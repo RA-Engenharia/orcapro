@@ -1,0 +1,991 @@
+/* =====================================================================
+ * app.js — Orquestrador (controller). Liga estado, UI, eventos e Store.
+ * Scripts "finos": a lógica de verdade vive em sinapi/bdi/orcamento.
+ * ===================================================================== */
+(function (global) {
+  "use strict";
+
+  var App = {
+    tela: "login",       // "login" | "lista" | "editor"
+    aba: "planilha",
+    orcAtual: null,
+    _addItemEtapaId: null,
+
+    // ---------- Boot ----------
+    iniciar: function () {
+      Auth.init();
+      // tema salvo
+      var tema = localStorage.getItem("orcapro:tema") || "light";
+      document.documentElement.setAttribute("data-tema", tema);
+
+      // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
+      if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
+
+      var self = this;
+      // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
+      this.carregarBaseSinapi().then(function (n) {
+        console.log("[SINAPI] " + n + " itens (" + Sinapi.competencia + "/" + Sinapi.uf + ")");
+        if (self.tela === "lista") self.render(); // atualiza o banner com o total real
+        // auto-check de atualização (não bloqueia; só avisa se houver competência nova)
+        if (typeof Atualizacao !== "undefined") {
+          Atualizacao.verificar().then(function (info) {
+            if (info.online && info.desatualizado) UI.toast("Nova competência SINAPI disponível: " + info.ultimaOficial + " — clique em 🔄 Atualizar.", "ok");
+          }).catch(function () {});
+        }
+      }).catch(function (e) {
+        console.warn("[SINAPI] não carregou:", e.message);
+        UI.toast("Base SINAPI não carregou (rode via servidor local).", "erro");
+      });
+
+      this.bindGlobal();
+      if (Auth.usuario()) { this.tela = "lista"; }
+      this.render();
+    },
+
+    // ---------- Modo demonstração (vitrine) ----------
+    _iniciarDemo: function (qs) {
+      var aba = (qs.match(/[?&]aba=([a-z]+)/) || [])[1] || "planilha";
+      Auth._usuario = { empresaId: "demo", empresa: "Construtora Modelo", email: "demo@orcapro.app", plano: "PRO" };
+      try {
+        if (typeof Empresa !== "undefined") Empresa.salvar({
+          nome: "Construtora Modelo Ltda", cnpj: "00.000.000/0001-00", responsavel: "Eng. João da Silva",
+          titulo: "Engenheiro Civil", crea: "CREA-MG 000000", registroNacional: "0000000000",
+          cidade: "Uberlândia / MG", contato: "contato@construtoramodelo.com.br"
+        });
+      } catch (e) {}
+      try { this.orcAtual = (typeof OrcDemo !== "undefined") ? OrcDemo.build() : Orcamento.novo({}); }
+      catch (e) { this.orcAtual = Orcamento.novo({}); }
+      this._demo = true;
+      this.tela = "editor";
+      this.aba = aba;
+      this.bindGlobal();
+      this.render();
+      this.carregarBaseSinapi().then(function () {}).catch(function () {});
+      var pr = (qs.match(/[?&]print=([a-z]+)/) || [])[1];
+      if (pr) { var s = this; setTimeout(function () { try { if (pr === "laudo") s.gerarLaudo(); else if (pr === "proposta") s.gerarProposta(); else if (pr === "relatorio") s.gerarRelatorio(); } catch (e) {} }, 500); }
+    },
+
+    // ---------- Render dispatcher ----------
+    render: function () {
+      var topbar = UI.el("topbar");
+      var main = UI.el("main");
+      var app = document.querySelector(".app");
+      if (this.tela === "login" || !Auth.usuario()) {
+        if (app) app.classList.add("tela-login");
+        topbar.innerHTML = "";
+        topbar.style.display = "none";
+        main.innerHTML = UI.renderLogin();
+        return;
+      }
+      if (app) app.classList.remove("tela-login");
+      topbar.style.display = "flex";
+      topbar.innerHTML = UI.renderTopbar(Auth.usuario());
+      if (this.tela === "editor" && this.orcAtual) {
+        main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
+      } else {
+        this.tela = "lista";
+        var r = Sinapi.resumo();
+        var baseInfo = { competencia: r.competencia, uf: r.uf, total: r.total,
+          personalizada: Store.temBaseSinapi(Auth.empresaId()) };
+        main.innerHTML = UI.renderLista(Store.listarOrcamentos(Auth.empresaId()), baseInfo);
+      }
+    },
+
+    // ---------- Eventos globais (delegação) ----------
+    bindGlobal: function () {
+      var self = this;
+      document.body.addEventListener("click", function (e) { self.onClick(e); });
+      document.body.addEventListener("change", function (e) { self.onChange(e); });
+      document.body.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" && self.tela === "login") self.entrar();
+      });
+    },
+
+    onClick: function (e) {
+      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa]");
+      if (!t) return;
+      // login: clicar numa conta salva preenche o e-mail
+      if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
+      // carregar base inclusa (1 clique)
+      if (t.dataset.inclusa) {
+        var pin = String(t.dataset.inclusa).split("|"); var selfI = this;
+        UI.toast("Carregando base inclusa…", "ok");
+        Bases.carregarInclusa(pin[0], pin[1]).then(function (r) {
+          UI.toast(r.fonte + " carregada: " + r.total.toLocaleString("pt-BR") + " itens (" + (r.competencia || "") + "/" + (r.uf || "") + ")." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
+          selfI.abrirTabelas();
+        }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
+        return;
+      }
+
+      // navegação por aba
+      if (t.dataset.aba) { this.aba = t.dataset.aba; this.render(); return; }
+      // abrir orçamento
+      if (t.dataset.abrir) { this.abrirOrcamento(t.dataset.abrir); return; }
+      // adicionar item a uma etapa -> abre busca SINAPI
+      if (t.dataset.addItem) { this.abrirBuscaSinapi(t.dataset.addItem); return; }
+      // remover etapa
+      if (t.dataset.delEtapa) { this.removerEtapa(t.dataset.delEtapa); return; }
+      // remover item "etapaId|itemId"
+      if (t.dataset.delItem) {
+        var pr = t.dataset.delItem.split("|");
+        this.removerItem(pr[0], pr[1]); return;
+      }
+      // ver insumos (composição explodida)
+      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos); return; }
+      // remover base extra
+      if (t.dataset.baseRemover) { Bases.remover(t.dataset.baseRemover); Bases.persistir(Auth.empresaId()); UI.toast("Base removida.", "ok"); this.abrirTabelas(); return; }
+      // atualizar competência (carregar do cache / baixar da Caixa)
+      if (t.dataset.atzCarregar) { this.carregarCompetencia(t.dataset.atzCarregar, true); return; }
+      if (t.dataset.atzBaixar) { this.carregarCompetencia(t.dataset.atzBaixar, false); return; }
+
+      var acao = t.dataset.acao;
+      switch (acao) {
+        case "entrar": this.entrar(); break;
+        case "logout": Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
+        case "tema": this.alternarTema(); break;
+        case "esqueci-senha": this.redefinirSenhaUI(); break;
+        case "empresa": this.abrirEmpresa(); break;
+        case "licenca": this.abrirLicenca(); break;
+        case "backup": this.abrirBackup(); break;
+        case "backup-export": this.exportarBackup(); break;
+        case "tabelas": this.abrirTabelas(); break;
+        case "escanear-pasta": this.escanearPastaUI(); break;
+        case "carregar-setop": this.carregarSetop(); break;
+        case "cron-recalc": this.cronRecalc(); break;
+        case "cron-reset": this.cronReset(); break;
+        case "cron-ia": this.cronRefinarIA(); break;
+        case "novo": this.novoOrcamento(); break;
+        case "importar-sinapi": this.abrirImportSinapi(); break;
+        case "atualizar": this.abrirAtualizar(); break;
+        case "processar-import": this.processarImportSinapi(); break;
+        case "voltar": this.tela = "lista"; this.orcAtual = null; this.render(); break;
+        case "add-etapa": this.addEtapa(); break;
+        case "salvar-bdi": this.salvarBdi(); break;
+        case "exportar": this.exportar(); break;
+        case "exportar-excel": this.exportarExcel(); break;
+        case "config-orc": this.editarDadosOrc(); break;
+        case "escopo": this.abrirEscopo(); break;
+        case "escopo-ia": this.analisarEscopoIA(); break;
+        case "escopo-casar": this.refinarEscopoCasar(); break;
+        case "escopo-analisar": this.analisarEscopo(); break;
+        case "escopo-confirmar": this.confirmarEscopo(); break;
+        case "proposta": this.gerarProposta(); break;
+        case "laudo": this.gerarLaudo(); break;
+        case "relatorio": this.gerarRelatorio(); break;
+        case "proposta-imprimir": window.print(); break;
+        case "proposta-fechar": this.fecharProposta(); break;
+      }
+    },
+
+    onChange: function (e) {
+      // upload do logo da empresa (arquivo -> base64 -> preview)
+      if (e.target.id === "emp-logo") {
+        var file = e.target.files && e.target.files[0];
+        if (!file) return;
+        if (file.size > 2 * 1024 * 1024) { UI.toast("Logo muito grande (máx. 2 MB).", "erro"); return; }
+        var self = this, rd = new FileReader();
+        rd.onload = function () {
+          self._logoPendente = rd.result;
+          var prev = UI.el("emp-logo-prev");
+          if (prev) prev.innerHTML = '<img src="' + rd.result + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">';
+        };
+        rd.readAsDataURL(file);
+        return;
+      }
+      // restaurar backup de orçamentos
+      if (e.target.id === "bkp-file") { var bf = e.target.files && e.target.files[0]; if (bf) this.importarBackup(bf); return; }
+      // ligar/desligar base de preço
+      if (e.target.matches("[data-base-toggle]")) { Bases.setAtiva(e.target.dataset.baseToggle, e.target.checked); return; }
+      // editar duração de etapa no cronograma
+      if (e.target.matches("[data-cron-dur]")) {
+        var o = this.orcAtual; if (!o) return;
+        o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {};
+        o.cronograma.duracoes[e.target.dataset.cronDur] = Math.max(1, parseInt(Util.num(e.target.value), 10) || 1);
+        this.persistir(); this.render(); return;
+      }
+      // edição inline de quantidade/custo na planilha
+      if (e.target.matches("input.cell[data-edit]")) {
+        var d = e.target.dataset;
+        var campos = {}; campos[d.edit] = e.target.value;
+        Orcamento.atualizarItem(this.orcAtual, d.eta, d.itm, campos);
+        this.persistir();
+        this.render();
+      }
+      // BDI live
+      if (e.target.id === "bdi-modelo") {
+        var mod = e.target.value;
+        if (mod !== "custom") {
+          var p = (mod === "dnit" && typeof DnitBdi !== "undefined") ? DnitBdi.params() : Bdi.paramsDoModelo(mod);
+          ["AC", "S", "R", "G", "DF", "L", "I"].forEach(function (k) {
+            var inp = UI.el("bdi-" + k); if (inp) inp.value = Util.fmtNum(p[k], 2);
+          });
+          this.recalcBdiPreview();
+        }
+      }
+      if (e.target.id && e.target.id.indexOf("bdi-") === 0 && e.target.id !== "bdi-modelo") {
+        var sel = UI.el("bdi-modelo"); if (sel) sel.value = "custom";
+        this.recalcBdiPreview();
+      }
+      // Escopo: troca de candidato / quantidade
+      if (e.target.matches("[data-esc-pick]")) {
+        var i = +e.target.dataset.escPick;
+        this._escopo[i].escolhido = parseInt(e.target.value, 10);
+        this._refreshConfianca(i);
+      }
+      if (e.target.matches("[data-esc-qtd]")) {
+        var j = +e.target.dataset.escQtd;
+        this._escopo[j].quantidade = Util.num(e.target.value);
+      }
+      // Cronograma: muda nº de meses
+      if (e.target.id === "cron-meses") {
+        var n = parseInt(Util.num(e.target.value), 10);
+        if (n >= 1 && n <= 60) { this.orcAtual.cronogramaMeses = n; this.persistir(); this.render(); }
+      }
+    },
+
+    _refreshConfianca: function (i) {
+      var l = this._escopo[i];
+      var cell = document.querySelector('[data-esc-conf="' + i + '"]');
+      if (!cell) return;
+      if (l.escolhido > -1 && l.candidatos[l.escolhido]) {
+        var c = l.candidatos[l.escolhido], n = Escopo.nivel(c.confianca);
+        cell.innerHTML = '<span class="pill" style="background:var(--' + n.cor + ');color:#fff">' + n.rotulo + ' ' + c.confianca + '%</span>';
+      } else {
+        cell.innerHTML = '<span class="pill proprio">Pendente</span>';
+      }
+    },
+
+    // ---------- Login ----------
+    entrar: function () {
+      var empresa = (UI.el("lg-empresa") || {}).value || "Minha Empresa";
+      var email = (UI.el("lg-email") || {}).value;
+      var senha = (UI.el("lg-senha") || {}).value;
+      if (!Util.naoVazio(email) || !Util.naoVazio(senha)) { UI.toast("Informe e-mail e senha.", "erro"); return; }
+      var jaExiste = Auth.existeEmail(email);
+      var r = Auth.login(email, senha);
+      if (!r.ok) {
+        if (jaExiste) {
+          // conta existe → é login com senha errada. NÃO cria conta nova (seus orçamentos estão salvos nesta).
+          UI.toast("Senha incorreta para " + email + ". Seus orçamentos estão salvos — tente de novo ou use “Esqueci a senha”.", "erro");
+          return;
+        }
+        // e-mail novo → cria conta (1º acesso)
+        r = Auth.registrar(empresa, email, senha);
+        if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+        UI.toast("Conta criada. Bem-vindo!", "ok");
+      } else {
+        UI.toast("Bem-vindo de volta!", "ok");
+      }
+      this.tela = "lista";
+      this.render();
+      // recarrega a base SINAPI específica desta empresa (se importou uma própria)
+      var self = this;
+      this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
+    },
+
+    // Esqueci a senha (redefinição local — é o próprio navegador/dados do usuário)
+    redefinirSenhaUI: function () {
+      var email = ((UI.el("lg-email") || {}).value || "").trim();
+      if (!Util.naoVazio(email)) { UI.toast("Digite (ou clique) o e-mail da conta primeiro.", "erro"); return; }
+      if (!Auth.existeEmail(email)) { UI.toast("Não há conta com esse e-mail neste navegador.", "erro"); return; }
+      var nova = window.prompt("Defina uma NOVA senha para " + email + "\n(é o seu próprio navegador — seus orçamentos continuam salvos):");
+      if (nova === null) return;
+      if (!Util.naoVazio(nova)) { UI.toast("Senha vazia.", "erro"); return; }
+      var r = Auth.redefinirSenha(email, nova);
+      if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+      UI.toast("Senha redefinida! Entrando…", "ok");
+      this.tela = "lista"; this.render();
+      var self = this; this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
+    },
+
+    // ---------- Base SINAPI (própria da empresa ou padrão) ----------
+    carregarBaseSinapi: function () {
+      if (typeof Bases !== "undefined") { try { Bases.carregar(Auth.empresaId()); } catch (e) {} }
+      var base = Store.lerBaseSinapi(Auth.empresaId());
+      if (base && base.dados && base.dados.length) {
+        Sinapi.carregarDe(base);
+        return Promise.resolve(Sinapi.resumo().total);
+      }
+      return Sinapi.carregarArquivo();
+    },
+
+    abrirImportSinapi: function () {
+      var self = this;
+      UI.modal("⬆ Importar base SINAPI", UI.renderImportSinapi(Sinapi.resumo()), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Importar", classe: "primary", onClick: function () { self.processarImportSinapi(); } }
+      ]);
+    },
+
+    processarImportSinapi: function () {
+      var self = this;
+      var fileInput = UI.el("imp-file");
+      var f = fileInput && fileInput.files && fileInput.files[0];
+      if (f) {
+        var rd = new FileReader();
+        rd.onload = function () { self._fazerImport(rd.result, f.name); };
+        rd.onerror = function () { UI.toast("Falha ao ler o arquivo.", "erro"); };
+        rd.readAsText(f);
+        return;
+      }
+      // nome neutro: deixa o importarTexto detectar JSON vs CSV pelo conteúdo
+      this._fazerImport((UI.el("imp-text") || {}).value, "colado.txt");
+    },
+
+    _fazerImport: function (texto, nome) {
+      var opts = { competencia: (UI.el("imp-comp") || {}).value, uf: (UI.el("imp-uf") || {}).value };
+      var r = Sinapi.importarTexto(texto, nome, opts);
+      if (!r.ok) { UI.toast("Importação falhou: " + r.erro, "erro"); return; }
+      var grav = Store.salvarBaseSinapi(Auth.empresaId(), r.pacote);
+      UI.fecharModal();
+      this.render();
+      if (grav.ok) UI.toast("Base importada: " + r.total.toLocaleString("pt-BR") + " itens (" + r.competencia + "/" + r.uf + ").", "ok");
+      else UI.toast(r.total.toLocaleString("pt-BR") + " itens carregados. " + grav.erro, "erro");
+    },
+
+    // ---------- Backup dos Orçamentos (exportar/importar) ----------
+    abrirBackup: function () {
+      var n = Store.listarOrcamentos(Auth.empresaId()).length;
+      var html = '<p>Você tem <b>' + n + '</b> orçamento(s) salvos nesta conta (' + Util.esc((Auth.usuario() || {}).email || "") + ').</p>' +
+        '<p class="muted">Exporte um arquivo <b>.json</b> para guardar/transferir. Importar <b>restaura/mescla</b> os orçamentos do arquivo nesta conta — nada é apagado.</p>' +
+        '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">💾 Exportar backup</button></div>' +
+        '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>';
+      UI.modal("💾 Backup dos Orçamentos", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    exportarBackup: function () {
+      var eid = Auth.empresaId();
+      var dump = { app: "OrçaPRO", versao: CONFIG.versao, exportadoEm: Util.agoraISO(), empresa: (Auth.usuario() || {}).empresa, email: (Auth.usuario() || {}).email, orcamentos: Store.listarOrcamentos(eid), prefs: Store.lerPrefs(eid) };
+      var blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "orcapro-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+      UI.toast(dump.orcamentos.length + " orçamento(s) exportado(s).", "ok");
+    },
+    importarBackup: function (file) {
+      var self = this, rd = new FileReader();
+      rd.onload = function () {
+        try {
+          var dump = JSON.parse(rd.result);
+          var orcs = Util.arr(dump.orcamentos);
+          if (!orcs.length) { UI.toast("Backup sem orçamentos.", "erro"); return; }
+          var eid = Auth.empresaId();
+          orcs.forEach(function (o) { Store.salvarOrcamento(eid, o); });
+          if (dump.prefs && typeof dump.prefs === "object") {
+            var atual = Store.lerPrefs(eid) || {};
+            for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];
+            Store.salvarPrefs(eid, atual);
+          }
+          UI.toast(orcs.length + " orçamento(s) restaurado(s).", "ok");
+          UI.fecharModal(); self.tela = "lista"; self.render();
+        } catch (e) { UI.toast("Arquivo inválido: " + e.message, "erro"); }
+      };
+      rd.readAsText(file);
+    },
+
+    // ---------- Licença ----------
+    abrirLicenca: function () {
+      var self = this;
+      UI.modal("🔑 Licença do OrçaPRO", UI.renderLicenca(Licenca.status()), [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Ativar", classe: "primary", onClick: function () { self.salvarLicenca(); } }
+      ]);
+    },
+    salvarLicenca: function () {
+      var chave = (UI.el("lic-chave") || {}).value || "";
+      if (!Util.naoVazio(chave)) { UI.toast("Cole a chave de licença.", "erro"); return; }
+      var r = Licenca.ativar(chave);
+      if (!r.ok) { UI.toast(r.erro || "Chave inválida.", "erro"); return; }
+      UI.fecharModal(); UI.toast("✓ Licença ativada! Obrigado.", "ok"); this.render();
+    },
+
+    // ---------- Empresa / Responsável Técnico ----------
+    abrirEmpresa: function () {
+      var self = this;
+      this._logoPendente = undefined; // undefined=inalterado · string=novo logo
+      var bg = UI.modal("⚙ Empresa / Responsável Técnico", UI.renderEmpresa(Empresa.dados(), Empresa.logo()), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () { self.salvarEmpresa(); } }
+      ]);
+      var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "660px";
+    },
+    salvarEmpresa: function () {
+      var dados = {};
+      Empresa.campos.forEach(function (k) { var el = UI.el("emp-" + k); dados[k] = el ? el.value : ""; });
+      Empresa.salvar(dados, this._logoPendente);
+      UI.fecharModal();
+      UI.toast("Dados da empresa salvos. Aparecem nos documentos.", "ok");
+    },
+
+    // ---------- Atualizar tabelas (backend sinapi-fetcher) ----------
+    abrirAtualizar: function () {
+      var bg = UI.modal("🔄 Atualizar Tabelas de Preço", '<div id="atz-body" class="muted">Verificando o backend (sinapi-fetcher :3040)…</div>',
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "640px";
+      Atualizacao.verificar().then(function (info) {
+        var el = UI.el("atz-body"); if (el) el.innerHTML = UI.renderAtualizar(info);
+      }).catch(function (e) {
+        var el = UI.el("atz-body"); if (el) el.innerHTML = '<div class="vazio card">Erro ao verificar: ' + Util.esc(e.message) + '</div>';
+      });
+    },
+    carregarCompetencia: function (mes, jaCache) {
+      var self = this, uf = (typeof Sinapi !== "undefined" ? Sinapi.uf : "MG") || "MG";
+      UI.toast(jaCache ? ("Carregando " + mes + "…") : ("Baixando " + mes + " da Caixa (30–60s)…"), "ok");
+      Atualizacao.baixar(mes, uf, jaCache).then(function (n) {
+        UI.toast("SINAPI atualizada: " + n.toLocaleString("pt-BR") + " itens (" + mes + "/" + uf + ").", "ok");
+        UI.fecharModal();
+        self.render();
+      }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
+    },
+
+    // Cronograma — recalcular com os parâmetros / limpar edições de duração
+    cronRecalc: function () {
+      var o = this.orcAtual; if (!o) return;
+      o.cronograma = o.cronograma || {};
+      o.cronograma.params = {
+        dataInicio: (UI.el("cron-inicio") || {}).value || null,
+        equipes: Math.max(1, parseInt(Util.num((UI.el("cron-equipes") || {}).value), 10) || 1),
+        diasUteisSemana: Math.min(7, Math.max(1, parseInt(Util.num((UI.el("cron-dias") || {}).value), 10) || 5)),
+        paralelismo: Util.num((UI.el("cron-paral") || {}).value),
+        custoDiaEquipe: Math.max(1, Util.num((UI.el("cron-custodia") || {}).value) || 700)
+      };
+      this.persistir(); this.render();
+    },
+    cronReset: function () {
+      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; }
+      this.persistir(); UI.toast("Durações voltaram à estimativa do agente.", "ok"); this.render();
+    },
+    // Refina as durações com a IA do ERP (planejador) — fonte de verdade = backend (chave da IA fica lá)
+    cronRefinarIA: function () {
+      var o = this.orcAtual; if (!o || !(o.etapas || []).length) return;
+      var r = Cronograma.estimar(o), self = this;
+      var etapas = o.etapas.map(function (e, i) {
+        return {
+          i: i, id: e.id, nome: e.nome, categoria: r.etapas[i].categoriaNome, duracaoAtual: r.etapas[i].duracao,
+          itens: (e.itens || []).slice(0, 15).map(function (it) { return { descricao: it.descricao, quantidade: it.quantidade, unidade: it.unidade }; })
+        };
+      });
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+      UI.toast("🤖 Consultando a IA do ERP (planejador)…", "ok");
+      fetch(back + "/ia/cronograma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ etapas: etapas, equipes: (r.params.equipes || 1) }) })
+        .then(function (resp) { return resp.json(); })
+        .then(function (j) {
+          if (!j.ok) { UI.toast("IA: " + (j.error || "não retornou"), "erro"); return; }
+          o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {}; o.cronograma.iaMotivos = {};
+          var n = 0;
+          (j.etapas || []).forEach(function (x) { var et = etapas[x.i]; if (et && x.dias >= 1) { o.cronograma.duracoes[et.id] = Math.round(Util.num(x.dias)); o.cronograma.iaMotivos[et.id] = x.motivo || ""; n++; } });
+          self.persistir();
+          UI.toast("🤖 " + n + " etapas refinadas pela IA (" + (j.provider || "") + "). Passe o mouse no 🤖 p/ ver o motivo; edite se quiser.", "ok");
+          self.render();
+        })
+        .catch(function (e) { UI.toast("Sem conexão com a IA — o ERP/servidor (porta 3040) está ligado? " + e.message, "erro"); });
+    },
+
+    // SETOP regionalizado — carrega usando o preço da região escolhida
+    carregarSetop: function () {
+      var self = this, reg = (UI.el("setop-regiao") || {}).value || "Triangulo";
+      var regime = (UI.el("setop-regime") || {}).value || "desonerada";
+      var arq = regime === "onerada" ? "data/setop-MG-onerada-current.json" : "data/setop-MG-current.json";
+      UI.toast("Carregando SETOP (" + reg + ", " + regime + ")…", "ok");
+      Bases.carregarInclusa(arq, "SETOP", reg).then(function (r) {
+        UI.toast("SETOP-MG · " + reg + " · " + regime + ": " + r.total.toLocaleString("pt-BR") + " itens." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
+        self.abrirTabelas();
+      }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
+    },
+
+    // Escanear pasta inteira (multi-base) via fetcher
+    escanearPastaUI: function () {
+      var self = this;
+      var caminho = ((UI.el("scan-pasta") || {}).value || "").trim();
+      var uf = (UI.el("scan-uf") || {}).value || "";
+      var mes = (UI.el("scan-mes") || {}).value || "";
+      var deson = !!((UI.el("scan-deson") || {}).checked);
+      if (!caminho) { UI.toast("Informe o nome da pasta (dentro do projeto do ERP).", "erro"); return; }
+      UI.toast("Escaneando '" + caminho + "' (pode levar ~30s)…", "ok");
+      Atualizacao.escanearPasta(caminho, uf, mes, deson).then(function (r) {
+        var resumo = r.carregadas.map(function (c) { return c.fonte + " " + c.total.toLocaleString("pt-BR"); }).join(" · ");
+        UI.toast("Importado: " + resumo + " (" + r.mes + "/" + r.uf + ")" + (r.persistido ? "" : " — " + r.gravErro), "ok");
+        self.abrirTabelas();
+      }).catch(function (e) { UI.toast("Falhou: " + e.message + " (o backend/ERP está ligado?)", "erro"); });
+    },
+
+    // ---------- Tabelas de Preço (multi-base) ----------
+    abrirTabelas: function () {
+      var self = this;
+      var bg = UI.modal("🗂 Tabelas de Preço (multi-base)", UI.renderTabelas(Bases.lista()), [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Importar base", classe: "primary", onClick: function () { self.importarBase(); } }
+      ]);
+      var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "740px";
+    },
+    importarBase: function () {
+      var self = this;
+      var fonte = (UI.el("tab-fonte") || {}).value || "PROPRIA";
+      var uf = (UI.el("tab-uf") || {}).value || "";
+      var fileInput = UI.el("tab-file");
+      var f = fileInput && fileInput.files && fileInput.files[0];
+      var concluir = function (texto, nome) {
+        var r = Bases.importarTexto(fonte, texto, nome, { uf: uf });
+        if (!r.ok) { UI.toast("Importação falhou: " + r.erro, "erro"); return; }
+        var grav = Bases.persistir(Auth.empresaId());
+        UI.toast(r.total.toLocaleString("pt-BR") + " itens de " + r.fonte + " importados" + (grav.ok ? "." : " — " + grav.erro), grav.ok ? "ok" : "erro");
+        self.abrirTabelas();
+      };
+      if (f) { var rd = new FileReader(); rd.onload = function () { concluir(rd.result, f.name); }; rd.onerror = function () { UI.toast("Falha ao ler arquivo.", "erro"); }; rd.readAsText(f); }
+      else { concluir((UI.el("tab-text") || {}).value, "colado.txt"); }
+    },
+
+    alternarTema: function () {
+      var atual = document.documentElement.getAttribute("data-tema");
+      var novo = atual === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-tema", novo);
+      localStorage.setItem("orcapro:tema", novo);
+    },
+
+    // ---------- Orçamentos ----------
+    novoOrcamento: function () {
+      var lista = Store.listarOrcamentos(Auth.empresaId());
+      var limite = Auth.limite("limiteOrcamentos");
+      if (lista.length >= limite) {
+        UI.toast("Plano " + CONFIG.planos[Auth.plano()].nome + " permite só " + limite + " orçamentos. Faça upgrade.", "erro");
+        return;
+      }
+      var self = this;
+      UI.modal("Novo Orçamento",
+        '<div class="field"><label>Nome do orçamento</label><input id="no-nome" placeholder="Ex.: Residência Unifamiliar 180m²"></div>' +
+        '<div class="row"><div class="field"><label>Cliente</label><input id="no-cliente" placeholder="Nome do cliente"></div>' +
+        '<div class="field"><label>Obra / Local</label><input id="no-obra" placeholder="Ex.: Bairro Centro"></div></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Criar", classe: "primary", onClick: function () {
+            var orc = Orcamento.novo({
+              nome: (UI.el("no-nome") || {}).value || "Novo Orçamento",
+              cliente: (UI.el("no-cliente") || {}).value || "",
+              obra: (UI.el("no-obra") || {}).value || ""
+            });
+            Store.salvarOrcamento(Auth.empresaId(), orc);
+            UI.fecharModal();
+            self.orcAtual = orc; self.tela = "editor"; self.aba = "planilha";
+            self.render();
+            UI.toast("Orçamento criado.", "ok");
+          } }
+        ]);
+    },
+
+    abrirOrcamento: function (id) {
+      var orc = Store.obterOrcamento(Auth.empresaId(), id);
+      if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
+      this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha";
+      this.render();
+    },
+
+    editarDadosOrc: function () {
+      var o = this.orcAtual, self = this;
+      var c = Orcamento.garantirComercial(o);
+      UI.modal("Dados do Orçamento",
+        '<div class="field"><label>Nome</label><input id="ed-nome" value="' + Util.esc(o.nome) + '"></div>' +
+        '<div class="row"><div class="field"><label>Cliente</label><input id="ed-cliente" value="' + Util.esc(o.cliente.nome) + '"></div>' +
+        '<div class="field"><label>Obra/Local</label><input id="ed-obra" value="' + Util.esc(o.obra.nome) + '"></div></div>' +
+        '<div class="row"><div class="field"><label>Competência SINAPI</label><input id="ed-comp" value="' + Util.esc(o.competenciaSinapi) + '"></div>' +
+        '<div class="field"><label>UF</label><input id="ed-uf" value="' + Util.esc(o.uf) + '"></div></div>' +
+        '<div class="field"><label>ART/RRT nº (opcional — aparece no Anexo p/ Laudo)</label><input id="ed-art" value="' + Util.esc(o.art || "") + '" placeholder="ex.: MG20260000000"></div>' +
+        '<h3 style="margin:8px 0;border-top:1px solid var(--linha);padding-top:14px">Dados para a Proposta Comercial</h3>' +
+        '<div class="field"><label>Condições de pagamento</label><textarea id="ed-pag" rows="2">' + Util.esc(c.condicoesPagamento) + '</textarea></div>' +
+        '<div class="row"><div class="field"><label>Prazo de execução</label><input id="ed-prazo" value="' + Util.esc(c.prazoExecucao) + '"></div>' +
+        '<div class="field"><label>Validade da proposta</label><input id="ed-val" value="' + Util.esc(c.validadeProposta) + '"></div></div>' +
+        '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
+        '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
+        '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Salvar", classe: "primary", onClick: function () {
+            o.nome = (UI.el("ed-nome") || {}).value || o.nome;
+            o.cliente.nome = (UI.el("ed-cliente") || {}).value || "";
+            o.obra.nome = (UI.el("ed-obra") || {}).value || "";
+            o.competenciaSinapi = (UI.el("ed-comp") || {}).value || o.competenciaSinapi;
+            o.uf = (UI.el("ed-uf") || {}).value || o.uf;
+            o.art = (UI.el("ed-art") || {}).value || "";
+            c.condicoesPagamento = (UI.el("ed-pag") || {}).value || "";
+            c.prazoExecucao = (UI.el("ed-prazo") || {}).value || "";
+            c.validadeProposta = (UI.el("ed-val") || {}).value || "";
+            c.garantia = (UI.el("ed-gar") || {}).value || "";
+            c.incluso = (UI.el("ed-inc") || {}).value || "";
+            c.excluso = (UI.el("ed-exc") || {}).value || "";
+            self.persistir(); UI.fecharModal(); self.render(); UI.toast("Dados salvos.", "ok");
+          } }
+        ]);
+    },
+
+    addEtapa: function () {
+      var self = this;
+      UI.modal("Nova Etapa",
+        '<div class="field"><label>Nome da etapa</label><input id="et-nome" placeholder="Ex.: 2.0 Fundações"></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Adicionar", classe: "primary", onClick: function () {
+            Orcamento.addEtapa(self.orcAtual, (UI.el("et-nome") || {}).value || "Nova Etapa");
+            self.persistir(); UI.fecharModal(); self.render();
+          } }
+        ]);
+    },
+
+    removerEtapa: function (etapaId) {
+      Orcamento.removerEtapa(this.orcAtual, etapaId);
+      this.persistir(); this.render();
+    },
+    removerItem: function (etapaId, itemId) {
+      Orcamento.removerItem(this.orcAtual, etapaId, itemId);
+      this.persistir(); this.render();
+    },
+
+    // ---------- Busca SINAPI ----------
+    abrirBuscaSinapi: function (etapaId) {
+      this._addItemEtapaId = etapaId;
+      var self = this;
+      var corpo =
+        '<div class="field"><input id="bs-q" placeholder="Buscar por código ou descrição (ex.: alvenaria bloco, concreto fck)" autofocus></div>' +
+        '<div class="muted mb" id="bs-base">Base: carregando…</div>' +
+        '<div id="bs-results"><div class="vazio">Digite ao menos 2 letras…</div></div>';
+      UI.modal("Buscar composição SINAPI", corpo,
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+
+      function ativarBusca() {
+        var baseEl = UI.el("bs-base");
+        if (baseEl) baseEl.textContent = "Base: SINAPI " + Sinapi.competencia + "/" + Sinapi.uf + " · " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens";
+        var inp = UI.el("bs-q");
+        if (!inp) return;
+        var doSearch = Util.debounce(function () {
+          var q = inp.value.trim();
+          var box = UI.el("bs-results");
+          if (!box) return;
+          if (q.length < 2) { box.innerHTML = '<div class="vazio">Digite ao menos 2 letras…</div>'; return; }
+          var res = (typeof Bases !== "undefined") ? Bases.buscar(q, 40)
+            : Sinapi.buscar(q, { max: 40 }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi" }; });
+          if (!res.length) { box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '".</div>'; return; }
+          box.innerHTML = res.map(function (r) {
+            var it = r.item;
+            return '<div class="sinapi-result" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
+              '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + '</span> ' + Util.esc(it.codigo) + ' · ' + Util.esc(it.unidade) + '</div>' +
+              Util.esc(it.descricao) + '</div>' +
+              '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + '</div></div>';
+          }).join("");
+          Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
+            row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
+          });
+        }, 220);
+        inp.addEventListener("input", doSearch);
+        if (inp.value.trim().length >= 2) doSearch(); // já digitou durante o carregamento
+        inp.focus();
+      }
+
+      // Se a base ainda não carregou, abre assim mesmo e espera (ou avisa em caso de falha)
+      if (Sinapi.carregado) {
+        ativarBusca();
+      } else {
+        var baseEl = UI.el("bs-base"); if (baseEl) baseEl.textContent = "⏳ Carregando base SINAPI…";
+        var box = UI.el("bs-results"); if (box) box.innerHTML = '<div class="vazio">Carregando base SINAPI, aguarde…</div>';
+        this.carregarBaseSinapi().then(function () {
+          if (UI.el("bs-q")) ativarBusca();
+        }).catch(function () {
+          var b = UI.el("bs-results");
+          if (b) b.innerHTML = '<div class="vazio">⚠️ Não foi possível carregar a base SINAPI.<br>' +
+            'Abra o app pelo <b>servidor local</b> (Iniciar-OrcaPRO.bat) — não funciona abrindo o index.html direto (file://).</div>';
+        });
+      }
+    },
+
+    escolherItemSinapi: function (pick) {
+      var parts = String(pick).split("|"), codigo = parts[0], fonte = parts[1] || "SINAPI";
+      var item = (typeof Bases !== "undefined") ? Bases.obter(fonte, codigo) : Sinapi.obter(codigo);
+      if (!item) { UI.toast("Item não encontrado.", "erro"); return; }
+      // checa limite de itens do plano
+      var totalItens = Orcamento.totais(this.orcAtual).qtdItens;
+      var lim = Auth.limite("limiteItensPorOrcamento");
+      if (totalItens >= lim) { UI.toast("Limite de itens do plano atingido. Faça upgrade.", "erro"); return; }
+      var self = this;
+      UI.fecharModal();
+      UI.modal("Quantidade — " + Util.esc(item.codigo),
+        '<p>' + Util.esc(item.descricao) + '</p>' +
+        '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(item.unidade) + ')</label>' +
+        '<input id="qi-qtd" value="1" autofocus></div>' +
+        '<div class="field"><label>Custo unitário</label><input id="qi-cu" value="' + Util.fmtNum(item.custoUnitario, 2) + '"></div></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Adicionar item", classe: "success", onClick: function () {
+            var qtd = Util.num((UI.el("qi-qtd") || {}).value);
+            var cu = Util.num((UI.el("qi-cu") || {}).value);
+            var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
+            Orcamento.addItem(self.orcAtual, self._addItemEtapaId, itemAjustado, qtd);
+            self.persistir(); UI.fecharModal(); self.render();
+            UI.toast("Item adicionado.", "ok");
+          } }
+        ]);
+    },
+
+    // ---------- BDI ----------
+    recalcBdiPreview: function () {
+      var p = {};
+      ["AC", "S", "R", "G", "DF", "L", "I"].forEach(function (k) { p[k] = Util.num((UI.el("bdi-" + k) || {}).value); });
+      var res = Bdi.calcular(p);
+      var out = UI.el("bdi-resultado"); if (out) out.textContent = Util.fmtPct(res);
+    },
+    salvarBdi: function () {
+      var modeloSel = (UI.el("bdi-modelo") || {}).value || "custom";
+      var p = {};
+      ["AC", "S", "R", "G", "DF", "L", "I"].forEach(function (k) { p[k] = Util.num((UI.el("bdi-" + k) || {}).value); });
+      Orcamento.aplicarBdi(this.orcAtual, modeloSel, p);
+      this.persistir(); this.render();
+      UI.toast("BDI aplicado: " + Util.fmtPct(this.orcAtual.bdi.percentual), "ok");
+    },
+
+    // ---------- Export ----------
+    exportar: function () {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgrade.", "erro"); return; }
+      var csv = Orcamento.exportarCSV(this.orcAtual);
+      Util.baixar((this.orcAtual.numero || "orcamento") + ".csv", csv, "text/csv;charset=utf-8");
+      UI.toast("CSV exportado.", "ok");
+    },
+
+    // Excel profissional: workbook vivo com 3 abas (Resumo/Sintética/Analítica) + fórmulas
+    exportarExcel: function () {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgrade.", "erro"); return; }
+      if (Orcamento.totais(this.orcAtual).qtdItens < 1) { UI.toast("Adicione itens antes de exportar.", "erro"); return; }
+      UI.toast("Gerando Excel (3 abas com fórmulas)…", "ok");
+      ExcelOrc.gerar(this.orcAtual);
+    },
+
+    // ---------- Ver composição → insumos (base analítica) ----------
+    verInsumos: function (codigo) {
+      function abrir() {
+        var a = Analitico.obter(codigo);
+        if (!a) { UI.toast("Sem analítico para a composição " + codigo + " nesta base.", "erro"); return; }
+        var bg = UI.modal("🔍 Composição " + codigo + " — Insumos", UI.renderInsumos(a),
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
+      }
+      if (Analitico.carregado) { abrir(); return; }
+      UI.toast("Carregando base analítica (1ª vez, ~17 MB)…", "ok");
+      Analitico.carregarArquivo().then(function () { abrir(); }).catch(function (e) {
+        UI.toast("Não carregou o analítico: " + e.message + " — abra pelo servidor local.", "erro");
+      });
+    },
+
+    // ---------- Escopo Inteligente ----------
+    abrirEscopo: function () {
+      if (!Auth.podeUsar("escopoIA")) { UI.toast("Escopo Inteligente é recurso PRO.", "erro"); return; }
+      if (!Sinapi.carregado) { UI.toast("Base SINAPI ainda carregando…", "erro"); return; }
+      var self = this;
+      this._escopo = null;
+      UI.modal("✨ Escopo Inteligente", UI.renderEscopoEntrada(), [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+      setTimeout(function () { var t = UI.el("esc-txt"); if (t) t.focus(); }, 50);
+    },
+
+    analisarEscopo: function () {
+      var txt = (UI.el("esc-txt") || {}).value || "";
+      if (!Util.naoVazio(txt)) { UI.toast("Cole o escopo primeiro.", "erro"); return; }
+      this._escopo = Escopo.analisar(txt);
+      if (!this._escopo.length) { UI.toast("Nenhuma linha reconhecida.", "erro"); return; }
+
+      var self = this;
+      var body = UI.renderEscopoResultado(this._escopo, this.orcAtual.etapas);
+      // reabre o modal com o resultado + rodapé de confirmação
+      var bg = UI.modal("✨ Escopo Inteligente — revisão", body, [
+        { texto: "Voltar", classe: "ghost", onClick: function () { self.abrirEscopo(); } },
+        { texto: "Adicionar selecionados", classe: "success", onClick: function () { self.confirmarEscopo(); } }
+      ]);
+      // largura maior p/ a tabela
+      var m = bg.querySelector(".modal"); if (m) m.style.maxWidth = "920px";
+    },
+
+    confirmarEscopo: function () {
+      var an = this._escopo || [], self = this;
+      var etapaSel = (UI.el("esc-etapa") || {}).value;
+      var porIA = etapaSel === "__por_ia__";
+      if (etapaSel === "__nova__") {
+        Orcamento.addEtapa(this.orcAtual, "Escopo Importado");
+        etapaSel = this.orcAtual.etapas[this.orcAtual.etapas.length - 1].id;
+      }
+      var etapaPorNome = {};
+      function etapaParaLinha(l) {
+        if (!porIA) return etapaSel;
+        var nome = String(l.etapaSugerida || "Escopo").trim() || "Escopo";
+        if (etapaPorNome[nome]) return etapaPorNome[nome];
+        var existe = self.orcAtual.etapas.filter(function (e) { return String(e.nome || "").toLowerCase() === nome.toLowerCase(); })[0];
+        if (existe) { etapaPorNome[nome] = existe.id; return existe.id; }
+        Orcamento.addEtapa(self.orcAtual, nome);
+        var nova = self.orcAtual.etapas[self.orcAtual.etapas.length - 1];
+        etapaPorNome[nome] = nova.id; return nova.id;
+      }
+      var add = 0, pend = 0, lim = Auth.limite("limiteItensPorOrcamento");
+      for (var i = 0; i < an.length; i++) {
+        var l = an[i];
+        if (l.escolhido < 0 || !l.candidatos[l.escolhido]) { pend++; continue; }
+        if (Orcamento.totais(this.orcAtual).qtdItens >= lim) { UI.toast("Limite de itens do plano atingido.", "erro"); break; }
+        var cand = l.candidatos[l.escolhido];
+        var item = Util.clone(cand.item);
+        item.baseFonte = cand.fonte || "SINAPI";
+        Orcamento.addItem(this.orcAtual, etapaParaLinha(l), item, l.quantidade);
+        add++;
+      }
+      this._escopoIA = false;
+      this.persistir(); UI.fecharModal(); this.render();
+      UI.toast(add + " itens adicionados" + (pend ? " · " + pend + " pendentes ignorados" : "") + ".", "ok");
+    },
+
+    // Escopo via IA: prosa livre -> IA estrutura -> casa c/ bases -> IA escolhe o código certo (/ia/casar)
+    analisarEscopoIA: function () {
+      var txt = (UI.el("esc-txt") || {}).value || "";
+      if (!Util.naoVazio(txt)) { UI.toast("Cole a descrição da obra primeiro.", "erro"); return; }
+      var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+      this._escBack = back;
+      UI.toast("🤖 Estruturando o escopo com a IA do ERP…", "ok");
+      fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ descricao: txt }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.ok || !j.resultado) { UI.toast("IA: " + (j.error || "não retornou estrutura"), "erro"); return; }
+          self._escopo = Escopo.analisarItensIA(j.resultado.etapas || []);
+          if (!self._escopo.length) { UI.toast("A IA não retornou itens.", "erro"); return; }
+          self._escopoIA = true;
+          var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;
+          UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão). Use 🎯 Refinar p/ a IA escolher o código exato.", "ok");
+          self._mostrarEscopoResultado(0);
+        })
+        .catch(function (e) { console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — veja o Console (F12). ERP na porta 3040?", "erro"); });
+    },
+
+    // 2º passo (opcional): IA escolhe o código EXATO. Em LOTES, só os ainda NÃO refinados,
+    // e PARA ao bater o limite/min da IA grátis (o usuário clica de novo p/ continuar).
+    _casarEscopoIA: function (back) {
+      var an = this._escopo || [];
+      var pares = an.filter(function (l) { return l.candidatos && l.candidatos.length && !l.refinadoIA; });
+      var res = { refinados: 0, limite: false, restam: 0 };
+      if (!pares.length) return Promise.resolve(res);
+      var CHUNK = 6, lotes = [];
+      for (var k = 0; k < pares.length; k += CHUNK) lotes.push(pares.slice(k, k + CHUNK));
+      return lotes.reduce(function (p, lote) {
+        return p.then(function () {
+          if (res.limite) return; // já bateu o limite: para
+          var payload = lote.map(function (l) {
+            return { descricao: l.textoOriginal, unidade: l.unidade || "", candidatos: l.candidatos.slice(0, 2).map(function (c) { return { codigo: c.item.codigo, descricao: String(c.item.descricao || "").slice(0, 70), unidade: c.item.unidade, custo: c.item.custoUnitario }; }) };
+          });
+          return fetch(back + "/ia/casar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itens: payload }) })
+            .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
+            .then(function (o) {
+              var j = o.j;
+              if (!j.ok && /rate limit|429|too large|413/i.test(String(j.error || ""))) { res.limite = true; return; }
+              if (!j.ok || !j.escolhas) return;
+              j.escolhas.forEach(function (esc) {
+                var l = lote[esc.i]; if (!l) return; l.refinadoIA = true;
+                if (!esc.codigo) { l.escolhido = -1; return; }
+                var idx = -1;
+                for (var z = 0; z < l.candidatos.length; z++) { if (String(l.candidatos[z].item.codigo) === String(esc.codigo)) { idx = z; break; } }
+                l.escolhido = idx; if (idx >= 0) res.refinados++;
+              });
+            }, function () { });
+        });
+      }, Promise.resolve()).then(function () {
+        res.restam = an.filter(function (l) { return l.candidatos && l.candidatos.length && !l.refinadoIA; }).length;
+        return res;
+      });
+    },
+    // botão "🎯 Refinar com IA" na revisão do escopo
+    refinarEscopoCasar: function () {
+      var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+      UI.toast("🎯 Refinando os matches com a IA…", "ok");
+      this._casarEscopoIA(back).then(function (r) {
+        var msg = r.refinados + " serviços refinados pela IA.";
+        if (r.limite) msg += " ⏳ Limite da IA grátis/min atingido — restam " + r.restam + ", clique de novo daqui ~1 min.";
+        UI.toast(msg, r.limite ? "erro" : "ok");
+        self._mostrarEscopoResultado(r.refinados);
+      });
+    },
+
+    _mostrarEscopoResultado: function (refinados) {
+      var self = this;
+      var body = UI.renderEscopoResultado(this._escopo, this.orcAtual.etapas);
+      var bg = UI.modal("✨ Escopo (IA) — revisão · " + this._escopo.length + " serviços" + (refinados ? " · 🎯 " + refinados + " confirmados pela IA" : ""), body, [
+        { texto: "Voltar", classe: "ghost", onClick: function () { self.abrirEscopo(); } },
+        { texto: "Adicionar selecionados", classe: "success", onClick: function () { self.confirmarEscopo(); } }
+      ]);
+      var m = bg.querySelector(".modal"); if (m) m.style.maxWidth = "940px";
+    },
+
+    // ---------- Proposta Comercial ----------
+    gerarProposta: function () {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (!Auth.podeUsar("proposta")) { UI.toast("Proposta Comercial é recurso PRO.", "erro"); return; }
+      var val = Proposta.validar(this.orcAtual);
+      if (!val.ok) {
+        UI.toast("Faltam dados: " + val.faltando.join(", ") + ". Abra ⚙ Dados.", "erro");
+        return;
+      }
+      this._abrirPrint("📄 Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()));
+    },
+
+    // Anexo Técnico de Orçamento p/ LAUDO pericial (não comercial)
+    gerarLaudo: function () {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (!Auth.podeUsar("proposta")) { UI.toast("Anexo p/ laudo é recurso PRO.", "erro"); return; }
+      var val = Laudo.validar(this.orcAtual);
+      if (!val.ok) { UI.toast("Faltam dados: " + val.faltando.join(", "), "erro"); return; }
+      this._abrirPrint("📑 Anexo de Orçamento p/ Laudo — " + this.orcAtual.numero, Laudo.gerarHTML(this.orcAtual, Auth.usuario()));
+    },
+
+    // Relatório técnico completo: sintético + analítico detalhado
+    gerarRelatorio: function () {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var t = Orcamento.totais(this.orcAtual);
+      if (t.qtdItens < 1) { UI.toast("Adicione itens antes de gerar o relatório.", "erro"); return; }
+      this._abrirPrint("🧾 Relatório de Orçamento — " + this.orcAtual.numero,
+        UI.renderRelatorioCompleto(this.orcAtual, Auth.usuario()));
+    },
+
+    // Overlay de impressão compartilhado (proposta e relatório)
+    _abrirPrint: function (titulo, htmlConteudo) {
+      this.fecharProposta();
+      var overlay = document.createElement("div");
+      overlay.className = "proposta-overlay"; overlay.id = "proposta-print";
+      overlay.innerHTML =
+        '<div class="prop-toolbar no-print"><span class="ttl">' + Util.esc(titulo) + '</span>' +
+        '<button class="btn sm success" data-acao="proposta-imprimir">🖨 Imprimir / Salvar PDF</button>' +
+        '<button class="btn sm" data-acao="proposta-fechar">Fechar</button></div>' +
+        htmlConteudo;
+      document.body.appendChild(overlay);
+      window.scrollTo(0, 0);
+    },
+    fecharProposta: function () {
+      var o = document.getElementById("proposta-print");
+      if (o) o.remove();
+    },
+
+    // ---------- Persistência (idempotente + debounce) ----------
+    // ---- Gate do teste de 3 horas (bloqueia GERAR e SALVAR após expirar) ----
+    _trialBloqueado: function () {
+      if (this._demo) return false; // a vitrine/demonstração nunca bloqueia
+      if (typeof Licenca === "undefined") return false;
+      var s = Licenca.status();
+      return !!(s && s.trial && s.expirado);
+    },
+    _avisoTrial: function () {
+      UI.toast("⏰ Seu teste de 3 horas terminou. Ative sua licença (🔑) para gerar e salvar.", "erro");
+      try { this.abrirLicenca(); } catch (e) {}
+    },
+
+    persistir: function () {
+      if (!this.orcAtual) return;
+      if (this._trialBloqueado()) {
+        if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("⏰ Teste encerrado — salvar bloqueado. Ative a licença (🔑).", "erro"); }
+        return;
+      }
+      Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
+    }
+  };
+
+  global.App = App;
+  document.addEventListener("DOMContentLoaded", function () { App.iniciar(); });
+})(window);

@@ -1,313 +1,329 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
+<!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OrçaPRO — Orçamento Inteligente de Obras com IA</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OrçaPRO — Orçamento de obra com Inteligência Artificial</title>
+<meta name="description" content="Descreva a obra e a IA monta o orçamento com SINAPI, SICRO, SUDECAP e mais — já com BDI (TCU/DNIT), cronograma de Gantt, Excel profissional e anexo para laudo pericial. Teste grátis.">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<link rel="apple-touch-icon" href="favicon.svg">
-<meta name="description" content="Orce obras com IA, bases oficiais (SINAPI, SICRO, SUDECAP, SEINFRA, SETOP), BDI TCU, cronograma automático, Excel profissional e anexo para laudo pericial. Roda no seu computador.">
-<!-- Compartilhamento (Open Graph / Twitter) -->
+<meta property="og:title" content="OrçaPRO — Orçamento de obra com IA">
+<meta property="og:description" content="Você descreve a obra, a IA monta o orçamento. SINAPI + BDI + Cronograma + Excel + anexo de laudo. Teste grátis.">
+<meta property="og:image" content="og-cover.png">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://ra-engenharia.github.io/orcapro/">
-<meta property="og:title" content="OrçaPRO — Orçamento de Obras com IA">
-<meta property="og:description" content="Do SINAPI ao laudo pericial — com IA, cronograma e Excel profissional. Orçamento profissional em minutos.">
-<meta property="og:image" content="https://ra-engenharia.github.io/orcapro/og-cover.png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:locale" content="pt_BR">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="OrçaPRO — Orçamento de Obras com IA">
-<meta name="twitter:description" content="Do SINAPI ao laudo pericial — com IA, cronograma e Excel profissional.">
-<meta name="twitter:image" content="https://ra-engenharia.github.io/orcapro/og-cover.png">
 <style>
-  :root{
-    --navy:#0f2740; --navy2:#16344f; --aco:#2e6f9e; --verde:#16a34a; --verde2:#15803d;
-    --tinta:#1e293b; --muted:#64748b; --linha:#e2e8f0; --bg:#f7fafc; --card:#ffffff; --amber:#f59e0b;
-  }
-  *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
-  body{font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif;color:var(--tinta);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
-  a{text-decoration:none;color:inherit}
-  .wrap{max-width:1140px;margin:0 auto;padding:0 22px}
-  .btn{display:inline-flex;align-items:center;gap:8px;font-weight:700;border-radius:12px;padding:14px 26px;border:0;cursor:pointer;font-size:16px;transition:transform .15s,box-shadow .15s;white-space:nowrap}
-  .btn:hover{transform:translateY(-2px)}
-  .btn-verde{background:linear-gradient(135deg,var(--verde),var(--verde2));color:#fff;box-shadow:0 10px 24px rgba(22,163,74,.35)}
-  .btn-ghost{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.3)}
-  .btn-navy{background:var(--navy);color:#fff}
-  .eyebrow{display:inline-block;font-weight:800;letter-spacing:.12em;text-transform:uppercase;font-size:12px;color:var(--aco);background:rgba(46,111,158,.1);padding:6px 14px;border-radius:99px}
-  h1,h2,h3{line-height:1.15;color:var(--navy)}
-  section{padding:84px 0}
-
-  /* NAV */
-  header{position:sticky;top:0;z-index:30;background:rgba(15,39,64,.92);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.08)}
-  .nav{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;max-width:1140px;margin:0 auto}
-  .logo{font-weight:900;font-size:22px;color:#fff;letter-spacing:-.5px}
-  .logo span{color:#6fd08a}
-  .nav-links{display:flex;gap:26px;align-items:center}
-  .nav-links a{color:#cdd9e6;font-weight:600;font-size:15px}
-  .nav-links a:hover{color:#fff}
-  .nav .btn{padding:10px 20px;font-size:15px}
-  @media(max-width:760px){.nav-links a:not(.btn){display:none}}
-
-  /* HERO */
-  .hero{background:radial-gradient(1200px 600px at 80% -10%,#1c4b73 0,var(--navy) 55%);color:#fff;padding:70px 0 90px;position:relative;overflow:hidden}
-  .hero h1{color:#fff;font-size:52px;font-weight:900;letter-spacing:-1px;margin:18px 0}
-  .hero h1 .hl{background:linear-gradient(120deg,#6fd08a,#9be7af);-webkit-background-clip:text;background-clip:text;color:transparent}
-  .hero p.sub{font-size:20px;color:#cfe0ee;max-width:620px;margin-bottom:30px}
-  .hero-cta{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:26px}
-  .trust{display:flex;gap:10px;flex-wrap:wrap;align-items:center;color:#9fb6cc;font-size:13px;font-weight:600}
-  .trust b{color:#fff;background:rgba(255,255,255,.1);padding:5px 12px;border-radius:8px}
-  .hero-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center}
-  @media(max-width:900px){.hero-grid{grid-template-columns:1fr}.hero h1{font-size:38px}}
-  /* mock card */
-  .mock{background:#fff;border-radius:18px;box-shadow:0 30px 60px rgba(0,0,0,.35);overflow:hidden;color:var(--tinta);transform:rotate(.5deg)}
-  .mock-top{background:var(--navy);padding:12px 16px;display:flex;align-items:center;gap:8px}
-  .dot{width:11px;height:11px;border-radius:50%}
-  .mock-body{padding:18px}
-  .mock-row{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:10px;font-size:14px;margin-bottom:8px;background:var(--bg)}
-  .mock-row .pill{font-size:10px;font-weight:800;padding:2px 8px;border-radius:99px}
-  .kpi-row{display:flex;gap:10px;margin-top:12px}
-  .kpi{flex:1;background:linear-gradient(135deg,#0f2740,#2e6f9e);color:#fff;border-radius:12px;padding:12px;text-align:center}
-  .kpi small{display:block;font-size:10px;opacity:.8;text-transform:uppercase;letter-spacing:.06em}
-  .kpi b{font-size:19px}
-
-  /* PROBLEM */
-  .prob{display:grid;grid-template-columns:1fr 1fr;gap:30px;align-items:center}
-  @media(max-width:820px){.prob{grid-template-columns:1fr}}
-  .prob ul{list-style:none;margin-top:14px}
-  .prob li{padding:8px 0 8px 30px;position:relative;color:var(--muted);font-size:16px}
-  .prob li:before{content:"✗";position:absolute;left:0;color:#dc2626;font-weight:900}
-  .sol li:before{content:"✓";color:var(--verde)}
-  .sol li{color:var(--tinta)}
-
-  /* FEATURES */
-  .center{text-align:center;max-width:680px;margin:0 auto 50px}
-  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
-  @media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}}
-  @media(max-width:560px){.grid{grid-template-columns:1fr}}
-  .feat{background:var(--card);border:1px solid var(--linha);border-radius:16px;padding:26px;transition:transform .2s,box-shadow .2s}
-  .feat:hover{transform:translateY(-4px);box-shadow:0 18px 36px rgba(15,39,64,.10);border-color:var(--aco)}
-  .feat .ico{font-size:30px;width:56px;height:56px;display:flex;align-items:center;justify-content:center;background:rgba(46,111,158,.1);border-radius:14px;margin-bottom:14px}
-  .feat h3{font-size:18px;margin-bottom:6px}
-  .feat p{color:var(--muted);font-size:15px}
-
-  /* STEPS */
-  .steps{background:var(--navy);color:#fff}
-  .steps h2{color:#fff}
-  .step-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:26px;margin-top:40px}
-  @media(max-width:820px){.step-grid{grid-template-columns:1fr}}
-  .step{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:28px}
-  .step .num{font-size:40px;font-weight:900;color:#6fd08a;line-height:1}
-  .step h3{color:#fff;margin:10px 0 6px}
-  .step p{color:#bcd0e2;font-size:15px}
-
-  /* PRICING */
-  .price-card{max-width:460px;margin:0 auto;background:var(--card);border:2px solid var(--verde);border-radius:22px;overflow:hidden;box-shadow:0 26px 60px rgba(15,39,64,.14)}
-  .price-top{background:linear-gradient(135deg,var(--navy),var(--aco));color:#fff;padding:30px;text-align:center}
-  .price-top .tag{display:inline-block;background:var(--amber);color:#3a2a00;font-weight:800;font-size:12px;padding:4px 12px;border-radius:99px;margin-bottom:10px}
-  .price-val{font-size:48px;font-weight:900;color:#fff}
-  .price-val small{font-size:17px;font-weight:600;opacity:.85}
-  .price-body{padding:28px}
-  .price-body ul{list-style:none}
-  .price-body li{padding:8px 0 8px 30px;position:relative;font-size:15px}
-  .price-body li:before{content:"✓";position:absolute;left:0;color:var(--verde);font-weight:900}
-  .price-body .btn{width:100%;justify-content:center;margin-top:18px}
-
-  /* FAQ */
-  .faq details{background:var(--card);border:1px solid var(--linha);border-radius:12px;padding:4px 20px;margin-bottom:12px}
-  .faq summary{font-weight:700;cursor:pointer;padding:14px 0;color:var(--navy);list-style:none;display:flex;justify-content:space-between}
-  .faq summary::-webkit-details-marker{display:none}
-  .faq summary:after{content:"+";color:var(--aco);font-weight:900;font-size:20px}
-  .faq details[open] summary:after{content:"–"}
-  .faq p{color:var(--muted);padding:0 0 16px;font-size:15px}
-
-  /* CTA FINAL */
-  .cta-final{background:linear-gradient(135deg,var(--verde),var(--verde2));color:#fff;text-align:center}
-  .cta-final h2{color:#fff;font-size:36px}
-  .cta-final p{font-size:18px;opacity:.95;margin:12px 0 26px}
-
-  footer{background:#0a1c2e;color:#9fb6cc;padding:46px 0;font-size:14px}
-  footer .wrap{display:flex;justify-content:space-between;flex-wrap:wrap;gap:20px}
-  footer a:hover{color:#fff}
-  .wpp{position:fixed;right:22px;bottom:22px;z-index:40;background:#25d366;color:#fff;width:60px;height:60px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:30px;box-shadow:0 12px 28px rgba(37,211,102,.5);transition:transform .2s}
-  .wpp:hover{transform:scale(1.08)}
-</style>
-</head>
+:root{--navy:#0f2740;--navy2:#1c4b73;--aco:#2e6f9e;--verde:#16a34a;--verde2:#6fd08a;--ink:#1e293b;--mut:#64748b;--linha:#e2e8f0;--bg:#f6f9fc}
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Segoe UI',system-ui,Arial,sans-serif}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);line-height:1.55}
+img{max-width:100%;display:block}
+.wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+a{color:inherit}
+.btn{display:inline-block;border:0;border-radius:12px;padding:15px 26px;font-size:16px;font-weight:800;cursor:pointer;text-decoration:none;transition:.15s}
+.btn.g{background:var(--verde);color:#fff}.btn.g:hover{background:#15803d}
+.btn.o{background:#fff;color:var(--navy);border:2px solid var(--linha)}.btn.o:hover{border-color:var(--aco)}
+.btn.w{background:#25d366;color:#fff}.btn.w:hover{filter:brightness(1.05)}
+.eyebrow{color:var(--aco);font-weight:800;font-size:13px;letter-spacing:1.5px;text-transform:uppercase}
+h2.tit{font-size:34px;color:var(--navy);font-weight:900;letter-spacing:-1px;margin:8px 0 6px}
+.sub{color:var(--mut);font-size:17px;max-width:680px}
+section{padding:64px 0}
+header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--linha)}
+.nav{display:flex;align-items:center;gap:16px;padding:12px 0}
+.logo{display:flex;align-items:center;gap:10px;font-weight:900;font-size:22px;color:var(--navy);letter-spacing:-.5px}
+.logo span{color:var(--verde)}
+.nav .links{margin-left:auto;display:flex;gap:22px;align-items:center}
+.nav .links a{font-size:14px;font-weight:600;color:var(--mut);text-decoration:none}
+.nav .links a:hover{color:var(--navy)}
+.nav .cta{margin-left:8px}
+@media(max-width:820px){.nav .links a:not(.cta){display:none}}
+.hero{background:radial-gradient(1100px 600px at 78% -10%,#1c4b73 0,#0c1f33 60%);color:#fff;padding:70px 0 64px}
+.hero .eyebrow{color:var(--verde2)}
+.hero h1{font-size:50px;font-weight:900;line-height:1.07;letter-spacing:-1.5px;margin:10px 0 16px}
+.hero h1 span{color:var(--verde2)}
+.hero p.lead{font-size:19px;color:#cfe0ee;max-width:620px}
+.hero .cta-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:28px}
+.hero .mini{margin-top:16px;font-size:13px;color:#9fb6cc}
+.hero-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:40px;align-items:center}
+@media(max-width:900px){.hero-grid{grid-template-columns:1fr}.hero h1{font-size:38px}}
+.shot{border-radius:14px;border:1px solid rgba(255,255,255,.15);box-shadow:0 30px 70px rgba(0,0,0,.5);overflow:hidden}
+.pills{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px}
+.pill{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);padding:7px 14px;border-radius:99px;font-size:13px;font-weight:700}
+.bases{background:var(--navy);color:#cfe0ee;padding:18px 0;text-align:center;font-size:14px;font-weight:600}
+.bases b{color:#fff}
+.demo-box{border:1px solid var(--linha);border-radius:16px;overflow:hidden;box-shadow:0 18px 50px rgba(15,39,64,.12);background:#fff}
+.demo-bar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:#0f2740}
+.demo-bar i{width:12px;height:12px;border-radius:50%;display:inline-block}
+.demo-bar .u{margin-left:12px;color:#9fb6cc;font-size:13px}
+.demo-frame{width:100%;height:620px;border:0;display:block;background:#f6f9fc}
+.demo-note{font-size:13px;color:var(--mut);margin-top:12px;text-align:center}
+.passo{display:grid;grid-template-columns:1fr 1.15fr;gap:34px;align-items:center;margin-bottom:46px}
+.passo:nth-child(even){grid-template-columns:1.15fr 1fr}
+.passo:nth-child(even) .pinfo{order:2}
+@media(max-width:840px){.passo,.passo:nth-child(even){grid-template-columns:1fr}.passo:nth-child(even) .pinfo{order:0}}
+.pnum{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:var(--verde);color:#fff;font-weight:900;font-size:18px}
+.passo h3{font-size:23px;color:var(--navy);margin:12px 0 8px;font-weight:800}
+.passo p{color:#475569;font-size:16px}
+.passo .why{margin-top:10px;font-size:14px;color:var(--mut);border-left:3px solid var(--aco);padding-left:12px}
+.passo .shot2{border-radius:12px;border:1px solid var(--linha);box-shadow:0 16px 40px rgba(15,39,64,.13);overflow:hidden;background:#fff}
+.excel{background:linear-gradient(180deg,#0c1f33,#11324f);color:#fff}
+.excel h2.tit{color:#fff}.excel .sub{color:#bcd0e4}
+.xtabs{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin:26px 0 18px}
+.xtab{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);color:#cfe0ee;padding:9px 16px;border-radius:99px;font-size:14px;font-weight:700;cursor:pointer}
+.xtab.on{background:var(--verde);border-color:var(--verde);color:#fff}
+.xview{background:#fff;border-radius:14px;padding:10px;box-shadow:0 24px 60px rgba(0,0,0,.45);max-width:900px;margin:0 auto}
+.xview img{border-radius:8px;margin:0 auto}
+.cards3{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:840px){.cards3{grid-template-columns:1fr}}
+.card{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:22px}
+.card h4{color:var(--navy);font-size:18px;margin-bottom:6px}
+.card p{color:#475569;font-size:15px}
+.card .ic{font-size:26px}
+.dev{background:#fff;border:1px solid var(--linha);border-radius:16px;padding:30px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+@media(max-width:840px){.dev{grid-template-columns:1fr}}
+.dev ul{list-style:none;margin-top:10px}
+.dev li{padding:7px 0 7px 26px;position:relative;color:#475569;font-size:15px}
+.dev li:before{content:"▸";position:absolute;left:0;color:var(--aco);font-weight:900}
+.precos{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-items:stretch}
+@media(max-width:840px){.precos{grid-template-columns:1fr}}
+.preco{background:#fff;border:2px solid var(--linha);border-radius:18px;padding:28px 22px;text-align:center;position:relative;display:flex;flex-direction:column}
+.preco.dest{border-color:var(--verde);box-shadow:0 18px 50px rgba(22,163,74,.18);transform:scale(1.03)}
+.preco .badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--verde);color:#fff;font-size:11px;font-weight:800;padding:5px 14px;border-radius:99px}
+.preco .pn{font-size:17px;font-weight:800;color:var(--navy)}
+.preco .de{color:#94a3b8;text-decoration:line-through;font-size:14px;height:18px}
+.preco .pv{font-size:44px;font-weight:900;color:var(--verde);line-height:1.05}
+.preco .pp{color:var(--mut);font-size:14px}
+.preco .ps{color:#475569;font-size:14px;margin:12px 0 18px;min-height:40px}
+.preco .btn{margin-top:auto;width:100%}
+.faq details{background:#fff;border:1px solid var(--linha);border-radius:12px;padding:4px 18px;margin-bottom:10px}
+.faq summary{cursor:pointer;font-weight:700;color:var(--navy);padding:14px 0;font-size:16px;list-style:none}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary:after{content:"+";float:right;color:var(--aco);font-weight:900}
+.faq details[open] summary:after{content:"–"}
+.faq p{color:#475569;padding:0 0 16px;font-size:15px}
+.final{background:radial-gradient(900px 500px at 50% -20%,#1c4b73 0,#0c1f33 70%);color:#fff;text-align:center}
+.final h2{font-size:34px;font-weight:900;letter-spacing:-1px}
+.final p{color:#cfe0ee;margin:10px 0 24px;font-size:17px}
+footer{background:#0a1726;color:#8aa6bf;padding:34px 0;font-size:14px}
+footer a{color:#cfe0ee;text-decoration:none}
+.float{position:fixed;right:18px;bottom:18px;z-index:60;background:#25d366;color:#fff;border-radius:50px;padding:14px 20px;font-weight:800;text-decoration:none;box-shadow:0 10px 30px rgba(37,211,102,.45)}
+.logo svg{flex:0 0 auto}
+</style></head>
 <body>
 
-<header>
-  <div class="nav">
-    <div class="logo" style="display:flex;align-items:center;gap:10px">
-      <svg width="32" height="32" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="hg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c4b73"/><stop offset="1" stop-color="#3a8bc2"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#hg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>
-      <span style="color:#fff">Orça<span style="color:#6fd08a">PRO</span></span>
-    </div>
-    <nav class="nav-links">
-      <a href="#recursos">Recursos</a>
-      <a href="#como">Como funciona</a>
-      <a href="#preco">Preço</a>
-      <a class="btn btn-verde" href="https://wa.me/553492869383?text=Quero%20o%20Or%C3%A7aPRO">Comprar</a>
-    </nav>
+<header><div class="wrap nav">
+  <div class="logo">
+    <svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c4b73"/><stop offset="1" stop-color="#3a8bc2"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#lg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg>
+    Orça<span>PRO</span>
   </div>
-</header>
+  <nav class="links">
+    <a href="#demo">Testar</a>
+    <a href="#passos">Como funciona</a>
+    <a href="#excel">O Excel</a>
+    <a href="#precos">Planos</a>
+    <a class="btn g cta" data-buy="vitalicia" href="#precos">Comprar</a>
+  </nav>
+</div></header>
 
-<!-- HERO -->
-<section class="hero">
-  <div class="wrap hero-grid">
-    <div>
-      <span class="eyebrow" style="background:rgba(255,255,255,.12);color:#9be7af">Orçamento + IA para engenharia</span>
-      <h1>Orçamento de obra <span class="hl">profissional em minutos</span>, não em dias.</h1>
-      <p class="sub">Descreva a obra e a <b>IA monta o orçamento</b> com as bases oficiais. BDI, cronograma de Gantt, gráficos, Excel e anexo para laudo pericial — tudo num lugar só, rodando no seu computador.</p>
-      <div class="hero-cta">
-        <a class="btn btn-verde" href="https://wa.me/553492869383?text=Quero%20o%20Or%C3%A7aPRO">Quero o OrçaPRO &nbsp;→</a>
-        <a class="btn btn-ghost" href="#recursos">Ver recursos</a>
-      </div>
-      <div class="trust">
-        <span>Bases oficiais:</span> <b>SINAPI</b> <b>SICRO</b> <b>SUDECAP</b> <b>SEINFRA</b> <b>SETOP</b>
-      </div>
+<section class="hero"><div class="wrap hero-grid">
+  <div>
+    <div class="eyebrow">Orçamento inteligente de obras</div>
+    <h1>Você descreve a obra.<br>A <span>IA</span> monta o orçamento.</h1>
+    <p class="lead">SINAPI, SICRO, SUDECAP, SEINFRA e SETOP — com <b>BDI do TCU/DNIT</b>, cronograma de Gantt, <b>Excel profissional</b> e anexo de orçamento para <b>laudo pericial</b>. Tudo no seu PC.</p>
+    <div class="cta-row">
+      <a class="btn g" href="#demo">▶ Testar agora (grátis)</a>
+      <a class="btn o" data-buy="vitalicia" href="#precos">Ver planos</a>
     </div>
-    <div>
-      <div class="mock">
-        <div class="mock-top"><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span><span style="color:#9fb6cc;font-size:12px;margin-left:8px">OrçaPRO — Reforma Residencial</span></div>
-        <div class="mock-body">
-          <div class="mock-row"><span>Alvenaria de vedação</span><span class="pill" style="background:rgba(46,111,158,.15);color:var(--aco)">SINAPI 87890</span></div>
-          <div class="mock-row"><span>Chapisco + emboço + reboco</span><span class="pill" style="background:rgba(13,148,136,.15);color:#0d9488">SEINFRA</span></div>
-          <div class="mock-row"><span>Piso porcelanato</span><span class="pill" style="background:rgba(8,145,178,.15);color:#0891b2">SUDECAP</span></div>
-          <div class="mock-row"><span>🤖 IA confirmou 28 serviços</span><span class="pill" style="background:rgba(22,163,74,.15);color:var(--verde)">🎯 refinado</span></div>
-          <div class="kpi-row">
-            <div class="kpi"><small>Custo direto</small><b>R$ 84.320</b></div>
-            <div class="kpi"><small>Com BDI</small><b>R$ 105.400</b></div>
-            <div class="kpi"><small>Prazo</small><b>11 sem.</b></div>
-          </div>
-        </div>
-      </div>
+    <div class="pills">
+      <span class="pill">SINAPI</span><span class="pill">SICRO</span><span class="pill">SUDECAP</span><span class="pill">SEINFRA</span><span class="pill">SETOP</span><span class="pill">BDI TCU/DNIT</span>
     </div>
+    <p class="mini">⏱️ Teste grátis por 3 horas · sem cartão · roda offline (só a IA usa internet)</p>
   </div>
-</section>
+  <div><img class="shot" src="prints/demo-graficos.png" alt="OrçaPRO — gráficos do orçamento"></div>
+</div></section>
 
-<!-- PROBLEM / SOLUTION -->
-<section>
-  <div class="wrap prob">
+<div class="bases"><div class="wrap">Casa cada serviço com a <b>base oficial certa</b> — e aplica o <b>BDI</b> automaticamente. 22.000+ itens de preço prontos.</div></div>
+
+<section id="demo"><div class="wrap" style="text-align:center">
+  <div class="eyebrow">Experimente sem instalar</div>
+  <h2 class="tit">Teste o OrçaPRO aqui mesmo</h2>
+  <p class="sub" style="margin:0 auto 24px">Um orçamento real de uma <b>residência de 120 m²</b> já está montado abaixo. Navegue pelas abas, mude quantidades, veja o cronograma, os gráficos e o BDI recalcularem na hora.</p>
+  <div class="demo-box">
+    <div class="demo-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="u">app OrçaPRO — demonstração</span></div>
+    <iframe class="demo-frame" src="app/index.html?demo=1" title="Demonstração do OrçaPRO" loading="lazy"></iframe>
+  </div>
+  <p class="demo-note">🖱️ É uma demonstração interativa de verdade. Melhor visualizada no computador. Para salvar e usar com as suas obras, <a data-buy="vitalicia" href="#precos" style="color:var(--verde);font-weight:700">garanta seu acesso</a>.</p>
+</div></section>
+
+<section id="passos" style="background:#fff"><div class="wrap">
+  <div style="text-align:center;margin-bottom:44px">
+    <div class="eyebrow">Passo a passo</div>
+    <h2 class="tit">Como elaborar um orçamento completo</h2>
+    <p class="sub" style="margin:0 auto">Do texto da obra ao Excel profissional — em minutos, com a lógica certa em cada etapa.</p>
+  </div>
+
+  <div class="passo">
+    <div class="pinfo"><span class="pnum">1</span><h3>Descreva a obra (ou cole o escopo)</h3>
+      <p>No <b>Escopo Inteligente</b>, escreva em texto livre o que a obra tem. A IA estrutura em etapas e serviços e <b>casa cada item</b> com a base oficial — SINAPI, SUDECAP, SICRO…</p>
+      <div class="why">Por que importa: ela nunca inventa código. Sem correspondência, o item fica marcado como “pendente” para você revisar.</div></div>
+    <div><img class="shot2" src="prints/demo-planilha.png" alt="Planilha do orçamento com as bases"></div>
+  </div>
+
+  <div class="passo">
+    <div class="pinfo"><span class="pnum">2</span><h3>Revise a planilha e ajuste quantidades</h3>
+      <p>Cada serviço entra com <b>código, unidade, quantidade e custo</b>. Edite a quantidade e o <b>custo total e o preço de venda recalculam na hora</b>. Veja a composição (insumos) de cada item.</p>
+      <div class="why">A planilha já separa Custo Direto e Preço de Venda — você enxerga a margem o tempo todo.</div></div>
+    <div><img class="shot2" src="prints/demo-relatorio.png" alt="Relatório sintético e analítico"></div>
+  </div>
+
+  <div class="passo">
+    <div class="pinfo"><span class="pnum">3</span><h3>Aplique o BDI (TCU / DNIT) automaticamente</h3>
+      <p>Escolha o modelo de <b>BDI</b> — inclusive o do <b>Acórdão TCU 2.622/2013</b> usado pelo DNIT — e ele incide sobre todos os serviços. Atualiza o CPRB por ano sozinho.</p>
+      <div class="why">Ideal para licitações: o BDI já sai documentado e dentro da metodologia aceita pelos órgãos.</div></div>
+    <div><img class="shot2" src="prints/demo-bdi.png" alt="Configuração de BDI"></div>
+  </div>
+
+  <div class="passo">
+    <div class="pinfo"><span class="pnum">4</span><h3>Veja o cronograma de Gantt automático</h3>
+      <p>Um <b>agente de planejamento</b> estima a duração de cada etapa pela produtividade e monta o <b>Gantt</b> com sequenciamento e datas. Ajuste frentes de trabalho e paralelismo e tudo recalcula.</p>
+      <div class="why">Você entrega prazo com embasamento — não “no chute”.</div></div>
+    <div><img class="shot2" src="prints/demo-cronograma.png" alt="Cronograma de Gantt"></div>
+  </div>
+
+  <div class="passo">
+    <div class="pinfo"><span class="pnum">5</span><h3>Analise com gráficos e Curva ABC</h3>
+      <p>Custo por etapa, <b>Curva ABC (Pareto)</b>, composição <b>MO/MAT/EQ</b> e <b>Curva S</b> físico-financeira — tudo gerado sozinho para você decidir onde está o dinheiro.</p>
+      <div class="why">A Curva ABC mostra que poucos itens concentram a maior parte do custo — foque neles.</div></div>
+    <div><img class="shot2" src="prints/demo-graficos.png" alt="Gráficos e Curva ABC"></div>
+  </div>
+
+  <div style="text-align:center;margin-top:18px"><a class="btn g" href="#demo">Quero testar isso agora →</a></div>
+</div></section>
+
+<section class="excel" id="excel"><div class="wrap" style="text-align:center">
+  <div class="eyebrow" style="color:var(--verde2)">Exportação profissional</div>
+  <h2 class="tit">O Excel que ele gera — com fórmulas vivas</h2>
+  <p class="sub" style="margin:0 auto">Um clique e sai uma planilha orçamentária completa, em <b>6 abas</b>, com <b>fórmulas que recalculam</b> ao mudar a quantidade ou o BDI. Veja cada aba:</p>
+  <div class="xtabs" id="xtabs"></div>
+  <div class="xview"><img id="ximg" src="prints/excel-01-Resumo.png" alt="Excel — Resumo"></div>
+  <p style="color:#bcd0e4;font-size:13px;margin-top:14px">Resumo · Sintética · Analítica · Curva ABC · Cronograma físico-financeiro · Gantt — todas com a sua identidade.</p>
+</div></section>
+
+<section><div class="wrap">
+  <div style="text-align:center;margin-bottom:38px">
+    <div class="eyebrow">Para quem é</div>
+    <h2 class="tit">Feito para quem orça e quem peritiza</h2>
+    <p class="sub" style="margin:0 auto">Se você lida com custo de obra, o OrçaPRO economiza horas e dá embasamento técnico.</p>
+  </div>
+  <div class="cards3">
+    <div class="card"><div class="ic">📐</div><h4>Engenheiros e arquitetos</h4><p>Monte orçamentos de obras residenciais, comerciais e reformas em minutos, com base oficial e BDI correto.</p></div>
+    <div class="card"><div class="ic">⚖️</div><h4>Peritos de engenharia</h4><p>Gere o <b>anexo de orçamento</b> para laudos de vícios construtivos, com metodologia SINAPI + ABNT e responsável técnico.</p></div>
+    <div class="card"><div class="ic">🏛️</div><h4>Quem participa de licitações</h4><p>SINAPI, SICRO e BDI do TCU/DNIT prontos — planilha sintética e analítica no padrão dos órgãos públicos.</p></div>
+    <div class="card"><div class="ic">🏗️</div><h4>Construtoras de pequeno/médio porte</h4><p>Padronize seus orçamentos, controle margem (Custo × Venda) e gere cronograma e Curva S da obra.</p></div>
+    <div class="card"><div class="ic">🧮</div><h4>Orçamentistas</h4><p>Pare de montar planilha do zero. Reaproveite bases, escopo inteligente e exportações automáticas.</p></div>
+    <div class="card"><div class="ic">🧑‍🏫</div><h4>Estudantes e autônomos</h4><p>Aprenda e entregue orçamento profissional sem precisar de software caro nem assinatura cara.</p></div>
+  </div>
+</div></section>
+
+<section style="background:#fff"><div class="wrap">
+  <div style="text-align:center;margin-bottom:34px">
+    <div class="eyebrow">Por dentro</div>
+    <h2 class="tit">Como o OrçaPRO foi desenvolvido</h2>
+  </div>
+  <div class="dev">
     <div>
-      <span class="eyebrow">O problema</span>
-      <h2 style="font-size:34px;margin-top:14px">Orçar obra ainda toma o seu dia?</h2>
+      <p style="color:#475569;font-size:16px">O OrçaPRO nasceu da prática real de engenharia e perícia da <b>RA Engenharia Especial</b>. Foi construído com uma régua clara: <b>estabilidade primeiro, depois funcionalidade, integração e só então enfeite</b>. Cada motor de cálculo (SINAPI, BDI, cronograma, Excel) foi testado isoladamente antes de virar botão.</p>
       <ul>
-        <li>Planilhas SINAPI gigantes e difíceis de buscar</li>
-        <li>Casar cada serviço com o código certo, na mão</li>
-        <li>BDI complicado, sem padrão claro (TCU/DNIT)</li>
-        <li>Cronograma feito à parte, sem ligação com o custo</li>
-        <li>Montar o Excel e o anexo do laudo do zero, toda vez</li>
+        <li>Arquitetura <b>modular</b>: cada base e cada cálculo é uma peça independente e auditável.</li>
+        <li>Bases oficiais reais já incluídas (SINAPI, SICRO, SUDECAP, SEINFRA, SETOP) — 22 mil+ itens.</li>
+        <li><b>Nunca inventa código</b>: sem correspondência, marca como pendente para revisão humana.</li>
+        <li>Roda no <b>seu</b> computador. Seus orçamentos ficam com você (a IA é o único passo online).</li>
       </ul>
     </div>
     <div>
-      <span class="eyebrow" style="color:var(--verde);background:rgba(22,163,74,.1)">A solução</span>
-      <h2 style="font-size:34px;margin-top:14px">O OrçaPRO faz o trabalho pesado</h2>
-      <ul class="sol">
-        <li>Busca unificada em 5 bases oficiais, com a origem de cada item</li>
-        <li>IA estrutura a obra e escolhe o código exato</li>
-        <li>BDI por modelo, incluindo DNIT / Acórdão TCU 2.622/2013</li>
-        <li>Cronograma de Gantt automático, ligado ao orçamento</li>
-        <li>Excel profissional e anexo de laudo gerados num clique</li>
+      <p style="color:#475569;font-size:16px"><b>Para qual público:</b> profissionais e empresas de engenharia e arquitetura no Brasil que precisam orçar obras com bases oficiais, defender o BDI em licitações e anexar orçamento técnico a laudos periciais — sem pagar fortunas em software de orçamento.</p>
+      <ul>
+        <li>Metodologia alinhada ao <b>Acórdão TCU 2.622/2013</b> e à <b>ABNT NBR 13.752</b>.</li>
+        <li>Inteligência artificial só para entender o escopo e casar serviços — o cálculo é determinístico.</li>
+        <li>Atualizações da versão 1.x incluídas.</li>
+        <li>Suporte direto com o desenvolvedor (Eng. Rogério Alves de Souza, CREA-MG).</li>
       </ul>
     </div>
   </div>
-</section>
+</div></section>
 
-<!-- FEATURES -->
-<section id="recursos" style="background:#eef3f8">
-  <div class="wrap">
-    <div class="center">
-      <span class="eyebrow">Recursos</span>
-      <h2 style="font-size:36px;margin-top:14px">Tudo que um orçamento de verdade precisa</h2>
-      <p style="color:var(--muted);font-size:18px">Do levantamento ao laudo — num sistema só, com inteligência artificial.</p>
-    </div>
-    <div class="grid">
-      <div class="feat"><div class="ico">🤖</div><h3>Escopo Inteligente (IA)</h3><p>Descreva a obra em texto livre. A IA quebra em serviços, casa com as bases e estima as quantidades.</p></div>
-      <div class="feat"><div class="ico">🗂️</div><h3>5 bases oficiais</h3><p>SINAPI, SICRO, SUDECAP, SEINFRA e SETOP com busca unificada e badge de origem em cada item.</p></div>
-      <div class="feat"><div class="ico">📊</div><h3>BDI completo</h3><p>Modelos prontos e o BDI do DNIT (Acórdão TCU 2.622/2013), com CPRB que se atualiza por ano.</p></div>
-      <div class="feat"><div class="ico">🗓️</div><h3>Cronograma / Gantt</h3><p>Um agente estima a duração de cada etapa e monta o Gantt — parametrizável e editável.</p></div>
-      <div class="feat"><div class="ico">📈</div><h3>Gráficos e Curva S</h3><p>Custo por etapa, Curva ABC, composição MO/MAT/EQ e a curva S físico-financeira.</p></div>
-      <div class="feat"><div class="ico">📑</div><h3>Excel profissional</h3><p>Planilha com 6+ abas (Resumo, Sintética, Analítica, Insumos, Curva ABC e Gantt).</p></div>
-      <div class="feat"><div class="ico">⚖️</div><h3>Anexo para Laudo</h3><p>Documento técnico-pericial pronto (metodologia SINAPI, BDI TCU, normas ABNT, responsável técnico).</p></div>
-      <div class="feat"><div class="ico">🔒</div><h3>100% no seu PC</h3><p>Roda local. Seus orçamentos e dados de clientes ficam no seu computador, não na nuvem.</p></div>
-    </div>
+<section id="precos"><div class="wrap">
+  <div style="text-align:center;margin-bottom:40px">
+    <div class="eyebrow">Planos</div>
+    <h2 class="tit">Escolha como quer usar</h2>
+    <p class="sub" style="margin:0 auto">Todos liberam o programa completo. Pagamento por <b>PIX</b>. Comece testando 3 horas grátis.</p>
   </div>
-</section>
-
-<!-- HOW -->
-<section id="como" class="steps">
-  <div class="wrap">
-    <div class="center"><span class="eyebrow" style="color:#9be7af;background:rgba(255,255,255,.12)">Simples</span><h2 style="font-size:36px;margin-top:14px">Começa em 5 minutos</h2></div>
-    <div class="step-grid">
-      <div class="step"><div class="num">1</div><h3>Instale</h3><p>Baixe o OrçaPRO, instale o Node.js e dê dois cliques no atalho. Pronto, abre no navegador.</p></div>
-      <div class="step"><div class="num">2</div><h3>Configure</h3><p>Coloque sua chave de IA (grátis) e seus dados de empresa/CREA. Suba seu logo para os documentos.</p></div>
-      <div class="step"><div class="num">3</div><h3>Orce</h3><p>Monte na planilha ou deixe a IA montar a partir da descrição da obra. Gere Excel, proposta e laudo.</p></div>
+  <div class="precos">
+    <div class="preco">
+      <div class="pn">Mensal</div><div class="de">&nbsp;</div>
+      <div class="pv">R$ 39</div><div class="pp">por mês</div>
+      <div class="ps">Para começar pagando pouco e conhecer no dia a dia.</div>
+      <a class="btn o" data-buy="mensal" href="#">Assinar mensal</a>
+    </div>
+    <div class="preco dest">
+      <div class="badge">MAIS VENDIDO</div>
+      <div class="pn">Vitalícia</div><div class="de">de R$ 597</div>
+      <div class="pv">R$ 297</div><div class="pp">pagamento único</div>
+      <div class="ps">Pague uma vez e use para sempre. Melhor custo-benefício.</div>
+      <a class="btn g" data-buy="vitalicia" href="#">Comprar vitalícia</a>
+    </div>
+    <div class="preco">
+      <div class="pn">Anual</div><div class="de">&nbsp;</div>
+      <div class="pv">R$ 197</div><div class="pp">por ano</div>
+      <div class="ps">Economize no ano todo com acesso completo.</div>
+      <a class="btn o" data-buy="anual" href="#">Assinar anual</a>
     </div>
   </div>
-</section>
+  <p style="text-align:center;color:var(--mut);font-size:14px;margin-top:20px">Pagou? Você recebe a chave na hora e baixa o instalador. Dúvidas? <a class="wpp-link" href="#" style="color:var(--verde);font-weight:700">chame no WhatsApp</a>.</p>
+</div></section>
 
-<!-- PRICING -->
-<section id="preco">
-  <div class="wrap">
-    <div class="center"><span class="eyebrow">Investimento</span><h2 style="font-size:36px;margin-top:14px">Uma licença, todos os recursos</h2><p style="color:var(--muted);font-size:18px">Sem mensalidade obrigatória. Pague uma vez e use no seu computador.</p></div>
-    <div class="price-card">
-      <div class="price-top">
-        <span class="tag">🚀 PREÇO DE LANÇAMENTO</span>
-        <div style="font-size:18px;opacity:.6;text-decoration:line-through;margin-top:4px">de R$ 597</div>
-        <div class="price-val"><small>R$</small> 297<small> à vista</small></div>
-        <div style="opacity:.9;font-size:14px;margin-top:6px">ou <b>12x de R$ 29,70</b> no cartão &nbsp;·&nbsp; ou <b>R$ 39/mês</b></div>
-      </div>
-      <div class="price-body">
-        <ul>
-          <li>Todos os recursos (IA, 5 bases, Gantt, Excel, laudo)</li>
-          <li>Atualizações da versão 1.x incluídas</li>
-          <li>Roda offline, dados no seu computador</li>
-          <li>IA com a sua chave Groq (plano grátis atende)</li>
-          <li>Suporte na implantação</li>
-        </ul>
-        <a class="btn btn-verde" href="https://wa.me/553492869383?text=Quero%20comprar%20o%20Or%C3%A7aPRO%20-%20licen%C3%A7a%20vital%C3%ADcia">Comprar pelo WhatsApp</a>
-        <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:12px">Atendimento direto com o engenheiro responsável.</p>
-      </div>
-    </div>
+<section class="faq" style="background:#fff"><div class="wrap" style="max-width:820px">
+  <div style="text-align:center;margin-bottom:30px"><div class="eyebrow">Dúvidas</div><h2 class="tit">Perguntas frequentes</h2></div>
+  <details open><summary>Como funciona o teste grátis?</summary><p>Você baixa e usa por <b>3 horas</b> com tudo liberado. Depois desse tempo, continua abrindo o programa, mas <b>gerar arquivos e salvar</b> ficam bloqueados até ativar com a sua chave de licença.</p></details>
+  <details><summary>O pagamento é seguro? Como recebo?</summary><p>O pagamento é por <b>PIX</b>. Assim que confirmado, a própria tela mostra a sua <b>chave de licença</b> e o link para baixar o OrçaPRO. Simples e na hora.</p></details>
+  <details><summary>Preciso de internet para usar?</summary><p>Não para orçar. O programa roda no seu computador e seus dados ficam com você. A internet só é usada no passo opcional da <b>IA</b> (entender o escopo).</p></details>
+  <details><summary>As bases de preço são oficiais e atualizadas?</summary><p>Sim. Já vêm <b>SINAPI, SICRO, SUDECAP, SEINFRA e SETOP</b> e dá para atualizar a competência. O BDI segue o Acórdão TCU 2.622/2013 (DNIT).</p></details>
+  <details><summary>Serve para laudo pericial?</summary><p>Sim. O OrçaPRO gera um <b>anexo de orçamento</b> técnico, com metodologia SINAPI + ABNT e espaço para o responsável técnico e a ART.</p></details>
+  <details><summary>Em quais versões do Windows roda?</summary><p>Roda em Windows com o navegador moderno. A instalação é simples e a gente te ajuda em 10 minutos se precisar.</p></details>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Pare de perder o dia montando planilha</h2>
+  <p>Descreva a obra e deixe a IA fazer o orçamento — com base oficial, BDI, cronograma e Excel.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+    <a class="btn g" href="#demo">▶ Testar grátis agora</a>
+    <a class="btn o" data-buy="vitalicia" href="#precos" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">Comprar — de R$597 por R$297</a>
   </div>
-</section>
+</div></section>
 
-<!-- FAQ -->
-<section style="background:#eef3f8" class="faq">
-  <div class="wrap" style="max-width:760px">
-    <div class="center"><span class="eyebrow">Dúvidas</span><h2 style="font-size:34px;margin-top:14px">Perguntas frequentes</h2></div>
-    <details><summary>Preciso de internet para usar?</summary><p>Só para os recursos de IA (Escopo Inteligente e refino do cronograma). Todo o resto — orçar, gerar Excel, proposta e laudo — funciona offline.</p></details>
-    <details><summary>A IA é paga?</summary><p>Não. Você usa a sua própria chave da Groq, que tem um plano gratuito que atende de sobra o uso normal. A gente te ensina a criar em 2 minutos.</p></details>
-    <details><summary>Funciona em qual sistema?</summary><p>Windows (recomendado, com o instalador). Também roda em qualquer computador com navegador moderno e Node.js.</p></details>
-    <details><summary>Como atualizo as bases (SINAPI/SICRO...)?</summary><p>Pela própria tela: importe o arquivo XLSX/JSON oficial da competência que você usa. Já vem com a SINAPI e as bases configuradas.</p></details>
-    <details><summary>Meus dados vão para a nuvem?</summary><p>Não. Seus orçamentos e dados de clientes ficam salvos no seu computador. Você ainda pode exportar um backup em arquivo quando quiser.</p></details>
-  </div>
-</section>
+<footer><div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between">
+  <div>© 2026 <b style="color:#fff">OrçaPRO</b> · RA Engenharia Especial · Eng. Rogério Alves de Souza — CREA-MG</div>
+  <div>📲 <a class="wpp-link" href="#">WhatsApp (34) 9286-9383</a> · ✉️ rogeriosouza.engenharia@gmail.com</div>
+</div></footer>
 
-<!-- CTA FINAL -->
-<section class="cta-final">
-  <div class="wrap">
-    <h2>Pare de perder horas em planilha.</h2>
-    <p>Tenha orçamento, cronograma e laudo com a inteligência do OrçaPRO.</p>
-    <a class="btn btn-navy" href="https://wa.me/553492869383?text=Quero%20o%20Or%C3%A7aPRO" style="background:#fff;color:var(--navy)">Falar agora no WhatsApp &nbsp;→</a>
-  </div>
-</section>
+<a class="float wpp-link" href="#">💬 Falar no WhatsApp</a>
 
-<footer>
-  <div class="wrap">
-    <div>
-      <div class="logo" style="font-size:20px">Orça<span>PRO</span></div>
-      <div style="margin-top:8px;max-width:320px">Orçamento Inteligente de Obras. Um produto da RA Engenharia Especial.</div>
-    </div>
-    <div>
-      <div style="color:#fff;font-weight:700;margin-bottom:6px">Contato</div>
-      <div><a href="https://wa.me/553492869383">WhatsApp: (34) 9286-9383</a></div>
-      <div><a href="mailto:rogeriosouza.engenharia@gmail.com">rogeriosouza.engenharia@gmail.com</a></div>
-    </div>
-  </div>
-</footer>
-
-<a class="wpp" href="https://wa.me/553492869383?text=Quero%20o%20Or%C3%A7aPRO" title="Falar no WhatsApp">🟢</a>
-
-</body>
-</html>
+<script>
+var COMPRAR = "https://peak-integral-roses-guam.trycloudflare.com";
+var WPP = "553492869383";
+document.querySelectorAll('[data-buy]').forEach(function(a){
+  a.addEventListener('click',function(e){ e.preventDefault(); window.open(COMPRAR + "/?plano=" + a.getAttribute('data-buy'), "_blank"); });
+});
+document.querySelectorAll('.wpp-link').forEach(function(a){ a.href = "https://wa.me/" + WPP + "?text=" + encodeURIComponent("Olá! Tenho interesse no OrçaPRO."); });
+var XAB = [
+  ["Resumo","prints/excel-01-Resumo.png"],
+  ["Sintética","prints/excel-02-Sinttica.png"],
+  ["Analítica","prints/excel-03-Analtica.png"],
+  ["Curva ABC","prints/excel-04-CurvaABC.png"],
+  ["Cronograma","prints/excel-05-Cronograma.png"],
+  ["Gantt","prints/excel-06-Gantt.png"]
+];
+var xt = document.getElementById('xtabs'), xi = document.getElementById('ximg');
+XAB.forEach(function(t,i){
+  var b=document.createElement('button'); b.className='xtab'+(i===0?' on':''); b.textContent=t[0];
+  b.onclick=function(){ xi.src=t[1]; document.querySelectorAll('.xtab').forEach(function(x){x.classList.remove('on')}); b.classList.add('on'); };
+  xt.appendChild(b);
+});
+</script>
+</body></html>

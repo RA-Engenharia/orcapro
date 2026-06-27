@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100" role="img" aria-label="OrçaPRO">
+  <defs>
+    <linearGradient id="opi-badge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#163a5c"/>
+      <stop offset="1" stop-color="#2e6f9e"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="96" height="96" rx="24" fill="url(#opi-badge)"/>
+  <rect x="24" y="52" width="13" height="22" rx="4" fill="#ffffff" opacity="0.55"/>
+  <rect x="44" y="38" width="13" height="36" rx="4" fill="#ffffff" opacity="0.85"/>
+  <rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/>
+  <path d="M73 10 l2.4 5.1 5.6 0.7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -0.7z" fill="#9be7af"/>
+</svg>
