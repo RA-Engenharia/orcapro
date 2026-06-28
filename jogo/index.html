@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0c1a28">
+<title>OrçaPro — Construtor 3D | Simulador de Obra</title>
+<meta name="description" content="Jogo de simulação de construção civil para tablet: compre o lote, monte o canteiro, contrate a equipe, alugue equipamentos e entregue a obra dentro do prazo. Construído com OrçaPro.">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="stylesheet" href="css/jogo.css">
+</head>
+<body>
+  <div id="app">
+    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#9db4c9;font-family:system-ui;">
+      Carregando o canteiro… 🏗️
+    </div>
+  </div>
+
+  <!-- Motor 3D: local (offline) + fallback CDN -->
+  <script src="vendor/three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Lógica do jogo -->
+  <script src="js/dados.js"></script>
+  <script src="js/estado.js"></script>
+  <script src="js/cena3d.js"></script>
+  <script src="js/jogo.js"></script>
+</body>
+</html>
