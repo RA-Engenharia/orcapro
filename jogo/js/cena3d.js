@@ -37,9 +37,12 @@
     this.grupoObra = new THREE.Group();   // tudo que é construção
     this.grupoCanteiro = new THREE.Group();
     this.grupoProps = new THREE.Group();  // animados
+    this.grupoTijolos = new THREE.Group(); // blocos do modo mão na massa
     this.scene.add(this.grupoObra);
     this.scene.add(this.grupoCanteiro);
     this.scene.add(this.grupoProps);
+    this.scene.add(this.grupoTijolos);
+    this.onTap = null;                     // callback de toque (assentar bloco)
 
     this.animados = [];       // {mesh, tipo}
     this.tempo = 0;
@@ -97,7 +100,7 @@
   // ---------- Controles touch / mouse -------------------------
   Cena3D.prototype._setupControles = function () {
     var self = this, el = this.canvas;
-    var lastX = 0, lastY = 0, dragging = false, pinch = 0;
+    var lastX = 0, lastY = 0, dragging = false, pinch = 0, moved = 0, startX = 0, startY = 0;
 
     function pos(e) { return e.touches ? e.touches[0] : e; }
 
@@ -109,8 +112,8 @@
         );
         return;
       }
-      dragging = true;
-      var p = pos(e); lastX = p.clientX; lastY = p.clientY;
+      dragging = true; moved = 0;
+      var p = pos(e); lastX = startX = p.clientX; lastY = startY = p.clientY;
     }
     function move(e) {
       if (e.touches && e.touches.length === 2) {
@@ -126,6 +129,7 @@
       }
       if (!dragging) return;
       var p = pos(e);
+      moved += Math.abs(p.clientX - lastX) + Math.abs(p.clientY - lastY);
       self.az -= (p.clientX - lastX) * 0.006;
       self.pol -= (p.clientY - lastY) * 0.006;
       self.pol = Math.max(0.15, Math.min(1.45, self.pol));
@@ -133,7 +137,11 @@
       self._atualizaCamera();
       e.preventDefault();
     }
-    function up() { dragging = false; pinch = 0; }
+    function up() {
+      // toque curto (sem arrastar) = assentar bloco, se em modo mão na massa
+      if (dragging && moved < 10 && self.onTap) self.onTap();
+      dragging = false; pinch = 0;
+    }
 
     el.addEventListener('mousedown', down);
     global.addEventListener('mousemove', move);
@@ -186,6 +194,21 @@
   // ---------- Construção principal ----------------------------
   // estagios = Set de strings (ids de 'estagio' concluídos)
   // cfg = { tipo, pavimentos, escala, frente, fundo, canteiro:[], equipe:n, ferramentas:[], emObra:estagio }
+  // altura de uma fiada de blocos (modo mão na massa)
+  var COURSE_H = 0.34, BLOCK_LEN = 0.7, BASE_Y = 0.5, WALL_ESP = 0.22;
+
+  // calcula o footprint a partir do cfg (usado por construir e pelos tijolos)
+  Cena3D.prototype._calcFP = function (cfg) {
+    cfg = cfg || {};
+    var frente = (cfg.frente || 10), fundo = (cfg.fundo || 20);
+    var bw = Math.max(6, Math.min(frente - 2.4, frente * 0.78));
+    var bd = Math.max(6, Math.min(fundo * 0.6, fundo - 6));
+    return {
+      frente: frente, fundo: fundo, bw: bw, bd: bd,
+      pav: cfg.pavimentos || 1, hPav: 3.0, tipo: cfg.tipo || 'residencial'
+    };
+  };
+
   Cena3D.prototype.construir = function (estagios, cfg) {
     if (!this.ok) return;
     estagios = estagios || new Set();
@@ -193,19 +216,14 @@
     this._limpar(this.grupoObra);
     this._limpar(this.grupoCanteiro);
     this._limpar(this.grupoProps);
+    if (this.grupoTijolos) this._limpar(this.grupoTijolos);
+    this.brick = null;
     this.animados = [];
 
-    var frente = (cfg.frente || 10);
-    var fundo = (cfg.fundo || 20);
-    // recuo padrão -> footprint da edificação
-    var bw = Math.min(frente - 2.4, frente * 0.78);
-    var bd = Math.min(fundo * 0.6, fundo - 6);
-    bw = Math.max(6, bw); bd = Math.max(6, bd);
-    var pav = cfg.pavimentos || 1;
-    var hPav = 3.0;                 // altura por pavimento
-    var tipo = cfg.tipo || 'residencial';
-
-    this.fp = { bw: bw, bd: bd, pav: pav, hPav: hPav, tipo: tipo };
+    var fp = this._calcFP(cfg);
+    var frente = fp.frente, fundo = fp.fundo, bw = fp.bw, bd = fp.bd,
+        pav = fp.pav, hPav = fp.hPav, tipo = fp.tipo;
+    this.fp = fp;
 
     // contorno do lote
     this._lote(frente, fundo);
@@ -217,8 +235,9 @@
 
     if (has('fundacao')) this._fundacao(bw, bd);
     if (has('estrutura')) this._estrutura(bw, bd, pav, hPav, tipo);
-    if (has('alvenaria1')) this._paredes(bw, bd, pav, hPav, 0.7, false, tipo);     // 1 fiada
-    if (has('alvenaria2')) this._paredes(bw, bd, pav, hPav, 1, has('reboco'), tipo); // cheias
+    // 1ª fiada = ~1 course; elevação = paredes cheias
+    if (has('alvenaria2')) this._paredes(bw, bd, pav, hPav, 1, has('reboco'), tipo);
+    else if (has('alvenaria1')) this._paredes(bw, bd, pav, hPav, COURSE_H / (hPav - 0.35), false, tipo);
     if (has('laje')) this._lajes(bw, bd, pav, hPav);
     if (has('cobertura')) this._cobertura(bw, bd, pav, hPav, tipo);
     if (has('esquadrias')) this._esquadrias(bw, bd, pav, hPav);
@@ -610,6 +629,92 @@
       this.grupoProps.add(grp);
       this.animados.push({ mesh: grp, tipo: 'worker', base: 0, fase: i });
     }
+  };
+
+  // ============ MODO MÃO NA MASSA (assentar tijolos) ============
+  // número total de fiadas de uma parede cheia
+  Cena3D.prototype.calcularFiadas = function (cfg) {
+    var fp = this._calcFP(cfg);
+    return Math.max(1, Math.round((fp.pav * fp.hPav - 0.35) / COURSE_H));
+  };
+
+  // prepara a sessão de assentamento para as fiadas [deFiada, ateFiada)
+  Cena3D.prototype.iniciarTijolos = function (cfg, deFiada, ateFiada) {
+    if (!this.ok) return { total: 0, fiadas: 0 };
+    this._limpar(this.grupoTijolos);
+    var fp = this._calcFP(cfg);
+    var bw = fp.bw, bd = fp.bd;
+    var lados = [
+      { len: bw, x: 0, z: bd / 2, horiz: true },
+      { len: bw, x: 0, z: -bd / 2, horiz: true },
+      { len: bd, x: bw / 2, z: 0, horiz: false },
+      { len: bd, x: -bw / 2, z: 0, horiz: false }
+    ];
+    var slots = [];
+    for (var c = deFiada; c < ateFiada; c++) {
+      var y = BASE_Y + c * COURSE_H + COURSE_H / 2;
+      var stagger = (c % 2) ? BLOCK_LEN / 2 : 0;
+      for (var L = 0; L < lados.length; L++) {
+        var lado = lados[L];
+        var n = Math.max(1, Math.round(lado.len / BLOCK_LEN));
+        var seg = lado.len / n;
+        for (var i = 0; i < n; i++) {
+          var t = -lado.len / 2 + seg * (i + 0.5);
+          var px, pz;
+          if (lado.horiz) { px = lado.x + t; pz = lado.z; }
+          else { px = lado.x; pz = lado.z + t; }
+          slots.push({
+            x: px, y: y, z: pz,
+            w: lado.horiz ? seg * 0.94 : WALL_ESP,
+            d: lado.horiz ? WALL_ESP : seg * 0.94,
+            fiada: c, par: (i + c) % 2
+          });
+        }
+      }
+    }
+    this.brick = { slots: slots, placed: 0, de: deFiada, ate: ateFiada };
+    return { total: slots.length, fiadas: ateFiada - deFiada };
+  };
+
+  Cena3D.prototype._assentarUm = function () {
+    var b = this.brick;
+    if (!b || b.placed >= b.slots.length) return false;
+    var s = b.slots[b.placed];
+    var cor = s.par ? 0xb5572f : 0xc06a3c;
+    var m = box(s.w, COURSE_H * 0.88, s.d, mat(cor));
+    m.position.set(s.x, s.y, s.z);
+    this.grupoTijolos.add(m);
+    b.placed++;
+    return true;
+  };
+
+  // assenta 1 bloco
+  Cena3D.prototype.assentarBloco = function () { this._assentarUm(); return this.estadoTijolos(); };
+  // assenta a fiada atual inteira
+  Cena3D.prototype.assentarFiada = function () {
+    var b = this.brick; if (!b) return this.estadoTijolos();
+    if (b.placed >= b.slots.length) return this.estadoTijolos();
+    var atual = b.slots[b.placed].fiada;
+    while (b.placed < b.slots.length && b.slots[b.placed].fiada === atual) this._assentarUm();
+    return this.estadoTijolos();
+  };
+  // assenta tudo que falta
+  Cena3D.prototype.assentarTudo = function () {
+    var b = this.brick; if (!b) return this.estadoTijolos();
+    while (b.placed < b.slots.length) this._assentarUm();
+    return this.estadoTijolos();
+  };
+
+  Cena3D.prototype.estadoTijolos = function () {
+    var b = this.brick;
+    if (!b) return { placed: 0, total: 0, completo: true, fiadaAtual: 0, fiadasTotal: 0 };
+    var idx = Math.min(b.placed, b.slots.length - 1);
+    var fiadaAtual = b.slots.length ? (b.slots[idx].fiada - b.de + 1) : 0;
+    return {
+      placed: b.placed, total: b.slots.length,
+      completo: b.placed >= b.slots.length,
+      fiadaAtual: fiadaAtual, fiadasTotal: b.ate - b.de
+    };
   };
 
   Cena3D.prototype.destruir = function () {

@@ -115,7 +115,12 @@
   // ======== TELA DE JOGO ======================================
   function abrirJogo(comBriefing) {
     trocarTela('tela-jogo');
-    if (!cena) cena = new global.Cena3D($('#cena'));
+    var canvasAtual = $('#cena');
+    // (re)cria a cena se ainda não existe ou se o canvas foi remontado
+    if (!cena || cena.canvas !== canvasAtual) {
+      if (cena && cena.destruir) cena.destruir();
+      cena = new global.Cena3D(canvasAtual);
+    }
     if (cena && !cena.ok) {
       $('#cena').style.display = 'none';
       var aviso = el('<div class="sem3d">⚠️ Não foi possível carregar o motor 3D (Three.js). ' +
@@ -179,20 +184,25 @@
     return set;
   }
 
-  function atualizarCena(emObra) {
-    if (!cena || !cena.ok) return;
-    var s = E.get(), n = nivelAtual(); if (!n) return;
+  function cfgCena(emObra) {
+    var s = E.get(), n = nivelAtual();
     var lote = D.lote(s.obra.loteId);
     var equipeTotal = 0;
     Object.keys(s.obra.equipe).forEach(function (k) { equipeTotal += s.obra.equipe[k]; });
     var temInsumo = Object.keys(s.obra.insumos).some(function (k) { return s.obra.insumos[k] > 0; });
-    cena.construir(estagiosConcluidos(), {
+    return {
       tipo: n.tipo, pavimentos: n.pavimentos, escala: n.escala,
       frente: lote ? lote.frente : 10, fundo: lote ? lote.fundo : 20,
       canteiro: s.obra.canteiro,
       ferramentas: s.obra.ferramentasCompradas.concat(s.obra.ferramentasAlugadas),
       equipe: equipeTotal, insumosNoCanteiro: temInsumo, emObra: emObra || null
-    });
+    };
+  }
+
+  function atualizarCena(emObra) {
+    if (!cena || !cena.ok) return;
+    if (!nivelAtual()) return;
+    cena.construir(estagiosConcluidos(), cfgCena(emObra));
   }
 
   // ======== PAINÉIS ===========================================
@@ -441,7 +451,8 @@
   function pObra(c) {
     var n = nivelAtual(), s = E.get();
     c.innerHTML = '<p class="ajuda">Execute as etapas na ordem. O jogo verifica equipe, ferramentas, ' +
-      'materiais e projetos. Cada etapa consome dias do cronograma.</p>';
+      'materiais e projetos. Cada etapa consome dias do cronograma.<br>🧱 Nas etapas de ' +
+      '<b>alvenaria</b> você entra no modo <b>Mão na Massa</b> e assenta os blocos fiada por fiada!</p>';
     n.etapas.forEach(function (eid) {
       var et = D.etapa(eid);
       var feita = E.etapaFeita(eid);
@@ -461,7 +472,7 @@
           '<div class="et-acao">' +
             (feita ? '<span class="badge-ok">Concluída</span>' :
               '<button class="bt executar ' + (chk.ok ? 'verde' : 'off') + '">' +
-                (chk.ok ? '▶ Executar' : 'Bloqueada') + '</button>') +
+                (chk.ok ? (et.estagio === 'alvenaria1' || et.estagio === 'alvenaria2' ? '🧱 Mão na massa' : '▶ Executar') : 'Bloqueada') + '</button>') +
           '</div></div>');
       if (!feita && chk.ok) {
         $('.executar', card).onclick = function () { executarEtapa(et); };
@@ -535,32 +546,104 @@
     return laborEtapa(et, dias) + aluguel;
   }
 
+  // confirma a etapa: consome materiais, debita custo, avança dias e marca concluída
+  function commitEtapa(et) {
+    var s = E.get(), esc = escala();
+    Object.keys(et.insumos).forEach(function (iid) {
+      var q = Math.ceil(et.insumos[iid] * esc);
+      s.obra.insumos[iid] = Math.max(0, (s.obra.insumos[iid] || 0) - q);
+    });
+    var dias = diasEtapa(et);
+    E.debitar(custoEtapa(et));
+    s.obra.dia += dias;
+    s.obra.etapasConcluidas.push(et.id);
+    E.salvar();
+    return dias;
+  }
+
+  function posEtapa(et, dias) {
+    atualizarCena();
+    renderHUD();
+    if (et.id === ultimaEtapa().id) { finalizarObra(); }
+    else { toast(et.nome + ' concluída! (+' + dias + ' dias)', 'ok'); abrirPainel('obra'); }
+  }
+
   function executarEtapa(et) {
-    var s = E.get(), n = nivelAtual(), esc = escala();
     var chk = checarEtapa(et);
     if (!chk.ok) { toast('Etapa bloqueada — verifique os itens em falta.', 'erro'); return; }
     var custo = custoEtapa(et);
     if (!E.pode(custo)) {
       toast('Caixa insuficiente para a mão de obra/aluguel desta etapa (' + rs(custo) + ').', 'erro'); return;
     }
-    // consome materiais
-    Object.keys(et.insumos).forEach(function (iid) {
-      var q = Math.ceil(et.insumos[iid] * esc);
-      s.obra.insumos[iid] = Math.max(0, (s.obra.insumos[iid] || 0) - q);
-    });
-    var dias = diasEtapa(et);
-    E.debitar(custo);
-    s.obra.dia += dias;
-    s.obra.etapasConcluidas.push(et.id);
-    E.salvar();
-
+    // alvenaria -> modo mão na massa (assentar tijolos)
+    if (cena && cena.ok && (et.estagio === 'alvenaria1' || et.estagio === 'alvenaria2')) {
+      iniciarMaoNaMassa(et);
+      return;
+    }
+    var dias = commitEtapa(et);
     fecharPainel();
-    animarEtapa(et, dias, function () {
-      atualizarCena();
-      renderHUD();
-      if (et.id === ultimaEtapa().id) { finalizarObra(); }
-      else { toast(et.nome + ' concluída! (+' + dias + ' dias)', 'ok'); abrirPainel('obra'); }
-    });
+    animarEtapa(et, dias, function () { posEtapa(et, dias); });
+  }
+
+  // ---------- modo mão na massa -------------------------------
+  function iniciarMaoNaMassa(et) {
+    fecharPainel();
+    var cfg = cfgCena(et.estagio);
+    atualizarCena(et.estagio);                 // mostra contexto (pilares, 1ª fiada, andaime)
+    var totalFiadas = cena.calcularFiadas(cfg);
+    var de, ate;
+    if (et.estagio === 'alvenaria1') { de = 0; ate = 1; }   // só a 1ª fiada
+    else { de = 1; ate = totalFiadas; }                      // elevação
+    cena.iniciarTijolos(cfg, de, ate);
+    abrirSessaoTijolo(et);
+  }
+
+  function abrirSessaoTijolo(et) {
+    var tj = $('#tela-jogo');
+    var sess = el(
+      '<div id="sessao">' +
+        '<div class="sess-top">' +
+          '<div class="sess-info"><b>🧱 ' + et.nome + '</b>' +
+            '<span id="sess-sub"></span>' +
+            '<div class="sess-barra"><i id="sess-i"></i></div></div>' +
+          '<button class="bt fechar" id="sess-x">✕</button>' +
+        '</div>' +
+        '<div class="sess-dica">👆 Toque na obra para assentar um bloco</div>' +
+        '<div class="sess-bts">' +
+          '<button class="bt" id="sess-1">🧱 +1 bloco</button>' +
+          '<button class="bt azul" id="sess-fiada">➕ Fiada inteira</button>' +
+          '<button class="bt cinza" id="sess-tudo">⏭️ Assentar tudo</button>' +
+        '</div>' +
+      '</div>');
+    tj.appendChild(sess);
+
+    function atualiza(st) {
+      st = st || cena.estadoTijolos();
+      $('#sess-sub').textContent = ' — Fiada ' + st.fiadaAtual + '/' + st.fiadasTotal +
+        ' • ' + st.placed + '/' + st.total + ' blocos';
+      $('#sess-i').style.width = (st.total ? (st.placed / st.total * 100) : 100) + '%';
+      if (st.completo) concluir();
+    }
+    function umBloco() { atualiza(cena.assentarBloco()); }
+    cena.onTap = umBloco;
+    $('#sess-1').onclick = umBloco;
+    $('#sess-fiada').onclick = function () { atualiza(cena.assentarFiada()); };
+    $('#sess-tudo').onclick = function () { atualiza(cena.assentarTudo()); };
+    $('#sess-x').onclick = function () {        // cancela sem concluir
+      cena.onTap = null; sess.remove(); atualizarCena(); abrirPainel('obra');
+    };
+    var concluido = false;
+    function concluir() {
+      if (concluido) return; concluido = true;
+      cena.onTap = null;
+      setTimeout(function () {
+        sess.remove();
+        var dias = commitEtapa(et);
+        toast('Parede levantada! 🧱 ' + et.nome + ' concluída (+' + dias + ' dias)', 'ok');
+        posEtapa(et, dias);
+      }, 500);
+    }
+    atualiza();
   }
 
   function ultimaEtapa() {

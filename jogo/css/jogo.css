@@ -192,6 +192,23 @@ h4{margin:14px 0 8px;font-size:15px;}
 .result-linhas b.pos{color:var(--verde2);} .result-linhas b.neg{color:#ff6b6b;}
 .result-bts{margin-top:14px;}
 
+/* sessão mão na massa */
+#sessao{position:absolute;left:0;right:0;bottom:0;z-index:9;
+  background:linear-gradient(0deg,rgba(8,18,28,.97),rgba(8,18,28,.86));
+  border-top:2px solid var(--amarelo);padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+  display:flex;flex-direction:column;gap:10px;animation:slideup .2s ease;}
+@keyframes slideup{from{transform:translateY(40px);opacity:.3;}to{transform:none;opacity:1;}}
+.sess-top{display:flex;align-items:flex-start;gap:12px;}
+.sess-info{flex:1;}
+.sess-info b{font-size:16px;}
+.sess-info #sess-sub{font-size:13px;color:var(--amarelo);font-weight:700;}
+.sess-barra{height:10px;background:rgba(255,255,255,.12);border-radius:8px;overflow:hidden;margin-top:8px;}
+.sess-barra i{display:block;height:100%;width:0;border-radius:8px;
+  background:linear-gradient(90deg,#b5572f,var(--amarelo));transition:width .25s;}
+.sess-dica{font-size:12.5px;color:var(--mut);text-align:center;}
+.sess-bts{display:flex;gap:8px;}
+.sess-bts .bt{flex:1;padding:15px 8px;font-size:15px;}
+
 /* toast */
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%) translateY(20px);
   background:var(--navy);color:#fff;border:1px solid var(--linha);border-radius:12px;
