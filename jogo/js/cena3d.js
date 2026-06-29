@@ -17,10 +17,16 @@
     this.renderer.setSize(w, h, false);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    if (THREE.sRGBEncoding) this.renderer.outputEncoding = THREE.sRGBEncoding;
+    if (THREE.ACESFilmicToneMapping) {
+      this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      this.renderer.toneMappingExposure = 1.05;
+    }
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x9fcbe8);
-    this.scene.fog = new THREE.Fog(0x9fcbe8, 80, 260);
+    var corCeu = 0x86b9e0;
+    this.scene.background = new THREE.Color(corCeu);
+    this.scene.fog = new THREE.Fog(0xc8dcec, 110, 320);
 
     this.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 1000);
 
@@ -72,29 +78,61 @@
   };
 
   Cena3D.prototype._setupLuzes = function () {
-    var amb = new THREE.HemisphereLight(0xffffff, 0x6b7a55, 0.85);
+    var amb = new THREE.HemisphereLight(0xeaf4ff, 0x6f7d52, 0.75);
     this.scene.add(amb);
-    var sol = new THREE.DirectionalLight(0xfff2d6, 1.05);
-    sol.position.set(40, 70, 30);
+    var sol = new THREE.DirectionalLight(0xfff4dc, 2.4);
+    sol.position.set(48, 80, 36);
     sol.castShadow = true;
-    sol.shadow.mapSize.set(1024, 1024);
-    var d = 90;
+    sol.shadow.mapSize.set(2048, 2048);
+    sol.shadow.radius = 4;
+    sol.shadow.bias = -0.0004;
+    var d = 110;
     sol.shadow.camera.left = -d; sol.shadow.camera.right = d;
     sol.shadow.camera.top = d; sol.shadow.camera.bottom = -d;
-    sol.shadow.camera.far = 250;
+    sol.shadow.camera.near = 1; sol.shadow.camera.far = 320;
     this.scene.add(sol);
+    // luz de preenchimento suave (céu) sem sombra
+    var fill = new THREE.DirectionalLight(0xbcd4ee, 0.35);
+    fill.position.set(-40, 30, -30);
+    this.scene.add(fill);
   };
 
   Cena3D.prototype._setupAmbiente = function () {
-    // chão / grama
+    // domo de céu com gradiente
+    var ceu = new THREE.Mesh(
+      new THREE.SphereGeometry(480, 24, 16),
+      new THREE.MeshBasicMaterial({ map: px('ceu'), side: THREE.BackSide, fog: false, depthWrite: false })
+    );
+    this.scene.add(ceu);
+    // nuvens
+    this._nuvens();
+    // chão / grama (textura)
     var chao = new THREE.Mesh(
       new THREE.PlaneGeometry(600, 600),
-      new THREE.MeshLambertMaterial({ color: 0x7caa4e })
+      tmat('grama', 120, 120, { r: 1 })
     );
     chao.rotation.x = -Math.PI / 2;
     chao.position.y = -0.02;
     chao.receiveShadow = true;
     this.scene.add(chao);
+  };
+
+  Cena3D.prototype._nuvens = function () {
+    var mat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.92, fog: false });
+    var posic = [[-90, 70, -120], [120, 85, -60], [40, 95, -160], [-140, 78, 40], [90, 70, 90]];
+    for (var i = 0; i < posic.length; i++) {
+      var nuvem = new THREE.Group();
+      var nb = 4 + (i % 3);
+      for (var b = 0; b < nb; b++) {
+        var r = 8 + (b % 3) * 4;
+        var s = new THREE.Mesh(new THREE.SphereGeometry(r, 10, 8), mat);
+        s.position.set((b - nb / 2) * 7, (b % 2) * 3, (b % 2) * 4);
+        s.scale.y = 0.6;
+        nuvem.add(s);
+      }
+      nuvem.position.set(posic[i][0], posic[i][1], posic[i][2]);
+      this.scene.add(nuvem);
+    }
   };
 
   // ---------- Controles touch / mouse -------------------------
@@ -180,10 +218,107 @@
     }
   };
 
+  // ---------- Texturas procedurais (geradas em canvas) --------
+  var TEX = {};
+  function cv(size) { var c = document.createElement('canvas'); c.width = c.height = size; return c; }
+  function rnd(a, b) { return a + (b - a) * (Math.sin(rnd._s++ * 12.9898) * 43758.5453 % 1 + 1) % 1; }
+  rnd._s = 1;
+  function speckle(ctx, size, n, cols) {
+    for (var i = 0; i < n; i++) {
+      ctx.fillStyle = cols[(i * 7) % cols.length];
+      var s = 1 + (i % 3);
+      ctx.fillRect((i * 53) % size, (i * 97) % size, s, s);
+    }
+  }
+  function gerarTextura(kind) {
+    var size = 256, c = cv(size), g = c.getContext('2d');
+    if (kind === 'ceu') {
+      var lin = g.createLinearGradient(0, 0, 0, size);
+      lin.addColorStop(0, '#3f7fc4'); lin.addColorStop(0.55, '#86b9e0'); lin.addColorStop(1, '#dceaf6');
+      g.fillStyle = lin; g.fillRect(0, 0, size, size);
+    } else if (kind === 'tijolo') {
+      g.fillStyle = '#9a9388'; g.fillRect(0, 0, size, size); // argamassa
+      var bw = 64, bh = 30, y = 0, row = 0;
+      while (y < size) {
+        var off = (row % 2) ? -bw / 2 : 0;
+        for (var x = off; x < size; x += bw) {
+          var v = 150 + ((x + y) % 40);
+          g.fillStyle = 'rgb(' + (v + 20) + ',' + Math.round(v * 0.55) + ',' + Math.round(v * 0.4) + ')';
+          g.fillRect(x + 2, y + 2, bw - 4, bh - 4);
+        }
+        y += bh; row++;
+      }
+    } else if (kind === 'telha') {
+      g.fillStyle = '#a4471f'; g.fillRect(0, 0, size, size);
+      for (var ry = 0; ry < size; ry += 22) {
+        g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(0, ry + 18, size, 4);
+        for (var rx = 0; rx < size; rx += 18) {
+          g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(rx, ry, 2, 22);
+          g.fillStyle = 'rgba(120,40,15,.5)'; g.beginPath();
+          g.arc(rx + 9, ry + 18, 8, Math.PI, 0, true); g.fill();
+        }
+      }
+    } else if (kind === 'concreto' || kind === 'reboco') {
+      var base = kind === 'reboco' ? '#cfc9bd' : '#b9bcc0';
+      g.fillStyle = base; g.fillRect(0, 0, size, size);
+      speckle(g, size, 2600, ['rgba(0,0,0,.05)', 'rgba(255,255,255,.06)', 'rgba(0,0,0,.08)']);
+    } else if (kind === 'parede') { // parede pintada lisa (tingível)
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, size, size);
+      speckle(g, size, 1200, ['rgba(0,0,0,.025)', 'rgba(0,0,0,.04)']);
+    } else if (kind === 'grama') {
+      g.fillStyle = '#5f9b40'; g.fillRect(0, 0, size, size);
+      var verdes = ['#6fae49', '#558c38', '#79b94f', '#4d8233', '#86c45a'];
+      for (var i = 0; i < 4200; i++) {
+        g.fillStyle = verdes[i % verdes.length];
+        g.fillRect((i * 71) % size, (i * 113) % size, 2, 3);
+      }
+    } else if (kind === 'terra') {
+      g.fillStyle = '#a9855c'; g.fillRect(0, 0, size, size);
+      speckle(g, size, 3000, ['#9c7748', '#b8966a', '#8a6a3e', '#c2a172']);
+    } else if (kind === 'madeira') {
+      g.fillStyle = '#b3884f'; g.fillRect(0, 0, size, size);
+      for (var wy = 0; wy < size; wy += 6) {
+        g.fillStyle = (wy % 12) ? 'rgba(90,60,25,.25)' : 'rgba(70,45,18,.35)';
+        g.fillRect(0, wy, size, 2);
+      }
+    } else if (kind === 'areia') {
+      g.fillStyle = '#d8c08a'; g.fillRect(0, 0, size, size);
+      speckle(g, size, 2600, ['#c9ad72', '#e3cf9d', '#bda062']);
+    } else if (kind === 'brita') {
+      g.fillStyle = '#9aa0a6'; g.fillRect(0, 0, size, size);
+      speckle(g, size, 3200, ['#7c828a', '#b3b9bf', '#6b7077', '#c4c9ce']);
+    } else if (kind === 'metal') {
+      g.fillStyle = '#7d858d'; g.fillRect(0, 0, size, size);
+      for (var mx = 0; mx < size; mx += 16) { g.fillStyle = 'rgba(255,255,255,.05)'; g.fillRect(mx, 0, 1, size); }
+    } else {
+      g.fillStyle = '#cccccc'; g.fillRect(0, 0, size, size);
+    }
+    var t = new THREE.CanvasTexture(c);
+    if (THREE.sRGBEncoding && kind !== 'ceu') t.encoding = THREE.sRGBEncoding;
+    t.anisotropy = 4;
+    return t;
+  }
+  function px(kind) { if (!TEX[kind]) TEX[kind] = gerarTextura(kind); return TEX[kind]; }
+
   // ---------- Materiais utilitários ---------------------------
   function mat(color, opts) {
     opts = opts || {};
-    return new THREE.MeshLambertMaterial({ color: color, transparent: !!opts.t, opacity: opts.o || 1 });
+    return new THREE.MeshStandardMaterial({
+      color: color, roughness: opts.r == null ? 0.9 : opts.r, metalness: opts.m || 0,
+      transparent: !!opts.t, opacity: opts.o || 1
+    });
+  }
+  // material texturizado: kind + repetições
+  function tmat(kind, rx, ry, opts) {
+    opts = opts || {};
+    var t = px(kind).clone(); t.needsUpdate = true;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(rx || 1, ry || 1);
+    return new THREE.MeshStandardMaterial({
+      map: t, color: opts.color || 0xffffff,
+      roughness: opts.r == null ? 0.92 : opts.r, metalness: opts.m || 0,
+      transparent: !!opts.t, opacity: opts.o || 1
+    });
   }
   function box(w, h, d, m) {
     var mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
@@ -278,7 +413,7 @@
   Cena3D.prototype._lote = function (frente, fundo) {
     var terreno = new THREE.Mesh(
       new THREE.PlaneGeometry(frente, fundo),
-      new THREE.MeshLambertMaterial({ color: 0xb9966b })
+      tmat('terra', frente / 3, fundo / 3, { r: 1 })
     );
     terreno.rotation.x = -Math.PI / 2;
     terreno.position.y = 0.01;
@@ -331,8 +466,8 @@
       cx.position.set(frente / 2 - 2, 4.6, z0); cx.castShadow = true; g.add(cx);
     }
     if (lista.indexOf('baia') >= 0) {
-      this._pilhaAgregado(x0 + 2, z0 + 4, 0xd9c08a); // areia
-      this._pilhaAgregado(x0 + 4.5, z0 + 4, 0x9aa0a6); // brita
+      this._pilhaAgregado(x0 + 2, z0 + 4, 'areia');
+      this._pilhaAgregado(x0 + 4.5, z0 + 4, 'brita');
     }
     // pilhas de blocos e sacos de cimento sempre que tiver insumo no canteiro
     if (cfg.insumosNoCanteiro) {
@@ -348,12 +483,12 @@
     }
   };
 
-  Cena3D.prototype._pilhaAgregado = function (x, z, color) {
-    var m = new THREE.Mesh(new THREE.ConeGeometry(1.3, 1.4, 8), mat(color));
-    m.position.set(x, 0.7, z); m.castShadow = true; this.grupoCanteiro.add(m);
+  Cena3D.prototype._pilhaAgregado = function (x, z, kind) {
+    var m = new THREE.Mesh(new THREE.ConeGeometry(1.3, 1.4, 10), tmat(kind, 2, 2, { r: 1 }));
+    m.position.set(x, 0.7, z); m.castShadow = true; m.receiveShadow = true; this.grupoCanteiro.add(m);
   };
   Cena3D.prototype._pilhaBlocos = function (x, z) {
-    var bm = mat(0xb5572f);
+    var bm = tmat('tijolo', 1, 1);
     for (var i = 0; i < 3; i++) for (var j = 0; j < 4; j++) {
       var b = box(0.4, 0.2, 0.9, bm);
       b.position.set(x + i * 0.45, 0.1 + Math.floor(j / 2) * 0.22, z + (j % 2) * 0.95);
@@ -389,7 +524,7 @@
 
   // ---------- Elementos da edificação -------------------------
   Cena3D.prototype._fundacao = function (bw, bd) {
-    var m = mat(0x7b7f86);
+    var m = tmat('concreto', 1, 1, { r: 0.95 });
     var nx = Math.max(2, Math.round(bw / 4)), nz = Math.max(2, Math.round(bd / 4));
     for (var i = 0; i <= nx; i++) for (var j = 0; j <= nz; j++) {
       var x = -bw / 2 + (bw / nx) * i;
@@ -409,7 +544,8 @@
   };
 
   Cena3D.prototype._estrutura = function (bw, bd, pav, hPav, tipo) {
-    var m = mat(tipo === 'industrial' ? 0xb0b6bd : 0x9a9ea6);
+    var m = tipo === 'industrial' ? tmat('metal', 2, 4, { r: 0.55, m: 0.6, color: 0xb0b6bd })
+                                  : tmat('concreto', 1, 3, { r: 0.9 });
     var cols = [[bw / 2, bd / 2], [-bw / 2, bd / 2], [bw / 2, -bd / 2], [-bw / 2, -bd / 2],
                 [0, bd / 2], [0, -bd / 2], [bw / 2, 0], [-bw / 2, 0]];
     var esp = tipo === 'industrial' ? 0.6 : 0.4;
@@ -431,49 +567,41 @@
 
   Cena3D.prototype._paredes = function (bw, bd, pav, hPav, frac, rebocado, tipo) {
     if (tipo === 'industrial') { this._fechamentoIndustrial(bw, bd, hPav * 2.2, rebocado); return; }
-    var cor = rebocado ? 0xcfcabb : 0xb5572f; // reboco cinza claro x tijolo
-    this.corParede = cor;
-    var m = mat(cor);
-    var esp = 0.22;
+    var kind = rebocado ? 'reboco' : 'tijolo';
+    this.corParede = rebocado ? 0xcfcabb : 0xb5572f;
+    var esp = 0.22, self = this;
+    function parede(lenVis, hParede, w, d, x, y, z) {
+      var rx = rebocado ? lenVis / 2.4 : lenVis / 1.7;   // ~tile a cada 1,7m (tijolo)
+      var ry = rebocado ? hParede / 2.4 : hParede / 1.0;
+      var wmesh = box(w, hParede, d, tmat(kind, Math.max(1, rx), Math.max(1, ry)));
+      wmesh.position.set(x, y, z); self.grupoObra.add(wmesh); wmesh.userData.parede = true;
+    }
     for (var p = 0; p < pav; p++) {
       var hParede = (hPav - 0.35) * frac;
-      var y0 = 0.5 + p * hPav;
-      var yc = y0 + hParede / 2;
-      var faces = [
-        [0, bd / 2, bw, esp], [0, -bd / 2, bw, esp],
-        [bw / 2, 0, esp, bd], [-bw / 2, 0, esp, bd]
-      ];
-      for (var f = 0; f < faces.length; f++) {
-        var wmesh = box(faces[f][2], hParede, faces[f][3], m);
-        wmesh.position.set(faces[f][0], yc, faces[f][1]);
-        this.grupoObra.add(wmesh);
-        wmesh.userData.parede = true;
-      }
-      // divisória interna simples
-      if (frac >= 1) {
-        var divi = box(bw * 0.6, hParede, esp, m);
-        divi.position.set(-bw * 0.1, yc, 0); this.grupoObra.add(divi); divi.userData.parede = true;
-      }
+      var yc = 0.5 + p * hPav + hParede / 2;
+      parede(bw, hParede, bw, esp, 0, yc, bd / 2);
+      parede(bw, hParede, bw, esp, 0, yc, -bd / 2);
+      parede(bd, hParede, esp, bd, bw / 2, yc, 0);
+      parede(bd, hParede, esp, bd, -bw / 2, yc, 0);
+      if (frac >= 1) parede(bw * 0.6, hParede, bw * 0.6, esp, -bw * 0.1, yc, 0); // divisória
     }
   };
 
   Cena3D.prototype._fechamentoIndustrial = function (bw, bd, h, rebocado) {
     var cor = rebocado ? 0xe2e6ea : 0xc6ccd2;
-    var m = mat(cor);
-    var esp = 0.2, yc = 0.5 + h / 2;
-    var faces = [[0, bd / 2, bw, esp], [0, -bd / 2, bw, esp], [bw / 2, 0, esp, bd], [-bw / 2, 0, esp, bd]];
-    for (var f = 0; f < faces.length; f++) {
-      var wmesh = box(faces[f][2], h, faces[f][3], m);
-      wmesh.position.set(faces[f][0], yc, faces[f][1]); this.grupoObra.add(wmesh);
-      wmesh.userData.parede = true;
+    var esp = 0.2, yc = 0.5 + h / 2, self = this;
+    function painel(lenVis, w, d, x, z) {
+      var wmesh = box(w, h, d, tmat('reboco', Math.max(1, lenVis / 3), Math.max(1, h / 3), { color: cor }));
+      wmesh.position.set(x, yc, z); self.grupoObra.add(wmesh); wmesh.userData.parede = true;
     }
+    painel(bw, bw, esp, 0, bd / 2); painel(bw, bw, esp, 0, -bd / 2);
+    painel(bd, esp, bd, bw / 2, 0); painel(bd, esp, bd, -bw / 2, 0);
     this.corParede = cor;
   };
 
   Cena3D.prototype._lajes = function (bw, bd, pav, hPav) {
-    var m = mat(0xb7bcc2);
     for (var p = 1; p <= pav; p++) {
-      var laje = box(bw + 0.3, 0.25, bd + 0.3, m);
+      var laje = box(bw + 0.3, 0.25, bd + 0.3, tmat('concreto', bw / 3, bd / 3, { r: 0.92 }));
       laje.position.set(0, 0.5 + p * hPav, 0); this.grupoObra.add(laje);
     }
   };
@@ -482,62 +610,80 @@
     var topo = 0.5 + pav * hPav;
     if (tipo === 'industrial' || tipo === 'predial') {
       // telhado metálico levemente inclinado
-      var m = mat(0x55606b);
+      var m = tmat('metal', bw / 2, bd / 2, { r: 0.5, m: 0.55, color: 0x6b7682 });
       var cob = box(bw + 1, 0.18, bd + 1, m);
       cob.position.set(0, topo + 0.5, 0); cob.rotation.z = 0.04; this.grupoObra.add(cob);
+      // platibanda
+      this._perimetro(bw + 0.6, bd + 0.6, topo, 0.5, 0.2, tmat('reboco', 2, 1, { color: this.corParede || 0xdfe7ee }));
       if (tipo === 'predial') {
         var cx = box(2, 1.4, 2, mat(0x8a8f98)); cx.position.set(bw / 3, topo + 1.3, 0); this.grupoObra.add(cx);
       }
       return;
     }
-    // telhado cerâmico de 2 águas
-    var corTel = 0xb5512f;
-    var mt = mat(corTel);
+    // telhado cerâmico de 2 águas (textura de telha)
     var altura = Math.min(2.4, bw * 0.28);
-    var meia = bw / 2 + 0.5;
+    var meia = bw / 2 + 0.55;
     var lado = Math.hypot(meia, altura);
     var ang = Math.atan2(altura, meia);
-    var agua1 = box(lado, 0.12, bd + 1, mt);
+    var beiral = bd + 1.1;
+    var mt = tmat('telha', lado / 0.9, beiral / 0.9, { r: 0.8 });
+    var agua1 = box(lado, 0.14, beiral, mt);
     agua1.position.set(-meia / 2, topo + altura / 2, 0); agua1.rotation.z = ang; this.grupoObra.add(agua1);
-    var agua2 = box(lado, 0.12, bd + 1, mt);
+    var agua2 = box(lado, 0.14, beiral, mt);
     agua2.position.set(meia / 2, topo + altura / 2, 0); agua2.rotation.z = -ang; this.grupoObra.add(agua2);
-    // oitões
-    var ot = mat(this.corParede || 0xcfcabb);
+    // cumeeira
+    var cume = box(0.3, 0.18, beiral, mat(0x8a3c1f, { r: 0.8 }));
+    cume.position.set(0, topo + altura, 0); this.grupoObra.add(cume);
+    // oitões (frontão triangular)
+    var ot = tmat('reboco', 2, 1, { color: this.corParede || 0xcfcabb });
+    var tri = new THREE.Shape();
+    tri.moveTo(-bw / 2 - 0.5, 0); tri.lineTo(bw / 2 + 0.5, 0); tri.lineTo(0, altura); tri.lineTo(-bw / 2 - 0.5, 0);
+    var geo = new THREE.ExtrudeGeometry(tri, { depth: 0.18, bevelEnabled: false });
     [bd / 2, -bd / 2].forEach(function (z) {
-      var tri = new THREE.Mesh(new THREE.CylinderGeometry(0, 1, 1, 3), ot);
-      tri.scale.set(bw / 2 + 0.5, altura, 0.1);
-      tri.rotation.z = Math.PI; tri.rotation.y = Math.PI / 2;
-      // usar prisma simples no lugar
-      this.grupoObra.add(tri);
-      tri.position.set(0, topo, z);
+      var fr = new THREE.Mesh(geo, ot);
+      fr.position.set(0, topo, z - 0.09); fr.castShadow = true; this.grupoObra.add(fr);
     }, this);
   };
 
   Cena3D.prototype._esquadrias = function (bw, bd, pav, hPav) {
-    var vidro = mat(0x86c5e8, { t: true, o: 0.85 });
-    var porta = mat(0x6b4423);
+    var vidro = new THREE.MeshStandardMaterial({ color: 0x9fd0ec, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.6 });
+    var caixilho = mat(0x3a4046, { r: 0.6, m: 0.4 });
+    var porta = tmat('madeira', 1, 2, { r: 0.7 });
+    var self = this;
+    function janela(x, y, z, ry, larg) {
+      var fr = box(larg + 0.12, 1.22, 0.08, caixilho);
+      fr.position.set(x, y, z); fr.rotation.y = ry; self.grupoObra.add(fr);
+      var v = box(larg, 1.04, 0.04, vidro);
+      v.position.set(x + Math.sin(ry) * 0.05, y, z + Math.cos(ry) * 0.05); v.rotation.y = ry;
+      self.grupoObra.add(v);
+      var peit = box(larg + 0.18, 0.08, 0.16, mat(0xd8d8d8));
+      peit.position.set(x, y - 0.6, z); peit.rotation.y = ry; self.grupoObra.add(peit);
+    }
     for (var p = 0; p < pav; p++) {
       var y = 0.5 + p * hPav + 1.4;
-      // janelas frontais
       for (var i = -1; i <= 1; i++) {
-        var jan = box(1.2, 1.1, 0.06, vidro);
-        jan.position.set(i * (bw / 3), y, bd / 2 + 0.02); this.grupoObra.add(jan);
-        var jan2 = box(0.06, 1.1, 1.2, vidro);
-        jan2.position.set(bw / 2 + 0.02, y, i * (bd / 3)); this.grupoObra.add(jan2);
+        janela(i * (bw / 3), y, bd / 2 + 0.04, 0, 1.2);
+        janela(bw / 2 + 0.04, y, i * (bd / 3), Math.PI / 2, 1.2);
       }
       if (p === 0) {
+        var batente = box(1.18, 2.22, 0.1, caixilho);
+        batente.position.set(bw / 4, 0.5 + 1.1, bd / 2 + 0.03); this.grupoObra.add(batente);
         var pt = box(1, 2.1, 0.08, porta);
-        pt.position.set(bw / 4, 0.5 + 1.05, bd / 2 + 0.03); this.grupoObra.add(pt);
+        pt.position.set(bw / 4, 0.5 + 1.05, bd / 2 + 0.06); this.grupoObra.add(pt);
+        var maca = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), mat(0xd4af37, { m: 0.7, r: 0.3 }));
+        maca.position.set(bw / 4 + 0.38, 0.5 + 1.0, bd / 2 + 0.11); this.grupoObra.add(maca);
       }
     }
   };
 
   Cena3D.prototype._pintar = function (tipo) {
-    var paleta = { residencial: 0xf3ede0, predial: 0xdfe7ee, industrial: 0xeef1f4 };
-    var cor = paleta[tipo] || 0xf3ede0;
+    var paleta = { residencial: 0xf2e8d5, predial: 0xdfe7ee, industrial: 0xeef1f4 };
+    var cor = paleta[tipo] || 0xf2e8d5;
     this.grupoObra.traverse(function (o) {
       if (o.userData && o.userData.parede && o.material) {
-        o.material = mat(cor);
+        var rx = (o.material.map && o.material.map.repeat) ? o.material.map.repeat.x : 2;
+        var ry = (o.material.map && o.material.map.repeat) ? o.material.map.repeat.y : 2;
+        o.material = tmat('parede', rx, ry, { color: cor, r: 0.85 });
       }
     });
   };
