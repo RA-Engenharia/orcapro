@@ -162,6 +162,8 @@
         case "add-etapa": this.addEtapa(); break;
         case "salvar-bdi": this.salvarBdi(); break;
         case "exportar": this.exportar(); break;
+        case "cenarios": this.compararCenarios(); break;
+        case "aplicar-cenario": this.aplicarCenario(t.dataset.bdi); break;
         case "exportar-excel": this.exportarExcel(); break;
         case "config-orc": this.editarDadosOrc(); break;
         case "escopo": this.abrirEscopo(); break;
@@ -746,6 +748,28 @@
       var csv = Orcamento.exportarCSV(this.orcAtual);
       Util.baixar((this.orcAtual.numero || "orcamento") + ".csv", csv, "text/csv;charset=utf-8");
       UI.toast("CSV exportado.", "ok");
+    },
+
+    // Comparar cenários de preço (Agressivo / Padrão / Conservador) — muda o BDI
+    compararCenarios: function () {
+      var orc = this.orcAtual; if (!orc) return;
+      var custo = Orcamento.totais(orc).custoDireto;
+      if (custo <= 0) { UI.toast("Adicione itens com custo antes de comparar.", "erro"); return; }
+      var p = Util.num(orc.bdi && orc.bdi.percentual) || 0;
+      var cenarios = [
+        { nome: "Agressivo", desc: "Preço menor para ganhar a obra", bdi: Math.max(8, Math.round((p - 7) * 100) / 100), cor: "#2e6f9e" },
+        { nome: "Padrão", desc: "Seu BDI atual", bdi: p, cor: "#16a34a", dest: true },
+        { nome: "Conservador", desc: "Margem maior, mais segurança", bdi: Math.round((p + 7) * 100) / 100, cor: "#0f2740" }
+      ];
+      UI.modal("📊 Comparar cenários de preço", UI.renderCenarios(custo, cenarios), [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+    },
+    aplicarCenario: function (bdiStr) {
+      var p = Util.num(bdiStr), o = this.orcAtual; if (!o) return;
+      o.bdi = o.bdi || {}; o.bdi.percentual = p; o.bdi.modeloId = "custom";
+      this.persistir(); UI.fecharModal(); this.render();
+      UI.toast("Cenário aplicado — BDI " + Util.fmtNum(p, 2) + "%.", "ok");
     },
 
     // Excel profissional: workbook vivo com 3 abas (Resumo/Sintética/Analítica) + fórmulas

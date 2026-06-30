@@ -131,6 +131,26 @@
         '<button class="btn sm primary" data-acao="escanear-pasta">📁 Escanear e organizar</button></div>';
     },
 
+    // ---------- Comparar cenários de preço ----------
+    renderCenarios: function (custo, cenarios) {
+      var f = Util.fmtNum;
+      var cards = cenarios.map(function (c) {
+        var bdiV = custo * c.bdi / 100, venda = custo + bdiV;
+        var border = c.dest ? "2px solid #16a34a" : "1px solid var(--linha,#e2e8f0)";
+        return '<div style="flex:1;min-width:150px;border:' + border + ';border-radius:12px;padding:14px;text-align:center;background:' + (c.dest ? "#f0fdf4" : "#fff") + '">' +
+          '<div style="font-weight:800;font-size:15px;color:' + c.cor + '">' + c.nome + (c.dest ? " ★" : "") + '</div>' +
+          '<div style="font-size:11px;color:var(--mut,#64748b);min-height:30px">' + c.desc + '</div>' +
+          '<div style="font-size:12px;color:var(--mut,#64748b);margin-top:6px">BDI ' + f(c.bdi, 2) + '%</div>' +
+          '<div style="font-size:22px;font-weight:900;color:#0f2740;line-height:1.25">R$ ' + f(venda, 2) + '</div>' +
+          '<div style="font-size:11px;color:#16a34a;margin-bottom:10px">margem R$ ' + f(bdiV, 2) + '</div>' +
+          '<button class="btn sm primary" data-acao="aplicar-cenario" data-bdi="' + c.bdi + '">Aplicar</button>' +
+          '</div>';
+      }).join("");
+      return '<p class="muted mb">Custo direto: <b>R$ ' + f(custo, 2) + '</b> (igual nos três). O que muda é o <b>BDI</b> (sua margem) e o preço final:</p>' +
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' + cards + '</div>' +
+        '<p class="muted" style="font-size:12px;margin-top:12px"><b>Agressivo</b> = preço menor pra ganhar a obra · <b>Conservador</b> = margem maior pra risco maior. Clique <b>Aplicar</b> pra usar o cenário no orçamento.</p>';
+    },
+
     // ---------- Licença ----------
     renderLicenca: function (st) {
       var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
@@ -231,7 +251,7 @@
           '<button class="btn sm success" data-acao="proposta">📄 Gerar Proposta</button>' +
           '<button class="btn sm" data-acao="laudo">📑 Anexo p/ Laudo</button>' +
           '<button class="btn sm" data-acao="config-orc">⚙ Dados</button>' +
-          '<button class="btn sm" data-acao="exportar">⬇ Exportar CSV</button>' +
+          '<button class="btn sm" data-acao="cenarios">📊 Comparar cenários</button>' +
           '<button class="btn sm" data-acao="exportar-excel">📊 Excel (3 abas)</button>' +
         '</div></div>';
 
