@@ -44,6 +44,43 @@
       return { ok: true, email: v.email, expira: v.expira };
     },
 
+    // ID do dispositivo (gerado 1x e guardado) — base da trava anti-compartilhamento
+    deviceId: function () {
+      try {
+        var k = "orcapro:deviceid", d = localStorage.getItem(k);
+        if (!d) { d = (global.crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 12)); localStorage.setItem(k, d); }
+        return d;
+      } catch (e) { return "nodev"; }
+    },
+    _servidor: function () { return (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : ""; },
+    _ativarLocal: function (chave, v) {
+      var l = this._ler() || {}; l.chave = String(chave).trim(); l.email = v.email; l.expira = v.expira; l.ativadoEm = agora(); l.deviceId = this.deviceId();
+      this._gravar(l);
+    },
+    // Ativação ONLINE: trava a licença na máquina (servidor controla o limite). Fallback offline se o servidor estiver fora.
+    ativarOnline: function (chave, cb) {
+      var self = this, v = this.validarChave(chave);
+      if (!v.ok) { cb(v); return; }
+      var srv = this._servidor();
+      if (!srv || typeof fetch === "undefined") { this._ativarLocal(chave, v); cb({ ok: true, email: v.email, expira: v.expira, offline: true }); return; }
+      fetch(srv + "/api/ativar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: String(chave).trim(), deviceId: this.deviceId() }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok) { self._ativarLocal(chave, { email: d.email, expira: d.expira }); cb({ ok: true, email: d.email, expira: d.expira }); }
+          else cb({ ok: false, erro: (d && d.erro) || "Não foi possível ativar." });
+        })
+        .catch(function () { self._ativarLocal(chave, v); cb({ ok: true, email: v.email, expira: v.expira, offline: true }); });
+    },
+    // Avisa o servidor que um TESTE foi iniciado (1x por máquina) — métrica do painel
+    registrarTeste: function () {
+      try {
+        if (localStorage.getItem("orcapro:teste_pingado")) return;
+        var srv = this._servidor(); if (!srv || typeof fetch === "undefined") return;
+        fetch(srv + "/api/teste", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ deviceId: this.deviceId() }) })
+          .then(function () { try { localStorage.setItem("orcapro:teste_pingado", "1"); } catch (e) {} }).catch(function () {});
+      } catch (e) {}
+    },
+
     status: function () {
       var l = this._ler() || {};
       if (l.chave) {

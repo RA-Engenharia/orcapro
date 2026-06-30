@@ -40,6 +40,9 @@
       this.bindGlobal();
       if (Auth.usuario()) { this.tela = "lista"; }
       this.render();
+      // licença: registra o teste (métrica do painel) + checa se há atualização do sistema
+      try { if (typeof Licenca !== "undefined" && Licenca.status().trial) Licenca.registrarTeste(); } catch (e) {}
+      this.checarAtualizacao();
     },
 
     // ---------- Modo demonstração (vitrine) ----------
@@ -397,9 +400,40 @@
     salvarLicenca: function () {
       var chave = (UI.el("lic-chave") || {}).value || "";
       if (!Util.naoVazio(chave)) { UI.toast("Cole a chave de licença.", "erro"); return; }
-      var r = Licenca.ativar(chave);
-      if (!r.ok) { UI.toast(r.erro || "Chave inválida.", "erro"); return; }
-      UI.fecharModal(); UI.toast("✓ Licença ativada! Obrigado.", "ok"); this.render();
+      var self = this;
+      UI.toast("Ativando licença…", "ok");
+      Licenca.ativarOnline(chave, function (r) {
+        if (!r.ok) { UI.toast(r.erro || "Chave inválida.", "erro"); return; }
+        UI.fecharModal();
+        UI.toast(r.offline ? "✓ Licença ativada." : "✓ Licença ativada e vinculada a esta máquina!", "ok");
+        self.render();
+      });
+    },
+
+    // ---------- Atualização do sistema (auto-update: avisa e o cliente baixa, sem perder dados) ----------
+    checarAtualizacao: function () {
+      try {
+        if (this._demo) return;
+        var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+        if (!srv || typeof fetch === "undefined") return;
+        var atual = (CONFIG.versao || "1.0.0"), self = this;
+        fetch(srv + "/api/versao").then(function (r) { return r.json(); }).then(function (d) {
+          if (d && d.versao && self._versaoMaior(d.versao, atual)) self._avisarAtualizacao(d);
+        }).catch(function () {});
+      } catch (e) {}
+    },
+    _versaoMaior: function (a, b) {
+      var pa = String(a).split("."), pb = String(b).split(".");
+      for (var i = 0; i < 3; i++) { var x = parseInt(pa[i] || 0, 10), y = parseInt(pb[i] || 0, 10); if (x > y) return true; if (x < y) return false; }
+      return false;
+    },
+    _avisarAtualizacao: function (d) {
+      var nov = d.novidades ? ("<div class=\"card\" style=\"margin-top:8px\">" + Util.esc(d.novidades) + "</div>") : "";
+      var html = "<p>Uma versão nova do OrçaPRO (<b>" + Util.esc(d.versao) + "</b>) está disponível! 🎉</p>" + nov +
+        "<p class=\"muted\" style=\"margin-top:10px\">Pode atualizar tranquilo: <b>seus orçamentos e dados continuam salvos</b> (ficam no seu navegador).</p>";
+      var botoes = [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      if (d.downloadUrl) botoes.push({ texto: "⬇ Baixar atualização", classe: "primary", onClick: function () { window.open(d.downloadUrl, "_blank"); UI.fecharModal(); } });
+      UI.modal("🔄 Atualização disponível", html, botoes);
     },
 
     // ---------- Empresa / Responsável Técnico ----------

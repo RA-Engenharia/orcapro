@@ -61,8 +61,10 @@
         (function () {
           var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
           if (!lic) return "";
-          var lbl = lic.trial ? (lic.expirado ? "🔑 Teste encerrado" : ("🔑 Teste " + (lic.rotulo || ""))) : "🔑 Licenciado";
-          var cor = (lic.trial && (lic.expirado || lic.restanteMs < 1800000)) ? ' style="color:var(--vermelho,#dc2626);font-weight:700"' : '';
+          var lbl, cor = '', vermelho = ' style="color:var(--vermelho,#dc2626);font-weight:700"';
+          if (lic.trial) { lbl = lic.expirado ? "🔑 Teste encerrado" : ("🔑 Teste " + (lic.rotulo || "")); if (lic.expirado || lic.restanteMs < 1800000) cor = vermelho; }
+          else if (lic.diasRestantes != null) { lbl = "🔑 Licença: " + lic.diasRestantes + "d"; if (lic.diasRestantes <= 7) cor = vermelho; }
+          else { lbl = "🔑 Licenciado"; }
           return '<button class="linkbtn" data-acao="licenca"' + cor + '>' + lbl + '</button>';
         })() +
         '<button class="linkbtn" data-acao="empresa">⚙ Empresa</button>' +

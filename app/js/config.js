@@ -21,6 +21,9 @@
     // Servidor de IA do OrçaPRO (orcapro-ia.js). Cada licença usa a própria chave.
     iaBackend: "http://localhost:3041",
 
+    // Servidor de licença/ativação/atualização (a loja no VPS). Trava de máquina + auto-update.
+    licencaServer: "https://187-127-40-14.sslip.io",
+
     versao: "1.0.0",
     schemaVersao: 2, // usado nas migrações de persistência
 

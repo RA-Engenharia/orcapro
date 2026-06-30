@@ -406,6 +406,7 @@ footer a{color:#cfe0ee;text-decoration:none}
 <script>
 var COMPRAR = "https://187-127-40-14.sslip.io";
 var WPP = "553492869383";
+try { if(!sessionStorage.getItem('opr_v')){ sessionStorage.setItem('opr_v','1'); fetch(COMPRAR+'/api/visita',{mode:'no-cors'}).catch(function(){}); } } catch(e){}
 document.querySelectorAll('[data-buy]').forEach(function(a){
   a.addEventListener('click',function(e){ e.preventDefault(); window.open(COMPRAR + "/?plano=" + a.getAttribute('data-buy'), "_blank"); });
 });
