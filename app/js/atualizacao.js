@@ -74,8 +74,10 @@
       var pegar = function () {
         return self._get("/sinapi/dados?mes=" + encodeURIComponent(mes) + "&uf=" + encodeURIComponent(uf) + "&tipo=composicoes").then(function (pacote) {
           if (typeof Sinapi !== "undefined") Sinapi.carregarDe(pacote);
-          if (typeof Store !== "undefined" && typeof Auth !== "undefined") Store.salvarBaseSinapi(Auth.empresaId(), pacote);
-          return (pacote && pacote.count) || (pacote && pacote.dados ? pacote.dados.length : 0);
+          var grav = { ok: true };
+          if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = Store.salvarBaseSinapi(Auth.empresaId(), pacote) || { ok: true };
+          var total = (pacote && pacote.count) || (pacote && pacote.dados ? pacote.dados.length : 0);
+          return { total: total, persistido: !!grav.ok, gravErro: grav.erro || "" };
         });
       };
       if (jaCache) return pegar();

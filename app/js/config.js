@@ -25,7 +25,7 @@
     licencaServer: "https://187-127-40-14.sslip.io",
 
     versao: "1.0.0",
-    schemaVersao: 2, // usado nas migrações de persistência
+    schemaVersao: 3, // usado nas migrações de persistência
 
     // ---- Planos / Monetização (SaaS por assinatura) ----
     // O gate é por feature: o app checa CONFIG.plano(featureKey).

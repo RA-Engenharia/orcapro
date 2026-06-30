@@ -468,8 +468,12 @@
     carregarCompetencia: function (mes, jaCache) {
       var self = this, uf = (typeof Sinapi !== "undefined" ? Sinapi.uf : "MG") || "MG";
       UI.toast(jaCache ? ("Carregando " + mes + "…") : ("Baixando " + mes + " da Caixa (30–60s)…"), "ok");
-      Atualizacao.baixar(mes, uf, jaCache).then(function (n) {
-        UI.toast("SINAPI atualizada: " + n.toLocaleString("pt-BR") + " itens (" + mes + "/" + uf + ").", "ok");
+      Atualizacao.baixar(mes, uf, jaCache).then(function (r) {
+        var n = (typeof r === "number") ? r : r.total;
+        var persistido = (typeof r === "number") ? true : r.persistido;
+        var gravErro = (typeof r === "number") ? "" : r.gravErro;
+        if (persistido) UI.toast("SINAPI atualizada: " + n.toLocaleString("pt-BR") + " itens (" + mes + "/" + uf + ").", "ok");
+        else UI.toast(n.toLocaleString("pt-BR") + " itens carregados nesta sessão, mas não couberam no armazenamento — exporte um backup e libere espaço.", "erro");
         UI.fecharModal();
         self.render();
       }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
@@ -618,6 +622,8 @@
 
     editarDadosOrc: function () {
       var o = this.orcAtual, self = this;
+      o.cliente = o.cliente || { nome: "", doc: "", contato: "" };
+      o.obra = o.obra || { nome: "", local: "", regime: "Empreitada" };
       var c = Orcamento.garantirComercial(o);
       UI.modal("Dados do Orçamento",
         '<div class="field"><label>Nome</label><input id="ed-nome" value="' + Util.esc(o.nome) + '"></div>' +
@@ -801,9 +807,21 @@
     },
     aplicarCenario: function (bdiStr) {
       var p = Util.num(bdiStr), o = this.orcAtual; if (!o) return;
-      o.bdi = o.bdi || {}; o.bdi.percentual = p; o.bdi.modeloId = "custom";
+      o.bdi = o.bdi || {};
+      // Deriva os params do BDI-alvo ajustando SÓ o Lucro (L) — assim params e percentual ficam
+      // consistentes (a aba BDI mostra valores certos e "Aplicar BDI" não reverte o preço).
+      var base = (o.bdi.params && typeof o.bdi.params === "object") ? Util.clone(o.bdi.params) : Bdi.paramsDoModelo("padrao");
+      var AC = Util.num(base.AC) / 100, S = Util.num(base.S) / 100, R = Util.num(base.R) / 100,
+          G = Util.num(base.G) / 100, DF = Util.num(base.DF) / 100, I = Util.num(base.I) / 100;
+      if (I >= 1) I = 0.9999;
+      var denom = (1 + AC + S + R + G) * (1 + DF);
+      var umMaisL = denom > 0 ? ((1 + p / 100) * (1 - I)) / denom : 1; // inverte a fórmula TCU p/ achar (1+L)
+      var L = (umMaisL - 1) * 100;
+      if (!isFinite(L)) L = Util.num(base.L);
+      base.L = Math.round(L * 100) / 100;
+      Orcamento.aplicarBdi(o, "custom", base); // grava params + percentual + modeloId juntos
       this.persistir(); UI.fecharModal(); this.render();
-      UI.toast("Cenário aplicado — BDI " + Util.fmtNum(p, 2) + "%.", "ok");
+      UI.toast("Cenário aplicado — BDI " + Util.fmtNum(o.bdi.percentual, 2) + "%.", "ok");
     },
 
     // Excel profissional: workbook vivo com 3 abas (Resumo/Sintética/Analítica) + fórmulas
@@ -1040,7 +1058,12 @@
         if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("⏰ Teste encerrado — salvar bloqueado. Ative a licença (🔑).", "erro"); }
         return;
       }
-      Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
+      var ok = Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
+      if (!ok && !this._avisouQuota) {
+        this._avisouQuota = true;
+        UI.toast("Não foi possível salvar — armazenamento cheio. Exporte um backup (💾) e remova a base SINAPI grande do navegador.", "erro");
+        try { this.abrirBackup(); } catch (e) {}
+      } else if (ok) { this._avisouQuota = false; }
     }
   };
 

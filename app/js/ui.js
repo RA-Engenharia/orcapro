@@ -725,7 +725,7 @@
         if (l.candidatos.length) {
           l.candidatos.forEach(function (c, ci) {
             sel += '<option value="' + ci + '"' + (l.escolhido === ci ? " selected" : "") + '>' +
-              '[' + Util.esc(c.fonte || "SINAPI") + '] ' + Util.esc(c.item.codigo + " · " + c.item.descricao.slice(0, 54)) + ' (' + c.confianca + '%)</option>';
+              '[' + Util.esc(c.fonte || "SINAPI") + '] ' + Util.esc(c.item.codigo + " · " + String(c.item.descricao || "").slice(0, 54)) + ' (' + c.confianca + '%)</option>';
           });
         }
         sel += '<option value="-1"' + (l.escolhido === -1 ? " selected" : "") + '>— Ignorar / pendente —</option></select>';

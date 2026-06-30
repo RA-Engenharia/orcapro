@@ -68,8 +68,10 @@
         .then(function (d) {
           if (d && d.ok) { self._ativarLocal(chave, { email: d.email, expira: d.expira }); cb({ ok: true, email: d.email, expira: d.expira }); }
           else cb({ ok: false, erro: (d && d.erro) || "Não foi possível ativar." });
-        })
-        .catch(function () { self._ativarLocal(chave, v); cb({ ok: true, email: v.email, expira: v.expira, offline: true }); });
+        }, function () {
+          // 2º arg do .then (não .catch): captura SÓ falha de rede/json, não exceção do callback de sucesso
+          self._ativarLocal(chave, v); cb({ ok: true, email: v.email, expira: v.expira, offline: true });
+        });
     },
     // Avisa o servidor que um TESTE foi iniciado (1x por máquina) — métrica do painel
     registrarTeste: function () {

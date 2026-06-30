@@ -52,6 +52,13 @@
       if (!o.bdi || typeof o.bdi !== "object") o.bdi = { modeloId: "padrao", params: null, percentual: 0 };
       o.schemaVersao = 2;
     }
+    // v2 -> v3: garante objetos cliente/obra/etapas (backups antigos podem não ter)
+    if (v < 3) {
+      if (!o.cliente || typeof o.cliente !== "object") o.cliente = { nome: "", doc: "", contato: "" };
+      if (!o.obra || typeof o.obra !== "object") o.obra = { nome: "", local: "", regime: "Empreitada" };
+      if (o.etapas == null) o.etapas = [];
+      o.schemaVersao = 3;
+    }
     return o;
   }
 
@@ -77,8 +84,8 @@
       var idx = -1;
       for (var i = 0; i < lista.length; i++) { if (lista[i].id === orc.id) { idx = i; break; } }
       if (idx >= 0) lista[idx] = orc; else lista.push(orc);
-      this.adapter.gravar(empresaId, "orcamentos", lista);
-      return orc;
+      var ok = this.adapter.gravar(empresaId, "orcamentos", lista);
+      return ok ? orc : null; // null = falhou ao gravar (cota cheia) — caller deve avisar
     },
 
     obterOrcamento: function (empresaId, id) {

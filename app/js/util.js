@@ -17,6 +17,9 @@
     // Remove separador de milhar BR e troca vírgula decimal por ponto
     if (s.indexOf(",") > -1) {
       s = s.replace(/\./g, "").replace(",", ".");
+    } else if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) {
+      // só pontos agrupando milhares (ex.: "1.000", "25.000", "1.000.000") -> remove milhar
+      s = s.replace(/\./g, "");
     }
     s = s.replace(/[^0-9.\-]/g, "");
     var n = parseFloat(s);
