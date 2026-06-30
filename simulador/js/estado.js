@@ -1,7 +1,7 @@
 /* ============================================================
-   OrçaPro — Construtor 3D : ESTADO DO JOGO
+   OrçaPRO — Simulador de Obras 3D : ESTADO
    Gerencia o save (localStorage), o caixa, a obra atual e o
-   progresso de níveis. Tudo determinístico para o jogo poder
+   progresso dos cenários. Tudo determinístico para o simulador
    recalcular regras a partir dos dados.
    ============================================================ */
 (function (global) {

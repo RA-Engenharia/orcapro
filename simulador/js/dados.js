@@ -1,7 +1,7 @@
 /* ============================================================
-   OrçaPro — Construtor 3D : DADOS DO JOGO
+   OrçaPRO — Simulador de Obras 3D : BASE DE DADOS
    Base de dados de lotes, funções, ferramentas, insumos,
-   projetos, etapas e níveis. Tudo em pt-BR.
+   projetos, etapas e cenários de obra. Tudo em pt-BR.
    ============================================================ */
 (function (global) {
   'use strict';
@@ -27,7 +27,7 @@
     { id: 'eng',   nome: 'Engenheiro Civil',        emoji: '👷‍♂️', diaria: 650, desc: 'Responsável técnico (ART). Obrigatório a partir da estrutura.', setor: 'tecnico' },
     { id: 'mestre',nome: 'Mestre de Obras',         emoji: '🧑‍🏭', diaria: 360, desc: 'Comanda a execução no campo. Aumenta a produtividade.', setor: 'tecnico' },
     { id: 'pedreiro', nome: 'Pedreiro',             emoji: '🧱', diaria: 230, desc: 'Assenta blocos, faz alvenaria, reboco e contrapiso.', setor: 'execucao' },
-    { id: 'ajudante', nome: 'Servente / Ajudante',  emoji: '🦺', diaria: 130, desc: 'Transporta materiais e dá apoio. Carrinho de mão na veia.', setor: 'execucao' },
+    { id: 'ajudante', nome: 'Servente / Ajudante',  emoji: '🦺', diaria: 130, desc: 'Transporta materiais e dá apoio geral à execução no canteiro.', setor: 'execucao' },
     { id: 'carpinteiro', nome: 'Carpinteiro',       emoji: '🪚', diaria: 240, desc: 'Monta fôrmas de madeira e o telhado.', setor: 'execucao' },
     { id: 'armador', nome: 'Armador (Ferreiro)',    emoji: '🔩', diaria: 240, desc: 'Corta e dobra o aço das armaduras.', setor: 'execucao' },
     { id: 'eletricista', nome: 'Eletricista',       emoji: '⚡', diaria: 260, desc: 'Executa o projeto elétrico e telecom.', setor: 'instalacoes' },
@@ -189,8 +189,8 @@
       desc: 'Limpeza fina, vistoria e entrega das chaves.' }
   ];
 
-  // ---- Níveis / Fases do jogo --------------------------------
-  // Cada nível usa um conjunto de etapas (padrão = todas), com
+  // ---- Cenários de obra --------------------------------------
+  // Cada cenário usa um conjunto de etapas (padrão = todas), com
   // multiplicadores de escala (insumos/dias/custo) e exigências.
   const NIVEIS = [
     {
@@ -200,7 +200,7 @@
       loteMin: 125, loteMax: 250,
       projetosObrig: ['arq','estr','fund','hidro','eletr'],
       etapas: ['preliminar','fundacao','estrutura','alvenaria1','alvenaria2','laje','cobertura','hidraulica','eletrica','reboco','revestimento','esquadrias','pintura','entrega'],
-      desc: 'Sua primeira obra! Uma casa térrea de 2 quartos. Aprenda a gerenciar prazo e orçamento.'
+      desc: 'Casa térrea de 2 quartos — cenário inicial para treinar a gestão de prazo e orçamento.'
     },
     {
       id: 2, nome: 'Sobrado de Médio Padrão', tipo: 'residencial',
@@ -254,7 +254,7 @@
       loteMin: 1800, loteMax: 1800,
       projetosObrig: ['arq','estr','fund','hidro','eletr','incendio'],
       etapas: ['preliminar','fundacao','estrutura','cobertura','hidraulica','eletrica','revestimento','pintura','entrega'],
-      desc: 'O desafio máximo: um complexo industrial completo dentro do prazo.'
+      desc: 'Complexo industrial completo — cenário avançado, gestão no limite do prazo.'
     }
   ];
 

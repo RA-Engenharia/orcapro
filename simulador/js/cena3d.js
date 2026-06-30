@@ -1,5 +1,5 @@
 /* ============================================================
-   OrçaPro — Construtor 3D : CENA 3D (Three.js)
+   OrçaPRO — Simulador de Obras 3D : CENA 3D (Three.js)
    Constrói a obra em blocos 3D conforme as etapas avançam.
    Controles touch (orbitar/pinça) para tablet.
    ============================================================ */

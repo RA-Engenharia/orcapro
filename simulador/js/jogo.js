@@ -1,7 +1,7 @@
 /* ============================================================
-   OrçaPro — Construtor 3D : CONTROLADOR DO JOGO
-   Telas, lojas (lote, canteiro, equipe, ferramentas, insumos,
-   projetos), execução das etapas, pontuação e progressão.
+   OrçaPRO — Simulador de Obras 3D : CONTROLADOR
+   Telas, módulos (lote, canteiro, equipe, ferramentas, insumos,
+   projetos), execução das etapas, avaliação e progressão.
    ============================================================ */
 (function (global) {
   'use strict';
@@ -51,21 +51,21 @@
     $('#tela-menu').innerHTML =
       '<div class="menu-bg"></div>' +
       '<div class="menu-card">' +
-        '<div class="menu-logo">🏗️ OrçaPro <span>Construtor 3D</span></div>' +
-        '<p class="menu-sub">Simulador de construção civil. Compre o lote, monte o canteiro, ' +
-        'contrate a equipe, alugue equipamentos e entregue a obra dentro do prazo e do orçamento.</p>' +
+        '<div class="menu-logo">🏗️ OrçaPRO <span>Simulador de Obras</span></div>' +
+        '<p class="menu-sub">Simulador de gestão de obras. Compre o lote, monte o canteiro, ' +
+        'contrate a equipe, contrate equipamentos e entregue a obra dentro do prazo e do orçamento.</p>' +
         '<div class="menu-stats">💰 Caixa da construtora: <b>' + rs(s.caixa) + '</b></div>' +
         '<div class="menu-botoes">' +
           (temSave ? '<button class="bt grande verde" id="bt-continuar">▶ Continuar obra</button>' : '') +
-          '<button class="bt grande azul" id="bt-niveis">🏆 Selecionar fase</button>' +
-          '<button class="bt grande cinza" id="bt-reset">🗑️ Reiniciar progresso</button>' +
+          '<button class="bt grande azul" id="bt-niveis">📂 Selecionar cenário</button>' +
+          '<button class="bt grande cinza" id="bt-reset">🗑️ Reiniciar simulação</button>' +
         '</div>' +
         '<div class="menu-rodape">Otimizado para tablet • toque e arraste para girar a obra em 3D</div>' +
       '</div>';
     if (temSave) $('#bt-continuar').onclick = function () { abrirJogo(); };
     $('#bt-niveis').onclick = telaNiveis;
     $('#bt-reset').onclick = function () {
-      if (confirm('Reiniciar todo o progresso e o caixa da construtora?')) { E.resetar(); telaMenu(); }
+      if (confirm('Reiniciar toda a simulação e o caixa da construtora?')) { E.resetar(); telaMenu(); }
     };
   }
 
@@ -82,7 +82,7 @@
       return '<div class="nivel-card ' + (liberado ? '' : 'travado') + '" data-id="' + n.id + '">' +
         '<div class="nv-ico">' + n.icone + (liberado ? '' : ' 🔒') + '</div>' +
         '<div class="nv-info">' +
-          '<div class="nv-tipo">' + n.tipo.toUpperCase() + ' • Fase ' + n.id + '</div>' +
+          '<div class="nv-tipo">' + n.tipo.toUpperCase() + ' • Cenário ' + n.id + '</div>' +
           '<div class="nv-nome">' + n.nome + '</div>' +
           '<div class="nv-desc">' + n.desc + '</div>' +
           '<div class="nv-meta">📅 Prazo: <b>' + n.prazo + ' dias</b> &nbsp; 💵 Venda: <b>' + rs(n.orcamento) + '</b></div>' +
@@ -91,7 +91,7 @@
     }).join('');
     $('#tela-niveis').innerHTML =
       '<div class="topbar"><button class="bt voltar" id="nv-voltar">‹ Menu</button>' +
-        '<div class="topbar-tit">Selecione a fase</div>' +
+        '<div class="topbar-tit">Selecione o cenário de obra</div>' +
         '<div class="topbar-caixa">💰 ' + rs(s.caixa) + '</div></div>' +
       '<div class="niveis-grid">' + cards + '</div>';
     $('#nv-voltar').onclick = telaMenu;
@@ -256,7 +256,7 @@
   // ---- Lote ----
   function pLote(c) {
     var n = nivelAtual(), s = E.get();
-    c.innerHTML = '<p class="ajuda">Compre um lote compatível com a fase (entre ' + n.loteMin +
+    c.innerHTML = '<p class="ajuda">Compre um lote compatível com o cenário (entre ' + n.loteMin +
       ' e ' + n.loteMax + ' m²). O custo do terreno sai do caixa.</p>';
     D.LOTES.forEach(function (l) {
       var compativel = l.area >= n.loteMin && l.area <= n.loteMax;
@@ -266,7 +266,7 @@
           '<div class="li-ico">📐</div>' +
           '<div class="li-info"><b>' + l.nome + '</b>' +
             '<small>' + l.frente + 'm × ' + l.fundo + 'm = ' + l.area + ' m² • ' + l.desc + '</small>' +
-            (compativel ? '' : '<small class="warn">Não compatível com esta fase</small>') +
+            (compativel ? '' : '<small class="warn">Não compatível com este cenário</small>') +
           '</div>' +
           '<div class="li-acao"><b class="preco">' + rs(l.preco) + '</b>' +
             (atual ? '<span class="badge-ok">✓ Comprado</span>' :
@@ -450,9 +450,9 @@
   // ---- Obra (executar etapas) ----
   function pObra(c) {
     var n = nivelAtual(), s = E.get();
-    c.innerHTML = '<p class="ajuda">Execute as etapas na ordem. O jogo verifica equipe, ferramentas, ' +
+    c.innerHTML = '<p class="ajuda">Execute as etapas na ordem. O simulador verifica equipe, ferramentas, ' +
       'materiais e projetos. Cada etapa consome dias do cronograma.<br>🧱 Nas etapas de ' +
-      '<b>alvenaria</b> você entra no modo <b>Mão na Massa</b> e assenta os blocos fiada por fiada!</p>';
+      '<b>alvenaria</b> você entra no modo de <b>execução assistida</b> e assenta os blocos fiada por fiada.</p>';
     n.etapas.forEach(function (eid) {
       var et = D.etapa(eid);
       var feita = E.etapaFeita(eid);
@@ -472,7 +472,7 @@
           '<div class="et-acao">' +
             (feita ? '<span class="badge-ok">Concluída</span>' :
               '<button class="bt executar ' + (chk.ok ? 'verde' : 'off') + '">' +
-                (chk.ok ? (et.estagio === 'alvenaria1' || et.estagio === 'alvenaria2' ? '🧱 Mão na massa' : '▶ Executar') : 'Bloqueada') + '</button>') +
+                (chk.ok ? (et.estagio === 'alvenaria1' || et.estagio === 'alvenaria2' ? '🧱 Executar alvenaria' : '▶ Executar') : 'Bloqueada') + '</button>') +
           '</div></div>');
       if (!feita && chk.ok) {
         $('.executar', card).onclick = function () { executarEtapa(et); };
@@ -639,7 +639,7 @@
       setTimeout(function () {
         sess.remove();
         var dias = commitEtapa(et);
-        toast('Parede levantada! 🧱 ' + et.nome + ' concluída (+' + dias + ' dias)', 'ok');
+        toast('🧱 Alvenaria assentada — ' + et.nome + ' concluída (+' + dias + ' dias)', 'ok');
         posEtapa(et, dias);
       }, 500);
     }
@@ -695,7 +695,7 @@
     var proximo = D.nivel(n.id + 1);
     ov.innerHTML =
       '<div class="result-card">' +
-        '<div class="result-cong">🎉 Obra entregue!</div>' +
+        '<div class="result-cong">✅ Obra concluída</div>' +
         '<h2>' + n.icone + ' ' + n.nome + '</h2>' +
         '<div class="result-estrelas">' + estrelasHtml + '</div>' +
         '<div class="result-linhas">' +
@@ -705,8 +705,8 @@
           (faltamProjetos.length ? '<div><span>Projetos faltando</span><b class="neg">' + faltamProjetos.length + '</b></div>' : '') +
         '</div>' +
         '<div class="result-bts">' +
-          (proximo && proximo.id <= s.nivelMax ? '<button class="bt grande verde" id="r-prox">▶ Próxima fase: ' + proximo.nome + '</button>' : '') +
-          '<button class="bt grande azul" id="r-niveis">🏆 Selecionar fase</button>' +
+          (proximo && proximo.id <= s.nivelMax ? '<button class="bt grande verde" id="r-prox">▶ Próximo cenário: ' + proximo.nome + '</button>' : '') +
+          '<button class="bt grande azul" id="r-niveis">📂 Selecionar cenário</button>' +
           '<button class="bt grande cinza" id="r-menu">🏠 Menu</button>' +
         '</div>' +
       '</div>';

@@ -1,36 +1,39 @@
-# 🏗️ OrçaPro — Construtor 3D
+# 🏗️ OrçaPRO — Simulador de Obras 3D
 
-Jogo de **simulação de construção civil** para tablet (também roda em celular e desktop).
-Você é dono de uma construtora: compra o lote, monta o canteiro, contrata a equipe,
-compra/aluga ferramentas e equipamentos, abastece o estoque de materiais e executa a
+**Simulador de gestão de obras** (roda em tablet, celular e desktop). Você assume a
+gestão de uma construtora: compra o lote, monta o canteiro, contrata a equipe,
+compra/contrata ferramentas e equipamentos, gerencia o estoque de materiais e executa a
 obra etapa por etapa — tudo visualizado em **3D** e dentro do prazo e do orçamento.
 
-## Como jogar
+É uma ferramenta de **treino e demonstração** das mesmas decisões que o OrçaPRO ajuda a
+orçar na vida real (lote, mão de obra, materiais, equipamentos, cronograma e margem).
 
-1. **Selecione a fase** (níveis com dificuldade crescente).
+## Como usar
+
+1. **Selecione o cenário de obra** (do mais simples ao mais complexo).
 2. **Compre o lote** com áreas-padrão de loteamento do Brasil (5×25, 10×20, 12×30…),
-   compatível com a fase.
+   compatível com o cenário.
 3. **Contrate os projetos** técnicos (arquitetônico, estrutural, fundação,
    hidrossanitário, elétrico, incêndio/PPCI, interiores).
 4. **Monte o canteiro** (tapume, barracão/almoxarifado, área de vivência, baias de
    agregados, escritório, caixa d'água…). Tapume + barracão são obrigatórios para começar.
 5. **Contrate a equipe**: engenheiro, mestre de obras, pedreiro, servente, carpinteiro,
    armador, eletricista, encanador, pintor, azulejista, gesseiro, operador e apoio.
-   Mais profissionais e um Mestre de Obras **aceleram** cada etapa.
-6. **Compre/alugue ferramentas e equipamentos**: do kit manual e furadeira à betoneira,
+   Mais profissionais e um Mestre de Obras **aumentam a produtividade** de cada etapa.
+6. **Compre/contrate ferramentas e equipamentos**: do kit manual e furadeira à betoneira,
    serra mármore, rompedor, andaime, escoramento, plataforma elevatória, caminhão munck,
-   guindaste e grua. Aluguel é cobrado só nas etapas em que o equipamento é usado.
+   guindaste e grua. O aluguel é cobrado só nas etapas em que o equipamento é usado.
 7. **Compre os materiais** (cimento, areia, brita, aço, blocos, concreto, telha, tubos,
    fios, tinta, porcelanato, esquadrias…) para o estoque do canteiro.
 8. **Execute as etapas** na ordem (serviços preliminares → fundação → estrutura →
    alvenaria → laje → cobertura → instalações → reboco → revestimento → esquadrias →
-   forro → pintura → entrega). O jogo verifica equipe, ferramentas, materiais e projetos.
+   forro → pintura → entrega). O simulador verifica equipe, ferramentas, materiais e projetos.
 
 Conclua a etapa final (**Entrega**) dentro do prazo para receber o valor de venda,
-ganhar até **3 estrelas** e liberar a próxima fase. O caixa da construtora é acumulado
-entre as fases.
+obter até **3 estrelas de desempenho** e liberar o próximo cenário. O caixa da construtora
+é acumulado entre os cenários.
 
-## Fases
+## Cenários de obra
 
 | # | Obra | Tipo | Pavimentos |
 |---|------|------|------------|
@@ -46,7 +49,7 @@ entre as fases.
 
 - **Arrastar** com 1 dedo → girar a câmera ao redor da obra.
 - **Pinça** com 2 dedos (ou roda do mouse) → aproximar/afastar.
-- Toques nos botões do **dock inferior** abrem os painéis de gestão.
+- Os botões do **dock inferior** abrem os painéis de gestão.
 
 ## Tecnologia
 
@@ -57,15 +60,15 @@ entre as fases.
 ## Estrutura
 
 ```
-jogo/
+simulador/
 ├── index.html        # entrada
 ├── css/jogo.css      # estilo tablet-first
 ├── js/
-│   ├── dados.js      # lotes, funções, insumos, ferramentas, projetos, etapas, níveis
-│   ├── estado.js     # estado do jogo + save/load
+│   ├── dados.js      # lotes, funções, insumos, ferramentas, projetos, etapas, cenários
+│   ├── estado.js     # estado do simulador + save/load
 │   ├── cena3d.js     # cena 3D (Three.js): constrói a obra em blocos
-│   └── jogo.js       # controlador: telas, lojas, execução de etapas, pontuação
+│   └── jogo.js       # controlador: telas, módulos, execução de etapas, avaliação
 └── vendor/three.min.js
 ```
 
-Abra `jogo/index.html` no navegador do tablet — não precisa de servidor.
+Abra `simulador/index.html` no navegador — não precisa de servidor.
