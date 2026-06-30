@@ -63,6 +63,9 @@
           if (!lic) return "";
           var lbl, cor = '', vermelho = ' style="color:var(--vermelho,#dc2626);font-weight:700"';
           if (lic.trial) { lbl = lic.expirado ? "🔑 Teste encerrado" : ("🔑 Teste " + (lic.rotulo || "")); if (lic.expirado || lic.restanteMs < 1800000) cor = vermelho; }
+          else if (lic.expirada) { lbl = "🔑 Licença vencida"; cor = vermelho; }
+          else if (lic.outroDispositivo) { lbl = "🔑 Outra máquina"; cor = vermelho; }
+          else if (lic.revalidar) { lbl = "🔑 Reconecte p/ validar"; cor = vermelho; }
           else if (lic.diasRestantes != null) { lbl = "🔑 Licença: " + lic.diasRestantes + "d"; if (lic.diasRestantes <= 7) cor = vermelho; }
           else { lbl = "🔑 Licenciado"; }
           return '<button class="linkbtn" data-acao="licenca"' + cor + '>' + lbl + '</button>';

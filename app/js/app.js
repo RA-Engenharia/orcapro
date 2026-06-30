@@ -40,8 +40,13 @@
       this.bindGlobal();
       if (Auth.usuario()) { this.tela = "lista"; }
       this.render();
-      // licença: registra o teste (métrica do painel) + checa se há atualização do sistema
-      try { if (typeof Licenca !== "undefined" && Licenca.status().trial) Licenca.registrarTeste(); } catch (e) {}
+      // licença: trial -> registra/ancora no servidor; licenciado -> revalida (renova carência / detecta bloqueio)
+      try {
+        if (typeof Licenca !== "undefined") {
+          if (Licenca.status().trial) Licenca.registrarTeste();
+          else Licenca.revalidar(function (r) { if (r && r.bloqueado) { try { self.render(); UI.toast("Licença: " + (r.erro || "ativada em outra máquina."), "erro"); } catch (e) {} } });
+        }
+      } catch (e) {}
       this.checarAtualizacao();
     },
 
@@ -1044,11 +1049,18 @@
     _trialBloqueado: function () {
       if (this._demo) return false; // a vitrine/demonstração nunca bloqueia
       if (typeof Licenca === "undefined") return false;
-      var s = Licenca.status();
-      return !!(s && s.trial && s.expirado);
+      var s = Licenca.status(); if (!s) return false;
+      if (s.trial) return !!s.expirado;   // trial: bloqueia se expirou
+      return !s.ativo;                    // licenciado: bloqueia se não está ativo (vencida/carência/outra máquina)
     },
     _avisoTrial: function () {
-      UI.toast("⏰ Seu teste de 3 horas terminou. Ative sua licença (🔑) para gerar e salvar.", "erro");
+      var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
+      var msg;
+      if (s.expirada) msg = "Sua licença venceu. Renove para continuar gerando e salvando.";
+      else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
+      else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
+      else msg = "⏰ Seu teste de 3 horas terminou. Ative sua licença (🔑) para gerar e salvar.";
+      UI.toast(msg, "erro");
       try { this.abrirLicenca(); } catch (e) {}
     },
 
