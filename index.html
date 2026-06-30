@@ -114,6 +114,26 @@ footer a{color:#cfe0ee;text-decoration:none}
 .garantia .g-ic{font-size:38px;flex:0 0 auto}
 .garantia b{color:var(--navy)}
 @media(max-width:600px){.garantia{flex-direction:column;text-align:center}}
+.demo-video{display:none;width:100%;background:#0c1f33}
+@media(max-width:840px){.demo-frame{display:none}.demo-video{display:block}}
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;text-align:center}
+@media(max-width:620px){.stats{grid-template-columns:repeat(2,1fr)}}
+.stats .s{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:20px 12px}
+.stats b{display:block;font-size:34px;font-weight:900;color:var(--verde);line-height:1.1}
+.stats small{color:var(--mut);font-size:13px;font-weight:600}
+.comp{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:stretch}
+@media(max-width:840px){.comp{grid-template-columns:1fr}}
+.comp-col{background:#fff;border:1px solid var(--linha);border-radius:16px;padding:22px}
+.comp-col.best{border:2px solid var(--verde);box-shadow:0 18px 50px rgba(22,163,74,.16)}
+.comp-col h4{font-size:18px;color:var(--navy);margin-bottom:12px}
+.comp-col ul{list-style:none}
+.comp-col li{padding:7px 0 7px 26px;position:relative;color:#475569;font-size:14.5px}
+.comp-col li.no:before{content:"✗";position:absolute;left:0;color:#dc2626;font-weight:900}
+.comp-col li.meh:before{content:"~";position:absolute;left:0;color:#f59e0b;font-weight:900}
+.comp-col li.yes:before{content:"✓";position:absolute;left:0;color:var(--verde);font-weight:900}
+.passos3{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:18px}
+.passos3 .p3{background:#f8fafc;border:1px solid var(--linha);border-radius:12px;padding:11px 16px;font-size:14px;color:#334155;font-weight:600}
+.passos3 b{color:var(--verde)}
 </style></head>
 <body>
 
@@ -158,8 +178,18 @@ footer a{color:#cfe0ee;text-decoration:none}
   <div class="demo-box">
     <div class="demo-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="u">app OrçaPRO — demonstração</span></div>
     <iframe class="demo-frame" src="app/index.html?demo=1" title="Demonstração do OrçaPRO" loading="lazy"></iframe>
+    <video class="demo-video" autoplay muted loop playsinline poster="prints/demo-planilha.png"><source src="prints/demo-mobile.mp4" type="video/mp4"></video>
   </div>
-  <p class="demo-note">🖱️ É uma demonstração interativa de verdade. Melhor visualizada no computador. Para salvar e usar com as suas obras, <a data-buy="vitalicia" href="#precos" style="color:var(--verde);font-weight:700">garanta seu acesso</a>.</p>
+  <p class="demo-note">🖱️ No <b>computador</b> é interativo de verdade (navegue pelas abas); no <b>celular</b>, roda como vídeo. Para salvar e usar com as suas obras, <a data-buy="vitalicia" href="#precos" style="color:var(--verde);font-weight:700">garanta seu acesso</a>.</p>
+</div></section>
+
+<section style="padding:42px 0;background:var(--bg)"><div class="wrap">
+  <div class="stats">
+    <div class="s"><b>22 mil+</b><small>itens de preço prontos</small></div>
+    <div class="s"><b>5</b><small>bases oficiais (SINAPI, SICRO…)</small></div>
+    <div class="s"><b>6 abas</b><small>no Excel que ele gera</small></div>
+    <div class="s"><b>3h</b><small>de teste grátis, sem cartão</small></div>
+  </div>
 </div></section>
 
 <section id="passos" style="background:#fff"><div class="wrap">
@@ -214,6 +244,24 @@ footer a{color:#cfe0ee;text-decoration:none}
   <div class="xtabs" id="xtabs"></div>
   <div class="xview"><img id="ximg" src="prints/excel-01-Resumo.png" alt="Excel — Resumo"></div>
   <p style="color:#bcd0e4;font-size:13px;margin-top:14px">Resumo · Sintética · Analítica · Curva ABC · Cronograma físico-financeiro · Gantt — todas com a sua identidade.</p>
+</div></section>
+
+<section style="background:#fff"><div class="wrap">
+  <div style="text-align:center;margin-bottom:34px"><div class="eyebrow">Por que vale a pena</div><h2 class="tit">OrçaPRO vs as alternativas</h2></div>
+  <div class="comp">
+    <div class="comp-col">
+      <h4>📝 Planilha manual</h4>
+      <ul><li class="no">Horas montando tudo do zero</li><li class="no">Caçar código SINAPI na mão</li><li class="no">BDI e cronograma manuais</li><li class="no">Erros e retrabalho constantes</li></ul>
+    </div>
+    <div class="comp-col">
+      <h4>💸 Software de assinatura</h4>
+      <ul><li class="no">R$150 a R$300 <b>todo mês</b></li><li class="no">Preso à mensalidade pra sempre</li><li class="meh">Curva de aprendizado longa</li><li class="meh">Seus dados na nuvem de terceiros</li></ul>
+    </div>
+    <div class="comp-col best">
+      <h4>🟢 OrçaPRO</h4>
+      <ul><li class="yes">Orçamento em minutos, com IA</li><li class="yes">Bases oficiais já casadas</li><li class="yes">BDI, cronograma e Excel automáticos</li><li class="yes"><b>Pague uma vez (R$297)</b> — seu pra sempre</li></ul>
+    </div>
+  </div>
 </div></section>
 
 <section><div class="wrap">
@@ -283,7 +331,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <div class="preco">
       <div class="pn">Mensal</div><div class="de">&nbsp;</div>
       <div class="pv">R$ 39</div><div class="pp">por mês</div>
-      <div class="ps">Para começar pagando pouco e conhecer no dia a dia.</div>
+      <div class="ps">Para começar pagando pouco. Cancele quando quiser.</div>
       <a class="btn o" data-buy="mensal" href="#">Assinar mensal</a>
     </div>
     <div class="preco dest">
@@ -296,7 +344,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <div class="preco">
       <div class="pn">Anual</div><div class="de">&nbsp;</div>
       <div class="pv">R$ 197</div><div class="pp">por ano</div>
-      <div class="ps">Economize no ano todo com acesso completo.</div>
+      <div class="ps">Equivale a só <b>R$16/mês</b>. Acesso completo o ano todo.</div>
       <a class="btn o" data-buy="anual" href="#">Assinar anual</a>
     </div>
   </div>
@@ -304,7 +352,8 @@ footer a{color:#cfe0ee;text-decoration:none}
     <div class="g-ic">🛡️</div>
     <div><b>Garantia de 7 dias.</b> Você ainda testa <b>3 horas grátis</b> antes de pagar. Comprou e não era o que esperava? Devolvo o seu dinheiro. <b>Risco zero.</b></div>
   </div>
-  <p style="text-align:center;color:var(--mut);font-size:14px;margin-top:20px">Pagou? Você recebe a chave na hora e baixa o instalador. Dúvidas? <a class="wpp-link" href="#" style="color:var(--verde);font-weight:700">chame no WhatsApp</a>.</p>
+  <div class="passos3"><div class="p3"><b>1.</b> Pague por PIX</div><div class="p3"><b>2.</b> Receba a chave + instalador na hora</div><div class="p3"><b>3.</b> Ative e comece a orçar</div></div>
+  <p style="text-align:center;color:var(--mut);font-size:14px;margin-top:18px">Dúvidas antes de comprar? <a class="wpp-link" href="#" style="color:var(--verde);font-weight:700">chame no WhatsApp</a> — o próprio Eng. Rogério responde.</p>
 </div></section>
 
 <section class="faq" style="background:#fff"><div class="wrap" style="max-width:820px">
@@ -328,7 +377,7 @@ footer a{color:#cfe0ee;text-decoration:none}
 
 <footer><div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between">
   <div>© 2026 <b style="color:#fff">OrçaPRO</b> · RA Engenharia Especial · Eng. Rogério Alves de Souza — CREA-MG</div>
-  <div>📲 <a class="wpp-link" href="#">WhatsApp (34) 9286-9383</a> · ✉️ rogeriosouza.engenharia@gmail.com</div>
+  <div>📲 <a class="wpp-link" href="#">WhatsApp (34) 9286-9383</a> · ✉️ rogeriosouza.engenharia@gmail.com · <a href="termos.html">Termos &amp; Privacidade</a></div>
 </div></footer>
 
 <a class="float wpp-link" href="#">💬 Falar no WhatsApp</a>
