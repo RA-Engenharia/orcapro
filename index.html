@@ -1,10 +1,10 @@
 <!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>OrçaPRO — Orçamento de obra com Inteligência Artificial</title>
+<title>OrçaPRO IA — Orçamento de obra com Inteligência Artificial</title>
 <meta name="description" content="Descreva a obra e a IA monta o orçamento com SINAPI, SICRO, SUDECAP e mais — já com BDI (TCU/DNIT), cronograma de Gantt, Excel profissional e anexo para laudo pericial. Teste grátis.">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
-<meta property="og:title" content="OrçaPRO — Orçamento de obra com IA">
+<meta property="og:title" content="OrçaPRO IA — Orçamento de obra com Inteligência Artificial">
 <meta property="og:description" content="Você descreve a obra, a IA monta o orçamento. SINAPI + BDI + Cronograma + Excel + anexo de laudo. Teste grátis.">
 <meta property="og:image" content="og-cover.png">
 <meta property="og:type" content="website">
@@ -134,13 +134,20 @@ footer a{color:#cfe0ee;text-decoration:none}
 .passos3{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:18px}
 .passos3 .p3{background:#f8fafc;border:1px solid var(--linha);border-radius:12px;padding:11px 16px;font-size:14px;color:#334155;font-weight:600}
 .passos3 b{color:var(--verde)}
+.ia-tag{font-size:11px;font-weight:900;color:#fff;background:var(--verde);border-radius:6px;padding:1px 6px;margin-left:5px;vertical-align:super;letter-spacing:.5px}
+.contato-box{background:#fff;border:1px solid var(--linha);border-radius:16px;padding:24px;box-shadow:0 14px 40px rgba(15,39,64,.08)}
+.contato-box input,.contato-box textarea{width:100%;padding:13px 14px;border:1.5px solid var(--linha);border-radius:11px;font-size:15px;margin-bottom:12px;font-family:inherit}
+.contato-box input:focus,.contato-box textarea:focus{outline:none;border-color:var(--aco)}
+.ct-btns{display:flex;gap:12px;flex-wrap:wrap}
+.ct-btns .btn{flex:1;min-width:200px;text-align:center}
+.ct-note{font-size:13px;color:var(--mut);text-align:center;margin-top:14px}
 </style></head>
 <body>
 
 <header><div class="wrap nav">
   <div class="logo">
     <svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c4b73"/><stop offset="1" stop-color="#3a8bc2"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#lg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg>
-    Orça<span>PRO</span>
+    Orça<span>PRO</span><sup class="ia-tag">IA</sup>
   </div>
   <nav class="links">
     <a href="#demo">Testar</a>
@@ -154,9 +161,10 @@ footer a{color:#cfe0ee;text-decoration:none}
 
 <section class="hero"><div class="wrap hero-grid">
   <div>
-    <div class="eyebrow">Orçamento inteligente de obras</div>
+    <div class="eyebrow">Orçamento de obra com agente de IA</div>
     <h1>Você descreve a obra.<br>A <span>IA</span> monta o orçamento.</h1>
     <p class="lead">SINAPI, SICRO, SUDECAP, SEINFRA e SETOP — com <b>BDI do TCU/DNIT</b>, cronograma de Gantt, <b>Excel profissional</b> e anexo de orçamento para <b>laudo pericial</b>. Tudo no seu PC.</p>
+    <p style="color:#9be7af;font-weight:700;margin-top:14px;font-size:15.5px">🧠 Um <b>agente de IA</b> funciona como o cérebro do seu orçamento — entende o escopo e monta tudo pra você.</p>
     <div class="cta-row">
       <a class="btn g" href="#demo">▶ Testar agora (grátis)</a>
       <a class="btn o" data-buy="vitalicia" href="#precos">Ver planos</a>
@@ -366,6 +374,19 @@ footer a{color:#cfe0ee;text-decoration:none}
   <details><summary>Em quais versões do Windows roda?</summary><p>Roda em Windows com o navegador moderno. A instalação é simples e a gente te ajuda em 10 minutos se precisar.</p></details>
 </div></section>
 
+<section id="contato" style="background:var(--bg)"><div class="wrap" style="max-width:720px">
+  <div style="text-align:center;margin-bottom:24px"><div class="eyebrow">Fale com a gente</div><h2 class="tit">Sugestões, dúvidas ou ideias?</h2><p class="sub" style="margin:0 auto">Sua opinião ajuda a melhorar o OrçaPRO IA. Envie pelo canal que preferir.</p></div>
+  <div class="contato-box">
+    <input id="ct-nome" placeholder="Seu nome (opcional)">
+    <textarea id="ct-msg" rows="4" placeholder="Escreva sua mensagem, sugestão ou dúvida…"></textarea>
+    <div class="ct-btns">
+      <button class="btn g" id="ct-wpp">💬 Enviar pelo WhatsApp</button>
+      <button class="btn o" id="ct-email">✉️ Enviar por e-mail</button>
+    </div>
+    <p class="ct-note">Ou escreva direto: <a href="mailto:contato@raengenhariaespecial.com.br" style="color:var(--verde);font-weight:700">contato@raengenhariaespecial.com.br</a></p>
+  </div>
+</div></section>
+
 <section class="final"><div class="wrap">
   <h2>Pare de perder o dia montando planilha</h2>
   <p>Descreva a obra e deixe a IA fazer o orçamento — com base oficial, BDI, cronograma e Excel.</p>
@@ -376,8 +397,8 @@ footer a{color:#cfe0ee;text-decoration:none}
 </div></section>
 
 <footer><div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between">
-  <div>© 2026 <b style="color:#fff">OrçaPRO</b> · RA Engenharia Especial · Eng. Rogério Alves de Souza — CREA-MG</div>
-  <div>📲 <a class="wpp-link" href="#">WhatsApp (34) 9286-9383</a> · ✉️ rogeriosouza.engenharia@gmail.com · <a href="termos.html">Termos &amp; Privacidade</a></div>
+  <div>© 2026 <b style="color:#fff">OrçaPRO IA</b> · RA Engenharia Especial · Eng. Rogério Alves de Souza — CREA-MG</div>
+  <div>📲 <a class="wpp-link" href="#">WhatsApp (34) 9286-9383</a> · ✉️ contato@raengenhariaespecial.com.br · <a href="termos.html">Termos &amp; Privacidade</a></div>
 </div></footer>
 
 <a class="float wpp-link" href="#">💬 Falar no WhatsApp</a>
@@ -388,7 +409,13 @@ var WPP = "553492869383";
 document.querySelectorAll('[data-buy]').forEach(function(a){
   a.addEventListener('click',function(e){ e.preventDefault(); window.open(COMPRAR + "/?plano=" + a.getAttribute('data-buy'), "_blank"); });
 });
-document.querySelectorAll('.wpp-link').forEach(function(a){ a.href = "https://wa.me/" + WPP + "?text=" + encodeURIComponent("Olá! Tenho interesse no OrçaPRO."); });
+document.querySelectorAll('.wpp-link').forEach(function(a){ a.href = "https://wa.me/" + WPP + "?text=" + encodeURIComponent("Olá! Tenho interesse no OrçaPRO IA."); });
+(function(){
+  var CT_EMAIL="contato@raengenhariaespecial.com.br";
+  function ctTexto(){ var n=((document.getElementById('ct-nome')||{}).value||"").trim(); var m=((document.getElementById('ct-msg')||{}).value||"").trim(); return (n?("Nome: "+n+"\n\n"):"")+(m||"Olá! Tenho uma mensagem sobre o OrçaPRO IA."); }
+  var w=document.getElementById('ct-wpp'); if(w) w.onclick=function(){ window.open("https://wa.me/"+WPP+"?text="+encodeURIComponent(ctTexto()),"_blank"); };
+  var e=document.getElementById('ct-email'); if(e) e.onclick=function(){ window.location.href="mailto:"+CT_EMAIL+"?subject="+encodeURIComponent("Mensagem do site OrçaPRO IA")+"&body="+encodeURIComponent(ctTexto()); };
+})();
 var XAB = [
   ["Resumo","prints/excel-01-Resumo.png"],
   ["Sintética","prints/excel-02-Sinttica.png"],
