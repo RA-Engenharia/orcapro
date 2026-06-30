@@ -1,10 +1,17 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="pt-BR" data-tema="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OrÃ§aPRO â€” OrÃ§amento Inteligente de Obras</title>
+  <title>OrçaPRO — Orçamento Inteligente de Obras</title>
   <link rel="icon" type="image/svg+xml" href="img/logo-icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f2740">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="OrçaPRO IA">
+  <link rel="apple-touch-icon" href="img/app-icon-192.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/app.css">
@@ -35,7 +42,28 @@
   <script src="js/cronograma.js"></script>
   <script src="js/demo.js"></script>
   <script src="js/empresa.js"></script>
+  <script src="js/licenca.js"></script>
   <script src="js/laudo.js"></script>
   <script src="js/app.js"></script>
+
+  <!-- PWA: instala o OrçaPRO como aplicativo (ícone + tela cheia + abre offline) -->
+  <script>
+  (function () {
+    if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+    var deferIns = null;
+    function standalone() { try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone; } catch (e) { return false; } }
+    function mostra() {
+      if (standalone() || document.getElementById('opr-install')) return;
+      var b = document.createElement('button');
+      b.id = 'opr-install'; b.type = 'button'; b.textContent = '📲 Instalar app';
+      b.title = 'Instalar o OrçaPRO como aplicativo';
+      b.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:99999;background:#16a34a;color:#fff;border:0;border-radius:99px;padding:11px 18px;font:700 14px/1 Inter,system-ui,Arial,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.28);cursor:pointer';
+      b.onclick = function () { if (deferIns) { deferIns.prompt(); deferIns = null; b.remove(); } };
+      document.body.appendChild(b);
+    }
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferIns = e; mostra(); });
+    window.addEventListener('appinstalled', function () { var b = document.getElementById('opr-install'); if (b) b.remove(); });
+  })();
+  </script>
 </body>
 </html>
