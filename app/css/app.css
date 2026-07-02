@@ -268,21 +268,30 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
 .pg .nota { font-size: 9.5pt; color: #6b7b8a; }
 .pg .bloco { margin-bottom: 12px; }
 /* Decorativo inspirado no logo (linhas) */
-.pg.capa { background: linear-gradient(160deg, var(--p-navy) 0%, #15324f 55%, var(--p-aco) 160%); color: #fff; display: flex; flex-direction: column; }
-.pg.capa::before { content: ""; position: absolute; left: 0; top: 38%; width: 100%; height: 6px; background: var(--p-verde); opacity: .9; }
+.pg.capa { background: linear-gradient(155deg, #0b1d31 0%, #143454 58%, #1c4b73 128%); color: #fff; display: flex; flex-direction: column; overflow: hidden; }
+/* grade de projeto (blueprint) decorativa, com máscara suave no canto */
+.pg.capa::before { content: ""; position: absolute; inset: 0; z-index: 0;
+  background-image: linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px), linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size: 42px 42px; -webkit-mask-image: radial-gradient(560px 460px at 82% 16%, #000, transparent 74%); mask-image: radial-gradient(560px 460px at 82% 16%, #000, transparent 74%); }
+.pg.capa::after { content: ""; position: absolute; right: -120px; top: -100px; width: 420px; height: 420px; border-radius: 50%; background: radial-gradient(circle, rgba(111,208,138,.16), transparent 70%); z-index: 0; }
+.pg.capa > * { position: relative; z-index: 1; }
 .capa .logo-ph { border: 2px dashed rgba(255,255,255,.4); padding: 14px 20px; display: inline-block; border-radius: 8px; color: rgba(255,255,255,.85); font-weight: 600; }
 .capa-top { margin-bottom: auto; }
-.capa-mid .kicker { letter-spacing: 6px; font-size: 11pt; color: #9fc4e0; font-weight: 700; }
-.capa-mid h1 { color: #fff; font-size: 32pt; }
+.capa-mid .kicker { letter-spacing: 6px; font-size: 11pt; color: #9be7af; font-weight: 800; }
+.capa-mid .kicker::after { content: ""; display: block; width: 58px; height: 4px; background: var(--p-verde); border-radius: 2px; margin-top: 14px; }
+.capa-mid h1 { color: #fff; font-size: 29pt; font-weight: 900; line-height: 1.12; letter-spacing: -.5px; margin: 18px 0 10px; }
 .capa-obra { font-size: 13pt; color: #cfe0ef; }
-.capa-info { background: rgba(255,255,255,.08); border-radius: 10px; padding: 16px 20px; margin: 24px 0; }
-.ci-row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.12); }
-.ci-row:last-child { border-bottom: none; }
-.ci-row span { color: #b9d0e4; }
-.capa-rod { margin-top: auto; font-size: 9pt; color: rgba(255,255,255,.6); }
+.capa-info { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; padding: 18px 22px; margin: 30px 0; }
+.ci-row { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.1); font-size: 11pt; }
+.ci-row:last-child { border-bottom: none; padding-bottom: 0; }
+.ci-row:last-child b { font-size: 15pt; }
+.ci-row span { color: #a9c4dc; }
+.ci-row b { font-variant-numeric: tabular-nums; }
+.capa-rod { margin-top: auto; font-size: 9pt; color: rgba(255,255,255,.6); border-top: 1px solid rgba(255,255,255,.1); padding-top: 14px; }
 table.prop-tbl { width: 100%; border-collapse: collapse; font-size: 10.5pt; margin: 8px 0; }
 table.prop-tbl th, table.prop-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--p-linha); text-align: left; }
-table.prop-tbl th { background: var(--p-navy); color: #fff; }
+table.prop-tbl th { background: var(--p-navy); color: #fff; font-weight: 700; letter-spacing: .3px; }
+table.prop-tbl tbody tr:nth-child(even) td { background: #f7fafd; }
 table.prop-tbl td.r, table.prop-tbl th.r { text-align: right; font-variant-numeric: tabular-nums; }
 table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px solid var(--p-navy); }
 .assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; text-align: center; }
