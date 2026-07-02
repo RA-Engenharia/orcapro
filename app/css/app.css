@@ -292,6 +292,8 @@ table.prop-tbl { width: 100%; border-collapse: collapse; font-size: 10.5pt; marg
 table.prop-tbl th, table.prop-tbl td { padding: 8px 10px; border-bottom: 1px solid var(--p-linha); text-align: left; }
 table.prop-tbl th { background: var(--p-navy); color: #fff; font-weight: 700; letter-spacing: .3px; }
 table.prop-tbl tbody tr:nth-child(even) td { background: #f7fafd; }
+/* linha de grupo (etapa) na analítica do laudo — acento à esquerda */
+table.prop-tbl tbody tr.grp-lau td { background: #eaf1f8; font-weight: 700; color: var(--p-navy); box-shadow: inset 3px 0 0 var(--p-aco); }
 table.prop-tbl td.r, table.prop-tbl th.r { text-align: right; font-variant-numeric: tabular-nums; }
 table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px solid var(--p-navy); }
 .assinaturas { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 60px; text-align: center; }

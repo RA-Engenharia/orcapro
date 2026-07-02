@@ -107,7 +107,7 @@
       // ---- 5. ANALÍTICA ----
       var analHtml = '';
       Util.arr(orc.etapas).forEach(function (e) {
-        analHtml += '<tr style="background:#eef3f8"><td colspan="6"><b>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + '</b></td></tr>';
+        analHtml += '<tr class="grp-lau"><td colspan="6"><b>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + '</b></td></tr>';
         Util.arr(e.itens).forEach(function (it) {
           var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
           analHtml += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
