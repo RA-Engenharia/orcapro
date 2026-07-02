@@ -99,6 +99,27 @@
       this.adapter.gravar(empresaId, "orcamentos", lista);
     },
 
+    // ----- CRUD genérico de entidades da Gestão (obras, clientes, contratos, medicoes, financeiro) -----
+    listar: function (empresaId, entidade) { return Util.arr(this.adapter.ler(empresaId, entidade, [])); },
+    obter: function (empresaId, entidade, id) {
+      var l = this.listar(empresaId, entidade);
+      for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+      return null;
+    },
+    salvar: function (empresaId, entidade, obj) {
+      if (!obj.id) obj.id = Util.uid(entidade.slice(0, 3));
+      obj.atualizadoEm = Util.agoraISO();
+      if (!obj.criadoEm) obj.criadoEm = obj.atualizadoEm;
+      var l = this.listar(empresaId, entidade), i = -1;
+      for (var k = 0; k < l.length; k++) if (l[k].id === obj.id) { i = k; break; }
+      if (i >= 0) l[i] = obj; else l.push(obj);
+      return this.adapter.gravar(empresaId, entidade, l) ? obj : null;
+    },
+    excluir: function (empresaId, entidade, id) {
+      var l = this.listar(empresaId, entidade).filter(function (x) { return x.id !== id; });
+      this.adapter.gravar(empresaId, entidade, l);
+    },
+
     // ----- Preferências/empresa -----
     lerPrefs: function (empresaId) { return this.adapter.ler(empresaId, "prefs", {}); },
     salvarPrefs: function (empresaId, prefs) { this.adapter.gravar(empresaId, "prefs", prefs); },

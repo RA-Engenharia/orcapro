@@ -77,17 +77,27 @@
     render: function () {
       var topbar = UI.el("topbar");
       var main = UI.el("main");
+      var sidebar = UI.el("sidebar");
       var app = document.querySelector(".app");
       if (this.tela === "login" || !Auth.usuario()) {
-        if (app) app.classList.add("tela-login");
-        topbar.innerHTML = "";
-        topbar.style.display = "none";
+        if (app) { app.classList.add("tela-login"); app.classList.remove("com-sidebar"); }
+        topbar.innerHTML = ""; topbar.style.display = "none";
+        if (sidebar) sidebar.innerHTML = "";
         main.innerHTML = UI.renderLogin();
         return;
       }
       if (app) app.classList.remove("tela-login");
       topbar.style.display = "flex";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
+      var view = this.view || "orcamentos";
+      // sidebar de módulos (não aparece na vitrine/demo)
+      if (sidebar) {
+        if (this._demo || typeof Gestao === "undefined") { sidebar.innerHTML = ""; if (app) app.classList.remove("com-sidebar"); }
+        else { sidebar.innerHTML = Gestao.renderSidebar(view); if (app) app.classList.add("com-sidebar"); }
+      }
+      // módulos da Gestão
+      if (view !== "orcamentos" && typeof Gestao !== "undefined") { main.innerHTML = Gestao.render(view); return; }
+      // view = Orçamentos (fluxo original)
       if (this.tela === "editor" && this.orcAtual) {
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
       } else {
@@ -110,8 +120,13 @@
     },
 
     onClick: function (e) {
-      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
       if (!t) return;
+      // navegação por módulo (sidebar da Gestão)
+      if (t.dataset.view) { this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; this.render(); return; }
+      // ações da Gestão (CRUD dos módulos)
+      if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.gacao, t.dataset, this); return; }
+      if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
       // login: clicar numa conta salva preenche o e-mail
       if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
       // carregar base inclusa (1 clique)

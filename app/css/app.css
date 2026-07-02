@@ -95,6 +95,26 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 
 .main { overflow: auto; padding: 24px; }
 
+/* ---------- Sidebar de módulos (Gestão) ---------- */
+.app.com-sidebar { grid-template-columns: 212px 1fr; grid-template-areas: "side top" "side main"; }
+.app.com-sidebar > .sidebar { grid-area: side; }
+.app.com-sidebar > .topbar { grid-area: top; }
+.app.com-sidebar > .main { grid-area: main; }
+.sidebar { display: none; background: linear-gradient(180deg, #143454, var(--navy)); color: #cfe0ef; flex-direction: column; overflow-y: auto; box-shadow: 2px 0 12px rgba(15,39,64,.2); z-index: 15; }
+.app.com-sidebar > .sidebar { display: flex; }
+.sb-top { padding: 15px 18px 8px; }
+.sb-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,.38); padding: 8px 20px 4px; font-weight: 700; }
+.sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 2px 10px 14px; }
+.sb-item { display: flex; align-items: center; gap: 11px; background: none; border: 0; color: #cfe0ef; font-size: 14px; font-weight: 600; padding: 11px 12px; border-radius: 9px; cursor: pointer; text-align: left; transition: .12s; width: 100%; }
+.sb-item:hover { background: rgba(255,255,255,.08); color: #fff; }
+.sb-item.on { background: linear-gradient(90deg, rgba(46,111,158,.55), rgba(46,111,158,.18)); color: #fff; box-shadow: inset 3px 0 0 var(--verde-claro); }
+.sb-ic { font-size: 17px; width: 22px; text-align: center; flex: none; }
+.g-pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
+.kpis.kpis-g { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.kpis.kpis-g .num { font-size: 22px; }
+@media (max-width: 720px) { .kpis.kpis-g { grid-template-columns: repeat(2, 1fr); } }
+
 /* ---------- Botões ---------- */
 .btn {
   display: inline-flex; align-items: center; gap: 7px; justify-content: center;
