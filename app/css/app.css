@@ -334,11 +334,13 @@ table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px
   .prop-toolbar, .no-print { display: none !important; }
   .pg { box-shadow: none; margin: 0; page-break-after: always; width: auto; min-height: auto; }
   .pg:last-child { page-break-after: auto; }
+  /* Capa preenche a área imprimível (dentro da margem de 10mm) — moldura fina e uniforme */
+  .pg.capa { min-height: 277mm; overflow: hidden; }
   /* Relatório: flui em várias páginas; cabeçalho de tabela repete, linhas não quebram */
   .rel-doc { box-shadow: none; margin: 0; width: auto; max-width: none; padding: 0; }
   .rel-doc table.prop-tbl thead { display: table-header-group; }
   .rel-doc table.prop-tbl tr { page-break-inside: avoid; }
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4; margin: 10mm; }
 }
 .right { text-align: right; }
 .flex { display: flex; align-items: center; gap: 10px; }
