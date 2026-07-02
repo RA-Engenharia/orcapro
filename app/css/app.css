@@ -196,12 +196,36 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
 .sinapi-result .cod { font-weight: 700; color: var(--aco); font-size: 12px; }
 .sinapi-result .preco { font-weight: 800; color: var(--verde); white-space: nowrap; }
 
-/* ---------- Login ---------- */
-.login-wrap { display: flex; align-items: center; justify-content: center; height: 100%; min-height: 100%; padding: 20px; box-sizing: border-box; background: linear-gradient(135deg, var(--navy), var(--navy-2)); }
-.login-card { background: var(--surface); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); width: 100%; max-width: 400px; padding: 32px; }
-.login-card .brand { text-align: center; margin-bottom: 22px; }
-.login-card .brand .nome { font-size: 28px; font-weight: 800; color: var(--navy); }
-.login-card .brand .slogan { color: var(--texto-fraco); font-size: 13px; }
+/* ---------- Login (split premium: marca + formulário) ---------- */
+.login-wrap { display: grid; grid-template-columns: 1.05fr .95fr; height: 100%; min-height: 100%; background: var(--surface); }
+.login-hero { position: relative; overflow: hidden; color: #fff; display: flex; align-items: center; padding: 56px 62px;
+  background: radial-gradient(900px 620px at 72% -12%, #1c4b73 0, #0c1f33 62%, #081826 100%); }
+.login-hero .lh-grid { position: absolute; inset: 0; opacity: .55;
+  background-image: linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px), linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);
+  background-size: 46px 46px; -webkit-mask-image: radial-gradient(680px 520px at 38% 42%, #000, transparent 82%); mask-image: radial-gradient(680px 520px at 38% 42%, #000, transparent 82%); }
+.login-hero::after { content: ""; position: absolute; right: -140px; top: -120px; width: 460px; height: 460px; border-radius: 50%; background: radial-gradient(circle, rgba(111,208,138,.18), transparent 70%); }
+.lh-content { position: relative; z-index: 1; max-width: 470px; }
+.lh-logo { display: flex; align-items: center; gap: 13px; font-size: 27px; font-weight: 900; letter-spacing: -.6px; margin-bottom: 34px; }
+.lh-logo b { background: linear-gradient(135deg, var(--verde), var(--verde-claro)); color: #fff; font-size: 14px; padding: 2px 8px; border-radius: 7px; margin-left: 3px; vertical-align: 3px; box-shadow: 0 3px 10px rgba(22,163,74,.42); }
+.lh-h { font-size: 35px; font-weight: 900; line-height: 1.13; letter-spacing: -1px; margin-bottom: 28px; }
+.lh-h em { font-style: normal; color: var(--verde-claro); }
+.lh-feats { list-style: none; margin: 0 0 30px; padding: 0; }
+.lh-feats li { position: relative; padding: 9px 0 9px 34px; color: #cfe0ee; font-size: 15.5px; }
+.lh-feats li::before { content: "✓"; position: absolute; left: 0; top: 9px; width: 22px; height: 22px; border-radius: 50%; background: rgba(111,208,138,.18); color: var(--verde-claro); font-weight: 900; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+.lh-trust { font-size: 13px; color: #9fb6cc; border-top: 1px solid rgba(255,255,255,.11); padding-top: 20px; }
+.login-formside { display: flex; align-items: center; justify-content: center; padding: 44px; overflow: auto; background: var(--surface); }
+.login-card { width: 100%; max-width: 384px; }
+.login-card .brand { margin-bottom: 26px; }
+.login-card .brand .lc-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.login-card .brand .nome { font-size: 23px; font-weight: 800; color: var(--texto); letter-spacing: -.3px; }
+.login-card .brand .nome .ia { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: 6px; background: linear-gradient(135deg, var(--verde), var(--verde-claro)); color: #fff; font-size: 12px; font-weight: 800; letter-spacing: .5px; vertical-align: 2px; }
+.login-card .brand .slogan { color: var(--texto-fraco); font-size: 14px; }
+.login-card .field input { padding: 11px 13px; }
+@media (max-width: 860px) {
+  .login-wrap { grid-template-columns: 1fr; }
+  .login-hero { display: none; }
+  .login-formside { padding: 28px 22px; align-items: flex-start; padding-top: 56px; }
+}
 
 /* ---------- Toast ---------- */
 .toasts { position: fixed; bottom: 20px; right: 20px; z-index: 100; display: flex; flex-direction: column; gap: 8px; }

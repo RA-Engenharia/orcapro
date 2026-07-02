@@ -191,21 +191,34 @@
             contas.map(function (c) { return '<button type="button" class="btn sm" data-conta="' + Util.esc(c.email) + '">👤 ' + Util.esc(c.email) + '</button>'; }).join("") +
           '</div></div>'
         : '';
+      var badge = '<svg width="46" height="46" viewBox="0 0 100 100" style="flex:none"><defs><linearGradient id="lgg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#lgg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>';
       return '' +
-        '<div class="login-wrap"><div class="login-card">' +
-        '<div class="brand"><svg width="64" height="64" viewBox="0 0 100 100" style="margin-bottom:8px"><defs><linearGradient id="lgg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#lgg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>' +
-        '<div class="nome">' + CONFIG.marca.nome + '</div>' +
-        '<div class="slogan">' + CONFIG.marca.slogan + '</div></div>' +
-        '<div id="login-form">' +
-        chips +
-        '<div class="field"><label>Empresa / Escritório</label><input id="lg-empresa" placeholder="Ex.: Studio Arq + Eng"></div>' +
-        '<div class="field"><label>E-mail</label><input id="lg-email" type="email" placeholder="voce@empresa.com"></div>' +
-        '<div class="field"><label>Senha</label><input id="lg-senha" type="password" placeholder="••••••"></div>' +
-        '<button class="btn primary" style="width:100%" data-acao="entrar">Entrar / Criar conta</button>' +
-        (contas.length
-          ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--azul,#2563eb)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
-          : '<p class="muted mt" style="font-size:12px;text-align:center">Conta nova é criada automaticamente no 1º acesso (modo demo PRO).</p>') +
-        '</div></div></div>';
+        '<div class="login-wrap">' +
+          '<div class="login-hero"><div class="lh-grid"></div><div class="lh-content">' +
+            '<div class="lh-logo">' + badge + '<span>OrçaPRO<b>IA</b></span></div>' +
+            '<h2 class="lh-h">Você descreve a obra.<br><em>A IA monta o orçamento.</em></h2>' +
+            '<ul class="lh-feats">' +
+              '<li>SINAPI, SICRO, SUDECAP e mais — já com BDI (TCU/DNIT)</li>' +
+              '<li>Cronograma de Gantt e Excel profissional</li>' +
+              '<li>Proposta comercial e anexo para laudo pericial</li>' +
+            '</ul>' +
+            '<div class="lh-trust">🔒 Roda no seu PC · seus orçamentos ficam salvos no dispositivo</div>' +
+          '</div></div>' +
+          '<div class="login-formside"><div class="login-card">' +
+            '<div class="brand"><div class="lc-logo">' + badge + '<span class="nome">OrçaPRO<span class="ia">IA</span></span></div>' +
+            '<div class="slogan">Entre ou crie sua conta para começar.</div></div>' +
+            '<div id="login-form">' +
+            chips +
+            '<div class="field"><label>Empresa / Escritório</label><input id="lg-empresa" placeholder="Ex.: Studio Arq + Eng"></div>' +
+            '<div class="field"><label>E-mail</label><input id="lg-email" type="email" placeholder="voce@empresa.com"></div>' +
+            '<div class="field"><label>Senha</label><input id="lg-senha" type="password" placeholder="••••••"></div>' +
+            '<button class="btn primary" style="width:100%" data-acao="entrar">Entrar / Criar conta</button>' +
+            (contas.length
+              ? '<p class="muted mt" style="font-size:12px;text-align:center"><a href="#" data-acao="esqueci-senha" style="color:var(--aco)">Esqueci a senha</a> · seus orçamentos ficam salvos neste navegador</p>'
+              : '<p class="muted mt" style="font-size:12px;text-align:center">Conta nova é criada automaticamente no 1º acesso (modo demo PRO).</p>') +
+            '</div>' +
+          '</div></div>' +
+        '</div>';
     },
 
     // ---------- Tela: Lista de orçamentos ----------
