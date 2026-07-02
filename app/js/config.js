@@ -9,13 +9,13 @@
   var CONFIG = {
     // ---- Identidade do produto (rebrandável por cliente) ----
     marca: {
-      nome: "OrçaPRO",
+      nome: "OrçaPRO IA",
       slogan: "Orçamento Inteligente de Obras",
       fabricante: "RA Engenharia",
       corPrimaria: "#0f2740",   // navy
       corSecundaria: "#2e6f9e", // aço
       corAcento: "#16a34a",     // verde (preço/venda)
-      logoTexto: "OrçaPRO"      // troque por <img> quando tiver logo
+      logoTexto: '<span class="marca-top">OrçaPRO<span class="logo-ia">IA</span></span>'   // selo IA estilizado (ver .logo-ia no CSS)
     },
 
     // Servidor de IA do OrçaPRO (orcapro-ia.js). Cada licença usa a própria chave.
