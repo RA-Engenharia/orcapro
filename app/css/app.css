@@ -242,6 +242,7 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
   position: fixed; inset: 0; z-index: 200; background: #5b6b7b;
   overflow: auto; padding: 64px 0 40px;
   --p-navy: #0f2740; --p-aco: #2e6f9e; --p-verde: #16a34a; --p-linha: #d8e0ea;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .prop-toolbar {
   position: fixed; top: 0; left: 0; right: 0; height: 52px; z-index: 210;
@@ -305,6 +306,7 @@ table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px
   width: 210mm; max-width: 210mm; background: #fff; color: #1a2632; margin: 0 auto;
   box-shadow: 0 6px 24px rgba(0,0,0,.3); padding: 18mm 16mm; box-sizing: border-box;
   font-size: 10.5pt; --p-navy: #0f2740; --p-aco: #2e6f9e; --p-verde: #16a34a; --p-linha: #d8e0ea;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .rel-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid var(--p-aco); padding-bottom: 12px; margin-bottom: 16px; }
 .rel-head h1 { font-size: 22pt; color: var(--p-navy); margin: 4px 0 0; }
@@ -325,6 +327,10 @@ table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px
 @media print {
   body > *:not(#proposta-print) { display: none !important; }
   #proposta-print { position: static; background: #fff; padding: 0; overflow: visible; }
+  /* força a impressão das cores de fundo/gradientes (navy da capa, cabeçalhos, acentos) */
+  #proposta-print, #proposta-print *, #proposta-print *::before, #proposta-print *::after {
+    -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+  }
   .prop-toolbar, .no-print { display: none !important; }
   .pg { box-shadow: none; margin: 0; page-break-after: always; width: auto; min-height: auto; }
   .pg:last-child { page-break-after: auto; }
