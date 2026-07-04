@@ -16,11 +16,11 @@
   // ---------- RBAC: presets de módulos por departamento (o admin pode ajustar por usuário) ----------
   var LIMITE_USUARIOS = 20;
   var DEPTO_MODULOS = {
-    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "insumos", "relatorios"],
+    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "insumos", "epi", "relatorios"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
-    rh:             ["dashboard", "colaboradores", "ponto", "folha"],
-    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota"],
+    rh:             ["dashboard", "colaboradores", "epi", "ponto", "folha"],
+    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi"],
     diretoria:      null   // null = todos os módulos atribuíveis
   };
 
@@ -122,6 +122,7 @@
     relatorios: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    epi: '<path d="M12 2l7 3v6c0 4.5-3 8.3-7 9-4-.7-7-4.5-7-9V5l7-3z"/><path d="M9 12l2 2 4-4"/>',
   };
   function svg(id, size) { size = size || 20; return '<svg class="g-ic" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON[id] || "") + "</svg>"; }
 
@@ -140,6 +141,7 @@
       { id: "estoque", nome: "Estoque" },
       { id: "rdo", nome: "Diário (RDO)" },
       { id: "colaboradores", nome: "Colaboradores" },
+      { id: "epi", nome: "EPI" },
       { id: "ponto", nome: "Ponto / Folha" },
       { id: "frota", nome: "Frota" },
       { id: "requisicoes", nome: "Requisições" },
@@ -182,6 +184,7 @@
         case "estoque": return this.renderEstoque();
         case "rdo": return this.renderRdo();
         case "colaboradores": return this.renderColaboradores();
+        case "epi": return this.renderEpi();
         case "ponto": return this.renderPonto();
         case "frota": return this.renderFrota();
         case "requisicoes": return this.renderRequisicoes();
@@ -662,6 +665,139 @@
       });
     },
 
+    // =================== EPI — CATÁLOGO + FICHAS (NR-6) ===================
+    _epiItens: function (e) { return (e && e.itens) ? e.itens.map(function (i) { return { epiId: i.epiId || "", nome: i.nome || "", ca: i.ca || "", validade: i.validade || "", quantidade: Util.num(i.quantidade) || 1, valorUnit: Util.num(i.valorUnit) || 0 }; }) : []; },
+    _epiValor: function (itens) { return itens.reduce(function (s, i) { return s + Util.num(i.quantidade) * Util.num(i.valorUnit); }, 0); },
+    _proxNumeroEpi: function () {
+      var es = lista("epi"), ano = new Date().getFullYear(), max = 0;
+      es.forEach(function (e) { var m = /EPI-(\d{4})-(\d+)/.exec(e.numero || ""); if (m && Util.num(m[1]) === ano) { var n = Util.num(m[2]); if (n > max) max = n; } });
+      var seq = max + 1, pad = "" + seq; while (pad.length < 3) pad = "0" + pad;
+      return "EPI-" + ano + "-" + pad;
+    },
+    afterRenderEpi: function () {
+      if (typeof Epi !== "undefined" && !Epi.carregado && !Epi.carregando) Epi.carregar("data/epi-catalogo.json").then(function () { if (typeof App !== "undefined" && App.view === "epi") App.render(); }).catch(function () {});
+    },
+    renderEpi: function () {
+      var es = lista("epi").slice().sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); });
+      var hoje = new Date(); hoje.setHours(0, 0, 0, 0); // meia-noite local → contagem de dias estável (independe da hora)
+      var gasto = 0, aVencer = 0;
+      es.forEach(function (e) { gasto += Util.num(e.valorTotal); (e.itens || []).forEach(function (it) { if (it.validade) { var dias = Math.round((new Date(it.validade + "T00:00:00") - hoje) / 86400000); if (dias <= 60) aVencer++; } }); }); // inclui já vencidos (dias<0) — precisam renovar
+      var catN = (typeof Epi !== "undefined" && Epi.carregado) ? Epi.resumo().total : null;
+      var card = function (val, l, cor) { return '<div class="card" style="flex:1;text-align:center;min-width:90px"><div style="font-size:24px;font-weight:800;color:' + cor + '">' + val + '</div><div class="muted">' + l + "</div></div>"; };
+      var kpis = '<div class="row" style="gap:10px;margin:4px 0 14px">'
+        + card(es.length, "entregas", "#0f2740") + card(Util.fmtMoeda(gasto), "gasto com EPI", "#16a34a")
+        + card(aVencer, "CA vencido/a vencer", aVencer ? "#dc2626" : "#64748b") + card(catN != null ? catN : "…", "no catálogo", "#2e6f9e") + "</div>";
+      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📖 Catálogo de EPI</button>';
+      var html = this._head(svg("epi") + "EPI — Entregas &amp; Fichas", "nova-entrega-epi", "Nova entrega", extra) + kpis;
+      html += '<p class="muted" style="margin:-4px 0 14px">Registre a entrega de EPI ao colaborador (com CA e validade), gere a <b>ficha de controle (NR-6)</b> para assinatura e acompanhe o gasto. O catálogo traz os EPIs de obra com valor de referência; o <b>CA é do modelo comprado</b> — use <b>🔎 Consultar CA</b> para conferir online.</p>';
+      if (!es.length) return html + vazioBox("Nenhuma entrega de EPI registrada", "nova-entrega-epi", "Registrar primeira entrega");
+      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Colaborador</th><th class="num">Itens</th><th class="num">Valor</th><th></th></tr></thead><tbody>';
+      es.forEach(function (e) {
+        var nI = (e.itens && e.itens.length) || 0;
+        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="ficha-epi" data-id="' + e.id + '">🖨 Ficha</button></td></tr>';
+      });
+      return html + "</tbody></table>";
+    },
+    novoEntregaEpi: function () { this.formEntregaEpi(null); },
+    formEntregaEpi: function (e) {
+      e = e || {}; var self = this, colabs = lista("colaboradores"), obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      var numero = e.numero || this._proxNumeroEpi();
+      var itensBuf = this._epiItens(e);
+      var corpo =
+        '<div class="row">' + campo("Número", inp("g-num", numero)) + campo("Data", inp("g-data", e.data || hoje, "", "date")) + campo("Obra", sel("g-obra", optsRec(obras, "nome", e.obraId, "— nenhuma —"))) + "</div>" +
+        campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", e.colaboradorId, "— selecionar —"))) +
+        campo("EPIs entregues *",
+          '<input id="ee-q" placeholder="🔍 Buscar EPI no catálogo (capacete, luva, bota, cinturão…)" autocomplete="off" style="margin-bottom:6px">' +
+          '<div class="muted" id="ee-status" style="font-size:12px;margin-bottom:6px"></div>' +
+          '<div id="ee-res" style="max-height:180px;overflow:auto;margin-bottom:8px"></div>' +
+          '<div id="ee-itens"></div>') +
+        campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(e.observacoes || "") + "</textarea>");
+      this._modalForm("epi", e, "Entrega de EPI", corpo, function (obj) {
+        obj.colaboradorId = v("g-colab"); if (!obj.colaboradorId) { UI.toast("Selecione o colaborador.", "erro"); return false; }
+        if (!itensBuf.length) { UI.toast("Adicione ao menos um EPI (busque no catálogo).", "erro"); return false; }
+        var c = lista("colaboradores").filter(function (x) { return x.id === obj.colaboradorId; })[0] || {};
+        obj.colaboradorNome = c.nome || ""; obj.colaboradorFuncao = c.funcao || ""; obj.colaboradorCpf = c.cpf || "";
+        obj.numero = v("g-num"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.observacoes = v("g-obs");
+        obj.itens = itensBuf.slice(); obj.valorTotal = self._epiValor(itensBuf);
+        return true;
+      });
+      function renderItens() {
+        var el = document.getElementById("ee-itens"); if (!el) return;
+        if (!itensBuf.length) { el.innerHTML = '<div class="muted" style="font-size:12px">Nenhum EPI ainda — busque no catálogo acima.</div>'; return; }
+        el.innerHTML = '<table class="tbl" style="font-size:12px"><thead><tr><th>EPI</th><th>CA</th><th>Validade</th><th class="num">Qtd</th><th class="num">Vlr un.</th><th class="num">Subtot.</th><th></th></tr></thead><tbody>'
+          + itensBuf.map(function (it, i) {
+            return "<tr><td>" + Util.esc(it.nome) + "</td>"
+              + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">🔎</button></td>'
+              + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
+              + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
+              + '<td class="num"><input data-eevu="' + i + '" value="' + Util.esc(String(it.valorUnit).replace(".", ",")) + '" style="width:60px;text-align:right"></td>'
+              + '<td class="num" data-eesub="' + i + '">' + Util.fmtMoeda(Util.num(it.quantidade) * Util.num(it.valorUnit)) + "</td>"
+              + '<td class="num"><button type="button" class="btn sm" data-eerm="' + i + '" style="color:#dc2626">✕</button></td></tr>';
+          }).join("")
+          + '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total</b></td><td class="num"><b data-eetot>' + Util.fmtMoeda(self._epiValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>";
+        function upd(i) { var s = el.querySelector('[data-eesub="' + i + '"]'); if (s) s.textContent = Util.fmtMoeda(Util.num(itensBuf[i].quantidade) * Util.num(itensBuf[i].valorUnit)); var t = el.querySelector("[data-eetot]"); if (t) t.textContent = Util.fmtMoeda(self._epiValor(itensBuf)); }
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eeca]"), function (x) { x.onchange = function () { itensBuf[+x.getAttribute("data-eeca")].ca = x.value.trim(); }; });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eeval]"), function (x) { x.onchange = function () { itensBuf[+x.getAttribute("data-eeval")].validade = x.value; }; });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eeqtd]"), function (x) { x.onchange = function () { var i = +x.getAttribute("data-eeqtd"); itensBuf[i].quantidade = Util.num(x.value) || 0; upd(i); }; });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eevu]"), function (x) { x.onchange = function () { var i = +x.getAttribute("data-eevu"); itensBuf[i].valorUnit = Util.num(x.value) || 0; upd(i); }; });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eeconsulta]"), function (b) { b.onclick = function () { window.open(Epi.consultaCaUrl(itensBuf[+b.getAttribute("data-eeconsulta")].ca), "_blank"); }; });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eerm]"), function (b) { b.onclick = function () { itensBuf.splice(+b.getAttribute("data-eerm"), 1); renderItens(); }; });
+      }
+      this._wireCatalogoEpi("ee-q", "ee-res", "ee-status", function (epi) {
+        itensBuf.push({ epiId: epi.id, nome: epi.nome, ca: epi.ca || "", validade: "", quantidade: 1, valorUnit: Util.num(epi.valorRef) || 0 });
+        renderItens(); UI.toast("EPI adicionado.", "ok");
+      });
+      renderItens();
+    },
+    _wireCatalogoEpi: function (qId, resId, statusId, onPick) {
+      var inp = document.getElementById(qId), box = document.getElementById(resId), st = statusId ? document.getElementById(statusId) : null;
+      if (!inp || !box) return;
+      function setSt(t) { if (st) st.textContent = t; }
+      function pintar(listaR) {
+        if (!listaR.length) { box.innerHTML = '<div class="muted" style="font-size:13px;padding:6px">Nenhum EPI encontrado.</div>'; return; }
+        box.innerHTML = '<table class="tbl" style="font-size:12.5px"><tbody>' + listaR.map(function (x, i) {
+          return "<tr><td><b>" + Util.esc(x.nome) + '</b> <span class="muted">· ' + Util.esc(Epi.rotuloCategoria(x.categoria)) + "</span></td><td>" + Util.fmtMoeda(x.valorRef) + "</td>"
+            + (onPick ? '<td class="num"><button type="button" class="btn sm primary" data-epiadd="' + i + '">Adicionar</button></td>' : '<td class="muted" style="font-size:11px">vida útil ' + Math.round((x.vidaUtilDias || 0) / 30) + " mês</td>") + "</tr>";
+        }).join("") + "</tbody></table>";
+        if (onPick) Array.prototype.forEach.call(box.querySelectorAll("[data-epiadd]"), function (b) { b.onclick = function () { var x = listaR[+b.getAttribute("data-epiadd")]; if (x) onPick(x); }; });
+      }
+      function achar() { var res = Epi.buscar(inp.value.trim(), { max: 30 }); setSt(res.length + " EPI(s)"); pintar(res); }
+      function rodar() { if (Epi.carregado) { achar(); return; } setSt("Carregando catálogo…"); Epi.carregar("data/epi-catalogo.json").then(achar).catch(function () { setSt("Não carregou o catálogo — abra pelo servidor local (Iniciar-OrcaPRO.bat)."); }); }
+      inp.oninput = (typeof Util !== "undefined" && Util.debounce) ? Util.debounce(rodar, 200) : rodar;
+      if (typeof Epi !== "undefined" && Epi.carregado) { setSt(Epi.resumo().total + " EPIs no catálogo. Digite para buscar."); if (!onPick) pintar(Epi.itens()); }
+      else if (typeof Epi !== "undefined") Epi.carregar("data/epi-catalogo.json").then(function () { setSt(Epi.resumo().total + " EPIs no catálogo. Digite para buscar."); if (!onPick) pintar(Epi.itens()); }).catch(function () {});
+    },
+    abrirCatalogoEpi: function () {
+      var corpo = '<div class="field"><input id="ec-q" placeholder="Buscar EPI (nome ou categoria)" autocomplete="off"></div><div class="muted mb" id="ec-status"></div><div id="ec-res" style="max-height:420px;overflow:auto"></div>';
+      var bg = UI.modal("📖 Catálogo de EPI (NR-6)", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "720px";
+      this._wireCatalogoEpi("ec-q", "ec-res", "ec-status", null);
+    },
+    fichaEpi: function (id) {
+      var e = Store.obter(eid(), "epi", id); if (!e) return;
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var obra = e.obraId ? Store.obter(eid(), "obras", e.obraId) : null;
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
+      var linhas = (e.itens || []).map(function (it, i) {
+        return "<tr><td style='text-align:center'>" + (i + 1) + "</td><td>" + Util.esc(it.nome) + "</td><td style='text-align:center'>" + Util.esc(it.ca || "—") + "</td><td style='text-align:center'>" + brd(it.validade) + "</td><td style='text-align:center'>" + Util.num(it.quantidade) + "</td></tr>";
+      }).join("");
+      var termo = "Declaro ter recebido gratuitamente da empresa os Equipamentos de Proteção Individual (EPI) acima discriminados, em perfeito estado de conservação e funcionamento, bem como orientação/treinamento quanto ao uso correto, guarda e conservação. Comprometo-me a: usá-los durante toda a jornada de trabalho; responsabilizar-me por sua guarda e conservação; comunicar qualquer alteração que os torne impróprios para uso; e devolvê-los quando solicitado. Estou ciente de que o uso é obrigatório e que o não uso constitui ato faltoso (art. 158 da CLT e NR-6).";
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:0 auto;padding:8px">'
+        + '<div style="text-align:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:14px">'
+        + '<h2 style="margin:0;color:#0f2740">FICHA DE CONTROLE DE ENTREGA DE EPI</h2>'
+        + '<div style="font-size:12px;color:#555">' + Util.esc(emp.razaoSocial || emp.nome || "") + (emp.cnpj ? " · CNPJ " + Util.esc(emp.cnpj) : "") + " · conforme NR-6</div>"
+        + '<div style="font-size:12px;color:#555">Ficha nº <b>' + Util.esc(e.numero || "—") + "</b> · Data: <b>" + brd(e.data) + "</b>" + (obra ? " · Obra: <b>" + Util.esc(obra.nome) + "</b>" : "") + "</div></div>"
+        + '<table style="width:100%;font-size:13px;margin-bottom:12px"><tr><td><b>Colaborador:</b> ' + Util.esc(e.colaboradorNome || "—") + "</td><td><b>Função:</b> " + Util.esc(e.colaboradorFuncao || "—") + "</td><td><b>CPF:</b> " + Util.esc(e.colaboradorCpf || "—") + "</td></tr></table>"
+        + '<table style="width:100%;border-collapse:collapse;font-size:12.5px" border="1"><thead><tr style="background:#eef4fa"><th style="padding:5px;width:26px">#</th><th style="padding:5px">Equipamento (EPI)</th><th style="padding:5px;width:90px">CA</th><th style="padding:5px;width:80px">Validade CA</th><th style="padding:5px;width:44px">Qtd</th></tr></thead><tbody>' + linhas + "</tbody></table>"
+        + (e.observacoes ? '<p style="font-size:12px;margin-top:8px"><b>Obs.:</b> ' + Util.esc(e.observacoes) + "</p>" : "")
+        + '<p style="font-size:11.5px;text-align:justify;margin-top:14px;line-height:1.5">' + termo + "</p>"
+        + '<div style="display:flex;justify-content:space-between;margin-top:46px;gap:40px">'
+        + '<div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:12px">Assinatura do colaborador</div>'
+        + '<div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:12px">Responsável pela entrega</div></div>'
+        + '<div style="text-align:right;font-size:10px;color:#999;margin-top:20px">Gerado pelo OrçaPRO IA</div></div>';
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Ficha de EPI — " + (e.colaboradorNome || ""), html);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Ficha de EPI</title></head><body onload='window.print()'>" + html + "</body></html>"); w.document.close(); } }
+    },
     // =================== RH — PONTO / FOLHA ===================
     renderPonto: function () {
       var ps = lista("ponto").slice().sort(function (a, b) { return (b.competencia || "").localeCompare(a.competencia || ""); });
@@ -808,7 +944,7 @@ renderRequisicoes: function () {
         + '<div id="bi-res"></div>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -1389,6 +1525,9 @@ renderRelatorios: function () {
         case "saida-estoque": return this._movEstoque(id, "saida");
         case "novo-rdo": return this.novoRdo();
         case "novo-usuario": return this.novoUsuario();
+        case "nova-entrega-epi": return this.novoEntregaEpi();
+        case "catalogo-epi": return this.abrirCatalogoEpi();
+        case "ficha-epi": return this.fichaEpi(id);
         case "finalizar-rdo": {
           var rd = Store.obter(eid(), "rdo", id); if (!rd) return;
           rd.status = "finalizado"; Store.salvar(eid(), "rdo", rd); App.render(); UI.toast("Diário finalizado.", "ok"); return;
@@ -1657,6 +1796,7 @@ if (entidade === "patrimonio") return this.formPatrimonio(r);
 if (entidade === "centrocusto") return this.formCentrocusto(r);
 if (entidade === "folha") return this.formFolha(r);
 if (entidade === "equipe") return this.formUsuario(r);
+if (entidade === "epi") return this.formEntregaEpi(r);
     }
   };
 
