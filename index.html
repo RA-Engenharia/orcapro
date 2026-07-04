@@ -508,13 +508,13 @@ XAB.forEach(function(t,i){
    Bloco 100% isolado. Para REMOVER o efeito: apague este <script>, o bloco CSS
    ".hero-fx" e volte o container #heroFx para <img class="shot" ...>. Nada mais depende disto. */
 (function(){
-  var C={ COLUNAS:9, LINHAS:6, DISPERSAO_MAX:240, ROTACAO_MAX:60, REMONTAR:true, REDUZIR_MOVIMENTO:true };
+  var C={ COLUNAS:9, LINHAS:6, DISPERSAO_MAX:360, ROTACAO_MAX:100, REMONTAR:true, REDUZIR_MOVIMENTO:true };
   var box=document.getElementById('heroFx'); if(!box) return;
   var img=box.querySelector('.shot'), cv=box.querySelector('canvas');
   if(!cv||!cv.getContext) return;                                                   // sem canvas → img estática
   if(C.REDUZIR_MOVIMENTO && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; // acessibilidade
   var mob = window.matchMedia && matchMedia('(max-width:600px)').matches;
-  var cols=mob?6:C.COLUNAS, rows=mob?4:C.LINHAS, disp=mob?90:C.DISPERSAO_MAX;
+  var cols=mob?6:C.COLUNAS, rows=mob?4:C.LINHAS, disp=mob?150:C.DISPERSAO_MAX;
   var ctx=cv.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2);
   var tiles=[], W=0, H=0, nW=0, nH=0, ready=false;
   function rnd(i){ var x=Math.sin(i*99.13+0.7)*43758.5453; return x-Math.floor(x); } // pseudo-aleatório por tile (seed)
