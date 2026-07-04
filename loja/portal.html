@@ -1,0 +1,705 @@
+<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portal da Obra — OrçaPRO</title>
+<meta name="description" content="Acompanhe sua obra em tempo real: andamento, medições, cronograma e diário de obra. Portal do cliente OrçaPRO.">
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" type="image/svg+xml" href="../favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0f2740;--navy2:#1c4b73;--aco:#2e6f9e;--verde:#16a34a;--verde2:#6fd08a;--ink:#1e293b;--mut:#64748b;--linha:#e2e8f0;--bg:#f6f9fc}
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif}
+html,body{background:var(--bg);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+
+/* ---------- LOGO ---------- */
+.logo{display:flex;align-items:center;gap:8px;font-weight:900;font-size:19px;color:var(--navy);letter-spacing:-.3px}
+.logo .txt span{color:var(--verde)}
+.logo svg{display:block}
+
+/* ---------- LOGIN ---------- */
+#login{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px;
+  background:radial-gradient(900px 460px at 82% -12%,var(--navy2) 0,#0c1f33 68%)}
+#login .card{background:#fff;border-radius:18px;box-shadow:0 26px 70px rgba(6,18,32,.45);width:100%;max-width:420px;padding:30px 26px 26px;position:relative;overflow:hidden}
+#login .card::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,var(--verde),var(--aco))}
+#login .brand{display:flex;justify-content:center;margin-bottom:16px}
+#login h1{font-size:21px;font-weight:900;color:var(--navy);letter-spacing:-.5px;text-align:center;margin-top:6px}
+#login .sub{text-align:center;color:var(--mut);font-size:14px;margin:5px 0 20px;line-height:1.45}
+.fld{margin-bottom:14px}
+.fld label{display:block;font-size:11px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+.fld input{width:100%;padding:12px 13px;border:1.6px solid var(--linha);border-radius:11px;font-size:15px;background:#fff;color:var(--ink);transition:.14s}
+.fld input:focus{outline:none;border-color:var(--aco);box-shadow:0 0 0 3px rgba(46,111,158,.14)}
+.pwrap{position:relative}
+.pwrap .toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;cursor:pointer;font-size:12px;font-weight:800;color:var(--aco);padding:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;border:0;border-radius:12px;padding:12px 18px;font-size:15px;font-weight:800;cursor:pointer;transition:.14s}
+.btn.g{background:linear-gradient(180deg,#1eb257,var(--verde));color:#fff;box-shadow:0 6px 18px rgba(22,163,74,.3);width:100%}
+.btn.g:hover{filter:brightness(1.06)}
+.btn.g:disabled{opacity:.65;cursor:default;filter:none}
+.btn.o{background:#fff;color:var(--navy);border:1.8px solid var(--linha)}
+.btn.o:hover{border-color:#cbd9e8}
+.msg{border-radius:11px;padding:11px 13px;font-size:13.5px;font-weight:600;margin-bottom:14px;display:none}
+.msg.err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;display:block}
+#login .foot{text-align:center;color:#cfe0ee;font-size:12.5px;margin-top:20px}
+#login .foot a{color:var(--verde2);font-weight:700}
+
+/* spinner */
+.spin{width:16px;height:16px;border:2.5px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;display:inline-block}
+@keyframes sp{to{transform:rotate(360deg)}}
+.spin.dark{border-color:rgba(46,111,158,.25);border-top-color:var(--aco)}
+
+/* ---------- APP HEADER ---------- */
+#app{display:none}
+header{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.95);backdrop-filter:blur(9px);border-bottom:1px solid var(--linha)}
+.nav{display:flex;align-items:center;gap:12px;padding:11px 0;flex-wrap:wrap}
+.nav .right{margin-left:auto;display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.empresa-tag{font-size:12.5px;color:var(--mut);font-weight:600}
+.empresa-tag b{color:var(--navy)}
+.btn.sm{padding:9px 15px;font-size:13.5px;border-radius:10px}
+.btn.upd{background:var(--navy);color:#fff}
+.btn.upd:hover{background:var(--navy2)}
+.btn.upd:disabled{opacity:.6;cursor:default}
+.btn.out{background:#fff;color:var(--mut);border:1.6px solid var(--linha)}
+.btn.out:hover{color:var(--ink);border-color:#cbd9e8}
+
+/* obra tabs */
+.obratabs{display:flex;gap:8px;overflow-x:auto;padding:12px 0 2px;-webkit-overflow-scrolling:touch}
+.obratab{flex:0 0 auto;border:1.6px solid var(--linha);background:#fff;border-radius:11px;padding:9px 15px;font-size:13.5px;font-weight:700;color:var(--mut);cursor:pointer;transition:.14s;white-space:nowrap}
+.obratab:hover{border-color:#cbd9e8}
+.obratab.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.updated{font-size:12px;color:var(--mut);margin:6px 2px 0}
+.updated b{color:var(--navy)}
+
+/* ---------- SECTIONS / CARDS ---------- */
+main{padding:8px 0 40px}
+.sec{margin-top:18px}
+.sec-h{display:flex;align-items:center;gap:9px;margin:0 2px 11px}
+.sec-h .ico{width:28px;height:28px;border-radius:8px;background:#eef4fa;color:var(--aco);display:flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto}
+.sec-h h2{font-size:15px;font-weight:800;color:var(--navy);letter-spacing:-.2px}
+.card{background:#fff;border:1px solid var(--linha);border-radius:15px;box-shadow:0 6px 18px rgba(15,39,64,.05);padding:18px}
+
+/* obra header card */
+.obra-head h1{font-size:22px;font-weight:900;color:var(--navy);letter-spacing:-.6px;line-height:1.2}
+.obra-head .cli{color:var(--mut);font-size:14px;font-weight:600;margin-top:2px}
+.metas{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.meta{background:#f7fafc;border:1px solid var(--linha);border-radius:10px;padding:7px 12px;font-size:12.5px;min-width:0}
+.meta .k{color:var(--mut);font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+.meta .v{color:var(--ink);font-weight:700;font-size:13.5px;margin-top:1px}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:800;padding:5px 11px;border-radius:99px;letter-spacing:.2px}
+.badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+.b-verde{background:#dcfce7;color:#15803d}.b-azul{background:#e0edfb;color:#1d4ed8}.b-amar{background:#fef3c7;color:#b45309}
+.b-cinza{background:#f1f5f9;color:#475569}.b-verm{background:#fee2e2;color:#b91c1c}
+.datas{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.datas .dbox{background:#f7fafc;border:1px solid var(--linha);border-radius:10px;padding:8px 13px;text-align:center}
+.datas .dbox .k{font-size:10px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+.datas .dbox .v{font-size:14px;font-weight:800;color:var(--navy)}
+.datas .arrow{color:var(--aco);font-weight:900;font-size:16px}
+
+/* andamento */
+.and-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:14px}
+.prog-box{background:linear-gradient(135deg,var(--navy) 0,var(--navy2) 100%);border-radius:14px;padding:20px;color:#fff;position:relative;overflow:hidden}
+.prog-box .lbl{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:var(--verde2)}
+.prog-box .big{font-size:44px;font-weight:900;letter-spacing:-2px;line-height:1;margin:6px 0 4px}
+.prog-box .big small{font-size:22px;font-weight:800}
+.prog-box .sub{color:#cfe0ee;font-size:12.5px}
+.pbar{height:14px;background:rgba(255,255,255,.16);border-radius:99px;overflow:hidden;margin-top:14px}
+.pbar>i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--verde2),var(--verde));transition:width .9s cubic-bezier(.2,.7,.2,1)}
+.kpis{display:grid;grid-template-rows:repeat(3,1fr);gap:10px}
+.kpi{background:#f7fafc;border:1px solid var(--linha);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px}
+.kpi .ki{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px;flex:0 0 auto}
+.kpi.c1 .ki{background:#e0edfb;color:#1d4ed8}.kpi.c2 .ki{background:#dcfce7;color:#15803d}.kpi.c3 .ki{background:#fef3c7;color:#b45309}
+.kpi .kt{font-size:10.5px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.5px}
+.kpi .kv{font-size:17px;font-weight:900;color:var(--navy);letter-spacing:-.4px}
+
+/* curva s */
+.leg{display:flex;gap:16px;margin-bottom:10px;flex-wrap:wrap}
+.leg span{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--ink)}
+.leg i{width:16px;height:4px;border-radius:2px;display:inline-block}
+.chart-scroll{overflow-x:auto}
+.chart-scroll svg{display:block;min-width:520px;width:100%;height:auto}
+
+/* cronograma */
+.gantt{display:flex;flex-direction:column;gap:11px}
+.grow{display:grid;grid-template-columns:150px 1fr 52px;gap:12px;align-items:center}
+.grow .gname{font-size:13px;font-weight:700;color:var(--ink);min-width:0}
+.grow .gname small{display:block;color:var(--mut);font-size:11px;font-weight:600;margin-top:1px}
+.gtrack{height:20px;background:#eef2f7;border-radius:99px;overflow:hidden;position:relative}
+.gtrack>i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--aco),var(--navy2));transition:width .8s}
+.gtrack>i.done{background:linear-gradient(90deg,var(--verde2),var(--verde))}
+.gpct{font-size:13px;font-weight:800;color:var(--navy);text-align:right}
+@media(max-width:640px){.grow{grid-template-columns:118px 1fr 44px;gap:8px}.grow .gname{font-size:12px}}
+
+/* tabela */
+.tbl-scroll{overflow-x:auto;border:1px solid var(--linha);border-radius:12px}
+table{width:100%;border-collapse:collapse;min-width:560px}
+thead th{background:#f7fafc;font-size:11px;color:var(--mut);font-weight:800;text-transform:uppercase;letter-spacing:.5px;text-align:right;padding:11px 12px;white-space:nowrap;border-bottom:1px solid var(--linha)}
+thead th:first-child,thead th:nth-child(2){text-align:left}
+tbody td{padding:11px 12px;font-size:13.5px;text-align:right;border-bottom:1px solid #eef2f7;white-space:nowrap}
+tbody td:first-child,tbody td:nth-child(2){text-align:left}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:#fafcfe}
+.tnum-cell{font-variant-numeric:tabular-nums}
+td .medn{display:inline-flex;align-items:center;justify-content:center;min-width:26px;height:24px;padding:0 7px;background:#eef4fa;color:var(--navy);border-radius:7px;font-weight:800;font-size:12.5px}
+.tfoot td{background:#f7fafc;font-weight:900;color:var(--navy);border-top:2px solid var(--linha)}
+
+/* rdo */
+.rdos{display:flex;flex-direction:column;gap:12px}
+.rdo{background:#fff;border:1px solid var(--linha);border-radius:14px;padding:15px 16px;box-shadow:0 5px 15px rgba(15,39,64,.04);border-left:4px solid var(--aco)}
+.rdo-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.rdo-date{font-size:15px;font-weight:900;color:var(--navy)}
+.rdo-num{font-size:11px;font-weight:800;color:var(--aco);background:#eef4fa;padding:3px 9px;border-radius:7px}
+.rdo-clima{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;color:var(--ink);background:#f1f5f9;border:1px solid var(--linha);padding:4px 9px;border-radius:8px}
+.chip.cond-ok{background:#dcfce7;border-color:#bbf7d0;color:#15803d}
+.chip.cond-parc{background:#fef3c7;border-color:#fde68a;color:#b45309}
+.chip.cond-parada{background:#fee2e2;border-color:#fecaca;color:#b91c1c}
+.rdo-body .ativ-lbl{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin-bottom:3px}
+.rdo-body .ativ{font-size:14px;color:var(--ink);line-height:1.55}
+.rdo-ocor{margin-top:11px;background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:10px 12px;font-size:13px;color:#92400e}
+.rdo-ocor b{color:#b45309}
+.rdo-meta{display:flex;gap:14px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px dashed var(--linha);font-size:12.5px;color:var(--mut)}
+.rdo-meta b{color:var(--ink);font-weight:700}
+
+/* empty / footer / loading */
+.empty{text-align:center;color:var(--mut);padding:26px 16px;font-size:14px}
+.empty .big-emoji{font-size:30px;display:block;margin-bottom:6px;opacity:.7}
+.appfoot{text-align:center;color:var(--mut);font-size:12px;padding:26px 0 8px}
+.appfoot b{color:var(--navy)}
+#loadOverlay{position:fixed;inset:0;background:rgba(246,249,252,.72);backdrop-filter:blur(2px);z-index:50;display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+#loadOverlay .spin{width:34px;height:34px}
+#loadOverlay .t{font-size:14px;font-weight:700;color:var(--navy)}
+
+@media(max-width:720px){
+  .and-grid{grid-template-columns:1fr}
+  .kpis{grid-template-rows:none}
+  .obra-head h1{font-size:19px}
+  .prog-box .big{font-size:38px}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<section id="login">
+  <div class="card">
+    <div class="brand" id="loginLogo"></div>
+    <h1>Portal da Obra</h1>
+    <p class="sub">Acompanhe seu projeto: andamento, medições,<br>cronograma e diário de obra em tempo real.</p>
+    <div class="msg" id="loginMsg"></div>
+    <form id="loginForm" autocomplete="on">
+      <div class="fld">
+        <label for="user">Usuário</label>
+        <input type="text" id="user" name="username" autocomplete="username" placeholder="seu usuário" required>
+      </div>
+      <div class="fld">
+        <label for="senha">Senha</label>
+        <div class="pwrap">
+          <input type="password" id="senha" name="password" autocomplete="current-password" placeholder="sua senha" required>
+          <button type="button" class="toggle" id="togglePw">Mostrar</button>
+        </div>
+      </div>
+      <button type="submit" class="btn g" id="loginBtn">Entrar</button>
+    </form>
+    <div class="foot">Não tem acesso? Fale com seu engenheiro responsável.</div>
+  </div>
+</section>
+
+<!-- ================= APP ================= -->
+<div id="app">
+  <header>
+    <div class="wrap nav">
+      <div class="logo" id="appLogo"></div>
+      <div class="right">
+        <span class="empresa-tag">Obra de <b id="empresaNome">—</b></span>
+        <button class="btn sm upd" id="btnUpdate">↻ Atualizar</button>
+        <button class="btn sm out" id="btnLogout">Sair</button>
+      </div>
+    </div>
+    <div class="wrap">
+      <div class="obratabs" id="obraTabs"></div>
+    </div>
+  </header>
+
+  <main class="wrap" id="dash">
+    <!-- render dinâmico -->
+  </main>
+
+  <div class="wrap appfoot" id="appFoot"></div>
+</div>
+
+<div id="loadOverlay"><span class="spin"></span><span class="t">Carregando dados da obra…</span></div>
+
+<script>
+"use strict";
+/* ================= CONFIG ================= */
+var API_LOGIN = "/api/portal/login"; // POST {user, senha}
+
+/* ================= LOGO SVG ================= */
+function logoHTML(){
+  return ''
+    +'<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">'
+    +'<rect x="2" y="14" width="4.5" height="10" rx="1.4" fill="#2e6f9e"/>'
+    +'<rect x="8.5" y="9" width="4.5" height="15" rx="1.4" fill="#1c4b73"/>'
+    +'<rect x="15" y="4" width="4.5" height="20" rx="1.4" fill="#16a34a"/>'
+    +'<path d="M21.5 3.2l.9 1.9 2.1.3-1.5 1.5.35 2.1-1.85-1-1.85 1 .35-2.1-1.5-1.5 2.1-.3z" fill="#6fd08a"/>'
+    +'</svg>'
+    +'<span class="txt">Orça<span>PRO</span></span>';
+}
+document.getElementById("loginLogo").innerHTML = logoHTML();
+document.getElementById("appLogo").innerHTML = logoHTML();
+
+/* ================= HELPERS ================= */
+var $ = function(id){ return document.getElementById(id); };
+
+function brMoney(n){
+  if(n===null||n===undefined||n==="" || isNaN(Number(n))) return "—";
+  return "R$ " + Number(n).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function brNum(n,dec){
+  if(n===null||n===undefined||n==="" || isNaN(Number(n))) return "—";
+  dec = (dec===undefined)?0:dec;
+  return Number(n).toLocaleString("pt-BR",{minimumFractionDigits:dec,maximumFractionDigits:dec});
+}
+function brDate(iso){
+  if(!iso) return "—";
+  // aceita YYYY-MM-DD ou ISO completo
+  var s = String(iso).slice(0,10);
+  var p = s.split("-");
+  if(p.length!==3) return iso;
+  return p[2]+"/"+p[1]+"/"+p[0];
+}
+function brDateTime(iso){
+  if(!iso) return "—";
+  var d = new Date(iso);
+  if(isNaN(d.getTime())) return brDate(iso);
+  var dd = d.toLocaleDateString("pt-BR");
+  var hh = d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+  return dd + " às " + hh;
+}
+function clampPct(n){
+  var v = Number(n);
+  if(isNaN(v)) return 0;
+  if(v<0) return 0; if(v>100) return 100;
+  return v;
+}
+function esc(s){
+  if(s===null||s===undefined) return "";
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+function has(v){ return v!==null && v!==undefined && v!==""; }
+
+/* status -> classe de badge */
+function statusBadge(status){
+  var s = (status||"").toString().toLowerCase();
+  var cls="b-cinza";
+  if(/conclu|entreg|finaliz/.test(s)) cls="b-verde";
+  else if(/andamento|execu|obra|ativa/.test(s)) cls="b-azul";
+  else if(/paus|parad|suspen|atras/.test(s)) cls="b-amar";
+  else if(/cancel|distrat/.test(s)) cls="b-verm";
+  var label = has(status)?status:"—";
+  return '<span class="badge '+cls+'"><span class="dot"></span>'+esc(label)+'</span>';
+}
+/* condição de trabalho do RDO -> chip */
+function condChip(cond){
+  var c=(cond||"").toString().toLowerCase(), cls="cond-ok", txt=has(cond)?cond:"Normal";
+  if(/parad|paralis|impratic/.test(c)) cls="cond-parada";
+  else if(/parcial|chuva|reduz/.test(c)) cls="cond-parc";
+  return '<span class="chip '+cls+'">'+esc(txt)+'</span>';
+}
+function climaIcon(txt){
+  var t=(txt||"").toString().toLowerCase();
+  if(/chuv|tempes|precip/.test(t)) return "🌧";
+  if(/nubl|encobert|parcial/.test(t)) return "⛅";
+  if(/sol|limp|claro|bom/.test(t)) return "☀";
+  return "🌤";
+}
+
+/* ================= STATE ================= */
+var STATE = { empresa:"", obras:[], sel:0 };
+
+/* ================= SESSION ================= */
+function saveCreds(u,s){
+  try{ sessionStorage.setItem("orcapro_portal", JSON.stringify({u:u,s:s})); }catch(e){}
+}
+function loadCreds(){
+  try{ var r=sessionStorage.getItem("orcapro_portal"); return r?JSON.parse(r):null; }catch(e){ return null; }
+}
+function clearCreds(){ try{ sessionStorage.removeItem("orcapro_portal"); }catch(e){} }
+
+/* ================= LOGIN / FETCH ================= */
+function doFetch(user, senha){
+  return fetch(API_LOGIN,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","Accept":"application/json"},
+    body:JSON.stringify({user:user, senha:senha})
+  }).then(function(r){
+    if(!r.ok) throw new Error("HTTP "+r.status);
+    return r.json();
+  });
+}
+
+function showLoginError(msg){
+  var m=$("loginMsg"); m.textContent=msg; m.className="msg err";
+}
+function clearLoginError(){ var m=$("loginMsg"); m.className="msg"; m.textContent=""; }
+
+function setLoginLoading(on){
+  var b=$("loginBtn");
+  b.disabled=on;
+  b.innerHTML = on ? '<span class="spin"></span> Entrando…' : 'Entrar';
+}
+
+$("togglePw").addEventListener("click",function(){
+  var i=$("senha");
+  if(i.type==="password"){ i.type="text"; this.textContent="Ocultar"; }
+  else{ i.type="password"; this.textContent="Mostrar"; }
+});
+
+$("loginForm").addEventListener("submit",function(ev){
+  ev.preventDefault();
+  clearLoginError();
+  var user=$("user").value.trim(), senha=$("senha").value;
+  if(!user || !senha){ showLoginError("Preencha usuário e senha."); return; }
+  setLoginLoading(true);
+  doFetch(user,senha).then(function(data){
+    setLoginLoading(false);
+    if(data && data.ok){
+      saveCreds(user,senha);
+      applyData(data);
+      enterApp();
+    }else{
+      showLoginError((data && data.erro) ? data.erro : "Usuário ou senha inválidos.");
+    }
+  }).catch(function(){
+    setLoginLoading(false);
+    showLoginError("Não foi possível conectar. Verifique sua internet e tente novamente.");
+  });
+});
+
+/* ================= REFRESH ================= */
+function refresh(){
+  var c=loadCreds();
+  if(!c){ logout(); return; }
+  var b=$("btnUpdate");
+  b.disabled=true; b.innerHTML='<span class="spin"></span> Atualizando…';
+  $("loadOverlay").style.display="flex";
+  doFetch(c.u,c.s).then(function(data){
+    $("loadOverlay").style.display="none";
+    b.disabled=false; b.innerHTML="↻ Atualizar";
+    if(data && data.ok){
+      var prevId = (STATE.obras[STATE.sel]||{}).obraId;
+      applyData(data, prevId);
+      renderAll();
+    }else{
+      // sessão pode ter expirado
+      logout();
+      showLoginError((data && data.erro) ? data.erro : "Sua sessão expirou. Entre novamente.");
+    }
+  }).catch(function(){
+    $("loadOverlay").style.display="none";
+    b.disabled=false; b.innerHTML="↻ Atualizar";
+    alert("Não foi possível atualizar agora. Tente novamente em instantes.");
+  });
+}
+
+/* ================= LOGOUT ================= */
+function logout(){
+  clearCreds();
+  STATE={empresa:"",obras:[],sel:0};
+  $("app").style.display="none";
+  $("login").style.display="flex";
+  $("loginForm").reset();
+  setLoginLoading(false);
+  window.scrollTo(0,0);
+}
+$("btnLogout").addEventListener("click",logout);
+$("btnUpdate").addEventListener("click",refresh);
+
+/* ================= APPLY DATA ================= */
+function applyData(data, keepObraId){
+  STATE.empresa = data.empresa || "seu escritório";
+  STATE.obras = Array.isArray(data.obras)?data.obras:[];
+  STATE.sel = 0;
+  if(keepObraId){
+    for(var i=0;i<STATE.obras.length;i++){
+      if(STATE.obras[i].obraId===keepObraId){ STATE.sel=i; break; }
+    }
+  }
+}
+
+function enterApp(){
+  $("login").style.display="none";
+  $("app").style.display="block";
+  window.scrollTo(0,0);
+  renderAll();
+}
+
+/* ================= RENDER: TOP ================= */
+function renderAll(){
+  $("empresaNome").textContent = STATE.empresa || "—";
+  $("appFoot").innerHTML = "Portal fornecido por <b>"+esc(STATE.empresa||"seu escritório")+"</b> · via OrçaPRO";
+  renderTabs();
+  renderDash();
+}
+
+function renderTabs(){
+  var t=$("obraTabs");
+  if(STATE.obras.length<=1){ t.innerHTML=""; t.style.display="none"; return; }
+  t.style.display="flex";
+  var html="";
+  for(var i=0;i<STATE.obras.length;i++){
+    var o=STATE.obras[i];
+    html+='<button class="obratab'+(i===STATE.sel?' on':'')+'" data-i="'+i+'">'+esc(o.nome||("Obra "+(i+1)))+'</button>';
+  }
+  t.innerHTML=html;
+  var btns=t.querySelectorAll(".obratab");
+  for(var j=0;j<btns.length;j++){
+    btns[j].addEventListener("click",function(){
+      STATE.sel=parseInt(this.getAttribute("data-i"),10);
+      renderTabs(); renderDash();
+      window.scrollTo({top:0,behavior:"smooth"});
+    });
+  }
+}
+
+/* ================= RENDER: DASH ================= */
+function renderDash(){
+  var d=$("dash");
+  if(!STATE.obras.length){
+    d.innerHTML = '<div class="sec"><div class="card empty"><span class="big-emoji">🏗️</span>'
+      +'Nenhuma obra disponível ainda.<br>Fale com seu engenheiro.</div></div>';
+    return;
+  }
+  var o = STATE.obras[STATE.sel] || STATE.obras[0];
+  var html = "";
+  if(o && o.atualizadoEm){
+    html += '<div class="updated" style="margin:10px 2px 0">Dados atualizados em <b>'+brDateTime(o.atualizadoEm)+'</b></div>';
+  }
+  html += secObraHead(o);
+  html += secAndamento(o);
+  html += secCurvaS(o);
+  html += secCronograma(o);
+  html += secMedicoes(o);
+  html += secRDO(o);
+  d.innerHTML = html;
+  // barras animadas: forçar reflow então setar width
+  requestAnimationFrame(function(){
+    var bars=d.querySelectorAll("[data-w]");
+    for(var i=0;i<bars.length;i++){ bars[i].style.width = bars[i].getAttribute("data-w")+"%"; }
+  });
+}
+
+/* ---- 1. cabeçalho ---- */
+function secObraHead(o){
+  var metas="";
+  function m(k,v){ if(!has(v)) return; metas+='<div class="meta"><div class="k">'+k+'</div><div class="v">'+esc(v)+'</div></div>'; }
+  m("Local", o.local);
+  m("Tipo", o.tipo);
+  m("Fase", o.fase);
+  if(has(o.areaConstruida)) metas+='<div class="meta"><div class="k">Área construída</div><div class="v tnum">'+brNum(o.areaConstruida,2)+' m²</div></div>';
+  if(has(o.areaTerreno)) metas+='<div class="meta"><div class="k">Área terreno</div><div class="v tnum">'+brNum(o.areaTerreno,2)+' m²</div></div>';
+
+  var datas="";
+  if(has(o.inicio)||has(o.termino)){
+    datas = '<div class="datas">'
+      +'<div class="dbox"><div class="k">Início</div><div class="v tnum">'+brDate(o.inicio)+'</div></div>'
+      +'<span class="arrow">→</span>'
+      +'<div class="dbox"><div class="k">Término previsto</div><div class="v tnum">'+brDate(o.termino)+'</div></div>'
+      +'</div>';
+  }
+
+  return '<section class="sec"><div class="card obra-head">'
+    +'<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">'
+    +'<div><h1>'+esc(o.nome||"Obra")+'</h1>'
+    +(has(o.cliente)?'<div class="cli">Cliente: '+esc(o.cliente)+'</div>':'')+'</div>'
+    +'<div>'+statusBadge(o.status)+'</div></div>'
+    +(metas?'<div class="metas">'+metas+'</div>':'')
+    +datas
+    +'</div></section>';
+}
+
+/* ---- 2. andamento ---- */
+function secAndamento(o){
+  var pct = clampPct(o.pctExecutado);
+  var kpis = ''
+    +'<div class="kpi c1"><div class="ki">📄</div><div><div class="kt">Valor contratado</div><div class="kv tnum">'+brMoney(o.contratado)+'</div></div></div>'
+    +'<div class="kpi c2"><div class="ki">✓</div><div><div class="kt">Medido acumulado</div><div class="kv tnum">'+brMoney(o.medidoAcum)+'</div></div></div>'
+    +'<div class="kpi c3"><div class="ki">⏳</div><div><div class="kt">A faturar</div><div class="kv tnum">'+brMoney(o.aFaturar)+'</div></div></div>';
+  return '<section class="sec">'
+    +'<div class="sec-h"><span class="ico">📊</span><h2>Andamento da obra</h2></div>'
+    +'<div class="and-grid">'
+    +'<div class="prog-box"><div class="lbl">Execução física</div>'
+    +'<div class="big tnum">'+brNum(pct,pct%1?1:0)+'<small>%</small></div>'
+    +'<div class="sub">concluído do total previsto</div>'
+    +'<div class="pbar"><i data-w="'+pct+'" style="width:0"></i></div></div>'
+    +'<div class="kpis">'+kpis+'</div>'
+    +'</div></section>';
+}
+
+/* ---- 3. curva S (SVG) ---- */
+function secCurvaS(o){
+  var c=o.curvaS;
+  if(!c || !c.labels || !c.labels.length) return "";
+  var W=680, H=260, padL=38, padR=14, padT=14, padB=34;
+  var iw=W-padL-padR, ih=H-padT-padB;
+  var n=c.labels.length;
+  function x(i){ return padL + (n<=1?iw/2:(iw*i/(n-1))); }
+  function y(v){ return padT + ih*(1 - clampPct(v)/100); }
+  // grid horizontal 0..100 step 25
+  var grid="";
+  for(var g=0;g<=100;g+=25){
+    var yy=y(g);
+    grid+='<line x1="'+padL+'" y1="'+yy+'" x2="'+(W-padR)+'" y2="'+yy+'" stroke="#e2e8f0" stroke-width="1"/>';
+    grid+='<text x="'+(padL-6)+'" y="'+(yy+4)+'" text-anchor="end" font-size="10" fill="#94a3b8">'+g+'%</text>';
+  }
+  // x labels (no máx ~8 pra não poluir)
+  var step = Math.ceil(n/8);
+  var xlab="";
+  for(var i=0;i<n;i++){
+    if(i%step!==0 && i!==n-1) continue;
+    xlab+='<text x="'+x(i)+'" y="'+(H-12)+'" text-anchor="middle" font-size="10" fill="#94a3b8">'+esc(c.labels[i])+'</text>';
+  }
+  function pathFor(arr){
+    if(!arr||!arr.length) return "";
+    var d="";
+    for(var i=0;i<arr.length;i++){ d+=(i?"L":"M")+x(i).toFixed(1)+" "+y(arr[i]).toFixed(1)+" "; }
+    return d;
+  }
+  function dots(arr,color){
+    if(!arr) return "";
+    var s="";
+    for(var i=0;i<arr.length;i++){ s+='<circle cx="'+x(i).toFixed(1)+'" cy="'+y(arr[i]).toFixed(1)+'" r="3" fill="'+color+'"/>'; }
+    return s;
+  }
+  var planPath = c.planejado ? '<path d="'+pathFor(c.planejado)+'" fill="none" stroke="#2e6f9e" stroke-width="2.4" stroke-dasharray="6 5"/>'+dots(c.planejado,"#2e6f9e") : "";
+  var realPath = c.realizado ? '<path d="'+pathFor(c.realizado)+'" fill="none" stroke="#16a34a" stroke-width="2.8"/>'+dots(c.realizado,"#16a34a") : "";
+
+  return '<section class="sec">'
+    +'<div class="sec-h"><span class="ico">📈</span><h2>Curva S — avanço físico</h2></div>'
+    +'<div class="card">'
+    +'<div class="leg"><span><i style="background:#2e6f9e"></i>Planejado</span><span><i style="background:#16a34a"></i>Realizado</span></div>'
+    +'<div class="chart-scroll"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Curva S planejado versus realizado">'
+    +grid+xlab+planPath+realPath
+    +'</svg></div></div></section>';
+}
+
+/* ---- 4. cronograma ---- */
+function secCronograma(o){
+  var cr=o.cronograma;
+  if(!cr || !cr.length) return "";
+  var rows="";
+  for(var i=0;i<cr.length;i++){
+    var e=cr[i], p=clampPct(e.pct);
+    var per="";
+    if(has(e.inicio)||has(e.fim)) per='<small>'+brDate(e.inicio)+' → '+brDate(e.fim)+'</small>';
+    rows+='<div class="grow"><div class="gname">'+esc(e.etapa||("Etapa "+(i+1)))+per+'</div>'
+      +'<div class="gtrack"><i class="'+(p>=100?'done':'')+'" data-w="'+p+'" style="width:0"></i></div>'
+      +'<div class="gpct tnum">'+brNum(p,p%1?1:0)+'%</div></div>';
+  }
+  return '<section class="sec">'
+    +'<div class="sec-h"><span class="ico">🗓️</span><h2>Cronograma por etapa</h2></div>'
+    +'<div class="card"><div class="gantt">'+rows+'</div></div></section>';
+}
+
+/* ---- 5. medições ---- */
+function secMedicoes(o){
+  var md=o.medicoes;
+  if(!md || !md.length){
+    return '<section class="sec"><div class="sec-h"><span class="ico">📐</span><h2>Medições</h2></div>'
+      +'<div class="card empty">Nenhuma medição registrada ainda.</div></section>';
+  }
+  var rows="", totVal=0, totRet=0, hasVal=false, hasRet=false;
+  for(var i=0;i<md.length;i++){
+    var m=md[i];
+    if(has(m.valor)&&!isNaN(Number(m.valor))){ totVal+=Number(m.valor); hasVal=true; }
+    if(has(m.retencao)&&!isNaN(Number(m.retencao))){ totRet+=Number(m.retencao); hasRet=true; }
+    rows+='<tr>'
+      +'<td><span class="medn">'+esc(has(m.numero)?m.numero:(i+1))+'</span></td>'
+      +'<td class="tnum-cell">'+brDate(m.data)+'</td>'
+      +'<td class="tnum-cell">'+(has(m.percentual)?brNum(m.percentual,m.percentual%1?2:0)+'%':'—')+'</td>'
+      +'<td class="tnum-cell">'+brMoney(m.valor)+'</td>'
+      +'<td class="tnum-cell">'+brMoney(m.retencao)+'</td>'
+      +'<td class="tnum-cell">'+(has(m.acumuladoPct)?brNum(m.acumuladoPct,m.acumuladoPct%1?2:0)+'%':'—')+'</td>'
+      +'</tr>';
+  }
+  var tfoot='';
+  if(hasVal||hasRet){
+    tfoot='<tr class="tfoot"><td>Total</td><td></td><td></td>'
+      +'<td class="tnum-cell">'+(hasVal?brMoney(totVal):'—')+'</td>'
+      +'<td class="tnum-cell">'+(hasRet?brMoney(totRet):'—')+'</td>'
+      +'<td></td></tr>';
+  }
+  return '<section class="sec">'
+    +'<div class="sec-h"><span class="ico">📐</span><h2>Medições</h2></div>'
+    +'<div class="tbl-scroll"><table>'
+    +'<thead><tr><th>Nº</th><th>Data</th><th>% período</th><th>Valor medido</th><th>Retenção</th><th>% acum.</th></tr></thead>'
+    +'<tbody>'+rows+tfoot+'</tbody></table></div></section>';
+}
+
+/* ---- 6. RDO ---- */
+function secRDO(o){
+  var head='<div class="sec-h"><span class="ico">📋</span><h2>Diário de Obra (RDO)</h2></div>';
+  var rdos=o.rdos;
+  if(!rdos || !rdos.length){
+    return '<section class="sec">'+head
+      +'<div class="card empty"><span class="big-emoji">📝</span>Nenhum diário publicado ainda.</div></section>';
+  }
+  // ordena do mais recente pro mais antigo (por data; fallback ordem original)
+  var arr = rdos.slice();
+  arr.sort(function(a,b){
+    var da=a.data?String(a.data):"", db=b.data?String(b.data):"";
+    if(da===db) return 0;
+    return da<db?1:-1;
+  });
+  var cards="";
+  for(var i=0;i<arr.length;i++){
+    var r=arr[i];
+    var clima="";
+    if(has(r.climaManha)) clima+='<span class="chip">'+climaIcon(r.climaManha)+' Manhã: '+esc(r.climaManha)+'</span>';
+    if(has(r.climaTarde)) clima+='<span class="chip">'+climaIcon(r.climaTarde)+' Tarde: '+esc(r.climaTarde)+'</span>';
+    if(has(r.condicao)) clima+=condChip(r.condicao);
+
+    var ocor = has(r.ocorrencias)
+      ? '<div class="rdo-ocor"><b>⚠ Ocorrências:</b> '+esc(r.ocorrencias)+'</div>' : '';
+
+    var meta="";
+    if(has(r.efetivo)) meta+='<span>👷 Efetivo: <b>'+esc(r.efetivo)+(String(r.efetivo).match(/[a-zA-Z]/)?'':' pessoa(s)')+'</b></span>';
+    if(has(r.equipamentos)) meta+='<span>🚜 Equipamentos: <b>'+esc(r.equipamentos)+'</b></span>';
+    if(has(r.responsavel)) meta+='<span>🖊️ Responsável: <b>'+esc(r.responsavel)+'</b></span>';
+
+    cards+='<div class="rdo">'
+      +'<div class="rdo-top">'
+      +'<span class="rdo-date tnum">'+brDate(r.data)+'</span>'
+      +(has(r.numero)?'<span class="rdo-num">RDO Nº '+esc(r.numero)+'</span>':'')
+      +'<span class="rdo-clima">'+clima+'</span>'
+      +'</div>'
+      +'<div class="rdo-body">'
+      +'<div class="ativ-lbl">Atividades executadas</div>'
+      +'<div class="ativ">'+(has(r.atividades)?esc(r.atividades):'<span style="color:var(--mut)">Sem descrição de atividades.</span>')+'</div>'
+      +'</div>'
+      +ocor
+      +(meta?'<div class="rdo-meta">'+meta+'</div>':'')
+      +'</div>';
+  }
+  return '<section class="sec">'+head
+    +'<div class="rdos">'+cards+'</div></section>';
+}
+
+/* ================= AUTO-RESTORE (se já logado nesta aba) ==== */
+(function(){
+  var c=loadCreds();
+  if(!c) return;
+  $("loadOverlay").style.display="flex";
+  doFetch(c.u,c.s).then(function(data){
+    $("loadOverlay").style.display="none";
+    if(data && data.ok){ applyData(data); enterApp(); }
+    else{ clearCreds(); } // sessão inválida -> fica no login
+  }).catch(function(){
+    $("loadOverlay").style.display="none";
+    // sem rede: mantém login, usuário tenta manualmente
+  });
+})();
+</script>
+</body></html>

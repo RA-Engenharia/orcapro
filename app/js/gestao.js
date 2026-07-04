@@ -229,7 +229,8 @@
         html += '<div class="card orc-card" data-gopen="obras:' + o.id + '">' +
           '<div class="flex between"><h3>' + Util.esc(o.nome) + "</h3>" + pill(o.status) + "</div>" +
           '<div class="meta">' + (cli ? "👤 " + Util.esc(cli.nome) + " · " : "") + (o.tipo ? rot(P.obraTipo, o.tipo) : "") + (o.local ? " · 📍 " + Util.esc(o.local) : "") + "</div>" +
-          '<div class="valor">' + Util.fmtMoeda(o.valor) + "</div></div>";
+          '<div class="valor">' + Util.fmtMoeda(o.valor) + "</div>" +
+          '<div style="margin-top:10px;text-align:right"><button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">📱 Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button></div></div>";
       });
       return html + "</div>";
     },
@@ -1073,6 +1074,7 @@ renderRelatorios: function () {
       if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && this._bloqueado()) return;
       switch (gacao) {
         case "upsell-plus": return this._upsell();
+        case "portal-obra": return this.portalObra(id);
         case "nova-obra": return this.novoObra();
         case "nova-cliente": return this.novoCliente();
         case "novo-contrato": return this.novoContrato();
@@ -1131,6 +1133,72 @@ case "nova-folha": return this.novoFolha();
         case "lancar-folha-enc": return this.lancarFolhaEnc(id);
       }
     },
+    // ---------- Portal do Cliente: publica o resumo da obra na nuvem ----------
+    portalObra: function (id) {
+      if (this._bloqueado()) return;
+      var obra = Store.obter(eid(), "obras", id); if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
+      var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "");
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!chave) { UI.toast("Ative sua licença pra publicar no Portal do Cliente.", "erro"); return; }
+      // snapshot CURADO — só o que o cliente pode ver (sem custo interno/margem)
+      var meds = lista("medicoes").filter(function (m) { return m.obraId === id; })
+        .sort(function (a, b) { return String(a.numero || "").localeCompare(String(b.numero || "")); });
+      var acum = 0, medidoAcum = 0;
+      var medicoes = meds.map(function (m) {
+        acum += Util.num(m.percentual); medidoAcum += Util.num(m.valor);
+        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10) };
+      });
+      var rdos = lista("rdo").filter(function (r) { return r.obraId === id && r.status !== "rascunho"; })
+        .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); })
+        .map(function (r) {
+          return { numero: r.numero || "", data: r.data || "", climaManha: rot(P.rdoClima, r.climaManha), climaTarde: rot(P.rdoClima, r.climaTarde), condicao: rot(P.rdoCondicao, r.condicao), efetivo: Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto), atividades: r.atividades || "", ocorrencias: r.ocorrencias || "", equipamentos: r.equipamentos || "", responsavel: r.responsavel || "" };
+        });
+      var contratado = Util.num(obra.valor);
+      var pctExec = obra.pctExecutado != null ? Util.num(obra.pctExecutado) : Math.min(100, Math.round(acum * 10) / 10);
+      var snapshot = {
+        obraId: id, nome: obra.nome || "", cliente: obra.clienteNome || "", local: obra.local || "",
+        tipo: rot(P.obraTipo, obra.tipo) || "", fase: rot(P.obraFase, obra.fase) || "", status: obra.status || "",
+        inicio: obra.inicio || "", termino: obra.termino || "",
+        areaConstruida: Util.num(obra.areaConstruida), areaTerreno: Util.num(obra.areaTerreno),
+        contratado: contratado, pctExecutado: pctExec, medidoAcum: medidoAcum, aFaturar: Math.max(0, contratado - medidoAcum),
+        curvaS: null, cronograma: [], medicoes: medicoes, rdos: rdos
+      };
+      var userSug = obra.portalUser || ((obra.clienteNome || obra.nome || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").slice(0, 16) || "cliente");
+      var senhaSug = obra.portalSenha || Math.random().toString(36).slice(2, 8);
+      var corpo =
+        '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO). Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
+        '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
+        '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>.</div>" +
+        '<div id="portal-result" style="margin-top:12px"></div>';
+      UI.modal("📱 Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Publicar", classe: "success", onClick: publicar }
+      ]);
+      function el(i) { return document.getElementById(i); }
+      function publicar() {
+        var user = ((el("g-puser") || {}).value || "").trim().toLowerCase().replace(/\s+/g, ""), senha = ((el("g-psenha") || {}).value || "").trim();
+        if (user.length < 3) { UI.toast("Usuário muito curto (mín. 3).", "erro"); return; }
+        if (senha.length < 4) { UI.toast("Senha muito curta (mín. 4).", "erro"); return; }
+        el("portal-result").innerHTML = '<div class="muted">Publicando…</div>';
+        fetch(url + "/api/portal/publicar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ user: user, senha: senha, empresa: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "", obra: snapshot }) })
+          .then(function (r) { return r.json(); }).then(function (j) {
+            if (!j.ok) { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">' + Util.esc(j.erro || "Falha ao publicar.") + "</div>"; return; }
+            obra.portalUser = user; obra.portalSenha = senha; Store.salvar(eid(), "obras", obra);
+            var link = url + "/portal";
+            el("portal-result").innerHTML =
+              '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px">' +
+              '<b style="color:#15803d">✓ Publicado!</b> Envie estes dados pro seu cliente:<br>' +
+              '<div style="margin-top:8px;line-height:1.9"><b>Link:</b> <a href="' + link + '" target="_blank" style="color:#2e6f9e">' + link + '</a><br><b>Usuário:</b> ' + Util.esc(user) + "<br><b>Senha:</b> " + Util.esc(senha) + "</div>" +
+              '<button class="btn sm primary" id="portal-copy" style="margin-top:10px">Copiar mensagem pro cliente</button></div>';
+            var cp = el("portal-copy");
+            if (cp) cp.onclick = function () {
+              var msg = "Olá! Acompanhe a sua obra online pelo portal:\nLink: " + link + "\nUsuário: " + user + "\nSenha: " + senha;
+              if (navigator.clipboard) navigator.clipboard.writeText(msg).then(function () { UI.toast("Mensagem copiada!", "ok"); }); else UI.toast("Copie manualmente os dados acima.", "ok");
+            };
+          }).catch(function () { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>'; });
+      }
+    },
+
     abrir: function (entidade, id) {
       var r = Store.obter(eid(), entidade, id); if (!r) return;
       if (entidade === "obras") return this.formObra(r);
