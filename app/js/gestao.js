@@ -7,6 +7,12 @@
 (function (global) {
   "use strict";
 
+  // ---------- Fotos dos RDOs (Portal do Cliente) ----------
+  var RDO_MAX_FOTOS = 6;            // teto de fotos por diário
+  var RDO_FOTO_MAXW = 1024;         // px no lado maior (reencode)
+  var RDO_FOTO_Q = 0.6;             // qualidade JPEG
+  var SNAP_MAX_BYTES = 8 * 1024 * 1024; // teto do snapshot serializado (< 10MB da rota + 12MB do body)
+
   // ---------- Parametrização (enums do domínio) ----------
   var P = {
     obraStatus: [["planejamento", "Planejamento"], ["andamento", "Em andamento"], ["pausada", "Pausada"], ["concluida", "Concluída"]],
@@ -529,16 +535,20 @@
         var ef = Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto);
         var clima = rot(P.rdoClima, r.climaManha) + (r.climaTarde && r.climaTarde !== r.climaManha ? " / " + rot(P.rdoClima, r.climaTarde) : "");
         var resumo = (r.atividades || "").replace(/\s+/g, " ").slice(0, 60) + ((r.atividades || "").length > 60 ? "…" : "");
+        var nf = (r.fotos && r.fotos.length) ? ' <span title="fotos anexadas" style="color:#2e6f9e;font-weight:700">📷' + r.fotos.length + "</span>" : "";
         var acao = r.status === "rascunho" ? '<button class="btn sm success" data-gacao="finalizar-rdo" data-id="' + r.id + '">Finalizar</button>' : "✓";
-        html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + "</td><td>" + pill(r.status) + '</td><td class="num">' + acao + "</td></tr>";
+        html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + pill(r.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
     novoRdo: function () { this.formRdo(null); },
     formRdo: function (r) {
-      r = r || {}; var obras = lista("obras");
+      r = r || {}; var self = this, obras = lista("obras");
       var num = r.numero || ("RDO-" + String(lista("rdo").length + 1).padStart(4, "0"));
       var hoje = new Date().toISOString().slice(0, 10);
+      var fotosBuf = (r.fotos || []).map(function (f) { return { d: f.d, leg: f.leg || "" }; }); // edição: fotos já salvas
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var autorDef = r.autor || eu.nome || eu.empresa || eu.email || "";
       var corpo =
         '<div class="row">' + campo("Nº", inp("g-num", num)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Status", sel("g-status", opts(P.rdoStatus, r.status || "rascunho"))) + "</div>" +
         campo("Obra *", sel("g-obra", optsRec(obras, "nome", r.obraId, "— selecionar —"))) +
@@ -546,7 +556,12 @@
         '<div class="row">' + campo("Efetivo direto (nº)", inp("g-efd", r.efetivoDireto)) + campo("Efetivo indireto (nº)", inp("g-efi", r.efetivoIndireto)) + campo("Terceiros / equipes", inp("g-terc", r.terceiros)) + "</div>" +
         campo("Atividades executadas *", '<textarea id="g-ativ" rows="3" placeholder="O que foi executado no dia">' + Util.esc(r.atividades || "") + "</textarea>") +
         campo("Ocorrências / paralisações", '<textarea id="g-ocor" rows="2" placeholder="Chuva, falta de material, acidente, visita técnica...">' + Util.esc(r.ocorrencias || "") + "</textarea>") +
-        '<div class="row">' + campo("Equipamentos em obra", inp("g-equip", r.equipamentos, "Betoneira, andaimes...")) + campo("Responsável (RT)", inp("g-resp", r.responsavel)) + "</div>";
+        '<div class="row">' + campo("Equipamentos em obra", inp("g-equip", r.equipamentos, "Betoneira, andaimes...")) + campo("Responsável (RT)", inp("g-resp", r.responsavel)) + "</div>" +
+        '<div class="row">' + campo("Elaborado por (autor)", inp("g-autor", autorDef, "Quem registrou o diário")) + "</div>" +
+        campo('Fotos do dia <span class="muted" style="font-weight:400">(aparecem no Portal do Cliente · máx ' + RDO_MAX_FOTOS + ")</span>",
+          '<input type="file" id="g-fotos" accept="image/*" multiple style="display:none">' +
+          '<button type="button" class="btn sm" id="g-fotos-btn" style="background:#0f2740;color:#fff">📷 Adicionar fotos</button>' +
+          '<div id="g-fotos-gal" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px"></div>');
       this._modalForm("rdo", r, "Diário de obra", corpo, function (obj) {
         obj.numero = v("g-num"); obj.data = v("g-data"); obj.status = v("g-status"); obj.obraId = v("g-obra");
         if (!obj.obraId) { UI.toast("Selecione a obra do diário.", "erro"); return false; }
@@ -554,10 +569,42 @@
         obj.efetivoDireto = nv("g-efd"); obj.efetivoIndireto = nv("g-efi"); obj.terceiros = v("g-terc");
         obj.atividades = v("g-ativ"); if (!obj.atividades) { UI.toast("Descreva as atividades do dia.", "erro"); return false; }
         obj.ocorrencias = v("g-ocor"); obj.equipamentos = v("g-equip"); obj.responsavel = v("g-resp");
+        obj.autor = v("g-autor");
+        obj.fotos = fotosBuf.slice(0, RDO_MAX_FOTOS);
         var ob = lista("obras").filter(function (o) { return o.id === obj.obraId; })[0];
         obj.obraNome = ob ? ob.nome : "";
         return true;
       });
+      // UI.modal já colocou o form no DOM (síncrono). Liga upload + galeria (legenda + remover por foto).
+      function renderGal() {
+        var g = document.getElementById("g-fotos-gal"); if (!g) return;
+        if (!fotosBuf.length) { g.innerHTML = '<span class="muted" style="font-size:12px">Nenhuma foto anexada.</span>'; return; }
+        g.innerHTML = fotosBuf.map(function (f, i) {
+          return '<div style="position:relative;width:76px">' +
+            '<img src="' + f.d + '" style="width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #d3e0ee">' +
+            '<button type="button" data-rmf="' + i + '" title="Remover" style="position:absolute;top:-7px;right:-7px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;line-height:18px;cursor:pointer;font-size:13px">×</button>' +
+            '<input type="text" data-legf="' + i + '" placeholder="legenda" style="width:76px;font-size:10px;margin-top:3px;padding:2px 4px;border:1px solid #d3e0ee;border-radius:5px">' +
+            '</div>';
+        }).join("");
+        Array.prototype.forEach.call(g.querySelectorAll("[data-legf]"), function (el) { var i = +el.getAttribute("data-legf"); el.value = fotosBuf[i].leg || ""; el.oninput = function () { fotosBuf[i].leg = el.value; }; });
+        Array.prototype.forEach.call(g.querySelectorAll("[data-rmf]"), function (b) { b.onclick = function () { fotosBuf.splice(+b.getAttribute("data-rmf"), 1); renderGal(); }; });
+      }
+      var btn = document.getElementById("g-fotos-btn"), inpF = document.getElementById("g-fotos");
+      if (btn && inpF) {
+        btn.onclick = function () { inpF.click(); };
+        inpF.onchange = function () {
+          Array.prototype.slice.call(inpF.files || []).forEach(function (file) {
+            if (fotosBuf.length >= RDO_MAX_FOTOS) { UI.toast("Máximo de " + RDO_MAX_FOTOS + " fotos por diário.", "erro"); return; }
+            self._comprimirFoto(file, RDO_FOTO_MAXW, RDO_FOTO_Q, function (d) {
+              if (!d) { UI.toast("Foto inválida — ignorada.", "erro"); return; }
+              if (fotosBuf.length >= RDO_MAX_FOTOS) return;
+              fotosBuf.push({ d: d, leg: "" }); renderGal();
+            });
+          });
+          inpF.value = "";
+        };
+      }
+      renderGal();
     },
 
     // =================== RH — COLABORADORES ===================
@@ -1153,7 +1200,7 @@ case "nova-folha": return this.novoFolha();
       var rdos = lista("rdo").filter(function (r) { return r.obraId === id && r.status !== "rascunho"; })
         .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); })
         .map(function (r) {
-          return { numero: r.numero || "", data: r.data || "", climaManha: rot(P.rdoClima, r.climaManha), climaTarde: rot(P.rdoClima, r.climaTarde), condicao: rot(P.rdoCondicao, r.condicao), efetivo: Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto), atividades: r.atividades || "", ocorrencias: r.ocorrencias || "", equipamentos: r.equipamentos || "", responsavel: r.responsavel || "" };
+          return { numero: r.numero || "", data: r.data || "", climaManha: rot(P.rdoClima, r.climaManha), climaTarde: rot(P.rdoClima, r.climaTarde), condicao: rot(P.rdoCondicao, r.condicao), efetivo: Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto), atividades: r.atividades || "", ocorrencias: r.ocorrencias || "", equipamentos: r.equipamentos || "", responsavel: r.responsavel || "", autor: r.autor || "", fotos: (r.fotos || []).slice(0, RDO_MAX_FOTOS).map(function (f) { return { d: f.d, leg: f.leg || "" }; }) };
         });
       var contratado = Util.num(obra.valor);
       var pctExec = obra.pctExecutado != null ? Util.num(obra.pctExecutado) : Math.min(100, Math.round(acum * 10) / 10);
@@ -1191,12 +1238,17 @@ case "nova-folha": return this.novoFolha();
         contratado: contratado, pctExecutado: pctExec, medidoAcum: medidoAcum, aFaturar: Math.max(0, contratado - medidoAcum),
         curvaS: curvaS, cronograma: cronograma, medicoes: medicoes, rdos: rdos
       };
+      // Orçamento de bytes: fotos em base64 podem estourar o envio — degrada (corta fotos dos RDOs antigos) até caber.
+      var fit = this._caberSnapshot(snapshot);
+      if (!fit.ok) { UI.toast("Fotos demais nos diários desta obra. Remova algumas e publique de novo.", "erro"); return; }
+      if (fit.cortou) UI.toast("Algumas fotos de diários antigos foram omitidas para caber no envio.", "erro");
+      var totFotos = snapshot.rdos.reduce(function (s, r) { return s + (r.fotos ? r.fotos.length : 0); }, 0);
       var userSug = obra.portalUser || ((obra.clienteNome || obra.nome || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").slice(0, 16) || "cliente");
       var senhaSug = obra.portalSenha || Math.random().toString(36).slice(2, 8);
       var corpo =
-        '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO). Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
+        '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO) com fotos. Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
         '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
-        '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
+        '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários" + (totFotos ? " · <b>" + totFotos + "</b> fotos" : "") + " · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
         '<div id="portal-result" style="margin-top:12px"></div>';
       UI.modal("📱 Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -1318,6 +1370,41 @@ case "nova-folha": return this.novoFolha();
       document.head.appendChild(s);
     },
 
+    // Comprime um File de imagem em dataURL JPEG ~maxW px de lado maior. cb(dataURL|null) assíncrono.
+    _comprimirFoto: function (file, maxW, q, cb) {
+      if (!file || !/^image\//.test(file.type || "")) { cb(null); return; }
+      var fr = new FileReader();
+      fr.onload = function () {
+        var img = new Image();
+        img.onload = function () {
+          var w = img.width || 1, h = img.height || 1;
+          if (w > maxW) { h = Math.round(h * maxW / w); w = maxW; }
+          try {
+            var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+            cv.getContext("2d").drawImage(img, 0, 0, w, h);
+            cb(cv.toDataURL("image/jpeg", q));
+          } catch (e) { cb(null); }
+        };
+        img.onerror = function () { cb(null); };
+        img.src = fr.result;
+      };
+      fr.onerror = function () { cb(null); };
+      fr.readAsDataURL(file);
+    },
+    // Garante que o snapshot serializado caiba em SNAP_MAX_BYTES, cortando fotos dos RDOs mais ANTIGOS primeiro (preserva os recentes).
+    _caberSnapshot: function (snap) {
+      function bytes() { return JSON.stringify(snap).length; }
+      if (bytes() <= SNAP_MAX_BYTES) return { ok: true, cortou: false };
+      var passo = 0, cortou = false;
+      while (bytes() > SNAP_MAX_BYTES && passo < 1000) {
+        passo++;
+        var alvo = null;
+        for (var i = (snap.rdos || []).length - 1; i >= 0; i--) { if (snap.rdos[i].fotos && snap.rdos[i].fotos.length) { alvo = snap.rdos[i]; break; } }
+        if (!alvo) break;
+        alvo.fotos.pop(); cortou = true;
+      }
+      return { ok: bytes() <= SNAP_MAX_BYTES, cortou: cortou };
+    },
     abrir: function (entidade, id) {
       var r = Store.obter(eid(), entidade, id); if (!r) return;
       if (entidade === "obras") return this.formObra(r);
