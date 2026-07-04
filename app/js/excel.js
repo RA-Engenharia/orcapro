@@ -562,14 +562,15 @@
 
     ensureExcelJS: function (cb) {
       if (global.ExcelJS) { cb(); return; }
+      var avisarFalha = function () { if (global.UI) UI.toast("Não foi possível carregar o gerador de Excel (precisa de internet na 1ª vez).", "erro"); };
       if (document.getElementById("exceljs-cdn")) {
         var t = setInterval(function () { if (global.ExcelJS) { clearInterval(t); cb(); } }, 120);
-        setTimeout(function () { clearInterval(t); }, 15000); return;
+        setTimeout(function () { clearInterval(t); if (!global.ExcelJS) avisarFalha(); }, 15000); return;
       }
       var s = document.createElement("script"); s.id = "exceljs-cdn";
       s.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
       s.onload = function () { cb(); };
-      s.onerror = function () { if (global.UI) UI.toast("Não foi possível carregar o gerador Excel (sem internet?).", "erro"); };
+      s.onerror = function () { var el = document.getElementById("exceljs-cdn"); if (el) el.remove(); avisarFalha(); }; // remove a tag morta p/ permitir nova tentativa
       document.head.appendChild(s);
     },
 

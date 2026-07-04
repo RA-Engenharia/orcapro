@@ -20,7 +20,7 @@
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
     rh:             ["dashboard", "colaboradores", "epi", "ponto", "folha"],
-    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi"],
+    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
     diretoria:      null   // null = todos os módulos atribuíveis
   };
 
@@ -54,6 +54,7 @@
     unidadeRem: [["mensal", "Mensal"], ["diaria", "Diária"], ["hora", "Hora"]],
     colabStatus: [["ativo", "Ativo"], ["afastado", "Afastado"], ["desligado", "Desligado"]],
     pontoStatus: [["aberto", "Aberto"], ["lancado", "Lançado"]],
+    faltaMotivo: [["injustificada", "Injustificada"], ["justificada", "Justificada"], ["atestado", "Atestado médico"], ["ferias", "Férias"], ["folga", "Folga/Compensação"]],
     frotaTipo: [["veiculo", "Veículo"], ["caminhao", "Caminhão"], ["maquina", "Máquina pesada"], ["equipamento", "Equipamento"], ["ferramenta", "Ferramenta"]],
     frotaPosse: [["proprio", "Próprio"], ["alugado", "Alugado/Locado"]],
     frotaStatus: [["disponivel", "Disponível"], ["em_uso", "Em uso"], ["manutencao", "Em manutenção"], ["inativo", "Inativo"]],
@@ -123,6 +124,7 @@
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     epi: '<path d="M12 2l7 3v6c0 4.5-3 8.3-7 9-4-.7-7-4.5-7-9V5l7-3z"/><path d="M9 12l2 2 4-4"/>',
+    modelos: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/>',
   };
   function svg(id, size) { size = size || 20; return '<svg class="g-ic" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON[id] || "") + "</svg>"; }
 
@@ -151,6 +153,7 @@
       { id: "centrocusto", nome: "Centro de Custo" },
       { id: "folha", nome: "Folha / Encargos" },
       { id: "relatorios", nome: "Relatórios" },
+      { id: "modelos", nome: "Modelos de Doc." },
       { id: "usuarios", nome: "Usuários" }
     ],
 
@@ -194,6 +197,7 @@
         case "centrocusto": return this.renderCentrocusto();
         case "folha": return this.renderFolha();
         case "relatorios": return this.renderRelatorios();
+        case "modelos": return this.renderModelos();
         case "usuarios": return this.renderUsuarios();
       }
       return "";
@@ -362,12 +366,13 @@
     // =================== MEDIÇÕES ===================
     renderMedicoes: function () {
       var ms = lista("medicoes"), obras = lista("obras"), contratos = lista("contratos");
-      var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição");
+      var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição", '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">📥 CSV</button>');
       if (!ms.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       ms.forEach(function (m) {
         var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
-        var acao = m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : "✓");
+        var docs = '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">🖨</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">📊</button> ';
+        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : "✓"));
         html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '"><b>' + Util.esc(m.numero || "—") + "</b></td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -391,6 +396,179 @@
       });
     },
 
+    // Chave ÚNICA de ordenação da sequência de medições (mesma em _medicaoCalc e no histórico do Excel).
+    _medKey: function (x) { return (x.periodoFim || x.periodoInicio || "") + "|" + (x.numero || ""); },
+    // Calcula anterior / atual / acumulada / saldo a partir da sequência de medições da obra.
+    _medicaoCalc: function (m) {
+      var self = this, obra = m.obraId ? Store.obter(eid(), "obras", m.obraId) : null;
+      var contratado = obra ? Util.num(obra.valor) : 0;
+      var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })
+        .sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
+      var anterior = 0, atual = Util.num(m.valor), acumulado = 0, achou = false;
+      for (var i = 0; i < meds.length; i++) {
+        if (String(meds[i].id) === String(m.id)) { anterior = acumulado; acumulado += atual; achou = true; break; }
+        acumulado += Util.num(meds[i].valor);
+      }
+      if (!achou) { anterior = acumulado; acumulado += atual; }
+      var ret = Util.num(m.retencao), retVal = atual * ret / 100, liquido = atual - retVal;
+      // sem valor de contrato → não exibir % (base inexistente); helper omite a coluna quando null
+      var pctAcum = contratado > 0 ? acumulado / contratado * 100 : null;
+      var pctAnt = contratado > 0 ? anterior / contratado * 100 : null;
+      return { contratado: contratado, anterior: anterior, atual: atual, acumulado: acumulado, saldo: Math.max(0, contratado - acumulado), retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra };
+    },
+    boletimMedicao: function (id) {
+      var m = Store.obter(eid(), "medicoes", id); if (!m) return;
+      var c = this._medicaoCalc(m), obra = c.obra || {}, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(50) : "";
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
+      var periodo = (m.periodoInicio ? brd(m.periodoInicio) : "") + (m.periodoFim ? " a " + brd(m.periodoFim) : "");
+      var lin = function (rot, val, dPct, forte) { return "<tr" + (forte ? " style='background:#eef4fa;font-weight:bold'" : "") + "><td style='border:1px solid #bbb;padding:6px'>" + rot + "</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(val) + "</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + (dPct != null ? Util.fmtPct(dPct, 1) : "") + "</td></tr>"; };
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:740px;margin:0 auto;font-size:12px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #16a34a;padding-bottom:10px;margin-bottom:14px"><div>' + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:14px">' + Util.esc(emp.nome || "") + "</b><br><span style='font-size:9px'>" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.contato ? " · " + Util.esc(emp.contato) : "") + "</span></div><div style='text-align:right'><b style='font-size:13px;color:#16a34a'>BOLETIM DE MEDIÇÃO</b><br><span>Nº " + Util.esc(m.numero || "—") + "</span></div></div>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:22%'><b>Obra</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra.nome || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Cliente</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra.clienteNome || "—") + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Período</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(periodo || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Local</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra.local || "—") + "</td></tr></table>"
+        + "<h3 style='border-bottom:2px solid #16a34a;padding-bottom:4px;font-size:13px'>RESUMO FINANCEIRO DA MEDIÇÃO</h3>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:6px;text-align:left'>Descrição</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>Valor (R$)</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>% do contrato</th></tr></thead><tbody>"
+        + lin("Valor contratado", c.contratado, c.contratado > 0 ? 100 : null)
+        + lin("Medição anterior (acumulado)", c.anterior, c.pctAnt)
+        + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, c.contratado > 0 ? c.atual / c.contratado * 100 : null)
+        + lin("Acumulado até esta medição", c.acumulado, c.pctAcum, true)
+        + lin("Saldo a executar", c.saldo, c.contratado > 0 ? c.saldo / c.contratado * 100 : null)
+        + "</tbody></table>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-top:10px'><tbody>"
+        + lin("Retenção contratual (" + Util.fmtNum(c.retencao, 1) + "%)", c.retVal, null)
+        + lin("Líquido a faturar nesta medição", c.liquido, null, true)
+        + "</tbody></table>"
+        + (m.descricao ? "<div style='margin-top:12px;padding:10px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px'><b>Serviços medidos:</b><br>" + Util.esc(m.descricao) + "</div>" : "")
+        + "<div style='margin-top:24px;font-size:11px'>Declaramos que os serviços descritos foram executados conforme o contrato e estão aptos para faturamento.</div>"
+        + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(emp.nome || "CONTRATADA") + "</b><br>" + (emp.responsavel ? Util.esc(emp.responsavel) + (emp.crea ? " · CREA " + Util.esc(emp.crea) : "") : "Responsável Técnico") + "</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(obra.clienteNome || "CONTRATANTE") + "</b><br>Aprovação do Cliente</div></div>"
+        + "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>Gerado pelo OrçaPRO IA em " + new Date().toLocaleDateString("pt-BR") + "</div></div>";
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Boletim de Medição Nº " + (m.numero || ""), html);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
+    },
+    excelMedicao: function (id) {
+      var self = this, m = Store.obter(eid(), "medicoes", id); if (!m) return;
+      if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { UI.toast("Gerador de Excel indisponível.", "erro"); return; }
+      UI.toast("Gerando Excel…", "ok");
+      ExcelOrc.ensureExcelJS(function () {
+        try {
+          var ExcelJS = window.ExcelJS, c = self._medicaoCalc(m), obra = c.obra || {}, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+          var wb = new ExcelJS.Workbook(); wb.creator = "OrçaPRO IA";
+          var navy = "FF0F2740", verde = "FF16A34A";
+          var ws = wb.addWorksheet("Medição", { views: [{ state: "frozen", ySplit: 5 }] });
+          ws.columns = [{ width: 38 }, { width: 18 }, { width: 16 }];
+          ws.mergeCells("A1:C1"); ws.getCell("A1").value = (emp.nome || "Empresa") + (emp.cnpj ? "  ·  CNPJ " + emp.cnpj : "");
+          ws.getCell("A1").font = { bold: true, size: 13, color: { argb: navy } };
+          ws.mergeCells("A2:C2"); ws.getCell("A2").value = "BOLETIM DE MEDIÇÃO Nº " + (m.numero || "");
+          ws.getCell("A2").font = { bold: true, size: 12, color: { argb: verde } };
+          ws.getCell("A3").value = "Obra:"; ws.getCell("B3").value = obra.nome || "—";
+          ws.getCell("A4").value = "Cliente:"; ws.getCell("B4").value = obra.clienteNome || "—";
+          var hdr = ws.getRow(5); hdr.values = ["Descrição", "Valor (R$)", "% do contrato"];
+          hdr.eachCell(function (cell) { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; });
+          var linhas = [
+            ["Valor contratado", c.contratado, c.contratado ? 1 : ""],
+            ["Medição anterior (acumulado)", c.anterior, c.contratado ? c.anterior / c.contratado : ""],
+            ["Medição atual (Nº " + (m.numero || "") + ")", c.atual, c.contratado ? c.atual / c.contratado : ""],
+            ["Acumulado até esta medição", c.acumulado, c.contratado ? c.acumulado / c.contratado : ""],
+            ["Saldo a executar", c.saldo, c.contratado ? c.saldo / c.contratado : ""],
+            ["Retenção (" + Util.fmtNum(c.retencao, 1) + "%)", c.retVal, ""],
+            ["Líquido a faturar", c.liquido, ""]
+          ];
+          linhas.forEach(function (l, i) {
+            var r = ws.getRow(6 + i); r.getCell(1).value = l[0]; r.getCell(2).value = l[1]; r.getCell(2).numFmt = "R$ #,##0.00";
+            if (l[2] !== "") { r.getCell(3).value = l[2]; r.getCell(3).numFmt = "0.0%"; }
+            if (i === 3 || i === 6) r.font = { bold: true };
+          });
+          // Aba histórico de medições da obra
+          var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })
+            .sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
+          var wh = wb.addWorksheet("Histórico", { views: [{ state: "frozen", ySplit: 1 }] });
+          wh.columns = [{ width: 10 }, { width: 26 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 12 }];
+          var hh = wh.getRow(1); hh.values = ["Nº", "Período", "Atual", "Acumulado", "Saldo", "%"];
+          hh.eachCell(function (cell) { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: verde } }; });
+          var acc = 0;
+          meds.forEach(function (mm, i) {
+            acc += Util.num(mm.valor); var saldo = Math.max(0, c.contratado - acc);
+            var r = wh.getRow(2 + i);
+            r.values = [mm.numero || (i + 1), (mm.periodoInicio ? mm.periodoInicio.split("-").reverse().join("/") : "") + (mm.periodoFim ? " a " + mm.periodoFim.split("-").reverse().join("/") : ""), Util.num(mm.valor), acc, saldo, c.contratado ? acc / c.contratado : ""];
+            r.getCell(3).numFmt = "R$ #,##0.00"; r.getCell(4).numFmt = "R$ #,##0.00"; r.getCell(5).numFmt = "R$ #,##0.00"; r.getCell(6).numFmt = "0.0%";
+            if (String(mm.id) === String(m.id)) r.font = { bold: true };
+          });
+          wb.xlsx.writeBuffer().then(function (buf) {
+            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "Medicao_" + (m.numero || "").replace(/[^\w]/g, "") + "_" + (obra.nome || "obra").slice(0, 20).replace(/[^\w]/g, "_") + ".xlsx";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+            UI.toast("Excel de medição gerado!", "ok");
+          }).catch(function (e) { UI.toast("Falha ao escrever Excel: " + e.message, "erro"); });
+        } catch (e) { UI.toast("Falha ao gerar Excel: " + e.message, "erro"); }
+      });
+    },
+    // =================== DOCUMENTOS (reutilizável) ===================
+    // Cabeçalho padrão dos documentos (empresa/logo/CNPJ + título). Usa template do usuário se houver.
+    _docShell: function (titulo, accent, corpo, chaveTemplate) {
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(48) : "";
+      return '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:740px;margin:0 auto;font-size:12px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid ' + accent + ';padding-bottom:10px;margin-bottom:14px"><div>' + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:14px">' + Util.esc(emp.nome || "") + "</b><br><span style='font-size:9px'>" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.contato ? " · " + Util.esc(emp.contato) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + "</span></div><div style='text-align:right'><b style='font-size:13px;color:" + accent + "'>" + titulo + "</b></div></div>"
+        + corpo
+        + "<div style='text-align:right;font-size:8px;color:#999;margin-top:14px'>Gerado pelo OrçaPRO IA em " + new Date().toLocaleDateString("pt-BR") + "</div></div>";
+    },
+    _abrirDoc: function (titulo, html) {
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint(titulo, html);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>" + Util.esc(titulo) + "</title></head><body>" + html + "</body></html>"); w.document.close(); } }
+    },
+    documentoRequisicao: function (id) {
+      var r = Store.obter(eid(), "requisicoes", id); if (!r) return;
+      var obra = r.obraId ? Store.obter(eid(), "obras", r.obraId) : null, itens = this._reqItens(r);
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
+      var rows = itens.map(function (it, i) { return "<tr><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + (i + 1) + "</td><td style='border:1px solid #bbb;padding:5px'>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(it.descricao) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.fmtNum(it.quantidade, 2) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.esc(it.unidade) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>☐</td></tr>"; }).join("");
+      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(r.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prioridade</b></td><td style='border:1px solid #bbb;padding:6px'>" + rot(P.reqPrioridade, r.prioridade) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Solicitante</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(r.solicitante || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Status</b></td><td style='border:1px solid #bbb;padding:6px'>" + rot(P.reqStatus, r.status) + "</td></tr></table>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;width:8%'>Nº</th><th style='border:1px solid #bbb;padding:5px'>Material / Insumo</th><th style='border:1px solid #bbb;padding:5px;width:14%'>Qtd</th><th style='border:1px solid #bbb;padding:5px;width:12%'>Unid.</th><th style='border:1px solid #bbb;padding:5px;width:12%'>Entregue</th></tr></thead><tbody>" + (rows || "<tr><td colspan='5' style='border:1px solid #bbb;padding:8px;text-align:center'>Sem itens</td></tr>") + "</tbody></table>"
+        + (r.observacoes ? "<p style='margin-top:10px;font-size:11px'><b>Obs.:</b> " + Util.esc(r.observacoes) + "</p>" : "")
+        + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:26px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Solicitante</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Aprovado por</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Recebido por</div></div>";
+      this._abrirDoc("Solicitação de Compra Nº " + (r.numero || ""), this._docShell("SOLICITAÇÃO DE COMPRA", "#f59e0b", corpo));
+    },
+    documentoCompra: function (id) {
+      var c = Store.obter(eid(), "compras", id); if (!c) return;
+      var forn = c.fornecedorId ? Store.obter(eid(), "fornecedores", c.fornecedorId) : null, obra = c.obraId ? Store.obter(eid(), "obras", c.obraId) : null;
+      var itens = c.itens || [], brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
+      var somaItens = itens.reduce(function (s, it) { return s + Util.num(it.quantidade) * Util.num(it.precoRef != null ? it.precoRef : it.valorUnit); }, 0);
+      var totalDoc = (itens.length && somaItens > 0) ? somaItens : Util.num(c.valor); // soma dos subtotais quando há preços (documento fecha)
+      var rows = itens.length
+        ? itens.map(function (it, i) { var vu = Util.num(it.precoRef != null ? it.precoRef : it.valorUnit), sub = Util.num(it.quantidade) * vu; return "<tr><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + (it.codigo || i + 1) + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(it.descricao) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.fmtNum(it.quantidade, 2) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.esc(it.unidade) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + (vu > 0 ? Util.fmtMoeda(vu) : "—") + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + (vu > 0 ? Util.fmtMoeda(sub) : "—") + "</td></tr>"; }).join("")
+        : "<tr><td style='border:1px solid #bbb;padding:6px;text-align:center'>1</td><td colspan='4' style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.descricao || "—") + "</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(c.valor) + "</td></tr>";
+      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Pedido Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Fornecedor</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(forn ? forn.nome : (c.fornecedorNome || "—")) + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra/Destino</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td></tr>" + (c.previsaoEntrega ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prev. entrega</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.previsaoEntrega) + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Pagamento</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(rot(P.formaPgto, c.formaPgto) || "—") + "</td></tr>" : "") + "</table>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;width:10%'>Cód.</th><th style='border:1px solid #bbb;padding:5px'>Descrição</th><th style='border:1px solid #bbb;padding:5px;width:10%'>Qtd</th><th style='border:1px solid #bbb;padding:5px;width:8%'>Un</th><th style='border:1px solid #bbb;padding:5px;width:14%'>V. unit</th><th style='border:1px solid #bbb;padding:5px;width:14%'>Subtotal</th></tr></thead><tbody>" + rows + "<tr style='background:#eef4fa;font-weight:bold'><td colspan='5' style='border:1px solid #bbb;padding:6px;text-align:right'>TOTAL GERAL</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(totalDoc) + "</td></tr></tbody></table>"
+        + (c.obs ? "<p style='margin-top:10px;font-size:11px'><b>Obs.:</b> " + Util.esc(c.obs) + "</p>" : "")
+        + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:30px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Solicitante</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Aprovação</div></div>";
+      this._abrirDoc("Pedido de Compra Nº " + (c.numero || ""), this._docShell("PEDIDO DE COMPRA", "#7c3aed", corpo));
+    },
+    // Exporta uma lista (array de objetos) em CSV (BOM UTF-8, separador ;) — reutilizável por módulo.
+    _exportarCSV: function (dados, nomeArquivo, colunas) {
+      if (!dados || !dados.length) { UI.toast("Nada para exportar.", "erro"); return; }
+      var linhas = [colunas.map(function (c) { return '"' + String(c.label).replace(/"/g, '""') + '"'; }).join(";")];
+      dados.forEach(function (item) {
+        linhas.push(colunas.map(function (c) {
+          var val = typeof c.get === "function" ? c.get(item) : item[c.key];
+          if (val == null) val = "";
+          if (typeof val === "number") val = String(val).replace(".", ",");
+          return '"' + String(val).replace(/"/g, '""') + '"';
+        }).join(";"));
+      });
+      var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+      a.download = nomeArquivo + "_" + new Date().toISOString().slice(0, 10) + ".csv";
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      UI.toast("CSV exportado.", "ok");
+    },
+    exportarModulo: function (modulo) {
+      var self = this, dados, cols, nome;
+      if (modulo === "financeiro") { dados = lista("financeiro"); nome = "financeiro"; cols = [{ label: "Data", key: "data" }, { label: "Descrição", key: "desc" }, { label: "Tipo", get: function (x) { return rot(P.finTipo, x.tipo); } }, { label: "Categoria", get: function (x) { return rot(P.finCategoria, x.categoria); } }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.finStatus, x.status); } }]; }
+      else if (modulo === "compras") { dados = lista("compras"); nome = "compras"; cols = [{ label: "Nº", key: "numero" }, { label: "Fornecedor", key: "fornecedorNome" }, { label: "Descrição", key: "descricao" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.compraStatus, x.status); } }]; }
+      else if (modulo === "medicoes") { dados = lista("medicoes"); nome = "medicoes"; cols = [{ label: "Nº", key: "numero" }, { label: "Obra", get: function (x) { return (Store.obter(eid(), "obras", x.obraId) || {}).nome || ""; } }, { label: "Período", get: function (x) { return (x.periodoInicio || "") + " a " + (x.periodoFim || ""); } }, { label: "%", key: "percentual" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.medicaoStatus, x.status); } }]; }
+      else return;
+      this._exportarCSV(dados, nome, cols);
+    },
     // =================== FINANCEIRO ===================
     renderFinanceiro: function () {
       var fs = lista("financeiro").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
@@ -398,6 +576,7 @@
       var rec = fs.filter(function (f) { return f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var desp = fs.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var extra = '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📄 Lançar de documento (IA)</button>' +
+        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">📥 CSV</button>' +
         '<span class="muted" style="margin-right:12px;align-self:center">Saldo: <b style="color:' + (rec - desp >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(rec - desp) + "</b></span>";
       var html = this._head(svg("financeiro") + "Financeiro", "novo-lancamento", "Novo lançamento", extra);
       if (!fs.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
@@ -465,14 +644,14 @@
       var obras = lista("obras");
       var total = cs.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       var pend = cs.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Em aberto: <b>' + pend + "</b> · Total: <b>" + Util.fmtMoeda(total) + "</b></span>";
+      var extra = '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">📥 CSV</button><span class="muted" style="margin-right:12px;align-self:center">Em aberto: <b>' + pend + "</b> · Total: <b>" + Util.fmtMoeda(total) + "</b></span>";
       var html = this._head(svg("compras") + "Compras", "nova-compra", "Novo pedido", extra);
       if (!cs.length) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
-        var acao = c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button>'
-          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : ""));
+        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">🖨</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button>'
+          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : "")));
         html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -636,7 +815,7 @@
     renderColaboradores: function () {
       var cs = lista("colaboradores"), obras = lista("obras");
       var ativos = cs.filter(function (c) { return c.status === "ativo"; }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
+      var extra = '<button class="btn sm" data-gacao="colab-doc" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📄 Cadastrar de documento (IA)</button><span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
       var html = this._head(svg("colaboradores") + "Colaboradores", "novo-colaborador", "Novo colaborador", extra);
       if (!cs.length) return html + vazioBox("Nenhum colaborador cadastrado", "novo-colaborador", "Cadastrar primeiro colaborador");
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Função</th><th>Contrato</th><th>Obra</th><th class="num">Remuneração</th><th>Status</th></tr></thead><tbody>';
@@ -665,6 +844,46 @@
       });
     },
 
+    // Cadastro de colaborador a partir de documento (RG/CTPS/ficha) lido por IA.
+    cadastrarColaboradorDoc: function () {
+      if (this._bloqueado()) return;
+      var self = this;
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? String(CONFIG.iaBackend).replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!chave) { UI.toast("Ative sua licença pra usar a leitura por IA.", "erro"); return; }
+      var inpEl = document.createElement("input");
+      inpEl.type = "file"; inpEl.accept = ".pdf,image/*"; inpEl.style.display = "none";
+      inpEl.onchange = function () {
+        var file = inpEl.files && inpEl.files[0]; if (!file) return;
+        var ext = String(file.name || "").toLowerCase().split(".").pop();
+        if (ext === "pdf") {
+          UI.toast("Lendo o PDF…", "ok");
+          self._pdfTexto(file, function (texto) {
+            if (!texto || texto.trim().length < 15) { UI.toast("PDF sem texto legível — envie uma foto do documento.", "erro"); return; }
+            self._enviarDocColab(back, chave, { tipo: "texto", conteudo: texto, contexto: "colaborador" });
+          });
+        } else {
+          var fr = new FileReader();
+          fr.onload = function () { self._enviarDocColab(back, chave, { tipo: "imagem", conteudo: fr.result, contexto: "colaborador" }); };
+          fr.readAsDataURL(file);
+        }
+      };
+      document.body.appendChild(inpEl); inpEl.click(); setTimeout(function () { inpEl.remove(); }, 60000);
+    },
+    _enviarDocColab: function (back, chave, payload) {
+      var self = this;
+      UI.toast("🤖 A IA está lendo o documento…", "ok");
+      fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json(); }).then(function (j) {
+          if (!j.ok) { UI.toast(j.error || "A IA não conseguiu ler o documento.", "erro"); return; }
+          self._colabParaCadastro(j.dados);
+        }).catch(function () { UI.toast("Sem conexão com a IA. Tente de novo.", "erro"); });
+    },
+    _colabParaCadastro: function (dados) {
+      dados = dados || {};
+      this.formColaborador({ nome: dados.nome || "", cpf: dados.cpf || "", funcao: dados.funcao || "", admissao: dados.admissao || "", telefone: dados.telefone || "", status: "ativo", origem: "documento-ia" });
+      UI.toast("🤖 Dados extraídos pela IA (confiança " + Math.round((dados.confianca || 0) * 100) + "%). Confira e complete.", "ok");
+    },
     // =================== EPI — CATÁLOGO + FICHAS (NR-6) ===================
     _epiItens: function (e) { return (e && e.itens) ? e.itens.map(function (i) { return { epiId: i.epiId || "", nome: i.nome || "", ca: i.ca || "", validade: i.validade || "", quantidade: Util.num(i.quantidade) || 1, valorUnit: Util.num(i.valorUnit) || 0 }; }) : []; },
     _epiValor: function (itens) { return itens.reduce(function (s, i) { return s + Util.num(i.quantidade) * Util.num(i.valorUnit); }, 0); },
@@ -799,21 +1018,172 @@
       else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Ficha de EPI</title></head><body onload='window.print()'>" + html + "</body></html>"); w.document.close(); } }
     },
     // =================== RH — PONTO / FOLHA ===================
+    _pontoMes: null,
     renderPonto: function () {
+      var self = this, colabs = lista("colaboradores"), obras = lista("obras");
+      var mes = this._pontoMes || new Date().toISOString().slice(0, 7);
+      var mesBR = mes.split("-").reverse().join("/");
+      var faltas = lista("faltas").filter(function (f) { return String(f.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+      var ativos = colabs.filter(function (c) { return c.status === "ativo"; }).length;
+      var inj = faltas.filter(function (f) { return f.motivo === "injustificada"; }).length;
+      var extra = '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">📋 Lançar em lote</button>'
+        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">🖨 Espelho de ponto</button>'
+        + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">⚙ Jornada</button>';
+      var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "nova-falta", "Registrar falta", extra);
+      html += '<div class="row" style="align-items:center;gap:14px;margin:-4px 0 12px">'
+        + '<div class="field" style="max-width:170px"><label>Mês de referência</label><input type="month" id="pt-mes" value="' + mes + '"></div>'
+        + '<span class="muted" style="align-self:center">Ativos: <b>' + ativos + "</b> · Faltas em " + mesBR + ": <b style=\"color:#dc2626\">" + inj + "</b> injustificada(s) de <b>" + faltas.length + "</b></span></div>";
+      html += '<h3 style="margin:6px 0 8px;font-size:15px">Faltas de ' + mesBR + "</h3>";
+      if (!faltas.length) html += vazioBox("Nenhuma falta lançada neste mês", "nova-falta", "Registrar falta");
+      else {
+        html += '<table class="tbl"><thead><tr><th>Data</th><th>Colaborador</th><th>Motivo</th><th></th></tr></thead><tbody>';
+        faltas.forEach(function (f) {
+          var col = colabs.filter(function (c) { return c.id === f.colaboradorId; })[0];
+          var cor = f.motivo === "injustificada" ? "#dc2626" : "#64748b";
+          html += "<tr><td>" + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(col ? col.nome : (f.colaboradorNome || "—")) + '</b></td><td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + rot(P.faltaMotivo, f.motivo) + '</span></td><td class="num"><button class="btn sm" data-gacao="excluir-falta" data-id="' + f.id + '" style="color:#dc2626">✕</button></td></tr>';
+        });
+        html += "</tbody></table>";
+      }
       var ps = lista("ponto").slice().sort(function (a, b) { return (b.competencia || "").localeCompare(a.competencia || ""); });
-      var colabs = lista("colaboradores"), obras = lista("obras");
-      var aLancar = ps.filter(function (p) { return p.status !== "lancado"; }).reduce(function (s, p) { return s + Util.num(p.valor); }, 0);
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">A lançar: <b>' + Util.fmtMoeda(aLancar) + "</b></span>";
-      var html = this._head(svg("ponto") + "Ponto / Folha", "novo-ponto", "Novo registro", extra);
-      if (!ps.length) return html + vazioBox("Nenhum registro de ponto/folha", "novo-ponto", "Registrar ponto");
-      html += '<table class="tbl"><thead><tr><th>Competência</th><th>Colaborador</th><th>Obra</th><th class="num">Dias</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
-      ps.forEach(function (p) {
-        var col = colabs.filter(function (c) { return c.id === p.colaboradorId; })[0];
-        var ob = obras.filter(function (o) { return o.id === p.obraId; })[0];
-        var acao = p.status !== "lancado" ? '<button class="btn sm success" data-gacao="lancar-ponto" data-id="' + p.id + '">Lançar folha</button>' : "✓";
-        html += '<tr><td style="cursor:pointer" data-gopen="ponto:' + p.id + '"><b>' + Util.esc(p.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : (p.colaboradorNome || "—")) + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtNum(p.dias, 0) + '</td><td class="num">' + Util.fmtMoeda(p.valor) + "</td><td>" + pill(p.status) + '</td><td class="num">' + acao + "</td></tr>";
-      });
-      return html + "</tbody></table>";
+      if (ps.length) {
+        html += '<h3 style="margin:20px 0 8px;font-size:15px">Registros mensais (valor lançado)</h3>';
+        html += '<table class="tbl"><thead><tr><th>Competência</th><th>Colaborador</th><th class="num">Dias</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+        ps.forEach(function (p) {
+          var col = colabs.filter(function (c) { return c.id === p.colaboradorId; })[0];
+          var acao = p.status !== "lancado" ? '<button class="btn sm success" data-gacao="lancar-ponto" data-id="' + p.id + '">Lançar folha</button>' : "✓";
+          html += '<tr><td style="cursor:pointer" data-gopen="ponto:' + p.id + '"><b>' + Util.esc(p.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : (p.colaboradorNome || "—")) + '</td><td class="num">' + Util.fmtNum(p.dias, 0) + '</td><td class="num">' + Util.fmtMoeda(p.valor) + "</td><td>" + pill(p.status) + '</td><td class="num">' + acao + "</td></tr>";
+        });
+        html += "</tbody></table>";
+      }
+      return html;
+    },
+    afterRenderPonto: function () {
+      var self = this, el = document.getElementById("pt-mes");
+      if (el) el.onchange = function () { self._pontoMes = el.value || null; if (typeof App !== "undefined") App.render(); };
+    },
+    novoFalta: function () { this.registrarFalta(); },
+    registrarFalta: function () {
+      var self = this, colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
+      var hoje = new Date().toISOString().slice(0, 10);
+      var corpo = '<div class="row">' + campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", "", "— selecionar —"))) + campo("Data *", inp("g-data", hoje, "", "date")) + "</div>"
+        + campo("Motivo", sel("g-motivo", opts(P.faltaMotivo, "injustificada")));
+      UI.modal("Registrar falta", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          if (self._bloqueado()) return;
+          var cid = v("g-colab"); if (!cid) { UI.toast("Selecione o colaborador.", "erro"); return; }
+          var data = v("g-data"); if (!data) { UI.toast("Informe a data.", "erro"); return; }
+          if (lista("faltas").filter(function (f) { return f.colaboradorId === cid && f.data === data; })[0]) { UI.toast("Já existe falta nessa data para esse colaborador.", "erro"); return; }
+          var col = lista("colaboradores").filter(function (c) { return c.id === cid; })[0] || {};
+          Store.salvar(eid(), "faltas", { colaboradorId: cid, colaboradorNome: col.nome || "", data: data, motivo: v("g-motivo") });
+          UI.fecharModal(); self._pontoMes = data.slice(0, 7); App.render(); UI.toast("Falta registrada.", "ok");
+        } }
+      ]);
+    },
+    faltasLote: function () {
+      var self = this, colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
+      var hoje = new Date().toISOString().slice(0, 10);
+      var checks = colabs.map(function (c) { return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0;cursor:pointer"><input type="checkbox" data-lote-col="' + c.id + '"> ' + Util.esc(c.nome) + ' <span class="muted">' + Util.esc(c.funcao || "") + "</span></label>"; }).join("");
+      var corpo = '<div class="row">' + campo("De *", inp("g-ini", hoje, "", "date")) + campo("Até *", inp("g-fim", hoje, "", "date")) + campo("Motivo", sel("g-motivo", opts(P.faltaMotivo, "injustificada"))) + "</div>"
+        + '<label style="display:flex;align-items:center;gap:7px;font-size:13px;margin:4px 0 6px"><input type="checkbox" id="g-pulafds" checked> Pular sábados e domingos</label>'
+        + campo("Colaboradores *", '<div style="max-height:200px;overflow:auto;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px">' + (checks || '<span class="muted">Cadastre colaboradores primeiro.</span>') + "</div>");
+      UI.modal("Lançar faltas em lote", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Lançar", classe: "primary", onClick: function () {
+          if (self._bloqueado()) return;
+          var ini = v("g-ini"), fim = v("g-fim"), motivo = v("g-motivo");
+          var pulaFds = (document.getElementById("g-pulafds") || {}).checked;
+          var ids = Array.prototype.map.call(document.querySelectorAll("[data-lote-col]:checked"), function (c) { return c.getAttribute("data-lote-col"); });
+          if (!ids.length) { UI.toast("Selecione ao menos um colaborador.", "erro"); return; }
+          if (!ini || !fim || ini > fim) { UI.toast("Informe um período válido.", "erro"); return; }
+          var existentes = lista("faltas"), n = 0, dini = new Date(ini + "T12:00:00"), dfim = new Date(fim + "T12:00:00"), passo = 0;
+          for (var d = new Date(dini); d <= dfim && passo < 400; d.setDate(d.getDate() + 1)) {
+            passo++;
+            var dow = d.getDay(); if (pulaFds && (dow === 0 || dow === 6)) continue;
+            var ds = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+            ids.forEach(function (cid) {
+              if (existentes.filter(function (f) { return f.colaboradorId === cid && f.data === ds; })[0]) return;
+              var col = lista("colaboradores").filter(function (c) { return c.id === cid; })[0] || {};
+              Store.salvar(eid(), "faltas", { colaboradorId: cid, colaboradorNome: col.nome || "", data: ds, motivo: motivo }); n++;
+            });
+          }
+          UI.fecharModal(); self._pontoMes = ini.slice(0, 7); App.render();
+          UI.toast(n + " falta(s) lançada(s)." + (ini.slice(0, 7) !== fim.slice(0, 7) ? " Abrangeu mais de um mês — troque o mês de referência para ver todas." : ""), "ok");
+        } }
+      ]);
+    },
+    excluirFalta: function (id) {
+      if (this._bloqueado()) return;
+      Store.excluir(eid(), "faltas", id); App.render(); UI.toast("Falta removida.", "ok");
+    },
+    _pontoJornada: function () {
+      var p = (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(eid()) || {}) : {};
+      var j = p.pontoJornada || {};
+      return { entrada: j.entrada || "07:00", almoco: j.almoco || "12:00", retorno: j.retorno || "13:00", saida: j.saida || "17:00" };
+    },
+    configJornada: function () {
+      var self = this, j = this._pontoJornada();
+      var corpo = '<p class="muted" style="margin:0 0 10px">Horários padrão da jornada — aparecem no espelho de ponto (documento para assinatura).</p>'
+        + '<div class="row">' + campo("Entrada", inp("g-e", j.entrada, "", "time")) + campo("Saída p/ almoço", inp("g-a", j.almoco, "", "time")) + campo("Retorno", inp("g-r", j.retorno, "", "time")) + campo("Saída", inp("g-s", j.saida, "", "time")) + "</div>";
+      UI.modal("⚙ Jornada de trabalho", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var p = Store.lerPrefs(eid()) || {};
+          p.pontoJornada = { entrada: v("g-e"), almoco: v("g-a"), retorno: v("g-r"), saida: v("g-s") };
+          Store.salvarPrefs(eid(), p); UI.fecharModal(); UI.toast("Jornada salva.", "ok");
+        } }
+      ]);
+    },
+    espelhoPonto: function () {
+      var self = this, colabs = lista("colaboradores");
+      if (!colabs.length) { UI.toast("Cadastre colaboradores primeiro.", "erro"); return; }
+      var mes = this._pontoMes || new Date().toISOString().slice(0, 7);
+      var corpo = '<div class="row">' + campo("Mês de referência", inp("g-mes", mes, "", "month")) + campo("Colaborador", sel("g-colab", optsRec(colabs.filter(function (c) { return c.status === "ativo"; }), "nome", "", "— Todos os ativos —"))) + "</div>"
+        + '<p class="muted" style="margin:6px 0 0">O espelho usa a jornada padrão (⚙ Jornada) e marca as faltas do mês. Documento pronto para impressão e assinatura (NR/CLT).</p>';
+      UI.modal("🖨 Espelho de Ponto", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gerar", classe: "primary", onClick: function () {
+          var m = v("g-mes") || mes, cid = v("g-colab");
+          var lista2 = cid ? colabs.filter(function (c) { return c.id === cid; }) : colabs.filter(function (c) { return c.status === "ativo"; });
+          if (!lista2.length) { UI.toast("Nenhum colaborador para gerar.", "erro"); return; }
+          UI.fecharModal(); self._gerarEspelho(m, lista2);
+        } }
+      ]);
+    },
+    _mesExtenso: function (mes) {
+      var M = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      var p = String(mes).split("-"); return (M[(Util.num(p[1]) || 1) - 1] || "") + " de " + (p[0] || "");
+    },
+    _gerarEspelho: function (mes, colabsLista) {
+      var self = this, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(46) : "";
+      var jor = this._pontoJornada(), diasSem = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+      var ano = Util.num(mes.split("-")[0]), mm = Util.num(mes.split("-")[1]);
+      var nDias = new Date(ano, mm, 0).getDate();
+      var todasFaltas = lista("faltas");
+      var paginas = colabsLista.map(function (c) {
+        var faltasC = {}; todasFaltas.forEach(function (f) { if (f.colaboradorId === c.id && String(f.data || "").slice(0, 7) === mes) faltasC[f.data] = f.motivo; });
+        var linhas = "", nFaltas = 0, nInj = 0, nTrab = 0;
+        for (var d = 1; d <= nDias; d++) {
+          var ds = ano + "-" + String(mm).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+          var dt = new Date(ds + "T12:00:00"), dow = dt.getDay(), fimDeSemana = (dow === 0 || dow === 6);
+          var falta = faltasC[ds], bg = "", obsCol = "", e = "", a = "", r = "", s = "";
+          if (falta) { bg = "#fee2e2"; obsCol = rot(P.faltaMotivo, falta); nFaltas++; if (falta === "injustificada") nInj++; }
+          else if (fimDeSemana) { bg = "#f3f4f6"; obsCol = dow === 0 ? "DSR — Descanso" : "Folga"; }
+          else { e = jor.entrada; a = jor.almoco; r = jor.retorno; s = jor.saida; nTrab++; }
+          linhas += '<tr style="background:' + bg + '"><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + String(d).padStart(2, "0") + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + diasSem[dow] + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + e + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + a + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + r + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + s + '</td><td style="border:1px solid #999;padding:2px 4px;font-size:8.5px">' + obsCol + "</td></tr>";
+        }
+        return '<div style="page-break-after:always;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;max-width:760px;margin:0 auto">'
+          + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:8px">'
+          + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">ESPELHO DE PONTO</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
+          + '<div style="display:flex;border:1px solid #999;margin-bottom:6px"><div style="flex:2;padding:4px;border-right:1px solid #999"><b>Colaborador:</b> ' + Util.esc(c.nome || "") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>Função:</b> ' + Util.esc(c.funcao || "—") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>CPF:</b> ' + Util.esc(c.cpf || "—") + '</div><div style="flex:1;padding:4px"><b>Admissão:</b> ' + (c.admissao ? c.admissao.split("-").reverse().join("/") : "—") + "</div></div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:8%">Dia</th><th style="border:1px solid #999;padding:3px;width:8%">Sem</th><th style="border:1px solid #999;padding:3px;width:13%">Entrada</th><th style="border:1px solid #999;padding:3px;width:13%">Almoço</th><th style="border:1px solid #999;padding:3px;width:13%">Retorno</th><th style="border:1px solid #999;padding:3px;width:13%">Saída</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
+          + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + "</div></div></div>"
+          + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador</div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
+          + '<div style="text-align:right;font-size:8px;color:#999;margin-top:10px">Documento gerado pelo OrçaPRO IA</div></div>';
+      }).join("");
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Espelho de Ponto — " + this._mesExtenso(mes), paginas);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Espelho de Ponto</title></head><body>" + paginas + "</body></html>"); w.document.close(); } }
     },
     novoPonto: function () { this.formPonto(null); },
     formPonto: function (p) {
@@ -899,7 +1269,7 @@ renderRequisicoes: function () {
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
-        var acoes = "";
+        var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">🖨</button> ';
         if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> ';
         if (r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
@@ -944,7 +1314,7 @@ renderRequisicoes: function () {
         + '<div id="bi-res"></div>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -1090,6 +1460,72 @@ renderRequisicoes: function () {
       ]);
     },
 
+    // =================== MODELOS DE DOCUMENTOS (templates editáveis) ===================
+    _templatesDefault: function () {
+      return [
+        { id: "tpl-declaracao", nome: "Declaração de vínculo", titulo: "DECLARAÇÃO", corpo: "Declaramos, para os devidos fins, que {colaborador}, CPF {cpf}, exerce a função de {funcao} na empresa {empresa}, admitido(a) em {admissao}.\n\n{cidade}, {data}.\n\n\n_______________________________\n{responsavel}" },
+        { id: "tpl-autorizacao", nome: "Autorização", titulo: "AUTORIZAÇÃO", corpo: "A empresa {empresa}, CNPJ {cnpj}, autoriza {colaborador} a ______________________________________ referente à obra {obra}.\n\n{cidade}, {data}.\n\n\n_______________________________\n{responsavel} — CREA {crea}" },
+        { id: "tpl-comunicado", nome: "Comunicado", titulo: "COMUNICADO", corpo: "Comunicamos que ______________________________________.\n\nAtenciosamente,\n{empresa}\n{cidade}, {data}." }
+      ];
+    },
+    renderModelos: function () {
+      var ts = lista("templates");
+      var html = this._head(svg("modelos") + "Modelos de Documento", "novo-modelo", "Novo modelo");
+      html += '<p class="muted" style="margin:-4px 0 12px">Crie documentos com <b>variáveis</b> entre chaves e gere preenchido em 1 clique. Disponíveis: <code>{empresa} {cnpj} {cidade} {responsavel} {crea} {data} {colaborador} {cpf} {funcao} {admissao} {obra} {cliente} {local}</code></p>';
+      if (!ts.length) {
+        html += '<div class="card" style="margin-bottom:12px"><b>Comece com modelos prontos</b> (Declaração, Autorização, Comunicado) e edite como quiser. <button class="btn sm primary" data-gacao="seed-modelos" style="margin-left:8px">＋ Adicionar exemplos</button></div>';
+        return html + vazioBox("Nenhum modelo ainda", "novo-modelo", "Criar primeiro modelo");
+      }
+      html += '<table class="tbl"><thead><tr><th>Modelo</th><th>Título</th><th></th></tr></thead><tbody>';
+      ts.forEach(function (t) {
+        html += '<tr><td style="cursor:pointer" data-gopen="templates:' + t.id + '"><b>' + Util.esc(t.nome || "—") + "</b></td><td>" + Util.esc(t.titulo || "—") + '</td><td class="num"><button class="btn sm primary" data-gacao="gerar-modelo" data-id="' + t.id + '">🖨 Gerar</button> <button class="btn sm" data-gopen="templates:' + t.id + '">Editar</button></td></tr>';
+      });
+      return html + "</tbody></table>";
+    },
+    seedModelos: function () {
+      if (this._bloqueado()) return;
+      this._templatesDefault().forEach(function (t) { if (!lista("templates").filter(function (x) { return x.id === t.id; })[0]) Store.salvar(eid(), "templates", t); });
+      App.render(); UI.toast("Modelos de exemplo adicionados.", "ok");
+    },
+    novoModelo: function () { this.formModelo(null); },
+    formModelo: function (t) {
+      t = t || {};
+      var corpo = '<div class="row">' + campo("Nome do modelo *", inp("g-nome", t.nome, "Ex.: Declaração de vínculo")) + campo("Título do documento", inp("g-titulo", t.titulo, "Ex.: DECLARAÇÃO")) + "</div>"
+        + campo("Conteúdo (use {variáveis})", '<textarea id="g-corpo" rows="10" style="font-family:monospace;font-size:12px">' + Util.esc(t.corpo || "") + "</textarea>");
+      this._modalForm("templates", t, "Modelo de documento", corpo, function (obj) {
+        obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome do modelo.", "erro"); return false; }
+        obj.titulo = v("g-titulo") || obj.nome.toUpperCase(); obj.corpo = (document.getElementById("g-corpo") || {}).value || "";
+        return true;
+      });
+    },
+    _ctxVariaveis: function (colab, obra) {
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : ""; };
+      return {
+        empresa: emp.nome || "", cnpj: emp.cnpj || "", cidade: emp.cidade || "", responsavel: emp.responsavel || "", crea: emp.crea || "",
+        data: new Date().toLocaleDateString("pt-BR"),
+        colaborador: colab ? (colab.nome || "") : "", cpf: colab ? (colab.cpf || "") : "", funcao: colab ? (colab.funcao || "") : "", admissao: colab ? brd(colab.admissao) : "",
+        obra: obra ? (obra.nome || "") : "", cliente: obra ? (obra.clienteNome || "") : "", local: obra ? (obra.local || "") : ""
+      };
+    },
+    _aplicarVariaveis: function (texto, ctx) { return String(texto || "").replace(/\{(\w+)\}/g, function (m, k) { return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : m; }); },
+    gerarModelo: function (id) {
+      var self = this, t = Store.obter(eid(), "templates", id); if (!t) return;
+      var colabs = lista("colaboradores"), obras = lista("obras");
+      var corpo = '<p class="muted" style="margin:0 0 10px">Escolha o colaborador/obra para preencher as variáveis (opcional).</p>'
+        + '<div class="row">' + campo("Colaborador", sel("g-colab", optsRec(colabs, "nome", "", "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", "", "— nenhuma —"))) + "</div>";
+      UI.modal("Gerar: " + Util.esc(t.nome || ""), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gerar", classe: "primary", onClick: function () {
+          var colab = lista("colaboradores").filter(function (c) { return c.id === v("g-colab"); })[0];
+          var obra = lista("obras").filter(function (o) { return o.id === v("g-obra"); })[0];
+          var texto = self._aplicarVariaveis(t.corpo, self._ctxVariaveis(colab, obra));
+          var corpoHtml = "<div style='white-space:pre-wrap;line-height:1.7;font-size:13px;text-align:justify;min-height:200px'>" + Util.esc(texto) + "</div>";
+          UI.fecharModal();
+          self._abrirDoc(t.nome || "Documento", self._docShell(Util.esc(t.titulo || t.nome || "DOCUMENTO"), "#0f2740", corpoHtml));
+        } }
+      ]);
+    },
     // =================== USUÁRIOS / EQUIPE (RBAC por departamento) ===================
     _modulosAtribuiveis: function () { return this.modulos.filter(function (m) { return m.id !== "usuarios"; }); },
     _modulosDoDepto: function (dep) {
@@ -1308,7 +1744,7 @@ renderFolha: function () {
       fls.forEach(function (f) {
         var col = cols.filter(function (c) { return c.id === f.colaboradorId; })[0];
         var ob = obras.filter(function (o) { return o.id === f.obraId; })[0];
-        var acao = f.status === "aberta" ? '<button class="btn sm primary" data-gacao="lancar-folha-enc" data-id="' + f.id + '">Lançar</button>' : "";
+        var acao = '<button class="btn sm" data-gacao="recibo-folha" data-id="' + f.id + '">🖨 Recibo</button> ' + (f.status === "aberta" ? '<button class="btn sm primary" data-gacao="lancar-folha-enc" data-id="' + f.id + '">Lançar</button>' : "");
         html += '<tr><td style="cursor:pointer" data-gopen="folha:' + f.id + '"><b>' + Util.esc(f.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(f.salarioBase)) + '</td><td class="num"><b>' + Util.fmtMoeda(Util.num(f.custoTotal)) + "</b></td><td>" + pill(f.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -1316,6 +1752,30 @@ renderFolha: function () {
     calcFolha: function (f) {
       var base = Util.num(f.salarioBase), enc = Util.num(f.encargosPct), he = Util.num(f.horasExtras), desc = Util.num(f.descontos);
       return base + base * enc / 100 + he - desc;
+    },
+    reciboFolha: function (id) {
+      var f = Store.obter(eid(), "folha", id); if (!f) return;
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(46) : "";
+      var col = lista("colaboradores").filter(function (c) { return c.id === f.colaboradorId; })[0] || {};
+      var base = Util.num(f.salarioBase), he = Util.num(f.horasExtras), desc = Util.num(f.descontos), enc = Util.num(f.encargosPct);
+      var faltas = lista("faltas").filter(function (x) { return x.colaboradorId === f.colaboradorId && String(x.data || "").slice(0, 7) === (f.competencia || "") && x.motivo === "injustificada"; }).length;
+      var venc = base + he, liq = venc - desc, fgts = base * 0.08;
+      var linha = function (cod, d, ref, val, isDesc) { return "<tr><td style='border:1px solid #ccc;padding:4px;text-align:center'>" + cod + "</td><td style='border:1px solid #ccc;padding:4px'>" + d + "</td><td style='border:1px solid #ccc;padding:4px;text-align:center'>" + (ref || "") + "</td><td style='border:1px solid #ccc;padding:4px;text-align:right'>" + (isDesc ? "" : Util.fmtMoeda(val)) + "</td><td style='border:1px solid #ccc;padding:4px;text-align:right'>" + (isDesc ? Util.fmtMoeda(val) : "") + "</td></tr>"; };
+      var rows = linha("001", "Salário base", "30", base, false);
+      if (he > 0) rows += linha("003", "Horas extras", "", he, false);
+      if (desc > 0) rows += linha("101", "Descontos" + (faltas ? " (" + faltas + " falta" + (faltas > 1 ? "s" : "") + " injust.)" : ""), "", desc, true);
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:0 auto;font-size:12px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:12px"><div>' + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style='font-size:9px'>" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + "</span></div><div style='text-align:right'><b>RECIBO DE PAGAMENTO</b><br><span style='font-size:10px'>Competência: " + Util.esc(f.competencia || "") + "</span></div></div>"
+        + "<table style='width:100%;font-size:12px;margin-bottom:10px'><tr><td><b>Colaborador:</b> " + Util.esc(col.nome || "—") + "</td><td><b>Função:</b> " + Util.esc(col.funcao || "—") + "</td><td><b>CPF:</b> " + Util.esc(col.cpf || "—") + "</td></tr></table>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:11.5px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #ccc;padding:4px'>Cód</th><th style='border:1px solid #ccc;padding:4px'>Descrição</th><th style='border:1px solid #ccc;padding:4px'>Ref</th><th style='border:1px solid #ccc;padding:4px'>Vencimentos</th><th style='border:1px solid #ccc;padding:4px'>Descontos</th></tr></thead><tbody>" + rows + "</tbody></table>"
+        + "<div style='display:flex;justify-content:flex-end;gap:24px;margin-top:8px;font-size:12px'><div>Total Vencimentos: <b>" + Util.fmtMoeda(venc) + "</b></div><div>Total Descontos: <b>" + Util.fmtMoeda(desc) + "</b></div></div>"
+        + "<div style='text-align:right;margin-top:6px;font-size:15px'><b>VALOR LÍQUIDO: " + Util.fmtMoeda(liq) + "</b></div>"
+        + "<div style='display:flex;gap:20px;margin-top:8px;font-size:10px;color:#555;border-top:1px dashed #ccc;padding-top:6px'><span>Base FGTS: " + Util.fmtMoeda(base) + "</span><span>FGTS (8%): " + Util.fmtMoeda(fgts) + "</span><span>Encargos ref.: " + Util.fmtNum(enc, 0) + "%</span></div>"
+        + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Assinatura do Empregador</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Assinatura do Colaborador</div></div>"
+        + "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>Gerado pelo OrçaPRO IA</div></div>";
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Recibo — " + (col.nome || ""), html);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
     },
     novoFolha: function () { this.formFolha(null); },
     formFolha: function (f) {
@@ -1528,6 +1988,23 @@ renderRelatorios: function () {
         case "nova-entrega-epi": return this.novoEntregaEpi();
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "ficha-epi": return this.fichaEpi(id);
+        case "nova-falta": return this.registrarFalta();
+        case "falta-lote": return this.faltasLote();
+        case "espelho-ponto": return this.espelhoPonto();
+        case "config-jornada": return this.configJornada();
+        case "excluir-falta": return this.excluirFalta(id);
+        case "recibo-folha": return this.reciboFolha(id);
+        case "boletim-medicao": return this.boletimMedicao(id);
+        case "excel-medicao": return this.excelMedicao(id);
+        case "doc-requisicao": return this.documentoRequisicao(id);
+        case "doc-compra": return this.documentoCompra(id);
+        case "export-financeiro": return this.exportarModulo("financeiro");
+        case "export-compras": return this.exportarModulo("compras");
+        case "export-medicoes": return this.exportarModulo("medicoes");
+        case "colab-doc": return this.cadastrarColaboradorDoc();
+        case "novo-modelo": return this.novoModelo();
+        case "seed-modelos": return this.seedModelos();
+        case "gerar-modelo": return this.gerarModelo(id);
         case "finalizar-rdo": {
           var rd = Store.obter(eid(), "rdo", id); if (!rd) return;
           rd.status = "finalizado"; Store.salvar(eid(), "rdo", rd); App.render(); UI.toast("Diário finalizado.", "ok"); return;
@@ -1797,6 +2274,7 @@ if (entidade === "centrocusto") return this.formCentrocusto(r);
 if (entidade === "folha") return this.formFolha(r);
 if (entidade === "equipe") return this.formUsuario(r);
 if (entidade === "epi") return this.formEntregaEpi(r);
+if (entidade === "templates") return this.formModelo(r);
     }
   };
 
