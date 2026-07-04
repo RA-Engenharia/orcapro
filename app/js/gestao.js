@@ -997,23 +997,21 @@
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
       var obra = e.obraId ? Store.obter(eid(), "obras", e.obraId) : null;
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
-      var linhas = (e.itens || []).map(function (it, i) {
-        return "<tr><td style='text-align:center'>" + (i + 1) + "</td><td>" + Util.esc(it.nome) + "</td><td style='text-align:center'>" + Util.esc(it.ca || "—") + "</td><td style='text-align:center'>" + brd(it.validade) + "</td><td style='text-align:center'>" + Util.num(it.quantidade) + "</td></tr>";
+      var logoE = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(44) : "";
+      var linhas = (e.itens || []).map(function (it) {
+        return "<tr><td style='text-align:center;padding:4px'>" + Util.num(it.quantidade) + "</td><td style='padding:4px'>" + Util.esc(it.nome) + "</td><td style='text-align:center;padding:4px'>" + brd(e.data) + "</td><td style='text-align:center;padding:4px'>" + Util.esc(it.ca || "N/A") + "</td><td style='padding:4px'></td></tr>";
       }).join("");
       var termo = "Declaro ter recebido gratuitamente da empresa os Equipamentos de Proteção Individual (EPI) acima discriminados, em perfeito estado de conservação e funcionamento, bem como orientação/treinamento quanto ao uso correto, guarda e conservação. Comprometo-me a: usá-los durante toda a jornada de trabalho; responsabilizar-me por sua guarda e conservação; comunicar qualquer alteração que os torne impróprios para uso; e devolvê-los quando solicitado. Estou ciente de que o uso é obrigatório e que o não uso constitui ato faltoso (art. 158 da CLT e NR-6).";
-      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:0 auto;padding:8px">'
-        + '<div style="text-align:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:14px">'
-        + '<h2 style="margin:0;color:#0f2740">FICHA DE CONTROLE DE ENTREGA DE EPI</h2>'
-        + '<div style="font-size:12px;color:#555">' + Util.esc(emp.razaoSocial || emp.nome || "") + (emp.cnpj ? " · CNPJ " + Util.esc(emp.cnpj) : "") + " · conforme NR-6</div>"
-        + '<div style="font-size:12px;color:#555">Ficha nº <b>' + Util.esc(e.numero || "—") + "</b> · Data: <b>" + brd(e.data) + "</b>" + (obra ? " · Obra: <b>" + Util.esc(obra.nome) + "</b>" : "") + "</div></div>"
-        + '<table style="width:100%;font-size:13px;margin-bottom:12px"><tr><td><b>Colaborador:</b> ' + Util.esc(e.colaboradorNome || "—") + "</td><td><b>Função:</b> " + Util.esc(e.colaboradorFuncao || "—") + "</td><td><b>CPF:</b> " + Util.esc(e.colaboradorCpf || "—") + "</td></tr></table>"
-        + '<table style="width:100%;border-collapse:collapse;font-size:12.5px" border="1"><thead><tr style="background:#eef4fa"><th style="padding:5px;width:26px">#</th><th style="padding:5px">Equipamento (EPI)</th><th style="padding:5px;width:90px">CA</th><th style="padding:5px;width:80px">Validade CA</th><th style="padding:5px;width:44px">Qtd</th></tr></thead><tbody>' + linhas + "</tbody></table>"
-        + (e.observacoes ? '<p style="font-size:12px;margin-top:8px"><b>Obs.:</b> ' + Util.esc(e.observacoes) + "</p>" : "")
-        + '<p style="font-size:11.5px;text-align:justify;margin-top:14px;line-height:1.5">' + termo + "</p>"
-        + '<div style="display:flex;justify-content:space-between;margin-top:46px;gap:40px">'
-        + '<div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:12px">Assinatura do colaborador</div>'
-        + '<div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:12px">Responsável pela entrega</div></div>'
-        + '<div style="text-align:right;font-size:10px;color:#999;margin-top:20px">Gerado pelo OrçaPRO IA</div></div>';
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:0 auto;padding:8px;font-size:12px">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:10px"><div>' + logoE + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style='font-size:9px'>" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.endereco ? " · " + Util.esc(emp.endereco) : "") + "</span></div></div>"
+        + '<h2 style="text-align:center;margin:0 0 10px;color:#0f2740;font-size:15px">FICHA DE CONTROLE E ENTREGA DE EPI</h2>'
+        + "<table style='width:100%;font-size:12px;margin-bottom:8px'><tr><td><b>Nome:</b> " + Util.esc(e.colaboradorNome || "—") + "</td><td><b>CPF:</b> " + Util.esc(e.colaboradorCpf || "—") + "</td></tr><tr><td><b>Função:</b> " + Util.esc(e.colaboradorFuncao || "—") + "</td><td><b>Data:</b> " + brd(e.data) + (e.numero ? " &nbsp;·&nbsp; <b>Ficha:</b> " + Util.esc(e.numero) : "") + (obra ? " &nbsp;·&nbsp; <b>Obra:</b> " + Util.esc(obra.nome) : "") + "</td></tr></table>"
+        + "<p style='font-size:11px;text-align:justify;line-height:1.5;margin:0 0 10px'>" + termo + "</p>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:11.5px' border='1'><thead><tr style='background:#0f2740;color:#fff'><th style='padding:5px;width:44px'>Qtd</th><th style='padding:5px'>Descrição do EPI</th><th style='padding:5px;width:80px'>Data</th><th style='padding:5px;width:70px'>CA</th><th style='padding:5px;width:150px'>Assinatura</th></tr></thead><tbody>" + linhas + "</tbody></table>"
+        + (e.observacoes ? "<p style='font-size:11px;margin-top:8px'><b>Obs.:</b> " + Util.esc(e.observacoes) + "</p>" : "")
+        + "<p style='font-size:11px;margin-top:12px'>Declaramos, para os devidos fins, que o colaborador recebeu treinamento para o uso correto dos EPIs.</p>"
+        + '<div style="display:flex;justify-content:space-between;margin-top:40px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px">Assinatura do Colaborador</div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px">Responsável pela Empresa</div></div>'
+        + '<div style="text-align:right;font-size:8px;color:#999;margin-top:14px">Gerado pelo OrçaPRO IA</div></div>';
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Ficha de EPI — " + (e.colaboradorNome || ""), html);
       else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Ficha de EPI</title></head><body onload='window.print()'>" + html + "</body></html>"); w.document.close(); } }
     },
@@ -1463,9 +1461,11 @@ renderRequisicoes: function () {
     // =================== MODELOS DE DOCUMENTOS (templates editáveis) ===================
     _templatesDefault: function () {
       return [
-        { id: "tpl-declaracao", nome: "Declaração de vínculo", titulo: "DECLARAÇÃO", corpo: "Declaramos, para os devidos fins, que {colaborador}, CPF {cpf}, exerce a função de {funcao} na empresa {empresa}, admitido(a) em {admissao}.\n\n{cidade}, {data}.\n\n\n_______________________________\n{responsavel}" },
-        { id: "tpl-autorizacao", nome: "Autorização", titulo: "AUTORIZAÇÃO", corpo: "A empresa {empresa}, CNPJ {cnpj}, autoriza {colaborador} a ______________________________________ referente à obra {obra}.\n\n{cidade}, {data}.\n\n\n_______________________________\n{responsavel} — CREA {crea}" },
-        { id: "tpl-comunicado", nome: "Comunicado", titulo: "COMUNICADO", corpo: "Comunicamos que ______________________________________.\n\nAtenciosamente,\n{empresa}\n{cidade}, {data}." }
+        { id: "tpl-vt-renuncia", nome: "Termo de renúncia ao Vale-Transporte", titulo: "TERMO DE OPÇÃO — RENÚNCIA AO VALE-TRANSPORTE", corpo: "Eu, {colaborador}, portador(a) do CPF nº {cpf}, ocupante do cargo de {cargo} na empresa {empresa}, CNPJ {cnpj}, declaro, para os devidos fins, que RENUNCIO ao benefício do Vale-Transporte previsto na Lei nº 7.418/85, uma vez que não utilizo transporte coletivo para deslocamento residência-trabalho-residência.\n\nDeclaro estar ciente de que esta opção poderá ser revista a qualquer momento, mediante comunicação prévia à empresa.\n\n{endereco}, {data}.\n\n\n_______________________________\n{colaborador}\nCPF: {cpf}" },
+        { id: "tpl-lanche", nome: "Protocolo de fornecimento de lanche", titulo: "PROTOCOLO DE FORNECIMENTO DE LANCHE", corpo: "Eu, {colaborador}, CPF nº {cpf}, cargo {cargo}, declaro ter recebido da {empresa} o fornecimento de lanche (café da manhã / tarde) durante os dias efetivamente trabalhados no mês de {mes}.\n\n{endereco}, {data}.\n\n\n_______________________________\n{colaborador}\nCPF: {cpf}" },
+        { id: "tpl-cesta", nome: "Protocolo de entrega de cesta básica", titulo: "PROTOCOLO DE ENTREGA DE CESTA BÁSICA", corpo: "Eu, {colaborador}, portador(a) do CPF nº {cpf}, ocupante do cargo de {cargo}, declaro para os devidos fins que recebi da empresa {empresa}, inscrita no CNPJ nº {cnpj}, a cesta básica referente ao mês de {mes}.\n\nDeclaro estar ciente de que o benefício é concedido por liberalidade da empresa, não possuindo natureza salarial para quaisquer efeitos legais.\n\n{endereco}, {data}.\n\n\n_______________________________\n{colaborador}\nCPF: {cpf}" },
+        { id: "tpl-declaracao", nome: "Declaração de vínculo", titulo: "DECLARAÇÃO", corpo: "Declaramos, para os devidos fins, que {colaborador}, CPF {cpf}, exerce a função de {funcao} na empresa {empresa}, admitido(a) em {admissao}.\n\n{endereco}, {data}.\n\n\n_______________________________\n{responsavel}" },
+        { id: "tpl-autorizacao", nome: "Autorização", titulo: "AUTORIZAÇÃO", corpo: "A empresa {empresa}, CNPJ {cnpj}, autoriza {colaborador} a ______________________________________ referente à obra {obra}.\n\n{endereco}, {data}.\n\n\n_______________________________\n{responsavel} — CREA {crea}" }
       ];
     },
     renderModelos: function () {
@@ -1498,31 +1498,36 @@ renderRequisicoes: function () {
         return true;
       });
     },
-    _ctxVariaveis: function (colab, obra) {
+    _mesRef: function (mes) { var M = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]; var p = String(mes || "").split("-"); return p[1] ? (M[(Util.num(p[1]) || 1) - 1] || "") + "/" + (p[0] || "") : ""; },
+    _ctxVariaveis: function (colab, obra, mesRef) {
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : ""; };
       return {
-        empresa: emp.nome || "", cnpj: emp.cnpj || "", cidade: emp.cidade || "", responsavel: emp.responsavel || "", crea: emp.crea || "",
-        data: new Date().toLocaleDateString("pt-BR"),
-        colaborador: colab ? (colab.nome || "") : "", cpf: colab ? (colab.cpf || "") : "", funcao: colab ? (colab.funcao || "") : "", admissao: colab ? brd(colab.admissao) : "",
+        empresa: emp.nome || "", cnpj: emp.cnpj || "", cidade: emp.cidade || "", endereco: emp.endereco || emp.cidade || "", responsavel: emp.responsavel || "", crea: emp.crea || "",
+        data: new Date().toLocaleDateString("pt-BR"), mes: mesRef || "",
+        colaborador: colab ? (colab.nome || "") : "", cpf: colab ? (colab.cpf || "") : "", funcao: colab ? (colab.funcao || "") : "", cargo: colab ? (colab.funcao || "") : "", admissao: colab ? brd(colab.admissao) : "", ctps: colab ? (colab.ctps || "") : "",
         obra: obra ? (obra.nome || "") : "", cliente: obra ? (obra.clienteNome || "") : "", local: obra ? (obra.local || "") : ""
       };
     },
     _aplicarVariaveis: function (texto, ctx) { return String(texto || "").replace(/\{(\w+)\}/g, function (m, k) { return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : m; }); },
     gerarModelo: function (id) {
       var self = this, t = Store.obter(eid(), "templates", id); if (!t) return;
-      var colabs = lista("colaboradores"), obras = lista("obras");
-      var corpo = '<p class="muted" style="margin:0 0 10px">Escolha o colaborador/obra para preencher as variáveis (opcional).</p>'
-        + '<div class="row">' + campo("Colaborador", sel("g-colab", optsRec(colabs, "nome", "", "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", "", "— nenhuma —"))) + "</div>";
+      var colabs = lista("colaboradores"), obras = lista("obras"), mesAtual = new Date().toISOString().slice(0, 7);
+      var corpo = '<p class="muted" style="margin:0 0 10px">Escolha o colaborador (ou <b>todos os ativos</b> — gera uma página por colaborador) e o mês.</p>'
+        + '<div class="row">' + campo("Colaborador", sel("g-colab", '<option value="__todos">— TODOS os ativos (1 página cada) —</option>' + optsRec(colabs, "nome", "", "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", "", "— nenhuma —"))) + campo("Mês de referência", inp("g-mes", mesAtual, "", "month")) + "</div>";
       UI.modal("Gerar: " + Util.esc(t.nome || ""), corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Gerar", classe: "primary", onClick: function () {
-          var colab = lista("colaboradores").filter(function (c) { return c.id === v("g-colab"); })[0];
-          var obra = lista("obras").filter(function (o) { return o.id === v("g-obra"); })[0];
-          var texto = self._aplicarVariaveis(t.corpo, self._ctxVariaveis(colab, obra));
-          var corpoHtml = "<div style='white-space:pre-wrap;line-height:1.7;font-size:13px;text-align:justify;min-height:200px'>" + Util.esc(texto) + "</div>";
+          var colVal = v("g-colab"), obra = lista("obras").filter(function (o) { return o.id === v("g-obra"); })[0], mesStr = self._mesRef(v("g-mes"));
+          var alvos = colVal === "__todos" ? colabs.filter(function (c) { return c.status === "ativo"; }) : (colVal ? colabs.filter(function (c) { return c.id === colVal; }) : [null]);
+          if (colVal === "__todos" && !alvos.length) { UI.toast("Nenhum colaborador ativo para gerar.", "erro"); return; }
+          var paginas = alvos.map(function (colab) {
+            var texto = self._aplicarVariaveis(t.corpo, self._ctxVariaveis(colab, obra, mesStr));
+            var corpoHtml = "<div style='white-space:pre-wrap;line-height:1.8;font-size:13px;text-align:justify;min-height:220px'>" + Util.esc(texto) + "</div>";
+            return "<div style='page-break-after:always'>" + self._docShell(Util.esc(t.titulo || t.nome || "DOCUMENTO"), "#0f2740", corpoHtml) + "</div>";
+          }).join("");
           UI.fecharModal();
-          self._abrirDoc(t.nome || "Documento", self._docShell(Util.esc(t.titulo || t.nome || "DOCUMENTO"), "#0f2740", corpoHtml));
+          self._abrirDoc((alvos.length > 1 ? alvos.length + "× " : "") + (t.nome || "Documento"), paginas);
         } }
       ]);
     },

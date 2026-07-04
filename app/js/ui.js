@@ -179,6 +179,7 @@
         '<div class="row">' + f("responsavel", "Responsável técnico", emp.responsavel) + f("titulo", "Título profissional", emp.titulo) + '</div>' +
         '<div class="row">' + f("crea", "Registro CREA/CAU", emp.crea) + f("registroNacional", "Reg. Nacional", emp.registroNacional) + '</div>' +
         '<div class="row">' + f("cidade", "Cidade / UF", emp.cidade) + f("contato", "Contato (tel/e-mail)", emp.contato) + '</div>' +
+        '<div class="field"><label>Endereço (rua, nº, bairro — usado nos documentos)</label><input id="emp-endereco" value="' + Util.esc(emp.endereco || "") + '"></div>' +
         '<div class="field"><label>Logo (PNG/JPG — aparece na capa dos documentos)</label>' +
         '<input type="file" id="emp-logo" accept="image/png,image/jpeg,image/jpg,image/webp">' +
         '<div id="emp-logo-prev" class="mt">' + (logo ? '<img src="' + logo + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">' : '<span class="muted">Nenhum logo carregado.</span>') + '</div></div>';

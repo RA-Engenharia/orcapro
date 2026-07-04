@@ -17,11 +17,12 @@
     crea: "",
     registroNacional: "",
     cidade: "",
+    endereco: "",
     contato: ""
   };
 
   var Empresa = {
-    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "contato"],
+    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato"],
 
     _prefs: function () {
       try { return (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(Auth.empresaId()) || {}) : {}; }
