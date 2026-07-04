@@ -437,15 +437,15 @@ footer a{color:#cfe0ee;text-decoration:none}
     </div>
     <div class="preco dest">
       <div class="badge">🚀 LANÇAMENTO</div>
-      <div class="pn">Plus — Vitalícia</div><div class="de">de R$ 2.997</div>
-      <div class="pv" id="plus-preco">R$ 497</div><div class="pp">pagamento único · <b style="color:var(--verde)">preço de lançamento</b></div>
+      <div class="pn">Plus — Vitalícia</div><div class="de" id="plus-de">de R$ 2.997</div>
+      <div class="pv" id="plus-preco">R$ 1.997</div><div class="pp">pagamento único · <b style="color:var(--verde)">preço de lançamento</b></div>
       <div class="ps"><b>Tudo da Base</b> + <b>Gestão de Obras</b> (20 módulos): obras, contratos, medições, financeiro, compras, estoque, RDO e equipe.</div>
       <a class="btn g" data-buy="plus_vitalicia" href="#">Comprar Plus</a>
     </div>
     <div class="preco">
       <div class="pn">Prefere assinar?</div><div class="de">&nbsp;</div>
       <div class="pv" style="font-size:30px;line-height:1.3">Mensal<br>ou Anual</div><div class="pp">Base ou Plus</div>
-      <div class="ps">Base <b>R$39/mês</b> · <b>R$197/ano</b><br>Plus <b>R$59/mês</b> · <b>R$397/ano</b></div>
+      <div class="ps">Base <b>R$39/mês</b> · <b>R$197/ano</b><br>Plus <b>R$149/mês</b> · <b id="plus-anual">R$1.500</b>/ano</div>
       <a class="btn o" data-buy="mensal" href="#" style="margin-bottom:8px">Assinar Base</a>
       <a class="btn o" data-buy="plus_mensal" href="#">Assinar Plus</a>
     </div>
@@ -528,8 +528,12 @@ XAB.forEach(function(t,i){
 </script>
 <script>
 (function(){
-  var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-launch"), pv=document.getElementById("plus-preco");
-  function tick(){ var ms=fim-Date.now(); if(pv)pv.textContent = ms<=0 ? "R$ 697" : "R$ 497"; if(!el)return; if(ms<=0){ el.style.display="none"; return; } el.style.display="block"; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento do Plus (R$ 497) termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
+  var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-launch"), pv=document.getElementById("plus-preco"), pde=document.getElementById("plus-de"), pan=document.getElementById("plus-anual");
+  function tick(){ var ms=fim-Date.now(), pos=ms<=0;
+    if(pv)pv.textContent = pos ? "R$ 2.997" : "R$ 1.997";
+    if(pde)pde.style.visibility = pos ? "hidden" : "visible";
+    if(pan)pan.textContent = pos ? "R$2.250" : "R$1.500";
+    if(!el)return; if(pos){ el.style.display="none"; return; } el.style.display="block"; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento do Plus (R$ 1.997) termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
   tick(); setInterval(tick,1000);
 })();
 </script>

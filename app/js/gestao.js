@@ -1046,7 +1046,7 @@ renderRelatorios: function () {
       var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "") + "/?plano=plus_vitalicia";
       var cd = "";
       try { var fim = new Date(CONFIG.ofertaFim).getTime(), ms = fim - Date.now(); if (ms > 0) { var dd = Math.floor(ms / 86400000), hh = Math.floor((ms % 86400000) / 3600000); cd = "⏳ Termina em " + (dd > 0 ? dd + (dd === 1 ? " dia" : " dias") + " e " + hh + "h" : hh + "h") + " — garanta agora."; } } catch (e) {}
-      var precoTxt = cd ? "R$ 497" : "R$ 697";
+      var precoTxt = cd ? "R$ 1.997" : "R$ 2.997";
       var mods = ["Obras", "Contratos", "Medições", "Financeiro", "Fornecedores", "Compras", "Estoque", "Diário (RDO)", "Colaboradores", "Ponto/Folha", "Frota"];
       var pills = mods.map(function (m) { return '<span style="background:#eef4fb;border:1px solid #d7e6f5;color:#143454;font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:8px">' + m + "</span>"; }).join("");
       var html =
