@@ -13,6 +13,17 @@
   var RDO_FOTO_Q = 0.6;             // qualidade JPEG
   var SNAP_MAX_BYTES = 8 * 1024 * 1024; // teto do snapshot serializado (< 10MB da rota + 12MB do body)
 
+  // ---------- RBAC: presets de módulos por departamento (o admin pode ajustar por usuário) ----------
+  var LIMITE_USUARIOS = 20;
+  var DEPTO_MODULOS = {
+    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "insumos", "relatorios"],
+    compras:        ["dashboard", "compras", "estoque", "requisicoes", "insumos", "fornecedores"],
+    financeiro:     ["dashboard", "financeiro", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
+    rh:             ["dashboard", "colaboradores", "ponto", "folha"],
+    administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota"],
+    diretoria:      null   // null = todos os módulos atribuíveis
+  };
+
   // ---------- Parametrização (enums do domínio) ----------
   var P = {
     obraStatus: [["planejamento", "Planejamento"], ["andamento", "Em andamento"], ["pausada", "Pausada"], ["concluida", "Concluída"]],
@@ -50,6 +61,7 @@
     reqPrioridade: [["baixa","Baixa"],["normal","Normal"],["alta","Alta"],["urgente","Urgente"]],
       reqStatus: [["aberta","Aberta"],["cotando","Cotando"],["aprovada","Aprovada"],["comprada","Comprada"],["cancelada","Cancelada"]],
       reqUnidade: [["un","un"],["m","m"],["m2","m²"],["m3","m³"],["kg","kg"],["sc","saco"],["cx","caixa"],["pc","peça"],["l","litro"]],
+    departamento: [["engenharia","Engenharia / Obras"],["compras","Compras / Suprimentos"],["financeiro","Financeiro"],["rh","RH / Departamento Pessoal"],["administrativo","Administrativo"],["diretoria","Diretoria"]],
     fiscalTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
     fiscalStatus: [["emitida", "Emitida"], ["cancelada", "Cancelada"]],
     patrimonioCategoria: [["imovel","Imóvel"],["movel","Móvel"],["informatica","Informática"],["equipamento","Equipamento"],["outros","Outros"]],
@@ -109,6 +121,7 @@
     folha: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 4v16"/><path d="M12 14h5"/><path d="M12 17h5"/>',
     relatorios: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
+    usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
   };
   function svg(id, size) { size = size || 20; return '<svg class="g-ic" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON[id] || "") + "</svg>"; }
 
@@ -135,23 +148,28 @@
       { id: "patrimonio", nome: "Patrimônio" },
       { id: "centrocusto", nome: "Centro de Custo" },
       { id: "folha", nome: "Folha / Encargos" },
-      { id: "relatorios", nome: "Relatórios" }
+      { id: "relatorios", nome: "Relatórios" },
+      { id: "usuarios", nome: "Usuários" }
     ],
 
     // ---------- Sidebar (nav de módulos) ----------
     renderSidebar: function (viewAtiva) {
       var pode = this.podeGestao();
-      var mods = pode ? this.modulos : this.modulos.filter(function (m) { return m.id === "orcamentos"; });
+      var mods;
+      if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
+      else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); }); // RBAC: sub-usuário só vê seus módulos
       var itens = mods.map(function (m) {
         return '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
       }).join("");
-      if (!pode) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">⭐</span><span>Desbloquear Gestão</span></button>';
+      if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">⭐</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
       return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#sbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg></div>' +
         '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + "</nav>";
     },
 
     // ---------- Dispatcher de view ----------
     render: function (view) {
+      // RBAC: guarda em função (não só ocultar) — sub-usuário sem permissão vê aviso
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(view)) return this._semPermissao(view);
       switch (view) {
         case "dashboard": return this.renderDashboard();
         case "obras": return this.renderObras();
@@ -173,6 +191,7 @@
         case "centrocusto": return this.renderCentrocusto();
         case "folha": return this.renderFolha();
         case "relatorios": return this.renderRelatorios();
+        case "usuarios": return this.renderUsuarios();
       }
       return "";
     },
@@ -935,7 +954,84 @@ renderRequisicoes: function () {
       ]);
     },
 
-renderFiscal: function () {
+    // =================== USUÁRIOS / EQUIPE (RBAC por departamento) ===================
+    _modulosAtribuiveis: function () { return this.modulos.filter(function (m) { return m.id !== "usuarios"; }); },
+    _modulosDoDepto: function (dep) {
+      if (dep === "diretoria" || !DEPTO_MODULOS[dep]) return this._modulosAtribuiveis().map(function (m) { return m.id; });
+      return DEPTO_MODULOS[dep].slice();
+    },
+    _semPermissao: function (view) {
+      var m = this.modulos.filter(function (x) { return x.id === view; })[0];
+      return '<div class="flex between mb"><h1 style="margin:0">🔒 Sem acesso</h1></div>'
+        + '<div class="card" style="text-align:center;padding:34px">'
+        + '<div style="font-size:42px;margin-bottom:8px">🔒</div>'
+        + '<p style="font-size:15px">Você não tem permissão para o módulo <b>' + Util.esc(m ? m.nome : view) + "</b>.</p>"
+        + '<p class="muted">Fale com o administrador da conta para liberar este módulo ao seu departamento.</p></div>';
+    },
+    renderUsuarios: function () {
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return this._semPermissao("usuarios");
+      var us = lista("equipe").slice().sort(function (a, b) { return (a.nome || "").localeCompare(b.nome || ""); });
+      var ativos = us.filter(function (u) { return u.ativo !== false; }).length;
+      var extra = '<span class="muted" style="margin-right:12px;align-self:center">' + us.length + " de " + LIMITE_USUARIOS + " usuários · " + ativos + " ativos</span>";
+      var podeAdd = us.length < LIMITE_USUARIOS;
+      var html = this._head(svg("usuarios") + "Usuários &amp; Permissões", podeAdd ? "novo-usuario" : "", podeAdd ? "Novo usuário" : "", extra);
+      html += '<p class="muted" style="margin:-4px 0 14px">Você (dono da conta) é o <b>administrador</b>. Cadastre até <b>' + LIMITE_USUARIOS + '</b> usuários e libere os módulos por <b>departamento</b> — cada um entra com o próprio login e senha e vê só o que foi liberado.</p>';
+      if (!podeAdd) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px">Limite de ' + LIMITE_USUARIOS + ' usuários nesta versão. Desative ou exclua um para criar outro.</div>';
+      if (!us.length) return html + vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário");
+      html += '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th></th></tr></thead><tbody>';
+      us.forEach(function (u) {
+        var nMod = (u.modulos && u.modulos.length) || 0;
+        var st = u.ativo === false ? '<span class="g-pill" style="background:#64748b22;color:#64748b">inativo</span>' : '<span class="g-pill" style="background:#16a34a22;color:#16a34a">ativo</span>';
+        html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
+      });
+      return html + "</tbody></table>";
+    },
+    novoUsuario: function () { this.formUsuario(null); },
+    formUsuario: function (u) {
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador gerencia usuários.", "erro"); return; }
+      u = u || {}; var self = this, ehNovo = !u.id;
+      var atrib = this._modulosAtribuiveis();
+      var modsSel = (u.modulos && u.modulos.length) ? u.modulos.slice() : this._modulosDoDepto(u.departamento || "engenharia");
+      var checkboxes = '<div id="us-mods" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:230px;overflow:auto;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px">' +
+        atrib.map(function (m) {
+          var on = m.id === "dashboard" || modsSel.indexOf(m.id) > -1;
+          var dis = m.id === "dashboard" ? " disabled" : "";
+          return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" data-mod="' + m.id + '"' + (on ? " checked" : "") + dis + "> " + Util.esc(m.nome) + (m.id === "dashboard" ? ' <span class="muted">(sempre)</span>' : "") + "</label>";
+        }).join("") + "</div>";
+      var corpo =
+        '<div class="row">' + campo("Nome *", inp("g-nome", u.nome, "Ex.: Maria Souza")) + campo("Login (usuário) *", inp("g-login", u.login, "ex.: maria")) + "</div>" +
+        '<div class="row">' + campo(ehNovo ? "Senha *" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "senha de acesso" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
+        campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">↺ preset do departamento</button>', checkboxes);
+      this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
+        obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome.", "erro"); return false; }
+        obj.login = String(v("g-login") || "").trim().toLowerCase(); if (obj.login.length < 3) { UI.toast("Login muito curto (mín. 3).", "erro"); return false; }
+        // login único GLOBALMENTE (evita colisão entre empresas no mesmo navegador)
+        var emUso = (typeof Auth !== "undefined" && Auth.loginEquipeEmUso)
+          ? Auth.loginEquipeEmUso(obj.login, eid(), obj.id)
+          : !!lista("equipe").filter(function (x) { return x.id !== obj.id && String(x.login || "").toLowerCase() === obj.login; })[0];
+        if (emUso) { UI.toast('Já existe um usuário com o login "' + obj.login + '".', "erro"); return false; }
+        if (ehNovo && lista("equipe").length >= LIMITE_USUARIOS) { UI.toast("Limite de " + LIMITE_USUARIOS + " usuários atingido.", "erro"); return false; }
+        var senha = v("g-senha");
+        if (ehNovo && !senha) { UI.toast("Defina uma senha para o 1º acesso.", "erro"); return false; }
+        if (senha) obj.senhaHash = (typeof Auth !== "undefined" && Auth._hashSenha) ? Auth._hashSenha(senha) : btoa(unescape(encodeURIComponent(senha)));
+        obj.departamento = v("g-depto");
+        obj.ativo = v("g-ativo") !== "0";
+        var mods = ["dashboard"];
+        Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) { if (c.checked && c.getAttribute("data-mod") !== "dashboard") mods.push(c.getAttribute("data-mod")); });
+        obj.modulos = mods;
+        return true;
+      });
+      var preset = document.getElementById("us-preset");
+      if (preset) preset.onclick = function () {
+        var dep = (document.getElementById("g-depto") || {}).value || "engenharia";
+        var ids = self._modulosDoDepto(dep);
+        Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) {
+          var id = c.getAttribute("data-mod"); if (id === "dashboard") return; c.checked = ids.indexOf(id) > -1;
+        });
+        UI.toast("Módulos do departamento aplicados.", "ok");
+      };
+    },
+    renderFiscal: function () {
       var nfs = lista("fiscal"), obras = lista("obras");
       var totEnt = nfs.filter(function (n) { return n.tipo === "entrada" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
@@ -1292,6 +1388,7 @@ renderRelatorios: function () {
         case "entrada-estoque": return this._movEstoque(id, "entrada");
         case "saida-estoque": return this._movEstoque(id, "saida");
         case "novo-rdo": return this.novoRdo();
+        case "novo-usuario": return this.novoUsuario();
         case "finalizar-rdo": {
           var rd = Store.obter(eid(), "rdo", id); if (!rd) return;
           rd.status = "finalizado"; Store.salvar(eid(), "rdo", rd); App.render(); UI.toast("Diário finalizado.", "ok"); return;
@@ -1559,6 +1656,7 @@ if (entidade === "fiscal") return this.formFiscal(r);
 if (entidade === "patrimonio") return this.formPatrimonio(r);
 if (entidade === "centrocusto") return this.formCentrocusto(r);
 if (entidade === "folha") return this.formFolha(r);
+if (entidade === "equipe") return this.formUsuario(r);
     }
   };
 

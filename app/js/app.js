@@ -90,8 +90,15 @@
       topbar.style.display = "flex";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
       var view = this.view || "orcamentos";
-      // Gestão de Obras é da versão PLUS: base (ou licença sem Plus) fica só no orçamento
-      if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao() && view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
+      var podeGestao = typeof Gestao !== "undefined" && !this._demo && Gestao.podeGestao();
+      if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
+        // Sem Plus (base/sem licença): Gestão bloqueada p/ TODOS (dono e sub-usuário) → só Orçamento
+        if (view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
+      } else if (podeGestao && Auth.podeModulo && !Auth.podeModulo(view)) {
+        // Plus: sub-usuário sem permissão p/ a view → vai p/ um módulo permitido (Painel é sempre liberado)
+        view = Auth.podeModulo("dashboard") ? "dashboard" : "orcamentos";
+        this.view = view;
+      }
       // sidebar de módulos (não aparece na vitrine/demo)
       if (sidebar) {
         if (this._demo || typeof Gestao === "undefined") { sidebar.innerHTML = ""; if (app) app.classList.remove("com-sidebar"); }
@@ -288,12 +295,13 @@
       var email = (UI.el("lg-email") || {}).value;
       var senha = (UI.el("lg-senha") || {}).value;
       if (!Util.naoVazio(email) || !Util.naoVazio(senha)) { UI.toast("Informe e-mail e senha.", "erro"); return; }
-      var jaExiste = Auth.existeEmail(email);
+      // conta-dono OU login de sub-usuário existente → não registrar conta nova
+      var jaExiste = Auth.existeEmail(email) || (Auth.existeLoginEquipe && Auth.existeLoginEquipe(email));
       var r = Auth.login(email, senha);
       if (!r.ok) {
         if (jaExiste) {
-          // conta existe → é login com senha errada. NÃO cria conta nova (seus orçamentos estão salvos nesta).
-          UI.toast("Senha incorreta para " + email + ". Seus orçamentos estão salvos — tente de novo ou use “Esqueci a senha”.", "erro");
+          // conta/usuário existe → senha errada. NÃO cria conta nova (os dados estão salvos nesta).
+          UI.toast("Senha incorreta para " + email + ". Tente de novo ou use “Esqueci a senha” (se for o dono da conta).", "erro");
           return;
         }
         // e-mail novo → cria conta (1º acesso)

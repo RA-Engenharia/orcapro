@@ -48,6 +48,8 @@
     renderTopbar: function (usuario) {
       var plano = usuario.plano || "FREE";
       var freeCls = plano === "FREE" ? "free" : "";
+      var admin = usuario.papel !== "usuario"; // sub-usuário não vê ações de dono (empresa/licença/backup)
+      var deptoLbl = (usuario.departamento && typeof Gestao !== "undefined" && Gestao.rot) ? Gestao.rot(Gestao.P.departamento, usuario.departamento) : (usuario.departamento || "usuário");
       return '' +
         '<div class="logo" style="display:flex;align-items:center;gap:10px">' +
           '<svg width="34" height="34" viewBox="0 0 100 100" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#tbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>' +
@@ -55,10 +57,11 @@
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
         '<span class="spacer"></span>' +
-        '<span class="user">' + Util.esc(usuario.empresa) + ' · ' + Util.esc(usuario.email) + '</span>' +
+        '<span class="user">' + Util.esc(usuario.empresa) + ' · ' + (admin ? Util.esc(usuario.email) : Util.esc(usuario.nome || usuario.email) + ' <span class="badge-plano" style="background:#2e6f9e22;color:#2e6f9e">' + Util.esc(deptoLbl) + '</span>') + '</span>' +
         '<button class="linkbtn" data-acao="tabelas">🗂 Tabelas</button>' +
-        '<button class="linkbtn" data-acao="backup">💾 Backup</button>' +
+        (admin ? '<button class="linkbtn" data-acao="backup">💾 Backup</button>' : '') +
         (function () {
+          if (!admin) return "";
           var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
           if (!lic) return "";
           var lbl, cor = '', vermelho = ' style="color:var(--vermelho,#dc2626);font-weight:700"';
@@ -70,7 +73,7 @@
           else { lbl = "🔑 Licenciado"; }
           return '<button class="linkbtn" data-acao="licenca"' + cor + '>' + lbl + '</button>';
         })() +
-        '<button class="linkbtn" data-acao="empresa">⚙ Empresa</button>' +
+        (admin ? '<button class="linkbtn" data-acao="empresa">⚙ Empresa</button>' : '') +
         '<button class="linkbtn" data-acao="tema">◐ Tema</button>' +
         '<button class="linkbtn" data-acao="logout">Sair</button>';
     },
@@ -208,7 +211,7 @@
             '<div id="login-form">' +
             chips +
             '<div class="field"><label>Empresa / Escritório</label><input id="lg-empresa" placeholder="Ex.: Studio Arq + Eng"></div>' +
-            '<div class="field"><label>E-mail</label><input id="lg-email" type="email" placeholder="voce@empresa.com"></div>' +
+            '<div class="field"><label>E-mail ou usuário</label><input id="lg-email" type="text" placeholder="voce@empresa.com (ou seu login de usuário)"></div>' +
             '<div class="field"><label>Senha</label><input id="lg-senha" type="password" placeholder="••••••"></div>' +
             '<button class="btn primary" style="width:100%" data-acao="entrar">Entrar / Criar conta</button>' +
             (contas.length
