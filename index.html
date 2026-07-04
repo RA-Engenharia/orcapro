@@ -393,7 +393,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <div class="preco dest">
       <div class="badge">🚀 LANÇAMENTO</div>
       <div class="pn">Plus — Vitalícia</div><div class="de">de R$ 2.997</div>
-      <div class="pv">R$ 497</div><div class="pp">pagamento único · <b style="color:var(--verde)">preço de lançamento</b></div>
+      <div class="pv" id="plus-preco">R$ 497</div><div class="pp">pagamento único · <b style="color:var(--verde)">preço de lançamento</b></div>
       <div class="ps"><b>Tudo da Base</b> + <b>Gestão de Obras</b> (13 módulos): obras, contratos, medições, financeiro, compras, estoque, RDO e equipe.</div>
       <a class="btn g" data-buy="plus_vitalicia" href="#">Comprar Plus</a>
     </div>
@@ -483,9 +483,8 @@ XAB.forEach(function(t,i){
 </script>
 <script>
 (function(){
-  var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-launch");
-  if(!el)return;
-  function tick(){ var ms=fim-Date.now(); if(ms<=0){ el.style.display="none"; return; } el.style.display="block"; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento do Plus (R$ 497) termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
+  var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-launch"), pv=document.getElementById("plus-preco");
+  function tick(){ var ms=fim-Date.now(); if(pv)pv.textContent = ms<=0 ? "R$ 697" : "R$ 497"; if(!el)return; if(ms<=0){ el.style.display="none"; return; } el.style.display="block"; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento do Plus (R$ 497) termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
   tick(); setInterval(tick,1000);
 })();
 </script>
