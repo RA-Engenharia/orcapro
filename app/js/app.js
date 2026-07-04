@@ -98,7 +98,7 @@
         else { sidebar.innerHTML = Gestao.renderSidebar(view); if (app) app.classList.add("com-sidebar"); }
       }
       // módulos da Gestão
-      if (view !== "orcamentos" && typeof Gestao !== "undefined") { main.innerHTML = Gestao.render(view); return; }
+      if (view !== "orcamentos" && typeof Gestao !== "undefined") { main.innerHTML = Gestao.render(view); if (Gestao.afterRender) Gestao.afterRender(view); return; }
       // view = Orçamentos (fluxo original)
       if (this.tela === "editor" && this.orcAtual) {
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);

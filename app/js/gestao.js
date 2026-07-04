@@ -108,6 +108,7 @@
     centrocusto: '<path d="M12 2v20"/><path d="M2 5h20"/><path d="M4 5v14c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5"/><path d="M8 10h8"/><path d="M8 14h5"/>',
     folha: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 4v16"/><path d="M12 14h5"/><path d="M12 17h5"/>',
     relatorios: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
+    insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
   };
   function svg(id, size) { size = size || 20; return '<svg class="g-ic" width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICON[id] || "") + "</svg>"; }
 
@@ -129,6 +130,7 @@
       { id: "ponto", nome: "Ponto / Folha" },
       { id: "frota", nome: "Frota" },
       { id: "requisicoes", nome: "Requisições" },
+      { id: "insumos", nome: "Banco de Insumos" },
       { id: "fiscal", nome: "Fiscal / NF-e" },
       { id: "patrimonio", nome: "Patrimônio" },
       { id: "centrocusto", nome: "Centro de Custo" },
@@ -165,6 +167,7 @@
         case "ponto": return this.renderPonto();
         case "frota": return this.renderFrota();
         case "requisicoes": return this.renderRequisicoes();
+        case "insumos": return this.renderBancoInsumos();
         case "fiscal": return this.renderFiscal();
         case "patrimonio": return this.renderPatrimonio();
         case "centrocusto": return this.renderCentrocusto();
@@ -745,7 +748,9 @@ renderRequisicoes: function () {
         if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> ';
         if (r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
-        html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + '</td><td class="num">' + acoes + "</td></tr>";
+        var nItens = (r.itens && r.itens.length) || 0;
+        var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "");
+        html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + reqInfo + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + '</td><td class="num">' + acoes + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -759,21 +764,149 @@ renderRequisicoes: function () {
       return "REQ-" + ano + "-" + pad;
     },
     novoRequisicoes: function () { this.formRequisicoes(null); },
+    // =================== BANCO DE INSUMOS ===================
+    // Resolve o analítico do estado ATIVO (mesma lógica do App.verInsumos).
+    _analiticoAtivo: function () {
+      var url = (typeof App !== "undefined") ? App._analiticoArquivo : null;
+      var uf = (typeof App !== "undefined" && App._baseUf) ? App._baseUf : ((typeof Sinapi !== "undefined") ? Sinapi.uf : null);
+      return { url: url, uf: uf };
+    },
+    renderBancoInsumos: function () {
+      var r = (typeof Insumos !== "undefined") ? Insumos.resumo() : { carregado: false, total: 0 };
+      var card = function (v, l, cor) { return '<div class="card" style="flex:1;text-align:center;min-width:90px"><div style="font-size:26px;font-weight:800;color:' + cor + '">' + v + '</div><div class="muted">' + l + "</div></div>"; };
+      var kpis = r.carregado
+        ? '<div class="row" style="gap:10px;margin:4px 0 14px">'
+          + card(r.total.toLocaleString("pt-BR"), "insumos" + (r.uf ? " · " + Util.esc(r.uf) : ""), "#0f2740")
+          + card(r.mat.toLocaleString("pt-BR"), "Material", "#2e6f9e")
+          + card(r.mo.toLocaleString("pt-BR"), "Mão de obra", "#16a34a")
+          + card(r.eq.toLocaleString("pt-BR"), "Equipamento", "#ea580c")
+          + "</div>"
+        : '<div class="muted" style="margin:4px 0 14px">Banco de preços do estado ativo (SINAPI analítico + bases carregadas em 🗂 Tabelas). Carrega na 1ª busca.</div>';
+      return this._head(svg("insumos") + "Banco de Insumos", "", "")
+        + kpis
+        + '<div class="field"><input id="bi-q" placeholder="Buscar insumo por código ou descrição (ex.: cimento, vergalhão, tijolo, servente)" autocomplete="off"></div>'
+        + '<div class="muted mb" id="bi-status">Digite ao menos 2 letras…</div>'
+        + '<div id="bi-res"></div>'
+        + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
+    },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); },
+    _wireBancoView: function () {
+      var self = this;
+      this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
+    },
+    // Busca inline reutilizável: input#qId -> resultados em #resId; ação chama onPick(insumo). Liga DEPOIS do modal/view existir no DOM.
+    _wireInsumoSearch: function (qId, resId, onPick, opts) {
+      opts = opts || {};
+      var inp = document.getElementById(qId), box = document.getElementById(resId);
+      if (!inp || !box) return;
+      var statusEl = opts.status ? document.getElementById(opts.status) : null;
+      var a = this._analiticoAtivo();
+      function setStatus(t) { if (statusEl) statusEl.textContent = t; }
+      function pintar(listaR) {
+        if (!listaR.length) { box.innerHTML = '<div class="muted" style="font-size:13px;padding:6px">Nenhum insumo encontrado.</div>'; return; }
+        box.innerHTML = '<table class="tbl" style="font-size:13px"><thead><tr><th>Código</th><th>Descrição</th><th>Und</th><th class="num">Preço ref.</th><th>Cat.</th><th></th></tr></thead><tbody>'
+          + listaR.map(function (x, i) {
+            var cor = x.categoria === "MO" ? "#16a34a" : (x.categoria === "EQ" ? "#ea580c" : "#2e6f9e");
+            return '<tr><td><b>' + Util.esc(x.codigo) + "</b>" + (x.fonte && x.fonte !== "SINAPI" ? '<div class="muted" style="font-size:10px">' + Util.esc(x.fonte) + "</div>" : "") + "</td>"
+              + "<td>" + Util.esc(x.descricao) + "</td><td>" + Util.esc(x.unidade) + "</td>"
+              + '<td class="num">' + (x.custoUnitario > 0 ? Util.fmtMoeda(x.custoUnitario) : "—") + "</td>"
+              + '<td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + x.categoria + "</span></td>"
+              + '<td class="num"><button type="button" class="btn sm primary" data-ins="' + i + '">' + (opts.comAcao ? "＋ Requisição" : "Adicionar") + "</button></td></tr>";
+          }).join("") + "</tbody></table>";
+        Array.prototype.forEach.call(box.querySelectorAll("[data-ins]"), function (b) {
+          b.onclick = function () { var ins = listaR[+b.getAttribute("data-ins")]; if (ins) onPick(ins); };
+        });
+      }
+      function achar(q) { var res = Insumos.buscar(q, { max: 40 }); setStatus(res.length + " resultado(s) · preços de referência" + (Insumos.uf ? " · " + Insumos.uf : "")); pintar(res); }
+      function rodar() {
+        var q = inp.value.trim();
+        if (q.length < 2) { box.innerHTML = ""; setStatus("Digite ao menos 2 letras…"); return; }
+        if (Insumos.carregado) { achar(q); return; }
+        setStatus("Carregando o banco de insumos (1ª vez, alguns segundos)…");
+        Insumos.carregar(a.url, a.uf).then(function () { if (inp.value.trim() === q) achar(q); })
+          .catch(function (e) { setStatus("Não carregou o banco: " + ((e && e.message) || "erro") + " — abra pelo servidor local (Iniciar-OrcaPRO.bat)."); });
+      }
+      inp.oninput = (typeof Util !== "undefined" && Util.debounce) ? Util.debounce(rodar, 250) : rodar;
+      if (!Insumos.carregado && !Insumos.carregando) Insumos.carregar(a.url, a.uf).then(function () { setStatus(Insumos.resumo().total.toLocaleString("pt-BR") + " insumos disponíveis. Digite para buscar."); }).catch(function () {});
+    },
+    novaRequisicaoComItem: function (ins) {
+      this._reqItemSeed = { codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" };
+      this.formRequisicoes(null);
+    },
+    // itens de uma requisição (back-compat com o formato antigo de item único)
+    _reqItens: function (r) {
+      if (r.itens && r.itens.length) return r.itens.map(function (i) { return { codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "" }; });
+      if (r.descricao) return [{ codigo: "", descricao: r.descricao, unidade: r.unidade || "un", quantidade: Util.num(r.quantidade) || 1, precoRef: 0, categoria: "MAT", fonte: "" }];
+      return [];
+    },
+    _reqResumo: function (itens) {
+      if (!itens.length) return "";
+      var n = itens.length - 1;
+      return (itens[0].descricao || "").slice(0, 50) + (n > 0 ? " (+" + n + (n > 1 ? " itens)" : " item)") : "");
+    },
+    _reqValor: function (itens) { return itens.reduce(function (s, i) { return s + Util.num(i.quantidade) * Util.num(i.precoRef); }, 0); },
     formRequisicoes: function (r) {
-      r = r || {}; var obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      r = r || {}; var self = this, obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
       var numero = r.numero || this._proxNumeroReq();
+      var itensBuf = this._reqItens(r);
+      if (this._reqItemSeed) { itensBuf.push(this._reqItemSeed); this._reqItemSeed = null; }
       var corpo =
         '<div class="row">' + campo("Número", inp("g-numero", numero)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Obra", sel("g-obra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
         '<div class="row">' + campo("Solicitante", inp("g-solic", r.solicitante)) + campo("Prioridade", sel("g-prioridade", opts(P.reqPrioridade, r.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.reqStatus, r.status || "aberta"))) + "</div>" +
-        '<div class="row">' + campo("Quantidade", inp("g-qtd", r.quantidade, "", "number")) + campo("Unidade", sel("g-unid", opts(P.reqUnidade, r.unidade || "un"))) + "</div>" +
-        campo("Descrição *", '<textarea id="g-descricao" rows="2">' + Util.esc(r.descricao || "") + "</textarea>") +
+        campo("Itens da solicitação *",
+          '<input id="ri-q" placeholder="🔍 Buscar no banco de insumos (código ou descrição)" autocomplete="off" style="margin-bottom:6px">' +
+          '<div class="muted" id="ri-status" style="font-size:12px;margin-bottom:6px"></div>' +
+          '<div id="ri-res" style="max-height:190px;overflow:auto;margin-bottom:8px"></div>' +
+          '<button type="button" class="btn sm" id="ri-manual" style="margin-bottom:10px">➕ Item manual (fora do banco)</button>' +
+          '<div id="ri-itens"></div>') +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(r.observacoes || "") + "</textarea>");
       this._modalForm("requisicoes", r, "Requisição de compra", corpo, function (obj) {
-        obj.descricao = v("g-descricao"); if (!obj.descricao) { UI.toast("Informe a descrição.", "erro"); return false; }
+        if (!itensBuf.length) { UI.toast("Adicione ao menos um item (busque no banco ou use item manual).", "erro"); return false; }
         obj.numero = v("g-numero"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.solicitante = v("g-solic");
-        obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.quantidade = v("g-qtd"); obj.unidade = v("g-unid"); obj.observacoes = v("g-obs");
+        obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.observacoes = v("g-obs");
+        obj.itens = itensBuf.slice();
+        obj.descricao = self._reqResumo(itensBuf);
+        obj.valorEstimado = self._reqValor(itensBuf);
+        obj.quantidade = itensBuf[0].quantidade; obj.unidade = itensBuf[0].unidade; // back-compat
         return true;
       });
+      // wiring (UI.modal já colocou o form no DOM)
+      function renderItens() {
+        var el = document.getElementById("ri-itens"); if (!el) return;
+        if (!itensBuf.length) { el.innerHTML = '<div class="muted" style="font-size:12px">Nenhum item ainda — busque no banco acima ou use "Item manual".</div>'; return; }
+        el.innerHTML = '<table class="tbl" style="font-size:13px"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd</th><th class="num">Preço ref.</th><th class="num">Subtotal</th><th></th></tr></thead><tbody>'
+          + itensBuf.map(function (it, i) {
+            return "<tr><td>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(it.descricao) + "</td>"
+              + "<td>" + Util.esc(it.unidade) + "</td>"
+              + '<td class="num"><input data-riq="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:64px;text-align:right"></td>'
+              + '<td class="num">' + (it.precoRef > 0 ? Util.fmtMoeda(it.precoRef) : "—") + "</td>"
+              + '<td class="num" data-risub="' + i + '">' + (it.precoRef > 0 ? Util.fmtMoeda(Util.num(it.quantidade) * it.precoRef) : "—") + "</td>"
+              + '<td class="num"><button type="button" class="btn sm" data-rirm="' + i + '" style="color:#dc2626">✕</button></td></tr>';
+          }).join("")
+          + '</tbody><tfoot><tr><td colspan="4" style="text-align:right"><b>Total estimado</b></td><td class="num"><b data-ritot>' + Util.fmtMoeda(self._reqValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>";
+        Array.prototype.forEach.call(el.querySelectorAll("[data-riq]"), function (input) {
+          input.onchange = function () {
+            var i = +input.getAttribute("data-riq"); itensBuf[i].quantidade = Util.num(input.value) || 0;
+            var sub = el.querySelector('[data-risub="' + i + '"]'); if (sub) sub.textContent = itensBuf[i].precoRef > 0 ? Util.fmtMoeda(itensBuf[i].quantidade * itensBuf[i].precoRef) : "—";
+            var tot = el.querySelector("[data-ritot]"); if (tot) tot.textContent = Util.fmtMoeda(self._reqValor(itensBuf));
+          };
+        });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-rirm]"), function (b) {
+          b.onclick = function () { itensBuf.splice(+b.getAttribute("data-rirm"), 1); renderItens(); };
+        });
+      }
+      this._wireInsumoSearch("ri-q", "ri-res", function (ins) {
+        itensBuf.push({ codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" });
+        renderItens(); UI.toast("Item adicionado.", "ok");
+      }, { status: "ri-status" });
+      var manual = document.getElementById("ri-manual");
+      if (manual) manual.onclick = function () {
+        var d = window.prompt("Descrição do item (livre):", ""); if (d == null) return; d = d.trim(); if (!d) return;
+        var u = window.prompt("Unidade (un, m², kg, sc…):", "un"); if (u == null) return;
+        itensBuf.push({ codigo: "", descricao: d, unidade: (u || "un").trim() || "un", quantidade: 1, precoRef: 0, categoria: "MAT", fonte: "" });
+        renderItens();
+      };
+      renderItens();
     },
     aprovarRequisicao: function (id) {
       if (this._bloqueado()) return;
@@ -783,9 +916,11 @@ renderRequisicoes: function () {
     comprarRequisicao: function (id) {
       var r = Store.obter(eid(), "requisicoes", id); if (!r) return;
       var obras = lista("obras");
+      var nI = (r.itens && r.itens.length) || 0;
       var corpo =
-        '<div class="row">' + campo("Descrição", inp("g-pdesc", r.descricao)) + campo("Valor (R$)", inp("g-pvalor", "", "", "number")) + "</div>" +
+        '<div class="row">' + campo("Descrição", inp("g-pdesc", r.descricao)) + campo("Valor (R$)", inp("g-pvalor", r.valorEstimado || "", "", "number")) + "</div>" +
         '<div class="row">' + campo("Obra", sel("g-pobra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
+        (nI ? '<p class="muted">Leva <b>' + nI + "</b> ite" + (nI > 1 ? "ns" : "m") + " para o pedido" + (r.valorEstimado ? " (valor de referência do banco: <b>" + Util.fmtMoeda(r.valorEstimado) + "</b>, ajuste com a cotação real)." : ".") + "</p>" : "") +
         '<p class="muted">Cria um pedido em Compras (status Cotação) e marca a requisição como comprada.</p>';
       UI.modal("Gerar pedido — " + Util.esc(r.numero || ""), corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -793,7 +928,7 @@ renderRequisicoes: function () {
           if (Gestao._bloqueado()) return;
           var desc = v("g-pdesc"); if (!desc) { UI.toast("Informe a descrição.", "erro"); return; }
           var pc = "PC-" + new Date().getFullYear() + "-" + ("" + (new Date().getTime())).slice(-4);
-          Store.salvar(eid(), "compras", { numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material" });
+          Store.salvar(eid(), "compras", { numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id });
           r.status = "comprada"; Store.salvar(eid(), "requisicoes", r);
           UI.fecharModal(); App.render(); UI.toast("Pedido " + pc + " criado.", "ok");
         } }
