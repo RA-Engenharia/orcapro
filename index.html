@@ -380,13 +380,49 @@ footer a{color:#cfe0ee;text-decoration:none}
 .mod svg{width:26px;height:26px;color:#2e6f9e;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .mod b{display:block;margin:10px 0 3px;color:var(--navy);font-size:15px}
 .mod small{color:var(--mut);font-size:12.5px;line-height:1.35}
+/* Gestão — bloco de resultados (dor → ganho) */
+.gben{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;max-width:920px;margin:0 auto 42px}
+@media(max-width:720px){.gben{grid-template-columns:1fr}}
+.gb{display:flex;gap:14px;align-items:flex-start;background:linear-gradient(180deg,#f8fbfe,#edf4fb);border:1px solid #dbe8f4;border-radius:14px;padding:18px 20px}
+.gb-ic{flex:0 0 auto;width:44px;height:44px;border-radius:11px;background:#fff;border:1px solid #d3e1f0;display:flex;align-items:center;justify-content:center;color:var(--verde)}
+.gb-ic svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.gb h4{color:var(--navy);font-size:16px;margin-bottom:4px}
+.gb p{color:#475569;font-size:14px;line-height:1.5}
+/* Portal do Cliente — seção destaque */
+#portal-cliente .portal-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:44px;align-items:center}
+@media(max-width:860px){#portal-cliente .portal-grid{grid-template-columns:1fr;gap:30px}}
+.portal-ul{list-style:none;margin:18px 0 24px}
+.portal-ul li{padding:7px 0 7px 30px;position:relative;color:#dbe9f5;font-size:15.5px}
+.portal-ul li:before{content:"✓";position:absolute;left:0;color:var(--verde2);font-weight:900;font-size:16px}
+.portal-mock{background:#fff;border-radius:18px;box-shadow:0 30px 70px rgba(0,0,0,.45);padding:20px;color:var(--ink);max-width:380px;margin:0 auto}
+.pm-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.pm-top b{color:var(--navy);font-size:16px}
+.pm-badge{background:#dcfce7;color:#15803d;font-size:11px;font-weight:800;padding:3px 10px;border-radius:99px}
+.pm-prog{background:linear-gradient(135deg,#0f2740,#1c4b73);border-radius:12px;padding:14px 16px;color:#fff;margin-bottom:12px}
+.pm-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--verde2);font-weight:800}
+.pm-pct{font-size:32px;font-weight:900;line-height:1.1}
+.pm-bar{height:8px;background:rgba(255,255,255,.2);border-radius:99px;margin-top:8px;overflow:hidden}
+.pm-bar i{display:block;height:100%;width:45%;background:linear-gradient(90deg,#16a34a,#6fd08a);border-radius:99px}
+.pm-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.pm-kpis div{background:#f6f9fc;border:1px solid var(--linha);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--mut)}
+.pm-kpis b{display:block;color:var(--navy);font-size:16px;margin-top:2px}
+.pm-rdo{background:#f6f9fc;border:1px solid var(--linha);border-radius:10px;padding:11px 13px;font-size:12.5px;color:#475569}
+.pm-rdo-h{font-weight:800;color:var(--navy);font-size:12px;margin-bottom:4px}
 </style>
 <section id="gestao" style="background:#fff"><div class="wrap">
   <div style="text-align:center;margin-bottom:40px">
     <div class="eyebrow">Versão Plus — muito além do orçamento</div>
     <h2 class="tit">Um sistema completo de obras</h2>
-    <p class="sub" style="margin:0 auto">Do orçamento aprovado à obra rodando: contratos, medições, financeiro, compras, estoque, diário e equipe — tudo ligado. O painel mostra <b>custo real × contratado</b> e a <b>margem de cada obra</b> em tempo real.</p>
+    <p class="sub" style="margin:0 auto">Orçar é só o começo. Quem <b>gerencia</b> a obra sabe se está ganhando dinheiro — quem não gerencia, descobre o prejuízo tarde demais.</p>
   </div>
+
+  <div class="gben">
+    <div class="gb"><div class="gb-ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></div><div><h4>Saiba a margem de cada obra — em tempo real</h4><p>O painel compara <b>custo real × contratado</b> e mostra na hora se a obra está no lucro ou no vermelho. Você decide com número, não no chute.</p></div></div>
+    <div class="gb"><div class="gb-ic"><svg viewBox="0 0 24 24"><path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M8 7h8M8 11h8M8 15h5"/></svg></div><div><h4>Nunca mais perca uma medição</h4><p>Medições, retenção e faturamento controlados por obra — você <b>fatura no prazo</b> e não deixa dinheiro na mesa.</p></div></div>
+    <div class="gb"><div class="gb-ic"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></div><div><h4>Tudo integrado, num lugar só</h4><p>Orçamento → obra → contrato → medição → financeiro. Pare de <b>espalhar planilha</b> e perder informação pelo caminho.</p></div></div>
+    <div class="gb"><div class="gb-ic"><svg viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg></div><div><h4>Impressione o seu cliente</h4><p>Com o <b>Portal do Cliente</b>, ele acompanha a obra online — um diferencial que <b>fecha contrato</b> e passa profissionalismo. (Veja abaixo 👇)</p></div></div>
+  </div>
+
   <div class="mods">
     <div class="mod"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><b>Painel</b><small>KPIs e margem por obra</small></div>
     <div class="mod"><svg viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v16"/><path d="M15 21V9h2a2 2 0 0 1 2 2v10"/><path d="M8 7h1M11 7h1M8 11h1M11 11h1M8 15h1M11 15h1"/></svg><b>Obras</b><small>status, fases, custo × contratado</small></div>
@@ -404,6 +440,31 @@ footer a{color:#cfe0ee;text-decoration:none}
   </div>
   <p class="sub" style="text-align:center;margin:34px auto 0">Tudo integrado ao orçamento: <b>orçamento → obra → contrato → medição → financeiro</b>.</p>
 </div></section>
+
+<section id="portal-cliente" style="background:radial-gradient(900px 500px at 15% -20%,#1c4b73 0,#0c1f33 72%);color:#fff">
+  <div class="wrap"><div class="portal-grid">
+    <div>
+      <div class="eyebrow" style="color:var(--verde2)">Exclusivo do Plus · novidade</div>
+      <h2 class="tit" style="color:#fff">Seu cliente acompanha a obra online</h2>
+      <p style="color:#cfe0ee;font-size:17px;max-width:560px">Gere um acesso com <b style="color:#fff">usuário e senha</b> e o seu cliente vê o <b style="color:#fff">andamento, as medições e o diário de obra (RDO)</b> em tempo real, de qualquer lugar. Transparência que <b style="color:#9be7af">fecha contrato e fideliza</b>.</p>
+      <ul class="portal-ul">
+        <li>Ele para de te ligar toda hora perguntando "e aí, como tá a obra?"</li>
+        <li>Você passa uma imagem de profissional de outro nível</li>
+        <li>Vira um diferencial e tanto na hora de apresentar a proposta</li>
+        <li>Você atualiza com um clique — o cliente vê na hora</li>
+      </ul>
+      <a class="btn g" data-buy="plus_vitalicia" href="#precos">Quero o Plus com Portal do Cliente</a>
+    </div>
+    <div>
+      <div class="portal-mock">
+        <div class="pm-top"><b>Residência Silva — 120m²</b><span class="pm-badge">andamento</span></div>
+        <div class="pm-prog"><div class="pm-lbl">Execução física</div><div class="pm-pct">45%</div><div class="pm-bar"><i></i></div></div>
+        <div class="pm-kpis"><div>Contratado<b>R$ 340 mil</b></div><div>Medido<b>R$ 153 mil</b></div></div>
+        <div class="pm-rdo"><div class="pm-rdo-h">Diário de obra · 20/06</div>☀️ Ensolarado · 👷 9 pessoas<br>Concretagem da laje do 2º pavimento e alvenaria externa.</div>
+      </div>
+    </div>
+  </div></div>
+</section>
 
 <section id="novidades" style="background:#fff"><div class="wrap">
   <div style="text-align:center;margin-bottom:38px">
@@ -439,7 +500,7 @@ footer a{color:#cfe0ee;text-decoration:none}
       <div class="badge">🚀 LANÇAMENTO</div>
       <div class="pn">Plus — Vitalícia</div><div class="de" id="plus-de">de R$ 2.997</div>
       <div class="pv" id="plus-preco">R$ 1.997</div><div class="pp">pagamento único · <b style="color:var(--verde)">preço de lançamento</b></div>
-      <div class="ps"><b>Tudo da Base</b> + <b>Gestão de Obras</b> (20 módulos): obras, contratos, medições, financeiro, compras, estoque, RDO e equipe.</div>
+      <div class="ps"><b>Tudo da Base</b> + <b>Gestão de Obras</b> (20 módulos): obras, contratos, medições, financeiro, compras, estoque, RDO e equipe — <b>+ Portal do Cliente</b>.</div>
       <a class="btn g" data-buy="plus_vitalicia" href="#">Comprar Plus</a>
     </div>
     <div class="preco">
