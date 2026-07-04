@@ -22,6 +22,7 @@
   var Licenca = {
     _ler: function () { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } },
     _gravar: function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
+    chave: function () { var l = this._ler() || {}; return l.chave || ""; },
 
     // ID do dispositivo (gerado 1x e guardado) — base da trava anti-compartilhamento
     deviceId: function () {
@@ -46,7 +47,7 @@
         }
         var payload = (typeof atob !== "undefined") ? atob(s) : Buffer.from(s, "base64").toString();
         var seg = payload.split("|");
-        return { email: seg[0], exp: parseInt(seg[1], 10) || 0 };
+        return { email: seg[0], exp: parseInt(seg[1], 10) || 0, tier: seg[2] || "" };
       } catch (e) { return null; }
     },
     _ativarLocal: function (chave, v, verificado) {
@@ -108,7 +109,7 @@
           if (expirada) return { ativo: false, trial: false, expirada: true, email: (l.email || (info && info.email)) };
           if (l.deviceId && l.deviceId !== this.deviceId()) return { ativo: false, trial: false, outroDispositivo: true };
           var dias = (info && info.exp) ? Math.ceil((info.exp - agora()) / 86400000) : null;
-          if (agora() < (l.validadoEm || 0) + GRACE_MS) return { ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias };
+          if (agora() < (l.validadoEm || 0) + GRACE_MS) return { ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias, tier: (info && info.tier) || "" };
           return { ativo: false, trial: false, revalidar: true, email: l.email, diasRestantes: dias }; // carência vencida: reconectar
         }
         // chave presente mas sem ativação verificada pelo servidor -> não concede (cai p/ trial)

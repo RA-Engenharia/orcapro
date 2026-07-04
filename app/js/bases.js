@@ -66,20 +66,40 @@
       return out;
     },
 
-    /* Busca unificada (SINAPI via Sinapi + bases extras). Retorna [{item,fonte,label,cor}]. */
-    buscar: function (texto, max) {
-      max = max || 40;
+    /* Tipo do item: "composicao" | "insumo" (heurística sobre tipoItem/tipo/categoria). */
+    tipoDe: function (it) {
+      var t = String((it && (it.tipoItem || it.tipo || it.categoria)) || "").toLowerCase();
+      return t.indexOf("insumo") !== -1 ? "insumo" : "composicao";
+    },
+
+    /* Busca unificada com FILTROS. opts: número (=max, retrocompat) OU
+       { max, fonte:"SINAPI"|"SICRO"|…|null(todas), tipo:"composicao"|"insumo"|null, desonerado:true|false|null }.
+       Retorna [{item,fonte,label,cor,tipo}]. */
+    buscar: function (texto, opts) {
+      if (typeof opts === "number") opts = { max: opts };
+      opts = opts || {};
+      var self = this, max = opts.max || 40;
+      var fFonte = opts.fonte ? String(opts.fonte).toUpperCase() : null;
+      var fTipo = (opts.tipo === "composicao" || opts.tipo === "insumo") ? opts.tipo : null;
+      var fDeson = (opts.desonerado === true || opts.desonerado === false) ? opts.desonerado : null;
       var alvo = norm(texto), termos = alvo.split(" ").filter(Boolean), out = [];
       if (!termos.length) return out;
-      if (this.sinapiAtiva && typeof Sinapi !== "undefined" && Sinapi.carregado) {
-        Sinapi.buscar(texto, { max: max * 2 }).forEach(function (it) { out.push({ item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi" }); });
+      function passa(it) {
+        if (fTipo && self.tipoDe(it) !== fTipo) return false;
+        // desoneração: só exclui itens EXPLICITAMENTE do regime oposto (não penaliza base sem flag)
+        if (fDeson !== null && (it.desonerado === true || it.desonerado === false) && it.desonerado !== fDeson) return false;
+        return true;
+      }
+      if ((!fFonte || fFonte === "SINAPI") && this.sinapiAtiva && typeof Sinapi !== "undefined" && Sinapi.carregado) {
+        Sinapi.buscar(texto, { max: max * 2, tipo: fTipo }).forEach(function (it) { if (passa(it)) out.push({ item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: self.tipoDe(it) }); });
       }
       EXTRA.forEach(function (b) {
         if (!b.ativa) return;
+        if (fFonte && b.fonte !== fFonte) return;
         for (var i = 0; i < b.itens.length && out.length < max * 4; i++) {
-          var hay = b.tokens[i], ok = true;
+          var it = b.itens[i], hay = b.tokens[i], ok = true;
           for (var t = 0; t < termos.length; t++) { if (hay.indexOf(termos[t]) === -1) { ok = false; break; } }
-          if (ok) out.push({ item: b.itens[i], fonte: b.fonte, label: b.label, cor: b.cor });
+          if (ok && passa(it)) out.push({ item: it, fonte: b.fonte, label: b.label, cor: b.cor, tipo: self.tipoDe(it) });
         }
       });
       var q = String(texto).trim();
@@ -138,12 +158,12 @@
     persistir: function (empresaId) {
       if (typeof Store === "undefined") return { ok: false };
       var payload = EXTRA.map(function (b) { return { fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens }; });
-      var ok = Store.adapter.gravar(empresaId, "bases_extras", payload);
-      return ok ? { ok: true } : { ok: false, erro: "Cota de armazenamento excedida — bases mantidas só nesta sessão." };
+      Store.salvarBasesExtras(empresaId, payload); // IndexedDB — sem cota do localStorage
+      return { ok: true };
     },
     carregar: function (empresaId) {
       if (typeof Store === "undefined") return 0;
-      var arr = Store.adapter.ler(empresaId, "bases_extras", []);
+      var arr = Store.lerBasesExtras(empresaId);
       var self = this; var n = 0;
       (Array.isArray(arr) ? arr : []).forEach(function (p) { if (p && p.fonte) { self.registrar(p.fonte, p); n++; } });
       return n;

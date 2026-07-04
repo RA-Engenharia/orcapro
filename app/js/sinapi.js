@@ -26,8 +26,10 @@
       return this._itens.length;
     },
 
-    /* Carrega via fetch do arquivo principal; cai na amostra se falhar. */
-    carregarArquivo: function (url) {
+    /* Carrega via fetch do arquivo principal; cai na amostra se falhar.
+     * semFallback=true (troca de estado): NÃO cai na amostra — propaga o erro e
+     * mantém a base atual carregada (evita clobber com a base didática de 30 itens). */
+    carregarArquivo: function (url, semFallback) {
       var self = this;
       var principal = url || CONFIG.sinapi.arquivoDemo;
       return fetch(principal)
@@ -37,6 +39,7 @@
         })
         .then(function (j) { return self.carregarDe(j); })
         .catch(function (e) {
+          if (semFallback) throw e; // propaga: quem chamou preserva a base anterior
           console.warn("[SINAPI] falhou base principal (" + principal + "): " + e.message + " — usando amostra.");
           return fetch(CONFIG.sinapi.arquivoAmostra)
             .then(function (r) { return r.json(); })

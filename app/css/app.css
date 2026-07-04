@@ -108,7 +108,13 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .sb-item { display: flex; align-items: center; gap: 11px; background: none; border: 0; color: #cfe0ef; font-size: 14px; font-weight: 600; padding: 11px 12px; border-radius: 9px; cursor: pointer; text-align: left; transition: .12s; width: 100%; }
 .sb-item:hover { background: rgba(255,255,255,.08); color: #fff; }
 .sb-item.on { background: linear-gradient(90deg, rgba(46,111,158,.55), rgba(46,111,158,.18)); color: #fff; box-shadow: inset 3px 0 0 var(--verde-claro); }
-.sb-ic { font-size: 17px; width: 22px; text-align: center; flex: none; }
+.sb-item.sb-upsell { color: #ffd47e; margin-top: 10px; border: 1px dashed rgba(255,212,126,.38); }
+.sb-item.sb-upsell:hover { background: rgba(255,212,126,.12); color: #ffe3a6; }
+.sb-ic { width: 22px; height: 20px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: #9fbdda; }
+.sb-item:hover .sb-ic, .sb-item.on .sb-ic { color: #fff; }
+.sb-ic svg { display: block; }
+.g-ic { flex: none; }
+h1 .g-ic { margin-right: 9px; vertical-align: -.14em; color: var(--aco); }
 .g-pill { font-size: 11px; font-weight: 700; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
 table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .kpis.kpis-g { grid-template-columns: repeat(3, minmax(0, 1fr)); }

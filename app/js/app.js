@@ -90,6 +90,8 @@
       topbar.style.display = "flex";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
       var view = this.view || "orcamentos";
+      // Gestão de Obras é da versão PLUS: base (ou licença sem Plus) fica só no orçamento
+      if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao() && view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
       // sidebar de módulos (não aparece na vitrine/demo)
       if (sidebar) {
         if (this._demo || typeof Gestao === "undefined") { sidebar.innerHTML = ""; if (app) app.classList.remove("com-sidebar"); }
@@ -324,14 +326,68 @@
     },
 
     // ---------- Base SINAPI (própria da empresa ou padrão) ----------
+    _analiticoArquivo: null,   // caminho do analítico do estado ATIVO (data/sinapi-<UF>-analitico.json)
+    _baseUf: null,             // UF da base SINAPI ativa
+    _estados: null,            // manifesto data/estados.json: [{uf,arquivo,competencia,analitico}]
+    _ufReq: 0,                 // token monotônico: só a troca de estado mais recente comita
+    _ufPendente: null,         // UF em carregamento (evita re-disparo do mesmo alvo)
+
     carregarBaseSinapi: function () {
-      if (typeof Bases !== "undefined") { try { Bases.carregar(Auth.empresaId()); } catch (e) {} }
-      var base = Store.lerBaseSinapi(Auth.empresaId());
-      if (base && base.dados && base.dados.length) {
-        Sinapi.carregarDe(base);
-        return Promise.resolve(Sinapi.resumo().total);
-      }
-      return Sinapi.carregarArquivo();
+      var self = this, emp = Auth.empresaId();
+      // Prime os blobs grandes (IndexedDB) ANTES de ler a base/bases extras (leitura síncrona do cache).
+      var prime = (typeof Store !== "undefined" && Store.initBigStore) ? Store.initBigStore(emp) : Promise.resolve();
+      return prime.then(function () {
+        if (typeof Bases !== "undefined") { try { Bases.carregar(emp); } catch (e) {} }
+        var base = Store.lerBaseSinapi(emp);
+        if (base && base.dados && base.dados.length) {
+          Sinapi.carregarDe(base);
+          return Sinapi.resumo().total;
+        }
+        // base padrão: respeita a escolha da instalação (data/base-ativa.json), senão a do CONFIG
+        return fetch("data/base-ativa.json")
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (cfg) {
+            self._analiticoArquivo = (cfg && cfg.analitico) || null;
+            self._baseUf = (cfg && cfg.uf) || null;
+            return Sinapi.carregarArquivo(cfg && cfg.arquivo ? cfg.arquivo : undefined);
+          })
+          .catch(function () { return Sinapi.carregarArquivo(); });
+      });
+    },
+
+    // Manifesto dos estados disponíveis no pacote (para o seletor "Brasil todo").
+    _carregarEstados: function () {
+      var self = this;
+      if (self._estados) return Promise.resolve(self._estados);
+      return fetch("data/estados.json")
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) { self._estados = (j && Array.isArray(j.estados)) ? j.estados : []; return self._estados; })
+        .catch(function () { self._estados = []; return self._estados; });
+    },
+
+    // Troca a base SINAPI ativa para outra UF (lazy). cb(true|false).
+    trocarEstadoSinapi: function (uf, cb) {
+      var self = this;
+      var est = (self._estados || []).filter(function (e) { return e.uf === uf; })[0];
+      if (!est || !est.arquivo) { UI.toast("Estado " + uf + " não disponível neste pacote.", "erro"); if (cb) cb(false); return; }
+      var req = ++self._ufReq; // só a troca mais recente comita (evita corrida em cliques rápidos)
+      UI.toast("Carregando SINAPI " + uf + "…", "ok");
+      Sinapi.carregarArquivo(est.arquivo, true).then(function () { // semFallback: mantém base atual se o arquivo faltar
+        if (req !== self._ufReq) return; // troca obsoleta — descarta silenciosamente
+        // Defesa extra: se por algum motivo a UF carregada != a pedida, trata como erro.
+        if (String(Sinapi.uf).toUpperCase() !== String(uf).toUpperCase()) {
+          UI.toast("Base SINAPI de " + uf + " não confere (arquivo inesperado).", "erro");
+          if (cb) cb(false); return;
+        }
+        self._analiticoArquivo = est.analitico || null;
+        self._baseUf = uf;
+        if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset(); // descarta analítico da UF anterior
+        UI.toast("SINAPI " + uf + " · " + (Sinapi.competencia || "") + " — " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens.", "ok");
+        if (cb) cb(true);
+      }).catch(function (e) {
+        if (req !== self._ufReq) return;
+        UI.toast("Falha ao carregar " + uf + ": " + (e && e.message), "erro"); if (cb) cb(false);
+      });
     },
 
     abrirImportSinapi: function () {
@@ -528,7 +584,7 @@
       });
       var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
       UI.toast("🤖 Consultando a IA do ERP (planejador)…", "ok");
-      fetch(back + "/ia/cronograma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ etapas: etapas, equipes: (r.params.equipes || 1) }) })
+      fetch(back + "/ia/cronograma", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ etapas: etapas, equipes: (r.params.equipes || 1) }) })
         .then(function (resp) { return resp.json(); })
         .then(function (j) {
           if (!j.ok) { UI.toast("IA: " + (j.error || "não retornou"), "erro"); return; }
@@ -702,42 +758,146 @@
     },
 
     // ---------- Busca SINAPI ----------
+    // Preferências do seletor de banco/tipo/oneração da busca (lembra entre buscas).
+    _lerBuscaPrefs: function () {
+      try { return JSON.parse(localStorage.getItem("orcapro:busca:prefs") || "{}") || {}; } catch (e) { return {}; }
+    },
+    _salvarBuscaPrefs: function () {
+      try {
+        var f = (UI.el("bs-fonte") || {}).value || "";
+        if (f.indexOf("__") === 0) f = ""; // não persiste ações "adicionar/gerenciar"
+        localStorage.setItem("orcapro:busca:prefs", JSON.stringify({
+          fonte: f, tipo: (UI.el("bs-tipo") || {}).value || "", deson: (UI.el("bs-deson") || {}).value || ""
+        }));
+      } catch (e) {}
+    },
+
     abrirBuscaSinapi: function (etapaId) {
       this._addItemEtapaId = etapaId;
       var self = this;
       var corpo =
         '<div class="field"><input id="bs-q" placeholder="Buscar por código ou descrição (ex.: alvenaria bloco, concreto fck)" autofocus></div>' +
+        '<div class="row" style="gap:8px;margin-bottom:4px">' +
+          '<div class="field"><label>Banco de preços</label><select id="bs-fonte"><option value="">Todos os bancos ativos</option></select></div>' +
+          '<div class="field"><label>Tipo</label><select id="bs-tipo"><option value="">Composições + insumos</option><option value="composicao">Só composições</option><option value="insumo">Só insumos</option></select></div>' +
+          '<div class="field"><label>Oneração</label><select id="bs-deson"><option value="">Todas</option><option value="des">Desonerada</option><option value="one">Onerada</option></select></div>' +
+          '<div class="field"><label>Estado (SINAPI)</label><select id="bs-uf" title="Troca a base SINAPI para orçar outro estado"><option value="">—</option></select></div>' +
+        '</div>' +
         '<div class="muted mb" id="bs-base">Base: carregando…</div>' +
         '<div id="bs-results"><div class="vazio">Digite ao menos 2 letras…</div></div>';
-      UI.modal("Buscar composição SINAPI", corpo,
+      UI.modal("Buscar item (composição ou insumo)", corpo,
         [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
 
       function ativarBusca() {
-        var baseEl = UI.el("bs-base");
-        if (baseEl) baseEl.textContent = "Base: SINAPI " + Sinapi.competencia + "/" + Sinapi.uf + " · " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens";
+        var prefs = self._lerBuscaPrefs();
+        var primeiraPintura = true; // só a 1ª pintura semeia do prefs; depois preserva a escolha viva
+        // (re)pinta o seletor de banco + a linha de base — chamado no início e após TROCAR de estado
+        function repintar() {
+          var selF = UI.el("bs-fonte");
+          if (selF && typeof Bases !== "undefined") {
+            var atualFonte = primeiraPintura ? (prefs.fonte || "") : (selF.value || ""); // viva após 1ª pintura (inclui "Todos")
+            var lista = Bases.lista();
+            var carregadas = {}; lista.forEach(function (b) { carregadas[b.fonte] = b; });
+            var opts = ['<option value="">Todos os bancos ativos</option>'];
+            // bancos JÁ carregados → selecionáveis para filtrar a busca
+            lista.filter(function (b) { return b.ativa; }).forEach(function (b) {
+              opts.push('<option value="' + b.fonte + '">' + Util.esc(b.label) + (b.uf ? " · " + b.uf : "") + (b.competencia ? " · " + b.competencia : "") + " · " + (b.total || 0).toLocaleString("pt-BR") + " itens</option>");
+            });
+            // catálogo completo de bancos suportados que ainda NÃO estão carregados → adicionar
+            var faltantes = Object.keys(Bases.META).filter(function (f) { return !carregadas[f]; });
+            if (faltantes.length) {
+              opts.push('<option disabled>──── adicionar outro banco ────</option>');
+              faltantes.forEach(function (f) {
+                opts.push('<option value="__add:' + f + '">＋ ' + Util.esc(Bases.META[f].label) + '…</option>');
+              });
+            }
+            opts.push('<option value="__manage">🗂 Gerenciar bancos / outro estado ou competência…</option>');
+            selF.innerHTML = opts.join("");
+            if (atualFonte && carregadas[atualFonte]) selF.value = atualFonte; // preserva escolha (viva ou do prefs no 1º paint)
+          }
+          var baseEl = UI.el("bs-base");
+          if (baseEl) {
+            var n = (typeof Bases !== "undefined") ? Bases.lista().filter(function (b) { return b.ativa; }).length : 1;
+            baseEl.innerHTML = "Base: <b>SINAPI " + Util.esc(Sinapi.competencia || "") + "/" + Util.esc(Sinapi.uf || "") + "</b> · " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens" + (n > 1 ? " · +" + (n - 1) + " banco(s) ativo(s)" : "") + ' · <span style="opacity:.75">escolha o banco e o estado nos seletores acima</span>';
+          }
+          primeiraPintura = false;
+        }
+        repintar();
+        var elT0 = UI.el("bs-tipo"); if (elT0 && prefs.tipo) elT0.value = prefs.tipo;
+        var elD0 = UI.el("bs-deson"); if (elD0 && prefs.deson) elD0.value = prefs.deson;
         var inp = UI.el("bs-q");
         if (!inp) return;
+        function ler() {
+          var dv = (UI.el("bs-deson") || {}).value || "";
+          return { max: 40, fonte: (UI.el("bs-fonte") || {}).value || "", tipo: (UI.el("bs-tipo") || {}).value || "", desonerado: dv === "des" ? true : (dv === "one" ? false : null) };
+        }
         var doSearch = Util.debounce(function () {
           var q = inp.value.trim();
           var box = UI.el("bs-results");
           if (!box) return;
           if (q.length < 2) { box.innerHTML = '<div class="vazio">Digite ao menos 2 letras…</div>'; return; }
-          var res = (typeof Bases !== "undefined") ? Bases.buscar(q, 40)
-            : Sinapi.buscar(q, { max: 40 }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi" }; });
-          if (!res.length) { box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '".</div>'; return; }
+          var f = ler();
+          var res = (typeof Bases !== "undefined") ? Bases.buscar(q, f)
+            : Sinapi.buscar(q, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
+          if (!res.length) {
+            var dica = f.tipo === "insumo" ? " — esta base pode não ter insumos (carregue uma base de insumos em 🗂 Tabelas)" : (f.desonerado === false ? " — verifique se a base ONERADA está carregada" : "");
+            box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>";
+            return;
+          }
           box.innerHTML = res.map(function (r) {
-            var it = r.item;
+            var it = r.item, tg = r.tipo === "insumo" ? ' <span class="pill proprio">insumo</span>' : "";
             return '<div class="sinapi-result" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
-              '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + '</span> ' + Util.esc(it.codigo) + ' · ' + Util.esc(it.unidade) + '</div>' +
-              Util.esc(it.descricao) + '</div>' +
-              '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + '</div></div>';
+              '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + "</span>" + tg + " " + Util.esc(it.codigo) + " · " + Util.esc(it.unidade) + "</div>" +
+              Util.esc(it.descricao) + "</div>" +
+              '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + "</div></div>";
           }).join("");
           Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
             row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
           });
         }, 220);
         inp.addEventListener("input", doSearch);
-        if (inp.value.trim().length >= 2) doSearch(); // já digitou durante o carregamento
+        var selFonte = UI.el("bs-fonte");
+        if (selFonte) selFonte.addEventListener("change", function () {
+          var v = selFonte.value || "";
+          if (v === "__manage" || v.indexOf("__add:") === 0) {
+            // volta a seleção para o último banco válido e abre o gerenciador de bases
+            selFonte.value = (prefs.fonte && Bases.lista().some(function (b) { return b.fonte === prefs.fonte; })) ? prefs.fonte : "";
+            UI.fecharModal();
+            self.abrirTabelas();
+            return;
+          }
+          self._salvarBuscaPrefs(); doSearch();
+        });
+        ["bs-tipo", "bs-deson"].forEach(function (id) { var el = UI.el(id); if (el) el.addEventListener("change", function () { self._salvarBuscaPrefs(); doSearch(); }); });
+        // Seletor de ESTADO (SINAPI) — troca a base ativa para orçar outro estado (Brasil todo)
+        var selUf = UI.el("bs-uf");
+        if (selUf) {
+          self._carregarEstados().then(function (ests) {
+            var atual = self._baseUf || Sinapi.uf || "";
+            if (!ests.length) { // pacote de estado único → mostra só a UF ativa
+              selUf.innerHTML = '<option value="' + Util.esc(atual) + '">' + Util.esc(atual || "—") + "</option>";
+              selUf.disabled = true; selUf.title = "Pacote de estado único — para outros estados, use 🗂 Gerenciar";
+            } else {
+              var temAtual = ests.some(function (e) { return e.uf === atual; });
+              var o = ests.map(function (e) { return '<option value="' + Util.esc(e.uf) + '">' + Util.esc(e.uf) + (e.competencia ? " · " + Util.esc(e.competencia) : "") + "</option>"; });
+              if (atual && !temAtual) o.unshift('<option value="' + Util.esc(atual) + '">' + Util.esc(atual) + " · ativa</option>");
+              selUf.innerHTML = o.join("");
+              selUf.value = atual;
+            }
+          });
+          selUf.addEventListener("change", function () {
+            var uf = selUf.value;
+            if (!uf || uf === self._ufPendente || uf === (self._baseUf || Sinapi.uf)) return;
+            self._ufPendente = uf;
+            var box0 = UI.el("bs-results"); if (box0) box0.innerHTML = '<div class="vazio">Trocando para ' + Util.esc(uf) + '…</div>';
+            self.trocarEstadoSinapi(uf, function (ok) {
+              self._ufPendente = null;
+              selUf.value = self._baseUf || Sinapi.uf || ""; // sincroniza o dropdown com a base REALMENTE carregada
+              if (ok) { repintar(); doSearch(); }
+            });
+          });
+        }
+        if (inp.value.trim().length >= 2) doSearch();
         inp.focus();
       }
 
@@ -853,19 +1013,33 @@
       ExcelOrc.gerar(this.orcAtual);
     },
 
-    // ---------- Ver composição → insumos (base analítica) ----------
+    // ---------- Ver composição → insumos (base analítica, por estado) ----------
     verInsumos: function (codigo) {
+      var self = this;
+      var ufAtivo = self._baseUf || Sinapi.uf || null;
       function abrir() {
         var a = Analitico.obter(codigo);
-        if (!a) { UI.toast("Sem analítico para a composição " + codigo + " nesta base.", "erro"); return; }
-        var bg = UI.modal("🔍 Composição " + codigo + " — Insumos", UI.renderInsumos(a),
+        if (!a) { UI.toast("A composição " + codigo + " não possui analítico detalhado" + (ufAtivo ? " na base " + ufAtivo : "") + ".", "erro"); return; }
+        var bg = UI.modal("🔍 Composição " + codigo + " — Insumos", UI.renderInsumos(a, ufAtivo),
           [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
         var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
       }
-      if (Analitico.carregado) { abrir(); return; }
-      UI.toast("Carregando base analítica (1ª vez, ~17 MB)…", "ok");
-      Analitico.carregarArquivo().then(function () { abrir(); }).catch(function (e) {
-        UI.toast("Não carregou o analítico: " + e.message + " — abra pelo servidor local.", "erro");
+      // Já carregado E é do estado ativo? abre direto.
+      if (Analitico.carregado && (!ufAtivo || !Analitico.uf || Analitico.uf === ufAtivo)) { abrir(); return; }
+      // Sem analítico apontado para este estado → mensagem clara (não trava).
+      if (!self._analiticoArquivo) {
+        UI.toast("O detalhamento insumo-a-insumo não está incluído para " + (ufAtivo || "esta base") + ". O orçamento usa os preços corretos da base; para ver o analítico deste estado, gere/importe em 🗂 Tabelas.", "erro");
+        return;
+      }
+      // Trocou de UF desde o último carregamento → descarta e recarrega o analítico certo.
+      if (Analitico.reset && Analitico.uf && ufAtivo && Analitico.uf !== ufAtivo) Analitico.reset();
+      if (self._insumosCarregando === codigo) return; // ignora duplo-clique durante o load frio
+      self._insumosCarregando = codigo;
+      UI.toast("Carregando analítico de " + (ufAtivo || "") + " (1ª vez)…", "ok");
+      Analitico.carregarArquivo(self._analiticoArquivo).then(function () { self._insumosCarregando = null; abrir(); }).catch(function (e) {
+        self._insumosCarregando = null;
+        if (e && e.message === "cancelado") return; // troca de UF cancelou o carregamento — silencioso
+        UI.toast("Não carregou o analítico: " + (e && e.message) + " — abra pelo servidor local (Iniciar-OrcaPRO.bat).", "erro");
       });
     },
 
@@ -940,7 +1114,7 @@
       var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
       this._escBack = back;
       UI.toast("🤖 Estruturando o escopo com a IA do ERP…", "ok");
-      fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ descricao: txt }) })
+      fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ descricao: txt }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j.ok || !j.resultado) { UI.toast("IA: " + (j.error || "não retornou estrutura"), "erro"); return; }
@@ -969,7 +1143,7 @@
           var payload = lote.map(function (l) {
             return { descricao: l.textoOriginal, unidade: l.unidade || "", candidatos: l.candidatos.slice(0, 2).map(function (c) { return { codigo: c.item.codigo, descricao: String(c.item.descricao || "").slice(0, 70), unidade: c.item.unidade, custo: c.item.custoUnitario }; }) };
           });
-          return fetch(back + "/ia/casar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ itens: payload }) })
+          return fetch(back + "/ia/casar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ itens: payload }) })
             .then(function (r) { return r.json().then(function (j) { return { status: r.status, j: j }; }, function () { return { status: r.status, j: {} }; }); })
             .then(function (o) {
               var j = o.j;
@@ -1060,21 +1234,21 @@
     },
 
     // ---------- Persistência (idempotente + debounce) ----------
-    // ---- Gate do teste de 3 horas (bloqueia GERAR e SALVAR após expirar) ----
+    // ---- Gate de licença: MODO DEMONSTRAÇÃO explora tudo, mas NÃO salva/exporta sem licença ----
     _trialBloqueado: function () {
-      if (this._demo) return false; // a vitrine/demonstração nunca bloqueia
+      if (this._demo) return false; // a vitrine da página de vendas nunca bloqueia
       if (typeof Licenca === "undefined") return false;
       var s = Licenca.status(); if (!s) return false;
-      if (s.trial) return !!s.expirado;   // trial: bloqueia se expirou
+      if (s.trial) return true;           // sem licença ativada = demonstração: nunca salva/exporta
       return !s.ativo;                    // licenciado: bloqueia se não está ativo (vencida/carência/outra máquina)
     },
     _avisoTrial: function () {
       var s = (typeof Licenca !== "undefined") ? Licenca.status() : {};
       var msg;
-      if (s.expirada) msg = "Sua licença venceu. Renove para continuar gerando e salvando.";
+      if (s.expirada) msg = "Sua licença venceu. Renove para continuar salvando e exportando.";
       else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
       else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
-      else msg = "⏰ Seu teste de 3 horas terminou. Ative sua licença (🔑) para gerar e salvar.";
+      else msg = "🔒 Modo demonstração — ative sua licença (🔑) para salvar e exportar. Você pode explorar tudo à vontade.";
       UI.toast(msg, "erro");
       try { this.abrirLicenca(); } catch (e) {}
     },
@@ -1082,7 +1256,7 @@
     persistir: function () {
       if (!this.orcAtual) return;
       if (this._trialBloqueado()) {
-        if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("⏰ Teste encerrado — salvar bloqueado. Ative a licença (🔑).", "erro"); }
+        if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("🔒 Modo demonstração — para salvar, ative sua licença (🔑).", "erro"); }
         return;
       }
       var ok = Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);

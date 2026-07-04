@@ -1,0 +1,262 @@
+<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Consulta grátis de composições e insumos — OrçaPRO IA</title>
+<meta name="description" content="Consulte grátis composições e insumos das bases oficiais SINAPI, SETOP, SUDECAP e SEINFRA. Preços atualizados, sem instalar nada.">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--navy:#0f2740;--aco:#2e6f9e;--verde:#16a34a;--verde2:#6fd08a;--ink:#1e293b;--mut:#64748b;--linha:#e2e8f0;--bg:#f6f9fc}
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif}
+body{background:var(--bg);color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:0 18px}
+a{color:inherit;text-decoration:none}
+header{position:sticky;top:0;z-index:30;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--linha)}
+.nav{display:flex;align-items:center;gap:14px;padding:11px 0}
+.logo{display:flex;align-items:center;gap:9px;font-weight:900;font-size:20px;color:var(--navy)}
+.logo span{color:var(--verde)}.logo sup{font-size:10px;font-weight:900;color:#fff;background:var(--verde);border-radius:5px;padding:1px 5px;letter-spacing:.5px}
+.nav .right{margin-left:auto;display:flex;gap:12px;align-items:center}
+.nav a.back{font-size:14px;color:var(--mut);font-weight:600}
+.btn{display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:11px;padding:12px 20px;font-size:15px;font-weight:800;cursor:pointer}
+.btn.g{background:linear-gradient(180deg,#1eb257,var(--verde));color:#fff;box-shadow:0 5px 16px rgba(22,163,74,.3)}
+.btn.g:hover{filter:brightness(1.06)}
+.btn.o{background:#fff;color:var(--navy);border:2px solid var(--linha)}
+.nav .btn{padding:9px 18px;font-size:14px}
+.hero{background:radial-gradient(900px 400px at 80% -20%,#1c4b73 0,#0c1f33 70%);color:#fff;padding:40px 0 30px}
+.hero .eyebrow{color:var(--verde2);font-weight:800;font-size:12px;letter-spacing:1.5px;text-transform:uppercase}
+.hero h1{font-size:32px;font-weight:900;letter-spacing:-1px;margin:8px 0 6px}
+.hero h1 span{color:var(--verde2)}
+.hero p{color:#cfe0ee;font-size:16px;max-width:640px}
+.bancos{display:flex;gap:7px;flex-wrap:wrap;margin-top:16px}
+.bpill{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);padding:5px 12px;border-radius:99px;font-size:12.5px;font-weight:700}
+.tool{margin:-22px auto 0;background:#fff;border:1px solid var(--linha);border-radius:16px;box-shadow:0 18px 50px rgba(15,39,64,.13);padding:18px;position:relative;z-index:5}
+.filtros{display:grid;grid-template-columns:1fr;gap:10px}
+.fld label{display:block;font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.fld input,.fld select{width:100%;padding:12px 13px;border:1.5px solid var(--linha);border-radius:10px;font-size:15px;background:#fff;color:var(--ink)}
+.fld input:focus,.fld select:focus{outline:none;border-color:var(--aco)}
+.row2{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:10px}
+@media(max-width:720px){.row2{grid-template-columns:1fr 1fr}}
+.baseinfo{font-size:13px;color:var(--mut);margin:12px 2px 0}
+.baseinfo b{color:var(--navy)}
+.baseinfo .lock{color:#c2410c;font-weight:700}
+#resultados{margin:22px 0 40px}
+.res{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--linha);border-radius:12px;padding:13px 15px;margin-bottom:9px;transition:.14s}
+.res:hover{border-color:#cbd9e8;box-shadow:0 8px 22px rgba(15,39,64,.08)}
+.res .desc{flex:1;min-width:0}
+.res .cod{font-size:12.5px;color:var(--mut);margin-bottom:2px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.res .nome{font-size:14.5px;color:var(--ink);font-weight:600}
+.pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:99px;letter-spacing:.3px}
+.pill.sinapi{background:#e0edfb;color:#1d4ed8}.pill.setop{background:#fef3c7;color:#b45309}.pill.sudecap{background:#e0f2fe;color:#0369a1}.pill.seinfra{background:#dcfce7;color:#15803d}
+.pill.ins{background:#f1f5f9;color:#475569}
+.res .preco{font-size:16px;font-weight:900;color:var(--verde);white-space:nowrap}
+.res .vi{background:#0f2740;color:#fff;border:0;border-radius:9px;padding:9px 12px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.res .vi:hover{background:#1c4b73}
+.vazio{text-align:center;color:var(--mut);padding:34px 16px;font-size:15px}
+.gate-hint{text-align:center;font-size:12.5px;color:var(--mut);margin:2px 0 14px}
+.gate-hint b{color:var(--aco)}
+/* modal */
+.bg{position:fixed;inset:0;background:rgba(10,23,38,.55);backdrop-filter:blur(2px);z-index:60;display:flex;align-items:center;justify-content:center;padding:18px}
+.modal{background:#fff;border-radius:16px;max-width:860px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 30px 80px rgba(0,0,0,.4)}
+.modal .mh{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--linha);position:sticky;top:0;background:#fff}
+.modal .mh h3{font-size:17px;color:var(--navy)}
+.modal .mx{background:#fff;border:1px solid var(--linha);border-radius:8px;width:32px;height:32px;cursor:pointer;font-size:15px}
+.modal .mb{padding:18px 20px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+@media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:#f8fafc;border:1px solid var(--linha);border-radius:10px;padding:11px 13px}
+.kpi .r{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+.kpi .n{font-size:19px;font-weight:900;color:var(--navy)}.kpi .n.d{color:var(--verde)}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.tbl th{text-align:left;color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding:8px 10px;border-bottom:2px solid var(--linha)}
+table.tbl td{padding:8px 10px;border-bottom:1px solid #eef2f7}
+table.tbl td.num,table.tbl th.num{text-align:right}
+/* buy modal */
+.buy{max-width:480px;text-align:center;padding:30px 26px}
+.buy .ic{width:64px;height:64px;margin:0 auto 14px;border-radius:16px;background:linear-gradient(135deg,#1eb257,var(--verde));display:flex;align-items:center;justify-content:center}
+.buy .ic svg{width:34px;height:34px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.buy h3{font-size:22px;color:var(--navy);font-weight:900;margin-bottom:8px}
+.buy p{color:#475569;font-size:15px;margin-bottom:18px}
+.buy .btn{width:100%;margin-bottom:9px}
+.buy .sm{font-size:13px;color:var(--mut)}
+footer{background:#0a1726;color:#8aa6bf;padding:28px 0;font-size:13.5px;text-align:center}
+footer a{color:var(--verde2);font-weight:600}
+</style></head><body>
+
+<header><div class="wrap nav">
+  <a class="logo" href="index.html"><svg width="30" height="30" viewBox="0 0 100 100"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c4b73"/><stop offset="1" stop-color="#3a8bc2"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#lg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg>Orça<span>PRO</span><sup>IA</sup></a>
+  <div class="right"><a class="back" href="index.html">← Voltar ao site</a><a class="btn g" href="index.html#precos">Comprar</a></div>
+</div></header>
+
+<section class="hero"><div class="wrap">
+  <div class="eyebrow">Ferramenta grátis</div>
+  <h1>Consulte <span>composições e insumos</span> das bases oficiais</h1>
+  <p>Pesquise preços de serviços e materiais da SINAPI, SETOP, SUDECAP e SEINFRA — atualizados, direto no navegador, sem instalar nada. É o mesmo motor de busca do OrçaPRO.</p>
+  <div class="bancos"><span class="bpill">SINAPI</span><span class="bpill">SETOP-MG</span><span class="bpill">SUDECAP-BH</span><span class="bpill">SEINFRA-CE</span><span class="bpill">+ atualizadas</span></div>
+</div></section>
+
+<div class="wrap"><div class="tool">
+  <div class="filtros">
+    <div class="fld"><label>Buscar por código ou descrição</label><input id="q" placeholder="Ex.: alvenaria bloco · concreto fck 25 · cimento · piso ceramico" autocomplete="off"></div>
+    <div class="row2">
+      <div class="fld"><label>Banco de preços</label><select id="banco"><option value="">Todos os bancos</option></select></div>
+      <div class="fld"><label>Tipo</label><select id="tipo"><option value="">Composições + insumos</option><option value="composicao">Só composições</option><option value="insumo">Só insumos</option></select></div>
+      <div class="fld"><label>Estado</label><select id="uf"></select></div>
+    </div>
+  </div>
+  <div class="baseinfo" id="baseinfo">Carregando bases…</div>
+</div>
+
+<div class="gate-hint" id="gatehint"></div>
+<div id="resultados"><div class="vazio">Digite ao menos 2 letras para pesquisar.</div></div>
+</div>
+
+<footer><div class="wrap">
+  Gostou? No <b style="color:#fff">OrçaPRO</b> você monta o orçamento completo com IA, BDI, cronograma e Excel — e consulta qualquer estado.<br>
+  <a href="index.html#precos">Ver planos</a> · <a href="index.html">Voltar ao site</a> · <a id="wpp" href="#">WhatsApp</a>
+</div></footer>
+
+<!-- motor do OrçaPRO (mesmos módulos do app) -->
+<script src="app/js/config.js"></script>
+<script src="app/js/util.js"></script>
+<script src="app/js/sinapi.js"></script>
+<script src="app/js/bases.js"></script>
+<script src="app/js/analitico.js"></script>
+<script>
+(function(){
+  "use strict";
+  var COMPRAR="index.html#precos", WPP="553492869383", GATE=3;
+  var DATA="app/data/";
+  var el=function(id){return document.getElementById(id);};
+  var esc=function(s){return (typeof Util!=='undefined'&&Util.esc)?Util.esc(s):String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});};
+  var money=function(v){return (typeof Util!=='undefined'&&Util.fmtMoeda)?Util.fmtMoeda(v):('R$ '+(Number(v)||0).toFixed(2).replace('.',','));};
+  var num=function(v,d){return (typeof Util!=='undefined'&&Util.fmtNum)?Util.fmtNum(v,d):(Number(v)||0).toFixed(d);};
+  el('wpp').href="https://wa.me/"+WPP+"?text="+encodeURIComponent("Olá! Vi a consulta de preços e tenho interesse no OrçaPRO IA.");
+
+  // ---- trava de insumos (3 grátis) ----
+  function vistos(){ try{return +localStorage.getItem('opr:consulta:ins')||0;}catch(e){return 0;} }
+  function bump(){ try{localStorage.setItem('opr:consulta:ins',vistos()+1);}catch(e){} }
+  function hint(){
+    var v=vistos(), rest=Math.max(0,GATE-v);
+    el('gatehint').innerHTML = v>=GATE
+      ? '🔒 Você usou suas <b>3 consultas grátis de insumos</b>. <a href="'+COMPRAR+'" style="color:var(--verde);font-weight:800">Garanta o OrçaPRO</a> para ver insumos ilimitados.'
+      : (v>0 ? 'Consultas de insumos grátis: <b>'+rest+' de 3</b> restantes.' : '');
+  }
+
+  // ---- modal genérico ----
+  function abrirModal(inner,cls){
+    fechar();
+    var bg=document.createElement('div'); bg.className='bg'; bg.id='mbg';
+    bg.innerHTML='<div class="modal '+(cls||'')+'">'+inner+'</div>';
+    bg.addEventListener('click',function(e){ if(e.target===bg) fechar(); });
+    document.body.appendChild(bg);
+    var x=bg.querySelector('.mx'); if(x) x.onclick=fechar;
+    return bg;
+  }
+  function fechar(){ var b=el('mbg'); if(b) b.remove(); }
+  document.addEventListener('keydown',function(e){ if(e.key==='Escape') fechar(); });
+
+  function buyModal(motivo){
+    var titulo = motivo==='uf' ? 'Consultar a base da sua região' : 'Ver insumos ilimitados';
+    var texto = motivo==='uf'
+      ? 'A consulta grátis usa a base de <b>MG</b>. Para pesquisar os preços do <b>seu estado</b> (e de todos os 27), garanta uma licença do OrçaPRO.'
+      : 'Você já viu o detalhamento de <b>3 composições</b> — esse é o gostinho! Para ver os insumos de <b>qualquer composição, sem limite</b> (e montar orçamentos com IA), garanta o OrçaPRO.';
+    abrirModal('<div class="buy">'+
+      '<div class="ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>'+
+      '<h3>'+titulo+'</h3><p>'+texto+'</p>'+
+      '<a class="btn g" href="'+COMPRAR+'">Ver planos do OrçaPRO</a>'+
+      '<a class="btn o" href="index.html#demo">Testar o sistema completo grátis</a>'+
+      '<div class="sm" style="margin-top:10px">A pesquisa de composições continua <b>liberada</b> aqui, à vontade.</div>'+
+      '</div>','');
+  }
+
+  // ---- ver insumos (analítico SINAPI, com a trava) ----
+  var _anaCarregando=false;
+  function verInsumos(codigo){
+    if(vistos()>=GATE){ buyModal('insumos'); return; }
+    function abrir(){
+      var a=Analitico.obter(codigo);
+      if(!a){ toast('Sem detalhamento para a composição '+codigo+'.'); return; }
+      bump(); hint();
+      var cat={MO:'Mão de obra',MAT:'Material',EQ:'Equipamento'};
+      var rows=(a.insumos||[]).map(function(it){
+        return '<tr><td>'+(it.tipo==='COMPOSICAO'?'Sub-comp.':'Insumo')+'</td><td>'+esc(it.codigo)+'</td><td>'+esc(it.descricao)+'</td><td>'+esc(it.unidade)+'</td>'+
+          '<td class="num">'+num(it.coeficiente,4)+'</td><td class="num">'+money(it.custoUnitario)+'</td><td class="num">'+money(it.custoTotal)+'</td>'+
+          '<td><span class="pill ins">'+(cat[it.categoria]||it.categoria||'')+'</span></td></tr>';
+      }).join('');
+      abrirModal('<div class="mh"><h3>🔍 Composição '+esc(codigo)+' — Insumos</h3><button class="mx">✕</button></div>'+
+        '<div class="mb"><div style="color:var(--mut);font-size:13px;margin-bottom:12px"><b>'+esc(a.codigo)+'</b> · '+esc(a.unidade)+(a.grupo?' · '+esc(a.grupo):'')+'<br>'+esc(a.descricao)+'</div>'+
+        '<div class="kpis"><div class="kpi"><div class="r">Mão de obra</div><div class="n">'+money(a.custoMO)+'</div></div>'+
+        '<div class="kpi"><div class="r">Material</div><div class="n">'+money(a.custoMAT)+'</div></div>'+
+        '<div class="kpi"><div class="r">Equipamento</div><div class="n">'+money(a.custoEQ)+'</div></div>'+
+        '<div class="kpi"><div class="r">Custo Unit.</div><div class="n d">'+money(a.custoUnitario)+'</div></div></div>'+
+        '<table class="tbl"><thead><tr><th>Tipo</th><th>Código</th><th>Insumo</th><th>Und</th><th class="num">Coef.</th><th class="num">Custo Unit</th><th class="num">Custo Total</th><th>Categoria</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+        '<p style="color:var(--mut);font-size:12px;margin-top:12px">Base analítica SINAPI '+esc(Analitico.competencia||'')+' / '+esc(Analitico.uf||'')+' — composição explodida em insumos com coeficientes.</p></div>','');
+    }
+    if(Analitico.carregado){ abrir(); return; }
+    if(_anaCarregando){ return; }
+    _anaCarregando=true; toast('Carregando detalhamento (1ª vez)…');
+    Analitico.carregarArquivo(DATA+'sinapi-MG-analitico.json').then(function(){ _anaCarregando=false; abrir(); })
+      .catch(function(){ _anaCarregando=false; toast('Não carregou o detalhamento. Recarregue a página.'); });
+  }
+
+  function toast(msg){ var t=document.createElement('div'); t.textContent=msg; t.style.cssText='position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:#0f2740;color:#fff;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:600;z-index:80;box-shadow:0 10px 30px rgba(0,0,0,.3)'; document.body.appendChild(t); setTimeout(function(){t.remove();},2600); }
+
+  // ---- busca ----
+  var debTimer=null;
+  function debounce(fn){ return function(){ clearTimeout(debTimer); debTimer=setTimeout(fn,220); }; }
+  var corMap={SINAPI:'sinapi',SETOP:'setop',SUDECAP:'sudecap',SEINFRA:'seinfra'};
+  function buscar(){
+    var q=el('q').value.trim(), box=el('resultados');
+    if(q.length<2){ box.innerHTML='<div class="vazio">Digite ao menos 2 letras para pesquisar.</div>'; return; }
+    var dv=el('tipo').value;
+    var res=Bases.buscar(q,{max:50,fonte:el('banco').value||null,tipo:dv||null});
+    if(!res.length){ box.innerHTML='<div class="vazio">Nenhum resultado para "'+esc(q)+'".</div>'; return; }
+    box.innerHTML=res.map(function(r){
+      var it=r.item, isComp=r.tipo!=='insumo';
+      var podeVer = isComp && r.fonte==='SINAPI' && (typeof Analitico==='undefined'||true);
+      var badge='<span class="pill '+(corMap[r.fonte]||'sinapi')+'">'+esc(r.label||r.fonte)+'</span>';
+      var tg = r.tipo==='insumo' ? ' <span class="pill ins">insumo</span>' : '';
+      return '<div class="res"><div class="desc"><div class="cod">'+badge+tg+' <b>'+esc(it.codigo)+'</b> · '+esc(it.unidade)+'</div><div class="nome">'+esc(it.descricao)+'</div></div>'+
+        '<div class="preco">'+money(it.custoUnitario)+'</div>'+
+        (podeVer?'<button class="vi" data-vi="'+esc(it.codigo)+'">🔍 Insumos</button>':'')+'</div>';
+    }).join('');
+    [].forEach.call(box.querySelectorAll('[data-vi]'),function(b){ b.onclick=function(){ verInsumos(b.getAttribute('data-vi')); }; });
+  }
+  var doBuscar=debounce(buscar);
+
+  // ---- carga das bases ----
+  function carregarBanco(fonte,arquivo){
+    return fetch(DATA+arquivo).then(function(r){ if(!r.ok) throw new Error(arquivo); return r.json(); })
+      .then(function(j){ Bases.registrar(fonte,j); }).catch(function(){ /* banco opcional */ });
+  }
+  function popularFiltros(){
+    var sel=el('banco'), lista=Bases.lista();
+    sel.innerHTML='<option value="">Todos os bancos</option>'+lista.map(function(b){ return '<option value="'+b.fonte+'">'+esc(b.label)+(b.uf?' · '+b.uf:'')+'</option>'; }).join('');
+    // UF: MG livre + outros TRAVADOS (comprar)
+    var uf=el('uf');
+    uf.innerHTML='<option value="MG">MG (grátis)</option>'+['SP','RJ','BA','PR','RS','SC','GO','DF','CE','PE','PA','+ 27 estados'].map(function(u){ return '<option value="__lock">🔒 '+u+' (Plus)</option>'; }).join('');
+    uf.value='MG';
+    uf.onchange=function(){ if(uf.value==='__lock'){ uf.value='MG'; buyModal('uf'); } };
+    el('baseinfo').innerHTML='Base ativa: <b>SINAPI MG '+esc(Sinapi.competencia||'')+'</b> · '+Sinapi.resumo().total.toLocaleString('pt-BR')+' itens · +SETOP, SUDECAP, SEINFRA · <span class="lock">🔒 outros estados na versão paga</span>';
+  }
+
+  el('q').addEventListener('input',doBuscar);
+  ['banco','tipo'].forEach(function(id){ el(id).addEventListener('change',buscar); });
+  hint();
+
+  // SINAPI-MG (motor principal) + bancos regionais (em memória)
+  el('baseinfo').textContent='Carregando bases oficiais…';
+  fetch(DATA+'sinapi-MG-2026-05.json').then(function(r){return r.json();}).then(function(j){
+    Sinapi.carregarDe(j);
+    return Promise.all([
+      carregarBanco('SETOP','setop-MG-current.json'),
+      carregarBanco('SUDECAP','sudecap-BH-current.json'),
+      carregarBanco('SEINFRA','seinfra-CE-current.json')
+    ]);
+  }).then(popularFiltros).catch(function(e){
+    el('baseinfo').innerHTML='⚠️ Não foi possível carregar as bases. Recarregue a página.';
+  });
+})();
+</script>
+</body></html>

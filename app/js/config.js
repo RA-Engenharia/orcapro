@@ -18,14 +18,18 @@
       logoTexto: '<span class="marca-top">OrçaPRO<span class="logo-ia">IA</span></span>'   // selo IA estilizado (ver .logo-ia no CSS)
     },
 
-    // Servidor de IA do OrçaPRO (orcapro-ia.js). Cada licença usa a própria chave.
-    iaBackend: "http://localhost:3041",
+    // IA na NUVEM (VPS): já vem pronta, sem o cliente configurar chave. A chave fica escondida no servidor.
+    // As chamadas de IA enviam a licença (x-licenca) — só quem ativou usa a IA.
+    iaBackend: "https://187-127-40-14.sslip.io",
 
     // Servidor de licença/ativação/atualização (a loja no VPS). Trava de máquina + auto-update.
     licencaServer: "https://187-127-40-14.sslip.io",
 
-    versao: "1.0.0",
+    versao: "1.1.7",
     schemaVersao: 3, // usado nas migrações de persistência
+
+    // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
+    ofertaFim: "2026-07-11T23:59:59-03:00",
 
     // ---- Planos / Monetização (SaaS por assinatura) ----
     // O gate é por feature: o app checa CONFIG.plano(featureKey).

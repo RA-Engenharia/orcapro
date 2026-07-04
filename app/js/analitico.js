@@ -16,6 +16,7 @@
     _porCodigo: {},
     _total: 0,
     _promise: null,
+    _epoca: 0,           // geração; reset() (troca de UF) incrementa p/ descartar fetch órfão
 
     /* Carrega de um pacote já parseado { mes, uf, dados:[...] } */
     carregarDe: function (pacote) {
@@ -39,11 +40,22 @@
       if (this.carregado) return Promise.resolve(this._total);
       if (this._promise) return this._promise;
       this.carregando = true;
+      var epoca = this._epoca; // captura a geração atual
       this._promise = fetch(url || "data/sinapi-MG-analitico.json")
         .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-        .then(function (j) { return self.carregarDe(j); })
+        .then(function (j) {
+          if (epoca !== self._epoca) throw new Error("cancelado"); // trocou de UF durante o fetch → descarta
+          return self.carregarDe(j);
+        })
         .catch(function (e) { self.carregando = false; self._promise = null; throw e; });
       return this._promise;
+    },
+
+    /* Zera o estado (usado ao TROCAR de UF: descarta o analítico anterior). */
+    reset: function () {
+      this._epoca++; // invalida qualquer fetch em voo (o .then vê época obsoleta e descarta)
+      this.carregado = false; this.carregando = false; this._promise = null;
+      this._porCodigo = {}; this._total = 0; this.competencia = null; this.uf = null;
     },
 
     /* Retorna o analítico de uma composição (ou null se não houver). */

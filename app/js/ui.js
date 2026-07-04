@@ -62,7 +62,7 @@
           var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
           if (!lic) return "";
           var lbl, cor = '', vermelho = ' style="color:var(--vermelho,#dc2626);font-weight:700"';
-          if (lic.trial) { lbl = lic.expirado ? "🔑 Teste encerrado" : ("🔑 Teste " + (lic.rotulo || "")); if (lic.expirado || lic.restanteMs < 1800000) cor = vermelho; }
+          if (lic.trial) { lbl = "🔓 Demonstração"; cor = ' style="color:var(--aco,#2e6f9e);font-weight:700"'; }
           else if (lic.expirada) { lbl = "🔑 Licença vencida"; cor = vermelho; }
           else if (lic.outroDispositivo) { lbl = "🔑 Outra máquina"; cor = vermelho; }
           else if (lic.revalidar) { lbl = "🔑 Reconecte p/ validar"; cor = vermelho; }
@@ -160,9 +160,7 @@
     renderLicenca: function (st) {
       var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
       if (st.trial) {
-        html += '<div class="card">' + (st.expirado
-          ? '<b style="color:var(--vermelho,#dc2626)">Teste de 3 horas encerrado.</b><br>Para <b>gerar e salvar</b> orçamentos, ative com a sua chave de licença.'
-          : '<b>Teste grátis (3 horas)</b><br>Tempo restante: <b>' + (st.rotulo || "") + '</b>.<br>Depois disso, <b>gerar e salvar</b> ficam bloqueados até ativar a licença.') + '</div>';
+        html += '<div class="card"><b>🔓 Modo demonstração</b><br>Você pode <b>explorar e testar tudo</b> à vontade (navegar, montar orçamento, ver os módulos de gestão). Para <b>salvar e exportar</b> (PDF, Excel, proposta, laudo), ative sua licença com a chave que você recebeu na compra.</div>';
       } else {
         html += '<div class="card"><b style="color:var(--verde,#16a34a)">✓ Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
       }
@@ -347,13 +345,17 @@
     },
 
     // ----- Modal: composição explodida em insumos (base analítica SINAPI) -----
-    renderInsumos: function (a) {
+    renderInsumos: function (a, ufAtivo) {
       var catLabel = { MO: "Mão de obra", MAT: "Material", EQ: "Equipamento" };
       function box(rotulo, valor, classe) {
         return '<div class="kpi"><div class="rotulo">' + rotulo + '</div>' +
           '<div class="num' + (classe ? " " + classe : "") + '">' + Util.fmtMoeda(valor) + '</div></div>';
       }
-      var html = '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
+      var anaUf = (typeof Analitico !== "undefined") ? Analitico.uf : null;
+      var aviso = (ufAtivo && anaUf && ufAtivo !== anaUf)
+        ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">⚠ Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
+        : '';
+      var html = aviso + '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
         (a.grupo ? ' · ' + Util.esc(a.grupo) : '') + '<br>' + Util.esc(a.descricao) + '</div>';
       html += '<div class="kpis">' +
         box("Mão de obra", a.custoMO) + box("Material", a.custoMAT) +

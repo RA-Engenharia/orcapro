@@ -19,6 +19,218 @@
   function thin() { var s = { style: 'thin', color: { argb: 'FFCBD5E1' } }; return { top: s, left: s, bottom: s, right: s }; }
   function hStyle(c) { c.font = { bold: true, color: { argb: branco }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } }; c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = thin(); }
 
+  // Cores da identidade (para os gráficos em canvas)
+  var COR = { navy: '#0f2740', aco: '#2e6f9e', verde: '#16a34a', amarelo: '#f59e0b', vermelho: '#dc2626', cinza: '#e2e8f0', muted: '#64748b', texto: '#1e293b' };
+
+  /* =====================================================================
+   * GRÁFICOS EM CANVAS (SÓ NO BROWSER) — geram PNG base64 p/ embutir.
+   * Rodam no wrapper gerar()/ensureExcelJS, ANTES de construir(). Node não
+   * tem document/canvas → nunca são chamados lá (construir só usa deps.graficos).
+   * ===================================================================== */
+
+  // Cria um canvas offscreen com fundo branco (qualidade de impressão).
+  function _canvas(w, h) {
+    var cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, w, h);
+    ctx.textBaseline = 'alphabetic';
+    return { cv: cv, ctx: ctx };
+  }
+  function _titulo(ctx, txt, w) {
+    ctx.fillStyle = COR.navy; ctx.font = 'bold 26px Arial, sans-serif';
+    ctx.textAlign = 'left'; ctx.fillText(txt, 34, 44);
+    ctx.strokeStyle = COR.aco; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(34, 58); ctx.lineTo(w - 34, 58); ctx.stroke();
+  }
+  function _corta(ctx, txt, maxW) {
+    txt = String(txt == null ? '' : txt);
+    if (ctx.measureText(txt).width <= maxW) return txt;
+    while (txt.length > 1 && ctx.measureText(txt + '…').width > maxW) txt = txt.slice(0, -1);
+    return txt + '…';
+  }
+  function _money(v, fmtNum) { return 'R$ ' + fmtNum(v || 0, 0); }
+
+  // --- Curva ABC / Pareto: barras (custo desc) + linha do % acumulado + faixas A/B/C ---
+  // abc = { linhas:[{codigo,descricao,custoTotal,pct,acumPct,classe}], ... } (Orcamento.curvaABC)
+  function _pngABC(abc, fmtNum) {
+    var linhas = (abc && abc.linhas) ? abc.linhas.slice(0, 20) : [];
+    var W = 900, H = 460, o = _canvas(W, H), ctx = o.ctx;
+    _titulo(ctx, 'Curva ABC — Pareto (custo por item)', W);
+    var padL = 60, padR = 56, padT = 80, padB = 96;
+    var plotW = W - padL - padR, plotH = H - padT - padB, x0 = padL, y0 = H - padB;
+    var maxV = linhas.reduce(function (m, l) { return Math.max(m, l.custoTotal || 0); }, 0) || 1;
+    var corCl = { A: COR.verde, B: COR.amarelo, C: COR.muted };
+    // grade + eixo Y esquerdo (R$) e direito (%)
+    ctx.textAlign = 'right'; ctx.font = '12px Arial, sans-serif';
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (g) {
+      var yy = y0 - g * plotH;
+      ctx.strokeStyle = COR.cinza; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + plotW, yy); ctx.stroke();
+      ctx.fillStyle = COR.muted; ctx.fillText(fmtNum(maxV * g, 0), x0 - 6, yy + 4);
+      ctx.textAlign = 'left'; ctx.fillText((g * 100).toFixed(0) + '%', x0 + plotW + 6, yy + 4); ctx.textAlign = 'right';
+    });
+    var n = linhas.length || 1, bw = plotW / n, bar = Math.min(bw * 0.62, 46);
+    // barras
+    linhas.forEach(function (l, i) {
+      var cx = x0 + i * bw + (bw - bar) / 2;
+      var bh = (l.custoTotal || 0) / maxV * plotH;
+      ctx.fillStyle = corCl[l.classe] || COR.aco;
+      ctx.fillRect(cx, y0 - bh, bar, bh);
+      ctx.save(); ctx.translate(cx + bar / 2, y0 + 6); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = COR.muted; ctx.font = '10px Arial, sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText(_corta(ctx, l.codigo || l.descricao || ('#' + (i + 1)), 74), 0, 0);
+      ctx.restore();
+    });
+    // linha % acumulado
+    ctx.strokeStyle = COR.navy; ctx.lineWidth = 2.5; ctx.beginPath();
+    linhas.forEach(function (l, i) {
+      var cx = x0 + i * bw + bw / 2, cy = y0 - (Math.min(100, l.acumPct || 0) / 100) * plotH;
+      if (i === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+    });
+    ctx.stroke();
+    linhas.forEach(function (l, i) {
+      var cx = x0 + i * bw + bw / 2, cy = y0 - (Math.min(100, l.acumPct || 0) / 100) * plotH;
+      ctx.fillStyle = COR.navy; ctx.beginPath(); ctx.arc(cx, cy, 3.2, 0, 2 * Math.PI); ctx.fill();
+    });
+    // faixas A/B/C (80% / 95%)
+    ctx.setLineDash([5, 4]); ctx.lineWidth = 1.2;
+    [{ v: 80, c: COR.verde }, { v: 95, c: COR.amarelo }].forEach(function (f) {
+      var yy = y0 - (f.v / 100) * plotH;
+      ctx.strokeStyle = f.c; ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + plotW, yy); ctx.stroke();
+    });
+    ctx.setLineDash([]);
+    // legenda
+    var lx = padL, ly = H - 30;
+    ctx.font = '13px Arial, sans-serif'; ctx.textAlign = 'left';
+    [['A', 'até 80%'], ['B', '80–95%'], ['C', '95–100%']].forEach(function (p) {
+      ctx.fillStyle = corCl[p[0]]; ctx.fillRect(lx, ly - 11, 14, 14);
+      ctx.fillStyle = COR.texto; ctx.fillText('Classe ' + p[0] + ' (' + p[1] + ')', lx + 20, ly);
+      lx += 200;
+    });
+    ctx.fillStyle = COR.navy; ctx.fillText('— % acumulado', lx, ly);
+    return o.cv.toDataURL('image/png');
+  }
+
+  // --- Curva S: linha do avanço físico-financeiro acumulado (%) ---
+  // pts = [%acum semana 1, ...] ; rotulos p/ eixo X. (mesma lógica do _curvaS do ui.js)
+  function _pngCurvaS(pts, totalTxt) {
+    pts = (pts && pts.length) ? pts : [0];
+    var W = 900, H = 420, o = _canvas(W, H), ctx = o.ctx;
+    _titulo(ctx, 'Curva S — avanço físico-financeiro acumulado', W);
+    var padL = 54, padR = 24, padT = 82, padB = 56;
+    var plotW = W - padL - padR, plotH = H - padT - padB, x0 = padL, yTop = padT, yBot = H - padB;
+    var nSem = pts.length;
+    var X = function (i) { return x0 + (nSem <= 1 ? plotW / 2 : (i / (nSem - 1)) * plotW); };
+    var Y = function (v) { return yBot - (Math.min(100, Math.max(0, v)) / 100) * plotH; };
+    ctx.font = '12px Arial, sans-serif';
+    [0, 25, 50, 75, 100].forEach(function (g) {
+      var yy = Y(g);
+      ctx.strokeStyle = COR.cinza; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + plotW, yy); ctx.stroke();
+      ctx.fillStyle = COR.muted; ctx.textAlign = 'right'; ctx.fillText(g + '%', x0 - 8, yy + 4);
+    });
+    // área
+    ctx.beginPath(); ctx.moveTo(X(0), yBot);
+    pts.forEach(function (v, i) { ctx.lineTo(X(i), Y(v)); });
+    ctx.lineTo(X(nSem - 1), yBot); ctx.closePath();
+    ctx.fillStyle = 'rgba(46,111,158,0.12)'; ctx.fill();
+    // linha
+    ctx.strokeStyle = COR.aco; ctx.lineWidth = 3; ctx.beginPath();
+    pts.forEach(function (v, i) { if (i === 0) ctx.moveTo(X(i), Y(v)); else ctx.lineTo(X(i), Y(v)); });
+    ctx.stroke();
+    // pontos + rótulos X
+    var step = Math.max(1, Math.ceil(nSem / 12));
+    ctx.textAlign = 'center';
+    pts.forEach(function (v, i) {
+      ctx.fillStyle = COR.navy; ctx.beginPath(); ctx.arc(X(i), Y(v), 3.4, 0, 2 * Math.PI); ctx.fill();
+      if (i % step === 0 || i === nSem - 1) {
+        ctx.fillStyle = COR.muted; ctx.font = '10px Arial, sans-serif';
+        ctx.fillText('S' + (i + 1), X(i), yBot + 18);
+      }
+    });
+    if (totalTxt) { ctx.fillStyle = COR.muted; ctx.font = '12px Arial, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(totalTxt, x0, H - 12); }
+    return o.cv.toDataURL('image/png');
+  }
+
+  // --- Composição MO/MAT/EQ: pizza + legenda ---
+  // dados = [{rotulo, valor, cor}]
+  function _pngPizza(dados, fmtNum) {
+    var W = 900, H = 420, o = _canvas(W, H), ctx = o.ctx;
+    _titulo(ctx, 'Composição de custo — MO / MAT / EQ', W);
+    var tot = dados.reduce(function (s, d) { return s + (d.valor || 0); }, 0) || 1;
+    var cx = 250, cy = 250, R = 140, ang = -Math.PI / 2;
+    dados.forEach(function (d) {
+      var frac = (d.valor || 0) / tot, a1 = ang + frac * 2 * Math.PI;
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, R, ang, a1); ctx.closePath();
+      ctx.fillStyle = d.cor; ctx.fill();
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.stroke();
+      ang = a1;
+    });
+    // legenda
+    var lx = 480, ly = 150;
+    ctx.textAlign = 'left';
+    dados.forEach(function (d) {
+      var pct = (d.valor || 0) / tot * 100;
+      ctx.fillStyle = d.cor; ctx.fillRect(lx, ly - 16, 20, 20);
+      ctx.fillStyle = COR.texto; ctx.font = 'bold 18px Arial, sans-serif';
+      ctx.fillText(d.rotulo + '  ' + fmtNum(pct, 1) + '%', lx + 30, ly);
+      ctx.fillStyle = COR.muted; ctx.font = '14px Arial, sans-serif';
+      ctx.fillText(_money(d.valor, fmtNum), lx + 30, ly + 22);
+      ly += 64;
+    });
+    return o.cv.toDataURL('image/png');
+  }
+
+  // Monta { abc, curvaS, moMatEq } (dataURLs). SÓ chamar no browser.
+  // orc: orçamento; deps: { num, fmtNum, abc?, crono?, cronoAgente? }
+  function gerarGraficos(orc, deps) {
+    if (typeof document === 'undefined' || !document.createElement) return null;
+    var num = deps.num, fmtNum = deps.fmtNum;
+    var g = {};
+    try {
+      // ABC
+      var abc = deps.abc || (global.Orcamento && Orcamento.curvaABC ? Orcamento.curvaABC(orc) : null);
+      if (abc && abc.linhas && abc.linhas.length) g.abc = _pngABC(abc, fmtNum);
+
+      // Curva S — preferir a curva semanal do agente (mesma do _curvaS); fallback: crono mensal
+      var pts = null, totalTxt = '';
+      if (typeof global.Cronograma !== 'undefined' && Cronograma.estimar) {
+        var r = Cronograma.estimar(orc), nSem = r.totalSemanas || 1, dpw = (r.params && r.params.diasUteisSemana) || 5;
+        var custoSem = [], totalCusto = 0, w;
+        for (w = 0; w < nSem; w++) custoSem[w] = 0;
+        (r.etapas || []).forEach(function (e) {
+          totalCusto += e.custo;
+          var s0 = e.inicio / dpw, s1 = e.fim / dpw, dur = Math.max(0.01, s1 - s0);
+          for (var ww = 0; ww < nSem; ww++) { var ov = Math.max(0, Math.min(ww + 1, s1) - Math.max(ww, s0)); if (ov > 0) custoSem[ww] += e.custo * (ov / dur); }
+        });
+        var acc = 0, totV = totalCusto || 1; pts = [];
+        for (w = 0; w < nSem; w++) { acc += custoSem[w]; pts.push(acc / totV * 100); }
+        totalTxt = 'Custo distribuído em ' + nSem + ' semanas do cronograma. Total: ' + _money(totalCusto, fmtNum) + '.';
+      } else if (deps.crono && deps.crono.acumPct && deps.crono.acumPct.length) {
+        pts = deps.crono.acumPct.slice();
+        totalTxt = 'Avanço acumulado ao longo de ' + deps.crono.meses + ' meses (preço com BDI).';
+      }
+      if (pts && pts.length) g.curvaS = _pngCurvaS(pts, totalTxt);
+
+      // MO/MAT/EQ — mesmos totais da pizza do ui.js (soma qtd × custoMO/MAT/EQ)
+      var mo = 0, mat = 0, eq = 0;
+      (orc.etapas || []).forEach(function (e) {
+        (e.itens || []).forEach(function (it) {
+          var q = num(it.quantidade);
+          mo += num(it.custoMO) * q; mat += num(it.custoMAT) * q; eq += num(it.custoEQ) * q;
+        });
+      });
+      if (mo + mat + eq > 0) {
+        g.moMatEq = _pngPizza([
+          { rotulo: 'Mão de obra', valor: mo, cor: '#2563eb' },
+          { rotulo: 'Material', valor: mat, cor: COR.verde },
+          { rotulo: 'Equipamento', valor: eq, cor: COR.amarelo }
+        ], fmtNum);
+      }
+    } catch (e) { if (global.console) console.warn('[excel graficos]', e); }
+    return (g.abc || g.curvaS || g.moMatEq) ? g : null;
+  }
+
   // ---------- Construtor PURO do workbook (testável em Node) ----------
   // deps: { num(v), fmtNum(v,casas), empresa }
   function construir(ExcelJS, orc, deps) {
@@ -314,6 +526,33 @@
       });
     }
 
+    // ===================== GRÁFICOS (imagens PNG geradas no browser) =====================
+    // Só embute se deps.graficos existir (browser). Em Node (testes) é undefined → aba não é criada.
+    var G = deps.graficos;
+    if (G && (G.abc || G.curvaS || G.moMatEq)) {
+      var wg2 = wb.addWorksheet("Gráficos", { properties: { tabColor: { argb: 'FFEC4899' } } });
+      wg2.columns = [{ width: 3 }, { width: 130 }];
+      wg2.mergeCells('A1:B1'); wg2.getCell('A1').value = empresa; wg2.getCell('A1').font = { bold: true, size: 16, color: { argb: navy } };
+      wg2.mergeCells('A2:B2'); wg2.getCell('A2').value = 'GRÁFICOS DO ORÇAMENTO — ' + (orc.numero || '') + (orc.nome ? ' · ' + orc.nome : ''); wg2.getCell('A2').font = { bold: true, size: 11, color: { argb: muted } };
+
+      // largura das imagens no canvas (900px). Altura por gráfico difere.
+      var IMG_W = 900, linhaTop = 4; // linha (1-based) onde começa a próxima imagem
+      function b64(dataUrl) { return String(dataUrl).replace(/^data:image\/png;base64,/, ''); }
+      function embutir(titulo, dataUrl, hPx) {
+        if (!dataUrl) return;
+        var tCell = wg2.getCell('B' + linhaTop);
+        tCell.value = titulo; tCell.font = { bold: true, size: 12, color: { argb: navy } };
+        linhaTop += 1;
+        var imgId = wb.addImage({ base64: b64(dataUrl), extension: 'png' });
+        // tl usa índices 0-based (col 1 = coluna B); ~15px por linha p/ reservar espaço vertical.
+        wg2.addImage(imgId, { tl: { col: 1, row: linhaTop - 1 }, ext: { width: IMG_W, height: hPx } });
+        linhaTop += Math.ceil(hPx / 15) + 2;
+      }
+      embutir('Curva ABC (Pareto)', G.abc, 460);
+      embutir('Curva S — avanço físico-financeiro', G.curvaS, 420);
+      embutir('Composição de custo (MO / MAT / EQ)', G.moMatEq, 420);
+    }
+
     return wb;
   }
 
@@ -348,6 +587,8 @@
               insumosMap: insumosMap,
               analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : ""
             };
+            // Gera os PNGs dos gráficos NO BROWSER (canvas). Node nunca passa por aqui.
+            try { deps.graficos = gerarGraficos(orc, deps); } catch (eg) { console.warn('[excel graficos]', eg); deps.graficos = null; }
             var wb = construir(global.ExcelJS, orc, deps);
             wb.xlsx.writeBuffer().then(function (buf) {
               var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });

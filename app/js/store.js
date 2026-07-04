@@ -40,6 +40,28 @@
     }
   };
 
+  /* ---------- Blobs GRANDES (IndexedDB) ----------
+   * A base SINAPI enriquecida (~3 MB) e as bases extras estouram a cota de
+   * ~5 MB do localStorage (QuotaExceededError). Ficam no IndexedDB (sem esse
+   * limite), com espelho EM MEMÓRIA p/ os callers continuarem síncronos.
+   * Migra automaticamente qualquer valor legado que esteja no localStorage.
+   */
+  var BIG = ["sinapi_base", "bases_extras"];
+  var _big = {};        // chave -> valor (espelho em memória)
+  var _bigInit = {};    // empresaId -> Promise (idempotente)
+  function idbHas() { return typeof Idb !== "undefined" && Idb.disponivel(); }
+  function primeUma(empresaId, entidade) {
+    var k = chave(empresaId, entidade), legado = null;
+    try { var raw = localStorage.getItem(k); if (raw) legado = JSON.parse(raw); } catch (e) {}
+    if (legado != null) { // migra legado do localStorage p/ IDB e libera a cota
+      _big[k] = legado;
+      if (idbHas()) Idb.set(k, legado).then(function () { try { localStorage.removeItem(k); } catch (e) {} }).catch(function () {});
+      return Promise.resolve();
+    }
+    if (!idbHas()) return Promise.resolve();
+    return Idb.get(k).then(function (v) { if (v != null) _big[k] = v; }).catch(function () {});
+  }
+
   /* ---------- Migrações versionadas ----------
    * Nunca apaga dados: transforma de uma versão de schema para a próxima.
    */
@@ -65,6 +87,26 @@
   /* ---------- API pública ---------- */
   var Store = {
     adapter: LocalAdapter,
+
+    // Prime o cache em memória dos blobs grandes (chamar no boot antes de ler a base).
+    initBigStore: function (empresaId) {
+      if (_bigInit[empresaId]) return _bigInit[empresaId];
+      _bigInit[empresaId] = Promise.all(BIG.map(function (ent) { return primeUma(empresaId, ent); })).then(function () { return true; });
+      return _bigInit[empresaId];
+    },
+    _bigGet: function (empresaId, entidade) { return _big[chave(empresaId, entidade)]; },
+    _bigSet: function (empresaId, entidade, valor) {
+      var k = chave(empresaId, entidade);
+      _big[k] = valor; // espelho síncrono (vale nesta sessão mesmo se o IDB falhar)
+      if (idbHas()) Idb.set(k, valor).catch(function (e) { console.warn("[store] IDB set falhou (" + entidade + "):", e && e.message); });
+      try { localStorage.removeItem(k); } catch (e) {} // nunca deixa cópia grande no localStorage
+      return true;
+    },
+    _bigDel: function (empresaId, entidade) {
+      var k = chave(empresaId, entidade); delete _big[k];
+      if (idbHas()) Idb.del(k).catch(function () {});
+      try { localStorage.removeItem(k); } catch (e) {}
+    },
 
     usarFirebase: function (firebaseAdapter) {
       // Ponto de extensão para o SaaS. Implementar ler/gravar/apagar async-compat.
@@ -124,18 +166,21 @@
     lerPrefs: function (empresaId) { return this.adapter.ler(empresaId, "prefs", {}); },
     salvarPrefs: function (empresaId, prefs) { this.adapter.gravar(empresaId, "prefs", prefs); },
 
-    // ----- Base SINAPI personalizada da empresa (importada) -----
-    lerBaseSinapi: function (empresaId) { return this.adapter.ler(empresaId, "sinapi_base", null); },
+    // ----- Base SINAPI personalizada da empresa (importada/atualizada) — IndexedDB -----
+    lerBaseSinapi: function (empresaId) { return this._bigGet(empresaId, "sinapi_base") || null; },
     temBaseSinapi: function (empresaId) {
       var b = this.lerBaseSinapi(empresaId);
       return !!(b && b.dados && b.dados.length);
     },
     salvarBaseSinapi: function (empresaId, pacote) {
-      // Base grande pode estourar a cota do localStorage — devolve {ok, erro}.
-      var okGravou = this.adapter.gravar(empresaId, "sinapi_base", pacote);
-      return okGravou ? { ok: true } : { ok: false, erro: "Cota de armazenamento excedida — base mantida só nesta sessão." };
+      // Agora no IndexedDB (sem a cota de ~5MB do localStorage) — não estoura mais.
+      this._bigSet(empresaId, "sinapi_base", pacote);
+      return { ok: true };
     },
-    apagarBaseSinapi: function (empresaId) { this.adapter.apagar(empresaId, "sinapi_base"); },
+    apagarBaseSinapi: function (empresaId) { this._bigDel(empresaId, "sinapi_base"); },
+    // ----- Bases extras (multi-base: SICRO/SETOP/… + própria) — também grandes, IndexedDB -----
+    lerBasesExtras: function (empresaId) { return this._bigGet(empresaId, "bases_extras") || []; },
+    salvarBasesExtras: function (empresaId, payload) { this._bigSet(empresaId, "bases_extras", payload); return true; },
 
     // ----- Saúde / observabilidade -----
     saude: function (empresaId) {
