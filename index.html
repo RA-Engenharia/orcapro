@@ -382,6 +382,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <h2 class="tit">Escolha como quer usar</h2>
     <p class="sub" style="margin:0 auto"><b>Base</b> = orçamento com IA. <b>Plus</b> = Base + gestão de obras completa. Pague com <b>PIX, cartão ou boleto</b>. Explore tudo grátis; salvar e exportar liberam ao ativar.</p>
   </div>
+  <div id="cd-launch" style="display:none;text-align:center;margin:0 auto 22px;max-width:540px;background:#fff7ed;border:1px solid #fed7aa;color:#c2410c;font-weight:800;font-size:15.5px;padding:13px 18px;border-radius:12px"></div>
   <div class="precos">
     <div class="preco">
       <div class="pn">Base — Vitalícia</div><div class="de">de R$ 1.997</div>
@@ -479,5 +480,13 @@ XAB.forEach(function(t,i){
   b.onclick=function(){ xi.src=t[1]; document.querySelectorAll('.xtab').forEach(function(x){x.classList.remove('on')}); b.classList.add('on'); };
   xt.appendChild(b);
 });
+</script>
+<script>
+(function(){
+  var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-launch");
+  if(!el)return;
+  function tick(){ var ms=fim-Date.now(); if(ms<=0){ el.style.display="none"; return; } el.style.display="block"; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento do Plus (R$ 497) termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
+  tick(); setInterval(tick,1000);
+})();
 </script>
 </body></html>
