@@ -155,6 +155,20 @@ footer a{color:#cfe0ee;text-decoration:none}
 .ct-btns{display:flex;gap:12px;flex-wrap:wrap}
 .ct-btns .btn{flex:1;min-width:200px;text-align:center}
 .ct-note{font-size:13px;color:var(--mut);text-align:center;margin-top:14px}
+/* Ícones profissionais (monoline SVG) — mesmo padrão da seção Gestão */
+.ic-badge{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:13px;background:linear-gradient(135deg,#eaf3fb,#dbe9f6);border:1px solid #d3e1f0;color:var(--aco);margin-bottom:6px}
+.ic-badge svg{width:25px;height:25px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.comp-col h4{display:flex;align-items:center;gap:9px}
+.comp-col h4 svg{width:20px;height:20px;flex:0 0 auto;color:var(--mut);stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.comp-col.best h4 svg{color:var(--verde)}
+.ai-ic{width:17px;height:17px;vertical-align:-3px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.garantia .g-ic svg{width:36px;height:36px;color:var(--verde);stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+/* Hero — efeito de fragmentação da imagem no scroll (Canvas 2D, zero dependência) */
+.hero-fx{position:relative;border-radius:14px;overflow:hidden;border:1px solid rgba(255,255,255,.15);box-shadow:0 30px 70px rgba(0,0,0,.5)}
+.hero-fx canvas{display:none;width:100%;height:auto}
+.hero-fx.fx-on canvas{display:block}
+.hero-fx.fx-on .shot{display:none}
+.hero-fx .shot{display:block;width:100%;border:0;border-radius:0;box-shadow:none}
 </style></head>
 <body>
 
@@ -167,7 +181,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <a href="#demo">Testar</a>
     <a href="#passos">Como funciona</a>
     <a href="#excel">O Excel</a>
-    <a href="simulador/" target="_blank">🏗️ Simulador 3D</a>
+    <a href="simulador/" target="_blank"><svg class="ai-ic" viewBox="0 0 24 24" style="color:currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg> Simulador 3D</a>
     <a href="#gestao">Gestão</a>
     <a href="#precos">Planos</a>
     <a class="btn g cta" data-buy="vitalicia" href="#precos">Comprar</a>
@@ -179,7 +193,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <div class="eyebrow">Orçamento com IA + Gestão de Obras</div>
     <h1>Você descreve a obra.<br>A <span>IA</span> monta o orçamento.</h1>
     <p class="lead">SINAPI, SICRO, SUDECAP, SEINFRA e SETOP — com <b>BDI do TCU/DNIT</b>, cronograma de Gantt, <b>Excel profissional</b> e anexo para <b>laudo pericial</b>. E agora com <b>gestão de obras completa</b>: obras, contratos, medições, financeiro, compras, estoque e equipe. Tudo no seu PC.</p>
-    <p style="color:#9be7af;font-weight:700;margin-top:14px;font-size:15.5px">🧠 Um <b>agente de IA</b> funciona como o cérebro do seu orçamento — entende o escopo e monta tudo pra você.</p>
+    <p style="color:#9be7af;font-weight:700;margin-top:14px;font-size:15.5px"><svg class="ai-ic" viewBox="0 0 24 24" style="color:#9be7af"><rect x="5" y="5" width="14" height="14" rx="2"/><rect x="9" y="9" width="6" height="6" rx="1"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg> Um <b>agente de IA</b> funciona como o cérebro do seu orçamento — entende o escopo e monta tudo pra você.</p>
     <div class="cta-row">
       <a class="btn g" href="#demo">▶ Testar agora (grátis)</a>
       <a class="btn o" data-buy="vitalicia" href="#precos">Ver planos</a>
@@ -189,7 +203,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     </div>
     <p class="mini">✅ Explore tudo grátis · salva e exporta só com a licença · sem cartão · roda offline</p>
   </div>
-  <div><img class="shot" src="prints/demo-graficos.png" alt="OrçaPRO — gráficos do orçamento"></div>
+  <div><div class="hero-fx" id="heroFx"><canvas></canvas><img class="shot" src="prints/demo-graficos.png" alt="OrçaPRO — gráficos do orçamento do sistema"></div></div>
 </div></section>
 
 <div class="bases"><div class="wrap">Casa cada serviço com a <b>base oficial certa</b> — e aplica o <b>BDI</b> automaticamente. 22.000+ itens de preço prontos.</div></div>
@@ -273,15 +287,15 @@ footer a{color:#cfe0ee;text-decoration:none}
   <div style="text-align:center;margin-bottom:34px"><div class="eyebrow">Por que vale a pena</div><h2 class="tit">OrçaPRO vs as alternativas</h2></div>
   <div class="comp">
     <div class="comp-col">
-      <h4>📝 Planilha manual</h4>
+      <h4><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h8M8 9h2"/></svg>Planilha manual</h4>
       <ul><li class="no">Horas montando tudo do zero</li><li class="no">Caçar código SINAPI na mão</li><li class="no">BDI e cronograma manuais</li><li class="no">Erros e retrabalho constantes</li></ul>
     </div>
     <div class="comp-col">
-      <h4>💸 Software de assinatura</h4>
+      <h4><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/><path d="M6 15h4"/></svg>Software de assinatura</h4>
       <ul><li class="no">R$150 a R$300 <b>todo mês</b></li><li class="no">Preso à mensalidade pra sempre</li><li class="meh">Curva de aprendizado longa</li><li class="meh">Seus dados na nuvem de terceiros</li></ul>
     </div>
     <div class="comp-col best">
-      <h4>🟢 OrçaPRO</h4>
+      <h4><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>OrçaPRO</h4>
       <ul><li class="yes">Orçamento em minutos, com IA</li><li class="yes">Bases oficiais já casadas</li><li class="yes">BDI, cronograma e Excel automáticos</li><li class="yes">Gestão de obras: contratos, medições, financeiro…</li><li class="yes"><b>Pague uma vez (R$297)</b> — seu pra sempre</li></ul>
     </div>
   </div>
@@ -294,12 +308,12 @@ footer a{color:#cfe0ee;text-decoration:none}
     <p class="sub" style="margin:0 auto">Se você lida com custo de obra, o OrçaPRO economiza horas e dá embasamento técnico.</p>
   </div>
   <div class="cards3">
-    <div class="card"><div class="ic">📐</div><h4>Engenheiros e arquitetos</h4><p>Monte orçamentos de obras residenciais, comerciais e reformas em minutos, com base oficial e BDI correto.</p></div>
-    <div class="card"><div class="ic">⚖️</div><h4>Peritos de engenharia</h4><p>Gere o <b>anexo de orçamento</b> para laudos de vícios construtivos, com metodologia SINAPI + ABNT e responsável técnico.</p></div>
-    <div class="card"><div class="ic">🏛️</div><h4>Quem participa de licitações</h4><p>SINAPI, SICRO e BDI do TCU/DNIT prontos — planilha sintética e analítica no padrão dos órgãos públicos.</p></div>
-    <div class="card"><div class="ic">🏗️</div><h4>Construtoras de pequeno/médio porte</h4><p>Padronize seus orçamentos, controle margem (Custo × Venda) e gere cronograma e Curva S da obra.</p></div>
-    <div class="card"><div class="ic">🧮</div><h4>Orçamentistas</h4><p>Pare de montar planilha do zero. Reaproveite bases, escopo inteligente e exportações automáticas.</p></div>
-    <div class="card"><div class="ic">🧑‍🏫</div><h4>Estudantes e autônomos</h4><p>Aprenda e entregue orçamento profissional sem precisar de software caro nem assinatura cara.</p></div>
+    <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></div><h4>Engenheiros e arquitetos</h4><p>Monte orçamentos de obras residenciais, comerciais e reformas em minutos, com base oficial e BDI correto.</p></div>
+    <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><path d="m8 11 2 2 4-4"/><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div><h4>Peritos de engenharia</h4><p>Gere o <b>anexo de orçamento</b> para laudos de vícios construtivos, com metodologia SINAPI + ABNT e responsável técnico.</p></div>
+    <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><line x1="3" y1="22" x2="21" y2="22"/><line x1="6" y1="18" x2="6" y2="11"/><line x1="10" y1="18" x2="10" y2="11"/><line x1="14" y1="18" x2="14" y2="11"/><line x1="18" y1="18" x2="18" y2="11"/><polygon points="12 2 20 7 4 7"/></svg></div><h4>Quem participa de licitações</h4><p>SINAPI, SICRO e BDI do TCU/DNIT prontos — planilha sintética e analítica no padrão dos órgãos públicos.</p></div>
+    <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4M10 10h4M10 14h4M10 18h4"/></svg></div><h4>Construtoras de pequeno/médio porte</h4><p>Padronize seus orçamentos, controle margem (Custo × Venda) e gere cronograma e Curva S da obra.</p></div>
+    <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><path d="M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg></div><h4>Orçamentistas</h4><p>Pare de montar planilha do zero. Reaproveite bases, escopo inteligente e exportações automáticas.</p></div>
+    <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><path d="M21.42 10.92a1 1 0 0 0-.02-1.84L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.83l8.57 3.91a2 2 0 0 0 1.66 0z"/><path d="M22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg></div><h4>Estudantes e autônomos</h4><p>Aprenda e entregue orçamento profissional sem precisar de software caro nem assinatura cara.</p></div>
   </div>
 </div></section>
 
@@ -407,7 +421,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     </div>
   </div>
   <div class="garantia">
-    <div class="g-ic">🛡️</div>
+    <div class="g-ic"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></div>
     <div><b>Garantia de 7 dias.</b> Você ainda <b>explora tudo grátis</b> antes de pagar. Comprou e não era o que esperava? Devolvo o seu dinheiro. <b>Risco zero.</b></div>
   </div>
   <div class="passos3"><div class="p3"><b>1.</b> Pague por PIX, cartão ou boleto</div><div class="p3"><b>2.</b> Receba a chave + instalador na hora</div><div class="p3"><b>3.</b> Ative e comece a orçar</div></div>
@@ -487,6 +501,59 @@ XAB.forEach(function(t,i){
   var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-launch"), pv=document.getElementById("plus-preco");
   function tick(){ var ms=fim-Date.now(); if(pv)pv.textContent = ms<=0 ? "R$ 697" : "R$ 497"; if(!el)return; if(ms<=0){ el.style.display="none"; return; } el.style.display="block"; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento do Plus (R$ 497) termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
   tick(); setInterval(tick,1000);
+})();
+</script>
+<script>
+/* ===== HERO: fragmentação da imagem no scroll — Canvas 2D, zero dependência =====
+   Bloco 100% isolado. Para REMOVER o efeito: apague este <script>, o bloco CSS
+   ".hero-fx" e volte o container #heroFx para <img class="shot" ...>. Nada mais depende disto. */
+(function(){
+  var C={ COLUNAS:9, LINHAS:6, DISPERSAO_MAX:240, ROTACAO_MAX:60, REMONTAR:true, REDUZIR_MOVIMENTO:true };
+  var box=document.getElementById('heroFx'); if(!box) return;
+  var img=box.querySelector('.shot'), cv=box.querySelector('canvas');
+  if(!cv||!cv.getContext) return;                                                   // sem canvas → img estática
+  if(C.REDUZIR_MOVIMENTO && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; // acessibilidade
+  var mob = window.matchMedia && matchMedia('(max-width:600px)').matches;
+  var cols=mob?6:C.COLUNAS, rows=mob?4:C.LINHAS, disp=mob?90:C.DISPERSAO_MAX;
+  var ctx=cv.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2);
+  var tiles=[], W=0, H=0, nW=0, nH=0, ready=false;
+  function rnd(i){ var x=Math.sin(i*99.13+0.7)*43758.5453; return x-Math.floor(x); } // pseudo-aleatório por tile (seed)
+  function build(){
+    var r=box.getBoundingClientRect(); if(r.width<10 || !img.naturalWidth) return;
+    nW=img.naturalWidth; nH=img.naturalHeight; W=r.width; H=Math.round(W*nH/nW);
+    cv.style.height=H+'px'; cv.width=Math.round(W*dpr); cv.height=Math.round(H*dpr);
+    tiles=[];
+    for(var y=0;y<rows;y++) for(var x=0;x<cols;x++){
+      var i=y*cols+x, a=rnd(i)*Math.PI*2, d=0.35+rnd(i+7)*0.65;
+      tiles.push({ x:x, y:y, dx:Math.cos(a)*d, dy:Math.sin(a)*d-0.35, rot:(rnd(i+3)-0.5)*2*C.ROTACAO_MAX*Math.PI/180, del:rnd(i+11)*0.35 });
+    }
+    ready=true; draw();
+  }
+  function prog(){                                                                  // 0 = imagem inteira · 1 = totalmente explodida
+    var r=box.getBoundingClientRect(), p=-r.top/(r.height*0.55); p=p<0?0:(p>1?1:p);
+    if(!C.REMONTAR){ box._mx=Math.max(box._mx||0,p); return box._mx; }
+    return p;
+  }
+  function draw(){
+    if(!ready) return;
+    var p=prog();
+    ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+    var tw=nW/cols, th=nH/rows, dw=W/cols, dh=H/rows;
+    for(var k=0;k<tiles.length;k++){
+      var t=tiles[k], tp=(p-t.del)/((1-t.del)||1); tp=tp<0?0:(tp>1?1:tp);
+      var e=tp*tp, op=1-e; if(op<=0.02) continue;                                    // some quando quase transparente
+      ctx.save(); ctx.globalAlpha=op;
+      ctx.translate(t.x*dw+dw/2 + t.dx*disp*e, t.y*dh+dh/2 + t.dy*disp*e); ctx.rotate(t.rot*e);
+      ctx.drawImage(img, t.x*tw,t.y*th,tw,th, -dw/2,-dh/2, dw+0.6,dh+0.6);           // +0.6 evita fresta entre peças
+      ctx.restore();
+    }
+  }
+  var raf=0; function onScroll(){ if(raf) return; raf=requestAnimationFrame(function(){ raf=0; draw(); }); }
+  function listen(){ addEventListener('scroll',onScroll,{passive:true}); addEventListener('resize',build); }
+  function ativar(){ if(ready){ box.classList.add('fx-on'); listen(); } }  // só troca img→canvas se o canvas foi desenhado
+  function go(){ build(); if(ready) ativar(); else setTimeout(function(){ build(); ativar(); }, 80); } // senão mantém a imagem estática (fallback)
+  if(img.complete && img.naturalWidth) go();
+  else { img.addEventListener('load',go); img.addEventListener('error',function(){}); } // erro no carregamento → mantém a imagem estática (fallback)
 })();
 </script>
 </body></html>
