@@ -1155,20 +1155,46 @@ case "nova-folha": return this.novoFolha();
         });
       var contratado = Util.num(obra.valor);
       var pctExec = obra.pctExecutado != null ? Util.num(obra.pctExecutado) : Math.min(100, Math.round(acum * 10) / 10);
+      // Curva S (planejado × realizado) + cronograma — do orçamento vinculado à obra
+      var curvaS = null, cronograma = [];
+      try {
+        var orc = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+        if (orc && orc.etapas && orc.etapas.length && typeof Orcamento !== "undefined" && Orcamento.cronograma) {
+          var cr = Orcamento.cronograma(orc), nM = cr.meses || 6, i;
+          var labels = []; for (i = 0; i < nM; i++) labels.push("Mês " + (i + 1));
+          var realizado = []; for (i = 0; i < nM; i++) realizado.push(0);
+          var iniMs = obra.inicio ? new Date(obra.inicio + "T00:00:00").getTime() : Date.now();
+          medicoes.slice().sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); }).forEach(function (m) {
+            var mi = 0; if (m.data) { var d = new Date(m.data + "T00:00:00").getTime(); mi = Math.max(0, Math.min(nM - 1, Math.floor((d - iniMs) / (30.44 * 86400000)))); }
+            for (var k = mi; k < nM; k++) realizado[k] = m.acumuladoPct;
+          });
+          curvaS = { labels: labels, planejado: (cr.acumPct || []).slice(), realizado: realizado };
+          if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
+            var est = Cronograma.estimar(orc), totC = 0, accW = 0;
+            (est.etapas || []).forEach(function (e) { totC += Util.num(e.custo); }); totC = totC || 1;
+            var addDias = function (ini, wd) { if (!ini) return ""; var d = new Date(ini + "T00:00:00"); d.setDate(d.getDate() + Math.round(Util.num(wd) * 7 / 5)); return d.toISOString().slice(0, 10); };
+            cronograma = (est.etapas || []).map(function (e) {
+              var w0 = accW / totC, w1 = (accW + Util.num(e.custo)) / totC; accW += Util.num(e.custo);
+              var pe = pctExec / 100, p = pe <= w0 ? 0 : (pe >= w1 ? 100 : (pe - w0) / ((w1 - w0) || 1) * 100);
+              return { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim), pct: Math.round(p) };
+            });
+          }
+        }
+      } catch (e) { curvaS = null; cronograma = []; }
       var snapshot = {
         obraId: id, nome: obra.nome || "", cliente: obra.clienteNome || "", local: obra.local || "",
         tipo: rot(P.obraTipo, obra.tipo) || "", fase: rot(P.obraFase, obra.fase) || "", status: obra.status || "",
         inicio: obra.inicio || "", termino: obra.termino || "",
         areaConstruida: Util.num(obra.areaConstruida), areaTerreno: Util.num(obra.areaTerreno),
         contratado: contratado, pctExecutado: pctExec, medidoAcum: medidoAcum, aFaturar: Math.max(0, contratado - medidoAcum),
-        curvaS: null, cronograma: [], medicoes: medicoes, rdos: rdos
+        curvaS: curvaS, cronograma: cronograma, medicoes: medicoes, rdos: rdos
       };
       var userSug = obra.portalUser || ((obra.clienteNome || obra.nome || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").slice(0, 16) || "cliente");
       var senhaSug = obra.portalSenha || Math.random().toString(36).slice(2, 8);
       var corpo =
         '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO). Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
         '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
-        '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>.</div>" +
+        '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
         '<div id="portal-result" style="margin-top:12px"></div>';
       UI.modal("📱 Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
