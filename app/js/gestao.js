@@ -366,7 +366,8 @@
       var obras = lista("obras");
       var rec = fs.filter(function (f) { return f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var desp = fs.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Saldo: <b style="color:' + (rec - desp >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(rec - desp) + "</b></span>";
+      var extra = '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📄 Lançar de documento (IA)</button>' +
+        '<span class="muted" style="margin-right:12px;align-self:center">Saldo: <b style="color:' + (rec - desp >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(rec - desp) + "</b></span>";
       var html = this._head(svg("financeiro") + "Financeiro", "novo-lancamento", "Novo lançamento", extra);
       if (!fs.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
@@ -1075,6 +1076,7 @@ renderRelatorios: function () {
       switch (gacao) {
         case "upsell-plus": return this._upsell();
         case "portal-obra": return this.portalObra(id);
+        case "doc-financeiro": return this.lancarDocumento();
         case "nova-obra": return this.novoObra();
         case "nova-cliente": return this.novoCliente();
         case "novo-contrato": return this.novoContrato();
@@ -1223,6 +1225,97 @@ case "nova-folha": return this.novoFolha();
             };
           }).catch(function () { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>'; });
       }
+    },
+
+    // ---------- Lançar de documento (IA lê NF/fatura/boleto) ----------
+    lancarDocumento: function () {
+      if (this._bloqueado()) return;
+      var self = this;
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? String(CONFIG.iaBackend).replace(/\/$/, "") : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!chave) { UI.toast("Ative sua licença pra usar a leitura por IA.", "erro"); return; }
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".xml,.pdf,image/*"; inp.style.display = "none";
+      inp.onchange = function () {
+        var file = inp.files && inp.files[0]; if (!file) return;
+        var ext = String(file.name || "").toLowerCase().split(".").pop();
+        if (ext === "xml") {
+          var fr = new FileReader();
+          fr.onload = function () { try { var dados = self._parseNfeXml(fr.result); if (!dados) { UI.toast("Não reconheci o XML como NF-e.", "erro"); return; } self._docParaLancamento(dados, "XML da NF-e"); } catch (e) { UI.toast("Falha ao ler o XML: " + e.message, "erro"); } };
+          fr.readAsText(file);
+        } else if (ext === "pdf") {
+          UI.toast("Lendo o PDF…", "ok");
+          self._pdfTexto(file, function (texto) {
+            if (!texto || texto.trim().length < 20) { UI.toast("PDF sem texto legível — tire uma foto/print e envie como imagem.", "erro"); return; }
+            self._enviarDoc(back, chave, { tipo: "texto", conteudo: texto }, "PDF");
+          });
+        } else {
+          var fr2 = new FileReader();
+          fr2.onload = function () { self._enviarDoc(back, chave, { tipo: "imagem", conteudo: fr2.result }, "imagem"); };
+          fr2.readAsDataURL(file);
+        }
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { inp.remove(); }, 60000);
+    },
+    _enviarDoc: function (back, chave, payload, origem) {
+      var self = this;
+      UI.toast("🤖 A IA está lendo o documento…", "ok");
+      fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(payload) })
+        .then(function (r) { return r.json(); }).then(function (j) {
+          if (!j.ok) { UI.toast(j.error || "A IA não conseguiu ler o documento.", "erro"); return; }
+          self._docParaLancamento(j.dados, origem);
+        }).catch(function () { UI.toast("Sem conexão com a IA. Tente de novo.", "erro"); });
+    },
+    _parseNfeXml: function (xml) {
+      var doc = new DOMParser().parseFromString(String(xml), "text/xml");
+      function sub(parent, tag) { if (!parent) return ""; var e = parent.getElementsByTagName(tag)[0]; return e ? (e.textContent || "").trim() : ""; }
+      function g(tag) { return sub(doc, tag); }
+      var emit = doc.getElementsByTagName("emit")[0];
+      var forn = { nome: sub(emit, "xNome"), cnpj: sub(emit, "CNPJ") || sub(emit, "CPF"), cidade: sub(emit, "xMun"), uf: sub(emit, "UF") };
+      if (!forn.nome) return null;
+      var valor = parseFloat(String(g("vNF")).replace(",", ".")) || 0;
+      var dh = g("dhEmi") || g("dEmi"); var emissao = dh ? dh.slice(0, 10) : "";
+      var dup = doc.getElementsByTagName("dup")[0]; var vencimento = dup ? sub(dup, "dVenc") : "";
+      var numero = g("nNF");
+      var itens = [], dets = doc.getElementsByTagName("det");
+      for (var i = 0; i < dets.length && i < 60; i++) { var prod = dets[i].getElementsByTagName("prod")[0]; if (prod) itens.push({ descricao: sub(prod, "xProd"), quantidade: parseFloat(sub(prod, "qCom")) || 0, unidade: sub(prod, "uCom"), valor: parseFloat(sub(prod, "vProd")) || 0 }); }
+      return { tipoLancamento: "despesa", fornecedor: forn, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
+    },
+    _docParaLancamento: function (dados, origem) {
+      var fn = dados.fornecedor || {}, ehReceita = dados.tipoLancamento === "receita", msgCad = "";
+      if (fn.nome) {
+        var entidade = ehReceita ? "clientes" : "fornecedores", docLimpo = String(fn.cnpj || "").replace(/\D/g, "");
+        var existe = lista(entidade).filter(function (x) { return (docLimpo && x.doc && String(x.doc).replace(/\D/g, "") === docLimpo) || (x.nome || "").toLowerCase() === String(fn.nome).toLowerCase(); })[0];
+        if (!existe) {
+          Store.salvar(eid(), entidade, { nome: fn.nome, doc: fn.cnpj || "", cidade: fn.cidade || "", uf: fn.uf || "", tipo: docLimpo.length > 11 ? "PJ" : "PF", status: "ativo", origem: "documento-ia" });
+          msgCad = (ehReceita ? "Cliente" : "Fornecedor") + " \"" + fn.nome + "\" cadastrado. ";
+        }
+      }
+      this.formFinanceiro({
+        tipo: ehReceita ? "receita" : "despesa",
+        data: dados.vencimento || dados.emissao || new Date().toISOString().slice(0, 10),
+        valor: dados.valor || 0, categoria: dados.categoria || "material",
+        desc: dados.descricao || ("Documento — " + (fn.nome || "")), fornecedor: fn.nome || "", status: "pendente"
+      });
+      UI.toast("🤖 " + msgCad + "Lançamento preenchido pela IA (confiança " + Math.round((dados.confianca || 0) * 100) + "%). Confira e salve.", "ok");
+    },
+    _pdfTexto: function (file, cb) {
+      function extrair() {
+        var fr = new FileReader();
+        fr.onload = function () {
+          window.pdfjsLib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
+            var texto = "", n = Math.min(pdf.numPages, 3), chain = Promise.resolve();
+            for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
+            chain.then(function () { cb(texto); });
+          }).catch(function () { cb(""); });
+        };
+        fr.readAsArrayBuffer(file);
+      }
+      if (window.pdfjsLib) { extrair(); return; }
+      var s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+      s.onload = function () { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } catch (e) {} extrair(); };
+      s.onerror = function () { UI.toast("Não carregou o leitor de PDF. Envie como imagem.", "erro"); };
+      document.head.appendChild(s);
     },
 
     abrir: function (entidade, id) {
