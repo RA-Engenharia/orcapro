@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.21",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.21/OrcaPRO-IA-update-v1.1.21.zip",
-  "notas": "Celular e tablet organizados: menu de módulos (☰) e menu de conta (⚙) mais limpos. Tela mais leve em tudo.",
+  "versao": "1.1.22",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.22/OrcaPRO-IA-update-v1.1.22.zip",
+  "notas": "Sincronização na nuvem corrigida e testada de ponta a ponta (seus dados em todos os aparelhos).",
   "obrigatoria": false
 }

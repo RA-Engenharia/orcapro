@@ -64,7 +64,16 @@
       if (!email || !senha) return Promise.reject(new Error("credenciais vazias"));
       return this.init().then(function () {
         return self.auth.signInWithEmailAndPassword(email, senha).catch(function (e) {
-          if (e && e.code === "auth/user-not-found") return self.auth.createUserWithEmailAndPassword(email, senha);
+          var code = e && e.code;
+          // conta ainda não existe na nuvem → cria. O Firebase novo (proteção de enumeração)
+          // devolve "invalid-login-credentials"/"invalid-credential" tanto p/ e-mail inexistente
+          // quanto p/ senha errada; então tentamos criar e, se o e-mail já existe, era senha errada.
+          if (code === "auth/user-not-found" || code === "auth/invalid-login-credentials" || code === "auth/invalid-credential") {
+            return self.auth.createUserWithEmailAndPassword(email, senha).catch(function (e2) {
+              if (e2 && e2.code === "auth/email-already-in-use") { var er = new Error("Senha da nuvem diferente da do app."); er.code = "auth/wrong-password"; throw er; }
+              throw e2;
+            });
+          }
           throw e;
         });
       }).then(function (cred) {
