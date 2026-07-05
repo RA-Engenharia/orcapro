@@ -26,9 +26,18 @@ obra etapa por etapa — tudo visualizado em **3D** e dentro do prazo e do orça
    alvenaria → laje → cobertura → instalações → reboco → revestimento → esquadrias →
    forro → pintura → entrega). O jogo verifica equipe, ferramentas, materiais e projetos.
 
-Conclua a etapa final (**Entrega**) dentro do prazo para receber o valor de venda,
-ganhar até **3 estrelas** e liberar a próxima fase. O caixa da construtora é acumulado
-entre as fases.
+Conclua a etapa final (**Entrega**) dentro do prazo, ganhe até **3 estrelas** e
+libere a próxima fase. O caixa da construtora é acumulado entre as fases.
+
+## Realismo da simulação
+
+- **Mão na massa**: nas etapas de alvenaria você assenta os blocos tocando na obra, fiada por fiada.
+- **Clima e chuva**: cada fase tem um clima; a chuva pode parar o serviço e atrasar (visual de chuva em 3D).
+- **Cura do concreto**: após concretar (fundação, estrutura, laje) é preciso aguardar a cura antes de seguir.
+- **Segurança (NR-18)**: invista em EPI, guarda-corpo, tela, treinamento etc. para reduzir acidentes e passar nas fiscalizações — conta pontos nas estrelas.
+- **Imprevistos**: rocha na fundação, atraso de fornecedor, furto (evitado com vigia), paralisação, vistoria, além de eventos bons (produtividade, bônus do cliente).
+- **Economia (SINAPI/BDI)**: contrato = custo estimado + **BDI**; você recebe **medições** a cada etapa (com **imposto** retido); dá pra tomar **financiamento** (com juros na entrega).
+- **Som e efeitos**: áudio sintetizado (betoneira, martelo, dinheiro, chuva, sucesso), partículas de poeira e operários animados (martelando e empurrando carrinho). Botão 🔊/🔇 no topo.
 
 ## Fases
 

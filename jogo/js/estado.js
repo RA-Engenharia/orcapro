@@ -22,7 +22,18 @@
       etapasConcluidas: [],  // ids
       etapaAtual: null,      // id da etapa em execução (animação)
       dia: 0,                // dias decorridos
-      gastoTotal: 0          // controle interno
+      gastoTotal: 0,         // controle interno
+      // --- segurança (NR-18) ---
+      segurancaItens: [],    // ids de itens de segurança adquiridos
+      // --- simulação ---
+      curaAte: 0,            // dia até o qual o concreto ainda está curando
+      tempoChuva: false,     // está chovendo agora (visual)
+      eventosVistos: [],     // ids de eventos já ocorridos nesta obra
+      // --- economia ---
+      recebido: 0,           // total já recebido em medições
+      imposto: 0,            // total de impostos pagos
+      emprestimo: 0,         // valor tomado emprestado (a devolver c/ juros)
+      emprestimoJuros: 0     // juros a pagar na entrega
     };
   }
 
@@ -87,7 +98,17 @@
     qtdEquipe: function (id) { return S.obra.equipe[id] || 0; },
     estoque: function (id) { return S.obra.insumos[id] || 0; },
     temCanteiro: function (id) { return S.obra.canteiro.indexOf(id) >= 0; },
-    etapaFeita: function (id) { return S.obra.etapasConcluidas.indexOf(id) >= 0; }
+    etapaFeita: function (id) { return S.obra.etapasConcluidas.indexOf(id) >= 0; },
+    temSeguranca: function (id) { return S.obra.segurancaItens.indexOf(id) >= 0; },
+
+    // pontuação de segurança (0-100) a partir dos itens adquiridos
+    nivelSeguranca: function () {
+      var total = 0;
+      S.obra.segurancaItens.forEach(function (id) {
+        var it = window.DADOS.seguranca(id); if (it) total += it.seg;
+      });
+      return Math.min(100, total);
+    }
   };
 
   global.ESTADO = ESTADO;

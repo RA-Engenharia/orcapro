@@ -139,14 +139,26 @@
     if (!n) return;
     var prog = progresso();
     var atraso = s.obra.dia > n.prazo;
+    var clima = D.CLIMAS[n.clima];
+    var climaIco = s.obra.tempoChuva ? '🌧️' : clima.emoji;
+    var seg = E.nivelSeguranca();
+    var mudo = global.AUDIO && global.AUDIO.mudo();
     $('#hud').innerHTML =
       '<button class="bt mini" id="hud-menu">‹</button>' +
       '<div class="hud-bloco"><span class="hl">' + n.icone + ' ' + n.nome + '</span></div>' +
       '<div class="hud-bloco"><small>Caixa</small><b class="' + (s.caixa < 0 ? 'neg' : '') + '">' + rs(s.caixa) + '</b></div>' +
-      '<div class="hud-bloco"><small>Prazo</small><b class="' + (atraso ? 'neg' : '') + '">' + s.obra.dia + ' / ' + n.prazo + ' dias</b></div>' +
+      '<div class="hud-bloco"><small>Prazo</small><b class="' + (atraso ? 'neg' : '') + '">' + s.obra.dia + ' / ' + n.prazo + ' d</b></div>' +
       '<div class="hud-bloco hud-prog"><small>Obra</small>' +
-        '<div class="barra"><i style="width:' + prog + '%"></i></div><b>' + prog + '%</b></div>';
+        '<div class="barra"><i style="width:' + prog + '%"></i></div><b>' + prog + '%</b></div>' +
+      '<div class="hud-bloco hud-mini2" title="Clima: ' + clima.nome + '"><small>Clima</small><b>' + climaIco + '</b></div>' +
+      '<div class="hud-bloco hud-mini2" title="Segurança NR-18"><small>Seg</small><b class="' + (seg < 40 ? 'neg' : '') + '">' + seg + '%</b></div>' +
+      '<button class="bt mini" id="hud-som">' + (mudo ? '🔇' : '🔊') + '</button>';
     $('#hud-menu').onclick = telaMenu;
+    $('#hud-som').onclick = function () {
+      var m = global.AUDIO.toggleMudo();
+      if (!m && s.obra.tempoChuva) global.AUDIO.chuva(true);
+      renderHUD();
+    };
   }
 
   function renderDock() {
@@ -155,8 +167,9 @@
       ['lote', '📍', 'Lote'],
       ['canteiro', '🚧', 'Canteiro'],
       ['equipe', '👷', 'Equipe'],
-      ['ferramentas', '🛠️', 'Ferramentas'],
+      ['ferramentas', '🛠️', 'Ferram.'],
       ['insumos', '🧱', 'Materiais'],
+      ['seguranca', '🦺', 'Segurança'],
       ['projetos', '📐', 'Projetos'],
       ['obra', '🏗️', 'Executar']
     ];
@@ -165,7 +178,7 @@
         '<span class="dl">' + i[2] + '</span></button>';
     }).join('');
     document.querySelectorAll('.dock-bt').forEach(function (b) {
-      b.onclick = function () { abrirPainel(b.dataset.p); };
+      b.onclick = function () { if (global.AUDIO) { global.AUDIO.ativar(); global.AUDIO.clique(); } abrirPainel(b.dataset.p); };
     });
   }
 
@@ -202,7 +215,14 @@
   function atualizarCena(emObra) {
     if (!cena || !cena.ok) return;
     if (!nivelAtual()) return;
-    cena.construir(estagiosConcluidos(), cfgCena(emObra));
+    var cfg = cfgCena(emObra);
+    cena.construir(estagiosConcluidos(), cfg);
+    cena.setChuva(E.get().obra.tempoChuva);
+    // som ambiente da betoneira
+    if (global.AUDIO) {
+      var temBet = cfg.ferramentas.indexOf('betoneira') >= 0 && cfg.canteiro.length > 0;
+      global.AUDIO.betoneira(temBet && !global.AUDIO.mudo());
+    }
   }
 
   // ======== PAINÉIS ===========================================
@@ -214,7 +234,8 @@
     var titulos = {
       briefing: '📋 Resumo da obra', lote: '📍 Comprar o lote', canteiro: '🚧 Montar o canteiro',
       equipe: '👷 Contratar equipe', ferramentas: '🛠️ Ferramentas e equipamentos',
-      insumos: '🧱 Comprar materiais', projetos: '📐 Projetos técnicos', obra: '🏗️ Executar etapas'
+      insumos: '🧱 Comprar materiais', seguranca: '🦺 Segurança (NR-18)',
+      projetos: '📐 Projetos técnicos', obra: '🏗️ Executar etapas'
     };
     var head = el('<div class="painel-head"><b>' + (titulos[p] || '') + '</b>' +
       '<div class="painel-caixa">💰 ' + rs(E.get().caixa) + '</div>' +
@@ -225,7 +246,8 @@
     $('#p-fechar').onclick = fecharPainel;
     ({
       briefing: pBriefing, lote: pLote, canteiro: pCanteiro, equipe: pEquipe,
-      ferramentas: pFerramentas, insumos: pInsumos, projetos: pProjetos, obra: pObra
+      ferramentas: pFerramentas, insumos: pInsumos, seguranca: pSeguranca,
+      projetos: pProjetos, obra: pObra
     })[p](corpo);
   }
   function fecharPainel() { $('#painel').classList.add('oculto'); painelAtual = null; }
@@ -234,23 +256,54 @@
   // ---- Briefing ----
   function pBriefing(c) {
     var n = nivelAtual(), s = E.get();
+    var clima = D.CLIMAS[n.clima];
+    var custoEst = Math.round(n.orcamento / (1 + n.bdi));
     var projs = n.projetosObrig.map(function (id) {
       var p = D.projeto(id);
       return '<span class="tag ' + (E.temProjeto(id) ? 'ok' : '') + '">' + p.emoji + ' ' + p.nome + '</span>';
     }).join('');
+    var areaC = areaConstruida();
     c.innerHTML =
       '<div class="info-box">' + n.icone + ' <b>' + n.nome + '</b><br><small>' + n.desc + '</small></div>' +
       '<div class="grade2">' +
         '<div class="kpi"><small>Tipo</small><b>' + n.tipo + '</b></div>' +
         '<div class="kpi"><small>Pavimentos</small><b>' + n.pavimentos + '</b></div>' +
         '<div class="kpi"><small>Prazo</small><b>' + n.prazo + ' dias</b></div>' +
-        '<div class="kpi"><small>Valor de venda</small><b>' + rs(n.orcamento) + '</b></div>' +
+        '<div class="kpi"><small>Clima</small><b>' + clima.emoji + ' ' + clima.nome + '</b></div>' +
         '<div class="kpi"><small>Lote exigido</small><b>' + n.loteMin + '–' + n.loteMax + ' m²</b></div>' +
-        '<div class="kpi"><small>Dia atual</small><b>' + s.obra.dia + '</b></div>' +
+        '<div class="kpi"><small>Área construída</small><b>' + (areaC ? areaC + ' m²' : '—') + '</b></div>' +
       '</div>' +
+      '<h4>💰 Contrato e economia</h4>' +
+      '<div class="fin-box">' +
+        '<div><span>Custo estimado (SINAPI)</span><b>' + rs(custoEst) + '</b></div>' +
+        '<div><span>BDI aplicado</span><b>' + (n.bdi * 100).toFixed(2) + '%</b></div>' +
+        '<div><span>Valor do contrato</span><b class="pos">' + rs(n.orcamento) + '</b></div>' +
+        '<div><span>Impostos s/ medição</span><b>' + (D.IMPOSTO * 100).toFixed(2) + '%</b></div>' +
+        '<div class="fin-sep"><span>Já recebido (medições)</span><b class="pos">' + rs(s.obra.recebido) + '</b></div>' +
+        (s.obra.emprestimo ? '<div><span>Financiamento a pagar</span><b class="neg">' + rs(s.obra.emprestimo + s.obra.emprestimoJuros) + '</b></div>' : '') +
+      '</div>' +
+      (s.obra.etapasConcluidas.length === 0 && !s.obra.emprestimo ?
+        '<button class="bt azul" id="bt-financiar" style="width:100%;margin-top:8px">🏦 Tomar financiamento (' +
+        rs(Math.round(n.orcamento * 0.3)) + ' agora, +15% na entrega)</button>' : '') +
       '<h4>Projetos obrigatórios para a entrega</h4><div class="tags">' + projs + '</div>' +
-      '<div class="dica">💡 Sequência recomendada: <b>Lote → Projetos → Canteiro → Equipe → Ferramentas → Materiais → Executar etapas</b>. ' +
-      'Você só recebe o valor de venda ao concluir a etapa final (Entrega).</div>';
+      '<div class="dica">💡 Você recebe uma <b>medição</b> a cada etapa concluída (proporcional ao serviço), já descontado o imposto. ' +
+      'Cuidado com <b>chuva</b>, <b>cura do concreto</b>, <b>segurança</b> e <b>imprevistos</b>!</div>';
+    if ($('#bt-financiar')) $('#bt-financiar').onclick = function () {
+      var v = Math.round(n.orcamento * 0.3);
+      E.creditar(v);
+      s.obra.emprestimo = v; s.obra.emprestimoJuros = Math.round(v * 0.15); E.salvar();
+      if (global.AUDIO) global.AUDIO.dinheiro();
+      toast('Financiamento aprovado! +' + rs(v), 'ok'); recarregarPainel();
+    };
+  }
+
+  function areaConstruida() {
+    var s = E.get(), n = nivelAtual();
+    var lote = D.lote(s.obra.loteId);
+    if (!lote) return 0;
+    var bw = Math.max(6, Math.min(lote.frente - 2.4, lote.frente * 0.78));
+    var bd = Math.max(6, Math.min(lote.fundo * 0.6, lote.fundo - 6));
+    return Math.round(bw * bd * n.pavimentos);
   }
 
   // ---- Lote ----
@@ -422,6 +475,34 @@
     });
   }
 
+  // ---- Segurança (NR-18) ----
+  function pSeguranca(c) {
+    var s = E.get(), seg = E.nivelSeguranca();
+    var cor = seg >= 70 ? 'pos' : (seg >= 40 ? '' : 'neg');
+    c.innerHTML = '<p class="ajuda">Invista em segurança (NR-18) para <b>reduzir acidentes</b> e passar nas ' +
+      'fiscalizações. Segurança alta também conta pontos na avaliação final.</p>' +
+      '<div class="seg-medidor"><div class="seg-bar"><i style="width:' + seg + '%"></i></div>' +
+      '<b class="' + cor + '">' + seg + '% de segurança</b></div>';
+    D.SEGURANCA.forEach(function (it) {
+      var tem = E.temSeguranca(it.id);
+      var card = el(
+        '<div class="loja-item ' + (tem ? 'sel' : '') + '">' +
+          '<div class="li-ico">' + it.emoji + '</div>' +
+          '<div class="li-info"><b>' + it.nome + ' <span class="segpt">+' + it.seg + '</span></b>' +
+            '<small>' + it.desc + '</small></div>' +
+          '<div class="li-acao"><b class="preco">' + rs(it.preco) + '</b>' +
+            (tem ? '<span class="badge-ok">✓ OK</span>' : '<button class="bt comprar">Adquirir</button>') +
+          '</div></div>');
+      if (!tem) $('.comprar', card).onclick = function () {
+        if (!E.pode(it.preco)) { toast('Caixa insuficiente.', 'erro'); return; }
+        E.debitar(it.preco); s.obra.segurancaItens.push(it.id); E.salvar();
+        if (global.AUDIO) global.AUDIO.clique();
+        toast(it.nome + ' ✓', 'ok'); renderHUD(); recarregarPainel();
+      };
+      c.appendChild(card);
+    });
+  }
+
   // ---- Projetos ----
   function pProjetos(c) {
     var n = nivelAtual(), s = E.get();
@@ -451,8 +532,19 @@
   function pObra(c) {
     var n = nivelAtual(), s = E.get();
     c.innerHTML = '<p class="ajuda">Execute as etapas na ordem. O jogo verifica equipe, ferramentas, ' +
-      'materiais e projetos. Cada etapa consome dias do cronograma.<br>🧱 Nas etapas de ' +
-      '<b>alvenaria</b> você entra no modo <b>Mão na Massa</b> e assenta os blocos fiada por fiada!</p>';
+      'materiais e projetos. A cada etapa você recebe uma <b>medição</b>.<br>🧱 Na <b>alvenaria</b> ' +
+      'entra o modo <b>Mão na Massa</b>. 🌧️ Chuva, cura do concreto e imprevistos podem atrasar a obra!</p>';
+    // aviso de cura em andamento
+    if (s.obra.curaAte > s.obra.dia) {
+      var falta = s.obra.curaAte - s.obra.dia;
+      var av = el('<div class="cura-aviso">⏳ Concreto curando — faltam <b>' + falta + ' dias</b>.' +
+        '<button class="bt azul" id="bt-cura">⏩ Aguardar cura</button></div>');
+      c.appendChild(av);
+      $('#bt-cura', av).onclick = function () {
+        s.obra.dia = s.obra.curaAte; E.salvar(); renderHUD();
+        toast('Concreto curado! Cronograma avançou.', 'ok'); recarregarPainel();
+      };
+    }
     n.etapas.forEach(function (eid) {
       var et = D.etapa(eid);
       var feita = E.etapaFeita(eid);
@@ -466,7 +558,7 @@
         '<div class="etapa-item ' + estado + '">' +
           '<div class="et-ico">' + (feita ? '✅' : et.emoji) + '</div>' +
           '<div class="et-info"><b>' + et.nome + '</b><small>' + et.desc + '</small>' +
-            '<div class="et-meta">📅 ' + dias + ' dias • 💰 ' + rs(custo) + '</div>' +
+            '<div class="et-meta">📅 ' + dias + ' dias • 💰 ' + rs(custo) + ' • 💵 medição ' + rs(medicaoLiquida(et)) + '</div>' +
             faltasHtml +
           '</div>' +
           '<div class="et-acao">' +
@@ -509,9 +601,21 @@
         faltas.push('Material: ' + m.nome + ' (' + E.estoque(iid) + '/' + prec + ' ' + m.un + ')');
       }
     });
+    // cura do concreto: bloqueia a etapa seguinte a uma concretagem
+    var dependeConcreto = et.dependeDe.some(function (dep) {
+      return D.CONCRETO.indexOf(dep) >= 0 && E.etapaFeita(dep) && (n && n.etapas.indexOf(dep) >= 0);
+    });
+    if (dependeConcreto && s.obra.dia < s.obra.curaAte) {
+      faltas.push('Cura do concreto: aguarde ' + (s.obra.curaAte - s.obra.dia) + ' dias');
+    }
     if (!E.get().obra.loteId) faltas.push('Compre o lote primeiro');
     return { ok: faltas.length === 0, faltas: faltas };
   }
+
+  function totalBaseDias(n) { var t = 0; n.etapas.forEach(function (id) { t += D.etapa(id).dias; }); return t; }
+  function medicaoBruta(et) { var n = nivelAtual(); return Math.round(n.orcamento * (et.dias / totalBaseDias(n))); }
+  function medicaoLiquida(et) { return Math.round(medicaoBruta(et) * (1 - D.IMPOSTO)); }
+  function curaDias() { return Math.round(D.CURA_BASE * Math.min(2, escala())); }
 
   // produtividade: mais profissionais das funções da etapa e um mestre
   // reduzem os dias necessários (limite de 2,2x mais rápido).
@@ -546,59 +650,141 @@
     return laborEtapa(et, dias) + aluguel;
   }
 
-  // confirma a etapa: consome materiais, debita custo, avança dias e marca concluída
-  function commitEtapa(et) {
-    var s = E.get(), esc = escala();
+  // ---------- simulação: clima, acidentes e imprevistos -------
+  function simularEtapa(et) {
+    var s = E.get(), n = nivelAtual(), esc = escala();
+    var oc = [], extraDias = 0, custoExtra = 0, dinheiroExtra = 0, chuva = false;
+    var dias = diasEtapa(et);
+
+    // clima / chuva (só a céu aberto)
+    if (D.OUTDOOR.indexOf(et.id) >= 0) {
+      var pch = D.CLIMAS[n.clima].chuva;
+      if (Math.random() < pch) {
+        chuva = true;
+        var atraso = Math.max(1, Math.ceil(dias * 0.4));
+        extraDias += atraso;
+        oc.push({ emoji: '🌧️', titulo: 'Choveu na obra', texto: 'A chuva parou o serviço por ' + atraso + ' dias.' });
+      }
+    }
+    // acidente (mitigado pela segurança)
+    var seg = E.nivelSeguranca();
+    var risco = 0.14 * (1 - seg / 100) * (D.OUTDOOR.indexOf(et.id) >= 0 ? 1 : 0.6);
+    if (Math.random() < risco) {
+      var cA = Math.round(6000 * esc), dA = 2;
+      extraDias += dA; custoExtra += cA;
+      oc.push({ emoji: '🚑', titulo: 'Acidente de trabalho', texto: 'Faltou segurança! Afastamento e custos: ' + rs(cA) + ' e +' + dA + ' dias. Invista em EPI/NR-18.' });
+    }
+    // evento aleatório (~33%)
+    if (Math.random() < 0.33) {
+      var pool = D.EVENTOS.filter(function (ev) {
+        if (ev.so && ev.so.indexOf(et.id) < 0) return false;
+        if (ev.evitaCom && E.qtdEquipe(ev.evitaCom) > 0) return false;
+        return Math.random() < ev.chance;
+      });
+      if (pool.length) {
+        var ev = pool[Math.floor(Math.random() * pool.length)];
+        var texto = ev.desc;
+        if (ev.fiscal) {
+          if (seg < 55) { custoExtra += Math.round(10000 * esc); extraDias += 2; texto = 'Fiscal reprovou o canteiro (segurança baixa): multa de ' + rs(Math.round(10000 * esc)) + ' e +2 dias.'; }
+          else { texto = 'Canteiro aprovado na vistoria! Nenhuma penalidade.'; }
+        } else {
+          if (ev.dias) extraDias += Math.round(ev.dias * (ev.dias < 0 ? esc * 0.6 : esc * 0.5));
+          if (ev.custo) custoExtra += Math.round(ev.custo * esc);
+          if (ev.dinheiro) dinheiroExtra += Math.round(ev.dinheiro * esc);
+        }
+        oc.push({ emoji: ev.emoji, titulo: ev.nome, texto: texto });
+      }
+    }
+    return { ocorrencias: oc, extraDias: extraDias, custoExtra: custoExtra, dinheiroExtra: dinheiroExtra, chuva: chuva };
+  }
+
+  // confirma a etapa: consome materiais, debita custos, recebe medição, avança dias
+  function commitEtapa(et, sim) {
+    var s = E.get(), n = nivelAtual(), esc = escala();
+    sim = sim || { extraDias: 0, custoExtra: 0, dinheiroExtra: 0, chuva: false };
     Object.keys(et.insumos).forEach(function (iid) {
       var q = Math.ceil(et.insumos[iid] * esc);
       s.obra.insumos[iid] = Math.max(0, (s.obra.insumos[iid] || 0) - q);
     });
-    var dias = diasEtapa(et);
-    E.debitar(custoEtapa(et));
+    var dias = diasEtapa(et) + (sim.extraDias || 0);
+    E.debitar(custoEtapa(et) + (sim.custoExtra || 0));
+    if (sim.dinheiroExtra) E.creditar(sim.dinheiroExtra);
     s.obra.dia += dias;
     s.obra.etapasConcluidas.push(et.id);
+    s.obra.tempoChuva = !!sim.chuva;
+    // cura do concreto
+    if (D.CONCRETO.indexOf(et.id) >= 0) s.obra.curaAte = s.obra.dia + curaDias();
+    // medição (recebimento por etapa, já com imposto retido)
+    var bruta = medicaoBruta(et), liquida = medicaoLiquida(et);
+    E.creditar(liquida);
+    s.obra.recebido += liquida;
+    s.obra.imposto += (bruta - liquida);
     E.salvar();
+    if (global.AUDIO) global.AUDIO.dinheiro();
     return dias;
   }
 
-  function posEtapa(et, dias) {
+  function posEtapa(et, dias, ocorrencias) {
     atualizarCena();
     renderHUD();
-    if (et.id === ultimaEtapa().id) { finalizarObra(); }
-    else { toast(et.nome + ' concluída! (+' + dias + ' dias)', 'ok'); abrirPainel('obra'); }
+    function seguir() {
+      if (et.id === ultimaEtapa().id) { finalizarObra(); }
+      else { toast(et.nome + ' concluída! (+' + dias + ' dias)', 'ok'); abrirPainel('obra'); }
+    }
+    if (ocorrencias && ocorrencias.length) modalImprevistos(ocorrencias, seguir);
+    else seguir();
   }
 
   function executarEtapa(et) {
+    if (global.AUDIO) global.AUDIO.ativar();
     var chk = checarEtapa(et);
-    if (!chk.ok) { toast('Etapa bloqueada — verifique os itens em falta.', 'erro'); return; }
-    var custo = custoEtapa(et);
+    if (!chk.ok) { if (global.AUDIO) global.AUDIO.erro(); toast('Etapa bloqueada — verifique os itens em falta.', 'erro'); return; }
+    var sim = simularEtapa(et);
+    var custo = custoEtapa(et) + sim.custoExtra;
     if (!E.pode(custo)) {
-      toast('Caixa insuficiente para a mão de obra/aluguel desta etapa (' + rs(custo) + ').', 'erro'); return;
+      if (global.AUDIO) global.AUDIO.erro();
+      toast('Caixa insuficiente para esta etapa (' + rs(custo) + ').', 'erro'); return;
     }
     // alvenaria -> modo mão na massa (assentar tijolos)
     if (cena && cena.ok && (et.estagio === 'alvenaria1' || et.estagio === 'alvenaria2')) {
-      iniciarMaoNaMassa(et);
+      iniciarMaoNaMassa(et, sim);
       return;
     }
-    var dias = commitEtapa(et);
+    var dias = commitEtapa(et, sim);
     fecharPainel();
-    animarEtapa(et, dias, function () { posEtapa(et, dias); });
+    animarEtapa(et, dias, sim.chuva, function () { posEtapa(et, dias, sim.ocorrencias); });
   }
 
   // ---------- modo mão na massa -------------------------------
-  function iniciarMaoNaMassa(et) {
+  function iniciarMaoNaMassa(et, sim) {
     fecharPainel();
     var cfg = cfgCena(et.estagio);
     atualizarCena(et.estagio);                 // mostra contexto (pilares, 1ª fiada, andaime)
+    if (cena && sim && sim.chuva) cena.setChuva(true);
     var totalFiadas = cena.calcularFiadas(cfg);
     var de, ate;
     if (et.estagio === 'alvenaria1') { de = 0; ate = 1; }   // só a 1ª fiada
     else { de = 1; ate = totalFiadas; }                      // elevação
     cena.iniciarTijolos(cfg, de, ate);
-    abrirSessaoTijolo(et);
+    abrirSessaoTijolo(et, sim);
   }
 
-  function abrirSessaoTijolo(et) {
+  // modal de imprevistos ocorridos numa etapa
+  function modalImprevistos(oc, done) {
+    var ov = $('#overlay-anim');
+    ov.classList.remove('oculto');
+    var itens = oc.map(function (o) {
+      return '<div class="oc-item"><span class="oc-ic">' + o.emoji + '</span>' +
+        '<div><b>' + o.titulo + '</b><small>' + o.texto + '</small></div></div>';
+    }).join('');
+    ov.innerHTML = '<div class="result-card"><div class="result-cong">📋 Diário de obra</div>' +
+      '<div class="oc-lista">' + itens + '</div>' +
+      '<button class="bt grande verde" id="oc-ok">Entendi</button></div>';
+    if (global.AUDIO) global.AUDIO.alerta();
+    $('#oc-ok').onclick = function () { ov.classList.add('oculto'); ov.innerHTML = ''; done(); };
+  }
+
+  function abrirSessaoTijolo(et, sim) {
     var tj = $('#tela-jogo');
     var sess = el(
       '<div id="sessao">' +
@@ -624,11 +810,19 @@
       $('#sess-i').style.width = (st.total ? (st.placed / st.total * 100) : 100) + '%';
       if (st.completo) concluir();
     }
-    function umBloco() { atualiza(cena.assentarBloco()); }
+    var ult = { placed: 0 };
+    function somTijolo(st) {
+      if (global.AUDIO && st.placed > ult.placed) { global.AUDIO.tijolo(); }
+      ult.placed = st.placed;
+    }
+    function umBloco() {
+      if (global.AUDIO) global.AUDIO.ativar();
+      var st = cena.assentarBloco(); somTijolo(st); atualiza(st);
+    }
     cena.onTap = umBloco;
     $('#sess-1').onclick = umBloco;
-    $('#sess-fiada').onclick = function () { atualiza(cena.assentarFiada()); };
-    $('#sess-tudo').onclick = function () { atualiza(cena.assentarTudo()); };
+    $('#sess-fiada').onclick = function () { var st = cena.assentarFiada(); somTijolo(st); atualiza(st); };
+    $('#sess-tudo').onclick = function () { var st = cena.assentarTudo(); somTijolo(st); atualiza(st); };
     $('#sess-x').onclick = function () {        // cancela sem concluir
       cena.onTap = null; sess.remove(); atualizarCena(); abrirPainel('obra');
     };
@@ -638,9 +832,9 @@
       cena.onTap = null;
       setTimeout(function () {
         sess.remove();
-        var dias = commitEtapa(et);
+        var dias = commitEtapa(et, sim);
         toast('Parede levantada! 🧱 ' + et.nome + ' concluída (+' + dias + ' dias)', 'ok');
-        posEtapa(et, dias);
+        posEtapa(et, dias, sim ? sim.ocorrencias : null);
       }, 500);
     }
     atualiza();
@@ -651,41 +845,54 @@
     return D.etapa(n.etapas[n.etapas.length - 1]);
   }
 
-  function animarEtapa(et, dias, done) {
+  function animarEtapa(et, dias, chuva, done) {
     atualizarCena(et.estagio);
+    if (cena && chuva) { cena.setChuva(true); if (global.AUDIO && !global.AUDIO.mudo()) global.AUDIO.chuva(true); }
     var ov = $('#overlay-anim');
     ov.classList.remove('oculto');
-    ov.innerHTML = '<div class="anim-card"><div class="anim-ico">' + et.emoji + '</div>' +
+    ov.innerHTML = '<div class="anim-card"><div class="anim-ico">' + (chuva ? '🌧️' : et.emoji) + '</div>' +
       '<b>Executando: ' + et.nome + '</b>' +
       '<div class="anim-barra"><i></i></div>' +
-      '<small>+' + dias + ' dias no cronograma</small></div>';
+      '<small>+' + dias + ' dias no cronograma' + (chuva ? ' (com chuva)' : '') + '</small></div>';
     setTimeout(function () { $('.anim-barra i', ov).style.width = '100%'; }, 30);
-    setTimeout(function () { ov.classList.add('oculto'); ov.innerHTML = ''; done(); }, 1500);
+    setTimeout(function () {
+      ov.classList.add('oculto'); ov.innerHTML = '';
+      if (global.AUDIO) global.AUDIO.chuva(false);
+      done();
+    }, 1500);
   }
 
   // ---------- finalização e pontuação -------------------------
   function finalizarObra() {
     var s = E.get(), n = nivelAtual();
-    // projetos obrigatórios faltando?
     var faltamProjetos = n.projetosObrig.filter(function (p) { return !E.temProjeto(p); });
-    // venda
-    E.creditar(n.orcamento);
+    // quita financiamento (com juros)
+    var quitacao = 0;
+    if (s.obra.emprestimo) {
+      quitacao = s.obra.emprestimo + s.obra.emprestimoJuros;
+      E.debitar(quitacao);
+      s.obra.emprestimo = 0; s.obra.emprestimoJuros = 0; E.salvar();
+    }
+    s.obra.tempoChuva = false; E.salvar();
+    if (cena) cena.setChuva(false);
+    if (global.AUDIO) { global.AUDIO.chuva(false); global.AUDIO.betoneira(false); }
+
     var noPrazo = s.obra.dia <= n.prazo;
-    // lucro estimado: comparar caixa não é trivial; usamos venda - referência
-    var lucro = n.orcamento; // valor recebido nesta entrega
+    var seg = E.nivelSeguranca();
     var estrelas = 1;
     if (noPrazo) estrelas++;
-    if (s.caixa > 0 && faltamProjetos.length === 0 && noPrazo) estrelas++;
+    if (s.caixa > 0 && faltamProjetos.length === 0 && noPrazo && seg >= 50) estrelas++;
     estrelas = Math.max(1, Math.min(3, estrelas));
 
     s.estrelas[n.id] = Math.max(s.estrelas[n.id] || 0, estrelas);
     if (estrelas >= 1) s.nivelMax = Math.max(s.nivelMax, Math.min(D.NIVEIS.length, n.id + 1));
     E.salvar();
+    if (global.AUDIO) global.AUDIO.sucesso();
 
-    telaResultado(n, estrelas, noPrazo, faltamProjetos);
+    telaResultado(n, estrelas, noPrazo, faltamProjetos, seg, quitacao);
   }
 
-  function telaResultado(n, estrelas, noPrazo, faltamProjetos) {
+  function telaResultado(n, estrelas, noPrazo, faltamProjetos, seg, quitacao) {
     var s = E.get();
     var ov = $('#overlay-anim');
     ov.classList.remove('oculto');
@@ -700,7 +907,10 @@
         '<div class="result-estrelas">' + estrelasHtml + '</div>' +
         '<div class="result-linhas">' +
           '<div><span>Prazo</span><b class="' + (noPrazo ? 'pos' : 'neg') + '">' + s.obra.dia + ' / ' + n.prazo + ' dias ' + (noPrazo ? '✓' : '⚠ atrasada') + '</b></div>' +
-          '<div><span>Valor recebido</span><b class="pos">' + rs(n.orcamento) + '</b></div>' +
+          '<div><span>Recebido em medições</span><b class="pos">' + rs(s.obra.recebido) + '</b></div>' +
+          '<div><span>Impostos pagos</span><b class="neg">' + rs(s.obra.imposto) + '</b></div>' +
+          (quitacao ? '<div><span>Financiamento quitado</span><b class="neg">' + rs(quitacao) + '</b></div>' : '') +
+          '<div><span>Segurança final</span><b class="' + (seg >= 50 ? 'pos' : 'neg') + '">' + seg + '%</b></div>' +
           '<div><span>Caixa da construtora</span><b class="' + (s.caixa < 0 ? 'neg' : 'pos') + '">' + rs(s.caixa) + '</b></div>' +
           (faltamProjetos.length ? '<div><span>Projetos faltando</span><b class="neg">' + faltamProjetos.length + '</b></div>' : '') +
         '</div>' +
@@ -724,6 +934,7 @@
   // ---------- boot --------------------------------------------
   function boot() {
     E.carregar();
+    if (global.AUDIO) global.AUDIO.carregarPref();
     montarBase();
     telaMenu();
   }
