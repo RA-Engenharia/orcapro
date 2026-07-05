@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.22",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.22/OrcaPRO-IA-update-v1.1.22.zip",
-  "notas": "Sincronização na nuvem corrigida e testada de ponta a ponta (seus dados em todos os aparelhos).",
+  "versao": "1.1.23",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.23/OrcaPRO-IA-update-v1.1.23.zip",
+  "notas": "Relatório e Excel de insumos agora funcionam em qualquer estado (antes o Excel usava a base de MG por engano).",
   "obrigatoria": false
 }

@@ -612,9 +612,9 @@
           return m;
         };
         if (typeof Analitico === "undefined") { finalizar(null); return; }
-        if (Analitico.carregado) { finalizar(montarMapa()); return; }
-        if (global.UI) UI.toast("Carregando insumos p/ o Excel (~17 MB, 1ª vez)…", "ok");
-        Analitico.carregarArquivo().then(function () { finalizar(montarMapa()); }).catch(function () { finalizar(null); });
+        // O App (exportarExcel) já carrega o analítico do ESTADO ATIVO antes de gerar.
+        // Se estiver carregado, usa; se não (raro/offline), gera SEM a aba — nunca com o MG errado.
+        finalizar(Analitico.carregado ? montarMapa() : null);
       });
     }
   };

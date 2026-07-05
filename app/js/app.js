@@ -1066,8 +1066,15 @@
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgrade.", "erro"); return; }
       if (Orcamento.totais(this.orcAtual).qtdItens < 1) { UI.toast("Adicione itens antes de exportar.", "erro"); return; }
-      UI.toast("Gerando Excel (3 abas com fórmulas)…", "ok");
-      ExcelOrc.gerar(this.orcAtual);
+      var self = this;
+      function gerar() { UI.toast("Gerando Excel (com aba de Insumos)…", "ok"); ExcelOrc.gerar(self.orcAtual); }
+      // Garante o analítico do ESTADO ATIVO carregado — para a aba Insumos sair certa em QUALQUER UF (não no MG padrão).
+      var ana = (typeof Analitico !== "undefined") ? Analitico : null;
+      var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
+      if (!ana || !self._analiticoArquivo || (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { gerar(); return; }
+      if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
+      UI.toast("Carregando insumos de " + (ufAtivo || "") + " (1ª vez)…", "ok");
+      ana.carregarArquivo(self._analiticoArquivo).then(gerar).catch(function () { gerar(); });
     },
 
     // ---------- Ver composição → insumos (base analítica, por estado) ----------
