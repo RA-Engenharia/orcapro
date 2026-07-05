@@ -51,6 +51,8 @@
     this.onTap = null;                     // callback de toque (assentar bloco)
 
     this.animados = [];       // {mesh, tipo}
+    this.efemeros = [];       // partículas de vida curta
+    this.rain = null;
     this.tempo = 0;
 
     this._setupControles();
@@ -206,16 +208,83 @@
   };
 
   Cena3D.prototype._tick = function () {
+    var t = this.tempo;
     for (var i = 0; i < this.animados.length; i++) {
       var a = this.animados[i];
       if (a.tipo === 'grua') { a.mesh.rotation.y += 0.004; }
       else if (a.tipo === 'betoneira') { a.mesh.rotation.z += 0.05; }
       else if (a.tipo === 'worker') {
-        a.mesh.position.y = a.base + Math.abs(Math.sin(this.tempo * 3 + a.fase)) * 0.18;
+        a.mesh.position.y = a.base + Math.abs(Math.sin(t * 3 + a.fase)) * 0.16;
+        if (a.braco) a.braco.rotation.x = Math.sin(t * 6 + a.fase) * 0.9 - 0.4; // martelando
       } else if (a.tipo === 'flag') {
-        a.mesh.rotation.y = Math.sin(this.tempo * 2) * 0.2;
+        a.mesh.rotation.y = Math.sin(t * 2) * 0.2;
+      } else if (a.tipo === 'carrinho-anda') {
+        a.mesh.position.z = a.z0 + Math.sin(t * 0.7 + a.fase) * a.amp;
+        a.mesh.rotation.y = Math.cos(t * 0.7 + a.fase) > 0 ? 0 : Math.PI;
       }
     }
+    // chuva
+    if (this.rain && this.rain.visible) {
+      var p = this.rain.geometry.attributes.position, arr = p.array;
+      for (var r = 1; r < arr.length; r += 3) {
+        arr[r] -= this.rainSpeed[(r - 1) / 3];
+        if (arr[r] < 0) arr[r] += this.rainH;
+      }
+      p.needsUpdate = true;
+    }
+    // partículas efêmeras (poeira/puff)
+    if (this.efemeros && this.efemeros.length) {
+      for (var e = this.efemeros.length - 1; e >= 0; e--) {
+        var ef = this.efemeros[e];
+        ef.vida -= 0.02;
+        ef.mesh.position.y += 0.012;
+        ef.mesh.scale.multiplyScalar(1.04);
+        if (ef.mesh.material) ef.mesh.material.opacity = Math.max(0, ef.vida) * 0.5;
+        if (ef.vida <= 0) {
+          this.grupoProps.remove(ef.mesh);
+          if (ef.mesh.geometry) ef.mesh.geometry.dispose();
+          this.efemeros.splice(e, 1);
+        }
+      }
+    }
+  };
+
+  // chuva liga/desliga
+  Cena3D.prototype.setChuva = function (on) {
+    if (!this.ok) return;
+    if (on && !this.rain) {
+      var N = 900, H = 60;
+      var geo = new THREE.BufferGeometry();
+      var pos = new Float32Array(N * 3);
+      this.rainSpeed = new Float32Array(N);
+      for (var i = 0; i < N; i++) {
+        pos[i * 3] = (Math.random() - 0.5) * 90;
+        pos[i * 3 + 1] = Math.random() * H;
+        pos[i * 3 + 2] = (Math.random() - 0.5) * 90;
+        this.rainSpeed[i] = 0.6 + Math.random() * 0.6;
+      }
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      var m = new THREE.PointsMaterial({ color: 0xbcd6ea, size: 0.5, transparent: true, opacity: 0.7, fog: false });
+      this.rain = new THREE.Points(geo, m);
+      this.rainH = H;
+      this.scene.add(this.rain);
+    }
+    if (this.rain) this.rain.visible = !!on;
+    // escurece o ambiente na chuva
+    this.scene.background = new THREE.Color(on ? 0x6a7f92 : 0x86b9e0);
+    if (this.scene.fog) this.scene.fog.color.setHex(on ? 0x8fa3b3 : 0xc8dcec);
+  };
+
+  // baforada de poeira/cimento num ponto
+  Cena3D.prototype.puff = function (x, y, z) {
+    if (!this.ok || !this.efemeros) return;
+    var m = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0xd8cfbf, transparent: true, opacity: 0.5, fog: false })
+    );
+    m.position.set(x, y, z);
+    this.grupoProps.add(m);
+    this.efemeros.push({ mesh: m, vida: 1 });
   };
 
   // ---------- Texturas procedurais (geradas em canvas) --------
@@ -354,6 +423,7 @@
     if (this.grupoTijolos) this._limpar(this.grupoTijolos);
     this.brick = null;
     this.animados = [];
+    this.efemeros = [];
 
     var fp = this._calcFP(cfg);
     var frente = fp.frente, fundo = fp.fundo, bw = fp.bw, bd = fp.bd,
@@ -770,10 +840,30 @@
       var ang = (i / n) * Math.PI * 2;
       var rx = (bw / 2 + 1.5) * Math.cos(ang) * (0.6 + (i % 3) * 0.15);
       var rz = (bd / 2 + 1.5) * Math.sin(ang) * (0.6 + (i % 2) * 0.2);
-      grp.position.set(rx, 0, rz);
-      grp.castShadow = true;
-      this.grupoProps.add(grp);
-      this.animados.push({ mesh: grp, tipo: 'worker', base: 0, fase: i });
+
+      // 1 em cada 3 empurra um carrinho de mão (anima indo e voltando)
+      if (i % 3 === 2) {
+        var carr = box(0.5, 0.28, 0.4, mat(0xdc2626)); carr.position.set(0.55, 0.4, 0); grp.add(carr);
+        var roda = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.08, 10), mat(0x1a1a1a));
+        roda.rotation.z = Math.PI / 2; roda.position.set(0.9, 0.16, 0); grp.add(roda);
+        grp.position.set(rx, 0, rz);
+        grp.castShadow = true;
+        this.grupoProps.add(grp);
+        this.animados.push({ mesh: grp, tipo: 'carrinho-anda', z0: rz, amp: 2 + (i % 3), fase: i });
+      } else {
+        // braço com martelo em alguns (martelando)
+        var braco = null;
+        if (i % 2 === 0) {
+          braco = new THREE.Group();
+          var b = box(0.1, 0.4, 0.1, mat(0xe8b58b)); b.position.y = -0.2; braco.add(b);
+          var cabo = box(0.06, 0.28, 0.06, mat(0x6b4423)); cabo.position.y = -0.42; braco.add(cabo);
+          braco.position.set(0.22, 0.95, 0.12); grp.add(braco);
+        }
+        grp.position.set(rx, 0, rz);
+        grp.castShadow = true;
+        this.grupoProps.add(grp);
+        this.animados.push({ mesh: grp, tipo: 'worker', base: 0, fase: i, braco: braco });
+      }
     }
   };
 

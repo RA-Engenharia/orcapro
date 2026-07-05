@@ -29,9 +29,19 @@ orçar na vida real (lote, mão de obra, materiais, equipamentos, cronograma e m
    alvenaria → laje → cobertura → instalações → reboco → revestimento → esquadrias →
    forro → pintura → entrega). O simulador verifica equipe, ferramentas, materiais e projetos.
 
-Conclua a etapa final (**Entrega**) dentro do prazo para receber o valor de venda,
+Conclua a etapa final (**Entrega**) dentro do prazo para receber as medições,
 obter até **3 estrelas de desempenho** e liberar o próximo cenário. O caixa da construtora
 é acumulado entre os cenários.
+
+## Realismo da simulação
+
+- **Execução assistida**: nas etapas de alvenaria você assenta os blocos tocando na obra, fiada por fiada.
+- **Clima e chuva**: cada cenário tem um clima; a chuva pode parar o serviço e atrasar (visual de chuva em 3D).
+- **Cura do concreto**: após concretar (fundação, estrutura, laje) é preciso aguardar a cura antes de seguir.
+- **Segurança (NR-18)**: invista em EPI, guarda-corpo, tela, treinamento etc. para reduzir acidentes e passar nas fiscalizações — conta pontos nas estrelas.
+- **Imprevistos**: rocha na fundação, atraso de fornecedor, furto (evitado com vigia), paralisação, vistoria, além de eventos bons (produtividade, bônus do cliente).
+- **Economia (SINAPI/BDI)**: contrato = custo estimado + **BDI**; você recebe **medições** a cada etapa (com **imposto** retido); dá pra tomar **financiamento** (com juros na entrega).
+- **Som e efeitos**: áudio sintetizado (betoneira, martelo, dinheiro, chuva, sucesso), partículas de poeira e operários animados. Botão 🔊/🔇 no topo.
 
 ## Cenários de obra
 

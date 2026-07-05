@@ -192,6 +192,40 @@ h4{margin:14px 0 8px;font-size:15px;}
 .result-linhas b.pos{color:var(--verde2);} .result-linhas b.neg{color:#ff6b6b;}
 .result-bts{margin-top:14px;}
 
+/* HUD extras (clima, segurança) */
+.hud-mini2{padding:6px 10px;text-align:center;}
+.hud-mini2 b{font-size:16px;}
+#hud-som{margin-left:auto;}
+
+/* financeiro (briefing) */
+.fin-box{background:var(--bg);border:1px solid var(--linha);border-radius:12px;padding:12px;}
+.fin-box>div{display:flex;justify-content:space-between;padding:6px 0;font-size:13.5px;border-bottom:1px solid var(--linha);}
+.fin-box>div:last-child{border-bottom:0;}
+.fin-box span{color:var(--mut);}
+.fin-box b.pos{color:var(--verde2);} .fin-box b.neg{color:#ff6b6b;}
+.fin-sep{border-top:2px solid var(--linha)!important;margin-top:2px;}
+
+/* segurança */
+.seg-medidor{text-align:center;margin-bottom:12px;}
+.seg-bar{height:12px;background:rgba(255,255,255,.12);border-radius:8px;overflow:hidden;margin-bottom:6px;}
+.seg-bar i{display:block;height:100%;background:linear-gradient(90deg,#dc2626,#f59e0b,#16a34a);border-radius:8px;transition:width .3s;}
+.seg-medidor b.pos{color:var(--verde2);} .seg-medidor b.neg{color:#ff6b6b;}
+.segpt{background:var(--verde);color:#fff;font-size:11px;padding:2px 7px;border-radius:6px;vertical-align:middle;}
+
+/* cura do concreto */
+.cura-aviso{background:rgba(46,111,158,.14);border:1px solid var(--aco);border-radius:12px;
+  padding:12px;margin-bottom:12px;font-size:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.cura-aviso b{color:var(--aco2);}
+.cura-aviso .bt{margin-left:auto;}
+
+/* modal de imprevistos */
+.oc-lista{text-align:left;margin:6px 0 16px;}
+.oc-item{display:flex;gap:12px;align-items:flex-start;background:var(--bg);border:1px solid var(--linha);
+  border-radius:10px;padding:12px;margin-bottom:8px;}
+.oc-ic{font-size:28px;line-height:1;}
+.oc-item b{display:block;font-size:15px;margin-bottom:3px;}
+.oc-item small{color:var(--mut);font-size:13px;line-height:1.4;}
+
 /* sessão mão na massa */
 #sessao{position:absolute;left:0;right:0;bottom:0;z-index:9;
   background:linear-gradient(0deg,rgba(8,18,28,.97),rgba(8,18,28,.86));

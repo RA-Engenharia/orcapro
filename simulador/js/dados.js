@@ -258,6 +258,62 @@
     }
   ];
 
+  // ---- Segurança do trabalho (NR-18) -------------------------
+  // seg = pontos de segurança que o item agrega (soma dá até ~100)
+  const SEGURANCA = [
+    { id: 'epi',        nome: 'Kit de EPI da equipe', emoji: '🦺', preco: 2200, seg: 30, desc: 'Capacete, luvas, botas e óculos para todos. Base da NR-18.' },
+    { id: 'guarda',     nome: 'Guarda-corpo e rodapé', emoji: '🚧', preco: 2600, seg: 18, desc: 'Proteção de periferia e vãos contra quedas.' },
+    { id: 'tela',       nome: 'Tela de proteção de fachada', emoji: '🕸️', preco: 3200, seg: 14, desc: 'Contém quedas de materiais em altura.' },
+    { id: 'cinto',      nome: 'Cinto/trava-quedas', emoji: '🪢', preco: 1800, seg: 12, desc: 'Obrigatório em trabalho em altura.' },
+    { id: 'treinamento',nome: 'Treinamento e DDS', emoji: '📋', preco: 2000, seg: 14, desc: 'Diálogo diário de segurança e capacitação.' },
+    { id: 'incendio_eq',nome: 'Extintores e sinalização', emoji: '🧯', preco: 1200, seg: 8, desc: 'Prevenção e combate a incêndio no canteiro.' },
+    { id: 'placas',     nome: 'Placas e cones', emoji: '⚠️', preco: 700, seg: 4, desc: 'Sinalização de segurança do canteiro.' }
+  ];
+
+  // ---- Eventos / imprevistos ---------------------------------
+  // tipo: 'ruim' | 'bom'. efeito: {dias, custo, dinheiro}
+  const EVENTOS = [
+    { id: 'rocha', tipo: 'ruim', emoji: '🪨', nome: 'Rocha na fundação', chance: 1,
+      desc: 'Encontraram rocha durante a escavação. Precisou de rompedor e mais tempo.',
+      dias: 5, custo: 12000, so: ['fundacao'] },
+    { id: 'fornecedor', tipo: 'ruim', emoji: '🚚', nome: 'Atraso do fornecedor', chance: 1,
+      desc: 'A entrega de material atrasou e a obra ficou parada.', dias: 4, custo: 0 },
+    { id: 'greve', tipo: 'ruim', emoji: '✊', nome: 'Paralisação', chance: 0.7,
+      desc: 'A equipe parou por um dia reivindicando melhorias.', dias: 3, custo: 0 },
+    { id: 'retrabalho', tipo: 'ruim', emoji: '🔁', nome: 'Retrabalho', chance: 1,
+      desc: 'Um serviço saiu fora do projeto e precisou refazer.', dias: 3, custo: 8000 },
+    { id: 'furto', tipo: 'ruim', emoji: '🥷', nome: 'Furto de material', chance: 1,
+      desc: 'Sumiram materiais do canteiro durante a noite.', dias: 0, custo: 9000, evitaCom: 'vigia' },
+    { id: 'vistoria', tipo: 'ruim', emoji: '🛂', nome: 'Vistoria da prefeitura', chance: 0.8,
+      desc: 'Fiscal apareceu para vistoriar o canteiro.', dias: 1, custo: 0, fiscal: true },
+    { id: 'produtividade', tipo: 'bom', emoji: '⚡', nome: 'Equipe rendeu!', chance: 1,
+      desc: 'A equipe engrenou e adiantou o serviço.', dias: -3, custo: 0 },
+    { id: 'clima_bom', tipo: 'bom', emoji: '☀️', nome: 'Tempo firme', chance: 1,
+      desc: 'Sequência de dias secos acelerou a obra.', dias: -2, custo: 0 },
+    { id: 'bonus', tipo: 'bom', emoji: '🎁', nome: 'Bônus do cliente', chance: 0.8,
+      desc: 'O cliente gostou do andamento e liberou um bônus.', dias: 0, dinheiro: 15000 }
+  ];
+
+  // etapas que envolvem concreto (exigem cura antes da próxima)
+  const CONCRETO = ['fundacao', 'estrutura', 'laje'];
+  // etapas a céu aberto (sofrem com a chuva)
+  const OUTDOOR = ['preliminar', 'fundacao', 'estrutura', 'alvenaria1', 'alvenaria2', 'laje', 'cobertura', 'reboco', 'pintura'];
+
+  // clima e BDI por nível (economia realista)
+  const CLIMAS = {
+    seco:     { nome: 'Seco',     emoji: '☀️', chuva: 0.12 },
+    ameno:    { nome: 'Ameno',    emoji: '⛅', chuva: 0.25 },
+    chuvoso:  { nome: 'Chuvoso',  emoji: '🌧️', chuva: 0.42 }
+  };
+  var climasPorNivel = { 1: 'seco', 2: 'ameno', 3: 'ameno', 4: 'chuvoso', 5: 'chuvoso', 6: 'ameno', 7: 'chuvoso' };
+  NIVEIS.forEach(function (n) {
+    n.clima = climasPorNivel[n.id] || 'ameno';
+    n.bdi = n.tipo === 'industrial' ? 0.2789 : (n.tipo === 'predial' ? 0.2612 : 0.2497); // faixas TCU/DNIT
+  });
+
+  var IMPOSTO = 0.0865;   // ISS + PIS/COFINS aprox. sobre a medição
+  var CURA_BASE = 4;      // dias-base de cura do concreto
+
   function byId(arr, id) { return arr.find(function (x) { return x.id === id; }); }
 
   global.DADOS = {
@@ -269,6 +325,13 @@
     PROJETOS: PROJETOS,
     ETAPAS: ETAPAS,
     NIVEIS: NIVEIS,
+    SEGURANCA: SEGURANCA,
+    EVENTOS: EVENTOS,
+    CLIMAS: CLIMAS,
+    CONCRETO: CONCRETO,
+    OUTDOOR: OUTDOOR,
+    IMPOSTO: IMPOSTO,
+    CURA_BASE: CURA_BASE,
     lote: function (id) { return byId(LOTES, id); },
     funcao: function (id) { return byId(FUNCOES, id); },
     insumo: function (id) { return byId(INSUMOS, id); },
@@ -276,6 +339,8 @@
     canteiro: function (id) { return byId(CANTEIRO, id); },
     projeto: function (id) { return byId(PROJETOS, id); },
     etapa: function (id) { return byId(ETAPAS, id); },
+    seguranca: function (id) { return byId(SEGURANCA, id); },
+    evento: function (id) { return byId(EVENTOS, id); },
     nivel: function (id) { return NIVEIS.find(function (n) { return n.id === id; }); }
   };
 })(window);
