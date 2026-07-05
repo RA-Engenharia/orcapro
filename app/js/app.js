@@ -177,7 +177,7 @@
       var acao = t.dataset.acao;
       switch (acao) {
         case "entrar": this.entrar(); break;
-        case "logout": Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
+        case "logout": if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
         case "tema": this.alternarTema(); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
         case "empresa": this.abrirEmpresa(); break;
@@ -320,6 +320,18 @@
       // recarrega a base SINAPI específica desta empresa (se importou uma própria)
       var self = this;
       this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
+      // Sincronização na nuvem — só age se CONFIG.backend.sync === true (inerte por padrão).
+      if (typeof Nuvem !== "undefined" && Nuvem.disponivel()) {
+        var eid = Auth.empresaId();
+        Nuvem.entrar(email, senha)
+          .then(function () { return Nuvem.sincronizar(eid); })
+          .then(function () {
+            Nuvem.escutar(eid, function () { if (self.tela === "lista") self.render(); });
+            if (self.tela === "lista") self.render();
+            UI.toast("☁ Dados sincronizados na nuvem.", "ok");
+          })
+          .catch(function (e) { console.warn("[nuvem] " + (e && (e.code || e.message))); });
+      }
     },
 
     // Esqueci a senha (redefinição local — é o próprio navegador/dados do usuário)

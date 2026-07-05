@@ -25,7 +25,7 @@
     // Servidor de licença/ativação/atualização (a loja no VPS). Trava de máquina + auto-update.
     licencaServer: "https://187-127-40-14.sslip.io",
 
-    versao: "1.1.19",
+    versao: "1.1.20",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -72,7 +72,15 @@
     // Quando 'firebase' estiver configurado, store.js usa nuvem; senão local.
     backend: {
       modo: "local",           // "local" | "firebase"
-      firebaseConfig: null     // cole o objeto firebaseConfig aqui na hora do SaaS
+      sync: true,              // sincronização na nuvem LIGADA (validada 05/jul/2026)
+      firebaseConfig: {
+        apiKey: "AIzaSyBUebEPWde5kbZBYiDK4NAD3sPNBlpUj8o",
+        authDomain: "orcapro-9595f.firebaseapp.com",
+        projectId: "orcapro-9595f",
+        storageBucket: "orcapro-9595f.firebasestorage.app",
+        messagingSenderId: "157081125995",
+        appId: "1:157081125995:web:22233d4c255e2f435edd2e"
+      }
     }
   };
 
