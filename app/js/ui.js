@@ -58,25 +58,33 @@
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
         '<span class="spacer"></span>' +
-        '<span class="user">' + Util.esc(usuario.empresa) + ' · ' + (admin ? Util.esc(usuario.email) : Util.esc(usuario.nome || usuario.email) + ' <span class="badge-plano" style="background:#2e6f9e22;color:#2e6f9e">' + Util.esc(deptoLbl) + '</span>') + '</span>' +
-        '<button class="linkbtn" data-acao="tabelas">🗂 Tabelas</button>' +
-        (admin ? '<button class="linkbtn" data-acao="backup">💾 Backup</button>' : '') +
-        (function () {
-          if (!admin) return "";
-          var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
-          if (!lic) return "";
-          var lbl, cor = '', vermelho = ' style="color:var(--vermelho,#dc2626);font-weight:700"';
-          if (lic.trial) { lbl = "🔓 Demonstração"; cor = ' style="color:var(--aco,#2e6f9e);font-weight:700"'; }
-          else if (lic.expirada) { lbl = "🔑 Licença vencida"; cor = vermelho; }
-          else if (lic.outroDispositivo) { lbl = "🔑 Outra máquina"; cor = vermelho; }
-          else if (lic.revalidar) { lbl = "🔑 Reconecte p/ validar"; cor = vermelho; }
-          else if (lic.diasRestantes != null) { lbl = "🔑 Licença: " + lic.diasRestantes + "d"; if (lic.diasRestantes <= 7) cor = vermelho; }
-          else { lbl = "🔑 Licenciado"; }
-          return '<button class="linkbtn" data-acao="licenca"' + cor + '>' + lbl + '</button>';
-        })() +
-        (admin ? '<button class="linkbtn" data-acao="empresa">⚙ Empresa</button>' : '') +
-        '<button class="linkbtn" data-acao="tema">◐ Tema</button>' +
-        '<button class="linkbtn" data-acao="logout">Sair</button>';
+        '<div class="topbar-conta">' +
+          '<button class="conta-btn" data-acao="conta" aria-label="Conta e configurações" title="Conta e configurações">' +
+            '<span class="conta-ic">⚙</span><span class="conta-nome">' + Util.esc(usuario.empresa) + '</span><span class="conta-ca">▾</span>' +
+          '</button>' +
+          '<div class="conta-drop">' +
+            '<div class="conta-cab"><b>' + Util.esc(usuario.empresa) + '</b><span>' + (admin ? Util.esc(usuario.email) : Util.esc(usuario.nome || usuario.email) + ' · ' + Util.esc(deptoLbl)) + '</span></div>' +
+            (function () {
+              if (!admin) return "";
+              var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
+              if (!lic) return "";
+              var lbl, alerta = false;
+              if (lic.trial) lbl = "Demonstração (ativar licença)";
+              else if (lic.expirada) { lbl = "Licença vencida"; alerta = true; }
+              else if (lic.outroDispositivo) { lbl = "Ativada em outra máquina"; alerta = true; }
+              else if (lic.revalidar) { lbl = "Reconecte para validar"; alerta = true; }
+              else if (lic.diasRestantes != null) { lbl = "Licença: " + lic.diasRestantes + " dias"; alerta = lic.diasRestantes <= 7; }
+              else lbl = "Licenciado";
+              return '<button class="conta-item' + (alerta ? " alerta" : "") + '" data-acao="licenca"><span>🔑</span>' + Util.esc(lbl) + '</button>';
+            })() +
+            (admin ? '<button class="conta-item" data-acao="empresa"><span>⚙</span>Dados da empresa</button>' : '') +
+            '<button class="conta-item" data-acao="tabelas"><span>🗂</span>Tabelas de preço</button>' +
+            (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
+            '<button class="conta-item" data-acao="tema"><span>◐</span>Tema claro / escuro</button>' +
+            '<div class="conta-sep"></div>' +
+            '<button class="conta-item sair" data-acao="logout"><span>🚪</span>Sair</button>' +
+          '</div>' +
+        '</div>';
     },
 
     // ---------- Atualizar tabelas (backend sinapi-fetcher) ----------

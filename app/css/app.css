@@ -94,6 +94,24 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .topbar button.linkbtn:hover { color: #fff; background: rgba(255,255,255,.09); }
 .topbar-burger { display: none; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; margin-right: 2px; border: 0; border-radius: 9px; background: rgba(255,255,255,.14); color: #fff; font-size: 20px; line-height: 1; cursor: pointer; }
 .topbar-burger:hover { background: rgba(255,255,255,.24); }
+/* Menu de conta/configurações (agrupa Tabelas, Empresa, Backup, Licença, Tema, Sair) */
+.topbar-conta { position: relative; flex: none; }
+.conta-btn { display: inline-flex; align-items: center; gap: 8px; max-width: 230px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.16); color: #fff; font-family: inherit; font-weight: 600; font-size: 13px; padding: 7px 12px; border-radius: 9px; cursor: pointer; }
+.conta-btn:hover { background: rgba(255,255,255,.2); }
+.conta-btn .conta-ic { font-size: 15px; flex: none; }
+.conta-btn .conta-nome { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; }
+.conta-btn .conta-ca { opacity: .7; font-size: 10px; flex: none; }
+.conta-drop { display: none; position: absolute; top: calc(100% + 8px); right: 0; min-width: 252px; background: var(--surface); border: 1px solid var(--linha); border-radius: 12px; box-shadow: var(--sombra-lg); padding: 6px; z-index: 45; }
+.topbar-conta.aberto .conta-drop { display: block; }
+.conta-cab { padding: 8px 12px 10px; border-bottom: 1px solid var(--linha); margin-bottom: 6px; }
+.conta-cab b { display: block; color: var(--texto); font-size: 14px; line-height: 1.2; }
+.conta-cab span { color: var(--texto-fraco); font-size: 12px; }
+.conta-item { display: flex; align-items: center; gap: 11px; width: 100%; background: none; border: 0; text-align: left; color: var(--texto); font-family: inherit; font-size: 13.5px; font-weight: 500; padding: 10px 12px; border-radius: 8px; cursor: pointer; }
+.conta-item:hover { background: var(--surface-2); }
+.conta-item > span { width: 20px; text-align: center; flex: none; font-size: 15px; }
+.conta-item.alerta { color: var(--vermelho); font-weight: 700; }
+.conta-item.sair { color: var(--vermelho); }
+.conta-sep { height: 1px; background: var(--linha); margin: 6px; }
 
 .main { overflow: auto; padding: 24px; }
 
@@ -320,6 +338,7 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
   /* celular: KPIs em 1 coluna (número sempre cabe inteiro) */
   .kpis, .kpis.kpis-g { grid-template-columns: 1fr; }
   .topbar .logo small { display: none; }
+  .conta-btn .conta-nome { display: none; }
 }
 
 /* ---------- Toast ---------- */
