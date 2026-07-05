@@ -324,7 +324,8 @@
           '<td class="num">' + Util.fmtMoeda(custoEtapa) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custoEtapa, pct)) + '</td>' +
           '<td class="right"><button class="btn sm" data-add-item="' + e.id + '">+ Item</button> ' +
-          '<button class="btn sm danger" data-del-etapa="' + e.id + '">✕</button></td></tr>';
+          '<button class="btn sm" data-edit-etapa="' + e.id + '" title="Renomear etapa">✎</button> ' +
+          '<button class="btn sm danger" data-del-etapa="' + e.id + '" title="Remover etapa">✕</button></td></tr>';
 
         e.itens.forEach(function (it) {
           var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
@@ -656,6 +657,44 @@
       });
       html += '</tbody><tfoot><tr><td colspan="5">TOTAL GERAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
         '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
+
+      // 3) COMPOSIÇÕES E INSUMOS (analítico SINAPI) — cada composição detalhada em seus insumos
+      if (typeof Analitico !== "undefined" && Analitico.carregado) {
+        var vistos = {}, comps = [];
+        Util.arr(orc.etapas).forEach(function (e) {
+          Util.arr(e.itens).forEach(function (it) {
+            if (it.origem === "SINAPI" && it.codigo && it.codigo !== "—" && !vistos[it.codigo]) {
+              var a = Analitico.obter(it.codigo);
+              if (a && Util.arr(a.insumos).length) { vistos[it.codigo] = 1; comps.push({ it: it, a: a }); }
+            }
+          });
+        });
+        if (comps.length) {
+          html += '<h2 class="rel-tit">3. Composições e Insumos (analítico SINAPI)</h2>';
+          html += '<p class="muted" style="margin:-6px 0 10px;font-size:12px">' + comps.length +
+            ' composição(ões) do orçamento, detalhada(s) em insumos, mão de obra e equipamentos — coeficientes da base SINAPI ' +
+            Util.esc((Analitico.competencia || "") + (Analitico.uf ? " / " + Analitico.uf : "")) + '.</p>';
+          comps.forEach(function (c) {
+            var a = c.a;
+            html += '<table class="prop-tbl" style="margin-bottom:12px"><thead>' +
+              '<tr class="grp"><td colspan="6">' + Util.esc(c.it.codigo) + ' · ' +
+              Util.esc(Util.fixEnc(a.descricao || c.it.descricao)) + ' — un. ' + Util.esc(a.unidade || c.it.unidade) + '</td></tr>' +
+              '<tr><th>Tipo</th><th>Código</th><th>Insumo</th><th>Un</th><th class="r">Coef.</th><th class="r">Custo Unit.</th></tr></thead><tbody>';
+            Util.arr(a.insumos).forEach(function (ins) {
+              html += '<tr><td>' + (ins.tipo === "COMPOSICAO" ? "Sub-comp." : "Insumo") + '</td>' +
+                '<td>' + Util.esc(ins.codigo) + '</td>' +
+                '<td>' + Util.esc(Util.fixEnc(ins.descricao)) + '</td>' +
+                '<td>' + Util.esc(ins.unidade) + '</td>' +
+                '<td class="r">' + Util.fmtNum(ins.coeficiente, 4) + '</td>' +
+                '<td class="r">' + Util.fmtMoeda(ins.custoUnitario) + '</td></tr>';
+            });
+            html += '<tr class="sub"><td colspan="4">Composição — MO ' + Util.fmtMoeda(a.custoMO) +
+              ' · MAT ' + Util.fmtMoeda(a.custoMAT) + ' · EQ ' + Util.fmtMoeda(a.custoEQ) + '</td>' +
+              '<td class="r">Custo unit.</td><td class="r">' + Util.fmtMoeda(a.custoUnitario) + '</td></tr>';
+            html += '</tbody></table>';
+          });
+        }
+      }
 
       html += '<div class="rel-rod">Gerado por ' + Util.esc(CONFIG.marca.nome) + " · " + hoje +
         ' · Custos ref. SINAPI ' + Util.esc(orc.competenciaSinapi) + "/" + Util.esc(orc.uf) +

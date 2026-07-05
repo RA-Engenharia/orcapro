@@ -155,6 +155,8 @@
       if (t.dataset.abrir) { this.abrirOrcamento(t.dataset.abrir); return; }
       // adicionar item a uma etapa -> abre busca SINAPI
       if (t.dataset.addItem) { this.abrirBuscaSinapi(t.dataset.addItem); return; }
+      // renomear etapa (sem recriar)
+      if (t.dataset.editEtapa) { this.renomearEtapa(t.dataset.editEtapa); return; }
       // remover etapa
       if (t.dataset.delEtapa) { this.removerEtapa(t.dataset.delEtapa); return; }
       // remover item "etapaId|itemId"
@@ -700,6 +702,14 @@
     abrirOrcamento: function (id) {
       var orc = Store.obterOrcamento(Auth.empresaId(), id);
       if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
+      // Conserta acentos/ç corrompidos (mojibake) de versões antigas — sem o usuário recriar nada.
+      try {
+        var reparos = Orcamento.repararTexto(orc);
+        if (reparos > 0) {
+          Store.salvarOrcamento(Auth.empresaId(), orc);
+          UI.toast("Corrigimos automaticamente " + reparos + " descrição(ões) com acentos.", "ok");
+        }
+      } catch (e) {}
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha";
       this.render();
     },
@@ -754,6 +764,23 @@
             self.persistir(); UI.fecharModal(); self.render();
           } }
         ]);
+    },
+
+    renomearEtapa: function (etapaId) {
+      var o = this.orcAtual; if (!o) return;
+      var e = Util.arr(o.etapas).filter(function (x) { return x.id === etapaId; })[0];
+      if (!e) return;
+      var self = this;
+      UI.modal("Renomear etapa",
+        '<div class="field"><label>Nome da etapa</label><input id="et-nome" value="' + Util.esc(e.nome) + '"></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Salvar", classe: "primary", onClick: function () {
+            Orcamento.renomearEtapa(o, etapaId, (UI.el("et-nome") || {}).value || e.nome);
+            self.persistir(); UI.fecharModal(); self.render(); UI.toast("Etapa renomeada.", "ok");
+          } }
+        ]);
+      setTimeout(function () { var i = UI.el("et-nome"); if (i) { i.focus(); i.select(); } }, 50);
     },
 
     removerEtapa: function (etapaId) {
@@ -1219,8 +1246,19 @@
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       var t = Orcamento.totais(this.orcAtual);
       if (t.qtdItens < 1) { UI.toast("Adicione itens antes de gerar o relatório.", "erro"); return; }
-      this._abrirPrint("🧾 Relatório de Orçamento — " + this.orcAtual.numero,
-        UI.renderRelatorioCompleto(this.orcAtual, Auth.usuario()));
+      var self = this;
+      function abrir() {
+        self._abrirPrint("🧾 Relatório de Orçamento — " + self.orcAtual.numero,
+          UI.renderRelatorioCompleto(self.orcAtual, Auth.usuario()));
+      }
+      // Carrega o analítico da UF (1ª vez) p/ incluir a seção de composições e insumos; degrada sem travar.
+      var ana = (typeof Analitico !== "undefined") ? Analitico : null;
+      var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
+      if (!ana || !self._analiticoArquivo ||
+          (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { abrir(); return; }
+      if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
+      UI.toast("Carregando insumos das composições (1ª vez)…", "ok");
+      ana.carregarArquivo(self._analiticoArquivo).then(abrir).catch(function () { abrir(); });
     },
 
     // Overlay de impressão compartilhado (proposta e relatório)

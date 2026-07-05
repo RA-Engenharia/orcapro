@@ -63,6 +63,28 @@
       orc.etapas = Util.arr(orc.etapas).filter(function (e) { return e.id !== etapaId; });
       return orc;
     },
+    // Renomeia uma etapa sem recriá-la (mantém itens e código).
+    renomearEtapa: function (orc, etapaId, nome) {
+      var e = this._etapa(orc, etapaId);
+      if (e && Util.naoVazio(nome)) e.nome = String(nome).trim();
+      return orc;
+    },
+
+    // Repara mojibake de encoding (acentos/ç) em todo o texto do orçamento.
+    // Idempotente: texto já correto não muda. Retorna nº de campos corrigidos.
+    repararTexto: function (orc) {
+      if (!orc) return 0;
+      var n = 0;
+      function fix(o, k) { if (o && typeof o[k] === "string") { var f = Util.fixEnc(o[k]); if (f !== o[k]) { o[k] = f; n++; } } }
+      fix(orc, "nome");
+      if (orc.cliente) fix(orc.cliente, "nome");
+      if (orc.obra) { fix(orc.obra, "nome"); fix(orc.obra, "local"); }
+      Util.arr(orc.etapas).forEach(function (e) {
+        fix(e, "nome");
+        Util.arr(e.itens).forEach(function (it) { fix(it, "descricao"); fix(it, "unidade"); });
+      });
+      return n;
+    },
 
     // ---- Itens ----
     // origem: item SINAPI (do motor) OU objeto próprio { descricao, unidade, custoUnitario }
@@ -74,8 +96,8 @@
         origem: sinapiItem.codigo ? "SINAPI" : "PROPRIO",
         baseFonte: sinapiItem.baseFonte || (sinapiItem.codigo ? "SINAPI" : null),
         codigo: sinapiItem.codigo || "—",
-        descricao: sinapiItem.descricao || "Item próprio",
-        unidade: sinapiItem.unidade || "un",
+        descricao: Util.fixEnc(sinapiItem.descricao || "Item próprio"),
+        unidade: Util.fixEnc(sinapiItem.unidade || "un"),
         quantidade: Util.num(quantidade) || 1,
         custoUnitario: Util.num(sinapiItem.custoUnitario),
         custoMO: Util.num(sinapiItem.custoMO),
