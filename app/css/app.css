@@ -302,6 +302,17 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
   .kpis .num, .kpi .num, .kpis.kpis-g .num { font-size: 18px; }
   .kpis.kpis-g { grid-template-columns: 1fr 1fr; }
   .row, .cards3 { grid-template-columns: 1fr !important; }
+  /* lista de orçamentos/obras: 1 card por linha */
+  .grid-cards { grid-template-columns: 1fr !important; }
+  /* cabeçalhos "título + botão" quebram em vez de estourar */
+  .flex.between { flex-wrap: wrap; gap: 10px; }
+  .flex.between > h1 { font-size: 20px; }
+  /* modais ocupam quase a tela toda no celular */
+  .modal-bg { padding: 10px; }
+  .modal { max-width: 100%; max-height: 92vh; }
+  /* botões e campos com alvo de toque confortável */
+  .btn { min-height: 40px; }
+  input, select, textarea { font-size: 16px; } /* evita zoom automático do iOS */
   /* login cabe na largura da tela */
   .login-formside { padding: 24px 16px; }
   .login-card { max-width: 100%; }
