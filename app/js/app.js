@@ -40,6 +40,8 @@
       this.bindGlobal();
       if (Auth.usuario()) { this.tela = "lista"; }
       this.render();
+      // Auto-update do app: avisa se há versão nova (só no install local; no site/demo o endpoint não existe e é ignorado)
+      if (typeof AutoUpdate !== "undefined") { setTimeout(function () { AutoUpdate.verificar(); }, 1800); }
       // licença: trial -> registra/ancora no servidor; licenciado -> revalida (renova carência / detecta bloqueio)
       try {
         if (typeof Licenca !== "undefined") {
