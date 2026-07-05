@@ -51,6 +51,7 @@
       var admin = usuario.papel !== "usuario"; // sub-usuário não vê ações de dono (empresa/licença/backup)
       var deptoLbl = (usuario.departamento && typeof Gestao !== "undefined" && Gestao.rot) ? Gestao.rot(Gestao.P.departamento, usuario.departamento) : (usuario.departamento || "usuário");
       return '' +
+        '<button class="topbar-burger" data-acao="menu" aria-label="Menu de módulos" title="Módulos">☰</button>' +
         '<div class="logo" style="display:flex;align-items:center;gap:10px">' +
           '<svg width="34" height="34" viewBox="0 0 100 100" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#tbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>' +
           '<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + '</small></div>' +

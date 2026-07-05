@@ -92,6 +92,8 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .topbar .user { font-size: 12px; opacity: .82; }
 .topbar button.linkbtn { background: none; border: none; color: #cfe0ef; cursor: pointer; font-size: 12.5px; font-weight: 500; padding: 6px 9px; border-radius: 7px; transition: .12s; }
 .topbar button.linkbtn:hover { color: #fff; background: rgba(255,255,255,.09); }
+.topbar-burger { display: none; align-items: center; justify-content: center; flex: none; width: 40px; height: 40px; margin-right: 2px; border: 0; border-radius: 9px; background: rgba(255,255,255,.14); color: #fff; font-size: 20px; line-height: 1; cursor: pointer; }
+.topbar-burger:hover { background: rgba(255,255,255,.24); }
 
 .main { overflow: auto; padding: 24px; }
 
@@ -273,21 +275,18 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
   /* cabeçalho: título em linha própria (nome quebra), toolbar na linha de baixo */
   .main .flex.between > div:first-child { flex: 1 1 100%; margin-bottom: 6px; }
 
-  /* Menu lateral da Gestão vira uma barra horizontal rolável no topo do conteúdo */
-  .app.com-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "side" "main"; }
+  /* Menu de módulos da Gestão vira GAVETA (abre no botão ☰) — some do fluxo, entra deslizando */
+  .app.com-sidebar { grid-template-columns: minmax(0, 1fr); grid-template-areas: "top" "main"; }
   .app.com-sidebar > .main { min-width: 0; }
   .app.com-sidebar > .sidebar {
-    display: flex; flex-direction: row; overflow-x: auto; overflow-y: hidden;
-    -webkit-overflow-scrolling: touch; box-shadow: var(--sombra); border-bottom: 1px solid rgba(255,255,255,.08);
+    position: fixed; top: 0; left: 0; bottom: 0; width: 262px; max-width: 82vw; z-index: 60;
+    display: flex; flex-direction: column; overflow-y: auto;
+    transform: translateX(-100%); transition: transform .22s ease;
   }
-  .sb-top, .sb-lbl { display: none; }
-  .sb-nav { flex-direction: row; padding: 8px; gap: 6px; }
-  .sb-item {
-    flex-direction: column; gap: 4px; min-width: 66px; padding: 8px 6px; font-size: 10.5px;
-    text-align: center; white-space: nowrap; border-radius: 10px;
-  }
-  .sb-item.on { box-shadow: inset 0 -3px 0 var(--verde-claro); }
-  .sb-ic { width: 22px; height: 22px; }
+  .app.com-sidebar.menu-aberto > .sidebar { transform: translateX(0); box-shadow: 6px 0 26px rgba(0,0,0,.45); }
+  .app.com-sidebar.menu-aberto::after { content: ""; position: fixed; inset: 0; background: rgba(8,18,30,.5); z-index: 55; }
+  .app.com-sidebar .topbar-burger { display: inline-flex; }
+  .sb-item { font-size: 15px; padding: 13px 14px; }  /* alvo confortável de toque na gaveta */
 
   /* Abas do editor rolam de lado (6 abas não cabem no celular) — some o estouro em cascata */
   .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }

@@ -131,10 +131,13 @@
     },
 
     onClick: function (e) {
+      // celular: fecha a gaveta de módulos ao tocar fora dela (não no ☰, não num item)
+      var _apM = document.querySelector(".app.menu-aberto");
+      if (_apM && !(e.target.closest && (e.target.closest("#sidebar") || e.target.closest(".topbar-burger")))) { _apM.classList.remove("menu-aberto"); }
       var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
       if (!t) return;
       // navegação por módulo (sidebar da Gestão)
-      if (t.dataset.view) { this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; this.render(); return; }
+      if (t.dataset.view) { var _apV = document.querySelector(".app"); if (_apV) _apV.classList.remove("menu-aberto"); this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; this.render(); return; }
       // ações da Gestão (CRUD dos módulos)
       if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.gacao, t.dataset, this); return; }
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
@@ -184,6 +187,7 @@
         case "licenca": this.abrirLicenca(); break;
         case "backup": this.abrirBackup(); break;
         case "backup-export": this.exportarBackup(); break;
+        case "menu": { var _apT = document.querySelector(".app"); if (_apT) _apT.classList.toggle("menu-aberto"); break; }
         case "tabelas": this.abrirTabelas(); break;
         case "escanear-pasta": this.escanearPastaUI(); break;
         case "carregar-setop": this.carregarSetop(); break;
