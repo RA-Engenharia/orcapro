@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.30",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.30/OrcaPRO-IA-update-v1.1.30.zip",
-  "notas": "Trabalha em mais de um computador? Novo menu ☁ Nuvem (na sua conta): conecte com o MESMO e-mail e senha em até 3 aparelhos e seus orçamentos aparecem em todos — com avisos claros se a sincronização não conectar. E o botão ✎ de renomear etapa foi consertado (não respondia ao clique).",
+  "versao": "1.1.31",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.31/OrcaPRO-IA-update-v1.1.31.zip",
+  "notas": "EXCLUSIVO: edite quantidades e custos direto no Excel exportado e traga de volta ao OrçaPRO com um clique (📥 Reimportar) — revisando cada mudança antes de aceitar. Também: menu ☁ Nuvem para sincronizar até 3 aparelhos, e botão ✎ de renomear etapa consertado.",
   "obrigatoria": false
 }
