@@ -85,6 +85,11 @@
       this._demo = true;
       this.tela = "editor";
       this.aba = aba;
+      // vitrine da GESTÃO: semeia dados de exemplo (empresa "demo") e permite deep-link
+      // ?demo=1&view=<modulo> (dashboard, obras, rdos, medicoes, financeiro...) p/ site e screenshots
+      try { if (typeof DemoGestao !== "undefined") DemoGestao.seed(); } catch (e) {}
+      var vw = (qs.match(/[?&]view=([a-z]+)/) || [])[1];
+      if (vw && vw !== "orcamentos" && typeof Gestao !== "undefined") { this.view = vw; this.tela = "gestao"; }
       this.bindGlobal();
       this.render();
       this.carregarBaseSinapi().then(function () {}).catch(function () {});
@@ -109,7 +114,7 @@
       topbar.style.display = "flex";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
       var view = this.view || "orcamentos";
-      var podeGestao = typeof Gestao !== "undefined" && !this._demo && Gestao.podeGestao();
+      var podeGestao = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao()); // demo: vitrine explora a Gestão com dados fake
       if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
         // Sem Plus (base/sem licença): Gestão bloqueada p/ TODOS (dono e sub-usuário) → só Orçamento
         if (view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
@@ -118,9 +123,9 @@
         view = Auth.podeModulo("dashboard") ? "dashboard" : "orcamentos";
         this.view = view;
       }
-      // sidebar de módulos (não aparece na vitrine/demo)
+      // sidebar de módulos (na vitrine/demo TAMBÉM: o possível cliente explora a Gestão com dados de exemplo)
       if (sidebar) {
-        if (this._demo || typeof Gestao === "undefined") { sidebar.innerHTML = ""; if (app) app.classList.remove("com-sidebar"); }
+        if (typeof Gestao === "undefined") { sidebar.innerHTML = ""; if (app) app.classList.remove("com-sidebar"); }
         else { sidebar.innerHTML = Gestao.renderSidebar(view); if (app) app.classList.add("com-sidebar"); }
       }
       // módulos da Gestão
