@@ -99,6 +99,9 @@
 
     analisarLinha: function (bruto) {
       var norm = Util.normalizar(bruto);
+      // #22: unidade colada no número ("10m2 de piso", "3,5m3 concreto") —
+      // separa dígito+letra p/ o token da unidade nascer solto e ser achado.
+      norm = norm.replace(/(\d)([a-z])/g, "$1 $2");
       var tokens = norm.split(" ").filter(Boolean);
 
       // 1) Quantidade: primeiro número da linha (aceita 1.234,56)

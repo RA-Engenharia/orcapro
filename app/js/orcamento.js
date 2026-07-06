@@ -57,7 +57,14 @@
       return orc;
     },
     _proxCodigoEtapa: function (orc) {
-      return String(Util.arr(orc.etapas).length + 1) + ".0";
+      // MÁXIMO+1, não length+1: remover a 2ª de 3 etapas e criar outra não
+      // pode duplicar o código (ex.: duas "3.0" confundem relatórios/SUMIFS).
+      var max = 0;
+      Util.arr(orc.etapas).forEach(function (e) {
+        var n = parseInt(String(e.codigo || ""), 10);
+        if (isFinite(n) && n > max) max = n;
+      });
+      return String(max + 1) + ".0";
     },
     removerEtapa: function (orc, etapaId) {
       orc.etapas = Util.arr(orc.etapas).filter(function (e) { return e.id !== etapaId; });

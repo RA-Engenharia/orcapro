@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.31",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.31/OrcaPRO-IA-update-v1.1.31.zip",
-  "notas": "EXCLUSIVO: edite quantidades e custos direto no Excel exportado e traga de volta ao OrçaPRO com um clique (📥 Reimportar) — revisando cada mudança antes de aceitar. Também: menu ☁ Nuvem para sincronizar até 3 aparelhos, e botão ✎ de renomear etapa consertado.",
+  "versao": "1.1.32",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.32/OrcaPRO-IA-update-v1.1.32.zip",
+  "notas": "IA do Escopo Inteligente mais precisa (modelo forte nas tarefas pesadas), códigos de etapa sem duplicar ao remover/criar, unidade separada do número nas planilhas e melhorias no relatório. E o site ganhou demonstração AO VIVO da Gestão de Obras.",
   "obrigatoria": false
 }

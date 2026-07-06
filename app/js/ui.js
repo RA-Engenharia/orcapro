@@ -637,6 +637,8 @@
       var hoje = new Date().toLocaleDateString("pt-BR");
 
       var html = '<div class="rel-doc">';
+      // marca d'água (mesmo padrão da Proposta/Laudo — consistência dos documentos)
+      html += '<div class="wm">' + Util.esc(empresa) + '</div>';
 
       // Cabeçalho
       html += '<div class="rel-head">' +
