@@ -816,6 +816,23 @@
       wa.getCell('F' + itensFlat[0].r).note = 'Qtd editável (amarelo). Custo Total, Preço c/ BDI, subtotais, Sintética, Resumo, ABC e cronograma recalculam em cadeia.';
     }
 
+    // ===================== _META (round-trip xlsx → app) =====================
+    // Aba veryHidden com o JSON do orçamento fatiado (≤30k chars por célula —
+    // limite do Excel é 32.767). Habilita a reimportação com diff no app
+    // (FASE 4; o import é a etapa seguinte). Invisível p/ usuário e impressão.
+    var wmeta = wb.addWorksheet('_meta');
+    wmeta.state = 'veryHidden';
+    var metaJson = JSON.stringify(orc);
+    var FATIA = 30000, metaPartes = Math.max(1, Math.ceil(metaJson.length / FATIA));
+    wmeta.getCell('A1').value = JSON.stringify({
+      v: 1, tipo: 'orcapro-meta', partes: metaPartes,
+      schemaVersao: orc.schemaVersao || null, id: orc.id || '', numero: orc.numero || '',
+      geradoEm: dtEmissao.toISOString()
+    });
+    for (var mi = 0; mi < metaPartes; mi++) {
+      wmeta.getCell('A' + (mi + 2)).value = metaJson.slice(mi * FATIA, (mi + 1) * FATIA);
+    }
+
     // ===================== FASE 2: verificações automáticas (Resumo) =====================
     // Sanidade viva: se o usuário editar algo e um total desalinhar, o Resumo
     // acusa na hora — nada de número silenciosamente errado.
