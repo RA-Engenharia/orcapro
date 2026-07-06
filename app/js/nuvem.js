@@ -86,17 +86,33 @@
     _doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
 
     // Une lista local + nuvem por id; o registro com atualizadoEm mais novo vence.
+    // LOTE 3: edição concorrente (2 aparelhos) NÃO é mais sobrescrita calada —
+    // o vencedor guarda a cópia perdedora em _conflitoDe (até ~50KB; acima
+    // disso, só metadados) e o contador alimenta o aviso pós-sync.
+    _conflitosUltimoMerge: 0,
     _merge: function (local, cloud, ent) {
       if (ent === "prefs") {
         // prefs: mescla campo a campo, o mais novo (por chave) — simplificado: local sobre nuvem
         return Object.assign({}, cloud || {}, local || {});
       }
+      var self = this;
       var byId = {};
       Util.arr(cloud).forEach(function (o) { if (o && o.id) byId[o.id] = o; });
       Util.arr(local).forEach(function (o) {
         if (!o || !o.id) return;
         var c = byId[o.id];
-        if (!c || String(o.atualizadoEm || "") >= String(c.atualizadoEm || "")) byId[o.id] = o;
+        if (!c) { byId[o.id] = o; return; }
+        var tl = String(o.atualizadoEm || ""), tc = String(c.atualizadoEm || "");
+        if (tl === tc) { byId[o.id] = o; return; } // mesma versão: sem conflito
+        var venc = tl > tc ? o : c, perd = tl > tc ? c : o;
+        try {
+          var json = JSON.stringify(perd);
+          venc._conflitoDe = (json.length <= 51200)
+            ? { em: perd.atualizadoEm || "", quando: new Date().toISOString(), copia: perd }
+            : { em: perd.atualizadoEm || "", quando: new Date().toISOString(), resumo: String(perd.nome || perd.numero || perd.id) };
+          self._conflitosUltimoMerge++;
+        } catch (e) {}
+        byId[o.id] = venc;
       });
       return Object.keys(byId).map(function (k) { return byId[k]; });
     },
@@ -105,6 +121,7 @@
     sincronizar: function (empresaId) {
       var self = this;
       if (!this.ligado) return Promise.resolve(false);
+      self._conflitosUltimoMerge = 0;
       return Promise.all(ENTIDADES.map(function (ent) {
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? snap.data().v : null;
@@ -113,7 +130,14 @@
           Store.adapter.gravar(empresaId, ent, merged);              // atualiza cache local
           return self._doc(ent).set({ v: merged, em: Date.now() });  // sobe o mesclado
         }).catch(function () { /* entidade sem dados / offline: ignora */ });
-      })).then(function () { return true; });
+      })).then(function () {
+        if (self._conflitosUltimoMerge > 0) {
+          try {
+            if (global.UI && global.UI.toast) global.UI.toast("⚠ " + self._conflitosUltimoMerge + " registro(s) editados em 2 aparelhos ao mesmo tempo — a versão mais recente venceu e a anterior ficou guardada dentro do registro (não se perdeu nada).", "erro");
+          } catch (e) {}
+        }
+        return true;
+      });
     },
 
     // Escuta mudanças vindas de OUTRO aparelho e atualiza o local + re-render.

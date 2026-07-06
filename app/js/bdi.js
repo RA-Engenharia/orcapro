@@ -29,6 +29,30 @@
     /* Aplica BDI sobre um custo direto -> preço de venda. */
     aplicar: function (custoDireto, percentualBdi) {
       return Util.num(custoDireto) * (1 + Util.num(percentualBdi) / 100);
+    },
+
+    /* LOTE 4 — Faixas referenciais de BDI do Acórdão TCU nº 2.622/2013
+     * (1º e 3º quartis por tipo de obra). Fonte: Acórdão TCU 2.622/2013,
+     * Plenário. Uso: aviso NÃO-bloqueante — fora da faixa, em licitação
+     * pública, o BDI precisa de justificativa formal. */
+    FAIXAS_TCU: {
+      edificacoes:  { label: "Construção de edifícios",                          min: 20.34, max: 25.00 },
+      rodovias:     { label: "Construção de rodovias e ferrovias",               min: 19.60, max: 24.23 },
+      saneamento:   { label: "Redes de abastecimento de água e coleta de esgoto", min: 20.76, max: 26.44 },
+      energia:      { label: "Redes de distribuição de energia elétrica",         min: 24.00, max: 25.84 },
+      portuarias:   { label: "Obras portuárias, marítimas e fluviais",            min: 22.80, max: 27.48 },
+      fornecimento: { label: "Mero fornecimento de materiais e equipamentos",     min: 11.10, max: 16.80 }
+    },
+
+    /* Devolve string de aviso se o BDI estiver fora da faixa TCU do tipo de
+     * obra (default: edificações), ou null se dentro. Nunca bloqueia. */
+    avisoFaixa: function (percentual, tipoObra) {
+      var fx = this.FAIXAS_TCU[tipoObra || "edificacoes"];
+      if (!fx) return null;
+      var p = Util.num(percentual);
+      if (p >= fx.min && p <= fx.max) return null;
+      return "BDI de " + Util.fmtNum(p, 2) + "% está FORA da faixa referencial do Acórdão TCU 2.622/2013 para " +
+        fx.label + " (" + Util.fmtNum(fx.min, 2) + "% a " + Util.fmtNum(fx.max, 2) + "%). Em licitação pública, justifique formalmente ou ajuste.";
     }
   };
 

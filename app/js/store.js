@@ -31,6 +31,14 @@
         return true;
       } catch (e) {
         console.error("[store] falha ao gravar", entidade, e);
+        // LOTE 1: falha de gravação NUNCA é silenciosa — o usuário precisa saber
+        // que a última alteração não persistiu (antes só ia p/ o console).
+        var cota = e && (e.name === "QuotaExceededError" || e.code === 22);
+        try {
+          if (global.UI && global.UI.toast) global.UI.toast(cota
+            ? "⚠ Armazenamento CHEIO — a última alteração NÃO foi salva. Faça 💾 Backup e remova bases não usadas em 🗂 Tabelas."
+            : "⚠ Falha ao salvar \"" + entidade + "\" — a última alteração não persistiu.", "erro");
+        } catch (e2) {}
         return false;
       }
     },
@@ -65,6 +73,17 @@
   /* ---------- Migrações versionadas ----------
    * Nunca apaga dados: transforma de uma versão de schema para a próxima.
    */
+  // LOTE 1: toda migração fica registrada (suporte consegue reconstituir o histórico)
+  function logMigracao(de, para, orcId) {
+    try {
+      var k = NS + ":migracoes";
+      var arr = JSON.parse(localStorage.getItem(k) || "[]");
+      arr.push({ de: de, para: para, orc: orcId || "", em: new Date().toISOString() });
+      if (arr.length > 200) arr = arr.slice(-200); // teto p/ não crescer sem fim
+      localStorage.setItem(k, JSON.stringify(arr));
+    } catch (e) {}
+  }
+
   function migrarOrcamento(o) {
     if (!o) return o;
     var v = o.schemaVersao || 1;
@@ -81,6 +100,7 @@
       if (o.etapas == null) o.etapas = [];
       o.schemaVersao = 3;
     }
+    if (o.schemaVersao !== v) logMigracao(v, o.schemaVersao, o.id);
     return o;
   }
 
@@ -98,9 +118,19 @@
     _bigSet: function (empresaId, entidade, valor) {
       var k = chave(empresaId, entidade);
       _big[k] = valor; // espelho síncrono (vale nesta sessão mesmo se o IDB falhar)
-      if (idbHas()) Idb.set(k, valor).catch(function (e) { console.warn("[store] IDB set falhou (" + entidade + "):", e && e.message); });
+      // LOTE 1: devolve Promise<bool> amarrada ao COMMIT real do IndexedDB
+      // (Idb.set agora resolve no tx.oncomplete) e avisa o usuário na falha —
+      // antes retornava true incondicional e a falha morria no console.
+      var p = idbHas() ? Idb.set(k, valor) : Promise.reject(new Error("IndexedDB indisponível"));
+      p = p.then(function () { return true; }).catch(function (e) {
+        console.error("[store] FALHA ao persistir " + entidade + ":", e && e.message);
+        try {
+          if (global.UI && global.UI.toast) global.UI.toast("⚠ Não consegui salvar \"" + entidade + "\" no disco — os dados valem só até fechar o app. Faça 💾 Backup agora!", "erro");
+        } catch (e2) {}
+        return false;
+      });
       try { localStorage.removeItem(k); } catch (e) {} // nunca deixa cópia grande no localStorage
-      return true;
+      return p;
     },
     _bigDel: function (empresaId, entidade) {
       var k = chave(empresaId, entidade); delete _big[k];
@@ -193,7 +223,12 @@
           }
         }
       } catch (e) {}
-      return { orcamentos: orcs.length, tamanhoKB: Math.round(bytes / 1024), schemaVersao: CONFIG.schemaVersao };
+      // usoPct: estimativa sobre a cota típica de ~5M chars do localStorage —
+      // base p/ o aviso de boot (>80%) que evita o QuotaExceeded silencioso.
+      var usoPct = Math.min(100, Math.round(bytes / (5 * 1024 * 1024) * 100));
+      var migr = [];
+      try { migr = JSON.parse(localStorage.getItem(NS + ":migracoes") || "[]"); } catch (e) {}
+      return { orcamentos: orcs.length, tamanhoKB: Math.round(bytes / 1024), usoPct: usoPct, migracoes: migr.length, schemaVersao: CONFIG.schemaVersao };
     }
   };
 

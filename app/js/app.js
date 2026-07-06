@@ -39,6 +39,14 @@
 
       this.bindGlobal();
       if (Auth.usuario()) { this.tela = "lista"; }
+      // LOTE 1: aviso preventivo de armazenamento — evita o QuotaExceeded silencioso
+      try {
+        var u0 = Auth.usuario();
+        if (u0) {
+          var sd = Store.saude(u0.empresaId);
+          if (sd.usoPct >= 80) UI.toast("⚠ Armazenamento local em " + sd.usoPct + "% — faça 💾 Backup e remova bases não usadas em 🗂 Tabelas.", "erro");
+        }
+      } catch (eSd) {}
       this.render();
       // Auto-update do app: avisa se há versão nova (só no install local; no site/demo o endpoint não existe e é ignorado)
       if (typeof AutoUpdate !== "undefined") { setTimeout(function () { AutoUpdate.verificar(); }, 1800); }
@@ -300,7 +308,8 @@
       if (!cell) return;
       if (l.escolhido > -1 && l.candidatos[l.escolhido]) {
         var c = l.candidatos[l.escolhido], n = Escopo.nivel(c.confianca);
-        cell.innerHTML = '<span class="pill" style="background:var(--' + n.cor + ');color:#fff">' + n.rotulo + ' ' + c.confianca + '%</span>';
+        // LOTE 3: cast numérico defensivo (confianca vem do scoring, mas innerHTML não perdoa)
+        cell.innerHTML = '<span class="pill" style="background:var(--' + n.cor + ');color:#fff">' + n.rotulo + ' ' + (Util.num(c.confianca) || 0) + '%</span>';
       } else {
         cell.innerHTML = '<span class="pill proprio">Pendente</span>';
       }
@@ -758,7 +767,8 @@
         '<div class="field"><label>Obra/Local</label><input id="ed-obra" value="' + Util.esc(o.obra.nome) + '"></div></div>' +
         '<div class="row"><div class="field"><label>Competência SINAPI</label><input id="ed-comp" value="' + Util.esc(o.competenciaSinapi) + '"></div>' +
         '<div class="field"><label>UF</label><input id="ed-uf" value="' + Util.esc(o.uf) + '"></div></div>' +
-        '<div class="field"><label>ART/RRT nº (opcional — aparece no Anexo p/ Laudo)</label><input id="ed-art" value="' + Util.esc(o.art || "") + '" placeholder="ex.: MG20260000000"></div>' +
+        '<div class="field"><label>ART/RRT nº (obrigatório p/ o Anexo de Laudo)</label><input id="ed-art" value="' + Util.esc(o.art || "") + '" placeholder="ex.: MG20260000000"></div>' +
+        '<div class="field"><label>Data da vistoria (obrigatória p/ o Anexo de Laudo)</label><input id="ed-vistoria" value="' + Util.esc(o.dataVistoria || "") + '" placeholder="ex.: 05/07/2026"></div>' +
         '<h3 style="margin:8px 0;border-top:1px solid var(--linha);padding-top:14px">Dados para a Proposta Comercial</h3>' +
         '<div class="field"><label>Condições de pagamento</label><textarea id="ed-pag" rows="2">' + Util.esc(c.condicoesPagamento) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Prazo de execução</label><input id="ed-prazo" value="' + Util.esc(c.prazoExecucao) + '"></div>' +
@@ -775,6 +785,7 @@
             o.competenciaSinapi = (UI.el("ed-comp") || {}).value || o.competenciaSinapi;
             o.uf = (UI.el("ed-uf") || {}).value || o.uf;
             o.art = (UI.el("ed-art") || {}).value || "";
+            o.dataVistoria = (UI.el("ed-vistoria") || {}).value || "";
             c.condicoesPagamento = (UI.el("ed-pag") || {}).value || "";
             c.prazoExecucao = (UI.el("ed-prazo") || {}).value || "";
             c.validadeProposta = (UI.el("ed-val") || {}).value || "";
@@ -817,8 +828,20 @@
     },
 
     removerEtapa: function (etapaId) {
-      Orcamento.removerEtapa(this.orcAtual, etapaId);
-      this.persistir(); this.render();
+      // LOTE 1: etapa pode ter dezenas de itens e não há desfazer — confirmar antes.
+      var self = this, orc = this.orcAtual;
+      var et = orc && (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
+      var nItens = et ? (et.itens || []).length : 0;
+      UI.modal("🗑 Remover etapa",
+        '<p>Remover a etapa <b>' + Util.esc((et && et.nome) || "") + '</b>' +
+        (nItens ? ' com <b>' + nItens + ' item(ns)</b>' : '') + '?<br><span class="muted">Essa ação não tem desfazer.</span></p>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "🗑 Remover", classe: "", onClick: function () {
+              UI.fecharModal();
+              Orcamento.removerEtapa(orc, etapaId);
+              self.persistir(); self.render();
+            } }
+        ]);
     },
     removerItem: function (etapaId, itemId) {
       Orcamento.removerItem(this.orcAtual, etapaId, itemId);
@@ -1044,6 +1067,11 @@
       Orcamento.aplicarBdi(this.orcAtual, modeloSel, p);
       this.persistir(); this.render();
       UI.toast("BDI aplicado: " + Util.fmtPct(this.orcAtual.bdi.percentual), "ok");
+      // LOTE 4: aviso não-bloqueante da faixa TCU 2.622/2013 (default: edificações)
+      try {
+        var avisoFx = Bdi.avisoFaixa && Bdi.avisoFaixa(this.orcAtual.bdi.percentual);
+        if (avisoFx) UI.toast("⚠ " + avisoFx, "erro");
+      } catch (eFx) {}
     },
 
     // ---------- Export ----------
@@ -1295,6 +1323,12 @@
         UI.toast("Faltam dados: " + val.faltando.join(", ") + ". Abra ⚙ Dados.", "erro");
         return;
       }
+      // LOTE 4: avisos NÃO-bloqueantes de acabamento — proposta sai, mas o usuário sabe
+      try {
+        if (typeof Empresa !== "undefined" && !Empresa.logo()) UI.toast("Sem logo em ⚙ Empresa — a capa sai com [LOGO]. Suba o logo p/ proposta 100% profissional.", "erro");
+        var _c = this.orcAtual.comercial || {};
+        if (!Util.naoVazio(_c.apresentacao)) UI.toast("Apresentação em ⚙ Dados vazia — saiu o texto padrão. Personalize p/ este cliente.", "erro");
+      } catch (eAv) {}
       this._abrirPrint("📄 Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()));
     },
 

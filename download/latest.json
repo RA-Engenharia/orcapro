@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.25",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.25/OrcaPRO-IA-update-v1.1.25.zip",
-  "notas": "Planilha VIVA completa (9 abas): nova aba Parâmetros com matriz de desembolso etapa×mês dirigindo o Cronograma por fórmula, data-base em todas as abas, bloco Responsável Técnico + ART, e Memória de Cálculo por item (Lei 14.133) — com campo 📝 no app para preenchê-la.",
+  "versao": "1.1.26",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.26/OrcaPRO-IA-update-v1.1.26.zip",
+  "notas": "Laudo pericial formal (ART/CREA e data de vistoria), memória de cálculo no PDF (Lei 14.133), aviso de faixa TCU no BDI, proteção contra perda de dados e senhas com criptografia reforçada (migração automática no login).",
   "obrigatoria": false
 }

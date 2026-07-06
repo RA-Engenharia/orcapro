@@ -20,6 +20,36 @@
       localStorage.setItem(this._usuariosKey, JSON.stringify(us));
     },
 
+    /* LOTE 3 — hash de senha v2: SHA-256 iterado 3000× com salt por usuário
+     * (formato "v2$<salt>$<hex>"). O formato antigo era Base64 REVERSÍVEL —
+     * segue aceito SÓ para migrar no primeiro login válido (transparente,
+     * nenhuma conta invalidada). Sem WebCrypto de propósito: o app roda em
+     * http/file:// onde crypto.subtle não existe. */
+    _salt: function () {
+      var s = "";
+      try {
+        var a = new Uint8Array(8);
+        (global.crypto || {}).getRandomValues(a);
+        for (var i = 0; i < 8; i++) s += ("0" + a[i].toString(16)).slice(-2);
+      } catch (e) {}
+      while (s.length < 16) s += Math.floor(Math.random() * 16).toString(16);
+      return s.slice(0, 16);
+    },
+    _hashV2: function (senha, salt) {
+      var h = String(senha) + "|" + salt;
+      for (var i = 0; i < 3000; i++) h = Util.sha256hex(h + "|" + salt + "|" + i);
+      return "v2$" + salt + "$" + h;
+    },
+    _conferir: function (senha, armazenado) {
+      var s = String(armazenado || "");
+      if (s.indexOf("v2$") === 0) {
+        var partes = s.split("$");
+        return { ok: this._hashV2(senha, partes[1] || "") === s, legado: false };
+      }
+      // formato legado (Base64): confere para permitir a migração no login
+      return { ok: btoa(unescape(encodeURIComponent(senha))) === s, legado: true };
+    },
+
     registrar: function (empresa, email, senha, plano) {
       email = String(email || "").trim().toLowerCase();
       if (!Util.naoVazio(email) || !Util.naoVazio(senha)) {
@@ -33,8 +63,7 @@
         empresaId: Util.uid("emp"),
         empresa: empresa || "Minha Empresa",
         email: email,
-        // Demo: hash trivial. Em SaaS use Firebase Auth (nunca senha em texto).
-        senhaHash: btoa(unescape(encodeURIComponent(senha))),
+        senhaHash: this._hashV2(senha, this._salt()), // v2 desde o nascimento
         plano: plano || "PRO", // demo nasce PRO para mostrar tudo
         criadoEm: Util.agoraISO()
       };
@@ -46,9 +75,14 @@
     login: function (email, senha) {
       email = String(email || "").trim().toLowerCase();
       var us = this._lerUsuarios();
-      var hash = btoa(unescape(encodeURIComponent(senha)));
-      var u = us.filter(function (x) { return x.email === email && x.senhaHash === hash; })[0];
+      var u = us.filter(function (x) { return x.email === email; })[0];
       if (!u) return { ok: false, erro: "E-mail ou senha inválidos." };
+      var c = this._conferir(senha, u.senhaHash);
+      if (!c.ok) return { ok: false, erro: "E-mail ou senha inválidos." };
+      if (c.legado) { // migração transparente: Base64 morre aqui, conta preservada
+        u.senhaHash = this._hashV2(senha, this._salt());
+        this._gravarUsuarios(us);
+      }
       return { ok: true, usuario: u };
     },
 
@@ -66,7 +100,7 @@
       var us = this._lerUsuarios();
       var u = us.filter(function (x) { return x.email === email; })[0];
       if (!u) return { ok: false, erro: "Não há conta com esse e-mail neste navegador." };
-      u.senhaHash = btoa(unescape(encodeURIComponent(nova)));
+      u.senhaHash = this._hashV2(nova, this._salt()); // sempre v2
       this._gravarUsuarios(us);
       return { ok: true, usuario: u };
     }

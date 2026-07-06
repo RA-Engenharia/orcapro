@@ -178,7 +178,12 @@
       if (!etapa) return orc;
       var it = etapa.itens.filter(function (x) { return x.id === itemId; })[0];
       if (!it) return orc;
-      if (campos.quantidade != null) it.quantidade = Util.num(campos.quantidade);
+      // LOTE 2: quantidade ≤ 0 vira item fantasma silencioso — rejeita e mantém o valor
+      if (campos.quantidade != null) {
+        var q = Util.num(campos.quantidade);
+        if (q > 0) it.quantidade = q;
+        else { try { if (global.UI && global.UI.toast) global.UI.toast("Quantidade deve ser maior que zero — valor anterior mantido.", "erro"); } catch (e) {} }
+      }
       if (campos.custoUnitario != null) it.custoUnitario = Util.num(campos.custoUnitario);
       if (campos.descricao != null) it.descricao = campos.descricao;
       return orc;
@@ -227,19 +232,49 @@
       };
     },
 
+    // LOTE 4: regime de composição declarado (Lei 14.133 exige) — olha os itens;
+    // sem marcação por item, cai no flag do orçamento. Nunca fica em branco.
+    regimeDe: function (orc) {
+      var des = false, one = false;
+      Util.arr(orc && orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          if (it.desonerado === true) des = true;
+          else if (it.desonerado === false) one = true;
+        });
+      });
+      if (des && one) return "misto (desonerado + onerado)";
+      if (des) return "desonerado";
+      if (one) return "onerado";
+      return (orc && orc.desonerado) ? "desonerado" : "onerado";
+    },
+
     // Resumo sintético: uma linha por etapa
     sintetico: function (orc) {
       var pct = orc.bdi ? orc.bdi.percentual : 0;
-      var totalGeral = this.totais(orc).precoVenda || 1;
-      return Util.arr(orc.etapas).map(function (e) {
+      var t = this.totais(orc);
+      var totalGeral = t.precoVenda || 1;
+      var r2 = function (n) { return Math.round((n + Number.EPSILON) * 100) / 100; };
+      var rows = Util.arr(orc.etapas).map(function (e) {
         var custo = 0;
         Util.arr(e.itens).forEach(function (it) { custo += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
         var venda = Bdi.aplicar(custo, pct);
         return {
           codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length,
-          custoDireto: custo, precoVenda: venda, peso: (venda / totalGeral) * 100
+          custoDireto: r2(custo), precoVenda: r2(venda), peso: 0
         };
       });
+      // LOTE 2: reconciliação de centavos — a soma das etapas arredondadas TEM
+      // que bater ao centavo com o total geral (licitação rejeita por 1 cent).
+      // A diferença residual do arredondamento vai para a maior etapa.
+      var somaC = 0, somaV = 0, maior = null;
+      rows.forEach(function (r) { somaC += r.custoDireto; somaV += r.precoVenda; if (!maior || r.precoVenda > maior.precoVenda) maior = r; });
+      if (maior) {
+        var difC = r2(r2(t.custoDireto) - r2(somaC)), difV = r2(r2(t.precoVenda) - r2(somaV));
+        if (difC) maior.custoDireto = r2(maior.custoDireto + difC);
+        if (difV) maior.precoVenda = r2(maior.precoVenda + difV);
+      }
+      rows.forEach(function (r) { r.peso = (r.precoVenda / totalGeral) * 100; });
+      return rows;
     },
 
     // Linha a linha (analítico) — útil p/ export

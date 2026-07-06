@@ -69,7 +69,10 @@
             row("Validade", c.validadeProposta) +
             rowRaw("Valor total", '<b style="color:var(--p-verde)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
           '</div>' +
-          '<div class="capa-rod">' + Util.esc(empresa) + ' · Proposta gerada por ' + Util.esc(marca.nome) + '</div>' +
+          '<div class="capa-rod">' + Util.esc(empresa) +
+            (emp && Util.naoVazio(emp.cnpj) ? ' · CNPJ ' + Util.esc(emp.cnpj) : '') +
+            (emp && Util.naoVazio(emp.endereco) ? ' · ' + Util.esc(emp.endereco) : (emp && Util.naoVazio(emp.cidade) ? ' · ' + Util.esc(emp.cidade) : '')) +
+            ' · Proposta gerada por ' + Util.esc(marca.nome) + '</div>' +
         '</section>');
 
       // 2) APRESENTAÇÃO
@@ -93,7 +96,10 @@
         '<p><b>Premissas:</b> condições normais de trabalho e acesso à obra; fornecimento de água e energia ' +
         'pelo contratante durante a execução; quantitativos sujeitos a confirmação em projeto executivo.</p>' +
         '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
-        'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>'));
+        'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>' +
+        '<p><b>Base de preços:</b> SINAPI ' + Util.esc(orc.competenciaSinapi || '—') + '/' + Util.esc(orc.uf || '—') +
+        ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
+        'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>'));
 
       // 6) RESUMO FINANCEIRO
       P.push(pg("5. Resumo Financeiro",

@@ -161,11 +161,29 @@
       Store.salvarBasesExtras(empresaId, payload); // IndexedDB — sem cota do localStorage
       return { ok: true };
     },
-    carregar: function (empresaId) {
+    carregar: function (empresaId, ufAtiva) {
       if (typeof Store === "undefined") return 0;
       var arr = Store.lerBasesExtras(empresaId);
       var self = this; var n = 0;
-      (Array.isArray(arr) ? arr : []).forEach(function (p) { if (p && p.fonte) { self.registrar(p.fonte, p); n++; } });
+      // LOTE 2: base de OUTRA UF não entra ativa por padrão — preço regional
+      // errado em proposta é bug de valor. Dados preservados; reativar em 🗂
+      // Tabelas é decisão consciente do usuário.
+      ufAtiva = String(ufAtiva || (typeof Sinapi !== "undefined" && Sinapi.uf) || "").toUpperCase();
+      var desativadas = [];
+      (Array.isArray(arr) ? arr : []).forEach(function (p) {
+        if (!p || !p.fonte) return;
+        self.registrar(p.fonte, p); n++;
+        var ufBase = String(p.uf || "").toUpperCase();
+        if (ufAtiva && ufBase && ufBase !== ufAtiva && ufBase !== "BR") {
+          self.setAtiva(p.fonte, false);
+          desativadas.push(p.fonte + " (" + ufBase + ")");
+        }
+      });
+      if (desativadas.length) {
+        try {
+          if (global.UI && global.UI.toast) global.UI.toast("Bases de outra UF desativadas: " + desativadas.join(", ") + " — UF atual é " + ufAtiva + ". Reative em 🗂 Tabelas se for intencional.", "erro");
+        } catch (e) {}
+      }
       return n;
     }
   };

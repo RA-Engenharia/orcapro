@@ -23,11 +23,27 @@
   function os(mode) { return open().then(function (db) { return db.transaction(STORE, mode).objectStore(STORE); }); }
   function req(p) { return new Promise(function (res, rej) { p.onsuccess = function () { res(p.result); }; p.onerror = function () { rej(p.error); }; }); }
 
+  // LOTE 1 (durabilidade): escrita SÓ confirma no oncomplete da TRANSAÇÃO.
+  // O onsuccess do request dispara ANTES do commit — fechar o app nessa janela
+  // perdia o dado mesmo com a Promise já resolvida.
+  function mut(fn) {
+    return open().then(function (db) {
+      return new Promise(function (res, rej) {
+        var tx, out;
+        try { tx = db.transaction(STORE, "readwrite"); out = fn(tx.objectStore(STORE)); }
+        catch (e) { rej(e); return; }
+        tx.oncomplete = function () { res(out && out.result); };
+        tx.onerror = function () { rej(tx.error || new Error("tx falhou")); };
+        tx.onabort = function () { rej(tx.error || new Error("tx abortada")); };
+      });
+    });
+  }
+
   var Idb = {
     disponivel: function () { return !!global.indexedDB; },
     get: function (k) { return os("readonly").then(function (s) { return req(s.get(k)); }); },
-    set: function (k, v) { return os("readwrite").then(function (s) { return req(s.put(v, k)); }); },
-    del: function (k) { return os("readwrite").then(function (s) { return req(s.delete(k)); }); }
+    set: function (k, v) { return mut(function (s) { return s.put(v, k); }); },
+    del: function (k) { return mut(function (s) { return s.delete(k); }); }
   };
 
   global.Idb = Idb;

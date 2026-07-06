@@ -14,6 +14,12 @@
       var f = [];
       if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) f.push("Requerente/Cliente");
       if (Orcamento.totais(orc).qtdItens < 1) f.push("Ao menos 1 item");
+      // LOTE 4: documento pericial sem registro técnico é irregular perante o
+      // CREA/CAU — e sem data de vistoria não é formal. Bloqueia com instrução.
+      if (!Util.naoVazio(orc.art)) f.push("ART/RRT (preencha em ⚙ Dados)");
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null;
+      if (!emp || !Util.naoVazio(emp.crea)) f.push("Registro CREA/CAU (preencha em ⚙ Empresa)");
+      if (!Util.naoVazio(orc.dataVistoria)) f.push("Data da vistoria (preencha em ⚙ Dados)");
       return { ok: f.length === 0, faltando: f };
     },
 
@@ -58,6 +64,7 @@
           row("Requerente / Cliente", orc.cliente.nome) +
           row("Imóvel / Local", local) +
           row("Orçamento nº", orc.numero) +
+          row("Data da vistoria", Util.naoVazio(orc.dataVistoria) ? orc.dataVistoria : "[____]") +
           row("Data de referência", hoje) +
           row("Base de preços", "SINAPI " + (orc.competenciaSinapi || "—") + " / " + (orc.uf || "—")) +
           rowRaw("Valor total estimado", '<b style="color:var(--p-verde,#16a34a)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
@@ -85,10 +92,10 @@
       P.push(pg("3. Metodologia e Critérios de Orçamentação",
         '<p>Os preços foram compostos a partir do <b>Sistema Nacional de Pesquisa de Custos e Índices da Construção Civil — SINAPI</b>, mantido pela Caixa Econômica Federal e pelo IBGE, na competência <b>' + Util.esc(orc.competenciaSinapi || "—") + ' (' + Util.esc(orc.uf || "—") + ')</b>, adotando-se:</p>' +
         '<ul>' +
-        '<li>composições oficiais de custo unitário, com quebra de mão de obra, material e equipamento, em regime <b>' + (orc.desonerado ? "desonerado" : "não desonerado") + '</b>;</li>' +
+        '<li>composições oficiais de custo unitário, com quebra de mão de obra, material e equipamento, em regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? "desonerado" : "onerado")) + '</b>;</li>' +
         '<li>itens sem correspondência direta na SINAPI orçados por <b>cotação de mercado</b> ou composição própria, identificados na planilha;</li>' +
         '<li><b>BDI</b> (Benefícios e Despesas Indiretas) de <b>' + Util.fmtPct(pct) + '</b>, em conformidade com a metodologia do Acórdão <b>TCU nº 2.622/2013</b>;</li>' +
-        '<li>quantitativos apurados a partir do levantamento técnico realizado em vistoria <i>in loco</i>.</li>' +
+        '<li>quantitativos apurados a partir do levantamento técnico realizado em vistoria <i>in loco</i>' + (Util.naoVazio(orc.dataVistoria) ? ' em <b>' + Util.esc(orc.dataVistoria) + '</b>' : '') + '.</li>' +
         '</ul>' +
         '<p>Aplicam-se, no que couber, as normas <b>ABNT NBR 13.752</b> (perícias de engenharia na construção civil) e demais normas técnicas vigentes.</p>'));
 
@@ -121,6 +128,24 @@
         '<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th><th class="r">Custo total</th></tr></thead>' +
         '<tbody>' + analHtml + '</tbody>' +
         '<tfoot><tr><td colspan="5">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr></tfoot></table>'));
+
+      // ---- 5.1 MEMÓRIA DE CÁLCULO (Lei 14.133 — justificativa dos quantitativos) ----
+      // LOTE 4: o campo já era capturado na UI mas não saía no PDF do laudo.
+      var memHtml = '';
+      Util.arr(orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          if (!Util.naoVazio(it.memoriaCalculo)) return;
+          memHtml += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
+            '<td class="r">' + Util.fmtNum(it.quantidade, 2) + ' ' + Util.esc(it.unidade || '') + '</td>' +
+            '<td>' + Util.esc(it.memoriaCalculo) + '</td></tr>';
+        });
+      });
+      if (memHtml) {
+        P.push(pg("5.1 Memória de Cálculo dos Quantitativos",
+          '<p>Justificativa dos quantitativos adotados, conforme levantamento técnico (art. 23 da Lei nº 14.133/2021):</p>' +
+          '<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Código</th><th>Serviço</th><th class="r">Qtd</th><th>Memória de cálculo</th></tr></thead>' +
+          '<tbody>' + memHtml + '</tbody></table>'));
+      }
 
       // ---- 6. RESUMO FINANCEIRO ----
       var mmeHtml = mme ? ('<h3 style="margin-top:18px">Composição do custo</h3><table class="prop-tbl"><tbody>' +
