@@ -232,6 +232,45 @@
       };
     },
 
+    // ---------- #18: medição vinculada ao orçamento ----------
+    // Linhas mediveis: 1 por item, com preço unitário COM BDI (o que se fatura).
+    itensMediveis: function (orc) {
+      var pct = (orc && orc.bdi) ? Util.num(orc.bdi.percentual) : 0;
+      var out = [];
+      Util.arr(orc && orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          var qtd = Util.num(it.quantidade), pu = Util.num(it.custoUnitario) * (1 + pct / 100);
+          out.push({
+            itemId: it.id, etapa: e.nome || e.codigo || "", codigo: it.codigo || "",
+            descricao: it.descricao || "", unidade: it.unidade || "un",
+            qtdContratada: qtd, precoUnit: pu, valorContratado: qtd * pu
+          });
+        });
+      });
+      return out;
+    },
+    // Consolida um boletim: % medido no período por item (mapa itemId -> %),
+    // com o acumulado anterior por item p/ acusar estouro de 100%.
+    medirItens: function (orc, pctPorItem, pctAnteriorPorItem) {
+      var r2 = function (n) { return Math.round((n + Number.EPSILON) * 100) / 100; };
+      var linhas = this.itensMediveis(orc), itens = [], total = 0, avisos = [];
+      linhas.forEach(function (L) {
+        var p = Util.num((pctPorItem || {})[L.itemId]);
+        if (p <= 0) return;
+        var ant = Util.num((pctAnteriorPorItem || {})[L.itemId]);
+        if (ant + p > 100.0001) avisos.push((L.codigo || L.descricao.slice(0, 20)) + " passa de 100% (" + Util.fmtNum(ant + p, 1) + "% acum.)");
+        var qtdMed = L.qtdContratada * p / 100, valor = r2(qtdMed * L.precoUnit);
+        total += valor;
+        itens.push({
+          itemId: L.itemId, etapa: L.etapa, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
+          qtdContratada: L.qtdContratada, precoUnit: r2(L.precoUnit),
+          pctAnterior: r2(ant), pctPeriodo: r2(p), qtdMedida: r2(qtdMed), valor: valor
+        });
+      });
+      var t = this.totais(orc);
+      return { itens: itens, total: r2(total), pctDoOrcamento: t.precoVenda > 0 ? (total / t.precoVenda * 100) : 0, avisos: avisos };
+    },
+
     // LOTE 4: regime de composição declarado (Lei 14.133 exige) — olha os itens;
     // sem marcação por item, cai no flag do orçamento. Nunca fica em branco.
     regimeDe: function (orc) {

@@ -378,12 +378,27 @@
       return html + "</tbody></table>";
     },
     novoMedicao: function () { this.formMedicao(null); },
+    // #18: acumulado ANTERIOR por item (medições da mesma obra + mesmo orçamento, exceto a atual)
+    _pctAnterioresPorItem: function (obraId, orcamentoId, medicaoAtualId) {
+      var acc = {};
+      lista("medicoes").forEach(function (x) {
+        if (x.obraId !== obraId || x.orcamentoId !== orcamentoId) return;
+        if (medicaoAtualId && String(x.id) === String(medicaoAtualId)) return;
+        Util.arr(x.itens).forEach(function (it) { acc[it.itemId] = (acc[it.itemId] || 0) + Util.num(it.pctPeriodo); });
+      });
+      return acc;
+    },
     formMedicao: function (m) {
+      var self = this;
       m = m || {}; var obras = lista("obras"), contratos = lista("contratos");
+      var orcs = Store.listarOrcamentos(eid());
       var num = m.numero || String(lista("medicoes").length + 1).padStart(2, "0") + "ª";
       var corpo =
         '<div class="row">' + campo("Nº da medição", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.medicaoStatus, m.status || "pendente"))) + "</div>" +
         '<div class="row">' + campo("Obra *", sel("g-obra", optsRec(obras, "nome", m.obraId, "— selecionar —"))) + campo("Contrato", sel("g-contrato", optsRec(contratos, "numero", m.contratoId, "— nenhum —"))) + "</div>" +
+        // #18: medição vinculada ao orçamento — os itens orçados viram linhas mediveis
+        '<div class="row">' + campo("Orçamento (medir por itens)", sel("g-orcmed", optsRec(orcs, "nome", m.orcamentoId, "— medição por valor (manual) —"))) + "</div>" +
+        '<div id="med-itens"></div>' +
         '<div class="row">' + campo("Período (início)", inp("g-pini", m.periodoInicio, "", "date")) + campo("Período (fim)", inp("g-pfim", m.periodoFim, "", "date")) + "</div>" +
         '<div class="row">' + campo("% executado no período", inp("g-pct", m.percentual)) + campo("Valor medido (R$) *", inp("g-valor", m.valor)) + campo("Retenção (%)", inp("g-ret", m.retencao == null ? 5 : m.retencao)) + "</div>" +
         campo("Descrição dos serviços medidos", '<textarea id="g-desc" rows="2">' + Util.esc(m.descricao || "") + "</textarea>");
@@ -391,9 +406,87 @@
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.obraId = v("g-obra");
         if (!obj.obraId) { UI.toast("Selecione a obra da medição.", "erro"); return false; }
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
-        obj.percentual = nv("g-pct"); obj.valor = nv("g-valor"); obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
+        obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
+        // #18: com orçamento selecionado, valor e % NASCEM dos itens (não se digita)
+        var orcId = v("g-orcmed");
+        if (orcId) {
+          var orc = Store.obterOrcamento(eid(), orcId);
+          if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return false; }
+          var pcts = {};
+          Array.prototype.forEach.call(document.querySelectorAll("[data-medpct]"), function (i2) {
+            var p = Util.num(i2.value); if (p > 0) pcts[i2.getAttribute("data-medpct")] = p;
+          });
+          var ant = self._pctAnterioresPorItem(obj.obraId, orcId, obj.id);
+          var res = Orcamento.medirItens(orc, pcts, ant);
+          if (!res.itens.length) { UI.toast("Informe o % medido de ao menos 1 item (ou volte para medição manual).", "erro"); return false; }
+          if (res.avisos.length) UI.toast("⚠ " + res.avisos.slice(0, 3).join(" · "), "erro");
+          obj.orcamentoId = orcId; obj.itens = res.itens;
+          obj.valor = res.total; obj.percentual = Math.round(res.pctDoOrcamento * 10) / 10;
+        } else {
+          obj.orcamentoId = null; obj.itens = null;
+          obj.percentual = nv("g-pct"); obj.valor = nv("g-valor");
+        }
         return true;
       });
+      setTimeout(function () { self._ligarMedItens(m); }, 60); // pós-abertura do modal
+    },
+    // #18: tabela de itens mediveis dentro do modal (recalcula ao digitar %)
+    _ligarMedItens: function (m) {
+      var self = this;
+      var selOrc = UI.el("g-orcmed"), box = UI.el("med-itens");
+      if (!selOrc || !box) return;
+      function pintar() {
+        var orcId = selOrc.value;
+        var gv = UI.el("g-valor"), gp = UI.el("g-pct");
+        if (!orcId) { box.innerHTML = ""; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
+        var orc = Store.obterOrcamento(eid(), orcId);
+        if (!orc) { box.innerHTML = '<div class="muted">Orçamento não encontrado.</div>'; return; }
+        var ant = self._pctAnterioresPorItem(v("g-obra"), orcId, m.id);
+        var salvos = {};
+        if (m.orcamentoId === orcId) Util.arr(m.itens).forEach(function (it) { salvos[it.itemId] = it.pctPeriodo; });
+        var linhas = Orcamento.itensMediveis(orc);
+        var html = '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">Preço c/BDI</th><th class="num">% ant.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
+        linhas.forEach(function (L) {
+          var a = Util.num(ant[L.itemId]);
+          html += '<tr><td>' + (L.codigo ? "<b>" + Util.esc(L.codigo) + "</b> " : "") + Util.esc(String(L.descricao).slice(0, 60)) + "</td>"
+            + "<td>" + Util.esc(L.unidade) + "</td>"
+            + '<td class="num">' + Util.fmtNum(L.qtdContratada, 2) + "</td>"
+            + '<td class="num">' + Util.fmtMoeda(L.precoUnit) + "</td>"
+            + '<td class="num" style="color:' + (a >= 99.95 ? "#16a34a" : "#64748b") + '">' + Util.fmtNum(a, 1) + "%</td>"
+            + '<td class="num"><input data-medpct="' + Util.esc(L.itemId) + '" value="' + Util.esc(salvos[L.itemId] != null ? String(salvos[L.itemId]).replace(".", ",") : "") + '" placeholder="0" style="width:58px;text-align:right;background:#fff9e0"></td>'
+            + '<td class="num" data-medval="' + Util.esc(L.itemId) + '">—</td></tr>';
+        });
+        html += '</tbody><tfoot><tr><td colspan="6" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b data-medtot>—</b></td></tr></tfoot></table>'
+          + '<div class="muted" style="font-size:11px;margin-bottom:6px">Informe o % executado NO PERÍODO por item — valor e % da medição são calculados sozinhos. Vermelho = estourou 100% acumulado.</div>';
+        box.innerHTML = html;
+        function recalc() {
+          var tot = 0;
+          linhas.forEach(function (L) {
+            var i2 = box.querySelector('[data-medpct="' + L.itemId + '"]');
+            var vl = box.querySelector('[data-medval="' + L.itemId + '"]');
+            var p = i2 ? Util.num(i2.value) : 0;
+            var val = p > 0 ? Math.round(L.qtdContratada * p / 100 * L.precoUnit * 100) / 100 : 0;
+            tot += val;
+            if (vl) vl.textContent = val ? Util.fmtMoeda(val) : "—";
+            if (i2) i2.style.borderColor = (Util.num(ant[L.itemId]) + p > 100.0001) ? "#dc2626" : "";
+          });
+          var t = box.querySelector("[data-medtot]"); if (t) t.textContent = Util.fmtMoeda(tot);
+          var t2 = Orcamento.totais(orc);
+          if (gv) { gv.value = tot.toFixed(2).replace(".", ","); gv.readOnly = true; }
+          if (gp) { gp.value = (t2.precoVenda > 0 ? (tot / t2.precoVenda * 100) : 0).toFixed(1).replace(".", ","); gp.readOnly = true; }
+        }
+        Array.prototype.forEach.call(box.querySelectorAll("[data-medpct]"), function (i2) { i2.oninput = recalc; });
+        recalc();
+      }
+      selOrc.addEventListener("change", pintar);
+      var gObra = UI.el("g-obra");
+      if (gObra) gObra.addEventListener("change", function () {
+        // obra criada a partir de orçamento já aponta o orçamento certo
+        var ob = Store.obter(eid(), "obras", gObra.value);
+        if (ob && ob.orcamentoId && !selOrc.value) selOrc.value = ob.orcamentoId;
+        pintar();
+      });
+      if (selOrc.value) pintar();
     },
 
     // Chave ÚNICA de ordenação da sequência de medições (mesma em _medicaoCalc e no histórico do Excel).
@@ -402,6 +495,12 @@
     _medicaoCalc: function (m) {
       var self = this, obra = m.obraId ? Store.obter(eid(), "obras", m.obraId) : null;
       var contratado = obra ? Util.num(obra.valor) : 0;
+      // #18: com orçamento vinculado, o contratado é o preço de venda do
+      // ORÇAMENTO (fonte da verdade) — fallback no valor digitado da obra.
+      if (m.orcamentoId && typeof Orcamento !== "undefined") {
+        var orcV = Store.obterOrcamento ? Store.obterOrcamento(eid(), m.orcamentoId) : null;
+        if (orcV) { var tv = Orcamento.totais(orcV); if (Util.num(tv.precoVenda) > 0) contratado = tv.precoVenda; }
+      }
       var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })
         .sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
       var anterior = 0, atual = Util.num(m.valor), acumulado = 0, achou = false;
@@ -438,6 +537,23 @@
         + lin("Retenção contratual (" + Util.fmtNum(c.retencao, 1) + "%)", c.retVal, null)
         + lin("Líquido a faturar nesta medição", c.liquido, null, true)
         + "</tbody></table>"
+        + (function () { // #18: itens medidos do orçamento vinculado (memória do boletim)
+          var its = Util.arr(m.itens); if (!its.length) return "";
+          var td = function (s, dir) { return "<td style='border:1px solid #bbb;padding:5px" + (dir ? ";text-align:right" : "") + "'>" + s + "</td>"; };
+          var h = "<h3 style='border-bottom:2px solid #16a34a;padding-bottom:4px;font-size:13px;margin-top:14px'>ITENS MEDIDOS NESTE BOLETIM</h3>"
+            + "<table style='width:100%;border-collapse:collapse;font-size:11px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;text-align:left'>Código</th><th style='border:1px solid #bbb;padding:5px;text-align:left'>Serviço</th><th style='border:1px solid #bbb;padding:5px'>Und</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd contr.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% ant.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% período</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% acum.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd medida</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Preço unit. c/BDI</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor (R$)</th></tr></thead><tbody>";
+          its.forEach(function (it) {
+            var acum = Util.num(it.pctAnterior) + Util.num(it.pctPeriodo);
+            h += "<tr>" + td(Util.esc(it.codigo || "—")) + td(Util.esc(it.descricao)) + td(Util.esc(it.unidade))
+              + td(Util.fmtNum(it.qtdContratada, 2), 1) + td(Util.fmtNum(it.pctAnterior, 1) + "%", 1)
+              + td("<b>" + Util.fmtNum(it.pctPeriodo, 1) + "%</b>", 1)
+              + td("<span style='color:" + (acum > 100.0001 ? "#dc2626" : (acum >= 99.95 ? "#16a34a" : "#111")) + "'>" + Util.fmtNum(acum, 1) + "%</span>", 1)
+              + td(Util.fmtNum(it.qtdMedida, 2), 1)
+              + td(Util.fmtMoeda(it.precoUnit), 1) + td("<b>" + Util.fmtMoeda(it.valor) + "</b>", 1) + "</tr>";
+          });
+          h += "</tbody><tfoot><tr style='background:#eef4fa;font-weight:bold'><td colspan='9' style='border:1px solid #bbb;padding:5px;text-align:right'>TOTAL MEDIDO</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(m.valor) + "</td></tr></tfoot></table>";
+          return h;
+        })()
         + (m.descricao ? "<div style='margin-top:12px;padding:10px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px'><b>Serviços medidos:</b><br>" + Util.esc(m.descricao) + "</div>" : "")
         + "<div style='margin-top:24px;font-size:11px'>Declaramos que os serviços descritos foram executados conforme o contrato e estão aptos para faturamento.</div>"
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(emp.nome || "CONTRATADA") + "</b><br>" + (emp.responsavel ? Util.esc(emp.responsavel) + (emp.crea ? " · CREA " + Util.esc(emp.crea) : "") : "Responsável Técnico") + "</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(obra.clienteNome || "CONTRATANTE") + "</b><br>Aprovação do Cliente</div></div>"
@@ -478,6 +594,31 @@
             if (l[2] !== "") { r.getCell(3).value = l[2]; r.getCell(3).numFmt = "0.0%"; }
             if (i === 3 || i === 6) r.font = { bold: true };
           });
+          // #18: medição VINCULADA ao orçamento -> aba com os itens medidos (padrão que o
+          // contratante espera: ant/período/acum POR ITEM). Medição manual não tem m.itens.
+          if (m.itens && m.itens.length) {
+            var wi = wb.addWorksheet("Itens Medidos", { views: [{ state: "frozen", ySplit: 2 }] });
+            wi.columns = [{ width: 16 }, { width: 11 }, { width: 44 }, { width: 7 }, { width: 12 }, { width: 13 }, { width: 9 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 14 }];
+            wi.mergeCells("A1:K1");
+            wi.getCell("A1").value = "ITENS MEDIDOS — Boletim Nº " + (m.numero || "") + (m.orcamentoNumero ? "  ·  Orçamento " + m.orcamentoNumero : "");
+            wi.getCell("A1").font = { bold: true, size: 12, color: { argb: navy } };
+            var hi = wi.getRow(2); hi.values = ["Etapa", "Código", "Descrição", "Und", "Qtd contr.", "Preço c/ BDI", "% ant.", "% período", "% acum.", "Qtd medida", "Valor (R$)"];
+            hi.eachCell(function (cell) { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; });
+            var totItens = 0;
+            m.itens.forEach(function (it, i) {
+              var acum = Util.num(it.pctAnterior) + Util.num(it.pctPeriodo);
+              totItens += Util.num(it.valor);
+              var r = wi.getRow(3 + i);
+              r.values = [it.etapa || "", it.codigo || "", it.descricao || "", it.unidade || "", Util.num(it.qtdContratada), Util.num(it.precoUnit), Util.num(it.pctAnterior) / 100, Util.num(it.pctPeriodo) / 100, acum / 100, Util.num(it.qtdMedida), Util.num(it.valor)];
+              r.getCell(5).numFmt = "#,##0.00"; r.getCell(6).numFmt = "R$ #,##0.00"; r.getCell(10).numFmt = "#,##0.00"; r.getCell(11).numFmt = "R$ #,##0.00";
+              r.getCell(7).numFmt = "0.0%"; r.getCell(8).numFmt = "0.0%"; r.getCell(9).numFmt = "0.0%";
+              if (acum > 100.0001) r.getCell(9).font = { bold: true, color: { argb: "FFB91C1C" } };        // estourou 100% acumulado
+              else if (acum >= 99.95) r.getCell(9).font = { color: { argb: verde } };                      // item concluído
+            });
+            var rt = wi.getRow(3 + m.itens.length);
+            rt.getCell(3).value = "TOTAL MEDIDO NESTE BOLETIM"; rt.getCell(3).font = { bold: true };
+            rt.getCell(11).value = totItens; rt.getCell(11).numFmt = "R$ #,##0.00"; rt.getCell(11).font = { bold: true, color: { argb: verde } };
+          }
           // Aba histórico de medições da obra
           var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })
             .sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });

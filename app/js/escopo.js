@@ -21,18 +21,66 @@
     "cj": "cj", "l": "l", "t": "t", "h": "h", "dia": "dia"
   };
 
-  // Dicionário escalável de sinônimos: termo do usuário -> termo SINAPI provável
+  // Dicionário escalável de sinônimos: termo do usuário -> termo SINAPI provável.
+  // #21: expandido de ~30 p/ 100+ termos reais de obra. REGRA: todo VALOR deste
+  // mapa precisa existir em descrição da base SINAPI real — validado automatica-
+  // mente contra data/sinapi-MG-2026-05.json em tools/test-escopo.js (sem chute).
   var SINONIMOS = {
-    "tijolo": "bloco", "parede": "alvenaria", "reboco": "emboco", "massa": "emboco",
-    "ceramica": "ceramico", "porcelanato": "ceramico", "piso": "piso", "contrapiso": "contrapiso",
-    "fundacao": "concreto", "sapata": "concreto", "viga": "concreto", "pilar": "concreto",
-    "ferro": "armacao", "aco": "armacao", "vergalhao": "armacao",
-    "telhado": "telha", "cobertura": "telha", "forro": "forro", "gesso": "gesso",
-    "tinta": "tinta", "pintura": "tinta", "eletrica": "cabo", "fiacao": "cabo",
-    "hidraulica": "tubo", "encanamento": "tubo", "esgoto": "esgoto", "agua": "agua",
-    "vaso": "sanitario", "privada": "sanitario", "pia": "lavatorio", "janela": "janela",
-    "porta": "porta", "impermeabilizacao": "impermeabilizacao", "manta": "manta",
-    "limpeza": "limpeza", "terraplanagem": "escavacao", "escavacao": "escavacao"
+    // vedações e revestimentos
+    "tijolo": "bloco", "parede": "alvenaria", "muro": "alvenaria", "reboco": "emboco",
+    "massa": "emboco", "emboco": "emboco", "chapisco": "chapisco", "salpico": "chapisco",
+    "ceramica": "ceramico", "azulejo": "ceramico", "porcelanato": "porcelanato",
+    "pastilha": "pastilha", "textura": "textura", "grafiato": "textura",
+    "drywall": "acartonado", "divisoria": "divisoria",
+    // pisos
+    "piso": "piso", "contrapiso": "contrapiso", "cimentado": "cimentado",
+    "granilite": "granilite", "vinilico": "vinilico", "laminado": "laminado",
+    "rodape": "rodape", "soleira": "soleira", "peitoril": "peitoril",
+    "intertravado": "intertravado", "bloquete": "intertravado",
+    // estrutura e fundação
+    "fundacao": "concreto", "sapata": "sapata", "baldrame": "baldrame",
+    "radier": "concreto", "broca": "estaca", "estaca": "estaca",
+    "viga": "concreto", "pilar": "concreto", "laje": "laje", "concretagem": "concreto",
+    "ferro": "armacao", "aco": "armacao", "vergalhao": "armacao", "armadura": "armacao",
+    "estribo": "armacao", "arranque": "armacao", "forma": "forma",
+    "escoramento": "escoramento", "graute": "graute", "grauteamento": "graute",
+    // cobertura
+    "telhado": "telha", "cobertura": "telha", "madeiramento": "trama",
+    "cumeeira": "cumeeira", "calha": "calha", "rufo": "rufo",
+    "forro": "forro", "gesso": "gesso",
+    // pintura
+    "tinta": "tinta", "pintura": "tinta", "latex": "latex", "acrilica": "acrilica",
+    "selador": "selador", "verniz": "verniz", "esmalte": "esmalte",
+    // elétrica
+    "eletrica": "cabo", "fiacao": "cabo", "tomada": "tomada", "interruptor": "interruptor",
+    "disjuntor": "disjuntor", "eletroduto": "eletroduto", "conduite": "eletroduto",
+    "luminaria": "luminaria", "lampada": "lampada", "aterramento": "aterramento",
+    "haste": "haste", "quadro": "quadro",
+    // hidráulica e louças
+    "hidraulica": "tubo", "encanamento": "tubo", "tubulacao": "tubo", "pvc": "pvc",
+    "esgoto": "esgoto", "agua": "agua", "joelho": "joelho", "conexao": "conexoes",
+    "registro": "registro", "torneira": "torneira", "chuveiro": "chuveiro",
+    "ducha": "chuveiro", "ralo": "ralo", "sifao": "sifao",
+    "vaso": "sanitario", "privada": "sanitario", "bacia": "bacia", "mictorio": "mictorio",
+    "pia": "lavatorio", "louca": "sanitario", "tanque": "tanque",
+    "reservatorio": "reservatorio", "hidrometro": "hidrometro", "cavalete": "cavalete",
+    // esquadrias
+    "janela": "janela", "porta": "porta", "portao": "portao", "vidro": "vidro",
+    "basculante": "basculante", "veneziana": "veneziana", "fechadura": "fechadura",
+    "dobradica": "dobradica", "corrimao": "corrimao", "grade": "grade",
+    // impermeabilização
+    "impermeabilizacao": "impermeabilizacao", "manta": "manta", "asfaltica": "manta",
+    // terra, infra e urbanização
+    "limpeza": "limpeza", "terraplanagem": "escavacao", "escavacao": "escavacao",
+    "vala": "vala", "aterro": "aterro", "reaterro": "reaterro",
+    "compactacao": "compactacao", "lastro": "lastro", "brita": "brita", "areia": "areia",
+    "sarjeta": "sarjeta", "calcada": "passeio", "passeio": "passeio",
+    "drenagem": "dreno", "dreno": "dreno", "alambrado": "alambrado", "cerca": "cerca",
+    // demolição e serviços preliminares
+    "demolicao": "demolicao", "remocao": "remocao", "retirada": "remocao",
+    "entulho": "entulho", "cacamba": "entulho", "andaime": "andaime",
+    "tapume": "tapume", "barracao": "container", "container": "container", "placa": "placa",
+    "locacao": "locacao", "gabarito": "gabarito"
   };
 
   var Escopo = {
