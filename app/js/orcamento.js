@@ -86,15 +86,81 @@
       return n;
     },
 
+    // FASE 1.2 — Fonte HONESTA: "SINAPI" só p/ código numérico vindo/confirmado
+    // na base SINAPI; código de outra base leva o nome dela (SEINFRA, SUDECAP...);
+    // código desconhecido -> "OUTRA". Nunca rotular SINAPI no chute.
+    _codigoSinapi: function (codigo) { return /^\d{1,7}$/.test(String(codigo == null ? "" : codigo).trim()); }, // há 33 códigos SINAPI reais de 1-2 dígitos (ex.: 34 = AÇO CA-50)
+    _existeNaSinapi: function (codigo) {
+      try {
+        if (typeof Sinapi !== "undefined" && Sinapi.carregado && Sinapi.obter && Sinapi.obter(codigo)) return true;
+        if (typeof Analitico !== "undefined" && Analitico.carregado && Analitico.tem && Analitico.tem(codigo)) return true;
+      } catch (e) { }
+      return false;
+    },
+    _origemDe: function (codigo, baseFonte) {
+      if (!codigo) return "PROPRIO";
+      if (baseFonte && baseFonte !== "SINAPI") return baseFonte; // veio de outra base: badge real
+      if (this._codigoSinapi(codigo) && (baseFonte === "SINAPI" || this._existeNaSinapi(codigo))) return "SINAPI";
+      return "OUTRA";
+    },
+    // Conserta a Fonte de orçamentos JÁ salvos (ex.: C1052/02.10.01 rotulados "SINAPI").
+    // Conservador: código numérico só é rebaixado com a base carregada e ausente dela.
+    // Idempotente. Retorna nº de itens reclassificados.
+    repararFontes: function (orc) {
+      if (!orc) return 0;
+      var self = this, n = 0;
+      var baseOk = (typeof Sinapi !== "undefined" && Sinapi.carregado) || (typeof Analitico !== "undefined" && Analitico.carregado);
+      Util.arr(orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          if (it.origem !== "SINAPI") return;
+          var fonteReal = (it.baseFonte && it.baseFonte !== "SINAPI") ? it.baseFonte : null;
+          if (!self._codigoSinapi(it.codigo)) {              // não-numérico: nunca é SINAPI
+            it.origem = fonteReal || "OUTRA"; if (!fonteReal) it.baseFonte = "OUTRA"; n++;
+          } else if (fonteReal) {                             // rotulado SINAPI mas a fonte real é outra
+            it.origem = fonteReal; n++;
+          }
+          // numérico sem fonte real: NUNCA rebaixar — as bases variam por UF/competência
+          // (1.094 códigos de MG não existem em AC) e o fallback pode ser a AMOSTRA de 30
+          // itens; rebaixar aqui destruiria itens legítimos de forma irreversível.
+        });
+      });
+      return n;
+    },
+
+    // FASE 1.4 — Prazo ÚNICO: o nº de meses do cronograma financeiro deriva do
+    // agente (Cronograma.estimar -> totalDias -> meses cheios) enquanto o usuário
+    // não travar manualmente (orc.cronogramaMesesManual). Fim do xlsx que dizia
+    // "15 dias úteis" no Gantt e distribuía 6 meses no Cronograma.
+    mesesSugeridos: function (orc) {
+      if (typeof Cronograma === "undefined" || !Cronograma.estimar) return 0;
+      try {
+        var est = Cronograma.estimar(orc);
+        if (!est || !est.totalDias) return 0;
+        var duSem = (est.params && est.params.diasUteisSemana) || 5;
+        return Math.max(1, Math.ceil(est.totalDias / (duSem * 4.345))); // dias úteis/mês
+      } catch (e) { return 0; }
+    },
+    sincronizarPrazo: function (orc) {
+      if (!orc) return false;
+      // migração: orçamento antigo (sem flag) onde o usuário JÁ escolheu prazo ≠ default(6)
+      // é tratado como travado — não destruir escolha histórica. O default 6 sincroniza.
+      if (orc.cronogramaMesesManual == null && orc.cronogramaMeses && orc.cronogramaMeses !== 6) { orc.cronogramaMesesManual = true; return false; }
+      if (orc.cronogramaMesesManual) return false;
+      var m = this.mesesSugeridos(orc);
+      if (m > 0 && m !== orc.cronogramaMeses) { orc.cronogramaMeses = m; return true; }
+      return false;
+    },
+
     // ---- Itens ----
     // origem: item SINAPI (do motor) OU objeto próprio { descricao, unidade, custoUnitario }
     addItem: function (orc, etapaId, sinapiItem, quantidade) {
       var etapa = this._etapa(orc, etapaId);
       if (!etapa) return orc;
+      var origem = this._origemDe(sinapiItem.codigo, sinapiItem.baseFonte || null);
       var it = {
         id: Util.uid("itm"),
-        origem: sinapiItem.codigo ? "SINAPI" : "PROPRIO",
-        baseFonte: sinapiItem.baseFonte || (sinapiItem.codigo ? "SINAPI" : null),
+        origem: origem,
+        baseFonte: sinapiItem.baseFonte || (origem === "PROPRIO" ? null : origem),
         codigo: sinapiItem.codigo || "—",
         descricao: Util.fixEnc(sinapiItem.descricao || "Item próprio"),
         unidade: Util.fixEnc(sinapiItem.unidade || "un"),

@@ -74,6 +74,7 @@
 
       orc.cronogramaMeses = 6;
       orc.cronograma = { params: { equipes: 4, paralelismo: 0.30, diasUteisSemana: 5, custoDiaEquipe: 750 } };
+      try { Orcamento.sincronizarPrazo(orc); } catch (e) {} // FASE 1.4: vitrine já abre com Gantt e Cronograma no MESMO prazo
       try {
         if (typeof DnitBdi !== "undefined") Orcamento.aplicarBdi(orc, "dnit", DnitBdi.params());
       } catch (e) {}

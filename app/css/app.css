@@ -214,6 +214,7 @@ table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface
 .pill.sudecap { background: rgba(8,145,178,.15); color: #0891b2; }
 .pill.orse { background: rgba(219,39,119,.15); color: #db2777; }
 .pill.sbc { background: rgba(100,116,139,.15); color: #475569; }
+.pill.outra { background: rgba(148,163,184,.18); color: #64748b; } /* FASE 1.2: código de fonte desconhecida */
 
 /* ---------- Modal ---------- */
 .modal-bg { position: fixed; inset: 0; background: rgba(8,18,30,.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; animation: fadein .15s; }

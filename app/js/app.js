@@ -282,10 +282,10 @@
         var j = +e.target.dataset.escQtd;
         this._escopo[j].quantidade = Util.num(e.target.value);
       }
-      // Cronograma: muda nº de meses
+      // Cronograma: muda nº de meses (edição do usuário TRAVA o prazo — FASE 1.4)
       if (e.target.id === "cron-meses") {
         var n = parseInt(Util.num(e.target.value), 10);
-        if (n >= 1 && n <= 60) { this.orcAtual.cronogramaMeses = n; this.persistir(); this.render(); }
+        if (n >= 1 && n <= 60) { this.orcAtual.cronogramaMeses = n; this.orcAtual.cronogramaMesesManual = true; this.persistir(); this.render(); }
       }
     },
 
@@ -602,7 +602,9 @@
     },
     cronReset: function () {
       var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; }
-      this.persistir(); UI.toast("Durações voltaram à estimativa do agente.", "ok"); this.render();
+      // FASE 1.4: destrava também o nº de meses (false explícito ≠ undefined: não re-dispara a migração)
+      if (o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
+      this.persistir(); UI.toast("Durações e prazo voltaram à estimativa do agente.", "ok"); this.render();
     },
     // Refina as durações com a IA do ERP (planejador) — fonte de verdade = backend (chave da IA fica lá)
     cronRefinarIA: function () {
@@ -727,9 +729,13 @@
       // Conserta acentos/ç corrompidos (mojibake) de versões antigas — sem o usuário recriar nada.
       try {
         var reparos = Orcamento.repararTexto(orc);
-        if (reparos > 0) {
+        var fontes = 0, prazo = false;
+        try { fontes = Orcamento.repararFontes(orc); } catch (e2) {} // FASE 1.2: Fonte honesta
+        try { prazo = Orcamento.sincronizarPrazo(orc); } catch (e3) {} // FASE 1.4: prazo único
+        if (reparos > 0 || fontes > 0 || prazo) {
           Store.salvarOrcamento(Auth.empresaId(), orc);
-          UI.toast("Corrigimos automaticamente " + reparos + " descrição(ões) com acentos.", "ok");
+          if (reparos > 0) UI.toast("Corrigimos automaticamente " + reparos + " descrição(ões) com acentos.", "ok");
+          if (fontes > 0) UI.toast("Fonte de " + fontes + " item(ns) corrigida (não eram SINAPI).", "ok");
         }
       } catch (e) {}
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha";
@@ -1140,14 +1146,23 @@
       var an = this._escopo || [], self = this;
       var etapaSel = (UI.el("esc-etapa") || {}).value;
       var porIA = etapaSel === "__por_ia__";
+      var porCat = etapaSel === "__por_categoria__"; // FASE 1.3: etapas por tipo de serviço
       if (etapaSel === "__nova__") {
         Orcamento.addEtapa(this.orcAtual, "Escopo Importado");
         etapaSel = this.orcAtual.etapas[this.orcAtual.etapas.length - 1].id;
       }
       var etapaPorNome = {};
-      function etapaParaLinha(l) {
-        if (!porIA) return etapaSel;
-        var nome = String(l.etapaSugerida || "Escopo").trim() || "Escopo";
+      function etapaParaLinha(l, item) {
+        if (!porIA && !porCat) return etapaSel;
+        var nome;
+        if (porIA) nome = String(l.etapaSugerida || "Escopo").trim() || "Escopo";
+        else {
+          // reusa o classificador do Cronograma (14 categorias): demolição ≠ alvenaria ≠ concretagem
+          var cat = (typeof Cronograma !== "undefined" && Cronograma.classificar)
+            ? (Cronograma.classificar(l.textoOriginal) || (item && Cronograma.classificar(item.descricao)))
+            : null;
+          nome = cat ? cat.nome : "Serviços Gerais";
+        }
         if (etapaPorNome[nome]) return etapaPorNome[nome];
         var existe = self.orcAtual.etapas.filter(function (e) { return String(e.nome || "").toLowerCase() === nome.toLowerCase(); })[0];
         if (existe) { etapaPorNome[nome] = existe.id; return existe.id; }
@@ -1163,7 +1178,7 @@
         var cand = l.candidatos[l.escolhido];
         var item = Util.clone(cand.item);
         item.baseFonte = cand.fonte || "SINAPI";
-        Orcamento.addItem(this.orcAtual, etapaParaLinha(l), item, l.quantidade);
+        Orcamento.addItem(this.orcAtual, etapaParaLinha(l, item), item, l.quantidade);
         add++;
       }
       this._escopoIA = false;
@@ -1334,6 +1349,7 @@
         if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("🔒 Modo demonstração — para salvar, ative sua licença (🔑).", "erro"); }
         return;
       }
+      try { Orcamento.sincronizarPrazo(this.orcAtual); } catch (e) {} // FASE 1.4: prazo segue o agente (depois do gate de licença)
       var ok = Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
       if (!ok && !this._avisouQuota) {
         this._avisouQuota = true;

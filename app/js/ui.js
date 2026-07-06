@@ -779,6 +779,7 @@
         '<div class="flex"><label class="muted" style="font-size:12px">Adicionar à etapa:</label>' +
         '<select id="esc-etapa" class="btn sm">' +
           (temIA ? '<option value="__por_ia__" selected>★ Criar etapas conforme a IA</option>' : '') +
+          '<option value="__por_categoria__"' + (temIA ? '' : ' selected') + '>★ Criar etapas por tipo de serviço (auto)</option>' + // FASE 1.3
           etapas.map(function (e) { return '<option value="' + e.id + '">' + Util.esc(e.codigo + " " + e.nome) + '</option>'; }).join("") +
           '<option value="__nova__">+ Nova etapa "Escopo"</option>' +
         '</select></div></div>';

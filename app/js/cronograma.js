@@ -34,9 +34,22 @@
     DEFAULTS: { equipes: 1, diasUteisSemana: 5, custoDiaEquipe: 700, paralelismo: 0.15, dataInicio: null },
 
     classificar: function (desc) {
-      var d = norm(desc);
-      for (var i = 0; i < CATS.length; i++) { var c = CATS[i]; for (var k = 0; k < c.kw.length; k++) { if (d.indexOf(c.kw[k]) !== -1) return c; } }
-      return null;
+      // FASE 1.3: numa descrição de serviço PT-BR a 1ª palavra é o SERVIÇO e o
+      // resto é o objeto ("DEMOLIÇÃO de alvenaria" = demolição; "ALVENARIA de
+      // blocos de concreto" = alvenaria). Vence o match mais perto do INÍCIO;
+      // empate de posição -> keyword mais longa (mais específica); depois ordem CATS.
+      var d = norm(desc), melhor = null, melhorPos = Infinity, melhorLen = 0;
+      for (var i = 0; i < CATS.length; i++) {
+        var c = CATS[i];
+        for (var k = 0; k < c.kw.length; k++) {
+          var kw = c.kw[k], pos = d.indexOf(kw);
+          if (pos === -1) continue;
+          if (pos < melhorPos || (pos === melhorPos && kw.length > melhorLen)) {
+            melhor = c; melhorPos = pos; melhorLen = kw.length;
+          }
+        }
+      }
+      return melhor;
     },
     cat: function (id) { for (var i = 0; i < CATS.length; i++) if (CATS[i].id === id) return CATS[i]; return { id: "outros", nome: "Outros", cor: "#94a3b8", prod: 12 }; },
 

@@ -9,7 +9,8 @@
   "use strict";
 
   var SH_RES = "Resumo", SH_SINT = "Sintética", SH_ANAL = "Analítica";
-  var BDI_CELL = "'" + SH_RES + "'!$B$6"; // célula do BDI (parâmetro) — tudo referencia aqui
+  var BDI_ADDR = "'" + SH_RES + "'!$B$6"; // endereço físico do parâmetro BDI (input amarelo)
+  var BDI_CELL = "p_BDI"; // FASE 2: fórmulas usam o named range (legível e à prova de mover célula)
   function ref(sheet, cell) { return "'" + sheet + "'!" + cell; }
 
   var MOEDA = 'R$ #,##0.00', NUM = '#,##0.00', PCT = '0.00"%"';
@@ -237,9 +238,14 @@
     var num = deps.num, fmtNum = deps.fmtNum, empresa = deps.empresa || "RA Engenharia";
     var bdiPct = num(orc.bdi && orc.bdi.percentual) || 0;
     var etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
+    var cronoTotRef = null, resumoChecksRow = 0; // refs p/ os checks de sanidade (FASE 2)
 
     var wb = new ExcelJS.Workbook();
     wb.creator = "OrçaPRO — RA Engenharia"; wb.created = orc.criadoEm ? new Date(orc.criadoEm) : undefined;
+    // FASE 2: recalcular tudo ao abrir — sem isso, LibreOffice (e Excel em
+    // alguns fluxos) exibe os valores congelados da emissão após o cliente editar.
+    wb.calcProperties = { fullCalcOnLoad: true };
+    wb.definedNames.add(BDI_ADDR, BDI_CELL); // p_BDI -> Resumo!$B$6
 
     // abas na ORDEM de exibição pedida: Resumo, Sintética, Analítica
     var wr  = wb.addWorksheet(SH_RES,  { properties: { tabColor: { argb: verde } } });
@@ -259,9 +265,15 @@
 
     var hr = 6, colsA = ['Item', 'Código', 'Fonte', 'Descrição', 'Und', 'Qtd', 'Custo Unit', 'Custo Total', 'Preço Unit c/BDI', 'Preço Total c/BDI'];
     colsA.forEach(function (h, i) { hStyle(wa.getRow(hr).getCell(i + 1)); wa.getRow(hr).getCell(i + 1).value = h; });
+    // FASE 2: coluna K oculta com a etapa de cada linha de item — âncora dos
+    // SUMIFS da Sintética (fim das referências fixas tipo 'Analítica'!H16).
+    wa.getRow(hr).getCell(11).value = 'Etapa';
+    wa.getColumn(11).width = 14; wa.getColumn(11).hidden = true;
 
     var r = hr + 1, n = 0, subCustoCells = [], etInfo = [], grandCusto = 0, grandMO = 0, grandMAT = 0, grandEQ = 0;
+    var itensFlat = []; // FASE 4 (AI-ready): 1 registro por item p/ a Table tblItens da aba "Dados IA"
     etapas.forEach(function (et) {
+      var etKey = et.codigo || et.nome || 'Etapa';
       wa.mergeCells('A' + r + ':J' + r);
       var bc = wa.getCell('A' + r); bc.value = (et.codigo ? et.codigo + '  ' : '') + (et.nome || 'Etapa'); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
       r++;
@@ -280,7 +292,9 @@
         } else { grandMAT += ct; }
         row.getCell(1).value = n;
         row.getCell(2).value = it.codigo || '';
-        row.getCell(3).value = (it.origem === 'SINAPI') ? 'SINAPI' : 'Própria';
+        // FASE 2: fonte honesta no xlsx — SEINFRA/SETOP/etc. não são "Própria"
+        var fonteIt = it.baseFonte || it.origem || '';
+        row.getCell(3).value = (!fonteIt || fonteIt === 'PROPRIO') ? 'Própria' : (fonteIt === 'OUTRA' ? 'Outra' : fonteIt);
         row.getCell(4).value = it.descricao || '';
         row.getCell(5).value = it.unidade || 'un';
         row.getCell(6).value = qt;
@@ -288,10 +302,17 @@
         row.getCell(8).value  = { formula: 'F' + r + '*G' + r, result: ct };
         row.getCell(9).value  = { formula: 'G' + r + '*(1+' + BDI_CELL + '/100)', result: pu };
         row.getCell(10).value = { formula: 'F' + r + '*I' + r, result: pt };
+        row.getCell(11).value = etKey; // âncora SUMIFS (coluna oculta; vazia em banner/subtotal)
+        itensFlat.push({ r: r, etapa: etKey, n: n, qt: qt, cu: cu, ct: ct, pu: pu, pt: pt, it: it });
         row.getCell(6).numFmt = NUM;
         [7, 8, 9, 10].forEach(function (k) { row.getCell(k).numFmt = MOEDA; });
         row.getCell(3).alignment = { horizontal: 'center' };
         for (var k = 1; k <= 10; k++) { row.getCell(k).border = thin(); if (n % 2 === 0) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
+        // FASE 2: Qtd e Custo Unit editáveis (amarelo claro) — o resto é fórmula travada
+        [6, 7].forEach(function (k2) {
+          row.getCell(k2).protection = { locked: false };
+          row.getCell(k2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9E0' } };
+        });
         r++;
       });
       var last = r - 1, sr = wa.getRow(r);
@@ -302,7 +323,7 @@
       } else { sr.getCell(8).value = 0; sr.getCell(10).value = 0; }
       [8, 10].forEach(function (k) { sr.getCell(k).numFmt = MOEDA; sr.getCell(k).font = { bold: true }; sr.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } }; });
       subCustoCells.push('H' + r);
-      etInfo.push({ nome: et.nome || 'Etapa', codigo: et.codigo || '', subRow: r, custo: etCusto, venda: etVenda });
+      etInfo.push({ nome: et.nome || 'Etapa', codigo: et.codigo || '', key: etKey, subRow: r, custo: etCusto, venda: etVenda });
       grandCusto += etCusto;
       r++;
     });
@@ -329,7 +350,10 @@
       var row = wsi.getRow(sr);
       row.getCell(1).value = et.codigo || ((i + 1) + '.0');
       row.getCell(2).value = et.nome;
-      row.getCell(3).value = { formula: ref(SH_ANAL, 'H' + et.subRow), result: et.custo };
+      // FASE 2: SUMIFS pela coluna-âncora K (linhas de item têm a etapa; subtotais
+      // ficam vazios) — robusto a inserção/remoção de linhas, faixa com folga fixa.
+      var kSeg = "'" + SH_ANAL + "'!$K$7:$K$1006", hSeg = "'" + SH_ANAL + "'!$H$7:$H$1006";
+      row.getCell(3).value = { formula: 'SUMIFS(' + hSeg + ',' + kSeg + ',"' + String(et.key).replace(/"/g, '""') + '")', result: et.custo };
       row.getCell(4).value = { formula: BDI_CELL, result: bdiPct };
       row.getCell(5).value = { formula: 'C' + sr + '*' + BDI_CELL + '/100', result: et.custo * bdiPct / 100 };
       row.getCell(6).value = { formula: 'C' + sr + '+E' + sr, result: et.venda };
@@ -344,11 +368,12 @@
     tr.getCell(6).value = { formula: 'SUM(F' + s0 + ':F' + (sr - 1) + ')', result: totVenda };
     [2, 3, 5, 6].forEach(function (k) { tr.getCell(k).font = { bold: true, color: { argb: branco } }; tr.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } }; });
     [3, 5, 6].forEach(function (k) { tr.getCell(k).numFmt = MOEDA; });
-    // peso % (precisa do total)
+    // peso % (precisa do total) — FASE 2: percentual REAL (fração + formato 0.0%),
+    // não mais número ×100 com sufixo de texto
     for (var i = 0; i < etInfo.length; i++) {
       var rr = s0 + i, cell = wsi.getCell('G' + rr);
-      cell.value = { formula: 'F' + rr + '/$F$' + sintTot + '*100', result: totVenda ? (etInfo[i].venda / totVenda * 100) : 0 };
-      cell.numFmt = PCT;
+      cell.value = { formula: 'F' + rr + '/$F$' + sintTot, result: totVenda ? (etInfo[i].venda / totVenda) : 0 };
+      cell.numFmt = '0.0%';
     }
 
     // ===================== RESUMO (B6 = BDI parâmetro) =====================
@@ -368,12 +393,13 @@
     lin(5, 'Obra / Local', ((orc.obra && orc.obra.nome) || '-') + (orc.obra && orc.obra.local ? ' — ' + orc.obra.local : ''));
     lin(6, 'BDI (%)  ⟵ edite aqui', bdiPct, '0.00');
     wr.getCell('B6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: amarelo } }; wr.getCell('B6').font = { bold: true };
+    wr.getCell('B6').protection = { locked: false }; // FASE 2: input liberado sob proteção
     lin(7, 'Competência SINAPI', (orc.competenciaSinapi || '-') + ' / ' + (orc.uf || '-'));
     lin(8, 'Nº de etapas / itens', etapas.length + ' / ' + n);
     lin(10, 'Custo Direto (sem BDI)', { formula: ref(SH_SINT, 'C' + sintTot), result: grandCusto }, MOEDA, { bold: true });
     lin(11, 'BDI (R$)', { formula: 'B10*$B$6/100', result: grandCusto * bdiPct / 100 }, MOEDA, { bold: true });
     lin(12, 'PREÇO DE VENDA', { formula: 'B10+B11', result: totVenda }, MOEDA, { head: true, bold: true, size: 13 });
-    wr.getCell('A14').value = 'Dica: altere a QTD/custo na aba Analítica ou o BDI em B6 — Sintética e Resumo recalculam sozinhos.';
+    wr.getCell('A14').value = 'Dica: as células AMARELAS são editáveis (BDI aqui, Qtd/Custo na Analítica) — tudo recalcula sozinho. A planilha é protegida só contra edição acidental (senha: raeng).';
     wr.mergeCells('A14:B15'); wr.getCell('A14').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } }; wr.getCell('A14').alignment = { wrapText: true, vertical: 'top' };
 
     // Composição de custo MO/MAT/EQ (derivada da base analítica)
@@ -386,6 +412,49 @@
       wr.getCell('A21').value = 'Itens sem código SINAPI entram como material.'; wr.mergeCells('A21:B21'); wr.getCell('A21').font = { italic: true, size: 8, color: { argb: '#94A3B8'.replace('#', 'FF') } };
     }
 
+    // ===================== QUADRO BDI — Acórdão TCU 2.622/2013 (FASE 2) =====================
+    // Usa os parâmetros REAIS do orçamento (orc.bdi.params). Sem parcelas
+    // detalhadas -> [PREENCHER]; NUNCA decompor um % seco em números fictícios.
+    var bp = (orc.bdi && orc.bdi.params) || {};
+    var parcelas = [
+      ['AC — Administração Central', bp.AC], ['S — Seguros', bp.S], ['R — Riscos', bp.R],
+      ['G — Garantias', bp.G], ['DF — Despesas Financeiras', bp.DF], ['L — Lucro', bp.L],
+      ['I — Impostos (PIS/COFINS/ISS/CPRB)', bp.I]
+    ];
+    var temParcelas = parcelas.some(function (pp) { return num(pp[1]) > 0; });
+    var rb = insMap ? 23 : 17;
+    wr.mergeCells('A' + rb + ':B' + rb);
+    wr.getCell('A' + rb).value = 'COMPOSIÇÃO DO BDI — Acórdão TCU 2.622/2013';
+    wr.getCell('A' + rb).font = { bold: true, color: { argb: navy } };
+    var r0 = rb + 1;
+    parcelas.forEach(function (pp, i) {
+      lin(r0 + i, pp[0], temParcelas ? num(pp[1]) / 100 : '[PREENCHER]', temParcelas ? '0.00%' : null);
+      if (temParcelas) { // parcela editável: o check TCU abaixo recalcula ao vivo
+        var cc = wr.getCell('B' + (r0 + i));
+        cc.protection = { locked: false };
+        cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9E0' } };
+      }
+    });
+    var rF = r0 + parcelas.length;
+    if (temParcelas) {
+      var cAC = 'B' + r0, cS = 'B' + (r0 + 1), cR = 'B' + (r0 + 2), cG = 'B' + (r0 + 3),
+          cDF = 'B' + (r0 + 4), cL = 'B' + (r0 + 5), cI = 'B' + (r0 + 6);
+      var fTcu = '(1+' + cAC + '+' + cS + '+' + cR + '+' + cG + ')*(1+' + cDF + ')*(1+' + cL + ')/(1-' + cI + ')-1';
+      var vTcu = (1 + (num(bp.AC) + num(bp.S) + num(bp.R) + num(bp.G)) / 100) * (1 + num(bp.DF) / 100) * (1 + num(bp.L) / 100) / (1 - num(bp.I) / 100) - 1;
+      lin(rF, 'BDI pela fórmula TCU', { formula: fTcu, result: vTcu }, '0.00%', { bold: true });
+      lin(rF + 1, 'BDI aplicado (B6)', { formula: '$B$6/100', result: bdiPct / 100 }, '0.00%', { bold: true });
+      if (Math.abs(vTcu * 100 - bdiPct) > 0.05) {
+        wr.mergeCells('A' + (rF + 2) + ':B' + (rF + 2));
+        wr.getCell('A' + (rF + 2)).value = '⚠ BDI aplicado difere da fórmula TCU com estas parcelas — revise antes de licitar.';
+        wr.getCell('A' + (rF + 2)).font = { italic: true, size: 8, color: { argb: 'FFDC2626' } };
+      }
+    } else {
+      wr.mergeCells('A' + rF + ':B' + rF);
+      wr.getCell('A' + rF).value = 'Modelo de BDI sem parcelas detalhadas — preencha conforme o Acórdão TCU 2.622/2013.';
+      wr.getCell('A' + rF).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
+    }
+    resumoChecksRow = rF + (temParcelas ? 4 : 2); // 1ª linha livre p/ o bloco de verificações
+
     // ===================== CURVA ABC =====================
     if (wabc) {
       var corCl = { A: 'FF16A34A', B: 'FFF59E0B', C: 'FF94A3B8' };
@@ -393,27 +462,47 @@
       wabc.mergeCells('A1:H1'); wabc.getCell('A1').value = empresa; wabc.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
       wabc.mergeCells('A2:H2'); wabc.getCell('A2').value = 'CURVA ABC — ' + (orc.numero || ''); wabc.getCell('A2').font = { bold: true, size: 11 };
       ['Classe', 'Itens', 'Valor', '% do total'].forEach(function (h, i) { var c = wabc.getRow(4).getCell(i + 1); c.value = h; c.font = { bold: true, color: { argb: muted } }; });
+      // resumo por classe via COUNTIF/SUMIFS sobre a lista (recalcula junto)
+      var abcN = (abc.linhas || []).length, abcIni = 9, abcFim = 8 + abcN;
+      var rngCl = '$A$' + abcIni + ':$A$' + abcFim, rngVal = '$F$' + abcIni + ':$F$' + abcFim;
       ['A', 'B', 'C'].forEach(function (cl, i) {
         var rr = 5 + i, rs = (abc.resumo && abc.resumo[cl]) || { qtd: 0, valor: 0, pct: 0 };
         wabc.getCell('A' + rr).value = 'Classe ' + cl; wabc.getCell('A' + rr).font = { bold: true, color: { argb: corCl[cl] } };
-        wabc.getCell('B' + rr).value = rs.qtd;
-        wabc.getCell('C' + rr).value = num(rs.valor); wabc.getCell('C' + rr).numFmt = MOEDA;
-        wabc.getCell('D' + rr).value = num(rs.pct) / 100; wabc.getCell('D' + rr).numFmt = '0.0%';
+        wabc.getCell('B' + rr).value = { formula: 'COUNTIF(' + rngCl + ',"' + cl + '")', result: rs.qtd };
+        wabc.getCell('C' + rr).value = { formula: 'SUMIFS(' + rngVal + ',' + rngCl + ',"' + cl + '")', result: num(rs.valor) }; wabc.getCell('C' + rr).numFmt = MOEDA;
+        wabc.getCell('D' + rr).value = { formula: 'C' + rr + '/SUM(' + rngVal + ')', result: num(rs.pct) / 100 }; wabc.getCell('D' + rr).numFmt = '0.0%';
       });
       var hh = 8, colsABC = ['Classe', 'Código', 'Descrição', 'Und', 'Qtd', 'Custo Total', '%', '% Acum.'];
       colsABC.forEach(function (h, i) { hStyle(wabc.getRow(hh).getCell(i + 1)); wabc.getRow(hh).getCell(i + 1).value = h; });
+      // FASE 2: ABC recalculável — custo puxado da Analítica (SUMIFS por código
+      // quando o código é único), % / % acum. / classe por fórmula. A ORDEM das
+      // linhas é a da emissão; valores e classes recalculam ao editar a Analítica.
+      var abcLinhas = abc.linhas || [], abcLast = hh + abcLinhas.length;
+      var contaCod = {};
+      abcLinhas.forEach(function (l) { var cd = String(l.codigo || ''); contaCod[cd] = (contaCod[cd] || 0) + 1; });
+      var somaAbc = 'SUM($F$' + (hh + 1) + ':$F$' + abcLast + ')';
       var ar = hh + 1;
-      (abc.linhas || []).forEach(function (l, idx) {
+      abcLinhas.forEach(function (l, idx) {
         var row = wabc.getRow(ar);
-        row.getCell(1).value = l.classe; row.getCell(1).alignment = { horizontal: 'center' }; row.getCell(1).font = { bold: true, color: { argb: corCl[l.classe] || navy } };
+        var cd = String(l.codigo || ''), vivo = cd && cd !== '—' && cd !== '-' && contaCod[cd] === 1;
+        var fAcum = (ar === hh + 1) ? 'G' + ar : 'H' + (ar - 1) + '+G' + ar;
+        row.getCell(1).value = { formula: 'IF(H' + ar + '<=0.8,"A",IF(H' + ar + '<=0.95,"B","C"))', result: l.classe };
+        row.getCell(1).alignment = { horizontal: 'center' }; row.getCell(1).font = { bold: true, color: { argb: corCl[l.classe] || navy } };
         row.getCell(2).value = l.codigo || ''; row.getCell(3).value = l.descricao || ''; row.getCell(4).value = l.unidade || '';
         row.getCell(5).value = num(l.quantidade); row.getCell(5).numFmt = NUM;
-        row.getCell(6).value = num(l.custoTotal); row.getCell(6).numFmt = MOEDA;
-        row.getCell(7).value = num(l.pct) / 100; row.getCell(7).numFmt = '0.0%';
-        row.getCell(8).value = num(l.acumPct) / 100; row.getCell(8).numFmt = '0.0%';
+        row.getCell(6).value = vivo
+          ? { formula: "SUMIFS('" + SH_ANAL + "'!$H$7:$H$1006,'" + SH_ANAL + "'!$B$7:$B$1006,B" + ar + ')', result: num(l.custoTotal) }
+          : num(l.custoTotal);
+        row.getCell(6).numFmt = MOEDA;
+        row.getCell(7).value = { formula: 'F' + ar + '/' + somaAbc, result: num(l.pct) / 100 }; row.getCell(7).numFmt = '0.0%';
+        row.getCell(8).value = { formula: fAcum, result: num(l.acumPct) / 100 }; row.getCell(8).numFmt = '0.0%';
         for (var k = 1; k <= 8; k++) { row.getCell(k).border = thin(); if (idx % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
         ar++;
       });
+      var abcNota = wabc.getCell('A' + (abcLast + 2));
+      abcNota.value = 'Ordem das linhas = emissão. Valores, %, classes e o resumo acima recalculam ao editar Qtd/Custo na Analítica.';
+      wabc.mergeCells('A' + (abcLast + 2) + ':H' + (abcLast + 2));
+      abcNota.font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
     }
 
     // ===================== CRONOGRAMA FÍSICO-FINANCEIRO =====================
@@ -446,9 +535,16 @@
       }
       tot.getCell(totalIdx).value = { formula: 'SUM(' + colFirst + cr + ':' + colLast + cr + ')', result: num(crono.total) };
       tot.getCell(totalIdx).numFmt = MOEDA; tot.getCell(totalIdx).font = { bold: true, color: { argb: branco } }; tot.getCell(totalIdx).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+      var totColL = wcr.getColumn(totalIdx).letter;
+      cronoTotRef = "'Cronograma'!$" + totColL + '$' + cr; // p/ check de sanidade no Resumo
+      // FASE 2: % acumulado por FÓRMULA (curva S viva) — Σ dos meses até m / total
       var acc = wcr.getRow(cr + 1);
       acc.getCell(1).value = '% acumulado'; acc.getCell(1).font = { bold: true, color: { argb: muted } };
-      for (var m = 0; m < M; m++) { var c2 = acc.getCell(2 + m); c2.value = num(crono.acumPct[m]) / 100; c2.numFmt = '0.0%'; c2.font = { color: { argb: muted } }; }
+      for (var m = 0; m < M; m++) {
+        var L2 = wcr.getColumn(2 + m).letter, c2 = acc.getCell(2 + m);
+        c2.value = { formula: 'SUM($' + colFirst + '$' + cr + ':' + L2 + cr + ')/$' + totColL + '$' + cr, result: num(crono.acumPct[m]) / 100 };
+        c2.numFmt = '0.0%'; c2.font = { color: { argb: muted } };
+      }
     }
 
     // ===================== INSUMOS (composições explodidas) =====================
@@ -470,6 +566,7 @@
           wins.mergeCells('A' + ir + ':I' + ir);
           var bc = wins.getCell('A' + ir); bc.value = it.codigo + '  ' + (a.descricao || it.descricao || ''); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
           ir++;
+          var insFirst = ir, somaComp = 0;
           (Array.isArray(a.insumos) ? a.insumos : []).forEach(function (ins, idx) {
             var row = wins.getRow(ir);
             row.getCell(1).value = it.codigo;
@@ -479,7 +576,9 @@
             row.getCell(5).value = ins.unidade;
             row.getCell(6).value = num(ins.coeficiente); row.getCell(6).numFmt = '#,##0.0000';
             row.getCell(7).value = num(ins.custoUnitario); row.getCell(7).numFmt = MOEDA;
-            row.getCell(8).value = num(ins.custoTotal); row.getCell(8).numFmt = MOEDA;
+            // FASE 2: custo total do insumo por fórmula (coef × custo unit)
+            row.getCell(8).value = { formula: 'F' + ir + '*G' + ir, result: num(ins.custoTotal) }; row.getCell(8).numFmt = MOEDA;
+            somaComp += num(ins.custoTotal);
             row.getCell(9).value = catNome[ins.categoria] || ins.categoria;
             for (var k = 1; k <= 9; k++) { row.getCell(k).border = thin(); if (idx % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
             ir++;
@@ -487,7 +586,10 @@
           var sr = wins.getRow(ir);
           sr.getCell(4).value = 'Σ  MO ' + fmtNum(a.custoMO, 2) + '  |  MAT ' + fmtNum(a.custoMAT, 2) + '  |  EQ ' + fmtNum(a.custoEQ, 2);
           sr.getCell(4).font = { bold: true, italic: true, color: { argb: muted } };
-          sr.getCell(8).value = num(a.custoUnitario); sr.getCell(8).numFmt = MOEDA; sr.getCell(8).font = { bold: true }; sr.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } };
+          sr.getCell(8).value = (ir > insFirst)
+            ? { formula: 'SUM(H' + insFirst + ':H' + (ir - 1) + ')', result: somaComp }
+            : num(a.custoUnitario);
+          sr.getCell(8).numFmt = MOEDA; sr.getCell(8).font = { bold: true }; sr.getCell(8).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } };
           ir++;
         });
       });
@@ -553,7 +655,132 @@
       embutir('Composição de custo (MO / MAT / EQ)', G.moMatEq, 420);
     }
 
-    return wb;
+    // ===================== DADOS IA (Excel Table viva p/ Copilot) =====================
+    // Tabela plana tblItens: 1 linha por item, TODA por fórmula referenciando a
+    // Analítica — editou lá, aqui acompanha. É a superfície que IA/Copilot lê bem
+    // (Table nomeada, cabeçalho único, zero merge). Analítica não vira Table
+    // porque os banners mesclados de etapa são proibidos dentro de Tables.
+    var wdad = null;
+    if (itensFlat.length) {
+      wdad = wb.addWorksheet('Dados IA', { properties: { tabColor: { argb: 'FF64748B' } } });
+      wdad.getCell('A1').value = 'BASE DE DADOS DO ORÇAMENTO (para análise e IA/Copilot) — espelho vivo da aba Analítica';
+      wdad.getCell('A1').font = { bold: true, size: 11, color: { argb: navy } };
+      var refA = function (col, rr, res) { return { formula: "'" + SH_ANAL + "'!" + col + rr, result: res }; };
+      wdad.addTable({
+        name: 'tblItens', ref: 'A2', headerRow: true,
+        style: { theme: 'TableStyleMedium2', showRowStripes: true },
+        columns: [{ name: 'Etapa' }, { name: 'Item' }, { name: 'Codigo' }, { name: 'Fonte' }, { name: 'Descricao' },
+                  { name: 'Und' }, { name: 'Qtd' }, { name: 'CustoUnit' }, { name: 'CustoTotal' },
+                  { name: 'PrecoUnitBDI' }, { name: 'PrecoTotalBDI' }],
+        rows: itensFlat.map(function (x) {
+          return [x.etapa, x.n,
+            refA('B', x.r, x.it.codigo || ''), refA('C', x.r, ''), refA('D', x.r, x.it.descricao || ''),
+            refA('E', x.r, x.it.unidade || 'un'), refA('F', x.r, x.qt), refA('G', x.r, x.cu),
+            refA('H', x.r, x.ct), refA('I', x.r, x.pu), refA('J', x.r, x.pt)];
+        })
+      });
+      wdad.columns = [{ width: 12 }, { width: 6 }, { width: 11 }, { width: 10 }, { width: 50 }, { width: 6 },
+                      { width: 10 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 14 }];
+      for (var di = 3; di <= 2 + itensFlat.length; di++) {
+        wdad.getCell('G' + di).numFmt = NUM;
+        ['H', 'I', 'J', 'K'].forEach(function (cl) { wdad.getCell(cl + di).numFmt = MOEDA; });
+      }
+    }
+
+    // ===================== LEIA-ME =====================
+    var wleia = wb.addWorksheet('Leia-me', { properties: { tabColor: { argb: 'FF16A34A' } } });
+    wleia.columns = [{ width: 110 }];
+    var leiaLinhas = [
+      ['ORÇAPRO — COMO USAR ESTA PLANILHA', { bold: true, size: 14, cor: navy }],
+      [(orc.numero || '') + (orc.nome ? ' · ' + orc.nome : '') + '   |   SINAPI ' + (orc.competenciaSinapi || '-') + '/' + (orc.uf || '-') + '   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'), { size: 9, cor: 'FF64748B' }],
+      [''],
+      ['✏️  O QUE VOCÊ PODE EDITAR (células AMARELAS):', { bold: true }],
+      ['     • Resumo!B6 — o BDI aplicado (%). Tudo recalcula: preços unitários, totais, curva ABC, cronograma.'],
+      ['     • Analítica, colunas Qtd e Custo Unit — simule quantidades e preços negociados.'],
+      ['     • Resumo, parcelas do quadro BDI — a linha "BDI pela fórmula TCU" confere na hora.'],
+      [''],
+      ['🔒  PROTEÇÃO: as demais células têm fórmula e estão travadas só contra edição acidental.'],
+      ['     Senha para desproteger (Revisão → Desproteger Planilha): raeng'],
+      [''],
+      ['✅  VERIFICAÇÕES AUTOMÁTICAS: o fim da aba Resumo confere se os totais seguem consistentes'],
+      ['     após suas edições ("OK" verde · "⚠ verificar" vermelho).'],
+      [''],
+      ['📷  A aba Gráficos contém IMAGENS da emissão (não recalculam). Os dados vivos estão nas abas.'],
+      [''],
+      ['🤖  DICA (Excel 365/Copilot): a aba "Dados IA" tem a tabela tblItens pronta para análise.'],
+      ['     Experimente perguntar: "quais os 5 itens de maior impacto no custo?" ou'],
+      ['     "faça um gráfico de custo por etapa usando tblItens".'],
+      [''],
+      ['📞  RA ENGENHARIA ESPECIAL LTDA — CNPJ 59.507.116/0001-64 · Uberlândia/MG'],
+      ['     Eng. Civil Rogério Alves de Souza · CREA-MG 323736 · WhatsApp (34) 9286-9383'],
+      ['     Gerado pelo OrçaPRO — orçamento de obras com bases oficiais e IA.']
+    ];
+    leiaLinhas.forEach(function (ln, i) {
+      var c = wleia.getCell('A' + (i + 1));
+      c.value = ln[0];
+      var o = ln[1] || {};
+      c.font = { bold: !!o.bold, size: o.size || 10, color: { argb: o.cor || 'FF1E293B' } };
+      c.alignment = { wrapText: false, vertical: 'top' };
+    });
+
+    // Notas nas células-chave (documentação p/ humano e p/ IA)
+    wr.getCell('B6').note = 'BDI em % aplicado sobre o custo direto. Edite aqui: preços unitários, totais, ABC e cronograma recalculam. Named range: p_BDI. Referência: Acórdão TCU 2.622/2013 (quadro abaixo).';
+    if (itensFlat.length) {
+      wa.getCell('F' + itensFlat[0].r).note = 'Qtd editável (amarelo). Custo Total, Preço c/ BDI, subtotais, Sintética, Resumo, ABC e cronograma recalculam em cadeia.';
+    }
+
+    // ===================== FASE 2: verificações automáticas (Resumo) =====================
+    // Sanidade viva: se o usuário editar algo e um total desalinhar, o Resumo
+    // acusa na hora — nada de número silenciosamente errado.
+    var rc = resumoChecksRow || 23, checks = [];
+    if (insMap) {
+      var difCat = Math.abs((grandMO + grandMAT + grandEQ) - grandCusto);
+      checks.push(['Soma MO+MAT+EQ = Custo Direto', 'IF(ABS((B18+B19+B20)-B10)<=1,"OK","⚠ verificar")', difCat <= 1 ? 'OK' : '⚠ verificar']);
+    }
+    if (cronoTotRef) {
+      checks.push(['Cronograma fecha com o Preço de Venda', 'IF(ABS(' + cronoTotRef + '-B12)<=0.05,"OK","⚠ verificar")',
+        Math.abs(num(crono && crono.total) - totVenda) <= 0.05 ? 'OK' : '⚠ verificar']);
+    }
+    if (wabc) {
+      checks.push(['Curva ABC soma = Custo Direto', "IF(ABS(SUM('Curva ABC'!$F$9:$F$" + abcFim + ')-B10)<=0.05,"OK","⚠ verificar")', 'OK']);
+    }
+    if (checks.length) {
+      wr.mergeCells('A' + rc + ':B' + rc);
+      wr.getCell('A' + rc).value = 'VERIFICAÇÕES AUTOMÁTICAS';
+      wr.getCell('A' + rc).font = { bold: true, color: { argb: navy } };
+      checks.forEach(function (ck, i) {
+        var rr = rc + 1 + i;
+        wr.getCell('A' + rr).value = ck[0]; wr.getCell('A' + rr).font = { size: 9 };
+        wr.getCell('B' + rr).value = { formula: ck[1], result: ck[2] };
+        wr.getCell('B' + rr).font = { bold: true, color: { argb: ck[2] === 'OK' ? verde : 'FFDC2626' } };
+        wr.getCell('A' + rr).border = wr.getCell('B' + rr).border = thin();
+      });
+    }
+
+    // ===================== FASE 2: impressão + proteção =====================
+    // Impressão pronta p/ PDF/licitação: A4, ajusta à largura, cabeçalho repetido
+    // e rodapé com nº do orçamento + página.
+    function pset(ws, orient, titles) {
+      if (!ws) return;
+      ws.pageSetup = {
+        paperSize: 9, orientation: orient, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+        margins: { left: 0.4, right: 0.4, top: 0.55, bottom: 0.55, header: 0.2, footer: 0.25 },
+        printTitlesRow: titles
+      };
+      ws.headerFooter.oddFooter = '&L&8OrçaPRO — ' + (orc.numero || '') + '&C&8' + (empresa || '') + '&R&8Pág. &P de &N';
+    }
+    pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6'); pset(wa, 'landscape', '1:6');
+    pset(wins, 'landscape', '1:5'); pset(wabc, 'portrait', '1:8'); pset(wcr, 'landscape', '1:4');
+    pset(wdad, 'landscape', '2:2'); pset(wleia, 'portrait');
+
+    // Proteção anti-edição acidental: só as células amarelas editam (B6, parcelas
+    // do BDI, Qtd/Custo da Analítica). Senha documentada no Resumo: 'raeng'.
+    // ws.protect é assíncrono no ExcelJS -> construir passa a devolver Promise<wb>.
+    // Dados IA fica SEM proteção: Table protegida bloqueia ordenar/filtrar no Excel.
+    var protOpts = { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true, sort: true };
+    return Promise.all([wr, wsi, wa, wins, wabc, wcr, wleia].filter(Boolean).map(function (ws) {
+      return ws.protect('raeng', protOpts);
+    })).then(function () { return wb; });
   }
 
   // ---------- Camada browser ----------
@@ -590,8 +817,10 @@
             };
             // Gera os PNGs dos gráficos NO BROWSER (canvas). Node nunca passa por aqui.
             try { deps.graficos = gerarGraficos(orc, deps); } catch (eg) { console.warn('[excel graficos]', eg); deps.graficos = null; }
-            var wb = construir(global.ExcelJS, orc, deps);
-            wb.xlsx.writeBuffer().then(function (buf) {
+            // construir devolve Promise (proteção de abas é assíncrona no ExcelJS)
+            Promise.resolve(construir(global.ExcelJS, orc, deps)).then(function (wb) {
+              return wb.xlsx.writeBuffer();
+            }).then(function (buf) {
               var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
               var a = document.createElement('a'); a.href = URL.createObjectURL(blob);
               a.download = (orc.numero || 'orcamento') + '_PRO.xlsx';

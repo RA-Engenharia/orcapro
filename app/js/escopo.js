@@ -77,10 +77,11 @@
 
       // 4) Código digitado direto? -> match certo (multi-base)
       var codDigitado = (bruto.match(/\b(\d{5,7})\b/) || [])[1];
-      var itx = codDigitado ? this._obter(codDigitado) : null;
-      if (itx) {
+      var hit = codDigitado ? this._obter(codDigitado) : null;
+      if (hit) {
+        var itx = hit.item;
         return this._linha(bruto, quantidade, unidade || itx.unidade, termos,
-          [{ item: itx, fonte: itx.baseFonte || "SINAPI", confianca: 100, motivo: "código informado" }], "ok");
+          [{ item: itx, fonte: hit.fonte, confianca: 100, motivo: "código informado" }], "ok"); // FASE 1.2: fonte REAL, não "SINAPI" no chute
       }
 
       // 5) Busca por termos + ranking de confiança (multi-base)
@@ -134,9 +135,26 @@
       if (typeof Sinapi !== "undefined" && Sinapi.buscar) return Sinapi.buscar(q, { max: max || 8 }).map(function (it) { return { item: it, fonte: "SINAPI" }; });
       return [];
     },
+    // FASE 1.2: devolve { item, fonte } com a fonte REAL de onde o código saiu.
     _obter: function (cod) {
-      if (typeof Bases !== "undefined" && Bases.obter) return Bases.obter(cod);
-      if (typeof Sinapi !== "undefined" && Sinapi.obter) return Sinapi.obter(cod);
+      if (typeof Sinapi !== "undefined" && Sinapi.obter) {
+        var s = Sinapi.obter(cod);
+        if (s) return { item: s, fonte: "SINAPI" };
+      }
+      if (typeof Bases !== "undefined" && Bases.obter) {
+        var it = Bases.obter(cod);
+        if (it) {
+          var fonte = it.baseFonte || "OUTRA";
+          if (fonte === "OUTRA" && Bases.lista) { // descobre em QUAL base extra o código está
+            var ls = Bases.lista() || [];
+            for (var i = 0; i < ls.length; i++) {
+              var f = ls[i] && ls[i].fonte;
+              if (f && f !== "SINAPI" && Bases.obter(f, cod)) { fonte = f; break; }
+            }
+          }
+          return { item: it, fonte: fonte };
+        }
+      }
       return null;
     },
 
