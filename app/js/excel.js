@@ -252,6 +252,9 @@
     var wsi = wb.addWorksheet(SH_SINT, { properties: { tabColor: { argb: aco } },  views: [{ state: 'frozen', ySplit: 6 }] });
     var wa  = wb.addWorksheet(SH_ANAL, { properties: { tabColor: { argb: navy } }, views: [{ state: 'frozen', ySplit: 6 }] });
     var abc = deps.abc, crono = deps.crono, insMap = deps.insumosMap; // opcionais
+    // FASE 2 lote 6: aba Parâmetros (matriz de desembolso) — criada aqui p/ ficar
+    // logo após a Analítica na ordem das abas; preenchida mais abaixo.
+    var wpar = crono ? wb.addWorksheet('Parâmetros', { properties: { tabColor: { argb: 'FFF59E0B' } }, views: [{ state: 'frozen', ySplit: 5 }] }) : null;
     var wins = insMap ? wb.addWorksheet("Insumos", { properties: { tabColor: { argb: 'FF0EA5E9' } }, views: [{ state: 'frozen', ySplit: 5 }] }) : null;
     var wabc = abc   ? wb.addWorksheet("Curva ABC",  { properties: { tabColor: { argb: 'FFF59E0B' } }, views: [{ state: 'frozen', ySplit: 7 }] }) : null;
     var wcr  = crono ? wb.addWorksheet("Cronograma", { properties: { tabColor: { argb: 'FF8B5CF6' } }, views: [{ state: 'frozen', ySplit: 4 }] }) : null;
@@ -505,6 +508,41 @@
       abcNota.font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
     }
 
+    // ===================== PARÂMETROS: matriz de desembolso etapa×mês =====================
+    // % editáveis (amarelas) que DIRIGEM o Cronograma por fórmula. Cada linha
+    // precisa somar 100% — a coluna Check acusa ao vivo.
+    if (wpar) {
+      var Mp = crono.meses || 0, etsP = crono.etapas || [];
+      var wcolsP = [{ width: 34 }];
+      for (var mp = 0; mp < Mp; mp++) wcolsP.push({ width: 9 });
+      wcolsP.push({ width: 10 }, { width: 12 });
+      wpar.columns = wcolsP;
+      wpar.mergeCells(1, 1, 1, Mp + 3); wpar.getCell('A1').value = empresa; wpar.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
+      wpar.mergeCells(2, 1, 2, Mp + 3); wpar.getCell('A2').value = 'PARÂMETROS — MATRIZ DE DESEMBOLSO (' + Mp + ' meses) — ' + (orc.numero || ''); wpar.getCell('A2').font = { bold: true, size: 11 };
+      wpar.mergeCells(3, 1, 3, Mp + 3); wpar.getCell('A3').value = 'Edite os % (células amarelas): o Cronograma e a Curva S recalculam sozinhos. Cada linha deve somar 100% — a coluna Check avisa.'; wpar.getCell('A3').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
+      var hp = ['Etapa']; for (var mp2 = 0; mp2 < Mp; mp2++) hp.push('Mês ' + (mp2 + 1)); hp.push('Soma', 'Check');
+      hp.forEach(function (h, i) { hStyle(wpar.getRow(5).getCell(i + 1)); wpar.getRow(5).getCell(i + 1).value = h; });
+      etsP.forEach(function (et, i) {
+        var pr = 6 + i, rowP = wpar.getRow(pr), tot = num(et.total);
+        rowP.getCell(1).value = (et.codigo ? et.codigo + ' ' : '') + (et.nome || 'Etapa'); rowP.getCell(1).border = thin();
+        var somaFrac = 0;
+        for (var m3 = 0; m3 < Mp; m3++) {
+          var frac = tot > 0 ? num(et.meses[m3]) / tot : 0;
+          somaFrac += frac;
+          var cP = rowP.getCell(2 + m3);
+          cP.value = frac; cP.numFmt = '0.0%'; cP.border = thin();
+          cP.protection = { locked: false };
+          cP.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9E0' } };
+        }
+        var colSoma = wpar.getColumn(Mp + 2).letter, colFirstP = wpar.getColumn(2).letter, colLastP = wpar.getColumn(Mp + 1).letter;
+        rowP.getCell(Mp + 2).value = { formula: 'SUM(' + colFirstP + pr + ':' + colLastP + pr + ')', result: somaFrac };
+        rowP.getCell(Mp + 2).numFmt = '0.0%'; rowP.getCell(Mp + 2).font = { bold: true }; rowP.getCell(Mp + 2).border = thin();
+        var okSoma = Math.abs(somaFrac - 1) <= 0.001;
+        rowP.getCell(Mp + 3).value = { formula: 'IF(ABS(' + colSoma + pr + '-1)>0.001,"⚠ ≠100%","OK")', result: okSoma ? 'OK' : '⚠ ≠100%' };
+        rowP.getCell(Mp + 3).font = { bold: true, color: { argb: okSoma ? verde : 'FFDC2626' } }; rowP.getCell(Mp + 3).border = thin();
+      });
+    }
+
     // ===================== CRONOGRAMA FÍSICO-FINANCEIRO =====================
     if (wcr) {
       var M = crono.meses || 0, totalIdx = M + 2;
@@ -516,10 +554,20 @@
       var ch = 4, chdr = ['Etapa']; for (var m = 0; m < M; m++) chdr.push('Mês ' + (m + 1)); chdr.push('Total');
       chdr.forEach(function (h, i) { hStyle(wcr.getRow(ch).getCell(i + 1)); wcr.getRow(ch).getCell(i + 1).value = h; });
       var cr = ch + 1, firstData = cr;
+      // FASE 2 lote 6: mês = preço da etapa (Sintética) × % da matriz de Parâmetros.
+      // Só liga a fórmula se as etapas do crono alinham 1:1 com a Sintética.
+      var etsOk = wpar && (crono.etapas || []).length === etInfo.length &&
+        (crono.etapas || []).every(function (e, i) { return String(e.codigo || '') === String(etInfo[i].codigo || ''); });
       (crono.etapas || []).forEach(function (et, idx) {
         var row = wcr.getRow(cr);
         row.getCell(1).value = (et.codigo ? et.codigo + ' ' : '') + (et.nome || 'Etapa');
-        for (var m = 0; m < M; m++) { var c = row.getCell(2 + m); c.value = num(et.meses[m]); c.numFmt = MOEDA; c.border = thin(); }
+        for (var m = 0; m < M; m++) {
+          var c = row.getCell(2 + m);
+          c.value = etsOk
+            ? { formula: "'" + SH_SINT + "'!$F$" + (s0 + idx) + "*'Parâmetros'!" + wpar.getColumn(2 + m).letter + (6 + idx), result: num(et.meses[m]) }
+            : num(et.meses[m]);
+          c.numFmt = MOEDA; c.border = thin();
+        }
         row.getCell(totalIdx).value = { formula: 'SUM(' + colFirst + cr + ':' + colLast + cr + ')', result: num(et.total) };
         row.getCell(totalIdx).numFmt = MOEDA; row.getCell(totalIdx).font = { bold: true };
         row.getCell(1).border = thin(); row.getCell(totalIdx).border = thin();
@@ -655,6 +703,44 @@
       embutir('Composição de custo (MO / MAT / EQ)', G.moMatEq, 420);
     }
 
+    // ===================== FASE 3: data-base em todas as abas =====================
+    // Exigência formal de licitação: data-base/competência visível em cada quadro.
+    var dtEmissao = orc.atualizadoEm ? new Date(orc.atualizadoEm) : new Date();
+    var txtBase = 'Data-base: SINAPI ' + (orc.competenciaSinapi || '-') + '/' + (orc.uf || '-') + ' — ' +
+      (orc.desonerado ? 'desonerado' : 'não desonerado') + '   ·   Emissão: ' + dtEmissao.toLocaleDateString('pt-BR');
+    function linhaBase(ws, rr, lastCol) {
+      if (!ws) return;
+      var c = ws.getCell('A' + rr);
+      if (c.value) return; // linha já ocupada — não sobrescreve
+      try { ws.mergeCells('A' + rr + ':' + lastCol + rr); } catch (e) {}
+      c.value = txtBase; c.font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
+    }
+    linhaBase(wsi, 4, 'G'); linhaBase(wabc, 3, 'H'); linhaBase(wins, 4, 'I');
+    if (wcr) linhaBase(wcr, 3, wcr.getColumn((crono.meses || 0) + 2).letter);
+
+    // ===================== FASE 3: memória de cálculo (Lei 14.133) =====================
+    // Só entra se algum item tiver o campo memoriaCalculo preenchido no app.
+    var wmem = null, comMem = itensFlat.filter(function (x) { return x.it && x.it.memoriaCalculo; });
+    if (comMem.length) {
+      wmem = wb.addWorksheet('Memória de Cálculo', { properties: { tabColor: { argb: 'FF8B5CF6' } } });
+      wmem.columns = [{ width: 6 }, { width: 12 }, { width: 44 }, { width: 6 }, { width: 10 }, { width: 70 }];
+      wmem.mergeCells('A1:F1'); wmem.getCell('A1').value = empresa; wmem.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
+      wmem.mergeCells('A2:F2'); wmem.getCell('A2').value = 'MEMÓRIA DE CÁLCULO DE QUANTITATIVOS — ' + (orc.numero || ''); wmem.getCell('A2').font = { bold: true, size: 11 };
+      linhaBase(wmem, 3, 'F');
+      ['Item', 'Código', 'Descrição', 'Und', 'Qtd', 'Memória de cálculo'].forEach(function (h, i) { hStyle(wmem.getRow(5).getCell(i + 1)); wmem.getRow(5).getCell(i + 1).value = h; });
+      var mr = 6;
+      comMem.forEach(function (x, idx) {
+        var row = wmem.getRow(mr);
+        row.getCell(1).value = x.n; row.getCell(2).value = x.it.codigo || '';
+        row.getCell(3).value = x.it.descricao || ''; row.getCell(4).value = x.it.unidade || 'un';
+        row.getCell(5).value = { formula: "'" + SH_ANAL + "'!F" + x.r, result: x.qt }; row.getCell(5).numFmt = NUM;
+        row.getCell(6).value = String(x.it.memoriaCalculo);
+        row.getCell(6).alignment = { wrapText: true, vertical: 'top' };
+        for (var k = 1; k <= 6; k++) { row.getCell(k).border = thin(); if (idx % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
+        mr++;
+      });
+    }
+
     // ===================== DADOS IA (Excel Table viva p/ Copilot) =====================
     // Tabela plana tblItens: 1 linha por item, TODA por fórmula referenciando a
     // Analítica — editou lá, aqui acompanha. É a superfície que IA/Copilot lê bem
@@ -698,6 +784,7 @@
       ['     • Resumo!B6 — o BDI aplicado (%). Tudo recalcula: preços unitários, totais, curva ABC, cronograma.'],
       ['     • Analítica, colunas Qtd e Custo Unit — simule quantidades e preços negociados.'],
       ['     • Resumo, parcelas do quadro BDI — a linha "BDI pela fórmula TCU" confere na hora.'],
+      ['     • Parâmetros — matriz de desembolso (% de cada etapa por mês): o Cronograma e a Curva S seguem.'],
       [''],
       ['🔒  PROTEÇÃO: as demais células têm fórmula e estão travadas só contra edição acidental.'],
       ['     Senha para desproteger (Revisão → Desproteger Planilha): raeng'],
@@ -757,6 +844,21 @@
       });
     }
 
+    // ===================== FASE 3: responsável técnico + ART (Súmula TCU 260) =====================
+    // Sempre presente — sem dado, sai placeholder explícito ([...]), nunca vazio.
+    var resp = deps.responsavel || {};
+    var ri = rc + checks.length + 2;
+    wr.mergeCells('A' + ri + ':B' + ri);
+    wr.getCell('A' + ri).value = 'RESPONSÁVEL TÉCNICO PELO ORÇAMENTO';
+    wr.getCell('A' + ri).font = { bold: true, color: { argb: navy } };
+    lin(ri + 1, 'Nome', resp.responsavel || '[RESPONSÁVEL TÉCNICO]');
+    lin(ri + 2, 'Título / Registro', (resp.titulo || 'Engenheiro Civil') + ' · ' + (resp.crea || '[CREA/CAU]'));
+    lin(ri + 3, 'ART/RRT', orc.art || '[nº da ART/RRT — informar]');
+    lin(ri + 4, 'Empresa', (resp.nome || empresa || '') + (resp.cnpj ? ' · CNPJ ' + resp.cnpj : ''));
+    wr.getCell('A' + (ri + 6)).value = '___________________________________';
+    wr.getCell('A' + (ri + 7)).value = (resp.responsavel || '[nome]') + ' — ' + (resp.crea || '[CREA/CAU]');
+    wr.getCell('A' + (ri + 7)).font = { size: 9, color: { argb: muted } };
+
     // ===================== FASE 2: impressão + proteção =====================
     // Impressão pronta p/ PDF/licitação: A4, ajusta à largura, cabeçalho repetido
     // e rodapé com nº do orçamento + página.
@@ -771,14 +873,14 @@
     }
     pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6'); pset(wa, 'landscape', '1:6');
     pset(wins, 'landscape', '1:5'); pset(wabc, 'portrait', '1:8'); pset(wcr, 'landscape', '1:4');
-    pset(wdad, 'landscape', '2:2'); pset(wleia, 'portrait');
+    pset(wdad, 'landscape', '2:2'); pset(wleia, 'portrait'); pset(wmem, 'landscape', '1:5'); pset(wpar, 'landscape', '1:5');
 
     // Proteção anti-edição acidental: só as células amarelas editam (B6, parcelas
     // do BDI, Qtd/Custo da Analítica). Senha documentada no Resumo: 'raeng'.
     // ws.protect é assíncrono no ExcelJS -> construir passa a devolver Promise<wb>.
     // Dados IA fica SEM proteção: Table protegida bloqueia ordenar/filtrar no Excel.
     var protOpts = { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true, sort: true };
-    return Promise.all([wr, wsi, wa, wins, wabc, wcr, wleia].filter(Boolean).map(function (ws) {
+    return Promise.all([wr, wsi, wa, wins, wabc, wcr, wleia, wmem, wpar].filter(Boolean).map(function (ws) {
       return ws.protect('raeng', protOpts);
     })).then(function () { return wb; });
   }
@@ -813,7 +915,8 @@
               crono: (typeof Orcamento.cronograma === "function") ? Orcamento.cronograma(orc, orc.cronogramaMeses) : null,
               cronoAgente: (typeof Cronograma !== "undefined") ? Cronograma.estimar(orc) : null,
               insumosMap: insumosMap,
-              analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : ""
+              analiticoComp: (typeof Analitico !== "undefined" && Analitico.carregado) ? (Analitico.competencia + "/" + Analitico.uf) : "",
+              responsavel: (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null
             };
             // Gera os PNGs dos gráficos NO BROWSER (canvas). Node nunca passa por aqui.
             try { deps.graficos = gerarGraficos(orc, deps); } catch (eg) { console.warn('[excel graficos]', eg); deps.graficos = null; }

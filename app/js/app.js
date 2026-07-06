@@ -137,7 +137,7 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
       if (!t) return;
       // navegação por módulo (sidebar da Gestão)
       if (t.dataset.view) { var _apV = document.querySelector(".app"); if (_apV) _apV.classList.remove("menu-aberto"); this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; this.render(); return; }
@@ -171,6 +171,11 @@
       if (t.dataset.delItem) {
         var pr = t.dataset.delItem.split("|");
         this.removerItem(pr[0], pr[1]); return;
+      }
+      // memória de cálculo do quantitativo "etapaId|itemId" (FASE 3, Lei 14.133)
+      if (t.dataset.memoria) {
+        var pm = t.dataset.memoria.split("|");
+        this.abrirMemoria(pm[0], pm[1]); return;
       }
       // ver insumos (composição explodida)
       if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos); return; }
@@ -818,6 +823,23 @@
     removerItem: function (etapaId, itemId) {
       Orcamento.removerItem(this.orcAtual, etapaId, itemId);
       this.persistir(); this.render();
+    },
+    // FASE 3: memória de cálculo do quantitativo (Lei 14.133) — o Excel (aba
+    // "Memória de Cálculo", lote 5) já exporta item.memoriaCalculo; aqui é onde digita.
+    abrirMemoria: function (etapaId, itemId) {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      var etapa = (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
+      var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
+      if (!it) return;
+      var body = '<p class="muted" style="margin-top:0">Registre como o quantitativo de <b>' + Util.esc(String(it.descricao || "").slice(0, 90)) + '</b> foi calculado (ex.: <i>"2 paredes × 3,20 m × 2,70 m − 1 porta 0,80×2,10"</i>). Sai na aba <b>Memória de Cálculo</b> do Excel — exigência comum em licitação (Lei 14.133).</p>' +
+        '<textarea id="mem-texto" class="cell" style="width:100%;min-height:130px;resize:vertical" placeholder="Descreva o cálculo do quantitativo…">' + Util.esc(it.memoriaCalculo || "") + '</textarea>';
+      UI.modal("📝 Memória de cálculo — " + (it.codigo || ""), body, [
+        { texto: "Salvar", classe: "primary", onClick: function () {
+            it.memoriaCalculo = String((UI.el("mem-texto") || {}).value || "").trim();
+            self.persistir(); UI.fecharModal(); self.render();
+            UI.toast(it.memoriaCalculo ? "Memória de cálculo salva." : "Memória de cálculo removida.", "ok");
+          } }
+      ]);
     },
 
     // ---------- Busca SINAPI ----------

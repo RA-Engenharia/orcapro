@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.24",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.24/OrcaPRO-IA-update-v1.1.24.zip",
-  "notas": "Categorias de insumos (MO/Material/Equipamento) corrigidas nas composições, coluna Fonte honesta, etapas criadas por tipo de serviço no escopo, prazo do Gantt e do Cronograma unificado, e Excel PRO v2: fórmulas vivas (mude Qtd/BDI e tudo recalcula), proteção de células, quadro BDI TCU, Curva ABC recalculável e abas Dados IA + Leia-me.",
+  "versao": "1.1.25",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.25/OrcaPRO-IA-update-v1.1.25.zip",
+  "notas": "Planilha VIVA completa (9 abas): nova aba Parâmetros com matriz de desembolso etapa×mês dirigindo o Cronograma por fórmula, data-base em todas as abas, bloco Responsável Técnico + ART, e Memória de Cálculo por item (Lei 14.133) — com campo 📝 no app para preenchê-la.",
   "obrigatoria": false
 }

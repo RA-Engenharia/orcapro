@@ -351,6 +351,7 @@
             '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custo, pct)) + '</td>' +
             '<td class="right">' +
               (ehSinapi ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button> ' : '') +
+              '<button class="btn sm' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button> ' +
               '<button class="btn sm danger" data-del-item="' + e.id + '|' + it.id + '">✕</button></td></tr>';
         });
       });
