@@ -154,7 +154,7 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
       if (!t) return;
       // navegação por módulo (sidebar da Gestão)
       if (t.dataset.view) { var _apV = document.querySelector(".app"); if (_apV) _apV.classList.remove("menu-aberto"); this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; this.render(); return; }
@@ -211,6 +211,7 @@
         case "empresa": this.abrirEmpresa(); break;
         case "licenca": this.abrirLicenca(); break;
         case "backup": this.abrirBackup(); break;
+        case "nuvem": this.abrirNuvem(); break;
         case "backup-export": this.exportarBackup(); break;
         case "menu": { var _apT = document.querySelector(".app"); if (_apT) _apT.classList.toggle("menu-aberto"); break; }
         case "conta": { var _c = t.closest(".topbar-conta"); if (_c) _c.classList.toggle("aberto"); break; }
@@ -231,6 +232,7 @@
         case "cenarios": this.compararCenarios(); break;
         case "aplicar-cenario": this.aplicarCenario(t.dataset.bdi); break;
         case "exportar-excel": this.exportarExcel(); break;
+        case "reimportar-excel": this.reimportarExcel(); break;
         case "config-orc": this.editarDadosOrc(); break;
         case "escopo": this.abrirEscopo(); break;
         case "escopo-ia": this.analisarEscopoIA(); break;
@@ -361,7 +363,18 @@
             if (self.tela === "lista") self.render();
             UI.toast("☁ Dados sincronizados na nuvem.", "ok");
           })
-          .catch(function (e) { console.warn("[nuvem] " + (e && (e.code || e.message))); });
+          .catch(function (e) {
+            // NUNCA falhar em silêncio: o usuário precisa saber que NÃO está sincronizando
+            console.warn("[nuvem] " + (e && (e.code || e.message)));
+            var code = e && e.code;
+            if (code === "auth/wrong-password") {
+              UI.toast("☁ Nuvem NÃO conectada: esta senha é diferente da usada no seu outro computador. Menu da conta → ☁ Nuvem para conectar com a senha certa.", "erro");
+            } else if (code === "auth/network-request-failed") {
+              UI.toast("☁ Sem internet agora — seus dados ficam locais e você pode sincronizar depois em: menu da conta → ☁ Nuvem.", "erro");
+            } else {
+              UI.toast("☁ Nuvem não conectada (" + (code || (e && e.message) || "erro") + "). Menu da conta → ☁ Nuvem para tentar de novo.", "erro");
+            }
+          });
       }
     },
 
@@ -480,6 +493,46 @@
     },
 
     // ---------- Backup dos Orçamentos (exportar/importar) ----------
+    // ☁ Nuvem: conectar/sincronizar A QUALQUER HORA (não só no login) — p/ quem
+    // trabalha em 2+ computadores (escritório e casa). Regra de ouro: usar o MESMO
+    // e-mail e senha da nuvem em todos os aparelhos.
+    abrirNuvem: function () {
+      var self = this;
+      if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) { UI.toast("Sincronização na nuvem indisponível nesta instalação.", "erro"); return; }
+      var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var conectado = !!(Nuvem.auth && Nuvem.auth.currentUser);
+      var emailNuvem = conectado ? (Nuvem.auth.currentUser.email || "") : "";
+      var body =
+        '<p style="margin-top:0">' + (conectado
+          ? '✅ Conectado como <b>' + Util.esc(emailNuvem) + '</b>. Seus orçamentos sincronizam sozinhos entre os aparelhos conectados com este mesmo e-mail e senha.'
+          : '⚠️ <b>Nuvem não conectada</b> — seus dados estão só neste computador.') + '</p>' +
+        '<p class="muted" style="font-size:12px">Trabalha no escritório e em casa? Use o <b>MESMO e-mail e a MESMA senha</b> da nuvem nos dois computadores — os orçamentos aparecem em todos (até 3 aparelhos na sua licença).</p>' +
+        '<div class="row"><div style="flex:1"><label class="muted" style="font-size:11px">E-mail da nuvem</label><input id="nv-email" class="cell" style="width:100%" value="' + Util.esc(u.email || "") + '"></div></div>' +
+        '<div class="row"><div style="flex:1"><label class="muted" style="font-size:11px">Senha da nuvem (a do OUTRO computador, se já usa lá)</label><input id="nv-senha" type="password" class="cell" style="width:100%" placeholder="••••••••"></div></div>';
+      UI.modal("☁ Nuvem — sincronizar entre aparelhos", body, [
+        { texto: conectado ? "Sincronizar agora" : "Conectar e sincronizar", classe: "primary", onClick: function () {
+            var email = String((UI.el("nv-email") || {}).value || "").trim().toLowerCase();
+            var senha = String((UI.el("nv-senha") || {}).value || "");
+            if (!email || (!conectado && !senha)) { UI.toast("Preencha e-mail e senha da nuvem.", "erro"); return; }
+            UI.toast("☁ Conectando…", "ok");
+            var eid = Auth.empresaId();
+            var p = conectado ? Promise.resolve() : Nuvem.entrar(email, senha);
+            p.then(function () { return Nuvem.sincronizar(eid); })
+              .then(function () {
+                Nuvem.escutar(eid, function () { if (self.tela === "lista") self.render(); });
+                UI.fecharModal(); self.render();
+                UI.toast("☁ Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
+              })
+              .catch(function (e) {
+                var code = e && e.code;
+                if (code === "auth/wrong-password") UI.toast("Senha da nuvem incorreta — use a MESMA senha do outro computador (ou redefina lá).", "erro");
+                else if (code === "auth/network-request-failed") UI.toast("Sem internet agora. Tente novamente quando conectar.", "erro");
+                else UI.toast("Não conectou: " + (code || (e && e.message) || "erro"), "erro");
+              });
+          } }
+      ]);
+    },
+
     abrirBackup: function () {
       var n = Store.listarOrcamentos(Auth.empresaId()).length;
       var html = '<p>Você tem <b>' + n + '</b> orçamento(s) salvos nesta conta (' + Util.esc((Auth.usuario() || {}).email || "") + ').</p>' +
@@ -1150,6 +1203,66 @@
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos de " + (ufAtivo || "") + " (1ª vez)…", "ok");
       ana.carregarArquivo(self._analiticoArquivo).then(gerar).catch(function () { gerar(); });
+    },
+
+    // ---------- FASE 4: reimportar Excel editado (round-trip via aba _meta) ----------
+    reimportarExcel: function () {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (!Auth.podeUsar("exportar")) { UI.toast("Reimportar Excel é recurso PRO. Faça upgrade.", "erro"); return; }
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".xlsx";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        ExcelOrc.ensureExcelJS(function () {
+          UI.loading("Lendo o Excel…");
+          f.arrayBuffer().then(function (ab) {
+            var wb = new window.ExcelJS.Workbook();
+            return wb.xlsx.load(ab).then(function () { return wb; });
+          }).then(function (wb) {
+            UI.loadingFim();
+            var meta = Roundtrip.lerMeta(wb);
+            if (meta.erro === "sem-meta") { UI.toast("Este arquivo não é um Excel do OrçaPRO — ou foi gerado por versão antiga, sem suporte à reimportação (reexporte e tente de novo).", "erro"); return; }
+            if (meta.erro) { UI.toast("Não consegui ler os dados de reimportação: " + (meta.detalhe || meta.erro), "erro"); return; }
+            var val = Roundtrip.validar(meta.cab, orc);
+            if (val.erro === "schema-novo") { UI.toast("Este Excel foi gerado por uma versão mais NOVA do OrçaPRO — atualize o app (🔄) para reimportar.", "erro"); return; }
+            if (val.erro === "outro-orcamento") { UI.toast("Este Excel é do orçamento " + (val.numero || "diferente") + " — abra o orçamento correspondente e reimporte lá.", "erro"); return; }
+            var eds = Roundtrip.extrairEdicoes(wb, meta.orc);
+            if (eds.erro) { UI.toast("Reimportação bloqueada: " + (eds.detalhe || eds.erro), "erro"); return; }
+            var difs = Roundtrip.diff(orc, eds);
+            if (!difs.length) { UI.toast("Nenhuma diferença entre o Excel e o orçamento — nada a importar.", "ok"); return; }
+            self._modalRoundtrip(difs);
+          }).catch(function (e) { UI.loadingFim(); UI.toast("Falha ao ler o arquivo: " + e.message, "erro"); });
+        });
+      };
+      inp.click();
+    },
+    _modalRoundtrip: function (difs) {
+      var self = this;
+      var rot = { quantidade: "Qtd", custoUnitario: "Custo unit." };
+      var html = '<p class="muted" style="font-size:13px">O Excel tem <b>' + difs.length + '</b> mudança(s) em relação ao orçamento aberto. Desmarque o que NÃO quiser aplicar:</p>'
+        + '<table class="tbl" style="font-size:12.5px"><thead><tr><th></th><th>Item</th><th>Campo</th><th class="num">No app</th><th class="num">No Excel</th></tr></thead><tbody>'
+        + difs.map(function (d, i) {
+          return '<tr><td><input type="checkbox" data-rt="' + i + '" checked></td>'
+            + '<td>' + (d.codigo ? "<b>" + Util.esc(d.codigo) + "</b> " : "") + Util.esc(String(d.descricao).slice(0, 45)) + '</td>'
+            + '<td>' + rot[d.campo] + '</td>'
+            + '<td class="num">' + Util.fmtNum(d.de, 2) + '</td>'
+            + '<td class="num"><b>' + Util.fmtNum(d.para, 2) + '</b></td></tr>';
+        }).join("") + '</tbody></table>';
+      UI.modal("📥 Reimportar Excel — revisar mudanças", html, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "✅ Aplicar selecionadas", classe: "primary", onClick: function () {
+          var aceitas = [];
+          Array.prototype.forEach.call(document.querySelectorAll("[data-rt]"), function (c) {
+            if (c.checked) aceitas.push(difs[+c.getAttribute("data-rt")]);
+          });
+          UI.fecharModal();
+          if (!aceitas.length) { UI.toast("Nada selecionado — nada aplicado.", "ok"); return; }
+          var n = Roundtrip.aplicar(self.orcAtual, aceitas);
+          self.persistir(); self.render();
+          UI.toast("✅ " + n + " mudança(s) do Excel aplicadas ao orçamento.", "ok");
+        } }
+      ]);
     },
 
     // ---------- Ver composição → insumos (base analítica, por estado) ----------

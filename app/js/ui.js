@@ -100,6 +100,7 @@
             })() +
             (admin ? '<button class="conta-item" data-acao="empresa"><span>⚙</span>Dados da empresa</button>' : '') +
             '<button class="conta-item" data-acao="tabelas"><span>🗂</span>Tabelas de preço</button>' +
+            (admin ? '<button class="conta-item" data-acao="nuvem"><span>☁</span>Nuvem — sincronizar aparelhos</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
             '<button class="conta-item" data-acao="tema"><span>◐</span>Tema claro / escuro</button>' +
             '<div class="conta-sep"></div>' +
@@ -305,6 +306,7 @@
           '<button class="btn sm" data-acao="config-orc">⚙ Dados</button>' +
           '<button class="btn sm" data-acao="cenarios">📊 Comparar cenários</button>' +
           '<button class="btn sm" data-acao="exportar-excel">📊 Excel (3 abas)</button>' +
+          '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">📥 Reimportar</button>' +
         '</div></div>';
 
       // KPIs

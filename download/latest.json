@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.29",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.29/OrcaPRO-IA-update-v1.1.29.zip",
-  "notas": "Medição profissional POR ITENS do orçamento (boletim + Excel com % acumulado e alerta de estouro), carregamento da base de insumos ~20× mais rápido, e a planilha exportada agora leva os dados do orçamento embutidos — preparando a reimportação com comparação de mudanças.",
+  "versao": "1.1.30",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.30/OrcaPRO-IA-update-v1.1.30.zip",
+  "notas": "Trabalha em mais de um computador? Novo menu ☁ Nuvem (na sua conta): conecte com o MESMO e-mail e senha em até 3 aparelhos e seus orçamentos aparecem em todos — com avisos claros se a sincronização não conectar. E o botão ✎ de renomear etapa foi consertado (não respondia ao clique).",
   "obrigatoria": false
 }
