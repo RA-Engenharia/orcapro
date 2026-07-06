@@ -44,6 +44,25 @@
     },
     fecharModal: function () { var m = this.el("modal-bg"); if (m) m.remove(); },
 
+    // LOTE 5: overlay de carregamento p/ operações longas (analítico 17MB, IA).
+    // Sem isso o app parece travado e a primeira impressão morre ali.
+    loading: function (msg) {
+      this.loadingFim();
+      if (!document.getElementById("ui-loading-css")) {
+        var s = document.createElement("style"); s.id = "ui-loading-css";
+        s.textContent = "@keyframes uiSpin{to{transform:rotate(360deg)}}";
+        document.head.appendChild(s);
+      }
+      var d = document.createElement("div");
+      d.id = "ui-loading";
+      d.style.cssText = "position:fixed;inset:0;background:rgba(15,39,64,.45);z-index:9999;display:flex;align-items:center;justify-content:center";
+      d.innerHTML = '<div style="background:#fff;border-radius:12px;padding:18px 26px;font-weight:600;color:#1e293b;box-shadow:0 18px 50px rgba(0,0,0,.3);display:flex;gap:12px;align-items:center">' +
+        '<span style="width:18px;height:18px;border:3px solid #cbd5e1;border-top-color:#2e6f9e;border-radius:50%;display:inline-block;animation:uiSpin .8s linear infinite"></span>' +
+        Util.esc(msg || "Carregando…") + "</div>";
+      document.body.appendChild(d);
+    },
+    loadingFim: function () { var d = document.getElementById("ui-loading"); if (d) d.remove(); },
+
     // ---------- Topbar ----------
     renderTopbar: function (usuario) {
       var plano = usuario.plano || "FREE";
@@ -69,7 +88,9 @@
               var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
               if (!lic) return "";
               var lbl, alerta = false;
-              if (lic.trial) lbl = "Demonstração (ativar licença)";
+              // LOTE 5: trial 7 dias completo — mostra o tempo restante e acende no fim
+              if (lic.trial && lic.ativo) { lbl = "Teste grátis: " + (lic.rotulo || "") + " restantes"; alerta = (lic.restanteMs || 0) < 2 * 86400000; }
+              else if (lic.trial) { lbl = "Teste encerrado (ativar licença)"; alerta = true; }
               else if (lic.expirada) { lbl = "Licença vencida"; alerta = true; }
               else if (lic.outroDispositivo) { lbl = "Ativada em outra máquina"; alerta = true; }
               else if (lic.revalidar) { lbl = "Reconecte para validar"; alerta = true; }
@@ -171,8 +192,10 @@
     // ---------- Licença ----------
     renderLicenca: function (st) {
       var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
-      if (st.trial) {
-        html += '<div class="card"><b>🔓 Modo demonstração</b><br>Você pode <b>explorar e testar tudo</b> à vontade (navegar, montar orçamento, ver os módulos de gestão). Para <b>salvar e exportar</b> (PDF, Excel, proposta, laudo), ative sua licença com a chave que você recebeu na compra.</div>';
+      if (st.trial && st.ativo) {
+        html += '<div class="card"><b>🔓 Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
+      } else if (st.trial) {
+        html += '<div class="card"><b>⏰ Teste grátis encerrado</b><br>Seus orçamentos estão preservados. Ative sua licença com a chave da compra para voltar a salvar e exportar.</div>';
       } else {
         html += '<div class="card"><b style="color:var(--verde,#16a34a)">✓ Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
       }

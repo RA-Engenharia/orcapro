@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.26",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.26/OrcaPRO-IA-update-v1.1.26.zip",
-  "notas": "Laudo pericial formal (ART/CREA e data de vistoria), memória de cálculo no PDF (Lei 14.133), aviso de faixa TCU no BDI, proteção contra perda de dados e senhas com criptografia reforçada (migração automática no login).",
+  "versao": "1.1.27",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.27/OrcaPRO-IA-update-v1.1.27.zip",
+  "notas": "Teste grátis de 7 dias completo para novos usuários, tema escuro sem flash, busca mais rápida e carregamento com indicador de progresso.",
   "obrigatoria": false
 }

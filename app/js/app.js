@@ -47,6 +47,15 @@
           if (sd.usoPct >= 80) UI.toast("⚠ Armazenamento local em " + sd.usoPct + "% — faça 💾 Backup e remova bases não usadas em 🗂 Tabelas.", "erro");
         }
       } catch (eSd) {}
+      // LOTE 5: CTA de upgrade quando o teste grátis está acabando (últimos 2 dias)
+      try {
+        if (typeof Licenca !== "undefined") {
+          var sl = Licenca.status();
+          if (sl && sl.trial && sl.ativo && (sl.restanteMs || 0) < 2 * 86400000) {
+            UI.toast("⏳ Seu teste grátis termina em " + (sl.rotulo || "breve") + ". Garanta sua licença (🔑) e não perca o ritmo — seus orçamentos continuam aqui.", "erro");
+          }
+        }
+      } catch (eTr) {}
       this.render();
       // Auto-update do app: avisa se há versão nova (só no install local; no site/demo o endpoint não existe e é ignorado)
       if (typeof AutoUpdate !== "undefined") { setTimeout(function () { AutoUpdate.verificar(); }, 1800); }
@@ -937,7 +946,7 @@
         if (!inp) return;
         function ler() {
           var dv = (UI.el("bs-deson") || {}).value || "";
-          return { max: 40, fonte: (UI.el("bs-fonte") || {}).value || "", tipo: (UI.el("bs-tipo") || {}).value || "", desonerado: dv === "des" ? true : (dv === "one" ? false : null) };
+          return { max: 120, fonte: (UI.el("bs-fonte") || {}).value || "", tipo: (UI.el("bs-tipo") || {}).value || "", desonerado: dv === "des" ? true : (dv === "one" ? false : null) };
         }
         var doSearch = Util.debounce(function () {
           var q = inp.value.trim();
@@ -952,16 +961,26 @@
             box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>";
             return;
           }
-          box.innerHTML = res.map(function (r) {
-            var it = r.item, tg = r.tipo === "insumo" ? ' <span class="pill proprio">insumo</span>' : "";
-            return '<div class="sinapi-result" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
-              '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + "</span>" + tg + " " + Util.esc(it.codigo) + " · " + Util.esc(it.unidade) + "</div>" +
-              Util.esc(it.descricao) + "</div>" +
-              '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + "</div></div>";
-          }).join("");
-          Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
-            row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
-          });
+          // LOTE 5: paginação — 15 por vez com "mostrar mais" (40+ de uma vez
+          // congelava o mobile e enterrava os melhores resultados)
+          var PAG = 15;
+          function pintarResultados(ate) {
+            ate = Math.min(res.length, ate);
+            box.innerHTML = res.slice(0, ate).map(function (r) {
+              var it = r.item, tg = r.tipo === "insumo" ? ' <span class="pill proprio">insumo</span>' : "";
+              return '<div class="sinapi-result" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
+                '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + "</span>" + tg + " " + Util.esc(it.codigo) + " · " + Util.esc(it.unidade) + "</div>" +
+                Util.esc(it.descricao) + "</div>" +
+                '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + "</div></div>";
+            }).join("") +
+              (res.length > ate ? '<button type="button" class="btn ghost" id="bs-mais" style="width:100%;margin-top:8px">➕ Mostrar mais ' + Math.min(PAG, res.length - ate) + " (de " + (res.length - ate) + " restantes)</button>" : "");
+            Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
+              row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
+            });
+            var mais = UI.el("bs-mais");
+            if (mais) mais.onclick = function () { pintarResultados(ate + PAG); };
+          }
+          pintarResultados(PAG);
         }, 220);
         inp.addEventListener("input", doSearch);
         var selFonte = UI.el("bs-fonte");
@@ -1155,9 +1174,10 @@
       if (Analitico.reset && Analitico.uf && ufAtivo && Analitico.uf !== ufAtivo) Analitico.reset();
       if (self._insumosCarregando === codigo) return; // ignora duplo-clique durante o load frio
       self._insumosCarregando = codigo;
-      UI.toast("Carregando analítico de " + (ufAtivo || "") + " (1ª vez)…", "ok");
-      Analitico.carregarArquivo(self._analiticoArquivo).then(function () { self._insumosCarregando = null; abrir(); }).catch(function (e) {
-        self._insumosCarregando = null;
+      // LOTE 5: overlay com spinner — o load frio de 17MB parecia travamento
+      UI.loading("Carregando a base analítica de " + (ufAtivo || "") + " (só na 1ª vez)…");
+      Analitico.carregarArquivo(self._analiticoArquivo).then(function () { self._insumosCarregando = null; UI.loadingFim(); abrir(); }).catch(function (e) {
+        self._insumosCarregando = null; UI.loadingFim();
         if (e && e.message === "cancelado") return; // troca de UF cancelou o carregamento — silencioso
         UI.toast("Não carregou o analítico: " + (e && e.message) + " — abra pelo servidor local (Iniciar-OrcaPRO.bat).", "erro");
       });
@@ -1385,7 +1405,10 @@
       if (this._demo) return false; // a vitrine da página de vendas nunca bloqueia
       if (typeof Licenca === "undefined") return false;
       var s = Licenca.status(); if (!s) return false;
-      if (s.trial) return true;           // sem licença ativada = demonstração: nunca salva/exporta
+      // LOTE 5: trial de 7 dias é COMPLETO (salva/exporta) enquanto ativo;
+      // bloqueia só quando expira. Antes: s.trial bloqueava sempre — ninguém
+      // experimentava o entregável antes de pagar.
+      if (s.trial) return !s.ativo;
       return !s.ativo;                    // licenciado: bloqueia se não está ativo (vencida/carência/outra máquina)
     },
     _avisoTrial: function () {
@@ -1394,7 +1417,8 @@
       if (s.expirada) msg = "Sua licença venceu. Renove para continuar salvando e exportando.";
       else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
       else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
-      else msg = "🔒 Modo demonstração — ative sua licença (🔑) para salvar e exportar. Você pode explorar tudo à vontade.";
+      else if (s.trial && s.expirado) msg = "⏰ Seu teste grátis de 7 dias terminou. Ative uma licença (🔑) para continuar salvando e exportando — seus orçamentos estão preservados.";
+      else msg = "🔒 Ative sua licença (🔑) para salvar e exportar.";
       UI.toast(msg, "erro");
       try { this.abrirLicenca(); } catch (e) {}
     },

@@ -8,14 +8,19 @@
 (function (global) {
   "use strict";
 
-  var TRIAL_MS = 3 * 60 * 60 * 1000; // teste de 3 HORAS — depois bloqueia gerar/salvar
+  // LOTE 5: teste grátis COMPLETO de 7 dias (salvar/exportar liberados na
+  // janela; o início é ancorado NO SERVIDOR por dispositivo — trocar de
+  // navegador não zera). Antes: "demonstração" que nunca salvava — ninguém
+  // experimentava o entregável antes de pagar. Concorrência dá 7-30 dias.
+  var TRIAL_MS = 7 * 24 * 3600 * 1000;
   var GRACE_MS = 7 * 24 * 3600 * 1000; // carência offline: até 7 dias sem reconectar; depois exige revalidação online
   var KEY = "orcapro:licenca";
 
   function agora() { return new Date().getTime(); }
   function rotuloTempo(ms) {
     if (ms <= 0) return "encerrado";
-    var h = Math.floor(ms / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    var d = Math.floor(ms / 86400000), h = Math.floor((ms % 86400000) / 3600000), m = Math.floor((ms % 3600000) / 60000);
+    if (d > 0) return d + "d " + h + "h";
     return h > 0 ? (h + "h" + (m < 10 ? "0" : "") + m) : (m + "min");
   }
 
