@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.23",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.23/OrcaPRO-IA-update-v1.1.23.zip",
-  "notas": "Relatório e Excel de insumos agora funcionam em qualquer estado (antes o Excel usava a base de MG por engano).",
+  "versao": "1.1.24",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.24/OrcaPRO-IA-update-v1.1.24.zip",
+  "notas": "Categorias de insumos (MO/Material/Equipamento) corrigidas nas composições, coluna Fonte honesta, etapas criadas por tipo de serviço no escopo, prazo do Gantt e do Cronograma unificado, e Excel PRO v2: fórmulas vivas (mude Qtd/BDI e tudo recalcula), proteção de células, quadro BDI TCU, Curva ABC recalculável e abas Dados IA + Leia-me.",
   "obrigatoria": false
 }
