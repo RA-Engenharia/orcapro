@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.39",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.39/OrcaPRO-IA-update-v1.1.39.zip",
-  "notas": "Correção importante: salvar em PDF (Relatório Completo e todos os documentos — proposta, laudo, medição, EPI, ponto, recibo, RDO) agora sai completo, não mais só a 1ª página. BIM: nova Compatibilização (conflitos entre disciplinas no 3D) + modelo 3D na orientação correta. Fonte offline e melhorias de estabilidade.",
+  "versao": "1.1.40",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.40/OrcaPRO-IA-update-v1.1.40.zip",
+  "notas": "Novo: Importador de planilhas — jogue um orçamento em Excel ou CSV de qualquer formato e o sistema detecta a estrutura, casa os códigos SINAPI (preço oficial no que faltar, nunca inventa código) e monta o orçamento, sem redigitar. Melhorias no visualizador BIM e na robustez do importador.",
   "obrigatoria": false
 }
