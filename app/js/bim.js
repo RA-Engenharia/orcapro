@@ -96,12 +96,13 @@ function montar(host, opts) {
 
   var matAndamento = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x7a4a06, transparent: true, opacity: .9, metalness: .05, roughness: .8, side: THREE.DoubleSide });
   var selMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, emissive: 0x0a5a2a, metalness: .1, roughness: .7 });
+  var clashMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x5a0a0a, metalness: .1, roughness: .6 });
 
   S = { host: host, opts: opts, scene: scene, camera: camera, renderer: renderer, orbit: orbit, modelRoot: modelRoot,
         bar: bar, hud: hud, over: over, loading: loading,
         api: new IfcAPI(), apiReady: false, modelID: -1, meshPorId: {}, elementos: [],
         fly: { on: false, keys: {}, speed: 14, yaw: 0, pitch: 0 }, selected: null, prevMat: null,
-        matAndamento: matAndamento, selMat: selMat, raf: 0, alive: true };
+        matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], raf: 0, alive: true };
 
   function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   S._resize = resize; window.addEventListener('resize', resize); resize();
@@ -273,6 +274,17 @@ function montar(host, opts) {
       hud.querySelector('[data-h="el"]').textContent = nEl.toLocaleString('pt-BR');
       hud.querySelector('[data-h="tri"]').textContent = Math.round(nTri).toLocaleString('pt-BR');
       enquadrar(); loading.style.display = 'none';
+      // AABB (mundo) por elemento p/ a compatibilização (clash) — união das geometrias do elemento
+      try {
+        modelRoot.updateMatrixWorld(true);
+        var caixas = {};
+        modelRoot.children.forEach(function (m) {
+          var id = m.userData && m.userData.expressID; if (id == null) return;
+          var bb = new THREE.Box3().setFromObject(m); if (bb.isEmpty()) return;
+          if (!caixas[id]) caixas[id] = bb; else caixas[id].union(bb);
+        });
+        S.elementos.forEach(function (elx) { var bb = caixas[elx.id]; if (bb) elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] }; });
+      } catch (_) {}
       if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
     } catch (err) {
       loading.style.display = 'none'; over.style.display = 'flex';
@@ -302,11 +314,35 @@ function aplicarEstado(est) {
 }
 function mostrarTudo() { if (!S) return; Object.keys(S.meshPorId).forEach(function (id) { var m = S.meshPorId[id]; if (m) { m.visible = true; if (m !== S.selected) m.material = m.userData.matOrig || m.material; } }); }
 
+// Compatibilização: destaca (vermelho) os elementos de um clash e enquadra a câmera no par.
+function focarClash(ids) {
+  if (!S) return;
+  limparClash();
+  var idset = {}; (ids || []).forEach(function (id) { idset[id] = 1; });
+  var box = new THREE.Box3(), any = false;
+  S.modelRoot.children.forEach(function (m) {
+    if (m.userData && idset[m.userData.expressID]) {
+      m.visible = true; m.material = S.clashMat; box.expandByObject(m); any = true; S._clashSel.push(m);
+    }
+  });
+  if (any) {
+    var size = box.getSize(new THREE.Vector3()), c = box.getCenter(new THREE.Vector3());
+    var maxDim = Math.max(size.x, size.y, size.z) || 2, dist = maxDim * 3 + 2;
+    S.camera.position.set(c.x + dist * .7, c.y + dist * .55, c.z + dist * .7);
+    S.camera.near = Math.max(0.01, maxDim / 100); S.camera.far = Math.max(1000, maxDim * 200); S.camera.updateProjectionMatrix();
+    S.orbit.target.copy(c); S.orbit.update();
+    S.fly.yaw = Math.atan2(S.camera.position.x - c.x, S.camera.position.z - c.z); S.fly.pitch = -0.3;
+  }
+}
+function limparClash() { if (!S) return; (S._clashSel || []).forEach(function (m) { m.material = m.userData.matOrig || m.material; }); S._clashSel = []; }
+
 window.BIM = {
   montar: montar,
   abrirArquivo: function (f) { if (S && S._abrirArquivo) S._abrirArquivo(f); },
   carregarExemplo: function () { if (S && S._carregarExemplo) S._carregarExemplo(); },
   aplicarEstado: aplicarEstado,
   mostrarTudo: mostrarTudo,
+  focarClash: function (ids) { if (S) focarClash(ids); },
+  limparClash: function () { if (S) limparClash(); },
   get elementos() { return S ? S.elementos.slice() : []; }
 };

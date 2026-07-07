@@ -1112,6 +1112,11 @@
         '<div id="bim-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:12px"></div>' +
         '<div id="bim-curva" style="margin-top:12px"></div>' +
         "</div>";
+      html += '<div class="card" id="bim-clash" style="display:none">' +
+        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🧩 Compatibilização <span class="muted" style="font-weight:400;font-size:13px">— conflitos entre disciplinas</span></h3>' +
+        '<button class="btn sm primary" id="bim-clash-run">🔍 Rodar compatibilização</button></div>' +
+        '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> (ex.: tubo atravessando viga, duto embutido em pilar). Clique em <b>Rodar</b>.</p></div>' +
+        "</div>";
       html += "</div>";
       html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
       return html;
@@ -1141,6 +1146,7 @@
         }).join("");
       }
       var box = document.getElementById("bim-4d"); if (box) box.style.display = "";
+      var bcx = document.getElementById("bim-clash"); if (bcx) bcx.style.display = "";
       this._bimCurva = BIM4D.curva(p);
       this._bimAplicarSemana(p.semanas);
     },
@@ -1178,6 +1184,48 @@
       var lb = document.getElementById("bim-semana"); if (lb) lb.textContent = "Semana " + sem + " / " + p.semanas;
       var cv = document.getElementById("bim-curva"); if (cv && this._bimCurva) cv.innerHTML = this._bimCurvaSvg(this._bimCurva, sem);
     },
+    // Compatibilização: roda o motor BIMClash sobre os elementos (com AABB) e lista os conflitos.
+    _bimCompatibilizar: function () {
+      var res = document.getElementById("bim-clash-res"); if (!res) return;
+      if (typeof BIMClash === "undefined") { res.innerHTML = '<p class="muted">Motor de compatibilização não carregado.</p>'; return; }
+      var els = (this._bimElementos || []).filter(function (e) { return e && e.aabb; });
+      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
+      var r; try { r = BIMClash.detectar(els); } catch (e) { res.innerHTML = '<p class="muted">Falha ao analisar: ' + Util.esc(String(e)) + "</p>"; return; }
+      this._bimClashes = r.clashes;
+      var byId = {}; els.forEach(function (e) { byId[e.id] = e; });
+      if (!r.total) { res.innerHTML = '<div style="padding:6px 0"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">✓ Nenhum conflito entre disciplinas</span> <span class="muted" style="font-size:12.5px">— ' + els.length + " elementos analisados (folga 5 mm).</span></div>"; return; }
+      var cor = { grave: "#dc2626", media: "#f59e0b", leve: "#64748b" }, nome = { grave: "graves", media: "médios", leve: "leves" };
+      var chips = ["grave", "media", "leve"].filter(function (s) { return r.severidade[s]; }).map(function (s) {
+        return '<span class="g-pill" style="background:' + cor[s] + '22;color:' + cor[s] + ';font-weight:700">' + r.severidade[s] + " " + nome[s] + "</span>";
+      }).join(" ");
+      var pares = Object.keys(r.porPar).sort(function (a, b) { return r.porPar[b] - r.porPar[a]; }).map(function (p) {
+        return '<span class="muted" style="font-size:12px">' + Util.esc(p) + ": <b>" + r.porPar[p] + "</b></span>";
+      }).join(" · ");
+      var LIM = 80, linhas = this._bimClashes.slice(0, LIM).map(function (c, i) {
+        var a = byId[c.aId] || {}, b = byId[c.bId] || {}, descA = a.nome || a.tipo || c.aId, descB = b.nome || b.tipo || c.bId;
+        return '<tr class="lin"><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cor[c.severidade] + '"></span></td>' +
+          "<td>" + Util.esc(c.par) + '</td><td style="font-size:12px">' + Util.esc(String(descA)) + " ✕ " + Util.esc(String(descB)) + "</td>" +
+          '<td class="num">' + (c.penetracao * 100).toFixed(1) + " cm</td>" +
+          '<td><button class="btn sm" data-clash="' + i + '">👁 ver</button></td></tr>';
+      }).join("");
+      res.innerHTML =
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + r.total + " conflito(s)</b> " + chips + '<span style="flex:1"></span><button class="btn sm ghost" data-clash-limpar="1">✖ limpar destaque</button></div>' +
+        (pares ? '<div style="margin-bottom:8px">' + pares + "</div>" : "") +
+        '<div style="max-height:280px;overflow:auto"><table class="tbl"><thead><tr><th></th><th>Disciplinas</th><th>Elementos</th><th class="num">Penetração</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
+        (r.total > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando os ' + LIM + " piores de " + r.total + " (ordenados por penetração).</p>" : "") +
+        '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>';
+    },
+    _bimVerClash: function (i) {
+      var c = this._bimClashes && this._bimClashes[i]; if (!c) return;
+      if (window.BIM && BIM.focarClash) { try { BIM.focarClash([c.aId, c.bId]); } catch (e) {} }
+      var box = document.getElementById("bim-info");
+      if (box) { box.style.display = ""; box.innerHTML = "<b>🧩 Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>Penetração " + (c.penetracao * 100).toFixed(1) + " cm · " + Util.esc(c.severidade) + "</span>"; }
+    },
+    _bimLimparClash: function () {
+      if (window.BIM && BIM.limparClash) { try { BIM.limparClash(); } catch (e) {} }
+      if (window.BIM && BIM.mostrarTudo) { try { BIM.mostrarTudo(); } catch (e) {} }
+      var box = document.getElementById("bim-info"); if (box) box.style.display = "none";
+    },
     _bimWire: function () {
       var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
       // slider + play
@@ -1192,6 +1240,14 @@
           var v = +s.value + 1; if (v > +s.max) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
           s.value = String(v); self._bimAplicarSemana(v);
         }, 700);
+      };
+      // compatibilização (clash): botão rodar + delegação dos cliques "ver"/"limpar"
+      var crun = document.getElementById("bim-clash-run");
+      if (crun) crun.onclick = function () { self._bimCompatibilizar(); };
+      var cres = document.getElementById("bim-clash-res");
+      if (cres) cres.onclick = function (e) {
+        var b = e.target.closest("[data-clash]"); if (b) { self._bimVerClash(+b.getAttribute("data-clash")); return; }
+        if (e.target.closest("[data-clash-limpar]")) self._bimLimparClash();
       };
       // monta o viewer (js/bim.js é módulo ES — pode não ter carregado ainda; poll curto)
       var tentativas = 0;

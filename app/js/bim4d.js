@@ -109,13 +109,36 @@
     // Retorna { elementos:[{id,tipo,cat,codOrc,exato,semInicio,semFim}], semanas, fases:[...] }.
     planejar: function (elementos, etapasCrono) {
       elementos = elementos || [];
-      var idxEtapa = {}; // chave normalizada (código/nome/id/categoria) -> etapa do cronograma
+      // Índices SEPARADOS por campo (evita colisão silenciosa de last-write-wins entre etapas).
+      // Casamento do carimbo por PRIORIDADE: código > nome > id (identificadores 1:1, com guard
+      // `if(!idx[k])` = first-write-wins dentro do campo). A CATEGORIA é many-to-1 → tratada à
+      // parte: um carimbo de categoria usa a JANELA AGREGADA da categoria (fasesCat), não uma
+      // etapa isolada. Assim 'Alvenaria' (2 etapas) vira {min início, max fim}, não uma só.
+      var idxCod = {}, idxNome = {}, idxId = {}, catsCrono = {};
       Util_arr(etapasCrono).forEach(function (e) {
-        [e.codigo, e.nome, e.id, e.categoria].forEach(function (kk) { if (kk != null && kk !== "") idxEtapa[normKey(kk)] = e; });
+        var kc = normKey(e.codigo), kn = normKey(e.nome), ki = normKey(e.id);
+        if (kc && !idxCod[kc]) idxCod[kc] = e;
+        if (kn && !idxNome[kn]) idxNome[kn] = e;
+        if (ki && !idxId[ki]) idxId[ki] = e;
+        if (e.categoria != null && e.categoria !== "") catsCrono[normKey(e.categoria)] = e.categoria;
       });
-      // fallback por tipo só p/ elementos SEM etapa carimbada (ou carimbo que não casa)
+      // resolve carimbo -> { e: etapa|null, cat: categoria|null }. e=null + cat!=null = casou só
+      // por categoria (usa janela agregada). null = não casou nada (cai no fallback por tipo).
+      function casa(stamp) {
+        var k = normKey(stamp); if (!k) return null;
+        var e = idxCod[k] || idxNome[k] || idxId[k];
+        if (e) return { e: e, cat: e.categoria || null };
+        if (catsCrono[k]) return { e: null, cat: catsCrono[k] };
+        return null;
+      }
+      // categorias que precisam de janela: fallback por tipo (sem carimbo/carimbo que não casa)
+      // + carimbos que casaram só por categoria.
       var catsFallback = {};
-      elementos.forEach(function (el) { if (!(el.etapa && idxEtapa[normKey(el.etapa)])) catsFallback[BIM4D.catDoTipo(el.tipo)] = 1; });
+      elementos.forEach(function (el) {
+        var m = el.etapa ? casa(el.etapa) : null;
+        if (!m) catsFallback[BIM4D.catDoTipo(el.tipo)] = 1;
+        else if (!m.e && m.cat) catsFallback[m.cat] = 1;
+      });
       var fasesCat = BIM4D._fases(Object.keys(catsFallback), etapasCrono);
       var semanas = 0, k;
       for (k in fasesCat) if (fasesCat.hasOwnProperty(k)) semanas = Math.max(semanas, fasesCat[k].fim);
@@ -123,9 +146,10 @@
       if (!(semanas > 0)) semanas = 1;
       var agg = {}; // cat -> {inicio,fim,qtd}
       var out = elementos.map(function (el) {
-        var e = el.etapa ? idxEtapa[normKey(el.etapa)] : null, cat, ini, fim, exato = false;
-        if (e) { cat = e.categoria || BIM4D.catDoTipo(el.tipo); ini = num(e.inicio); fim = num(e.fim); exato = true; }
-        else { cat = BIM4D.catDoTipo(el.tipo); var f = fasesCat[cat] || { inicio: 0, fim: semanas }; ini = f.inicio; fim = f.fim; }
+        var m = el.etapa ? casa(el.etapa) : null, cat, ini, fim, exato = false, f;
+        if (m && m.e) { cat = m.e.categoria || BIM4D.catDoTipo(el.tipo); ini = num(m.e.inicio); fim = num(m.e.fim); exato = true; }
+        else if (m && m.cat) { cat = m.cat; f = fasesCat[cat] || { inicio: 0, fim: semanas }; ini = f.inicio; fim = f.fim; exato = true; }
+        else { cat = BIM4D.catDoTipo(el.tipo); f = fasesCat[cat] || { inicio: 0, fim: semanas }; ini = f.inicio; fim = f.fim; }
         if (!agg[cat]) agg[cat] = { inicio: ini, fim: fim, qtd: 0 };
         else { agg[cat].inicio = Math.min(agg[cat].inicio, ini); agg[cat].fim = Math.max(agg[cat].fim, fim); }
         agg[cat].qtd++;
