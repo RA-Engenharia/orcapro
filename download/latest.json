@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.33",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.33/OrcaPRO-IA-update-v1.1.33.zip",
-  "notas": "Diário de obra IMPRESSO profissional (fotos com legendas, ocorrências destacadas e campo de assinaturas), centro de custos com rateio correto, aprovação de requisições valendo de verdade e nota fiscal XML gravando no módulo fiscal.",
+  "versao": "1.1.34",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.34/OrcaPRO-IA-update-v1.1.34.zip",
+  "notas": "Previsto × Realizado por etapa (custo orçado × gasto real, com estouro e custo/m²), Galeria de fotos da obra com relatório fotográfico impresso, e Fiscal/NF-e com importação de XML em lote e consulta por chave de acesso.",
   "obrigatoria": false
 }

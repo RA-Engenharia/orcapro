@@ -64,7 +64,7 @@
       reqUnidade: [["un","un"],["m","m"],["m2","m²"],["m3","m³"],["kg","kg"],["sc","saco"],["cx","caixa"],["pc","peça"],["l","litro"]],
     departamento: [["engenharia","Engenharia / Obras"],["compras","Compras / Suprimentos"],["financeiro","Financeiro"],["rh","RH / Departamento Pessoal"],["administrativo","Administrativo"],["diretoria","Diretoria"]],
     fiscalTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
-    fiscalStatus: [["emitida", "Emitida"], ["cancelada", "Cancelada"]],
+    fiscalStatus: [["emitida", "Emitida"], ["cancelada", "Cancelada"], ["aguardando_xml", "Aguardando XML"]],
     patrimonioCategoria: [["imovel","Imóvel"],["movel","Móvel"],["informatica","Informática"],["equipamento","Equipamento"],["outros","Outros"]],
       patrimonioEstado: [["novo","Novo"],["bom","Bom"],["regular","Regular"],["ruim","Ruim"],["baixado","Baixado"]],
     centrocustoTipo: [["direto","Direto"],["indireto","Indireto"],["administrativo","Administrativo"]],
@@ -80,7 +80,7 @@
     afastado: "#f59e0b", desligado: "#94a3b8", aberto: "#f59e0b", lancado: "#16a34a",
     disponivel: "#16a34a", em_uso: "#2e6f9e", manutencao: "#f59e0b",
     aberta: "#2e6f9e", cotando: "#f59e0b", comprada: "#16a34a", urgente: "#dc2626", prioridade_alta: "#ea580c",
-    emitida: "#16a34a", cancelada: "#dc2626",
+    emitida: "#16a34a", cancelada: "#dc2626", aguardando_xml: "#f59e0b",
     novo: "#16a34a", regular: "#f59e0b", ruim: "#dc2626", baixado: "#94a3b8",
     aberta: "#f59e0b", lancada: "#16a34a",
   };
@@ -121,6 +121,8 @@
     centrocusto: '<path d="M12 2v20"/><path d="M2 5h20"/><path d="M4 5v14c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5"/><path d="M8 10h8"/><path d="M8 14h5"/>',
     folha: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18"/><path d="M8 4v16"/><path d="M12 14h5"/><path d="M12 17h5"/>',
     relatorios: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
+    previstoreal: '<path d="M3 3v18h18"/><rect x="7" y="6" width="10" height="3" rx="1"/><rect x="7" y="13" width="13" height="3" rx="1"/><path d="M17 4.5v6"/>',
+    galeria: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     epi: '<path d="M12 2l7 3v6c0 4.5-3 8.3-7 9-4-.7-7-4.5-7-9V5l7-3z"/><path d="M9 12l2 2 4-4"/>',
@@ -138,10 +140,12 @@
       { id: "contratos", nome: "Contratos" },
       { id: "medicoes", nome: "Medições" },
       { id: "financeiro", nome: "Financeiro" },
+      { id: "previstoreal", nome: "Previsto × Real" },
       { id: "fornecedores", nome: "Fornecedores" },
       { id: "compras", nome: "Compras" },
       { id: "estoque", nome: "Estoque" },
       { id: "rdo", nome: "Diário (RDO)" },
+      { id: "galeria", nome: "Galeria de Fotos" },
       { id: "colaboradores", nome: "Colaboradores" },
       { id: "epi", nome: "EPI" },
       { id: "ponto", nome: "Ponto / Folha" },
@@ -182,10 +186,12 @@
         case "contratos": return this.renderContratos();
         case "medicoes": return this.renderMedicoes();
         case "financeiro": return this.renderFinanceiro();
+        case "previstoreal": return this.renderPrevistoReal();
         case "fornecedores": return this.renderFornecedores();
         case "compras": return this.renderCompras();
         case "estoque": return this.renderEstoque();
         case "rdo": return this.renderRdo();
+        case "galeria": return this.renderGaleria();
         case "colaboradores": return this.renderColaboradores();
         case "epi": return this.renderEpi();
         case "ponto": return this.renderPonto();
@@ -238,14 +244,16 @@
       html += '<div class="card mt"><h3 style="margin:0 0 10px">Resumo por obra</h3>';
       if (!obras.length) html += '<p class="muted">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> (ou gere a partir de um orçamento).</p>';
       else {
-        html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num">Recebido</th><th class="num">Margem</th></tr></thead><tbody>';
+        html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num">Margem</th></tr></thead><tbody>';
         obras.forEach(function (o) {
           var ctr = contratos.filter(function (c) { return c.obraId === o.id; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
           var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var base = ctr || Util.num(o.valor);
           var margem = base > 0 ? ((base - custo) / base * 100) : 0;
-          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtPct(margem, 1) + "</td></tr>";
+          var area = Util.num(o.areaConstruida);
+          var cm2 = area > 0 ? (Util.fmtMoeda(custo / area) + "/m²") : '<span class="muted" title="Cadastre a área construída na obra">—</span>';
+          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtPct(margem, 1) + "</td></tr>";
         });
         html += "</tbody></table>";
       }
@@ -730,22 +738,260 @@
       return html + "</tbody></table>";
     },
     novoLancamento: function () { this.formFinanceiro(null); },
+    // Etapas do orçamento vinculado à obra (para apropriar custo por etapa)
+    _etapasDaObra: function (obraId) {
+      if (!obraId) return [];
+      var obra = Store.obter(eid(), "obras", obraId); if (!obra || !obra.orcamentoId) return [];
+      var orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      if (!orc || !orc.etapas) return [];
+      return Util.arr(orc.etapas).map(function (e) { return { id: e.id, nome: (e.codigo ? e.codigo + " " : "") + (e.nome || "") }; });
+    },
+    _etapaOptsHtml: function (etapas, selId) {
+      var o = '<option value="">— não apropriado —</option>';
+      Util.arr(etapas).forEach(function (e) { o += '<option value="' + Util.esc(e.id) + '"' + (e.id === selId ? " selected" : "") + ">" + Util.esc(e.nome) + "</option>"; });
+      return o;
+    },
     formFinanceiro: function (f) {
-      f = f || {}; var obras = lista("obras"), contratos = lista("contratos");
+      f = f || {}; var self = this, obras = lista("obras"), contratos = lista("contratos");
       var hoje = new Date().toISOString().slice(0, 10);
+      var etapasIni = this._etapasDaObra(f.obraId);
       var corpo =
         '<div class="row">' + campo("Data", inp("g-data", f.data || hoje, "", "date")) + campo("Tipo", sel("g-tipo", opts(P.finTipo, f.tipo || "despesa"))) + "</div>" +
         campo("Descrição *", inp("g-desc", f.desc)) +
         '<div class="row">' + campo("Categoria", sel("g-cat", opts(P.finCategoria, f.categoria || "material"))) + campo("Valor (R$) *", inp("g-valor", f.valor)) + campo("Status", sel("g-status", opts(P.finStatus, f.status || "pago"))) + "</div>" +
         '<div class="row">' + campo("Obra", sel("g-obra", optsRec(obras, "nome", f.obraId, "— nenhuma —"))) + campo("Contrato", sel("g-contrato", optsRec(contratos, "numero", f.contratoId, "— nenhum —"))) + "</div>" +
-        '<div class="row">' + campo("Fornecedor / Cliente", inp("g-forn", f.fornecedor)) + campo("Forma de pagamento", sel("g-forma", '<option value="">—</option>' + opts(P.formaPgto, f.formaPgto))) + "</div>" +
+        '<div class="row">' + campo("Etapa do orçamento", '<select id="g-etapa">' + this._etapaOptsHtml(etapasIni, f.etapaId) + "</select>") + campo("Fornecedor / Cliente", inp("g-forn", f.fornecedor)) + "</div>" +
+        '<div class="row">' + campo("Forma de pagamento", sel("g-forma", '<option value="">—</option>' + opts(P.formaPgto, f.formaPgto))) + "</div>" +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(f.obs || "") + "</textarea>");
       this._modalForm("financeiro", f, "Lançamento", corpo, function (obj) {
         obj.desc = v("g-desc"); if (!obj.desc) { UI.toast("Informe a descrição.", "erro"); return false; }
         obj.data = v("g-data"); obj.tipo = v("g-tipo"); obj.categoria = v("g-cat"); obj.valor = nv("g-valor"); obj.status = v("g-status");
-        obj.obraId = v("g-obra"); obj.contratoId = v("g-contrato"); obj.fornecedor = v("g-forn"); obj.formaPgto = v("g-forma"); obj.obs = v("g-obs");
+        obj.obraId = v("g-obra"); obj.contratoId = v("g-contrato"); obj.etapaId = v("g-etapa"); obj.fornecedor = v("g-forn"); obj.formaPgto = v("g-forma"); obj.obs = v("g-obs");
         return true;
       });
+      // Ao trocar a obra, repovoa as etapas do orçamento vinculado (mantém "não apropriado" quando a obra não tem orçamento)
+      var selObra = document.getElementById("g-obra"), selEt = document.getElementById("g-etapa");
+      if (selObra && selEt) selObra.onchange = function () { selEt.innerHTML = self._etapaOptsHtml(self._etapasDaObra(selObra.value), ""); };
+    },
+
+    // =================== PREVISTO × REALIZADO (por etapa do orçamento) ===================
+    // Motor puro e testável: para uma obra com orçamento vinculado, cruza o custo
+    // direto previsto de cada etapa (Σ qtd×custoUnit) com as despesas do Financeiro
+    // apropriadas àquela etapa (f.etapaId). Despesas sem etapa caem em "Não apropriado".
+    _previstoRealDados: function (obraId) {
+      var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
+      if (!obra) return { erro: "sem-obra" };
+      var orc = obra.orcamentoId && Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      if (!orc || !Util.arr(orc.etapas).length) return { erro: "sem-orcamento", obra: obra };
+      // previsto por etapa (custo direto, sem BDI) — a mesma base de "custo real"
+      var etapas = Util.arr(orc.etapas).map(function (e) {
+        var prev = 0;
+        Util.arr(e.itens).forEach(function (it) { prev += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
+        return { id: e.id, nome: (e.codigo ? e.codigo + " " : "") + (e.nome || "Etapa"), previsto: prev, realizado: 0 };
+      });
+      var idx = {}; etapas.forEach(function (e) { idx[e.id] = e; });
+      var naoApropriado = 0;
+      lista("financeiro").forEach(function (f) {
+        if (f.tipo !== "despesa" || f.obraId !== obraId) return;
+        var val = Util.num(f.valor);
+        if (f.etapaId && idx[f.etapaId]) idx[f.etapaId].realizado += val;
+        else naoApropriado += val;
+      });
+      var totPrev = 0, totReal = 0;
+      etapas.forEach(function (e) {
+        e.saldo = e.previsto - e.realizado;
+        e.pct = e.previsto > 0 ? (e.realizado / e.previsto * 100) : (e.realizado > 0 ? 999 : 0);
+        e.estouro = e.realizado > e.previsto + 0.005;
+        totPrev += e.previsto; totReal += e.realizado;
+      });
+      totReal += naoApropriado;
+      return {
+        obra: obra, orc: orc, etapas: etapas, naoApropriado: naoApropriado,
+        totalPrevisto: totPrev, totalRealizado: totReal, saldoTotal: totPrev - totReal
+      };
+    },
+    renderPrevistoReal: function () {
+      var obras = lista("obras");
+      var self = this;
+      // obra selecionada persiste no módulo (default: 1ª com orçamento vinculado)
+      var comOrc = obras.filter(function (o) { return o.orcamentoId; });
+      if (this._prSel == null) this._prSel = (comOrc[0] && comOrc[0].id) || (obras[0] && obras[0].id) || "";
+      var sel = '<select data-gacao="pr-troca-obra" style="max-width:280px">' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._prSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
+      var html = this._head(svg("previstoreal") + "Previsto × Realizado", "", "", '<span class="muted" style="align-self:center;margin-right:10px">Obra:</span>' + sel);
+      if (!obras.length) return html + vazioBox("Nenhuma obra ainda", "", "Crie uma obra e vincule um orçamento");
+      var d = this._previstoRealDados(this._prSel);
+      if (d.erro === "sem-orcamento") return html + '<div class="card"><p class="muted">Esta obra não tem orçamento vinculado. Abra a obra em <b>Obras</b> e escolha um orçamento no campo "Vincular a um orçamento" — aí o previsto por etapa aparece aqui.</p></div>';
+      if (d.erro) return html + vazioBox("Selecione uma obra", "", "");
+      // cabeçalho de totais
+      var corSaldo = d.saldoTotal >= 0 ? "var(--verde)" : "var(--vermelho)";
+      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
+        '<div class="kpi custo"><div class="rotulo">Previsto (custo direto)</div><div class="num">' + Util.fmtMoeda(d.totalPrevisto) + "</div></div>" +
+        '<div class="kpi"><div class="rotulo">Realizado (gasto real)</div><div class="num">' + Util.fmtMoeda(d.totalRealizado) + "</div></div>" +
+        '<div class="kpi destaque"><div class="rotulo">Saldo</div><div class="num" style="color:' + corSaldo + '">' + Util.fmtMoeda(d.saldoTotal) + "</div></div>" +
+        "</div>";
+      html += '<div class="card"><table class="tbl"><thead><tr><th>Etapa</th><th class="num">Previsto</th><th class="num">Realizado</th><th style="width:34%">Consumo</th><th class="num">Saldo</th></tr></thead><tbody>';
+      d.etapas.forEach(function (e) {
+        var largura = Math.min(100, Math.round(e.pct));
+        var cor = e.estouro ? "var(--vermelho)" : (e.pct >= 85 ? "#f59e0b" : "var(--verde)");
+        var pctTxt = e.previsto > 0 ? (Math.round(e.pct) + "%") : (e.realizado > 0 ? "s/ previsto" : "—");
+        var barra = '<div style="background:#eef2f7;border-radius:99px;height:16px;overflow:hidden;position:relative">' +
+          '<div style="height:100%;width:' + largura + '%;background:' + cor + ';border-radius:99px;transition:width .3s"></div>' +
+          '<span style="position:absolute;right:8px;top:0;font-size:11px;line-height:16px;color:#334155;font-weight:700">' + pctTxt + (e.estouro ? " ⚠" : "") + "</span></div>";
+        html += "<tr><td><b>" + Util.esc(e.nome) + "</b></td>" +
+          '<td class="num">' + Util.fmtMoeda(e.previsto) + '</td><td class="num">' + Util.fmtMoeda(e.realizado) + "</td>" +
+          "<td>" + barra + '</td><td class="num" style="color:' + (e.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + ';font-weight:600">' + Util.fmtMoeda(e.saldo) + "</td></tr>";
+      });
+      if (d.naoApropriado > 0.005) {
+        html += '<tr style="background:#fff7ed"><td><b>Não apropriado</b> <span class="muted" title="Despesas da obra sem etapa escolhida no lançamento">ⓘ</span></td>' +
+          '<td class="num muted">—</td><td class="num">' + Util.fmtMoeda(d.naoApropriado) + '</td><td><span class="muted" style="font-size:12px">escolha a etapa ao lançar no Financeiro para apropriar</span></td><td class="num muted">—</td></tr>';
+      }
+      html += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalRealizado) + '</b></td><td></td><td class="num" style="color:' + corSaldo + '"><b>' + Util.fmtMoeda(d.saldoTotal) + "</b></td></tr></tfoot></table></div>";
+      return html;
+    },
+    prTrocaObra: function (obraId) { this._prSel = obraId; App.render(); },
+
+    // =================== GALERIA DE FOTOS (por obra) ===================
+    // Motor puro: junta todas as fotos dos RDOs da obra num fluxo plano,
+    // mais recente primeiro, cada uma com sua legenda, data e diário de origem.
+    _galeriaFotos: function (obraId, filtro) {
+      var f = (filtro || "").trim().toLowerCase();
+      var out = [];
+      lista("rdo").forEach(function (r) {
+        if (r.obraId !== obraId) return;
+        Util.arr(r.fotos).forEach(function (foto, i) {
+          if (!foto || !foto.d) return;
+          var leg = foto.leg || "";
+          if (f && (leg.toLowerCase().indexOf(f) < 0) && (String(r.numero || "").toLowerCase().indexOf(f) < 0)) return;
+          out.push({ d: foto.d, leg: leg, data: r.data || "", rdoNumero: r.numero || "", rdoId: r.id, idxNoRdo: i });
+        });
+      });
+      out.sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+      return out;
+    },
+    // Agrupa por mês (YYYY-MM) preservando a ordem desc.
+    _galeriaPorMes: function (fotos) {
+      var grupos = [], mapa = {};
+      fotos.forEach(function (ft) {
+        var chave = (ft.data || "0000-00").slice(0, 7);
+        if (!mapa[chave]) { mapa[chave] = { chave: chave, fotos: [] }; grupos.push(mapa[chave]); }
+        mapa[chave].fotos.push(ft);
+      });
+      return grupos;
+    },
+    _rotuloMes: function (yyyymm) {
+      if (!/^\d{4}-\d{2}$/.test(yyyymm)) return "Sem data";
+      var meses = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+      var p = yyyymm.split("-");
+      return meses[(+p[1]) - 1] + "/" + p[0];
+    },
+    renderGaleria: function () {
+      var obras = lista("obras"), self = this;
+      if (this._galSel == null) this._galSel = (obras[0] && obras[0].id) || "";
+      if (this._galFiltro == null) this._galFiltro = "";
+      var sel = '<select data-gacao="galeria-troca-obra" style="max-width:280px">' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._galSel ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var totObra = this._galeriaFotos(this._galSel, "").length;
+      var btnRel = totObra ? '<button class="btn sm" data-gacao="galeria-relatorio" style="margin-right:8px">🖨 Relatório fotográfico</button>' : "";
+      var html = this._head(svg("galeria") + "Galeria de Fotos", "", "", btnRel + '<span class="muted" style="align-self:center;margin-right:10px">Obra:</span>' + sel);
+      if (!obras.length) return html + vazioBox("Nenhuma obra ainda", "", "Crie uma obra e registre diários com fotos");
+      if (!totObra) return html + '<div class="card"><p class="muted">Esta obra ainda não tem fotos. As fotos aparecem aqui automaticamente quando você anexa imagens aos <b>Diários de Obra (RDO)</b> desta obra.</p></div>';
+      html += '<div class="card" style="margin-bottom:12px"><input id="gal-filtro" placeholder="🔍 Filtrar por legenda ou nº do diário" value="' + Util.esc(this._galFiltro) + '" style="width:100%;max-width:360px"></div>';
+      html += '<div id="gal-grid">' + this._galeriaGridHtml(this._galSel, this._galFiltro) + "</div>";
+      return html;
+    },
+    _galeriaGridHtml: function (obraId, filtro) {
+      var self = this;
+      var fotos = this._galeriaFotos(obraId, filtro);
+      this._galFotos = fotos; // usado pelo lightbox p/ navegar
+      if (!fotos.length) return '<div class="card"><p class="muted">Nenhuma foto com esse filtro.</p></div>';
+      var idxGlobal = 0, html = "";
+      this._galeriaPorMes(fotos).forEach(function (g) {
+        html += '<div style="margin-bottom:6px;font-weight:700;color:#334155">' + self._rotuloMes(g.chave) + ' <span class="muted" style="font-weight:400">· ' + g.fotos.length + " foto" + (g.fotos.length > 1 ? "s" : "") + "</span></div>";
+        html += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:18px">';
+        g.fotos.forEach(function (ft) {
+          var gi = idxGlobal++;
+          html += '<figure style="margin:0;border:1px solid var(--linha);border-radius:10px;overflow:hidden;cursor:pointer;background:#fff" data-gacao="galeria-abrir" data-idx="' + gi + '" title="' + Util.esc(ft.leg || "Ampliar") + '">'
+            + '<img src="' + ft.d + '" loading="lazy" style="width:100%;height:110px;object-fit:cover;display:block">'
+            + '<figcaption style="padding:5px 7px;font-size:11px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (ft.leg ? Util.esc(ft.leg) : '<span class="muted">sem legenda</span>') + '<br><span class="muted" style="font-size:10px">' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + "</span></figcaption></figure>";
+        });
+        html += "</div>";
+      });
+      return html;
+    },
+    galeriaTrocaObra: function (obraId) { this._galSel = obraId; this._galFiltro = ""; App.render(); },
+    _galeriaWire: function () {
+      var self = this, inp = document.getElementById("gal-filtro");
+      if (inp && !inp._wired) {
+        inp._wired = true;
+        inp.oninput = function () {
+          self._galFiltro = inp.value;
+          var grid = document.getElementById("gal-grid");
+          if (grid) grid.innerHTML = self._galeriaGridHtml(self._galSel, self._galFiltro);
+        };
+      }
+    },
+    galeriaAbrir: function (idx) {
+      var fotos = this._galFotos || [];
+      idx = Math.max(0, Math.min(fotos.length - 1, +idx || 0));
+      this._galLbIdx = idx;
+      this._galeriaLightbox();
+    },
+    galeriaNav: function (dir) {
+      var fotos = this._galFotos || []; if (!fotos.length) return;
+      this._galLbIdx = (this._galLbIdx + (dir === "prev" ? -1 : 1) + fotos.length) % fotos.length;
+      this._galeriaLightbox();
+    },
+    galeriaFecharLb: function () {
+      var ov = document.getElementById("gal-lightbox"); if (ov) ov.parentNode.removeChild(ov);
+      document.onkeydown = this._galKeyPrev || null; this._galKeyPrev = null;
+    },
+    _galeriaLightbox: function () {
+      var self = this, fotos = this._galFotos || [], ft = fotos[this._galLbIdx]; if (!ft) return;
+      var ov = document.getElementById("gal-lightbox");
+      if (!ov) {
+        ov = document.createElement("div"); ov.id = "gal-lightbox";
+        ov.style.cssText = "position:fixed;inset:0;background:rgba(8,15,26,.92);z-index:9000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px";
+        document.body.appendChild(ov);
+        this._galKeyPrev = document.onkeydown;
+        document.onkeydown = function (e) {
+          if (e.key === "Escape") self.galeriaFecharLb();
+          else if (e.key === "ArrowLeft") self.galeriaNav("prev");
+          else if (e.key === "ArrowRight") self.galeriaNav("next");
+        };
+        ov.onclick = function (e) { if (e.target === ov) self.galeriaFecharLb(); };
+      }
+      var nome = "foto-" + (ft.rdoNumero || "obra") + "-" + (this._galLbIdx + 1) + ".jpg";
+      var legTxt = (ft.leg ? Util.esc(ft.leg) : "Sem legenda") + '<span style="opacity:.7"> · ' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + " · " + (this._galLbIdx + 1) + "/" + fotos.length + "</span>";
+      ov.innerHTML =
+        '<div style="position:absolute;top:14px;right:16px;display:flex;gap:10px">' +
+          '<a href="' + ft.d + '" download="' + nome + '" class="btn sm" style="background:#fff;color:#0f2740" onclick="event.stopPropagation()">⬇ Baixar</a>' +
+          '<button class="btn sm" data-gacao="galeria-fechar" style="background:#fff;color:#0f2740">✕ Fechar</button>' +
+        "</div>" +
+        '<button class="btn" data-gacao="galeria-nav" data-dir="prev" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;font-size:20px;padding:8px 14px">‹</button>' +
+        '<img src="' + ft.d + '" style="max-width:88vw;max-height:78vh;object-fit:contain;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.5)">' +
+        '<button class="btn" data-gacao="galeria-nav" data-dir="next" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;font-size:20px;padding:8px 14px">›</button>' +
+        '<div style="color:#fff;margin-top:14px;font-size:13px;text-align:center;max-width:80vw">' + legTxt + "</div>";
+    },
+    galeriaRelatorio: function () {
+      var obraId = this._galSel, obra = Store.obter(eid(), "obras", obraId); if (!obra) return;
+      var fotos = this._galeriaFotos(obraId, "");
+      if (!fotos.length) { UI.toast("Esta obra não tem fotos.", "erro"); return; }
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : ""; };
+      var corpo = '<table style="width:100%;font-size:12px;margin-bottom:12px"><tr><td><b>Obra:</b> ' + Util.esc(obra.nome || "—") + "</td><td><b>Total de fotos:</b> " + fotos.length + "</td></tr>"
+        + (obra.local || obra.endereco ? '<tr><td colspan="2"><b>Local:</b> ' + Util.esc(obra.local || obra.endereco) + "</td></tr>" : "") + "</table>";
+      var self = this;
+      this._galeriaPorMes(fotos).forEach(function (g) {
+        corpo += '<div style="font-weight:800;font-size:11px;letter-spacing:.4px;margin:14px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px">' + self._rotuloMes(g.chave).toUpperCase() + " (" + g.fotos.length + ")</div>"
+          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+        g.fotos.forEach(function (ft, i) {
+          corpo += '<figure style="margin:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;page-break-inside:avoid">'
+            + '<img src="' + ft.d + '" style="width:100%;max-height:220px;object-fit:cover;display:block">'
+            + '<figcaption style="padding:4px 8px;font-size:10px;color:#555">' + brd(ft.data) + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + (ft.leg ? " — " + Util.esc(ft.leg) : "") + "</figcaption></figure>";
+        });
+        corpo += "</div>";
+      });
+      this._abrirDoc("Relatório Fotográfico — " + (obra.nome || ""), this._docShell("RELATÓRIO FOTOGRÁFICO", "#0f2740", corpo));
     },
 
     // =================== FORNECEDORES ===================
@@ -1503,7 +1749,7 @@ renderRequisicoes: function () {
         + '<div id="bi-res"></div>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -1804,7 +2050,9 @@ renderRequisicoes: function () {
       var nfs = lista("fiscal"), obras = lista("obras");
       var totEnt = nfs.filter(function (n) { return n.tipo === "entrada" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Entradas: <b>' + Util.fmtMoeda(totEnt) + "</b> · Saídas: <b>" + Util.fmtMoeda(totSai) + "</b></span>";
+      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Entradas: <b>' + Util.fmtMoeda(totEnt) + "</b> · Saídas: <b>" + Util.fmtMoeda(totSai) + "</b></span>" +
+        '<button class="btn" data-gacao="importar-xml-lote" title="Importe vários XMLs de NF-e de uma vez — direto do arquivo, sem IA e sem internet">📥 XML em lote</button> ' +
+        '<button class="btn ghost" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">🔎 Chave de acesso</button>';
       var html = this._head(svg("fiscal") + "Fiscal / NF-e", "nova-fiscal", "Nova nota", extra);
       if (!nfs.length) return html + vazioBox("Nenhuma nota fiscal", "nova-fiscal", "Cadastrar primeira");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Tipo</th><th>Parceiro</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
@@ -1830,7 +2078,7 @@ renderRequisicoes: function () {
         obj.numero = v("g-numero"); obj.serie = v("g-serie"); obj.tipo = v("g-tipo"); obj.status = v("g-status");
         obj.naturezaOp = v("g-natop"); obj.parceiro = v("g-parceiro"); obj.obraId = v("g-obra"); obj.dataEmissao = v("g-data");
         obj.valorProdutos = nv("g-vprod"); obj.valorImpostos = nv("g-vimp"); obj.valorTotal = nv("g-vtot"); obj.chaveAcesso = v("g-chave");
-        if (!(obj.valorTotal > 0)) { UI.toast("Informe o valor total.", "erro"); return false; }
+        if (!(obj.valorTotal > 0) && obj.status !== "aguardando_xml") { UI.toast("Informe o valor total (ou marque como Aguardando XML).", "erro"); return false; }
         return true;
       });
     },
@@ -1852,6 +2100,189 @@ renderRequisicoes: function () {
           UI.fecharModal(); App.render(); UI.toast("NF lançada no Financeiro.", "ok");
         } }
       ]);
+    },
+
+    // ---------- Fiscal: XML em lote + consulta por chave de acesso (offline, sem IA) ----------
+    importarXmlLote: function () {
+      if (this._bloqueado()) return;
+      var self = this;
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".xml"; inp.multiple = true; inp.style.display = "none";
+      inp.onchange = function () {
+        var files = Array.prototype.slice.call(inp.files || []);
+        if (!files.length) return;
+        var okN = 0, dupN = 0, atuN = 0, errN = 0, semIdN = 0, semValorN = 0, fornN = 0, valorNovas = 0, valorAtu = 0, pend = files.length;
+        var fim = function () {
+          if (--pend > 0) return;
+          App.render();
+          var li = [];
+          if (okN) li.push("<li><b>" + okN + "</b> nota(s) nova(s) importada(s)" + (valorNovas > 0 ? " — " + Util.fmtMoeda(valorNovas) : "") + "</li>");
+          if (atuN) li.push("<li><b>" + atuN + "</b> nota(s) que aguardava(m) XML completada(s)" + (valorAtu > 0 ? " — " + Util.fmtMoeda(valorAtu) : "") + "</li>");
+          if (dupN) li.push("<li><b>" + dupN + "</b> já existia(m) — pulada(s), sem duplicar</li>");
+          if (fornN) li.push("<li><b>" + fornN + "</b> parceiro(s) cadastrado(s) automaticamente</li>");
+          if (semIdN) li.push("<li><b>" + semIdN + "</b> XML sem número/chave de NF-e — ignorado(s)</li>");
+          if (semValorN) li.push("<li><b>" + semValorN + "</b> XML sem valor legível — a nota segue aguardando um XML completo</li>");
+          if (errN) li.push("<li><b>" + errN + "</b> arquivo(s) não reconhecido(s) como NF-e</li>");
+          if (!li.length) li.push("<li>Nenhum arquivo processado.</li>");
+          var corpo = '<ul style="margin:0 0 10px 18px;padding:0">' + li.join("") + "</ul>" +
+            ((okN || atuN) ? '<p class="muted">Use o botão <b>Lançar</b> na lista pra gerar o lançamento de cada nota no Financeiro.</p>' : "");
+          UI.modal("Importação de XML concluída", corpo, [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        };
+        files.forEach(function (file) {
+          var fr = new FileReader();
+          fr.onload = function () {
+            try {
+              var dados = self._parseNfeXml(fr.result);
+              if (!dados) { errN++; }
+              else {
+                var r = self._registrarNfe(dados, "xml-lote");
+                if (r.fornecedorNovo) fornN++;
+                if (r.atualizada) { atuN++; valorAtu += Util.num(dados.valor); }
+                else if (r.invalido) semValorN++;
+                else if (r.dup) dupN++;
+                else if (r.nota) { okN++; valorNovas += Util.num(dados.valor); }
+                else semIdN++;
+              }
+            } catch (e) { errN++; }
+            fim();
+          };
+          fr.onerror = function () { errN++; fim(); };
+          fr.readAsText(file);
+        });
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { inp.remove(); }, 60000);
+    },
+    /* CNPJ/CPF da própria empresa (⚙ Empresa), só dígitos — "" se não configurado. */
+    _cnpjProprio: function () {
+      try { return (typeof Empresa !== "undefined") ? String((Empresa.dados() || {}).cnpj || "").replace(/\D/g, "") : ""; }
+      catch (e) { return ""; }
+    },
+    /* Grava uma NF-e parseada no Fiscal (+ parceiro se novo), sem abrir formulário.
+     * Emitente = própria empresa → nota de SAÍDA e o parceiro é o destinatário
+     * (cadastrado como cliente); senão entrada e o emitente vira fornecedor.
+     * Dedupe por chave (ou nº+parceiro, sem diferenciar caixa). Nota "aguardando_xml"
+     * é COMPLETADA pelo XML; sem valor legível (vNF ausente) ela NÃO vira emitida.
+     * Retorna { nota, dup, atualizada, invalido, fornecedorNovo }. */
+    _registrarNfe: function (dados, origem) {
+      var fn = dados.fornecedor || {}, dest = dados.destinatario || {}, fornecedorNovo = false;
+      var proprio = this._cnpjProprio();
+      var emitDoc = String(fn.cnpj || "").replace(/\D/g, "");
+      var ehSaida = !!(proprio && emitDoc && emitDoc === proprio);
+      var parc = ehSaida ? dest : fn;
+      var parcDoc = String(parc.cnpj || "").replace(/\D/g, "");
+      if (parc.nome) {
+        var entidade = ehSaida ? "clientes" : "fornecedores";
+        var existe = lista(entidade).filter(function (x) { return (parcDoc && x.doc && String(x.doc).replace(/\D/g, "") === parcDoc) || (x.nome || "").toLowerCase() === String(parc.nome).toLowerCase(); })[0];
+        if (!existe) {
+          Store.salvar(eid(), entidade, { nome: parc.nome, doc: parc.cnpj || "", cidade: parc.cidade || "", uf: parc.uf || "", tipo: parcDoc.length > 11 ? "PJ" : "PF", status: "ativo", origem: origem || "xml-lote" });
+          fornecedorNovo = true;
+        }
+      }
+      if (!dados.numero && !dados.chave) return { nota: null, dup: false, atualizada: false, invalido: false, fornecedorNovo: fornecedorNovo };
+      var chaveLimpa = String(dados.chave || "").replace(/\D/g, "");
+      var jaTem = lista("fiscal").filter(function (x) {
+        var xc = String(x.chaveAcesso || "").replace(/\D/g, "");
+        if (chaveLimpa && xc) return xc === chaveLimpa;
+        return dados.numero && String(x.numero) === String(dados.numero) && (x.parceiro || "").toLowerCase() === (parc.nome || "").toLowerCase();
+      })[0];
+      if (jaTem && jaTem.status === "aguardando_xml") {
+        var vNovo = Util.num(dados.valor);
+        if (!(vNovo > 0)) return { nota: jaTem, dup: false, atualizada: false, invalido: true, fornecedorNovo: fornecedorNovo };
+        jaTem.numero = dados.numero || jaTem.numero; jaTem.serie = dados.serie || jaTem.serie;
+        jaTem.naturezaOp = dados.natureza || jaTem.naturezaOp; jaTem.parceiro = parc.nome || jaTem.parceiro;
+        jaTem.dataEmissao = dados.emissao || jaTem.dataEmissao; jaTem.valorTotal = vNovo;
+        jaTem.chaveAcesso = dados.chave || jaTem.chaveAcesso || "";
+        jaTem.status = "emitida"; jaTem.origem = origem || jaTem.origem;
+        Store.salvar(eid(), "fiscal", jaTem);
+        return { nota: jaTem, dup: false, atualizada: true, invalido: false, fornecedorNovo: fornecedorNovo };
+      }
+      if (jaTem) return { nota: jaTem, dup: true, atualizada: false, invalido: false, fornecedorNovo: fornecedorNovo };
+      var nota = Store.salvar(eid(), "fiscal", {
+        numero: dados.numero || "", serie: dados.serie || "", tipo: ehSaida ? "saida" : "entrada",
+        status: "emitida", naturezaOp: dados.natureza || "", parceiro: parc.nome || "", obraId: "",
+        dataEmissao: dados.emissao || "", valorProdutos: 0, valorImpostos: 0,
+        valorTotal: Util.num(dados.valor), chaveAcesso: dados.chave || "", origem: origem || "xml-lote"
+      });
+      return { nota: nota, dup: false, atualizada: false, invalido: false, fornecedorNovo: fornecedorNovo };
+    },
+    /* Decodifica a chave de acesso de 44 dígitos (DANFE/QR-Code) — 100% offline.
+     * Layout oficial: cUF(2) AAMM(4) CNPJ(14) modelo(2) série(3) nNF(9) tpEmis(1) cNF(8) DV(1). */
+    decodificarChave: function (chave) {
+      var d = String(chave || "").replace(/\D/g, "");
+      if (d.length !== 44) return { ok: false, erro: "A chave precisa ter 44 dígitos — encontrei " + d.length + "." };
+      var UFS = { "11": "RO", "12": "AC", "13": "AM", "14": "RR", "15": "PA", "16": "AP", "17": "TO", "21": "MA", "22": "PI", "23": "CE", "24": "RN", "25": "PB", "26": "PE", "27": "AL", "28": "SE", "29": "BA", "31": "MG", "32": "ES", "33": "RJ", "35": "SP", "41": "PR", "42": "SC", "43": "RS", "50": "MS", "51": "MT", "52": "GO", "53": "DF" };
+      var uf = UFS[d.slice(0, 2)];
+      if (!uf) return { ok: false, erro: "Código de estado inválido (" + d.slice(0, 2) + ") — confira os 2 primeiros dígitos." };
+      var mm = d.slice(4, 6);
+      if (+mm < 1 || +mm > 12) return { ok: false, erro: "Mês de emissão inválido (" + mm + ") — confira os dígitos 5 e 6." };
+      var soma = 0, peso = 2;
+      for (var i = 42; i >= 0; i--) { soma += (+d.charAt(i)) * peso; peso = peso === 9 ? 2 : peso + 1; }
+      var resto = soma % 11, dv = resto < 2 ? 0 : 11 - resto;
+      if (dv !== +d.charAt(43)) return { ok: false, erro: "Dígito verificador não confere — algum dígito foi digitado errado." };
+      var campoDoc = d.slice(6, 20), mod = d.slice(20, 22);
+      var modeloNome = mod === "55" ? "NF-e" : mod === "65" ? "NFC-e" : mod === "57" ? "CT-e" : "modelo " + mod;
+      // emitente PF (produtor rural etc.): o campo de 14 dígitos vem como 000 + CPF
+      var ehCpf = campoDoc.slice(0, 3) === "000";
+      var docNum = ehCpf ? campoDoc.slice(3) : campoDoc;
+      var docFmt = ehCpf
+        ? docNum.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")
+        : docNum.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+      return {
+        ok: true, chave: d, uf: uf, competencia: mm + "/20" + d.slice(2, 4),
+        doc: docNum, docFmt: docFmt, docTipo: ehCpf ? "CPF" : "CNPJ",
+        modelo: mod, modeloNome: modeloNome, importavel: mod === "55" || mod === "65",
+        serie: String(+d.slice(22, 25)), numero: String(+d.slice(25, 34))
+      };
+    },
+    consultarChave: function () {
+      this._ultimaChave = null;
+      var corpo = '<p class="muted">Cole a <b>chave de acesso</b> da nota (44 dígitos, impressos no DANFE ou no QR-Code). O OrçaPRO valida o dígito verificador e identifica estado, emissão, CNPJ do emitente, série e número — <b>sem internet</b>.</p>' +
+        campo("Chave de acesso", inp("g-chave-consulta", "", "44 dígitos — pode colar com espaços ou pontos")) +
+        '<div id="g-chave-res" style="margin-top:8px"></div>';
+      UI.modal("Consultar chave de acesso", corpo, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Verificar", classe: "primary", onClick: function () { Gestao._verificarChave(); } }
+      ]);
+    },
+    _verificarChave: function () {
+      var res = UI.el("g-chave-res"); if (!res) return;
+      var r = this.decodificarChave(v("g-chave-consulta"));
+      if (!r.ok) { res.innerHTML = '<div class="card" style="border-left:4px solid var(--vermelho);padding:10px 12px">✗ ' + Util.esc(r.erro) + "</div>"; return; }
+      var jaTem = lista("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === r.chave; })[0];
+      // identifica o emitente pelo CNPJ/CPF, se já for parceiro cadastrado
+      var parceiro = lista("fornecedores").concat(lista("clientes")).filter(function (x) { return String(x.doc || "").replace(/\D/g, "") === r.doc; })[0];
+      var linhas = "<b>" + r.modeloNome + "</b> nº <b>" + Util.esc(r.numero) + "</b> · série " + Util.esc(r.serie) +
+        "<br>Emitente: <b>" + (parceiro ? Util.esc(parceiro.nome) : r.docTipo + " " + r.docFmt) + "</b>" +
+        "<br>Emissão: " + r.competencia + " · " + r.uf;
+      if (jaTem) {
+        res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">✓ Chave válida — <b>nota já registrada</b> no Fiscal (' + rot(P.fiscalStatus, jaTem.status) + ").<br>" + linhas + "</div>";
+        return;
+      }
+      if (!r.importavel) {
+        res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">✓ Chave válida.<br>' + linhas +
+          '<br><span class="muted">Documento do tipo ' + Util.esc(r.modeloNome) + " não entra pela importação de XML — se precisar, registre pela <b>+ Nova nota</b>.</span></div>";
+        return;
+      }
+      this._ultimaChave = { dec: r, parceiro: parceiro ? parceiro.nome : "" };
+      res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">✓ Chave válida.<br>' + linhas +
+        '<br><button id="g-chave-reg" class="btn sm primary mt">Registrar no Fiscal — completo depois com o XML</button></div>';
+      var b = UI.el("g-chave-reg"); if (b) b.onclick = function () { Gestao.registrarChavePendente(); };
+    },
+    registrarChavePendente: function () {
+      if (this._bloqueado()) return;
+      var u = this._ultimaChave; if (!u) return;
+      var r = u.dec;
+      var propriaEmpresa = this._cnpjProprio();
+      var ehSaida = !!(propriaEmpresa && propriaEmpresa === r.doc);
+      Store.salvar(eid(), "fiscal", {
+        numero: r.numero, serie: r.serie, tipo: ehSaida ? "saida" : "entrada",
+        status: "aguardando_xml", naturezaOp: "", parceiro: ehSaida ? "" : u.parceiro, obraId: "",
+        dataEmissao: "", valorProdutos: 0, valorImpostos: 0, valorTotal: 0,
+        chaveAcesso: r.chave, origem: "consulta-chave"
+      });
+      this._ultimaChave = null;
+      UI.fecharModal(); App.render();
+      UI.toast("Nota registrada como Aguardando XML — importe o XML depois pra completar os valores.", "ok");
     },
 
 renderPatrimonio: function () {
@@ -2156,8 +2587,14 @@ renderRelatorios: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       switch (gacao) {
+        case "pr-troca-obra": return this.prTrocaObra(dataset.value);
+        case "galeria-troca-obra": return this.galeriaTrocaObra(dataset.value);
+        case "galeria-abrir": return this.galeriaAbrir(dataset.idx);
+        case "galeria-nav": return this.galeriaNav(dataset.dir);
+        case "galeria-fechar": return this.galeriaFecharLb();
+        case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
         case "portal-obra": return this.portalObra(id);
         case "doc-financeiro": return this.lancarDocumento();
@@ -2235,6 +2672,8 @@ case "nova-requisicoes": return this.novoRequisicoes();
         case "comprar-requisicao": return this.comprarRequisicao(id);
 case "nova-fiscal": return this.novoFiscal();
         case "lancar-fiscal": return this.lancarFiscal(id);
+        case "importar-xml-lote": return this.importarXmlLote();
+        case "consultar-chave": return this.consultarChave();
 case "novo-patrimonio": return this.novoPatrimonio();
 case "novo-centrocusto": return this.novoCentrocusto();
 case "nova-folha": return this.novoFolha();
@@ -2394,7 +2833,9 @@ case "nova-folha": return this.novoFolha();
       if (!chave) chave = g("chNFe");
       var itens = [], dets = doc.getElementsByTagName("det");
       for (var i = 0; i < dets.length && i < 60; i++) { var prod = dets[i].getElementsByTagName("prod")[0]; if (prod) itens.push({ descricao: sub(prod, "xProd"), quantidade: parseFloat(sub(prod, "qCom")) || 0, unidade: sub(prod, "uCom"), valor: parseFloat(sub(prod, "vProd")) || 0 }); }
-      return { tipoLancamento: "despesa", fornecedor: forn, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave, natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
+      var destEl = doc.getElementsByTagName("dest")[0];
+      var dest = { nome: sub(destEl, "xNome"), cnpj: sub(destEl, "CNPJ") || sub(destEl, "CPF"), cidade: sub(destEl, "xMun"), uf: sub(destEl, "UF") };
+      return { tipoLancamento: "despesa", fornecedor: forn, destinatario: dest, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave, natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
     },
     _docParaLancamento: function (dados, origem) {
       var fn = dados.fornecedor || {}, ehReceita = dados.tipoLancamento === "receita", msgCad = "";

@@ -316,6 +316,10 @@
         var n = parseInt(Util.num(e.target.value), 10);
         if (n >= 1 && n <= 60) { this.orcAtual.cronogramaMeses = n; this.orcAtual.cronogramaMesesManual = true; this.persistir(); this.render(); }
       }
+      // selects da Gestão que disparam ação ao mudar (ex.: trocar obra no Previsto×Realizado)
+      if (e.target.matches && e.target.matches("[data-gacao]") && e.target.tagName === "SELECT") {
+        if (typeof Gestao !== "undefined") Gestao.acao(e.target.dataset.gacao, { value: e.target.value }, this);
+      }
     },
 
     _refreshConfianca: function (i) {
