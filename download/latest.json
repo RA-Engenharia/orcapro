@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.38",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.38/OrcaPRO-IA-update-v1.1.38.zip",
-  "notas": "Interface premium em todo o sistema + BIM mais completo: 4D exato por peça (etapa carimbada no Revit), custo no tempo (5D) e curva S físico × financeiro.",
+  "versao": "1.1.39",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.39/OrcaPRO-IA-update-v1.1.39.zip",
+  "notas": "Correção importante: salvar em PDF (Relatório Completo e todos os documentos — proposta, laudo, medição, EPI, ponto, recibo, RDO) agora sai completo, não mais só a 1ª página. BIM: nova Compatibilização (conflitos entre disciplinas no 3D) + modelo 3D na orientação correta. Fonte offline e melhorias de estabilidade.",
   "obrigatoria": false
 }
