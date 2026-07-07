@@ -238,6 +238,9 @@
         case "aplicar-cenario": this.aplicarCenario(t.dataset.bdi); break;
         case "exportar-excel": this.exportarExcel(); break;
         case "reimportar-excel": this.reimportarExcel(); break;
+        case "importar-planilha": this.importarPlanilha(); break;
+        case "import-reanalisar": this.importRemapear(); break;
+        case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
         case "config-orc": this.editarDadosOrc(); break;
         case "escopo": this.abrirEscopo(); break;
         case "escopo-ia": this.analisarEscopoIA(); break;
@@ -1501,6 +1504,109 @@
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos das composições (1ª vez)…", "ok");
       ana.carregarArquivo(self._analiticoArquivo).then(abrir).catch(function () { abrir(); });
+    },
+
+    // ---------- AGENTE IMPORTADOR: planilha (Excel/CSV) de qualquer formato → etapas+itens ----------
+    importarPlanilha: function () {
+      var self = this;
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".xlsx,.xls,.csv"; inp.style.display = "none";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        if (f.size > 25 * 1024 * 1024) { UI.toast("Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
+        UI.toast("Lendo a planilha…", "ok");
+        self._lerPlanilha(f, function (matriz, erro) {
+          if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+          var res = Importador.analisar(matriz);
+          self._imp = { matriz: matriz, nome: f.name, res: res };
+          self._abrirImportPreview();
+        });
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
+    _lerPlanilha: function (file, cb) {
+      var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
+      if (/\.csv$/.test(nome)) { fr.onload = function () { try { cb(App._parseCSV(String(fr.result))); } catch (e) { cb(null, String(e && e.message || e)); } }; fr.onerror = function () { cb(null, "falha ao ler o arquivo"); }; fr.readAsText(file); return; }
+      fr.onload = function () {
+        if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { cb(null, "módulo Excel indisponível (precisa de internet na 1ª vez)"); return; }
+        ExcelOrc.ensureExcelJS(function () {
+          try {
+            var wb = new ExcelJS.Workbook();
+            wb.xlsx.load(fr.result).then(function () {
+              var ws = null; wb.worksheets.forEach(function (w) { if (!ws || (w.rowCount || 0) > (ws.rowCount || 0)) ws = w; });
+              if (!ws) { cb(null, "planilha sem abas legíveis"); return; }
+              var m = [];
+              ws.eachRow({ includeEmpty: true }, function (row) { var r = []; row.eachCell({ includeEmpty: true }, function (cell) { r.push(cell.value); }); m.push(r); });
+              cb(m);
+            }).catch(function (e) { cb(null, String(e && e.message || e)); });
+          } catch (e) { cb(null, String(e && e.message || e)); }
+        });
+      };
+      fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
+      fr.readAsArrayBuffer(file);
+    },
+    // CSV simples (detecta ; ou , como separador; respeita aspas)
+    _parseCSV: function (txt) {
+      txt = String(txt).replace(/\r\n?/g, "\n");
+      var linhas = txt.split("\n").filter(function (l) { return l.trim() !== ""; });
+      if (!linhas.length) return [];
+      var delim = (linhas[0].split(";").length > linhas[0].split(",").length) ? ";" : ",";
+      return linhas.map(function (line) {
+        var out = [], cur = "", q = false;
+        for (var i = 0; i < line.length; i++) { var ch = line[i];
+          if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+          else if (ch === delim && !q) { out.push(cur); cur = ""; }
+          else cur += ch;
+        }
+        out.push(cur); return out;
+      });
+    },
+    _abrirImportPreview: function () {
+      var self = this;
+      UI.modal("📊 Importar planilha — " + Util.esc(self._imp.nome || ""), UI.renderImportPreview(self._imp), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "🔄 Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
+        { texto: "✅ Importar como orçamento", classe: "success", onClick: function () { self.criarOrcamentoDaImportacao(); } }
+      ]);
+    },
+    importRemapear: function () {
+      if (!this._imp) return;
+      var roles = ["codigo", "descricao", "unidade", "quantidade", "custoUnit", "custoTotal"], cols = {};
+      roles.forEach(function (r) { var s = document.getElementById("imp-col-" + r); cols[r] = (s && s.value !== "") ? parseInt(s.value, 10) : null; });
+      var hr = document.getElementById("imp-header"), headerRow = (hr && hr.value !== "") ? parseInt(hr.value, 10) : this._imp.res.headerRow;
+      this._imp.res = Importador.analisar(this._imp.matriz, { colunas: cols, headerRow: headerRow });
+      var body = document.getElementById("imp-body"); if (body) body.innerHTML = UI.renderImportPreview(this._imp, true);
+    },
+    criarOrcamentoDaImportacao: function () {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var res = this._imp && this._imp.res;
+      if (!res || !res.etapas.length) { UI.toast("Nada pra importar — ajuste o mapeamento das colunas e clique Reanalisar.", "erro"); return; }
+      var nomeBase = String(this._imp.nome || "Orçamento importado").replace(/\.(xlsx|xls|csv)$/i, "");
+      var orc = Orcamento.novo({ nome: nomeBase });
+      var temSinapi = (typeof Sinapi !== "undefined" && Sinapi.obter), casados = 0, proprios = 0, semCusto = 0;
+      res.etapas.forEach(function (et) {
+        Orcamento.addEtapa(orc, et.nome || "Etapa");
+        var etapaId = orc.etapas[orc.etapas.length - 1].id;
+        Util.arr(et.itens).forEach(function (it) {
+          var base = (temSinapi && it.codigo) ? Sinapi.obter(it.codigo) : null, sinapiItem;
+          if (base) {
+            casados++;
+            sinapiItem = { codigo: base.codigo, baseFonte: base.baseFonte || null,
+              descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade,
+              custoUnitario: it.custoUnitario > 0 ? it.custoUnitario : Util.num(base.custoUnitario),
+              custoMO: Util.num(base.custoMO), custoMAT: Util.num(base.custoMAT), custoEQ: Util.num(base.custoEQ) };
+          } else {
+            proprios++;
+            sinapiItem = { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: Util.num(it.custoUnitario) };
+          }
+          if (!(sinapiItem.custoUnitario > 0)) semCusto++;
+          Orcamento.addItem(orc, etapaId, sinapiItem, it.quantidade);
+        });
+      });
+      Store.salvarOrcamento(Auth.empresaId(), orc);
+      UI.fecharModal();
+      this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
+      UI.toast("Importado: " + orc.etapas.length + " etapas · " + (casados + proprios) + " itens (" + casados + " casados no SINAPI" + (semCusto ? " · " + semCusto + " sem custo p/ revisar" : "") + ").", "ok");
     },
 
     // Overlay de impressão compartilhado (proposta e relatório)

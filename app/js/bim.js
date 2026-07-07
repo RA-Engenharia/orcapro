@@ -102,7 +102,7 @@ function montar(host, opts) {
         bar: bar, hud: hud, over: over, loading: loading,
         api: new IfcAPI(), apiReady: false, modelID: -1, meshPorId: {}, elementos: [],
         fly: { on: false, keys: {}, speed: 14, yaw: 0, pitch: 0 }, selected: null, prevMat: null,
-        matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], raf: 0, alive: true };
+        matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
 
   function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   S._resize = resize; window.addEventListener('resize', resize); resize();
@@ -238,6 +238,10 @@ function montar(host, opts) {
     try {
       await initApi();
       while (modelRoot.children.length) { var c = modelRoot.children.pop(); if (c.geometry) c.geometry.dispose(); }
+      // descarta os materiais POR-COR do carregamento anterior (nunca os compartilhados
+      // matAndamento/selMat/clashMat) → não vaza shaders/programas no renderer ao recarregar um 2º IFC
+      if (S.matCache) { Object.keys(S.matCache).forEach(function (k) { try { S.matCache[k].dispose(); } catch (_) {} }); }
+      S.matCache = {};
       S.meshPorId = {}; S.elementos = []; S.carimbos = {};
       if (S.modelID !== -1) { try { S.api.CloseModel(S.modelID); } catch (_) {} }
       loading.querySelector('[data-l="txt"]').textContent = 'Lendo geometria do IFC…';
@@ -245,8 +249,8 @@ function montar(host, opts) {
       S.modelID = S.api.OpenModel(data);
       // carimbos do exportador pyRevit (OrcaPRO_Etapa/CodOrc) → 4D exato + 5D por elemento
       S.carimbos = lerCarimbosOrcaPro();
-      var nEl = 0, nTri = 0, tmpMat = new THREE.Matrix4(), matCache = {};
-      function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!matCache[k]) matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return matCache[k]; }
+      var nEl = 0, nTri = 0, tmpMat = new THREE.Matrix4();
+      function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!S.matCache[k]) S.matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return S.matCache[k]; }
       S.api.StreamAllMeshes(S.modelID, function (mesh) {
         var geos = mesh.geometries, n = geos.size(), tipoNum = 0;
         try { tipoNum = S.api.GetLineType(S.modelID, mesh.expressID); } catch (_) {}

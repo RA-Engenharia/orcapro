@@ -269,7 +269,8 @@
           '<button class="btn sm" data-acao="importar-sinapi">⬆ Importar base SINAPI</button></div></div>';
       }
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
-                 '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div>';
+                 '<div class="flex"><button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">📊 Importar planilha</button>' +
+                 '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
       if (!orcamentos.length) {
         html += '<div class="vazio card"><h3>Nenhum orçamento ainda</h3>' +
                 '<p>Crie seu primeiro orçamento e comece a buscar composições SINAPI.</p>' +
@@ -783,6 +784,37 @@
         '<div class="field"><label>Arquivo (.json / .csv)</label><input id="imp-file" type="file" accept=".json,.csv,.txt"></div>' +
         '<div class="field"><label>…ou cole o conteúdo aqui</label><textarea id="imp-text" rows="5" placeholder=\'{"mes":"2026-05","uf":"MG","dados":[...]}  ou  Codigo;Descricao;Unidade;Custo\'></textarea></div>' +
         '<div class="watermark-hint">A base fica salva por empresa e passa a ser usada na busca e no Escopo. Bases muito grandes podem ficar só na sessão atual (aviso na hora).</div>';
+    },
+
+    // ---------- Agente Importador: preview + mapeamento de colunas ----------
+    renderImportPreview: function (imp, semWrap) {
+      var res = imp.res, mat = imp.matriz || [];
+      var nCols = 0; mat.forEach(function (r) { if (r.length > nCols) nCols = r.length; });
+      var hdr = (res.headerRow >= 0) ? (mat[res.headerRow] || []) : [];
+      function letra(i) { return i < 26 ? String.fromCharCode(65 + i) : "C" + (i + 1); }
+      function colLabel(i) { var h = hdr[i] != null ? String(Importador._txt(hdr[i])).trim() : ""; return letra(i) + (h ? ": " + h : ""); }
+      var roles = [["codigo", "Código"], ["descricao", "Descrição"], ["unidade", "Unidade"], ["quantidade", "Quantidade"], ["custoUnit", "Custo unit."], ["custoTotal", "Custo total"]];
+      function selCol(role) {
+        var cur = res.colunas ? res.colunas[role[0]] : null, opts = '<option value="">— nenhuma —</option>';
+        for (var i = 0; i < nCols; i++) opts += '<option value="' + i + '"' + (cur === i ? " selected" : "") + ">" + Util.esc(colLabel(i)) + "</option>";
+        return '<div class="field" style="margin:0"><label style="font-size:11px">' + role[1] + '</label><select id="imp-col-' + role[0] + '">' + opts + "</select></div>";
+      }
+      var conf = Math.round((res.confianca || 0) * 100), corConf = conf >= 80 ? "#16a34a" : conf >= 50 ? "#f59e0b" : "#dc2626";
+      var html = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
+        '<span class="g-pill" style="background:' + corConf + '22;color:' + corConf + ';font-weight:700">🤖 Confiança ' + conf + "%</span>" +
+        '<span class="muted" style="font-size:13px">' + res.resumo.etapas + " etapas · " + res.resumo.itens + " itens" + (res.resumo.ignoradas ? " · " + res.resumo.ignoradas + " linhas ignoradas (totais/vazias)" : "") + "</span></div>";
+      html += '<p class="muted" style="font-size:12.5px;margin:0 0 6px">O agente detectou o mapeamento abaixo. Se alguma coluna estiver errada, corrija e clique <b>🔄 Reanalisar</b>.</p>';
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">' + roles.map(selCol).join("") + "</div>";
+      html += '<input id="imp-header" type="hidden" value="' + (res.headerRow != null ? res.headerRow : -1) + '">';
+      if (res.avisos && res.avisos.length) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;padding:8px 12px;margin-bottom:12px;font-size:12.5px;color:#92400e">⚠️ ' + res.avisos.map(function (a) { return Util.esc(a); }).join("<br>⚠️ ") + "</div>";
+      var prev = [];
+      Util.arr(res.etapas).forEach(function (e) {
+        prev.push('<tr class="etapa-row"><td colspan="5"><b>' + Util.esc((e.codigo ? e.codigo + " · " : "") + e.nome) + "</b></td></tr>");
+        Util.arr(e.itens).forEach(function (it) { if (prev.length > 45) return; prev.push("<tr><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(it.unidade) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); });
+      });
+      html += '<div style="max-height:300px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table class="tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Custo unit.</th></tr></thead><tbody>' + (prev.join("") || '<tr><td colspan="5" class="muted">Nada detectado — ajuste o mapeamento.</td></tr>') + "</tbody></table></div>";
+      html += '<p class="muted" style="font-size:11px;margin:8px 0 0">Ao importar: itens com <b>código SINAPI válido</b> são casados na base (o preço oficial preenche o que estiver vazio na planilha); os demais entram como <b>itens próprios</b> com os valores da planilha. Nenhum código é inventado.</p>';
+      return semWrap ? html : '<div id="imp-body">' + html + "</div>";
     },
 
     // ---------- Escopo Inteligente: entrada ----------
