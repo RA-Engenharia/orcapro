@@ -121,7 +121,7 @@
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
         if (!atual || atual.ativo === false) { this.logout(); return null; } // removido/desativado → desloga
-        u.modulos = atual.modulos || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome;
+        u.modulos = atual.modulos || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.aprovador = atual.aprovador === true;
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -166,7 +166,7 @@
         for (var j = 0; j < equipe.length; j++) {
           var u = equipe[j];
           if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [] } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true } };
           }
         }
       }
@@ -203,10 +203,16 @@
     nome: function () { var u = this._usuario; return u ? (u.nome || u.empresa || u.email || "") : ""; },
     podeModulo: function (id) {
       if (this.ehAdmin()) return true;                 // dono/demo vê tudo
-      if (id === "dashboard") return true;             // painel sempre acessível
+      if (id === "dashboard" || id === "ajuda") return true; // painel e ajuda sempre acessíveis
       if (id === "usuarios") return false;             // gestão de usuários é exclusiva do admin
       var mods = (this._usuario && this._usuario.modulos) || [];
       return mods.indexOf(id) > -1;
+    },
+    // G3: quem pode APROVAR/rejeitar medições, compras e requisições.
+    // Dono/demo sempre pode; sub-usuário só com a flag "aprovador" marcada pelo admin.
+    podeAprovar: function () {
+      if (this.ehAdmin()) return true;
+      return !!(this._usuario && this._usuario.aprovador);
     },
     redefinirSenha: function (email, nova) {
       var r = this.backend.redefinirSenha(email, nova);
@@ -221,7 +227,8 @@
         nome: u.nome || u.empresa || u.email,
         usuarioId: u._usuarioId || null,
         departamento: u._departamento || "",
-        modulos: u._modulos || null   // null = admin (todos os módulos)
+        modulos: u._modulos || null,  // null = admin (todos os módulos)
+        aprovador: u._aprovador === true
       };
       localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
     },

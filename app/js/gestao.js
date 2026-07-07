@@ -38,13 +38,13 @@
     contratoRegime: [["direta", "Direta"], ["indireta", "Indireta"], ["tarefa", "Tarefa"], ["integral", "Integral"]],
     formaPgto: [["avista", "À vista"], ["entrada_final", "Entrada + final"], ["parcelado", "Parcelado"], ["medicao", "Por medição"], ["medicao_retencao", "Por medição c/ retenção"]],
     tipoGarantia: [["nenhuma", "Nenhuma"], ["caucao", "Caução"], ["fianca", "Fiança"], ["seguro", "Seguro"]],
-    medicaoStatus: [["pendente", "Pendente"], ["aprovada", "Aprovada"], ["paga", "Paga"]],
+    medicaoStatus: [["pendente", "Pendente"], ["aprovada", "Aprovada"], ["rejeitada", "Rejeitada"], ["paga", "Paga"]],
     finTipo: [["receita", "Receita"], ["despesa", "Despesa"]],
     finCategoria: [["obra", "Obra"], ["material", "Material"], ["mao_obra", "Mão de obra"], ["equipamento", "Equipamento"], ["administrativo", "Administrativo"], ["impostos", "Impostos"], ["medicao", "Medição"], ["outros", "Outros"]],
     finStatus: [["pago", "Pago / Recebido"], ["pendente", "Pendente"]],
     fornCategoria: [["material", "Material"], ["servico", "Serviço"], ["equipamento", "Equipamento"], ["mao_obra", "Mão de obra"], ["transporte", "Transporte"], ["locacao", "Locação"], ["outros", "Outros"]],
     fornStatus: [["ativo", "Ativo"], ["homologado", "Homologado"], ["inativo", "Inativo"]],
-    compraStatus: [["cotacao", "Em cotação"], ["aprovado", "Aprovado"], ["recebido", "Recebido"], ["cancelado", "Cancelado"]],
+    compraStatus: [["cotacao", "Em cotação"], ["aprovado", "Aprovado"], ["rejeitado", "Rejeitado"], ["recebido", "Recebido"], ["cancelado", "Cancelado"]],
     estoqueCategoria: [["cimento", "Cimento/Argamassa"], ["aco", "Aço/Ferragem"], ["agregados", "Agregados"], ["hidraulica", "Hidráulica"], ["eletrica", "Elétrica"], ["madeira", "Madeira/Forma"], ["acabamento", "Acabamento"], ["epi", "EPI/Ferramentas"], ["outros", "Outros"]],
     movTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
     rdoClima: [["ensolarado", "Ensolarado"], ["nublado", "Nublado"], ["chuvoso", "Chuvoso"], ["chuva_forte", "Chuva forte"]],
@@ -60,7 +60,7 @@
     frotaStatus: [["disponivel", "Disponível"], ["em_uso", "Em uso"], ["manutencao", "Em manutenção"], ["inativo", "Inativo"]],
     frotaCusto: [["combustivel", "Combustível"], ["manutencao", "Manutenção"], ["seguro", "Seguro"], ["locacao", "Locação"], ["pneus", "Pneus"], ["outros", "Outros"]],
     reqPrioridade: [["baixa","Baixa"],["normal","Normal"],["alta","Alta"],["urgente","Urgente"]],
-      reqStatus: [["aberta","Aberta"],["cotando","Cotando"],["aprovada","Aprovada"],["comprada","Comprada"],["cancelada","Cancelada"]],
+      reqStatus: [["aberta","Aberta"],["cotando","Cotando"],["aprovada","Aprovada"],["rejeitada","Rejeitada"],["comprada","Comprada"],["cancelada","Cancelada"]],
       reqUnidade: [["un","un"],["m","m"],["m2","m²"],["m3","m³"],["kg","kg"],["sc","saco"],["cx","caixa"],["pc","peça"],["l","litro"]],
     departamento: [["engenharia","Engenharia / Obras"],["compras","Compras / Suprimentos"],["financeiro","Financeiro"],["rh","RH / Departamento Pessoal"],["administrativo","Administrativo"],["diretoria","Diretoria"]],
     fiscalTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
@@ -69,6 +69,8 @@
       patrimonioEstado: [["novo","Novo"],["bom","Bom"],["regular","Regular"],["ruim","Ruim"],["baixado","Baixado"]],
     centrocustoTipo: [["direto","Direto"],["indireto","Indireto"],["administrativo","Administrativo"]],
     folhaStatus: [["aberta","Aberta"],["lancada","Lançada"]],
+    tarefaStatus: [["afazer","A fazer"],["fazendo","Em andamento"],["feita","Concluída"],["cancelada","Cancelada"]],
+    tarefaPrioridade: [["baixa","Baixa"],["normal","Normal"],["alta","Alta"],["urgente","Urgente"]],
   };
   var CORStatus = {
     planejamento: "#64748b", andamento: "#2e6f9e", pausada: "#f59e0b", concluida: "#16a34a",
@@ -81,15 +83,17 @@
     disponivel: "#16a34a", em_uso: "#2e6f9e", manutencao: "#f59e0b",
     aberta: "#2e6f9e", cotando: "#f59e0b", comprada: "#16a34a", urgente: "#dc2626", prioridade_alta: "#ea580c",
     emitida: "#16a34a", cancelada: "#dc2626", aguardando_xml: "#f59e0b",
+    rejeitada: "#dc2626", rejeitado: "#dc2626",
     novo: "#16a34a", regular: "#f59e0b", ruim: "#dc2626", baixado: "#94a3b8",
-    aberta: "#f59e0b", lancada: "#16a34a",
+    lancada: "#16a34a",
+    afazer: "#f59e0b", fazendo: "#2e6f9e", feita: "#16a34a",
   };
 
   function rot(lista, v) { for (var i = 0; i < lista.length; i++) if (lista[i][0] === v) return lista[i][1]; return v || "—"; }
   function opts(lista, sel) { return lista.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? " selected" : "") + '>' + o[1] + "</option>"; }).join(""); }
   function optsUf(sel) { return '<option value="">—</option>' + P.uf.map(function (u) { return "<option" + (u === sel ? " selected" : "") + ">" + u + "</option>"; }).join(""); }
   function optsRec(lista, campo, sel, vazio) { return '<option value="">' + (vazio || "—") + "</option>" + Util.arr(lista).map(function (r) { return '<option value="' + r.id + '"' + (r.id === sel ? " selected" : "") + ">" + Util.esc(r[campo] || r.nome || r.numero || r.id) + "</option>"; }).join(""); }
-  function pill(status) { var c = CORStatus[status] || "#64748b"; return '<span class="g-pill" style="background:' + c + '22;color:' + c + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus), status)) + "</span>"; }
+  function pill(status) { var c = CORStatus[status] || "#64748b"; return '<span class="g-pill" style="background:' + c + '22;color:' + c + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus, P.tarefaStatus), status)) + "</span>"; }
   function v(id) { var e = UI.el(id); return e ? e.value.trim() : ""; }
   function nv(id) { return Util.num(v(id)); }
   function campo(label, inner) { return '<div class="field"><label>' + label + "</label>" + inner + "</div>"; }
@@ -123,6 +127,8 @@
     relatorios: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
     previstoreal: '<path d="M3 3v18h18"/><rect x="7" y="6" width="10" height="3" rx="1"/><rect x="7" y="13" width="13" height="3" rx="1"/><path d="M17 4.5v6"/>',
     galeria: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+    tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+    ajuda: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     epi: '<path d="M12 2l7 3v6c0 4.5-3 8.3-7 9-4-.7-7-4.5-7-9V5l7-3z"/><path d="M9 12l2 2 4-4"/>',
@@ -136,6 +142,7 @@
       { id: "dashboard", nome: "Painel" },
       { id: "orcamentos", nome: "Orçamentos" },
       { id: "obras", nome: "Obras" },
+      { id: "tarefas", nome: "Tarefas" },
       { id: "clientes", nome: "Clientes" },
       { id: "contratos", nome: "Contratos" },
       { id: "medicoes", nome: "Medições" },
@@ -158,7 +165,8 @@
       { id: "folha", nome: "Folha / Encargos" },
       { id: "relatorios", nome: "Relatórios" },
       { id: "modelos", nome: "Modelos de Doc." },
-      { id: "usuarios", nome: "Usuários" }
+      { id: "usuarios", nome: "Usuários" },
+      { id: "ajuda", nome: "Ajuda" }
     ],
 
     // ---------- Sidebar (nav de módulos) ----------
@@ -182,6 +190,7 @@
       switch (view) {
         case "dashboard": return this.renderDashboard();
         case "obras": return this.renderObras();
+        case "tarefas": return this.renderTarefas();
         case "clientes": return this.renderClientes();
         case "contratos": return this.renderContratos();
         case "medicoes": return this.renderMedicoes();
@@ -205,6 +214,7 @@
         case "relatorios": return this.renderRelatorios();
         case "modelos": return this.renderModelos();
         case "usuarios": return this.renderUsuarios();
+        case "ajuda": return this.renderAjuda();
       }
       return "";
     },
@@ -226,7 +236,7 @@
       var receitas = fin.filter(function (f) { return f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var aReceber = fin.filter(function (f) { return f.tipo === "receita" && f.status === "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var medPend = med.filter(function (m) { return m.status !== "paga"; }).length;
+      var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
       function k(rot, num, cls) { return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div></div>"; }
       var html = '<h1 class="mb">Painel de Gestão</h1>' +
         '<div class="kpis kpis-g">' +
@@ -240,6 +250,26 @@
           k("Valor em estoque", Util.fmtMoeda(valorEstoque)) +
           k("Diários (RDO)", rdos.length) +
         "</div>";
+      // G3: fila de aprovações pendentes (só aparece quando há algo esperando, e só p/ quem aprova)
+      var podeAp = (typeof Auth === "undefined" || !Auth.podeAprovar) ? true : Auth.podeAprovar();
+      var pend = this._pendentesAprovacao();
+      if (podeAp && pend.total > 0) {
+        var chip = function (n, rot, view) { return n > 0 ? '<button class="btn sm" data-view="' + view + '" style="margin-right:8px">' + rot + ": <b>" + n + "</b></button>" : ""; };
+        html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px">⏳ Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309">' + pend.total + '</span></h3>' +
+          '<div class="muted" style="margin-bottom:10px;font-size:13px">Itens aguardando o seu aval. Clique para revisar e aprovar/rejeitar.</div>' +
+          chip(pend.medicoes, "Medições", "medicoes") + chip(pend.compras, "Pedidos de compra", "compras") + chip(pend.requisicoes, "Requisições", "requisicoes") +
+          "</div>";
+      }
+      // G4: tarefas atrasadas / a fazer
+      var self = this, tarefas = lista("tarefas");
+      var tAtras = tarefas.filter(function (t) { return self._tarefaAtrasada(t); }).length;
+      var tAfazer = tarefas.filter(function (t) { return t.status === "afazer" || t.status === "fazendo"; }).length;
+      if (tAfazer > 0 || tAtras > 0) {
+        html += '<div class="card mt"' + (tAtras ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px">🗒️ Tarefas</h3>' +
+          '<button class="btn sm" data-view="tarefas" style="margin-right:8px">A fazer: <b>' + tAfazer + "</b></button>" +
+          (tAtras ? '<button class="btn sm" data-view="tarefas" style="color:#dc2626;margin-right:8px">⚠ Atrasadas: <b>' + tAtras + "</b></button>" : "") +
+          "</div>";
+      }
       // resumo por obra (orçado x contratado x custo real)
       html += '<div class="card mt"><h3 style="margin:0 0 10px">Resumo por obra</h3>';
       if (!obras.length) html += '<p class="muted">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> (ou gere a partir de um orçamento).</p>';
@@ -258,8 +288,64 @@
         html += "</tbody></table>";
       }
       html += "</div>";
+      // G5: Análise visual (gráficos reutilizando o motor SVG do ui.js) com filtro de período
+      html += this._dashAnalise();
       return html;
     },
+    // ---------- G5: BI vivo no Painel ----------
+    _CORCAT: { obra: "#0f2740", material: "#16a34a", mao_obra: "#2563eb", equipamento: "#f59e0b", administrativo: "#64748b", impostos: "#dc2626", medicao: "#7c3aed", outros: "#94a3b8" },
+    _periodoFin: function (fin, periodo, ref) {
+      if (!periodo || periodo === "tudo") return fin;
+      var hoje = ref ? new Date(ref + "T00:00:00") : new Date();
+      var ano = hoje.getFullYear(), mes = hoje.getMonth();
+      return fin.filter(function (f) {
+        if (!f.data) return false;
+        var d = new Date(String(f.data) + "T00:00:00"); if (isNaN(d.getTime())) return false;
+        if (periodo === "ano") return d.getFullYear() === ano;
+        if (periodo === "mes") return d.getFullYear() === ano && d.getMonth() === mes;
+        return true;
+      });
+    },
+    _dashGraficosDados: function (periodo, ref) {
+      var self = this, fin = this._periodoFin(lista("financeiro"), periodo, ref), obras = lista("obras");
+      var porCat = {};
+      fin.forEach(function (f) { if (f.tipo === "despesa") { var c = f.categoria || "outros"; porCat[c] = (porCat[c] || 0) + Util.num(f.valor); } });
+      var cats = [];
+      for (var k in porCat) if (porCat.hasOwnProperty(k)) cats.push({ rotulo: rot(P.finCategoria, k), valor: porCat[k], cor: self._CORCAT[k] || "#94a3b8" });
+      cats.sort(function (a, b) { return b.valor - a.valor; });
+      var custoObra = obras.map(function (o) {
+        var c = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+        return { rotulo: o.nome, valor: c, area: Util.num(o.areaConstruida) };
+      }).filter(function (x) { return x.valor > 0; }).sort(function (a, b) { return b.valor - a.valor; });
+      var custoM2 = custoObra.filter(function (x) { return x.area > 0; }).map(function (x) { return { rotulo: x.rotulo, valor: x.valor / x.area }; });
+      return { porCategoria: cats, custoPorObra: custoObra.map(function (x) { return { rotulo: x.rotulo, valor: x.valor }; }), custoM2: custoM2 };
+    },
+    _dashAnalise: function () {
+      if (this._dashPer == null) this._dashPer = "tudo";
+      // Só esconde o bloco inteiro se a empresa não tem NENHUMA despesa (Painel limpo p/ conta nova).
+      // Se há despesas mas nenhuma NO PERÍODO filtrado, o card + o seletor CONTINUAM (senão o usuário
+      // ficaria preso num período vazio, sem como voltar — bug do G5 pego na revisão).
+      var temQualquerDespesa = lista("financeiro").some(function (f) { return f.tipo === "despesa"; });
+      if (!temQualquerDespesa) return "";
+      var per = this._dashPer, gd = this._dashGraficosDados(per);
+      var opt = function (v, r) { return '<option value="' + v + '"' + (per === v ? " selected" : "") + ">" + r + "</option>"; };
+      var perSel = '<select data-gacao="dash-periodo" style="max-width:160px">' + opt("tudo", "Desde sempre") + opt("ano", "Este ano") + opt("mes", "Este mês") + "</select>";
+      var donut = (typeof UI !== "undefined" && UI._donut) ? UI._donut : function () { return ""; };
+      var barH = (typeof UI !== "undefined" && UI._barH) ? UI._barH : function () { return ""; };
+      var html = '<div class="card mt"><div class="flex between" style="align-items:center"><h3 style="margin:0">📊 Análise</h3>' + perSel + "</div>";
+      if (!gd.porCategoria.length && !gd.custoPorObra.length) {
+        html += '<p class="muted" style="margin:12px 0 0;font-size:14px">Sem lançamentos no período selecionado. Troque o filtro acima (ex.: <b>Desde sempre</b>).</p>';
+        return html + "</div>";
+      }
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:12px">';
+      if (gd.porCategoria.length) html += '<div><h4 style="margin:0 0 8px;font-size:14px">Despesas por categoria</h4>' + donut(gd.porCategoria) + "</div>";
+      if (gd.custoPorObra.length) html += '<div><h4 style="margin:0 0 8px;font-size:14px">Custo real por obra</h4>' + barH(gd.custoPorObra) + "</div>";
+      if (gd.custoM2.length) html += '<div><h4 style="margin:0 0 8px;font-size:14px" title="Custo real ÷ área construída">Custo por m²</h4>' + barH(gd.custoM2) + '</div>';
+      else html += '<div><h4 style="margin:0 0 8px;font-size:14px">Custo por m²</h4><p class="muted" style="font-size:13px">Cadastre a área construída nas obras para ver o custo por m² comparativo.</p></div>';
+      html += "</div></div>";
+      return html;
+    },
+    dashTrocaPeriodo: function (p) { this._dashPer = p; App.render(); },
 
     // =================== OBRAS ===================
     renderObras: function () {
@@ -380,7 +466,7 @@
       ms.forEach(function (m) {
         var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
         var docs = '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">🖨</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">📊</button> ';
-        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : "✓"));
+        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">✕ rejeitada</span>' : "✓")));
         html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '"><b>' + Util.esc(m.numero || "—") + "</b></td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -398,7 +484,7 @@
     },
     formMedicao: function (m) {
       var self = this;
-      m = m || {}; var obras = lista("obras"), contratos = lista("contratos");
+      m = m || {}; var stAntigo = m.status || ""; var obras = lista("obras"), contratos = lista("contratos");
       var orcs = Store.listarOrcamentos(eid());
       var num = m.numero || String(lista("medicoes").length + 1).padStart(2, "0") + "ª";
       var corpo =
@@ -413,6 +499,7 @@
       this._modalForm("medicoes", m, "Medição", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.obraId = v("g-obra");
         if (!obj.obraId) { UI.toast("Selecione a obra da medição.", "erro"); return false; }
+        if (!self._gateStatusForm(obj, stAntigo)) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
         obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
         // #18: com orçamento selecionado, valor e % NASCEM dos itens (não se digita)
@@ -994,6 +1081,175 @@
       this._abrirDoc("Relatório Fotográfico — " + (obra.nome || ""), this._docShell("RELATÓRIO FOTOGRÁFICO", "#0f2740", corpo));
     },
 
+    // =================== TAREFAS ===================
+    _hojeISO: function () { return new Date().toISOString().slice(0, 10); },
+    // Data de HOJE no fuso LOCAL (evita off-by-one noturno do toISOString/UTC nas comparações de prazo).
+    _hojeLocal: function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); },
+    // Atrasada = tem prazo, o prazo já passou e a tarefa não está concluída/cancelada.
+    _tarefaAtrasada: function (t) {
+      if (!t.prazo || t.status === "feita" || t.status === "cancelada") return false;
+      return String(t.prazo) < this._hojeLocal();
+    },
+    _tarefasFiltradas: function (filtro, obraId) {
+      var self = this, ts = lista("tarefas");
+      ts = ts.filter(function (t) {
+        if (obraId && t.obraId !== obraId) return false;
+        if (filtro === "afazer") return t.status === "afazer" || t.status === "fazendo";
+        if (filtro === "atrasadas") return self._tarefaAtrasada(t);
+        if (filtro === "feitas") return t.status === "feita";
+        return true; // todas
+      });
+      var ordP = { urgente: 0, alta: 1, normal: 2, baixa: 3 };
+      ts.sort(function (a, b) {
+        var aa = self._tarefaAtrasada(a) ? 0 : 1, bb = self._tarefaAtrasada(b) ? 0 : 1;
+        if (aa !== bb) return aa - bb;                       // atrasadas primeiro
+        var pa = String(a.prazo || "9999"), pb = String(b.prazo || "9999");
+        if (pa !== pb) return pa < pb ? -1 : 1;              // prazo mais próximo primeiro
+        return (ordP[a.prioridade] || 2) - (ordP[b.prioridade] || 2);
+      });
+      return ts;
+    },
+    renderTarefas: function () {
+      var self = this, obras = lista("obras");
+      if (this._tarFiltro == null) this._tarFiltro = "afazer";
+      if (this._tarObra == null) this._tarObra = "";
+      var todas = lista("tarefas");
+      var nAtras = todas.filter(function (t) { return self._tarefaAtrasada(t); }).length;
+      var cont = {
+        todas: todas.length,
+        afazer: todas.filter(function (t) { return t.status === "afazer" || t.status === "fazendo"; }).length,
+        atrasadas: nAtras,
+        feitas: todas.filter(function (t) { return t.status === "feita"; }).length
+      };
+      var chip = function (k, rot) { return '<button class="btn sm' + (self._tarFiltro === k ? " primary" : "") + '" data-gacao="tar-filtro" data-val="' + k + '">' + rot + ' <b>' + cont[k] + "</b></button>"; };
+      var selObra = '<select data-gacao="tar-obra" style="max-width:220px"><option value="">Todas as obras</option>' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._tarObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var extra = (nAtras ? '<span class="g-pill" style="background:#dc262622;color:#dc2626;align-self:center;margin-right:10px">⚠ ' + nAtras + " atrasada" + (nAtras > 1 ? "s" : "") + "</span>" : "") + selObra;
+      var html = this._head(svg("tarefas") + "Tarefas", "nova-tarefa", "Nova tarefa", extra);
+      html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:-4px 0 14px">' + chip("afazer", "A fazer") + chip("atrasadas", "Atrasadas") + chip("feitas", "Concluídas") + chip("todas", "Todas") + "</div>";
+      var ts = this._tarefasFiltradas(this._tarFiltro, this._tarObra);
+      if (!ts.length) return html + vazioBox(todas.length ? "Nenhuma tarefa neste filtro" : "Nenhuma tarefa ainda", "nova-tarefa", "Criar primeira tarefa");
+      var cols = lista("colaboradores");
+      html += '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Obra</th><th>Prazo</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
+      ts.forEach(function (t) {
+        var resp = cols.filter(function (c) { return c.id === t.responsavelId; })[0];
+        var ob = obras.filter(function (o) { return o.id === t.obraId; })[0];
+        var atras = self._tarefaAtrasada(t);
+        var prazoTxt = t.prazo ? t.prazo.split("-").reverse().join("/") : "—";
+        var corPrz = atras ? ' style="color:#dc2626;font-weight:700"' : "";
+        var corPri = t.prioridade === "urgente" ? "#dc2626" : (t.prioridade === "alta" ? "#ea580c" : "#64748b");
+        var acao = "";
+        if (t.status === "afazer") acao = '<button class="btn sm" data-gacao="tar-fazer" data-id="' + t.id + '">▶ Iniciar</button> <button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">✓ Concluir</button>';
+        else if (t.status === "fazendo") acao = '<button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">✓ Concluir</button>';
+        else if (t.status === "feita") acao = '<button class="btn sm" data-gacao="tar-reabrir" data-id="' + t.id + '">↺ Reabrir</button>';
+        html += '<tr><td style="cursor:pointer" data-gopen="tarefas:' + t.id + '"><b>' + Util.esc(t.titulo || "—") + "</b>" + (atras ? ' <span title="Prazo vencido">⚠</span>' : "") + "</td><td>" + Util.esc(resp ? resp.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td" + corPrz + ">" + prazoTxt + '</td><td><b style="color:' + corPri + '">' + rot(P.tarefaPrioridade, t.prioridade) + "</b></td><td>" + pill(t.status) + '</td><td class="num">' + acao + "</td></tr>";
+      });
+      return html + "</tbody></table>";
+    },
+    tarTrocaFiltro: function (k) { this._tarFiltro = k; App.render(); },
+    tarTrocaObra: function (obraId) { this._tarObra = obraId; App.render(); },
+    novoTarefa: function () { this.formTarefa(null); },
+    formTarefa: function (t) {
+      t = t || {}; var obras = lista("obras"), cols = lista("colaboradores");
+      var corpo =
+        campo("Tarefa *", inp("g-titulo", t.titulo, "Ex.: Comprar cimento para a laje")) +
+        '<div class="row">' + campo("Responsável", sel("g-resp", optsRec(cols, "nome", t.responsavelId, "— ninguém —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", t.obraId, "— nenhuma —"))) + "</div>" +
+        '<div class="row">' + campo("Prazo", inp("g-prazo", t.prazo, "", "date")) + campo("Prioridade", sel("g-prio", opts(P.tarefaPrioridade, t.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.tarefaStatus, t.status || "afazer"))) + "</div>" +
+        campo("Detalhes", '<textarea id="g-desc" rows="3">' + Util.esc(t.descricao || "") + "</textarea>");
+      this._modalForm("tarefas", t, "Tarefa", corpo, function (obj) {
+        obj.titulo = v("g-titulo"); if (!obj.titulo) { UI.toast("Informe a tarefa.", "erro"); return false; }
+        obj.responsavelId = v("g-resp"); obj.obraId = v("g-obra"); obj.prazo = v("g-prazo");
+        obj.prioridade = v("g-prio"); obj.status = v("g-status"); obj.descricao = v("g-desc");
+        return true;
+      });
+    },
+    _tarefaStatus: function (id, novo, msg) {
+      var t = Store.obter(eid(), "tarefas", id); if (!t) return;
+      t.status = novo;
+      if (novo === "feita") t.concluidaEm = this._hojeISO(); else if (novo !== "feita") t.concluidaEm = "";
+      Store.salvar(eid(), "tarefas", t); App.render(); UI.toast(msg, "ok");
+    },
+
+    // =================== CENTRAL DE AJUDA (G7 app-side) ===================
+    _AJUDA_FAQ: [
+      { p: "Como crio meu primeiro orçamento?", r: "No menu <b>Orçamentos</b>, clique em <b>Novo orçamento</b>. Descreva a obra no <b>Escopo Inteligente</b> (texto livre) ou adicione itens direto com <b>+ Item</b>, buscando no SINAPI por código ou descrição." },
+      { p: "De onde vêm os preços?", r: "Da base <b>SINAPI oficial da Caixa</b>, na competência e UF que você escolher — mais SICRO, SEINFRA-CE, SETOP-MG e SUDECAP-BH. Nada é inventado: item sem correspondência fica marcado como pendente para você decidir." },
+      { p: "O que é o BDI e como configuro?", r: "BDI é a taxa que cobre custos indiretos, impostos e lucro sobre o custo direto. Na aba <b>BDI & Parâmetros</b> você usa o modelo do <b>Acórdão TCU 2.622/2013</b> ou o <b>DNIT</b>, e o preço de venda recalcula na hora." },
+      { p: "Posso editar a planilha no Excel e trazer de volta?", r: "Sim — esse é um diferencial exclusivo. Exporte o Excel, ajuste quantidades ou custos, e use <b>📥 Reimportar</b>: o sistema mostra cada mudança para você revisar antes de aplicar." },
+      { p: "Como gero a proposta comercial?", r: "Com o orçamento pronto e um cliente vinculado, o botão <b>Gerar Proposta Comercial</b> monta o PDF com a sua marca — capa, escopo, condições comerciais e assinatura." },
+      { p: "O que é o Portal do Cliente?", r: "No plano <b>Plus</b>, em <b>Obras</b> → <b>Portal do cliente</b>, você publica um resumo da obra (andamento, medições, diário com fotos) e o SEU cliente acompanha online com login próprio." },
+      { p: "Como registro o Diário de Obra (RDO)?", r: "No módulo <b>Diário (RDO)</b>, crie um novo com clima, efetivo, atividades, ocorrências e fotos. Sai impresso com a identidade da sua empresa e as fotos alimentam o Portal do Cliente." },
+      { p: "Como faço uma medição?", r: "No módulo <b>Medições</b>, vincule o orçamento e informe o % executado por item no período. O boletim sai no padrão do contratante (anterior, período, acumulado, saldo) e avisa se algum item passar de 100%." },
+      { p: "Onde vejo o Previsto × Realizado por etapa?", r: "No módulo <b>Previsto × Real</b>: escolha a obra e veja, por etapa do orçamento, o custo previsto contra o gasto real em barras — com alerta de estouro." },
+      { p: "Funciona offline?", r: "Sim. O sistema roda no seu navegador e seus dados ficam salvos no seu computador. A sincronização na nuvem é opcional (Plus, 3 aparelhos)." },
+      { p: "Meus dados ficam salvos onde?", r: "No armazenamento local do seu navegador, no seu computador — nada é enviado sem você mandar. Faça backups pelo menu quando quiser. No Plus, dá para sincronizar entre PC, celular e tablet." },
+      { p: "Como adiciono alguém da minha equipe?", r: "No módulo <b>Usuários</b> (só o administrador), crie o sub-usuário com login, senha e os <b>módulos liberados</b>. Marque <b>“pode aprovar”</b> se ele puder aprovar medições, compras e requisições." },
+      { p: "Como atualizo a base SINAPI?", r: "A base acompanha as competências publicadas pela Caixa. Você escolhe a competência e a UF no orçamento; quando sai uma nova, é só selecioná-la." },
+      { p: "Como recupero minha licença?", r: "Acesse <b>/recuperar</b> na página do OrçaPRO com o e-mail da compra, ou fale com o suporte no WhatsApp." }
+    ],
+    _ajudaChecklist: function () {
+      var orcs = (Store.listarOrcamentos ? Store.listarOrcamentos(eid()) : []) || [];
+      var temItem = orcs.some(function (o) { return Util.arr(o.etapas).some(function (e) { return Util.arr(e.itens).length; }); });
+      var obras = lista("obras");
+      return [
+        { label: "Criar o primeiro orçamento", feito: orcs.length > 0, dica: "Menu Orçamentos → Novo orçamento", view: "orcamentos" },
+        { label: "Adicionar itens (SINAPI ou Escopo Inteligente)", feito: temItem, dica: "Abra um orçamento e use + Item ou cole o escopo", view: "orcamentos" },
+        { label: "Cadastrar uma obra", feito: obras.length > 0, dica: "Menu Obras → Nova obra (vincule o orçamento)", view: "obras" },
+        { label: "Registrar um Diário de Obra (RDO)", feito: lista("rdo").length > 0, dica: "Menu Diário (RDO) → Novo", view: "rdo" },
+        { label: "Fazer uma medição", feito: lista("medicoes").length > 0, dica: "Menu Medições → Nova medição", view: "medicoes" },
+        { label: "Publicar o Portal do Cliente", feito: obras.some(function (o) { return o.portalUser; }), dica: "Em Obras, botão Portal do cliente", view: "obras" }
+      ];
+    },
+    renderAjuda: function () {
+      var self = this;
+      if (this._ajudaFiltro == null) this._ajudaFiltro = "";
+      var html = this._head(svg("ajuda") + "Central de Ajuda", "", "", "");
+      // checklist de primeiros passos (auto-detectado dos seus dados)
+      var chk = this._ajudaChecklist(), feitos = chk.filter(function (c) { return c.feito; }).length;
+      var pct = Math.round(feitos / chk.length * 100);
+      html += '<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px">🚀 Primeiros passos <span class="muted" style="font-weight:400">' + feitos + "/" + chk.length + "</span></h3>" +
+        '<div style="background:#eef2f7;border-radius:99px;height:10px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:' + pct + '%;background:var(--verde,#16a34a);border-radius:99px;transition:width .3s"></div></div>';
+      html += chk.map(function (c) {
+        return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
+          '<span style="font-size:16px">' + (c.feito ? "✅" : "⬜") + "</span>" +
+          '<span style="' + (c.feito ? "color:#16a34a;text-decoration:line-through" : "") + '">' + Util.esc(c.label) + "</span>" +
+          (c.feito ? "" : ' <button class="btn sm" data-view="' + c.view + '" style="margin-left:auto">Ir →</button> <span class="muted" style="font-size:12px;flex:none">' + Util.esc(c.dica) + "</span>") +
+          "</div>";
+      }).join("") + "</div>";
+      // FAQ pesquisável
+      html += '<div class="card"><h3 style="margin:0 0 8px">Perguntas frequentes</h3>' +
+        '<input id="ajuda-q" placeholder="🔍 Buscar na ajuda (ex.: BDI, medição, portal)" value="' + Util.esc(this._ajudaFiltro) + '" style="width:100%;max-width:420px;margin-bottom:12px">' +
+        '<div id="ajuda-faq">' + this._ajudaFaqHtml(this._ajudaFiltro) + "</div></div>";
+      // suporte
+      html += '<div class="card" style="margin-top:12px"><h3 style="margin:0 0 6px">Ainda precisa de ajuda?</h3>' +
+        '<p class="muted" style="margin:0 0 10px;font-size:14px">Fale direto com o Eng. Rogério (CREA-MG 323736) no WhatsApp — resposta rápida em horário comercial.</p>' +
+        '<a class="btn sm primary" href="https://wa.me/553492869383" target="_blank" rel="noopener">💬 Falar no WhatsApp</a>' +
+        '<span class="muted" style="font-size:12px;margin-left:12px">🎬 Tutoriais em vídeo: em breve.</span></div>';
+      return html;
+    },
+    _ajudaFaqHtml: function (filtro) {
+      var f = (filtro || "").trim().toLowerCase();
+      var itens = this._AJUDA_FAQ.filter(function (x) {
+        if (!f) return true;
+        return (x.p + " " + x.r).toLowerCase().indexOf(f) > -1;
+      });
+      if (!itens.length) return '<p class="muted">Nada encontrado. Tente outra palavra ou fale no WhatsApp.</p>';
+      return itens.map(function (x) {
+        return '<details class="feat" style="margin-bottom:6px"><summary style="cursor:pointer;font-weight:600;padding:8px 0">' + Util.esc(x.p) + "</summary><div style=\"padding:4px 0 10px;color:#475569;font-size:14px\">" + x.r + "</div></details>";
+      }).join("");
+    },
+    _ajudaWire: function () {
+      var self = this, inp = document.getElementById("ajuda-q");
+      if (inp && !inp._wired) {
+        inp._wired = true;
+        inp.oninput = function () {
+          self._ajudaFiltro = inp.value;
+          var box = document.getElementById("ajuda-faq");
+          if (box) box.innerHTML = self._ajudaFaqHtml(self._ajudaFiltro);
+        };
+      }
+    },
+
     // =================== FORNECEDORES ===================
     renderFornecedores: function () {
       var fs = lista("fornecedores");
@@ -1037,15 +1293,16 @@
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
-        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">🖨</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button>'
-          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : "")));
+        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">🖨</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
+          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : (c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">✕ rejeitado</span>' : ""))));
         html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
     novoCompra: function () { this.formCompra(null); },
     formCompra: function (c) {
-      c = c || {}; var forn = lista("fornecedores"), obras = lista("obras");
+      var self = this;
+      c = c || {}; var stAntigo = c.status || ""; var forn = lista("fornecedores"), obras = lista("obras");
       var num = c.numero || ("PC-" + new Date().getFullYear() + "-" + String(lista("compras").length + 1).padStart(3, "0"));
       var hoje = new Date().toISOString().slice(0, 10);
       var corpo =
@@ -1058,6 +1315,7 @@
         (c.status === "recebido" ? '<p class="muted">✓ Recebida — já lançou uma despesa no Financeiro.</p>' : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>');
       this._modalForm("compras", c, "Pedido de compra", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.fornecedorId = v("g-forn"); obj.obraId = v("g-obra");
+        if (!self._gateStatusForm(obj, stAntigo)) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.descricao = v("g-desc"); if (!obj.descricao) { UI.toast("Descreva o que será comprado.", "erro"); return false; }
         obj.valor = nv("g-valor"); obj.categoria = v("g-cat"); obj.formaPgto = v("g-forma");
         obj.data = v("g-data"); obj.previsaoEntrega = v("g-entrega"); obj.obs = v("g-obs");
@@ -1704,9 +1962,10 @@ renderRequisicoes: function () {
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
         var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">🖨</button> ';
-        if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> ';
+        if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-requisicao" data-id="' + r.id + '" style="color:#dc2626">Rejeitar</button> ';
         if (r.status === "aprovada") acoes += '<button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
-        else if (r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm" disabled title="Aprove a requisição antes de gerar o pedido" style="opacity:.5;cursor:not-allowed">Gerar pedido</button>';
+        else if (r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada") acoes += '<button class="btn sm" disabled title="Aprove a requisição antes de gerar o pedido" style="opacity:.5;cursor:not-allowed">Gerar pedido</button>';
+        else if (r.status === "rejeitada") acoes += '<span class="muted" title="' + Util.esc(r.motivoRejeicao || "") + '">✕ rejeitada</span>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
         var nItens = (r.itens && r.itens.length) || 0;
         var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "");
@@ -1749,7 +2008,7 @@ renderRequisicoes: function () {
         + '<div id="bi-res"></div>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -1806,7 +2065,7 @@ renderRequisicoes: function () {
     },
     _reqValor: function (itens) { return itens.reduce(function (s, i) { return s + Util.num(i.quantidade) * Util.num(i.precoRef); }, 0); },
     formRequisicoes: function (r) {
-      r = r || {}; var self = this, obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      r = r || {}; var self = this, stAntigo = r.status || "", obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
       var numero = r.numero || this._proxNumeroReq();
       var itensBuf = this._reqItens(r);
       if (this._reqItemSeed) { itensBuf.push(this._reqItemSeed); this._reqItemSeed = null; }
@@ -1824,6 +2083,7 @@ renderRequisicoes: function () {
         if (!itensBuf.length) { UI.toast("Adicione ao menos um item (busque no banco ou use item manual).", "erro"); return false; }
         obj.numero = v("g-numero"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.solicitante = v("g-solic");
         obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.observacoes = v("g-obs");
+        if (!self._gateStatusForm(obj, stAntigo)) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.itens = itensBuf.slice();
         obj.descricao = self._reqResumo(itensBuf);
         obj.valorEstimado = self._reqValor(itensBuf);
@@ -1867,11 +2127,6 @@ renderRequisicoes: function () {
         renderItens();
       };
       renderItens();
-    },
-    aprovarRequisicao: function (id) {
-      if (this._bloqueado()) return;
-      var r = Store.obter(eid(), "requisicoes", id); if (!r) return;
-      r.status = "aprovada"; Store.salvar(eid(), "requisicoes", r); App.render(); UI.toast("Requisição aprovada.", "ok");
     },
     comprarRequisicao: function (id) {
       var r = Store.obter(eid(), "requisicoes", id); if (!r) return;
@@ -2016,7 +2271,8 @@ renderRequisicoes: function () {
       var corpo =
         '<div class="row">' + campo("Nome *", inp("g-nome", u.nome, "Ex.: Maria Souza")) + campo("Login (usuário) *", inp("g-login", u.login, "ex.: maria")) + "</div>" +
         '<div class="row">' + campo(ehNovo ? "Senha *" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "senha de acesso" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
-        campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">↺ preset do departamento</button>', checkboxes);
+        campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">↺ preset do departamento</button>', checkboxes) +
+        campo("Aprovações", '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>');
       this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome.", "erro"); return false; }
         obj.login = String(v("g-login") || "").trim().toLowerCase(); if (obj.login.length < 3) { UI.toast("Login muito curto (mín. 3).", "erro"); return false; }
@@ -2034,6 +2290,7 @@ renderRequisicoes: function () {
         var mods = ["dashboard"];
         Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) { if (c.checked && c.getAttribute("data-mod") !== "dashboard") mods.push(c.getAttribute("data-mod")); });
         obj.modulos = mods;
+        obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
         return true;
       });
       var preset = document.getElementById("us-preset");
@@ -2532,6 +2789,79 @@ renderRelatorios: function () {
       UI.modal((ehNovo ? "Novo " : "Editar ") + titulo, corpo, botoes);
     },
 
+    // ---------- G3: workflow de aprovação (papel de aprovador + auditoria + rejeição) ----------
+    _quemAprova: function () { return (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""; },
+    _podeAprovarGuard: function () {
+      if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+        UI.toast("Você não tem permissão para aprovar/rejeitar. Peça a um aprovador da equipe.", "erro");
+        return false;
+      }
+      return true;
+    },
+    // Aprova um registro: grava status + trilha aprovadoPor/aprovadoEm.
+    _aprovar: function (entidade, id, statusOk, msg) {
+      if (!this._podeAprovarGuard()) return;
+      var reg = Store.obter(eid(), entidade, id); if (!reg) return;
+      reg.status = statusOk;
+      reg.aprovadoPor = this._quemAprova();
+      reg.aprovadoEm = new Date().toISOString().slice(0, 10);
+      reg.motivoRejeicao = ""; reg.rejeitadoPor = ""; reg.rejeitadoEm = ""; // limpa rejeição anterior (reaprovação)
+      Store.salvar(eid(), entidade, reg);
+      App.render(); UI.toast(msg || "Aprovado.", "ok");
+    },
+    // Rejeita com motivo obrigatório + trilha rejeitadoPor/rejeitadoEm.
+    _rejeitar: function (entidade, id, statusRej) {
+      if (!this._podeAprovarGuard()) return;
+      var reg = Store.obter(eid(), entidade, id); if (!reg) return;
+      var motivo = window.prompt("Motivo da rejeição (obrigatório):", "");
+      if (motivo == null) return;
+      motivo = String(motivo).trim();
+      if (!motivo) { UI.toast("Informe o motivo da rejeição.", "erro"); return; }
+      reg.status = statusRej;
+      reg.rejeitadoPor = this._quemAprova();
+      reg.rejeitadoEm = new Date().toISOString().slice(0, 10);
+      reg.motivoRejeicao = motivo;
+      Store.salvar(eid(), entidade, reg);
+      App.render(); UI.toast("Registro rejeitado.", "ok");
+    },
+    _APROV_OK: { aprovada: 1, aprovado: 1 },
+    _APROV_REJ: { rejeitada: 1, rejeitado: 1 },
+    // Estados terminais pós-aprovação: avançar PELO FORM direto p/ eles também exige aprovador,
+    // senão um sub-usuário sem a flag pula a fila (pendente -> paga/recebido/comprada) sem aprovação.
+    _APROV_TERM: { paga: 1, recebido: 1, comprada: 1 },
+    // G3 (fix): quando o STATUS é mudado PELO FORMULÁRIO de detalhe para aprovar/rejeitar/dar baixa,
+    // aplica o MESMO gate + auditoria dos botões. Retorna false p/ ABORTAR o save.
+    _gateStatusForm: function (obj, statusAntigo) {
+      var novo = obj.status;
+      if (novo === statusAntigo) return true;                 // status não mudou → nada a validar
+      var ehOk = this._APROV_OK[novo], ehRej = this._APROV_REJ[novo], ehTerm = this._APROV_TERM[novo];
+      if (!ehOk && !ehRej && !ehTerm) return true;            // não é estado controlado por aprovação
+      if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+        UI.toast("Você não tem permissão para aprovar, rejeitar ou dar baixa. Peça a um aprovador da equipe.", "erro");
+        return false;
+      }
+      if (ehOk) {
+        obj.aprovadoPor = this._quemAprova(); obj.aprovadoEm = this._hojeISO();
+        obj.motivoRejeicao = ""; obj.rejeitadoPor = ""; obj.rejeitadoEm = ""; // reaprovar limpa rejeição
+      } else if (ehRej) {
+        var motivo = window.prompt("Motivo da rejeição (obrigatório):", obj.motivoRejeicao || "");
+        if (motivo == null) return false;
+        motivo = String(motivo).trim();
+        if (!motivo) { UI.toast("Informe o motivo da rejeição.", "erro"); return false; }
+        obj.rejeitadoPor = this._quemAprova(); obj.rejeitadoEm = this._hojeISO(); obj.motivoRejeicao = motivo;
+        obj.aprovadoPor = ""; obj.aprovadoEm = "";
+      }
+      // ehTerm (paga/recebido/comprada): passou o gate de permissão; sem carimbo extra (é baixa, não aprovação)
+      return true;
+    },
+    // Fila do que aguarda aprovação (para o card no Painel).
+    _pendentesAprovacao: function () {
+      var med = lista("medicoes").filter(function (m) { return m.status === "pendente"; });
+      var com = lista("compras").filter(function (c) { return c.status === "cotacao"; });
+      var req = lista("requisicoes").filter(function (r) { return r.status === "aberta" || r.status === "cotando"; });
+      return { medicoes: med.length, compras: com.length, requisicoes: req.length, total: med.length + com.length + req.length };
+    },
+
     // ---------- Integração: criar obra a partir de um orçamento ----------
     obraDeOrcamento: function (orc) {
       var t = Orcamento.totais(orc);
@@ -2587,9 +2917,16 @@ renderRelatorios: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
+        case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
+        case "nova-tarefa": return this.novoTarefa();
+        case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
+        case "tar-obra": return this.tarTrocaObra(dataset.value);
+        case "tar-fazer": return this._tarefaStatus(id, "fazendo", "Tarefa em andamento.");
+        case "tar-concluir": return this._tarefaStatus(id, "feita", "Tarefa concluída.");
+        case "tar-reabrir": return this._tarefaStatus(id, "afazer", "Tarefa reaberta.");
         case "galeria-troca-obra": return this.galeriaTrocaObra(dataset.value);
         case "galeria-abrir": return this.galeriaAbrir(dataset.idx);
         case "galeria-nav": return this.galeriaNav(dataset.dir);
@@ -2603,10 +2940,8 @@ renderRelatorios: function () {
         case "novo-contrato": return this.novoContrato();
         case "nova-medicao": return this.novoMedicao();
         case "novo-lancamento": return this.novoLancamento();
-        case "aprovar-medicao": {
-          var m = Store.obter(eid(), "medicoes", id); if (!m) return;
-          m.status = "aprovada"; Store.salvar(eid(), "medicoes", m); App.render(); UI.toast("Medição aprovada.", "ok"); return;
-        }
+        case "aprovar-medicao": return this._aprovar("medicoes", id, "aprovada", "Medição aprovada.");
+        case "rejeitar-medicao": return this._rejeitar("medicoes", id, "rejeitada");
         case "pagar-medicao": {
           var md = Store.obter(eid(), "medicoes", id); if (!md) return;
           md.status = "paga"; md.dataPgto = new Date().toISOString().slice(0, 10); Store.salvar(eid(), "medicoes", md);
@@ -2618,10 +2953,8 @@ renderRelatorios: function () {
         case "novo-fornecedor": return this.novoFornecedor();
         case "nova-compra": return this.novoCompra();
         case "novo-item-estoque": return this.novoItemEstoque();
-        case "aprovar-compra": {
-          var pc = Store.obter(eid(), "compras", id); if (!pc) return;
-          pc.status = "aprovado"; Store.salvar(eid(), "compras", pc); App.render(); UI.toast("Pedido de compra aprovado.", "ok"); return;
-        }
+        case "aprovar-compra": return this._aprovar("compras", id, "aprovado", "Pedido de compra aprovado.");
+        case "rejeitar-compra": return this._rejeitar("compras", id, "rejeitado");
         case "receber-compra": {
           var pcr = Store.obter(eid(), "compras", id); if (!pcr) return;
           pcr.status = "recebido"; pcr.dataRecebimento = new Date().toISOString().slice(0, 10); Store.salvar(eid(), "compras", pcr);
@@ -2668,7 +3001,8 @@ renderRelatorios: function () {
         case "nova-frota": return this.novoFrota();
         case "custo-frota": return this.formCustoFrota(id);
 case "nova-requisicoes": return this.novoRequisicoes();
-        case "aprovar-requisicao": return this.aprovarRequisicao(id);
+        case "aprovar-requisicao": return this._aprovar("requisicoes", id, "aprovada", "Requisição aprovada.");
+        case "rejeitar-requisicao": return this._rejeitar("requisicoes", id, "rejeitada");
         case "comprar-requisicao": return this.comprarRequisicao(id);
 case "nova-fiscal": return this.novoFiscal();
         case "lancar-fiscal": return this.lancarFiscal(id);
@@ -2930,6 +3264,7 @@ case "nova-folha": return this.novoFolha();
     abrir: function (entidade, id) {
       var r = Store.obter(eid(), entidade, id); if (!r) return;
       if (entidade === "obras") return this.formObra(r);
+      if (entidade === "tarefas") return this.formTarefa(r);
       if (entidade === "clientes") return this.formCliente(r);
       if (entidade === "contratos") return this.formContrato(r);
       if (entidade === "medicoes") return this.formMedicao(r);
