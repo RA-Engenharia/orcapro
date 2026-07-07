@@ -91,7 +91,8 @@ function montar(host, opts) {
   var dir = new THREE.DirectionalLight(0xffffff, 1.1); dir.position.set(30, 50, 20); scene.add(dir);
   var grid = new THREE.GridHelper(200, 40, 0x2e6f9e, 0x1c3a58); grid.material.opacity = .5; grid.material.transparent = true; scene.add(grid);
   var orbit = new OrbitControls(camera, renderer.domElement); orbit.enableDamping = true; orbit.dampingFactor = .08;
-  var modelRoot = new THREE.Group(); modelRoot.rotation.x = -Math.PI / 2; scene.add(modelRoot);
+  // web-ifc já entrega a geometria em Y-up (converte o Z-up do IFC) → NÃO rotacionar (rotacionar tombava o modelo)
+  var modelRoot = new THREE.Group(); modelRoot.rotation.x = 0; scene.add(modelRoot);
 
   var matAndamento = new THREE.MeshStandardMaterial({ color: 0xf59e0b, emissive: 0x7a4a06, transparent: true, opacity: .9, metalness: .05, roughness: .8, side: THREE.DoubleSide });
   var selMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, emissive: 0x0a5a2a, metalness: .1, roughness: .7 });

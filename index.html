@@ -184,6 +184,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <a href="#excel">O Excel</a>
     <a href="simulador/" target="_blank"><svg class="ai-ic" viewBox="0 0 24 24" style="color:currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg> Simulador 3D</a>
     <a href="#gestao">Gestão</a>
+    <a href="#bim" style="color:var(--verde);font-weight:800">BIM 3D</a>
     <a href="#precos">Planos</a>
     <a class="btn g cta" data-buy="vitalicia" href="#precos">Comprar</a>
   </nav>
@@ -494,6 +495,139 @@ footer a{color:#cfe0ee;text-decoration:none}
   </div></div>
 </section>
 
+<style>
+/* ===== Seção BIM (módulo premium) ===== */
+#bim{background:radial-gradient(1000px 620px at 80% -12%,#14324f 0,#0a1a2b 62%);color:#fff}
+#bim .eyebrow{color:var(--verde2)}
+#bim h2.tit{color:#fff}
+.bim-alert{max-width:820px;margin:0 auto 30px;display:flex;gap:14px;align-items:center;background:rgba(22,163,74,.12);border:1px solid rgba(111,208,138,.42);border-radius:14px;padding:14px 20px;color:#dbe9f5;font-size:14.5px}
+.bim-alert svg{width:30px;height:30px;flex:0 0 auto;color:var(--verde2);stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.bim-alert b{color:#fff}
+@media(max-width:600px){.bim-alert{flex-direction:column;text-align:center}}
+.bim-demo{border:1px solid rgba(255,255,255,.14);border-radius:16px;overflow:hidden;box-shadow:0 34px 80px rgba(0,0,0,.55);background:#0b1a2b;max-width:1000px;margin:0 auto}
+.bim-demo .demo-bar{background:#08131f}
+.bim-frame{width:100%;height:560px;border:0;display:block;background:#0b1a2b}
+.bim-poster{display:none;width:100%}
+@media(max-width:840px){.bim-frame{display:none}.bim-poster{display:block}}
+.bim-note{font-size:13px;color:#8fa9c4;margin-top:12px;text-align:center}
+.bim-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin:42px 0 8px}
+@media(max-width:840px){.bim-cols{grid-template-columns:1fr}}
+.bim-c{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:22px;transition:transform .16s,border-color .16s,box-shadow .16s}
+.bim-c:hover{transform:translateY(-3px);border-color:rgba(111,208,138,.4);box-shadow:0 16px 40px rgba(0,0,0,.35)}
+.bim-c .ic{width:46px;height:46px;border-radius:12px;background:rgba(46,111,158,.26);border:1px solid rgba(90,169,230,.35);display:flex;align-items:center;justify-content:center;color:var(--verde2);margin-bottom:12px}
+.bim-c .ic svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.bim-c h4{color:#fff;font-size:17.5px;margin-bottom:6px}
+.bim-c p{color:#a9c1d8;font-size:14.5px;line-height:1.55}
+.bim-h3{text-align:center;font-size:22px;font-weight:800;color:#fff;margin:46px 0 4px}
+.bim-h3-sub{text-align:center;color:#9fb6cc;font-size:15px;max-width:640px;margin:0 auto 24px}
+.bim-feats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:840px){.bim-feats{grid-template-columns:repeat(2,1fr)}}
+.bim-f{background:rgba(255,255,255,.045);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:16px 15px;transition:transform .14s,border-color .14s}
+.bim-f:hover{transform:translateY(-2px);border-color:rgba(90,169,230,.4)}
+.bim-f>svg{width:25px;height:25px;color:var(--verde2);stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.bim-f b{display:block;margin:9px 0 3px;color:#fff;font-size:14.5px}
+.bim-f small{color:#8fa9c4;font-size:12.5px;line-height:1.4}
+.bim-soon{font-size:10px;font-weight:800;color:#0a1a2b;background:var(--verde2);border-radius:5px;padding:1px 6px;margin-left:6px;vertical-align:middle;letter-spacing:.3px}
+.bim-bridge{background:linear-gradient(135deg,#0f2740,#173a5c);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:32px 28px;margin-top:46px}
+.bim-bridge h3{font-size:23px;color:#fff;text-align:center;margin-bottom:6px;font-weight:800}
+.bim-bridge .lead{color:#cfe0ee;text-align:center;max-width:680px;margin:0 auto 24px;font-size:15.5px}
+.bim-flow{display:flex;align-items:stretch;justify-content:center;gap:12px;flex-wrap:wrap}
+.bim-step{flex:1;min-width:200px;max-width:280px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:18px 18px;text-align:center}
+.bim-step .n{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:9px;background:var(--verde);color:#fff;font-weight:900;font-size:15px;margin-bottom:8px}
+.bim-step b{display:block;color:#fff;font-size:15px;margin-bottom:3px}
+.bim-step small{color:#a9c1d8;font-size:13px}
+.bim-arrow{display:flex;align-items:center;color:var(--verde2);font-size:22px;font-weight:900}
+@media(max-width:720px){.bim-arrow{transform:rotate(90deg)}}
+.bim-oneall{margin-top:22px;display:flex;gap:14px;align-items:center;justify-content:center;background:rgba(22,163,74,.1);border:1px solid rgba(111,208,138,.35);border-radius:12px;padding:14px 20px;color:#dbe9f5;font-size:14.5px;max-width:780px;margin-left:auto;margin-right:auto}
+.bim-oneall b{color:#9be7af}
+.bim-gate{margin-top:44px;text-align:center;background:linear-gradient(135deg,#123a2a,#0f2740);border:1px solid rgba(111,208,138,.3);border-radius:20px;padding:34px 26px}
+.bim-gate .tag{display:inline-block;background:var(--verde);color:#fff;font-size:12px;font-weight:800;letter-spacing:.5px;padding:5px 14px;border-radius:99px;margin-bottom:12px}
+.bim-gate h3{font-size:24px;color:#fff;font-weight:900;margin-bottom:8px;letter-spacing:-.5px}
+.bim-gate p{color:#cfe0ee;font-size:15.5px;max-width:600px;margin:0 auto 20px}
+.bim-gate .cta-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+</style>
+
+<section id="bim"><div class="wrap">
+  <div style="text-align:center;margin-bottom:30px">
+    <div class="eyebrow">Novo · Módulo BIM · 3D · 4D · 5D</div>
+    <h2 class="tit">Seu projeto 3D vira <span style="color:var(--verde2)">cronograma e custo</span></h2>
+    <p class="sub" style="color:#bcd0e4;margin:0 auto">Abra o modelo BIM (arquivo <b>IFC</b>) do seu projeto direto no OrçaPRO — gire em 3D, <b>voe por dentro</b> e veja a obra <b>subir no tempo</b>, ligada ao cronograma e ao orçamento. Sem instalar nada, sem internet, no seu computador.</p>
+  </div>
+
+  <div class="bim-alert">
+    <svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+    <div><b>O BIM virou obrigatório.</b> O Governo Federal já exige BIM em obras públicas (Estratégia Nacional BIM BR — <b>Decreto 10.306/2020</b>), em etapas que crescem a cada ano — e no mercado privado virou padrão. Quem domina BIM ganha as melhores obras.</div>
+  </div>
+
+  <div class="bim-demo">
+    <div class="demo-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="u">OrçaPRO BIM — modelo 3D real rodando no navegador</span></div>
+    <iframe class="bim-frame" src="bim/bim.html?auto=1" title="Visualizador BIM 3D do OrçaPRO" loading="lazy" allow="fullscreen"></iframe>
+    <img class="bim-poster" src="prints/bim-3d.png" alt="Modelo BIM 3D aberto no OrçaPRO — paredes, vigas, pilares e lajes por disciplina">
+  </div>
+  <p class="bim-note">🖱️ No <b>computador</b> é o 3D real: arraste pra girar, role pra dar zoom, clique num elemento pra ver as propriedades. No celular, mostramos uma prévia.</p>
+
+  <!-- O que é BIM, pra quem nunca usou -->
+  <div class="bim-cols">
+    <div class="bim-c">
+      <div class="ic"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div>
+      <h4>O que é BIM?</h4>
+      <p>É o seu projeto em <b>3D inteligente</b>: cada parede, viga e laje é um objeto que <b>carrega informação</b> — material, quantidade, etapa da obra. Não é um desenho; é um modelo que sabe o que ele é.</p>
+    </div>
+    <div class="bim-c">
+      <div class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 2"/></svg></div>
+      <h4>Por que agora?</h4>
+      <p>Além de exigência legal em obras públicas, o BIM <b>evita erro no canteiro</b>: você vê o prédio pronto antes de construir e pega o conflito no computador — onde custa quase nada — em vez de descobrir na obra, onde custa caro.</p>
+    </div>
+    <div class="bim-c">
+      <div class="ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 5-6"/></svg></div>
+      <h4>O que muda pra você?</h4>
+      <p>Você entrega proposta com o <b>modelo 3D</b>, mostra a obra <b>subindo no tempo</b> (4D) e o <b>custo acompanhando</b> (5D). É o tipo de apresentação que <b>impressiona o cliente e fecha contrato</b>.</p>
+    </div>
+  </div>
+
+  <!-- Ferramentas -->
+  <div class="bim-h3">Tudo o que o módulo BIM faz</div>
+  <p class="bim-h3-sub">Do modelo 3D à obra simulada no tempo e no custo — o poder dos programas caros de compatibilização, no seu PC.</p>
+  <div class="bim-feats">
+    <div class="bim-f"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg><b>Visualizador 3D</b><small>Abra o IFC, gire, dê zoom e clique pra ver as propriedades.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><path d="M17.8 19.2 16 11l3.5-3.5c1.5-1.5 2-3.5 1.5-4-1-.5-3 0-4.5 1.5L13 8.5 4.8 6.7c-.5-.1-.9.3-.7.8l1.9 4L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 1.3 3.3c.2.5.7.6.9.1z"/></svg><b>Modo de voo</b><small>Ande por dentro do prédio (W A S D + mouse), como num jogo.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="m9 16 2 2 4-4"/></svg><b>4D · Linha do tempo</b><small>A obra sobe peça por peça, ligada ao cronograma real.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M14.5 9.3c-.4-.9-1.3-1.3-2.5-1.3-1.7 0-2.5.8-2.5 2s.8 1.8 2.5 2 2.5.8 2.5 2-.8 2-2.5 2c-1.2 0-2.1-.4-2.5-1.3"/></svg><b>5D · Custo no tempo</b><small>Quanto a obra custa a cada semana/mês, acompanhando o 4D.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M6 16c3 0 3-8 6-8s3 5 6 5"/></svg><b>Curva S</b><small>Curva física e financeira gerada sozinha a partir do modelo.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg><b>Filtro por disciplina</b><small>Estrutura, arquitetura, hidráulica… isole o que quer ver.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2M11 7l2 2M14.5 3.5l2 2M4 14l2 2"/></svg><b>Medir (trena)<span class="bim-soon">em breve</span></b><small>Meça distâncias direto no modelo, com o mouse.</small></div>
+    <div class="bim-f"><svg viewBox="0 0 24 24"><path d="M12 2v6M12 16v6M2 12h6M16 12h6"/><circle cx="12" cy="12" r="3"/></svg><b>Compatibilização (clash)<span class="bim-soon">chegando</span></b><small>Detecta conflitos entre disciplinas — já em construção.</small></div>
+  </div>
+
+  <!-- Revit cria, OrçaPRO coordena -->
+  <div class="bim-bridge">
+    <h3>Você modela no Revit. O OrçaPRO coordena.</h3>
+    <p class="lead">A modelagem 3D fica onde ela é forte — no <b>Revit</b> (ou no IFC que o projetista te manda). Com <b>um clique</b> nas nossas ferramentas <b>RA BIM Tools</b>, o modelo entra no OrçaPRO já ligado ao seu orçamento e cronograma.</p>
+    <div class="bim-flow">
+      <div class="bim-step"><span class="n">1</span><b>Revit / projetista</b><small>Seu modelo 3D, ou o IFC que você recebe.</small></div>
+      <div class="bim-arrow">→</div>
+      <div class="bim-step"><span class="n">2</span><b>Um clique: exporta IFC</b><small>As ferramentas RA BIM Tools já carimbam a etapa da obra em cada peça.</small></div>
+      <div class="bim-arrow">→</div>
+      <div class="bim-step"><span class="n">3</span><b>OrçaPRO coordena</b><small>3D + voo + 4D + 5D + Curva S, ligados ao orçamento.</small></div>
+    </div>
+    <div class="bim-oneall">
+      <svg viewBox="0 0 24 24" style="width:24px;height:24px;flex:0 0 auto;color:var(--verde2);stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round"><path d="M20 6 9 17l-5-5"/></svg>
+      <div><b>Tudo em um só.</b> Programas de compatibilização e interoperabilidade custam <b>milhares de reais por ano</b> em assinatura. Aqui é o mesmo poder — junto do seu orçamento e da gestão da obra, e <b>pago uma vez</b>.</div>
+    </div>
+  </div>
+
+  <!-- Trava de plano -->
+  <div class="bim-gate">
+    <span class="tag">🏆 Recurso do plano superior</span>
+    <h3>Quer o módulo BIM completo?</h3>
+    <p>O BIM 3D/4D/5D é o topo do OrçaPRO — faz parte do <b>plano superior</b>. Fale com o Eng. Rogério e leve a cereja do bolo pro seu escritório.</p>
+    <div class="cta-row">
+      <a class="btn w wpp-link" href="#">💬 Quero o BIM — falar no WhatsApp</a>
+      <a class="btn o" href="#precos" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">Ver planos</a>
+    </div>
+  </div>
+</div></section>
+
 <section id="novidades" style="background:#fff"><div class="wrap">
   <div style="text-align:center;margin-bottom:38px">
     <div class="eyebrow">Novidades · sempre evoluindo</div>
@@ -501,6 +635,7 @@ footer a{color:#cfe0ee;text-decoration:none}
     <p class="sub" style="margin:0 auto">Melhoramos o sistema o tempo todo — e as <b>atualizações da versão 1.x são incluídas</b>. Veja o que já está no ar:</p>
   </div>
   <div class="cards3">
+    <a class="card" href="#bim" style="display:block"><div class="ic-badge"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg></div><h4>Módulo BIM 3D · 4D · 5D <span style="font-size:10px;font-weight:900;color:#fff;background:var(--verde);border-radius:6px;padding:2px 7px;vertical-align:middle;letter-spacing:.5px">NOVO</span></h4><p>Abra o modelo IFC do projeto em 3D, voe por dentro e veja a obra <b>subir no tempo</b> ligada ao cronograma e ao custo. <b>Toque para ver →</b></p></a>
     <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg></div><h4>Consulta grátis de preços <span style="font-size:10px;font-weight:900;color:#fff;background:var(--verde);border-radius:6px;padding:2px 7px;vertical-align:middle;letter-spacing:.5px">NOVO</span></h4><p>Pesquise composições e insumos das bases oficiais sem instalar nada — o gostinho do sistema, direto no site.</p></div>
     <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><path d="m9 20-6-3V4l6 3 6-3 6 3v13l-6 3-6-3z"/><path d="M9 7v13M15 4v13"/></svg></div><h4>27 estados + bancos regionais</h4><p>SINAPI dos <b>27 estados</b>, mais <b>SETOP-MG, SUDECAP-BH e SEINFRA-CE</b> — troque a base para a sua região.</p></div>
     <div class="card"><div class="ic-badge"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg></div><h4>Gestão de obras — 20 módulos</h4><p>Obras, contratos, medições, financeiro, compras, estoque, RDO, equipe, frota e mais — tudo ligado ao orçamento.</p></div>

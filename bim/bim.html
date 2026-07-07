@@ -107,8 +107,9 @@ const grid = new THREE.GridHelper(200, 40, 0x2e6f9e, 0x1c3a58); grid.material.op
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true; orbit.dampingFactor = .08;
 
-// grupo do modelo (IFC é Z-up → giro -90° em X p/ ficar Y-up no Three)
-const modelRoot = new THREE.Group(); modelRoot.rotation.x = -Math.PI/2; scene.add(modelRoot);
+// grupo do modelo — o web-ifc JÁ entrega a geometria em Y-up (converte o Z-up do IFC
+// internamente). Por isso NÃO rotacionamos: rotacionar tombava o modelo ("virado").
+const modelRoot = new THREE.Group(); modelRoot.rotation.x = 0; scene.add(modelRoot);
 
 function resize(){ const w=wrap.clientWidth,h=wrap.clientHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
 window.addEventListener('resize', resize); resize();
@@ -304,12 +305,24 @@ function rotuloDisciplina(ifcName){ const u = String(ifcName).toUpperCase(); ret
 const fileInput = document.getElementById('file');
 document.getElementById('btnAbrir').onclick = ()=> fileInput.click();
 fileInput.onchange = async ()=>{ const f=fileInput.files[0]; if(!f) return; carregarIFC(await f.arrayBuffer(), f.name); };
-document.getElementById('btnAmostra').onclick = async ()=>{
-  try { const r = await fetch('./samples/exemplo.ifc'); carregarIFC(await r.arrayBuffer(), 'exemplo.ifc'); }
+async function carregarAmostra(){
+  try { const r = await fetch('./samples/exemplo.ifc'); await carregarIFC(await r.arrayBuffer(), 'exemplo.ifc'); }
   catch(e){ alert('Não achei o exemplo. Abra um IFC seu.'); }
-};
+}
+document.getElementById('btnAmostra').onclick = carregarAmostra;
 wrap.addEventListener('dragover', e=>{ e.preventDefault(); });
 wrap.addEventListener('drop', async e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f&&/\.ifc$/i.test(f.name)) carregarIFC(await f.arrayBuffer(), f.name); });
+
+// autoload p/ o demo embutido na landing (?auto=1): abre o exemplo e gira devagar até o usuário interagir
+(function(){
+  try { if (!new URLSearchParams(location.search).has('auto')) return; } catch(_){ return; }
+  orbit.autoRotate = true; orbit.autoRotateSpeed = 0.7;
+  function parar(){ orbit.autoRotate = false; }
+  orbit.addEventListener('start', parar);                 // arrastar/zoom encerra o giro automático
+  addEventListener('keydown', parar, { once:true });
+  canvasEl.addEventListener('pointerdown', parar, { once:true });
+  carregarAmostra();
+})();
 
 window.__bim = { scene, modelRoot, camera, get elementos(){ return modelRoot.children.length; } }; // p/ verificação
 </script>
