@@ -6,6 +6,10 @@
   try { document.documentElement.setAttribute("data-tema", localStorage.getItem("orcapro:tema") || "light"); } catch (e) {}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OrçaPRO — Orçamento Inteligente de Obras</title>
+  <!-- BIM: resolve os specifiers dos módulos ES do visualizador (js/bim.js + OrbitControls) -->
+  <script type="importmap">
+  { "imports": { "three": "./bim/vendor/three.module.js", "web-ifc": "./bim/vendor/web-ifc-api.js" } }
+  </script>
   <link rel="icon" type="image/svg+xml" href="img/logo-icon.svg">
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f2740">
@@ -47,6 +51,7 @@
   <script src="js/insumos.js"></script>
   <script src="js/epi.js"></script>
   <script src="js/cronograma.js"></script>
+  <script src="js/bim4d.js"></script>
   <script src="js/demo.js"></script>
   <script src="js/demo-gestao.js"></script>
   <script src="js/empresa.js"></script>
@@ -56,6 +61,7 @@
   <script src="js/autoupdate.js"></script>
   <script src="js/nuvem.js"></script>
   <script src="js/app.js"></script>
+  <script type="module" src="js/bim.js"></script>
 
   <!-- PWA: instala o OrçaPRO como aplicativo (ícone + tela cheia + abre offline) -->
   <script>

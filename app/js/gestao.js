@@ -129,6 +129,7 @@
     galeria: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
     tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     ajuda: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    bim: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/><path d="M12 12L3 7"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     epi: '<path d="M12 2l7 3v6c0 4.5-3 8.3-7 9-4-.7-7-4.5-7-9V5l7-3z"/><path d="M9 12l2 2 4-4"/>',
@@ -153,6 +154,7 @@
       { id: "estoque", nome: "Estoque" },
       { id: "rdo", nome: "Diário (RDO)" },
       { id: "galeria", nome: "Galeria de Fotos" },
+      { id: "bim", nome: "BIM 3D / 4D" },
       { id: "colaboradores", nome: "Colaboradores" },
       { id: "epi", nome: "EPI" },
       { id: "ponto", nome: "Ponto / Folha" },
@@ -201,6 +203,7 @@
         case "estoque": return this.renderEstoque();
         case "rdo": return this.renderRdo();
         case "galeria": return this.renderGaleria();
+        case "bim": return this.renderBim();
         case "colaboradores": return this.renderColaboradores();
         case "epi": return this.renderEpi();
         case "ponto": return this.renderPonto();
@@ -1079,6 +1082,105 @@
         corpo += "</div>";
       });
       this._abrirDoc("Relatório Fotográfico — " + (obra.nome || ""), this._docShell("RELATÓRIO FOTOGRÁFICO", "#0f2740", corpo));
+    },
+
+    // =================== BIM 3D / 4D ===================
+    // Aba BIM na Gestão: monta o viewer in-app (js/bim.js → window.BIM) num canvas
+    // e sobrepõe o timeline 4D (motor BIM4D). Cadeia in-app 100% minha; o bim/bim.html
+    // da NF8n fica como demo standalone dela. Sem viewer carregado → aviso amigável.
+    renderBim: function () {
+      var self = this, obras = lista("obras");
+      if (this._bimSel == null) this._bimSel = (obras.filter(function (o) { return o.orcamentoId; })[0] || obras[0] || {}).id || "";
+      var sel = '<select data-gacao="bim-troca-obra" style="max-width:260px">' +
+        '<option value="">— sem cronograma (sequência padrão) —</option>' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
+      var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel;
+      var html = this._head(svg("bim") + "BIM 3D / 4D", "", "", extra);
+      html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
+      html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px">' +
+        '<div id="bim-canvas" style="width:100%;height:min(64vh,580px);position:relative;background:#0b1a2b;display:flex;align-items:center;justify-content:center">' +
+        '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px"><div style="font-size:34px;margin-bottom:8px">🏗️</div>Carregando o visualizador 3D…</div>' +
+        '<div id="bim-info" style="position:absolute;left:10px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
+        "</div></div>";
+      html += '<div class="card" id="bim-4d" style="display:none">' +
+        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🎬 Simulação 4D <span class="muted" style="font-weight:400;font-size:13px">— avanço da obra no tempo</span></h3>' +
+        '<span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></div>' +
+        '<div class="flex" style="gap:10px;align-items:center">' +
+        '<button class="btn sm" id="bim-play">▶ Play</button>' +
+        '<input type="range" id="bim-slider" min="0" max="100" value="0" style="flex:1">' +
+        '<span id="bim-semana" class="muted" style="min-width:130px;text-align:right;font-size:13px">Semana 0</span></div>' +
+        '<div id="bim-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:12px"></div>' +
+        "</div>";
+      html += "</div>";
+      html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
+      return html;
+    },
+    bimTrocaObra: function (obraId) { this._bimSel = obraId; if (this._bimElementos && this._bimElementos.length) this._bimReplanejar(); },
+    _bimReplanejar: function () {
+      if (!this._bimElementos || !this._bimElementos.length) return;
+      var crono = null, obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (obra && obra.orcamentoId && Store.obterOrcamento && typeof Cronograma !== "undefined" && Cronograma.estimar) {
+        var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
+        if (orc) { try { crono = Cronograma.estimar(orc).etapas; } catch (e) { crono = null; } }
+      }
+      this._bimPlano = BIM4D.planejar(this._bimElementos, crono);
+      this._bimRenderTimeline();
+    },
+    _bimRenderTimeline: function () {
+      var p = this._bimPlano; if (!p) return;
+      var sl = document.getElementById("bim-slider"); if (sl) { sl.max = String(p.semanas); sl.value = String(p.semanas); }
+      var leg = document.getElementById("bim-legenda");
+      if (leg) leg.innerHTML = p.fases.map(function (f) {
+        return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:' + f.cor + ';display:inline-block"></span>' + Util.esc(f.nome) + ' <span class="muted">(' + f.qtd + ")</span></span>";
+      }).join("");
+      var box = document.getElementById("bim-4d"); if (box) box.style.display = "";
+      this._bimAplicarSemana(p.semanas);
+    },
+    _bimAplicarSemana: function (sem) {
+      var p = this._bimPlano; if (!p) return;
+      sem = Math.max(0, Math.min(p.semanas, +sem || 0));
+      var est = BIM4D.estadoEm(p, sem);
+      if (window.BIM && BIM.aplicarEstado) { try { BIM.aplicarEstado(est); } catch (e) {} }
+      var av = document.getElementById("bim-avanco"); if (av) av.textContent = BIM4D.avancoEm(p, sem) + "%";
+      var lb = document.getElementById("bim-semana"); if (lb) lb.textContent = "Semana " + sem + " / " + p.semanas;
+    },
+    _bimWire: function () {
+      var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
+      // slider + play
+      var sl = document.getElementById("bim-slider");
+      if (sl) sl.oninput = function () { self._bimAplicarSemana(+sl.value); };
+      var play = document.getElementById("bim-play");
+      if (play) play.onclick = function () {
+        if (self._bimTimer) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
+        play.textContent = "⏸ Pausar"; var s0 = document.getElementById("bim-slider"); if (s0 && +s0.value >= +s0.max) s0.value = "0";
+        self._bimTimer = setInterval(function () {
+          var s = document.getElementById("bim-slider"); if (!s) { clearInterval(self._bimTimer); self._bimTimer = null; return; }
+          var v = +s.value + 1; if (v > +s.max) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
+          s.value = String(v); self._bimAplicarSemana(v);
+        }, 700);
+      };
+      // monta o viewer (js/bim.js é módulo ES — pode não ter carregado ainda; poll curto)
+      var tentativas = 0;
+      function montarViewer() {
+        if (window.BIM && BIM.montar) {
+          var aviso = document.getElementById("bim-aviso"); if (aviso) aviso.style.display = "none";
+          BIM.montar(canvas, {
+            onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }); self._bimReplanejar(); },
+            onPick: function (info) {
+              var box = document.getElementById("bim-info"); if (!box) return;
+              if (!info) { box.style.display = "none"; return; }
+              box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
+            }
+          });
+          // re-home: se o modelo já estava carregado (reentrou na aba / App.render), o onLoaded não
+          // refira — re-popula o timeline 4D a partir do que o viewer já tem.
+          try { var jaCarregado = BIM.elementos; if (jaCarregado && jaCarregado.length) { self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }); self._bimReplanejar(); } } catch (e) {}
+          return;
+        }
+        if (tentativas++ < 60) setTimeout(montarViewer, 200);
+        else { var a = document.getElementById("bim-aviso"); if (a) a.innerHTML = '<div style="font-size:34px;margin-bottom:8px">🏗️</div>Não consegui iniciar o visualizador 3D. Atualize o app para a versão mais recente e tente de novo; se persistir, abra um IFC em outro navegador.'; }
+      }
+      montarViewer();
     },
 
     // =================== TAREFAS ===================
@@ -2008,7 +2110,7 @@ renderRequisicoes: function () {
         + '<div id="bi-res"></div>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -2917,9 +3019,10 @@ renderRelatorios: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
+        case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
