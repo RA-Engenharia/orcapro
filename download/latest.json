@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.32",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.32/OrcaPRO-IA-update-v1.1.32.zip",
-  "notas": "IA do Escopo Inteligente mais precisa (modelo forte nas tarefas pesadas), códigos de etapa sem duplicar ao remover/criar, unidade separada do número nas planilhas e melhorias no relatório. E o site ganhou demonstração AO VIVO da Gestão de Obras.",
+  "versao": "1.1.33",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.33/OrcaPRO-IA-update-v1.1.33.zip",
+  "notas": "Diário de obra IMPRESSO profissional (fotos com legendas, ocorrências destacadas e campo de assinaturas), centro de custos com rateio correto, aprovação de requisições valendo de verdade e nota fiscal XML gravando no módulo fiscal.",
   "obrigatoria": false
 }

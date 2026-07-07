@@ -881,11 +881,60 @@
         var clima = rot(P.rdoClima, r.climaManha) + (r.climaTarde && r.climaTarde !== r.climaManha ? " / " + rot(P.rdoClima, r.climaTarde) : "");
         var resumo = (r.atividades || "").replace(/\s+/g, " ").slice(0, 60) + ((r.atividades || "").length > 60 ? "…" : "");
         var nf = (r.fotos && r.fotos.length) ? ' <span title="fotos anexadas" style="color:#2e6f9e;font-weight:700">📷' + r.fotos.length + "</span>" : "";
-        var acao = r.status === "rascunho" ? '<button class="btn sm success" data-gacao="finalizar-rdo" data-id="' + r.id + '">Finalizar</button>' : "✓";
+        var acao = (r.status === "rascunho" ? '<button class="btn sm success" data-gacao="finalizar-rdo" data-id="' + r.id + '">Finalizar</button> ' : "✓ ")
+          + '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">🖨</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + pill(r.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
+    // RDO ENTREGÁVEL (benchmark concorrência): diário impresso profissional —
+    // identificação completa, clima/efetivo, atividades, ocorrências em destaque,
+    // FOTOS com legenda e campo de assinaturas. É o documento que protege o
+    // engenheiro em juízo e impressiona a fiscalização.
+    imprimirRdo: function (id) {
+      var r = Store.obter(eid(), "rdo", id); if (!r) return;
+      var ob = Store.obter(eid(), "obras", r.obraId) || {};
+      var cli = ob.clienteId ? (Store.obter(eid(), "clientes", ob.clienteId) || {}) : {};
+      var ct = lista("contratos").filter(function (c) { return c.obraId === r.obraId; })[0] || {};
+      var dt = r.data ? new Date(r.data + "T00:00:00") : null;
+      var dataExt = dt ? dt.toLocaleDateString("pt-BR") + " (" + dt.toLocaleDateString("pt-BR", { weekday: "long" }) + ")" : "—";
+      var efDir = Util.num(r.efetivoDireto), efInd = Util.num(r.efetivoIndireto);
+      function linhaId(rot2, val) { return '<tr><td style="padding:3px 8px;color:#666;white-space:nowrap">' + rot2 + '</td><td style="padding:3px 8px;font-weight:700">' + Util.esc(val || "—") + "</td></tr>"; }
+      function bloco(tit, txt, borda) {
+        return '<div style="margin-top:10px;border:1px solid ' + (borda || "#ddd") + ';border-radius:6px;overflow:hidden">'
+          + '<div style="background:#f1f5f9;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">' + tit + "</div>"
+          + '<div style="padding:8px 10px;white-space:pre-wrap;min-height:26px">' + Util.esc(txt || "—") + "</div></div>";
+      }
+      var temOcorrencia = r.ocorrencias && !/^sem ocorr/i.test(String(r.ocorrencias).trim());
+      var corpo =
+        '<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #ddd;border-radius:6px">'
+        + linhaId("Obra", ob.nome) + linhaId("Cliente", cli.nome || ob.clienteNome)
+        + linhaId("Local", ob.endereco || ob.local) + (ct.numero ? linhaId("Contrato", ct.numero) : "")
+        + linhaId("Data", dataExt) + linhaId("Responsável", r.responsavel || ob.responsavel)
+        + "</table>"
+        + '<div style="display:flex;gap:10px;margin-top:10px;font-size:12px">'
+        + '<div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>Clima</b><br>Manhã: ' + Util.esc(rot(P.rdoClima, r.climaManha) || "—") + '<br>Tarde: ' + Util.esc(rot(P.rdoClima, r.climaTarde) || "—") + "</div>"
+        + '<div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>Efetivo em obra</b><br>Direto: ' + efDir + " · Indireto: " + efInd + '<br><b>Total: ' + (efDir + efInd) + " pessoas</b></div></div>"
+        + bloco("ATIVIDADES EXECUTADAS", r.atividades)
+        + bloco("OCORRÊNCIAS / OBSERVAÇÕES" + (temOcorrencia ? " ⚠" : ""), r.ocorrencias, temOcorrencia ? "#f59e0b" : "#ddd")
+        + (r.equipamentos ? bloco("EQUIPAMENTOS EM USO", r.equipamentos) : "");
+      var fotos = (r.fotos || []).filter(function (f) { return f && f.d; });
+      if (fotos.length) {
+        corpo += '<div style="margin-top:10px"><div style="font-weight:800;font-size:11px;letter-spacing:.4px;margin-bottom:6px">REGISTRO FOTOGRÁFICO (' + fotos.length + ")</div>"
+          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+        fotos.forEach(function (f, i) {
+          corpo += '<figure style="margin:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;page-break-inside:avoid">'
+            + '<img src="' + f.d + '" style="width:100%;max-height:230px;object-fit:cover;display:block">'
+            + '<figcaption style="padding:4px 8px;font-size:10px;color:#555">Foto ' + (i + 1) + (f.leg ? " — " + Util.esc(f.leg) : "") + "</figcaption></figure>";
+        });
+        corpo += "</div></div>";
+      }
+      corpo += '<div style="display:flex;gap:30px;margin-top:34px;text-align:center;font-size:11px;page-break-inside:avoid">'
+        + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(r.responsavel || ob.responsavel || "Responsável pela obra") + "<br><span style='color:#777'>Responsável pela obra</span></div></div>"
+        + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(cli.nome || ob.clienteNome || "Fiscalização / Cliente") + "<br><span style='color:#777'>Fiscalização / Cliente</span></div></div></div>";
+      this._abrirDoc("Diário de Obra " + (r.numero || ""), this._docShell("DIÁRIO DE OBRA — " + Util.esc(r.numero || ""), "#0f2740", corpo, "rdo"));
+    },
+
     novoRdo: function () { this.formRdo(null); },
     formRdo: function (r) {
       r = r || {}; var self = this, obras = lista("obras");
@@ -1410,7 +1459,8 @@ renderRequisicoes: function () {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
         var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">🖨</button> ';
         if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> ';
-        if (r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
+        if (r.status === "aprovada") acoes += '<button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
+        else if (r.status !== "comprada" && r.status !== "cancelada") acoes += '<button class="btn sm" disabled title="Aprove a requisição antes de gerar o pedido" style="opacity:.5;cursor:not-allowed">Gerar pedido</button>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
         var nItens = (r.itens && r.itens.length) || 0;
         var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "");
@@ -1579,6 +1629,7 @@ renderRequisicoes: function () {
     },
     comprarRequisicao: function (id) {
       var r = Store.obter(eid(), "requisicoes", id); if (!r) return;
+      if (r.status !== "aprovada") { UI.toast("Aprove a requisição antes de gerar o pedido.", "erro"); return; }
       var obras = lista("obras");
       var nI = (r.itens && r.itens.length) || 0;
       var corpo =
@@ -1848,17 +1899,30 @@ renderCentrocusto: function () {
       fin.forEach(function (f) {
         if (f.tipo === "despesa" && f.obraId) { realPorObra[f.obraId] = (realPorObra[f.obraId] || 0) + Util.num(f.valor); }
       });
-      var totReal = ccs.reduce(function (s, c) { return s + (realPorObra[c.obraId] || 0); }, 0);
+      // 2+ centros na mesma obra: rateio proporcional ao orçado (sem orçado → partes iguais), senão duplicaria o realizado
+      var ccPorObra = {}, orcPorObra = {};
+      ccs.forEach(function (c) {
+        if (!c.obraId) return;
+        ccPorObra[c.obraId] = (ccPorObra[c.obraId] || 0) + 1;
+        orcPorObra[c.obraId] = (orcPorObra[c.obraId] || 0) + Util.num(c.valorOrcado);
+      });
+      function realDoCentro(c) {
+        var real = realPorObra[c.obraId] || 0; if (!real) return 0;
+        var n = ccPorObra[c.obraId] || 0; if (n <= 1) return real;
+        var orcObra = orcPorObra[c.obraId];
+        return orcObra > 0 ? real * (Util.num(c.valorOrcado) / orcObra) : real / n;
+      }
+      var totReal = ccs.reduce(function (s, c) { return s + realDoCentro(c); }, 0);
       var totSaldo = totOrcado - totReal;
       var corTot = totSaldo >= 0 ? "#16a34a" : "#ef4444";
       var extra = '<span class="muted" style="margin-right:12px;align-self:center">Orçado: <b>' + Util.fmtMoeda(totOrcado) + "</b> · Realizado: <b>" + Util.fmtMoeda(totReal) + '</b> · Saldo: <b style="color:' + corTot + '">' + Util.fmtMoeda(totSaldo) + "</b></span>";
       var html = this._head(svg("centrocusto") + "Centros de Custo", "novo-centrocusto", "Novo centro", extra);
       if (!ccs.length) return html + vazioBox("Nenhum centro de custo", "novo-centrocusto", "Cadastrar primeiro");
-      html += '<table class="tbl"><thead><tr><th>Código</th><th>Nome</th><th>Tipo</th><th>Obra</th><th class="num">Orçado</th><th class="num">Realizado</th><th class="num">Saldo</th></tr></thead><tbody>';
+      html += '<table class="tbl"><thead><tr><th>Código</th><th>Nome</th><th>Tipo</th><th>Obra</th><th class="num">Orçado</th><th class="num" title="Despesas da obra no Financeiro. Obra com 2+ centros: rateio proporcional ao orçado de cada centro.">Realizado</th><th class="num">Saldo</th></tr></thead><tbody>';
       ccs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
         var orcado = Util.num(c.valorOrcado);
-        var real = realPorObra[c.obraId] || 0;
+        var real = realDoCentro(c);
         var saldo = orcado - real;
         var corSaldo = saldo >= 0 ? "#16a34a" : "#ef4444";
         html += '<tr style="cursor:pointer" data-gopen="centrocusto:' + c.id + '"><td><b>' + Util.esc(c.codigo || "—") + "</b></td><td>" + Util.esc(c.nome) + "</td><td>" + rot(P.centrocustoTipo, c.tipo) + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(orcado) + '</td><td class="num">' + Util.fmtMoeda(real) + '</td><td class="num" style="color:' + corSaldo + ';font-weight:600">' + Util.fmtMoeda(saldo) + "</td></tr>";
@@ -2155,6 +2219,7 @@ renderRelatorios: function () {
           var rd = Store.obter(eid(), "rdo", id); if (!rd) return;
           rd.status = "finalizado"; Store.salvar(eid(), "rdo", rd); App.render(); UI.toast("Diário finalizado.", "ok"); return;
         }
+        case "imprimir-rdo": return this.imprimirRdo(id);
         case "novo-colaborador": return this.novoColaborador();
         case "novo-ponto": return this.novoPonto();
         case "lancar-ponto": {
@@ -2322,10 +2387,14 @@ case "nova-folha": return this.novoFolha();
       var valor = parseFloat(String(g("vNF")).replace(",", ".")) || 0;
       var dh = g("dhEmi") || g("dEmi"); var emissao = dh ? dh.slice(0, 10) : "";
       var dup = doc.getElementsByTagName("dup")[0]; var vencimento = dup ? sub(dup, "dVenc") : "";
-      var numero = g("nNF");
+      var numero = g("nNF"), serie = g("serie"), natureza = g("natOp");
+      var chave = "";
+      var infNfe = doc.getElementsByTagName("infNFe")[0];
+      if (infNfe && infNfe.getAttribute && infNfe.getAttribute("Id")) chave = String(infNfe.getAttribute("Id")).replace(/^NFe/i, "");
+      if (!chave) chave = g("chNFe");
       var itens = [], dets = doc.getElementsByTagName("det");
       for (var i = 0; i < dets.length && i < 60; i++) { var prod = dets[i].getElementsByTagName("prod")[0]; if (prod) itens.push({ descricao: sub(prod, "xProd"), quantidade: parseFloat(sub(prod, "qCom")) || 0, unidade: sub(prod, "uCom"), valor: parseFloat(sub(prod, "vProd")) || 0 }); }
-      return { tipoLancamento: "despesa", fornecedor: forn, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
+      return { tipoLancamento: "despesa", fornecedor: forn, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave, natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
     },
     _docParaLancamento: function (dados, origem) {
       var fn = dados.fornecedor || {}, ehReceita = dados.tipoLancamento === "receita", msgCad = "";
@@ -2335,6 +2404,24 @@ case "nova-folha": return this.novoFolha();
         if (!existe) {
           Store.salvar(eid(), entidade, { nome: fn.nome, doc: fn.cnpj || "", cidade: fn.cidade || "", uf: fn.uf || "", tipo: docLimpo.length > 11 ? "PJ" : "PF", status: "ativo", origem: "documento-ia" });
           msgCad = (ehReceita ? "Cliente" : "Fornecedor") + " \"" + fn.nome + "\" cadastrado. ";
+        }
+      }
+      // NF identificada (número/chave): registra também na entidade fiscal, sem duplicar
+      if (dados.numero || dados.chave) {
+        var chaveLimpa = String(dados.chave || "").replace(/\D/g, "");
+        var jaTem = lista("fiscal").filter(function (x) {
+          var xc = String(x.chaveAcesso || "").replace(/\D/g, "");
+          if (chaveLimpa && xc) return xc === chaveLimpa;
+          return dados.numero && String(x.numero) === String(dados.numero) && (x.parceiro || "") === (fn.nome || "");
+        })[0];
+        if (!jaTem) {
+          Store.salvar(eid(), "fiscal", {
+            numero: dados.numero || "", serie: dados.serie || "", tipo: ehReceita ? "saida" : "entrada",
+            status: "emitida", naturezaOp: dados.natureza || "", parceiro: fn.nome || "", obraId: "",
+            dataEmissao: dados.emissao || "", valorProdutos: 0, valorImpostos: 0,
+            valorTotal: dados.valor || 0, chaveAcesso: dados.chave || "", origem: origem || "documento-ia"
+          });
+          msgCad += "NF registrada no Fiscal. ";
         }
       }
       this.formFinanceiro({
