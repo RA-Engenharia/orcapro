@@ -45,6 +45,8 @@
   };
 
   function num(x) { var n = parseFloat(x); return isNaN(n) ? 0 : n; }
+  function normKey(s) { return String(s == null ? "" : s).trim().toLowerCase().replace(/\s+/g, " "); }
+  function Util_arr(a) { return (a && a.length) ? a : []; }
 
   var BIM4D = {
     TIPO_CAT: TIPO_CAT, SEQUENCIA: SEQUENCIA,
@@ -101,27 +103,51 @@
     },
 
     // Plano 4D: cada elemento ganha categoria + janela (semInicio/semFim).
-    // Retorna { elementos:[{id,tipo,cat,semInicio,semFim}], semanas, fases:[{cat,nome,cor,inicio,fim,qtd}] }.
+    // PRIORIDADE: se o elemento traz `etapa` (property OrcaPRO_Etapa do exportador pyRevit),
+    // casa direto com a etapa do cronograma (EXATO) — código/nome/id/categoria. Senão, cai no
+    // mapa de tipos (catDoTipo). Carrega `codOrc` (OrcaPRO_CodOrc) p/ o 5D (custo por elemento).
+    // Retorna { elementos:[{id,tipo,cat,codOrc,exato,semInicio,semFim}], semanas, fases:[...] }.
     planejar: function (elementos, etapasCrono) {
       elementos = elementos || [];
-      var catsPresentes = {};
-      elementos.forEach(function (el) { catsPresentes[BIM4D.catDoTipo(el.tipo)] = 1; });
-      var listaCats = Object.keys(catsPresentes);
-      var fases = BIM4D._fases(listaCats, etapasCrono);
-      var semanas = 0, k;
-      for (k in fases) if (fases.hasOwnProperty(k)) semanas = Math.max(semanas, fases[k].fim);
-      if (!(semanas > 0)) semanas = 1;
-      var qtdPorCat = {};
-      var out = elementos.map(function (el) {
-        var cat = BIM4D.catDoTipo(el.tipo);
-        qtdPorCat[cat] = (qtdPorCat[cat] || 0) + 1;
-        var f = fases[cat] || { inicio: 0, fim: semanas };
-        return { id: el.id, tipo: el.tipo, cat: cat, semInicio: f.inicio, semFim: f.fim };
+      var idxEtapa = {}; // chave normalizada (código/nome/id/categoria) -> etapa do cronograma
+      Util_arr(etapasCrono).forEach(function (e) {
+        [e.codigo, e.nome, e.id, e.categoria].forEach(function (kk) { if (kk != null && kk !== "") idxEtapa[normKey(kk)] = e; });
       });
-      var resumoFases = Object.keys(fases).map(function (c) {
-        return { cat: c, nome: BIM4D.nomeCat(c), cor: BIM4D.corCat(c), inicio: fases[c].inicio, fim: fases[c].fim, qtd: qtdPorCat[c] || 0 };
+      // fallback por tipo só p/ elementos SEM etapa carimbada (ou carimbo que não casa)
+      var catsFallback = {};
+      elementos.forEach(function (el) { if (!(el.etapa && idxEtapa[normKey(el.etapa)])) catsFallback[BIM4D.catDoTipo(el.tipo)] = 1; });
+      var fasesCat = BIM4D._fases(Object.keys(catsFallback), etapasCrono);
+      var semanas = 0, k;
+      for (k in fasesCat) if (fasesCat.hasOwnProperty(k)) semanas = Math.max(semanas, fasesCat[k].fim);
+      Util_arr(etapasCrono).forEach(function (e) { semanas = Math.max(semanas, num(e.fim)); });
+      if (!(semanas > 0)) semanas = 1;
+      var agg = {}; // cat -> {inicio,fim,qtd}
+      var out = elementos.map(function (el) {
+        var e = el.etapa ? idxEtapa[normKey(el.etapa)] : null, cat, ini, fim, exato = false;
+        if (e) { cat = e.categoria || BIM4D.catDoTipo(el.tipo); ini = num(e.inicio); fim = num(e.fim); exato = true; }
+        else { cat = BIM4D.catDoTipo(el.tipo); var f = fasesCat[cat] || { inicio: 0, fim: semanas }; ini = f.inicio; fim = f.fim; }
+        if (!agg[cat]) agg[cat] = { inicio: ini, fim: fim, qtd: 0 };
+        else { agg[cat].inicio = Math.min(agg[cat].inicio, ini); agg[cat].fim = Math.max(agg[cat].fim, fim); }
+        agg[cat].qtd++;
+        return { id: el.id, tipo: el.tipo, cat: cat, codOrc: el.codOrc || "", exato: exato, semInicio: ini, semFim: fim };
+      });
+      var resumoFases = Object.keys(agg).map(function (c) {
+        return { cat: c, nome: BIM4D.nomeCat(c), cor: BIM4D.corCat(c), inicio: agg[c].inicio, fim: agg[c].fim, qtd: agg[c].qtd };
       }).sort(function (a, b) { return a.inicio - b.inicio || a.fim - b.fim; });
-      return { elementos: out, semanas: semanas, fases: resumoFases };
+      // 5D-lite: custo por etapa do cronograma (quando há orçamento vinculado) → curva físico-financeira
+      var custoFases = Util_arr(etapasCrono).map(function (e) { return { inicio: num(e.inicio), fim: num(e.fim), custo: num(e.custo) }; });
+      var custoTotal = custoFases.reduce(function (s, f) { return s + f.custo; }, 0);
+      return { elementos: out, semanas: semanas, fases: resumoFases, custoFases: custoFases, custoTotal: custoTotal };
+    },
+    // 5D-lite: custo ACUMULADO na semana W (etapas concluídas = custo cheio; em andamento = proporcional
+    // ao tempo decorrido na janela). Base = custo por etapa do Cronograma; 0 se não há orçamento vinculado.
+    custoEm: function (plano, semana) {
+      var t = 0;
+      Util_arr(plano && plano.custoFases).forEach(function (f) {
+        if (semana >= f.fim) t += f.custo;
+        else if (semana > f.inicio && f.fim > f.inicio) t += f.custo * (semana - f.inicio) / (f.fim - f.inicio);
+      });
+      return t;
     },
 
     // Estado da obra numa dada SEMANA (para o slider): construído / em andamento / futuro.
@@ -140,6 +166,15 @@
       var tot = (plano.elementos || []).length; if (!tot) return 0;
       var st = BIM4D.estadoEm(plano, semana);
       return Math.round(st.construidos.length / tot * 1000) / 10;
+    },
+    // Curva S: avanço FÍSICO (% elementos) e FINANCEIRO (% custo) semana a semana. financeiro=null sem custo.
+    curva: function (plano) {
+      var n = Math.max(1, (plano && plano.semanas) || 1), fis = [], fin = [], temCusto = plano && plano.custoTotal > 0;
+      for (var w = 0; w <= n; w++) {
+        fis.push(BIM4D.avancoEm(plano, w));
+        fin.push(temCusto ? Math.round(BIM4D.custoEm(plano, w) / plano.custoTotal * 1000) / 10 : null);
+      }
+      return { semanas: n, fisico: fis, financeiro: fin, temCusto: !!temCusto };
     }
   };
 

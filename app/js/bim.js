@@ -26,6 +26,12 @@ var TIPOS = {
   IFCCOVERING: 'Revestimento', IFCSPACE: 'Ambiente', IFCFOOTING: 'Fundação', IFCPILE: 'Estaca', IFCCURTAINWALL: 'Fachada cortina'
 };
 
+// Códigos de tipo IFC p/ ler os carimbos do exportador pyRevit (OrcaPRO_Etapa/OrcaPRO_CodOrc)
+// via relacionamento de property set. web-ifc 0.0.44 NÃO exporta essas constantes → hardcode
+// dos códigos de tipo (estáveis no schema). Traversal: IfcRelDefinesByProperties → IfcPropertySet
+// (HasProperties) → IfcPropertySingleValue(Name='OrcaPRO_Etapa').
+var IFC_RELDEFINESBYPROPERTIES = 4186316022, IFC_PROPERTYSINGLEVALUE = 3650150729;
+
 function montar(host, opts) {
   opts = opts || {};
   // RE-HOME: se já existe um viewer vivo, NÃO cria outro (senão vaza WebGLRenderer + loop RAF +
@@ -166,8 +172,9 @@ function montar(host, opts) {
       var nome = (line.Name && line.Name.value) || '—';
       var tipo = tipoCache || nomeTipo(S.api.GetLineType(S.modelID, expressID));
       var gid = (line.GlobalId && line.GlobalId.value) || '—';
-      return { id: expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '' };
-    } catch (e) { return { id: expressID, nome: '—', tipo: tipoCache || '', globalId: '' }; }
+      var cb = (S.carimbos && S.carimbos[expressID]) || {};
+      return { id: expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '', etapa: cb.etapa || '', codOrc: cb.codOrc || '' };
+    } catch (e) { return { id: expressID, nome: '—', tipo: tipoCache || '', globalId: '', etapa: '', codOrc: '' }; }
   }
   function nomeTipo(num) { var raw = ''; try { if (S.api.GetNameFromTypeCode) raw = S.api.GetNameFromTypeCode(num); } catch (_) {} return raw || ('IFC#' + num); }
 
@@ -185,16 +192,57 @@ function montar(host, opts) {
 
   async function initApi() { if (S.apiReady) return; S.api.SetWasmPath('bim/vendor/'); await S.api.Init(); S.apiReady = true; }
 
+  // Lê os carimbos do exportador pyRevit e devolve mapa expressID -> {etapa, codOrc}.
+  // Uma passada por todos os IfcRelDefinesByProperties; para cada, resolve o pset e varre
+  // seus IfcPropertySingleValue atrás de OrcaPRO_Etapa/OrcaPRO_CodOrc, atribuindo a TODOS os
+  // RelatedObjects (um rel pode carimbar vários elementos). Blindado: qualquer falha de leitura
+  // devolve o que já achou — NUNCA impede o modelo 3D de abrir (property é bônus sobre a geometria).
+  function lerCarimbosOrcaPro() {
+    var mapa = {};
+    try {
+      var rels = S.api.GetLineIDsWithType(S.modelID, IFC_RELDEFINESBYPROPERTIES);
+      var nRel = rels.size();
+      for (var i = 0; i < nRel; i++) {
+        var rel; try { rel = S.api.GetLine(S.modelID, rels.get(i), false); } catch (_) { continue; }
+        if (!rel || !rel.RelatingPropertyDefinition || !rel.RelatedObjects) continue;
+        var psetID = rel.RelatingPropertyDefinition.value; if (psetID == null) continue;
+        var pset; try { pset = S.api.GetLine(S.modelID, psetID, false); } catch (_) { continue; }
+        if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
+        var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
+        var etapa = null, cod = null;
+        for (var p = 0; p < props.length; p++) {
+          var h = props[p]; if (!h || h.value == null) continue;
+          var pv; try { pv = S.api.GetLine(S.modelID, h.value, false); } catch (_) { continue; }
+          if (!pv || pv.type !== IFC_PROPERTYSINGLEVALUE) continue;
+          var nm = pv.Name && pv.Name.value;
+          if (nm === 'OrcaPRO_Etapa' && pv.NominalValue) etapa = pv.NominalValue.value;
+          else if (nm === 'OrcaPRO_CodOrc' && pv.NominalValue) cod = pv.NominalValue.value;
+        }
+        if (etapa == null && cod == null) continue;
+        var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+        for (var o = 0; o < objs.length; o++) {
+          var oh = objs[o]; if (!oh || oh.value == null) continue;
+          var eid = oh.value; if (!mapa[eid]) mapa[eid] = {};
+          if (etapa != null) mapa[eid].etapa = etapa;
+          if (cod != null) mapa[eid].codOrc = cod;
+        }
+      }
+    } catch (e) { /* leitura de propriedades é bônus; nunca impede o modelo de abrir */ }
+    return mapa;
+  }
+
   async function carregarIFC(arrayBuffer, nome) {
     over.style.display = 'none'; loading.style.display = 'flex'; loading.querySelector('[data-l="txt"]').textContent = 'Iniciando o motor BIM…';
     try {
       await initApi();
       while (modelRoot.children.length) { var c = modelRoot.children.pop(); if (c.geometry) c.geometry.dispose(); }
-      S.meshPorId = {}; S.elementos = [];
+      S.meshPorId = {}; S.elementos = []; S.carimbos = {};
       if (S.modelID !== -1) { try { S.api.CloseModel(S.modelID); } catch (_) {} }
       loading.querySelector('[data-l="txt"]').textContent = 'Lendo geometria do IFC…';
       var data = new Uint8Array(arrayBuffer);
       S.modelID = S.api.OpenModel(data);
+      // carimbos do exportador pyRevit (OrcaPRO_Etapa/CodOrc) → 4D exato + 5D por elemento
+      S.carimbos = lerCarimbosOrcaPro();
       var nEl = 0, nTri = 0, tmpMat = new THREE.Matrix4(), matCache = {};
       function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!matCache[k]) matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return matCache[k]; }
       S.api.StreamAllMeshes(S.modelID, function (mesh) {
@@ -217,7 +265,8 @@ function montar(host, opts) {
           modelRoot.add(m); S.meshPorId[mesh.expressID] = m;
           nTri += idx.length / 3; geo.delete();
         }
-        S.elementos.push({ id: mesh.expressID, tipo: tipoNome, nome: rotuloDisciplina(tipoNome) });
+        var cb = S.carimbos[mesh.expressID] || {};
+        S.elementos.push({ id: mesh.expressID, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), etapa: cb.etapa || null, codOrc: cb.codOrc || null });
         nEl++;
       });
       hud.querySelector('[data-h="el"]').textContent = nEl.toLocaleString('pt-BR');

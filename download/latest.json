@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.37",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.37/OrcaPRO-IA-update-v1.1.37.zip",
-  "notas": "BIM 3D no OrçaPRO: visualizador de projetos IFC com modo de voo e clique nas peças, linha do tempo 4D ligada ao cronograma, e exportador IFC no pyRevit. Tudo offline, dentro do sistema.",
+  "versao": "1.1.38",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.38/OrcaPRO-IA-update-v1.1.38.zip",
+  "notas": "Interface premium em todo o sistema + BIM mais completo: 4D exato por peça (etapa carimbada no Revit), custo no tempo (5D) e curva S físico × financeiro.",
   "obrigatoria": false
 }

@@ -1104,12 +1104,13 @@
         "</div></div>";
       html += '<div class="card" id="bim-4d" style="display:none">' +
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🎬 Simulação 4D <span class="muted" style="font-weight:400;font-size:13px">— avanço da obra no tempo</span></h3>' +
-        '<span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></div>' +
+        '<span><span id="bim-custo" class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;margin-right:6px;display:none"></span><span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></span></div>' +
         '<div class="flex" style="gap:10px;align-items:center">' +
         '<button class="btn sm" id="bim-play">▶ Play</button>' +
         '<input type="range" id="bim-slider" min="0" max="100" value="0" style="flex:1">' +
         '<span id="bim-semana" class="muted" style="min-width:130px;text-align:right;font-size:13px">Semana 0</span></div>' +
         '<div id="bim-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:12px"></div>' +
+        '<div id="bim-curva" style="margin-top:12px"></div>' +
         "</div>";
       html += "</div>";
       html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
@@ -1130,11 +1131,37 @@
       var p = this._bimPlano; if (!p) return;
       var sl = document.getElementById("bim-slider"); if (sl) { sl.max = String(p.semanas); sl.value = String(p.semanas); }
       var leg = document.getElementById("bim-legenda");
-      if (leg) leg.innerHTML = p.fases.map(function (f) {
-        return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:' + f.cor + ';display:inline-block"></span>' + Util.esc(f.nome) + ' <span class="muted">(' + f.qtd + ")</span></span>";
-      }).join("");
+      if (leg) {
+        var nEx = p.elementos.filter(function (e) { return e.exato; }).length, nTot = p.elementos.length;
+        var selo = nEx
+          ? '<span title="Elementos com etapa carimbada no Revit (property OrcaPRO_Etapa) casada com o cronograma — 4D preciso, não estimado" style="display:inline-flex;align-items:center;gap:5px;background:rgba(34,197,94,.16);color:#16a34a;font-weight:700;border-radius:99px;padding:2px 10px;margin-right:6px">🏷️ 4D exato: ' + nEx + "/" + nTot + " carimbados</span>"
+          : '<span class="muted" title="Nenhum elemento carimbado — 4D estimado pela categoria do tipo IFC. Para 4D preciso, use no Revit os botões “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”." style="margin-right:6px">📐 4D estimado por tipo</span>';
+        leg.innerHTML = selo + p.fases.map(function (f) {
+          return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:' + f.cor + ';display:inline-block"></span>' + Util.esc(f.nome) + ' <span class="muted">(' + f.qtd + ")</span></span>";
+        }).join("");
+      }
       var box = document.getElementById("bim-4d"); if (box) box.style.display = "";
+      this._bimCurva = BIM4D.curva(p);
       this._bimAplicarSemana(p.semanas);
+    },
+    // Curva S: avanço físico (verde) × financeiro (azul) ao longo do tempo + marcador da semana atual.
+    _bimCurvaSvg: function (cv, semAtual) {
+      if (!cv) return "";
+      var W = 320, H = 96, pl = 30, pr = 8, pt = 8, pb = 16, iw = W - pl - pr, ih = H - pt - pb, n = cv.semanas || 1;
+      function X(w) { return pl + (w / n) * iw; }
+      function Y(v) { return pt + ih - (Math.max(0, Math.min(100, v)) / 100) * ih; }
+      function poly(arr, cor) {
+        var pts = []; for (var w = 0; w < arr.length; w++) if (arr[w] != null) pts.push(X(w).toFixed(1) + "," + Y(arr[w]).toFixed(1));
+        return pts.length ? '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + cor + '" stroke-width="2" stroke-linejoin="round"/>' : "";
+      }
+      var g = "";
+      [0, 25, 50, 75, 100].forEach(function (v) { g += '<line x1="' + pl + '" y1="' + Y(v).toFixed(1) + '" x2="' + (W - pr) + '" y2="' + Y(v).toFixed(1) + '" stroke="#e2e8f0" stroke-width="1"/><text x="' + (pl - 4) + '" y="' + (Y(v) + 3).toFixed(1) + '" text-anchor="end" font-size="8" fill="#94a3b8">' + v + "</text>"; });
+      var marca = semAtual != null ? '<line x1="' + X(semAtual).toFixed(1) + '" y1="' + pt + '" x2="' + X(semAtual).toFixed(1) + '" y2="' + (pt + ih) + '" stroke="#0f2740" stroke-width="1" stroke-dasharray="3 2"/>' : "";
+      var legFin = cv.temCusto ? '<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:2px;background:#2e6f9e;display:inline-block"></span>Financeiro (custo)</span>' : "";
+      return '<div class="muted" style="font-size:12px;margin-bottom:4px">Curva S — avanço no tempo</div>' +
+        '<svg viewBox="0 0 ' + W + " " + H + '" style="width:100%;max-width:520px;height:auto;background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:8px">' +
+        g + poly(cv.financeiro, "#2e6f9e") + poly(cv.fisico, "#16a34a") + marca + "</svg>" +
+        '<div style="display:flex;gap:14px;margin-top:5px;font-size:11px;color:#475569"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:2px;background:#16a34a;display:inline-block"></span>Físico (execução)</span>' + legFin + "</div>";
     },
     _bimAplicarSemana: function (sem) {
       var p = this._bimPlano; if (!p) return;
@@ -1142,7 +1169,14 @@
       var est = BIM4D.estadoEm(p, sem);
       if (window.BIM && BIM.aplicarEstado) { try { BIM.aplicarEstado(est); } catch (e) {} }
       var av = document.getElementById("bim-avanco"); if (av) av.textContent = BIM4D.avancoEm(p, sem) + "%";
+      // 5D-lite: custo acumulado no tempo (só quando há orçamento vinculado com custo)
+      var cst = document.getElementById("bim-custo");
+      if (cst) {
+        if (p.custoTotal > 0) { cst.style.display = ""; cst.textContent = Util.fmtMoeda(BIM4D.custoEm(p, sem)) + " / " + Util.fmtMoeda(p.custoTotal); }
+        else cst.style.display = "none";
+      }
       var lb = document.getElementById("bim-semana"); if (lb) lb.textContent = "Semana " + sem + " / " + p.semanas;
+      var cv = document.getElementById("bim-curva"); if (cv && this._bimCurva) cv.innerHTML = this._bimCurvaSvg(this._bimCurva, sem);
     },
     _bimWire: function () {
       var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
@@ -1169,7 +1203,7 @@
             onPick: function (info) {
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
-              box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
+              box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
             }
           });
           // re-home: se o modelo já estava carregado (reentrou na aba / App.render), o onLoaded não
