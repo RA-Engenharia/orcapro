@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.47",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.47/OrcaPRO-IA-update-v1.1.47.zip",
-  "notas": "Novidades: (1) NOVO módulo Last Planner (PPC) — planejamento enxuto da obra: plano da semana, lookahead de 6 semanas com gestão de restrições, % do plano concluído (PPC) e causas de não-cumprimento, com plano semanal e relatório PPC imprimíveis. (2) Importador agora ABRE .xls antigo direto (Excel binário), além de .xlsx e CSV. (3) BIM: o quantitativo mostra a dimensão alternativa por disciplina (ex.: pilar em m³ de concreto além de metro linear).",
+  "versao": "1.1.48",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.48/OrcaPRO-IA-update-v1.1.48.zip",
+  "notas": "Mais bases de preço: além de SINAPI, SEINFRA, SETOP e SUDECAP, agora você importa a base OFICIAL do seu estado (EMOP-RJ, CPOS/FDE-SP, ORSE-SE, AGETOP-GO, SEDOP-PA e outras) direto da planilha do órgão (.xlsx/.xls) — o sistema detecta as colunas (código, descrição, unidade, custo) e monta a base, sem inventar preço.",
   "obrigatoria": false
 }

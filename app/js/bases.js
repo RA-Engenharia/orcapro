@@ -24,6 +24,16 @@
       ORSE: { label: "ORSE-SE", cor: "orse" },
       SUDECAP: { label: "SUDECAP-BH", cor: "sudecap" },
       SBC: { label: "SBC", cor: "sbc" },
+      EMOP: { label: "EMOP-RJ", cor: "emop" },
+      CPOS: { label: "CPOS-SP", cor: "cpos" },
+      FDE: { label: "FDE-SP", cor: "fde" },
+      AGETOP: { label: "AGETOP-GO", cor: "agetop" },
+      SEDOP: { label: "SEDOP-PA", cor: "sedop" },
+      CEHOP: { label: "CEHOP-SE", cor: "cehop" },
+      IOPES: { label: "IOPES-ES", cor: "iopes" },
+      DEINFRA: { label: "DEINFRA-SC", cor: "deinfra" },
+      DER: { label: "DER (rodovias)", cor: "der" },
+      CDHU: { label: "CDHU-SP", cor: "cdhu" },
       PROPRIA: { label: "Própria", cor: "proprio" }
     },
 

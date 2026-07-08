@@ -145,14 +145,16 @@
           '<td><label style="cursor:pointer"><input type="checkbox" data-base-toggle="' + Util.esc(b.fonte) + '"' + (b.ativa ? " checked" : "") + '> ativa</label></td>' +
           '<td class="right">' + (b.fonte !== "SINAPI" ? '<button class="btn sm danger" data-base-remover="' + Util.esc(b.fonte) + '">remover</button>' : '') + '</td></tr>';
       }).join("");
-      var opts = ["SICRO", "SEINFRA", "SETOP", "ORSE", "SUDECAP", "SBC", "PROPRIA"].map(function (x) { return '<option value="' + x + '">' + x + '</option>'; }).join("");
+      var fontes = (typeof Bases !== "undefined" && Bases.META) ? Object.keys(Bases.META).filter(function (k) { return k !== "SINAPI"; }) : ["SICRO", "SEINFRA", "SETOP", "ORSE", "SUDECAP", "SBC", "PROPRIA"];
+      var opts = fontes.map(function (x) { var m = (typeof Bases !== "undefined" && Bases.META && Bases.META[x]) || {}; return '<option value="' + x + '">' + Util.esc(m.label || x) + '</option>'; }).join("");
       return '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
         '<table class="tbl"><thead><tr><th>Base</th><th>Competência/UF</th><th class="num">Itens</th><th>Status</th><th></th></tr></thead><tbody>' +
         (rows || '<tr><td colspan="5">—</td></tr>') + '</tbody></table>' +
         '<h3 style="margin:18px 0 8px">Importar base extra</h3>' +
+        '<p class="muted" style="font-size:12px;margin:-2px 0 8px">Carregue a <b>planilha oficial da base do seu estado</b> (EMOP-RJ, CPOS/FDE-SP, ORSE-SE, AGETOP-GO…). O detector reconhece as colunas (código, descrição, unidade, custo) sozinho — nada é inventado.</p>' +
         '<div class="row"><div class="field"><label>Fonte</label><select id="tab-fonte">' + opts + '</select></div>' +
         '<div class="field"><label>UF (opcional)</label><input id="tab-uf" placeholder="MG"></div></div>' +
-        '<div class="field"><label>Arquivo (JSON do fetcher do ERP ou CSV)</label><input type="file" id="tab-file" accept=".json,.csv,.txt"></div>' +
+        '<div class="field"><label>Arquivo (planilha oficial: Excel .xlsx/.xls, CSV, ou JSON do fetcher)</label><input type="file" id="tab-file" accept=".xlsx,.xls,.json,.csv,.txt"></div>' +
         '<div class="field"><label>ou cole o conteúdo (JSON, ou CSV: Código;Descrição;Custo)</label><textarea id="tab-text" rows="3"></textarea></div>' +
         '<h3 style="margin:18px 0 6px">📦 Bases prontas (1 clique, já inclusas no app)</h3>' +
         '<div class="flex" style="flex-wrap:wrap;gap:8px;margin-bottom:6px">' +

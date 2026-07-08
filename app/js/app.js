@@ -770,8 +770,48 @@
         UI.toast(r.total.toLocaleString("pt-BR") + " itens de " + r.fonte + " importados" + (grav.ok ? "." : " — " + grav.erro), grav.ok ? "ok" : "erro");
         self.abrirTabelas();
       };
+      // Planilha OFICIAL da base (Excel .xlsx/.xls): reusa o importador (detecta as colunas
+      // código/descrição/unidade/custo) → base plana. Assim o usuário carrega EMOP/CPOS/FDE/ORSE…
+      // com o arquivo verdadeiro do órgão — nada inventado.
+      if (f && /\.(xlsx|xls)$/i.test(f.name)) {
+        UI.toast("Lendo a planilha da base…", "ok");
+        self._lerPlanilha(f, function (matriz, erro) {
+          if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+          var dados = self._baseItensDaMatriz(matriz, fonte);
+          if (!dados.length) { UI.toast("Nenhum item de preço reconhecido (preciso de código/descrição + custo).", "erro"); return; }
+          Bases.registrar(fonte, { dados: dados, uf: uf });
+          var grav = Bases.persistir(Auth.empresaId());
+          UI.toast(dados.length.toLocaleString("pt-BR") + " itens de " + String(fonte).toUpperCase() + " importados da planilha" + (grav.ok ? "." : " — " + grav.erro), grav.ok ? "ok" : "erro");
+          self.abrirTabelas();
+        });
+        return;
+      }
       if (f) { var rd = new FileReader(); rd.onload = function () { concluir(rd.result, f.name); }; rd.onerror = function () { UI.toast("Falha ao ler arquivo.", "erro"); }; rd.readAsText(f); }
       else { concluir((UI.el("tab-text") || {}).value, "colado.txt"); }
+    },
+    // Converte a matriz de uma planilha em itens de BASE (lista plana com custo unitário),
+    // reusando o DETECTOR DE COLUNAS do importador — mas lê o código CRU (bases usam formatos
+    // próprios: EMOP "C-100", ORSE "01.001.0001", CPOS "39.05.010" — não o padrão SINAPI, então
+    // não passo pelo filtro ehCodSinapi). Não inventa preço: item sem custo entra com 0.
+    _baseItensDaMatriz: function (matriz, fonte) {
+      if (typeof Importador === "undefined" || !Importador._detectarColunas) return [];
+      var linhas = (matriz || []).filter(function (r) { return r && r.some(function (c) { return String(c == null ? "" : c).trim() !== ""; }); });
+      if (!linhas.length) return [];
+      var nCols = 0; linhas.forEach(function (r) { if (r.length > nCols) nCols = r.length; });
+      var hIdx = Importador._acharCabecalho(linhas, nCols);
+      var cols = Importador._detectarColunas(linhas, hIdx, nCols);
+      if (cols.descricao == null && cols.codigo == null) return [];
+      var start = hIdx >= 0 ? hIdx + 1 : 0, itens = [], f = String(fonte || "PROPRIA").toUpperCase();
+      var col = function (row, c) { return c != null ? String(Importador._txt(row[c])).trim() : ""; };
+      for (var i = start; i < linhas.length; i++) {
+        var row = linhas[i];
+        var cod = col(row, cols.codigo), desc = col(row, cols.descricao);
+        if (!cod && !desc) continue;
+        var custo = cols.custoUnit != null ? Importador._num(row[cols.custoUnit]) : (cols.custoTotal != null ? Importador._num(row[cols.custoTotal]) : 0);
+        if (!(custo > 0) && !cod) continue; // linha sem custo e sem código = provável total/rodapé
+        itens.push({ codigo: cod, descricao: desc, unidade: col(row, cols.unidade) || "un", custoUnitario: custo > 0 ? Math.round(custo * 100) / 100 : 0, origem: f, tipoItem: "composicao" });
+      }
+      return itens;
     },
 
     alternarTema: function () {
