@@ -73,7 +73,7 @@
         '<button class="topbar-burger" data-acao="menu" aria-label="Menu de módulos" title="Módulos">☰</button>' +
         '<div class="logo" style="display:flex;align-items:center;gap:10px">' +
           '<svg width="34" height="34" viewBox="0 0 100 100" style="flex:none"><defs><linearGradient id="tbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#tbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M73 10 l2.4 5.1 5.6 .7 -4.1 3.9 1 5.6 -4.9 -2.7 -4.9 2.7 1 -5.6 -4.1 -3.9 5.6 -.7z" fill="#9be7af"/></svg>' +
-          '<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + '</small></div>' +
+          '<div style="display:flex;flex-direction:column;line-height:1.05">' + CONFIG.marca.logoTexto + '<small>' + CONFIG.marca.slogan + ' · <span style="opacity:.85">v' + CONFIG.versao + '</span></small></div>' +
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
         '<span class="spacer"></span>' +
@@ -105,6 +105,8 @@
             '<button class="conta-item" data-acao="tema"><span>◐</span>Tema claro / escuro</button>' +
             '<div class="conta-sep"></div>' +
             '<button class="conta-item sair" data-acao="logout"><span>🚪</span>Sair</button>' +
+            '<div class="conta-sep"></div>' +
+            '<div style="padding:4px 12px 6px;font-size:11.5px;color:var(--texto-fraco);text-align:center">' + Util.esc(CONFIG.marca.nomeProduto || "OrçaPRO IA") + ' · <b>v' + Util.esc(CONFIG.versao) + '</b></div>' +
           '</div>' +
         '</div>';
     },
@@ -789,9 +791,12 @@
     // ---------- Agente Importador: preview + mapeamento de colunas ----------
     renderImportPreview: function (imp, semWrap) {
       var res = imp.res, mat = imp.matriz || [];
-      var nCols = 0; mat.forEach(function (r) { if (r.length > nCols) nCols = r.length; });
-      var hdr = (res.headerRow >= 0) ? (mat[res.headerRow] || []) : [];
-      function letra(i) { return i < 26 ? String.fromCharCode(65 + i) : "C" + (i + 1); }
+      // headerRow é índice do array SEM linhas vazias (o Importador filtra) — filtrar igual aqui,
+      // senão o rótulo da coluna sai da linha errada quando há linha em branco no topo (comum no Excel).
+      var matNV = mat.filter(function (r) { return r && r.some(function (c) { return String(Importador._txt(c)).trim() !== ""; }); });
+      var nCols = 0; matNV.forEach(function (r) { if (r.length > nCols) nCols = r.length; });
+      var hdr = (res.headerRow >= 0) ? (matNV[res.headerRow] || []) : [];
+      function letra(i) { var s = ""; i++; while (i > 0) { var m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; }
       function colLabel(i) { var h = hdr[i] != null ? String(Importador._txt(hdr[i])).trim() : ""; return letra(i) + (h ? ": " + h : ""); }
       var roles = [["codigo", "Código"], ["descricao", "Descrição"], ["unidade", "Unidade"], ["quantidade", "Quantidade"], ["custoUnit", "Custo unit."], ["custoTotal", "Custo total"]];
       function selCol(role) {
@@ -807,11 +812,13 @@
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">' + roles.map(selCol).join("") + "</div>";
       html += '<input id="imp-header" type="hidden" value="' + (res.headerRow != null ? res.headerRow : -1) + '">';
       if (res.avisos && res.avisos.length) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;padding:8px 12px;margin-bottom:12px;font-size:12.5px;color:#92400e">⚠️ ' + res.avisos.map(function (a) { return Util.esc(a); }).join("<br>⚠️ ") + "</div>";
-      var prev = [];
+      var prev = [], nP = 0, LIMP = 40, cortou = false;
       Util.arr(res.etapas).forEach(function (e) {
+        if (nP >= LIMP) { cortou = true; return; }   // não empurra cabeçalho de etapa depois do limite (senão sobram etapas vazias)
         prev.push('<tr class="etapa-row"><td colspan="5"><b>' + Util.esc((e.codigo ? e.codigo + " · " : "") + e.nome) + "</b></td></tr>");
-        Util.arr(e.itens).forEach(function (it) { if (prev.length > 45) return; prev.push("<tr><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(it.unidade) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); });
+        Util.arr(e.itens).forEach(function (it) { if (nP >= LIMP) { cortou = true; return; } prev.push("<tr><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(it.unidade) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); nP++; });
       });
+      if (cortou) prev.push('<tr><td colspan="5" class="muted" style="text-align:center">… e mais ' + Math.max(0, res.resumo.itens - nP) + ' item(ns) — mostrando os ' + nP + ' primeiros</td></tr>');
       html += '<div style="max-height:300px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table class="tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Custo unit.</th></tr></thead><tbody>' + (prev.join("") || '<tr><td colspan="5" class="muted">Nada detectado — ajuste o mapeamento.</td></tr>') + "</tbody></table></div>";
       html += '<p class="muted" style="font-size:11px;margin:8px 0 0">Ao importar: itens com <b>código SINAPI válido</b> são casados na base (o preço oficial preenche o que estiver vazio na planilha); os demais entram como <b>itens próprios</b> com os valores da planilha. Nenhum código é inventado.</p>';
       return semWrap ? html : '<div id="imp-body">' + html + "</div>";

@@ -1545,21 +1545,27 @@
       fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
       fr.readAsArrayBuffer(file);
     },
-    // CSV simples (detecta ; ou , como separador; respeita aspas)
+    // CSV (detecta ; ou , como separador). Varredura char-a-char sobre o TEXTO INTEIRO,
+    // mantendo o estado de aspas ATRAVÉS das quebras de linha — descrição multi-linha entre
+    // aspas (o que o Excel gera) é CSV válido e NÃO pode rasgar o registro.
     _parseCSV: function (txt) {
       txt = String(txt).replace(/\r\n?/g, "\n");
-      var linhas = txt.split("\n").filter(function (l) { return l.trim() !== ""; });
-      if (!linhas.length) return [];
-      var delim = (linhas[0].split(";").length > linhas[0].split(",").length) ? ";" : ",";
-      return linhas.map(function (line) {
-        var out = [], cur = "", q = false;
-        for (var i = 0; i < line.length; i++) { var ch = line[i];
-          if (ch === '"') { if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
-          else if (ch === delim && !q) { out.push(cur); cur = ""; }
-          else cur += ch;
-        }
-        out.push(cur); return out;
-      });
+      if (!txt.trim()) return [];
+      // separador pela 1ª linha não-vazia, IGNORANDO conteúdo entre aspas (vírgula dentro de
+      // aspas não conta) — senão um cabeçalho com campo citado contendo vírgula erra o delimitador.
+      var linhasTxt = txt.split("\n"), prim = "";
+      for (var pi = 0; pi < linhasTxt.length; pi++) { if (linhasTxt[pi].trim()) { prim = linhasTxt[pi].replace(/"[^"]*"/g, ""); break; } }
+      var delim = (prim.split(";").length > prim.split(",").length) ? ";" : ",";
+      var linhas = [], linha = [], cur = "", q = false;
+      for (var i = 0; i < txt.length; i++) {
+        var ch = txt[i];
+        if (ch === '"') { if (q && txt[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+        else if (ch === delim && !q) { linha.push(cur); cur = ""; }
+        else if (ch === "\n" && !q) { linha.push(cur); linhas.push(linha); linha = []; cur = ""; }
+        else cur += ch;
+      }
+      if (cur !== "" || linha.length) { linha.push(cur); linhas.push(linha); }
+      return linhas.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ""; }); });
     },
     _abrirImportPreview: function () {
       var self = this;
@@ -1591,10 +1597,15 @@
           var base = (temSinapi && it.codigo) ? Sinapi.obter(it.codigo) : null, sinapiItem;
           if (base) {
             casados++;
+            var baseUnit = Util.num(base.custoUnitario);
+            var usarUnit = it.custoUnitario > 0 ? it.custoUnitario : baseUnit;
+            // se o preço da planilha diverge da base, RATEIA MO/MAT/EQ pelo fator → a composição
+            // (MO+MAT+EQ) fica coerente com o custo direto (senão o relatório SINAPI desbate).
+            var fator = (baseUnit > 0 && usarUnit > 0) ? usarUnit / baseUnit : 1;
             sinapiItem = { codigo: base.codigo, baseFonte: base.baseFonte || null,
               descricao: it.descricao || base.descricao, unidade: it.unidade || base.unidade,
-              custoUnitario: it.custoUnitario > 0 ? it.custoUnitario : Util.num(base.custoUnitario),
-              custoMO: Util.num(base.custoMO), custoMAT: Util.num(base.custoMAT), custoEQ: Util.num(base.custoEQ) };
+              custoUnitario: usarUnit,
+              custoMO: Util.num(base.custoMO) * fator, custoMAT: Util.num(base.custoMAT) * fator, custoEQ: Util.num(base.custoEQ) * fator };
           } else {
             proprios++;
             sinapiItem = { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: Util.num(it.custoUnitario) };
