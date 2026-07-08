@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.43",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.43/OrcaPRO-IA-update-v1.1.43.zip",
-  "notas": "Interface do sistema ainda mais premium: mais profundidade nos cartões e indicadores, acabamento nos botões e leitura reforçada dos valores em R$ (claro e escuro). Importador de planilha mais esperto: reconhece as etapas quando o número e o nome vêm juntos na mesma coluna do Excel (formato de export analítico, como '1.0 Serviços preliminares'), agrupando os itens na etapa certa — antes caíam todos num grupo só.",
+  "versao": "1.1.44",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.44/OrcaPRO-IA-update-v1.1.44.zip",
+  "notas": "Importador mais inteligente com planilhas de várias abas: agora o sistema identifica automaticamente a aba do ORÇAMENTO (Analítica) mesmo quando há abas maiores no arquivo (Composições, Memória de Cálculo). E, se precisar, você troca a aba na hora da importação, num seletor no topo do preview.",
   "obrigatoria": false
 }

@@ -1515,10 +1515,10 @@
         var f = inp.files && inp.files[0]; if (!f) return;
         if (f.size > 25 * 1024 * 1024) { UI.toast("Planilha muito grande (máx. 25 MB). Reduza ou divida o arquivo.", "erro"); return; }
         UI.toast("Lendo a planilha…", "ok");
-        self._lerPlanilha(f, function (matriz, erro) {
+        self._lerPlanilha(f, function (matriz, erro, meta) {
           if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
           var res = Importador.analisar(matriz);
-          self._imp = { matriz: matriz, nome: f.name, res: res };
+          self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
           self._abrirImportPreview();
         });
       };
@@ -1533,17 +1533,43 @@
           try {
             var wb = new ExcelJS.Workbook();
             wb.xlsx.load(fr.result).then(function () {
-              var ws = null; wb.worksheets.forEach(function (w) { if (!ws || (w.rowCount || 0) > (ws.rowCount || 0)) ws = w; });
-              if (!ws) { cb(null, "planilha sem abas legíveis"); return; }
-              var m = [];
-              ws.eachRow({ includeEmpty: true }, function (row) { var r = []; row.eachCell({ includeEmpty: true }, function (cell) { r.push(cell.value); }); m.push(r); });
-              cb(m);
+              function matDe(w) { var m = []; w.eachRow({ includeEmpty: true }, function (row) { var r = []; row.eachCell({ includeEmpty: true }, function (cell) { r.push(cell.value); }); m.push(r); }); return m; }
+              // Planilha profissional traz VÁRIAS abas (Resumo, Sintética, Analítica, Composições…).
+              // A MAIOR não é o orçamento: "Composições Unitárias" (85 linhas de insumos) > "Analítica"
+              // (63). Elege a aba que o Importador melhor reconhece como ORÇAMENTO e guarda as demais
+              // pro usuário trocar no preview (seletor de aba).
+              var abas = [];
+              (wb.worksheets || []).forEach(function (w) { var m = matDe(w); if (m.length) abas.push({ nome: String(w.name || ("Aba " + (abas.length + 1))), matriz: m }); });
+              if (!abas.length) { cb(null, "planilha sem abas legíveis"); return; }
+              var idx = App._melhorAba(abas);
+              cb(abas[idx].matriz, null, { abas: abas, idx: idx });
             }).catch(function (e) { cb(null, String(e && e.message || e)); });
           } catch (e) { cb(null, String(e && e.message || e)); }
         });
       };
       fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
       fr.readAsArrayBuffer(file);
+    },
+    // Multi-aba: elege a aba que MAIS parece um ORÇAMENTO (não a maior). Roda o próprio
+    // Importador em cada aba e pontua: confiança manda; estrutura de etapas REAIS desempata
+    // forte (aba de composição/insumo é plana → cai no fallback "Serviços" e perde); itens é
+    // desempate leve. Empate/erro → índice 0. O usuário ainda pode trocar a aba no preview.
+    _melhorAba: function (abas) {
+      var best = 0, bestScore = -1;
+      for (var i = 0; i < abas.length; i++) {
+        var sc = -1;
+        try {
+          var r = Importador.analisar(abas[i].matriz);
+          var itens = 0, reais = 0;
+          Util.arr(r.etapas).forEach(function (e) {
+            itens += Util.arr(e.itens).length;
+            if ((e.codigo && /\d/.test(e.codigo)) || (e.nome && e.nome !== "Serviços")) reais++;
+          });
+          sc = (r.confianca || 0) * 1000 + reais * 100 + Math.min(itens, 99);
+        } catch (e) {}
+        if (sc > bestScore) { bestScore = sc; best = i; }
+      }
+      return best;
     },
     // CSV (detecta ; ou , como separador). Varredura char-a-char sobre o TEXTO INTEIRO,
     // mantendo o estado de aspas ATRAVÉS das quebras de linha — descrição multi-linha entre
@@ -1568,8 +1594,15 @@
       return linhas.filter(function (r) { return r.some(function (c) { return String(c).trim() !== ""; }); });
     },
     _abrirImportPreview: function () {
-      var self = this;
-      UI.modal("📊 Importar planilha — " + Util.esc(self._imp.nome || ""), UI.renderImportPreview(self._imp), [
+      var self = this, imp = self._imp, picker = "";
+      if (imp.abas && imp.abas.length > 1) {
+        var opts = imp.abas.map(function (a, i) { return '<option value="' + i + '"' + (i === imp.abaIdx ? " selected" : "") + ">" + Util.esc(a.nome) + "</option>"; }).join("");
+        picker = '<div class="card" style="background:#eff6ff;border-color:#bfdbfe;padding:8px 12px;margin-bottom:10px;font-size:12.5px;color:#1e3a5f">' +
+          "📑 Esta planilha tem <b>" + imp.abas.length + " abas</b>. Importando de " +
+          '<select id="imp-aba" style="margin:0 6px;padding:2px 6px;font-size:12.5px">' + opts + "</select>" +
+          '<span class="muted">— se não for a aba do orçamento, troque e clique <b>🔄 Reanalisar</b>.</span></div>';
+      }
+      UI.modal("📊 Importar planilha — " + Util.esc(imp.nome || ""), picker + UI.renderImportPreview(imp), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "🔄 Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
         { texto: "✅ Importar como orçamento", classe: "success", onClick: function () { self.criarOrcamentoDaImportacao(); } }
@@ -1577,11 +1610,23 @@
     },
     importRemapear: function () {
       if (!this._imp) return;
+      var imp = this._imp;
+      // Troca de aba (planilha multi-aba): reanalisa a aba escolhida DO ZERO (auto-detecção limpa —
+      // o mapeamento de colunas anterior era da outra aba e não vale mais).
+      var selAba = document.getElementById("imp-aba");
+      if (selAba && imp.abas) {
+        var ai = parseInt(selAba.value, 10); if (isNaN(ai)) ai = imp.abaIdx;
+        if (imp.abas[ai] && ai !== imp.abaIdx) {
+          imp.abaIdx = ai; imp.matriz = imp.abas[ai].matriz; imp.res = Importador.analisar(imp.matriz);
+          var body0 = document.getElementById("imp-body"); if (body0) body0.innerHTML = UI.renderImportPreview(imp, true);
+          return;
+        }
+      }
       var roles = ["codigo", "descricao", "unidade", "quantidade", "custoUnit", "custoTotal"], cols = {};
       roles.forEach(function (r) { var s = document.getElementById("imp-col-" + r); cols[r] = (s && s.value !== "") ? parseInt(s.value, 10) : null; });
-      var hr = document.getElementById("imp-header"), headerRow = (hr && hr.value !== "") ? parseInt(hr.value, 10) : this._imp.res.headerRow;
-      this._imp.res = Importador.analisar(this._imp.matriz, { colunas: cols, headerRow: headerRow });
-      var body = document.getElementById("imp-body"); if (body) body.innerHTML = UI.renderImportPreview(this._imp, true);
+      var hr = document.getElementById("imp-header"), headerRow = (hr && hr.value !== "") ? parseInt(hr.value, 10) : imp.res.headerRow;
+      imp.res = Importador.analisar(imp.matriz, { colunas: cols, headerRow: headerRow });
+      var body = document.getElementById("imp-body"); if (body) body.innerHTML = UI.renderImportPreview(imp, true);
     },
     criarOrcamentoDaImportacao: function () {
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
