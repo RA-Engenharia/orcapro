@@ -920,6 +920,22 @@
       document.head.appendChild(s);
     },
 
+    // SheetJS (vendorizado, OFFLINE) — só p/ LER .xls antigo (BIFF), que o ExcelJS não abre.
+    // Lazy: injeta o script só quando um .xls é importado (não pesa o load de quem não usa).
+    ensureSheetJS: function (cb) {
+      if (global.XLSX) { cb(); return; }
+      var avisarFalha = function () { if (global.UI) UI.toast("Não foi possível carregar o leitor de .xls.", "erro"); };
+      if (document.getElementById("sheetjs-vendor")) {
+        var t = setInterval(function () { if (global.XLSX) { clearInterval(t); cb(); } }, 120);
+        setTimeout(function () { clearInterval(t); if (!global.XLSX) avisarFalha(); }, 15000); return;
+      }
+      var s = document.createElement("script"); s.id = "sheetjs-vendor";
+      s.src = "js/vendor/xlsx.full.min.js";
+      s.onload = function () { cb(); };
+      s.onerror = function () { var el = document.getElementById("sheetjs-vendor"); if (el) el.remove(); avisarFalha(); };
+      document.head.appendChild(s);
+    },
+
     gerar: function (orc) {
       this.ensureExcelJS(function () {
         var finalizar = function (insumosMap) {

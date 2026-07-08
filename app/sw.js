@@ -4,7 +4,12 @@
  * Só cacheia o MESMO domínio (IA, servidor de licença e fontes externas vão direto pra rede). */
 var CACHE = 'orcapro-app-v1';
 
-self.addEventListener('install', function () { self.skipWaiting(); });
+self.addEventListener('install', function (e) {
+  self.skipWaiting();
+  // Pré-cacheia o leitor de .xls (SheetJS): é lazy-load — não é baixado no boot normal do app,
+  // então sem isto o import de .xls quebraria offline após instalar. Falha silenciosa (não trava o install).
+  e.waitUntil(caches.open(CACHE).then(function (c) { return c.add('./js/vendor/xlsx.full.min.js').catch(function () {}); }));
+});
 self.addEventListener('activate', function (e) {
   e.waitUntil(
     caches.keys().then(function (ks) { return Promise.all(ks.map(function (k) { return k === CACHE ? null : caches.delete(k); })); })

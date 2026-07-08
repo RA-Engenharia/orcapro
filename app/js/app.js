@@ -1527,9 +1527,29 @@
     _lerPlanilha: function (file, cb) {
       var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
       if (/\.csv$/.test(nome)) { fr.onload = function () { try { cb(App._parseCSV(String(fr.result))); } catch (e) { cb(null, String(e && e.message || e)); } }; fr.onerror = function () { cb(null, "falha ao ler o arquivo"); }; fr.readAsText(file); return; }
-      // .xls antigo (binário BIFF, pré-2007) NÃO é lido pelo ExcelJS (que só abre .xlsx/OOXML) —
-      // sem este guard o load estoura com "Cannot read properties of undefined (reading 'sheets')".
-      if (/\.xls$/.test(nome)) { cb(null, "Arquivo .xls (Excel antigo) não é suportado. No Excel, use Salvar como → Pasta de Trabalho do Excel (.xlsx) — ou salve como .csv — e importe de novo."); return; }
+      // .xls antigo (binário BIFF, pré-2007): o ExcelJS NÃO lê (só .xlsx/OOXML). Usa o SheetJS
+      // (vendorizado, offline) só pra este caso → mesma estrutura {abas, idx} do .xlsx, então o
+      // seletor de aba / _melhorAba / preview funcionam idênticos. (comum em obra/SINAPI.)
+      if (/\.xls$/.test(nome)) {
+        if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureSheetJS) { cb(null, "Leitor de .xls indisponível. Salve como .xlsx ou .csv e importe."); return; }
+        fr.onload = function () {
+          ExcelOrc.ensureSheetJS(function () {
+            try {
+              if (!global.XLSX) { cb(null, "Não consegui carregar o leitor de .xls. Salve como .xlsx ou .csv."); return; }
+              var wb = XLSX.read(new Uint8Array(fr.result), { type: "array" });
+              var abas = (wb.SheetNames || []).map(function (nm) {
+                return { nome: String(nm), matriz: XLSX.utils.sheet_to_json(wb.Sheets[nm], { header: 1, blankrows: true, defval: "" }) };
+              }).filter(function (a) { return a.matriz.length; });
+              if (!abas.length) { cb(null, "planilha .xls sem abas legíveis"); return; }
+              var idx = App._melhorAba(abas);
+              cb(abas[idx].matriz, null, { abas: abas, idx: idx });
+            } catch (e) { cb(null, App._msgExcelErro(e)); }
+          });
+        };
+        fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
+        fr.readAsArrayBuffer(file);
+        return;
+      }
       fr.onload = function () {
         if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { cb(null, "módulo Excel indisponível (precisa de internet na 1ª vez)"); return; }
         ExcelOrc.ensureExcelJS(function () {

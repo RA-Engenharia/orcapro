@@ -128,6 +128,7 @@
     previstoreal: '<path d="M3 3v18h18"/><rect x="7" y="6" width="10" height="3" rx="1"/><rect x="7" y="13" width="13" height="3" rx="1"/><path d="M17 4.5v6"/>',
     galeria: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
     tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
+    lastplanner: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/><path d="m8 15 2 2 3-3"/>',
     ajuda: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
     bim: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/><path d="M12 12L3 7"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
@@ -144,6 +145,7 @@
       { id: "orcamentos", nome: "Orçamentos" },
       { id: "obras", nome: "Obras" },
       { id: "tarefas", nome: "Tarefas" },
+      { id: "lastplanner", nome: "Last Planner (PPC)" },
       { id: "clientes", nome: "Clientes" },
       { id: "contratos", nome: "Contratos" },
       { id: "medicoes", nome: "Medições" },
@@ -193,6 +195,7 @@
         case "dashboard": return this.renderDashboard();
         case "obras": return this.renderObras();
         case "tarefas": return this.renderTarefas();
+        case "lastplanner": return this.renderLastPlanner();
         case "clientes": return this.renderClientes();
         case "contratos": return this.renderContratos();
         case "medicoes": return this.renderMedicoes();
@@ -1232,7 +1235,8 @@
       if (!r.linhas.length) { res.innerHTML = '<p class="muted">Nenhum elemento reconhecido para levantamento.</p>'; return; }
       var chip = { ifc: '<span class="pill sinapi" title="Medido do modelo (BaseQuantities do IFC)">medido</span>', estimado: '<span class="pill proprio" title="Estimado pela caixa envolvente do elemento — revise">estimado</span>', misto: '<span class="pill proprio" title="Parte medido, parte estimado">misto</span>', contagem: '<span class="pill outra">contagem</span>', "sem-medida": '<span class="pill outra">s/ medida</span>' };
       var linhas = r.linhas.map(function (l) {
-        return '<tr class="lin"><td>' + Util.esc(l.categoria) + "</td>" +
+        var alt = (l.alternativas || []).map(function (a) { return Util.fmtNum(a.quantidade, 2) + " " + a.unidade; }).join(" · ");
+        return '<tr class="lin"><td>' + Util.esc(l.categoria) + (alt ? '<br><span class="muted" style="font-size:11px">ou ' + Util.esc(alt) + "</span>" : "") + "</td>" +
           '<td class="num">' + Util.fmtNum(l.quantidade, l.medida === "contagem" ? 0 : 2) + "</td><td>" + Util.esc(l.unidade) + "</td>" +
           '<td class="num">' + l.nElementos + "</td><td>" + (chip[l.fonte] || Util.esc(l.fonte)) + "</td></tr>";
       }).join("");
@@ -3145,10 +3149,180 @@ renderRelatorios: function () {
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "540px";
     },
 
+    // ================= LAST PLANNER (PPC) — planejamento enxuto (Lean Construction) =================
+    _lpTarefas: function () { var o = this._lpObra; return Store.listar(eid(), "lp_tarefas").filter(function (t) { return !o || t.obraId === o; }); },
+    _lpObter: function (id) { return Store.obter(eid(), "lp_tarefas", id); },
+    _lpSalvar: function (t, msg) { Store.salvar(eid(), "lp_tarefas", t); App.render(); if (msg) UI.toast(msg, "ok"); },
+    _lpKpi: function (t, val, sub, cor) { return '<div class="card" style="padding:12px 14px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px">' + t + '</div><div style="font-size:26px;font-weight:800;color:' + cor + ';line-height:1.1;margin:2px 0">' + val + '</div><div class="muted" style="font-size:11.5px">' + sub + '</div></div>'; },
+    renderLastPlanner: function () {
+      var self = this, LP = window.LastPlanner, obras = lista("obras");
+      if (typeof LP === "undefined") return this._head("Last Planner · PPC", "", "") + vazioBox("Módulo Last Planner não carregado.", "", "");
+      if (this._lpObra == null) this._lpObra = obras.length ? obras[0].id : "";
+      var look = LP.semanas(new Date(), 6);
+      var hb = new Date(); hb.setDate(hb.getDate() - 35);
+      var hist = LP.semanas(hb, 6);
+      var ts = this._lpTarefas();
+      var res = LP.resumo(ts, look);
+      var selObra = '<select data-gacao="lp-obra" style="max-width:230px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._lpObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var extra = selObra + ' <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">🖨 Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">📊 Relatório PPC</button>';
+      var html = this._head(svg("lastplanner") + "Last Planner · PPC", "lp-nova", "Nova Tarefa", extra);
+      if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o Last Planner planeja a semana de uma obra.", "nova-obra", "Nova obra");
+
+      // KPIs
+      var ppcSem = res.ppcSemana == null ? "—" : Math.round(res.ppcSemana * 100) + "%";
+      var ppcMed = res.ppcMedio == null ? "—" : Math.round(res.ppcMedio * 100) + "%";
+      var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= .8 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
+        this._lpKpi("PPC da semana", ppcSem, res.feitas + "/" + res.comprometidas + " tarefas", corPpc) +
+        this._lpKpi("PPC médio (6 sem)", ppcMed, "meta ≥ 80%", "var(--navy)") +
+        this._lpKpi("Restrições abertas", String(res.restricoesAbertas), "a remover no médio prazo", res.restricoesAbertas ? "#ea580c" : "var(--verde)") +
+        this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--navy)") + '</div>';
+
+      // Plano da Semana
+      var estaSem = look[0];
+      var comp = LP.daSemana(ts, estaSem.chave).filter(function (t) { return t.comprometida; });
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 8px">🗓 Plano da Semana <span class="muted" style="font-weight:400;font-size:13px">· ' + estaSem.periodo + '</span></h3>';
+      if (!comp.length) html += '<p class="muted" style="font-size:13px;margin:0">Nenhuma tarefa comprometida nesta semana. Comprometa tarefas <b>livres</b> (sem restrição) no lookahead abaixo.</p>';
+      else {
+        html += '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Status</th><th></th></tr></thead><tbody>';
+        comp.forEach(function (t) {
+          var st = t.status === "feito" ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">✓ Feito</span>' : (t.status === "naofeito" ? '<span class="g-pill" style="background:#dc262622;color:#dc2626">✗ Não feito' + (t.causa ? " · " + Util.esc(t.causa) : "") + '</span>' : '<span class="g-pill" style="background:#64748b22;color:#64748b">a fazer</span>');
+          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + t.id + '" title="Concluída">✓</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + t.id + '" title="Não cumprida">✗</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + t.id + '" title="Tirar do plano">↩</button>';
+          html += '<tr><td><b>' + Util.esc(t.titulo) + '</b></td><td>' + Util.esc(t.responsavel || "—") + '</td><td>' + st + '</td><td class="num">' + ac + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+
+      // Lookahead 6 semanas
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">📋 Lookahead 6 semanas</h3><p class="muted" style="font-size:12.5px;margin:0 0 10px">Médio prazo — clique numa tarefa pra <b>gerir restrições</b>. Só tarefa livre (sem restrição aberta) vira comprometida.</p><div style="display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:8px;overflow-x:auto">';
+      look.forEach(function (s, i) {
+        html += '<div style="background:#f7fafd;border:1px solid var(--linha);border-radius:10px;padding:8px"><div style="text-align:center;font-size:12px;font-weight:700;color:var(--navy)">' + s.rotulo + '</div><div style="text-align:center;font-size:11px;color:#64748b;margin-bottom:6px">' + s.periodo + '</div>';
+        LP.daSemana(ts, s.chave).forEach(function (t) {
+          var ra = LP.restricoesAbertas(t);
+          var bg = t.comprometida ? "#dbeafe" : (ra ? "#fff7ed" : "#dcfce7"), bd = t.comprometida ? "#93c5fd" : (ra ? "#fdba74" : "#86efac");
+          var tag = t.comprometida ? "✓ no plano" : (ra ? "🔒 " + ra + " restr." : "✔ livre");
+          html += '<div data-gacao="lp-abrir" data-id="' + t.id + '" style="cursor:pointer;background:' + bg + ';border:1px solid ' + bd + ';border-radius:7px;padding:6px 8px;margin-bottom:5px;font-size:12px"><b>' + Util.esc(t.titulo) + '</b><div style="font-size:10.5px;color:#475569;margin-top:2px">' + Util.esc(t.responsavel || "—") + ' · ' + tag + '</div></div>';
+        });
+        html += '<button class="btn sm" data-gacao="lp-nova-sem" data-val="' + i + '" style="width:100%;font-size:11.5px">+ Tarefa</button></div>';
+      });
+      html += '</div></div>';
+
+      // Gráfico PPC + Causas
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">';
+      var h = LP.historicoPPC(ts, hist);
+      html += '<div class="card"><h3 style="margin:0 0 10px">📈 PPC — últimas 6 semanas</h3><div style="display:flex;align-items:flex-end;gap:8px;height:130px">';
+      h.forEach(function (x) {
+        var pct = x.ppc == null ? 0 : Math.round(x.ppc * 100), cor = x.ppc == null ? "#e2e8f0" : (x.ppc >= .8 ? "#16a34a" : (x.ppc >= .5 ? "#f59e0b" : "#dc2626"));
+        html += '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;text-align:center;height:100%"><div style="font-size:10.5px;font-weight:700;color:#475569;margin-bottom:3px">' + (x.ppc == null ? "—" : pct + "%") + '</div><div style="background:' + cor + ';height:' + Math.max(2, pct) + '%;border-radius:4px 4px 0 0;min-height:2px"></div><div style="font-size:9.5px;color:#94a3b8;margin-top:4px">' + x.periodo.split("–")[0] + '</div></div>';
+      });
+      html += '</div></div>';
+      var ca = LP.causasAgregadas(ts);
+      html += '<div class="card"><h3 style="margin:0 0 10px">⚠ Causas de não-cumprimento</h3>';
+      if (!ca.total) html += '<p class="muted" style="font-size:13px;margin:0">Sem causas registradas ainda.</p>';
+      else {
+        html += '<table class="tbl" style="font-size:13px"><tbody>';
+        ca.linhas.forEach(function (l) { var pct = Math.round(l.pct * 100); html += '<tr><td>' + Util.esc(l.causa) + '</td><td style="width:42%"><div style="background:#eef2f7;border-radius:99px;height:14px;overflow:hidden"><div style="background:#ea580c;height:100%;width:' + pct + '%"></div></div></td><td class="num" style="width:64px"><b>' + l.n + '</b> · ' + pct + '%</td></tr>'; });
+        html += '</tbody></table>';
+      }
+      html += '</div></div>';
+      return html;
+    },
+    lpTrocaObra: function (id) { this._lpObra = id; App.render(); },
+    lpNova: function (semIdx) {
+      var self = this, LP = window.LastPlanner, obras = lista("obras");
+      if (!this._lpObra && obras.length) this._lpObra = obras[0].id;
+      if (!this._lpObra) { UI.toast("Cadastre uma obra primeiro.", "erro"); return; }
+      var look = LP.semanas(new Date(), 6);
+      var semOpts = look.map(function (s, i) { return '<option value="' + s.chave + '"' + (i === (semIdx || 0) ? " selected" : "") + ">" + s.rotulo + " (" + s.periodo + ")</option>"; }).join("");
+      var corpo = campo("Tarefa *", inp("g-lp-titulo", "", "Ex.: Concretar laje do 2º pavimento")) +
+        '<div class="row">' + campo("Responsável", inp("g-lp-resp", "", "Ex.: Equipe estrutura")) + campo("Frente / local", inp("g-lp-frente", "", "Ex.: Bloco A")) + '</div>' +
+        campo("Semana (lookahead)", sel("g-lp-sem", semOpts));
+      this._modalForm("lp_tarefas", null, "Nova tarefa (Last Planner)", corpo, function (obj) {
+        obj.titulo = v("g-lp-titulo"); if (!obj.titulo) { UI.toast("Informe a tarefa.", "erro"); return false; }
+        obj.responsavel = v("g-lp-resp"); obj.frente = v("g-lp-frente"); obj.semana = v("g-lp-sem"); obj.obraId = self._lpObra;
+        obj.comprometida = false; obj.status = "afazer"; obj.causa = ""; obj.restricoes = obj.restricoes || [];
+        return true;
+      });
+    },
+    lpComprometer: function (id) {
+      var t = this._lpObter(id); if (!t) return;
+      if (!window.LastPlanner.podeComprometer(t)) { UI.toast("Remova as restrições antes de comprometer.", "erro"); return; }
+      t.comprometida = true; if (t.status !== "feito" && t.status !== "naofeito") t.status = "afazer";
+      this._lpSalvar(t, "Tarefa comprometida no plano da semana.");
+    },
+    lpDescomprometer: function (id) { var t = this._lpObter(id); if (!t) return; t.comprometida = false; this._lpSalvar(t, "Tarefa tirada do plano."); },
+    lpFeito: function (id) { var t = this._lpObter(id); if (!t) return; t.status = "feito"; t.causa = ""; this._lpSalvar(t, "✓ Concluída."); },
+    lpNaoFeito: function (id) {
+      var self = this, t = this._lpObter(id); if (!t) return;
+      var opts = window.LastPlanner.CAUSAS.map(function (c) { return '<option value="' + Util.esc(c) + '"' + (t.causa === c ? " selected" : "") + ">" + Util.esc(c) + "</option>"; }).join("");
+      UI.modal("Não cumprida — por quê?", campo("Causa (pra melhoria contínua)", sel("g-lp-causa", opts)), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Registrar", classe: "primary", onClick: function () { t.status = "naofeito"; t.causa = v("g-lp-causa"); UI.fecharModal(); self._lpSalvar(t, "Causa registrada."); } }
+      ]);
+    },
+    _lpRestrHtml: function (t) {
+      var r = t.restricoes || [];
+      if (!r.length) return '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem restrições — tarefa livre pra comprometer.</p>';
+      return '<table class="tbl" style="font-size:12.5px;margin:6px 0"><tbody>' + r.map(function (x, i) {
+        var st = x.removida ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">removida</span>' : '<span class="g-pill" style="background:#ea580c22;color:#ea580c">pendente</span>';
+        var ac = x.removida ? '' : '<button class="btn sm success" data-gacao="lp-rem-restr" data-id="' + t.id + '" data-val="' + i + '">✓ Remover</button>';
+        return '<tr><td><b>' + Util.esc(x.tipo || "") + '</b> · ' + Util.esc(x.descricao || "") + (x.prazo ? ' <span class="muted">(' + x.prazo.split("-").reverse().join("/") + ')</span>' : "") + '</td><td>' + st + '</td><td class="num">' + ac + '</td></tr>';
+      }).join("") + '</tbody></table>';
+    },
+    lpAbrir: function (id) {
+      var self = this, LP = window.LastPlanner, t = this._lpObter(id); if (!t) return;
+      t.restricoes = t.restricoes || [];
+      UI.fecharModal();
+      var corpo = '<p style="margin:0 0 6px"><b>' + Util.esc(t.titulo) + '</b> <span class="muted">· ' + Util.esc(t.responsavel || "—") + (t.frente ? " · " + Util.esc(t.frente) : "") + '</span></p>' + this._lpRestrHtml(t);
+      var tipoOpts = LP.RESTRICOES.map(function (r) { return '<option>' + r + '</option>'; }).join("");
+      corpo += '<div class="row" style="margin-top:6px;align-items:end"><div class="field" style="flex:1;margin:0"><label style="font-size:11px">Restrição</label>' + sel("g-lp-rtipo", tipoOpts) + '</div><div class="field" style="flex:1.5;margin:0"><label style="font-size:11px">Descrição</label>' + inp("g-lp-rdesc", "", "Ex.: aço não entregue") + '</div><div class="field" style="flex:.9;margin:0"><label style="font-size:11px">Prazo</label>' + inp("g-lp-rprazo", "", "", "date") + '</div></div>';
+      var botoes = [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); App.render(); } },
+        { texto: "+ Restrição", classe: "", onClick: function () { self._lpAddRestr(t.id); } },
+        { texto: "🗑 Excluir", classe: "", onClick: function () { if (confirm("Excluir esta tarefa do Last Planner?")) { Store.excluir(eid(), "lp_tarefas", t.id); UI.fecharModal(); App.render(); } } }
+      ];
+      if (LP.podeComprometer(t) && !t.comprometida) botoes.push({ texto: "✅ Comprometer", classe: "success", onClick: function () { UI.fecharModal(); self.lpComprometer(t.id); } });
+      UI.modal("Restrições · " + Util.esc(t.titulo), corpo, botoes);
+    },
+    _lpAddRestr: function (id) {
+      var t = this._lpObter(id); if (!t) return;
+      var tipo = v("g-lp-rtipo"), desc = v("g-lp-rdesc"), prazo = v("g-lp-rprazo");
+      if (!desc) { UI.toast("Descreva a restrição.", "erro"); return; }
+      t.restricoes = t.restricoes || [];
+      t.restricoes.push({ id: "r" + Date.now(), tipo: tipo, descricao: desc, prazo: prazo, removida: false });
+      Store.salvar(eid(), "lp_tarefas", t); this.lpAbrir(id);
+    },
+    lpRemRestr: function (id, idx) {
+      var t = this._lpObter(id); if (!t || !t.restricoes || !t.restricoes[idx]) return;
+      t.restricoes[idx].removida = true; Store.salvar(eid(), "lp_tarefas", t); this.lpAbrir(id);
+    },
+    _lpImprimir: function (tipo) {
+      var LP = window.LastPlanner, obras = lista("obras");
+      var obra = obras.filter(function (o) { return o.id === this._lpObra; }, this)[0] || { nome: "" };
+      var ts = this._lpTarefas(), look = LP.semanas(new Date(), 6), estaSem = look[0], corpo;
+      if (tipo === "ppc") {
+        var hb = new Date(); hb.setDate(hb.getDate() - 35);
+        var hist = LP.historicoPPC(ts, LP.semanas(hb, 6)), ca = LP.causasAgregadas(ts), med = LP.ppcMedio(hist);
+        corpo = '<p><b>Obra:</b> ' + Util.esc(obra.nome) + ' &nbsp; <b>PPC médio (6 sem):</b> ' + (med == null ? "—" : Math.round(med * 100) + "%") + '</p>';
+        corpo += '<h3>PPC por semana</h3><table class="prop-tbl"><thead><tr><th>Semana</th><th class="r">Comprometidas</th><th class="r">Feitas</th><th class="r">PPC</th></tr></thead><tbody>' +
+          hist.map(function (x) { return '<tr><td>' + x.periodo + '</td><td class="r">' + x.comprometidas + '</td><td class="r">' + x.feitas + '</td><td class="r">' + (x.ppc == null ? "—" : Math.round(x.ppc * 100) + "%") + '</td></tr>'; }).join("") + '</tbody></table>';
+        corpo += '<h3>Causas de não-cumprimento (Pareto)</h3>' + (ca.total ? '<table class="prop-tbl"><thead><tr><th>Causa</th><th class="r">Ocorrências</th><th class="r">%</th></tr></thead><tbody>' + ca.linhas.map(function (l) { return '<tr><td>' + Util.esc(l.causa) + '</td><td class="r">' + l.n + '</td><td class="r">' + Math.round(l.pct * 100) + '%</td></tr>'; }).join("") + '</tbody></table>' : '<p>Sem causas registradas.</p>');
+        this._abrirDoc("Relatório PPC — " + (obra.nome || ""), this._docShell("RELATÓRIO PPC · LAST PLANNER", "#0f2740", corpo));
+      } else {
+        var comp = LP.daSemana(ts, estaSem.chave).filter(function (t) { return t.comprometida; });
+        corpo = '<p><b>Obra:</b> ' + Util.esc(obra.nome) + ' &nbsp; <b>Semana:</b> ' + estaSem.periodo + '</p>';
+        corpo += '<table class="prop-tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Frente</th><th class="r">Feito?</th></tr></thead><tbody>' +
+          (comp.length ? comp.map(function (t) { return '<tr><td>' + Util.esc(t.titulo) + '</td><td>' + Util.esc(t.responsavel || "—") + '</td><td>' + Util.esc(t.frente || "—") + '</td><td class="r">☐</td></tr>'; }).join("") : '<tr><td colspan="4">Nenhuma tarefa comprometida.</td></tr>') + '</tbody></table>';
+        corpo += '<p style="margin-top:16px;font-size:12px;color:#555">Reunião semanal (Last Planner) — marque ✓ o que foi feito; para o que não foi, anote a causa. O PPC da semana = feitas ÷ comprometidas.</p>';
+        this._abrirDoc("Plano Semanal — " + (obra.nome || ""), this._docShell("PLANO DA SEMANA · LAST PLANNER", "#0f2740", corpo));
+      }
+    },
+
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
@@ -3159,6 +3333,16 @@ renderRelatorios: function () {
         case "tar-fazer": return this._tarefaStatus(id, "fazendo", "Tarefa em andamento.");
         case "tar-concluir": return this._tarefaStatus(id, "feita", "Tarefa concluída.");
         case "tar-reabrir": return this._tarefaStatus(id, "afazer", "Tarefa reaberta.");
+        case "lp-obra": return this.lpTrocaObra(dataset.value);
+        case "lp-nova": return this.lpNova(0);
+        case "lp-nova-sem": return this.lpNova(parseInt(dataset.val, 10) || 0);
+        case "lp-abrir": return this.lpAbrir(id);
+        case "lp-comprometer": return this.lpComprometer(id);
+        case "lp-descomprometer": return this.lpDescomprometer(id);
+        case "lp-feito": return this.lpFeito(id);
+        case "lp-naofeito": return this.lpNaoFeito(id);
+        case "lp-rem-restr": return this.lpRemRestr(id, parseInt(dataset.val, 10));
+        case "lp-imprimir": return this._lpImprimir(dataset.val);
         case "galeria-troca-obra": return this.galeriaTrocaObra(dataset.value);
         case "galeria-abrir": return this.galeriaAbrir(dataset.idx);
         case "galeria-nav": return this.galeriaNav(dataset.dir);

@@ -18,14 +18,14 @@
 
   // Mapa disciplina: tipo IFC (prefixo) → categoria + unidade + o que MEDIR.
   var MAPA = {
-    IFCWALL: { cat: "Paredes / Alvenaria", un: "m²", medida: "area" },
+    IFCWALL: { cat: "Paredes / Alvenaria", un: "m²", medida: "area", tambem: ["volume"] },
     IFCCURTAINWALL: { cat: "Fachada cortina", un: "m²", medida: "area" },
-    IFCSLAB: { cat: "Lajes / Pisos", un: "m²", medida: "area" },
+    IFCSLAB: { cat: "Lajes / Pisos", un: "m²", medida: "area", tambem: ["volume"] },
     IFCROOF: { cat: "Cobertura", un: "m²", medida: "area" },
     IFCCOVERING: { cat: "Revestimentos / Forros", un: "m²", medida: "area" },
     IFCPLATE: { cat: "Chapas / Placas", un: "m²", medida: "area" },
-    IFCBEAM: { cat: "Vigas", un: "m", medida: "comprimento" },
-    IFCCOLUMN: { cat: "Pilares", un: "m", medida: "comprimento" },
+    IFCBEAM: { cat: "Vigas", un: "m", medida: "comprimento", tambem: ["volume"] },
+    IFCCOLUMN: { cat: "Pilares", un: "m", medida: "comprimento", tambem: ["volume"] },
     IFCMEMBER: { cat: "Perfis metálicos", un: "m", medida: "comprimento" },
     IFCRAILING: { cat: "Guarda-corpos / Corrimãos", un: "m", medida: "comprimento" },
     IFCPILE: { cat: "Estacas", un: "m", medida: "comprimento" },
@@ -100,6 +100,15 @@
     return t || "Outros elementos";
   }
 
+  var UNID = { comprimento: "m", area: "m²", volume: "m³", contagem: "un" };
+  function arred2(v) { return Math.round(v * 100) / 100; }
+  // Consolida a fonte de uma dimensão: contagem / sem-medida / misto (ifc+estimado) / ifc / estimado.
+  function fonteDe(fontes, medida) {
+    if (medida === "contagem") return "contagem";
+    var fk = Object.keys(fontes).filter(function (f) { return f === "ifc" || f === "estimado"; });
+    return fk.length === 0 ? "sem-medida" : (fk.length > 1 ? "misto" : fk[0]);
+  }
+
   // Levantamento agregado. opts.min (default 0): ignora categoria com quantidade < min.
   function levantar(elementos, opts) {
     opts = opts || {};
@@ -112,24 +121,31 @@
     lista.forEach(function (el) {
       var map = classificarTipo(el.tipo) || { cat: nomeCatDesconhecida(el), un: "un", medida: "contagem" };
       var g = grupos[map.cat];
-      if (!g) { g = grupos[map.cat] = { categoria: map.cat, unidade: map.un, medida: map.medida, quantidade: 0, nElementos: 0, fontes: {}, tipos: {} }; }
+      if (!g) { g = grupos[map.cat] = { categoria: map.cat, unidade: map.un, medida: map.medida, quantidade: 0, nElementos: 0, fontes: {}, tipos: {}, alt: {} }; }
       var m = medir(el, map.medida);
       g.quantidade += m.valor;
       g.nElementos += 1;
       g.fontes[m.fonte] = (g.fontes[m.fonte] || 0) + 1;
       if (el.tipo) g.tipos[String(el.tipo).toUpperCase()] = 1;
       if (m.fonte === "ifc") nMedidos++; else if (m.fonte === "estimado") nEstim++; else if (m.fonte === "sem-medida") nSemMedida++;
+      // dimensões ALTERNATIVAS por disciplina (pilar/viga em m³ de concreto ALÉM de m linear;
+      // parede/laje em m³ além de m²) — o engenheiro escolhe como orçar; o primário fica intacto.
+      (map.tambem || []).forEach(function (md) {
+        var am = medir(el, md), a = g.alt[md] || (g.alt[md] = { soma: 0, fontes: {} });
+        a.soma += am.valor; a.fontes[am.fonte] = (a.fontes[am.fonte] || 0) + 1;
+      });
     });
 
     var linhas = Object.keys(grupos).map(function (k) {
       var g = grupos[k];
-      var fk = Object.keys(g.fontes).filter(function (f) { return f === "ifc" || f === "estimado"; });
-      var fonte = g.medida === "contagem" ? "contagem" : (fk.length === 0 ? "sem-medida" : (fk.length > 1 ? "misto" : fk[0]));
-      var casas = g.medida === "contagem" ? 0 : 2;
+      var alternativas = Object.keys(g.alt).map(function (md) {
+        return { medida: md, unidade: UNID[md] || "", quantidade: arred2(g.alt[md].soma), fonte: fonteDe(g.alt[md].fontes, md) };
+      }).filter(function (x) { return x.quantidade > 0; });
       return {
         categoria: g.categoria, unidade: g.unidade, medida: g.medida,
-        quantidade: g.medida === "contagem" ? g.nElementos : Math.round(g.quantidade * Math.pow(10, casas)) / Math.pow(10, casas),
-        nElementos: g.nElementos, fonte: fonte, tiposIFC: Object.keys(g.tipos)
+        quantidade: g.medida === "contagem" ? g.nElementos : arred2(g.quantidade),
+        nElementos: g.nElementos, fonte: fonteDe(g.fontes, g.medida), tiposIFC: Object.keys(g.tipos),
+        alternativas: alternativas
       };
     }).filter(function (l) { return l.quantidade >= (opts.min || 0); });
 
