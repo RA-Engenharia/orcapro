@@ -227,6 +227,19 @@
   }
 
   function ehTotal(desc) { var nd = norm(desc); if (!nd) return false; for (var i = 0; i < TOTAL_KW.length; i++) { if (nd === TOTAL_KW[i] || nd.indexOf(TOTAL_KW[i] + " ") === 0) return true; } return false; }
+  // Linha-de-etapa com nº hierárquico + NOME no MESMO campo (ex.: "1.0 Serviços preliminares"
+  // na coluna "Item"), sem coluna de descrição/código própria — comum em export analítico.
+  // Retorna { codigo, nome } ou null. Exige LETRA no nome (não confunde com número/moeda) e
+  // ignora se o texto for um total/subtotal.
+  function etapaEmbutida(row) {
+    if (!row) return null;
+    for (var c = 0; c < row.length; c++) {
+      var s = txt(row[c]).trim();
+      var m = /^(\d{1,3}(?:\.\d{1,3}){0,3})\.?\s+(.+\S)$/.exec(s);
+      if (m && /[A-Za-zÀ-ÿ]/.test(m[2]) && !ehTotal(m[2])) return { codigo: m[1], nome: m[2].trim() };
+    }
+    return null;
+  }
   function classificar(row, cols) {
     var desc = cols.descricao != null ? txt(row[cols.descricao]).trim() : "";
     if (ehTotal(desc)) return "ignorar";
@@ -234,9 +247,10 @@
     var temQtd = cols.quantidade != null && num(row[cols.quantidade]) > 0;
     var temUnit = cols.custoUnit != null && num(row[cols.custoUnit]) > 0;
     var temTot = cols.custoTotal != null && num(row[cols.custoTotal]) > 0;
-    if (!desc && !temCod) return "ignorar";   // sem descrição E sem código = linha solta/rodapé, não item real
-    if (temCod || temUnit || temTot || temQtd) return "item";
-    if (desc) return "etapa";
+    // item real precisa de descrição OU código (linha só-com-valor-perdido não vira item fantasma)
+    if ((desc || temCod) && (temCod || temUnit || temTot || temQtd)) return "item";
+    if (desc) return "etapa";                    // etapa clássica: nome na coluna de descrição
+    if (etapaEmbutida(row)) return "etapa";      // etapa "1.0 Nome" embutida na coluna "Item" (caso Luiz)
     return "ignorar";
   }
   function codigoEtapaDe(row, cols) {
@@ -253,7 +267,7 @@
   }
 
   var Importador = {
-    _num: num, _txt: txt, _norm: norm, _ehCodSinapi: ehCodSinapi, _ehMoeda: ehMoeda, _pareceIndice: pareceIndice, _detectarColunas: detectarColunas, _acharCabecalho: acharCabecalho,
+    _num: num, _txt: txt, _norm: norm, _ehCodSinapi: ehCodSinapi, _ehMoeda: ehMoeda, _pareceIndice: pareceIndice, _detectarColunas: detectarColunas, _acharCabecalho: acharCabecalho, _etapaEmbutida: etapaEmbutida,
 
     analisar: function (matriz, opts) {
       opts = opts || {};
@@ -274,7 +288,7 @@
         var row = linhas[i], cls = classificar(row, cols);
         if (cls === "ignorar") { nIgn++; continue; }
         var desc = cols.descricao != null ? txt(row[cols.descricao]).trim() : "";
-        if (cls === "etapa") { atual = { nome: desc || ("Etapa " + (nEtapas + 1)), codigo: codigoEtapaDe(row, cols), itens: [] }; etapas.push(atual); nEtapas++; continue; }
+        if (cls === "etapa") { var _emb = desc ? null : etapaEmbutida(row); atual = { nome: desc || (_emb && _emb.nome) || ("Etapa " + (nEtapas + 1)), codigo: codigoEtapaDe(row, cols) || (_emb && _emb.codigo) || "", itens: [] }; etapas.push(atual); nEtapas++; continue; }
         if (!atual) { atual = { nome: "Serviços", codigo: "", itens: [] }; etapas.push(atual); nEtapas++; }
         var qtd = cols.quantidade != null ? num(row[cols.quantidade], dmQ) : NaN;
         var unit = cols.custoUnit != null ? num(row[cols.custoUnit], dmU) : NaN;

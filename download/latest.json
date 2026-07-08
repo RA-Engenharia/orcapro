@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.42",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.42/OrcaPRO-IA-update-v1.1.42.zip",
-  "notas": "Novo: Importador de planilhas — importe um orçamento de Excel ou CSV de qualquer formato; o sistema detecta etapas, itens, quantidades e custos e casa os códigos SINAPI (nunca inventa código), sem redigitar. Em planilha sem cabeçalho, avisa e mostra o mapeamento pra você conferir antes de importar. A versão do app agora aparece na tela.",
+  "versao": "1.1.43",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.43/OrcaPRO-IA-update-v1.1.43.zip",
+  "notas": "Interface do sistema ainda mais premium: mais profundidade nos cartões e indicadores, acabamento nos botões e leitura reforçada dos valores em R$ (claro e escuro). Importador de planilha mais esperto: reconhece as etapas quando o número e o nome vêm juntos na mesma coluna do Excel (formato de export analítico, como '1.0 Serviços preliminares'), agrupando os itens na etapa certa — antes caíam todos num grupo só.",
   "obrigatoria": false
 }
