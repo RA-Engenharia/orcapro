@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.48",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.48/OrcaPRO-IA-update-v1.1.48.zip",
-  "notas": "Mais bases de preço: além de SINAPI, SEINFRA, SETOP e SUDECAP, agora você importa a base OFICIAL do seu estado (EMOP-RJ, CPOS/FDE-SP, ORSE-SE, AGETOP-GO, SEDOP-PA e outras) direto da planilha do órgão (.xlsx/.xls) — o sistema detecta as colunas (código, descrição, unidade, custo) e monta a base, sem inventar preço.",
+  "versao": "1.1.49",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.49/OrcaPRO-IA-update-v1.1.49.zip",
+  "notas": "O app agora abre direto, sem a tela de login travando a entrada (era isso que dava a impressão de que 'não abria'). No uso individual você entra automaticamente com todos os módulos liberados, incluindo o novo Last Planner / PPC. Quem usa multiusuário (sub-usuários/RBAC) continua com o login por perfil — e o login segue acessível pelo botão Sair. O cache do app passou a ser versionado: cada atualização limpa o código antigo e evita rodar uma versão velha.",
   "obrigatoria": false
 }

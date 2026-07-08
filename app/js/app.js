@@ -21,6 +21,10 @@
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
 
+      // USO SOLO/LOCAL: entra direto (sem a barreira de login). O login segue acessível via "Sair"
+      // p/ quem usa RBAC/multiempresa ou quer conta com e-mail. Só age quando não há RBAC configurado.
+      if (typeof Auth.autoEntrar === "function") { try { Auth.autoEntrar(); } catch (eAe) {} }
+
       var self = this;
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
       this.carregarBaseSinapi().then(function (n) {

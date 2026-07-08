@@ -220,6 +220,28 @@
       return r;
     },
 
+    // Auto-entrada (uso solo/local): abre o app direto, sem a barreira de login.
+    // Regras: já há sessão -> nada; algum dono com sub-usuários (RBAC) -> mantém o login;
+    // 1 dono solo já cadastrado -> entra nele; primeiro uso -> sessão local direta (namespace estável "local").
+    // O login continua acessível via "Sair" p/ quem usa RBAC/multiempresa ou quer conta com e-mail.
+    autoEntrar: function () {
+      if (this._usuario) return this._usuario;                 // init já restaurou a sessão
+      var contas = [];
+      try { contas = this.backend._lerUsuarios() || []; } catch (e) {}
+      for (var i = 0; i < contas.length; i++) {                // RBAC configurado? respeita o login por perfil
+        var eq = this._equipe(contas[i].empresaId);
+        if (eq && eq.length) return null;
+      }
+      if (contas.length) {                                     // dono solo já cadastrado -> entra nele (sem senha)
+        var dono = contas[0]; dono._papel = "admin";
+        this._iniciarSessao(dono);
+        return this._usuario;
+      }
+      // primeiro uso: sessão local direta (sem cadastro). empresaId estável p/ os dados persistirem entre boots.
+      this._iniciarSessao({ empresaId: "local", empresa: "Minha Empresa", email: "", plano: "PRO", _papel: "admin" });
+      return this._usuario;
+    },
+
     _iniciarSessao: function (u) {
       this._usuario = {
         empresaId: u.empresaId, empresa: u.empresa, email: u.email, plano: u.plano,

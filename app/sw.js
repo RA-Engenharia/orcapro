@@ -2,7 +2,9 @@
  * - servidor local rodando -> sempre a versão mais nova (e cacheia tudo);
  * - servidor parado / offline -> abre do cache (dá pra usar sem rodar o Iniciar-OrcaPRO).
  * Só cacheia o MESMO domínio (IA, servidor de licença e fontes externas vão direto pra rede). */
-var CACHE = 'orcapro-app-v1';
+/* IMPORTANTE: o nome do cache carrega a versão. A cada release o 'activate' abaixo apaga
+ * os caches de versões antigas -> força buscar o código novo (evita app rodando JS velho após update). */
+var CACHE = 'orcapro-app-v1.1.49';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
