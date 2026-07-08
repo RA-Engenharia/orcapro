@@ -31,6 +31,8 @@ var TIPOS = {
 // dos códigos de tipo (estáveis no schema). Traversal: IfcRelDefinesByProperties → IfcPropertySet
 // (HasProperties) → IfcPropertySingleValue(Name='OrcaPRO_Etapa').
 var IFC_RELDEFINESBYPROPERTIES = 4186316022, IFC_PROPERTYSINGLEVALUE = 3650150729;
+// IfcSIUnit — p/ normalizar BaseQuantities (que vêm na unidade do arquivo, ex.: mm) em metros.
+var IFC_SIUNIT = 448429030;
 
 function montar(host, opts) {
   opts = opts || {};
@@ -233,6 +235,88 @@ function montar(host, opts) {
     return mapa;
   }
 
+  // Fator linear do prefixo do IfcSIUnit de um tipo (LENGTHUNIT/AREAUNIT/VOLUMEUNIT). Ex.: CENTI→0.01.
+  // Devolve null se o tipo não estiver declarado no arquivo. IMPORTANTE: no IFC, área e volume têm
+  // unidade PRÓPRIA (SQUARE_METRE/CUBIC_METRE, quase sempre m²/m³ mesmo com comprimento em cm/mm) —
+  // por isso NÃO se converte área com comprimento². Só se AREAUNIT/VOLUMEUNIT faltarem é que caímos
+  // no derivado (comprimento² / comprimento³).
+  function unidadePrefixoBase(tipo) {
+    try {
+      var us = S.api.GetLineIDsWithType(S.modelID, IFC_SIUNIT), n = us.size();
+      for (var i = 0; i < n; i++) {
+        var u; try { u = S.api.GetLine(S.modelID, us.get(i), false); } catch (_) { continue; }
+        if (!u || !u.UnitType || u.UnitType.value !== tipo) continue;
+        var p = u.Prefix && u.Prefix.value;
+        return p === 'MILLI' ? 0.001 : p === 'CENTI' ? 0.01 : p === 'DECI' ? 0.1 : p === 'KILO' ? 1000 : 1;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Lê BaseQuantities (IfcElementQuantity) por elemento → {comprimento, area, volume, contagem} já
+  // em metros/m²/m³. Espelha lerCarimbosOrcaPro, mas atua nos psets que têm .Quantities (não
+  // .HasProperties — exatamente os que o traversal de carimbos pula). Escolhe por nome:
+  // comprimento='Length' (ignora Width/Height/Perímetro); área/volume preferem 'Net' sobre 'Gross'.
+  // Quando existir, o motor de quantitativos prefere isto (MEDIDO) ao AABB (ESTIMADO). Blindado:
+  // qualquer falha devolve o que já achou — quantidade é bônus, NUNCA impede o 3D de abrir.
+  function lerQuantitativos() {
+    var mapa = {};
+    // 3 fatores independentes → metros / m² / m³. Área/volume usam a unidade própria (m²/m³ se
+    // declarada); só caem no comprimento²/³ se AREAUNIT/VOLUMEUNIT não existirem no arquivo.
+    var bL = unidadePrefixoBase('LENGTHUNIT'); if (bL == null) bL = 1;
+    var bA = unidadePrefixoBase('AREAUNIT'), bV = unidadePrefixoBase('VOLUMEUNIT');
+    var fLen = bL, fArea = (bA != null ? bA * bA : bL * bL), fVol = (bV != null ? bV * bV * bV : bL * bL * bL);
+    function vnum(x) { if (x == null) return NaN; if (typeof x === 'object') x = x.value; var v = parseFloat(x); return isNaN(v) ? NaN : v; }
+    try {
+      var rels = S.api.GetLineIDsWithType(S.modelID, IFC_RELDEFINESBYPROPERTIES), nRel = rels.size();
+      for (var i = 0; i < nRel; i++) {
+        var rel; try { rel = S.api.GetLine(S.modelID, rels.get(i), false); } catch (_) { continue; }
+        if (!rel || !rel.RelatingPropertyDefinition || !rel.RelatedObjects) continue;
+        var qid = rel.RelatingPropertyDefinition.value; if (qid == null) continue;
+        var qset; try { qset = S.api.GetLine(S.modelID, qid, false); } catch (_) { continue; }
+        if (!qset || !qset.Quantities) continue; // não é IfcElementQuantity (pset comum cai fora)
+        var qs = Array.isArray(qset.Quantities) ? qset.Quantities : [qset.Quantities];
+        var comp = { v: 0, s: -1 }, ar = { v: 0, s: -1 }, vol = { v: 0, s: -1 }, cont = 0;
+        for (var q = 0; q < qs.length; q++) {
+          var qh = qs[q]; if (!qh || qh.value == null) continue;
+          var qv; try { qv = S.api.GetLine(S.modelID, qh.value, false); } catch (_) { continue; }
+          if (!qv) continue;
+          var nm = (qv.Name && qv.Name.value) ? String(qv.Name.value).toLowerCase() : '';
+          if (qv.LengthValue != null) {
+            var Lv = vnum(qv.LengthValue); if (isNaN(Lv)) continue;
+            if (/width|height|thick|depth|perimet|larg|altura|espess/.test(nm)) continue; // não é "o comprimento"
+            var sL = nm === 'length' ? 3 : /length|comprim/.test(nm) ? 2 : 1;
+            if (sL > comp.s) comp = { v: Lv, s: sL };
+          } else if (qv.AreaValue != null) {
+            var Av = vnum(qv.AreaValue); if (isNaN(Av)) continue;
+            var sA = /net/.test(nm) ? 3 : /gross/.test(nm) ? 2 : 1;
+            if (sA > ar.s) ar = { v: Av, s: sA };
+          } else if (qv.VolumeValue != null) {
+            var Vv = vnum(qv.VolumeValue); if (isNaN(Vv)) continue;
+            var sV = /net/.test(nm) ? 3 : /gross/.test(nm) ? 2 : 1;
+            if (sV > vol.s) vol = { v: Vv, s: sV };
+          } else if (qv.CountValue != null) {
+            var Cv = vnum(qv.CountValue); if (!isNaN(Cv)) cont += Cv;
+          }
+        }
+        if (comp.s < 0 && ar.s < 0 && vol.s < 0 && cont === 0) continue;
+        var qto = { comprimento: comp.s >= 0 ? comp.v * fLen : 0, area: ar.s >= 0 ? ar.v * fArea : 0, volume: vol.s >= 0 ? vol.v * fVol : 0, contagem: cont };
+        var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+        for (var o = 0; o < objs.length; o++) {
+          var oh = objs[o]; if (!oh || oh.value == null) continue;
+          var eid = oh.value;
+          // um elemento pode ter mais de um IfcElementQuantity → fica o MAIOR por dimensão (não soma, p/ não duplicar)
+          if (!mapa[eid]) mapa[eid] = { comprimento: 0, area: 0, volume: 0, contagem: 0 };
+          if (qto.comprimento > mapa[eid].comprimento) mapa[eid].comprimento = qto.comprimento;
+          if (qto.area > mapa[eid].area) mapa[eid].area = qto.area;
+          if (qto.volume > mapa[eid].volume) mapa[eid].volume = qto.volume;
+          if (qto.contagem > mapa[eid].contagem) mapa[eid].contagem = qto.contagem;
+        }
+      }
+    } catch (e) { /* quantidade é bônus; nunca impede o modelo de abrir */ }
+    return mapa;
+  }
+
   async function carregarIFC(arrayBuffer, nome) {
     over.style.display = 'none'; loading.style.display = 'flex'; loading.querySelector('[data-l="txt"]').textContent = 'Iniciando o motor BIM…';
     try {
@@ -249,6 +333,8 @@ function montar(host, opts) {
       S.modelID = S.api.OpenModel(data);
       // carimbos do exportador pyRevit (OrcaPRO_Etapa/CodOrc) → 4D exato + 5D por elemento
       S.carimbos = lerCarimbosOrcaPro();
+      // BaseQuantities do IFC (comprimento/área/volume) por elemento → quantitativo MEDIDO p/ o 5D
+      S.qto = lerQuantitativos();
       var nEl = 0, nTri = 0, tmpMat = new THREE.Matrix4();
       function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!S.matCache[k]) S.matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return S.matCache[k]; }
       S.api.StreamAllMeshes(S.modelID, function (mesh) {
@@ -272,7 +358,7 @@ function montar(host, opts) {
           nTri += idx.length / 3; geo.delete();
         }
         var cb = S.carimbos[mesh.expressID] || {};
-        S.elementos.push({ id: mesh.expressID, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), etapa: cb.etapa || null, codOrc: cb.codOrc || null });
+        S.elementos.push({ id: mesh.expressID, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), etapa: cb.etapa || null, codOrc: cb.codOrc || null, qto: (S.qto && S.qto[mesh.expressID]) || null });
         nEl++;
       });
       hud.querySelector('[data-h="el"]').textContent = nEl.toLocaleString('pt-BR');

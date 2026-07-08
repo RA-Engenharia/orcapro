@@ -1117,6 +1117,11 @@
         '<button class="btn sm primary" id="bim-clash-run">🔍 Rodar compatibilização</button></div>' +
         '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> (ex.: tubo atravessando viga, duto embutido em pilar). Clique em <b>Rodar</b>.</p></div>' +
         "</div>";
+      html += '<div class="card" id="bim-qto" style="display:none">' +
+        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">📐 Quantitativos <span class="muted" style="font-weight:400;font-size:13px">— levantamento automático do modelo</span></h3>' +
+        '<button class="btn sm primary" id="bim-qto-run">📊 Levantar quantitativos</button></div>' +
+        '<div id="bim-qto-res"><p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p></div>' +
+        "</div>";
       html += "</div>";
       html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
       return html;
@@ -1147,6 +1152,7 @@
       }
       var box = document.getElementById("bim-4d"); if (box) box.style.display = "";
       var bcx = document.getElementById("bim-clash"); if (bcx) bcx.style.display = "";
+      var bqx = document.getElementById("bim-qto"); if (bqx) bqx.style.display = "";
       this._bimCurva = BIM4D.curva(p);
       this._bimAplicarSemana(p.semanas);
     },
@@ -1215,6 +1221,29 @@
         (r.total > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando os ' + LIM + " piores de " + r.total + " (ordenados por penetração).</p>" : "") +
         '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>';
     },
+    // Quantitativos: roda o motor BIMQto sobre os elementos (com AABB) e lista o levantamento por disciplina.
+    _bimQuantificar: function () {
+      var res = document.getElementById("bim-qto-res"); if (!res) return;
+      if (typeof BIMQto === "undefined") { res.innerHTML = '<p class="muted">Motor de quantitativos não carregado.</p>'; return; }
+      var els = this._bimElementos || [];
+      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
+      var r; try { r = BIMQto.levantar(els); } catch (e) { res.innerHTML = '<p class="muted">Falha ao levantar: ' + Util.esc(String(e)) + "</p>"; return; }
+      this._bimQto = r;
+      if (!r.linhas.length) { res.innerHTML = '<p class="muted">Nenhum elemento reconhecido para levantamento.</p>'; return; }
+      var chip = { ifc: '<span class="pill sinapi" title="Medido do modelo (BaseQuantities do IFC)">medido</span>', estimado: '<span class="pill proprio" title="Estimado pela caixa envolvente do elemento — revise">estimado</span>', misto: '<span class="pill proprio" title="Parte medido, parte estimado">misto</span>', contagem: '<span class="pill outra">contagem</span>', "sem-medida": '<span class="pill outra">s/ medida</span>' };
+      var linhas = r.linhas.map(function (l) {
+        return '<tr class="lin"><td>' + Util.esc(l.categoria) + "</td>" +
+          '<td class="num">' + Util.fmtNum(l.quantidade, l.medida === "contagem" ? 0 : 2) + "</td><td>" + Util.esc(l.unidade) + "</td>" +
+          '<td class="num">' + l.nElementos + "</td><td>" + (chip[l.fonte] || Util.esc(l.fonte)) + "</td></tr>";
+      }).join("");
+      var avisos = (r.avisos || []).map(function (a) { return '<p class="muted" style="font-size:11.5px;margin:4px 0 0">⚠️ ' + Util.esc(a) + "</p>"; }).join("");
+      res.innerHTML =
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + r.linhas.length + " serviços · " + r.resumo.nElementos + ' elementos</b><span style="flex:1"></span>' +
+        '<button class="btn sm success" id="bim-qto-lancar">✅ Lançar no orçamento</button></div>' +
+        '<div style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Disciplina / serviço</th><th class="num">Qtd</th><th>Un</th><th class="num">Elem.</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
+        avisos +
+        '<p class="muted" style="font-size:11px;margin:6px 0 0">📐 Levantamento automático — o custo entra zerado; case no SINAPI ou informe o preço no editor. <b>"estimado"</b> = medido pela caixa do elemento (revise).</p>';
+    },
     _bimVerClash: function (i) {
       var c = this._bimClashes && this._bimClashes[i]; if (!c) return;
       if (window.BIM && BIM.focarClash) { try { BIM.focarClash([c.aId, c.bId]); } catch (e) {} }
@@ -1248,6 +1277,16 @@
       if (cres) cres.onclick = function (e) {
         var b = e.target.closest("[data-clash]"); if (b) { self._bimVerClash(+b.getAttribute("data-clash")); return; }
         if (e.target.closest("[data-clash-limpar]")) self._bimLimparClash();
+      };
+      // quantitativos: botão levantar + delegação do "lançar no orçamento"
+      var qrun = document.getElementById("bim-qto-run");
+      if (qrun) qrun.onclick = function () { self._bimQuantificar(); };
+      var qres = document.getElementById("bim-qto-res");
+      if (qres) qres.onclick = function (e) {
+        if (e.target.closest("#bim-qto-lancar")) {
+          var obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null;
+          if (window.App && App.criarOrcamentoDoBIM) App.criarOrcamentoDoBIM(self._bimQto, obra && obra.nome);
+        }
       };
       // monta o viewer (js/bim.js é módulo ES — pode não ter carregado ainda; poll curto)
       var tentativas = 0;

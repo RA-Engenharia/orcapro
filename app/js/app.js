@@ -1665,6 +1665,24 @@
       UI.toast("Importado: " + orc.etapas.length + " etapas · " + (casados + proprios) + " itens (" + casados + " casados no SINAPI" + (semCusto ? " · " + semCusto + " sem custo p/ revisar" : "") + ").", "ok");
     },
 
+    // Lança um orçamento a partir do levantamento de quantitativos do BIM (js/bimqto.js).
+    // NÃO inventa preço: custo entra zerado — o usuário casa no SINAPI / precifica no editor.
+    criarOrcamentoDoBIM: function (levantamento, nomeObra) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var seed = (typeof BIMQto !== "undefined" && BIMQto.paraOrcamento) ? BIMQto.paraOrcamento(levantamento) : null;
+      if (!seed || !seed.itens.length) { UI.toast("Nada pra lançar — o modelo não gerou quantitativos.", "erro"); return; }
+      var orc = Orcamento.novo({ nome: nomeObra ? ("Levantamento BIM — " + nomeObra) : "Levantamento BIM (modelo IFC)" });
+      Orcamento.addEtapa(orc, seed.nome);
+      var etapaId = orc.etapas[orc.etapas.length - 1].id;
+      seed.itens.forEach(function (it) {
+        Orcamento.addItem(orc, etapaId, { codigo: "", descricao: it.descricao, unidade: it.unidade || "un", custoUnitario: 0 }, it.quantidade);
+      });
+      Store.salvarOrcamento(Auth.empresaId(), orc);
+      this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha"; this.render();
+      var estim = (levantamento && levantamento.resumo && levantamento.resumo.nEstimados) || 0;
+      UI.toast("Lançado do BIM: " + seed.itens.length + " serviços quantificados" + (estim ? " (algumas quantidades estimadas — revise)" : "") + ". Agora case no SINAPI / informe os preços.", "ok");
+    },
+
     // Overlay de impressão compartilhado (proposta e relatório)
     _abrirPrint: function (titulo, htmlConteudo) {
       this.fecharProposta();

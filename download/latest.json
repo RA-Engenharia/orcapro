@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.44",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.44/OrcaPRO-IA-update-v1.1.44.zip",
-  "notas": "Importador mais inteligente com planilhas de várias abas: agora o sistema identifica automaticamente a aba do ORÇAMENTO (Analítica) mesmo quando há abas maiores no arquivo (Composições, Memória de Cálculo). E, se precisar, você troca a aba na hora da importação, num seletor no topo do preview.",
+  "versao": "1.1.45",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.45/OrcaPRO-IA-update-v1.1.45.zip",
+  "notas": "Novo: Levantamento Automático de Quantitativos no BIM. Carregue o modelo IFC (export do Revit) no visualizador 3D e o sistema mede as quantidades por disciplina — pilares e lajes saem MEDIDOS direto do modelo, o resto é estimado (e avisado). Um clique em 'Lançar no orçamento' cria a etapa com os itens (custo zerado — voce casa no SINAPI ou informa o preço). O modelo vira orçamento.",
   "obrigatoria": false
 }
