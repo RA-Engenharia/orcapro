@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.40",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.40/OrcaPRO-IA-update-v1.1.40.zip",
-  "notas": "Novo: Importador de planilhas — jogue um orçamento em Excel ou CSV de qualquer formato e o sistema detecta a estrutura, casa os códigos SINAPI (preço oficial no que faltar, nunca inventa código) e monta o orçamento, sem redigitar. Melhorias no visualizador BIM e na robustez do importador.",
+  "versao": "1.1.41",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.41/OrcaPRO-IA-update-v1.1.41.zip",
+  "notas": "Ajuste de estabilidade. O importador de planilhas está em aprimoramento e volta em breve, mais robusto (detecção de custo, quantidade e número endurecida). Os demais recursos seguem normais.",
   "obrigatoria": false
 }
