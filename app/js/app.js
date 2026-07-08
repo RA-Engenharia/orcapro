@@ -1527,6 +1527,9 @@
     _lerPlanilha: function (file, cb) {
       var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
       if (/\.csv$/.test(nome)) { fr.onload = function () { try { cb(App._parseCSV(String(fr.result))); } catch (e) { cb(null, String(e && e.message || e)); } }; fr.onerror = function () { cb(null, "falha ao ler o arquivo"); }; fr.readAsText(file); return; }
+      // .xls antigo (binário BIFF, pré-2007) NÃO é lido pelo ExcelJS (que só abre .xlsx/OOXML) —
+      // sem este guard o load estoura com "Cannot read properties of undefined (reading 'sheets')".
+      if (/\.xls$/.test(nome)) { cb(null, "Arquivo .xls (Excel antigo) não é suportado. No Excel, use Salvar como → Pasta de Trabalho do Excel (.xlsx) — ou salve como .csv — e importe de novo."); return; }
       fr.onload = function () {
         if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { cb(null, "módulo Excel indisponível (precisa de internet na 1ª vez)"); return; }
         ExcelOrc.ensureExcelJS(function () {
@@ -1543,12 +1546,19 @@
               if (!abas.length) { cb(null, "planilha sem abas legíveis"); return; }
               var idx = App._melhorAba(abas);
               cb(abas[idx].matriz, null, { abas: abas, idx: idx });
-            }).catch(function (e) { cb(null, String(e && e.message || e)); });
-          } catch (e) { cb(null, String(e && e.message || e)); }
+            }).catch(function (e) { cb(null, App._msgExcelErro(e)); });
+          } catch (e) { cb(null, App._msgExcelErro(e)); }
         });
       };
       fr.onerror = function () { cb(null, "falha ao ler o arquivo"); };
       fr.readAsArrayBuffer(file);
+    },
+    // Traduz o erro cru do ExcelJS numa mensagem acionável (arquivo não-xlsx/corrompido/protegido).
+    _msgExcelErro: function (e) {
+      var raw = String((e && e.message) || e || "");
+      if (/sheets|zip|central directory|end of central|invalid|corrupt|undefined|not a valid|signature/i.test(raw))
+        return "Não consegui ler este arquivo como Excel (.xlsx). Confirme que é um .xlsx válido — não protegido por senha e não corrompido. Dica: abra no Excel e use Salvar como .xlsx (ou .csv), depois importe.";
+      return "Falha ao ler a planilha: " + raw;
     },
     // Multi-aba: elege a aba que MAIS parece um ORÇAMENTO (não a maior). Roda o próprio
     // Importador em cada aba e pontua: confiança manda; estrutura de etapas REAIS desempata
