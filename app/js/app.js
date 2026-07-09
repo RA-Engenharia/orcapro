@@ -14,9 +14,10 @@
     // ---------- Boot ----------
     iniciar: function () {
       Auth.init();
-      // tema salvo
+      // tema salvo (tema = claro/escuro; tom = variação do escuro: azul/preto/verde/marrom/ra)
       var tema = localStorage.getItem("orcapro:tema") || "light";
       document.documentElement.setAttribute("data-tema", tema);
+      document.documentElement.setAttribute("data-tom", localStorage.getItem("orcapro:tom") || "azul");
 
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
@@ -215,7 +216,8 @@
       switch (acao) {
         case "entrar": this.entrar(); break;
         case "logout": if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
-        case "tema": this.alternarTema(); break;
+        case "tema": this.abrirTema(); break;
+        case "tema-op": this.aplicarTema(t.dataset.temaVal, t.dataset.tomVal); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
         case "empresa": this.abrirEmpresa(); break;
         case "licenca": this.abrirLicenca(); break;
@@ -818,11 +820,42 @@
       return itens;
     },
 
-    alternarTema: function () {
-      var atual = document.documentElement.getAttribute("data-tema");
-      var novo = atual === "dark" ? "light" : "dark";
-      document.documentElement.setAttribute("data-tema", novo);
-      localStorage.setItem("orcapro:tema", novo);
+    alternarTema: function () { // atalho claro↔escuro (preserva o tom escolhido)
+      this.aplicarTema(document.documentElement.getAttribute("data-tema") === "dark" ? "light" : "dark", null);
+    },
+    aplicarTema: function (tema, tom) {
+      tema = tema === "dark" ? "dark" : "light";
+      tom = tom || localStorage.getItem("orcapro:tom") || "azul";
+      document.documentElement.setAttribute("data-tema", tema);
+      document.documentElement.setAttribute("data-tom", tom);
+      localStorage.setItem("orcapro:tema", tema);
+      localStorage.setItem("orcapro:tom", tom);
+      // marca a opção ativa se o modal de temas estiver aberto
+      var abertos = document.querySelectorAll(".tema-op");
+      if (abertos.length) abertos.forEach(function (b) { b.classList.toggle("on", b.dataset.temaVal === tema && (tema === "light" || b.dataset.tomVal === tom)); });
+    },
+    // Seletor de tema: Claro (como o site) + 5 tons de escuro (cores do logo RA)
+    abrirTema: function () {
+      var temaAtual = document.documentElement.getAttribute("data-tema") || "light";
+      var tomAtual = document.documentElement.getAttribute("data-tom") || "azul";
+      var ops = [
+        { tema: "light", tom: "azul",   nome: "Claro",         desc: "Branco, como o site",             sw: ["#f4f7fb", "#ffffff", "#0f2740", "#16a34a"] },
+        { tema: "dark",  tom: "azul",   nome: "Escuro Azul",   desc: "Navy OrçaPRO (padrão)",           sw: ["#0b1622", "#11202e", "#5a9bc9", "#22c55e"] },
+        { tema: "dark",  tom: "preto",  nome: "Escuro Preto",  desc: "Neutro, foco total",              sw: ["#0a0c0f", "#121519", "#8b98a5", "#22c55e"] },
+        { tema: "dark",  tom: "verde",  nome: "Escuro Verde",  desc: "O verde do logo RA",              sw: ["#081711", "#0e2118", "#4d8b2f", "#79c455"] },
+        { tema: "dark",  tom: "marrom", nome: "Escuro Marrom", desc: "O terra do logo RA",              sw: ["#15100a", "#1e1710", "#877457", "#b5985a"] },
+        { tema: "dark",  tom: "ra",     nome: "RA Engenharia", desc: "Misto do logo: navy + verde + dourado", sw: ["#0d1725", "#132133", "#5ea23a", "#b5985a"] }
+      ];
+      var cards = ops.map(function (o) {
+        var on = (o.tema === temaAtual && (o.tema === "light" || o.tom === tomAtual));
+        return '<button type="button" class="tema-op' + (on ? " on" : "") + '" data-acao="tema-op" data-tema-val="' + o.tema + '" data-tom-val="' + o.tom + '">' +
+          '<span class="sw">' + o.sw.map(function (c) { return '<i style="background:' + c + '"></i>'; }).join("") + "</span>" +
+          "<b>" + o.nome + "</b><small>" + o.desc + "</small></button>";
+      }).join("");
+      UI.modal("🎨 Tema do aplicativo",
+        '<p class="muted" style="margin:0 0 12px">Escolha como o OrçaPRO fica na sua tela — a mudança é na hora e fica salva neste aparelho.</p>' +
+        '<div class="tema-ops">' + cards + "</div>",
+        [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
 
     // ---------- Orçamentos ----------

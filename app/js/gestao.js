@@ -141,37 +141,40 @@
   var Gestao = {
     P: P, rot: rot,
     modulos: [
-      { id: "dashboard", nome: "Painel" },
-      { id: "orcamentos", nome: "Orçamentos" },
-      { id: "obras", nome: "Obras" },
-      { id: "tarefas", nome: "Tarefas" },
-      { id: "lastplanner", nome: "Last Planner (PPC)" },
-      { id: "clientes", nome: "Clientes" },
-      { id: "contratos", nome: "Contratos" },
-      { id: "medicoes", nome: "Medições" },
-      { id: "financeiro", nome: "Financeiro" },
-      { id: "previstoreal", nome: "Previsto × Real" },
-      { id: "fornecedores", nome: "Fornecedores" },
-      { id: "compras", nome: "Compras" },
-      { id: "estoque", nome: "Estoque" },
-      { id: "rdo", nome: "Diário (RDO)" },
-      { id: "galeria", nome: "Galeria de Fotos" },
-      { id: "bim", nome: "BIM 3D / 4D" },
-      { id: "colaboradores", nome: "Colaboradores" },
-      { id: "epi", nome: "EPI" },
-      { id: "ponto", nome: "Ponto / Folha" },
-      { id: "frota", nome: "Frota" },
-      { id: "requisicoes", nome: "Requisições" },
-      { id: "insumos", nome: "Banco de Insumos" },
-      { id: "fiscal", nome: "Fiscal / NF-e" },
-      { id: "patrimonio", nome: "Patrimônio" },
-      { id: "centrocusto", nome: "Centro de Custo" },
-      { id: "folha", nome: "Folha / Encargos" },
-      { id: "relatorios", nome: "Relatórios" },
-      { id: "modelos", nome: "Modelos de Doc." },
-      { id: "usuarios", nome: "Usuários" },
-      { id: "ajuda", nome: "Ajuda" }
+      // Ordem = jornada da obra (a MESMA da landing): 1 orçar → 2 BIM → 3 estruturar →
+      // 4 canteiro → 5 abastecer → 6 equipe/ativos → 7 dinheiro/comando. g = grupo do menu.
+      { id: "dashboard", nome: "Painel", g: 0 },
+      { id: "orcamentos", nome: "Orçamentos", g: 1 },
+      { id: "bim", nome: "BIM 3D / 4D", g: 2 },
+      { id: "clientes", nome: "Clientes", g: 3 },
+      { id: "contratos", nome: "Contratos", g: 3 },
+      { id: "obras", nome: "Obras", g: 3 },
+      { id: "tarefas", nome: "Tarefas", g: 3 },
+      { id: "lastplanner", nome: "Last Planner (PPC)", g: 4 },
+      { id: "rdo", nome: "Diário (RDO)", g: 4 },
+      { id: "galeria", nome: "Galeria de Fotos", g: 4 },
+      { id: "medicoes", nome: "Medições", g: 4 },
+      { id: "insumos", nome: "Banco de Insumos", g: 5 },
+      { id: "requisicoes", nome: "Requisições", g: 5 },
+      { id: "compras", nome: "Compras", g: 5 },
+      { id: "fornecedores", nome: "Fornecedores", g: 5 },
+      { id: "estoque", nome: "Estoque", g: 5 },
+      { id: "colaboradores", nome: "Colaboradores", g: 6 },
+      { id: "epi", nome: "EPI", g: 6 },
+      { id: "ponto", nome: "Ponto / Folha", g: 6 },
+      { id: "folha", nome: "Folha / Encargos", g: 6 },
+      { id: "frota", nome: "Frota", g: 6 },
+      { id: "patrimonio", nome: "Patrimônio", g: 6 },
+      { id: "modelos", nome: "Modelos de Doc.", g: 6 },
+      { id: "financeiro", nome: "Financeiro", g: 7 },
+      { id: "previstoreal", nome: "Previsto × Real", g: 7 },
+      { id: "fiscal", nome: "Fiscal / NF-e", g: 7 },
+      { id: "centrocusto", nome: "Centro de Custo", g: 7 },
+      { id: "relatorios", nome: "Relatórios", g: 7 },
+      { id: "usuarios", nome: "Usuários", g: 7 },
+      { id: "ajuda", nome: "Ajuda", g: 8 }
     ],
+    GRUPOS_MENU: { 1: "1 · Orçar & vender", 2: "2 · Modelo 3D (BIM)", 3: "3 · Fechar & estruturar", 4: "4 · Canteiro", 5: "5 · Abastecer a obra", 6: "6 · Equipe & ativos", 7: "7 · Dinheiro & comando" },
 
     // ---------- Sidebar (nav de módulos) ----------
     renderSidebar: function (viewAtiva) {
@@ -179,8 +182,19 @@
       var mods;
       if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
       else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); }); // RBAC: sub-usuário só vê seus módulos
+      // Cabeçalhos de grupo seguem a jornada da obra (só quando há 2+ grupos visíveis — FREE fica limpo)
+      var grupos = {}; mods.forEach(function (m) { if (m.g) grupos[m.g] = 1; });
+      var comLabels = Object.keys(grupos).length > 1;
+      var self = this, ultimoG = null;
       var itens = mods.map(function (m) {
-        return '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
+        var pre = "";
+        if (comLabels && m.g !== ultimoG) {
+          ultimoG = m.g;
+          var lbl = self.GRUPOS_MENU[m.g];
+          if (lbl) pre = '<div class="sb-grp">' + lbl + "</div>";
+          else if (m.g === 8) pre = '<div class="sb-sep"></div>';
+        }
+        return pre + '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
       }).join("");
       if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">⭐</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
       return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#sbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg></div>' +
@@ -3174,9 +3188,9 @@ renderRelatorios: function () {
       var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= .8 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
         this._lpKpi("PPC da semana", ppcSem, res.feitas + "/" + res.comprometidas + " tarefas", corPpc) +
-        this._lpKpi("PPC médio (6 sem)", ppcMed, "meta ≥ 80%", "var(--navy)") +
+        this._lpKpi("PPC médio (6 sem)", ppcMed, "meta ≥ 80%", "var(--texto)") +
         this._lpKpi("Restrições abertas", String(res.restricoesAbertas), "a remover no médio prazo", res.restricoesAbertas ? "#ea580c" : "var(--verde)") +
-        this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--navy)") + '</div>';
+        this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--texto)") + '</div>';
 
       // Plano da Semana
       var estaSem = look[0];

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <script>/* LOTE 5: aplica o tema salvo ANTES do primeiro paint (mata o flash branco no dark) */
-  try { document.documentElement.setAttribute("data-tema", localStorage.getItem("orcapro:tema") || "light"); } catch (e) {}</script>
+  try { document.documentElement.setAttribute("data-tema", localStorage.getItem("orcapro:tema") || "light"); document.documentElement.setAttribute("data-tom", localStorage.getItem("orcapro:tom") || "azul"); } catch (e) {}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OrçaPRO — Orçamento Inteligente de Obras</title>
   <!-- BIM: resolve os specifiers dos módulos ES do visualizador (js/bim.js + OrbitControls) -->

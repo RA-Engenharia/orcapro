@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.50",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.50/OrcaPRO-IA-update-v1.1.50.zip",
-  "notas": "Correção: clicar em 'Nova tarefa' no Last Planner (PPC) deixou de dar erro — agora abre o formulário normalmente (tarefa, responsável, frente e semana). Continua tudo do 1.1.49: o app abre direto no uso individual (sem tela de login), o multiusuário (RBAC) mantém o login por perfil, e o cache é versionado para não rodar código antigo após atualizar.",
+  "versao": "1.1.51",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.51/OrcaPRO-IA-update-v1.1.51.zip",
+  "notas": "Menu na ordem da jornada da obra (Orçar → BIM → Estruturar → Canteiro → Abastecer → Equipe → Dinheiro), tema claro mais branco e modo escuro com 5 tons — incluindo o tema RA com as cores do logo (navy, verde e dourado). Troque em ⚙ → 🎨 Tema do aplicativo.",
   "obrigatoria": false
 }

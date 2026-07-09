@@ -12,7 +12,7 @@
   --vermelho: #dc2626;
   --amarelo: #f59e0b;
 
-  --bg: #eff3f8;
+  --bg: #f4f7fb; /* mesmo branco-azulado do site — claro puxado pro branco */
   --surface: #ffffff;
   --surface-2: #eef2f7;
   --surface-3: #e5ecf4;
@@ -54,6 +54,51 @@
   --card-bg: linear-gradient(180deg, #142433 0%, #10202e 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #14293b 0%, rgba(20,41,59,0) 54%);
 }
+
+/* ===== Tons do modo escuro (data-tom) — Azul é o padrão acima; Preto, Verde,
+   Marrom e RA (misto navy+verde+dourado, as cores do logo RA Engenharia) ===== */
+[data-tema="dark"][data-tom="preto"] {
+  --bg: #0a0c0f; --surface: #121519; --surface-2: #181c22; --surface-3: #1f242c;
+  --linha: #252b34; --linha-forte: #39424e;
+  --card-bg: linear-gradient(180deg, #14181d 0%, #101317 100%);
+  --bg-grad: radial-gradient(1180px 680px at 80% -12%, #171b21 0%, rgba(23,27,33,0) 54%);
+}
+[data-tema="dark"][data-tom="preto"] .topbar { background: linear-gradient(180deg, #171a20 0%, #0e1114 100%); }
+[data-tema="dark"][data-tom="preto"] .sidebar { background: linear-gradient(180deg, #15181d, #0d1013); }
+
+[data-tema="dark"][data-tom="verde"] {
+  --bg: #081711; --surface: #0e2118; --surface-2: #132a1f; --surface-3: #1a3427;
+  --linha: #1f3a2c; --linha-forte: #2f5241;
+  --card-bg: linear-gradient(180deg, #11271c 0%, #0d2016 100%);
+  --bg-grad: radial-gradient(1180px 680px at 80% -12%, #143024 0%, rgba(20,48,36,0) 54%);
+  --anel: 0 0 0 3px rgba(34,197,94,.22);
+}
+[data-tema="dark"][data-tom="verde"] .topbar { background: linear-gradient(180deg, #123324 0%, #0a1f15 100%); }
+[data-tema="dark"][data-tom="verde"] .sidebar { background: linear-gradient(180deg, #113022, #0a1d13); }
+
+[data-tema="dark"][data-tom="marrom"] {
+  --bg: #15100a; --surface: #1e1710; --surface-2: #261d14; --surface-3: #2f2419;
+  --linha: #332a1e; --linha-forte: #4a3d2c;
+  --texto: #f0e9df; --texto-fraco: #a99c8a;
+  --card-bg: linear-gradient(180deg, #221a12 0%, #1b140d 100%);
+  --bg-grad: radial-gradient(1180px 680px at 80% -12%, #2a2115 0%, rgba(42,33,21,0) 54%);
+  --anel: 0 0 0 3px rgba(181,152,90,.26);
+}
+[data-tema="dark"][data-tom="marrom"] .topbar { background: linear-gradient(180deg, #382c1b 0%, #201810 100%); }
+[data-tema="dark"][data-tom="marrom"] .sidebar { background: linear-gradient(180deg, #332718, #1c150c); }
+
+[data-tema="dark"][data-tom="ra"] {
+  /* Misto do logo RA: navy de base, verde do R e dourado do "ESPECIAL" nos acentos */
+  --bg: #0d1725; --surface: #132133; --surface-2: #182a40; --surface-3: #20344d;
+  --linha: #263a52; --linha-forte: #3a5270;
+  --verde: #5ea23a; --verde-claro: #79c455; --amarelo: #b5985a;
+  --card-bg: linear-gradient(180deg, #162743 0%, #111f33 100%);
+  --bg-grad: radial-gradient(1180px 680px at 80% -12%, #1a2c47 0%, rgba(26,44,71,0) 54%),
+             radial-gradient(900px 520px at -10% 112%, rgba(94,162,58,.10) 0%, rgba(0,0,0,0) 60%);
+  --anel: 0 0 0 3px rgba(181,152,90,.22);
+}
+[data-tema="dark"][data-tom="ra"] .topbar { background: linear-gradient(180deg, #1a3050 0%, #12233c 100%); }
+[data-tema="dark"][data-tom="ra"] .sidebar { background: linear-gradient(180deg, #182e4d, #101f36); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
@@ -151,6 +196,19 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; }
 .sb-top { padding: 15px 18px 8px; }
 .sb-lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: rgba(255,255,255,.38); padding: 8px 20px 4px; font-weight: 700; }
 .sb-nav { display: flex; flex-direction: column; gap: 2px; padding: 2px 10px 14px; }
+/* cabeçalho de grupo do menu (jornada da obra, igual à landing) */
+.sb-grp { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1.2px; color: rgba(255,255,255,.34); padding: 13px 12px 4px; font-weight: 800; white-space: nowrap; }
+.sb-sep { height: 1px; margin: 12px 12px 4px; background: rgba(255,255,255,.1); }
+/* seletor de tema (modal) */
+.tema-ops { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tema-op { border: 2px solid var(--linha); border-radius: 12px; padding: 12px 12px 10px; cursor: pointer; background: var(--surface); text-align: left; transition: transform .15s, border-color .15s, box-shadow .15s; width: 100%; font: inherit; color: var(--texto); }
+.tema-op:hover { transform: translateY(-2px); border-color: var(--aco-claro); box-shadow: var(--sombra); }
+.tema-op.on { border-color: var(--verde); box-shadow: 0 0 0 3px rgba(22,163,74,.15); }
+.tema-op .sw { display: flex; gap: 5px; margin-bottom: 8px; }
+.tema-op .sw i { width: 22px; height: 22px; border-radius: 7px; border: 1px solid rgba(0,0,0,.18); }
+.tema-op b { display: block; font-size: 13.5px; }
+.tema-op small { color: var(--texto-fraco); font-size: 11.5px; line-height: 1.3; display: block; }
+@media (max-width: 560px) { .tema-ops { grid-template-columns: repeat(2, 1fr); } }
 .sb-item { display: flex; align-items: center; gap: 11px; background: none; border: 0; color: #cfe0ef; font-size: 14px; font-weight: 600; padding: 11px 12px; border-radius: 9px; cursor: pointer; text-align: left; transition: .12s; width: 100%; }
 .sb-item:hover { background: rgba(255,255,255,.08); color: #fff; }
 .sb-item.on { background: linear-gradient(90deg, rgba(46,111,158,.55), rgba(46,111,158,.18)); color: #fff; box-shadow: inset 3px 0 0 var(--verde-claro); }

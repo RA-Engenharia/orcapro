@@ -102,7 +102,7 @@
             '<button class="conta-item" data-acao="tabelas"><span>🗂</span>Tabelas de preço</button>' +
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>☁</span>Nuvem — sincronizar aparelhos</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
-            '<button class="conta-item" data-acao="tema"><span>◐</span>Tema claro / escuro</button>' +
+            '<button class="conta-item" data-acao="tema"><span>🎨</span>Tema do aplicativo</button>' +
             '<div class="conta-sep"></div>' +
             '<button class="conta-item sair" data-acao="logout"><span>🚪</span>Sair</button>' +
             '<div class="conta-sep"></div>' +
