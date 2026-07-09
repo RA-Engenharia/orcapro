@@ -148,7 +148,7 @@
           if (obras.indexOf(obraNome) === -1) obras.push(obraNome);
           // 1ª data da linha vira a semana (M/D/AA ou D/M/AA — planilha dela é M/D/AA)
           for (var ci = 1; ci < row.length; ci++) {
-            if (row[ci] && typeof row[ci] === "object" && typeof row[ci].getFullYear === "function") { chave = chaveSemana(row[ci]); break; }
+            if (row[ci] && typeof row[ci] === "object" && typeof row[ci].getFullYear === "function") { var dU = row[ci]; chave = chaveSemana(new Date(dU.getUTCFullYear(), dU.getUTCMonth(), dU.getUTCDate())); break; }
             var dv = limpo(row[ci]), md = dv.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
             if (md) { var a = +md[3] < 100 ? 2000 + (+md[3]) : +md[3]; var mm = +md[1], dd = +md[2]; if (mm > 12) { var tmp = mm; mm = dd; dd = tmp; } chave = chaveSemana(new Date(a, mm - 1, dd)); break; }
           }
