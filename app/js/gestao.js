@@ -3238,7 +3238,7 @@ renderRelatorios: function () {
       var corpo = campo("Tarefa *", inp("g-lp-titulo", "", "Ex.: Concretar laje do 2º pavimento")) +
         '<div class="row">' + campo("Responsável", inp("g-lp-resp", "", "Ex.: Equipe estrutura")) + campo("Frente / local", inp("g-lp-frente", "", "Ex.: Bloco A")) + '</div>' +
         campo("Semana (lookahead)", sel("g-lp-sem", semOpts));
-      this._modalForm("lp_tarefas", null, "Nova tarefa (Last Planner)", corpo, function (obj) {
+      this._modalForm("lp_tarefas", {}, "Nova tarefa (Last Planner)", corpo, function (obj) {
         obj.titulo = v("g-lp-titulo"); if (!obj.titulo) { UI.toast("Informe a tarefa.", "erro"); return false; }
         obj.responsavel = v("g-lp-resp"); obj.frente = v("g-lp-frente"); obj.semana = v("g-lp-sem"); obj.obraId = self._lpObra;
         obj.comprometida = false; obj.status = "afazer"; obj.causa = ""; obj.restricoes = obj.restricoes || [];
