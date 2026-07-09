@@ -117,6 +117,7 @@
     estoque: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/><path d="m7.5 4.3 9 5.2"/>',
     rdo: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8M8 15h5"/>',
     colaboradores: '<path d="M2 18h20"/><path d="M4 18v-2a8 8 0 0 1 16 0v2"/><path d="M10 8V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3"/>',
+    folhasemanal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h5M14 15.5h3.5"/>',
     ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
     requisicoes: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/>',
@@ -160,6 +161,7 @@
       { id: "fornecedores", nome: "Fornecedores", g: 5 },
       { id: "estoque", nome: "Estoque", g: 5 },
       { id: "colaboradores", nome: "Colaboradores", g: 6 },
+      { id: "folhasemanal", nome: "Folha Semanal", g: 6 },
       { id: "epi", nome: "EPI", g: 6 },
       { id: "ponto", nome: "Ponto / Folha", g: 6 },
       { id: "folha", nome: "Folha / Encargos", g: 6 },
@@ -210,6 +212,7 @@
         case "obras": return this.renderObras();
         case "tarefas": return this.renderTarefas();
         case "lastplanner": return this.renderLastPlanner();
+        case "folhasemanal": return this.renderFolhaSemanal();
         case "clientes": return this.renderClientes();
         case "contratos": return this.renderContratos();
         case "medicoes": return this.renderMedicoes();
@@ -1777,12 +1780,14 @@
         '<div class="row">' + campo("Tipo de contrato", sel("g-tipo", opts(P.tipoContrato, c.tipoContrato || "clt"))) + campo("CPF", inp("g-cpf", c.cpf)) + campo("Telefone", inp("g-tel", c.telefone, "(34) 90000-0000")) + "</div>" +
         '<div class="row">' + campo("Remuneração (R$)", inp("g-rem", c.remuneracao)) + campo("Base", sel("g-un", opts(P.unidadeRem, c.unidadeRem || "mensal"))) + campo("Admissão", inp("g-adm", c.admissao, "", "date")) + "</div>" +
         '<div class="row">' + campo("Obra (alocação)", sel("g-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + campo("Status", sel("g-status", opts(P.colabStatus, c.status || "ativo"))) + "</div>" +
+        '<div class="row">' + campo("Favorecido do pagamento", inp("g-fav", c.favorecido, "Quem recebe (se for outra pessoa)")) + campo("Chave PIX", inp("g-pix", c.chavePix, "CPF, celular ou e-mail")) + "</div>" +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(c.obs || "") + "</textarea>");
       this._modalForm("colaboradores", c, "Colaborador", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome do colaborador.", "erro"); return false; }
         obj.funcao = v("g-func"); obj.tipoContrato = v("g-tipo"); obj.cpf = v("g-cpf"); obj.telefone = v("g-tel");
         obj.remuneracao = nv("g-rem"); obj.unidadeRem = v("g-un"); obj.admissao = v("g-adm"); obj.obraId = v("g-obra");
         obj.status = v("g-status"); obj.obs = v("g-obs");
+        obj.favorecido = v("g-fav"); obj.chavePix = v("g-pix");
         return true;
       });
     },
@@ -3020,6 +3025,178 @@ renderRelatorios: function () {
       return html;
     },
 
+    // ---------- FOLHA SEMANAL (diaristas por obra: favorecido + PIX + fechamento) ----------
+    _fsSemana: null, _fsObra: "",
+    _fsTodos: function () { return Store.listar(eid(), "fs_lancamentos"); },
+    _fsLancs: function () { var s = this._fsSemana, o = this._fsObra; return this._fsTodos().filter(function (l) { return l.semana === s && (!o || l.obraId === o); }); },
+    _fsNomeObra: function (id) { var o = Store.obter(eid(), "obras", id); return o ? o.nome : (id || "— sem obra —"); },
+    fsTroca: function (campo, val) { if (campo === "semana") this._fsSemana = val; else this._fsObra = val; App.render(); },
+    renderFolhaSemanal: function () {
+      var FS = window.FolhaSemanal; if (!FS) return this._head("Folha Semanal", "", "") + '<div class="card">Motor da Folha Semanal não carregado.</div>';
+      var self = this;
+      if (!this._fsSemana) { var ts = this._fsTodos().map(function (l) { return l.semana; }).sort(); this._fsSemana = ts.length ? ts[ts.length - 1] : FS.chaveSemana(new Date()); }
+      var semanas = {}; this._fsTodos().forEach(function (l) { if (l.semana) semanas[l.semana] = 1; }); semanas[this._fsSemana] = 1; semanas[FS.chaveSemana(new Date())] = 1;
+      var selSem = '<select data-gacao="fs-semana" style="max-width:210px">' + Object.keys(semanas).sort().reverse().map(function (s) { return '<option value="' + s + '"' + (s === self._fsSemana ? " selected" : "") + ">Semana " + FS.periodoDaChave(s) + "</option>"; }).join("") + "</select>";
+      var obras = lista("obras");
+      var selObra = '<select data-gacao="fs-obra" style="max-width:180px"><option value="">Todas as obras</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._fsObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var extra = selSem + " " + selObra +
+        ' <button class="btn sm" data-gacao="fs-importar">📥 Importar planilha</button>' +
+        ' <button class="btn sm" data-gacao="fs-print" data-val="fechamento">🖨 Fechamento</button>' +
+        ' <button class="btn sm" data-gacao="fs-print" data-val="pix">🧾 Lista PIX</button>' +
+        ' <button class="btn sm" data-gacao="fs-financeiro">💸 Lançar no Financeiro</button>';
+      var html = this._head(svg("folhasemanal") + "Folha Semanal · Diaristas", "fs-nova", "Lançamento", extra);
+      var lancs = this._fsLancs(), fech = FS.fechamento(lancs), pix = FS.listaPix(lancs);
+      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
+        '<div class="card kpi destaque"><div class="rotulo">Total da semana</div><div class="num">' + Util.fmtMoeda(fech.total) + '</div></div>' +
+        '<div class="card kpi"><div class="rotulo">Obras com folha</div><div class="num">' + Object.keys(fech.porObra).length + '</div></div>' +
+        '<div class="card kpi"><div class="rotulo">Pagamentos PIX</div><div class="num">' + pix.length + '</div></div></div>';
+      if (!lancs.length) return html + '<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhum lançamento nesta semana.</b><br><span class="muted">Clique em <b>+ Lançamento</b> pra lançar as diárias — ou <b>📥 Importar planilha</b> pra trazer a sua planilha semanal inteira (uma obra por aba, com favorecido e chave PIX): o sistema cadastra obras, colaboradores e a semana sozinho.</span></div>';
+      Object.keys(fech.porObra).forEach(function (ob) {
+        var g = fech.porObra[ob];
+        html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:auto"><div style="padding:12px 14px 8px;display:flex;justify-content:space-between;align-items:center"><b>' + Util.esc(self._fsNomeObra(ob)) + '</b><b style="color:var(--verde)">' + Util.fmtMoeda(g.total) + "</b></div>" +
+          '<table class="tbl"><thead><tr><th>Operário / lançamento</th><th class="num">Seg</th><th class="num">Ter</th><th class="num">Qua</th><th class="num">Qui</th><th class="num">Sex</th><th class="num">Sáb</th><th class="num">Dom</th><th class="num">H.E.</th><th class="num">Total</th><th></th></tr></thead><tbody>';
+        g.linhas.forEach(function (l) {
+          var cels = FS.DIAS.map(function (d) {
+            if (l.tipo !== "diaria" && !l.usarValor) return '<td class="num muted">—</td>';
+            if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td class="num" style="color:var(--vermelho);font-weight:700">✕</td>';
+            var v = l.dias && l.dias[d]; return '<td class="num">' + (v ? Util.fmtNum(v, 0) : "") + "</td>";
+          }).join("");
+          var rotTipo = l.tipo && l.tipo !== "diaria" ? ' <span class="g-pill" style="background:var(--surface-3)">' + Util.esc(l.tipo) + "</span>" : "";
+          html += '<tr><td><b>' + Util.esc(l.nome || "—") + "</b>" + (l.funcao ? ' <span class="muted">· ' + Util.esc(l.funcao) + "</span>" : "") + rotTipo +
+            (l.favorecido || l.chavePix ? '<br><span class="muted" style="font-size:11px">' + Util.esc(l.favorecido || "") + (l.chavePix ? " · PIX " + Util.esc(l.chavePix) : "") + "</span>" : "") + "</td>" +
+            cels + '<td class="num">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td><td class="num"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + '</b></td>' +
+            '<td class="num" style="white-space:nowrap"><button class="btn sm" data-gacao="fs-edit" data-val="' + l.id + '">✎</button> <button class="btn sm danger" data-gacao="fs-del" data-val="' + l.id + '">🗑</button></td></tr>';
+        });
+        html += "</tbody></table></div>";
+      });
+      return html;
+    },
+    fsForm: function (id) {
+      var FS = window.FolhaSemanal, self = this;
+      var l = id ? Store.obter(eid(), "fs_lancamentos", id) : null; l = l || {};
+      var obras = lista("obras"), cols = lista("colaboradores");
+      var diasIn = FS.DIAS.map(function (d) { var v = l.faltas && l.faltas.indexOf(d) !== -1 ? "x" : (l.dias && l.dias[d]) || ""; return campo(FS.ROT[d].slice(0, 3), inp("g-fs-" + d, v, "R$ ou x")); }).join("");
+      var corpo = '<div class="row">' + campo("Obra *", sel("g-fs-obra", optsRec(obras, "nome", l.obraId, "— escolha —"))) +
+        campo("Colaborador", sel("g-fs-colab", optsRec(cols, "nome", l.colaboradorId, "— avulso / manual —"))) +
+        campo("Tipo", sel("g-fs-tipo", opts([["diaria", "Diária (dia a dia)"], ["empreita", "Empreita"], ["frete", "Frete"], ["reembolso", "Reembolso"], ["fornecedor", "Fornecedor"], ["outro", "Outro"]], l.tipo || "diaria"))) + "</div>" +
+        '<div class="row">' + campo("Nome no lançamento *", inp("g-fs-nome", l.nome, "Ex.: Rosivaldo Pedreiro")) + campo("Favorecido (quem recebe)", inp("g-fs-fav", l.favorecido)) + campo("Chave PIX", inp("g-fs-pix", l.chavePix)) + "</div>" +
+        '<div class="row">' + diasIn + "</div>" +
+        '<div class="row">' + campo("Hora extra (R$)", inp("g-fs-he", l.he)) + campo("Valor fechado (empreita/frete…)", inp("g-fs-valor", l.valor)) + campo("Observação", inp("g-fs-obs", l.obs)) + "</div>" +
+        '<p class="muted" style="font-size:12px;margin:4px 0 0">Nos dias: digite o valor da diária (ex.: <b>166</b>) ou <b>x</b> pra falta. Escolhendo um colaborador, favorecido e PIX vêm do cadastro.</p>';
+      this._modalForm("fs_lancamentos", l, "Lançamento da folha", corpo, function (obj) {
+        obj.obraId = v("g-fs-obra"); if (!obj.obraId) { UI.toast("Escolha a obra.", "erro"); return false; }
+        obj.colaboradorId = v("g-fs-colab");
+        var col = obj.colaboradorId ? Store.obter(eid(), "colaboradores", obj.colaboradorId) : null;
+        obj.nome = v("g-fs-nome") || (col ? col.nome : ""); if (!obj.nome) { UI.toast("Informe o nome.", "erro"); return false; }
+        obj.tipo = v("g-fs-tipo");
+        obj.favorecido = v("g-fs-fav") || (col ? col.favorecido || "" : "");
+        obj.chavePix = v("g-fs-pix") || (col ? col.chavePix || "" : "");
+        obj.funcao = obj.funcao || (col ? col.funcao || "" : "");
+        obj.semana = self._fsSemana || FS.chaveSemana(new Date());
+        obj.dias = {}; obj.faltas = [];
+        FS.DIAS.forEach(function (d) { var x = v("g-fs-" + d); if (FS.ehFalta(x)) obj.faltas.push(d); else { var n = FS.num(x); if (n > 0) obj.dias[d] = n; } });
+        obj.he = FS.num(v("g-fs-he")); obj.valor = FS.num(v("g-fs-valor")); obj.obs = v("g-fs-obs");
+        obj.usarValor = false;
+        if (obj.tipo === "diaria" && !Object.keys(obj.dias).length && obj.valor > 0) obj.usarValor = true;
+        return true;
+      });
+    },
+    fsExcluir: function (id) { if (!confirm("Excluir este lançamento da folha?")) return; Store.excluir(eid(), "fs_lancamentos", id); App.render(); UI.toast("Lançamento excluído.", "ok"); },
+    fsImportar: function () {
+      UI.modal("📥 Importar planilha semanal", '<p class="muted">Selecione o Excel da sua folha semanal — <b>uma obra por aba</b>, operário com FAVORECIDO e CHAVE PIX, valores por dia (x = falta), empreitas/fretes e fechamento. O sistema <b>cadastra as obras e os colaboradores que faltarem</b> e lança a semana inteira. Nada é inventado: total divergente vem com aviso.</p><div class="field"><input type="file" id="fs-file" accept=".xlsx,.xls,.csv"></div>', [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    fsImportarArquivo: function (file) {
+      var self = this, FS = window.FolhaSemanal;
+      UI.toast("Lendo a planilha…", "ok");
+      App._lerPlanilha(file, function (matriz, erro, meta) {
+        if (erro || (!matriz && !(meta && meta.abas))) { UI.toast("Falha ao ler a planilha: " + (erro || "vazia"), "erro"); return; }
+        var abas = (meta && meta.abas && meta.abas.length) ? meta.abas : [{ nome: file.name.replace(/\.[^.]+$/, ""), dados: matriz || [] }];
+        var r = FS.parsePlanilha(abas);
+        if (!r.lancamentos.length) { UI.toast("Não reconheci lançamentos nessa planilha (o formato esperado tem OPERÁRIO + dias da semana).", "erro"); return; }
+        var obras = lista("obras"), porNome = {}; obras.forEach(function (o) { porNome[Util.normalizar ? Util.normalizar(o.nome) : o.nome.toUpperCase()] = o.id; });
+        var chaveN = function (s) { return Util.normalizar ? Util.normalizar(s || "") : String(s || "").toUpperCase(); };
+        var novasObras = 0;
+        r.obras.forEach(function (n) { if (!porNome[chaveN(n)]) { var o = { nome: n, status: "andamento" }; Store.salvar(eid(), "obras", o); porNome[chaveN(n)] = o.id; novasObras++; } });
+        var cols = lista("colaboradores"), porNomeC = {}; cols.forEach(function (c) { porNomeC[chaveN(c.nome)] = c.id; });
+        var novosC = 0;
+        r.lancamentos.forEach(function (l) {
+          if (l.tipo !== "diaria" || !l.nome) return;
+          if (!porNomeC[chaveN(l.nome)]) { var c = { nome: l.nome, funcao: l.funcao || "", tipoContrato: "diarista", favorecido: l.favorecido || "", chavePix: l.chavePix || "", status: "ativo" }; Store.salvar(eid(), "colaboradores", c); porNomeC[chaveN(l.nome)] = c.id; novosC++; }
+        });
+        var ckDe = function (l) { return l.semana + "|" + l.obraId + "|" + chaveN(l.nome) + "|" + (l.tipo || "") + "|" + Math.round(FS.totalFinal(l) * 100); };
+        var atuais = self._fsTodos(), jaTem = {}; atuais.forEach(function (l) { jaTem[ckDe(l)] = 1; });
+        var novos = 0, semana = null;
+        r.lancamentos.forEach(function (l) {
+          l.obraId = porNome[chaveN(l.obra)] || ""; delete l.obra;
+          l.colaboradorId = porNomeC[chaveN(l.nome)] || "";
+          semana = semana || l.semana;
+          var ck = ckDe(l);
+          if (jaTem[ck]) return; jaTem[ck] = 1;
+          Store.salvar(eid(), "fs_lancamentos", l); novos++;
+        });
+        if (semana) self._fsSemana = semana;
+        self._fsObra = "";
+        UI.fecharModal(); if (typeof App !== "undefined") { App.view = "folhasemanal"; App.render(); }
+        UI.toast("✅ " + novos + " lançamentos · " + novasObras + " obras novas · " + novosC + " colaboradores novos" + (r.avisos.length ? " · ⚠ " + r.avisos.length + " total(is) divergente(s) — mantive o da planilha" : ""), "ok");
+      });
+    },
+    fsPrint: function (qual) {
+      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
+      var periodo = FS.periodoDaChave(this._fsSemana), corpo = "";
+      if (qual === "pix") {
+        var pix = FS.listaPix(lancs), tot = 0;
+        corpo = '<p style="margin:0 0 10px">Semana <b>' + periodo + "</b> · pagamentos agrupados por favorecido</p><table style=\"width:100%;border-collapse:collapse;font-size:11px\"><tr style=\"background:#f0f4f8\"><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Favorecido</th><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Chave PIX</th><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Referente a</th><th style=\"text-align:right;padding:6px;border:1px solid #ccc\">Valor</th><th style=\"padding:6px;border:1px solid #ccc\">Pago ✓</th></tr>";
+        pix.forEach(function (p) {
+          tot += p.total;
+          var ref = p.itens.map(function (i) { return (i.nome || "") + " (" + self._fsNomeObra(i.obraId) + ")"; }).join(", ");
+          corpo += '<tr><td style="padding:6px;border:1px solid #ccc"><b>' + Util.esc(p.favorecido) + '</b></td><td style="padding:6px;border:1px solid #ccc">' + Util.esc(p.chavePix || "—") + '</td><td style="padding:6px;border:1px solid #ccc">' + Util.esc(ref) + '</td><td style="padding:6px;border:1px solid #ccc;text-align:right"><b>' + Util.fmtMoeda(p.total) + '</b></td><td style="padding:6px;border:1px solid #ccc;text-align:center">☐</td></tr>';
+        });
+        corpo += '<tr style="background:#0f2740;color:#fff"><td colspan="3" style="padding:7px;border:1px solid #0f2740"><b>TOTAL DA SEMANA</b></td><td style="padding:7px;border:1px solid #0f2740;text-align:right"><b>' + Util.fmtMoeda(tot) + '</b></td><td style="border:1px solid #0f2740"></td></tr></table>';
+        App._abrirPrint("Lista de Pagamento PIX — " + periodo, this._docShell("LISTA DE PAGAMENTO — PIX", "#16a34a", corpo, "fs_pix"));
+        return;
+      }
+      var fech = FS.fechamento(lancs);
+      corpo = '<p style="margin:0 0 10px">Período: <b>' + periodo + "</b></p>";
+      Object.keys(fech.porObra).forEach(function (ob) {
+        var g = fech.porObra[ob];
+        corpo += '<h3 style="margin:14px 0 6px;font-size:13px;border-left:4px solid #16a34a;padding-left:8px">' + Util.esc(self._fsNomeObra(ob)) + "</h3>" +
+          '<table style="width:100%;border-collapse:collapse;font-size:10.5px"><tr style="background:#f0f4f8"><th style="text-align:left;padding:5px;border:1px solid #ccc">Operário</th><th style="padding:5px;border:1px solid #ccc">Seg</th><th style="padding:5px;border:1px solid #ccc">Ter</th><th style="padding:5px;border:1px solid #ccc">Qua</th><th style="padding:5px;border:1px solid #ccc">Qui</th><th style="padding:5px;border:1px solid #ccc">Sex</th><th style="padding:5px;border:1px solid #ccc">Sáb</th><th style="padding:5px;border:1px solid #ccc">Dom</th><th style="padding:5px;border:1px solid #ccc">H.E.</th><th style="padding:5px;border:1px solid #ccc;text-align:right">Total</th></tr>';
+        g.linhas.forEach(function (l) {
+          var cels = FS.DIAS.map(function (d) {
+            if (l.tipo !== "diaria" && !l.usarValor) return '<td style="padding:5px;border:1px solid #ccc;text-align:center">—</td>';
+            if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td style="padding:5px;border:1px solid #ccc;text-align:center;color:#dc2626">✕</td>';
+            var vv = l.dias && l.dias[d];
+            return '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (vv ? Util.fmtNum(vv, 0) : "") + "</td>";
+          }).join("");
+          corpo += '<tr><td style="padding:5px;border:1px solid #ccc"><b>' + Util.esc(l.nome) + "</b>" + (l.funcao ? " · " + Util.esc(l.funcao) : "") + (l.tipo !== "diaria" ? " · " + Util.esc(l.tipo).toUpperCase() : "") +
+            (l.favorecido ? '<br><span style="font-size:9px;color:#555">Favorecido: ' + Util.esc(l.favorecido) + (l.chavePix ? " · PIX: " + Util.esc(l.chavePix) : "") + "</span>" : "") + "</td>" + cels +
+            '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td><td style="padding:5px;border:1px solid #ccc;text-align:right"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + "</b></td></tr>";
+        });
+        corpo += '<tr style="background:#0f2740;color:#fff"><td colspan="9" style="padding:6px;border:1px solid #0f2740"><b>FECHAMENTO DE FOLHA — ' + Util.esc(self._fsNomeObra(ob)) + '</b></td><td style="padding:6px;border:1px solid #0f2740;text-align:right"><b>' + Util.fmtMoeda(g.total) + "</b></td></tr></table>";
+      });
+      corpo += '<p style="margin:14px 0 4px;text-align:right;font-size:13px">TOTAL GERAL DA SEMANA: <b style="color:#16a34a">' + Util.fmtMoeda(fech.total) + "</b></p>" +
+        '<div style="display:flex;gap:40px;margin-top:44px"><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:10px">Responsável pela obra</div><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:10px">Financeiro</div></div>';
+      App._abrirPrint("Fechamento de Folha Semanal — " + periodo, this._docShell("FECHAMENTO DE FOLHA SEMANAL", "#16a34a", corpo, "fs_fechamento"));
+    },
+    fsFinanceiro: function () {
+      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
+      var fech = FS.fechamento(lancs), periodo = FS.periodoDaChave(this._fsSemana);
+      if (!confirm("Lançar a folha desta semana (" + periodo + ") como despesa de Mão de obra no Financeiro, uma por obra? Se já existir o lançamento da semana, ele é atualizado (não duplica).")) return;
+      var fin = lista("financeiro"), n = 0;
+      Object.keys(fech.porObra).forEach(function (ob) {
+        if (!ob || ob === "—") return;
+        var marca = "[Folha semanal " + self._fsSemana + "]";
+        var desc = marca + " Diaristas — " + periodo;
+        var exist = null; fin.forEach(function (f) { if (f.obraId === ob && (f.desc || "").indexOf(marca) === 0) exist = f; });
+        var obj = exist || { tipo: "despesa", categoria: "mao_obra", obraId: ob, status: "pago", data: self._fsSemana };
+        obj.desc = desc; obj.valor = fech.porObra[ob].total;
+        Store.salvar(eid(), "financeiro", obj); n++;
+      });
+      UI.toast("💸 " + n + " despesa(s) de mão de obra lançada(s) no Financeiro — custo real na obra certa.", "ok");
+    },
+
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
     _modalForm: function (entidade, registro, titulo, corpo, coletar) {
       var self = this, ehNovo = !registro.id;
@@ -3336,7 +3513,7 @@ renderRelatorios: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
@@ -3357,6 +3534,14 @@ renderRelatorios: function () {
         case "lp-naofeito": return this.lpNaoFeito(id);
         case "lp-rem-restr": return this.lpRemRestr(id, parseInt(dataset.val, 10));
         case "lp-imprimir": return this._lpImprimir(dataset.val);
+        case "fs-semana": return this.fsTroca("semana", dataset.value);
+        case "fs-obra": return this.fsTroca("obra", dataset.value);
+        case "fs-nova": return this.fsForm(null);
+        case "fs-edit": return this.fsForm(dataset.val);
+        case "fs-del": return this.fsExcluir(dataset.val);
+        case "fs-importar": return this.fsImportar();
+        case "fs-print": return this.fsPrint(dataset.val);
+        case "fs-financeiro": return this.fsFinanceiro();
         case "galeria-troca-obra": return this.galeriaTrocaObra(dataset.value);
         case "galeria-abrir": return this.galeriaAbrir(dataset.idx);
         case "galeria-nav": return this.galeriaNav(dataset.dir);

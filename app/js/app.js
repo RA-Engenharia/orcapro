@@ -278,6 +278,8 @@
       }
       // restaurar backup de orçamentos
       if (e.target.id === "bkp-file") { var bf = e.target.files && e.target.files[0]; if (bf) this.importarBackup(bf); return; }
+      // folha semanal de diaristas (planilha da semana, uma obra por aba)
+      if (e.target.id === "fs-file") { var ff = e.target.files && e.target.files[0]; if (ff && typeof Gestao !== "undefined") Gestao.fsImportarArquivo(ff); return; }
       // ligar/desligar base de preço
       if (e.target.matches("[data-base-toggle]")) { Bases.setAtiva(e.target.dataset.baseToggle, e.target.checked); return; }
       // editar duração de etapa no cronograma
