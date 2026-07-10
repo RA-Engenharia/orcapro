@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.56",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.56/OrcaPRO-IA-update-v1.1.56.zip",
-  "notas": "Hardening da Central de Entregáveis: Excel Pagamentos sem duplicar (favorecido+PIX), assinaturas lado a lado no Word, CPF nunca vira link de WhatsApp, aviso ao truncar relatório longo.",
+  "versao": "1.1.57",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.57/OrcaPRO-IA-update-v1.1.57.zip",
+  "notas": "Agora o instalador traz TAMBÉM o ContabPRO: um app completo de gestão para escritório de contabilidade (agenda de obrigações, clientes, honorários, BI e mais), incluído no mesmo pacote. Abra pelo Iniciar-ContabPRO.bat. O OrçaPRO segue igual.",
   "obrigatoria": false
 }
