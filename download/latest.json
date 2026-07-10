@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.55",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.55/OrcaPRO-IA-update-v1.1.55.zip",
-  "notas": "Central de Entregáveis da Folha Semanal: PDF/Word por favorecido ou obra + Excel PRO 5 abas (SUMIF/SUMIFS vivos + link WhatsApp) + CSV. Inclui a onda 2 (marcar PAGO na tela, recibos com assinatura, resumo mensal, alerta de operário em 2 obras).",
+  "versao": "1.1.56",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.56/OrcaPRO-IA-update-v1.1.56.zip",
+  "notas": "Hardening da Central de Entregáveis: Excel Pagamentos sem duplicar (favorecido+PIX), assinaturas lado a lado no Word, CPF nunca vira link de WhatsApp, aviso ao truncar relatório longo.",
   "obrigatoria": false
 }

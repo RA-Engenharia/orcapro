@@ -92,13 +92,16 @@
     return out;
   }
 
-  /* chave PIX que é telefone BR vira link de WhatsApp (10-11 dígitos, com ou sem DDI) */
+  /* chave PIX que é CELULAR BR vira link de WhatsApp. Regra dura: 11 dígitos com
+     "9" na 3ª posição (DDD + 9xxxx). CPF tem 11 dígitos mas sem esse 9 → nunca vira link
+     (mesmo digitado com espaços/pontos). E-mail e chave aleatória ficam de fora. */
   function foneDaChave(chave) {
-    var d = String(chave || "").replace(/\D/g, "");
-    if (/@/.test(chave) || d.length === 11 && /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(limpo(chave))) return null; // e-mail/CPF
-    if (d.length === 13 && d.slice(0, 2) === "55") return d;
-    if (d.length === 10 || d.length === 11) return "55" + d;
-    return null;
+    var s = limpo(chave); if (!s || /@/.test(s)) return null;
+    var d = s.replace(/\D/g, "");
+    if (d.length === 13 && d.slice(0, 2) === "55") d = d.slice(2);
+    if (d.length !== 11 || d.charAt(2) !== "9") return null;
+    if (+d.slice(0, 2) < 11) return null; // DDD válido começa em 11
+    return "55" + d;
   }
 
   /* mesmo operário com valor lançado em 2+ obras no MESMO dia da semana */

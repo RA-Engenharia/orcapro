@@ -3246,7 +3246,8 @@ renderRelatorios: function () {
         var de = v("g-rel-de"), ate = v("g-rel-ate");
         if (!de || !ate) { UI.toast("Informe as datas De e Até.", "erro"); return null; }
         var s = FS.chaveSemana(new Date(de + "T12:00:00")), fim = FS.chaveSemana(new Date(ate + "T12:00:00")), guard = 0;
-        while (s <= fim && guard++ < 60) { p.semanas.push(s); s = FS.semanaVizinha(s, 1); }
+        while (s <= fim && guard++ < 120) { p.semanas.push(s); s = FS.semanaVizinha(s, 1); }
+        if (s <= fim) UI.toast("⚠ Intervalo muito longo: limitei a 120 semanas (~2 anos e 4 meses). O relatório sai até " + FS.periodoDaChave(p.semanas[p.semanas.length - 1]) + ".", "erro");
         p.rot = "De " + de.split("-").reverse().join("/") + " até " + ate.split("-").reverse().join("/");
       }
       if (!p.semanas.length) { UI.toast("Escolha pelo menos uma semana.", "erro"); return null; }
@@ -3318,7 +3319,8 @@ renderRelatorios: function () {
           g.lancs.forEach(function (l) { corpo += '<tr><td style="border:1px solid #ccc;padding:4px">' + FS.periodoDaChave(l.semana) + '</td><td style="border:1px solid #ccc;padding:4px">' + Util.esc(self._fsNomeObra(l.obraId)) + '</td><td style="border:1px solid #ccc;padding:4px">' + Util.esc(l.nome || "") + '</td><td style="border:1px solid #ccc;padding:4px">' + Util.esc(FS.ROT_TIPO[l.tipo] || l.tipo || "") + '</td><td style="border:1px solid #ccc;padding:4px;text-align:right">' + Util.fmtMoeda(FS.totalFinal(l)) + "</td></tr>"; });
           corpo += "</table>";
         }
-        corpo += '<div style="display:flex;gap:40px;margin-top:30px"><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:3px;font-size:9px">' + Util.esc(g.nome) + '</div><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:3px;font-size:9px">Responsável</div></div></div>';
+        // assinaturas em TABELA (o Word não entende flex — tabela fica lado a lado nos dois)
+        corpo += '<table style="width:100%;border-collapse:collapse;margin-top:30px"><tr><td style="width:46%;border-top:1px solid #333;text-align:center;padding-top:3px;font-size:9px">' + Util.esc(g.nome) + '</td><td style="width:8%"></td><td style="width:46%;border-top:1px solid #333;text-align:center;padding-top:3px;font-size:9px">Responsável</td></tr></table></div>';
       });
       return corpo;
     },
@@ -3371,7 +3373,7 @@ renderRelatorios: function () {
         cab(wp, ["Favorecido", "Chave PIX", "Valor (fórmula)", "Status", "Avisar", "Assinado"], [28, 22, 16, 11, 22, 10]);
         pix.forEach(function (g, i) {
           var rn = i + 2, pg = pagos[g.favKey], fone = FS.foneDaChave(g.chavePix);
-          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIF(Lancamentos!E:E,A' + rn + ",Lancamentos!O:O)" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
+          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIFS(Lancamentos!O:O,Lancamentos!E:E,A' + rn + ",Lancamentos!F:F,B" + rn + ")" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
           if (fone) { var cel = row.getCell(5); cel.value = { text: "💬 WhatsApp", hyperlink: "https://wa.me/" + fone + "?text=" + encodeURIComponent("Olá, " + g.favorecido + "! Seu pagamento (" + p.rot + ") foi enviado via PIX.") }; cel.font = { color: { argb: "FF2E6F9E" }, underline: true }; }
           if (pg && pg.pago) row.getCell(4).font = { color: { argb: VERDE }, bold: true };
         });
