@@ -18,8 +18,8 @@
   var DEPTO_MODULOS = {
     engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "insumos", "epi", "relatorios"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "insumos", "fornecedores"],
-    financeiro:     ["dashboard", "financeiro", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
-    rh:             ["dashboard", "colaboradores", "epi", "ponto", "folha"],
+    financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
+    rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha"],
     administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
     diretoria:      null   // null = todos os módulos atribuíveis
   };
@@ -3040,16 +3040,29 @@ renderRelatorios: function () {
       var obras = lista("obras");
       var selObra = '<select data-gacao="fs-obra" style="max-width:180px"><option value="">Todas as obras</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._fsObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
       var extra = selSem + " " + selObra +
+        ' <button class="btn sm" data-gacao="fs-copiar" title="Recria nesta semana a equipe da semana anterior (só diárias)">⟳ Copiar semana ant.</button>' +
         ' <button class="btn sm" data-gacao="fs-importar">📥 Importar planilha</button>' +
         ' <button class="btn sm" data-gacao="fs-print" data-val="fechamento">🖨 Fechamento</button>' +
         ' <button class="btn sm" data-gacao="fs-print" data-val="pix">🧾 Lista PIX</button>' +
+        ' <button class="btn sm" data-gacao="fs-recibos">✍ Recibos</button>' +
+        ' <button class="btn sm" data-gacao="fs-mes">📅 Resumo do mês</button>' +
+        ' <button class="btn sm" data-gacao="fs-csv">⬇ Excel/CSV</button>' +
         ' <button class="btn sm" data-gacao="fs-financeiro">💸 Lançar no Financeiro</button>';
       var html = this._head(svg("folhasemanal") + "Folha Semanal · Diaristas", "fs-nova", "Lançamento", extra);
       var lancs = this._fsLancs(), fech = FS.fechamento(lancs), pix = FS.listaPix(lancs);
+      var pagos = this._fsPagos(), pagosN = 0, pagoTotal = 0;
+      pix.forEach(function (p) { if (pagos[p.favKey] && pagos[p.favKey].pago) { pagosN++; pagoTotal += p.total; } });
       html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
         '<div class="card kpi destaque"><div class="rotulo">Total da semana</div><div class="num">' + Util.fmtMoeda(fech.total) + '</div></div>' +
         '<div class="card kpi"><div class="rotulo">Obras com folha</div><div class="num">' + Object.keys(fech.porObra).length + '</div></div>' +
-        '<div class="card kpi"><div class="rotulo">Pagamentos PIX</div><div class="num">' + pix.length + '</div></div></div>';
+        '<div class="card kpi"><div class="rotulo">PIX pagos</div><div class="num">' + pagosN + ' / ' + pix.length + '</div></div>' +
+        '<div class="card kpi ' + (fech.total - pagoTotal > 0 ? 'custo' : 'destaque') + '"><div class="rotulo">Falta pagar</div><div class="num">' + Util.fmtMoeda(Math.max(0, fech.total - pagoTotal)) + '</div></div></div>';
+      var cfl = FS.conflitos(lancs);
+      if (cfl.length) {
+        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>⚠ Possível conflito de alocação:</b> ' +
+          cfl.slice(0, 3).map(function (c) { return c.nome + " tem diária em " + c.obras.length + " obras na " + c.rotDia; }).join(" · ") +
+          (cfl.length > 3 ? " · +" + (cfl.length - 3) + " caso(s)" : "") + ' <span class="muted">— confira se é proposital (meio período em cada).</span></div>';
+      }
       if (!lancs.length) return html + '<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhum lançamento nesta semana.</b><br><span class="muted">Clique em <b>+ Lançamento</b> pra lançar as diárias — ou <b>📥 Importar planilha</b> pra trazer a sua planilha semanal inteira (uma obra por aba, com favorecido e chave PIX): o sistema cadastra obras, colaboradores e a semana sozinho.</span></div>';
       Object.keys(fech.porObra).forEach(function (ob) {
         var g = fech.porObra[ob];
@@ -3069,7 +3082,114 @@ renderRelatorios: function () {
         });
         html += "</tbody></table></div>";
       });
+      // pagamentos da semana: pago na tela + WhatsApp + assinatura
+      html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 8px"><b>💸 Pagamentos da semana (PIX)</b> <span class="muted" style="font-size:12px">— marque quem já recebeu; o recibo guarda a assinatura</span></div>' +
+        '<table class="tbl"><thead><tr><th>Favorecido</th><th>Chave PIX</th><th class="num">Valor</th><th>Contato</th><th>Assinatura</th><th>Status</th></tr></thead><tbody>';
+      pix.forEach(function (p) {
+        var pg = pagos[p.favKey], fone = FS.foneDaChave(p.chavePix);
+        var zap = fone ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + fone + '?text=' + encodeURIComponent("Olá, " + p.favorecido + "! Seu pagamento da semana (" + FS.periodoDaChave(self._fsSemana) + ") foi enviado: " + Util.fmtMoeda(p.total) + " via PIX.") + '">💬 WhatsApp</a>' : '<span class="muted">—</span>';
+        var ass = pg && pg.assinatura ? '<span style="color:var(--verde);font-weight:700">✓ assinado</span>' : '<button class="btn sm" data-gacao="fs-assinar" data-val="' + Util.esc(p.favKey) + '">✍ Colher</button>';
+        var st = pg && pg.pago ? '<button class="btn sm success" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '">✓ Pago</button>' : '<button class="btn sm" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '" style="border-color:var(--amarelo)">Marcar pago</button>';
+        html += '<tr><td><b>' + Util.esc(p.favorecido) + '</b><br><span class="muted" style="font-size:11px">' + p.itens.map(function (i) { return Util.esc(i.nome || ""); }).join(", ") + '</span></td><td>' + Util.esc(p.chavePix || "—") + '</td><td class="num"><b>' + Util.fmtMoeda(p.total) + "</b></td><td>" + zap + "</td><td>" + ass + "</td><td>" + st + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
       return html;
+    },
+    // pagamentos: mapa favKey → registro {semana, favKey, pago, assinatura}
+    _fsPagos: function () { var s = this._fsSemana, m = {}; Store.listar(eid(), "fs_pagamentos").forEach(function (p) { if (p.semana === s) m[p.favKey] = p; }); return m; },
+    fsTogglePago: function (favKey) {
+      var FS = window.FolhaSemanal;
+      var p = this._fsPagos()[favKey] || { semana: this._fsSemana, favKey: favKey };
+      p.pago = !p.pago; p.em = p.pago ? Util.agoraISO() : null;
+      // snapshot p/ auditoria e KPI por obra: valor e obras cobertas por este PIX
+      var grupo = FS.listaPix(this._fsLancs()).filter(function (g) { return g.favKey === favKey; })[0];
+      if (grupo) { p.valor = grupo.total; p.obras = grupo.itens.map(function (i) { return i.obraId; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }); }
+      Store.salvar(eid(), "fs_pagamentos", p); App.render();
+    },
+    fsAssinar: function (favKey) {
+      var self = this;
+      UI.modal("✍ Assinatura do recebedor", '<p class="muted" style="margin:0 0 8px">Peça pra pessoa assinar com o dedo (celular) ou o mouse — fica guardada no recibo desta semana.</p>' +
+        '<canvas id="fs-ass" width="600" height="190" style="width:100%;border:1.5px dashed var(--linha-forte);border-radius:10px;background:#fff;touch-action:none"></canvas>',
+        [{ texto: "Limpar", classe: "ghost", onClick: function () { var c = UI.el("fs-ass"), x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); } },
+         { texto: "Salvar assinatura", classe: "primary", onClick: function () {
+           var c = UI.el("fs-ass"); if (!c) return;
+           var p = self._fsPagos()[favKey] || { semana: self._fsSemana, favKey: favKey };
+           // JPEG 0.6 sobre fundo branco: ~5-10x menor que PNG — 30+ recibos/semana sem estourar a quota
+           p.assinatura = c.toDataURL("image/jpeg", 0.6); p.assinadoEm = Util.agoraISO();
+           Store.salvar(eid(), "fs_pagamentos", p); UI.fecharModal(); App.render(); UI.toast("Assinatura guardada.", "ok");
+         } },
+         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var cv = UI.el("fs-ass"); if (!cv) return;
+      var ctx = cv.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height); // JPEG não tem transparência — fundo branco desde o início
+      ctx.lineWidth = 2.4; ctx.lineCap = "round"; ctx.strokeStyle = "#14202e";
+      var des = false;
+      function pos(e) { var r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * (cv.width / r.width), y: (e.clientY - r.top) * (cv.height / r.height) }; }
+      cv.addEventListener("pointerdown", function (e) { des = true; var p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); });
+      cv.addEventListener("pointermove", function (e) { if (!des) return; var p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); });
+      ["pointerup", "pointerleave"].forEach(function (ev) { cv.addEventListener(ev, function () { des = false; }); });
+    },
+    fsCopiarSemana: function () {
+      var FS = window.FolhaSemanal, self = this;
+      var ant = FS.semanaVizinha(this._fsSemana, -1);
+      var deLa = this._fsTodos().filter(function (l) { return l.semana === ant && l.tipo === "diaria"; });
+      if (!deLa.length) { UI.toast("A semana anterior (" + FS.periodoDaChave(ant) + ") não tem diárias pra copiar.", "erro"); return; }
+      if (!confirm("Copiar " + deLa.length + " diárias da semana " + FS.periodoDaChave(ant) + " pra esta semana? (Vêm com os mesmos valores de diária, sem faltas, sem hora extra — empreitas e fretes não são copiados.)")) return;
+      var jaTem = {}; this._fsLancs().forEach(function (l) { jaTem[(l.obraId || "") + "|" + (l.nome || "").toUpperCase()] = 1; });
+      var n = 0;
+      deLa.forEach(function (l) {
+        if (jaTem[(l.obraId || "") + "|" + (l.nome || "").toUpperCase()]) return;
+        Store.salvar(eid(), "fs_lancamentos", { semana: self._fsSemana, obraId: l.obraId, colaboradorId: l.colaboradorId || "", nome: l.nome, funcao: l.funcao || "", favorecido: l.favorecido || "", chavePix: l.chavePix || "", tipo: "diaria", dias: Util.clone(l.dias || {}), faltas: [], he: 0, obs: "" });
+        n++;
+      });
+      App.render(); UI.toast("⟳ " + n + " diárias copiadas da semana anterior. Ajuste faltas e exceções.", "ok");
+    },
+    fsResumoMes: function () {
+      var FS = window.FolhaSemanal, self = this, mes = this._fsSemana.slice(0, 7);
+      var rm = FS.resumoMensal(this._fsTodos(), mes);
+      if (!rm.total) { UI.toast("Nenhuma folha no mês " + mes + ".", "erro"); return; }
+      var rotMes = mes.split("-").reverse().join("/");
+      var corpo = '<p style="margin:0 0 10px">Competência <b>' + rotMes + "</b> · " + rm.semanas.length + " semana(s): " + rm.semanas.map(function (s) { return FS.periodoDaChave(s); }).join(" · ") + "</p>";
+      corpo += '<h3 style="margin:10px 0 6px;font-size:13px;border-left:4px solid #16a34a;padding-left:8px">Por obra</h3><table style="width:100%;border-collapse:collapse;font-size:11px">';
+      Object.keys(rm.porObra).sort(function (a, b) { return rm.porObra[b] - rm.porObra[a]; }).forEach(function (ob) {
+        corpo += '<tr><td style="padding:5px;border:1px solid #ccc">' + Util.esc(self._fsNomeObra(ob)) + '</td><td style="padding:5px;border:1px solid #ccc;text-align:right"><b>' + Util.fmtMoeda(rm.porObra[ob]) + "</b></td></tr>";
+      });
+      corpo += '<tr style="background:#0f2740;color:#fff"><td style="padding:6px;border:1px solid #0f2740"><b>TOTAL DO MÊS</b></td><td style="padding:6px;border:1px solid #0f2740;text-align:right"><b>' + Util.fmtMoeda(rm.total) + "</b></td></tr></table>";
+      corpo += '<h3 style="margin:14px 0 6px;font-size:13px;border-left:4px solid #2e6f9e;padding-left:8px">Por favorecido</h3><table style="width:100%;border-collapse:collapse;font-size:11px">';
+      Object.keys(rm.porPessoa).sort(function (a, b) { return rm.porPessoa[b] - rm.porPessoa[a]; }).forEach(function (q) {
+        corpo += '<tr><td style="padding:5px;border:1px solid #ccc">' + Util.esc(q) + '</td><td style="padding:5px;border:1px solid #ccc;text-align:right">' + Util.fmtMoeda(rm.porPessoa[q]) + "</td></tr>";
+      });
+      corpo += "</table>";
+      App._abrirPrint("Resumo Mensal da Folha — " + rotMes, this._docShell("RESUMO MENSAL — FOLHA DE DIARISTAS", "#2e6f9e", corpo, "fs_mes"));
+    },
+    fsRecibos: function () {
+      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
+      var pix = FS.listaPix(lancs), pagos = this._fsPagos(), periodo = FS.periodoDaChave(this._fsSemana);
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var corpo = "";
+      pix.forEach(function (p, i) {
+        var pg = pagos[p.favKey];
+        var ref = p.itens.map(function (it) { return (it.nome || "") + " (" + self._fsNomeObra(it.obraId) + ")"; }).join(", ");
+        corpo += '<div style="border:1px solid #999;border-radius:8px;padding:12px 14px;margin-bottom:12px;page-break-inside:avoid">' +
+          '<div style="display:flex;justify-content:space-between"><b>RECIBO DE PAGAMENTO — SEMANA ' + periodo + '</b><b>' + Util.fmtMoeda(p.total) + "</b></div>" +
+          '<p style="margin:8px 0;font-size:11px">Recebi de <b>' + Util.esc(emp.nome || "________________") + "</b> a importância de <b>" + Util.fmtMoeda(p.total) + "</b> referente aos serviços prestados por " + Util.esc(ref) + ", pagos via PIX (" + Util.esc(p.chavePix || "—") + ").</p>" +
+          (pg && pg.assinatura ? '<img src="' + pg.assinatura + '" style="height:60px;display:block;margin:4px 0 0">' : '<div style="height:46px"></div>') +
+          '<div style="border-top:1px solid #333;width:320px;text-align:center;font-size:10px;padding-top:3px">' + Util.esc(p.favorecido) + (pg && pg.assinadoEm ? " · assinado em " + pg.assinadoEm.slice(0, 10).split("-").reverse().join("/") : "") + "</div></div>";
+      });
+      App._abrirPrint("Recibos da Semana — " + periodo, this._docShell("RECIBOS DE PAGAMENTO — " + periodo, "#16a34a", corpo, "fs_recibos"));
+    },
+    fsCsv: function () {
+      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
+      var linhas = [["Obra", "Nome", "Função", "Tipo", "Favorecido", "Chave PIX", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom", "Hora extra", "Total"].join(";")];
+      lancs.forEach(function (l) {
+        var dias = FS.DIAS.map(function (d) { return (l.faltas && l.faltas.indexOf(d) !== -1) ? "x" : String((l.dias && l.dias[d]) || "").replace(".", ","); });
+        linhas.push([self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", l.tipo || "", l.favorecido || "", l.chavePix || ""].map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(";") + ";" + dias.join(";") + ";" + String(FS.num(l.he) || "").replace(".", ",") + ";" + String(FS.totalFinal(l)).replace(".", ","));
+      });
+      var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" });
+      var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-semanal-" + this._fsSemana + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+      UI.toast("⬇ CSV da semana baixado (abre direto no Excel).", "ok");
     },
     fsForm: function (id) {
       var FS = window.FolhaSemanal, self = this;
@@ -3100,6 +3220,17 @@ renderRelatorios: function () {
         if (obj.tipo === "diaria" && !Object.keys(obj.dias).length && obj.valor > 0) obj.usarValor = true;
         return true;
       });
+      // escolheu o colaborador → puxa nome/favorecido/PIX e preenche a DIÁRIA PADRÃO do cadastro
+      var selC = UI.el("g-fs-colab");
+      if (selC) selC.onchange = function () {
+        var c = Store.obter(eid(), "colaboradores", this.value); if (!c) return;
+        var el;
+        if ((el = UI.el("g-fs-nome")) && !el.value) el.value = c.nome || "";
+        if ((el = UI.el("g-fs-fav")) && !el.value) el.value = c.favorecido || "";
+        if ((el = UI.el("g-fs-pix")) && !el.value) el.value = c.chavePix || "";
+        var diaria = (c.unidadeRem === "diaria") ? FS.num(c.remuneracao) : 0;
+        if (diaria > 0) FS.DIAS.forEach(function (d) { var i = UI.el("g-fs-" + d); if (i && !i.value && d !== "dom") i.value = String(diaria); });
+      };
     },
     fsExcluir: function (id) { if (!confirm("Excluir este lançamento da folha?")) return; Store.excluir(eid(), "fs_lancamentos", id); App.render(); UI.toast("Lançamento excluído.", "ok"); },
     fsImportar: function () {
@@ -3121,7 +3252,11 @@ renderRelatorios: function () {
         var novosC = 0;
         r.lancamentos.forEach(function (l) {
           if (l.tipo !== "diaria" || !l.nome) return;
-          if (!porNomeC[chaveN(l.nome)]) { var c = { nome: l.nome, funcao: l.funcao || "", tipoContrato: "diarista", favorecido: l.favorecido || "", chavePix: l.chavePix || "", status: "ativo" }; Store.salvar(eid(), "colaboradores", c); porNomeC[chaveN(l.nome)] = c.id; novosC++; }
+          if (!porNomeC[chaveN(l.nome)]) {
+            var diaria = 0; FS.DIAS.forEach(function (d) { var n = FS.num(l.dias && l.dias[d]); if (n > diaria) diaria = n; });
+            var c = { nome: l.nome, funcao: l.funcao || "", tipoContrato: "diarista", favorecido: l.favorecido || "", chavePix: l.chavePix || "", status: "ativo", remuneracao: diaria || "", unidadeRem: diaria ? "diaria" : "mensal" };
+            Store.salvar(eid(), "colaboradores", c); porNomeC[chaveN(l.nome)] = c.id; novosC++;
+          }
         });
         var ckDe = function (l) { return l.semana + "|" + l.obraId + "|" + chaveN(l.nome) + "|" + (l.tipo || "") + "|" + Math.round(FS.totalFinal(l) * 100); };
         var atuais = self._fsTodos(), jaTem = {}; atuais.forEach(function (l) { jaTem[ckDe(l)] = 1; });
@@ -3542,6 +3677,12 @@ renderRelatorios: function () {
         case "fs-importar": return this.fsImportar();
         case "fs-print": return this.fsPrint(dataset.val);
         case "fs-financeiro": return this.fsFinanceiro();
+        case "fs-copiar": return this.fsCopiarSemana();
+        case "fs-mes": return this.fsResumoMes();
+        case "fs-recibos": return this.fsRecibos();
+        case "fs-csv": return this.fsCsv();
+        case "fs-pago": return this.fsTogglePago(dataset.val);
+        case "fs-assinar": return this.fsAssinar(dataset.val);
         case "galeria-troca-obra": return this.galeriaTrocaObra(dataset.value);
         case "galeria-abrir": return this.galeriaAbrir(dataset.idx);
         case "galeria-nav": return this.galeriaNav(dataset.dir);

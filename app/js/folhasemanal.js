@@ -50,6 +50,10 @@
     var m = x.getMonth() + 1, dd = x.getDate();
     return x.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (dd < 10 ? "0" : "") + dd;
   }
+  function semanaVizinha(ch, delta) {
+    var p = String(ch).split("-"), d = new Date(+p[0], +p[1] - 1, +p[2] + (delta * 7));
+    return chaveSemana(d);
+  }
   function periodoDaChave(ch) {
     var p = String(ch).split("-"), ini = new Date(+p[0], +p[1] - 1, +p[2]), fim = new Date(+p[0], +p[1] - 1, +p[2] + 6);
     function f(d) { return (d.getDate() < 10 ? "0" : "") + d.getDate() + "/" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1); }
@@ -81,11 +85,55 @@
       var t = totalLinha(l); if (t <= 0) return;
       var fav = limpo(l.favorecido) || limpo(l.nome) || "—";
       var k = up(fav) + "|" + limpo(l.chavePix);
-      if (!m[k]) { m[k] = { favorecido: fav, chavePix: limpo(l.chavePix), total: 0, itens: [] }; out.push(m[k]); }
+      if (!m[k]) { m[k] = { favKey: k, favorecido: fav, chavePix: limpo(l.chavePix), total: 0, itens: [] }; out.push(m[k]); }
       m[k].total += t; m[k].itens.push({ nome: l.nome, obraId: l.obraId || l.obra, valor: t });
     });
     out.sort(function (a, b) { return b.total - a.total; });
     return out;
+  }
+
+  /* chave PIX que é telefone BR vira link de WhatsApp (10-11 dígitos, com ou sem DDI) */
+  function foneDaChave(chave) {
+    var d = String(chave || "").replace(/\D/g, "");
+    if (/@/.test(chave) || d.length === 11 && /^\d{3}\.?\d{3}\.?\d{3}-?\d{2}$/.test(limpo(chave))) return null; // e-mail/CPF
+    if (d.length === 13 && d.slice(0, 2) === "55") return d;
+    if (d.length === 10 || d.length === 11) return "55" + d;
+    return null;
+  }
+
+  /* mesmo operário com valor lançado em 2+ obras no MESMO dia da semana */
+  function conflitos(lancs) {
+    var mapa = {}, out = [];
+    (lancs || []).forEach(function (l) {
+      if (l.tipo !== "diaria" || !l.dias) return;
+      DIAS.forEach(function (d) {
+        if (!num(l.dias[d])) return;
+        var k = up(limpo(l.nome)) + "|" + d;
+        if (!mapa[k]) mapa[k] = [];
+        mapa[k].push(l.obraId || l.obra || "—");
+      });
+    });
+    Object.keys(mapa).forEach(function (k) {
+      var obras = mapa[k]; if (obras.length < 2) return;
+      var p = k.split("|");
+      out.push({ nome: p[0], dia: p[1], rotDia: ROT[p[1]], obras: obras });
+    });
+    return out;
+  }
+
+  /* resumo do mês: semanas cujo início cai no mês (AAAA-MM) → por obra e por pessoa */
+  function resumoMensal(lancs, mesChave) {
+    var porObra = {}, porPessoa = {}, semanas = {}, total = 0;
+    (lancs || []).forEach(function (l) {
+      if (!l.semana || l.semana.slice(0, 7) !== mesChave) return;
+      var t = totalFinal(l); if (!t) return;
+      semanas[l.semana] = 1; total += t;
+      var ob = l.obraId || l.obra || "—";
+      porObra[ob] = (porObra[ob] || 0) + t;
+      var quem = limpo(l.favorecido) || limpo(l.nome) || "—";
+      porPessoa[quem] = (porPessoa[quem] || 0) + t;
+    });
+    return { mes: mesChave, semanas: Object.keys(semanas).sort(), porObra: porObra, porPessoa: porPessoa, total: total };
   }
 
   /* ---- parser da célula "Nome (Função) FAVORECIDO: ... CHAVE PIX: ..." ---- */
@@ -190,7 +238,8 @@
   var FolhaSemanal = {
     DIAS: DIAS, ROT: ROT,
     num: num, ehFalta: ehFalta,
-    chaveSemana: chaveSemana, periodoDaChave: periodoDaChave,
+    chaveSemana: chaveSemana, periodoDaChave: periodoDaChave, semanaVizinha: semanaVizinha,
+    foneDaChave: foneDaChave, conflitos: conflitos, resumoMensal: resumoMensal,
     totalLinha: totalLinha, totalFinal: totalFinal,
     fechamento: function (lancs) { var f = fechamento(lancs); var t2 = 0, po = {}; (lancs || []).forEach(function (l) { var k = l.obraId || l.obra || "—", v = totalFinal(l); if (!po[k]) po[k] = { total: 0, linhas: [] }; po[k].total += v; po[k].linhas.push(l); t2 += v; }); return { porObra: po, total: t2 }; },
     listaPix: function (lancs) { var out = listaPix((lancs || []).map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (l.usarValor) { c.tipo = "outro"; c.valor = l.valor; } return c; })); return out; },

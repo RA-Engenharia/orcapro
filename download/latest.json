@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.53",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.53/OrcaPRO-IA-update-v1.1.53.zip",
-  "notas": "Novo módulo Folha Semanal (grupo Equipe): diárias dia a dia por obra com X de falta, hora extra, empreitas/fretes/reembolsos, fechamento semanal por obra com impresso, Lista de Pagamento PIX por favorecido, importação da sua planilha .xlsx e lançamento direto no Financeiro.",
+  "versao": "1.1.54",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.54/OrcaPRO-IA-update-v1.1.54.zip",
+  "notas": "Folha Semanal completa: PAGO na tela com KPI de falta-pagar, botão WhatsApp por favorecido, copiar semana anterior, recibos em lote com assinatura touch, resumo mensal impresso, export CSV e alerta de operário em duas obras no mesmo dia.",
   "obrigatoria": false
 }
