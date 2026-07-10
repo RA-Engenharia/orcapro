@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.57",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.57/OrcaPRO-IA-update-v1.1.57.zip",
-  "notas": "Agora o instalador traz TAMBÉM o ContabPRO: um app completo de gestão para escritório de contabilidade (agenda de obrigações, clientes, honorários, BI e mais), incluído no mesmo pacote. Abra pelo Iniciar-ContabPRO.bat. O OrçaPRO segue igual.",
+  "versao": "1.1.58",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.58/OrcaPRO-IA-update-v1.1.58.zip",
+  "notas": "Teste grátis agora pede nome+telefone (com consentimento LGPD) e o painel do vendedor mostra quem está testando, online agora, tempo de uso e módulos mais usados. O ContabPRO segue incluído no mesmo instalador. Atualização automática.",
   "obrigatoria": false
 }
