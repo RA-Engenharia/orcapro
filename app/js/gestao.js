@@ -3046,7 +3046,7 @@ renderRelatorios: function () {
         ' <button class="btn sm" data-gacao="fs-print" data-val="pix">🧾 Lista PIX</button>' +
         ' <button class="btn sm" data-gacao="fs-recibos">✍ Recibos</button>' +
         ' <button class="btn sm" data-gacao="fs-mes">📅 Resumo do mês</button>' +
-        ' <button class="btn sm" data-gacao="fs-csv">⬇ Excel/CSV</button>' +
+        ' <button class="btn sm primary" data-gacao="fs-entregaveis">📄 Entregáveis (PDF·Word·Excel)</button>' +
         ' <button class="btn sm" data-gacao="fs-financeiro">💸 Lançar no Financeiro</button>';
       var html = this._head(svg("folhasemanal") + "Folha Semanal · Diaristas", "fs-nova", "Lançamento", extra);
       var lancs = this._fsLancs(), fech = FS.fechamento(lancs), pix = FS.listaPix(lancs);
@@ -3190,6 +3190,222 @@ renderRelatorios: function () {
       var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-semanal-" + this._fsSemana + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
       UI.toast("⬇ CSV da semana baixado (abre direto no Excel).", "ok");
+    },
+    // ---------- Central de Entregáveis (PDF · Word · Excel PRO · CSV) ----------
+    fsEntregaveis: function () {
+      var FS = window.FolhaSemanal, self = this;
+      var obras = lista("obras");
+      var favs = FS.listaPix(this._fsTodos());
+      var corpo =
+        '<div class="row">' +
+        campo("Gerar um bloco para cada", sel("g-rel-grp", opts([["fav", "Favorecido (pessoa que recebe)"], ["obra", "Obra"]], "fav"))) +
+        campo("Favorecido", '<select id="g-rel-fav"><option value="">Todos</option>' + favs.map(function (f) { return '<option value="' + Util.esc(f.favKey) + '">' + Util.esc(f.favorecido) + "</option>"; }).join("") + "</select>") +
+        campo("Obra", '<select id="g-rel-obra"><option value="">Todas</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>"; }).join("") + "</select>") + "</div>" +
+        '<div class="row">' + campo("Período", sel("g-rel-per", opts([["semana", "Semana atual"], ["mes", "Semanas do mês (01, 02, 03…)"], ["intervalo", "Intervalo de datas"]], "mes"))) +
+        campo("Mês", '<input id="g-rel-mes" type="month" value="' + this._fsSemana.slice(0, 7) + '">') + "</div>" +
+        '<div id="g-rel-sems" class="flex" style="flex-wrap:wrap;gap:10px;margin:2px 0 8px"></div>' +
+        '<div id="g-rel-int" class="row" style="display:none">' + campo("De", '<input id="g-rel-de" type="date">') + campo("Até", '<input id="g-rel-ate" type="date">') + "</div>" +
+        '<div class="flex" style="flex-wrap:wrap;gap:14px;margin:6px 0 2px">' +
+        '<label style="cursor:pointer"><input type="checkbox" id="g-rel-med" checked> Medição (anterior · atual · acumulado)</label>' +
+        '<label style="cursor:pointer"><input type="checkbox" id="g-rel-tipo" checked> Por tipo (MO · material · frete…)</label>' +
+        '<label style="cursor:pointer"><input type="checkbox" id="g-rel-graf" checked> Gráficos de barras</label>' +
+        '<label style="cursor:pointer"><input type="checkbox" id="g-rel-pag" checked> Status de pagamento</label>' +
+        '<label style="cursor:pointer"><input type="checkbox" id="g-rel-det"> Detalhar lançamentos</label></div>' +
+        '<p class="muted" style="font-size:12px;margin:8px 0 0">PDF abre pronto pra salvar · Word (.doc) baixa editável · <b>Excel completo</b> sai com 5 abas, fórmulas vivas e link de WhatsApp por favorecido.</p>';
+      UI.modal("📄 Entregáveis da Folha", corpo, [
+        { texto: "📄 PDF", classe: "primary", onClick: function () { self.fsRelGerar("pdf"); } },
+        { texto: "📝 Word", classe: "primary", onClick: function () { self.fsRelGerar("word"); } },
+        { texto: "📊 Excel completo", classe: "success", onClick: function () { self.fsRelGerar("excel"); } },
+        { texto: "⬇ CSV", classe: "ghost", onClick: function () { self.fsCsv(); } },
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+      function desenhaSems() {
+        var box = UI.el("g-rel-sems"); if (!box) return;
+        var sems = FS.semanasDoMes((UI.el("g-rel-mes") || {}).value || self._fsSemana.slice(0, 7));
+        box.innerHTML = sems.map(function (s) { return '<label style="cursor:pointer;border:1px solid var(--linha);border-radius:8px;padding:5px 10px"><input type="checkbox" class="g-rel-sem" value="' + s.chave + '" checked> <b>' + s.rotulo + "</b> <span class='muted' style='font-size:11px'>" + s.periodo + "</span></label>"; }).join("") || '<span class="muted">Mês sem semanas iniciadas nele.</span>';
+      }
+      var per = UI.el("g-rel-per"), mesI = UI.el("g-rel-mes");
+      function alterna() {
+        var v = per.value;
+        UI.el("g-rel-int").style.display = v === "intervalo" ? "" : "none";
+        mesI.parentElement.style.display = v === "mes" ? "" : "none";
+        UI.el("g-rel-sems").style.display = v === "mes" ? "" : "none";
+      }
+      if (per) { per.onchange = alterna; mesI.onchange = desenhaSems; desenhaSems(); alterna(); }
+    },
+    _fsRelParams: function () {
+      var FS = window.FolhaSemanal, v = function (id) { var e = UI.el(id); return e ? e.value : ""; };
+      var p = { grp: v("g-rel-grp") || "fav", favKey: v("g-rel-fav"), obraId: v("g-rel-obra"), per: v("g-rel-per") || "semana", semanas: [], rot: "" };
+      ["med", "tipo", "graf", "pag", "det"].forEach(function (k) { var e = UI.el("g-rel-" + k); p[k] = e ? !!e.checked : false; });
+      if (p.per === "semana") { p.semanas = [this._fsSemana]; p.rot = "Semana " + FS.periodoDaChave(this._fsSemana); }
+      else if (p.per === "mes") {
+        var marc = []; (document.querySelectorAll(".g-rel-sem") || []).forEach(function (c) { if (c.checked) marc.push(c.value); });
+        p.semanas = marc; var mes = v("g-rel-mes");
+        p.rot = "Mês " + mes.split("-").reverse().join("/") + " · " + marc.length + " semana(s)";
+      } else {
+        var de = v("g-rel-de"), ate = v("g-rel-ate");
+        if (!de || !ate) { UI.toast("Informe as datas De e Até.", "erro"); return null; }
+        var s = FS.chaveSemana(new Date(de + "T12:00:00")), fim = FS.chaveSemana(new Date(ate + "T12:00:00")), guard = 0;
+        while (s <= fim && guard++ < 60) { p.semanas.push(s); s = FS.semanaVizinha(s, 1); }
+        p.rot = "De " + de.split("-").reverse().join("/") + " até " + ate.split("-").reverse().join("/");
+      }
+      if (!p.semanas.length) { UI.toast("Escolha pelo menos uma semana.", "erro"); return null; }
+      return p;
+    },
+    _fsFavKeyDe: function (l) { var FS = window.FolhaSemanal; var fav = (l.favorecido || l.nome || "—"); return String(fav).toUpperCase().replace(/\s+/g, " ").trim() + "|" + String(l.chavePix || "").trim(); },
+    _fsRelDados: function (p) {
+      var FS = window.FolhaSemanal, self = this;
+      var todos = this._fsTodos().filter(function (l) {
+        if (p.obraId && l.obraId !== p.obraId) return false;
+        if (p.favKey && self._fsFavKeyDe(l) !== p.favKey) return false;
+        return true;
+      });
+      var setSem = {}; p.semanas.forEach(function (s) { setSem[s] = 1; });
+      var doPer = todos.filter(function (l) { return setSem[l.semana]; });
+      var chaveDe = p.grp === "obra" ? function (l) { return l.obraId || "—"; } : function (l) { return self._fsFavKeyDe(l); };
+      var nomeDe = p.grp === "obra" ? function (k) { return self._fsNomeObra(k); } : function (k) { return k.split("|")[0]; };
+      var med = FS.medicao(todos, p.semanas, chaveDe);
+      var pagos = {}; Store.listar(eid(), "fs_pagamentos").forEach(function (pg) { if (setSem[pg.semana] && pg.pago) pagos[pg.favKey] = (pagos[pg.favKey] || 0) + (pg.valor || 0); });
+      var grupos = {};
+      doPer.forEach(function (l) {
+        var k = chaveDe(l);
+        if (!grupos[k]) grupos[k] = { chave: k, nome: nomeDe(k), lancs: [], porSemana: {}, chavePix: l.chavePix || "" };
+        grupos[k].lancs.push(l);
+        grupos[k].porSemana[l.semana] = (grupos[k].porSemana[l.semana] || 0) + FS.totalFinal(l);
+        if (!grupos[k].chavePix && l.chavePix) grupos[k].chavePix = l.chavePix;
+      });
+      return { todos: todos, doPer: doPer, grupos: grupos, med: med, pagos: pagos };
+    },
+    _fsBarra: function (val, max, cor) { // barra de gráfico via TABELA (imprime no PDF e abre no Word)
+      var pct = max > 0 ? Math.max(2, Math.round(val / max * 100)) : 0;
+      return '<table style="border-collapse:collapse;width:100%"><tr><td style="background:' + cor + ';width:' + pct + '%;font-size:4px">&nbsp;</td><td style="background:#e8edf3;font-size:4px">&nbsp;</td></tr></table>';
+    },
+    _fsRelHtml: function (p) {
+      var FS = window.FolhaSemanal, self = this, d = this._fsRelDados(p);
+      var chaves = Object.keys(d.grupos);
+      if (!chaves.length) return null;
+      chaves.sort(function (a, b) { return d.grupos[b].porSemana && d.grupos[a].porSemana ? 0 : 0; });
+      var corpo = '<p style="margin:0 0 12px">Período: <b>' + Util.esc(p.rot) + "</b>" + (p.obraId ? " · Obra: <b>" + Util.esc(this._fsNomeObra(p.obraId)) + "</b>" : "") + "</p>";
+      var kpi = function (rot, val, cor) { return '<td style="border:1px solid #ccc;padding:7px 10px;text-align:center"><div style="font-size:9px;color:#555;text-transform:uppercase">' + rot + '</div><b style="font-size:13px;color:' + (cor || "#0f2740") + '">' + Util.fmtMoeda(val) + "</b></td>"; };
+      chaves.forEach(function (k, idx) {
+        var g = d.grupos[k], m = d.med[k] || { anterior: 0, atual: 0, acumulado: 0 };
+        var pagoV = p.grp === "fav" ? (d.pagos[k] || 0) : g.lancs.reduce(function (s, l) { var fk = self._fsFavKeyDe(l); return s; }, 0);
+        corpo += '<div style="' + (idx ? "page-break-before:always;" : "") + 'padding-top:4px">' +
+          '<h2 style="font-size:15px;margin:0 0 2px;border-left:5px solid #16a34a;padding-left:9px">' + Util.esc(g.nome) + "</h2>" +
+          (p.grp === "fav" && g.chavePix ? '<div style="font-size:10px;color:#555;margin:0 0 8px;padding-left:14px">Chave PIX: ' + Util.esc(g.chavePix) + "</div>" : '<div style="height:8px"></div>');
+        if (p.med) {
+          corpo += '<table style="border-collapse:collapse;width:100%;margin:6px 0 12px"><tr>' + kpi("Anterior (acumulado até o período)", m.anterior) + kpi("Atual (este período)", m.atual, "#16a34a") + kpi("Acumulado total", m.acumulado) + (p.pag && p.grp === "fav" ? kpi("Pago no período", pagoV, "#2e6f9e") + kpi("Em aberto", Math.max(0, m.atual - pagoV), m.atual - pagoV > 0 ? "#dc2626" : "#16a34a") : "") + "</tr></table>";
+        }
+        // por semana
+        corpo += '<h3 style="font-size:11.5px;margin:8px 0 4px">Valores por semana</h3><table style="border-collapse:collapse;width:100%;font-size:10.5px">';
+        var maxSem = 0; p.semanas.forEach(function (s) { maxSem = Math.max(maxSem, g.porSemana[s] || 0); });
+        p.semanas.forEach(function (s) {
+          var v2 = g.porSemana[s] || 0;
+          corpo += '<tr><td style="border:1px solid #ccc;padding:4px 8px;width:170px">Semana ' + FS.periodoDaChave(s) + '</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:right;width:90px"><b>' + Util.fmtMoeda(v2) + "</b></td>" + (p.graf ? '<td style="border:1px solid #ccc;padding:3px 6px">' + self._fsBarra(v2, maxSem, "#16a34a") + "</td>" : "") + "</tr>";
+        });
+        corpo += "</table>";
+        if (p.tipo) {
+          var pt = FS.porTipo(g.lancs), tks = Object.keys(pt), maxT = 0;
+          tks.forEach(function (t) { maxT = Math.max(maxT, pt[t]); });
+          corpo += '<h3 style="font-size:11.5px;margin:10px 0 4px">Composição por tipo</h3><table style="border-collapse:collapse;width:100%;font-size:10.5px">';
+          tks.sort(function (a, b) { return pt[b] - pt[a]; }).forEach(function (t) {
+            corpo += '<tr><td style="border:1px solid #ccc;padding:4px 8px;width:170px">' + Util.esc(FS.ROT_TIPO[t] || t) + '</td><td style="border:1px solid #ccc;padding:4px 8px;text-align:right;width:90px"><b>' + Util.fmtMoeda(pt[t]) + "</b></td>" + (p.graf ? '<td style="border:1px solid #ccc;padding:3px 6px">' + self._fsBarra(pt[t], maxT, "#2e6f9e") + "</td>" : "") + "</tr>";
+          });
+          corpo += "</table>";
+        }
+        if (p.det) {
+          corpo += '<h3 style="font-size:11.5px;margin:10px 0 4px">Lançamentos do período</h3><table style="border-collapse:collapse;width:100%;font-size:10px"><tr style="background:#f0f4f8"><th style="border:1px solid #ccc;padding:4px">Semana</th><th style="border:1px solid #ccc;padding:4px">Obra</th><th style="border:1px solid #ccc;padding:4px">Nome</th><th style="border:1px solid #ccc;padding:4px">Tipo</th><th style="border:1px solid #ccc;padding:4px;text-align:right">Total</th></tr>';
+          g.lancs.forEach(function (l) { corpo += '<tr><td style="border:1px solid #ccc;padding:4px">' + FS.periodoDaChave(l.semana) + '</td><td style="border:1px solid #ccc;padding:4px">' + Util.esc(self._fsNomeObra(l.obraId)) + '</td><td style="border:1px solid #ccc;padding:4px">' + Util.esc(l.nome || "") + '</td><td style="border:1px solid #ccc;padding:4px">' + Util.esc(FS.ROT_TIPO[l.tipo] || l.tipo || "") + '</td><td style="border:1px solid #ccc;padding:4px;text-align:right">' + Util.fmtMoeda(FS.totalFinal(l)) + "</td></tr>"; });
+          corpo += "</table>";
+        }
+        corpo += '<div style="display:flex;gap:40px;margin-top:30px"><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:3px;font-size:9px">' + Util.esc(g.nome) + '</div><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:3px;font-size:9px">Responsável</div></div></div>';
+      });
+      return corpo;
+    },
+    fsRelGerar: function (fmt) {
+      var p = this._fsRelParams(); if (!p) return;
+      if (fmt === "excel") return this.fsExcelPro(p);
+      var titulo = p.grp === "obra" ? "RELATÓRIO DE FOLHA POR OBRA" : "RELATÓRIO DE FOLHA POR FAVORECIDO";
+      var corpo = this._fsRelHtml(p);
+      if (!corpo) { UI.toast("Nenhum lançamento no período/filtro escolhido.", "erro"); return; }
+      var html = this._docShell(titulo, "#16a34a", corpo, "fs_rel");
+      if (fmt === "word") {
+        var doc = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>Folha</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]--></head><body>' + html + "</body></html>";
+        var blob = new Blob(["﻿", doc], { type: "application/msword" });
+        var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-" + (p.grp === "obra" ? "obras" : "favorecidos") + ".doc"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+        UI.toast("📝 Word (.doc) baixado — abre e edita normal.", "ok"); return;
+      }
+      App._abrirPrint(titulo, html);
+    },
+    fsExcelPro: function (p) {
+      var FS = window.FolhaSemanal, self = this;
+      if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { UI.toast("Módulo Excel indisponível (precisa de internet na 1ª vez).", "erro"); return; }
+      var d = this._fsRelDados(p);
+      if (!d.doPer.length) { UI.toast("Nenhum lançamento no período/filtro.", "erro"); return; }
+      UI.toast("Gerando o Excel completo…", "ok");
+      ExcelOrc.ensureExcelJS(function () {
+        var wb = new ExcelJS.Workbook(); wb.creator = "OrçaPRO IA";
+        var NAVY = "FF0F2740", VERDE = "FF16A34A", MOEDA = '"R$" #,##0.00';
+        function cab(ws, headers, widths) {
+          ws.addRow(headers); var r = ws.getRow(1);
+          r.eachCell(function (c) { c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: NAVY } }; c.font = { color: { argb: "FFFFFFFF" }, bold: true, size: 10 }; c.alignment = { vertical: "middle" }; });
+          r.height = 20; widths.forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+          ws.views = [{ state: "frozen", ySplit: 1 }];
+        }
+        var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+        // --- Aba Lancamentos (base de tudo: fórmulas vivas) ---
+        var wl = wb.addWorksheet("Lancamentos");
+        cab(wl, ["Obra", "Nome", "Função", "Tipo", "Favorecido", "Chave PIX", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom", "H.Extra", "Total", "Semana"], [22, 22, 14, 12, 26, 20, 8, 8, 8, 8, 8, 8, 8, 9, 13, 14]);
+        d.doPer.forEach(function (l, i) {
+          var rn = i + 2, fav = String(l.favorecido || l.nome || "").replace(/\s+/g, " ").trim(); // igual ao listaPix → SUMIF casa
+          var dias = FS.DIAS.map(function (dd) { return (l.faltas && l.faltas.indexOf(dd) !== -1) ? "x" : ((l.dias && l.dias[dd]) || null); });
+          var row = [self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", FS.ROT_TIPO[l.tipo] || l.tipo || "", fav, l.chavePix || ""].concat(dias).concat([FS.num(l.he) || null,
+            (l.tipo === "diaria" && !l.usarValor) ? { formula: "SUM(G" + rn + ":M" + rn + ")+IF(N" + rn + '="",0,N' + rn + ")" } : FS.totalFinal(l),
+            FS.periodoDaChave(l.semana)]);
+          wl.addRow(row);
+        });
+        for (var c2 = 7; c2 <= 15; c2++) wl.getColumn(c2).numFmt = MOEDA;
+        // --- Aba Pagamentos (SUMIF vivo + link WhatsApp) ---
+        var pix = FS.listaPix(d.doPer), pagos = self._fsPagos();
+        var wp = wb.addWorksheet("Pagamentos");
+        cab(wp, ["Favorecido", "Chave PIX", "Valor (fórmula)", "Status", "Avisar", "Assinado"], [28, 22, 16, 11, 22, 10]);
+        pix.forEach(function (g, i) {
+          var rn = i + 2, pg = pagos[g.favKey], fone = FS.foneDaChave(g.chavePix);
+          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIF(Lancamentos!E:E,A' + rn + ",Lancamentos!O:O)" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
+          if (fone) { var cel = row.getCell(5); cel.value = { text: "💬 WhatsApp", hyperlink: "https://wa.me/" + fone + "?text=" + encodeURIComponent("Olá, " + g.favorecido + "! Seu pagamento (" + p.rot + ") foi enviado via PIX.") }; cel.font = { color: { argb: "FF2E6F9E" }, underline: true }; }
+          if (pg && pg.pago) row.getCell(4).font = { color: { argb: VERDE }, bold: true };
+        });
+        wp.getColumn(3).numFmt = MOEDA;
+        // --- Aba PorObra (SUMIFS por tipo) ---
+        var wo = wb.addWorksheet("PorObra");
+        var tipos = Object.keys(FS.ROT_TIPO);
+        cab(wo, ["Obra"].concat(tipos.map(function (t) { return FS.ROT_TIPO[t]; })).concat(["Total"]), [24].concat(tipos.map(function () { return 16; })).concat([15]));
+        var obrasSet = {}; d.doPer.forEach(function (l) { obrasSet[self._fsNomeObra(l.obraId)] = 1; });
+        Object.keys(obrasSet).forEach(function (nomeOb, i) {
+          var rn = i + 2;
+          wo.addRow([nomeOb].concat(tipos.map(function (t) { return { formula: 'SUMIFS(Lancamentos!$O:$O,Lancamentos!$A:$A,$A' + rn + ',Lancamentos!$D:$D,"' + (FS.ROT_TIPO[t] || t).replace(/"/g, "") + '")' }; })).concat([{ formula: "SUM(B" + rn + ":" + String.fromCharCode(66 + tipos.length - 1) + rn + ")" }]));
+        });
+        for (var c3 = 2; c3 <= tipos.length + 2; c3++) wo.getColumn(c3).numFmt = MOEDA;
+        // --- Aba Resumo (KPIs com fórmula) ---
+        var wr = wb.addWorksheet("Resumo", { views: [{}] });
+        wr.getColumn(1).width = 34; wr.getColumn(2).width = 20;
+        wr.addRow(["FOLHA SEMANAL — RESUMO"]).getCell(1).font = { bold: true, size: 14, color: { argb: NAVY } };
+        wr.addRow(["Empresa", emp.nome || ""]); wr.addRow(["Período", p.rot]); wr.addRow([]);
+        [["Total do período", "SUM(Lancamentos!O:O)"], ["Pago", 'SUMIF(Pagamentos!D:D,"PAGO",Pagamentos!C:C)'], ["Em aberto", "B5-B6"]].forEach(function (par) {
+          var r3 = wr.addRow([par[0], { formula: par[1] }]); r3.getCell(1).font = { bold: true }; r3.getCell(2).numFmt = MOEDA;
+        });
+        wr.addRow([]); wr.addRow(["Por tipo"]).getCell(1).font = { bold: true };
+        tipos.forEach(function (t) { var r4 = wr.addRow([FS.ROT_TIPO[t], { formula: 'SUMIF(Lancamentos!D:D,"' + (FS.ROT_TIPO[t] || t).replace(/"/g, "") + '",Lancamentos!O:O)' }]); r4.getCell(2).numFmt = MOEDA; });
+        // --- Aba Parametros ---
+        var wpar = wb.addWorksheet("Parametros");
+        wpar.getColumn(1).width = 26; wpar.getColumn(2).width = 46;
+        [["Gerado por", "OrçaPRO IA — Folha Semanal"], ["Empresa", emp.nome || ""], ["Período", p.rot], ["Semanas", p.semanas.join(", ")], ["Escopo obra", p.obraId ? self._fsNomeObra(p.obraId) : "Todas"], ["Escopo favorecido", p.favKey ? p.favKey.split("|")[0] : "Todos"], ["Observação", "Os valores em Pagamentos/PorObra/Resumo são FÓRMULAS: edite a aba Lancamentos e tudo recalcula."]].forEach(function (par) { var r5 = wpar.addRow(par); r5.getCell(1).font = { bold: true }; });
+        wb.xlsx.writeBuffer().then(function (buf) {
+          var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+          var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-completa-" + (p.semanas[0] || "periodo") + ".xlsx"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+          UI.toast("📊 Excel completo baixado: 5 abas, fórmulas vivas e links de WhatsApp.", "ok");
+        }).catch(function (e) { UI.toast("Falha ao gerar o Excel: " + ((e && e.message) || e), "erro"); });
+      });
     },
     fsForm: function (id) {
       var FS = window.FolhaSemanal, self = this;
@@ -3683,6 +3899,8 @@ renderRelatorios: function () {
         case "fs-csv": return this.fsCsv();
         case "fs-pago": return this.fsTogglePago(dataset.val);
         case "fs-assinar": return this.fsAssinar(dataset.val);
+        case "fs-entregaveis": return this.fsEntregaveis();
+        case "fs-rel": return this.fsRelGerar(dataset.val);
         case "galeria-troca-obra": return this.galeriaTrocaObra(dataset.value);
         case "galeria-abrir": return this.galeriaAbrir(dataset.idx);
         case "galeria-nav": return this.galeriaNav(dataset.dir);

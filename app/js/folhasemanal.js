@@ -121,6 +121,47 @@
     return out;
   }
 
+  /* rótulos dos tipos de lançamento (a "categoria" do custo) */
+  var ROT_TIPO = { diaria: "Mão de obra (diárias)", empreita: "Empreita", frete: "Frete", reembolso: "Reembolso", fornecedor: "Material / Fornecedor", outro: "Outros" };
+
+  /* total por tipo (MO, empreita, frete, material…) */
+  function porTipo(lancs) {
+    var m = {};
+    (lancs || []).forEach(function (l) { var k = l.tipo || "outro"; m[k] = (m[k] || 0) + totalFinal(l); });
+    return m;
+  }
+
+  /* semanas cujo início (segunda) cai no mês AAAA-MM, rotuladas Semana 01.. */
+  function semanasDoMes(mesChave) {
+    var p = String(mesChave).split("-"), ano = +p[0], mes = +p[1] - 1;
+    var d = new Date(ano, mes, 1), out = [], n = 1;
+    var dow = (d.getDay() + 6) % 7; if (dow) d.setDate(d.getDate() + (7 - dow)); // 1ª segunda do mês
+    while (d.getMonth() === mes) {
+      out.push({ chave: chaveSemana(d), rotulo: "Semana " + (n < 10 ? "0" : "") + n, periodo: periodoDaChave(chaveSemana(d)) });
+      n++; d.setDate(d.getDate() + 7);
+    }
+    return out;
+  }
+
+  /* medição do período: anterior (tudo antes), atual (período), acumulado — por chave de grupo */
+  function medicao(todos, semanasPeriodo, chaveDe) {
+    var noPer = {}, antes = {}, setPer = {};
+    (semanasPeriodo || []).forEach(function (s) { setPer[s] = 1; });
+    var ini = (semanasPeriodo && semanasPeriodo.length) ? semanasPeriodo.slice().sort()[0] : "";
+    (todos || []).forEach(function (l) {
+      var k = chaveDe(l), t = totalFinal(l); if (!k || !t) return;
+      if (setPer[l.semana]) noPer[k] = (noPer[k] || 0) + t;
+      else if (l.semana < ini) antes[k] = (antes[k] || 0) + t;
+    });
+    var out = {};
+    Object.keys(noPer).concat(Object.keys(antes)).forEach(function (k) {
+      if (out[k]) return;
+      var a = antes[k] || 0, c = noPer[k] || 0;
+      out[k] = { anterior: a, atual: c, acumulado: a + c };
+    });
+    return out;
+  }
+
   /* resumo do mês: semanas cujo início cai no mês (AAAA-MM) → por obra e por pessoa */
   function resumoMensal(lancs, mesChave) {
     var porObra = {}, porPessoa = {}, semanas = {}, total = 0;
@@ -240,6 +281,7 @@
     num: num, ehFalta: ehFalta,
     chaveSemana: chaveSemana, periodoDaChave: periodoDaChave, semanaVizinha: semanaVizinha,
     foneDaChave: foneDaChave, conflitos: conflitos, resumoMensal: resumoMensal,
+    ROT_TIPO: ROT_TIPO, porTipo: porTipo, semanasDoMes: semanasDoMes, medicao: medicao,
     totalLinha: totalLinha, totalFinal: totalFinal,
     fechamento: function (lancs) { var f = fechamento(lancs); var t2 = 0, po = {}; (lancs || []).forEach(function (l) { var k = l.obraId || l.obra || "—", v = totalFinal(l); if (!po[k]) po[k] = { total: 0, linhas: [] }; po[k].total += v; po[k].linhas.push(l); t2 += v; }); return { porObra: po, total: t2 }; },
     listaPix: function (lancs) { var out = listaPix((lancs || []).map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (l.usarValor) { c.tipo = "outro"; c.valor = l.valor; } return c; })); return out; },
