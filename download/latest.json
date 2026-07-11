@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.58",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.58/OrcaPRO-IA-update-v1.1.58.zip",
-  "notas": "Teste grátis agora pede nome+telefone (com consentimento LGPD) e o painel do vendedor mostra quem está testando, online agora, tempo de uso e módulos mais usados. O ContabPRO segue incluído no mesmo instalador. Atualização automática.",
+  "versao": "1.1.59",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.59/OrcaPRO-IA-update-v1.1.59.zip",
+  "notas": "Nova base de preços GOINFRA/AGETOP-GO (obras rodoviárias de Goiás): terraplenagem, pavimentação e obras de arte especiais, com toggle de regime (com/sem desoneração) e de preço (custo direto ou com BDI oficial), busca unificada e atualização automática da fonte oficial. ContabPRO e telemetria de trial seguem inclusos.",
   "obrigatoria": false
 }
