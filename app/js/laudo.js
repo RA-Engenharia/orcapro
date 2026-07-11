@@ -66,7 +66,7 @@
           row("Orçamento nº", orc.numero) +
           row("Data da vistoria", Util.naoVazio(orc.dataVistoria) ? orc.dataVistoria : "[____]") +
           row("Data de referência", hoje) +
-          row("Base de preços", "SINAPI " + (orc.competenciaSinapi || "—") + " / " + (orc.uf || "—")) +
+          row((Orcamento.basesUsadas(orc).length > 1 ? "Bases de preços" : "Base de preços"), Orcamento.basesUsadasTexto(orc)) +
           rowRaw("Valor total estimado", '<b style="color:var(--p-verde,#16a34a)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
         '</div>' +
         '<div class="capa-rod">' + Util.esc(empresa) + ' · Documento técnico de subsídio ao laudo pericial</div></section>');
@@ -90,10 +90,16 @@
 
       // ---- 3. METODOLOGIA ----
       P.push(pg("3. Metodologia e Critérios de Orçamentação",
-        '<p>Os preços foram compostos a partir do <b>Sistema Nacional de Pesquisa de Custos e Índices da Construção Civil — SINAPI</b>, mantido pela Caixa Econômica Federal e pelo IBGE, na competência <b>' + Util.esc(orc.competenciaSinapi || "—") + ' (' + Util.esc(orc.uf || "—") + ')</b>, adotando-se:</p>' +
+        '<p>' + ((function () {
+          var bs = Orcamento.basesUsadas(orc);
+          if (bs.length === 1 && bs[0].fonte === "SINAPI") {
+            return 'Os preços foram compostos a partir do <b>Sistema Nacional de Pesquisa de Custos e Índices da Construção Civil — SINAPI</b>, mantido pela Caixa Econômica Federal e pelo IBGE, na competência <b>' + Util.esc(orc.competenciaSinapi || "—") + ' (' + Util.esc(orc.uf || "—") + ')</b>, adotando-se:';
+          }
+          return 'Os preços foram compostos a partir das seguintes bases oficiais de referência de custos: <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>' + (bs.some(function (x) { return x.fonte === "SINAPI"; }) ? ' (a SINAPI é mantida pela Caixa Econômica Federal e pelo IBGE)' : '') + ', adotando-se:';
+        })()) + '</p>' +
         '<ul>' +
         '<li>composições oficiais de custo unitário, com quebra de mão de obra, material e equipamento, em regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? "desonerado" : "onerado")) + '</b>;</li>' +
-        '<li>itens sem correspondência direta na SINAPI orçados por <b>cotação de mercado</b> ou composição própria, identificados na planilha;</li>' +
+        '<li>itens sem correspondência direta nas bases adotadas, orçados por <b>cotação de mercado</b> ou composição própria, identificados na planilha;</li>' +
         '<li><b>BDI</b> (Benefícios e Despesas Indiretas) de <b>' + Util.fmtPct(pct) + '</b>, em conformidade com a metodologia do Acórdão <b>TCU nº 2.622/2013</b>;</li>' +
         '<li>quantitativos apurados a partir do levantamento técnico realizado em vistoria <i>in loco</i>' + (Util.naoVazio(orc.dataVistoria) ? ' em <b>' + Util.esc(orc.dataVistoria) + '</b>' : '') + '.</li>' +
         '</ul>' +
@@ -162,7 +168,7 @@
       // ---- 7. PREMISSAS ----
       P.push(pg("7. Premissas e Considerações Técnicas",
         '<ul>' +
-        '<li>Os preços referem-se à competência <b>' + Util.esc(orc.competenciaSinapi || "—") + '</b> da SINAPI e estão sujeitos a reajuste conforme a data efetiva de execução;</li>' +
+        '<li>Os preços referem-se às bases de referência adotadas (<b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>) e estão sujeitos a reajuste conforme a data efetiva de execução;</li>' +
         '<li>Os quantitativos decorrem do levantamento em vistoria e poderão ser confirmados em projeto executivo;</li>' +
         '<li>O valor não inclui projetos complementares, taxas, licenças e serviços não identificáveis na vistoria;</li>' +
         '<li>O BDI adotado reflete despesas indiretas, tributos e remuneração, conforme metodologia consagrada;</li>' +

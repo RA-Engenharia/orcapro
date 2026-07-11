@@ -26,6 +26,16 @@
       // p/ quem usa RBAC/multiempresa ou quer conta com e-mail. Só age quando não há RBAC configurado.
       if (typeof Auth.autoEntrar === "function") { try { Auth.autoEntrar(); } catch (eAe) {} }
 
+      // TESTE GRÁTIS: cadastro obrigatório (nome+telefone+consentimento) antes de liberar,
+      // e telemetria do trial (boot + heartbeat 5min + módulos usados). Licenciado não rastreia.
+      try {
+        if (typeof Telemetria !== "undefined") {
+          var _app = this;
+          if (Telemetria.gate(function () { Telemetria.iniciar(); _app.iniciar(); })) return;
+          Telemetria.iniciar();
+        }
+      } catch (eTg) {}
+
       var self = this;
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
       this.carregarBaseSinapi().then(function (n) {
@@ -167,7 +177,7 @@
       var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
       if (!t) return;
       // navegação por módulo (sidebar da Gestão)
-      if (t.dataset.view) { var _apV = document.querySelector(".app"); if (_apV) _apV.classList.remove("menu-aberto"); this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; this.render(); return; }
+      if (t.dataset.view) { var _apV = document.querySelector(".app"); if (_apV) _apV.classList.remove("menu-aberto"); if (t.dataset.view !== "bim" && typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo(t.dataset.view); } catch (eTm) {} this.render(); return; }
       // ações da Gestão (CRUD dos módulos)
       if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.gacao, t.dataset, this); return; }
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
@@ -215,7 +225,7 @@
       var acao = t.dataset.acao;
       switch (acao) {
         case "entrar": this.entrar(); break;
-        case "logout": if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
+        case "logout": if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
         case "tema": this.abrirTema(); break;
         case "tema-op": this.aplicarTema(t.dataset.temaVal, t.dataset.tomVal); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
@@ -229,6 +239,7 @@
         case "tabelas": this.abrirTabelas(); break;
         case "escanear-pasta": this.escanearPastaUI(); break;
         case "carregar-setop": this.carregarSetop(); break;
+        case "carregar-goinfra": this.carregarGoinfra(); break;
         case "cron-recalc": this.cronRecalc(); break;
         case "cron-reset": this.cronReset(); break;
         case "cron-ia": this.cronRefinarIA(); break;
@@ -738,6 +749,29 @@
         UI.toast("SETOP-MG · " + reg + " · " + regime + ": " + r.total.toLocaleString("pt-BR") + " itens." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
         self.abrirTabelas();
       }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
+    },
+
+    // GOINFRA/AGETOP-GO (rodoviárias de Goiás) — 2 regimes (com/sem desoneração) e 2 preços
+    // (custo direto sem BDI = app aplica o BDI do cliente | preço com o BDI oficial 27,21%).
+    // O "preço" entra como o arg regiao do carregarInclusa, que remapeia custoUnitario de precos[preco].
+    carregarGoinfra: function () {
+      var self = this;
+      var regime = (UI.el("goinfra-regime") || {}).value || "onerada";   // padrão: SEM desoneração (o que o cliente usa)
+      var preco = (UI.el("goinfra-preco") || {}).value || "direto";      // padrão: custo direto (o app aplica o BDI)
+      var nome = "goinfra-GO" + (regime === "onerada" ? "-onerada" : "") + "-current.json";
+      var inclusa = "data/" + nome;
+      // auto-update: tenta a base AO VIVO no VPS (regenerada a cada bimestre pela GOINFRA);
+      // se offline/indisponível, cai na base inclusa no pacote (offline-first).
+      var live = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? (String(CONFIG.licencaServer).replace(/\/$/, "") + "/goinfra/" + nome) : null;
+      var rotReg = regime === "onerada" ? "sem desoneração" : "com desoneração";
+      var rotPre = preco === "comBDI" ? "com BDI 27,21%" : "custo direto (sem BDI)";
+      UI.toast("Carregando GOINFRA (" + rotReg + " · " + rotPre + ")…", "ok");
+      function carregar(url, ehLive) { return Bases.carregarInclusa(url, "AGETOP", preco).then(function (r) { r._live = ehLive; return r; }); }
+      var promessa = live ? carregar(live, true).catch(function () { return carregar(inclusa, false); }) : carregar(inclusa, false);
+      promessa.then(function (r) {
+        UI.toast("AGETOP-GO · " + rotReg + " · " + rotPre + ": " + r.total.toLocaleString("pt-BR") + " itens " + (r._live ? "(online, mais recente)" : "(inclusa)") + "." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
+        self.abrirTabelas();
+      }).catch(function (e) { UI.toast("Falhou ao carregar GOINFRA: " + e.message, "erro"); });
     },
 
     // Escanear pasta inteira (multi-base) via fetcher

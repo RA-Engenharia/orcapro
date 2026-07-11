@@ -164,6 +164,9 @@
         [["Triangulo", "Triângulo"], ["Central", "Central"], ["Norte", "Norte"], ["Sul", "Sul"], ["Leste", "Leste"], ["Jequitinhonha", "Jequitinhonha/Mucuri"]].map(function (r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join("") +
         '</select><select id="setop-regime" class="btn sm" style="padding:5px"><option value="desonerada">Desonerada</option><option value="onerada">Onerada</option></select>' +
         '<button class="btn sm primary" data-acao="carregar-setop">📦 SETOP · MG (ago/2023)</button></span>' +
+        '<span class="flex" style="gap:4px;align-items:center"><select id="goinfra-regime" class="btn sm" style="padding:5px"><option value="onerada">Sem desoneração</option><option value="desonerada">Com desoneração</option></select>' +
+        '<select id="goinfra-preco" class="btn sm" style="padding:5px" title="Custo direto: o app aplica o seu BDI. Com BDI: usa o preço final oficial da GOINFRA (27,21%)."><option value="direto">Custo direto (sem BDI)</option><option value="comBDI">Preço com BDI (oficial)</option></select>' +
+        '<button class="btn sm primary" data-acao="carregar-goinfra">📦 GOINFRA/AGETOP · GO (rodoviárias)</button></span>' +
         '</div>' +
         '<h3 style="margin:18px 0 6px">📁 Escanear pasta inteira (de uma vez)</h3>' +
         '<p class="muted" style="font-size:12px">Pasta DENTRO do projeto do ERP (ex.: <b>mg-01-2026</b> = SICRO-MG). O fetcher parseia TUDO (composições com MO/MAT/EQ + materiais + equipamentos + mão de obra) e organiza no multi-base sozinho.</p>' +
@@ -362,9 +365,9 @@
           '<td colspan="4">' + Util.esc(e.nome) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(custoEtapa) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custoEtapa, pct)) + '</td>' +
-          '<td class="right"><button class="btn sm" data-add-item="' + e.id + '">+ Item</button> ' +
-          '<button class="btn sm" data-edit-etapa="' + e.id + '" title="Renomear etapa">✎</button> ' +
-          '<button class="btn sm danger" data-del-etapa="' + e.id + '" title="Remover etapa">✕</button></td></tr>';
+          '<td class="right"><div class="acoes"><button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
+          '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">✎</button>' +
+          '<button class="btn sm ico danger" data-del-etapa="' + e.id + '" title="Remover etapa">✕</button></div></td></tr>';
 
         e.itens.forEach(function (it) {
           var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
@@ -379,10 +382,10 @@
             '<td class="num"><input class="cell" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"></td>' +
             '<td class="num">' + Util.fmtMoeda(custo) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custo, pct)) + '</td>' +
-            '<td class="right">' +
-              (ehSinapi ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button> ' : '') +
-              '<button class="btn sm' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button> ' +
-              '<button class="btn sm danger" data-del-item="' + e.id + '|' + it.id + '">✕</button></td></tr>';
+            '<td class="right"><div class="acoes">' +
+              (ehSinapi ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button>' : '') +
+              '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button>' +
+              '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">✕</button></div></td></tr>';
         });
       });
       html += '</tbody></table>';
@@ -653,7 +656,7 @@
           '<div><span>Nº</span> ' + Util.esc(orc.numero) + '</div>' +
           '<div><span>Cliente</span> ' + Util.esc(orc.cliente.nome || "—") + '</div>' +
           '<div><span>Obra</span> ' + Util.esc((orc.obra && orc.obra.nome) || "—") + '</div>' +
-          '<div><span>SINAPI</span> ' + Util.esc(orc.competenciaSinapi) + " / " + Util.esc(orc.uf) + '</div>' +
+          '<div><span>' + (Orcamento.basesUsadas(orc).length > 1 ? "Bases" : "Base") + '</span> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</div>' +
           '<div><span>Data</span> ' + hoje + '</div>' +
         '</div></div>';
 
@@ -739,7 +742,7 @@
       }
 
       html += '<div class="rel-rod">Gerado por ' + Util.esc(CONFIG.marca.nome) + " · " + hoje +
-        ' · Custos ref. SINAPI ' + Util.esc(orc.competenciaSinapi) + "/" + Util.esc(orc.uf) +
+        ' · Custos ref. ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
         ' com BDI ' + Util.fmtPct(pct) + ' incluso no preço de venda.</div>';
       html += '</div>';
       return html;

@@ -1114,7 +1114,8 @@
       var sel = '<select data-gacao="bim-troca-obra" style="max-width:260px">' +
         '<option value="">— sem cronograma (sequência padrão) —</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
-      var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel;
+      var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
+        ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>';
       var html = this._head(svg("bim") + "BIM 3D / 4D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px">' +
@@ -1122,6 +1123,10 @@
         '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px"><div style="font-size:34px;margin-bottom:8px">🏗️</div>Carregando o visualizador 3D…</div>' +
         '<div id="bim-info" style="position:absolute;left:10px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
         "</div></div>";
+      html += '<div class="card" id="bim-modelos" style="display:none">' +
+        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🗂 Modelos carregados <span class="muted" style="font-weight:400;font-size:13px">— interoperabilidade entre disciplinas</span></h3>' +
+        '<span class="muted" style="font-size:12px">➕ arraste mais arquivos .IFC no visualizador (estrutural + arquitetura + hidráulica…)</span></div>' +
+        '<div id="bim-modelos-lista"></div></div>';
       html += '<div class="card" id="bim-4d" style="display:none">' +
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🎬 Simulação 4D <span class="muted" style="font-weight:400;font-size:13px">— avanço da obra no tempo</span></h3>' +
         '<span><span id="bim-custo" class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;margin-right:6px;display:none"></span><span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></span></div>' +
@@ -1147,6 +1152,75 @@
       return html;
     },
     bimTrocaObra: function (obraId) { this._bimSel = obraId; if (this._bimElementos && this._bimElementos.length) this._bimReplanejar(); },
+
+    // painel "Modelos carregados": disciplina + transparência + olhinho + remover, por IFC
+    _BIM_DISCS: [["estrutural", "🏗 Estrutural"], ["arquitetura", "🏠 Arquitetura"], ["hidraulica", "🚿 Hidráulica"], ["eletrica", "⚡ Elétrica"], ["mecanica", "❄ Mecânica/AVAC"], ["outra", "📦 Outra"]],
+    _bimRenderModelos: function (lista) {
+      var card = document.getElementById("bim-modelos"), box = document.getElementById("bim-modelos-lista");
+      if (!card || !box) return;
+      if (!lista || !lista.length) { card.style.display = "none"; box.innerHTML = ""; return; }
+      card.style.display = "";
+      var self = this;
+      box.innerHTML = "";
+      lista.forEach(function (mo) {
+        var linha = document.createElement("div");
+        linha.style.cssText = "display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:9px 4px;border-bottom:1px dashed var(--linha)";
+        var discOpts = self._BIM_DISCS.map(function (d) { return '<option value="' + d[0] + '"' + (mo.disciplina === d[0] ? " selected" : "") + ">" + d[1] + "</option>"; }).join("");
+        linha.innerHTML =
+          '<b style="min-width:180px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Util.esc(mo.nome) + '">' + Util.esc(mo.nome) + '</b>' +
+          '<span class="muted" style="font-size:11.5px">' + (mo.n || 0).toLocaleString("pt-BR") + ' elem.</span>' +
+          '<select data-m="disc" class="btn sm" style="padding:4px 8px">' + discOpts + "</select>" +
+          '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--texto-fraco)">Transparência <input data-m="alpha" type="range" min="10" max="100" value="' + Math.round((mo.alpha || 1) * 100) + '" style="width:130px"><b data-m="alphapct" style="min-width:38px">' + Math.round((mo.alpha || 1) * 100) + "%</b></label>" +
+          '<span style="flex:1"></span>' +
+          '<button data-m="vis" class="btn sm" title="Mostrar/ocultar este modelo">' + (mo.visivel ? "👁" : "🚫") + "</button>" +
+          '<button data-m="del" class="btn sm danger" title="Remover este modelo">🗑</button>';
+        // wiring direto (painel dinâmico — sem passar pelo dispatcher global)
+        linha.querySelector('[data-m="disc"]').onchange = function () { BIM.setDisciplina(mo.mid, this.value); };
+        var rng = linha.querySelector('[data-m="alpha"]'), pct = linha.querySelector('[data-m="alphapct"]');
+        rng.oninput = function () { pct.textContent = this.value + "%"; BIM.setTransparencia(mo.mid, (+this.value) / 100); };
+        linha.querySelector('[data-m="vis"]').onclick = function () { BIM.setVisivel(mo.mid, !(mo.visivel)); };
+        linha.querySelector('[data-m="del"]').onclick = function () { if (confirm("Remover o modelo \"" + mo.nome + "\" do visualizador?")) BIM.removerModelo(mo.mid); };
+        box.appendChild(linha);
+      });
+    },
+
+    // Reunião no modelo: avatar nomeado + sala (compatibilização ao vivo com a equipe)
+    bimReuniao: function () {
+      var self = this;
+      if (typeof BIM === "undefined" || !BIM.reuniao) { UI.toast("Abra a aba BIM com um modelo carregado primeiro.", "erro"); return; }
+      if (BIM.reuniao.ativa) {
+        if (confirm("Você está na sala \"" + BIM.reuniao.sala + "\". Sair da reunião?")) { BIM.reuniao.sair(); UI.toast("Você saiu da reunião.", "ok"); }
+        return;
+      }
+      var av = {}; try { av = JSON.parse(localStorage.getItem("orcapro:bim:avatar") || "{}"); } catch (e) {}
+      var usuario = (typeof Auth !== "undefined" && Auth.usuario) ? (Auth.usuario() || {}) : {};
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      // sala NÃO-adivinhável: slug da obra + código aleatório persistido (mesma equipe reusa; estranho não chuta)
+      var chaveObra = obra ? obra.id : (eid() + "-geral"), codKey = "orcapro:bim:salacode:" + chaveObra, cod = "";
+      try { cod = localStorage.getItem(codKey) || ""; } catch (e) {}
+      if (!cod) { cod = Math.random().toString(36).slice(2, 8); try { localStorage.setItem(codKey, cod); } catch (e) {} }
+      var salaDefault = av.sala || ((obra ? "obra-" + (obra.nome || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) : "reuniao") + "-" + cod);
+      var corpo =
+        '<p class="muted" style="margin:0 0 12px">Todos que entrarem na <b>mesma sala</b> se veem dentro do modelo — cada um com seu avatar e nome. Perfeito pra <b>compatibilização e reunião de projeto</b> (um aponta o conflito, os outros voam até lá).</p>' +
+        '<div class="row">' + campo("Seu nome no avatar *", inp("g-av-nome", av.nome || usuario.nome || usuario.empresa || "", "Como os outros te veem")) +
+        campo("Sala da reunião *", inp("g-av-sala", salaDefault, "mesmo nome de sala = mesma reunião")) + "</div>" +
+        '<div class="row">' +
+        campo("Cor do uniforme", '<input id="g-av-c1" type="color" value="' + (av.c1 || "#2e6f9e") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
+        campo("Cor do capacete", '<input id="g-av-c2" type="color" value="' + (av.c2 || "#f59e0b") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
+        campo("Altura", sel("g-av-esc", opts([["normal", "Normal"], ["alto", "Alto"], ["baixo", "Baixo"]], av.esc || "normal"))) + "</div>" +
+        '<p class="muted" style="font-size:12px;margin:6px 0 0">💡 Use o modo <b>✈️ Voo</b> (WASD + mouse) pra andar pelo modelo. Precisa de internet; a sala fecha sozinha quando todos saem.</p>';
+      UI.modal("👥 Reunião no modelo", corpo, [
+        { texto: "🚀 Entrar na reunião", classe: "primary", onClick: function () {
+          var cfg = { nome: (UI.el("g-av-nome") || {}).value || "", sala: ((UI.el("g-av-sala") || {}).value || "").trim(), c1: (UI.el("g-av-c1") || {}).value, c2: (UI.el("g-av-c2") || {}).value, esc: (UI.el("g-av-esc") || {}).value };
+          if (cfg.nome.trim().length < 2) { UI.toast("Diga seu nome no avatar.", "erro"); return; }
+          if (!cfg.sala) { UI.toast("Dê um nome pra sala.", "erro"); return; }
+          try { localStorage.setItem("orcapro:bim:avatar", JSON.stringify(cfg)); } catch (e) {}
+          if (BIM.reuniao.entrar(cfg)) { UI.fecharModal(); UI.toast("👥 Você entrou na sala \"" + cfg.sala + "\" — quem entrar nela te vê no modelo.", "ok"); }
+          else UI.toast("Não consegui conectar na sala (sem internet?). O modelo segue normal.", "erro");
+        } },
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+    },
     _bimReplanejar: function () {
       if (!this._bimElementos || !this._bimElementos.length) return;
       var crono = null, obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
@@ -1315,7 +1389,10 @@
         if (window.BIM && BIM.montar) {
           var aviso = document.getElementById("bim-aviso"); if (aviso) aviso.style.display = "none";
           BIM.montar(canvas, {
-            onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }); self._bimReplanejar(); },
+            onModelos: function (lista) { self._bimRenderModelos(lista); },
+            onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = n > 0 ? "👥 Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "👥 Na sala…" : "👥 Reunião"); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
+            onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
+            onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); },
             onPick: function (info) {
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
@@ -1324,7 +1401,8 @@
           });
           // re-home: se o modelo já estava carregado (reentrou na aba / App.render), o onLoaded não
           // refira — re-popula o timeline 4D a partir do que o viewer já tem.
-          try { var jaCarregado = BIM.elementos; if (jaCarregado && jaCarregado.length) { self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }); self._bimReplanejar(); } } catch (e) {}
+          try { var jaCarregado = BIM.elementos; if (jaCarregado && jaCarregado.length) { self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); } } catch (e) {}
+          try { if (BIM.modelos && BIM.modelos.length) self._bimRenderModelos(BIM.modelos); } catch (e2) {}
           return;
         }
         if (tentativas++ < 60) setTimeout(montarViewer, 200);
@@ -1425,7 +1503,7 @@
     // =================== CENTRAL DE AJUDA (G7 app-side) ===================
     _AJUDA_FAQ: [
       { p: "Como crio meu primeiro orçamento?", r: "No menu <b>Orçamentos</b>, clique em <b>Novo orçamento</b>. Descreva a obra no <b>Escopo Inteligente</b> (texto livre) ou adicione itens direto com <b>+ Item</b>, buscando no SINAPI por código ou descrição." },
-      { p: "De onde vêm os preços?", r: "Da base <b>SINAPI oficial da Caixa</b>, na competência e UF que você escolher — mais SICRO, SEINFRA-CE, SETOP-MG e SUDECAP-BH. Nada é inventado: item sem correspondência fica marcado como pendente para você decidir." },
+      { p: "De onde vêm os preços?", r: "Da base <b>SINAPI oficial da Caixa</b>, na competência e UF que você escolher — mais SICRO, SEINFRA-CE, SETOP-MG, SUDECAP-BH e GOINFRA/AGETOP-GO (rodoviárias de Goiás). Cada orçamento declara as bases REALMENTE usadas (nunca atribui tudo à SINAPI). Nada é inventado: item sem correspondência fica marcado como pendente para você decidir." },
       { p: "O que é o BDI e como configuro?", r: "BDI é a taxa que cobre custos indiretos, impostos e lucro sobre o custo direto. Na aba <b>BDI & Parâmetros</b> você usa o modelo do <b>Acórdão TCU 2.622/2013</b> ou o <b>DNIT</b>, e o preço de venda recalcula na hora." },
       { p: "Posso editar a planilha no Excel e trazer de volta?", r: "Sim — esse é um diferencial exclusivo. Exporte o Excel, ajuste quantidades ou custos, e use <b>📥 Reimportar</b>: o sistema mostra cada mudança para você revisar antes de aplicar." },
       { p: "Como gero a proposta comercial?", r: "Com o orçamento pronto e um cliente vinculado, o botão <b>Gerar Proposta Comercial</b> monta o PDF com a sua marca — capa, escopo, condições comerciais e assinatura." },
@@ -3870,6 +3948,7 @@ renderRelatorios: function () {
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
+        case "bim-reuniao": return this.bimReuniao();
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);

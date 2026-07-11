@@ -19,6 +19,8 @@
   "use strict";
 
   // categoria de serviço (mesmos ids do Cronograma/BIM4D) -> disciplina de compatibilização
+  // disciplina escolhida no painel multi-IFC (el.disciplina) tem PRIORIDADE sobre a inferida do tipo
+  var DISC_PAINEL = { estrutural: "Estrutura", arquitetura: "Arquitetura", hidraulica: "Instalações", eletrica: "Instalações", mecanica: "Instalações", outra: "Outros" };
   var CAT_DISC = {
     fundacao: "Estrutura", estrutura: "Estrutura",
     alvenaria: "Arquitetura", cobertura: "Arquitetura", revestimento: "Arquitetura",
@@ -73,11 +75,19 @@
       if (filtroPares) opts.pares.forEach(function (p) { filtroPares[p] = 1; });
 
       // prepara: só elementos com AABB válido (min/max com 3 números)
+      // disciplina do painel (el.disciplina) só vale no modo FEDERADO (2+ modelos):
+      // num IFC único combinado ela é a MESMA p/ todo elemento do modelo e cegaria o
+      // clash (falso "sem conflito") → com 1 modelo, infere por tipo elemento a elemento.
+      var mids = {}, nMids = 0;
+      (elementos || []).forEach(function (el) {
+        if (el && el.mid != null && !mids[el.mid]) { mids[el.mid] = 1; nMids++; }
+      });
+      var usarPainel = nMids >= 2;
       var els = [];
       (elementos || []).forEach(function (el) {
         var bb = el && el.aabb;
         if (!bb || !bb.min || !bb.max || bb.min.length < 3 || bb.max.length < 3) return;
-        els.push({ id: el.id, disc: BIMClash.disciplinaDe(el.cat || el.tipo), cat: catDe(el),
+        els.push({ id: el.id, disc: (usarPainel && el.disciplina && DISC_PAINEL[el.disciplina]) || BIMClash.disciplinaDe(el.cat || el.tipo), cat: catDe(el),
           min: [num(bb.min[0]), num(bb.min[1]), num(bb.min[2])],
           max: [num(bb.max[0]), num(bb.max[1]), num(bb.max[2])] });
       });

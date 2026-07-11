@@ -78,7 +78,7 @@
       // 2) APRESENTAÇÃO
       P.push(pg("1. Apresentação", '<p>' + apresentacao + '</p>' +
         '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
-        'custos referenciadas na tabela <b>SINAPI ' + Util.esc(orc.competenciaSinapi) + ' / ' + Util.esc(orc.uf) + '</b>, ' +
+        'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>, ' +
         'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>'));
 
       // 3) ENTENDIMENTO DO ESCOPO
@@ -97,7 +97,7 @@
         'pelo contratante durante a execução; quantitativos sujeitos a confirmação em projeto executivo.</p>' +
         '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
         'acompanhamento técnico responsável, seguindo normas técnicas vigentes (ABNT).</p>' +
-        '<p><b>Base de preços:</b> SINAPI ' + Util.esc(orc.competenciaSinapi || '—') + '/' + Util.esc(orc.uf || '—') +
+        '<p><b>' + (Orcamento.basesUsadas(orc).length > 1 ? 'Bases de preços:' : 'Base de preços:') + '</b> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
         ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
         'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>'));
 

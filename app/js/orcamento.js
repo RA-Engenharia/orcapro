@@ -134,6 +134,41 @@
       return n;
     },
 
+    // FONTE HONESTA no NÍVEL DO DOCUMENTO: as bases de preço REALMENTE usadas no
+    // orçamento (a partir da origem de cada item) — nunca atribuir tudo à SINAPI.
+    // Ex.: itens da GOINFRA -> declara AGETOP-GO; mistos -> lista todas.
+    basesUsadas: function (orc) {
+      if (!orc) return [];
+      var cont = {};
+      Util.arr(orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          var f = String(it.origem || it.baseFonte || "").toUpperCase();
+          if (!f || f === "PROPRIA") f = "PROPRIO";
+          cont[f] = (cont[f] || 0) + 1;
+        });
+      });
+      var META = (typeof Bases !== "undefined" && Bases.META) || {};
+      var out = Object.keys(cont).map(function (f) {
+        var label = (f === "PROPRIO") ? "Composição própria" : (f === "OUTRA" ? "Outra base" : ((META[f] && META[f].label) || f));
+        var texto = label;
+        if (f === "SINAPI") texto = "SINAPI " + (orc.competenciaSinapi || "") + (orc.uf ? "/" + orc.uf : "");
+        return { fonte: f, label: label, texto: texto, n: cont[f] };
+      });
+      out.sort(function (a, b) {
+        if (a.fonte === "SINAPI") return -1; if (b.fonte === "SINAPI") return 1;
+        if (a.fonte === "PROPRIO") return 1; if (b.fonte === "PROPRIO") return -1;
+        return String(a.label).localeCompare(String(b.label));
+      });
+      return out;
+    },
+    // Texto das bases p/ cabeçalhos/documentos: "SINAPI 05/2026/MG · AGETOP-GO".
+    // Sem itens (orçamento vazio) cai no rótulo SINAPI padrão só p/ não quebrar.
+    basesUsadasTexto: function (orc, sep) {
+      var l = this.basesUsadas(orc);
+      if (!l.length) return "SINAPI " + ((orc && orc.competenciaSinapi) || "—") + "/" + ((orc && orc.uf) || "—");
+      return l.map(function (x) { return x.texto; }).join(sep || " · ");
+    },
+
     // FASE 1.4 — Prazo ÚNICO: o nº de meses do cronograma financeiro deriva do
     // agente (Cronograma.estimar -> totalDias -> meses cheios) enquanto o usuário
     // não travar manualmente (orc.cronogramaMesesManual). Fim do xlsx que dizia

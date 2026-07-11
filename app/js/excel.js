@@ -264,7 +264,7 @@
     wa.mergeCells('A1:J1'); wa.getCell('A1').value = empresa; wa.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
     wa.mergeCells('A2:J2'); wa.getCell('A2').value = 'PLANILHA ORÇAMENTÁRIA ANALÍTICA — ' + (orc.numero || '') + (orc.nome ? ' · ' + orc.nome : ''); wa.getCell('A2').font = { bold: true, size: 11 };
     wa.mergeCells('A3:J3'); wa.getCell('A3').value = 'Cliente: ' + ((orc.cliente && orc.cliente.nome) || '-') + '   |   Obra: ' + ((orc.obra && orc.obra.nome) || '-') + (orc.obra && orc.obra.local ? ' (' + orc.obra.local + ')' : ''); wa.getCell('A3').font = { size: 9, color: { argb: muted } };
-    wa.mergeCells('A4:J4'); wa.getCell('A4').value = 'SINAPI ' + (orc.competenciaSinapi || '') + '/' + (orc.uf || '') + '   |   BDI ' + fmtNum(bdiPct, 2) + '%   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'); wa.getCell('A4').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
+    wa.mergeCells('A4:J4'); wa.getCell('A4').value = Orcamento.basesUsadasTexto(orc) + '   |   BDI ' + fmtNum(bdiPct, 2) + '%   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'); wa.getCell('A4').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
 
     var hr = 6, colsA = ['Item', 'Código', 'Fonte', 'Descrição', 'Und', 'Qtd', 'Custo Unit', 'Custo Total', 'Preço Unit c/BDI', 'Preço Total c/BDI'];
     colsA.forEach(function (h, i) { hStyle(wa.getRow(hr).getCell(i + 1)); wa.getRow(hr).getCell(i + 1).value = h; });
@@ -397,7 +397,7 @@
     lin(6, 'BDI (%)  ⟵ edite aqui', bdiPct, '0.00');
     wr.getCell('B6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: amarelo } }; wr.getCell('B6').font = { bold: true };
     wr.getCell('B6').protection = { locked: false }; // FASE 2: input liberado sob proteção
-    lin(7, 'Competência SINAPI', (orc.competenciaSinapi || '-') + ' / ' + (orc.uf || '-'));
+    lin(7, 'Bases de preços', Orcamento.basesUsadasTexto(orc));
     lin(8, 'Nº de etapas / itens', etapas.length + ' / ' + n);
     lin(10, 'Custo Direto (sem BDI)', { formula: ref(SH_SINT, 'C' + sintTot), result: grandCusto }, MOEDA, { bold: true });
     lin(11, 'BDI (R$)', { formula: 'B10*$B$6/100', result: grandCusto * bdiPct / 100 }, MOEDA, { bold: true });
@@ -706,7 +706,7 @@
     // ===================== FASE 3: data-base em todas as abas =====================
     // Exigência formal de licitação: data-base/competência visível em cada quadro.
     var dtEmissao = orc.atualizadoEm ? new Date(orc.atualizadoEm) : new Date();
-    var txtBase = 'Data-base: SINAPI ' + (orc.competenciaSinapi || '-') + '/' + (orc.uf || '-') + ' — ' +
+    var txtBase = 'Bases de preços: ' + Orcamento.basesUsadasTexto(orc) + ' — ' +
       (orc.desonerado ? 'desonerado' : 'não desonerado') + '   ·   Emissão: ' + dtEmissao.toLocaleDateString('pt-BR');
     function linhaBase(ws, rr, lastCol) {
       if (!ws) return;
@@ -778,7 +778,7 @@
     wleia.columns = [{ width: 110 }];
     var leiaLinhas = [
       ['ORÇAPRO — COMO USAR ESTA PLANILHA', { bold: true, size: 14, cor: navy }],
-      [(orc.numero || '') + (orc.nome ? ' · ' + orc.nome : '') + '   |   SINAPI ' + (orc.competenciaSinapi || '-') + '/' + (orc.uf || '-') + '   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'), { size: 9, cor: 'FF64748B' }],
+      [(orc.numero || '') + (orc.nome ? ' · ' + orc.nome : '') + '   |   ' + Orcamento.basesUsadasTexto(orc) + '   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'), { size: 9, cor: 'FF64748B' }],
       [''],
       ['✏️  O QUE VOCÊ PODE EDITAR (células AMARELAS):', { bold: true }],
       ['     • Resumo!B6 — o BDI aplicado (%). Tudo recalcula: preços unitários, totais, curva ABC, cronograma.'],

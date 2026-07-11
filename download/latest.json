@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.61",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.61/OrcaPRO-IA-update-v1.1.61.zip",
-  "notas": "Fonte honesta: cada orçamento, proposta, laudo e planilha declara as bases de preço REALMENTE usadas — nunca atribui tudo à SINAPI. Se você usou GOINFRA, SETOP, SEINFRA ou SUDECAP, o documento mostra a base certa (essencial em documento oficial). Bases estaduais seguem inclusas offline.",
+  "versao": "1.1.62",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.62/OrcaPRO-IA-update-v1.1.62.zip",
+  "notas": "BIM 2.0: vários IFC juntos no 3D (arquitetura + estrutura + hidráulica) com disciplina e transparência por modelo, Reunião multi-usuário com avatares dentro do modelo para compatibilização, qualidade Ultra e clash mais preciso. Robustez: IFC inválido não trava o visualizador e a reunião avisa quando está offline.",
   "obrigatoria": false
 }
