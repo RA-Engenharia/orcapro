@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.59",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.59/OrcaPRO-IA-update-v1.1.59.zip",
-  "notas": "Nova base de preços GOINFRA/AGETOP-GO (obras rodoviárias de Goiás): terraplenagem, pavimentação e obras de arte especiais, com toggle de regime (com/sem desoneração) e de preço (custo direto ou com BDI oficial), busca unificada e atualização automática da fonte oficial. ContabPRO e telemetria de trial seguem inclusos.",
+  "versao": "1.1.60",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.60/OrcaPRO-IA-update-v1.1.60.zip",
+  "notas": "Agora o instalador já traz TODAS as bases estaduais prontas pra usar offline com 1 clique: SETOP-MG (com/sem desoneração), SEINFRA-CE, SUDECAP-BH e GOINFRA/AGETOP-GO (rodoviárias de Goiás). SINAPI, ContabPRO e telemetria de trial seguem inclusos.",
   "obrigatoria": false
 }
