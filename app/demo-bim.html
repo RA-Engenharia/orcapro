@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OrçaPRO BIM — demonstração ao vivo</title>
+  <!-- MESMO viewer do app (js/bim.js): trena, planta, corte livre, corte técnico e snap.
+       Assim a demo do site NUNCA desatualiza — é o módulo real, servido da CDN (offload do WASM). -->
+  <script type="importmap">
+  { "imports": { "three": "./bim/vendor/three.module.js", "web-ifc": "./bim/vendor/web-ifc-api.js" } }
+  </script>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1a2b; overflow: hidden; font-family: Arial, sans-serif; }
+    #host { position: absolute; inset: 0; }
+    #carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: #dbe8f5; z-index: 9; }
+    #carregando .sp { width: 42px; height: 42px; border: 4px solid #24435f; border-top-color: #16a34a; border-radius: 50%; animation: sp 1s linear infinite; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    #erro { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; color: #a9c1d8; padding: 20px; z-index: 9; }
+  </style>
+</head>
+<body>
+  <div id="host"></div>
+  <div id="carregando"><div class="sp"></div><div>Carregando o modelo de exemplo…</div></div>
+  <div id="erro">Não foi possível iniciar o visualizador 3D neste navegador.<br>Tente o Chrome/Edge atualizado — ou abra o OrçaPRO instalado.</div>
+  <script type="module">
+    import './js/bim.js';
+    var carreg = document.getElementById('carregando'), erro = document.getElementById('erro');
+    try {
+      BIM.montar(document.getElementById('host'), {
+        onLoaded: function () { carreg.style.display = 'none'; }
+      });
+      BIM.carregarExemplo();
+      // fallback: se em 25s nada carregou, mostra a dica (sem travar)
+      setTimeout(function () { if (carreg.style.display !== 'none') { carreg.style.display = 'none'; } }, 25000);
+    } catch (e) {
+      carreg.style.display = 'none'; erro.style.display = 'flex';
+    }
+  </script>
+</body>
+</html>
