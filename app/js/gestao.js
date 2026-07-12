@@ -146,7 +146,7 @@
       // 4 canteiro → 5 abastecer → 6 equipe/ativos → 7 dinheiro/comando. g = grupo do menu.
       { id: "dashboard", nome: "Painel", g: 0 },
       { id: "orcamentos", nome: "Orçamentos", g: 1 },
-      { id: "bim", nome: "BIM 3D / 4D", g: 2 },
+      { id: "bim", nome: "BIM 3D ao 7D", g: 2 },
       { id: "clientes", nome: "Clientes", g: 3 },
       { id: "contratos", nome: "Contratos", g: 3 },
       { id: "obras", nome: "Obras", g: 3 },
@@ -1119,7 +1119,7 @@
       this._abrirDoc("Relatório Fotográfico — " + (obra.nome || ""), this._docShell("RELATÓRIO FOTOGRÁFICO", "#0f2740", corpo));
     },
 
-    // =================== BIM 3D / 4D ===================
+    // =================== BIM 3D ao 7D ===================
     // Aba BIM na Gestão: monta o viewer in-app (js/bim.js → window.BIM) num canvas
     // e sobrepõe o timeline 4D (motor BIM4D). Cadeia in-app 100% minha; o bim/bim.html
     // da NF8n fica como demo standalone dela. Sem viewer carregado → aviso amigável.
@@ -1131,7 +1131,7 @@
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
       var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
         ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>';
-      var html = this._head(svg("bim") + "BIM 3D / 4D", "", "", extra);
+      var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px">' +
         '<div id="bim-canvas" style="width:100%;height:min(64vh,580px);position:relative;background:#0b1a2b;display:flex;align-items:center;justify-content:center">' +

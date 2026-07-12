@@ -35,8 +35,8 @@
       titulo: "Central de avisos",
       texto: "Medições a aprovar, tarefas atrasadas e restrições da semana — tudo num sino só, para nada passar despercebido." },
     { seletor: '[data-view="bim"]',
-      titulo: "BIM 3D",
-      texto: "Arraste seus arquivos IFC e veja a obra em 3D, com cronograma 4D e quantitativos 5D ligados ao orçamento." },
+      titulo: "BIM 3D ao 7D",
+      texto: "Arraste seus arquivos IFC e coordene a obra em 3D: cronograma 4D, custo 5D, ciclo de vida 6D/7D, trena, planta baixa, corte livre e vista de corte técnica — tudo ligado ao orçamento." },
     { seletor: '[data-view="ajuda"]',
       titulo: "Ajuda sempre à mão",
       texto: "FAQ com as dúvidas mais comuns — e é por aqui que você revê este tour quando quiser." }

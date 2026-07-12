@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.65",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.65/OrcaPRO-IA-update-v1.1.65.zip",
-  "notas": "BIM v2: medir dentro da planta baixa (cota horizontal) · corte livre em qualquer ângulo (horizontal, vertical ou inclinado) · snaps em vértice/meio/aresta · corte técnico A–A em P&B na escala escolhida (imprimir/baixar). Só mede/agarra o que está visível.",
+  "versao": "1.1.66",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.66/OrcaPRO-IA-update-v1.1.66.zip",
+  "notas": "Ajuste: o módulo BIM agora se chama '3D ao 7D' (reflete o ciclo de vida 6D/7D e as ferramentas do v1.1.65 — trena, planta, corte livre, corte técnico e snaps).",
   "obrigatoria": false
 }
