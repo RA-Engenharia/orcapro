@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.64",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.64/OrcaPRO-IA-update-v1.1.64.zip",
-  "notas": "BIM: Trena — mede distâncias reais no modelo 3D, em metros (só o que está visível; elementos ocultos e clipados ficam fora) + Planta Baixa — corte horizontal na altura que você escolher, com vista de topo e cota do corte.",
+  "versao": "1.1.65",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.65/OrcaPRO-IA-update-v1.1.65.zip",
+  "notas": "BIM v2: medir dentro da planta baixa (cota horizontal) · corte livre em qualquer ângulo (horizontal, vertical ou inclinado) · snaps em vértice/meio/aresta · corte técnico A–A em P&B na escala escolhida (imprimir/baixar). Só mede/agarra o que está visível.",
   "obrigatoria": false
 }
