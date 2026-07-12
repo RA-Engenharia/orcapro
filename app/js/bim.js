@@ -44,7 +44,8 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel].forEach(function (el) { if (el) host.appendChild(el); });
+    if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); }, 0);
     return;
@@ -64,6 +65,9 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="ultra" title="Qualidade ultra: nitidez máxima (usa mais GPU)">✨ Ultra</button>' +
     '<button class="btn sm on" data-b="orbita" style="background:#16a34a;color:#fff">🖱️ Órbita</button>' +
     '<button class="btn sm" data-b="voo">✈️ Voo</button>' +
+    '<button class="btn sm" data-b="medir" title="Trena: clique em 2 pontos do modelo pra medir a distância">📏 Medir</button>' +
+    '<button class="btn sm" data-b="limpar-medidas" title="Apagar todas as cotas medidas" style="display:none">🧹 Cotas</button>' +
+    '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">📐 Planta</button>' +
     '<button class="btn sm" data-b="fit">⤢ Enquadrar</button>' +
     '<input type="file" data-b="file" accept=".ifc" multiple style="display:none">';
   host.appendChild(bar);
@@ -130,7 +134,7 @@ function montar(host, opts) {
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape' && fly.on) setMode(false); };
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.planta && S.planta.on) S._setPlanta(false); } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
   S._onMouseMove = function (e) { if (!fly.on || !document.pointerLockElement) return; fly.yaw -= e.movementX * 0.0022; fly.pitch -= e.movementY * 0.0022; fly.pitch = Math.max(-1.5, Math.min(1.5, fly.pitch)); };
   window.addEventListener('keydown', S._onKeyDown); window.addEventListener('keyup', S._onKeyUp); document.addEventListener('mousemove', S._onMouseMove);
@@ -152,12 +156,27 @@ function montar(host, opts) {
 
   // ---- pick ----
   var ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+  // O Raycaster do three NÃO testa object.visible (só layers): sem filtro, o raio acerta elemento
+  // OCULTO (modelo desligado no painel, 4D com "futuros" escondidos) na frente do visível — cota da
+  // trena e seleção silenciosamente ERRADAS. Na planta, o clipping é só GPU: o raycast CPU ainda
+  // acerta o telhado acima do corte. Este filtro resolve as duas famílias.
+  function cadeiaVisivel(o) { for (var n = o; n; n = n.parent) { if (n.visible === false) return false; if (n === modelRoot) break; } return true; }
+  function primeiroHit(hits) {
+    for (var i = 0; i < hits.length; i++) {
+      if (!cadeiaVisivel(hits[i].object)) continue;
+      if (planta.on && planta.plane && hits[i].point.y > planta.plane.constant + 1e-6) continue; // acima do corte
+      return hits[i];
+    }
+    return null;
+  }
   canvasEl.addEventListener('dblclick', function (e) {
+    if (!S || !S.alive) return;
     if (fly.on) return;
+    if (S.medir && S.medir.on) return; // no modo trena o duplo-clique é medição, não seleção
     var r = canvasEl.getBoundingClientRect();
     mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
-    var hit = ray.intersectObjects(modelRoot.children, true)[0];
+    var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
     if (hit && hit.object.userData && hit.object.userData.expressID != null) {
       S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
@@ -172,18 +191,21 @@ function montar(host, opts) {
     else if (k === 'exemplo') carregarExemplo();
     else if (k === 'limpar') limparTudo();
     else if (k === 'ultra') setUltra(!S.ultra);
-    else if (k === 'orbita') setMode(false);
-    else if (k === 'voo') setMode(true);
-    else if (k === 'fit') enquadrar();
+    // Órbita/Voo/Enquadrar SEMPRE encerram Medir/Planta (exclusividade de modos nos 2 sentidos)
+    else if (k === 'orbita') { if (medir.on) setMedir(false); if (planta.on) setPlanta(false); setMode(false); }
+    else if (k === 'voo') { if (medir.on) setMedir(false); if (planta.on) setPlanta(false); setMode(true); }
+    else if (k === 'medir') setMedir(!medir.on);
+    else if (k === 'planta') setPlanta(!planta.on);
+    else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
+    else if (k === 'fit') { if (planta.on) setPlanta(false); else enquadrar(); }
   });
   bar.querySelector('[data-b="file"]').addEventListener('change', function (e) {
     var fs2 = Array.prototype.slice.call(e.target.files || []); fs2.forEach(function (f) { abrirArquivo(f); }); e.target.value = '';
   });
-  host.addEventListener('dragover', function (e) { e.preventDefault(); });
-  host.addEventListener('drop', function (e) {
-    e.preventDefault();
-    Array.prototype.slice.call(e.dataTransfer.files || []).forEach(function (f) { if (/\.ifc$/i.test(f.name)) abrirArquivo(f); });
-  });
+  function onDragOver(e) { e.preventDefault(); }
+  function onDrop(e) { e.preventDefault(); Array.prototype.slice.call(e.dataTransfer.files || []).forEach(function (f) { if (/\.ifc$/i.test(f.name)) abrirArquivo(f); }); }
+  host.addEventListener('dragover', onDragOver); host.addEventListener('drop', onDrop);
+  S._onDragOver = onDragOver; S._onDrop = onDrop; // guardados p/ re-registrar no host novo (re-home)
   function setUltra(on) {
     S.ultra = !!on;
     renderer.setPixelRatio(S.ultra ? Math.min(window.devicePixelRatio || 1, 2.5) : Math.min(window.devicePixelRatio || 1, 2));
@@ -217,6 +239,150 @@ function montar(host, opts) {
     grid.position.y = box.min.y;
   }
   S._enquadrar = enquadrar;
+
+  // ============================================================
+  // Dica flutuante (usada pela trena e pela planta baixa)
+  // ============================================================
+  var hint = document.createElement('div');
+  hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;background:rgba(34,197,94,.94);color:#04240f;font-weight:600;font-size:12.5px;padding:7px 15px;border-radius:20px;box-shadow:0 6px 16px rgba(0,0,0,.35);max-width:90%;text-align:center';
+  host.appendChild(hint);
+  S.hint = hint; // guardado p/ re-parentar no re-home (senão some ao revisitar a aba)
+  S._hint = function (msg) { if (msg) { hint.textContent = msg; hint.style.display = 'block'; } else { hint.style.display = 'none'; } };
+
+  // ============================================================
+  // TRENA (medição) — clique em 2 pontos do modelo e mede a distância real
+  // ============================================================
+  var medir = { on: false, pts: [], objs: [], down: null, prov: null };
+  S.medir = medir;
+
+  // A geometria do web-ifc já vem NORMALIZADA em METROS (o próprio web-ifc aplica o fator da
+  // unidade do arquivo). Logo, a distância entre 2 pontos do mundo JÁ é em metros — NÃO se aplica
+  // o fator de unidade aqui (isso é só p/ os BaseQuantities do QTO, que vêm em unidade nativa).
+  function fmtDist(m) { return m >= 1 ? m.toFixed(2).replace('.', ',') + ' m' : Math.round(m * 100) + ' cm'; }
+  function labelSprite(txt) {
+    var cv = document.createElement('canvas'), fs = 46, pad = 14;
+    var g = cv.getContext('2d'); g.font = 'bold ' + fs + 'px Arial';
+    cv.width = Math.ceil(g.measureText(txt).width) + pad * 2; cv.height = fs + pad * 2;
+    g = cv.getContext('2d'); g.font = 'bold ' + fs + 'px Arial';
+    g.fillStyle = 'rgba(11,26,43,.94)'; g.fillRect(0, 0, cv.width, cv.height);
+    g.strokeStyle = '#22c55e'; g.lineWidth = 4; g.strokeRect(2, 2, cv.width - 4, cv.height - 4);
+    g.fillStyle = '#c7f9d8'; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillText(txt, pad, cv.height / 2 + 2);
+    var tex = new THREE.CanvasTexture(cv); tex.minFilter = THREE.LinearFilter;
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sp.userData._ratio = cv.width / cv.height; sp.userData._sc = 0.028; sp.renderOrder = 999; return sp;
+  }
+  function pontoMarca(p) {
+    var s = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 16), new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false }));
+    s.position.copy(p); s.userData._sc = 0.006; s.renderOrder = 998; return s;
+  }
+  // marcas e etiquetas ficam do MESMO tamanho na tela em qualquer zoom/escala de modelo:
+  // reescala por distância da câmera a cada frame (vãos pequenos — porta, parede — continuam legíveis)
+  function rescaleObj(o) {
+    var sc = o.userData && o.userData._sc; if (!sc) return;
+    var d = camera.position.distanceTo(o.position) * sc;
+    if (o.userData._ratio) o.scale.set(d * o.userData._ratio, d, 1); else o.scale.setScalar(d);
+  }
+  S._tickExtra.push(function () { for (var i = 0; i < medir.objs.length; i++) rescaleObj(medir.objs[i]); });
+  function btnCotas() { var b = bar.querySelector('[data-b="limpar-medidas"]'); if (b) b.style.display = medir.objs.length ? '' : 'none'; }
+  function addMed(o) { scene.add(o); medir.objs.push(o); rescaleObj(o); }
+  function desenharMedida(a, b) {
+    if (a.distanceTo(b) < 2e-3) return false; // pontos coincidentes (duplo-clique/acidente) -> ignora
+    var line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0x22c55e, depthTest: false })); line.renderOrder = 997;
+    var lab = labelSprite(fmtDist(a.distanceTo(b))); lab.position.copy(a.clone().add(b).multiplyScalar(0.5));
+    var mA = pontoMarca(a), mB = pontoMarca(b);
+    addMed(mA); addMed(mB); addMed(line); addMed(lab); btnCotas(); return true;
+  }
+  function limparMarca(o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }
+  function tirarProv() { if (!medir.prov) return; var i = medir.objs.indexOf(medir.prov); if (i >= 0) { limparMarca(medir.prov); medir.objs.splice(i, 1); } medir.prov = null; }
+  function limparMedidas() { medir.prov = null; medir.objs.forEach(limparMarca); medir.objs = []; medir.pts = []; btnCotas(); }
+  S._limparMedidas = limparMedidas;
+  function setMedir(on) {
+    medir.on = !!on;
+    if (on) { if (planta.on) setPlanta(false); setMode(false); }
+    else { medir.pts = []; tirarProv(); btnCotas(); } // sai: descarta 1º ponto pendente + sua marca provisória
+    var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? '#16a34a' : ''; bm.style.color = on ? '#fff' : ''; }
+    canvasEl.style.cursor = on ? 'crosshair' : '';
+    S._hint(on ? '📏 Trena: clique em 2 pontos do modelo pra medir. Esc sai.' : '');
+  }
+  S._setMedir = setMedir;
+  // captura por CLIQUE-SEM-ARRASTE (não atrapalha a órbita: se arrastou, é rotação)
+  canvasEl.addEventListener('pointerdown', function (e) { if (!S || !S.alive) return; if (medir.on) medir.down = (e.button === 0) ? { x: e.clientX, y: e.clientY } : null; });
+  canvasEl.addEventListener('pointerup', function (e) {
+    if (!S || !S.alive) return;
+    if (!medir.on || !medir.down || e.button !== 0) return; // só botão esquerdo/toque marca ponto
+    var dx = e.clientX - medir.down.x, dy = e.clientY - medir.down.y; medir.down = null;
+    if (dx * dx + dy * dy > 100) return; // arrastou (>10px) -> era órbita; tolerância p/ toque (tablet)
+    var rc = canvasEl.getBoundingClientRect();
+    mouse.x = ((e.clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((e.clientY - rc.top) / rc.height) * 2 + 1;
+    ray.setFromCamera(mouse, camera);
+    var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true)); // ignora oculto/clipado (mede só o que se vê)
+    if (!hit) { S._hint('📏 Clique em cima de uma superfície do modelo.'); return; }
+    medir.pts.push({ p: hit.point.clone() });
+    if (medir.pts.length === 2) {
+      tirarProv(); // a marca definitiva do 1º ponto é desenhada por desenharMedida (evita marca dupla)
+      var ok = desenharMedida(medir.pts[0].p, medir.pts[1].p); medir.pts = [];
+      S._hint(ok ? '📏 Medido! Clique 2 pontos pra medir de novo, ou Esc pra sair.' : '📏 Pontos muito próximos — clique 2 pontos distintos.');
+    } else {
+      var m0 = pontoMarca(medir.pts[0].p); addMed(m0); medir.prov = m0; S._hint('📏 Agora clique no 2º ponto.');
+    }
+  });
+
+  // ============================================================
+  // PLANTA BAIXA — plano de corte horizontal com altura ajustável
+  // ============================================================
+  var planta = { on: false, plane: null, y0: 0, y1: 1 };
+  S.planta = planta;
+  var cortePanel = document.createElement('div');
+  cortePanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:220px';
+  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>📐 Altura do corte</b><span data-c="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
+    '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:#22c55e">' +
+    '<div style="font-size:11px;color:#9fb2c8">Esconde o que está acima do corte — a planta baixa do pavimento.</div>';
+  host.appendChild(cortePanel);
+  S.cortePanel = cortePanel; // guardado p/ re-parentar no re-home (senão o slider some ao revisitar a aba)
+  function setAlturaCorte(frac) {
+    if (!planta.plane) return;
+    var y = planta.y0 + (planta.y1 - planta.y0) * frac; planta.plane.constant = y;
+    var rot = cortePanel.querySelector('[data-c="v"]'); if (rot) rot.textContent = fmtDist(Math.max(0, y - planta.y0)) + ' do piso'; // mundo já em metros
+  }
+  function setPlanta(on) {
+    planta.on = !!on;
+    var bp = bar.querySelector('[data-b="planta"]');
+    if (on) {
+      if (medir.on) setMedir(false); setMode(false);
+      var box = new THREE.Box3().setFromObject(modelRoot);
+      if (box.isEmpty()) { planta.on = false; S._hint('Carregue um modelo primeiro.'); return; }
+      var min = box.min, max = box.max, c = box.getCenter(new THREE.Vector3());
+      planta.y0 = min.y; planta.y1 = max.y;
+      planta.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), max.y); // normal -Y: mantém o que está ABAIXO
+      renderer.localClippingEnabled = true; renderer.clippingPlanes = [planta.plane];
+      orbit.enableRotate = false; // planta: só translada/zoom (vista de topo travada)
+      var sizeXZ = Math.max(max.x - min.x, max.z - min.z) || 10;
+      camera.position.set(c.x, max.y + sizeXZ * 1.15, c.z);
+      orbit.target.set(c.x, min.y, c.z); orbit.update();
+      cortePanel.style.display = 'flex';
+      cortePanel.querySelector('[data-c="alt"]').value = 620; setAlturaCorte(0.62); // ~altura de peitoril
+      if (bp) { bp.style.background = '#16a34a'; bp.style.color = '#fff'; }
+      S._hint('📐 Planta baixa. Ajuste a altura do corte no painel. Toque em 📐 de novo pra sair.');
+    } else {
+      renderer.clippingPlanes = []; renderer.localClippingEnabled = false; planta.plane = null;
+      orbit.enableRotate = true; // volta a permitir órbita livre
+      cortePanel.style.display = 'none';
+      if (bp) { bp.style.background = ''; bp.style.color = ''; }
+      enquadrar(); S._hint('');
+    }
+  }
+  S._setPlanta = setPlanta;
+  // modelo removido com a planta ativa: re-ancora y0/y1 no bbox restante (senão o slider ganha zona morta)
+  function replanejarCorte() {
+    if (!planta.on || !planta.plane) return;
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    if (box.isEmpty()) { setPlanta(false); return; }
+    planta.y0 = box.min.y; planta.y1 = box.max.y;
+    var sl = cortePanel.querySelector('[data-c="alt"]');
+    setAlturaCorte((sl ? +sl.value : 620) / 1000);
+  }
+  S._replanejarCorte = replanejarCorte;
+  cortePanel.querySelector('[data-c="alt"]').addEventListener('input', function () { setAlturaCorte(this.value / 1000); });
 
   // rejeição NÃO fica memoizada: falha transitória do wasm (offline/atualização) permite retentar na próxima carga
   function initApi() { if (!S._initP) S._initP = (async function () { S.api.SetWasmPath('bim/vendor/'); await S.api.Init(); S.apiReady = true; })().catch(function (e) { S._initP = null; throw e; }); return S._initP; }
@@ -428,10 +594,15 @@ function montar(host, opts) {
     if (S.selected && S.selected.userData.mid === mid) { S.selected = null; S.prevMat = null; }
     S._clashSel = (S._clashSel || []).filter(function (m) { return m.userData.mid !== mid; });
     rebuildIndices(); atualizarHud(); notifyModelos();
+    if (S._limparMedidas) S._limparMedidas(); // medidas referenciam coordenadas que podem ter saído
+    if (!S.modelos.length && S.planta && S.planta.on && S._setPlanta) S._setPlanta(false);
+    else if (S.planta && S.planta.on && S._replanejarCorte) S._replanejarCorte(); // sobrou modelo: corte re-ancorado
     if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
     if (!S.modelos.length) over.style.display = 'flex';
   }
   function limparTudo() {
+    if (S.planta && S.planta.on && S._setPlanta) S._setPlanta(false);
+    if (S._limparMedidas) S._limparMedidas();
     S.modelos.slice().forEach(function (mo) { removerModelo(mo.mid); });
     S.carimbos = {}; S.qto = {};
   }
@@ -486,6 +657,7 @@ function montar(host, opts) {
       modelo.elementos.forEach(function (e) { e.disciplina = modelo.disciplina; });
       S.modelos.push(modelo);
       atualizarHud();
+      if (planta.on) setPlanta(false); // carregar modelo com a planta ativa: sai da planta (senão vista fica incoerente)
       enquadrar(); loading.style.display = 'none';
       // AABB (mundo) por elemento do modelo novo — p/ compatibilização entre DISCIPLINAS
       try {
@@ -535,6 +707,10 @@ function mostrarTudo() { if (!S) return; Object.keys(S.meshPorUid || S.meshPorId
 // Compatibilização: destaca (vermelho) os elementos de um clash e enquadra a câmera no par.
 function focarClash(ids) {
   if (!S) return;
+  // caminho EXTERNO (gestao.js "ver clash"): sai da Planta/Trena antes de voar a câmera — senão o
+  // clash fica clipado pelo plano de corte e a órbita segue travada (parece que "não funciona")
+  if (S.planta && S.planta.on && S._setPlanta) S._setPlanta(false);
+  if (S.medir && S.medir.on && S._setMedir) S._setMedir(false);
   limparClash();
   var idset = {}; (ids || []).forEach(function (id) { idset[id] = 1; });
   var box = new THREE.Box3(), any = false;
@@ -677,6 +853,10 @@ window.BIM = {
   mostrarTudo: mostrarTudo,
   focarClash: function (ids) { if (S) focarClash(ids); },
   limparClash: function () { if (S) limparClash(); },
+  // ---- ferramentas de coordenação ----
+  medir: function (on) { if (S && S._setMedir) S._setMedir(on == null ? !(S.medir && S.medir.on) : !!on); },
+  limparMedidas: function () { if (S && S._limparMedidas) S._limparMedidas(); },
+  planta: function (on) { if (S && S._setPlanta) S._setPlanta(on == null ? !(S.planta && S.planta.on) : !!on); },
   get elementos() { return S ? S.elementos.slice() : []; },
   // ---- multi-IFC (interoperabilidade entre disciplinas) ----
   get modelos() { return S && S._publicos ? S._publicos() : []; },

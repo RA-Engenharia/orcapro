@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.63",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.63/OrcaPRO-IA-update-v1.1.63.zip",
-  "notas": "Roadmap entregue: Busca universal (Ctrl+K), Central de avisos, Tour guiado, QR de verificação nos boletins e diários, Modo apresentação do orçamento, Relatório executivo mensal, BIM 6D/7D (ciclo de vida) e Last Planner ligado ao cronograma e ao diário.",
+  "versao": "1.1.64",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.64/OrcaPRO-IA-update-v1.1.64.zip",
+  "notas": "BIM: Trena — mede distâncias reais no modelo 3D, em metros (só o que está visível; elementos ocultos e clipados ficam fora) + Planta Baixa — corte horizontal na altura que você escolher, com vista de topo e cota do corte.",
   "obrigatoria": false
 }
