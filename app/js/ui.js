@@ -77,6 +77,12 @@
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
         '<span class="spacer"></span>' +
+        '<button class="topo-ic-btn" data-busca-abrir aria-label="Busca universal (Ctrl+K)" title="Busca universal — pule pra qualquer obra, orçamento ou ação (Ctrl+K)">🔍<span class="topo-kbd">Ctrl+K</span></button>' +
+        (function () {
+          var n = (typeof AvisosUI !== "undefined") ? AvisosUI.contar() : 0;
+          return '<button class="topo-ic-btn" data-avisos-abrir aria-label="Central de avisos" title="Central de avisos — medições a aprovar, tarefas atrasadas e restrições">🔔' +
+            (n ? '<span class="aviso-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") + "</button>";
+        })() +
         '<div class="topbar-conta">' +
           '<button class="conta-btn" data-acao="conta" aria-label="Conta e configurações" title="Conta e configurações">' +
             '<span class="conta-ic">⚙</span><span class="conta-nome">' + Util.esc(usuario.empresa) + '</span><span class="conta-ca">▾</span>' +
@@ -310,6 +316,7 @@
           '<button class="btn sm primary" data-acao="escopo">✨ Escopo Inteligente</button>' +
           '<button class="btn sm" data-acao="relatorio">🧾 Relatório completo</button>' +
           '<button class="btn sm success" data-acao="proposta">📄 Gerar Proposta</button>' +
+          '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">🖥️ Apresentar</button>' +
           '<button class="btn sm" data-acao="laudo">📑 Anexo p/ Laudo</button>' +
           '<button class="btn sm" data-acao="config-orc">⚙ Dados</button>' +
           '<button class="btn sm" data-acao="cenarios">📊 Comparar cenários</button>' +

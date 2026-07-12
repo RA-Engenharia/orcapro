@@ -154,6 +154,46 @@
     };
   }
 
+  /* ===== Integração cronograma → plano da semana =====
+   * CONTRATO: inicio/fim em DIAS CORRIDOS a partir de dataInicioISO — o caller
+   * converte (Cronograma.estimar entrega offsets em dias ÚTEIS mas também as
+   * datas reais; a view usa as datas). Devolve RASCUNHOS pra semana-alvo:
+   * entram só as etapas cuja janela cruza a semana, sem duplicar título que já
+   * exista naquela semana. Puro — quem grava no Store é a view. */
+  function normTit(s) { return String(s || "").toLowerCase().replace(/\s+/g, " ").trim(); }
+  function sugerirDoCronograma(etapasCrono, dataInicioISO, semanaISO, existentes) {
+    var out = [];
+    if (!semanaISO) return out;
+    var seg = new Date(String(semanaISO).slice(0, 10) + "T00:00:00");
+    if (isNaN(seg.getTime())) return out;
+    var fimSem = new Date(seg.getTime() + 6 * 86400000);
+    var ini = new Date(String(dataInicioISO || semanaISO).slice(0, 10) + "T00:00:00");
+    if (isNaN(ini.getTime())) ini = seg;
+    var jaTem = {};
+    arr(existentes).forEach(function (t) { if (t && t.semana === semanaISO) jaTem[normTit(t.titulo)] = 1; });
+    arr(etapasCrono).forEach(function (e) {
+      if (!e || e.inicio == null || e.fim == null || !e.nome) return;
+      var a = new Date(ini.getTime() + e.inicio * 86400000);
+      var b = new Date(ini.getTime() + e.fim * 86400000);
+      if (b < seg || a > fimSem) return; // etapa fora da janela da semana
+      if (jaTem[normTit(e.nome)]) return;
+      jaTem[normTit(e.nome)] = 1;
+      out.push({ titulo: e.nome, frente: e.categoriaNome || e.categoria || "", semana: semanaISO, comprometida: false, status: "afazer", restricoes: [], origem: "cronograma" });
+    });
+    return out;
+  }
+
+  /* Diário (RDO) evidencia execução: marca a tarefa da semana como FEITA.
+   * Devolve true se mudou (idempotente: já-feita não re-marca). Puro. */
+  function concluirPorRdo(tarefa, dataISO) {
+    if (!tarefa || tarefa.status === "feito") return false;
+    tarefa.status = "feito";
+    tarefa.causa = "";
+    tarefa.concluidaVia = "rdo";
+    tarefa.concluidaEm = String(dataISO || "").slice(0, 10);
+    return true;
+  }
+
   var LastPlanner = {
     CAUSAS: CAUSAS, RESTRICOES: RESTRICOES, STATUS: STATUS,
     segundaDe: segundaDe, chaveSemana: chaveSemana, semanas: semanas,
@@ -162,6 +202,7 @@
     ppcSemana: ppcSemana, historicoPPC: historicoPPC, ppcMedio: ppcMedio,
     causasAgregadas: causasAgregadas, restricoesPendentes: restricoesPendentes,
     resumo: resumo,
+    sugerirDoCronograma: sugerirDoCronograma, concluirPorRdo: concluirPorRdo,
     novo: function (obraId) { return { obraId: obraId || "", tarefas: [] }; }
   };
 

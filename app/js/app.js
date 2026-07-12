@@ -128,6 +128,19 @@
       if (app) app.classList.remove("tela-login");
       topbar.style.display = "flex";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
+      // Tour guiado de primeira entrada (1x por sessão; o Tour se auto-guarda via
+      // localStorage). Re-valida o login DENTRO do timeout: se o usuário deslogou
+      // nos 900ms, não roda sobre a tela de login nem queima a flag (gate v1.1.63).
+      if (!this._tourTentado) {
+        this._tourTentado = true;
+        var selfT = this;
+        setTimeout(function () {
+          try {
+            if (selfT.tela === "login" || !Auth.usuario()) return;
+            if (typeof Tour !== "undefined") Tour.iniciar();
+          } catch (eT) {}
+        }, 900);
+      }
       var view = this.view || "orcamentos";
       var podeGestao = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao()); // demo: vitrine explora a Gestão com dados fake
       if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
@@ -164,7 +177,30 @@
       document.body.addEventListener("change", function (e) { self.onChange(e); });
       document.body.addEventListener("keydown", function (e) {
         if (e.key === "Enter" && self.tela === "login") self.entrar();
+        // Busca universal: Ctrl+K / Cmd+K de qualquer tela logada — modificadores
+        // EXATOS (não sequestra Ctrl+Shift+K/AltGr+K) e nunca por cima de
+        // apresentação fullscreen ou tour (gate v1.1.63)
+        if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && String(e.key).toLowerCase() === "k") {
+          if (self.tela === "login" || typeof BuscaUI === "undefined") return;
+          if (document.fullscreenElement || document.getElementById("tour-overlay")) return;
+          e.preventDefault(); BuscaUI.abrir();
+        }
       });
+    },
+
+    /* Navegação programática por módulo (Busca universal, sino de avisos, tour):
+     * mesmo caminho do clique na sidebar — teardown do BIM incluído. Fecha modal
+     * CRUD aberto (senão a view troca por baixo e o modal fica órfão por cima). */
+    irPara: function (view) {
+      if (!view) return;
+      try { if (typeof UI !== "undefined" && UI.fecharModal && document.querySelector(".modal-bg")) UI.fecharModal(); } catch (eM) {}
+      if (view !== "bim" && typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} }
+      var ap = document.querySelector(".app"); if (ap) ap.classList.remove("menu-aberto");
+      this.view = view;
+      this.tela = (view === "orcamentos" ? "lista" : "gestao");
+      this.orcAtual = null;
+      try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo(view); } catch (eTm) {}
+      this.render();
     },
 
     onClick: function (e) {
@@ -174,10 +210,13 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
+      // topbar: busca universal e central de avisos
+      if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
+      if (t.hasAttribute && t.hasAttribute("data-avisos-abrir")) { if (typeof AvisosUI !== "undefined") AvisosUI.abrir(); return; }
       // navegação por módulo (sidebar da Gestão)
-      if (t.dataset.view) { var _apV = document.querySelector(".app"); if (_apV) _apV.classList.remove("menu-aberto"); if (t.dataset.view !== "bim" && typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } this.view = t.dataset.view; this.tela = (t.dataset.view === "orcamentos" ? "lista" : "gestao"); this.orcAtual = null; try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo(t.dataset.view); } catch (eTm) {} this.render(); return; }
+      if (t.dataset.view) { this.irPara(t.dataset.view); return; }
       // ações da Gestão (CRUD dos módulos)
       if (t.dataset.gacao) { if (typeof Gestao !== "undefined") Gestao.acao(t.dataset.gacao, t.dataset, this); return; }
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
@@ -265,6 +304,7 @@
         case "escopo-analisar": this.analisarEscopo(); break;
         case "escopo-confirmar": this.confirmarEscopo(); break;
         case "proposta": this.gerarProposta(); break;
+        case "apresentar": { if (this.orcAtual && typeof Apresentacao !== "undefined") Apresentacao.abrir(this.orcAtual); else UI.toast("Abra um orçamento primeiro.", "erro"); break; }
         case "laudo": this.gerarLaudo(); break;
         case "relatorio": this.gerarRelatorio(); break;
         case "proposta-imprimir": window.print(); break;

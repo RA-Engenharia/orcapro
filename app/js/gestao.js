@@ -633,6 +633,20 @@
       var pctAnt = contratado > 0 ? anterior / contratado * 100 : null;
       return { contratado: contratado, anterior: anterior, atual: atual, acumulado: acumulado, saldo: Math.max(0, contratado - acumulado), retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra };
     },
+    /* QR de verificação nos impressos: aponta pro Portal do Cliente com o
+     * usuário pré-preenchido e a obra do documento (senha continua exigida —
+     * o QR não autentica). Só sai quando a obra está publicada no portal.
+     * O portal mostra a ÚLTIMA PUBLICAÇÃO da obra (snapshot) — a legenda não
+     * promete o documento específico. No impresso vai o domínio oficial
+     * (sslip.io com IP fica só pro uso interno dos apps). */
+    _qrPortalObra: function (obra, legenda) {
+      if (typeof QR === "undefined" || !obra || !obra.portalUser || !obra.id) return "";
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      if (!base) return "";
+      if (base.indexOf("sslip.io") > -1) base = "https://orcapro.raengenhariaespecial.com.br";
+      return QR.blocoImpresso(base + "/portal?u=" + encodeURIComponent(obra.portalUser) + "&obra=" + encodeURIComponent(obra.id), legenda);
+    },
+
     boletimMedicao: function (id) {
       var m = Store.obter(eid(), "medicoes", id); if (!m) return;
       var c = this._medicaoCalc(m), obra = c.obra || {}, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
@@ -673,6 +687,7 @@
           return h;
         })()
         + (m.descricao ? "<div style='margin-top:12px;padding:10px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px'><b>Serviços medidos:</b><br>" + Util.esc(m.descricao) + "</div>" : "")
+        + this._qrPortalObra(obra, "Escaneie para acompanhar as medições e o andamento desta obra no Portal do Cliente (conforme a última publicação).")
         + "<div style='margin-top:24px;font-size:11px'>Declaramos que os serviços descritos foram executados conforme o contrato e estão aptos para faturamento.</div>"
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(emp.nome || "CONTRATADA") + "</b><br>" + (emp.responsavel ? Util.esc(emp.responsavel) + (emp.crea ? " · CREA " + Util.esc(emp.crea) : "") : "Responsável Técnico") + "</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(obra.clienteNome || "CONTRATANTE") + "</b><br>Aprovação do Cliente</div></div>"
         + "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>Gerado pelo OrçaPRO IA em " + new Date().toLocaleDateString("pt-BR") + "</div></div>";
@@ -1147,6 +1162,11 @@
         '<button class="btn sm primary" id="bim-qto-run">📊 Levantar quantitativos</button></div>' +
         '<div id="bim-qto-res"><p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p></div>' +
         "</div>";
+      html += '<div class="card" id="bim-6d" style="display:none">' +
+        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🧊 6D/7D · Ciclo de vida <span class="muted" style="font-weight:400;font-size:13px">— manutenção e custo pós-obra (20 anos)</span></h3>' +
+        '<button class="btn sm primary" id="bim-6d-run">🧊 Gerar ciclo de vida</button></div>' +
+        '<div id="bim-6d-res"><p class="muted" style="font-size:12.5px;margin:0"><b>6D</b> = plano de manutenção preventiva por categoria (vida útil de projeto da NBR 15575). <b>7D</b> = quanto a edificação custa DEPOIS de pronta, ano a ano. Com orçamento vinculado à obra, os valores saem em R$; sem, sai o cronograma físico. Clique em <b>Gerar</b>.</p></div>' +
+        "</div>";
       html += "</div>";
       html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
       return html;
@@ -1247,6 +1267,7 @@
       var box = document.getElementById("bim-4d"); if (box) box.style.display = "";
       var bcx = document.getElementById("bim-clash"); if (bcx) bcx.style.display = "";
       var bqx = document.getElementById("bim-qto"); if (bqx) bqx.style.display = "";
+      var b6x = document.getElementById("bim-6d"); if (b6x) b6x.style.display = "";
       this._bimCurva = BIM4D.curva(p);
       this._bimAplicarSemana(p.semanas);
     },
@@ -1284,6 +1305,65 @@
       var lb = document.getElementById("bim-semana"); if (lb) lb.textContent = "Semana " + sem + " / " + p.semanas;
       var cv = document.getElementById("bim-curva"); if (cv && this._bimCurva) cv.innerHTML = this._bimCurvaSvg(this._bimCurva, sem);
     },
+    /* 6D/7D: plano de manutenção (VUP NBR 15575) + custo do ciclo de vida a partir do
+     * modelo carregado. Custos por categoria vêm do ORÇAMENTO VINCULADO à obra (etapas
+     * classificadas via Cronograma.classificar) — sem orçamento, sai só o cronograma
+     * físico (nunca inventa R$). Estimativa paramétrica ROTULADA. */
+    _bim6dRodar: function () {
+      var res = document.getElementById("bim-6d-res"); if (!res) return;
+      if (typeof BIM6D === "undefined") { res.innerHTML = '<p class="muted">Motor 6D/7D não carregado.</p>'; return; }
+      // elementos COM categoria vêm do plano 4D (BIM4D.planejar → {id,tipo,cat,…});
+      // o _bimElementos cru do viewer NÃO tem cat e cairia 100% em "Outros"
+      // (achado da revisão independente do líder)
+      var els = (this._bimPlano && this._bimPlano.elementos) ? this._bimPlano.elementos : [];
+      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
+      var custosCat = {}, custoInicial = 0, temCusto = false;
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (obra && obra.orcamentoId && Store.obterOrcamento) {
+        var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
+        if (orc && orc.etapas) {
+          orc.etapas.forEach(function (e) {
+            var c = 0; (e.itens || []).forEach(function (it) { c += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
+            // classificar devolve OBJETO {id,nome,…} ou null — a chave do motor é o .id
+            var cat = (typeof Cronograma !== "undefined" && Cronograma.classificar) ? Cronograma.classificar(e.nome) : null;
+            var catId = (cat && cat.id) || "outros";
+            custosCat[catId] = (custosCat[catId] || 0) + c;
+            custoInicial += c;
+          });
+          temCusto = custoInicial > 0;
+        }
+      }
+      var plano, ciclo;
+      try {
+        plano = BIM6D.plano(els, temCusto ? custosCat : {});
+        ciclo = BIM6D.cicloDeVida(temCusto ? custoInicial : 0, plano.porAno);
+      } catch (e) { res.innerHTML = '<p class="muted">Falha: ' + Util.esc(String(e)) + "</p>"; return; }
+      var nomeCat = function (id) { return (typeof BIM4D !== "undefined" && BIM4D.nomeCat) ? BIM4D.nomeCat(id) : id; };
+      var h = '<p class="muted" style="font-size:11.5px;margin:0 0 10px">📐 ' + Util.esc(plano.rotulo || "Estimativa paramétrica — planejamento, não substitui laudo.") +
+        (temCusto ? "" : " <b>Sem orçamento vinculado à obra</b> — mostrando o cronograma físico; vincule um orçamento em Obras pra ver os valores.") + "</p>";
+      h += '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Categoria</th><th class="num">Elem.</th><th class="num">VUP (anos)</th><th class="num">Manut./ano</th><th>Intervenções no horizonte</th></tr></thead><tbody>';
+      plano.linhas.forEach(function (l) {
+        var evs = {}; (l.eventos || []).forEach(function (ev) { evs[ev.tipo] = (evs[ev.tipo] || 0) + 1; });
+        var evTxt = Object.keys(evs).map(function (k) { return evs[k] + "× " + k; }).join(" · ") || "—";
+        h += '<tr class="lin"><td>' + Util.esc(nomeCat(l.categoria)) + '</td><td class="num">' + l.nElementos + '</td><td class="num">' + l.vupAnos + '</td><td class="num">' + (l.manutAnualEstimada != null ? Util.fmtMoeda(l.manutAnualEstimada) : "—") + "</td><td>" + Util.esc(evTxt) + "</td></tr>";
+      });
+      h += "</tbody></table>";
+      if (plano.alertaVup && plano.alertaVup.length) {
+        h += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">⚠️ Vida útil dentro do horizonte de ' + plano.horizonteAnos + " anos (substituição prevista): <b>" + Util.esc(plano.alertaVup.map(nomeCat).join(", ")) + "</b></p>";
+      }
+      if (temCusto && ciclo && ciclo.anos && ciclo.anos.length) {
+        var max = 0; ciclo.anos.forEach(function (a) { if (a.custoAcumulado > max) max = a.custoAcumulado; });
+        h += '<h4 style="margin:16px 0 6px">7D · Custo do ciclo de vida (acumulado, ano a ano)</h4><div style="display:flex;align-items:flex-end;gap:3px;height:120px">';
+        ciclo.anos.forEach(function (a) {
+          var pct = max > 0 ? Math.round(a.custoAcumulado / max * 100) : 0;
+          h += '<div title="Ano ' + a.ano + ": " + Util.fmtMoeda(a.custoAcumulado) + '" style="flex:1;background:linear-gradient(180deg,var(--aco-claro,#5a9bc9),var(--aco,#2e6f9e));height:' + Math.max(3, pct) + '%;border-radius:3px 3px 0 0"></div>';
+        });
+        h += '</div><div class="muted" style="font-size:10.5px;display:flex;justify-content:space-between"><span>ano 0 (entrega da obra)</span><span>ano ' + (ciclo.anos.length - 1) + "</span></div>";
+        h += '<p style="font-size:13px;margin:10px 0 0"><b>Obra:</b> ' + Util.fmtMoeda(custoInicial) + " · <b>Manutenção em " + plano.horizonteAnos + " anos:</b> " + Util.fmtMoeda(plano.custoTotalManut) + " (" + Util.fmtNum(ciclo.pctManutSobreInicial, 1) + "% do custo inicial) · <b>Ciclo completo:</b> " + Util.fmtMoeda(ciclo.custoTotal) + "</p>";
+      }
+      res.innerHTML = h;
+    },
+
     // Compatibilização: roda o motor BIMClash sobre os elementos (com AABB) e lista os conflitos.
     _bimCompatibilizar: function () {
       var res = document.getElementById("bim-clash-res"); if (!res) return;
@@ -1383,6 +1463,9 @@
           if (window.App && App.criarOrcamentoDoBIM) App.criarOrcamentoDoBIM(self._bimQto, obra && obra.nome);
         }
       };
+      // 6D/7D: ciclo de vida
+      var b6run = document.getElementById("bim-6d-run");
+      if (b6run) b6run.onclick = function () { self._bim6dRodar(); };
       // monta o viewer (js/bim.js é módulo ES — pode não ter carregado ainda; poll curto)
       var tentativas = 0;
       function montarViewer() {
@@ -1537,7 +1620,7 @@
       // checklist de primeiros passos (auto-detectado dos seus dados)
       var chk = this._ajudaChecklist(), feitos = chk.filter(function (c) { return c.feito; }).length;
       var pct = Math.round(feitos / chk.length * 100);
-      html += '<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px">🚀 Primeiros passos <span class="muted" style="font-weight:400">' + feitos + "/" + chk.length + "</span></h3>" +
+      html += '<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px">🚀 Primeiros passos <span class="muted" style="font-weight:400">' + feitos + "/" + chk.length + '</span><button class="btn sm" data-gacao="rever-tour" style="float:right" title="Tour guiado pelas telas principais">🎯 Rever o tour</button></h3>' +
         '<div style="background:#eef2f7;border-radius:99px;height:10px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:' + pct + '%;background:var(--verde,#16a34a);border-radius:99px;transition:width .3s"></div></div>';
       html += chk.map(function (c) {
         return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
@@ -1763,6 +1846,7 @@
         });
         corpo += "</div></div>";
       }
+      if (r.status !== "rascunho") corpo += this._qrPortalObra(ob, "Escaneie para acompanhar o andamento desta obra no Portal do Cliente (conforme a última publicação).");
       corpo += '<div style="display:flex;gap:30px;margin-top:34px;text-align:center;font-size:11px;page-break-inside:avoid">'
         + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(r.responsavel || ob.responsavel || "Responsável pela obra") + "<br><span style='color:#777'>Responsável pela obra</span></div></div>"
         + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(cli.nome || ob.clienteNome || "Fiscalização / Cliente") + "<br><span style='color:#777'>Fiscalização / Cliente</span></div></div></div>";
@@ -1783,6 +1867,17 @@
         '<div class="row">' + campo("Clima (manhã)", sel("g-cmanha", opts(P.rdoClima, r.climaManha || "ensolarado"))) + campo("Clima (tarde)", sel("g-ctarde", opts(P.rdoClima, r.climaTarde || "ensolarado"))) + campo("Condição de trabalho", sel("g-cond", opts(P.rdoCondicao, r.condicao || "praticavel"))) + "</div>" +
         '<div class="row">' + campo("Efetivo direto (nº)", inp("g-efd", r.efetivoDireto)) + campo("Efetivo indireto (nº)", inp("g-efi", r.efetivoIndireto)) + campo("Terceiros / equipes", inp("g-terc", r.terceiros)) + "</div>" +
         campo("Atividades executadas *", '<textarea id="g-ativ" rows="3" placeholder="O que foi executado no dia">' + Util.esc(r.atividades || "") + "</textarea>") +
+        (function () { // Last Planner: o diário evidencia a execução → conclui a tarefa da semana
+          if (typeof LastPlanner === "undefined") return "";
+          var sem = LastPlanner.chaveSemana(new Date());
+          var abertas = Store.listar(eid(), "lp_tarefas").filter(function (t) { return t.semana === sem && t.status !== "feito"; });
+          if (!abertas.length) return "";
+          var obrasIdx = {}; lista("obras").forEach(function (o) { obrasIdx[o.id] = o.nome; });
+          var op = '<option value="">— nenhuma —</option>' + abertas.map(function (t) {
+            return '<option value="' + Util.esc(t.id) + '"' + (r.lpTarefaId === t.id ? " selected" : "") + ">" + Util.esc((obrasIdx[t.obraId] ? obrasIdx[t.obraId] + " · " : "") + t.titulo) + "</option>";
+          }).join("");
+          return campo("Concluir tarefa da semana (Last Planner)", '<select id="g-lptarefa">' + op + "</select>");
+        })() +
         campo("Ocorrências / paralisações", '<textarea id="g-ocor" rows="2" placeholder="Chuva, falta de material, acidente, visita técnica...">' + Util.esc(r.ocorrencias || "") + "</textarea>") +
         '<div class="row">' + campo("Equipamentos em obra", inp("g-equip", r.equipamentos, "Betoneira, andaimes...")) + campo("Responsável (RT)", inp("g-resp", r.responsavel)) + "</div>" +
         '<div class="row">' + campo("Elaborado por (autor)", inp("g-autor", autorDef, "Quem registrou o diário")) + "</div>" +
@@ -1796,6 +1891,23 @@
         obj.climaManha = v("g-cmanha"); obj.climaTarde = v("g-ctarde"); obj.condicao = v("g-cond");
         obj.efetivoDireto = nv("g-efd"); obj.efetivoIndireto = nv("g-efi"); obj.terceiros = v("g-terc");
         obj.atividades = v("g-ativ"); if (!obj.atividades) { UI.toast("Descreva as atividades do dia.", "erro"); return false; }
+        // Last Planner: diário evidencia execução → conclui a tarefa da semana.
+        // Marca DEPOIS do RDO persistir (gate v1.1.63): se a gravação do RDO falhar
+        // (cota/validação), não sobra tarefa "feita" apontando pra diário inexistente.
+        var lpSel = document.getElementById("g-lptarefa");
+        if (lpSel) obj.lpTarefaId = lpSel.value; // select ausente → preserva vínculo antigo (reedição)
+        if (lpSel && lpSel.value && typeof LastPlanner !== "undefined") {
+          var lpId = lpSel.value, lpData = v("g-data");
+          setTimeout(function () {
+            try {
+              if (!obj.id) return; // RDO não chegou a persistir
+              var salvo = Store.obter(eid(), "rdo", obj.id);
+              if (!salvo || salvo.lpTarefaId !== lpId) return;
+              var lpT = Store.obter(eid(), "lp_tarefas", lpId);
+              if (lpT && LastPlanner.concluirPorRdo(lpT, lpData)) { Store.salvar(eid(), "lp_tarefas", lpT); UI.toast("Tarefa da semana concluída pelo diário: " + (lpT.titulo || ""), "ok"); }
+            } catch (eLp) {}
+          }, 0);
+        }
         obj.ocorrencias = v("g-ocor"); obj.equipamentos = v("g-equip"); obj.responsavel = v("g-resp");
         obj.autor = v("g-autor");
         obj.fotos = fotosBuf.slice(0, RDO_MAX_FOTOS);
@@ -3045,7 +3157,80 @@ renderFolha: function () {
       ]);
     },
 
-renderRelatorios: function () {
+/* 📈 Relatório executivo mensal em 1 clique: avanço físico (medições), custo real ×
+     * orçado (financeiro × orçamento vinculado), diários e fotos do mês. Fontes 100%
+     * reais dos módulos — onde não há dado, o relatório DIZ que não há (nada inventado). */
+    relatorioExecutivo: function (obraId, mesISO) {
+      var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
+      if (!obra) { UI.toast("Selecione a obra.", "erro"); return; }
+      mesISO = String(mesISO || "").slice(0, 7);
+      if (!/^\d{4}-\d{2}$/.test(mesISO)) { UI.toast("Informe o mês do relatório.", "erro"); return; }
+      var fim = mesISO + "-31"; // comparação lexicográfica ISO cobre o mês inteiro
+      var MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+      var mesRot = MESES[parseInt(mesISO.split("-")[1], 10) - 1] + " de " + mesISO.split("-")[0];
+      var noMes = function (d) { return d && String(d).slice(0, 7) === mesISO; };
+      var ateFim = function (d) { return d && String(d).slice(0, 10) <= fim; };
+
+      var orc = (obra.orcamentoId && Store.obterOrcamento) ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      var orcado = 0; if (orc) (orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { orcado += Util.num(it.quantidade) * Util.num(it.custoUnitario); }); });
+
+      var meds = lista("medicoes").filter(function (m) { return m.obraId === obraId && m.status !== "rejeitada"; });
+      var medMes = 0, medAcum = 0, medsDoMes = [];
+      meds.forEach(function (m) {
+        var d = m.periodoFim || m.criadoEm, v = Util.num(m.valor);
+        if (ateFim(d)) medAcum += v;
+        if (noMes(d)) { medMes += v; medsDoMes.push(m); }
+      });
+      var contrato = lista("contratos").filter(function (c) { return c.obraId === obraId; })[0];
+      // Base do avanço físico: contrato > PREÇO DE VENDA do orçamento (medição é a
+      // preço de venda — dividir pelo custo direto inflava o % e o Math.min mascarava
+      // em "100%"; revisão do líder). Mesmo padrão do boletim (#18/_medicaoCalc).
+      var baseContr = contrato ? Util.num(contrato.valor) : 0;
+      if (!(baseContr > 0) && orc && typeof Orcamento !== "undefined" && Orcamento.totais) {
+        try { baseContr = Util.num(Orcamento.totais(orc).precoVenda); } catch (eB) { baseContr = 0; }
+      }
+      var pctAcum = baseContr > 0 ? Math.min(100, medAcum / baseContr * 100) : null;
+
+      var finO = lista("financeiro").filter(function (f) { return f.obraId === obraId && f.tipo === "despesa"; });
+      var despMes = 0, despAcum = 0;
+      finO.forEach(function (f) { if (ateFim(f.data)) despAcum += Util.num(f.valor); if (noMes(f.data)) despMes += Util.num(f.valor); });
+
+      var rdos = lista("rdo").filter(function (r) { return r.obraId === obraId && noMes(r.data); });
+      var fotos = []; rdos.forEach(function (r) { (r.fotos || []).forEach(function (f) { if (fotos.length < 6) fotos.push({ d: f.d, leg: f.leg || "", data: r.data }); }); });
+      var ocorr = rdos.filter(function (r) { return r.ocorrencias && !/^sem ocorr/i.test(String(r.ocorrencias).trim()); });
+
+      var kpi = function (rot, val, cor) { return '<div style="flex:1;min-width:150px;border:1px solid #d8e0ea;border-radius:10px;padding:12px 14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#5a6b7b;font-weight:700">' + rot + '</div><div style="font-size:19px;font-weight:800;margin-top:4px;color:' + (cor || "#14202e") + '">' + val + "</div></div>"; };
+      var corpo = '<p style="font-size:11px;color:#5a6b7b;margin:0 0 12px"><b>' + Util.esc(obra.nome) + "</b>" + (obra.clienteNome ? " · " + Util.esc(obra.clienteNome) : "") + " · competência <b>" + Util.esc(mesRot) + "</b></p>";
+      corpo += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">' +
+        kpi("Avanço físico acumulado", pctAcum != null ? Util.fmtNum(pctAcum, 1) + "%" : "—", "#2e6f9e") +
+        kpi("Medido no mês", Util.fmtMoeda(medMes), "#16a34a") +
+        kpi("Custo real no mês", Util.fmtMoeda(despMes), "#dc2626") +
+        kpi("Custo acum. × orçado", orcado > 0 ? Util.fmtNum(despAcum / orcado * 100, 1) + "%" : "—", despAcum > orcado && orcado > 0 ? "#dc2626" : "#14202e") + "</div>";
+      if (pctAcum != null) {
+        corpo += '<div style="margin-bottom:14px"><div style="font-size:10px;color:#5a6b7b;margin-bottom:3px">AVANÇO FÍSICO (medições acumuladas sobre ' + (contrato ? "o contrato" : "o orçamento") + ')</div><div style="background:#eef2f7;border-radius:99px;height:14px;overflow:hidden"><div style="height:100%;width:' + Math.round(pctAcum) + '%;background:linear-gradient(90deg,#5a9bc9,#2e6f9e)"></div></div></div>';
+      }
+      corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>FINANCEIRO DO PERÍODO</h3>" +
+        "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tbody>" +
+        "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:45%'><b>Custo orçado (total da obra)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + (orcado > 0 ? Util.fmtMoeda(orcado) : "sem orçamento vinculado") + "</td></tr>" +
+        "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Custo real acumulado (despesas lançadas)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(despAcum) + "</td></tr>" +
+        "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Medido acumulado (a faturar/faturado)</b></td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(medAcum) + "</td></tr></tbody></table>";
+      corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>MEDIÇÕES DO MÊS (" + medsDoMes.length + ")</h3>";
+      corpo += medsDoMes.length
+        ? "<table style='width:100%;border-collapse:collapse;font-size:11.5px;margin-bottom:14px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;text-align:left'>Nº</th><th style='border:1px solid #bbb;padding:5px;text-align:left'>Período</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor</th><th style='border:1px solid #bbb;padding:5px'>Status</th></tr></thead><tbody>" +
+          medsDoMes.map(function (m) { return "<tr><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(m.numero || "—") + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(m.valor) + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(m.status || "—") + "</td></tr>"; }).join("") + "</tbody></table>"
+        : "<p style='font-size:11.5px;color:#5a6b7b'>Sem medições registradas no período.</p>";
+      corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>CANTEIRO NO MÊS</h3>" +
+        "<p style='font-size:12px'>" + rdos.length + " diário(s) de obra registrados" + (ocorr.length ? " · <b style='color:#dc2626'>" + ocorr.length + " com ocorrência</b>" : " · sem ocorrências relevantes") + ".</p>";
+      if (ocorr.length) corpo += "<ul style='font-size:11.5px;margin:4px 0 12px'>" + ocorr.slice(0, 6).map(function (r) { return "<li><b>" + Util.esc(String(r.data || "").split("-").reverse().join("/")) + ":</b> " + Util.esc(String(r.ocorrencias).slice(0, 140)) + "</li>"; }).join("") + "</ul>";
+      if (fotos.length) {
+        corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>REGISTRO FOTOGRÁFICO</h3><div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px'>" +
+          fotos.map(function (f) { return "<figure style='margin:0;page-break-inside:avoid'><img src='" + f.d + "' style='width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid #d8e0ea'><figcaption style='font-size:9px;color:#5a6b7b'>" + Util.esc((f.data ? String(f.data).split("-").reverse().join("/") + " — " : "") + (f.leg || "")) + "</figcaption></figure>"; }).join("") + "</div>";
+      }
+      corpo += this._qrPortalObra(obra, "Escaneie para acompanhar esta obra no Portal do Cliente (conforme a última publicação).");
+      this._abrirDoc("Relatório Executivo — " + (obra.nome || ""), this._docShell("RELATÓRIO EXECUTIVO — " + mesRot.toUpperCase(), "#0f2740", corpo, "rexec"));
+    },
+
+    renderRelatorios: function () {
       var fin = lista("financeiro"), obras = lista("obras"), contratos = lista("contratos");
       var totRec = 0, totDesp = 0;
       fin.forEach(function (l) {
@@ -3054,6 +3239,15 @@ renderRelatorios: function () {
       });
       var resultado = totRec - totDesp;
       var html = this._head(svg("relatorios") + "Relatórios Gerenciais", "", "", "");
+      // Relatório executivo mensal em 1 clique (promessa do site)
+      var mesPassado = (function () { var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); })();
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">📈 Relatório executivo mensal</h3>' +
+        '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Avanço físico, custo real × orçado, medições, diários e fotos do mês — o documento de 1 página pra reunião de diretoria ou pro cliente.</p>' +
+        '<div class="flex" style="flex-wrap:wrap;gap:10px">' +
+        '<select id="rex-obra" style="max-width:280px">' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>"; }).join("") + "</select>" +
+        '<input id="rex-mes" type="month" value="' + mesPassado + '" style="max-width:170px">' +
+        '<button class="btn sm primary" data-gacao="rel-executivo">📈 Gerar relatório</button></div>' +
+        (obras.length ? "" : '<p class="muted" style="font-size:12px;margin:8px 0 0">Cadastre uma obra primeiro.</p>') + "</div>";
       html += '<div class="kpis">';
       html += '<div class="kpi"><span class="rotulo">Receitas totais</span><span class="num">' + Util.fmtMoeda(totRec) + "</span></div>";
       html += '<div class="kpi"><span class="rotulo">Despesas totais</span><span class="num">' + Util.fmtMoeda(totDesp) + "</span></div>";
@@ -3773,6 +3967,38 @@ renderRelatorios: function () {
 
     // ================= LAST PLANNER (PPC) — planejamento enxuto (Lean Construction) =================
     _lpTarefas: function () { var o = this._lpObra; return Store.listar(eid(), "lp_tarefas").filter(function (t) { return !o || t.obraId === o; }); },
+
+    /* "Puxar do cronograma": as etapas do orçamento vinculado à obra cuja janela
+     * cruza ESTA semana viram tarefas do plano (não-comprometidas — comprometer é
+     * decisão do último planejador, LPS). Dedup por título+semana no motor. */
+    lpPuxarCronograma: function () {
+      var obraId = this._lpObra;
+      if (!obraId) { UI.toast("Selecione a obra no topo do Last Planner primeiro.", "erro"); return; }
+      var obra = Store.obter(eid(), "obras", obraId);
+      if (!obra || !obra.orcamentoId) { UI.toast("Vincule um orçamento à obra (em Obras → editar) pra puxar o cronograma.", "erro"); return; }
+      var orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      if (!orc) { UI.toast("Orçamento vinculado não encontrado.", "erro"); return; }
+      // estimar() devolve offsets em DIAS ÚTEIS, mas também as DATAS reais (dataInicio/
+      // dataFim, já pulando fins de semana) — usamos as datas e convertemos pra dias
+      // corridos, que é o contrato do motor (gate v1.1.63: úteis≠corridos, erro ~40%).
+      var est;
+      try { est = Cronograma.estimar(orc, obra.inicio ? { dataInicio: obra.inicio } : null); } catch (e) { UI.toast("Falha ao estimar o cronograma: " + e.message, "erro"); return; }
+      var ancora = est.dataInicio;
+      var pad2 = function (n) { return (n < 10 ? "0" : "") + n; };
+      var ancoraISO = ancora.getFullYear() + "-" + pad2(ancora.getMonth() + 1) + "-" + pad2(ancora.getDate());
+      var etapas = (est.etapas || []).map(function (e) {
+        if (!e.dataInicio || !e.dataFim) return null;
+        return { nome: e.nome, categoria: e.categoria, categoriaNome: e.categoriaNome,
+          inicio: Math.round((e.dataInicio - ancora) / 86400000), fim: Math.round((e.dataFim - ancora) / 86400000) };
+      }).filter(function (x) { return x; });
+      var semana = LastPlanner.chaveSemana(new Date());
+      var existentes = Store.listar(eid(), "lp_tarefas").filter(function (t) { return t.obraId === obraId; });
+      var sugestoes = LastPlanner.sugerirDoCronograma(etapas, ancoraISO, semana, existentes);
+      if (!sugestoes.length) { UI.toast("Nada novo pra esta semana: ou as etapas do cronograma não caem nela, ou já estão no plano.", "ok"); return; }
+      sugestoes.forEach(function (s) { s.obraId = obraId; Store.salvar(eid(), "lp_tarefas", s); });
+      App.render();
+      UI.toast(sugestoes.length + " tarefa(s) do cronograma entraram no plano desta semana — gerencie as restrições e comprometa.", "ok");
+    },
     _lpObter: function (id) { return Store.obter(eid(), "lp_tarefas", id); },
     _lpSalvar: function (t, msg) { Store.salvar(eid(), "lp_tarefas", t); App.render(); if (msg) UI.toast(msg, "ok"); },
     _lpKpi: function (t, val, sub, cor) { return '<div class="card" style="padding:12px 14px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px">' + t + '</div><div style="font-size:26px;font-weight:800;color:' + cor + ';line-height:1.1;margin:2px 0">' + val + '</div><div class="muted" style="font-size:11.5px">' + sub + '</div></div>'; },
@@ -3786,7 +4012,7 @@ renderRelatorios: function () {
       var ts = this._lpTarefas();
       var res = LP.resumo(ts, look);
       var selObra = '<select data-gacao="lp-obra" style="max-width:230px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._lpObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
-      var extra = selObra + ' <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">🖨 Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">📊 Relatório PPC</button>';
+      var extra = selObra + ' <button class="btn sm" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">📅 Puxar do cronograma</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">🖨 Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">📊 Relatório PPC</button>';
       var html = this._head(svg("lastplanner") + "Last Planner · PPC", "lp-nova", "Nova Tarefa", extra);
       if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o Last Planner planeja a semana de uma obra.", "nova-obra", "Nova obra");
 
@@ -3957,6 +4183,7 @@ renderRelatorios: function () {
         case "tar-concluir": return this._tarefaStatus(id, "feita", "Tarefa concluída.");
         case "tar-reabrir": return this._tarefaStatus(id, "afazer", "Tarefa reaberta.");
         case "lp-obra": return this.lpTrocaObra(dataset.value);
+        case "lp-puxar": return this.lpPuxarCronograma();
         case "lp-nova": return this.lpNova(0);
         case "lp-nova-sem": return this.lpNova(parseInt(dataset.val, 10) || 0);
         case "lp-abrir": return this.lpAbrir(id);
@@ -3989,6 +4216,8 @@ renderRelatorios: function () {
         case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
         case "portal-obra": return this.portalObra(id);
+        case "rever-tour": if (typeof Tour !== "undefined") Tour.iniciar(true); return;
+        case "rel-executivo": { var reO = document.getElementById("rex-obra"), reM = document.getElementById("rex-mes"); return this.relatorioExecutivo(reO ? reO.value : "", reM ? reM.value : ""); }
         case "doc-financeiro": return this.lancarDocumento();
         case "nova-obra": return this.novoObra();
         case "nova-cliente": return this.novoCliente();
@@ -4317,6 +4546,11 @@ case "nova-folha": return this.novoFolha();
       return { ok: bytes() <= SNAP_MAX_BYTES, cortou: cortou };
     },
     abrir: function (entidade, id) {
+      // Guard em FUNÇÃO (achado do gate v1.1.63): abrir registro exige o plano de
+      // gestão E a permissão RBAC do módulo — não importa por onde o clique veio
+      // (sidebar, busca Ctrl+K, sino…). Ids de entidade coincidem com os de módulo.
+      if (!this.podeGestao()) { if (typeof UI !== "undefined") UI.toast("Gestão de Obras é recurso do plano Plus.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(entidade)) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro"); return; }
       var r = Store.obter(eid(), entidade, id); if (!r) return;
       if (entidade === "obras") return this.formObra(r);
       if (entidade === "tarefas") return this.formTarefa(r);

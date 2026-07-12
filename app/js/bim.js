@@ -644,7 +644,14 @@ var Reuniao = {
       this.es.onmessage = function (ev) { try { var d = JSON.parse(ev.data); self.conectado = true; self.jaConectou = true; self._aplicar(d.usuarios || {}); } catch (_) {} };
       // queda DEPOIS de conectado: pausa os POSTs (conectado=false) e deixa o SSE reconectar
       // sozinho (onopen religa); só desiste de vez quem NUNCA conectou (3 falhas na entrada).
-      this.es.onerror = function () { self.conectado = false; self.falhas++; if (!self.jaConectou && self.falhas >= 3) { self.sair(); if (S && S.opts && S.opts.onReuniaoFalha) { try { S.opts.onReuniaoFalha(); } catch (_) {} } } };
+      // EXCEÇÃO: resposta ≠200 (ex.: 502 do proxy com o relay morto) FECHA o EventSource pra
+      // sempre (readyState=CLOSED, sem retry da spec) → sem sair() aqui viraria reunião-zumbi
+      // silenciosa (botão verde, contagem stale, nunca se recupera sozinha).
+      this.es.onerror = function () {
+        self.conectado = false; self.falhas++;
+        var fatal = self.jaConectou && self.es && self.es.readyState === 2; // 2 = CLOSED (não reconecta mais)
+        if (fatal || (!self.jaConectou && self.falhas >= 3)) { self.sair(); if (S && S.opts && S.opts.onReuniaoFalha) { try { S.opts.onReuniaoFalha(); } catch (_) {} } }
+      };
     } catch (_) { this.sair(); return false; }
     this._connTimer = setTimeout(function () { if (self.on && !self.jaConectou) { self.sair(); if (S && S.opts && S.opts.onReuniaoFalha) { try { S.opts.onReuniaoFalha(); } catch (_) {} } } }, 8000);
     S._tickExtra.push(this._tick);

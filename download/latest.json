@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.62",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.62/OrcaPRO-IA-update-v1.1.62.zip",
-  "notas": "BIM 2.0: vários IFC juntos no 3D (arquitetura + estrutura + hidráulica) com disciplina e transparência por modelo, Reunião multi-usuário com avatares dentro do modelo para compatibilização, qualidade Ultra e clash mais preciso. Robustez: IFC inválido não trava o visualizador e a reunião avisa quando está offline.",
+  "versao": "1.1.63",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.63/OrcaPRO-IA-update-v1.1.63.zip",
+  "notas": "Roadmap entregue: Busca universal (Ctrl+K), Central de avisos, Tour guiado, QR de verificação nos boletins e diários, Modo apresentação do orçamento, Relatório executivo mensal, BIM 6D/7D (ciclo de vida) e Last Planner ligado ao cronograma e ao diário.",
   "obrigatoria": false
 }
