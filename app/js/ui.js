@@ -333,7 +333,7 @@
       '</div>';
 
       // Abas
-      var abas = [["planilha", "Planilha"], ["sintetico", "Sintético"], ["cronograma", "🗓 Cronograma"], ["graficos", "📊 Gráficos"], ["relatorios", "Relatórios"], ["bdi", "BDI & Parâmetros"]];
+      var abas = [["planilha", "Planilha"], ["sintetico", "Sintético"], ["cronograma", "🗓 Cronograma"], ["execucao", "🏗️ Execução"], ["graficos", "📊 Gráficos"], ["relatorios", "Relatórios"], ["bdi", "BDI & Parâmetros"]];
       html += '<div class="tabs">';
       abas.forEach(function (a) {
         html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + a[1] + '</div>';
@@ -343,6 +343,7 @@
       html += '<div id="aba-conteudo">';
       if (abaAtiva === "sintetico") html += this.renderSintetico(orc);
       else if (abaAtiva === "cronograma") html += this.renderCronograma(orc);
+      else if (abaAtiva === "execucao") html += this.renderExecucao(orc);
       else if (abaAtiva === "graficos") html += this.renderGraficos(orc);
       else if (abaAtiva === "relatorios") html += this.renderRelatorios(orc);
       else if (abaAtiva === "bdi") html += this.renderBdi(orc);
@@ -486,6 +487,118 @@
           '<td>' + e.dataInicio.toLocaleDateString("pt-BR") + '</td><td>' + e.dataFim.toLocaleDateString("pt-BR") + '</td></tr>';
       });
       html += '</tbody></table>';
+      return html;
+    },
+
+    // ----- Aba Execução (agente de canteiro: equipe/prazo/custo × orçamento) -----
+    renderExecucao: function (orc) {
+      if (typeof Execucao === "undefined") return '<div class="vazio card">Agente de execução indisponível.</div>';
+      if (!(orc.etapas || []).length) return '<div class="vazio card">Adicione etapas e itens para o agente dimensionar equipe, prazo e custo.</div>';
+      // RBAC: só usa as diárias REAIS do RH se o usuário tem o módulo 'colaboradores'
+      // (senão vazaria salário via a aba de orçamento). Sem acesso -> cai no fallback SINAPI.
+      var podeRH = (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo("colaboradores");
+      var colab = [];
+      if (podeRH) { try { colab = Store.listar(Auth.empresaId(), "colaboradores") || []; } catch (e) {} }
+      var sim = Execucao.simular(orc, { colaboradores: colab });
+      var p = sim.params;
+      function d10(v) { try { var x = new Date(v); return x.getFullYear() + "-" + ("0" + (x.getMonth() + 1)).slice(-2) + "-" + ("0" + x.getDate()).slice(-2); } catch (e) { return ""; } }
+      function moeda(v) { return Util.fmtMoeda(Math.round(v || 0)); }
+      function curto(prof) { var w = String(prof).split(" ")[0].toLowerCase(); return w.charAt(0).toUpperCase() + w.slice(1); }
+      var COR = { dentro: "#16a34a", acima: "#dc2626", abaixo: "#2563eb", "sem-base": "#64748b" };
+      var ROT = { dentro: "DENTRO DO ORÇADO", acima: "ACIMA DO ORÇADO", abaixo: "ABAIXO DO ORÇADO", "sem-base": "SEM BASE P/ RECONCILIAR" };
+      var cor = COR[sim.status] || "#64748b";
+
+      // form de parâmetros
+      var html = '<div class="card" style="margin-bottom:12px"><div class="flex" style="flex-wrap:wrap;gap:12px;align-items:flex-end">' +
+        '<div class="field" style="margin:0"><label>Início da obra</label><input id="exec-inicio" type="date" value="' + d10(sim.dataInicio) + '"></div>' +
+        '<div class="field" style="margin:0"><label>Entrega desejada</label><input id="exec-entrega" type="date" value="' + (p.dataEntrega || "") + '"></div>' +
+        '<div class="field" style="margin:0"><label>Jornada (h/dia)</label><input id="exec-jornada" type="number" min="1" max="12" value="' + p.jornadaH + '" style="width:80px"></div>' +
+        '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="exec-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:80px"></div>' +
+        '<div class="field" style="margin:0"><label title="Onera a diária de colaboradores CLT p/ comparar com o SINAPI (que já vem onerado). Diarista/autônomo/PJ entram cheios.">Encargos CLT (%)</label><input id="exec-encargos" type="number" min="0" max="150" value="' + (p.encargosPct || 0) + '" style="width:90px"></div>' +
+        '<button class="btn sm primary" data-acao="exec-recalc">↻ Recalcular</button>' +
+        '<button class="btn sm" data-acao="exec-cronograma" title="Usar estas durações no Cronograma">🗓 Enviar ao cronograma</button>' +
+        '</div>' +
+        '<div class="muted" style="font-size:11px;margin-top:8px">Produtividade = coeficientes de mão-de-obra do SINAPI (horas-homem). Custo/dia = diária dos seus colaboradores (RH); onde não há colaborador da profissão, usa a <b>referência SINAPI</b>.' +
+        (colab.length ? '' : ' <b>Cadastre colaboradores em RH</b> para usar suas diárias reais — por ora tudo está na referência SINAPI.') + '</div></div>';
+
+      var semBase = sim.semBaseMO;
+
+      // headline + semáforo (sem prazo/equipe FANTASMA quando a base não tem MO)
+      html += '<div class="flex" style="gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:10px">';
+      if (semBase) {
+        html += '<b style="font-size:16px;color:#b45309">⏱ prazo/equipe não estimáveis</b>';
+      } else {
+        var parcial = sim.nEtapasSemBase > 0; // prazo cobre só as etapas estimáveis; as estaduais ficam de fora
+        html += '<b style="font-size:16px">⏱ ' + sim.prazoDias + ' dias úteis (~' + sim.prazoSemanas + ' semanas)' + (parcial ? ' <span style="color:#b45309">*parcial</span>' : '') + '</b>' +
+          (sim.dataFim ? '<span class="muted">' + sim.dataInicio.toLocaleDateString("pt-BR") + ' → ' + sim.dataFim.toLocaleDateString("pt-BR") + (parcial ? ' (só etapas estimáveis)' : '') + '</span>' : '') +
+          (sim.metaAtingida === false ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">⚠ não bate a entrega pedida</span>' : '') +
+          (parcial ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">⚠ prazo parcial — ' + sim.nEtapasSemBase + ' etapa(s) sem base de MO fora da conta</span>' : '');
+      }
+      html += '<span class="pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + (ROT[sim.status] || sim.status) + (sim.reconConfiavel ? ' · ' + (sim.desvioPct >= 0 ? "+" : "") + sim.desvioPct.toFixed(1) + '%' : '') + '</span>';
+      if (!semBase) html += '<span class="muted" style="font-size:12px' + (sim.coberturaBaixa ? ';color:#b45309;font-weight:600' : '') + '">🧠 ' + sim.cobertura.pct + '% dos itens (com qtd) têm produtividade SINAPI' + (sim.coberturaBaixa ? ' — reconciliação parcial' : '') + '</span>';
+      html += '</div>';
+
+      // aviso forte quando é 100% base estadual/própria sem custo de MO
+      if (semBase) {
+        html += '<div class="card" style="margin-bottom:12px;border-left:4px solid #b45309;background:#f59e0b0d"><b style="color:#b45309">⚠ Orçamento de base estadual/própria sem custo de mão-de-obra.</b><div class="muted" style="font-size:12px;margin-top:4px">O agente precisa de composições SINAPI (horas-homem) — ou da produtividade informada — para dimensionar equipe, prazo e custo. Os números abaixo NÃO são uma estimativa de obra.</div></div>';
+      } else {
+        // reconciliação — SÓ sobre a porção com DIÁRIA REAL (real × orçado-SINAPI da mesma profissão)
+        html += '<div class="card" style="margin-bottom:12px;border-left:4px solid ' + cor + '">';
+        if (sim.reconConfiavel) {
+          html += '<div class="flex" style="gap:24px;flex-wrap:wrap;align-items:baseline">' +
+            '<div><div class="muted" style="font-size:12px" title="MO orçada (SINAPI) das profissões que têm diária cadastrada no RH">MO orçada (porção reconciliável)</div><b style="font-size:18px">' + moeda(sim.orcadoMOReal) + '</b></div>' +
+            '<div style="font-size:20px;color:var(--aco,#64748b)">→</div>' +
+            '<div><div class="muted" style="font-size:12px">MO simulada (diárias reais do RH)</div><b style="font-size:18px;color:' + cor + '">' + moeda(sim.custoMOReal) + '</b></div>' +
+            '<div><div class="muted" style="font-size:12px">Diferença</div><b style="font-size:16px;color:' + cor + '">' + (sim.desvio >= 0 ? "+" : "") + moeda(sim.desvio) + ' (' + (sim.desvioPct >= 0 ? "+" : "") + sim.desvioPct.toFixed(1) + '%)</b></div>' +
+            '</div>' +
+            (sim.coberturaBaixa ? '<div class="pill" style="display:inline-block;margin-top:8px;background:#f59e0b22;color:#b45309;font-weight:600;font-size:11px">⚠ Cobre só ' + Math.round(sim.reconCobPct) + '% do custo de MO-SINAPI — só as profissões com diária real cadastrada</div>' : '');
+        } else {
+          html += '<div style="font-size:13px">' + (sim.orcadoMOExato > 0 ? 'Há itens SINAPI, mas nenhuma <b>diária real</b> no RH que case as profissões — comparar SINAPI × SINAPI daria sempre 0%. Cadastre sua equipe em RH para reconciliar custo real × orçado.' : 'Nenhum item com composição SINAPI para reconciliar o custo de MO — a base é própria/estadual.') + '</div>';
+        }
+        html += '<div class="muted" style="font-size:11px;margin-top:8px">Custo total de MO simulado (obra inteira): <b>' + moeda(sim.custoMOSimulado) + '</b> · MO total orçada: ' + moeda(sim.orcadoMO) + (sim.orcadoMOExato ? ' · com produtividade SINAPI: ' + moeda(sim.orcadoMOExato) : '') + '.</div>';
+        html += '</div>';
+      }
+
+      // observações do agente (sempre)
+      html += '<div class="card" style="margin-bottom:12px"><ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.6">';
+      sim.sugestoes.forEach(function (s) { html += '<li>' + Util.esc(s) + '</li>'; });
+      html += '</ul></div>';
+
+      // equipe de pico
+      var picoKeys = Object.keys(sim.equipePico);
+      if (picoKeys.length) {
+        html += '<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:14px">👷 Equipe de pico (máximo simultâneo no canteiro)</h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
+        picoKeys.sort(function (a, b) { return sim.equipePico[b] - sim.equipePico[a]; }).forEach(function (pf) {
+          var estim = pf.indexOf("estimada") >= 0;
+          var lbl = estim ? (sim.equipePico[pf] + '× equipe geral (est.)') : (sim.equipePico[pf] + '× ' + curto(pf));
+          var bg = estim ? '#f59e0b18' : '#0f274012', bd = estim ? '#f59e0b55' : 'var(--linha,#e2e8f0)';
+          html += '<span class="pill" title="' + (estim ? 'itens sem código SINAPI — equipe geral estimada pela MO do orçamento' : Util.esc(pf)) + '" style="background:' + bg + ';border:1px solid ' + bd + ';font-weight:600">' + Util.esc(lbl) + '</span>';
+        });
+        html += '</div></div>';
+      }
+
+      // tabela por etapa
+      html += '<table class="tbl"><thead><tr><th>Etapa</th><th class="num">Duração</th><th>Equipe por profissão</th><th class="num">Custo MO</th></tr></thead><tbody>';
+      sim.etapas.forEach(function (et) {
+        if (!et.temBaseMO) {
+          html += '<tr><td><b>' + Util.esc(et.nome) + '</b></td><td class="num muted">—</td>' +
+            '<td><span class="pill" style="background:#f59e0b22;color:#b45309;font-size:11px" title="base estadual/própria sem custo de MO — sem coeficiente p/ dimensionar equipe/prazo">não estimável (base sem MO)</span></td>' +
+            '<td class="num muted">—</td></tr>';
+          return;
+        }
+        var chips = Object.keys(et.prof).map(function (pf) {
+          var s = et.prof[pf], ref = s.fonteCusto !== "real";
+          return '<span class="pill" title="' + Util.esc(pf) + ' · R$' + Math.round(s.custoDia) + '/dia ' + (ref ? '(ref. SINAPI)' : '(diária real)') + '" style="background:' + (ref ? '#94a3b822' : '#16a34a1a') + ';color:' + (ref ? '#64748b' : '#16a34a') + ';font-size:11px">' + s.equipe + '× ' + Util.esc(curto(pf)) + '</span>';
+        }).join(" ");
+        if (et.homensDiaEstim > 0) chips += ' <span class="pill" style="background:#f59e0b22;color:#b45309;font-size:11px" title="itens sem código SINAPI mas com custoMO — equipe/produtividade estimada pela MO do orçamento">~' + (et.equipeEstim || 1) + '× equipe geral (est.)</span>';
+        html += '<tr><td><b>' + Util.esc(et.nome) + '</b>' + (et.dataInicio ? '<br><span class="muted" style="font-size:11px">' + et.dataInicio.toLocaleDateString("pt-BR") + ' → ' + et.dataFim.toLocaleDateString("pt-BR") + '</span>' : '') + '</td>' +
+          '<td class="num">' + et.duracao + ' d</td>' +
+          '<td>' + (chips || '<span class="muted">—</span>') + '</td>' +
+          '<td class="num">' + moeda(et.custoMO) + '</td></tr>';
+      });
+      html += '<tr style="font-weight:700;border-top:2px solid var(--linha,#e2e8f0)"><td>Total</td><td class="num">' + (semBase ? '—' : sim.prazoDias + ' d') + '</td><td></td><td class="num">' + moeda(sim.custoMOSimulado) + '</td></tr>';
+      html += '</tbody></table>';
+      html += '<div class="muted" style="font-size:11px;margin-top:8px">O custo de MO é pelo conteúdo de trabalho (equipe eficientemente dimensionada). A hora do SINAPI já vem <b>com encargos sociais/complementares</b>; por isso, ao comparar, as diárias de CLT são oneradas em ' + (p.encargosPct || 0) + '% (campo acima — mesmo % da Folha de pagamento) e as de diarista/autônomo/PJ entram cheias. A reconciliação vale <b>só sobre as profissões com diária real cadastrada no RH</b> — se a cobertura for baixa, o veredito é parcial. Itens de base estadual sem custo de MO aparecem como “não estimável”.</div>';
       return html;
     },
 

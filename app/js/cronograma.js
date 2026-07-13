@@ -95,8 +95,11 @@
         });
         var catPred = Object.keys(catCusto).sort(function (a, b) { return catCusto[b] - catCusto[a]; })[0] || "outros";
         var catO = self.cat(catPred);
-        var dur = (manual[e.id] != null) ? num(manual[e.id]) : Math.max(1, Math.ceil(ed / (params.equipes || 1)));
-        return { id: e.id, codigo: e.codigo, nome: e.nome, categoria: catPred, categoriaNome: catO.nome, cor: catO.cor, custo: custo, equipeDias: Math.round(ed * 10) / 10, duracao: dur, editado: manual[e.id] != null };
+        // override manual só vale se POSITIVO — um 0 gravado (ex.: etapa "não estimável" do agente de
+        // execução) NÃO pode zerar a barra do Gantt; cai no cálculo próprio por categoria.
+        var temOverride = manual[e.id] != null && num(manual[e.id]) > 0;
+        var dur = temOverride ? num(manual[e.id]) : Math.max(1, Math.ceil(ed / (params.equipes || 1)));
+        return { id: e.id, codigo: e.codigo, nome: e.nome, categoria: catPred, categoriaNome: catO.nome, cor: catO.cor, custo: custo, equipeDias: Math.round(ed * 10) / 10, duracao: dur, editado: temOverride };
       });
       // sequenciamento em cascata com sobreposição (paralelismo)
       etapas.forEach(function (et, i) {

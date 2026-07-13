@@ -282,6 +282,8 @@
         case "cron-recalc": this.cronRecalc(); break;
         case "cron-reset": this.cronReset(); break;
         case "cron-ia": this.cronRefinarIA(); break;
+        case "exec-recalc": this.execRecalc(); break;
+        case "exec-cronograma": this.execEnviarCronograma(); break;
         case "novo": this.novoOrcamento(); break;
         case "importar-sinapi": this.abrirImportSinapi(); break;
         case "atualizar": this.abrirAtualizar(); break;
@@ -338,6 +340,8 @@
         var o = this.orcAtual; if (!o) return;
         o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {};
         o.cronograma.duracoes[e.target.dataset.cronDur] = Math.max(1, parseInt(Util.num(e.target.value), 10) || 1);
+        if (o.cronograma.duracoesAgente) delete o.cronograma.duracoesAgente[e.target.dataset.cronDur]; // virou edição do USUÁRIO
+        if (o.cronograma.iaMotivos) delete o.cronograma.iaMotivos[e.target.dataset.cronDur]; // remove justificativa IA órfã
         this.persistir(); this.render(); return;
       }
       // edição inline de quantidade/custo na planilha
@@ -748,10 +752,43 @@
       this.persistir(); this.render();
     },
     cronReset: function () {
-      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; }
+      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = {}; }
       // FASE 1.4: destrava também o nº de meses (false explícito ≠ undefined: não re-dispara a migração)
       if (o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
       this.persistir(); UI.toast("Durações e prazo voltaram à estimativa do agente.", "ok"); this.render();
+    },
+
+    // lê os inputs do form da aba Execução e grava em o.execucao.params (sem render)
+    _execLerParams: function (o) {
+      o.execucao = o.execucao || {};
+      o.execucao.params = {
+        dataInicio: (UI.el("exec-inicio") || {}).value || null,
+        dataEntrega: (UI.el("exec-entrega") || {}).value || null,
+        jornadaH: Math.min(12, Math.max(1, parseInt(Util.num((UI.el("exec-jornada") || {}).value), 10) || 8)),
+        diasUteisSemana: Math.min(7, Math.max(1, parseInt(Util.num((UI.el("exec-dias") || {}).value), 10) || 5)),
+        encargosPct: UI.el("exec-encargos") ? Math.min(150, Math.max(0, Util.num((UI.el("exec-encargos") || {}).value))) : undefined
+      };
+    },
+    // Agente de execução — recalcular equipe/prazo/custo com os parâmetros
+    execRecalc: function () {
+      var o = this.orcAtual; if (!o) return;
+      this._execLerParams(o);
+      this.persistir(); this.render();
+    },
+    // Manda as durações dimensionadas pelo agente para o Cronograma (uma fonte de verdade)
+    execEnviarCronograma: function () {
+      var o = this.orcAtual; if (!o || typeof Execucao === "undefined") return;
+      if (UI.el("exec-inicio")) this._execLerParams(o); // usa os inputs ATUAIS (não os salvos/stale)
+      // durações do agente dependem só do Hh (não da diária), então colaboradores não são necessários aqui
+      var sim = Execucao.simular(o, {});
+      o.cronograma = o.cronograma || {};
+      // proveniência + limpeza de stale ficam no motor puro (testável): ver Execucao.aplicarNoCronograma
+      var apl = Execucao.aplicarNoCronograma(o.cronograma, sim.etapas);
+      var nEnv = apl.enviadas;
+      if (sim.params.dataInicio) { o.cronograma.params = o.cronograma.params || {}; o.cronograma.params.dataInicio = (typeof sim.dataInicio.toISOString === "function") ? sim.dataInicio.toISOString().slice(0, 10) : sim.params.dataInicio; }
+      try { Orcamento.sincronizarPrazo(o); } catch (e) {}
+      var nPula = sim.etapas.length - nEnv;
+      this.persistir(); UI.toast("Durações do agente aplicadas ao Cronograma (" + nEnv + " etapa" + (nEnv === 1 ? "" : "s") + (nPula > 0 ? "; " + nPula + " não estimável(is) não foram alteradas" : "") + ").", "ok"); this.render();
     },
     // Refina as durações com a IA do ERP (planejador) — fonte de verdade = backend (chave da IA fica lá)
     cronRefinarIA: function () {
@@ -769,9 +806,9 @@
         .then(function (resp) { return resp.json(); })
         .then(function (j) {
           if (!j.ok) { UI.toast("IA: " + (j.error || "não retornou"), "erro"); return; }
-          o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {}; o.cronograma.iaMotivos = {};
+          o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = o.cronograma.duracoesAgente || {};
           var n = 0;
-          (j.etapas || []).forEach(function (x) { var et = etapas[x.i]; if (et && x.dias >= 1) { o.cronograma.duracoes[et.id] = Math.round(Util.num(x.dias)); o.cronograma.iaMotivos[et.id] = x.motivo || ""; n++; } });
+          (j.etapas || []).forEach(function (x) { var et = etapas[x.i]; if (et && x.dias >= 1) { o.cronograma.duracoes[et.id] = Math.round(Util.num(x.dias)); o.cronograma.iaMotivos[et.id] = x.motivo || ""; o.cronograma.duracoesAgente[et.id] = "ia"; n++; } });
           self.persistir();
           UI.toast("🤖 " + n + " etapas refinadas pela IA (" + (j.provider || "") + "). Passe o mouse no 🤖 p/ ver o motivo; edite se quiser.", "ok");
           self.render();
