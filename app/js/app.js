@@ -284,6 +284,8 @@
         case "cron-ia": this.cronRefinarIA(); break;
         case "exec-recalc": this.execRecalc(); break;
         case "exec-cronograma": this.execEnviarCronograma(); break;
+        case "parede-explodir": this.paredeExplodir(); break;
+        case "parede-aplicar": this.paredeAplicar(); break;
         case "novo": this.novoOrcamento(); break;
         case "importar-sinapi": this.abrirImportSinapi(); break;
         case "atualizar": this.abrirAtualizar(); break;
@@ -315,6 +317,24 @@
     },
 
     onChange: function (e) {
+      // Parede-Cebola: trocar o candidato SINAPI de uma camada no preview → atualiza escolhido,
+      // re-checa unidade (ok/revisar) e re-renderiza (badge, confiança e contador do botão ao vivo).
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-pc-cand") != null && this._pcPreview) {
+        var seq = parseInt(e.target.getAttribute("data-pc-cand"), 10), idx = parseInt(e.target.value, 10);
+        var cam = (this._pcPreview.resultado.camadas || []).filter(function (c) { return c.seq === seq; })[0];
+        if (cam && cam.candidatos[idx]) {
+          cam.escolhido = idx;
+          var cand = cam.candidatos[idx];
+          var div = String(cand.item.unidade || "").toUpperCase().replace(/\s/g, "") !== String(cam.unidade || "").toUpperCase().replace(/\s/g, "");
+          cam.unidadeDivergente = div; cam.status = cam.qtdZero ? cam.status : (div ? "revisar" : "ok"); cam.confianca = Util.num(cand.confianca);
+          // recomputa os contadores p/ o botão/pills não ficarem stale
+          var r = this._pcPreview.resultado, nOk = 0, nRev = 0, nPend = 0;
+          r.camadas.forEach(function (c) { if (c.qtdZero) return; if (c.status === "ok") nOk++; else if (c.status === "revisar") nRev++; else nPend++; });
+          r.nOk = nOk; r.nRevisar = nRev; r.nPendentes = nPend;
+          this.render();
+        }
+        return;
+      }
       // upload do logo da empresa (arquivo -> base64 -> preview)
       if (e.target.id === "emp-logo") {
         var file = e.target.files && e.target.files[0];
@@ -789,6 +809,64 @@
       try { Orcamento.sincronizarPrazo(o); } catch (e) {}
       var nPula = sim.etapas.length - nEnv;
       this.persistir(); UI.toast("Durações do agente aplicadas ao Cronograma (" + nEnv + " etapa" + (nEnv === 1 ? "" : "s") + (nPula > 0 ? "; " + nPula + " não estimável(is) não foram alteradas" : "") + ").", "ok"); this.render();
+    },
+    // ---- Parede-Cebola (Fase B): explode parede em camadas de serviço ----
+    _paredeLerInputs: function () {
+      var v = function (id) { return (UI.el(id) || {}).value; };
+      return {
+        nome: v("pc-nome") || "Parede",
+        area: Util.num(v("pc-area")) || null,
+        comprimento: Util.num(v("pc-comp")) || null,
+        altura: Util.num(v("pc-alt")) || null,
+        descontos: Util.num(v("pc-vaos")) || 0,
+        faces: parseInt(v("pc-faces"), 10) || 2,
+        receita: v("pc-receita") || "interna_pintura",
+        incluiAlvenaria: (UI.el("pc-alv") || {}).checked !== false
+      };
+    },
+    paredeExplodir: function () {
+      var o = this.orcAtual; if (!o || typeof ParedeCebola === "undefined") return;
+      var inp = this._paredeLerInputs();
+      if (!(Util.num(inp.area) > 0) && !(Util.num(inp.comprimento) > 0 && Util.num(inp.altura) > 0)) {
+        UI.toast("Informe a área (m²) ou comprimento × altura da parede.", "erro"); return;
+      }
+      var res = ParedeCebola.explodir(inp);
+      this._pcPreview = { orcId: o.id, inputs: inp, resultado: res };  // transiente (não persistido/sincronizado)
+      this.render();
+      if (!(Util.num(res.parede.areaLiquida) > 0)) UI.toast("Área líquida = 0 (vãos ≥ área da parede). Revise a área ou os vãos — nada a aplicar.", "erro");
+      else if (res.nPendentes || res.nRevisar) UI.toast(res.nOk + " camada(s) casaram; " + (res.nPendentes ? res.nPendentes + " sem código" : "") + (res.nPendentes && res.nRevisar ? " e " : "") + (res.nRevisar ? res.nRevisar + " p/ revisar" : "") + " — confira antes de aplicar.", "info");
+    },
+    paredeAplicar: function () {
+      var o = this.orcAtual; if (!o || !this._pcPreview || this._pcPreview.orcId !== o.id || typeof ParedeCebola === "undefined") return;
+      var res = this._pcPreview.resultado;
+      // aplica overrides de candidato escolhidos nos selects (revisão do usuário)
+      res.camadas.forEach(function (c) {
+        var sel = document.querySelector('[data-pc-cand="' + c.seq + '"]');
+        if (sel) {
+          var idx = parseInt(sel.value, 10);
+          if (!isNaN(idx) && c.candidatos[idx]) {
+            c.escolhido = idx;
+            var cand = c.candidatos[idx];
+            // re-checa unidade do candidato agora escolhido (usuário pode ter corrigido p/ um M2)
+            var div = String((cand.item.unidade || "")).toUpperCase().replace(/\s/g, "") !== String(c.unidade || "").toUpperCase().replace(/\s/g, "");
+            c.unidadeDivergente = div; c.status = div ? "revisar" : "ok";
+          }
+        }
+      });
+      // nenhuma camada aplicável (tudo pendente/revisar/qtd-0) → NÃO cria etapa vazia
+      var nAplicaveis = res.camadas.filter(function (c) { return c.status === "ok" && Util.num(c.quantidade) > 0; }).length;
+      if (!nAplicaveis) { UI.toast("Nenhuma camada aplicável (sem código casado ou quantidade 0) — resolva as pendências ou revise a área antes.", "erro"); return; }
+      // etapa alvo: nova ("Parede — <nome>") ou existente — só cria a nova quando há o que aplicar
+      var etSel = (UI.el("pc-etapa") || {}).value || "__nova__", etapaId = etSel;
+      if (etSel === "__nova__") {
+        Orcamento.addEtapa(o, "Parede — " + (res.parede.nome || "s/ nome"));
+        etapaId = o.etapas[o.etapas.length - 1].id;
+      }
+      var out = ParedeCebola.aplicarNoOrcamento(o, etapaId, res.camadas);
+      this._pcPreview = null;  // limpa o preview após aplicar
+      this.aba = "planilha";  // leva o usuário pro orçamento pra ver as camadas
+      this.persistir(); this.render();
+      UI.toast(out.adicionadas + " camada(s) adicionada(s) ao orçamento" + (out.puladas ? " · " + out.puladas + " pulada(s) (sem código/unidade divergente)" : "") + ".", out.adicionadas ? "ok" : "info");
     },
     // Refina as durações com a IA do ERP (planejador) — fonte de verdade = backend (chave da IA fica lá)
     cronRefinarIA: function () {

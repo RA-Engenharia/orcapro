@@ -333,7 +333,7 @@
       '</div>';
 
       // Abas
-      var abas = [["planilha", "Planilha"], ["sintetico", "Sintético"], ["cronograma", "🗓 Cronograma"], ["execucao", "🏗️ Execução"], ["graficos", "📊 Gráficos"], ["relatorios", "Relatórios"], ["bdi", "BDI & Parâmetros"]];
+      var abas = [["planilha", "Planilha"], ["sintetico", "Sintético"], ["cronograma", "🗓 Cronograma"], ["execucao", "🏗️ Execução"], ["paredecebola", "🧱 Parede-Cebola"], ["graficos", "📊 Gráficos"], ["relatorios", "Relatórios"], ["bdi", "BDI & Parâmetros"]];
       html += '<div class="tabs">';
       abas.forEach(function (a) {
         html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + a[1] + '</div>';
@@ -344,6 +344,7 @@
       if (abaAtiva === "sintetico") html += this.renderSintetico(orc);
       else if (abaAtiva === "cronograma") html += this.renderCronograma(orc);
       else if (abaAtiva === "execucao") html += this.renderExecucao(orc);
+      else if (abaAtiva === "paredecebola") html += this.renderParedeCebola(orc);
       else if (abaAtiva === "graficos") html += this.renderGraficos(orc);
       else if (abaAtiva === "relatorios") html += this.renderRelatorios(orc);
       else if (abaAtiva === "bdi") html += this.renderBdi(orc);
@@ -599,6 +600,73 @@
       html += '<tr style="font-weight:700;border-top:2px solid var(--linha,#e2e8f0)"><td>Total</td><td class="num">' + (semBase ? '—' : sim.prazoDias + ' d') + '</td><td></td><td class="num">' + moeda(sim.custoMOSimulado) + '</td></tr>';
       html += '</tbody></table>';
       html += '<div class="muted" style="font-size:11px;margin-top:8px">O custo de MO é pelo conteúdo de trabalho (equipe eficientemente dimensionada). A hora do SINAPI já vem <b>com encargos sociais/complementares</b>; por isso, ao comparar, as diárias de CLT são oneradas em ' + (p.encargosPct || 0) + '% (campo acima — mesmo % da Folha de pagamento) e as de diarista/autônomo/PJ entram cheias. A reconciliação vale <b>só sobre as profissões com diária real cadastrada no RH</b> — se a cobertura for baixa, o veredito é parcial. Itens de base estadual sem custo de MO aparecem como “não estimável”.</div>';
+      return html;
+    },
+
+    renderParedeCebola: function (orc) {
+      if (typeof ParedeCebola === "undefined") return '<div class="vazio card">Parede-Cebola indisponível.</div>';
+      // preview TRANSIENTE (não polui o orçamento salvo/sincronizado): vive em App._pcPreview
+      var pc = (typeof App !== "undefined" && App._pcPreview && App._pcPreview.orcId === orc.id) ? App._pcPreview : {};
+      var esc = Util.esc, inp = pc.inputs || {};
+      var receitas = ParedeCebola.receitas();
+      function selReceita() {
+        return receitas.map(function (r) { return '<option value="' + r.id + '"' + (inp.receita === r.id ? " selected" : "") + '>' + esc(r.rotulo) + '</option>'; }).join("");
+      }
+      var html = '<div class="card" style="margin-bottom:12px">' +
+        '<h3 style="margin:0 0 4px;font-size:15px">🧱 Parede-Cebola — do 2D à obra real</h3>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 10px">Uma parede é UMA linha, mas na obra ela é um empilhamento: bloco → chapisco → reboco → massa → pintura. Informe a parede e o sistema explode nas camadas de serviço, casando cada uma num <b>código SINAPI real</b> (nunca inventa — sem match vira “pendente”). Você revisa e joga no orçamento.</p>' +
+        '<div class="flex" style="flex-wrap:wrap;gap:10px;align-items:flex-end">' +
+        '<div class="field" style="margin:0"><label>Nome</label><input id="pc-nome" value="' + esc(inp.nome || "") + '" placeholder="Parede sala" style="width:150px"></div>' +
+        '<div class="field" style="margin:0"><label>Área (m²)</label><input id="pc-area" type="number" min="0" step="0.01" value="' + (inp.area != null ? inp.area : "") + '" placeholder="ou C×A →" style="width:100px"></div>' +
+        '<div class="field" style="margin:0"><label>Comprim. (m)</label><input id="pc-comp" type="number" min="0" step="0.01" value="' + (inp.comprimento != null ? inp.comprimento : "") + '" style="width:90px"></div>' +
+        '<div class="field" style="margin:0"><label>Altura (m)</label><input id="pc-alt" type="number" min="0" step="0.01" value="' + (inp.altura != null ? inp.altura : "") + '" style="width:80px"></div>' +
+        '<div class="field" style="margin:0"><label title="Portas/janelas em m² a abater">Vãos (m²)</label><input id="pc-vaos" type="number" min="0" step="0.01" value="' + (inp.descontos != null ? inp.descontos : "") + '" style="width:80px"></div>' +
+        '<div class="field" style="margin:0"><label>Faces</label><select id="pc-faces"><option value="2"' + (inp.faces == 1 ? "" : " selected") + '>2 faces</option><option value="1"' + (inp.faces == 1 ? " selected" : "") + '>1 face</option></select></div>' +
+        '<div class="field" style="margin:0"><label>Receita (tipo de parede)</label><select id="pc-receita">' + selReceita() + '</select></div>' +
+        '<div class="field" style="margin:0"><label style="white-space:nowrap"><input id="pc-alv" type="checkbox"' + (inp.incluiAlvenaria === false ? "" : " checked") + '> incluir alvenaria</label></div>' +
+        '<button class="btn sm primary" data-acao="parede-explodir">🧅 Explodir em camadas</button>' +
+        '</div></div>';
+
+      if (pc.resultado) {
+        var r = pc.resultado, badge = { ok: ["#16a34a", "casou"], revisar: ["#b45309", "revisar unidade"], pendente: ["#dc2626", "sem código"] };
+        html += '<div class="card" style="margin-bottom:12px"><div class="flex" style="gap:18px;flex-wrap:wrap;align-items:baseline">' +
+          '<b style="font-size:15px">🧅 ' + esc(r.parede.nome) + '</b>' +
+          '<span class="muted" style="font-size:12px">' + r.parede.areaLiquida + ' m² líquidos' + (r.parede.descontos ? ' (' + r.parede.areaBruta + ' − ' + r.parede.descontos + ' de vãos)' : '') + ' · ' + r.parede.faces + ' face(s) · ' + esc(r.receita.rotulo) + '</span>' +
+          '<span class="pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + r.nOk + ' casaram</span>' +
+          (r.nRevisar ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + r.nRevisar + ' p/ revisar</span>' : '') +
+          (r.nPendentes ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + r.nPendentes + ' sem código</span>' : '') +
+          '</div>';
+        html += '<table class="tbl" style="margin-top:10px;font-size:13px"><thead><tr><th>#</th><th>Camada</th><th style="text-align:right">Qtd</th><th>Un</th><th>Código SINAPI casado</th><th>Confiança</th><th></th></tr></thead><tbody>';
+        r.camadas.forEach(function (c) {
+          var cand = (c.escolhido >= 0 && c.candidatos[c.escolhido]) ? c.candidatos[c.escolhido] : null;
+          var b = badge[c.status] || badge.pendente;
+          var codCel;
+          if (c.candidatos && c.candidatos.length) {
+            codCel = '<select data-pc-cand="' + c.seq + '" style="max-width:340px">' + c.candidatos.map(function (k, i) {
+              return '<option value="' + i + '"' + (i === c.escolhido ? " selected" : "") + '>' + esc((k.item.codigo || "—") + " · " + (k.item.descricao || "").slice(0, 60)) + " [" + (k.item.unidade || "?") + "]</option>";
+            }).join("") + '</select>' + (c.unidadeDivergente ? ' <span class="muted" style="color:#b45309;font-size:11px">⚠ unidade ' + esc(cand ? cand.item.unidade : "") + ' ≠ ' + c.unidade + '</span>' : "");
+          } else {
+            codCel = '<span class="muted" style="color:#dc2626">nenhum código casou — ajuste o termo ou lance manualmente</span>';
+          }
+          html += '<tr><td>' + c.seq + '</td><td>' + esc(c.camada) + (c.base ? ' <span class="muted" style="font-size:10px">(núcleo)</span>' : '') + '</td>' +
+            '<td style="text-align:right">' + c.quantidade + '</td><td>' + c.unidade + '</td>' +
+            '<td>' + codCel + '</td>' +
+            '<td>' + (cand ? Math.round(c.confianca) + '%' : '—') + '</td>' +
+            '<td><span class="pill" style="background:' + b[0] + '22;color:' + b[0] + ';font-size:11px;font-weight:700">' + b[1] + '</span></td></tr>';
+        });
+        html += '</tbody></table>';
+        var etapas = (orc.etapas || []);
+        var selEt = '<select id="pc-etapa"><option value="__nova__">➕ Nova etapa: Parede — ' + esc(r.parede.nome) + '</option>' +
+          etapas.map(function (e) { return '<option value="' + e.id + '">' + esc((e.codigo ? e.codigo + " " : "") + e.nome) + '</option>'; }).join("") + '</select>';
+        var aplicaveis = r.nOk + (r.nRevisar ? 0 : 0);
+        html += '<div class="flex" style="gap:10px;align-items:flex-end;margin-top:12px;flex-wrap:wrap">' +
+          '<div class="field" style="margin:0"><label>Adicionar em</label>' + selEt + '</div>' +
+          '<button class="btn sm primary" data-acao="parede-aplicar" title="Só as camadas com código casado (OK) entram. Pendentes e as de unidade divergente ficam de fora.">➕ Adicionar ' + r.nOk + ' camada(s) ao orçamento</button>' +
+          (r.nRevisar || r.nPendentes ? '<span class="muted" style="font-size:11px">' + (r.nRevisar ? r.nRevisar + ' de unidade divergente' : "") + (r.nRevisar && r.nPendentes ? " e " : "") + (r.nPendentes ? r.nPendentes + ' sem código' : "") + ' NÃO entram — resolva antes.</span>' : "") +
+          '</div>';
+        html += '<div class="muted" style="font-size:11px;margin-top:8px">Cada camada vira um <b>item normal do orçamento</b> (código SINAPI + qtd) — então o Agente de Execução (aba 🏗️) dimensiona equipe, prazo e custo dessas camadas automaticamente.</div>';
+        html += '</div>';
+      }
       return html;
     },
 
