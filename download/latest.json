@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.75",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.75/OrcaPRO-IA-update-v1.1.75.zip",
-  "notas": "Novidade: 🏗️ Exportar p/ Revit — um botão na tela BIM manda a obra ativa (BDI, etapas e cronograma do Agente de Execução) direto pro plugin RA BIM Tools 2.0 dentro do Revit. O modelo e o orçamento passam a falar a mesma língua, sem digitar nada duas vezes. + estabilidade do servidor local.",
+  "versao": "1.1.76",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.76/OrcaPRO-IA-update-v1.1.76.zip",
+  "notas": "O Exportar p/ Revit agora leva também os itens do orçamento (código, quantidade e custo por etapa) — habilita o Reconciliar Orçado×Modelado e a Curva ABC do plugin RA BIM Tools dentro do Revit.",
   "obrigatoria": false
 }

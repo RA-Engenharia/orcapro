@@ -44,6 +44,31 @@
       });
       var bdi = 0;
       if (orc.bdi && isFinite(Number(orc.bdi.percentual))) bdi = Number(orc.bdi.percentual);
+      // itens do orçamento (p/ Reconciliar/Curva ABC no plugin do Revit):
+      // só itens com código real; quantidades/custos numéricos, total derivado
+      var itens = [], valorTotal = 0;
+      (orc.etapas || []).forEach(function (e) {
+        var nomeEtapa = e && e.nome ? String(e.nome).trim() : "";
+        ((e && e.itens) || []).forEach(function (it) {
+          if (!it) return;
+          var cod = it.codigo ? String(it.codigo).trim() : "";
+          if (!cod || cod === "—" || cod === "-") return;
+          var qtde = Number(it.quantidade), unit = Number(it.custoUnitario);
+          if (!isFinite(qtde)) qtde = 0;
+          if (!isFinite(unit)) unit = 0;
+          var total = qtde * unit;
+          valorTotal += total;
+          itens.push({
+            etapa: nomeEtapa,
+            codigo: cod,
+            descricao: String(it.descricao || "").slice(0, 90),
+            unidade: String(it.unidade || "").toUpperCase(),
+            quantidade: qtde,
+            custoUnitario: unit,
+            total: total
+          });
+        });
+      });
       return {
         formato: 1,
         obra: (obra && obra.nome) || (orc.obra && orc.obra.nome) || orc.nome || "",
@@ -53,6 +78,8 @@
         bdi: bdi,
         etapas: etapas,
         cronograma: cronograma,
+        itens: itens,
+        valorTotal: valorTotal,
         geradoEm: new Date().toISOString(),
         versaoApp: (typeof CONFIG !== "undefined" && CONFIG.versao) || ""
       };
