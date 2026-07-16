@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.72",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.72/OrcaPRO-IA-update-v1.1.72.zip",
-  "notas": "Novidade: 📝 Corte técnico virou prancha de verdade — as faces cortadas pelo plano A–A saem HACHURADAS a 45° como manda o desenho técnico, com espaçamento constante no papel em qualquer escala (1:50, 1:100…). Imprima em 100% e confira no escalímetro.",
+  "versao": "1.1.73",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.73/OrcaPRO-IA-update-v1.1.73.zip",
+  "notas": "Novidade: 🏗 2D→3D — abra a PLANTA BAIXA em DXF dentro do OrçaPRO: o sistema propõe as paredes (espessura real, eixo reconhecido, curvas, trechos em T), você confirma no preview e a volumetria 3D nasce no viewer BIM. Daí a cadeia fecha sozinha: QTO mede os m², a Parede-Cebola explode em camadas SINAPI e o Agente de Execução dimensiona equipe, prazo e custo. Assistido e honesto — volumetria de estudo, não substitui projeto.",
   "obrigatoria": false
 }

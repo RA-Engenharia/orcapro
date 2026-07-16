@@ -47,7 +47,7 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel, S.p3dPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); }, 0);
@@ -79,6 +79,7 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="limpar-medidas" title="Apagar todas as cotas medidas" style="display:none">🧹 Cotas</button>' +
     '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">📐 Planta</button>' +
     '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">✂️ Corte</button>' +
+    '<button class="btn sm" data-b="p3d" title="Reconstruir 3D a partir da planta baixa em DXF (assistido: o sistema propõe as paredes, você confirma)">🏗 2D→3D</button>' +
     '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">🏢 Pav.</button>' +
     '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">👁 Ver</button>' +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">📸 Foto</button>' +
@@ -226,6 +227,7 @@ function montar(host, opts) {
     else if (k === 'snap') toggleSnapPanel();
     else if (k === 'planta') setPlanta(!planta.on);
     else if (k === 'corte') setCorteL(!corteL.on);
+    else if (k === 'p3d') toggleP3dPanel();
     else if (k === 'pav') togglePavPanel();
     else if (k === 'vis') toggleVisPanel();
     else if (k === 'foto') tirarFoto();
@@ -264,6 +266,12 @@ function montar(host, opts) {
   S._setUltra = setUltra;
 
   function propsDe(mid, expressID, tipoCache) {
+    var moS = modeloDe(mid);
+    if (moS && moS.sintetico) { // sintético não existe no wasm (GetLine com mid string sondaria o modelo 0 REAL)
+      var elS = null; for (var q3 = 0; q3 < moS.elementos.length; q3++) if (moS.elementos[q3].id === expressID) { elS = moS.elementos[q3]; break; }
+      var qS = (moS.qto && moS.qto[expressID]) || {};
+      return { id: expressID, nome: (elS && elS.nome) || 'Parede', tipo: 'IFCWALL', globalId: '2D→3D', tag: '', etapa: '', codOrc: '', area: qS.area, comprimento: qS.comprimento };
+    }
     try {
       var line = S.api.GetLine(mid, expressID, true);
       var nome = (line.Name && line.Name.value) || '—';
@@ -1312,6 +1320,162 @@ function montar(host, opts) {
   }
   S._tirarFoto = tirarFoto;
 
+  // ============================================================
+  // 🏗 2D→3D (Fase C.1) — reconstrução ASSISTIDA a partir de DXF: o parser
+  // (js/dxf.js) lê a planta, o detector (js/planta3d.js) PROPÕE paredes por
+  // pares de linhas paralelas, o usuário confirma/desliga no preview e o
+  // viewer extruda como MODELO SINTÉTICO (QTO/4D/clash/parede-cebola ganham
+  // de graça). Honesto: volumetria de ESTUDO — não substitui projeto.
+  // ============================================================
+  var p3dSeq = 0;
+  function carregarSintetico(caixas, nome) {
+    caixas = caixas || [];
+    if (!caixas.length) { S._hint('🏗 Nenhuma parede ligada pra gerar.'); return null; }
+    if (S.modelos.length >= 8) { S._hint('Limite de 8 modelos abertos — remova um antes.'); return null; }
+    var mid = 'p3d' + (++p3dSeq);
+    var modelo = { mid: mid, sintetico: true, nome: nome || ('Planta 2D→3D (' + caixas.length + ' paredes)'), disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: { IFCWALL: caixas.length }, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
+    modelo.grupo.userData.mid = mid;
+    modelRoot.add(modelo.grupo);
+    var mat = new THREE.MeshStandardMaterial({ color: 0xd8cfc0, metalness: .05, roughness: .85, side: THREE.DoubleSide });
+    modelo.matCache.parede = mat;
+    caixas.forEach(function (c, i) {
+      var g = new THREE.BoxGeometry(c.comprimento, c.altura, c.espessura);
+      var m = new THREE.Mesh(g, mat);
+      m.position.set(c.cx, c.cy, c.cz); m.rotation.y = c.rotY;
+      m.userData.expressID = c.id != null ? c.id : (i + 1); m.userData.tipo = 'IFCWALL'; m.userData.mid = mid; m.userData.matOrig = mat;
+      modelo.grupo.add(m);
+      S.meshPorId[m.userData.expressID] = m; S.meshPorUid[mid + ':' + m.userData.expressID] = m;
+      modelo.nTri += 12;
+      // qto REAL da parede (área de 1 face; a Parede-Cebola/QTO consomem daqui — nada estimado por caixa)
+      modelo.qto[m.userData.expressID] = { comprimento: c.comprimento, area: c.area, volume: +(c.comprimento * c.altura * c.espessura).toFixed(4), contagem: 1 };
+      modelo.elementos.push({ id: m.userData.expressID, uid: mid + ':' + m.userData.expressID, mid: mid, arquivo: modelo.nome, tipo: 'IFCWALL', nome: 'Parede ' + (i + 1) + ' (' + c.comprimento.toFixed(2).replace('.', ',') + ' m)', etapa: null, codOrc: null, qto: modelo.qto[m.userData.expressID], disciplina: 'arquitetura' });
+      modelo.nEl++;
+    });
+    S.modelos.push(modelo);
+    // AABB mundo por elemento (clash/QTO)
+    try {
+      modelRoot.updateMatrixWorld(true);
+      modelo.grupo.children.forEach(function (m) {
+        var bb = new THREE.Box3().setFromObject(m);
+        var elx = modelo.elementos.filter(function (e) { return e.id === m.userData.expressID; })[0];
+        if (elx && !bb.isEmpty()) elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] };
+      });
+    } catch (_) {}
+    over.style.display = 'none';
+    atualizarHud();
+    if (planta.on) setPlanta(false);
+    if (corteL.on) setCorteL(false);
+    enquadrar();
+    S.elementos = []; S.modelos.forEach(function (mo) { S.elementos = S.elementos.concat(mo.elementos); });
+    if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
+    notifyModelos();
+    if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
+    return mid;
+  }
+  S._carregarSintetico = carregarSintetico;
+
+  var p3d = { parse: null, det: null };
+  var p3dPanel = document.createElement('div');
+  p3dPanel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:480px;max-width:94%;max-height:92%;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  p3dPanel.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>🏗 Planta 2D → 3D (DXF)</b><button class="btn sm" data-p3="fechar">✕</button></div>' +
+    '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+    '<button class="btn sm primary" data-p3="abrir">📂 Abrir .DXF</button>' +
+    '<label style="display:flex;gap:5px;align-items:center">Pé-direito <input data-p3="pd" class="inp" type="number" value="2.80" step="0.1" min="2" max="6" style="width:64px"> m</label>' +
+    '<label style="display:flex;gap:5px;align-items:center">Unidade <select data-p3="un" class="inp" style="width:76px"><option value="">auto</option><option value="0.001">mm</option><option value="0.01">cm</option><option value="1">m</option></select></label>' +
+    '<input type="file" data-p3="file" accept=".dxf" style="display:none"></div>' +
+    '<div data-p3="info" style="font-size:11.5px;color:#9fb2c8">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
+    '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid #24435f;border-radius:8px;cursor:pointer;display:none"></canvas>' +
+    '<div data-p3="res" style="font-size:12px"></div>' +
+    '<button class="btn sm primary" data-p3="gerar" style="display:none">🏗 Gerar 3D</button>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Volumetria de ESTUDO (paredes por par de linhas paralelas de 6–40 cm) — clique numa parede verde do preview pra ligar/desligar. Portas, janelas e cobertura não entram nesta fase. Não substitui o projeto.</div>';
+  host.appendChild(p3dPanel);
+  S.p3dPanel = p3dPanel;
+  function toggleP3dPanel() { var abrir = p3dPanel.style.display === 'none' || !p3dPanel.style.display; fecharPaineis(null); p3dPanel.style.display = abrir ? 'flex' : 'none'; }
+  function p3dDesenhar() {
+    var cv = p3dPanel.querySelector('[data-p3="cv"]'); if (!cv || !p3d.parse) return;
+    cv.style.display = '';
+    var g = cv.getContext('2d'), ex = p3d.parse.extents;
+    g.fillStyle = '#0b1a2b'; g.fillRect(0, 0, cv.width, cv.height);
+    if (!ex) return;
+    var mrg = 14, sw = (cv.width - mrg * 2) / Math.max(1e-6, ex.x1 - ex.x0), sh = (cv.height - mrg * 2) / Math.max(1e-6, ex.y1 - ex.y0);
+    var sc = Math.min(sw, sh);
+    function px(x) { return mrg + (x - ex.x0) * sc; }
+    function py(y) { return cv.height - mrg - (y - ex.y0) * sc; } // Y da planta pra cima
+    p3d._px = px; p3d._py = py; p3d._sc = sc;
+    g.strokeStyle = '#3a5570'; g.lineWidth = 1;
+    p3d.parse.segmentos.forEach(function (s) { g.beginPath(); g.moveTo(px(s.x1), py(s.y1)); g.lineTo(px(s.x2), py(s.y2)); g.stroke(); });
+    (p3d.det ? p3d.det.paredes : []).forEach(function (p) {
+      g.strokeStyle = p.ligada !== false ? '#22c55e' : '#64748b';
+      g.setLineDash(p.ligada !== false ? [] : [5, 4]);
+      g.lineWidth = Math.max(3, p.espessura * sc);
+      g.beginPath(); g.moveTo(px(p.x1), py(p.y1)); g.lineTo(px(p.x2), py(p.y2)); g.stroke();
+      g.setLineDash([]);
+    });
+  }
+  function p3dResumo() {
+    var res = p3dPanel.querySelector('[data-p3="res"]'), bg = p3dPanel.querySelector('[data-p3="gerar"]');
+    if (!p3d.det) { res.innerHTML = ''; bg.style.display = 'none'; return; }
+    var ligadas = p3d.det.paredes.filter(function (p) { return p.ligada !== false; });
+    var mTot = ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0);
+    res.innerHTML = '<b style="color:#7fe0a3">' + ligadas.length + ' parede(s) ligadas</b> (' + mTot.toFixed(1).replace('.', ',') + ' m lineares) · ' +
+      p3d.det.stats.segmentosSemPar + ' segmento(s) sem par (portas/mobiliário/cotas — fora, honesto) · unidade: ' + (p3d.parse.unidade.origem === 'insunits' ? 'do arquivo' : p3d.parse.unidade.origem);
+    bg.style.display = ''; bg.textContent = '🏗 Gerar 3D (' + ligadas.length + ' paredes)';
+  }
+  function p3dProcessar(texto, nome) {
+    if (typeof window === 'undefined' || !window.DXF || !window.Planta3D) { S._hint('🏗 Motores 2D→3D não carregados — atualize o app.'); return; }
+    p3d._texto = String(texto || ''); // guardado: trocar a unidade re-processa (a UI instrui isso)
+    var fu = parseFloat(p3dPanel.querySelector('[data-p3="un"]').value) || 0;
+    p3d.parse = window.DXF.parse(texto, fu > 0 ? { fatorUnidade: fu } : {});
+    p3d.nome = nome || 'planta.dxf';
+    var info = p3dPanel.querySelector('[data-p3="info"]');
+    if (!p3d.parse.segmentos.length) { info.innerHTML = '⚠ Não achei geometria 2D neste DXF (só ' + JSON.stringify(p3d.parse.stats.ignoradas) + '). Exporte como DXF ASCII (R12/2000) com as linhas das paredes.'; p3d.det = null; p3dDesenhar(); p3dResumo(); return; }
+    p3d.det = window.Planta3D.detectarParedes(p3d.parse.segmentos);
+    var env = p3d.parse.extents ? ((p3d.parse.extents.x1 - p3d.parse.extents.x0).toFixed(1) + '×' + (p3d.parse.extents.y1 - p3d.parse.extents.y0).toFixed(1) + ' m') : '—';
+    var ign = Object.keys(p3d.parse.stats.ignoradas || {}).map(function (k) { return k + '×' + p3d.parse.stats.ignoradas[k]; }).join(', ');
+    info.innerHTML = '<b>' + esc(p3d.nome) + '</b> · ' + p3d.parse.segmentos.length + ' segmentos · envergadura ' + env +
+      (p3d.parse.unidade.origem.indexOf('heuristica') === 0 ? ' · <span style="color:#f0b94a">unidade ASSUMIDA (' + p3d.parse.unidade.origem.slice(11) + ') — confira a envergadura e corrija no seletor se preciso</span>' : '');
+    if (ign) info.innerHTML += '<br>⚠ Entidades ignoradas: ' + esc(ign) + (/INSERT/.test(ign) ? ' — geometria DENTRO de bloco não entra: exploda os blocos no CAD antes de exportar.' : '.');
+    if (!p3d.det.paredes.length) info.innerHTML += '<br>⚠ Nenhum par de linhas com cara de parede (6–40 cm). Confira a UNIDADE — envergadura errada = espessuras fora da faixa.';
+    p3dDesenhar(); p3dResumo();
+  }
+  p3dPanel.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-p3]'); if (!b) return; var k = b.getAttribute('data-p3');
+    if (k === 'fechar') p3dPanel.style.display = 'none';
+    else if (k === 'abrir') p3dPanel.querySelector('[data-p3="file"]').click();
+    else if (k === 'gerar') {
+      if (!p3d.det) return;
+      var pd = parseFloat(p3dPanel.querySelector('[data-p3="pd"]').value) || 2.8;
+      var caixas = window.Planta3D.extrudar(p3d.det.paredes, pd);
+      var mid = carregarSintetico(caixas, p3d.nome.replace(/\.dxf$/i, '') + ' (2D→3D)');
+      if (mid) { p3dPanel.style.display = 'none'; S._hint('🏗 ' + caixas.length + ' paredes no 3D! O QTO já mede os m² — e a 🧱 Parede-Cebola explode em camadas SINAPI no orçamento.'); }
+    }
+  });
+  p3dPanel.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.getAttribute('data-p3') === 'file' && t.files && t.files[0]) {
+      var f = t.files[0], fr = new FileReader();
+      fr.onload = function () { p3dProcessar(String(fr.result || ''), f.name); };
+      fr.readAsText(f); t.value = '';
+    } else if (t.getAttribute('data-p3') === 'un' && p3d._texto) { p3dProcessar(p3d._texto, p3d.nome); } // achado do gate: era no-op — agora re-parseia com a unidade nova
+  });
+  // clique no preview: liga/desliga a parede proposta mais próxima
+  p3dPanel.querySelector('[data-p3="cv"]').addEventListener('click', function (e) {
+    if (!p3d.det || !p3d._px) return;
+    var cv = e.target, rc = cv.getBoundingClientRect();
+    var mx = (e.clientX - rc.left) * (cv.width / rc.width), my = (e.clientY - rc.top) * (cv.height / rc.height);
+    var melhor = null, dMin = 12;
+    p3d.det.paredes.forEach(function (p) {
+      var x1 = p3d._px(p.x1), y1 = p3d._py(p.y1), x2 = p3d._px(p.x2), y2 = p3d._py(p.y2);
+      var dx = x2 - x1, dy = y2 - y1, L2 = dx * dx + dy * dy;
+      var t2 = L2 > 0 ? Math.max(0, Math.min(1, ((mx - x1) * dx + (my - y1) * dy) / L2)) : 0;
+      var d = Math.sqrt(Math.pow(mx - (x1 + dx * t2), 2) + Math.pow(my - (y1 + dy * t2), 2));
+      if (d < dMin) { dMin = d; melhor = p; }
+    });
+    if (melhor) { melhor.ligada = melhor.ligada === false; p3dDesenhar(); p3dResumo(); }
+  });
+  S._p3dProcessar = p3dProcessar; // hook de teste (injeta o texto DXF sem file input)
+
   // rejeição NÃO fica memoizada: falha transitória do wasm (offline/atualização) permite retentar na próxima carga
   function initApi() { if (!S._initP) S._initP = (async function () { S.api.SetWasmPath('bim/vendor/'); await S.api.Init(); S.apiReady = true; })().catch(function (e) { S._initP = null; throw e; }); return S._initP; }
   var _loadChain = Promise.resolve(); // cadeia LOCAL do mount (a global misturaria cargas de um viewer morto com o novo)
@@ -1550,7 +1714,7 @@ function montar(host, opts) {
     Object.keys(mo.matCache).forEach(function (k) { try { mo.matCache[k].dispose(); } catch (_) {} });
     Object.keys(mo.transCache).forEach(function (k) { try { mo.transCache[k].dispose(); } catch (_) {} });
     modelRoot.remove(mo.grupo);
-    try { S.api.CloseModel(mid); } catch (_) {}
+    if (typeof mid === 'number') { try { S.api.CloseModel(mid); } catch (_) {} } // mid sintético ('p3dN') no embind vira >>>0 = 0 e FECHARIA o 1º IFC real
     if (S.selected && S.selected.userData.mid === mid) { S.selected = null; S.prevMat = null; }
     S._clashSel = (S._clashSel || []).filter(function (m) { return m.userData.mid !== mid; });
     rebuildIndices(); atualizarHud(); notifyModelos();
@@ -1679,7 +1843,7 @@ function desmontarMorto() {
   try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
   try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
-  try { S.modelos.slice().forEach(function (mo) { try { S.api.CloseModel(mo.mid); } catch (_) {} }); } catch (_) {}
+  try { S.modelos.slice().forEach(function (mo) { if (typeof mo.mid === 'number') { try { S.api.CloseModel(mo.mid); } catch (_) {} } }); } catch (_) {}
   try { S.renderer.dispose(); } catch (_) {}
   S = null;
 }
@@ -1724,6 +1888,7 @@ function focarClash(ids) {
   if (S.ang && S.ang.on && S._setAng) S._setAng(false);
   if (S._fecharCtecModal && S.ctecModal && S.ctecModal.style.display === 'flex') S._fecharCtecModal(); // modal do resultado tapa o viewer -> fecha antes de voar a câmera
   if (S._ctecCancelar) S._ctecCancelar();
+  if (S.p3dPanel && S.p3dPanel.style.display === 'flex') S.p3dPanel.style.display = 'none'; // modal 2D→3D também taparia o clash
   limparClash();
   var idset = {}; (ids || []).forEach(function (id) { idset[id] = 1; });
   var box = new THREE.Box3(), any = false;
@@ -2001,6 +2166,9 @@ window.BIM = {
   isolarTipo: function () { if (S && S._isolarTipo) S._isolarTipo(); },
   restaurarVisibilidade: function () { if (S && S._restaurarVis) S._restaurarVis(); },
   foto: function () { return (S && S._tirarFoto) ? S._tirarFoto() : null; }, // dataURL do render (também baixa o PNG carimbado)
+  // ---- 2D→3D (Fase C.1): paredes confirmadas viram modelo sintético no viewer ----
+  carregarSintetico: function (caixas, nome) { return (S && S._carregarSintetico) ? S._carregarSintetico(caixas, nome) : null; },
+  _p3dTexto: function (txt, nome) { if (S && S._p3dProcessar) S._p3dProcessar(txt, nome); }, // hook de teste: injeta DXF sem file input
   planta: function (on) { if (S && S._setPlanta) S._setPlanta(on == null ? !(S.planta && S.planta.on) : !!on); },
   corte: function (on) { if (S && S._setCorteL) S._setCorteL(on == null ? !(S.corteL && S.corteL.on) : !!on); },
   corteConfig: function (cfg) { // {az?, inc?, pos0a1?, inv?} — programático/testes
