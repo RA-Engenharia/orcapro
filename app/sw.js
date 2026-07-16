@@ -4,7 +4,7 @@
  * Só cacheia o MESMO domínio (IA, servidor de licença e fontes externas vão direto pra rede). */
 /* IMPORTANTE: o nome do cache carrega a versão. A cada release o 'activate' abaixo apaga
  * os caches de versões antigas -> força buscar o código novo (evita app rodando JS velho após update). */
-var CACHE = 'orcapro-app-v1.1.69';
+var CACHE = 'orcapro-app-v1.1.70';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();

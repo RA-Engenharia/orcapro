@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.69",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.69/OrcaPRO-IA-update-v1.1.69.zip",
-  "notas": "Novidade: 🧰 BIM v3 — kit de ferramentas de obra no viewer 3D: ▱ Área e perímetro (na planta mede a projeção horizontal; em 3D declara o plano médio — nunca inventa número), ∠ Ângulo entre 3 pontos, 🏢 Pavimentos (o sistema lê os andares do IFC: isole um pavimento ou gere a planta baixa dele em 1 clique), 👁 Visibilidade (isolar/ocultar elemento ou tipo) e 📸 Foto do modelo com carimbo honesto — tudo offline, dentro do orçamento.",
+  "versao": "1.1.70",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.70/OrcaPRO-IA-update-v1.1.70.zip",
+  "notas": "Novidade: 👥 Reunião no modelo BIM com código de sala copiável em 1 clique (mande no WhatsApp — o colega cola e aparece do seu lado no 3D) · 🧲 Compatibilização MEP: Hidráulica, Elétrica e Mecânica agora são disciplinas separadas no modelo federado — tubo × eletroduto passa a ser detectado · 🧯 recuperação limpa quando o 3D fica pesado demais (sem painéis do modelo que já foi).",
   "obrigatoria": false
 }

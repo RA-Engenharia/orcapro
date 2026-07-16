@@ -53,6 +53,10 @@ function montar(host, opts) {
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); }, 0);
     return;
   }
+  // CONTEXTO PERDIDO: o viewer antigo morreu (S.alive=false) mas os listeners globais e o
+  // renderer continuavam pendurados — cada remount vazava keydown/keyup/mousemove/resize
+  // (teclado disparando em dobro) + um WebGLRenderer morto. Desmonta ANTES de criar o novo.
+  if (S && !S.alive) desmontarMorto();
   host.innerHTML = '';
   host.style.position = 'relative';
   host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
@@ -127,6 +131,7 @@ function montar(host, opts) {
         modelos: [], meshPorUid: {}, ultra: false, _tickExtra: [],
         fly: { on: false, keys: {}, speed: 14, yaw: 0, pitch: 0 }, selected: null, prevMat: null,
         matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
+  var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
 
   function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   S._resize = resize; window.addEventListener('resize', resize); resize();
@@ -1264,7 +1269,8 @@ function montar(host, opts) {
 
   // rejeição NÃO fica memoizada: falha transitória do wasm (offline/atualização) permite retentar na próxima carga
   function initApi() { if (!S._initP) S._initP = (async function () { S.api.SetWasmPath('bim/vendor/'); await S.api.Init(); S.apiReady = true; })().catch(function (e) { S._initP = null; throw e; }); return S._initP; }
-  function enfileirar(fn) { S._loadChain = (S._loadChain || Promise.resolve()).then(fn, fn); return S._loadChain; }
+  var _loadChain = Promise.resolve(); // cadeia LOCAL do mount (a global misturaria cargas de um viewer morto com o novo)
+  function enfileirar(fn) { _loadChain = _loadChain.then(fn, fn); return _loadChain; }
 
   // Lê os carimbos do exportador pyRevit e devolve mapa expressID -> {etapa, codOrc}.
   // Uma passada por todos os IfcRelDefinesByProperties; para cada, resolve o pset e varre
@@ -1525,12 +1531,16 @@ function montar(host, opts) {
   S._removerModelo = removerModelo; S._limparTudo = limparTudo;
 
   async function carregarIFC(arrayBuffer, nome) {
+    // identidade + vida: um FileReader em voo de um viewer MORTO não pode nem apagar o overlay
+    // nem despejar meshes/índices no viewer NOVO (S global pode já ser outra instância)
+    if (S !== Sm || !S.alive) return;
     over.style.display = 'none'; loading.style.display = 'flex';
     loading.querySelector('[data-l="txt"]').textContent = 'Lendo ' + (nome || 'IFC') + '…';
     if (S.modelos.length >= 8) { loading.style.display = 'none'; over.style.display = S.modelos.length ? 'none' : 'flex'; try { alert('Limite de 8 modelos abertos ao mesmo tempo. Remova um antes de abrir outro (memória de vídeo).'); } catch (_) {} return; }
     var mid;
     try {
       await initApi();
+      if (S !== Sm || !S.alive) return; // o mundo pode ter mudado durante o await (ctx-lost + remount)
       var data = new Uint8Array(arrayBuffer);
       mid = S.api.OpenModel(data);
       S.modelID = mid; // compat: "modelo corrente" = último carregado
@@ -1601,7 +1611,7 @@ function montar(host, opts) {
     } catch (err) {
       try { if (mid != null && mid !== -1) S.api.CloseModel(mid); } catch (_) {}
       try { if (typeof modelo !== 'undefined' && modelo && S.modelos.indexOf(modelo) === -1) { (modelo.grupo.children || []).forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } }); Object.keys(modelo.matCache || {}).forEach(function (k) { try { modelo.matCache[k].dispose(); } catch (_) {} }); modelRoot.remove(modelo.grupo); } } catch (_) {}
-      try { if (mid != null) Object.keys(S.meshPorUid).forEach(function (u) { if (u.indexOf(mid + ':') === 0) delete S.meshPorUid[u]; }); } catch (_) {}
+      try { rebuildIndices(); } catch (_) {} // meshPorId E meshPorUid sem restos do modelo que falhou (o manual só limpava o Uid)
       loading.style.display = 'none'; if (!S.modelos.length) over.style.display = 'flex';
       over.querySelector('div').innerHTML = '<div style="font-size:30px">⚠️</div><h3 style="margin:8px 0">Não consegui ler este IFC</h3><p style="color:#a9c1d8;font-size:13px">' + esc(String(err && err.message || err)) + '</p><p style="color:#a9c1d8;font-size:12px">Confira se é um .ifc válido (IFC2x3 ou IFC4).</p>';
     }
@@ -1613,6 +1623,21 @@ function montar(host, opts) {
   S._abrirArquivo = abrirArquivo; S._carregarExemplo = carregarExemplo;
 }
 
+// desmonta um viewer MORTO (pós webglcontextlost): remove listeners globais, cancela o RAF,
+// libera os modelos do WASM e o renderer — deixa o caminho limpo pro montar() criar um novo.
+function desmontarMorto() {
+  if (!S) return;
+  try { if (S.raf) cancelAnimationFrame(S.raf); } catch (_) {}
+  try { if (Reuniao.on) Reuniao.sair(); } catch (_) {}
+  try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
+  try { if (S._onKeyUp) window.removeEventListener('keyup', S._onKeyUp); } catch (_) {}
+  try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
+  try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
+  try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
+  try { S.modelos.slice().forEach(function (mo) { try { S.api.CloseModel(mo.mid); } catch (_) {} }); } catch (_) {}
+  try { S.renderer.dispose(); } catch (_) {}
+  S = null;
+}
 // itera as MALHAS REAIS de todos os modelos (um elemento pode ter VÁRIAS malhas — uma por cor;
 // meshPorUid guarda só a última, então visibilidade via mapa deixava peças meio-escondidas)
 function cadaMalha(fn) { if (!S) return; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(fn); }); }

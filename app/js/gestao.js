@@ -1155,7 +1155,7 @@
       html += '<div class="card" id="bim-clash" style="display:none">' +
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🧩 Compatibilização <span class="muted" style="font-weight:400;font-size:13px">— conflitos entre disciplinas</span></h3>' +
         '<button class="btn sm primary" id="bim-clash-run">🔍 Rodar compatibilização</button></div>' +
-        '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> (ex.: tubo atravessando viga, duto embutido em pilar). Clique em <b>Rodar</b>.</p></div>' +
+        '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> — e no federado (2+ modelos) <b>Hidráulica, Elétrica e Mecânica contam separadas</b> (ex.: tubo × eletroduto, tubo atravessando viga). Clique em <b>Rodar</b>.</p></div>' +
         "</div>";
       html += '<div class="card" id="bim-qto" style="display:none">' +
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">📐 Quantitativos <span class="muted" style="font-weight:400;font-size:13px">— levantamento automático do modelo</span></h3>' +
@@ -1209,7 +1209,20 @@
       var self = this;
       if (typeof BIM === "undefined" || !BIM.reuniao) { UI.toast("Abra a aba BIM com um modelo carregado primeiro.", "erro"); return; }
       if (BIM.reuniao.ativa) {
-        if (confirm("Você está na sala \"" + BIM.reuniao.sala + "\". Sair da reunião?")) { BIM.reuniao.sair(); UI.toast("Você saiu da reunião.", "ok"); }
+        // já na sala: oferecer COPIAR o código (é assim que a equipe se encontra) além de sair
+        var salaAtual = BIM.reuniao.sala, nOnline = BIM.reuniao.participantes;
+        UI.modal("👥 Você está na sala",
+          '<p style="margin:0 0 10px">Sala atual: <b>' + Util.esc(salaAtual) + "</b> · " + nOnline + " online</p>" +
+          '<p class="muted" style="font-size:12.5px;margin:0">Copie o código e mande pro colega (WhatsApp mesmo) — ele clica em 👥 Reunião, cola no campo <b>Sala</b> e aparece do seu lado dentro do modelo.</p>', [
+          { texto: "📋 Copiar código da sala", classe: "primary", onClick: function () {
+            // writeText é Promise: rejeição assíncrona (iframe sem clipboard-write, doc sem foco) NÃO pode virar toast verde
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              navigator.clipboard.writeText(salaAtual).then(function () { UI.toast("Código copiado — mande pro colega.", "ok"); }, function () { UI.toast("Não consegui copiar — o código é: " + salaAtual, "erro"); });
+            } else UI.toast("Não consegui copiar — o código é: " + salaAtual, "erro");
+          } },
+          { texto: "🚪 Sair da sala", classe: "ghost", onClick: function () { BIM.reuniao.sair(); UI.fecharModal(); UI.toast("Você saiu da reunião.", "ok"); } },
+          { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+        ]);
         return;
       }
       var av = {}; try { av = JSON.parse(localStorage.getItem("orcapro:bim:avatar") || "{}"); } catch (e) {}
@@ -1218,12 +1231,20 @@
       // sala NÃO-adivinhável: slug da obra + código aleatório persistido (mesma equipe reusa; estranho não chuta)
       var chaveObra = obra ? obra.id : (eid() + "-geral"), codKey = "orcapro:bim:salacode:" + chaveObra, cod = "";
       try { cod = localStorage.getItem(codKey) || ""; } catch (e) {}
-      if (!cod) { cod = Math.random().toString(36).slice(2, 8); try { localStorage.setItem(codKey, cod); } catch (e) {} }
-      var salaDefault = av.sala || ((obra ? "obra-" + (obra.nome || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) : "reuniao") + "-" + cod);
+      if (!cod) {
+        // código NÃO-adivinhável via crypto (Math.random é previsível) — achado do gate v1.1.62
+        try { var _ca = new Uint32Array(2); crypto.getRandomValues(_ca); cod = (_ca[0].toString(36) + _ca[1].toString(36)).replace(/[^a-z0-9]/g, "").slice(0, 8); } catch (e) { cod = Math.random().toString(36).slice(2, 10); }
+        if (!cod) cod = Math.random().toString(36).slice(2, 10);
+        try { localStorage.setItem(codKey, cod); } catch (e) {}
+      }
+      // default é SEMPRE a sala da OBRA atual: o av.sala salvo curto-circuitava (trocava de obra e a
+      // sala anterior — inclusive do formato velho adivinhável — continuava vindo como sugestão)
+      var salaDefault = (obra ? "obra-" + (obra.nome || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 24) : "reuniao") + "-" + cod;
       var corpo =
         '<p class="muted" style="margin:0 0 12px">Todos que entrarem na <b>mesma sala</b> se veem dentro do modelo — cada um com seu avatar e nome. Perfeito pra <b>compatibilização e reunião de projeto</b> (um aponta o conflito, os outros voam até lá).</p>' +
         '<div class="row">' + campo("Seu nome no avatar *", inp("g-av-nome", av.nome || usuario.nome || usuario.empresa || "", "Como os outros te veem")) +
         campo("Sala da reunião *", inp("g-av-sala", salaDefault, "mesmo nome de sala = mesma reunião")) + "</div>" +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-2px 0 10px"><button id="g-av-copiar" class="btn sm" type="button">📋 Copiar código da sala</button><span class="muted" style="font-size:12px">mande pro colega — ele cola no mesmo campo e entra com você</span></div>' +
         '<div class="row">' +
         campo("Cor do uniforme", '<input id="g-av-c1" type="color" value="' + (av.c1 || "#2e6f9e") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
         campo("Cor do capacete", '<input id="g-av-c2" type="color" value="' + (av.c2 || "#f59e0b") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
@@ -1240,9 +1261,27 @@
         } },
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
+      // copiar o código direto do campo (o valor pode ter sido editado)
+      var bCop = UI.el("g-av-copiar");
+      if (bCop) bCop.onclick = function () {
+        var i = UI.el("g-av-sala"), v = i ? (i.value || "").trim() : "";
+        if (!v) { UI.toast("Dê um nome pra sala primeiro.", "erro"); return; }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(v).then(function () { UI.toast("Código copiado — mande pro colega.", "ok"); }, function () { UI.toast("Não consegui copiar — o código é: " + v, "erro"); });
+        } else UI.toast("Não consegui copiar — o código é: " + v, "erro");
+      };
     },
     _bimReplanejar: function () {
-      if (!this._bimElementos || !this._bimElementos.length) return;
+      if (!this._bimElementos || !this._bimElementos.length) {
+        // último modelo removido: sem isto, timeline/clash/QTO/6D ficavam mostrando o modelo que JÁ FOI
+        this._bimPlano = null; this._bimCurva = null; this._bimQto = null; this._bimClashes = null;
+        ["bim-4d", "bim-clash", "bim-qto", "bim-6d"].forEach(function (id) { var el = document.getElementById(id); if (el) el.style.display = "none"; });
+        var cres = document.getElementById("bim-clash-res"); if (cres) cres.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> — e no federado (2+ modelos) <b>Hidráulica, Elétrica e Mecânica contam separadas</b> (ex.: tubo × eletroduto, tubo atravessando viga). Clique em <b>Rodar</b>.</p>';
+        var qres = document.getElementById("bim-qto-res"); if (qres) qres.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p>';
+        var binfo = document.getElementById("bim-info"); if (binfo) binfo.style.display = "none"; // balão de propriedades/conflito do modelo que JÁ FOI
+        var r6 = document.getElementById("bim-6d-res"); if (r6) r6.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0"><b>6D</b> = plano de manutenção preventiva por categoria (vida útil de projeto da NBR 15575). <b>7D</b> = quanto a edificação custa DEPOIS de pronta, ano a ano. Com orçamento vinculado à obra, os valores saem em R$; sem, sai o cronograma físico. Clique em <b>Gerar</b>.</p>';
+        return;
+      }
       var crono = null, obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
       if (obra && obra.orcamentoId && Store.obterOrcamento && typeof Cronograma !== "undefined" && Cronograma.estimar) {
         var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
@@ -1484,7 +1523,13 @@
           });
           // re-home: se o modelo já estava carregado (reentrou na aba / App.render), o onLoaded não
           // refira — re-popula o timeline 4D a partir do que o viewer já tem.
-          try { var jaCarregado = BIM.elementos; if (jaCarregado && jaCarregado.length) { self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); } } catch (e) {}
+          try {
+            // sync INCONDICIONAL: viewer novo/VAZIO (ex.: recriado pós contexto-perdido) zera o cache —
+            // senão trocar de obra ressuscitava painéis 4D/clash/QTO do modelo que JÁ FOI (achado do gate)
+            var jaCarregado = BIM.elementos || [];
+            self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
+            self._bimReplanejar();
+          } catch (e) {}
           try { if (BIM.modelos && BIM.modelos.length) self._bimRenderModelos(BIM.modelos); } catch (e2) {}
           return;
         }

@@ -19,8 +19,11 @@
   "use strict";
 
   // categoria de serviço (mesmos ids do Cronograma/BIM4D) -> disciplina de compatibilização
-  // disciplina escolhida no painel multi-IFC (el.disciplina) tem PRIORIDADE sobre a inferida do tipo
-  var DISC_PAINEL = { estrutural: "Estrutura", arquitetura: "Arquitetura", hidraulica: "Instalações", eletrica: "Instalações", mecanica: "Instalações", outra: "Outros" };
+  // disciplina escolhida no painel multi-IFC (el.disciplina) tem PRIORIDADE sobre a inferida do tipo.
+  // MEP SEPARADO (achado do gate v1.1.62): hidráulica, elétrica e mecânica são disciplinas
+  // DISTINTAS no federado — tubo × eletroduto (o clash MEP mais comum) passa a ser detectado.
+  // Na inferência por tipo IFC (arquivo único) continua "Instalações": o IFC não diz qual MEP é.
+  var DISC_PAINEL = { estrutural: "Estrutura", arquitetura: "Arquitetura", hidraulica: "Hidráulica", eletrica: "Elétrica", mecanica: "Mecânica", outra: "Outros" };
   var CAT_DISC = {
     fundacao: "Estrutura", estrutura: "Estrutura",
     alvenaria: "Arquitetura", cobertura: "Arquitetura", revestimento: "Arquitetura",
