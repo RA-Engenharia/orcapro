@@ -831,8 +831,8 @@ function montar(host, opts) {
   // 📝 CORTE TÉCNICO — o usuário risca a linha A–A' NA PLANTA e o viewer gera a
   // vista de corte em preto-e-branco estilo desenho técnico, NA ESCALA escolhida
   // (px/m derivado de 96dpi), com carimbo e escala gráfica. Câmera ortográfica
-  // perpendicular à linha; near = o próprio plano de corte. MVP honesto: faces
-  // cortadas SEM hachura (caps por stencil ficam pra evolução).
+  // perpendicular à linha; clipping no próprio plano de corte. Faces cortadas saem
+  // HACHURADAS (caps por stencil: saldo backface−frontface ≠ 0 = interior de sólido).
   // ============================================================
   var ctec = { ativo: false, pts: [], objs: [] };
   S._tickExtra.push(function () { for (var i = 0; i < ctec.objs.length; i++) rescaleObj(ctec.objs[i]); });
@@ -871,7 +871,7 @@ function montar(host, opts) {
     '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-t="esc" class="inp" style="width:130px"><option value="50">1:50</option><option value="75">1:75</option><option value="100" selected>1:100</option><option value="200">1:200</option></select></label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade de visão <input data-t="prof" class="inp" type="number" min="0.5" step="0.5" value="10" style="width:70px"> m</label>' +
     '<label style="display:flex;gap:6px;align-items:center;font-size:12px"><input data-t="inv" type="checkbox"> Olhar para o outro lado</label>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Auxílio visual de coordenação, não substitui o projeto executivo. Faces cortadas SEM hachura; superfícies curvas/tubos podem sair sem contorno. Confira sempre pela escala gráfica.</div>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Auxílio visual de coordenação, não substitui o projeto executivo. Faces cortadas saem <b>hachuradas</b>; superfícies curvas/tubos podem sair sem contorno. Confira sempre pela escala gráfica.</div>' +
     '<div style="display:flex;gap:6px"><button class="btn sm primary" data-t="gerar" style="flex:1">Gerar</button><button class="btn sm" data-t="cancelar" style="flex:1">Cancelar</button></div>';
   host.appendChild(ctecCfg);
   S.ctecCfg = ctecCfg;
@@ -915,6 +915,9 @@ function montar(host, opts) {
     var cx = (o.ax + o.bx) / 2, cz = (o.az + o.bz) / 2, cy = (yMin + yMax) / 2;
     var diag = box.getSize(new THREE.Vector3()).length();
     var recuo = (o.tipo === 'fachada') ? diag : 0.02; // epsilon > 0 no near evita z-fighting da aresta no plano
+    // plano de corte REAL (só no corte; a fachada olha de fora, não corta): além de clipar as
+    // massas exatamente na linha A–A, é a referência dos passes de stencil da HACHURA
+    var secPlane = (o.tipo === 'fachada') ? null : new THREE.Plane(new THREE.Vector3(vx, 0, vz), -(vx * cx + vz * cz));
     var cam = new THREE.OrthographicCamera(-wM / 2, wM / 2, hM / 2, -hM / 2, 0.01, recuo + ((o.tipo === 'fachada') ? diag * 2 : Math.max(0.5, +o.prof || 10)));
     cam.position.set(cx - vx * recuo, cy, cz - vz * recuo);
     cam.up.set(0, 1, 0); cam.lookAt(cx, cy, cz); cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
@@ -922,9 +925,10 @@ function montar(host, opts) {
     var prevClip = renderer.clippingPlanes, prevLocal = renderer.localClippingEnabled;
     var prevClear = renderer.getClearColor(new THREE.Color()).clone(), prevAlpha = renderer.getClearAlpha();
     var prevTone = renderer.toneMapping, prevAuto = renderer.autoClear;
-    var rt = new THREE.WebGLRenderTarget(W, H), buf = null, edgesRoot = null, matMassa = null, matLinha = null, escondidos = [];
+    var rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: true }), buf = null, edgesRoot = null, matMassa = null, matLinha = null, escondidos = [];
+    var stBack = null, stFront = null, capMat = null, capGeo = null, hatchTex = null;
     try {
-      renderer.clippingPlanes = []; renderer.localClippingEnabled = false;
+      renderer.clippingPlanes = secPlane ? [secPlane] : []; renderer.localClippingEnabled = false;
       renderer.toneMapping = THREE.NoToneMapping; // P&B fiel (sem ACES escurecer os cinzas)
       scene.children.forEach(function (c) { if (c !== modelRoot && c.visible !== false) { escondidos.push(c); c.visible = false; } });
       // PASSE 1 — massas cinza-claro sobre branco; polygonOffset empurra as faces no depth p/ as
@@ -934,6 +938,45 @@ function montar(host, opts) {
       renderer.setRenderTarget(rt); renderer.setClearColor(0xffffff, 1); renderer.clear();
       renderer.render(scene, cam);
       scene.overrideMaterial = null;
+      // PASSE 1.5 — HACHURA nas faces cortadas (caps por stencil, só no corte):
+      // com o plano ativo, conta backfaces (+1) e frontfaces (−1) do que sobrou além do plano;
+      // onde o saldo ≠ 0 o plano atravessa o INTERIOR de um sólido → pinta o quad hachurado 45°.
+      if (secPlane) {
+        renderer.autoClear = false;
+        // câmera EXCLUSIVA do stencil com far cobrindo o MODELO INTEIRO (achado do gate): o far
+        // da câmera do desenho (= profundidade de visão) descartava backfaces distantes e
+        // desbalanceava a paridade — hachura sumia em laje cortada profunda e aparecia FALSA em
+        // parede em vista atravessando o far. L/R/T/B idênticos -> os pixels casam 1:1.
+        var camSt = cam.clone(); camSt.far = recuo + diag * 2 + 1; camSt.updateProjectionMatrix();
+        stBack = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, side: THREE.BackSide,
+          stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, stencilFail: THREE.IncrementWrapStencilOp, stencilZFail: THREE.IncrementWrapStencilOp, stencilZPass: THREE.IncrementWrapStencilOp });
+        stFront = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, side: THREE.FrontSide,
+          stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, stencilFail: THREE.DecrementWrapStencilOp, stencilZFail: THREE.DecrementWrapStencilOp, stencilZPass: THREE.DecrementWrapStencilOp });
+        scene.overrideMaterial = stBack; renderer.render(scene, camSt);
+        scene.overrideMaterial = stFront; renderer.render(scene, camSt);
+        scene.overrideMaterial = null;
+        // textura de hachura 45° com espaçamento constante NO PAPEL (~2 mm × escala, em metros de mundo)
+        var hcv = document.createElement('canvas'); hcv.width = hcv.height = 32;
+        var hg = hcv.getContext('2d');
+        hg.fillStyle = '#dfdfdf'; hg.fillRect(0, 0, 32, 32);
+        hg.strokeStyle = '#141414'; hg.lineWidth = 2.4;
+        hg.beginPath(); hg.moveTo(-4, 36); hg.lineTo(36, -4); hg.moveTo(-20, 20); hg.lineTo(20, -20); hg.moveTo(12, 52); hg.lineTo(52, 12); hg.stroke();
+        hatchTex = new THREE.CanvasTexture(hcv);
+        hatchTex.wrapS = hatchTex.wrapT = THREE.RepeatWrapping; hatchTex.minFilter = THREE.LinearFilter;
+        var esp = 0.0028 * escalaEf; // período da hachura em metros de mundo (~2 mm no papel em qualquer escala)
+        hatchTex.repeat.set(wM / esp, hM / esp);
+        // depthFunc Always + depthWrite TRUE (achado do gate): o quad GRAVA depth na região
+        // hachurada — arestas de geometria ATRÁS do corte não riscam a hachura no PASSE 2
+        // (as do contorno, clipadas exatamente no plano, ficam mais perto que o quad e vencem)
+        capMat = new THREE.MeshBasicMaterial({ map: hatchTex, depthTest: true, depthFunc: THREE.AlwaysDepth, depthWrite: true, side: THREE.DoubleSide,
+          stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc, stencilFail: THREE.ZeroStencilOp, stencilZFail: THREE.ZeroStencilOp, stencilZPass: THREE.ZeroStencilOp });
+        capGeo = new THREE.PlaneGeometry(wM, hM);
+        var capQuad = new THREE.Mesh(capGeo, capMat);
+        capQuad.position.set(cx + vx * 1e-3, cy, cz + vz * 1e-3); // um fio ALÉM do plano (lado mantido pelo clip)
+        capQuad.lookAt(cx + vx * 2, cy, cz + vz * 2);
+        var capScene = new THREE.Scene(); capScene.add(capQuad);
+        renderer.render(capScene, camSt);
+      }
       // PASSE 2 — arestas pretas (cache local + matrixWorld de cada malha)
       edgesRoot = new THREE.Group(); matLinha = new THREE.LineBasicMaterial({ color: 0x111111 });
       modelRoot.children.forEach(function (g) {
@@ -955,6 +998,8 @@ function montar(host, opts) {
       scene.overrideMaterial = null; renderer.autoClear = prevAuto; modelRoot.visible = true;
       if (edgesRoot) { scene.remove(edgesRoot); edgesRoot.children.forEach(function (ls) { if (ls.geometry) ls.geometry.dispose(); }); }
       if (matLinha) matLinha.dispose(); if (matMassa) matMassa.dispose();
+      if (stBack) stBack.dispose(); if (stFront) stFront.dispose();
+      if (capMat) capMat.dispose(); if (capGeo) capGeo.dispose(); if (hatchTex) hatchTex.dispose();
       escondidos.forEach(function (c) { c.visible = true; });
       renderer.setRenderTarget(null); try { rt.dispose(); } catch (_) {}
       renderer.clippingPlanes = prevClip; renderer.localClippingEnabled = prevLocal;

@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.71",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.71/OrcaPRO-IA-update-v1.1.71.zip",
-  "notas": "Novidade: 🧩 Compatibilização CONFIRMADA por geometria real — cada conflito do envelope é testado triângulo a triângulo contra o modelo: ✔ confirmado (pega até tubo totalmente embutido na viga, via teste de contenção), ✕ descartado (falso alarme de caixa — no modelo de exemplo, 44 de 57 eram falsos) ou ~ não-verificável, sempre declarado. A lista de clash vira lista de AÇÃO.",
+  "versao": "1.1.72",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.72/OrcaPRO-IA-update-v1.1.72.zip",
+  "notas": "Novidade: 📝 Corte técnico virou prancha de verdade — as faces cortadas pelo plano A–A saem HACHURADAS a 45° como manda o desenho técnico, com espaçamento constante no papel em qualquer escala (1:50, 1:100…). Imprima em 100% e confira no escalímetro.",
   "obrigatoria": false
 }
