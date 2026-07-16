@@ -1,0 +1,63 @@
+====================================================================
+  OrcaPRO IA  -  Orcamento Inteligente de Obras
+  RA Engenharia
+====================================================================
+
+COMO INSTALAR  (2 passos, sem complicacao)
+--------------------------------------------------------------------
+ 1) Extraia ESTA pasta em algum lugar do seu PC (ex.: Documentos).
+ 2) De 2 cliques em:   Instalar-OrcaPRO.bat
+
+    Ele faz tudo sozinho:
+      - prepara o Node.js (baixa automatico se voce nao tiver);
+      - deixa a base de precos (SINAPI) do seu estado pronta;
+      - cria o atalho "OrcaPRO IA" na Area de Trabalho;
+      - abre o app no seu navegador.
+
+    * Se o Windows mostrar a tela azul "O Windows protegeu o seu PC",
+      clique em "Mais informacoes" e depois "Executar assim mesmo".
+      (E um aviso padrao para programas novos - pode confiar.)
+
+
+NO DIA A DIA
+--------------------------------------------------------------------
+ - Abra pelo atalho "OrcaPRO IA" na Area de Trabalho
+   (ou pelo arquivo Iniciar-OrcaPRO.bat).
+ - O app abre sozinho no navegador em  http://localhost:8754
+
+
+BONUS: ContabPRO  (gestao para escritorio de contabilidade)
+--------------------------------------------------------------------
+ - Este pacote inclui TAMBEM o ContabPRO, um segundo app completo:
+   agenda de obrigacoes, clientes, honorarios, BI, radar e muito mais.
+ - Abra pelo arquivo  Iniciar-ContabPRO.bat  (abre em http://localhost:8770).
+ - Usa o MESMO Node.js ja preparado pelo OrcaPRO - nao instala nada de novo.
+ - Os dois apps sao independentes e podem ficar abertos ao mesmo tempo.
+
+
+ATIVAR SUA LICENCA  (para SALVAR e EXPORTAR)
+--------------------------------------------------------------------
+ - No topo do app, clique em  "Demonstracao"  (ou no cadeado).
+ - Cole a sua CHAVE DE LICENCA (a que voce recebeu na compra)
+   e clique em Ativar.  Precisa de internet so nesse momento.
+ - Sem ativar, voce EXPLORA e TESTA tudo a vontade, mas o app
+   nao salva nem exporta ate a licenca ser ativada.
+
+
+TROCAR A BASE DE PRECOS (outro estado / competencia)
+--------------------------------------------------------------------
+ - Dentro do app, abra  "Tabelas"  no menu de cima.
+
+
+IA (Escopo Inteligente e cronograma por IA)
+--------------------------------------------------------------------
+ - JA VEM PRONTA. A IA roda na nuvem do OrcaPRO; voce nao configura
+   nada. Funciona para quem ativou a licenca (precisa de internet).
+
+
+SUPORTE
+--------------------------------------------------------------------
+ RA Engenharia
+ WhatsApp: (34) 9286-9383
+ E-mail:   contato@raengenhariaespecial.com.br
+====================================================================

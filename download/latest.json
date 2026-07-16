@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.74",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.74/OrcaPRO-IA-update-v1.1.74.zip",
-  "notas": "Novidade: 🧲 snap PRECISO nas medições do BIM — agarra no ponto MAIS PERTO de onde você clica (canto distante não rouba mais da aresta debaixo do cursor), ✚ interseção real de arestas (canto parede×viga vira ponto exato) e o marcador acompanha a câmera quadro a quadro. Vale pra trena, área, ângulo e corte técnico.",
+  "versao": "1.1.75",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.75/OrcaPRO-IA-update-v1.1.75.zip",
+  "notas": "Novidade: 🏗️ Exportar p/ Revit — um botão na tela BIM manda a obra ativa (BDI, etapas e cronograma do Agente de Execução) direto pro plugin RA BIM Tools 2.0 dentro do Revit. O modelo e o orçamento passam a falar a mesma língua, sem digitar nada duas vezes. + estabilidade do servidor local.",
   "obrigatoria": false
 }

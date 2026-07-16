@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bem-vindo ao OrçaPRO IA</title>
+<link rel="icon" href="img/logo-icon.svg">
+<style>
+:root{--navy:#0f2740;--aco:#2e6f9e;--verde:#16a34a;--mut:#64748b;--linha:#e6edf5;--bg:#f2f7fc}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Inter,'Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--navy);-webkit-font-smoothing:antialiased;line-height:1.5}
+.wrap{max-width:900px;margin:0 auto;padding:0 20px}
+.hero{background:linear-gradient(135deg,#0f2740,#163a5c 60%,#2e6f9e);color:#fff;padding:44px 0 40px;position:relative;overflow:hidden}
+.hero::after{content:"";position:absolute;inset:0;background:radial-gradient(600px 300px at 85% -10%,rgba(111,208,138,.28),transparent 60%);pointer-events:none}
+.brand{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.brand img{height:46px;filter:drop-shadow(0 4px 12px rgba(0,0,0,.3))}
+.brand .bt{font-size:13px;color:#9be7af;font-weight:700;letter-spacing:.4px}
+.hero h1{font-size:34px;font-weight:900;letter-spacing:-.5px;line-height:1.12;margin-bottom:12px}
+.hero h1 span{color:#6fd08a}
+.hero p{font-size:16px;color:#cfe0ef;max-width:620px}
+.ok-chip{display:inline-flex;align-items:center;gap:8px;background:rgba(111,208,138,.16);border:1px solid rgba(111,208,138,.45);color:#bff3cd;font-weight:700;font-size:13px;padding:7px 14px;border-radius:99px;margin-bottom:20px}
+.cta{display:inline-flex;align-items:center;gap:10px;background:linear-gradient(180deg,#22c55e,#16a34a);color:#fff;font-weight:800;font-size:17px;text-decoration:none;padding:15px 30px;border-radius:12px;box-shadow:0 12px 30px rgba(22,163,74,.4);margin-top:24px;transition:transform .15s,box-shadow .15s}
+.cta:hover{transform:translateY(-2px);box-shadow:0 16px 38px rgba(22,163,74,.5)}
+.sec{padding:40px 0}
+.sec h2{font-size:22px;font-weight:800;margin-bottom:6px}
+.sec .lead{color:var(--mut);margin-bottom:24px}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:720px){.steps{grid-template-columns:1fr}.hero h1{font-size:27px}}
+.step{background:#fff;border:1px solid var(--linha);border-radius:16px;padding:22px 20px;box-shadow:0 6px 20px rgba(15,39,64,.05)}
+.step .n{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#163a5c,#2e6f9e);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:center;font-size:16px;margin-bottom:12px}
+.step h3{font-size:16px;margin-bottom:5px}
+.step p{font-size:13.5px;color:var(--mut)}
+.step b{color:var(--navy)}
+.card{background:#fff;border:1px solid var(--linha);border-radius:16px;padding:26px;box-shadow:0 6px 20px rgba(15,39,64,.05)}
+.demo-note{display:flex;gap:14px;align-items:flex-start;background:#eef6ff;border:1px solid #d3e6fb;border-radius:14px;padding:18px 20px}
+.demo-note .ic{font-size:26px}
+.demo-note b{color:var(--navy)}
+.plus{background:linear-gradient(135deg,#132e4a,#0f2740);color:#fff;border-radius:18px;padding:30px;position:relative;overflow:hidden}
+.plus::after{content:"";position:absolute;inset:0;background:radial-gradient(500px 240px at 90% 110%,rgba(111,208,138,.22),transparent 60%)}
+.plus .tag{display:inline-block;background:#6fd08a;color:#0f2740;font-weight:800;font-size:12px;padding:4px 12px;border-radius:99px;margin-bottom:12px}
+.plus h2{color:#fff;font-size:23px;margin-bottom:8px}
+.plus p{color:#cfe0ef;font-size:14.5px;max-width:560px}
+.mods{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0 6px}
+.mods span{background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);color:#eaf2fa;font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px}
+.plus-price{display:flex;align-items:baseline;gap:10px;margin-top:16px}
+.plus-price .de{color:#7f9cbb;text-decoration:line-through;font-size:15px}
+.plus-price .v{font-size:30px;font-weight:900;color:#6fd08a}
+.plus-price .u{color:#cfe0ef;font-size:13px}
+.foot{text-align:center;color:var(--mut);font-size:13.5px;padding:30px 0 44px}
+.foot a{color:var(--verde);font-weight:700;text-decoration:none}
+</style></head>
+<body>
+
+<header class="hero"><div class="wrap">
+  <div class="brand"><img src="img/logo-orcapro-dark.svg" alt="OrçaPRO IA" onerror="this.style.display='none'"><span class="bt">RA ENGENHARIA</span></div>
+  <div class="ok-chip">✓ Instalação concluída — está tudo pronto!</div>
+  <h1>Bem-vindo ao <span>OrçaPRO&nbsp;IA</span></h1>
+  <p>Seu orçamento de obras com Inteligência Artificial já está aberto no navegador. Aqui vai um guia rápido de 1 minuto para você começar com o pé direito.</p>
+  <a class="cta" href="http://localhost:8754/index.html" target="_blank">▶ Abrir o OrçaPRO IA</a>
+</div></header>
+
+<section class="sec"><div class="wrap">
+  <h2>Comece em 3 passos</h2>
+  <p class="lead">Do zero ao primeiro orçamento em minutos.</p>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><h3>Explore à vontade</h3><p>Entre com seu e-mail e <b>navegue por tudo de graça</b> — monte um orçamento, veja a IA, os gráficos e o BDI. Sem prazo, sem cartão.</p></div>
+    <div class="step"><div class="n">2</div><h3>Ative sua licença</h3><p>No topo do app, clique em <b>🔓 Demonstração</b>, cole a <b>chave</b> que você recebeu na compra e clique <b>Ativar</b>. Aí liberam <b>salvar e exportar</b>.</p></div>
+    <div class="step"><div class="n">3</div><h3>Orce com IA</h3><p>Descreva a obra em texto livre e a <b>IA monta o orçamento</b> casando cada serviço com a base oficial (SINAPI, SICRO…) + BDI automático.</p></div>
+  </div>
+</div></section>
+
+<section class="sec" style="padding-top:0"><div class="wrap">
+  <div class="demo-note"><div class="ic">🔓</div><div><b>Modo demonstração:</b> antes de ativar, você <b>explora e testa tudo</b> — só <b>salvar e exportar</b> (PDF, Excel, proposta) ficam liberados quando você ativa a licença. Assim você conhece o sistema sem compromisso.</div></div>
+</div></section>
+
+<section class="sec" style="padding-top:0"><div class="wrap">
+  <div class="plus">
+    <div style="position:relative;z-index:1">
+      <span class="tag">🚀 OFERTA DE LANÇAMENTO</span>
+      <h2>Vá além do orçamento: gerencie a obra inteira</h2>
+      <p>A versão <b>Plus</b> transforma o OrçaPRO num sistema completo de obras — com <b>custo real × contratado</b> e a <b>margem de cada obra</b> em tempo real.</p>
+      <div class="mods"><span>Obras</span><span>Contratos</span><span>Medições</span><span>Financeiro</span><span>Fornecedores</span><span>Compras</span><span>Estoque</span><span>Diário (RDO)</span><span>Colaboradores</span><span>Ponto/Folha</span><span>Frota</span></div>
+      <div class="plus-price"><span class="de">de R$ 2.997</span><span class="v" id="plus-preco">R$ 497</span><span class="u">único, pra sempre</span></div>
+      <div id="cd-plus" style="color:#ffd479;font-size:14px;font-weight:800;margin-top:12px">🔥 Oferta de lançamento</div>
+      <a class="cta" href="https://187-127-40-14.sslip.io/?plano=plus_vitalicia" target="_blank" style="margin-top:16px">⭐ Garantir o Plus agora</a>
+    </div>
+  </div>
+</div></section>
+
+<script>
+(function(){
+  var fim=new Date("2026-07-11T23:59:59-03:00").getTime(), el=document.getElementById("cd-plus");
+  function tick(){ var pv=document.getElementById("plus-preco"); var ms=fim-Date.now(); if(ms<=0){ if(el)el.textContent="🔥 Preço de lançamento"; if(pv)pv.textContent="R$ 697"; return; } if(pv)pv.textContent="R$ 497"; if(!el)return; var d=Math.floor(ms/86400000),h=Math.floor(ms%86400000/3600000),m=Math.floor(ms%3600000/60000),s=Math.floor(ms%60000/1000); el.innerHTML="🔥 Oferta de lançamento termina em <b>"+d+"d "+h+"h "+m+"m "+s+"s</b>"; }
+  tick(); setInterval(tick,1000);
+})();
+</script>
+<div class="foot">Precisa de ajuda? Fale com a <b>RA Engenharia</b> — WhatsApp <a href="https://wa.me/553492869383" target="_blank">(34) 9286-9383</a> · contato@raengenhariaespecial.com.br</div>
+
+</body></html>

@@ -1130,7 +1130,8 @@
         '<option value="">— sem cronograma (sequência padrão) —</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
       var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
-        ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>';
+        ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>' +
+        ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">🏗️ Exportar p/ Revit</button>';
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;position:relative">' +
@@ -1175,6 +1176,27 @@
       return html;
     },
     bimTrocaObra: function (obraId) { this._bimSel = obraId; if (this._bimElementos && this._bimElementos.length) this._bimReplanejar(); },
+    // Exporta a obra selecionada p/ o plugin do Revit (revit/obra-ativa.json):
+    // BDI + etapas do orçamento vinculado + cronograma do Agente de Execução.
+    bimExportarRevit: function () {
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (!obra) { UI.toast("Escolha uma obra no seletor acima (Cronograma da obra) para exportar ao Revit.", "erro"); return; }
+      var orc = (obra.orcamentoId && Store.obterOrcamento) ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+      if (!orc) { UI.toast("Vincule um orçamento a esta obra (Gestão → Obras → editar) — é dele que saem BDI e etapas.", "erro"); return; }
+      var sim = null;
+      try { sim = (typeof Execucao !== "undefined") ? Execucao.simular(orc, {}) : null; } catch (e) { sim = null; }
+      var payload = Revit.montarObraAtiva(orc, obra, sim);
+      Revit.exportar(payload, function (err, res) {
+        if (err) { UI.toast("Não consegui exportar: " + (err.message || err), "erro"); return; }
+        if (res && res.download) {
+          UI.toast("Baixei o obra-ativa.json — salve na pasta revit\\ da instalação do OrçaPRO para o Revit ler.", "ok");
+        } else {
+          var nCrono = payload.cronograma.length;
+          UI.toast("Exportado! O plugin no Revit já vê esta obra: BDI " + payload.bdi + "%, " +
+            payload.etapas.length + " etapas" + (nCrono ? ", cronograma de " + nCrono + " etapas" : "") + ".", "ok");
+        }
+      });
+    },
 
     // painel "Modelos carregados": disciplina + transparência + olhinho + remover, por IFC
     _BIM_DISCS: [["estrutural", "🏗 Estrutural"], ["arquitetura", "🏠 Arquitetura"], ["hidraulica", "🚿 Hidráulica"], ["eletrica", "⚡ Elétrica"], ["mecanica", "❄ Mecânica/AVAC"], ["outra", "📦 Outra"]],
@@ -4268,6 +4290,7 @@ renderFolha: function () {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
         case "bim-reuniao": return this.bimReuniao();
+        case "bim-revit": return this.bimExportarRevit();
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
