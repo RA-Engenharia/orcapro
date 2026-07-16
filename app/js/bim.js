@@ -372,11 +372,19 @@ function montar(host, opts) {
   S._setMedir = setMedir;
   // captura por CLIQUE-SEM-ARRASTE (não atrapalha a órbita: se arrastou, é rotação).
   // O MESMO caminho serve a trena e o desenho da linha do corte técnico — ambos com snap.
+  var _ultimosHits = []; // objetos DISTINTOS visíveis/não-clipados do último raio (o snap de ✚ interseção usa até 2)
   function raycastEm(clientX, clientY) {
     var rc = canvasEl.getBoundingClientRect();
     mouse.x = ((clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((clientY - rc.top) / rc.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
-    return primeiroHit(ray.intersectObjects(modelRoot.children, true)); // ignora oculto/clipado
+    var hits = ray.intersectObjects(modelRoot.children, true);
+    _ultimosHits = [];
+    for (var hh = 0; hh < hits.length && _ultimosHits.length < 2; hh++) {
+      if (!cadeiaVisivel(hits[hh].object) || foraDoClip(hits[hh].point)) continue;
+      if (_ultimosHits.length && _ultimosHits[0].object === hits[hh].object) continue; // 2º OBJETO distinto (canto parede×viga)
+      _ultimosHits.push(hits[hh]);
+    }
+    return _ultimosHits[0] || null;
   }
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
   function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo; } // quem consome clique-sem-arraste
@@ -744,9 +752,9 @@ function montar(host, opts) {
   // vértice (fim de linha) > meio de aresta > aresta mais próxima > superfície livre.
   // Configurável por tipo, persistido; indicador visual mostra ONDE e O QUE agarrou.
   // ============================================================
-  var snap = { on: true, v: true, m: true, a: true, raio: 14 };
-  try { var _sv = JSON.parse(localStorage.getItem('orcapro:bim:snap') || 'null'); if (_sv) { snap.on = !!_sv.on; snap.v = !!_sv.v; snap.m = !!_sv.m; snap.a = !!_sv.a; } } catch (_) {}
-  function salvarSnap() { try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: snap.on, v: snap.v, m: snap.m, a: snap.a })); } catch (_) {} }
+  var snap = { on: true, v: true, m: true, a: true, i: true, raio: 14 };
+  try { var _sv = JSON.parse(localStorage.getItem('orcapro:bim:snap') || 'null'); if (_sv) { snap.on = !!_sv.on; snap.v = !!_sv.v; snap.m = !!_sv.m; snap.a = !!_sv.a; snap.i = _sv.i !== false; } } catch (_) {}
+  function salvarSnap() { try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i })); } catch (_) {} }
   S.snap = snap;
   var snapPanel = document.createElement('div');
   snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:210px';
@@ -755,13 +763,14 @@ function montar(host, opts) {
     '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
     '<button class="btn sm" data-s="v" style="flex:1" title="Agarra no fim de linha (canto/vértice)">▪ Vértice</button>' +
     '<button class="btn sm" data-s="m" style="flex:1" title="Agarra no meio da aresta">● Meio</button>' +
-    '<button class="btn sm" data-s="a" style="flex:1" title="Agarra no ponto mais próximo da aresta">◆ Aresta</button></div>' +
+    '<button class="btn sm" data-s="a" style="flex:1" title="Agarra no ponto mais próximo da aresta">◆ Aresta</button>' +
+    '<button class="btn sm" data-s="i" style="flex:1" title="Agarra no CRUZAMENTO real de duas arestas (canto parede×viga)">✚ Interseção</button></div>' +
     '<div style="font-size:11px;color:#9fb2c8">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
   host.appendChild(snapPanel);
   S.snapPanel = snapPanel;
   function pintarSnapPanel() {
-    var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a };
-    ['on', 'v', 'm', 'a'].forEach(function (kk) {
+    var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i };
+    ['on', 'v', 'm', 'a', 'i'].forEach(function (kk) {
       var b = snapPanel.querySelector('[data-s="' + kk + '"]'); if (!b) return;
       b.style.background = cfg[kk] ? '#16a34a' : ''; b.style.color = cfg[kk] ? '#fff' : '';
       if (kk === 'on') b.textContent = cfg.on ? 'ON' : 'OFF';
@@ -782,20 +791,31 @@ function montar(host, opts) {
   snapMarca.innerHTML = '<div data-sm="ico" style="width:12px;height:12px;border:2px solid #22c55e;margin:0 auto"></div><div data-sm="rot" style="font-size:10px;font-weight:700;color:#7fe0a3;text-shadow:0 1px 2px rgba(0,0,0,.8);text-align:center;margin-top:2px"></div>';
   host.appendChild(snapMarca);
   S.snapMarca = snapMarca;
-  var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' } };
-  function mostrarSnapMarca(sn, clientX, clientY) {
-    if (!sn || !sn.tipo) { esconderSnapMarca(); return; }
+  var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' } };
+  // o marcador é ANCORADO NO MUNDO e re-projetado a cada frame (achado do usuário: posicionado
+  // uma única vez, ficava "pendurado" na tela enquanto o damping da câmera ainda deslizava —
+  // o ponto mostrado parecia longe/bugado em relação ao ponto real)
+  var snapVivo = null; // { p: Vector3, tipo }
+  function posicionarSnapMarca() {
+    if (!snapVivo) return;
     var rc = canvasEl.getBoundingClientRect(), hr = host.getBoundingClientRect();
-    var q = sn.p.clone().project(camera);
+    var q = snapVivo.p.clone().project(camera);
+    if (q.z > 1 || q.z < -1) { snapMarca.style.display = 'none'; return; } // atrás da câmera/fora do frustum
     var x = (q.x + 1) / 2 * rc.width + (rc.left - hr.left), y = (1 - q.y) / 2 * rc.height + (rc.top - hr.top);
-    var vis = SNAP_VIS[sn.tipo], ico = snapMarca.querySelector('[data-sm="ico"]');
-    ico.style.borderColor = vis.cor; ico.style.borderRadius = vis.borda;
-    ico.style.transform = sn.tipo === 'aresta' ? 'rotate(45deg)' : '';
-    snapMarca.querySelector('[data-sm="rot"]').textContent = vis.rot;
-    snapMarca.querySelector('[data-sm="rot"]').style.color = vis.cor;
     snapMarca.style.left = x + 'px'; snapMarca.style.top = y + 'px'; snapMarca.style.display = 'block';
   }
-  function esconderSnapMarca() { snapMarca.style.display = 'none'; }
+  S._tickExtra.push(function () { posicionarSnapMarca(); });
+  function mostrarSnapMarca(sn) {
+    if (!sn || !sn.tipo) { esconderSnapMarca(); return; }
+    var vis = SNAP_VIS[sn.tipo], ico = snapMarca.querySelector('[data-sm="ico"]');
+    ico.style.borderColor = vis.cor; ico.style.borderRadius = vis.borda;
+    ico.style.transform = (sn.tipo === 'aresta' || sn.tipo === 'intersecao') ? 'rotate(45deg)' : '';
+    snapMarca.querySelector('[data-sm="rot"]').textContent = vis.rot;
+    snapMarca.querySelector('[data-sm="rot"]').style.color = vis.cor;
+    snapVivo = { p: sn.p.clone(), tipo: sn.tipo };
+    posicionarSnapMarca();
+  }
+  function esconderSnapMarca() { snapVivo = null; snapMarca.style.display = 'none'; }
   // cache de arestas por geometria (espaço LOCAL); WeakMap → some junto com a geometria no GC
   var arestasCache = new WeakMap();
   function arestasDe(geo) {
@@ -809,27 +829,78 @@ function montar(host, opts) {
   // são reusados nos loops (o candidato aceito é clonado dentro de testar()).
   var _snA = new THREE.Vector3(), _snB = new THREE.Vector3(), _snM = new THREE.Vector3(), _snCl = new THREE.Vector3(), _snP = new THREE.Vector3(), _snL = new THREE.Line3();
   var SNAP_MAX_VERT = 90000; // malha densa (terreno/mobiliário) trava o hover ao gerar EdgesGeometry -> pula snap
+  // PESOS de desempate (achado do usuário: prioridade ABSOLUTA fazia um vértice a 13px "roubar"
+  // de uma aresta a 2px do cursor — o snap agarrava LONGE de onde se clicava). Agora ganha o
+  // candidato mais PRÓXIMO em distância efetiva; o peso só desempata tipos ~equidistantes.
+  var SNAP_PESO = { intersecao: 1.5, vertice: 1.35, meio: 1.15, aresta: 1.0 };
+  // pontos mais próximos entre dois segmentos 3D (Ericson) — devolve {d, p} (p = ponto médio do par)
+  function segSeg3D(a1, a2, b1, b2) {
+    var d1x = a2.x - a1.x, d1y = a2.y - a1.y, d1z = a2.z - a1.z;
+    var d2x = b2.x - b1.x, d2y = b2.y - b1.y, d2z = b2.z - b1.z;
+    var rx = a1.x - b1.x, ry = a1.y - b1.y, rz = a1.z - b1.z;
+    var A = d1x * d1x + d1y * d1y + d1z * d1z, E = d2x * d2x + d2y * d2y + d2z * d2z;
+    var F = d2x * rx + d2y * ry + d2z * rz, s, t;
+    if (A <= 1e-12 && E <= 1e-12) { s = 0; t = 0; }
+    else if (A <= 1e-12) { s = 0; t = Math.max(0, Math.min(1, F / E)); }
+    else {
+      var C = d1x * rx + d1y * ry + d1z * rz;
+      if (E <= 1e-12) { t = 0; s = Math.max(0, Math.min(1, -C / A)); }
+      else {
+        var B = d1x * d2x + d1y * d2y + d1z * d2z, den = A * E - B * B;
+        s = den > 1e-12 ? Math.max(0, Math.min(1, (B * F - C * E) / den)) : 0;
+        t = Math.max(0, Math.min(1, (B * s + F) / E));
+        s = Math.max(0, Math.min(1, (B * t - C) / A));
+      }
+    }
+    var px1 = a1.x + d1x * s, py1 = a1.y + d1y * s, pz1 = a1.z + d1z * s;
+    var qx1 = b1.x + d2x * t, qy1 = b1.y + d2y * t, qz1 = b1.z + d2z * t;
+    var dd = Math.sqrt((px1 - qx1) * (px1 - qx1) + (py1 - qy1) * (py1 - qy1) + (pz1 - qz1) * (pz1 - qz1));
+    return { d: dd, p: new THREE.Vector3((px1 + qx1) / 2, (py1 + qy1) / 2, (pz1 + qz1) / 2) };
+  }
   function aplicarSnap(hit, raioPx) {
     if (!snap.on || !hit || !hit.object || !hit.object.geometry) return { p: hit.point, tipo: null };
-    var g = hit.object.geometry, np = (g.attributes && g.attributes.position) ? g.attributes.position.count : 0;
-    if (np > SNAP_MAX_VERT) return { p: hit.point, tipo: null }; // elemento pesado: mede na superfície livre
-    var arr = arestasDe(g);
-    if (!arr.length) return { p: hit.point, tipo: null };
-    var raio = raioPx || snap.raio, mw = hit.object.matrixWorld, rc = canvasEl.getBoundingClientRect();
+    var raio = raioPx || snap.raio, rc = canvasEl.getBoundingClientRect();
     function px(v) { var q = _snP.copy(v).project(camera); return { x: (q.x + 1) / 2 * rc.width, y: (1 - q.y) / 2 * rc.height }; }
     var alvoPx = px(hit.point), melhor = null;
-    function testar(v, tipo, prio) {
+    function testar(v, tipo) {
       var p2 = px(v), dx = p2.x - alvoPx.x, dy = p2.y - alvoPx.y, d = Math.sqrt(dx * dx + dy * dy);
       if (d > raio) return;
       if (foraDoClip(v)) return; // vértice/aresta do lado CLIPADO (invisível) do corte NÃO pode ser snapado -> cota errada
-      if (!melhor || prio > melhor.prio || (prio === melhor.prio && d < melhor.d)) melhor = { p: v.clone(), tipo: tipo, prio: prio, d: d };
+      var dEff = d / (SNAP_PESO[tipo] || 1);
+      if (!melhor || dEff < melhor.dEff) melhor = { p: v.clone(), tipo: tipo, d: d, dEff: dEff };
     }
-    for (var i = 0; i < arr.length; i += 6) {
-      _snA.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(mw);
-      _snB.set(arr[i + 3], arr[i + 4], arr[i + 5]).applyMatrix4(mw);
-      if (snap.v) { testar(_snA, 'vertice', 3); testar(_snB, 'vertice', 3); }
-      if (snap.m) { testar(_snM.addVectors(_snA, _snB).multiplyScalar(0.5), 'meio', 2); }
-      if (snap.a) { _snL.set(_snA, _snB); testar(_snL.closestPointToPoint(hit.point, true, _snCl), 'aresta', 1); }
+    // arestas PRÓXIMAS do cursor (candidatas ao ✚ interseção) — dos até 2 objetos do raio
+    var proximas = [];
+    function varrerObjeto(obj) {
+      if (!obj || !obj.geometry) return;
+      var g = obj.geometry, np = (g.attributes && g.attributes.position) ? g.attributes.position.count : 0;
+      if (np > SNAP_MAX_VERT) return; // elemento pesado: sem snap nesse objeto
+      var arr = arestasDe(g); if (!arr.length) return;
+      var mw = obj.matrixWorld;
+      for (var i = 0; i < arr.length; i += 6) {
+        _snA.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(mw);
+        _snB.set(arr[i + 3], arr[i + 4], arr[i + 5]).applyMatrix4(mw);
+        if (snap.v) { testar(_snA, 'vertice'); testar(_snB, 'vertice'); }
+        if (snap.m) { testar(_snM.addVectors(_snA, _snB).multiplyScalar(0.5), 'meio'); }
+        _snL.set(_snA, _snB);
+        var cl = _snL.closestPointToPoint(hit.point, true, _snCl);
+        if (snap.a) testar(cl, 'aresta');
+        if (snap.i !== false && proximas.length < 14) {
+          var pc = px(cl), ddx = pc.x - alvoPx.x, ddy = pc.y - alvoPx.y;
+          if (ddx * ddx + ddy * ddy <= (raio + 6) * (raio + 6)) proximas.push({ a: _snA.clone(), b: _snB.clone() });
+        }
+      }
+    }
+    varrerObjeto(hit.object);
+    // 2º objeto do raio: o canto parede×viga vive na fronteira entre DOIS elementos
+    if (_ultimosHits.length > 1 && _ultimosHits[1].object !== hit.object) varrerObjeto(_ultimosHits[1].object);
+    // ✚ INTERSEÇÃO REAL: pares de arestas próximas cujos pontos-mais-próximos em 3D distam < 1 cm
+    // (cruzamento genuíno no espaço, não coincidência visual de projeção — nunca inventa ponto)
+    if (snap.i !== false) {
+      for (var ii = 0; ii < proximas.length; ii++) for (var jj = ii + 1; jj < proximas.length; jj++) {
+        var r3 = segSeg3D(proximas[ii].a, proximas[ii].b, proximas[jj].a, proximas[jj].b);
+        if (r3.d < 0.01) testar(r3.p, 'intersecao');
+      }
     }
     return melhor ? { p: melhor.p, tipo: melhor.tipo } : { p: hit.point, tipo: null };
   }
@@ -2181,16 +2252,16 @@ window.BIM = {
   },
   snapConfig: function (cfg) { // {on?, v?, m?, a?} — liga/desliga tipos de snap
     if (!S || !S.snap) return { on: false };
-    ['on', 'v', 'm', 'a'].forEach(function (k) { if (cfg && cfg[k] != null) S.snap[k] = !!cfg[k]; });
-    try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a })); } catch (_) {}
-    return { on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a };
+    ['on', 'v', 'm', 'a', 'i'].forEach(function (k) { if (cfg && cfg[k] != null) S.snap[k] = !!cfg[k]; });
+    try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i })); } catch (_) {}
+    return { on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i };
   },
   corteTecnico: function (o) { return (S && S._gerarCorteTec) ? S._gerarCorteTec(o || {}) : null; }, // {ax,az,bx,bz,escala,tipo,prof,inv} -> {url,w,h,escala}
   _snapAt: function (cx, cy) { if (!S || !S._raycastEm) return null; var h = S._raycastEm(cx, cy); if (!h) return null; var sn = S._aplicarSnapRef(h, S.snap ? S.snap.raio : 14); return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: snap num ponto de tela
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
   _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; }, // hook de teste: estado da câmera
-  _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono (aba em background não recebe RAF -> matrizes ficariam stale)
+  _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste
   _ctecModal: function () { return (S && S.ctecModal) ? S.ctecModal : null; }, // hook de teste: elemento do modal do resultado
   get elementos() { return S ? S.elementos.slice() : []; },
