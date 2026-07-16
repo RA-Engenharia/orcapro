@@ -1133,11 +1133,14 @@
         ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>';
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
-      html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px">' +
+      html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;position:relative">' +
         '<div id="bim-canvas" style="width:100%;height:min(64vh,580px);position:relative;background:#0b1a2b;display:flex;align-items:center;justify-content:center">' +
         '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px"><div style="font-size:34px;margin-bottom:8px">🏗️</div>Carregando o visualizador 3D…</div>' +
+        "</div>" +
+        // FORA do #bim-canvas: BIM.montar zera o innerHTML do host — dentro dele o balão era APAGADO
+        // em toda montagem (overlay de propriedades/conflito nunca aparecia após montar o viewer)
         '<div id="bim-info" style="position:absolute;left:10px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
-        "</div></div>";
+        "</div>";
       html += '<div class="card" id="bim-modelos" style="display:none">' +
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🗂 Modelos carregados <span class="muted" style="font-weight:400;font-size:13px">— interoperabilidade entre disciplinas</span></h3>' +
         '<span class="muted" style="font-size:12px">➕ arraste mais arquivos .IFC no visualizador (estrutural + arquitetura + hidráulica…)</span></div>' +
@@ -1411,28 +1414,68 @@
       if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
       var r; try { r = BIMClash.detectar(els); } catch (e) { res.innerHTML = '<p class="muted">Falha ao analisar: ' + Util.esc(String(e)) + "</p>"; return; }
       this._bimClashes = r.clashes;
+      // REFINO por geometria real (tri-a-tri no viewer): cada clash ganha geo=confirmado/descartado/nao-verificavel
+      var refinou = false, nGeo = { confirmado: 0, descartado: 0, "nao-verificavel": 0 };
+      try {
+        if (typeof BIM !== "undefined" && BIM.refinarClash) {
+          BIM.refinarClash(r.clashes);
+          refinou = r.clashes.length > 0 && !!r.clashes[0].geo;
+        }
+      } catch (e) { refinou = false; }
+      if (refinou) {
+        r.clashes.forEach(function (c) { if (nGeo[c.geo] != null) nGeo[c.geo]++; else nGeo["nao-verificavel"]++; });
+        var ordG = { confirmado: 0, "nao-verificavel": 1, descartado: 2 };
+        this._bimClashes.sort(function (a, b) { return (ordG[a.geo] - ordG[b.geo]) || (b.penetracao - a.penetracao); }); // confirmados primeiro (mesma array do r.clashes)
+      }
       var byId = {}; els.forEach(function (e) { byId[e.id] = e; });
       if (!r.total) { res.innerHTML = '<div style="padding:6px 0"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">✓ Nenhum conflito entre disciplinas</span> <span class="muted" style="font-size:12.5px">— ' + els.length + " elementos analisados (folga 5 mm).</span></div>"; return; }
       var cor = { grave: "#dc2626", media: "#f59e0b", leve: "#64748b" }, nome = { grave: "graves", media: "médios", leve: "leves" };
-      var chips = ["grave", "media", "leve"].filter(function (s) { return r.severidade[s]; }).map(function (s) {
-        return '<span class="g-pill" style="background:' + cor[s] + '22;color:' + cor[s] + ';font-weight:700">' + r.severidade[s] + " " + nome[s] + "</span>";
+      // pós-refino, chips e contagem por par contam SÓ o que ficou de pé (confirmado + não-verificável) —
+      // senão o banner diz "0 confirmados" com a pill "20 graves" do envelope do lado (contraditório)
+      var sevFonte = r.severidade, parFonte = r.porPar;
+      if (refinou) {
+        sevFonte = { grave: 0, media: 0, leve: 0 }; parFonte = {};
+        this._bimClashes.forEach(function (c) {
+          if (c.geo === "descartado") return;
+          sevFonte[c.severidade] = (sevFonte[c.severidade] || 0) + 1;
+          parFonte[c.par] = (parFonte[c.par] || 0) + 1;
+        });
+      }
+      var chips = ["grave", "media", "leve"].filter(function (s) { return sevFonte[s]; }).map(function (s) {
+        return '<span class="g-pill" style="background:' + cor[s] + '22;color:' + cor[s] + ';font-weight:700">' + sevFonte[s] + " " + nome[s] + "</span>";
       }).join(" ");
-      var pares = Object.keys(r.porPar).sort(function (a, b) { return r.porPar[b] - r.porPar[a]; }).map(function (p) {
-        return '<span class="muted" style="font-size:12px">' + Util.esc(p) + ": <b>" + r.porPar[p] + "</b></span>";
+      var pares = Object.keys(parFonte).sort(function (a, b) { return parFonte[b] - parFonte[a]; }).map(function (p) {
+        return '<span class="muted" style="font-size:12px">' + Util.esc(p) + ": <b>" + parFonte[p] + "</b></span>";
       }).join(" · ");
+      var SELO = {
+        confirmado: '<span title="CONFIRMADO pela geometria: um triângulo real de um elemento atravessa o outro" style="color:#16a34a;font-weight:800">✔</span>',
+        descartado: '<span title="As caixas se tocam, mas a geometria real não se cruza — provável falso alarme do envelope" style="color:#94a3b8">✕</span>',
+        "nao-verificavel": '<span title="Não-verificável (elemento sem malha própria ou acima do limite de triângulos) — confira no 3D" style="color:#f59e0b">~</span>'
+      };
       var LIM = 80, linhas = this._bimClashes.slice(0, LIM).map(function (c, i) {
         var a = byId[c.aId] || {}, b = byId[c.bId] || {}, descA = a.nome || a.tipo || c.aId, descB = b.nome || b.tipo || c.bId;
-        return '<tr class="lin"><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cor[c.severidade] + '"></span></td>' +
+        return '<tr class="lin"' + (c.geo === "descartado" ? ' style="opacity:.55"' : "") + '><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cor[c.severidade] + '"></span>' + (c.geo ? " " + SELO[c.geo] : "") + "</td>" +
           "<td>" + Util.esc(c.par) + '</td><td style="font-size:12px">' + Util.esc(String(descA)) + " ✕ " + Util.esc(String(descB)) + "</td>" +
           '<td class="num">' + (c.penetracao * 100).toFixed(1) + " cm</td>" +
           '<td><button class="btn sm" data-clash="' + i + '">👁 ver</button></td></tr>';
       }).join("");
+      var cab = refinou
+        ? ('<b style="font-size:15px">' + nGeo.confirmado + " conflito(s) confirmados</b>" +
+          (nGeo["nao-verificavel"] ? ' <span class="g-pill" style="background:#f59e0b22;color:#b45309;font-weight:700">~ ' + nGeo["nao-verificavel"] + " não-verificáveis</span>" : "") +
+          (nGeo.descartado ? ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700">✕ ' + nGeo.descartado + " descartados pela geometria</span>" : ""))
+        : ('<b style="font-size:15px">' + r.total + " conflito(s)</b>");
+      var bannerLimpo = (refinou && nGeo.confirmado === 0 && nGeo["nao-verificavel"] === 0)
+        ? '<div style="padding:4px 0 8px"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">✓ Nenhum conflito CONFIRMADO pela geometria</span> <span class="muted" style="font-size:12px">— os ' + nGeo.descartado + " alarmes do envelope eram caixas se tocando sem cruzamento real (lista abaixo, pra auditoria).</span></div>"
+        : "";
       res.innerHTML =
-        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + r.total + " conflito(s)</b> " + chips + '<span style="flex:1"></span><button class="btn sm ghost" data-clash-limpar="1">✖ limpar destaque</button></div>' +
+        bannerLimpo +
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' + cab + " " + chips + '<span style="flex:1"></span><button class="btn sm ghost" data-clash-limpar="1">✖ limpar destaque</button></div>' +
         (pares ? '<div style="margin-bottom:8px">' + pares + "</div>" : "") +
         '<div style="max-height:280px;overflow:auto"><table class="tbl"><thead><tr><th></th><th>Disciplinas</th><th>Elementos</th><th class="num">Penetração</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
-        (r.total > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando os ' + LIM + " piores de " + r.total + " (ordenados por penetração).</p>" : "") +
-        '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>';
+        (r.total > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando os ' + LIM + " piores de " + r.total + (refinou ? " (confirmados primeiro)" : " (ordenados por penetração)") + ".</p>" : "") +
+        (refinou
+          ? '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Envelope (AABB) + <b>confirmação por geometria real</b> (triângulo a triângulo na zona da interseção): ✔ confirmado · ✕ descartado (caixas se tocam, geometria não) · ~ não-verificável (sem malha própria/limite de triângulos — confira no 3D). Folga de 5 mm entre disciplinas.</p>'
+          : '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>');
     },
     // Quantitativos: roda o motor BIMQto sobre os elementos (com AABB) e lista o levantamento por disciplina.
     _bimQuantificar: function () {
@@ -1462,7 +1505,12 @@
       var c = this._bimClashes && this._bimClashes[i]; if (!c) return;
       if (window.BIM && BIM.focarClash) { try { BIM.focarClash([c.aId, c.bId]); } catch (e) {} }
       var box = document.getElementById("bim-info");
-      if (box) { box.style.display = ""; box.innerHTML = "<b>🧩 Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>Penetração " + (c.penetracao * 100).toFixed(1) + " cm · " + Util.esc(c.severidade) + "</span>"; }
+      if (box) {
+        var geoTxt = c.geo === "confirmado" ? " · <span style='color:#16a34a;font-weight:700'>✔ confirmado pela geometria</span>"
+          : c.geo === "descartado" ? " · <span style='color:#94a3b8;font-weight:700'>✕ descartado pela geometria (provável falso alarme)</span>"
+          : c.geo ? " · <span style='color:#f59e0b;font-weight:700'>~ não-verificável — confira no 3D</span>" : "";
+        box.style.display = ""; box.innerHTML = "<b>🧩 Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>Penetração " + (c.penetracao * 100).toFixed(1) + " cm · " + Util.esc(c.severidade) + geoTxt + "</span>";
+      }
     },
     _bimLimparClash: function () {
       if (window.BIM && BIM.limparClash) { try { BIM.limparClash(); } catch (e) {} }

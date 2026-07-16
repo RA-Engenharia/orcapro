@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.70",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.70/OrcaPRO-IA-update-v1.1.70.zip",
-  "notas": "Novidade: 👥 Reunião no modelo BIM com código de sala copiável em 1 clique (mande no WhatsApp — o colega cola e aparece do seu lado no 3D) · 🧲 Compatibilização MEP: Hidráulica, Elétrica e Mecânica agora são disciplinas separadas no modelo federado — tubo × eletroduto passa a ser detectado · 🧯 recuperação limpa quando o 3D fica pesado demais (sem painéis do modelo que já foi).",
+  "versao": "1.1.71",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.71/OrcaPRO-IA-update-v1.1.71.zip",
+  "notas": "Novidade: 🧩 Compatibilização CONFIRMADA por geometria real — cada conflito do envelope é testado triângulo a triângulo contra o modelo: ✔ confirmado (pega até tubo totalmente embutido na viga, via teste de contenção), ✕ descartado (falso alarme de caixa — no modelo de exemplo, 44 de 57 eram falsos) ou ~ não-verificável, sempre declarado. A lista de clash vira lista de AÇÃO.",
   "obrigatoria": false
 }

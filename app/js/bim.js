@@ -1698,6 +1698,121 @@ function focarClash(ids) {
 }
 function limparClash() { if (!S) return; (S._clashSel || []).forEach(function (m) { m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); }); S._clashSel = []; }
 
+// ============================================================
+// REFINO DO CLASH — geometria REAL (triângulo-a-triângulo, motor BIMTri)
+// sobre os pares que o envelope (AABB) apontou. Cada clash ganha
+// geo = 'confirmado' (tri de A atravessa tri de B) | 'descartado' (caixas se
+// tocam mas a geometria não) | 'nao-verificavel' (sem malha/cap estourado —
+// honesto: não-verificável NÃO vira "sem conflito"). Só triângulos dentro da
+// caixa de interseção (expandida) entram no teste — mantém o custo baixo.
+// ============================================================
+function refinarClash(clashes, opts) {
+  clashes = clashes || [];
+  if (!S || typeof window === 'undefined' || !window.BIMTri) return clashes;
+  opts = opts || {};
+  var MAX_TRI = opts.maxTriPorElemento || 40000; // por ELEMENTO (malha completa em mundo)
+  var FOLGA = opts.folga != null ? opts.folga : 0.01;
+  var MAX_TESTES = opts.maxTestes || 400000;     // pares tri×tri por clash
+  var MAX_CLASHES = opts.maxClashes || 800;      // refina os N piores (a lista já vem ordenada)
+  var DEADLINE_MS = opts.deadlineMs || 2500;     // orçamento GLOBAL: estourou -> resto vira não-verificável (UI explica)
+  try { S.modelRoot.updateMatrixWorld(true); } catch (_) {} // RAF pode estar congelado (aba em background)
+  var t0 = performance.now();
+  // índice uid/eid -> malhas (um elemento pode ter VÁRIAS malhas)
+  var porId = {};
+  S.modelRoot.children.forEach(function (g) {
+    (g.children || []).forEach(function (m) {
+      var ud = m.userData || {}; if (ud.expressID == null) return;
+      var uid = ud.mid + ':' + ud.expressID;
+      (porId[uid] = porId[uid] || []).push(m);
+      (porId[ud.expressID] = porId[ud.expressID] || []).push(m);
+    });
+  });
+  var _va = new THREE.Vector3(), _vb = new THREE.Vector3(), _vc = new THREE.Vector3();
+  // CACHE por elemento (achado do gate: o mesmo elemento grande aparece em dezenas de clashes —
+  // transformar a malha 1x por elemento, não 1x por clash): id -> { tris: Float32Array (mundo),
+  // aabb: [x0,y0,z0,x1,y1,z1] } | 'cap' | null (sem malha)
+  var cache = {};
+  function cacheDe(id) {
+    if (id in cache) return cache[id];
+    var malhas = porId[id];
+    if (!malhas || !malhas.length) return (cache[id] = null);
+    var total = 0, mi, m, g;
+    for (mi = 0; mi < malhas.length; mi++) {
+      g = malhas[mi].geometry;
+      if (g && g.attributes && g.attributes.position) total += Math.floor(((g.index ? g.index.array.length : g.attributes.position.count)) / 3);
+    }
+    if (total > MAX_TRI) return (cache[id] = 'cap');
+    var arr = new Float32Array(total * 9), w = 0;
+    var bx0 = Infinity, by0 = Infinity, bz0 = Infinity, bx1 = -Infinity, by1 = -Infinity, bz1 = -Infinity;
+    for (mi = 0; mi < malhas.length; mi++) {
+      m = malhas[mi]; g = m.geometry;
+      if (!g || !g.attributes || !g.attributes.position) continue;
+      var pos = g.attributes.position, idx = g.index ? g.index.array : null;
+      var nTri = Math.floor((idx ? idx.length : pos.count) / 3), mw = m.matrixWorld;
+      for (var t = 0; t < nTri; t++) {
+        var i0 = idx ? idx[t * 3] : t * 3, i1 = idx ? idx[t * 3 + 1] : t * 3 + 1, i2 = idx ? idx[t * 3 + 2] : t * 3 + 2;
+        _va.fromBufferAttribute(pos, i0).applyMatrix4(mw);
+        _vb.fromBufferAttribute(pos, i1).applyMatrix4(mw);
+        _vc.fromBufferAttribute(pos, i2).applyMatrix4(mw);
+        arr[w] = _va.x; arr[w + 1] = _va.y; arr[w + 2] = _va.z;
+        arr[w + 3] = _vb.x; arr[w + 4] = _vb.y; arr[w + 5] = _vb.z;
+        arr[w + 6] = _vc.x; arr[w + 7] = _vc.y; arr[w + 8] = _vc.z;
+        w += 9;
+        if (_va.x < bx0) bx0 = _va.x; if (_va.x > bx1) bx1 = _va.x; if (_va.y < by0) by0 = _va.y; if (_va.y > by1) by1 = _va.y; if (_va.z < bz0) bz0 = _va.z; if (_va.z > bz1) bz1 = _va.z;
+        if (_vb.x < bx0) bx0 = _vb.x; if (_vb.x > bx1) bx1 = _vb.x; if (_vb.y < by0) by0 = _vb.y; if (_vb.y > by1) by1 = _vb.y; if (_vb.z < bz0) bz0 = _vb.z; if (_vb.z > bz1) bz1 = _vb.z;
+        if (_vc.x < bx0) bx0 = _vc.x; if (_vc.x > bx1) bx1 = _vc.x; if (_vc.y < by0) by0 = _vc.y; if (_vc.y > by1) by1 = _vc.y; if (_vc.z < bz0) bz0 = _vc.z; if (_vc.z > bz1) bz1 = _vc.z;
+      }
+    }
+    return (cache[id] = { tris: arr.subarray(0, w), aabb: [bx0, by0, bz0, bx1, by1, bz1] });
+  }
+  // recorte da malha em cache pela zona da interseção (+folga)
+  function filtrar(ce, caixa) {
+    var x0 = caixa.min[0] - FOLGA, y0 = caixa.min[1] - FOLGA, z0 = caixa.min[2] - FOLGA;
+    var x1 = caixa.max[0] + FOLGA, y1 = caixa.max[1] + FOLGA, z1 = caixa.max[2] + FOLGA;
+    var tris = ce.tris, out = [];
+    for (var b = 0; b < tris.length; b += 9) {
+      var tx0 = Math.min(tris[b], tris[b + 3], tris[b + 6]), tx1 = Math.max(tris[b], tris[b + 3], tris[b + 6]);
+      if (tx1 < x0 || tx0 > x1) continue;
+      var ty0 = Math.min(tris[b + 1], tris[b + 4], tris[b + 7]), ty1 = Math.max(tris[b + 1], tris[b + 4], tris[b + 7]);
+      if (ty1 < y0 || ty0 > y1) continue;
+      var tz0 = Math.min(tris[b + 2], tris[b + 5], tris[b + 8]), tz1 = Math.max(tris[b + 2], tris[b + 5], tris[b + 8]);
+      if (tz1 < z0 || tz0 > z1) continue;
+      for (var q = 0; q < 9; q++) out.push(tris[b + q]);
+    }
+    return out;
+  }
+  function contido(bIn, bOut) { // AABB bIn dentro de bOut (com folga)
+    return bIn[0] >= bOut[0] - FOLGA && bIn[1] >= bOut[1] - FOLGA && bIn[2] >= bOut[2] - FOLGA &&
+           bIn[3] <= bOut[3] + FOLGA && bIn[4] <= bOut[4] + FOLGA && bIn[5] <= bOut[5] + FOLGA;
+  }
+  for (var i = 0; i < clashes.length; i++) {
+    var c = clashes[i]; if (!c) continue;
+    if (i >= MAX_CLASHES || performance.now() - t0 > DEADLINE_MS) { c.geo = 'nao-verificavel'; continue; }
+    if (!c.inter || !c.inter.min || !c.inter.max) { c.geo = 'nao-verificavel'; continue; }
+    var A = cacheDe(c.aId), B = cacheDe(c.bId);
+    if (A === null || A === 'cap' || B === null || B === 'cap') { c.geo = 'nao-verificavel'; continue; }
+    var ta = filtrar(A, c.inter), tb = filtrar(B, c.inter);
+    var conf = false, naoVer = false;
+    if (ta.length && tb.length) {
+      var r = window.BIMTri.algumIntersecta(ta, tb, MAX_TESTES);
+      if (r.estourou) naoVer = true; else conf = r.confirmado;
+    }
+    // CONTENÇÃO TOTAL (achado bloqueador do gate): tubo INTEIRO dentro da viga não tem
+    // cruzamento de superfície — teste ponto-dentro-do-sólido (paridade de raio, voto 3 eixos)
+    // com um vértice do elemento menor contra a malha COMPLETA do maior.
+    if (!conf && !naoVer) {
+      var menor = null, maior = null;
+      if (contido(A.aabb, B.aabb)) { menor = A; maior = B; }
+      else if (contido(B.aabb, A.aabb)) { menor = B; maior = A; }
+      if (menor && menor.tris.length >= 3) {
+        conf = window.BIMTri.dentroVoto([menor.tris[0], menor.tris[1], menor.tris[2]], maior.tris);
+      }
+    }
+    c.geo = naoVer ? 'nao-verificavel' : (conf ? 'confirmado' : 'descartado');
+  }
+  return clashes;
+}
+
 // ===================== REUNIÃO: presença multi-usuário no modelo =====================
 // Vários usuários andam no MESMO modelo com um avatar nomeado (compatibilização ao vivo).
 // Transporte simples e robusto: SSE (recebe) + POST (envia pose) num relay do VPS — sem
@@ -1821,6 +1936,7 @@ window.BIM = {
   mostrarTudo: mostrarTudo,
   focarClash: function (ids) { if (S) focarClash(ids); },
   limparClash: function () { if (S) limparClash(); },
+  refinarClash: function (clashes, opts) { return refinarClash(clashes, opts); }, // tri-a-tri: anota geo=confirmado/descartado/nao-verificavel
   // ---- ferramentas de coordenação ----
   medir: function (on) { if (S && S._setMedir) S._setMedir(on == null ? !(S.medir && S.medir.on) : !!on); },
   get ultimaMedida() { return (S && S.medir && S.medir.ultima) || null; }, // {valor(m), horizontal}

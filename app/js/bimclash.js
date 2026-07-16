@@ -114,7 +114,8 @@
           var sev = pen >= lGrave ? "grave" : (pen >= lMed ? "media" : "leve");
           clashes.push({ aId: o.id, bId: e.id, discA: o.disc, discB: e.disc, par: par,
             penetracao: pen, volume: ov.dim[0] * ov.dim[1] * ov.dim[2], severidade: sev,
-            centro: [(ov.min[0] + ov.max[0]) / 2, (ov.min[1] + ov.max[1]) / 2, (ov.min[2] + ov.max[2]) / 2] });
+            centro: [(ov.min[0] + ov.max[0]) / 2, (ov.min[1] + ov.max[1]) / 2, (ov.min[2] + ov.max[2]) / 2],
+            inter: { min: ov.min.slice(), max: ov.max.slice() } }); // caixa da interseção — o refino tri-a-tri filtra triângulos por ela
           porPar[par] = (porPar[par] || 0) + 1;
         }
         ativos.push(e);
