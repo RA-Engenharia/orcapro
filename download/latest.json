@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.68",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.68/OrcaPRO-IA-update-v1.1.68.zip",
-  "notas": "Novidade: 🧱 Parede-Cebola — sua parede vira as camadas reais de obra (alvenaria, chapisco, reboco, massa, pintura — 1 ou 2 faces), cada uma com código SINAPI de verdade e quantidade da geometria. Casou? entra no orçamento. Não casou? fica pendente pra você resolver — nunca inventa código. Cada camada vira item do orçamento, então o Agente de Execução já dimensiona equipe, prazo e custo delas.",
+  "versao": "1.1.69",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.69/OrcaPRO-IA-update-v1.1.69.zip",
+  "notas": "Novidade: 🧰 BIM v3 — kit de ferramentas de obra no viewer 3D: ▱ Área e perímetro (na planta mede a projeção horizontal; em 3D declara o plano médio — nunca inventa número), ∠ Ângulo entre 3 pontos, 🏢 Pavimentos (o sistema lê os andares do IFC: isole um pavimento ou gere a planta baixa dele em 1 clique), 👁 Visibilidade (isolar/ocultar elemento ou tipo) e 📸 Foto do modelo com carimbo honesto — tudo offline, dentro do orçamento.",
   "obrigatoria": false
 }
