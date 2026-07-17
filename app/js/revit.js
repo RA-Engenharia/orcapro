@@ -85,6 +85,73 @@
       };
     },
 
+    /* Avanço FÍSICO da obra p/ o plugin pintar o modelo (formato 1, v1.1.77+).
+       Fonte preferida: medições POR ITENS (pctAnterior+pctPeriodo por código,
+       ponderado por qtdContratada×precoUnit na etapa). Fallback: Last Planner
+       (tarefas por etapa: % feitas). Sem dado -> null (plugin instrui).
+       Puro/testável: recebe as listas cruas, não toca em Store. */
+    montarAvanco: function (medicoes, lpTarefas) {
+      function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
+      function statusDe(pct) {
+        return pct >= 99.5 ? "concluida" : (pct > 0 ? "andamento" : "pendente");
+      }
+      // 1) medições por itens — acumulado mais alto por (etapa|código)
+      var porChave = {}, temMed = false;
+      (medicoes || []).forEach(function (m) {
+        ((m && m.itens) || []).forEach(function (it) {
+          if (!it || !it.codigo) return;
+          temMed = true;
+          var etapa = String(it.etapa || "").trim();
+          var ch = etapa + "|" + it.codigo;
+          var acum = Math.min(100, num(it.pctAnterior) + num(it.pctPeriodo));
+          var atual = porChave[ch];
+          if (!atual || acum > atual.pctAcum) {
+            porChave[ch] = { etapa: etapa, codigo: String(it.codigo),
+                             pctAcum: acum,
+                             peso: num(it.qtdContratada) * num(it.precoUnit) };
+          }
+        });
+      });
+      if (temMed) {
+        var porCodigo = [], etapas = {};
+        Object.keys(porChave).sort().forEach(function (ch) {
+          var x = porChave[ch];
+          porCodigo.push({ etapa: x.etapa, codigo: x.codigo, pctAcum: x.pctAcum });
+          var e = etapas[x.etapa] || (etapas[x.etapa] = { soma: 0, peso: 0, n: 0, media: 0 });
+          e.soma += x.pctAcum * x.peso; e.peso += x.peso;
+          e.media += x.pctAcum; e.n += 1;   // fallback: média simples se peso 0
+        });
+        var porEtapa = Object.keys(etapas).sort().map(function (nome) {
+          var e = etapas[nome];
+          var pct = e.peso > 0 ? (e.soma / e.peso) : (e.media / e.n);
+          pct = Math.round(pct * 10) / 10;
+          return { etapa: nome, pct: pct, status: statusDe(pct) };
+        });
+        return { fonte: "medicao", porEtapa: porEtapa, porCodigo: porCodigo };
+      }
+      // 2) Last Planner — % de tarefas feitas por etapa (título da tarefa)
+      var lp = {};
+      (lpTarefas || []).forEach(function (t) {
+        if (!t || !t.titulo) return;
+        var nome = String(t.titulo).trim();
+        if (!nome) return;
+        var g = lp[nome] || (lp[nome] = { feitas: 0, total: 0 });
+        g.total += 1;
+        if (t.status === "feito") g.feitas += 1;
+      });
+      var nomes = Object.keys(lp).sort();
+      if (!nomes.length) return null;
+      return {
+        fonte: "lastplanner",
+        porEtapa: nomes.map(function (nome) {
+          var g = lp[nome];
+          var pct = Math.round(g.feitas / g.total * 1000) / 10;
+          return { etapa: nome, pct: pct, status: statusDe(pct) };
+        }),
+        porCodigo: []
+      };
+    },
+
     // POST no servidor local; fallback: download do arquivo p/ salvar na mão.
     exportar: function (payload, cb) {
       cb = cb || function () {};

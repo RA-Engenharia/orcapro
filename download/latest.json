@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.76",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.76/OrcaPRO-IA-update-v1.1.76.zip",
-  "notas": "O Exportar p/ Revit agora leva também os itens do orçamento (código, quantidade e custo por etapa) — habilita o Reconciliar Orçado×Modelado e a Curva ABC do plugin RA BIM Tools dentro do Revit.",
+  "versao": "1.1.77",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.77/OrcaPRO-IA-update-v1.1.77.zip",
+  "notas": "O avanço físico da obra (medições por itens; Last Planner) agora viaja pro Revit junto com BDI, etapas, itens e cronograma — o plugin RA BIM Tools pinta o modelo com o executado real: verde concluído, âmbar em andamento, pendente em meio-tom.",
   "obrigatoria": false
 }

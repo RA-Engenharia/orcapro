@@ -1186,6 +1186,12 @@
       var sim = null;
       try { sim = (typeof Execucao !== "undefined") ? Execucao.simular(orc, {}) : null; } catch (e) { sim = null; }
       var payload = Revit.montarObraAtiva(orc, obra, sim);
+      // avanço físico (medições por itens; fallback Last Planner) — v1.1.77
+      try {
+        var medsObra = lista("medicoes").filter(function (m) { return m.obraId === obra.id; });
+        var lpObra = lista("lp_tarefas").filter(function (t) { return t.obraId === obra.id; });
+        payload.avanco = Revit.montarAvanco(medsObra, lpObra);
+      } catch (eAv) { payload.avanco = null; }
       Revit.exportar(payload, function (err, res) {
         if (err) { UI.toast("Não consegui exportar: " + (err.message || err), "erro"); return; }
         if (res && res.download) {
@@ -1193,7 +1199,8 @@
         } else {
           var nCrono = payload.cronograma.length;
           UI.toast("Exportado! O plugin no Revit já vê esta obra: BDI " + payload.bdi + "%, " +
-            payload.etapas.length + " etapas" + (nCrono ? ", cronograma de " + nCrono + " etapas" : "") + ".", "ok");
+            payload.etapas.length + " etapas" + (nCrono ? ", cronograma de " + nCrono + " etapas" : "") +
+            (payload.avanco ? ", avanço real (" + (payload.avanco.fonte === "medicao" ? "medições" : "Last Planner") + ")" : "") + ".", "ok");
         }
       });
     },
