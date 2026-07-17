@@ -47,7 +47,7 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel, S.p3dPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); }, 0);
@@ -80,6 +80,7 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">📐 Planta</button>' +
     '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">✂️ Corte</button>' +
     '<button class="btn sm" data-b="p3d" title="Reconstruir 3D a partir da planta baixa em DXF (assistido: o sistema propõe as paredes, você confirma)">🏗 2D→3D</button>' +
+    '<button class="btn sm" data-b="editar" title="Editor: criar paredes, lajes e pilares SINTÉTICOS, mover, apagar e anotar — salvo com a obra">✏️ Editar</button>' +
     '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">🏢 Pav.</button>' +
     '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">👁 Ver</button>' +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">📸 Foto</button>' +
@@ -150,7 +151,7 @@ function montar(host, opts) {
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); } };
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
   S._onMouseMove = function (e) { if (!fly.on || !document.pointerLockElement) return; fly.yaw -= e.movementX * 0.0022; fly.pitch -= e.movementY * 0.0022; fly.pitch = Math.max(-1.5, Math.min(1.5, fly.pitch)); };
   window.addEventListener('keydown', S._onKeyDown); window.addEventListener('keyup', S._onKeyUp); document.addEventListener('mousemove', S._onMouseMove);
@@ -228,6 +229,7 @@ function montar(host, opts) {
     else if (k === 'planta') setPlanta(!planta.on);
     else if (k === 'corte') setCorteL(!corteL.on);
     else if (k === 'p3d') toggleP3dPanel();
+    else if (k === 'editar') setEdit(!edit.on);
     else if (k === 'pav') togglePavPanel();
     else if (k === 'vis') toggleVisPanel();
     else if (k === 'foto') tirarFoto();
@@ -247,7 +249,7 @@ function montar(host, opts) {
   // entrar em corteL    —              sai     ·       cancela-se-via-planta  fica
   // medir/area/ang      exclusivos ENTRE SI    —       —              coexistem com planta/corte
   // aplicarEstado(4D)/mostrarTudo (externos)                          limpam o marcador de isolamento
-  function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); } // fecha o modal do resultado + cobre o estágio "config aberta"
+  function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); } // fecha o modal do resultado + cobre o estágio "config aberta"
   bar.querySelector('[data-b="file"]').addEventListener('change', function (e) {
     var fs2 = Array.prototype.slice.call(e.target.files || []); fs2.forEach(function (f) { abrirArquivo(f); }); e.target.value = '';
   });
@@ -363,7 +365,7 @@ function montar(host, opts) {
   function atualizarCursor() { canvasEl.style.cursor = (medir.on || area.on || ang.on) ? 'crosshair' : ''; }
   function setMedir(on) {
     medir.on = !!on;
-    if (on) { setMode(false); if (area.on) setArea(false); if (ang.on) setAng(false); } // pode coexistir com Planta/Corte; exclusivo entre medições
+    if (on) { setMode(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (edit && edit.on) setEdit(false); } // pode coexistir com Planta/Corte; exclusivo entre medições e editor
     else { medir.pts = []; tirarProv(); btnCotas(); esconderSnapMarca(); } // sai: descarta 1º ponto pendente
     var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? '#16a34a' : ''; bm.style.color = on ? '#fff' : ''; }
     atualizarCursor();
@@ -387,7 +389,7 @@ function montar(host, opts) {
     return _ultimosHits[0] || null;
   }
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
-  function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo; } // quem consome clique-sem-arraste
+  function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo || (S.edit && S.edit.on && !!S.edit.sub); } // quem consome clique-sem-arraste
   // GUARD ÚNICO anti-ponto-fantasma (gate v1.1.69): quando um clique FECHA uma medição/linha
   // (área, ângulo, trena, corte técnico), o pointerup IRMÃO do duplo-clique chegaria <400ms
   // depois NO MESMO LUGAR e plantaria o 1º ponto da próxima medição — silenciosamente errada.
@@ -408,6 +410,7 @@ function montar(host, opts) {
     }
     _upAtual = { x: e.clientX, y: e.clientY };
     var hit = raycastEm(e.clientX, e.clientY);
+    if (S.edit && S.edit.on && S.edit.sub) { editClique(e, hit); return; } // editor: aceita hit OU plano do chão
     if (!hit) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + ' Clique em cima de uma superfície do modelo.'); return; }
     var sn = aplicarSnap(hit, raioToque(e)); mostrarSnapMarca(sn, e.clientX, e.clientY);
     if (ctec.ativo) { ctecClique(sn.p.clone()); return; } // linha do corte técnico tem prioridade
@@ -499,7 +502,7 @@ function montar(host, opts) {
   }
   function setArea(on) {
     area.on = !!on;
-    if (on) { setMode(false); if (medir.on) setMedir(false); if (ang.on) setAng(false); } // coexiste com Planta/Corte; exclusivo entre medições
+    if (on) { setMode(false); if (medir.on) setMedir(false); if (ang.on) setAng(false); if (edit && edit.on) setEdit(false); } // coexiste com Planta/Corte; exclusivo entre medições e editor
     else { limparTmp(area.tmp); area.pts = []; esconderSnapMarca(); btnCotas(); }
     var b = bar.querySelector('[data-b="area"]'); if (b) { b.style.background = on ? '#16a34a' : ''; b.style.color = on ? '#fff' : ''; }
     atualizarCursor();
@@ -549,7 +552,7 @@ function montar(host, opts) {
   }
   function setAng(on) {
     ang.on = !!on;
-    if (on) { setMode(false); if (medir.on) setMedir(false); if (area.on) setArea(false); }
+    if (on) { setMode(false); if (medir.on) setMedir(false); if (area.on) setArea(false); if (edit && edit.on) setEdit(false); }
     else { limparTmp(ang.tmp); ang.pts = []; esconderSnapMarca(); btnCotas(); }
     var b = bar.querySelector('[data-b="angulo"]'); if (b) { b.style.background = on ? '#16a34a' : ''; b.style.color = on ? '#fff' : ''; }
     atualizarCursor();
@@ -918,6 +921,7 @@ function montar(host, opts) {
   function ctecLimparDesenho() { ctec.objs.forEach(limparMarca); ctec.objs = []; ctec.pts = []; }
   function ctecIniciar() {
     if (!planta.on) { setPlanta(true); if (!planta.on) return; } // linha se risca NA planta
+    if (edit && edit.on) setEdit(false); // corte técnico e editor disputariam o mesmo clique
     ctecLimparDesenho(); ctec.ativo = true;
     S._hint('📝 Clique o 1º ponto da linha de corte (A) sobre a planta.');
   }
@@ -1228,7 +1232,7 @@ function montar(host, opts) {
   S._pavRender = pavRender;
   function restaurarVisibilidade() {
     pav.isolado = null; pav.manual = false;
-    todasMalhas(function (m) { m.visible = !ehFuturo4d(m); }); // restaurar NÃO ressuscita futuros do 4D
+    todasMalhas(function (m) { m.visible = !ehFuturo4d(m) && !ehRemovidoEd(m); }); // restaurar NÃO ressuscita futuros do 4D nem removidos da edição
     pavRender();
   }
   S._restaurarVis = restaurarVisibilidade;
@@ -1236,7 +1240,7 @@ function montar(host, opts) {
     var lst = pavLista(), alvo = null;
     for (var i = 0; i < lst.length; i++) if (lst[i].nome === nome) { alvo = lst[i]; break; }
     if (!alvo) return false;
-    todasMalhas(function (m) { m.visible = !!alvo.uids[m.userData.mid + ':' + m.userData.expressID] && !ehFuturo4d(m); });
+    todasMalhas(function (m) { m.visible = !!alvo.uids[m.userData.mid + ':' + m.userData.expressID] && !ehFuturo4d(m) && !ehRemovidoEd(m); });
     pav.isolado = alvo.nome; pav.manual = false; pavRender();
     if (visiveisEfetivos() === 0) S._hint('🏢 "' + alvo.nome + '" isolado, mas nada visível — o pavimento pertence a um modelo desligado (religue no painel Modelos) ou não tem geometria/está no futuro do 4D. ↺ Todos restaura.');
     else S._hint('🏢 Pavimento "' + alvo.nome + '" isolado. ↺ Todos (painel 🏢) restaura.');
@@ -1295,7 +1299,7 @@ function montar(host, opts) {
   function selInfo() { return (S.selected && S.selected.userData && S.selected.userData.expressID != null) ? { mid: S.selected.userData.mid, eid: S.selected.userData.expressID, tipo: S.selected.userData.tipo } : null; }
   function isolarSelecao() {
     var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento do modelo primeiro.'); return; }
-    todasMalhas(function (m) { m.visible = (m.userData.mid === si.mid && m.userData.expressID === si.eid) && !ehFuturo4d(m); });
+    todasMalhas(function (m) { m.visible = (m.userData.mid === si.mid && m.userData.expressID === si.eid) && !ehFuturo4d(m) && !ehRemovidoEd(m); });
     pav.isolado = null; pav.manual = true; pavRender(); // isolamento manual substitui o de pavimento (e é restaurável)
     if (visiveisEfetivos() === 0) S._hint('🎯 Isolado, mas nada visível — o modelo desse elemento está desligado no painel Modelos. ↺ Restaurar tudo volta o modelo.');
     else S._hint('🎯 Elemento isolado. ↺ Restaurar tudo (painel 👁) volta o modelo.');
@@ -1312,7 +1316,7 @@ function montar(host, opts) {
   S._ocultarSelecao = ocultarSelecao;
   function isolarTipo() {
     var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento do modelo primeiro.'); return; }
-    todasMalhas(function (m) { m.visible = (m.userData.tipo === si.tipo) && !ehFuturo4d(m); });
+    todasMalhas(function (m) { m.visible = (m.userData.tipo === si.tipo) && !ehFuturo4d(m) && !ehRemovidoEd(m); });
     pav.isolado = null; pav.manual = true; pavRender();
     if (visiveisEfetivos() === 0) S._hint('🧩 Só "' + rotuloDisciplina(si.tipo) + '", mas nada visível — o modelo está desligado no painel Modelos. ↺ Restaurar tudo volta.');
     else S._hint('🧩 Mostrando só "' + rotuloDisciplina(si.tipo) + '". ↺ Restaurar tudo volta o modelo.');
@@ -1333,6 +1337,8 @@ function montar(host, opts) {
   }
   // um painel flutuante por vez (snap/pav/vis disputam os cantos da tela)
   function fecharPaineis(exceto) {
+    // abrir um painel flutuante fecha o editor (senão o painel nasce ATRÁS dele, invisível)
+    if (exceto && edit && edit.on && typeof setEdit === 'function') setEdit(false);
     [snapPanel, pavPanel, visPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
     pintarSnapPanel();
     var bp4 = bar.querySelector('[data-b="pav"]'); if (bp4 && pavPanel.style.display !== 'flex') bp4.style.outline = '';
@@ -1439,11 +1445,315 @@ function montar(host, opts) {
     enquadrar();
     S.elementos = []; S.modelos.forEach(function (mo) { S.elementos = S.elementos.concat(mo.elementos); });
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
+    if (S._editReaplicarRem) S._editReaplicarRem(); // removidos da edição valem pro sintético recém-chegado
     notifyModelos();
     if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
     return mid;
   }
   S._carregarSintetico = carregarSintetico;
+
+  // ============================================================
+  // ✏️ EDITOR — cria/edita volumetria SINTÉTICA no viewer (motor puro:
+  // js/bimedit.js; ops serializáveis, undo por REPLAY determinístico).
+  // Honestidade RA: o que nasce aqui é "sintético (criado no OrçaPRO)"
+  // com QTO exato das peças; elemento de IFC importado NUNCA é alterado —
+  // "apagar" IFC apenas OCULTA marcado como removido na edição.
+  // ============================================================
+  var edit = { on: false, sub: null, p1: null, prov: null, ops: [], seq: 0,
+               moverId: null, moverMesh: null, esp: 0.15, alt: 2.8, secao: 0.2,
+               base: 0, modelo: null, sprites: [], removidosAntes: [] };
+  S.edit = edit;
+  var editPanel = document.createElement('div');
+  editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:10px 12px;color:#dbe8f5;font-size:12px;width:280px;max-width:94%';
+  editPanel.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>✏️ Editor <span style="color:#9fb2c8;font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">✕</button></div>' +
+    '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+    '<button class="btn sm" data-ed="parede">🧱 Parede</button>' +
+    '<button class="btn sm" data-ed="laje">⬜ Laje</button>' +
+    '<button class="btn sm" data-ed="pilar">🏛 Pilar</button>' +
+    '<button class="btn sm" data-ed="mover">↔️ Mover</button>' +
+    '<button class="btn sm" data-ed="apagar">🗑 Apagar</button>' +
+    '<button class="btn sm" data-ed="anotar">📍 Anotar</button></div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+    '<label style="display:flex;gap:4px;align-items:center">Esp. <input data-ed="esp" class="inp" type="number" value="0.15" step="0.01" min="0.05" max="0.6" style="width:56px"> m</label>' +
+    '<label style="display:flex;gap:4px;align-items:center">Alt. <input data-ed="alt" class="inp" type="number" value="2.80" step="0.1" min="0.3" max="8" style="width:56px"> m</label>' +
+    '<label style="display:flex;gap:4px;align-items:center">Pilar <input data-ed="secao" class="inp" type="number" value="0.20" step="0.05" min="0.1" max="1" style="width:56px"> m</label></div>' +
+    '<input data-ed="txt" class="inp" placeholder="Texto da anotação (p/ 📍 Anotar)" maxlength="200" style="width:100%">' +
+    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">↩️ Desfazer</button><span data-ed="st" style="color:#9fb2c8;font-size:11.5px"></span></div>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
+  host.appendChild(editPanel);
+  S.editPanel = editPanel; // re-home re-parenteia via S.* — fora da lista o painel fica órfão
+  var editMats = null;
+  function editMat(tipo) {
+    if (!editMats) {
+      editMats = {
+        parede: new THREE.MeshStandardMaterial({ color: 0xd8cfc0, metalness: .05, roughness: .85, side: THREE.DoubleSide }),
+        laje: new THREE.MeshStandardMaterial({ color: 0x9aa7b4, metalness: .05, roughness: .9, side: THREE.DoubleSide }),
+        pilar: new THREE.MeshStandardMaterial({ color: 0x7fa7d4, metalness: .1, roughness: .8, side: THREE.DoubleSide }),
+        sel: new THREE.MeshStandardMaterial({ color: 0x22c55e, emissive: 0x114422, metalness: .1, roughness: .6, side: THREE.DoubleSide })
+      };
+    }
+    return editMats[tipo] || editMats.parede;
+  }
+  function editBase() {
+    try {
+      // só modelos IMPORTADOS ancoram o plano de trabalho — incluir o próprio modelo
+      // do editor faria a laje (que cresce pra baixo) rebaixar a base a cada reentrada
+      var bb = new THREE.Box3(), tem = false;
+      S.modelos.forEach(function (mo) { if (mo.mid === 'edit' || !mo.grupo) return; bb.expandByObject(mo.grupo); tem = true; });
+      return (!tem || bb.isEmpty()) ? 0 : bb.min.y;
+    } catch (_) { return 0; }
+  }
+  // ponto no PLANO DE TRABALHO (y = base) quando o raio não acha malha —
+  // permite desenhar no vazio (terreno limpo) e ao lado do modelo
+  function editPontoPlano(clientX, clientY) {
+    var rc = canvasEl.getBoundingClientRect();
+    mouse.x = ((clientX - rc.left) / rc.width) * 2 - 1; mouse.y = -((clientY - rc.top) / rc.height) * 2 + 1;
+    ray.setFromCamera(mouse, camera);
+    var alvo = new THREE.Vector3();
+    var plano = new THREE.Plane(new THREE.Vector3(0, 1, 0), -edit.base); // y = base
+    return ray.ray.intersectPlane(plano, alvo) ? alvo : null;
+  }
+  function editTirarProv() {
+    if (edit.prov) { limparMarca(edit.prov); edit.prov = null; }
+    edit.p1 = null;
+  }
+  function editSt() {
+    var el = editPanel.querySelector('[data-ed="st"]');
+    if (el) el.textContent = edit.ops.length + ' operação(ões) · ' + ((edit.modelo && edit.modelo.nEl) || 0) + ' elemento(s)';
+    editPanel.querySelectorAll('[data-ed]').forEach(function (b) {
+      var k = b.getAttribute('data-ed');
+      if (['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].indexOf(k) >= 0) {
+        b.style.background = (edit.sub === k) ? '#16a34a' : ''; b.style.color = (edit.sub === k) ? '#fff' : '';
+      }
+    });
+  }
+  function editSoltarSel() {
+    if (edit.moverMesh && edit.moverMesh.userData.matOrig) edit.moverMesh.material = edit.moverMesh.userData.matOrig;
+    edit.moverMesh = null; edit.moverId = null;
+  }
+  // reconstrói o modelo sintético 'edit' a partir do REPLAY das ops (fonte
+  // única de verdade = motor puro; nada de estado paralelo no viewer)
+  // uid gravado numa op pode ser de OUTRA sessão (o mid muda com a ordem de abertura dos
+  // arquivos) — resolve pela identidade estável arquivo+expressID quando o uid direto não existe
+  function editUidRemovido(info) {
+    if (S.meshPorUid[info.uid]) return info.uid;
+    if (info.arq != null && info.eid != null) {
+      var mo2 = S.modelos.filter(function (x) { return x.mid !== 'edit' && x.nome === info.arq; })[0];
+      if (mo2) return mo2.mid + ':' + info.eid;
+    }
+    return info.uid;
+  }
+  function editRebuild() {
+    // restaura visibilidade dos IFC ocultados na rodada anterior (diff limpo) — TODAS as
+    // malhas do elemento (multi-material tem várias), compondo com o 4D
+    if (edit.removidosAntes.length) {
+      var ra = {}; edit.removidosAntes.forEach(function (u) { ra[u] = 1; });
+      todasMalhas(function (m) { if (ra[m.userData.mid + ':' + m.userData.expressID]) m.visible = !ehFuturo4d(m); });
+    }
+    editSoltarSel();
+    if (edit.modelo) {
+      modelRoot.remove(edit.modelo.grupo);
+      edit.modelo.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
+      edit.modelo.grupo.children.slice().forEach(function (m) { delete S.meshPorUid['edit:' + m.userData.expressID]; });
+      var ix = S.modelos.indexOf(edit.modelo); if (ix >= 0) S.modelos.splice(ix, 1);
+      edit.modelo = null;
+    }
+    edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.material.map) sp.material.map.dispose(); if (sp.material) sp.material.dispose(); });
+    edit.sprites = [];
+    var st = BimEdit.aplicar(edit.ops);
+    if (st.caixas.length) {
+      var mo = { mid: 'edit', sintetico: true, editor: true, nome: 'Criados no OrçaPRO (' + st.caixas.length + ')', disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
+      mo.grupo.userData.mid = 'edit';
+      st.caixas.forEach(function (c) {
+        var g = new THREE.BoxGeometry(c.comprimento, c.altura, c.espessura);
+        var m = new THREE.Mesh(g, editMat(c.tipo));
+        m.position.set(c.cx, c.cy, c.cz); m.rotation.y = c.rotY;
+        m.userData.expressID = c.id; m.userData.tipo = c.ifc; m.userData.mid = 'edit'; m.userData.matOrig = editMat(c.tipo);
+        mo.grupo.add(m);
+        S.meshPorUid['edit:' + c.id] = m;
+        mo.nTri += 12; mo.tipos[c.ifc] = (mo.tipos[c.ifc] || 0) + 1;
+        mo.qto[c.id] = { comprimento: c.tipo === 'pilar' ? (c.comprimentoPilar || c.altura) : c.comprimento, area: c.area, volume: c.volume, contagem: 1 };
+        mo.elementos.push({ id: c.id, uid: 'edit:' + c.id, mid: 'edit', arquivo: mo.nome, tipo: c.ifc, nome: (c.tipo === 'parede' ? 'Parede' : c.tipo === 'laje' ? 'Laje' : 'Pilar') + ' (sintética ' + c.id + ')', etapa: null, codOrc: null, qto: mo.qto[c.id], disciplina: 'arquitetura' });
+        mo.nEl++;
+      });
+      modelRoot.add(mo.grupo);
+      try {
+        modelRoot.updateMatrixWorld(true);
+        mo.grupo.children.forEach(function (m) {
+          var bb = new THREE.Box3().setFromObject(m);
+          var elx = mo.elementos.filter(function (e2) { return e2.id === m.userData.expressID; })[0];
+          if (elx && !bb.isEmpty()) elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] };
+        });
+      } catch (_) {}
+      S.modelos.push(mo);
+      edit.modelo = mo;
+    }
+    st.anotacoes.forEach(function (a) {
+      var sp = labelSprite('📍 ' + a.texto);
+      sp.position.set(a.x, a.y, a.z); sp.userData._anotId = a.id;
+      scene.add(sp); rescaleObj(sp); edit.sprites.push(sp);
+    });
+    // oculta os removidos (uid resolvido p/ a sessão atual; TODAS as malhas do elemento) e
+    // publica S._remEd — todo escritor de visibilidade (4D/isolar/restaurar/focar) compõe com ele
+    S._remEd = {};
+    (st.removidosIfcInfo || []).forEach(function (info) { S._remEd[editUidRemovido(info)] = 1; });
+    if (st.removidosIfc.length) todasMalhas(function (m) { if (S._remEd[m.userData.mid + ':' + m.userData.expressID]) m.visible = false; });
+    edit.removidosAntes = Object.keys(S._remEd);
+    S.elementos = []; S.modelos.forEach(function (mo2) { S.elementos = S.elementos.concat(mo2.elementos); });
+    over.style.display = (S.modelos.length || st.anotacoes.length) ? 'none' : 'flex'; // sintético/anotação também tira o "arraste um IFC"
+    atualizarHud(); notifyModelos(); editSt();
+    if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
+    if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
+  }
+  S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
+  function editOp(o) { edit.ops.push(o); editRebuild(); }
+  function editHintSub() {
+    var h = { parede: '🧱 Clique o INÍCIO e o FIM da parede (no modelo ou no chão vazio).',
+              laje: '⬜ Clique 2 cantos OPOSTOS do retângulo da laje.',
+              pilar: '🏛 Clique onde o pilar nasce.',
+              mover: '↔️ Clique num elemento CRIADO AQUI e depois no novo lugar (IFC não se move — honestidade).',
+              apagar: '🗑 Clique no elemento: criado aqui = removido; do IFC = ocultado como "removido na edição".',
+              anotar: '📍 Escreva o texto no campo e clique no ponto do modelo.' };
+    S._hint(edit.sub ? h[edit.sub] : '✏️ Editor: escolha uma ferramenta no painel.');
+  }
+  function editClique(e, hit) {
+    var sn = hit ? aplicarSnap(hit, raioToque(e)) : null;
+    var p = sn ? sn.p.clone() : editPontoPlano(e.clientX, e.clientY);
+    if (sn) mostrarSnapMarca(sn, e.clientX, e.clientY);
+    var sub = edit.sub;
+    if (sub === 'apagar') {
+      if (!hit) { S._hint('🗑 Clique em cima de um elemento.'); return; }
+      var mA = _ultimosHits[0].object, midA = mA.userData.mid, idA = mA.userData.expressID;
+      if (midA === 'edit') { editOp({ op: 'apagar', id: idA }); S._hint('🗑 Removido (Desfazer volta).'); }
+      else {
+        var moRem = S.modelos.filter(function (x) { return x.mid === midA; })[0];
+        // arq+eid = identidade que sobrevive a F5/ordem de abertura (o mid é da sessão)
+        editOp({ op: 'apagarIfc', uid: midA + ':' + idA, arq: moRem ? moRem.nome : null, eid: idA });
+        S._hint('🗑 Elemento do modelo OCULTADO como removido na edição — o arquivo original não muda.');
+      }
+      marcarFechamento(); return;
+    }
+    if (sub === 'mover') {
+      if (!edit.moverId) {
+        if (!hit) { S._hint('↔️ Clique num elemento criado no editor.'); return; }
+        var mM = _ultimosHits[0].object;
+        if (mM.userData.mid !== 'edit') { S._hint('↔️ Só elementos CRIADOS AQUI se movem (IFC importado não é alterado).'); return; }
+        edit.moverId = mM.userData.expressID; edit.moverMesh = mM; mM.material = editMat('sel');
+        S._hint('↔️ Agora clique no NOVO lugar (o centro vai pra lá).'); return;
+      }
+      if (!p) { S._hint('↔️ Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
+      editOp({ op: 'mover', id: edit.moverId, cx: p.x, cz: p.z });
+      S._hint('↔️ Movido. Clique noutro elemento pra mover de novo, ou Esc.');
+      marcarFechamento(); return;
+    }
+    if (!p) { S._hint('✏️ Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
+    if (sub === 'pilar') {
+      var cP = BimEdit.pilar({ x: p.x, z: p.z }, edit.secao, edit.alt, edit.base);
+      if (cP) { editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cP }); S._hint('🏛 Pilar criado. Clique pra outro, ou Esc.'); }
+      marcarFechamento(); return;
+    }
+    if (sub === 'anotar') {
+      var txt = (editPanel.querySelector('[data-ed="txt"]').value || '').trim();
+      if (!txt) { S._hint('📍 Escreva o texto da anotação no painel primeiro.'); return; }
+      editOp({ op: 'anotar', id: 'a' + (++edit.seq), x: p.x, y: p.y, z: p.z, texto: txt });
+      S._hint('📍 Anotado! O pin fica salvo com a obra.');
+      marcarFechamento(); return;
+    }
+    if (sub === 'parede' || sub === 'laje') {
+      if (!edit.p1) {
+        edit.p1 = p.clone();
+        edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov);
+        S._hint(sub === 'parede' ? '🧱 Agora clique o FIM da parede.' : '⬜ Agora clique o canto OPOSTO.');
+        return;
+      }
+      var cx2 = sub === 'parede'
+        ? BimEdit.parede({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, edit.esp, edit.alt, edit.base)
+        : BimEdit.laje({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, Math.min(edit.esp, 0.4), edit.base + (sub === 'laje' ? 0 : 0));
+      editTirarProv();
+      if (!cx2) { S._hint('✏️ Pontos muito próximos — clique 2 pontos distintos.'); return; }
+      editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cx2 });
+      S._hint(sub === 'parede' ? '🧱 Parede criada (' + cx2.comprimento.toFixed(2).replace('.', ',') + ' m). Siga clicando, ou Esc.' : '⬜ Laje criada (' + cx2.area.toFixed(2).replace('.', ',') + ' m²).');
+      marcarFechamento(); return;
+    }
+  }
+  function setEditSub(sub) {
+    edit.sub = (edit.sub === sub) ? null : sub;
+    editTirarProv(); editSoltarSel(); editHintSub(); editSt();
+    canvasEl.style.cursor = edit.sub ? 'crosshair' : '';
+    // ferramenta ativa marcada no painel — sem isso o toggle fica invisível pro usuário
+    ['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].forEach(function (k) {
+      var b = editPanel.querySelector('[data-ed="' + k + '"]'); if (!b) return;
+      var on2 = edit.sub === k;
+      b.style.background = on2 ? '#16a34a' : ''; b.style.color = on2 ? '#fff' : '';
+    });
+  }
+  function setEdit(on) {
+    edit.on = !!on;
+    if (on) {
+      if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false);
+      if (ctec.ativo && S._ctecCancelar) S._ctecCancelar(true);
+      setMode(false); fecharPaineis(null);
+      edit.base = editBase();
+      editPanel.style.display = 'flex';
+      editHintSub(); editSt();
+    } else {
+      editTirarProv(); editSoltarSel();
+      edit.sub = null; editPanel.style.display = 'none';
+      canvasEl.style.cursor = ''; S._hint('');
+    }
+    var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? '#16a34a' : ''; be.style.color = on ? '#fff' : ''; }
+  }
+  S._setEdit = setEdit;
+  S._editOps = function () { return edit.ops.slice(); };
+  S._editAplicar = function (ops) {
+    if (!S || !S.alive) return; // viewer morto (ctx perdido): rebuild apagaria o aviso de recarregar
+    edit.ops = BimEdit.sanear(ops);
+    var mx = 0;
+    edit.ops.forEach(function (o) { var m2 = /^[ea](\d+)$/.exec(String(o.id || '')); if (m2) mx = Math.max(mx, parseInt(m2[1], 10)); });
+    edit.seq = mx;
+    // replay NÃO re-dispara onEdicao (gravaria de volta o que acabou de ser lido)
+    edit._replay = true;
+    try { editRebuild(); } finally { edit._replay = false; }
+    // replay externo (reentrar na obra / F5): enquadra o que voltou — no uso ao vivo
+    // a câmera NÃO pula (editRebuild não enquadra; o usuário está desenhando nela)
+    if (edit.ops.length) enquadrar();
+  };
+  // IFC chega DEPOIS do replay (pós-F5 só as ops persistem): re-resolve os removidos
+  // sobre o modelo recém-carregado — sem isto o "removido na edição" voltaria visível
+  S._editReaplicarRem = function () {
+    if (!edit.ops.length) return;
+    var st2 = BimEdit.aplicar(edit.ops);
+    if (!st2.removidosIfc.length) return;
+    S._remEd = {};
+    (st2.removidosIfcInfo || []).forEach(function (info) { S._remEd[editUidRemovido(info)] = 1; });
+    todasMalhas(function (m) { if (S._remEd[m.userData.mid + ':' + m.userData.expressID]) m.visible = false; });
+    edit.removidosAntes = Object.keys(S._remEd);
+  };
+  // 🗑 Limpar / remover o modelo "Criados no OrçaPRO": o editor zera JUNTO (persistido) —
+  // senão pins ficam órfãos na cena e a próxima op ressuscitaria tudo do replay
+  S._editReset = function () {
+    edit.ops = []; edit.seq = 0; edit.removidosAntes = []; edit.modelo = null; S._remEd = null;
+    edit.sprites.forEach(function (sp) { scene.remove(sp); if (sp.material && sp.material.map) sp.material.map.dispose(); if (sp.material) sp.material.dispose(); });
+    edit.sprites = [];
+    if (edit.on) setEdit(false);
+    if (opts.onEdicao) { try { opts.onEdicao([]); } catch (_) {} }
+  };
+  editPanel.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-ed]'); if (!b) return; var k = b.getAttribute('data-ed');
+    if (k === 'fechar') setEdit(false);
+    else if (k === 'undo') { if (edit.ops.length) { edit.ops.pop(); editRebuild(); S._hint('↩️ Desfeito.'); } else { S._hint('↩️ Nada pra desfazer.'); } }
+    else if (['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].indexOf(k) >= 0) setEditSub(k);
+  });
+  editPanel.addEventListener('change', function (e) {
+    var i = e.target.closest('input[data-ed]'); if (!i) return; var k = i.getAttribute('data-ed'), v = parseFloat(i.value);
+    // clamp nos limites do input — valor DIGITADO ignora min/max do HTML (parede de 50 m de espessura não passa)
+    var lim = { esp: [0.05, 0.6], alt: [0.3, 8], secao: [0.1, 1] }[k];
+    if (!lim || !(v > 0) || !isFinite(v)) return;
+    v = Math.min(lim[1], Math.max(lim[0], v));
+    i.value = String(v);
+    if (k === 'esp') edit.esp = v; else if (k === 'alt') edit.alt = v; else edit.secao = v;
+  });
 
   var p3d = { parse: null, det: null };
   var p3dPanel = document.createElement('div');
@@ -1795,6 +2105,7 @@ function montar(host, opts) {
     else if (S.planta && S.planta.on && S._replanejarCorte) S._replanejarCorte(); // sobrou modelo: corte re-ancorado
     if (S.corteL && S.corteL.on && S._aplicarCorteL) S._aplicarCorteL(); // re-ancora (ou sai, se o bbox esvaziou)
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender(); // isolamento (🏢 OU 👁) pode ter ficado sem alvo
+    if (mid === 'edit' && S._editReset) S._editReset(); // apagar "Criados no OrçaPRO" = zerar edições (senão replay ressuscita + pins órfãos)
     if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
     if (!S.modelos.length) over.style.display = 'flex';
   }
@@ -1804,7 +2115,8 @@ function montar(host, opts) {
     if (S._ctecCancelar) S._ctecCancelar();
     if (S._limparMedidas) S._limparMedidas();
     S.modelos.slice().forEach(function (mo) { removerModelo(mo.mid); });
-    S.carimbos = {}; S.qto = {}; S._fut4d = null;
+    if (S._editReset) S._editReset(); // 🗑 limpa TAMBÉM as edições (anotações/removidos sem modelo 'edit')
+    S.carimbos = {}; S.qto = {}; S._fut4d = null; S._remEd = null;
     pav.isolado = null; pav.manual = false; pavRender();
   }
   S._setTransparencia = setTransparencia; S._setVisivel = setVisivel; S._setDisciplina = setDisciplina;
@@ -1886,6 +2198,7 @@ function montar(host, opts) {
       S.elementos = []; S.modelos.forEach(function (mo) { S.elementos = S.elementos.concat(mo.elementos); });
       // isolamento antigo (🏢 OU 👁) ficaria incoerente (modelo novo nasce visível) -> restaura; senão só re-lista
       if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
+      if (S._editReaplicarRem) S._editReaplicarRem(); // "removidos na edição" persistidos valem pro IFC que acabou de chegar
       notifyModelos();
       if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
     } catch (err) {
@@ -1921,6 +2234,12 @@ function desmontarMorto() {
 // itera as MALHAS REAIS de todos os modelos (um elemento pode ter VÁRIAS malhas — uma por cor;
 // meshPorUid guarda só a última, então visibilidade via mapa deixava peças meio-escondidas)
 function cadaMalha(fn) { if (!S) return; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(fn); }); }
+// "removido na edição" (✏️ apagarIfc) compõe com TODO escritor de visibilidade — mesma família
+// do ehFuturo4d: sem isto, 4D/isolar/restaurar/focar ressuscitam o que o editor ocultou.
+function ehRemovidoEd(m) {
+  var r = S && S._remEd; if (!r) return false;
+  return !!r[m.userData.mid + ':' + m.userData.expressID];
+}
 // aplica o estado 4D: esconde futuros; construídos = material original; em andamento = âmbar
 function aplicarEstado(est) {
   if (!S) return;
@@ -1934,7 +2253,7 @@ function aplicarEstado(est) {
     var id = m.userData.expressID; if (id == null) return;
     var uid = m.userData.mid + ':' + id;
     var chave = (fut[uid] != null || and[uid] != null) ? uid : id;
-    if (fut[chave]) { m.visible = false; return; }
+    if (fut[chave] || ehRemovidoEd(m)) { m.visible = false; return; }
     m.visible = true;
     if (m === S.selected) return; // não mexe no selecionado
     m.material = and[chave] ? S.matAndamento : (S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material));
@@ -1944,7 +2263,7 @@ function mostrarTudo() {
   if (!S) return;
   if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
   S._fut4d = null; // sair do 4D: nada mais é "futuro"
-  cadaMalha(function (m) { m.visible = true; if (m !== S.selected) m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); });
+  cadaMalha(function (m) { m.visible = !ehRemovidoEd(m); if (m !== S.selected) m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); });
 }
 
 // Compatibilização: destaca (vermelho) os elementos de um clash e enquadra a câmera no par.
@@ -1959,12 +2278,14 @@ function focarClash(ids) {
   if (S.ang && S.ang.on && S._setAng) S._setAng(false);
   if (S._fecharCtecModal && S.ctecModal && S.ctecModal.style.display === 'flex') S._fecharCtecModal(); // modal do resultado tapa o viewer -> fecha antes de voar a câmera
   if (S._ctecCancelar) S._ctecCancelar();
+  if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); // editor armado + câmera voando = clique seguinte criaria parede sem querer
   if (S.p3dPanel && S.p3dPanel.style.display === 'flex') S.p3dPanel.style.display = 'none'; // modal 2D→3D também taparia o clash
   limparClash();
   var idset = {}; (ids || []).forEach(function (id) { idset[id] = 1; });
   var box = new THREE.Box3(), any = false;
   S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) {
     if (m.userData && (idset[m.userData.mid + ':' + m.userData.expressID] || idset[m.userData.expressID])) {
+      if (ehRemovidoEd(m)) return; // "removido na edição" não é destacável — segue oculto
       m.visible = true; m.material = S.clashMat; box.expandByObject(m); any = true; S._clashSel.push(m);
     }
   }); });
@@ -2239,6 +2560,15 @@ window.BIM = {
   foto: function () { return (S && S._tirarFoto) ? S._tirarFoto() : null; }, // dataURL do render (também baixa o PNG carimbado)
   // ---- 2D→3D (Fase C.1): paredes confirmadas viram modelo sintético no viewer ----
   carregarSintetico: function (caixas, nome) { return (S && S._carregarSintetico) ? S._carregarSintetico(caixas, nome) : null; },
+  editar: function (on) { if (S && S._setEdit) S._setEdit(on == null ? !(S.edit && S.edit.on) : !!on); },
+  editarOps: function () { return (S && S._editOps) ? S._editOps() : []; },
+  editarAplicar: function (ops) { if (S && S._editAplicar) S._editAplicar(ops); },
+  // nº de malhas efetivamente visíveis (modelo ligado + mesh visível) — E2E/diagnóstico
+  visiveis: function () {
+    var v = 0; if (!S) return 0;
+    S.modelRoot.children.forEach(function (g) { if (g.visible === false) return; (g.children || []).forEach(function (m) { if (m.visible) v++; }); });
+    return v;
+  },
   _p3dTexto: function (txt, nome) { if (S && S._p3dProcessar) S._p3dProcessar(txt, nome); }, // hook de teste: injeta DXF sem file input
   planta: function (on) { if (S && S._setPlanta) S._setPlanta(on == null ? !(S.planta && S.planta.on) : !!on); },
   corte: function (on) { if (S && S._setCorteL) S._setCorteL(on == null ? !(S.corteL && S.corteL.on) : !!on); },

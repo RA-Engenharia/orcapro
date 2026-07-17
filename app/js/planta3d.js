@@ -176,7 +176,11 @@
           id: i + 1,
           cx: (p.x1 + p.x2) / 2, cy: h / 2, cz: -(p.y1 + p.y2) / 2, // planta XY -> mundo XZ (Z = -Y pra manter o norte)
           comprimento: compr, altura: h, espessura: p.espessura,
-          rotY: Math.atan2(-(p.y2 - p.y1), p.x2 - p.x1), // ângulo no plano XZ
+          // three R_y(θ) leva (1,0,0) a (cosθ,0,−sinθ); com z=−y, a direção
+          // p1→p2 exige θ = atan2(−dz,dx) = atan2(dy,dx). O sinal antigo
+          // (−dy) espelhava paredes DIAGONAIS em Z (ortogonais não mudam) —
+          // provado por teste de endpoints no test-bimedit.js.
+          rotY: Math.atan2(p.y2 - p.y1, p.x2 - p.x1),
           area: +(compr * h).toFixed(4), // m² de UMA face (o que a Parede-Cebola consome)
           layer: p.layer || "0"
         });

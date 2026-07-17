@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.77",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.77/OrcaPRO-IA-update-v1.1.77.zip",
-  "notas": "O avanço físico da obra (medições por itens; Last Planner) agora viaja pro Revit junto com BDI, etapas, itens e cronograma — o plugin RA BIM Tools pinta o modelo com o executado real: verde concluído, âmbar em andamento, pendente em meio-tom.",
+  "versao": "1.1.78",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.78/OrcaPRO-IA-update-v1.1.78.zip",
+  "notas": "BIM Editor dentro do sistema: crie paredes, lajes e pilares direto no viewer 3D, mova, anote e desfaça — tudo salvo por obra. Apagar elemento do IFC só oculta (removido na edição); o arquivo original nunca muda.",
   "obrigatoria": false
 }

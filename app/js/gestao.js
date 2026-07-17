@@ -1175,7 +1175,26 @@
       html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
       return html;
     },
-    bimTrocaObra: function (obraId) { this._bimSel = obraId; if (this._bimElementos && this._bimElementos.length) this._bimReplanejar(); },
+    bimTrocaObra: function (obraId) {
+      this._bimSel = obraId;
+      // edições são POR OBRA: descarrega o save pendente NA OBRA ANTIGA (flush — descartar
+      // perderia a edição) e carrega as da obra nova (replay)
+      try {
+        this._bimEdFlush();
+        this._bimSemana = null; // slider 4D da obra anterior não vale pra nova
+        var edN = Store.obter(eid(), "bim_edicoes", obraId || "geral");
+        if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
+      } catch (eEd2) {}
+      if (this._bimElementos && this._bimElementos.length) this._bimReplanejar();
+    },
+    // grava JÁ o save pendente do editor BIM (agendado pelo debounce do onEdicao) —
+    // usado na troca de obra; sem pendência é no-op
+    _bimEdFlush: function () {
+      clearTimeout(this._bimEdSaveT);
+      var p = this._bimEdPend; this._bimEdPend = null;
+      if (!p) return;
+      try { Store.salvar(eid(), "bim_edicoes", p); } catch (eS) {}
+    },
     // Exporta a obra selecionada p/ o plugin do Revit (revit/obra-ativa.json):
     // BDI + etapas do orçamento vinculado + cronograma do Agente de Execução.
     bimExportarRevit: function () {
@@ -1324,7 +1343,10 @@
     },
     _bimRenderTimeline: function () {
       var p = this._bimPlano; if (!p) return;
-      var sl = document.getElementById("bim-slider"); if (sl) { sl.max = String(p.semanas); sl.value = String(p.semanas); }
+      // preserva a semana que o usuário estava inspecionando — replanejar (ex.: cada op do
+      // editor BIM dispara onLoaded→replan) não pode resetar o slider pro fim
+      var semAlvo = (this._bimSemana != null) ? Math.max(0, Math.min(this._bimSemana, p.semanas)) : p.semanas;
+      var sl = document.getElementById("bim-slider"); if (sl) { sl.max = String(p.semanas); sl.value = String(semAlvo); }
       var leg = document.getElementById("bim-legenda");
       if (leg) {
         var nEx = p.elementos.filter(function (e) { return e.exato; }).length, nTot = p.elementos.length;
@@ -1340,7 +1362,7 @@
       var bqx = document.getElementById("bim-qto"); if (bqx) bqx.style.display = "";
       var b6x = document.getElementById("bim-6d"); if (b6x) b6x.style.display = "";
       this._bimCurva = BIM4D.curva(p);
-      this._bimAplicarSemana(p.semanas);
+      this._bimAplicarSemana(semAlvo);
     },
     // Curva S: avanço físico (verde) × financeiro (azul) ao longo do tempo + marcador da semana atual.
     _bimCurvaSvg: function (cv, semAtual) {
@@ -1364,6 +1386,8 @@
     _bimAplicarSemana: function (sem) {
       var p = this._bimPlano; if (!p) return;
       sem = Math.max(0, Math.min(p.semanas, +sem || 0));
+      // _bimSemana NÃO é gravada aqui: só gesto do usuário (slider/play) pina a semana —
+      // gravar na chamada programática pinava o 1º render no fim e o plano crescido escondia elementos
       var est = BIM4D.estadoEm(p, sem);
       if (window.BIM && BIM.aplicarEstado) { try { BIM.aplicarEstado(est); } catch (e) {} }
       var av = document.getElementById("bim-avanco"); if (av) av.textContent = BIM4D.avancoEm(p, sem) + "%";
@@ -1528,6 +1552,10 @@
         '<button class="btn sm success" id="bim-qto-lancar">✅ Lançar no orçamento</button></div>' +
         '<div style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Disciplina / serviço</th><th class="num">Qtd</th><th>Un</th><th class="num">Elem.</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
         avisos +
+        (function () { // honestidade: peça criada no editor NÃO vem de BaseQuantities do IFC
+          var nEd = els.filter(function (e2) { return e2.mid === "edit" || /^edit:/.test(String(e2.id || "")); }).length;
+          return nEd ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">✏️ Inclui <b>' + nEd + ' elemento(s) criados no editor</b> (sintéticos, QTO exato das peças — não vem do IFC).</p>' : "";
+        })() +
         '<p class="muted" style="font-size:11px;margin:6px 0 0">📐 Levantamento automático — o custo entra zerado; case no SINAPI ou informe o preço no editor. <b>"estimado"</b> = medido pela caixa do elemento (revise).</p>';
     },
     _bimVerClash: function (i) {
@@ -1548,9 +1576,16 @@
     },
     _bimWire: function () {
       var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
-      // slider + play
+      // F5/fechar aba dentro da janela de 400ms do debounce não pode perder a edição
+      if (!this._bimEdUnload) {
+        this._bimEdUnload = true;
+        window.addEventListener("pagehide", function () { try { self._bimEdFlush(); } catch (e) {} });
+      }
+      // slider + play — a semana só é PINADA por gesto do usuário; arrastar até o fim
+      // desafixa (null = "fim da obra"), senão federar um 2º IFC (plano cresce) esconderia
+      // as semanas novas como futuro com o slider pinado no máximo antigo
       var sl = document.getElementById("bim-slider");
-      if (sl) sl.oninput = function () { self._bimAplicarSemana(+sl.value); };
+      if (sl) sl.oninput = function () { var v = +sl.value; self._bimSemana = (v >= +sl.max) ? null : v; self._bimAplicarSemana(v); };
       var play = document.getElementById("bim-play");
       if (play) play.onclick = function () {
         if (self._bimTimer) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
@@ -1558,7 +1593,7 @@
         self._bimTimer = setInterval(function () {
           var s = document.getElementById("bim-slider"); if (!s) { clearInterval(self._bimTimer); self._bimTimer = null; return; }
           var v = +s.value + 1; if (v > +s.max) { clearInterval(self._bimTimer); self._bimTimer = null; play.textContent = "▶ Play"; return; }
-          s.value = String(v); self._bimAplicarSemana(v);
+          s.value = String(v); self._bimSemana = (v >= +s.max) ? null : v; self._bimAplicarSemana(v);
         }, 700);
       };
       // compatibilização (clash): botão rodar + delegação dos cliques "ver"/"limpar"
@@ -1596,8 +1631,28 @@
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
               box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
+            },
+            // ✏️ Editor: cada mutação agenda o save das ops da obra ATUAL (capturada NA HORA
+            // da mutação — trocar de obra não pode gravar no registro errado); debounce leve
+            // com flush explícito (trocar de obra dentro dos 400ms não pode PERDER a edição)
+            onEdicao: function (ops) {
+              clearTimeout(self._bimEdSaveT);
+              self._bimEdPend = { id: self._bimSel || "geral", ops: ops };
+              self._bimEdSaveT = setTimeout(function () { self._bimEdFlush(); }, 400);
             }
           });
+          // edições salvas da obra atual voltam ao montar (replay determinístico).
+          // FLUSH antes de ler (re-render em <400ms leria ops velhas e REVERTERIA a última
+          // edição); replay pulado se o viewer re-homed JÁ tem as mesmas ops (senão a
+          // câmera pularia pro enquadramento a cada reentrada na aba)
+          try {
+            self._bimEdFlush();
+            var edSalva = Store.obter(eid(), "bim_edicoes", self._bimSel || "geral");
+            var opsSalvas = (edSalva && edSalva.ops) || [];
+            var opsVivas = BIM.editarOps ? BIM.editarOps() : [];
+            if (BIM.editarAplicar && (opsSalvas.length || opsVivas.length) &&
+                JSON.stringify(opsVivas) !== JSON.stringify(opsSalvas)) BIM.editarAplicar(opsSalvas);
+          } catch (eEd) {}
           // re-home: se o modelo já estava carregado (reentrou na aba / App.render), o onLoaded não
           // refira — re-popula o timeline 4D a partir do que o viewer já tem.
           try {
