@@ -1964,6 +1964,8 @@
         ov.innerHTML =
           '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📱 Abrir a RA/RV no aparelho</b><button class="btn sm" data-rv="fechar">✕</button></div>' +
+          '<button class="btn primary" data-rv="nuvem" style="width:100%;margin-bottom:10px">☁️ Compartilhar na nuvem — abre em QUALQUER celular</button>' +
+          '<div style="font-size:11px;color:#8fa3b8;text-align:center;margin-bottom:8px">— ou o QR abaixo, só pra aparelho na <b>mesma rede Wi-Fi</b> —</div>' +
           '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
           '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Endereço:</b> ' + Util.esc(url) + '</div>' +
           '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Este QR abre a tela de <b>RA/RV</b> — no <b>tablet/celular que já tem este modelo carregado</b> (mesmo aparelho, ou outro na mesma rede com o mesmo IFC aberto):' +
@@ -1984,6 +1986,7 @@
           if (k === "fechar") ov.remove();
           else if (k === "copiar") { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
           else if (k === "imprimir") self._imprimirCartaoRV(url, svg);
+          else if (k === "nuvem") { ov.remove(); self._compartilharNuvemRV(); }
         });
       }
       // ordena os IPs: rede doméstica real (192.168 / 10.x) na frente; virtuais (172.x de WSL/Hyper-V) atrás
@@ -2016,6 +2019,76 @@
           '<script>setTimeout(function(){window.print()},300)<\/script>');
         w.document.close();
       } catch (_) { UI.toast("Não deu pra abrir a impressão.", "erro"); }
+    },
+    // ☁️ Compartilhar na nuvem: sobe os IFC carregados pro VPS (gated por licença) e gera
+    // um QR pro app público /rvapp/#rv?t=<token> — QUALQUER celular, em qualquer lugar, abre.
+    // Honesto: o link expira em 72h e só quem tem ele acessa.
+    _compartilharNuvemRV: function () {
+      var self = this;
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? CONFIG.licencaServer : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!base) { UI.toast("Servidor de compartilhamento não configurado.", "erro"); return; }
+      if (!chave) { UI.toast("Compartilhar na nuvem é da versão ativada (🔑). No teste grátis, use o QR da rede local.", "erro"); return; }
+      var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
+      if (!modelos.length) { UI.toast("Carregue um modelo .IFC no visualizador antes de compartilhar.", "erro"); return; }
+      // overlay de progresso
+      var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
+      ov = document.createElement("div"); ov.id = "rv-qr-ov";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.86);display:flex;align-items:center;justify-content:center;padding:16px";
+      ov.innerHTML = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:420px;width:100%;padding:22px;color:#dbe8f5;text-align:center"><div style="font-size:30px">☁️</div><b data-rvp="txt" style="display:block;margin:10px 0">Enviando o modelo pra nuvem…</b><div class="muted" style="font-size:12px">Não feche esta janela.</div></div>';
+      document.body.appendChild(ov);
+      function setTxt(t) { var e = ov.querySelector('[data-rvp="txt"]'); if (e) e.textContent = t; }
+      var enviados = [];
+      function subir(i) {
+        if (i >= modelos.length) { criarToken(); return; }
+        setTxt("Enviando modelo " + (i + 1) + " de " + modelos.length + "…");
+        var m = modelos[i];
+        fetch(base + "/rv/up?nome=" + encodeURIComponent(m.nome) + "&disc=" + encodeURIComponent(m.disc), {
+          method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/octet-stream" }, body: m.bytes
+        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.j.id) throw new Error(res.j.erro || "falha no envio");
+            enviados.push({ id: res.j.id, nome: m.nome, disc: m.disc });
+            subir(i + 1);
+          }).catch(function (e) { if (ov.parentNode) ov.remove(); UI.toast("Não deu pra enviar: " + (e && e.message || e), "erro"); });
+      }
+      function criarToken() {
+        setTxt("Criando o link…");
+        fetch(base + "/rv/token", { method: "POST", headers: { "x-licenca": chave, "Content-Type": "application/json" }, body: JSON.stringify({ nome: (modelos[0] && modelos[0].nome) || "Projeto", arquivos: enviados }) })
+          .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+          .then(function (res) {
+            if (!res.ok || !res.j.token) throw new Error(res.j.erro || "falha ao criar o link");
+            if (ov.parentNode) ov.remove();
+            self._modalNuvemRV(base + "/rvapp/#rv?t=" + res.j.token, res.j.expira);
+          }).catch(function (e) { if (ov.parentNode) ov.remove(); UI.toast("Não deu pra criar o link: " + (e && e.message || e), "erro"); });
+      }
+      subir(0);
+    },
+    _modalNuvemRV: function (url, expira) {
+      var self = this;
+      var svg = (typeof QR !== "undefined") ? QR.svg(url, { tamanhoPx: 220, correcao: "M" }) : "";
+      var dias = expira ? Math.max(1, Math.round((expira - Date.now()) / 86400000)) : 3;
+      var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
+      ov = document.createElement("div"); ov.id = "rv-qr-ov";
+      ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
+      ov.innerHTML =
+        '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">☁️ RA/RV na nuvem — qualquer celular</b><button class="btn sm" data-rv="fechar">✕</button></div>' +
+        '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
+        '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Link:</b> ' + Util.esc(url) + '</div>' +
+        '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> (não precisa estar na mesma rede) — o modelo abre direto na RA/RV:' +
+        '<ul style="margin:6px 0;padding-left:18px"><li><b>Android</b>: RA no ambiente (fixe no chão e trave) + escolha a disciplina.</li><li><b>iPhone/iPad</b>: Caminhar no projeto.</li></ul></div>' +
+        '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:12px">⏳ O link vale <b>' + dias + ' dia(s)</b> e só quem tem ele acessa. Depois disso o modelo é apagado do servidor.</div>' +
+        '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">🖨 Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">📋 Copiar link</button></div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      ov.addEventListener("click", function (e) {
+        if (e.target === ov) { ov.remove(); return; }
+        var b = e.target.closest("[data-rv]"); if (!b) return; var k = b.getAttribute("data-rv");
+        if (k === "fechar") ov.remove();
+        else if (k === "copiar") { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast("Copie o link mostrado.", "info"); } }
+        else if (k === "imprimir") self._imprimirCartaoRV(url, svg);
+      });
     },
     // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
     // dimensões e quantidade principal (área/comprimento/unidade) do projeto inteiro

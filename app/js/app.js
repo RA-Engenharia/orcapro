@@ -22,6 +22,11 @@
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
 
+      // VISOR RA/RV NA NUVEM (#rv?t=<token>) — QUALQUER pessoa abre o link do QR e vê o modelo
+      // compartilhado, SEM login/gestão. Curto-circuito antes de todo o app.
+      var _rvt = ((location.hash || "") + (location.search || "")).match(/[?&]t=([a-f0-9]{12,40})/);
+      if (_rvt && /(^|[#&/])rv\b/i.test(location.hash || location.search || "")) { return this._abrirRVCloud(_rvt[1]); }
+
       // USO SOLO/LOCAL: entra direto (sem a barreira de login). O login segue acessível via "Sair"
       // p/ quem usa RBAC/multiempresa ou quer conta com e-mail. Só age quando não há RBAC configurado.
       if (typeof Auth.autoEntrar === "function") { try { Auth.autoEntrar(); } catch (eAe) {} }
@@ -100,6 +105,42 @@
     },
 
     // ---------- Modo demonstração (vitrine) ----------
+    // Visor RA/RV público (link da nuvem): monta só o viewer BIM em tela cheia, baixa o modelo
+    // compartilhado do VPS (mesmo domínio) e entra no imersivo Caminhar. Sem login/gestão.
+    _abrirRVCloud: function (token) {
+      document.title = "RA/RV — OrçaPRO";
+      document.body.innerHTML =
+        '<div id="rvfull" style="position:fixed;inset:0;background:#0b1a2b">' +
+        '<div id="bim-canvas" style="width:100%;height:100%;position:relative"></div>' +
+        '<div id="rv-load" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dbe8f5;font-family:Inter,system-ui,sans-serif;gap:10px;text-align:center;padding:20px">' +
+        '<div style="font-size:34px">☁️</div><div id="rv-load-txt" style="font-size:15px">Baixando o projeto…</div>' +
+        '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois, toque em 👣 Caminhar (ou 📱 RA no Android) no painel.</div></div></div>';
+      var origin = location.origin;
+      function txt(t) { var e = document.getElementById("rv-load-txt"); if (e) e.textContent = t; }
+      function erro(t) { var l = document.getElementById("rv-load"); if (l) { l.querySelector("#rv-load-txt").textContent = t; l.querySelector("div").textContent = "❌"; } }
+      var t0 = 0, espera = setInterval(function () {
+        t0++;
+        if (window.BIM && BIM.montar) {
+          clearInterval(espera);
+          try { BIM.montar(document.getElementById("bim-canvas"), {}); } catch (e) { erro("Falha ao iniciar o visualizador."); return; }
+          fetch(origin + "/rv/t/" + token).then(function (r) { return r.json(); }).then(function (man) {
+            if (!man.ok) throw new Error(man.erro || "link inválido");
+            var arqs = man.arquivos || [], i = 0;
+            (function prox() {
+              if (i >= arqs.length) {
+                var l = document.getElementById("rv-load"); if (l) l.remove();
+                setTimeout(function () { try { BIM.imersivo("caminhar"); } catch (e) {} }, 1000);
+                return;
+              }
+              var a = arqs[i]; txt("Baixando " + (a.nome || "modelo") + " (" + (i + 1) + "/" + arqs.length + ")…");
+              fetch(origin + "/rv/f/" + a.id).then(function (r) { if (!r.ok) throw new Error("modelo indisponível"); return r.arrayBuffer(); })
+                .then(function (ab) { try { BIM.abrirBytes(ab, a.nome, a.disc); } catch (e) {} i++; setTimeout(prox, 1800); })
+                .catch(function (e) { erro("Não deu pra baixar o modelo: " + (e && e.message || e)); });
+            })();
+          }).catch(function (e) { erro("Link expirado ou inválido. Peça um novo QR."); });
+        } else if (t0 > 80) { clearInterval(espera); erro("O visualizador não carregou. Recarregue a página."); }
+      }, 100);
+    },
     _iniciarDemo: function (qs) {
       var aba = (qs.match(/[?&]aba=([a-z]+)/) || [])[1] || "planilha";
       Auth._usuario = { empresaId: "demo", empresa: "Construtora Modelo", email: "demo@orcapro.app", plano: "PRO" };

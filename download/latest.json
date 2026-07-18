@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.84",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.84/OrcaPRO-IA-update-v1.1.84.zip",
-  "notas": "Realidade Mista e Virtual (RA/RV): ande DENTRO do modelo 3D em escala real (1:1) pelo celular — modo Caminhar (qualquer aparelho), VR imersivo e RA no ambiente (Android: fixe o projeto no chão e trave). Meça na escala real, ajuste o teto de visão, filtre por disciplina (ex.: Hidráulica, pra não furar em cima do cano) e gere um QR pra abrir a RA/RV no celular ou tablet.",
+  "versao": "1.1.85",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.85/OrcaPRO-IA-update-v1.1.85.zip",
+  "notas": "RA/RV na nuvem: com um clique, gere um QR que abre o seu modelo BIM na Realidade Mista/Virtual em QUALQUER celular ou tablet, de qualquer lugar (não precisa estar na mesma rede). O executor confere na obra por disciplina, o cliente entra no projeto. O link expira em 72h e só quem tem ele acessa.",
   "obrigatoria": false
 }

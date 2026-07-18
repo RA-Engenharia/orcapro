@@ -3289,7 +3289,7 @@ function montar(host, opts) {
   S._setTransparencia = setTransparencia; S._setVisivel = setVisivel; S._setDisciplina = setDisciplina;
   S._removerModelo = removerModelo; S._limparTudo = limparTudo;
 
-  async function carregarIFC(arrayBuffer, nome) {
+  async function carregarIFC(arrayBuffer, nome, disc) {
     // identidade + vida: um FileReader em voo de um viewer MORTO não pode nem apagar o overlay
     // nem despejar meshes/índices no viewer NOVO (S global pode já ser outra instância)
     if (S !== Sm || !S.alive) return;
@@ -3303,7 +3303,8 @@ function montar(host, opts) {
       var data = new Uint8Array(arrayBuffer);
       mid = S.api.OpenModel(data);
       S.modelID = mid; // compat: "modelo corrente" = último carregado
-      var modelo = { mid: mid, nome: nome || ('Modelo ' + (S.modelos.length + 1)), disciplina: '', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0 };
+      var modelo = { mid: mid, nome: nome || ('Modelo ' + (S.modelos.length + 1)), disciplina: disc || '', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0 };
+      modelo._bytes = data; // v1.1.85: guarda os bytes do IFC p/ o ☁️ Compartilhar na nuvem (RA/RV)
       modelo.grupo.userData.mid = mid;
       modelRoot.add(modelo.grupo);
       // carimbos do exportador pyRevit + BaseQuantities — merge nos mapas compartilhados (4D/5D)
@@ -3381,6 +3382,10 @@ function montar(host, opts) {
   function rotuloDisciplina(ifcName) { var u = String(ifcName).toUpperCase(); return TIPOS[u] || String(ifcName).replace(/^IFC/, ''); }
 
   function abrirArquivo(file) { var fr = new FileReader(); fr.onload = function () { enfileirar(function () { return carregarIFC(fr.result, file.name); }); }; fr.readAsArrayBuffer(file); }
+  // v1.1.85 — carrega IFC a partir de bytes (compartilhamento em nuvem: o celular baixa o modelo do VPS)
+  S._abrirBytes = function (ab, nome, disc) { enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
+  // modelos IFC atuais com bytes guardados (p/ subir pra nuvem) — sintéticos/editor ficam de fora
+  S._bytesModelos = function () { return S.modelos.filter(function (m) { return m._bytes && m._bytes.length; }).map(function (m) { return { nome: m.nome, disc: m.disciplina || '', bytes: m._bytes }; }); };
   function carregarExemplo() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc'); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">🗂️</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
   S._abrirArquivo = abrirArquivo; S._carregarExemplo = carregarExemplo;
 }
@@ -3711,6 +3716,8 @@ var Reuniao = {
 window.BIM = {
   montar: montar,
   abrirArquivo: function (f) { if (S && S._abrirArquivo) S._abrirArquivo(f); },
+  abrirBytes: function (ab, nome) { if (S && S._abrirBytes) S._abrirBytes(ab, nome); }, // v1.1.85 — RA/RV nuvem
+  bytesModelos: function () { return (S && S._bytesModelos) ? S._bytesModelos() : []; },
   carregarExemplo: function () { if (S && S._carregarExemplo) S._carregarExemplo(); },
   aplicarEstado: aplicarEstado,
   mostrarTudo: mostrarTudo,
