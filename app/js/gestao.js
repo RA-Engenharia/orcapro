@@ -1234,7 +1234,7 @@
     // Passo 2 (bimeapCasar): casa cada serviço com a base (candidatos + confiança; nunca inventa).
     // Gerar (bimeapGerar): cria o orçamento com memorial de cálculo rastreável por item.
     _eapChipFonte: function (f) {
-      var m = { ifc: ["medido no IFC", "#16a34a"], estimado: ["estimado (caixa)", "#d97706"], misto: ["misto", "#d97706"], contagem: ["contagem", "#0e7490"], derivado: ["derivado", "#7c3aed"], manual: ["manual", "#64748b"], "sem-medida": ["s/ medida", "#dc2626"] };
+      var m = { ifc: ["medido no IFC", "#16a34a"], estimado: ["estimado (caixa)", "#d97706"], misto: ["misto", "#d97706"], contagem: ["contagem", "#0e7490"], derivado: ["derivado", "#7c3aed"], parametrico: ["estimativa (taxa)", "#7c3aed"], manual: ["manual", "#64748b"], "sem-medida": ["s/ medida", "#dc2626"] };
       var x = m[f] || [f || "—", "#64748b"];
       return '<span class="g-pill" style="background:' + x[1] + '22;color:' + x[1] + ';font-size:10.5px">' + x[0] + "</span>";
     },
@@ -1245,6 +1245,10 @@
       o.fatorEmpolamento = UI.el("eap-empol") ? (Util.num(UI.el("eap-empol").value) || 1.3) : 1.3;
       o.incluirPreliminares = !!(UI.el("eap-prel") && UI.el("eap-prel").checked);
       o.incluirLimpeza = !!(UI.el("eap-limp") && UI.el("eap-limp").checked);
+      o.estimarEstrutura = !!(UI.el("eap-estrut") && UI.el("eap-estrut").checked);
+      // vazio = default do agente; 0 EXPLÍCITO = desligar a categoria (laje pré-moldada etc.)
+      var lerTaxa = function (id) { var e = UI.el(id); if (!e) return null; var v2 = String(e.value).trim(); return v2 === "" ? null : Util.num(v2); };
+      o.taxasAco = { fundacao: lerTaxa("eap-tx-fund"), pilar: lerTaxa("eap-tx-pilar"), viga: lerTaxa("eap-tx-viga"), laje: lerTaxa("eap-tx-laje") };
       return o;
     },
     bimeapAbrir: function (opts) {
@@ -1280,6 +1284,14 @@
         '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-prel"' + (op.incluirPreliminares ? " checked" : "") + ' style="width:auto"> Preliminares</label>' +
         '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-limp"' + (op.incluirLimpeza ? " checked" : "") + ' style="width:auto"> Limpeza final</label>' +
         '<button type="button" class="btn sm" id="eap-recalc">↻ Reaplicar</button></div>' +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;font-size:12.5px;margin:2px 0 6px">' +
+        '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-estrut"' + (op.estimarEstrutura ? " checked" : "") + ' style="width:auto"> <b>Estimar armadura + fôrma</b> <span class="muted">(paramétrico — sem projeto estrutural nada fica de fora)</span></label>' +
+        '<span class="muted">Aço kg/m³:</span>' +
+        '<label style="display:flex;gap:4px;align-items:center">Fund. <input id="eap-tx-fund" value="' + (op.taxasAco ? op.taxasAco.fundacao : 70) + '" style="width:48px" inputmode="numeric"></label>' +
+        '<label style="display:flex;gap:4px;align-items:center">Pilar <input id="eap-tx-pilar" value="' + (op.taxasAco ? op.taxasAco.pilar : 110) + '" style="width:48px" inputmode="numeric"></label>' +
+        '<label style="display:flex;gap:4px;align-items:center">Viga <input id="eap-tx-viga" value="' + (op.taxasAco ? op.taxasAco.viga : 100) + '" style="width:48px" inputmode="numeric"></label>' +
+        '<label style="display:flex;gap:4px;align-items:center">Laje <input id="eap-tx-laje" value="' + (op.taxasAco ? op.taxasAco.laje : 80) + '" style="width:48px" inputmode="numeric"></label>' +
+        '</div>' +
         '<div style="max-height:46vh;overflow:auto"><table class="tbl" style="font-size:12px"><thead><tr><th>Serviço</th><th class="num">Qtd</th><th>Un</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" + avisos;
       UI.modal("🧠 Agente EAP — o que o modelo diz que a obra precisa", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -1369,7 +1381,11 @@
               var q2 = Bimeap.quantidadeDoServico(l2.sv, unEsc);
               var inpQ = raiz.querySelector('[data-eap-qtd="' + i + '"]');
               if (q2 != null && inpQ) { inpQ.value = String(q2).replace(".", ","); l2.quantidade = q2; }
-              else if (q2 == null && inpQ) { inpQ.value = ""; l2.quantidade = null; UI.toast("Unidade " + unEsc + " não é derivável da geometria — informe a quantidade (o Gerar bloqueia até preencher).", "erro"); }
+              else if (q2 == null && inpQ) {
+                // serviço paramétrico (aço em kg): a quantidade É do agente — trocar de composição kg↔kg não apaga
+                if (l2.sv.parametrico && Bimeap.grandezaDaUnidade(l2.sv.unidade) == null && Bimeap.grandezaDaUnidade(unEsc) == null) { /* mantém a estimativa */ }
+                else { inpQ.value = ""; l2.quantidade = null; UI.toast("Unidade " + unEsc + " não é derivável da geometria — informe a quantidade (o Gerar bloqueia até preencher).", "erro"); }
+              }
             }
           }
           var pill2 = raiz.querySelector('[data-eap-conf="' + i + '"]');

@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.80",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.80/OrcaPRO-IA-update-v1.1.80.zip",
-  "notas": "🧠 Agente EAP: carregue o IFC do Revit (RA BIM Tools) e o agente monta a EAP completa da obra — da fundação à limpeza final, sem esquecer disciplina — com quantitativos do modelo, casamento SINAPI assistido, memorial de cálculo rastreável em cada item e cronograma ajustável. Reforma por fases do Revit: demolição com entulho, existente fora do orçamento.",
+  "versao": "1.1.81",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.81/OrcaPRO-IA-update-v1.1.81.zip",
+  "notas": "Agente EAP completo: sem projeto estrutural no IFC, o agente estima a armadura (taxas kg/m³ ajustáveis) e a fôrma (pela geometria de cada peça) — nada fica de fora, tudo declarado no memorial de cálculo rastreável.",
   "obrigatoria": false
 }

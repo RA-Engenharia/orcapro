@@ -68,12 +68,12 @@
    */
   var REGRAS = [
     // --- fundações ---
-    { id: "fundacao-bloco", tipos: ["IFCFOOTING"], disc: "fundacao", nome: "Concreto estrutural em fundações (sapatas/blocos)", medida: "volume", unidade: "m³", termos: ["concreto", "fundacao"] },
+    { id: "fundacao-bloco", tipos: ["IFCFOOTING"], disc: "fundacao", nome: "Concreto estrutural em fundações (sapatas/blocos)", medida: "volume", unidade: "m³", termos: ["concreto", "fundacao"], estrut: "fundacao" },
     { id: "fundacao-estaca", tipos: ["IFCPILE"], disc: "fundacao", nome: "Estaca de fundação", medida: "comprimento", unidade: "m", termos: ["estaca"] },
     // --- estrutura ---
-    { id: "estrutura-pilar", tipos: ["IFCCOLUMN"], disc: "estrutura", nome: "Concreto estrutural em pilares", medida: "volume", unidade: "m³", termos: ["concretagem", "pilar"] },
-    { id: "estrutura-viga", tipos: ["IFCBEAM"], disc: "estrutura", nome: "Concreto estrutural em vigas", medida: "volume", unidade: "m³", termos: ["concretagem", "viga"] },
-    { id: "estrutura-laje", tipos: ["IFCSLAB"], disc: "estrutura", nome: "Concreto em lajes / pisos estruturais", medida: "volume", unidade: "m³", termos: ["concretagem", "laje"] },
+    { id: "estrutura-pilar", tipos: ["IFCCOLUMN"], disc: "estrutura", nome: "Concreto estrutural em pilares", medida: "volume", unidade: "m³", termos: ["concretagem", "pilar"], estrut: "pilar" },
+    { id: "estrutura-viga", tipos: ["IFCBEAM"], disc: "estrutura", nome: "Concreto estrutural em vigas", medida: "volume", unidade: "m³", termos: ["concretagem", "viga"], estrut: "viga" },
+    { id: "estrutura-laje", tipos: ["IFCSLAB"], disc: "estrutura", nome: "Concreto em lajes / pisos estruturais", medida: "volume", unidade: "m³", termos: ["concretagem", "laje"], estrut: "laje" },
     { id: "estrutura-escada", tipos: ["IFCSTAIR"], disc: "estrutura", nome: "Escada (estrutura)", medida: "contagem", unidade: "un", termos: ["escada", "concreto"] },
     { id: "estrutura-metalica", tipos: ["IFCMEMBER", "IFCPLATE"], disc: "estrutura", nome: "Estrutura metálica (perfis/chapas)", medida: "comprimento", unidade: "m", termos: ["estrutura", "metalica"], aviso: "peso em kg não é derivável do IFC — confirme com o projeto estrutural" },
     { id: "estrutura-armadura", tipos: ["IFCREINFORCING"], disc: "estrutura", nome: "Armadura (barras modeladas)", medida: "comprimento", unidade: "m", termos: ["armadura", "aco"], aviso: "kg de aço exige bitola do projeto — o IFC só dá o comprimento" },
@@ -150,7 +150,35 @@
   ];
   var DEMOLICAO_GENERICA = { nome: "Remoções diversas (reforma)", medida: "contagem", unidade: "un", termos: ["remocao"] };
 
-  var DEFAULTS = { cebola: true, faces: 2, fatorEmpolamento: 1.3, incluirPreliminares: true, incluirLimpeza: true };
+  var DEFAULTS = { cebola: true, faces: 2, fatorEmpolamento: 1.3, incluirPreliminares: true, incluirLimpeza: true, estimarEstrutura: true };
+
+  /* Taxas PARAMÉTRICAS de aço (kg por m³ de concreto) — faixas usuais da prática de projeto
+   * estrutural brasileiro (fundação 60-90, pilar 90-130, viga 80-120, laje maciça 70-90).
+   * São ESTIMATIVA declarada e ajustável no assistente — o projeto estrutural, quando
+   * existir, substitui esses números. A fôrma NÃO usa taxa: sai da geometria de cada peça. */
+  var TAXAS_ACO = { fundacao: 70, pilar: 110, viga: 100, laje: 80 };
+  var ESTRUT_INFO = {
+    fundacao: { rot: "fundações", acoTermos: ["armacao", "sapata"], formaTermos: ["forma", "sapata"] },
+    pilar: { rot: "pilares", acoTermos: ["armacao", "pilar"], formaTermos: ["forma", "pilar"] },
+    viga: { rot: "vigas", acoTermos: ["armacao", "viga"], formaTermos: ["forma", "viga"] },
+    laje: { rot: "lajes", acoTermos: ["armacao", "laje"], formaTermos: ["forma", "laje"] }
+  };
+  // fôrma pela GEOMETRIA da caixa de cada peça, ORIENTADA pelo eixo vertical REAL do mundo do
+  // viewer (Y — o modelRoot já converteu IFC Z-up p/ Three Y-up). Ordenar por tamanho descartaria
+  // a orientação e erraria viga chata (+40%) e sapata alta (−25%).
+  // pilar: perímetro da seção (planta) × altura · viga: fundo + 2 laterais × vão ·
+  // laje: fundo (planta; a área MEDIDA do IFC tem prioridade no chamador) · fundação: laterais
+  function formaAabb(modo, aabb) {
+    if (!aabb || !aabb.min || !aabb.max) return 0;
+    var dx = Math.abs(aabb.max[0] - aabb.min[0]);
+    var dy = Math.abs(aabb.max[1] - aabb.min[1]); // VERTICAL (altura real da peça)
+    var dz = Math.abs(aabb.max[2] - aabb.min[2]);
+    if (modo === "pilar") return 2 * (dx + dz) * dy;
+    if (modo === "viga") { var vao = Math.max(dx, dz), b = Math.min(dx, dz); return (b + 2 * dy) * vao; }
+    if (modo === "laje") return dx * dz;
+    if (modo === "fundacao") return 2 * (dx + dz) * dy;
+    return 0;
+  }
 
   // ---------- helpers ----------
   function tipoBase(tipo) { return String(tipo || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); }
@@ -274,9 +302,10 @@
       var arqs = {}; (sv.elementos || []).forEach(function (e) { arqs[e.a] = (arqs[e.a] || 0) + 1; });
       var arqsTxt = Object.keys(arqs).map(function (a) { return a + " (" + arqs[a] + " elem.)"; }).join(", ");
       linhas.push("Gerado do modelo BIM — " + arqsTxt + ".");
-      // grandeza e fonte REALMENTE usadas na quantidade final (podem diferir da medida da regra)
+      // grandeza e fonte REALMENTE usadas na quantidade final (podem diferir da medida da regra);
+      // paramétrico (kg): o Σ é da grandeza-BASE (volume) — a unidade final não é geométrica
       var gF = this.grandezaDaUnidade(unidadeFinal || sv.unidade);
-      var rot = gF || sv.medida;
+      var rot = gF || sv.medidaBase || sv.medida;
       var f = this.fonteDaQuantidade(sv, unidadeFinal || sv.unidade);
       if (sv.derivadoDe) {
         linhas.push("Derivado de “" + sv.derivadoDe + "”: " + fmt(sv.quantidadeBase) + " m² × " + sv.fator + " face(s) = " + fmt(num(quantidadeFinal)) + " " + (unidadeFinal || sv.unidade) + " (receita padrão parede — ajuste se houver face externa com outro acabamento).");
@@ -291,7 +320,9 @@
       else if (f === "estimado") linhas.push("Fonte: ESTIMADO pela caixa envolvente (o IFC não trouxe BaseQuantities) — revisar antes de fechar preço.");
       else if (f === "misto") linhas.push("Fonte: " + Math.max(0, sv.nElementos - sv.nEstimados - sv.nSemMedida) + " medidos no IFC + " + sv.nEstimados + " estimados pela caixa envolvente — revisar os estimados.");
       else if (f === "contagem") linhas.push("Fonte: contagem de elementos do modelo.");
+      else if (f === "parametrico") linhas.push("Fonte: ESTIMATIVA do agente (taxa/geometria — detalhe abaixo), nunca medição.");
       else if (f === "sem-medida") linhas.push("Fonte: SEM medida derivável do modelo nesta unidade — quantidade informada manualmente.");
+      if (sv.memorialExtra) linhas.push(sv.memorialExtra);
       if (sv.nSemMedida > 0) linhas.push("Atenção: " + sv.nSemMedida + " elemento(s)/serviço(s) sem medida no IFC não somaram quantidade.");
       var ids = (sv.elementos || []).slice(0, 30).map(function (e) { return e.a + "#" + e.e; }).join(", ");
       if (sv.elementos && sv.elementos.length > 30) ids += " (+" + (sv.elementos.length - 30) + " elementos)";
@@ -306,6 +337,15 @@
       opts = opts || {};
       var o = {};
       for (var k in DEFAULTS) o[k] = (opts[k] != null) ? opts[k] : DEFAULTS[k];
+
+      // taxas de aço: merge por chave — null/ausente = default; 0 (ou negativo) EXPLÍCITO = desligar a
+      // categoria (laje pré-moldada etc.), nunca reverter em silêncio pro default
+      var taxasAco = {};
+      for (var kt in TAXAS_ACO) {
+        if (opts.taxasAco && opts.taxasAco[kt] != null) { var tv = num(opts.taxasAco[kt]); taxasAco[kt] = tv > 0 ? tv : 0; }
+        else taxasAco[kt] = TAXAS_ACO[kt];
+      }
+      o.taxasAco = taxasAco;
 
       var els = (elementos || []).filter(function (e) { return e && (e.tipo || e.nome); });
       var avisos = [];
@@ -338,6 +378,7 @@
             somas: { area: 0, volume: 0, comprimento: 0, contagem: 0 },
             somasIfc: { area: 0, volume: 0, comprimento: 0 }, // só o MEDIDO (BaseQuantities) — o entulho usa isto
             _gr: { area: { i: 0, e: 0, s: 0 }, volume: { i: 0, e: 0, s: 0 }, comprimento: { i: 0, e: 0, s: 0 } }, // origem de cada grandeza
+            estrut: base.estrut || null, somaForma: 0, _formaSem: 0, // fôrma geométrica (peça a peça, pela caixa)
             quantidade: 0, nElementos: 0, nEstimados: 0, nSemMedida: 0, _nIfc: 0, _nCont: 0,
             elementos: []
           };
@@ -364,6 +405,11 @@
           }
         });
         g.somas.contagem += 1;
+        if (g.estrut) { // fôrma: laje usa a área MEDIDA do IFC quando existe (IFC exato > caixa); resto, geometria da caixa
+          var qA = g.estrut === "laje" && el.qto && num(el.qto.area) > 0 ? num(el.qto.area) : 0;
+          if (qA > 0) g.somaForma += qA;
+          else { var fF = formaAabb(g.estrut, el.aabb); if (fF > 0) g.somaForma += fF; else g._formaSem++; }
+        }
         g.elementos.push({ a: el.arquivo || "modelo", e: expressIdDe(el), tipo: tipoBase(el.tipo), v: r2(m.v) });
       }
 
@@ -396,13 +442,15 @@
             disc0 = res0 ? res0.disc : "diversos"; // disciplina não-MEP: sem chute de hidráulica
           }
           porDisciplina[disc0] = (porDisciplina[disc0] || 0) + 1;
-          var chaveC = "carimbo|" + el.etapa + "|" + (el.codOrc || (r0 ? r0.id : t));
+          // estrutural: separa o grupo por TIPO mesmo com o mesmo carimbo (pilar+laje na mesma etapa
+          // NÃO podem dividir taxa de aço nem fórmula de fôrma — cada tipo tem a sua)
+          var chaveC = "carimbo|" + el.etapa + "|" + (el.codOrc || (r0 ? r0.id : t)) + (r0 && r0.estrut ? "|" + r0.id : "");
           var gc = grupo(chaveC, {
             regra: "carimbo-plugin", regraBase: r0 ? r0.id : null, disc: disc0,
             nome: el.codOrc ? ("Serviço carimbado " + el.codOrc + " — " + el.etapa) : ("Elementos da etapa “" + el.etapa + "”"),
             carimbo: { etapa: el.etapa, codOrc: el.codOrc || null },
             medida: r0 ? r0.medida : "contagem", unidade: r0 ? r0.unidade : "un",
-            termos: r0 ? r0.termos : null
+            termos: r0 ? r0.termos : null, estrut: r0 ? r0.estrut : null
           });
           acumular(gc, el);
           return;
@@ -427,7 +475,7 @@
           }
         }
         porDisciplina[disc] = (porDisciplina[disc] || 0) + 1;
-        var g = grupo(r.id + "|" + disc, { regra: r.id, disc: disc, nome: nome, medida: r.medida, unidade: r.unidade, termos: termos, pendente: pend, aviso: avs });
+        var g = grupo(r.id + "|" + disc, { regra: r.id, disc: disc, nome: nome, medida: r.medida, unidade: r.unidade, termos: termos, pendente: pend, aviso: avs, estrut: r.estrut });
         acumular(g, el);
       });
 
@@ -472,6 +520,63 @@
           }
         }
       });
+
+      // ---- armadura + fôrma da estrutura: ESTIMATIVA PARAMÉTRICA declarada ("não pode ficar sem") ----
+      // Aço: taxa kg/m³ (usual da prática, ajustável) × volume dos elementos, propagando a FONTE do
+      // volume (medido|estimado). Fôrma: geometria da caixa de cada peça (sem taxa). Elementos de
+      // fase 'demolir' nunca chegam aqui (viram demolição antes) — só a estrutura NOVA deriva.
+      if (o.estimarEstrutura) {
+        // armadura MODELADA no IFC (barras) ou carimbada com código de armação: o aço paramétrico
+        // seria dupla contagem — suprime e declara (o modelo/projeto vale mais que a taxa)
+        var temArmaduraModelada = servicos.some(function (s) {
+          return s.regra === "estrutura-armadura" || (s.regra === "carimbo-plugin" && s.regraBase === "estrutura-armadura");
+        });
+        if (temArmaduraModelada) avisos.push("Armadura MODELADA detectada no IFC — o aço paramétrico foi suprimido pra não contar duas vezes (valem as barras do modelo; a fôrma continua estimada).");
+        var estrutBase = servicos.filter(function (s) { return s.estrut && !s.derivadoDe && !s.parametrico; });
+        estrutBase.forEach(function (g) {
+          var info = ESTRUT_INFO[g.estrut]; if (!info) return;
+          var vol = num(g.somas.volume);
+          var fonteVol = (g.fontes && g.fontes.volume) || g.fonte;
+          var fonteVolTxt = fonteVol === "ifc" ? "medido no IFC" : fonteVol === "misto" ? "parcialmente medido no IFC (parte estimada pela caixa envolvente)" : "ESTIMADO pela caixa envolvente";
+          var taxa = o.taxasAco[g.estrut];
+          var avisoCod = (g.carimbo && g.carimbo.codOrc) ? " — ATENÇÃO: se a composição carimbada (" + g.carimbo.codOrc + ") já inclui armação/fôrma (concreto armado completo), desmarque este item" : "";
+          if (vol > 0 && taxa > 0 && !temArmaduraModelada) {
+            servicos.push({
+              // medida null: a grandeza-própria é a UNIDADE (kg) — o wizard recalcula certo se o
+              // usuário escolher composição em m³ (invariante medida↔quantidade preservada)
+              chave: "aco|" + g.chave, regra: "estrutura-aco-" + g.estrut, disc: g.disc,
+              nome: "Armação de aço — " + info.rot + " (estimativa paramétrica " + taxa + " kg/m³)",
+              carimbo: null, medida: null, medidaBase: "volume", unidade: "kg", termos: info.acoTermos,
+              pendente: false, parametrico: true,
+              aviso: "estimado por taxa paramétrica — substitua pelo quantitativo do projeto estrutural quando disponível" + avisoCod,
+              somas: { area: 0, volume: r2(vol), comprimento: 0, contagem: g.nElementos },
+              somasIfc: { area: 0, volume: num(g.somasIfc && g.somasIfc.volume) || 0, comprimento: 0 },
+              fontes: { area: "sem-medida", volume: fonteVol, comprimento: "sem-medida" },
+              quantidade: r2(vol * taxa), quantidadeBase: r2(vol), fator: taxa,
+              memorialExtra: "ESTIMATIVA PARAMÉTRICA (sem quantitativos de projeto estrutural no IFC): taxa " + taxa + " kg/m³ — faixa usual da prática para " + info.rot + ", ajustável no assistente — sobre volume " + fonteVolTxt + ". Substitua pelos quantitativos do projeto estrutural quando disponível.",
+              derivadoDe: null, fonte: "parametrico", nElementos: g.nElementos, nEstimados: g.nEstimados, nSemMedida: g.nSemMedida,
+              elementos: g.elementos.slice()
+            });
+          }
+          if (g.somaForma > 0) {
+            var avisoLaje = g.estrut === "laje" ? " Laje apoiada no solo (contrapiso/radier) NÃO tem fôrma de fundo — desmarque se for o caso." : "";
+            servicos.push({
+              chave: "forma|" + g.chave, regra: "estrutura-forma-" + g.estrut, disc: g.disc,
+              nome: "Fôrma de madeira — " + info.rot + " (pela geometria do modelo)",
+              carimbo: null, medida: "area", unidade: "m²", termos: info.formaTermos,
+              pendente: false, parametrico: true,
+              aviso: (g._formaSem > 0 ? g._formaSem + " peça(s) sem caixa envolvente ficaram fora da fôrma — " : "") + "estimada pela geometria; confira com o projeto de fôrmas." + avisoLaje + avisoCod,
+              somas: { area: r2(g.somaForma), volume: 0, comprimento: 0, contagem: g.nElementos },
+              somasIfc: { area: 0, volume: 0, comprimento: 0 },
+              fontes: { area: "estimado", volume: "sem-medida", comprimento: "sem-medida" },
+              quantidade: r2(g.somaForma), quantidadeBase: r2(g.somaForma), fator: 1,
+              memorialExtra: "Fôrma estimada pela GEOMETRIA de cada peça, orientada pelo eixo vertical (" + (g.estrut === "pilar" ? "perímetro da seção × altura" : g.estrut === "viga" ? "fundo + 2 laterais × vão" : g.estrut === "laje" ? "área de fundo (área medida do IFC quando disponível)" : "perímetro da planta × altura") + ") — sem projeto de fôrmas; substitua pelos quantitativos do projeto quando disponível.",
+              derivadoDe: null, fonte: "parametrico", nElementos: g.nElementos, nEstimados: g.nEstimados, nSemMedida: g._formaSem,
+              elementos: g.elementos.slice()
+            });
+          }
+        });
+      }
 
       // ---- entulho da demolição: SÓ volume MEDIDO no IFC (bbox mentiria o m³) + fator declarado ----
       var volDemolido = 0, elsDemo = [], nDemoSemVol = 0;
@@ -553,9 +658,11 @@
       cobertura.forEach(function (c) { if (c.aviso) avisos.push("⚠️ " + c.aviso); });
 
       // ---- avisos estruturais honestos ----
-      var temEstrutura = servicos.some(function (s) { return s.disc === "estrutura" && s.regra !== "estrutura-armadura"; });
-      if (temEstrutura) avisos.push("Forma e armadura de pilares/vigas/lajes NÃO são deriváveis do IFC (exigem projeto estrutural) — acrescente com as taxas do projeto.");
-      var nEst = 0; servicos.forEach(function (s) { if (!s.derivadoDe) nEst += s.nEstimados || 0; }); // derivados repetem os elementos do pai — não recontar
+      var temEstrutura = servicos.some(function (s) { return s.estrut && !s.derivadoDe; });
+      var temParametrico = servicos.some(function (s) { return s.parametrico; });
+      if (temParametrico) avisos.push("Armadura e fôrma foram ESTIMADAS (taxas paramétricas kg/m³ + geometria das peças) por não haver projeto estrutural no IFC — os fatores estão declarados no memorial de cada item; substitua pelos quantitativos do projeto estrutural quando disponível.");
+      else if (temEstrutura) avisos.push("Forma e armadura de pilares/vigas/lajes NÃO são deriváveis do IFC (exigem projeto estrutural) — acrescente com as taxas do projeto, ou ligue a estimativa paramétrica no assistente.");
+      var nEst = 0; servicos.forEach(function (s) { if (!s.derivadoDe && !s.parametrico) nEst += s.nEstimados || 0; }); // derivados/paramétricos repetem os elementos do pai — não recontar
       if (nEst > 0) avisos.push(nEst + " elemento(s) sem BaseQuantities: quantidade ESTIMADA pela caixa envolvente — revise antes de fechar preço.");
       if (resumo.nSemMedida > 0) avisos.push(resumo.nSemMedida + " elemento(s) sem nenhuma medida — entraram só como contagem.");
       if (resumo.nMobiliario > 0) avisos.push(resumo.nMobiliario + " elemento(s) de mobiliário ignorados (mobiliário não é serviço de obra — inclua como verba se for contratual).");
