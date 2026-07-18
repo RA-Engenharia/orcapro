@@ -1135,7 +1135,8 @@
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
       var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
         ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>' +
-        ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">🏗️ Exportar p/ Revit</button>';
+        ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">🏗️ Exportar p/ Revit</button>' +
+        ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">🧠 Gerar orçamento do modelo</button>';
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;position:relative">' +
@@ -1226,6 +1227,206 @@
             (payload.avanco ? ", avanço real (" + (payload.avanco.fonte === "medicao" ? "medições" : "Last Planner") + ")" : "") + ".", "ok");
         }
       });
+    },
+
+    // =================== AGENTE EAP: modelo BIM → orçamento completo ===================
+    // Passo 1 (bimeapAbrir): o agente lê o modelo e monta a EAP com checklist de disciplinas.
+    // Passo 2 (bimeapCasar): casa cada serviço com a base (candidatos + confiança; nunca inventa).
+    // Gerar (bimeapGerar): cria o orçamento com memorial de cálculo rastreável por item.
+    _eapChipFonte: function (f) {
+      var m = { ifc: ["medido no IFC", "#16a34a"], estimado: ["estimado (caixa)", "#d97706"], misto: ["misto", "#d97706"], contagem: ["contagem", "#0e7490"], derivado: ["derivado", "#7c3aed"], manual: ["manual", "#64748b"], "sem-medida": ["s/ medida", "#dc2626"] };
+      var x = m[f] || [f || "—", "#64748b"];
+      return '<span class="g-pill" style="background:' + x[1] + '22;color:' + x[1] + ';font-size:10.5px">' + x[0] + "</span>";
+    },
+    _eapLerOpts: function () {
+      var o = {};
+      o.cebola = !!(UI.el("eap-cebola") && UI.el("eap-cebola").checked);
+      o.faces = UI.el("eap-faces") ? (Util.num(UI.el("eap-faces").value) || 2) : 2;
+      o.fatorEmpolamento = UI.el("eap-empol") ? (Util.num(UI.el("eap-empol").value) || 1.3) : 1.3;
+      o.incluirPreliminares = !!(UI.el("eap-prel") && UI.el("eap-prel").checked);
+      o.incluirLimpeza = !!(UI.el("eap-limp") && UI.el("eap-limp").checked);
+      return o;
+    },
+    bimeapAbrir: function (opts) {
+      var self = this;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("bim")) return;
+      if (typeof Bimeap === "undefined") { UI.toast("Motor do agente não carregado — recarregue o app (Ctrl+Shift+R).", "erro"); return; }
+      var els = this._bimElementos || [];
+      if (!els.length) { UI.toast("Carregue um modelo .IFC no visualizador primeiro (o agente lê o modelo pra montar a EAP).", "erro"); return; }
+      var o = opts || this._eapOpts || {};
+      var plano = Bimeap.analisar(els, o);
+      this._eapPlano = plano; this._eapOpts = plano.opts;
+      var op = plano.opts;
+      // checklist de cobertura (o "não esquecer nada")
+      var chk = plano.cobertura.map(function (c) {
+        if (!c.presente && !c.aviso) return "";
+        return '<span class="g-pill" style="background:' + (c.aviso ? "#dc262622;color:#dc2626" : "#16a34a22;color:#16a34a") + ';margin:2px">' + (c.aviso ? "⚠️ " : "✓ ") + Util.esc(c.nome) + "</span>";
+      }).join("");
+      var linhas = "";
+      plano.etapas.forEach(function (et) {
+        linhas += '<tr><td colspan="4" style="background:var(--surface-2);font-weight:800;font-size:12px">' + Util.esc(et.nome) + "</td></tr>";
+        et.servicos.forEach(function (s) {
+          linhas += "<tr><td>" + Util.esc(s.nome) + (s.carimbo ? ' <span class="g-pill" style="background:#0e749022;color:#0e7490;font-size:10px" title="Vem carimbado do Revit (OrcaPRO_Etapa)">🔗 Revit</span>' : "") + (s.aviso ? ' <span class="muted" style="font-size:11px" title="' + Util.esc(s.aviso) + '">ⓘ</span>' : "") + '</td><td class="num">' + (s.quantidade != null ? Util.fmtNum(s.quantidade) : "—") + "</td><td>" + Util.esc(s.unidade || "—") + '</td><td>' + self._eapChipFonte(s.fonte) + "</td></tr>";
+        });
+      });
+      var avisos = plano.avisos.length ? '<div class="card" style="padding:8px 10px;margin-top:8px;font-size:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e">' + plano.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>" : "";
+      var corpo =
+        '<p class="muted" style="font-size:12.5px;margin-bottom:8px">O agente leu <b>' + plano.resumo.nElementos + " elementos</b> (" + plano.resumo.nOrcaveis + " orçáveis · " + plano.resumo.pctCarimbo + "% carimbados no Revit" + (plano.resumo.nDemolir ? " · " + plano.resumo.nDemolir + " a demolir" : "") + (plano.resumo.nExistentes ? " · " + plano.resumo.nExistentes + " existentes preservados" : "") + ") e montou a EAP abaixo. Ajuste os parâmetros e siga pro casamento com a base.</p>" +
+        '<div style="margin-bottom:6px">' + chk + "</div>" +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;font-size:12.5px;margin:6px 0">' +
+        '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-cebola"' + (op.cebola ? " checked" : "") + ' style="width:auto"> Parede-cebola (chapisco+massa+pintura)</label>' +
+        '<label style="display:flex;gap:6px;align-items:center">Faces <select id="eap-faces" style="width:64px"><option value="1"' + (op.faces === 1 ? " selected" : "") + '>1</option><option value="2"' + (op.faces === 2 ? " selected" : "") + '>2</option></select></label>' +
+        '<label style="display:flex;gap:6px;align-items:center">Empolamento entulho <input id="eap-empol" value="' + op.fatorEmpolamento + '" style="width:64px" inputmode="decimal"></label>' +
+        '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-prel"' + (op.incluirPreliminares ? " checked" : "") + ' style="width:auto"> Preliminares</label>' +
+        '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-limp"' + (op.incluirLimpeza ? " checked" : "") + ' style="width:auto"> Limpeza final</label>' +
+        '<button type="button" class="btn sm" id="eap-recalc">↻ Reaplicar</button></div>' +
+        '<div style="max-height:46vh;overflow:auto"><table class="tbl" style="font-size:12px"><thead><tr><th>Serviço</th><th class="num">Qtd</th><th>Un</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" + avisos;
+      UI.modal("🧠 Agente EAP — o que o modelo diz que a obra precisa", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Casar com a base →", classe: "primary", onClick: function () { self._eapOpts = self._eapLerOpts(); self.bimeapCasar(); } }
+      ]);
+      var rec = UI.el("eap-recalc");
+      if (rec) rec.onclick = function () { self.bimeapAbrir(self._eapLerOpts()); };
+    },
+    bimeapCasar: function () {
+      var self = this;
+      var plano = Bimeap.analisar(this._bimElementos || [], this._eapOpts || {});
+      this._eapPlano = plano;
+      var temBase = (typeof Bases !== "undefined") && ((typeof Sinapi !== "undefined" && Sinapi.carregado) || (Bases.lista && Bases.lista().length));
+      var linhas = [];
+      plano.etapas.forEach(function (et) {
+        et.servicos.forEach(function (s) {
+          var cands = [];
+          if (temBase) {
+            if (s.carimbo && s.carimbo.codOrc) {
+              var rC = Bases.obterComFonte ? Bases.obterComFonte(s.carimbo.codOrc) : null;
+              if (rC) cands.push({ item: rC.item, fonte: rC.fonte, conf: 100 });
+              else { var itC = Bases.obter(s.carimbo.codOrc); if (itC) cands.push({ item: itC, fonte: itC.baseFonte || "SINAPI", conf: 100 }); }
+            }
+            if (!cands.length && s.termos && s.termos.length) {
+              var achados = [];
+              try { achados = Bases.buscar(s.termos.join(" "), { max: 6, tipo: "composicao" }) || []; } catch (eB) { achados = []; }
+              achados.forEach(function (c) { cands.push({ item: c.item, fonte: c.fonte, conf: Bimeap.pontuar(s, c.item) }); });
+              cands.sort(function (a, b) { return b.conf - a.conf; });
+              cands = cands.slice(0, 3);
+            }
+          }
+          // quantidade inicial já na GRANDEZA da composição pré-selecionada (dinheiro no número certo desde o 1º render)
+          var qtd0 = s.quantidade;
+          if (cands.length) {
+            var unC = cands[0].item.unidade;
+            if (Bimeap.grandezaDaUnidade(unC) == null && Bimeap.grandezaDaUnidade(s.unidade) != null) {
+              qtd0 = null; // KG/SC/VB: não derivável da geometria — exige preenchimento manual (o Gerar bloqueia vazio)
+            } else {
+              var qU = Bimeap.quantidadeDoServico(s, unC);
+              if (qU != null && Bimeap.grandezaDaUnidade(unC) !== s.medida) qtd0 = qU;
+              else if (qU != null && s.carimbo) qtd0 = qU;
+            }
+          }
+          linhas.push({ sv: s, etapa: et, cands: cands, escolhido: cands.length ? 0 : -1, incluir: !s.pendente || s.regra === "preliminares", quantidade: qtd0 });
+        });
+      });
+      this._eapLinhas = linhas;
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      var html = "", idx = 0, etapaAtual = null;
+      linhas.forEach(function (l) {
+        if (l.etapa.nome !== etapaAtual) { etapaAtual = l.etapa.nome; html += '<tr><td colspan="5" style="background:var(--surface-2);font-weight:800;font-size:12px">' + Util.esc(etapaAtual) + "</td></tr>"; }
+        var optsSel = l.cands.map(function (c, k) {
+          return '<option value="' + k + '"' + (k === l.escolhido ? " selected" : "") + ">[" + Util.esc(c.fonte) + "] " + Util.esc(c.item.codigo) + " · " + Util.esc(String(c.item.descricao || "").slice(0, 60)) + " — " + Util.esc(c.item.unidade || "?") + " (" + c.conf + "%)</option>";
+        }).join("") + '<option value="-1"' + (l.escolhido === -1 ? " selected" : "") + ">— pendente (sem código; custo 0) —</option>";
+        var conf = l.cands.length && l.escolhido >= 0 ? l.cands[l.escolhido].conf : null;
+        var nivel = conf == null ? ["Pendente", "#dc2626"] : conf >= 70 ? ["Alta", "#16a34a"] : conf >= 40 ? ["Média", "#d97706"] : ["Baixa", "#dc2626"];
+        html += '<tr data-eap-linha="' + idx + '"><td style="width:24px"><input type="checkbox" data-eap-inc="' + idx + '"' + (l.incluir ? " checked" : "") + ' style="width:auto"></td>' +
+          "<td>" + Util.esc(l.sv.nome) + '<div class="muted" style="font-size:10.5px">' + (l.sv.nElementos || 0) + " elem. · " + Util.esc(l.sv.unidade || "") + "</div></td>" +
+          '<td style="width:90px"><input data-eap-qtd="' + idx + '" value="' + (l.quantidade != null ? String(l.quantidade).replace(".", ",") : "") + '" style="width:80px" inputmode="decimal"></td>' +
+          '<td><select data-eap-pick="' + idx + '" style="max-width:340px;font-size:11.5px">' + optsSel + "</select></td>" +
+          '<td style="width:70px"><span class="g-pill" data-eap-conf="' + idx + '" style="background:' + nivel[1] + '22;color:' + nivel[1] + ';font-size:10.5px">' + nivel[0] + "</span></td></tr>";
+        idx++;
+      });
+      var vinculo = "";
+      if (obra) {
+        var jaTem = !!obra.orcamentoId;
+        vinculo = '<label style="display:flex;gap:6px;align-items:center;font-size:12.5px;margin-top:8px"><input type="checkbox" id="eap-vincular"' + (jaTem ? "" : " checked") + ' style="width:auto"> Vincular o orçamento gerado à obra <b>' + Util.esc(obra.nome) + "</b>" + (jaTem ? ' <span class="muted">(substitui o vínculo atual — o 4D passa a usar o novo)</span>' : " (liga o 4D/cronograma)") + "</label>";
+      }
+      var avisoBase = temBase ? "" : '<div class="card" style="padding:8px 10px;margin-bottom:8px;font-size:12px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b">Nenhuma base de preços carregada — todos os serviços sairão PENDENTES (custo 0). Carregue a SINAPI e rode de novo pra casar códigos.</div>';
+      var corpo = avisoBase +
+        '<p class="muted" style="font-size:12.5px;margin-bottom:8px">Escolha a composição de cada serviço (o agente sugere por confiança — <b>nunca inventa código</b>: sem escolha, o item entra pendente com custo 0 pra você completar). Quantidades são editáveis; o memorial de cálculo rastreável (elementos IFC + fórmula) vai junto em cada item.</p>' +
+        '<div style="max-height:48vh;overflow:auto"><table class="tbl" style="font-size:12px"><thead><tr><th></th><th>Serviço</th><th>Qtd</th><th>Composição da base</th><th>Conf.</th></tr></thead><tbody>' + html + "</tbody></table></div>" + vinculo;
+      UI.modal("🧠 Agente EAP — casar serviços com a base (" + linhas.length + ")", corpo, [
+        { texto: "← Voltar", classe: "ghost", onClick: function () { self.bimeapAbrir(self._eapOpts); } },
+        { texto: "✅ Gerar orçamento", classe: "primary", onClick: function () { self.bimeapGerar(); } }
+      ]);
+      var raiz = document.getElementById("modal-bg") || document;
+      raiz.addEventListener("change", function (ev) {
+        var t = ev.target;
+        if (t && t.hasAttribute && t.hasAttribute("data-eap-pick")) {
+          var i = +t.getAttribute("data-eap-pick"), l2 = self._eapLinhas[i];
+          l2.escolhido = parseInt(t.value, 10);
+          // recalcula a quantidade pela GRANDEZA da composição escolhida (carimbado sempre; regra quando a grandeza muda)
+          if (l2.escolhido >= 0) {
+            var unEsc = l2.cands[l2.escolhido].item.unidade;
+            if (l2.sv.carimbo || Bimeap.grandezaDaUnidade(unEsc) !== l2.sv.medida) {
+              var q2 = Bimeap.quantidadeDoServico(l2.sv, unEsc);
+              var inpQ = raiz.querySelector('[data-eap-qtd="' + i + '"]');
+              if (q2 != null && inpQ) { inpQ.value = String(q2).replace(".", ","); l2.quantidade = q2; }
+              else if (q2 == null && inpQ) { inpQ.value = ""; l2.quantidade = null; UI.toast("Unidade " + unEsc + " não é derivável da geometria — informe a quantidade (o Gerar bloqueia até preencher).", "erro"); }
+            }
+          }
+          var pill2 = raiz.querySelector('[data-eap-conf="' + i + '"]');
+          if (pill2) {
+            var c3 = l2.escolhido >= 0 ? l2.cands[l2.escolhido].conf : null;
+            var nv2 = c3 == null ? ["Pendente", "#dc2626"] : c3 >= 70 ? ["Alta", "#16a34a"] : c3 >= 40 ? ["Média", "#d97706"] : ["Baixa", "#dc2626"];
+            pill2.textContent = nv2[0]; pill2.style.background = nv2[1] + "22"; pill2.style.color = nv2[1];
+          }
+        }
+        if (t && t.hasAttribute && t.hasAttribute("data-eap-qtd")) { var i4 = +t.getAttribute("data-eap-qtd"); self._eapLinhas[i4].quantidade = Util.num(t.value); }
+        if (t && t.hasAttribute && t.hasAttribute("data-eap-inc")) { var i5 = +t.getAttribute("data-eap-inc"); self._eapLinhas[i5].incluir = !!t.checked; }
+      });
+    },
+    bimeapGerar: function () {
+      var self = this;
+      if (this._bloqueado()) return;
+      var linhas = (this._eapLinhas || []).filter(function (l) { return l.incluir; });
+      if (!linhas.length) { UI.toast("Nenhum serviço marcado pra entrar no orçamento.", "erro"); return; }
+      var invalida = linhas.filter(function (l) { return !(Util.num(l.quantidade) > 0); })[0];
+      if (invalida) { UI.toast("Quantidade inválida em “" + invalida.sv.nome + "” — corrija ou desmarque o serviço.", "erro"); return; }
+      var limite = (typeof Auth !== "undefined" && Auth.limite) ? Auth.limite("limiteItensPorOrcamento") : Infinity;
+      var truncou = false;
+      if (linhas.length > limite) { linhas = linhas.slice(0, limite); truncou = true; }
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      var orc = Orcamento.novo({ nome: "Orçamento BIM — " + (obra ? obra.nome : "modelo IFC") });
+      var mapaEtapa = {}; // nome -> etapaId (carimbado usa o nome EXATO do Revit → 4D exato)
+      function etapaId(nome) {
+        var chave = "k:" + nome.toLowerCase(); // prefixo blinda contra chaves herdadas ('constructor', '__proto__')
+        if (Object.prototype.hasOwnProperty.call(mapaEtapa, chave)) return mapaEtapa[chave];
+        Orcamento.addEtapa(orc, nome);
+        var id = orc.etapas[orc.etapas.length - 1].id;
+        mapaEtapa[chave] = id; return id;
+      }
+      var nPend = 0;
+      linhas.forEach(function (l) {
+        var sv = l.sv, qtd = Util.num(l.quantidade);
+        var nomeEtapa = (sv.carimbo && sv.carimbo.etapa) ? sv.carimbo.etapa : l.etapa.nome;
+        var eId = etapaId(nomeEtapa);
+        var cand = l.escolhido >= 0 ? l.cands[l.escolhido] : null;
+        var item;
+        if (cand) { item = Util.clone(cand.item); item.baseFonte = cand.fonte; }
+        else { item = { descricao: sv.nome, unidade: sv.unidade || "un", custoUnitario: 0 }; nPend++; }
+        Orcamento.addItem(orc, eId, item, qtd);
+        var et = orc.etapas.filter(function (e) { return e.id === eId; })[0];
+        var novo = et.itens[et.itens.length - 1];
+        var unFinal = cand ? cand.item.unidade : sv.unidade;
+        novo.memoriaCalculo = Bimeap.memorial(sv, qtd, unFinal) + (cand ? " Composição " + cand.item.codigo + " (" + cand.fonte + ") escolhida no assistente — confiança " + cand.conf + "%." : " PENDENTE: sem composição da base — complete o código e o preço.");
+        novo.rastreioBim = { regra: sv.regra, fonte: Bimeap.fonteDaQuantidade(sv, unFinal), ids: (sv.elementos || []).slice(0, 200).map(function (e) { return { a: e.a, e: e.e }; }) };
+      });
+      Orcamento.aplicarBdi(orc, "padrao");
+      var salvo = Store.salvarOrcamento(eid(), orc);
+      if (!salvo) { UI.toast("Não consegui salvar (armazenamento cheio) — faça um backup e tente de novo.", "erro"); return; }
+      var vinc = UI.el("eap-vincular");
+      if (obra && vinc && vinc.checked) { obra.orcamentoId = orc.id; Store.salvar(eid(), "obras", obra); }
+      UI.fecharModal();
+      App.orcAtual = orc; App.tela = "editor"; App.aba = "planilha"; App.render();
+      UI.toast("Orçamento gerado do modelo: " + orc.etapas.length + " etapas, " + linhas.length + " itens (" + nPend + " pendentes), memorial de cálculo rastreável em cada item." + (truncou ? " ⚠️ Limite do plano: itens excedentes ficaram de fora." : ""), "ok");
     },
 
     // painel "Modelos carregados": disciplina + transparência + olhinho + remover, por IFC
@@ -1540,6 +1741,15 @@
       if (typeof BIMQto === "undefined") { res.innerHTML = '<p class="muted">Motor de quantitativos não carregado.</p>'; return; }
       var els = this._bimElementos || [];
       if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
+      // reforma (OrcaPRO_Fase): existente não se constrói; demolir não é construção — quem trata é o Agente EAP
+      var nExist = 0, nDemol = 0;
+      els = els.filter(function (e2) {
+        var f = String(e2.fase || "").toLowerCase();
+        if (f === "existente") { nExist++; return false; }
+        if (f === "demolir" || f === "demolicao") { nDemol++; return false; }
+        return true;
+      });
+      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">♻️ Todos os elementos do modelo são de reforma (existente/demolir) — nada a construir. Use o <b>🧠 Agente EAP</b> para gerar os serviços de demolição.</p>'; return; }
       var r; try { r = BIMQto.levantar(els); } catch (e) { res.innerHTML = '<p class="muted">Falha ao levantar: ' + Util.esc(String(e)) + "</p>"; return; }
       this._bimQto = r;
       if (!r.linhas.length) { res.innerHTML = '<p class="muted">Nenhum elemento reconhecido para levantamento.</p>'; return; }
@@ -1560,6 +1770,7 @@
           var nEd = els.filter(function (e2) { return e2.mid === "edit" || /^edit:/.test(String(e2.id || "")); }).length;
           return nEd ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">✏️ Inclui <b>' + nEd + ' elemento(s) criados no editor</b> (sintéticos, QTO exato das peças — não vem do IFC).</p>' : "";
         })() +
+        (nExist || nDemol ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">♻️ Reforma (OrcaPRO_Fase): ' + nExist + ' elemento(s) "existente" fora do levantamento (não se constrói o que já existe)' + (nDemol ? ' · ' + nDemol + ' "demolir" fora — use o <b>🧠 Agente EAP</b> para demolição/entulho' : "") + ".</p>" : "") +
         '<p class="muted" style="font-size:11px;margin:6px 0 0">📐 Levantamento automático — o custo entra zerado; case no SINAPI ou informe o preço no editor. <b>"estimado"</b> = medido pela caixa do elemento (revise).</p>';
     },
     _bimVerClash: function (i) {
@@ -1634,7 +1845,7 @@
             onPick: function (info) {
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
-              box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
+              box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.fase ? "<br><span style='display:inline-block;margin-top:4px;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;" + (info.fase === "demolir" ? "background:rgba(239,68,68,.18);color:#ef4444" : (info.fase === "existente" ? "background:rgba(148,163,184,.18);color:#94a3b8" : "background:rgba(34,197,94,.18);color:#16a34a")) + "'>" + (info.fase === "demolir" ? "🔴" : (info.fase === "existente" ? "⚪" : "🟢")) + " Fase: " + Util.esc(info.fase) + " · reforma</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
             },
             // ✏️ Editor: cada mutação agenda o save das ops da obra ATUAL (capturada NA HORA
             // da mutação — trocar de obra não pode gravar no registro errado); debounce leve
@@ -4580,6 +4791,7 @@ renderFolha: function () {
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
         case "bim-reuniao": return this.bimReuniao();
         case "bim-revit": return this.bimExportarRevit();
+        case "bimeap-abrir": return this.bimeapAbrir();
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);

@@ -280,8 +280,8 @@ function montar(host, opts) {
       var tipo = tipoCache || nomeTipo(S.api.GetLineType(mid, expressID));
       var gid = (line.GlobalId && line.GlobalId.value) || '—';
       var cb = (function () { var mo = modeloDe(mid); return (mo && mo.carimbos && mo.carimbos[expressID]) || {}; })();
-      return { id: expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '', etapa: cb.etapa || '', codOrc: cb.codOrc || '' };
-    } catch (e) { return { id: expressID, nome: '—', tipo: tipoCache || '', globalId: '', etapa: '', codOrc: '' }; }
+      return { id: expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '', etapa: cb.etapa || '', codOrc: cb.codOrc || '', fase: cb.fase || '' };
+    } catch (e) { return { id: expressID, nome: '—', tipo: tipoCache || '', globalId: '', etapa: '', codOrc: '', fase: '' }; }
   }
   function nomeTipo(num) { var raw = ''; try { if (S.api.GetNameFromTypeCode) raw = S.api.GetNameFromTypeCode(num); } catch (_) {} return raw || ('IFC#' + num); }
 
@@ -1447,7 +1447,7 @@ function montar(host, opts) {
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
     if (S._editReaplicarRem) S._editReaplicarRem(); // removidos da edição valem pro sintético recém-chegado
     notifyModelos();
-    if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
+    if (opts.onLoaded) opts.onLoaded(elementosVivos());
     return mid;
   }
   S._carregarSintetico = carregarSintetico;
@@ -1603,7 +1603,7 @@ function montar(host, opts) {
     S.elementos = []; S.modelos.forEach(function (mo2) { S.elementos = S.elementos.concat(mo2.elementos); });
     over.style.display = (S.modelos.length || st.anotacoes.length) ? 'none' : 'flex'; // sintético/anotação também tira o "arraste um IFC"
     atualizarHud(); notifyModelos(); editSt();
-    if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
+    if (opts.onLoaded) opts.onLoaded(elementosVivos());
     if (opts.onEdicao && !edit._replay) { try { opts.onEdicao(edit.ops.slice()); } catch (_) {} }
   }
   S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
@@ -1879,7 +1879,7 @@ function montar(host, opts) {
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null;
+        var etapa = null, cod = null, fase = null;
         for (var p = 0; p < props.length; p++) {
           var h = props[p]; if (!h || h.value == null) continue;
           var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
@@ -1887,14 +1887,16 @@ function montar(host, opts) {
           var nm = pv.Name && pv.Name.value;
           if (nm === 'OrcaPRO_Etapa' && pv.NominalValue) etapa = pv.NominalValue.value;
           else if (nm === 'OrcaPRO_CodOrc' && pv.NominalValue) cod = pv.NominalValue.value;
+          else if (nm === 'OrcaPRO_Fase' && pv.NominalValue) fase = pv.NominalValue.value; // reforma: nova|demolir|existente
         }
-        if (etapa == null && cod == null) continue;
+        if (etapa == null && cod == null && fase == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
           var eid = oh.value; if (!mapa[eid]) mapa[eid] = {};
           if (etapa != null) mapa[eid].etapa = etapa;
           if (cod != null) mapa[eid].codOrc = cod;
+          if (fase != null) mapa[eid].fase = fase;
         }
       }
     } catch (e) { /* leitura de propriedades é bônus; nunca impede o modelo de abrir */ }
@@ -2070,7 +2072,7 @@ function montar(host, opts) {
     var mo = modeloDe(mid); if (!mo) return;
     mo.disciplina = d; mo.elementos.forEach(function (e) { e.disciplina = d; });
     notifyModelos();
-    if (opts.onLoaded) opts.onLoaded(S.elementos.slice()); // 4D/QTO/clash replanejam com a disciplina nova
+    if (opts.onLoaded) opts.onLoaded(elementosVivos()); // 4D/QTO/clash replanejam com a disciplina nova
   }
   function atualizarHud() {
     var el = 0, tri = 0;
@@ -2106,7 +2108,7 @@ function montar(host, opts) {
     if (S.corteL && S.corteL.on && S._aplicarCorteL) S._aplicarCorteL(); // re-ancora (ou sai, se o bbox esvaziou)
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender(); // isolamento (🏢 OU 👁) pode ter ficado sem alvo
     if (mid === 'edit' && S._editReset) S._editReset(); // apagar "Criados no OrçaPRO" = zerar edições (senão replay ressuscita + pins órfãos)
-    if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
+    if (opts.onLoaded) opts.onLoaded(elementosVivos());
     if (!S.modelos.length) over.style.display = 'flex';
   }
   function limparTudo() {
@@ -2168,7 +2170,7 @@ function montar(host, opts) {
           modelo.nTri += idx.length / 3; geo.delete();
         }
         var cb = carimbos[mesh.expressID] || {};
-        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), etapa: cb.etapa || null, codOrc: cb.codOrc || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);
@@ -2200,7 +2202,7 @@ function montar(host, opts) {
       if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
       if (S._editReaplicarRem) S._editReaplicarRem(); // "removidos na edição" persistidos valem pro IFC que acabou de chegar
       notifyModelos();
-      if (opts.onLoaded) opts.onLoaded(S.elementos.slice());
+      if (opts.onLoaded) opts.onLoaded(elementosVivos());
     } catch (err) {
       try { if (mid != null && mid !== -1) S.api.CloseModel(mid); } catch (_) {}
       try { if (typeof modelo !== 'undefined' && modelo && S.modelos.indexOf(modelo) === -1) { (modelo.grupo.children || []).forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } }); Object.keys(modelo.matCache || {}).forEach(function (k) { try { modelo.matCache[k].dispose(); } catch (_) {} }); modelRoot.remove(modelo.grupo); } } catch (_) {}
@@ -2239,6 +2241,13 @@ function cadaMalha(fn) { if (!S) return; S.modelRoot.children.forEach(function (
 function ehRemovidoEd(m) {
   var r = S && S._remEd; if (!r) return false;
   return !!r[m.userData.mid + ':' + m.userData.expressID];
+}
+// elementos SEM os "removidos na edição" — o que o EAP/QTO/4D/clash consomem tem que ser
+// o MESMO modelo que o viewer mostra (peça apagada no ✏️ não pode ser orçada/quantificada)
+function elementosVivos() {
+  if (!S) return [];
+  var r = S._remEd; if (!r) return S.elementos.slice();
+  return S.elementos.filter(function (e) { return !r[e.uid]; });
 }
 // aplica o estado 4D: esconde futuros; construídos = material original; em andamento = âmbar
 function aplicarEstado(est) {
@@ -2594,7 +2603,7 @@ window.BIM = {
   _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste
   _ctecModal: function () { return (S && S.ctecModal) ? S.ctecModal : null; }, // hook de teste: elemento do modal do resultado
-  get elementos() { return S ? S.elementos.slice() : []; },
+  get elementos() { return elementosVivos(); },
   // ---- multi-IFC (interoperabilidade entre disciplinas) ----
   get modelos() { return S && S._publicos ? S._publicos() : []; },
   setTransparencia: function (mid, a) { if (S && S._setTransparencia) S._setTransparencia(mid, a); },

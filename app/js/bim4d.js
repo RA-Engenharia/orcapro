@@ -138,6 +138,8 @@
         var m = el.etapa ? casa(el.etapa) : null;
         if (!m) catsFallback[BIM4D.catDoTipo(el.tipo)] = 1;
         else if (!m.e && m.cat) catsFallback[m.cat] = 1;
+        // reforma: quem vai ser demolido precisa de uma janela de demolição na timeline
+        if (String(el.fase || "").toLowerCase() === "demolir") catsFallback.demolicao = 1;
       });
       var fasesCat = BIM4D._fases(Object.keys(catsFallback), etapasCrono);
       var semanas = 0, k;
@@ -150,10 +152,15 @@
         if (m && m.e) { cat = m.e.categoria || BIM4D.catDoTipo(el.tipo); ini = num(m.e.inicio); fim = num(m.e.fim); exato = true; }
         else if (m && m.cat) { cat = m.cat; f = fasesCat[cat] || { inicio: 0, fim: semanas }; ini = f.inicio; fim = f.fim; exato = true; }
         else { cat = BIM4D.catDoTipo(el.tipo); f = fasesCat[cat] || { inicio: 0, fim: semanas }; ini = f.inicio; fim = f.fim; }
+        // reforma (OrcaPRO_Fase): existente já está de pé (visível desde a semana 0);
+        // demolir usa a janela da demolição e SOME depois dela (estadoEm inverte a semântica)
+        var fase = String(el.fase || "").toLowerCase();
+        if (fase === "existente") { ini = 0; fim = 0; }
+        else if (fase === "demolir" || fase === "demolicao") { fase = "demolir"; f = fasesCat.demolicao || { inicio: 0, fim: 1 }; ini = f.inicio; fim = f.fim; }
         if (!agg[cat]) agg[cat] = { inicio: ini, fim: fim, qtd: 0 };
         else { agg[cat].inicio = Math.min(agg[cat].inicio, ini); agg[cat].fim = Math.max(agg[cat].fim, fim); }
         agg[cat].qtd++;
-        return { id: el.id, tipo: el.tipo, cat: cat, codOrc: el.codOrc || "", exato: exato, semInicio: ini, semFim: fim };
+        return { id: el.id, tipo: el.tipo, cat: cat, codOrc: el.codOrc || "", exato: exato, fase: fase || null, semInicio: ini, semFim: fim };
       });
       var resumoFases = Object.keys(agg).map(function (c) {
         return { cat: c, nome: BIM4D.nomeCat(c), cor: BIM4D.corCat(c), inicio: agg[c].inicio, fim: agg[c].fim, qtd: agg[c].qtd };
@@ -175,9 +182,16 @@
     },
 
     // Estado da obra numa dada SEMANA (para o slider): construído / em andamento / futuro.
+    // Reforma: 'demolir' INVERTE — em pé no início, âmbar durante a demolição, some (futuros) depois.
     estadoEm: function (plano, semana) {
       var construidos = [], emAndamento = [], futuros = [];
       (plano.elementos || []).forEach(function (el) {
+        if (el.fase === "demolir") {
+          if (semana >= el.semFim) futuros.push(el.id);          // demolido: some da cena
+          else if (semana >= el.semInicio) emAndamento.push(el.id);
+          else construidos.push(el.id);                           // ainda de pé
+          return;
+        }
         if (semana >= el.semFim) construidos.push(el.id);
         else if (semana >= el.semInicio) emAndamento.push(el.id);
         else futuros.push(el.id);
@@ -186,10 +200,14 @@
     },
 
     // % de avanço físico (por nº de elementos concluídos) numa semana — para KPI/curva.
+    // Existente (reforma) fica FORA do denominador: não é trabalho da obra. Demolir conta
+    // como trabalho feito quando a demolição termina (mesmo comparador semana>=semFim).
     avancoEm: function (plano, semana) {
-      var tot = (plano.elementos || []).length; if (!tot) return 0;
-      var st = BIM4D.estadoEm(plano, semana);
-      return Math.round(st.construidos.length / tot * 1000) / 10;
+      var els = (plano.elementos || []).filter(function (e) { return e.fase !== "existente"; });
+      var tot = els.length; if (!tot) return 0;
+      var done = 0;
+      els.forEach(function (e) { if (semana >= e.semFim) done++; });
+      return Math.round(done / tot * 1000) / 10;
     },
     // Curva S: avanço FÍSICO (% elementos) e FINANCEIRO (% custo) semana a semana. financeiro=null sem custo.
     curva: function (plano) {

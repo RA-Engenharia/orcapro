@@ -131,6 +131,14 @@
       return null;
     },
 
+    /* Como obter(codigo), mas devolve { item, fonte } com a base REAL que resolveu o código
+       (itens crus das bases extras não carregam baseFonte — rotular SINAPI no chute violaria a fonte honesta). */
+    obterComFonte: function (codigo) {
+      if (typeof Sinapi !== "undefined" && Sinapi.carregado) { var s = Sinapi.obter(codigo); if (s) return { item: s, fonte: "SINAPI" }; }
+      for (var i = 0; i < EXTRA.length; i++) { var it = EXTRA[i].porCodigo[String(codigo)]; if (it) return { item: it, fonte: EXTRA[i].fonte }; }
+      return null;
+    },
+
     /* Carrega uma base inclusa no app (JSON em data/), same-origin. */
     carregarInclusa: function (arquivo, fonte, regiao) {
       var self = this;

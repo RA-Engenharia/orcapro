@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.79",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.79/OrcaPRO-IA-update-v1.1.79.zip",
-  "notas": "Novo módulo Cotações (Mapa de Cotação de Compras): compare até 4 fornecedores item a item, veja a decisão ao vivo (fornecedor único × compra mista), gere os pedidos de compra automaticamente e imprima o Mapa de Cotação.",
+  "versao": "1.1.80",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.80/OrcaPRO-IA-update-v1.1.80.zip",
+  "notas": "🧠 Agente EAP: carregue o IFC do Revit (RA BIM Tools) e o agente monta a EAP completa da obra — da fundação à limpeza final, sem esquecer disciplina — com quantitativos do modelo, casamento SINAPI assistido, memorial de cálculo rastreável em cada item e cronograma ajustável. Reforma por fases do Revit: demolição com entulho, existente fora do orçamento.",
   "obrigatoria": false
 }
