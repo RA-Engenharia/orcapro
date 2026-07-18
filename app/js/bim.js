@@ -36,6 +36,11 @@ var IFC_SIUNIT = 448429030;
 // IfcBuildingStorey + IfcRelContainedInSpatialStructure — p/ a ferramenta 🏢 Pavimentos
 // (códigos conferidos no vendor bim/vendor/web-ifc-api.js, estáveis no schema)
 var IFC_BUILDINGSTOREY = 3124254112, IFC_RELCONTAINEDINSPATIALSTRUCTURE = 3242617779;
+// v1.1.82 — família/tipo (IfcRelDefinesByType) + propriedades completas (todos os psets):
+// códigos conferidos no vendor (web-ifc-api.js): RELDEFINESBYTYPE 10025, PROPERTYSET 10063,
+// ELEMENTQUANTITY 10091, ENUMERATED/LIST/BOUNDED/COMPLEX p/ o painel não descartar nada.
+var IFC_RELDEFINESBYTYPE = 781010003, IFC_PROPERTYSET = 1451395588, IFC_ELEMENTQUANTITY = 1883228015;
+var IFC_PROP_ENUM = 4166981789, IFC_PROP_LIST = 2752243245, IFC_PROP_BOUNDED = 871118103, IFC_PROP_COMPLEX = 2542286263;
 
 function montar(host, opts) {
   opts = opts || {};
@@ -47,10 +52,10 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
-    setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); }, 0);
+    setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
     return;
   }
   // CONTEXTO PERDIDO: o viewer antigo morreu (S.alive=false) mas os listeners globais e o
@@ -61,32 +66,98 @@ function montar(host, opts) {
   host.style.position = 'relative';
   host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
 
+  // v1.1.82 — ícones SVG line-art (estilo Revit) no lugar dos emojis: stroke currentColor,
+  // 14px, herdam a cor do tema. ico(nome) devolve a tag inline.
+  function ico(n) {
+    var P = {
+      abrir: '<path d="M2 5h4l2 2h6v6H2z"/><path d="M2 5V3h5"/>',
+      lixo: '<path d="M4 5h8M6 5V3h4v2M5 5l1 8h4l1-8"/>',
+      ultra: '<path d="M8 2l1.6 4.2L14 8l-4.4 1.8L8 14l-1.6-4.2L2 8l4.4-1.8z"/>',
+      orbita: '<circle cx="8" cy="8" r="3.4"/><path d="M2.2 10.5C1 8 4 4 8 3.4M13.8 5.5C15 8 12 12 8 12.6"/>',
+      voo: '<path d="M2 9l12-5-4 6 4 4-6-2-3 3z"/>',
+      medir: '<path d="M2 12L12 2l2 2L4 14z"/><path d="M5 11l1 1M7 9l1 1M9 7l1 1M11 5l1 1"/>',
+      area: '<path d="M3 4l10-1 -1 9-9 1z"/><path d="M3 4l9 8"/>',
+      angulo: '<path d="M3 13L13 3M3 13h10"/><path d="M7 13a5 5 0 0 0-1.5-3.5"/>',
+      snap: '<path d="M4 2v6a4 4 0 0 0 8 0V2"/><path d="M4 2h2M10 2h2"/>',
+      cotas: '<path d="M2 8h12M2 6v4M14 6v4M6 8l-2-1.5M6 8l-2 1.5M10 8l2-1.5M10 8l2 1.5"/>',
+      planta: '<rect x="3" y="3" width="10" height="10"/><path d="M3 8h5v5"/>',
+      corte: '<path d="M2 10L14 4"/><circle cx="4" cy="12" r="1.6"/><circle cx="8" cy="11" r="1.6"/><path d="M9 9l5 3"/>',
+      p3d: '<path d="M8 2l5 3v6l-5 3-5-3V5z"/><path d="M8 8l5-3M8 8L3 5M8 8v6"/>',
+      editar: '<path d="M3 13l1-3 7-7 2 2-7 7z"/><path d="M10 4l2 2"/>',
+      pav: '<path d="M2 12h12M2 9h12M2 6h12"/><path d="M4 12V4h8v8"/>',
+      ver: '<path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="1.8"/>',
+      foto: '<rect x="2" y="4" width="12" height="9" rx="1.5"/><circle cx="8" cy="8.5" r="2.6"/><path d="M5 4l1-1.5h4L11 4"/>',
+      fit: '<path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3"/>',
+      tema: '<circle cx="8" cy="8" r="5.6"/><path d="M8 2.4v11.2M8 8l4-4M8 8l4 4"/>',
+      parede: '<path d="M2 12V6h12v6z"/><path d="M6 6v3M10 9v3M2 9h12"/>',
+      laje: '<path d="M2 9l6-3 6 3-6 3z"/><path d="M2 9v2l6 3 6-3V9"/>',
+      pilar: '<rect x="6" y="3" width="4" height="10"/><path d="M4 3h8M4 13h8"/>',
+      mover: '<path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M8 14l-2-2M8 14l2-2M2 8l2-2M2 8l2 2M14 8l-2-2M14 8l-2 2"/>',
+      nota: '<path d="M8 14V7"/><circle cx="8" cy="4.6" r="2.6"/>'
+    };
+    return '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px">' + (P[n] || '') + '</svg>';
+  }
+
   // toolbar compacta
   var bar = document.createElement('div');
   bar.style.cssText = 'position:absolute;left:0;right:0;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))';
   bar.innerHTML =
-    '<button class="btn sm primary" data-b="abrir">📂 + IFC</button>' +
+    '<button class="btn sm primary" data-b="abrir">' + ico('abrir') + '+ IFC</button>' +
     '<button class="btn sm" data-b="exemplo">Exemplo</button>' +
-    '<button class="btn sm" data-b="limpar" title="Remove todos os modelos carregados">🗑</button>' +
+    '<button class="btn sm" data-b="limpar" title="Remove todos os modelos carregados">' + ico('lixo') + '</button>' +
     '<span style="flex:1"></span>' +
-    '<button class="btn sm" data-b="ultra" title="Qualidade ultra: nitidez máxima (usa mais GPU)">✨ Ultra</button>' +
-    '<button class="btn sm on" data-b="orbita" style="background:#16a34a;color:#fff">🖱️ Órbita</button>' +
-    '<button class="btn sm" data-b="voo">✈️ Voo</button>' +
-    '<button class="btn sm" data-b="medir" title="Trena: clique em 2 pontos do modelo pra medir a distância">📏 Medir</button>' +
-    '<button class="btn sm" data-b="area" title="Área e perímetro: clique os cantos (3+) e feche clicando de novo no 1º ponto">▱ Área</button>' +
-    '<button class="btn sm" data-b="angulo" title="Ângulo entre 3 pontos: 1º ponto, vértice, 2º ponto">∠ Ângulo</button>' +
-    '<button class="btn sm" data-b="snap" title="Snap das medições: agarrar em vértice, meio de aresta ou aresta">🧲</button>' +
-    '<button class="btn sm" data-b="limpar-medidas" title="Apagar todas as cotas medidas" style="display:none">🧹 Cotas</button>' +
-    '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">📐 Planta</button>' +
-    '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">✂️ Corte</button>' +
-    '<button class="btn sm" data-b="p3d" title="Reconstruir 3D a partir da planta baixa em DXF (assistido: o sistema propõe as paredes, você confirma)">🏗 2D→3D</button>' +
-    '<button class="btn sm" data-b="editar" title="Editor: criar paredes, lajes e pilares SINTÉTICOS, mover, apagar e anotar — salvo com a obra">✏️ Editar</button>' +
-    '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">🏢 Pav.</button>' +
-    '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">👁 Ver</button>' +
-    '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">📸 Foto</button>' +
-    '<button class="btn sm" data-b="fit">⤢ Enquadrar</button>' +
+    '<button class="btn sm" data-b="ultra" title="Qualidade ultra: nitidez máxima (usa mais GPU)">' + ico('ultra') + 'Ultra</button>' +
+    '<button class="btn sm on" data-b="orbita" style="background:#16a34a;color:#fff">' + ico('orbita') + 'Órbita</button>' +
+    '<button class="btn sm" data-b="voo">' + ico('voo') + 'Voo</button>' +
+    '<button class="btn sm" data-b="medir" title="Trena: clique em 2 pontos do modelo pra medir a distância">' + ico('medir') + 'Medir</button>' +
+    '<button class="btn sm" data-b="area" title="Área e perímetro: clique os cantos (3+) e feche clicando de novo no 1º ponto">' + ico('area') + 'Área</button>' +
+    '<button class="btn sm" data-b="angulo" title="Ângulo entre 3 pontos: 1º ponto, vértice, 2º ponto">' + ico('angulo') + 'Ângulo</button>' +
+    '<button class="btn sm" data-b="snap" title="Snap das medições: agarrar em vértice, meio de aresta ou aresta">' + ico('snap') + '</button>' +
+    '<button class="btn sm" data-b="limpar-medidas" title="Apagar todas as cotas medidas" style="display:none">' + ico('cotas') + 'Cotas</button>' +
+    '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">' + ico('planta') + 'Planta</button>' +
+    '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">' + ico('corte') + 'Corte</button>' +
+    '<button class="btn sm" data-b="p3d" title="Reconstruir 3D a partir da planta baixa em DXF (assistido: o sistema propõe as paredes, você confirma)">' + ico('p3d') + '2D→3D</button>' +
+    '<button class="btn sm" data-b="editar" title="Editor: criar paredes, lajes e pilares SINTÉTICOS, mover, apagar e anotar — salvo com a obra">' + ico('editar') + 'Editar</button>' +
+    '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">' + ico('pav') + 'Pav.</button>' +
+    '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">' + ico('ver') + 'Ver</button>' +
+    '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
+    '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
+    '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
     '<input type="file" data-b="file" accept=".ifc" multiple style="display:none">';
   host.appendChild(bar);
+
+  // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = o look do Revit)
+  var TEMAS = {
+    orcapro: { nome: 'OrçaPRO', ativo: '#16a34a', bar: 'linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))', painel: 'rgba(15,39,64,.97)', borda: '#24435f', texto: '#dbe8f5', fundo: 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)' },
+    revit: { nome: 'Revit', ativo: '#1858A8', bar: 'linear-gradient(180deg,rgba(59,68,75,.96),rgba(59,68,75,0))', painel: 'rgba(42,49,56,.97)', borda: '#565f66', texto: '#e8eaec', fundo: 'radial-gradient(120% 120% at 50% 0%, #4a5158 0%, #2e343a 70%)' },
+    claro: { nome: 'Claro', ativo: '#0e7490', bar: 'linear-gradient(180deg,rgba(235,241,247,.95),rgba(235,241,247,0))', painel: 'rgba(248,250,252,.98)', borda: '#c4d0dc', texto: '#1a2b3c', fundo: 'radial-gradient(120% 120% at 50% 0%, #e6edf4 0%, #c9d6e3 70%)' }
+  };
+  var temaId = 'orcapro';
+  try { var t0 = localStorage.getItem('orcapro:bim:tema'); if (t0 && TEMAS[t0]) temaId = t0; } catch (_) {}
+  function corAtiva() { return TEMAS[temaId].ativo; }
+  function aplicarTema() {
+    var T = TEMAS[temaId];
+    var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
+    h2.style.background = T.fundo;
+    bar.style.background = T.bar;
+    bar.style.color = T.texto;
+    [S.editPanel, S.snapPanel, S.pavPanel, S.visPanel, S.editDist, S.p3dPanel].forEach(function (pn) {
+      if (!pn) return;
+      pn.style.background = T.painel; pn.style.borderColor = T.borda; pn.style.color = T.texto;
+      // re-pinta os toggles ativos DOS PAINÉIS também (chain/orto/ângulo/sub-ferramenta)
+      pn.querySelectorAll && pn.querySelectorAll('button').forEach(function (b3) { if (b3.style.background && b3.style.background !== '') b3.style.background = corAtiva(); });
+    });
+    // re-pinta os botões da toolbar que estavam com a cor ativa antiga (estado ligado sobrevive à troca)
+    bar.querySelectorAll('button').forEach(function (b2) { if (b2.style.background && b2.style.background !== '') b2.style.background = corAtiva(); });
+    try { localStorage.setItem('orcapro:bim:tema', temaId); } catch (_) {}
+  }
+  function trocarTema() {
+    temaId = temaId === 'orcapro' ? 'revit' : (temaId === 'revit' ? 'claro' : 'orcapro');
+    aplicarTema();
+    if (S && S._hint) S._hint('🎨 Tema: ' + TEMAS[temaId].nome);
+  }
+  // aplica DEPOIS que S e todos os painéis nasceram (este bloco roda antes da criação do S)
+  setTimeout(function () { if (S && S.alive) { S._aplicarTema = aplicarTema; aplicarTema(); } }, 0);
 
   var hud = document.createElement('div');
   hud.style.cssText = 'position:absolute;right:10px;bottom:10px;z-index:3;background:rgba(15,39,64,.85);border:1px solid #24435f;border-radius:8px;padding:6px 10px;font-size:12px;color:#bcd0e4';
@@ -143,15 +214,15 @@ function montar(host, opts) {
   function setMode(voo) {
     fly.on = voo; orbit.enabled = !voo;
     bar.querySelector('[data-b="voo"]').classList.toggle('on', voo);
-    bar.querySelector('[data-b="voo"]').style.background = voo ? '#16a34a' : '';
+    bar.querySelector('[data-b="voo"]').style.background = voo ? corAtiva() : '';
     bar.querySelector('[data-b="voo"]').style.color = voo ? '#fff' : '';
-    bar.querySelector('[data-b="orbita"]').style.background = voo ? '' : '#16a34a';
+    bar.querySelector('[data-b="orbita"]').style.background = voo ? '' : corAtiva();
     bar.querySelector('[data-b="orbita"]').style.color = voo ? '' : '#fff';
     if (!voo && document.pointerLockElement) document.exitPointerLock();
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); } };
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
   S._onMouseMove = function (e) { if (!fly.on || !document.pointerLockElement) return; fly.yaw -= e.movementX * 0.0022; fly.pitch -= e.movementY * 0.0022; fly.pitch = Math.max(-1.5, Math.min(1.5, fly.pitch)); };
   window.addEventListener('keydown', S._onKeyDown); window.addEventListener('keyup', S._onKeyUp); document.addEventListener('mousemove', S._onMouseMove);
@@ -196,6 +267,7 @@ function montar(host, opts) {
   canvasEl.addEventListener('dblclick', function (e) {
     if (!S || !S.alive) return;
     if (fly.on) return;
+    if (S.edit && S.edit.on && S.edit.sub) return; // desenhando: duplo-clique não seleciona nem abre painel
     if (ctec.ativo) return; // riscando a linha de corte, clique é ponto — não seleção (ANTES de area/ang: mesma ordem do pointerup)
     if (S.medir && S.medir.on) return; // no modo trena o duplo-clique é medição, não seleção
     if (area.on) { if (area.pts.length >= 3) fecharArea(); return; } // no modo área o duplo-clique FECHA o polígono
@@ -217,6 +289,7 @@ function montar(host, opts) {
     if (k === 'abrir') bar.querySelector('[data-b="file"]').click();
     else if (k === 'exemplo') carregarExemplo();
     else if (k === 'limpar') limparTudo();
+    else if (k === 'tema') trocarTema();
     else if (k === 'ultra') setUltra(!S.ultra);
     // Órbita/Voo SEMPRE encerram as ferramentas (exclusividade nos 2 sentidos); Medir pode
     // coexistir com Planta/Corte (medir na planta e na face do corte é o uso pedido)
@@ -249,6 +322,9 @@ function montar(host, opts) {
   // entrar em corteL    —              sai     ·       cancela-se-via-planta  fica
   // medir/area/ang      exclusivos ENTRE SI    —       —              coexistem com planta/corte
   // aplicarEstado(4D)/mostrarTudo (externos)                          limpam o marcador de isolamento
+  // Órbita/Voo SEMPRE encerram o editor INTEIRO (setEdit(false) já limpa a cadeia via editTirarProv);
+  // o "Esc encerra só o traço" vive APENAS no handler de Escape — aqui um return deixaria o editor
+  // armado com o voo ligado (clique em pointerlock criaria parede acidental persistida)
   function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); } // fecha o modal do resultado + cobre o estágio "config aberta"
   bar.querySelector('[data-b="file"]').addEventListener('change', function (e) {
     var fs2 = Array.prototype.slice.call(e.target.files || []); fs2.forEach(function (f) { abrirArquivo(f); }); e.target.value = '';
@@ -272,16 +348,26 @@ function montar(host, opts) {
     if (moS && moS.sintetico) { // sintético não existe no wasm (GetLine com mid string sondaria o modelo 0 REAL)
       var elS = null; for (var q3 = 0; q3 < moS.elementos.length; q3++) if (moS.elementos[q3].id === expressID) { elS = moS.elementos[q3]; break; }
       var qS = (moS.qto && moS.qto[expressID]) || {};
-      return { id: expressID, nome: (elS && elS.nome) || 'Parede', tipo: 'IFCWALL', globalId: '2D→3D', tag: '', etapa: '', codOrc: '', area: qS.area, comprimento: qS.comprimento };
+      // v1.1.82: mesmo CONTRATO do ramo IFC (uid/mid/tipo real/qto) — Propriedades/Salvar família
+      // funcionam também pro que foi criado no OrçaPRO (editor ✏️ e 2D→3D)
+      return { id: expressID, mid: mid, uid: mid + ':' + expressID, nome: (elS && elS.nome) || 'Parede',
+        tipo: (elS && elS.tipo) || 'IFCWALL', globalId: moS.editor ? 'criado no OrçaPRO' : '2D→3D', tag: '',
+        familia: (elS && elS.nome) || '', etapa: '', codOrc: '', fase: '',
+        qto: qS, area: qS.area, comprimento: qS.comprimento };
     }
     try {
       var line = S.api.GetLine(mid, expressID, true);
       var nome = (line.Name && line.Name.value) || '—';
       var tipo = tipoCache || nomeTipo(S.api.GetLineType(mid, expressID));
       var gid = (line.GlobalId && line.GlobalId.value) || '—';
-      var cb = (function () { var mo = modeloDe(mid); return (mo && mo.carimbos && mo.carimbos[expressID]) || {}; })();
-      return { id: expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '', etapa: cb.etapa || '', codOrc: cb.codOrc || '', fase: cb.fase || '' };
-    } catch (e) { return { id: expressID, nome: '—', tipo: tipoCache || '', globalId: '', etapa: '', codOrc: '', fase: '' }; }
+      var moP = modeloDe(mid);
+      var cb = (moP && moP.carimbos && moP.carimbos[expressID]) || {};
+      var famP = (moP && moP.familias && moP.familias[expressID]) || null;
+      var qtoP = (moP && moP.qto && moP.qto[expressID]) || null;
+      return { id: expressID, mid: mid, uid: mid + ':' + expressID, nome: nome, tipo: tipo, globalId: gid, tag: (line.Tag && line.Tag.value) || '',
+        familia: famP ? famP.familia : ((line.ObjectType && line.ObjectType.value) || ''),
+        etapa: cb.etapa || '', codOrc: cb.codOrc || '', fase: cb.fase || '', qto: qtoP };
+    } catch (e) { return { id: expressID, mid: mid, uid: mid + ':' + expressID, nome: '—', tipo: tipoCache || '', globalId: '', familia: '', etapa: '', codOrc: '', fase: '', qto: null }; }
   }
   function nomeTipo(num) { var raw = ''; try { if (S.api.GetNameFromTypeCode) raw = S.api.GetNameFromTypeCode(num); } catch (_) {} return raw || ('IFC#' + num); }
 
@@ -367,7 +453,7 @@ function montar(host, opts) {
     medir.on = !!on;
     if (on) { setMode(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (edit && edit.on) setEdit(false); } // pode coexistir com Planta/Corte; exclusivo entre medições e editor
     else { medir.pts = []; tirarProv(); btnCotas(); esconderSnapMarca(); } // sai: descarta 1º ponto pendente
-    var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? '#16a34a' : ''; bm.style.color = on ? '#fff' : ''; }
+    var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? corAtiva() : ''; bm.style.color = on ? '#fff' : ''; }
     atualizarCursor();
     S._hint(on ? (planta.on ? '📏 Trena na planta: clique em 2 pontos — a cota é a distância horizontal.' : '📏 Trena: clique em 2 pontos do modelo pra medir. Esc sai.') : (planta.on ? '📐 Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
@@ -389,7 +475,7 @@ function montar(host, opts) {
     return _ultimosHits[0] || null;
   }
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
-  function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo || (S.edit && S.edit.on && !!S.edit.sub); } // quem consome clique-sem-arraste
+  function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo || (S.edit && S.edit.on); } // quem consome clique-sem-arraste (editor SEM sub-ferramenta = clique mostra parâmetros)
   // GUARD ÚNICO anti-ponto-fantasma (gate v1.1.69): quando um clique FECHA uma medição/linha
   // (área, ângulo, trena, corte técnico), o pointerup IRMÃO do duplo-clique chegaria <400ms
   // depois NO MESMO LUGAR e plantaria o 1º ponto da próxima medição — silenciosamente errada.
@@ -411,6 +497,13 @@ function montar(host, opts) {
     _upAtual = { x: e.clientX, y: e.clientY };
     var hit = raycastEm(e.clientX, e.clientY);
     if (S.edit && S.edit.on && S.edit.sub) { editClique(e, hit); return; } // editor: aceita hit OU plano do chão
+    if (S.edit && S.edit.on && !S.edit.sub) { // editor SEM ferramenta: clique simples mostra os parâmetros (estilo Revit)
+      if (hit && _ultimosHits[0]) {
+        var udP = _ultimosHits[0].object.userData;
+        if (opts.onPick) opts.onPick(propsDe(udP.mid !== undefined ? udP.mid : S.modelID, udP.expressID, udP.tipo));
+      }
+      return;
+    }
     if (!hit) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + ' Clique em cima de uma superfície do modelo.'); return; }
     var sn = aplicarSnap(hit, raioToque(e)); mostrarSnapMarca(sn, e.clientX, e.clientY);
     if (ctec.ativo) { ctecClique(sn.p.clone()); return; } // linha do corte técnico tem prioridade
@@ -430,6 +523,10 @@ function montar(host, opts) {
   var _snapHoverT = 0;
   canvasEl.addEventListener('pointermove', function (e) {
     if (!S || !S.alive) return;
+    // v1.1.82 — preview vivo da parede (rubber-band + cota junto ao cursor, estilo Revit)
+    if (S.edit && S.edit.on && S.edit.sub === 'parede' && S.edit.p1 && S._editPreviewMove) {
+      S._editPreviewMove(e);
+    }
     if (!ferramentaClique() || !snap.on) return;
     var t = performance.now(); if (t - _snapHoverT < 60) return; _snapHoverT = t;
     var hit = raycastEm(e.clientX, e.clientY);
@@ -504,7 +601,7 @@ function montar(host, opts) {
     area.on = !!on;
     if (on) { setMode(false); if (medir.on) setMedir(false); if (ang.on) setAng(false); if (edit && edit.on) setEdit(false); } // coexiste com Planta/Corte; exclusivo entre medições e editor
     else { limparTmp(area.tmp); area.pts = []; esconderSnapMarca(); btnCotas(); }
-    var b = bar.querySelector('[data-b="area"]'); if (b) { b.style.background = on ? '#16a34a' : ''; b.style.color = on ? '#fff' : ''; }
+    var b = bar.querySelector('[data-b="area"]'); if (b) { b.style.background = on ? corAtiva() : ''; b.style.color = on ? '#fff' : ''; }
     atualizarCursor();
     S._hint(on ? ('▱ Área: clique os cantos (3+)' + (planta.on ? ' na planta' : '') + ' e feche clicando de novo no 1º ponto (ou duplo-clique).') : (planta.on ? '📐 Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
@@ -554,7 +651,7 @@ function montar(host, opts) {
     ang.on = !!on;
     if (on) { setMode(false); if (medir.on) setMedir(false); if (area.on) setArea(false); if (edit && edit.on) setEdit(false); }
     else { limparTmp(ang.tmp); ang.pts = []; esconderSnapMarca(); btnCotas(); }
-    var b = bar.querySelector('[data-b="angulo"]'); if (b) { b.style.background = on ? '#16a34a' : ''; b.style.color = on ? '#fff' : ''; }
+    var b = bar.querySelector('[data-b="angulo"]'); if (b) { b.style.background = on ? corAtiva() : ''; b.style.color = on ? '#fff' : ''; }
     atualizarCursor();
     S._hint(on ? '∠ Ângulo: clique o 1º ponto, depois o VÉRTICE, depois o 2º ponto.' : (planta.on ? '📐 Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
@@ -631,7 +728,7 @@ function montar(host, opts) {
       enquadrarTopo();
       cortePanel.style.display = 'flex';
       cortePanel.querySelector('[data-c="alt"]').value = 620; setAlturaCorte(0.62); // ~altura de peitoril
-      if (bp) { bp.style.background = '#16a34a'; bp.style.color = '#fff'; }
+      if (bp) { bp.style.background = corAtiva(); bp.style.color = '#fff'; }
       S._hint('📐 Planta baixa. Ajuste a altura do corte no painel. Toque em 📐 de novo pra sair.');
     } else {
       ctecCancelar(); // desenho/config do corte técnico só faz sentido NA planta (incondicional: pega a config aberta)
@@ -723,7 +820,7 @@ function montar(host, opts) {
       var box = new THREE.Box3().setFromObject(modelRoot);
       if (box.isEmpty()) { corteL.on = false; S._hint('Carregue um modelo primeiro.'); return; }
       corteLPanel.style.display = 'flex';
-      if (bc) { bc.style.background = '#16a34a'; bc.style.color = '#fff'; }
+      if (bc) { bc.style.background = corAtiva(); bc.style.color = '#fff'; }
       aplicarCorteL();
       S._hint('✂️ Corte livre: escolha a direção e arraste a posição — o modelo abre ao vivo. Esc sai.');
     } else {
@@ -747,7 +844,7 @@ function montar(host, opts) {
     if (k === 'ph') preset(0, 90);
     else if (k === 'pns') preset(0, 0);
     else if (k === 'plo') preset(90, 0);
-    else if (k === 'inv') { corteL.inv = !corteL.inv; b.style.background = corteL.inv ? '#16a34a' : ''; b.style.color = corteL.inv ? '#fff' : ''; aplicarCorteL(); }
+    else if (k === 'inv') { corteL.inv = !corteL.inv; b.style.background = corteL.inv ? corAtiva() : ''; b.style.color = corteL.inv ? '#fff' : ''; aplicarCorteL(); }
   });
 
   // ============================================================
@@ -775,10 +872,10 @@ function montar(host, opts) {
     var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i };
     ['on', 'v', 'm', 'a', 'i'].forEach(function (kk) {
       var b = snapPanel.querySelector('[data-s="' + kk + '"]'); if (!b) return;
-      b.style.background = cfg[kk] ? '#16a34a' : ''; b.style.color = cfg[kk] ? '#fff' : '';
+      b.style.background = cfg[kk] ? corAtiva() : ''; b.style.color = cfg[kk] ? '#fff' : '';
       if (kk === 'on') b.textContent = cfg.on ? 'ON' : 'OFF';
     });
-    var bs = bar.querySelector('[data-b="snap"]'); if (bs) { bs.style.background = snap.on ? '#16a34a' : ''; bs.style.color = snap.on ? '#fff' : ''; bs.style.outline = (snapPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
+    var bs = bar.querySelector('[data-b="snap"]'); if (bs) { bs.style.background = snap.on ? corAtiva() : ''; bs.style.color = snap.on ? '#fff' : ''; bs.style.outline = (snapPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
   }
   pintarSnapPanel();
   function toggleSnapPanel() { var abrir = (snapPanel.style.display === 'none' || !snapPanel.style.display); fecharPaineis(abrir ? snapPanel : null); snapPanel.style.display = abrir ? 'flex' : 'none'; pintarSnapPanel(); } // repinta -> botão mostra painel aberto
@@ -1219,7 +1316,7 @@ function montar(host, opts) {
       lst.forEach(function (pv) {
         var atv = pav.isolado === pv.nome;
         var nivel = (pv.y0 != null && base != null) ? ' <span style="color:#9fb2c8;font-size:11px">nível +' + fmtDist(Math.max(0, pv.y0 - base)) + '</span>' : '';
-        html += '<div style="display:flex;align-items:center;gap:5px;border:1px solid ' + (atv ? '#16a34a' : 'transparent') + ';border-radius:7px;padding:2px 4px">' +
+        html += '<div style="display:flex;align-items:center;gap:5px;border:1px solid ' + (atv ? corAtiva() : 'transparent') + ';border-radius:7px;padding:2px 4px">' +
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(pv.nome) + ' · ' + pv.n + ' elementos">' + esc(pv.nome) + nivel + '</span>' +
           '<button class="btn sm" data-p="iso" data-n="' + esc(pv.nome) + '" title="Isolar este pavimento">🎯</button>' +
           '<button class="btn sm" data-p="pl" data-n="' + esc(pv.nome) + '" title="Planta baixa deste pavimento">📐</button></div>';
@@ -1227,7 +1324,7 @@ function montar(host, opts) {
       html += '<div style="font-size:11px;color:#9fb2c8">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ↺ Todos restaura.</div>';
     }
     pavPanel.innerHTML = html;
-    var bp2 = bar.querySelector('[data-b="pav"]'); if (bp2) { bp2.style.background = pav.isolado ? '#16a34a' : ''; bp2.style.color = pav.isolado ? '#fff' : ''; bp2.style.outline = (pavPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
+    var bp2 = bar.querySelector('[data-b="pav"]'); if (bp2) { bp2.style.background = pav.isolado ? corAtiva() : ''; bp2.style.color = pav.isolado ? '#fff' : ''; bp2.style.outline = (pavPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
   }
   S._pavRender = pavRender;
   function restaurarVisibilidade() {
@@ -1360,6 +1457,74 @@ function montar(host, opts) {
   // preserveDrawingBuffer:false) e compõe carimbo. O fundo é gradiente CSS
   // (não sai na captura) -> pinta um fundo sólido só durante o render.
   // ============================================================
+  // v1.1.82 — thumbnail de UM elemento (banco de famílias / quantitativo ilustrado): salva a
+  // visibilidade REAL de cada malha + câmera, isola as malhas do elemento, enquadra pelo AABB,
+  // renderiza síncrono (preserveDrawingBuffer=false: render+toDataURL na MESMA task), reduz p/
+  // maxPx e RESTAURA tudo (visibilidade por malha — não usa restaurarVisibilidade, que apagaria
+  // um isolamento que o usuário tinha feito). Devolve dataURL jpeg ou null.
+  function thumbFamilia(uid, maxPx) {
+    try {
+      if (!S.modelos.length) return null;
+      var px = uid.lastIndexOf(':'); if (px < 0) return null;
+      var midStr = uid.slice(0, px), eidRaw = uid.slice(px + 1);
+      var alvoEid = /^\d+$/.test(eidRaw) ? +eidRaw : eidRaw; // ids do editor são strings 'eN'
+      var alvoMid = /^\d+$/.test(midStr) ? +midStr : midStr;
+      var mo = modeloDe(alvoMid); if (!mo) return null;
+      var elA = (mo.elementos || []).filter(function (e) { return e.id === alvoEid; })[0];
+      var aabb = elA && elA.aabb; if (!aabb) return null;
+      // snapshot: visibilidade por MALHA (não usa restaurarVisibilidade — apagaria isolamento do usuário)
+      // + MATERIAL ORIGINAL das malhas do alvo (seleção verde/4D âmbar/clash não podem sair na foto)
+      var visAntes = [], matAntes = [];
+      cadaMalha(function (m) {
+        visAntes.push([m, m.visible]);
+        var ehAlvo = (m.userData.mid === alvoMid && m.userData.expressID === alvoEid);
+        m.visible = ehAlvo;
+        if (ehAlvo && m.userData.matOrig && m.material !== m.userData.matOrig) { matAntes.push([m, m.material]); m.material = m.userData.matOrig; }
+      });
+      var gAntes = []; modelRoot.children.forEach(function (g) { gAntes.push([g, g.visible]); g.visible = true; });
+      // grid, cotas, pins e avatares vivem FORA do modelRoot — esconde (menos as LUZES, senão a foto sai preta)
+      var cenaAntes = [];
+      scene.children.forEach(function (c) { if (c !== modelRoot && !c.isLight && c.visible) { cenaAntes.push(c); c.visible = false; } });
+      var camPos = camera.position.clone(), camNear = camera.near, camFar = camera.far, tgt = orbit.target.clone();
+      var clipAntes = renderer.clippingPlanes; renderer.clippingPlanes = [];
+      var prevBg = scene.background, thumb = null;
+      try {
+        var cx = (aabb.min[0] + aabb.max[0]) / 2, cy = (aabb.min[1] + aabb.max[1]) / 2, cz = (aabb.min[2] + aabb.max[2]) / 2;
+        var dim = Math.max(aabb.max[0] - aabb.min[0], aabb.max[1] - aabb.min[1], aabb.max[2] - aabb.min[2]) || 1;
+        var dist = dim * 1.9;
+        camera.position.set(cx + dist * 0.72, cy + dist * 0.5, cz + dist * 0.72);
+        camera.near = dim / 100; camera.far = dim * 50; camera.updateProjectionMatrix();
+        camera.lookAt(cx, cy, cz);
+        scene.background = new THREE.Color(0xf3f6fa); // fundo claro: legível no impresso
+        renderer.render(scene, camera); // preserveDrawingBuffer=false → drawImage na MESMA task
+        var srcCnv = renderer.domElement, lado = Math.min(srcCnv.width, srcCnv.height);
+        var out = document.createElement('canvas'); var mp = maxPx || 220; out.width = mp; out.height = mp;
+        out.getContext('2d').drawImage(srcCnv, (srcCnv.width - lado) / 2, (srcCnv.height - lado) / 2, lado, lado, 0, 0, mp, mp);
+        thumb = out.toDataURL('image/jpeg', 0.85);
+      } catch (_) { thumb = null; }
+      // restaura TUDO
+      scene.background = prevBg;
+      renderer.clippingPlanes = clipAntes;
+      matAntes.forEach(function (par) { par[0].material = par[1]; });
+      visAntes.forEach(function (par) { par[0].visible = par[1]; });
+      gAntes.forEach(function (par) { par[0].visible = par[1]; });
+      cenaAntes.forEach(function (c) { c.visible = true; });
+      camera.position.copy(camPos); camera.near = camNear; camera.far = camFar; camera.updateProjectionMatrix();
+      orbit.target.copy(tgt); orbit.update();
+      return thumb;
+    } catch (e) { return null; }
+  }
+
+  S._thumbFamilia = thumbFamilia;
+  S._propsCompletas = function (uid) { // uid 'mid:eid' → grupos de propriedades
+    try {
+      var px = uid.lastIndexOf(':'); if (px < 0) return [];
+      var midStr = uid.slice(0, px), eidRaw2 = uid.slice(px + 1);
+      var eid2 = /^\d+$/.test(eidRaw2) ? +eidRaw2 : eidRaw2; // 'eN' do editor é string
+      return propsCompletas(/^\d+$/.test(midStr) ? +midStr : midStr, eid2);
+    } catch (e) { return []; }
+  };
+
   function tirarFoto() {
     if (!S.modelos.length) { S._hint('📸 Carregue um modelo primeiro.'); return null; }
     var prevBg = scene.background, url;
@@ -1461,7 +1626,11 @@ function montar(host, opts) {
   // ============================================================
   var edit = { on: false, sub: null, p1: null, prov: null, ops: [], seq: 0,
                moverId: null, moverMesh: null, esp: 0.15, alt: 2.8, secao: 0.2,
-               base: 0, modelo: null, sprites: [], removidosAntes: [] };
+               base: 0, modelo: null, sprites: [], removidosAntes: [],
+               // v1.1.82 — desenho estilo Revit: trava orto, ângulo predefinido (0=livre),
+               // traço ENCADEADO (a próxima parede continua do fim da anterior) e o último
+               // ponto ajustado do preview (direção p/ o input de distância)
+               orto: false, angPre: 0, chain: true, pPrev: null, linhaProv: null };
   S.edit = edit;
   var editPanel = document.createElement('div');
   editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:10px 12px;color:#dbe8f5;font-size:12px;width:280px;max-width:94%';
@@ -1479,6 +1648,13 @@ function montar(host, opts) {
     '<label style="display:flex;gap:4px;align-items:center">Alt. <input data-ed="alt" class="inp" type="number" value="2.80" step="0.1" min="0.3" max="8" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Pilar <input data-ed="secao" class="inp" type="number" value="0.20" step="0.05" min="0.1" max="1" style="width:56px"> m</label></div>' +
     '<input data-ed="txt" class="inp" placeholder="Texto da anotação (p/ 📍 Anotar)" maxlength="200" style="width:100%">' +
+    // v1.1.82 — controles de desenho estilo Revit (orto/ângulo/encadear)
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
+    '<button class="btn sm" data-ed="orto" title="Trava a parede na horizontal/vertical (ou segure Shift enquanto desenha)">⟂ Orto</button>' +
+    '<button class="btn sm" data-ed="angpre" title="Ângulos predefinidos: livre → 45° → 15°">∠ Livre</button>' +
+    '<button class="btn sm" data-ed="chain" title="A próxima parede continua do fim da anterior (Esc encerra a cadeia)">⛓ Encadear</button>' +
+    '</div>' +
+    '<div style="font-size:10.5px;color:#9fb2c8">💡 Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter — igual no Revit.</div>' +
     '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">↩️ Desfazer</button><span data-ed="st" style="color:#9fb2c8;font-size:11.5px"></span></div>' +
     '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
   host.appendChild(editPanel);
@@ -1517,14 +1693,124 @@ function montar(host, opts) {
   function editTirarProv() {
     if (edit.prov) { limparMarca(edit.prov); edit.prov = null; }
     edit.p1 = null;
+    editPreviewLimpar();
   }
+  // ---- v1.1.82: desenho estilo Revit ----
+  // ajusta o 2º ponto pela trava orto (botão OU Shift) e pelos ângulos predefinidos
+  function editAjustarPonto(p, ev) {
+    if (!edit.p1 || !p || edit.sub !== 'parede') return p;
+    var dx = p.x - edit.p1.x, dz = p.z - edit.p1.z;
+    var dist = Math.sqrt(dx * dx + dz * dz);
+    if (dist < 1e-6) return p;
+    var q = p.clone(); q.y = edit.p1.y;
+    if (edit.orto || (ev && ev.shiftKey)) {
+      if (Math.abs(dx) >= Math.abs(dz)) q.z = edit.p1.z; else q.x = edit.p1.x;
+      return q;
+    }
+    if (edit.angPre > 0) {
+      var passo = edit.angPre * Math.PI / 180;
+      var a2 = Math.round(Math.atan2(dz, dx) / passo) * passo;
+      q.x = edit.p1.x + dist * Math.cos(a2); q.z = edit.p1.z + dist * Math.sin(a2);
+    }
+    return q;
+  }
+  // preview vivo (rubber-band) + caixinha de distância junto ao cursor (padrão do snapMarca:
+  // DOM fora da cena — nunca é clipado nem raycastado)
+  var editDist = document.createElement('div');
+  editDist.style.cssText = 'position:absolute;z-index:6;display:none;background:rgba(15,39,64,.95);border:1px solid #2FBF71;border-radius:8px;padding:3px 6px;color:#dbe8f5;font-size:12px;white-space:nowrap;pointer-events:auto';
+  editDist.innerHTML = '<span data-edd="txt" style="font-weight:700;color:#7fe0a3"></span> <input data-edd="inp" inputmode="decimal" placeholder="m" style="width:52px;background:#0b1a2b;border:1px solid #24435f;border-radius:5px;color:#fff;font-size:12px;padding:1px 4px">';
+  host.appendChild(editDist);
+  S.editDist = editDist; // re-home
+  function editPreviewLimpar() {
+    if (edit.linhaProv) { scene.remove(edit.linhaProv); if (edit.linhaProv.geometry) edit.linhaProv.geometry.dispose(); edit.linhaProv = null; }
+    edit.pPrev = null;
+    editDist.style.display = 'none';
+  }
+  function editPreview(p, clientX, clientY) {
+    if (!edit.p1 || !p) { editPreviewLimpar(); return; }
+    edit.pPrev = p.clone();
+    if (!edit.linhaProv) {
+      if (!edit._linhaMat) edit._linhaMat = new THREE.LineBasicMaterial({ color: 0x2fbf71, depthTest: false }); // 1 material vivo (sem leak por segmento)
+      var g3 = new THREE.BufferGeometry().setFromPoints([edit.p1, p]);
+      edit.linhaProv = new THREE.Line(g3, edit._linhaMat);
+      edit.linhaProv.renderOrder = 999;
+      scene.add(edit.linhaProv);
+    } else {
+      edit.linhaProv.geometry.setFromPoints([edit.p1, p]);
+    }
+    var d = Math.sqrt(Math.pow(p.x - edit.p1.x, 2) + Math.pow(p.z - edit.p1.z, 2));
+    var rc2 = canvasEl.getBoundingClientRect();
+    editDist.style.display = '';
+    editDist.style.left = (clientX - rc2.left + 16) + 'px';
+    editDist.style.top = (clientY - rc2.top + 12) + 'px';
+    var tx = editDist.querySelector('[data-edd="txt"]');
+    if (tx) tx.textContent = d.toFixed(2).replace('.', ',') + ' m';
+  }
+  // digitar a distância + Enter = parede com o comprimento EXATO na direção do preview
+  editDist.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { // Esc DENTRO do input: encerra a cadeia (o stopPropagation não pode engolir)
+      e.stopPropagation();
+      var iEsc = editDist.querySelector('[data-edd="inp"]'); if (iEsc) { iEsc.value = ''; iEsc.blur(); }
+      if (S._editFimCadeia) S._editFimCadeia();
+      return;
+    }
+    e.stopPropagation(); // não aciona atalhos do viewer (WASD do voo etc.)
+    if (e.key !== 'Enter') return;
+    var inp2 = editDist.querySelector('[data-edd="inp"]');
+    var num2 = parseFloat(String(inp2.value || '').replace(',', '.'));
+    if (!(num2 > 0.01) || !edit.p1) return;
+    var dir;
+    if (edit.pPrev) {
+      var ddx = edit.pPrev.x - edit.p1.x, ddz = edit.pPrev.z - edit.p1.z;
+      var len = Math.sqrt(ddx * ddx + ddz * ddz);
+      dir = len > 1e-6 ? { x: ddx / len, z: ddz / len } : { x: 1, z: 0 };
+    } else dir = { x: 1, z: 0 };
+    var p2 = new THREE.Vector3(edit.p1.x + dir.x * num2, edit.p1.y, edit.p1.z + dir.z * num2);
+    inp2.value = '';
+    editConcluirParede(p2);
+  });
+  // conclui a parede em p2 (2º clique OU distância digitada) com o traço ENCADEADO
+  function editConcluirParede(p2) {
+    var cxP = BimEdit.parede({ x: edit.p1.x, z: edit.p1.z }, { x: p2.x, z: p2.z }, edit.esp, edit.alt, edit.base);
+    if (!cxP) { S._hint('🧱 Pontos muito próximos — clique 2 pontos distintos.'); return; }
+    editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cxP });
+    var comp = cxP.comprimento.toFixed(2).replace('.', ',');
+    if (edit.chain) {
+      // encadeia: a próxima parede nasce do fim desta (Esc encerra a cadeia)
+      if (edit.prov) { limparMarca(edit.prov); edit.prov = null; }
+      editPreviewLimpar();
+      edit.p1 = p2.clone();
+      edit.prov = pontoMarca(p2); scene.add(edit.prov); rescaleObj(edit.prov);
+      S._hint('🧱 Parede criada (' + comp + ' m). ⛓ Continuando do fim — clique o próximo ponto, ou Esc pra encerrar.');
+    } else {
+      editTirarProv();
+      S._hint('🧱 Parede criada (' + comp + ' m). Siga clicando, ou Esc.');
+    }
+    marcarFechamento();
+  }
+  // Esc no meio da cadeia: encerra SÓ o traço (não fecha o editor)
+  S._editFimCadeia = function () {
+    editTirarProv();
+    S._hint(edit.sub ? '✏️ Traço encerrado — clique o INÍCIO da próxima parede.' : '');
+    marcarFechamento();
+  };
+  // preview no pointermove (registrado lá em cima via S._ — o handler nasce antes deste bloco)
+  var _edPrevT = 0;
+  S._editPreviewMove = function (e) {
+    var t2 = performance.now(); if (t2 - _edPrevT < 33) return; _edPrevT = t2;
+    var hit2 = raycastEm(e.clientX, e.clientY);
+    var sn2 = hit2 ? aplicarSnap(hit2, raioToque(e)) : null;
+    var pM = sn2 ? sn2.p.clone() : editPontoPlano(e.clientX, e.clientY);
+    if (!pM) return;
+    editPreview(editAjustarPonto(pM, e), e.clientX, e.clientY);
+  };
   function editSt() {
     var el = editPanel.querySelector('[data-ed="st"]');
     if (el) el.textContent = edit.ops.length + ' operação(ões) · ' + ((edit.modelo && edit.modelo.nEl) || 0) + ' elemento(s)';
     editPanel.querySelectorAll('[data-ed]').forEach(function (b) {
       var k = b.getAttribute('data-ed');
       if (['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].indexOf(k) >= 0) {
-        b.style.background = (edit.sub === k) ? '#16a34a' : ''; b.style.color = (edit.sub === k) ? '#fff' : '';
+        b.style.background = (edit.sub === k) ? corAtiva() : ''; b.style.color = (edit.sub === k) ? '#fff' : '';
       }
     });
   }
@@ -1664,16 +1950,15 @@ function montar(host, opts) {
       if (!edit.p1) {
         edit.p1 = p.clone();
         edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov);
-        S._hint(sub === 'parede' ? '🧱 Agora clique o FIM da parede.' : '⬜ Agora clique o canto OPOSTO.');
+        S._hint(sub === 'parede' ? '🧱 Agora clique o FIM da parede (ou digite a distância na caixinha + Enter).' : '⬜ Agora clique o canto OPOSTO.');
         return;
       }
-      var cx2 = sub === 'parede'
-        ? BimEdit.parede({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, edit.esp, edit.alt, edit.base)
-        : BimEdit.laje({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, Math.min(edit.esp, 0.4), edit.base + (sub === 'laje' ? 0 : 0));
+      if (sub === 'parede') { editConcluirParede(editAjustarPonto(p, e)); return; } // orto/ângulo/encadeado/distância
+      var cx2 = BimEdit.laje({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, Math.min(edit.esp, 0.4), edit.base);
       editTirarProv();
       if (!cx2) { S._hint('✏️ Pontos muito próximos — clique 2 pontos distintos.'); return; }
       editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cx2 });
-      S._hint(sub === 'parede' ? '🧱 Parede criada (' + cx2.comprimento.toFixed(2).replace('.', ',') + ' m). Siga clicando, ou Esc.' : '⬜ Laje criada (' + cx2.area.toFixed(2).replace('.', ',') + ' m²).');
+      S._hint('⬜ Laje criada (' + cx2.area.toFixed(2).replace('.', ',') + ' m²).');
       marcarFechamento(); return;
     }
   }
@@ -1685,7 +1970,7 @@ function montar(host, opts) {
     ['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].forEach(function (k) {
       var b = editPanel.querySelector('[data-ed="' + k + '"]'); if (!b) return;
       var on2 = edit.sub === k;
-      b.style.background = on2 ? '#16a34a' : ''; b.style.color = on2 ? '#fff' : '';
+      b.style.background = on2 ? corAtiva() : ''; b.style.color = on2 ? '#fff' : '';
     });
   }
   function setEdit(on) {
@@ -1702,7 +1987,7 @@ function montar(host, opts) {
       edit.sub = null; editPanel.style.display = 'none';
       canvasEl.style.cursor = ''; S._hint('');
     }
-    var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? '#16a34a' : ''; be.style.color = on ? '#fff' : ''; }
+    var be = bar.querySelector('[data-b="editar"]'); if (be) { be.style.background = on ? corAtiva() : ''; be.style.color = on ? '#fff' : ''; }
   }
   S._setEdit = setEdit;
   S._editOps = function () { return edit.ops.slice(); };
@@ -1742,9 +2027,19 @@ function montar(host, opts) {
   editPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-ed]'); if (!b) return; var k = b.getAttribute('data-ed');
     if (k === 'fechar') setEdit(false);
-    else if (k === 'undo') { if (edit.ops.length) { edit.ops.pop(); editRebuild(); S._hint('↩️ Desfeito.'); } else { S._hint('↩️ Nada pra desfazer.'); } }
+    else if (k === 'undo') { if (edit.ops.length) { edit.ops.pop(); editTirarProv(); editRebuild(); S._hint('↩️ Desfeito.'); } else { S._hint('↩️ Nada pra desfazer.'); } } // TirarProv: cadeia não pode ficar apontando pra parede que sumiu
+    else if (k === 'orto') { edit.orto = !edit.orto; b.style.background = edit.orto ? corAtiva() : ''; b.style.color = edit.orto ? '#fff' : ''; S._hint(edit.orto ? '⟂ Orto LIGADO — paredes só na horizontal/vertical.' : '⟂ Orto desligado (Shift também trava).'); }
+    else if (k === 'angpre') {
+      edit.angPre = edit.angPre === 0 ? 45 : (edit.angPre === 45 ? 15 : 0);
+      b.textContent = '∠ ' + (edit.angPre === 0 ? 'Livre' : edit.angPre + '°');
+      b.style.background = edit.angPre ? corAtiva() : ''; b.style.color = edit.angPre ? '#fff' : '';
+      S._hint(edit.angPre ? '∠ Ângulos travados em múltiplos de ' + edit.angPre + '°.' : '∠ Ângulo livre.');
+    }
+    else if (k === 'chain') { edit.chain = !edit.chain; b.style.background = edit.chain ? corAtiva() : ''; b.style.color = edit.chain ? '#fff' : ''; S._hint(edit.chain ? '⛓ Encadear LIGADO — cada parede continua da anterior (Esc encerra o traço).' : '⛓ Encadear desligado.'); }
     else if (['parede', 'laje', 'pilar', 'mover', 'apagar', 'anotar'].indexOf(k) >= 0) setEditSub(k);
   });
+  // estado inicial dos toggles (chain nasce ligado — fluxo Revit)
+  (function () { var bC = editPanel.querySelector('[data-ed="chain"]'); if (bC) { bC.style.background = corAtiva(); bC.style.color = '#fff'; } })();
   editPanel.addEventListener('change', function (e) {
     var i = e.target.closest('input[data-ed]'); if (!i) return; var k = i.getAttribute('data-ed'), v = parseFloat(i.value);
     // clamp nos limites do input — valor DIGITADO ignora min/max do HTML (parede de 50 m de espessura não passa)
@@ -1901,6 +2196,116 @@ function montar(host, opts) {
       }
     } catch (e) { /* leitura de propriedades é bônus; nunca impede o modelo de abrir */ }
     return mapa;
+  }
+
+  // v1.1.82 — FAMÍLIA/TIPO por elemento (IfcRelDefinesByType): o Revit exporta o nome do TIPO
+  // como Name do IfcTypeObject (e 'Família:Tipo' no ObjectType da instância). Devolve mapa
+  // expressID -> { familia, tipoId } — tipoId guarda o IfcTypeObject p/ ler os psets do TIPO depois.
+  // Blindado: property é bônus, nunca impede o 3D de abrir.
+  function lerTipos(mid) {
+    var mapa = {};
+    try {
+      var rels = S.api.GetLineIDsWithType(mid, IFC_RELDEFINESBYTYPE);
+      var n = rels.size();
+      for (var i = 0; i < n; i++) {
+        var rel; try { rel = S.api.GetLine(mid, rels.get(i), false); } catch (_) { continue; }
+        if (!rel || !rel.RelatingType || !rel.RelatedObjects) continue;
+        var tid = rel.RelatingType.value; if (tid == null) continue;
+        var tipoObj; try { tipoObj = S.api.GetLine(mid, tid, false); } catch (_) { continue; }
+        var nomeFam = (tipoObj && tipoObj.Name && tipoObj.Name.value) || null;
+        if (!nomeFam) continue;
+        var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+        for (var o = 0; o < objs.length; o++) {
+          var oh = objs[o]; if (!oh || oh.value == null) continue;
+          mapa[oh.value] = { familia: nomeFam, tipoId: tid };
+        }
+      }
+    } catch (e) { /* bônus */ }
+    return mapa;
+  }
+
+  // valor legível de uma property (SingleValue/Enumerated/List/Bounded/Complex — nada é descartado)
+  function propValor(mid, pv) {
+    try {
+      if (pv.type === IFC_PROPERTYSINGLEVALUE) return pv.NominalValue != null ? pv.NominalValue.value : null;
+      if (pv.type === IFC_PROP_ENUM) return (pv.EnumerationValues || []).map(function (x) { return x && x.value; }).join(", ");
+      if (pv.type === IFC_PROP_LIST) return (pv.ListValues || []).map(function (x) { return x && x.value; }).join(", ");
+      if (pv.type === IFC_PROP_BOUNDED) {
+        var lo = pv.LowerBoundValue && pv.LowerBoundValue.value, hi = pv.UpperBoundValue && pv.UpperBoundValue.value;
+        return (lo != null ? lo : "…") + " – " + (hi != null ? hi : "…");
+      }
+      if (pv.type === IFC_PROP_COMPLEX) {
+        var subs = Array.isArray(pv.HasProperties) ? pv.HasProperties : [pv.HasProperties];
+        return subs.map(function (h) {
+          try { var sub = S.api.GetLine(mid, h.value, false); return (sub.Name && sub.Name.value) + ": " + propValor(mid, sub); } catch (_) { return ""; }
+        }).filter(Boolean).join(" · ");
+      }
+    } catch (e) {}
+    return null;
+  }
+  function lerPropsDePset(mid, psetId, grupos, origem) {
+    var pset; try { pset = S.api.GetLine(mid, psetId, false); } catch (_) { return; }
+    if (!pset) return;
+    var nomePset = (pset.Name && pset.Name.value) || "Propriedades";
+    var props = [];
+    if (pset.HasProperties) { // IfcPropertySet
+      var hs = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
+      for (var p = 0; p < hs.length; p++) {
+        var h = hs[p]; if (!h || h.value == null) continue;
+        var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
+        if (!pv) continue;
+        var v = propValor(mid, pv);
+        if (v != null && v !== "") props.push({ n: (pv.Name && pv.Name.value) || "?", v: String(v) });
+      }
+    } else if (pset.Quantities) { // IfcElementQuantity — quantidades cruas do arquivo
+      var qs = Array.isArray(pset.Quantities) ? pset.Quantities : [pset.Quantities];
+      for (var q = 0; q < qs.length; q++) {
+        var qh = qs[q]; if (!qh || qh.value == null) continue;
+        var qv; try { qv = S.api.GetLine(mid, qh.value, false); } catch (_) { continue; }
+        if (!qv) continue;
+        var val = null, camp = ["LengthValue", "AreaValue", "VolumeValue", "CountValue", "WeightValue"];
+        for (var c = 0; c < camp.length; c++) if (qv[camp[c]] != null) { val = qv[camp[c]].value != null ? qv[camp[c]].value : qv[camp[c]]; break; }
+        if (val != null) props.push({ n: (qv.Name && qv.Name.value) || "?", v: String(val) });
+      }
+    }
+    if (props.length) grupos.push({ pset: nomePset, origem: origem, props: props });
+  }
+  // TODAS as propriedades de um elemento, on-demand (clique): psets da INSTÂNCIA
+  // (IfcRelDefinesByProperties) + psets do TIPO/família (IfcTypeObject.HasPropertySets — atributo
+  // direto, caminho diferente!). Devolve [{pset, origem:'instância'|'família', props:[{n,v}]}].
+  function propsCompletas(mid, expressID) {
+    var grupos = [];
+    var mo = modeloDe(mid);
+    if (mo && mo.sintetico) { // criado no OrçaPRO: propriedades do editor
+      var elS = (mo.elementos || []).filter(function (e) { return e.id === expressID; })[0];
+      if (elS && elS.qto) grupos.push({ pset: "Dimensões (criado no OrçaPRO)", origem: "instância", props: [
+        { n: "Comprimento (m)", v: String(elS.qto.comprimento || 0) }, { n: "Área (m²)", v: String(elS.qto.area || 0) }, { n: "Volume (m³)", v: String(elS.qto.volume || 0) }] });
+      return grupos;
+    }
+    try {
+      // psets da instância
+      var rels = S.api.GetLineIDsWithType(mid, IFC_RELDEFINESBYPROPERTIES);
+      var n = rels.size();
+      for (var i = 0; i < n; i++) {
+        var rel; try { rel = S.api.GetLine(mid, rels.get(i), false); } catch (_) { continue; }
+        if (!rel || !rel.RelatingPropertyDefinition || !rel.RelatedObjects) continue;
+        var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+        var meu = false;
+        for (var o = 0; o < objs.length; o++) if (objs[o] && objs[o].value === expressID) { meu = true; break; }
+        if (!meu) continue;
+        lerPropsDePset(mid, rel.RelatingPropertyDefinition.value, grupos, "instância");
+      }
+      // psets do TIPO (família)
+      var fam = (mo && mo.familias && mo.familias[expressID]) || null;
+      if (fam && fam.tipoId != null) {
+        var tipoObj; try { tipoObj = S.api.GetLine(mid, fam.tipoId, false); } catch (_) { tipoObj = null; }
+        if (tipoObj && tipoObj.HasPropertySets) {
+          var hps = Array.isArray(tipoObj.HasPropertySets) ? tipoObj.HasPropertySets : [tipoObj.HasPropertySets];
+          for (var t = 0; t < hps.length; t++) if (hps[t] && hps[t].value != null) lerPropsDePset(mid, hps[t].value, grupos, "família");
+        }
+      }
+    } catch (e) { /* bônus */ }
+    return grupos;
   }
 
   // Fator linear do prefixo do IfcSIUnit de um tipo (LENGTHUNIT/AREAUNIT/VOLUMEUNIT). Ex.: CENTI→0.01.
@@ -2144,6 +2549,7 @@ function montar(host, opts) {
       // carimbos do exportador pyRevit + BaseQuantities — merge nos mapas compartilhados (4D/5D)
       var carimbos = lerCarimbosOrcaPro(mid), qto = lerQuantitativos(mid);
       modelo.carimbos = carimbos; modelo.qto = qto; // por modelo (expressID colide entre IFCs)
+      modelo.familias = lerTipos(mid); // v1.1.82: família/tipo por elemento (Revit → IfcTypeObject)
       modelo.pavimentos = lerPavimentos(mid); // 🏢 (y0 real preenchido depois, pelo AABB dos membros)
       var tmpMat = new THREE.Matrix4();
       function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!modelo.matCache[k]) modelo.matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return modelo.matCache[k]; }
@@ -2170,7 +2576,8 @@ function montar(host, opts) {
           modelo.nTri += idx.length / 3; geo.delete();
         }
         var cb = carimbos[mesh.expressID] || {};
-        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
+        var famEl = (modelo.familias && modelo.familias[mesh.expressID]) || null;
+        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);
@@ -2287,7 +2694,7 @@ function focarClash(ids) {
   if (S.ang && S.ang.on && S._setAng) S._setAng(false);
   if (S._fecharCtecModal && S.ctecModal && S.ctecModal.style.display === 'flex') S._fecharCtecModal(); // modal do resultado tapa o viewer -> fecha antes de voar a câmera
   if (S._ctecCancelar) S._ctecCancelar();
-  if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); // editor armado + câmera voando = clique seguinte criaria parede sem querer
+  if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); // editor armado + câmera voando = clique seguinte criaria parede sem querer (setEdit já limpa a cadeia)
   if (S.p3dPanel && S.p3dPanel.style.display === 'flex') S.p3dPanel.style.display = 'none'; // modal 2D→3D também taparia o clash
   limparClash();
   var idset = {}; (ids || []).forEach(function (id) { idset[id] = 1; });
@@ -2567,6 +2974,9 @@ window.BIM = {
   isolarTipo: function () { if (S && S._isolarTipo) S._isolarTipo(); },
   restaurarVisibilidade: function () { if (S && S._restaurarVis) S._restaurarVis(); },
   foto: function () { return (S && S._tirarFoto) ? S._tirarFoto() : null; }, // dataURL do render (também baixa o PNG carimbado)
+  // v1.1.82 — propriedades completas do elemento (todos os psets, instância+família) e thumbnail
+  propriedades: function (uid) { return (S && S._propsCompletas) ? S._propsCompletas(uid) : []; },
+  thumbFamilia: function (uid, maxPx) { return (S && S._thumbFamilia) ? S._thumbFamilia(uid, maxPx) : null; },
   // ---- 2D→3D (Fase C.1): paredes confirmadas viram modelo sintético no viewer ----
   carregarSintetico: function (caixas, nome) { return (S && S._carregarSintetico) ? S._carregarSintetico(caixas, nome) : null; },
   editar: function (on) { if (S && S._setEdit) S._setEdit(on == null ? !(S.edit && S.edit.on) : !!on); },

@@ -1136,7 +1136,8 @@
       var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
         ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>' +
         ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">🏗️ Exportar p/ Revit</button>' +
-        ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">🧠 Gerar orçamento do modelo</button>';
+        ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">🧠 Gerar orçamento do modelo</button>' +
+        ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">📕 Quantitativo ilustrado</button>';
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;position:relative">' +
@@ -1170,6 +1171,12 @@
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">📐 Quantitativos <span class="muted" style="font-weight:400;font-size:13px">— levantamento automático do modelo</span></h3>' +
         '<button class="btn sm primary" id="bim-qto-run">📊 Levantar quantitativos</button></div>' +
         '<div id="bim-qto-res"><p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p></div>' +
+        "</div>";
+      // 📚 Banco de famílias — SEMPRE visível (mesmo sem modelo: dá pra criar projeto do zero
+      // com o editor + uma família salva de outro projeto). Populado no _bimWire.
+      html += '<div class="card" id="bim-familias" style="padding:12px">' +
+        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">📚 Banco de famílias <span class="muted" style="font-weight:400;font-size:13px">— salve do modelo e reuse em qualquer projeto</span></h3></div>' +
+        '<div id="bim-familias-lista"></div>' +
         "</div>";
       html += '<div class="card" id="bim-6d" style="display:none">' +
         '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🧊 6D/7D · Ciclo de vida <span class="muted" style="font-weight:400;font-size:13px">— manutenção e custo pós-obra (20 anos)</span></h3>' +
@@ -1794,6 +1801,7 @@
       if (window.BIM && BIM.focarClash) { try { BIM.focarClash([c.aId, c.bId]); } catch (e) {} }
       var box = document.getElementById("bim-info");
       if (box) {
+        box.style.maxWidth = "260px"; // o painel de propriedades (420px) pode ter ficado aberto
         var geoTxt = c.geo === "confirmado" ? " · <span style='color:#16a34a;font-weight:700'>✔ confirmado pela geometria</span>"
           : c.geo === "descartado" ? " · <span style='color:#94a3b8;font-weight:700'>✕ descartado pela geometria (provável falso alarme)</span>"
           : c.geo ? " · <span style='color:#f59e0b;font-weight:700'>~ não-verificável — confira no 3D</span>" : "";
@@ -1804,6 +1812,208 @@
       if (window.BIM && BIM.limparClash) { try { BIM.limparClash(); } catch (e) {} }
       if (window.BIM && BIM.mostrarTudo) { try { BIM.mostrarTudo(); } catch (e) {} }
       var box = document.getElementById("bim-info"); if (box) box.style.display = "none";
+    },
+    // dims da caixa envolvente (metros): Y é o eixo VERTICAL do viewer → altura;
+    // entre os horizontais, o maior vira largura e o menor espessura (2 casas).
+    // qto (BaseQuantities) tem PRIORIDADE quando existe — é rotação-independente:
+    // parede a 45° tem AABB diagonal (largura/espessura infladas), mas comprimento
+    // medido e volume/área continuam exatos.
+    _bimDimsDoAabb: function (aabb, qto) {
+      if (!aabb || !aabb.min || !aabb.max) return null;
+      var dx = Math.abs(aabb.max[0] - aabb.min[0]), dy = Math.abs(aabb.max[1] - aabb.min[1]), dz = Math.abs(aabb.max[2] - aabb.min[2]);
+      var r2 = function (n) { return Math.round(n * 100) / 100; };
+      var d = { largura: r2(Math.max(dx, dz)), espessura: r2(Math.min(dx, dz)), altura: r2(dy) };
+      if (qto) {
+        if (qto.comprimento > 0) d.largura = r2(qto.comprimento);
+        if (qto.volume > 0 && qto.area > 0) { var eQ = r2(qto.volume / qto.area); if (eQ > 0 && eQ < d.espessura) d.espessura = eQ; }
+      }
+      return d;
+    },
+    // 📋 Propriedades COMPLETAS do elemento (todos os psets, instância+família) — expande
+    // o PRÓPRIO balão #bim-info (o clash reusa o mesmo balão; fechar restaura o tamanho)
+    _bimVerProps: function (info) {
+      var box = document.getElementById("bim-info"); if (!box || !info) return;
+      var grupos = [];
+      try { grupos = (window.BIM && BIM.propriedades) ? (BIM.propriedades(info.uid) || []) : []; } catch (e) { grupos = []; }
+      box.style.display = ""; box.style.maxWidth = "420px";
+      var h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
+        + '<b style="font-size:12.5px">' + Util.esc(info.nome || info.tipo || "Elemento")
+        + (info.familia ? ' <span style="font-weight:400;opacity:.85">· ' + Util.esc(info.familia) + "</span>" : "") + "</b>"
+        + '<button class="btn sm" id="bim-props-fechar" title="Fechar" style="padding:1px 8px;line-height:1.4">✕</button></div>';
+      if (!grupos.length) {
+        h += '<p style="margin:8px 0 0;font-size:12px;opacity:.85">Este elemento não trouxe property sets no IFC.</p>';
+      } else {
+        h += '<input id="bim-props-filtro" placeholder="🔎 filtrar propriedade…" style="width:100%;margin-top:6px;padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;font-size:12px">';
+        h += '<div style="max-height:56vh;overflow:auto;margin-top:6px">';
+        grupos.forEach(function (g) {
+          var badge = g.origem === "família"
+            ? '<span style="background:rgba(245,158,11,.22);color:#fbbf24;font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px">família</span>'
+            : '<span style="background:rgba(34,197,94,.2);color:#4ade80;font-size:10px;font-weight:700;padding:1px 7px;border-radius:99px">' + Util.esc(g.origem || "instância") + "</span>";
+          h += '<div style="display:flex;align-items:center;gap:6px;margin-top:8px;border-bottom:1px solid rgba(255,255,255,.2);padding-bottom:2px"><b style="font-size:11px;letter-spacing:.3px">' + Util.esc(g.pset || "—") + "</b>" + badge + "</div>";
+          h += '<table style="width:100%;border-collapse:collapse;font-size:11.5px">';
+          (g.props || []).forEach(function (p) {
+            h += '<tr class="bim-prop-lin"><td style="padding:2px 6px 2px 0;opacity:.75;vertical-align:top;max-width:170px;word-break:break-word">' + Util.esc(p.n) + '</td><td style="padding:2px 0;word-break:break-word">' + Util.esc(p.v) + "</td></tr>";
+          });
+          h += "</table>";
+        });
+        h += "</div>";
+      }
+      box.innerHTML = h;
+      var bx = document.getElementById("bim-props-fechar");
+      if (bx) bx.onclick = function () { box.style.display = "none"; box.style.maxWidth = "260px"; };
+      var fil = document.getElementById("bim-props-filtro");
+      if (fil) fil.oninput = function () {
+        var q = (fil.value || "").toLowerCase(), lins = box.querySelectorAll("tr.bim-prop-lin");
+        for (var i = 0; i < lins.length; i++) {
+          var t = (lins[i].textContent || "").toLowerCase();
+          lins[i].style.display = (!q || t.indexOf(q) >= 0) ? "" : "none";
+        }
+      };
+    },
+    // 💾 Salva a família do elemento clicado no banco (entidade "familias") — nome repetido
+    // (case-insensitive) ATUALIZA o registro (thumb/props/dims), nunca duplica
+    _bimSalvarFamilia: function (info) {
+      if (!info) return;
+      var nome = info.familia || info.nome || info.tipo || "Família";
+      var el = null, els = this._bimElementos || [];
+      for (var i = 0; i < els.length; i++) if (els[i].uid === info.uid) { el = els[i]; break; }
+      var props = []; try { props = (window.BIM && BIM.propriedades) ? (BIM.propriedades(info.uid) || []) : []; } catch (e) { props = []; }
+      var thumb = null; try { thumb = (window.BIM && BIM.thumbFamilia) ? BIM.thumbFamilia(info.uid, 220) : null; } catch (e2) { thumb = null; }
+      var reg = {
+        nome: nome,
+        tipoIfc: info.tipo || "",
+        categoria: (typeof BIM4D !== "undefined") ? BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo)) : "",
+        dims: this._bimDimsDoAabb(el && el.aabb, el && el.qto),
+        qto: info.qto || (el && el.qto) || null,
+        props: props,
+        thumb: thumb,
+        arquivo: (el && el.arquivo) || "",
+        origem: "modelo IFC"
+      };
+      var jaTem = null, fams = lista("familias");
+      for (var j = 0; j < fams.length; j++) if (String(fams[j].nome || "").toLowerCase() === String(nome).toLowerCase()) { jaTem = fams[j]; break; }
+      if (jaTem) {
+        jaTem.tipoIfc = reg.tipoIfc; jaTem.categoria = reg.categoria;
+        if (reg.dims) jaTem.dims = reg.dims;
+        if (reg.qto) jaTem.qto = reg.qto;
+        if (reg.props && reg.props.length) jaTem.props = reg.props;
+        if (reg.thumb) jaTem.thumb = reg.thumb;
+        if (reg.arquivo) jaTem.arquivo = reg.arquivo;
+        if (Store.salvar(eid(), "familias", jaTem)) UI.toast('"' + nome + '" já estava no banco — atualizei foto, medidas e propriedades (sem duplicar).', "ok"); // null = quota cheia (o Store já toasta o erro)
+      } else {
+        if (Store.salvar(eid(), "familias", reg)) UI.toast("Família salva no banco 📚", "ok");
+      }
+      this._bimRenderFamilias();
+    },
+    // 📚 grid de mini-cards do banco de famílias (card #bim-familias — sempre visível)
+    _bimRenderFamilias: function () {
+      var box = document.getElementById("bim-familias-lista"); if (!box) return;
+      var fams = lista("familias");
+      if (!fams.length) { box.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Clique num elemento do modelo e use <b>💾 Salvar família</b>.</p>'; return; }
+      var h = '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+      fams.forEach(function (f) {
+        var d = f.dims || {}, t = String(f.tipoIfc || "").toUpperCase(), dimsTxt = "";
+        if (t.indexOf("IFCDOOR") === 0 || t.indexOf("IFCWINDOW") === 0) {
+          if (d.largura > 0 && d.altura > 0) dimsTxt = Util.fmtNum(d.largura, 2) + "×" + Util.fmtNum(d.altura, 2) + " m";
+        } else if (t.indexOf("IFCSLAB") === 0) {
+          if (d.altura > 0) dimsTxt = "esp. " + Util.fmtNum(d.altura, 2) + " m"; // laje: a espessura real é a dimensão VERTICAL
+        } else if (d.espessura > 0) dimsTxt = "esp. " + Util.fmtNum(d.espessura, 2) + " m";
+        h += '<div style="width:150px;border:1px solid var(--linha);border-radius:10px;padding:8px;display:flex;flex-direction:column;gap:4px">'
+          + (f.thumb ? '<img src="' + Util.esc(f.thumb) + '" alt="" style="width:100%;border-radius:8px">' : "")
+          + '<b style="font-size:11.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="' + Util.esc(f.nome) + '">' + Util.esc(f.nome) + "</b>"
+          + (dimsTxt ? '<span class="muted" style="font-size:11px">' + dimsTxt + "</span>" : "")
+          + '<div style="display:flex;gap:4px;margin-top:auto"><button class="btn sm" data-fam-usar="' + Util.esc(f.id) + '" title="Aplica as dimensões desta família no editor do visualizador">✏️ Usar</button><button class="btn sm danger" data-fam-excluir="' + Util.esc(f.id) + '" title="Excluir do banco">✕</button></div>'
+          + "</div>";
+      });
+      box.innerHTML = h + "</div>";
+    },
+    // ✏️ Usar: liga o editor do viewer e pré-carrega os inputs dele com as dims da família
+    _bimUsarFamilia: function (id) {
+      var f = Store.obter(eid(), "familias", id); if (!f) return;
+      if (!window.BIM || !BIM.editar) { UI.toast("O visualizador 3D ainda não carregou — abra a aba BIM e tente de novo.", "erro"); return; }
+      BIM.editar(true);
+      var d = f.dims || {}, t = String(f.tipoIfc || "").toUpperCase(), mexeu = false;
+      var setar = function (chave, valor) {
+        if (!(valor > 0)) return;
+        var i2 = document.querySelector('[data-ed="' + chave + '"]'); if (!i2) return;
+        i2.value = String(valor);
+        // change borbulhando: o viewer clampa/absorve o valor como se o usuário tivesse digitado
+        try { i2.dispatchEvent(new Event("change", { bubbles: true })); } catch (eEv) {}
+        mexeu = true;
+      };
+      if (t.indexOf("IFCWALL") === 0) { setar("esp", d.espessura); setar("alt", d.altura); }
+      else if (t.indexOf("IFCCOLUMN") === 0) { setar("secao", d.largura); setar("alt", d.altura); }
+      else if (t.indexOf("IFCSLAB") === 0) { setar("esp", d.altura); } // laje: espessura = dimensão VERTICAL (a "largura em planta" iria clampada errada)
+      if (mexeu) UI.toast("Família aplicada no editor — desenhe com as dimensões dela.", "ok");
+      else UI.toast("Editor aberto. Esta família não vira molde automático (só parede/pilar/laje) — use as medidas do card como referência.", "ok");
+    },
+    // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
+    // dimensões e quantidade principal (área/comprimento/unidade) do projeto inteiro
+    bimQuantIlustrado: function () {
+      var els = this._bimElementos || [];
+      if (!els.length) { UI.toast("Carregue um modelo .IFC no visualizador primeiro.", "erro"); return; }
+      var nExist = 0, nDemol = 0, grupos = {}, ordem = [];
+      els.forEach(function (e2) {
+        // reforma: 'existente' já está de pé e 'demolir' NÃO é quantidade a construir —
+        // ambos FORA do quantitativo (mesma régua do QTO normal; declarado no rodapé)
+        var fQ = String(e2.fase || "").toLowerCase();
+        if (fQ === "existente") { nExist++; return; }
+        if (fQ === "demolir" || fQ === "demolicao") { nDemol++; return; }
+        var chave = e2.familia || e2.nome || e2.tipo || "—";
+        var g = grupos[chave];
+        if (!g) { g = grupos[chave] = { nome: chave, n: 0, tipos: {}, area: 0, comprimento: 0, volume: 0, primeiro: e2, comAabb: null }; ordem.push(g); }
+        g.n++;
+        var t = String(e2.tipo || ""); g.tipos[t] = (g.tipos[t] || 0) + 1;
+        if (e2.qto) {
+          if (e2.qto.area > 0) g.area += e2.qto.area;
+          if (e2.qto.comprimento > 0) g.comprimento += e2.qto.comprimento;
+          if (e2.qto.volume > 0) g.volume += e2.qto.volume;
+        }
+        if (!g.comAabb && e2.aabb) g.comAabb = e2;
+      });
+      ordem.sort(function (a, b) { return b.n - a.n; });
+      var self = this;
+      var linhas = ordem.map(function (g, idx) {
+        // tipo IFC predominante do grupo decide a medida principal
+        var tipoPred = "", nMax = -1, k;
+        for (k in g.tipos) if (g.tipos.hasOwnProperty(k) && g.tipos[k] > nMax) { nMax = g.tipos[k]; tipoPred = k; }
+        var T = String(tipoPred).toUpperCase();
+        var ehM2 = T.indexOf("IFCWALL") === 0 || T.indexOf("IFCCOVERING") === 0 || T.indexOf("IFCSLAB") === 0 || T.indexOf("IFCROOF") === 0 || T.indexOf("IFCPLATE") === 0;
+        var ehM = T.indexOf("IFCBEAM") === 0 || T.indexOf("IFCCOLUMN") === 0 || T.indexOf("IFCMEMBER") === 0 || T.indexOf("IFCPIPE") === 0 || T.indexOf("IFCDUCT") === 0 || T.indexOf("IFCCABLE") === 0 || T.indexOf("IFCFLOWSEGMENT") === 0;
+        var qtd, un;
+        if (ehM2 && g.area > 0) { qtd = Util.fmtNum(g.area, 2); un = "m²"; }
+        else if (ehM && g.comprimento > 0) { qtd = Util.fmtNum(g.comprimento, 2); un = "m"; }
+        else { qtd = String(g.n); un = "un"; } // portas/janelas/louças/luminárias e fallback
+        // dims do 1º elemento COM aabb (mesma régua do banco: dy=altura, maior=largura, menor=espessura)
+        var dims = self._bimDimsDoAabb(g.comAabb && g.comAabb.aabb, g.comAabb && g.comAabb.qto), dimsTxt = "";
+        if (dims) {
+          if (T.indexOf("IFCDOOR") === 0 || T.indexOf("IFCWINDOW") === 0) dimsTxt = "Dimensões: L " + Util.fmtNum(dims.largura, 2) + " × A " + Util.fmtNum(dims.altura, 2) + " m";
+          else if (T.indexOf("IFCWALL") === 0) dimsTxt = "Espessura " + Util.fmtNum(dims.espessura, 2) + " m · Altura " + Util.fmtNum(dims.altura, 2) + " m";
+        }
+        // thumbs: síncronos, mas caros — só os 40 primeiros grupos ganham foto (os demais "—")
+        var thumb = null;
+        if (idx < 40 && (g.comAabb || g.primeiro)) { try { thumb = (window.BIM && BIM.thumbFamilia) ? BIM.thumbFamilia((g.comAabb || g.primeiro).uid, 200) : null; } catch (eT) { thumb = null; } }
+        return "<tr>"
+          + "<td style='border:1px solid #bbb;padding:5px;text-align:center;width:96px'>" + (thumb ? "<img src='" + thumb + "' style='width:86px;height:86px;object-fit:cover;border:1px solid #ccc'>" : "—") + "</td>"
+          + "<td style='border:1px solid #bbb;padding:5px'><b>" + Util.esc(g.nome) + "</b><br><span style='color:#777;font-size:10px'>" + Util.esc(tipoPred || "—") + "</span>" + (dimsTxt ? "<br><span style='font-size:11px'>" + Util.esc(dimsTxt) + "</span>" : "") + "</td>"
+          + "<td style='border:1px solid #bbb;padding:5px;text-align:center;white-space:nowrap'><b>" + qtd + " " + un + "</b>" + (g.n > 1 ? "<br><span style='color:#777;font-size:10px'>" + g.n + " elementos</span>" : "") + "</td>"
+          + "</tr>";
+      }).join("");
+      // cabeçalho: obra + arquivos carregados + data
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      var arqs = [], vistos = {};
+      els.forEach(function (e3) { var a = e3.arquivo || ""; if (a && !vistos[a]) { vistos[a] = 1; arqs.push(a); } });
+      var corpo = "<table style='width:100%;font-size:12px;margin-bottom:12px'>"
+        + "<tr><td><b>Obra:</b> " + Util.esc(obra ? obra.nome : "—") + "</td><td style='text-align:right'><b>Data:</b> " + new Date().toLocaleDateString("pt-BR") + "</td></tr>"
+        + (arqs.length ? "<tr><td colspan='2'><b>Modelos:</b> " + Util.esc(arqs.join(" · ")) + "</td></tr>" : "")
+        + "<tr><td colspan='2'><b>Famílias:</b> " + ordem.length + " · <b>Elementos:</b> " + (els.length - nExist - nDemol) + "</td></tr></table>";
+      corpo += "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0e7490;color:#fff'>"
+        + "<th style='border:1px solid #bbb;padding:5px;width:96px'>Imagem</th><th style='border:1px solid #bbb;padding:5px'>Família / Descrição</th><th style='border:1px solid #bbb;padding:5px;width:16%'>Quantidade</th>"
+        + "</tr></thead><tbody>" + linhas + "</tbody></table>";
+      corpo += "<p style='margin-top:10px;font-size:10px;color:#555'>Quantidades das BaseQuantities do IFC; itens sem medida contam por unidade."
+        + (nExist ? "<br>" + nExist + " elementos de fase 'existente' (reforma) fora do quantitativo." : "")
+        + (nDemol ? "<br>" + nDemol + " elementos de fase 'demolir' fora do quantitativo — demolição/entulho é papel do 🧠 Agente EAP." : "") + "</p>";
+      this._abrirDoc("Quantitativo Ilustrado — " + (obra ? obra.nome : "modelo BIM"), this._docShell("QUANTITATIVO ILUSTRADO · FAMÍLIAS DO MODELO", "#0e7490", corpo));
     },
     _bimWire: function () {
       var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
@@ -1848,6 +2058,21 @@
       // 6D/7D: ciclo de vida
       var b6run = document.getElementById("bim-6d-run");
       if (b6run) b6run.onclick = function () { self._bim6dRodar(); };
+      // 📚 Banco de famílias: render + delegação usar/excluir (aparece MESMO sem modelo)
+      this._bimRenderFamilias();
+      var fbox = document.getElementById("bim-familias-lista");
+      if (fbox) fbox.onclick = function (e) {
+        var bU = e.target.closest("[data-fam-usar]");
+        if (bU) { self._bimUsarFamilia(bU.getAttribute("data-fam-usar")); return; }
+        var bX = e.target.closest("[data-fam-excluir]");
+        if (bX) {
+          var fid = bX.getAttribute("data-fam-excluir"), f = Store.obter(eid(), "familias", fid);
+          UI.modal("Excluir família", '<p style="margin:0">Excluir a família <b>' + Util.esc((f && f.nome) || "—") + "</b> do banco? Os modelos IFC não mudam.</p>", [
+            { texto: "🗑 Excluir", classe: "danger", onClick: function () { Store.excluir(eid(), "familias", fid); UI.fecharModal(); self._bimRenderFamilias(); UI.toast("Família excluída do banco.", "ok"); } },
+            { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+          ]);
+        }
+      };
       // monta o viewer (js/bim.js é módulo ES — pode não ter carregado ainda; poll curto)
       var tentativas = 0;
       function montarViewer() {
@@ -1861,7 +2086,22 @@
             onPick: function (info) {
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
-              box.style.display = ""; box.innerHTML = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.fase ? "<br><span style='display:inline-block;margin-top:4px;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;" + (info.fase === "demolir" ? "background:rgba(239,68,68,.18);color:#ef4444" : (info.fase === "existente" ? "background:rgba(148,163,184,.18);color:#94a3b8" : "background:rgba(34,197,94,.18);color:#16a34a")) + "'>" + (info.fase === "demolir" ? "🔴" : (info.fase === "existente" ? "⚪" : "🟢")) + " Fase: " + Util.esc(info.fase) + " · reforma</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
+              box.style.display = ""; box.style.maxWidth = "260px"; // volta do painel de propriedades expandido (420px)
+              var h = "<b>" + Util.esc(info.nome || info.tipo || "Elemento") + "</b><br><span style='opacity:.85'>" + Util.esc(BIM4D.nomeCat(BIM4D.catDoTipo(info.tipo))) + " · " + Util.esc(info.tipo || "") + "</span>" + (info.etapa ? "<br><span style='display:inline-block;margin-top:4px;background:rgba(34,197,94,.18);color:#16a34a;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🏷️ Etapa: " + Util.esc(info.etapa) + " · carimbo OrçaPRO</span>" : "") + (info.fase ? "<br><span style='display:inline-block;margin-top:4px;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px;" + (info.fase === "demolir" ? "background:rgba(239,68,68,.18);color:#ef4444" : (info.fase === "existente" ? "background:rgba(148,163,184,.18);color:#94a3b8" : "background:rgba(34,197,94,.18);color:#16a34a")) + "'>" + (info.fase === "demolir" ? "🔴" : (info.fase === "existente" ? "⚪" : "🟢")) + " Fase: " + Util.esc(info.fase) + " · reforma</span>" : "") + (info.globalId ? "<br><span style='opacity:.6;font-size:11px'>" + Util.esc(info.globalId) + "</span>" : "");
+              // v1.1.82: família Revit em destaque + quantitativos reais (BaseQuantities, só os >0)
+              if (info.familia) h += "<br><span style='display:inline-block;margin-top:4px;background:rgba(46,111,158,.28);color:#9fd0f5;font-weight:700;font-size:11px;padding:2px 8px;border-radius:99px'>🧩 " + Util.esc(info.familia) + "</span>";
+              if (info.qto) {
+                var qtxt = [];
+                if (info.qto.comprimento > 0) qtxt.push(Util.fmtNum(info.qto.comprimento, 2) + " m");
+                if (info.qto.area > 0) qtxt.push(Util.fmtNum(info.qto.area, 2) + " m²");
+                if (info.qto.volume > 0) qtxt.push(Util.fmtNum(info.qto.volume, 2) + " m³");
+                if (qtxt.length) h += "<br><span style='opacity:.85;font-size:11px'>📐 " + qtxt.join(" · ") + "</span>";
+              }
+              h += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-props-btn">📋 Propriedades</button> <button class="btn sm" id="bim-fam-salvar">💾 Salvar família</button></div>';
+              box.innerHTML = h;
+              // wiring direto (balão dinâmico — mesmo padrão dos painéis do _bimWire)
+              var bP = document.getElementById("bim-props-btn"); if (bP) bP.onclick = function () { self._bimVerProps(info); };
+              var bF = document.getElementById("bim-fam-salvar"); if (bF) bF.onclick = function () { self._bimSalvarFamilia(info); };
             },
             // ✏️ Editor: cada mutação agenda o save das ops da obra ATUAL (capturada NA HORA
             // da mutação — trocar de obra não pode gravar no registro errado); debounce leve
@@ -4808,6 +5048,7 @@ renderFolha: function () {
         case "bim-reuniao": return this.bimReuniao();
         case "bim-revit": return this.bimExportarRevit();
         case "bimeap-abrir": return this.bimeapAbrir();
+        case "bim-quant-ilustrado": return this.bimQuantIlustrado();
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);

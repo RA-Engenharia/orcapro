@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.81",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.81/OrcaPRO-IA-update-v1.1.81.zip",
-  "notas": "Agente EAP completo: sem projeto estrutural no IFC, o agente estima a armadura (taxas kg/m³ ajustáveis) e a fôrma (pela geometria de cada peça) — nada fica de fora, tudo declarado no memorial de cálculo rastreável.",
+  "versao": "1.1.82",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.82/OrcaPRO-IA-update-v1.1.82.zip",
+  "notas": "BIM completo: propriedades do Revit em cada elemento, banco de famílias parametrizadas com foto, Quantitativo Ilustrado (imagem de cada família ao lado das quantidades), editor estilo Revit (orto, ângulos, traço encadeado, distância digitada + Enter) e tema de cores da interface.",
   "obrigatoria": false
 }
