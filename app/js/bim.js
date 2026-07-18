@@ -52,7 +52,7 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
@@ -138,7 +138,7 @@ function montar(host, opts) {
   function aplicarTema() {
     var T = TEMAS[temaId];
     var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
-    h2.style.background = T.fundo;
+    h2.style.background = (S && S._estiloOn && S._estiloOn()) ? '#fff' : T.fundo; // estilo desenho segura o branco
     bar.style.background = T.bar;
     bar.style.color = T.texto;
     [S.editPanel, S.snapPanel, S.pavPanel, S.visPanel, S.editDist, S.p3dPanel].forEach(function (pn) {
@@ -222,7 +222,7 @@ function montar(host, opts) {
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
   S._onMouseMove = function (e) { if (!fly.on || !document.pointerLockElement) return; fly.yaw -= e.movementX * 0.0022; fly.pitch -= e.movementY * 0.0022; fly.pitch = Math.max(-1.5, Math.min(1.5, fly.pitch)); };
   window.addEventListener('keydown', S._onKeyDown); window.addEventListener('keyup', S._onKeyUp); document.addEventListener('mousemove', S._onMouseMove);
@@ -704,6 +704,8 @@ function montar(host, opts) {
   cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>📐 Altura do corte</b><span data-c="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
     '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:#22c55e">' +
     '<div style="font-size:11px;color:#9fb2c8">Esconde o que está acima do corte — a planta baixa do pavimento. A 📏 trena funciona aqui (cota horizontal).</div>' +
+    '<button class="btn sm primary" data-c="planta2d" style="width:100%">📄 Planta baixa técnica (2D)</button>' +
+    '<button class="btn sm" data-c="estilo" style="width:100%">✏️ Estilo desenho (branco)</button>' +
     '<button class="btn sm" data-c="cortetec" style="width:100%">📝 Gerar corte técnico (A–A)</button>';
   host.appendChild(cortePanel);
   S.cortePanel = cortePanel; // guardado p/ re-parentar no re-home (senão o slider some ao revisitar a aba)
@@ -729,9 +731,12 @@ function montar(host, opts) {
       cortePanel.style.display = 'flex';
       cortePanel.querySelector('[data-c="alt"]').value = 620; setAlturaCorte(0.62); // ~altura de peitoril
       if (bp) { bp.style.background = corAtiva(); bp.style.color = '#fff'; }
-      S._hint('📐 Planta baixa. Ajuste a altura do corte no painel. Toque em 📐 de novo pra sair.');
+      if (!estiloD.on) setEstiloDesenho(true); // planta "como deve ser": entra já em modo desenho (branco + arestas)
+      S._hint('📐 Planta baixa. Ajuste a altura do corte e gere a 📄 planta técnica com cotas no painel. Toque em 📐 de novo pra sair.');
     } else {
       ctecCancelar(); // desenho/config do corte técnico só faz sentido NA planta (incondicional: pega a config aberta)
+      plantaCfg.style.display = 'none'; // config da planta técnica idem
+      if (estiloD.on) setEstiloDesenho(false); // devolve as cores do modelo
       renderer.clippingPlanes = []; renderer.localClippingEnabled = false; planta.plane = null;
       orbit.enableRotate = true; // volta a permitir órbita livre
       cortePanel.style.display = 'none';
@@ -761,6 +766,8 @@ function montar(host, opts) {
   S._replanejarCorte = replanejarCorte;
   cortePanel.querySelector('[data-c="alt"]').addEventListener('input', function () { setAlturaCorte(this.value / 1000); });
   cortePanel.querySelector('[data-c="cortetec"]').addEventListener('click', function () { ctecIniciar(); });
+  cortePanel.querySelector('[data-c="planta2d"]').addEventListener('click', function () { fecharPaineis(); ctecCancelar(); plantaCfg.style.display = 'flex'; }); // planta técnica e corte A–A são modais centrais no mesmo z — não empilham
+  cortePanel.querySelector('[data-c="estilo"]').addEventListener('click', function () { setEstiloDesenho(!estiloD.on); });
 
   // ============================================================
   // ✂️ CORTE LIVRE — plano de corte em QUALQUER orientação, ao vivo
@@ -1018,6 +1025,7 @@ function montar(host, opts) {
   function ctecLimparDesenho() { ctec.objs.forEach(limparMarca); ctec.objs = []; ctec.pts = []; }
   function ctecIniciar() {
     if (!planta.on) { setPlanta(true); if (!planta.on) return; } // linha se risca NA planta
+    if (S.plantaCfg) S.plantaCfg.style.display = 'none'; // config da planta técnica não pode ficar cobrindo os cliques A/B
     if (edit && edit.on) setEdit(false); // corte técnico e editor disputariam o mesmo clique
     ctecLimparDesenho(); ctec.ativo = true;
     S._hint('📝 Clique o 1º ponto da linha de corte (A) sobre a planta.');
@@ -1220,6 +1228,7 @@ function montar(host, opts) {
     });
     ctecCfg.style.display = 'none';
     if (!res) { ctecIniciar(); S._hint('📝 Linha muito curta — clique o 1º ponto da linha de corte (A) de novo.'); return; } // re-arma (senão a ferramenta fica morta)
+    ctecModal._ajustar = null; ctecModal._nomeArq = null; // modal é compartilhado com a planta técnica: limpa os hooks dela
     ctecModal._res = res; // guarda p/ imprimir em mm físicos
     ctecModal.querySelector('[data-r="img"]').src = res.url;
     ctecModal.querySelector('[data-r="titulo"]').textContent = (ctecCfg.querySelector('[data-t="tipo"]').value === 'fachada' ? 'Fachada' : 'Corte A–A') + ' — ESC 1:' + res.escala + (res.ajustada ? ' (ajustada p/ caber)' : '');
@@ -1230,20 +1239,320 @@ function montar(host, opts) {
     var b = e.target.closest('[data-r]'); if (!b) return; var k = b.getAttribute('data-r');
     var url = ctecModal.querySelector('[data-r="img"]').src, res = ctecModal._res || {};
     if (k === 'fechar') { S._fecharCtecModal(); }
-    else if (k === 'ajustar') { ctecModal.style.display = 'none'; ctecCfg.style.display = 'flex'; S._hint('📝 Ajuste e clique Gerar (a linha A–A foi mantida).'); } // pts preservados
-    else if (k === 'baixar') { var aEl = document.createElement('a'); aEl.href = url; aEl.download = 'corte-tecnico.png'; aEl.click(); }
+    else if (k === 'ajustar') {
+      ctecModal.style.display = 'none';
+      if (ctecModal._ajustar) { ctecModal._ajustar(); S._hint('📄 Ajuste e clique Gerar.'); } // planta técnica reabre a config DELA
+      else { ctecCfg.style.display = 'flex'; S._hint('📝 Ajuste e clique Gerar (a linha A–A foi mantida).'); } // pts preservados
+    }
+    else if (k === 'baixar') { var aEl = document.createElement('a'); aEl.href = url; aEl.download = ctecModal._nomeArq || 'corte-tecnico.png'; aEl.click(); }
     else if (k === 'imprimir') {
       // imprime na DIMENSÃO FÍSICA (mm) pra a escala do carimbo valer no papel — max-width:100% encolheria
       var w = null; try { w = window.open('', '_blank'); } catch (_) {}
       if (!w) { S._hint('🖨 O navegador bloqueou a janela de impressão — use ⬇ PNG e imprima o arquivo em 100%.'); return; }
       try {
-        w.document.write('<!doctype html><meta charset="utf-8"><title>Corte técnico — OrçaPRO BIM</title>' +
+        var ttlImp = esc((ctecModal.querySelector('[data-r="titulo"]').textContent || 'Desenho técnico')) + ' — OrçaPRO BIM';
+        w.document.write('<!doctype html><meta charset="utf-8"><title>' + ttlImp + '</title>' +
           '<style>@page{size:auto;margin:8mm}body{margin:0;font-family:Arial}.av{font-size:12px;color:#444;margin:6px 2px}@media print{.av{display:none}}</style>' +
           '<p class="av">Imprima em <b>100%</b> (sem “ajustar à página”) para a escala do carimbo valer. A escala gráfica de 1 m serve de conferência.</p>' +
           '<img src="' + url + '" style="width:' + (res.larguraMM || 200).toFixed(1) + 'mm;height:' + (res.alturaMM || 150).toFixed(1) + 'mm;display:block" onload="setTimeout(function(){window.print()},300)">');
         w.document.close();
       } catch (_) { S._hint('🖨 Não deu pra abrir a impressão — use ⬇ PNG.'); }
     }
+  });
+
+  // ============================================================
+  // 📄 PLANTA BAIXA TÉCNICA — desenho 2D de verdade (estilo Revit):
+  // corte horizontal na altura do slider, paredes cortadas HACHURADAS
+  // (mesmo stencil por paridade do corte técnico), arestas pretas, fundo
+  // branco, escala exata e COTAS AUTOMÁTICAS em cadeia nos 2 eixos
+  // (motor BimPlanta — parede fora de esquadro fica FORA e é declarada).
+  // ✏️ Estilo desenho: a própria vista ao vivo vira "planta de verdade"
+  // (massas cinza + arestas pretas + fundo branco) enquanto navega.
+  // ============================================================
+  var estiloD = { on: false, mat: null, matLinha: null };
+  S._estiloOn = function () { return !!estiloD.on; };
+  function nVerts(geo) { return (geo && geo.attributes && geo.attributes.position) ? geo.attributes.position.count : 0; }
+  // silencioso=true: re-aplicação automática (modelo novo / refreshModelo / alpha) — não repinta hint nem outline
+  function setEstiloDesenho(on, silencioso) {
+    estiloD.on = !!on;
+    var bt = cortePanel.querySelector('[data-c="estilo"]');
+    var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
+    if (on) {
+      if (!estiloD.mat) estiloD.mat = new THREE.MeshBasicMaterial({ color: 0xe9e9e9, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+      if (!estiloD.matLinha) estiloD.matLinha = new THREE.LineBasicMaterial({ color: 0x111111 });
+      todasMalhas(function (m) {
+        if (!m.geometry) return;
+        // salva o material ORIGINAL só na 1ª passada (idempotente); mas FORÇA o cinza SEMPRE que
+        // reaplicar — senão refreshModelo/transparência/4D deixariam a cor original de volta com o
+        // estilo ainda ligado (o _matAntesEstilo guarda o que restaurar; o material vivo é o cinza).
+        if (!('_matAntesEstilo' in m.userData)) {
+          if (m === S.selected) m.userData._matAntesEstilo = S.prevMat || m.material;
+          else m.userData._matAntesEstilo = m.material;
+        }
+        if (m === S.selected) S.prevMat = estiloD.mat; // desselecionar devolve o cinza, não a cor
+        else if (m.material !== estiloD.mat) m.material = estiloD.mat;
+        // arestas pretas: pula malha densa (mesmo guard do snap) — EdgesGeometry em terreno de 90k
+        // vértices trava a UI; a massa cinza continua, só sem contorno
+        if (!m.userData._edgeLn && nVerts(m.geometry) <= SNAP_MAX_VERT) {
+          var arr = arestasDe(m.geometry);
+          if (arr.length) {
+            var bge = new THREE.BufferGeometry(); bge.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+            var ln = new THREE.LineSegments(bge, estiloD.matLinha);
+            ln.raycast = function () {}; // aresta é decoração — nunca rouba o clique/snap da parede
+            m.add(ln); m.userData._edgeLn = ln;
+          }
+        }
+        if (m.userData._edgeLn) m.userData._edgeLn.visible = true;
+      });
+      h2.style.background = '#fff';
+      if (bt) bt.style.outline = '2px solid ' + corAtiva();
+      if (!silencioso) S._hint('✏️ Estilo desenho: massas + arestas no fundo branco (as cores voltam ao sair).');
+    } else {
+      todasMalhas(function (m) {
+        if ('_matAntesEstilo' in m.userData) {
+          if (m === S.selected) { if (S.prevMat === estiloD.mat) S.prevMat = m.userData._matAntesEstilo; }
+          else m.material = m.userData._matAntesEstilo;
+          delete m.userData._matAntesEstilo;
+        }
+        if (m.userData._edgeLn) m.userData._edgeLn.visible = false;
+      });
+      if (bt) bt.style.outline = '';
+      if (S._aplicarTema) S._aplicarTema(); // devolve o fundo do tema atual
+    }
+  }
+  S._setEstiloDesenho = setEstiloDesenho;
+  S._reaplicarEstilo = function () { if (estiloD.on) setEstiloDesenho(true, true); }; // modelo novo/refresh entra no estilo, sem spam de hint
+  // esconde/mostra as arestas do estilo (thumbnail e foto de 1 elemento não podem sair com wireframe)
+  S._edgesEstilo = function (mostrar) { if (!estiloD.on) return; todasMalhas(function (m) { if (m.userData._edgeLn) m.userData._edgeLn.visible = !!mostrar; }); };
+
+  var plantaCfg = document.createElement('div');
+  plantaCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:270px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  plantaCfg.innerHTML =
+    '<b>📄 Planta baixa técnica</b>' +
+    '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-q="esc" class="inp" style="width:130px"><option value="50" selected>1:50</option><option value="75">1:75</option><option value="100">1:100</option><option value="200">1:200</option></select></label>' +
+    '<label style="display:flex;gap:6px;align-items:center"><input data-q="cotas" type="checkbox" checked> Cotas automáticas nas paredes</label>' +
+    '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade abaixo do corte <input data-q="prof" class="inp" type="number" min="0.5" step="0.5" value="3" style="width:64px"> m</label>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ As cotas saem dos alinhamentos das faces das paredes retas nos eixos do modelo. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a 📏 trena.</div>' +
+    '<div style="display:flex;gap:6px"><button class="btn sm primary" data-q="gerar" style="flex:1">Gerar</button><button class="btn sm" data-q="cancelar" style="flex:1">Cancelar</button></div>';
+  host.appendChild(plantaCfg);
+  S.plantaCfg = plantaCfg;
+
+  // cadeias de cota (parciais + total) desenhadas em volta do desenho, estilo prancha
+  function desenharCotas(g2, cad, geo) {
+    var mmpx = 96 / 25.4;
+    function mm(v) { return Math.round(v * mmpx); }
+    function px(x) { return geo.padL + (x - geo.x0) * geo.pxM; }
+    function py(z) { return (z - geo.z0) * geo.pxM; }
+    function tick(x, y) { g2.beginPath(); g2.moveTo(x - 3.5, y + 3.5); g2.lineTo(x + 3.5, y - 3.5); g2.stroke(); }
+    g2.lineWidth = 1;
+    if (cad.x) {
+      var y1 = geo.H + mm(6), y2 = geo.H + mm(12);
+      g2.strokeStyle = '#888'; // linhas de chamada
+      cad.x.ticks.forEach(function (t) { g2.beginPath(); g2.moveTo(px(t), geo.H + 2); g2.lineTo(px(t), y2 + mm(1.5)); g2.stroke(); });
+      g2.strokeStyle = '#111'; g2.fillStyle = '#111';
+      g2.beginPath(); g2.moveTo(px(cad.x.total.a) - 6, y1); g2.lineTo(px(cad.x.total.b) + 6, y1); g2.stroke();
+      cad.x.ticks.forEach(function (t) { tick(px(t), y1); });
+      cad.x.segs.forEach(function (s) {
+        var w = px(s.b) - px(s.a), t = BimPlanta.fmtM(s.v);
+        g2.font = '10px Arial'; var tw = g2.measureText(t).width;
+        if (tw > w - 4) { g2.font = '8px Arial'; tw = g2.measureText(t).width; if (tw > w - 2) return; } // sem espaço: fica só o tick
+        g2.fillText(t, (px(s.a) + px(s.b)) / 2 - tw / 2, y1 - 3);
+      });
+      g2.beginPath(); g2.moveTo(px(cad.x.total.a) - 6, y2); g2.lineTo(px(cad.x.total.b) + 6, y2); g2.stroke();
+      tick(px(cad.x.total.a), y2); tick(px(cad.x.total.b), y2);
+      g2.font = 'bold 11px Arial'; var tt = BimPlanta.fmtM(cad.x.total.v), ttw = g2.measureText(tt).width;
+      g2.fillText(tt, (px(cad.x.total.a) + px(cad.x.total.b)) / 2 - ttw / 2, y2 - 3);
+    }
+    if (cad.z) {
+      var x1 = geo.padL - mm(6), x2 = geo.padL - mm(12);
+      g2.strokeStyle = '#888';
+      cad.z.ticks.forEach(function (t) { g2.beginPath(); g2.moveTo(geo.padL - 2, py(t)); g2.lineTo(x2 - mm(1.5), py(t)); g2.stroke(); });
+      g2.strokeStyle = '#111'; g2.fillStyle = '#111';
+      g2.beginPath(); g2.moveTo(x1, py(cad.z.total.a) - 6); g2.lineTo(x1, py(cad.z.total.b) + 6); g2.stroke();
+      cad.z.ticks.forEach(function (t) { tick(x1, py(t)); });
+      cad.z.segs.forEach(function (s) {
+        var h = py(s.b) - py(s.a), t = BimPlanta.fmtM(s.v);
+        g2.font = '10px Arial'; var tw = g2.measureText(t).width;
+        if (tw > h - 4) { g2.font = '8px Arial'; tw = g2.measureText(t).width; if (tw > h - 2) return; }
+        g2.save(); g2.translate(x1 - 3, (py(s.a) + py(s.b)) / 2 + tw / 2); g2.rotate(-Math.PI / 2); g2.fillText(t, 0, 0); g2.restore();
+      });
+      g2.beginPath(); g2.moveTo(x2, py(cad.z.total.a) - 6); g2.lineTo(x2, py(cad.z.total.b) + 6); g2.stroke();
+      tick(x2, py(cad.z.total.a)); tick(x2, py(cad.z.total.b));
+      g2.save(); g2.font = 'bold 11px Arial'; var tz = BimPlanta.fmtM(cad.z.total.v), tzw = g2.measureText(tz).width;
+      g2.translate(x2 - 3, (py(cad.z.total.a) + py(cad.z.total.b)) / 2 + tzw / 2); g2.rotate(-Math.PI / 2); g2.fillText(tz, 0, 0); g2.restore();
+    }
+  }
+
+  function gerarPlantaTec(o) {
+    // o: {y (altura do corte no MUNDO, metros), escala, cotas, prof, rotAlt}
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    if (box.isEmpty()) return null;
+    var minX = box.min.x, maxX = box.max.x, minZ = box.min.z, maxZ = box.max.z;
+    var margem = Math.max(0.4, Math.max(maxX - minX, maxZ - minZ) * 0.03);
+    var wM = (maxX - minX) + margem * 2, hM = (maxZ - minZ) + margem * 2;
+    var escBase = o.escala || 50, PPM96 = 96 / 25.4;
+    // mesmo cap honesto do corte técnico: se a escala pedida estoura a GPU, sobe pra próxima da
+    // série padrão (medível com escalímetro) e recomputa px/m EXATO — carimbo == pixels
+    var MAXPX = Math.min(4096, (renderer.capabilities && renderer.capabilities.maxTextureSize) || 4096);
+    var escalaEf = escBase, pxM = PPM96 * (1000 / escalaEf);
+    if (Math.max(wM, hM) * pxM > MAXPX) {
+      escalaEf = null;
+      for (var si = 0; si < SERIE_ESC.length; si++) { if (SERIE_ESC[si] >= escBase && Math.max(wM, hM) * (PPM96 * (1000 / SERIE_ESC[si])) <= MAXPX) { escalaEf = SERIE_ESC[si]; break; } }
+      if (escalaEf == null) { escalaEf = Math.ceil(PPM96 * 1000 / (MAXPX / Math.max(wM, hM))); pxM = PPM96 * (1000 / escalaEf); }
+      else pxM = PPM96 * (1000 / escalaEf);
+    }
+    var ajustada = escalaEf !== escBase;
+    var W = Math.round(wM * pxM), H = Math.round(hM * pxM);
+    var cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+    var recuo = 0.02, prof = Math.max(0.5, +o.prof || 3);
+    var secPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), o.y); // mantém o que está ABAIXO do corte
+    var cam = new THREE.OrthographicCamera(-wM / 2, wM / 2, hM / 2, -hM / 2, 0.01, recuo + prof);
+    cam.position.set(cx, o.y + recuo, cz);
+    cam.up.set(0, 0, -1); // norte pra cima (X do modelo pra direita)
+    cam.lookAt(cx, o.y - 1, cz); cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+    var prevClip = renderer.clippingPlanes, prevLocal = renderer.localClippingEnabled;
+    var prevClear = renderer.getClearColor(new THREE.Color()).clone(), prevAlpha = renderer.getClearAlpha();
+    var prevTone = renderer.toneMapping, prevAuto = renderer.autoClear;
+    var rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: true }), buf = null, edgesRoot = null, matMassa = null, matLinha = null, escondidos = [];
+    var stBack = null, stFront = null, capMat = null, capGeo = null, hatchTex = null;
+    try {
+      renderer.clippingPlanes = [secPlane]; renderer.localClippingEnabled = false;
+      renderer.toneMapping = THREE.NoToneMapping; // P&B fiel
+      scene.children.forEach(function (c) { if (c !== modelRoot && c.visible !== false) { escondidos.push(c); c.visible = false; } });
+      // PASSE 1 — massas cinza-claro sobre branco
+      matMassa = new THREE.MeshBasicMaterial({ color: 0xededed, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 });
+      scene.overrideMaterial = matMassa;
+      renderer.setRenderTarget(rt); renderer.setClearColor(0xffffff, 1); renderer.clear();
+      renderer.render(scene, cam);
+      scene.overrideMaterial = null;
+      // PASSE 1.5 — HACHURA nas paredes cortadas (paridade de stencil, mesma técnica do corte
+      // técnico; câmera do stencil com far cobrindo o modelo INTEIRO abaixo do corte)
+      renderer.autoClear = false;
+      var camSt = cam.clone(); camSt.far = recuo + Math.max(0.5, o.y - box.min.y) + 1; camSt.updateProjectionMatrix();
+      stBack = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, side: THREE.BackSide,
+        stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, stencilFail: THREE.IncrementWrapStencilOp, stencilZFail: THREE.IncrementWrapStencilOp, stencilZPass: THREE.IncrementWrapStencilOp });
+      stFront = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, depthTest: false, side: THREE.FrontSide,
+        stencilWrite: true, stencilFunc: THREE.AlwaysStencilFunc, stencilFail: THREE.DecrementWrapStencilOp, stencilZFail: THREE.DecrementWrapStencilOp, stencilZPass: THREE.DecrementWrapStencilOp });
+      scene.overrideMaterial = stBack; renderer.render(scene, camSt);
+      scene.overrideMaterial = stFront; renderer.render(scene, camSt);
+      scene.overrideMaterial = null;
+      var hcv = document.createElement('canvas'); hcv.width = hcv.height = 32;
+      var hg = hcv.getContext('2d');
+      hg.fillStyle = '#dfdfdf'; hg.fillRect(0, 0, 32, 32);
+      hg.strokeStyle = '#141414'; hg.lineWidth = 2.4;
+      hg.beginPath(); hg.moveTo(-4, 36); hg.lineTo(36, -4); hg.moveTo(-20, 20); hg.lineTo(20, -20); hg.moveTo(12, 52); hg.lineTo(52, 12); hg.stroke();
+      hatchTex = new THREE.CanvasTexture(hcv);
+      hatchTex.wrapS = hatchTex.wrapT = THREE.RepeatWrapping; hatchTex.minFilter = THREE.LinearFilter;
+      var esp = 0.0028 * escalaEf; // ~2 mm no papel em qualquer escala
+      hatchTex.repeat.set(wM / esp, hM / esp);
+      capMat = new THREE.MeshBasicMaterial({ map: hatchTex, depthTest: true, depthFunc: THREE.AlwaysDepth, depthWrite: true, side: THREE.DoubleSide,
+        stencilWrite: true, stencilRef: 0, stencilFunc: THREE.NotEqualStencilFunc, stencilFail: THREE.ZeroStencilOp, stencilZFail: THREE.ZeroStencilOp, stencilZPass: THREE.ZeroStencilOp });
+      capGeo = new THREE.PlaneGeometry(wM, hM);
+      var capQuad = new THREE.Mesh(capGeo, capMat);
+      capQuad.rotation.x = Math.PI / 2; // XY -> XZ, normal pra baixo (lado mantido pelo clip)
+      capQuad.position.set(cx, o.y - 1e-3, cz); // um fio ALÉM do plano, no lado mantido
+      var capScene = new THREE.Scene(); capScene.add(capQuad);
+      renderer.render(capScene, camSt);
+      // PASSE 2 — arestas pretas
+      edgesRoot = new THREE.Group(); matLinha = new THREE.LineBasicMaterial({ color: 0x111111 });
+      modelRoot.children.forEach(function (g) {
+        (g.children || []).forEach(function (m) {
+          if (!m.geometry || !cadeiaVisivel(m)) return;
+          var arr = arestasDe(m.geometry); if (!arr.length) return;
+          var bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+          var ls = new THREE.LineSegments(bg, matLinha);
+          ls.matrixAutoUpdate = false; ls.matrix.copy(m.matrixWorld);
+          edgesRoot.add(ls);
+        });
+      });
+      scene.add(edgesRoot); modelRoot.visible = false; renderer.autoClear = false;
+      renderer.render(scene, cam);
+      buf = new Uint8Array(W * H * 4);
+      renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+    } finally {
+      // restaura o viewer SEMPRE (mesma disciplina do corte técnico)
+      scene.overrideMaterial = null; renderer.autoClear = prevAuto; modelRoot.visible = true;
+      if (edgesRoot) { scene.remove(edgesRoot); edgesRoot.children.forEach(function (ls) { if (ls.geometry) ls.geometry.dispose(); }); }
+      if (matLinha) matLinha.dispose(); if (matMassa) matMassa.dispose();
+      if (stBack) stBack.dispose(); if (stFront) stFront.dispose();
+      if (capMat) capMat.dispose(); if (capGeo) capGeo.dispose(); if (hatchTex) hatchTex.dispose();
+      escondidos.forEach(function (c) { c.visible = true; });
+      renderer.setRenderTarget(null); try { rt.dispose(); } catch (_) {}
+      renderer.clippingPlanes = prevClip; renderer.localClippingEnabled = prevLocal;
+      renderer.setClearColor(prevClear, prevAlpha); renderer.toneMapping = prevTone;
+    }
+    if (!buf) return null;
+    // COTAS AUTOMÁTICAS — só paredes VISÍVEIS que o corte atravessa (motor puro BimPlanta)
+    var cad = null;
+    if (o.cotas && typeof BimPlanta !== 'undefined') {
+      var els = [];
+      S.modelos.forEach(function (mo) {
+        if (mo.visivel === false) return;
+        (mo.elementos || []).forEach(function (el) {
+          if (!el.aabb) return;
+          var m = S.meshPorUid[el.uid];
+          if (!m || !m.visible || !cadeiaVisivel(m)) return;
+          els.push({ tipo: el.tipo, aabb: el.aabb });
+        });
+      });
+      cad = BimPlanta.cadeias(BimPlanta.paredesDoCorte(els, o.y));
+    }
+    var temCotas = !!(cad && (cad.x || cad.z));
+    // avisos honestos numa FAIXA reservada no topo (nunca por cima do desenho)
+    var avisos = [];
+    if (cad && cad.diagonais) avisos.push('⚠ ' + cad.diagonais + ' parede(s) fora de esquadro/curtas sem cota automática — meça com a trena');
+    if (o.cotas && !temCotas) avisos.push('⚠ Nenhuma parede reta atravessa o corte — sem cotas automáticas');
+    var padTop = avisos.length ? (avisos.length * 15 + 8) : 0;
+    var padL = (cad && cad.z) ? Math.round(17 * PPM96) : 0; // 17 mm p/ cadeia vertical
+    var padB = (cad && cad.x) ? Math.round(17 * PPM96) : 0;
+    var faixa = 46, totalW = padL + W, totalH = padTop + H + padB + faixa, yBase = padTop + H + padB;
+    var cnv = document.createElement('canvas'); cnv.width = totalW; cnv.height = totalH;
+    var g2 = cnv.getContext('2d');
+    g2.fillStyle = '#fff'; g2.fillRect(0, 0, totalW, totalH);
+    var img = g2.createImageData(W, H);
+    for (var y2f = 0; y2f < H; y2f++) { var srcY = (H - 1 - y2f) * W * 4; img.data.set(buf.subarray(srcY, srcY + W * 4), y2f * W * 4); }
+    g2.putImageData(img, padL, padTop); // putImageData ignora transform — posiciona direto abaixo da faixa de avisos
+    if (cad) { g2.save(); g2.translate(0, padTop); desenharCotas(g2, cad, { padL: padL, H: H, pxM: pxM, x0: minX - margem, z0: minZ - margem }); g2.restore(); }
+    // faixa de avisos no topo
+    if (avisos.length) {
+      g2.font = '11px Arial'; g2.fillStyle = '#b45309';
+      for (var ai = 0; ai < avisos.length; ai++) g2.fillText(avisos[ai], 8, 16 + ai * 15);
+    }
+    // moldura + divisória do carimbo + escala gráfica + carimbo (mesma régua do corte técnico)
+    g2.strokeStyle = '#111'; g2.lineWidth = 2; g2.strokeRect(1, 1, totalW - 2, totalH - 2);
+    g2.beginPath(); g2.moveTo(1, yBase); g2.lineTo(totalW - 1, yBase); g2.stroke();
+    g2.fillStyle = '#111'; var temBarra = pxM >= 8 && pxM < totalW * 0.45, barW = temBarra ? pxM + 26 : 0;
+    if (temBarra) { g2.fillRect(totalW - pxM - 12, yBase + 16, pxM, 6); g2.font = '10px Arial'; g2.fillText('1 m', totalW - pxM - 12, yBase + 37); }
+    var rotAlt = o.rotAlt || (fmtDist(Math.max(0, o.y - box.min.y)) + ' do piso');
+    var titulo = 'PLANTA BAIXA (corte a ' + rotAlt + ')  ·  ESC 1:' + escalaEf + (ajustada ? ' (ajustada)' : '') + '  ·  OrçaPRO BIM  ·  ' + new Date().toLocaleDateString('pt-BR');
+    var livre = totalW - 16 - barW, fs = 15;
+    g2.font = 'bold ' + fs + 'px Arial';
+    while (fs > 8 && g2.measureText(titulo).width > livre) { fs--; g2.font = 'bold ' + fs + 'px Arial'; }
+    if (g2.measureText(titulo).width > livre) { titulo = 'ESC 1:' + escalaEf + (ajustada ? ' (aj.)' : ''); g2.font = 'bold 11px Arial'; }
+    g2.fillStyle = '#111'; g2.fillText(titulo, 10, yBase + 29);
+    return { url: cnv.toDataURL('image/png'), w: totalW, h: totalH, escala: escalaEf, pxPorMetro: pxM, ajustada: ajustada, cotas: temCotas, diagonais: cad ? cad.diagonais : 0, larguraMM: totalW / 96 * 25.4, alturaMM: totalH / 96 * 25.4 };
+  }
+  S._gerarPlantaTec = gerarPlantaTec;
+  plantaCfg.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-q]'); if (!b) return; var k = b.getAttribute('data-q');
+    if (k === 'cancelar') { plantaCfg.style.display = 'none'; return; }
+    if (k !== 'gerar') return;
+    if (!planta.on || !planta.plane) { plantaCfg.style.display = 'none'; S._hint('📐 Abra a Planta primeiro — o corte usa a altura do slider.'); return; }
+    var res = gerarPlantaTec({
+      y: planta.plane.constant,
+      escala: +plantaCfg.querySelector('[data-q="esc"]').value,
+      cotas: plantaCfg.querySelector('[data-q="cotas"]').checked,
+      prof: +plantaCfg.querySelector('[data-q="prof"]').value,
+      rotAlt: (cortePanel.querySelector('[data-c="v"]') || {}).textContent
+    });
+    plantaCfg.style.display = 'none';
+    if (!res) { S._hint('📄 Carregue um modelo primeiro.'); return; }
+    ctecModal._res = res;
+    ctecModal._nomeArq = 'planta-baixa.png';
+    ctecModal._ajustar = function () { plantaCfg.style.display = 'flex'; };
+    ctecModal.querySelector('[data-r="img"]').src = res.url;
+    ctecModal.querySelector('[data-r="titulo"]').textContent = 'Planta baixa — ESC 1:' + res.escala + (res.ajustada ? ' (ajustada p/ caber)' : '') + (res.cotas ? ' · cotas automáticas' : '');
+    ctecModal.style.display = 'flex'; S._hint('');
   });
 
   // ============================================================
@@ -1482,6 +1791,7 @@ function montar(host, opts) {
         if (ehAlvo && m.userData.matOrig && m.material !== m.userData.matOrig) { matAntes.push([m, m.material]); m.material = m.userData.matOrig; }
       });
       var gAntes = []; modelRoot.children.forEach(function (g) { gAntes.push([g, g.visible]); g.visible = true; });
+      if (S._edgesEstilo) S._edgesEstilo(false); // estilo desenho ligado: sem wireframe preto na foto da família
       // grid, cotas, pins e avatares vivem FORA do modelRoot — esconde (menos as LUZES, senão a foto sai preta)
       var cenaAntes = [];
       scene.children.forEach(function (c) { if (c !== modelRoot && !c.isLight && c.visible) { cenaAntes.push(c); c.visible = false; } });
@@ -1529,7 +1839,7 @@ function montar(host, opts) {
     if (!S.modelos.length) { S._hint('📸 Carregue um modelo primeiro.'); return null; }
     var prevBg = scene.background, url;
     try {
-      scene.background = new THREE.Color(0x0d1f33);
+      scene.background = new THREE.Color(estiloD.on ? 0xffffff : 0x0d1f33); // estilo desenho: foto sai no branco
       renderer.render(scene, camera);
       url = renderer.domElement.toDataURL('image/png');
     } catch (_) { url = null; } finally { scene.background = prevBg; }
@@ -2439,7 +2749,7 @@ function montar(host, opts) {
   }
   function modeloDe(mid) { for (var i = 0; i < S.modelos.length; i++) if (S.modelos[i].mid === mid) return S.modelos[i]; return null; }
   function publicos() { return S.modelos.map(function (mo) { return { mid: mo.mid, nome: mo.nome, disciplina: mo.disciplina, alpha: mo.alpha, visivel: mo.visivel, n: mo.elementos.length }; }); }
-  function notifyModelos() { if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } }
+  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho pega modelo que entrar depois
   S._publicos = publicos;
 
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
@@ -2498,7 +2808,7 @@ function montar(host, opts) {
   function removerModelo(mid) {
     var mo = modeloDe(mid); if (!mo) return;
     S.modelos.splice(S.modelos.indexOf(mo), 1);
-    mo.grupo.children.slice().forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } });
+    mo.grupo.children.slice().forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } if (m.userData && m.userData._edgeLn && m.userData._edgeLn.geometry) { try { m.userData._edgeLn.geometry.dispose(); } catch (_) {} } });
     Object.keys(mo.matCache).forEach(function (k) { try { mo.matCache[k].dispose(); } catch (_) {} });
     Object.keys(mo.transCache).forEach(function (k) { try { mo.transCache[k].dispose(); } catch (_) {} });
     modelRoot.remove(mo.grupo);
@@ -2974,6 +3284,15 @@ window.BIM = {
   isolarTipo: function () { if (S && S._isolarTipo) S._isolarTipo(); },
   restaurarVisibilidade: function () { if (S && S._restaurarVis) S._restaurarVis(); },
   foto: function () { return (S && S._tirarFoto) ? S._tirarFoto() : null; }, // dataURL do render (também baixa o PNG carimbado)
+  // v1.1.83 — planta baixa técnica 2D (corte na altura do slider da Planta, hachura + cotas automáticas)
+  plantaBaixa: function (o) {
+    o = o || {};
+    if (!S || !S._gerarPlantaTec) return null;
+    var y = o.y != null ? o.y : (S.planta && S.planta.plane ? S.planta.plane.constant : null);
+    if (y == null) return null; // sem Planta ativa e sem altura explícita, não há corte honesto
+    return S._gerarPlantaTec({ y: y, escala: o.escala || 50, cotas: o.cotas !== false, prof: o.prof || 3, rotAlt: o.rotAlt });
+  },
+  estiloDesenho: function (on) { if (S && S._setEstiloDesenho) S._setEstiloDesenho(on == null ? !(S._estiloOn && S._estiloOn()) : !!on); },
   // v1.1.82 — propriedades completas do elemento (todos os psets, instância+família) e thumbnail
   propriedades: function (uid) { return (S && S._propsCompletas) ? S._propsCompletas(uid) : []; },
   thumbFamilia: function (uid, maxPx) { return (S && S._thumbFamilia) ? S._thumbFamilia(uid, maxPx) : null; },
