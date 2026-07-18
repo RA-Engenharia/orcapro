@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.87",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.87/OrcaPRO-IA-update-v1.1.87.zip",
-  "notas": "Correção mobile: a barra de ferramentas do BIM começa recolhida no celular (vista 3D limpa, botão pra abrir quando precisar) e o painel da RA/RV vira uma barra compacta ao caminhar — sem tapar a visualização. Traz também o RA/RV na nuvem.",
+  "versao": "1.1.88",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.88/OrcaPRO-IA-update-v1.1.88.zip",
+  "notas": "Novo modo 📷 Câmera + Projeto na RA/RV: liga a câmera do celular e o modelo BIM aparece POR CIMA do ambiente real — funciona no iPhone/iPad (sem WebXR) e no Android. Mova o celular pra olhar, joystick pra chegar perto. Abra pelo link da nuvem (☁️ Compartilhar).",
   "obrigatoria": false
 }

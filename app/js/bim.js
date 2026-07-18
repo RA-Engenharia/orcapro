@@ -1947,13 +1947,14 @@ function montar(host, opts) {
     var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>🥽 Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">✕</button></div>';
     if (vazio) { html += '<div style="font-size:11px;color:#9fb2c8">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
     if (!xr.on) {
-      html += '<div style="font-size:11px;color:#9fb2c8">Entre no projeto e ande dentro dele. Escolha o modo:</div>' +
-        '<button class="btn sm primary" data-x="caminhar" style="width:100%">👣 Caminhar no projeto (qualquer celular)</button>' +
+      html += '<div style="font-size:11px;color:#9fb2c8">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
+        '<button class="btn sm primary" data-x="camera" style="width:100%">📷 Câmera + Projeto (ver no seu ambiente)</button>' +
+        '<button class="btn sm" data-x="caminhar" style="width:100%">👣 Caminhar no projeto (fundo liso)</button>' +
+        '<button class="btn sm" data-x="ar" style="width:100%" disabled>📱 RA com âncora (Android) <span data-x="arst" style="color:#9fb2c8">(verificando…)</span></button>' +
         '<button class="btn sm" data-x="vr" style="width:100%" disabled>🥽 VR imersivo <span data-x="vrst" style="color:#9fb2c8">(verificando…)</span></button>' +
-        '<button class="btn sm" data-x="ar" style="width:100%" disabled>📱 RA no ambiente <span data-x="arst" style="color:#9fb2c8">(verificando…)</span></button>' +
-        '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">👣 Caminhar: arraste pra olhar, joystick pra andar (ou vire o próprio celular). 🥽/📱 usam WebXR — <b>iPhone/iPad não têm RA no navegador</b>, use o Caminhar.</div>';
+        '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ☁️ da nuvem). 📱 RA com âncora (fixa no chão) só no Android/ARCore.</div>';
     } else {
-      var em = xr.mode === 'ar' ? '📱 RA no ambiente' : xr.mode === 'vr' ? '🥽 VR imersivo' : '👣 Caminhando';
+      var em = xr.mode === 'ar' ? '📱 RA no ambiente' : xr.mode === 'vr' ? '🥽 VR imersivo' : xr.mode === 'camera' ? '📷 Câmera + Projeto' : '👣 Caminhando';
       html += '<div style="font-size:11px;color:#7fe0a3"><b>' + em + '</b> ativo</div>';
       // escala: só no AR (mesa). Andar/VR é sempre 1:1 (escala real — é o sentido de "andar dentro")
       if (xr.mode === 'ar') {
@@ -2147,25 +2148,61 @@ function montar(host, opts) {
   // rig de VR: a câmera XR fica dentro dele; mover/girar o rig = teletransporte suave
   var xrRig = new THREE.Group(); scene.add(xrRig);
 
-  // ---- ENTRAR: Caminhar (universal, sem WebXR) ----
-  function entrarCaminhar() {
+  // ---- ENTRAR: Caminhar / Câmera (universal, sem WebXR) ----
+  // modo 'caminhar' = modelo em fundo liso; modo 'camera' = modelo POR CIMA do vídeo da câmera
+  // (RA simples que roda no iPhone: giroscópio olha, joystick anda, o projeto aparece no ambiente).
+  function iniciarAndar(modo) {
     var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) { S._hint('Carregue um modelo primeiro.'); return; }
-    xr.on = true; xr.mode = 'caminhar'; xr.escala = 1; xr.cortefrac = 1000;
+    xr.on = true; xr.mode = modo; xr.escala = 1; xr.cortefrac = 1000;
     xr.cam = { pos: camera.position.clone(), quat: camera.quaternion.clone(), near: camera.near, far: camera.far };
     xr.prevClip = renderer.clippingPlanes; xr.prevLocal = renderer.localClippingEnabled;
     orbit.enabled = false; if (S.fly && S.fly.on && S._setMode) S._setMode(false);
     ligarSombras(true);
     var c = box.getCenter(new THREE.Vector3());
     xr._pisoY = box.min.y;
-    camera.position.set(c.x, box.min.y + EYE, c.z); camera.near = 0.05; camera.far = 5000; camera.updateProjectionMatrix();
+    // câmera: no modo câmera começa um pouco AFASTADO, olhando o modelo (vê o projeto no ambiente,
+    // como um objeto na sua frente); no caminhar começa no centro (dentro).
+    if (modo === 'camera') {
+      var diag = box.getSize(new THREE.Vector3()); var recuo = Math.max(diag.x, diag.z) * 0.8 + 2;
+      camera.position.set(c.x, box.min.y + EYE, box.max.z + recuo);
+    } else camera.position.set(c.x, box.min.y + EYE, c.z);
+    camera.near = 0.05; camera.far = 5000; camera.updateProjectionMatrix();
     xr.look.yaw = 0; xr.look.pitch = 0; xr.joy.x = 0; xr.joy.z = 0; // zera o joystick (senão anda sozinho na reentrada)
     S._xrWalk = xrWalkStep;
-    montarHud(false); xrDica('Arraste pra olhar · joystick pra andar. Toque em “virar o celular” no painel pra usar o giroscópio.');
-    // botão de giroscópio se houver
+    montarHud(false);
     if (typeof DeviceOrientationEvent !== 'undefined') ligarOrientacao();
     canvasEl.addEventListener('pointerdown', xrPointerDown); canvasEl.addEventListener('pointermove', xrPointerMove); window.addEventListener('pointerup', xrPointerUp);
-    marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none'; // no imersivo o painel grande some (tampava a vista no celular); ⚙️ Ajustes reabre
-    S._hint('👣 Você está DENTRO do projeto. Ande com o joystick; arraste pra olhar. ⏹ Sair no painel.');
+    marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none';
+    if (modo === 'camera') { xrDica('📷 Mova o celular pra olhar em volta · joystick pra chegar perto. O projeto aparece no ambiente real.'); S._hint('📷 Projeto sobre a câmera. ⏹ Sair no painel.'); }
+    else { xrDica('Arraste pra olhar · joystick pra andar. Vire o celular pra usar o giroscópio.'); S._hint('👣 Você está DENTRO do projeto. Ande com o joystick; arraste pra olhar. ⏹ Sair no painel.'); }
+  }
+  function entrarCaminhar() { iniciarAndar('caminhar'); }
+  // ---- ENTRAR: Câmera + Projeto (RA simples: vídeo da câmera de fundo + modelo por cima) ----
+  function entrarCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { S._hint('📷 Este navegador não dá acesso à câmera.'); return; }
+    if (!/^https:$|^http:\/\/localhost|^http:\/\/127\./.test(location.protocol + '//' + location.hostname) && location.hostname !== 'localhost') {
+      // câmera só em HTTPS ou localhost (regra do navegador). No QR da rede local (http) não rola.
+      S._hint('📷 A câmera só abre por HTTPS. Use o link ☁️ da nuvem (ou rode no próprio computador).');
+      return;
+    }
+    S._hint('📷 Pedindo acesso à câmera…');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (stream) {
+      xr.stream = stream;
+      var v = document.createElement('video');
+      v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.muted = true; v.autoplay = true;
+      v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:0;background:#000';
+      v.srcObject = stream; host.insertBefore(v, host.firstChild); xr.video = v; try { v.play(); } catch (_) {}
+      canvasEl.style.position = 'relative'; canvasEl.style.zIndex = '1'; canvasEl.style.background = 'transparent';
+      iniciarAndar('camera');
+    }).catch(function (e) {
+      var nm = (e && e.name) || e;
+      S._hint(nm === 'NotAllowedError' ? '📷 Você negou a câmera. Toque de novo e permita.' : '📷 Não consegui abrir a câmera: ' + nm);
+    });
+  }
+  function limparCamera() {
+    if (xr.stream) { try { xr.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} xr.stream = null; }
+    if (xr.video) { try { xr.video.pause(); xr.video.srcObject = null; if (xr.video.parentNode) xr.video.parentNode.removeChild(xr.video); } catch (_) {} xr.video = null; }
+    try { canvasEl.style.zIndex = ''; canvasEl.style.background = ''; } catch (_) {}
   }
 
   // ---- ENTRAR: VR imersivo (WebXR) ----
@@ -2302,6 +2339,7 @@ function montar(host, opts) {
     if (xr.hitSrc) { try { xr.hitSrc.cancel(); } catch (_) {} }
     if (xr.session) { try { xr.session.end(); } catch (_) {} }
     xr.session = null; xr.hitSrc = null; xr.joy.x = 0; xr.joy.z = 0; xr.cortefrac = 1000;
+    limparCamera(); // para a câmera + remove o vídeo de fundo (modo 📷)
     S._xrActive = false; S._xrWalk = null;
     try { renderer.setAnimationLoop(null); } catch (_) {}
     if (xr.reticle) xr.reticle.visible = false;
@@ -2331,6 +2369,7 @@ function montar(host, opts) {
     var bd = e.target.closest('[data-xd]'); if (bd) { toggleDisciplinaXR(bd.getAttribute('data-xd')); return; }
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
     if (k === 'fechar') { xrPanel.style.display = 'none'; }
+    else if (k === 'camera') { entrarCamera(); }
     else if (k === 'caminhar') { entrarCaminhar(); }
     else if (k === 'vr') { entrarVR(); }
     else if (k === 'ar') { entrarAR(); }

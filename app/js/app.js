@@ -129,7 +129,9 @@
             (function prox() {
               if (i >= arqs.length) {
                 var l = document.getElementById("rv-load"); if (l) l.remove();
-                setTimeout(function () { try { BIM.imersivo("caminhar"); } catch (e) {} }, 1000);
+                // abre o seletor de modo (📷 Câmera + Projeto / 👣 Caminhar) — a câmera precisa de um
+                // TOQUE do usuário pra pedir permissão, então não entramos sozinhos no modo câmera.
+                setTimeout(function () { try { BIM.abrirXR(); } catch (e) {} }, 800);
                 return;
               }
               var a = arqs[i]; txt("Baixando " + (a.nome || "modelo") + " (" + (i + 1) + "/" + arqs.length + ")…");
