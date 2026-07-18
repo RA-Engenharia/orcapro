@@ -1137,7 +1137,8 @@
         ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>' +
         ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">🏗️ Exportar p/ Revit</button>' +
         ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">🧠 Gerar orçamento do modelo</button>' +
-        ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">📕 Quantitativo ilustrado</button>';
+        ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">📕 Quantitativo ilustrado</button>' +
+        ' <button class="btn sm" data-gacao="bim-qr-rv" title="Gera um QR pra abrir a Realidade Mista/Virtual no celular ou tablet — andar dentro do projeto, ver por disciplina e (Android) fixar em RA no ambiente da obra">📱 QR · RA/RV no celular</button>';
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
       html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;position:relative">' +
@@ -1946,6 +1947,75 @@
       else if (t.indexOf("IFCSLAB") === 0) { setar("esp", d.altura); } // laje: espessura = dimensão VERTICAL (a "largura em planta" iria clampada errada)
       if (mexeu) UI.toast("Família aplicada no editor — desenhe com as dimensões dela.", "ok");
       else UI.toast("Editor aberto. Esta família não vira molde automático (só parede/pilar/laje) — use as medidas do card como referência.", "ok");
+    },
+    // 📱 QR para abrir a Realidade Mista/Virtual no celular/tablet.
+    // O QR aponta pro app na REDE LOCAL (mesmo Wi-Fi) com #rv, que entra direto no
+    // modo imersivo. Honesto: o aparelho precisa estar na mesma rede E o modelo precisa
+    // estar carregado no app que serve o QR (o compartilhamento em nuvem p/ qualquer
+    // lugar é a próxima fase). No Android dá RA no ambiente; iPhone entra pelo Caminhar.
+    bimQRImersivo: function () {
+      var self = this;
+      function montar(url, lanNota, alts) {
+        var velho = document.getElementById("rv-qr-ov"); if (velho) velho.remove(); // sem overlays empilhados
+        var svg = (typeof QR !== "undefined") ? QR.svg(url, { tamanhoPx: 220, correcao: "M" }) : "";
+        var ov = document.createElement("div");
+        ov.id = "rv-qr-ov";
+        ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
+        ov.innerHTML =
+          '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📱 Abrir a RA/RV no aparelho</b><button class="btn sm" data-rv="fechar">✕</button></div>' +
+          '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
+          '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Endereço:</b> ' + Util.esc(url) + '</div>' +
+          '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Este QR abre a tela de <b>RA/RV</b> — no <b>tablet/celular que já tem este modelo carregado</b> (mesmo aparelho, ou outro na mesma rede com o mesmo IFC aberto):' +
+          '<ul style="margin:6px 0;padding-left:18px">' +
+          '<li><b>Android</b>: <b>📱 RA no ambiente</b> — aponte pro chão, toque pra fixar, <b>🔒 trave</b> e escolha a <b>disciplina</b> (ex.: Hidráulica, pra não furar em cima do cano).</li>' +
+          '<li><b>iPhone/iPad</b>: <b>👣 Caminhar</b> (o Safari não tem RA no navegador).</li>' +
+          '</ul></div>' +
+          '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:6px">' + Util.esc(lanNota) + '</div>' +
+          '<div style="font-size:11px;color:#8fa3b8;line-height:1.35;margin-bottom:12px">ℹ️ Enviar o modelo automaticamente pra qualquer celular (sem carregar lá) é a próxima atualização (compartilhamento em nuvem).</div>' +
+          (alts && alts.length ? '<div style="font-size:11px;color:#9fb2c8;margin-bottom:10px">Não abriu? Tente outro IP: ' + alts.map(function (u) { return '<button class="btn sm" data-rvip="' + Util.esc(u) + '" style="font-size:11px;padding:3px 7px;margin:2px">' + Util.esc(u.replace(/^https?:\/\//, "").replace(/\/#rv$/, "")) + '</button>'; }).join("") + '</div>' : '') +
+          '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">🖨 Imprimir cartão pra obra</button><button class="btn sm" data-rv="copiar" style="flex:1">📋 Copiar link</button></div>' +
+          '</div>';
+        document.body.appendChild(ov);
+        ov.addEventListener("click", function (e) {
+          if (e.target === ov) { ov.remove(); return; }
+          var bip = e.target.closest("[data-rvip]"); if (bip) { ov.remove(); montar(bip.getAttribute("data-rvip"), lanNota, alts); return; }
+          var b = e.target.closest("[data-rv]"); if (!b) return; var k = b.getAttribute("data-rv");
+          if (k === "fechar") ov.remove();
+          else if (k === "copiar") { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast("Copie o endereço mostrado.", "info"); } }
+          else if (k === "imprimir") self._imprimirCartaoRV(url, svg);
+        });
+      }
+      // ordena os IPs: rede doméstica real (192.168 / 10.x) na frente; virtuais (172.x de WSL/Hyper-V) atrás
+      function ordenarIps(ips) {
+        return ips.slice().sort(function (a, b) { return prio(a) - prio(b); });
+        function prio(ip) { if (/^192\.168\./.test(ip)) return 0; if (/^10\./.test(ip)) return 1; if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 3; return 2; }
+      }
+      var base = location.origin + location.pathname.replace(/[^/]*$/, "");
+      var urlLocal = base + "#rv";
+      fetch("/__lan").then(function (r) { return r.json(); }).then(function (d) {
+        if (d && d.ips && d.ips.length) {
+          var ips = ordenarIps(d.ips), porta = d.porta || 8754;
+          var urls = ips.map(function (ip) { return "http://" + ip + ":" + porta + "/#rv"; });
+          montar(urls[0], "O QR aponta pra " + ips[0] + " (rede local). O aparelho precisa estar no mesmo Wi-Fi do computador.", urls.slice(1));
+        } else montar(urlLocal, "Não achei o IP da rede local. Este QR abre só neste aparelho.", []);
+      }).catch(function () { montar(urlLocal, "Servidor local não respondeu o IP. Este QR abre só neste aparelho.", []); });
+    },
+    _imprimirCartaoRV: function (url, svg) {
+      var w = null; try { w = window.open("", "_blank"); } catch (_) {}
+      if (!w) { UI.toast("O navegador bloqueou a impressão — copie o link.", "erro"); return; }
+      try {
+        var emp = (typeof Store !== "undefined" && Store.empresa) ? (Store.empresa(Auth.empresaId()) || {}) : {};
+        w.document.write('<!doctype html><meta charset="utf-8"><title>RA/RV na obra — OrçaPRO</title>' +
+          '<style>@page{size:A5;margin:12mm}body{font-family:Arial;color:#0f2740;text-align:center}h1{font-size:20px;margin:6px 0}p{font-size:13px;color:#334}</style>' +
+          '<h1>📱 Ver o projeto em Realidade Aumentada</h1>' +
+          '<p><b>' + Util.esc(emp.nome || "OrçaPRO BIM") + '</b></p>' +
+          '<div style="margin:14px auto;width:220px">' + (svg || "") + '</div>' +
+          '<p>Aponte a câmera do celular pro QR (mesmo Wi-Fi).<br>Android: RA no ambiente · iPhone: Caminhar no projeto.</p>' +
+          '<p style="font-size:10px;color:#889;word-break:break-all">' + Util.esc(url) + '</p>' +
+          '<script>setTimeout(function(){window.print()},300)<\/script>');
+        w.document.close();
+      } catch (_) { UI.toast("Não deu pra abrir a impressão.", "erro"); }
     },
     // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
     // dimensões e quantidade principal (área/comprimento/unidade) do projeto inteiro
@@ -5049,6 +5119,7 @@ renderFolha: function () {
         case "bim-revit": return this.bimExportarRevit();
         case "bimeap-abrir": return this.bimeapAbrir();
         case "bim-quant-ilustrado": return this.bimQuantIlustrado();
+        case "bim-qr-rv": return this.bimQRImersivo();
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);

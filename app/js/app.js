@@ -72,6 +72,21 @@
         }
       } catch (eTr) {}
       this.render();
+      // Rota #rv (QR da RA/RV no celular): abre o BIM e entra no imersivo Caminhar assim que
+      // o modelo estiver carregado. Honesto: precisa do módulo Gestão e de um modelo carregado
+      // NESTE aparelho (o compartilhamento em nuvem p/ qualquer lugar é a próxima fase).
+      try {
+        if (/(^|[#&])rv\b/i.test(location.hash || "")) {
+          if (typeof Gestao !== "undefined" && Gestao.podeGestao && Gestao.podeGestao()) {
+            this.view = "bim"; this.render();
+            var _t = 0, _iv = setInterval(function () {
+              _t++;
+              if (window.BIM && BIM.imersivo && BIM.visiveis && BIM.visiveis() > 0) { clearInterval(_iv); BIM.imersivo("caminhar"); }
+              else if (_t > 48) { clearInterval(_iv); if (typeof UI !== "undefined") UI.toast("Abra ou gere o modelo 3D e toque em 🥽 RA/RV.", "info"); }
+            }, 250);
+          } else if (typeof UI !== "undefined") { UI.toast("A RA/RV fica no módulo BIM (plano com Gestão de Obras).", "erro"); }
+        }
+      } catch (eRv) {}
       // Auto-update do app: avisa se há versão nova (só no install local; no site/demo o endpoint não existe e é ignorado)
       if (typeof AutoUpdate !== "undefined") { setTimeout(function () { AutoUpdate.verificar(); }, 1800); }
       // licença: trial -> registra/ancora no servidor; licenciado -> revalida (renova carência / detecta bloqueio)

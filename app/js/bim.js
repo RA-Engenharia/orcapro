@@ -52,7 +52,7 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
@@ -93,7 +93,8 @@ function montar(host, opts) {
       laje: '<path d="M2 9l6-3 6 3-6 3z"/><path d="M2 9v2l6 3 6-3V9"/>',
       pilar: '<rect x="6" y="3" width="4" height="10"/><path d="M4 3h8M4 13h8"/>',
       mover: '<path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M8 14l-2-2M8 14l2-2M2 8l2-2M2 8l2 2M14 8l-2-2M14 8l-2 2"/>',
-      nota: '<path d="M8 14V7"/><circle cx="8" cy="4.6" r="2.6"/>'
+      nota: '<path d="M8 14V7"/><circle cx="8" cy="4.6" r="2.6"/>',
+      xr: '<path d="M2 6.5A1.5 1.5 0 0 1 3.5 5h9A1.5 1.5 0 0 1 14 6.5v3A1.5 1.5 0 0 1 12.5 11h-2.2L8 9 5.7 11H3.5A1.5 1.5 0 0 1 2 9.5z"/><circle cx="5" cy="8" r="0.7"/><circle cx="11" cy="8" r="0.7"/>'
     };
     return '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px">' + (P[n] || '') + '</svg>';
   }
@@ -120,6 +121,7 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="editar" title="Editor: criar paredes, lajes e pilares SINTÉTICOS, mover, apagar e anotar — salvo com a obra">' + ico('editar') + 'Editar</button>' +
     '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">' + ico('pav') + 'Pav.</button>' +
     '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">' + ico('ver') + 'Ver</button>' +
+    '<button class="btn sm" data-b="xr" title="Realidade Mista/Virtual: andar dentro do modelo em escala real (1:1) ou escolhida, medir, ver por disciplina e gerar QR para o celular">' + ico('xr') + 'RA/RV</button>' +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
     '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
     '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
@@ -183,11 +185,16 @@ function montar(host, opts) {
   // qualidade de cor "de render": sRGB + tone mapping cinematográfico por padrão
   try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch (_) {}
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.12;
+  // sombras suaves (qualidade de render + imersão RA/RV) e WebXR habilitado no renderer
+  try { renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap; } catch (_) {}
+  try { renderer.xr.enabled = true; } catch (_) {}
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;outline:none';
   host.appendChild(renderer.domElement);
   renderer.domElement.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (S) { S.alive = false; if (S.raf) cancelAnimationFrame(S.raf); } try { over.style.display = 'flex'; over.querySelector('div').innerHTML = '<div style="font-size:30px">🧊</div><h3 style="margin:8px 0">O 3D ficou pesado demais</h3><p style="color:#a9c1d8;font-size:13px">A memória de vídeo esgotou (modelos grandes / Ultra). Recarregue a aba BIM com menos modelos, ou desligue o ✨ Ultra.</p>'; } catch (_) {} }, false);
   scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.05));
   var dir = new THREE.DirectionalLight(0xffffff, 1.1); dir.position.set(30, 50, 20); scene.add(dir);
+  // sombra da luz principal (ligada só quando o usuário entra no imersivo — custa GPU no modelo grande)
+  try { dir.shadow.mapSize.set(2048, 2048); dir.shadow.camera.near = 1; dir.shadow.camera.far = 400; dir.shadow.bias = -0.0005; var _ds = dir.shadow.camera; _ds.left = -80; _ds.right = 80; _ds.top = 80; _ds.bottom = -80; _ds.updateProjectionMatrix(); } catch (_) {}
   var fill = new THREE.DirectionalLight(0xbfd8ee, 0.35); fill.position.set(-40, 25, -30); scene.add(fill); // luz de preenchimento (sombra menos chapada)
   var grid = new THREE.GridHelper(200, 40, 0x2e6f9e, 0x1c3a58); grid.material.opacity = .5; grid.material.transparent = true; scene.add(grid);
   var orbit = new OrbitControls(camera, renderer.domElement); orbit.enableDamping = true; orbit.dampingFactor = .08;
@@ -222,7 +229,7 @@ function montar(host, opts) {
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } if (S.xr && S.xr.on && S._sairImersivo) { S._sairImersivo(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
   S._onMouseMove = function (e) { if (!fly.on || !document.pointerLockElement) return; fly.yaw -= e.movementX * 0.0022; fly.pitch -= e.movementY * 0.0022; fly.pitch = Math.max(-1.5, Math.min(1.5, fly.pitch)); };
   window.addEventListener('keydown', S._onKeyDown); window.addEventListener('keyup', S._onKeyUp); document.addEventListener('mousemove', S._onMouseMove);
@@ -239,7 +246,15 @@ function montar(host, opts) {
   }
 
   var clock = new THREE.Clock();
-  function tick() { if (!S || !S.alive) return; var dt = Math.min(clock.getDelta(), 0.1); if (fly.on) flyStep(dt); else orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](dt); } catch (_) {} } renderer.render(scene, camera); S.raf = requestAnimationFrame(tick); }
+  // corpo de 1 quadro: reusado pelo rAF normal E pelo setAnimationLoop do WebXR (sessão VR/AR)
+  function renderFrame(dt) {
+    if (S._xrWalk) S._xrWalk(dt);          // locomoção do imersivo (andar) — tem prioridade
+    else if (fly.on) flyStep(dt); else orbit.update();
+    for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](dt); } catch (_) {} }
+    renderer.render(scene, camera);
+  }
+  function tick() { if (!S || !S.alive) return; if (S._xrActive) { S.raf = 0; return; } var dt = Math.min(clock.getDelta(), 0.1); renderFrame(dt); S.raf = requestAnimationFrame(tick); }
+  S._renderFrame = renderFrame; S._retomarTick = function () { if (S && S.alive && !S._xrActive && !S.raf) tick(); };
   tick();
 
   // ---- pick ----
@@ -305,6 +320,7 @@ function montar(host, opts) {
     else if (k === 'editar') setEdit(!edit.on);
     else if (k === 'pav') togglePavPanel();
     else if (k === 'vis') toggleVisPanel();
+    else if (k === 'xr') toggleXRPanel();
     else if (k === 'foto') tirarFoto();
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
     else if (k === 'fit') { if (planta.on) enquadrarTopo(); else enquadrar(); } // na planta re-centra a vista de topo (não sai)
@@ -325,7 +341,7 @@ function montar(host, opts) {
   // Órbita/Voo SEMPRE encerram o editor INTEIRO (setEdit(false) já limpa a cadeia via editTirarProv);
   // o "Esc encerra só o traço" vive APENAS no handler de Escape — aqui um return deixaria o editor
   // armado com o voo ligado (clique em pointerlock criaria parede acidental persistida)
-  function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); } // fecha o modal do resultado + cobre o estágio "config aberta"
+  function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); if (S.xr && S.xr.on && S._sairImersivo) S._sairImersivo(); } // fecha o modal do resultado + cobre o estágio "config aberta"
   bar.querySelector('[data-b="file"]').addEventListener('change', function (e) {
     var fs2 = Array.prototype.slice.call(e.target.files || []); fs2.forEach(function (f) { abrirArquivo(f); }); e.target.value = '';
   });
@@ -1745,7 +1761,7 @@ function montar(host, opts) {
   function fecharPaineis(exceto) {
     // abrir um painel flutuante fecha o editor (senão o painel nasce ATRÁS dele, invisível)
     if (exceto && edit && edit.on && typeof setEdit === 'function') setEdit(false);
-    [snapPanel, pavPanel, visPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
+    [snapPanel, pavPanel, visPanel, xrPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
     pintarSnapPanel();
     var bp4 = bar.querySelector('[data-b="pav"]'); if (bp4 && pavPanel.style.display !== 'flex') bp4.style.outline = '';
     var bv2 = bar.querySelector('[data-b="vis"]'); if (bv2 && visPanel.style.display !== 'flex') bv2.style.outline = '';
@@ -1755,7 +1771,7 @@ function montar(host, opts) {
   // altura REAL da barra (o top:52px fixo cobriria a 2ª linha de botões)
   function ajustarTopFlutuantes() {
     var t = ((bar && bar.offsetHeight) || 44) + 8;
-    [hint, snapPanel, pavPanel, visPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
+    [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
   }
   S._ajustarTop = ajustarTopFlutuantes;
   ajustarTopFlutuantes();
@@ -1871,6 +1887,440 @@ function montar(host, opts) {
     return url; // p/ testes (dataURL do render puro)
   }
   S._tirarFoto = tirarFoto;
+
+  // ============================================================
+  // 🥽 RA/RV — Realidade Mista e Virtual (v1.1.84)
+  // Andar dentro do modelo em escala REAL (1:1) ou escolhida, medir na
+  // escala, cortar a altura de visão, filtrar por DISCIPLINA e — no
+  // Android/Chrome — colocar o projeto no ambiente com a câmera (RA).
+  // O modo "Caminhar" funciona em QUALQUER aparelho (não exige WebXR),
+  // então iPhone/iPad entram por ele. Tudo restaura ao sair.
+  // ============================================================
+  var EYE = 1.6; // altura dos olhos ao caminhar (m)
+  var xr = { on: false, mode: null, escala: 1, session: null, hitSrc: null, reticle: null,
+             placed: false, travado: false, prevClip: null, clip: null, prevLocal: false,
+             cam: null, look: { yaw: 0, pitch: 0 }, joy: { x: 0, z: 0 }, ori: false, oriBase: null,
+             modelSnap: null, medir: { on: false, pts: [], objs: [] }, discOcultas: {} };
+  S.xr = xr;
+
+  // painel de controle (fica sobre o canvas; entra no re-home)
+  var xrPanel = document.createElement('div');
+  xrPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.96);border:1px solid #24435f;border-radius:12px;padding:12px 13px;color:#dbe8f5;font-size:12px;width:250px;max-height:78vh;overflow:auto';
+  host.appendChild(xrPanel);
+  S.xrPanel = xrPanel;
+  // HUD imersivo (joystick + sair + mira) — some quando não está no modo
+  var xrHud = document.createElement('div');
+  xrHud.style.cssText = 'position:absolute;inset:0;z-index:6;display:none;pointer-events:none';
+  host.appendChild(xrHud);
+  S.xrHud = xrHud;
+
+  function xrSupport(modo) { return !!(navigator.xr && navigator.xr.isSessionSupported) ? navigator.xr.isSessionSupported(modo).catch(function () { return false; }) : Promise.resolve(false); }
+
+  function pintarXRPanel() {
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    var vazio = box.isEmpty();
+    var discs = disciplinasPresentes();
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>🥽 Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">✕</button></div>';
+    if (vazio) { html += '<div style="font-size:11px;color:#9fb2c8">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
+    if (!xr.on) {
+      html += '<div style="font-size:11px;color:#9fb2c8">Entre no projeto e ande dentro dele. Escolha o modo:</div>' +
+        '<button class="btn sm primary" data-x="caminhar" style="width:100%">👣 Caminhar no projeto (qualquer celular)</button>' +
+        '<button class="btn sm" data-x="vr" style="width:100%" disabled>🥽 VR imersivo <span data-x="vrst" style="color:#9fb2c8">(verificando…)</span></button>' +
+        '<button class="btn sm" data-x="ar" style="width:100%" disabled>📱 RA no ambiente <span data-x="arst" style="color:#9fb2c8">(verificando…)</span></button>' +
+        '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">👣 Caminhar: arraste pra olhar, joystick pra andar (ou vire o próprio celular). 🥽/📱 usam WebXR — <b>iPhone/iPad não têm RA no navegador</b>, use o Caminhar.</div>';
+    } else {
+      var em = xr.mode === 'ar' ? '📱 RA no ambiente' : xr.mode === 'vr' ? '🥽 VR imersivo' : '👣 Caminhando';
+      html += '<div style="font-size:11px;color:#7fe0a3"><b>' + em + '</b> ativo</div>';
+      // escala: só no AR (mesa). Andar/VR é sempre 1:1 (escala real — é o sentido de "andar dentro")
+      if (xr.mode === 'ar') {
+        var ESCS = [['1', '1:1 (real)'], ['0.04', '1:25'], ['0.02', '1:50'], ['0.01', '1:100'], ['0.005', '1:200']];
+        html += '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-x="esc" class="inp" style="width:120px">' +
+          ESCS.map(function (o) { return '<option value="' + o[0] + '"' + (Math.abs(parseFloat(o[0]) - (xr.escala || 1)) < 1e-6 ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
+      } else {
+        html += '<div style="font-size:11px;color:#9fb2c8">Você caminha em <b>escala real 1:1</b>. (Escala reduzida fica na 📱 RA de mesa.)</div>';
+      }
+      // altura do corte de visão (reflete o valor atual — não reseta no repaint)
+      var cf = (xr.cortefrac == null ? 1000 : xr.cortefrac);
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>✂️ Teto de visão</span><span data-x="cortev" style="color:#7fe0a3">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
+        '<input type="range" data-x="corte" min="0" max="1000" value="' + cf + '" style="width:100%;accent-color:#22c55e">';
+      // medir
+      html += '<button class="btn sm" data-x="medir" style="width:100%">📏 Medir na escala (toque 2 pontos)</button>';
+      // disciplinas
+      if (discs.length > 1) {
+        html += '<div style="font-size:11px;color:#9fb2c8;margin-top:2px">Disciplinas (toque pra ligar/desligar):</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
+        discs.forEach(function (d) {
+          var off = !!xr.discOcultas[d.chave];
+          html += '<button class="btn sm" data-xd="' + esc(d.chave) + '" style="' + (off ? 'opacity:.45' : 'background:' + corAtiva() + ';color:#fff') + '">' + esc(d.nome) + '</button>';
+        });
+        html += '</div>';
+      }
+      if (xr.mode === 'ar') {
+        html += '<button class="btn sm" data-x="travar" style="width:100%">' + (xr.travado ? '🔓 Destravar do ponto' : '🔒 Travar neste ponto') + '</button>' +
+          '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">Aponte pro chão, toque pra fixar o projeto no lugar real; trave pra ele não sair do lugar.</div>';
+      }
+      html += '<button class="btn sm" data-x="sair" style="width:100%">⏹ Sair do imersivo</button>';
+    }
+    xrPanel.innerHTML = html;
+    if (!xr.on && !vazio) {
+      // habilita VR/AR conforme suporte real do aparelho
+      xrSupport('immersive-vr').then(function (ok) { var b = xrPanel.querySelector('[data-x="vr"]'), st = xrPanel.querySelector('[data-x="vrst"]'); if (!b) return; b.disabled = !ok; if (st) st.textContent = ok ? '' : '(indisponível aqui)'; });
+      xrSupport('immersive-ar').then(function (ok) { var b = xrPanel.querySelector('[data-x="ar"]'), st = xrPanel.querySelector('[data-x="arst"]'); if (!b) return; b.disabled = !ok; if (st) st.textContent = ok ? '' : '(precisa Android/ARCore)'; });
+    }
+  }
+  function disciplinasPresentes() {
+    var mapa = {};
+    S.modelos.forEach(function (mo) { var d = (mo.disciplina || 'outros'); if (!mapa[d]) mapa[d] = { chave: d, nome: nomeDisc(d), n: 0 }; mapa[d].n += mo.elementos.length; });
+    return Object.keys(mapa).map(function (k) { return mapa[k]; });
+  }
+  function nomeDisc(d) { var M = { arquitetura: 'Arquitetura', estrutura: 'Estrutura', hidraulica: 'Hidráulica', eletrica: 'Elétrica', mecanica: 'Mecânica', incendio: 'Incêndio', outros: 'Outros' }; return M[d] || (d.charAt(0).toUpperCase() + d.slice(1)); }
+
+  function toggleXRPanel() {
+    if (xrPanel.style.display === 'flex') { xrPanel.style.display = 'none'; return; }
+    if (S._fecharPaineis) S._fecharPaineis(xrPanel);
+    pintarXRPanel(); xrPanel.style.display = 'flex';
+    if (S._ajustarTop) S._ajustarTop();
+  }
+  S._toggleXR = toggleXRPanel;
+
+  // ---- qualidade: sombras só no imersivo e só se o modelo não for gigante ----
+  function ligarSombras(on) {
+    var tri = 0; S.modelos.forEach(function (mo) { tri += mo.nTri || 0; });
+    if (on && tri > 1800000) return false; // modelo pesado: sombra travaria — segue sem
+    dir.castShadow = !!on;
+    todasMalhas(function (m) { if (m.geometry) { m.castShadow = !!on; m.receiveShadow = !!on; } });
+    return true;
+  }
+
+  // ---- escala: só na RA de mesa (AR). Andar/VR é sempre 1:1 (escala real) — escalar o
+  // modelRoot em torno da origem no Caminhar jogava a câmera pra fora do modelo (achado do gate).
+  function aplicarEscalaXR(f) {
+    if (xr.mode !== 'ar') { xr.escala = 1; return; } // caminhar/VR ignoram escala
+    xr.escala = f || 1;
+    if (xr.placed) posicionarModeloAR();
+  }
+
+  // ---- teto de visão (corte horizontal que esconde o que está acima) ----
+  function aplicarTetoVisao(frac) {
+    var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return;
+    xr.cortefrac = Math.round(frac * 1000); // lembra a posição p/ o repaint não resetar
+    var y = box.min.y + (box.max.y - box.min.y) * frac;
+    var rot = xrPanel.querySelector('[data-x="cortev"]');
+    if (frac >= 0.999) { renderer.clippingPlanes = xr.prevClip || []; renderer.localClippingEnabled = xr.prevLocal; if (rot) rot.textContent = 'inteiro'; return; }
+    if (!xr.clip) xr.clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
+    xr.clip.constant = y;
+    renderer.localClippingEnabled = true; renderer.clippingPlanes = [xr.clip];
+    if (rot) rot.textContent = fmtDist(Math.max(0, y - box.min.y) / (xr.escala || 1)) + ' do piso'; // metro REAL (divide pela escala do AR)
+  }
+
+  // ---- HUD: joystick de andar + mira + (no AR) barra de disciplina/medir/sair ----
+  // No AR imersivo SÓ o dom-overlay (xrHud) aparece — o xrPanel de config fica invisível.
+  // Então as ferramentas essenciais da obra (disciplina, medir, sair) vão pra CÁ.
+  function montarHud(comReticulo) {
+    var barraAR = '';
+    if (comReticulo) {
+      var discs = disciplinasPresentes();
+      var chips = discs.length > 1 ? discs.map(function (d) { var off = !!xr.discOcultas[d.chave]; return '<button data-har="' + esc(d.chave) + '" style="pointer-events:auto;border:0;border-radius:14px;padding:6px 10px;font-size:12px;color:#fff;background:' + (off ? 'rgba(90,110,130,.7)' : corAtiva()) + '">' + esc(d.nome) + '</button>'; }).join('') : '';
+      barraAR = '<div style="position:absolute;left:0;right:0;bottom:24px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 12px">' +
+        chips +
+        '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:6px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
+        '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:6px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
+    }
+    xrHud.innerHTML =
+      (comReticulo ? '' : '<div data-h="joy" style="position:absolute;left:20px;bottom:24px;width:120px;height:120px;border-radius:50%;background:rgba(20,40,64,.4);border:2px solid rgba(127,224,163,.5);pointer-events:auto;touch-action:none">' +
+      '<div data-h="knob" style="position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(127,224,163,.85)"></div></div>') +
+      (comReticulo ? '<div style="position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #7fe0a3;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>' : '') +
+      barraAR +
+      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#dbe8f5;font-size:12px;padding:5px 12px;border-radius:20px;max-width:80%;text-align:center"></div></div>';
+    xrHud.style.display = 'block';
+    if (!comReticulo) ligarJoystick();
+  }
+  // cliques da barra do AR (disciplina/medir/sair) — no dom-overlay
+  xrHud.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-har]'); if (!b) return; var k = b.getAttribute('data-har');
+    if (k === 'sair') sairImersivo();
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo (a mira central) pra medir.' : ''); }
+    else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
+  });
+  function xrDica(t) { var d = xrHud.querySelector('[data-h="dica"]'); if (d) d.textContent = t || ''; }
+  function ligarJoystick() {
+    var joy = xrHud.querySelector('[data-h="joy"]'), knob = xrHud.querySelector('[data-h="knob"]');
+    if (!joy) return;
+    var ativo = false, cx = 60, cy = 60, R = 42;
+    function set(px, py) {
+      var dx = px - cx, dy = py - cy, d = Math.sqrt(dx * dx + dy * dy) || 1;
+      if (d > R) { dx = dx / d * R; dy = dy / d * R; }
+      knob.style.left = (35 + dx) + 'px'; knob.style.top = (35 + dy) + 'px';
+      xr.joy.x = dx / R; xr.joy.z = dy / R; // x=strafe, z=frente(-)/trás(+)
+    }
+    function pos(e) { var r = joy.getBoundingClientRect(), t = e.touches ? e.touches[0] : e; return [t.clientX - r.left, t.clientY - r.top]; }
+    joy.addEventListener('pointerdown', function (e) { ativo = true; joy.setPointerCapture && joy.setPointerCapture(e.pointerId); var p = pos(e); set(p[0], p[1]); e.preventDefault(); });
+    joy.addEventListener('pointermove', function (e) { if (!ativo) return; var p = pos(e); set(p[0], p[1]); e.preventDefault(); });
+    var solta = function () { ativo = false; xr.joy.x = 0; xr.joy.z = 0; knob.style.left = '35px'; knob.style.top = '35px'; };
+    joy.addEventListener('pointerup', solta); joy.addEventListener('pointercancel', solta);
+  }
+
+  // ---- olhar arrastando (não-XR): drag no canvas gira a câmera ----
+  var xrDrag = null;
+  function xrPointerDown(e) { if (!xr.on || xr.mode === 'ar' || xr.mode === 'vr') return; if (xr.medir.on) { medirTocar(e); return; } xrDrag = { x: e.clientX, y: e.clientY }; }
+  function xrPointerMove(e) { if (!xrDrag) return; xr.look.yaw -= (e.clientX - xrDrag.x) * 0.005; xr.look.pitch -= (e.clientY - xrDrag.y) * 0.005; xr.look.pitch = Math.max(-1.4, Math.min(1.4, xr.look.pitch)); xrDrag = { x: e.clientX, y: e.clientY }; }
+  function xrPointerUp() { xrDrag = null; }
+
+  // ---- orientação do aparelho (virar o celular pra olhar) ----
+  function ligarOrientacao() {
+    if (xr.ori) return;
+    function handler(ev) {
+      if (ev.alpha == null) return;
+      var a = ev.alpha * Math.PI / 180, b = ev.beta * Math.PI / 180;
+      if (!xr.oriBase) xr.oriBase = a;
+      xr.look.yaw = -(a - xr.oriBase);
+      xr.look.pitch = Math.max(-1.4, Math.min(1.4, (b - Math.PI / 2)));
+    }
+    var start = function () { window.addEventListener('deviceorientation', handler, true); xr.ori = true; xr._oriH = handler; xrDica('Vire o celular pra olhar em volta. Joystick pra andar.'); };
+    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+      DeviceOrientationEvent.requestPermission().then(function (p) { if (p === 'granted') start(); }).catch(function () {});
+    } else if (typeof DeviceOrientationEvent !== 'undefined') { start(); }
+  }
+  function desligarOrientacao() { if (xr.ori && xr._oriH) { window.removeEventListener('deviceorientation', xr._oriH, true); } xr.ori = false; xr.oriBase = null; }
+
+  // ---- passo de andar (roda todo frame via S._xrWalk) ----
+  var _xrFwd = new THREE.Vector3(), _xrRight = new THREE.Vector3(), _xrUp = new THREE.Vector3(0, 1, 0);
+  function xrWalkStep(dt) {
+    if (xr.mode === 'vr') { xrVRLoco(dt); return; }
+    // câmera olha conforme yaw/pitch (não-XR); no AR a câmera é da sessão, só nudge no plano
+    if (xr.mode !== 'ar') {
+      var e = new THREE.Euler(xr.look.pitch, xr.look.yaw, 0, 'YXZ'); camera.quaternion.setFromEuler(e);
+    }
+    var mv = xr.joy.x * xr.joy.x + xr.joy.z * xr.joy.z;
+    if (mv < 0.0009) return;
+    camera.getWorldDirection(_xrFwd); _xrFwd.y = 0; _xrFwd.normalize();
+    _xrRight.crossVectors(_xrFwd, _xrUp).normalize();
+    var vel = 1.4 * dt; // ~caminhada humana (m/s), em unidades de mundo já escaladas
+    var alvo = new THREE.Vector3();
+    alvo.addScaledVector(_xrFwd, -xr.joy.z * vel).addScaledVector(_xrRight, xr.joy.x * vel);
+    if (xr.mode === 'ar') { modelRoot.position.sub(alvo); } // no AR movo o MODELO (a câmera é do device)
+    else { camera.position.add(alvo); camera.position.y = xr._pisoY + EYE * (xr.escala || 1); }
+  }
+  function xrVRLoco(dt) {
+    try {
+      var s = renderer.xr.getSession(); if (!s) return;
+      s.inputSources.forEach(function (src) {
+        if (!src.gamepad || !src.handedness) return;
+        var ax = src.gamepad.axes || [];
+        var x = ax[2] || ax[0] || 0, y = ax[3] || ax[1] || 0;
+        if (Math.abs(x) < 0.15 && Math.abs(y) < 0.15) return;
+        if (src.handedness === 'left') {
+          camera.getWorldDirection(_xrFwd); _xrFwd.y = 0; _xrFwd.normalize(); _xrRight.crossVectors(_xrFwd, _xrUp).normalize();
+          var v = 1.6 * dt, mov = new THREE.Vector3(); mov.addScaledVector(_xrFwd, -y * v).addScaledVector(_xrRight, x * v);
+          xrRig.position.add(mov);
+        } else if (src.handedness === 'right' && Math.abs(x) > 0.6) {
+          if (!xr._snapT || performance.now() - xr._snapT > 300) { xrRig.rotation.y -= (x > 0 ? 1 : -1) * Math.PI / 6; xr._snapT = performance.now(); }
+        }
+      });
+    } catch (_) {}
+  }
+
+  // rig de VR: a câmera XR fica dentro dele; mover/girar o rig = teletransporte suave
+  var xrRig = new THREE.Group(); scene.add(xrRig);
+
+  // ---- ENTRAR: Caminhar (universal, sem WebXR) ----
+  function entrarCaminhar() {
+    var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) { S._hint('Carregue um modelo primeiro.'); return; }
+    xr.on = true; xr.mode = 'caminhar'; xr.escala = 1; xr.cortefrac = 1000;
+    xr.cam = { pos: camera.position.clone(), quat: camera.quaternion.clone(), near: camera.near, far: camera.far };
+    xr.prevClip = renderer.clippingPlanes; xr.prevLocal = renderer.localClippingEnabled;
+    orbit.enabled = false; if (S.fly && S.fly.on && S._setMode) S._setMode(false);
+    ligarSombras(true);
+    var c = box.getCenter(new THREE.Vector3());
+    xr._pisoY = box.min.y;
+    camera.position.set(c.x, box.min.y + EYE, c.z); camera.near = 0.05; camera.far = 5000; camera.updateProjectionMatrix();
+    xr.look.yaw = 0; xr.look.pitch = 0; xr.joy.x = 0; xr.joy.z = 0; // zera o joystick (senão anda sozinho na reentrada)
+    S._xrWalk = xrWalkStep;
+    montarHud(false); xrDica('Arraste pra olhar · joystick pra andar. Toque em “virar o celular” no painel pra usar o giroscópio.');
+    // botão de giroscópio se houver
+    if (typeof DeviceOrientationEvent !== 'undefined') ligarOrientacao();
+    canvasEl.addEventListener('pointerdown', xrPointerDown); canvasEl.addEventListener('pointermove', xrPointerMove); window.addEventListener('pointerup', xrPointerUp);
+    marcarBtnXR(true); pintarXRPanel();
+    S._hint('👣 Você está DENTRO do projeto. Ande com o joystick; arraste pra olhar. ⏹ Sair no painel.');
+  }
+
+  // ---- ENTRAR: VR imersivo (WebXR) ----
+  function entrarVR() {
+    if (!navigator.xr) return;
+    var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return;
+    navigator.xr.requestSession('immersive-vr', { optionalFeatures: ['local-floor', 'bounded-floor'] }).then(function (session) {
+      xr.on = true; xr.mode = 'vr'; xr.session = session; xr.escala = 1;
+      xr.cam = { pos: camera.position.clone(), quat: camera.quaternion.clone() };
+      xr.prevClip = renderer.clippingPlanes; xr.prevLocal = renderer.localClippingEnabled; // preserva Planta/Corte ativos
+      xr.joy.x = 0; xr.joy.z = 0;
+      S._xrWalk = xrWalkStep; // locomoção (analógico → xrVRLoco) roda no xrLoop
+      ligarSombras(true);
+      var c = box.getCenter(new THREE.Vector3());
+      xrRig.position.set(c.x, box.min.y, c.z); xrRig.rotation.set(0, 0, 0);
+      renderer.xr.setReferenceSpaceType('local-floor');
+      xrRig.add(camera); // câmera XR dentro do rig → mover o rig te leva pelo modelo
+      renderer.xr.setSession(session).then(function () {
+        if (!xr.on) return; // sessão já encerrada antes deste callback (Esc/tirou o headset) — não ressuscita o loop
+        xr._xrActivePrev = S._xrActive; S._xrActive = true; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
+        renderer.setAnimationLoop(xrLoop);
+      }).catch(function (e) { sairImersivo(); S._hint('🥽 Falha ao iniciar a sessão VR: ' + (e && e.message || e)); });
+      session.addEventListener('end', sairImersivo);
+      marcarBtnXR(true); pintarXRPanel();
+    }).catch(function (e) { S._hint('🥽 Não deu pra entrar em VR: ' + (e && e.message || e)); });
+  }
+
+  // ---- ENTRAR: RA no ambiente (WebXR immersive-ar, Android) ----
+  function entrarAR() {
+    if (!navigator.xr) return;
+    montarHud(true); // dom-overlay usa o xrHud
+    navigator.xr.requestSession('immersive-ar', { requiredFeatures: ['hit-test'], optionalFeatures: ['dom-overlay', 'local-floor'], domOverlay: { root: xrHud } }).then(function (session) {
+      xr.on = true; xr.mode = 'ar'; xr.session = session; xr.placed = false; xr.travado = false;
+      xr.modelSnap = { pos: modelRoot.position.clone(), quat: modelRoot.quaternion.clone(), scale: modelRoot.scale.clone() };
+      xr.prevClip = renderer.clippingPlanes; xr.prevLocal = renderer.localClippingEnabled; // preserva Planta/Corte ativos
+      xr.joy.x = 0; xr.joy.z = 0;
+      S._xrWalk = xrWalkStep; // nudge do joystick no modo AR roda no xrLoop
+      modelRoot.visible = false; // só aparece após colocar
+      ligarSombras(true);
+      // retículo de colocação
+      if (!xr.reticle) {
+        var g = new THREE.RingGeometry(0.09, 0.11, 32).rotateX(-Math.PI / 2);
+        xr.reticle = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x7fe0a3 }));
+        xr.reticle.matrixAutoUpdate = false; xr.reticle.visible = false; scene.add(xr.reticle);
+      }
+      renderer.xr.setReferenceSpaceType('local');
+      renderer.xr.setSession(session).then(function () {
+        if (!xr.on) return; // sessão já encerrada antes deste callback
+        S._xrActive = true; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
+        session.requestReferenceSpace('viewer').then(function (vs) {
+          session.requestHitTestSource({ space: vs }).then(function (src) { if (xr.on) xr.hitSrc = src; else { try { src.cancel(); } catch (_) {} } });
+        });
+        renderer.setAnimationLoop(xrLoop);
+      }).catch(function (e) { sairImersivo(); S._hint('📱 Falha ao iniciar a sessão RA: ' + (e && e.message || e)); });
+      // toque no AR: mede (se a régua estiver ligada) ou fixa o projeto
+      session.addEventListener('select', function () { if (xr.medir.on && xr.placed) medirTocar({}); else arColocar(); });
+      session.addEventListener('end', sairImersivo);
+      xrDica('Aponte a câmera pro chão e toque na tela pra fixar o projeto.');
+      marcarBtnXR(true); pintarXRPanel();
+    }).catch(function (e) { xrHud.style.display = 'none'; S._hint('📱 RA indisponível neste aparelho: ' + (e && e.message || e)); });
+  }
+  function arColocar() {
+    if (xr.travado || !xr.reticle || !xr.reticle.visible) return;
+    xr._anchorMat = xr.reticle.matrix.clone();
+    xr.placed = true; modelRoot.visible = true;
+    posicionarModeloAR();
+    xrDica('Projeto fixado. Ande em volta! Trave no painel pra ele não sair do lugar.');
+    pintarXRPanel();
+  }
+  function posicionarModeloAR() {
+    if (!xr._anchorMat) return;
+    var box = new THREE.Box3().setFromObject(modelRoot); // em coords atuais
+    var p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3();
+    xr._anchorMat.decompose(p, q, s);
+    modelRoot.scale.setScalar(xr.escala || 1);
+    // apoia a BASE do modelo no ponto do chão
+    var box0 = new THREE.Box3().setFromObject(modelRoot);
+    modelRoot.position.set(0, 0, 0);
+    var min = box0.min.clone();
+    modelRoot.position.set(p.x - (box0.getCenter(new THREE.Vector3()).x), p.y - min.y, p.z - (box0.getCenter(new THREE.Vector3()).z));
+    modelRoot.quaternion.copy(q);
+  }
+
+  // ---- loop XR (VR/AR): dt + locomoção + hit-test + render ----
+  function xrLoop(t, frame) {
+    if (!S || !S.alive) { renderer.setAnimationLoop(null); return; }
+    var dt = Math.min(clock.getDelta(), 0.1);
+    if (S._xrWalk) S._xrWalk(dt);
+    if (xr.mode === 'ar' && frame && xr.hitSrc && !xr.travado) {
+      try {
+        var ref = renderer.xr.getReferenceSpace(), hits = frame.getHitTestResults(xr.hitSrc);
+        if (hits.length) { var pose = hits[0].getPose(ref); if (pose) { xr.reticle.visible = !xr.placed; xr.reticle.matrix.fromArray(pose.transform.matrix); } }
+        else xr.reticle.visible = false;
+      } catch (_) {}
+    }
+    for (var i = 0; i < S._tickExtra.length; i++) { try { S._tickExtra[i](dt); } catch (_) {} }
+    renderer.render(scene, camera);
+  }
+
+  // ---- medir na escala (2 toques) ----
+  function medirTocar(e) {
+    var r = canvasEl.getBoundingClientRect();
+    var mx = (((e.clientX != null ? e.clientX : r.left + r.width / 2) - r.left) / r.width) * 2 - 1;
+    var my = -((((e.clientY != null ? e.clientY : r.top + r.height / 2) - r.top) / r.height) * 2 - 1);
+    ray.setFromCamera({ x: mx, y: my }, camera);
+    var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
+    if (!hit) { xrDica('📏 Mire numa superfície do modelo.'); return; }
+    xr.medir.pts.push(hit.point.clone());
+    var m = pontoMarca(hit.point.clone()); scene.add(m); xr.medir.objs.push(m); rescaleObj(m);
+    if (xr.medir.pts.length === 2) {
+      var a = xr.medir.pts[0], b = xr.medir.pts[1];
+      var dReal = a.distanceTo(b) / (xr.escala || 1); // divide pela escala → metros reais
+      var ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), new THREE.LineBasicMaterial({ color: 0x7fe0a3, depthTest: false }));
+      ln.renderOrder = 998; scene.add(ln); xr.medir.objs.push(ln);
+      var lab = labelSprite(fmtDist(dReal)); lab.position.copy(a.clone().add(b).multiplyScalar(0.5)); scene.add(lab); xr.medir.objs.push(lab); rescaleObj(lab);
+      xrDica('📏 ' + fmtDist(dReal) + ' (real). Toque 2 pontos pra medir de novo.');
+      xr.medir.pts = [];
+    } else xrDica('📏 Agora toque no 2º ponto.');
+  }
+  function limparMedirXR() { xr.medir.objs.forEach(function (o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); }); xr.medir.objs = []; xr.medir.pts = []; }
+
+  // ---- disciplina: liga/desliga MODELOS por disciplina ----
+  function toggleDisciplinaXR(chave) {
+    xr.discOcultas[chave] = !xr.discOcultas[chave];
+    S.modelos.forEach(function (mo) { if ((mo.disciplina || 'outros') === chave) mo.grupo.visible = !xr.discOcultas[chave] && mo.visivel !== false; });
+    pintarXRPanel();
+  }
+
+  // ---- SAIR: restaura tudo ----
+  function sairImersivo() {
+    if (!xr.on) return;
+    var eraVR = xr.mode === 'vr', eraAR = xr.mode === 'ar';
+    xr.on = false;
+    if (xr.hitSrc) { try { xr.hitSrc.cancel(); } catch (_) {} }
+    if (xr.session) { try { xr.session.end(); } catch (_) {} }
+    xr.session = null; xr.hitSrc = null; xr.joy.x = 0; xr.joy.z = 0; xr.cortefrac = 1000;
+    S._xrActive = false; S._xrWalk = null;
+    try { renderer.setAnimationLoop(null); } catch (_) {}
+    if (xr.reticle) xr.reticle.visible = false;
+    if (eraVR) { scene.add(camera); xrRig.remove(camera); } // devolve a câmera à cena
+    // restaura modelo (escala/posição do AR) e disciplinas
+    modelRoot.visible = true;
+    modelRoot.scale.setScalar(1);
+    if (xr.modelSnap) { modelRoot.position.copy(xr.modelSnap.pos); modelRoot.quaternion.copy(xr.modelSnap.quat); modelRoot.scale.copy(xr.modelSnap.scale); xr.modelSnap = null; }
+    S.modelos.forEach(function (mo) { mo.grupo.visible = mo.visivel !== false; }); xr.discOcultas = {};
+    ligarSombras(false);
+    limparMedirXR(); xr.medir.on = false;
+    desligarOrientacao();
+    renderer.clippingPlanes = xr.prevClip || []; renderer.localClippingEnabled = xr.prevLocal;
+    canvasEl.removeEventListener('pointerdown', xrPointerDown); canvasEl.removeEventListener('pointermove', xrPointerMove); window.removeEventListener('pointerup', xrPointerUp);
+    xrHud.style.display = 'none'; xrHud.innerHTML = '';
+    if (xr.cam) { camera.position.copy(xr.cam.pos); if (xr.cam.quat) camera.quaternion.copy(xr.cam.quat); if (xr.cam.near) { camera.near = xr.cam.near; camera.far = xr.cam.far; camera.updateProjectionMatrix(); } xr.cam = null; }
+    orbit.enabled = true; orbit.update();
+    xr.escala = 1; xr.mode = null; xr.placed = false; xr.travado = false;
+    marcarBtnXR(false); pintarXRPanel();
+    if (S._retomarTick) S._retomarTick();
+    S._hint('');
+  }
+  S._sairImersivo = sairImersivo;
+  function marcarBtnXR(on) { var b = bar.querySelector('[data-b="xr"]'); if (b) { b.style.background = on ? corAtiva() : ''; b.style.color = on ? '#fff' : ''; } }
+
+  xrPanel.addEventListener('click', function (e) {
+    var bd = e.target.closest('[data-xd]'); if (bd) { toggleDisciplinaXR(bd.getAttribute('data-xd')); return; }
+    var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
+    if (k === 'fechar') { xrPanel.style.display = 'none'; }
+    else if (k === 'caminhar') { entrarCaminhar(); }
+    else if (k === 'vr') { entrarVR(); }
+    else if (k === 'ar') { entrarAR(); }
+    else if (k === 'sair') { sairImersivo(); }
+    else if (k === 'travar') { xr.travado = !xr.travado; if (xr.reticle) xr.reticle.visible = false; pintarXRPanel(); }
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); xrDica(xr.medir.on ? '📏 Toque 2 pontos do modelo pra medir na escala.' : ''); b.style.background = xr.medir.on ? corAtiva() : ''; b.style.color = xr.medir.on ? '#fff' : ''; }
+  });
+  xrPanel.addEventListener('change', function (e) {
+    var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
+    if (k === 'esc') aplicarEscalaXR(parseFloat(b.value) || 1);
+  });
+  xrPanel.addEventListener('input', function (e) {
+    var b = e.target.closest('[data-x]'); if (!b) return;
+    if (b.getAttribute('data-x') === 'corte') aplicarTetoVisao((+b.value) / 1000);
+  });
 
   // ============================================================
   // 🏗 2D→3D (Fase C.1) — reconstrução ASSISTIDA a partir de DXF: o parser
@@ -2939,6 +3389,8 @@ function montar(host, opts) {
 // libera os modelos do WASM e o renderer — deixa o caminho limpo pro montar() criar um novo.
 function desmontarMorto() {
   if (!S) return;
+  try { if (S.xr && S.xr.on && S._sairImersivo) S._sairImersivo(); } catch (_) {} // fecha sessão XR/loop antes de derrubar
+  try { S._xrActive = false; if (S.renderer && S.renderer.setAnimationLoop) S.renderer.setAnimationLoop(null); } catch (_) {}
   try { if (S.raf) cancelAnimationFrame(S.raf); } catch (_) {}
   try { if (Reuniao.on) Reuniao.sair(); } catch (_) {}
   try { if (S._onKeyDown) window.removeEventListener('keydown', S._onKeyDown); } catch (_) {}
@@ -3283,6 +3735,11 @@ window.BIM = {
   ocultarSelecao: function () { if (S && S._ocultarSelecao) S._ocultarSelecao(); },
   isolarTipo: function () { if (S && S._isolarTipo) S._isolarTipo(); },
   restaurarVisibilidade: function () { if (S && S._restaurarVis) S._restaurarVis(); },
+  // ---- RA/RV (v1.1.84): imersivo — andar em escala real, VR, RA Android ----
+  abrirXR: function () { if (S && S._toggleXR) S._toggleXR(); },
+  imersivo: function (modo) { if (!S || !S.xr) return false; if (S.xr.on) return true; if (S._toggleXR && (!S.xrPanel || S.xrPanel.style.display !== 'flex')) S._toggleXR(); var b = S.xrPanel && S.xrPanel.querySelector('[data-x="' + (modo || 'caminhar') + '"]'); if (b) { b.click(); return true; } return false; },
+  imersivoAtivo: function () { return !!(S && S.xr && S.xr.on); },
+  sairImersivo: function () { if (S && S._sairImersivo) S._sairImersivo(); },
   foto: function () { return (S && S._tirarFoto) ? S._tirarFoto() : null; }, // dataURL do render (também baixa o PNG carimbado)
   // v1.1.83 — planta baixa técnica 2D (corte na altura do slider da Planta, hachura + cotas automáticas)
   plantaBaixa: function (o) {

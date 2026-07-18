@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.83",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.83/OrcaPRO-IA-update-v1.1.83.zip",
-  "notas": "Planta baixa técnica 2D estilo Revit: corte de topo com paredes hachuradas, arestas pretas, escala exata e cotas automáticas em cadeia (parciais + total). Modo Estilo Desenho ao vivo (o modelo vira prancha branca enquanto você navega). No plugin RA BIM Tools v2.6.0: botão Cotas Automáticas — cota todas as paredes e eixos da planta ativa de uma vez.",
+  "versao": "1.1.84",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.84/OrcaPRO-IA-update-v1.1.84.zip",
+  "notas": "Realidade Mista e Virtual (RA/RV): ande DENTRO do modelo 3D em escala real (1:1) pelo celular — modo Caminhar (qualquer aparelho), VR imersivo e RA no ambiente (Android: fixe o projeto no chão e trave). Meça na escala real, ajuste o teto de visão, filtre por disciplina (ex.: Hidráulica, pra não furar em cima do cano) e gere um QR pra abrir a RA/RV no celular ou tablet.",
   "obrigatoria": false
 }
