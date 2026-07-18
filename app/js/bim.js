@@ -134,8 +134,10 @@ function montar(host, opts) {
   barToggle.className = 'btn sm';
   barToggle.style.cssText = 'position:absolute;right:10px;top:8px;z-index:5;padding:5px 9px;font-size:12px;opacity:.94;box-shadow:0 2px 8px rgba(0,0,0,.35)';
   barToggle.title = 'Mostrar ou esconder a barra de ferramentas (deixa a vista limpa)';
-  var barraAberta = true;
-  try { barraAberta = localStorage.getItem('orcapro:bim:barra') !== 'recolhida'; } catch (_) {}
+  // no celular a barra (20 botões) tampava metade da tela → começa RECOLHIDA por padrão em tela
+  // pequena; no PC começa aberta. A escolha do usuário (se ele mexer) manda daí pra frente.
+  var barraAberta = (host.clientWidth || window.innerWidth || 1024) > 640;
+  try { var _pref = localStorage.getItem('orcapro:bim:barra'); if (_pref) barraAberta = _pref !== 'recolhida'; } catch (_) {}
   function setBarra(aberta) {
     barraAberta = !!aberta;
     bar.style.display = aberta ? 'flex' : 'none';
@@ -2038,29 +2040,30 @@ function montar(host, opts) {
   // No AR imersivo SÓ o dom-overlay (xrHud) aparece — o xrPanel de config fica invisível.
   // Então as ferramentas essenciais da obra (disciplina, medir, sair) vão pra CÁ.
   function montarHud(comReticulo) {
-    var barraAR = '';
-    if (comReticulo) {
-      var discs = disciplinasPresentes();
-      var chips = discs.length > 1 ? discs.map(function (d) { var off = !!xr.discOcultas[d.chave]; return '<button data-har="' + esc(d.chave) + '" style="pointer-events:auto;border:0;border-radius:14px;padding:6px 10px;font-size:12px;color:#fff;background:' + (off ? 'rgba(90,110,130,.7)' : corAtiva()) + '">' + esc(d.nome) + '</button>'; }).join('') : '';
-      barraAR = '<div style="position:absolute;left:0;right:0;bottom:24px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 12px">' +
-        chips +
-        '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:6px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
-        '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:6px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
-    }
+    // barra compacta de ferramentas SEMPRE (Caminhar E AR) — no celular o painel grande de config
+    // tampa a vista, então as ações essenciais (disciplina/medir/ajustes/sair) ficam nesta barra.
+    var discs = disciplinasPresentes();
+    var chips = discs.length > 1 ? discs.map(function (d) { var off = !!xr.discOcultas[d.chave]; return '<button data-har="' + esc(d.chave) + '" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 11px;font-size:12px;color:#fff;background:' + (off ? 'rgba(90,110,130,.7)' : corAtiva()) + '">' + esc(d.nome) + '</button>'; }).join('') : '';
+    var barra = '<div style="position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 10px">' +
+      chips +
+      '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
+      '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">⚙️ Ajustes</button>' +
+      '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
     xrHud.innerHTML =
-      (comReticulo ? '' : '<div data-h="joy" style="position:absolute;left:20px;bottom:24px;width:120px;height:120px;border-radius:50%;background:rgba(20,40,64,.4);border:2px solid rgba(127,224,163,.5);pointer-events:auto;touch-action:none">' +
-      '<div data-h="knob" style="position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(127,224,163,.85)"></div></div>') +
+      (comReticulo ? '' : '<div data-h="joy" style="position:absolute;left:16px;bottom:60px;width:108px;height:108px;border-radius:50%;background:rgba(20,40,64,.4);border:2px solid rgba(127,224,163,.5);pointer-events:auto;touch-action:none">' +
+      '<div data-h="knob" style="position:absolute;left:31px;top:31px;width:46px;height:46px;border-radius:50%;background:rgba(127,224,163,.85)"></div></div>') +
       (comReticulo ? '<div style="position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #7fe0a3;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>' : '') +
-      barraAR +
-      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#dbe8f5;font-size:12px;padding:5px 12px;border-radius:20px;max-width:80%;text-align:center"></div></div>';
+      barra +
+      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#dbe8f5;font-size:12px;padding:5px 12px;border-radius:20px;max-width:88%;text-align:center"></div></div>';
     xrHud.style.display = 'block';
     if (!comReticulo) ligarJoystick();
   }
-  // cliques da barra do AR (disciplina/medir/sair) — no dom-overlay
+  // cliques da barra (disciplina/medir/ajustes/sair) — no dom-overlay do imersivo
   xrHud.addEventListener('click', function (e) {
     var b = e.target.closest('[data-har]'); if (!b) return; var k = b.getAttribute('data-har');
     if (k === 'sair') sairImersivo();
-    else if (k === 'medir') { xr.medir.on = !xr.medir.on; b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo (a mira central) pra medir.' : ''); }
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo pra medir na escala.' : ''); }
+    else if (k === 'ajustes') { var aberto = xrPanel.style.display === 'flex'; if (aberto) { xrPanel.style.display = 'none'; } else { pintarXRPanel(); xrPanel.style.display = 'flex'; if (S._ajustarTop) S._ajustarTop(); } }
     else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
   });
   function xrDica(t) { var d = xrHud.querySelector('[data-h="dica"]'); if (d) d.textContent = t || ''; }
@@ -2161,7 +2164,7 @@ function montar(host, opts) {
     // botão de giroscópio se houver
     if (typeof DeviceOrientationEvent !== 'undefined') ligarOrientacao();
     canvasEl.addEventListener('pointerdown', xrPointerDown); canvasEl.addEventListener('pointermove', xrPointerMove); window.addEventListener('pointerup', xrPointerUp);
-    marcarBtnXR(true); pintarXRPanel();
+    marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none'; // no imersivo o painel grande some (tampava a vista no celular); ⚙️ Ajustes reabre
     S._hint('👣 Você está DENTRO do projeto. Ande com o joystick; arraste pra olhar. ⏹ Sair no painel.');
   }
 
@@ -2186,7 +2189,7 @@ function montar(host, opts) {
         renderer.setAnimationLoop(xrLoop);
       }).catch(function (e) { sairImersivo(); S._hint('🥽 Falha ao iniciar a sessão VR: ' + (e && e.message || e)); });
       session.addEventListener('end', sairImersivo);
-      marcarBtnXR(true); pintarXRPanel();
+      marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none'; // no imersivo o painel grande some (tampava a vista no celular); ⚙️ Ajustes reabre
     }).catch(function (e) { S._hint('🥽 Não deu pra entrar em VR: ' + (e && e.message || e)); });
   }
 
@@ -2221,7 +2224,7 @@ function montar(host, opts) {
       session.addEventListener('select', function () { if (xr.medir.on && xr.placed) medirTocar({}); else arColocar(); });
       session.addEventListener('end', sairImersivo);
       xrDica('Aponte a câmera pro chão e toque na tela pra fixar o projeto.');
-      marcarBtnXR(true); pintarXRPanel();
+      marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none'; // no imersivo o painel grande some (tampava a vista no celular); ⚙️ Ajustes reabre
     }).catch(function (e) { xrHud.style.display = 'none'; S._hint('📱 RA indisponível neste aparelho: ' + (e && e.message || e)); });
   }
   function arColocar() {
