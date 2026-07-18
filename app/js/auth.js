@@ -115,8 +115,21 @@
         var s = JSON.parse(localStorage.getItem(SESSAO_KEY) || "null");
         if (s && s.email) this._usuario = s;
       } catch (e) {}
-      // sub-usuário: re-sincroniza permissões (o admin pode ter alterado/desativado desde o último login)
       var u = this._usuario;
+      // v1.1.79 (1× por empresa): módulo Cotações é novo — quem já operava Requisições ganha acesso;
+      // depois da migração, o que o admin marcar/desmarcar no usuário vale normalmente.
+      if (u && u.empresaId && typeof Store !== "undefined" && Store.listar) {
+        try {
+          var flagCot = "orcapro:mig:cotacoes79:" + u.empresaId;
+          if (!localStorage.getItem(flagCot)) {
+            (Store.listar(u.empresaId, "equipe") || []).forEach(function (m) {
+              if (m && m.modulos && m.modulos.indexOf("requisicoes") > -1 && m.modulos.indexOf("cotacoes") === -1) { m.modulos.push("cotacoes"); Store.salvar(u.empresaId, "equipe", m); }
+            });
+            localStorage.setItem(flagCot, "1");
+          }
+        } catch (eMig) {}
+      }
+      // sub-usuário: re-sincroniza permissões (o admin pode ter alterado/desativado desde o último login)
       if (u && u.papel === "usuario" && u.usuarioId) {
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }

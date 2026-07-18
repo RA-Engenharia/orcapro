@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.78",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.78/OrcaPRO-IA-update-v1.1.78.zip",
-  "notas": "BIM Editor dentro do sistema: crie paredes, lajes e pilares direto no viewer 3D, mova, anote e desfaça — tudo salvo por obra. Apagar elemento do IFC só oculta (removido na edição); o arquivo original nunca muda.",
+  "versao": "1.1.79",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.79/OrcaPRO-IA-update-v1.1.79.zip",
+  "notas": "Novo módulo Cotações (Mapa de Cotação de Compras): compare até 4 fornecedores item a item, veja a decisão ao vivo (fornecedor único × compra mista), gere os pedidos de compra automaticamente e imprima o Mapa de Cotação.",
   "obrigatoria": false
 }

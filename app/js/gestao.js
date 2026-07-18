@@ -16,8 +16,8 @@
   // ---------- RBAC: presets de módulos por departamento (o admin pode ajustar por usuário) ----------
   var LIMITE_USUARIOS = 20;
   var DEPTO_MODULOS = {
-    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "insumos", "epi", "relatorios"],
-    compras:        ["dashboard", "compras", "estoque", "requisicoes", "insumos", "fornecedores"],
+    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "cotacoes", "insumos", "epi", "relatorios"],
+    compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
     rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha"],
     administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
@@ -61,6 +61,7 @@
     frotaCusto: [["combustivel", "Combustível"], ["manutencao", "Manutenção"], ["seguro", "Seguro"], ["locacao", "Locação"], ["pneus", "Pneus"], ["outros", "Outros"]],
     reqPrioridade: [["baixa","Baixa"],["normal","Normal"],["alta","Alta"],["urgente","Urgente"]],
       reqStatus: [["aberta","Aberta"],["cotando","Cotando"],["aprovada","Aprovada"],["rejeitada","Rejeitada"],["comprada","Comprada"],["cancelada","Cancelada"]],
+      cotStatus: [["rascunho","Em cotação"],["concluida","Concluída"]],
       reqUnidade: [["un","un"],["m","m"],["m2","m²"],["m3","m³"],["kg","kg"],["sc","saco"],["cx","caixa"],["pc","peça"],["l","litro"]],
     departamento: [["engenharia","Engenharia / Obras"],["compras","Compras / Suprimentos"],["financeiro","Financeiro"],["rh","RH / Departamento Pessoal"],["administrativo","Administrativo"],["diretoria","Diretoria"]],
     fiscalTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
@@ -93,7 +94,7 @@
   function opts(lista, sel) { return lista.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? " selected" : "") + '>' + o[1] + "</option>"; }).join(""); }
   function optsUf(sel) { return '<option value="">—</option>' + P.uf.map(function (u) { return "<option" + (u === sel ? " selected" : "") + ">" + u + "</option>"; }).join(""); }
   function optsRec(lista, campo, sel, vazio) { return '<option value="">' + (vazio || "—") + "</option>" + Util.arr(lista).map(function (r) { return '<option value="' + r.id + '"' + (r.id === sel ? " selected" : "") + ">" + Util.esc(r[campo] || r.nome || r.numero || r.id) + "</option>"; }).join(""); }
-  function pill(status) { var c = CORStatus[status] || "#64748b"; return '<span class="g-pill" style="background:' + c + '22;color:' + c + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus, P.tarefaStatus), status)) + "</span>"; }
+  function pill(status) { var c = CORStatus[status] || "#64748b"; return '<span class="g-pill" style="background:' + c + '22;color:' + c + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.cotStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus, P.tarefaStatus), status)) + "</span>"; }
   function v(id) { var e = UI.el(id); return e ? e.value.trim() : ""; }
   function nv(id) { return Util.num(v(id)); }
   function campo(label, inner) { return '<div class="field"><label>' + label + "</label>" + inner + "</div>"; }
@@ -121,6 +122,7 @@
     ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
     requisicoes: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/>',
+    cotacoes: '<path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 7l-3 6a3.5 3.5 0 0 0 7 0L6 7"/><path d="M19 7l-3 6a3.5 3.5 0 0 0 7 0l-3-6"/>',
     fiscal: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2Z"/><path d="M9 9h1"/><path d="M9 13h6"/><path d="M9 17h6"/>',
     patrimonio: '<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 9h.01"/><path d="M15 9h.01"/><path d="M9 13h.01"/><path d="M15 13h.01"/><path d="M10 21v-4h4v4"/>',
     centrocusto: '<path d="M12 2v20"/><path d="M2 5h20"/><path d="M4 5v14c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5"/><path d="M8 10h8"/><path d="M8 14h5"/>',
@@ -157,6 +159,7 @@
       { id: "medicoes", nome: "Medições", g: 4 },
       { id: "insumos", nome: "Banco de Insumos", g: 5 },
       { id: "requisicoes", nome: "Requisições", g: 5 },
+      { id: "cotacoes", nome: "Cotações", g: 5 },
       { id: "compras", nome: "Compras", g: 5 },
       { id: "fornecedores", nome: "Fornecedores", g: 5 },
       { id: "estoque", nome: "Estoque", g: 5 },
@@ -229,6 +232,7 @@
         case "ponto": return this.renderPonto();
         case "frota": return this.renderFrota();
         case "requisicoes": return this.renderRequisicoes();
+        case "cotacoes": return this.renderCotacoes();
         case "insumos": return this.renderBancoInsumos();
         case "fiscal": return this.renderFiscal();
         case "patrimonio": return this.renderPatrimonio();
@@ -2583,8 +2587,9 @@ renderRequisicoes: function () {
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
         var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">🖨</button> ';
-        if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-requisicao" data-id="' + r.id + '" style="color:#dc2626">Rejeitar</button> ';
-        if (r.status === "aprovada") acoes += '<button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
+        if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada" && r.status !== "cotando") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-requisicao" data-id="' + r.id + '" style="color:#dc2626">Rejeitar</button> ';
+        if (r.status === "aprovada") acoes += '<button class="btn sm" data-gacao="cotar-requisicao" data-id="' + r.id + '" title="Comparar fornecedores antes de comprar">🆚 Cotar</button> <button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
+        else if (r.status === "cotando") acoes += '<span class="muted" title="Cotação em andamento — conclua ou exclua a cotação no módulo Cotações">🆚 em cotação</span>';
         else if (r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada") acoes += '<button class="btn sm" disabled title="Aprove a requisição antes de gerar o pedido" style="opacity:.5;cursor:not-allowed">Gerar pedido</button>';
         else if (r.status === "rejeitada") acoes += '<span class="muted" title="' + Util.esc(r.motivoRejeicao || "") + '">✕ rejeitada</span>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
@@ -2604,6 +2609,226 @@ renderRequisicoes: function () {
       return "REQ-" + ano + "-" + pad;
     },
     novoRequisicoes: function () { this.formRequisicoes(null); },
+    // =================== COTAÇÕES (Mapa de Cotação de Compras) ===================
+    renderCotacoes: function () {
+      var cs = lista("cotacoes"), obras = lista("obras");
+      var abertas = cs.filter(function (c) { return c.status !== "concluida"; }).length;
+      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Em cotação: <b>' + abertas + "</b></span>";
+      var html = this._head(svg("cotacoes") + "Cotações", "nova-cotacoes", "Nova cotação", extra);
+      if (!cs.length) return html + vazioBox("Nenhuma cotação ainda. Compare 2-3 fornecedores item a item antes de comprar — a economia aparece sozinha.", "nova-cotacoes", "Criar primeira");
+      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th class="num">Itens</th><th class="num">Fornecedores</th><th class="num">Melhor total</th><th>Status</th><th></th></tr></thead><tbody>';
+      cs.forEach(function (c) {
+        var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
+        var d = (typeof Cotacoes !== "undefined") ? Cotacoes.decisao(c) : { totalMisto: null, totalUnico: null };
+        var melhor = d.totalMisto != null ? d.totalMisto : d.totalUnico;
+        var acoes = '<button class="btn sm" data-gacao="doc-cotacao" data-id="' + c.id + '" title="Imprimir o Mapa de Cotação">🖨</button> <button class="btn sm" data-gacao="excluir-cotacao" data-id="' + c.id + '" style="color:#dc2626">✕</button>';
+        var st = c.status || "rascunho", corSt = st === "concluida" ? "#16a34a" : "#0e7490"; // pill próprio: no genérico, "rascunho" do RDO roubaria o rótulo
+        var pillCot = '<span class="g-pill" style="background:' + corSt + '22;color:' + corSt + '">' + Util.esc(rot(P.cotStatus, st)) + "</span>";
+        html += '<tr><td style="cursor:pointer" data-gopen="cotacoes:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + ((c.itens || []).length) + '</td><td class="num">' + ((c.fornecedores || []).length) + '</td><td class="num">' + (melhor != null ? "<b>" + Util.fmtMoeda(melhor) + "</b>" : "—") + "</td><td>" + pillCot + '</td><td class="num">' + acoes + "</td></tr>";
+      });
+      return html + "</tbody></table><p class=\"muted\" style=\"margin-top:10px\">💡 Crie a cotação a partir de uma <b>Requisição aprovada</b> (botão 🆚 Cotar) — os itens já vêm preenchidos. Ao concluir, os <b>pedidos de compra</b> nascem sozinhos, um por fornecedor vencedor.</p>";
+    },
+    _proxNumeroCot: function () {
+      var cs = lista("cotacoes"), ano = new Date().getFullYear(), max = 0;
+      cs.forEach(function (c) { var m = /COT-(\d{4})-(\d+)/.exec(c.numero || ""); if (m && Util.num(m[1]) === ano) { var x = Util.num(m[2]); if (x > max) max = x; } });
+      var seq = max + 1, pad = "" + seq; while (pad.length < 3) pad = "0" + pad;
+      return "COT-" + ano + "-" + pad;
+    },
+    novaCotacaoDaRequisicao: function (reqId) {
+      var r = Store.obter(eid(), "requisicoes", reqId); if (!r) return;
+      var itens = this._reqItens(r).map(function (it) { return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef) }; });
+      if (!itens.length) { UI.toast("A requisição não tem itens pra cotar.", "erro"); return; }
+      this.formCotacao({ numero: this._proxNumeroCot(), data: new Date().toISOString().slice(0, 10), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] });
+    },
+    // lê a grade do modal -> objeto de cotação (itens + fornecedores + preços)
+    _cotDoForm: function (base) {
+      var cot = { id: base && base.id, numero: v("ct-num") || this._proxNumeroCot(), data: v("ct-data") || new Date().toISOString().slice(0, 10), obraId: v("ct-obra"), requisicaoId: (base && base.requisicaoId) || null, descricao: v("ct-desc"), status: (base && base.status) || "rascunho", itens: [], fornecedores: [] };
+      var mapaIdx = {}; // índice do DOM -> índice no array (linha em branco no meio NÃO pode deslocar os preços)
+      Array.prototype.forEach.call(document.querySelectorAll("[data-ct-item]"), function (tr) {
+        var g = function (cl) { var e = tr.querySelector("[data-cti=" + cl + "]"); return e ? e.value.trim() : ""; };
+        var desc = g("desc"); if (!desc) return;
+        mapaIdx[+tr.getAttribute("data-ct-item")] = cot.itens.length;
+        cot.itens.push({ codigo: g("cod"), descricao: desc, unidade: g("un"), quantidade: Util.num(g("qtd")), precoRef: Util.num(g("ref")) });
+      });
+      var nF = document.querySelectorAll("[data-ct-forn]").length;
+      for (var f = 0; f < nF; f++) {
+        var nome = v("ctf-nome-" + f); var fid = v("ctf-id-" + f);
+        if (!nome && fid) { var fr0 = Store.obter(eid(), "fornecedores", fid); nome = fr0 ? fr0.nome : ""; }
+        if (!nome) continue;
+        var fr = { fornecedorId: fid || null, nome: nome, frete: nv("ctf-frete-" + f), prazoDias: nv("ctf-prazo-" + f), condPgto: v("ctf-cond-" + f), precos: {} };
+        Array.prototype.forEach.call(document.querySelectorAll("[data-ct-preco=\"" + f + "\"]"), function (inp2) {
+          var iDom = +inp2.getAttribute("data-ct-preco-item");
+          if (mapaIdx[iDom] == null) return; // linha sem descrição: o preço dela não entra
+          var val = inp2.value.trim(); if (val === "") return;
+          fr.precos[mapaIdx[iDom]] = Util.num(val); // parser BR direto ("0,850"=0.85 — pré-replace viraria milhar!)
+        });
+        cot.fornecedores.push(fr);
+      }
+      return cot;
+    },
+    _cotPainelDecisao: function (cot) {
+      if (typeof Cotacoes === "undefined" || !cot.itens.length || !cot.fornecedores.length) return '<div class="muted" style="font-size:12.5px">Preencha itens, fornecedores e preços — a decisão aparece aqui ao vivo.</div>';
+      var d = Cotacoes.decisao(cot);
+      var linhas = d.totais.map(function (t, f) {
+        var venc = d.vencedorUnico === f;
+        return "<tr" + (venc ? ' style="background:#f0fdf4;font-weight:700"' : "") + "><td>" + (venc ? "🏆 " : "") + Util.esc(t.nome) + '</td><td class="num">' + t.cotados + "/" + cot.itens.length + '</td><td class="num">' + Util.fmtMoeda(t.subtotal) + '</td><td class="num">' + Util.fmtMoeda(t.frete) + '</td><td class="num"><b>' + Util.fmtMoeda(t.total) + "</b>" + (t.completo ? "" : ' <span class="muted" style="font-size:10px">(incompleto — não vence sozinho)</span>') + "</td></tr>";
+      }).join("");
+      var rodape = "";
+      if (d.totalMisto != null && d.vencedorUnico != null) rodape = '<p style="font-size:13px;margin-top:8px">🧠 Comprando <b>cada item do mais barato</b> (misto): <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' — economia de <b style="color:var(--verde)">' + Util.fmtMoeda(d.economiaMisto) + "</b> vs fornecedor único." : " — fornecedor único já é o melhor cenário.") + "</p>";
+      else if (d.totalMisto != null) rodape = '<p style="font-size:13px;margin-top:8px">🧠 Cenário misto: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>. Nenhum fornecedor cotou todos os itens — só o misto fecha a compra.</p>";
+      var ref = Cotacoes.economiaVsReferencia(cot, d.totalMisto != null ? "misto" : "unico");
+      if (ref && ref.economia !== 0) rodape += '<p class="muted" style="font-size:12px">Contra o preço de referência do banco (' + ref.itensComparados + " item(ns)): " + (ref.economia > 0 ? '<b style="color:var(--verde)">' + Util.fmtMoeda(ref.economia) + " abaixo</b>" : '<b style="color:var(--vermelho)">' + Util.fmtMoeda(-ref.economia) + " acima</b>") + " da referência.</p>";
+      return '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Fornecedor</th><th class="num">Cotou</th><th class="num">Subtotal</th><th class="num">Frete</th><th class="num">Total</th></tr></thead><tbody>' + linhas + "</tbody></table>" + rodape;
+    },
+    formCotacao: function (c) {
+      var self = this, ehNova = !c || !c.id;
+      c = c || { numero: this._proxNumeroCot(), data: new Date().toISOString().slice(0, 10), status: "rascunho", itens: [], fornecedores: [] };
+      if (!c.itens) c.itens = []; if (!c.fornecedores) c.fornecedores = [];
+      var ehConcluida = c.status === "concluida"; // concluída = somente leitura (pedidos já emitidos!)
+      var obras = lista("obras"), forns = lista("fornecedores");
+      var maxF = 4, nF = Math.max(2, Math.min(maxF, Math.max(c.fornecedores.length, c._nF || 0) || 2));
+      var cabF = "";
+      for (var f = 0; f < nF; f++) {
+        var fr = c.fornecedores[f] || {};
+        cabF += '<div class="card" data-ct-forn="' + f + '" style="flex:1;min-width:180px;padding:10px">' +
+          '<div style="font-weight:800;font-size:12px;margin-bottom:6px">Fornecedor ' + (f + 1) + "</div>" +
+          sel("ctf-id-" + f, '<option value="">— avulso —</option>' + forns.map(function (x) { return '<option value="' + x.id + '"' + (fr.fornecedorId === x.id ? " selected" : "") + ">" + Util.esc(x.nome) + "</option>"; }).join("")) +
+          inp("ctf-nome-" + f, fr.nome || "", "ou digite o nome") +
+          '<div class="row" style="gap:6px;margin-top:6px">' + inp("ctf-frete-" + f, fr.frete != null ? fr.frete : "", "Frete R$", "number") + inp("ctf-prazo-" + f, fr.prazoDias != null ? fr.prazoDias : "", "Prazo (dias)", "number") + "</div>" +
+          inp("ctf-cond-" + f, fr.condPgto || "", "Condição (ex.: 28 dias)") + "</div>";
+      }
+      var linhas = "";
+      var itensBase = c.itens.length ? c.itens : [{ codigo: "", descricao: "", unidade: "", quantidade: "" }];
+      itensBase.forEach(function (it, i) {
+        var precosTd = "";
+        for (var f2 = 0; f2 < nF; f2++) {
+          var pv = (c.fornecedores[f2] && c.fornecedores[f2].precos && c.fornecedores[f2].precos[i] != null) ? c.fornecedores[f2].precos[i] : "";
+          precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(pv) + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
+        }
+        linhas += '<tr data-ct-item="' + i + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(it.quantidade || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(it.precoRef || "") + '"></td>' + precosTd + "</tr>";
+      });
+      var cabPrecos = ""; for (var f3 = 0; f3 < nF; f3++) cabPrecos += "<th>Forn. " + (f3 + 1) + "</th>";
+      var corpo =
+        '<div class="row">' + campo("Nº", inp("ct-num", c.numero)) + campo("Data", inp("ct-data", c.data, "", "date")) + campo("Obra", sel("ct-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
+        campo("Descrição", inp("ct-desc", c.descricao || "", "ex.: Materiais da alvenaria — Bloco B")) +
+        (c.requisicaoId ? '<p class="muted" style="font-size:12px">Vinculada à requisição ' + Util.esc((Store.obter(eid(), "requisicoes", c.requisicaoId) || {}).numero || "") + "</p>" : "") +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0">' + cabF + "</div>" +
+        '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Cód.</th><th>Item</th><th>Un</th><th>Qtd</th><th style="display:none"></th>' + cabPrecos + "</tr></thead><tbody id=\"ct-linhas\">" + linhas + "</tbody></table></div>" +
+        (ehConcluida ? "" : '<button type="button" class="btn sm" id="ct-add-item" style="margin-top:6px">+ item</button>' + (nF < maxF ? ' <button type="button" class="btn sm" id="ct-add-forn" style="margin-top:6px;margin-left:6px">+ fornecedor</button>' : "")) +
+        '<div class="card" style="margin-top:12px;padding:12px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">⚖️ Decisão (recalcula enquanto você digita)</div><div id="ct-decisao"></div></div>';
+      var botoes = ehConcluida ? [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "🖨 Imprimir mapa", classe: "primary", onClick: function () { UI.fecharModal(); self.documentoCotacao(c.id); } }
+      ] : [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "", onClick: function () {
+          if (Gestao._bloqueado()) return;
+          var cot = self._cotDoForm(c);
+          var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : [];
+          if (erros.length) { UI.toast(erros[0], "erro"); return; }
+          Store.salvar(eid(), "cotacoes", cot);
+          if (cot.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId); if (rq && rq.status === "aprovada") { rq.status = "cotando"; Store.salvar(eid(), "requisicoes", rq); } }
+          UI.fecharModal(); App.render(); UI.toast("Cotação salva.", "ok");
+        } },
+        { texto: "✅ Concluir e gerar pedidos", classe: "primary", onClick: function () {
+          if (Gestao._bloqueado()) return;
+          var cot = self._cotDoForm(c);
+          var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : ["Motor de cotações não carregado."];
+          if (erros.length) { UI.toast(erros[0], "erro"); return; }
+          Store.salvar(eid(), "cotacoes", cot);
+          self.concluirCotacao(cot);
+        } }
+      ];
+      UI.modal((ehNova ? "Nova cotação" : "Cotação " + Util.esc(c.numero || "")) + (ehConcluida ? " (concluída — somente leitura)" : " — Mapa de Cotação"), corpo, botoes);
+      var wire = function () {
+        var atualiza = function () { var el = document.getElementById("ct-decisao"); if (el) el.innerHTML = self._cotPainelDecisao(ehConcluida ? c : self._cotDoForm(c)); };
+        var box = document.getElementById("ct-linhas"); if (!box) return;
+        var raiz = box.closest(".modal") || document;
+        if (ehConcluida) { Array.prototype.forEach.call(raiz.querySelectorAll("input,select"), function (el2) { el2.disabled = true; }); atualiza(); return; }
+        raiz.addEventListener("input", function (ev) { if (ev.target && (ev.target.hasAttribute("data-ct-preco") || ev.target.hasAttribute("data-cti") || /^ctf-/.test(ev.target.id || ""))) atualiza(); });
+        var add = document.getElementById("ct-add-item");
+        if (add) add.onclick = function () {
+          var i = box.querySelectorAll("[data-ct-item]").length, tds = "";
+          for (var f4 = 0; f4 < nF; f4++) tds += '<td><input data-ct-preco="' + f4 + '" data-ct-preco-item="' + i + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
+          var tr = document.createElement("tr"); tr.setAttribute("data-ct-item", i);
+          tr.innerHTML = '<td><input data-cti="cod" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" placeholder="descrição"></td><td><input data-cti="un" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref"></td>' + tds;
+          box.appendChild(tr);
+        };
+        var addF = document.getElementById("ct-add-forn");
+        if (addF) addF.onclick = function () {
+          // re-renderiza com +1 coluna preservando o que já foi digitado (colunas sem nome se perdem — nomeie antes)
+          var atual = self._cotDoForm(c);
+          atual._nF = Math.min(maxF, Math.max(nF + 1, atual.fornecedores.length + 1));
+          UI.fecharModal(); self.formCotacao(atual);
+        };
+        atualiza();
+      };
+      setTimeout(wire, 30);
+    },
+    concluirCotacao: function (cot) {
+      var self = this;
+      if (cot && cot.status === "concluida") { UI.toast("Esta cotação já foi concluída — os pedidos já foram gerados.", "erro"); return; }
+      var d = Cotacoes.decisao(cot);
+      if (d.vencedorUnico == null && !d.mistoCompleto) { UI.toast("Nenhum cenário fecha a compra — preencha os preços (todo item precisa de ao menos 1 preço).", "erro"); return; }
+      var opcoes = "";
+      if (d.mistoCompleto) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="misto" checked style="width:auto"> <span><b>Misto</b> — cada item do mais barato: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' <span style="color:var(--verde);font-weight:700">(economiza ' + Util.fmtMoeda(d.economiaMisto) + ")</span>" : "") + "</span></label>";
+      if (d.vencedorUnico != null) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="unico"' + (d.mistoCompleto ? "" : " checked") + ' style="width:auto"> <span><b>Fornecedor único</b> — ' + Util.esc(d.totais[d.vencedorUnico].nome) + " entrega tudo: <b>" + Util.fmtMoeda(d.totalUnico) + "</b> (menos entregas pra receber)</span></label>";
+      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor (status Aprovado), marca a requisição como comprada e conclui a cotação.</p>', [
+        { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.formCotacao(cot); } },
+        { texto: "Gerar pedidos", classe: "primary", onClick: function () {
+          var modo = (document.querySelector("input[name=ct-modo]:checked") || {}).value || (d.mistoCompleto ? "misto" : "unico");
+          var peds = Cotacoes.pedidos(cot, modo);
+          if (!peds.length) { UI.toast("Cenário sem pedidos — confira os preços.", "erro"); return; }
+          peds.forEach(function (p, k) {
+            var pc = "PC-" + new Date().getFullYear() + "-" + ("" + (new Date().getTime() + k)).slice(-4);
+            Store.salvar(eid(), "compras", { numero: pc, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "aprovado", categoria: "material", itens: p.itens, cotacaoId: cot.id || null, formaPgto: p.condPgto || "", obs: (p.prazoDias != null && p.prazoDias > 0 ? "Prazo de entrega: " + p.prazoDias + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." });
+          });
+          cot.status = "concluida"; cot.cenario = modo; Store.salvar(eid(), "cotacoes", cot);
+          if (cot.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId); if (rq && (rq.status === "cotando" || rq.status === "aprovada")) { rq.status = "comprada"; Store.salvar(eid(), "requisicoes", rq); } }
+          UI.fecharModal(); App.render(); UI.toast(peds.length + " pedido(s) de compra criado(s) a partir da cotação.", "ok");
+        } }
+      ]);
+    },
+    excluirCotacao: function (id) {
+      var self = this;
+      UI.modal("Excluir cotação", "<p>Excluir esta cotação? Os pedidos já gerados em Compras não são afetados.</p>", [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Excluir", classe: "primary", onClick: function () {
+          // destrava a requisição presa em 'cotando' (senão ela fica sem saída pra sempre)
+          var c0 = Store.obter(eid(), "cotacoes", id);
+          if (c0 && c0.requisicaoId && c0.status !== "concluida") { var rq0 = Store.obter(eid(), "requisicoes", c0.requisicaoId); if (rq0 && rq0.status === "cotando") { rq0.status = "aprovada"; Store.salvar(eid(), "requisicoes", rq0); } }
+          Store.excluir(eid(), "cotacoes", id); UI.fecharModal(); App.render(); UI.toast("Cotação excluída.", "ok");
+        } }
+      ]);
+    },
+    documentoCotacao: function (id) {
+      var c = Store.obter(eid(), "cotacoes", id); if (!c) return;
+      var obra = c.obraId ? Store.obter(eid(), "obras", c.obraId) : null;
+      var d = Cotacoes.decisao(c), brd = function (x) { return x ? String(x).split("-").reverse().join("/") : "—"; };
+      var cab = "<tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px'>Item</th><th style='border:1px solid #bbb;padding:5px;width:8%'>Un</th><th style='border:1px solid #bbb;padding:5px;width:8%'>Qtd</th>";
+      (c.fornecedores || []).forEach(function (fr) { cab += "<th style='border:1px solid #bbb;padding:5px;width:" + Math.floor(46 / c.fornecedores.length) + "%'>" + Util.esc(fr.nome) + "</th>"; });
+      cab += "</tr>";
+      var linhas = (c.itens || []).map(function (it, i) {
+        var tds = "";
+        (c.fornecedores || []).forEach(function (_fr, f) {
+          var p = Cotacoes.preco(c, i, f);
+          var venc = d.porItem[i] && d.porItem[i].fornecedorIdx === f;
+          tds += "<td style='border:1px solid #bbb;padding:5px;text-align:right" + (venc ? ";background:#dcfce7;font-weight:bold" : "") + "'>" + (p != null ? Util.fmtMoeda(p) : "—") + "</td>";
+        });
+        return "<tr><td style='border:1px solid #bbb;padding:5px'>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(it.descricao) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.esc(it.unidade || "") + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.fmtNum(it.quantidade, 2) + "</td>" + tds + "</tr>";
+      }).join("");
+      var tot = "<tr style='background:#eef4fa;font-weight:bold'><td colspan='3' style='border:1px solid #bbb;padding:6px;text-align:right'>TOTAL (subtotal + frete)</td>";
+      d.totais.forEach(function (t, f) { tot += "<td style='border:1px solid #bbb;padding:6px;text-align:right" + (d.vencedorUnico === f ? ";background:#dcfce7" : "") + "'>" + Util.fmtMoeda(t.total) + (t.completo ? "" : "*") + "</td>"; });
+      tot += "</tr>";
+      var extra = "<tr><td colspan='3' style='border:1px solid #bbb;padding:5px;text-align:right'>Frete / Prazo / Condição</td>";
+      (c.fornecedores || []).forEach(function (fr) { extra += "<td style='border:1px solid #bbb;padding:5px;text-align:center;font-size:10px'>" + Util.fmtMoeda(Util.num(fr.frete)) + " · " + (fr.prazoDias != null && fr.prazoDias !== "" ? fr.prazoDias + "d" : "—") + " · " + Util.esc(fr.condPgto || "—") + "</td>"; });
+      extra += "</tr>";
+      var resumo = "<p style='font-size:11px;margin-top:10px'>" + (d.vencedorUnico != null ? "<b>Fornecedor único vencedor:</b> " + Util.esc(d.totais[d.vencedorUnico].nome) + " (" + Util.fmtMoeda(d.totalUnico) + "). " : "") + (d.totalMisto != null ? "<b>Cenário misto (cada item do mais barato):</b> " + Util.fmtMoeda(d.totalMisto) + (d.economiaMisto > 0 ? " — economia de " + Util.fmtMoeda(d.economiaMisto) + " sobre o fornecedor único." : ".") : "") + (d.totais.some(function (t) { return !t.completo; }) ? " (*) fornecedor não cotou todos os itens." : "") + "</p>";
+      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:14%'><b>Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:14%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Objeto</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.descricao || "—") + "</td></tr></table>" +
+        "<table style='width:100%;border-collapse:collapse;font-size:11px'><thead>" + cab + "</thead><tbody>" + linhas + extra + tot + "</tbody></table>" + resumo +
+        "<div style='display:flex;justify-content:space-between;margin-top:40px;gap:26px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Comprador</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Aprovação</div></div>";
+      this._abrirDoc("Mapa de Cotação " + (c.numero || ""), this._docShell("MAPA DE COTAÇÃO", "#0e7490", corpo));
+    },
     // =================== BANCO DE INSUMOS ===================
     // Resolve o analítico do estado ATIVO (mesma lógica do App.verInsumos).
     _analiticoAtivo: function () {
@@ -4348,6 +4573,8 @@ renderFolha: function () {
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
       if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      // RBAC em FUNÇÃO (regra A.5 / achado do gate v1.1.63): ação de cotação exige o módulo, não basta esconder o botão
+      if ((gacao === "nova-cotacoes" || gacao === "cotar-requisicao" || gacao === "doc-cotacao" || gacao === "excluir-cotacao") && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Cotações.", "erro"); return; }
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
@@ -4463,6 +4690,10 @@ renderFolha: function () {
         case "nova-frota": return this.novoFrota();
         case "custo-frota": return this.formCustoFrota(id);
 case "nova-requisicoes": return this.novoRequisicoes();
+case "nova-cotacoes": return this.formCotacao(null);
+        case "cotar-requisicao": return this.novaCotacaoDaRequisicao(id);
+        case "doc-cotacao": return this.documentoCotacao(id);
+        case "excluir-cotacao": return this.excluirCotacao(id);
         case "aprovar-requisicao": return this._aprovar("requisicoes", id, "aprovada", "Requisição aprovada.");
         case "rejeitar-requisicao": return this._rejeitar("requisicoes", id, "rejeitada");
         case "comprar-requisicao": return this.comprarRequisicao(id);
@@ -4738,6 +4969,7 @@ case "nova-folha": return this.novoFolha();
       if (entidade === "financeiro") return this.formFinanceiro(r);
       if (entidade === "fornecedores") return this.formFornecedor(r);
       if (entidade === "compras") return this.formCompra(r);
+      if (entidade === "cotacoes") return this.formCotacao(r);
       if (entidade === "estoque") return this.formEstoque(r);
       if (entidade === "rdo") return this.formRdo(r);
       if (entidade === "colaboradores") return this.formColaborador(r);
