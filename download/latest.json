@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.85",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.85/OrcaPRO-IA-update-v1.1.85.zip",
-  "notas": "RA/RV na nuvem: com um clique, gere um QR que abre o seu modelo BIM na Realidade Mista/Virtual em QUALQUER celular ou tablet, de qualquer lugar (não precisa estar na mesma rede). O executor confere na obra por disciplina, o cliente entra no projeto. O link expira em 72h e só quem tem ele acessa.",
+  "versao": "1.1.86",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.86/OrcaPRO-IA-update-v1.1.86.zip",
+  "notas": "Agora dá pra esconder a barra de ferramentas do BIM (botão no canto do visualizador) e deixar a vista 3D limpa. Estado salvo por aparelho. Traz também tudo do RA/RV na nuvem.",
   "obrigatoria": false
 }

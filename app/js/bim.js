@@ -52,7 +52,7 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
+    [S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
@@ -127,6 +127,25 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
     '<input type="file" data-b="file" accept=".ifc" multiple style="display:none">';
   host.appendChild(bar);
+
+  // v1.1.86 — RECOLHER a barra de ferramentas: ela cresceu (quebra em 2+ linhas) e tampava a
+  // vista. Um botão discreto no canto esconde/mostra todos os botões; o estado fica salvo.
+  var barToggle = document.createElement('button');
+  barToggle.className = 'btn sm';
+  barToggle.style.cssText = 'position:absolute;right:10px;top:8px;z-index:5;padding:5px 9px;font-size:12px;opacity:.94;box-shadow:0 2px 8px rgba(0,0,0,.35)';
+  barToggle.title = 'Mostrar ou esconder a barra de ferramentas (deixa a vista limpa)';
+  var barraAberta = true;
+  try { barraAberta = localStorage.getItem('orcapro:bim:barra') !== 'recolhida'; } catch (_) {}
+  function setBarra(aberta) {
+    barraAberta = !!aberta;
+    bar.style.display = aberta ? 'flex' : 'none';
+    barToggle.innerHTML = aberta ? '⤢ Esconder' : '🧰 Ferramentas';
+    try { localStorage.setItem('orcapro:bim:barra', aberta ? 'aberta' : 'recolhida'); } catch (_) {}
+    if (S && S._ajustarTop) S._ajustarTop();
+  }
+  barToggle.addEventListener('click', function () { setBarra(!barraAberta); });
+  host.appendChild(barToggle);
+  setBarra(barraAberta); // aplica o estado salvo (S._ajustarTop roda depois no setup)
 
   // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = o look do Revit)
   var TEMAS = {
@@ -212,6 +231,7 @@ function montar(host, opts) {
         fly: { on: false, keys: {}, speed: 14, yaw: 0, pitch: 0 }, selected: null, prevMat: null,
         matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
   var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
+  S.barToggle = barToggle; S._setBarra = setBarra; // recolher/expandir a barra (entra no re-home)
 
   function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   S._resize = resize; window.addEventListener('resize', resize); resize();
@@ -1770,7 +1790,9 @@ function montar(host, opts) {
   // toolbar com flex-wrap pode ter 2+ linhas em tela estreita: hint/painéis ancoram ABAIXO da
   // altura REAL da barra (o top:52px fixo cobriria a 2ª linha de botões)
   function ajustarTopFlutuantes() {
-    var t = ((bar && bar.offsetHeight) || 44) + 8;
+    // barra recolhida (offsetHeight 0): ancora os painéis ABAIXO do botão flutuante de ferramentas
+    var bh = (bar && bar.offsetHeight) || 0;
+    var t = bh ? bh + 8 : 44;
     [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
   }
   S._ajustarTop = ajustarTopFlutuantes;
