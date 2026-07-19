@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.90",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.90/OrcaPRO-IA-update-v1.1.90.zip",
-  "notas": "Correção importante: a RA 📷 Câmera + Projeto (ver o projeto por cima do ambiente real pela câmera do celular) estava bloqueada em HTTPS por um erro na verificação — agora abre normalmente pelo link ☁️ da nuvem, inclusive no iPhone. Inclui o visualizador nível mundial da v1.1.89 (iluminação realista, sombra de contato, voo suave ao elemento, contorno e Raio-X).",
+  "versao": "1.1.91",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.91/OrcaPRO-IA-update-v1.1.91.zip",
+  "notas": "Novo botão 🔄 Buscar atualização — no menu ⚙ e no visor da nuvem RA/RV. Puxa a versão nova na hora, sem baixar nada, limpando o cache. Essencial no celular (que não tem Ctrl+Shift+R). Inclui o hotfix da câmera RA e o visualizador nível mundial.",
   "obrigatoria": false
 }

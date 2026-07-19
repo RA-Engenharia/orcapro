@@ -97,8 +97,10 @@
     var done = false;
     function go() {
       if (done) return; done = true;
-      var url = location.pathname + "?upd=" + Date.now();
-      location.replace(url);
+      // PRESERVA ?query e #hash — o visor da RA/RV na nuvem carrega o token no #rv?t=<token>;
+      // recarregar só com pathname perderia o token e quebraria o link. Cache-bust no query.
+      var sep = location.search ? "&" : "?";
+      location.replace(location.pathname + location.search + sep + "_upd=" + Date.now() + location.hash);
     }
     try {
       var tarefas = [];
@@ -118,7 +120,25 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
+  // Botão manual "🔄 Buscar atualização" (topbar + visor da nuvem): puxa a versão nova SEM baixar ZIP —
+  // limpa o cache do navegador + desregistra o service worker e recarrega buscando os arquivos novos do
+  // servidor. Essencial no CELULAR, que não tem Ctrl+Shift+R. Preserva o token do visor da nuvem (#rv?t=).
+  function forcarAtualizacao() {
+    injetarEstilos(); // garante os keyframes do spinner
+    if (!document.getElementById("opr-upd-forcar")) {
+      var ov = document.createElement("div");
+      ov.id = "opr-upd-forcar";
+      ov.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;gap:14px;" +
+        "align-items:center;justify-content:center;background:rgba(11,26,43,.94);color:#fff;text-align:center;padding:24px;" +
+        "font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:16px;font-weight:600";
+      ov.innerHTML = '<div class="opr-sp" style="width:30px;height:30px"></div><div>🔄 Buscando a versão mais nova…</div>';
+      document.body.appendChild(ov);
+    }
+    limparCachesERecarregar();
+  }
+
   var AutoUpdate = {
+    forcar: forcarAtualizacao, // botão manual (mobile-friendly)
     // Verifica no boot. Silencioso se: não há servidor de update, offline, ou já é a última.
     verificar: function () {
       fetch("/__update/check", { method: "GET" })

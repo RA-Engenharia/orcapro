@@ -109,6 +109,7 @@
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>☁</span>Nuvem — sincronizar aparelhos</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
             '<button class="conta-item" data-acao="tema"><span>🎨</span>Tema do aplicativo</button>' +
+            '<button class="conta-item" data-acao="atualizar"><span>🔄</span>Buscar atualização</button>' +
             '<div class="conta-sep"></div>' +
             '<button class="conta-item sair" data-acao="logout"><span>🚪</span>Sair</button>' +
             '<div class="conta-sep"></div>' +
