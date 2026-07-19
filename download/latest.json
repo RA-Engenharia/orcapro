@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.88",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.88/OrcaPRO-IA-update-v1.1.88.zip",
-  "notas": "Novo modo 📷 Câmera + Projeto na RA/RV: liga a câmera do celular e o modelo BIM aparece POR CIMA do ambiente real — funciona no iPhone/iPad (sem WebXR) e no Android. Mova o celular pra olhar, joystick pra chegar perto. Abra pelo link da nuvem (☁️ Compartilhar).",
+  "versao": "1.1.89",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.89/OrcaPRO-IA-update-v1.1.89.zip",
+  "notas": "RA/RV nível mundial: iluminação realista (PMREM) + sombra de contato que assenta o modelo no chão; voo suave da câmera ao dar duplo-clique num elemento; contorno nítido na seleção; e Raio-X — deixa o resto translúcido pra você ver onde passa o cano dentro da parede ANTES de furar. O melhor visualizador de projetos.",
   "obrigatoria": false
 }

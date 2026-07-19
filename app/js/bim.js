@@ -212,12 +212,41 @@ function montar(host, opts) {
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;outline:none';
   host.appendChild(renderer.domElement);
   renderer.domElement.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (S) { S.alive = false; if (S.raf) cancelAnimationFrame(S.raf); } try { over.style.display = 'flex'; over.querySelector('div').innerHTML = '<div style="font-size:30px">🧊</div><h3 style="margin:8px 0">O 3D ficou pesado demais</h3><p style="color:#a9c1d8;font-size:13px">A memória de vídeo esgotou (modelos grandes / Ultra). Recarregue a aba BIM com menos modelos, ou desligue o ✨ Ultra.</p>'; } catch (_) {} }, false);
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x223344, 1.05));
-  var dir = new THREE.DirectionalLight(0xffffff, 1.1); dir.position.set(30, 50, 20); scene.add(dir);
+  var hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.55); scene.add(hemi); // reduzido: o ambiente PMREM abaixo faz o preenchimento
+  var dir = new THREE.DirectionalLight(0xffffff, 1.0); dir.position.set(30, 50, 20); scene.add(dir);
+  // v1.1.89 — ILUMINAÇÃO BASEADA EM IMAGEM (PMREM): reflexos suaves + shading premium em TODO
+  // MeshStandardMaterial (o "look de render" dos melhores visualizadores). Custo ~zero por frame
+  // (a env é pré-computada 1×). Os desenhos técnicos (corte/planta) usam material UNLIT (MeshBasic)
+  // e NÃO são afetados. Um estúdio procedural (sala + luzes-área) vira a environment map.
+  try {
+    var _pmrem = new THREE.PMREMGenerator(renderer);
+    var _envScn = new THREE.Scene();
+    var _room = new THREE.Mesh(new THREE.BoxGeometry(24, 18, 24), new THREE.MeshStandardMaterial({ side: THREE.BackSide, roughness: 1, metalness: 0, color: 0x9fb0c4 }));
+    _envScn.add(_room);
+    var _areaLuz = function (cor, w, h, d, x, y, z, ganho) { var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshBasicMaterial()); m.material.color.setHex(cor).multiplyScalar(ganho); m.position.set(x, y, z); return m; };
+    _envScn.add(_areaLuz(0xffffff, 16, 1, 16, 0, 8.5, 0, 3.0));    // teto claro (luz principal difusa)
+    _envScn.add(_areaLuz(0xdfeaf7, 1, 10, 12, -11.5, 2, -3, 1.6)); // parede fria à esquerda
+    _envScn.add(_areaLuz(0xfff0dc, 1, 10, 12, 11.5, 2, 4, 1.3));   // parede quente à direita
+    _envScn.add(_areaLuz(0xc4d0dd, 16, 1, 16, 0, -8.5, 0, 0.6));   // piso claro (bounce de baixo)
+    var _envRT = _pmrem.fromScene(_envScn, 0.04);
+    scene.environment = _envRT.texture;
+    _room.geometry.dispose(); _envScn.traverse(function (o) { if (o.material && o.material.dispose) o.material.dispose(); if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+    _pmrem.dispose();
+  } catch (eEnv) { /* sem env: cai no shading direto — nunca impede o viewer */ }
   // sombra da luz principal (ligada só quando o usuário entra no imersivo — custa GPU no modelo grande)
   try { dir.shadow.mapSize.set(2048, 2048); dir.shadow.camera.near = 1; dir.shadow.camera.far = 400; dir.shadow.bias = -0.0005; var _ds = dir.shadow.camera; _ds.left = -80; _ds.right = 80; _ds.top = 80; _ds.bottom = -80; _ds.updateProjectionMatrix(); } catch (_) {}
   var fill = new THREE.DirectionalLight(0xbfd8ee, 0.35); fill.position.set(-40, 25, -30); scene.add(fill); // luz de preenchimento (sombra menos chapada)
   var grid = new THREE.GridHelper(200, 40, 0x2e6f9e, 0x1c3a58); grid.material.opacity = .5; grid.material.transparent = true; scene.add(grid);
+  // ---- sombra de contato (blob radial macio sob o modelo — "assenta" o prédio no chão, barato p/ mobile) ----
+  var _chaoTex = (function () {
+    var c = document.createElement('canvas'); c.width = c.height = 256; var g = c.getContext('2d');
+    var rg = g.createRadialGradient(128, 128, 8, 128, 128, 126);
+    rg.addColorStop(0, 'rgba(0,0,0,.42)'); rg.addColorStop(.55, 'rgba(0,0,0,.20)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg; g.fillRect(0, 0, 256, 256);
+    var t = new THREE.CanvasTexture(c); return t;
+  })();
+  var _chao = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: _chaoTex, transparent: true, depthWrite: false, opacity: .9 }));
+  _chao.rotation.x = -Math.PI / 2; _chao.renderOrder = -1; _chao.raycast = function () {}; scene.add(_chao);
   var orbit = new OrbitControls(camera, renderer.domElement); orbit.enableDamping = true; orbit.dampingFactor = .08;
   // web-ifc já entrega a geometria em Y-up (converte o Z-up do IFC) → NÃO rotacionar (rotacionar tombava o modelo)
   var modelRoot = new THREE.Group(); modelRoot.rotation.x = 0; scene.add(modelRoot);
@@ -241,6 +270,7 @@ function montar(host, opts) {
   // ---- voo ----
   var canvasEl = renderer.domElement, fly = S.fly, _fwd = new THREE.Vector3(), _right = new THREE.Vector3(), _up = new THREE.Vector3(0, 1, 0);
   function setMode(voo) {
+    if (S._cancelTween) S._cancelTween(); // qualquer troca de modo (Voo/Órbita e — via setMode(false) — Planta/Corte/Caminhar) cancela o voo cinematográfico pendente
     fly.on = voo; orbit.enabled = !voo;
     bar.querySelector('[data-b="voo"]').classList.toggle('on', voo);
     bar.querySelector('[data-b="voo"]').style.background = voo ? corAtiva() : '';
@@ -309,6 +339,7 @@ function montar(host, opts) {
     if (S.medir && S.medir.on) return; // no modo trena o duplo-clique é medição, não seleção
     if (area.on) { if (area.pts.length >= 3) fecharArea(); return; } // no modo área o duplo-clique FECHA o polígono
     if (ang.on) return; // no modo ângulo o clique é ponto — não seleção
+    if (S._limparRaioX) S._limparRaioX(); // nova seleção reseta o raio-X (senão o ghostMat vaza pro prevMat)
     var r = canvasEl.getBoundingClientRect();
     mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1; mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
     ray.setFromCamera(mouse, camera);
@@ -316,9 +347,58 @@ function montar(host, opts) {
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; }
     if (hit && hit.object.userData && hit.object.userData.expressID != null) {
       S.selected = hit.object; S.prevMat = S.selected.material; S.selected.material = selMat;
+      contornoSelecao(hit.object); // v1.1.89 — contorno nítido na seleção
+      if (!fly.on && !xr.on && !planta.on && !corteL.on) enquadrarObj(new THREE.Box3().setFromObject(hit.object), 2.6); // foco cinematográfico — NÃO na planta/corte (quebraria a moldura travada)
       if (opts.onPick) opts.onPick(propsDe(hit.object.userData.mid != null ? hit.object.userData.mid : S.modelID, hit.object.userData.expressID, hit.object.userData.tipo));
-    } else if (opts.onPick) opts.onPick(null);
+    } else if (opts.onPick) { contornoSelecao(null); opts.onPick(null); }
   });
+
+  // ---- navegação cinematográfica: tween suave de câmera (fly-to / enquadrar) ----
+  var _cvT = null; // tween ativo
+  function cancelTween() { _cvT = null; } // trocar de modo (voo/planta/corte/caminhar/enquadrar) cancela o voo pendente — senão o tween sobrescreve a câmera do modo novo por ~0,55s (gate v1.1.89)
+  S._cancelTween = cancelTween;
+  function voarCam(destPos, destTgt, dur) {
+    if (!destPos) return;
+    _cvT = { p0: camera.position.clone(), p1: destPos.clone(), t0: orbit.target.clone(), t1: (destTgt || orbit.target).clone(), dur: Math.max(0.15, dur || 0.6), e: 0 };
+  }
+  S._tickExtra.push(function (dt) {
+    if (!_cvT) return;
+    _cvT.e += dt; var k = Math.min(1, _cvT.e / _cvT.dur);
+    var s = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; // easeInOutQuad
+    camera.position.lerpVectors(_cvT.p0, _cvT.p1, s);
+    orbit.target.lerpVectors(_cvT.t0, _cvT.t1, s);
+    if (k >= 1) _cvT = null;
+  });
+  // enquadra um box (elemento ou modelo) com voo suave, mantendo a direção de visão atual
+  function enquadrarObj(box, fator) {
+    if (!box || box.isEmpty()) return;
+    var c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3());
+    var raio = Math.max(sz.x, sz.y, sz.z, 0.5) * 0.5;
+    var dist = (raio / Math.tan((camera.fov * Math.PI / 180) / 2)) * (fator || 1.6);
+    var dir = camera.position.clone().sub(orbit.target); if (dir.lengthSq() < 1e-6) dir.set(0.7, 0.55, 0.8); dir.normalize();
+    // afrouxa o near ao aproximar de elemento pequeno em modelo grande (near travado em maxDim/1000 cortaria a frente) — só DIMINUI, nunca aumenta (não some o resto do modelo)
+    var near = Math.max(0.01, (dist - raio) * 0.5); if (near < camera.near) { camera.near = near; camera.updateProjectionMatrix(); }
+    voarCam(c.clone().add(dir.multiplyScalar(dist)), c, 0.55);
+  }
+  S._enquadrarObj = enquadrarObj; S._voarCam = voarCam;
+
+  // ---- contorno nítido na seleção (lê claro em qualquer fundo, estilo visualizador pro) ----
+  var _selLn = null, _selLnMat = null;
+  function contornoSelecao(mesh) {
+    if (_selLn) { scene.remove(_selLn); if (_selLn.geometry) _selLn.geometry.dispose(); _selLn = null; }
+    if (!mesh || !mesh.geometry) return;
+    if (mesh.geometry.attributes && mesh.geometry.attributes.position && mesh.geometry.attributes.position.count > 60000) return; // malha densa: sem contorno (EdgesGeometry travaria)
+    var arr = arestasDe(mesh.geometry); if (!arr.length) return;
+    if (!_selLnMat) _selLnMat = new THREE.LineBasicMaterial({ color: 0x2effa0, depthTest: false, transparent: true, opacity: 0.95 });
+    var bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    var ln = new THREE.LineSegments(bg, _selLnMat);
+    ln.matrixAutoUpdate = false; ln.matrix.copy(mesh.matrixWorld); ln.renderOrder = 1000; ln.raycast = function () {};
+    scene.add(ln); _selLn = ln;
+  }
+  S._contornoSelecao = contornoSelecao;
+  // o contorno é um overlay independente na cena (depthTest:false): compõe a visibilidade do elemento
+  // selecionado a cada frame (some quando ele fica invisível no 4D, no toggle de modelo, isolar etc.) — regra de ouro
+  S._tickExtra.push(function () { if (_selLn) _selLn.visible = !!(S.selected && cadeiaVisivel(S.selected)); });
 
   // ---- toolbar ----
   bar.addEventListener('click', function (e) {
@@ -345,7 +425,7 @@ function montar(host, opts) {
     else if (k === 'xr') toggleXRPanel();
     else if (k === 'foto') tirarFoto();
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
-    else if (k === 'fit') { if (planta.on) enquadrarTopo(); else enquadrar(); } // na planta re-centra a vista de topo (não sai)
+    else if (k === 'fit') { if (planta.on) enquadrarTopo(); else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5); else enquadrar(); } // na planta re-centra a vista de topo (não sai); no 3D enquadra suave (cinematográfico)
   });
   // MATRIZ MODOS×SAÍDAS (manter em dia ao criar modo novo — regra aprendida no gate v1.1.64):
   //                    medir/area/ang  planta  corteL  ctec(desenho)  isolamento(pav/vis)
@@ -409,7 +489,17 @@ function montar(host, opts) {
   }
   function nomeTipo(num) { var raw = ''; try { if (S.api.GetNameFromTypeCode) raw = S.api.GetNameFromTypeCode(num); } catch (_) {} return raw || ('IFC#' + num); }
 
+  // grid + sombra de contato acompanham a pegada atual de modelRoot (chamado por enquadrar E por removerModelo, sem mexer na câmera)
+  function reposicionarChao() {
+    var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return;
+    var size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    grid.position.y = box.min.y;
+    var fp = Math.max(size.x, size.z) * 1.3 || 20; // folga de 30% na pegada
+    _chao.scale.set(fp, fp, 1); _chao.position.set(center.x, box.min.y + 0.01, center.z);
+  }
+  S._reposicionarChao = reposicionarChao;
   function enquadrar() {
+    if (S._cancelTween) S._cancelTween(); // fit instantâneo cancela voo pendente (senão o tween sobrescreve)
     var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return;
     var size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
     var maxDim = Math.max(size.x, size.y, size.z) || 10, dist = maxDim * 1.6;
@@ -417,7 +507,7 @@ function montar(host, opts) {
     camera.near = maxDim / 1000; camera.far = maxDim * 100; camera.updateProjectionMatrix();
     orbit.target.copy(center); orbit.update();
     fly.yaw = Math.atan2(camera.position.x - center.x, camera.position.z - center.z); fly.pitch = -0.35;
-    grid.position.y = box.min.y;
+    reposicionarChao();
   }
   S._enquadrar = enquadrar;
 
@@ -785,6 +875,7 @@ function montar(host, opts) {
   S._setPlanta = setPlanta;
   // vista de topo travada (reusada por setPlanta ao entrar E pelo Enquadrar dentro da planta)
   function enquadrarTopo() {
+    if (S._cancelTween) S._cancelTween(); // fit-na-planta cancela voo pendente (senão o tween puxa a câmera pra fora do topo)
     var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) return;
     var c = box.getCenter(new THREE.Vector3());
     var sizeXZ = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) || 10;
@@ -1312,6 +1403,7 @@ function montar(host, opts) {
   function nVerts(geo) { return (geo && geo.attributes && geo.attributes.position) ? geo.attributes.position.count : 0; }
   // silencioso=true: re-aplicação automática (modelo novo / refreshModelo / alpha) — não repinta hint nem outline
   function setEstiloDesenho(on, silencioso) {
+    if (on && S._limparRaioX) S._limparRaioX(); // estilo desenho reescreve todos os materiais → tira o raio-X antes (senão o ghostMat vira o "material antes do estilo")
     estiloD.on = !!on;
     var bt = cortePanel.querySelector('[data-c="estilo"]');
     var h2 = (S && S.host) || host; // re-home troca o host — o closure original aponta pro morto
@@ -1343,9 +1435,11 @@ function montar(host, opts) {
         if (m.userData._edgeLn) m.userData._edgeLn.visible = true;
       });
       h2.style.background = '#fff';
+      _chao.visible = false; // fundo branco: o blob da sombra de contato viraria borrão cinza (some no fundo escuro normal)
       if (bt) bt.style.outline = '2px solid ' + corAtiva();
       if (!silencioso) S._hint('✏️ Estilo desenho: massas + arestas no fundo branco (as cores voltam ao sair).');
     } else {
+      _chao.visible = true;
       todasMalhas(function (m) {
         if ('_matAntesEstilo' in m.userData) {
           if (m === S.selected) { if (S.prevMat === estiloD.mat) S.prevMat = m.userData._matAntesEstilo; }
@@ -1611,6 +1705,13 @@ function montar(host, opts) {
     var id = m.userData.expressID;
     return !!(f[m.userData.mid + ':' + id] || f[id]);
   }
+  // irmão de ehFuturo4d: elemento "em andamento" (âmbar) no estágio 4D corrente — usado no restore do raio-X
+  function ehAndamento4d(m) {
+    var a = S._and4d; if (!a) return false;
+    var id = m.userData.expressID;
+    return !!(a[m.userData.mid + ':' + id] || a[id]);
+  }
+  S._ehAndamento4d = ehAndamento4d;
   // malhas que o usuário REALMENTE vê (grupo do modelo ligado + mesh visível)
   function visiveisEfetivos() {
     var v = 0;
@@ -1676,6 +1777,7 @@ function montar(host, opts) {
   S._pavRender = pavRender;
   function restaurarVisibilidade() {
     pav.isolado = null; pav.manual = false;
+    if (S._limparRaioX) S._limparRaioX(); // ↺ também tira o raio-X (materiais fantasma → originais)
     todasMalhas(function (m) { m.visible = !ehFuturo4d(m) && !ehRemovidoEd(m); }); // restaurar NÃO ressuscita futuros do 4D nem removidos da edição
     pavRender();
   }
@@ -1736,6 +1838,8 @@ function montar(host, opts) {
     '<button class="btn sm" data-v="iso" title="Esconde tudo, menos o elemento selecionado">🎯 Isolar seleção</button>' +
     '<button class="btn sm" data-v="occ" title="Esconde o elemento selecionado">🙈 Ocultar seleção</button>' +
     '<button class="btn sm" data-v="tipo" title="Mostra só os elementos do MESMO tipo do selecionado (ex.: todas as paredes)">🧩 Só este tipo</button>' +
+    '<button class="btn sm" data-v="rx" title="Raio-X: deixa o resto translúcido (não some) e destaca o elemento. Enxergue o que está atrás/dentro.">🫥 Raio-X da seleção</button>' +
+    '<button class="btn sm" data-v="rxt" title="Raio-X por tipo: destaca todos deste tipo (ex.: toda a hidráulica) e translucidez o resto — bom pra ver onde há cano antes de furar.">🫥 Raio-X deste tipo</button>' +
     '<button class="btn sm" data-v="tudo" title="Volta a mostrar tudo">↺ Restaurar tudo</button>' +
     '<div style="font-size:11px;color:#9fb2c8">Dê <b>dois cliques</b> num elemento do modelo pra selecionar antes.</div>';
   host.appendChild(visPanel);
@@ -1752,7 +1856,7 @@ function montar(host, opts) {
   function ocultarSelecao() {
     var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento do modelo primeiro.'); return; }
     // devolve o material e desseleciona ANTES de esconder — senão o selMat fica preso no mesh oculto
-    if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; if (opts.onPick) { try { opts.onPick(null); } catch (_) {} } }
+    if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; contornoSelecao(null); if (opts.onPick) { try { opts.onPick(null); } catch (_) {} } } // contornoSelecao(null): senão o contorno verde fica flutuando sobre o vazio (gate v1.1.89)
     todasMalhas(function (m) { if (m.userData.mid === si.mid && m.userData.expressID === si.eid) m.visible = false; });
     pav.manual = true; // remover/carregar modelo restaura (nada fica escondido "pra sempre" sem marcador)
     S._hint('🙈 Elemento oculto. ↺ Restaurar tudo (painel 👁) traz de volta.');
@@ -1766,11 +1870,43 @@ function montar(host, opts) {
     else S._hint('🧩 Mostrando só "' + rotuloDisciplina(si.tipo) + '". ↺ Restaurar tudo volta o modelo.');
   }
   S._isolarTipo = isolarTipo;
+  // ---- 🫥 RAIO-X: deixa o resto translúcido (não oculto) para ver o que está DENTRO/ATRÁS
+  //      (ex.: onde passa cano/eletroduto antes de furar a parede) — material fantasma, restaurável.
+  var xray = { on: false, ghosted: [] };
+  var _ghostMat = null;
+  function ghostMat() { if (!_ghostMat) _ghostMat = new THREE.MeshStandardMaterial({ color: 0x93a7bd, transparent: true, opacity: .1, depthWrite: false, metalness: 0, roughness: 1, side: THREE.DoubleSide }); return _ghostMat; }
+  function limparRaioX() { if (!xray.on) return; xray.ghosted.forEach(function (m) { m.material = ehAndamento4d(m) ? S.matAndamento : matBase(m); }); xray.ghosted = []; xray.on = false; } // devolve o âmbar do 4D a quem estava "em andamento" (senão o restore mostra como concluído)
+  S._limparRaioX = limparRaioX;
+  function aplicarRaioX(ehAlvo, msg) {
+    limparRaioX();
+    xray.on = true; // ANTES do loop: senão o aborto abaixo chama limparRaioX() com xray.on=false e ele sai no early-return, deixando o modelo translúcido travado (gate v1.1.89)
+    var nAlvo = 0;
+    todasMalhas(function (m) {
+      if (m.userData.expressID == null) return;
+      if (ehFuturo4d(m) || ehRemovidoEd(m) || !m.visible) return; // não fantasmiza futuro/removido/já-oculto
+      if (ehAlvo(m)) { nAlvo++; return; } // alvo permanece sólido
+      m.material = ghostMat(); xray.ghosted.push(m);
+    });
+    if (!nAlvo) { limparRaioX(); S._hint('🫥 Nada correspondeu ao alvo do raio-X.'); return; } // agora restaura de verdade
+    S._hint(msg);
+  }
+  function raioXSelecao() {
+    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento primeiro.'); return; }
+    aplicarRaioX(function (m) { return m.userData.mid === si.mid && m.userData.expressID === si.eid; }, '🫥 Raio-X: elemento em destaque, resto translúcido. ↺ Restaurar tudo volta.');
+    if (S.selected) contornoSelecao(S.selected);
+  }
+  function raioXTipo() {
+    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento primeiro.'); return; }
+    aplicarRaioX(function (m) { return m.userData.tipo === si.tipo; }, '🫥 Raio-X de "' + rotuloDisciplina(si.tipo) + '": resto translúcido — bom pra ver onde há cano/eletroduto antes de furar. ↺ Restaurar tudo volta.');
+  }
+  S._raioXSelecao = raioXSelecao; S._raioXTipo = raioXTipo;
   visPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-v]'); if (!b) return; var k = b.getAttribute('data-v');
     if (k === 'iso') isolarSelecao();
     else if (k === 'occ') ocultarSelecao();
     else if (k === 'tipo') isolarTipo();
+    else if (k === 'rx') raioXSelecao();
+    else if (k === 'rxt') raioXTipo();
     else if (k === 'tudo') { restaurarVisibilidade(); S._hint('↺ Tudo visível de novo.'); }
   });
   function toggleVisPanel() {
@@ -1878,11 +2014,13 @@ function montar(host, opts) {
   function tirarFoto() {
     if (!S.modelos.length) { S._hint('📸 Carregue um modelo primeiro.'); return null; }
     var prevBg = scene.background, url;
+    var vLn = _selLn ? _selLn.visible : null; // o contorno verde de seleção é overlay de UI: não sai no PNG entregável
     try {
       scene.background = new THREE.Color(estiloD.on ? 0xffffff : 0x0d1f33); // estilo desenho: foto sai no branco
+      if (_selLn) _selLn.visible = false;
       renderer.render(scene, camera);
       url = renderer.domElement.toDataURL('image/png');
-    } catch (_) { url = null; } finally { scene.background = prevBg; }
+    } catch (_) { url = null; } finally { scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn; }
     if (!url) { S._hint('📸 Não consegui capturar a imagem.'); return null; }
     var img = new Image();
     img.onload = function () {
@@ -2662,6 +2800,9 @@ function montar(host, opts) {
       todasMalhas(function (m) { if (ra[m.userData.mid + ':' + m.userData.expressID]) m.visible = !ehFuturo4d(m); });
     }
     editSoltarSel();
+    // a malha 'edit' selecionada será destruída+recriada abaixo: limpa a seleção/contorno obsoletos
+    // (senão o contorno verde fica congelado na posição antiga — mesmo padrão de removerModelo). Gate v1.1.89.
+    if (S.selected && S.selected.userData && S.selected.userData.mid === 'edit') { S.selected = null; S.prevMat = null; if (S._contornoSelecao) S._contornoSelecao(null); }
     if (edit.modelo) {
       modelRoot.remove(edit.modelo.grupo);
       edit.modelo.grupo.traverse(function (o) { if (o.geometry) o.geometry.dispose(); });
@@ -3327,7 +3468,8 @@ function montar(host, opts) {
     Object.keys(mo.transCache).forEach(function (k) { try { mo.transCache[k].dispose(); } catch (_) {} });
     modelRoot.remove(mo.grupo);
     if (typeof mid === 'number') { try { S.api.CloseModel(mid); } catch (_) {} } // mid sintético ('p3dN') no embind vira >>>0 = 0 e FECHARIA o 1º IFC real
-    if (S.selected && S.selected.userData.mid === mid) { S.selected = null; S.prevMat = null; }
+    if (S.selected && S.selected.userData.mid === mid) { S.selected = null; S.prevMat = null; if (S._contornoSelecao) S._contornoSelecao(null); }
+    if (S._limparRaioX) S._limparRaioX(); // raio-X segura refs de malhas que podem ter saído do modelo removido
     S._clashSel = (S._clashSel || []).filter(function (m) { return m.userData.mid !== mid; });
     rebuildIndices(); atualizarHud(); notifyModelos();
     if (S._limparMedidas) S._limparMedidas(); // medidas referenciam coordenadas que podem ter saído
@@ -3496,6 +3638,7 @@ function aplicarEstado(est) {
   (est && est.futuros || []).forEach(function (id) { fut[id] = 1; });
   (est && est.emAndamento || []).forEach(function (id) { and[id] = 1; });
   S._fut4d = fut; // isolamento 🏢/👁 compõe com isto (não ressuscita futuros)
+  S._and4d = and; // "em andamento" (âmbar): o restore do raio-X consulta isto p/ NÃO apagar o âmbar do 4D
   cadaMalha(function (m) {
     var id = m.userData.expressID; if (id == null) return;
     var uid = m.userData.mid + ':' + id;
@@ -3509,7 +3652,7 @@ function aplicarEstado(est) {
 function mostrarTudo() {
   if (!S) return;
   if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
-  S._fut4d = null; // sair do 4D: nada mais é "futuro"
+  S._fut4d = null; S._and4d = null; // sair do 4D: nada mais é "futuro" nem "em andamento"
   cadaMalha(function (m) { m.visible = !ehRemovidoEd(m); if (m !== S.selected) m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); });
 }
 
@@ -3528,6 +3671,10 @@ function focarClash(ids) {
   if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); // editor armado + câmera voando = clique seguinte criaria parede sem querer (setEdit já limpa a cadeia)
   if (S.p3dPanel && S.p3dPanel.style.display === 'flex') S.p3dPanel.style.display = 'none'; // modal 2D→3D também taparia o clash
   limparClash();
+  // desfaz a seleção anterior ANTES de pintar o par de vermelho: devolve o material e apaga o contorno verde
+  // (senão o selMat/contorno da seleção antiga sobrevivem por cima da cena do clash). Gate v1.1.89.
+  if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; }
+  if (S._contornoSelecao) S._contornoSelecao(null);
   var idset = {}; (ids || []).forEach(function (id) { idset[id] = 1; });
   var box = new THREE.Box3(), any = false;
   S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) {
@@ -3857,6 +4004,26 @@ window.BIM = {
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
   _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; }, // hook de teste: estado da câmera
+  // ---- v1.1.89 render/navegação/raio-X: hooks de teste ----
+  _selecionarPrimeiro: function () { // seleciona a 1ª malha real (imita o duplo-clique) p/ testar contorno/raio-X sem evento DOM
+    if (!S) return null; var alvo = null;
+    S.modelRoot.children.some(function (g) { return (g.children || []).some(function (m) { if (m.userData && m.userData.expressID != null && m.visible) { alvo = m; return true; } return false; }); });
+    if (!alvo) return null;
+    if (S.selected) S.selected.material = S.prevMat;
+    S.selected = alvo; S.prevMat = alvo.material; alvo.material = S.selMat;
+    if (S._contornoSelecao) S._contornoSelecao(alvo);
+    return { tipo: alvo.userData.tipo, eid: alvo.userData.expressID, mid: alvo.userData.mid };
+  },
+  _temContorno: function () { if (!S) return false; var n = 0; S.scene.children.forEach(function (c) { if (c.type === 'LineSegments' && c.renderOrder === 1000) n++; }); return n; }, // nº de contornos de seleção na cena
+  _contornoVis: function () { if (!S) return null; var v = null; S.scene.children.forEach(function (c) { if (c.type === 'LineSegments' && c.renderOrder === 1000) v = c.visible; }); return v; }, // visibilidade do contorno (segue o elemento)
+  raioXSelecao: function () { if (S && S._raioXSelecao) S._raioXSelecao(); },
+  raioXTipo: function () { if (S && S._raioXTipo) S._raioXTipo(); },
+  limparRaioX: function () { if (S && S._limparRaioX) S._limparRaioX(); },
+  _ghostCount: function () { if (!S) return 0; var n = 0, gm = null; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { if (m.material && m.material.opacity === 0.1 && m.material.transparent && m.material.depthWrite === false && m.material.color && m.material.color.getHex() === 0x93a7bd) n++; }); }); return n; }, // malhas em material fantasma
+  _amberCount: function () { if (!S) return 0; var n = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { if (m.material === S.matAndamento) n++; }); }); return n; }, // malhas em âmbar (4D em andamento)
+  _chaoVis: function () { if (!S || !S.scene) return null; var v = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) v = o.visible; }); return v; }, // visibilidade da sombra de contato
+  _envSet: function () { return !!(S && S.scene && S.scene.environment); }, // ambiente PMREM aplicado?
+  _chaoSet: function () { if (!S || !S.scene) return null; var c = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) c = o; }); return c ? { x: c.scale.x, y: c.position.y } : null; }, // sombra de contato
   _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste
   _ctecModal: function () { return (S && S.ctecModal) ? S.ctecModal : null; }, // hook de teste: elemento do modal do resultado
