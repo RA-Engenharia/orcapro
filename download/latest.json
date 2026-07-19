@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.89",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.89/OrcaPRO-IA-update-v1.1.89.zip",
-  "notas": "RA/RV nível mundial: iluminação realista (PMREM) + sombra de contato que assenta o modelo no chão; voo suave da câmera ao dar duplo-clique num elemento; contorno nítido na seleção; e Raio-X — deixa o resto translúcido pra você ver onde passa o cano dentro da parede ANTES de furar. O melhor visualizador de projetos.",
+  "versao": "1.1.90",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.90/OrcaPRO-IA-update-v1.1.90.zip",
+  "notas": "Correção importante: a RA 📷 Câmera + Projeto (ver o projeto por cima do ambiente real pela câmera do celular) estava bloqueada em HTTPS por um erro na verificação — agora abre normalmente pelo link ☁️ da nuvem, inclusive no iPhone. Inclui o visualizador nível mundial da v1.1.89 (iluminação realista, sombra de contato, voo suave ao elemento, contorno e Raio-X).",
   "obrigatoria": false
 }

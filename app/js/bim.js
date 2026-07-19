@@ -2318,8 +2318,11 @@ function montar(host, opts) {
   // ---- ENTRAR: Câmera + Projeto (RA simples: vídeo da câmera de fundo + modelo por cima) ----
   function entrarCamera() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { S._hint('📷 Este navegador não dá acesso à câmera.'); return; }
-    if (!/^https:$|^http:\/\/localhost|^http:\/\/127\./.test(location.protocol + '//' + location.hostname) && location.hostname !== 'localhost') {
-      // câmera só em HTTPS ou localhost (regra do navegador). No QR da rede local (http) não rola.
+    // câmera só em contexto seguro (HTTPS ou localhost) — regra do navegador. No QR da rede local (http) não rola.
+    // (fix v1.1.90: o regex antigo `^https:$` NUNCA batia em "https://host" — bloqueava a câmera em TODO HTTPS, inclusive o link da nuvem)
+    var h = location.hostname;
+    var origemSegura = (location.protocol === 'https:') || (typeof window.isSecureContext !== 'undefined' && window.isSecureContext) || h === 'localhost' || h === '127.0.0.1' || h === '::1' || /\.localhost$/.test(h);
+    if (!origemSegura) {
       S._hint('📷 A câmera só abre por HTTPS. Use o link ☁️ da nuvem (ou rode no próprio computador).');
       return;
     }
