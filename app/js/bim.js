@@ -2260,6 +2260,9 @@ function montar(host, opts) {
     var barra = '<div style="position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 10px">' +
       chips +
       '<button data-har="centralizar" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#2563eb;font-weight:600">📍 Centralizar</button>' +
+      // Passos SÓ em Caminhar/Câmera (no AR a locomoção é do WebXR, o botão seria morto). Rótulo reflete
+      // o estado REAL (listener ativo) — nunca mostra "on" sem sensor ligado (gate v1.1.93).
+      (comReticulo ? '' : '<button data-har="passos" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + ((xr._pass && xr._pass.on) ? '#0d9488' : 'rgba(90,110,130,.7)') + '">🚶 Passos: ' + ((xr._pass && xr._pass.on) ? 'on' : 'off') + '</button>') +
       '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
       '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">⚙️ Ajustes</button>' +
       '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
@@ -2277,11 +2280,23 @@ function montar(host, opts) {
     var b = e.target.closest('[data-har]'); if (!b) return; var k = b.getAttribute('data-har');
     if (k === 'sair') sairImersivo();
     else if (k === 'centralizar') centralizarProjeto();
+    else if (k === 'passos') {
+      if (xr._passH) { xr._pass.on = !xr._pass.on; _syncPassosHud(xr._pass.on ? 'Andar com o celular na mão move você no projeto (por passos).' : 'Passos desligados — use o joystick.'); }
+      else { ligarPassos(); } // sem listener (permissão negada/pendente) → re-tenta de fato em vez de mentir "on"
+    }
     else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
     else if (k === 'ajustes') { var aberto = xrPanel.style.display === 'flex'; if (aberto) { xrPanel.style.display = 'none'; } else { pintarXRPanel(); xrPanel.style.display = 'flex'; if (S._ajustarTop) S._ajustarTop(); } }
     else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
   });
   function xrDica(t) { var d = xrHud.querySelector('[data-h="dica"]'); if (d) d.textContent = t || ''; }
+  // espelha no botão do HUD o estado REAL dos passos (listener ativo) — evita "on" mentiroso quando a
+  // permissão de Movimento foi negada/está pendente no iOS (gate v1.1.93).
+  function _syncPassosHud(dica) {
+    var b = xrHud.querySelector('[data-har="passos"]');
+    if (b) { var on = !!(xr._pass && xr._pass.on); b.textContent = '🚶 Passos: ' + (on ? 'on' : 'off'); b.style.background = on ? '#0d9488' : 'rgba(90,110,130,.7)'; }
+    if (dica) xrDica(dica);
+  }
+  S._xrPassosHud = function (n) { var b = xrHud.querySelector('[data-har="passos"]'); if (b && xr._pass && xr._pass.on) b.textContent = '🚶 ' + n + ' passos'; };
   function ligarJoystick() {
     var joy = xrHud.querySelector('[data-h="joy"]'), knob = xrHud.querySelector('[data-h="knob"]');
     if (!joy) return;
@@ -2320,6 +2335,22 @@ function montar(host, opts) {
   var _oriYaw = new THREE.Quaternion(); // offset de recentragem (horizontal), aplicado em torno do Y do MUNDO
   var _oriUp = new THREE.Vector3(0, 1, 0);
   function _screenAngRad() { var a = 0; try { a = (window.screen && screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0); } catch (e) {} return (a || 0) * Math.PI / 180; }
+  // iOS exige que DeviceOrientation/Motion.requestPermission rode DENTRO do gesto de toque. No modo
+  // Câmera+Projeto, ligarOrientacao/ligarPassos só rodam depois do getUserMedia().then (gesto já
+  // gasto) → sem isto os sensores NUNCA ligavam no iPhone (gate v1.1.93). Cacheamos a PROMISE do
+  // pedido: _pedirSensores() a cria no toque; ligar* reusa a mesma promise (sem 2º requestPermission,
+  // que o iOS rejeitaria como "já pendente"). Só limpa em não-granted, p/ permitir retry depois.
+  function _permOri() {
+    if (typeof DeviceOrientationEvent === 'undefined' || !DeviceOrientationEvent.requestPermission) return null; // Android/desktop: sem gate
+    if (!xr._oriPromise) xr._oriPromise = DeviceOrientationEvent.requestPermission().then(function (p) { xr._oriPerm = p; if (p !== 'granted') xr._oriPromise = null; return p; }).catch(function () { xr._oriPromise = null; return 'denied'; });
+    return xr._oriPromise;
+  }
+  function _permPasso() {
+    if (typeof DeviceMotionEvent === 'undefined' || !DeviceMotionEvent.requestPermission) return null;
+    if (!xr._passPromise) xr._passPromise = DeviceMotionEvent.requestPermission().then(function (p) { xr._passPerm = p; if (p !== 'granted') xr._passPromise = null; return p; }).catch(function () { xr._passPromise = null; return 'denied'; });
+    return xr._passPromise;
+  }
+  function _pedirSensores() { _permOri(); _permPasso(); } // dispara AMBOS no gesto (usado pelo modo câmera)
   function ligarOrientacao() {
     if (xr.ori) return;
     function handler(ev) {
@@ -2336,11 +2367,34 @@ function montar(host, opts) {
       xr.oriOk = true;
     }
     var start = function () { window.addEventListener('deviceorientation', handler, true); xr.ori = true; xr._oriH = handler; xrDica('Vire e incline o celular pra olhar — o projeto acompanha. Joystick pra andar. Arraste na horizontal pra recentralizar.'); };
-    if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
-      DeviceOrientationEvent.requestPermission().then(function (p) { if (p === 'granted') start(); }).catch(function () {});
-    } else if (typeof DeviceOrientationEvent !== 'undefined') { start(); }
+    var pr = _permOri();
+    if (pr) { pr.then(function (p) { if (p === 'granted') start(); }); }
+    else if (typeof DeviceOrientationEvent !== 'undefined') { start(); } // Android/desktop: sem requestPermission → liga direto
   }
   function desligarOrientacao() { if (xr.ori && xr._oriH) { window.removeEventListener('deviceorientation', xr._oriH, true); } xr.ori = false; xr.oriOk = false; xr.oriBase = null; }
+
+  // ---- ANDAR POR PASSOS (acelerômetro): andar com o celular na mão → andar no projeto. iPhone/Android
+  //      sem SLAM nativo — é APROXIMADO (detecção de passo), rotulado como "por passos". Cada passo move
+  //      pra frente ~0,68 m na escala do mundo (na 1:1 = passo real dentro do projeto). Toggle no HUD. ----
+  var _passLen = 0.68;
+  function ligarPassos() {
+    if (xr._passH) return;
+    xr._pass = { last: 0, ema: 0, on: false, n: 0 }; // 'on' só vira true quando o listener EXISTIR (start)
+    function handler(ev) {
+      if (!xr.on || !xr._pass || !xr._pass.on) return;
+      var a = ev.accelerationIncludingGravity || ev.acceleration; if (!a) return;
+      var mag = Math.sqrt((a.x || 0) * (a.x || 0) + (a.y || 0) * (a.y || 0) + (a.z || 0) * (a.z || 0));
+      var P = xr._pass; P.ema = P.ema ? P.ema * 0.88 + mag * 0.12 : mag;
+      var din = mag - P.ema, now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (din > 2.6 && (now - P.last) > 340) { P.last = now; P.n++; xr._stepMove = (xr._stepMove || 0) + _passLen; if (S._xrPassosHud) S._xrPassosHud(P.n); } // pico → 1 passo
+    }
+    var start = function () { window.addEventListener('devicemotion', handler); xr._passH = handler; if (xr._pass) xr._pass.on = true; _syncPassosHud(); };
+    var pr = _permPasso();
+    if (pr) { pr.then(function (p) { if (p === 'granted') start(); else _syncPassosHud('📵 Passos precisam da permissão de Movimento (negada) — use o joystick.'); }); }
+    else if (typeof DeviceMotionEvent !== 'undefined') { start(); } // Android/desktop: sem requestPermission → liga direto
+  }
+  function desligarPassos() { if (xr._passH) { try { window.removeEventListener('devicemotion', xr._passH); } catch (_) {} xr._passH = null; } xr._pass = null; xr._stepMove = 0; }
+  S._xrStep = function () { xr._stepMove = (xr._stepMove || 0) + _passLen; }; // hook de teste: simula 1 passo
 
   // ---- passo de andar (roda todo frame via S._xrWalk) ----
   var _xrFwd = new THREE.Vector3(), _xrRight = new THREE.Vector3(), _xrUp = new THREE.Vector3(0, 1, 0);
@@ -2351,6 +2405,8 @@ function montar(host, opts) {
     if (xr.mode !== 'ar') {
       if (xr.oriOk && xr.oriQuat) { camera.quaternion.copy(xr.oriQuat); }
       else { var e = new THREE.Euler(xr.look.pitch, xr.look.yaw, 0, 'YXZ'); camera.quaternion.setFromEuler(e); }
+      // PASSOS: andou com o celular na mão → anda pra frente no projeto (independe do joystick)
+      if (xr._stepMove) { var sm = xr._stepMove; xr._stepMove = 0; camera.getWorldDirection(_xrFwd); _xrFwd.y = 0; if (_xrFwd.lengthSq() > 1e-6) { _xrFwd.normalize(); camera.position.addScaledVector(_xrFwd, sm); camera.position.y = xr._pisoY + EYE; } }
     }
     var mv = xr.joy.x * xr.joy.x + xr.joy.z * xr.joy.z;
     if (mv < 0.0009) return;
@@ -2413,6 +2469,7 @@ function montar(host, opts) {
     S._xrWalk = xrWalkStep;
     montarHud(false);
     if (typeof DeviceOrientationEvent !== 'undefined') ligarOrientacao();
+    ligarPassos(); // andar com o celular na mão → andar no projeto (por passos)
     canvasEl.addEventListener('pointerdown', xrPointerDown); canvasEl.addEventListener('pointermove', xrPointerMove); window.addEventListener('pointerup', xrPointerUp);
     marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none';
     // câmera: começa como MINIATURA na frente (vê o projeto inteiro na sala); caminhar: 1:1 DENTRO
@@ -2433,6 +2490,7 @@ function montar(host, opts) {
     }
     if (xr.on || xr._camPend) return; // já imersivo ou pedido de câmera em voo: ignora toque duplo (senão orfã stream + corrompe posOrig)
     xr._camPend = true;
+    _pedirSensores(); // AINDA no gesto do toque: concede giroscópio+passos p/ o iPhone (o getUserMedia().then já gastaria o gesto)
     S._hint('📷 Pedindo acesso à câmera…');
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (stream) {
       xr._camPend = false;
@@ -2604,7 +2662,7 @@ function montar(host, opts) {
     S.modelos.forEach(function (mo) { mo.grupo.visible = mo.visivel !== false; }); xr.discOcultas = {};
     ligarSombras(false);
     limparMedirXR(); xr.medir.on = false;
-    desligarOrientacao();
+    desligarOrientacao(); desligarPassos();
     renderer.clippingPlanes = xr.prevClip || []; renderer.localClippingEnabled = xr.prevLocal;
     canvasEl.removeEventListener('pointerdown', xrPointerDown); canvasEl.removeEventListener('pointermove', xrPointerMove); window.removeEventListener('pointerup', xrPointerUp);
     xrHud.style.display = 'none'; xrHud.innerHTML = '';
@@ -3951,20 +4009,66 @@ var Reuniao = {
     sp.scale.set(2.6, 0.65, 1); sp.renderOrder = 999;
     return sp;
   },
+  // camisa (jersey) com LOGO da empresa + NOME + TELEFONE — identifica cada um na reunião.
+  // Duas texturas: frente normal e verso espelhado (pra ler certo por trás, como no Augin).
+  _jerseyTex: function (u) {
+    var cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+    var x = cv.getContext('2d');
+    var shirt = u.c1 || '#222b34';
+    function desenha(logoImg) {
+      x.clearRect(0, 0, 256, 256);
+      x.fillStyle = shirt; x.fillRect(0, 0, 256, 256);
+      x.fillStyle = 'rgba(255,255,255,.10)'; x.fillRect(0, 0, 256, 20); // "gola"
+      if (logoImg) { try { var r = (logoImg.width || 1) / (logoImg.height || 1), w = 100, h = w / r; if (h > 84) { h = 84; w = h * r; } x.drawImage(logoImg, 128 - w / 2, 34, w, h); } catch (e) {} }
+      else { // sem logo (convidado da nuvem): iniciais do nome num disco → cada um fica distinto
+        var ini = String(u.nome || 'Visitante').trim().split(/\s+/).map(function (p) { return p.charAt(0); }).join('').slice(0, 2).toUpperCase() || 'RA';
+        x.fillStyle = 'rgba(255,255,255,.16)'; x.beginPath(); x.arc(128, 64, 34, 0, Math.PI * 2); x.fill();
+        x.fillStyle = 'rgba(255,255,255,.95)'; x.font = 'bold 34px Segoe UI, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(ini, 128, 65); x.textBaseline = 'alphabetic';
+      }
+      x.textAlign = 'center'; x.fillStyle = '#fff'; x.font = 'bold 27px Segoe UI, Arial';
+      x.fillText(String(u.nome || 'Visitante').slice(0, 18), 128, 168);
+      if (u.tel) { x.font = '20px Segoe UI, Arial'; x.fillStyle = 'rgba(255,255,255,.88)'; x.fillText(String(u.tel).slice(0, 20), 128, 202); }
+    }
+    desenha(null);
+    var texF = new THREE.CanvasTexture(cv); texF.anisotropy = 4;
+    var texB = new THREE.CanvasTexture(cv); texB.anisotropy = 4; texB.wrapS = THREE.RepeatWrapping; texB.repeat.x = -1; texB.offset.x = 1; // verso: espelha p/ ler certo por trás
+    if (u.logo) { var img = new Image(); img.onload = function () { desenha(img); texF.needsUpdate = true; texB.needsUpdate = true; }; img.onerror = function () {}; img.src = u.logo; }
+    return { texF: texF, texB: texB, shirt: new THREE.Color(shirt) };
+  },
+  // avatar HUMANO (cabeça/tronco/braços/pernas + capacete); homem/mulher; camisa c/ logo+nome+tel
   _avatar: function (u) {
     var g = new THREE.Group();
-    var corR = new THREE.Color(u.c1 || '#2e6f9e'), corC = new THREE.Color(u.c2 || '#f59e0b');
-    var corpoGeo = THREE.CapsuleGeometry ? new THREE.CapsuleGeometry(0.24, 0.72, 6, 14) : new THREE.CylinderGeometry(0.24, 0.26, 1.1, 14);
-    var corpo = new THREE.Mesh(corpoGeo, new THREE.MeshStandardMaterial({ color: corR, roughness: .6 }));
-    corpo.position.y = 0.85; g.add(corpo);
-    var cab = new THREE.Mesh(new THREE.SphereGeometry(0.17, 18, 14), new THREE.MeshStandardMaterial({ color: 0xe4b48e, roughness: .7 }));
-    cab.position.y = 1.52; g.add(cab);
-    var capacete = new THREE.Mesh(new THREE.SphereGeometry(0.185, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: corC, roughness: .35, metalness: .15 }));
-    capacete.position.y = 1.55; g.add(capacete);
-    var aba = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.03, 18), capacete.material);
-    aba.position.y = 1.5; aba.position.z = 0.05; g.add(aba);
-    var nome = this._sprite(u.nome, u.c2 || '#f59e0b'); nome.position.y = 2.15; g.add(nome);
-    var esc2 = u.esc === 'baixo' ? 0.88 : u.esc === 'alto' ? 1.12 : 1; g.scale.set(esc2, esc2, esc2);
+    var corC = new THREE.Color(u.c2 || '#f59e0b'), mulher = u.sexo === 'm';
+    var matPele = new THREE.MeshStandardMaterial({ color: 0xe4b48e, roughness: .75 });
+    var matCalca = new THREE.MeshStandardMaterial({ color: 0x2b3440, roughness: .85 });
+    var matSapato = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: .6 });
+    var j = this._jerseyTex(u);
+    var matShirt = new THREE.MeshStandardMaterial({ color: j.shirt, roughness: .85 });
+    var matJf = new THREE.MeshStandardMaterial({ map: j.texF, roughness: .85 });
+    var matJb = new THREE.MeshStandardMaterial({ map: j.texB, roughness: .85 });
+    var lh = 0.82, th = 0.52, tw = mulher ? 0.36 : 0.42, td = 0.24, lw = mulher ? 0.13 : 0.15;
+    [-1, 1].forEach(function (s) {
+      var perna = new THREE.Mesh(new THREE.CylinderGeometry(lw * 0.5, lw * 0.45, lh, 10), matCalca); perna.position.set(s * 0.11, lh / 2, 0); g.add(perna);
+      var pe = new THREE.Mesh(new THREE.BoxGeometry(lw * 1.1, 0.07, 0.26), matSapato); pe.position.set(s * 0.11, 0.035, 0.06); g.add(pe);
+    });
+    // tronco: jersey na frente (+z, idx4) e verso (-z, idx5); camisa lisa nas laterais/topo/base
+    var tronco = new THREE.Mesh(new THREE.BoxGeometry(tw, th, td), [matShirt, matShirt, matShirt, matShirt, matJf, matJb]);
+    tronco.position.y = lh + th / 2; g.add(tronco);
+    var aw = mulher ? 0.09 : 0.11;
+    [-1, 1].forEach(function (s) {
+      var br = new THREE.Mesh(new THREE.CylinderGeometry(aw * 0.5, aw * 0.45, 0.5, 8), matShirt); br.position.set(s * (tw / 2 + aw * 0.45), lh + th - 0.27, 0); br.rotation.z = s * 0.09; g.add(br);
+      var mao = new THREE.Mesh(new THREE.SphereGeometry(aw * 0.55, 8, 6), matPele); mao.position.set(s * (tw / 2 + aw * 0.5), lh + th - 0.5, 0); g.add(mao);
+    });
+    var cab = new THREE.Mesh(new THREE.SphereGeometry(0.135, 18, 14), matPele); cab.position.y = lh + th + 0.16; g.add(cab);
+    if (mulher) { // cabelo + rabo de cavalo
+      var matCab = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: .9 });
+      var cabelo = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), matCab); cabelo.position.set(0, lh + th + 0.19, -0.015); g.add(cabelo);
+      var rabo = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.028, 0.3, 8), matCab); rabo.position.set(0, lh + th + 0.03, -0.14); rabo.rotation.x = 0.2; g.add(rabo);
+    }
+    var capacete = new THREE.Mesh(new THREE.SphereGeometry(0.155, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: corC, roughness: .35, metalness: .15 })); capacete.position.y = lh + th + 0.19; g.add(capacete);
+    var aba = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.025, 18), capacete.material); aba.position.set(0, lh + th + 0.15, 0.07); g.add(aba);
+    var nome = this._sprite(u.nome, u.c2 || '#f59e0b'); nome.position.y = lh + th + 0.55; g.add(nome);
+    var esc2 = u.esc === 'baixo' ? 0.9 : u.esc === 'alto' ? 1.1 : 1; g.scale.set(esc2, esc2, esc2);
     g.userData.alvo = { p: new THREE.Vector3(), yaw: 0 };
     return g;
   },
@@ -3974,20 +4078,42 @@ var Reuniao = {
       if (uid === self.uid) return;
       var u = usuarios[uid]; if (!u || !u.p) return;
       vistos[uid] = 1;
+      // LOGO vem fora do broadcast (só o hash 'lv' no SSE): busca 1x por uid quando o lv mudar
+      if (!self._logos) self._logos = {};
+      var lc = self._logos[uid];
+      if (u.lv && (!lc || (lc.lv !== u.lv && !lc.pend))) {
+        self._logos[uid] = { lv: u.lv, logo: (lc && lc.logo) || '', pend: true };
+        (function (id, lv) { fetch(self.base() + encodeURIComponent(self.sala) + '/logo/' + encodeURIComponent(id)).then(function (r) { return r.ok ? r.text() : ''; }).then(function (t) { self._logos[id] = { lv: lv, logo: t || '', pend: false }; }).catch(function () { if (self._logos[id]) self._logos[id].pend = false; }); })(uid, u.lv);
+      } else if (!u.lv && lc) { self._logos[uid] = { lv: '', logo: '', pend: false }; }
+      u.logo = (self._logos[uid] && self._logos[uid].logo) || ''; // avatar usa o logo do cache; rebuild dispara quando chega
       var av = self.outros[uid];
-      if (!av || av.userData.c1 !== u.c1 || av.userData.c2 !== u.c2 || av.userData.nome !== u.nome || av.userData.esc !== u.esc) {
+      if (!av || av.userData.c1 !== u.c1 || av.userData.c2 !== u.c2 || av.userData.nome !== u.nome || av.userData.esc !== u.esc || av.userData.sexo !== u.sexo || av.userData.tel !== u.tel || av.userData.logo !== u.logo) {
         if (av) { self._dispor(av); self.grupo.remove(av); }
-        av = self._avatar(u); av.userData.c1 = u.c1; av.userData.c2 = u.c2; av.userData.nome = u.nome; av.userData.esc = u.esc;
+        av = self._avatar(u); av.userData.c1 = u.c1; av.userData.c2 = u.c2; av.userData.nome = u.nome; av.userData.esc = u.esc; av.userData.sexo = u.sexo; av.userData.tel = u.tel; av.userData.logo = u.logo;
         av.position.set(u.p[0], u.p[1] - 1.6, u.p[2]);
         self.grupo.add(av); self.outros[uid] = av;
       }
       av.userData.alvo.p.set(u.p[0], u.p[1] - 1.6, u.p[2]); // câmera ≈ olhos → pé do avatar ~1,6m abaixo
       av.userData.alvo.yaw = u.yaw || 0;
     });
-    Object.keys(this.outros).forEach(function (uid) { if (!vistos[uid]) { self._dispor(self.outros[uid]); self.grupo.remove(self.outros[uid]); delete self.outros[uid]; } });
+    Object.keys(this.outros).forEach(function (uid) { if (!vistos[uid]) { self._dispor(self.outros[uid]); self.grupo.remove(self.outros[uid]); delete self.outros[uid]; delete self._logos[uid]; } });
     if (S && S.opts && S.opts.onReuniao) { try { S.opts.onReuniao(Object.keys(vistos).length + 1); } catch (_) {} }
   },
-  _dispor: function (g) { try { g.traverse(function (o) { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); } catch (_) {} },
+  // libera GPU: o TRONCO usa material ARRAY [camisa×4, frente, verso] → normaliza p/ array e
+  // dispõe .map+.dispose de cada submaterial (o antigo o.material.map casava Array.prototype.map
+  // → TypeError abortava o traverse e VAZAVA texturas/geometrias — bloqueador do gate v1.1.93).
+  _dispor: function (g) {
+    try {
+      g.traverse(function (o) {
+        try {
+          if (o.geometry) o.geometry.dispose();
+          var m = o.material; if (!m) return;
+          var arr = Array.isArray(m) ? m : [m];
+          for (var i = 0; i < arr.length; i++) { var mm = arr[i]; if (!mm) continue; if (mm.map) mm.map.dispose(); mm.dispose(); }
+        } catch (_) {}
+      });
+    } catch (_) {}
+  },
   _tick: function () {
     var self = Reuniao; if (!self.on || !S) return;
     Object.keys(self.outros).forEach(function (uid) {
@@ -3998,24 +4124,40 @@ var Reuniao = {
     });
     if (!self.conectado) return; // sem SSE conectado não martela POST
     var now = Date.now();
+    var c = S.camera, e = new THREE.Euler().setFromQuaternion(c.quaternion, 'YXZ');
+    // POSE (leve, frequente): só posição/rotação — o relay MERGE preserva a identidade
     if (now - self._lastPost > 180) {
       self._lastPost = now;
-      var c = S.camera, e = new THREE.Euler().setFromQuaternion(c.quaternion, 'YXZ');
-      var body = JSON.stringify({ uid: self.uid, nome: self.cfg.nome, c1: self.cfg.c1, c2: self.cfg.c2, esc: self.cfg.esc, p: [c.position.x, c.position.y, c.position.z], yaw: e.y });
-      try { fetch(self.base() + encodeURIComponent(self.sala) + '/pose', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: body }).catch(function () {}); } catch (_) {}
+      // 429 = sala CHEIA (relay capa em 20 no POST, mas o SSE conecta mesmo assim → sem isto o 21º
+      // vira "zumbi": vê todos e some pra todos, sem aviso). Detecta o 429 e sai avisando (gate v1.1.93).
+      try { fetch(self.base() + encodeURIComponent(self.sala) + '/pose', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ uid: self.uid, p: [c.position.x, c.position.y, c.position.z], yaw: e.y }) }).then(function (r) { if (r && r.status === 429) { self.sair(); if (S && S.opts) { var cb = S.opts.onReuniaoCheia || S.opts.onReuniaoFalha; if (cb) { try { cb(); } catch (_) {} } } } }).catch(function () {}); } catch (_) {}
+    }
+    // IDENTIDADE (nome/tel/sexo/cores) a cada ~4s — p/ quem entra depois montar o avatar.
+    // O LOGO (dataURL pesado) só entra no corpo quando MUDA: o relay guarda por sessão e serve via
+    // GET /logo; reenviar a cada 4s desperdiçava ~6 KB/s de upload por participante (gate v1.1.93).
+    // Se o POST com o logo falhar, _logoEnviado fica desalinhado e o próximo tick reenvia (retry).
+    if (now - (self._lastIdent || 0) > 4000) {
+      self._lastIdent = now;
+      var g = self.cfg;
+      var mudouLogo = g.logo !== self._logoEnviado;
+      var body = { uid: self.uid, nome: g.nome, c1: g.c1, c2: g.c2, esc: g.esc, sexo: g.sexo, tel: g.tel, p: [c.position.x, c.position.y, c.position.z], yaw: e.y };
+      if (mudouLogo) body.logo = g.logo;
+      try { fetch(self.base() + encodeURIComponent(self.sala) + '/pose', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify(body) }).then(function (r) { if (mudouLogo && r && r.ok) self._logoEnviado = g.logo; }).catch(function () {}); } catch (_) {}
     }
   },
   entrar: function (cfg) {
     if (!S) return false;
     this.sair();
-    this.cfg = { nome: (cfg && cfg.nome) || 'Visitante', c1: (cfg && cfg.c1) || '#2e6f9e', c2: (cfg && cfg.c2) || '#f59e0b', esc: (cfg && cfg.esc) || 'normal' };
+    this.cfg = { nome: (cfg && cfg.nome) || 'Visitante', c1: (cfg && cfg.c1) || '#222b34', c2: (cfg && cfg.c2) || '#f59e0b', esc: (cfg && cfg.esc) || 'normal', sexo: (cfg && cfg.sexo) || 'h', tel: (cfg && cfg.tel) || '', logo: (cfg && cfg.logo) || '' };
     this.sala = (cfg && cfg.sala) || 'geral';
     this.grupo = new THREE.Group(); S.scene.add(this.grupo);
-    this.conectado = false; this.falhas = 0; this.jaConectou = false;
+    this.conectado = false; this.falhas = 0; this.jaConectou = false; this._logos = {}; this._lastIdent = 0; this._logoEnviado = null;
     var self = this;
     try {
       this.es = new EventSource(this.base() + encodeURIComponent(this.sala) + '/stream');
-      this.es.onopen = function () { self.conectado = true; self.jaConectou = true; self.falhas = 0; if (self._connTimer) { clearTimeout(self._connTimer); self._connTimer = 0; } if (S && S.opts && S.opts.onReuniao) { try { S.opts.onReuniao(self.on ? (Object.keys(self.outros).length + 1) : 0); } catch (_) {} } };
+      // _logoEnviado=null no (re)conectar: se a sessão expirou no relay durante uma queda >6s (TTL),
+      // o logo é reenviado no próximo tick; senão o hash bate e ninguém re-busca (gate v1.1.93).
+      this.es.onopen = function () { self.conectado = true; self.jaConectou = true; self.falhas = 0; self._logoEnviado = null; if (self._connTimer) { clearTimeout(self._connTimer); self._connTimer = 0; } if (S && S.opts && S.opts.onReuniao) { try { S.opts.onReuniao(self.on ? (Object.keys(self.outros).length + 1) : 0); } catch (_) {} } };
       this.es.onmessage = function (ev) { try { var d = JSON.parse(ev.data); self.conectado = true; self.jaConectou = true; self._aplicar(d.usuarios || {}); } catch (_) {} };
       // queda DEPOIS de conectado: pausa os POSTs (conectado=false) e deixa o SSE reconectar
       // sozinho (onopen religa); só desiste de vez quem NUNCA conectou (3 falhas na entrada).
@@ -4039,7 +4181,7 @@ var Reuniao = {
     if (this.es) { try { this.es.close(); } catch (_) {} this.es = null; }
     var i = S ? S._tickExtra.indexOf(this._tick) : -1; if (i !== -1) S._tickExtra.splice(i, 1);
     var selfS = this; if (this.grupo) { Object.keys(this.outros).forEach(function (uid) { selfS._dispor(selfS.outros[uid]); }); if (S) S.scene.remove(this.grupo); }
-    this.grupo = null; this.outros = {};
+    this.grupo = null; this.outros = {}; this._logos = {};
     if (S && S.opts && S.opts.onReuniao) { try { S.opts.onReuniao(0); } catch (_) {} }
   }
 };
@@ -4147,6 +4289,7 @@ window.BIM = {
   _xrEscala: function (f) { if (S && S._aplicarEscalaImersivo) S._aplicarEscalaImersivo(f); }, // hook de teste
   _xrCentralizar: function () { if (S && S._centralizarImersivo) S._centralizarImersivo(); }, // hook de teste
   _xrTickWalk: function () { if (S && S._xrWalk) S._xrWalk(0.016); }, // hook de teste: roda o passo do imersivo (giroscópio/andar), que o loop real chama
+  _xrPasso: function () { if (S && S._xrStep) S._xrStep(); }, // hook de teste: simula 1 passo do acelerômetro
   _chaoSet: function () { if (!S || !S.scene) return null; var c = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) c = o; }); return c ? { x: c.scale.x, y: c.position.y } : null; }, // sombra de contato
   _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste
@@ -4166,6 +4309,14 @@ window.BIM = {
     sair: function () { Reuniao.sair(); },
     get ativa() { return Reuniao.on; },
     get sala() { return Reuniao.sala; },
-    get participantes() { return Reuniao.on ? Object.keys(Reuniao.outros).length + 1 : 0; }
+    get participantes() { return Reuniao.on ? Object.keys(Reuniao.outros).length + 1 : 0; },
+    _tickTest: function () { Reuniao._tick(); }, // hook de teste: roda 1 tick (rAF fica pausado em aba de fundo)
+    _avatarTest: function (u) { // hook de teste: monta um avatar e devolve a estrutura
+      var g = Reuniao._avatar(u || {}); var meshes = 0, jersey = false;
+      g.traverse(function (o) { if (o.isMesh) { meshes++; var m = o.material; if (Array.isArray(m) ? m.some(function (x) { return x && x.map; }) : (m && m.map)) jersey = true; } });
+      var alt = new THREE.Box3().setFromObject(g); var sz = alt.getSize(new THREE.Vector3());
+      Reuniao._dispor(g);
+      return { meshes: meshes, jersey: jersey, alturaM: +sz.y.toFixed(2), filhos: g.children.length };
+    }
   }
 };

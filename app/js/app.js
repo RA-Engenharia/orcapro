@@ -109,11 +109,16 @@
     // compartilhado do VPS (mesmo domínio) e entra no imersivo Caminhar. Sem login/gestão.
     _abrirRVCloud: function (token) {
       document.title = "RA/RV — OrçaPRO";
+      // a SALA da reunião é derivada do próprio token do link: TODOS que abrem o mesmo link/QR caem
+      // na mesma sala e se veem (avatares). O token vem de crypto (18 hex) → sala não-adivinhável.
+      var sala = "nuvem-" + String(token).slice(0, 18);
       document.body.innerHTML =
         '<div id="rvfull" style="position:fixed;inset:0;background:#0b1a2b">' +
         '<div id="bim-canvas" style="width:100%;height:100%;position:relative"></div>' +
         // 🔄 buscar atualização — no celular não tem Ctrl+Shift+R; puxa a versão nova limpando o cache (preserva o token do link)
         '<button id="rv-upd" title="Buscar atualização" style="position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;z-index:2147483000;background:rgba(15,39,64,.92);color:#dbe8f5;border:1px solid #24435f;border-radius:9px;padding:8px 11px;font-size:14px;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">🔄</button>' +
+        // 👥 Reunião — QUALQUER pessoa do link entra na mesma sala e vê os outros (cap 20). Escondido até o modelo carregar.
+        '<button id="rv-reun" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:2147483000;background:rgba(22,115,74,.94);color:#eafff2;border:1px solid #1c7a4a;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">👥 Reunião</button>' +
         '<div id="rv-load" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dbe8f5;font-family:Inter,system-ui,sans-serif;gap:10px;text-align:center;padding:20px">' +
         '<div style="font-size:34px">☁️</div><div id="rv-load-txt" style="font-size:15px">Baixando o projeto…</div>' +
         '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois, toque em 👣 Caminhar (ou 📱 RA no Android) no painel.</div></div></div>';
@@ -121,17 +126,21 @@
       var origin = location.origin;
       function txt(t) { var e = document.getElementById("rv-load-txt"); if (e) e.textContent = t; }
       function erro(t) { var l = document.getElementById("rv-load"); if (l) { l.querySelector("#rv-load-txt").textContent = t; l.querySelector("div").textContent = "❌"; } }
+      this._rvReuniao(sala); // prepara o botão/formulário da reunião (fica escondido até liberar)
       var t0 = 0, espera = setInterval(function () {
         t0++;
         if (window.BIM && BIM.montar) {
           clearInterval(espera);
-          try { BIM.montar(document.getElementById("bim-canvas"), {}); } catch (e) { erro("Falha ao iniciar o visualizador."); return; }
+          // opts.onReuniao mantém o contador no botão; onReuniaoFalha avisa quando cai a conexão
+          try { BIM.montar(document.getElementById("bim-canvas"), { onReuniao: function (n) { App._rvReunBadge(n); }, onReuniaoFalha: function () { App._rvReunBadge(0); alert("A reunião caiu (sem internet?). O modelo segue normal — toque em 👥 pra reconectar."); }, onReuniaoCheia: function () { App._rvReunBadge(0); alert("👥 Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair."); } }); }
+          catch (e) { erro("Falha ao iniciar o visualizador."); return; }
           fetch(origin + "/rv/t/" + token).then(function (r) { return r.json(); }).then(function (man) {
             if (!man.ok) throw new Error(man.erro || "link inválido");
             var arqs = man.arquivos || [], i = 0;
             (function prox() {
               if (i >= arqs.length) {
                 var l = document.getElementById("rv-load"); if (l) l.remove();
+                var rb = document.getElementById("rv-reun"); if (rb) rb.style.display = "block"; // libera a reunião
                 // abre o seletor de modo (📷 Câmera + Projeto / 👣 Caminhar) — a câmera precisa de um
                 // TOQUE do usuário pra pedir permissão, então não entramos sozinhos no modo câmera.
                 setTimeout(function () { try { BIM.abrirXR(); } catch (e) {} }, 800);
@@ -146,6 +155,72 @@
         } else if (t0 > 80) { clearInterval(espera); erro("O visualizador não carregou. Recarregue a página."); }
       }, 100);
     },
+    // Botão/fluxo de reunião no visor da nuvem: o convidado informa nome/sexo/telefone (sem login) e
+    // entra na sala do link. Avatar humano com capacete + camisa (nome+telefone; sem logo → iniciais).
+    _rvReunBadge: function (n) {
+      var b = document.getElementById("rv-reun"); if (!b) return;
+      if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { b.textContent = "👥 " + (n || 1) + " — sair"; b.style.background = "rgba(15,39,64,.94)"; b.style.borderColor = "#2e6f9e"; }
+      else { b.textContent = "👥 Reunião"; b.style.background = "rgba(22,115,74,.94)"; b.style.borderColor = "#1c7a4a"; }
+    },
+    _rvReuniao: function (sala) {
+      var self = this;
+      // identidade do convidado persistida (não retypar a cada visita)
+      var g = {}; try { g = JSON.parse(localStorage.getItem("orcapro:rv:guest") || "{}"); } catch (e) {}
+      // cor do uniforme derivada do nome (cada convidado fica com um tom distinto)
+      function corDoNome(nome) { var h = 0, s = String(nome || "eng"); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; var hue = h % 360; return "hsl(" + hue + ",42%,38%)"; }
+      function hslParaHex(hsl) { // three lê hex/nome; converte o hsl p/ #rrggbb
+        var m = /hsl\((\d+),(\d+)%?,(\d+)%?\)/.exec(hsl); if (!m) return "#2e6f9e";
+        var H = +m[1] / 360, Sx = +m[2] / 100, L = +m[3] / 100;
+        function f(n) { var k = (n + H * 12) % 12; var a = Sx * Math.min(L, 1 - L); var c = L - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1))); return Math.round(c * 255); }
+        function h2(v) { var s = v.toString(16); return s.length < 2 ? "0" + s : s; }
+        return "#" + h2(f(0)) + h2(f(8)) + h2(f(4));
+      }
+      function abrirForm() {
+        var ov = document.getElementById("rv-reun-ov"); if (ov) ov.remove();
+        ov = document.createElement("div"); ov.id = "rv-reun-ov";
+        ov.style.cssText = "position:fixed;inset:0;z-index:2147483600;background:rgba(4,12,22,.86);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,system-ui,sans-serif";
+        ov.innerHTML =
+          '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:360px;width:100%;padding:20px;color:#dbe8f5">' +
+          '<b style="font-size:15px">👥 Entrar na reunião</b>' +
+          '<p style="font-size:12.5px;color:#9fb2c8;margin:8px 0 14px">Todo mundo com este link se vê dentro do modelo. Seu nome e telefone aparecem na camisa do seu avatar (até 20 pessoas).</p>' +
+          '<label style="font-size:12px;color:#9fb2c8">Seu nome *</label>' +
+          '<input id="rvr-nome" value="' + (self._escAttr(g.nome || "")) + '" placeholder="Como os outros te veem" style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:10px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:14px">' +
+          '<label style="font-size:12px;color:#9fb2c8">Você é</label>' +
+          '<div style="display:flex;gap:8px;margin:4px 0 12px"><button type="button" data-sx="h" class="rvr-sx" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:13px;cursor:pointer">👷 Homem</button><button type="button" data-sx="m" class="rvr-sx" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:13px;cursor:pointer">👷‍♀️ Mulher</button></div>' +
+          '<label style="font-size:12px;color:#9fb2c8">Telefone (aparece na camisa)</label>' +
+          '<input id="rvr-tel" value="' + (self._escAttr(g.tel || "")) + '" placeholder="(00) 00000-0000" inputmode="tel" style="width:100%;box-sizing:border-box;margin:4px 0 16px;padding:10px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:14px">' +
+          '<div style="display:flex;gap:8px"><button type="button" id="rvr-ok" style="flex:1;padding:11px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-size:14px;font-weight:700;cursor:pointer">🚀 Entrar</button><button type="button" id="rvr-cancel" style="padding:11px 14px;border-radius:9px;border:1.5px solid #24435f;background:transparent;color:#cbd8e6;font-size:14px;cursor:pointer">Cancelar</button></div>' +
+          '</div>';
+        document.body.appendChild(ov);
+        var sexo = g.sexo === "m" ? "m" : "h";
+        function pintaSexo() { var bs = ov.querySelectorAll(".rvr-sx"); for (var i = 0; i < bs.length; i++) { var on = bs[i].getAttribute("data-sx") === sexo; bs[i].style.background = on ? "#16a34a" : "#0b1e33"; bs[i].style.borderColor = on ? "#16a34a" : "#24435f"; } }
+        pintaSexo();
+        ov.addEventListener("click", function (e) {
+          if (e.target === ov || e.target.id === "rvr-cancel") { ov.remove(); return; }
+          var sb = e.target.closest ? e.target.closest(".rvr-sx") : null;
+          if (sb) { sexo = sb.getAttribute("data-sx"); pintaSexo(); return; }
+          if (e.target.id === "rvr-ok") {
+            var nome = (document.getElementById("rvr-nome").value || "").trim();
+            var tel = (document.getElementById("rvr-tel").value || "").trim();
+            if (nome.length < 2) { alert("Diga seu nome pra reunião."); return; }
+            try { localStorage.setItem("orcapro:rv:guest", JSON.stringify({ nome: nome, tel: tel, sexo: sexo })); } catch (_) {}
+            g = { nome: nome, tel: tel, sexo: sexo }; // sincroniza o closure p/ reabrir o form já preenchido na mesma sessão
+            var c1 = hslParaHex(corDoNome(nome));
+            var ok = false;
+            try { ok = BIM.reuniao.entrar({ sala: sala, nome: nome, tel: tel, sexo: sexo, c1: c1, c2: "#f59e0b", esc: "normal", logo: "" }); } catch (_) {}
+            if (ok) { ov.remove(); self._rvReunBadge(1); }
+            else alert("Não consegui conectar na reunião (sem internet?). O modelo segue normal.");
+          }
+        });
+      }
+      var btn = document.getElementById("rv-reun");
+      if (btn) btn.onclick = function () {
+        if (typeof BIM === "undefined" || !BIM.reuniao) return;
+        if (BIM.reuniao.ativa) { if (confirm("Sair da reunião?")) { BIM.reuniao.sair(); self._rvReunBadge(0); } }
+        else abrirForm();
+      };
+    },
+    _escAttr: function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); },
     _iniciarDemo: function (qs) {
       var aba = (qs.match(/[?&]aba=([a-z]+)/) || [])[1] || "planilha";
       Auth._usuario = { empresaId: "demo", empresa: "Construtora Modelo", email: "demo@orcapro.app", plano: "PRO" };

@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.92",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.92/OrcaPRO-IA-update-v1.1.92.zip",
-  "notas": "RA/RV muito melhor no celular: giroscópio de verdade (vire o celular e o projeto acompanha, 3 eixos), escala 1:1 real (andar dentro) ou miniatura na sua frente, e 📍 Centralizar / 🔒 Travar pra fixar o projeto num ponto. Abra pelo link ☁️ da nuvem.",
+  "versao": "1.1.93",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.93/OrcaPRO-IA-update-v1.1.93.zip",
+  "notas": "RA/RV nível mundial no celular: avatares humanos (homem/mulher + capacete + camisa com o logo, nome e telefone da sua empresa), reunião por link/QR com até 20 pessoas (todos que abrem o link se veem no modelo) e andar por passos com o celular na mão. Mais estabilidade: sem travar o 3D em reuniões longas, giroscópio/passos corretos no iPhone e aviso de sala cheia.",
   "obrigatoria": false
 }

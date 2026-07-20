@@ -1508,6 +1508,11 @@
       var av = {}; try { av = JSON.parse(localStorage.getItem("orcapro:bim:avatar") || "{}"); } catch (e) {}
       var usuario = (typeof Auth !== "undefined" && Auth.usuario) ? (Auth.usuario() || {}) : {};
       var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      // logo da empresa (reduzido p/ caber na camisa do avatar) + telefone — identificam o usuário na reunião
+      var empLogo = (typeof Empresa !== "undefined" && Empresa.logo) ? (Empresa.logo() || "") : "";
+      var empTel = (typeof Empresa !== "undefined" && Empresa.dados) ? String((Empresa.dados() || {}).contato || "") : "";
+      var self2 = this; this._avLogoSmall = "";
+      this._avatarLogoSmall(function (d) { self2._avLogoSmall = d; }); // logo da empresa capado (<20KB) p/ a camisa do avatar
       // sala NÃO-adivinhável: slug da obra + código aleatório persistido (mesma equipe reusa; estranho não chuta)
       var chaveObra = obra ? obra.id : (eid() + "-geral"), codKey = "orcapro:bim:salacode:" + chaveObra, cod = "";
       try { cod = localStorage.getItem(codKey) || ""; } catch (e) {}
@@ -1526,16 +1531,20 @@
         campo("Sala da reunião *", inp("g-av-sala", salaDefault, "mesmo nome de sala = mesma reunião")) + "</div>" +
         '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-2px 0 10px"><button id="g-av-copiar" class="btn sm" type="button">📋 Copiar código da sala</button><span class="muted" style="font-size:12px">mande pro colega — ele cola no mesmo campo e entra com você</span></div>' +
         '<div class="row">' +
-        campo("Cor do uniforme", '<input id="g-av-c1" type="color" value="' + (av.c1 || "#2e6f9e") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
+        campo("Você é", sel("g-av-sexo", opts([["h", "👷 Homem"], ["m", "👷‍♀️ Mulher"]], av.sexo || "h"))) +
+        campo("Telefone (aparece na camisa)", inp("g-av-tel", av.tel || empTel || "", "(00) 00000-0000")) + "</div>" +
+        (empLogo ? '<p class="muted" style="font-size:12px;margin:-4px 0 8px">👕 O <b>logo da sua empresa</b> + nome + telefone vão na camisa do seu avatar, pra todos te identificarem na reunião.</p>' : "") +
+        '<div class="row">' +
+        campo("Cor do uniforme", '<input id="g-av-c1" type="color" value="' + (av.c1 || "#222b34") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
         campo("Cor do capacete", '<input id="g-av-c2" type="color" value="' + (av.c2 || "#f59e0b") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
         campo("Altura", sel("g-av-esc", opts([["normal", "Normal"], ["alto", "Alto"], ["baixo", "Baixo"]], av.esc || "normal"))) + "</div>" +
         '<p class="muted" style="font-size:12px;margin:6px 0 0">💡 Use o modo <b>✈️ Voo</b> (WASD + mouse) pra andar pelo modelo. Precisa de internet; a sala fecha sozinha quando todos saem.</p>';
       UI.modal("👥 Reunião no modelo", corpo, [
         { texto: "🚀 Entrar na reunião", classe: "primary", onClick: function () {
-          var cfg = { nome: (UI.el("g-av-nome") || {}).value || "", sala: ((UI.el("g-av-sala") || {}).value || "").trim(), c1: (UI.el("g-av-c1") || {}).value, c2: (UI.el("g-av-c2") || {}).value, esc: (UI.el("g-av-esc") || {}).value };
+          var cfg = { nome: (UI.el("g-av-nome") || {}).value || "", sala: ((UI.el("g-av-sala") || {}).value || "").trim(), c1: (UI.el("g-av-c1") || {}).value, c2: (UI.el("g-av-c2") || {}).value, esc: (UI.el("g-av-esc") || {}).value, sexo: (UI.el("g-av-sexo") || {}).value || "h", tel: ((UI.el("g-av-tel") || {}).value || "").trim(), logo: self2._avLogoSmall || "" };
           if (cfg.nome.trim().length < 2) { UI.toast("Diga seu nome no avatar.", "erro"); return; }
           if (!cfg.sala) { UI.toast("Dê um nome pra sala.", "erro"); return; }
-          try { localStorage.setItem("orcapro:bim:avatar", JSON.stringify(cfg)); } catch (e) {}
+          try { var salvo = {}; for (var k in cfg) if (k !== "logo") salvo[k] = cfg[k]; localStorage.setItem("orcapro:bim:avatar", JSON.stringify(salvo)); } catch (e) {}
           if (BIM.reuniao.entrar(cfg)) { UI.fecharModal(); UI.toast("👥 Você entrou na sala \"" + cfg.sala + "\" — quem entrar nela te vê no modelo.", "ok"); }
           else UI.toast("Não consegui conectar na sala (sem internet?). O modelo segue normal.", "erro");
         } },
@@ -2021,6 +2030,29 @@
       } catch (_) { UI.toast("Não deu pra abrir a impressão.", "erro"); }
     },
     // ☁️ Compartilhar na nuvem: sobe os IFC carregados pro VPS (gated por licença) e gera
+    // logo da empresa reduzido e CAPADO (<20KB) p/ a camisa do avatar. O relay corta em
+    // MAX_LOGO(24KB)/MAX_BODY(40KB): um PNG denso de 96px poderia ser truncado (base64 quebrado →
+    // logo some) ou derrubar o POST de identidade (avatar vira "Visitante"). Reencoda p/ JPEG e, se
+    // ainda passar, descarta o logo — nome/tel/cores SEMPRE seguem (gate v1.1.93). cb(dataURL|"").
+    _avatarLogoSmall: function (cb) {
+      var empLogo = (typeof Empresa !== "undefined" && Empresa.logo) ? (Empresa.logo() || "") : "";
+      if (!empLogo) { cb(""); return; }
+      try {
+        var im = new Image();
+        im.onload = function () {
+          try {
+            var mx = 96, r = im.width / (im.height || 1), cv = document.createElement("canvas");
+            cv.width = Math.round(r >= 1 ? mx : mx * r); cv.height = Math.round(r >= 1 ? mx / r : mx);
+            var cx = cv.getContext("2d"); cx.fillStyle = "#ffffff"; cx.fillRect(0, 0, cv.width, cv.height); cx.drawImage(im, 0, 0, cv.width, cv.height);
+            var d = cv.toDataURL("image/png");
+            if (d.length > 20000) { for (var q = 0.85; q >= 0.4 && d.length > 20000; q -= 0.15) d = cv.toDataURL("image/jpeg", q); }
+            cb(d.length > 20000 ? "" : d);
+          } catch (e) { cb(""); }
+        };
+        im.onerror = function () { cb(""); };
+        im.src = empLogo;
+      } catch (e) { cb(""); }
+    },
     // um QR pro app público /rvapp/#rv?t=<token> — QUALQUER celular, em qualquer lugar, abre.
     // Honesto: o link expira em 72h e só quem tem ele acessa.
     _compartilharNuvemRV: function () {
@@ -2059,15 +2091,17 @@
           .then(function (res) {
             if (!res.ok || !res.j.token) throw new Error(res.j.erro || "falha ao criar o link");
             if (ov.parentNode) ov.remove();
-            self._modalNuvemRV(base + "/rvapp/#rv?t=" + res.j.token, res.j.expira);
+            self._modalNuvemRV(base + "/rvapp/#rv?t=" + res.j.token, res.j.expira, res.j.token);
           }).catch(function (e) { if (ov.parentNode) ov.remove(); UI.toast("Não deu pra criar o link: " + (e && e.message || e), "erro"); });
       }
       subir(0);
     },
-    _modalNuvemRV: function (url, expira) {
+    _modalNuvemRV: function (url, expira, token) {
       var self = this;
       var svg = (typeof QR !== "undefined") ? QR.svg(url, { tamanhoPx: 220, correcao: "M" }) : "";
       var dias = expira ? Math.max(1, Math.round((expira - Date.now()) / 86400000)) : 3;
+      // sala da reunião derivada do token (mesma fórmula do visor da nuvem): quem abre o link cai aqui
+      var salaLink = token ? ("nuvem-" + String(token).slice(0, 18)) : "";
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
@@ -2079,6 +2113,7 @@
         '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> (não precisa estar na mesma rede) — o modelo abre direto na RA/RV:' +
         '<ul style="margin:6px 0;padding-left:18px"><li><b>Android</b>: RA no ambiente (fixe no chão e trave) + escolha a disciplina.</li><li><b>iPhone/iPad</b>: Caminhar no projeto.</li></ul></div>' +
         '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:12px">⏳ O link vale <b>' + dias + ' dia(s)</b> e só quem tem ele acessa. Depois disso o modelo é apagado do servidor.</div>' +
+        (salaLink ? '<button data-rv="entrar" style="width:100%;margin-bottom:8px;padding:10px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-weight:700;font-size:13px;cursor:pointer">👥 Entrar você também na reunião deste link</button>' : '') +
         '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">🖨 Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">📋 Copiar link</button></div>' +
         '</div>';
       document.body.appendChild(ov);
@@ -2088,6 +2123,19 @@
         if (k === "fechar") ov.remove();
         else if (k === "copiar") { try { navigator.clipboard.writeText(url); UI.toast("Link copiado.", "ok"); } catch (_) { UI.toast("Copie o link mostrado.", "info"); } }
         else if (k === "imprimir") self._imprimirCartaoRV(url, svg);
+        else if (k === "entrar") {
+          if (typeof BIM === "undefined" || !BIM.reuniao) { UI.toast("Abra o modelo no visualizador primeiro.", "erro"); return; }
+          if (BIM.reuniao.ativa) { UI.toast("Você já está na reunião deste link.", "ok"); ov.remove(); return; }
+          var av = {}; try { av = JSON.parse(localStorage.getItem("orcapro:bim:avatar") || "{}"); } catch (e2) {}
+          var usuario = (typeof Auth !== "undefined" && Auth.usuario) ? (Auth.usuario() || {}) : {};
+          var empTel = (typeof Empresa !== "undefined" && Empresa.dados) ? String((Empresa.dados() || {}).contato || "") : "";
+          self._avatarLogoSmall(function (logo) {
+            var cfg = { sala: salaLink, nome: av.nome || usuario.nome || usuario.empresa || "Eng.", sexo: av.sexo || "h", tel: av.tel || empTel || "", c1: av.c1 || "#222b34", c2: av.c2 || "#f59e0b", esc: av.esc || "normal", logo: logo || "" };
+            var ok = false; try { ok = BIM.reuniao.entrar(cfg); } catch (e3) {}
+            if (ok) { UI.toast("👥 Você entrou na reunião deste link — quem abrir o QR te vê no modelo.", "ok"); ov.remove(); }
+            else UI.toast("Não consegui conectar na reunião (sem internet?).", "erro");
+          });
+        }
       });
     },
     // 📕 Quantitativo ilustrado — caderno impresso: foto de cada família, descrição,
@@ -2225,6 +2273,7 @@
             onModelos: function (lista) { self._bimRenderModelos(lista); },
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = n > 0 ? "👥 Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "👥 Na sala…" : "👥 Reunião"); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
+            onReuniaoCheia: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("👥 Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair.", "erro"); },
             onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); },
             onPick: function (info) {
               var box = document.getElementById("bim-info"); if (!box) return;
