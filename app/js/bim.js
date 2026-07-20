@@ -3958,7 +3958,13 @@ function montar(host, opts) {
   S._abrirBytes = function (ab, nome, disc) { enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
   // modelos IFC atuais com bytes guardados (p/ subir pra nuvem) — sintéticos/editor ficam de fora
   S._bytesModelos = function () { return S.modelos.filter(function (m) { return m._bytes && m._bytes.length; }).map(function (m) { return { nome: m.nome, disc: m.disciplina || '', bytes: m._bytes }; }); };
-  function carregarExemplo() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc'); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">🗂️</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
+  function carregarExemplo() {
+    // v1.1.97 — exemplo = modelo REAL de obra (Murumbir, RA Engenharia) da nuvem; atualizável sem
+    // release e sem inchar o pacote. Offline/sem nuvem cai no exemplo embutido (bim/samples/exemplo.ifc).
+    var CLOUD = 'https://orcapro.raengenhariaespecial.com.br/samples/murumbir-demolicao.ifc';
+    function embutido() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc'); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">🗂️</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
+    fetch(CLOUD).then(function (r) { if (!r.ok) throw new Error('http'); return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'Murumbir — Demolição (exemplo)'); }); }).catch(embutido);
+  }
   S._abrirArquivo = abrirArquivo; S._carregarExemplo = carregarExemplo;
 }
 

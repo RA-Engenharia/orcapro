@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.96",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.96/OrcaPRO-IA-update-v1.1.96.zip",
-  "notas": "BIM: novo modo 🎨 Sistemas — a tubulação fica colorida por sistema hidrossanitário (água fria azul, água quente laranja, esgoto marrom, pluvial verde, gás amarelo, incêndio vermelho, ventilação roxo). Cores editáveis, com legenda, valendo no 3D, na Planta baixa e no RA/RV imersivo.",
+  "versao": "1.1.97",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.97/OrcaPRO-IA-update-v1.1.97.zip",
+  "notas": "O Exemplo do módulo BIM agora abre um modelo real de obra (Murumbir). A demonstração ao vivo do site mostra os modelos reais de demolição e esgoto hidrossanitário.",
   "obrigatoria": false
 }
