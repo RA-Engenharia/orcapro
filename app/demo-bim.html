@@ -4,36 +4,70 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OrçaPRO BIM — demonstração ao vivo</title>
-  <!-- MESMO viewer do app (js/bim.js): trena, planta, corte livre, corte técnico e snap.
-       Assim a demo do site NUNCA desatualiza — é o módulo real, servido da CDN (offload do WASM). -->
+  <!-- MESMO viewer do app (js/bim.js): trena, planta, corte, snap, quantitativos, RA/RV, cores por sistema.
+       Modelos REAIS (obra Murumbir, RA Engenharia) carregados da nuvem — a demo nunca desatualiza. -->
   <script type="importmap">
   { "imports": { "three": "./bim/vendor/three.module.js", "web-ifc": "./bim/vendor/web-ifc-api.js" } }
   </script>
   <style>
     html, body { margin: 0; height: 100%; background: #0b1a2b; overflow: hidden; font-family: Arial, sans-serif; }
     #host { position: absolute; inset: 0; }
-    #carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: #dbe8f5; z-index: 9; }
+    #carregando { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: #dbe8f5; z-index: 9; background: #0b1a2b; }
     #carregando .sp { width: 42px; height: 42px; border: 4px solid #24435f; border-top-color: #16a34a; border-radius: 50%; animation: sp 1s linear infinite; }
+    #carregando small { color:#9fb2c8; font-size:12px }
     @keyframes sp { to { transform: rotate(360deg); } }
     #erro { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; color: #a9c1d8; padding: 20px; z-index: 9; }
+    /* seletor de modelo real */
+    #modelos { position:absolute; left:10px; bottom:10px; z-index:8; display:flex; gap:8px; flex-wrap:wrap; }
+    #modelos button { background:rgba(15,39,64,.92); color:#dbe8f5; border:1px solid #2e6f9e; border-radius:10px; padding:8px 12px; font-size:12.5px; font-weight:700; cursor:pointer; }
+    #modelos button.on { background:#16a34a; border-color:#16a34a; color:#fff; }
+    #modelos button:disabled { opacity:.6; cursor:default }
   </style>
 </head>
 <body>
   <div id="host"></div>
-  <div id="carregando"><div class="sp"></div><div>Carregando o modelo de exemplo…</div></div>
+  <div id="carregando"><div class="sp"></div><div>Carregando o modelo da obra…</div><small id="cg-sub">Obra Murumbir · RA Engenharia</small></div>
   <div id="erro">Não foi possível iniciar o visualizador 3D neste navegador.<br>Tente o Chrome/Edge atualizado — ou abra o OrçaPRO instalado.</div>
+  <div id="modelos">
+    <button data-m="demo" class="on" title="Modelo de demolição da obra Murumbir">🏗 Murumbir — Demolição</button>
+    <button data-m="esg" title="Modelo hidrossanitário (esgoto) da obra Murumbir — 38 MB, pode demorar alguns segundos">🚿 Murumbir — Esgoto (hidrossanitário)</button>
+  </div>
   <script type="module">
     import './js/bim.js';
-    var carreg = document.getElementById('carregando'), erro = document.getElementById('erro');
+    var carreg = document.getElementById('carregando'), erro = document.getElementById('erro'), sub = document.getElementById('cg-sub');
+    var CLOUD = 'https://orcapro.raengenhariaespecial.com.br/samples/';
+    var MOD = { demo: { url: CLOUD + 'murumbir-demolicao.ifc', nome: 'Murumbir — Demolição' },
+                esg:  { url: CLOUD + 'murumbir-esgoto.ifc',     nome: 'Murumbir — Esgoto (hidrossanitário)' } };
+    var atual = null, carregando = false;
+
+    function mostrarSpin(txt) { carreg.style.display = 'flex'; if (sub) sub.textContent = txt || 'Obra Murumbir · RA Engenharia'; }
+    function esconderSpin() { carreg.style.display = 'none'; }
+
+    function carregar(k) {
+      if (carregando || atual === k) return;
+      carregando = true; atual = k;
+      document.querySelectorAll('#modelos button').forEach(function (b) { b.classList.toggle('on', b.getAttribute('data-m') === k); b.disabled = true; });
+      mostrarSpin(k === 'esg' ? 'Modelo de esgoto (38 MB) — carregando…' : 'Obra Murumbir · RA Engenharia');
+      try { BIM.limpar && BIM.limpar(); } catch (e) {}
+      fetch(MOD[k].url).then(function (r) { if (!r.ok) throw new Error('http ' + r.status); return r.arrayBuffer(); })
+        .then(function (ab) { BIM.abrirBytes(ab, MOD[k].nome); })
+        .catch(function () {
+          // sem internet/nuvem: cai no exemplo embutido, pra demo nunca ficar em branco
+          try { BIM.carregarExemplo(); } catch (e2) { esconderSpin(); erro.style.display = 'flex'; }
+        })
+        .then(function () { document.querySelectorAll('#modelos button').forEach(function (b) { b.disabled = false; }); carregando = false; });
+    }
+
     try {
-      BIM.montar(document.getElementById('host'), {
-        onLoaded: function () { carreg.style.display = 'none'; }
+      BIM.montar(document.getElementById('host'), { onLoaded: function () { esconderSpin(); } });
+      carregar('demo');
+      document.getElementById('modelos').addEventListener('click', function (e) {
+        var b = e.target.closest('button[data-m]'); if (b) carregar(b.getAttribute('data-m'));
       });
-      BIM.carregarExemplo();
-      // fallback: se em 25s nada carregou, mostra a dica (sem travar)
-      setTimeout(function () { if (carreg.style.display !== 'none') { carreg.style.display = 'none'; } }, 25000);
+      // fallback: se em 30s nada carregou, tira o overlay (sem travar)
+      setTimeout(function () { esconderSpin(); }, 30000);
     } catch (e) {
-      carreg.style.display = 'none'; erro.style.display = 'flex';
+      esconderSpin(); erro.style.display = 'flex';
     }
   </script>
 </body>
