@@ -25,7 +25,7 @@
     // Servidor de licença/ativação/atualização (a loja no VPS). Trava de máquina + auto-update.
     licencaServer: "https://187-127-40-14.sslip.io",
 
-    versao: "1.1.95",
+    versao: "1.1.96",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)

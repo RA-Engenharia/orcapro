@@ -122,6 +122,7 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">' + ico('pav') + 'Pav.</button>' +
     '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">' + ico('ver') + 'Ver</button>' +
     '<button class="btn sm" data-b="xr" title="Realidade Mista/Virtual: andar dentro do modelo em escala real (1:1) ou escolhida, medir, ver por disciplina e gerar QR para o celular">' + ico('xr') + 'RA/RV</button>' +
+    '<button class="btn sm" data-b="sistema" title="Colorir a tubulação por sistema hidrossanitário (água fria, água quente, esgoto, pluvial, gás, incêndio, ventilação) com cores editáveis — vale na Planta baixa e no RA/RV">🎨 Sistemas</button>' +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
     '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
     '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
@@ -179,6 +180,72 @@ function montar(host, opts) {
     aplicarTema();
     if (S && S._hint) S._hint('🎨 Tema: ' + TEMAS[temaId].nome);
   }
+
+  // v1.1.96 — COLORIR POR SISTEMA HIDROSSANITÁRIO (padrão brasileiro, editável pelo usuário).
+  // Vale no 3D, na Planta baixa e no imersivo RA/RV de uma vez só, porque o hook está no
+  // matBase() — a "aparência-base" única de toda malha; quando o modo está ligado, matBase
+  // devolve o material da COR DO SISTEMA no lugar do material original do IFC.
+  var SIS_ORDEM = ['agua_fria', 'agua_quente', 'esgoto', 'pluvial', 'gas', 'incendio', 'ventilacao', 'outros'];
+  var SIS_PADRAO = {
+    agua_fria:   { nome: 'Água fria',        cor: '#2563eb' },
+    agua_quente: { nome: 'Água quente',      cor: '#f97316' },
+    esgoto:      { nome: 'Esgoto / sanitário', cor: '#7c4a12' },
+    pluvial:     { nome: 'Águas pluviais',   cor: '#16a34a' },
+    gas:         { nome: 'Gás',              cor: '#eab308' },
+    incendio:    { nome: 'Incêndio (PPCI)',  cor: '#dc2626' },
+    ventilacao:  { nome: 'Ventilação',       cor: '#7c3aed' },
+    outros:      { nome: 'Outros / não classificado', cor: '#8aa0b6' }
+  };
+  var sisCores = {}; SIS_ORDEM.forEach(function (k) { sisCores[k] = SIS_PADRAO[k].cor; });
+  try { var _sc0 = JSON.parse(localStorage.getItem('orcapro:bim:sistemas') || '{}'); SIS_ORDEM.forEach(function (k) { if (_sc0[k] && /^#[0-9a-f]{6}$/i.test(_sc0[k])) sisCores[k] = _sc0[k]; }); } catch (_) {}
+  function salvarSisCores() { try { localStorage.setItem('orcapro:bim:sistemas', JSON.stringify(sisCores)); } catch (_) {} }
+  var sisColor = { on: false };
+  var sisMatCache = {};
+  // classifica um elemento por nome/família/tipo/tag num sistema hidrossanitário.
+  // Ordem = prioridade: incêndio/gás/exaustão (HVAC) primeiro; "ventilação" simples cai em
+  // esgoto (coluna de ventilação sanitária, uso dominante num app hidrossanitário); "água
+  // quente" antes de "água fria" (ambas contêm "água"); resto vira "outros".
+  function classificaSistemaTxt(s) {
+    // "hidrossanitário" é rótulo GUARDA-CHUVA (cobre água fria + esgoto + pluvial…); sem neutralizar,
+    // o "sanit" dentro dele cairia em esgoto (marrom). Tira o termo antes de classificar o resto.
+    s = String(s || '').toLowerCase().replace(/hidr[oa]ss?anit\w*/g, ' ');
+    if (/inc[eê]ndio|hidrante|sprinkler|combate a inc|\bppci\b|\bspk\b/.test(s)) return 'incendio';
+    if (/\bg[aá]s\b|\bglp\b|\bgnv\b|g[aá]s natural|combust[ií]v/.test(s)) return 'gas';
+    if (/exaust|\bduto\b|\bduct\b|\bhvac\b|\bavac\b|climatiz|ar[ -]?condic/.test(s)) return 'ventilacao';
+    if (/pluvial|[aá]guas? ?pluvia|rainwater|\bstorm\b|calha/.test(s)) return 'pluvial';
+    if (/esgoto|\besg\b|sanit[aá]ri|sewage|\bwaste\b|\bfoul\b|ventila[çc]/.test(s)) return 'esgoto';
+    if (/[aá]gua ?quente|\baq\b|hot ?water|domestichotwater|\bquente\b/.test(s)) return 'agua_quente';
+    if (/[aá]gua ?fria|\baf\b|cold ?water|domesticcoldwater|[aá]gua ?pot[aá]vel|[aá]gua|\bwater\b/.test(s)) return 'agua_fria';
+    return 'outros';
+  }
+  function sisTxtEl(e) { return (e.nome || '') + ' ' + (e.familia || '') + ' ' + (e.tipo || '') + ' ' + (e.tag || ''); }
+  // material da cor do sistema, respeitando a transparência do modelo; "outros" fica cinza
+  // translúcido pra a tubulação colorida SALTAR na vista (destaque estilo MEP).
+  function sisMat(chave, alpha) {
+    var cor = sisCores[chave] || sisCores.outros;
+    var op = (chave === 'outros' ? 0.30 : 1) * (alpha == null ? 1 : Math.max(0.05, Math.min(1, alpha)));
+    op = Math.round(op / 0.05) * 0.05; // quantiza a opacidade: o slider de transparência não cria um material novo por passo (limita o cache a ~8 sistemas × ~20 níveis)
+    var transp = op < 0.985;
+    var key = chave + '@' + op.toFixed(2) + '@' + cor;
+    if (!sisMatCache[key]) sisMatCache[key] = new THREE.MeshStandardMaterial({ color: new THREE.Color(cor), roughness: 0.55, metalness: 0.05, transparent: transp, opacity: op, depthWrite: !transp, side: THREE.DoubleSide });
+    return sisMatCache[key];
+  }
+  function limparSisMatCache() { Object.keys(sisMatCache).forEach(function (k) { try { sisMatCache[k].dispose(); } catch (_) {} }); sisMatCache = {}; }
+  // roda a classificação uma vez e grava no elemento (e.sistema) e no mesh (userData._sisK,
+  // lido rápido pelo matBase a cada repintura).
+  function construirSisIdx() {
+    (S.elementos || []).forEach(function (e) {
+      var k = classificaSistemaTxt(sisTxtEl(e));
+      e.sistema = k;
+      var m = S.meshPorUid[e.uid]; if (m) m.userData._sisK = k;
+    });
+  }
+  function sistemasPresentes() {
+    var cnt = {};
+    (S.elementos || []).forEach(function (e) { var k = e.sistema || classificaSistemaTxt(sisTxtEl(e)); cnt[k] = (cnt[k] || 0) + 1; });
+    return cnt;
+  }
+
   // aplica DEPOIS que S e todos os painéis nasceram (este bloco roda antes da criação do S)
   setTimeout(function () { if (S && S.alive) { S._aplicarTema = aplicarTema; aplicarTema(); } }, 0);
 
@@ -423,6 +490,7 @@ function montar(host, opts) {
     else if (k === 'pav') togglePavPanel();
     else if (k === 'vis') toggleVisPanel();
     else if (k === 'xr') toggleXRPanel();
+    else if (k === 'sistema') { if (sisColor.on && sisPanel.style.display === 'none') { pintarSisPanel(); sisPanel.style.display = 'flex'; fecharPaineis(sisPanel); } else setSisColor(!sisColor.on); } // modo ligado + legenda fechada por outro painel → reabre a legenda (não desliga as cores)
     else if (k === 'foto') tirarFoto();
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
     else if (k === 'fit') { if (planta.on) enquadrarTopo(); else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5); else enquadrar(); } // na planta re-centra a vista de topo (não sai); no 3D enquadra suave (cinematográfico)
@@ -859,7 +927,7 @@ function montar(host, opts) {
       cortePanel.style.display = 'flex';
       cortePanel.querySelector('[data-c="alt"]').value = 620; setAlturaCorte(0.62); // ~altura de peitoril
       if (bp) { bp.style.background = corAtiva(); bp.style.color = '#fff'; }
-      if (!estiloD.on) setEstiloDesenho(true); // planta "como deve ser": entra já em modo desenho (branco + arestas)
+      if (!estiloD.on && !sisColor.on) setEstiloDesenho(true); // planta "como deve ser": entra já em modo desenho (branco + arestas). MAS se o usuário ligou "colorir por sistema", a planta sai COLORIDA (é o pedido: cores do sistema na planta baixa)
       S._hint('📐 Planta baixa. Ajuste a altura do corte e gere a 📄 planta técnica com cotas no painel. Toque em 📐 de novo pra sair.');
     } else {
       ctecCancelar(); // desenho/config do corte técnico só faz sentido NA planta (incondicional: pega a config aberta)
@@ -1004,6 +1072,81 @@ function montar(host, opts) {
     '<div style="font-size:11px;color:#9fb2c8">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
   host.appendChild(snapPanel);
   S.snapPanel = snapPanel;
+
+  // v1.1.96 — LEGENDA/PERSONALIZAÇÃO das cores por sistema hidrossanitário
+  var sisPanel = document.createElement('div');
+  sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.95);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:238px;max-height:72%;overflow:auto';
+  host.appendChild(sisPanel);
+  S.sisPanel = sisPanel;
+  function pintarSisPanel() {
+    var cnt = sistemasPresentes();
+    var linhas = SIS_ORDEM.filter(function (k) { return cnt[k]; }).map(function (k) {
+      return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
+        '<input type="color" data-sk="' + k + '" value="' + sisCores[k] + '" style="width:26px;height:22px;border:0;background:none;padding:0;cursor:pointer">' +
+        '<span style="flex:1">' + esc(SIS_PADRAO[k].nome) + '</span>' +
+        '<b style="color:#9fb2c8;font-weight:600">' + cnt[k] + '</b></label>';
+    }).join('');
+    sisPanel.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🎨 Sistemas hidrossanitários</b>' +
+      '<button class="btn sm" data-sx="fechar" style="padding:2px 8px" title="Desligar as cores por sistema">✕</button></div>' +
+      (linhas || '<div style="color:#9fb2c8;line-height:1.4">Nenhum sistema hidráulico reconhecido pelos nomes dos elementos. As cores aparecem quando o IFC tiver tubulação nomeada (água fria, esgoto, pluvial, gás, incêndio…).</div>') +
+      '<div style="display:flex;gap:6px;margin-top:2px"><button class="btn sm" data-sx="padrao" style="flex:1" title="Voltar às cores padrão">↺ Cores padrão</button></div>' +
+      '<div style="font-size:11px;color:#9fb2c8;line-height:1.4">Estas cores também valem na <b>Planta baixa</b> e no <b>RA/RV</b>. Clique numa cor pra trocar.</div>';
+  }
+  // legenda compacta (chips) para o overlay do imersivo — pintada dentro do xrHud
+  function montarLegendaChips() {
+    var cnt = sistemasPresentes();
+    var chips = SIS_ORDEM.filter(function (k) { return cnt[k]; }).map(function (k) {
+      return '<span style="display:inline-flex;align-items:center;gap:4px;background:rgba(11,26,43,.72);border-radius:12px;padding:3px 8px;margin:2px"><span style="width:11px;height:11px;border-radius:3px;background:' + sisCores[k] + '"></span>' + esc(SIS_PADRAO[k].nome) + '</span>';
+    }).join('');
+    return chips ? '<div data-h="sisleg" style="position:absolute;left:8px;top:8px;max-width:62%;pointer-events:none;display:flex;flex-wrap:wrap;font-size:11px;color:#eaf2fb">' + chips + '</div>' : '';
+  }
+  S._montarLegendaChips = function () { return sisColor.on ? montarLegendaChips() : ''; };
+  function repintarSisBase() { S.modelos.forEach(function (mo) { refreshModelo(mo); }); if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._sisImersivoSync) S._sisImersivoSync(); }
+  function setSisColor(on) {
+    on = !!on;
+    if (on && S._estiloOn && S._estiloOn() && S._setEstiloDesenho) S._setEstiloDesenho(false); // exclusivo do estilo-desenho P&B do corte técnico
+    sisColor.on = on;
+    if (on) construirSisIdx();
+    S.modelos.forEach(function (mo) { refreshModelo(mo); }); // repinta a base respeitando 4D/seleção/clash
+    if (S.selected) S.prevMat = matBase(S.selected); // seleção fica com selMat: ressincroniza o material a restaurar (senão desselecionar volta a cor do estado anterior). matBase já lê o sisColor.on novo
+    if (S._reaplicarEstilo) S._reaplicarEstilo();
+    var b = bar.querySelector('[data-b="sistema"]');
+    if (b) { b.classList.toggle('on', on); b.style.background = on ? corAtiva() : ''; b.style.color = on ? '#fff' : ''; }
+    pintarSisPanel();
+    // no imersivo NÃO abre o painel lateral (tampa a vista) — a legenda vai como chips no HUD
+    if (!(S.xr && S.xr.on)) { sisPanel.style.display = on ? 'flex' : 'none'; if (on) fecharPaineis(sisPanel); }
+    if (S._sisImersivoSync) S._sisImersivoSync();
+    if (S._hint) S._hint(on ? '🎨 Colorido por sistema hidrossanitário. Toque nas cores da legenda pra personalizar.' : 'Cores originais do modelo restauradas.');
+  }
+  S._setSistema = setSisColor;
+  S._sisColorOn = function () { return !!sisColor.on; };
+  S._sisClassificar = function (texto) { return classificaSistemaTxt(texto); };
+  // modelo que ENTRAR/mudar com o modo já ligado (IFC federado, edição) pega a cor por sistema —
+  // simétrico ao S._reaplicarEstilo; chamado pelo notifyModelos após qualquer mudança de modelos.
+  S._reaplicarSistema = function () { if (!sisColor.on) return; construirSisIdx(); S.modelos.forEach(function (mo) { refreshModelo(mo); }); };
+  S._sisInfo = function () { // E2E/diagnóstico: estado + classificação + cor efetiva do material por sistema
+    var pres = sistemasPresentes(), cores = {}, amostra = {};
+    SIS_ORDEM.forEach(function (k) { cores[k] = sisCores[k]; });
+    (S.elementos || []).forEach(function (e) {
+      var k = e.sistema || classificaSistemaTxt(sisTxtEl(e));
+      if (amostra[k]) return;
+      var m = S.meshPorUid[e.uid];
+      amostra[k] = { uid: e.uid, nome: e.nome, matCor: (m && m.material && m.material.color) ? '#' + m.material.color.getHexString() : null };
+    });
+    return { on: !!sisColor.on, presentes: pres, cores: cores, amostra: amostra };
+  };
+  sisPanel.addEventListener('input', function (e) {
+    var ci = e.target.closest && e.target.closest('input[data-sk]'); if (!ci) return;
+    var k = ci.getAttribute('data-sk'); if (!/^#[0-9a-f]{6}$/i.test(ci.value)) return;
+    sisCores[k] = ci.value; salvarSisCores(); limparSisMatCache();
+    if (sisColor.on) repintarSisBase();
+  });
+  sisPanel.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-sx]'); if (!b) return; var k = b.getAttribute('data-sx');
+    if (k === 'fechar') setSisColor(false);
+    else if (k === 'padrao') { SIS_ORDEM.forEach(function (kk) { sisCores[kk] = SIS_PADRAO[kk].cor; }); salvarSisCores(); limparSisMatCache(); pintarSisPanel(); if (sisColor.on) repintarSisBase(); }
+  });
   function pintarSnapPanel() {
     var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i };
     ['on', 'v', 'm', 'a', 'i'].forEach(function (kk) {
@@ -1919,7 +2062,7 @@ function montar(host, opts) {
   function fecharPaineis(exceto) {
     // abrir um painel flutuante fecha o editor (senão o painel nasce ATRÁS dele, invisível)
     if (exceto && edit && edit.on && typeof setEdit === 'function') setEdit(false);
-    [snapPanel, pavPanel, visPanel, xrPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
+    [snapPanel, pavPanel, visPanel, xrPanel, sisPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
     pintarSnapPanel();
     var bp4 = bar.querySelector('[data-b="pav"]'); if (bp4 && pavPanel.style.display !== 'flex') bp4.style.outline = '';
     var bv2 = bar.querySelector('[data-b="vis"]'); if (bv2 && visPanel.style.display !== 'flex') bv2.style.outline = '';
@@ -2272,6 +2415,7 @@ function montar(host, opts) {
       // o estado REAL (listener ativo) — nunca mostra "on" sem sensor ligado (gate v1.1.93).
       (comReticulo ? '' : '<button data-har="passos" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + ((xr._pass && xr._pass.on) ? '#0d9488' : 'rgba(90,110,130,.7)') + '">🚶 Passos: ' + ((xr._pass && xr._pass.on) ? 'on' : 'off') + '</button>') +
       '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
+      '<button data-har="sistema" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + (sisColor.on ? corAtiva() : '#334a63') + '">🎨 Sistemas</button>' +
       '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">⚙️ Ajustes</button>' +
       '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
     xrHud.innerHTML =
@@ -2279,6 +2423,7 @@ function montar(host, opts) {
       '<div data-h="knob" style="position:absolute;left:31px;top:31px;width:46px;height:46px;border-radius:50%;background:rgba(127,224,163,.85)"></div></div>') +
       (comReticulo ? '<div style="position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #7fe0a3;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>' : '') +
       barra +
+      (S._montarLegendaChips ? S._montarLegendaChips() : '') + // legenda de cores por sistema (só quando o modo está ligado)
       '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#dbe8f5;font-size:12px;padding:5px 12px;border-radius:20px;max-width:88%;text-align:center"></div></div>';
     xrHud.style.display = 'block';
     if (!comReticulo) ligarJoystick();
@@ -2294,8 +2439,17 @@ function montar(host, opts) {
     }
     else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
     else if (k === 'ajustes') { var aberto = xrPanel.style.display === 'flex'; if (aberto) { xrPanel.style.display = 'none'; } else { pintarXRPanel(); xrPanel.style.display = 'flex'; if (S._ajustarTop) S._ajustarTop(); } }
+    else if (k === 'sistema') { if (S._setSistema) S._setSistema(!(S._sisColorOn && S._sisColorOn())); } // recolore por sistema; _sisImersivoSync remonta o HUD (botão + legenda)
     else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
   });
+  // atualiza SÓ o botão 🎨 + a legenda de chips do imersivo quando o modo por-sistema muda
+  // (update cirúrgico, sem remontar o HUD inteiro — não reseta joystick nem o estado do 📏 Medir)
+  S._sisImersivoSync = function () {
+    if (!(xr.on && xrHud.style.display !== 'none')) return;
+    var b = xrHud.querySelector('[data-har="sistema"]'); if (b) b.style.background = S._sisColorOn && S._sisColorOn() ? corAtiva() : '#334a63';
+    var leg = xrHud.querySelector('[data-h="sisleg"]'); if (leg && leg.parentNode) leg.parentNode.removeChild(leg);
+    if (S._sisColorOn && S._sisColorOn() && S._montarLegendaChips) { var html = S._montarLegendaChips(); if (html) xrHud.insertAdjacentHTML('beforeend', html); }
+  };
   function xrDica(t) { var d = xrHud.querySelector('[data-h="dica"]'); if (d) d.textContent = t || ''; }
   // espelha no botão do HUD o estado REAL dos passos (listener ativo) — evita "on" mentiroso quando a
   // permissão de Movimento foi negada/está pendente no iOS (gate v1.1.93).
@@ -3611,11 +3765,14 @@ function montar(host, opts) {
   }
   function modeloDe(mid) { for (var i = 0; i < S.modelos.length; i++) if (S.modelos[i].mid === mid) return S.modelos[i]; return null; }
   function publicos() { return S.modelos.map(function (mo) { return { mid: mo.mid, nome: mo.nome, disciplina: mo.disciplina, alpha: mo.alpha, visivel: mo.visivel, n: mo.elementos.length }; }); }
-  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho pega modelo que entrar depois
+  function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._reaplicarSistema) S._reaplicarSistema(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho E cor-por-sistema pegam modelo que entrar depois
   S._publicos = publicos;
 
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
   function matBase(m) {
+    // v1.1.96 — modo "colorir por sistema" ligado: a aparência-base vira a COR DO SISTEMA
+    // hidrossanitário (isto faz a cor valer no 3D, na Planta e no imersivo de uma vez).
+    if (sisColor.on) { var _moS = modeloDe(m.userData.mid); return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
     var mo = modeloDe(m.userData.mid);
     var orig = m.userData.matOrig || m.material;
     if (!mo || mo.alpha >= 0.99) return orig;
@@ -3634,6 +3791,7 @@ function montar(host, opts) {
       if (m === S.selected) return;
       if (S._clashSel && S._clashSel.indexOf(m) !== -1) return;
       if (m.material === S.matAndamento) return; // estado 4D "em andamento" mantém o âmbar
+      if (xray.on && xray.ghosted.indexOf(m) !== -1) return; // raio-X: preserva o fantasma (senão trocar transparência/cor-por-sistema desfaz o isolamento)
       m.material = matBase(m);
     });
   }
@@ -3688,7 +3846,7 @@ function montar(host, opts) {
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender(); // isolamento (🏢 OU 👁) pode ter ficado sem alvo
     if (mid === 'edit' && S._editReset) S._editReset(); // apagar "Criados no OrçaPRO" = zerar edições (senão replay ressuscita + pins órfãos)
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
-    if (!S.modelos.length) over.style.display = 'flex';
+    if (!S.modelos.length) { over.style.display = 'flex'; limparSisMatCache(); } // sem modelos: nenhuma malha referencia os materiais de sistema → pode liberar a GPU (com modelos vivos, NÃO limpar: eles ainda apontam pro cache global)
   }
   function limparTudo() {
     if (S.planta && S.planta.on && S._setPlanta) S._setPlanta(false);
@@ -4398,6 +4556,11 @@ window.BIM = {
     return S._gerarPlantaTec({ y: y, escala: o.escala || 50, cotas: o.cotas !== false, prof: o.prof || 3, rotAlt: o.rotAlt });
   },
   estiloDesenho: function (on) { if (S && S._setEstiloDesenho) S._setEstiloDesenho(on == null ? !(S._estiloOn && S._estiloOn()) : !!on); },
+  // v1.1.96 — colorir por sistema hidrossanitário (3D + planta + RA/RV); sistemaInfo p/ E2E
+  sistema: function (on) { if (S && S._setSistema) S._setSistema(on == null ? !(S._sisColorOn && S._sisColorOn()) : !!on); },
+  sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
+  sistemaInfo: function () { return (S && S._sisInfo) ? S._sisInfo() : null; },
+  sistemaClassificar: function (texto) { return (S && S._sisClassificar) ? S._sisClassificar(texto) : null; }, // classifica um nome/descrição num sistema (pura; p/ testes e plugins)
   // v1.1.82 — propriedades completas do elemento (todos os psets, instância+família) e thumbnail
   propriedades: function (uid) { return (S && S._propsCompletas) ? S._propsCompletas(uid) : []; },
   thumbFamilia: function (uid, maxPx) { return (S && S._thumbFamilia) ? S._thumbFamilia(uid, maxPx) : null; },
