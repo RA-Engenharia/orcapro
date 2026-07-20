@@ -2118,6 +2118,14 @@ function montar(host, opts) {
       var cf = (xr.cortefrac == null ? 1000 : xr.cortefrac);
       html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>✂️ Teto de visão</span><span data-x="cortev" style="color:#7fe0a3">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
         '<input type="range" data-x="corte" min="0" max="1000" value="' + cf + '" style="width:100%;accent-color:#22c55e">';
+      // passos: sensibilidade (só caminhar/câmera — no AR a locomoção é do WebXR). Tablet precisa de mais
+      // sensibilidade (movimento gentil); o usuário ajusta se não anda ou anda demais.
+      if (xr.mode !== 'ar' && xr.mode !== 'vr') {
+        var ps = Math.round(_passSens() * 100); // valor REAL (localStorage c/ fallback), não o default fixo — bate com o aplicado
+        html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>🚶 Sensibilidade dos passos</span><span data-x="passv" style="color:#7fe0a3">' + (ps / 100).toFixed(1) + '×</span></div>' +
+          '<input type="range" data-x="passsens" min="40" max="300" value="' + ps + '" style="width:100%;accent-color:#0d9488">' +
+          '<div style="font-size:10.5px;color:#9fb2c8;line-height:1.25;margin-top:-2px">Ande com o aparelho na mão pra andar no projeto. Se o projeto não anda, <b>aumente</b>; se anda sozinho, <b>diminua</b>. (No tablet costuma precisar mais.)</div>';
+      }
       // medir
       html += '<button class="btn sm" data-x="medir" style="width:100%">📏 Medir na escala (toque 2 pontos)</button>';
       // disciplinas
@@ -2377,16 +2385,29 @@ function montar(host, opts) {
   //      sem SLAM nativo — é APROXIMADO (detecção de passo), rotulado como "por passos". Cada passo move
   //      pra frente ~0,68 m na escala do mundo (na 1:1 = passo real dentro do projeto). Toggle no HUD. ----
   var _passLen = 0.68;
+  function _passSens() { if (xr.passSens == null) { var v = 1.3; try { var s = parseFloat(localStorage.getItem('orcapro:bim:passSens')); if (s > 0) v = s; } catch (_) {} xr.passSens = Math.max(0.4, Math.min(3, v)); } return xr.passSens; }
+  // detector de passo ADAPTATIVO (pura, testável): o limiar escala com o VIGOR do movimento (dev = média
+  // do |dinâmico|) e tem piso BAIXO — o antigo `din>2.6` fixo não disparava com TABLET (movimento mais
+  // gentil que o celular na mão). Pico com histerese (conta 1 por passo) + refratário. Retorna true no passo.
+  function _passoDetecta(P, mag, now, sens) {
+    P.ema = P.ema * 0.9 + mag * 0.1;                          // baseline SEMPRE EMA (P semeado c/ ema≈9.81 → sem transiente que engula os 1ºs passos)
+    var din = mag - P.ema;                                    // parte dinâmica do passo
+    P.dev = P.dev * 0.92 + Math.abs(din) * 0.08;              // vigor do movimento
+    var thr = Math.max(0.55, P.dev * 1.4) / (sens || 1);      // limiar adaptativo (÷ sensibilidade do usuário)
+    // dev>0.35: exige movimento REAL de translação — tremor/agito do aparelho parado não vira passo fantasma
+    if (!P.up && din > thr && P.dev > 0.35 && (now - P.last) > 300) { P.up = true; P.last = now; P.n++; return true; }
+    if (P.up && din < thr * 0.5) P.up = false;                // rearma ao descer (1 passo por pico)
+    return false;
+  }
   function ligarPassos() {
     if (xr._passH) return;
-    xr._pass = { last: 0, ema: 0, on: false, n: 0 }; // 'on' só vira true quando o listener EXISTIR (start)
+    xr._pass = { last: 0, ema: 9.81, dev: 0.2, up: false, on: false, n: 0 }; // baseline semeado (gravidade); 'on' só vira true quando o listener EXISTIR (start)
     function handler(ev) {
       if (!xr.on || !xr._pass || !xr._pass.on) return;
       var a = ev.accelerationIncludingGravity || ev.acceleration; if (!a) return;
       var mag = Math.sqrt((a.x || 0) * (a.x || 0) + (a.y || 0) * (a.y || 0) + (a.z || 0) * (a.z || 0));
-      var P = xr._pass; P.ema = P.ema ? P.ema * 0.88 + mag * 0.12 : mag;
-      var din = mag - P.ema, now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-      if (din > 2.6 && (now - P.last) > 340) { P.last = now; P.n++; xr._stepMove = (xr._stepMove || 0) + _passLen; if (S._xrPassosHud) S._xrPassosHud(P.n); } // pico → 1 passo
+      var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (_passoDetecta(xr._pass, mag, now, _passSens())) { xr._stepMove = (xr._stepMove || 0) + _passLen; if (S._xrPassosHud) S._xrPassosHud(xr._pass.n); } // pico → 1 passo pra frente
     }
     var start = function () { window.addEventListener('devicemotion', handler); xr._passH = handler; if (xr._pass) xr._pass.on = true; _syncPassosHud(); };
     var pr = _permPasso();
@@ -2395,6 +2416,12 @@ function montar(host, opts) {
   }
   function desligarPassos() { if (xr._passH) { try { window.removeEventListener('devicemotion', xr._passH); } catch (_) {} xr._passH = null; } xr._pass = null; xr._stepMove = 0; }
   S._xrStep = function () { xr._stepMove = (xr._stepMove || 0) + _passLen; }; // hook de teste: simula 1 passo
+  S._passSensSet = function (v) { v = Math.max(0.4, Math.min(3, +v || 1)); xr.passSens = v; try { localStorage.setItem('orcapro:bim:passSens', String(v)); } catch (_) {} return v; };
+  S._xrSimPassos = function (mags) { // hook de teste: alimenta uma sequência de magnitudes e conta os passos
+    var P = { last: -9999, ema: 9.81, dev: 0.2, up: false, n: 0 }, i, t = 0, passos = 0;
+    for (i = 0; i < mags.length; i++) { t += 60; if (_passoDetecta(P, mags[i], t, _passSens())) passos++; }
+    return passos;
+  };
 
   // ---- passo de andar (roda todo frame via S._xrWalk) ----
   var _xrFwd = new THREE.Vector3(), _xrRight = new THREE.Vector3(), _xrUp = new THREE.Vector3(0, 1, 0);
@@ -2405,8 +2432,10 @@ function montar(host, opts) {
     if (xr.mode !== 'ar') {
       if (xr.oriOk && xr.oriQuat) { camera.quaternion.copy(xr.oriQuat); }
       else { var e = new THREE.Euler(xr.look.pitch, xr.look.yaw, 0, 'YXZ'); camera.quaternion.setFromEuler(e); }
-      // PASSOS: andou com o celular na mão → anda pra frente no projeto (independe do joystick)
-      if (xr._stepMove) { var sm = xr._stepMove; xr._stepMove = 0; camera.getWorldDirection(_xrFwd); _xrFwd.y = 0; if (_xrFwd.lengthSq() > 1e-6) { _xrFwd.normalize(); camera.position.addScaledVector(_xrFwd, sm); camera.position.y = xr._pisoY + EYE; } }
+      // PASSOS: andou com o celular na mão → anda pra frente no projeto (independe do joystick).
+      // Só zera o acumulador quando REALMENTE aplica (olhando ~reto p/ cima/baixo o fwd horizontal some →
+      // adia o passo pro próximo frame com direção válida, em vez de descartá-lo). (gate v1.1.95)
+      if (xr._stepMove) { camera.getWorldDirection(_xrFwd); _xrFwd.y = 0; if (_xrFwd.lengthSq() > 1e-6) { var sm = xr._stepMove; xr._stepMove = 0; _xrFwd.normalize(); camera.position.addScaledVector(_xrFwd, sm); camera.position.y = xr._pisoY + EYE; } }
     }
     var mv = xr.joy.x * xr.joy.x + xr.joy.z * xr.joy.z;
     if (mv < 0.0009) return;
@@ -2696,8 +2725,9 @@ function montar(host, opts) {
     else if (k === 'esc2') { var v = b.value; aplicarEscalaImersivo(v === 'fit' ? fitEscala() : (parseFloat(v) || 1)); }
   });
   xrPanel.addEventListener('input', function (e) {
-    var b = e.target.closest('[data-x]'); if (!b) return;
-    if (b.getAttribute('data-x') === 'corte') aplicarTetoVisao((+b.value) / 1000);
+    var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
+    if (k === 'corte') aplicarTetoVisao((+b.value) / 1000);
+    else if (k === 'passsens') { var v = S._passSensSet((+b.value) / 100); var lab = xrPanel.querySelector('[data-x="passv"]'); if (lab) lab.textContent = v.toFixed(1) + '×'; }
   });
 
   // ============================================================
@@ -4428,6 +4458,8 @@ window.BIM = {
   _xrCentralizar: function () { if (S && S._centralizarImersivo) S._centralizarImersivo(); }, // hook de teste
   _xrTickWalk: function () { if (S && S._xrWalk) S._xrWalk(0.016); }, // hook de teste: roda o passo do imersivo (giroscópio/andar), que o loop real chama
   _xrPasso: function () { if (S && S._xrStep) S._xrStep(); }, // hook de teste: simula 1 passo do acelerômetro
+  _xrSimPassos: function (mags) { return (S && S._xrSimPassos) ? S._xrSimPassos(mags) : 0; }, // hook de teste: conta passos numa sequência de |accel|
+  _passSens: function (v) { return (S && S._passSensSet) ? S._passSensSet(v) : 1; }, // sensibilidade dos passos (persistida)
   _chaoSet: function () { if (!S || !S.scene) return null; var c = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) c = o; }); return c ? { x: c.scale.x, y: c.position.y } : null; }, // sombra de contato
   _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste

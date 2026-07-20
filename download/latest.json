@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.94",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.94/OrcaPRO-IA-update-v1.1.94.zip",
-  "notas": "A reunião RA/RV agora tem ÁUDIO por voz: quando você fala, os colegas ouvem; quando cala, seu som pausa sozinho — e um 🎤 aparece sobre quem está falando. Até 20 pessoas por link/QR. Corrigido o tom da voz no iPhone/Mac e a estabilidade do áudio.",
+  "versao": "1.1.95",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.95/OrcaPRO-IA-update-v1.1.95.zip",
+  "notas": "RA/RV: agora dá pra ANDAR no tablet Android — a detecção de passo ficou adaptativa (pega o movimento mais gentil do tablet) e tem um controle de sensibilidade no painel ⚙️ Ajustes. Ande com o aparelho na mão e o projeto anda junto.",
   "obrigatoria": false
 }
