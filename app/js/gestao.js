@@ -1491,10 +1491,17 @@
       if (BIM.reuniao.ativa) {
         // já na sala: oferecer COPIAR o código (é assim que a equipe se encontra) além de sair
         var salaAtual = BIM.reuniao.sala, nOnline = BIM.reuniao.participantes;
+        var audioOn = !!BIM.reuniao.audioAtiva;
         UI.modal("👥 Você está na sala",
           '<p style="margin:0 0 10px">Sala atual: <b>' + Util.esc(salaAtual) + "</b> · " + nOnline + " online</p>" +
-          '<p class="muted" style="font-size:12.5px;margin:0">Copie o código e mande pro colega (WhatsApp mesmo) — ele clica em 👥 Reunião, cola no campo <b>Sala</b> e aparece do seu lado dentro do modelo.</p>', [
-          { texto: "📋 Copiar código da sala", classe: "primary", onClick: function () {
+          '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Copie o código e mande pro colega (WhatsApp mesmo) — ele clica em 👥 Reunião, cola no campo <b>Sala</b> e aparece do seu lado dentro do modelo.</p>' +
+          '<p class="muted" style="font-size:12px;margin:0">🎤 O áudio é <b>por voz</b>: quando você fala, os outros ouvem; quando cala, seu som pausa sozinho (aparece um 🎤 sobre quem está falando).</p>', [
+          { texto: audioOn ? "🔇 Desligar áudio" : "🎤 Ativar áudio", classe: audioOn ? "ghost" : "primary", onClick: function () {
+            // o CLIQUE libera o microfone (getUserMedia + AudioContext exigem gesto)
+            if (BIM.reuniao.audioAtiva) { BIM.reuniao.audioSair(); } else { BIM.reuniao.audioEntrar(); }
+            UI.fecharModal();
+          } },
+          { texto: "📋 Copiar código da sala", classe: "ghost", onClick: function () {
             // writeText é Promise: rejeição assíncrona (iframe sem clipboard-write, doc sem foco) NÃO pode virar toast verde
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(salaAtual).then(function () { UI.toast("Código copiado — mande pro colega.", "ok"); }, function () { UI.toast("Não consegui copiar — o código é: " + salaAtual, "erro"); });
@@ -2274,6 +2281,8 @@
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = n > 0 ? "👥 Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "👥 Na sala…" : "👥 Reunião"); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
             onReuniaoCheia: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("👥 Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair.", "erro"); },
+            onVoz: function (on) { UI.toast(on ? "🎤 Áudio ligado — fale normalmente; quem não fala fica em silêncio." : "🎤 Áudio desligado.", "ok"); },
+            onVozErro: function (nm) { UI.toast(nm === "NotAllowedError" ? "🎤 Microfone negado. Clique de novo e permita." : "🎤 Não consegui abrir o microfone: " + nm, "erro"); },
             onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); },
             onPick: function (info) {
               var box = document.getElementById("bim-info"); if (!box) return;

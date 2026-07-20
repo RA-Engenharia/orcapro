@@ -4068,9 +4068,24 @@ var Reuniao = {
     var capacete = new THREE.Mesh(new THREE.SphereGeometry(0.155, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshStandardMaterial({ color: corC, roughness: .35, metalness: .15 })); capacete.position.y = lh + th + 0.19; g.add(capacete);
     var aba = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.025, 18), capacete.material); aba.position.set(0, lh + th + 0.15, 0.07); g.add(aba);
     var nome = this._sprite(u.nome, u.c2 || '#f59e0b'); nome.position.y = lh + th + 0.55; g.add(nome);
+    // indicador de fala (🎤): aparece quando o áudio detecta ESSE avatar falando (Voz.falandoUid)
+    var mic = new THREE.Sprite(new THREE.SpriteMaterial({ map: this._micTex(), depthTest: false, transparent: true }));
+    mic.scale.set(0.42, 0.42, 1); mic.position.y = lh + th + 0.92; mic.visible = false; mic.renderOrder = 1001;
+    g.add(mic); g.userData.mic = mic;
     var esc2 = u.esc === 'baixo' ? 0.9 : u.esc === 'alto' ? 1.1 : 1; g.scale.set(esc2, esc2, esc2);
     g.userData.alvo = { p: new THREE.Vector3(), yaw: 0 };
     return g;
+  },
+  _micTex: function () {
+    // textura POR avatar (não compartilhada): o _dispor libera o .map de cada avatar; uma textura
+    // compartilhada seria disposta pelo 1º descarte e sumiria dos outros.
+    var cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+    var x = cv.getContext('2d');
+    x.fillStyle = 'rgba(22,163,74,.92)'; x.beginPath(); x.arc(64, 64, 60, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#eafff2'; x.lineWidth = 6; x.stroke();
+    x.font = '64px Segoe UI Emoji, Arial'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('🎤', 64, 70);
+    var t = new THREE.CanvasTexture(cv); t.anisotropy = 4;
+    return t;
   },
   _aplicar: function (usuarios) {
     var self = this, vistos = {};
@@ -4106,7 +4121,7 @@ var Reuniao = {
     try {
       g.traverse(function (o) {
         try {
-          if (o.geometry) o.geometry.dispose();
+          if (o.geometry && !o.isSprite) o.geometry.dispose(); // Sprite (nome/🎤) usa geometria COMPARTILHADA do three r150 — não dispor
           var m = o.material; if (!m) return;
           var arr = Array.isArray(m) ? m : [m];
           for (var i = 0; i < arr.length; i++) { var mm = arr[i]; if (!mm) continue; if (mm.map) mm.map.dispose(); mm.dispose(); }
@@ -4116,11 +4131,13 @@ var Reuniao = {
   },
   _tick: function () {
     var self = Reuniao; if (!self.on || !S) return;
+    var vozOn = (typeof Voz !== 'undefined' && Voz.on);
     Object.keys(self.outros).forEach(function (uid) {
       var av = self.outros[uid], a = av.userData.alvo;
       av.position.lerp(a.p, 0.14);
       var dy = a.yaw - av.rotation.y; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
       av.rotation.y += dy * 0.14;
+      if (av.userData.mic) av.userData.mic.visible = vozOn && Voz.falandoUid(uid); // 🎤 quando esse colega fala
     });
     if (!self.conectado) return; // sem SSE conectado não martela POST
     var now = Date.now();
@@ -4177,12 +4194,133 @@ var Reuniao = {
   },
   sair: function () {
     this.on = false; this.conectado = false;
+    if (typeof Voz !== 'undefined' && (Voz.on || Voz.wanted)) { try { Voz.sair(); } catch (_) {} } // sai da reunião → corta o áudio junto (Voz.wanted cobre o mic em aquisição)
     if (this._connTimer) { clearTimeout(this._connTimer); this._connTimer = 0; }
     if (this.es) { try { this.es.close(); } catch (_) {} this.es = null; }
     var i = S ? S._tickExtra.indexOf(this._tick) : -1; if (i !== -1) S._tickExtra.splice(i, 1);
     var selfS = this; if (this.grupo) { Object.keys(this.outros).forEach(function (uid) { selfS._dispor(selfS.outros[uid]); }); if (S) S.scene.remove(this.grupo); }
     this.grupo = null; this.outros = {}; this._logos = {};
     if (S && S.opts && S.opts.onReuniao) { try { S.opts.onReuniao(0); } catch (_) {} }
+  }
+};
+
+// ===================== VOZ: áudio walkie-talkie da reunião (VAD) =====================
+// Cada um só TRANSMITE enquanto FALA (VAD no navegador) → quem não fala não gera tráfego e
+// fica em silêncio pros outros (o "pausado" que o Rogério pediu; no exato momento que fala,
+// o gate abre e a voz vai). PCM 8kHz mono int16 em frames de ~100ms via o canal /audio do relay
+// (separado da pose). Playback por locutor com jitter buffer. getUserMedia + AudioContext exigem
+// HTTPS + gesto do usuário (por isso é um botão), igual à câmera.
+var Voz = {
+  on: false, ctx: null, stream: null, src: null, proc: null, muteGain: null,
+  es: null, sala: '', uid: '', base: '', seq: 0, HZ: 8000, frameLen: 800,
+  frameBuf: null, frameFill: 0, ratio: 1, wanted: false, _acc: 0, _cnt: 0, _phase: 0,
+  vad: { floor: 0.003, hang: 0, speaking: false },
+  rx: {}, // uid -> { gain, next, last }
+  entrar: function (sala, uid, base) {
+    if (this.on) return true;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return false;
+    var AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+    var self = this; this.sala = sala; this.uid = uid; this.base = base; this.wanted = true;
+    // cria + resume o AudioContext AINDA no gesto do toque: no iOS o ctx nasce 'suspended' e só sai do
+    // suspenso dentro da ativação do usuário; criar dentro do getUserMedia().then (microtask) deixaria o
+    // áudio MUDO no iPhone. ratio já sai daqui (síncrono).
+    try { this.ctx = new AC(); if (this.ctx.state === 'suspended') this.ctx.resume(); } catch (_) { this.ctx = null; }
+    if (!this.ctx) { this.wanted = false; return false; }
+    this.ratio = Math.max(1, this.ctx.sampleRate / this.HZ);
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false }).then(function (stream) {
+      // saiu no meio da aquisição (wanted=false) OU já ligou de novo (on): descarta o stream E o ctx órfão
+      if (self.on || !self.wanted) { try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} if (!self.wanted && self.ctx) { try { self.ctx.close(); } catch (_) {} self.ctx = null; } return; }
+      self.stream = stream;
+      self.frameBuf = new Float32Array(self.frameLen); self.frameFill = 0; self.seq = 0; self._acc = 0; self._cnt = 0; self._phase = 0;
+      self.src = self.ctx.createMediaStreamSource(stream);
+      var proc = self.ctx.createScriptProcessor(2048, 1, 1); self.proc = proc;
+      self.muteGain = self.ctx.createGain(); self.muteGain.gain.value = 0; // não ecoa o próprio microfone
+      proc.onaudioprocess = function (e) { self._captura(e); };
+      self.src.connect(proc); proc.connect(self.muteGain); self.muteGain.connect(self.ctx.destination);
+      try {
+        self.es = new EventSource(base + encodeURIComponent(sala) + '/audiostream?uid=' + encodeURIComponent(uid));
+        self.es.onmessage = function (ev) { self._recebe(ev.data); };
+        self.es.onerror = function () {}; // reconecta sozinho pela spec do EventSource
+      } catch (_) {}
+      self.on = true;
+      if (S && S.opts && S.opts.onVoz) { try { S.opts.onVoz(true); } catch (_) {} }
+    }).catch(function (e) {
+      self.wanted = false; if (self.ctx) { try { self.ctx.close(); } catch (_) {} self.ctx = null; } // mic negado → fecha o ctx criado no gesto
+      if (S && S.opts && S.opts.onVozErro) { try { S.opts.onVozErro((e && e.name) || String(e)); } catch (_) {} }
+    });
+    return true;
+  },
+  // downsample p/ 8kHz com acumulador de FASE fracionário e PERSISTENTE entre callbacks: com ratio
+  // fracionário (44100/8000=5.5125) um contador inteiro travaria em 6:1 (=7350Hz → voz de esquilo) e
+  // ainda descartaria o resto de cada bloco. A fase média converge pra 8000Hz exatos (grupos de ~5 e ~6).
+  _captura: function (e) {
+    if (!this.on) return;
+    var input = e.inputBuffer.getChannelData(0), ratio = this.ratio, i;
+    for (i = 0; i < input.length; i++) {
+      this._acc += input[i]; this._cnt++; this._phase++;
+      if (this._phase >= ratio) {
+        this._phase -= ratio;
+        this.frameBuf[this.frameFill++] = this._acc / this._cnt; this._acc = 0; this._cnt = 0;
+        if (this.frameFill >= this.frameLen) { this._frame(); this.frameFill = 0; }
+      }
+    }
+  },
+  _frame: function () {
+    var buf = this.frameBuf, n = this.frameLen, i, sum = 0;
+    for (i = 0; i < n; i++) sum += buf[i] * buf[i];
+    var rms = Math.sqrt(sum / n), v = this.vad;
+    // noise floor adaptativo: sobe devagar, desce rápido quando fica quieto
+    if (rms < v.floor) v.floor = v.floor * 0.9 + rms * 0.1; else v.floor = v.floor * 0.995 + rms * 0.005;
+    var thrOpen = Math.max(0.012, v.floor * 3.2), thrClose = Math.max(0.008, v.floor * 2.0);
+    var era = v.speaking;
+    if (!v.speaking) { if (rms > thrOpen) { v.speaking = true; v.hang = 6; } }
+    else { if (rms > thrClose) v.hang = 6; else if (--v.hang <= 0) v.speaking = false; }
+    if (v.speaking !== era && S && S.opts && S.opts.onFala) { try { S.opts.onFala(v.speaking); } catch (_) {} }
+    if (!v.speaking) return; // silêncio: NÃO transmite (é o "pausado")
+    var pcm = new Int16Array(n);
+    for (i = 0; i < n; i++) { var x = buf[i]; if (x > 1) x = 1; else if (x < -1) x = -1; pcm[i] = x < 0 ? (x * 0x8000) | 0 : (x * 0x7fff) | 0; }
+    var b64 = this._toB64(pcm);
+    try { fetch(this.base + encodeURIComponent(this.sala) + '/audio', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ uid: this.uid, q: this.seq++, a: b64 }) }).catch(function () {}); } catch (_) {}
+  },
+  _recebe: function (data) {
+    if (!this.on || !this.ctx) return;
+    var msg; try { msg = JSON.parse(data); } catch (_) { return; }
+    if (!msg || !msg.a || !msg.u || msg.u === this.uid) return;
+    var pcm = this._fromB64(msg.a); if (!pcm || !pcm.length) return;
+    var n = pcm.length, f32 = new Float32Array(n), i;
+    for (i = 0; i < n; i++) f32[i] = pcm[i] / 0x8000;
+    var r = this.rx[msg.u];
+    if (!r) { r = this.rx[msg.u] = { gain: this.ctx.createGain(), next: 0, last: 0 }; r.gain.gain.value = 1; try { r.gain.connect(this.ctx.destination); } catch (_) {} }
+    r.last = Date.now();
+    var ab = this.ctx.createBuffer(1, n, this.HZ); ab.getChannelData(0).set(f32);
+    var srcN = this.ctx.createBufferSource(); srcN.buffer = ab; try { srcN.connect(r.gain); } catch (_) { return; }
+    var t = this.ctx.currentTime, dur = n / this.HZ;
+    if (r.next < t + 0.02) r.next = t + 0.12; // buffer de jitter inicial (evita estouros/gaps)
+    if (r.next > t + 0.5) return; // TETO: já há ~0.5s enfileirado (rajada de rede) → descarta este frame p/ não acumular latência
+    try { srcN.start(r.next); } catch (_) {}
+    r.next += dur;
+  },
+  falandoUid: function (uid) { var r = this.rx[uid]; return !!(r && (Date.now() - r.last) < 500); },
+  euFalando: function () { return !!(this.on && this.vad.speaking); },
+  sair: function () {
+    this.on = false; this.wanted = false; // wanted=false: se um getUserMedia estiver pendente, ele descarta o mic ao resolver (sem hot-mic)
+    if (this.es) { try { this.es.close(); } catch (_) {} this.es = null; }
+    if (this.proc) { try { this.proc.disconnect(); this.proc.onaudioprocess = null; } catch (_) {} this.proc = null; }
+    if (this.src) { try { this.src.disconnect(); } catch (_) {} this.src = null; }
+    if (this.muteGain) { try { this.muteGain.disconnect(); } catch (_) {} this.muteGain = null; }
+    if (this.stream) { try { this.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} this.stream = null; }
+    var self = this; Object.keys(this.rx).forEach(function (u) { try { self.rx[u].gain.disconnect(); } catch (_) {} });
+    this.rx = {}; this.vad.speaking = false; this.vad.hang = 0;
+    if (this.ctx) { try { this.ctx.close(); } catch (_) {} this.ctx = null; }
+    if (S && S.opts && S.opts.onVoz) { try { S.opts.onVoz(false); } catch (_) {} }
+  },
+  _toB64: function (int16) {
+    var bytes = new Uint8Array(int16.buffer), bin = '', i, chunk = 0x8000;
+    for (i = 0; i < bytes.length; i += chunk) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    return btoa(bin);
+  },
+  _fromB64: function (b64) {
+    try { var bin = atob(b64), len = bin.length, bytes = new Uint8Array(len), i; for (i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i); return new Int16Array(bytes.buffer); } catch (_) { return null; }
   }
 };
 
@@ -4310,6 +4448,12 @@ window.BIM = {
     get ativa() { return Reuniao.on; },
     get sala() { return Reuniao.sala; },
     get participantes() { return Reuniao.on ? Object.keys(Reuniao.outros).length + 1 : 0; },
+    // ---- áudio walkie-talkie (v1.1.94): só liga DENTRO de uma reunião, precisa de gesto (botão) + HTTPS ----
+    audioEntrar: function () { if (!Reuniao.on) return false; return Voz.entrar(Reuniao.sala, Reuniao.uid, Reuniao.base()); },
+    audioSair: function () { Voz.sair(); },
+    get audioAtiva() { return Voz.on; },
+    euFalando: function () { return Voz.euFalando(); },
+    _vozRecebeTest: function (data) { Voz._recebe(data); }, // hook de teste: injeta 1 frame recebido
     _tickTest: function () { Reuniao._tick(); }, // hook de teste: roda 1 tick (rAF fica pausado em aba de fundo)
     _avatarTest: function (u) { // hook de teste: monta um avatar e devolve a estrutura
       var g = Reuniao._avatar(u || {}); var meshes = 0, jersey = false;

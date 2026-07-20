@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.93",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.93/OrcaPRO-IA-update-v1.1.93.zip",
-  "notas": "RA/RV nível mundial no celular: avatares humanos (homem/mulher + capacete + camisa com o logo, nome e telefone da sua empresa), reunião por link/QR com até 20 pessoas (todos que abrem o link se veem no modelo) e andar por passos com o celular na mão. Mais estabilidade: sem travar o 3D em reuniões longas, giroscópio/passos corretos no iPhone e aviso de sala cheia.",
+  "versao": "1.1.94",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.94/OrcaPRO-IA-update-v1.1.94.zip",
+  "notas": "A reunião RA/RV agora tem ÁUDIO por voz: quando você fala, os colegas ouvem; quando cala, seu som pausa sozinho — e um 🎤 aparece sobre quem está falando. Até 20 pessoas por link/QR. Corrigido o tom da voz no iPhone/Mac e a estabilidade do áudio.",
   "obrigatoria": false
 }
