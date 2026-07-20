@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.97",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.97/OrcaPRO-IA-update-v1.1.97.zip",
-  "notas": "O Exemplo do módulo BIM agora abre um modelo real de obra (Murumbir). A demonstração ao vivo do site mostra os modelos reais de demolição e esgoto hidrossanitário.",
+  "versao": "1.1.98",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.98/OrcaPRO-IA-update-v1.1.98.zip",
+  "notas": "A cor por sistema hidrossanitário agora lê o Sistema do IFC e acerta em modelos Revit reais (a tubulação de esgoto colore certo).",
   "obrigatoria": false
 }

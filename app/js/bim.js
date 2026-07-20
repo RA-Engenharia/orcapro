@@ -40,6 +40,7 @@ var IFC_BUILDINGSTOREY = 3124254112, IFC_RELCONTAINEDINSPATIALSTRUCTURE = 324261
 // códigos conferidos no vendor (web-ifc-api.js): RELDEFINESBYTYPE 10025, PROPERTYSET 10063,
 // ELEMENTQUANTITY 10091, ENUMERATED/LIST/BOUNDED/COMPLEX p/ o painel não descartar nada.
 var IFC_RELDEFINESBYTYPE = 781010003, IFC_PROPERTYSET = 1451395588, IFC_ELEMENTQUANTITY = 1883228015;
+var IFC_RELASSIGNSTOGROUP = 1307041759, IFC_SYSTEM = 2254336722, IFC_DISTRIBUTIONSYSTEM = 3205830791; // v1.1.98 — SISTEMA do IFC (Esgoto/Água…) p/ colorir por sistema
 var IFC_PROP_ENUM = 4166981789, IFC_PROP_LIST = 2752243245, IFC_PROP_BOUNDED = 871118103, IFC_PROP_COMPLEX = 2542286263;
 
 function montar(host, opts) {
@@ -219,6 +220,13 @@ function montar(host, opts) {
     return 'outros';
   }
   function sisTxtEl(e) { return (e.nome || '') + ' ' + (e.familia || '') + ' ' + (e.tipo || '') + ' ' + (e.tag || ''); }
+  // v1.1.98 — classifica um elemento pelo SISTEMA do IFC (Esgoto/Água…, sinal correto) e, só se não
+  // houver sistema reconhecido, cai no NOME do elemento (que costuma ser genérico "Tubo/duto").
+  function classificaEl(e) {
+    var k = classificaSistemaTxt(e.sistemaIfc || '');
+    if (k === 'outros') k = classificaSistemaTxt(sisTxtEl(e));
+    return k;
+  }
   // material da cor do sistema, respeitando a transparência do modelo; "outros" fica cinza
   // translúcido pra a tubulação colorida SALTAR na vista (destaque estilo MEP).
   function sisMat(chave, alpha) {
@@ -235,14 +243,14 @@ function montar(host, opts) {
   // lido rápido pelo matBase a cada repintura).
   function construirSisIdx() {
     (S.elementos || []).forEach(function (e) {
-      var k = classificaSistemaTxt(sisTxtEl(e));
+      var k = classificaEl(e);
       e.sistema = k;
       var m = S.meshPorUid[e.uid]; if (m) m.userData._sisK = k;
     });
   }
   function sistemasPresentes() {
     var cnt = {};
-    (S.elementos || []).forEach(function (e) { var k = e.sistema || classificaSistemaTxt(sisTxtEl(e)); cnt[k] = (cnt[k] || 0) + 1; });
+    (S.elementos || []).forEach(function (e) { var k = e.sistema || classificaEl(e); cnt[k] = (cnt[k] || 0) + 1; });
     return cnt;
   }
 
@@ -1129,7 +1137,7 @@ function montar(host, opts) {
     var pres = sistemasPresentes(), cores = {}, amostra = {};
     SIS_ORDEM.forEach(function (k) { cores[k] = sisCores[k]; });
     (S.elementos || []).forEach(function (e) {
-      var k = e.sistema || classificaSistemaTxt(sisTxtEl(e));
+      var k = e.sistema || classificaEl(e);
       if (amostra[k]) return;
       var m = S.meshPorUid[e.uid];
       amostra[k] = { uid: e.uid, nome: e.nome, matCor: (m && m.material && m.material.color) ? '#' + m.material.color.getHexString() : null };
@@ -3550,6 +3558,32 @@ function montar(host, opts) {
     return mapa;
   }
 
+  // v1.1.98 — SISTEMA por elemento (IfcRelAssignsToGroup → IfcSystem/IfcDistributionSystem): o Revit
+  // agrupa a tubulação em sistemas nomeados ("Sanitário 1", "Água Fria 3", "Ventilação 2"…). É esse
+  // Name que diz o SISTEMA de verdade — o nome do elemento costuma ser genérico ("Tubo/duto"). Só
+  // aceita grupos que SÃO sistema (filtra IfcGroup genérico, ex.: "Grupo de modelos"). Blindado.
+  function lerSistemas(mid) {
+    var mapa = {};
+    try {
+      var rels = S.api.GetLineIDsWithType(mid, IFC_RELASSIGNSTOGROUP);
+      var n = rels.size();
+      for (var i = 0; i < n; i++) {
+        var rel; try { rel = S.api.GetLine(mid, rels.get(i), false); } catch (_) { continue; }
+        if (!rel || !rel.RelatingGroup || rel.RelatingGroup.value == null || !rel.RelatedObjects) continue;
+        var grp; try { grp = S.api.GetLine(mid, rel.RelatingGroup.value, false); } catch (_) { continue; }
+        if (!grp || (grp.type !== IFC_SYSTEM && grp.type !== IFC_DISTRIBUTIONSYSTEM)) continue; // só SISTEMA (não zona/grupo/lista)
+        var nomeSis = (grp.Name && grp.Name.value) || (grp.LongName && grp.LongName.value) || null;
+        if (!nomeSis) continue;
+        var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+        for (var o = 0; o < objs.length; o++) {
+          var oh = objs[o]; if (!oh || oh.value == null) continue;
+          if (!mapa[oh.value]) mapa[oh.value] = nomeSis; // 1º sistema vence (um elemento pode estar em vários grupos)
+        }
+      }
+    } catch (e) { /* bônus */ }
+    return mapa;
+  }
+
   // valor legível de uma property (SingleValue/Enumerated/List/Bounded/Complex — nada é descartado)
   function propValor(mid, pv) {
     try {
@@ -3883,6 +3917,7 @@ function montar(host, opts) {
       var carimbos = lerCarimbosOrcaPro(mid), qto = lerQuantitativos(mid);
       modelo.carimbos = carimbos; modelo.qto = qto; // por modelo (expressID colide entre IFCs)
       modelo.familias = lerTipos(mid); // v1.1.82: família/tipo por elemento (Revit → IfcTypeObject)
+      modelo.sistemas = lerSistemas(mid); // v1.1.98: SISTEMA por elemento (IfcSystem) → cor por sistema hidrossanitário
       modelo.pavimentos = lerPavimentos(mid); // 🏢 (y0 real preenchido depois, pelo AABB dos membros)
       var tmpMat = new THREE.Matrix4();
       function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!modelo.matCache[k]) modelo.matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return modelo.matCache[k]; }
@@ -3910,7 +3945,7 @@ function montar(host, opts) {
         }
         var cb = carimbos[mesh.expressID] || {};
         var famEl = (modelo.familias && modelo.familias[mesh.expressID]) || null;
-        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
+        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);
