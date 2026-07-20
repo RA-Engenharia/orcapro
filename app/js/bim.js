@@ -16,6 +16,10 @@ import { IfcAPI } from 'web-ifc';
 
 var S = null; // estado do viewer montado
 
+// 🧱 Blocok — allowlist de e-mails com acesso (feito p/ a Argecon primeiro; fácil de estender).
+// No escopo do MÓDULO (não dentro de montar) p/ já estar definido quando a toolbar é construída.
+var BLOCOK_EMAILS = ['argeconengenharia@gmail.com'];
+
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
 var TIPOS = {
@@ -124,6 +128,7 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">' + ico('ver') + 'Ver</button>' +
     '<button class="btn sm" data-b="xr" title="Realidade Mista/Virtual: andar dentro do modelo em escala real (1:1) ou escolhida, medir, ver por disciplina e gerar QR para o celular">' + ico('xr') + 'RA/RV</button>' +
     '<button class="btn sm" data-b="sistema" title="Colorir a tubulação por sistema hidrossanitário (água fria, água quente, esgoto, pluvial, gás, incêndio, ventilação) com cores editáveis — vale na Planta baixa e no RA/RV">🎨 Sistemas</button>' +
+    (blocokLiberado() ? '<button class="btn sm" data-b="blocok" title="Plantas Executivas Blocok: lê as paredes do IFC e gera a prancha de cada parede com as placas 90×90 numeradas e paginadas + tabela de material (placas + insumos calculados) + carga na fundação">🧱 Blocok</button>' : '') +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
     '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
     '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
@@ -499,6 +504,7 @@ function montar(host, opts) {
     else if (k === 'vis') toggleVisPanel();
     else if (k === 'xr') toggleXRPanel();
     else if (k === 'sistema') { if (sisColor.on && sisPanel.style.display === 'none') { pintarSisPanel(); sisPanel.style.display = 'flex'; fecharPaineis(sisPanel); } else setSisColor(!sisColor.on); } // modo ligado + legenda fechada por outro painel → reabre a legenda (não desliga as cores)
+    else if (k === 'blocok') toggleBlocokPanel();
     else if (k === 'foto') tirarFoto();
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
     else if (k === 'fit') { if (planta.on) enquadrarTopo(); else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5); else enquadrar(); } // na planta re-centra a vista de topo (não sai); no 3D enquadra suave (cinematográfico)
@@ -1155,6 +1161,270 @@ function montar(host, opts) {
     if (k === 'fechar') setSisColor(false);
     else if (k === 'padrao') { SIS_ORDEM.forEach(function (kk) { sisCores[kk] = SIS_PADRAO[kk].cor; }); salvarSisCores(); limparSisMatCache(); pintarSisPanel(); if (sisColor.on) repintarSisBase(); }
   });
+
+  // ============================================================
+  // 🧱 BLOCOK — PLANTAS EXECUTIVAS (paginação de painéis 90×90 cm)
+  // Lê as PAREDES de qualquer IFC, extrai comprimento×altura×espessura pela OBB 2D
+  // (motor blocok.js), pagina as placas NUMERADAS (recortes de borda + desconto de
+  // vãos) e gera: prancha executiva SVG de CADA parede + mapa de localização + tabela
+  // de material (placas por espessura) + INSUMOS calculados (produção das placas +
+  // assentamento pela junta escolhida) + carga própria na fundação (peso líquido).
+  // ⚠️ EXCLUSIVO do cliente Argecon (feito p/ ele primeiro) — gate por e-mail logado.
+  // ============================================================
+  function getBK() { return (typeof Blocok !== 'undefined' && Blocok) || (typeof window !== 'undefined' && window.Blocok) || null; }
+  function blocokLiberado() {
+    try {
+      var norm = function (e) { return String(e || '').trim().toLowerCase(); };
+      var A = (typeof window !== 'undefined' && window.Auth) ? window.Auth : (typeof Auth !== 'undefined' ? Auth : null);
+      var emLocal = (A && A.usuario && A.usuario()) ? norm(A.usuario().email) : '';           // login local
+      var N = (typeof window !== 'undefined' && window.Nuvem) ? window.Nuvem : null;
+      var emNuvem = (N && N.auth && N.auth.currentUser) ? norm(N.auth.currentUser.email) : '';  // login da nuvem
+      return BLOCOK_EMAILS.indexOf(emLocal) >= 0 || (emNuvem && BLOCOK_EMAILS.indexOf(emNuvem) >= 0);
+    } catch (_) { return false; }
+  }
+  var blocokCfg = { espForcada: 'auto', pesoPorEsp: { 10: 46, 13: 46, 15: 46, 20: 46 }, insCfg: null, descontarVaos: true };
+  function ensureInsCfg() { if (!blocokCfg.insCfg) { var bk = getBK(); blocokCfg.insCfg = bk ? bk.insumoDefaults() : {}; } return blocokCfg.insCfg; }
+  function ehParedeTipo(t) { t = String(t || '').toUpperCase(); return t.indexOf('WALL') >= 0 || t === 'PAREDE'; }
+  function ehVaoTipo(t) { t = String(t || '').toUpperCase(); return t.indexOf('DOOR') >= 0 || t.indexOf('WINDOW') >= 0 || t === 'PORTA' || t === 'JANELA'; }
+  function fmtB(n) { return (Math.round((+n || 0) * 100) / 100).toFixed(2).replace('.', ','); }
+
+  // extrai as paredes VISÍVEIS: pontos XZ (mundo) por parede → OBB 2D (comprimento×
+  // espessura + linha de base) + altura pelo Y da malha; detecta vãos pela AABB das
+  // portas/janelas projetada na linha da parede.
+  function extrairParedesBlocok() {
+    var BK = getBK(); if (!BK) return { paredes: [], vaosDet: 0 };
+    modelRoot.updateMatrixWorld(true);
+    var acc = {}, ordem = [], tmpV = new THREE.Vector3();
+    todasMalhas(function (m) {
+      var ud = m.userData || {}; if (ud.expressID == null || !m.geometry) return;
+      if (!ehParedeTipo(ud.tipo)) return;
+      if (m.visible === false || !cadeiaVisivel(m)) return; // respeita isolar/pavimento/4D
+      var uid = ud.mid + ':' + ud.expressID, a = acc[uid];
+      if (!a) { a = acc[uid] = { pts: [], yMin: Infinity, yMax: -Infinity, tipo: ud.tipo }; ordem.push(uid); }
+      var pos = m.geometry.attributes && m.geometry.attributes.position; if (!pos) return;
+      var step = Math.max(1, Math.floor(pos.count / 260));
+      for (var i = 0; i < pos.count; i += step) {
+        tmpV.fromBufferAttribute(pos, i).applyMatrix4(m.matrixWorld);
+        a.pts.push([tmpV.x, tmpV.z]);
+        if (tmpV.y < a.yMin) a.yMin = tmpV.y; if (tmpV.y > a.yMax) a.yMax = tmpV.y;
+      }
+    });
+    // portas/janelas (AABB de mundo já calculada no load) + nomes por uid
+    var vaos = [], nomePorUid = {};
+    (S.modelos || []).forEach(function (mo) {
+      (mo.elementos || []).forEach(function (e) {
+        nomePorUid[e.uid] = e.nome;
+        if (ehVaoTipo(e.tipo) && e.aabb) {
+          var mn = e.aabb.min, mx = e.aabb.max;
+          vaos.push({ cx: (mn[0] + mx[0]) / 2, cz: (mn[2] + mx[2]) / 2, y0: mn[1], y1: mx[1], sx: mx[0] - mn[0], sz: mx[2] - mn[2] });
+        }
+      });
+    });
+    // PASSO 1 — paredes válidas, cada uma com seu frame de base (p1 + eixo ux/uz) p/ atribuir vãos
+    var raw = [];
+    ordem.forEach(function (uid) {
+      var a = acc[uid]; if (a.pts.length < 6) return;
+      var obb = BK.obb2dXZ(a.pts); if (!obb) return;
+      var L = obb.comprimento, esp = obb.espessura, H = (a.yMax - a.yMin);
+      if (L < 0.3 || H < 0.3) return;             // fragmento/degenerada: fora
+      if (esp < 0.03) esp = 0.10;                 // espessura implausível → mínima Blocok
+      var dx = obb.p2[0] - obb.p1[0], dz = obb.p2[1] - obb.p1[1], dl = Math.sqrt(dx * dx + dz * dz) || 1;
+      raw.push({ uid: uid, obb: obb, L: L, esp: esp, H: H, yMin: a.yMin, p1: obb.p1, ux: dx / dl, uz: dz / dl, vlist: [] });
+    });
+    // PASSO 2 — atribui cada vão à parede DONA (motor puro Blocok.distribuirVaos, Node-testável):
+    // menor distância perpendicular → evita descontar a mesma abertura de paredes paralelas próximas
+    // (fachada dupla, geminada como 2 IfcWall, shaft, gesso). Desconto desligado → nenhum vão entra.
+    var vaosDet = BK.distribuirVaos(raw, blocokCfg.descontarVaos ? vaos : []);
+    // PASSO 3 — pagina cada parede com os vãos que lhe pertencem
+    var paredes = [], np = 0;
+    raw.forEach(function (w) {
+      var espCm = (blocokCfg.espForcada === 'auto') ? BK.espBlocok(w.esp) : +blocokCfg.espForcada;
+      var pag = BK.paginar({ comprimento: w.L, altura: w.H, vaos: w.vlist });
+      np++;
+      paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist });
+    });
+    return { paredes: paredes, vaosDet: vaosDet };
+  }
+  S._extrairParedesBlocok = extrairParedesBlocok;
+
+  // prancha executiva SVG de UMA parede (elevação com placas numeradas + recortes cotados + vãos)
+  function svgParedeBlocok(pd) {
+    var pag = pd.pag, L = pag.comprimento, H = pag.altura, pad = 30;
+    var sc = Math.min(720 / L, 300 / H); if (!isFinite(sc) || sc <= 0) sc = 40;
+    var iw = L * sc, ih = H * sc, W = iw + pad * 2, Ht = ih + pad * 2 + 20;
+    function X(x) { return pad + x * sc; }
+    function Y(y) { return pad + (H - y) * sc; } // base embaixo (WebGL/desenho: Y pra cima)
+    var s = '<svg viewBox="0 0 ' + W.toFixed(0) + ' ' + Ht.toFixed(0) + '" width="100%" style="max-width:' + Math.min(760, W).toFixed(0) + 'px;height:auto;background:#fff;border:1px solid #ccc;border-radius:6px">';
+    s += '<rect x="' + X(0).toFixed(1) + '" y="' + Y(H).toFixed(1) + '" width="' + iw.toFixed(1) + '" height="' + ih.toFixed(1) + '" fill="#fbfdff" stroke="#123" stroke-width="1.4"/>';
+    (pd.vaos || []).forEach(function (v) {
+      s += '<rect x="' + X(v.x).toFixed(1) + '" y="' + Y(v.y + v.h).toFixed(1) + '" width="' + (v.w * sc).toFixed(1) + '" height="' + (v.h * sc).toFixed(1) + '" fill="#e8ecef" stroke="#8a97a3" stroke-dasharray="4 3"/>';
+      if (v.w * sc > 30 && v.h * sc > 18) s += '<text x="' + X(v.x + v.w / 2).toFixed(1) + '" y="' + Y(v.y + v.h / 2).toFixed(1) + '" font-size="10" fill="#5a6a78" text-anchor="middle" dominant-baseline="middle">VÃO</text>';
+    });
+    var fs = Math.max(8, Math.min(15, sc * 0.28));
+    pag.placas.forEach(function (p) {
+      var px = X(p.x), py = Y(p.y + p.h), pw = p.w * sc, ph = p.h * sc, rec = p.tipo === 'recorte';
+      s += '<rect x="' + px.toFixed(1) + '" y="' + py.toFixed(1) + '" width="' + pw.toFixed(1) + '" height="' + ph.toFixed(1) + '" fill="' + (rec ? '#fdecc8' : '#e6f0fb') + '" stroke="#2b4a6b" stroke-width="0.7"/>';
+      if (pw > 15 && ph > 13) {
+        s += '<text x="' + (px + pw / 2).toFixed(1) + '" y="' + (py + ph / 2).toFixed(1) + '" font-size="' + fs.toFixed(1) + '" font-weight="bold" fill="#12314f" text-anchor="middle" dominant-baseline="middle">' + p.n + '</text>';
+        if (rec && pw > 42 && ph > 30) s += '<text x="' + (px + pw / 2).toFixed(1) + '" y="' + (py + ph - 3).toFixed(1) + '" font-size="8" fill="#8a5a10" text-anchor="middle">' + Math.round(p.w * 100) + '×' + Math.round(p.h * 100) + '</text>';
+      }
+    });
+    s += '<text x="' + (pad + iw / 2).toFixed(1) + '" y="' + (Ht - 5).toFixed(1) + '" font-size="11" fill="#333" text-anchor="middle">L = ' + fmtB(L) + ' m · H = ' + fmtB(H) + ' m · esp ' + pd.espessura + ' cm</text>';
+    return s + '</svg>';
+  }
+
+  // mapa de localização das paredes (planta esquemática, P1..Pn nas linhas de base)
+  function svgMapaBlocok(paredes) {
+    if (!paredes.length) return '';
+    var xs = [], zs = [];
+    paredes.forEach(function (pd) { xs.push(pd.p1[0], pd.p2[0]); zs.push(pd.p1[1], pd.p2[1]); });
+    var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs), minZ = Math.min.apply(null, zs), maxZ = Math.max.apply(null, zs);
+    var w = (maxX - minX) || 1, h = (maxZ - minZ) || 1, pad = 26;
+    var sc = Math.min(680 / w, 420 / h); if (!isFinite(sc) || sc <= 0) sc = 20;
+    var W = w * sc + pad * 2, H = h * sc + pad * 2;
+    function X(x) { return pad + (x - minX) * sc; }
+    function Y(z) { return pad + (z - minZ) * sc; }
+    var s = '<svg viewBox="0 0 ' + W.toFixed(0) + ' ' + H.toFixed(0) + '" width="100%" style="max-width:' + Math.min(720, W).toFixed(0) + 'px;height:auto;background:#fff;border:1px solid #ccc;border-radius:6px">';
+    paredes.forEach(function (pd) {
+      var x1 = X(pd.p1[0]), y1 = Y(pd.p1[1]), x2 = X(pd.p2[0]), y2 = Y(pd.p2[1]), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      s += '<line x1="' + x1.toFixed(1) + '" y1="' + y1.toFixed(1) + '" x2="' + x2.toFixed(1) + '" y2="' + y2.toFixed(1) + '" stroke="#1858a8" stroke-width="4" stroke-linecap="round"/>';
+      s += '<circle cx="' + mx.toFixed(1) + '" cy="' + my.toFixed(1) + '" r="10" fill="#fff" stroke="#1858a8"/>';
+      s += '<text x="' + mx.toFixed(1) + '" y="' + my.toFixed(1) + '" font-size="10" font-weight="bold" fill="#123" text-anchor="middle" dominant-baseline="middle">' + esc(pd.id) + '</text>';
+    });
+    return s + '</svg>';
+  }
+
+  function gerarBlocok(opts) {
+    opts = opts || {};
+    if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return null; }
+    var BK = getBK();
+    if (!BK) { if (S._hint) S._hint('🧱 Motor Blocok não carregou (js/blocok.js).'); return null; }
+    if (!(S.modelos && S.modelos.length)) { if (S._hint) S._hint('🧱 Abra um IFC primeiro — o Blocok lê as paredes do modelo.'); return null; }
+    var ext = extrairParedesBlocok(), paredes = ext.paredes;
+    if (!paredes.length) { if (S._hint) S._hint('🧱 Nenhuma parede visível reconhecida (IfcWall). Verifique se o andar/disciplina está ligado.'); return { paredes: [], material: null, carga: null, insumos: null }; }
+    var mat = BK.material(paredes, { pesoPorEsp: blocokCfg.pesoPorEsp });
+    var carga = BK.cargaFundacao(paredes, { pesoPorEsp: blocokCfg.pesoPorEsp });
+    var ins = BK.insumos(paredes, ensureInsCfg());
+    var dados = { paredes: paredes, material: mat, carga: carga, insumos: ins, vaosDet: ext.vaosDet };
+    if (!opts.semJanela) abrirRelatorioBlocok(dados);
+    if (S._hint) S._hint('🧱 ' + paredes.length + ' paredes · ' + mat.totalPlacas + ' placas · ' + fmtB(mat.pesoTotalT) + ' t. Prancha aberta em nova aba.');
+    return dados;
+  }
+  S.blocok = gerarBlocok;
+  S._blocokLiberado = blocokLiberado;
+
+  function abrirRelatorioBlocok(d) {
+    var w = null; try { w = window.open('', '_blank'); } catch (_) {}
+    if (!w) { if (S._hint) S._hint('🖨 O navegador bloqueou a nova aba — libere pop-ups pra ver as pranchas Blocok.'); return; }
+    var obra = (S.opts && (S.opts.obraNome || S.opts.obra)) || 'Obra', hoje = new Date().toLocaleDateString('pt-BR');
+    var m = d.material, cg = d.carga;
+    function card(v, l) { return '<div class="cd"><b>' + v + '</b><span>' + esc(l) + '</span></div>'; }
+    var cards = card(d.paredes.length, 'paredes') + card(m.totalPlacas, 'placas 90×90') + card(m.totalInteiras, 'inteiras') + card(m.totalRecortes, 'recortes') + card(fmtB(m.areaPlacas) + ' m²', 'área de placa') + card(fmtB(m.pesoTotalT) + ' t', 'peso p/ compra');
+    var trEsp = m.porEspessura.map(function (e) { return '<tr><td>' + e.espessura + ' cm</td><td>' + e.placas + '</td><td>' + e.inteiras + '</td><td>' + e.recortes + '</td><td>' + fmtB(e.area) + '</td><td>' + fmtB(e.peso) + '</td></tr>'; }).join('');
+    var ins = d.insumos || { producao: [], montagem: [], areaCheia: 0, areaInstalada: 0, juntaTipo: '' };
+    function trInsumo(i) { return '<tr><td>' + esc(i.nome) + '</td><td>' + fmtB(i.total) + '</td><td>' + esc(i.unid) + '</td></tr>'; }
+    var trProd = (ins.producao || []).map(trInsumo).join('');
+    var juntaNome = ins.juntaTipo === 'argamassa' ? 'argamassa polimérica (junta preenchida)' : (ins.juntaTipo === 'seca' ? 'encaixe seco (sem argamassa)' : 'adesivo/argamassa polimérica (cordão)');
+    var trMont = (ins.montagem || []).length ? (ins.montagem || []).map(trInsumo).join('') : '<tr><td colspan="3" style="text-align:left;color:#5a6a78">Junta seca — sem consumo de argamassa/adesivo.</td></tr>';
+    var trCg = cg.linhas.map(function (l, ix) { var pd = d.paredes[ix]; return '<tr><td>' + esc(pd ? pd.id : ('P' + (ix + 1))) + '</td><td>' + fmtB(l.comprimento) + '</td><td>' + l.espessura + '</td><td>' + l.placas + '</td><td>' + fmtB(l.pesoKg) + '</td><td>' + fmtB(l.cargaKgM) + '</td><td>' + fmtB(l.cargaKNm) + '</td></tr>'; }).join('');
+    var pranchas = d.paredes.map(function (pd) {
+      var pg = pd.pag;
+      return '<div class="pr"><h3>' + esc(pd.id) + ' — ' + esc(pd.nome) + '</h3><div class="meta">' + fmtB(pd.comprimento) + ' × ' + fmtB(pd.altura) + ' m · esp ' + pd.espessura + ' cm · ' + pg.total + ' placas (' + pg.inteiras + ' inteiras + ' + pg.recortes + ' recortes)' + (pd.vaos && pd.vaos.length ? ' · ' + pd.vaos.length + ' vão(s)' : '') + '</div>' + svgParedeBlocok(pd) + '</div>';
+    }).join('');
+    var mapa = svgMapaBlocok(d.paredes);
+    var css = '*{box-sizing:border-box}body{font-family:-apple-system,Segoe UI,Arial,sans-serif;margin:0;color:#12314f;background:#f4f7fb}'
+      + 'header{background:linear-gradient(135deg,#0f2740,#1858a8);color:#fff;padding:20px 26px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}'
+      + 'header h1{margin:0;font-size:21px}header .sub{opacity:.85;font-size:13px;margin-top:3px}'
+      + '.wrap{max-width:1000px;margin:0 auto;padding:18px 22px 20px}.cards{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}'
+      + '.cd{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:10px 14px;min-width:96px;flex:1}.cd b{display:block;font-size:20px;color:#1858a8}.cd span{font-size:11px;color:#5a6a78;text-transform:uppercase;letter-spacing:.4px}'
+      + 'h2{font-size:15px;border-bottom:2px solid #1858a8;padding-bottom:5px;margin:26px 0 12px}'
+      + 'table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}th,td{border:1px solid #d5dfea;padding:6px 9px;text-align:right}th{background:#eaf1f8}td:first-child,th:first-child{text-align:left}'
+      + '.conf{color:#b26a00;font-style:italic}.leg{display:flex;flex-wrap:wrap;gap:16px;font-size:11.5px;color:#5a6a78;margin:8px 0}.leg span{display:inline-flex;align-items:center;gap:5px}.sw{width:14px;height:14px;border-radius:3px;border:1px solid #2b4a6b;display:inline-block}'
+      + '.pr{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:14px;margin:14px 0;page-break-inside:avoid}.pr h3{margin:0 0 3px;font-size:14px;color:#1858a8}.pr .meta{font-size:12px;color:#5a6a78;margin-bottom:8px}'
+      + 'footer{max-width:1000px;margin:0 auto;padding:8px 22px 40px;font-size:11px;color:#7a8a99;line-height:1.55}'
+      + '.pbtn{background:#16a34a;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer}'
+      + '@media print{.pbtn,.noprint{display:none}body{background:#fff}}';
+    var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Plantas Executivas Blocok — ' + esc(obra) + '</title><style>' + css + '</style></head><body>'
+      + '<header><div><h1>🧱 Plantas Executivas — Sistema Blocok</h1><div class="sub">' + esc(obra) + ' · ' + hoje + ' · gerado no OrçaPRO BIM</div></div><button class="pbtn noprint" onclick="window.print()">🖨 Imprimir / PDF</button></header>'
+      + '<div class="wrap">'
+      + '<div class="cards">' + cards + '</div>'
+      + '<div class="leg"><span><i class="sw" style="background:#e6f0fb"></i> placa inteira 90×90 cm</span><span><i class="sw" style="background:#fdecc8"></i> recorte (dimensão em cm)</span><span><i class="sw" style="background:#e8ecef;border-style:dashed"></i> vão (porta/janela)</span></div>'
+      + (mapa ? '<h2>🗺️ Mapa de localização das paredes</h2>' + mapa : '')
+      + '<h2>📦 Material — placas por espessura</h2><table><thead><tr><th>Espessura</th><th>Placas</th><th>Inteiras</th><th>Recortes</th><th>Área (m²)</th><th>Peso (kg)</th></tr></thead><tbody>' + trEsp + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>' + m.totalPlacas + '</td><td>' + m.totalInteiras + '</td><td>' + m.totalRecortes + '</td><td>' + fmtB(m.areaPlacas) + '</td><td>' + fmtB(m.pesoTotalKg) + '</td></tr></tbody></table>'
+      + '<h2>🏭 Insumos de produção das placas <span style="font-size:11px;color:#5a6a78;font-weight:400">(fábrica — por placa cheia produzida: ' + fmtB(ins.areaCheia) + ' m²)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trProd + '</tbody></table>'
+      + '<h2>🧱 Insumos de montagem/assentamento <span style="font-size:11px;color:#5a6a78;font-weight:400">(obra — junta: ' + esc(juntaNome) + ' · por ' + fmtB(ins.areaInstalada) + ' m² instalados)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trMont + '</tbody></table>'
+      + '<h2>🏗️ Carga própria das paredes na fundação</h2><table><thead><tr><th>Parede</th><th>Comp. (m)</th><th>Esp. (cm)</th><th>Placas</th><th>Peso (kg)</th><th>Carga (kg/m)</th><th>Carga (kN/m)</th></tr></thead><tbody>' + trCg + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>—</td><td>—</td><td>' + m.totalPlacas + '</td><td>' + fmtB(cg.pesoTotalKg) + '</td><td>—</td><td>—</td></tr></tbody></table>'
+      + '<h2>📐 Pranchas executivas por parede</h2>' + pranchas
+      + '</div>'
+      + '<footer><b>Observações e premissas (honestidade técnica):</b><br>'
+      + '1) Os insumos são uma <b>estimativa técnica calculada</b> a partir da geometria do painel (2 faces de micro concreto + núcleo EPS + junta de assentamento) com um <b>traço de referência editável</b>: produção por placa cheia produzida, assentamento por m² instalado conforme a <b>junta escolhida</b>. Ajuste traço/junta/peso no painel se a sua fábrica usar valores próprios.<br>'
+      + '2) Comprimento, altura e espessura de cada parede são extraídos da geometria do IFC (OBB 2D no plano); paredes fora de esquadro, curvas ou fragmentadas podem exigir conferência manual.<br>'
+      + '3) Vãos de porta/janela são detectados automaticamente pela posição no modelo — confira nas pranchas (só some a placa 100% dentro do vão).<br>'
+      + '4) A carga na fundação é o <b>peso próprio LÍQUIDO</b> das paredes (área de placa efetivamente instalada — o retalho do recorte é descartado, não pesa na parede). Já o card <b>“peso p/ compra”</b> soma <b>placas cheias</b> (o que você adquire/transporta). Não inclui laje, cobertura nem sobrecarga de uso — some às demais cargas no dimensionamento estrutural.<br>'
+      + '5) Placas numeradas em fiadas da <b>base para o topo</b>, da <b>esquerda para a direita</b>. Gerado no OrçaPRO BIM — RA Engenharia.</footer>'
+      + '</body></html>';
+    try { w.document.write(html); w.document.close(); } catch (_) { if (S._hint) S._hint('🧱 Não deu pra montar a prancha na nova aba.'); }
+  }
+
+  // painel flutuante do Blocok (espessura + peso + insumos editáveis + desconto de vãos)
+  var blocokPanel = document.createElement('div');
+  blocokPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.96);border:1px solid #24435f;border-radius:11px;padding:12px 13px;color:#dbe8f5;font-size:12px;width:264px;max-height:80%;overflow:auto';
+  host.appendChild(blocokPanel);
+  S.blocokPanel = blocokPanel;
+  var INP = 'width:58px;background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:2px 5px';
+  function linhaNum(rot, attrs, val, unid) {
+    return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="flex:1;color:#9fb2c8;font-size:11px">' + rot + '</span><input type="number" min="0" step="0.1" ' + attrs + ' value="' + val + '" style="' + INP + '"><span style="color:#9fb2c8;font-size:10px;width:40px">' + unid + '</span></label>';
+  }
+  function pintarBlocokPanel() {
+    var c = ensureInsCfg();
+    var espOpts = ['auto', 10, 13, 15, 20].map(function (v) { return '<option value="' + v + '"' + (String(blocokCfg.espForcada) === String(v) ? ' selected' : '') + '>' + (v === 'auto' ? 'Automática (espessura real)' : v + ' cm') + '</option>'; }).join('');
+    var juntaOpts = [['cola', 'Cola/adesivo polimérico (cordão)'], ['argamassa', 'Argamassa polimérica (junta preenchida)'], ['seca', 'Encaixe seco (sem argamassa)']].map(function (o) { return '<option value="' + o[0] + '"' + (c.junta.tipo === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('');
+    var juntaExtra = (c.junta.tipo === 'cola') ? linhaNum('Consumo do adesivo', 'data-bkj="cola"', c.junta.colaKgM2, 'kg/m²')
+      : (c.junta.tipo === 'argamassa') ? linhaNum('Espessura da junta', 'data-bkj="gap"', c.junta.gapCm, 'cm') : '';
+    var pesos = [10, 13, 15, 20].map(function (e) { return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="width:36px;color:#9fb2c8">' + e + ' cm</span><input type="number" min="1" step="0.5" data-bkp="peso" data-esp="' + e + '" value="' + blocokCfg.pesoPorEsp[e] + '" style="' + INP + '"><span style="color:#9fb2c8;font-size:11px">kg/placa</span></label>'; }).join('');
+    var traco = linhaNum('Cimento CP-V', 'data-bkm="cimento"', c.mix.cimento, 'kg/m³')
+      + linhaNum('Areia industrial', 'data-bkm="areia"', c.mix.areia, 'm³/m³')
+      + linhaNum('Pedrisco', 'data-bkm="pedrisco"', c.mix.pedrisco, 'm³/m³')
+      + linhaNum('Aditivo polimérico', 'data-bkm="aditivo"', c.mix.aditivo, 'kg/m³')
+      + linhaNum('Face de micro concreto', 'data-bkf="face"', c.faceCm, 'cm');
+    blocokPanel.innerHTML =
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🧱 Plantas Executivas Blocok</b><button class="btn sm" data-bk="fechar" style="padding:2px 8px">✕</button></div>'
+      + '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
+      + '<label style="display:flex;flex-direction:column;gap:2px"><span style="color:#9fb2c8">Espessura Blocok</span><select data-bk="esp" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + espOpts + '</select></label>'
+      + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:#9fb2c8">Junta de assentamento</span><select data-bk="junta" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
+      + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Traço do micro concreto (avançado)</summary>' + traco + '</details>'
+      + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Peso por placa (compra)</summary>' + pesos + '</details>'
+      + '<label style="display:flex;align-items:center;gap:6px;margin-top:2px"><input type="checkbox" data-bk="vaos"' + (blocokCfg.descontarVaos ? ' checked' : '') + '> descontar vãos (portas/janelas)</label>'
+      + '<button class="btn sm primary" data-bk="gerar" style="margin-top:2px">📐 Gerar plantas executivas</button>'
+      + '<div style="font-size:10px;color:#8296ab;line-height:1.3">Insumos <b>calculados</b> da geometria do painel (traço de referência editável) — ajuste se a sua fábrica usar valores próprios.</div>';
+  }
+  function toggleBlocokPanel() {
+    if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return; }
+    var abrir = (blocokPanel.style.display === 'none' || !blocokPanel.style.display);
+    if (abrir) { pintarBlocokPanel(); fecharPaineis(blocokPanel); blocokPanel.style.display = 'flex'; }
+    else blocokPanel.style.display = 'none';
+    var b = bar.querySelector('[data-b="blocok"]'); if (b) { b.style.background = abrir ? corAtiva() : ''; b.style.color = abrir ? '#fff' : ''; }
+  }
+  S._toggleBlocok = toggleBlocokPanel;
+  blocokPanel.addEventListener('change', function (e) {
+    var t = e.target; if (!t.getAttribute) return;
+    var k = t.getAttribute('data-bk'), kp = t.getAttribute('data-bkp'), kj = t.getAttribute('data-bkj'), kf = t.getAttribute('data-bkf'), km = t.getAttribute('data-bkm');
+    var c = ensureInsCfg();
+    if (k === 'esp') blocokCfg.espForcada = (t.value === 'auto') ? 'auto' : +t.value;
+    else if (k === 'vaos') blocokCfg.descontarVaos = !!t.checked;
+    else if (k === 'junta') { c.junta.tipo = t.value; pintarBlocokPanel(); } // re-renderiza p/ mostrar o campo da junta escolhida
+    else if (kj === 'cola') c.junta.colaKgM2 = Math.max(0, +t.value || 0);
+    else if (kj === 'gap') c.junta.gapCm = Math.max(0, +t.value || 0);
+    else if (kf === 'face') c.faceCm = Math.max(0.3, +t.value || 1.5);
+    else if (km) c.mix[km] = Math.max(0, +t.value || 0);
+    else if (kp === 'peso') { var esp = t.getAttribute('data-esp'), val = +t.value; if (val > 0) blocokCfg.pesoPorEsp[esp] = val; }
+  });
+  blocokPanel.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-bk]'); if (!b) return; var k = b.getAttribute('data-bk');
+    if (k === 'fechar') toggleBlocokPanel();
+    else if (k === 'gerar') gerarBlocok({});
+  });
+
   function pintarSnapPanel() {
     var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i };
     ['on', 'v', 'm', 'a', 'i'].forEach(function (kk) {
@@ -2070,7 +2340,8 @@ function montar(host, opts) {
   function fecharPaineis(exceto) {
     // abrir um painel flutuante fecha o editor (senão o painel nasce ATRÁS dele, invisível)
     if (exceto && edit && edit.on && typeof setEdit === 'function') setEdit(false);
-    [snapPanel, pavPanel, visPanel, xrPanel, sisPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
+    [snapPanel, pavPanel, visPanel, xrPanel, sisPanel, blocokPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
+    if (blocokPanel !== exceto) { var bbk = bar.querySelector('[data-b="blocok"]'); if (bbk) { bbk.style.background = ''; bbk.style.color = ''; } }
     pintarSnapPanel();
     var bp4 = bar.querySelector('[data-b="pav"]'); if (bp4 && pavPanel.style.display !== 'flex') bp4.style.outline = '';
     var bv2 = bar.querySelector('[data-b="vis"]'); if (bv2 && visPanel.style.display !== 'flex') bv2.style.outline = '';
@@ -4602,6 +4873,9 @@ window.BIM = {
   sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
   sistemaInfo: function () { return (S && S._sisInfo) ? S._sisInfo() : null; },
   sistemaClassificar: function (texto) { return (S && S._sisClassificar) ? S._sisClassificar(texto) : null; }, // classifica um nome/descrição num sistema (pura; p/ testes e plugins)
+  // v1.1.99 — Plantas Executivas Blocok: lê as paredes do IFC → pranchas 90×90 numeradas + material + carga na fundação
+  blocok: function (opts) { return (S && S.blocok) ? S.blocok(opts) : null; }, // {semJanela?:bool} → {paredes,material,carga}; abre a prancha em nova aba salvo semJanela
+  blocokParedes: function () { return (S && S._extrairParedesBlocok && S._blocokLiberado && S._blocokLiberado()) ? S._extrairParedesBlocok() : { paredes: [], vaosDet: 0 }; }, // só a extração (E2E/diagnóstico) — mesmo gate por licença
   // v1.1.82 — propriedades completas do elemento (todos os psets, instância+família) e thumbnail
   propriedades: function (uid) { return (S && S._propsCompletas) ? S._propsCompletas(uid) : []; },
   thumbFamilia: function (uid, maxPx) { return (S && S._thumbFamilia) ? S._thumbFamilia(uid, maxPx) : null; },
