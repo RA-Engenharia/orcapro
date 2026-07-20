@@ -52,7 +52,7 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
@@ -2062,6 +2062,8 @@ function montar(host, opts) {
   var xr = { on: false, mode: null, escala: 1, session: null, hitSrc: null, reticle: null,
              placed: false, travado: false, prevClip: null, clip: null, prevLocal: false,
              cam: null, look: { yaw: 0, pitch: 0 }, joy: { x: 0, z: 0 }, ori: false, oriBase: null,
+             oriQuat: null, oriOk: false, oriYawOff: 0, // v1.1.92 — giroscópio por QUATERNION (device-orientation real)
+             boxOrig: null, posOrig: null, // bbox/posição do modelo em escala 1 (âncora da escala)
              modelSnap: null, medir: { on: false, pts: [], objs: [] }, discOcultas: {} };
   S.xr = xr;
 
@@ -2094,13 +2096,23 @@ function montar(host, opts) {
     } else {
       var em = xr.mode === 'ar' ? '📱 RA no ambiente' : xr.mode === 'vr' ? '🥽 VR imersivo' : xr.mode === 'camera' ? '📷 Câmera + Projeto' : '👣 Caminhando';
       html += '<div style="font-size:11px;color:#7fe0a3"><b>' + em + '</b> ativo</div>';
-      // escala: só no AR (mesa). Andar/VR é sempre 1:1 (escala real — é o sentido de "andar dentro")
+      // escala — no AR de mesa (hit-test) e agora TAMBÉM no câmera/caminhar (1:1 real OU miniatura na sala)
       if (xr.mode === 'ar') {
         var ESCS = [['1', '1:1 (real)'], ['0.04', '1:25'], ['0.02', '1:50'], ['0.01', '1:100'], ['0.005', '1:200']];
         html += '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-x="esc" class="inp" style="width:120px">' +
           ESCS.map(function (o) { return '<option value="' + o[0] + '"' + (Math.abs(parseFloat(o[0]) - (xr.escala || 1)) < 1e-6 ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
       } else {
-        html += '<div style="font-size:11px;color:#9fb2c8">Você caminha em <b>escala real 1:1</b>. (Escala reduzida fica na 📱 RA de mesa.)</div>';
+        var real = (xr.escala || 1) >= 0.999;
+        var ESCS2 = [['1', '1:1 real (andar dentro)'], ['fit', 'Caber na sala (auto)'], ['0.04', '1:25'], ['0.02', '1:50'], ['0.01', '1:100'], ['0.005', '1:200']];
+        // seleção: 1:1 se real; senão a numérica mais próxima; senão "fit"
+        var selNum = null; if (!real) { for (var _i = 2; _i < ESCS2.length; _i++) { if (Math.abs(parseFloat(ESCS2[_i][0]) - (xr.escala || 1)) < 1e-4) { selNum = ESCS2[_i][0]; break; } } }
+        var selVal = real ? '1' : (selNum || 'fit');
+        html += '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-x="esc2" class="inp" style="width:150px">' +
+          ESCS2.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === selVal ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+          '<div style="display:flex;gap:6px">' +
+          '<button class="btn sm" data-x="centralizar" style="flex:1">📍 Centralizar</button>' +
+          '<button class="btn sm" data-x="travarcam" style="flex:1">' + (xr.travado ? '🔓 Destravar' : '🔒 Travar') + '</button></div>' +
+          '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. 📍 recoloca à frente; 🔒 fixa no lugar.</div>';
       }
       // altura do corte de visão (reflete o valor atual — não reseta no repaint)
       var cf = (xr.cortefrac == null ? 1000 : xr.cortefrac);
@@ -2157,10 +2169,72 @@ function montar(host, opts) {
   // ---- escala: só na RA de mesa (AR). Andar/VR é sempre 1:1 (escala real) — escalar o
   // modelRoot em torno da origem no Caminhar jogava a câmera pra fora do modelo (achado do gate).
   function aplicarEscalaXR(f) {
-    if (xr.mode !== 'ar') { xr.escala = 1; return; } // caminhar/VR ignoram escala
+    if (xr.mode !== 'ar') { xr.escala = 1; return; } // AR de mesa tem seu próprio fluxo (hit-test)
     xr.escala = f || 1;
     if (xr.placed) posicionarModeloAR();
   }
+
+  // ---- ESCALA + ÂNCORA no modo CÂMERA/CAMINHAR (iPhone/Android sem WebXR): 1:1 real (andar DENTRO)
+  //      ou miniatura na sua frente. Escala em torno de uma ÂNCORA (ponto à frente), NÃO da origem —
+  //      escalar na origem jogava a câmera pra fora do modelo (achado do gate). modelRoot fica na
+  //      origem durante o imersivo (posOrig restaurado ao sair), então world = position + escala*local. ----
+  var _imFwd = new THREE.Vector3(), _imC = new THREE.Vector3();
+  function fitEscala() { // escala que faz o modelo caber ~2,2 m à frente (miniatura de sala)
+    var b = xr.boxLocal; if (!b) return 0.02;
+    var d = b.getSize(new THREE.Vector3()), maior = Math.max(d.x, d.y, d.z) || 1;
+    return Math.max(0.002, Math.min(1, 2.2 / maior));
+  }
+  function posicionarNaFrente(dist) {
+    var b = xr.boxLocal; if (!b) return;
+    var s = xr.escala || 1;
+    camera.getWorldDirection(_imFwd); _imFwd.y = 0; if (_imFwd.lengthSq() < 1e-6) _imFwd.set(0, 0, -1); _imFwd.normalize();
+    var pisoY = camera.position.y - EYE; // chão sob os olhos (altura real do usuário)
+    var ax = camera.position.x + _imFwd.x * dist, az = camera.position.z + _imFwd.z * dist;
+    b.getCenter(_imC);
+    modelRoot.position.set(ax - s * _imC.x, pisoY - s * b.min.y, az - s * _imC.z); // base-centro do modelo cai em (ax, pisoY, az)
+    xr._pisoY = pisoY;
+  }
+  function aplicarEscalaImersivo(f) {
+    if (xr.mode === 'ar') { aplicarEscalaXR(f); return; }
+    if (!xr.on || !xr.boxLocal) return; // só no imersivo câmera/caminhar
+    if (xr.travado) { S._hint('🔒 Destrave pra mudar a escala.'); pintarXRPanel(); return; } // repinta pro <select> voltar ao valor real
+    xr.escala = f > 0 ? f : 1;
+    modelRoot.scale.setScalar(xr.escala);
+    if (xr.escala >= 0.999) { // 1:1 real: modelo nas coords locais, câmera no piso do centro (andar DENTRO)
+      modelRoot.position.set(0, 0, 0);
+      xr.boxLocal.getCenter(_imC);
+      camera.position.set(_imC.x, xr.boxLocal.min.y + EYE, _imC.z);
+      xr._pisoY = xr.boxLocal.min.y;
+      xrDica('Escala real 1:1 — você está DENTRO do projeto. Vire o celular; ande com o joystick.');
+    } else { // miniatura à frente (na sua sala)
+      posicionarNaFrente(2.0);
+      xrDica('Miniatura na sua frente. Vire o celular pra olhar; 📍 recentraliza; joystick pra rodear.');
+    }
+    if (xr.cortefrac != null && xr.cortefrac < 999) aplicarTetoVisao(xr.cortefrac / 1000); // recalcula o teto de visão p/ a nova escala (senão o corte fica na altura de mundo antiga e some o modelo)
+  }
+  S._aplicarEscalaImersivo = aplicarEscalaImersivo;
+  function centralizarProjeto() {
+    if (xr.mode === 'ar') { if (!xr.travado) { xr.placed = false; xrDica('Aponte pro chão e toque pra fixar de novo.'); } else S._hint('🔒 Destrave pra reposicionar.'); return; }
+    if (!xr.on || !xr.boxLocal) return; // simétrico com aplicarEscalaImersivo: fora do imersivo câmera/caminhar não faz nada
+    if (xr.travado) { S._hint('🔒 Destrave pra reposicionar.'); return; }
+    if (xr.escala >= 0.999) { xr.boxLocal.getCenter(_imC); camera.position.set(_imC.x, xr.boxLocal.min.y + EYE, _imC.z); xr._pisoY = xr.boxLocal.min.y; }
+    else posicionarNaFrente(2.0);
+    S._hint('📍 Projeto recolocado à sua frente.');
+  }
+  S._centralizarImersivo = centralizarProjeto;
+  // re-snapshot da âncora (boxLocal) quando modelos entram/saem DURANTE o imersivo câmera/caminhar —
+  // senão centralizar/escala ancoram no bbox antigo. Se ficou sem geometria, sai do imersivo.
+  function xrReSnap() {
+    if (!xr.on || xr.mode === 'ar' || xr.mode === 'vr') return;
+    var p = modelRoot.position.clone(), s = modelRoot.scale.clone();
+    modelRoot.position.set(0, 0, 0); modelRoot.scale.setScalar(1); modelRoot.updateMatrixWorld(true);
+    var b = new THREE.Box3().setFromObject(modelRoot);
+    modelRoot.position.copy(p); modelRoot.scale.copy(s); modelRoot.updateMatrixWorld(true);
+    if (b.isEmpty()) { sairImersivo(); return; }
+    xr.boxLocal = b.clone();
+    aplicarEscalaImersivo(xr.escala || 1); // reancora na escala corrente
+  }
+  S._xrReSnap = xrReSnap;
 
   // ---- teto de visão (corte horizontal que esconde o que está acima) ----
   function aplicarTetoVisao(frac) {
@@ -2168,7 +2242,7 @@ function montar(host, opts) {
     xr.cortefrac = Math.round(frac * 1000); // lembra a posição p/ o repaint não resetar
     var y = box.min.y + (box.max.y - box.min.y) * frac;
     var rot = xrPanel.querySelector('[data-x="cortev"]');
-    if (frac >= 0.999) { renderer.clippingPlanes = xr.prevClip || []; renderer.localClippingEnabled = xr.prevLocal; if (rot) rot.textContent = 'inteiro'; return; }
+    if (frac >= 0.999) { var walk = (xr.mode !== 'ar' && xr.mode !== 'vr'); renderer.clippingPlanes = walk ? [] : (xr.prevClip || []); renderer.localClippingEnabled = walk ? false : xr.prevLocal; if (rot) rot.textContent = 'inteiro'; return; } // no Caminhar/Câmera "inteiro" = modelo inteiro (não reinstala o corte da planta)
     if (!xr.clip) xr.clip = new THREE.Plane(new THREE.Vector3(0, -1, 0), 0);
     xr.clip.constant = y;
     renderer.localClippingEnabled = true; renderer.clippingPlanes = [xr.clip];
@@ -2185,6 +2259,7 @@ function montar(host, opts) {
     var chips = discs.length > 1 ? discs.map(function (d) { var off = !!xr.discOcultas[d.chave]; return '<button data-har="' + esc(d.chave) + '" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 11px;font-size:12px;color:#fff;background:' + (off ? 'rgba(90,110,130,.7)' : corAtiva()) + '">' + esc(d.nome) + '</button>'; }).join('') : '';
     var barra = '<div style="position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 10px">' +
       chips +
+      '<button data-har="centralizar" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#2563eb;font-weight:600">📍 Centralizar</button>' +
       '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
       '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">⚙️ Ajustes</button>' +
       '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
@@ -2201,7 +2276,8 @@ function montar(host, opts) {
   xrHud.addEventListener('click', function (e) {
     var b = e.target.closest('[data-har]'); if (!b) return; var k = b.getAttribute('data-har');
     if (k === 'sair') sairImersivo();
-    else if (k === 'medir') { xr.medir.on = !xr.medir.on; b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo pra medir na escala.' : ''); }
+    else if (k === 'centralizar') centralizarProjeto();
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
     else if (k === 'ajustes') { var aberto = xrPanel.style.display === 'flex'; if (aberto) { xrPanel.style.display = 'none'; } else { pintarXRPanel(); xrPanel.style.display = 'flex'; if (S._ajustarTop) S._ajustarTop(); } }
     else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
   });
@@ -2226,33 +2302,55 @@ function montar(host, opts) {
   // ---- olhar arrastando (não-XR): drag no canvas gira a câmera ----
   var xrDrag = null;
   function xrPointerDown(e) { if (!xr.on || xr.mode === 'ar' || xr.mode === 'vr') return; if (xr.medir.on) { medirTocar(e); return; } xrDrag = { x: e.clientX, y: e.clientY }; }
-  function xrPointerMove(e) { if (!xrDrag) return; xr.look.yaw -= (e.clientX - xrDrag.x) * 0.005; xr.look.pitch -= (e.clientY - xrDrag.y) * 0.005; xr.look.pitch = Math.max(-1.4, Math.min(1.4, xr.look.pitch)); xrDrag = { x: e.clientX, y: e.clientY }; }
+  function xrPointerMove(e) {
+    if (!xrDrag) return;
+    if (xr.oriOk) { xr.oriYawOff -= (e.clientX - xrDrag.x) * 0.005; } // com giroscópio: arrastar na horizontal RECENTRALIZA (o pitch vem do aparelho)
+    else { xr.look.yaw -= (e.clientX - xrDrag.x) * 0.005; xr.look.pitch -= (e.clientY - xrDrag.y) * 0.005; xr.look.pitch = Math.max(-1.4, Math.min(1.4, xr.look.pitch)); }
+    xrDrag = { x: e.clientX, y: e.clientY };
+  }
   function xrPointerUp() { xrDrag = null; }
 
-  // ---- orientação do aparelho (virar o celular pra olhar) ----
+  // ---- orientação do aparelho: giroscópio REAL por QUATERNION (fórmula do DeviceOrientationControls
+  //      do three.js). O jeito antigo (só yaw a partir de alpha + pitch de beta) IGNORAVA gamma e a
+  //      orientação da tela → a câmera "bugava" ao inclinar/girar o celular. Agora acompanha os 3 eixos. ----
+  var _oriZee = new THREE.Vector3(0, 0, 1);
+  var _oriEul = new THREE.Euler();
+  var _oriQ0 = new THREE.Quaternion();
+  var _oriQ1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° em X: a câmera aponta pra "fora" do fundo do aparelho
+  var _oriYaw = new THREE.Quaternion(); // offset de recentragem (horizontal), aplicado em torno do Y do MUNDO
+  var _oriUp = new THREE.Vector3(0, 1, 0);
+  function _screenAngRad() { var a = 0; try { a = (window.screen && screen.orientation && typeof screen.orientation.angle === 'number') ? screen.orientation.angle : (window.orientation || 0); } catch (e) {} return (a || 0) * Math.PI / 180; }
   function ligarOrientacao() {
     if (xr.ori) return;
     function handler(ev) {
-      if (ev.alpha == null) return;
-      var a = ev.alpha * Math.PI / 180, b = ev.beta * Math.PI / 180;
-      if (!xr.oriBase) xr.oriBase = a;
-      xr.look.yaw = -(a - xr.oriBase);
-      xr.look.pitch = Math.max(-1.4, Math.min(1.4, (b - Math.PI / 2)));
+      if (ev.alpha == null && ev.beta == null && ev.gamma == null) return;
+      var alpha = (ev.alpha || 0) * Math.PI / 180, beta = (ev.beta || 0) * Math.PI / 180, gamma = (ev.gamma || 0) * Math.PI / 180;
+      _oriEul.set(beta, alpha, -gamma, 'YXZ');       // ordem canônica do device-orientation
+      var q = xr.oriQuat || (xr.oriQuat = new THREE.Quaternion());
+      q.setFromEuler(_oriEul);
+      q.multiply(_oriQ1);                            // olhar pra frente (não pro céu)
+      q.multiply(_oriQ0.setFromAxisAngle(_oriZee, -_screenAngRad())); // corrige retrato/paisagem
+      // recentragem horizontal: gira o resultado em torno do Y do mundo pelo offset do usuário
+      _oriYaw.setFromAxisAngle(_oriUp, xr.oriYawOff || 0);
+      q.premultiply(_oriYaw);
+      xr.oriOk = true;
     }
-    var start = function () { window.addEventListener('deviceorientation', handler, true); xr.ori = true; xr._oriH = handler; xrDica('Vire o celular pra olhar em volta. Joystick pra andar.'); };
+    var start = function () { window.addEventListener('deviceorientation', handler, true); xr.ori = true; xr._oriH = handler; xrDica('Vire e incline o celular pra olhar — o projeto acompanha. Joystick pra andar. Arraste na horizontal pra recentralizar.'); };
     if (typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
       DeviceOrientationEvent.requestPermission().then(function (p) { if (p === 'granted') start(); }).catch(function () {});
     } else if (typeof DeviceOrientationEvent !== 'undefined') { start(); }
   }
-  function desligarOrientacao() { if (xr.ori && xr._oriH) { window.removeEventListener('deviceorientation', xr._oriH, true); } xr.ori = false; xr.oriBase = null; }
+  function desligarOrientacao() { if (xr.ori && xr._oriH) { window.removeEventListener('deviceorientation', xr._oriH, true); } xr.ori = false; xr.oriOk = false; xr.oriBase = null; }
 
   // ---- passo de andar (roda todo frame via S._xrWalk) ----
   var _xrFwd = new THREE.Vector3(), _xrRight = new THREE.Vector3(), _xrUp = new THREE.Vector3(0, 1, 0);
   function xrWalkStep(dt) {
     if (xr.mode === 'vr') { xrVRLoco(dt); return; }
-    // câmera olha conforme yaw/pitch (não-XR); no AR a câmera é da sessão, só nudge no plano
+    // câmera olha conforme o giroscópio (quaternion real) OU, sem giroscópio (desktop/permissão negada),
+    // pelo arraste (yaw/pitch). No AR a câmera é da sessão, só nudge no plano.
     if (xr.mode !== 'ar') {
-      var e = new THREE.Euler(xr.look.pitch, xr.look.yaw, 0, 'YXZ'); camera.quaternion.setFromEuler(e);
+      if (xr.oriOk && xr.oriQuat) { camera.quaternion.copy(xr.oriQuat); }
+      else { var e = new THREE.Euler(xr.look.pitch, xr.look.yaw, 0, 'YXZ'); camera.quaternion.setFromEuler(e); }
     }
     var mv = xr.joy.x * xr.joy.x + xr.joy.z * xr.joy.z;
     if (mv < 0.0009) return;
@@ -2262,7 +2360,7 @@ function montar(host, opts) {
     var alvo = new THREE.Vector3();
     alvo.addScaledVector(_xrFwd, -xr.joy.z * vel).addScaledVector(_xrRight, xr.joy.x * vel);
     if (xr.mode === 'ar') { modelRoot.position.sub(alvo); } // no AR movo o MODELO (a câmera é do device)
-    else { camera.position.add(alvo); camera.position.y = xr._pisoY + EYE * (xr.escala || 1); }
+    else { camera.position.add(alvo); camera.position.y = xr._pisoY + EYE; } // altura REAL do olho (não escala com a miniatura)
   }
   function xrVRLoco(dt) {
     try {
@@ -2290,29 +2388,36 @@ function montar(host, opts) {
   // modo 'caminhar' = modelo em fundo liso; modo 'camera' = modelo POR CIMA do vídeo da câmera
   // (RA simples que roda no iPhone: giroscópio olha, joystick anda, o projeto aparece no ambiente).
   function iniciarAndar(modo) {
-    var box = new THREE.Box3().setFromObject(modelRoot); if (box.isEmpty()) { S._hint('Carregue um modelo primeiro.'); return; }
+    if (xr.on) return; // guarda de reentrada: 2ª entrada (toque duplo 📷/👣) capturaria posOrig JÁ deslocado → modelo torto no 3D ao sair (gate v1.1.92)
+    if (!modelRoot.children.length) { S._hint('Carregue um modelo primeiro.'); return; }
+    // trabalha no frame LOCAL (modelRoot na origem) p/ a escala ancorar certo; posOrig restaurado ao sair
+    xr.posOrig = modelRoot.position.clone();
+    modelRoot.position.set(0, 0, 0); modelRoot.scale.setScalar(1); modelRoot.updateMatrixWorld(true);
+    var box = new THREE.Box3().setFromObject(modelRoot);
+    if (box.isEmpty()) { modelRoot.position.copy(xr.posOrig); S._hint('Modelo sem geometria visível.'); return; }
+    xr.boxLocal = box.clone();
     xr.on = true; xr.mode = modo; xr.escala = 1; xr.cortefrac = 1000;
+    xr.oriYawOff = 0; xr.oriOk = false; xr.travado = false;
     xr.cam = { pos: camera.position.clone(), quat: camera.quaternion.clone(), near: camera.near, far: camera.far };
     xr.prevClip = renderer.clippingPlanes; xr.prevLocal = renderer.localClippingEnabled;
+    renderer.clippingPlanes = []; renderer.localClippingEnabled = false; // Caminhar/Câmera entram INTEIROS; Planta/Corte ativos NÃO vazam (prevClip volta no sair)
     orbit.enabled = false; if (S.fly && S.fly.on && S._setMode) S._setMode(false);
     ligarSombras(true);
     var c = box.getCenter(new THREE.Vector3());
-    xr._pisoY = box.min.y;
-    // câmera: no modo câmera começa um pouco AFASTADO, olhando o modelo (vê o projeto no ambiente,
-    // como um objeto na sua frente); no caminhar começa no centro (dentro).
-    if (modo === 'camera') {
-      var diag = box.getSize(new THREE.Vector3()); var recuo = Math.max(diag.x, diag.z) * 0.8 + 2;
-      camera.position.set(c.x, box.min.y + EYE, box.max.z + recuo);
-    } else camera.position.set(c.x, box.min.y + EYE, c.z);
-    camera.near = 0.05; camera.far = 5000; camera.updateProjectionMatrix();
+    camera.near = 0.02; camera.far = 5000;
+    camera.quaternion.identity(); // olhar pra frente (-Z) até o giroscópio assumir
+    if (modo === 'camera') { camera.position.set(0, box.min.y + EYE, 0); xr._pisoY = box.min.y; }
+    else { camera.position.set(c.x, box.min.y + EYE, c.z); xr._pisoY = box.min.y; } // caminhar: dentro, 1:1
+    camera.updateProjectionMatrix();
     xr.look.yaw = 0; xr.look.pitch = 0; xr.joy.x = 0; xr.joy.z = 0; // zera o joystick (senão anda sozinho na reentrada)
     S._xrWalk = xrWalkStep;
     montarHud(false);
     if (typeof DeviceOrientationEvent !== 'undefined') ligarOrientacao();
     canvasEl.addEventListener('pointerdown', xrPointerDown); canvasEl.addEventListener('pointermove', xrPointerMove); window.addEventListener('pointerup', xrPointerUp);
     marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none';
-    if (modo === 'camera') { xrDica('📷 Mova o celular pra olhar em volta · joystick pra chegar perto. O projeto aparece no ambiente real.'); S._hint('📷 Projeto sobre a câmera. ⏹ Sair no painel.'); }
-    else { xrDica('Arraste pra olhar · joystick pra andar. Vire o celular pra usar o giroscópio.'); S._hint('👣 Você está DENTRO do projeto. Ande com o joystick; arraste pra olhar. ⏹ Sair no painel.'); }
+    // câmera: começa como MINIATURA na frente (vê o projeto inteiro na sala); caminhar: 1:1 DENTRO
+    if (modo === 'camera') { aplicarEscalaImersivo(fitEscala()); S._hint('📷 Projeto no seu ambiente. Vire o celular pra olhar; ⚙️ Ajustes p/ escala (1:1 = andar dentro) e 📍 Centralizar. ⏹ Sair.'); }
+    else { xrDica('👣 Você está DENTRO em escala real 1:1. Vire o celular pra olhar; joystick pra andar.'); S._hint('👣 Dentro do projeto 1:1. Vire o celular; joystick pra andar. ⏹ Sair.'); }
   }
   function entrarCaminhar() { iniciarAndar('caminhar'); }
   // ---- ENTRAR: Câmera + Projeto (RA simples: vídeo da câmera de fundo + modelo por cima) ----
@@ -2326,8 +2431,12 @@ function montar(host, opts) {
       S._hint('📷 A câmera só abre por HTTPS. Use o link ☁️ da nuvem (ou rode no próprio computador).');
       return;
     }
+    if (xr.on || xr._camPend) return; // já imersivo ou pedido de câmera em voo: ignora toque duplo (senão orfã stream + corrompe posOrig)
+    xr._camPend = true;
     S._hint('📷 Pedindo acesso à câmera…');
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (stream) {
+      xr._camPend = false;
+      if (xr.on) { try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} return; } // usuário já entrou em outro modo enquanto pedíamos a câmera → descarta o stream
       xr.stream = stream;
       var v = document.createElement('video');
       v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); v.muted = true; v.autoplay = true;
@@ -2336,6 +2445,7 @@ function montar(host, opts) {
       canvasEl.style.position = 'relative'; canvasEl.style.zIndex = '1'; canvasEl.style.background = 'transparent';
       iniciarAndar('camera');
     }).catch(function (e) {
+      xr._camPend = false;
       var nm = (e && e.name) || e;
       S._hint(nm === 'NotAllowedError' ? '📷 Você negou a câmera. Toque de novo e permita.' : '📷 Não consegui abrir a câmera: ' + nm);
     });
@@ -2489,6 +2599,8 @@ function montar(host, opts) {
     modelRoot.visible = true;
     modelRoot.scale.setScalar(1);
     if (xr.modelSnap) { modelRoot.position.copy(xr.modelSnap.pos); modelRoot.quaternion.copy(xr.modelSnap.quat); modelRoot.scale.copy(xr.modelSnap.scale); xr.modelSnap = null; }
+    else if (xr.posOrig) { modelRoot.position.copy(xr.posOrig); } // câmera/caminhar movem o modelRoot p/ a origem — devolve a posição real
+    xr.posOrig = null; xr.boxLocal = null;
     S.modelos.forEach(function (mo) { mo.grupo.visible = mo.visivel !== false; }); xr.discOcultas = {};
     ligarSombras(false);
     limparMedirXR(); xr.medir.on = false;
@@ -2516,11 +2628,14 @@ function montar(host, opts) {
     else if (k === 'ar') { entrarAR(); }
     else if (k === 'sair') { sairImersivo(); }
     else if (k === 'travar') { xr.travado = !xr.travado; if (xr.reticle) xr.reticle.visible = false; pintarXRPanel(); }
+    else if (k === 'centralizar') { centralizarProjeto(); }
+    else if (k === 'travarcam') { xr.travado = !xr.travado; S._hint(xr.travado ? '🔒 Projeto travado no lugar.' : '🔓 Projeto liberado — dá pra reposicionar/escalar.'); pintarXRPanel(); }
     else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); xrDica(xr.medir.on ? '📏 Toque 2 pontos do modelo pra medir na escala.' : ''); b.style.background = xr.medir.on ? corAtiva() : ''; b.style.color = xr.medir.on ? '#fff' : ''; }
   });
   xrPanel.addEventListener('change', function (e) {
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
     if (k === 'esc') aplicarEscalaXR(parseFloat(b.value) || 1);
+    else if (k === 'esc2') { var v = b.value; aplicarEscalaImersivo(v === 'fit' ? fitEscala() : (parseFloat(v) || 1)); }
   });
   xrPanel.addEventListener('input', function (e) {
     var b = e.target.closest('[data-x]'); if (!b) return;
@@ -2577,6 +2692,7 @@ function montar(host, opts) {
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
     if (S._editReaplicarRem) S._editReaplicarRem(); // removidos da edição valem pro sintético recém-chegado
     notifyModelos();
+    if (S._xrReSnap) S._xrReSnap(); // se chegou modelo durante o imersivo, re-ancora (o enquadrar() acima é ignorado no imersivo)
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
     return mid;
   }
@@ -3480,6 +3596,7 @@ function montar(host, opts) {
     if (!S.modelos.length && S.planta && S.planta.on && S._setPlanta) S._setPlanta(false);
     else if (S.planta && S.planta.on && S._replanejarCorte) S._replanejarCorte(); // sobrou modelo: corte re-ancorado
     if (S.corteL && S.corteL.on && S._aplicarCorteL) S._aplicarCorteL(); // re-ancora (ou sai, se o bbox esvaziou)
+    if (S._xrReSnap) S._xrReSnap(); // imersivo câmera/caminhar: re-ancora a escala no bbox restante (ou sai se esvaziou)
     if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender(); // isolamento (🏢 OU 👁) pode ter ficado sem alvo
     if (mid === 'edit' && S._editReset) S._editReset(); // apagar "Criados no OrçaPRO" = zerar edições (senão replay ressuscita + pins órfãos)
     if (opts.onLoaded) opts.onLoaded(elementosVivos());
@@ -4026,6 +4143,10 @@ window.BIM = {
   _amberCount: function () { if (!S) return 0; var n = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { if (m.material === S.matAndamento) n++; }); }); return n; }, // malhas em âmbar (4D em andamento)
   _chaoVis: function () { if (!S || !S.scene) return null; var v = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) v = o.visible; }); return v; }, // visibilidade da sombra de contato
   _envSet: function () { return !!(S && S.scene && S.scene.environment); }, // ambiente PMREM aplicado?
+  _xr: function () { if (!S || !S.xr) return null; var x = S.xr, c = S.camera, m = S.modelRoot; return { on: x.on, mode: x.mode, escala: +(x.escala || 1).toFixed(4), oriOk: !!x.oriOk, travado: !!x.travado, camY: +c.position.y.toFixed(2), mScale: +m.scale.x.toFixed(4), mPos: [+m.position.x.toFixed(2), +m.position.y.toFixed(2), +m.position.z.toFixed(2)], camDist: +m.position.clone().sub(c.position).length().toFixed(2), camQuat: [+c.quaternion.x.toFixed(3), +c.quaternion.y.toFixed(3), +c.quaternion.z.toFixed(3), +c.quaternion.w.toFixed(3)] }; }, // hook de teste: estado do imersivo RA/RV
+  _xrEscala: function (f) { if (S && S._aplicarEscalaImersivo) S._aplicarEscalaImersivo(f); }, // hook de teste
+  _xrCentralizar: function () { if (S && S._centralizarImersivo) S._centralizarImersivo(); }, // hook de teste
+  _xrTickWalk: function () { if (S && S._xrWalk) S._xrWalk(0.016); }, // hook de teste: roda o passo do imersivo (giroscópio/andar), que o loop real chama
   _chaoSet: function () { if (!S || !S.scene) return null; var c = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) c = o; }); return c ? { x: c.scale.x, y: c.position.y } : null; }, // sombra de contato
   _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste

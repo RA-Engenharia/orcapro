@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.91",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.91/OrcaPRO-IA-update-v1.1.91.zip",
-  "notas": "Novo botão 🔄 Buscar atualização — no menu ⚙ e no visor da nuvem RA/RV. Puxa a versão nova na hora, sem baixar nada, limpando o cache. Essencial no celular (que não tem Ctrl+Shift+R). Inclui o hotfix da câmera RA e o visualizador nível mundial.",
+  "versao": "1.1.92",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.92/OrcaPRO-IA-update-v1.1.92.zip",
+  "notas": "RA/RV muito melhor no celular: giroscópio de verdade (vire o celular e o projeto acompanha, 3 eixos), escala 1:1 real (andar dentro) ou miniatura na sua frente, e 📍 Centralizar / 🔒 Travar pra fixar o projeto num ponto. Abra pelo link ☁️ da nuvem.",
   "obrigatoria": false
 }
