@@ -1,10 +1,10 @@
 /* =====================================================================
- * telemetria.js — Cadastro obrigatório do TESTE GRÁTIS + uso do trial
- * Sem nome+telefone (com consentimento) ninguém testa. Enquanto o trial
- * roda, o app manda pings leves pro servidor de licença: boot + heartbeat
- * a cada 5 min + contador de módulos usados. O servidor agrega e o admin
- * vê: quem está testando, online agora, nº de entradas, horas de uso e
- * módulos mais usados. Clientes LICENCIADOS não são rastreados.
+ * telemetria.js — Cadastro do TESTE GRÁTIS + uso do app (trial e licenciado)
+ * TRIAL: nome+telefone (com consentimento LGPD) antes de liberar.
+ * Enquanto o app roda, manda pings leves (só metadados de USO — nada do
+ * conteúdo dos orçamentos): boot + heartbeat a cada 5 min + contador de
+ * módulos usados. O painel de vendas agrega: quem testa/usa, online agora,
+ * horas de uso, empresa que mais usa e módulos mais usados (p/ priorizar).
  * Fire-and-forget: sem internet, o app segue 100% (offline-first).
  * ===================================================================== */
 (function (global) {
@@ -17,11 +17,17 @@
     reg: function () { try { return JSON.parse(localStorage.getItem(KEYREG) || "null"); } catch (e) { return null; } },
     salvarReg: function (r) { try { localStorage.setItem(KEYREG, JSON.stringify(r)); } catch (e) {} },
 
-    /* só rastreia TRIAL (licenciado/demo ficam de fora) */
+    /* trial ativo */
     ehTrial: function () {
       try { var s = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; return !!(s && s.trial && s.ativo); }
       catch (e) { return false; }
     },
+    /* licença ativada (não-trial) */
+    ehLicenciado: function () {
+      try { var s = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; return !!(s && s.ativo && !s.trial); }
+      catch (e) { return false; }
+    },
+    _ativo: function () { return this.ehTrial() ? !!this.reg() : this.ehLicenciado(); },
 
     _mods: function () { try { return JSON.parse(localStorage.getItem(KEYMODS) || "{}"); } catch (e) { return {}; } },
     contaModulo: function (v) {
@@ -29,34 +35,54 @@
       try { var m = this._mods(); m[v] = (m[v] || 0) + 1; localStorage.setItem(KEYMODS, JSON.stringify(m)); } catch (e) {}
     },
 
+    /* identidade do cliente licenciado (empresa/usuário logado/papel/licença) */
+    _licInfo: function () {
+      var A = (typeof Auth !== "undefined") ? Auth : null;
+      var u = (A && A.usuario) ? (A.usuario() || {}) : {};
+      var email = "";
+      try { if (typeof Licenca !== "undefined" && Licenca._ler) email = (Licenca._ler() || {}).email || ""; } catch (e) {}
+      var dev = "";
+      try { if (typeof Licenca !== "undefined" && Licenca.deviceId) dev = Licenca.deviceId(); } catch (e2) {}
+      return {
+        empresa: u.empresa || "Minha Empresa",
+        usuario: (A && A.nome) ? A.nome() : (u.nome || u.email || "Usuário"),
+        papel: (A && A.papel) ? A.papel() : "admin",
+        licencaEmail: email, deviceId: dev
+      };
+    },
+
     enviar: function (evento) {
       try {
-        var r = this.reg(); if (!r || !this.ehTrial()) return;
+        if (!this._ativo()) return;
         if (!this._sessao) this._sessao = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-        var email = r.email || "";
-        try { if (!email && typeof Auth !== "undefined" && Auth.usuario) email = (Auth.usuario() || {}).email || ""; } catch (e2) {}
-        var body = {
-          evento: evento === "boot" ? "boot" : "ping", sessaoId: this._sessao,
-          nome: r.nome || "", telefone: r.telefone || "", email: email,
-          versao: (typeof CONFIG !== "undefined") ? CONFIG.versao : "",
-          modulos: this._mods() // cumulativo DA SESSÃO (zera a cada boot; o server guarda o maior)
-        };
         var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
         if (!base) return;
+        var ev = evento === "boot" ? "boot" : "ping";
+        var ver = (typeof CONFIG !== "undefined") ? CONFIG.versao : "";
+        var body;
+        if (this.ehTrial()) {
+          var r = this.reg(); if (!r) return;
+          var email = r.email || "";
+          try { if (!email && typeof Auth !== "undefined" && Auth.usuario) email = (Auth.usuario() || {}).email || ""; } catch (e2) {}
+          body = { tipo: "trial", evento: ev, sessaoId: this._sessao, nome: r.nome || "", telefone: r.telefone || "", email: email, versao: ver, modulos: this._mods() };
+        } else {
+          var i = this._licInfo();
+          body = { tipo: "licenciado", evento: ev, sessaoId: this._sessao, empresa: i.empresa, usuario: i.usuario, papel: i.papel, licencaEmail: i.licencaEmail, deviceId: i.deviceId, versao: ver, modulos: this._mods() };
+        }
         fetch(base + "/api/telemetria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(function () {});
       } catch (e) {}
     },
 
     iniciar: function () {
       var self = this;
-      if (!this.ehTrial() || !this.reg()) return;
+      if (!this._ativo()) return;
       try { localStorage.setItem(KEYMODS, "{}"); } catch (e) {} // sessão nova = contador de módulos zerado
       this.enviar("boot");
       if (this._timer) clearInterval(this._timer);
       this._timer = setInterval(function () { self.enviar("ping"); }, 5 * 60 * 1000);
     },
 
-    /* true = bloqueou (modal de cadastro na tela); false = segue o boot */
+    /* true = bloqueou (modal de cadastro na tela); false = segue o boot. Só TRIAL. */
     gate: function (aoLiberar) {
       if (!this.ehTrial() || this.reg()) return false;
       var self = this;

@@ -134,7 +134,7 @@
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
         if (!atual || atual.ativo === false) { this.logout(); return null; } // removido/desativado → desloga
-        u.modulos = atual.modulos || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.aprovador = atual.aprovador === true;
+        u.modulos = atual.modulos || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.aprovador = atual.aprovador === true; u.trocarSenha = atual.trocarSenha === true;
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -179,7 +179,7 @@
         for (var j = 0; j < equipe.length; j++) {
           var u = equipe[j];
           if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _trocarSenha: u.trocarSenha === true } };
           }
         }
       }
@@ -227,6 +227,21 @@
       if (this.ehAdmin()) return true;
       return !!(this._usuario && this._usuario.aprovador);
     },
+    // 1º acesso do sub-usuário: precisa definir a própria senha antes de usar o sistema.
+    precisaTrocarSenha: function () { return !!(this._usuario && this._usuario.papel === "usuario" && this._usuario.trocarSenha); },
+    // Sub-usuário troca a própria senha (1º acesso). Atualiza o registro na equipe + a sessão.
+    trocarMinhaSenha: function (nova) {
+      var u = this._usuario;
+      if (!u || u.papel !== "usuario" || !u.usuarioId) return { ok: false, erro: "Apenas sub-usuário troca a própria senha aqui." };
+      if (!Util.naoVazio(nova) || String(nova).length < 4) return { ok: false, erro: "A nova senha precisa de ao menos 4 caracteres." };
+      var eq = this._equipe(u.empresaId), rec = null;
+      for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { rec = eq[i]; break; } }
+      if (!rec) return { ok: false, erro: "Usuário não encontrado." };
+      rec.senhaHash = this._hashSenha(nova); rec.trocarSenha = false;
+      try { Store.salvar(u.empresaId, "equipe", rec); } catch (e) { return { ok: false, erro: "Falha ao salvar a nova senha." }; }
+      u.trocarSenha = false; localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
+      return { ok: true };
+    },
     redefinirSenha: function (email, nova) {
       var r = this.backend.redefinirSenha(email, nova);
       if (r.ok) this._iniciarSessao(r.usuario);
@@ -263,7 +278,8 @@
         usuarioId: u._usuarioId || null,
         departamento: u._departamento || "",
         modulos: u._modulos || null,  // null = admin (todos os módulos)
-        aprovador: u._aprovador === true
+        aprovador: u._aprovador === true,
+        trocarSenha: u._trocarSenha === true   // 1º acesso do sub-usuário: força definir a própria senha
       };
       localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
     },

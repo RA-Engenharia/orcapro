@@ -581,6 +581,22 @@
     },
 
     // ---------- Login ----------
+    _trocaSenhaPrimeiroAcesso: function () {
+      var self = this;
+      var corpo = '<p class="muted" style="margin:0 0 12px">Este é o seu <b>primeiro acesso</b>. Defina uma senha só sua para continuar.</p>' +
+        '<div class="field"><label>Nova senha *</label><input id="ts-s1" type="password" placeholder="mínimo 4 caracteres" autocomplete="new-password"></div>' +
+        '<div class="field"><label>Repita a nova senha *</label><input id="ts-s2" type="password" placeholder="repita" autocomplete="new-password"></div>';
+      UI.modal("🔐 Primeiro acesso — crie sua senha", corpo, [
+        { texto: "Salvar e continuar", classe: "primary", onClick: function () {
+          var s1 = (UI.el("ts-s1") || {}).value || "", s2 = (UI.el("ts-s2") || {}).value || "";
+          if (s1.length < 4) { UI.toast("A senha precisa de ao menos 4 caracteres.", "erro"); return; }
+          if (s1 !== s2) { UI.toast("As senhas não conferem.", "erro"); return; }
+          var r = Auth.trocarMinhaSenha(s1);
+          if (!r.ok) { UI.toast(r.erro || "Não foi possível trocar a senha.", "erro"); return; }
+          UI.fecharModal(); UI.toast("Senha definida! Bom trabalho.", "ok"); self.render();
+        } }
+      ]);
+    },
     entrar: function () {
       var empresa = (UI.el("lg-empresa") || {}).value || "Minha Empresa";
       var email = (UI.el("lg-email") || {}).value;
@@ -604,6 +620,8 @@
       }
       this.tela = "lista";
       this.render();
+      // 1º acesso de sub-usuário: obriga a definir a própria senha antes de operar
+      if (typeof Auth.precisaTrocarSenha === "function" && Auth.precisaTrocarSenha()) { this._trocaSenhaPrimeiroAcesso(); }
       // recarrega a base SINAPI específica desta empresa (se importou uma própria)
       var self = this;
       this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });

@@ -3788,9 +3788,11 @@ renderRequisicoes: function () {
           var dis = m.id === "dashboard" ? " disabled" : "";
           return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" data-mod="' + m.id + '"' + (on ? " checked" : "") + dis + "> " + Util.esc(m.nome) + (m.id === "dashboard" ? ' <span class="muted">(sempre)</span>' : "") + "</label>";
         }).join("") + "</div>";
+      var senhaGerada = ""; // plaintext capturado só p/ o envio ao usuário (nunca é salvo)
       var corpo =
         '<div class="row">' + campo("Nome *", inp("g-nome", u.nome, "Ex.: Maria Souza")) + campo("Login (usuário) *", inp("g-login", u.login, "ex.: maria")) + "</div>" +
-        '<div class="row">' + campo(ehNovo ? "Senha *" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "senha de acesso" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
+        '<div class="row">' + campo(ehNovo ? "Senha provisória (branco = gerar automática)" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "deixe em branco p/ gerar" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
+        '<div class="row">' + campo("WhatsApp do usuário", inp("g-ufone", u.fone, "(34) 90000-0000")) + campo("E-mail do usuário", inp("g-uemail", u.email, "usuario@empresa.com")) + "</div>" +
         campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">↺ preset do departamento</button>', checkboxes) +
         campo("Aprovações", '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>');
       this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
@@ -3803,16 +3805,20 @@ renderRequisicoes: function () {
         if (emUso) { UI.toast('Já existe um usuário com o login "' + obj.login + '".', "erro"); return false; }
         if (ehNovo && lista("equipe").length >= LIMITE_USUARIOS) { UI.toast("Limite de " + LIMITE_USUARIOS + " usuários atingido.", "erro"); return false; }
         var senha = v("g-senha");
-        if (ehNovo && !senha) { UI.toast("Defina uma senha para o 1º acesso.", "erro"); return false; }
+        if (ehNovo && !senha) { senha = self._gerarSenhaPadrao(); } // senha padrão automática se em branco
         if (senha) obj.senhaHash = (typeof Auth !== "undefined" && Auth._hashSenha) ? Auth._hashSenha(senha) : btoa(unescape(encodeURIComponent(senha)));
+        if (ehNovo) obj.trocarSenha = true; // 1º acesso: o usuário define a própria senha
         obj.departamento = v("g-depto");
+        obj.fone = String(v("g-ufone") || "").trim();
+        obj.email = String(v("g-uemail") || "").trim();
         obj.ativo = v("g-ativo") !== "0";
         var mods = ["dashboard"];
         Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) { if (c.checked && c.getAttribute("data-mod") !== "dashboard") mods.push(c.getAttribute("data-mod")); });
         obj.modulos = mods;
         obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
+        senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
         return true;
-      });
+      }, ehNovo ? function (obj) { self._usuarioCriado(obj, senhaGerada); } : null);
       var preset = document.getElementById("us-preset");
       if (preset) preset.onclick = function () {
         var dep = (document.getElementById("g-depto") || {}).value || "engenharia";
@@ -3821,6 +3827,38 @@ renderRequisicoes: function () {
           var id = c.getAttribute("data-mod"); if (id === "dashboard") return; c.checked = ids.indexOf(id) > -1;
         });
         UI.toast("Módulos do departamento aplicados.", "ok");
+      };
+    },
+    _gerarSenhaPadrao: function () {
+      // senha provisória curta e fácil de digitar (o usuário troca no 1º acesso). Ex.: "ra7391".
+      return "ra" + (1000 + Math.floor(Math.random() * 9000));
+    },
+    _usuarioCriado: function (u, senha) {
+      var nome = u.nome || u.login;
+      var empresa = ""; try { empresa = (Auth.usuario() || {}).empresa || ""; } catch (e) {}
+      var msg = "Olá " + nome + "! Seu acesso ao OrçaPRO" + (empresa ? " (" + empresa + ")" : "") + " foi criado.\n\n" +
+        "Login: " + u.login + "\nSenha provisória: " + senha + "\n\n" +
+        "No primeiro acesso o sistema vai pedir para você criar uma nova senha. Bom trabalho!";
+      var fone = String(u.fone || "").replace(/\D/g, "");
+      var foneIntl = fone ? (fone.length <= 11 ? "55" + fone : fone) : "";
+      var wa = foneIntl ? ("https://wa.me/" + foneIntl + "?text=" + encodeURIComponent(msg)) : "";
+      var mail = u.email ? ("mailto:" + encodeURIComponent(u.email) + "?subject=" + encodeURIComponent("Seu acesso ao OrçaPRO") + "&body=" + encodeURIComponent(msg)) : "";
+      var creds = '<div style="background:#f0fdf4;border:1px solid #b9e6c8;border-radius:10px;padding:12px 14px;margin:10px 0;font-size:14px">' +
+        '<div><b>Login:</b> <span style="font-family:monospace">' + Util.esc(u.login) + '</span></div>' +
+        '<div><b>Senha provisória:</b> <span style="font-family:monospace">' + Util.esc(senha) + '</span></div></div>';
+      var botoes = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">' +
+        (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">📱 Enviar por WhatsApp</a>' : '') +
+        (mail ? '<a class="btn" href="' + mail + '">✉️ Enviar por E-mail</a>' : '') +
+        '<button class="btn ghost" id="uc-copiar">📋 Copiar dados</button></div>' +
+        (!wa && !mail ? '<p class="muted" style="font-size:12px;margin-top:8px">Dica: preencha o WhatsApp ou o e-mail do usuário no cadastro para enviar em 1 clique. Por ora, use “Copiar dados”.</p>' : '');
+      var corpo = '<p style="margin:0 0 6px">✅ <b>Usuário criado com sucesso!</b></p>' +
+        '<p class="muted" style="font-size:13px;margin:0 0 8px">Envie os dados de acesso para <b>' + Util.esc(nome) + '</b> — ele vai <b>trocar a senha no primeiro acesso</b>.</p>' +
+        creds + botoes;
+      UI.modal("🎉 Usuário criado", corpo, [{ texto: "Concluir", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+      var cp = document.getElementById("uc-copiar");
+      if (cp) cp.onclick = function () {
+        try { navigator.clipboard.writeText(msg).then(function () { UI.toast("Dados copiados.", "ok"); }, function () { UI.toast("Copie manualmente do texto acima.", "erro"); }); }
+        catch (e) { UI.toast("Copie manualmente.", "erro"); }
       };
     },
     renderFiscal: function () {
@@ -4899,7 +4937,7 @@ renderFolha: function () {
     },
 
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
-    _modalForm: function (entidade, registro, titulo, corpo, coletar) {
+    _modalForm: function (entidade, registro, titulo, corpo, coletar, aposSalvar) {
       var self = this, ehNovo = !registro.id;
       var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
       if (!ehNovo) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
@@ -4911,7 +4949,9 @@ renderFolha: function () {
         var obj = Util.clone(registro);
         if (coletar(obj) === false) return;
         Store.salvar(eid(), entidade, obj);
-        UI.fecharModal(); App.render(); UI.toast(titulo + (ehNovo ? " criado." : " salvo."), "ok");
+        UI.fecharModal(); App.render();
+        if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
+        else UI.toast(titulo + (ehNovo ? " criado." : " salvo."), "ok");
       } });
       UI.modal((ehNovo ? "Novo " : "Editar ") + titulo, corpo, botoes);
     },
