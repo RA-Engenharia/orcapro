@@ -14,7 +14,13 @@
   var SNAP_MAX_BYTES = 8 * 1024 * 1024; // teto do snapshot serializado (< 10MB da rota + 12MB do body)
 
   // ---------- RBAC: presets de módulos por departamento (o admin pode ajustar por usuário) ----------
-  var LIMITE_USUARIOS = 20;
+  // Limite de usuários (RBAC) por licença. Padrão 10; parametrizável por máquina via
+  // localStorage 'orcapro:limite-usuarios' (o dono/RA sobe p/ clientes que compram usuários
+  // extras — sobrevive a updates, como o desbloqueio do Blocok). Teto de segurança 999.
+  var LIMITE_USUARIOS = (function () {
+    try { var o = parseInt(localStorage.getItem("orcapro:limite-usuarios"), 10); if (o > 0 && o <= 999) return o; } catch (e) {}
+    return 10;
+  })();
   var DEPTO_MODULOS = {
     engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "cotacoes", "insumos", "epi", "relatorios"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
