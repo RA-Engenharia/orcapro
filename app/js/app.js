@@ -1298,6 +1298,21 @@
       } catch (e) {}
       this.orcAtual = orc; this.tela = "editor"; this.aba = "planilha";
       this.render();
+      this._preloadAnalitico(); // pré-carrega a base analítica em 2º plano → detalhe de insumos abre na hora
+    },
+
+    // Pré-carrega a base ANALÍTICA (~18MB) em segundo plano assim que abre o orçamento,
+    // pra "ver composição detalhada" abrir instantâneo (sem o load frio no 1º clique).
+    // Silencioso, sem spinner, offline-first (se falhar, o clique recarrega normalmente).
+    _preloadAnalitico: function () {
+      try {
+        if (typeof Analitico === "undefined" || !this._analiticoArquivo) return;
+        if (Analitico.carregado || Analitico.carregando) return;
+        var arq = this._analiticoArquivo;
+        setTimeout(function () {
+          try { if (!Analitico.carregado && !Analitico.carregando) Analitico.carregarArquivo(arq).catch(function () {}); } catch (e) {}
+        }, 1200);
+      } catch (e) {}
     },
 
     editarDadosOrc: function () {
@@ -1751,9 +1766,22 @@
     verInsumos: function (codigo) {
       var self = this;
       var ufAtivo = self._baseUf || Sinapi.uf || null;
+      if (!codigo || !String(codigo).trim()) {
+        UI.modal("ℹ️ Sem composição detalhada", '<p>Este item foi <b>lançado manualmente</b> (sem código SINAPI), então não há composição de insumos para detalhar. O valor usado é o que você digitou.</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
       function abrir() {
         var a = Analitico.obter(codigo);
-        if (!a) { UI.toast("A composição " + codigo + " não possui analítico detalhado" + (ufAtivo ? " na base " + ufAtivo : "") + ".", "erro"); return; }
+        if (!a) {
+          UI.modal("ℹ️ Sem composição detalhada", '<p style="margin:0 0 8px">O item <b>' + Util.esc(String(codigo)) + '</b> não tem composição de insumos para abrir. Isso acontece quando:</p>' +
+            '<ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.7">' +
+            '<li>é um <b>insumo</b> (material/mão de obra/equipamento) — não é uma composição, então não se desdobra;</li>' +
+            '<li>foi <b>lançado manualmente</b> ou por preço próprio (sem código SINAPI);</li>' +
+            '<li>o código não está na base <b>analítica</b>' + (ufAtivo ? ' de ' + Util.esc(ufAtivo) : '') + ' (existe no preço, mas sem o detalhamento).</li></ul>' +
+            '<p class="muted" style="font-size:12.5px;margin:10px 0 0">O orçamento usa o <b>preço correto</b> da base — só o desmembramento em insumos é que não está disponível para este item.</p>',
+            [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
         var bg = UI.modal("🔍 Composição " + codigo + " — Insumos", UI.renderInsumos(a, ufAtivo),
           [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
         var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";

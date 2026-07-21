@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.103",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.103/OrcaPRO-IA-update-v1.1.103.zip",
-  "notas": "Modo nuvem multi-aparelho: cada usuário entra no próprio celular, tablet ou computador com a MESMA licença; os usuários e os dados ficam compartilhados; só o administrador (primeira máquina) cria os usuários. A trava passa a valer por número de usuários.",
+  "versao": "1.1.104",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.104/OrcaPRO-IA-update-v1.1.104.zip",
+  "notas": "Composição detalhada de insumos mais fluida: a base analítica pré-carrega ao abrir o orçamento (o detalhe abre na hora, sem espera no primeiro clique) e, quando o item não tem composição (é um insumo ou foi lançado manualmente), aparece um aviso claro explicando o porquê.",
   "obrigatoria": false
 }
