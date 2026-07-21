@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.101",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.101/OrcaPRO-IA-update-v1.1.101.zip",
-  "notas": "Limite de usuários padronizado em 10 por licença (parametrizável) — a RA Engenharia libera usuários adicionais por cliente quando contratado. Correções e melhorias.",
+  "versao": "1.1.102",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.102/OrcaPRO-IA-update-v1.1.102.zip",
+  "notas": "Criação de usuário com aviso de sucesso + envio dos dados de acesso por WhatsApp ou e-mail; senha provisória automática e troca obrigatória no 1º acesso. Painel de vendas com aba de Uso: empresas que mais usam (horas), módulos mais usados e usuários logados agora.",
   "obrigatoria": false
 }
