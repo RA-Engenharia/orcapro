@@ -18,7 +18,8 @@ var S = null; // estado do viewer montado
 
 // 🧱 Blocok — allowlist de e-mails com acesso (feito p/ a Argecon primeiro; fácil de estender).
 // No escopo do MÓDULO (não dentro de montar) p/ já estar definido quando a toolbar é construída.
-var BLOCOK_EMAILS = ['argeconengenharia@gmail.com'];
+// rogeriosouza... = o dono (RA Engenharia) — sempre liberado pra testar.
+var BLOCOK_EMAILS = ['argeconengenharia@gmail.com', 'rogeriosouza.engenharia@gmail.com'];
 
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
@@ -1174,6 +1175,9 @@ function montar(host, opts) {
   function getBK() { return (typeof Blocok !== 'undefined' && Blocok) || (typeof window !== 'undefined' && window.Blocok) || null; }
   function blocokLiberado() {
     try {
+      // desbloqueio PERMANENTE desta máquina (dono/teste): sobrevive a updates (localStorage não é
+      // sobrescrito pelo pacote de atualização). Ligado pelo LIBERAR-BLOCOK.html do instalador.
+      try { if (typeof localStorage !== 'undefined' && localStorage.getItem('orcapro:blocok:owner') === '1') return true; } catch (_) {}
       var norm = function (e) { return String(e || '').trim().toLowerCase(); };
       var A = (typeof window !== 'undefined' && window.Auth) ? window.Auth : (typeof Auth !== 'undefined' ? Auth : null);
       var emLocal = (A && A.usuario && A.usuario()) ? norm(A.usuario().email) : '';           // login local
@@ -1182,11 +1186,25 @@ function montar(host, opts) {
       return BLOCOK_EMAILS.indexOf(emLocal) >= 0 || (emNuvem && BLOCOK_EMAILS.indexOf(emNuvem) >= 0);
     } catch (_) { return false; }
   }
-  var blocokCfg = { espForcada: 'auto', pesoPorEsp: { 10: 46, 13: 46, 15: 46, 20: 46 }, insCfg: null, descontarVaos: true };
+  var blocokCfg = { espForcada: 'auto', pesoPorEsp: { 10: 46, 13: 46, 15: 46, 20: 46 }, insCfg: null, moCfg: null, logCfg: null, descontarVaos: true };
   function ensureInsCfg() { if (!blocokCfg.insCfg) { var bk = getBK(); blocokCfg.insCfg = bk ? bk.insumoDefaults() : {}; } return blocokCfg.insCfg; }
+  function ensureMoCfg() { if (!blocokCfg.moCfg) { var bk = getBK(); blocokCfg.moCfg = bk ? bk.maoDeObraDefaults() : {}; } return blocokCfg.moCfg; }
+  function ensureLogCfg() { if (!blocokCfg.logCfg) { var bk = getBK(); blocokCfg.logCfg = bk ? bk.logisticaDefaults() : {}; } return blocokCfg.logCfg; }
   function ehParedeTipo(t) { t = String(t || '').toUpperCase(); return t.indexOf('WALL') >= 0 || t === 'PAREDE'; }
   function ehVaoTipo(t) { t = String(t || '').toUpperCase(); return t.indexOf('DOOR') >= 0 || t.indexOf('WINDOW') >= 0 || t === 'PORTA' || t === 'JANELA'; }
   function fmtB(n) { return (Math.round((+n || 0) * 100) / 100).toFixed(2).replace('.', ','); }
+  // pavimento de uma parede: 1) membership declarada no IFC (IfcRelContainedInSpatialStructure via
+  // pavLista) 2) por elevação (maior y0 ≤ base) 3) "Pavimento único".
+  function pavDaParede(uid, yBase) {
+    try {
+      var lst = (S._pavLista) ? S._pavLista() : [];
+      if (!lst.length) return 'Pavimento único';
+      for (var i = 0; i < lst.length; i++) { if (lst[i].uids && lst[i].uids[uid]) return lst[i].nome; }
+      var melhor = null;
+      lst.forEach(function (pv) { if (pv.y0 != null && pv.y0 <= yBase + 0.5 && (!melhor || pv.y0 > melhor.y0)) melhor = pv; });
+      return (melhor && melhor.nome) || lst[0].nome || 'Pavimento único';
+    } catch (_) { return 'Pavimento único'; }
+  }
 
   // extrai as paredes VISÍVEIS: pontos XZ (mundo) por parede → OBB 2D (comprimento×
   // espessura + linha de base) + altura pelo Y da malha; detecta vãos pela AABB das
@@ -1235,13 +1253,13 @@ function montar(host, opts) {
     // menor distância perpendicular → evita descontar a mesma abertura de paredes paralelas próximas
     // (fachada dupla, geminada como 2 IfcWall, shaft, gesso). Desconto desligado → nenhum vão entra.
     var vaosDet = BK.distribuirVaos(raw, blocokCfg.descontarVaos ? vaos : []);
-    // PASSO 3 — pagina cada parede com os vãos que lhe pertencem
+    // PASSO 3 — pagina cada parede com os vãos que lhe pertencem + marca o pavimento
     var paredes = [], np = 0;
     raw.forEach(function (w) {
       var espCm = (blocokCfg.espForcada === 'auto') ? BK.espBlocok(w.esp) : +blocokCfg.espForcada;
       var pag = BK.paginar({ comprimento: w.L, altura: w.H, vaos: w.vlist });
       np++;
-      paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist });
+      paredes.push({ id: 'P' + np, uid: w.uid, nome: nomePorUid[w.uid] || ('Parede ' + np), comprimento: w.L, altura: w.H, espessura: espCm, espM: w.esp, pag: pag, p1: w.obb.p1, p2: w.obb.p2, vaos: w.vlist, pavimento: pavDaParede(w.uid, w.yMin) });
     });
     return { paredes: paredes, vaosDet: vaosDet };
   }
@@ -1312,6 +1330,35 @@ function montar(host, opts) {
   }
   S.blocok = gerarBlocok;
   S._blocokLiberado = blocokLiberado;
+
+  // 📊 planilha Excel multi-abas (Resumo, por pavimento, romaneio, material, insumos, MO, cargas, logística)
+  function gerarPlanilhaBlocok() {
+    if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Recurso exclusivo (liberado por licença).'); return null; }
+    var BK = getBK(); if (!BK) { if (S._hint) S._hint('🧱 Motor Blocok não carregou.'); return null; }
+    var XLS = (typeof window !== 'undefined' && window.BlocokXLS) || null;
+    if (!XLS) { if (S._hint) S._hint('📊 Módulo de planilha não carregou (js/blocokxls.js).'); return null; }
+    if (!(S.modelos && S.modelos.length)) { if (S._hint) S._hint('🧱 Abra um IFC primeiro.'); return null; }
+    var ext = extrairParedesBlocok(), paredes = ext.paredes;
+    if (!paredes.length) { if (S._hint) S._hint('🧱 Nenhuma parede visível reconhecida (IfcWall).'); return null; }
+    var pesoCfg = { pesoPorEsp: blocokCfg.pesoPorEsp }, ic = ensureInsCfg();
+    var mat = BK.material(paredes, pesoCfg);
+    var pacote = {
+      obra: (S.opts && (S.opts.obraNome || S.opts.obra)) || 'Obra', data: new Date().toLocaleDateString('pt-BR'),
+      paredes: paredes, material: mat, insumos: BK.insumos(paredes, ic), carga: BK.cargaFundacao(paredes, pesoCfg),
+      maoObra: BK.maoDeObra(mat, ensureMoCfg()), logistica: BK.logistica(mat, ensureLogCfg()),
+      moCfg: ensureMoCfg(), pesoCfg: pesoCfg,
+      juntaNome: (ic.junta && ic.junta.tipo === 'argamassa') ? 'argamassa polimérica (junta preenchida)' : (ic.junta && ic.junta.tipo === 'seca') ? 'encaixe seco' : 'cola/adesivo polimérico (cordão)',
+      premissas: { faceCm: ic.faceCm, cimento: ic.mix && ic.mix.cimento, areia: ic.mix && ic.mix.areia, pedrisco: ic.mix && ic.mix.pedrisco, aditivo: ic.mix && ic.mix.aditivo }
+    };
+    if (S._hint) S._hint('📊 Gerando a planilha Excel (' + paredes.length + ' paredes, ' + mat.totalPlacas + ' placas)…');
+    XLS.gerar(pacote, {
+      nome: 'Blocok — ' + pacote.obra + ' — ' + pacote.data.replace(/\//g, '-'),
+      ok: function () { if (S._hint) S._hint('📊 Planilha Excel baixada — abas por pavimento + romaneio + material + insumos + mão de obra + cargas + logística.'); },
+      erro: function (e) { if (S._hint) S._hint('📊 Não gerou a planilha (' + e + '). O Excel precisa de internet na 1ª vez pra carregar o ExcelJS.'); }
+    });
+    return pacote;
+  }
+  S.blocokPlanilha = gerarPlanilhaBlocok;
 
   function abrirRelatorioBlocok(d) {
     var w = null; try { w = window.open('', '_blank'); } catch (_) {}
@@ -1387,6 +1434,14 @@ function montar(host, opts) {
       + linhaNum('Pedrisco', 'data-bkm="pedrisco"', c.mix.pedrisco, 'm³/m³')
       + linhaNum('Aditivo polimérico', 'data-bkm="aditivo"', c.mix.aditivo, 'kg/m³')
       + linhaNum('Face de micro concreto', 'data-bkf="face"', c.faceCm, 'cm');
+    var mc = ensureMoCfg(), lc = ensureLogCfg();
+    var molog = linhaNum('Rendimento', 'data-bkmo="placasDiaEquipe"', mc.placasDiaEquipe, 'placas/dia')
+      + linhaNum('Equipes', 'data-bkmo="nEquipes"', mc.nEquipes, 'equipe')
+      + linhaNum('Pessoas/equipe', 'data-bkmo="pessoasEquipe"', mc.pessoasEquipe, 'pess.')
+      + linhaNum('Jornada', 'data-bkmo="jornadaH"', mc.jornadaH, 'h/dia')
+      + linhaNum('Custo MO', 'data-bkmo="custoHh"', mc.custoHh, 'R$/Hh')
+      + linhaNum('Capac./viagem', 'data-bklg="pesoViagemKg"', lc.pesoViagemKg, 'kg')
+      + linhaNum('Placas/pallet', 'data-bklg="placasPallet"', lc.placasPallet, 'un');
     blocokPanel.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🧱 Plantas Executivas Blocok</b><button class="btn sm" data-bk="fechar" style="padding:2px 8px">✕</button></div>'
       + '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
@@ -1394,9 +1449,11 @@ function montar(host, opts) {
       + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:#9fb2c8">Junta de assentamento</span><select data-bk="junta" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
       + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Traço do micro concreto (avançado)</summary>' + traco + '</details>'
       + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Peso por placa (compra)</summary>' + pesos + '</details>'
+      + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Mão de obra & logística (planilha)</summary>' + molog + '</details>'
       + '<label style="display:flex;align-items:center;gap:6px;margin-top:2px"><input type="checkbox" data-bk="vaos"' + (blocokCfg.descontarVaos ? ' checked' : '') + '> descontar vãos (portas/janelas)</label>'
       + '<button class="btn sm primary" data-bk="gerar" style="margin-top:2px">📐 Gerar plantas executivas</button>'
-      + '<div style="font-size:10px;color:#8296ab;line-height:1.3">Insumos <b>calculados</b> da geometria do painel (traço de referência editável) — ajuste se a sua fábrica usar valores próprios.</div>';
+      + '<button class="btn sm" data-bk="planilha" style="margin-top:2px">📊 Gerar planilha (Excel)</button>'
+      + '<div style="font-size:10px;color:#8296ab;line-height:1.3">Planilha com abas por pavimento, romaneio de placas, material, insumos, mão de obra, cargas e logística. Insumos <b>calculados</b> (traço editável).</div>';
   }
   function toggleBlocokPanel() {
     if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return; }
@@ -1408,7 +1465,7 @@ function montar(host, opts) {
   S._toggleBlocok = toggleBlocokPanel;
   blocokPanel.addEventListener('change', function (e) {
     var t = e.target; if (!t.getAttribute) return;
-    var k = t.getAttribute('data-bk'), kp = t.getAttribute('data-bkp'), kj = t.getAttribute('data-bkj'), kf = t.getAttribute('data-bkf'), km = t.getAttribute('data-bkm');
+    var k = t.getAttribute('data-bk'), kp = t.getAttribute('data-bkp'), kj = t.getAttribute('data-bkj'), kf = t.getAttribute('data-bkf'), km = t.getAttribute('data-bkm'), kmo = t.getAttribute('data-bkmo'), klg = t.getAttribute('data-bklg');
     var c = ensureInsCfg();
     if (k === 'esp') blocokCfg.espForcada = (t.value === 'auto') ? 'auto' : +t.value;
     else if (k === 'vaos') blocokCfg.descontarVaos = !!t.checked;
@@ -1417,12 +1474,15 @@ function montar(host, opts) {
     else if (kj === 'gap') c.junta.gapCm = Math.max(0, +t.value || 0);
     else if (kf === 'face') c.faceCm = Math.max(0.3, +t.value || 1.5);
     else if (km) c.mix[km] = Math.max(0, +t.value || 0);
+    else if (kmo) ensureMoCfg()[kmo] = Math.max(0, +t.value || 0);
+    else if (klg) ensureLogCfg()[klg] = Math.max(0, +t.value || 0);
     else if (kp === 'peso') { var esp = t.getAttribute('data-esp'), val = +t.value; if (val > 0) blocokCfg.pesoPorEsp[esp] = val; }
   });
   blocokPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-bk]'); if (!b) return; var k = b.getAttribute('data-bk');
     if (k === 'fechar') toggleBlocokPanel();
     else if (k === 'gerar') gerarBlocok({});
+    else if (k === 'planilha') gerarPlanilhaBlocok();
   });
 
   function pintarSnapPanel() {
@@ -4876,6 +4936,7 @@ window.BIM = {
   // v1.1.99 — Plantas Executivas Blocok: lê as paredes do IFC → pranchas 90×90 numeradas + material + carga na fundação
   blocok: function (opts) { return (S && S.blocok) ? S.blocok(opts) : null; }, // {semJanela?:bool} → {paredes,material,carga}; abre a prancha em nova aba salvo semJanela
   blocokParedes: function () { return (S && S._extrairParedesBlocok && S._blocokLiberado && S._blocokLiberado()) ? S._extrairParedesBlocok() : { paredes: [], vaosDet: 0 }; }, // só a extração (E2E/diagnóstico) — mesmo gate por licença
+  blocokPlanilha: function () { return (S && S.blocokPlanilha) ? S.blocokPlanilha() : null; }, // planilha Excel multi-abas (por pavimento, romaneio, material, insumos, MO, cargas, logística)
   // v1.1.82 — propriedades completas do elemento (todos os psets, instância+família) e thumbnail
   propriedades: function (uid) { return (S && S._propsCompletas) ? S._propsCompletas(uid) : []; },
   thumbFamilia: function (uid, maxPx) { return (S && S._thumbFamilia) ? S._thumbFamilia(uid, maxPx) : null; },

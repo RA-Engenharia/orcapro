@@ -168,6 +168,48 @@
     return { linhas: linhas, pesoTotalKg: r3(pesoTotal), pesoTotalT: r3(pesoTotal / 1000) };
   }
 
+  // -------- mão de obra por RENDIMENTO (estimativa de montagem) --------
+  // Blocok monta rápido (−50% prazo vs alvenaria). Estima equipe/dias/Hh a partir de um rendimento
+  // EDITÁVEL (placas/dia por equipe). res = { totalPlacas, areaPlacas } (de material()). Custo opcional.
+  function maoDeObraDefaults() {
+    return { placasDiaEquipe: 40, pessoasEquipe: 2, nEquipes: 1, jornadaH: 8, custoHh: 0 };
+  }
+  function maoDeObra(res, cfg) {
+    var d = maoDeObraDefaults(); cfg = cfg || d;
+    var pde = Math.max(1, +cfg.placasDiaEquipe || d.placasDiaEquipe);
+    var neq = Math.max(1, +cfg.nEquipes || d.nEquipes);
+    var pes = Math.max(1, +cfg.pessoasEquipe || d.pessoasEquipe);
+    var jor = Math.max(1, +cfg.jornadaH || d.jornadaH);
+    var custoHh = Math.max(0, +cfg.custoHh || 0);
+    var totalPlacas = Math.max(0, +(res && res.totalPlacas) || 0);
+    var area = Math.max(0, +(res && res.areaPlacas) || 0);
+    var prodDia = pde * neq;                                  // placas/dia (todas as equipes)
+    var dias = prodDia > 0 ? Math.ceil(totalPlacas / prodDia) : 0;
+    var hh = dias * jor * pes * neq;                          // homem-hora
+    return {
+      placasDiaEquipe: pde, nEquipes: neq, pessoasEquipe: pes, jornadaH: jor,
+      producaoDia: prodDia, dias: dias, pessoasTotal: pes * neq, Hh: hh,
+      m2PorDia: dias > 0 ? r3(area / dias) : 0, placasPorHh: hh > 0 ? r3(totalPlacas / hh) : 0,
+      custoHh: custoHh, custoTotal: r3(hh * custoHh)
+    };
+  }
+
+  // -------- logística (transporte por peso) --------
+  // res = { totalPlacas, pesoTotalKg } (de material(), peso de COMPRA). cfg editável.
+  function logisticaDefaults() { return { pesoViagemKg: 5000, placasPallet: 25 }; }
+  function logistica(res, cfg) {
+    var d = logisticaDefaults(); cfg = cfg || d;
+    var pvg = Math.max(1, +cfg.pesoViagemKg || d.pesoViagemKg);
+    var ppl = Math.max(1, +cfg.placasPallet || d.placasPallet);
+    var peso = Math.max(0, +(res && res.pesoTotalKg) || 0), total = Math.max(0, +(res && res.totalPlacas) || 0);
+    return {
+      pesoTotalKg: r3(peso), pesoTotalT: r3(peso / 1000), pesoViagemKg: pvg,
+      viagens: peso > 0 ? Math.ceil(peso / pvg) : 0, placasPallet: ppl,
+      pallets: total > 0 ? Math.ceil(total / ppl) : 0,
+      placasPorViagemMedia: peso > 0 ? Math.round(total / Math.max(1, Math.ceil(peso / pvg))) : 0
+    };
+  }
+
   // -------- atribui cada vão (porta/janela) à parede DONA --------
   // paredes = [{ L, esp, H, yMin, p1:[x,z], ux, uz }] (frame de base da parede, do OBB)
   // aberturas = [{ cx, cz, y0, y1, sx, sz }] (AABB de mundo da porta/janela)
@@ -239,5 +281,5 @@
     return melhor;
   }
 
-  return { PLACA: PLACA, ESPESSURAS: ESPESSURAS, paginar: paginar, pesoPlaca: pesoPlaca, material: material, insumos: insumos, insumoDefaults: insumoDefaults, cargaFundacao: cargaFundacao, distribuirVaos: distribuirVaos, obb2dXZ: obb2dXZ, espBlocok: espBlocok };
+  return { PLACA: PLACA, ESPESSURAS: ESPESSURAS, paginar: paginar, pesoPlaca: pesoPlaca, material: material, insumos: insumos, insumoDefaults: insumoDefaults, maoDeObra: maoDeObra, maoDeObraDefaults: maoDeObraDefaults, logistica: logistica, logisticaDefaults: logisticaDefaults, cargaFundacao: cargaFundacao, distribuirVaos: distribuirVaos, obb2dXZ: obb2dXZ, espBlocok: espBlocok };
 });

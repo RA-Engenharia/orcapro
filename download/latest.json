@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.99",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.99/OrcaPRO-IA-update-v1.1.99.zip",
-  "notas": "Plantas Executivas Blocok (exclusivo por licença): lê as paredes de qualquer IFC e gera a prancha de cada parede com as placas 90×90 numeradas + insumos calculados (produção e assentamento pela junta escolhida) + carga própria na fundação.",
+  "versao": "1.1.100",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.100/OrcaPRO-IA-update-v1.1.100.zip",
+  "notas": "Blocok: planilha Excel completa (recurso exclusivo por licença) — workbook multi-abas a partir de qualquer IFC: Resumo, uma aba por pavimento, Paredes, Romaneio de placas, Material, Insumos, Mão de obra por rendimento, Cargas na fundação e Logística.",
   "obrigatoria": false
 }
