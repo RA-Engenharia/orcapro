@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.102",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.102/OrcaPRO-IA-update-v1.1.102.zip",
-  "notas": "Criação de usuário com aviso de sucesso + envio dos dados de acesso por WhatsApp ou e-mail; senha provisória automática e troca obrigatória no 1º acesso. Painel de vendas com aba de Uso: empresas que mais usam (horas), módulos mais usados e usuários logados agora.",
+  "versao": "1.1.103",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.103/OrcaPRO-IA-update-v1.1.103.zip",
+  "notas": "Modo nuvem multi-aparelho: cada usuário entra no próprio celular, tablet ou computador com a MESMA licença; os usuários e os dados ficam compartilhados; só o administrador (primeira máquina) cria os usuários. A trava passa a valer por número de usuários.",
   "obrigatoria": false
 }

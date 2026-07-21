@@ -41,6 +41,10 @@
         }
       } catch (eTg) {}
 
+      // Modo nuvem multi-aparelho: conecta na conta-tenant da licença (dados + usuários
+      // compartilhados) e, se este aparelho for secundário, pede login. Async/offline-first.
+      try { this._conectarNuvemLicenca(); } catch (eCn) {}
+
       var self = this;
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
       this.carregarBaseSinapi().then(function (n) {
@@ -581,6 +585,25 @@
     },
 
     // ---------- Login ----------
+    _conectarNuvemLicenca: function () {
+      var self = this;
+      try {
+        var st = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null;
+        if (!st || !st.ativo || st.trial) return;                        // só cliente licenciado
+        if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return; // nuvem ligada no config
+        var chave = Licenca.chave(); if (!chave) return;
+        var eid = Auth.empresaId();
+        Nuvem.entrarPorLicenca(chave)
+          .then(function () { return Nuvem.sincronizar(eid); })
+          .then(function () {
+            try { Nuvem.escutar(eid, function () { if (self.tela === "lista") self.render(); }); } catch (e) {}
+            // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
+            if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
+            if (self.tela === "lista") self.render(); // equipe/dados sincronizados
+          })
+          .catch(function () { /* offline: segue com o cache local (offline-first) */ });
+      } catch (e) {}
+    },
     _trocaSenhaPrimeiroAcesso: function () {
       var self = this;
       var corpo = '<p class="muted" style="margin:0 0 12px">Este é o seu <b>primeiro acesso</b>. Defina uma senha só sua para continuar.</p>' +
@@ -626,7 +649,9 @@
       var self = this;
       this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
       // Sincronização na nuvem — só age se CONFIG.backend.sync === true (inerte por padrão).
-      if (typeof Nuvem !== "undefined" && Nuvem.disponivel()) {
+      // NÃO faz o login manual da nuvem quando o tenant-licença já está conectado (multi-aparelho):
+      // evita trocar a conta-tenant pela conta e-mail/senha do login e partir os dados em dois.
+      if (typeof Nuvem !== "undefined" && Nuvem.disponivel() && !Nuvem.ligado) {
         var eid = Auth.empresaId();
         Nuvem.entrar(email, senha)
           .then(function () { return Nuvem.sincronizar(eid); })

@@ -12,7 +12,10 @@
   var ENTIDADES = [
     "orcamentos", "prefs", "obras", "clientes", "contratos", "medicoes",
     "financeiro", "compras", "estoque", "rdo", "colaboradores", "frota",
-    "requisicoes", "epi", "faltas", "templates", "documentos", "usuarios"
+    "requisicoes", "epi", "faltas", "templates", "documentos", "usuarios",
+    // modo nuvem multi-aparelho: a EQUIPE (sub-usuários) e a CONTA (admin mestre)
+    // sincronizam pela conta-tenant da licença → cada usuário loga no próprio aparelho.
+    "equipe", "conta"
   ];
   var SDK = [
     "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js",
@@ -27,7 +30,7 @@
       document.head.appendChild(s);
     });
   }
-  function vazioDe(ent) { return ent === "prefs" ? {} : []; }
+  function vazioDe(ent) { return (ent === "prefs" || ent === "conta") ? {} : []; }
 
   var Nuvem = {
     ligado: false, uid: null, db: null, auth: null,
@@ -83,6 +86,20 @@
       });
     },
 
+    // Modo nuvem MULTI-APARELHO: deriva uma conta Firebase ESTÁVEL da própria licença.
+    // Todo aparelho com a mesma chave entra na MESMA conta-tenant → dados e usuários
+    // compartilhados. A licença é a chave de acesso; o gate por pessoa é o login do usuário.
+    _credLicenca: function (chave) {
+      var c = String(chave || "").trim();
+      var H = (typeof Util !== "undefined" && Util.sha256hex) ? Util.sha256hex : function (x) { return String(x); };
+      return { email: "lic_" + H(c).slice(0, 32) + "@orcapro.app", senha: "L1" + H("orcapro-tenant::" + c).slice(0, 40) };
+    },
+    entrarPorLicenca: function (chave) {
+      if (!chave) return Promise.reject(new Error("sem licença"));
+      var cr = this._credLicenca(chave);
+      return this.entrar(cr.email, cr.senha);
+    },
+
     _doc: function (ent) { return this.db.collection("empresas").doc(this.uid).collection("dados").doc(ent); },
 
     // Une lista local + nuvem por id; o registro com atualizadoEm mais novo vence.
@@ -91,9 +108,11 @@
     // disso, só metadados) e o contador alimenta o aviso pós-sync.
     _conflitosUltimoMerge: 0,
     _merge: function (local, cloud, ent) {
-      if (ent === "prefs") {
-        // prefs: mescla campo a campo, o mais novo (por chave) — simplificado: local sobre nuvem
-        return Object.assign({}, cloud || {}, local || {});
+      if (ent === "prefs" || ent === "conta") {
+        // objeto único (prefs, conta mestre): mescla campo a campo; o mais novo (atualizadoEm) vence
+        var l = local || {}, c = cloud || {};
+        if (ent === "conta" && c.atualizadoEm && (!l.atualizadoEm || String(c.atualizadoEm) > String(l.atualizadoEm))) return Object.assign({}, l, c);
+        return Object.assign({}, c, l);
       }
       var self = this;
       var byId = {};

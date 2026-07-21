@@ -3766,6 +3766,7 @@ renderRequisicoes: function () {
       var podeAdd = us.length < LIMITE_USUARIOS;
       var html = this._head(svg("usuarios") + "Usuários &amp; Permissões", podeAdd ? "novo-usuario" : "", podeAdd ? "Novo usuário" : "", extra);
       html += '<p class="muted" style="margin:-4px 0 14px">Você (dono da conta) é o <b>administrador</b>. Cadastre até <b>' + LIMITE_USUARIOS + '</b> usuários e libere os módulos por <b>departamento</b> — cada um entra com o próprio login e senha e vê só o que foi liberado.</p>';
+      html += this._bannerMultiAparelho();
       if (!podeAdd) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px">Limite de ' + LIMITE_USUARIOS + ' usuários nesta versão. Desative ou exclua um para criar outro.</div>';
       if (!us.length) return html + vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário");
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th></th></tr></thead><tbody>';
@@ -3775,6 +3776,34 @@ renderRequisicoes: function () {
         html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
       });
       return html + "</tbody></table>";
+    },
+    _bannerMultiAparelho: function () {
+      var lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null;
+      if (!lic || !lic.ativo || lic.trial) return "";                       // só cliente licenciado
+      if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return "";   // nuvem ligada no config
+      var conta = (typeof Auth !== "undefined" && Auth.contaMestre) ? Auth.contaMestre() : null;
+      if (conta) {
+        return '<div class="card" style="background:#eafaf0;border-color:#b9e6c8;color:#0f5132;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+          '<span>📱 <b>Acesso multi-aparelho ATIVO.</b> Admin: <b>' + Util.esc(conta.email) + '</b> — cada usuário entra no próprio celular/tablet com a mesma licença.</span>' +
+          '<button class="btn sm" data-gacao="config-admin">Trocar senha de admin</button></div>';
+      }
+      return '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
+        '<span>📱 <b>Ative o acesso multi-aparelho:</b> defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.</span>' +
+        '<button class="btn sm primary" data-gacao="config-admin">🔗 Configurar admin</button></div>';
+    },
+    configurarAdmin: function () {
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador configura isto.", "erro"); return; }
+      var conta = (Auth.contaMestre && Auth.contaMestre()) || {};
+      var emailPad = conta.email || ((typeof Licenca !== "undefined" && Licenca._lerExpDe && (Licenca._lerExpDe(Licenca.chave()) || {}).email) || "");
+      var corpo = '<p class="muted" style="margin:0 0 12px">Defina a conta de <b>administrador</b> desta licença. É com ela que você entra em <b>outros aparelhos</b> (celular/tablet) e é o que permite os <b>usuários</b> criados logarem nos aparelhos deles — tudo com a <b>mesma licença</b>.</p>' +
+        '<div class="field"><label>E-mail do administrador</label><input id="ca-email" type="email" value="' + String(emailPad).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com"></div>' +
+        '<div class="field"><label>Senha de administrador</label><input id="ca-senha" type="text" placeholder="crie uma senha (mín. 4)"></div>';
+      UI.modal("🔗 Acesso multi-aparelho", corpo, [{ texto: "Salvar", classe: "primary", onClick: function () {
+        var email = (UI.el("ca-email") || {}).value || "", senha = (UI.el("ca-senha") || {}).value || "";
+        var r = Auth.criarContaMestre((Auth.usuario() || {}).empresa, email, senha);
+        if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+        UI.fecharModal(); UI.toast("Acesso multi-aparelho ativado! Agora cada usuário entra no aparelho dele com o próprio login.", "ok"); App.render();
+      } }]);
     },
     novoUsuario: function () { this.formUsuario(null); },
     formUsuario: function (u) {
@@ -5371,6 +5400,7 @@ renderFolha: function () {
         case "saida-estoque": return this._movEstoque(id, "saida");
         case "novo-rdo": return this.novoRdo();
         case "novo-usuario": return this.novoUsuario();
+        case "config-admin": return this.configurarAdmin();
         case "nova-entrega-epi": return this.novoEntregaEpi();
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "ficha-epi": return this.fichaEpi(id);

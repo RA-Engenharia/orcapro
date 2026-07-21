@@ -158,6 +158,8 @@
       if (r.ok) { r.usuario._papel = "admin"; this._iniciarSessao(r.usuario); return r; }
       var sub = this._loginEquipe(email, senha);        // 2) tenta um SUB-USUÁRIO (login) de qualquer empresa local
       if (sub.ok) { this._iniciarSessao(sub.usuario); return sub; }
+      var nuv = this.loginNuvem(email, senha, this.empresaId()); // 3) modo nuvem: conta mestre + equipe sincronizadas (multi-aparelho)
+      if (nuv.ok) { this._iniciarSessao(nuv.usuario); return nuv; }
       return r;
     },
 
@@ -241,6 +243,49 @@
       try { Store.salvar(u.empresaId, "equipe", rec); } catch (e) { return { ok: false, erro: "Falha ao salvar a nova senha." }; }
       u.trocarSenha = false; localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       return { ok: true };
+    },
+
+    // ---------- Modo nuvem multi-aparelho: conta mestre (admin) + login por licença ----------
+    _adapter: function () { return (typeof Store !== "undefined" && Store.adapter) ? Store.adapter : null; },
+    // Lê a conta de administrador sincronizada (o "dono" da licença, compartilhado na nuvem).
+    contaMestre: function (empresaId) {
+      var a = this._adapter(); if (!a) return null;
+      try { var c = a.ler(empresaId || this.empresaId(), "conta", {}); return (c && c.email) ? c : null; } catch (e) { return null; }
+    },
+    // Cria/atualiza a conta de ADMINISTRADOR (sincroniza pela nuvem-tenant da licença) —
+    // é o que permite o admin e a equipe logarem nos aparelhos deles.
+    criarContaMestre: function (empresa, email, senha) {
+      email = String(email || "").trim().toLowerCase();
+      if (!email || !Util.naoVazio(senha) || String(senha).length < 4) return { ok: false, erro: "Informe e-mail e uma senha (mín. 4)." };
+      var a = this._adapter(); if (!a) return { ok: false, erro: "Armazenamento indisponível." };
+      var eid = this.empresaId();
+      var conta = { id: "conta", empresa: empresa || (this._usuario && this._usuario.empresa) || "Minha Empresa", email: email, senhaHash: this._hashSenha(senha), criadoEm: Util.agoraISO(), atualizadoEm: Util.agoraISO() };
+      try { a.gravar(eid, "conta", conta); } catch (e) { return { ok: false, erro: "Falha ao salvar." }; }
+      if (this._usuario) { this._usuario.email = email; this._usuario.empresa = conta.empresa; localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario)); }
+      return { ok: true, conta: conta };
+    },
+    // Login no modo nuvem: valida contra a CONTA mestre (admin) + a EQUIPE sincronizadas
+    // sob empresaId — funciona em QUALQUER aparelho, sem dono registrado localmente.
+    loginNuvem: function (idOuEmail, senha, empresaId) {
+      empresaId = empresaId || this.empresaId();
+      var login = String(idOuEmail || "").trim().toLowerCase(), hash = this._hashSenha(senha);
+      var conta = this.contaMestre(empresaId);
+      if (conta && conta.email === login && conta.senhaHash === hash) {
+        return { ok: true, usuario: { empresaId: empresaId, empresa: conta.empresa, email: conta.email, nome: conta.empresa, plano: "PRO", _papel: "admin" } };
+      }
+      var eq = this._equipe(empresaId);
+      for (var i = 0; i < eq.length; i++) {
+        var u = eq[i];
+        if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _trocarSenha: u.trocarSenha === true } };
+        }
+      }
+      return { ok: false, erro: "Usuário ou senha inválidos." };
+    },
+    // Este aparelho é secundário/anônimo mas o tenant já tem admin? → precisa logar (não auto-entra).
+    precisaLoginNuvem: function () {
+      var u = this._usuario, conta = this.contaMestre();
+      return !!(conta && u && u.papel === "admin" && !u.email && !u.usuarioId);
     },
     redefinirSenha: function (email, nova) {
       var r = this.backend.redefinirSenha(email, nova);
