@@ -235,6 +235,8 @@
     // ---------- Tela: Login ----------
     renderLogin: function () {
       var contas = (typeof Auth !== "undefined" && Auth.listarContas) ? Auth.listarContas() : [];
+      // Login sugerido pelo link de acesso do admin (?u=): a pessoa só digita a senha.
+      var sugLogin = ""; try { sugLogin = localStorage.getItem("orcapro:login-sugerido") || ""; } catch (e) {}
       var chips = contas.length
         ? '<div class="field"><label>Suas contas neste navegador (clique p/ preencher o e-mail)</label><div class="flex" style="flex-wrap:wrap;gap:6px">' +
             contas.map(function (c) { return '<button type="button" class="btn sm" data-conta="' + Util.esc(c.email) + '">👤 ' + Util.esc(c.email) + '</button>'; }).join("") +
@@ -259,7 +261,7 @@
             '<div id="login-form">' +
             chips +
             '<div class="field"><label>Empresa / Escritório</label><input id="lg-empresa" placeholder="Ex.: Studio Arq + Eng"></div>' +
-            '<div class="field"><label>E-mail ou usuário</label><input id="lg-email" type="text" placeholder="voce@empresa.com (ou seu login de usuário)"></div>' +
+            '<div class="field"><label>E-mail ou usuário</label><input id="lg-email" type="text" value="' + String(sugLogin).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com (ou seu login de usuário)"></div>' +
             '<div class="field"><label>Senha</label><input id="lg-senha" type="password" placeholder="••••••"></div>' +
             '<button class="btn primary" style="width:100%" data-acao="entrar">Entrar / Criar conta</button>' +
             (contas.length

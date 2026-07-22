@@ -3773,7 +3773,7 @@ renderRequisicoes: function () {
       us.forEach(function (u) {
         var nMod = (u.modulos && u.modulos.length) || 0;
         var st = u.ativo === false ? '<span class="g-pill" style="background:#64748b22;color:#64748b">inativo</span>' : '<span class="g-pill" style="background:#16a34a22;color:#16a34a">ativo</span>';
-        html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
+        html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gacao="acesso-movel" data-id="' + u.id + '" title="Enviar o acesso pelo celular/tablet (link + QR — abre já ativado com a licença da empresa)">📱</button> <button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
       });
       return html + "</tbody></table>";
     },
@@ -3804,6 +3804,35 @@ renderRequisicoes: function () {
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
         UI.fecharModal(); UI.toast("Acesso multi-aparelho ativado! Agora cada usuário entra no aparelho dele com o próprio login.", "ok"); App.render();
       } }]);
+    },
+    // 📱 Acesso do usuário no celular/tablet: link (e QR) do app WEB com a licença da
+    // empresa embutida + login sugerido — quem recebe toca no link, o sistema abre já
+    // ativado e só pede a senha da pessoa. Exige licença ativa + admin configurado.
+    acessoMovel: function (id) {
+      var u = Store.obter(eid(), "equipe", id); if (!u) return;
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!chave) { UI.toast("Ative a licença primeiro (⚙ → 🔑 Licença) para gerar o link de acesso.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.contaMestre && !Auth.contaMestre()) { UI.toast("Antes, clique em 🔗 Configurar admin (faixa no topo) — é o que liga o acesso multi-aparelho.", "erro"); return; }
+      var base = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) ? CONFIG.appWebUrl : "https://ra-engenharia.github.io/orcapro/app/";
+      var link = base + "?lic=" + encodeURIComponent(chave) + "&u=" + encodeURIComponent(u.login || "");
+      var msg = "Olá " + (u.nome || u.login) + "! Seu acesso ao OrçaPRO no celular/tablet:\n\n1) Toque no link abaixo — o sistema abre já ativado;\n2) Entre com seu usuário \"" + (u.login || "") + "\" e a sua senha.\n\n" + link;
+      var fone = String(u.fone || "").replace(/\D/g, "");
+      var foneIntl = fone ? (fone.length <= 11 ? "55" + fone : fone) : "";
+      var wa = foneIntl ? ("https://wa.me/" + foneIntl + "?text=" + encodeURIComponent(msg)) : "";
+      var qrSvg = (typeof QR !== "undefined" && QR.svg) ? QR.svg(link, { tamanhoPx: 200 }) : "";
+      var corpo = '<p class="muted" style="margin:0 0 10px">Envie para <b>' + Util.esc(u.nome || u.login) + '</b>: no aparelho, é só <b>tocar no link</b> (ou apontar a câmera pro QR) — o OrçaPRO abre <b>já ativado com a licença da empresa</b> e com o usuário preenchido; a pessoa só digita a própria senha.</p>' +
+        (qrSvg ? '<div style="display:flex;justify-content:center;margin:8px 0 12px"><div style="background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:12px;padding:10px">' + qrSvg + '</div></div>' : '') +
+        '<div style="border:1.5px dashed var(--linha,#e2e8f0);border-radius:10px;background:#f8fafc;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:11px;word-break:break-all">' + Util.esc(link) + '</div>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
+        (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">📱 Enviar por WhatsApp</a>' : '') +
+        '<button class="btn" id="am-copiar">📋 Copiar link</button></div>' +
+        (!wa ? '<p class="muted" style="font-size:12px;margin-top:8px">Dica: preencha o WhatsApp do usuário no cadastro pra enviar em 1 clique.</p>' : '');
+      UI.modal("📱 Acesso no celular/tablet — " + Util.esc(u.nome || u.login), corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var cp = document.getElementById("am-copiar");
+      if (cp) cp.onclick = function () {
+        try { navigator.clipboard.writeText(link).then(function () { UI.toast("Link copiado.", "ok"); }, function () { UI.toast("Copie manualmente do quadro.", "erro"); }); }
+        catch (e) { UI.toast("Copie manualmente.", "erro"); }
+      };
     },
     novoUsuario: function () { this.formUsuario(null); },
     formUsuario: function (u) {
@@ -3868,6 +3897,12 @@ renderRequisicoes: function () {
       var msg = "Olá " + nome + "! Seu acesso ao OrçaPRO" + (empresa ? " (" + empresa + ")" : "") + " foi criado.\n\n" +
         "Login: " + u.login + "\nSenha provisória: " + senha + "\n\n" +
         "No primeiro acesso o sistema vai pedir para você criar uma nova senha. Bom trabalho!";
+      try { // com a licença ativa, a mensagem já leva o link do celular/tablet (abre ativado)
+        var chaveL = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+        if (chaveL && typeof CONFIG !== "undefined" && CONFIG.appWebUrl) {
+          msg += "\n\n📱 No celular/tablet, toque neste link (abre já ativado): " + CONFIG.appWebUrl + "?lic=" + encodeURIComponent(chaveL) + "&u=" + encodeURIComponent(u.login || "");
+        }
+      } catch (eLm) {}
       var fone = String(u.fone || "").replace(/\D/g, "");
       var foneIntl = fone ? (fone.length <= 11 ? "55" + fone : fone) : "";
       var wa = foneIntl ? ("https://wa.me/" + foneIntl + "?text=" + encodeURIComponent(msg)) : "";
@@ -5401,6 +5436,7 @@ renderFolha: function () {
         case "novo-rdo": return this.novoRdo();
         case "novo-usuario": return this.novoUsuario();
         case "config-admin": return this.configurarAdmin();
+        case "acesso-movel": return this.acessoMovel(id);
         case "nova-entrega-epi": return this.novoEntregaEpi();
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "ficha-epi": return this.fichaEpi(id);

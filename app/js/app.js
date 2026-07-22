@@ -31,10 +31,15 @@
       // p/ quem usa RBAC/multiempresa ou quer conta com e-mail. Só age quando não há RBAC configurado.
       if (typeof Auth.autoEntrar === "function") { try { Auth.autoEntrar(); } catch (eAe) {} }
 
+      // Link de acesso enviado pelo admin (?lic=<chave>&u=<login>): ativa a licença neste
+      // aparelho (celular/tablet) e deixa o login sugerido — a pessoa só digita a senha.
+      // Roda ANTES do gate do trial: com ?lic em ativação, o cadastro de teste não bloqueia.
+      try { this._processarLinkAcesso(); } catch (eLk) {}
+
       // TESTE GRÁTIS: cadastro obrigatório (nome+telefone+consentimento) antes de liberar,
-      // e telemetria do trial (boot + heartbeat 5min + módulos usados). Licenciado não rastreia.
+      // e telemetria de uso (boot + heartbeat 5min + módulos usados).
       try {
-        if (typeof Telemetria !== "undefined") {
+        if (typeof Telemetria !== "undefined" && !this._ativandoPorLink) {
           var _app = this;
           if (Telemetria.gate(function () { Telemetria.iniciar(); _app.iniciar(); })) return;
           Telemetria.iniciar();
@@ -585,6 +590,34 @@
     },
 
     // ---------- Login ----------
+    // Link de acesso do funcionário (?lic=<chave>&u=<login>): ativa a licença da empresa
+    // neste aparelho e sugere o login — quem recebeu só digita a própria senha.
+    _processarLinkAcesso: function () {
+      var self = this;
+      try {
+        var q = new URLSearchParams(location.search || "");
+        var lic = String(q.get("lic") || "").trim(), u = String(q.get("u") || "").trim();
+        if (!lic && !u) return;
+        if (u) { try { localStorage.setItem("orcapro:login-sugerido", u); } catch (e) {} }
+        try { history.replaceState(null, "", location.pathname); } catch (e) {} // chave fora da barra/histórico
+        if (!lic || typeof Licenca === "undefined") return;
+        var st = Licenca.status();
+        if (Licenca.chave() === lic && st && st.ativo && !st.trial) return; // já ativada com esta chave
+        this._ativandoPorLink = true; // segura o gate do trial enquanto a ativação roda
+        Licenca.ativarOnline(lic, function (r) {
+          self._ativandoPorLink = false;
+          if (r && r.ok) {
+            if (typeof UI !== "undefined") UI.toast("✅ Licença da empresa ativada neste aparelho! Entre com o seu usuário e senha.", "ok");
+            try { if (typeof Telemetria !== "undefined") Telemetria.iniciar(); } catch (e2) {}
+            try { self._conectarNuvemLicenca(); } catch (e) {}
+            self.render();
+          } else if (typeof UI !== "undefined") {
+            UI.toast("Não deu pra ativar por este link: " + ((r && r.erro) || "erro de conexão") + ". Tente com internet ou fale com o administrador.", "erro");
+            self.render(); // volta ao fluxo normal (trial) sem travar
+          }
+        });
+      } catch (e) {}
+    },
     _conectarNuvemLicenca: function () {
       var self = this;
       try {

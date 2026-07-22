@@ -25,7 +25,11 @@
     // Servidor de licença/ativação/atualização (a loja no VPS). Trava de máquina + auto-update.
     licencaServer: "https://187-127-40-14.sslip.io",
 
-    versao: "1.1.104",
+    // App WEB (PWA) — o mesmo sistema hospedado, p/ acessar do celular/tablet sem instalar.
+    // Usado no link de acesso que o admin envia ao usuário (?lic=<chave>&u=<login>).
+    appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
+
+    versao: "1.1.105",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)

@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.104",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.104/OrcaPRO-IA-update-v1.1.104.zip",
-  "notas": "Composição detalhada de insumos mais fluida: a base analítica pré-carrega ao abrir o orçamento (o detalhe abre na hora, sem espera no primeiro clique) e, quando o item não tem composição (é um insumo ou foi lançado manualmente), aparece um aviso claro explicando o porquê.",
+  "versao": "1.1.105",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.105/OrcaPRO-IA-update-v1.1.105.zip",
+  "notas": "Usuários: novo botão 📱 'Enviar acesso pelo celular/tablet' — a empresa envia ao usuário cadastrado um link (ou QR code) do app; a pessoa toca no link, o sistema abre já ativado com a licença da empresa e com o login preenchido, só digita a própria senha.",
   "obrigatoria": false
 }
