@@ -722,3 +722,86 @@ table.tbl tr.etapa-row:hover td { box-shadow: inset 3px 0 0 var(--aco); }
   .orc-card:hover, .kpi:hover, .btn:hover, .sb-item:hover { transform: none !important; }
   .btn.primary::after, .btn.success::after { display: none !important; }
 }
+
+/* ===== Last Planner — Quadro Kanban (colunas derivam do estado LPS) ===== */
+.lp-vtoggle { display: inline-flex; gap: 4px; }
+/* Vermelho de TEXTO com contraste AA nos dois temas (o --vermelho puro reprova em texto pequeno) */
+.lp-q { --lp-vermelho-texto: #b91c1c; }
+[data-tema="dark"] .lp-q { --lp-vermelho-texto: #f87171; }
+[data-tema="dark"] .lp-qtag { color: var(--aco-claro); background: rgba(90, 155, 201, .14); }
+.lp-q {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(215px, 1fr);
+  gap: 10px; overflow-x: auto; padding-bottom: 6px; align-items: start;
+  scrollbar-width: thin;
+}
+.lp-qcol {
+  background: var(--surface-2); border: 1px solid var(--linha);
+  border-radius: var(--raio-sm); padding: 8px; min-height: 200px;
+  transition: box-shadow .15s, border-color .15s;
+}
+.lp-qcol.sobre { border-color: var(--aco); box-shadow: 0 0 0 2px var(--aco) inset; }
+.lp-qcol.imp { background: rgba(220, 38, 38, .06); border-color: rgba(220, 38, 38, .25); }
+.lp-qcol.ok { background: rgba(22, 163, 74, .06); border-color: rgba(22, 163, 74, .22); }
+.lp-qcab { display: flex; align-items: center; gap: 7px; padding: 2px 3px 8px; }
+.lp-qicone { font-size: 13px; color: var(--vermelho); line-height: 1; }
+.lp-qicone.vd { color: var(--verde); }
+.lp-qponto { width: 8px; height: 8px; border-radius: 99px; background: var(--aco); flex: 0 0 auto; }
+.lp-qnome { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; color: var(--texto); line-height: 1.2; min-width: 0; }
+.lp-qcol.imp .lp-qnome { color: var(--lp-vermelho-texto); }
+.lp-qnome small { display: block; font-size: 9.5px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--texto-fraco); }
+.lp-qn {
+  margin-left: auto; font-size: 10.5px; font-weight: 800; font-variant-numeric: tabular-nums;
+  background: var(--surface); border: 1px solid var(--linha); color: var(--texto-fraco);
+  border-radius: 99px; padding: 1px 7px;
+}
+.lp-qn.alerta { background: var(--vermelho); border-color: var(--vermelho); color: #fff; }
+.lp-qlista { display: flex; flex-direction: column; gap: 7px; }
+.lp-qcard {
+  background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  padding: 8px 9px; cursor: grab; box-shadow: var(--sombra-sm); user-select: none;
+  transition: box-shadow .15s, transform .15s;
+}
+.lp-qcard:hover { box-shadow: var(--sombra); transform: translateY(-1px); }
+.lp-qcard:active { cursor: grabbing; }
+.lp-qcard.arrastando { opacity: .45; }
+.lp-qcol.imp .lp-qcard { border-left: 3px solid var(--vermelho); }
+.lp-qcol.ok .lp-qcard { opacity: .85; }
+.lp-qtags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.lp-qtag {
+  font-size: 9.5px; font-weight: 700; color: var(--aco);
+  background: rgba(46, 111, 158, .1); border-radius: 4px; padding: 1px 6px;
+}
+.lp-qtag.crono { color: var(--texto-fraco); background: var(--surface-2); }
+.lp-qtit { font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--texto); }
+.lp-qmotivo {
+  font-size: 10.5px; font-weight: 600; color: var(--lp-vermelho-texto);
+  background: rgba(220, 38, 38, .07); border: 1px solid rgba(220, 38, 38, .2);
+  border-radius: 5px; padding: 3px 6px; margin-top: 5px;
+}
+.lp-qpe { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 7px; }
+.lp-qresp { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: var(--texto-fraco); min-width: 0; }
+.lp-qresp > span + * { min-width: 0; }
+.lp-qav {
+  width: 20px; height: 20px; border-radius: 99px; background: var(--navy); color: #fff;
+  font-size: 8.5px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+}
+[data-tema="dark"] .lp-qav { background: var(--aco); }
+.lp-qchip {
+  font-size: 10px; font-weight: 600; white-space: nowrap; color: var(--texto-fraco);
+  background: var(--surface-2); border: 1px solid var(--linha); border-radius: 4px; padding: 1px 6px;
+}
+.lp-qchip.vence { color: var(--lp-vermelho-texto); background: rgba(220, 38, 38, .08); border-color: rgba(220, 38, 38, .25); font-weight: 700; }
+.lp-qchip.ok { color: var(--verde); background: rgba(22, 163, 74, .09); border-color: rgba(22, 163, 74, .25); }
+.lp-qvazio {
+  font-size: 11px; color: var(--texto-fraco); text-align: center; padding: 18px 6px;
+  border: 1px dashed var(--linha-forte); border-radius: var(--raio-sm);
+}
+.lp-qcol.imp .lp-qvazio { border-color: rgba(220, 38, 38, .3); color: var(--lp-vermelho-texto); }
+@keyframes lpQPulso { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
+.lp-qicone.pulso { animation: lpQPulso 2.2s ease-in-out infinite; }
+.lp-qcard:focus-visible { outline: none; box-shadow: var(--anel); }
+@media (prefers-reduced-motion: reduce) {
+  .lp-qicone.pulso { animation: none; }
+  .lp-qcard:hover { transform: none; }
+}
+@media (max-width: 900px) { .lp-q { grid-auto-columns: minmax(190px, 230px); } }

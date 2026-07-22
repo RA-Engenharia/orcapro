@@ -3528,7 +3528,7 @@ renderRequisicoes: function () {
         + '<div id="bi-res"></div>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); },
+    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -5191,8 +5191,10 @@ renderFolha: function () {
       var hist = LP.semanas(hb, 6);
       var ts = this._lpTarefas();
       var res = LP.resumo(ts, look);
+      var visao = this._lpVisaoAtual();
       var selObra = '<select data-gacao="lp-obra" style="max-width:230px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._lpObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
-      var extra = selObra + ' <button class="btn sm" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">📅 Puxar do cronograma</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">🖨 Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">📊 Relatório PPC</button>';
+      var vBtn = function (val, rot) { return '<button class="btn sm' + (visao === val ? " primary" : "") + '" data-gacao="lp-visao" data-val="' + val + '">' + rot + '</button>'; };
+      var extra = selObra + ' <span class="lp-vtoggle">' + vBtn("quadro", "🗂 Quadro") + vBtn("semanal", "📋 Semanal") + '</span> <button class="btn sm" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">📅 Puxar do cronograma</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">🖨 Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">📊 Relatório PPC</button>';
       var html = this._head(svg("lastplanner") + "Last Planner · PPC", "lp-nova", "Nova Tarefa", extra);
       if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o Last Planner planeja a semana de uma obra.", "nova-obra", "Nova obra");
 
@@ -5206,6 +5208,12 @@ renderFolha: function () {
         this._lpKpi("Restrições abertas", String(res.restricoesAbertas), "a remover no médio prazo", res.restricoesAbertas ? "#ea580c" : "var(--verde)") +
         this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--texto)") + '</div>';
 
+      if (visao === "quadro") {
+        html += this._lpQuadroHtml(ts, look);
+        html += this._lpGraficosHtml(ts, hist);
+        return html;
+      }
+
       // Plano da Semana
       var estaSem = look[0];
       var comp = LP.daSemana(ts, estaSem.chave).filter(function (t) { return t.comprometida; });
@@ -5215,7 +5223,7 @@ renderFolha: function () {
         html += '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Status</th><th></th></tr></thead><tbody>';
         comp.forEach(function (t) {
           var st = t.status === "feito" ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">✓ Feito</span>' : (t.status === "naofeito" ? '<span class="g-pill" style="background:#dc262622;color:#dc2626">✗ Não feito' + (t.causa ? " · " + Util.esc(t.causa) : "") + '</span>' : '<span class="g-pill" style="background:#64748b22;color:#64748b">a fazer</span>');
-          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + t.id + '" title="Concluída">✓</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + t.id + '" title="Não cumprida">✗</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + t.id + '" title="Tirar do plano">↩</button>';
+          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + Util.esc(t.id) + '" title="Concluída">✓</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + Util.esc(t.id) + '" title="Não cumprida">✗</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + Util.esc(t.id) + '" title="Tirar do plano">↩</button>';
           html += '<tr><td><b>' + Util.esc(t.titulo) + '</b></td><td>' + Util.esc(t.responsavel || "—") + '</td><td>' + st + '</td><td class="num">' + ac + '</td></tr>';
         });
         html += '</tbody></table>';
@@ -5230,14 +5238,19 @@ renderFolha: function () {
           var ra = LP.restricoesAbertas(t);
           var bg = t.comprometida ? "#dbeafe" : (ra ? "#fff7ed" : "#dcfce7"), bd = t.comprometida ? "#93c5fd" : (ra ? "#fdba74" : "#86efac");
           var tag = t.comprometida ? "✓ no plano" : (ra ? "🔒 " + ra + " restr." : "✔ livre");
-          html += '<div data-gacao="lp-abrir" data-id="' + t.id + '" style="cursor:pointer;background:' + bg + ';border:1px solid ' + bd + ';border-radius:7px;padding:6px 8px;margin-bottom:5px;font-size:12px"><b>' + Util.esc(t.titulo) + '</b><div style="font-size:10.5px;color:#475569;margin-top:2px">' + Util.esc(t.responsavel || "—") + ' · ' + tag + '</div></div>';
+          html += '<div data-gacao="lp-abrir" data-id="' + Util.esc(t.id) + '" style="cursor:pointer;background:' + bg + ';border:1px solid ' + bd + ';border-radius:7px;padding:6px 8px;margin-bottom:5px;font-size:12px"><b>' + Util.esc(t.titulo) + '</b><div style="font-size:10.5px;color:#475569;margin-top:2px">' + Util.esc(t.responsavel || "—") + ' · ' + tag + '</div></div>';
         });
         html += '<button class="btn sm" data-gacao="lp-nova-sem" data-val="' + i + '" style="width:100%;font-size:11.5px">+ Tarefa</button></div>';
       });
       html += '</div></div>';
 
-      // Gráfico PPC + Causas
-      html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">';
+      html += this._lpGraficosHtml(ts, hist);
+      return html;
+    },
+    // Gráfico PPC + Causas (compartilhado entre as visões Quadro e Semanal)
+    _lpGraficosHtml: function (ts, hist) {
+      var LP = window.LastPlanner;
+      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">';
       var h = LP.historicoPPC(ts, hist);
       html += '<div class="card"><h3 style="margin:0 0 10px">📈 PPC — últimas 6 semanas</h3><div style="display:flex;align-items:flex-end;gap:8px;height:130px">';
       h.forEach(function (x) {
@@ -5255,6 +5268,177 @@ renderFolha: function () {
       }
       html += '</div></div>';
       return html;
+    },
+
+    // ===== Quadro Kanban do Last Planner — colunas DERIVAM do estado LPS =====
+    _lpVisaoAtual: function () {
+      if (!this._lpVisao) { try { this._lpVisao = localStorage.getItem("orcapro:lp:visao") || "quadro"; } catch (e) { this._lpVisao = "quadro"; } }
+      return this._lpVisao;
+    },
+    lpTrocaVisao: function (val) {
+      this._lpVisao = val === "semanal" ? "semanal" : "quadro";
+      try { localStorage.setItem("orcapro:lp:visao", this._lpVisao); } catch (e) {}
+      App.render();
+    },
+    _lpQuadroHtml: function (ts, look) {
+      var LP = window.LastPlanner;
+      var chaveAtual = look[0].chave;
+      // Concluído/Não cumprida: mostra só as últimas 4 semanas (histórico completo fica no PPC)
+      var corte = LP.chaveSemana(new Date(Date.now() - 28 * 86400000));
+      var porSem = {}; look.forEach(function (s) { porSem[s.chave] = s; });
+      var cols = {}; LP.QUADRO_COLUNAS.forEach(function (c) { cols[c.id] = []; });
+      var ocultas = 0;
+      ts.forEach(function (t) {
+        if (!t) return; // registro corrompido (null no storage) não derruba o quadro
+        var c = LP.classificarQuadro(t, chaveAtual);
+        // Corte de histórico: só CONCLUÍDA antiga sai do quadro. Não cumprida antiga é
+        // pendência de replanejamento — fica visível até ser tratada. Sem semana → fica.
+        if (c === "feito" && t.semana && String(t.semana) < corte) { ocultas++; return; }
+        cols[c].push(t);
+      });
+      Object.keys(cols).forEach(function (k) {
+        cols[k].sort(function (a, b) { return String(a.semana || "").localeCompare(String(b.semana || "")) || String(a.titulo || "").localeCompare(String(b.titulo || "")); });
+      });
+      var hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+      var fmtSem = function (chave) { var s = porSem[chave]; if (s) return s.rotulo === "Esta semana" ? "Esta semana" : s.periodo; return String(chave || "").split("-").reverse().slice(0, 2).join("/"); };
+      var cardHtml = function (t, colId) {
+        var esc = Util.esc, ra = LP.restricoesAbertas(t);
+        // atraso: o domingo da semana da tarefa já passou e ela não foi concluída
+        var atrasada = false, fimSem = null;
+        if (t.semana && colId !== "feito") {
+          fimSem = new Date(String(t.semana).slice(0, 10) + "T00:00:00");
+          if (!isNaN(fimSem.getTime())) { fimSem.setDate(fimSem.getDate() + 6); atrasada = fimSem < hoje; }
+        }
+        var chipSem = t.semana
+          ? '<span class="lp-qchip' + (atrasada ? " vence" : "") + '">' + (atrasada ? "⏰ " : "🗓 ") + esc(fmtSem(t.semana)) + (atrasada ? " · atrasada" : "") + '</span>'
+          : "";
+        if (colId === "feito") chipSem = '<span class="lp-qchip ok">✓ ' + esc(String(t.concluidaEm || t.semana || "").slice(5).split("-").reverse().join("/")) + '</span>';
+        var tags = "";
+        if (t.frente) tags += '<span class="lp-qtag">' + esc(t.frente) + '</span>';
+        if (t.origem === "cronograma") tags += '<span class="lp-qtag crono" title="Criada a partir do cronograma do orçamento">📅 cronograma</span>';
+        var extra = "";
+        if (colId === "impedida") {
+          var abertas = (Array.isArray(t.restricoes) ? t.restricoes : []).filter(function (r) { return r && !r.removida; });
+          var r0 = abertas[0] || {};
+          extra = '<div class="lp-qmotivo">⚠ ' + esc(r0.tipo ? r0.tipo + ": " : "") + esc(r0.descricao || "restrição aberta") + (abertas.length > 1 ? " (+" + (abertas.length - 1) + ")" : "") + '</div>';
+        } else if (colId === "naofeito" && t.causa) {
+          extra = '<div class="lp-qmotivo">✗ Causa: ' + esc(t.causa) + '</div>';
+        }
+        var ini = (String(t.responsavel || "").trim().split(/\s+/).map(function (p) { return p.charAt(0); }).slice(0, 2).join("") || "•").toUpperCase();
+        return '<article class="lp-qcard" draggable="true" tabindex="0" role="button" data-lpid="' + esc(t.id) + '" data-gacao="lp-abrir" data-id="' + esc(t.id) + '" title="Clique ou toque: ações e restrições · no computador, arraste p/ mudar de coluna">' +
+          (tags ? '<div class="lp-qtags">' + tags + '</div>' : "") +
+          '<div class="lp-qtit">' + esc(t.titulo || "") + '</div>' + extra +
+          '<div class="lp-qpe"><span class="lp-qresp"><span class="lp-qav">' + esc(ini) + '</span>' + esc(t.responsavel || "—") + '</span>' + chipSem + '</div>' +
+          '</article>';
+      };
+      var html = '<div class="card" style="margin-bottom:16px;padding:14px"><h3 style="margin:0 0 2px">🗂 Quadro da Obra <span class="muted" style="font-weight:400;font-size:13px">· cada coluna é um passo do Last Planner</span></h3>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 10px">No computador, <b>arraste</b> os cartões; no celular/tablet, <b>toque</b> no cartão p/ as ações. Comprometer exige tarefa <b>livre</b> (sem restrição) — a trava do LPS vale nos dois caminhos.' + (ocultas ? " · " + ocultas + " concluída(s) antiga(s) fora do quadro (histórico completo no PPC)." : "") + '</p>' +
+        '<div id="lp-quadro" class="lp-q">';
+      LP.QUADRO_COLUNAS.forEach(function (c) {
+        var doCol = cols[c.id], n = doCol.length;
+        html += '<section class="lp-qcol' + (c.id === "impedida" ? " imp" : "") + (c.id === "feito" ? " ok" : "") + '" data-lpcol="' + c.id + '">' +
+          '<header class="lp-qcab">' +
+          (c.id === "impedida" ? '<span class="lp-qicone' + (n ? " pulso" : "") + '">⚠</span>' : "") +
+          (c.id === "feito" ? '<span class="lp-qicone vd">✓</span>' : "") +
+          (c.id === "execucao" ? '<span class="lp-qponto"></span>' : "") +
+          '<span class="lp-qnome">' + c.nome + '<small>' + c.desc + '</small></span>' +
+          '<span class="lp-qn' + (c.id === "impedida" && n ? " alerta" : "") + '">' + n + '</span></header>' +
+          '<div class="lp-qlista">' + doCol.map(function (t) { return cardHtml(t, c.id); }).join("") +
+          (n ? "" : '<div class="lp-qvazio">' + (c.id === "impedida" ? "Nenhuma restrição ativa" : "Solte um cartão aqui") + '</div>') +
+          '</div></section>';
+      });
+      html += '</div></div>';
+      return html;
+    },
+    _lpWire: function () {
+      var self = this, q = document.getElementById("lp-quadro");
+      if (!q || q._lpWired) return;
+      q._lpWired = true;
+      var limpaSobre = function () { var s = q.querySelectorAll(".lp-qcol.sobre"); for (var i = 0; i < s.length; i++) s[i].classList.remove("sobre"); };
+      q.addEventListener("dragstart", function (e) {
+        var card = e.target && e.target.closest ? e.target.closest(".lp-qcard") : null;
+        if (!card) return;
+        try { e.dataTransfer.setData("text/plain", card.getAttribute("data-lpid") || ""); e.dataTransfer.effectAllowed = "move"; } catch (err) {}
+        card.classList.add("arrastando");
+        self._lpArrastando = card.getAttribute("data-lpid") || "";
+      });
+      q.addEventListener("dragend", function () {
+        var c = q.querySelector(".lp-qcard.arrastando"); if (c) c.classList.remove("arrastando");
+        limpaSobre(); self._lpArrastando = "";
+      });
+      q.addEventListener("dragover", function (e) {
+        var col = e.target && e.target.closest ? e.target.closest(".lp-qcol") : null;
+        if (!col) return;
+        e.preventDefault();
+        try { e.dataTransfer.dropEffect = "move"; } catch (err) {}
+        if (!col.classList.contains("sobre")) { limpaSobre(); col.classList.add("sobre"); }
+      });
+      q.addEventListener("dragleave", function (e) {
+        var col = e.target && e.target.closest ? e.target.closest(".lp-qcol") : null;
+        if (col && !(e.relatedTarget && col.contains(e.relatedTarget))) col.classList.remove("sobre");
+      });
+      q.addEventListener("drop", function (e) {
+        var col = e.target && e.target.closest ? e.target.closest(".lp-qcol") : null;
+        if (!col) return;
+        e.preventDefault(); e.stopPropagation();
+        limpaSobre();
+        var id = ""; try { id = e.dataTransfer.getData("text/plain"); } catch (err) {}
+        if (!id) id = self._lpArrastando || "";
+        self._lpArrastando = "";
+        if (id) self.lpMoverQuadro(id, col.getAttribute("data-lpcol"));
+      });
+      // Teclado: Enter/Espaço no cartão focado abre o modal de ações (a11y)
+      q.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        var card = e.target && e.target.classList && e.target.classList.contains("lp-qcard") ? e.target : null;
+        if (!card) return;
+        e.preventDefault();
+        self.lpAbrir(card.getAttribute("data-lpid"));
+      });
+    },
+    lpMoverQuadro: function (id, col) {
+      if (this._bloqueado()) return;
+      var LP = window.LastPlanner, t = this._lpObter(id);
+      if (!t || !col) return;
+      var look = LP.semanas(new Date(), 6);
+      var hj = new Date(), p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+      var ctx = {
+        chaveAtual: look[0].chave, chaveProxima: look[1] ? look[1].chave : look[0].chave,
+        hojeISO: hj.getFullYear() + "-" + p2(hj.getMonth() + 1) + "-" + p2(hj.getDate()),
+        agora: Date.now()
+      };
+      this.lpMoverQuadroCtx(t, col, ctx);
+    },
+    // Miolo do mover: trata o resultado do motor (reusado pela confirmação de histórico e pelo modal de causa)
+    lpMoverQuadroCtx: function (t, col, ctx) {
+      var self = this, LP = window.LastPlanner;
+      var r = LP.moverQuadro(t, col, ctx);
+      if (r.ok) { this._lpSalvar(t, r.msg); return; }
+      if (r.precisa === "historico") {
+        // semana já medida no PPC: reabrir reescreve gráfico + Pareto — só com confirmação
+        UI.modal("Reescrever semana já medida?", '<p style="margin:0 0 6px"><b>' + Util.esc(t.titulo || "") + '</b></p><p class="muted" style="font-size:13px;margin:0">' + Util.esc(r.msg) + ' O PPC e as causas daquela semana vão mudar.</p>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Reabrir mesmo assim", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            ctx.confirmaHistorico = true;
+            self.lpMoverQuadroCtx(t, col, ctx);
+          } }
+        ]);
+        return;
+      }
+      if (r.precisa === "causa") {
+        var opts = LP.CAUSAS.map(function (c) { return '<option value="' + Util.esc(c) + '">' + Util.esc(c) + '</option>'; }).join("");
+        UI.modal("Não cumprida — por quê?", campo("Causa (pra melhoria contínua)", sel("g-lp-causa", opts)), [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Registrar", classe: "primary", onClick: function () {
+            ctx.causa = v("g-lp-causa"); UI.fecharModal();
+            self.lpMoverQuadroCtx(t, col, ctx);
+          } }
+        ]);
+        return;
+      }
+      if (r.precisa === "restricoes") { UI.toast(r.msg, "erro"); this.lpAbrir(t.id); return; }
+      if (r.msg) UI.toast(r.msg, "erro");
     },
     lpTrocaObra: function (id) { this._lpObra = id; App.render(); },
     lpNova: function (semIdx) {
@@ -5280,7 +5464,14 @@ renderFolha: function () {
       this._lpSalvar(t, "Tarefa comprometida no plano da semana.");
     },
     lpDescomprometer: function (id) { var t = this._lpObter(id); if (!t) return; t.comprometida = false; this._lpSalvar(t, "Tarefa tirada do plano."); },
-    lpFeito: function (id) { var t = this._lpObter(id); if (!t) return; t.status = "feito"; t.causa = ""; this._lpSalvar(t, "✓ Concluída."); },
+    lpFeito: function (id) {
+      var t = this._lpObter(id); if (!t) return;
+      t.status = "feito"; t.causa = "";
+      // mesma marca de conclusão do quadro (o chip da coluna Concluída usa concluidaEm)
+      var hj = new Date(), p2 = function (n) { return (n < 10 ? "0" : "") + n; };
+      t.concluidaEm = hj.getFullYear() + "-" + p2(hj.getMonth() + 1) + "-" + p2(hj.getDate());
+      this._lpSalvar(t, "✓ Concluída.");
+    },
     lpNaoFeito: function (id) {
       var self = this, t = this._lpObter(id); if (!t) return;
       var opts = window.LastPlanner.CAUSAS.map(function (c) { return '<option value="' + Util.esc(c) + '"' + (t.causa === c ? " selected" : "") + ">" + Util.esc(c) + "</option>"; }).join("");
@@ -5310,6 +5501,11 @@ renderFolha: function () {
         { texto: "+ Restrição", classe: "", onClick: function () { self._lpAddRestr(t.id); } },
         { texto: "🗑 Excluir", classe: "", onClick: function () { if (confirm("Excluir esta tarefa do Last Planner?")) { Store.excluir(eid(), "lp_tarefas", t.id); UI.fecharModal(); App.render(); } } }
       ];
+      // Ações de status TAMBÉM por toque (tablet/celular não tem arrasto) — mesmas travas
+      // do quadro: lpMoverQuadro passa pelo motor (restrições, causa, histórico).
+      if (t.comprometida) botoes.push({ texto: "↩ Tirar do plano", classe: "", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "liberada"); } });
+      if (t.comprometida && t.status === "afazer") botoes.push({ texto: "✗ Não cumprida", classe: "", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "naofeito"); } });
+      if (t.status !== "feito") botoes.push({ texto: "✓ Concluir", classe: "success", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "feito"); } });
       if (LP.podeComprometer(t) && !t.comprometida) botoes.push({ texto: "✅ Comprometer", classe: "success", onClick: function () { UI.fecharModal(); self.lpComprometer(t.id); } });
       UI.modal("Restrições · " + Util.esc(t.titulo), corpo, botoes);
     },
@@ -5350,7 +5546,7 @@ renderFolha: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "lp-visao" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       // RBAC em FUNÇÃO (regra A.5 / achado do gate v1.1.63): ação de cotação exige o módulo, não basta esconder o botão
       if ((gacao === "nova-cotacoes" || gacao === "cotar-requisicao" || gacao === "doc-cotacao" || gacao === "excluir-cotacao") && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Cotações.", "erro"); return; }
       switch (gacao) {
@@ -5369,6 +5565,7 @@ renderFolha: function () {
         case "tar-concluir": return this._tarefaStatus(id, "feita", "Tarefa concluída.");
         case "tar-reabrir": return this._tarefaStatus(id, "afazer", "Tarefa reaberta.");
         case "lp-obra": return this.lpTrocaObra(dataset.value);
+        case "lp-visao": return this.lpTrocaVisao(dataset.val);
         case "lp-puxar": return this.lpPuxarCronograma();
         case "lp-nova": return this.lpNova(0);
         case "lp-nova-sem": return this.lpNova(parseInt(dataset.val, 10) || 0);

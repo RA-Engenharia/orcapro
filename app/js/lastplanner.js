@@ -183,6 +183,93 @@
     return out;
   }
 
+  /* ===== Quadro Kanban (visão em colunas do MESMO estado LPS) =====
+   * Nada de status novo: as colunas DERIVAM de comprometida/status/restrições/
+   * semana. Precedência: feito > naofeito > impedida > execucao > (liberada |
+   * lookahead por semana). Assim o quadro nunca diverge do PPC. */
+  var QUADRO_COLUNAS = [
+    { id: "lookahead",  nome: "Lookahead",    desc: "Semanas futuras" },
+    { id: "liberada",   nome: "Liberada",     desc: "Livre p/ comprometer" },
+    { id: "execucao",   nome: "Em Execução",  desc: "Comprometidas (plano)" },
+    { id: "impedida",   nome: "Impedimento",  desc: "Restrição aberta" },
+    { id: "naofeito",   nome: "Não cumprida", desc: "Com causa registrada" },
+    { id: "feito",      nome: "Concluída",    desc: "Entregue" }
+  ];
+  function classificarQuadro(t, chaveAtual) {
+    if (!t) return "lookahead";
+    if (t.status === STATUS.FEITO) return "feito";
+    if (t.status === STATUS.NAOFEITO) return "naofeito";
+    if (restricoesAbertas(t) > 0) return "impedida";
+    if (t.comprometida) return "execucao";
+    // livre e não comprometida: separa por semana (futura = lookahead)
+    return String(t.semana || "") > String(chaveAtual || "") ? "lookahead" : "liberada";
+  }
+
+  /* Mover no quadro = ação LPS real, com as MESMAS travas do módulo.
+   * Muta t só quando ok. ctx = { chaveAtual, chaveProxima, causa, hojeISO }.
+   * Retorna { ok, msg } ou { ok:false, precisa:"causa"|"restricoes", msg }. */
+  function moverQuadro(t, coluna, ctx) {
+    if (!t) return { ok: false, msg: "Tarefa não encontrada." };
+    ctx = ctx || {};
+    var de = classificarQuadro(t, ctx.chaveAtual);
+    if (de === coluna) return { ok: false, msg: "" }; // já está lá — nada a fazer
+    // Semana JÁ MEDIDA no PPC: mexer em feito/naofeito de semana fechada reescreve
+    // histórico (gráfico + Pareto de causas). Só com confirmação explícita da view.
+    var historico = (de === "feito" || de === "naofeito") && !!t.semana && String(t.semana) < String(ctx.chaveAtual || "");
+    if (historico && !ctx.confirmaHistorico) {
+      return { ok: false, precisa: "historico", msg: "Essa tarefa é de semana já medida no PPC — mover reescreve o histórico (gráfico e causas)." };
+    }
+    // ao sair de "feito", o rastro de conclusão não pode sobrar num afazer
+    function limpaConclusao() { delete t.concluidaEm; delete t.concluidaVia; }
+    switch (coluna) {
+      case "feito":
+        // mesma trava do comprometer: restrição aberta se resolve antes, não se atropela
+        if (!podeComprometer(t)) return { ok: false, precisa: "restricoes", msg: "Remova as restrições antes de concluir." };
+        var foraDoPlano = !t.comprometida;
+        t.status = STATUS.FEITO; t.causa = "";
+        t.concluidaEm = String(ctx.hojeISO || "").slice(0, 10);
+        return { ok: true, msg: foraDoPlano ? "✓ Concluída (fora do PPC — não estava comprometida no plano)." : "✓ Concluída." };
+      case "naofeito":
+        // não-cumprimento só existe pra quem foi PROMETIDO (senão o Pareto mente sobre o PPC)
+        if (!t.comprometida) return { ok: false, msg: "Só tarefa comprometida no plano pode ser marcada como não cumprida — comprometa primeiro (Em Execução)." };
+        // registrar não-cumprimento EXIGE causa (melhoria contínua — sem causa não move)
+        if (!ctx.causa) return { ok: false, precisa: "causa", msg: "Informe a causa do não-cumprimento." };
+        t.status = STATUS.NAOFEITO; t.causa = String(ctx.causa);
+        limpaConclusao();
+        return { ok: true, msg: "Causa registrada: " + t.causa };
+      case "execucao":
+        if (!podeComprometer(t)) return { ok: false, precisa: "restricoes", msg: "Remova as restrições antes de comprometer." };
+        t.comprometida = true; t.status = STATUS.AFAZER; t.causa = "";
+        limpaConclusao();
+        // puxa pra semana atual quando estava fora dela (comprometer = plano DESTA semana)
+        if (ctx.chaveAtual && t.semana !== ctx.chaveAtual) t.semana = ctx.chaveAtual;
+        return { ok: true, msg: "Comprometida no plano da semana." };
+      case "liberada":
+        // liberar NÃO remove restrição por arrasto — remoção é ato deliberado (modal)
+        if (restricoesAbertas(t) > 0) return { ok: false, precisa: "restricoes", msg: "Esta tarefa tem restrição aberta — remova no cartão antes de liberar." };
+        t.comprometida = false; t.status = STATUS.AFAZER; t.causa = "";
+        limpaConclusao();
+        if (ctx.chaveAtual && String(t.semana || "") > String(ctx.chaveAtual)) t.semana = ctx.chaveAtual;
+        return { ok: true, msg: de === "execucao" ? "Tirada do plano da semana." : "Liberada p/ comprometer." };
+      case "lookahead":
+        // valida ANTES de mutar (bloqueio nunca deixa a tarefa meio-movida)
+        if (!ctx.chaveProxima) return { ok: false, msg: "Semana de destino indisponível." };
+        t.comprometida = false; t.status = STATUS.AFAZER; t.causa = "";
+        limpaConclusao();
+        // garante semana FUTURA (adiar): se estava na atual/atrás, empurra pra próxima
+        if (String(t.semana || "") <= String(ctx.chaveAtual || "")) t.semana = ctx.chaveProxima;
+        return { ok: true, msg: "Adiada p/ o lookahead (" + t.semana + ")." };
+      case "impedida":
+        // arrastar p/ Impedimento cria a restrição explícita (editável no cartão)
+        t.restricoes = Array.isArray(t.restricoes) ? t.restricoes : [];
+        t.restricoes.push({ id: "r" + (ctx.agora || 0), tipo: "Outros", descricao: String(ctx.motivo || "A classificar (movida no quadro)"), prazo: "", removida: false });
+        if (t.status === STATUS.FEITO || t.status === STATUS.NAOFEITO) { t.status = STATUS.AFAZER; t.causa = ""; limpaConclusao(); }
+        return { ok: true, msg: "Restrição registrada — detalhe no cartão." };
+      default:
+        return { ok: false, msg: "Coluna desconhecida." };
+    }
+  }
+
   /* Diário (RDO) evidencia execução: marca a tarefa da semana como FEITA.
    * Devolve true se mudou (idempotente: já-feita não re-marca). Puro. */
   function concluirPorRdo(tarefa, dataISO) {
@@ -202,6 +289,7 @@
     ppcSemana: ppcSemana, historicoPPC: historicoPPC, ppcMedio: ppcMedio,
     causasAgregadas: causasAgregadas, restricoesPendentes: restricoesPendentes,
     resumo: resumo,
+    QUADRO_COLUNAS: QUADRO_COLUNAS, classificarQuadro: classificarQuadro, moverQuadro: moverQuadro,
     sugerirDoCronograma: sugerirDoCronograma, concluirPorRdo: concluirPorRdo,
     novo: function (obraId) { return { obraId: obraId || "", tarefas: [] }; }
   };
