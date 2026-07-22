@@ -5267,11 +5267,20 @@ renderFolha: function () {
       var ppcSem = res.ppcSemana == null ? "—" : Math.round(res.ppcSemana * 100) + "%";
       var ppcMed = res.ppcMedio == null ? "—" : Math.round(res.ppcMedio * 100) + "%";
       var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= .8 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
+      // Aderência Previsto × Real (média dos desvios das obras com cronograma+medição)
+      var kpiPR = "";
+      var prDados = this._lpPrevRealDados();
+      if (prDados.length) {
+        var desvio = prDados.reduce(function (s, d) { return s + (d.real - d.prev); }, 0) / prDados.length;
+        var dTxt = (desvio > 0 ? "+" : "") + (Math.round(desvio * 10) / 10).toFixed(1).replace(".", ",") + " pts";
+        kpiPR = this._lpKpi("Previsto × Real", dTxt, "média de " + prDados.length + " obra(s) medida(s)", desvio >= 0 ? "var(--verde)" : "#ea580c");
+      }
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px">' +
         this._lpKpi("PPC da semana", ppcSem, res.feitas + "/" + res.comprometidas + " tarefas", corPpc) +
         this._lpKpi("PPC médio (6 sem)", ppcMed, "meta ≥ 80%", "var(--texto)") +
         this._lpKpi("Restrições abertas", String(res.restricoesAbertas), "a remover no médio prazo", res.restricoesAbertas ? "#ea580c" : "var(--verde)") +
-        this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--texto)") + '</div>';
+        this._lpKpi("No lookahead", String(res.naLista), res.comprometiveis + " prontas p/ comprometer", "var(--texto)") +
+        kpiPR + '</div>';
 
       if (visao === "quadro") {
         html += this._lpQuadroHtml(ts, look);
@@ -5312,17 +5321,132 @@ renderFolha: function () {
       html += this._lpGraficosHtml(ts, hist);
       return html;
     },
-    // Gráfico PPC + Causas (compartilhado entre as visões Quadro e Semanal)
-    _lpGraficosHtml: function (ts, hist) {
-      var LP = window.LastPlanner;
-      var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">';
-      var h = LP.historicoPPC(ts, hist);
-      html += '<div class="card"><h3 style="margin:0 0 10px">📈 PPC — últimas 6 semanas</h3><div style="display:flex;align-items:flex-end;gap:8px;height:130px">';
-      h.forEach(function (x) {
-        var pct = x.ppc == null ? 0 : Math.round(x.ppc * 100), cor = x.ppc == null ? "#e2e8f0" : (x.ppc >= .8 ? "#16a34a" : (x.ppc >= .5 ? "#f59e0b" : "#dc2626"));
-        html += '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;text-align:center;height:100%"><div style="font-size:10.5px;font-weight:700;color:#475569;margin-bottom:3px">' + (x.ppc == null ? "—" : pct + "%") + '</div><div style="background:' + cor + ';height:' + Math.max(2, pct) + '%;border-radius:4px 4px 0 0;min-height:2px"></div><div style="font-size:9.5px;color:#94a3b8;margin-top:4px">' + x.periodo.split("–")[0] + '</div></div>';
+    // ===== Gráficos do Last Planner (Quadro e Semanal): PPC em linha c/ meta,
+    // Previsto×Realizado por obra (cronograma × medições) e donut de pendências =====
+    /* Avanço por obra DERIVADO de dados reais: previsto = % do prazo do cronograma
+     * decorrido (a distribuição do Orcamento.cronograma é linear no total);
+     * realizado = % acumulado das medições não-rejeitadas. Obra sem orçamento
+     * vinculado ou sem data de início fica fora (sem inventar número). */
+    _lpPrevRealDados: function () {
+      var out = [], meds = lista("medicoes"), hoje = new Date();
+      lista("obras").forEach(function (o) {
+        if (!o || !o.orcamentoId || !o.inicio) return;
+        var orc = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc) return;
+        var meses = parseInt(orc.cronogramaMeses || 6, 10) || 6;
+        var ini = new Date(String(o.inicio).slice(0, 10) + "T00:00:00");
+        if (isNaN(ini.getTime())) return;
+        var prev = Math.max(0, Math.min(100, ((hoje - ini) / (30.44 * 86400000)) / meses * 100));
+        var real = 0;
+        meds.forEach(function (m) { if (m && m.obraId === o.id && m.status !== "rejeitada") real += Util.num(m.percentual); });
+        real = Math.max(0, Math.min(100, real));
+        if (prev <= 0 && real <= 0) return;
+        out.push({ nome: o.nome, prev: Math.round(prev), real: Math.round(real) });
       });
+      return out.slice(0, 6);
+    },
+    _lpSvgPpc: function (h) {
+      var pts = [], W = 340, H = 150, padL = 26, padR = 10, padT = 12, padB = 22;
+      var iw = W - padL - padR, ih = H - padT - padB;
+      var x = function (i) { return padL + (h.length > 1 ? i / (h.length - 1) : .5) * iw; };
+      var y = function (p) { return padT + (1 - p / 100) * ih; };
+      h.forEach(function (s, i) { if (s.ppc != null) pts.push({ x: x(i), y: y(Math.round(s.ppc * 100)), v: Math.round(s.ppc * 100) }); });
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">';
+      [0, 25, 50, 75, 100].forEach(function (g) {
+        svg += '<line x1="' + padL + '" y1="' + y(g) + '" x2="' + (W - padR) + '" y2="' + y(g) + '" stroke="var(--linha)" stroke-width="1"/>' +
+          '<text x="' + (padL - 5) + '" y="' + (y(g) + 3) + '" text-anchor="end" font-size="8.5" fill="var(--texto-fraco)">' + g + '</text>';
+      });
+      // meta 85% tracejada
+      svg += '<line x1="' + padL + '" y1="' + y(85) + '" x2="' + (W - padR) + '" y2="' + y(85) + '" stroke="var(--texto-fraco)" stroke-width="1" stroke-dasharray="5 4"/>' +
+        '<text x="' + (W - padR) + '" y="' + (y(85) - 4) + '" text-anchor="end" font-size="8.5" fill="var(--texto-fraco)">Meta 85%</text>';
+      if (pts.length >= 2) {
+        var linha = pts.map(function (p) { return p.x + "," + p.y; }).join(" ");
+        svg += '<polygon points="' + linha + " " + pts[pts.length - 1].x + "," + y(0) + " " + pts[0].x + "," + y(0) + '" fill="var(--aco)" opacity=".08"/>';
+        svg += '<polyline points="' + linha + '" fill="none" stroke="var(--navy)" stroke-width="2"/>';
+      }
+      pts.forEach(function (p) {
+        svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="var(--surface)" stroke="var(--navy)" stroke-width="1.75"><title>PPC ' + p.v + '%</title></circle>';
+      });
+      h.forEach(function (s, i) {
+        svg += '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(s.periodo.split("–")[0]) + '</text>';
+        if (s.ppc != null) svg += '<text x="' + x(i) + '" y="' + (y(Math.round(s.ppc * 100)) - 7) + '" text-anchor="middle" font-size="9" font-weight="700" fill="var(--texto)">' + Math.round(s.ppc * 100) + '%</text>';
+      });
+      return svg + "</svg>";
+    },
+    _lpSvgPrevReal: function (dados) {
+      var W = 340, H = 150, padL = 26, padR = 6, padT = 10, padB = 24;
+      var iw = W - padL - padR, ih = H - padT - padB;
+      var y = function (p) { return padT + (1 - p / 100) * ih; };
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">';
+      [0, 25, 50, 75, 100].forEach(function (g) {
+        svg += '<line x1="' + padL + '" y1="' + y(g) + '" x2="' + (W - padR) + '" y2="' + y(g) + '" stroke="var(--linha)" stroke-width="1"/>' +
+          '<text x="' + (padL - 5) + '" y="' + (y(g) + 3) + '" text-anchor="end" font-size="8.5" fill="var(--texto-fraco)">' + g + '</text>';
+      });
+      var gw = iw / dados.length, bw = Math.min(18, gw / 3);
+      dados.forEach(function (d, i) {
+        var cx = padL + gw * i + gw / 2;
+        var nome = String(d.nome || ""); if (nome.length > 14) nome = nome.slice(0, 13) + "…";
+        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.prev) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.prev)) + '" rx="2" fill="var(--aco-claro)" opacity=".75"><title>Previsto ' + d.prev + '%</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="var(--navy)"><title>Realizado (medido) ' + d.real + '%</title></rect>' +
+          '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(nome) + '</text>' +
+          '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="' + (d.real >= d.prev ? "var(--verde)" : "#ea580c") + '">' + (d.real >= d.prev ? "+" : "") + (d.real - d.prev) + ' pts</text>';
+      });
+      svg += "</svg>";
+      svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco)">' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--aco-claro)"></span>Previsto (cronograma)</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--navy)"></span>Realizado (medições)</span></div>';
+      return svg;
+    },
+    _lpDonutCores: ["#2563eb", "#b45309", "#15803d", "#7c3aed", "#be185d", "#64748b"],
+    _lpSvgDonut: function (fatias, total) {
+      var R = 42, C = 2 * Math.PI * R, off = 0;
+      var svg = '<svg viewBox="0 0 120 120" style="width:132px;height:132px;flex:0 0 auto">';
+      fatias.forEach(function (f) {
+        var frac = f.n / total, arco = Math.max(0, frac * C - 2);
+        svg += '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + f.cor + '" stroke-width="15" stroke-dasharray="' + arco + " " + (C - arco) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 60 60)"><title>' + Util.esc(f.rotulo) + ": " + f.n + '</title></circle>';
+        off += frac * C;
+      });
+      svg += '<text x="60" y="58" text-anchor="middle" font-size="21" font-weight="800" fill="var(--texto)">' + total + '</text>' +
+        '<text x="60" y="72" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">pendências</text></svg>';
+      return svg;
+    },
+    // Gráfico PPC + Prev×Real + Donut + Causas (compartilhado entre Quadro e Semanal)
+    _lpGraficosHtml: function (ts, hist) {
+      var self = this, LP = window.LastPlanner;
+      var h = LP.historicoPPC(ts, hist);
+      var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:start;margin-bottom:16px">';
+
+      // 1) PPC — linha com meta 85%
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">📈 PPC — Percentual do Planejamento Concluído</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Últimas 6 semanas · meta 85%</p>' + this._lpSvgPpc(h) + '</div>';
+
+      // 2) Avanço físico — Previsto × Realizado por obra (só com dados reais)
+      var pr = this._lpPrevRealDados();
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">📊 Avanço físico — Previsto × Realizado</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Cronograma × medições acumuladas, por obra</p>';
+      if (pr.length) html += this._lpSvgPrevReal(pr);
+      else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (com data de início) e lance medições — o gráfico compara o previsto do cronograma com o medido.</p>';
+      html += '</div>';
+
+      // 3) Donut — pendências por frente (deriva do quadro ao vivo)
+      var pend = ts.filter(function (t) { return t && t.status !== "feito"; });
+      var porFrente = {};
+      pend.forEach(function (t) { var f = (t.frente && String(t.frente).trim()) || "Sem frente"; porFrente[f] = (porFrente[f] || 0) + 1; });
+      var fatias = Object.keys(porFrente).map(function (f) { return { rotulo: f, n: porFrente[f] }; }).sort(function (a, b) { return b.n - a.n; });
+      if (fatias.length > 5) {
+        var resto = fatias.slice(4).reduce(function (s, f) { return s + f.n; }, 0);
+        fatias = fatias.slice(0, 4); fatias.push({ rotulo: "Outras", n: resto });
+      }
+      fatias.forEach(function (f, i) { f.cor = self._lpDonutCores[Math.min(i, self._lpDonutCores.length - 1)]; });
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">🧭 Pendências por frente</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Tarefas não concluídas · atualiza com o quadro</p>';
+      if (!pend.length) html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Nenhuma pendência — tudo concluído. 👏</p>';
+      else {
+        html += '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">' + this._lpSvgDonut(fatias, pend.length) + '<div style="flex:1;min-width:140px">';
+        fatias.forEach(function (f) {
+          html += '<div style="display:flex;align-items:center;gap:7px;font-size:12px;margin-bottom:5px"><span style="width:9px;height:9px;border-radius:99px;background:' + f.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(f.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums">' + f.n + '</span><b style="width:38px;text-align:right;font-variant-numeric:tabular-nums">' + Math.round(f.n / pend.length * 100) + '%</b></div>';
+        });
+        html += '</div></div>';
+      }
       html += '</div></div>';
+
+      // 4) Pareto de causas (mantido)
       var ca = LP.causasAgregadas(ts);
       html += '<div class="card"><h3 style="margin:0 0 10px">⚠ Causas de não-cumprimento</h3>';
       if (!ca.total) html += '<p class="muted" style="font-size:13px;margin:0">Sem causas registradas ainda.</p>';
@@ -5331,7 +5455,7 @@ renderFolha: function () {
         ca.linhas.forEach(function (l) { var pct = Math.round(l.pct * 100); html += '<tr><td>' + Util.esc(l.causa) + '</td><td style="width:42%"><div style="background:#eef2f7;border-radius:99px;height:14px;overflow:hidden"><div style="background:#ea580c;height:100%;width:' + pct + '%"></div></div></td><td class="num" style="width:64px"><b>' + l.n + '</b> · ' + pct + '%</td></tr>'; });
         html += '</tbody></table>';
       }
-      html += '</div></div>';
+      html += '</div>';
       return html;
     },
 
