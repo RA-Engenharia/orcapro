@@ -308,8 +308,10 @@
           } catch (eT) {}
         }, 900);
       }
-      var view = this.view || "orcamentos";
       var podeGestao = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao()); // demo: vitrine explora a Gestão com dados fake
+      // Tela inicial = Painel de Gestão (visão executiva). Vitrine/demo continua no editor
+      // de orçamento; sem Gestão (plano base) cai em Orçamentos como sempre.
+      var view = this.view || (podeGestao && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos");
       if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
         // Sem Plus (base/sem licença): Gestão bloqueada p/ TODOS (dono e sub-usuário) → só Orçamento
         if (view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }

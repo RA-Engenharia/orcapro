@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.106",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.106/OrcaPRO-IA-update-v1.1.106.zip",
-  "notas": "Last Planner: novo Quadro Kanban da obra — arraste os cartões entre Lookahead, Liberada, Em Execução, Impedimento, Não cumprida e Concluída (no celular/tablet, toque no cartão para as mesmas ações). As travas do LPS valem no quadro: comprometer exige tarefa livre, não-cumprimento exige causa e semana já medida no PPC pede confirmação antes de reescrever o histórico.",
+  "versao": "1.1.107",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.107/OrcaPRO-IA-update-v1.1.107.zip",
+  "notas": "O sistema agora abre direto no Painel de Gestão (KPIs, pulso do Last Planner e aprovações pendentes). E o administrador cria com 1 clique a OBRA TESTE ORÇAPRO — obra de demonstração completa que alimenta todos os módulos (orçamento SINAPI, Last Planner, diários com fotos, medições, compras, equipe, folha, frota, financeiro…) para apresentar o sistema funcionando, e remove tudo com 1 clique sem tocar nos dados reais.",
   "obrigatoria": false
 }

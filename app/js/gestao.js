@@ -266,7 +266,8 @@
       var valorEstoque = estoque.reduce(function (s, i) { return s + Util.num(i.saldo) * Util.num(i.custoUnit); }, 0);
       var emAndamento = obras.filter(function (o) { return o.status === "andamento"; }).length;
       var valorContratado = contratos.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
-      var receitas = fin.filter(function (f) { return f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+      // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
+      var receitas = fin.filter(function (f) { return f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var aReceber = fin.filter(function (f) { return f.tipo === "receita" && f.status === "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
@@ -283,6 +284,27 @@
           k("Valor em estoque", Util.fmtMoeda(valorEstoque)) +
           k("Diários (RDO)", rdos.length) +
         "</div>";
+      // Sem nenhuma obra ainda: o CTA da obra de demonstração sobe pro TOPO (1ª impressão)
+      if (!obras.length) html += this._obraDemoCard();
+      // Last Planner — pulso da semana (agregado de todas as obras) + atalho pro quadro
+      if (typeof LastPlanner !== "undefined") {
+        var lpTs = lista("lp_tarefas");
+        if (lpTs.length) {
+          var lpLook = LastPlanner.semanas(new Date(), 6);
+          var lpRes = LastPlanner.resumo(lpTs, lpLook);
+          var lpCols = { execucao: 0, impedida: 0, liberada: 0 };
+          lpTs.forEach(function (t) { if (!t) return; var c = LastPlanner.classificarQuadro(t, lpLook[0].chave); if (lpCols[c] != null) lpCols[c]++; });
+          var lpPpc = lpRes.ppcSemana == null ? "—" : Math.round(lpRes.ppcSemana * 100) + "%";
+          var lpCor = lpRes.ppcSemana == null ? "var(--texto-fraco)" : (lpRes.ppcSemana >= .8 ? "var(--verde)" : "#ea580c");
+          html += '<div class="card mt"' + (lpCols.impedida ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px">🗂 Last Planner — semana</h3>' +
+            '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">' +
+            '<span style="font-size:13px">PPC: <b style="color:' + lpCor + '">' + lpPpc + '</b> <span class="muted">(' + lpRes.feitas + "/" + lpRes.comprometidas + ' tarefas)</span></span>' +
+            '<span style="font-size:13px">Em execução: <b>' + lpCols.execucao + '</b></span>' +
+            '<span style="font-size:13px">Liberadas: <b>' + lpCols.liberada + '</b></span>' +
+            '<span style="font-size:13px;color:' + (lpCols.impedida ? "#b3423a" : "var(--verde)") + '">Impedimentos: <b>' + lpCols.impedida + '</b></span>' +
+            '<button class="btn sm" data-view="lastplanner" style="margin-left:auto">🗂 Abrir o quadro</button></div></div>';
+        }
+      }
       // G3: fila de aprovações pendentes (só aparece quando há algo esperando, e só p/ quem aprova)
       var podeAp = (typeof Auth === "undefined" || !Auth.podeAprovar) ? true : Auth.podeAprovar();
       var pend = this._pendentesAprovacao();
@@ -311,7 +333,7 @@
         obras.forEach(function (o) {
           var ctr = contratos.filter(function (c) { return c.obraId === o.id; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
           var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-          var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var base = ctr || Util.num(o.valor);
           var margem = base > 0 ? ((base - custo) / base * 100) : 0;
           var area = Util.num(o.areaConstruida);
@@ -323,7 +345,50 @@
       html += "</div>";
       // G5: Análise visual (gráficos reutilizando o motor SVG do ui.js) com filtro de período
       html += this._dashAnalise();
+      // Obra de demonstração — só p/ o ADMIN, fora da vitrine e com licença ativa
+      // (RBAC em função também: ver obraDemoCriar/Remover — regra A.5)
+      html += this._obraDemoCard();
       return html;
+    },
+    _obraDemoPode: function () {
+      if (typeof ObraDemo === "undefined") return false;
+      if (typeof App !== "undefined" && App._demo) return false;          // vitrine do site: nunca
+      if (this._bloqueado()) return false;                                 // sem licença/trial expirado
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return false; // só o dono/admin
+      return true;
+    },
+    _obraDemoCard: function () {
+      if (!this._obraDemoPode()) return "";
+      var temDemo = ObraDemo.existe();
+      return '<div class="card mt" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:240px"><h3 style="margin:0 0 4px">🏗 Obra de demonstração</h3>' +
+        '<p class="muted" style="font-size:12.5px;margin:0">' + (temDemo
+          ? 'A <b>OBRA TESTE ORÇAPRO</b> está criada — todos os módulos têm dados de exemplo pra apresentar o sistema. Ao remover, só os dados de demonstração saem.'
+          : 'Crie a <b>OBRA TESTE ORÇAPRO</b> com tudo preenchido (orçamento SINAPI, Last Planner, diários com fotos, medições, compras, equipe, folha, frota, financeiro…) pra demonstrar o sistema funcionando.') + '</p></div>' +
+        (temDemo
+          ? '<button class="btn sm" data-gacao="obrademo-remover">🗑 Remover dados de demonstração</button>'
+          : '<button class="btn primary sm" data-gacao="obrademo-criar">🏗 Criar OBRA TESTE ORÇAPRO</button>') +
+        '</div>';
+    },
+    obraDemoCriar: function () {
+      if (!this._obraDemoPode()) { UI.toast("Só o administrador (com licença ativa) cria a obra de demonstração.", "erro"); return; }
+      try {
+        ObraDemo.criar();
+        App.render();
+        UI.toast("OBRA TESTE ORÇAPRO criada — todos os módulos alimentados. Explore pelo menu à esquerda.", "ok");
+      } catch (e) {
+        // seed parcial não fica pra trás: desfaz o que entrou antes da falha
+        try { ObraDemo.remover(); } catch (e2) {}
+        App.render();
+        UI.toast("Falhou ao criar a demonstração: " + e.message, "erro");
+      }
+    },
+    obraDemoRemover: function () {
+      if (!this._obraDemoPode()) { UI.toast("Só o administrador pode remover a obra de demonstração.", "erro"); return; }
+      if (!confirm("Remover a OBRA TESTE ORÇAPRO e TODOS os dados de demonstração? Os seus dados reais não são tocados.")) return;
+      var n = ObraDemo.remover();
+      App.render();
+      UI.toast(n + " registro(s) de demonstração removido(s).", "ok");
     },
     // ---------- G5: BI vivo no Painel ----------
     _CORCAT: { obra: "#0f2740", material: "#16a34a", mao_obra: "#2563eb", equipamento: "#f59e0b", administrativo: "#64748b", impostos: "#dc2626", medicao: "#7c3aed", outros: "#94a3b8" },
@@ -5564,6 +5629,8 @@ renderFolha: function () {
         case "tar-fazer": return this._tarefaStatus(id, "fazendo", "Tarefa em andamento.");
         case "tar-concluir": return this._tarefaStatus(id, "feita", "Tarefa concluída.");
         case "tar-reabrir": return this._tarefaStatus(id, "afazer", "Tarefa reaberta.");
+        case "obrademo-criar": return this.obraDemoCriar();
+        case "obrademo-remover": return this.obraDemoRemover();
         case "lp-obra": return this.lpTrocaObra(dataset.value);
         case "lp-visao": return this.lpTrocaVisao(dataset.val);
         case "lp-puxar": return this.lpPuxarCronograma();
