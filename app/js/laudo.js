@@ -120,11 +120,11 @@
 
       // ---- 5. ANALÍTICA ----
       var analHtml = '';
-      Util.arr(orc.etapas).forEach(function (e) {
-        analHtml += '<tr class="grp-lau"><td colspan="6"><b>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + '</b></td></tr>';
-        Util.arr(e.itens).forEach(function (it) {
+      Util.arr(orc.etapas).forEach(function (e, ei) {
+        analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="6"><b>' + Util.esc(e.nome) + '</b></td></tr>';
+        Util.arr(e.itens).forEach(function (it, ii) {
           var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-          analHtml += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
+          analHtml += '<tr><td><b>' + Orcamento.itemNumero(ei, ii) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(it.custoUnitario) + '</td>' +
@@ -132,9 +132,9 @@
         });
       });
       P.push(pg("5. Planilha Orçamentária Analítica",
-        '<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th><th class="r">Custo total</th></tr></thead>' +
+        '<table class="prop-tbl" style="font-size:11px"><thead><tr><th>Item</th><th>Código</th><th>Descrição do serviço</th><th>Un</th><th class="r">Qtd</th><th class="r">Custo unit.</th><th class="r">Custo total</th></tr></thead>' +
         '<tbody>' + analHtml + '</tbody>' +
-        '<tfoot><tr><td colspan="5">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr></tfoot></table>'));
+        '<tfoot><tr><td colspan="6">CUSTO DIRETO (sem BDI)</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr></tfoot></table>'));
 
       // ---- 5.1 MEMÓRIA DE CÁLCULO (Lei 14.133 — justificativa dos quantitativos) ----
       // LOTE 4: o campo já era capturado na UI mas não saía no PDF do laudo.

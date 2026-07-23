@@ -401,7 +401,7 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -439,6 +439,20 @@
       if (t.dataset.editEtapa) { this.renomearEtapa(t.dataset.editEtapa); return; }
       // remover etapa
       if (t.dataset.delEtapa) { this.removerEtapa(t.dataset.delEtapa); return; }
+      // reordenar etapa "etapaId|dir" (dir -1 sobe / 1 desce)
+      if (t.dataset.moverEtapa) {
+        if (t.disabled) return;
+        var me = String(t.dataset.moverEtapa).split("|");
+        Orcamento.moverEtapa(this.orcAtual, me[0], parseInt(me[1], 10));
+        this.persistir(); this.render(); return;
+      }
+      // reordenar item "etapaId|itemId|dir"
+      if (t.dataset.moverItem) {
+        if (t.disabled) return;
+        var mi = String(t.dataset.moverItem).split("|");
+        Orcamento.moverItem(this.orcAtual, mi[0], mi[1], parseInt(mi[2], 10));
+        this.persistir(); this.render(); return;
+      }
       // remover item "etapaId|itemId"
       if (t.dataset.delItem) {
         var pr = t.dataset.delItem.split("|");
@@ -1392,6 +1406,10 @@
         var fontes = 0, prazo = false;
         try { fontes = Orcamento.repararFontes(orc); } catch (e2) {} // FASE 1.2: Fonte honesta
         try { prazo = Orcamento.sincronizarPrazo(orc); } catch (e3) {} // FASE 1.4: prazo único
+        // NÃO renumeramos as etapas ao só ABRIR: isso sobrescreveria silenciosamente códigos
+        // de edital/EAP importados ("02.10.01") e marcaria o orçamento como "modificado". A
+        // renumeração sequencial acontece só nas ações estruturais (add/mover/remover etapa),
+        // e o número hierárquico dos itens (2.1) é derivado da POSIÇÃO no render — sempre correto.
         if (reparos > 0 || fontes > 0 || prazo) {
           Store.salvarOrcamento(Auth.empresaId(), orc);
           if (reparos > 0) UI.toast("Corrigimos automaticamente " + reparos + " descrição(ões) com acentos.", "ok");

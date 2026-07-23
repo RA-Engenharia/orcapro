@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.115",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.115/OrcaPRO-IA-update-v1.1.115.zip",
-  "notas": "Detalhamento da composição (insumos) garantido em TODAS as regiões: se faltar o arquivo no seu PC, o sistema busca o detalhamento direto do nosso servidor, automaticamente. Nunca mais o aviso de que não tem detalhamento para a base daquela região.",
+  "versao": "1.1.116",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.116/OrcaPRO-IA-update-v1.1.116.zip",
+  "notas": "No editor de orçamento agora dá para REORDENAR etapas e itens (botões subir/descer) sem apagar nada, e a numeração ficou hierárquica: a etapa 2 tem os itens 2.1, 2.2, 2.3 numa coluna, com o código SINAPI numa coluna separada. O número do item também aparece no relatório, no laudo e no Excel.",
   "obrigatoria": false
 }

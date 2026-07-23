@@ -386,29 +386,40 @@
         return html;
       }
       html += '<table class="tbl"><thead><tr>' +
-        '<th>Código</th><th>Descrição</th><th>Unid</th>' +
+        '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
         '<th class="num">Preço Venda</th><th></th></tr></thead><tbody>';
 
       var pct = orc.bdi ? orc.bdi.percentual : 0;
-      orc.etapas.forEach(function (e) {
+      var nEtapas = orc.etapas.length;
+      orc.etapas.forEach(function (e, ei) {
         var custoEtapa = 0;
         e.itens.forEach(function (it) { custoEtapa += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
-        html += '<tr class="etapa-row"><td>' + Util.esc(e.codigo) + '</td>' +
-          '<td colspan="4">' + Util.esc(e.nome) + '</td>' +
+        // número da etapa = posição (1, 2, 3…); item = 2.1, 2.2… (derivado da posição)
+        var numEtapa = String(ei + 1);
+        html += '<tr class="etapa-row"><td><b>' + numEtapa + '</b></td>' +
+          '<td colspan="5">' + Util.esc(e.nome) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(custoEtapa) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custoEtapa, pct)) + '</td>' +
-          '<td class="right"><div class="acoes"><button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
+          '<td class="right"><div class="acoes">' +
+          '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
+          '<button class="btn sm ico" data-mover-etapa="' + e.id + '|1"' + (ei === nEtapas - 1 ? ' disabled' : '') + ' title="Descer etapa">▼</button>' +
+          '<button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
           '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">✎</button>' +
           '<button class="btn sm ico danger" data-del-etapa="' + e.id + '" title="Remover etapa">✕</button></div></td></tr>';
 
-        e.itens.forEach(function (it) {
+        var nItens = e.itens.length;
+        e.itens.forEach(function (it, ii) {
           var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
           var fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "PROPRIO");
           var ehSinapi = it.origem === "SINAPI" && (!it.baseFonte || it.baseFonte === "SINAPI");
           var pillCls = fonte === "SINAPI" ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
+          var numItem = Orcamento.itemNumero(ei, ii); // 2.1, 2.2… (mesma regra dos entregáveis)
+          var temCod = it.codigo && it.codigo !== "—";
           html += '<tr>' +
-            '<td><span class="pill ' + pillCls + '">' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? ' <span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '') + '</td>' +
+            // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
+            '<td class="num-item"><b>' + numItem + '</b></td>' +
+            '<td>' + (temCod ? '<span class="pill ' + pillCls + '">' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '') : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             '<td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
@@ -416,6 +427,8 @@
             '<td class="num">' + Util.fmtMoeda(custo) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custo, pct)) + '</td>' +
             '<td class="right"><div class="acoes">' +
+              '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (ii === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
+              '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (ii === nItens - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (ehSinapi ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button>' : '') +
               '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button>' +
               '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">✕</button></div></td></tr>';
@@ -895,26 +908,26 @@
 
       // 2) Planilha ANALÍTICA (detalhada, item a item, por etapa)
       html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
-      html += '<table class="prop-tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th>' +
+      html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
         '<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">Preço Venda</th></tr></thead><tbody>';
-      Util.arr(orc.etapas).forEach(function (e) {
+      Util.arr(orc.etapas).forEach(function (e, ei) {
         var subCusto = 0;
         e.itens.forEach(function (it) { subCusto += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
-        html += '<tr class="grp"><td colspan="7">' + Util.esc(e.codigo + " · " + e.nome) + '</td></tr>';
-        if (!e.itens.length) html += '<tr><td colspan="7" class="muted">(sem itens)</td></tr>';
-        e.itens.forEach(function (it) {
+        html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + '</td></tr>';
+        if (!e.itens.length) html += '<tr><td colspan="8" class="muted">(sem itens)</td></tr>';
+        e.itens.forEach(function (it, ii) {
           var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-          html += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
+          html += '<tr><td><b>' + Orcamento.itemNumero(ei, ii) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(it.custoUnitario) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(custo) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(Bdi.aplicar(custo, pct)) + '</td></tr>';
         });
-        html += '<tr class="sub"><td colspan="5">Subtotal ' + Util.esc(e.codigo) + '</td>' +
+        html += '<tr class="sub"><td colspan="6">Subtotal ' + (ei + 1) + " · " + Util.esc(e.nome) + '</td>' +
           '<td class="r">' + Util.fmtMoeda(subCusto) + '</td><td class="r">' + Util.fmtMoeda(Bdi.aplicar(subCusto, pct)) + '</td></tr>';
       });
-      html += '</tbody><tfoot><tr><td colspan="5">TOTAL GERAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
+      html += '</tbody><tfoot><tr><td colspan="6">TOTAL GERAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
         '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
 
       // 3) COMPOSIÇÕES E INSUMOS (analítico SINAPI) — cada composição detalhada em seus insumos

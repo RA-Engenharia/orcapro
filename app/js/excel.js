@@ -278,13 +278,13 @@
 
     var r = hr + 1, n = 0, subCustoCells = [], etInfo = [], grandCusto = 0, grandMO = 0, grandMAT = 0, grandEQ = 0;
     var itensFlat = []; // FASE 4 (AI-ready): 1 registro por item p/ a Table tblItens da aba "Dados IA"
-    etapas.forEach(function (et) {
+    etapas.forEach(function (et, etIdx) {
       var etKey = et.codigo || et.nome || 'Etapa';
       wa.mergeCells('A' + r + ':J' + r);
-      var bc = wa.getCell('A' + r); bc.value = (et.codigo ? et.codigo + '  ' : '') + (et.nome || 'Etapa'); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
+      var bc = wa.getCell('A' + r); bc.value = (etIdx + 1) + '  ' + (et.nome || 'Etapa'); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
       r++;
       var first = r, etCusto = 0, etVenda = 0;
-      (Array.isArray(et.itens) ? et.itens : []).forEach(function (it) {
+      (Array.isArray(et.itens) ? et.itens : []).forEach(function (it, itIdx) {
         n++; var row = wa.getRow(r);
         var qt = num(it.quantidade), cu = num(it.custoUnitario);
         var ct = qt * cu, pu = cu * (1 + bdiPct / 100), pt = qt * pu;
@@ -296,7 +296,7 @@
           grandMAT += ct * ((ana.custoMAT || 0) / ana.custoUnitario);
           grandEQ += ct * ((ana.custoEQ || 0) / ana.custoUnitario);
         } else { grandMAT += ct; }
-        row.getCell(1).value = n;
+        row.getCell(1).value = (etIdx + 1) + '.' + (itIdx + 1); // número hierárquico 2.1 (igual ao editor)
         row.getCell(2).value = it.codigo || '';
         // FASE 2: fonte honesta no xlsx — SEINFRA/SETOP/etc. não são "Própria"
         var fonteIt = it.baseFonte || it.origem || '';

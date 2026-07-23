@@ -53,21 +53,43 @@
 
     // ---- Etapas ----
     addEtapa: function (orc, nome) {
-      orc.etapas.push({ id: Util.uid("eta"), codigo: this._proxCodigoEtapa(orc), nome: nome || "Nova Etapa", itens: [] });
+      orc.etapas.push({ id: Util.uid("eta"), codigo: "", nome: nome || "Nova Etapa", itens: [] });
+      this._renumerarEtapas(orc);
       return orc;
     },
-    _proxCodigoEtapa: function (orc) {
-      // MÁXIMO+1, não length+1: remover a 2ª de 3 etapas e criar outra não
-      // pode duplicar o código (ex.: duas "3.0" confundem relatórios/SUMIFS).
-      var max = 0;
-      Util.arr(orc.etapas).forEach(function (e) {
-        var n = parseInt(String(e.codigo || ""), 10);
-        if (isFinite(n) && n > max) max = n;
-      });
-      return String(max + 1) + ".0";
+    // Códigos SEQUENCIAIS por POSIÇÃO (1.0, 2.0, 3.0…) — assim reordenar já renumera e os
+    // itens viram 2.1, 2.2… coerentes com a ordem. Só display; os vínculos usam o id.
+    _renumerarEtapas: function (orc) {
+      Util.arr(orc && orc.etapas).forEach(function (e, i) { e.codigo = String(i + 1) + ".0"; });
+      return orc;
     },
+    // Número hierárquico do item (derivado da posição): etapa 2, 3º item → "2.3".
+    itemNumero: function (etapaIdx, itemIdx) { return (etapaIdx + 1) + "." + (itemIdx + 1); },
     removerEtapa: function (orc, etapaId) {
       orc.etapas = Util.arr(orc.etapas).filter(function (e) { return e.id !== etapaId; });
+      this._renumerarEtapas(orc);
+      return orc;
+    },
+    // Sobe (dir<0) ou desce (dir>0) uma ETAPA, trocando com a vizinha, e renumera.
+    moverEtapa: function (orc, etapaId, dir) {
+      var arr = Util.arr(orc && orc.etapas), i = -1;
+      for (var k = 0; k < arr.length; k++) { if (arr[k].id === etapaId) { i = k; break; } }
+      if (i < 0) return orc;
+      var j = i + (dir < 0 ? -1 : 1);
+      if (j < 0 || j >= arr.length) return orc; // já no topo/fundo
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+      this._renumerarEtapas(orc);
+      return orc;
+    },
+    // Sobe/desce um ITEM dentro da própria etapa (o número 2.x segue a posição).
+    moverItem: function (orc, etapaId, itemId, dir) {
+      var e = this._etapa(orc, etapaId); if (!e) return orc;
+      var arr = Util.arr(e.itens), i = -1;
+      for (var k = 0; k < arr.length; k++) { if (arr[k].id === itemId) { i = k; break; } }
+      if (i < 0) return orc;
+      var j = i + (dir < 0 ? -1 : 1);
+      if (j < 0 || j >= arr.length) return orc;
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
       return orc;
     },
     // Renomeia uma etapa sem recriá-la (mantém itens e código).
