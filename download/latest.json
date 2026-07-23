@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.113",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.113/OrcaPRO-IA-update-v1.1.113.zip",
-  "notas": "Correção: o detalhamento da composição (insumos) abre de primeira, sem trocar de estado. E o sistema agora se atualiza sozinho: baixa e instala em segundo plano e recarrega num momento seguro — o botão Atualizar deixou de ser necessário.",
+  "versao": "1.1.114",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.114/OrcaPRO-IA-update-v1.1.114.zip",
+  "notas": "BIM no celular muito mais fácil: o botão Ferramentas virou um botão verde grande, fixo no canto da tela — sempre visível, em qualquer rolagem. A barra aberta rola dentro dela mesma (não tampa a vista do 3D) e o botão se adapta ao girar o aparelho.",
   "obrigatoria": false
 }

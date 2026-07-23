@@ -140,21 +140,55 @@ function montar(host, opts) {
   // vista. Um botão discreto no canto esconde/mostra todos os botões; o estado fica salvo.
   var barToggle = document.createElement('button');
   barToggle.className = 'btn sm';
-  barToggle.style.cssText = 'position:absolute;right:10px;top:8px;z-index:5;padding:5px 9px;font-size:12px;opacity:.94;box-shadow:0 2px 8px rgba(0,0,0,.35)';
   barToggle.title = 'Mostrar ou esconder a barra de ferramentas (deixa a vista limpa)';
-  // no celular a barra (20 botões) tampava metade da tela → começa RECOLHIDA por padrão em tela
-  // pequena; no PC começa aberta. A escolha do usuário (se ele mexer) manda daí pra frente.
-  var barraAberta = (host.clientWidth || window.innerWidth || 1024) > 640;
+  // v1.1.114 — CELULAR: o toggle era pequeno e ficava no TOPO do viewer; rolando a página
+  // pra ver o 3D ele saía da tela e o cliente "perdia" as ferramentas (relato real).
+  // Em tela pequena vira um FAB verde GRANDE e fixo no pé do viewer (sempre à vista),
+  // e a barra aberta ganha rolagem própria (não tampa mais metade da vista).
+  // DINÂMICO (gate v1.1.114): recalculado no resize — celular aberto em landscape (>640px)
+  // ou janela de PC estreitada trocam de modo na hora, sem reabrir a aba BIM.
+  var ehTelaPequena = (host.clientWidth || window.innerWidth || 1024) <= 640;
+  var barraAberta = !ehTelaPequena;
   try { var _pref = localStorage.getItem('orcapro:bim:barra'); if (_pref) barraAberta = _pref !== 'recolhida'; } catch (_) {}
+  function aplicarEstiloToggle() {
+    ehTelaPequena = (host.clientWidth || window.innerWidth || 1024) <= 640;
+    if (ehTelaPequena) {
+      // FIXED (viewport): o viewer costuma ser mais alto que a tela do celular — ancorado no
+      // host, o botão sumia ao rolar (relato real do cliente). Fixo, está SEMPRE à mão enquanto
+      // a aba BIM existir (é filho do host: sai junto quando troca de módulo). O toast
+      // "Instalar como app" (#opr-install) senta no mesmo canto → o FAB sobe pra cima dele.
+      // z-index 40: acima de tudo do viewer (z≤7) e ABAIXO de modal (z-50), busca (z-70) e
+      // toasts (z-100) — o FAB nunca cobre a UI do app (achado do gate).
+      var inst = document.getElementById('opr-install');
+      var bb = (inst && inst.offsetHeight) ? (inst.offsetHeight + 26) : 14;
+      barToggle.style.cssText = 'position:fixed;right:12px;bottom:' + bb + 'px;z-index:40;padding:12px 18px;font-size:14.5px;font-weight:800;border:0;border-radius:999px;background:#16a34a;color:#fff;box-shadow:0 6px 22px rgba(0,0,0,.5);cursor:pointer';
+      bar.style.maxHeight = '46%'; bar.style.overflowY = 'auto'; bar.style.paddingBottom = '10px';
+    } else {
+      barToggle.style.cssText = 'position:absolute;right:10px;top:8px;z-index:5;padding:5px 9px;font-size:12px;opacity:.94;box-shadow:0 2px 8px rgba(0,0,0,.35)';
+      bar.style.maxHeight = ''; bar.style.overflowY = ''; bar.style.paddingBottom = '';
+    }
+    barToggle.innerHTML = barraAberta ? (ehTelaPequena ? '✕ Fechar ferramentas' : '⤢ Esconder') : '🧰 Ferramentas';
+  }
   function setBarra(aberta) {
     barraAberta = !!aberta;
     bar.style.display = aberta ? 'flex' : 'none';
-    barToggle.innerHTML = aberta ? '⤢ Esconder' : '🧰 Ferramentas';
+    barToggle.innerHTML = aberta ? (ehTelaPequena ? '✕ Fechar ferramentas' : '⤢ Esconder') : '🧰 Ferramentas';
     try { localStorage.setItem('orcapro:bim:barra', aberta ? 'aberta' : 'recolhida'); } catch (_) {}
+    // página rolada longe do viewer: abrir a barra sem trazê-la à vista parecia "não fez nada"
+    if (aberta && ehTelaPequena && host.scrollIntoView) { try { host.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) {} }
     if (S && S._ajustarTop) S._ajustarTop();
   }
+  var fabObs = null;
+  try {
+    // reposiciona quando o toast #opr-install entra/sai; guardado em S e DESCONECTADO no
+    // desmonte (senão acumulava 1 observer por ctx-lost — achado do gate)
+    fabObs = new MutationObserver(aplicarEstiloToggle);
+    fabObs.observe(document.body, { childList: true });
+  } catch (eF) {}
   barToggle.addEventListener('click', function () { setBarra(!barraAberta); });
   host.appendChild(barToggle);
+  aplicarEstiloToggle();
+  window.addEventListener('resize', aplicarEstiloToggle);
   setBarra(barraAberta); // aplica o estado salvo (S._ajustarTop roda depois no setup)
 
   // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = o look do Revit)
@@ -344,6 +378,7 @@ function montar(host, opts) {
         matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
   var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
   S.barToggle = barToggle; S._setBarra = setBarra; // recolher/expandir a barra (entra no re-home)
+  S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; // FAB mobile: desconectados no desmonte (gate v1.1.114)
 
   function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   S._resize = resize; window.addEventListener('resize', resize); resize();
@@ -2410,9 +2445,10 @@ function montar(host, opts) {
   // toolbar com flex-wrap pode ter 2+ linhas em tela estreita: hint/painéis ancoram ABAIXO da
   // altura REAL da barra (o top:52px fixo cobriria a 2ª linha de botões)
   function ajustarTopFlutuantes() {
-    // barra recolhida (offsetHeight 0): ancora os painéis ABAIXO do botão flutuante de ferramentas
+    // barra recolhida (offsetHeight 0): ancora os painéis abaixo do toggle — que no CELULAR
+    // agora vive no PÉ do viewer, então lá os painéis podem colar no topo (t=8).
     var bh = (bar && bar.offsetHeight) || 0;
-    var t = bh ? bh + 8 : 44;
+    var t = bh ? bh + 8 : (ehTelaPequena ? 8 : 44);
     [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
   }
   S._ajustarTop = ajustarTopFlutuantes;
@@ -2557,6 +2593,14 @@ function montar(host, opts) {
   // HUD imersivo (joystick + sair + mira) — some quando não está no modo
   var xrHud = document.createElement('div');
   xrHud.style.cssText = 'position:absolute;inset:0;z-index:6;display:none;pointer-events:none';
+  // O toggle de ferramentas some enquanto o HUD imersivo está ativo (celular E desktop —
+  // no celular o FAB sobreporia a barra de disciplina/medir/sair; no PC evita botão órfão
+  // sobre o HUD; mudança intencional de comportamento no PC, v1.1.114).
+  try {
+    new MutationObserver(function () {
+      if (S && S.barToggle) S.barToggle.style.visibility = (xrHud.style.display !== 'none') ? 'hidden' : '';
+    }).observe(xrHud, { attributes: true, attributeFilter: ['style'] });
+  } catch (eMo) {}
   host.appendChild(xrHud);
   S.xrHud = xrHud;
 
@@ -4347,6 +4391,8 @@ function desmontarMorto() {
   try { if (S._onMouseMove) document.removeEventListener('mousemove', S._onMouseMove); } catch (_) {}
   try { if (S._resize) window.removeEventListener('resize', S._resize); } catch (_) {}
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
+  try { if (S._fabObserver) S._fabObserver.disconnect(); } catch (_) {}
+  try { if (S._fabEstilo) window.removeEventListener('resize', S._fabEstilo); } catch (_) {}
   try { S.modelos.slice().forEach(function (mo) { if (typeof mo.mid === 'number') { try { S.api.CloseModel(mo.mid); } catch (_) {} } }); } catch (_) {}
   try { S.renderer.dispose(); } catch (_) {}
   S = null;
