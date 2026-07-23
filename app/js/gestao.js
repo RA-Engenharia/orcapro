@@ -189,7 +189,9 @@
 
     // ---------- Sidebar (nav de módulos) ----------
     renderSidebar: function (viewAtiva) {
-      var pode = this.podeGestao();
+      // Vitrine (?demo=1): Gestão sempre liberada, mesmo que a licença do navegador
+      // diga outra coisa (cliente já licenciado explorando a demo) — espelha App.render().
+      var pode = (typeof App !== "undefined" && App._demo) || this.podeGestao();
       var mods;
       if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
       else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); }); // RBAC: sub-usuário só vê seus módulos

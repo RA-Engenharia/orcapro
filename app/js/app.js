@@ -272,9 +272,31 @@
       try { if (typeof DemoGestao !== "undefined") DemoGestao.seed(); } catch (e) {}
       var vw = (qs.match(/[?&]view=([a-z]+)/) || [])[1];
       if (vw && vw !== "orcamentos" && typeof Gestao !== "undefined") { this.view = vw; this.tela = "gestao"; }
+      // Sem deep-link (?view=/?aba=), a vitrine abre na NOVA CARA: Painel Executivo/Financeiro
+      // (a OBRA TESTE alimenta os gráficos; quem quer o editor usa ?aba=planilha como antes).
+      if (!vw && !/[?&]aba=/.test(qs) && typeof Gestao !== "undefined") { this.view = "dashboard"; this.tela = "gestao"; }
       this.bindGlobal();
       this.render();
-      this.carregarBaseSinapi().then(function () {}).catch(function () {});
+      // OBRA TESTE ORÇAPRO completa na vitrine: semeia DEPOIS da base SINAPI carregar
+      // (os itens do orçamento pescam código/preço reais da base). Empresa "demo" é
+      // isolada por empresaId — nunca toca dados reais. Silencioso: vitrine não toasta erro.
+      var sDemo = this;
+      this.carregarBaseSinapi().then(function () {
+        // Guard de TENANT: a sessão pode ter mudado enquanto a base baixava (ex.: visitante
+        // saiu/logou de verdade). Só semeia se ainda estamos na vitrine, na empresa "demo".
+        if (!sDemo._demo || (typeof Auth === "undefined") || Auth.empresaId() !== "demo") return;
+        try {
+          if (typeof ObraDemo !== "undefined" && typeof LastPlanner !== "undefined" && typeof Orcamento !== "undefined") {
+            ObraDemo.criar();
+          }
+        } catch (eOD) {
+          // rollback: cota estourada no meio deixaria a OBRA TESTE pela metade (KPIs incoerentes)
+          try { ObraDemo.remover(); } catch (e2) {}
+        }
+        // re-render só se não atropela o visitante (modal aberto / digitando num campo)
+        var ae = document.activeElement;
+        if (!document.querySelector(".modal-bg") && !(ae && /INPUT|SELECT|TEXTAREA/.test(ae.tagName))) sDemo.render();
+      }).catch(function () {});
       var pr = (qs.match(/[?&]print=([a-z]+)/) || [])[1];
       if (pr) { var s = this; setTimeout(function () { try { if (pr === "laudo") s.gerarLaudo(); else if (pr === "proposta") s.gerarProposta(); else if (pr === "relatorio") s.gerarRelatorio(); } catch (e) {} }, 500); }
     },
@@ -438,7 +460,12 @@
       var acao = t.dataset.acao;
       switch (acao) {
         case "entrar": this.entrar(); break;
-        case "logout": if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
+        case "logout":
+          // Na VITRINE (?demo=1): sair = recarregar a página LIMPA (sem ?demo=1). Sem isso,
+          // (a) o seed assíncrono da OBRA TESTE poderia gravar no tenant errado após o logout
+          // e (b) a flag _demo sobreviveria a um login real na mesma página (bypass de licença).
+          if (this._demo) { try { location.href = location.pathname; } catch (eD) {} break; }
+          if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
         case "tema": this.abrirTema(); break;
         case "atualizar": if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); break; // botão manual: puxa a versão nova limpando o cache (essencial no celular, que não tem Ctrl+Shift+R)
         case "tema-op": this.aplicarTema(t.dataset.temaVal, t.dataset.tomVal); break;
