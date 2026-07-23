@@ -773,6 +773,26 @@
         var base = Store.lerBaseSinapi(emp);
         if (base && base.dados && base.dados.length) {
           Sinapi.carregarDe(base);
+          // FIX (bug do detalhamento): com base PERSISTIDA este caminho retornava cedo e
+          // _analiticoArquivo/_baseUf ficavam null — o "🔍 insumos" dava "não incluído p/ a UF"
+          // até o cliente trocar de estado (que aí setava o ponteiro). Aponta o analítico
+          // da UF ativa já no boot, pelo manifesto (fallback: padrão de nome do pacote).
+          self._baseUf = String(self._baseUf || base.uf || Sinapi.uf || "").toUpperCase() || null;
+          if (!self._analiticoArquivo && self._baseUf) {
+            var ufA = self._baseUf;
+            var reqA = self._ufReq; // token: se o cliente trocar de estado no meio tempo, NÃO regrava
+            var setar = function () {
+              if (self._analiticoArquivo || self._ufReq !== reqA || self._baseUf !== ufA) return;
+              return true;
+            };
+            self._carregarEstados().then(function (ests) {
+              if (!setar()) return;
+              var est = (ests || []).filter(function (e) { return String(e.uf).toUpperCase() === ufA; })[0];
+              self._analiticoArquivo = (est && est.analitico) || ("data/sinapi-" + ufA + "-analitico.json");
+            }).catch(function () {
+              if (setar()) self._analiticoArquivo = "data/sinapi-" + ufA + "-analitico.json";
+            });
+          }
           return Sinapi.resumo().total;
         }
         // base padrão: respeita a escolha da instalação (data/base-ativa.json), senão a do CONFIG
@@ -1872,6 +1892,11 @@
       Analitico.carregarArquivo(self._analiticoArquivo).then(function () { self._insumosCarregando = null; UI.loadingFim(); abrir(); }).catch(function (e) {
         self._insumosCarregando = null; UI.loadingFim();
         if (e && e.message === "cancelado") return; // troca de UF cancelou o carregamento — silencioso
+        // 404 = o pacote não traz o analítico desta UF — mensagem honesta (não é problema de servidor)
+        if (e && /HTTP 4\d\d/.test(e.message || "")) {
+          UI.toast("O detalhamento insumo-a-insumo não está incluído para " + (ufAtivo || "esta base") + ". O orçamento usa os preços corretos; para ver o analítico, gere/importe em 🗂 Tabelas.", "erro");
+          return;
+        }
         UI.toast("Não carregou o analítico: " + (e && e.message) + " — abra pelo servidor local (Iniciar-OrcaPRO.bat).", "erro");
       });
     },
