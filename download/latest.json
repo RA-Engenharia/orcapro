@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.110",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.110/OrcaPRO-IA-update-v1.1.110.zip",
-  "notas": "Novas bases de preço oficiais com atualização automática: SICRO/DNIT-ES (6.618 composições rodoviárias), IOPES/DER-ES (1.363 serviços de edificações) e ORSE-SE (16.944 serviços) — carregamento em 1 clique no modal Tabelas, sempre na competência mais recente direto das fontes oficiais, com fallback offline. SBC (comercial): importe a planilha da sua assinatura pelo botão Importar base.",
+  "versao": "1.1.111",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.111/OrcaPRO-IA-update-v1.1.111.zip",
+  "notas": "Demonstração renovada (Painel Executivo com a OBRA TESTE completa no site) e melhorias de estabilidade. Da v1.1.110: bases SICRO/DNIT-ES, IOPES/DER-ES e ORSE-SE inclusas com atualização automática — 1 clique no modal Tabelas.",
   "obrigatoria": false
 }
