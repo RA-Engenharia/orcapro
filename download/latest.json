@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.108",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.108/OrcaPRO-IA-update-v1.1.108.zip",
-  "notas": "Last Planner com painel visual completo: PPC das últimas 6 semanas em linha com meta de 85%, Avanço físico Previsto × Realizado por obra (cronograma × medições reais), donut de pendências por frente que atualiza com o quadro Kanban, e KPI de aderência no topo.",
+  "versao": "1.1.109",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.109/OrcaPRO-IA-update-v1.1.109.zip",
+  "notas": "A tela inicial virou um Dashboard Executivo e Financeiro: filtros de Obra e Período, KPIs de caixa (recebido, pago, resultado com a receber/a pagar, margem, previsto × realizado com alerta rastreável), alertas executivos, fluxo de caixa com saldo acumulado, previsto × realizado por obra/etapa, despesas por categoria e custo por obra — tudo derivado dos seus lançamentos reais.",
   "obrigatoria": false
 }

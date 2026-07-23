@@ -336,18 +336,28 @@
       salvar("patrimonio", { id: PRE + "pat2", descricao: "Andaime fachadeiro 60 m²", categoria: "equipamento", numeroPatrimonio: "PAT-OT02", valorAquisicao: 14500, dataAquisicao: iso(dias(hoje, -365)), depreciacaoAnual: 10, estado: "bom", obraId: obraId, localizacao: "OBRA TESTE ORÇAPRO", obs: "" });
 
       // ---------- 18) Financeiro (receitas + despesas conectadas aos módulos) ----------
+      // ids das etapas do orçamento (apropriação por etapa alimenta o Previsto×Real da Home)
+      var etFundacoes = e2.id, etEstrutura = e3.id, etAlvenaria = e4.id;
       var fin = [
         { id: PRE + "fin1", data: iso(dias(iniObra, 2)), tipo: "receita", desc: "Entrada do contrato CT-" + ano + "-OT1 (20%)", categoria: "obra", valor: Math.round(precoVenda * 0.2), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con" },
         { id: PRE + "fin2", data: iso(dias(iniObra, 35)), tipo: "receita", desc: "Medição 01ª — líquido (retenção 5%)", categoria: "medicao", valor: Math.round(med1v * 0.95), status: "pago", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con" },
         { id: PRE + "fin3", data: iso(diaUtil(1)), tipo: "despesa", desc: "PC-" + ano + "-OT1 — blocos e argamassa (Depósito São José)", categoria: "material", valor: Math.round(4200 * 2.28 + 90 * 13.9), status: "pendente", fornecedor: "Depósito São José", formaPgto: "parcelado" },
-        { id: PRE + "fin4", data: iso(dias(iniObra, 20)), tipo: "despesa", desc: "Concreto usinado FCK 25 — fundações", categoria: "material", valor: 17360, status: "pago", fornecedor: "Concreteira Forte" },
+        { id: PRE + "fin4", data: iso(dias(iniObra, 20)), tipo: "despesa", desc: "Concreto usinado FCK 25 — fundações", categoria: "material", valor: 17360, status: "pago", fornecedor: "Concreteira Forte", etapaId: etFundacoes },
+        { id: PRE + "fin10", data: iso(dias(iniObra, 12)), tipo: "despesa", desc: "Escavação e empreiteiro de fundações", categoria: "mao_obra", valor: 14800, status: "pago", fornecedor: "", etapaId: etFundacoes },
+        { id: PRE + "fin11", data: iso(dias(iniObra, 34)), tipo: "despesa", desc: "Aço CA-50 — vergalhões da estrutura", categoria: "material", valor: 24900, status: "pago", fornecedor: "Depósito São José", etapaId: etEstrutura },
+        { id: PRE + "fin12", data: iso(dias(iniObra, 45)), tipo: "despesa", desc: "Empreiteiro de estrutura (formas e concretagem)", categoria: "mao_obra", valor: 29800, status: "pago", fornecedor: "", etapaId: etEstrutura },
+        { id: PRE + "fin13", data: iso(dias(iniObra, 40)), tipo: "despesa", desc: "Locação de escoras e formas metálicas", categoria: "equipamento", valor: 6400, status: "pago", fornecedor: "LocaMáquinas Equipamentos", etapaId: etEstrutura },
+        { id: PRE + "fin14", data: iso(diaUtil(2)), tipo: "despesa", desc: "Blocos e argamassa — 1ª remessa alvenaria", categoria: "material", valor: 12600, status: "pago", fornecedor: "Depósito São José", etapaId: etAlvenaria },
         { id: PRE + "fin5", data: iso(diaUtil(1)), tipo: "despesa", desc: "Folha " + comp + " — José Carlos Mendes (encargos)", categoria: "mao_obra", valor: Math.round(4200 + 4200 * 0.68 + 180), status: "pago", fornecedor: "" },
         { id: PRE + "fin6", data: iso(diaUtil(2)), tipo: "despesa", desc: "Combustível - Caminhão Mercedes Atego", categoria: "equipamento", valor: 620, status: "pago", fornecedor: "Caminhão Mercedes Atego" },
         { id: PRE + "fin7", data: iso(diaUtil(4)), tipo: "despesa", desc: "Manutenção - Betoneira 400L", categoria: "equipamento", valor: 260, status: "pago", fornecedor: "Betoneira 400L" },
         { id: PRE + "fin8", data: iso(diaUtil(5)), tipo: "despesa", desc: "Taxas e ART da obra", categoria: "impostos", valor: 890, status: "pago", fornecedor: "CREA-MG" },
-        { id: PRE + "fin9", data: iso(dias(hoje, 12)), tipo: "receita", desc: "Medição 02ª (prevista — aguardando aprovação)", categoria: "medicao", valor: Math.round(precoVenda * 0.14 * 0.95), status: "pendente", fornecedor: "Construtora Horizonte Ltda", contratoId: PRE + "con" }
+        // (fin9 removido: a Medição 02ª pendente JÁ representa esse recebível — o
+        // registro duplicado no financeiro dobraria o "a receber" e nunca seria
+        // baixado quando o usuário pagasse a medição pelo fluxo real)
+        { id: PRE + "fin15", data: iso(dias(hoje, 5)), tipo: "receita", desc: "Aluguel de equipamento ocioso p/ obra vizinha", categoria: "outros", valor: 3200, status: "pendente", fornecedor: "Construtora Vizinhança ME" }
       ];
-      fin.forEach(function (f) { f.obraId = obraId; f.etapaId = ""; f.obs = ""; salvar("financeiro", f); });
+      fin.forEach(function (f) { f.obraId = obraId; if (f.etapaId == null) f.etapaId = ""; f.obs = ""; salvar("financeiro", f); });
 
       // ---------- 19) Fiscal (NF-e entrada + saída) ----------
       salvar("fiscal", { id: PRE + "nf1", numero: "48213", serie: "1", tipo: "entrada", status: "emitida", naturezaOp: "Venda de mercadoria", parceiro: "Depósito São José", obraId: obraId, dataEmissao: iso(diaUtil(1)), valorProdutos: 10827, valorImpostos: 1245, valorTotal: 10827, chaveAcesso: "" });

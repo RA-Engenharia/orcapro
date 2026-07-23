@@ -273,6 +273,8 @@
       var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
       function k(rot, num, cls) { return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div></div>"; }
       var html = '<h1 class="mb">Painel de Gestão</h1>' +
+        // Bloco executivo/financeiro (filtros globais + KPIs de caixa + gráficos)
+        this._dashFinHtml() +
         '<div class="kpis kpis-g">' +
           k("Obras em andamento", emAndamento + " / " + obras.length) +
           k("Valor contratado", Util.fmtMoeda(valorContratado), "custo") +
@@ -390,17 +392,345 @@
       App.render();
       UI.toast(n + " registro(s) de demonstração removido(s).", "ok");
     },
+    // ========== HOME EXECUTIVA/FINANCEIRA (visual aprovado no protótipo) ==========
+    /* Selects com data-gacao também recebem o CLIQUE da delegação (antes do change),
+     * com value undefined — early-return senão o re-render fecha o dropdown aberto. */
+    dashTrocaObra: function (id) { if (id == null) return; this._dashObra = id || "todas"; App.render(); },
+    _fmtK: function (v) {
+      var neg = v < 0 ? "−" : ""; v = Math.abs(Util.num(v));
+      if (v >= 999500) return neg + "R$ " + (v / 1000000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " mi";
+      if (v >= 1000) return neg + "R$ " + (v / 1000).toLocaleString("pt-BR", { maximumFractionDigits: v < 100000 ? 1 : 0 }) + " mil";
+      return neg + Util.fmtMoeda(v);
+    },
+    /* Agregações do bloco executivo — CAIXA (pago/recebido) nos KPIs, fluxo e
+     * categorias; Previsto×Realizado compara custo LANÇADO (inclui pendente =
+     * compromisso) com o CUSTO DIRETO orçado — maçãs com maçãs, sem BDI. */
+    _dashFinExec: function () {
+      var self = this;
+      if (this._dashPer == null) this._dashPer = "6m";
+      if (this._dashObra == null) this._dashObra = "todas";
+      var obraSel = this._dashObra, obras = lista("obras");
+      if (obraSel !== "todas" && !obras.some(function (o) { return o.id === obraSel; })) { obraSel = this._dashObra = "todas"; }
+      var finTudo = lista("financeiro");
+      var finPer = this._periodoFin(finTudo, this._dashPer);
+      var fin = finPer.filter(function (f) { return obraSel === "todas" || f.obraId === obraSel; });
+
+      var receitas = 0, despesas = 0, aReceber = 0, aPagar = 0;
+      var porCat = Object.create(null), porMes = Object.create(null);
+      fin.forEach(function (f) {
+        var v = Util.num(f.valor);
+        if (f.status === "pendente") return; // pendência é ESTOQUE (contado abaixo, sem período)
+        if (f.tipo === "receita") receitas += v;
+        else if (f.tipo === "despesa") {
+          despesas += v;
+          var c = f.categoria || "outros";
+          porCat[c] = (porCat[c] || 0) + v;
+        } else return;
+        if (f.data && /^\d{4}-\d{2}/.test(String(f.data))) {
+          var m = String(f.data).slice(0, 7);
+          if (!porMes[m]) porMes[m] = { receita: 0, despesa: 0 };
+          porMes[m][f.tipo === "receita" ? "receita" : "despesa"] += v;
+        }
+      });
+      // contas em aberto = estoque (independe do período; respeita o filtro de obra)
+      finTudo.forEach(function (f) {
+        if (f.status !== "pendente") return;
+        if (obraSel !== "todas" && f.obraId !== obraSel) return;
+        var v = Util.num(f.valor);
+        if (f.tipo === "receita") aReceber += v; else if (f.tipo === "despesa") aPagar += v;
+      });
+      var cats = [];
+      for (var k in porCat) { var vc = Math.max(0, porCat[k]); if (vc > 0) cats.push({ cat: k, rotulo: rot(P.finCategoria, k), valor: vc, cor: this._CORCAT[k] || "#94a3b8" }); }
+      cats.sort(function (a, b) { return b.valor - a.valor; });
+
+      // fluxo mensal (máx 12 meses, ordenados) + saldo acumulado
+      var meses = []; for (var mk in porMes) meses.push(mk); // Object.create(null): for..in já é próprio
+      meses.sort();
+      var cortados = meses.slice(0, Math.max(0, meses.length - 12));
+      meses = meses.slice(-12);
+      var NOMES_MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+      // o acumulado NUNCA esquece os meses fora da janela de exibição
+      var acc = cortados.reduce(function (s2, m2) { return s2 + porMes[m2].receita - porMes[m2].despesa; }, 0);
+      var fluxo = meses.map(function (m) {
+        var d = porMes[m]; acc += d.receita - d.despesa;
+        var mi = parseInt(m.slice(5, 7), 10) - 1;
+        return { rotulo: (NOMES_MES[mi] || m.slice(5)) + "/" + m.slice(2, 4), receita: d.receita, despesa: d.despesa, acumulado: acc };
+      });
+
+      // Previsto×Realizado (acumulado da obra): global = por OBRA; filtrada = por ETAPA
+      var prevReal = [], porEtapa = false;
+      if (obraSel !== "todas") {
+        var ob = obras.filter(function (o) { return o.id === obraSel; })[0];
+        var orc = ob && ob.orcamentoId ? Store.obterOrcamento(eid(), ob.orcamentoId) : null;
+        if (orc) {
+          porEtapa = true;
+          var despEt = {}, semEtapa = 0;
+          finTudo.forEach(function (f) {
+            if (f.obraId !== obraSel || f.tipo !== "despesa") return;
+            if (f.etapaId) despEt[f.etapaId] = (despEt[f.etapaId] || 0) + Util.num(f.valor);
+            else semEtapa += Util.num(f.valor);
+          });
+          (orc.etapas || []).forEach(function (e) {
+            var prev = (e.itens || []).reduce(function (s, it) { return s + Util.num(it.quantidade) * Util.num(it.custoUnitario); }, 0);
+            var realE = Math.max(0, despEt[e.id] || 0);
+            prevReal.push({ rotulo: e.nome, previsto: prev, real: realE, estourou: prev > 0 && realE > prev });
+          });
+          if (semEtapa > 0) prevReal.push({ rotulo: "Sem etapa apropriada", previsto: 0, real: Math.max(0, semEtapa), estourou: false });
+        }
+      } else {
+        obras.forEach(function (o) {
+          if (!o.orcamentoId) return;
+          var orc2 = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc2) return;
+          var prev = Orcamento.totais(orc2).custoDireto;
+          var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          if (prev <= 0 && real <= 0) return;
+          prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev });
+        });
+      }
+      // KPI honesto: a COMPARAÇÃO usa só linhas com previsto>0 (etapa/obra orçada);
+      // o que foi lançado sem etapa é informado à parte — nunca vira "estouro fantasma".
+      var prevTot = 0, realComp = 0, semComparacao = 0;
+      prevReal.forEach(function (x) {
+        if (x.previsto > 0) { prevTot += x.previsto; realComp += x.real; }
+        else semComparacao += x.real;
+      });
+      var realTot = realComp + semComparacao;
+      var nEstouros = prevReal.filter(function (x) { return x.estourou; }).length;
+
+      // empilhado por obra (portfólio, período aplicado — comparativo entre obras)
+      var catsEmp = ["material", "mao_obra", "equipamento"];
+      var empilhado = obras.map(function (o) {
+        var soma = {}, total = 0;
+        finPer.forEach(function (f) {
+          if (f.obraId !== o.id || f.tipo !== "despesa" || f.status === "pendente") return;
+          var c = catsEmp.indexOf(f.categoria) >= 0 ? f.categoria : "outros";
+          var v = Util.num(f.valor); soma[c] = (soma[c] || 0) + v; total += v;
+        });
+        return { rotulo: o.nome, seg: catsEmp.concat(["outros"]).map(function (c) { return { cat: c, valor: soma[c] || 0 }; }), total: total };
+      }).filter(function (l) { return l.total > 0; }).sort(function (a, b) { return b.total - a.total; }).slice(0, 6);
+
+      // alertas executivos
+      var alertas = [];
+      prevReal.filter(function (x) { return x.estourou; }).slice(0, 2).forEach(function (x) {
+        var pct = Math.round((x.real / x.previsto - 1) * 100);
+        alertas.push({ tipo: "estouro", texto: (porEtapa ? "Etapa " : "") + x.rotulo + ": custo " + pct + "% acima do orçado (" + self._fmtK(x.real - x.previsto) + " a mais)" });
+      });
+      var medPend = lista("medicoes").filter(function (m) { return (obraSel === "todas" || m.obraId === obraSel) && m.status === "pendente"; });
+      if (medPend.length) alertas.push({ tipo: "prazo", texto: medPend.length + " medição(ões) aguardando aprovação — " + this._fmtK(medPend.reduce(function (s, m) { return s + Util.num(m.valor); }, 0)) });
+      // contas a pagar são ESTOQUE (como aReceber/aPagar): a base é a lista completa
+      // com filtro de obra — o período nunca esconde um vencimento iminente
+      var em7 = new Date(Date.now() + 7 * 86400000);
+      var contas = finTudo.filter(function (f) {
+        if (f.tipo !== "despesa" || f.status !== "pendente" || !f.data) return false;
+        if (obraSel !== "todas" && f.obraId !== obraSel) return false;
+        var dv = new Date(String(f.data) + "T00:00:00");
+        return !isNaN(dv.getTime()) && dv <= em7;
+      });
+      if (contas.length) alertas.push({ tipo: "prazo", texto: contas.length + " conta(s) a pagar vencida(s)/vencendo até 7 dias — " + this._fmtK(contas.reduce(function (s, f) { return s + Util.num(f.valor); }, 0)) });
+
+      var resultado = receitas - despesas;
+      return {
+        obraSel: obraSel, receitas: receitas, despesas: despesas, resultado: resultado,
+        margem: receitas > 0 ? (resultado / receitas) * 100 : null,
+        aReceber: aReceber, aPagar: aPagar, cats: cats, fluxo: fluxo,
+        prevReal: prevReal, porEtapa: porEtapa, prevTot: prevTot, realTot: realTot,
+        realComp: realComp, semComparacao: semComparacao, nEstouros: nEstouros,
+        empilhado: empilhado, alertas: alertas.slice(0, 4)
+      };
+    },
+    // ----- SVGs do bloco executivo (mesma estética do painel do Last Planner) -----
+    _dashSvgFluxo: function (fluxo) {
+      var W = 420, H = 168, padL = 44, padR = 8, padT = 10, padB = 20;
+      var iw = W - padL - padR, ih = H - padT - padB;
+      var vals = [];
+      fluxo.forEach(function (f) { vals.push(f.receita, f.despesa, f.acumulado, 0); });
+      var max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
+      if (max === min) max = min + 1;
+      var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
+      var x = function (i) { return padL + (fluxo.length > 1 ? i / (fluxo.length - 1) : .5) * iw; };
+      var self = this;
+      var linha = function (chave, cor, dash) {
+        var pts = fluxo.map(function (f, i) { return x(i) + "," + y(f[chave]); }).join(" ");
+        var s = '<polyline points="' + pts + '" fill="none" stroke="' + cor + '" stroke-width="2"' + (dash ? ' stroke-dasharray="6 4"' : "") + '/>';
+        fluxo.forEach(function (f, i) {
+          s += '<circle cx="' + x(i) + '" cy="' + y(f[chave]) + '" r="2.6" fill="var(--surface)" stroke="' + cor + '" stroke-width="1.6"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f[chave]) + '</title></circle>';
+        });
+        return s;
+      };
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">';
+      for (var g = 0; g <= 3; g++) {
+        var gv = min + (max - min) * g / 3;
+        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha)" stroke-width="1"/>' +
+          '<text x="' + (padL - 5) + '" y="' + (y(gv) + 3) + '" text-anchor="end" font-size="8" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
+      }
+      if (min < 0) svg += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="var(--texto-fraco)" stroke-width="1"/>';
+      svg += linha("receita", "var(--navy)") + linha("despesa", "#b45309") + linha("acumulado", "var(--verde)", true);
+      fluxo.forEach(function (f, i) {
+        svg += '<text x="' + x(i) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(f.rotulo) + '</text>';
+      });
+      svg += "</svg>";
+      svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:var(--navy)"></span>Receitas</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:#b45309"></span>Despesas</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:var(--verde)"></span>Saldo acumulado</span></div>';
+      return svg;
+    },
+    /* Top-8 do Previsto×Realizado por RELEVÂNCIA (maior previsto+real primeiro),
+     * com "Sem etapa apropriada" SEMPRE visível no fim (nunca cortada — senão o
+     * número do KPI fica irrastreável no gráfico). */
+    _dashPrevRealTop: function (prevReal) {
+      var semEtapa = prevReal.filter(function (x) { return x.previsto <= 0; });
+      var etapas = prevReal.filter(function (x) { return x.previsto > 0; })
+        .sort(function (a, b) { return (b.previsto + b.real) - (a.previsto + a.real); })
+        .slice(0, semEtapa.length ? 7 : 8);
+      return etapas.concat(semEtapa);
+    },
+    _dashSvgPrevReal: function (dados) {
+      var self = this, W = 420, H = 168, padL = 44, padR = 6, padT = 10, padB = 24;
+      var iw = W - padL - padR, ih = H - padT - padB;
+      var max = 1;
+      dados.forEach(function (d) { if (d.previsto > max) max = d.previsto; if (d.real > max) max = d.real; });
+      var y = function (v) { return padT + (1 - v / max) * ih; };
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">';
+      for (var g = 0; g <= 3; g++) {
+        var gv = max * g / 3;
+        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha)" stroke-width="1"/>' +
+          '<text x="' + (padL - 5) + '" y="' + (y(gv) + 3) + '" text-anchor="end" font-size="8" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
+      }
+      var gw = iw / dados.length, bw = Math.min(16, gw / 3);
+      dados.forEach(function (d, i) {
+        var cx = padL + gw * i + gw / 2;
+        var nome = String(d.rotulo || ""); if (nome.length > 13) nome = nome.slice(0, 12) + "…";
+        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="2" fill="var(--aco-claro)" opacity=".75"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="' + (d.estourou ? "#dc2626" : "var(--navy)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " ⚠ ESTOURO" : "") + '</title></rect>' +
+          '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="8" fill="var(--texto-fraco)">' + Util.esc(nome) + '</text>' +
+          (d.previsto > 0 ? '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8" font-weight="700" fill="' + (d.estourou ? "#dc2626" : "var(--verde)") + '">' + (d.real > d.previsto ? "+" : "") + Math.round((d.real / d.previsto - 1) * 100) + '%</text>' : "");
+      });
+      svg += "</svg>";
+      svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--aco-claro)"></span>Previsto (orçamento)</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--navy)"></span>Realizado (lançado)</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:#dc2626"></span>Estouro</span></div>';
+      return svg;
+    },
+    _dashSvgDonutCat: function (cats, total) {
+      var R = 42, C = 2 * Math.PI * R, off = 0, self = this;
+      var svg = '<svg viewBox="0 0 120 120" style="width:128px;height:128px;flex:0 0 auto">';
+      cats.forEach(function (f) {
+        var frac = total > 0 ? f.valor / total : 0, arco = Math.max(0, frac * C - 2);
+        svg += '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + f.cor + '" stroke-width="15" stroke-dasharray="' + arco + " " + (C - arco) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 60 60)"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f.valor) + '</title></circle>';
+        off += frac * C;
+      });
+      svg += '<text x="60" y="57" text-anchor="middle" font-size="13" font-weight="800" fill="var(--texto)">' + this._fmtK(total).replace("R$ ", "") + '</text>' +
+        '<text x="60" y="71" text-anchor="middle" font-size="8" fill="var(--texto-fraco)">despesas pagas</text></svg>';
+      return svg;
+    },
+    _dashEmpilhadoHtml: function (empilhado) {
+      var self = this, max = 1;
+      empilhado.forEach(function (l) { if (l.total > max) max = l.total; });
+      var ROT = { material: "Material", mao_obra: "Mão de obra", equipamento: "Equipamento", outros: "Outras" };
+      var html = "";
+      empilhado.forEach(function (l) {
+        var nome = String(l.rotulo); if (nome.length > 22) nome = nome.slice(0, 21) + "…";
+        html += '<div style="margin-bottom:9px"><div style="display:flex;justify-content:space-between;font-size:11.5px;margin-bottom:3px"><span style="color:var(--texto)">' + Util.esc(nome) + '</span><b style="font-variant-numeric:tabular-nums">' + self._fmtK(l.total) + '</b></div>' +
+          '<div style="display:flex;gap:1px;height:16px;border-radius:4px;overflow:hidden;width:' + Math.max(8, Math.round(l.total / max * 100)) + '%">';
+        l.seg.forEach(function (s) {
+          if (s.valor <= 0) return;
+          var pct = l.total > 0 ? (s.valor / l.total * 100) : 0;
+          html += '<div title="' + Util.esc(ROT[s.cat] || s.cat) + ': ' + self._fmtK(s.valor) + '" style="width:' + pct + '%;background:' + (self._CORCAT[s.cat] || "#94a3b8") + '"></div>';
+        });
+        html += '</div></div>';
+      });
+      html += '<div style="display:flex;gap:12px;margin-top:6px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">' +
+        ["material", "mao_obra", "equipamento", "outros"].map(function (c) {
+          return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:' + (self._CORCAT[c] || "#94a3b8") + '"></span>' + ROT[c] + '</span>';
+        }).join("") + '</div>';
+      return html;
+    },
+    _dashFinHtml: function () {
+      // RBAC: números financeiros só p/ quem tem o módulo Financeiro (admin sempre tem)
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return "";
+      var self = this, d = this._dashFinExec(), obras = lista("obras");
+      var perRot = { mes: "Este mês", "6m": "Últimos 6 meses", ano: "Este ano", tudo: "Desde sempre" };
+      // sem NENHUM lançamento financeiro: não polui o Painel de conta nova
+      var temFin = lista("financeiro").length > 0;
+
+      // ---- barra de filtros globais ----
+      var optO = '<option value="todas"' + (d.obraSel === "todas" ? " selected" : "") + '>Todas as Obras (Visão Global)</option>' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === d.obraSel ? " selected" : "") + '>' + Util.esc(o.nome) + '</option>'; }).join("");
+      var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + '>' + perRot[p] + '</option>'; }).join("");
+      var html = '<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px">' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">🏗 Obra <select data-gacao="dash-obra" style="max-width:250px">' + optO + '</select></label>' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">📅 Período <select data-gacao="dash-periodo" style="max-width:170px">' + optP + '</select></label>' +
+        '<span class="muted" style="margin-left:auto;font-size:11.5px">' + (d.obraSel === "todas" ? "Portfólio completo" : Util.esc((obras.filter(function (o) { return o.id === d.obraSel; })[0] || {}).nome || "")) + ' · ' + perRot[this._dashPer] + '</span></div>';
+
+      if (!temFin) return html; // filtros ficam; KPIs/gráficos aparecem quando houver lançamentos
+
+      // ---- KPIs financeiros ----
+      // A comparação orçado×realizado usa SÓ o que tem previsto (realComp) — o
+      // lançado sem etapa é informado, nunca dispara estouro sem causa visível.
+      var estouroKpi = d.prevTot > 0 && d.realComp > d.prevTot;
+      var notaSem = d.semComparacao > 0 ? " · " + this._fmtK(d.semComparacao) + " sem etapa apropriada" : "";
+      var kpiPR;
+      if (!d.prevReal.length) kpiPR = "";
+      else kpiPR = this._lpKpi("Previsto × Realizado", this._fmtK(d.realTot),
+        estouroKpi ? "⚠ " + this._fmtK(d.realComp - d.prevTot) + " ACIMA do orçado (" + this._fmtK(d.prevTot) + ")" + notaSem
+          : d.nEstouros ? "⚠ orçado " + this._fmtK(d.prevTot) + " · " + d.nEstouros + " estouro(s)" + notaSem
+            : "dentro do orçado (" + this._fmtK(d.prevTot) + ")" + notaSem,
+        estouroKpi || d.nEstouros ? (estouroKpi ? "#dc2626" : "#ea580c") : "var(--verde)");
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px">' +
+        this._lpKpi("Receitas (recebido)", this._fmtK(d.receitas), "medições e faturas no período", "var(--texto)") +
+        this._lpKpi("Despesas (pago)", this._fmtK(d.despesas), "custo desembolsado no período", "var(--texto)") +
+        this._lpKpi("Resultado (caixa)", this._fmtK(d.resultado), this._fmtK(d.aReceber) + " a receber · " + this._fmtK(d.aPagar) + " a pagar", d.resultado >= 0 ? "var(--verde)" : "#dc2626") +
+        this._lpKpi("Margem", d.margem == null ? "—" : d.margem.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%", d.margem == null ? "sem receita no período" : (d.margem >= 15 ? "saudável (meta ≥ 15%)" : "abaixo da meta de 15%"), d.margem == null ? "var(--texto-fraco)" : d.margem >= 15 ? "var(--verde)" : "#ea580c") +
+        kpiPR + '</div>';
+
+      // ---- alertas executivos ----
+      if (d.alertas.length) {
+        html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+        d.alertas.forEach(function (a) {
+          var est = a.tipo === "estouro";
+          html += '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:8px;border:1px solid ' + (est ? "rgba(220,38,38,.3)" : "rgba(234,88,12,.3)") + ';background:' + (est ? "rgba(220,38,38,.07)" : "rgba(234,88,12,.07)") + ';color:' + (est ? "#dc2626" : "#c2570c") + '">' + (est ? "⚠" : "⏳") + " " + Util.esc(a.texto) + '</span>';
+        });
+        html += '</div>';
+      }
+
+      // ---- gráficos ----
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:14px">';
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">💰 Fluxo de caixa</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Recebido × pago por mês · saldo acumulado — ' + perRot[this._dashPer] + '</p>' +
+        (d.fluxo.length ? this._dashSvgFluxo(d.fluxo) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem lançamentos pagos no período.</p>') + '</div>';
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">📊 Previsto × Realizado ' + (d.porEtapa ? "por etapa" : "por obra") + '</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Custo direto orçado × despesas lançadas (acumulado da obra)</p>' +
+        (d.prevReal.length ? this._dashSvgPrevReal(this._dashPrevRealTop(d.prevReal)) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (em Obras → editar) pra comparar orçado × realizado.</p>') +
+        (d.prevReal.length > 8 ? '<p class="muted" style="font-size:10.5px;margin:4px 0 0">Mostrando as 8 maiores linhas de ' + d.prevReal.length + ' — o KPI soma todas.</p>' : '') + '</div>';
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">🍩 Despesas por categoria</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Categorias do financeiro — ' + perRot[this._dashPer] + '</p>';
+      if (d.cats.length) {
+        html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + this._dashSvgDonutCat(d.cats, d.despesas) + '<div style="flex:1;min-width:150px">';
+        d.cats.forEach(function (c) {
+          var pct = d.despesas > 0 ? Math.round(c.valor / d.despesas * 100) : 0;
+          html += '<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;margin-bottom:4px"><span style="width:9px;height:9px;border-radius:99px;background:' + c.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(c.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums;font-size:11px">' + self._fmtK(c.valor) + '</span><b style="width:34px;text-align:right;font-variant-numeric:tabular-nums">' + pct + '%</b></div>';
+        });
+        html += '</div></div>';
+      } else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas no período.</p>';
+      html += '</div>';
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">🏗 Custo por obra</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Peso de cada obra no período — Material × Mão de obra × Equipamento</p>' +
+        (d.empilhado.length ? this._dashEmpilhadoHtml(d.empilhado) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas com obra vinculada no período.</p>') + '</div>';
+      html += '</div>';
+      return html;
+    },
+
     // ---------- G5: BI vivo no Painel ----------
     _CORCAT: { obra: "#0f2740", material: "#16a34a", mao_obra: "#2563eb", equipamento: "#f59e0b", administrativo: "#64748b", impostos: "#dc2626", medicao: "#7c3aed", outros: "#94a3b8" },
     _periodoFin: function (fin, periodo, ref) {
       if (!periodo || periodo === "tudo") return fin;
       var hoje = ref ? new Date(ref + "T00:00:00") : new Date();
       var ano = hoje.getFullYear(), mes = hoje.getMonth();
+      var ini6 = new Date(ano, mes - 5, 1); // "6m": do 1º dia de 5 meses atrás até hoje (6 meses corridos)
       return fin.filter(function (f) {
         if (!f.data) return false;
         var d = new Date(String(f.data) + "T00:00:00"); if (isNaN(d.getTime())) return false;
         if (periodo === "ano") return d.getFullYear() === ano;
         if (periodo === "mes") return d.getFullYear() === ano && d.getMonth() === mes;
+        if (periodo === "6m") return d >= ini6;
         return true;
       });
     },
@@ -419,31 +749,21 @@
       return { porCategoria: cats, custoPorObra: custoObra.map(function (x) { return { rotulo: x.rotulo, valor: x.valor }; }), custoM2: custoM2 };
     },
     _dashAnalise: function () {
-      if (this._dashPer == null) this._dashPer = "tudo";
-      // Só esconde o bloco inteiro se a empresa não tem NENHUMA despesa (Painel limpo p/ conta nova).
-      // Se há despesas mas nenhuma NO PERÍODO filtrado, o card + o seletor CONTINUAM (senão o usuário
-      // ficaria preso num período vazio, sem como voltar — bug do G5 pego na revisão).
+      // Enxuto desde a Home executiva: donut de categorias e custo-por-obra moraram
+      // pro bloco financeiro do topo (com filtro global). Aqui fica só o que é
+      // EXCLUSIVO: custo por m² comparativo entre obras (período global do Painel).
       var temQualquerDespesa = lista("financeiro").some(function (f) { return f.tipo === "despesa"; });
       if (!temQualquerDespesa) return "";
-      var per = this._dashPer, gd = this._dashGraficosDados(per);
-      var opt = function (v, r) { return '<option value="' + v + '"' + (per === v ? " selected" : "") + ">" + r + "</option>"; };
-      var perSel = '<select data-gacao="dash-periodo" style="max-width:160px">' + opt("tudo", "Desde sempre") + opt("ano", "Este ano") + opt("mes", "Este mês") + "</select>";
-      var donut = (typeof UI !== "undefined" && UI._donut) ? UI._donut : function () { return ""; };
+      var gd = this._dashGraficosDados(this._dashPer || "6m");
+      if (!gd.custoM2.length) return "";
       var barH = (typeof UI !== "undefined" && UI._barH) ? UI._barH : function () { return ""; };
-      var html = '<div class="card mt"><div class="flex between" style="align-items:center"><h3 style="margin:0">📊 Análise</h3>' + perSel + "</div>";
-      if (!gd.porCategoria.length && !gd.custoPorObra.length) {
-        html += '<p class="muted" style="margin:12px 0 0;font-size:14px">Sem lançamentos no período selecionado. Troque o filtro acima (ex.: <b>Desde sempre</b>).</p>';
-        return html + "</div>";
-      }
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;margin-top:12px">';
-      if (gd.porCategoria.length) html += '<div><h4 style="margin:0 0 8px;font-size:14px">Despesas por categoria</h4>' + donut(gd.porCategoria) + "</div>";
-      if (gd.custoPorObra.length) html += '<div><h4 style="margin:0 0 8px;font-size:14px">Custo real por obra</h4>' + barH(gd.custoPorObra) + "</div>";
-      if (gd.custoM2.length) html += '<div><h4 style="margin:0 0 8px;font-size:14px" title="Custo real ÷ área construída">Custo por m²</h4>' + barH(gd.custoM2) + '</div>';
-      else html += '<div><h4 style="margin:0 0 8px;font-size:14px">Custo por m²</h4><p class="muted" style="font-size:13px">Cadastre a área construída nas obras para ver o custo por m² comparativo.</p></div>';
-      html += "</div></div>";
-      return html;
+      return '<div class="card mt"><h3 style="margin:0 0 10px" title="Custo real ÷ área construída cadastrada na obra">📐 Custo por m²</h3>' + barH(gd.custoM2) + '</div>';
     },
-    dashTrocaPeriodo: function (p) { this._dashPer = p; App.render(); },
+    dashTrocaPeriodo: function (p) {
+      if (p == null) return; // clique da delegação (sem value) não re-renderiza
+      if (["mes", "6m", "ano", "tudo"].indexOf(p) < 0) p = "6m";
+      this._dashPer = p; App.render();
+    },
 
     // =================== OBRAS ===================
     renderObras: function () {
@@ -5735,7 +6055,7 @@ renderFolha: function () {
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "lp-visao" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "dash-obra" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "lp-visao" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
       // RBAC em FUNÇÃO (regra A.5 / achado do gate v1.1.63): ação de cotação exige o módulo, não basta esconder o botão
       if ((gacao === "nova-cotacoes" || gacao === "cotar-requisicao" || gacao === "doc-cotacao" || gacao === "excluir-cotacao") && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Cotações.", "erro"); return; }
       switch (gacao) {
@@ -5747,6 +6067,7 @@ renderFolha: function () {
         case "bim-quant-ilustrado": return this.bimQuantIlustrado();
         case "bim-qr-rv": return this.bimQRImersivo();
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
+        case "dash-obra": return this.dashTrocaObra(dataset.value);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
         case "tar-obra": return this.tarTrocaObra(dataset.value);
