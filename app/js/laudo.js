@@ -46,7 +46,8 @@
       var sint = Orcamento.sintetico(orc);
       var marca = CONFIG.marca;
       var emp = (typeof Empresa !== "undefined") ? Empresa.dados() : null;
-      var empresa = (emp && emp.nome) || (usuario && usuario.empresa) || marca.fabricante;
+      // White-label: o documento é da EMPRESA DO CLIENTE — nunca cai no fabricante.
+      var empresa = (emp && emp.nome) || (usuario && usuario.empresa) || "Sua Empresa";
       var logoHTML = (typeof Empresa !== "undefined") ? Empresa.logoHTML(90) : '<div class="logo-ph">[LOGO ' + Util.esc(empresa) + ']</div>';
       var hoje = new Date().toLocaleDateString("pt-BR");
       var local = (orc.obra && orc.obra.local) ? orc.obra.local : ((orc.obra && orc.obra.nome) || "—");
@@ -190,9 +191,15 @@
   function row(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + Util.esc(v) + '</b></div>'; }
   function rowRaw(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + v + '</b></div>'; }
   function pg(titulo, corpo) {
-    return '<section class="pg interna"><div class="wm">' + CONFIG.marca.fabricante + '</div>' +
+    // White-label: marca d'água e rodapé são da EMPRESA DO CLIENTE (configurável em ⚙ Empresa)
+    var temEmp = typeof Empresa !== "undefined";
+    var wm = temEmp && Empresa.marcaDaguaTexto ? Empresa.marcaDaguaTexto() : "";
+    var rod = ((temEmp && Empresa.nomeDoc && Empresa.nomeDoc()) || "") + " · Anexo técnico de orçamento";
+    var cred = temEmp && Empresa.creditoTexto ? Empresa.creditoTexto() : "";
+    if (cred) rod += " · " + cred;
+    return '<section class="pg interna">' + (wm ? '<div class="wm">' + Util.esc(wm) + '</div>' : '') +
       '<h2 class="pg-tit">' + Util.esc(titulo) + '</h2>' + corpo +
-      '<div class="pg-rod">' + Util.esc(CONFIG.marca.fabricante) + ' · Anexo técnico de orçamento</div></section>';
+      '<div class="pg-rod">' + Util.esc(rod.replace(/^ · /, "")) + '</div></section>';
   }
 
   global.Laudo = Laudo;

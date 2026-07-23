@@ -35,7 +35,8 @@
       var sint = Orcamento.sintetico(orc);
       var marca = CONFIG.marca;
       var emp = (typeof Empresa !== "undefined") ? Empresa.dados() : null;
-      var empresa = (emp && emp.nome) || (usuario && usuario.empresa) || marca.fabricante;
+      // White-label: o documento é da EMPRESA DO CLIENTE — nunca cai no fabricante.
+      var empresa = (emp && emp.nome) || (usuario && usuario.empresa) || "Sua Empresa";
       var logoHTML = (typeof Empresa !== "undefined") ? Empresa.logoHTML(80) : '<div class="logo-ph">[LOGO ' + Util.esc(empresa) + ']</div>';
       var hoje = new Date().toLocaleDateString("pt-BR");
 
@@ -72,7 +73,7 @@
           '<div class="capa-rod">' + Util.esc(empresa) +
             (emp && Util.naoVazio(emp.cnpj) ? ' · CNPJ ' + Util.esc(emp.cnpj) : '') +
             (emp && Util.naoVazio(emp.endereco) ? ' · ' + Util.esc(emp.endereco) : (emp && Util.naoVazio(emp.cidade) ? ' · ' + Util.esc(emp.cidade) : '')) +
-            ' · Proposta gerada por ' + Util.esc(marca.nome) + '</div>' +
+            ((typeof Empresa !== "undefined" && Empresa.creditoTexto && Empresa.creditoTexto()) ? ' · ' + Util.esc(Empresa.creditoTexto()) : '') + '</div>' +
         '</section>');
 
       // 2) APRESENTAÇÃO
@@ -145,9 +146,15 @@
   function rowRaw(k, v) { return '<div class="ci-row"><span>' + Util.esc(k) + '</span><b>' + v + '</b></div>'; }
   function bloco(titulo, txt) { return '<div class="bloco"><h3>' + Util.esc(titulo) + '</h3><p>' + Util.esc(txt) + '</p></div>'; }
   function pg(titulo, corpo) {
-    return '<section class="pg interna"><div class="wm">' + CONFIG.marca.fabricante + '</div>' +
+    // White-label: marca d'água e rodapé são da EMPRESA DO CLIENTE (configurável em ⚙ Empresa)
+    var temEmp = typeof Empresa !== "undefined";
+    var wm = temEmp && Empresa.marcaDaguaTexto ? Empresa.marcaDaguaTexto() : "";
+    var rod = (temEmp && Empresa.nomeDoc && Empresa.nomeDoc()) || "";
+    var cred = temEmp && Empresa.creditoTexto ? Empresa.creditoTexto() : "";
+    if (cred) rod = rod ? rod + " · " + cred : cred;
+    return '<section class="pg interna">' + (wm ? '<div class="wm">' + Util.esc(wm) + '</div>' : '') +
       '<h2 class="pg-tit">' + Util.esc(titulo) + '</h2>' + corpo +
-      '<div class="pg-rod">' + Util.esc(CONFIG.marca.fabricante) + ' · ' + Util.esc(CONFIG.marca.slogan) + '</div></section>';
+      (rod ? '<div class="pg-rod">' + Util.esc(rod) + '</div>' : '') + '</section>';
   }
 
   global.Proposta = Proposta;

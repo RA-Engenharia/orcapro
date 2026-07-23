@@ -57,6 +57,53 @@
     salvarLogo: function (logoBase64) {
       var p = this._prefs(); p.logo = logoBase64; Store.salvarPrefs(Auth.empresaId(), p);
     },
+
+    /* ================= WHITE-LABEL DOS ENTREGÁVEIS =================
+     * Os documentos saem com a marca da EMPRESA DO CLIENTE. A menção ao
+     * OrçaPRO ("Gerado pelo…"), a marca d'água e o QR de verificação são
+     * OPCIONAIS — configurados em ⚙ Empresa e salvos nas prefs. */
+    docsCfg: function () {
+      var d = this._prefs().docs || {};
+      return {
+        creditos: d.creditos !== false,          // "Gerado pelo OrçaPRO IA" nos rodapés (default: mostra)
+        marcaDagua: d.marcaDagua || "empresa",   // "empresa" (nome do cliente) | "nenhuma"
+        qr: d.qr !== false                       // bloco QR de verificação nos impressos
+      };
+    },
+    salvarDocsCfg: function (cfg) {
+      var p = this._prefs();
+      p.docs = { creditos: !!cfg.creditos, marcaDagua: cfg.marcaDagua === "nenhuma" ? "nenhuma" : "empresa", qr: !!cfg.qr };
+      Store.salvarPrefs(Auth.empresaId(), p);
+    },
+
+    /* Nome que ASSINA os documentos: sempre a empresa do cliente (nunca o fabricante). */
+    nomeDoc: function () {
+      var n = this.dados().nome;
+      if (n) return n;
+      try { var u = (typeof Auth !== "undefined") && Auth.usuario(); if (u && u.empresa) return u.empresa; } catch (e) {}
+      return "";
+    },
+    /* Texto da marca d'água das páginas internas ("" = sem marca d'água). */
+    marcaDaguaTexto: function () {
+      return this.docsCfg().marcaDagua === "nenhuma" ? "" : this.nomeDoc();
+    },
+    /* Crédito do produto: "" quando o cliente desliga. */
+    creditoTexto: function () {
+      if (!this.docsCfg().creditos) return "";
+      return "Gerado pelo " + ((typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO IA");
+    },
+    /* Rodapé-crédito pronto p/ os impressos (div discreta ou ""). */
+    creditoHTML: function (comData) {
+      var t = this.creditoTexto();
+      if (!t) return "";
+      return "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>" + t +
+        (comData ? " em " + new Date().toLocaleDateString("pt-BR") : "") + "</div>";
+    },
+    /* creator dos .xlsx (metadado visível no Excel). */
+    excelCreator: function () {
+      if (this.docsCfg().creditos) return (typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO IA";
+      return this.nomeDoc() || " ";
+    },
     DEFAULT: DEFAULT
   };
 

@@ -235,13 +235,16 @@
   // ---------- Construtor PURO do workbook (testável em Node) ----------
   // deps: { num(v), fmtNum(v,casas), empresa }
   function construir(ExcelJS, orc, deps) {
-    var num = deps.num, fmtNum = deps.fmtNum, empresa = deps.empresa || "RA Engenharia";
+    // White-label: a planilha é da EMPRESA DO CLIENTE (deps.empresa); o crédito do
+    // produto (deps.credito) é opcional — "" quando o cliente desliga em ⚙ Empresa.
+    var num = deps.num, fmtNum = deps.fmtNum, empresa = deps.empresa || "";
+    var credito = deps.credito || "";
     var bdiPct = num(orc.bdi && orc.bdi.percentual) || 0;
     var etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
     var cronoTotRef = null, resumoChecksRow = 0; // refs p/ os checks de sanidade (FASE 2)
 
     var wb = new ExcelJS.Workbook();
-    wb.creator = "OrçaPRO — RA Engenharia"; wb.created = orc.criadoEm ? new Date(orc.criadoEm) : undefined;
+    wb.creator = deps.creator || empresa || "Orçamento"; wb.created = orc.criadoEm ? new Date(orc.criadoEm) : undefined;
     // FASE 2: recalcular tudo ao abrir — sem isso, LibreOffice (e Excel em
     // alguns fluxos) exibe os valores congelados da emissão após o cliente editar.
     wb.calcProperties = { fullCalcOnLoad: true };
@@ -777,7 +780,7 @@
     var wleia = wb.addWorksheet('Leia-me', { properties: { tabColor: { argb: 'FF16A34A' } } });
     wleia.columns = [{ width: 110 }];
     var leiaLinhas = [
-      ['ORÇAPRO — COMO USAR ESTA PLANILHA', { bold: true, size: 14, cor: navy }],
+      [(empresa ? empresa.toUpperCase() + ' — ' : '') + 'COMO USAR ESTA PLANILHA', { bold: true, size: 14, cor: navy }],
       [(orc.numero || '') + (orc.nome ? ' · ' + orc.nome : '') + '   |   ' + Orcamento.basesUsadasTexto(orc) + '   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'), { size: 9, cor: 'FF64748B' }],
       [''],
       ['✏️  O QUE VOCÊ PODE EDITAR (células AMARELAS):', { bold: true }],
@@ -798,10 +801,14 @@
       ['     Experimente perguntar: "quais os 5 itens de maior impacto no custo?" ou'],
       ['     "faça um gráfico de custo por etapa usando tblItens".'],
       [''],
-      ['📞  RA ENGENHARIA ESPECIAL LTDA — CNPJ 59.507.116/0001-64 · Uberlândia/MG'],
-      ['     Eng. Civil Rogério Alves de Souza · CREA-MG 323736 · WhatsApp (34) 9286-9383'],
-      ['     Gerado pelo OrçaPRO — orçamento de obras com bases oficiais e IA.']
     ];
+    // Bloco de contato: SEMPRE da empresa do CLIENTE (⚙ Empresa) — nunca do fabricante.
+    var rt = deps.responsavel || {};
+    if (rt.nome || empresa) {
+      leiaLinhas.push(['📞  ' + (rt.nome || empresa) + (rt.cnpj ? ' — CNPJ ' + rt.cnpj : '') + (rt.cidade ? ' · ' + rt.cidade : '')]);
+      if (rt.responsavel) leiaLinhas.push(['     ' + (rt.titulo ? rt.titulo + ' ' : '') + rt.responsavel + (rt.crea ? ' · ' + rt.crea : '') + (rt.contato ? ' · ' + rt.contato : '')]);
+    }
+    if (credito) leiaLinhas.push(['     ' + credito + ' — orçamento de obras com bases oficiais e IA.']);
     leiaLinhas.forEach(function (ln, i) {
       var c = wleia.getCell('A' + (i + 1));
       c.value = ln[0];
@@ -886,7 +893,7 @@
         margins: { left: 0.4, right: 0.4, top: 0.55, bottom: 0.55, header: 0.2, footer: 0.25 },
         printTitlesRow: titles
       };
-      ws.headerFooter.oddFooter = '&L&8OrçaPRO — ' + (orc.numero || '') + '&C&8' + (empresa || '') + '&R&8Pág. &P de &N';
+      ws.headerFooter.oddFooter = '&L&8' + (credito ? 'OrçaPRO — ' : '') + (orc.numero || '') + '&C&8' + (empresa || '') + '&R&8Pág. &P de &N';
     }
     pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6'); pset(wa, 'landscape', '1:6');
     pset(wins, 'landscape', '1:5'); pset(wabc, 'portrait', '1:8'); pset(wcr, 'landscape', '1:4');
@@ -943,7 +950,9 @@
             var deps = {
               num: Util.num,
               fmtNum: Util.fmtNum,
-              empresa: (Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : (CONFIG.marca.fabricante || "RA Engenharia"),
+              empresa: ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "") || ((Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "") || "",
+              credito: (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "",
+              creator: (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : "",
               abc: (typeof Orcamento.curvaABC === "function") ? Orcamento.curvaABC(orc) : null,
               crono: (typeof Orcamento.cronograma === "function") ? Orcamento.cronograma(orc, orc.cronogramaMeses) : null,
               cronoAgente: (typeof Cronograma !== "undefined") ? Cronograma.estimar(orc) : null,

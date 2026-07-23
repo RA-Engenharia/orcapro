@@ -232,7 +232,25 @@
         '<div class="field"><label>Endereço (rua, nº, bairro — usado nos documentos)</label><input id="emp-endereco" value="' + Util.esc(emp.endereco || "") + '"></div>' +
         '<div class="field"><label>Logo (PNG/JPG — aparece na capa dos documentos)</label>' +
         '<input type="file" id="emp-logo" accept="image/png,image/jpeg,image/jpg,image/webp">' +
-        '<div id="emp-logo-prev" class="mt">' + (logo ? '<img src="' + logo + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">' : '<span class="muted">Nenhum logo carregado.</span>') + '</div></div>';
+        '<div id="emp-logo-prev" class="mt">' + (logo ? '<img src="' + logo + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">' : '<span class="muted">Nenhum logo carregado.</span>') + '</div></div>' +
+        this._renderEmpresaDocs();
+    },
+    /* Seção "Documentos & entregáveis" do ⚙ Empresa — white-label: os docs saem com a
+     * marca DO CLIENTE; menção ao produto, marca d'água e QR são opcionais. */
+    _renderEmpresaDocs: function () {
+      var cfg = (typeof Empresa !== "undefined" && Empresa.docsCfg) ? Empresa.docsCfg() : { creditos: true, marcaDagua: "empresa", qr: true };
+      return '' +
+        '<div class="card mt" style="padding:12px 14px">' +
+          '<b>Documentos &amp; entregáveis (sua marca)</b>' +
+          '<p class="muted" style="font-size:12px;margin:4px 0 8px">Todos os documentos saem com a SUA logo e os SEUS dados. Aqui você escolhe o que mais aparece neles.</p>' +
+          '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-creditos"' + (cfg.creditos ? " checked" : "") + '> Mencionar “Gerado pelo OrçaPRO IA” no rodapé dos documentos</label>' +
+          '<label class="flex" style="gap:8px;align-items:center;margin:6px 0"><input type="checkbox" id="emp-doc-qr"' + (cfg.qr ? " checked" : "") + '> Incluir QR de verificação (Portal do Cliente) nos impressos</label>' +
+          '<div class="field" style="margin:6px 0 0"><label>Marca d’água das páginas internas (Proposta / Laudo / Relatório)</label>' +
+            '<select id="emp-doc-wm">' +
+              '<option value="empresa"' + (cfg.marcaDagua !== "nenhuma" ? " selected" : "") + '>Nome da minha empresa</option>' +
+              '<option value="nenhuma"' + (cfg.marcaDagua === "nenhuma" ? " selected" : "") + '>Nenhuma</option>' +
+            '</select></div>' +
+        '</div>';
     },
 
     // ---------- Tela: Login ----------
@@ -835,12 +853,14 @@
       var t = Orcamento.totais(orc);
       var sint = Orcamento.sintetico(orc);
       var pct = orc.bdi ? orc.bdi.percentual : 0;
-      var empresa = (usuario && usuario.empresa) || CONFIG.marca.fabricante;
+      // White-label: cadastro completo da Empresa primeiro; nunca cai no fabricante.
+      var empresa = ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "") || (usuario && usuario.empresa) || "Sua Empresa";
       var hoje = new Date().toLocaleDateString("pt-BR");
 
       var html = '<div class="rel-doc">';
-      // marca d'água (mesmo padrão da Proposta/Laudo — consistência dos documentos)
-      html += '<div class="wm">' + Util.esc(empresa) + '</div>';
+      // marca d'água (mesmo padrão da Proposta/Laudo — configurável em ⚙ Empresa)
+      var wmRel = (typeof Empresa !== "undefined" && Empresa.marcaDaguaTexto) ? Empresa.marcaDaguaTexto() : empresa;
+      if (wmRel) html += '<div class="wm">' + Util.esc(wmRel) + '</div>';
 
       // Cabeçalho
       html += '<div class="rel-head">' +
@@ -935,7 +955,8 @@
         }
       }
 
-      html += '<div class="rel-rod">Gerado por ' + Util.esc(CONFIG.marca.nome) + " · " + hoje +
+      var credRel = (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "";
+      html += '<div class="rel-rod">' + (credRel ? Util.esc(credRel) + " · " : "") + hoje +
         ' · Custos ref. ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
         ' com BDI ' + Util.fmtPct(pct) + ' incluso no preço de venda.</div>';
       html += '</div>';

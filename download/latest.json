@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.111",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.111/OrcaPRO-IA-update-v1.1.111.zip",
-  "notas": "Demonstração renovada (Painel Executivo com a OBRA TESTE completa no site) e melhorias de estabilidade. Da v1.1.110: bases SICRO/DNIT-ES, IOPES/DER-ES e ORSE-SE inclusas com atualização automática — 1 clique no modal Tabelas.",
+  "versao": "1.1.112",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.112/OrcaPRO-IA-update-v1.1.112.zip",
+  "notas": "Documentos com a SUA marca (white-label): todos os entregáveis saem com a logomarca e os dados da sua empresa. Em ⚙ Empresa → Documentos & entregáveis você escolhe se aparece a menção ao OrçaPRO, a marca d'água e o QR de verificação — ou deixa 100% só com a sua marca.",
   "obrigatoria": false
 }

@@ -102,7 +102,7 @@
   // ---- monta o workbook inteiro ----
   function construir(ExcelJS, pacote, BK) {
     var wb = new ExcelJS.Workbook();
-    wb.creator = 'OrçaPRO BIM — RA Engenharia'; wb.created = pacote.dataObj || undefined;
+    wb.creator = (typeof Empresa!=='undefined'&&Empresa.excelCreator)?Empresa.excelCreator():'Plantas Executivas'; wb.created = pacote.dataObj || undefined;
     var P = pacote.paredes || [], m = pacote.material || {}, ins = pacote.insumos || {},
         cg = pacote.carga || {}, mo = pacote.maoObra || {}, lg = pacote.logistica || {};
     var obra = pacote.obra || 'Obra', hoje = pacote.data || '';
@@ -125,7 +125,7 @@
       { h: 'Dias montagem', k: 'dias', w: 14, fmt: INT }
     ], resumoPav, {
       titulo: '🧱 Plantas Executivas Blocok — ' + obra,
-      subtitulo: hoje + ' · OrçaPRO BIM — RA Engenharia · Placa 90×90 cm · ' + P.length + ' paredes · ' + m.totalPlacas + ' placas · ' + fmtBR(m.pesoTotalT) + ' t (compra)',
+      subtitulo: hoje + ((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())?' · '+Empresa.nomeDoc():'') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' · OrçaPRO BIM':'') + ' · Placa 90×90 cm · ' + P.length + ' paredes · ' + m.totalPlacas + ' placas · ' + fmtBR(m.pesoTotalT) + ' t (compra)',
       totais: { pav: 'TOTAL', paredes: P.length, placas: m.totalPlacas, area: fmtBR(m.areaPlacas), peso: fmtBR(m.pesoTotalKg), dias: mo.dias }
     });
 

@@ -47,11 +47,15 @@
     blocoImpresso: function (url, legenda) {
       var svg = QR.svg(url, { tamanhoPx: 88 });
       if (!svg) return "";
+      // White-label: a URL por extenso (que expõe o domínio do produto) só sai
+      // quando o cliente mantém os créditos ligados; o QR funciona igual sem ela.
+      var mostraUrl = true;
+      try { if (typeof Empresa !== "undefined" && Empresa.docsCfg) mostraUrl = Empresa.docsCfg().creditos; } catch (e) {}
       return '<div class="qr-verif" style="display:flex;align-items:center;gap:10px;margin-top:14px;padding:10px 12px;border:1px solid #d8e0ea;border-radius:8px;page-break-inside:avoid">' +
         svg +
         '<div style="font-size:10px;color:#5a6b7b;line-height:1.5"><b style="color:#14202e;font-size:11px">Verificação digital</b><br>' +
         (legenda || "Escaneie para acompanhar esta obra no Portal do Cliente.") +
-        '<br><span style="word-break:break-all">' + String(url).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</span></div></div>";
+        (mostraUrl ? '<br><span style="word-break:break-all">' + String(url).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</span>" : "") + "</div></div>";
     }
   };
 

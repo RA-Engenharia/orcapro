@@ -1392,7 +1392,7 @@ function montar(host, opts) {
       + '.pbtn{background:#16a34a;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer}'
       + '@media print{.pbtn,.noprint{display:none}body{background:#fff}}';
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Plantas Executivas Blocok — ' + esc(obra) + '</title><style>' + css + '</style></head><body>'
-      + '<header><div><h1>🧱 Plantas Executivas — Sistema Blocok</h1><div class="sub">' + esc(obra) + ' · ' + hoje + ' · gerado no OrçaPRO BIM</div></div><button class="pbtn noprint" onclick="window.print()">🖨 Imprimir / PDF</button></header>'
+      + '<header><div><h1>🧱 Plantas Executivas — Sistema Blocok</h1><div class="sub">' + esc(obra) + ' · ' + hoje + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' · gerado no OrçaPRO BIM':'') + '</div></div><button class="pbtn noprint" onclick="window.print()">🖨 Imprimir / PDF</button></header>'
       + '<div class="wrap">'
       + '<div class="cards">' + cards + '</div>'
       + '<div class="leg"><span><i class="sw" style="background:#e6f0fb"></i> placa inteira 90×90 cm</span><span><i class="sw" style="background:#fdecc8"></i> recorte (dimensão em cm)</span><span><i class="sw" style="background:#e8ecef;border-style:dashed"></i> vão (porta/janela)</span></div>'
@@ -1408,7 +1408,7 @@ function montar(host, opts) {
       + '2) Comprimento, altura e espessura de cada parede são extraídos da geometria do IFC (OBB 2D no plano); paredes fora de esquadro, curvas ou fragmentadas podem exigir conferência manual.<br>'
       + '3) Vãos de porta/janela são detectados automaticamente pela posição no modelo — confira nas pranchas (só some a placa 100% dentro do vão).<br>'
       + '4) A carga na fundação é o <b>peso próprio LÍQUIDO</b> das paredes (área de placa efetivamente instalada — o retalho do recorte é descartado, não pesa na parede). Já o card <b>“peso p/ compra”</b> soma <b>placas cheias</b> (o que você adquire/transporta). Não inclui laje, cobertura nem sobrecarga de uso — some às demais cargas no dimensionamento estrutural.<br>'
-      + '5) Placas numeradas em fiadas da <b>base para o topo</b>, da <b>esquerda para a direita</b>. Gerado no OrçaPRO BIM — RA Engenharia.</footer>'
+      + '5) Placas numeradas em fiadas da <b>base para o topo</b>, da <b>esquerda para a direita</b>. ' + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'Gerado no OrçaPRO BIM.':'') + '</footer>'
       + '</body></html>';
     try { w.document.write(html); w.document.close(); } catch (_) { if (S._hint) S._hint('🧱 Não deu pra montar a prancha na nova aba.'); }
   }
@@ -1815,7 +1815,7 @@ function montar(host, opts) {
     g2.fillStyle = '#111'; var temBarra = pxM >= 8 && pxM < W * 0.45, barW = temBarra ? pxM + 26 : 0;
     if (temBarra) { g2.fillRect(W - pxM - 12, H + 16, pxM, 6); g2.font = '10px Arial'; g2.fillText('1 m', W - pxM - 12, H + 37); }
     // carimbo: encolhe a fonte até caber na largura livre (evita clip/transbordo em desenho estreito)
-    var titulo = (o.tipo === 'fachada' ? 'FACHADA' : 'CORTE A–A') + '  ·  ESC 1:' + escalaEf + (ajustada ? ' (ajustada)' : '') + '  ·  OrçaPRO BIM  ·  ' + new Date().toLocaleDateString('pt-BR');
+    var titulo = (o.tipo === 'fachada' ? 'FACHADA' : 'CORTE A–A') + '  ·  ESC 1:' + escalaEf + (ajustada ? ' (ajustada)' : '') + '  ·  ' + (((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') || 'Desenho técnico') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' · OrçaPRO BIM':'') + '  ·  ' + new Date().toLocaleDateString('pt-BR');
     var livre = W - 16 - barW, fs = 15;
     g2.font = 'bold ' + fs + 'px Arial';
     while (fs > 8 && g2.measureText(titulo).width > livre) { fs--; g2.font = 'bold ' + fs + 'px Arial'; }
@@ -1860,7 +1860,7 @@ function montar(host, opts) {
       var w = null; try { w = window.open('', '_blank'); } catch (_) {}
       if (!w) { S._hint('🖨 O navegador bloqueou a janela de impressão — use ⬇ PNG e imprima o arquivo em 100%.'); return; }
       try {
-        var ttlImp = esc((ctecModal.querySelector('[data-r="titulo"]').textContent || 'Desenho técnico')) + ' — OrçaPRO BIM';
+        var ttlImp = esc((ctecModal.querySelector('[data-r="titulo"]').textContent || 'Desenho técnico')) + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' — OrçaPRO BIM':'');
         w.document.write('<!doctype html><meta charset="utf-8"><title>' + ttlImp + '</title>' +
           '<style>@page{size:auto;margin:8mm}body{margin:0;font-family:Arial}.av{font-size:12px;color:#444;margin:6px 2px}@media print{.av{display:none}}</style>' +
           '<p class="av">Imprima em <b>100%</b> (sem “ajustar à página”) para a escala do carimbo valer. A escala gráfica de 1 m serve de conferência.</p>' +
@@ -2137,7 +2137,7 @@ function montar(host, opts) {
     g2.fillStyle = '#111'; var temBarra = pxM >= 8 && pxM < totalW * 0.45, barW = temBarra ? pxM + 26 : 0;
     if (temBarra) { g2.fillRect(totalW - pxM - 12, yBase + 16, pxM, 6); g2.font = '10px Arial'; g2.fillText('1 m', totalW - pxM - 12, yBase + 37); }
     var rotAlt = o.rotAlt || (fmtDist(Math.max(0, o.y - box.min.y)) + ' do piso');
-    var titulo = 'PLANTA BAIXA (corte a ' + rotAlt + ')  ·  ESC 1:' + escalaEf + (ajustada ? ' (ajustada)' : '') + '  ·  OrçaPRO BIM  ·  ' + new Date().toLocaleDateString('pt-BR');
+    var titulo = 'PLANTA BAIXA (corte a ' + rotAlt + ')  ·  ESC 1:' + escalaEf + (ajustada ? ' (ajustada)' : '') + '  ·  ' + (((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') || 'Desenho técnico') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' · OrçaPRO BIM':'') + '  ·  ' + new Date().toLocaleDateString('pt-BR');
     var livre = totalW - 16 - barW, fs = 15;
     g2.font = 'bold ' + fs + 'px Arial';
     while (fs > 8 && g2.measureText(titulo).width > livre) { fs--; g2.font = 'bold ' + fs + 'px Arial'; }
@@ -2522,7 +2522,7 @@ function montar(host, opts) {
         var cortado = (renderer.clippingPlanes || []).length > 0;
         var rotEl = nv < tot ? (nv + ' de ' + tot + ' elementos (vista filtrada)') : (cortado ? (tot + ' elementos (vista cortada)') : (tot + ' elementos'));
         g2.fillStyle = '#7fe0a3'; g2.font = 'bold 16px Segoe UI, Arial';
-        g2.fillText('OrçaPRO BIM · ' + new Date().toLocaleString('pt-BR') + ' · ' + rotEl + (pav.isolado ? ' · pavimento: ' + pav.isolado : ''), 12, img.height + 28);
+        g2.fillText((((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') ? ((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') + ' · ' : '') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'OrçaPRO BIM · ':'') + new Date().toLocaleString('pt-BR') + ' · ' + rotEl + (pav.isolado ? ' · pavimento: ' + pav.isolado : ''), 12, img.height + 28);
         var a2 = document.createElement('a'); a2.href = cnv.toDataURL('image/png'); a2.download = 'bim-foto.png'; a2.click();
         S._hint('📸 Foto salva (bim-foto.png).');
       } catch (_) { S._hint('📸 Não consegui montar o arquivo da foto.'); }

@@ -998,6 +998,9 @@
       var dados = {};
       Empresa.campos.forEach(function (k) { var el = UI.el("emp-" + k); dados[k] = el ? el.value : ""; });
       Empresa.salvar(dados, this._logoPendente);
+      // White-label dos entregáveis (créditos / marca d'água / QR)
+      var elC = UI.el("emp-doc-creditos"), elQ = UI.el("emp-doc-qr"), elW = UI.el("emp-doc-wm");
+      if (elC && Empresa.salvarDocsCfg) Empresa.salvarDocsCfg({ creditos: elC.checked, qr: elQ ? elQ.checked : true, marcaDagua: elW ? elW.value : "empresa" });
       UI.fecharModal();
       UI.toast("Dados da empresa salvos. Aparecem nos documentos.", "ok");
     },
@@ -2281,6 +2284,12 @@
     // Overlay de impressão compartilhado (proposta e relatório)
     _abrirPrint: function (titulo, htmlConteudo) {
       this.fecharProposta();
+      // White-label: o <title> da página sai no cabeçalho/rodapé de impressão do
+      // navegador — enquanto o documento está aberto, o título vira o do DOCUMENTO
+      // (com o nome da empresa do cliente), não o do produto. Restaura ao fechar.
+      if (this._tituloApp == null) this._tituloApp = document.title;
+      var nomeEmp = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
+      try { document.title = (titulo || "Documento") + (nomeEmp ? " — " + nomeEmp : ""); } catch (eT) {}
       var overlay = document.createElement("div");
       overlay.className = "proposta-overlay"; overlay.id = "proposta-print";
       overlay.innerHTML =
@@ -2294,6 +2303,7 @@
     fecharProposta: function () {
       var o = document.getElementById("proposta-print");
       if (o) o.remove();
+      if (this._tituloApp != null) { try { document.title = this._tituloApp; } catch (eT) {} this._tituloApp = null; }
     },
 
     // ---------- Persistência (idempotente + debounce) ----------

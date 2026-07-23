@@ -1038,6 +1038,8 @@
      * (sslip.io com IP fica só pro uso interno dos apps). */
     _qrPortalObra: function (obra, legenda) {
       if (typeof QR === "undefined" || !obra || !obra.portalUser || !obra.id) return "";
+      // White-label: o cliente pode desligar o bloco QR dos impressos em ⚙ Empresa
+      if (typeof Empresa !== "undefined" && Empresa.docsCfg && !Empresa.docsCfg().qr) return "";
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       if (!base) return "";
       if (base.indexOf("sslip.io") > -1) base = "https://orcapro.raengenhariaespecial.com.br";
@@ -1087,7 +1089,7 @@
         + this._qrPortalObra(obra, "Escaneie para acompanhar as medições e o andamento desta obra no Portal do Cliente (conforme a última publicação).")
         + "<div style='margin-top:24px;font-size:11px'>Declaramos que os serviços descritos foram executados conforme o contrato e estão aptos para faturamento.</div>"
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(emp.nome || "CONTRATADA") + "</b><br>" + (emp.responsavel ? Util.esc(emp.responsavel) + (emp.crea ? " · CREA " + Util.esc(emp.crea) : "") : "Responsável Técnico") + "</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>" + Util.esc(obra.clienteNome || "CONTRATANTE") + "</b><br>Aprovação do Cliente</div></div>"
-        + "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>Gerado pelo OrçaPRO IA em " + new Date().toLocaleDateString("pt-BR") + "</div></div>";
+        + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML(true) : "") + "</div>";
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Boletim de Medição Nº " + (m.numero || ""), html);
       else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
     },
@@ -1098,7 +1100,7 @@
       ExcelOrc.ensureExcelJS(function () {
         try {
           var ExcelJS = window.ExcelJS, c = self._medicaoCalc(m), obra = c.obra || {}, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
-          var wb = new ExcelJS.Workbook(); wb.creator = "OrçaPRO IA";
+          var wb = new ExcelJS.Workbook(); wb.creator = (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : (emp.nome || "OrçaPRO IA");
           var navy = "FF0F2740", verde = "FF16A34A";
           var ws = wb.addWorksheet("Medição", { views: [{ state: "frozen", ySplit: 5 }] });
           ws.columns = [{ width: 38 }, { width: 18 }, { width: 16 }];
@@ -1181,7 +1183,7 @@
       return '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:740px;margin:0 auto;font-size:12px">'
         + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid ' + accent + ';padding-bottom:10px;margin-bottom:14px"><div>' + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:14px">' + Util.esc(emp.nome || "") + "</b><br><span style='font-size:9px'>" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.contato ? " · " + Util.esc(emp.contato) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + "</span></div><div style='text-align:right'><b style='font-size:13px;color:" + accent + "'>" + titulo + "</b></div></div>"
         + corpo
-        + "<div style='text-align:right;font-size:8px;color:#999;margin-top:14px'>Gerado pelo OrçaPRO IA em " + new Date().toLocaleDateString("pt-BR") + "</div></div>";
+        + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML(true) : "") + "</div>";
     },
     _abrirDoc: function (titulo, html) {
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint(titulo, html);
@@ -2418,10 +2420,10 @@
       if (!w) { UI.toast("O navegador bloqueou a impressão — copie o link.", "erro"); return; }
       try {
         var emp = (typeof Store !== "undefined" && Store.empresa) ? (Store.empresa(Auth.empresaId()) || {}) : {};
-        w.document.write('<!doctype html><meta charset="utf-8"><title>RA/RV na obra — OrçaPRO</title>' +
+        w.document.write('<!doctype html><meta charset="utf-8"><title>RA/RV na obra</title>' +
           '<style>@page{size:A5;margin:12mm}body{font-family:Arial;color:#0f2740;text-align:center}h1{font-size:20px;margin:6px 0}p{font-size:13px;color:#334}</style>' +
           '<h1>📱 Ver o projeto em Realidade Aumentada</h1>' +
-          '<p><b>' + Util.esc(emp.nome || "OrçaPRO BIM") + '</b></p>' +
+          '<p><b>' + Util.esc(emp.nome || "Visita virtual da obra") + '</b></p>' +
           '<div style="margin:14px auto;width:220px">' + (svg || "") + '</div>' +
           '<p>Aponte a câmera do celular pro QR (mesmo Wi-Fi).<br>Android: RA no ambiente · iPhone: Caminhar no projeto.</p>' +
           '<p style="font-size:10px;color:#889;word-break:break-all">' + Util.esc(url) + '</p>' +
@@ -3391,7 +3393,7 @@
         + (e.observacoes ? "<p style='font-size:11px;margin-top:8px'><b>Obs.:</b> " + Util.esc(e.observacoes) + "</p>" : "")
         + "<p style='font-size:11px;margin-top:12px'>Declaramos, para os devidos fins, que o colaborador recebeu treinamento para o uso correto dos EPIs.</p>"
         + '<div style="display:flex;justify-content:space-between;margin-top:40px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px">Assinatura do Colaborador</div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px">Responsável pela Empresa</div></div>'
-        + '<div style="text-align:right;font-size:8px;color:#999;margin-top:14px">Gerado pelo OrçaPRO IA</div></div>';
+        + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + '</div>';
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Ficha de EPI — " + (e.colaboradorNome || ""), html);
       else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Ficha de EPI</title></head><body onload='window.print()'>" + html + "</body></html>"); w.document.close(); } }
     },
@@ -3558,7 +3560,7 @@
           + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:8%">Dia</th><th style="border:1px solid #999;padding:3px;width:8%">Sem</th><th style="border:1px solid #999;padding:3px;width:13%">Entrada</th><th style="border:1px solid #999;padding:3px;width:13%">Almoço</th><th style="border:1px solid #999;padding:3px;width:13%">Retorno</th><th style="border:1px solid #999;padding:3px;width:13%">Saída</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
           + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + "</div></div></div>"
           + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador</div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
-          + '<div style="text-align:right;font-size:8px;color:#999;margin-top:10px">Documento gerado pelo OrçaPRO IA</div></div>';
+          + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + '</div>';
       }).join("");
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Espelho de Ponto — " + this._mesExtenso(mes), paginas);
       else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Espelho de Ponto</title></head><body>" + paginas + "</body></html>"); w.document.close(); } }
@@ -4680,7 +4682,7 @@ renderFolha: function () {
         + "<div style='text-align:right;margin-top:6px;font-size:15px'><b>VALOR LÍQUIDO: " + Util.fmtMoeda(liq) + "</b></div>"
         + "<div style='display:flex;gap:20px;margin-top:8px;font-size:10px;color:#555;border-top:1px dashed #ccc;padding-top:6px'><span>Base FGTS: " + Util.fmtMoeda(base) + "</span><span>FGTS (8%): " + Util.fmtMoeda(fgts) + "</span><span>Encargos ref.: " + Util.fmtNum(enc, 0) + "%</span></div>"
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Assinatura do Empregador</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Assinatura do Colaborador</div></div>"
-        + "<div style='text-align:right;font-size:8px;color:#999;margin-top:12px'>Gerado pelo OrçaPRO IA</div></div>";
+        + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + "</div>";
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Recibo — " + (col.nome || ""), html);
       else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
     },
@@ -5183,7 +5185,7 @@ renderFolha: function () {
       if (!d.doPer.length) { UI.toast("Nenhum lançamento no período/filtro.", "erro"); return; }
       UI.toast("Gerando o Excel completo…", "ok");
       ExcelOrc.ensureExcelJS(function () {
-        var wb = new ExcelJS.Workbook(); wb.creator = "OrçaPRO IA";
+        var wb = new ExcelJS.Workbook(); wb.creator = (typeof Empresa !== "undefined" && Empresa.excelCreator) ? Empresa.excelCreator() : (emp.nome || "OrçaPRO IA");
         var NAVY = "FF0F2740", VERDE = "FF16A34A", MOEDA = '"R$" #,##0.00';
         function cab(ws, headers, widths) {
           ws.addRow(headers); var r = ws.getRow(1);
@@ -5238,7 +5240,7 @@ renderFolha: function () {
         // --- Aba Parametros ---
         var wpar = wb.addWorksheet("Parametros");
         wpar.getColumn(1).width = 26; wpar.getColumn(2).width = 46;
-        [["Gerado por", "OrçaPRO IA — Folha Semanal"], ["Empresa", emp.nome || ""], ["Período", p.rot], ["Semanas", p.semanas.join(", ")], ["Escopo obra", p.obraId ? self._fsNomeObra(p.obraId) : "Todas"], ["Escopo favorecido", p.favKey ? p.favKey.split("|")[0] : "Todos"], ["Observação", "Os valores em Pagamentos/PorObra/Resumo são FÓRMULAS: edite a aba Lancamentos e tudo recalcula."]].forEach(function (par) { var r5 = wpar.addRow(par); r5.getCell(1).font = { bold: true }; });
+        [["Gerado por", ((typeof Empresa !== "undefined" && Empresa.creditoTexto && Empresa.creditoTexto()) ? "OrçaPRO IA — Folha Semanal" : (emp.nome || "Folha Semanal"))], ["Empresa", emp.nome || ""], ["Período", p.rot], ["Semanas", p.semanas.join(", ")], ["Escopo obra", p.obraId ? self._fsNomeObra(p.obraId) : "Todas"], ["Escopo favorecido", p.favKey ? p.favKey.split("|")[0] : "Todos"], ["Observação", "Os valores em Pagamentos/PorObra/Resumo são FÓRMULAS: edite a aba Lancamentos e tudo recalcula."]].forEach(function (par) { var r5 = wpar.addRow(par); r5.getCell(1).font = { bold: true }; });
         wb.xlsx.writeBuffer().then(function (buf) {
           var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
           var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-completa-" + (p.semanas[0] || "periodo") + ".xlsx"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
