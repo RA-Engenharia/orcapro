@@ -167,6 +167,9 @@
         '<div class="flex" style="flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
         '<button class="btn sm primary" data-inclusa="data/sudecap-BH-current.json|SUDECAP">📦 SUDECAP · Belo Horizonte (atual)</button>' +
         '<button class="btn sm primary" data-inclusa="data/seinfra-CE-current.json|SEINFRA">📦 SEINFRA · Ceará (atual)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/sicro-ES-current.json|SICRO" title="SICRO/DNIT — custos rodoviários oficiais. Relatório Sintético de Composições, trimestral.">📦 SICRO/DNIT · ES (rodoviárias)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/iopes-ES-current.json|IOPES" title="IOPES/DER-ES — Tabela Referencial de Edificações do Espírito Santo (não desonerada, BDI 0%), mensal.">📦 IOPES/DER-ES · ES (edificações)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/orse-SE-current.json|ORSE" title="ORSE/CEHOP-SE — Orçamento de Obras de Sergipe (consulta pública oficial), mensal.">📦 ORSE · Sergipe</button>' +
         '<span class="flex" style="gap:4px;align-items:center"><select id="setop-regiao" class="btn sm" style="padding:5px">' +
         [["Triangulo", "Triângulo"], ["Central", "Central"], ["Norte", "Norte"], ["Sul", "Sul"], ["Leste", "Leste"], ["Jequitinhonha", "Jequitinhonha/Mucuri"]].map(function (r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join("") +
         '</select><select id="setop-regime" class="btn sm" style="padding:5px"><option value="desonerada">Desonerada</option><option value="onerada">Onerada</option></select>' +

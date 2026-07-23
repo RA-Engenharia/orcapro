@@ -391,12 +391,17 @@
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
       // login: clicar numa conta salva preenche o e-mail
       if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
-      // carregar base inclusa (1 clique)
+      // carregar base inclusa (1 clique) — LIVE-FIRST: tenta a versão mais recente
+      // regenerada no VPS (rota /bases/), cai na inclusa do pacote se offline.
       if (t.dataset.inclusa) {
         var pin = String(t.dataset.inclusa).split("|"); var selfI = this;
         UI.toast("Carregando base inclusa…", "ok");
-        Bases.carregarInclusa(pin[0], pin[1]).then(function (r) {
-          UI.toast(r.fonte + " carregada: " + r.total.toLocaleString("pt-BR") + " itens (" + (r.competencia || "") + "/" + (r.uf || "") + ")." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
+        var nomeArq = String(pin[0]).split("/").pop();
+        var liveUrl = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? (String(CONFIG.licencaServer).replace(/\/$/, "") + "/bases/" + nomeArq) : null;
+        function cair(url, ehLive) { return Bases.carregarInclusa(url, pin[1]).then(function (r) { r._live = ehLive; return r; }); }
+        var pInc = liveUrl ? cair(liveUrl, true).catch(function () { return cair(pin[0], false); }) : cair(pin[0], false);
+        pInc.then(function (r) {
+          UI.toast(r.fonte + " carregada: " + r.total.toLocaleString("pt-BR") + " itens (" + (r.competencia || "") + "/" + (r.uf || "") + ")" + (r._live ? " — online, mais recente" : " — inclusa") + "." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
           selfI.abrirTabelas();
         }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
         return;

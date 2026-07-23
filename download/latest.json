@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.109",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.109/OrcaPRO-IA-update-v1.1.109.zip",
-  "notas": "A tela inicial virou um Dashboard Executivo e Financeiro: filtros de Obra e Período, KPIs de caixa (recebido, pago, resultado com a receber/a pagar, margem, previsto × realizado com alerta rastreável), alertas executivos, fluxo de caixa com saldo acumulado, previsto × realizado por obra/etapa, despesas por categoria e custo por obra — tudo derivado dos seus lançamentos reais.",
+  "versao": "1.1.110",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.110/OrcaPRO-IA-update-v1.1.110.zip",
+  "notas": "Novas bases de preço oficiais com atualização automática: SICRO/DNIT-ES (6.618 composições rodoviárias), IOPES/DER-ES (1.363 serviços de edificações) e ORSE-SE (16.944 serviços) — carregamento em 1 clique no modal Tabelas, sempre na competência mais recente direto das fontes oficiais, com fallback offline. SBC (comercial): importe a planilha da sua assinatura pelo botão Importar base.",
   "obrigatoria": false
 }
