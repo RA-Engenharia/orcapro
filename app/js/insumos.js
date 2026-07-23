@@ -85,7 +85,7 @@
     },
 
     /* Lazy-load: garante o analítico do estado ativo carregado e então agrega. */
-    carregar: function (analiticoUrl, ufAtivo) {
+    carregar: function (analiticoUrl, ufAtivo, analiticoLive) {
       var self = this;
       // já construído p/ o UF certo → reaproveita
       if (this.carregado && (!ufAtivo || !this.uf || this.uf === ufAtivo)) return Promise.resolve(this._idx.length);
@@ -104,7 +104,7 @@
       if (Analitico.reset && Analitico.uf && ufAtivo && Analitico.uf !== ufAtivo) Analitico.reset();
       this._reset(); // limpa o catálogo do UF anterior
       this._promiseUf = ufAtivo || null;
-      this._promise = Analitico.carregarArquivo(analiticoUrl).then(function () {
+      this._promise = Analitico.carregarArquivo(analiticoUrl, analiticoLive).then(function () {
         self._promise = null; self._promiseUf = null;
         return self.construir();
       }).catch(function (e) { self.carregando = false; self._promise = null; self._promiseUf = null; throw e; });

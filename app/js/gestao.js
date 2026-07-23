@@ -3895,9 +3895,10 @@ renderRequisicoes: function () {
     // =================== BANCO DE INSUMOS ===================
     // Resolve o analítico do estado ATIVO (mesma lógica do App.verInsumos).
     _analiticoAtivo: function () {
-      var url = (typeof App !== "undefined") ? App._analiticoArquivo : null;
+      // reutiliza o resolvedor do App (local + AO VIVO): garante o banco de insumos em toda UF
+      var u = (typeof App !== "undefined" && App._analiticoUrls) ? App._analiticoUrls() : { local: null, live: null };
       var uf = (typeof App !== "undefined" && App._baseUf) ? App._baseUf : ((typeof Sinapi !== "undefined") ? Sinapi.uf : null);
-      return { url: url, uf: uf };
+      return { url: u.local || u.live, live: u.live, uf: uf };
     },
     renderBancoInsumos: function () {
       var r = (typeof Insumos !== "undefined") ? Insumos.resumo() : { carregado: false, total: 0 };
@@ -3951,11 +3952,11 @@ renderRequisicoes: function () {
         if (q.length < 2) { box.innerHTML = ""; setStatus("Digite ao menos 2 letras…"); return; }
         if (Insumos.carregado) { achar(q); return; }
         setStatus("Carregando o banco de insumos (1ª vez, alguns segundos)…");
-        Insumos.carregar(a.url, a.uf).then(function () { if (inp.value.trim() === q) achar(q); })
+        Insumos.carregar(a.url, a.uf, a.live).then(function () { if (inp.value.trim() === q) achar(q); })
           .catch(function (e) { setStatus("Não carregou o banco: " + ((e && e.message) || "erro") + " — abra pelo servidor local (Iniciar-OrcaPRO.bat)."); });
       }
       inp.oninput = (typeof Util !== "undefined" && Util.debounce) ? Util.debounce(rodar, 250) : rodar;
-      if (!Insumos.carregado && !Insumos.carregando) Insumos.carregar(a.url, a.uf).then(function () { setStatus(Insumos.resumo().total.toLocaleString("pt-BR") + " insumos disponíveis. Digite para buscar."); }).catch(function () {});
+      if (!Insumos.carregado && !Insumos.carregando) Insumos.carregar(a.url, a.uf, a.live).then(function () { setStatus(Insumos.resumo().total.toLocaleString("pt-BR") + " insumos disponíveis. Digite para buscar."); }).catch(function () {});
     },
     novaRequisicaoComItem: function (ins) {
       this._reqItemSeed = { codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" };

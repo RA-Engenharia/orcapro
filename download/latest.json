@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.114",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.114/OrcaPRO-IA-update-v1.1.114.zip",
-  "notas": "BIM no celular muito mais fácil: o botão Ferramentas virou um botão verde grande, fixo no canto da tela — sempre visível, em qualquer rolagem. A barra aberta rola dentro dela mesma (não tampa a vista do 3D) e o botão se adapta ao girar o aparelho.",
+  "versao": "1.1.115",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.115/OrcaPRO-IA-update-v1.1.115.zip",
+  "notas": "Detalhamento da composição (insumos) garantido em TODAS as regiões: se faltar o arquivo no seu PC, o sistema busca o detalhamento direto do nosso servidor, automaticamente. Nunca mais o aviso de que não tem detalhamento para a base daquela região.",
   "obrigatoria": false
 }

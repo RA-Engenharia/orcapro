@@ -39,7 +39,7 @@
     // #17: o servidor local (http.server) não comprime — o gzip vive no ARQUIVO
     // (.json.gz, ~85% menor) e a descompressão é do cliente (DecompressionStream).
     // Sem suporte do navegador ou sem o .gz no disco → cai no .json puro.
-    _fetchJson: function (url) {
+    _fetchUma: function (url) {
       var temDS = (typeof DecompressionStream !== "undefined") && (typeof Response !== "undefined");
       var puro = function () { return fetch(url).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }); };
       if (!temDS || /\.gz$/.test(url)) return puro();
@@ -48,18 +48,30 @@
         return new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
       }).catch(puro);
     },
-    carregarArquivo: function (url) {
+    /* Tenta o arquivo LOCAL e, se falhar (ausente/404/corrompido), cai no AO VIVO (VPS).
+     * Garante o detalhamento em TODA região mesmo que o disco do cliente não tenha o analítico. */
+    _fetchJson: function (url, urlLive) {
+      var self = this;
+      var p = url ? this._fetchUma(url) : Promise.reject(new Error("sem url local"));
+      if (urlLive && urlLive !== url) {
+        p = p.catch(function () { return self._fetchUma(urlLive); });
+      }
+      return p;
+    },
+    carregarArquivo: function (url, urlLive) {
       var self = this;
       if (this.carregado) return Promise.resolve(this._total);
       if (this._promise) return this._promise;
       this.carregando = true;
       var epoca = this._epoca; // captura a geração atual
-      this._promise = this._fetchJson(url || "data/sinapi-MG-analitico.json")
+      this._promise = this._fetchJson(url || "data/sinapi-MG-analitico.json", urlLive)
         .then(function (j) {
           if (epoca !== self._epoca) throw new Error("cancelado"); // trocou de UF durante o fetch → descarta
           return self.carregarDe(j);
         })
-        .catch(function (e) { self.carregando = false; self._promise = null; throw e; });
+        // só limpa o estado se a rejeição for do carregamento ATUAL — senão apagaria o
+        // _promise de um carregamento NOVO (troca de UF durante o fallback local→live)
+        .catch(function (e) { if (epoca === self._epoca) { self.carregando = false; self._promise = null; } throw e; });
       return this._promise;
     },
 

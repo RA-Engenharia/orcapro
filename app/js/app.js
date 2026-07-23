@@ -757,6 +757,18 @@
       var self = this; this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
     },
 
+    // URLs do analítico da UF ativa: {local} no disco + {live} no VPS (fallback garantido).
+    // O analítico de TODA UF fica hospedado em CONFIG.licencaServer/analitico/ — assim o
+    // detalhamento nunca some por falta do arquivo local (instalação antiga, disco, competência).
+    _analiticoUrls: function () {
+      var uf = String(this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
+      var local = this._analiticoArquivo || (uf ? "data/sinapi-" + uf + "-analitico.json" : null);
+      var live = (uf && typeof CONFIG !== "undefined" && CONFIG.licencaServer)
+        ? String(CONFIG.licencaServer).replace(/\/$/, "") + "/analitico/sinapi-" + uf + "-analitico.json"
+        : null;
+      return { local: local, live: live };
+    },
+
     // ---------- Base SINAPI (própria da empresa ou padrão) ----------
     _analiticoArquivo: null,   // caminho do analítico do estado ATIVO (data/sinapi-<UF>-analitico.json)
     _baseUf: null,             // UF da base SINAPI ativa
@@ -1396,11 +1408,14 @@
     // Silencioso, sem spinner, offline-first (se falhar, o clique recarrega normalmente).
     _preloadAnalitico: function () {
       try {
-        if (typeof Analitico === "undefined" || !this._analiticoArquivo) return;
+        if (typeof Analitico === "undefined") return;
         if (Analitico.carregado || Analitico.carregando) return;
-        var arq = this._analiticoArquivo;
+        var u = this._analiticoUrls();
+        if (!u.local && !u.live) return;
+        // pré-carrega já com o fallback AO VIVO embutido — se um clique em 🔍 pegar esta
+        // promise compartilhada no meio do caminho, ela já sabe cair no VPS.
         setTimeout(function () {
-          try { if (!Analitico.carregado && !Analitico.carregando) Analitico.carregarArquivo(arq).catch(function () {}); } catch (e) {}
+          try { if (!Analitico.carregado && !Analitico.carregando) Analitico.carregarArquivo(u.local || u.live, u.live).catch(function () {}); } catch (e) {}
         }, 1200);
       } catch (e) {}
     },
@@ -1783,13 +1798,15 @@
       if (Orcamento.totais(this.orcAtual).qtdItens < 1) { UI.toast("Adicione itens antes de exportar.", "erro"); return; }
       var self = this;
       function gerar() { UI.toast("Gerando Excel (com aba de Insumos)…", "ok"); ExcelOrc.gerar(self.orcAtual); }
-      // Garante o analítico do ESTADO ATIVO carregado — para a aba Insumos sair certa em QUALQUER UF (não no MG padrão).
+      // Garante o analítico do ESTADO ATIVO carregado — para a aba Insumos sair certa em QUALQUER UF
+      // (com fallback AO VIVO: mesmo sem o arquivo local, a aba Insumos sai preenchida).
       var ana = (typeof Analitico !== "undefined") ? Analitico : null;
       var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
-      if (!ana || !self._analiticoArquivo || (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { gerar(); return; }
+      var urlsX = self._analiticoUrls();
+      if (!ana || (!urlsX.local && !urlsX.live) || (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { gerar(); return; }
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos de " + (ufAtivo || "") + " (1ª vez)…", "ok");
-      ana.carregarArquivo(self._analiticoArquivo).then(gerar).catch(function () { gerar(); });
+      ana.carregarArquivo(urlsX.local || urlsX.live, urlsX.live).then(gerar).catch(function () { gerar(); });
     },
 
     // ---------- FASE 4: reimportar Excel editado (round-trip via aba _meta) ----------
@@ -1878,9 +1895,11 @@
       }
       // Já carregado E é do estado ativo? abre direto.
       if (Analitico.carregado && (!ufAtivo || !Analitico.uf || Analitico.uf === ufAtivo)) { abrir(); return; }
-      // Sem analítico apontado para este estado → mensagem clara (não trava).
-      if (!self._analiticoArquivo) {
-        UI.toast("O detalhamento insumo-a-insumo não está incluído para " + (ufAtivo || "esta base") + ". O orçamento usa os preços corretos da base; para ver o analítico deste estado, gere/importe em 🗂 Tabelas.", "erro");
+      // URLs local + AO VIVO (VPS). O analítico da região SEMPRE existe no servidor, então
+      // mesmo que o disco do cliente não tenha o arquivo, o detalhamento carrega ao vivo.
+      var urls = self._analiticoUrls();
+      if (!urls.local && !urls.live) { // só quando não há UF de forma alguma
+        UI.toast("Sem UF ativa para o detalhamento. Escolha um estado em 🗂 Tabelas.", "erro");
         return;
       }
       // Trocou de UF desde o último carregamento → descarta e recarrega o analítico certo.
@@ -1889,15 +1908,11 @@
       self._insumosCarregando = codigo;
       // LOTE 5: overlay com spinner — o load frio de 17MB parecia travamento
       UI.loading("Carregando a base analítica de " + (ufAtivo || "") + " (só na 1ª vez)…");
-      Analitico.carregarArquivo(self._analiticoArquivo).then(function () { self._insumosCarregando = null; UI.loadingFim(); abrir(); }).catch(function (e) {
+      Analitico.carregarArquivo(urls.local || urls.live, urls.live).then(function () { self._insumosCarregando = null; UI.loadingFim(); abrir(); }).catch(function (e) {
         self._insumosCarregando = null; UI.loadingFim();
         if (e && e.message === "cancelado") return; // troca de UF cancelou o carregamento — silencioso
-        // 404 = o pacote não traz o analítico desta UF — mensagem honesta (não é problema de servidor)
-        if (e && /HTTP 4\d\d/.test(e.message || "")) {
-          UI.toast("O detalhamento insumo-a-insumo não está incluído para " + (ufAtivo || "esta base") + ". O orçamento usa os preços corretos; para ver o analítico, gere/importe em 🗂 Tabelas.", "erro");
-          return;
-        }
-        UI.toast("Não carregou o analítico: " + (e && e.message) + " — abra pelo servidor local (Iniciar-OrcaPRO.bat).", "erro");
+        // Chegou aqui = local E ao vivo falharam (offline sem o arquivo no disco)
+        UI.toast("Não foi possível carregar o detalhamento agora" + (ufAtivo ? " de " + ufAtivo : "") + ". Verifique a internet e tente de novo — o orçamento usa os preços corretos normalmente.", "erro");
       });
     },
 
@@ -2092,11 +2107,12 @@
       // Carrega o analítico da UF (1ª vez) p/ incluir a seção de composições e insumos; degrada sem travar.
       var ana = (typeof Analitico !== "undefined") ? Analitico : null;
       var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
-      if (!ana || !self._analiticoArquivo ||
+      var urlsR = self._analiticoUrls();
+      if (!ana || (!urlsR.local && !urlsR.live) ||
           (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { abrir(); return; }
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos das composições (1ª vez)…", "ok");
-      ana.carregarArquivo(self._analiticoArquivo).then(abrir).catch(function () { abrir(); });
+      ana.carregarArquivo(urlsR.local || urlsR.live, urlsR.live).then(abrir).catch(function () { abrir(); });
     },
 
     // ---------- AGENTE IMPORTADOR: planilha (Excel/CSV) de qualquer formato → etapas+itens ----------
