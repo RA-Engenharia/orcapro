@@ -1,5 +1,5 @@
 {
-  "versao": "1.1.123",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.123/OrcaPRO-IA-update-v1.1.123.zip",
-  "notas": "Criador de Composicoes Proprias em 2 passos + Agente Especialista (estrutura por referencia oficial da base analitica, sem margem de erro) + aviso de insumo sem preco embaixo da composicao na planilha, com cotacao em 1 clique."
+  "versao": "1.1.124",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.124/OrcaPRO-IA-update-v1.1.124.zip",
+  "notas": "Crie composicoes e insumos proprios direto de onde voce trabalha: na busca de itens do orcamento (ja entra na planilha), no detalhamento oficial (Criar minha versao) e na requisicao de compras (insumo proprio reutilizavel)."
 }

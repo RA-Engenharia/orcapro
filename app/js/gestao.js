@@ -4071,12 +4071,15 @@ renderRequisicoes: function () {
         + '<div class="field"><input id="bi-q" placeholder="Buscar insumo por código ou descrição (ex.: cimento, vergalhão, tijolo, servente)" autocomplete="off"></div>'
         + '<div class="muted mb" id="bi-status">Digite ao menos 2 letras…</div>'
         + '<div id="bi-res"></div>'
+        + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">➕ Cadastrar insumo próprio (fora das bases oficiais)</button>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
     afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
+      var bNovo = document.getElementById("bi-novo");
+      if (bNovo) bNovo.onclick = function () { self.formInsumoProprio(); };
     },
     // Busca inline reutilizável: input#qId -> resultados em #resId; ação chama onPick(insumo). Liga DEPOIS do modal/view existir no DOM.
     _wireInsumoSearch: function (qId, resId, onPick, opts) {
@@ -4101,7 +4104,28 @@ renderRequisicoes: function () {
           b.onclick = function () { var ins = listaR[+b.getAttribute("data-ins")]; if (ins) onPick(ins); };
         });
       }
-      function achar(q) { var res = Insumos.buscar(q, { max: 40 }); setStatus(res.length + " resultado(s) · preços de referência" + (Insumos.uf ? " · " + Insumos.uf : "")); pintar(res); }
+      function achar(q) {
+        var res = Insumos.buscar(q, { max: 40 });
+        // v1.1.124 — os insumos PRÓPRIOS do usuário (base PROPRIA, código PROP)
+        // aparecem PRIMEIRO na busca de requisição/banco, com a fonte marcada.
+        // DEDUPE: o caminho secundário do Insumos.buscar também varre as bases
+        // extras (inclui a PROPRIA) — sem o filtro o mesmo PROP sairia 2×.
+        try {
+          if (typeof Bases !== "undefined" && Bases.buscar) {
+            var prop = Bases.buscar(q, { max: 10, fonte: "PROPRIA", tipo: "insumo" }).map(function (r) {
+              return { codigo: r.item.codigo, descricao: r.item.descricao, unidade: r.item.unidade || "un",
+                custoUnitario: Util.num(r.item.custoUnitario), categoria: String(r.item.categoria || "MAT").toUpperCase(), fonte: "PRÓPRIO" };
+            });
+            if (prop.length) {
+              var codsProp = {};
+              prop.forEach(function (p) { codsProp[String(p.codigo)] = 1; });
+              res = prop.concat(res.filter(function (x) { return !codsProp[String(x.codigo)]; }));
+            }
+          }
+        } catch (eP) {}
+        setStatus(res.length + " resultado(s) · preços de referência" + (Insumos.uf ? " · " + Insumos.uf : ""));
+        pintar(res);
+      }
       function rodar() {
         var q = inp.value.trim();
         if (q.length < 2) { box.innerHTML = ""; setStatus("Digite ao menos 2 letras…"); return; }
@@ -4116,6 +4140,37 @@ renderRequisicoes: function () {
     novaRequisicaoComItem: function (ins) {
       this._reqItemSeed = { codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" };
       this.formRequisicoes(null);
+    },
+    /* v1.1.124 — INSUMO PRÓPRIO: campos reutilizáveis (inline na requisição,
+     * modal na view do banco). Coleta devolve {descricao,unidade,categoria,preco,salvar}. */
+    _insumoProprioCampos: function (px, comSalvar) {
+      return '<div class="row"><div class="field" style="flex:2"><label>Descrição do insumo *</label><input id="' + px + '-desc" placeholder="Ex.: Bloco cerâmico 9x19x39 · Locação de betoneira 400L"></div>' +
+        '<div class="field" style="max-width:110px"><label>Unidade *</label><input id="' + px + '-und" value="un" placeholder="un, m², kg…"></div></div>' +
+        '<div class="row"><div class="field"><label>Categoria</label><select id="' + px + '-cat"><option value="MAT">Material</option><option value="MO">Mão de obra</option><option value="EQ">Equipamento</option></select></div>' +
+        '<div class="field"><label>Preço de referência (R$) — opcional</label><input id="' + px + '-preco" placeholder="0,00"></div></div>' +
+        (comSalvar ? '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin:4px 0"><input type="checkbox" id="' + px + '-salvar" checked> Salvar no meu banco (código PROP — aparece nas próximas buscas de requisição e de orçamento)</label>' : "");
+    },
+    _insumoProprioColeta: function (px) {
+      var v = function (id) { var el = document.getElementById(px + "-" + id); return el ? el.value : ""; };
+      var chk = document.getElementById(px + "-salvar");
+      return { descricao: String(v("desc")).trim(), unidade: String(v("und")).trim() || "un", categoria: v("cat") || "MAT", preco: Util.num(v("preco")), salvar: chk ? !!chk.checked : false };
+    },
+    /* Modal de cadastro (view Banco de Insumos) — grava direto na base PROPRIA. */
+    formInsumoProprio: function () {
+      var self = this;
+      UI.modal("Cadastrar insumo próprio", '<p class="muted" style="font-size:12px">Insumo que não existe nas bases oficiais (material regional, locação, serviço de terceiro…). Ganha código <b>PROP</b> e entra nas buscas de <b>requisição</b> e de <b>orçamento</b>.</p>' + this._insumoProprioCampos("bip", false), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar no meu banco", classe: "success", onClick: function () {
+          var d = self._insumoProprioColeta("bip");
+          var item = App.salvarInsumoProprio(d); // valida e toasta; null = inválido (modal fica aberto)
+          if (item) {
+            UI.fecharModal();
+            // a lista da view atualiza na hora — o insumo recém-criado aparece na busca
+            var biQ = document.getElementById("bi-q");
+            if (biQ && String(biQ.value).trim().length >= 2) biQ.dispatchEvent(new Event("input", { bubbles: true }));
+          }
+        } }
+      ]);
     },
     // itens de uma requisição (back-compat com o formato antigo de item único)
     _reqItens: function (r) {
@@ -4141,10 +4196,17 @@ renderRequisicoes: function () {
           '<input id="ri-q" placeholder="🔍 Buscar no banco de insumos (código ou descrição)" autocomplete="off" style="margin-bottom:6px">' +
           '<div class="muted" id="ri-status" style="font-size:12px;margin-bottom:6px"></div>' +
           '<div id="ri-res" style="max-height:190px;overflow:auto;margin-bottom:8px"></div>' +
-          '<button type="button" class="btn sm" id="ri-manual" style="margin-bottom:10px">➕ Item manual (fora do banco)</button>' +
+          '<button type="button" class="btn sm" id="ri-manual" style="margin-bottom:6px">➕ Não achou? Cadastrar insumo / item manual</button>' +
+          '<div id="ri-novo" style="display:none;padding:10px 12px;border-radius:9px;box-shadow:inset 0 0 0 1px var(--linha);margin-bottom:10px"></div>' +
           '<div id="ri-itens"></div>') +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(r.observacoes || "") + "</textarea>");
       this._modalForm("requisicoes", r, "Requisição de compra", corpo, function (obj) {
+        // form de item manual aberto e preenchido? o item seria perdido em silêncio
+        var boxPend = document.getElementById("ri-novo"), descPend = document.getElementById("rin-desc");
+        if (boxPend && boxPend.style.display !== "none" && descPend && String(descPend.value).trim()) {
+          UI.toast('Você preencheu um item manual sem adicionar — clique em "Adicionar à requisição" (ou apague a descrição) antes de salvar.', "erro");
+          return false;
+        }
         if (!itensBuf.length) { UI.toast("Adicione ao menos um item (busque no banco ou use item manual).", "erro"); return false; }
         obj.numero = v("g-numero"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.solicitante = v("g-solic");
         obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.observacoes = v("g-obs");
@@ -4184,12 +4246,31 @@ renderRequisicoes: function () {
         itensBuf.push({ codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" });
         renderItens(); UI.toast("Item adicionado.", "ok");
       }, { status: "ri-status" });
+      // v1.1.124 — item manual virou FORM INLINE (modal aninhado fecharia a
+      // requisição): descrição+unidade+categoria+preço e opção de salvar o
+      // insumo no banco próprio (código PROP) p/ as próximas requisições
       var manual = document.getElementById("ri-manual");
       if (manual) manual.onclick = function () {
-        var d = window.prompt("Descrição do item (livre):", ""); if (d == null) return; d = d.trim(); if (!d) return;
-        var u = window.prompt("Unidade (un, m², kg, sc…):", "un"); if (u == null) return;
-        itensBuf.push({ codigo: "", descricao: d, unidade: (u || "un").trim() || "un", quantidade: 1, precoRef: 0, categoria: "MAT", fonte: "" });
-        renderItens();
+        var boxN = document.getElementById("ri-novo"); if (!boxN) return;
+        if (boxN.style.display !== "none") { boxN.style.display = "none"; return; }
+        boxN.style.display = "block";
+        boxN.innerHTML = self._insumoProprioCampos("rin", true) +
+          '<button type="button" class="btn sm success" id="rin-add" style="margin-top:6px">Adicionar à requisição</button>';
+        var bAdd = document.getElementById("rin-add");
+        if (bAdd) bAdd.onclick = function () {
+          var d = self._insumoProprioColeta("rin");
+          if (d.descricao.length < 3) { UI.toast("Descreva o item (mínimo 3 letras).", "erro"); return; }
+          var cod = "";
+          if (d.salvar) {
+            var salvo = App.salvarInsumoProprio(d); // valida + toasta; entra nas próximas buscas
+            if (salvo) cod = salvo.codigo;
+          }
+          itensBuf.push({ codigo: cod, descricao: d.descricao, unidade: d.unidade, quantidade: 1, precoRef: d.preco || 0, categoria: d.categoria, fonte: cod ? "PRÓPRIO" : "" });
+          boxN.style.display = "none";
+          renderItens();
+          if (!d.salvar) UI.toast("Item adicionado à requisição.", "ok");
+        };
+        var dIn = document.getElementById("rin-desc"); if (dIn) dIn.focus();
       };
       renderItens();
     },
