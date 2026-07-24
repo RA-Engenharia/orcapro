@@ -401,7 +401,7 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -432,6 +432,8 @@
       // navegação por aba
       if (t.dataset.aba) { this.aba = t.dataset.aba; this.render(); return; }
       // abrir orçamento
+      // excluir orçamento (ANTES do abrir: o botão fica dentro do card clicável)
+      if (t.dataset.delOrc) { this.confirmarExcluirOrcamento(t.dataset.delOrc); return; }
       if (t.dataset.abrir) { this.abrirOrcamento(t.dataset.abrir); return; }
       // adicionar item a uma etapa -> abre busca SINAPI
       if (t.dataset.addItem) { this.abrirBuscaSinapi(t.dataset.addItem); return; }
@@ -1399,6 +1401,43 @@
             self.orcAtual = orc; self.tela = "editor"; self.aba = "planilha";
             self.render();
             UI.toast("Orçamento criado.", "ok");
+          } }
+        ]);
+    },
+
+    /* Excluir orçamento com CONFIRMAÇÃO explícita — mostra o que vai sumir
+     * (nome, nº, itens, valor) e alerta que medições/vínculos ficam órfãos.
+     * Ação destrutiva nunca roda em 1 clique. */
+    confirmarExcluirOrcamento: function (id) {
+      var self = this;
+      var orc = Store.obterOrcamento(Auth.empresaId(), id);
+      if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return; }
+      var t = Orcamento.totais(orc);
+      // vínculos que ficam órfãos (aviso honesto antes de apagar)
+      var vinculos = [];
+      try {
+        var obras = Store.listar(Auth.empresaId(), "obras").filter(function (o) { return o.orcamentoId === id; });
+        var meds = Store.listar(Auth.empresaId(), "medicoes").filter(function (m) { return m.orcamentoId === id; });
+        if (obras.length) vinculos.push(obras.length + " obra(s) vinculada(s)");
+        if (meds.length) vinculos.push(meds.length + " medição(ões) por itens");
+      } catch (e) {}
+      UI.modal("🗑 Excluir orçamento?",
+        '<div style="padding:10px 12px;border-radius:10px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);margin-bottom:12px">' +
+          '<b>' + Util.esc(orc.nome) + '</b><br>' +
+          '<span class="muted">' + Util.esc(orc.numero) + ' · ' + t.qtdEtapas + ' etapa(s) · ' + t.qtdItens + ' item(ns) · ' + Util.fmtMoeda(t.precoVenda) + '</span>' +
+        '</div>' +
+        '<p style="margin:0 0 6px">Esta ação <b>não pode ser desfeita</b>. O orçamento sai deste aparelho e da nuvem sincronizada.</p>' +
+        (vinculos.length
+          ? '<p style="margin:0;color:#b45309;font-size:12.5px">⚠ Existem ' + vinculos.join(" e ") + ' apontando para este orçamento — os registros continuam, mas perdem o vínculo (previsto×real e medição por itens param de calcular).</p>'
+          : '<p class="muted" style="margin:0;font-size:12.5px">Nenhuma obra ou medição vinculada a ele.</p>'),
+        [
+          { texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } },
+          { texto: "🗑 Excluir definitivamente", classe: "danger", onClick: function () {
+            Store.excluirOrcamento(Auth.empresaId(), orc.id);
+            if (self.orcAtual && self.orcAtual.id === orc.id) { self.orcAtual = null; self.tela = "lista"; }
+            UI.fecharModal();
+            self.render();
+            UI.toast("Orçamento “" + orc.nome + "” excluído.", "ok");
           } }
         ]);
     },

@@ -318,6 +318,8 @@
       orcamentos.forEach(function (o) {
         var t = Orcamento.totais(o);
         html += '<div class="card orc-card" data-abrir="' + o.id + '">' +
+          // 🗑 dentro do card clicável: o dispatch resolve o botão ANTES do abrir
+          '<button class="btn sm ico danger orc-del" data-del-orc="' + o.id + '" title="Excluir este orçamento (pede confirmação)">🗑</button>' +
           '<h3>' + Util.esc(o.nome) + '</h3>' +
           '<div class="meta">' + Util.esc(o.numero) + ' · ' + Util.esc(o.cliente.nome || "Sem cliente") + '</div>' +
           '<div class="meta">' + t.qtdEtapas + ' etapas · ' + t.qtdItens + ' itens · BDI ' + Util.fmtPct(t.bdiPercentual) + '</div>' +
