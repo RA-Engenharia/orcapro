@@ -1,6 +1,5 @@
-﻿{
-    "versao":  "1.1.123",
-    "zip":  "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.122/OrcaPRO-IA-update-v1.1.122.zip",
-    "notas":  "SINAPI atualizada para a competÃªncia 06/2026 nos 27 estados (composiÃ§Ãµes, insumos e detalhamento) + Central de AtualizaÃ§Ã£o de Bases: um botÃ£o por banco (SINAPI, SICRO, IOPES, ORSE, GOINFRA) verifica o servidor e aplica a base nova na hora â€” sem novidade, informa a mais recente e desde quando estÃ¡ no ar. A SINAPI tambÃ©m se atualiza sozinha, 1Ã— por dia, sem nunca mexer em base prÃ³pria importada.",
-    "obrigatoria":  false
+{
+  "versao": "1.1.123",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.123/OrcaPRO-IA-update-v1.1.123.zip",
+  "notas": "Criador de Composicoes Proprias em 2 passos + Agente Especialista (estrutura por referencia oficial da base analitica, sem margem de erro) + aviso de insumo sem preco embaixo da composicao na planilha, com cotacao em 1 clique."
 }
