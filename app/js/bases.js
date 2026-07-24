@@ -208,7 +208,9 @@
         if (!p || !p.fonte) return;
         self.registrar(p.fonte, p); n++;
         var ufBase = String(p.uf || "").toUpperCase();
-        if (ufAtiva && ufBase && ufBase !== ufAtiva && ufBase !== "BR") {
+        // a base PROPRIA é AUTORAL (composições criadas pelo cliente) — vale em
+        // qualquer UF e nunca é desativada pela troca de estado
+        if (ufAtiva && ufBase && ufBase !== ufAtiva && ufBase !== "BR" && String(p.fonte).toUpperCase() !== "PROPRIA") {
           self.setAtiva(p.fonte, false);
           desativadas.push(p.fonte + " (" + ufBase + ")");
         }

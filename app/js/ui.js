@@ -179,6 +179,9 @@
         '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
         '<table class="tbl"><thead><tr><th>Base</th><th>Competência/UF</th><th class="num">Itens</th><th>Status</th><th></th></tr></thead><tbody>' +
         (rows || '<tr><td colspan="5">—</td></tr>') + '</tbody></table>' +
+        '<h3 style="margin:18px 0 8px;display:flex;align-items:center">' + _icT("mais") + 'Criar composição própria</h3>' +
+        '<p class="muted" style="font-size:12px;margin:-2px 0 8px">Monte a SUA composição (código PROP-XXXX): informações gerais + estrutura de insumos pescada das bases reais, com custo no seu método de cálculo. O <b>agente especialista</b> propõe a estrutura pela referência oficial mais parecida — nada é inventado e tudo passa por um checklist duro antes de gravar.</p>' +
+        '<button class="btn primary" data-acao="criar-composicao" style="margin-bottom:10px">' + _icT("escopo") + 'Criar composição própria</button>' +
         '<h3 style="margin:18px 0 8px">Importar base extra</h3>' +
         '<p class="muted" style="font-size:12px;margin:-2px 0 8px">Carregue a <b>planilha oficial da base do seu estado</b> (EMOP-RJ, CPOS/FDE-SP, ORSE-SE, AGETOP-GO…). O detector reconhece as colunas (código, descrição, unidade, custo) sozinho — nada é inventado.</p>' +
         '<div class="row"><div class="field"><label>Fonte</label><select id="tab-fonte">' + opts + '</select></div>' +
@@ -470,6 +473,11 @@
           var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0 };
           var fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "PROPRIO");
           var ehSinapi = it.origem === "SINAPI" && (!it.baseFonte || it.baseFonte === "SINAPI");
+          // v1.1.123: composição PRÓPRIA criada no app tem estrutura de insumos → detalhável
+          var ehPropriaDet = fonte === "PROPRIA" && (typeof Bases !== "undefined") && (function () {
+            var bp = Bases.obter("PROPRIA", it.codigo);
+            return !!(bp && bp.insumos && bp.insumos.length);
+          })();
           var pillCls = fonte === "SINAPI" ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
           var numItem = Orcamento.itemNumero(ei, ii); // 2.1, 2.2… (mesma regra dos entregáveis)
           var temCod = it.codigo && it.codigo !== "—";
@@ -478,7 +486,7 @@
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
             '<td>' + (temCod
-              ? '<span class="pill ' + pillCls + (ehSinapi ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
+              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
               : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             '<td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
@@ -491,12 +499,135 @@
             '<td class="right"><div class="acoes">' +
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (ii === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (ii === nItens - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
-              (ehSinapi ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button>' : '') +
+              (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button>' : '') +
               '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button>' +
               '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">✕</button></div></td></tr>';
+          // v1.1.123 — SEMPRE que a composição tiver insumo sem preço coletado no
+          // detalhamento, o aviso fica AQUI, embaixo dela na planilha (pedido do
+          // Rogério): o usuário clica e informa a cotação manualmente no modal.
+          if (ehSinapi) {
+            var nSem = UI._insumosSemPrecoDe(it.codigo);
+            if (nSem > 0) {
+              html += '<tr class="tr-aviso-insumo"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
+            }
+          }
         });
       });
       html += '</tbody></table>';
+      return html;
+    },
+
+    /* v1.1.123 — quantos insumos da composição estão SEM preço coletado na UF,
+     * já descontando as cotações que o usuário preencheu (Store.precosInsumos).
+     * Usa o analítico carregado; sem ele carregado, devolve 0 (o modal cobre). */
+    _insumosSemPrecoDe: function (codigo) {
+      try {
+        if (typeof Analitico === "undefined" || !Analitico.carregado) return 0;
+        var a = Analitico.obter(codigo);
+        if (!a || !a.insumos || !a.insumos.length) return 0;
+        var meus = (typeof Store !== "undefined" && Store.precosInsumos) ? Store.precosInsumos(Auth.empresaId()) : {};
+        var n = 0;
+        a.insumos.forEach(function (i) {
+          // conta TODA linha zerada (insumo OU sub-composição) — mesmo critério
+          // do modal de detalhamento e da trava de finalização, senão a contagem
+          // do aviso diverge do "⛔ N insumo(s) sem preço" do modal
+          var cotado = meus[String(i.codigo)] && Number(meus[String(i.codigo)].preco) > 0;
+          if (!(Number(i.custoUnitario) > 0) && !cotado) n++;
+        });
+        return n;
+      } catch (e) { return 0; }
+    },
+
+    /* Conteúdo do aviso "insumo sem preço" da planilha — compartilhado entre o
+     * renderPlanilha e o refresh in-place pós-cotação. */
+    _avisoInsumoHtml: function (codigo, n) {
+      return '⚠ ' + n + ' insumo(s) desta composição sem preço coletado na sua região — ' +
+        '<b data-ver-insumos="' + Util.esc(codigo) + '">clique aqui para informar os valores manualmente</b>. A cotação fica salva para a sua empresa.';
+    },
+
+    /* v1.1.123 — depois que o usuário informa cotações no modal, os avisos da
+     * planilha atrás são atualizados/removidos SEM re-renderizar a tela. */
+    _refreshAvisosInsumo: function () {
+      try {
+        var trs = document.querySelectorAll("tr.tr-aviso-insumo");
+        for (var i = 0; i < trs.length; i++) {
+          var b = trs[i].querySelector("[data-ver-insumos]");
+          var cod = b ? b.getAttribute("data-ver-insumos") : null;
+          if (!cod) continue;
+          var n = UI._insumosSemPrecoDe(cod);
+          var td = trs[i].querySelector("td");
+          if (n > 0) { if (td) td.innerHTML = UI._avisoInsumoHtml(cod, n); }
+          else if (trs[i].parentNode) trs[i].parentNode.removeChild(trs[i]);
+        }
+      } catch (e) {}
+    },
+
+    /* v1.1.123 — CRIADOR DE COMPOSIÇÃO PRÓPRIA (2 passos, paridade de mercado).
+     * st = App._cp: { passo, comp{codigo,codigoSec,descricao,grupo,unidade,uf,
+     *   modeloRef,metodo,maoDeObra,observacao,insumos[]}, referencia, valida } */
+    renderCriadorComposicao: function (st) {
+      var _ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      var c = st.comp;
+      var html = '<div class="tabs" style="margin-bottom:14px">' +
+        '<div class="tab ' + (st.passo === 1 ? "ativa" : "") + '">Passo 1 — Informações gerais</div>' +
+        '<div class="tab ' + (st.passo === 2 ? "ativa" : "") + '">Passo 2 — Estrutura e bases de referência</div></div>';
+      if (st.passo === 1) {
+        var gruposOpts = ComposicaoPropria.GRUPOS.map(function (g) { return '<option value="' + Util.esc(g) + '"' + (c.grupo === g ? " selected" : "") + '>' + Util.esc(g) + '</option>'; }).join("");
+        html += '<div class="row">' +
+          '<div class="field"><label>Código *</label><input id="cp-codigo" value="' + Util.esc(c.codigo) + '"></div>' +
+          '<div class="field"><label>Código secundário (opcional)</label><input id="cp-codigosec" value="' + Util.esc(c.codigoSec || "") + '" placeholder="Seu código interno"></div></div>' +
+          '<div class="field"><label>Descrição do serviço *</label><input id="cp-descricao" value="' + Util.esc(c.descricao || "") + '" placeholder="Ex.: Assentamento de tubo PVC DN 100 com anel elástico, inclusive escavação"></div>' +
+          '<div class="row"><div class="field"><label>Tipo de composição (grupo) *</label><select id="cp-grupo"><option value="">— escolha —</option>' + gruposOpts + '</select></div>' +
+          '<div class="field" style="max-width:140px"><label>Unidade *</label><input id="cp-unidade" value="' + Util.esc(c.unidade || "") + '" placeholder="m, m2, un…"></div></div>' +
+          '<div class="row"><div class="field"><label>Estado (base de preços ativa)</label><input value="' + Util.esc(c.uf || "") + '" disabled title="A composição usa os preços da base ativa — troque o estado em 🗂 Tabelas"></div>' +
+          '<div class="field"><label>Modelo de referência</label><div class="flex" style="gap:12px;padding-top:8px">' +
+            '<label style="cursor:pointer"><input type="radio" name="cp-modelo" value="SINAPI"' + (c.modeloRef !== "SICRO" ? " checked" : "") + '> SINAPI</label>' +
+            '<label style="cursor:pointer"><input type="radio" name="cp-modelo" value="SICRO"' + (c.modeloRef === "SICRO" ? " checked" : "") + '> SICRO3</label></div></div></div>' +
+          '<div class="field"><label>Método de cálculo</label>' +
+            '<label style="display:block;cursor:pointer;padding:3px 0"><input type="radio" name="cp-metodo" value="truncar2"' + (c.metodo !== "arred2" && c.metodo !== "nenhum" ? " checked" : "") + '> Truncar em 2 casas decimais <span class="ow-selo" style="background:#16a34a;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:99px;margin-left:6px">Padrão TCU</span></label>' +
+            '<label style="display:block;cursor:pointer;padding:3px 0"><input type="radio" name="cp-metodo" value="arred2"' + (c.metodo === "arred2" ? " checked" : "") + '> Arredondar em 2 casas decimais</label>' +
+            '<label style="display:block;cursor:pointer;padding:3px 0"><input type="radio" name="cp-metodo" value="nenhum"' + (c.metodo === "nenhum" ? " checked" : "") + '> Não arredondar</label></div>' +
+          '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="cp-mo"' + (c.maoDeObra ? " checked" : "") + '> Composição com mão de obra</label>' +
+          '<div class="field"><label>Observação</label><textarea id="cp-obs" rows="2">' + Util.esc(c.observacao || "") + '</textarea></div>' +
+          '<div class="flex" style="gap:8px;margin-top:6px;flex-wrap:wrap">' +
+            '<button class="btn primary" data-acao="cp-agente">' + _ic("escopo") + 'Agente especialista — montar pela referência oficial</button>' +
+            '<button class="btn success" data-acao="cp-passo2" style="margin-left:auto">Próximo →</button></div>' +
+          '<p class="muted" style="font-size:11px;margin-top:8px">O agente lê a sua descrição, encontra a composição oficial mais parecida no detalhamento da sua UF e propõe a estrutura com <b>coeficientes reais</b> — nunca inventa código nem preço; você revisa tudo no passo 2.</p>';
+      } else {
+        var custo = ComposicaoPropria.custo(c.insumos, c.metodo);
+        var linhas = (c.insumos || []).map(function (i, idx) {
+          var tot = (Number(i.coeficiente) || 0) * (Number(i.custoUnitario) || 0);
+          var semPreco = !(Number(i.custoUnitario) > 0);
+          return '<tr>' +
+            '<td><span class="pill sinapi">' + Util.esc(i.codigo) + '</span></td>' +
+            '<td style="max-width:320px">' + Util.esc(i.descricao) + '</td>' +
+            '<td>' + Util.esc(i.unidade || "") + '</td>' +
+            '<td class="num"><input class="cell" data-cp-coef="' + idx + '" value="' + Util.fmtNum(i.coeficiente, 4) + '" style="width:86px"></td>' +
+            // sem preço coletado na região → o usuário informa a cotação AQUI
+            // (fica salva p/ a empresa, igual ao modal de detalhamento)
+            '<td class="num">' + (semPreco
+              ? '<input class="cell cell-erro" data-cp-preco="' + idx + '" value="" placeholder="informe R$" title="Insumo sem preço coletado na sua região — informe a cotação (fica salva para a sua empresa)" style="width:96px">'
+              : Util.fmtMoeda(i.custoUnitario)) + '</td>' +
+            '<td>' + Util.esc(i.categoria || "") + '</td>' +
+            '<td class="num" data-cp-tot="' + idx + '">' + Util.fmtMoeda(tot) + '</td>' +
+            '<td><button class="btn sm ico danger" data-cp-del="' + idx + '">✕</button></td></tr>';
+        }).join("");
+        html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util.esc(c.codigo) + '</b> — ' + Util.esc(c.descricao || "(sem descrição)") + ' · ' + Util.esc(c.unidade || "?") + (st.referencia ? ' · <span class="pill sinapi">ref. ' + Util.esc(st.referencia.codigo) + '</span>' : '') + '</div>' +
+          '<div class="field"><label>Adicionar insumo/composição das bases reais (busque por código ou descrição)</label>' +
+          '<input id="cp-busca" placeholder="Ex.: 88316, servente, tubo pvc 100…"></div>' +
+          '<div id="cp-busca-res" style="max-height:180px;overflow-y:auto;margin-bottom:10px"></div>' +
+          '<table class="tbl"><thead><tr><th>Código</th><th>Insumo</th><th>Und</th><th class="num">Coef.</th><th class="num">Preço</th><th>Categoria</th><th class="num">Total</th><th></th></tr></thead>' +
+          '<tbody>' + (linhas || '<tr><td colspan="8" class="muted">Nenhum insumo ainda — busque acima ou use o Agente no passo 1.</td></tr>') + '</tbody></table>' +
+          '<div class="kpis" style="margin-top:12px">' +
+            '<div class="kpi"><div class="rotulo">Mão de obra</div><div class="num" id="cp-kpi-mo">' + Util.fmtMoeda(custo.mo) + '</div></div>' +
+            '<div class="kpi"><div class="rotulo">Material</div><div class="num" id="cp-kpi-mat">' + Util.fmtMoeda(custo.mat) + '</div></div>' +
+            '<div class="kpi"><div class="rotulo">Equipamento</div><div class="num" id="cp-kpi-eq">' + Util.fmtMoeda(custo.eq) + '</div></div>' +
+            '<div class="kpi destaque"><div class="rotulo">Custo unitário (' + (c.metodo === "nenhum" ? "sem arredondar" : c.metodo === "arred2" ? "arredondado" : "truncado · TCU") + ')</div><div class="num destaque" id="cp-kpi-total">' + Util.fmtMoeda(custo.total) + '</div></div></div>' +
+          '<div id="cp-valida" style="margin-top:10px"></div>' +
+          '<div class="flex" style="gap:8px;margin-top:10px">' +
+            '<button class="btn ghost" data-acao="cp-passo1">← Voltar</button>' +
+            '<button class="btn success" data-acao="cp-salvar" style="margin-left:auto">' + _ic("check") + 'Validar e gravar na base própria</button></div>';
+      }
       return html;
     },
 

@@ -401,7 +401,7 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -413,6 +413,30 @@
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
       // login: clicar numa conta salva preenche o e-mail
       if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
+      // v1.1.123 — criador de composição: adicionar/remover insumo no passo 2
+      if (t.dataset.cpAdd && this._cp) {
+        var pAdd = String(t.dataset.cpAdd).split("|");
+        var itAdd = Bases.obter(pAdd[1], pAdd[0]);
+        if (itAdd) {
+          var ja = this._cp.comp.insumos.some(function (i) { return String(i.codigo) === String(itAdd.codigo); });
+          if (ja) { UI.toast("Este insumo já está na composição — ajuste o coeficiente dele.", "erro"); return; }
+          this._cp.comp.insumos.push({
+            codigo: itAdd.codigo, descricao: itAdd.descricao, unidade: itAdd.unidade,
+            coeficiente: 1, custoUnitario: Util.num(itAdd.custoUnitario),
+            categoria: itAdd.categoria || (String(itAdd.tipoItem) === "insumo" ? "MATERIAL" : "COMPOSICAO AUXILIAR"),
+            tipo: itAdd.tipoItem || "insumo",
+            fonte: pAdd[1] // rastreia a base de origem — o resolve nunca confunde códigos homônimos
+          });
+          this._cpRender();
+          UI.toast(itAdd.codigo + " adicionado — ajuste o coeficiente na tabela.", "ok");
+        }
+        return;
+      }
+      if (t.dataset.cpDel != null && this._cp) {
+        this._cp.comp.insumos.splice(parseInt(t.dataset.cpDel, 10), 1);
+        this._cpRender();
+        return;
+      }
       // v1.1.122 — Central de Atualização: 1 botão por banco confere o servidor.
       // Há base nova → aplica na hora; não há → informa a mais recente e a data.
       if (t.dataset.atuBase) {
@@ -525,8 +549,21 @@
       }
       // ver insumos (composição explodida)
       if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos); return; }
-      // remover base extra
-      if (t.dataset.baseRemover) { Bases.remover(t.dataset.baseRemover); Bases.persistir(Auth.empresaId()); UI.toast("Base removida.", "ok"); this.abrirTabelas(); return; }
+      // remover base extra — a PROPRIA guarda composições AUTORAIS (não há como
+      // reimportar), então exige confirmação explícita antes de apagar
+      if (t.dataset.baseRemover) {
+        var fonteRem = String(t.dataset.baseRemover).toUpperCase(), selfRem = this;
+        if (fonteRem === "PROPRIA") {
+          var bRem = Bases.extras().filter(function (x) { return x.fonte === "PROPRIA"; })[0];
+          var nRem = bRem && bRem.itens ? bRem.itens.length : 0;
+          UI.modal("⚠ Apagar a base própria?", '<p style="font-size:13px">A base própria tem <b>' + nRem + ' composição(ões) criada(s) por você</b>. Diferente das bases importadas, elas <b>não existem em nenhum arquivo</b> para reimportar — apagar é definitivo.</p>', [
+            { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+            { texto: "Apagar mesmo assim", classe: "danger", onClick: function () { Bases.remover("PROPRIA"); Bases.persistir(Auth.empresaId()); UI.fecharModal(); UI.toast("Base própria removida.", "ok"); selfRem.abrirTabelas(); } }
+          ]);
+          return;
+        }
+        Bases.remover(fonteRem); Bases.persistir(Auth.empresaId()); UI.toast("Base removida.", "ok"); this.abrirTabelas(); return;
+      }
       // atualizar competência (carregar do cache / baixar da Caixa)
       if (t.dataset.atzCarregar) { this.carregarCompetencia(t.dataset.atzCarregar, true); return; }
       if (t.dataset.atzBaixar) { this.carregarCompetencia(t.dataset.atzBaixar, false); return; }
@@ -571,6 +608,11 @@
         case "salvar-bdi": this.salvarBdi(); break;
         case "exportar": this.exportar(); break;
         case "cenarios": this.compararCenarios(); break;
+        case "criar-composicao": this.criarComposicao(); break;
+        case "cp-agente": this.cpAgente(); break;
+        case "cp-passo1": this._cp.passo = 1; this._cpRender(); break;
+        case "cp-passo2": this._cpColeta1(); this._cp.passo = 2; this._cpRender(); break;
+        case "cp-salvar": this.cpSalvar(); break;
         case "aplicar-cenario": this.aplicarCenario(t.dataset.bdi); break;
         case "exportar-excel": this.exportarExcel(); break;
         case "reimportar-excel": this.reimportarExcel(); break;
@@ -654,6 +696,32 @@
       }
       // preço de insumo NÃO COLETADO informado pelo usuário (detalhamento) —
       // salva por empresa e re-renderiza o modal para a soma/aviso atualizarem
+      // v1.1.123 — coeficiente/preço editados no criador: atualiza a prévia
+      // IN-PLACE (re-render total destruía o botão sob o mouse e engolia o clique)
+      if (e.target.matches("input[data-cp-coef]") && this._cp) {
+        var idxCoef = parseInt(e.target.dataset.cpCoef, 10);
+        if (this._cp.comp.insumos[idxCoef]) {
+          this._cp.comp.insumos[idxCoef].coeficiente = Util.num(e.target.value);
+          this._cpAtualizarPrevia(idxCoef);
+        }
+        return;
+      }
+      // preço informado p/ insumo sem coleta (criador, passo 2): vale na composição
+      // E fica salvo p/ a empresa (mesma cotação do modal de detalhamento)
+      if (e.target.matches("input[data-cp-preco]") && this._cp) {
+        var idxPre = parseInt(e.target.dataset.cpPreco, 10);
+        var insPre = this._cp.comp.insumos[idxPre];
+        if (insPre) {
+          var vPre = Util.num(e.target.value);
+          insPre.custoUnitario = vPre;
+          if (vPre > 0 && insPre.codigo && Store.salvarPrecoInsumo) {
+            Store.salvarPrecoInsumo(Auth.empresaId(), String(insPre.codigo), vPre);
+            UI.toast("Cotação de " + insPre.codigo + " salva (" + Util.fmtMoeda(vPre) + ") — vale em toda composição que usa este insumo.", "ok");
+          }
+          this._cpAtualizarPrevia(idxPre);
+        }
+        return;
+      }
       if (e.target.matches("input[data-preco-insumo]")) {
         var codIns = e.target.dataset.precoInsumo;
         var precoIns = Util.num(e.target.value);
@@ -663,7 +731,8 @@
           : "Preço de " + codIns + " removido — o insumo voltou a pendente.", precoIns > 0 ? "ok" : "erro");
         // re-render do modal aberto (mantém a composição na tela)
         var compAberta = (document.querySelector("#modal-bg header h2") || {}).textContent || "";
-        var mCod = compAberta.match(/Composição\s+(\S+)/);
+        // "Composição própria PROP-XXXX" também: pula o adjetivo p/ capturar o código
+        var mCod = compAberta.match(/Composição(?:\s+própria)?\s+(\S+)/);
         if (mCod && typeof Analitico !== "undefined" && Analitico.obter) {
           var aRe = Analitico.obter(mCod[1]);
           if (aRe) {
@@ -671,6 +740,9 @@
             if (corpoRe) corpoRe.innerHTML = UI.renderInsumos(aRe, this._baseUf || Sinapi.uf || null);
           }
         }
+        // os avisos "insumo sem preço" da planilha ATRÁS do modal atualizam na
+        // hora (senão o usuário fecha o modal e o aviso obsoleto fica na tela)
+        if (UI._refreshAvisosInsumo) UI._refreshAvisosInsumo();
         return;
       }
       // edição inline de quantidade/custo na planilha
@@ -1624,6 +1696,7 @@
     // pra "ver composição detalhada" abrir instantâneo (sem o load frio no 1º clique).
     // Silencioso, sem spinner, offline-first (se falhar, o clique recarrega normalmente).
     _preloadAnalitico: function () {
+      var self = this;
       try {
         if (typeof Analitico === "undefined") return;
         if (Analitico.carregado || Analitico.carregando) return;
@@ -1632,7 +1705,21 @@
         // pré-carrega já com o fallback AO VIVO embutido — se um clique em 🔍 pegar esta
         // promise compartilhada no meio do caminho, ela já sabe cair no VPS.
         setTimeout(function () {
-          try { if (!Analitico.carregado && !Analitico.carregando) Analitico.carregarArquivo(u.local || u.live, u.live).catch(function () {}); } catch (e) {}
+          try {
+            if (!Analitico.carregado && !Analitico.carregando) {
+              Analitico.carregarArquivo(u.local || u.live, u.live).then(function () {
+                // v1.1.123 — com o analítico na mão, os avisos "insumo sem preço"
+                // aparecem já na PRIMEIRA abertura da planilha (antes só apareciam
+                // depois de algum 🔍 Insumos + re-render). Não re-renderiza se o
+                // usuário está digitando em algum campo.
+                try {
+                  var ae = document.activeElement;
+                  var digitando = ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName || "");
+                  if (self.tela === "editor" && self.aba === "planilha" && !digitando) self.render();
+                } catch (e2) {}
+              }).catch(function () {});
+            }
+          } catch (e) {}
         }, 1200);
       } catch (e) {}
     },
@@ -2118,6 +2205,32 @@
         UI.modal("ℹ️ Sem composição detalhada", '<p>Este item foi <b>lançado manualmente</b> (sem código SINAPI), então não há composição de insumos para detalhar. O valor usado é o que você digitou.</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
         return;
       }
+      // v1.1.123 — composição PRÓPRIA criada no app: detalhamento vem da própria
+      // estrutura salva. NUNCA sombreia um código oficial: se o código existir na
+      // base SINAPI ativa, o detalhamento oficial tem prioridade (colisão de código).
+      var bp = (typeof Bases !== "undefined") ? Bases.obter("PROPRIA", String(codigo)) : null;
+      var ehOficial = (typeof Sinapi !== "undefined" && Sinapi.obter) ? !!Sinapi.obter(String(codigo)) : false;
+      if (bp && bp.insumos && bp.insumos.length && !ehOficial) {
+        var normCat = (typeof ComposicaoPropria !== "undefined" && ComposicaoPropria.catDe)
+          ? ComposicaoPropria.catDe
+          : function (c) { return String(c || "MAT").toUpperCase(); };
+        var aP = {
+          codigo: bp.codigo, descricao: bp.descricao, unidade: bp.unidade,
+          grupo: bp.grupo || "Composição própria", custoUnitario: Util.num(bp.custoUnitario),
+          custoMO: Util.num(bp.custoMO), custoMAT: Util.num(bp.custoMAT), custoEQ: Util.num(bp.custoEQ),
+          insumos: bp.insumos.map(function (i) {
+            return { tipo: "INSUMO", codigo: i.codigo, descricao: i.descricao, unidade: i.unidade,
+              coeficiente: Util.num(i.coeficiente), custoUnitario: Util.num(i.custoUnitario),
+              custoTotal: Util.num(i.coeficiente) * Util.num(i.custoUnitario), categoria: normCat(i.categoria) };
+          })
+        };
+        var bgP = UI.modal("🔍 Composição própria " + String(codigo) + " — Insumos", UI.renderInsumos(aP, ufAtivo), [
+          { texto: "✎ Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
+          { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
+        ]);
+        var mP = bgP.querySelector(".modal"); if (mP) mP.style.maxWidth = "900px";
+        return;
+      }
       function abrir() {
         var a = Analitico.obter(codigo);
         if (!a) {
@@ -2155,6 +2268,253 @@
         // Chegou aqui = local E ao vivo falharam (offline sem o arquivo no disco)
         UI.toast("Não foi possível carregar o detalhamento agora" + (ufAtivo ? " de " + ufAtivo : "") + ". Verifique a internet e tente de novo — o orçamento usa os preços corretos normalmente.", "erro");
       });
+    },
+
+    /* ================================================================
+     * v1.1.123 — CRIADOR DE COMPOSIÇÃO PRÓPRIA (2 passos + agente)
+     * Motor: js/composicaopropria.js (validação dura, custo por método,
+     * análogas na base analítica REAL). Grava na base PROPRIA do multi-base
+     * COM a estrutura de insumos — vira buscável e detalhável no orçamento.
+     * ================================================================ */
+    _cp: null,
+    _cpCodigosExistentes: function () {
+      var payload = Store.lerBasesExtras(Auth.empresaId()) || [];
+      var propria = null;
+      for (var i = 0; i < payload.length; i++) { if (String(payload[i].fonte).toUpperCase() === "PROPRIA") propria = payload[i]; }
+      return (propria && propria.dados ? propria.dados : []).map(function (d) { return d.codigo; });
+    },
+    criarComposicao: function () {
+      var cods = this._cpCodigosExistentes();
+      this._cp = {
+        passo: 1,
+        comp: {
+          codigo: ComposicaoPropria.gerarCodigo(cods), codigoSec: "", descricao: "", grupo: "",
+          unidade: "", uf: String(this._baseUf || Sinapi.uf || ""), modeloRef: "SINAPI",
+          metodo: "truncar2", maoDeObra: false, observacao: "", insumos: []
+        },
+        referencia: null
+      };
+      this._cpRender();
+    },
+    /* v1.1.123 — reabre uma composição própria existente no criador (errou o
+     * coeficiente? corrige e regrava — o código original é sobrescrito). */
+    editarComposicao: function (codigo) {
+      var bp = Bases.obter("PROPRIA", String(codigo));
+      if (!bp) { UI.toast("Composição " + codigo + " não encontrada na base própria.", "erro"); return; }
+      var copia; try { copia = JSON.parse(JSON.stringify(bp)); } catch (e) { copia = bp; }
+      this._cp = {
+        passo: 2,
+        editando: String(codigo), // isenta o próprio código da checagem de duplicidade
+        comp: {
+          codigo: copia.codigo, codigoSec: copia.codigoSecundario || "", descricao: copia.descricao || "",
+          grupo: copia.grupo || "", unidade: copia.unidade || "", uf: String(this._baseUf || Sinapi.uf || ""),
+          modeloRef: copia.modeloRef || "SINAPI", metodo: copia.metodo || "truncar2",
+          maoDeObra: !!copia.maoDeObra, observacao: copia.observacao || "", insumos: copia.insumos || []
+        },
+        referencia: null
+      };
+      this._cpRender();
+    },
+    _cpRender: function () {
+      var self = this;
+      var bg = UI.modal((this._cp && this._cp.editando ? "Editar composição própria" : "Criar composição própria"), UI.renderCriadorComposicao(this._cp), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { self._cp = null; UI.fecharModal(); } }
+      ]);
+      var m = bg.querySelector(".modal"); if (m) m.style.maxWidth = "940px";
+      // busca de insumos do passo 2 (debounce) — o texto sobrevive ao re-render
+      // (adicionar 5 insumos da mesma pesquisa sem digitá-la 5 vezes)
+      var inp = UI.el("cp-busca");
+      if (inp) {
+        var timer = null;
+        inp.addEventListener("input", function () {
+          self._cp.busca = inp.value;
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(function () { self._cpBuscar(inp.value); }, 250);
+        });
+        if (this._cp.busca) { inp.value = this._cp.busca; this._cpBuscar(this._cp.busca); }
+      }
+    },
+    /* Recalcula a prévia do passo 2 SEM re-render (a linha e os KPIs mudam
+     * in-place; re-render total destruía o botão sob o mouse e engolia o clique). */
+    _cpAtualizarPrevia: function (idx) {
+      var c = this._cp && this._cp.comp; if (!c) return;
+      var i = c.insumos[idx];
+      if (i) {
+        var tdTot = document.querySelector('[data-cp-tot="' + idx + '"]');
+        if (tdTot) tdTot.textContent = Util.fmtMoeda((Number(i.coeficiente) || 0) * (Number(i.custoUnitario) || 0));
+      }
+      var custo = ComposicaoPropria.custo(c.insumos, c.metodo);
+      var poe = function (id, v) { var el = UI.el(id); if (el) el.textContent = Util.fmtMoeda(v); };
+      poe("cp-kpi-mo", custo.mo); poe("cp-kpi-mat", custo.mat); poe("cp-kpi-eq", custo.eq); poe("cp-kpi-total", custo.total);
+    },
+    _cpBuscar: function (q) {
+      var box = UI.el("cp-busca-res"); if (!box) return;
+      if (!q || String(q).trim().length < 2) { box.innerHTML = ""; return; }
+      var res = Bases.buscar(String(q).trim(), { max: 8 });
+      box.innerHTML = res.length ? res.map(function (r) {
+        return '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--linha);font-size:12px">' +
+          '<span class="pill ' + Util.esc(r.cor || "sinapi") + '">' + Util.esc(r.item.codigo) + '</span>' +
+          '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Util.esc(r.item.descricao) + '">' + Util.esc(r.item.descricao) + '</span>' +
+          '<span class="muted">' + Util.esc(r.item.unidade || "") + ' · ' + Util.fmtMoeda(r.item.custoUnitario) + '</span>' +
+          '<button class="btn sm primary" data-cp-add="' + Util.esc(r.item.codigo) + '|' + Util.esc(r.fonte) + '">+ coef.</button></div>';
+      }).join("") : '<div class="muted" style="font-size:12px;padding:6px 4px">Nada encontrado nas bases ativas.</div>';
+    },
+    _cpColeta1: function () {
+      var c = this._cp.comp, v = function (id) { var el = UI.el(id); return el ? el.value : ""; };
+      c.codigo = String(v("cp-codigo")).trim() || c.codigo;
+      c.codigoSec = String(v("cp-codigosec")).trim();
+      c.descricao = String(v("cp-descricao")).trim();
+      c.grupo = v("cp-grupo");
+      c.unidade = String(v("cp-unidade")).trim();
+      var rm = document.querySelector('input[name="cp-modelo"]:checked'); if (rm) c.modeloRef = rm.value;
+      var rc = document.querySelector('input[name="cp-metodo"]:checked'); if (rc) c.metodo = rc.value;
+      var mo = UI.el("cp-mo"); if (mo) c.maoDeObra = !!mo.checked;
+      c.observacao = String(v("cp-obs"));
+    },
+    /* resolve p/ validação e preços atualizados: procura o código nas bases reais.
+     * Com a FONTE conhecida (insumo adicionado pela busca ou vindo de referência
+     * SINAPI), procura SÓ nela — códigos numéricos homônimos em bases diferentes
+     * nunca se confundem. Cotação do usuário (Store.precosInsumos) cobre insumo
+     * sem preço coletado na região. */
+    _cpResolve: function (codigo, fonte) {
+      var item = null;
+      if (fonte === "SINAPI") {
+        item = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(String(codigo)) : null;
+      } else if (fonte && typeof Bases !== "undefined" && Bases.obter) {
+        item = Bases.obter(String(fonte), String(codigo));
+      }
+      if (!item) {
+        if (typeof Bases !== "undefined" && Bases.obterComFonte) {
+          var r = Bases.obterComFonte(String(codigo));
+          if (r && r.item) item = r.item;
+        }
+        if (!item) item = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(String(codigo)) : null;
+      }
+      // sem preço na base? a cotação que o usuário já informou vale (mesma da planilha)
+      if (!item || !(Number(item.custoUnitario) > 0)) {
+        try {
+          var meus = Store.precosInsumos ? Store.precosInsumos(Auth.empresaId()) : {};
+          var cot = meus[String(codigo)];
+          if (cot && Number(cot.preco) > 0) {
+            var base = item || { codigo: String(codigo), descricao: "(cotação própria)", unidade: "" };
+            return { codigo: base.codigo, descricao: base.descricao, unidade: base.unidade, custoUnitario: Number(cot.preco), categoria: base.categoria || "", tipoItem: base.tipoItem || "insumo" };
+          }
+        } catch (eCot) {}
+      }
+      return item || null;
+    },
+    /* O código da composição própria colide com alguma base OFICIAL? → fonte */
+    _cpExisteOficial: function (codigo) {
+      var cod = String(codigo || "").trim();
+      if (!cod) return null;
+      if (typeof Sinapi !== "undefined" && Sinapi.obter && Sinapi.obter(cod)) return "SINAPI";
+      if (typeof Bases !== "undefined" && Bases.extras) {
+        var ex = Bases.extras();
+        for (var i = 0; i < ex.length; i++) {
+          if (ex[i].fonte === "PROPRIA") continue;
+          if (Bases.obter(ex[i].fonte, cod)) return ex[i].fonte;
+        }
+      }
+      return null;
+    },
+    /* AGENTE ESPECIALISTA: descrição → análogas REAIS → estrutura proposta */
+    cpAgente: function () {
+      var self = this;
+      this._cpColeta1();
+      var desc = this._cp.comp.descricao;
+      if (String(desc).trim().length < 10) { UI.toast("Descreva o serviço primeiro (campo Descrição) — o agente busca a referência oficial pela sua descrição.", "erro"); return; }
+      var rodar = function () {
+        var cands = ComposicaoPropria.analogas(desc, Analitico.todos(), 5);
+        if (!cands.length) { UI.toast("Não achei composição parecida no detalhamento oficial — monte a estrutura manualmente no passo 2.", "erro"); return; }
+        var linhas = cands.map(function (cd, i) {
+          return '<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 11px;margin-bottom:6px;border-radius:9px;box-shadow:inset 0 0 0 1px var(--linha);cursor:pointer;font-size:12.5px">' +
+            '<input type="radio" name="cp-ref" value="' + i + '"' + (i === 0 ? " checked" : "") + ' style="margin-top:3px">' +
+            '<span><span class="pill sinapi">' + Util.esc(cd.codigo) + '</span> <b>' + Util.esc(cd.descricao) + '</b><br>' +
+            '<span class="muted">' + Util.esc(cd.unidade) + ' · ' + cd.nInsumos + ' insumo(s) · custo ref. ' + Util.fmtMoeda(cd.custoUnitario) + ' · aderência ' + Math.round(cd.score * 100) + '%</span></span></label>';
+        }).join("");
+        UI.modal("Agente especialista — referência oficial", '<p class="muted" style="font-size:12px">O agente achou estas composições oficiais parecidas com a sua descrição. Escolha a base da estrutura — os <b>coeficientes vêm da referência real</b> (nada inventado) e você revisa tudo no passo 2.</p>' + linhas, [
+          { texto: "Voltar", classe: "ghost", onClick: function () { self._cpRender(); } },
+          { texto: "Usar esta referência", classe: "success", onClick: function () {
+            var sel = document.querySelector('input[name="cp-ref"]:checked');
+            var ref = cands[sel ? parseInt(sel.value, 10) : 0];
+            var prop = ComposicaoPropria.daReferencia(ref._comp, { resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); } });
+            var c = self._cp.comp;
+            if (!c.unidade) c.unidade = String(prop.unidade || "").toLowerCase();
+            if (!c.grupo) c.grupo = ComposicaoPropria.GRUPOS.indexOf(String(prop.grupo).toUpperCase()) >= 0 ? String(prop.grupo).toUpperCase() : "OUTROS";
+            c.maoDeObra = prop.maoDeObra;
+            c.insumos = prop.insumos;
+            c.observacao = (c.observacao ? c.observacao + " · " : "") + prop.observacao + (prop.grupo && c.grupo === "OUTROS" ? " Grupo oficial: " + prop.grupo + "." : "");
+            self._cp.referencia = ref._comp;
+            self._cp.passo = 2;
+            self._cpRender();
+            UI.toast("Estrutura montada pela referência " + ref.codigo + " — revise coeficientes e preços antes de gravar.", "ok");
+          } }
+        ]);
+      };
+      if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
+      // detalhamento ainda não carregado: mesmo lazy-load do verInsumos
+      // (padrão da casa: UI.loading(msg) + UI.loadingFim() — UI.loading não retorna nada)
+      var urls = this._analiticoUrls();
+      UI.loading("Carregando o detalhamento oficial p/ o agente…");
+      Analitico.carregarArquivo(urls.local || urls.live, urls.live).then(function () { UI.loadingFim(); rodar(); })
+        .catch(function () { UI.loadingFim(); UI.toast("Não consegui carregar o detalhamento agora — tente de novo com internet.", "erro"); });
+    },
+    cpSalvar: function () {
+      var self = this, st = this._cp;
+      if (!st) return;
+      var codsExist = this._cpCodigosExistentes();
+      if (st.editando) {
+        // regravação da mesma composição: o próprio código não conta como duplicado
+        codsExist = codsExist.filter(function (c) { return String(c).toLowerCase() !== String(st.editando).toLowerCase(); });
+      }
+      var ctx = {
+        codigosExistentes: codsExist,
+        resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); },
+        existeOficial: function (cod) { return self._cpExisteOficial(cod); },
+        referencia: st.referencia
+      };
+      var r = ComposicaoPropria.validar(st.comp, ctx);
+      var box = UI.el("cp-valida");
+      if (!r.ok) {
+        if (box) box.innerHTML = '<div style="padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.3);font-size:12px"><b>⛔ Corrija antes de gravar (sem margem para erro):</b><br>· ' + r.erros.map(Util.esc).join("<br>· ") + '</div>';
+        return;
+      }
+      var gravar = function () {
+        var c = st.comp;
+        var item = {
+          codigo: c.codigo, codigoSecundario: c.codigoSec || "", descricao: c.descricao,
+          unidade: c.unidade, custoUnitario: r.custo.total, custoMO: r.custo.mo,
+          custoMAT: r.custo.mat, custoEQ: r.custo.eq, tipoItem: "composicao",
+          origem: "PROPRIA", grupo: c.grupo, metodo: c.metodo, modeloRef: c.modeloRef || "SINAPI", maoDeObra: !!c.maoDeObra,
+          observacao: c.observacao, referenciaCodigo: (st.referencia && st.referencia.codigo) || "",
+          criadoEm: Util.agoraISO(), insumos: c.insumos
+        };
+        var payload = Store.lerBasesExtras(Auth.empresaId()) || [];
+        var atual = null;
+        for (var i = 0; i < payload.length; i++) { if (String(payload[i].fonte).toUpperCase() === "PROPRIA") atual = payload[i]; }
+        var dados = (atual && atual.dados ? atual.dados : []).filter(function (d) {
+          var mesmo = String(d.codigo) === String(item.codigo);
+          var antigo = st.editando && String(d.codigo).toLowerCase() === String(st.editando).toLowerCase();
+          return !mesmo && !antigo; // regravação substitui; edição com código novo remove o antigo
+        });
+        dados.push(item);
+        // uf/mes da base PROPRIA são da PRIMEIRA gravação (metadados informativos —
+        // a base autoral vale em qualquer UF e não é clobberada a cada composição)
+        Bases.registrar("PROPRIA", { dados: dados, uf: (atual && atual.uf) || c.uf, mes: (atual && atual.mes) || new Date().toISOString().slice(0, 7) });
+        Bases.persistir(Auth.empresaId());
+        self._cp = null;
+        UI.fecharModal();
+        UI.toast("Composição " + item.codigo + " gravada na base própria (" + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade + ") — já aparece na busca de itens.", "ok");
+      };
+      if (r.avisos.length) {
+        // avisos não bloqueiam, mas exigem decisão EXPLÍCITA (sem margem p/ erro escondido)
+        UI.modal("⚠ Avisos de parâmetro", '<p style="font-size:13px">O checklist passou sem erros, mas o agente encontrou <b>' + r.avisos.length + ' aviso(s)</b> que merecem conferência:</p><div style="padding:9px 12px;border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.3);font-size:12px">· ' + r.avisos.map(Util.esc).join("<br>· ") + '</div>', [
+          { texto: "Voltar e revisar", classe: "ghost", onClick: function () { self._cpRender(); } },
+          { texto: "Conferi — gravar assim", classe: "success", onClick: gravar }
+        ]);
+        return;
+      }
+      gravar();
     },
 
     // ---------- Escopo Inteligente ----------

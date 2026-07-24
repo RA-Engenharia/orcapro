@@ -159,6 +159,12 @@
     /* Retorna o analítico de uma composição (ou null se não houver). */
     obter: function (codigo) { return this._porCodigo[String(codigo)] || null; },
     tem: function (codigo) { return !!this._porCodigo[String(codigo)]; },
+    /* v1.1.123 — lista completa (p/ o agente de composição buscar análogas) */
+    todos: function () {
+      var self = this, out = [];
+      Object.keys(this._porCodigo).forEach(function (c) { out.push(self._porCodigo[c]); });
+      return out;
+    },
 
     /* Razões MO/MAT/EQ (0..1) de uma composição — p/ aplicar sobre o preço do orçamento. */
     razoes: function (codigo) {

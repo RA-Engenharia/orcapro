@@ -713,13 +713,15 @@
       wins.columns = [{ width: 10 }, { width: 11 }, { width: 11 }, { width: 46 }, { width: 6 }, { width: 11 }, { width: 13 }, { width: 13 }, { width: 13 }];
       wins.mergeCells('A1:I1'); wins.getCell('A1').value = empresa; wins.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
       wins.mergeCells('A2:I2'); wins.getCell('A2').value = 'DETALHAMENTO DE COMPOSIÇÕES (INSUMOS) — ' + (orc.numero || ''); wins.getCell('A2').font = { bold: true, size: 11 };
-      wins.mergeCells('A3:I3'); wins.getCell('A3').value = 'Cada composição SINAPI explodida nos seus insumos (referência analítica ' + (deps.analiticoComp || '') + '). MO = mão de obra · MAT = material · EQ = equipamento.'; wins.getCell('A3').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
+      wins.mergeCells('A3:I3'); wins.getCell('A3').value = 'Cada composição (SINAPI e próprias) explodida nos seus insumos (referência analítica ' + (deps.analiticoComp || '') + '). MO = mão de obra · MAT = material · EQ = equipamento.'; wins.getCell('A3').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
       var hi = ['Composição', 'Cód. Item', 'Tipo', 'Insumo', 'Und', 'Coef.', 'Custo Unit', 'Custo Total', 'Categoria'];
       hi.forEach(function (h, i) { hStyle(wins.getRow(5).getCell(i + 1)); wins.getRow(5).getCell(i + 1).value = h; });
       var ir = 6, vistos = {};
       (etapas).forEach(function (et) {
         (Array.isArray(et.itens) ? et.itens : []).forEach(function (it) {
-          if (it.origem !== 'SINAPI') return;
+          // v1.1.123 — composições PRÓPRIAS também saem explodidas (o montarMapa
+          // já as coloca no insMap com a mesma estrutura)
+          if (it.origem !== 'SINAPI' && it.origem !== 'PROPRIA') return;
           var a = insMap[String(it.codigo)];
           if (!a || vistos[it.codigo]) return;
           vistos[it.codigo] = 1;
@@ -1100,6 +1102,27 @@
           (orc.etapas || []).forEach(function (et) {
             (et.itens || []).forEach(function (it) {
               if (it.origem === "SINAPI") { var a = Analitico.obter(it.codigo); if (a) m[String(it.codigo)] = a; }
+              // v1.1.123 — composição PRÓPRIA: a estrutura salva na base do
+              // cliente sai na aba de insumos igual à SINAPI (entregável coerente
+              // com o detalhamento da tela)
+              else if (it.origem === "PROPRIA" && typeof Bases !== "undefined" && Bases.obter) {
+                var bp = Bases.obter("PROPRIA", String(it.codigo));
+                if (bp && bp.insumos && bp.insumos.length) {
+                  var catP = (typeof ComposicaoPropria !== "undefined" && ComposicaoPropria.catDe)
+                    ? ComposicaoPropria.catDe
+                    : function (x) { return String(x || "MAT").toUpperCase(); };
+                  m[String(it.codigo)] = {
+                    codigo: bp.codigo, descricao: bp.descricao, unidade: bp.unidade,
+                    custoUnitario: Number(bp.custoUnitario) || 0,
+                    custoMO: Number(bp.custoMO) || 0, custoMAT: Number(bp.custoMAT) || 0, custoEQ: Number(bp.custoEQ) || 0,
+                    insumos: bp.insumos.map(function (ip) {
+                      var co = Number(ip.coeficiente) || 0, cu = Number(ip.custoUnitario) || 0;
+                      return { tipo: "INSUMO", codigo: ip.codigo, descricao: ip.descricao, unidade: ip.unidade,
+                        coeficiente: co, custoUnitario: cu, custoTotal: co * cu, categoria: catP(ip.categoria) };
+                    })
+                  };
+                }
+              }
             });
           });
           return m;

@@ -1,6 +1,6 @@
-{
-  "versao": "1.1.122",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.122/OrcaPRO-IA-update-v1.1.122.zip",
-  "notas": "SINAPI atualizada para a competência 06/2026 nos 27 estados (composições, insumos e detalhamento) + Central de Atualização de Bases: um botão por banco (SINAPI, SICRO, IOPES, ORSE, GOINFRA) verifica o servidor e aplica a base nova na hora — sem novidade, informa a mais recente e desde quando está no ar. A SINAPI também se atualiza sozinha, 1× por dia, sem nunca mexer em base própria importada.",
-  "obrigatoria": false
+﻿{
+    "versao":  "1.1.123",
+    "zip":  "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.122/OrcaPRO-IA-update-v1.1.122.zip",
+    "notas":  "SINAPI atualizada para a competÃªncia 06/2026 nos 27 estados (composiÃ§Ãµes, insumos e detalhamento) + Central de AtualizaÃ§Ã£o de Bases: um botÃ£o por banco (SINAPI, SICRO, IOPES, ORSE, GOINFRA) verifica o servidor e aplica a base nova na hora â€” sem novidade, informa a mais recente e desde quando estÃ¡ no ar. A SINAPI tambÃ©m se atualiza sozinha, 1Ã— por dia, sem nunca mexer em base prÃ³pria importada.",
+    "obrigatoria":  false
 }
