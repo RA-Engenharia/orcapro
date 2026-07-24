@@ -154,7 +154,29 @@
       }).join("");
       var fontes = (typeof Bases !== "undefined" && Bases.META) ? Object.keys(Bases.META).filter(function (k) { return k !== "SINAPI"; }) : ["SICRO", "SEINFRA", "SETOP", "ORSE", "SUDECAP", "SBC", "PROPRIA"];
       var opts = fontes.map(function (x) { var m = (typeof Bases !== "undefined" && Bases.META && Bases.META[x]) || {}; return '<option value="' + x + '">' + Util.esc(m.label || x) + '</option>'; }).join("");
-      return '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
+      // v1.1.122 — Central de Atualização: 1 botão por banco; o servidor OrçaPRO
+      // responde a competência mais recente e QUANDO entrou no ar. Sem novidade,
+      // a resposta é honesta: "sem atualização — a última é a de tal data".
+      var _icT = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 14) : ""; };
+      var compSin = (typeof Atualizacao !== "undefined" && Atualizacao.fmtComp) ? Atualizacao.fmtComp(Sinapi.competencia) : (Sinapi.competencia || "—");
+      // GOINFRA instala com fonte "AGETOP" (nome oficial do órgão) — aceitar os dois
+      var extrasAtu = [["SICRO", ["SICRO"]], ["IOPES", ["IOPES"]], ["ORSE", ["ORSE"]], ["GOINFRA", ["GOINFRA", "AGETOP"]]];
+      var atuLinhas = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
+        '<span class="pill sinapi">SINAPI</span><span style="font-size:12.5px">competência ativa: <b>' + Util.esc(compSin) + '</b> · ' + Util.esc(String(Sinapi.uf || "")) + '</span>' +
+        '<button class="btn sm primary" data-atu-base="SINAPI" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
+        '<span class="muted" id="atu-st-SINAPI" style="flex-basis:100%;font-size:11.5px"></span></div>';
+      extrasAtu.forEach(function (par) {
+        var inst = (lista || []).filter(function (b) { return par[1].indexOf(String(b.fonte).toUpperCase()) >= 0; })[0];
+        atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
+          '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(par[0]) + '</span>' +
+          '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(inst.competencia || "—") + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões 📦 abaixo</span>') + '</span>' +
+          '<button class="btn sm" data-atu-base="' + par[0] + '" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
+          '<span class="muted" id="atu-st-' + par[0] + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
+      });
+      return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere no servidor OrçaPRO se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b> (1× por dia, silencioso).</p>' +
+        '<div style="margin-bottom:16px">' + atuLinhas + '</div>' +
+        '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
         '<table class="tbl"><thead><tr><th>Base</th><th>Competência/UF</th><th class="num">Itens</th><th>Status</th><th></th></tr></thead><tbody>' +
         (rows || '<tr><td colspan="5">—</td></tr>') + '</tbody></table>' +
         '<h3 style="margin:18px 0 8px">Importar base extra</h3>' +

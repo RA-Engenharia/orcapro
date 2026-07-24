@@ -55,11 +55,11 @@
       this.carregarBaseSinapi().then(function (n) {
         console.log("[SINAPI] " + n + " itens (" + Sinapi.competencia + "/" + Sinapi.uf + ")");
         if (self.tela === "lista") self.render(); // atualiza o banner com o total real
-        // auto-check de atualização (não bloqueia; só avisa se houver competência nova)
-        if (typeof Atualizacao !== "undefined") {
-          Atualizacao.verificar().then(function (info) {
-            if (info.online && info.desatualizado) UI.toast("Nova competência SINAPI disponível: " + info.ultimaOficial + " — clique em 🔄 Atualizar.", "ok");
-          }).catch(function () {});
+        // v1.1.122 — checagem automática das BASES no servidor OrçaPRO (1×/dia,
+        // silenciosa): saiu SINAPI nova → baixa e aplica sozinha, só informa depois.
+        // (O check antigo via ERP local ficou obsoleto: o servidor cobre a frota toda.)
+        if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto) {
+          setTimeout(function () { try { Atualizacao.checarAuto(); } catch (eAu) {} }, 9000);
         }
       }).catch(function (e) {
         console.warn("[SINAPI] não carregou:", e.message);
@@ -401,7 +401,7 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -413,6 +413,64 @@
       if (t.dataset.gopen) { if (typeof Gestao !== "undefined") { var gp = String(t.dataset.gopen).split(":"); Gestao.abrir(gp[0], gp[1]); } return; }
       // login: clicar numa conta salva preenche o e-mail
       if (t.dataset.conta) { var ce = UI.el("lg-email"); if (ce) ce.value = t.dataset.conta; var cs = UI.el("lg-senha"); if (cs) cs.focus(); return; }
+      // v1.1.122 — Central de Atualização: 1 botão por banco confere o servidor.
+      // Há base nova → aplica na hora; não há → informa a mais recente e a data.
+      if (t.dataset.atuBase) {
+        if (t.disabled) return; // reentrância: clique duplo disparava dois fluxos (gate)
+        var fonteAtu = String(t.dataset.atuBase).toUpperCase(), selfA = this;
+        var btnAtu = t;
+        btnAtu.disabled = true;
+        var stEl = function () { return document.getElementById("atu-st-" + fonteAtu); };
+        var pinta = function (msg, ok) { var el = stEl(); if (el) { el.textContent = msg; el.style.color = ok ? "var(--verde)" : ""; } if (msg.indexOf("…") < 0) btnAtu.disabled = false; };
+        pinta("Consultando o servidor…");
+        if (fonteAtu === "SINAPI") {
+          Atualizacao.atualizarSinapi(function (r) {
+            if (!r.ok) { pinta("⚠ " + r.erro); UI.toast(r.erro, "erro"); return; }
+            if (r.basePropria) {
+              pinta("Você usa uma base PRÓPRIA importada (competência " + Atualizacao.fmtComp(r.de) + ") — a atualização oficial não mexe nela. Para voltar à SINAPI oficial, remova a base própria em ⬆ Importar.", true);
+              return;
+            }
+            if (r.atualizou) {
+              UI.toast("SINAPI atualizada: competência " + Atualizacao.fmtComp(r.de) + " → " + Atualizacao.fmtComp(r.para) + " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
+              selfA.abrirTabelas(); // re-abre com a competência nova na tela
+            } else {
+              pinta("Sem atualização — a mais recente é a competência " + Atualizacao.fmtComp(r.para) + ", no ar desde " + Atualizacao.fmtData(r.publicadoEm) + ". Você já está nela.", true);
+            }
+          });
+          return;
+        }
+        // Extras (SICRO/IOPES/ORSE/GOINFRA): status → compara → recarrega live se houver nova.
+        // GOINFRA instala com fonte "AGETOP" (nome oficial do órgão) — aceitar os dois.
+        var MAPA_ATU = { SICRO: ["sicro", "sicro-ES-current.json", ["SICRO"]], IOPES: ["iopes", "iopes-ES-current.json", ["IOPES"]], ORSE: ["orse", "orse-SE-current.json", ["ORSE"]], GOINFRA: ["goinfra", null, ["GOINFRA", "AGETOP"]] };
+        var cfgAtu = MAPA_ATU[fonteAtu];
+        if (!cfgAtu) { pinta("Este banco não tem atualização online."); return; }
+        Atualizacao.statusServidor().then(function (st) {
+          var srv = st && st[cfgAtu[0]];
+          if (!srv || !srv.competencia) { pinta("O servidor não informou este banco agora — tente mais tarde."); return; }
+          var inst = (Bases.lista() || []).filter(function (b) { return cfgAtu[2].indexOf(String(b.fonte).toUpperCase()) >= 0; })[0];
+          var compLocal = inst ? Atualizacao._normComp(inst.competencia) : null;
+          if (!inst) {
+            pinta("Base não instalada. A mais recente no servidor é a competência " + Atualizacao.fmtComp(srv.competencia) + ", no ar desde " + Atualizacao.fmtData(srv.publicadoEm) + " — instale nos botões 📦 abaixo.");
+            return;
+          }
+          if (String(srv.competencia) <= String(compLocal)) {
+            pinta("Sem atualização — a mais recente é a competência " + Atualizacao.fmtComp(srv.competencia) + ", no ar desde " + Atualizacao.fmtData(srv.publicadoEm) + ". Você já está nela.", true);
+            return;
+          }
+          pinta("Baixando a competência " + Atualizacao.fmtComp(srv.competencia) + "…");
+          if (fonteAtu === "GOINFRA") {
+            selfA.carregarGoinfra(); // fluxo próprio (regime/preço) — toast informa o resultado
+            pinta("Baixando pelo canal GOINFRA — o aviso no canto confirma quando terminar.");
+            return;
+          }
+          var urlAtu = String(CONFIG.licencaServer).replace(/\/$/, "") + "/bases/" + cfgAtu[1];
+          Bases.carregarInclusa(urlAtu, fonteAtu).then(function (r) {
+            UI.toast(fonteAtu + " atualizada: competência " + Atualizacao.fmtComp(compLocal) + " → " + Atualizacao.fmtComp(r.competencia || srv.competencia) + " (" + (r.total || 0).toLocaleString("pt-BR") + " itens).", "ok");
+            selfA.abrirTabelas();
+          }).catch(function (e) { pinta("⚠ Falhou ao baixar: " + ((e && e.message) || "erro")); });
+        }).catch(function () { pinta("⚠ Sem conexão com o servidor OrçaPRO agora — a base atual foi mantida."); });
+        return;
+      }
       // carregar base inclusa (1 clique) — LIVE-FIRST: tenta a versão mais recente
       // regenerada no VPS (rota /bases/), cai na inclusa do pacote se offline.
       if (t.dataset.inclusa) {
@@ -839,6 +897,13 @@
           // até o cliente trocar de estado (que aí setava o ponteiro). Aponta o analítico
           // da UF ativa já no boot, pelo manifesto (fallback: padrão de nome do pacote).
           self._baseUf = String(self._baseUf || base.uf || Sinapi.uf || "").toUpperCase() || null;
+          // v1.1.122: base persistida pela ATUALIZAÇÃO OFICIAL numa competência mais
+          // nova que a do pacote local → o detalhamento vem do VPS (o analítico local
+          // é da competência embarcada; senão unitário novo + insumos velhos não fecham)
+          if (base._origem === "atualizacao-oficial" && self._baseUf &&
+              String(base.mes || "") > String(CONFIG.sinapi.competenciaPadrao || "")) {
+            self._analiticoArquivo = CONFIG.licencaServer + "/analitico/sinapi-" + self._baseUf + "-analitico.json";
+          }
           if (!self._analiticoArquivo && self._baseUf) {
             var ufA = self._baseUf;
             var reqA = self._ufReq; // token: se o cliente trocar de estado no meio tempo, NÃO regrava

@@ -29,7 +29,7 @@
     // Usado no link de acesso que o admin envia ao usuário (?lic=<chave>&u=<login>).
     appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 
-    versao: "1.1.121",
+    versao: "1.1.122",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
@@ -58,9 +58,9 @@
     sinapi: {
       // Base REAL: 8.380 composições SINAPI MG 2026-05 (export do sinapi-fetcher do ERP).
       // Troque por outra competência/UF copiando o JSON para data/ e ajustando aqui.
-      arquivoDemo: "data/sinapi-MG-2026-05.json",
+      arquivoDemo: "data/sinapi-MG-2026-06.json",
       arquivoAmostra: "data/sinapi-sample.json", // fallback didático (30 itens)
-      competenciaPadrao: "2026-05",
+      competenciaPadrao: "2026-06",
       ufPadrao: "MG"
     },
 

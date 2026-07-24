@@ -3,164 +3,164 @@
  "estados": [
   {
    "uf": "AC",
-   "arquivo": "data/sinapi-AC-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-AC-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-AC-analitico.json"
   },
   {
    "uf": "AL",
-   "arquivo": "data/sinapi-AL-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-AL-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-AL-analitico.json"
   },
   {
    "uf": "AM",
-   "arquivo": "data/sinapi-AM-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-AM-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-AM-analitico.json"
   },
   {
    "uf": "AP",
-   "arquivo": "data/sinapi-AP-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-AP-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-AP-analitico.json"
   },
   {
    "uf": "BA",
-   "arquivo": "data/sinapi-BA-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-BA-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-BA-analitico.json"
   },
   {
    "uf": "CE",
-   "arquivo": "data/sinapi-CE-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-CE-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-CE-analitico.json"
   },
   {
    "uf": "DF",
-   "arquivo": "data/sinapi-DF-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-DF-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-DF-analitico.json"
   },
   {
    "uf": "ES",
-   "arquivo": "data/sinapi-ES-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-ES-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-ES-analitico.json"
   },
   {
    "uf": "GO",
-   "arquivo": "data/sinapi-GO-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-GO-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-GO-analitico.json"
   },
   {
    "uf": "MA",
-   "arquivo": "data/sinapi-MA-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-MA-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-MA-analitico.json"
   },
   {
    "uf": "MG",
-   "arquivo": "data/sinapi-MG-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-MG-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-MG-analitico.json"
   },
   {
    "uf": "MS",
-   "arquivo": "data/sinapi-MS-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-MS-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-MS-analitico.json"
   },
   {
    "uf": "MT",
-   "arquivo": "data/sinapi-MT-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-MT-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-MT-analitico.json"
   },
   {
    "uf": "PA",
-   "arquivo": "data/sinapi-PA-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-PA-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-PA-analitico.json"
   },
   {
    "uf": "PB",
-   "arquivo": "data/sinapi-PB-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-PB-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-PB-analitico.json"
   },
   {
    "uf": "PE",
-   "arquivo": "data/sinapi-PE-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-PE-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-PE-analitico.json"
   },
   {
    "uf": "PI",
-   "arquivo": "data/sinapi-PI-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-PI-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-PI-analitico.json"
   },
   {
    "uf": "PR",
-   "arquivo": "data/sinapi-PR-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-PR-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-PR-analitico.json"
   },
   {
    "uf": "RJ",
-   "arquivo": "data/sinapi-RJ-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-RJ-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-RJ-analitico.json"
   },
   {
    "uf": "RN",
-   "arquivo": "data/sinapi-RN-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-RN-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-RN-analitico.json"
   },
   {
    "uf": "RO",
-   "arquivo": "data/sinapi-RO-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-RO-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-RO-analitico.json"
   },
   {
    "uf": "RR",
-   "arquivo": "data/sinapi-RR-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-RR-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-RR-analitico.json"
   },
   {
    "uf": "RS",
-   "arquivo": "data/sinapi-RS-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-RS-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-RS-analitico.json"
   },
   {
    "uf": "SC",
-   "arquivo": "data/sinapi-SC-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-SC-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-SC-analitico.json"
   },
   {
    "uf": "SE",
-   "arquivo": "data/sinapi-SE-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-SE-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-SE-analitico.json"
   },
   {
    "uf": "SP",
-   "arquivo": "data/sinapi-SP-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-SP-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-SP-analitico.json"
   },
   {
    "uf": "TO",
-   "arquivo": "data/sinapi-TO-2026-05.json",
-   "competencia": "2026-05",
+   "arquivo": "data/sinapi-TO-2026-06.json",
+   "competencia": "2026-06",
    "analitico": "data/sinapi-TO-analitico.json"
   }
  ]

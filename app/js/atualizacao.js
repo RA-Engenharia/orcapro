@@ -19,6 +19,118 @@
 
     online: function () { return this._get("/health").then(function (j) { return !!(j && j.ok); }).catch(function () { return false; }); },
 
+    /* ================================================================
+     * v1.1.122 — CENTRAL DE ATUALIZAÇÃO DE BASES (servidor OrçaPRO)
+     * O VPS informa em /api/bases-status a competência mais recente de
+     * cada banco; daqui o app atualiza a SINAPI com 1 clique (ou sozinho,
+     * 1×/dia) e responde com honestidade quando NÃO há nada novo.
+     * ================================================================ */
+
+    /* Competências vêm em dois formatos históricos ("2026-06" e "06/2026"). */
+    _normComp: function (c) {
+      var m = String(c || "").match(/^(\d{2})\/(\d{4})$/);
+      return m ? m[2] + "-" + m[1] : String(c || "");
+    },
+    fmtComp: function (c) {
+      var m = String(this._normComp(c)).match(/^(\d{4})-(\d{2})$/);
+      return m ? m[2] + "/" + m[1] : (String(c || "") || "—");
+    },
+    fmtData: function (iso) {
+      var m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? m[3] + "/" + m[2] + "/" + m[1] : "—";
+    },
+
+    /* Consulta o status dos bancos no servidor OrçaPRO (VPS). */
+    statusServidor: function () {
+      return fetch(CONFIG.licencaServer + "/api/bases-status", { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+    },
+
+    /* A base persistida da empresa é uma base PRÓPRIA (importada pelo cliente,
+     * preços negociados)? A atualização oficial NUNCA passa por cima dela.
+     * Só a base gravada pela própria atualização (flag _origem) é substituível. */
+    _basePropriaDoCliente: function () {
+      try {
+        var b = (typeof Store !== "undefined" && Store.lerBaseSinapi) ? Store.lerBaseSinapi(Auth.empresaId()) : null;
+        return !!(b && b.dados && b.dados.length && b._origem !== "atualizacao-oficial");
+      } catch (eB) { return false; }
+    },
+
+    /* Atualiza a base SINAPI da UF ativa para a competência do servidor.
+     * cb({ok, atualizou, de, para, publicadoEm, itens, erro, basePropria}) */
+    atualizarSinapi: function (cb) {
+      var self = this;
+      var uf = String((global.App && global.App._baseUf) || Sinapi.uf || CONFIG.sinapi.ufPadrao).toUpperCase();
+      // Base própria importada: proteger SEMPRE (achado do gate — o auto-update
+      // destruía a tabela negociada da empresa sem confirmação).
+      if (self._basePropriaDoCliente()) {
+        cb({ ok: true, atualizou: false, basePropria: true, de: self._normComp(Sinapi.competencia) });
+        return;
+      }
+      // token anti-corrida: se o usuário TROCAR de estado enquanto a atualização
+      // baixa, aborta em vez de comitar a base da UF antiga por cima da nova
+      var reqA = (global.App && global.App._ufReq != null) ? global.App._ufReq : null;
+      var ufMudou = function () { return global.App && reqA !== null && global.App._ufReq !== reqA; };
+      self.statusServidor().then(function (st) {
+        var srv = st && st.sinapi;
+        if (!srv || !srv.competencia) { cb({ ok: false, erro: "o servidor não informou a SINAPI" }); return; }
+        var local = self._normComp(Sinapi.competencia);
+        if (String(srv.competencia) <= String(local)) {
+          cb({ ok: true, atualizou: false, de: local, para: srv.competencia, publicadoEm: srv.publicadoEm });
+          return;
+        }
+        var url = CONFIG.licencaServer + "/analitico/sinapi-" + uf + "-" + srv.competencia + ".json";
+        fetch(url, { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        }).then(function (j) {
+          if (ufMudou()) { cb({ ok: false, erro: "você trocou de estado durante o download — verifique de novo" }); return; }
+          // mesmo rigor do fallback de UF: só pacote VÁLIDO toca a base carregada
+          if (!(j && j.dados && j.dados.length > 0 && String(j.uf || "").toUpperCase() === uf)) throw new Error("pacote do servidor inválido");
+          j._origem = "atualizacao-oficial"; // marca substituível pela PRÓXIMA atualização (≠ base própria)
+          Sinapi.carregarDe(j);
+          try { if (typeof Store !== "undefined" && Store.salvarBaseSinapi) Store.salvarBaseSinapi(Auth.empresaId(), j); } catch (eP) {}
+          if (global.App) {
+            global.App._baseUf = uf;
+            // Detalhamento acompanha a competência nova: o analítico LOCAL do pacote
+            // é da competência embarcada — quando o servidor está à frente, o
+            // detalhamento passa a vir do VPS (achado do gate: unitário 2026-07 com
+            // insumos 2026-06 não fechava).
+            if (String(srv.competencia) > String(CONFIG.sinapi.competenciaPadrao || "")) {
+              global.App._analiticoArquivo = CONFIG.licencaServer + "/analitico/sinapi-" + uf + "-analitico.json";
+            }
+            if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset();
+          }
+          cb({ ok: true, atualizou: true, de: local, para: srv.competencia, publicadoEm: srv.publicadoEm, itens: Sinapi.resumo().total });
+        }).catch(function (e) {
+          cb({ ok: false, erro: "não consegui baixar a base nova (" + ((e && e.message) || "falha") + ") — a atual foi mantida" });
+        });
+      }).catch(function (e) {
+        cb({ ok: false, erro: "sem conexão com o servidor OrçaPRO (" + ((e && e.message) || "") + ")" });
+      });
+    },
+
+    /* Checagem automática silenciosa 1×/dia (regra da casa: nunca pedir pra
+     * atualizar — atualiza sozinho e só informa o que fez).
+     * Achados do gate: (a) só marca o dia APÓS uma resposta ok — falha de rede
+     * no boot re-tenta na próxima abertura; (b) não roda sem sessão (tenant
+     * "default") nem na vitrine demo. */
+    checarAuto: function () {
+      var self = this;
+      try {
+        if (typeof Auth === "undefined" || !Auth.usuario()) return;
+        if (global.App && global.App._demo) return;
+        var hoje = new Date().toISOString().slice(0, 10);
+        if (localStorage.getItem("orcapro:bases:check") === hoje) return;
+      } catch (eL) { return; }
+      self.atualizarSinapi(function (r) {
+        if (r && r.ok) { try { localStorage.setItem("orcapro:bases:check", new Date().toISOString().slice(0, 10)); } catch (eM) {} }
+        if (r && r.ok && r.atualizou && typeof UI !== "undefined") {
+          UI.toast("Base SINAPI atualizada sozinha: competência " + self.fmtComp(r.de) + " → " + self.fmtComp(r.para) + " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
+        }
+      });
+    },
+
     /* Escaneia uma PASTA (dentro do projeto do ERP) → parseia tudo (SICRO etc.) e
        carrega cada base resultante no multi-base do OrçaPRO. Retorna o resumo. */
     escanearPasta: function (caminho, uf, mes, desonerado) {

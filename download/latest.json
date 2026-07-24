@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.121",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.121/OrcaPRO-IA-update-v1.1.121.zip",
-  "notas": "Interface PRO: ícones profissionais em todo o sistema (chega de emoji), tipografia mais nítida com linhas de contraste forte, Painel de Gestão reorganizado em seções, dock lateral de ferramentas do BIM por categoria com gaveta de análise dentro do próprio visualizador (quantitativos, compatibilização, 4D e 6D/7D sem rolar a página) e qualquer UF abrindo ao vivo do servidor quando faltar a base local.",
+  "versao": "1.1.122",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.122/OrcaPRO-IA-update-v1.1.122.zip",
+  "notas": "SINAPI atualizada para a competência 06/2026 nos 27 estados (composições, insumos e detalhamento) + Central de Atualização de Bases: um botão por banco (SINAPI, SICRO, IOPES, ORSE, GOINFRA) verifica o servidor e aplica a base nova na hora — sem novidade, informa a mais recente e desde quando está no ar. A SINAPI também se atualiza sozinha, 1× por dia, sem nunca mexer em base própria importada.",
   "obrigatoria": false
 }
