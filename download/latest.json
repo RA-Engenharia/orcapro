@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.120",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.120/OrcaPRO-IA-update-v1.1.120.zip",
-  "notas": "Composição com insumo sem preço coletado agora pede o valor direto para você: campo editável no detalhamento (salvo por empresa, com selo 👤), faixa de erro listando os itens zerados e trava de finalização — proposta e apresentação só liberam com todos os preços preenchidos. Detalhamento analítico regenerado nas 27 UFs (DF corrigido).",
+  "versao": "1.1.121",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.121/OrcaPRO-IA-update-v1.1.121.zip",
+  "notas": "Interface PRO: ícones profissionais em todo o sistema (chega de emoji), tipografia mais nítida com linhas de contraste forte, Painel de Gestão reorganizado em seções, dock lateral de ferramentas do BIM por categoria com gaveta de análise dentro do próprio visualizador (quantitativos, compatibilização, 4D e 6D/7D sem rolar a página) e qualquer UF abrindo ao vivo do servidor quando faltar a base local.",
   "obrigatoria": false
 }

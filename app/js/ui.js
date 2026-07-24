@@ -306,7 +306,7 @@
           '<button class="btn sm" data-acao="importar-sinapi">⬆ Importar base SINAPI</button></div></div>';
       }
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
-                 '<div class="flex"><button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">📊 Importar planilha</button>' +
+                 '<div class="flex"><button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("reimportar") + 'Importar planilha</button>' +
                  '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
       if (!orcamentos.length) {
         html += '<div class="vazio card"><h3>Nenhum orçamento ainda</h3>' +
@@ -339,16 +339,16 @@
         '<span style="font-size:20px;font-weight:800;margin-left:8px">' + Util.esc(orc.nome) + '</span> ' +
         '<span class="muted">' + Util.esc(orc.numero) + '</span></div>' +
         '<div class="flex">' +
-          '<button class="btn sm primary" data-acao="escopo">✨ Escopo Inteligente</button>' +
-          '<button class="btn sm" data-acao="relatorio">🧾 Relatório completo</button>' +
-          '<button class="btn sm success" data-acao="proposta">📄 Gerar Proposta</button>' +
-          '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">🖥️ Apresentar</button>' +
-          '<button class="btn sm" data-acao="laudo">📑 Anexo p/ Laudo</button>' +
-          '<button class="btn sm" data-acao="config-orc">⚙ Dados</button>' +
-          '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">🎛 Parâmetros</button>' +
-          '<button class="btn sm" data-acao="cenarios">📊 Comparar cenários</button>' +
-          '<button class="btn sm" data-acao="exportar-excel">📊 Excel (3 abas)</button>' +
-          '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">📥 Reimportar</button>' +
+          '<button class="btn sm primary" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>' +
+          '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>' +
+          '<button class="btn sm success" data-acao="proposta">' + Icones.get("proposta") + 'Gerar Proposta</button>' +
+          '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
+          '<button class="btn sm" data-acao="laudo">' + Icones.get("laudo") + 'Anexo p/ Laudo</button>' +
+          '<button class="btn sm" data-acao="config-orc">' + Icones.get("dados") + 'Dados</button>' +
+          '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">' + Icones.get("parametros") + 'Parâmetros</button>' +
+          '<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
+          '<button class="btn sm" data-acao="exportar-excel">' + Icones.get("excel") + 'Excel (3 abas)</button>' +
+          '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>' +
         '</div></div>';
 
       // KPIs
@@ -369,11 +369,20 @@
           ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</div>';
       }
 
-      // Abas
-      var abas = [["planilha", "Planilha"], ["sintetico", "Sintético"], ["cronograma", "🗓 Cronograma"], ["execucao", "🏗️ Execução"], ["paredecebola", "🧱 Parede-Cebola"], ["graficos", "📊 Gráficos"], ["relatorios", "Relatórios"], ["bdi", "BDI & Parâmetros"]];
+      // Abas — ícone SVG padronizado em todas (nada de emoji)
+      var abas = [
+        ["planilha", "Planilha", "planilha"],
+        ["sintetico", "Sintético", "sintetico"],
+        ["cronograma", "Cronograma", "cronograma"],
+        ["execucao", "Execução", "execucao"],
+        ["paredecebola", "Parede-Cebola", "paredecebola"],
+        ["graficos", "Gráficos", "graficos"],
+        ["relatorios", "Relatórios", "relatorios"],
+        ["bdi", "BDI & Parâmetros", "bdi"]
+      ];
       html += '<div class="tabs">';
       abas.forEach(function (a) {
-        html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + a[1] + '</div>';
+        html += '<div class="tab ' + (abaAtiva === a[0] ? "ativa" : "") + '" data-aba="' + a[0] + '">' + Icones.get(a[2], 14) + a[1] + '</div>';
       });
       html += '</div>';
 
@@ -652,7 +661,7 @@
         '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="exec-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:80px"></div>' +
         '<div class="field" style="margin:0"><label title="Onera a diária de colaboradores CLT p/ comparar com o SINAPI (que já vem onerado). Diarista/autônomo/PJ entram cheios.">Encargos CLT (%)</label><input id="exec-encargos" type="number" min="0" max="150" value="' + (p.encargosPct || 0) + '" style="width:90px"></div>' +
         '<button class="btn sm primary" data-acao="exec-recalc">↻ Recalcular</button>' +
-        '<button class="btn sm" data-acao="exec-cronograma" title="Usar estas durações no Cronograma">🗓 Enviar ao cronograma</button>' +
+        '<button class="btn sm" data-acao="exec-cronograma" title="Usar estas durações no Cronograma">' + Icones.get("cronograma") + 'Enviar ao cronograma</button>' +
         '</div>' +
         '<div class="muted" style="font-size:11px;margin-top:8px">Produtividade = coeficientes de mão-de-obra do SINAPI (horas-homem). Custo/dia = diária dos seus colaboradores (RH); onde não há colaborador da profissão, usa a <b>referência SINAPI</b>.' +
         (colab.length ? '' : ' <b>Cadastre colaboradores em RH</b> para usar suas diárias reais — por ora tudo está na referência SINAPI.') + '</div></div>';
@@ -748,7 +757,7 @@
         return receitas.map(function (r) { return '<option value="' + r.id + '"' + (inp.receita === r.id ? " selected" : "") + '>' + esc(r.rotulo) + '</option>'; }).join("");
       }
       var html = '<div class="card" style="margin-bottom:12px">' +
-        '<h3 style="margin:0 0 4px;font-size:15px">🧱 Parede-Cebola — do 2D à obra real</h3>' +
+        '<h3 style="margin:0 0 4px;font-size:15px;display:flex;align-items:center">' + Icones.get("paredecebola", 16) + 'Parede-Cebola — do 2D à obra real</h3>' +
         '<p class="muted" style="font-size:12px;margin:0 0 10px">Uma parede é UMA linha, mas na obra ela é um empilhamento: bloco → chapisco → reboco → massa → pintura. Informe a parede e o sistema explode nas camadas de serviço, casando cada uma num <b>código SINAPI real</b> (nunca inventa — sem match vira “pendente”). Você revisa e joga no orçamento.</p>' +
         '<div class="flex" style="flex-wrap:wrap;gap:10px;align-items:flex-end">' +
         '<div class="field" style="margin:0"><label>Nome</label><input id="pc-nome" value="' + esc(inp.nome || "") + '" placeholder="Parede sala" style="width:150px"></div>' +
@@ -799,7 +808,7 @@
           '<button class="btn sm primary" data-acao="parede-aplicar" title="Só as camadas com código casado (OK) entram. Pendentes e as de unidade divergente ficam de fora.">➕ Adicionar ' + r.nOk + ' camada(s) ao orçamento</button>' +
           (r.nRevisar || r.nPendentes ? '<span class="muted" style="font-size:11px">' + (r.nRevisar ? r.nRevisar + ' de unidade divergente' : "") + (r.nRevisar && r.nPendentes ? " e " : "") + (r.nPendentes ? r.nPendentes + ' sem código' : "") + ' NÃO entram — resolva antes.</span>' : "") +
           '</div>';
-        html += '<div class="muted" style="font-size:11px;margin-top:8px">Cada camada vira um <b>item normal do orçamento</b> (código SINAPI + qtd) — então o Agente de Execução (aba 🏗️) dimensiona equipe, prazo e custo dessas camadas automaticamente.</div>';
+        html += '<div class="muted" style="font-size:11px;margin-top:8px">Cada camada vira um <b>item normal do orçamento</b> (código SINAPI + qtd) — então o Agente de Execução (aba Execução) dimensiona equipe, prazo e custo dessas camadas automaticamente.</div>';
         html += '</div>';
       }
       return html;

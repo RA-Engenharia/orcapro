@@ -109,8 +109,18 @@
             }).join("") + "</div>";
         }
       } catch (eB) {}
+      // v1.1.121 — faixa de CONTEXTO no topo: base/UF/competência/regime deste
+      // orçamento sempre à vista (parâmetro implícito que ficava escondido).
+      var regTxt = this._st.encargos.tipo === "desonerado" ? "Desonerado" : "Não desonerado";
+      var faixaCtx = '<div class="ow-ctx">' +
+        '<span><small>Base</small><b>SINAPI' + (this._st.uf ? " · " + esc(this._st.uf) : "") + '</b></span>' +
+        '<span><small>Competência</small><b>' + esc(this._st.competencia || "—") + '</b></span>' +
+        '<span><small>Regime</small><b>' + regTxt + '</b></span>' +
+        '<span><small>BDI atual</small><b>' + Util.fmtPct(this._st.bdiPercentual) + '</b></span>' +
+        '<small class="ow-ctx-dica">Estado e competência trocam em 🗂 Tabelas — aqui ajustam-se os critérios de cálculo.</small></div>';
       var corpo =
         '<p class="muted ow-nota" style="margin-top:0">Mudanças aqui <b>recalculam todos os totais</b> deste orçamento — inclusive o que já foi exportado. Confira antes de reemitir a planilha.</p>' +
+        faixaCtx +
         '<div class="ow-sec"><h4>Dados do orçamento</h4>' + this._corpo1() + "</div>" +
         this._corpo2() + blocoBases;
       UI.modal("⚙ Parâmetros do orçamento", corpo, [
@@ -365,7 +375,11 @@
         if (sel && app && app._carregarEstados) {
           app._carregarEstados().then(function (ests) {
             if (!UI.el("ow-uf")) return; // modal fechou no meio do caminho
-            if (!ests || !ests.length) { sel.disabled = true; return; }
+            // v1.1.121: sem manifesto local ainda dá pra escolher qualquer UF —
+            // a troca baixa a base ao vivo do servidor (fallback do trocarEstadoSinapi)
+            if (!ests || !ests.length) {
+              ests = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"].map(function (u) { return { uf: u }; });
+            }
             var atual = self._st.uf;
             sel.innerHTML = ests.map(function (e) {
               return '<option value="' + esc(e.uf) + '"' + (e.uf === atual ? " selected" : "") + ">" + esc(e.uf) + (e.competencia ? " · " + esc(e.competencia) : "") + "</option>";
@@ -465,8 +479,14 @@
         ".ow-step.on{opacity:1;box-shadow:inset 0 0 0 1px var(--aco,#2e6f9e)}",
         ".ow-step.on .n{background:var(--aco,#2e6f9e);color:#fff}",
         ".ow-step.ok{opacity:.95}.ow-step.ok .n{background:#16a34a;color:#fff}",
-        ".ow-sec{margin:0 0 18px}",
-        ".ow-sec h4{margin:0 0 6px;font-size:13px;font-weight:800;color:var(--aco,#2e6f9e);text-transform:uppercase;letter-spacing:.3px}",
+        // v1.1.121 — seções em CAIXAS (borda + título com filete): parâmetros organizados por bloco
+        ".ow-sec{margin:0 0 16px;padding:14px;border:1px solid var(--linha,#c9d6e4);border-radius:12px;background:var(--surface,transparent)}",
+        ".ow-sec h4{margin:-14px -14px 12px;padding:9px 14px;font-size:12px;font-weight:800;color:var(--aco,#2e6f9e);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--linha,#c9d6e4);background:rgba(46,111,158,.05);border-radius:12px 12px 0 0}",
+        ".ow-ctx{display:flex;gap:18px;flex-wrap:wrap;align-items:center;padding:11px 14px;margin:0 0 14px;border:1px solid var(--linha-forte,#a6bdd2);border-radius:12px;background:rgba(46,111,158,.06)}",
+        ".ow-ctx span{display:flex;flex-direction:column;gap:1px}",
+        ".ow-ctx small{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;opacity:.65}",
+        ".ow-ctx b{font-size:13px}",
+        ".ow-ctx-dica{flex-basis:100%;font-size:10.5px;opacity:.7;margin-top:2px}",
         ".ow-nota{font-size:11.5px;margin:4px 0 10px;line-height:1.5}",
         ".ow-radio{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;margin-bottom:6px;border-radius:9px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(127,127,127,.2);font-size:12.5px;line-height:1.4}",
         ".ow-radio.on{box-shadow:inset 0 0 0 2px var(--aco,#2e6f9e);background:rgba(46,111,158,.08)}",

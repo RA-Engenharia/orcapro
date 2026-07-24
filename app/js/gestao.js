@@ -274,9 +274,17 @@
       var aReceber = fin.filter(function (f) { return f.tipo === "receita" && f.status === "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
       function k(rot, num, cls) { return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div></div>"; }
+      var _icP = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 15) : ""; };
+      // Título de seção do Painel — divide a página em blocos nomeados (organização)
+      var _sec = function (icone, titulo, sub) {
+        return '<div style="display:flex;align-items:baseline;gap:10px;margin:22px 0 10px;padding-bottom:7px;border-bottom:2px solid var(--linha)">' +
+          '<h2 style="margin:0;font-size:15px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:var(--texto);display:flex;align-items:center">' + _icP(icone) + titulo + '</h2>' +
+          (sub ? '<span class="muted" style="font-size:11.5px">' + sub + '</span>' : '') + '</div>';
+      };
       var html = '<h1 class="mb">Painel de Gestão</h1>' +
         // Bloco executivo/financeiro (filtros globais + KPIs de caixa + gráficos)
         this._dashFinHtml() +
+        _sec("obra", "Operação", "visão geral de obras, suprimentos e campo") +
         '<div class="kpis kpis-g">' +
           k("Obras em andamento", emAndamento + " / " + obras.length) +
           k("Valor contratado", Util.fmtMoeda(valorContratado), "custo") +
@@ -300,13 +308,13 @@
           lpTs.forEach(function (t) { if (!t) return; var c = LastPlanner.classificarQuadro(t, lpLook[0].chave); if (lpCols[c] != null) lpCols[c]++; });
           var lpPpc = lpRes.ppcSemana == null ? "—" : Math.round(lpRes.ppcSemana * 100) + "%";
           var lpCor = lpRes.ppcSemana == null ? "var(--texto-fraco)" : (lpRes.ppcSemana >= .8 ? "var(--verde)" : "#ea580c");
-          html += '<div class="card mt"' + (lpCols.impedida ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px">🗂 Last Planner — semana</h3>' +
+          html += '<div class="card mt"' + (lpCols.impedida ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("cronograma") + 'Last Planner — semana</h3>' +
             '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">' +
             '<span style="font-size:13px">PPC: <b style="color:' + lpCor + '">' + lpPpc + '</b> <span class="muted">(' + lpRes.feitas + "/" + lpRes.comprometidas + ' tarefas)</span></span>' +
             '<span style="font-size:13px">Em execução: <b>' + lpCols.execucao + '</b></span>' +
             '<span style="font-size:13px">Liberadas: <b>' + lpCols.liberada + '</b></span>' +
             '<span style="font-size:13px;color:' + (lpCols.impedida ? "#b3423a" : "var(--verde)") + '">Impedimentos: <b>' + lpCols.impedida + '</b></span>' +
-            '<button class="btn sm" data-view="lastplanner" style="margin-left:auto">🗂 Abrir o quadro</button></div></div>';
+            '<button class="btn sm" data-view="lastplanner" style="margin-left:auto">Abrir o quadro</button></div></div>';
         }
       }
       // G3: fila de aprovações pendentes (só aparece quando há algo esperando, e só p/ quem aprova)
@@ -314,7 +322,7 @@
       var pend = this._pendentesAprovacao();
       if (podeAp && pend.total > 0) {
         var chip = function (n, rot, view) { return n > 0 ? '<button class="btn sm" data-view="' + view + '" style="margin-right:8px">' + rot + ": <b>" + n + "</b></button>" : ""; };
-        html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px">⏳ Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309">' + pend.total + '</span></h3>' +
+        html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("relogio") + 'Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309;margin-left:8px">' + pend.total + '</span></h3>' +
           '<div class="muted" style="margin-bottom:10px;font-size:13px">Itens aguardando o seu aval. Clique para revisar e aprovar/rejeitar.</div>' +
           chip(pend.medicoes, "Medições", "medicoes") + chip(pend.compras, "Pedidos de compra", "compras") + chip(pend.requisicoes, "Requisições", "requisicoes") +
           "</div>";
@@ -542,7 +550,8 @@
     },
     // ----- SVGs do bloco executivo (mesma estética do painel do Last Planner) -----
     _dashSvgFluxo: function (fluxo) {
-      var W = 420, H = 168, padL = 44, padR = 8, padT = 10, padB = 20;
+      // Tipografia dos eixos maior + grid mais forte (legibilidade em tela grande e mobile)
+      var W = 440, H = 190, padL = 52, padR = 10, padT = 12, padB = 26;
       var iw = W - padL - padR, ih = H - padT - padB;
       var vals = [];
       fluxo.forEach(function (f) { vals.push(f.receita, f.despesa, f.acumulado, 0); });
@@ -553,28 +562,31 @@
       var self = this;
       var linha = function (chave, cor, dash) {
         var pts = fluxo.map(function (f, i) { return x(i) + "," + y(f[chave]); }).join(" ");
-        var s = '<polyline points="' + pts + '" fill="none" stroke="' + cor + '" stroke-width="2"' + (dash ? ' stroke-dasharray="6 4"' : "") + '/>';
+        var s = '<polyline points="' + pts + '" fill="none" stroke="' + cor + '" stroke-width="2.5"' + (dash ? ' stroke-dasharray="7 4"' : "") + '/>';
         fluxo.forEach(function (f, i) {
-          s += '<circle cx="' + x(i) + '" cy="' + y(f[chave]) + '" r="2.6" fill="var(--surface)" stroke="' + cor + '" stroke-width="1.6"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f[chave]) + '</title></circle>';
+          s += '<circle cx="' + x(i) + '" cy="' + y(f[chave]) + '" r="3.1" fill="var(--surface)" stroke="' + cor + '" stroke-width="2"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f[chave]) + '</title></circle>';
         });
         return s;
       };
-      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">';
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
       for (var g = 0; g <= 3; g++) {
         var gv = min + (max - min) * g / 3;
-        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha)" stroke-width="1"/>' +
-          '<text x="' + (padL - 5) + '" y="' + (y(gv) + 3) + '" text-anchor="end" font-size="8" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
+        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha-forte)" stroke-width="1"/>' +
+          '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
-      if (min < 0) svg += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="var(--texto-fraco)" stroke-width="1"/>';
+      if (min < 0) svg += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="var(--texto-fraco)" stroke-width="1.4"/>';
       svg += linha("receita", "var(--navy)") + linha("despesa", "#b45309") + linha("acumulado", "var(--verde)", true);
       fluxo.forEach(function (f, i) {
-        svg += '<text x="' + x(i) + '" y="' + (H - 4) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(f.rotulo) + '</text>';
+        // 1º e último ancoram pra dentro — "jul/26" estourava o viewBox e era clipado ("jul/2")
+        var anc = i === 0 ? "start" : (i === fluxo.length - 1 ? "end" : "middle");
+        var tx = i === 0 ? Math.max(2, x(i) - 14) : (i === fluxo.length - 1 ? W - 2 : x(i));
+        svg += '<text x="' + tx + '" y="' + (H - 6) + '" text-anchor="' + anc + '" font-size="10" font-weight="600" fill="var(--texto-fraco)">' + Util.esc(f.rotulo) + '</text>';
       });
       svg += "</svg>";
-      svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:var(--navy)"></span>Receitas</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:#b45309"></span>Despesas</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:12px;height:3px;border-radius:2px;background:var(--verde)"></span>Saldo acumulado</span></div>';
+      svg += '<div style="display:flex;gap:14px;margin-top:6px;font-size:11.5px;font-weight:600;color:var(--texto-fraco);flex-wrap:wrap">' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--navy)"></span>Receitas</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:#b45309"></span>Despesas</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--verde)"></span>Saldo acumulado</span></div>';
       return svg;
     },
     /* Top-8 do Previsto×Realizado por RELEVÂNCIA (maior previsto+real primeiro),
@@ -588,43 +600,49 @@
       return etapas.concat(semEtapa);
     },
     _dashSvgPrevReal: function (dados) {
-      var self = this, W = 420, H = 168, padL = 44, padR = 6, padT = 10, padB = 24;
+      var self = this, W = 440, H = 190, padL = 52, padR = 8, padT = 12, padB = 30;
       var iw = W - padL - padR, ih = H - padT - padB;
       var max = 1;
       dados.forEach(function (d) { if (d.previsto > max) max = d.previsto; if (d.real > max) max = d.real; });
       var y = function (v) { return padT + (1 - v / max) * ih; };
-      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block">';
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
       for (var g = 0; g <= 3; g++) {
         var gv = max * g / 3;
-        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha)" stroke-width="1"/>' +
-          '<text x="' + (padL - 5) + '" y="' + (y(gv) + 3) + '" text-anchor="end" font-size="8" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
+        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha-forte)" stroke-width="1"/>' +
+          '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
-      var gw = iw / dados.length, bw = Math.min(16, gw / 3);
+      var gw = iw / dados.length, bw = Math.min(18, gw / 3);
+      // Rótulo do eixo X: truncagem pelo ESPAÇO do slot (~5.6px/char a 9.5px) e, se
+      // ainda assim vizinhos encostarem (5+ barras), alterna em 2 alturas (zigue-zague)
+      // — achado do gate: nomes de etapa colidiam e viravam uma faixa ilegível.
+      var maxC = Math.max(5, Math.floor(gw / 5.6));
+      var zig = dados.length >= 5;
       dados.forEach(function (d, i) {
         var cx = padL + gw * i + gw / 2;
-        var nome = String(d.rotulo || ""); if (nome.length > 13) nome = nome.slice(0, 12) + "…";
-        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="2" fill="var(--aco-claro)" opacity=".75"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
-          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="' + (d.estourou ? "#dc2626" : "var(--navy)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " ⚠ ESTOURO" : "") + '</title></rect>' +
-          '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="8" fill="var(--texto-fraco)">' + Util.esc(nome) + '</text>' +
-          (d.previsto > 0 ? '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8" font-weight="700" fill="' + (d.estourou ? "#dc2626" : "var(--verde)") + '">' + (d.real > d.previsto ? "+" : "") + Math.round((d.real / d.previsto - 1) * 100) + '%</text>' : "");
+        var nome = String(d.rotulo || ""); if (nome.length > maxC) nome = nome.slice(0, Math.max(3, maxC - 1)) + "…";
+        var yNome = zig ? (i % 2 ? H - 15 : H - 25) : H - 15;
+        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="3" fill="var(--aco-claro)" opacity=".8"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="3" fill="' + (d.estourou ? "#dc2626" : "var(--navy)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " ⚠ ESTOURO" : "") + '</title></rect>' +
+          '<text x="' + cx + '" y="' + yNome + '" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + Util.esc(nome) + '<title>' + Util.esc(d.rotulo) + '</title></text>' +
+          (d.previsto > 0 ? '<text x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + (d.estourou ? "#dc2626" : "var(--verde)") + '">' + (d.real > d.previsto ? "+" : "") + Math.round((d.real / d.previsto - 1) * 100) + '%</text>' : "");
       });
       svg += "</svg>";
-      svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--aco-claro)"></span>Previsto (orçamento)</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--navy)"></span>Realizado (lançado)</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:#dc2626"></span>Estouro</span></div>';
+      svg += '<div style="display:flex;gap:14px;margin-top:6px;font-size:11.5px;font-weight:600;color:var(--texto-fraco);flex-wrap:wrap">' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--aco-claro)"></span>Previsto (orçamento)</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--navy)"></span>Realizado (lançado)</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#dc2626"></span>Estouro</span></div>';
       return svg;
     },
     _dashSvgDonutCat: function (cats, total) {
       var R = 42, C = 2 * Math.PI * R, off = 0, self = this;
-      var svg = '<svg viewBox="0 0 120 120" style="width:128px;height:128px;flex:0 0 auto">';
+      var svg = '<svg viewBox="0 0 120 120" style="width:148px;height:148px;flex:0 0 auto;font-variant-numeric:tabular-nums">';
       cats.forEach(function (f) {
         var frac = total > 0 ? f.valor / total : 0, arco = Math.max(0, frac * C - 2);
-        svg += '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + f.cor + '" stroke-width="15" stroke-dasharray="' + arco + " " + (C - arco) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 60 60)"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f.valor) + '</title></circle>';
+        svg += '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + f.cor + '" stroke-width="16" stroke-dasharray="' + arco + " " + (C - arco) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 60 60)"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f.valor) + '</title></circle>';
         off += frac * C;
       });
-      svg += '<text x="60" y="57" text-anchor="middle" font-size="13" font-weight="800" fill="var(--texto)">' + this._fmtK(total).replace("R$ ", "") + '</text>' +
-        '<text x="60" y="71" text-anchor="middle" font-size="8" fill="var(--texto-fraco)">despesas pagas</text></svg>';
+      svg += '<text x="60" y="57" text-anchor="middle" font-size="13.5" font-weight="800" fill="var(--texto)">' + this._fmtK(total).replace("R$ ", "") + '</text>' +
+        '<text x="60" y="71" text-anchor="middle" font-size="8.5" font-weight="600" fill="var(--texto-fraco)">despesas pagas</text></svg>';
       return svg;
     },
     _dashEmpilhadoHtml: function (empilhado) {
@@ -661,12 +679,18 @@
       var optO = '<option value="todas"' + (d.obraSel === "todas" ? " selected" : "") + '>Todas as Obras (Visão Global)</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === d.obraSel ? " selected" : "") + '>' + Util.esc(o.nome) + '</option>'; }).join("");
       var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + '>' + perRot[p] + '</option>'; }).join("");
-      var html = '<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:12px 16px">' +
-        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">🏗 Obra <select data-gacao="dash-obra" style="max-width:250px">' + optO + '</select></label>' +
-        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">📅 Período <select data-gacao="dash-periodo" style="max-width:170px">' + optP + '</select></label>' +
+      var _ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      var html = '<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 16px">' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("obra") + 'Obra <select data-gacao="dash-obra" style="max-width:250px">' + optO + '</select></label>' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("periodo") + 'Período <select data-gacao="dash-periodo" style="max-width:170px">' + optP + '</select></label>' +
         '<span class="muted" style="margin-left:auto;font-size:11.5px">' + (d.obraSel === "todas" ? "Portfólio completo" : Util.esc((obras.filter(function (o) { return o.id === d.obraSel; })[0] || {}).nome || "")) + ' · ' + perRot[this._dashPer] + '</span></div>';
 
       if (!temFin) return html; // filtros ficam; KPIs/gráficos aparecem quando houver lançamentos
+
+      // Título da seção financeira (organização em blocos nomeados)
+      html += '<div style="display:flex;align-items:baseline;gap:10px;margin:6px 0 10px;padding-bottom:7px;border-bottom:2px solid var(--linha)">' +
+        '<h2 style="margin:0;font-size:15px;font-weight:800;letter-spacing:.02em;text-transform:uppercase;color:var(--texto);display:flex;align-items:center">' + _ic("dinheiro", 15) + 'Financeiro do período</h2>' +
+        '<span class="muted" style="font-size:11.5px">caixa, orçado × realizado e alertas</span></div>';
 
       // ---- KPIs financeiros ----
       // A comparação orçado×realizado usa SÓ o que tem previsto (realComp) — o
@@ -692,19 +716,23 @@
         html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
         d.alertas.forEach(function (a) {
           var est = a.tipo === "estouro";
-          html += '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:8px;border:1px solid ' + (est ? "rgba(220,38,38,.3)" : "rgba(234,88,12,.3)") + ';background:' + (est ? "rgba(220,38,38,.07)" : "rgba(234,88,12,.07)") + ';color:' + (est ? "#dc2626" : "#c2570c") + '">' + (est ? "⚠" : "⏳") + " " + Util.esc(a.texto) + '</span>';
+          html += '<span style="display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:6px 10px;border-radius:8px;border:1px solid ' + (est ? "rgba(220,38,38,.35)" : "rgba(234,88,12,.35)") + ';background:' + (est ? "rgba(220,38,38,.07)" : "rgba(234,88,12,.07)") + ';color:' + (est ? "#dc2626" : "#c2570c") + '">' + _ic(est ? "alerta" : "relogio", 13) + Util.esc(a.texto) + '</span>';
         });
         html += '</div>';
       }
 
       // ---- gráficos ----
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:14px">';
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">💰 Fluxo de caixa</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Recebido × pago por mês · saldo acumulado — ' + perRot[this._dashPer] + '</p>' +
+      var _h3g = function (icone, titulo, sub) {
+        return '<h3 style="margin:0 0 2px;font-size:14px;display:flex;align-items:center;color:var(--texto)">' + _ic(icone, 15) + titulo + '</h3>' +
+          '<p class="muted" style="font-size:11.5px;margin:0 0 10px">' + sub + '</p>';
+      };
+      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">';
+      html += '<div class="card">' + _h3g("fluxo", "Fluxo de caixa", 'Recebido × pago por mês · saldo acumulado — ' + perRot[this._dashPer]) +
         (d.fluxo.length ? this._dashSvgFluxo(d.fluxo) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem lançamentos pagos no período.</p>') + '</div>';
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">📊 Previsto × Realizado ' + (d.porEtapa ? "por etapa" : "por obra") + '</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Custo direto orçado × despesas lançadas (acumulado da obra)</p>' +
+      html += '<div class="card">' + _h3g("prevreal", "Previsto × Realizado " + (d.porEtapa ? "por etapa" : "por obra"), "Custo direto orçado × despesas lançadas (acumulado da obra)") +
         (d.prevReal.length ? this._dashSvgPrevReal(this._dashPrevRealTop(d.prevReal)) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (em Obras → editar) pra comparar orçado × realizado.</p>') +
         (d.prevReal.length > 8 ? '<p class="muted" style="font-size:10.5px;margin:4px 0 0">Mostrando as 8 maiores linhas de ' + d.prevReal.length + ' — o KPI soma todas.</p>' : '') + '</div>';
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">🍩 Despesas por categoria</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Categorias do financeiro — ' + perRot[this._dashPer] + '</p>';
+      html += '<div class="card">' + _h3g("categorias", "Despesas por categoria", 'Categorias do financeiro — ' + perRot[this._dashPer]);
       if (d.cats.length) {
         html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + this._dashSvgDonutCat(d.cats, d.despesas) + '<div style="flex:1;min-width:150px">';
         d.cats.forEach(function (c) {
@@ -714,7 +742,7 @@
         html += '</div></div>';
       } else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas no período.</p>';
       html += '</div>';
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">🏗 Custo por obra</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Peso de cada obra no período — Material × Mão de obra × Equipamento</p>' +
+      html += '<div class="card">' + _h3g("custoobra", "Custo por obra", "Peso de cada obra no período — Material × Mão de obra × Equipamento") +
         (d.empilhado.length ? this._dashEmpilhadoHtml(d.empilhado) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas com obra vinculada no período.</p>') + '</div>';
       html += '</div>';
       return html;
@@ -1617,59 +1645,94 @@
         '<option value="">— sem cronograma (sequência padrão) —</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._bimSel ? " selected" : "") + ">" + Util.esc(o.nome) + (o.orcamentoId ? "" : " (sem orçamento)") + "</option>"; }).join("") + "</select>";
       var extra = '<span class="muted" style="align-self:center;margin-right:10px">Cronograma da obra (4D):</span>' + sel +
-        ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">👥 Reunião</button>' +
-        ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">🏗️ Exportar p/ Revit</button>' +
-        ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">🧠 Gerar orçamento do modelo</button>' +
-        ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">📕 Quantitativo ilustrado</button>' +
-        ' <button class="btn sm" data-gacao="bim-qr-rv" title="Gera um QR pra abrir a Realidade Mista/Virtual no celular ou tablet — andar dentro do projeto, ver por disciplina e (Android) fixar em RA no ambiente da obra">📱 QR · RA/RV no celular</button>';
+        ' <button class="btn sm" data-gacao="bim-reuniao" id="bim-btn-reuniao">' + ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + 'Reunião</button>' +
+        ' <button class="btn sm" data-gacao="bim-revit" title="Grava revit\\obra-ativa.json — o plugin RA BIM Tools no Revit passa a ver BDI, etapas e cronograma desta obra">' + ((typeof Icones !== "undefined") ? Icones.get("custoobra", 14) : "") + 'Exportar p/ Revit</button>' +
+        ' <button class="btn sm primary" data-gacao="bimeap-abrir" title="O agente lê o modelo IFC (carimbos do Revit, quantitativos, fases de reforma) e monta a EAP completa: etapas, serviços, quantidades e memorial de cálculo rastreável">' + ((typeof Icones !== "undefined") ? Icones.get("escopo", 14) : "") + 'Gerar orçamento do modelo</button>' +
+        ' <button class="btn sm" data-gacao="bim-quant-ilustrado" title="Caderno com a imagem de cada família, descrição, dimensões e quantidades do projeto inteiro">' + ((typeof Icones !== "undefined") ? Icones.get("relatorios", 14) : "") + 'Quantitativo ilustrado</button>' +
+        ' <button class="btn sm" data-gacao="bim-qr-rv" title="Gera um QR pra abrir a Realidade Mista/Virtual no celular ou tablet — andar dentro do projeto, ver por disciplina e (Android) fixar em RA no ambiente da obra">' + ((typeof Icones !== "undefined") ? Icones.get("apresentar", 14) : "") + 'QR · RA/RV no celular</button>';
+      var _icB = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 15) : ""; };
       var html = this._head(svg("bim") + "BIM 3D ao 7D", "", "", extra);
-      html += '<div style="display:grid;grid-template-columns:1fr;gap:12px">';
+      // v1.1.121 — página = SÓ o visualizador (mais alto). Os painéis de análise
+      // (modelos, 4D, clash, quantitativos, famílias, 6D/7D) moram numa GAVETA
+      // lateral DENTRO do viewer, aberta pelo dock de ferramentas — sem rolar a página.
       html += '<div class="card" style="padding:0;overflow:hidden;border-radius:14px;position:relative">' +
-        '<div id="bim-canvas" style="width:100%;height:min(64vh,580px);position:relative;background:#0b1a2b;display:flex;align-items:center;justify-content:center">' +
-        '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px"><div style="font-size:34px;margin-bottom:8px">🏗️</div>Carregando o visualizador 3D…</div>' +
+        '<div id="bim-canvas" style="width:100%;height:min(76vh,720px);position:relative;background:#0b1a2b;display:flex;align-items:center;justify-content:center">' +
+        '<div id="bim-aviso" style="color:#8fa3b8;text-align:center;font-size:14px;padding:20px"><div style="margin-bottom:8px">' + _icB("obra", 34) + '</div>Carregando o visualizador 3D…</div>' +
         "</div>" +
         // FORA do #bim-canvas: BIM.montar zera o innerHTML do host — dentro dele o balão era APAGADO
         // em toda montagem (overlay de propriedades/conflito nunca aparecia após montar o viewer)
-        '<div id="bim-info" style="position:absolute;left:10px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
-        "</div>";
-      html += '<div class="card" id="bim-modelos" style="display:none">' +
-        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🗂 Modelos carregados <span class="muted" style="font-weight:400;font-size:13px">— interoperabilidade entre disciplinas</span></h3>' +
-        '<span class="muted" style="font-size:12px">➕ arraste mais arquivos .IFC no visualizador (estrutural + arquitetura + hidráulica…)</span></div>' +
-        '<div id="bim-modelos-lista"></div></div>';
-      html += '<div class="card" id="bim-4d" style="display:none">' +
-        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🎬 Simulação 4D <span class="muted" style="font-weight:400;font-size:13px">— avanço da obra no tempo</span></h3>' +
-        '<span><span id="bim-custo" class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;margin-right:6px;display:none"></span><span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></span></div>' +
-        '<div class="flex" style="gap:10px;align-items:center">' +
-        '<button class="btn sm" id="bim-play">▶ Play</button>' +
-        '<input type="range" id="bim-slider" min="0" max="100" value="0" style="flex:1">' +
-        '<span id="bim-semana" class="muted" style="min-width:130px;text-align:right;font-size:13px">Semana 0</span></div>' +
-        '<div id="bim-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:12px"></div>' +
-        '<div id="bim-curva" style="margin-top:12px"></div>' +
-        "</div>";
-      html += '<div class="card" id="bim-clash" style="display:none">' +
-        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🧩 Compatibilização <span class="muted" style="font-weight:400;font-size:13px">— conflitos entre disciplinas</span></h3>' +
-        '<button class="btn sm primary" id="bim-clash-run">🔍 Rodar compatibilização</button></div>' +
-        '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> — e no federado (2+ modelos) <b>Hidráulica, Elétrica e Mecânica contam separadas</b> (ex.: tubo × eletroduto, tubo atravessando viga). Clique em <b>Rodar</b>.</p></div>' +
-        "</div>";
-      html += '<div class="card" id="bim-qto" style="display:none">' +
-        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">📐 Quantitativos <span class="muted" style="font-weight:400;font-size:13px">— levantamento automático do modelo</span></h3>' +
-        '<button class="btn sm primary" id="bim-qto-run">📊 Levantar quantitativos</button></div>' +
-        '<div id="bim-qto-res"><p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p></div>' +
-        "</div>";
-      // 📚 Banco de famílias — SEMPRE visível (mesmo sem modelo: dá pra criar projeto do zero
-      // com o editor + uma família salva de outro projeto). Populado no _bimWire.
-      html += '<div class="card" id="bim-familias" style="padding:12px">' +
-        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">📚 Banco de famílias <span class="muted" style="font-weight:400;font-size:13px">— salve do modelo e reuse em qualquer projeto</span></h3></div>' +
-        '<div id="bim-familias-lista"></div>' +
-        "</div>";
-      html += '<div class="card" id="bim-6d" style="display:none">' +
-        '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0">🧊 6D/7D · Ciclo de vida <span class="muted" style="font-weight:400;font-size:13px">— manutenção e custo pós-obra (20 anos)</span></h3>' +
-        '<button class="btn sm primary" id="bim-6d-run">🧊 Gerar ciclo de vida</button></div>' +
-        '<div id="bim-6d-res"><p class="muted" style="font-size:12.5px;margin:0"><b>6D</b> = plano de manutenção preventiva por categoria (vida útil de projeto da NBR 15575). <b>7D</b> = quanto a edificação custa DEPOIS de pronta, ano a ano. Com orçamento vinculado à obra, os valores saem em R$; sem, sai o cronograma físico. Clique em <b>Gerar</b>.</p></div>' +
-        "</div>";
-      html += "</div>";
-      html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) no visualizador — use <b>Carregar exemplo</b> pra testar. Navegue em <b>Órbita</b> ou <b>Voo</b> (WASD+mouse), duplo-clique num elemento pra ver as propriedades. Depois arraste o tempo e veja a obra se construir por etapa; as fases seguem o <b>cronograma do orçamento vinculado</b> à obra (ou a sequência padrão).</p>';
+        '<div id="bim-info" style="position:absolute;left:64px;top:52px;background:rgba(15,39,64,.9);color:#fff;border-radius:8px;padding:7px 11px;font-size:12px;display:none;max-width:260px;z-index:4"></div>' +
+        // GAVETA de análise (drawer): desliza da direita, por cima do canvas
+        '<div id="bim-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(440px,94%);background:var(--surface);border-left:1px solid var(--linha-forte);box-shadow:-14px 0 34px rgba(0,0,0,.3);z-index:6;display:none;flex-direction:column">' +
+          '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:2px solid var(--linha)">' +
+            '<b id="bim-drawer-tit" style="font-size:14px">Análise</b>' +
+            '<button class="btn sm ghost" data-gacao="bim-drawer-fechar" style="margin-left:auto" title="Fechar painel">✕</button></div>' +
+          '<div id="bim-drawer-body" style="flex:1;overflow-y:auto;padding:12px">' +
+
+        '<div id="bim-modelos" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("camadas") + 'Modelos carregados</h3>' +
+          '<span class="muted" style="font-size:11.5px">arraste mais .IFC no visualizador (federado)</span></div>' +
+          '<div id="bim-modelos-lista"></div></div>' +
+
+        '<div id="bim-4d" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("cronograma") + 'Simulação 4D</h3>' +
+          '<span><span id="bim-custo" class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;margin-right:6px;display:none"></span><span id="bim-avanco" class="g-pill" style="background:#16a34a22;color:#16a34a">0%</span></span></div>' +
+          '<div class="flex" style="gap:10px;align-items:center">' +
+          '<button class="btn sm" id="bim-play">▶ Play</button>' +
+          '<input type="range" id="bim-slider" min="0" max="100" value="0" style="flex:1">' +
+          '<span id="bim-semana" class="muted" style="min-width:110px;text-align:right;font-size:12.5px">Semana 0</span></div>' +
+          '<div id="bim-legenda" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:12px;font-size:12px"></div>' +
+          '<div id="bim-curva" style="margin-top:12px"></div>' +
+        "</div>" +
+
+        '<div id="bim-clash" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("alerta") + 'Compatibilização</h3>' +
+          '<button class="btn sm primary" id="bim-clash-run">' + _icB("buscar") + 'Rodar compatibilização</button></div>' +
+          '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> — e no federado (2+ modelos) <b>Hidráulica, Elétrica e Mecânica contam separadas</b> (ex.: tubo × eletroduto, tubo atravessando viga). Clique em <b>Rodar</b>.</p></div>' +
+        "</div>" +
+
+        '<div id="bim-qto" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("medicao") + 'Quantitativos</h3>' +
+          '<button class="btn sm primary" id="bim-qto-run">' + _icB("prevreal") + 'Levantar quantitativos</button></div>' +
+          '<div id="bim-qto-res"><p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p></div>' +
+        "</div>" +
+
+        '<div id="bim-familias" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0;display:flex;align-items:center">' + _icB("tabela") + 'Banco de famílias</h3></div>' +
+          '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Salve famílias do modelo e reuse em qualquer projeto.</p>' +
+          '<div id="bim-familias-lista"></div>' +
+        "</div>" +
+
+        '<div id="bim-6d" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("relogio") + '6D/7D · Ciclo de vida</h3>' +
+          '<button class="btn sm primary" id="bim-6d-run">Gerar ciclo de vida</button></div>' +
+          '<div id="bim-6d-res"><p class="muted" style="font-size:12.5px;margin:0"><b>6D</b> = plano de manutenção preventiva por categoria (vida útil de projeto da NBR 15575). <b>7D</b> = quanto a edificação custa DEPOIS de pronta, ano a ano. Com orçamento vinculado à obra, os valores saem em R$; sem, sai o cronograma físico. Clique em <b>Gerar</b>.</p></div>' +
+        "</div>" +
+
+          "</div>" + // /#bim-drawer-body
+        "</div>" +   // /#bim-drawer
+        "</div>";    // /card do viewer
+      html += '<p class="muted" style="font-size:12.5px;margin-top:10px">Carregue um modelo <b>.IFC</b> (exportado do Revit/pyRevit) — use <b>Exemplo</b> pra testar. As ferramentas ficam no <b>dock à esquerda</b>, agrupadas por categoria (passe o mouse ou toque pra expandir); Quantitativos, Compatibilização, 4D e 6D/7D abrem no grupo <b>Análise & Orçamento</b>, numa gaveta dentro do próprio visualizador. Duplo-clique num elemento mostra as propriedades.</p>';
       return html;
+    },
+    /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
+     * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
+    _bimAbrirPainel: function (chave) {
+      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"] };
+      var alvo = mapa[chave]; if (!alvo) return;
+      var drawer = document.getElementById("bim-drawer"); if (!drawer) return;
+      Object.keys(mapa).forEach(function (k) {
+        var el = document.getElementById(mapa[k][0]);
+        if (el) el.style.display = (k === chave) ? "" : "none";
+      });
+      var tit = document.getElementById("bim-drawer-tit"); if (tit) tit.textContent = alvo[1];
+      drawer.style.display = "flex";
+      // famílias são populadas sob demanda (antes era um card sempre visível)
+      if (chave === "familias" && this._bimRenderFamilias) { try { this._bimRenderFamilias(); } catch (eF) {} }
+    },
+    _bimFecharDrawer: function () {
+      var drawer = document.getElementById("bim-drawer");
+      if (drawer) drawer.style.display = "none";
     },
     bimTrocaObra: function (obraId) {
       this._bimSel = obraId;
@@ -1941,8 +2004,10 @@
     _bimRenderModelos: function (lista) {
       var card = document.getElementById("bim-modelos"), box = document.getElementById("bim-modelos-lista");
       if (!card || !box) return;
-      if (!lista || !lista.length) { card.style.display = "none"; box.innerHTML = ""; return; }
-      card.style.display = "";
+      // v1.1.121: o painel mora na gaveta do viewer — só ATUALIZA o conteúdo aqui;
+      // exibição é da gaveta (_bimAbrirPainel). Sem modelo, esconde E fecha a gaveta
+      // (senão sobrava uma gaveta aberta e vazia — achado do gate).
+      if (!lista || !lista.length) { card.style.display = "none"; box.innerHTML = ""; this._bimFecharDrawer(); return; }
       var self = this;
       box.innerHTML = "";
       lista.forEach(function (mo) {
@@ -1977,7 +2042,7 @@
         var audioOn = !!BIM.reuniao.audioAtiva;
         UI.modal("👥 Você está na sala",
           '<p style="margin:0 0 10px">Sala atual: <b>' + Util.esc(salaAtual) + "</b> · " + nOnline + " online</p>" +
-          '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Copie o código e mande pro colega (WhatsApp mesmo) — ele clica em 👥 Reunião, cola no campo <b>Sala</b> e aparece do seu lado dentro do modelo.</p>' +
+          '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Copie o código e mande pro colega (WhatsApp mesmo) — ele clica em <b>Reunião</b>, cola no campo <b>Sala</b> e aparece do seu lado dentro do modelo.</p>' +
           '<p class="muted" style="font-size:12px;margin:0">🎤 O áudio é <b>por voz</b>: quando você fala, os outros ouvem; quando cala, seu som pausa sozinho (aparece um 🎤 sobre quem está falando).</p>', [
           { texto: audioOn ? "🔇 Desligar áudio" : "🎤 Ativar áudio", classe: audioOn ? "ghost" : "primary", onClick: function () {
             // o CLIQUE libera o microfone (getUserMedia + AudioContext exigem gesto)
@@ -2059,6 +2124,7 @@
         var qres = document.getElementById("bim-qto-res"); if (qres) qres.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p>';
         var binfo = document.getElementById("bim-info"); if (binfo) binfo.style.display = "none"; // balão de propriedades/conflito do modelo que JÁ FOI
         var r6 = document.getElementById("bim-6d-res"); if (r6) r6.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0"><b>6D</b> = plano de manutenção preventiva por categoria (vida útil de projeto da NBR 15575). <b>7D</b> = quanto a edificação custa DEPOIS de pronta, ano a ano. Com orçamento vinculado à obra, os valores saem em R$; sem, sai o cronograma físico. Clique em <b>Gerar</b>.</p>';
+        this._bimFecharDrawer(); // gaveta aberta num painel que acabou de esvaziar viraria casca vazia (achado do gate)
         return;
       }
       var crono = null, obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
@@ -2085,10 +2151,8 @@
           return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:' + f.cor + ';display:inline-block"></span>' + Util.esc(f.nome) + ' <span class="muted">(' + f.qtd + ")</span></span>";
         }).join("");
       }
-      var box = document.getElementById("bim-4d"); if (box) box.style.display = "";
-      var bcx = document.getElementById("bim-clash"); if (bcx) bcx.style.display = "";
-      var bqx = document.getElementById("bim-qto"); if (bqx) bqx.style.display = "";
-      var b6x = document.getElementById("bim-6d"); if (b6x) b6x.style.display = "";
+      // v1.1.121: os painéis moram na GAVETA do viewer — quem controla a exibição
+      // é _bimAbrirPainel (um por vez); modelo carregado não os força mais na página.
       this._bimCurva = BIM4D.curva(p);
       this._bimAplicarSemana(semAlvo);
     },
@@ -2760,10 +2824,13 @@
         if (window.BIM && BIM.montar) {
           var aviso = document.getElementById("bim-aviso"); if (aviso) aviso.style.display = "none";
           BIM.montar(canvas, {
+            // v1.1.121 — grupo "Análise & Orçamento" do dock abre a gaveta do viewer
+            onPainel: function (chave) { self._bimAbrirPainel(chave); },
             onModelos: function (lista) { self._bimRenderModelos(lista); },
-            onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = n > 0 ? "👥 Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "👥 Na sala…" : "👥 Reunião"); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
-            onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
-            onReuniaoCheia: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.textContent = "👥 Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("👥 Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair.", "erro"); },
+            // v1.1.121: innerHTML com Icones (textContent apagaria o ícone SVG do botão)
+            onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { var icR = (typeof Icones !== "undefined") ? Icones.get("obra", 14) : ""; b.innerHTML = icR + (n > 0 ? "Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "Na sala…" : "Reunião")); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
+            onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
+            onReuniaoCheia: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair.", "erro"); },
             onVoz: function (on) { UI.toast(on ? "🎤 Áudio ligado — fale normalmente; quem não fala fica em silêncio." : "🎤 Áudio desligado.", "ok"); },
             onVozErro: function (nm) { UI.toast(nm === "NotAllowedError" ? "🎤 Microfone negado. Clique de novo e permita." : "🎤 Não consegui abrir o microfone: " + nm, "erro"); },
             onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); },
@@ -2920,7 +2987,7 @@
       { p: "Como crio meu primeiro orçamento?", r: "No menu <b>Orçamentos</b>, clique em <b>Novo orçamento</b>. Descreva a obra no <b>Escopo Inteligente</b> (texto livre) ou adicione itens direto com <b>+ Item</b>, buscando no SINAPI por código ou descrição." },
       { p: "De onde vêm os preços?", r: "Da base <b>SINAPI oficial da Caixa</b>, na competência e UF que você escolher — mais SICRO, SEINFRA-CE, SETOP-MG, SUDECAP-BH e GOINFRA/AGETOP-GO (rodoviárias de Goiás). Cada orçamento declara as bases REALMENTE usadas (nunca atribui tudo à SINAPI). Nada é inventado: item sem correspondência fica marcado como pendente para você decidir." },
       { p: "O que é o BDI e como configuro?", r: "BDI é a taxa que cobre custos indiretos, impostos e lucro sobre o custo direto. Na aba <b>BDI & Parâmetros</b> você usa o modelo do <b>Acórdão TCU 2.622/2013</b> ou o <b>DNIT</b>, e o preço de venda recalcula na hora." },
-      { p: "Posso editar a planilha no Excel e trazer de volta?", r: "Sim — esse é um diferencial exclusivo. Exporte o Excel, ajuste quantidades ou custos, e use <b>📥 Reimportar</b>: o sistema mostra cada mudança para você revisar antes de aplicar." },
+      { p: "Posso editar a planilha no Excel e trazer de volta?", r: "Sim — esse é um diferencial exclusivo. Exporte o Excel, ajuste quantidades ou custos, e use <b>Reimportar</b>: o sistema mostra cada mudança para você revisar antes de aplicar." },
       { p: "Como gero a proposta comercial?", r: "Com o orçamento pronto e um cliente vinculado, o botão <b>Gerar Proposta Comercial</b> monta o PDF com a sua marca — capa, escopo, condições comerciais e assinatura." },
       { p: "O que é o Portal do Cliente?", r: "No plano <b>Plus</b>, em <b>Obras</b> → <b>Portal do cliente</b>, você publica um resumo da obra (andamento, medições, diário com fotos) e o SEU cliente acompanha online com login próprio." },
       { p: "Como registro o Diário de Obra (RDO)?", r: "No módulo <b>Diário (RDO)</b>, crie um novo com clima, efetivo, atividades, ocorrências e fotos. Sai impresso com a identidade da sua empresa e as fotos alimentam o Portal do Cliente." },
@@ -6154,6 +6221,7 @@ renderFolha: function () {
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
+        case "bim-drawer-fechar": return this._bimFecharDrawer();
         case "bim-reuniao": return this.bimReuniao();
         case "bim-revit": return this.bimExportarRevit();
         case "bimeap-abrir": return this.bimeapAbrir();

@@ -100,7 +100,9 @@ function montar(host, opts) {
       pilar: '<rect x="6" y="3" width="4" height="10"/><path d="M4 3h8M4 13h8"/>',
       mover: '<path d="M8 2v12M2 8h12M8 2l-2 2M8 2l2 2M8 14l-2-2M8 14l2-2M2 8l2-2M2 8l2 2M14 8l-2-2M14 8l-2 2"/>',
       nota: '<path d="M8 14V7"/><circle cx="8" cy="4.6" r="2.6"/>',
-      xr: '<path d="M2 6.5A1.5 1.5 0 0 1 3.5 5h9A1.5 1.5 0 0 1 14 6.5v3A1.5 1.5 0 0 1 12.5 11h-2.2L8 9 5.7 11H3.5A1.5 1.5 0 0 1 2 9.5z"/><circle cx="5" cy="8" r="0.7"/><circle cx="11" cy="8" r="0.7"/>'
+      xr: '<path d="M2 6.5A1.5 1.5 0 0 1 3.5 5h9A1.5 1.5 0 0 1 14 6.5v3A1.5 1.5 0 0 1 12.5 11h-2.2L8 9 5.7 11H3.5A1.5 1.5 0 0 1 2 9.5z"/><circle cx="5" cy="8" r="0.7"/><circle cx="11" cy="8" r="0.7"/>',
+      grafico: '<path d="M2 2v11a1 1 0 0 0 1 1h11"/><path d="M6 11V7M9 11V4M12 11V6"/>',
+      sistemas: '<path d="M8 2s4 4.6 4 7.4A4 4 0 0 1 4 9.4C4 6.6 8 2 8 2z"/><path d="M6.4 9.6a1.7 1.7 0 0 0 1.7 1.7"/>'
     };
     return '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px">' + (P[n] || '') + '</svg>';
   }
@@ -128,13 +130,117 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="pav" title="Pavimentos declarados no IFC: isolar um andar ou gerar a planta dele">' + ico('pav') + 'Pav.</button>' +
     '<button class="btn sm" data-b="vis" title="Visibilidade: isolar ou ocultar o elemento selecionado (duplo-clique seleciona)">' + ico('ver') + 'Ver</button>' +
     '<button class="btn sm" data-b="xr" title="Realidade Mista/Virtual: andar dentro do modelo em escala real (1:1) ou escolhida, medir, ver por disciplina e gerar QR para o celular">' + ico('xr') + 'RA/RV</button>' +
-    '<button class="btn sm" data-b="sistema" title="Colorir a tubulação por sistema hidrossanitário (água fria, água quente, esgoto, pluvial, gás, incêndio, ventilação) com cores editáveis — vale na Planta baixa e no RA/RV">🎨 Sistemas</button>' +
-    (blocokLiberado() ? '<button class="btn sm" data-b="blocok" title="Plantas Executivas Blocok: lê as paredes do IFC e gera a prancha de cada parede com as placas 90×90 numeradas e paginadas + tabela de material (placas + insumos calculados) + carga na fundação">🧱 Blocok</button>' : '') +
+    '<button class="btn sm" data-b="sistema" title="Colorir a tubulação por sistema hidrossanitário (água fria, água quente, esgoto, pluvial, gás, incêndio, ventilação) com cores editáveis — vale na Planta baixa e no RA/RV">' + ico('sistemas') + 'Sistemas</button>' +
+    (blocokLiberado() ? '<button class="btn sm" data-b="blocok" title="Plantas Executivas Blocok: lê as paredes do IFC e gera a prancha de cada parede com as placas 90×90 numeradas e paginadas + tabela de material (placas + insumos calculados) + carga na fundação">' + ico('parede') + 'Blocok</button>' : '') +
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
     '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
     '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
     '<input type="file" data-b="file" accept=".ifc" multiple style="display:none">';
   host.appendChild(bar);
+
+  // v1.1.121 — DOCK LATERAL: as ferramentas saem da fita corrida (lista solta que
+  // tampava a vista) e viram GRUPOS por categoria numa aba vertical à esquerda.
+  // Passar o mouse (ou tocar) num grupo expande o leque com as ferramentas dele.
+  // O dock é filho do BAR em position:absolute — não entra no bar.offsetHeight
+  // (o _ajustarTop segue medindo só a fita do topo) e os botões continuam
+  // descendentes do bar (dispatch de clique e querySelector de estado intactos).
+  function icoG(n) { return ico(n).replace('width="13" height="13"', 'width="17" height="17"').replace('margin-right:3px', 'margin-right:0'); }
+  var dock = document.createElement('div');
+  // overflow-y:auto: em viewport baixa (celular deitado) o dock ROLA em vez de ser
+  // clipado pelo overflow:hidden do card — os leques abrem em position:fixed (fora
+  // do clip), então a rolagem não os corta. maxHeight dinâmico no aplicarEstiloToggle.
+  dock.style.cssText = 'position:absolute;left:10px;top:calc(100% + 2px);display:flex;flex-direction:column;gap:6px;z-index:6;pointer-events:auto;overflow-y:auto;overflow-x:hidden;padding-right:2px';
+  var GRUPOS_DOCK = [
+    { rot: 'Medição', ic: 'medir', bs: ['medir', 'area', 'angulo', 'snap', 'limpar-medidas'] },
+    { rot: 'Cortes & Plantas', ic: 'planta', bs: ['planta', 'corte', 'pav'] },
+    { rot: 'Visibilidade', ic: 'ver', bs: ['vis', 'sistema', 'foto'] },
+    { rot: 'Edição & 2D→3D', ic: 'editar', bs: ['editar', 'p3d', 'blocok'] },
+    { rot: 'Imersivo RA/RV', ic: 'xr', bs: ['xr'] }
+  ];
+  // Análise & Orçamento: painéis da página (quantitativo, clash, 4D…) abrem por AQUI,
+  // sem rolar a página — a Gestão injeta o abridor via opts.onPainel.
+  var PAINEIS_DOCK = [['modelos', 'Modelos carregados'], ['4d', 'Simulação 4D'], ['clash', 'Compatibilização (clash)'], ['qto', 'Quantitativos'], ['familias', 'Banco de famílias'], ['6d', '6D/7D Ciclo de vida']];
+  // Ambiente com mouse de verdade? (touch NÃO deve ganhar hover: o tap emite
+  // mouseenter sintético ANTES do click e o leque abria-e-fechava no mesmo toque)
+  var dockHover = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
+  var flyTimer = null;
+  function fecharFlys() { if (flyTimer) { clearTimeout(flyTimer); flyTimer = null; } dock.querySelectorAll('.bim-fly').forEach(function (f) { f.style.display = 'none'; }); }
+  function agendarFechar() { if (flyTimer) clearTimeout(flyTimer); flyTimer = setTimeout(fecharFlys, 320); } // delay cobre o vão head→leque (fix do gate: mouseleave fechava no caminho)
+  function abrirFly(head, fly) {
+    fecharFlys();
+    // position:fixed = escapa do overflow do card/dock; ancorado no head na hora de abrir
+    var r = head.getBoundingClientRect();
+    fly.style.display = 'flex';
+    fly.style.left = (r.right + 4) + 'px';
+    var h = fly.offsetHeight || 200;
+    var top = Math.max(8, Math.min(r.top, (window.innerHeight || 800) - h - 8));
+    fly.style.top = top + 'px';
+  }
+  function montarGrupo(g) {
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'position:relative;flex:0 0 auto';
+    var head = document.createElement('button');
+    head.className = 'btn sm';
+    head.setAttribute('data-grp', g.rot);
+    head.title = g.rot;
+    head.style.cssText = 'width:42px;height:42px;display:flex;align-items:center;justify-content:center;border-radius:11px;padding:0;box-shadow:0 2px 10px rgba(0,0,0,.35)';
+    head.innerHTML = icoG(g.ic);
+    var fly = document.createElement('div');
+    fly.className = 'bim-fly';
+    fly.style.cssText = 'position:fixed;display:none;flex-direction:column;gap:4px;padding:8px;border-radius:11px;min-width:172px;max-height:70vh;overflow-y:auto;box-shadow:0 10px 30px rgba(0,0,0,.45);z-index:60';
+    fly.innerHTML = '<div class="bim-fly-tit" style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;opacity:.75;padding:0 4px 2px">' + g.rot + '</div>';
+    if (g.bs) g.bs.forEach(function (k) {
+      var b = bar.querySelector('[data-b="' + k + '"]');
+      if (!b) return; // ex.: blocok não liberado
+      b.style.width = '100%';
+      b.style.justifyContent = 'flex-start';
+      fly.appendChild(b);
+    });
+    if (g.pp) g.pp.forEach(function (par) {
+      var pb = document.createElement('button');
+      pb.className = 'btn sm';
+      pb.setAttribute('data-pp', par[0]);
+      pb.style.cssText = 'width:100%;justify-content:flex-start';
+      pb.innerHTML = ico('grafico') + par[1];
+      fly.appendChild(pb);
+    });
+    wrap.appendChild(head); wrap.appendChild(fly);
+    if (dockHover) {
+      // Desktop: hover abre; sair agenda fechar com DELAY (320ms cobre o vão até o
+      // leque — achado do gate: fechava no meio do caminho); entrar de novo cancela.
+      wrap.addEventListener('mouseenter', function () { abrirFly(head, fly); });
+      wrap.addEventListener('mouseleave', agendarFechar);
+      // clique no head NUNCA fecha em desktop (hover já abriu; fechar aqui parecia
+      // botão quebrado — achado do gate). Ele só garante aberto.
+      head.addEventListener('click', function (ev) { ev.stopPropagation(); abrirFly(head, fly); });
+    } else {
+      // Touch: o TOQUE é o único alternador (sem hover sintético no meio)
+      head.addEventListener('click', function (ev) {
+        ev.stopPropagation();
+        var aberto = fly.style.display === 'flex';
+        if (aberto) fecharFlys(); else abrirFly(head, fly);
+      });
+    }
+    dock.appendChild(wrap);
+  }
+  GRUPOS_DOCK.forEach(montarGrupo);
+  if (opts && opts.onPainel) montarGrupo({ rot: 'Análise & Orçamento', ic: 'grafico', pp: PAINEIS_DOCK });
+  bar.appendChild(dock);
+  // ferramenta clicada OU painel pedido → fecha o leque (a ação já está em curso)
+  // (usa S.opts quando existir: o re-home troca os callbacks sem reconstruir o dock)
+  dock.addEventListener('click', function (e) {
+    var pb = e.target.closest('[data-pp]');
+    var oAtual = (S && S.opts) || opts;
+    if (pb && oAtual && oAtual.onPainel) { fecharFlys(); oAtual.onPainel(pb.getAttribute('data-pp')); return; }
+    if (e.target.closest('[data-b]')) setTimeout(fecharFlys, 60);
+  });
+  // toque fora do dock fecha o leque aberto (no touch não há mouseleave);
+  // guardado em S e removido no desmonte (senão acumula 1 listener por remount)
+  var dockDocClick = function (e) { if (!dock.contains(e.target)) fecharFlys(); };
+  document.addEventListener('click', dockDocClick, true);
+  function dockRepintar(T) {
+    dock.querySelectorAll('.bim-fly').forEach(function (f) { f.style.background = T.painel; f.style.border = '1px solid ' + T.borda; f.style.color = T.texto; });
+  }
 
   // v1.1.86 — RECOLHER a barra de ferramentas: ela cresceu (quebra em 2+ linhas) e tampava a
   // vista. Um botão discreto no canto esconde/mostra todos os botões; o estado fica salvo.
@@ -162,11 +268,22 @@ function montar(host, opts) {
       var inst = document.getElementById('opr-install');
       var bb = (inst && inst.offsetHeight) ? (inst.offsetHeight + 26) : 14;
       barToggle.style.cssText = 'position:fixed;right:12px;bottom:' + bb + 'px;z-index:40;padding:12px 18px;font-size:14.5px;font-weight:800;border:0;border-radius:999px;background:#16a34a;color:#fff;box-shadow:0 6px 22px rgba(0,0,0,.5);cursor:pointer';
-      bar.style.maxHeight = '46%'; bar.style.overflowY = 'auto'; bar.style.paddingBottom = '10px';
+      // v1.1.121: SEM overflow/maxHeight aqui — o overflow:auto CLIPAVA o dock lateral
+      // (filho absoluto abaixo da caixa do bar). A fita agora tem só ~9 botões (2 linhas);
+      // quem organiza o resto é o dock por grupos.
+      bar.style.maxHeight = ''; bar.style.overflowY = ''; bar.style.paddingBottom = '';
     } else {
       barToggle.style.cssText = 'position:absolute;right:10px;top:8px;z-index:5;padding:5px 9px;font-size:12px;opacity:.94;box-shadow:0 2px 8px rgba(0,0,0,.35)';
       bar.style.maxHeight = ''; bar.style.overflowY = ''; bar.style.paddingBottom = '';
     }
+    // Viewport baixa (celular deitado/janela curta): o dock ROLA dentro do canvas em
+    // vez de ser clipado pelo overflow:hidden do card (achado do gate — os últimos
+    // grupos, incluindo Análise & Orçamento, ficavam inclicáveis).
+    try {
+      var hHost = (S && S.host && S.host.clientHeight) || host.clientHeight || 0;
+      var hBar = bar.offsetHeight || 46;
+      if (hHost > 0) dock.style.maxHeight = Math.max(120, hHost - hBar - 16) + 'px';
+    } catch (eD) {}
     barToggle.innerHTML = barraAberta ? (ehTelaPequena ? '✕ Fechar ferramentas' : '⤢ Esconder') : '🧰 Ferramentas';
   }
   function setBarra(aberta) {
@@ -214,6 +331,7 @@ function montar(host, opts) {
     });
     // re-pinta os botões da toolbar que estavam com a cor ativa antiga (estado ligado sobrevive à troca)
     bar.querySelectorAll('button').forEach(function (b2) { if (b2.style.background && b2.style.background !== '') b2.style.background = corAtiva(); });
+    dockRepintar(T); // leques do dock lateral acompanham o tema
     try { localStorage.setItem('orcapro:bim:tema', temaId); } catch (_) {}
   }
   function trocarTema() {
@@ -379,6 +497,7 @@ function montar(host, opts) {
   var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
   S.barToggle = barToggle; S._setBarra = setBarra; // recolher/expandir a barra (entra no re-home)
   S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; // FAB mobile: desconectados no desmonte (gate v1.1.114)
+  S._dockDocClick = dockDocClick; // fechar-leque-no-toque-fora: removido no desmonte (senão acumula por remount)
 
   function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
   S._resize = resize; window.addEventListener('resize', resize); resize();
@@ -2450,6 +2569,11 @@ function montar(host, opts) {
     var bh = (bar && bar.offsetHeight) || 0;
     var t = bh ? bh + 8 : (ehTelaPequena ? 8 : 44);
     [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
+    // v1.1.121: com o DOCK vivendo em left:10px, os painéis flutuantes deslocam pra
+    // left:64px quando a barra está aberta — senão cobriam a coluna de grupos e
+    // roubavam os cliques (achado do gate: Pav./RA-RV/propriedades em cima do dock).
+    var lx = (bh ? 64 : 10) + 'px';
+    [snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.left = lx; });
   }
   S._ajustarTop = ajustarTopFlutuantes;
   ajustarTopFlutuantes();
@@ -4393,6 +4517,7 @@ function desmontarMorto() {
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
   try { if (S._fabObserver) S._fabObserver.disconnect(); } catch (_) {}
   try { if (S._fabEstilo) window.removeEventListener('resize', S._fabEstilo); } catch (_) {}
+  try { if (S._dockDocClick) document.removeEventListener('click', S._dockDocClick, true); } catch (_) {}
   try { S.modelos.slice().forEach(function (mo) { if (typeof mo.mid === 'number') { try { S.api.CloseModel(mo.mid); } catch (_) {} } }); } catch (_) {}
   try { S.renderer.dispose(); } catch (_) {}
   S = null;

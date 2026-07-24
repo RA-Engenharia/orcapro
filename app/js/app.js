@@ -879,27 +879,79 @@
     },
 
     // Troca a base SINAPI ativa para outra UF (lazy). cb(true|false).
+    // v1.1.121 — QUALQUER UF abre: arquivo local primeiro; se faltar/corromper,
+    // busca AO VIVO no servidor (mesma rota dos analíticos, .json.gz descomprimido
+    // pelo VPS). Pacote de estado único ou instalação antiga deixam de ser beco
+    // sem saída — só falha de verdade sem internet E sem arquivo local.
     trocarEstadoSinapi: function (uf, cb) {
       var self = this;
+      uf = String(uf || "").toUpperCase();
       var est = (self._estados || []).filter(function (e) { return e.uf === uf; })[0];
-      if (!est || !est.arquivo) { UI.toast("Estado " + uf + " não disponível neste pacote.", "erro"); if (cb) cb(false); return; }
+      var comp = (est && est.competencia) || (self._estados && self._estados[0] && self._estados[0].competencia) || CONFIG.sinapi.competenciaPadrao;
+      var arqLocal = (est && est.arquivo) || ("data/sinapi-" + uf + "-" + comp + ".json");
       var req = ++self._ufReq; // só a troca mais recente comita (evita corrida em cliques rápidos)
       UI.toast("Carregando SINAPI " + uf + "…", "ok");
-      Sinapi.carregarArquivo(est.arquivo, true).then(function () { // semFallback: mantém base atual se o arquivo faltar
+      // Só um pacote VÁLIDO chega ao Sinapi.carregarDe — achados do gate: (a) JSON 200
+      // de proxy/erro clobberava a base atual antes da checagem de UF; (b) pacote sem
+      // 'uf' assumia MG e passava batido quando a UF pedida era MG. Validar ANTES.
+      var pacoteValido = function (j) {
+        return j && Array.isArray(j.dados) && j.dados.length > 0 && String(j.uf || "").toUpperCase() === uf;
+      };
+      var aplicar = function () {
         if (req !== self._ufReq) return; // troca obsoleta — descarta silenciosamente
         // Defesa extra: se por algum motivo a UF carregada != a pedida, trata como erro.
-        if (String(Sinapi.uf).toUpperCase() !== String(uf).toUpperCase()) {
+        if (String(Sinapi.uf).toUpperCase() !== uf) {
           UI.toast("Base SINAPI de " + uf + " não confere (arquivo inesperado).", "erro");
           if (cb) cb(false); return;
         }
-        self._analiticoArquivo = est.analitico || null;
+        self._analiticoArquivo = (est && est.analitico) || ("data/sinapi-" + uf + "-analitico.json");
         self._baseUf = uf;
         if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset(); // descarta analítico da UF anterior
         UI.toast("SINAPI " + uf + " · " + (Sinapi.competencia || "") + " — " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens.", "ok");
         if (cb) cb(true);
-      }).catch(function (e) {
+      };
+      // Caminho LOCAL com o mesmo rigor do live: fetch manual → valida token e pacote
+      // ANTES do carregarDe (a corrida de cliques rápidos comitava a UF errada — gate).
+      fetch(arqLocal).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (j) {
         if (req !== self._ufReq) return;
-        UI.toast("Falha ao carregar " + uf + ": " + (e && e.message), "erro"); if (cb) cb(false);
+        if (!pacoteValido(j)) throw new Error("pacote local inválido");
+        Sinapi.carregarDe(j);
+        aplicar();
+      }).catch(function (eLocal) {
+        if (req !== self._ufReq) return;
+        // Local falhou → base AO VIVO do servidor. Tenta a competência local e, se o
+        // servidor não a tiver (404 após o giro mensal / instalação antiga), tenta a
+        // competência padrão do config — que sobe atualizado em todo update da frota.
+        var comps = [comp];
+        if (CONFIG.sinapi.competenciaPadrao && CONFIG.sinapi.competenciaPadrao !== comp) comps.push(CONFIG.sinapi.competenciaPadrao);
+        UI.toast("Base local de " + uf + " indisponível — baixando ao vivo…", "ok");
+        var tentar = function (idx) {
+          if (idx >= comps.length) {
+            UI.toast("Falha ao carregar " + uf + ": sem arquivo local e o servidor não tem essa base agora. A base atual foi mantida.", "erro");
+            if (cb) cb(false); return;
+          }
+          var urlLive = CONFIG.licencaServer + "/analitico/sinapi-" + uf + "-" + comps[idx] + ".json";
+          fetch(urlLive, { cache: "no-store" }).then(function (r) {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.json();
+          }).then(function (j) {
+            if (req !== self._ufReq) return;
+            if (!pacoteValido(j)) throw new Error("pacote do servidor inválido");
+            Sinapi.carregarDe(j);
+            aplicar();
+          }).catch(function (eLive) {
+            if (req !== self._ufReq) return;
+            // 404/pacote inválido → tenta a próxima competência; erro de REDE → mensagem honesta
+            var m = String((eLive && eLive.message) || "");
+            if (m.indexOf("HTTP") === 0 || m.indexOf("pacote") === 0) { tentar(idx + 1); return; }
+            UI.toast("Falha ao carregar " + uf + ": sem arquivo local e sem conexão com o servidor (" + (m || (eLocal && eLocal.message)) + "). A base atual foi mantida.", "erro");
+            if (cb) cb(false);
+          });
+        };
+        tentar(0);
       });
     },
 
@@ -1490,7 +1542,7 @@
         var cfgMig = Orcamento.garantirConfig(orc), migrou = false;
         if (cfgMig.migradoTcu && !cfgMig.migradoAvisadoEm) {
           cfgMig.migradoAvisadoEm = Util.agoraISO(); migrou = true;
-          UI.toast("Este orçamento passou a calcular pelo padrão do TCU (truncar 2 casas, BDI no preço unitário). O total pode variar centavos do que já foi impresso — dá para mudar o critério em 🎛 Parâmetros.", "ok");
+          UI.toast("Este orçamento passou a calcular pelo padrão do TCU (truncar 2 casas, BDI no preço unitário). O total pode variar centavos do que já foi impresso — dá para mudar o critério no botão Parâmetros do orçamento.", "ok");
         }
         if (reparos > 0 || fontes > 0 || prazo || migrou) {
           Store.salvarOrcamento(Auth.empresaId(), orc);
@@ -1773,16 +1825,16 @@
         if (selUf) {
           self._carregarEstados().then(function (ests) {
             var atual = self._baseUf || Sinapi.uf || "";
-            if (!ests.length) { // pacote de estado único → mostra só a UF ativa
-              selUf.innerHTML = '<option value="' + Util.esc(atual) + '">' + Util.esc(atual || "—") + "</option>";
-              selUf.disabled = true; selUf.title = "Pacote de estado único — para outros estados, use 🗂 Gerenciar";
-            } else {
-              var temAtual = ests.some(function (e) { return e.uf === atual; });
-              var o = ests.map(function (e) { return '<option value="' + Util.esc(e.uf) + '">' + Util.esc(e.uf) + (e.competencia ? " · " + Util.esc(e.competencia) : "") + "</option>"; });
-              if (atual && !temAtual) o.unshift('<option value="' + Util.esc(atual) + '">' + Util.esc(atual) + " · ativa</option>");
-              selUf.innerHTML = o.join("");
-              selUf.value = atual;
-            }
+            // v1.1.121: pacote de estado único deixou de travar o seletor — as 27 UFs
+            // sempre aparecem; sem arquivo local, a troca baixa a base AO VIVO do servidor.
+            var UFS27 = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"];
+            var lista = ests.length ? ests : UFS27.map(function (u) { return { uf: u }; });
+            var temAtual = lista.some(function (e) { return e.uf === atual; });
+            var o = lista.map(function (e) { return '<option value="' + Util.esc(e.uf) + '">' + Util.esc(e.uf) + (e.competencia ? " · " + Util.esc(e.competencia) : "") + "</option>"; });
+            if (atual && !temAtual) o.unshift('<option value="' + Util.esc(atual) + '">' + Util.esc(atual) + " · ativa</option>");
+            selUf.innerHTML = o.join("");
+            selUf.value = atual;
+            if (!ests.length) selUf.title = "Sem manifesto local — estados carregam ao vivo do servidor OrçaPRO";
           });
           selUf.addEventListener("change", function () {
             var uf = selUf.value;
@@ -1840,7 +1892,7 @@
             // liberou no assistente (senão vira "buraco" invisível na planilha).
             var cfgZ = Orcamento.garantirConfig(self.orcAtual);
             if (cu <= 0 && !cfgZ.permitirZerado) {
-              UI.toast("Este item está com preço zerado. Informe o custo unitário ou libere em 🎛 Parâmetros → “Permitir insumos com preço zerado”.", "erro");
+              UI.toast("Este item está com preço zerado. Informe o custo unitário ou libere em Parâmetros → “Permitir insumos com preço zerado”.", "erro");
               return;
             }
             var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
@@ -1977,7 +2029,7 @@
             + '<td class="num">' + Util.fmtNum(d.de, 2) + '</td>'
             + '<td class="num"><b>' + Util.fmtNum(d.para, 2) + '</b></td></tr>';
         }).join("") + '</tbody></table>';
-      UI.modal("📥 Reimportar Excel — revisar mudanças", html, [
+      UI.modal("Reimportar Excel — revisar mudanças", html, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "✅ Aplicar selecionadas", classe: "primary", onClick: function () {
           var aceitas = [];
