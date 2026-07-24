@@ -359,6 +359,16 @@
         kpi("Itens / Etapas", t.qtdItens + " / " + t.qtdEtapas, "") +
       '</div>';
 
+      // Pendência de preço: faixa de erro ANTES das abas (não finaliza zerado)
+      var _semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
+      if (_semPreco.length) {
+        html += '<div style="padding:10px 14px;border-radius:10px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.3);font-size:13px;margin-bottom:12px">' +
+          '⛔ <b>' + _semPreco.length + ' item(ns) sem preço:</b> ' +
+          _semPreco.slice(0, 5).map(function (i) { return '<b>' + Util.esc(i.numero) + '</b>' + (i.codigo ? ' (' + Util.esc(i.codigo) + ')' : ''); }).join(', ') +
+          (_semPreco.length > 5 ? '…' : '') +
+          ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</div>';
+      }
+
       // Abas
       var abas = [["planilha", "Planilha"], ["sintetico", "Sintético"], ["cronograma", "🗓 Cronograma"], ["execucao", "🏗️ Execução"], ["paredecebola", "🧱 Parede-Cebola"], ["graficos", "📊 Gráficos"], ["relatorios", "Relatórios"], ["bdi", "BDI & Parâmetros"]];
       html += '<div class="tabs">';
@@ -442,7 +452,9 @@
             '<td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
-            '<td class="num"><input class="cell" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"></td>' +
+            // custo ZERADO = pendência que trava a finalização: o campo grita
+            '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
+              (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '></td>' +
             '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
             '<td class="right"><div class="acoes">' +
@@ -475,10 +487,13 @@
         box("Equipamento", a.custoEQ) + box("Custo Unit.", a.custoUnitario, "destaque") + '</div>';
 
       // "não coletado": preço zerado NA FONTE para esta UF (o SINAPI publica em
-      // branco o que não coletou na região). Mostrar R$ 0,00 parecia bug — e
-      // esconder seria pior. O orçamento usa o preço OFICIAL da composição.
-      var naoColetado = '<span class="muted" title="Preço não coletado pelo SINAPI nesta UF — o orçamento usa o preço oficial da composição" style="font-size:11px">não coletado</span>';
-      var somaIns = 0, temZero = false;
+      // branco o que não coletou na região). O usuário COTA e informa o preço
+      // dele — fica salvo por empresa (vale p/ toda composição com o insumo) e
+      // os entregáveis marcam "informado por você". Enquanto houver pendência,
+      // o orçamento com item zerado não finaliza.
+      var meusPrecos = {};
+      try { if (typeof Store !== "undefined" && Store.precosInsumos) meusPrecos = Store.precosInsumos(Auth.empresaId()); } catch (eP) {}
+      var somaIns = 0, temZero = false, pendentes = 0;
 
       html += '<table class="tbl tbl-analitico"><thead><tr><th></th><th>Código</th><th>Insumo</th><th>Und</th>' +
         '<th class="num">Coef.</th><th class="num">Custo Unit</th><th class="num">Custo Total</th><th>Categoria</th></tr></thead><tbody>';
@@ -494,22 +509,47 @@
       Util.arr(a.insumos).forEach(function (it) {
         var sub = (it.tipo === "COMPOSICAO");
         var zerado = !Util.num(it.custoUnitario);
-        if (zerado) temZero = true; else somaIns += Util.num(it.custoTotal);
+        var meu = zerado ? meusPrecos[String(it.codigo)] : null;
+        var celUnit, celTotal, classeExtra = "";
+        if (!zerado) {
+          somaIns += Util.num(it.custoTotal);
+          celUnit = Util.fmtMoeda(it.custoUnitario);
+          celTotal = Util.fmtMoeda(it.custoTotal);
+        } else if (meu && Util.num(meu.preco) > 0) {
+          // cotação do usuário preenche a lacuna — some no total e leva o selo
+          temZero = true;
+          var totMeu = Util.num(it.coeficiente) * Util.num(meu.preco);
+          somaIns += totMeu;
+          celUnit = '<input class="preco-user" data-preco-insumo="' + Util.esc(it.codigo) + '" value="' + Util.fmtNum(meu.preco, 2) + '" title="Preço informado por você — edite ou apague para voltar a pendente">';
+          celTotal = Util.fmtMoeda(totMeu) + ' <span class="selo-user" title="Calculado com o preço que você informou">👤</span>';
+        } else {
+          // PENDENTE: o SINAPI não coletou nesta UF — o usuário precisa cotar
+          temZero = true; pendentes++;
+          classeExtra = " lin-pendente";
+          celUnit = '<input class="preco-user pendente" data-preco-insumo="' + Util.esc(it.codigo) + '" placeholder="informe R$" title="Preço não coletado pelo SINAPI nesta UF — informe a sua cotação">';
+          celTotal = '<span class="txt-pendente">⚠ sem preço</span>';
+        }
         // sub-composição: código clicável abre o detalhamento DELA (drill-down)
         var celCod = sub
           ? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Abrir a composição analítica de ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
           : Util.esc(it.codigo);
-        html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + '">' +
+        html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + classeExtra + '">' +
           '<td><span class="tag-tipo ' + (sub ? "tag-s" : "tag-i") + '" title="' + (sub ? "Sub-composição" : "Insumo") + '">' + (sub ? "S" : "I") + '</span></td>' +
           '<td>' + celCod + '</td>' +
           '<td>' + Util.esc(it.descricao) + '</td>' +
           '<td>' + Util.esc(it.unidade) + '</td>' +
           '<td class="num">' + Util.fmtNum(it.coeficiente, 4) + '</td>' +
-          '<td class="num">' + (zerado ? naoColetado : Util.fmtMoeda(it.custoUnitario)) + '</td>' +
-          '<td class="num">' + (zerado ? naoColetado : Util.fmtMoeda(it.custoTotal)) + '</td>' +
+          '<td class="num">' + celUnit + '</td>' +
+          '<td class="num">' + celTotal + '</td>' +
           '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || it.categoria) + '</span></td></tr>';
       });
       html += '</tbody></table>';
+      if (pendentes > 0) {
+        html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.25);font-size:12px;margin-top:8px">' +
+          '⛔ <b>' + pendentes + ' insumo(s) sem preço coletado' + (anaUf ? ' em ' + Util.esc(anaUf) : '') + '.</b> ' +
+          'Informe a sua cotação nos campos <b>“informe R$”</b> acima — o valor fica salvo para a sua empresa e vale em toda composição que usa o insumo. ' +
+          'Orçamento com item zerado <b>não pode ser finalizado</b>.</div>';
+      }
       // reconciliação honesta: se a soma dos insumos ficou longe do custo oficial
       // (preços não coletados na UF), avisa — e reafirma que o orçamento não é
       // afetado. O "oficial" vem do cabeçalho analítico e, quando este também

@@ -529,7 +529,16 @@
         case "escopo-analisar": this.analisarEscopo(); break;
         case "escopo-confirmar": this.confirmarEscopo(); break;
         case "proposta": this.gerarProposta(); break;
-        case "apresentar": { if (this.orcAtual && typeof Apresentacao !== "undefined") Apresentacao.abrir(this.orcAtual); else UI.toast("Abra um orçamento primeiro.", "erro"); break; }
+        case "apresentar": {
+          if (!this.orcAtual || typeof Apresentacao === "undefined") { UI.toast("Abra um orçamento primeiro.", "erro"); break; }
+          // apresentação é cara ao cliente: não projeta orçamento com item zerado
+          var _sp = Orcamento.itensSemPreco(this.orcAtual);
+          if (_sp.length) {
+            UI.toast("⛔ " + _sp.length + " item(ns) sem preço (" + _sp.slice(0, 3).map(function (i) { return i.numero; }).join(", ") + (_sp.length > 3 ? "…" : "") + "). Preencha o custo na planilha antes de apresentar.", "erro");
+            break;
+          }
+          Apresentacao.abrir(this.orcAtual); break;
+        }
         case "laudo": this.gerarLaudo(); break;
         case "relatorio": this.gerarRelatorio(); break;
         case "proposta-imprimir": window.print(); break;
@@ -584,6 +593,27 @@
         if (o.cronograma.duracoesAgente) delete o.cronograma.duracoesAgente[e.target.dataset.cronDur]; // virou edição do USUÁRIO
         if (o.cronograma.iaMotivos) delete o.cronograma.iaMotivos[e.target.dataset.cronDur]; // remove justificativa IA órfã
         this.persistir(); this.render(); return;
+      }
+      // preço de insumo NÃO COLETADO informado pelo usuário (detalhamento) —
+      // salva por empresa e re-renderiza o modal para a soma/aviso atualizarem
+      if (e.target.matches("input[data-preco-insumo]")) {
+        var codIns = e.target.dataset.precoInsumo;
+        var precoIns = Util.num(e.target.value);
+        Store.salvarPrecoInsumo(Auth.empresaId(), codIns, precoIns);
+        UI.toast(precoIns > 0
+          ? "Preço de " + codIns + " salvo (" + Util.fmtMoeda(precoIns) + ") — vale em toda composição que usa este insumo."
+          : "Preço de " + codIns + " removido — o insumo voltou a pendente.", precoIns > 0 ? "ok" : "erro");
+        // re-render do modal aberto (mantém a composição na tela)
+        var compAberta = (document.querySelector("#modal-bg header h2") || {}).textContent || "";
+        var mCod = compAberta.match(/Composição\s+(\S+)/);
+        if (mCod && typeof Analitico !== "undefined" && Analitico.obter) {
+          var aRe = Analitico.obter(mCod[1]);
+          if (aRe) {
+            var corpoRe = document.querySelector("#modal-bg .modal .body");
+            if (corpoRe) corpoRe.innerHTML = UI.renderInsumos(aRe, this._baseUf || Sinapi.uf || null);
+          }
+        }
+        return;
       }
       // edição inline de quantidade/custo na planilha
       if (e.target.matches("input.cell[data-edit]")) {

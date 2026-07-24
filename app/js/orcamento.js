@@ -439,6 +439,17 @@
     /* Linhas já calculadas (mesma conta da tela, do Excel e do laudo). */
     linhas: function (orc) { return this.calcular(orc).linhas; },
 
+    /* Itens SEM PREÇO (custo unitário zerado). Orçamento com pendência destas
+     * não pode ser FINALIZADO (proposta/apresentação): zero não é preço, é
+     * lacuna — o usuário precisa cotar e preencher antes de entregar. */
+    itensSemPreco: function (orc) {
+      var out = [];
+      this.calcular(orc).linhas.forEach(function (L) {
+        if (!(L.custoUnitario > 0)) out.push({ numero: L.numero, codigo: L.codigo, descricao: L.descricao, etapa: L.etapaNome });
+      });
+      return out;
+    },
+
     // ---------- #18: medição vinculada ao orçamento ----------
     // Linhas mediveis: 1 por item, com preço unitário COM BDI (o que se fatura).
     itensMediveis: function (orc) {

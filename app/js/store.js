@@ -166,6 +166,24 @@
       return null;
     },
 
+    /* ---- Preços de insumo informados PELO USUÁRIO ----
+     * O SINAPI publica em branco o que não coletou na região. Quando isso
+     * acontece, o usuário cota e informa o preço dele — que fica guardado por
+     * EMPRESA (código do insumo → preço) e vale para toda composição que usa o
+     * insumo. É cotação própria: os entregáveis marcam "informado por você". */
+    precosInsumos: function (empresaId) {
+      var m = this.adapter.ler(empresaId, "precosinsumos", {});
+      return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
+    },
+    salvarPrecoInsumo: function (empresaId, codigo, preco) {
+      var m = this.precosInsumos(empresaId);
+      var cod = String(codigo);
+      if (preco == null || !(Number(preco) > 0)) delete m[cod];
+      else m[cod] = { preco: Math.round(Number(preco) * 100) / 100, em: Util.agoraISO() };
+      this.adapter.gravar(empresaId, "precosinsumos", m);
+      return m[cod] || null;
+    },
+
     excluirOrcamento: function (empresaId, id) {
       var lista = this.listarOrcamentos(empresaId).filter(function (o) { return o.id !== id; });
       this.adapter.gravar(empresaId, "orcamentos", lista);

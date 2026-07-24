@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.119",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.119/OrcaPRO-IA-update-v1.1.119.zip",
-  "notas": "Agora dá para EXCLUIR um orçamento direto da lista: botão 🗑 no card, com confirmação obrigatória mostrando o que vai ser apagado (nome, itens, valor) e aviso de obras/medições vinculadas. Cancelar é sempre o caminho fácil — excluir exige o clique consciente.",
+  "versao": "1.1.120",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.120/OrcaPRO-IA-update-v1.1.120.zip",
+  "notas": "Composição com insumo sem preço coletado agora pede o valor direto para você: campo editável no detalhamento (salvo por empresa, com selo 👤), faixa de erro listando os itens zerados e trava de finalização — proposta e apresentação só liberam com todos os preços preenchidos. Detalhamento analítico regenerado nas 27 UFs (DF corrigido).",
   "obrigatoria": false
 }

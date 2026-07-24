@@ -17,6 +17,14 @@
       if (!orc.cliente || !Util.naoVazio(orc.cliente.nome)) faltando.push("Cliente vinculado");
       var totais = Orcamento.totais(orc);
       if (totais.qtdItens < 1) faltando.push("Ao menos 1 item no escopo");
+      // ZERO não é preço: orçamento com item sem custo não vira proposta —
+      // o usuário cota (planilha ou detalhamento do insumo) e preenche antes.
+      var semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
+      if (semPreco.length) {
+        faltando.push("Preço em " + semPreco.length + " item(ns): " +
+          semPreco.slice(0, 3).map(function (i) { return i.numero + (i.codigo ? " (" + i.codigo + ")" : ""); }).join(", ") +
+          (semPreco.length > 3 ? "…" : ""));
+      }
       Orcamento.garantirComercial(orc);
       if (!Util.naoVazio(orc.comercial.condicoesPagamento)) faltando.push("Condições de pagamento");
       return { ok: faltando.length === 0, faltando: faltando };
