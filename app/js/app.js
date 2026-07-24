@@ -518,6 +518,9 @@
         case "import-reanalisar": this.importRemapear(); break;
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
         case "config-orc": this.editarDadosOrc(); break;
+        case "parametros-orc":
+          if (typeof OrcWizard !== "undefined" && this.orcAtual) OrcWizard.editarParametros(this, this.orcAtual);
+          break;
         case "escopo": this.abrirEscopo(); break;
         case "escopo-ia": this.analisarEscopoIA(); break;
         case "escopo-casar": this.refinarEscopoCasar(); break;
@@ -1376,6 +1379,9 @@
         return;
       }
       var self = this;
+      // Assistente de 3 passos (dados → cálculo → bases). Parametrizar DEPOIS,
+      // com itens já lançados, é o que produz divergência de centavo em licitação.
+      if (typeof OrcWizard !== "undefined") { OrcWizard.abrir(this); return; }
       UI.modal("Novo Orçamento",
         '<div class="field"><label>Nome do orçamento</label><input id="no-nome" placeholder="Ex.: Residência Unifamiliar 180m²"></div>' +
         '<div class="row"><div class="field"><label>Cliente</label><input id="no-cliente" placeholder="Nome do cliente"></div>' +
@@ -1410,7 +1416,14 @@
         // de edital/EAP importados ("02.10.01") e marcaria o orçamento como "modificado". A
         // renumeração sequencial acontece só nas ações estruturais (add/mover/remover etapa),
         // e o número hierárquico dos itens (2.1) é derivado da POSIÇÃO no render — sempre correto.
-        if (reparos > 0 || fontes > 0 || prazo) {
+        // Orçamento anterior à parametrização: avisa UMA vez que agora ele calcula
+        // pelo padrão do TCU (o total pode diferir em centavos do que foi impresso).
+        var cfgMig = Orcamento.garantirConfig(orc), migrou = false;
+        if (cfgMig.migradoTcu && !cfgMig.migradoAvisadoEm) {
+          cfgMig.migradoAvisadoEm = Util.agoraISO(); migrou = true;
+          UI.toast("Este orçamento passou a calcular pelo padrão do TCU (truncar 2 casas, BDI no preço unitário). O total pode variar centavos do que já foi impresso — dá para mudar o critério em 🎛 Parâmetros.", "ok");
+        }
+        if (reparos > 0 || fontes > 0 || prazo || migrou) {
           Store.salvarOrcamento(Auth.empresaId(), orc);
           if (reparos > 0) UI.toast("Corrigimos automaticamente " + reparos + " descrição(ões) com acentos.", "ok");
           if (fontes > 0) UI.toast("Fonte de " + fontes + " item(ns) corrigida (não eram SINAPI).", "ok");
@@ -1588,9 +1601,17 @@
             var atualFonte = primeiraPintura ? (prefs.fonte || "") : (selF.value || ""); // viva após 1ª pintura (inclui "Todos")
             var lista = Bases.lista();
             var carregadas = {}; lista.forEach(function (b) { carregadas[b.fonte] = b; });
-            var opts = ['<option value="">Todos os bancos ativos</option>'];
+            // tabelas DESMARCADAS no passo 3 deste orçamento saem do seletor (denylist —
+            // banco instalado depois aparece sozinho; é por orçamento, não global).
+            var excluidasSel = {};
+            try {
+              var cfgB = self.orcAtual && Orcamento.garantirConfig(self.orcAtual);
+              Util.arr(cfgB && cfgB.basesExcluidas).forEach(function (f) { excluidasSel[String(f).toUpperCase()] = 1; });
+            } catch (e) {}
+            var temExclusao = false; for (var kE in excluidasSel) { temExclusao = true; break; }
+            var opts = ['<option value="">Todos os bancos' + (temExclusao ? " deste orçamento" : " ativos") + '</option>'];
             // bancos JÁ carregados → selecionáveis para filtrar a busca
-            lista.filter(function (b) { return b.ativa; }).forEach(function (b) {
+            lista.filter(function (b) { return b.ativa && !excluidasSel[String(b.fonte).toUpperCase()]; }).forEach(function (b) {
               opts.push('<option value="' + b.fonte + '">' + Util.esc(b.label) + (b.uf ? " · " + b.uf : "") + (b.competencia ? " · " + b.competencia : "") + " · " + (b.total || 0).toLocaleString("pt-BR") + " itens</option>");
             });
             // catálogo completo de bancos suportados que ainda NÃO estão carregados → adicionar
@@ -1619,7 +1640,16 @@
         if (!inp) return;
         function ler() {
           var dv = (UI.el("bs-deson") || {}).value || "";
-          return { max: 120, fonte: (UI.el("bs-fonte") || {}).value || "", tipo: (UI.el("bs-tipo") || {}).value || "", desonerado: dv === "des" ? true : (dv === "one" ? false : null) };
+          // DENYLIST do passo 3: só o que o usuário DESMARCOU sai da busca deste
+          // orçamento. Tabela instalada depois aparece sozinha — allowlist escondia
+          // banco novo e a UI prometia o contrário.
+          var excluidas = null;
+          try {
+            var cfgF = self.orcAtual && Orcamento.garantirConfig(self.orcAtual);
+            if (cfgF && Util.arr(cfgF.basesExcluidas).length) excluidas = cfgF.basesExcluidas;
+          } catch (e) {}
+          return { max: 120, fonte: (UI.el("bs-fonte") || {}).value || "", excluirFontes: excluidas,
+            tipo: (UI.el("bs-tipo") || {}).value || "", desonerado: dv === "des" ? true : (dv === "one" ? false : null) };
         }
         var doSearch = Util.debounce(function () {
           var q = inp.value.trim();
@@ -1737,6 +1767,13 @@
           { texto: "Adicionar item", classe: "success", onClick: function () {
             var qtd = Util.num((UI.el("qi-qtd") || {}).value);
             var cu = Util.num((UI.el("qi-cu") || {}).value);
+            // Parâmetro do orçamento: item com preço zerado só entra se o usuário
+            // liberou no assistente (senão vira "buraco" invisível na planilha).
+            var cfgZ = Orcamento.garantirConfig(self.orcAtual);
+            if (cu <= 0 && !cfgZ.permitirZerado) {
+              UI.toast("Este item está com preço zerado. Informe o custo unitário ou libere em 🎛 Parâmetros → “Permitir insumos com preço zerado”.", "erro");
+              return;
+            }
             var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
             Orcamento.addItem(self.orcAtual, self._addItemEtapaId, itemAjustado, qtd);
             self.persistir(); UI.fecharModal(); self.render();

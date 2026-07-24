@@ -119,16 +119,19 @@
         '<tfoot><tr><td colspan="2">TOTAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr></tfoot></table>'));
 
       // ---- 5. ANALÍTICA ----
-      var analHtml = '';
+      // Valores da FONTE ÚNICA (Orcamento.calcular): o laudo é peça pericial —
+      // não pode divergir em centavo da planilha nem do Excel entregue junto.
+      var analHtml = '', _calc = Orcamento.calcular(orc), _pi = {};
+      _calc.linhas.forEach(function (L) { _pi[L.etapaIdx + "|" + L.itemIdx] = L; });
       Util.arr(orc.etapas).forEach(function (e, ei) {
         analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="6"><b>' + Util.esc(e.nome) + '</b></td></tr>';
         Util.arr(e.itens).forEach(function (it, ii) {
-          var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
+          var L = _pi[ei + "|" + ii] || { custoUnitario: 0, custoTotal: 0 };
           analHtml += '<tr><td><b>' + Orcamento.itemNumero(ei, ii) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
-            '<td class="r">' + Util.fmtMoeda(it.custoUnitario) + '</td>' +
-            '<td class="r">' + Util.fmtMoeda(ct) + '</td></tr>';
+            '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
+            '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td></tr>';
         });
       });
       P.push(pg("5. Planilha Orçamentária Analítica",

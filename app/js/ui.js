@@ -343,6 +343,7 @@
           '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">🖥️ Apresentar</button>' +
           '<button class="btn sm" data-acao="laudo">📑 Anexo p/ Laudo</button>' +
           '<button class="btn sm" data-acao="config-orc">⚙ Dados</button>' +
+          '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">🎛 Parâmetros</button>' +
           '<button class="btn sm" data-acao="cenarios">📊 Comparar cenários</button>' +
           '<button class="btn sm" data-acao="exportar-excel">📊 Excel (3 abas)</button>' +
           '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">📥 Reimportar</button>' +
@@ -390,17 +391,30 @@
         '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
         '<th class="num">Preço Venda</th><th></th></tr></thead><tbody>';
 
-      var pct = orc.bdi ? orc.bdi.percentual : 0;
+      // Linhas e subtotais vêm da FONTE ÚNICA (Orcamento.calcular): a planilha da
+      // tela precisa mostrar exatamente o mesmo número do Excel, do relatório e
+      // do laudo — o critério de arredondamento é do orçamento, não da tela.
+      var _c = Orcamento.calcular(orc);
+      var _porEtapa = [], _porItem = {};
+      _c.linhas.forEach(function (L) {
+        var s = _porEtapa[L.etapaIdx] || (_porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
+        s.custo += L.custoTotal; s.venda += L.precoTotal;
+        _porItem[L.etapaIdx + "|" + L.itemIdx] = L;
+      });
       var nEtapas = orc.etapas.length;
       orc.etapas.forEach(function (e, ei) {
-        var custoEtapa = 0;
-        e.itens.forEach(function (it) { custoEtapa += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
+        // Subtotal da etapa = SOMA DAS LINHAS IMPRESSAS abaixo dela. Com o BDI
+        // apartado ("no preço final") o preço do item é de custo, então usar o
+        // sintético aqui (que já rateia o BDI) faria a etapa não bater com os
+        // próprios itens — e o BDI apareceria duas vezes no documento.
+        var sm = _porEtapa[ei] || { custo: 0, venda: 0 };
+        var se = { custoDireto: Arred.valor(sm.custo, _c.modo), precoVenda: Arred.valor(sm.venda, _c.modo) };
         // número da etapa = posição (1, 2, 3…); item = 2.1, 2.2… (derivado da posição)
         var numEtapa = String(ei + 1);
         html += '<tr class="etapa-row"><td><b>' + numEtapa + '</b></td>' +
           '<td colspan="5">' + Util.esc(e.nome) + '</td>' +
-          '<td class="num">' + Util.fmtMoeda(custoEtapa) + '</td>' +
-          '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custoEtapa, pct)) + '</td>' +
+          '<td class="num">' + Util.fmtMoeda(se.custoDireto) + '</td>' +
+          '<td class="num">' + Util.fmtMoeda(se.precoVenda) + '</td>' +
           '<td class="right"><div class="acoes">' +
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|1"' + (ei === nEtapas - 1 ? ' disabled' : '') + ' title="Descer etapa">▼</button>' +
@@ -410,7 +424,7 @@
 
         var nItens = e.itens.length;
         e.itens.forEach(function (it, ii) {
-          var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
+          var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0 };
           var fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "PROPRIO");
           var ehSinapi = it.origem === "SINAPI" && (!it.baseFonte || it.baseFonte === "SINAPI");
           var pillCls = fonte === "SINAPI" ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
@@ -424,8 +438,8 @@
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
             '<td class="num"><input class="cell" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"></td>' +
-            '<td class="num">' + Util.fmtMoeda(custo) + '</td>' +
-            '<td class="num">' + Util.fmtMoeda(Bdi.aplicar(custo, pct)) + '</td>' +
+            '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+            '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
             '<td class="right"><div class="acoes">' +
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (ii === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (ii === nItens - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
@@ -862,6 +876,32 @@
     },
 
     // ----- Relatório completo (sintético + analítico) para impressão/PDF -----
+    /* Linhas de metadados do orçamento que precisam sair NO documento: critério de
+     * arredondamento (quem confere a planilha em licitação checa isso) e o bloco
+     * de licitação quando o orçamento foi marcado como tal. */
+    _dataBr: function (s) {
+      var m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+      return m ? (m[3] + "/" + m[2] + "/" + m[1] + (m[4] ? " " + m[4] + ":" + m[5] : "")) : "";
+    },
+    _metaParametros: function (orc) {
+      var cfg;
+      try { cfg = Orcamento.garantirConfig(orc); } catch (e) { return ""; }
+      var h = "";
+      var crit = (typeof Arred !== "undefined")
+        ? Arred.rotulo(cfg.arredondamento) + (Arred.ehPadraoTcu(cfg.arredondamento) ? " (padrão do TCU)" : "") +
+          " · BDI " + (cfg.bdiIncidencia === "final" ? "no preço final" : "no preço unitário")
+        : "";
+      if (crit) h += '<div><span>Critério</span> ' + Util.esc(crit) + "</div>";
+      var lic = cfg.licitacao || {};
+      if (lic.ativo) {
+        var partes = [lic.tipo || "", lic.processo ? "Processo " + lic.processo : "",
+          this._dataBr(lic.abertura) ? "Abertura " + this._dataBr(lic.abertura) : ""].filter(function (x) { return !!x; });
+        h += '<div><span>Licitação</span> ' + Util.esc(partes.join(" · ") || "sim") + "</div>";
+      }
+      if (cfg.categoria) h += '<div><span>Categoria</span> ' + Util.esc(cfg.categoria) + "</div>";
+      return h;
+    },
+
     renderRelatorioCompleto: function (orc, usuario) {
       var t = Orcamento.totais(orc);
       var sint = Orcamento.sintetico(orc);
@@ -885,6 +925,7 @@
           '<div><span>Obra</span> ' + Util.esc((orc.obra && orc.obra.nome) || "—") + '</div>' +
           '<div><span>' + (Orcamento.basesUsadas(orc).length > 1 ? "Bases" : "Base") + '</span> ' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</div>' +
           '<div><span>Data</span> ' + hoje + '</div>' +
+          this._metaParametros(orc) +
         '</div></div>';
 
       // Resumo
@@ -910,24 +951,39 @@
       html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
       html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
         '<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">Preço Venda</th></tr></thead><tbody>';
+      // Linhas da FONTE ÚNICA: o documento assinado não pode divergir do Excel
+      var calc = Orcamento.calcular(orc), porItem = {}, porEtapa = [];
+      calc.linhas.forEach(function (L) {
+        porItem[L.etapaIdx + "|" + L.itemIdx] = L;
+        var s2 = porEtapa[L.etapaIdx] || (porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
+        s2.custo += L.custoTotal; s2.venda += L.precoTotal;
+      });
       Util.arr(orc.etapas).forEach(function (e, ei) {
-        var subCusto = 0;
-        e.itens.forEach(function (it) { subCusto += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
+        // subtotal = soma das linhas impressas (ver comentário em renderPlanilha)
+        var sm2 = porEtapa[ei] || { custo: 0, venda: 0 };
+        var se = { custoDireto: Arred.valor(sm2.custo, calc.modo), precoVenda: Arred.valor(sm2.venda, calc.modo) };
         html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + '</td></tr>';
         if (!e.itens.length) html += '<tr><td colspan="8" class="muted">(sem itens)</td></tr>';
         e.itens.forEach(function (it, ii) {
-          var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
+          var L = porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, custoUnitario: 0 };
           html += '<tr><td><b>' + Orcamento.itemNumero(ei, ii) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
-            '<td class="r">' + Util.fmtMoeda(it.custoUnitario) + '</td>' +
-            '<td class="r">' + Util.fmtMoeda(custo) + '</td>' +
-            '<td class="r">' + Util.fmtMoeda(Bdi.aplicar(custo, pct)) + '</td></tr>';
+            '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
+            '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
+            '<td class="r">' + Util.fmtMoeda(L.precoTotal) + '</td></tr>';
         });
         html += '<tr class="sub"><td colspan="6">Subtotal ' + (ei + 1) + " · " + Util.esc(e.nome) + '</td>' +
-          '<td class="r">' + Util.fmtMoeda(subCusto) + '</td><td class="r">' + Util.fmtMoeda(Bdi.aplicar(subCusto, pct)) + '</td></tr>';
+          '<td class="r">' + Util.fmtMoeda(se.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(se.precoVenda) + '</td></tr>';
       });
-      html += '</tbody><tfoot><tr><td colspan="6">TOTAL GERAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
+      html += '</tbody><tfoot>';
+      // BDI apartado (incidência "no preço final"): a coluna soma o CUSTO, então
+      // o BDI precisa aparecer como linha própria para o rodapé fechar.
+      if (!calc.bdiNoPU) {
+        html += '<tr><td colspan="6">Custo direto</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
+          '<tr><td colspan="7">BDI ' + Util.fmtPct(t.bdiPercentual) + ' (sobre o preço final)</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>';
+      }
+      html += '<tr><td colspan="6">TOTAL GERAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
         '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
 
       // 3) COMPOSIÇÕES E INSUMOS (analítico SINAPI) — cada composição detalhada em seus insumos

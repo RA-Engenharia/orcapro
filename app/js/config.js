@@ -29,7 +29,7 @@
     // Usado no link de acesso que o admin envia ao usuário (?lic=<chave>&u=<login>).
     appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 
-    versao: "1.1.116",
+    versao: "1.1.117",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)

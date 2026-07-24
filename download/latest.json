@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.116",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.116/OrcaPRO-IA-update-v1.1.116.zip",
-  "notas": "No editor de orçamento agora dá para REORDENAR etapas e itens (botões subir/descer) sem apagar nada, e a numeração ficou hierárquica: a etapa 2 tem os itens 2.1, 2.2, 2.3 numa coluna, com o código SINAPI numa coluna separada. O número do item também aparece no relatório, no laudo e no Excel.",
+  "versao": "1.1.117",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.117/OrcaPRO-IA-update-v1.1.117.zip",
+  "notas": "Novo orçamento com ASSISTENTE DE 3 PASSOS (dados + licitação, cálculo, bases). Arredondamento configurável em 5 modos com TRUNCAR 2 CASAS como padrão (critério do TCU) e escolha de onde o BDI incide. Todos os documentos — planilha, relatório, laudo, proposta, apresentação, medição, curva ABC, CSV e Excel — saem da mesma conta, sem divergência de centavo. Boletim de medição aprovado fica travado (não reprecifica). Botão 🎛 Parâmetros reabre a configuração a qualquer momento.",
   "obrigatoria": false
 }

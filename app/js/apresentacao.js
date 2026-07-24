@@ -99,26 +99,41 @@
      *              Orcamento.basesUsadasTexto(orc) — abrir() já faz isso)
      * Devolve array de slides [{ id, titulo, html }].
      * ================================================================= */
-    slides: function (orc, empresa, basesTxt) {
+    slides: function (orc, empresa, basesTxt, dados) {
       orc = orc || {};
       empresa = empresa || {};
 
       var pct = num(orc.bdi && orc.bdi.percentual);
       var etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
 
-      // custo por etapa = Σ qtd × custoUnit; total direto = Σ etapas
-      var linhas = [], custoTotal = 0;
-      etapas.forEach(function (e) {
-        if (!e) return;
-        var c = 0;
-        (Array.isArray(e.itens) ? e.itens : []).forEach(function (it) {
-          if (it) c += num(it.quantidade) * num(it.custoUnitario);
+      /* Os números vêm PRONTOS de quem chama (abrir() passa Orcamento.totais +
+       * Orcamento.sintetico). O slide é o que o cliente vê na reunião: se ele
+       * calculasse por conta própria, mostraria um preço e o PDF/Excel enviado
+       * depois mostraria outro. O cálculo local abaixo é só fallback para quando
+       * o chamador não injeta nada (mantém slides() pura e testável). */
+      var linhas = [], custoTotal = 0, precoTotal = 0, valorBdi = 0;
+      if (dados && dados.etapas) {
+        for (var di = 0; di < dados.etapas.length; di++) {
+          var de = dados.etapas[di] || {};
+          linhas.push({ codigo: de.codigo, nome: de.nome, custo: num(de.custoDireto), preco: num(de.precoVenda) });
+        }
+        custoTotal = num(dados.custoDireto);
+        precoTotal = num(dados.precoVenda);
+        valorBdi = num(dados.bdiValor);
+        if (dados.pct != null) pct = num(dados.pct);
+      } else {
+        etapas.forEach(function (e) {
+          if (!e) return;
+          var c = 0;
+          (Array.isArray(e.itens) ? e.itens : []).forEach(function (it) {
+            if (it) c += num(it.quantidade) * num(it.custoUnitario);
+          });
+          linhas.push({ codigo: e.codigo, nome: e.nome, custo: c, preco: aplicarBdi(c, pct) });
+          custoTotal += c;
         });
-        linhas.push({ codigo: e.codigo, nome: e.nome, custo: c });
-        custoTotal += c;
-      });
-      var precoTotal = aplicarBdi(custoTotal, pct);
-      var valorBdi = precoTotal - custoTotal;
+        precoTotal = aplicarBdi(custoTotal, pct);
+        valorBdi = precoTotal - custoTotal;
+      }
 
       var out = [];
 
@@ -157,7 +172,7 @@
           var titulo = blocos.length > 1 ? "Etapas (" + (bi + 1) + "/" + blocos.length + ")" : "Etapas";
           var rows = "";
           bloco.forEach(function (l) {
-            var preco = aplicarBdi(l.custo, pct);
+            var preco = (l.preco != null) ? l.preco : aplicarBdi(l.custo, pct);
             var p = precoTotal > 0 ? (preco / precoTotal) * 100 : 0;
             rows += '<tr data-pct="' + p.toFixed(4) + '">' +
               '<td class="ap-cod">' + esc(l.codigo) + "</td>" +
@@ -248,7 +263,19 @@
         }
       } catch (e3) {}
 
-      var slides = this.slides(orc, empresa, basesTxt);
+      // Números da FONTE ÚNICA: o slide projetado na reunião tem que mostrar
+      // exatamente o mesmo custo/BDI/preço da planilha, do Excel e do laudo.
+      var dados = null;
+      try {
+        if (typeof global.Orcamento !== "undefined" && global.Orcamento.calcular) {
+          var T = global.Orcamento.totais(orc), S = global.Orcamento.sintetico(orc);
+          dados = {
+            custoDireto: T.custoDireto, bdiValor: T.bdiValor, precoVenda: T.precoVenda,
+            pct: T.bdiPercentual, etapas: S
+          };
+        }
+      } catch (e3) { dados = null; }
+      var slides = this.slides(orc, empresa, basesTxt, dados);
       var n = slides.length, idx = 0;
 
       var el = document.createElement("div");

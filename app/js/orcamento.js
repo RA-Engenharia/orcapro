@@ -7,6 +7,34 @@
 (function (global) {
   "use strict";
 
+  /* Motor de arredondamento (js/arredondamento.js), resolvido SOB DEMANDA.
+   * Assim o orçamento nunca quebra se o script não estiver carregado: em Node
+   * (testes/ferramentas) ele é carregado por require; num navegador com cache
+   * antigo cai num fallback mínimo no padrão do TCU (truncar 2 casas + BDI no
+   * unitário), que é justamente o default do produto. */
+  var _arredFB = null;
+  function A() {
+    var M = global.Arred;
+    if (M) return M;
+    if (typeof require === "function") {
+      try { M = require("./arredondamento.js"); if (M) { global.Arred = M; return M; } } catch (e) {}
+    }
+    if (!_arredFB) {
+      var tr = function (v) { var n = Number(v); if (!isFinite(n)) return 0; var s = n < 0 ? -1 : 1; return s * (Math.floor(Math.abs(n) * 100 + 1e-9) / 100); };
+      _arredFB = {
+        PADRAO: "truncar2", INCIDENCIA_PADRAO: "unitario",
+        normalizar: function () { return "truncar2"; },
+        normalizarIncidencia: function (i) { return i === "final" ? "final" : "unitario"; },
+        valor: tr, unitario: tr, auxiliar: tr,
+        puComBdi: function (cu, pct, m, inc) { return inc === "final" ? tr(cu) : tr(Number(cu || 0) * (1 + Number(pct || 0) / 100)); },
+        totalItem: function (q, cu, pct, m, inc) { return tr(Number(q || 0) * this.puComBdi(cu, pct, m, inc)); },
+        custoItem: function (q, cu) { return tr(Number(q || 0) * tr(cu)); }
+      };
+      try { console.warn("[OrçaPRO] arredondamento.js ausente — usando padrão do TCU embutido."); } catch (e) {}
+    }
+    return _arredFB;
+  }
+
   var Orcamento = {
 
     /* Cria um orçamento novo, já com schema atual. */
@@ -24,12 +52,73 @@
         uf: Sinapi.uf || CONFIG.sinapi.ufPadrao,
         desonerado: false,
         bdi: { modeloId: "padrao", params: bdiParams, percentual: Bdi.calcular(bdiParams) },
+        config: this.configPadrao(dados),
         comercial: this.comercialPadrao(),
         cronogramaMeses: 6,
         etapas: [],
         criadoEm: Util.agoraISO(),
         atualizadoEm: Util.agoraISO()
       };
+    },
+
+    /* Categorias de obra (tipologias usuais de obra pública/privada) — usadas
+     * no Passo 1 do assistente para classificar o orçamento. */
+    CATEGORIAS_OBRA: [
+      "Calçadas e meio-fio",
+      "Construção e ampliação de rede de abastecimento de água",
+      "Creches e escolas — Construção", "Creches e escolas — Reforma",
+      "Drenagem e esgotamento sanitário",
+      "Edificação residencial", "Edificação comercial",
+      "Espaços públicos e praças — Construção", "Espaços públicos e praças — Reforma",
+      "Galpões",
+      "Hospitais e unidades de saúde — Construção", "Hospitais e unidades de saúde — Reforma",
+      "Infraestruturas esportivas — Construção", "Infraestruturas esportivas — Reforma",
+      "Muros e contenções",
+      "Passagens molhadas e pontes — Construção", "Passagens molhadas e pontes — Reforma",
+      "Pavimentação asfáltica", "Pavimentação e drenagem",
+      "Pavimentação em bloco de concreto intertravado", "Pavimentação em paralelepípedo",
+      "Prédios públicos — Construção", "Prédios públicos — Reforma",
+      "Reforma e manutenção predial",
+      "Terraplenagem", "Outra"
+    ],
+
+    /* Parametrização do orçamento (Passos 1 e 2 do assistente).
+     * Padrão do produto = PADRÃO DO TCU (truncar 2 casas + BDI no unitário),
+     * porque é o que licitação pública exige. */
+    configPadrao: function (dados) {
+      dados = dados || {};
+      return {
+        categoria: dados.categoria || "",
+        prazoEntrega: dados.prazoEntrega || "",
+        arredondamento: A().PADRAO,                  // "truncar2" — Padrão do TCU
+        bdiIncidencia: A().INCIDENCIA_PADRAO,        // "unitario" — TCU recomenda
+        encargos: { tipo: "desonerado", horista: 0, mensalista: 0 },
+        permitirZerado: false,
+        licitacao: { ativo: false, tipo: "", abertura: "", processo: "" }
+      };
+    },
+
+    /* Garante a config em orçamentos ANTIGOS (migração): quem não tinha
+     * parametrização passa a calcular pelo padrão TCU — decisão do produto,
+     * para que todo orçamento saia no critério aceito em licitação. */
+    garantirConfig: function (orc) {
+      if (!orc) return this.configPadrao();
+      // Marca o orçamento que NASCEU sem parametrização: ele passa a calcular no
+      // padrão do TCU e o total pode mudar em centavos em relação ao que já foi
+      // impresso. O app avisa isso uma vez ao abrir (nada de mudar em silêncio).
+      if (!orc.config || typeof orc.config !== "object") {
+        orc.config = this.configPadrao();
+        if (Util.arr(orc.etapas).length) orc.config.migradoTcu = true;
+      }
+      var pad = this.configPadrao();
+      for (var k in pad) { if (orc.config[k] == null) orc.config[k] = pad[k]; }
+      if (!orc.config.encargos || typeof orc.config.encargos !== "object") orc.config.encargos = { tipo: "desonerado", horista: 0, mensalista: 0 };
+      if (!orc.config.licitacao || typeof orc.config.licitacao !== "object") orc.config.licitacao = { ativo: false, tipo: "", abertura: "", processo: "" };
+      orc.config.arredondamento = A().normalizar(orc.config.arredondamento);
+      orc.config.bdiIncidencia = A().normalizarIncidencia(orc.config.bdiIncidencia);
+      // compat: o campo antigo orc.desonerado manda no tipo de encargo
+      if (typeof orc.desonerado === "boolean") orc.config.encargos.tipo = orc.desonerado ? "desonerado" : "nao_desonerado";
+      return orc.config;
     },
 
     comercialPadrao: function () {
@@ -271,68 +360,143 @@
     // ---- Cálculos / Totais ----
     custoItem: function (it) { return Util.num(it.quantidade) * Util.num(it.custoUnitario); },
 
-    totais: function (orc) {
-      var custoDireto = 0, mo = 0, mat = 0, eq = 0, qtdItens = 0;
-      Util.arr(orc.etapas).forEach(function (e) {
-        Util.arr(e.itens).forEach(function (it) {
-          var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-          custoDireto += ct;
-          mo += Util.num(it.quantidade) * Util.num(it.custoMO);
-          mat += Util.num(it.quantidade) * Util.num(it.custoMAT);
-          eq += Util.num(it.quantidade) * Util.num(it.custoEQ);
-          qtdItens++;
-        });
-      });
-      var pct = orc.bdi ? orc.bdi.percentual : 0;
-      var precoVenda = Bdi.aplicar(custoDireto, pct);
+    /* =================================================================
+     * FONTE ÚNICA DE VALORES.
+     *
+     * TODA visão do orçamento (planilha da tela, sintético, analítico, CSV,
+     * curva ABC, cronograma, medição, relatório, laudo, proposta e Excel)
+     * tem que sair daqui. Quando cada tela fazia a sua conta, dois documentos
+     * do MESMO orçamento divergiam em centavos — e em licitação isso é
+     * impugnação. Aqui o critério de arredondamento e a incidência do BDI são
+     * aplicados UMA vez, item a item.
+     *
+     * Incidência do BDI:
+     *   "unitario" (padrão, TCU) — o BDI entra no preço unitário de cada item;
+     *                              o total é a SOMA dos itens.
+     *   "final"                  — o preço unitário é de CUSTO; o BDI aparece
+     *                              como uma parcela única no fim. O total é
+     *                              custo direto + BDI (é o que o edital pede
+     *                              quando manda "BDI sobre o preço final").
+     * ================================================================= */
+    calcular: function (orc) {
+      var cfg = this.garantirConfig(orc);
+      var modo = cfg.arredondamento, inc = cfg.bdiIncidencia, A0 = A();
+      var pct = (orc && orc.bdi) ? Util.num(orc.bdi.percentual) : 0;
+      var bdiNoPU = (inc !== "final");
+      var linhas = [], custoDireto = 0, somaVenda = 0, mo = 0, mat = 0, eq = 0;
+      Util.arr(orc && orc.etapas).forEach(function (e, ei) {
+        Util.arr(e.itens).forEach(function (it, ii) {
+          var q = Util.num(it.quantidade);
+          var cu = A0.unitario(it.custoUnitario, modo);
+          var ct = A0.valor(q * cu, modo);
+          // PU faturável: com BDI embutido quando a incidência é no unitário
+          var pu = bdiNoPU ? A0.unitario(Util.num(it.custoUnitario) * (1 + pct / 100), modo) : cu;
+          var pt = A0.valor(q * pu, modo);
+          custoDireto += ct; somaVenda += pt;
+          mo += q * Util.num(it.custoMO); mat += q * Util.num(it.custoMAT); eq += q * Util.num(it.custoEQ);
+          linhas.push({
+            etapaIdx: ei, etapaId: e.id, etapaCodigo: e.codigo || "", etapaNome: e.nome || "",
+            itemIdx: ii, numero: this.itemNumero(ei, ii), item: it, itemId: it.id,
+            codigo: it.codigo || "", descricao: it.descricao || "", unidade: it.unidade || "un",
+            origem: it.origem, baseFonte: it.baseFonte,
+            quantidade: q, custoUnitario: cu, custoTotal: ct,
+            precoUnit: pu, precoTotal: pt
+          });
+        }, this);
+      }, this);
+      custoDireto = A0.valor(custoDireto, modo);
+      somaVenda = A0.valor(somaVenda, modo);
+      var precoVenda = bdiNoPU ? somaVenda : A0.valor(Bdi.aplicar(custoDireto, pct), modo);
       return {
+        cfg: cfg, modo: modo, incidencia: inc, bdiNoPU: bdiNoPU, pct: pct,
+        linhas: linhas,
         custoDireto: custoDireto,
-        mo: mo, mat: mat, eq: eq,
-        bdiPercentual: pct,
-        bdiValor: precoVenda - custoDireto,
+        somaItens: somaVenda,                       // soma das linhas faturáveis
+        // venda e custo JÁ estão em centavos exatos: a diferença também é — o round
+        // só limpa o ruído de float. Truncar aqui comia 1 centavo e o trio
+        // custo + BDI ≠ venda não fechava (o Excel, que subtrai exato, divergia).
+        bdiValor: Math.round((precoVenda - custoDireto) * 100) / 100,
         precoVenda: precoVenda,
-        qtdItens: qtdItens,
-        qtdEtapas: Util.arr(orc.etapas).length
+        mo: A0.valor(mo, modo), mat: A0.valor(mat, modo), eq: A0.valor(eq, modo),
+        qtdItens: linhas.length, qtdEtapas: Util.arr(orc && orc.etapas).length
       };
     },
+
+    totais: function (orc) {
+      var c = this.calcular(orc);
+      return {
+        custoDireto: c.custoDireto,
+        mo: c.mo, mat: c.mat, eq: c.eq,
+        bdiPercentual: c.pct,
+        bdiValor: c.bdiValor,
+        precoVenda: c.precoVenda,
+        qtdItens: c.qtdItens,
+        qtdEtapas: c.qtdEtapas,
+        arredondamento: c.modo, bdiIncidencia: c.incidencia, bdiNoPU: c.bdiNoPU
+      };
+    },
+
+    /* Linhas já calculadas (mesma conta da tela, do Excel e do laudo). */
+    linhas: function (orc) { return this.calcular(orc).linhas; },
 
     // ---------- #18: medição vinculada ao orçamento ----------
     // Linhas mediveis: 1 por item, com preço unitário COM BDI (o que se fatura).
     itensMediveis: function (orc) {
-      var pct = (orc && orc.bdi) ? Util.num(orc.bdi.percentual) : 0;
-      var out = [];
-      Util.arr(orc && orc.etapas).forEach(function (e) {
-        Util.arr(e.itens).forEach(function (it) {
-          var qtd = Util.num(it.quantidade), pu = Util.num(it.custoUnitario) * (1 + pct / 100);
-          out.push({
-            itemId: it.id, etapa: e.nome || e.codigo || "", codigo: it.codigo || "",
-            descricao: it.descricao || "", unidade: it.unidade || "un",
-            qtdContratada: qtd, precoUnit: pu, valorContratado: qtd * pu
-          });
-        });
+      var c = this.calcular(orc);
+      return c.linhas.map(function (L) {
+        return {
+          itemId: L.itemId, etapa: L.etapaNome || L.etapaCodigo || "", codigo: L.codigo,
+          descricao: L.descricao, unidade: L.unidade,
+          qtdContratada: L.quantidade, precoUnit: L.precoUnit, valorContratado: L.precoTotal,
+          bdiNoPU: c.bdiNoPU
+        };
       });
-      return out;
     },
-    // Consolida um boletim: % medido no período por item (mapa itemId -> %),
-    // com o acumulado anterior por item p/ acusar estouro de 100%.
+    /* Consolida um boletim: % medido no período por item (mapa itemId -> %),
+     * com o acumulado anterior por item p/ acusar estouro de 100%.
+     *
+     * Fecha ao CENTAVO com o orçamento: usa o mesmo arredondamento e, quando o
+     * BDI incide sobre o preço final (o PU da planilha é de custo), fatura o
+     * BDI como parcela proporcional ao medido — sem isso, medir 100% deixaria
+     * o BDI inteiro para trás. */
     medirItens: function (orc, pctPorItem, pctAnteriorPorItem) {
-      var r2 = function (n) { return Math.round((n + Number.EPSILON) * 100) / 100; };
-      var linhas = this.itensMediveis(orc), itens = [], total = 0, avisos = [];
-      linhas.forEach(function (L) {
+      var c = this.calcular(orc), A0 = A(), modo = c.modo;
+      var itens = [], somaItens = 0, avisos = [];
+      c.linhas.forEach(function (L) {
         var p = Util.num((pctPorItem || {})[L.itemId]);
         if (p <= 0) return;
         var ant = Util.num((pctAnteriorPorItem || {})[L.itemId]);
         if (ant + p > 100.0001) avisos.push((L.codigo || L.descricao.slice(0, 20)) + " passa de 100% (" + Util.fmtNum(ant + p, 1) + "% acum.)");
-        var qtdMed = L.qtdContratada * p / 100, valor = r2(qtdMed * L.precoUnit);
-        total += valor;
+        var qtdMed = L.quantidade * p / 100;
+        // 100% do item fatura exatamente o valor contratado (sem sobra de centavo)
+        var valor = (p >= 99.9999 && ant <= 0.0001) ? L.precoTotal : A0.valor(qtdMed * L.precoUnit, modo);
+        somaItens += valor;
         itens.push({
-          itemId: L.itemId, etapa: L.etapa, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
-          qtdContratada: L.qtdContratada, precoUnit: r2(L.precoUnit),
-          pctAnterior: r2(ant), pctPeriodo: r2(p), qtdMedida: r2(qtdMed), valor: valor
+          itemId: L.itemId, etapa: L.etapaNome, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
+          qtdContratada: L.quantidade, precoUnit: L.precoUnit,
+          pctAnterior: A0.valor(ant, modo), pctPeriodo: A0.valor(p, modo),
+          qtdMedida: A0.valor(qtdMed, modo), valor: valor
         });
       });
-      var t = this.totais(orc);
-      return { itens: itens, total: r2(total), pctDoOrcamento: t.precoVenda > 0 ? (total / t.precoVenda * 100) : 0, avisos: avisos };
+      somaItens = A0.valor(somaItens, modo);
+      // BDI apartado: a planilha tem PU de custo, então o boletim fatura o BDI
+      // proporcional ao que foi medido (medir 100% = preço de venda, ao centavo).
+      // O TOTAL usa a MESMA fórmula do preço de venda (valor(custo×(1+BDI))) e o
+      // BDI sai como diferença exata — truncar a diferença solta quebrava com BDI
+      // NEGATIVO (desconto): truncar rumo ao zero deixava o boletim 1 centavo
+      // ACIMA do contratado.
+      var total, bdiMedido;
+      if (c.bdiNoPU) { bdiMedido = 0; total = somaItens; }
+      else {
+        total = A0.valor(Bdi.aplicar(somaItens, c.pct), modo);
+        bdiMedido = Math.round((total - somaItens) * 100) / 100;
+      }
+      return {
+        itens: itens, totalItens: somaItens, bdiValor: bdiMedido, bdiPercentual: c.pct,
+        bdiNoPU: c.bdiNoPU, total: total,
+        pctDoOrcamento: c.precoVenda > 0 ? (total / c.precoVenda * 100) : 0,
+        avisos: avisos
+      };
     },
 
     // LOTE 4: regime de composição declarado (Lei 14.133 exige) — olha os itens;
@@ -351,20 +515,22 @@
       return (orc && orc.desonerado) ? "desonerado" : "onerado";
     },
 
-    // Resumo sintético: uma linha por etapa
+    // Resumo sintético: uma linha por etapa — somando as MESMAS linhas da planilha
     sintetico: function (orc) {
-      var pct = orc.bdi ? orc.bdi.percentual : 0;
-      var t = this.totais(orc);
-      var totalGeral = t.precoVenda || 1;
-      var r2 = function (n) { return Math.round((n + Number.EPSILON) * 100) / 100; };
-      var rows = Util.arr(orc.etapas).map(function (e) {
-        var custo = 0;
-        Util.arr(e.itens).forEach(function (it) { custo += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
-        var venda = Bdi.aplicar(custo, pct);
-        return {
-          codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length,
-          custoDireto: r2(custo), precoVenda: r2(venda), peso: 0
-        };
+      var c = this.calcular(orc), A0 = A(), modo = c.modo;
+      var totalGeral = c.precoVenda || 1;
+      var rows = Util.arr(orc && orc.etapas).map(function (e) {
+        return { codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length, custoDireto: 0, precoVenda: 0, peso: 0 };
+      });
+      c.linhas.forEach(function (L) {
+        var r = rows[L.etapaIdx]; if (!r) return;
+        r.custoDireto += L.custoTotal;
+        r.precoVenda += L.precoTotal;
+      });
+      rows.forEach(function (r) {
+        r.custoDireto = A0.valor(r.custoDireto, modo);
+        // BDI apartado: a etapa mostra o preço de venda com o BDI proporcional
+        r.precoVenda = c.bdiNoPU ? A0.valor(r.precoVenda, modo) : A0.valor(Bdi.aplicar(r.custoDireto, c.pct), modo);
       });
       // LOTE 2: reconciliação de centavos — a soma das etapas arredondadas TEM
       // que bater ao centavo com o total geral (licitação rejeita por 1 cent).
@@ -372,9 +538,14 @@
       var somaC = 0, somaV = 0, maior = null;
       rows.forEach(function (r) { somaC += r.custoDireto; somaV += r.precoVenda; if (!maior || r.precoVenda > maior.precoVenda) maior = r; });
       if (maior) {
-        var difC = r2(r2(t.custoDireto) - r2(somaC)), difV = r2(r2(t.precoVenda) - r2(somaV));
-        if (difC) maior.custoDireto = r2(maior.custoDireto + difC);
-        if (difV) maior.precoVenda = r2(maior.precoVenda + difV);
+        // O RESÍDUO é sempre pelo centavo mais próximo, mesmo no modo truncar:
+        // truncar uma diferença de 0,00999999 (que é 1 centavo com ruído de float)
+        // devolveria 0,00 e a soma das etapas ficaria 1 centavo abaixo do total.
+        var _res = function (v) { return Math.round(v * 100) / 100; };
+        var difC = _res(c.custoDireto - A0.valor(somaC, modo));
+        var difV = _res(c.precoVenda - A0.valor(somaV, modo));
+        if (difC) maior.custoDireto = _res(maior.custoDireto + difC);
+        if (difV) maior.precoVenda = _res(maior.precoVenda + difV);
       }
       rows.forEach(function (r) { r.peso = (r.precoVenda / totalGeral) * 100; });
       return rows;
@@ -382,48 +553,51 @@
 
     // Linha a linha (analítico) — útil p/ export
     analitico: function (orc) {
-      var linhas = [], pct = orc.bdi ? orc.bdi.percentual : 0;
-      Util.arr(orc.etapas).forEach(function (e) {
-        Util.arr(e.itens).forEach(function (it) {
-          var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-          linhas.push({
-            etapa: e.codigo + " " + e.nome,
-            origem: it.origem, codigo: it.codigo, descricao: it.descricao, unidade: it.unidade,
-            quantidade: Util.num(it.quantidade), custoUnitario: Util.num(it.custoUnitario),
-            custoTotal: custo, precoVenda: Bdi.aplicar(custo, pct)
-          });
-        });
+      return this.calcular(orc).linhas.map(function (L) {
+        return {
+          etapa: (L.etapaCodigo ? L.etapaCodigo + " " : "") + L.etapaNome,
+          numero: L.numero,
+          origem: L.origem, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
+          quantidade: L.quantidade, custoUnitario: L.custoUnitario,
+          custoTotal: L.custoTotal, precoUnitario: L.precoUnit, precoVenda: L.precoTotal
+        };
       });
-      return linhas;
     },
 
     // Exporta o analítico como CSV (separador ; — padrão Excel BR)
     exportarCSV: function (orc) {
-      var linhas = this.analitico(orc);
-      var head = ["Etapa", "Origem", "Codigo", "Descricao", "Unid", "Qtd", "Custo Unit", "Custo Total", "Preco Venda"];
+      var c = this.calcular(orc);
+      // No modo "não arredondar" o orçamento carrega frações de centavo: imprimir
+      // 2 casas faria o arquivo NÃO fechar com o próprio total. Quem escolheu não
+      // arredondar recebe o CSV com as casas que o cálculo realmente usa.
+      var casas = (c.modo === "nenhum") ? 4 : 2;
+      var n = function (v) { return Util.fmtNum(v, casas); };
+      var head = ["Item", "Etapa", "Origem", "Codigo", "Descricao", "Unid", "Qtd", "Custo Unit", "Custo Total", "Preco Unit", "Preco Total"];
       var rows = [head.join(";")];
-      linhas.forEach(function (l) {
+      this.analitico(orc).forEach(function (l) {
         rows.push([
-          '"' + l.etapa + '"', l.origem, l.codigo, '"' + l.descricao + '"', l.unidade,
-          Util.fmtNum(l.quantidade, 2), Util.fmtNum(l.custoUnitario, 2),
-          Util.fmtNum(l.custoTotal, 2), Util.fmtNum(l.precoVenda, 2)
+          l.numero, '"' + l.etapa + '"', l.origem, l.codigo, '"' + l.descricao + '"', l.unidade,
+          Util.fmtNum(l.quantidade, 2), n(l.custoUnitario), n(l.custoTotal),
+          n(l.precoUnitario), n(l.precoVenda)
         ].join(";"));
       });
-      var t = this.totais(orc);
       rows.push("");
-      rows.push(["TOTAL", "", "", "", "", "", "", Util.fmtNum(t.custoDireto, 2), Util.fmtNum(t.precoVenda, 2)].join(";"));
+      rows.push(["CUSTO DIRETO", "", "", "", "", "", "", "", n(c.custoDireto), "", ""].join(";"));
+      // com BDI apartado a soma das linhas é o custo: o BDI PRECISA aparecer como
+      // linha própria, senão o arquivo não fecha consigo mesmo
+      if (!c.bdiNoPU) rows.push(["BDI " + Util.fmtNum(c.pct, 2) + "%", "", "", "", "", "", "", "", "", "", n(c.bdiValor)].join(";"));
+      rows.push(["PRECO DE VENDA", "", "", "", "", "", "", "", "", "", n(c.precoVenda)].join(";"));
       return "﻿" + rows.join("\r\n"); // BOM p/ acentos no Excel
     },
 
     // ---- Curva ABC (itens ordenados por custo, classes A/B/C) ----
     curvaABC: function (orc) {
-      var itens = [];
-      Util.arr(orc.etapas).forEach(function (e) {
-        Util.arr(e.itens).forEach(function (it) {
-          var custo = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-          itens.push({ codigo: it.codigo, descricao: it.descricao, unidade: it.unidade,
-            quantidade: Util.num(it.quantidade), custoTotal: custo, etapa: e.nome });
-        });
+      // custo por item JÁ no critério do orçamento — assim o total da curva
+      // fecha com o Custo Direto da planilha (o Excel confere isso e imprime
+      // "⚠ verificar" no documento entregue quando não bate)
+      var itens = this.calcular(orc).linhas.map(function (L) {
+        return { codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
+          quantidade: L.quantidade, custoTotal: L.custoTotal, etapa: L.etapaNome };
       });
       itens.sort(function (a, b) { return b.custoTotal - a.custoTotal; });
       var total = itens.reduce(function (s, x) { return s + x.custoTotal; }, 0) || 1;

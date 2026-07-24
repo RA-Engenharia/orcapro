@@ -241,6 +241,36 @@
     var credito = deps.credito || "";
     var bdiPct = num(orc.bdi && orc.bdi.percentual) || 0;
     var etapas = Array.isArray(orc.etapas) ? orc.etapas : [];
+
+    /* ---- Política de ARREDONDAMENTO (Passo 2 do assistente) ----
+     * A planilha é VIVA (fórmulas). Se as fórmulas não seguirem o mesmo
+     * critério do app, o cliente abre o xlsx e vê um total diferente do
+     * orçamento — em licitação isso vira impugnação. Então cada fórmula sai
+     * embrulhada em TRUNC()/ROUND() conforme o modo, e a incidência do BDI
+     * (unitário × final) muda de onde o BDI entra. */
+    var _A = global.Arred || (function () {
+      if (typeof require !== "function") return null;
+      try { return require("./arredondamento.js"); } catch (e) { return null; }
+    })();
+    var cfgArr = (global.Orcamento && Orcamento.garantirConfig)
+      ? Orcamento.garantirConfig(orc)
+      : { arredondamento: "truncar2", bdiIncidencia: "unitario" };
+    var modoArr = cfgArr.arredondamento, incBdi = cfgArr.bdiIncidencia;
+    var aVal = function (v) { return _A ? _A.valor(v, modoArr) : num(v); };
+    var aUni = function (v) { return _A ? _A.unitario(v, modoArr) : num(v); };
+    // Valores por item vêm da FONTE ÚNICA do app (Orcamento.calcular) — o xlsx
+    // não recalcula nada por conta própria, senão volta a divergir da tela.
+    var _calc = (global.Orcamento && Orcamento.calcular) ? Orcamento.calcular(orc) : null;
+    var _linhaDe = {};
+    if (_calc) _calc.linhas.forEach(function (L) { _linhaDe[L.etapaIdx + "|" + L.itemIdx] = L; });
+    function fWrap(expr, ehUnitario) {
+      if (modoArr === "nenhum") return expr;
+      var trunca = (modoArr === "truncar2") || (ehUnitario && modoArr === "arred2truncpu");
+      return (trunca ? "TRUNC(" : "ROUND(") + expr + ",2)";
+    }
+    var fV = function (e) { return fWrap(e, false); };  // valores/totais
+    var fU = function (e) { return fWrap(e, true); };   // preço unitário
+    var bdiNoPU = (incBdi !== "final");
     var cronoTotRef = null, resumoChecksRow = 0; // refs p/ os checks de sanidade (FASE 2)
 
     var wb = new ExcelJS.Workbook();
@@ -269,17 +299,20 @@
     wa.mergeCells('A3:J3'); wa.getCell('A3').value = 'Cliente: ' + ((orc.cliente && orc.cliente.nome) || '-') + '   |   Obra: ' + ((orc.obra && orc.obra.nome) || '-') + (orc.obra && orc.obra.local ? ' (' + orc.obra.local + ')' : ''); wa.getCell('A3').font = { size: 9, color: { argb: muted } };
     wa.mergeCells('A4:J4'); wa.getCell('A4').value = Orcamento.basesUsadasTexto(orc) + '   |   BDI ' + fmtNum(bdiPct, 2) + '%   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'); wa.getCell('A4').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
 
-    var hr = 6, colsA = ['Item', 'Código', 'Fonte', 'Descrição', 'Und', 'Qtd', 'Custo Unit', 'Custo Total', 'Preço Unit c/BDI', 'Preço Total c/BDI'];
+    var hr = 6, colsA = ['Item', 'Código', 'Fonte', 'Descrição', 'Und', 'Qtd', 'Custo Unit', 'Custo Total',
+      bdiNoPU ? 'Preço Unit c/BDI' : 'Preço Unit (BDI no final)', bdiNoPU ? 'Preço Total c/BDI' : 'Preço Total (BDI no final)'];
     colsA.forEach(function (h, i) { hStyle(wa.getRow(hr).getCell(i + 1)); wa.getRow(hr).getCell(i + 1).value = h; });
     // FASE 2: coluna K oculta com a etapa de cada linha de item — âncora dos
     // SUMIFS da Sintética (fim das referências fixas tipo 'Analítica'!H16).
     wa.getRow(hr).getCell(11).value = 'Etapa';
     wa.getColumn(11).width = 14; wa.getColumn(11).hidden = true;
 
-    var r = hr + 1, n = 0, subCustoCells = [], etInfo = [], grandCusto = 0, grandMO = 0, grandMAT = 0, grandEQ = 0;
+    var r = hr + 1, n = 0, subCustoCells = [], subVendaCells = [], etInfo = [], grandCusto = 0, grandVenda = 0, grandMO = 0, grandMAT = 0, grandEQ = 0;
     var itensFlat = []; // FASE 4 (AI-ready): 1 registro por item p/ a Table tblItens da aba "Dados IA"
     etapas.forEach(function (et, etIdx) {
-      var etKey = et.codigo || et.nome || 'Etapa';
+      // Chave da etapa para os SUMIFS: precisa ser UNICA. Duas etapas com o mesmo
+      // nome (ou sem codigo) casavam no mesmo SUMIFS e DOBRAVAM o valor da etapa.
+      var etKey = (etIdx + 1) + '|' + (et.codigo || et.nome || 'Etapa');
       wa.mergeCells('A' + r + ':J' + r);
       var bc = wa.getCell('A' + r); bc.value = (etIdx + 1) + '  ' + (et.nome || 'Etapa'); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
       r++;
@@ -287,7 +320,11 @@
       (Array.isArray(et.itens) ? et.itens : []).forEach(function (it, itIdx) {
         n++; var row = wa.getRow(r);
         var qt = num(it.quantidade), cu = num(it.custoUnitario);
-        var ct = qt * cu, pu = cu * (1 + bdiPct / 100), pt = qt * pu;
+        // valores idênticos aos da tela (fonte única); fallback só se o motor faltar
+        var _L = _linhaDe[etIdx + "|" + itIdx];
+        var ct = _L ? _L.custoTotal : aVal(qt * aUni(cu));
+        var pu = _L ? _L.precoUnit : (bdiNoPU ? aUni(cu * (1 + bdiPct / 100)) : aUni(cu));
+        var pt = _L ? _L.precoTotal : aVal(qt * pu);
         etCusto += ct; etVenda += pt;
         // quebra MO/MAT/EQ do item (razão da composição analítica × custo real; próprio → material)
         var ana = insMap && insMap[String(it.codigo)];
@@ -305,9 +342,9 @@
         row.getCell(5).value = it.unidade || 'un';
         row.getCell(6).value = qt;
         row.getCell(7).value = cu;
-        row.getCell(8).value  = { formula: 'F' + r + '*G' + r, result: ct };
-        row.getCell(9).value  = { formula: 'G' + r + '*(1+' + BDI_CELL + '/100)', result: pu };
-        row.getCell(10).value = { formula: 'F' + r + '*I' + r, result: pt };
+        row.getCell(8).value  = { formula: fV('F' + r + '*' + fU('G' + r)), result: ct };
+        row.getCell(9).value  = { formula: bdiNoPU ? fU('G' + r + '*(1+' + BDI_CELL + '/100)') : fU('G' + r), result: pu };
+        row.getCell(10).value = { formula: fV('F' + r + '*I' + r), result: pt };
         row.getCell(11).value = etKey; // âncora SUMIFS (coluna oculta; vazia em banner/subtotal)
         itensFlat.push({ r: r, etapa: etKey, n: n, qt: qt, cu: cu, ct: ct, pu: pu, pt: pt, it: it });
         row.getCell(6).numFmt = NUM;
@@ -328,21 +365,35 @@
         sr.getCell(10).value = { formula: 'SUM(J' + first + ':J' + last + ')', result: etVenda };
       } else { sr.getCell(8).value = 0; sr.getCell(10).value = 0; }
       [8, 10].forEach(function (k) { sr.getCell(k).numFmt = MOEDA; sr.getCell(k).font = { bold: true }; sr.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } }; });
-      subCustoCells.push('H' + r);
+      subCustoCells.push('H' + r); subVendaCells.push('J' + r);
       etInfo.push({ nome: et.nome || 'Etapa', codigo: et.codigo || '', key: etKey, subRow: r, custo: etCusto, venda: etVenda });
-      grandCusto += etCusto;
+      grandCusto += etCusto; grandVenda += etVenda;
       r++;
     });
+    grandCusto = aVal(grandCusto);
+    // incidência "final": o BDI só entra no fim (não está nos preços unitários)
+    grandVenda = bdiNoPU ? aVal(grandVenda) : aVal(grandCusto * (1 + bdiPct / 100));
     r++;
     var gCustoRow = r;
     wa.getCell('D' + r).value = 'CUSTO DIRETO (sem BDI)'; wa.getCell('D' + r).font = { bold: true };
     wa.getCell('H' + r).value = { formula: subCustoCells.join('+') || '0', result: grandCusto }; wa.getCell('H' + r).numFmt = MOEDA; wa.getCell('H' + r).font = { bold: true };
-    r++; var gBdiRow = r;
-    wa.getCell('D' + r).value = 'BDI (' + fmtNum(bdiPct, 2) + '%)'; wa.getCell('D' + r).font = { bold: true };
-    wa.getCell('H' + r).value = { formula: 'H' + gCustoRow + '*' + BDI_CELL + '/100', result: grandCusto * bdiPct / 100 }; wa.getCell('H' + r).numFmt = MOEDA;
-    r++; var gVendaRow = r;
+    r++; var gBdiRow = r, gVendaRow = r + 1;
+    wa.getCell('D' + r).value = 'BDI (' + fmtNum(bdiPct, 2) + '%)' + (bdiNoPU ? ' — já embutido nos preços unitários' : ' — sobre o preço final');
+    wa.getCell('D' + r).font = { bold: true };
+    // BDI em R$ = venda − custo (nunca recalculado por fora: com truncamento o
+    // "custo × BDI%" solto dá diferença de centavos contra a soma dos itens)
+    wa.getCell('H' + r).value = { formula: 'H' + gVendaRow + '-H' + gCustoRow, result: Math.round((grandVenda - grandCusto) * 100) / 100 }; wa.getCell('H' + r).numFmt = MOEDA;
+    r++;
     wa.getCell('D' + r).value = 'PREÇO DE VENDA (com BDI)'; wa.getCell('D' + r).font = { bold: true, size: 12, color: { argb: branco } }; wa.getCell('D' + r).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
-    wa.getCell('H' + r).value = { formula: 'H' + gCustoRow + '+H' + gBdiRow, result: grandCusto * (1 + bdiPct / 100) }; wa.getCell('H' + r).numFmt = MOEDA; wa.getCell('H' + r).font = { bold: true, size: 12, color: { argb: branco } }; wa.getCell('H' + r).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+    wa.getCell('H' + r).value = {
+      formula: bdiNoPU ? (subVendaCells.join('+') || '0') : fV('H' + gCustoRow + '*(1+' + BDI_CELL + '/100)'),
+      result: grandVenda
+    };
+    wa.getCell('H' + r).numFmt = MOEDA; wa.getCell('H' + r).font = { bold: true, size: 12, color: { argb: branco } }; wa.getCell('H' + r).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } };
+
+    // Última linha coberta pelos SUMIFS que leem a Analítica — a real + folga de 500
+    // linhas para o cliente inserir itens no xlsx sem perder valor do total.
+    var _fimAnal = Math.max(r + 500, 1006);
 
     // ===================== SINTÉTICA =====================
     wsi.columns = [{ width: 10 }, { width: 46 }, { width: 16 }, { width: 9 }, { width: 15 }, { width: 17 }, { width: 10 }];
@@ -351,18 +402,51 @@
     wsi.mergeCells('A3:G3'); wsi.getCell('A3').value = 'Cliente: ' + ((orc.cliente && orc.cliente.nome) || '-') + '   |   ' + ((orc.obra && orc.obra.nome) || '-'); wsi.getCell('A3').font = { size: 9, color: { argb: muted } };
     var colsS = ['Item', 'Etapa', 'Custo Direto', 'BDI %', 'BDI (R$)', 'Preço de Venda', 'Peso %'];
     colsS.forEach(function (h, i) { hStyle(wsi.getRow(6).getCell(i + 1)); wsi.getRow(6).getCell(i + 1).value = h; });
-    var s0 = 7, sr = s0, totVenda = grandCusto * (1 + bdiPct / 100);
+    var s0 = 7, sr = s0, totVenda = grandVenda;
+    var _sintApp = (global.Orcamento && Orcamento.sintetico) ? Orcamento.sintetico(orc) : null;
+    var _totRow = s0 + etInfo.length;          // linha do TOTAL (conhecida de antemão)
+    // Com o BDI apartado ("no preço final"), a venda de cada etapa é o custo da
+    // etapa + BDI proporcional, e a soma pode ficar 1 centavo longe do total.
+    // O resíduo cai na MAIOR etapa — e por FÓRMULA (total − soma das outras),
+    // para continuar fechando depois que o cliente editar quantidades no xlsx.
+    // A etapa que recebe o resíduo tem que ser a MESMA que o app escolhe em
+    // Orcamento.sintetico (maior preço de venda, primeiro máximo) — senão o valor
+    // gravado na célula e o valor que a fórmula recalcula ficam 1 centavo distantes.
+    var _refMaior = _sintApp || etInfo, _maiorIdx = 0;
+    for (var _mi = 1; _mi < _refMaior.length; _mi++) {
+      var _a = _sintApp ? _refMaior[_mi].precoVenda : _refMaior[_mi].venda;
+      var _b = _sintApp ? _refMaior[_maiorIdx].precoVenda : _refMaior[_maiorIdx].venda;
+      if (_a > _b) _maiorIdx = _mi;
+    }
+    function _somaOutras(idx) {
+      var m = s0 + idx, partes = [];
+      if (m > s0) partes.push('SUM(F' + s0 + ':F' + (m - 1) + ')');
+      if (m < _totRow - 1) partes.push('SUM(F' + (m + 1) + ':F' + (_totRow - 1) + ')');
+      // PARÊNTESES obrigatórios: sem eles "F10-SUM(a)+SUM(b)" vira F10−a+b (Excel
+      // avalia da esquerda pra direita) e a etapa do meio explodiria ao recalcular.
+      return partes.length ? '(' + partes.join('+') + ')' : '0';
+    }
     etInfo.forEach(function (et, i) {
+      if (_sintApp && _sintApp[i]) { et.custo = _sintApp[i].custoDireto; et.venda = _sintApp[i].precoVenda; }
+      else if (!bdiNoPU) { et.venda = aVal(et.custo * (1 + bdiPct / 100)); }
       var row = wsi.getRow(sr);
       row.getCell(1).value = et.codigo || ((i + 1) + '.0');
       row.getCell(2).value = et.nome;
       // FASE 2: SUMIFS pela coluna-âncora K (linhas de item têm a etapa; subtotais
-      // ficam vazios) — robusto a inserção/remoção de linhas, faixa com folga fixa.
-      var kSeg = "'" + SH_ANAL + "'!$K$7:$K$1006", hSeg = "'" + SH_ANAL + "'!$H$7:$H$1006";
-      row.getCell(3).value = { formula: 'SUMIFS(' + hSeg + ',' + kSeg + ',"' + String(et.key).replace(/"/g, '""') + '")', result: et.custo };
+      // ficam vazios) — robusto a inserção/remoção de linhas. A faixa acompanha o
+      // tamanho REAL da Analítica (com folga): a faixa fixa até a linha 1006 cortava
+      // orçamento grande e a Sintética saía menor que a própria Analítica.
+      var kSeg = "'" + SH_ANAL + "'!$K$7:$K$" + _fimAnal, hSeg = "'" + SH_ANAL + "'!$H$7:$H$" + _fimAnal,
+          jSeg = "'" + SH_ANAL + "'!$J$7:$J$" + _fimAnal, chave = '"' + String(et.key).replace(/"/g, '""') + '"';
+      row.getCell(3).value = { formula: 'SUMIFS(' + hSeg + ',' + kSeg + ',' + chave + ')', result: et.custo };
       row.getCell(4).value = { formula: BDI_CELL, result: bdiPct };
-      row.getCell(5).value = { formula: 'C' + sr + '*' + BDI_CELL + '/100', result: et.custo * bdiPct / 100 };
-      row.getCell(6).value = { formula: 'C' + sr + '+E' + sr, result: et.venda };
+      // venda vem da SOMA dos itens (já arredondados) — não de custo×BDI%
+      var fVenda;
+      if (bdiNoPU) fVenda = 'SUMIFS(' + jSeg + ',' + kSeg + ',' + chave + ')';
+      else if (i === _maiorIdx && etInfo.length > 1) fVenda = 'F' + _totRow + '-' + _somaOutras(i);
+      else fVenda = fV('C' + sr + '*(1+' + BDI_CELL + '/100)');
+      row.getCell(6).value = { formula: fVenda, result: et.venda };
+      row.getCell(5).value = { formula: 'F' + sr + '-C' + sr, result: Math.round((et.venda - et.custo) * 100) / 100 };
       row.getCell(3).numFmt = MOEDA; row.getCell(4).numFmt = PCT; row.getCell(5).numFmt = MOEDA; row.getCell(6).numFmt = MOEDA;
       for (var k = 1; k <= 7; k++) { row.getCell(k).border = thin(); if (i % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
       sr++;
@@ -370,8 +454,11 @@
     var sintTot = sr, tr = wsi.getRow(sr);
     tr.getCell(2).value = 'TOTAL';
     tr.getCell(3).value = { formula: 'SUM(C' + s0 + ':C' + (sr - 1) + ')', result: grandCusto };
-    tr.getCell(5).value = { formula: 'SUM(E' + s0 + ':E' + (sr - 1) + ')', result: grandCusto * bdiPct / 100 };
-    tr.getCell(6).value = { formula: 'SUM(F' + s0 + ':F' + (sr - 1) + ')', result: totVenda };
+    tr.getCell(6).value = {
+      formula: bdiNoPU ? ('SUM(F' + s0 + ':F' + (sr - 1) + ')') : fV('C' + sr + '*(1+' + BDI_CELL + '/100)'),
+      result: totVenda
+    };
+    tr.getCell(5).value = { formula: 'F' + sr + '-C' + sr, result: Math.round((totVenda - grandCusto) * 100) / 100 };
     [2, 3, 5, 6].forEach(function (k) { tr.getCell(k).font = { bold: true, color: { argb: branco } }; tr.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } }; });
     [3, 5, 6].forEach(function (k) { tr.getCell(k).numFmt = MOEDA; });
     // peso % (precisa do total) — FASE 2: percentual REAL (fração + formato 0.0%),
@@ -402,9 +489,27 @@
     wr.getCell('B6').protection = { locked: false }; // FASE 2: input liberado sob proteção
     lin(7, 'Bases de preços', Orcamento.basesUsadasTexto(orc));
     lin(8, 'Nº de etapas / itens', etapas.length + ' / ' + n);
+    // Parametrização (assistente): categoria/prazo e, quando for o caso, o bloco de licitação
+    var _lic = cfgArr.licitacao || {};
+    function _dtBr(s) {
+      var m = String(s || "").match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
+      return m ? (m[3] + "/" + m[2] + "/" + m[1] + (m[4] ? " " + m[4] + ":" + m[5] : "")) : "";
+    }
+    if (_lic.ativo) {
+      lin(9, 'Licitação', [_lic.tipo || 'Modalidade não informada',
+        _lic.processo ? 'Processo ' + _lic.processo : '',
+        _dtBr(_lic.abertura) ? 'Abertura ' + _dtBr(_lic.abertura) : '',
+        cfgArr.categoria ? 'Categoria: ' + cfgArr.categoria : ''].filter(Boolean).join('  ·  '));
+    } else if (cfgArr.categoria || cfgArr.prazoEntrega) {
+      lin(9, 'Categoria / prazo', [cfgArr.categoria || '—',
+        _dtBr(cfgArr.prazoEntrega) ? 'entrega ' + _dtBr(cfgArr.prazoEntrega) : ''].filter(Boolean).join('  ·  '));
+    }
     lin(10, 'Custo Direto (sem BDI)', { formula: ref(SH_SINT, 'C' + sintTot), result: grandCusto }, MOEDA, { bold: true });
-    lin(11, 'BDI (R$)', { formula: 'B10*$B$6/100', result: grandCusto * bdiPct / 100 }, MOEDA, { bold: true });
-    lin(12, 'PREÇO DE VENDA', { formula: 'B10+B11', result: totVenda }, MOEDA, { head: true, bold: true, size: 13 });
+    // BDI em R$ = venda − custo (com truncamento, "custo × BDI%" não fecha com a soma dos itens)
+    lin(11, 'BDI (R$)', { formula: 'B12-B10', result: Math.round((totVenda - grandCusto) * 100) / 100 }, MOEDA, { bold: true });
+    lin(12, 'PREÇO DE VENDA', { formula: ref(SH_SINT, 'F' + sintTot), result: totVenda }, MOEDA, { head: true, bold: true, size: 13 });
+    lin(13, 'Critério de arredondamento', (_A ? _A.rotulo(modoArr) : modoArr) + (_A && _A.ehPadraoTcu(modoArr) ? '  (Padrão do TCU)' : '')
+      + ' · BDI ' + (bdiNoPU ? 'no preço unitário' : 'no preço final'));
     wr.getCell('A14').value = 'Dica: as células AMARELAS são editáveis (BDI aqui, Qtd/Custo na Analítica) — tudo recalcula sozinho. A planilha é protegida só contra edição acidental (senha: raeng).';
     wr.mergeCells('A14:B15'); wr.getCell('A14').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } }; wr.getCell('A14').alignment = { wrapText: true, vertical: 'top' };
 
@@ -484,20 +589,24 @@
       // quando o código é único), % / % acum. / classe por fórmula. A ORDEM das
       // linhas é a da emissão; valores e classes recalculam ao editar a Analítica.
       var abcLinhas = abc.linhas || [], abcLast = hh + abcLinhas.length;
+      // Unicidade pela RÉGUA DO EXCEL: o SUMIFS é case-insensitive ("abc1" e "ABC1"
+      // casam na mesma soma) e trata * ? ~ como curinga — código com esses
+      // caracteres nunca pode virar fórmula viva, senão a linha soma o que não é dela.
       var contaCod = {};
-      abcLinhas.forEach(function (l) { var cd = String(l.codigo || ''); contaCod[cd] = (contaCod[cd] || 0) + 1; });
+      abcLinhas.forEach(function (l) { var cd = String(l.codigo || '').toLowerCase(); contaCod[cd] = (contaCod[cd] || 0) + 1; });
       var somaAbc = 'SUM($F$' + (hh + 1) + ':$F$' + abcLast + ')';
       var ar = hh + 1;
       abcLinhas.forEach(function (l, idx) {
         var row = wabc.getRow(ar);
-        var cd = String(l.codigo || ''), vivo = cd && cd !== '—' && cd !== '-' && contaCod[cd] === 1;
+        var cd = String(l.codigo || '');
+        var vivo = cd && cd !== '—' && cd !== '-' && contaCod[cd.toLowerCase()] === 1 && !/[*?~]/.test(cd);
         var fAcum = (ar === hh + 1) ? 'G' + ar : 'H' + (ar - 1) + '+G' + ar;
         row.getCell(1).value = { formula: 'IF(H' + ar + '<=0.8,"A",IF(H' + ar + '<=0.95,"B","C"))', result: l.classe };
         row.getCell(1).alignment = { horizontal: 'center' }; row.getCell(1).font = { bold: true, color: { argb: corCl[l.classe] || navy } };
         row.getCell(2).value = l.codigo || ''; row.getCell(3).value = l.descricao || ''; row.getCell(4).value = l.unidade || '';
         row.getCell(5).value = num(l.quantidade); row.getCell(5).numFmt = NUM;
         row.getCell(6).value = vivo
-          ? { formula: "SUMIFS('" + SH_ANAL + "'!$H$7:$H$1006,'" + SH_ANAL + "'!$B$7:$B$1006,B" + ar + ')', result: num(l.custoTotal) }
+          ? { formula: "SUMIFS('" + SH_ANAL + "'!$H$7:$H$" + _fimAnal + ",'" + SH_ANAL + "'!$B$7:$B$" + _fimAnal + ",B" + ar + ')', result: num(l.custoTotal) }
           : num(l.custoTotal);
         row.getCell(6).numFmt = MOEDA;
         row.getCell(7).value = { formula: 'F' + ar + '/' + somaAbc, result: num(l.pct) / 100 }; row.getCell(7).numFmt = '0.0%';
@@ -760,7 +869,9 @@
         style: { theme: 'TableStyleMedium2', showRowStripes: true },
         columns: [{ name: 'Etapa' }, { name: 'Item' }, { name: 'Codigo' }, { name: 'Fonte' }, { name: 'Descricao' },
                   { name: 'Und' }, { name: 'Qtd' }, { name: 'CustoUnit' }, { name: 'CustoTotal' },
-                  { name: 'PrecoUnitBDI' }, { name: 'PrecoTotalBDI' }],
+                  // com o BDI apartado, essas colunas NÃO carregam BDI — o nome tem que dizer isso
+                  { name: bdiNoPU ? 'PrecoUnitBDI' : 'PrecoUnitCusto' },
+                  { name: bdiNoPU ? 'PrecoTotalBDI' : 'PrecoTotalCusto' }],
         rows: itensFlat.map(function (x) {
           return [x.etapa, x.n,
             refA('B', x.r, x.it.codigo || ''), refA('C', x.r, ''), refA('D', x.r, x.it.descricao || ''),
@@ -845,15 +956,22 @@
     // acusa na hora — nada de número silenciosamente errado.
     var rc = resumoChecksRow || 23, checks = [];
     if (insMap) {
+      // MO/MAT/EQ são valores da EMISSÃO (a base analítica não vem no arquivo, então
+      // não dá para recalcular a quebra ao vivo). O check tem que ser da emissão
+      // também — comparar valor estático com célula viva acusava "⚠ verificar" em
+      // toda edição legítima do cliente, e um alerta que grita sozinho vira ruído.
       var difCat = Math.abs((grandMO + grandMAT + grandEQ) - grandCusto);
-      checks.push(['Soma MO+MAT+EQ = Custo Direto', 'IF(ABS((B18+B19+B20)-B10)<=1,"OK","⚠ verificar")', difCat <= 1 ? 'OK' : '⚠ verificar']);
+      checks.push(['Soma MO+MAT+EQ = Custo Direto (na emissão)', null, difCat <= 1 ? 'OK' : '⚠ verificar']);
     }
     if (cronoTotRef) {
       checks.push(['Cronograma fecha com o Preço de Venda', 'IF(ABS(' + cronoTotRef + '-B12)<=0.05,"OK","⚠ verificar")',
         Math.abs(num(crono && crono.total) - totVenda) <= 0.05 ? 'OK' : '⚠ verificar']);
     }
     if (wabc) {
-      checks.push(['Curva ABC soma = Custo Direto', "IF(ABS(SUM('Curva ABC'!$F$9:$F$" + abcFim + ')-B10)<=0.05,"OK","⚠ verificar")', 'OK']);
+      // resultado CALCULADO (nunca fixo em "OK": um check que sempre diz OK não é check)
+      var difAbc = Math.abs(num(abc && abc.total) - grandCusto);
+      checks.push(['Curva ABC soma = Custo Direto', "IF(ABS(SUM('Curva ABC'!$F$9:$F$" + abcFim + ')-B10)<=0.05,"OK","⚠ verificar")',
+        difAbc <= 0.05 ? 'OK' : '⚠ verificar']);
     }
     if (checks.length) {
       wr.mergeCells('A' + rc + ':B' + rc);
@@ -862,7 +980,8 @@
       checks.forEach(function (ck, i) {
         var rr = rc + 1 + i;
         wr.getCell('A' + rr).value = ck[0]; wr.getCell('A' + rr).font = { size: 9 };
-        wr.getCell('B' + rr).value = { formula: ck[1], result: ck[2] };
+        // check sem fórmula = verificação da emissão (valor estático, honesto)
+        wr.getCell('B' + rr).value = ck[1] ? { formula: ck[1], result: ck[2] } : ck[2];
         wr.getCell('B' + rr).font = { bold: true, color: { argb: ck[2] === 'OK' ? verde : 'FFDC2626' } };
         wr.getCell('A' + rr).border = wr.getCell('B' + rr).border = thin();
       });

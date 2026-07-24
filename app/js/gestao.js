@@ -927,18 +927,44 @@
         if (orcId) {
           var orc = Store.obterOrcamento(eid(), orcId);
           if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return false; }
-          var pcts = {};
-          Array.prototype.forEach.call(document.querySelectorAll("[data-medpct]"), function (i2) {
-            var p = Util.num(i2.value); if (p > 0) pcts[i2.getAttribute("data-medpct")] = p;
-          });
-          var ant = self._pctAnterioresPorItem(obj.obraId, orcId, obj.id);
-          var res = Orcamento.medirItens(orc, pcts, ant);
-          if (!res.itens.length) { UI.toast("Informe o % medido de ao menos 1 item (ou volte para medição manual).", "erro"); return false; }
-          if (res.avisos.length) UI.toast("⚠ " + res.avisos.slice(0, 3).join(" · "), "erro");
-          obj.orcamentoId = orcId; obj.itens = res.itens;
-          obj.valor = res.total; obj.percentual = Math.round(res.pctDoOrcamento * 10) / 10;
+          // Boletim JÁ APROVADO/PAGO é documento contratual: NADA de dinheiro é
+          // reprecificado ao salvar — nem itens, nem valor, nem % (o gate pegou o
+          // congelamento pela metade: valor/itens mudavam e o rodapé congelado não
+          // fechava mais com as próprias linhas). Para remedir, o usuário volta o
+          // status para "pendente" primeiro.
+          var _travado = (m && (m.status === "aprovada" || m.status === "paga") && Util.num(m.valorContratado) > 0 && m.orcamentoId === orcId);
+          if (_travado) {
+            obj.orcamentoId = m.orcamentoId;
+            obj.itens = Util.clone(m.itens);
+            obj.valor = Util.num(m.valor);
+            obj.percentual = m.percentual;
+            obj.valorContratado = Util.num(m.valorContratado);
+            obj.bdiValor = Util.num(m.bdiValor); obj.totalItens = Util.num(m.totalItens);
+            obj.bdiNoPU = m.bdiNoPU !== false;
+          } else {
+            var pcts = {};
+            Array.prototype.forEach.call(document.querySelectorAll("[data-medpct]"), function (i2) {
+              var p = Util.num(i2.value); if (p > 0) pcts[i2.getAttribute("data-medpct")] = p;
+            });
+            var ant = self._pctAnterioresPorItem(obj.obraId, orcId, obj.id);
+            var res = Orcamento.medirItens(orc, pcts, ant);
+            if (!res.itens.length) { UI.toast("Informe o % medido de ao menos 1 item (ou volte para medição manual).", "erro"); return false; }
+            if (res.avisos.length) UI.toast("⚠ " + res.avisos.slice(0, 3).join(" · "), "erro");
+            obj.orcamentoId = orcId; obj.itens = res.itens;
+            obj.valor = res.total; obj.percentual = Math.round(res.pctDoOrcamento * 10) / 10;
+            // CONGELA o valor contratado e o BDI apartado no próprio boletim:
+            // reimprimir depois tem que dar o MESMO papel.
+            var _tv = Orcamento.totais(orc);
+            obj.valorContratado = Util.num(_tv.precoVenda);
+            obj.bdiValor = Util.num(res.bdiValor); obj.totalItens = Util.num(res.totalItens);
+            obj.bdiNoPU = res.bdiNoPU !== false;
+          }
         } else {
+          // Voltou para medição MANUAL: limpa o que era do orçamento vinculado,
+          // senão o boletim continuaria calculando % contra um contratado congelado
+          // de um orçamento que ele não mede mais.
           obj.orcamentoId = null; obj.itens = null;
+          obj.valorContratado = null; obj.bdiValor = null; obj.totalItens = null; obj.bdiNoPU = null;
           obj.percentual = nv("g-pct"); obj.valor = nv("g-valor");
         }
         return true;
@@ -956,11 +982,36 @@
         if (!orcId) { box.innerHTML = ""; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orc = Store.obterOrcamento(eid(), orcId);
         if (!orc) { box.innerHTML = '<div class="muted">Orçamento não encontrado.</div>'; return; }
+        // Boletim APROVADO/PAGO: mostra os valores SALVOS, travados — a prévia não
+        // pode recalcular contra o orçamento atual e induzir o usuário a gravar
+        // um documento contratual reprecificado.
+        var travado = (m.status === "aprovada" || m.status === "paga") && Util.num(m.valorContratado) > 0 && m.orcamentoId === orcId;
+        if (travado) {
+          var td2 = function (s, dir) { return '<td class="' + (dir ? "num" : "") + '">' + s + "</td>"; };
+          var h2 = '<div style="padding:8px 10px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin:6px 0">🔒 Boletim <b>' + Util.esc(m.status) + '</b> — os valores estão travados (documento contratual). Para remedir, volte o status para <b>pendente</b> e salve.</div>' +
+            '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">Preço unit.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
+          Util.arr(m.itens).forEach(function (it) {
+            h2 += "<tr>" + td2((it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(String(it.descricao || "").slice(0, 60))) +
+              td2(Util.esc(it.unidade || "")) + td2(Util.fmtNum(it.qtdContratada, 2), 1) + td2(Util.fmtMoeda(it.precoUnit), 1) +
+              td2(Util.fmtNum(it.pctPeriodo, 1) + "%", 1) + td2(Util.fmtMoeda(it.valor), 1) + "</tr>";
+          });
+          h2 += '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr></tfoot></table>";
+          box.innerHTML = h2;
+          if (gv) { gv.value = Util.num(m.valor).toFixed(2).replace(".", ","); gv.readOnly = true; }
+          if (gp) { gp.value = Util.num(m.percentual).toFixed(1).replace(".", ","); gp.readOnly = true; }
+          return;
+        }
         var ant = self._pctAnterioresPorItem(v("g-obra"), orcId, m.id);
         var salvos = {};
         if (m.orcamentoId === orcId) Util.arr(m.itens).forEach(function (it) { salvos[it.itemId] = it.pctPeriodo; });
         var linhas = Orcamento.itensMediveis(orc);
-        var html = '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">Preço c/BDI</th><th class="num">% ant.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
+        // Com o BDI incidindo sobre o preço FINAL, o preço unitário da planilha é
+        // de CUSTO — o BDI é faturado como parcela à parte no rodapé do boletim.
+        // Rotular a coluna como "c/BDI" nesse caso seria mentira no documento.
+        var _bdiNoPU = !linhas.length || linhas[0].bdiNoPU !== false;
+        var _pctBdi = Util.num(orc.bdi && orc.bdi.percentual);
+        var html = '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">' +
+          (_bdiNoPU ? "Preço c/BDI" : "Preço de custo") + '</th><th class="num">% ant.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
         linhas.forEach(function (L) {
           var a = Util.num(ant[L.itemId]);
           html += '<tr><td>' + (L.codigo ? "<b>" + Util.esc(L.codigo) + "</b> " : "") + Util.esc(String(L.descricao).slice(0, 60)) + "</td>"
@@ -971,24 +1022,37 @@
             + '<td class="num"><input data-medpct="' + Util.esc(L.itemId) + '" value="' + Util.esc(salvos[L.itemId] != null ? String(salvos[L.itemId]).replace(".", ",") : "") + '" placeholder="0" style="width:58px;text-align:right;background:#fff9e0"></td>'
             + '<td class="num" data-medval="' + Util.esc(L.itemId) + '">—</td></tr>';
         });
-        html += '</tbody><tfoot><tr><td colspan="6" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b data-medtot>—</b></td></tr></tfoot></table>'
-          + '<div class="muted" style="font-size:11px;margin-bottom:6px">Informe o % executado NO PERÍODO por item — valor e % da medição são calculados sozinhos. Vermelho = estourou 100% acumulado.</div>';
+        html += '</tbody><tfoot>'
+          + (_bdiNoPU ? '' :
+            '<tr><td colspan="6" style="text-align:right">Serviços medidos (custo)</td><td class="num" data-medsub>—</td></tr>' +
+            '<tr><td colspan="6" style="text-align:right">BDI ' + Util.fmtNum(_pctBdi, 2) + '% sobre o medido</td><td class="num" data-medbdi>—</td></tr>')
+          + '<tr><td colspan="6" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b data-medtot>—</b></td></tr></tfoot></table>'
+          + '<div class="muted" style="font-size:11px;margin-bottom:6px">Informe o % executado NO PERÍODO por item — valor e % da medição são calculados sozinhos. Vermelho = estourou 100% acumulado.'
+          + (_bdiNoPU ? '' : ' Neste orçamento o BDI incide sobre o preço final, então ele é faturado como parcela proporcional ao medido.') + '</div>';
         box.innerHTML = html;
         function recalc() {
-          var tot = 0;
+          // usa o MESMO motor do boletim salvo (Orcamento.medirItens): mesmo
+          // arredondamento, mesmo tratamento de BDI — a prévia não pode divergir
+          // do documento que vai ser emitido
+          var pcts = {};
           linhas.forEach(function (L) {
             var i2 = box.querySelector('[data-medpct="' + L.itemId + '"]');
-            var vl = box.querySelector('[data-medval="' + L.itemId + '"]');
             var p = i2 ? Util.num(i2.value) : 0;
-            var val = p > 0 ? Math.round(L.qtdContratada * p / 100 * L.precoUnit * 100) / 100 : 0;
-            tot += val;
-            if (vl) vl.textContent = val ? Util.fmtMoeda(val) : "—";
+            if (p > 0) pcts[L.itemId] = p;
             if (i2) i2.style.borderColor = (Util.num(ant[L.itemId]) + p > 100.0001) ? "#dc2626" : "";
           });
-          var t = box.querySelector("[data-medtot]"); if (t) t.textContent = Util.fmtMoeda(tot);
-          var t2 = Orcamento.totais(orc);
-          if (gv) { gv.value = tot.toFixed(2).replace(".", ","); gv.readOnly = true; }
-          if (gp) { gp.value = (t2.precoVenda > 0 ? (tot / t2.precoVenda * 100) : 0).toFixed(1).replace(".", ","); gp.readOnly = true; }
+          var b = Orcamento.medirItens(orc, pcts, ant);
+          var porItem = {};
+          Util.arr(b.itens).forEach(function (x) { porItem[x.itemId] = x.valor; });
+          linhas.forEach(function (L) {
+            var vl = box.querySelector('[data-medval="' + L.itemId + '"]');
+            if (vl) vl.textContent = porItem[L.itemId] ? Util.fmtMoeda(porItem[L.itemId]) : "—";
+          });
+          var sub = box.querySelector("[data-medsub]"); if (sub) sub.textContent = Util.fmtMoeda(b.totalItens);
+          var bd = box.querySelector("[data-medbdi]"); if (bd) bd.textContent = Util.fmtMoeda(b.bdiValor);
+          var t = box.querySelector("[data-medtot]"); if (t) t.textContent = Util.fmtMoeda(b.total);
+          if (gv) { gv.value = Util.num(b.total).toFixed(2).replace(".", ","); gv.readOnly = true; }
+          if (gp) { gp.value = Util.num(b.pctDoOrcamento).toFixed(1).replace(".", ","); gp.readOnly = true; }
         }
         Array.prototype.forEach.call(box.querySelectorAll("[data-medpct]"), function (i2) { i2.oninput = recalc; });
         recalc();
@@ -1012,7 +1076,11 @@
       var contratado = obra ? Util.num(obra.valor) : 0;
       // #18: com orçamento vinculado, o contratado é o preço de venda do
       // ORÇAMENTO (fonte da verdade) — fallback no valor digitado da obra.
-      if (m.orcamentoId && typeof Orcamento !== "undefined") {
+      // Boletim já emitido guarda o contratado CONGELADO (documento contratual):
+      // reimprimir não pode mudar o valor porque o orçamento foi editado depois.
+      if (Util.num(m.valorContratado) > 0) {
+        contratado = Util.num(m.valorContratado);
+      } else if (m.orcamentoId && typeof Orcamento !== "undefined") {
         var orcV = Store.obterOrcamento ? Store.obterOrcamento(eid(), m.orcamentoId) : null;
         if (orcV) { var tv = Orcamento.totais(orcV); if (Util.num(tv.precoVenda) > 0) contratado = tv.precoVenda; }
       }
@@ -1071,8 +1139,12 @@
         + (function () { // #18: itens medidos do orçamento vinculado (memória do boletim)
           var its = Util.arr(m.itens); if (!its.length) return "";
           var td = function (s, dir) { return "<td style='border:1px solid #bbb;padding:5px" + (dir ? ";text-align:right" : "") + "'>" + s + "</td>"; };
+          // Orçamento com BDI sobre o preço FINAL: o preço unitário é de custo e o
+          // BDI vem como parcela — sem essas linhas a tabela do boletim não fecha.
+          var bdiFora = (m.bdiNoPU === false), vBdi = Util.num(m.bdiValor);
+          var vServ = Util.num(m.totalItens) || (Util.num(m.valor) - vBdi);
           var h = "<h3 style='border-bottom:2px solid #16a34a;padding-bottom:4px;font-size:13px;margin-top:14px'>ITENS MEDIDOS NESTE BOLETIM</h3>"
-            + "<table style='width:100%;border-collapse:collapse;font-size:11px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;text-align:left'>Código</th><th style='border:1px solid #bbb;padding:5px;text-align:left'>Serviço</th><th style='border:1px solid #bbb;padding:5px'>Und</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd contr.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% ant.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% período</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% acum.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd medida</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Preço unit. c/BDI</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor (R$)</th></tr></thead><tbody>";
+            + "<table style='width:100%;border-collapse:collapse;font-size:11px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;text-align:left'>Código</th><th style='border:1px solid #bbb;padding:5px;text-align:left'>Serviço</th><th style='border:1px solid #bbb;padding:5px'>Und</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd contr.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% ant.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% período</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>% acum.</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd medida</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>" + (bdiFora ? "Preço unit. (custo)" : "Preço unit. c/BDI") + "</th><th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor (R$)</th></tr></thead><tbody>";
           its.forEach(function (it) {
             var acum = Util.num(it.pctAnterior) + Util.num(it.pctPeriodo);
             h += "<tr>" + td(Util.esc(it.codigo || "—")) + td(Util.esc(it.descricao)) + td(Util.esc(it.unidade))
@@ -1082,7 +1154,10 @@
               + td(Util.fmtNum(it.qtdMedida, 2), 1)
               + td(Util.fmtMoeda(it.precoUnit), 1) + td("<b>" + Util.fmtMoeda(it.valor) + "</b>", 1) + "</tr>";
           });
-          h += "</tbody><tfoot><tr style='background:#eef4fa;font-weight:bold'><td colspan='9' style='border:1px solid #bbb;padding:5px;text-align:right'>TOTAL MEDIDO</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(m.valor) + "</td></tr></tfoot></table>";
+          h += "</tbody><tfoot>"
+            + (bdiFora ? "<tr><td colspan='9' style='border:1px solid #bbb;padding:5px;text-align:right'>Serviços medidos (custo)</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(vServ) + "</td></tr>"
+                + "<tr><td colspan='9' style='border:1px solid #bbb;padding:5px;text-align:right'>BDI sobre o medido</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(vBdi) + "</td></tr>" : "")
+            + "<tr style='background:#eef4fa;font-weight:bold'><td colspan='9' style='border:1px solid #bbb;padding:5px;text-align:right'>TOTAL MEDIDO</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(m.valor) + "</td></tr></tfoot></table>";
           return h;
         })()
         + (m.descricao ? "<div style='margin-top:12px;padding:10px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px'><b>Serviços medidos:</b><br>" + Util.esc(m.descricao) + "</div>" : "")
@@ -1134,7 +1209,9 @@
             wi.mergeCells("A1:K1");
             wi.getCell("A1").value = "ITENS MEDIDOS — Boletim Nº " + (m.numero || "") + (m.orcamentoNumero ? "  ·  Orçamento " + m.orcamentoNumero : "");
             wi.getCell("A1").font = { bold: true, size: 12, color: { argb: navy } };
-            var hi = wi.getRow(2); hi.values = ["Etapa", "Código", "Descrição", "Und", "Qtd contr.", "Preço c/ BDI", "% ant.", "% período", "% acum.", "Qtd medida", "Valor (R$)"];
+            var bdiForaX = (m.bdiNoPU === false);
+            var hi = wi.getRow(2); hi.values = ["Etapa", "Código", "Descrição", "Und", "Qtd contr.",
+              bdiForaX ? "Preço (custo)" : "Preço c/ BDI", "% ant.", "% período", "% acum.", "Qtd medida", "Valor (R$)"];
             hi.eachCell(function (cell) { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; });
             var totItens = 0;
             m.itens.forEach(function (it, i) {
@@ -1147,9 +1224,20 @@
               if (acum > 100.0001) r.getCell(9).font = { bold: true, color: { argb: "FFB91C1C" } };        // estourou 100% acumulado
               else if (acum >= 99.95) r.getCell(9).font = { color: { argb: verde } };                      // item concluído
             });
-            var rt = wi.getRow(3 + m.itens.length);
+            var linhaTot = 3 + m.itens.length;
+            if (bdiForaX) { // BDI apartado: sem estas linhas a aba não fecha com o boletim
+              var rs = wi.getRow(linhaTot);
+              rs.getCell(3).value = "Serviços medidos (custo)";
+              rs.getCell(11).value = totItens; rs.getCell(11).numFmt = "R$ #,##0.00";
+              var rb = wi.getRow(linhaTot + 1);
+              rb.getCell(3).value = "BDI sobre o medido";
+              rb.getCell(11).value = Util.num(m.bdiValor); rb.getCell(11).numFmt = "R$ #,##0.00";
+              linhaTot += 2;
+            }
+            var rt = wi.getRow(linhaTot);
             rt.getCell(3).value = "TOTAL MEDIDO NESTE BOLETIM"; rt.getCell(3).font = { bold: true };
-            rt.getCell(11).value = totItens; rt.getCell(11).numFmt = "R$ #,##0.00"; rt.getCell(11).font = { bold: true, color: { argb: verde } };
+            rt.getCell(11).value = bdiForaX ? Util.num(m.valor) : totItens;
+            rt.getCell(11).numFmt = "R$ #,##0.00"; rt.getCell(11).font = { bold: true, color: { argb: verde } };
           }
           // Aba histórico de medições da obra
           var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })

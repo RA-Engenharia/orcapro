@@ -90,6 +90,20 @@
       opts = opts || {};
       var self = this, max = opts.max || 40;
       var fFonte = opts.fonte ? String(opts.fonte).toUpperCase() : null;
+      // Filtros por orçamento (passo 3 do assistente):
+      //   opts.fontes         — allowlist explícita (quem passar decide tudo)
+      //   opts.excluirFontes  — DENYLIST: só o que o usuário desmarcou sai; tabela
+      //                         instalada depois continua aparecendo sozinha.
+      var permit = null;
+      if (opts.fontes && opts.fontes.length) {
+        permit = {};
+        for (var pi = 0; pi < opts.fontes.length; pi++) { permit[String(opts.fontes[pi]).toUpperCase()] = 1; }
+      }
+      var negar = null;
+      if (opts.excluirFontes && opts.excluirFontes.length) {
+        negar = {};
+        for (var ni = 0; ni < opts.excluirFontes.length; ni++) { negar[String(opts.excluirFontes[ni]).toUpperCase()] = 1; }
+      }
       var fTipo = (opts.tipo === "composicao" || opts.tipo === "insumo") ? opts.tipo : null;
       var fDeson = (opts.desonerado === true || opts.desonerado === false) ? opts.desonerado : null;
       var alvo = norm(texto), termos = alvo.split(" ").filter(Boolean), out = [];
@@ -100,11 +114,13 @@
         if (fDeson !== null && (it.desonerado === true || it.desonerado === false) && it.desonerado !== fDeson) return false;
         return true;
       }
-      if ((!fFonte || fFonte === "SINAPI") && this.sinapiAtiva && typeof Sinapi !== "undefined" && Sinapi.carregado) {
+      if ((!fFonte || fFonte === "SINAPI") && (!permit || permit.SINAPI) && !(negar && negar.SINAPI) && this.sinapiAtiva && typeof Sinapi !== "undefined" && Sinapi.carregado) {
         Sinapi.buscar(texto, { max: max * 2, tipo: fTipo }).forEach(function (it) { if (passa(it)) out.push({ item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: self.tipoDe(it) }); });
       }
       EXTRA.forEach(function (b) {
         if (!b.ativa) return;
+        if (permit && !permit[String(b.fonte).toUpperCase()]) return;
+        if (negar && negar[String(b.fonte).toUpperCase()]) return;
         if (fFonte && b.fonte !== fFonte) return;
         for (var i = 0; i < b.itens.length && out.length < max * 4; i++) {
           var it = b.itens[i], hay = b.tokens[i], ok = true;
