@@ -806,3 +806,20 @@ table.tbl tr.etapa-row:hover td { box-shadow: inset 3px 0 0 var(--aco); }
   .lp-qcard:hover { transform: none; }
 }
 @media (max-width: 900px) { .lp-q { grid-auto-columns: minmax(190px, 230px); } }
+
+/* ---- Detalhamento analítico (composição → insumos), cores por tipo ---- */
+.tbl-analitico .lin-comp td { background: rgba(22, 163, 74, .14); font-weight: 600; }
+.tbl-analitico .lin-sub  td { background: rgba(46, 111, 158, .10); }
+.tbl-analitico .lin-ins  td { background: rgba(245, 158, 11, .08); }
+[data-tema="dark"] .tbl-analitico .lin-comp td { background: rgba(22, 163, 74, .20); }
+[data-tema="dark"] .tbl-analitico .lin-sub  td { background: rgba(46, 111, 158, .18); }
+[data-tema="dark"] .tbl-analitico .lin-ins  td { background: rgba(245, 158, 11, .12); }
+.tag-tipo { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 6px; font-size: 11px; font-weight: 800; color: #fff; }
+.tag-c { background: #16a34a; }
+.tag-s { background: #2e6f9e; }
+.tag-i { background: #d97706; }
+.cod-link { color: var(--aco); font-weight: 700; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.cod-link:hover { color: var(--navy, #0f2740); }
+/* código do item na planilha: clicável quando tem composição para abrir */
+.pill.cod-click { cursor: pointer; box-shadow: inset 0 0 0 1px rgba(46,111,158,.45); }
+.pill.cod-click:hover { filter: brightness(.92); text-decoration: underline; }

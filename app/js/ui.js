@@ -433,7 +433,10 @@
           html += '<tr>' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item"><b>' + numItem + '</b></td>' +
-            '<td>' + (temCod ? '<span class="pill ' + pillCls + '">' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '') : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
+            // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
+            '<td>' + (temCod
+              ? '<span class="pill ' + pillCls + (ehSinapi ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
+              : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             '<td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
@@ -468,22 +471,61 @@
       html += '<div class="kpis">' +
         box("Mão de obra", a.custoMO) + box("Material", a.custoMAT) +
         box("Equipamento", a.custoEQ) + box("Custo Unit.", a.custoUnitario, "destaque") + '</div>';
-      html += '<table class="tbl"><thead><tr><th>Tipo</th><th>Código</th><th>Insumo</th><th>Und</th>' +
+
+      // "não coletado": preço zerado NA FONTE para esta UF (o SINAPI publica em
+      // branco o que não coletou na região). Mostrar R$ 0,00 parecia bug — e
+      // esconder seria pior. O orçamento usa o preço OFICIAL da composição.
+      var naoColetado = '<span class="muted" title="Preço não coletado pelo SINAPI nesta UF — o orçamento usa o preço oficial da composição" style="font-size:11px">não coletado</span>';
+      var somaIns = 0, temZero = false;
+
+      html += '<table class="tbl tbl-analitico"><thead><tr><th></th><th>Código</th><th>Insumo</th><th>Und</th>' +
         '<th class="num">Coef.</th><th class="num">Custo Unit</th><th class="num">Custo Total</th><th>Categoria</th></tr></thead><tbody>';
+      // 1ª linha = a PRÓPRIA composição (verde, como o mercado apresenta)
+      html += '<tr class="lin-comp"><td><span class="tag-tipo tag-c" title="Composição">C</span></td>' +
+        '<td><b>' + Util.esc(a.codigo) + '</b></td>' +
+        '<td>' + Util.esc(a.descricao) + '</td>' +
+        '<td>' + Util.esc(a.unidade) + '</td>' +
+        '<td class="num">1,0</td>' +
+        '<td class="num"><b>' + Util.fmtMoeda(a.custoUnitario) + '</b></td>' +
+        '<td class="num"><b>' + Util.fmtMoeda(a.custoUnitario) + '</b></td>' +
+        '<td>' + (a.grupo ? '<span class="pill sinapi">' + Util.esc(a.grupo) + '</span>' : '') + '</td></tr>';
       Util.arr(a.insumos).forEach(function (it) {
-        html += '<tr><td>' + (it.tipo === "COMPOSICAO" ? "Sub-comp." : "Insumo") + '</td>' +
-          '<td>' + Util.esc(it.codigo) + '</td>' +
+        var sub = (it.tipo === "COMPOSICAO");
+        var zerado = !Util.num(it.custoUnitario);
+        if (zerado) temZero = true; else somaIns += Util.num(it.custoTotal);
+        // sub-composição: código clicável abre o detalhamento DELA (drill-down)
+        var celCod = sub
+          ? '<a href="javascript:void 0" class="cod-link" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Abrir a composição analítica de ' + Util.esc(it.codigo) + '">' + Util.esc(it.codigo) + '</a>'
+          : Util.esc(it.codigo);
+        html += '<tr class="' + (sub ? "lin-sub" : "lin-ins") + '">' +
+          '<td><span class="tag-tipo ' + (sub ? "tag-s" : "tag-i") + '" title="' + (sub ? "Sub-composição" : "Insumo") + '">' + (sub ? "S" : "I") + '</span></td>' +
+          '<td>' + celCod + '</td>' +
           '<td>' + Util.esc(it.descricao) + '</td>' +
           '<td>' + Util.esc(it.unidade) + '</td>' +
           '<td class="num">' + Util.fmtNum(it.coeficiente, 4) + '</td>' +
-          '<td class="num">' + Util.fmtMoeda(it.custoUnitario) + '</td>' +
-          '<td class="num">' + Util.fmtMoeda(it.custoTotal) + '</td>' +
+          '<td class="num">' + (zerado ? naoColetado : Util.fmtMoeda(it.custoUnitario)) + '</td>' +
+          '<td class="num">' + (zerado ? naoColetado : Util.fmtMoeda(it.custoTotal)) + '</td>' +
           '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || it.categoria) + '</span></td></tr>';
       });
       html += '</tbody></table>';
+      // reconciliação honesta: se a soma dos insumos ficou longe do custo oficial
+      // (preços não coletados na UF), avisa — e reafirma que o orçamento não é
+      // afetado. O "oficial" vem do cabeçalho analítico e, quando este também
+      // está zerado, do SINTÉTICO — que é o preço que o orçamento realmente usa.
+      var oficialRef = Util.num(a.custoUnitario);
+      if (!oficialRef && typeof Sinapi !== "undefined" && Sinapi.obter) {
+        var _sRef = Sinapi.obter(a.codigo);
+        if (_sRef) oficialRef = Util.num(_sRef.custoUnitario);
+      }
+      if (temZero && oficialRef > 0 && somaIns < oficialRef * 0.98) {
+        html += '<div class="mb" style="padding:9px 12px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin-top:8px">' +
+          '⚠ <b>Detalhamento parcial nesta UF:</b> o SINAPI não coletou o preço de parte dos insumos ' +
+          (anaUf ? 'em <b>' + Util.esc(anaUf) + '</b>' : 'nesta região') +
+          '. A soma exibida (' + Util.fmtMoeda(somaIns) + ') fica abaixo do preço oficial da composição (<b>' + Util.fmtMoeda(oficialRef) + '</b>), que é o valor usado no seu orçamento.</div>';
+      }
       html += '<p class="muted mt" style="font-size:12px">Base analítica SINAPI ' +
         (typeof Analitico !== "undefined" ? (Analitico.competencia || "") + " / " + (Analitico.uf || "") : "") +
-        ' — composição → insumos com coeficientes. O orçamento usa o preço da sua competência; aqui é a referência da composição.</p>';
+        ' — composição → insumos com coeficientes. Clique no código de uma sub-composição (S) para abrir o detalhamento dela. O orçamento usa o preço da sua competência.</p>';
       return html;
     },
 

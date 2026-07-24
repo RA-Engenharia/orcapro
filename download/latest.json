@@ -1,6 +1,6 @@
 {
-  "versao": "1.1.117",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.117/OrcaPRO-IA-update-v1.1.117.zip",
-  "notas": "Novo orçamento com ASSISTENTE DE 3 PASSOS (dados + licitação, cálculo, bases). Arredondamento configurável em 5 modos com TRUNCAR 2 CASAS como padrão (critério do TCU) e escolha de onde o BDI incide. Todos os documentos — planilha, relatório, laudo, proposta, apresentação, medição, curva ABC, CSV e Excel — saem da mesma conta, sem divergência de centavo. Boletim de medição aprovado fica travado (não reprecifica). Botão 🎛 Parâmetros reabre a configuração a qualquer momento.",
+  "versao": "1.1.118",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.118/OrcaPRO-IA-update-v1.1.118.zip",
+  "notas": "Detalhamento da composição com cores por tipo (C verde, S azul, I âmbar), código do item clicável abre a composição analítica (com navegação nas sub-composições) e preços não coletados pelo SINAPI na região agora aparecem como \"não coletado\" com o preço oficial da composição em destaque.",
   "obrigatoria": false
 }
