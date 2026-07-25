@@ -195,8 +195,15 @@
      * aparelho — exatamente o que o modal promete preservar. Achado do gate de 25/07. */
     _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
+    /* A lápide só serve para o merge da nuvem: entidade que NÃO sincroniza nunca ressuscita,
+     * e gravar lápide dela só gastava o teto — empurrando para fora as que importam. */
+    _sincroniza: function (entidade) {
+      var L = (typeof Nuvem !== "undefined" && Nuvem.ENTIDADES) ? Nuvem.ENTIDADES : null;
+      return L ? L.indexOf(entidade) >= 0 : true; // sem a lista carregada, erra pelo lado seguro
+    },
     lapidar: function (empresaId, entidade, id) {
       if (!empresaId || !entidade || !id) return;
+      if (!this._sincroniza(entidade)) return;
       try {
         var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
         this._porLapide(l, { id: entidade + ":" + id, ent: entidade, ref: String(id), em: Util.agoraISO() });
@@ -252,7 +259,7 @@
       var l = antes.filter(function (x) { return !(x && alvo[String(x.id)]); });
       var saiu = antes.length - l.length;
       if (!this.adapter.gravar(empresaId, entidade, l)) return 0;
-      if (!semLapide && saiu) {
+      if (!semLapide && saiu && this._sincroniza(entidade)) {
         // uma leitura/gravação só do bloco de lápides (o laço chamando lapidar era O(n²))
         try {
           var tl = Util.arr(this.adapter.ler(empresaId, "_lapides", [])), self = this, agora = Util.agoraISO();

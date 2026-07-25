@@ -36,6 +36,8 @@
   function vazioDe(ent) { return (ent === "prefs" || ent === "conta") ? {} : []; }
 
   var Nuvem = {
+    // exposta p/ o Store saber o que vale a pena lapidar (só o que sincroniza pode ressuscitar)
+    ENTIDADES: ENTIDADES,
     ligado: false, uid: null, db: null, auth: null,
     _un: [], _push: {}, _patched: false, _initP: null,
 
@@ -127,15 +129,21 @@
        * Exceto os cadastros da empresa (equipe, patrimônio, frota): a exclusão só os
        * DESVINCULA, e aplicar a cascata neles apagaria no outro aparelho justamente o que
        * o modal promete preservar. Achado do gate de 25/07. */
-      var cascataVale = !semLapide && !Store.imuneACascata(ent);
-      var obrasMortas = cascataVale ? Store.cascatasDeObra(empresaId) : Object.create(null);
+      var imune = !semLapide && Store.imuneACascata(ent);
+      var obrasMortas = semLapide ? Object.create(null) : Store.cascatasDeObra(empresaId);
       var vivo = function (o) {
         var t = mortos[o.id];
         if (t) return String(o.atualizadoEm || "") > String(t); // recriado depois de excluir → mantém
-        /* filho de obra apagada em cascata: NÃO há ressalva. Se houvesse, uma edição feita
-         * no outro aparelho depois da exclusão devolveria o registro para sempre — órfão,
-         * apontando para uma obra que não existe mais e sem tela que o mostre. */
-        if (o.obraId && obrasMortas[o.obraId]) return false;
+        if (o.obraId && obrasMortas[o.obraId]) {
+          /* cadastro da empresa (equipe, patrimônio, frota): a obra morreu, ele não. Faz aqui o
+           * mesmo que a exclusão faz localmente — solta o vínculo — em vez de deixá-lo apontando
+           * para uma obra que não existe. Antes ele era APAGADO, contra o que o modal promete. */
+          if (imune) { o.obraId = ""; o.obraNome = ""; return true; }
+          /* filho de verdade: NÃO há ressalva. Se houvesse, uma edição feita no outro aparelho
+           * depois da exclusão devolveria o registro para sempre — órfão, apontando para uma
+           * obra que não existe mais e sem tela que o mostre. */
+          return false;
+        }
         if (ent === "obras" && obrasMortas[o.id]) return String(o.atualizadoEm || "") > String(obrasMortas[o.id]);
         return true;
       };
