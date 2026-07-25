@@ -88,8 +88,8 @@
           { id: "junta", rotulo: "Junta e\ncompensador", icone: "ajustes", requer: "modelo", dica: "Afina a junta dentro da faixa aceitável para dispensar bolacha; se não fechar, encaixa a bolacha." }
         ] },
         { nome: "Paginação", comandos: [
-          { id: "paginar-alvenaria", emBreve: true, rotulo: "Paginar\nalvenaria", icone: "grade", grande: true, requer: "modelo", dica: "Distribui as peças fiada a fiada, com amarração nos encontros em L, T e X." },
-          { id: "elevacoes", emBreve: true, rotulo: "Elevações\nde parede", icone: "prancha", grande: true, requer: "modelo", dica: "Gera a prancha de elevação de cada parede, com peças numeradas e lista de material." },
+          { id: "paginar-alvenaria", rotulo: "Paginar\nalvenaria", icone: "grade", grande: true, requer: "modelo", dica: "Distribui as peças fiada a fiada, com amarração nos encontros em L, T e X." },
+          { id: "elevacoes", rotulo: "Elevações\nde parede", icone: "prancha", grande: true, requer: "modelo", dica: "Gera a prancha de elevação de cada parede, com peças numeradas e lista de material." },
           { id: "graute", emBreve: true, rotulo: "Graute e\narmadura", icone: "estrutura", requer: "modelo", dica: "Alvenaria estrutural: pontos de graute e armadura vertical, com m³ e kg." }
         ] },
         { nome: "Conferência", comandos: [
@@ -112,9 +112,9 @@
           { id: "aplicar-ambiente", emBreve: true, rotulo: "Aplicar por\nambiente", icone: "ambiente", requer: "modelo", dica: "Define o acabamento de um ambiente inteiro de uma vez." }
         ] },
         { nome: "Piso e revestimento", comandos: [
-          { id: "paginar-piso", emBreve: true, rotulo: "Paginar\npiso", icone: "grade", grande: true, requer: "modelo", dica: "Escolhe o melhor ponto de partida para o menor recorte e nenhum recorte fino na entrada." },
-          { id: "paginar-parede", emBreve: true, rotulo: "Paginar\nrevestimento", icone: "azulejo", grande: true, requer: "modelo", dica: "Paginação do azulejo por parede, alinhada com o piso." },
-          { id: "pranchas-paginacao", emBreve: true, rotulo: "Pranchas de\npaginação", icone: "prancha", requer: "modelo", dica: "Gera as pranchas executivas de paginação para o pedreiro." }
+          { id: "paginar-piso", rotulo: "Paginar\npiso", icone: "grade", grande: true, requer: "modelo", dica: "Escolhe o melhor ponto de partida para o menor recorte e nenhum recorte fino na entrada." },
+          { id: "paginar-parede", rotulo: "Paginar\nrevestimento", icone: "azulejo", grande: true, requer: "modelo", dica: "Paginação do azulejo por parede, alinhada com o piso." },
+          { id: "pranchas-paginacao", rotulo: "Pranchas de\npaginação", icone: "prancha", requer: "modelo", dica: "Gera as pranchas executivas de paginação para o pedreiro." }
         ] }
       ]
     },

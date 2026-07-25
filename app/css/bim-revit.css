@@ -462,3 +462,16 @@
 .rv-nota-peca { display: block; font-size: 10.5px; line-height: 1.4; color: var(--rv-tx-fraco, #6a6a6a);
   margin-top: 2px; max-width: 46ch; }
 @media (min-width: 721px) { .rv-nota-peca { display: none; } }
+
+/* ------------------------------------------------------------------
+ * PAGINAÇÃO E ELEVAÇÃO — a tabela de números no celular.
+ * Em duas colunas numa tela de 390 px o rótulo tem nota longa, come a
+ * linha toda e o VALOR — que é o que o cara foi ali ver — some para
+ * fora. Em tela estreita as duas células viram linhas empilhadas.
+ * ------------------------------------------------------------------ */
+@media (max-width: 620px) {
+  .pag-num td { display: block; width: auto !important; padding: 4px 8px !important; }
+  .pag-num td:first-child { padding-bottom: 0 !important; }
+  .pag-num td:last-child { padding-top: 2px !important; font-weight: 600; }
+  .pag-num tr { display: block; border-bottom: 1px solid var(--linha); }
+}

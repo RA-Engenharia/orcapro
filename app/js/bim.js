@@ -684,6 +684,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
     else if (k === 'fit') { if (planta.on) enquadrarTopo(); else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5); else enquadrar(); } // na planta re-centra a vista de topo (não sai); no 3D enquadra suave (cinematográfico)
   });
+
+  /* ------------------------------------------------------------------
+   * PONTES PARA A FITA.
+   * A ribbon chama estas quatro por nome (js/gestao.js, _bimCascaAcoes).
+   * Elas existiam aqui dentro há versões, mas NÃO estavam na API pública:
+   * o registro devolvia false e o botão respondia "ainda não está
+   * disponível nesta versão" — Voo, Enquadrar tudo, Visibilidade e
+   * Pavimentos, todos mudos na fita, todos funcionando no viewer.
+   * ------------------------------------------------------------------ */
+  S._setVoo = function (on) { sairFerramentas(); setMode(on == null ? !fly.on : !!on); };
+  S._fit = function () {
+    if (planta.on) enquadrarTopo();
+    else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5);
+    else enquadrar();
+  };
+  S._togglePav = togglePavPanel;
+  S._toggleVis = toggleVisPanel;
   // MATRIZ MODOS×SAÍDAS (manter em dia ao criar modo novo — regra aprendida no gate v1.1.64):
   //                    medir/area/ang  planta  corteL  ctec(desenho)  isolamento(pav/vis)
   // botão Órbita/Voo    sai            sai     sai     cancela        fica (só visibilidade)
@@ -3996,6 +4013,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   host.appendChild(p3dPanel);
   S.p3dPanel = p3dPanel;
   function toggleP3dPanel() { var abrir = p3dPanel.style.display === 'none' || !p3dPanel.style.display; fecharPaineis(null); p3dPanel.style.display = abrir ? 'flex' : 'none'; }
+  S._toggleP3d = toggleP3dPanel; // a fita chama por aqui (BIM.painelP3d)
   function p3dDesenhar() {
     var cv = p3dPanel.querySelector('[data-p3="cv"]'); if (!cv || !p3d.parse) return;
     cv.style.display = '';
@@ -5225,6 +5243,16 @@ window.BIM = {
     return v;
   },
   _p3dTexto: function (txt, nome) { if (S && S._p3dProcessar) S._p3dProcessar(txt, nome); }, // hook de teste: injeta DXF sem file input
+  /* "Gerar de desenho" na fita chamava BIM.painelP3d(), que NUNCA EXISTIU:
+     o registro devolvia false e o comando respondia "ainda não está
+     disponível nesta versão". O painel só abria pelo botão antigo dentro
+     do viewer. É o botão da função que o cliente mais pediu — 2D vira 3D
+     — e ele estava mudo desde que a fita nasceu. */
+  painelP3d: function () { if (S && S._toggleP3d) { S._toggleP3d(); return true; } return false; },
+  voo: function (on) { if (S && S._setVoo) { S._setVoo(on); return true; } return false; },
+  home: function () { if (S && S._fit) { S._fit(); return true; } return false; },
+  painelVis: function () { if (S && S._toggleVis) { S._toggleVis(); return true; } return false; },
+  painelPav: function () { if (S && S._togglePav) { S._togglePav(); return true; } return false; },
   planta: function (on) { if (S && S._setPlanta) S._setPlanta(on == null ? !(S.planta && S.planta.on) : !!on); },
   corte: function (on) { if (S && S._setCorteL) S._setCorteL(on == null ? !(S.corteL && S.corteL.on) : !!on); },
   corteConfig: function (cfg) { // {az?, inc?, pos0a1?, inv?} — programático/testes

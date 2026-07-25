@@ -128,18 +128,13 @@
     _ALTERNATIVA: {
       "novo-projeto": "Por enquanto: abra um IFC, ou use \"Gerar de desenho\" para levantar a volumetria de um PDF ou DXF.",
       "exportar-ifc": "Por enquanto: \"Enviar ao Revit\" leva o orçamento e o avanço para o plugin dentro do Revit.",
-      "porta": "Por enquanto: o vão de porta desconta no quantitativo pela Conferência de modulação, na aba Alvenaria.",
-      "janela": "Por enquanto: o vão e a verga saem na Conferência de modulação, na aba Alvenaria.",
+      "porta": "Por enquanto: em \"Paginar alvenaria\" você lança o vão de porta e ele desconta o bloco fiada a fiada, com a verga.",
+      "janela": "Por enquanto: em \"Paginar alvenaria\" o vão de janela sai com verga, contraverga e o desconto de área.",
       "cobertura": "Por enquanto: a cobertura entra pelo IFC importado.",
       "combinar": "Por enquanto: use \"Tipos de parede\" e escolha o mesmo tipo nos dois.",
       "plano-trabalho": "Por enquanto: a altura de referência vem do nível ativo, em Níveis.",
-      "paginar-alvenaria": "Por enquanto: \"Conferir modulação\" já dá as peças fiada a fiada, com a amarração e a junta.",
-      "elevacoes": "Por enquanto: a Conferência de modulação lista as peças de cada parede.",
-      "graute": "Por enquanto: a Conferência de alvenaria já traz cinta, verga e junta de controle pela norma.",
-      "aplicar-ambiente": "Por enquanto: escolha o tipo em \"Padrões prontos\" e ele vale para as paredes novas.",
-      "paginar-piso": "Por enquanto: a área de piso sai nos Quantitativos do modelo.",
-      "paginar-parede": "Por enquanto: a área de revestimento por face está nas Propriedades da parede.",
-      "pranchas-paginacao": "Por enquanto: \"Corte técnico\" e \"Cotas automáticas\" geram desenho a partir do modelo."
+      "graute": "Por enquanto: \"Paginar alvenaria\" já posiciona a cinta, a verga e a contraverga em canaleta — falta só o m³ de graute e o kg de aço.",
+      "aplicar-ambiente": "Por enquanto: escolha o tipo em \"Padrões prontos\" e ele vale para as paredes novas."
     },
 
     _emBreve: function (c) {

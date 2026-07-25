@@ -1973,6 +1973,21 @@
       reg["presets-acabamento"] = function () { self._alvPresets(); return true; };
       reg["peso-total"] = function () { self._pesoPorNivel(); return true; };
 
+      /* ---- paginação e elevação: os motores novos ---- */
+      reg["paginar-piso"] = function () { self._paginar("piso"); return true; };
+      reg["paginar-parede"] = function () { self._paginar("parede"); return true; };
+      reg["pranchas-paginacao"] = function () {
+        /* sem cálculo prévio não há prancha: em vez de imprimir folha em
+           branco, abre a tela para o usuário decidir a paginação primeiro */
+        if (!self._pagAtual) { self._paginar(self._pagCfg ? self._pagCfg.modo : "piso"); return true; }
+        self._pagPrancha(); return true;
+      };
+      reg["paginar-alvenaria"] = function () { self._elevacao(); return true; };
+      reg["elevacoes"] = function () {
+        if (!self._elevAtual) { self._elevacao(); return true; }
+        self._elevPrancha(); return true;
+      };
+
       reg["editar-tipo"] = reg["tipo-parede"] = reg["parede-cebola"] = function () {
         if (!window.AlvTipos || !window.BimShell) return false;
         BimShell.pintarProps(self._alvEsquemaProps());
@@ -2542,6 +2557,595 @@
     /* PADRÕES PRONTOS — as dez receitas lado a lado, para escolher de uma vez.
        O painel de Propriedades mostra UMA por vez, no seletor; aqui o usuário
        compara espessura, faces e uso antes de decidir. */
+    /* ==================================================================
+     * PAGINAÇÃO DE PISO E REVESTIMENTO
+     *
+     * Uma tela só, dois modos. Piso é planta (largura × comprimento);
+     * revestimento é elevação (comprimento × altura, com os vãos). O que
+     * muda é o vocabulário e o desconto de vão — o motor é o mesmo.
+     *
+     * A tela recalcula a cada mexida, e mostra o DESENHO, porque paginação
+     * é decisão visual: número nenhum convence quem vai assentar.
+     * ================================================================== */
+    _pagCfg: null,
+    _pagAtual: null,
+
+    _pagPadrao: function (modo) {
+      return {
+        modo: modo || "piso",
+        largura: modo === "parede" ? 3.50 : 3.00,
+        comprimento: modo === "parede" ? 2.60 : 4.00,
+        formato: modo === "parede" ? "30x60" : "60x60",
+        pl: modo === "parede" ? 0.30 : 0.60,
+        pc: modo === "parede" ? 0.60 : 0.60,
+        esp: modo === "parede" ? 0.008 : 0.009,
+        junta: modo === "parede" ? 0.002 : 0.003,
+        assentamento: "reto",
+        recorteMin: 0.10,
+        estrategia: "otimizada",
+        offX: 0, offY: 0,
+        reserva: 0,
+        portas: 1,
+        vaos: []
+      };
+    },
+
+    _paginar: function (modo) {
+      if (!window.Paginacao) { UI.toast("Motor de paginação não carregado.", "erro"); return; }
+      if (this._bloqueado && this._bloqueado()) return;
+      var g = this._pagCfg;
+      if (!g || (modo && g.modo !== modo)) g = this._pagCfg = this._pagPadrao(modo);
+      var self = this;
+
+      UI.modal(modo === "parede" ? "Paginar revestimento de parede" : "Paginar piso",
+        '<div id="pag-corpo">' + this._pagCorpo() + "</div>",
+        [
+          { texto: "Imprimir prancha", classe: "", onClick: function () { self._pagPrancha(); } },
+          { texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }
+        ]);
+      this._pagLigar();
+    },
+
+    _pagLigar: function () {
+      var self = this;
+      var cx = document.getElementById("pag-corpo");
+      if (!cx) return;
+      function mexeu(e) {
+        var el = e.target;
+        if (!el || !el.getAttribute) return;
+        var g = self._pagCfg;
+        /* campo de vão: "índice:campo" */
+        var kv = el.getAttribute("data-pagvao");
+        if (kv) {
+          var pp = kv.split(":"), vi = parseInt(pp[0], 10);
+          if (!g.vaos[vi]) return;
+          var vv = parseFloat(String(el.value).replace(",", "."));
+          if (!isFinite(vv) || vv < 0) { self._pagRecusa("A medida do vão é em metros e não pode ser negativa."); return; }
+          g.vaos[vi][pp[1]] = vv;
+          self._pagRepintar(); return;
+        }
+        var k = el.getAttribute("data-pag");
+        if (!k) return;
+        if (k === "formato") {
+          var f = Paginacao.formato(el.value);
+          if (f) { g.formato = f.id; g.pl = f.l; g.pc = f.c; g.esp = f.esp; g.junta = f.junta; }
+          else g.formato = "custom";
+        } else if (k === "pl" || k === "pc" || k === "junta" || k === "recorteMin" || k === "esp") {
+          var v = parseFloat(String(el.value).replace(",", "."));
+          if (!isFinite(v) || v < 0) { self._pagRecusa("Valor inválido — a medida é em metros, com vírgula."); return; }
+          /* TUDO AQUI É METRO. O erro clássico é digitar em centímetro (60
+             em vez de 0,60) ou em milímetro (3 em vez de 0,003). A junta é
+             onde isso mais acontece, e era justamente onde não havia trava:
+             junta "3" virava junta de 3 METROS e o rejunte saía mil vezes
+             errado, sem uma palavra. */
+          if ((k === "pl" || k === "pc") && v > 3) { self._pagRecusa("A medida da peça é em METROS: 60 cm é 0,60."); return; }
+          if (k === "junta" && v > 0.05) { self._pagRecusa("A junta é em METROS: 3 mm é 0,003. Acima de 5 cm não é junta de cerâmica."); return; }
+          if (k === "recorteMin" && v > 1) { self._pagRecusa("O recorte mínimo é em METROS: 10 cm é 0,10."); return; }
+          if (k === "esp" && v > 0.1) { self._pagRecusa("A espessura da peça é em METROS: 9 mm é 0,009."); return; }
+          g[k] = v;
+          if (k === "pl" || k === "pc") g.formato = "custom";
+        } else if (k === "largura" || k === "comprimento") {
+          var w = parseFloat(String(el.value).replace(",", "."));
+          if (!isFinite(w) || w <= 0) { self._pagRecusa("Informe uma medida maior que zero, em metros."); return; }
+          if (w > 500) { self._pagRecusa("Medida em METROS: 500 m já é quarteirão. Confira a unidade."); return; }
+          g[k] = w;
+        } else if (k === "reserva" || k === "portas") {
+          var n = parseFloat(String(el.value).replace(",", "."));
+          g[k] = isFinite(n) && n >= 0 ? n : 0;
+        } else if (k === "externo") {
+          g.externo = !!el.checked;
+        } else {
+          g[k] = el.value;
+        }
+        self._pagRepintar();
+      }
+      cx.addEventListener("change", mexeu);
+      cx.addEventListener("input", function (e) {
+        var el = e.target;
+        if (el && el.tagName === "INPUT" && el.type === "number") mexeu(e);
+      });
+      cx.addEventListener("click", function (e) {
+        var b = e.target.closest && e.target.closest("[data-pagacao]");
+        if (!b) return;
+        var a = b.getAttribute("data-pagacao");
+        if (a === "estrategia") { self._pagCfg.estrategia = b.getAttribute("data-id"); self._pagRepintar(); }
+        else if (a === "vao-add") { self._pagCfg.vaos.push({ x: 0.5, y: 1.0, l: 1.0, c: 1.2 }); self._pagRepintar(); }
+        else if (a === "vao-del") { self._pagCfg.vaos.splice(parseInt(b.getAttribute("data-i"), 10), 1); self._pagRepintar(); }
+      });
+    },
+
+    /* RECUSA NUNCA CALADA.
+       O caminho de rejeição era um `return` seco, ANTES de repintar: o
+       campo continuava mostrando o valor recusado e o desenho seguia com
+       o antigo. O usuário via 3 na junta, via o desenho, e acreditava que
+       o desenho era daquele 3. Agora a tela volta ao valor que vale E diz
+       por que o outro não entrou. */
+    _pagRecusa: function (msg) {
+      if (typeof UI !== "undefined" && UI.toast) UI.toast(msg, "aviso");
+      this._pagRepintar();
+    },
+
+    _pagRepintar: function () {
+      var cx = document.getElementById("pag-corpo");
+      if (!cx) return;
+      /* preserva o foco: repintar o corpo inteiro tirava o cursor do campo
+         no meio da digitação e a pessoa perdia o número */
+      var ativo = document.activeElement;
+      var chave = null, attr = "data-pag";
+      if (ativo && ativo.getAttribute) {
+        chave = ativo.getAttribute("data-pag");
+        if (!chave) { chave = ativo.getAttribute("data-pagvao"); attr = "data-pagvao"; }
+      }
+      cx.innerHTML = this._pagCorpo();
+      if (chave) {
+        var novo = cx.querySelector("[" + attr + '="' + chave + '"]');
+        if (novo) { try { novo.focus(); } catch (e) {} }
+      }
+    },
+
+    /* roda o motor com a configuração de agora */
+    _pagCalcular: function () {
+      var g = this._pagCfg, parede = g.modo === "parede";
+      var base = {
+        largura: g.largura, comprimento: g.comprimento,
+        peca: { l: g.pl, c: g.pc }, junta: g.junta,
+        assentamento: g.assentamento, recorteMin: g.recorteMin,
+        vaos: parede ? g.vaos : []
+      };
+      var comp = Paginacao.melhorPartida(base);
+      /* zera o resultado ANTES de tentar: senão, no estado de erro a tela
+         mostra a tarja vermelha e o botão Imprimir manda para a gráfica a
+         paginação ANTERIOR, que não é a que está na tela */
+      if (!comp.ok) { this._pagAtual = null; return { erro: comp.motivo }; }
+      var esc = null;
+      for (var i = 0; i < comp.opcoes.length; i++) if (comp.opcoes[i].id === g.estrategia) esc = comp.opcoes[i];
+      if (!esc) { esc = comp.opcoes[0]; g.estrategia = esc.id; }
+      var res = esc.res;
+      /* o rodapé é calculado ANTES do quantitativo porque as tiras saem
+         da mesma peça de piso e entram na conta de quantas comprar */
+      var rod = parede ? null : Paginacao.rodape(res, { portas: g.portas, altura: 0.07 });
+      this._pagAtual = {
+        cfg: JSON.parse(JSON.stringify(g)), res: res, opcoes: comp.opcoes,
+        quant: Paginacao.quantitativo(res, { reserva: g.reserva, girarRecorte: true, rodape: rod }),
+        rejunte: Paginacao.rejunte(res, { espessura: g.esp }),
+        colante: Paginacao.colante(res, { externo: !!g.externo }),
+        juntas: parede ? null : Paginacao.juntasMovimentacao(res, { externo: !!g.externo }),
+        rodape: rod
+      };
+      return this._pagAtual;
+    },
+
+    _pagCorpo: function () {
+      var g = this._pagCfg, parede = g.modo === "parede";
+      var st = this._pagCalcular();
+      var h = "";
+
+      /* ---- entrada ---- */
+      var fmts = Paginacao.FORMATOS.map(function (f) {
+        return '<option value="' + Util.esc(f.id) + '"' + (f.id === g.formato ? " selected" : "") + ">" + Util.esc(f.rotulo) + " — " + Util.esc(f.uso) + "</option>";
+      }).join("");
+      var ass = Paginacao.ASSENTAMENTOS.map(function (a) {
+        return '<option value="' + Util.esc(a.id) + '"' + (a.id === g.assentamento ? " selected" : "") + ">" + Util.esc(a.rotulo) + "</option>";
+      }).join("");
+
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:10px">' +
+        "<label>" + (parede ? "Comprimento da parede (m)" : "Largura do ambiente (m)") +
+          '<input type="number" step="0.01" data-pag="largura" value="' + g.largura + '" style="width:100%"></label>' +
+        "<label>" + (parede ? "Altura (m)" : "Comprimento (m)") +
+          '<input type="number" step="0.01" data-pag="comprimento" value="' + g.comprimento + '" style="width:100%"></label>' +
+        '<label>Peça<select data-pag="formato" style="width:100%">' + fmts +
+          '<option value="custom"' + (g.formato === "custom" ? " selected" : "") + ">Outra medida…</option></select></label>" +
+        '<label>Peça — X (m)<input type="number" step="0.005" data-pag="pl" value="' + g.pl + '" style="width:100%"></label>' +
+        '<label>Peça — Y (m)<input type="number" step="0.005" data-pag="pc" value="' + g.pc + '" style="width:100%"></label>' +
+        '<label>Junta (m)<input type="number" step="0.001" data-pag="junta" value="' + g.junta + '" style="width:100%"></label>' +
+        '<label>Assentamento<select data-pag="assentamento" style="width:100%">' + ass + "</select></label>" +
+        '<label>Recorte mínimo (m)<input type="number" step="0.01" data-pag="recorteMin" value="' + g.recorteMin + '" style="width:100%"></label>' +
+        '<label>Reserva de reposição (%)<input type="number" step="1" data-pag="reserva" value="' + g.reserva + '" style="width:100%"></label>' +
+        (parede ? "" : '<label>Portas (desconto do rodapé)<input type="number" step="1" data-pag="portas" value="' + g.portas + '" style="width:100%"></label>') +
+        "</div>";
+      h += '<label style="font-size:12px;display:block;margin:-4px 0 10px"><input type="checkbox" data-pag="externo"' +
+        (g.externo ? " checked" : "") + "> Área externa, fachada ou sol direto " +
+        '<span class="muted">— muda a classe da argamassa e o tamanho do pano entre juntas</span></label>';
+
+      if (st.erro) {
+        return h + '<div style="padding:10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px">' + Util.esc(st.erro) + "</div>";
+      }
+
+      /* ---- vãos, só em parede ---- */
+      if (parede) {
+        h += '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--linha);border-radius:8px">' +
+             '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+             '<b style="font-size:12px;flex:1">Vãos da parede (não recebem revestimento)</b>' +
+             '<button class="btn sm" data-pagacao="vao-add">+ vão</button></div>';
+        if (!g.vaos.length) h += '<div class="muted" style="font-size:11.5px">Nenhum vão. A parede é contada cheia.</div>';
+        g.vaos.forEach(function (v, i) {
+          h += '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;flex-wrap:wrap">' +
+               '<span class="muted" style="font-size:11px;width:34px">#' + (i + 1) + "</span>" +
+               ["x", "y", "l", "c"].map(function (k, ki) {
+                 return '<label style="font-size:10.5px">' + ["da esquerda", "do piso", "largura", "altura"][ki] +
+                   '<input type="number" step="0.05" data-pagvao="' + i + ":" + k + '" value="' + v[k] + '" style="width:72px;display:block"></label>';
+               }).join("") +
+               '<button class="btn sm" data-pagacao="vao-del" data-i="' + i + '" style="color:#dc2626">✕</button></div>';
+        });
+        h += "</div>";
+      }
+
+      /* ---- as três estratégias, com número ---- */
+      h += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">';
+      st.opcoes.forEach(function (o) {
+        var r = o.res, sel = o.id === g.estrategia;
+        h += '<button class="btn sm" data-pagacao="estrategia" data-id="' + Util.esc(o.id) + '" ' +
+             /* .btn e inline-flex: filho com display:block virava COLUNA e as
+                tres linhas se sobrepunham. Aqui o botao volta a ser bloco. */
+             'style="flex:1 1 190px;min-width:170px;display:block;white-space:normal;line-height:1.4;' +
+             'text-align:left;padding:8px 10px;height:auto;border:1px solid ' +
+             (sel ? "var(--azul,#2e6f9e)" : "var(--linha)") + ";" + (sel ? "background:#2e6f9e12;" : "") + '" title="' + Util.esc(o.quando) + '">' +
+             '<b style="font-size:11.5px;display:block">' + Util.esc(o.rotulo) + "</b>" +
+             '<span style="font-size:11px;color:' + (r.bolachas || r.rentes ? "#dc2626" : "#15803d") + '">' +
+             (r.bolachas ? r.bolachas + " recorte(s) abaixo de " + Math.round(r.recorteMin * 100) + " cm"
+              : r.rentes ? r.rentes + " corte(s) rente(s) — lasca de poucos mm"
+                         : "menor recorte " + Math.round((r.menorRecorte || Math.min(r.peca.l, r.peca.c)) * 100) + " cm") +
+             "</span>" +
+             '<span class="muted" style="font-size:10.5px;display:block">' + r.inteiras + " inteiras · " + r.recortes + " recortes</span>" +
+             "</button>";
+      });
+      h += "</div>";
+
+      var sel = null;
+      for (var i = 0; i < st.opcoes.length; i++) if (st.opcoes[i].id === g.estrategia) sel = st.opcoes[i];
+      if (sel) h += '<p class="muted" style="font-size:11.5px;margin:-4px 0 10px">' + Util.esc(sel.quando) + "</p>";
+
+      /* ---- o desenho ---- */
+      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px;background:#fff;margin-bottom:10px;overflow-x:auto">' +
+           Paginacao.svg(st.res, { largura: 820 }) + "</div>";
+
+      /* ---- os números ---- */
+      var q = st.quant, rj = st.rejunte, co = st.colante;
+      h += '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
+      h += this._pagLinha("Área a revestir", q.areaLiquida.toFixed(2).replace(".", ",") + " m²",
+        "é a área que vai para a planilha em m² — já sem os vãos");
+      function comp2(x) {
+        return "<b>" + x.pecas + "</b> peças" +
+          (q.rodapePecas ? " <span class='muted'>(" + x.piso + " piso + " + q.rodapePecas + " rodapé)</span>" : "") +
+          " · perda do piso " + String(x.perdaPct).replace(".", ",") + " %";
+      }
+      h += this._pagLinha("Peças — número seguro", comp2(q.semAproveitamento), q.semAproveitamento.nota);
+      h += this._pagLinha("Peças — com aproveitamento", comp2(q.comAproveitamento),
+        q.comAproveitamento.nota + " · " + q.notaPerda);
+      if (rj.ok && rj.kgM2 > 0) {
+        h += this._pagLinha("Rejunte", rj.kg.toFixed(2).replace(".", ",") + " kg (" + rj.kgM2.toString().replace(".", ",") + " kg/m²)", rj.nota);
+      }
+      if (co.ok) {
+        h += this._pagLinha("Argamassa colante",
+          "<b>" + Util.esc(co.classe) + "</b> · " + co.rotulo + " · " + co.kgMin + " a " + co.kgMax + " kg (" +
+          co.sacosMin + " a " + co.sacosMax + " sacos de 20 kg)<br>" +
+          '<span class="muted" style="font-size:11px">' + Util.esc(co.porqueClasse) + "</span>",
+          co.classeFonte);
+        if (co.aviso) h += '<tr><td colspan="2" style="padding:6px 8px;background:#f59e0b18;font-size:11.5px">' + Util.esc(co.aviso) + "</td></tr>";
+      }
+      if (st.rodape && st.rodape.ok) {
+        h += this._pagLinha("Rodapé", st.rodape.metros.toFixed(2).replace(".", ",") + " m · " +
+          st.rodape.tirasPorPeca + " tiras por peça" + (q.rodapePecas ? " · <b>+" + q.rodapePecas + " peças</b> na compra" : ""),
+          st.rodape.nota);
+      }
+      if (st.juntas && st.juntas.ok) {
+        h += this._pagLinha("Juntas de movimentação",
+          (st.juntas.precisa ? "<b>" + st.juntas.linhas.length + "</b> junta(s) · " +
+             st.juntas.metros.toFixed(2).replace(".", ",") + " m · " + st.juntas.panos + " panos de até " +
+             st.juntas.areaPorPano.toFixed(1).replace(".", ",") + " m²"
+           : "não precisa — o pano cabe no limite"),
+          st.juntas.fonte);
+        h += '<tr><td colspan="2" style="padding:6px 8px;background:#2e6f9e12;font-size:11.5px">' +
+          Util.esc(st.juntas.precisa ? st.juntas.nota : "") + (st.juntas.precisa ? "<br>" : "") +
+          Util.esc(st.juntas.sempre) + "</td></tr>";
+      }
+      h += "</tbody></table>";
+
+      if (q.grupos.length) {
+        h += '<p class="muted" style="font-size:11.5px;margin:8px 0 2px"><b>Recortes:</b> ' +
+          q.grupos.map(function (x) { return x.qtd + " × " + x.rotulo + (x.porPeca > 1 ? " (" + x.porPeca + " por peça)" : ""); }).join(" · ") + "</p>";
+      }
+      h += '<p class="muted" style="font-size:11px;margin:6px 0 0">' + Util.esc(st.res.notaAssentamento) + "</p>";
+      return h;
+    },
+
+    _pagLinha: function (rot, val, nota) {
+      return "<tr><td style='padding:5px 8px;width:34%'><b>" + Util.esc(rot) + "</b>" +
+        (nota ? "<br><span class='muted' style='font-size:10.5px;font-weight:400'>" + Util.esc(nota) + "</span>" : "") +
+        "</td><td style='padding:5px 8px'>" + val + "</td></tr>";
+    },
+
+    _pagPrancha: function () {
+      var st = this._pagAtual;
+      if (!st || !st.res) { UI.toast("Calcule a paginação antes de imprimir.", "aviso"); return; }
+      var g = st.cfg, q = st.quant, parede = g.modo === "parede";
+      var titulo = parede ? "Paginação de revestimento" : "Paginação de piso";
+      var html = '<h1 style="margin:0 0 4px">' + titulo + "</h1>" +
+        '<p style="margin:0 0 12px;color:#475569;font-size:13px">' +
+        (parede ? "Parede " : "Ambiente ") + g.largura.toFixed(2).replace(".", ",") + " × " + g.comprimento.toFixed(2).replace(".", ",") + " m · " +
+        "peça " + Math.round(g.pl * 100) + " × " + Math.round(g.pc * 100) + " cm · junta " + Math.round(g.junta * 1000) + " mm · " +
+        st.res.assentamentoRotulo + "</p>" +
+        '<div style="margin:0 0 14px">' + Paginacao.svg(st.res, { largura: 720 }) + "</div>" +
+        "<h2 style='font-size:15px;margin:0 0 6px'>Material</h2>" +
+        '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
+        "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Área a revestir</td><td style='padding:4px;border-bottom:1px solid #e2e8f0'><b>" +
+          q.areaLiquida.toFixed(2).replace(".", ",") + " m²</b></td></tr>" +
+        "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Peças a comprar (número seguro)</td><td style='padding:4px;border-bottom:1px solid #e2e8f0'><b>" +
+          q.semAproveitamento.pecas + "</b>" + (q.rodapePecas ? " (" + q.semAproveitamento.piso + " piso + " + q.rodapePecas + " rodapé)" : "") +
+          " · " + q.semAproveitamento.m2.toFixed(2).replace(".", ",") + " m² de face · perda do piso " +
+          String(q.semAproveitamento.perdaPct).replace(".", ",") + " %</td></tr>" +
+        "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Com aproveitamento de recorte</td><td style='padding:4px;border-bottom:1px solid #e2e8f0'>" +
+          q.comAproveitamento.pecas + " peças</td></tr>" +
+        (st.rejunte.ok && st.rejunte.kgM2 > 0 ? "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Rejunte</td><td style='padding:4px;border-bottom:1px solid #e2e8f0'>" +
+          st.rejunte.kg.toFixed(2).replace(".", ",") + " kg</td></tr>" : "") +
+        (st.colante.ok ? "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Argamassa colante</td><td style='padding:4px;border-bottom:1px solid #e2e8f0'><b>" +
+          Util.esc(st.colante.classe) + "</b> · " + Util.esc(st.colante.rotulo) + " · " + st.colante.sacosMin + " a " + st.colante.sacosMax + " sacos<br>" +
+          "<span style='font-size:11px;color:#64748b'>" + Util.esc(st.colante.porqueClasse) + "</span></td></tr>" : "") +
+        (st.rodape && st.rodape.ok ? "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Rodapé</td><td style='padding:4px;border-bottom:1px solid #e2e8f0'>" +
+          st.rodape.metros.toFixed(2).replace(".", ",") + " m" + (q.rodapePecas ? " (já somado: +" + q.rodapePecas + " peças)" : "") + "</td></tr>" : "") +
+        "</table>" +
+        (st.juntas && st.juntas.ok ? "<h2 style='font-size:15px;margin:14px 0 6px'>Juntas</h2>" +
+          "<p style='font-size:12.5px;margin:0'>" + Util.esc(st.juntas.precisa ? st.juntas.nota : "Não é necessária junta de movimentação no meio deste pano.") +
+          "<br>" + Util.esc(st.juntas.sempre) + "</p>" +
+          "<p style='font-size:11px;color:#64748b;margin:4px 0 0'>" + Util.esc(st.juntas.fonte) + "</p>" : "") +
+        (st.colante.aviso ? "<p style='font-size:12px;margin:10px 0 0;padding:8px;background:#fef3c7;border-radius:6px'>" + Util.esc(st.colante.aviso) + "</p>" : "") +
+        "<p style='font-size:11px;color:#64748b;margin:12px 0 0'>O número seguro considera que cada recorte gasta uma peça. " +
+        "O aproveitamento de recorte é estimativa de bancada — quem não reusa o pedaço compra pelo número seguro. " +
+        "Consumo de argamassa colante é faixa de fabricante; confira o saco comprado.</p>";
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint(titulo, html);
+      else UI.toast("Impressão indisponível.", "erro");
+    },
+
+    /* ==================================================================
+     * ELEVAÇÃO DE ALVENARIA — fiada a fiada, hachura por peça.
+     * ================================================================== */
+    _elevCfg: null,
+    _elevAtual: null,
+
+    _elevacao: function () {
+      if (!window.Elevacao || !window.Blocos) { UI.toast("Motor de elevação não carregado.", "erro"); return; }
+      if (this._bloqueado && this._bloqueado()) return;
+      this._alvGarantirPesos();
+      var self = this;
+      if (!this._elevCfg) {
+        this._elevCfg = {
+          fam: "39-14", c: 4.00, h: 2.80, junta: 0.010, bordas: 1,
+          cinta: true, verga: true, contraverga: true, apoio: 0.20,
+          vaos: [{ tipo: "janela", x: 1.20, y: 1.00, l: 1.50, a: 1.20, nome: "J1" }]
+        };
+      }
+      UI.modal("Elevação da parede — fiada a fiada",
+        '<div id="elev-corpo">' + this._elevCorpo() + "</div>",
+        [
+          { texto: "Imprimir prancha", classe: "", onClick: function () { self._elevPrancha(); } },
+          { texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }
+        ]);
+      this._elevLigar();
+    },
+
+    _elevLigar: function () {
+      var self = this;
+      var cx = document.getElementById("elev-corpo");
+      if (!cx) return;
+      function mexeu(e) {
+        var el = e.target;
+        if (!el || !el.getAttribute) return;
+        var g = self._elevCfg;
+        var kv = el.getAttribute("data-elevao");
+        if (kv) {
+          var p = kv.split(":"), i = parseInt(p[0], 10), k = p[1];
+          if (!g.vaos[i]) return;
+          if (k === "tipo" || k === "nome") g.vaos[i][k] = el.value;
+          else {
+            var v = parseFloat(String(el.value).replace(",", "."));
+            if (!isFinite(v) || v < 0) { self._elevRecusa("A medida do vão é em metros e não pode ser negativa."); return; }
+            if (v > 50) { self._elevRecusa("Medida em METROS: 1,50 m é 1,50, não 150."); return; }
+            g.vaos[i][k] = v;
+          }
+          self._elevRepintar(); return;
+        }
+        var k2 = el.getAttribute("data-elev");
+        if (!k2) return;
+        if (k2 === "fam") g.fam = el.value;
+        else if (k2 === "cinta" || k2 === "verga" || k2 === "contraverga") g[k2] = !!el.checked;
+        else if (k2 === "bordas") g.bordas = parseInt(el.value, 10) || 0;
+        else {
+          var n = parseFloat(String(el.value).replace(",", "."));
+          if (!isFinite(n) || n <= 0) { self._elevRecusa("Informe uma medida maior que zero, em metros."); return; }
+          if (k2 === "junta" && n > 0.05) { self._elevRecusa("A junta é em METROS: 10 mm é 0,010."); return; }
+          if ((k2 === "c" || k2 === "h") && n > 200) { self._elevRecusa("A parede é medida em METROS. Confira a unidade."); return; }
+          g[k2] = n;
+        }
+        self._elevRepintar();
+      }
+      cx.addEventListener("change", mexeu);
+      cx.addEventListener("input", function (e) {
+        if (e.target && e.target.tagName === "INPUT" && e.target.type === "number") mexeu(e);
+      });
+      cx.addEventListener("click", function (e) {
+        var b = e.target.closest && e.target.closest("[data-elevacao]");
+        if (!b) return;
+        var a = b.getAttribute("data-elevacao");
+        if (a === "add") {
+          self._elevCfg.vaos.push({ tipo: "janela", x: 0.60, y: 1.00, l: 1.20, a: 1.20,
+            nome: "V" + (self._elevCfg.vaos.length + 1) });
+        } else if (a === "del") {
+          self._elevCfg.vaos.splice(parseInt(b.getAttribute("data-i"), 10), 1);
+        } else return;
+        self._elevRepintar();
+      });
+    },
+
+    /* mesma regra da paginação: nada de recusa calada */
+    _elevRecusa: function (msg) {
+      if (typeof UI !== "undefined" && UI.toast) UI.toast(msg, "aviso");
+      this._elevRepintar();
+    },
+
+    _elevRepintar: function () {
+      var cx = document.getElementById("elev-corpo");
+      if (!cx) return;
+      var ativo = document.activeElement;
+      var ch = ativo && ativo.getAttribute ? (ativo.getAttribute("data-elev") || ("v:" + ativo.getAttribute("data-elevao"))) : null;
+      cx.innerHTML = this._elevCorpo();
+      if (ch && ch !== "v:null") {
+        var q = ch.indexOf("v:") === 0
+          ? cx.querySelector('[data-elevao="' + ch.slice(2) + '"]')
+          : cx.querySelector('[data-elev="' + ch + '"]');
+        if (q) { try { q.focus(); } catch (e) {} }
+      }
+    },
+
+    _elevCorpo: function () {
+      var g = this._elevCfg;
+      var res = Elevacao.parede({
+        comprimento: g.c, altura: g.h, familia: g.fam, junta: g.junta, bordas: g.bordas,
+        cinta: g.cinta, verga: g.verga, contraverga: g.contraverga, apoioVerga: g.apoio,
+        vaos: g.vaos
+      });
+      /* Só guarda o que DEU CERTO. Gravar incondicionalmente fazia duas
+         coisas ruins: o botão "Elevações" virava só-impressão para sempre
+         depois do primeiro cálculo (o roteador testa `if (!_elevAtual)`),
+         e imprimia a última elevação VÁLIDA enquanto a tela mostrava
+         erro. */
+      if (res.ok) this._elevAtual = res; else this._elevAtual = null;
+
+      var fams = Blocos.familias().map(function (f) {
+        return '<option value="' + Util.esc(f.id) + '"' + (f.id === g.fam ? " selected" : "") + ">" + Util.esc(f.rotulo) + "</option>";
+      }).join("");
+
+      var h = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:10px">' +
+        '<label>Família do bloco<select data-elev="fam" style="width:100%">' + fams + "</select></label>" +
+        '<label>Comprimento (m)<input type="number" step="0.01" data-elev="c" value="' + g.c + '" style="width:100%"></label>' +
+        '<label>Altura (m)<input type="number" step="0.01" data-elev="h" value="' + g.h + '" style="width:100%"></label>' +
+        '<label>Junta (m)<input type="number" step="0.001" data-elev="junta" value="' + g.junta + '" style="width:100%"></label>' +
+        '<label>Apoio da verga (m)<input type="number" step="0.05" data-elev="apoio" value="' + g.apoio + '" style="width:100%"></label>' +
+        '<label>Encontros<select data-elev="bordas" style="width:100%">' +
+          '<option value="0"' + (g.bordas === 0 ? " selected" : "") + ">Solta nas duas pontas</option>" +
+          '<option value="1"' + (g.bordas === 1 ? " selected" : "") + ">Encosta em uma parede</option>" +
+          '<option value="2"' + (g.bordas === 2 ? " selected" : "") + ">Entre duas paredes</option></select></label>" +
+        "</div>";
+
+      h += '<div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:10px;font-size:12px">' +
+        '<label><input type="checkbox" data-elev="cinta"' + (g.cinta ? " checked" : "") + "> Cinta de amarração na última fiada</label>" +
+        '<label><input type="checkbox" data-elev="verga"' + (g.verga ? " checked" : "") + "> Verga sobre os vãos</label>" +
+        '<label><input type="checkbox" data-elev="contraverga"' + (g.contraverga ? " checked" : "") + "> Contraverga sob as janelas</label>" +
+        "</div>";
+
+      /* vãos */
+      h += '<div style="margin-bottom:10px;padding:8px 10px;border:1px solid var(--linha);border-radius:8px">' +
+           '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">' +
+           '<b style="font-size:12px;flex:1">Vãos</b><button class="btn sm" data-elevacao="add">+ vão</button></div>';
+      if (!g.vaos.length) h += '<div class="muted" style="font-size:11.5px">Parede cega.</div>';
+      g.vaos.forEach(function (v, i) {
+        h += '<div style="display:flex;gap:6px;align-items:flex-end;margin-bottom:5px;flex-wrap:wrap">' +
+          '<label style="font-size:10.5px">tipo<select data-elevao="' + i + ':tipo" style="width:88px;display:block">' +
+            '<option value="janela"' + (v.tipo === "janela" ? " selected" : "") + ">janela</option>" +
+            '<option value="porta"' + (v.tipo === "porta" ? " selected" : "") + ">porta</option></select></label>" +
+          '<label style="font-size:10.5px">nome<input type="text" data-elevao="' + i + ':nome" value="' + Util.esc(v.nome || "") + '" style="width:64px;display:block"></label>' +
+          '<label style="font-size:10.5px">da esquerda<input type="number" step="0.05" data-elevao="' + i + ':x" value="' + v.x + '" style="width:72px;display:block"></label>' +
+          (v.tipo === "porta" ? '<span class="muted" style="font-size:10.5px;width:72px">peitoril 0<br>(porta)</span>'
+            : '<label style="font-size:10.5px">peitoril<input type="number" step="0.05" data-elevao="' + i + ':y" value="' + v.y + '" style="width:72px;display:block"></label>') +
+          '<label style="font-size:10.5px">largura<input type="number" step="0.05" data-elevao="' + i + ':l" value="' + v.l + '" style="width:72px;display:block"></label>' +
+          '<label style="font-size:10.5px">altura<input type="number" step="0.05" data-elevao="' + i + ':a" value="' + v.a + '" style="width:72px;display:block"></label>' +
+          '<button class="btn sm" data-elevacao="del" data-i="' + i + '" style="color:#dc2626">✕</button></div>';
+      });
+      h += "</div>";
+
+      if (!res.ok) {
+        return h + '<div style="padding:10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px">' + Util.esc(res.motivo) + "</div>";
+      }
+
+      h += '<div style="border:1px solid var(--linha);border-radius:8px;padding:6px;background:#fff;margin-bottom:10px;overflow-x:auto">' +
+           Elevacao.svg(res, { largura: 840, titulo: "Elevação" }) + "</div>";
+
+      /* números */
+      h += '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
+      h += this._pagLinha("Área da parede", res.area.bruta.toFixed(2).replace(".", ",") + " m² bruta · " +
+        res.area.liquida.toFixed(2).replace(".", ",") + " m² líquida" +
+        (res.area.vaos > 0 ? " (vãos descontam " + String(res.area.vaosPct).replace(".", ",") + " %)" : ""),
+        "a área líquida é o critério de medição do SINAPI");
+      h += this._pagLinha("Fiadas", res.nFiadas + " de " + Math.round(res.alturaFiada * 100) + " cm · altura real " +
+        res.alturaReal.toFixed(2).replace(".", ",") + " m", "");
+      h += this._pagLinha("Peças a comprar", "<b>" + res.blocosAComprar + "</b> · " + res.contagem.bloco + " blocos, " +
+        res.contagem.canaleta + " canaletas" + (res.cortes ? ", " + res.cortes + " cortes na obra" : ""),
+        res.cortes ? "o corte gasta um bloco inteiro na compra, mesmo pesando menos" : "");
+      h += this._pagLinha("Peso" + (res.parcial ? " (parcial)" : ""), "<b>" + Util.fmtNum(res.peso, 1) + " kg</b>",
+        res.escopoDoPeso);
+      h += "</tbody></table>";
+
+      h += '<table class="tbl" style="width:100%;font-size:11.5px;margin-top:8px"><thead><tr>' +
+        "<th>Peça</th><th>Qtd</th><th>Peso un.</th><th>Origem</th></tr></thead><tbody>";
+      res.resumo.forEach(function (r) {
+        h += "<tr><td>" + Util.esc(r.nome) + "</td><td>" + r.qtd + "</td><td>" +
+          (r.peso != null ? Util.fmtNum(r.peso, 2) + " kg" : "<span style='color:#b45309'>informe</span>") + "</td><td>" +
+          '<span class="g-pill" style="font-size:9.5px">' + Util.esc(r.selo || "") + "</span> " +
+          '<span class="muted" style="font-size:10px">' + Util.esc(r.fabricante || "") + "</span></td></tr>";
+      });
+      h += "</tbody></table>";
+      h += '<p class="muted" style="font-size:11px;margin:6px 0 0">Peso de catálogo, versão ' + Util.esc(res.pesosVersao) +
+        '. Troque pelo do seu fornecedor em <b>Alvenaria → Peso por parede</b>.</p>';
+
+      if (res.avisos.length) {
+        h += '<div style="margin-top:9px;padding:8px 10px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12px">' +
+          res.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>";
+      }
+      return h;
+    },
+
+    _elevPrancha: function () {
+      var res = this._elevAtual;
+      if (!res || !res.ok) { UI.toast("Ajuste a parede antes de imprimir.", "aviso"); return; }
+      var html = '<h1 style="margin:0 0 4px">Elevação de parede</h1>' +
+        '<p style="margin:0 0 12px;color:#475569;font-size:13px">' + Util.esc(res.familiaRotulo) + " · " +
+        res.comprimento.toFixed(2).replace(".", ",") + " × " + res.altura.toFixed(2).replace(".", ",") + " m · junta " +
+        Math.round(res.junta * 1000) + " mm</p>" +
+        '<div style="margin:0 0 14px">' + Elevacao.svg(res, { largura: 720, titulo: "Elevação" }) + "</div>" +
+        "<h2 style='font-size:15px;margin:0 0 6px'>Peças</h2>" +
+        '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
+        "<tr style='background:#f1f5f9'><th style='padding:4px;text-align:left'>Peça</th><th style='padding:4px'>Qtd</th><th style='padding:4px'>Peso un.</th><th style='padding:4px'>Peso total</th></tr>" +
+        res.resumo.map(function (r) {
+          return "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>" + Util.esc(r.nome) + "</td>" +
+            "<td style='padding:4px;border-bottom:1px solid #e2e8f0;text-align:center'>" + r.qtd + "</td>" +
+            "<td style='padding:4px;border-bottom:1px solid #e2e8f0;text-align:right'>" + (r.peso != null ? Util.fmtNum(r.peso, 2) + " kg" : "—") + "</td>" +
+            "<td style='padding:4px;border-bottom:1px solid #e2e8f0;text-align:right'>" + (r.peso != null ? Util.fmtNum(r.peso * r.qtd, 1) + " kg" : "—") + "</td></tr>";
+        }).join("") +
+        (res.cortes ? "<tr><td style='padding:4px;border-bottom:1px solid #e2e8f0'>Corte na obra</td><td style='padding:4px;text-align:center;border-bottom:1px solid #e2e8f0'>" +
+          res.cortes + "</td><td colspan='2' style='padding:4px;border-bottom:1px solid #e2e8f0;text-align:right'>gasta bloco inteiro na compra</td></tr>" : "") +
+        "<tr><td colspan='3' style='padding:6px 4px;text-align:right'><b>Peças a comprar</b></td><td style='padding:6px 4px;text-align:right'><b>" +
+          res.blocosAComprar + "</b></td></tr>" +
+        "<tr><td colspan='3' style='padding:2px 4px;text-align:right'><b>Peso" + (res.parcial ? " (parcial)" : "") + "</b></td><td style='padding:2px 4px;text-align:right'><b>" +
+          Util.fmtNum(res.peso, 1) + " kg</b></td></tr>" +
+        "</table>" +
+        "<p style='font-size:11px;color:#64748b;margin:10px 0 0'>Área líquida " + res.area.liquida.toFixed(2).replace(".", ",") +
+        " m² (bruta " + res.area.bruta.toFixed(2).replace(".", ",") + " m²). Peso: " + Util.esc(res.escopoDoPeso) +
+        " Peso de catálogo versão " + Util.esc(res.pesosVersao) + ".</p>" +
+        (res.avisos.length ? "<p style='font-size:11.5px;margin:8px 0 0;padding:8px;background:#fef3c7;border-radius:6px'>" +
+          res.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</p>" : "");
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Elevação de parede", html);
+      else UI.toast("Impressão indisponível.", "erro");
+    },
+
     _alvPresets: function () {
       var T = window.AlvTipos;
       if (!T) { UI.toast("Motor de tipos não carregado.", "erro"); return; }
@@ -7461,6 +8065,9 @@ renderFolha: function () {
         case "alv-preset": return this._alvUsarPreset(dataset.tipo);
         case "alv-peso-reverter": return this._alvPesoReverter(dataset.peca);
         case "niveis": return this._niveis();
+        case "paginar-piso": return this._paginar("piso");
+        case "paginar-parede": return this._paginar("parede");
+        case "elevacao-parede": return this._elevacao();
         case "niv-excluir": return this._nivExcluir(dataset.id);
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "dash-obra": return this.dashTrocaObra(dataset.value);
