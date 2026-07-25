@@ -184,9 +184,107 @@
       return m[cod] || null;
     },
 
+    /* LÁPIDES (v1.1.126) — o merge da nuvem une as listas por id, então um registro
+     * apagado num aparelho VOLTAVA quando o outro aparelho sincronizava a lista antiga.
+     * Toda exclusão passa a deixar uma lápide (entidade + id + quando), que a nuvem
+     * sincroniza e usa para descartar o ressuscitado. Guarda as 3.000 mais recentes. */
+    _LAPIDES_MAX: 3000,
+    /* Entidades IMUNES à cascata de obra: são cadastros da EMPRESA que a exclusão apenas
+     * DESVINCULA (perdem o obraId e continuam na lista). Sem esta lista o merge da nuvem
+     * lia "obraId aponta pra obra morta" e apagava o colaborador/veículo/bem no outro
+     * aparelho — exatamente o que o modal promete preservar. Achado do gate de 25/07. */
+    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1 },
+    imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
+    lapidar: function (empresaId, entidade, id) {
+      if (!empresaId || !entidade || !id) return;
+      try {
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        this._porLapide(l, { id: entidade + ":" + id, ent: entidade, ref: String(id), em: Util.agoraISO() });
+        this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
+      } catch (e) {}
+    },
+    /* Uma obra apagada em cascata deixa UMA lápide, não uma por registro: a cascata de uma
+     * obra de 1 ano passa de 2.000 registros e o teto expulsava justamente as lápides das
+     * entidades que sincronizam (elas vinham primeiro) — os diários e medições voltavam da
+     * nuvem órfãos, com a obra já apagada. Achado do gate de 25/07. */
+    lapidarObraEmCascata: function (empresaId, obraId) {
+      if (!empresaId || !obraId) return;
+      try {
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        this._porLapide(l, { id: "cascata:obra:" + obraId, cascata: "obra", ref: String(obraId), em: Util.agoraISO() });
+        this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
+      } catch (e) {}
+    },
+    _porLapide: function (l, nova) {
+      for (var i = 0; i < l.length; i++) if (l[i] && l[i].id === nova.id) { l[i].em = nova.em; return; }
+      l.push(nova);
+    },
+    /* poda pela DATA (não pela posição no array: depois do merge da nuvem a ordem não é
+     * cronológica) e nunca descarta lápide de cascata, que vale por milhares */
+    _podarLapides: function (l) {
+      if (l.length <= this._LAPIDES_MAX) return l;
+      var cascatas = [], simples = [];
+      l.forEach(function (t) { if (t && t.cascata) cascatas.push(t); else if (t) simples.push(t); });
+      simples.sort(function (a, b) { return String(a.em || "") < String(b.em || "") ? -1 : 1; });
+      var sobra = Math.max(0, this._LAPIDES_MAX - cascatas.length);
+      return cascatas.concat(simples.slice(simples.length - sobra));
+    },
+    /* obras apagadas em cascata: { obraId: quando } — o merge da nuvem descarta por obraId.
+     * Object.create(null): um registro com id "constructor"/"toString" era dado como
+     * excluído por herança do protótipo. */
+    cascatasDeObra: function (empresaId) {
+      var m = Object.create(null);
+      try {
+        Util.arr(this.adapter.ler(empresaId, "_lapides", [])).forEach(function (t) {
+          if (t && t.cascata === "obra" && t.ref) m[t.ref] = t.em || "";
+        });
+      } catch (e) {}
+      return m;
+    },
+    /* apaga vários de uma vez: 1 leitura + 1 gravação por entidade (a versão um-a-um
+     * travava a aba por segundos numa obra grande). Devolve quantos SAÍRAM de fato — e 0
+     * se a gravação falhar (cota cheia), senão o resumo final mentiria pro usuário. */
+    excluirVarios: function (empresaId, entidade, ids, semLapide) {
+      if (!ids || !ids.length) return 0;
+      var alvo = Object.create(null);
+      ids.forEach(function (i) { alvo[String(i)] = 1; });
+      var antes = this.listar(empresaId, entidade);
+      var l = antes.filter(function (x) { return !(x && alvo[String(x.id)]); });
+      var saiu = antes.length - l.length;
+      if (!this.adapter.gravar(empresaId, entidade, l)) return 0;
+      if (!semLapide && saiu) {
+        // uma leitura/gravação só do bloco de lápides (o laço chamando lapidar era O(n²))
+        try {
+          var tl = Util.arr(this.adapter.ler(empresaId, "_lapides", [])), self = this, agora = Util.agoraISO();
+          ids.forEach(function (i) { self._porLapide(tl, { id: entidade + ":" + i, ent: entidade, ref: String(i), em: agora }); });
+          this.adapter.gravar(empresaId, "_lapides", this._podarLapides(tl));
+        } catch (e) {}
+      }
+      return saiu;
+    },
+    /* mapa { id: quando } das exclusões de uma entidade — usado pelo merge da nuvem */
+    lapidesDe: function (empresaId, entidade) {
+      var m = Object.create(null);
+      try {
+        Util.arr(this.adapter.ler(empresaId, "_lapides", [])).forEach(function (t) {
+          if (t && t.ent === entidade && t.ref) m[t.ref] = t.em || "";
+        });
+      } catch (e) {}
+      return m;
+    },
+    /* poda usada pelo merge da nuvem: sem isto o teto valia só nas exclusões locais e a
+     * lista crescia sem fim quando dois aparelhos trocavam lápides. */
+    podarLapidesDe: function (empresaId) {
+      try {
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        if (l.length > this._LAPIDES_MAX) this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
+      } catch (e) {}
+    },
+
     excluirOrcamento: function (empresaId, id) {
       var lista = this.listarOrcamentos(empresaId).filter(function (o) { return o.id !== id; });
       this.adapter.gravar(empresaId, "orcamentos", lista);
+      this.lapidar(empresaId, "orcamentos", id);
     },
 
     // ----- CRUD genérico de entidades da Gestão (obras, clientes, contratos, medicoes, financeiro) -----
@@ -208,6 +306,7 @@
     excluir: function (empresaId, entidade, id) {
       var l = this.listar(empresaId, entidade).filter(function (x) { return x.id !== id; });
       this.adapter.gravar(empresaId, entidade, l);
+      this.lapidar(empresaId, entidade, id);
     },
 
     // ----- Preferências/empresa -----

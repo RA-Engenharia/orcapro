@@ -803,15 +803,179 @@
       html += '<div class="grid-cards">';
       obras.forEach(function (o) {
         var cli = clientes.filter(function (c) { return c.id === o.clienteId; })[0];
+        // lixeira visível no card (só admin): antes, excluir exigia abrir o cadastro e
+        // rolar até o rodapé do modal — no celular ninguém achava.
+        var podeExcluir = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin());
         html += '<div class="card orc-card" data-gopen="obras:' + o.id + '">' +
           '<div class="flex between"><h3>' + Util.esc(o.nome) + "</h3>" + pill(o.status) + "</div>" +
           '<div class="meta">' + (cli ? "👤 " + Util.esc(cli.nome) + " · " : "") + (o.tipo ? rot(P.obraTipo, o.tipo) : "") + (o.local ? " · 📍 " + Util.esc(o.local) : "") + "</div>" +
           '<div class="valor">' + Util.fmtMoeda(o.valor) + "</div>" +
-          '<div style="margin-top:10px;text-align:right"><button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">📱 Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button></div></div>";
+          // a lixeira fica no RODAPÉ, ao lado do Portal: no canto superior ela cobria o selo
+          // de status e um toque no selo abria o modal de excluir (achado do gate)
+          '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:flex-end">' +
+            (podeExcluir ? '<button class="btn sm ico danger" data-gacao="excluir-obra" data-id="' + Util.esc(o.id) + '" title="Excluir esta obra (pede confirmação)" style="margin-right:auto;min-width:44px;min-height:38px">' + Icones.get("lixeira", 15) + "</button>" : "") +
+            '<button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">📱 Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button>" +
+          "</div></div>";
       });
       return html + "</div>";
     },
     novoObra: function () { this.formObra(null); },
+    /* ---------- Excluir obra (v1.1.126) ----------
+     * A obra é o centro do sistema: medição, diário, folha, compras e o Portal do
+     * Cliente apontam para ela. Apagar só a linha da obra deixava tudo isso órfão em
+     * silêncio. Aqui o usuário vê o que está preso na obra e escolhe: sair só com a
+     * obra (os registros ficam, sem vínculo) ou levar tudo junto. */
+    /* O que só existe POR CAUSA da obra — some junto na cascata.
+     * (as fotos da galeria não são entidade própria: moram dentro do RDO e vão com ele) */
+    _ENT_DA_OBRA: [
+      ["contratos", "contrato(s)"], ["medicoes", "medição(ões)"], ["rdo", "diário(s) de obra e suas fotos"],
+      ["lp_tarefas", "tarefa(s) do Last Planner"], ["tarefas", "tarefa(s)"],
+      ["requisicoes", "requisição(ões)"], ["cotacoes", "cotação(ões)"], ["compras", "compra(s)"],
+      ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
+      ["epi", "entrega(s) de EPI"], ["ponto", "registro(s) de ponto"],
+      ["fs_lancamentos", "lançamento(s) da folha semanal"],
+      ["folha", "folha(s) de pagamento"], ["frota_mov", "uso(s) de veículo"],
+      ["financeiro", "lançamento(s) financeiro(s)"], ["fiscal", "nota(s) fiscal(is)"],
+      ["centrocusto", "registro(s) de centro de custo"]
+    ],
+    /* fs_pagamentos ficou de FORA de propósito: o pagamento é do FAVORECIDO na semana e
+     * pode cobrir várias obras (campo `obras: []`, não `obraId`) — levá-lo junto apagaria
+     * o comprovante do pagamento das outras obras. Os lançamentos da obra saem; o
+     * pagamento permanece, com o valor que já foi pago. */
+    /* O que SOBREVIVE à obra — é cadastro da empresa e só perde o vínculo.
+     * Apagar o funcionário ou o veículo porque a obra acabou seria destruir cadastro. */
+    _ENT_SO_DESVINCULA: [
+      ["colaboradores", "colaborador(es) alocado(s)"],
+      ["patrimonio", "bem(ns) do patrimônio"],
+      ["frota", "veículo(s)"]
+    ],
+    _vinculosDaObra: function (obraId) {
+      var e = eid(), out = [], total = 0;
+      this._ENT_DA_OBRA.forEach(function (par) {
+        var n = 0;
+        try {
+          Store.listar(e, par[0]).forEach(function (r) { if (r && r.obraId === obraId) n++; });
+        } catch (er) {}
+        if (n) { out.push({ ent: par[0], rot: par[1], n: n }); total += n; }
+      });
+      return { itens: out, total: total };
+    },
+    _desvinculaveis: function (obraId) {
+      var e = eid(), out = [], total = 0;
+      this._ENT_SO_DESVINCULA.forEach(function (par) {
+        var n = 0;
+        try { Store.listar(e, par[0]).forEach(function (r) { if (r && r.obraId === obraId) n++; }); } catch (er) {}
+        if (n) { out.push({ ent: par[0], rot: par[1], n: n }); total += n; }
+      });
+      return { itens: out, total: total };
+    },
+    confirmarExcluirObra: function (id) {
+      var self = this, e = eid();
+      if (this._bloqueado()) return;
+      // ação destrutiva com cascata: só o administrador da conta
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) {
+        UI.toast("Só o administrador da conta pode excluir uma obra — ela leva junto medições, diários e lançamentos.", "erro");
+        return;
+      }
+      var obra = Store.obter(e, "obras", id);
+      if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
+      var v = this._vinculosDaObra(id);
+      var orc = null;
+      try { if (obra.orcamentoId) orc = Store.obterOrcamento(e, obra.orcamentoId); } catch (eo) {}
+
+      var listaHtml = v.itens.length
+        ? '<ul style="margin:6px 0 0 18px;padding:0;font-size:12.5px;line-height:1.7">' +
+            v.itens.map(function (x) { return "<li><b>" + x.n + "</b> " + x.rot + "</li>"; }).join("") + "</ul>"
+        : '<p class="muted" style="margin:6px 0 0;font-size:12.5px">Nenhum registro está vinculado a esta obra.</p>';
+      // cadastros que continuam existindo (só soltam o vínculo) — precisa ficar claro
+      var solta = this._desvinculaveis(id);
+      var soltaHtml = solta.total
+        ? '<p style="margin:10px 0 0;font-size:12.5px">Continuam cadastrados, apenas sem obra: ' +
+            solta.itens.map(function (x) { return "<b>" + x.n + "</b> " + x.rot; }).join(", ") + ".</p>"
+        : "";
+
+      var corpo =
+        '<div style="padding:10px 12px;border-radius:10px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);margin-bottom:12px">' +
+          "<b>" + Util.esc(obra.nome) + "</b><br>" +
+          '<span class="muted">' + (obra.local ? Util.esc(obra.local) + " · " : "") + rot(P.obraStatus, obra.status || "planejamento") +
+            (obra.valor ? " · " + Util.fmtMoeda(obra.valor) : "") + "</span>" +
+        "</div>" +
+        '<p style="margin:0 0 4px">O que está ligado a esta obra:</p>' + listaHtml + soltaHtml +
+        (orc ? '<p style="margin:10px 0 0;font-size:12.5px">O orçamento <b>' + Util.esc(orc.nome) + "</b> <b>não</b> será apagado — ele vive na tela de Orçamentos.</p>" : "") +
+        (obra.portalUser ? '<p style="margin:10px 0 0;color:#b45309;font-size:12.5px">⚠ Esta obra está publicada no <b>Portal do Cliente</b> (' + Util.esc(obra.portalUser) + "). O acesso do cliente a ela também será removido.</p>" : "") +
+        '<p style="margin:12px 0 0;font-size:12.5px">Esta ação <b>não pode ser desfeita</b>' +
+          (v.total ? " — escolha abaixo se os " + v.total + " registro(s) vão junto." : ".") + "</p>";
+
+      var botoes = [{ texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } }];
+      if (v.total) {
+        botoes.push({ texto: "Excluir só a obra", classe: "ghost", onClick: function () { self._excluirObra(id, false); } });
+        botoes.push({ texto: "🗑 Excluir a obra e os " + v.total + " registro(s)", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
+      } else {
+        botoes.push({ texto: "🗑 Excluir definitivamente", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
+      }
+      UI.modal("🗑 Excluir obra?", corpo, botoes);
+    },
+    _excluirObra: function (id, cascata) {
+      var self = this, e = eid();
+      var obra = Store.obter(e, "obras", id);
+      if (!obra) { UI.fecharModal(); return; }
+      var apagados = 0;
+      if (cascata) {
+        // uma lápide para a obra inteira (não uma por registro) e uma gravação por
+        // entidade: com milhares de registros o jeito antigo travava a aba e estourava
+        // o teto de lápides, e a nuvem devolvia os órfãos depois.
+        Store.lapidarObraEmCascata(e, id);
+        this._ENT_DA_OBRA.forEach(function (par) {
+          try {
+            var ids = [];
+            Store.listar(e, par[0]).forEach(function (r) { if (r && r.obraId === id) ids.push(r.id); });
+            // conta o que SAIU de fato: se a gravação falhar (cota cheia) o resumo não pode mentir
+            if (ids.length) apagados += Store.excluirVarios(e, par[0], ids, true);
+          } catch (er) {}
+        });
+        // as anotações do BIM são guardadas com o id da obra como chave (não têm obraId)
+        try { Store.excluir(e, "bim_edicoes", id); } catch (er) {}
+      }
+      // cadastros da empresa (equipe, patrimônio, frota) apenas soltam o vínculo
+      this._ENT_SO_DESVINCULA.forEach(function (par) {
+        try {
+          Store.listar(e, par[0]).forEach(function (r) {
+            if (r && r.obraId === id) { r.obraId = ""; r.obraNome = ""; Store.salvar(e, par[0], r); }
+          });
+        } catch (er) {}
+      });
+      // o Portal do Cliente vive no servidor: sem isto o cliente continuaria entrando
+      // e vendo medições e fotos de uma obra que não existe mais aqui.
+      if (obra.portalUser) this._despublicarPortal(obra);
+      Store.excluir(e, "obras", id);
+      // filtros em memória apontando para a obra apagada deixariam telas vazias sem explicação
+      if (this._lpObra === id) this._lpObra = null;
+      if (this._tarObra === id) this._tarObra = "";
+      if (this._fsObra === id) this._fsObra = "";
+      if (this._prSel === id) this._prSel = null;
+      if (this._galSel === id) this._galSel = null;
+      if (this._bimSel === id) this._bimSel = null;
+      if (this._dashObra === id) this._dashObra = "todas";
+      UI.fecharModal();
+      App.render();
+      UI.toast("Obra “" + obra.nome + "” excluída" + (apagados ? " com " + apagados + " registro(s) ligados a ela." : "."), "ok");
+    },
+    _despublicarPortal: function (obra) {
+      try {
+        var base = String((typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "").replace(/\/$/, "");
+        if (!base || typeof Licenca === "undefined" || !Licenca.chave || !Licenca.chave()) return;
+        var aviso = function () {
+          UI.toast("A obra foi excluída aqui, mas o acesso do cliente no Portal continua ativo — o servidor não confirmou a remoção. Refaça com internet ou fale com o suporte.", "erro");
+        };
+        fetch(base + "/api/portal/remover", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-licenca": Licenca.chave() },
+          body: JSON.stringify({ user: obra.portalUser, obraId: obra.id })
+        }).then(function (r) { if (!r || !r.ok) aviso(); })   // 404/500 também é falha, não só rede
+          .catch(aviso);
+      } catch (e) {}
+    },
+
     formObra: function (o) {
       o = o || {}; var clientes = lista("clientes"), orcs = Store.listarOrcamentos(eid());
       var corpo =
@@ -1489,7 +1653,7 @@
       html += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalRealizado) + '</b></td><td></td><td class="num" style="color:' + corSaldo + '"><b>' + Util.fmtMoeda(d.saldoTotal) + "</b></td></tr></tfoot></table></div>";
       return html;
     },
-    prTrocaObra: function (obraId) { this._prSel = obraId; App.render(); },
+    prTrocaObra: function (obraId) { if (obraId == null) return; this._prSel = obraId; App.render(); },
 
     // =================== GALERIA DE FOTOS (por obra) ===================
     // Motor puro: junta todas as fotos dos RDOs da obra num fluxo plano,
@@ -1559,7 +1723,7 @@
       });
       return html;
     },
-    galeriaTrocaObra: function (obraId) { this._galSel = obraId; this._galFiltro = ""; App.render(); },
+    galeriaTrocaObra: function (obraId) { if (obraId == null) return; this._galSel = obraId; this._galFiltro = ""; App.render(); },
     _galeriaWire: function () {
       var self = this, inp = document.getElementById("gal-filtro");
       if (inp && !inp._wired) {
@@ -1735,6 +1899,7 @@
       if (drawer) drawer.style.display = "none";
     },
     bimTrocaObra: function (obraId) {
+      if (obraId == null) return; // clique da delegação (sem value): não zera a obra do 4D
       this._bimSel = obraId;
       // edições são POR OBRA: descarrega o save pendente NA OBRA ANTIGA (flush — descartar
       // perderia a edição) e carrega as da obra nova (replay)
@@ -2959,7 +3124,7 @@
       return html + "</tbody></table>";
     },
     tarTrocaFiltro: function (k) { this._tarFiltro = k; App.render(); },
-    tarTrocaObra: function (obraId) { this._tarObra = obraId; App.render(); },
+    tarTrocaObra: function (obraId) { if (obraId == null) return; this._tarObra = obraId; App.render(); },
     novoTarefa: function () { this.formTarefa(null); },
     formTarefa: function (t) {
       t = t || {}; var obras = lista("obras"), cols = lista("colaboradores");
@@ -5106,7 +5271,7 @@ renderFolha: function () {
     _fsTodos: function () { return Store.listar(eid(), "fs_lancamentos"); },
     _fsLancs: function () { var s = this._fsSemana, o = this._fsObra; return this._fsTodos().filter(function (l) { return l.semana === s && (!o || l.obraId === o); }); },
     _fsNomeObra: function (id) { var o = Store.obter(eid(), "obras", id); return o ? o.nome : (id || "— sem obra —"); },
-    fsTroca: function (campo, val) { if (campo === "semana") this._fsSemana = val; else this._fsObra = val; App.render(); },
+    fsTroca: function (campo, val) { if (val == null) return; if (campo === "semana") this._fsSemana = val; else this._fsObra = val; App.render(); },
     renderFolhaSemanal: function () {
       var FS = window.FolhaSemanal; if (!FS) return this._head("Folha Semanal", "", "") + '<div class="card">Motor da Folha Semanal não carregado.</div>';
       var self = this;
@@ -6195,7 +6360,7 @@ renderFolha: function () {
       if (r.precisa === "restricoes") { UI.toast(r.msg, "erro"); this.lpAbrir(t.id); return; }
       if (r.msg) UI.toast(r.msg, "erro");
     },
-    lpTrocaObra: function (id) { this._lpObra = id; App.render(); },
+    lpTrocaObra: function (id) { if (id == null) return; this._lpObra = id; App.render(); },
     lpNova: function (semIdx) {
       var self = this, LP = window.LastPlanner, obras = lista("obras");
       if (!this._lpObra && obras.length) this._lpObra = obras[0].id;
@@ -6298,10 +6463,31 @@ renderFolha: function () {
       }
     },
 
+    /* Em demonstração/trial vencido o usuário EXPLORA à vontade — o que trava é SALVAR.
+     * Por isso navegar, filtrar, trocar de obra, abrir formulário e FECHAR painel passam.
+     * Virou lista nomeada na v1.1.126: a condição anterior era uma fila de "!==" onde
+     * (a) "bim-drawer-fechar" ficou de fora e a gaveta do BIM travava aberta sem saída,
+     * (b) o prefixo "galeria" liberava também o Relatório Fotográfico — um entregável
+     *     impresso, que não pode sair sem licença, e
+     * (c) o prefixo "novo" não cobria os 12 "nova-*", então metade dos formulários de
+     *     cadastro nem abria (contradizendo o próprio contrato). */
+    _ISENTO_BLOQUEIO: {
+      "custo-frota": 1, "consultar-chave": 1,
+      "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "tar-filtro": 1, "tar-obra": 1,
+      "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1,
+      "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
+      "bim-drawer-fechar": 1
+    },
+    _isentoDoBloqueio: function (gacao) {
+      if (this._ISENTO_BLOQUEIO[gacao]) return true;
+      // abrir o formulário de cadastro é exploração; o gate real está no salvar
+      return gacao.indexOf("novo") === 0 || gacao.indexOf("nova-") === 0;
+    },
+
     // ---------- Dispatcher de ações (chamado pelo app.js) ----------
     acao: function (gacao, dataset, app) {
       var id = dataset.id;
-      if (gacao.indexOf("novo") !== 0 && gacao !== "custo-frota" && gacao !== "consultar-chave" && gacao !== "pr-troca-obra" && gacao !== "dash-periodo" && gacao !== "dash-obra" && gacao !== "tar-filtro" && gacao !== "tar-obra" && gacao !== "bim-troca-obra" && gacao !== "lp-obra" && gacao !== "lp-visao" && gacao !== "fs-semana" && gacao !== "fs-obra" && gacao.indexOf("galeria") !== 0 && this._bloqueado()) return;
+      if (!this._isentoDoBloqueio(gacao) && this._bloqueado()) return;
       // RBAC em FUNÇÃO (regra A.5 / achado do gate v1.1.63): ação de cotação exige o módulo, não basta esconder o botão
       if ((gacao === "nova-cotacoes" || gacao === "cotar-requisicao" || gacao === "doc-cotacao" || gacao === "excluir-cotacao") && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Cotações.", "erro"); return; }
       switch (gacao) {
@@ -6358,6 +6544,7 @@ renderFolha: function () {
         case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
         case "portal-obra": return this.portalObra(id);
+        case "excluir-obra": return this.confirmarExcluirObra(id);
         case "rever-tour": if (typeof Tour !== "undefined") Tour.iniciar(true); return;
         case "rel-executivo": { var reO = document.getElementById("rex-obra"), reM = document.getElementById("rex-mes"); return this.relatorioExecutivo(reO ? reO.value : "", reM ? reM.value : ""); }
         case "doc-financeiro": return this.lancarDocumento();

@@ -58,9 +58,14 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
+    /* sisPanel (legenda de cores por sistema) e blocokPanel estavam fora desta lista:
+     * ficavam presos no host morto e sumiam de vez ao sair e voltar para a aba BIM. */
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
+    // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
+    // (o usuário voltava ao BIM e "não conseguia mais fechar"). Entra sempre limpo.
+    try { if (S._fecharPaineis && S.bar && S.bar.style.display === 'none') S._fecharPaineis(null); } catch (eP) {}
     setTimeout(function () { if (S && S._resize) S._resize(); if (S && S._ajustarTop) S._ajustarTop(); if (S && S._aplicarTema) S._aplicarTema(); }, 0); // tema re-aplicado (o fundo acima é só o default até aqui)
     return;
   }
@@ -232,7 +237,7 @@ function montar(host, opts) {
     var pb = e.target.closest('[data-pp]');
     var oAtual = (S && S.opts) || opts;
     if (pb && oAtual && oAtual.onPainel) { fecharFlys(); oAtual.onPainel(pb.getAttribute('data-pp')); return; }
-    if (e.target.closest('[data-b]')) setTimeout(fecharFlys, 60);
+    if (e.target.closest('[data-b]')) { if (flyTimer) clearTimeout(flyTimer); flyTimer = setTimeout(fecharFlys, 60); }
   });
   // toque fora do dock fecha o leque aberto (no touch não há mouseleave);
   // guardado em S e removido no desmonte (senão acumula 1 listener por remount)
@@ -516,7 +521,9 @@ function montar(host, opts) {
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } if (S.xr && S.xr.on && S._sairImersivo) { S._sairImersivo(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } /* painel flutuante só é fechado pelo Esc quando NENHUMA ferramenta está em uso —
+   senão o Esc de sair da trena/voo era gasto fechando um painel que o usuário nem olhava */
+if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area.on) || (S.ang && S.ang.on) || (S.planta && S.planta.on) || (S.corteL && S.corteL.on) || (S.edit && S.edit.on)) && [S.visPanel, S.pavPanel, S.snapPanel, S.xrPanel].some(function (p) { return p && p.style.display === 'flex'; })) { S._fecharPaineis(null); return; } if (S.xr && S.xr.on && S._sairImersivo) { S._sairImersivo(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
   S._onMouseMove = function (e) { if (!fly.on || !document.pointerLockElement) return; fly.yaw -= e.movementX * 0.0022; fly.pitch -= e.movementY * 0.0022; fly.pitch = Math.max(-1.5, Math.min(1.5, fly.pitch)); };
   window.addEventListener('keydown', S._onKeyDown); window.addEventListener('keyup', S._onKeyUp); document.addEventListener('mousemove', S._onMouseMove);
@@ -2469,7 +2476,11 @@ function montar(host, opts) {
   var visPanel = document.createElement('div');
   visPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:220px';
   visPanel.innerHTML =
-    '<b>👁 Visibilidade</b>' +
+    // ✕ próprio (padrão dos outros painéis): sem ele, o único jeito de fechar era o
+    // botão "Ver" lá dentro do leque do dock — e com a barra recolhida o painel ficava
+    // órfão na tela, sem nenhum fechador alcançável.
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>👁 Visibilidade</b>' +
+      '<button class="btn sm" data-v="fechar" title="Fechar este painel" style="padding:2px 8px;line-height:1.2">✕</button></div>' +
     '<button class="btn sm" data-v="iso" title="Esconde tudo, menos o elemento selecionado">🎯 Isolar seleção</button>' +
     '<button class="btn sm" data-v="occ" title="Esconde o elemento selecionado">🙈 Ocultar seleção</button>' +
     '<button class="btn sm" data-v="tipo" title="Mostra só os elementos do MESMO tipo do selecionado (ex.: todas as paredes)">🧩 Só este tipo</button>' +
@@ -2537,6 +2548,7 @@ function montar(host, opts) {
   S._raioXSelecao = raioXSelecao; S._raioXTipo = raioXTipo;
   visPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-v]'); if (!b) return; var k = b.getAttribute('data-v');
+    if (k === 'fechar') { visPanel.style.display = 'none'; var bvF = bar.querySelector('[data-b="vis"]'); if (bvF) bvF.style.outline = ''; return; }
     if (k === 'iso') isolarSelecao();
     else if (k === 'occ') ocultarSelecao();
     else if (k === 'tipo') isolarTipo();
@@ -2561,6 +2573,36 @@ function montar(host, opts) {
     var bv2 = bar.querySelector('[data-b="vis"]'); if (bv2 && visPanel.style.display !== 'flex') bv2.style.outline = '';
   }
   S._fecharPaineis = fecharPaineis;
+
+  /* ✕ EM TODOS OS PAINÉIS FLUTUANTES (v1.1.126).
+   * O visPanel ganhou o seu no cabeçalho, mas snap/pav/sis/blocok continuavam dependendo
+   * do botão que os abriu — que mora dentro do leque do dock e some com a barra recolhida.
+   * No celular ainda por cima não existe Esc. Um fechador absoluto no canto de cada painel
+   * resolve todos de uma vez, sem tocar no HTML (que alguns montam dinamicamente). */
+  function porFechadorNoPainel(pn) {
+    if (!pn || pn.querySelector('[data-pnl-fechar]')) return;
+    var x = document.createElement('button');
+    x.className = 'btn sm';
+    x.setAttribute('data-pnl-fechar', '1');
+    x.title = 'Fechar este painel';
+    x.textContent = '✕';
+    x.style.cssText = 'position:absolute;right:7px;top:7px;z-index:2;padding:1px 7px;line-height:1.25;font-size:12px;opacity:.9';
+    x.addEventListener('click', function (ev) { ev.stopPropagation(); pn.style.display = 'none'; fecharPaineis(null); });
+    // espaço p/ o ✕ não cair em cima do título do painel
+    pn.style.paddingRight = '30px';
+    pn.appendChild(x);
+  }
+  [snapPanel, pavPanel, sisPanel, blocokPanel].forEach(function (pn) {
+    if (!pn) return;
+    porFechadorNoPainel(pn);
+    /* Painéis que montam a lista na hora de abrir (pavimentos, sistemas, Blocok) fazem
+     * innerHTML = ... e APAGAM o ✕ junto — o fechador sumia justo depois do primeiro uso.
+     * O observer devolve o botão sempre que o conteúdo é reescrito. */
+    if (typeof MutationObserver === 'function') {
+      new MutationObserver(function () { porFechadorNoPainel(pn); }).observe(pn, { childList: true });
+    }
+  });
+
   // toolbar com flex-wrap pode ter 2+ linhas em tela estreita: hint/painéis ancoram ABAIXO da
   // altura REAL da barra (o top:52px fixo cobriria a 2ª linha de botões)
   function ajustarTopFlutuantes() {
@@ -2569,11 +2611,15 @@ function montar(host, opts) {
     var bh = (bar && bar.offsetHeight) || 0;
     var t = bh ? bh + 8 : (ehTelaPequena ? 8 : 44);
     [hint, snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.top = t + 'px'; });
-    // v1.1.121: com o DOCK vivendo em left:10px, os painéis flutuantes deslocam pra
-    // left:64px quando a barra está aberta — senão cobriam a coluna de grupos e
-    // roubavam os cliques (achado do gate: Pav./RA-RV/propriedades em cima do dock).
-    var lx = (bh ? 64 : 10) + 'px';
-    [snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) el.style.left = lx; });
+    /* v1.1.126: os painéis voltam para a DIREITA (o right:10px do próprio cssText).
+     * Em left:64px eles ficavam embaixo do leque do dock (que abre em ~56px com 172px
+     * de largura e z-index 60): no PC, passar o mouse na direção do painel fazia o leque
+     * saltar na frente e os botões pararem de responder — parecia painel travado.
+     * O dock mora à esquerda; à direita não há disputa. */
+    /* z-index 7: a gaveta de análise (#bim-drawer) mora em z=6 e encosta na borda
+     * direita — com os painéis em z=4 o ✕ e os botões ficavam ATRÁS dela, e o painel
+     * voltava a parecer travado. Achado do gate de 25/07. */
+    [snapPanel, pavPanel, visPanel, xrPanel].forEach(function (el) { if (el) { el.style.left = "auto"; el.style.right = "10px"; el.style.zIndex = "7"; } });
   }
   S._ajustarTop = ajustarTopFlutuantes;
   ajustarTopFlutuantes();

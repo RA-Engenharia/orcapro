@@ -15,7 +15,10 @@
     "requisicoes", "epi", "faltas", "templates", "documentos", "usuarios",
     // modo nuvem multi-aparelho: a EQUIPE (sub-usuários) e a CONTA (admin mestre)
     // sincronizam pela conta-tenant da licença → cada usuário loga no próprio aparelho.
-    "equipe", "conta"
+    "equipe", "conta",
+    // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
+    // no aparelho A o registro que o aparelho B tinha acabado de apagar.
+    "_lapides"
   ];
   var SDK = [
     "https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js",
@@ -107,7 +110,7 @@
     // o vencedor guarda a cópia perdedora em _conflitoDe (até ~50KB; acima
     // disso, só metadados) e o contador alimenta o aviso pós-sync.
     _conflitosUltimoMerge: 0,
-    _merge: function (local, cloud, ent) {
+    _merge: function (local, cloud, ent, empresaId) {
       if (ent === "prefs" || ent === "conta") {
         // objeto único (prefs, conta mestre): mescla campo a campo; o mais novo (atualizadoEm) vence
         var l = local || {}, c = cloud || {};
@@ -116,9 +119,29 @@
       }
       var self = this;
       var byId = {};
-      Util.arr(cloud).forEach(function (o) { if (o && o.id) byId[o.id] = o; });
+      /* quem foi excluído (em qualquer aparelho) não volta: a lápide vence o registro
+       * mais antigo que ela. A própria lista de lápides não se filtra. */
+      var semLapide = (ent === "_lapides" || !empresaId);
+      var mortos = semLapide ? Object.create(null) : Store.lapidesDe(empresaId, ent);
+      /* obra apagada em cascata: o que APONTA para ela morreu junto (1 lápide cobre o lote).
+       * Exceto os cadastros da empresa (equipe, patrimônio, frota): a exclusão só os
+       * DESVINCULA, e aplicar a cascata neles apagaria no outro aparelho justamente o que
+       * o modal promete preservar. Achado do gate de 25/07. */
+      var cascataVale = !semLapide && !Store.imuneACascata(ent);
+      var obrasMortas = cascataVale ? Store.cascatasDeObra(empresaId) : Object.create(null);
+      var vivo = function (o) {
+        var t = mortos[o.id];
+        if (t) return String(o.atualizadoEm || "") > String(t); // recriado depois de excluir → mantém
+        /* filho de obra apagada em cascata: NÃO há ressalva. Se houvesse, uma edição feita
+         * no outro aparelho depois da exclusão devolveria o registro para sempre — órfão,
+         * apontando para uma obra que não existe mais e sem tela que o mostre. */
+        if (o.obraId && obrasMortas[o.obraId]) return false;
+        if (ent === "obras" && obrasMortas[o.id]) return String(o.atualizadoEm || "") > String(obrasMortas[o.id]);
+        return true;
+      };
+      Util.arr(cloud).forEach(function (o) { if (o && o.id && vivo(o)) byId[o.id] = o; });
       Util.arr(local).forEach(function (o) {
-        if (!o || !o.id) return;
+        if (!o || !o.id || !vivo(o)) return;
         var c = byId[o.id];
         if (!c) { byId[o.id] = o; return; }
         var tl = String(o.atualizadoEm || ""), tc = String(c.atualizadoEm || "");
@@ -141,15 +164,21 @@
       var self = this;
       if (!this.ligado) return Promise.resolve(false);
       self._conflitosUltimoMerge = 0;
-      return Promise.all(ENTIDADES.map(function (ent) {
+      var uma = function (ent) {
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? snap.data().v : null;
           var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
-          var merged = self._merge(local, cloud, ent);
+          var merged = self._merge(local, cloud, ent, empresaId);
           Store.adapter.gravar(empresaId, ent, merged);              // atualiza cache local
           return self._doc(ent).set({ v: merged, em: Date.now() });  // sobe o mesclado
         }).catch(function () { /* entidade sem dados / offline: ignora */ });
-      })).then(function () {
+      };
+      // as LÁPIDES vêm primeiro: as demais entidades consultam essa lista para não
+      // ressuscitar o que já foi excluído em outro aparelho
+      return uma("_lapides").then(function () {
+        Store.podarLapidesDe(empresaId); // o teto só valia nas exclusões locais
+        return Promise.all(ENTIDADES.filter(function (e) { return e !== "_lapides"; }).map(uma));
+      }).then(function () {
         if (self._conflitosUltimoMerge > 0) {
           try {
             if (global.UI && global.UI.toast) global.UI.toast("⚠ " + self._conflitosUltimoMerge + " registro(s) editados em 2 aparelhos ao mesmo tempo — a versão mais recente venceu e a anterior ficou guardada dentro do registro (não se perdeu nada).", "erro");
@@ -163,15 +192,27 @@
     escutar: function (empresaId, onChange) {
       var self = this;
       if (!this.ligado) return;
+      /* As lápides precisam estar em dia ANTES de mesclar qualquer entidade — senão o
+       * aparelho ainda não sabe o que foi apagado, aceita o registro velho e o reempurra
+       * pra nuvem (ressurreição em pingue-pongue). Por isso a escuta de cada entidade
+       * baixa as lápides primeiro; e o push manda "_lapides" na frente, sem debounce. */
+      var comLapides = function (fn) {
+        return self._doc("_lapides").get().then(function (s) {
+          if (s.exists) Store.adapter.gravar(empresaId, "_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), s.data().v, "_lapides", empresaId));
+        }).catch(function () {}).then(fn);
+      };
       ENTIDADES.forEach(function (ent) {
         var un = self._doc(ent).onSnapshot(function (snap) {
           if (!snap.exists) return;
           if (snap.metadata && snap.metadata.hasPendingWrites) return; // ignora o eco do próprio write
           var cloud = snap.data().v;
-          var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
-          var merged = self._merge(local, cloud, ent);
-          Store.adapter.gravar(empresaId, ent, merged);
-          if (typeof onChange === "function") onChange(ent);
+          var aplicar = function () {
+            var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
+            var merged = self._merge(local, cloud, ent, empresaId);
+            Store.adapter.gravar(empresaId, ent, merged);
+            if (typeof onChange === "function") onChange(ent);
+          };
+          if (ent === "_lapides") aplicar(); else comLapides(aplicar);
         }, function () {});
         self._un.push(un);
       });
@@ -188,16 +229,20 @@
       };
     },
 
-    // Empurra uma entidade pra nuvem (debounce por entidade).
+    // Empurra uma entidade pra nuvem (debounce por entidade). As LÁPIDES vão sem espera:
+    // se a exclusão chegasse depois da lista já sem os registros, o outro aparelho teria
+    // uma janela para devolver tudo achando que só sumiu.
     push: function (empresaId, ent) {
       var self = this;
-      clearTimeout(this._push[ent]);
-      this._push[ent] = setTimeout(function () {
+      var mandar = function () {
         try {
           var v = Store.adapter.ler(empresaId, ent, vazioDe(ent));
           self._doc(ent).set({ v: v, em: Date.now() }).catch(function () {});
         } catch (e) {}
-      }, 900);
+      };
+      if (ent === "_lapides") { clearTimeout(this._push[ent]); mandar(); return; }
+      clearTimeout(this._push[ent]);
+      this._push[ent] = setTimeout(mandar, 900);
     },
 
     sair: function () {

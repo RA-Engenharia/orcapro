@@ -366,7 +366,15 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 @keyframes popin { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 .modal .body { padding: 20px; overflow: auto; }
-.modal footer { padding: 14px 20px; border-top: 1px solid var(--linha); display: flex; gap: 10px; justify-content: flex-end; }
+/* wrap: com 3 botões (ex.: "Cancelar / Excluir só a obra / Excluir tudo") o rodapé
+ * nowrap empurrava o Cancelar para FORA da tela no celular — ninguém conseguia
+ * desistir justamente no modal mais perigoso. Quebra a linha em vez de estourar.
+ * NÃO invertemos a ordem em tela pequena: o app tem modais com o botão perigoso em
+ * posições diferentes (Excluir família, Limpar assinatura, ‹ Voltar do wizard), e
+ * qualquer inversão global colocaria um deles debaixo do polegar. A ordem visual
+ * segue a ordem do autor — que é também a ordem de foco do teclado. */
+.modal footer { padding: 14px 20px; border-top: 1px solid var(--linha); display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.modal footer > button { max-width: 100%; }
 
 /* ---------- Form ---------- */
 .field { margin-bottom: 14px; }
@@ -845,7 +853,8 @@ table.tbl tr.etapa-row:hover td { box-shadow: inset 3px 0 0 var(--aco); }
 .orc-card { position: relative; }
 .orc-card .orc-del { position: absolute; top: 10px; right: 10px; opacity: .35; transition: opacity .15s; }
 .orc-card:hover .orc-del { opacity: 1; }
-@media (max-width: 900px) { .orc-card .orc-del { opacity: .8; } } /* sem hover no toque */
+/* sem hover no toque: fica sempre visível e com alvo de dedo (44px é o mínimo confortável) */
+@media (max-width: 900px) { .orc-card .orc-del { opacity: .8; min-width: 44px; min-height: 44px; } }
 
 /* ---- pendência de preço (insumo não coletado / item zerado) ---- */
 .preco-user { width: 92px; text-align: right; padding: 4px 8px; border-radius: 7px; border: 1px solid rgba(46,111,158,.4); background: #fffdf5; font: inherit; font-size: 12px; }

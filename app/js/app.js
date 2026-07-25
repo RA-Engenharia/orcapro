@@ -479,6 +479,12 @@
       // fecha o menu de conta ao clicar fora do botão (itens fecham após rodar sua ação)
       var _conta = document.querySelector(".topbar-conta.aberto");
       if (_conta && !(e.target.closest && e.target.closest('[data-acao="conta"]'))) { _conta.classList.remove("aberto"); }
+      /* <select> fala por CHANGE, nunca por click. Sem esta saída, o clique que ABRE a
+       * lista era tratado como ação (com value undefined): a tela re-renderizava e o
+       * seletor sumia embaixo do dedo — no celular e no tablet ficava impossível
+       * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
+       * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
+      if (e.target.closest && e.target.closest("select, option")) return;
       var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
