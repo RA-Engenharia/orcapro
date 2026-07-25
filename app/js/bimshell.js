@@ -126,7 +126,6 @@
        Cada um aponta o que já dá para fazer no lugar — a alternativa é o que
        importa, não o pedido de desculpas. */
     _ALTERNATIVA: {
-      "novo-projeto": "Por enquanto: abra um IFC, ou use \"Gerar de desenho\" para levantar a volumetria de um PDF ou DXF.",
       "exportar-ifc": "Por enquanto: \"Enviar ao Revit\" leva o orçamento e o avanço para o plugin dentro do Revit.",
       "porta": "Por enquanto: em \"Paginar alvenaria\" você lança o vão de porta e ele desconta o bloco fiada a fiada, com a verga.",
       "janela": "Por enquanto: em \"Paginar alvenaria\" o vão de janela sai com verga, contraverga e o desconto de área.",

@@ -44,7 +44,7 @@
       id: "arquivo", rotulo: "Arquivo", tipo: "backstage",
       paineis: [
         { nome: "Projeto", comandos: [
-          { id: "novo-projeto", emBreve: true, rotulo: "Novo\nprojeto", icone: "obra", grande: true, dica: "Começa um projeto do zero: define os níveis e desenha as paredes aqui mesmo." },
+          { id: "novo-projeto", rotulo: "Novo\nprojeto", icone: "obra", grande: true, dica: "Começa um projeto do zero: define os níveis e desenha as paredes aqui mesmo." },
           { id: "abrir-ifc", rotulo: "Abrir\nIFC", icone: "abrir", grande: true, dica: "Abre um modelo IFC exportado do Revit, ArchiCAD, SketchUp ou do nosso plugin." },
           { id: "gerar-volumetria", rotulo: "Gerar de\ndesenho", icone: "importar", grande: true, dica: "Levanta a volumetria a partir de PDF, DWG/DXF, foto de prancha ou croqui feito à mão." },
           { id: "modelos", rotulo: "Modelos\nabertos", icone: "camadas", requer: "modelo", dica: "Federação: vários arquivos abertos juntos, com visibilidade e transparência por disciplina." }

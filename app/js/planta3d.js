@@ -186,6 +186,101 @@
         });
       });
       return out;
+    },
+
+    /* ==================================================================
+     * FAMÍLIA DE PARALELAS — o falso positivo mais perigoso da planta.
+     *
+     * O detector casa qualquer par de paralelas afastado de 6 a 40 cm.
+     * Só que um LANCE DE ESCADA é exatamente isso: degraus de 28 cm,
+     * paralelos, com 1,10 m de comprimento. Doze degraus viram onze
+     * "paredes" de 28 cm com confiança alta, e o orçamento ganha 12 m²
+     * de alvenaria que não existem. O mesmo vale para HACHURA de piso e
+     * para a cadeia de cotas.
+     *
+     * O que separa: uma parede real tem EXATAMENTE DUAS faces. Escada,
+     * hachura e cota têm TRÊS OU MAIS linhas paralelas, igualmente
+     * espaçadas e de comprimento parecido. Isso é geométrico, é
+     * determinístico, e não depende de layer nem de nome.
+     *
+     * Devolve os segmentos limpos E as famílias achadas — porque o
+     * usuário precisa poder discordar: uma parede dupla com isolamento
+     * no meio também são três linhas.
+     * ================================================================== */
+    filtrarFamilias: function (segmentos, opts) {
+      opts = opts || {};
+      var angTol = (opts.angTol != null ? opts.angTol : 4) * Math.PI / 180;
+      var minLinhas = opts.minLinhas != null ? opts.minLinhas : 3;
+      var tolEsp = opts.tolEspacamento != null ? opts.tolEspacamento : 0.25;  /* ±25 % */
+      var tolComp = opts.tolComprimento != null ? opts.tolComprimento : 0.40;
+      var espMax = opts.espMax != null ? opts.espMax : 0.40;
+      var segs = (segmentos || []).filter(function (s) { return len(s) > 1e-9; });
+      if (segs.length < minLinhas) return { segmentos: segmentos || [], familias: [], removidos: 0 };
+
+      /* 1) agrupa por DIREÇÃO (módulo 180°: sentido não importa) */
+      var grupos = [];
+      segs.forEach(function (s) {
+        var a = ang(s); if (a < 0) a += Math.PI;
+        if (a >= Math.PI - 1e-9) a -= Math.PI;
+        for (var i = 0; i < grupos.length; i++) {
+          var d = Math.abs(a - grupos[i].ang);
+          if (d > Math.PI / 2) d = Math.PI - d;
+          if (d <= angTol) { grupos[i].itens.push({ s: s, a: a }); return; }
+        }
+        grupos.push({ ang: a, itens: [{ s: s, a: a }] });
+      });
+
+      /* 2) dentro de cada direção, ordena pelo afastamento perpendicular */
+      var mortos = [], familias = [];
+      grupos.forEach(function (g) {
+        if (g.itens.length < minLinhas) return;
+        var nx = -Math.sin(g.ang), ny = Math.cos(g.ang);
+        var lista = g.itens.map(function (it) {
+          var mx = (it.s.x1 + it.s.x2) / 2, my = (it.s.y1 + it.s.y2) / 2;
+          return { s: it.s, off: mx * nx + my * ny, L: len(it.s),
+                   t: (mx * Math.cos(g.ang) + my * Math.sin(g.ang)) };
+        });
+        lista.sort(function (a, b) { return a.off - b.off; });
+
+        var i = 0;
+        while (i < lista.length - (minLinhas - 1)) {
+          /* cresce a corrida enquanto o espaçamento se mantiver uniforme
+             e as linhas continuarem parecidas em comprimento e posição */
+          var passo = lista[i + 1].off - lista[i].off;
+          if (!(passo > 1e-4) || passo > espMax) { i++; continue; }
+          var fim = i + 1;
+          while (fim + 1 < lista.length) {
+            var p2 = lista[fim + 1].off - lista[fim].off;
+            if (!(p2 > 1e-4)) break;
+            if (Math.abs(p2 - passo) > tolEsp * passo) break;
+            var dl = Math.abs(lista[fim + 1].L - lista[i].L) / Math.max(lista[i].L, 1e-6);
+            if (dl > tolComp) break;
+            /* têm de estar lado a lado, não em cantos opostos da planta */
+            if (Math.abs(lista[fim + 1].t - lista[i].t) > Math.max(lista[i].L, lista[fim + 1].L)) break;
+            fim++;
+          }
+          var n = fim - i + 1;
+          if (n >= minLinhas) {
+            var fam = { linhas: n, espacamento: Math.round(passo * 1000) / 1000,
+                        anguloGraus: Math.round(g.ang * 180 / Math.PI * 10) / 10,
+                        comprimento: Math.round(lista[i].L * 100) / 100,
+                        motivo: passo < 0.06 ? "hachura" : (passo <= 0.35 ? "escada ou hachura larga" : "cadeia de cotas") };
+            familias.push(fam);
+            for (var k = i; k <= fim; k++) mortos.push(lista[k].s);
+            i = fim + 1;
+          } else i++;
+        }
+      });
+
+      if (!mortos.length) return { segmentos: segmentos || [], familias: [], removidos: 0 };
+      var fora = (segmentos || []).filter(function (s) { return mortos.indexOf(s) < 0; });
+      return {
+        segmentos: fora, familias: familias, removidos: mortos.length,
+        descartados: mortos,
+        nota: familias.length + " família(s) de linhas paralelas equidistantes descartadas (" +
+              mortos.length + " traços). Parede tem DUAS faces; três ou mais linhas igualmente " +
+              "espaçadas é escada, hachura ou cadeia de cotas."
+      };
     }
   };
 

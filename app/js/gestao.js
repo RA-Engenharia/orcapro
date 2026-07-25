@@ -1896,7 +1896,12 @@
       reg["exportar-revit"] = function () { self.acao("bim-revit", {}); return true; };
       reg.reuniao = function () { self.acao("bim-reuniao", {}); return true; };
       reg.imersivo = function () { self.acao("bim-qr-rv", {}); return true; };
-      reg["gerar-volumetria"] = function () { var b = B(); if (b && b.painelP3d) { b.painelP3d(); return true; } return false; };
+      /* O assistente novo faz as TRÊS portas — DXF, PDF (vetor ou
+         escaneado) e foto/croqui — com calibração de escala e revisão
+         das paredes antes de gerar. O painel antigo do viewer, que só
+         lia DXF, continua no botão 2D→3D lá dentro. */
+      reg["gerar-volumetria"] = function () { self._volumetria(); return true; };
+      reg["novo-projeto"] = function () { self._novoProjeto(); return true; };
 
       /* conferência de alvenaria — os motores novos, já disponíveis */
       reg["conferir-modulacao"] = function () { self._bimConferirAlvenaria(); return true; };
@@ -3144,6 +3149,800 @@
           res.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</p>" : "");
       if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Elevação de parede", html);
       else UI.toast("Impressão indisponível.", "erro");
+    },
+
+    /* ==================================================================
+     * NOVO PROJETO — começar do zero, sem arquivo nenhum.
+     *
+     * Até aqui só nascia projeto abrindo um IFC ou um DXF. Quem quer
+     * orçar uma obra pequena — uma reforma, um muro, um galpão — não tem
+     * arquivo nenhum: tem a medida na cabeça. Esta tela cria os níveis,
+     * fixa o tipo de parede e já joga o perímetro no 3D, pronto para
+     * editar. É a porta que faltava.
+     * ================================================================== */
+    _novoProjeto: function () {
+      if (this._bloqueado && this._bloqueado()) return;
+      if (!window.Niveis || !window.AlvTipos) { UI.toast("Motores de nível e tipo não carregados.", "erro"); return; }
+      var self = this;
+      var g = this._npCfg || (this._npCfg = {
+        nome: "Projeto novo", pavimentos: 1, peDireito: 2.80,
+        tipo: this._alvTipoId || "bloco_concreto_14_est",
+        contorno: "retangulo", largura: 8.00, comprimento: 6.00
+      });
+
+      var tipos = AlvTipos.listar().map(function (t) {
+        return '<option value="' + Util.esc(t.id) + '"' + (t.id === g.tipo ? " selected" : "") + ">" +
+               Util.esc(t.rotulo) + " · " + (t.espessura / 10).toFixed(1) + " cm</option>";
+      }).join("");
+
+      var h =
+        '<p class="muted" style="font-size:12.5px;margin:0 0 12px">' +
+        "Cria os níveis da obra, fixa o tipo de parede e joga o contorno no 3D. " +
+        "Daí em diante é só desenhar — o quantitativo e o peso acompanham.</p>" +
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">' +
+          '<label>Nome do projeto<input type="text" data-np="nome" value="' + Util.esc(g.nome) + '" style="width:100%"></label>' +
+          '<label>Pavimentos<input type="number" min="1" max="30" step="1" data-np="pavimentos" value="' + g.pavimentos + '" style="width:100%"></label>' +
+          '<label>Pé-direito (m)<input type="number" step="0.05" data-np="peDireito" value="' + g.peDireito + '" style="width:100%"></label>' +
+          '<label>Tipo de parede<select data-np="tipo" style="width:100%">' + tipos + "</select></label>" +
+          '<label>Começar com<select data-np="contorno" style="width:100%">' +
+            '<option value="retangulo"' + (g.contorno === "retangulo" ? " selected" : "") + ">Um retângulo</option>" +
+            '<option value="vazio"' + (g.contorno === "vazio" ? " selected" : "") + ">Nada — desenho tudo</option></select></label>" +
+          '<label>Largura (m)<input type="number" step="0.1" data-np="largura" value="' + g.largura + '" style="width:100%"></label>' +
+          '<label>Comprimento (m)<input type="number" step="0.1" data-np="comprimento" value="' + g.comprimento + '" style="width:100%"></label>' +
+        "</div>" +
+        '<div id="np-resumo" style="margin-top:12px"></div>';
+
+      UI.modal("Novo projeto", h, [
+        { texto: "Criar projeto", classe: "primary", onClick: function () { self._npCriar(); } },
+        { texto: "Cancelar", classe: "", onClick: function () { UI.fecharModal(); } }
+      ]);
+      this._npLigar();
+      this._npResumo();
+    },
+
+    _npLigar: function () {
+      var self = this, box = document.querySelector("#modal-bg .modal");
+      if (!box) return;
+      function mexeu(e) {
+        var el = e.target, k = el && el.getAttribute && el.getAttribute("data-np");
+        if (!k) return;
+        var g = self._npCfg;
+        if (k === "nome" || k === "tipo" || k === "contorno") g[k] = el.value;
+        else {
+          var v = parseFloat(String(el.value).replace(",", "."));
+          if (!isFinite(v) || v <= 0) { UI.toast("Informe um número maior que zero, em metros.", "aviso"); return; }
+          if ((k === "largura" || k === "comprimento") && v > 300) { UI.toast("A medida é em METROS.", "aviso"); return; }
+          if (k === "pavimentos") v = Math.max(1, Math.min(30, Math.round(v)));
+          g[k] = v;
+        }
+        self._npResumo();
+      }
+      box.addEventListener("change", mexeu);
+      box.addEventListener("input", function (e) {
+        if (e.target && e.target.tagName === "INPUT" && e.target.type === "number") mexeu(e);
+      });
+    },
+
+    _npResumo: function () {
+      var el = document.getElementById("np-resumo");
+      if (!el) return;
+      var g = this._npCfg, N = window.Niveis;
+      var lista = [];
+      for (var i = 0; i < g.pavimentos; i++) {
+        lista.push({ id: "nivel-" + (i + 1), nome: i === 0 ? "Térreo" : (i + "º pavimento"),
+                     elevacao: +(i * g.peDireito).toFixed(2) });
+      }
+      lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2) });
+      var L = N.listar(lista);
+      var t = AlvTipos.tipo(g.tipo);
+      var per = g.contorno === "retangulo" ? 2 * (g.largura + g.comprimento) : 0;
+      var h = '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
+      h += this._pagLinha("Níveis", L.map(function (n) {
+        return Util.esc(n.nome) + " (" + n.elevacao.toFixed(2).replace(".", ",") + " m)";
+      }).join(" · "), "o pé-direito de cada um é a distância até o de cima");
+      h += this._pagLinha("Parede", (t && t.ok ? Util.esc(t.rotulo) + " · " + (t.espessura / 10).toFixed(1) + " cm" : "—"),
+        "as camadas de cada face saem do tipo — dá para mudar depois");
+      if (per > 0) {
+        h += this._pagLinha("Contorno", g.largura.toFixed(2).replace(".", ",") + " × " +
+          g.comprimento.toFixed(2).replace(".", ",") + " m · perímetro " + per.toFixed(2).replace(".", ",") + " m · " +
+          (g.pavimentos * 4) + " paredes",
+          "medida de EIXO a eixo; o 3D já nasce com elas");
+      } else {
+        h += this._pagLinha("Contorno", "nenhum — o 3D abre vazio", "você desenha as paredes com o editor");
+      }
+      h += "</tbody></table>";
+      el.innerHTML = h;
+    },
+
+    _npCriar: function () {
+      var g = this._npCfg, self = this;
+      if (this._semSessao()) { UI.toast("Entre na sua conta antes: sem sessão o projeto iria para um lugar que some no login.", "erro"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o projeto pertence a ela.", "aviso"); return; }
+
+      /* 1) níveis */
+      var lista = [], i;
+      for (i = 0; i < g.pavimentos; i++) {
+        lista.push({ id: "nivel-" + (i + 1), nome: i === 0 ? "Térreo" : (i + "º pavimento"),
+                     elevacao: +(i * g.peDireito).toFixed(2), corte: 1.20 });
+      }
+      lista.push({ id: "nivel-cob", nome: "Cobertura", elevacao: +(g.pavimentos * g.peDireito).toFixed(2),
+                   corte: 1.20, peDireitoDeclarado: g.peDireito });
+      var v = Niveis.validar(lista);
+      if (v.erros.length) { UI.toast(v.erros[0], "erro"); return; }
+      /* A obra pode JÁ TER níveis, e os ids aqui são fixos ("nivel-1",
+         "nivel-cob"): gravar por cima apagaria o que o usuário montou,
+         sem aviso e sem volta. */
+      var jaTem = this._nivLer();
+      if (jaTem.length) {
+        var nomes = jaTem.map(function (n) { return n.nome; }).join(", ");
+        if (!confirm("Esta obra já tem " + jaTem.length + " nível(is): " + nomes + ".\n\n" +
+                     "Criar o projeto vai SUBSTITUIR esses níveis pelos novos. Continuar?")) return;
+      }
+      var gravados = 0;
+      lista.forEach(function (n) { if (self._nivGravar(n)) gravados++; });
+      if (gravados !== lista.length) { UI.toast("Não consegui gravar todos os níveis.", "erro"); return; }
+
+      /* 2) tipo de parede ativo */
+      this._alvTrocarTipo(g.tipo);
+      var t = AlvTipos.tipo(g.tipo);
+      var esp = t && t.ok ? t.espessura / 1000 : 0.14;
+
+      /* 3) contorno no 3D */
+      var caixas = [];
+      if (g.contorno === "retangulo" && window.Planta3D) {
+        var L = g.largura, C = g.comprimento, paredes = [];
+        for (i = 0; i < g.pavimentos; i++) {
+          var z = i * g.peDireito;
+          [[0, 0, L, 0], [L, 0, L, C], [L, C, 0, C], [0, C, 0, 0]].forEach(function (p) {
+            paredes.push({ x1: p[0], y1: p[1], x2: p[2], y2: p[3], espessura: esp,
+                           comprimento: 0, layer: "Nível " + (i + 1), ligada: true, _base: z });
+          });
+        }
+        caixas = Planta3D.extrudar(paredes, g.peDireito);
+        /* Planta3D põe tudo na base zero; aqui cada pavimento sobe */
+        caixas.forEach(function (c, k) {
+          var pav = Math.floor(k / 4);
+          c.cy = pav * g.peDireito + g.peDireito / 2;
+          c.layer = "Nível " + (pav + 1);
+        });
+      }
+
+      /* A função existe mesmo com o viewer desmontado — e devolve null.
+         Testar só a existência dava "projeto criado" com o 3D vazio. */
+      if (!window.BIM || !BIM.carregarSintetico) { UI.toast("Viewer 3D não está pronto.", "erro"); return; }
+      var mid = caixas.length ? BIM.carregarSintetico(caixas, g.nome) : null;
+      if (caixas.length && !mid) {
+        UI.toast("Os níveis foram criados, mas o 3D ainda não está de pé — abra a aba BIM e o contorno entra lá.", "aviso");
+      }
+      UI.fecharModal();
+      if (window.BIM.editar) BIM.editar(true);
+      if (window.BimShell) {
+        BimShell.status(caixas.length
+          ? g.nome + " criado: " + lista.length + " níveis e " + caixas.length + " paredes no 3D. O editor já está ligado."
+          : g.nome + " criado com " + lista.length + " níveis. O editor está ligado — desenhe a primeira parede.");
+      }
+      UI.toast("Projeto criado nesta obra.", "ok");
+      try { this._bimCascaContexto(); } catch (e) {}
+    },
+
+    /* ==================================================================
+     * VOLUMETRIA DE DESENHO — DXF, PDF, foto e croqui à mão.
+     *
+     * Três portas, um destino. O que muda é só COMO o desenho vira linha:
+     *   DXF          → js/dxf.js, coordenada exata, já em metro
+     *   PDF vetorial → js/pdfvetor.js, coordenada exata, em ponto
+     *   PDF escaneado, foto, croqui → js/imgplanta.js, em pixel
+     * Daí para frente é o mesmo caminho de sempre: os segmentos vão para
+     * o Planta3D, que casa as faces em parede, e as paredes viram 3D.
+     *
+     * A ESCALA é o que separa uma volumetria de um desenho bonito. Só o
+     * DXF a traz consigo; PDF e imagem exigem calibrar dois pontos com
+     * uma medida real. Sem isso a tela não deixa gerar — melhor não
+     * entregar nada do que entregar metro inventado.
+     * ================================================================== */
+    _volCfg: null,
+
+    _volumetria: function () {
+      if (this._bloqueado && this._bloqueado()) return;
+      if (!window.Planta3D) { UI.toast("Motor de detecção de paredes não carregado.", "erro"); return; }
+      var self = this;
+      this._volCfg = {
+        passo: 1, fonte: null, nome: "", erro: "",
+        img: null, prev: null, segs: null, unidade: "",
+        escala: 0, calib: null, p1: null, p2: null, medida: 3.00,
+        croqui: false, peDireito: 2.80, paredes: null, det: null, pagina: 1, paginas: 1
+      };
+      UI.modal("Gerar volumetria de um desenho",
+        '<div id="vol-corpo">' + this._volCorpo() + "</div>",
+        [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
+      this._volLigar();
+    },
+
+    _volNum: function (v) { return typeof v === "number" && isFinite(v) ? v : 0; },
+
+    _volRepintar: function () {
+      var cx = document.getElementById("vol-corpo");
+      if (cx) { cx.innerHTML = this._volCorpo(); this._volDesenhar(); }
+    },
+
+    _volCorpo: function () {
+      var g = this._volCfg, h = "";
+      var passos = ["Arquivo", "Escala", "Paredes"];
+      h += '<div style="display:flex;gap:6px;margin-bottom:12px">';
+      passos.forEach(function (p, i) {
+        var at = g.passo === i + 1, feito = g.passo > i + 1;
+        h += '<div style="flex:1;padding:6px 8px;border-radius:8px;font-size:11.5px;text-align:center;border:1px solid ' +
+          (at ? "var(--azul,#2e6f9e)" : "var(--linha)") + ";" +
+          (at ? "background:#2e6f9e14;font-weight:600;" : feito ? "opacity:.6;" : "opacity:.45;") + '">' +
+          (feito ? "✓ " : (i + 1) + ". ") + p + "</div>";
+      });
+      h += "</div>";
+
+      if (g.erro) {
+        h += '<div style="padding:10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px;margin-bottom:10px">' +
+          Util.esc(g.erro) + "</div>";
+      }
+
+      if (g.passo === 1) {
+        h += '<p style="font-size:12.5px;margin:0 0 10px">Escolha o desenho da planta baixa. Vale:</p>' +
+          '<ul style="font-size:12.5px;margin:0 0 12px 18px;padding:0;line-height:1.7">' +
+          "<li><b>DXF</b> do AutoCAD — o mais exato, e já vem com a escala dentro</li>" +
+          "<li><b>PDF</b> exportado do CAD ou do Revit — o traço continua vetor, precisão de projeto</li>" +
+          "<li><b>PDF escaneado, foto de prancha ou croqui à mão</b> — o sistema lê a imagem</li></ul>" +
+          '<input type="file" id="vol-arq" accept=".dxf,.pdf,.png,.jpg,.jpeg,.webp" style="font-size:12.5px">' +
+          '<label style="display:block;margin-top:10px;font-size:12.5px"><input type="checkbox" data-vol="croqui"' +
+          (g.croqui ? " checked" : "") + "> É croqui feito à mão (traço tremido, tolerância maior)</label>" +
+          '<p class="muted" style="font-size:11.5px;margin:12px 0 0">O arquivo NÃO sai do seu computador: ' +
+          "tudo é processado aqui dentro, offline.</p>";
+      }
+
+      if (g.passo === 2) {
+        h += '<p style="font-size:12.5px;margin:0 0 8px"><b>' + Util.esc(g.nome) + "</b> — " +
+          Util.esc(g.fonte) + (g.segs ? " · " + g.segs.length + " traços" : "") + "</p>";
+        if (g.paginas > 1) {
+          h += '<label style="font-size:12px;display:block;margin-bottom:8px">Página ' +
+            '<input type="number" min="1" max="' + g.paginas + '" step="1" data-vol="pagina" value="' + g.pagina +
+            '" style="width:70px"> de ' + g.paginas + "</label>";
+        }
+        if (g.escala) {
+          h += '<div style="padding:9px 11px;border-radius:8px;background:#15803d14;border:1px solid #15803d44;font-size:12.5px;margin-bottom:10px">' +
+            "Escala definida: <b>" + Util.esc(g.calib) + "</b></div>";
+        } else {
+          h += '<div style="padding:9px 11px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px;margin-bottom:10px">' +
+            "<b>Clique em dois pontos do desenho</b> cujo tamanho real você sabe — de preferência a MAIOR cota " +
+            "que existir — e digite a medida. Sem isso não há metro, e sem metro não há volumetria.</div>";
+        }
+        h += '<div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center">' +
+          '<span class="muted" style="font-size:11.5px">No desenho:</span>' +
+          '<button class="btn sm" data-volacao="modo-escala" style="' +
+            (g.modo !== "recorte" ? "border-color:var(--azul,#2e6f9e);background:#2e6f9e14;font-weight:600;" : "") +
+            '">Marcar 2 pontos da escala</button>' +
+          '<button class="btn sm" data-volacao="modo-recorte" style="' +
+            (g.modo === "recorte" ? "border-color:var(--azul,#2e6f9e);background:#2e6f9e14;font-weight:600;" : "") +
+            '">Recortar só a planta</button>' +
+          (g.recorte ? '<button class="btn sm" data-volacao="limpar-recorte" style="color:#dc2626">\u2715 recorte</button>' : "") +
+          "</div>";
+        if (g.modo === "recorte") {
+          h += '<div style="padding:9px 11px;border-radius:8px;background:#2e6f9e14;border:1px solid #2e6f9e33;font-size:12.5px;margin-bottom:8px">' +
+            "<b>Arraste um ret\u00e2ngulo em volta da planta.</b> Uma prancha tem corte, fachada, quadro de esquadrias " +
+            "e carimbo na mesma folha \u2014 e TUDO isso vira parede se entrar. Recortar \u00e9 o que separa." +
+            (g.recorte ? " <b>Recorte ativo:</b> " + Math.round(g.recorte.x1 - g.recorte.x0) + " \u00d7 " +
+                         Math.round(g.recorte.y1 - g.recorte.y0) + " " + Util.esc(g.unidade) + "." : "") +
+            "</div>";
+        }
+        h += '<div style="border:1px solid var(--linha);border-radius:8px;overflow:auto;background:#fff;max-height:420px">' +
+          '<canvas id="vol-canvas" style="display:block;cursor:crosshair;max-width:100%"></canvas></div>';
+        h += '<div style="display:flex;gap:8px;align-items:flex-end;margin-top:10px;flex-wrap:wrap">' +
+          '<label style="font-size:12px">Medida real entre os dois pontos (m)' +
+          '<input type="number" step="0.01" data-vol="medida" value="' + g.medida + '" style="width:110px;display:block"></label>' +
+          '<button class="btn sm" data-volacao="calibrar">Aplicar escala</button>' +
+          '<button class="btn sm" data-volacao="limpar-pontos">Limpar pontos</button>' +
+          (g.escala ? '<button class="btn sm primary" data-volacao="detectar">Detectar paredes →</button>' : "") +
+          "</div>";
+        if (g.p1 && g.p2) {
+          var d = Math.round(Math.sqrt(Math.pow(g.p2.x - g.p1.x, 2) + Math.pow(g.p2.y - g.p1.y, 2)));
+          h += '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Dois pontos marcados, a ' + d + " " +
+            Util.esc(g.unidade) + " um do outro.</p>";
+        }
+        if (g.avisos && g.avisos.length) {
+          h += '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#f59e0b14;border:1px solid #f59e0b33;font-size:11.5px">' +
+            g.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>";
+        }
+      }
+
+      if (g.passo === 3) {
+        var det = g.det || { paredes: [], stats: {} };
+        var ligadas = det.paredes.filter(function (p) { return p.ligada !== false; });
+        h += '<div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap">' +
+          '<label style="font-size:12px">Pé-direito (m)<input type="number" step="0.05" data-vol="peDireito" value="' +
+          g.peDireito + '" style="width:90px;display:block"></label>' +
+          '<button class="btn sm primary" data-volacao="gerar">Gerar o 3D</button>' +
+          '<button class="btn sm" data-volacao="voltar2">← voltar à escala</button></div>';
+        h += '<div style="border:1px solid var(--linha);border-radius:8px;background:#fff;padding:6px;margin-bottom:10px;overflow:auto">' +
+          '<canvas id="vol-canvas" style="display:block;max-width:100%"></canvas></div>';
+        h += '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
+        h += this._pagLinha("Paredes encontradas", "<b>" + ligadas.length + "</b> de " + det.paredes.length +
+          " · " + Math.round(ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0) * 10) / 10 + " m no total",
+          "desligue no quadro abaixo o que não for parede");
+        h += this._pagLinha("Traços analisados", (det.stats.segmentosAnalisados || 0) + " · " +
+          (det.stats.segmentosSemPar || 0) + " sem par" + (g.recorteInfo ? " · " + Util.esc(g.recorteInfo) : ""),
+          "traço sem par é cota, texto, mobiliário — não vira parede");
+        if (g.familias && g.familias.length) {
+          h += this._pagLinha("Descartado como não-parede",
+            g.familias.map(function (fx) { return fx.linhas + " linhas a " + Math.round(fx.espacamento * 100) +
+              " cm (" + Util.esc(fx.motivo) + ")"; }).join(" · "),
+            "parede tem DUAS faces; três ou mais linhas igualmente espaçadas é escada, hachura ou cota — " +
+            "e um degrau de 28 cm passaria como parede de 28 cm");
+        }
+        h += "</tbody></table>";
+        h += '<div style="max-height:230px;overflow:auto;margin-top:8px;border:1px solid var(--linha);border-radius:8px">' +
+          '<table class="tbl" style="width:100%;font-size:11.5px"><thead><tr><th></th><th>Parede</th><th>Compr.</th><th>Espess.</th><th>Confiança</th></tr></thead><tbody>';
+        det.paredes.forEach(function (p, i) {
+          var conf = Math.round((p.confianca || 0) * 100);
+          h += '<tr><td><input type="checkbox" data-volpar="' + i + '"' + (p.ligada !== false ? " checked" : "") + "></td>" +
+            "<td>P" + (i + 1) + '<span class="muted" style="font-size:10px"> ' + Util.esc(p.layer || "") + "</span></td>" +
+            "<td>" + p.comprimento.toFixed(2).replace(".", ",") + " m</td>" +
+            "<td>" + Math.round(p.espessura * 100) + " cm</td>" +
+            '<td><span style="color:' + (conf >= 70 ? "#15803d" : conf >= 40 ? "#b45309" : "#dc2626") + '">' + conf + " %</span></td></tr>";
+        });
+        h += "</tbody></table></div>";
+        h += '<p class="muted" style="font-size:11px;margin:8px 0 0">A detecção é ASSISTIDA: o sistema propõe, ' +
+          "você confirma. Confiança é o quanto as duas faces se acompanham — abaixo de 40 % desconfie e confira a medida.</p>";
+      }
+      return h;
+    },
+
+    _volLigar: function () {
+      var self = this, box = document.querySelector("#modal-bg .modal");
+      if (!box) return;
+
+      box.addEventListener("change", function (e) {
+        var el = e.target;
+        if (el && el.id === "vol-arq" && el.files && el.files[0]) { self._volAbrir(el.files[0]); return; }
+        var k = el && el.getAttribute && el.getAttribute("data-vol");
+        if (k) {
+          var g = self._volCfg;
+          if (k === "croqui") { g.croqui = !!el.checked; return; }
+          var v = parseFloat(String(el.value).replace(",", "."));
+          if (!isFinite(v) || v <= 0) { UI.toast("Informe um número maior que zero.", "aviso"); self._volRepintar(); return; }
+          if (k === "medida" && v > 500) { UI.toast("A medida é em METROS.", "aviso"); self._volRepintar(); return; }
+          g[k] = k === "pagina" ? Math.round(v) : v;
+          if (k === "pagina") { self._volPagina(); return; }
+          if (k === "peDireito") return;      /* não repinta: perderia o foco */
+          return;
+        }
+        var pi = el && el.getAttribute && el.getAttribute("data-volpar");
+        if (pi != null) {
+          var p = self._volCfg.det.paredes[parseInt(pi, 10)];
+          if (p) { p.ligada = !!el.checked; self._volDesenhar(); }
+        }
+      });
+
+      box.addEventListener("click", function (e) {
+        var b = e.target.closest && e.target.closest("[data-volacao]");
+        if (!b) return;
+        var a = b.getAttribute("data-volacao");
+        if (a === "modo-escala") { self._volCfg.modo = "escala"; self._volRepintar(); }
+        else if (a === "modo-recorte") { self._volCfg.modo = "recorte"; self._volRepintar(); }
+        else if (a === "limpar-recorte") { self._volCfg.recorte = null; self._volRepintar(); }
+        else if (a === "calibrar") self._volCalibrar();
+        else if (a === "limpar-pontos") { self._volCfg.p1 = self._volCfg.p2 = null; self._volCfg.escala = 0; self._volRepintar(); }
+        else if (a === "detectar") self._volDetectar();
+        else if (a === "gerar") self._volGerar();
+        else if (a === "voltar2") { self._volCfg.passo = 2; self._volRepintar(); }
+      });
+    },
+
+    /* ---- leitura do arquivo ---------------------------------------- */
+    _volAbrir: function (file) {
+      var self = this, g = this._volCfg;
+      g.nome = file.name; g.erro = "";
+      var ext = (file.name.split(".").pop() || "").toLowerCase();
+
+      if (ext === "dxf") {
+        var fr = new FileReader();
+        fr.onload = function () {
+          if (!window.DXF) { g.erro = "Motor de DXF não carregado."; self._volRepintar(); return; }
+          var d = DXF.parse(String(fr.result));
+          if (!d.segmentos.length) { g.erro = "Não achei linha nenhuma neste DXF. Se o desenho estiver dentro de blocos, explodá-los no CAD antes."; self._volRepintar(); return; }
+          g.fonte = "DXF"; g.unidade = "m"; g.segs = d.segmentos;
+          /* o DXF traz a unidade — logo, já tem escala */
+          g.escala = 1; g.calib = "veio do próprio DXF (" + d.unidade.origem + ")";
+          g.avisos = ["Unidade lida do arquivo: 1 unidade = " + d.unidade.fator + " m (" + d.unidade.origem + "). " +
+                      "Se a planta sair com medida errada, é aqui que está o problema."];
+          g.passo = 2; self._volRepintar();
+        };
+        fr.onerror = function () { g.erro = "Não consegui ler o arquivo."; self._volRepintar(); };
+        fr.readAsText(file);
+        return;
+      }
+
+      if (ext === "pdf") {
+        g.fonte = "PDF"; g.arquivoPdf = file; g.pagina = 1;
+        this._volPdf(file);
+        return;
+      }
+
+      if (["png", "jpg", "jpeg", "webp"].indexOf(ext) >= 0) {
+        g.fonte = "imagem";
+        var url = URL.createObjectURL(file);
+        var im = new Image();
+        im.onload = function () {
+          try { self._volDaImagem(im); } finally { URL.revokeObjectURL(url); }
+        };
+        im.onerror = function () { g.erro = "Não consegui abrir esta imagem."; URL.revokeObjectURL(url); self._volRepintar(); };
+        im.src = url;
+        return;
+      }
+      g.erro = "Formato não reconhecido. Use DXF, PDF, PNG ou JPG.";
+      this._volRepintar();
+    },
+
+    /* rasteriza uma imagem já carregada, reduzindo para o motor aguentar */
+    _volDaImagem: function (im) {
+      var g = this._volCfg;
+      var lado = Math.max(im.width, im.height), k = lado > 1600 ? 1600 / lado : 1;
+      var w = Math.max(1, Math.round(im.width * k)), h = Math.max(1, Math.round(im.height * k));
+      var cv = document.createElement("canvas"); cv.width = w; cv.height = h;
+      var cx = cv.getContext("2d");
+      cx.fillStyle = "#fff"; cx.fillRect(0, 0, w, h);
+      cx.drawImage(im, 0, 0, w, h);
+      var dados = cx.getImageData(0, 0, w, h);
+      /* zera ANTES de tentar: a página que falha deixava escala, traços e
+         imagem da página ANTERIOR de pé, e o usuário calibrava numa e
+         gerava a volumetria de outra */
+      g.img = null; g.prev = null; g.segs = null; g.escala = 0; g.calib = ""; g.p1 = g.p2 = null; g.det = null;
+      var res = ImgPlanta.processar({ data: dados.data, width: w, height: h }, { croqui: g.croqui });
+      if (!res.ok) { g.erro = res.motivo; g.passo = 1; this._volRepintar(); return; }
+      g.img = res; g.prev = cv; g.unidade = "px"; g.segs = res.segmentos;
+      g.avisos = res.avisos.slice();
+      g.avisos.push("Reduzi para " + w + "×" + h + " px para processar. " + res.stats.segmentos +
+        " traços de face e " + res.stats.diretas + " de traço grosso.");
+      g.escala = 0; g.p1 = g.p2 = null;
+      g.passo = 2; this._volRepintar();
+    },
+
+    /* ---- PDF: tenta o vetor; se não houver, rasteriza --------------- */
+    _volPdf: function (file) {
+      var self = this, g = this._volCfg;
+      g.erro = "Abrindo o PDF…"; this._volRepintar();
+      var fr = new FileReader();
+      fr.onload = function () {
+        var buf = fr.result;
+        /* `import()` num script clássico resolve o caminho a partir do
+           ARQUIVO, não da página: de dentro de js/gestao.js o "./js/..."
+           virava "/js/js/...". Ancorar em document.baseURI resolve, e
+           vale igual no app instalado e no servido pela nuvem. */
+        var raiz = document.baseURI;
+        import(new URL("js/vendor/pdfjs/pdf.min.mjs", raiz).href).then(function (lib) {
+          lib.GlobalWorkerOptions.workerSrc = new URL("js/vendor/pdfjs/pdf.worker.min.mjs", raiz).href;
+          g._pdflib = lib;
+          return lib.getDocument({ data: new Uint8Array(buf) }).promise;
+        }).then(function (doc) {
+          g._pdfdoc = doc; g.paginas = doc.numPages;
+          self._volPagina();
+        })["catch"](function (e) {
+          g.erro = "Não consegui abrir o PDF: " + (e && e.message ? e.message : e);
+          self._volRepintar();
+        });
+      };
+      fr.onerror = function () { g.erro = "Não consegui ler o arquivo."; self._volRepintar(); };
+      fr.readAsArrayBuffer(file);
+    },
+
+    _volPagina: function () {
+      var self = this, g = this._volCfg;
+      if (!g._pdfdoc) return;
+      g.erro = "";
+      g._pdfdoc.getPage(Math.max(1, Math.min(g.paginas, g.pagina))).then(function (page) {
+        var vp = page.getViewport({ scale: 1 });
+        return page.getOperatorList().then(function (opList) {
+          var r = PdfVetor.segmentos(opList, g._pdflib.OPS, { base: vp.transform });
+          if (r.ok) {
+            g.alturaPagina = vp.height;   /* desfaz o Y invertido do viewport */
+            var lim = PdfVetor.tirarMoldura(r.segmentos);
+            g.fonte = "PDF vetorial"; g.unidade = "pt"; g.segs = lim.segmentos;
+            g.avisos = ["Traço vetorial: precisão de projeto. " + r.stats.segmentos + " traços" +
+                        (lim.removidos ? ", " + lim.removidos + " descartados como moldura ou carimbo." : ".")];
+            if (lim.suspeito && lim.candidatos) g.avisos.push(lim.nota);
+            g.escala = 0; g.p1 = g.p2 = null; g.img = null;
+            /* desenha os vetores num canvas para o usuário calibrar em cima */
+            g.prev = self._volCanvasDeSegs(lim.segmentos, vp.width, vp.height);
+            g.passo = 2; self._volRepintar();
+            return;
+          }
+          /* sem vetor: é página escaneada → caminho de imagem */
+          var esc = Math.min(2200 / vp.width, 2200 / vp.height, 2);
+          var vp2 = page.getViewport({ scale: esc });
+          var cv = document.createElement("canvas");
+          cv.width = Math.round(vp2.width); cv.height = Math.round(vp2.height);
+          var ctx = cv.getContext("2d");
+          ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, cv.width, cv.height);
+          return page.render({ canvasContext: ctx, viewport: vp2 }).promise.then(function () {
+            var im = new Image();
+            im.onload = function () { g.fonte = "PDF escaneado (lido como imagem)"; self._volDaImagem(im); };
+            im.src = cv.toDataURL("image/png");
+          });
+        });
+      })["catch"](function (e) {
+        g.erro = "Falhou ao ler a página: " + (e && e.message ? e.message : e);
+        self._volRepintar();
+      });
+    },
+
+    _volCanvasDeSegs: function (segs, w, h) {
+      var cv = document.createElement("canvas");
+      var k = Math.min(1200 / w, 1200 / h, 1);
+      cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+      var c = cv.getContext("2d");
+      c.fillStyle = "#fff"; c.fillRect(0, 0, cv.width, cv.height);
+      c.strokeStyle = "#1f2937"; c.lineWidth = 1;
+      c.beginPath();
+      segs.forEach(function (s) { c.moveTo(s.x1 * k, s.y1 * k); c.lineTo(s.x2 * k, s.y2 * k); });
+      c.stroke();
+      cv._k = k;
+      return cv;
+    },
+
+    /* ---- desenho do preview + cliques de calibração ----------------- */
+    _volDesenhar: function () {
+      var g = this._volCfg, cv = document.getElementById("vol-canvas");
+      if (!cv) return;
+      var self = this;
+
+      if (g.passo === 3) {
+        /* mapa das paredes detectadas */
+        var det = g.det || { paredes: [] };
+        var x0 = 1e18, x1 = -1e18, y0 = 1e18, y1 = -1e18;
+        det.paredes.forEach(function (p) {
+          x0 = Math.min(x0, p.x1, p.x2); x1 = Math.max(x1, p.x1, p.x2);
+          y0 = Math.min(y0, p.y1, p.y2); y1 = Math.max(y1, p.y1, p.y2);
+        });
+        if (!isFinite(x0)) return;
+        var W = 760, mg = 24, k = (W - mg * 2) / Math.max(x1 - x0, 0.001);
+        var H = (y1 - y0) * k + mg * 2;
+        cv.width = W; cv.height = Math.max(120, Math.round(H));
+        var c = cv.getContext("2d");
+        c.fillStyle = "#fff"; c.fillRect(0, 0, cv.width, cv.height);
+        det.paredes.forEach(function (p, i) {
+          c.strokeStyle = p.ligada === false ? "#cbd5e1" : "#0f172a";
+          c.lineWidth = Math.max(2, p.espessura * k);
+          c.beginPath();
+          c.moveTo(mg + (p.x1 - x0) * k, cv.height - mg - (p.y1 - y0) * k);
+          c.lineTo(mg + (p.x2 - x0) * k, cv.height - mg - (p.y2 - y0) * k);
+          c.stroke();
+        });
+        return;
+      }
+
+      if (!g.prev) return;
+      cv.width = g.prev.width; cv.height = g.prev.height;
+      var ctx = cv.getContext("2d");
+      ctx.drawImage(g.prev, 0, 0);
+      /* marcas da calibração */
+      [g.p1, g.p2].forEach(function (p, i) {
+        if (!p) return;
+        var kk = g.prev._k || 1;
+        var x = p.x * kk, y = p.y * kk;
+        ctx.strokeStyle = "#dc2626"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x - 12, y); ctx.lineTo(x + 12, y);
+        ctx.moveTo(x, y - 12); ctx.lineTo(x, y + 12); ctx.stroke();
+      });
+      if (g.p1 && g.p2) {
+        var kk2 = g.prev._k || 1;
+        ctx.strokeStyle = "#dc2626"; ctx.setLineDash([6, 4]); ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(g.p1.x * kk2, g.p1.y * kk2); ctx.lineTo(g.p2.x * kk2, g.p2.y * kk2); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      /* o RECORTE desenhado por cima: o que fica de fora escurece */
+      if (g.recorte) {
+        var kr = g.prev._k || 1;
+        var rx = g.recorte.x0 * kr, ry = g.recorte.y0 * kr;
+        var rw = (g.recorte.x1 - g.recorte.x0) * kr, rh = (g.recorte.y1 - g.recorte.y0) * kr;
+        ctx.save();
+        ctx.fillStyle = "rgba(15,23,42,0.45)";
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(g.prev, rx, ry, rw, rh, rx, ry, rw, rh);
+        ctx.strokeStyle = "#2e6f9e"; ctx.lineWidth = 2;
+        ctx.strokeRect(rx, ry, rw, rh);
+        ctx.restore();
+      }
+
+      if (!cv._ligado) {
+        cv._ligado = true;
+        /* ponto de TELA → unidade da FONTE (px da imagem ou pt do PDF) */
+        function fonte(e) {
+          var rect = cv.getBoundingClientRect();
+          var kx = cv.width / (rect.width || cv.width), ky = cv.height / (rect.height || cv.height);
+          var kk = g.prev._k || 1;
+          var cli = (e.touches && e.touches[0]) ? e.touches[0] : e;
+          return { x: (cli.clientX - rect.left) * kx / kk, y: (cli.clientY - rect.top) * ky / kk };
+        }
+        var arrasto = null;
+        function inicio(e) {
+          if (self._volCfg.modo !== "recorte") return;
+          arrasto = fonte(e);
+          if (e.preventDefault) e.preventDefault();
+        }
+        function meio(e) {
+          if (!arrasto) return;
+          var p = fonte(e);
+          self._volCfg.recorte = { x0: Math.min(arrasto.x, p.x), y0: Math.min(arrasto.y, p.y),
+                                   x1: Math.max(arrasto.x, p.x), y1: Math.max(arrasto.y, p.y) };
+          self._volDesenhar();
+          if (e.preventDefault) e.preventDefault();
+        }
+        function fim() {
+          if (!arrasto) return;
+          arrasto = null;
+          var r = self._volCfg.recorte;
+          /* retângulo minúsculo é engano de clique, não recorte */
+          if (r && (r.x1 - r.x0 < 20 || r.y1 - r.y0 < 20)) self._volCfg.recorte = null;
+          self._volRepintar();
+        }
+        cv.addEventListener("mousedown", inicio);
+        cv.addEventListener("mousemove", meio);
+        cv.addEventListener("mouseup", fim);
+        cv.addEventListener("mouseleave", fim);
+        /* toque: o assistente tem de funcionar no tablet, no canteiro */
+        cv.addEventListener("touchstart", inicio, { passive: false });
+        cv.addEventListener("touchmove", meio, { passive: false });
+        cv.addEventListener("touchend", fim);
+        cv.addEventListener("click", function (e) {
+          if (self._volCfg.modo === "recorte") return;
+          var p = fonte(e);
+          if (!g.p1 || (g.p1 && g.p2)) { g.p1 = p; g.p2 = null; }
+          else g.p2 = p;
+          g.escala = 0;
+          self._volRepintar();
+        });
+      }
+    },
+
+    _volCalibrar: function () {
+      var g = this._volCfg;
+      if (!g.p1 || !g.p2) { UI.toast("Clique em DOIS pontos do desenho antes.", "aviso"); return; }
+      /* Quantos PIXELS DE TELA separam os dois cliques — é essa distância
+         que limita a precisão, não a da imagem nem a do PDF. O preview é
+         reduzido duas vezes (no canvas e pelo CSS do modal), então a
+         incerteza declarada era 2 a 5 vezes menor que a real. */
+      var telaPx = 0;
+      var cvv = document.getElementById("vol-canvas");
+      if (cvv && g.prev) {
+        var rct = cvv.getBoundingClientRect();
+        var kk = (g.prev._k || 1) * ((rct.width || cvv.width) / (cvv.width || 1));
+        telaPx = Math.sqrt(Math.pow((g.p2.x - g.p1.x) * kk, 2) + Math.pow((g.p2.y - g.p1.y) * kk, 2));
+      }
+      var r = g.fonte === "PDF vetorial"
+        ? PdfVetor.calibrar(g.p1, g.p2, g.medida, { distTelaPx: telaPx })
+        : ImgPlanta.calibrar(g.p1, g.p2, g.medida, { distTelaPx: telaPx });
+      if (!r.ok) { UI.toast(r.motivo, "aviso"); return; }
+      g.escala = r.pxPorMetro || r.ptPorMetro;
+      g.calib = (r.escalaProvavel ? r.escalaProvavel + " · " : "") +
+        Math.round(g.escala) + " " + g.unidade + " por metro" +
+        (r.erroEstimadoPct ? " · incerteza ~" + r.erroEstimadoPct + " %" : "");
+      UI.toast(r.nota, "ok");
+      this._volRepintar();
+    },
+
+    _volDetectar: function () {
+      var g = this._volCfg;
+      if (!g.escala) { UI.toast("Defina a escala primeiro.", "aviso"); return; }
+      var segs, diretas = [];
+      if (g.fonte === "DXF") segs = g.segs;
+      else if (g.fonte === "PDF vetorial") {
+        segs = PdfVetor.paraMetros(g.segs, g.escala, { alturaPagina: g.alturaPagina }).segmentos;
+      } else {
+        var mm = ImgPlanta.paraMetros(g.img, g.escala);
+        segs = mm.segmentos;
+        /* PAREDE DE TRAÇO GROSSO (poché) e CROQUI DE TRAÇO ÚNICO.
+           O motor de imagem já entrega essas prontas — eixo e espessura
+           medidos pelo raio local do traço — e elas NÃO passam pelo
+           pareador de faces, senão seriam contadas duas vezes. Eu estava
+           calculando e JOGANDO FORA: a planta impressa mais comum, a de
+           parede preenchida, saía sem parede nenhuma, calada. */
+        diretas = mm.paredesDiretas || [];
+      }
+
+      /* RECORTE — fora da região marcada, nada existe.
+         É o que separa a planta do corte, da fachada, do quadro de
+         esquadrias e do carimbo: estão todos na MESMA folha, e todos
+         viram parede se entrarem. Nenhuma heurística de geometria
+         resolve isso; quem sabe onde está a planta é o engenheiro. */
+      if (g.recorte && g.escala > 0) {
+        var R = g.recorte;
+        var Hf = (g.fonte === "PDF vetorial") ? this._volNum(g.alturaPagina) : (g.img ? g.img.altura : 0);
+        var mx0 = R.x0 / g.escala, mx1 = R.x1 / g.escala, my0, my1;
+        if (Hf > 0) { my0 = (Hf - R.y1) / g.escala; my1 = (Hf - R.y0) / g.escala; }
+        else { my0 = R.y0 / g.escala; my1 = R.y1 / g.escala; }
+        var antesR = segs.length + diretas.length;
+        function dentro(a) {
+          var cx = (a.x1 + a.x2) / 2, cy = (a.y1 + a.y2) / 2;
+          return cx >= mx0 && cx <= mx1 && cy >= my0 && cy <= my1;
+        }
+        segs = segs.filter(dentro);
+        diretas = diretas.filter(dentro);
+        g.recorteInfo = antesR + " → " + (segs.length + diretas.length) + " traços dentro do recorte";
+        if (!segs.length && !diretas.length) {
+          g.erro = "O recorte não pegou traço nenhum. Marque a região da planta, não uma área vazia.";
+          this._volRepintar(); return;
+        }
+      } else g.recorteInfo = "";
+
+      /* RESOLUÇÃO — com escala de menos, as duas faces de uma parede se
+         fundem num traço só: ou a parede some, ou sai com espessura
+         inventada. Recusar antes é melhor que entregar o número. */
+      /* Só vale para IMAGEM. No DXF e no PDF vetorial a coordenada é
+         EXATA: uma parede de 15 cm a 1:100 mede 4,25 pt e esses 4,25 pt
+         estão no arquivo, sem amostragem. Fusão de faces é problema de
+         pixel, e aplicar a régua do pixel ao vetor recusaria a fonte mais
+         precisa que o sistema tem. */
+      if (g.img && g.escala > 0 && g.escala * 0.15 < 6) {
+        g.erro = "A escala ficou em " + Math.round(g.escala) + " px por metro: uma parede de 15 cm " +
+          "tem menos de " + Math.round(g.escala * 0.15) + " px na imagem, e as duas faces dela se " +
+          "fundem num traço só. Use uma foto com mais resolução, ou recorte e amplie só a planta.";
+        this._volRepintar(); return;
+      }
+
+      /* ESCADA, HACHURA E CADEIA DE COTAS — o falso positivo mais
+         perigoso: um degrau de 28 cm cai no meio da faixa de espessura de
+         parede, e um lance inteiro vira meia dúzia de paredes com
+         confiança alta. Parede tem DUAS faces; três ou mais paralelas
+         igualmente espaçadas, não. */
+      var fam = Planta3D.filtrarFamilias(segs, { espMax: 0.40, angTol: g.croqui ? 8 : 4 });
+      segs = fam.segmentos;
+      g.familias = fam.familias || [];
+
+      var det = Planta3D.detectarParedes(segs, {
+        espMin: 0.06, espMax: 0.40, angTol: g.croqui ? 8 : 3,
+        sobreMin: 0.20, compMin: 0.25
+      });
+
+      diretas.forEach(function (d) {
+        var comp = Math.sqrt((d.x2 - d.x1) * (d.x2 - d.x1) + (d.y2 - d.y1) * (d.y2 - d.y1));
+        if (comp < 0.25) return;
+        var esp = d.espessura;
+        /* traço fino sem par num croqui: espessura DECLARADA, marcada */
+        var assumida = false;
+        if (!(esp >= 0.06 && esp <= 0.40)) {
+          if (!g.croqui) return;
+          esp = g.espCroqui || 0.15; assumida = true;
+        }
+        det.paredes.push({ x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2,
+          comprimento: Math.round(comp * 10000) / 10000, espessura: esp,
+          layer: assumida ? "croqui" : "poché", confianca: assumida ? 0.35 : 0.8,
+          espessuraAssumida: assumida, ligada: true });
+      });
+
+      if (!det.paredes.length) {
+        g.erro = "Não achei par de faces nenhum, nem traço grosso. Se o desenho for de traço único (croqui), " +
+          "marque a opção de croqui no passo 1: aí cada linha vira parede com a espessura que você declarar — " +
+          "o sistema não consegue MEDIR a espessura de uma parede desenhada com uma linha só.";
+        this._volRepintar(); return;
+      }
+      det.paredes.forEach(function (p) { if (p.ligada == null) p.ligada = true; });
+      g.det = det; g.erro = ""; g.passo = 3;
+      this._volRepintar();
+    },
+
+    _volGerar: function () {
+      var g = this._volCfg;
+      if (!g.det) return;
+      var ligadas = g.det.paredes.filter(function (p) { return p.ligada !== false; });
+      if (!ligadas.length) { UI.toast("Ligue pelo menos uma parede.", "aviso"); return; }
+      if (!window.BIM || !BIM.carregarSintetico) { UI.toast("Viewer 3D não está pronto.", "erro"); return; }
+      var caixas = Planta3D.extrudar(g.det.paredes, g.peDireito);
+      var mid = BIM.carregarSintetico(caixas, g.nome || "Volumetria");
+      if (!mid) { UI.toast("O viewer 3D não está de pé — abra a aba BIM e tente de novo. Nada foi perdido.", "erro"); return; }
+      UI.fecharModal();
+      if (window.BimShell) {
+        BimShell.status(ligadas.length + " paredes no 3D, a partir de " + g.fonte + ". " +
+          "A escala veio de " + g.calib + " — toda medida daqui para frente carrega essa precisão.");
+      }
+      UI.toast("Volumetria gerada: " + ligadas.length + " paredes.", "ok");
+      try { this._bimCascaContexto(); } catch (e) {}
     },
 
     _alvPresets: function () {
@@ -8065,6 +8864,8 @@ renderFolha: function () {
         case "alv-preset": return this._alvUsarPreset(dataset.tipo);
         case "alv-peso-reverter": return this._alvPesoReverter(dataset.peca);
         case "niveis": return this._niveis();
+        case "volumetria": return this._volumetria();
+        case "novo-projeto": return this._novoProjeto();
         case "paginar-piso": return this._paginar("piso");
         case "paginar-parede": return this._paginar("parede");
         case "elevacao-parede": return this._elevacao();
