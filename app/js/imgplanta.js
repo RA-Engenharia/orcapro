@@ -66,26 +66,52 @@
     return g;
   }
 
-  /* máximo em janela, separável (linha depois coluna). É a estimativa do
-     FUNDO: numa planta o fundo é o papel, o mais claro da vizinhança. */
+  /* MÁXIMO EM JANELA, em tempo CONSTANTE por pixel (van Herk / Gil-Werman).
+   *
+   * A versão ingênua custa O(raio) por pixel, e isso amarrava o raio num
+   * valor pequeno e fixo — que é justamente o defeito: com raio menor que
+   * metade do traço, a janela inteira cai DENTRO da tinta, o "fundo"
+   * estimado vira a própria tinta e o miolo do traço é apagado.
+   * Com custo independente do raio, o raio pode CRESCER até funcionar.
+   *
+   * A conta: divide a linha em blocos de k = 2r+1; guarda o máximo
+   * acumulado da esquerda (pref) e da direita (suf) dentro de cada bloco.
+   * A janela centrada em i é max(suf[i-r], pref[i+r]) — duas leituras.
+   * Nas bordas a janela é aparada e o resultado pode incluir um pouco
+   * além; para estimar PAPEL isso é inofensivo. */
+  function maxLinear(a, n, r) {
+    var k = 2 * r + 1, i;
+    if (k >= n) {   /* janela maior que a linha: um máximo só */
+      var m = 0; for (i = 0; i < n; i++) if (a[i] > m) m = a[i];
+      var u = new Uint8Array(n); for (i = 0; i < n; i++) u[i] = m; return u;
+    }
+    var pref = new Uint8Array(n), suf = new Uint8Array(n);
+    for (i = 0; i < n; i++) pref[i] = (i % k === 0) ? a[i] : (a[i] > pref[i - 1] ? a[i] : pref[i - 1]);
+    for (i = n - 1; i >= 0; i--) suf[i] = (i === n - 1 || (i + 1) % k === 0) ? a[i] : (a[i] > suf[i + 1] ? a[i] : suf[i + 1]);
+    var out = new Uint8Array(n);
+    for (i = 0; i < n; i++) {
+      var lo = i - r, hi = i + r;
+      if (lo < 0) lo = 0;
+      if (hi > n - 1) hi = n - 1;
+      var v = suf[lo];
+      if (pref[hi] > v) v = pref[hi];
+      out[i] = v;
+    }
+    return out;
+  }
+
   function maxBox(g, w, h, raio) {
-    var a = new Uint8Array(w * h), b = new Uint8Array(w * h), x, y, i, k, m;
+    var a = new Uint8Array(w * h), b = new Uint8Array(w * h), x, y, i;
+    var lin = new Uint8Array(w > h ? w : h);
     for (y = 0; y < h; y++) {
-      var base = y * w;
-      for (x = 0; x < w; x++) {
-        m = 0;
-        var x0 = x - raio < 0 ? 0 : x - raio, x1 = x + raio >= w ? w - 1 : x + raio;
-        for (i = x0; i <= x1; i++) { k = g[base + i]; if (k > m) m = k; }
-        a[base + x] = m;
-      }
+      for (x = 0; x < w; x++) lin[x] = g[y * w + x];
+      var rx = maxLinear(lin, w, raio);
+      for (x = 0; x < w; x++) a[y * w + x] = rx[x];
     }
     for (x = 0; x < w; x++) {
-      for (y = 0; y < h; y++) {
-        m = 0;
-        var y0 = y - raio < 0 ? 0 : y - raio, y1 = y + raio >= h ? h - 1 : y + raio;
-        for (i = y0; i <= y1; i++) { k = a[i * w + x]; if (k > m) m = k; }
-        b[y * w + x] = m;
-      }
+      for (y = 0; y < h; y++) lin[y] = a[y * w + x];
+      var ry = maxLinear(lin, h, raio);
+      for (y = 0; y < h; y++) b[y * w + x] = ry[y];
     }
     return b;
   }
@@ -189,6 +215,21 @@
 
   /* componentes conexos (8-vizinhos) com pilha explícita — recursão
      estoura a pilha do JS numa planta grande */
+  /* MEIO-TRAÇO MAIS GROSSO da imagem, em pixels. É a distância do pixel
+     mais "fundo" da tinta até o papel mais próximo — logo, metade da
+     espessura do traço mais largo. Usada para dimensionar a janela do
+     achatamento: janela menor que isso cai inteira dentro da tinta.
+     Percentil 99,9 em vez do máximo puro para um borrão isolado (uma
+     logomarca preta) não ditar o raio da planta inteira. */
+  function meioTracoMax(bin, w, h) {
+    var d = distancia(bin, w, h), hist = [], i, n = 0, mx = 0;
+    for (i = 0; i < d.length; i++) if (d[i] > 0) { var v = (d[i] / 3) | 0; if (v > mx) mx = v; hist[v] = (hist[v] || 0) + 1; n++; }
+    if (!n) return 0;
+    var alvo = n * 0.001, acc = 0;                 /* 0,1 % mais fundo */
+    for (i = mx; i >= 0; i--) { acc += hist[i] || 0; if (acc >= alvo) return i; }
+    return mx;
+  }
+
   function componentes(bin, w, h) {
     var rot = new Int32Array(w * h), lista = [], id = 0;
     var pilha = new Int32Array(w * h), dx = [1, -1, 0, 0, 1, 1, -1, -1], dy = [0, 0, 1, -1, 1, -1, 1, -1];
@@ -540,14 +581,58 @@
       /* --- cinza + iluminação --- */
       var g = cinza(img.data, w, h);
       var lado = w > h ? w : h;
-      var usouAchatamento = false;
+      var usouAchatamento = false, raioUsado = 0;
       if (opts.achatar !== false) {
-        var raio = Math.max(6, Math.round(this.FRACAO_RAIO * lado));
-        g = achatar(g, w, h, raio);
-        usouAchatamento = true;
-        avisos.push("Iluminação achatada com raio de " + raio + " px. " +
-          "Traço mais largo que " + (2 * raio) + " px (carimbo sólido, mancha grande) é apagado por essa " +
-          "correção — recorte só o desenho antes de enviar.");
+        /* O RAIO TEM DE PASSAR DA METADE DO TRAÇO MAIS GROSSO.
+         *
+         * Estimar o fundo pelo máximo local só vale se toda janela pegar
+         * um pedaço de papel. Numa parede em POCHÉ — a planta impressa
+         * mais comum — a janela inteira cai dentro da tinta, o "fundo"
+         * vira a própria tinta e o miolo do traço é apagado: sobram duas
+         * tirinhas, uma em cada face. Medido: uma parede de 15 cm virava
+         * QUINZE paredes de 7 cm, com confiança 80 % e a tela dizendo
+         * "6 de 6 paredes encontradas". Metade da espessura, o dobro da
+         * contagem, cara de certo.
+         *
+         * E o estrago NÃO aparece na conta de tinta. Com raio 32 numa
+         * parede de 66 px só as 2 linhas do miolo viram papel: 0,3 % de
+         * tinta a menos — e a parede partida em duas. Área não denuncia
+         * fio de cabelo; ESPESSURA denuncia. Então o motor MEDE o traço
+         * mais grosso e exige raio maior que o meio-traço, para que toda
+         * janela alcance papel.
+         *
+         * A régua dessa medida não pode ser um limiar global — numa foto
+         * com sombra ele funde o lado escuro num borrão só e acusaria um
+         * "traço" de meia imagem, recusando justo o achatamento que
+         * conserta a sombra. Então a régua é BRADLEY, que compara cada
+         * pixel com a vizinhança e por isso não enxerga sombra. */
+        var jRef = Math.max(15, (Math.round(lado / 8) | 1));
+        var refBin = bradley(g, w, h, integral(g, w, h), jRef, 0.15);
+        var espRef = meioTracoMax(refBin, w, h);          /* meio-traço, em px */
+        var r0 = Math.max(6, Math.round(this.FRACAO_RAIO * lado));
+        var rNec = Math.ceil(espRef) + 3;                 /* +3: folga p/ a janela achar papel */
+        var rTeto = Math.round(lado / 6);
+        var raio = r0 > rNec ? r0 : rNec;
+        if (raio <= rTeto) {
+          var gA = achatar(g, w, h, raio);
+          /* prova: depois de achatar, o traço tem de continuar com a
+             espessura que o Bradley já tinha medido */
+          var espA = meioTracoMax(limiarFixo(gA, otsu(gA).t), w, h);
+          if (espA >= espRef * 0.85) {
+            g = gA; raioUsado = raio; usouAchatamento = true;
+            avisos.push("Iluminação achatada com raio de " + raio + " px" +
+              (raio > r0 ? " (subi de " + r0 + " px: o traço mais grosso tem " +
+                Math.round(espRef * 2) + " px e a janela precisa passar dele)" : "") + ".");
+          } else {
+            avisos.push("NÃO achatei a iluminação: com raio " + raio + " px o traço encolheu de " +
+              Math.round(espRef * 2) + " px para " + Math.round(espA * 2) + " px. Sigo com a imagem crua; " +
+              "se houver sombra forte, recorte só o desenho e tente de novo.");
+          }
+        } else {
+          avisos.push("NÃO achatei a iluminação: o desenho tem área cheia de " + Math.round(espRef * 2) +
+            " px (poché largo, carimbo sólido) e a correção precisaria de uma janela de " + (2 * rNec) +
+            " px, maior que o próprio desenho comporta. Sigo com a imagem crua — o que exige foto sem sombra.");
+        }
       }
 
       /* --- binarização, com o motivo à vista --- */
@@ -569,6 +654,17 @@
       /* --- limpeza --- */
       var lp = limpar(bin, w, h, { minArea: croqui ? 8 : 12 });
       bin = lp.bin;
+
+      /* O EXTERIOR DA IMAGEM É FUNDO.
+         Sem isto, dois defeitos se somam numa parede colada na borda: a
+         transformada de distância mede o raio só pelo lado de dentro (o
+         de fora não existe), e o Zhang-Suen nunca toca a moldura de 1 px
+         — então o esqueleto fica NA BORDA, justo onde o raio está mais
+         inflado. Medido: parede de 14 px encostada em y=0 saía com
+         espessura 28. O dobro de alvenaria, calado.
+         Apagar 1 px da moldura resolve os dois e custa 1 px de parede. */
+      for (var bx = 0; bx < w; bx++) { bin[bx] = 0; bin[(h - 1) * w + bx] = 0; }
+      for (var by = 0; by < h; by++) { bin[by * w] = 0; bin[by * w + w - 1] = 0; }
 
       /* --- distância e esqueleto --- */
       var dist = distancia(bin, w, h);
@@ -639,7 +735,7 @@
         paredesDiretas: diretas,
         largura: w, altura: h,
         limiar: { metodo: metodo, valor: o.t, separabilidade: r3(o.eta), fracaoTinta: r3(ft), janela: jan },
-        iluminacao: { achatada: usouAchatamento },
+        iluminacao: { achatada: usouAchatamento, raio: raioUsado },
         orientacao: { grausDominante: Math.round(ori.theta * 180 / Math.PI * 10) / 10,
                       aderencia: r3(ori.fracao), alinhada: ortoAplicada, ajustados: nAjust },
         stats: { ramos: ramos.length, segmentos: segmentos.length, diretas: diretas.length,
