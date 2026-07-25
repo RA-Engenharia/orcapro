@@ -5627,12 +5627,17 @@ renderFolha: function () {
     },
 
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
+    // titulo: string com o nome da entidade ("Obra") — recebe o prefixo "Novo "/"Editar ";
+    //         ou objeto { novo, editar, nome } quando o título já vem pronto (evita "Novo Nova tarefa").
     _modalForm: function (entidade, registro, titulo, corpo, coletar, aposSalvar) {
       var self = this, ehNovo = !registro.id;
+      var tit = (titulo && typeof titulo === "object") ? titulo
+        : { novo: "Novo " + titulo, editar: "Editar " + titulo, nome: titulo };
+      var nome = tit.nome || tit.novo || "";
       var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
       if (!ehNovo) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
         if (self._bloqueado()) return;
-        if (confirm("Excluir este registro? Não pode ser desfeito.")) { Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(titulo + " excluído.", "ok"); }
+        if (confirm("Excluir este registro? Não pode ser desfeito.")) { Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok"); }
       } });
       botoes.push({ texto: ehNovo ? "Salvar" : "Salvar alterações", classe: "primary", onClick: function () {
         if (self._bloqueado()) return;
@@ -5641,9 +5646,9 @@ renderFolha: function () {
         Store.salvar(eid(), entidade, obj);
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
-        else UI.toast(titulo + (ehNovo ? " criado." : " salvo."), "ok");
+        else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
       } });
-      UI.modal((ehNovo ? "Novo " : "Editar ") + titulo, corpo, botoes);
+      UI.modal(ehNovo ? tit.novo : tit.editar, corpo, botoes);
     },
 
     // ---------- G3: workflow de aprovação (papel de aprovador + auditoria + rejeição) ----------
@@ -6200,12 +6205,12 @@ renderFolha: function () {
       var corpo = campo("Tarefa *", inp("g-lp-titulo", "", "Ex.: Concretar laje do 2º pavimento")) +
         '<div class="row">' + campo("Responsável", inp("g-lp-resp", "", "Ex.: Equipe estrutura")) + campo("Frente / local", inp("g-lp-frente", "", "Ex.: Bloco A")) + '</div>' +
         campo("Semana (lookahead)", sel("g-lp-sem", semOpts));
-      this._modalForm("lp_tarefas", {}, "Nova tarefa (Last Planner)", corpo, function (obj) {
+      this._modalForm("lp_tarefas", {}, { novo: "Nova tarefa (Last Planner)", editar: "Editar tarefa (Last Planner)", nome: "Tarefa" }, corpo, function (obj) {
         obj.titulo = v("g-lp-titulo"); if (!obj.titulo) { UI.toast("Informe a tarefa.", "erro"); return false; }
         obj.responsavel = v("g-lp-resp"); obj.frente = v("g-lp-frente"); obj.semana = v("g-lp-sem"); obj.obraId = self._lpObra;
         obj.comprometida = false; obj.status = "afazer"; obj.causa = ""; obj.restricoes = obj.restricoes || [];
         return true;
-      });
+      }, function () { UI.toast("Tarefa criada no lookahead.", "ok"); });
     },
     lpComprometer: function (id) {
       var t = this._lpObter(id); if (!t) return;

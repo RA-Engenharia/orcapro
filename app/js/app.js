@@ -271,12 +271,18 @@
       // ?demo=1&view=<modulo> (dashboard, obras, rdos, medicoes, financeiro...) p/ site e screenshots
       try { if (typeof DemoGestao !== "undefined") DemoGestao.seed(); } catch (e) {}
       var vw = (qs.match(/[?&]view=([a-z]+)/) || [])[1];
+      // ?view= inválido é o caminho mais provável de um visitante cair em tela
+      // branca: ignora a view (cai no Painel logo abaixo) e, se for uma AÇÃO
+      // disfarçada (?view=tabelas), dispara a ação depois do render.
+      var vwAcao = (vw && !this.viewValida(vw) && this.VIEW_ACOES[vw]) ? vw : null;
+      if (vw && !this.viewValida(vw)) vw = null;
       if (vw && vw !== "orcamentos" && typeof Gestao !== "undefined") { this.view = vw; this.tela = "gestao"; }
       // Sem deep-link (?view=/?aba=), a vitrine abre na NOVA CARA: Painel Executivo/Financeiro
       // (a OBRA TESTE alimenta os gráficos; quem quer o editor usa ?aba=planilha como antes).
       if (!vw && !/[?&]aba=/.test(qs) && typeof Gestao !== "undefined") { this.view = "dashboard"; this.tela = "gestao"; }
       this.bindGlobal();
       this.render();
+      if (vwAcao) { var sAc = this; setTimeout(function () { try { sAc.irPara(vwAcao); } catch (eAc) {} }, 0); }
       // OBRA TESTE ORÇAPRO completa na vitrine: semeia DEPOIS da base SINAPI carregar
       // (os itens do orçamento pescam código/preço reais da base). Empresa "demo" é
       // isolada por empresaId — nunca toca dados reais. Silencioso: vitrine não toasta erro.
@@ -334,6 +340,10 @@
       // Tela inicial = Painel de Gestão (visão executiva). Vitrine/demo continua no editor
       // de orçamento; sem Gestão (plano base) cai em Orçamentos como sempre.
       var view = this.view || (podeGestao && !this._demo && (!Auth.podeModulo || Auth.podeModulo("dashboard")) ? "dashboard" : "orcamentos");
+      // Rede de segurança: quem seta App.view direto (deep-link ?view=xxx, console,
+      // harness de screenshot) não passa por irPara. View desconhecida deixava o
+      // #main VAZIO — normaliza aqui p/ o padrão seguro antes de qualquer render.
+      if (!this.viewValida(view)) { view = this.viewPadrao(); this.view = view; }
       if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
         // Sem Plus (base/sem licença): Gestão bloqueada p/ TODOS (dono e sub-usuário) → só Orçamento
         if (view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
@@ -348,7 +358,14 @@
         else { sidebar.innerHTML = Gestao.renderSidebar(view); if (app) app.classList.add("com-sidebar"); }
       }
       // módulos da Gestão
-      if (view !== "orcamentos" && typeof Gestao !== "undefined") { main.innerHTML = Gestao.render(view); if (Gestao.afterRender) Gestao.afterRender(view); return; }
+      if (view !== "orcamentos" && typeof Gestao !== "undefined") {
+        // Último recurso: módulo no menu SEM case no dispatcher devolve "" e a tela
+        // fica branca. afterRender só roda se o módulo renderizou de verdade.
+        var htmlG = Gestao.render(view), okG = !!(htmlG && String(htmlG).trim());
+        main.innerHTML = okG ? htmlG : this._viewVazia(view);
+        if (okG && Gestao.afterRender) Gestao.afterRender(view);
+        return;
+      }
       // view = Orçamentos (fluxo original)
       if (this.tela === "editor" && this.orcAtual) {
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
@@ -379,11 +396,56 @@
       });
     },
 
-    /* Navegação programática por módulo (Busca universal, sino de avisos, tour):
-     * mesmo caminho do clique na sidebar — teardown do BIM incluído. Fecha modal
-     * CRUD aberto (senão a view troca por baixo e o modal fica órfão por cima). */
+    /* Ações que PARECEM view mas são MODAL — nunca existiram como módulo. Quem
+     * chamava App.irPara("tabelas") caía num render vazio (Tabelas de Preço abre
+     * por App.abrirTabelas()). Mapear p/ o método real em vez de só recusar. */
+    VIEW_ACOES: { tabelas: "abrirTabelas" },
+
+    /* Fonte ÚNICA de views válidas: os módulos da sidebar (Gestao.modulos) + o
+     * Orçamentos. Sem a Gestão carregada, só o Orçamentos existe. */
+    viewsValidas: function () {
+      var vs = ["orcamentos"];
+      if (typeof Gestao !== "undefined" && Gestao.modulos) {
+        Gestao.modulos.forEach(function (m) { if (m && m.id && vs.indexOf(m.id) < 0) vs.push(m.id); });
+      }
+      return vs;
+    },
+    viewValida: function (view) { return !!view && this.viewsValidas().indexOf(String(view)) > -1; },
+
+    /* Destino seguro quando a view pedida não existe: Painel (se a Gestão está
+     * liberada e permitida ao usuário), senão a lista de Orçamentos. */
+    viewPadrao: function () {
+      var podeG = typeof Gestao !== "undefined" && (this._demo || Gestao.podeGestao());
+      if (podeG && (typeof Auth === "undefined" || !Auth.podeModulo || Auth.podeModulo("dashboard"))) return "dashboard";
+      return "orcamentos";
+    },
+
+    /* Navegação programática por módulo (Busca universal, sino de avisos, tour).
+     * View desconhecida NUNCA passa daqui: vira ação (se for uma) ou cai no padrão
+     * com aviso. Antes seguia adiante e o #main ficava VAZIO — o usuário lê tela
+     * branca como "sistema quebrado" (achado ao gravar a Central de Treinamento). */
     irPara: function (view) {
       if (!view) return;
+      view = String(view);
+      var fn = this.VIEW_ACOES[view];
+      if (fn && typeof this[fn] === "function") {
+        // modal abre POR CIMA da tela atual: só navega se o estado já estiver
+        // quebrado (senão perderia o orçamento aberto no editor)
+        if (this.view && !this.viewValida(this.view)) this._navegar(this.viewPadrao());
+        try { this[fn](); } catch (eA) {}
+        return;
+      }
+      if (!this.viewValida(view)) {
+        try { if (typeof UI !== "undefined" && UI.toast) UI.toast('Módulo "' + view + '" não existe — abrindo o Painel.', "erro"); } catch (eT2) {}
+        view = this.viewPadrao();
+      }
+      this._navegar(view);
+    },
+
+    /* Troca de view de fato — mesmo caminho do clique na sidebar, teardown do BIM
+     * incluído. Fecha modal CRUD aberto (senão a view troca por baixo e o modal
+     * fica órfão por cima). Só recebe view JÁ validada por irPara. */
+    _navegar: function (view) {
       try { if (typeof UI !== "undefined" && UI.fecharModal && document.querySelector(".modal-bg")) UI.fecharModal(); } catch (eM) {}
       if (view !== "bim" && typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} }
       var ap = document.querySelector(".app"); if (ap) ap.classList.remove("menu-aberto");
@@ -392,6 +454,22 @@
       this.orcAtual = null;
       try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo(view); } catch (eTm) {}
       this.render();
+    },
+
+    /* Aviso com saída, usado quando um módulo não produz conteúdo. Melhor isto do
+     * que a tela branca — o usuário sempre tem pra onde ir. */
+    _viewVazia: function (view) {
+      var nome = view;
+      try {
+        var m = ((typeof Gestao !== "undefined" && Gestao.modulos) || []).filter(function (x) { return x.id === view; })[0];
+        if (m) nome = m.nome;
+      } catch (eV) {}
+      var esc = (typeof Util !== "undefined" && Util.esc) ? Util.esc : function (s) { return String(s); };
+      return '<div class="flex between mb"><h1 style="margin:0">Módulo indisponível</h1></div>'
+        + '<div class="card" style="text-align:center;padding:34px">'
+        + '<p style="font-size:15px">Não foi possível abrir <b>' + esc(nome) + "</b> agora.</p>"
+        + '<p class="muted">Se continuar assim, avise o suporte do OrçaPRO.</p>'
+        + '<button class="btn primary" data-view="dashboard" style="margin-top:14px">Ir para o Painel</button></div>';
     },
 
     onClick: function (e) {

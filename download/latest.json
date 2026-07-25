@@ -1,5 +1,5 @@
 {
-  "versao": "1.1.124",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/1.1.124/OrcaPRO-IA-update-v1.1.124.zip",
-  "notas": "Crie composicoes e insumos proprios direto de onde voce trabalha: na busca de itens do orcamento (ja entra na planilha), no detalhamento oficial (Criar minha versao) e na requisicao de compras (insumo proprio reutilizavel)."
+  "versao": "1.1.125",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.125/OrcaPRO-IA-update-v1.1.125.zip",
+  "notas": "O modal de nova tarefa do Last Planner abria com o titulo duplicado (Novo Nova tarefa) - corrigido. E o sistema nao fica mais com a tela em branco quando um modulo e aberto por um link ou atalho que nao existe: cai no Painel com aviso e saida."
 }
