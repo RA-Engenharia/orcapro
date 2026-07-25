@@ -73,10 +73,7 @@
           { id: "combinar", emBreve: true, rotulo: "Igualar\ntipo", icone: "copiar", requer: "selecao", dica: "Aplica o tipo de um elemento em outro." }
         ] },
         { nome: "Nível", comandos: [
-          /* v1.1.127: a tela de níveis está pronta e testada no motor, mas o gate
-             achou que os níveis somem ao recarregar a página. Segura aqui — soltar
-             uma tela que perde o trabalho do usuário é pior que não ter a tela. */
-          { id: "niveis", emBreve: true, rotulo: "Níveis", icone: "niveis", grande: true, dica: "Cria e edita os níveis do projeto. Sai na próxima versão — está em conferência final." },
+                    { id: "niveis", rotulo: "Níveis", icone: "niveis", grande: true, dica: "Cria e edita os níveis do projeto. Cada elemento pertence a um nível." },
           { id: "nivel-atual", rotulo: "Nível\natual", icone: "alvo", tipo: "menu", dica: "Escolhe em que nível o próximo elemento vai nascer." },
           { id: "plano-trabalho", emBreve: true, rotulo: "Plano de\ntrabalho", icone: "planta", dica: "Altura de referência para desenhar." }
         ] }
@@ -313,6 +310,7 @@
                 icone: c.icone || "quadrado", dica: str(c.dica),
                 tipo: c.tipo || "botao", grande: c.grande !== false && !!c.grande,
                 pro: !!c.pro, ativo: self.ativo(c.id), habilitado: d.ok, motivo: d.motivo,
+                emBreve: !!c.emBreve,
                 itens: arr(c.itens).map(function (i) {
                   var di = self.disponibilidade(i.id);
                   return { id: i.id, rotulo: str(i.rotulo), icone: i.icone || "", dica: str(i.dica), ativo: self.ativo(i.id), habilitado: di.ok, motivo: di.motivo };

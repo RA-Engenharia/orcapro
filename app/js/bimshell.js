@@ -122,6 +122,34 @@
       return { raiz: raiz, palco: palco };
     },
 
+    /* O que dizer quando o usuário clica num comando que ainda não existe.
+       Cada um aponta o que já dá para fazer no lugar — a alternativa é o que
+       importa, não o pedido de desculpas. */
+    _ALTERNATIVA: {
+      "novo-projeto": "Por enquanto: abra um IFC, ou use \"Gerar de desenho\" para levantar a volumetria de um PDF ou DXF.",
+      "exportar-ifc": "Por enquanto: \"Enviar ao Revit\" leva o orçamento e o avanço para o plugin dentro do Revit.",
+      "porta": "Por enquanto: o vão de porta desconta no quantitativo pela Conferência de modulação, na aba Alvenaria.",
+      "janela": "Por enquanto: o vão e a verga saem na Conferência de modulação, na aba Alvenaria.",
+      "cobertura": "Por enquanto: a cobertura entra pelo IFC importado.",
+      "combinar": "Por enquanto: use \"Tipos de parede\" e escolha o mesmo tipo nos dois.",
+      "plano-trabalho": "Por enquanto: a altura de referência vem do nível ativo, em Níveis.",
+      "paginar-alvenaria": "Por enquanto: \"Conferir modulação\" já dá as peças fiada a fiada, com a amarração e a junta.",
+      "elevacoes": "Por enquanto: a Conferência de modulação lista as peças de cada parede.",
+      "graute": "Por enquanto: a Conferência de alvenaria já traz cinta, verga e junta de controle pela norma.",
+      "aplicar-ambiente": "Por enquanto: escolha o tipo em \"Padrões prontos\" e ele vale para as paredes novas.",
+      "paginar-piso": "Por enquanto: a área de piso sai nos Quantitativos do modelo.",
+      "paginar-parede": "Por enquanto: a área de revestimento por face está nas Propriedades da parede.",
+      "pranchas-paginacao": "Por enquanto: \"Corte técnico\" e \"Cotas automáticas\" geram desenho a partir do modelo."
+    },
+
+    _emBreve: function (c) {
+      var rot = String(c.rotulo || "").split(String.fromCharCode(10)).join(" ");
+      var alt = this._ALTERNATIVA[c.id] || "";
+      var txt = "\"" + rot + "\" ainda não está pronto — está no roteiro." + (alt ? " " + alt : "");
+      this.status(txt);
+      if (typeof UI !== "undefined" && UI.toast) UI.toast(txt, "aviso");
+    },
+
     desmontar: function () {
       if (this._onKey) { document.removeEventListener("keydown", this._onKey); this._onKey = null; }
       this._raiz = null; this._palco = null;
@@ -210,7 +238,13 @@
           var b = el("button", "rv-cmd" + (c.grande ? "" : " rv-cmd-sm"));
           b.type = "button";
           b.setAttribute("data-rv-cmd", c.id);
-          b.disabled = !c.habilitado;
+          /* "em breve" NÃO fica disabled: o botão continua clicável e o clique
+             conta o que já dá para fazer no lugar. Botão desabilitado com uma
+             dica que manda clicar é convite a um clique impossível — e no
+             celular a dica (title) nem aparece. Ele fica com CARA de
+             indisponível, mas responde. */
+          b.disabled = !c.habilitado && !c.emBreve;
+          if (c.emBreve) b.setAttribute("data-rv-embreve", "1");
           b.title = c.habilitado ? c.dica : (c.motivo || c.dica);
           if (c.tipo === "alterna") b.setAttribute("aria-pressed", c.ativo ? "true" : "false");
 
@@ -225,7 +259,10 @@
           if (c.tipo === "menu") b.appendChild(el("span", "rv-cmd-seta", "▾"));
           if (c.pro) b.appendChild(el("span", "rv-cmd-pro", "PRO"));
 
-          b.onclick = function () { self.executar(c.id); };
+          b.onclick = function () {
+            if (c.emBreve) { self._emBreve(c); return; }
+            self.executar(c.id);
+          };
 
           if (c.grande) {
             corpo.appendChild(b); col = null;

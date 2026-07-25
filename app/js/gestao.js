@@ -1912,7 +1912,17 @@
        * chamava, e o botão respondia "ainda não está disponível". */
       reg["estilo"] = function (e) { var b = B(); if (b && b.estiloDesenho) { b.estiloDesenho(e.ligado); return true; } return false; };
       reg["sistemas"] = function (e) { var b = B(); if (b && b.sistema) { b.sistema(e.ligado); return true; } return false; };
-      reg["snap"] = function (e) { var b = B(); if (b && b.snapConfig) { b.snapConfig({ on: e.ligado }); return true; } return false; };
+      /* "snap" é comando de MENU, não de alternar: e.ligado chegava null e o
+         snapConfig({on:null}) não mudava nada — o botão dizia sucesso e o
+         snap continuava como estava. Lê o estado e inverte. */
+      reg["snap"] = function () {
+        var b = B(); if (!b || !b.snapConfig) return false;
+        var st = b.snapConfig({}) || {};
+        var novo = !st.on;
+        b.snapConfig({ on: novo });
+        BimShell.status(novo ? "Snap ligado — vértice, meio e aresta." : "Snap desligado.");
+        return true;
+      };
       reg["corte-tecnico"] = function () { var b = B(); if (b && b.corte) { b.corte(true); BimShell.status("Trace a linha do corte na planta: o desenho técnico sai dela."); return true; } return false; };
       reg["anotacao"] = function (e) {
         var b = B(); if (!b || !b.editar) return false;
@@ -1951,12 +1961,16 @@
       reg["cotas-auto"] = function () { var b = B(); if (b && b.planta) { b.planta(true); BimShell.status("Planta baixa ligada — as cotas automáticas saem dela."); return true; } return false; };
       /* alvenaria: os motores já entregam isto pronto */
       reg["modular"] = reg["junta"] = function () { self._bimConferirAlvenaria(); return true; };
-      reg["tipos-parede"] = reg["presets-acabamento"] = function () {
+      reg["tipos-parede"] = function () {
         if (!window.AlvTipos || !window.BimShell) return false;
         BimShell.pintarProps(self._alvEsquemaProps());
         BimShell.status("Tipo de parede nas Propriedades. Troque no seletor do topo ou mude qualquer espessura.");
         return true;
       };
+      /* "Padrões prontos" é OUTRA coisa: a lista das receitas para escolher de
+         uma vez. Antes era o mesmo botão de "Tipos de parede" — dois botões
+         com rótulos diferentes fazendo exatamente a mesma coisa. */
+      reg["presets-acabamento"] = function () { self._alvPresets(); return true; };
       reg["peso-total"] = function () { self._pesoPorNivel(); return true; };
 
       reg["editar-tipo"] = reg["tipo-parede"] = reg["parede-cebola"] = function () {
@@ -2016,7 +2030,15 @@
       return s.indexOf("::") >= 0 ? s : (obra + "::" + s);
     },
 
+    /* Auth.empresaId() devolve "default" quando NÃO há sessão. Gravar assim
+       manda o dado para um tenant que deixa de existir no login — o usuário
+       perde o trabalho e nada avisa. Vale para as duas entidades novas. */
+    _semSessao: function () {
+      try { return !Auth || !Auth.empresaId || Auth.empresaId() === "default"; } catch (e) { return true; }
+    },
+
     _nivGravar: function (n) {
+      if (this._semSessao()) return false;
       var reg = {
         id: this._nivChave(n.id), obraId: this._bimSel || "geral",
         nome: n.nome, elevacao: n.elevacao,
@@ -2162,6 +2184,7 @@
       var r = this._nivRascunho || [];
       var v = N.validar(r);
       if (!v.ok) { UI.toast(v.erros[0], "erro"); return; }
+      if (this._semSessao()) { UI.toast("Entre na sua conta para salvar os níveis.", "erro"); return; }
       var antes = this._nivLer();
       /* o que sumiu do rascunho tem que sair do Store, senão volta na próxima
          abertura como se nunca tivesse sido excluído */
@@ -2303,7 +2326,8 @@
                  (o.kg == null ? "" : o.kg) + '" placeholder="informe"></td>' +
                "<td><span class='g-pill' style='background:" + cor + "1a;color:" + cor + ";font-size:10px'>" + Util.esc(o.rotulo) + "</span> " +
                  (o.fabricante ? '<span class="muted" style="font-size:11px">' + Util.esc(String(o.fabricante).split("|").join(" e ")) + "</span>" : "") +
-                 (dica ? ' <span class="muted" style="font-size:10.5px" title="' + Util.esc(dica) + '">ⓘ</span>' : "") +
+                 (dica ? ' <span class="muted" style="font-size:10.5px" title="' + Util.esc(dica) + '">ⓘ</span>' +
+                         '<span class="rv-nota-peca">' + Util.esc(dica) + "</span>" : "") +
                  (o.faixa ? '<br><span class="muted" style="font-size:10.5px">' + o.faixa.min + "–" + o.faixa.max + " kg em " + o.faixa.n + " catálogos</span>" : "") +
                "</td>" +
                '<td><button class="btn btn-sm" data-gacao="alv-peso-reverter" data-peca="' + Util.esc(pc.id) +
@@ -2316,7 +2340,17 @@
            ". O que você digitar vale para toda a empresa e sincroniza com os outros aparelhos. " +
            "Digitar o mesmo valor que já está aqui conta como conferência — o sistema passa a saber que alguém bateu esse número.</p>";
 
-      var bg = UI.modal("Pesos do meu fornecedor", h, [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
+      /* abrir esta tela fechava a Conferência e não havia volta: o usuário
+         perdia os campos que tinha preenchido. Se veio de lá, volta para lá
+         já recalculada com o peso novo. */
+      var veioDaConferencia = !!this._alvCfg;
+      var bg = UI.modal("Pesos do meu fornecedor", h, [{
+        texto: veioDaConferencia ? "Voltar à conferência" : "Fechar", classe: "",
+        onClick: function () {
+          UI.fecharModal();
+          if (veioDaConferencia) { try { self._bimConferirAlvenaria(); } catch (e) {} }
+        }
+      }]);
       var box = bg.querySelector(".modal");
       box.querySelectorAll("[data-gpeso]").forEach(function (inp) {
         /* guarda o valor ao ENTRAR: sem isso, só passar o foco pelo campo e
@@ -2334,8 +2368,15 @@
 
     _alvPesoGravar: function (box, pecaId, valor) {
       var B = window.Blocos, e = eid();
+      if (this._semSessao()) { UI.toast("Entre na sua conta para guardar o peso do fornecedor.", "erro"); return; }
       var v = String(valor).trim();
-      if (v === "") return;                         /* campo vazio não apaga nada */
+      if (v === "") {
+        /* apagar o campo não apagava nada e não dizia nada: a tela ficava em
+           branco enquanto o peso vigente seguia valendo por baixo */
+        this._alvPesoPintar(box, pecaId);
+        UI.toast("Para voltar ao peso de referência, use o ↺ na linha.", "aviso");
+        return;
+      }
       var r = B.definirPeso(pecaId, v, {});
       if (!r.ok) { UI.toast(r.motivo, "erro"); this._alvPesoPintar(box, pecaId); return; }
       /* grava e SÓ pinta o selo se a gravação passou — em cota cheia o
@@ -2496,6 +2537,49 @@
         this._alvEspessuras[id] = v;
       }
       return this._alvEsquemaProps();
+    },
+
+    /* PADRÕES PRONTOS — as dez receitas lado a lado, para escolher de uma vez.
+       O painel de Propriedades mostra UMA por vez, no seletor; aqui o usuário
+       compara espessura, faces e uso antes de decidir. */
+    _alvPresets: function () {
+      var T = window.AlvTipos;
+      if (!T) { UI.toast("Motor de tipos não carregado.", "erro"); return; }
+      var self = this, atual = this._alvTipoId;
+      var h = '<p class="muted" style="font-size:12.5px;margin:0 0 10px">' +
+        "As receitas mais usadas no Brasil, estrutural e vedação. Escolher uma troca o tipo ativo — " +
+        "depois dá para mexer em qualquer camada nas Propriedades.</p>";
+      h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px">';
+      T.listar().forEach(function (x) {
+        var t = T.tipo(x.id);
+        if (!t.ok) return;
+        var dentro = (t.dentro || []).map(function (c) { return c.rotulo; }).join(" → ") || "sem acabamento";
+        var fora = (t.fora || []).map(function (c) { return c.rotulo; }).join(" → ") || "sem acabamento";
+        var ativo = x.id === atual;
+        h += '<div style="border:1px solid ' + (ativo ? "var(--azul,#2e6f9e)" : "var(--linha)") + ';border-radius:10px;padding:10px 12px;' +
+             (ativo ? "background:#2e6f9e0f;" : "") + '">' +
+             '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+             '<b style="font-size:12.5px;flex:1">' + Util.esc(x.rotulo) + "</b>" +
+             (ativo ? '<span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-size:10px">EM USO</span>' : "") + "</div>" +
+             '<div style="font-size:11.5px;margin-bottom:6px"><b>' + (x.espessura / 10).toFixed(1) + " cm</b> " +
+             '<span class="muted">· ' + Util.esc(x.funcao === "estrutural" ? "estrutural" : "vedação") + "</span></div>" +
+             '<div class="muted" style="font-size:11px;line-height:1.5">' +
+             "<b>Dentro:</b> " + Util.esc(dentro) + "<br><b>Fora:</b> " + Util.esc(fora) + "</div>" +
+             (t.nota ? '<div class="muted" style="font-size:10.5px;margin-top:5px;font-style:italic">' + Util.esc(t.nota) + "</div>" : "") +
+             '<button class="btn sm ' + (ativo ? "" : "primary") + '" data-gacao="alv-preset" data-tipo="' + Util.esc(x.id) +
+             '" style="margin-top:8px;width:100%"' + (ativo ? " disabled" : "") + ">" +
+             (ativo ? "Já é o tipo ativo" : "Usar esta") + "</button></div>";
+      });
+      h += "</div>";
+      UI.modal("Padrões de parede prontos", h, [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
+    },
+
+    _alvUsarPreset: function (tipoId) {
+      this._alvTrocarTipo(tipoId);
+      UI.fecharModal();
+      var t = this._alvTipo();
+      UI.toast("Tipo ativo: " + (t ? t.rotulo + " · " + (t.espessura / 10).toFixed(1) + " cm" : tipoId), "ok");
+      if (window.BimShell) BimShell.pintarProps(this._alvEsquemaProps());
     },
 
     _alvTrocarTipo: function (tipoId) {
@@ -7374,6 +7458,7 @@ renderFolha: function () {
         case "bim-quant-ilustrado": return this.bimQuantIlustrado();
         case "bim-qr-rv": return this.bimQRImersivo();
         case "alv-pesos": return this._alvPesos();
+        case "alv-preset": return this._alvUsarPreset(dataset.tipo);
         case "alv-peso-reverter": return this._alvPesoReverter(dataset.peca);
         case "niveis": return this._niveis();
         case "niv-excluir": return this._nivExcluir(dataset.id);

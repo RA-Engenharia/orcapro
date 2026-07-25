@@ -437,3 +437,28 @@
 @media (prefers-reduced-motion: reduce) {
   .rv-lateral, .rv-fita { transition: none; }
 }
+
+
+/* =====================================================================
+ * TOQUE E TELA PEQUENA
+ * O gate achou duas coisas que só doem no celular: a tabela de níveis
+ * espremia o campo "Nome" a 37 px (ela rola E o campo colapsa, o pior dos
+ * dois mundos), e toda a justificativa dos pesos vivia em `title`, que
+ * não existe em aparelho de toque.
+ * ===================================================================== */
+@media (max-width: 720px) {
+  /* a tabela rola em vez de espremer: cada coluna guarda um mínimo legível */
+  #modal-bg .modal .body table.tbl { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #modal-bg .modal .body table.tbl th,
+  #modal-bg .modal .body table.tbl td { white-space: nowrap; }
+  #modal-bg .modal .body table.tbl input[type="text"] { min-width: 150px; }
+  #modal-bg .modal .body table.tbl input[type="number"] { min-width: 88px; }
+  /* alvo de toque: 1px de borda não se acerta com o dedo */
+  #modal-bg .modal .body .btn.sm { min-height: 34px; min-width: 34px; }
+}
+
+/* A nota da peça deixa de ser só tooltip: vira linha visível abaixo do nome.
+   Em tela grande fica discreta; no toque é a ÚNICA forma de ler. */
+.rv-nota-peca { display: block; font-size: 10.5px; line-height: 1.4; color: var(--rv-tx-fraco, #6a6a6a);
+  margin-top: 2px; max-width: 46ch; }
+@media (min-width: 721px) { .rv-nota-peca { display: none; } }
