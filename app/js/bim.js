@@ -344,6 +344,18 @@ function montar(host, opts) {
     aplicarTema();
     if (S && S._hint) S._hint('🎨 Tema: ' + TEMAS[temaId].nome);
   }
+  /* v1.1.127 — a casca (bimshell) precisa MANDAR o tema, não só ciclar: quando o
+   * ambiente está no claro do Revit, a cena tem de acompanhar, senão fica uma
+   * janela navy no meio de uma interface clara. */
+  function definirTema(id) {
+    if (!TEMAS[id]) return false;
+    temaId = id;
+    try { localStorage.setItem('orcapro:bim:tema', id); } catch (_) {}
+    aplicarTema();
+    return true;
+  }
+  /* a exposição em S fica LOGO DEPOIS da criação do S (mais abaixo): aqui em
+   * cima S ainda vai ser reatribuído, e a referência se perderia. */
 
   // v1.1.96 — COLORIR POR SISTEMA HIDROSSANITÁRIO (padrão brasileiro, editável pelo usuário).
   // Vale no 3D, na Planta baixa e no imersivo RA/RV de uma vez só, porque o hook está no
@@ -494,6 +506,7 @@ function montar(host, opts) {
   var clashMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, emissive: 0x5a0a0a, metalness: .1, roughness: .6 });
 
   S = { host: host, opts: opts, scene: scene, camera: camera, renderer: renderer, orbit: orbit, modelRoot: modelRoot,
+        _definirTema: definirTema,   /* a casca manda o tema da cena (v1.1.127) */
         bar: bar, hud: hud, over: over, loading: loading,
         api: new IfcAPI(), apiReady: false, modelID: -1, meshPorId: {}, elementos: [],
         modelos: [], meshPorUid: {}, ultra: false, _tickExtra: [],
@@ -3501,7 +3514,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // "apagar" IFC apenas OCULTA marcado como removido na edição.
   // ============================================================
   var edit = { on: false, sub: null, p1: null, prov: null, ops: [], seq: 0,
-               moverId: null, moverMesh: null, esp: 0.15, alt: 2.8, secao: 0.2,
+               /* espLaje separado de esp de propósito: a espessura do TIPO DE
+                  PAREDE (bloco + revestimento das duas faces) não tem relação
+                  nenhuma com a espessura do piso. Compartilhar o campo fazia a
+                  laje nascer com 19,7 cm em vez de 15 — 31% de concreto a mais,
+                  em silêncio, e a espessura do piso virava função do reboco. */
+               moverId: null, moverMesh: null, esp: 0.15, espLaje: 0.15, alt: 2.8, secao: 0.2,
                base: 0, modelo: null, sprites: [], removidosAntes: [],
                // v1.1.82 — desenho estilo Revit: trava orto, ângulo predefinido (0=livre),
                // traço ENCADEADO (a próxima parede continua do fim da anterior) e o último
@@ -3520,7 +3538,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-ed="apagar">🗑 Apagar</button>' +
     '<button class="btn sm" data-ed="anotar">📍 Anotar</button></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
-    '<label style="display:flex;gap:4px;align-items:center">Esp. <input data-ed="esp" class="inp" type="number" value="0.15" step="0.01" min="0.05" max="0.6" style="width:56px"> m</label>' +
+    '<label style="display:flex;gap:4px;align-items:center">Esp. <input data-ed="esp" class="inp" type="number" value="0.15" step="0.01" min="0.05" max="1.0" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Alt. <input data-ed="alt" class="inp" type="number" value="2.80" step="0.1" min="0.3" max="8" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Pilar <input data-ed="secao" class="inp" type="number" value="0.20" step="0.05" min="0.1" max="1" style="width:56px"> m</label></div>' +
     '<input data-ed="txt" class="inp" placeholder="Texto da anotação (p/ 📍 Anotar)" maxlength="200" style="width:100%">' +
@@ -3833,7 +3851,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         return;
       }
       if (sub === 'parede') { editConcluirParede(editAjustarPonto(p, e)); return; } // orto/ângulo/encadeado/distância
-      var cx2 = BimEdit.laje({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, Math.min(edit.esp, 0.4), edit.base);
+      var cx2 = BimEdit.laje({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, Math.min(edit.espLaje, 0.4), edit.base);
       editTirarProv();
       if (!cx2) { S._hint('✏️ Pontos muito próximos — clique 2 pontos distintos.'); return; }
       editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cx2 });
@@ -3922,12 +3940,43 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   editPanel.addEventListener('change', function (e) {
     var i = e.target.closest('input[data-ed]'); if (!i) return; var k = i.getAttribute('data-ed'), v = parseFloat(i.value);
     // clamp nos limites do input — valor DIGITADO ignora min/max do HTML (parede de 50 m de espessura não passa)
-    var lim = { esp: [0.05, 0.6], alt: [0.3, 8], secao: [0.1, 1] }[k];
+    var lim = { esp: [0.05, 1.0], alt: [0.3, 8], secao: [0.1, 1] }[k];
     if (!lim || !(v > 0) || !isFinite(v)) return;
     v = Math.min(lim[1], Math.max(lim[0], v));
     i.value = String(v);
-    if (k === 'esp') edit.esp = v; else if (k === 'alt') edit.alt = v; else edit.secao = v;
+    /* o mesmo campo alimenta parede e laje conforme a ferramenta ativa */
+    if (k === 'esp') { if (edit.sub === 'laje') edit.espLaje = v; else edit.esp = v; }
+    else if (k === 'alt') edit.alt = v; else edit.secao = v;
   });
+
+  /* --------------------------------------------------------------
+   * O TIPO DE PAREDE manda na espessura do editor.
+   * Até aqui, `edit.esp` nascia com 0,15 m FIXOS: o painel de tipo
+   * calculava a parede executiva em 19,7 cm e o 3D desenhava 15.
+   * Agora quem define é o tipo ativo (js/alvtipos.js), e o número
+   * chega aqui em metros, já somado com as camadas das duas faces.
+   * -------------------------------------------------------------- */
+  S._setEspEditor = function (metros, rotulo) {
+    var v = parseFloat(metros);
+    if (!(v > 0) || !isFinite(v)) return false;
+    /* se não mudou nada, não escreve: o painel de propriedades repinta a cada
+       tecla, e sobrescrever aqui apagaria o que o usuário digitou no viewer */
+    if (Math.abs(v - edit.esp) < 1e-6 && (rotulo || "") === (edit.tipoRotulo || "")) return true;
+    /* parede de 5 cm ou de 5 m não existe. O teto sobe para 1,00 m porque a
+       espessura agora inclui as camadas: bloco de 19 com emboço nas duas
+       faces já passa de 24 cm, e parede dupla passa de 60. */
+    v = Math.min(1.0, Math.max(0.05, v));
+    edit.esp = v;
+    edit.tipoRotulo = rotulo || "";
+    /* o campo na tela mostra a grandeza da ferramenta ATIVA — se o usuário
+       está no Piso, escrever a espessura da parede ali seria mentira */
+    if (edit.sub !== 'laje') {
+      var inp = editPanel.querySelector('input[data-ed="esp"]');
+      if (inp) inp.value = String(Math.round(v * 1000) / 1000);
+    }
+    return true;
+  };
+  S._espEditor = function () { return { esp: edit.esp, espLaje: edit.espLaje, tipo: edit.tipoRotulo || "" }; };
 
   var p3d = { parse: null, det: null };
   var p3dPanel = document.createElement('div');
@@ -5147,6 +5196,9 @@ window.BIM = {
   estiloDesenho: function (on) { if (S && S._setEstiloDesenho) S._setEstiloDesenho(on == null ? !(S._estiloOn && S._estiloOn()) : !!on); },
   // v1.1.96 — colorir por sistema hidrossanitário (3D + planta + RA/RV); sistemaInfo p/ E2E
   sistema: function (on) { if (S && S._setSistema) S._setSistema(on == null ? !(S._sisColorOn && S._sisColorOn()) : !!on); },
+  /* tema da CENA 3D: 'orcapro' (navy) | 'revit' (cinza escuro) | 'claro'.
+   * A casca do ambiente chama isto para a cena acompanhar a interface. */
+  tema: function (id) { return !!(S && S._definirTema && S._definirTema(id)); },
   sistemaOn: function () { return !!(S && S._sisColorOn && S._sisColorOn()); },
   sistemaInfo: function () { return (S && S._sisInfo) ? S._sisInfo() : null; },
   sistemaClassificar: function (texto) { return (S && S._sisClassificar) ? S._sisClassificar(texto) : null; }, // classifica um nome/descrição num sistema (pura; p/ testes e plugins)
@@ -5160,6 +5212,10 @@ window.BIM = {
   // ---- 2D→3D (Fase C.1): paredes confirmadas viram modelo sintético no viewer ----
   carregarSintetico: function (caixas, nome) { return (S && S._carregarSintetico) ? S._carregarSintetico(caixas, nome) : null; },
   editar: function (on) { if (S && S._setEdit) S._setEdit(on == null ? !(S.edit && S.edit.on) : !!on); },
+  /* a espessura com que a próxima parede nasce — vem do tipo (alvtipos.js),
+     em METROS, já com as camadas das duas faces somadas */
+  espessuraTipo: function (metros, rotulo) { return !!(S && S._setEspEditor && S._setEspEditor(metros, rotulo)); },
+  espessuraAtual: function () { return (S && S._espEditor) ? S._espEditor() : null; },
   editarOps: function () { return (S && S._editOps) ? S._editOps() : []; },
   editarAplicar: function (ops) { if (S && S._editAplicar) S._editAplicar(ops); },
   // nº de malhas efetivamente visíveis (modelo ligado + mesh visível) — E2E/diagnóstico

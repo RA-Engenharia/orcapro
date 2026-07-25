@@ -925,8 +925,9 @@
         var eid = Auth.empresaId();
         Nuvem.entrarPorLicenca(chave)
           .then(function () { return Nuvem.sincronizar(eid); })
+          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
           .then(function () {
-            try { Nuvem.escutar(eid, function () { if (self.tela === "lista") self.render(); }); } catch (e) {}
+            try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); }); } catch (e) {}
             // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
             if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
             if (self.tela === "lista") self.render(); // equipe/dados sincronizados
@@ -985,8 +986,9 @@
         var eid = Auth.empresaId();
         Nuvem.entrar(email, senha)
           .then(function () { return Nuvem.sincronizar(eid); })
+          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
           .then(function () {
-            Nuvem.escutar(eid, function () { if (self.tela === "lista") self.render(); });
+            Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
             if (self.tela === "lista") self.render();
             UI.toast("☁ Dados sincronizados na nuvem.", "ok");
           })
@@ -1236,8 +1238,10 @@
             var eid = Auth.empresaId();
             var p = conectado ? Promise.resolve() : Nuvem.entrar(email, senha);
             p.then(function () { return Nuvem.sincronizar(eid); })
+              .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
+          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
               .then(function () {
-                Nuvem.escutar(eid, function () { if (self.tela === "lista") self.render(); });
+                Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
                 UI.fecharModal(); self.render();
                 UI.toast("☁ Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
               })

@@ -1,0 +1,439 @@
+/* =====================================================================
+ * bim-revit.css — A casca do módulo BIM, na aparência do Revit.
+ *
+ * Decisão do Rogério (25/jul): o BIM tem a cara do Revit, não a do resto
+ * do OrçaPRO. O engenheiro que abre isto já sabe onde tudo fica — a fita
+ * em cima, Propriedades à esquerda, Navegador de Projeto embaixo dela,
+ * ViewCube no canto, barra de status no rodapé.
+ *
+ * As cores vivem em variáveis PRÓPRIAS (--rv-*), presas ao .bim-revit.
+ * Nada aqui vaza para o resto do app, e o tema do app não pinta isto.
+ *
+ * Tema claro = o do print que ele mandou (Revit 2027 claro).
+ * Tema escuro = o Revit Dark, para quem trabalha à noite.
+ * ===================================================================== */
+
+.bim-revit {
+  /* ---- claro (padrão, igual ao print) ---- */
+  --rv-titulo-bg: #2f2f2f;
+  --rv-titulo-tx: #f0f0f0;
+  --rv-fita-bg: #f0f0f0;
+  --rv-fita-tx: #1a1a1a;
+  --rv-aba-bg: transparent;
+  --rv-aba-ativa-bg: #f0f0f0;
+  --rv-aba-ativa-linha: #1a6cb5;
+  --rv-abas-bg: #e4e4e4;
+  --rv-arquivo-bg: #1a6cb5;
+  --rv-arquivo-tx: #ffffff;
+  --rv-painel-bg: #f0f0f0;
+  --rv-painel-tx: #1a1a1a;
+  --rv-painel-cab: #e1e1e1;
+  --rv-linha: #d4d4d4;
+  --rv-linha-forte: #b4b4b4;
+  --rv-tela: #ffffff;           /* a área de desenho é BRANCA, como no Revit */
+  --rv-tela-2: #f7f9fb;
+  --rv-hover: #d8e6f2;
+  --rv-ativo: #cce4f7;
+  --rv-ativo-borda: #7aaddc;
+  --rv-sel: #cce8ff;
+  --rv-tx-fraco: #6a6a6a;
+  --rv-tx-off: #a0a0a0;
+  --rv-status-bg: #f0f0f0;
+  --rv-foco: #1a6cb5;
+  --rv-sombra: rgba(0,0,0,.18);
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* o ambiente ocupa a tela como um programa de projeto, não como um cartão:
+     sem altura fixa o palco colapsa e o 3D some */
+  height: min(84vh, 900px);
+  background: var(--rv-fita-bg);
+  color: var(--rv-fita-tx);
+  border: 1px solid var(--rv-linha-forte);
+  border-radius: 4px;
+  overflow: hidden;
+  font-size: 12px;
+  /* a fonte do Revit é a de sistema; aqui idem, para não parecer "site" */
+  font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Revit Dark, para quem trabalha à noite. A estrutura é a mesma; só a
+   paleta muda — inclusive a área de desenho, que fica cinza-escura. */
+.bim-revit[data-rv-tema="escuro"] {
+  --rv-titulo-bg: #1c1c1c;
+  --rv-titulo-tx: #e6e6e6;
+  --rv-fita-bg: #383838;
+  --rv-fita-tx: #e6e6e6;
+  --rv-aba-ativa-bg: #383838;
+  --rv-aba-ativa-linha: #4a9fe0;
+  --rv-abas-bg: #2b2b2b;
+  --rv-arquivo-bg: #1a6cb5;
+  --rv-painel-bg: #383838;
+  --rv-painel-tx: #e6e6e6;
+  --rv-painel-cab: #454545;
+  --rv-linha: #4a4a4a;
+  --rv-linha-forte: #5a5a5a;
+  --rv-tela: #3f3f3f;
+  --rv-tela-2: #363636;
+  --rv-hover: #4c5a66;
+  --rv-ativo: #2d4d68;
+  --rv-ativo-borda: #4a9fe0;
+  --rv-sel: #2d4d68;
+  --rv-tx-fraco: #a8a8a8;
+  --rv-tx-off: #6e6e6e;
+  --rv-status-bg: #383838;
+  --rv-sombra: rgba(0,0,0,.45);
+}
+
+/* ---------------------------------------------------------------- TÍTULO */
+.rv-titulo {
+  display: flex; align-items: center; gap: 8px;
+  height: 30px; padding: 0 8px;
+  background: var(--rv-titulo-bg); color: var(--rv-titulo-tx);
+  font-size: 12px; flex: 0 0 auto;
+}
+.rv-titulo-nome {
+  flex: 1; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  opacity: .95;
+}
+.rv-qat { display: flex; align-items: center; gap: 1px; }
+.rv-qat button {
+  width: 24px; height: 22px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 3px;
+  color: var(--rv-titulo-tx); cursor: pointer; opacity: .85;
+}
+.rv-qat button:hover { background: rgba(255,255,255,.14); opacity: 1; }
+.rv-qat button:disabled { opacity: .3; cursor: default; }
+.rv-qat button svg { width: 15px; height: 15px; }
+
+/* ------------------------------------------------------------------ ABAS */
+.rv-abas {
+  display: flex; align-items: flex-end; gap: 0;
+  background: var(--rv-abas-bg);
+  border-bottom: 1px solid var(--rv-linha-forte);
+  padding: 0 6px; flex: 0 0 auto;
+  overflow-x: auto; scrollbar-width: thin;
+}
+.rv-abas::-webkit-scrollbar { height: 5px; }
+.rv-abas::-webkit-scrollbar-thumb { background: var(--rv-linha-forte); border-radius: 3px; }
+.rv-aba {
+  appearance: none;
+  padding: 6px 13px 7px; margin: 0;
+  background: var(--rv-aba-bg); color: var(--rv-fita-tx);
+  border: 0; border-bottom: 2px solid transparent;
+  font-size: 12.5px; font-family: inherit; white-space: nowrap;
+  cursor: pointer;
+}
+.rv-aba:hover { background: var(--rv-hover); }
+.rv-aba[aria-selected="true"] {
+  background: var(--rv-aba-ativa-bg);
+  border-bottom-color: var(--rv-aba-ativa-linha);
+  font-weight: 600;
+}
+.rv-aba.rv-aba-arquivo {
+  background: var(--rv-arquivo-bg); color: var(--rv-arquivo-tx);
+  font-weight: 600; margin-right: 4px;
+  border-radius: 3px 3px 0 0;
+}
+.rv-aba.rv-aba-arquivo:hover { filter: brightness(1.12); }
+.rv-aba:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
+
+/* ------------------------------------------------------------------ FITA */
+.rv-fita {
+  display: flex; align-items: stretch; gap: 0;
+  background: var(--rv-fita-bg);
+  border-bottom: 1px solid var(--rv-linha-forte);
+  padding: 4px 6px 0; min-height: 92px; flex: 0 0 auto;
+  overflow-x: auto; scrollbar-width: thin;
+}
+.rv-fita::-webkit-scrollbar { height: 6px; }
+.rv-fita::-webkit-scrollbar-thumb { background: var(--rv-linha-forte); border-radius: 3px; }
+
+/* um painel da fita: comandos em cima, nome embaixo, filete à direita */
+.rv-painel {
+  display: flex; flex-direction: column;
+  padding: 0 8px; position: relative;
+  border-right: 1px solid var(--rv-linha);
+  flex: 0 0 auto;
+}
+.rv-painel:last-child { border-right: 0; }
+.rv-painel-corpo {
+  display: flex; align-items: flex-start; gap: 2px;
+  flex: 1; padding: 2px 0 4px;
+}
+.rv-painel-nome {
+  text-align: center; font-size: 10.5px; color: var(--rv-tx-fraco);
+  padding: 2px 0 4px; user-select: none;
+}
+
+/* botão grande: ícone em cima, rótulo em duas linhas embaixo */
+.rv-cmd {
+  appearance: none; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  gap: 3px; width: 62px; min-height: 62px; padding: 5px 3px 4px;
+  background: transparent; border: 1px solid transparent; border-radius: 3px;
+  color: var(--rv-fita-tx); cursor: pointer; text-align: center;
+}
+.rv-cmd:hover:not(:disabled) { background: var(--rv-hover); border-color: var(--rv-ativo-borda); }
+.rv-cmd:active:not(:disabled) { background: var(--rv-ativo); }
+.rv-cmd[aria-pressed="true"] {
+  background: var(--rv-ativo); border-color: var(--rv-ativo-borda);
+  box-shadow: inset 0 1px 2px var(--rv-sombra);
+}
+.rv-cmd:disabled { color: var(--rv-tx-off); cursor: default; }
+.rv-cmd:disabled .rv-cmd-ico { opacity: .35; }
+.rv-cmd:focus-visible { outline: 2px solid var(--rv-foco); outline-offset: -2px; }
+.rv-cmd-ico { display: flex; align-items: center; justify-content: center; height: 26px; }
+.rv-cmd-ico svg { width: 24px; height: 24px; }
+.rv-cmd-rot {
+  font-size: 11px; line-height: 1.15; letter-spacing: -.1px;
+  display: flex; flex-direction: column;
+}
+/* botão pequeno: ícone e rótulo lado a lado, três por coluna */
+.rv-cmd.rv-cmd-sm {
+  flex-direction: row; align-items: center; justify-content: flex-start;
+  width: auto; min-width: 96px; min-height: 0; height: 22px;
+  padding: 2px 6px; gap: 5px; text-align: left;
+}
+.rv-cmd.rv-cmd-sm .rv-cmd-ico { height: 16px; }
+.rv-cmd.rv-cmd-sm .rv-cmd-ico svg { width: 15px; height: 15px; }
+.rv-cmd.rv-cmd-sm .rv-cmd-rot { flex-direction: row; gap: 3px; font-size: 11.5px; }
+.rv-col { display: flex; flex-direction: column; gap: 1px; }
+/* seta de menu embaixo do botão */
+.rv-cmd-seta { font-size: 8px; line-height: 1; opacity: .65; margin-top: -1px; }
+/* selo de recurso do plano pago */
+.rv-cmd-pro {
+  position: absolute; top: 2px; right: 2px;
+  font-size: 8px; font-weight: 700; letter-spacing: .3px;
+  background: #f59e0b; color: #1a1a1a; border-radius: 2px; padding: 0 3px;
+}
+.rv-cmd { position: relative; }
+
+/* ------------------------------------------------------------- CORPO 3 COLUNAS */
+.rv-corpo { display: flex; flex: 1; min-height: 0; }
+
+/* coluna esquerda: Propriedades em cima, Navegador embaixo */
+.rv-lateral {
+  width: 268px; flex: 0 0 268px;
+  display: flex; flex-direction: column;
+  background: var(--rv-painel-bg); color: var(--rv-painel-tx);
+  border-right: 1px solid var(--rv-linha-forte);
+  min-height: 0;
+}
+.rv-doca { display: flex; flex-direction: column; min-height: 0; }
+/* Propriedades é o painel de trabalho — leva a maior fatia. O Navegador
+   guarda um piso para nunca virar uma fresta. */
+.rv-doca.rv-props { flex: 1 1 62%; }
+.rv-doca.rv-nav { flex: 1 1 38%; min-height: 150px; border-top: 1px solid var(--rv-linha-forte); }
+.rv-doca-cab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; font-size: 12px; font-weight: 600;
+  background: var(--rv-painel-cab); border-bottom: 1px solid var(--rv-linha);
+  flex: 0 0 auto;
+}
+.rv-doca-cab .rv-x {
+  margin-left: auto; width: 18px; height: 18px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 2px;
+  color: inherit; cursor: pointer; font-size: 12px; line-height: 1;
+}
+.rv-doca-cab .rv-x:hover { background: var(--rv-hover); border-color: var(--rv-linha-forte); }
+.rv-doca-corpo { flex: 1; overflow: auto; min-height: 0; }
+
+/* cartão do tipo, no alto das Propriedades */
+.rv-tipo {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-bottom: 1px solid var(--rv-linha);
+  background: var(--rv-tela-2);
+}
+.rv-tipo-mini {
+  width: 42px; height: 42px; flex: 0 0 42px;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--rv-tela); border: 1px solid var(--rv-linha);
+  border-radius: 2px;
+}
+.rv-tipo-mini svg { width: 26px; height: 26px; opacity: .75; }
+.rv-tipo-sel { flex: 1; min-width: 0; }
+/* sem box-sizing o padding e a borda somam por fora dos 100% e a seta do
+   select monta em cima do texto — foi o que apareceu no print da tela */
+.rv-tipo-sel select { width: 100%; max-width: 100%; box-sizing: border-box; font-size: 11.5px; }
+.rv-tipo-linha {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-bottom: 1px solid var(--rv-linha);
+  font-size: 11.5px;
+}
+.rv-tipo-linha b { flex: 1; font-weight: 600; }
+.rv-btn-tipo {
+  font-size: 11px; padding: 2px 8px;
+  background: var(--rv-painel-cab); color: inherit;
+  border: 1px solid var(--rv-linha-forte); border-radius: 2px; cursor: pointer;
+}
+.rv-btn-tipo:hover { background: var(--rv-hover); }
+
+/* tabela de parâmetros */
+.rv-params { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+.rv-params th {
+  text-align: left; font-weight: 700; font-size: 11px;
+  background: var(--rv-painel-cab); color: var(--rv-painel-tx);
+  padding: 4px 8px; border-top: 1px solid var(--rv-linha);
+  border-bottom: 1px solid var(--rv-linha);
+  position: sticky; top: 0; z-index: 1;
+  cursor: pointer; user-select: none;
+}
+.rv-params th .rv-seta { font-size: 8px; margin-right: 4px; display: inline-block; }
+.rv-params td { padding: 3px 8px; border-bottom: 1px solid var(--rv-linha); vertical-align: middle; }
+.rv-params tr:nth-child(even) td { background: var(--rv-tela-2); }
+.rv-params td.rv-p-nome { width: 47%; color: var(--rv-painel-tx); }
+.rv-params tr.rv-p-off td.rv-p-nome,
+.rv-params tr.rv-p-off td.rv-p-val { color: var(--rv-tx-off); }
+.rv-params td.rv-p-val input[type="text"],
+.rv-params td.rv-p-val input[type="number"],
+.rv-params td.rv-p-val select {
+  width: 100%; max-width: 100%; box-sizing: border-box; font-size: 11.5px; padding: 1px 3px;
+  background: var(--rv-tela); color: var(--rv-painel-tx);
+  border: 1px solid transparent; border-radius: 0;
+  font-family: inherit;
+}
+.rv-params td.rv-p-val input:hover, .rv-params td.rv-p-val select:hover { border-color: var(--rv-linha-forte); }
+.rv-params td.rv-p-val input:focus, .rv-params td.rv-p-val select:focus {
+  border-color: var(--rv-foco); outline: none;
+}
+.rv-params td.rv-p-val .rv-p-ro { color: var(--rv-tx-fraco); padding: 1px 3px; display: block; }
+.rv-p-motivo { font-size: 10.5px; color: var(--rv-tx-fraco); font-style: italic; }
+/* Aviso de NORMA e pendência de DADO não podem parecer a mesma coisa: um diz
+   que a parede está errada, o outro que falta informação para fechar a conta. */
+.rv-p-aviso { font-size: 11px; line-height: 1.45; padding: 7px 9px; border-left: 3px solid #b45309;
+  background: rgba(180, 83, 9, .10); color: var(--rv-tx); }
+.rv-p-pend { font-size: 10.5px; line-height: 1.45; padding: 6px 9px; border-left: 3px solid var(--rv-linha);
+  color: var(--rv-tx-fraco); }
+.rv-props-pe {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px; border-top: 1px solid var(--rv-linha);
+  background: var(--rv-painel-cab); flex: 0 0 auto;
+}
+.rv-props-pe .rv-aplicar { margin-left: auto; }
+
+/* navegador de projeto */
+.rv-busca {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 8px; border-bottom: 1px solid var(--rv-linha);
+  flex: 0 0 auto;
+}
+.rv-busca input {
+  flex: 1; font-size: 11.5px; padding: 2px 5px;
+  background: var(--rv-tela); color: var(--rv-painel-tx);
+  border: 1px solid var(--rv-linha-forte); border-radius: 2px;
+  font-family: inherit;
+}
+.rv-arv { list-style: none; margin: 0; padding: 2px 0; font-size: 11.5px; }
+.rv-arv ul { list-style: none; margin: 0; padding-left: 13px; }
+.rv-no {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 8px; cursor: pointer; user-select: none;
+  white-space: nowrap;
+}
+.rv-no:hover { background: var(--rv-hover); }
+.rv-no[aria-selected="true"] { background: var(--rv-sel); }
+.rv-no-exp {
+  width: 12px; flex: 0 0 12px; text-align: center;
+  font-size: 9px; color: var(--rv-tx-fraco);
+}
+.rv-no-ico { width: 14px; flex: 0 0 14px; display: inline-flex; }
+.rv-no-ico svg { width: 13px; height: 13px; }
+.rv-no-tx { overflow: hidden; text-overflow: ellipsis; }
+.rv-no-n { color: var(--rv-tx-fraco); font-size: 10.5px; margin-left: 3px; }
+
+/* ------------------------------------------------------- ÁREA DE DESENHO */
+.rv-area {
+  flex: 1; position: relative; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--rv-tela);
+}
+.rv-docs {
+  display: flex; align-items: stretch; gap: 1px;
+  background: var(--rv-abas-bg);
+  border-bottom: 1px solid var(--rv-linha-forte);
+  padding: 2px 4px 0; flex: 0 0 auto;
+}
+.rv-doc {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px; font-size: 11.5px;
+  background: var(--rv-painel-cab); color: var(--rv-fita-tx);
+  border: 1px solid var(--rv-linha); border-bottom: 0;
+  border-radius: 3px 3px 0 0; cursor: pointer;
+}
+.rv-doc[aria-selected="true"] { background: var(--rv-tela); font-weight: 600; }
+.rv-doc .rv-x { font-size: 11px; opacity: .6; }
+.rv-doc .rv-x:hover { opacity: 1; }
+.rv-palco { flex: 1; position: relative; min-height: 0; }
+
+/* barra de controle da vista, no rodapé da área */
+.rv-vistabar {
+  display: flex; align-items: center; gap: 3px;
+  padding: 2px 6px; flex: 0 0 auto;
+  background: var(--rv-painel-bg);
+  border-top: 1px solid var(--rv-linha);
+  font-size: 11px; overflow-x: auto;
+}
+.rv-vistabar .rv-vb-rot { color: var(--rv-tx-fraco); margin-right: 6px; white-space: nowrap; }
+.rv-vb {
+  width: 22px; height: 20px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 2px;
+  color: var(--rv-fita-tx); cursor: pointer; flex: 0 0 auto;
+}
+.rv-vb:hover:not(:disabled) { background: var(--rv-hover); border-color: var(--rv-ativo-borda); }
+.rv-vb[aria-pressed="true"] { background: var(--rv-ativo); border-color: var(--rv-ativo-borda); }
+.rv-vb:disabled { opacity: .35; cursor: default; }
+.rv-vb svg { width: 14px; height: 14px; }
+
+/* --------------------------------------------------------- BARRA DE STATUS */
+.rv-status {
+  display: flex; align-items: center; gap: 10px;
+  padding: 3px 8px; flex: 0 0 auto;
+  background: var(--rv-status-bg);
+  border-top: 1px solid var(--rv-linha-forte);
+  font-size: 11.5px; color: var(--rv-painel-tx);
+}
+.rv-status-sel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rv-status-dir { display: flex; align-items: center; gap: 10px; color: var(--rv-tx-fraco); white-space: nowrap; }
+.rv-status-dir b { color: var(--rv-painel-tx); font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------- MOBILE */
+/* No celular a fita vira uma folha que sobe pelo botão Ferramentas, e as
+   colunas laterais viram gavetas — nenhum comando fica inalcançável. */
+@media (max-width: 900px) {
+  .rv-lateral {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 12;
+    width: min(300px, 88%); flex-basis: auto;
+    box-shadow: 4px 0 18px var(--rv-sombra);
+    transform: translateX(-102%); transition: transform .18s ease;
+  }
+  .bim-revit[data-rv-lateral="1"] .rv-lateral { transform: none; }
+  .rv-fita {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 14;
+    max-height: 62%; overflow-y: auto; flex-wrap: wrap;
+    background: var(--rv-fita-bg);
+    border-top: 1px solid var(--rv-linha-forte);
+    box-shadow: 0 -6px 20px var(--rv-sombra);
+    transform: translateY(102%); transition: transform .18s ease;
+  }
+  .bim-revit[data-rv-fita="1"] .rv-fita { transform: none; }
+  .rv-painel { border-right: 0; border-bottom: 1px solid var(--rv-linha); width: 100%; }
+  .rv-painel-corpo { flex-wrap: wrap; }
+  .rv-titulo-nome { font-size: 11px; }
+}
+
+/* tela cheia: abaixo de modal (z-50), busca (z-70) e toast */
+.bim-revit[data-rv-cheia="1"] {
+  position: fixed; inset: 0; z-index: 48;
+  border-radius: 0; border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-lateral, .rv-fita { transition: none; }
+}

@@ -836,7 +836,9 @@
       ["fs_lancamentos", "lançamento(s) da folha semanal"],
       ["folha", "folha(s) de pagamento"], ["frota_mov", "uso(s) de veículo"],
       ["financeiro", "lançamento(s) financeiro(s)"], ["fiscal", "nota(s) fiscal(is)"],
-      ["centrocusto", "registro(s) de centro de custo"]
+      ["centrocusto", "registro(s) de centro de custo"],
+      /* níveis são do PROJETO daquela obra: o Térreo da obra A não é o da B */
+      ["bim_niveis", "nível(is) do projeto"]
     ],
     /* fs_pagamentos ficou de FORA de propósito: o pagamento é do FAVORECIDO na semana e
      * pode cobrir várias obras (campo `obras: []`, não `obraId`) — levá-lo junto apagaria
@@ -1802,6 +1804,866 @@
     // Aba BIM na Gestão: monta o viewer in-app (js/bim.js → window.BIM) num canvas
     // e sobrepõe o timeline 4D (motor BIM4D). Cadeia in-app 100% minha; o bim/bim.html
     // da NF8n fica como demo standalone dela. Sem viewer carregado → aviso amigável.
+    /* ------------------------------------------------------------------
+     * A CASCA DO BIM na aparência do Revit (v1.1.127).
+     * Envolve o card do viewer com fita de comandos, Propriedades,
+     * Navegador de Projeto e barra de status, e liga cada comando da fita
+     * numa ação real. Comando ainda sem ação avisa em vez de fingir —
+     * `BimCmd.orfaos()` lista quais são, e o teste não deixa passar batido.
+     * ------------------------------------------------------------------ */
+    _bimCasca: function (canvas) {
+      if (!canvas || !window.BimShell || !window.BimRibbon || !window.BimCmd) return null;
+      var self = this;
+      var card = canvas.parentNode;
+      if (!card || card.getAttribute("data-rv-montado") === "1") return null;
+
+      var info = document.getElementById("bim-info");
+      var drawer = document.getElementById("bim-drawer");
+      var obra = null;
+      try { obra = Store.obter(eid(), "obras", this._bimSel); } catch (e) {}
+
+      BimShell.montar(card, {
+        arquivo: (obra && obra.nome) || "",
+        tema: BimShell.temaSalvo(),
+        onPalco: function (palco) {
+          /* o canvas do viewer e o que vive sobre ele mudam de casa */
+          palco.appendChild(canvas);
+          if (info) palco.appendChild(info);
+          if (drawer) palco.appendChild(drawer);
+          canvas.style.height = "100%";
+          canvas.style.background = "transparent";
+        },
+        onNo: function (no) { if (no && no.acao) self._bimCascaAcao(no.acao, no); },
+        onTrocarTipo: function (id) { self._alvTrocarTipo(id); },
+        /* a cena 3D acompanha a interface: no claro do Revit a área de desenho
+         * é clara, senão fica uma janela navy no meio de uma tela clara */
+        onTema: function (t) { self._bimTemaCena(t); }
+      });
+      card.setAttribute("data-rv-montado", "1");
+      card.style.padding = "0";
+
+      this._bimCascaAcoes();
+      this._bimCascaContexto();
+      this._nivArvore();
+      /* o tema da cena só pode ser aplicado DEPOIS que o viewer montar —
+       * antes disso não existe host para pintar. Por isso o _bimTemaCena
+       * espera o BIM aparecer em vez de chamar direto. */
+      this._bimTemaCena(BimShell.temaSalvo());
+      return true;
+    },
+
+    /* claro do ambiente → cena clara; escuro → o cinza do Revit Dark.
+     * O viewer pode demorar a carregar (é módulo ES), então tenta de novo. */
+    _bimTemaCena: function (tema) {
+      /* guarda a intenção; quem aplica de fato é _bimTemaAplicar, chamado
+       * DEPOIS do BIM.montar — antes disso não existe host para pintar e a
+       * chamada falharia em silêncio. */
+      this._bimTemaAlvo = tema === "escuro" ? "revit" : "claro";
+      this._bimTemaAplicar();
+    },
+    _bimTemaAplicar: function () {
+      var alvo = this._bimTemaAlvo;
+      if (!alvo || !window.BIM || !BIM.tema) return false;
+      try { return BIM.tema(alvo); } catch (e) { return false; }
+    },
+
+    /* Liga os comandos da fita nas ações que JÁ existem no viewer. O que
+     * ainda não existe fica sem ação de propósito: o roteador avisa
+     * "ainda não está disponível nesta versão" em vez de um botão morto. */
+    _bimCascaAcoes: function () {
+      var self = this;
+      if (!window.BimCmd) return;
+      var B = function () { return window.BIM; };
+      var reg = {};
+
+      /* ferramentas de medição e vista — já existem no bim.js */
+      ["medir", "area", "angulo", "planta", "corte"].forEach(function (k) {
+        reg[k] = function (e) { var b = B(); if (b && b[k]) { b[k](e.ligado); return true; } return false; };
+      });
+      reg.voo = function (e) { var b = B(); if (b && b.voo) { b.voo(e.ligado); return true; } return false; };
+      reg.home = function () { var b = B(); if (b && b.home) { b.home(); return true; } return false; };
+      reg.foto = function () { var b = B(); if (b && b.foto) { b.foto(); return true; } return false; };
+      reg.visibilidade = function () { var b = B(); if (b && b.painelVis) { b.painelVis(); return true; } return false; };
+      reg.pavimentos = function () { var b = B(); if (b && b.painelPav) { b.painelPav(); return true; } return false; };
+
+      /* painéis de análise que moram na gaveta */
+      [["modelos", "modelos"], ["quatro-d", "4d"], ["clash", "clash"], ["qto", "qto"], ["seis-d", "6d"]].forEach(function (p) {
+        reg[p[0]] = function () { self._bimAbrirPainel(p[1]); return true; };
+      });
+
+      /* ações que já têm botão na barra antiga */
+      reg.eap = function () { self.acao("bimeap-abrir", {}); return true; };
+      reg["exportar-revit"] = function () { self.acao("bim-revit", {}); return true; };
+      reg.reuniao = function () { self.acao("bim-reuniao", {}); return true; };
+      reg.imersivo = function () { self.acao("bim-qr-rv", {}); return true; };
+      reg["gerar-volumetria"] = function () { var b = B(); if (b && b.painelP3d) { b.painelP3d(); return true; } return false; };
+
+      /* conferência de alvenaria — os motores novos, já disponíveis */
+      reg["conferir-modulacao"] = function () { self._bimConferirAlvenaria(); return true; };
+      reg["familia-bloco"] = function () { self._bimConferirAlvenaria(); return true; };
+      reg["peso-alvenaria"] = function () { self._bimConferirAlvenaria(); return true; };
+
+      /* tipo de parede — a parede-cebola paramétrica, no painel Propriedades */
+      reg["niveis"] = function () { self._niveis(); return true; };
+      reg["nivel-atual"] = function () { self._niveis(); return true; };
+
+      /* ---- comandos que já existiam no viewer e estavam sem fio ----
+       * A API do bim.js tinha essas funções há versões; a fita nova não as
+       * chamava, e o botão respondia "ainda não está disponível". */
+      reg["estilo"] = function (e) { var b = B(); if (b && b.estiloDesenho) { b.estiloDesenho(e.ligado); return true; } return false; };
+      reg["sistemas"] = function (e) { var b = B(); if (b && b.sistema) { b.sistema(e.ligado); return true; } return false; };
+      reg["snap"] = function (e) { var b = B(); if (b && b.snapConfig) { b.snapConfig({ on: e.ligado }); return true; } return false; };
+      reg["corte-tecnico"] = function () { var b = B(); if (b && b.corte) { b.corte(true); BimShell.status("Trace a linha do corte na planta: o desenho técnico sai dela."); return true; } return false; };
+      reg["anotacao"] = function (e) {
+        var b = B(); if (!b || !b.editar) return false;
+        b.editar(!!e.ligado);
+        BimShell.status(e.ligado ? "Modo de edição ligado — a anotação fica na barra do viewer." : "Editor desligado.");
+        return true;
+      };
+      /* os três abrem o mesmo editor; qual peça criar é escolha dentro dele */
+      reg["parede"] = reg["piso"] = reg["pilar"] = function (e) {
+        var b = B();
+        if (!b || !b.editar) return false;
+        /* são comandos de ALTERNAR: ligar sempre deixava o botão aceso e o
+           segundo clique não desligava nada */
+        b.editar(!!e.ligado);
+        if (!e.ligado) { BimShell.status("Editor desligado."); return true; }
+        BimShell.status("Editor ligado. Escolha \"" + (e.comando.rotulo || "").replace(/\n/g, " ") + "\" na barra do viewer e clique no palco.");
+        return true;
+      };
+      /* chamava self.acao("bim-salvar-edicoes"), case que NÃO existe no switch:
+         o switch caía fora em silêncio, o comando devolvia sucesso e nada era
+         salvo. O usuário clicava em Salvar e perdia o trabalho. */
+      reg["salvar-modelo"] = function () {
+        try { self._bimEdFlush(); } catch (e) { UI.toast("Não consegui salvar as edições.", "erro"); return true; }
+        UI.toast("Modelo e edições salvos nesta obra.", "ok");
+        return true;
+      };
+      reg["abrir-ifc"] = function () {
+        var inp = document.getElementById("bim-file") || document.querySelector('#main input[type="file"]');
+        if (inp) { inp.click(); return true; }
+        return false;
+      };
+      reg["compartilhar"] = function () { self.acao("bim-qr-rv", {}); return true; };
+      reg["curva-s"] = function () { self._bimAbrirPainel("4d"); return true; };
+      reg["insumos-modelo"] = function () { self._bimAbrirPainel("qto"); return true; };
+      reg["rastrear"] = function () { self.acao("bimeap-abrir", {}); return true; };
+      reg["cotas-auto"] = function () { var b = B(); if (b && b.planta) { b.planta(true); BimShell.status("Planta baixa ligada — as cotas automáticas saem dela."); return true; } return false; };
+      /* alvenaria: os motores já entregam isto pronto */
+      reg["modular"] = reg["junta"] = function () { self._bimConferirAlvenaria(); return true; };
+      reg["tipos-parede"] = reg["presets-acabamento"] = function () {
+        if (!window.AlvTipos || !window.BimShell) return false;
+        BimShell.pintarProps(self._alvEsquemaProps());
+        BimShell.status("Tipo de parede nas Propriedades. Troque no seletor do topo ou mude qualquer espessura.");
+        return true;
+      };
+      reg["peso-total"] = function () { self._pesoPorNivel(); return true; };
+
+      reg["editar-tipo"] = reg["tipo-parede"] = reg["parede-cebola"] = function () {
+        if (!window.AlvTipos || !window.BimShell) return false;
+        BimShell.pintarProps(self._alvEsquemaProps());
+        BimShell.status("Tipo de parede aberto nas Propriedades. Mude qualquer espessura e a parede recalcula na hora.");
+        return true;
+      };
+
+      BimCmd.registrar(reg);
+      BimCmd.aoCancelar(function () {
+        var b = B();
+        if (b) { try { ["medir", "area", "angulo", "planta", "corte"].forEach(function (k) { if (b[k]) b[k](false); }); } catch (e) {} }
+      });
+    },
+
+    /* o que está disponível agora: com modelo? com seleção? plano PRO? */
+    _bimCascaContexto: function () {
+      if (!window.BimRibbon) return;
+      var temModelo = !!(this._bimElementos && this._bimElementos.length);
+      var pro = true;
+      try { pro = !(typeof Auth !== "undefined" && Auth.limite && Auth.limite("planoBase")); } catch (e) {}
+      BimRibbon.setContexto({
+        modelo: temModelo,
+        selecao: !!this._bimSelecao,
+        obra: !!this._bimSel,
+        pro: pro
+      });
+      if (window.BimShell) BimShell.pintarFita();
+    },
+
+    _bimCascaAcao: function (id) { if (window.BimCmd) BimCmd.executar(id); },
+
+    /* ==================================================================
+     * NÍVEIS DO PROJETO — como no Revit.
+     * O motor (js/niveis.js) já sabe tudo: pé-direito derivado, plano de
+     * corte, o que aparece na planta de cada nível. Faltava a tela.
+     * Os níveis são da OBRA, não da empresa: o Térreo de uma não é o da
+     * outra. Por isso carregam obraId e entram na cascata.
+     * ================================================================== */
+    _nivLer: function () {
+      var obraId = this._bimSel || "geral";
+      var todos = [];
+      try { todos = Store.listar(eid(), "bim_niveis") || []; } catch (e) {}
+      return todos.filter(function (n) { return (n.obraId || "geral") === obraId; });
+    },
+
+    /* O Store casa o registro APENAS por id, ignorando obraId. Com os ids
+       fixos que Niveis.padrao devolve ("terreo", "cobertura"), a segunda obra
+       sobrescrevia os níveis da primeira. A chave gravada passa a carregar a
+       obra — e é ela que circula, inclusive na tela: o motor não se importa
+       com o formato do id, e sem mapeamento de ida e volta não há como o id
+       se perder no caminho. */
+    _nivChave: function (idLocal) {
+      var s = String(idLocal);
+      var obra = this._bimSel || "geral";
+      return s.indexOf("::") >= 0 ? s : (obra + "::" + s);
+    },
+
+    _nivGravar: function (n) {
+      var reg = {
+        id: this._nivChave(n.id), obraId: this._bimSel || "geral",
+        nome: n.nome, elevacao: n.elevacao,
+        corte: n.corte != null ? n.corte : null,
+        peDireitoDeclarado: n.peDireitoDeclarado != null ? n.peDireitoDeclarado : null
+      };
+      try { return !!Store.salvar(eid(), "bim_niveis", reg); } catch (e) { return false; }
+    },
+
+
+    /* corpo da tela, montado a partir do RASCUNHO — a mesma função serve
+       para abrir e para repintar depois de cada edição */
+    _nivCorpo: function (lista, novo) {
+      var N = window.Niveis;
+      var L = N.listar(lista), v = N.validar(lista);
+      var h = "";
+      if (novo) {
+        h += '<div style="padding:8px 10px;border-radius:8px;background:#2e6f9e14;border:1px solid #2e6f9e33;font-size:12.5px;margin-bottom:10px">' +
+             "Esta obra ainda não tem níveis. Abaixo está uma sugestão de térreo e cobertura com pé-direito de 2,80 m — " +
+             "ajuste e clique em <b>Salvar</b> para criar.</div>";
+      }
+      h += '<table class="tbl" style="width:100%;font-size:12.5px"><thead><tr>' +
+           "<th>Nome</th><th>Elevação (m)</th><th>Pé-direito (m)</th><th>Corte da planta (m)</th><th></th></tr></thead><tbody>";
+      L.forEach(function (n) {
+        h += '<tr data-niv="' + Util.esc(n.id) + '">' +
+             '<td><input type="text" data-gniv="nome" data-id="' + Util.esc(n.id) + '" value="' + Util.esc(n.nome) + '" style="width:100%"></td>' +
+             '<td><input type="number" step="0.01" data-gniv="elevacao" data-id="' + Util.esc(n.id) + '" value="' + n.elevacao + '" style="width:90px"></td>' +
+             "<td>" + (n.peDireito != null
+               ? "<b>" + n.peDireito.toFixed(2) + "</b>" + (n.ultimo ? ' <span class="muted" style="font-size:11px">(informado)</span>' : ' <span class="muted" style="font-size:11px">(até o de cima)</span>')
+               : '<span style="color:#b45309">—</span>') + "</td>" +
+             '<td><input type="number" step="0.05" data-gniv="corte" data-id="' + Util.esc(n.id) + '" value="' + n.corte + '" style="width:80px"></td>' +
+             '<td><button class="btn sm" data-gacao="niv-excluir" data-id="' + Util.esc(n.id) + '" style="color:#dc2626;font-size:11px;padding:1px 6px" title="excluir nível">✕</button></td></tr>';
+      });
+      h += "</tbody></table>";
+      h += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">' +
+           "O <b>pé-direito não se digita</b>: ele é a distância até o nível de cima. Se não bater com o que você espera, " +
+           "é a elevação que está errada. O <b>corte da planta</b> é a altura em que o desenho corta a parede — " +
+           "1,20 m passa acima do peitoril e abaixo do topo da porta.</p>";
+      if (v.erros.length) {
+        h += '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#dc262618;border:1px solid #dc262644;font-size:12.5px">' +
+             v.erros.map(function (x) { return "• " + Util.esc(x); }).join("<br>") + "</div>";
+      }
+      if (v.avisos.length) {
+        h += '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px">' +
+             v.avisos.map(function (x) { return "• " + Util.esc(x); }).join("<br>") + "</div>";
+      }
+      return h;
+    },
+
+    _niveis: function () {
+      var N = window.Niveis;
+      if (!N) { UI.toast("Motor de níveis não carregado.", "erro"); return; }
+      /* RBAC em FUNÇÃO, não só no roteador: o comando da fita chama direto */
+      if (this._bloqueado && this._bloqueado()) return;
+      var self = this;
+      var lista = this._nivLer();
+      /* obra sem nível nenhum começa com o padrão, mas NÃO grava sozinho:
+         gravar sem o usuário pedir enche o projeto de coisa que ele não fez */
+      var novo = lista.length === 0;
+      if (novo) lista = N.padrao(2.80);
+      this._nivRascunho = lista;
+      this._nivNovo1 = novo;
+
+      var bg = UI.modal("Níveis do projeto", this._nivCorpo(lista, novo), [
+        { texto: "+ Nível acima", classe: "", onClick: function () { self._nivNovo(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () { self._nivSalvar(); } }
+      ]);
+      this._nivLigar();
+      return bg;
+    },
+
+    _nivLigar: function () {
+      var self = this;
+      var box = document.querySelector("#modal-bg .modal");
+      if (!box) return;
+      box.querySelectorAll("[data-gniv]").forEach(function (inp) {
+        inp.onchange = function () { self._nivCampo(this.getAttribute("data-id"), this.getAttribute("data-gniv"), this.value); };
+        inp.onkeydown = function (ev) { if (ev.key === "Enter") { ev.preventDefault(); this.blur(); } };
+      });
+    },
+
+    /* troca SÓ o corpo do modal aberto. Repinta inteiro de propósito: mexer
+       na elevação de um nível muda o pé-direito do de baixo. */
+    _nivRepintar: function () {
+      var box = document.querySelector("#modal-bg .modal .body");
+      if (!box) return;
+      /* guarda QUEM estava em foco e onde estava o cursor: repintar a tabela
+         inteira jogava o foco no body, e quem digitava a elevação de três
+         níveis seguidos tinha que clicar de novo a cada campo */
+      var ativo = document.activeElement;
+      var foco = null;
+      if (ativo && ativo.getAttribute && ativo.getAttribute("data-gniv")) {
+        foco = { campo: ativo.getAttribute("data-gniv"), id: ativo.getAttribute("data-id"), ini: null, fim: null };
+        /* input type=number NÃO tem selectionStart: no Chrome, só LER a
+           propriedade lança TypeError e derruba a tela inteira. */
+        try { foco.ini = ativo.selectionStart; foco.fim = ativo.selectionEnd; } catch (e) {}
+      }
+      box.innerHTML = this._nivCorpo(this._nivRascunho || [], this._nivNovo1);
+      this._nivLigar();
+      if (foco) {
+        var volta = box.querySelector('[data-gniv="' + foco.campo + '"][data-id="' + foco.id + '"]');
+        if (volta) {
+          volta.focus();
+          try { if (foco.ini != null) volta.setSelectionRange(foco.ini, foco.fim); } catch (e) {}
+        }
+      }
+    },
+
+    _nivCampo: function (id, campo, valor) {
+      var r = this._nivRascunho || [];
+      for (var i = 0; i < r.length; i++) {
+        if (String(r[i].id) !== String(id)) continue;
+        if (campo === "nome") r[i].nome = String(valor).trim() || r[i].nome;
+        else {
+          var v = parseFloat(String(valor).replace(",", "."));
+          if (!isFinite(v)) { UI.toast("Valor inválido.", "erro"); this._nivRepintar(); return; }
+          if (campo === "corte" && v <= 0) { UI.toast("O corte da planta tem que ser maior que zero.", "erro"); this._nivRepintar(); return; }
+          r[i][campo] = v;
+        }
+        break;
+      }
+      this._nivRepintar();
+    },
+
+    _nivNovo: function () {
+      var N = window.Niveis;
+      var r = this._nivRascunho || [];
+      r.push(N.proximo(r, {}));
+      this._nivRascunho = r;
+      this._nivRepintar();
+    },
+
+    _nivExcluir: function (id) {
+      var r = (this._nivRascunho || []).filter(function (n) { return String(n.id) !== String(id); });
+      if (!r.length) { UI.toast("O projeto precisa de pelo menos um nível.", "erro"); return; }
+      this._nivRascunho = r;
+      this._nivRepintar();
+    },
+
+    _nivSalvar: function () {
+      var N = window.Niveis, self = this;
+      if (this._bloqueado && this._bloqueado()) return;
+      var r = this._nivRascunho || [];
+      var v = N.validar(r);
+      if (!v.ok) { UI.toast(v.erros[0], "erro"); return; }
+      var antes = this._nivLer();
+      /* o que sumiu do rascunho tem que sair do Store, senão volta na próxima
+         abertura como se nunca tivesse sido excluído */
+      var idsNovos = {};
+      r.forEach(function (n) { idsNovos[String(n.id)] = 1; });
+      var apagar = antes.filter(function (n) { return !idsNovos[String(n.id)]; })
+                        .map(function (n) { return String(n.id); });
+      var falhou = 0;
+      r.forEach(function (n) { if (!self._nivGravar(n)) falhou++; });
+      if (apagar.length) { try { Store.excluirVarios(eid(), "bim_niveis", apagar); } catch (e) {} }
+      if (falhou) { UI.toast("Não consegui salvar " + falhou + " nível(is). Confira o espaço do navegador.", "erro"); return; }
+      UI.fecharModal();
+      UI.toast(r.length + " nível(is) salvos.", "ok");
+      this._nivArvore();
+    },
+
+    /* PESO POR NÍVEL — o que o Rogério pediu para conferir carga.
+     * Honesto sobre o que entra: só as paredes de alvenaria que o usuário
+     * conferiu, não o modelo inteiro. Sem paredes conferidas, diz isso em
+     * vez de mostrar um total de zero como se fosse resposta. */
+    _pesoPorNivel: function () {
+      var N = window.Niveis, B = window.Blocos;
+      if (!N || !B) { UI.toast("Motores de nível e bloco não carregados.", "erro"); return; }
+      this._alvGarantirPesos();
+      var L = N.listar(this._nivLer());
+      var h = "";
+
+      if (!L.length) {
+        h = '<p style="font-size:12.5px">Esta obra ainda não tem níveis. Crie os níveis primeiro — o peso é agrupado por eles.</p>' +
+            '<p><button class="btn primary" data-gacao="niveis">Criar níveis</button></p>';
+        UI.modal("Peso por nível", h, [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+
+      /* NÃO existe ainda um caminho que lance parede conferida num nível: a
+         conferência de alvenaria é paramétrica e não pergunta o nível. Esta
+         tela mostra a estrutura pronta e diz, sem rodeio, o que falta — em
+         vez de instruir o usuário a fazer algo que não alimenta nada. */
+      var paredes = this._alvConferidas || [];
+      h = '<table class="tbl" style="width:100%;font-size:12.5px"><thead><tr>' +
+          "<th>Nível</th><th>Elevação</th><th>Paredes</th><th>Peso dos blocos</th></tr></thead><tbody>";
+      var total = 0, comPeso = 0;
+      L.forEach(function (n) {
+        var doNivel = paredes.filter(function (p) { return String(p.nivelId) === String(n.id); });
+        var kg = doNivel.reduce(function (s, p) { return s + (p.peso || 0); }, 0);
+        total += kg; comPeso += doNivel.length;
+        h += "<tr><td>" + Util.esc(n.nome) + "</td><td>" + (n.elevacao >= 0 ? "+" : "") + n.elevacao.toFixed(2) + " m</td>" +
+             "<td>" + (doNivel.length || "—") + "</td><td>" + (kg ? "<b>" + Util.fmtNum(Math.round(kg)) + " kg</b>" : '<span class="muted">—</span>') + "</td></tr>";
+      });
+      h += "</tbody>";
+      if (total) h += "<tfoot><tr><th colspan='3'>Total</th><th>" + Util.fmtNum(Math.round(total)) + " kg</th></tr></tfoot>";
+      h += "</table>";
+
+      if (!comPeso) {
+        h += '<div style="margin-top:10px;padding:10px 12px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px">' +
+             "<b>Ainda não há como lançar parede num nível.</b> Os níveis estão prontos e o peso dos blocos é calculado " +
+             "na <b>Conferência de modulação</b> — mas a conferência ainda não pergunta o nível, e nada é gravado. " +
+             "Esta tela está aqui com a estrutura montada; enquanto o lançamento não existir, ela não tem o que somar.<br><br>" +
+             "Para o peso de uma parede agora, use <b>Conferir modulação</b> na aba Alvenaria — ele sai por parede, " +
+             "com a origem de cada peso.</div>";
+      } else {
+        h += '<p class="muted" style="font-size:11.5px;margin-top:8px">São só as paredes que você conferiu, e só o peso dos BLOCOS — ' +
+             "não inclui canaleta, verga, cinta nem a argamassa de assentamento. " +
+             "Para lançar na estrutura, use o valor de projeto da NBR 6120, que já inclui a argamassa.</p>";
+      }
+      UI.modal("Peso por nível", h, [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
+    },
+
+    /* Os níveis aparecem no Navegador de Projeto, como no Revit. */
+    _nivArvore: function () {
+      if (!window.BimShell || !window.Niveis) return;
+      var L = Niveis.listar(this._nivLer());
+      /* Só emite `acao` onde existe ação de verdade. Nó com acao que ninguém
+         trata é clique no vazio: nada acontece e nada é dito. Aqui os dois
+         abrem a tela de níveis, que é o que existe hoje. */
+      var ramoNiveis = L.length
+        ? L.slice().reverse().map(function (n) {
+            return { id: "niv:" + n.id, rotulo: n.nome + " · " + (n.elevacao >= 0 ? "+" : "") + n.elevacao.toFixed(2),
+                     icone: "niveis", acao: "niveis", nivelId: n.id };
+          })
+        : [{ id: "niv:vazio", rotulo: "Nenhum nível — clique para criar", icone: "niveis", acao: "niveis" }];
+      var plantas = L.length
+        ? L.map(function (n) { return { id: "pl:" + n.id, rotulo: n.nome + " (em breve)", icone: "planta", nivelId: n.id }; })
+        : [];
+      var arv = [
+        { id: "vistas", rotulo: "Vistas", icone: "planta", filhos: [
+          { id: "plantas", rotulo: "Plantas de piso", icone: "planta", filhos: plantas },
+          { id: "v3d", rotulo: "Vistas 3D", icone: "quadrado", filhos: [{ id: "3d", rotulo: "{3D}", icone: "quadrado", acao: "home" }] }
+        ] },
+        { id: "niveis", rotulo: "Níveis", icone: "niveis", filhos: ramoNiveis }
+      ];
+      BimShell.pintarArvore(arv);
+    },
+
+    /* ------------------------------------------------------------------
+     * PESOS DO MEU FORNECEDOR
+     * O peso vem pré-definido para o orçamento fechar sozinho. Aqui o
+     * usuário troca pelo catálogo de quem ele compra — peça a peça, com o
+     * de referência à vista para comparar, e podendo voltar ao padrão.
+     * ------------------------------------------------------------------ */
+    /* Garante que os pesos desta empresa estão carregados. Vale para o caminho
+       OFFLINE, em que a nuvem nunca chama de volta — e para a troca de conta,
+       em que o peso da empresa anterior não pode ficar. */
+    _alvGarantirPesos: function () {
+      var B = window.Blocos;
+      if (!B || !B.usarOverrides) return;
+      /* SEMPRE recarrega, não só quando a empresa muda. O boot chama
+         usarOverrides assim que a licença resolve — se isso acontecer antes
+         do Store terminar de sincronizar, o carregamento vem vazio, marca a
+         empresa como carregada, e o peso do fornecedor NUNCA mais aparece
+         nesta sessão. São 27 peças; o custo de reler é irrisório perto de
+         mostrar o número errado. */
+      B.usarOverrides(eid());
+    },
+
+    _alvPesos: function () {
+      var B = window.Blocos;
+      if (!B) { UI.toast("Catálogo de blocos não carregado.", "erro"); return; }
+      this._alvGarantirPesos();
+      var self = this, e = eid();
+      var h = '<p class="muted" style="font-size:12.5px;margin:0 0 10px">' +
+        "O peso do bloco muda muito de fábrica para fábrica. O que está aqui vem de catálogo de fabricante e serve " +
+        "para o orçamento fechar sem você fazer nada — mas <b>não é o catálogo do seu fornecedor</b>. " +
+        "Pegue a tabela de quem você compra e troque os que importam: o bloco inteiro sozinho já responde por " +
+        "cerca de três quartos do peso da parede.</p>";
+
+      B.familias().forEach(function (f) {
+        h += '<div style="margin-bottom:14px"><b style="font-size:13px">' + Util.esc(f.rotulo) + "</b>";
+        h += '<table class="tbl" style="width:100%;font-size:12px;margin-top:4px"><thead><tr>' +
+             "<th>Peça</th><th>Dimensão</th><th>Peso (kg)</th><th>De onde vem</th><th></th></tr></thead><tbody>";
+        B.familia(f.id).pecas.forEach(function (pc) {
+          var o = B.origemDoPeso(pc.id);
+          var cor = { "MEU FORNECEDOR": "#16a34a", "REFERÊNCIA": "#6b7280", "CALCULADO": "#b45309", "SEM FONTE": "#dc2626" }[o.rotulo] || "#6b7280";
+          var dica = [o.nota, o.formula, o.confere ? "Conferido: " + o.confere : ""].filter(Boolean).join(" ");
+          h += '<tr data-peca="' + Util.esc(pc.id) + '">' +
+               "<td>" + Util.esc(pc.nome) + "</td>" +
+               "<td class='muted'>" + Math.round(pc.l * 100) + "×" + Math.round(pc.a * 100) + "×" + Math.round(pc.c * 100) + "</td>" +
+               '<td><input type="number" step="0.01" min="0" style="width:80px" data-gpeso="' + Util.esc(pc.id) + '" value="' +
+                 (o.kg == null ? "" : o.kg) + '" placeholder="informe"></td>' +
+               "<td><span class='g-pill' style='background:" + cor + "1a;color:" + cor + ";font-size:10px'>" + Util.esc(o.rotulo) + "</span> " +
+                 (o.fabricante ? '<span class="muted" style="font-size:11px">' + Util.esc(String(o.fabricante).split("|").join(" e ")) + "</span>" : "") +
+                 (dica ? ' <span class="muted" style="font-size:10.5px" title="' + Util.esc(dica) + '">ⓘ</span>' : "") +
+                 (o.faixa ? '<br><span class="muted" style="font-size:10.5px">' + o.faixa.min + "–" + o.faixa.max + " kg em " + o.faixa.n + " catálogos</span>" : "") +
+               "</td>" +
+               '<td><button class="btn btn-sm" data-gacao="alv-peso-reverter" data-peca="' + Util.esc(pc.id) +
+                 '" style="font-size:11px;padding:1px 6px" title="voltar ao padrão">↺</button></td></tr>';
+        });
+        h += "</tbody></table></div>";
+      });
+
+      h += '<p class="muted" style="font-size:11px">Referência OrçaPRO ' + Util.esc(B.PESOS_REF_VERSAO) +
+           ". O que você digitar vale para toda a empresa e sincroniza com os outros aparelhos. " +
+           "Digitar o mesmo valor que já está aqui conta como conferência — o sistema passa a saber que alguém bateu esse número.</p>";
+
+      var bg = UI.modal("Pesos do meu fornecedor", h, [{ texto: "Fechar", classe: "", onClick: function () { UI.fecharModal(); } }]);
+      var box = bg.querySelector(".modal");
+      box.querySelectorAll("[data-gpeso]").forEach(function (inp) {
+        /* guarda o valor ao ENTRAR: sem isso, só passar o foco pelo campo e
+           sair já gravava um registro "conferido" e mandava para a nuvem —
+           confirmação tem que ser gesto do usuário, não descuido */
+        inp.onfocus = function () { this.setAttribute("data-antes", this.value); };
+        inp.onblur = function () {
+          if (this.value === this.getAttribute("data-antes")) return;
+          self._alvPesoGravar(box, this.getAttribute("data-gpeso"), this.value);
+        };
+        inp.onkeydown = function (ev) { if (ev.key === "Enter") { ev.preventDefault(); this.blur(); } };
+      });
+      return bg;
+    },
+
+    _alvPesoGravar: function (box, pecaId, valor) {
+      var B = window.Blocos, e = eid();
+      var v = String(valor).trim();
+      if (v === "") return;                         /* campo vazio não apaga nada */
+      var r = B.definirPeso(pecaId, v, {});
+      if (!r.ok) { UI.toast(r.motivo, "erro"); this._alvPesoPintar(box, pecaId); return; }
+      /* grava e SÓ pinta o selo se a gravação passou — em cota cheia o
+         Store devolve null, e um selo verde por cima disso é mentira */
+      var gravou = null;
+      try {
+        gravou = Store.salvar(e, "pesos_bloco", {
+          id: pecaId, pecaId: pecaId, kg: B.pesoDe(pecaId),
+          fabricante: "", catalogoRef: "", coletadoEm: "",
+          confirmado: !!r.confirmado, metodo: r.confirmado ? "confirmado" : "informado"
+        });
+      } catch (ex) { gravou = null; }
+      if (!gravou) {
+        /* o peso já foi aplicado em memória: se a gravação falhou, DESFAZ.
+           Senão o número passa a valer pelo resto da sessão com selo "MEU
+           FORNECEDOR", e some no próximo F5 sem ninguém saber. */
+        B.reverterPeso(pecaId);
+        B.usarOverrides(e);
+        this._alvPesoPintar(box, pecaId);
+        UI.toast("Não consegui salvar o peso — voltei ao valor de referência. Confira o espaço do navegador.", "erro");
+        return;
+      }
+      if (r.suspeito) UI.toast(r.motivo, "aviso");
+      else if (r.confirmado) UI.toast("Peso conferido — bate com a referência.", "ok");
+      this._alvPesoPintar(box, pecaId);
+    },
+
+    _alvPesoReverter: function (pecaId) {
+      var B = window.Blocos, e = eid();
+      var r = B.reverterPeso(pecaId);
+      if (!r.ok) { UI.toast(r.motivo, "erro"); return; }
+      try { Store.excluirVarios(e, "pesos_bloco", [pecaId]); } catch (ex) {}
+      var box = document.querySelector("#modal-bg .modal") || document;
+      var inp = box.querySelector('[data-gpeso="' + pecaId + '"]');
+      if (inp) inp.value = r.kg == null ? "" : r.kg;
+      this._alvPesoPintar(box, pecaId);
+      UI.toast("Voltou ao peso de referência.", "ok");
+    },
+
+    /* repinta SÓ a linha — refazer o innerHTML inteiro apagaria o que o
+       usuário está digitando nas outras linhas */
+    _alvPesoPintar: function (box, pecaId) {
+      var B = window.Blocos;
+      var tr = box.querySelector('tr[data-peca="' + pecaId + '"]');
+      if (!tr) return;
+      var o = B.origemDoPeso(pecaId);
+      var cor = { "MEU FORNECEDOR": "#16a34a", "REFERÊNCIA": "#6b7280", "CALCULADO": "#b45309", "SEM FONTE": "#dc2626" }[o.rotulo] || "#6b7280";
+      var pill = tr.querySelector(".g-pill");
+      if (pill) { pill.textContent = o.rotulo; pill.style.background = cor + "1a"; pill.style.color = cor; }
+      var inp = tr.querySelector("[data-gpeso]");
+      if (inp && o.kg != null) inp.value = o.kg;
+    },
+
+    /* ------------------------------------------------------------------
+     * PROPRIEDADES DA PAREDE — o painel paramétrico.
+     * Mexer numa espessura recalcula o tipo inteiro e repinta na hora. É o
+     * que o Revit faz no "Edit Type": a parede não tem espessura digitada,
+     * ela tem camadas, e a espessura é a soma.
+     * ------------------------------------------------------------------ */
+    _alvTipoId: "est-14-fachada",
+    _alvEspessuras: null,
+    _alvGeom: { comprimento: 4, altura: 2.8 },
+
+    _alvTipo: function () {
+      if (!window.AlvTipos) return null;
+      var o = { base: this._alvTipoId, id: this._alvTipoId, espessuras: this._alvEspessuras || {} };
+      if (this._alvNucleoEscolhido) o.nucleo = this._alvNucleoEscolhido;
+      if (this._alvEspNucleo) o.espessuraNucleo = this._alvEspNucleo;
+      var t = AlvTipos.montar(o);
+      return t && t.ok ? t : null;
+    },
+
+    /* Monta o esquema que o BimShell pinta. Cada camada vira uma linha
+       editável, com o nome da face, para o usuário ver a cebola inteira. */
+    _alvEsquemaProps: function () {
+      var t = this._alvTipo();
+      if (!t) return null;
+      var self = this;
+      var g = this._alvGeom;
+      var conf = AlvTipos.conferir(t, { faceExterna: "fora" });
+      var area = (g.comprimento || 0) * (g.altura || 0);
+      var q = area > 0 ? AlvTipos.quantificar(t, area) : null;
+
+      /* a unidade vai no título da seção, não em cada linha: com "(mm)" em
+         toda camada o rótulo quebra em duas linhas e a lista fica ilegível */
+      function camadas(pilha, nomeFace) {
+        var soma = (pilha || []).reduce(function (s, c) { return s + c.espessura; }, 0);
+        return { nome: nomeFace + " · mm · total " + soma.toFixed(0), params: (pilha || []).map(function (c) {
+          return { id: c.face + ":" + c.id, rotulo: c.ordem + ". " + c.rotulo,
+                   tipo: "numero", passo: "1", valor: c.espessura, dica: c.traco + " — " + c.fonte };
+        }) };
+      }
+
+      var secoes = [
+        { nome: "Restrições", params: [
+          { id: "geo:comprimento", rotulo: "Comprimento", unidade: "m", tipo: "numero", passo: "0.01", valor: g.comprimento },
+          { id: "geo:altura", rotulo: "Altura", unidade: "m", tipo: "numero", passo: "0.01", valor: g.altura },
+          { id: "ro:area", rotulo: "Área de face", unidade: "m²", leitura: true, valor: area ? area.toFixed(2) : "—" }
+        ] },
+        { nome: "Estrutura do tipo", params: [
+          { id: "nucleo", rotulo: "Núcleo", tipo: "lista", valor: t.nucleo.id,
+            opcoes: Object.keys(AlvTipos.NUCLEOS).map(function (k) { return { id: k, rotulo: AlvTipos.NUCLEOS[k].rotulo }; }) },
+          { id: "esp:nucleo", rotulo: "Espessura do núcleo", unidade: "mm", tipo: "numero", passo: "1", valor: t.espessuraNucleo },
+          { id: "ro:total", rotulo: "Espessura total", unidade: "mm", leitura: true, valor: t.espessura,
+            motivo: "É a soma do núcleo com as camadas das duas faces — não se digita." }
+        ] }
+      ];
+      if ((t.dentro || []).length) secoes.push(camadas(t.dentro, "Face interna"));
+      if ((t.fora || []).length) secoes.push(camadas(t.fora, "Face externa"));
+      if (q && q.ok) {
+        secoes.push({ nome: "Quantitativos", params: [
+          { id: "ro:arg", rotulo: "Argamassa de revestimento", unidade: "m³", leitura: true, valor: q.volumeArgamassa.toFixed(3) },
+          { id: "ro:peso", rotulo: "Peso", unidade: "kg", leitura: true, valor: q.peso.toFixed(0),
+            motivo: q.avisoPeso || "Somado camada a camada pela NBR 6120:2019." },
+          { id: "ro:pm2", rotulo: "Peso por m²", unidade: "kg/m²", leitura: true, valor: q.pesoPorM2.toFixed(1) }
+        ] });
+      }
+
+      /* aviso = a parede está fora da norma (o usuário precisa decidir);
+         pendência = falta um dado (o usuário precisa informar). */
+      var aviso = "";
+      if (conf.erros.length) aviso = conf.erros.join(" ");
+      else if (conf.avisos.length) aviso = conf.avisos.join(" ");
+      var pend = (q && !q.pesoCompleto) ? q.avisoPeso : "";
+
+      /* LIGA O NÚCLEO AO 3D: a espessura que o tipo calcula (núcleo + as
+         camadas das duas faces) passa a ser a espessura com que a próxima
+         parede nasce no viewer. Antes o editor usava 0,15 m fixos, e o 3D
+         desenhava uma parede que não era a que o painel dizia. */
+      try { if (window.BIM && BIM.espessuraTipo) BIM.espessuraTipo(t.espessuraM, t.rotulo); } catch (eE) {}
+
+      return {
+        icone: "cebola", titulo: t.rotulo, tipo: this._alvTipoId,
+        tipos: AlvTipos.listar().map(function (x) { return { id: x.id, rotulo: x.rotulo + " · " + (x.espessura / 10).toFixed(1) + " cm" }; }),
+        secoes: secoes,
+        motivoLeitura: aviso, pendencia: pend,
+        onMudar: function (id, valor) { return self._alvMudarProp(id, valor); }
+      };
+    },
+
+    _alvMudarProp: function (id, valor) {
+      var v = parseFloat(valor);
+      if (id.indexOf("geo:") === 0) {
+        if (!isFinite(v) || v <= 0) { UI.toast("Comprimento e altura têm que ser maiores que zero.", "erro"); return this._alvEsquemaProps(); }
+        this._alvGeom[id.slice(4)] = v;
+      } else if (id === "nucleo") {
+        /* troca o miolo mantendo a receita de acabamento */
+        var t = AlvTipos.montar({ base: this._alvTipoId, nucleo: String(valor), espessuras: this._alvEspessuras || {} });
+        if (!t.ok) { UI.toast(t.motivo, "erro"); return this._alvEsquemaProps(); }
+        this._alvNucleoEscolhido = String(valor);
+        this._alvEspNucleo = null;      /* espessura passa a ser a do núcleo novo */
+      } else if (id === "esp:nucleo") {
+        if (!isFinite(v) || v <= 0) { UI.toast("A espessura do núcleo tem que ser maior que zero.", "erro"); return this._alvEsquemaProps(); }
+        this._alvEspNucleo = v;
+      } else if (id.indexOf(":") > 0) {
+        if (!isFinite(v) || v < 0) { UI.toast("Espessura de camada não pode ser negativa.", "erro"); return this._alvEsquemaProps(); }
+        this._alvEspessuras = this._alvEspessuras || {};
+        this._alvEspessuras[id] = v;
+      }
+      return this._alvEsquemaProps();
+    },
+
+    _alvTrocarTipo: function (tipoId) {
+      if (!window.AlvTipos || !AlvTipos.TIPOS[tipoId]) return;
+      this._alvTipoId = tipoId;
+      this._alvEspessuras = null;                            /* receita nova, espessuras da receita */
+      this._alvNucleoEscolhido = null; this._alvEspNucleo = null;
+      if (window.BimShell) BimShell.pintarProps(this._alvEsquemaProps());
+    },
+
+    /* ------------------------------------------------------------------
+     * CONFERÊNCIA DE ALVENARIA — a primeira coisa que os motores novos
+     * entregam pronta. O usuário informa a parede e recebe, com fonte:
+     * a modulação (fecha ou não, e o que fazer), as peças fiada a fiada,
+     * o peso, a argamassa pelo SINAPI e a verga do vão.
+     * ------------------------------------------------------------------ */
+    _bimConferirAlvenaria: function () {
+      this._alvGarantirPesos();
+      if (!window.Blocos || !window.Alvenaria) { UI.toast("Motor de alvenaria não carregou.", "erro"); return; }
+      var self = this;
+      var g = this._alvCfg || (this._alvCfg = { fam: "39-14", c: 4.00, h: 2.80, vao: 1.50, bordas: 1, tecnica: "colher", funcao: "estrutural" });
+
+      var opts = Blocos.familias().map(function (f) {
+        return '<option value="' + Util.esc(f.id) + '"' + (f.id === g.fam ? " selected" : "") + ">" + Util.esc(f.rotulo) + "</option>";
+      }).join("");
+
+      var corpo =
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px">' +
+          '<label>Família do bloco<select id="alv-fam" style="width:100%">' + opts + "</select></label>" +
+          '<label>Função<select id="alv-funcao" style="width:100%">' +
+            '<option value="estrutural"' + (g.funcao === "estrutural" ? " selected" : "") + ">Estrutural</option>" +
+            '<option value="vedacao"' + (g.funcao === "vedacao" ? " selected" : "") + ">Vedação</option></select></label>" +
+          '<label>Comprimento (m)<input id="alv-c" type="number" step="0.01" value="' + g.c + '" style="width:100%"></label>' +
+          '<label>Altura (m)<input id="alv-h" type="number" step="0.01" value="' + g.h + '" style="width:100%"></label>' +
+          '<label>Vão da esquadria (m)<input id="alv-vao" type="number" step="0.01" value="' + g.vao + '" style="width:100%"></label>' +
+          '<label>Encontros<select id="alv-bordas" style="width:100%">' +
+            '<option value="0"' + (g.bordas === 0 ? " selected" : "") + ">Solta nas duas pontas</option>" +
+            '<option value="1"' + (g.bordas === 1 ? " selected" : "") + ">Encontra outra de um lado</option>" +
+            '<option value="2"' + (g.bordas === 2 ? " selected" : "") + ">Entre duas paredes</option></select></label>" +
+          '<label>Assentamento<select id="alv-tec" style="width:100%">' +
+            '<option value="colher"' + (g.tecnica === "colher" ? " selected" : "") + ">Colher de pedreiro</option>" +
+            '<option value="palheta"' + (g.tecnica === "palheta" ? " selected" : "") + ">Palheta / bisnaga</option></select></label>" +
+        "</div>" +
+        '<div id="alv-saida"></div>';
+
+      UI.modal("Conferência de alvenaria", corpo, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+
+      function ler() {
+        var v = function (id) { var e = document.getElementById(id); return e ? e.value : ""; };
+        g.fam = v("alv-fam"); g.funcao = v("alv-funcao");
+        g.c = Util.num(v("alv-c")); g.h = Util.num(v("alv-h")); g.vao = Util.num(v("alv-vao"));
+        g.bordas = parseInt(v("alv-bordas"), 10); g.tecnica = v("alv-tec");
+        self._alvSaida(g);
+      }
+      ["alv-fam", "alv-funcao", "alv-c", "alv-h", "alv-vao", "alv-bordas", "alv-tec"].forEach(function (id) {
+        var e = document.getElementById(id);
+        if (e) { e.onchange = ler; e.oninput = ler; }
+      });
+      ler();
+    },
+
+    _alvSaida: function (g) {
+      var out = document.getElementById("alv-saida");
+      if (!out) return;
+      var A = window.Alvenaria, B = window.Blocos;
+      var h = "";
+
+      var p = B.modularParede(g.c, g.h, g.fam, { bordas: g.bordas });
+      if (!p.ok) { out.innerHTML = '<p class="muted">' + Util.esc(p.motivo) + "</p>"; return; }
+
+      var selo = p.fecha
+        ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">Fecha na modulação</span>'
+        : '<span class="g-pill" style="background:#dc262622;color:#dc2626">Não fecha</span>';
+      h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><b>' + Util.esc(p.familiaRotulo) + "</b>" + selo + "</div>";
+
+      h += '<table class="tbl" style="width:100%;font-size:12.5px"><tbody>';
+      h += "<tr><td>Fiadas</td><td><b>" + p.nFiadas + "</b> de 20 cm (altura real " + p.alturaReal.toFixed(2) + " m)</td></tr>";
+      h += "<tr><td>Peças</td><td><b>" + p.nPecas + "</b> — " + p.pecas.map(function (x) { return x.qtd + "× " + Util.esc(x.nome); }).join(", ") + "</td></tr>";
+      /* "Peso da parede" era ambíguo: o número é só o dos BLOCOS, sem a
+         argamassa, a canaleta nem a verga. Quem lê "peso da parede" e leva
+         para a fundação erra para menos. */
+      h += "<tr><td>Peso dos blocos<br><span class='muted' style='font-size:11px'>para compra e transporte</span></td><td><b>" +
+           (p.parcial ? "≥ " : "") + Util.fmtNum(p.peso) + " kg</b>" +
+           (p.parcial ? ' <span style="color:#b45309">(parcial: ' + p.pecasSemPeso + " peça(s) sem peso)</span>" : "") +
+           '<br><span class="muted" style="font-size:11px">' + Util.esc(p.escopoDoPeso) + "</span></td></tr>";
+      h += "<tr><td>Junta</td><td>" + Math.round(p.junta * 1000) + " mm" +
+           (p.fiadaImpar.juntaAjustada ? ' <span style="color:#b45309">(ajustada para fechar sem compensador)</span>' : "") + "</td></tr>";
+      h += "</tbody></table>";
+
+      /* argamassa — só se houver coeficiente para essa combinação */
+      var ar = B.argamassaAssentamento(p.area, g.fam, { modo: "orcamento", tecnica: g.tecnica });
+      h += '<p style="margin:8px 0 0;font-size:12.5px">';
+      if (ar.ok) {
+        h += "<b>Argamassa de assentamento:</b> " + ar.volume.toFixed(4) + " m³ (" + ar.m3porM2 + " m³/m² · " + Util.esc(ar.fonte) + ")" +
+             '<br><span class="muted" style="font-size:11.5px">' + Util.esc(ar.nota) + "</span>";
+      } else {
+        h += '<span style="color:#b45309">Argamassa: ' + Util.esc(ar.motivo) + "</span>";
+      }
+      h += "</p>";
+
+      /* verga do vão */
+      if (g.vao > 0) {
+        var v = A.verga(g.vao, g.fam, { tipo: g.funcao });
+        h += '<p style="margin:8px 0 0;font-size:12.5px"><b>Verga do vão de ' + g.vao.toFixed(2) + " m:</b> " +
+             v.comprimentoModular.toFixed(2) + " m, apoio de " + Math.round(v.apoioCada * 100) + " cm de cada lado " +
+             '<span class="muted">(' + Util.esc(v.fonte) + ")</span>";
+        if (v.viga) h += '<br><span style="color:#dc2626">' + Util.esc(v.aviso) + "</span>";
+        h += "</p>";
+      }
+
+      /* cintas e junta de controle */
+      var ci = A.cintas(g.c, g.h, g.fam, { externa: true });
+      if (ci.cintas.length > 1) {
+        h += '<p style="margin:8px 0 0;font-size:12.5px"><b>Cinta intermediária:</b> ' + Util.esc(ci.cintas[1].motivo) + "</p>";
+      }
+      var jc = A.juntaControle(g.c, g.fam, { externa: true });
+      if (jc.necessarias) {
+        h += '<p style="margin:8px 0 0;font-size:12.5px"><b>Junta de controle:</b> ' + jc.necessarias +
+             " necessária(s) — limite de " + jc.limite.toFixed(1) + " m. " + Util.esc(jc.nota) + "</p>";
+      }
+
+      /* avisos e alertas de base */
+      if (p.avisos.length) {
+        h += '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:#f59e0b18;border:1px solid #f59e0b44;font-size:12.5px">' +
+             p.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>";
+      }
+      var al = A.alertasDeBase(g.fam, p.pecas);
+      if (al.length) {
+        h += '<div style="margin-top:8px;padding:8px 10px;border-radius:8px;background:#2e6f9e14;border:1px solid #2e6f9e33;font-size:12px">' +
+             al.map(function (a) { return "• " + Util.esc(a.texto); }).join("<br>") + "</div>";
+      }
+      /* ---- DE ONDE VEIO O PESO ----------------------------------------
+       * O usuário tem que poder olhar o número e saber se é referência do
+       * sistema ou catálogo do fornecedor dele. Sem isso ele leva para o
+       * cliente um peso que acha que é do fornecedor e não é. */
+      h += '<div style="margin-top:12px;border-top:1px solid var(--linha);padding-top:8px;font-size:11.5px">';
+      h += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px">' +
+           '<b style="font-size:12px">De onde vem o peso</b>' +
+           '<button class="btn btn-sm" data-gacao="alv-pesos" style="font-size:11px;padding:2px 8px">Informar o peso do meu fornecedor</button></div>';
+      h += '<table class="tbl" style="width:100%;font-size:11.5px"><tbody>';
+      var SELO = { "MEU FORNECEDOR": "#16a34a", "REFERÊNCIA": "#6b7280", "CALCULADO": "#b45309", "SEM FONTE": "#dc2626" };
+      p.pecas.forEach(function (x) {
+        var cor = SELO[x.selo] || "#6b7280";
+        h += "<tr><td style='width:42%'>" + x.qtd + "× " + Util.esc(x.nome) + "</td>" +
+             "<td style='width:18%'>" + (x.peso == null ? '<span style="color:#dc2626">sem peso</span>' : Util.fmtNum(x.peso) + " kg") + "</td>" +
+             "<td><span class='g-pill' style='background:" + cor + "1a;color:" + cor + ";font-size:10px'>" + Util.esc(x.selo) + "</span> " +
+             (x.fabricante ? '<span class="muted">' + Util.esc(String(x.fabricante).split("|").join(" e ")) + "</span>" : "") +
+             (x.faixa ? ' <span class="muted">(' + x.faixa.min + "–" + x.faixa.max + " kg em " + x.faixa.n + " catálogos)</span>" : "") +
+             "</td></tr>";
+      });
+      h += "</tbody></table>";
+      var fabs = p.fabricantes || [];
+      h += '<p class="muted" style="font-size:11px;margin:6px 0 0">Referência OrçaPRO ' + Util.esc(p.pesosVersao) +
+           (fabs.length > 1 ? " — compilação de " + fabs.length + " fabricantes (" + Util.esc(fabs.join(", ")) + "). <b>Nenhum deles é o seu fornecedor.</b>" : "") +
+           (p.pesoDoUsuarioPct > 0 ? " <b>" + p.pesoDoUsuarioPct + "% do peso vem do que você informou.</b>" : "") + "</p>";
+      if ((p.pecasCalculadas || []).length) {
+        h += '<p class="muted" style="font-size:11px;margin:3px 0 0">' + p.pecasCalculadas.length +
+             " peça(s) com peso calculado pela geometria, por não haver catálogo — a fórmula fica na tela de pesos.</p>";
+      }
+      h += "</div>";
+
+      h += '<p class="muted" style="font-size:11px;margin-top:10px">Normas: ' + Util.esc(A.NORMAS.estrutural) + " · " + Util.esc(A.NORMAS.bloco) + "</p>";
+
+      out.innerHTML = h;
+    },
+
     renderBim: function () {
       var self = this, obras = lista("obras");
       if (this._bimSel == null) this._bimSel = (obras.filter(function (o) { return o.orcamentoId; })[0] || obras[0] || {}).id || "";
@@ -1910,6 +2772,7 @@
         if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
       } catch (eEd2) {}
       if (this._bimElementos && this._bimElementos.length) this._bimReplanejar();
+      try { this._nivArvore(); } catch (e) {}   /* a árvore é da OBRA: sem isto continuava mostrando os níveis da anterior */
     },
     // grava JÁ o save pendente do editor BIM (agendado pelo debounce do onEdicao) —
     // usado na troca de obra; sem pendência é no-op
@@ -2983,11 +3846,22 @@
           ]);
         }
       };
+      /* A CASCA (aparência do Revit) entra ANTES do viewer.
+       * Ela envolve o card: monta título, fita, Propriedades, Navegador e
+       * barra de status, e move o canvas + o balão + a gaveta para dentro do
+       * palco. O bim.js continua dono só do que vive sobre o canvas, então o
+       * re-home do viewer não é afetado. Se a casca não estiver disponível
+       * (arquivo não carregado), o BIM abre no layout antigo — nada quebra. */
+      this._bimCasca(canvas);
+
       // monta o viewer (js/bim.js é módulo ES — pode não ter carregado ainda; poll curto)
       var tentativas = 0;
       function montarViewer() {
         if (window.BIM && BIM.montar) {
           var aviso = document.getElementById("bim-aviso"); if (aviso) aviso.style.display = "none";
+          /* com o viewer prestes a existir, a cena já pode receber o tema do
+           * ambiente (o aplicarTema do bim.js precisa do host montado) */
+          setTimeout(function () { self._bimTemaAplicar(); }, 0);
           BIM.montar(canvas, {
             // v1.1.121 — grupo "Análise & Orçamento" do dock abre a gaveta do viewer
             onPainel: function (chave) { self._bimAbrirPainel(chave); },
@@ -6499,6 +7373,10 @@ renderFolha: function () {
         case "bimeap-abrir": return this.bimeapAbrir();
         case "bim-quant-ilustrado": return this.bimQuantIlustrado();
         case "bim-qr-rv": return this.bimQRImersivo();
+        case "alv-pesos": return this._alvPesos();
+        case "alv-peso-reverter": return this._alvPesoReverter(dataset.peca);
+        case "niveis": return this._niveis();
+        case "niv-excluir": return this._nivExcluir(dataset.id);
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
         case "dash-obra": return this.dashTrocaObra(dataset.value);
         case "nova-tarefa": return this.novoTarefa();

@@ -16,6 +16,11 @@
     // modo nuvem multi-aparelho: a EQUIPE (sub-usuários) e a CONTA (admin mestre)
     // sincronizam pela conta-tenant da licença → cada usuário loga no próprio aparelho.
     "equipe", "conta",
+    // peso de bloco do fornecedor do usuário: 1 registro por peça, sem obraId
+    // (é catálogo da empresa, não da obra — logo não entra em cascata nenhuma)
+    "pesos_bloco",
+    // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
+    "bim_niveis",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"
