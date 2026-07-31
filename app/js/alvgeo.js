@@ -147,9 +147,36 @@
      *   3. a mais COMPRIDA (convenção usual em paginação);
      *   4. empate: a de menor id, só para ser determinístico.
      *
-     * O desconto de quem cede é METADE da espessura de quem atravessa,
-     * porque o eixo dela ia até o eixo do outro: sobra o miolo da parede
-     * que atravessa.
+     * O DESCONTO NÃO É O MESMO NO T E NO L — e essa distinção custou
+     * 1 % de alvenaria até aqui.
+     *
+     * No T a parede que atravessa passa INTEIRA pelo encontro: ela ocupa
+     * a espessura toda no caminho de quem cede, e o pedaço contado duas
+     * vezes vale t/2 de comprimento. Desconto = t/2. (Conferido contra a
+     * área de união exata dos retângulos: erro 0,000 %.)
+     *
+     * No L o desconto é ZERO — e chegar nisso exigiu parar de usar o
+     * palpite e medir a peça que o pedreiro levanta.
+     *
+     * O canto de alvenaria é AMARRADO: os blocos se intertravam e o canto
+     * fica cheio, inclusive a quina externa. A peça física é a faixa
+     * MITRADA — o polígono do eixo deslocado de +t/2 e de −t/2, com as
+     * juntas em meia-esquadria. A área dessa faixa é EXATAMENTE o
+     * perímetro do eixo × t, para qualquer ângulo: os termos de canto do
+     * deslocamento para fora e para dentro se cancelam. Conferido por
+     * shoelace em quadrado, octógono e chanfro a 45° — os três batem na
+     * quarta casa.
+     *
+     * Ou seja: o quadradinho que se conta duas vezes por DENTRO do canto
+     * é exatamente compensado pela quina externa que nenhum dos dois
+     * retângulos cobre. Somar os eixos e multiplicar por t já é a
+     * resposta certa. Todo desconto no L é alvenaria que existe e não vai
+     * ser paga: t/2 tirava 2 %, t/4 tirava 1 %.
+     *
+     * De quebra isso conserta um efeito colateral: `encontros` classifica
+     * ponta-com-ponta como L pela DISTÂNCIA, sem olhar ângulo — uma
+     * parede reta partida em dois lances virava "L" e perdia comprimento
+     * à toa. Com corte zero, deixa de importar.
      * --------------------------------------------------------------- */
     resolverEncontros: function (paredes, opts) {
       opts = opts || {};
@@ -193,7 +220,9 @@
         }
 
         var vence = quem === "a" ? A : B, cede = quem === "a" ? B : A;
-        var corte = r4(vence.espessura / 2);
+        /* T: a vencedora passa inteira pelo caminho de quem cede -> t/2.
+           L: desconto ZERO. */
+        var corte = e.tipo === "L" ? 0 : r4(vence.espessura / 2);
         cede.desconto = r4(cede.desconto + corte);
         cede.cedeu.push({ para: vence.id, tipo: e.tipo, corte: corte, ponto: e.ponto });
         vence.atravessou.push({ sobre: cede.id, tipo: e.tipo, ponto: e.ponto });

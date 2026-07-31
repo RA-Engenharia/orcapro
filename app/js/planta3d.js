@@ -30,10 +30,12 @@
 
       // candidatos: só segmentos retos com comprimento útil (curvas discretizadas participam,
       // mas trechos minúsculos só geram ruído)
-      var segs = [];
+      var segs = [], nCurtos = 0, nForaLayer = 0;
       (segmentos || []).forEach(function (s, idx) {
-        if (whitelist && !whitelist[s.layer]) return;
-        var L = len(s); if (L < compMin) return;
+        if (whitelist && !whitelist[s.layer]) { nForaLayer++; return; }
+        /* traço curto demais não vira parede — mas some da CONTA se ninguém
+           contar: a tela dizia "16 traços analisados" num desenho de 36 */
+        var L = len(s); if (L < compMin) { nCurtos++; return; }
         var a = ang(s);
         // normaliza a direção pro intervalo [0, PI) — segmentos opostos são paralelos
         if (a < 0) a += Math.PI; if (a >= Math.PI) a -= Math.PI;
@@ -61,7 +63,10 @@
           var lo = Math.max(aLo, bLo), hi = Math.min(aHi, bHi), sobre = hi - lo;
           if (sobre < sobreMin) continue;
           if (sobre < 0.3 * Math.min(A.L, B.L)) continue; // sobreposição irrisória = provavelmente não é o par
-          candidatos.push({ ia: i, ib: j, esp: dPerp, sobre: sobre, lo: lo, hi: hi, ux: ux, uy: uy, nx: nx, ny: ny, A: A, B: B });
+          candidatos.push({ ia: i, ib: j, esp: dPerp, sobre: sobre, lo: lo, hi: hi,
+                            /* extremos de cada face: precisos p/ achar o fim do EIXO, não da face */
+                            aLo: aLo, aHi: aHi, bLo: bLo, bHi: bHi,
+                            ux: ux, uy: uy, nx: nx, ny: ny, A: A, B: B });
         }
       }
 
@@ -84,7 +89,7 @@
           var e1 = E.x1 * c.ux + E.y1 * c.uy, e2 = E.x2 * c.ux + E.y2 * c.uy;
           var eLo = Math.min(e1, e2), eHi = Math.max(e1, e2);
           var sob = Math.min(eHi, c.hi) - Math.max(eLo, c.lo);
-          if (sob >= 0.5 * c.sobre) ehEixo[ei] = 1;
+          if (sob >= 0.5 * c.sobre) { ehEixo[ei] = 1; c.temEixo = true; }
         });
       });
       candidatos = candidatos.filter(function (c) { return !ehEixo[c.ia] && !ehEixo[c.ib]; });
@@ -111,13 +116,87 @@
         var offA = c.A.x1 * c.nx + c.A.y1 * c.ny; // offset perpendicular da reta A
         var offB = c.B.x1 * c.nx + c.B.y1 * c.ny;
         var offM = (offA + offB) / 2;
-        var p1x = c.ux * c.lo + c.nx * offM, p1y = c.uy * c.lo + c.ny * offM;
-        var p2x = c.ux * c.hi + c.nx * offM, p2y = c.uy * c.hi + c.ny * offM;
-        var confianca = Math.min(1, c.sobre / Math.max(c.A.L, c.B.L)); // 1 = par perfeito
+
+        /* A PAREDE VAI ATÉ O EIXO, NÃO ATÉ A FACE INTERNA.
+         *
+         * A sobreposição das duas faces é o trecho onde AS DUAS existem —
+         * e num canto a face interna para antes, porque ela dobra. Usar a
+         * sobreposição como comprimento joga fora meia espessura em cada
+         * canto. Medido numa sala de 6 × 4 m com parede de 15 cm: o motor
+         * dava 2,82 m² de alvenaria contra 2,91 m² reais (área do anel,
+         * conta exata) — 3,09 % a menos, em silêncio, no orçamento.
+         *
+         * O fim do eixo é o MEIO-CAMINHO entre onde cada face termina —
+         * metade da sobra, não a sobra inteira. Num canto mitrado o
+         * vértice do eixo fica exatamente no meio entre o vértice da face
+         * externa e o da interna, porque as duas faces são a mesma linha
+         * deslocada de +t/2 e −t/2. A 90° com espessuras iguais a sobra
+         * vale t e metade dela dá t/2, o que fez a conta fechar no
+         * retângulo e escondeu o erro; num canto de 135° ou entre paredes
+         * de espessuras diferentes a sobra é outra, e estender ela inteira
+         * COBRAVA alvenaria a mais (medido: +2,03 % num octógono, +0,60 %
+         * num chanfro a 45°).
+         *
+         * A sobra ainda é limitada a MEIA ESPESSURA: mais que isso não é
+         * canto, é parede contínua passando por cima (caso do T), e aí
+         * quem resolve é o AlvGeo. O preço desse teto é o canto AGUDO, em
+         * que o mitrado avança mais que t/2 e a conta fica curta — está
+         * declarado, não corrigido. Ponta livre (as duas faces terminam
+         * juntas) não ganha nem um milímetro. */
+        var meia = c.esp / 2;
+        var extLo = Math.min(Math.max(0, c.lo - Math.min(c.aLo, c.bLo)) / 2, meia);
+        var extHi = Math.min(Math.max(0, Math.max(c.aHi, c.bHi) - c.hi) / 2, meia);
+        var eLo = c.lo - extLo, eHi = c.hi + extHi;
+        var p1x = c.ux * eLo + c.nx * offM, p1y = c.uy * eLo + c.ny * offM;
+        var p2x = c.ux * eHi + c.nx * offM, p2y = c.uy * eHi + c.ny * offM;
+        var compr = eHi - eLo;
+
+        /* CONFIANÇA QUE MEDE ALGUMA COISA.
+         * A conta antiga era só "quanto da face maior está pareado" — e um
+         * PILAR quadrado de 30 × 30 desenhado fechado dá dois pares
+         * perfeitos, saía com 100 % e virava 2 paredes de 30 cm. O que
+         * distingue parede de pilar é a ESBELTEZ: parede é comprida em
+         * relação à espessura. Entra como fator, e o caso duvidoso vai
+         * marcado para o usuário decidir — não sumindo nem entrando calado. */
+        var cobertura = Math.min(1, c.sobre / Math.max(c.A.L, c.B.L));
+        var esbeltez = compr / Math.max(c.esp, 1e-6);
+        var confianca = cobertura * Math.min(1, esbeltez / 4);
+
+        /* TRÊS LINHAS PARALELAS: GEOMETRIA NÃO DECIDE — QUEM DECIDE É O OLHO.
+         *
+         * Uma parede desenhada com a linha de centro no meio e uma CADEIA
+         * DE COTAS são, no papel, o mesmo desenho: três paralelas
+         * igualmente espaçadas, do mesmo comprimento. Não há critério
+         * geométrico que separe as duas — e as duas leituras erradas são
+         * caras: apagar faz a parede sumir; aceitar faz a cota virar
+         * parede. Medido no caminho de hoje: cadeia de cotas a 18 cm
+         * saía como parede de 36 cm com 100 % de confiança, MARCADA.
+         *
+         * Então o par com linha no meio entra marcado como duvidoso,
+         * desligado, e a tela diz por quê. O usuário liga o que for
+         * parede — que é a única informação que ele tem e o programa não. */
+        var confMax = c.temEixo ? 0.35 : 1;
         paredes.push({
           x1: p1x, y1: p1y, x2: p2x, y2: p2y,
-          comprimento: +(c.sobre).toFixed(4), espessura: +c.esp.toFixed(4),
-          layer: c.A.layer, confianca: +confianca.toFixed(2), ligada: true
+          comprimento: +compr.toFixed(4), espessura: +c.esp.toFixed(4),
+          comprimentoFaces: +(c.sobre).toFixed(4),   /* o trecho onde as DUAS faces existem */
+          cobertura: +cobertura.toFixed(4),
+          esbeltez: +esbeltez.toFixed(2),
+          /* 1,25 e não 1,5: a régua anterior pegava parede CURTA DE VERDADE
+             — um nicho de 35 cm em bloco de 25 dá esbeltez 1,4 e saía
+             desmarcado do orçamento. Pilar quadrado, que é o alvo, fica em
+             1,0 e continua pego. */
+          provavelPilar: esbeltez < 1.25,
+          viaTrio: !!c.temEixo,
+          layer: c.A.layer,
+          confianca: +Math.min(confianca, confMax).toFixed(2),
+          /* O DUVIDOSO NASCE DESLIGADO NA ORIGEM, não na tela.
+             A regra do pilar morava só no assistente de volumetria — e o
+             painel 2D→3D de dentro do viewer, que chama este motor direto,
+             não sabia dela: o pilar continuava entrando em dobro por lá.
+             Decidindo aqui, todo consumidor herda (extrudar já respeita
+             ligada === false) e não há duas fontes da mesma verdade. */
+          ligada: !(c.temEixo || esbeltez < 1.25)
         });
       });
 
@@ -146,7 +225,33 @@
           P.x2 = ux2 * hi2 + nx2 * off2; P.y2 = uy2 * hi2 + ny2 * off2;
           P.comprimento = +(hi2 - lo2).toFixed(4);
           P.espessura = +((P.espessura + Q.espessura) / 2).toFixed(4);
-          P.confianca = Math.max(P.confianca, Q.confianca);
+          P.comprimentoFaces = +((P.comprimentoFaces || 0) + (Q.comprimentoFaces || 0)).toFixed(4);
+          /* a esbeltez é da parede JUNTA — dois trechos curtos colineares
+             formam uma parede comprida, e ela deixa de parecer pilar */
+          P.esbeltez = +(P.comprimento / Math.max(P.espessura, 1e-6)).toFixed(2);
+          P.provavelPilar = P.esbeltez < 1.25;
+          P.viaTrio = !!(P.viaTrio || Q.viaTrio);
+          /* A NOTA TEM DE SER IDEMPOTENTE: a mesma parede, desenhada
+             inteira ou partida em N trechos, precisa receber a mesma
+             confiança. Multiplicar a esbeltez sobre uma nota que JÁ foi
+             penalizada por ela rebaixava a parede a cada emenda — três
+             trechos e uma parede boa saía vermelha. Por isso o fator entra
+             sobre a COBERTURA crua, guardada de propósito. */
+          P.cobertura = Math.max(P.cobertura || 0, Q.cobertura || 0);
+          P.confianca = +Math.min(P.cobertura * Math.min(1, P.esbeltez / 4), P.viaTrio ? 0.35 : 1).toFixed(2);
+          /* A DECISÃO É REFEITA INTEIRA, NÃO SÓ ENDURECIDA.
+           * O merge recalculava esbeltez e provavelPilar mas só sabia
+           * DESLIGAR — nunca voltava atrás. Numa parede grossa desenhada
+           * em trechos (cada LINE do DXF é um pedaço), cada trecho isolado
+           * tem esbeltez ~1,2 e parece pilar: nascia desligado. Depois de
+           * emendados viravam uma parede de 4 m com esbeltez 13, que não
+           * parece pilar nenhum — e continuava desligada. Medido numa sala
+           * de 6 × 4 m com parede de 30 cm fatiada em 35 cm: 6 paredes,
+           * ZERO ligadas, ZERO caixas no 3D. O modelo nascia vazio.
+           * A parede emendada é outro objeto para efeito da regra, e neste
+           * ponto o usuário ainda não tocou em nada — então a regra vale
+           * inteira, nos dois sentidos. */
+          P.ligada = !(P.viaTrio || P.provavelPilar);
           paredes.splice(q, 1); m = true; break outer;
         }
       }
@@ -158,6 +263,10 @@
           segmentosAnalisados: segs.length,
           segmentosUsados: nUsados,
           segmentosSemPar: segs.length - nUsados, // honesto: o que NÃO virou parede (portas, mobiliário, cotas…)
+          /* a conta tem de FECHAR: recebidos = analisados + curtos + fora de layer */
+          segmentosRecebidos: (segmentos || []).length,
+          segmentosCurtos: nCurtos,
+          segmentosForaLayer: nForaLayer,
           paredes: paredes.length
         }
       };
@@ -214,6 +323,7 @@
       var tolEsp = opts.tolEspacamento != null ? opts.tolEspacamento : 0.25;  /* ±25 % */
       var tolComp = opts.tolComprimento != null ? opts.tolComprimento : 0.40;
       var espMax = opts.espMax != null ? opts.espMax : 0.40;
+      var espMin = opts.espMin != null ? opts.espMin : 0.06;
       var segs = (segmentos || []).filter(function (s) { return len(s) > 1e-9; });
       if (segs.length < minLinhas) return { segmentos: segmentos || [], familias: [], removidos: 0 };
 
@@ -260,6 +370,17 @@
             fim++;
           }
           var n = fim - i + 1;
+          /* EXCEÇÃO: TRÊS linhas cujo vão total cabe numa espessura de
+             parede é FACE + EIXO + FACE — o jeito como muita prancha
+             desenha parede, com a linha de centro no meio. Apagar isso
+             faz a parede sumir inteira e em silêncio (medido: parede de
+             6 m × 15 cm virava zero). Quem separa aqui é o vão TOTAL:
+             face+eixo+face de 15 cm mede 15 cm entre as extremas; três
+             degraus de escada medem 56 cm, e caem fora na hora.
+             Três linhas não são apagadas — vão para o detector, que tem
+             a regra do eixo-sanduíche e resolve o par certo. */
+          var vaoTotal = passo * (n - 1);
+          if (n === 3 && vaoTotal >= espMin && vaoTotal <= espMax) { i = fim + 1; continue; }
           if (n >= minLinhas) {
             var fam = { linhas: n, espacamento: Math.round(passo * 1000) / 1000,
                         anguloGraus: Math.round(g.ang * 180 / Math.PI * 10) / 10,

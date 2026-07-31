@@ -3453,6 +3453,16 @@
       if (g.passo === 3) {
         var det = g.det || { paredes: [], stats: {} };
         var ligadas = det.paredes.filter(function (p) { return p.ligada !== false; });
+        /* O AVISO DE LEITURA TRUNCADA TEM DE ESTAR ONDE SE APERTA O BOTÃO.
+           Ele era mostrado só no passo 2 e sumia no 3 — justamente a tela
+           que soma os metros e oferece "Gerar o 3D". O usuário via o alerta,
+           avançava, e decidia numa tela que não lembrava mais dele. */
+        var truncado = (g.avisos || []).filter(function (a) { return /PASSOU DO TETO/.test(a); });
+        if (truncado.length) {
+          h += '<div style="margin-bottom:10px;padding:10px 12px;border-radius:8px;background:#fee2e2;border:1px solid #fecaca;font-size:12.5px">' +
+            truncado.map(function (a) { return Util.esc(a); }).join("<br>") +
+            "<br><b>Os metros abaixo são só do que foi lido — não da prancha inteira.</b></div>";
+        }
         h += '<div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap">' +
           '<label style="font-size:12px">Pé-direito (m)<input type="number" step="0.05" data-vol="peDireito" value="' +
           g.peDireito + '" style="width:90px;display:block"></label>' +
@@ -3461,12 +3471,31 @@
         h += '<div style="border:1px solid var(--linha);border-radius:8px;background:#fff;padding:6px;margin-bottom:10px;overflow:auto">' +
           '<canvas id="vol-canvas" style="display:block;max-width:100%"></canvas></div>';
         h += '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
+        /* o total é das LIGADAS — o que está desmarcado não vai para o 3D
+           nem para o orçamento, e não pode ser somado como se fosse */
+        var nDesl = det.paredes.length - ligadas.length;
         h += this._pagLinha("Paredes encontradas", "<b>" + ligadas.length + "</b> de " + det.paredes.length +
-          " · " + Math.round(ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0) * 10) / 10 + " m no total",
-          "desligue no quadro abaixo o que não for parede");
-        h += this._pagLinha("Traços analisados", (det.stats.segmentosAnalisados || 0) + " · " +
-          (det.stats.segmentosSemPar || 0) + " sem par" + (g.recorteInfo ? " · " + Util.esc(g.recorteInfo) : ""),
-          "traço sem par é cota, texto, mobiliário — não vira parede");
+          " · " + Math.round(ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0) * 10) / 10 + " m no total" +
+          (nDesl ? ' <span style="color:#b45309">(' + nDesl + " fora, não entram na conta)</span>" : ""),
+          ligadas.length ? "desligue no quadro abaixo o que não for parede"
+                         : "nada entrou marcado — leia o aviso abaixo e ligue o que você confirmar");
+        /* o número que o detector viu é DEPOIS do filtro de famílias — dizer
+           só ele esconde os traços que saíram antes de chegar aqui */
+        var nFam = (g.familias || []).reduce(function (s, fx) { return s + (fx.linhas || 0); }, 0);
+        var nCurt = det.stats.segmentosCurtos || 0;
+        var nFora = det.stats.segmentosForaLayer || 0;
+        var nDir = g.nDiretas || 0, nDirC = g.nDiretasCurtas || 0;
+        var lido = (det.stats.segmentosAnalisados || 0) + nFam + nCurt + nFora + nDir + nDirC;
+        h += this._pagLinha("O que foi lido",
+          "<b>" + lido + "</b> = " + (det.stats.segmentosAnalisados || 0) + " traços de face" +
+          (nDir ? " + " + nDir + " de traço grosso, medido pelo esqueleto" : "") +
+          (nFam ? " + " + nFam + " no filtro de famílias" : "") +
+          (nCurt + nDirC ? " + " + (nCurt + nDirC) + " curtos demais (menos de 25 cm)" : "") +
+          (nFora ? " + " + nFora + " fora do layer escolhido" : "") +
+          " · " + (det.stats.segmentosSemPar || 0) + " sem par" +
+          (g.recorteInfo ? " · " + Util.esc(g.recorteInfo) : ""),
+          "a conta FECHA de propósito: o que sai tem de aparecer em alguma parcela, " +
+          "senão o número parece cobrir o desenho todo");
         if (g.familias && g.familias.length) {
           h += this._pagLinha("Descartado como não-parede",
             g.familias.map(function (fx) { return fx.linhas + " linhas a " + Math.round(fx.espacamento * 100) +
@@ -3479,15 +3508,44 @@
           '<table class="tbl" style="width:100%;font-size:11.5px"><thead><tr><th></th><th>Parede</th><th>Compr.</th><th>Espess.</th><th>Confiança</th></tr></thead><tbody>';
         det.paredes.forEach(function (p, i) {
           var conf = Math.round((p.confianca || 0) * 100);
+          /* o SELO diz por que desconfiar — porcentagem sozinha não ensina nada */
+          var selo = p.espessuraAssumida
+            ? '<span style="color:#dc2626;font-weight:700"> ESPESSURA NÃO MEDIDA</span>'
+            : (p.viaTrio ? '<span style="color:#b45309;font-weight:700"> 3 linhas — pode ser COTA</span>'
+            : (p.provavelPilar ? '<span style="color:#b45309;font-weight:700"> parece PILAR</span>' : ""));
           h += '<tr><td><input type="checkbox" data-volpar="' + i + '"' + (p.ligada !== false ? " checked" : "") + "></td>" +
-            "<td>P" + (i + 1) + '<span class="muted" style="font-size:10px"> ' + Util.esc(p.layer || "") + "</span></td>" +
+            "<td>P" + (i + 1) + '<span class="muted" style="font-size:10px"> ' + Util.esc(p.layer || "") + "</span>" + selo + "</td>" +
             "<td>" + p.comprimento.toFixed(2).replace(".", ",") + " m</td>" +
-            "<td>" + Math.round(p.espessura * 100) + " cm</td>" +
+            "<td>" + Math.round(p.espessura * 100) + " cm" +
+              (p.espessuraAssumida ? '<span class="muted" style="font-size:10px"> (declarada)</span>' : "") + "</td>" +
             '<td><span style="color:' + (conf >= 70 ? "#15803d" : conf >= 40 ? "#b45309" : "#dc2626") + '">' + conf + " %</span></td></tr>";
         });
         h += "</tbody></table></div>";
+        var nAssum = det.paredes.filter(function (p) { return p.espessuraAssumida; }).length;
+        var nPilar = det.paredes.filter(function (p) { return p.provavelPilar; }).length;
+        if (nAssum) {
+          h += '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#fee2e2;border:1px solid #fecaca;font-size:12px">' +
+            "<b>" + nAssum + " parede(s) com espessura que o sistema NÃO mediu.</b> Num croqui de traço único não " +
+            "existe espessura no desenho — o valor é o que você declarou. Elas entram <b>desmarcadas</b>: " +
+            "confira uma a uma antes de ligar, porque cada uma vira m² de alvenaria no orçamento.</div>";
+        }
+        if (nPilar) {
+          h += '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#fef3c7;border:1px solid #fde68a;font-size:12px">' +
+            "<b>" + nPilar + " item(ns) com cara de pilar, não de parede</b> — comprimento próximo da espessura. " +
+            "Um pilar desenhado fechado vira DOIS pares de faces perfeitos e seria contado em dobro. " +
+            "Também entram desmarcados.</div>";
+        }
+        var nTrio = det.paredes.filter(function (p) { return p.viaTrio; }).length;
+        if (nTrio) {
+          h += '<div style="margin-top:8px;padding:9px 11px;border-radius:8px;background:#fef3c7;border:1px solid #fde68a;font-size:12px">' +
+            "<b>" + nTrio + " item(ns) formados por TRÊS linhas paralelas.</b> No papel, uma parede desenhada com " +
+            "a linha de centro no meio e uma cadeia de cotas são o mesmo desenho — não existe conta que separe " +
+            "as duas. Quem sabe é você: se for parede, marque; se for cota, régua de forro ou hachura, deixe " +
+            "como está. <b>Entram desmarcados</b> justamente porque o sistema não tem como decidir.</div>";
+        }
         h += '<p class="muted" style="font-size:11px;margin:8px 0 0">A detecção é ASSISTIDA: o sistema propõe, ' +
-          "você confirma. Confiança é o quanto as duas faces se acompanham — abaixo de 40 % desconfie e confira a medida.</p>";
+          "você confirma. A confiança combina duas coisas: quanto as duas faces se acompanham e quanto a peça é " +
+          "esbelta (parede é comprida em relação à espessura; pilar não é). Abaixo de 40 %, meça no desenho antes de aceitar.</p>";
       }
       return h;
     },
@@ -3514,7 +3572,11 @@
         var pi = el && el.getAttribute && el.getAttribute("data-volpar");
         if (pi != null) {
           var p = self._volCfg.det.paredes[parseInt(pi, 10)];
-          if (p) { p.ligada = !!el.checked; self._volDesenhar(); }
+          /* _volDesenhar só redesenha o CANVAS — o resumo ("N de M · X m
+             no total", "N fora", a dica) ficava congelado no primeiro
+             render, e o painel contradizia o 3D que ia ser gerado.
+             _volRepintar refaz a tela inteira e termina no canvas. */
+          if (p) { p.ligada = !!el.checked; self._volRepintar(); }
         }
       });
 
@@ -3642,8 +3704,19 @@
             g.alturaPagina = vp.height;   /* desfaz o Y invertido do viewport */
             var lim = PdfVetor.tirarMoldura(r.segmentos);
             g.fonte = "PDF vetorial"; g.unidade = "pt"; g.segs = lim.segmentos;
-            g.avisos = ["Traço vetorial: precisão de projeto. " + r.stats.segmentos + " traços" +
+            g.avisos = [(r.stats.estourou ? "" : "Traço vetorial: precisão de projeto. ") + r.stats.segmentos + " traços" +
                         (lim.removidos ? ", " + lim.removidos + " descartados como moldura ou carimbo." : ".")];
+            /* O TETO DE TRAÇOS NÃO PODE PASSAR CALADO. Ao estourar, o
+               leitor PARA de varrer — e o que vinha depois na ordem de
+               desenho simplesmente não existe, sem nada na tela. Uma
+               prancha grande perde as últimas paredes e o desenho parece
+               só "incompleto". Se estourou, não é precisão de projeto. */
+            if (r.stats.estourou) {
+              g.avisos.unshift("⚠ ESTA PÁGINA PASSOU DO TETO DE " + r.stats.segmentos + " TRAÇOS e a leitura " +
+                "PAROU ali. Tudo o que o PDF desenha depois desse ponto ficou de fora — provavelmente " +
+                "paredes inteiras. NÃO use este resultado para orçar a prancha toda: recorte uma região " +
+                "menor (uma planta por vez) e repita.");
+            }
             if (lim.suspeito && lim.candidatos) g.avisos.push(lim.nota);
             g.escala = 0; g.p1 = g.p2 = null; g.img = null;
             /* desenha os vetores num canvas para o usuário calibrar em cima */
@@ -3899,10 +3972,24 @@
         espMin: 0.06, espMax: 0.40, angTol: g.croqui ? 8 : 3,
         sobreMin: 0.20, compMin: 0.25
       });
+      /* PILAR NÃO É PAREDE, E ENTRA DESLIGADO. Um pilar 30 × 30 desenhado
+         fechado dá DOIS pares perfeitos de faces — o detector via duas
+         paredes de 30 cm com 100 % de confiança, e a seção ia dobrada para
+         o orçamento. Agora sai marcado e desmarcado, para o olho decidir. */
+      det.paredes.forEach(function (p) { if (p.provavelPilar) p.ligada = false; });
 
+      /* AS PAREDES DIRETAS TAMBÉM ENTRAM NA CONTA.
+         Numa planta de parede PREENCHIDA (poché) não existe par de faces:
+         o motor mede pelo esqueleto do traço e devolve paredesDiretas, e
+         `segmentos` vem vazio. A linha "Traços analisados" somava só o que
+         veio por face — e numa planta assim dizia "0 lidos = 0 analisados"
+         com quatro paredes na tabela logo abaixo. Pior: a dica que eu
+         mesmo escrevi promete que a conta FECHA. */
+      g.nDiretas = 0; g.nDiretasCurtas = 0;
       diretas.forEach(function (d) {
         var comp = Math.sqrt((d.x2 - d.x1) * (d.x2 - d.x1) + (d.y2 - d.y1) * (d.y2 - d.y1));
-        if (comp < 0.25) return;
+        if (comp < 0.25) { g.nDiretasCurtas++; return; }
+        g.nDiretas++;
         var esp = d.espessura;
         /* traço fino sem par num croqui: espessura DECLARADA, marcada */
         var assumida = false;
@@ -3910,10 +3997,25 @@
           if (!g.croqui) return;
           esp = g.espCroqui || 0.15; assumida = true;
         }
+        /* ESPESSURA ASSUMIDA ENTRA DESLIGADA.
+           Num croqui de traço único não existe espessura para medir — o
+           número é o que o usuário declarou, ou 15 cm de fábrica. Entrando
+           marcada, ela vira m² de alvenaria no orçamento sem ninguém ter
+           dito que concorda. Desligada, o usuário tem de olhar e ligar. */
+        /* a nota do poché tem de sair da MESMA conta que a legenda anuncia.
+           Era 0,80 fixo — um número que não media nada e que a legenda
+           descrevia como se fosse cobertura × esbeltez. Aqui não há duas
+           faces para comparar (o traço é maciço, a espessura vem do
+           esqueleto), então a cobertura entra como 0,80 declarado e a
+           esbeltez multiplica igual a todo mundo. */
+        var esbD = comp / Math.max(esp, 1e-6);
         det.paredes.push({ x1: d.x1, y1: d.y1, x2: d.x2, y2: d.y2,
           comprimento: Math.round(comp * 10000) / 10000, espessura: esp,
-          layer: assumida ? "croqui" : "poché", confianca: assumida ? 0.35 : 0.8,
-          espessuraAssumida: assumida, ligada: true });
+          esbeltez: Math.round(esbD * 100) / 100,
+          provavelPilar: esbD < 1.25,
+          layer: assumida ? "croqui" : "poché",
+          confianca: assumida ? 0 : Math.round(0.8 * Math.min(1, esbD / 4) * 100) / 100,
+          espessuraAssumida: assumida, ligada: !assumida && esbD >= 1.25 });
       });
 
       if (!det.paredes.length) {
@@ -3931,7 +4033,17 @@
       var g = this._volCfg;
       if (!g.det) return;
       var ligadas = g.det.paredes.filter(function (p) { return p.ligada !== false; });
-      if (!ligadas.length) { UI.toast("Ligue pelo menos uma parede.", "aviso"); return; }
+      if (!ligadas.length) {
+        /* num croqui TODAS entram desligadas (a espessura é declarada, não
+           medida) — dizer só "ligue uma parede" deixa o usuário sem saber
+           por que nada veio marcado */
+        var assum = g.det.paredes.filter(function (p) { return p.espessuraAssumida; }).length;
+        UI.toast(assum === g.det.paredes.length
+          ? "Nenhuma parede ligada. Neste croqui a espessura não foi medida — é a que você declarou. " +
+            "Confira as " + assum + " e marque as que valem."
+          : "Ligue pelo menos uma parede.", "aviso");
+        return;
+      }
       if (!window.BIM || !BIM.carregarSintetico) { UI.toast("Viewer 3D não está pronto.", "erro"); return; }
       var caixas = Planta3D.extrudar(g.det.paredes, g.peDireito);
       var mid = BIM.carregarSintetico(caixas, g.nome || "Volumetria");
@@ -5359,8 +5471,34 @@
             onReuniaoCheia: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair.", "erro"); },
             onVoz: function (on) { UI.toast(on ? "🎤 Áudio ligado — fale normalmente; quem não fala fica em silêncio." : "🎤 Áudio desligado.", "ok"); },
             onVozErro: function (nm) { UI.toast(nm === "NotAllowedError" ? "🎤 Microfone negado. Clique de novo e permita." : "🎤 Não consegui abrir o microfone: " + nm, "erro"); },
-            onLoaded: function (elementos) { self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); }); self._bimReplanejar(); },
+            /* A FITA TEM DE SABER QUE O MODELO CHEGOU.
+               Sem este _bimCascaContexto, abrir um IFC pela barra do viewer
+               carregava 452 elementos na cena e a fita continuava achando
+               que não havia modelo: todo comando com requer:"modelo" ficava
+               cinza respondendo "Abra ou gere um modelo primeiro". */
+            onLoaded: function (elementos) {
+              self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
+              /* SELEÇÃO FANTASMA: ao remover ou trocar o modelo, _bimSelecao
+                 ficava apontando para um elemento que não existe mais — a
+                 barra mostrava o nome dele e a fita liberava "Editar tipo" e
+                 "Rastrear no orçamento" sobre coisa nenhuma. */
+              if (self._bimSelecao) {
+                var alvo = self._bimSelecao.uid || self._bimSelecao.id;
+                var vive = self._bimElementos.some(function (e) { return e.uid === alvo || e.id === alvo; });
+                if (!vive) self._bimSelecao = null;
+              }
+              self._bimReplanejar();
+              try { self._bimCascaContexto(); } catch (e) {}
+              try { if (window.BimShell) BimShell.contadores(self._bimElementos.length, self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null); } catch (e2) {}
+            },
             onPick: function (info) {
+              /* SELEÇÃO É ESTADO DA CASCA, não só um balão na tela.
+                 _bimSelecao nunca era escrito — e "Editar tipo" e "Rastrear
+                 no orçamento" ficavam mortos para sempre, mesmo com o
+                 elemento certo destacado no 3D. */
+              self._bimSelecao = info || null;
+              try { self._bimCascaContexto(); } catch (e) {}
+              try { if (window.BimShell) BimShell.contadores((self._bimElementos || []).length, info ? (info.nome || info.tipo) : null); } catch (e2) {}
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
               box.style.display = ""; box.style.maxWidth = "260px"; // volta do painel de propriedades expandido (420px)
@@ -5409,6 +5547,13 @@
             var jaCarregado = BIM.elementos || [];
             self._bimElementos = jaCarregado.filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
             self._bimReplanejar();
+            /* REENTRAR NA ABA É COMO CARREGAR DE NOVO. Este ramo re-sincroniza
+               os elementos mas não avisava a casca: a barra voltava a
+               "Elementos: 0" e a fita a achar que não havia modelo, com o
+               modelo inteiro na tela. */
+            self._bimCascaContexto();
+            if (window.BimShell) BimShell.contadores(self._bimElementos.length,
+              self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null);
           } catch (e) {}
           try { if (BIM.modelos && BIM.modelos.length) self._bimRenderModelos(BIM.modelos); } catch (e2) {}
           return;

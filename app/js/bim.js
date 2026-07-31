@@ -4041,7 +4041,40 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var ligadas = p3d.det.paredes.filter(function (p) { return p.ligada !== false; });
     var mTot = ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0);
     res.innerHTML = '<b style="color:#7fe0a3">' + ligadas.length + ' parede(s) ligadas</b> (' + mTot.toFixed(1).replace('.', ',') + ' m lineares) · ' +
-      p3d.det.stats.segmentosSemPar + ' segmento(s) sem par (portas/mobiliário/cotas — fora, honesto) · unidade: ' + (p3d.parse.unidade.origem === 'insunits' ? 'do arquivo' : p3d.parse.unidade.origem);
+      /* NÃO AFIRMAR A CAUSA. "portas/mobiliário/cotas" era chute apresentado
+         como fato: no DXF com a parede fatiada em LINEs, boa parte dos
+         sem-par é FACE DE PAREDE que o pareador não casou — e o texto
+         mandava o usuário ignorar justamente o que estava faltando. */
+      p3d.det.stats.segmentosSemPar + ' segmento(s) não formaram par (porta, mobiliário, cota — ou face de parede que o pareador não casou) · unidade: ' + (p3d.parse.unidade.origem === 'insunits' ? 'do arquivo' : p3d.parse.unidade.origem);
+    /* O MOTIVO SAI DO PRÓPRIO OBJETO, não de uma lista fixa de causas.
+       Concatenar só viaTrio e provavelPilar como se fossem exaustivas
+       imprimia "⚠ 4 item(ns) NÃO entram no 3D: ." — prefixo com ponto solto
+       e nenhuma explicação — sempre que a exclusão viesse por outro caminho. */
+    var dubias = p3d.det.paredes.filter(function (p) { return p.ligada === false; });
+    if (dubias.length) {
+      var nTrio = dubias.filter(function (p) { return p.viaTrio; }).length;
+      var nPil = dubias.filter(function (p) { return p.provavelPilar && !p.viaTrio; }).length;
+      var nOutro = dubias.length - nTrio - nPil;
+      var mot = [];
+      if (nTrio) mot.push(nTrio + ' com três linhas paralelas (pode ser cota, não parede)');
+      if (nPil) mot.push(nPil + ' com comprimento próximo da espessura (parece pilar, contaria em dobro)');
+      if (nOutro > 0) mot.push(nOutro + ' desligados por você');
+      res.innerHTML += '<br><span style="color:#f0b94a">⚠ ' + dubias.length + ' NÃO entram no 3D: ' + mot.join(' · ') + '.</span>';
+    }
+    /* botão que gera NADA não fica oferecido: com zero ligadas ele produzia
+       um modelo vazio e o painel continuava aberto, sem dizer por quê */
+    if (!ligadas.length) {
+      bg.style.display = 'none';
+      /* dois casos DIFERENTES, e mandar clicar no segundo é mandar clicar
+         no vazio: sem parede proposta não há o que ligar no desenho */
+      res.innerHTML += p3d.det.paredes.length
+        ? '<br><b style="color:#f0b94a">Nenhuma parede ligada</b> — clique nas do desenho para ligar ' +
+          'o que for parede de verdade. O 3D só nasce com pelo menos uma.'
+        : '<br><b style="color:#f0b94a">Nenhuma parede foi proposta</b> — não há o que clicar. ' +
+          'Confira a UNIDADE no seletor acima (envergadura errada joga toda espessura fora da faixa de ' +
+          '6–40 cm) e explode os blocos no CAD antes de exportar.';
+      return;
+    }
     bg.style.display = ''; bg.textContent = '🏗 Gerar 3D (' + ligadas.length + ' paredes)';
   }
   function p3dProcessar(texto, nome) {
@@ -4052,13 +4085,29 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     p3d.nome = nome || 'planta.dxf';
     var info = p3dPanel.querySelector('[data-p3="info"]');
     if (!p3d.parse.segmentos.length) { info.innerHTML = '⚠ Não achei geometria 2D neste DXF (só ' + JSON.stringify(p3d.parse.stats.ignoradas) + '). Exporte como DXF ASCII (R12/2000) com as linhas das paredes.'; p3d.det = null; p3dDesenhar(); p3dResumo(); return; }
-    p3d.det = window.Planta3D.detectarParedes(p3d.parse.segmentos);
+    /* ESCADA, HACHURA E COTA SAEM ANTES — este painel chamava o detector
+       direto e não passava pelo filtro de famílias que o assistente de
+       volumetria usa. Um lance de escada de 28 cm cai no meio da faixa de
+       espessura de parede e virava meia dúzia de paredes por aqui. */
+    var fam3d = window.Planta3D.filtrarFamilias(p3d.parse.segmentos, { espMin: 0.06, espMax: 0.40, angTol: 4 });
+    p3d.familias = fam3d.familias || [];
+    p3d.det = window.Planta3D.detectarParedes(fam3d.segmentos);
     var env = p3d.parse.extents ? ((p3d.parse.extents.x1 - p3d.parse.extents.x0).toFixed(1) + '×' + (p3d.parse.extents.y1 - p3d.parse.extents.y0).toFixed(1) + ' m') : '—';
     var ign = Object.keys(p3d.parse.stats.ignoradas || {}).map(function (k) { return k + '×' + p3d.parse.stats.ignoradas[k]; }).join(', ');
     info.innerHTML = '<b>' + esc(p3d.nome) + '</b> · ' + p3d.parse.segmentos.length + ' segmentos · envergadura ' + env +
       (p3d.parse.unidade.origem.indexOf('heuristica') === 0 ? ' · <span style="color:#f0b94a">unidade ASSUMIDA (' + p3d.parse.unidade.origem.slice(11) + ') — confira a envergadura e corrija no seletor se preciso</span>' : '');
     if (ign) info.innerHTML += '<br>⚠ Entidades ignoradas: ' + esc(ign) + (/INSERT/.test(ign) ? ' — geometria DENTRO de bloco não entra: exploda os blocos no CAD antes de exportar.' : '.');
     if (!p3d.det.paredes.length) info.innerHTML += '<br>⚠ Nenhum par de linhas com cara de parede (6–40 cm). Confira a UNIDADE — envergadura errada = espessuras fora da faixa.';
+    /* o que saiu e o que entrou DESMARCADO tem de aparecer: sem isso o
+       painel diz "N paredes" e gera outro número */
+    if (p3d.familias.length) {
+      info.innerHTML += '<br>🚫 Descartado como não-parede: ' + p3d.familias.map(function (fx) {
+        return fx.linhas + ' linhas a ' + Math.round(fx.espacamento * 100) + ' cm (' + esc(fx.motivo) + ')';
+      }).join(' · ') + '. Parede tem DUAS faces.';
+    }
+    /* o aviso do que NÃO entra mora no resumo, não aqui: o bloco `info` só
+       é escrito ao abrir o arquivo, e depois que o usuário liga paredes na
+       mão ele continuaria afirmando que N itens ficam de fora */
     p3dDesenhar(); p3dResumo();
   }
   p3dPanel.addEventListener('click', function (e) {
