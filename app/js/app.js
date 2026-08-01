@@ -29,16 +29,25 @@
     },
     /* usada por quem INSERE item numa etapa: item novo em etapa recolhida
        nasceria invisível e o usuário jura que o lançamento não pegou. */
-    expandirEtapa: function (etapaId) {
+    expandirEtapa: function (etapaId, subId) {
       var orc = this.orcAtual; if (!orc || !etapaId) return;
       var m = this._etapasRecolhidas[orc.id];
-      if (m && m[etapaId]) delete m[etapaId];
+      if (!m) return;
+      // abre a SUB e o PAI: item lançado numa sub etapa com o pai recolhido
+      // nasceria invisível — que é exatamente o bug que esta função evita.
+      if (m[etapaId]) delete m[etapaId];
+      if (subId && m[subId]) delete m[subId];
     },
     _aplicarRecolhidas: function () {
       var self = this, orc = this.orcAtual; if (!orc) return;
       var linhas = document.querySelectorAll("[data-etapa-linhas]");
       Array.prototype.forEach.call(linhas, function (tr) {
-        var rec = self.etapaRecolhida(orc.id, tr.getAttribute("data-etapa-linhas"));
+        /* CADEIA "<subId> <etapaId>": o item de uma sub etapa some quando a SUB
+           ou a ETAPA está recolhida. Sem o some() aqui, recolher a etapa deixava
+           os itens das sub etapas na tela, órfãos do próprio cabeçalho. */
+        var rec = String(tr.getAttribute("data-etapa-linhas") || "").split(" ").some(function (id) {
+          return id && self.etapaRecolhida(orc.id, id);
+        });
         /* esconder por CSS, jamais remover do DOM: _refreshAvisosInsumo mexe
            nessas linhas e a numeração/subtotal vêm de Orcamento.calcular. */
         if (rec) tr.classList.add("oculta"); else tr.classList.remove("oculta");
@@ -48,8 +57,11 @@
         el.textContent = rec ? "\u25B8" : "\u25BE";
         var td = el.parentNode;
         if (td && td.parentNode) {
+          // a MESMA linha pode ser etapa ou sub etapa — o rótulo tem que perguntar,
+          // não presumir (senão o tooltip da sub etapa vira "esta etapa" no 1º toggle)
+          var ehSub = td.parentNode.className.indexOf("sub") > -1;
           Array.prototype.forEach.call(td.parentNode.querySelectorAll("[data-toggle-etapa]"), function (c) {
-            c.title = (rec ? "Expandir" : "Recolher") + " esta etapa";
+            c.title = (rec ? "Expandir" : "Recolher") + (ehSub ? " esta sub etapa" : " esta etapa");
           });
         }
       });
@@ -548,7 +560,7 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -677,8 +689,22 @@
       // excluir orçamento (ANTES do abrir: o botão fica dentro do card clicável)
       if (t.dataset.delOrc) { this.confirmarExcluirOrcamento(t.dataset.delOrc); return; }
       if (t.dataset.abrir) { this.abrirOrcamento(t.dataset.abrir); return; }
-      // adicionar item a uma etapa -> abre busca SINAPI
-      if (t.dataset.addItem) { this.abrirBuscaSinapi(t.dataset.addItem); return; }
+      // adicionar item -> abre busca SINAPI. "etapaId" ou "etapaId|subEtapaId"
+      if (t.dataset.addItem) {
+        var ai = String(t.dataset.addItem).split("|");
+        this.abrirBuscaSinapi(ai[0], "", ai[1] || "");
+        return;
+      }
+      // sub etapas (1.1) — criar / renomear / remover / reordenar
+      if (t.dataset.addSub) { this.addSubEtapa(t.dataset.addSub); return; }
+      if (t.dataset.editSub) { var es = String(t.dataset.editSub).split("|"); this.renomearSubEtapa(es[0], es[1]); return; }
+      if (t.dataset.delSub) { var ds = String(t.dataset.delSub).split("|"); this.removerSubEtapa(ds[0], ds[1]); return; }
+      if (t.dataset.moverSub) {
+        if (t.disabled) return;
+        var ms = String(t.dataset.moverSub).split("|");
+        Orcamento.moverSubEtapa(this.orcAtual, ms[0], ms[1], parseInt(ms[2], 10));
+        this.persistir(); this.render(); return;
+      }
       // renomear etapa (sem recriar)
       if (t.dataset.editEtapa) { this.renomearEtapa(t.dataset.editEtapa); return; }
       // remover etapa
@@ -819,6 +845,17 @@
     },
 
     onChange: function (e) {
+      /* Mover um item entre os grupos da etapa (solto ↔ sub etapa). É <select>,
+         então fala por CHANGE — o onClick retorna cedo em "select, option". */
+      if (e.target && e.target.getAttribute && e.target.getAttribute("data-item-sub")) {
+        var ps = String(e.target.getAttribute("data-item-sub")).split("|");
+        var destino = e.target.value || "";
+        Orcamento.moverItemParaSub(this.orcAtual, ps[0], ps[1], destino);
+        this.expandirEtapa(ps[0], destino);
+        this.persistir(); this.render();
+        UI.toast(destino ? "Item movido para a sub etapa." : "Item solto na etapa.", "ok");
+        return;
+      }
       // Parede-Cebola: trocar o candidato SINAPI de uma camada no preview → atualiza escolhido,
       // re-checa unidade (ok/revisar) e re-renderiza (badge, confiança e contador do botão ao vivo).
       if (e.target && e.target.getAttribute && e.target.getAttribute("data-pc-cand") != null && this._pcPreview) {
@@ -1844,6 +1881,12 @@
       // Conserta acentos/ç corrompidos (mojibake) de versões antigas — sem o usuário recriar nada.
       try {
         var reparos = Orcamento.repararTexto(orc);
+        /* ORDEM CANÔNICA das sub etapas na carga. O orçamento pode ter passado por
+         * uma máquina na versão ANTERIOR (que preserva subetapas/subEtapaId mas não
+         * conhece a regra de contiguidade) ou pelo round-trip do Excel — e aí os
+         * itens de um grupo chegam intercalados. Sem este reparo o Excel emite o
+         * banner da sub etapa DUAS vezes e as linhas saem fora de ordem. */
+        try { Orcamento.normalizarSubEtapas(orc); } catch (eNs) {}
         var fontes = 0, prazo = false;
         try { fontes = Orcamento.repararFontes(orc); } catch (e2) {} // FASE 1.2: Fonte honesta
         try { prazo = Orcamento.sincronizarPrazo(orc); } catch (e3) {} // FASE 1.4: prazo único
@@ -1972,11 +2015,106 @@
       setTimeout(function () { var i = UI.el("et-nome"); if (i) { i.focus(); i.select(); } }, 50);
     },
 
+    /* SUB ETAPAS (1.1) — o pedido é organizar a etapa em blocos: "Serviços
+       Preliminares" vira 1, "Canteiro de Obras" vira 1.1, e as composições do
+       canteiro viram 1.1.1, 1.1.2… */
+    addSubEtapa: function (etapaId) {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      var e = Util.arr(orc.etapas).filter(function (x) { return x.id === etapaId; })[0];
+      if (!e) return;
+      // itens que hoje estão SOLTOS na etapa (os que já estão em outra sub etapa não contam)
+      var subs = Orcamento.subEtapas(e), val = {};
+      subs.forEach(function (sx) { val[sx.id] = true; });
+      var nSoltos = Util.arr(e.itens).filter(function (it) { return !(it.subEtapaId && val[it.subEtapaId]); }).length;
+      var numEt = String(Util.arr(orc.etapas).indexOf(e) + 1);
+      /* A PREVISÃO TEM QUE SEGUIR A CAIXA. Com "mover" marcada (o padrão) os itens
+         soltos deixam de ocupar o 2º nível e a sub etapa nasce 1.1 — anunciar 1.4
+         só porque a etapa tem 3 itens soltos hoje é prometer um número que não sai. */
+      var nSubsComItem = 0;
+      subs.forEach(function (sx) {
+        if (Util.arr(e.itens).filter(function (it) { return it.subEtapaId === sx.id; }).length) nSubsComItem++;
+      });
+      var numMove = numEt + "." + (nSubsComItem + 1);
+      var numFica = numEt + "." + (nSoltos + nSubsComItem + 1);
+      var numIni = nSoltos ? numMove : numFica; // a caixa nasce marcada
+      var corpo = '<p class="muted" style="margin-top:0">A etapa <b>' + numEt + ' ' + Util.esc(e.nome) +
+          '</b> passa a ter blocos: a sub etapa vira <b><span id="sub-prev">' + numIni +
+          '</span></b> e as composições dela numeram <b><span id="sub-prev2">' + numIni + '</span>.1</b>, <b>.2</b>…</p>' +
+        '<div class="field"><label>Nome da sub etapa</label><input id="sub-nome" placeholder="Ex.: Canteiro de Obras" autofocus></div>' +
+        (nSoltos ? '<label style="display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer">' +
+            '<input type="checkbox" id="sub-mover" checked style="margin-top:3px">' +
+            '<span>Mover para dentro dela <b>' + nSoltos + ' item(ns)</b> que já estão nesta etapa.' +
+            '<br><span class="muted">Desmarcado, eles continuam soltos e a sub etapa entra depois deles.</span></span></label>' : "");
+      UI.modal("Nova sub etapa de " + e.nome, corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Criar sub etapa", classe: "primary", onClick: function () {
+            var nome = String((UI.el("sub-nome") || {}).value || "").trim();
+            var mover = !!((UI.el("sub-mover") || {}).checked);
+            var s = Orcamento.addSubEtapa(orc, etapaId, nome, mover);
+            if (!s) { UI.fecharModal(); return; }
+            if (self.expandirEtapa) self.expandirEtapa(etapaId, s.id);
+            self.persistir(); UI.fecharModal(); self.render();
+            UI.toast("Sub etapa criada." + (mover && nSoltos ? " " + nSoltos + " item(ns) foram para dentro dela." : ""), "ok");
+          } }
+      ]);
+      setTimeout(function () {
+        var i = UI.el("sub-nome"); if (i) i.focus();
+        var chk = UI.el("sub-mover");
+        if (chk) chk.onchange = function () {
+          var n = chk.checked ? numMove : numFica;
+          var a = UI.el("sub-prev"), b = UI.el("sub-prev2");
+          if (a) a.textContent = n; if (b) b.textContent = n;
+        };
+      }, 50);
+    },
+    renomearSubEtapa: function (etapaId, subId) {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      var e = Util.arr(orc.etapas).filter(function (x) { return x.id === etapaId; })[0];
+      var s = e && Orcamento.subEtapas(e).filter(function (x) { return x.id === subId; })[0];
+      if (!s) return;
+      UI.modal("Renomear sub etapa",
+        '<div class="field"><label>Nome da sub etapa</label><input id="sub-nome" value="' + Util.esc(s.nome) + '"></div>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Salvar", classe: "primary", onClick: function () {
+              Orcamento.renomearSubEtapa(orc, etapaId, subId, (UI.el("sub-nome") || {}).value || s.nome);
+              self.persistir(); UI.fecharModal(); self.render(); UI.toast("Sub etapa renomeada.", "ok");
+            } }
+        ]);
+      setTimeout(function () { var i = UI.el("sub-nome"); if (i) { i.focus(); i.select(); } }, 50);
+    },
+    removerSubEtapa: function (etapaId, subId) {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      var e = Util.arr(orc.etapas).filter(function (x) { return x.id === etapaId; })[0];
+      var s = e && Orcamento.subEtapas(e).filter(function (x) { return x.id === subId; })[0];
+      if (!s) return;
+      var n = Util.arr(e.itens).filter(function (it) { return it.subEtapaId === subId; }).length;
+      UI.modal("Remover sub etapa",
+        '<p>Remover a sub etapa <b>' + Util.esc(s.nome) + '</b>?</p>' +
+        (n ? '<p class="muted">Os <b>' + n + ' item(ns)</b> dela <b>não são apagados</b> — voltam a ficar soltos na etapa e são renumerados.</p>'
+           : '<p class="muted">Ela está vazia.</p>'), [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Remover sub etapa", classe: "", onClick: function () {
+              UI.fecharModal();
+              Orcamento.removerSubEtapa(orc, etapaId, subId);
+              self.persistir(); self.render();
+              UI.toast(n ? n + " item(ns) voltaram para a etapa." : "Sub etapa removida.", "ok");
+            } }
+        ]);
+    },
+
     recolherTodasEtapas: function () {
       var orc = this.orcAtual; if (!orc) return;
       var m = this._etapasRecolhidas[orc.id] || (this._etapasRecolhidas[orc.id] = {});
-      var algumAberto = (orc.etapas || []).some(function (e) { return !m[e.id]; });
-      (orc.etapas || []).forEach(function (e) { if (algumAberto) m[e.id] = true; else delete m[e.id]; });
+      /* O mapa guarda id de ETAPA e de SUB ETAPA no mesmo lugar (o toggle é o
+         mesmo). Varrer só orc.etapas fazia "Expandir todas" deixar os itens das
+         sub etapas escondidos: o m[subId] continuava lá. */
+      var ids = [];
+      (orc.etapas || []).forEach(function (e) {
+        ids.push(e.id);
+        Orcamento.subEtapas(e).forEach(function (sx) { ids.push(sx.id); });
+      });
+      var algumAberto = ids.some(function (id) { return !m[id]; });
+      ids.forEach(function (id) { if (algumAberto) m[id] = true; else delete m[id]; });
       this.render(); // o rótulo do botão muda junto
     },
     removerEtapa: function (etapaId) {
@@ -1984,8 +2122,10 @@
       var self = this, orc = this.orcAtual;
       var et = orc && (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
       var nItens = et ? (et.itens || []).length : 0;
+      var nSubs = et ? Orcamento.subEtapas(et).length : 0;
       UI.modal("🗑 Remover etapa",
         '<p>Remover a etapa <b>' + Util.esc((et && et.nome) || "") + '</b>' +
+        (nSubs ? ' com <b>' + nSubs + ' sub etapa(s)</b>' + (nItens ? ' e' : '') : '') +
         (nItens ? ' com <b>' + nItens + ' item(ns)</b>' : '') + '?<br><span class="muted">Essa ação não tem desfazer.</span></p>', [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "🗑 Remover", classe: "", onClick: function () {
@@ -2035,8 +2175,10 @@
     /* termoInicial: reabre a busca com o que já estava digitado — é o que
        sustenta o "Adicionar e continuar" (lançar vários itens da mesma busca
        sem redigitar). Chamada sem o 2º argumento continua idêntica. */
-    abrirBuscaSinapi: function (etapaId, termoInicial) {
+    abrirBuscaSinapi: function (etapaId, termoInicial, subEtapaId) {
       this._addItemEtapaId = etapaId;
+      // destino opcional: "+ Item" clicado na linha de uma SUB etapa lança lá dentro
+      this._addItemSubId = subEtapaId || "";
       var self = this;
       var corpo =
         '<div class="field"><input id="bs-q" value="' + Util.esc(termoInicial || "") + '" placeholder="Buscar por código ou descrição (ex.: alvenaria bloco, concreto fck)" autofocus></div>' +
@@ -2234,7 +2376,7 @@
       /* capturado ANTES do fecharModal: ele faz m.remove() e leva junto o
          #bs-q e todo o closure da busca. */
       var termoBusca = String((UI.el("bs-q") || {}).value || "");
-      var etapaAlvo = this._addItemEtapaId;
+      var etapaAlvo = this._addItemEtapaId, subAlvo = this._addItemSubId || "";
       UI.fecharModal();
       /* uma função só para os dois botões: duplicar o corpo abriria espaço para
          a regra de preço zerado divergir entre "adicionar" e "adicionar e
@@ -2248,14 +2390,14 @@
           return;
         }
         var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
-        Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd);
-        /* item novo em etapa recolhida nasceria invisível — o usuário reporta
-           como "não lançou". */
-        if (self.expandirEtapa) self.expandirEtapa(etapaAlvo);
+        Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd, subAlvo);
+        /* item novo em etapa (ou sub etapa) recolhida nasceria invisível — o
+           usuário reporta como "não lançou". */
+        if (self.expandirEtapa) self.expandirEtapa(etapaAlvo, subAlvo);
         self.persistir(); UI.fecharModal(); self.render();
         if (continuar) {
           UI.toast("Item adicionado — continue lançando.", "ok");
-          self.abrirBuscaSinapi(etapaAlvo, termoBusca);
+          self.abrirBuscaSinapi(etapaAlvo, termoBusca, subAlvo);
         } else {
           UI.toast("Item adicionado.", "ok");
         }
@@ -2958,7 +3100,7 @@
         // Respeita o limite de itens do plano (mesma régua do escolherItemSinapi).
         var addOk = false, limEstourado = false;
         if (st.addNaEtapa && self.orcAtual && (self.orcAtual.etapas || []).some(function (e) { return e.id === st.addNaEtapa; })) {
-          self.expandirEtapa(st.addNaEtapa); // senão o item nasce escondido numa etapa recolhida
+          self.expandirEtapa(st.addNaEtapa, st.addNaSub || ""); // senão o item nasce escondido numa etapa (ou sub etapa) recolhida
           var limCp = Auth.limite("limiteItensPorOrcamento");
           if (Orcamento.totais(self.orcAtual).qtdItens >= limCp) {
             limEstourado = true;
@@ -2967,7 +3109,7 @@
               codigo: item.codigo, descricao: item.descricao, unidade: item.unidade,
               custoUnitario: item.custoUnitario, custoMO: item.custoMO, custoMAT: item.custoMAT,
               custoEQ: item.custoEQ, baseFonte: "PROPRIA"
-            }, 1);
+            }, 1, st.addNaSub || "");
             self.persistir();
             addOk = true;
           }
@@ -3050,17 +3192,19 @@
     /* v1.1.124 — busca do editor sem resultado bom → cria a composição JÁ com a
      * descrição digitada e, ao gravar, o item entra na etapa de origem. */
     criarComposicaoDaBusca: function (q) {
-      var etapa = this._addItemEtapaId || null;
+      var etapa = this._addItemEtapaId || null, sub = this._addItemSubId || "";
       this.criarComposicao(true);
       this._cp.comp.descricao = String(q || "").trim();
       this._cp.addNaEtapa = etapa;
+      // destino da sub etapa: sem isto o item nasce SOLTO e empurra o grupo de 1.1 p/ 1.2
+      this._cp.addNaSub = sub;
       this._cpRender();
     },
     /* v1.1.124 — busca do editor filtrada em "Só insumos" sem resultado: o atalho
      * certo é cadastrar um INSUMO próprio (não uma composição). Modal leve com os
      * campos do Gestao; ao salvar, o insumo entra na etapa (respeitando o limite). */
     criarInsumoDaBusca: function (q) {
-      var self = this, etapa = this._addItemEtapaId || null;
+      var self = this, etapa = this._addItemEtapaId || null, subDest = this._addItemSubId || "";
       var campos = (typeof Gestao !== "undefined" && Gestao._insumoProprioCampos)
         ? Gestao._insumoProprioCampos("bsi", false)
         : '<div class="field"><label>Descrição *</label><input id="bsi-desc"></div><div class="row"><div class="field" style="max-width:110px"><label>Unidade *</label><input id="bsi-und" value="un"></div><div class="field"><label>Preço (R$)</label><input id="bsi-preco"></div></div><select id="bsi-cat" style="display:none"><option value="MAT" selected>MAT</option></select>';
@@ -3072,11 +3216,14 @@
           var item = self.salvarInsumoProprio(d);
           if (!item) return; // inválido — modal fica aberto
           if (etapa && self.orcAtual && (self.orcAtual.etapas || []).some(function (e) { return e.id === etapa; })) {
-            self.expandirEtapa(etapa); // idem: item novo não pode nascer invisível
+            self.expandirEtapa(etapa, subDest); // idem: item novo não pode nascer invisível
             if (Orcamento.totais(self.orcAtual).qtdItens >= Auth.limite("limiteItensPorOrcamento")) {
               UI.toast("Insumo salvo, mas não entrou na planilha: limite de itens do plano atingido.", "erro");
             } else {
-              Orcamento.addItem(self.orcAtual, etapa, { codigo: item.codigo, descricao: item.descricao, unidade: item.unidade, custoUnitario: item.custoUnitario, custoMO: item.custoMO, custoMAT: item.custoMAT, custoEQ: item.custoEQ, baseFonte: "PROPRIA" }, 1);
+              // 5º argumento = destino: "+ Item" clicado na linha de uma sub etapa tem
+              // que lançar DENTRO dela. Sem isso o item nascia solto e empurrava o
+              // grupo inteiro de 1.1 para 1.2 na planilha entregue.
+              Orcamento.addItem(self.orcAtual, etapa, { codigo: item.codigo, descricao: item.descricao, unidade: item.unidade, custoUnitario: item.custoUnitario, custoMO: item.custoMO, custoMAT: item.custoMAT, custoEQ: item.custoEQ, baseFonte: "PROPRIA" }, 1, subDest);
               self.persistir(); self.render();
             }
           }

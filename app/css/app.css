@@ -326,6 +326,20 @@ table.tbl tr.oculta { display: none; }
 }
 table.tbl tr.etapa-row td[data-toggle-etapa] { user-select: none; }
 table.tbl tr.etapa-row td[data-toggle-etapa]:hover { background: var(--surface-3); }
+/* SUB ETAPA (1.1) — mesma linha de etapa, um degrau abaixo: recuo nas duas
+   primeiras células, filete mais claro e peso menor. O número (1.1 vs 1) já é
+   o sinal mais forte de hierarquia, e é o único que sobrevive ao aperto de
+   tela no celular — por isso o item da sub etapa NÃO ganha recuo extra (a
+   coluna já cresce de 1.1 para 1.1.1 sozinha). */
+table.tbl tr.etapa-row.sub td { background: var(--surface); font-weight: 600; box-shadow: inset 3px 0 0 var(--linha-forte); font-size: 13px; }
+table.tbl tr.etapa-row.sub:hover td { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--linha-forte); }
+table.tbl tr.etapa-row.sub td:first-child { padding-left: 22px; }
+table.tbl tr.etapa-row.sub td:nth-child(2) { padding-left: 18px; }
+/* seletor "em que grupo este item está" — discreto até o hover, para não
+   competir com os números na planilha */
+table.tbl select.sel-sub { max-width: 122px; font-size: 11px; padding: 3px 4px; border: 1px solid transparent; background: transparent; color: var(--texto-fraco); border-radius: 6px; cursor: pointer; }
+table.tbl select.sel-sub:hover, table.tbl select.sel-sub:focus { border-color: var(--linha-forte); background: var(--surface); color: var(--texto); }
+@media screen and (max-width: 820px) { table.tbl select.sel-sub { max-width: 88px; } }
 table.tbl input.cell { width: 100%; border: 1px solid transparent; background: transparent; padding: 5px 7px; border-radius: 6px; text-align: right; transition: .1s; }
 table.tbl input.cell:hover { border-color: var(--linha-forte); background: var(--surface); }
 table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface); box-shadow: 0 0 0 3px rgba(46,111,158,.13); outline: none; }
@@ -610,6 +624,16 @@ table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px
 .rel-tit { font-size: 13pt; color: var(--p-navy); border-left: 4px solid var(--p-aco); padding-left: 8px; margin: 22px 0 8px; }
 .rel-doc table.prop-tbl tr.grp td { background: var(--p-navy); color: #fff; font-weight: 700; }
 .rel-doc table.prop-tbl tr.sub td { background: #eef4fa; font-weight: 700; }
+/* CABEÇALHO DE SUB ETAPA (1.1) nos documentos — classe PRÓPRIA, nunca ".sub":
+   nesta tabela ".sub" já é a linha de SUBTOTAL da etapa e vence o ".grp" por vir
+   depois; a sub etapa sairia com a cara de um subtotal e o cliente não teria
+   como distinguir um do outro no PDF. Aqui ela é um degrau claro abaixo da
+   etapa (navy), com recuo e o filete de acento mais fino. */
+.rel-doc table.prop-tbl tr.grp.subetapa td,
+table.prop-tbl tbody tr.grp-lau.subetapa td {
+  background: #dce7f2; color: var(--p-navy); font-weight: 700;
+  box-shadow: inset 6px 0 0 var(--p-aco); font-size: 9.8pt;
+}
 .rel-rod { margin-top: 20px; border-top: 1px solid var(--p-linha); padding-top: 8px; font-size: 8.5pt; color: #7a8a99; }
 
 @media print {

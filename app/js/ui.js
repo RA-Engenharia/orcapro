@@ -487,12 +487,14 @@
       // tela precisa mostrar exatamente o mesmo número do Excel, do relatório e
       // do laudo — o critério de arredondamento é do orçamento, não da tela.
       var _c = Orcamento.calcular(orc);
-      var _porEtapa = [], _porItem = {};
+      var _porEtapa = [], _porItem = {}, _porSub = {};
       _c.linhas.forEach(function (L) {
         var s = _porEtapa[L.etapaIdx] || (_porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
         s.custo += L.custoTotal; s.venda += L.precoTotal;
         _porItem[L.etapaIdx + "|" + L.itemIdx] = L;
       });
+      // subtotal de sub etapa vem do MOTOR (c.grupos) — a tela nunca refaz a conta
+      Util.arr(_c.grupos).forEach(function (g) { _porSub[g.subEtapaId] = g; });
       var nEtapas = orc.etapas.length;
       orc.etapas.forEach(function (e, ei) {
         // Subtotal da etapa = SOMA DAS LINHAS IMPRESSAS abaixo dela. Com o BDI
@@ -516,12 +518,32 @@
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|-1"' + (ei === 0 ? ' disabled' : '') + ' title="Subir etapa">▲</button>' +
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|1"' + (ei === nEtapas - 1 ? ' disabled' : '') + ' title="Descer etapa">▼</button>' +
           '<button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
+          '<button class="btn sm" data-add-sub="' + e.id + '" title="Dividir esta etapa em sub etapas (ex.: 1.1 Canteiro de Obras)">+ Sub etapa</button>' +
           '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">✎</button>' +
           '<button class="btn sm ico danger" data-del-etapa="' + e.id + '" title="Remover etapa">✕</button></div></td></tr>';
 
-        var nItens = e.itens.length;
-        e.itens.forEach(function (it, ii) {
-          var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0 };
+        /* CORPO DA ETAPA — soltos primeiro, depois um bloco por sub etapa (a mesma
+           ordem canônica que Orcamento._normalizarEtapa impõe em e.itens; render
+           e numeração TÊM que andar juntos, senão a tela mostra 1.3 em cima de 1.1). */
+        var _subs = Orcamento.subEtapas(e), _idxDe = {}, _valido = {}, _soltos = [], _blocos = {};
+        e.itens.forEach(function (it, ii) { _idxDe[it.id] = ii; });
+        _subs.forEach(function (sx) { _valido[sx.id] = true; _blocos[sx.id] = []; });
+        e.itens.forEach(function (it) {
+          var sid0 = (it.subEtapaId && _valido[it.subEtapaId]) ? it.subEtapaId : "";
+          if (sid0) _blocos[sid0].push(it); else _soltos.push(it);
+        });
+        // opções do seletor "em que grupo este item está" (só aparece se a etapa tem sub etapa)
+        var _optsSub = "";
+        if (_subs.length) {
+          _optsSub = '<option value="">— solto na etapa —</option>' + _subs.map(function (sx) {
+            var gg = _porSub[sx.id];
+            return '<option value="' + sx.id + '">' + Util.esc((gg ? gg.numero + " " : "") + sx.nome) + '</option>';
+          }).join("");
+        }
+
+        function linhaItem(it, posNoGrupo, tamGrupo, subId) {
+          var ii = _idxDe[it.id];
+          var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, numero: "" };
           var fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "PROPRIO");
           var ehSinapi = it.origem === "SINAPI" && (!it.baseFonte || it.baseFonte === "SINAPI");
           // v1.1.123: composição PRÓPRIA criada no app tem estrutura de insumos → detalhável
@@ -530,9 +552,15 @@
             return !!(bp && bp.insumos && bp.insumos.length);
           })();
           var pillCls = fonte === "SINAPI" ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
-          var numItem = Orcamento.itemNumero(ei, ii); // 2.1, 2.2… (mesma regra dos entregáveis)
+          // número vem da FONTE ÚNICA (1.2 solto, 1.1.1 dentro de sub etapa)
+          var numItem = L.numero || Orcamento.itemNumero(ei, ii);
           var temCod = it.codigo && it.codigo !== "—";
-          html += '<tr data-etapa-linhas="' + e.id + '"' + (rec ? ' class="oculta"' : "") + '>' +
+          /* cadeia do accordion: item de sub etapa some se a SUB ou a ETAPA
+             estiver recolhida — por isso os dois ids na mesma marcação. */
+          var cadeia = subId ? (subId + " " + e.id) : e.id;
+          var recSub = subId && typeof App !== "undefined" && App.etapaRecolhida ? App.etapaRecolhida(orc.id, subId) : false;
+          var recLinha = rec || recSub;
+          var out = '<tr data-etapa-linhas="' + cadeia + '"' + (recLinha ? ' class="oculta"' : "") + '>' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
@@ -548,8 +576,12 @@
             '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
             '<td class="right"><div class="acoes">' +
-              '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (ii === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
-              '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (ii === nItens - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
+              // ▲▼ andam DENTRO do grupo: subir o 1º item de uma sub etapa o
+              // arrancaria dela e a numeração sairia 1.1.1, 1.2, 1.1.2.
+              '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|-1"' + (posNoGrupo === 0 ? ' disabled' : '') + ' title="Subir item">▲</button>' +
+              '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
+              (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
+                _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
               (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button>' : '') +
               '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button>' +
               '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">✕</button></div></td></tr>';
@@ -559,9 +591,40 @@
           if (ehSinapi) {
             var nSem = UI._insumosSemPrecoDe(it.codigo);
             if (nSem > 0) {
-              html += '<tr class="tr-aviso-insumo' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
+              out += '<tr class="tr-aviso-insumo' + (recLinha ? " oculta" : "") + '" data-etapa-linhas="' + cadeia + '"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
             }
           }
+          return out;
+        }
+
+        // 1) itens soltos na etapa
+        _soltos.forEach(function (it, k) { html += linhaItem(it, k, _soltos.length, ""); });
+        // 2) um bloco por sub etapa — cabeçalho (1.1) + os itens dela (1.1.1…)
+        _subs.forEach(function (sx, si) {
+          var g = _porSub[sx.id] || { numero: "", custoTotal: 0, precoTotal: 0, qtdItens: 0 };
+          var recS = (typeof App !== "undefined" && App.etapaRecolhida) ? App.etapaRecolhida(orc.id, sx.id) : false;
+          var lst = _blocos[sx.id] || [];
+          /* Sub etapa VAZIA não tem número (ver Orcamento.calcular): ela ainda não é
+             uma linha do orçamento e os entregáveis não a imprimem — dar número aqui
+             abriria um buraco na planilha entregue (1.1 → 1.3). Mostra "—" e explica. */
+          var rotNum = g.numero ? '<b>' + g.numero + '</b>'
+            : '<span class="muted" title="Recebe o número assim que tiver o primeiro item">—</span>';
+          html += '<tr class="etapa-row sub' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '">' +
+            '<td data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa"><span data-chevron-etapa="' + sx.id + '">' + (recS ? "▸" : "▾") + '</span> ' + rotNum + '</td>' +
+            '<td colspan="5" data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa">' + Util.esc(sx.nome) +
+              ' <span class="muted" style="font-weight:400;font-size:11px">(' + g.qtdItens + (g.qtdItens === 1 ? " item" : " itens") + ')</span></td>' +
+            '<td class="num">' + Util.fmtMoeda(g.custoTotal) + '</td>' +
+            '<td class="num">' + Util.fmtMoeda(g.precoTotal) + '</td>' +
+            '<td class="right"><div class="acoes">' +
+            '<button class="btn sm ico" data-mover-sub="' + e.id + '|' + sx.id + '|-1"' + (si === 0 ? ' disabled' : '') + ' title="Subir sub etapa">▲</button>' +
+            '<button class="btn sm ico" data-mover-sub="' + e.id + '|' + sx.id + '|1"' + (si === _subs.length - 1 ? ' disabled' : '') + ' title="Descer sub etapa">▼</button>' +
+            '<button class="btn sm" data-add-item="' + e.id + '|' + sx.id + '">+ Item</button>' +
+            '<button class="btn sm ico" data-edit-sub="' + e.id + '|' + sx.id + '" title="Renomear sub etapa">✎</button>' +
+            '<button class="btn sm ico danger" data-del-sub="' + e.id + '|' + sx.id + '" title="Remover sub etapa (os itens voltam para a etapa)">✕</button></div></td></tr>';
+          if (!lst.length) {
+            html += '<tr data-etapa-linhas="' + sx.id + ' ' + e.id + '"' + ((rec || recS) ? ' class="oculta"' : "") + '><td></td><td colspan="8" class="muted" style="font-size:12px">Sub etapa ainda sem itens — use <b>+ Item</b> na linha acima.</td></tr>';
+          }
+          lst.forEach(function (it, k) { html += linhaItem(it, k, lst.length, sx.id); });
         });
       });
       html += '</tbody></table>';
@@ -1255,15 +1318,28 @@
         var s2 = porEtapa[L.etapaIdx] || (porEtapa[L.etapaIdx] = { custo: 0, venda: 0 });
         s2.custo += L.custoTotal; s2.venda += L.precoTotal;
       });
+      var porSubRel = {};
+      Util.arr(calc.grupos).forEach(function (g) { porSubRel[g.subEtapaId] = g; });
       Util.arr(orc.etapas).forEach(function (e, ei) {
         // subtotal = soma das linhas impressas (ver comentário em renderPlanilha)
         var sm2 = porEtapa[ei] || { custo: 0, venda: 0 };
         var se = { custoDireto: Arred.valor(sm2.custo, calc.modo), precoVenda: Arred.valor(sm2.venda, calc.modo) };
         html += '<tr class="grp"><td><b>' + (ei + 1) + '</b></td><td colspan="7">' + Util.esc(e.nome) + '</td></tr>';
         if (!e.itens.length) html += '<tr><td colspan="8" class="muted">(sem itens)</td></tr>';
+        var _subRelAtual = null;
         e.itens.forEach(function (it, ii) {
-          var L = porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, custoUnitario: 0 };
-          html += '<tr><td><b>' + Orcamento.itemNumero(ei, ii) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
+          var L = porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, custoUnitario: 0, numero: "" };
+          // cabeçalho da sub etapa (1.1) quando o bloco muda
+          if ((L.subEtapaId || "") !== _subRelAtual) {
+            _subRelAtual = L.subEtapaId || "";
+            if (_subRelAtual) {
+              var gR = porSubRel[_subRelAtual] || { numero: "", nome: "", custoTotal: 0, precoTotal: 0 };
+              html += '<tr class="grp subetapa"><td style="padding-left:14px"><b>' + Util.esc(gR.numero) + '</b></td>' +
+                '<td colspan="5" style="padding-left:14px">' + Util.esc(gR.nome) + '</td>' +
+                '<td class="r">' + Util.fmtMoeda(gR.custoTotal) + '</td><td class="r">' + Util.fmtMoeda(gR.precoTotal) + '</td></tr>';
+            }
+          }
+          html += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +

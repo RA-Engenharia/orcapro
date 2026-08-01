@@ -153,7 +153,100 @@
       return orc;
     },
     // Número hierárquico do item (derivado da posição): etapa 2, 3º item → "2.3".
+    // Mantido por compatibilidade; a numeração VIVA (que enxerga sub etapa) sai
+    // de calcular() em L.numero — é ela que os entregáveis leem.
     itemNumero: function (etapaIdx, itemIdx) { return (etapaIdx + 1) + "." + (itemIdx + 1); },
+
+    /* ================= SUB ETAPAS (etapa > sub etapa > item) =================
+     * O dado é ADITIVO e opcional: a etapa ganha `subetapas: [{id, nome}]` e o
+     * item ganha `subEtapaId`. Ausentes = orçamento de hoje, numerado 1 / 1.1 /
+     * 1.2, bit a bit igual.
+     *
+     * Os itens continuam TODOS em `e.itens`. Isso não é detalhe: há 30+ lugares
+     * que leem `e.itens` direto, sem passar pelo motor (Excel, laudo, cronograma,
+     * previsto×real, export Revit, round-trip). Aninhar item dentro da sub etapa
+     * faria item SUMIR do total — sem erro, sem aviso, só um total menor.
+     * ===================================================================== */
+    subEtapas: function (e) { return Util.arr(e && e.subetapas); },
+
+    addSubEtapa: function (orc, etapaId, nome, moverItensSoltos) {
+      var e = this._etapa(orc, etapaId); if (!e) return null;
+      if (!Array.isArray(e.subetapas)) e.subetapas = [];
+      var s = { id: Util.uid("sub"), nome: Util.fixEnc(String(nome == null ? "" : nome).trim()) || "Nova sub etapa" };
+      e.subetapas.push(s);
+      // Etapa que JÁ tinha itens: o padrão é levá-los para dentro da sub etapa —
+      // senão "1.1" significaria duas coisas (item solto e grupo) no mesmo lugar.
+      if (moverItensSoltos) Util.arr(e.itens).forEach(function (it) { if (!it.subEtapaId) it.subEtapaId = s.id; });
+      this._normalizarEtapa(e);
+      return s;
+    },
+    renomearSubEtapa: function (orc, etapaId, subId, nome) {
+      var e = this._etapa(orc, etapaId); if (!e) return orc;
+      var s = this.subEtapas(e).filter(function (x) { return x.id === subId; })[0];
+      if (s && Util.naoVazio(nome)) s.nome = String(nome).trim();
+      return orc;
+    },
+    // Remover a sub etapa NUNCA apaga item: os itens voltam a soltos na etapa.
+    // O agrupamento é organização; o serviço orçado é conteúdo.
+    removerSubEtapa: function (orc, etapaId, subId) {
+      var e = this._etapa(orc, etapaId); if (!e) return orc;
+      e.subetapas = this.subEtapas(e).filter(function (x) { return x.id !== subId; });
+      Util.arr(e.itens).forEach(function (it) { if (it.subEtapaId === subId) it.subEtapaId = ""; });
+      this._normalizarEtapa(e);
+      return orc;
+    },
+    moverSubEtapa: function (orc, etapaId, subId, dir) {
+      var e = this._etapa(orc, etapaId); if (!e) return orc;
+      var arr = this.subEtapas(e), i = -1;
+      for (var k = 0; k < arr.length; k++) { if (arr[k].id === subId) { i = k; break; } }
+      if (i < 0) return orc;
+      var j = i + (dir < 0 ? -1 : 1);
+      if (j < 0 || j >= arr.length) return orc;
+      var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+      this._normalizarEtapa(e);
+      return orc;
+    },
+    // Move um item entre grupos da MESMA etapa. subId vazio = solto na etapa.
+    moverItemParaSub: function (orc, etapaId, itemId, subId) {
+      var e = this._etapa(orc, etapaId); if (!e) return orc;
+      var it = Util.arr(e.itens).filter(function (x) { return x.id === itemId; })[0];
+      if (!it) return orc;
+      var existe = this.subEtapas(e).filter(function (s) { return s.id === subId; }).length > 0;
+      it.subEtapaId = (subId && existe) ? subId : "";
+      this._normalizarEtapa(e);
+      return orc;
+    },
+    /* ORDEM CANÔNICA de e.itens: soltos primeiro, depois um bloco CONTÍGUO por
+     * sub etapa, na ordem de e.subetapas. É essa contiguidade que faz a
+     * numeração impressa e o desenho da planilha baterem — e é ela que repara
+     * dado misto vindo do importador, do round-trip do Excel ou do agente EAP.
+     * Também limpa `subEtapaId` órfão (sub etapa que não existe mais).
+     * Idempotente. NUNCA é chamada de dentro de calcular(), que fica puro. */
+    _normalizarEtapa: function (e) {
+      if (!e) return e;
+      var subs = this.subEtapas(e);
+      if (!subs.length) {
+        // etapa sem sub etapa: sem carimbo órfão, e nada mais muda
+        Util.arr(e.itens).forEach(function (it) { if (it.subEtapaId) it.subEtapaId = ""; });
+        return e;
+      }
+      var valido = {}, blocos = {}, soltos = [];
+      subs.forEach(function (s) { valido[s.id] = true; blocos[s.id] = []; });
+      Util.arr(e.itens).forEach(function (it) {
+        var sid = (it.subEtapaId && valido[it.subEtapaId]) ? it.subEtapaId : "";
+        if (!sid) { if (it.subEtapaId) it.subEtapaId = ""; soltos.push(it); }
+        else blocos[sid].push(it);
+      });
+      var novo = soltos.slice();
+      subs.forEach(function (s) { novo = novo.concat(blocos[s.id]); });
+      e.itens = novo;
+      return e;
+    },
+    normalizarSubEtapas: function (orc) {
+      var self = this;
+      Util.arr(orc && orc.etapas).forEach(function (e) { self._normalizarEtapa(e); });
+      return orc;
+    },
     removerEtapa: function (orc, etapaId) {
       orc.etapas = Util.arr(orc.etapas).filter(function (e) { return e.id !== etapaId; });
       this._renumerarEtapas(orc);
@@ -178,6 +271,10 @@
       if (i < 0) return orc;
       var j = i + (dir < 0 ? -1 : 1);
       if (j < 0 || j >= arr.length) return orc;
+      // FRONTEIRA DO BLOCO: subir o 1º item de uma sub etapa o arrancaria dela e
+      // a numeração sairia 1.1.1, 1.2, 1.1.2. Só troca com vizinho do mesmo grupo;
+      // para trocar de grupo existe moverItemParaSub.
+      if ((arr[i].subEtapaId || "") !== (arr[j].subEtapaId || "")) return orc;
       var tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
       return orc;
     },
@@ -199,6 +296,7 @@
       if (orc.obra) { fix(orc.obra, "nome"); fix(orc.obra, "local"); }
       Util.arr(orc.etapas).forEach(function (e) {
         fix(e, "nome");
+        Util.arr(e.subetapas).forEach(function (s) { fix(s, "nome"); });
         Util.arr(e.itens).forEach(function (it) { fix(it, "descricao"); fix(it, "unidade"); });
       });
       return n;
@@ -306,7 +404,7 @@
 
     // ---- Itens ----
     // origem: item SINAPI (do motor) OU objeto próprio { descricao, unidade, custoUnitario }
-    addItem: function (orc, etapaId, sinapiItem, quantidade) {
+    addItem: function (orc, etapaId, sinapiItem, quantidade, subEtapaId) {
       var etapa = this._etapa(orc, etapaId);
       if (!etapa) return orc;
       var origem = this._origemDe(sinapiItem.codigo, sinapiItem.baseFonte || null);
@@ -323,7 +421,10 @@
         custoMAT: Util.num(sinapiItem.custoMAT),
         custoEQ: Util.num(sinapiItem.custoEQ)
       };
+      // destino opcional: sub etapa da MESMA etapa (id desconhecido vira solto)
+      if (subEtapaId && this.subEtapas(etapa).filter(function (s) { return s.id === subEtapaId; }).length) it.subEtapaId = subEtapaId;
       etapa.itens.push(it);
+      if (this.subEtapas(etapa).length) this._normalizarEtapa(etapa);
       return orc;
     },
     /* REPRECIFICAR OS ITENS QUE VIERAM DE UMA COMPOSIÇÃO EDITADA.
@@ -413,9 +514,45 @@
       var modo = cfg.arredondamento, inc = cfg.bdiIncidencia, A0 = A();
       var pct = (orc && orc.bdi) ? Util.num(orc.bdi.percentual) : 0;
       var bdiNoPU = (inc !== "final");
-      var linhas = [], custoDireto = 0, somaVenda = 0, mo = 0, mat = 0, eq = 0;
+      var linhas = [], grupos = [], custoDireto = 0, somaVenda = 0, mo = 0, mat = 0, eq = 0, nSub = 0;
+      var self = this;
       Util.arr(orc && orc.etapas).forEach(function (e, ei) {
+        /* NUMERAÇÃO DO 2º NÍVEL — um contador só, compartilhado: os itens SOLTOS
+         * ocupam 1..N e cada sub etapa vem depois, na ordem de e.subetapas.
+         * Sem sub etapa isso DEGENERA no número de sempre (1.1, 1.2, 1.3) — não é
+         * um "if de legado", é o mesmo algoritmo com zero grupos. */
+        var subs = self.subEtapas(e), valido = {}, gRef = {}, numSub = {}, cntSub = {}, nomeSub = {};
+        subs.forEach(function (s) { valido[s.id] = true; });
+        /* Conta os itens de cada grupo ANTES de numerar. Sub etapa VAZIA não gasta
+         * número: ela existe na tela (para o usuário lançar dentro) mas não é uma
+         * linha do orçamento, e os entregáveis imprimem grupo varrendo ITENS. Se ela
+         * consumisse o número, a planilha entregue pularia de 1.1 para 1.3 — um
+         * buraco que o leitor do edital lê como item omitido. Ganha número no
+         * instante em que recebe o primeiro item. */
+        var nSoltos = 0, nItensSub = {};
+        subs.forEach(function (s) { nItensSub[s.id] = 0; });
+        Util.arr(e.itens).forEach(function (it) {
+          if (it.subEtapaId && valido[it.subEtapaId]) nItensSub[it.subEtapaId]++;
+          else nSoltos++;
+        });
+        var seq2 = nSoltos;
+        subs.forEach(function (s, si) {
+          var vazia = !nItensSub[s.id];
+          if (!vazia) { seq2++; numSub[s.id] = (ei + 1) + "." + seq2; }
+          else numSub[s.id] = "";
+          nomeSub[s.id] = s.nome || "Sub etapa"; cntSub[s.id] = 0;
+          var g = { etapaIdx: ei, etapaId: e.id, etapaNome: e.nome || "", subIdx: si,
+            subEtapaId: s.id, nome: nomeSub[s.id], numero: numSub[s.id], vazia: vazia,
+            qtdItens: 0, custoTotal: 0, precoTotal: 0 };
+          grupos.push(g); gRef[s.id] = g;
+        });
+        nSub += subs.length;
+        var seq = 0;
         Util.arr(e.itens).forEach(function (it, ii) {
+          var sid = (it.subEtapaId && valido[it.subEtapaId]) ? it.subEtapaId : "";
+          var numero;
+          if (!sid) { seq++; numero = (ei + 1) + "." + seq; }
+          else { cntSub[sid]++; numero = numSub[sid] + "." + cntSub[sid]; }
           var q = Util.num(it.quantidade);
           var cu = A0.unitario(it.custoUnitario, modo);
           var ct = A0.valor(q * cu, modo);
@@ -424,16 +561,22 @@
           var pt = A0.valor(q * pu, modo);
           custoDireto += ct; somaVenda += pt;
           mo += q * Util.num(it.custoMO); mat += q * Util.num(it.custoMAT); eq += q * Util.num(it.custoEQ);
+          if (sid) { var g2 = gRef[sid]; g2.qtdItens++; g2.custoTotal += ct; g2.precoTotal += pt; }
           linhas.push({
             etapaIdx: ei, etapaId: e.id, etapaCodigo: e.codigo || "", etapaNome: e.nome || "",
-            itemIdx: ii, numero: this.itemNumero(ei, ii), item: it, itemId: it.id,
+            itemIdx: ii, numero: numero, item: it, itemId: it.id,
+            // hierarquia (vazios em item solto — quem não usa sub etapa não vê diferença)
+            subEtapaId: sid, subEtapaNome: sid ? nomeSub[sid] : "", subNumero: sid ? numSub[sid] : "",
+            nivel: sid ? 3 : 2,
             codigo: it.codigo || "", descricao: it.descricao || "", unidade: it.unidade || "un",
             origem: it.origem, baseFonte: it.baseFonte,
             quantidade: q, custoUnitario: cu, custoTotal: ct,
             precoUnit: pu, precoTotal: pt
           });
-        }, this);
-      }, this);
+        });
+      });
+      // subtotal do grupo no MESMO critério de arredondamento das linhas
+      grupos.forEach(function (g) { g.custoTotal = A0.valor(g.custoTotal, modo); g.precoTotal = A0.valor(g.precoTotal, modo); });
       custoDireto = A0.valor(custoDireto, modo);
       somaVenda = A0.valor(somaVenda, modo);
       var precoVenda = bdiNoPU ? somaVenda : A0.valor(Bdi.aplicar(custoDireto, pct), modo);
@@ -448,7 +591,10 @@
         bdiValor: Math.round((precoVenda - custoDireto) * 100) / 100,
         precoVenda: precoVenda,
         mo: A0.valor(mo, modo), mat: A0.valor(mat, modo), eq: A0.valor(eq, modo),
-        qtdItens: linhas.length, qtdEtapas: Util.arr(orc && orc.etapas).length
+        // cabeçalho de sub etapa NÃO entra em `linhas` (senão qtdItens mentiria e a
+        // curva ABC ganharia linha fantasma): vai aqui, com o subtotal do bloco.
+        grupos: grupos,
+        qtdItens: linhas.length, qtdEtapas: Util.arr(orc && orc.etapas).length, qtdSubEtapas: nSub
       };
     },
 
@@ -461,7 +607,7 @@
         bdiValor: c.bdiValor,
         precoVenda: c.precoVenda,
         qtdItens: c.qtdItens,
-        qtdEtapas: c.qtdEtapas,
+        qtdEtapas: c.qtdEtapas, qtdSubEtapas: c.qtdSubEtapas,
         arredondamento: c.modo, bdiIncidencia: c.incidencia, bdiNoPU: c.bdiNoPU
       };
     },
@@ -597,6 +743,7 @@
       return this.calcular(orc).linhas.map(function (L) {
         return {
           etapa: (L.etapaCodigo ? L.etapaCodigo + " " : "") + L.etapaNome,
+          subEtapa: L.subEtapaNome || "",
           numero: L.numero,
           origem: L.origem, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
           quantidade: L.quantidade, custoUnitario: L.custoUnitario,
@@ -613,21 +760,21 @@
       // arredondar recebe o CSV com as casas que o cálculo realmente usa.
       var casas = (c.modo === "nenhum") ? 4 : 2;
       var n = function (v) { return Util.fmtNum(v, casas); };
-      var head = ["Item", "Etapa", "Origem", "Codigo", "Descricao", "Unid", "Qtd", "Custo Unit", "Custo Total", "Preco Unit", "Preco Total"];
+      var head = ["Item", "Etapa", "Sub etapa", "Origem", "Codigo", "Descricao", "Unid", "Qtd", "Custo Unit", "Custo Total", "Preco Unit", "Preco Total"];
       var rows = [head.join(";")];
       this.analitico(orc).forEach(function (l) {
         rows.push([
-          l.numero, '"' + l.etapa + '"', l.origem, l.codigo, '"' + l.descricao + '"', l.unidade,
+          l.numero, '"' + l.etapa + '"', '"' + (l.subEtapa || "") + '"', l.origem, l.codigo, '"' + l.descricao + '"', l.unidade,
           Util.fmtNum(l.quantidade, 2), n(l.custoUnitario), n(l.custoTotal),
           n(l.precoUnitario), n(l.precoVenda)
         ].join(";"));
       });
       rows.push("");
-      rows.push(["CUSTO DIRETO", "", "", "", "", "", "", "", n(c.custoDireto), "", ""].join(";"));
+      rows.push(["CUSTO DIRETO", "", "", "", "", "", "", "", "", n(c.custoDireto), "", ""].join(";"));
       // com BDI apartado a soma das linhas é o custo: o BDI PRECISA aparecer como
       // linha própria, senão o arquivo não fecha consigo mesmo
-      if (!c.bdiNoPU) rows.push(["BDI " + Util.fmtNum(c.pct, 2) + "%", "", "", "", "", "", "", "", "", "", n(c.bdiValor)].join(";"));
-      rows.push(["PRECO DE VENDA", "", "", "", "", "", "", "", "", "", n(c.precoVenda)].join(";"));
+      if (!c.bdiNoPU) rows.push(["BDI " + Util.fmtNum(c.pct, 2) + "%", "", "", "", "", "", "", "", "", "", "", n(c.bdiValor)].join(";"));
+      rows.push(["PRECO DE VENDA", "", "", "", "", "", "", "", "", "", "", n(c.precoVenda)].join(";"));
       return "﻿" + rows.join("\r\n"); // BOM p/ acentos no Excel
     },
 

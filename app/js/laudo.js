@@ -121,13 +121,22 @@
       // ---- 5. ANALÍTICA ----
       // Valores da FONTE ÚNICA (Orcamento.calcular): o laudo é peça pericial —
       // não pode divergir em centavo da planilha nem do Excel entregue junto.
-      var analHtml = '', _calc = Orcamento.calcular(orc), _pi = {};
+      var analHtml = '', _calc = Orcamento.calcular(orc), _pi = {}, _pg = {};
       _calc.linhas.forEach(function (L) { _pi[L.etapaIdx + "|" + L.itemIdx] = L; });
+      Util.arr(_calc.grupos).forEach(function (g) { _pg[g.subEtapaId] = g; });
       Util.arr(orc.etapas).forEach(function (e, ei) {
         analHtml += '<tr class="grp-lau"><td><b>' + (ei + 1) + '</b></td><td colspan="6"><b>' + Util.esc(e.nome) + '</b></td></tr>';
+        var _subLau = null;
         Util.arr(e.itens).forEach(function (it, ii) {
-          var L = _pi[ei + "|" + ii] || { custoUnitario: 0, custoTotal: 0 };
-          analHtml += '<tr><td><b>' + Orcamento.itemNumero(ei, ii) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
+          var L = _pi[ei + "|" + ii] || { custoUnitario: 0, custoTotal: 0, numero: "" };
+          if ((L.subEtapaId || "") !== _subLau) {
+            _subLau = L.subEtapaId || "";
+            if (_subLau) {
+              var gL = _pg[_subLau] || { numero: "", nome: "" };
+              analHtml += '<tr class="grp-lau subetapa"><td style="padding-left:12px"><b>' + Util.esc(gL.numero) + '</b></td><td colspan="6" style="padding-left:12px">' + Util.esc(gL.nome) + '</td></tr>';
+            }
+          }
+          analHtml += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(it.unidade) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +

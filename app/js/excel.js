@@ -316,8 +316,31 @@
       wa.mergeCells('A' + r + ':J' + r);
       var bc = wa.getCell('A' + r); bc.value = (etIdx + 1) + '  ' + (et.nome || 'Etapa'); bc.font = { bold: true, color: { argb: branco } }; bc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: aco } }; bc.border = thin();
       r++;
-      var first = r, etCusto = 0, etVenda = 0;
+      var first = r, etCusto = 0, etVenda = 0, _subAtual = null;
+      // mapa id→nome das sub etapas desta etapa (o banner precisa do nome)
+      var _subNome = {};
+      (Array.isArray(et.subetapas) ? et.subetapas : []).forEach(function (sx) { _subNome[sx.id] = sx.nome || 'Sub etapa'; });
       (Array.isArray(et.itens) ? et.itens : []).forEach(function (it, itIdx) {
+        var _L0 = _linhaDe[etIdx + "|" + itIdx];
+        var _sid = (it.subEtapaId && _subNome[it.subEtapaId]) ? it.subEtapaId : "";
+        /* BANNER DA SUB ETAPA — emitido varrendo et.itens NA ORDEM, nunca por uma
+         * lista própria: o round-trip (Roundtrip._flatten) casa Excel × snapshot
+         * pela ordem de et.itens, e duas ordens diferentes viram
+         * "estrutura-alterada" no Excel→app. A coluna K fica VAZIA de propósito:
+         * é ela que marca linha de item para os SUMIFS e para o round-trip. */
+        if (_sid !== _subAtual) {
+          _subAtual = _sid;
+          if (_sid) {
+            var sb = wa.getRow(r);
+            wa.mergeCells('A' + r + ':J' + r);
+            var sc = wa.getCell('A' + r);
+            sc.value = '     ' + ((_L0 && _L0.subNumero) || '') + '  ' + _subNome[_sid];
+            sc.font = { bold: true, italic: true, size: 10, color: { argb: navy } };
+            sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } };
+            sc.border = thin(); sc.alignment = { indent: 1 };
+            r++;
+          }
+        }
         n++; var row = wa.getRow(r);
         var qt = num(it.quantidade), cu = num(it.custoUnitario);
         // valores idênticos aos da tela (fonte única); fallback só se o motor faltar
@@ -333,7 +356,9 @@
           grandMAT += ct * ((ana.custoMAT || 0) / ana.custoUnitario);
           grandEQ += ct * ((ana.custoEQ || 0) / ana.custoUnitario);
         } else { grandMAT += ct; }
-        row.getCell(1).value = (etIdx + 1) + '.' + (itIdx + 1); // número hierárquico 2.1 (igual ao editor)
+        // número da FONTE ÚNICA (1.1 ou 1.1.1 quando há sub etapa). Reimplementar
+        // aqui era o ponto onde a tela e o xlsx entregue divergiam calados.
+        row.getCell(1).value = (_L && _L.numero) ? _L.numero : ((etIdx + 1) + '.' + (itIdx + 1));
         row.getCell(2).value = it.codigo || '';
         // FASE 2: fonte honesta no xlsx — SEINFRA/SETOP/etc. não são "Própria"
         var fonteIt = it.baseFonte || it.origem || '';
@@ -346,7 +371,7 @@
         row.getCell(9).value  = { formula: bdiNoPU ? fU('G' + r + '*(1+' + BDI_CELL + '/100)') : fU('G' + r), result: pu };
         row.getCell(10).value = { formula: fV('F' + r + '*I' + r), result: pt };
         row.getCell(11).value = etKey; // âncora SUMIFS (coluna oculta; vazia em banner/subtotal)
-        itensFlat.push({ r: r, etapa: etKey, n: n, qt: qt, cu: cu, ct: ct, pu: pu, pt: pt, it: it });
+        itensFlat.push({ r: r, etapa: etKey, n: n, num: (_L && _L.numero) || ((etIdx + 1) + '.' + (itIdx + 1)), qt: qt, cu: cu, ct: ct, pu: pu, pt: pt, it: it });
         row.getCell(6).numFmt = NUM;
         [7, 8, 9, 10].forEach(function (k) { row.getCell(k).numFmt = MOEDA; });
         row.getCell(3).alignment = { horizontal: 'center' };
@@ -845,7 +870,7 @@
       var mr = 6;
       comMem.forEach(function (x, idx) {
         var row = wmem.getRow(mr);
-        row.getCell(1).value = x.n; row.getCell(2).value = x.it.codigo || '';
+        row.getCell(1).value = x.num || x.n; row.getCell(2).value = x.it.codigo || '';
         row.getCell(3).value = x.it.descricao || ''; row.getCell(4).value = x.it.unidade || 'un';
         row.getCell(5).value = { formula: "'" + SH_ANAL + "'!F" + x.r, result: x.qt }; row.getCell(5).numFmt = NUM;
         row.getCell(6).value = String(x.it.memoriaCalculo);
