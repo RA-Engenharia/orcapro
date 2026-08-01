@@ -29,6 +29,17 @@
   }
   function fix(s) { return (typeof Util !== "undefined" && Util.fixEnc) ? Util.fixEnc(String(s == null ? "" : s)) : String(s == null ? "" : s); }
   function norm(s) { return fix(s).toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim(); }
+  /* Chave de unidade: "M2" (SINAPI) e "m²" (SICRO) TÊM que casar. Usa o helper
+     central quando existe; senão aplica a mesma regra localmente — este módulo
+     roda em teste isolado, sem o Util global carregado. */
+  function unKey(u) {
+    if (typeof Util !== "undefined" && Util.unidadeChave) return Util.unidadeChave(u);
+    var s = String(u == null ? "" : u).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/²/g, "2").replace(/³/g, "3").replace(/[^a-z0-9]/g, ""), a;
+    do { a = s; s = s.replace(/([a-z0-9])x([a-z0-9])/g, "$1$2"); } while (s !== a);
+    if (s === "und" || s === "unid" || s === "uni" || s === "u") return "un";
+    return s;
+  }
   function round2(n) { return Math.round(num(n) * 100) / 100; }
 
   var ParedeCebola = {
@@ -124,7 +135,10 @@
         // senão aplicar a qtd (m²) num código de m³/m dá número errado silencioso -> "revisar".
         var status = l.status || (cand ? "ok" : "pendente");
         var unidadeDivergente = false;
-        if (cand && cand.item && norm(cand.item.unidade) !== norm(es.c.un)) { unidadeDivergente = true; status = "revisar"; }
+        // Util.unidadeChave, nao norm(): norm() usa NFD, que NAO decompoe "²" —
+        // entao "M2" (SINAPI) e "m²" (SICRO) nao casavam e a camada ia para
+        // "revisar", ficando FORA do orcamento (app.js so aplica status "ok").
+        if (cand && cand.item && unKey(cand.item.unidade) !== unKey(es.c.un)) { unidadeDivergente = true; status = "revisar"; }
         var qtdZero = !(num(es.qtd) > 0);   // área líquida 0 (vãos ≥ área) -> camada NÃO aplicável
         // "aplicável" = casou (ok) E tem quantidade. Só isso conta como nOk (o botão promete o real).
         if (qtdZero) nZero++; else if (status === "ok") nOk++; else if (status === "revisar") nRev++; else nPend++;

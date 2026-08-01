@@ -568,7 +568,7 @@
               ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
               : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             '<td>' + Util.esc(it.descricao) + '</td>' +
-            '<td>' + Util.esc(it.unidade) + '</td>' +
+            '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
             // custo ZERADO = pendência que trava a finalização: o campo grita
             '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
@@ -609,7 +609,10 @@
              abriria um buraco na planilha entregue (1.1 → 1.3). Mostra "—" e explica. */
           var rotNum = g.numero ? '<b>' + g.numero + '</b>'
             : '<span class="muted" title="Recebe o número assim que tiver o primeiro item">—</span>';
-          html += '<tr class="etapa-row sub' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '">' +
+          /* classe "subetapa", NÃO "sub": `.main .sub` (css/app.css:137) é a regra de
+             SUBTÍTULO do app e estava pintando esta linha com --texto-fraco e 13.5px,
+             que é justamente o oposto do pedido (mesma fonte e cor da etapa). */
+          html += '<tr class="etapa-row subetapa' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '">' +
             '<td data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa"><span data-chevron-etapa="' + sx.id + '">' + (recS ? "▸" : "▾") + '</span> ' + rotNum + '</td>' +
             '<td colspan="5" data-toggle-etapa="' + sx.id + '" style="cursor:pointer" title="' + (recS ? "Expandir" : "Recolher") + ' esta sub etapa">' + Util.esc(sx.nome) +
               ' <span class="muted" style="font-weight:400;font-size:11px">(' + g.qtdItens + (g.qtdItens === 1 ? " item" : " itens") + ')</span></td>' +
@@ -813,7 +816,7 @@
           '<td><span class="tag-tipo ' + (sub ? "tag-s" : "tag-i") + '" title="' + (sub ? "Sub-composição" : "Insumo") + '">' + (sub ? "S" : "I") + '</span></td>' +
           '<td>' + celCod + '</td>' +
           '<td>' + Util.esc(it.descricao) + '</td>' +
-          '<td>' + Util.esc(it.unidade) + '</td>' +
+          '<td>' + Util.esc(Util.unidadeExibir(it.unidade)) + '</td>' +
           '<td class="num">' + Util.fmtNum(it.coeficiente, 4) + '</td>' +
           '<td class="num">' + celUnit + '</td>' +
           '<td class="num">' + celTotal + '</td>' +
@@ -1340,7 +1343,7 @@
             }
           }
           html += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
-            '<td>' + Util.esc(it.unidade) + '</td>' +
+            '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
@@ -1488,7 +1491,7 @@
       Util.arr(res.etapas).forEach(function (e) {
         if (nP >= LIMP) { cortou = true; return; }   // não empurra cabeçalho de etapa depois do limite (senão sobram etapas vazias)
         prev.push('<tr class="etapa-row"><td colspan="5"><b>' + Util.esc((e.codigo ? e.codigo + " · " : "") + e.nome) + "</b></td></tr>");
-        Util.arr(e.itens).forEach(function (it) { if (nP >= LIMP) { cortou = true; return; } prev.push("<tr><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(it.unidade) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); nP++; });
+        Util.arr(e.itens).forEach(function (it) { if (nP >= LIMP) { cortou = true; return; } prev.push("<tr><td>" + Util.esc(it.codigo || "—") + "</td><td>" + Util.esc(it.descricao) + "</td><td>" + Util.esc(Util.unidadeExibir(it.unidade)) + '</td><td class="num">' + Util.fmtNum(it.quantidade, 2) + '</td><td class="num">' + Util.fmtMoeda(it.custoUnitario) + "</td></tr>"); nP++; });
       });
       if (cortou) prev.push('<tr><td colspan="5" class="muted" style="text-align:center">… e mais ' + Math.max(0, res.resumo.itens - nP) + ' item(ns) — mostrando os ' + nP + ' primeiros</td></tr>');
       html += '<div style="max-height:300px;overflow:auto;border:1px solid var(--linha);border-radius:8px"><table class="tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Qtd</th><th class="num">Custo unit.</th></tr></thead><tbody>' + (prev.join("") || '<tr><td colspan="5" class="muted">Nada detectado — ajuste o mapeamento.</td></tr>') + "</tbody></table></div>";

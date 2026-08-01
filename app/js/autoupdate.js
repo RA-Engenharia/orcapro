@@ -20,7 +20,10 @@
   var recarregarPendente = false; // update aplicado no disco, aguardando momento seguro
   var ultimaInteracao = 0;        // último keydown/pointerdown — mede ociosidade REAL
 
-  // higiene: chave do fluxo antigo ("agora não") não existe mais
+  // higiene: limpa a chave do fluxo ANTIGO de "agora não" (v1), que não existe mais.
+  // ⚠ A chave do fluxo atual é OUTRA (:v2) de propósito — usar o mesmo nome fazia
+  // esta linha apagar a escolha do usuário a cada boot, e o aviso de versão nova
+  // voltava em TODA abertura do app.
   try { localStorage.removeItem("orcapro:update:adiada"); } catch (e) {}
   try {
     document.addEventListener("keydown", function () { ultimaInteracao = Date.now(); }, true);
@@ -128,13 +131,95 @@
         if (res === null) return;
         aplicando = false;
         if (res && res.ok) { agendarRecarga(res.versao || d.disponivel); }
-        else { fechar(); } // falhou: silencioso — próximo check tenta de novo
+        else if (d && d.pediuUsuario) {
+          /* O usuário CLICOU em "Atualizar agora": sumir em silêncio faz ele achar
+             que atualizou. Quando ele não pediu (update silencioso), o silêncio é
+             correto — o próximo check tenta de novo sozinho. */
+          faixa('<span class="opr-ic">⚠</span><div class="opr-tx"><b>Não consegui atualizar agora.</b>' +
+            '<small>Verifique a internet — o app tenta de novo sozinho. Você pode continuar trabalhando normalmente.</small></div>');
+          setTimeout(fechar, 12000);
+        } else { fechar(); } // silencioso: próximo check tenta de novo
       })
       .catch(function () { aplicando = false; fechar(); });
   }
 
   function esc(s) {
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  /* ===================================================================
+   * VERSÃO NOVA (tipo "maior") — o único caso em que o app PEDE algo.
+   *
+   * A regra do produto é que atualização sobe sozinha e o cliente nunca é
+   * incomodado. A exceção é quando o programador marca a versão como "maior"
+   * no manifesto: aí há novidade que vale contar, e às vezes algo que o
+   * update de arquivos não entrega sozinho (mudança na forma de instalar).
+   *
+   * Mostrado UMA VEZ por versão — quem dispensa não é perguntado de novo até
+   * sair outra versão maior. A escolha mora no localStorage (é preferência de
+   * tela, não dado do orçamento).
+   * =================================================================== */
+  var CHAVE_ADIADA = "orcapro:update:adiada:v2"; // :v2 — a sem sufixo é limpa no boot (ver topo)
+
+  function jaDispensou(versao) {
+    try { return localStorage.getItem(CHAVE_ADIADA) === String(versao); } catch (e) { return false; }
+  }
+  function dispensar(versao) {
+    try { localStorage.setItem(CHAVE_ADIADA, String(versao)); } catch (e) {}
+  }
+
+  function avisarVersaoNova(d) {
+    if (aplicando || recarregarPendente) return;
+    if (jaDispensou(d.disponivel)) return;
+    if (document.getElementById("opr-upd-maior")) return;
+    /* MOMENTO SEGURO — o resto do módulo respeita isto para RECARREGAR; a tela que
+       cobre o app inteiro tem ainda mais motivo. Sem isto ela aparecia por cima de
+       um modal aberto ou no meio de uma impressão. Tenta de novo em 30s. */
+    if (!seguroRecarregar()) { setTimeout(function () { avisarVersaoNova(d); }, 30000); return; }
+    injetarEstilos();
+
+    var ov = document.createElement("div");
+    ov.id = "opr-upd-maior";
+    ov.style.cssText = "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+      "background:rgba(11,26,43,.72);padding:20px;font-family:'Segoe UI',system-ui,Arial,sans-serif";
+    var titulo = d.titulo || ("OrçaPRO " + d.disponivel);
+    ov.innerHTML =
+      '<div style="max-width:520px;width:100%;background:#fff;color:#111d2b;border-radius:14px;overflow:hidden;' +
+        'box-shadow:0 24px 60px rgba(0,0,0,.35)">' +
+        '<div style="background:linear-gradient(135deg,#0f2740,#2e6f9e);color:#fff;padding:18px 22px">' +
+          '<div style="font-size:11px;letter-spacing:.14em;opacity:.85;text-transform:uppercase">Versão nova disponível</div>' +
+          '<div style="font-size:20px;font-weight:800;margin-top:4px">' + esc(titulo) + '</div>' +
+        '</div>' +
+        '<div style="padding:18px 22px;font-size:14px;line-height:1.55;max-height:44vh;overflow:auto">' +
+          (d.notas ? esc(d.notas) : "Melhorias e novidades nesta versão.") +
+        '</div>' +
+        '<div style="padding:14px 22px 20px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">' +
+          '<button id="opr-maior-depois" style="border:1px solid #c9d6e4;background:#fff;color:#516375;' +
+            'padding:10px 16px;border-radius:9px;font-weight:600;cursor:pointer;font-size:14px">Agora não</button>' +
+          '<button id="opr-maior-agora" style="border:0;background:#16a34a;color:#fff;' +
+            'padding:10px 20px;border-radius:9px;font-weight:700;cursor:pointer;font-size:14px">Atualizar agora</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+
+    var btnDepois = document.getElementById("opr-maior-depois");
+    var btnAgora = document.getElementById("opr-maior-agora");
+    var onKey = function (ev) {
+      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); dispensar(d.disponivel); fecharOv(); return; }
+      if (ev.key !== "Tab") { ev.stopPropagation(); return; } // Ctrl+K e cia não passam por trás
+      // armadilha de foco: Tab circula só entre os dois botões
+      var ativo = document.activeElement;
+      if (ev.shiftKey && ativo === btnDepois) { ev.preventDefault(); btnAgora.focus(); }
+      else if (!ev.shiftKey && ativo === btnAgora) { ev.preventDefault(); btnDepois.focus(); }
+    };
+    var fecharOv = function () {
+      try { document.removeEventListener("keydown", onKey, true); } catch (e) {}
+      try { ov.parentNode.removeChild(ov); } catch (e) {}
+    };
+    document.addEventListener("keydown", onKey, true);
+    try { btnAgora.focus(); } catch (e) {}
+    btnDepois.onclick = function () { dispensar(d.disponivel); fecharOv(); };
+    btnAgora.onclick = function () { fecharOv(); d.pediuUsuario = true; aplicarSilencioso(d); };
   }
 
   // Botão manual "🔄 Buscar atualização" (topbar + visor da nuvem): puxa a versão nova SEM baixar ZIP —
@@ -168,7 +253,9 @@
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
           if (!d || !d.temAtualizacao || !d.disponivel) return;
-          aplicarSilencioso(d);
+          // "maior" = o programador marcou como versão nova: avisa e espera a ação.
+          // Qualquer outro valor (inclusive ausente) sobe sozinho, como sempre.
+          if (d.tipo === "maior") avisarVersaoNova(d); else aplicarSilencioso(d);
         })
         .catch(function () { /* sem endpoint / offline: não faz nada */ });
       // App aberto o dia todo também se mantém em dia: re-verifica a cada 4h.
@@ -177,7 +264,10 @@
           if (aplicando || recarregarPendente) return;
           fetch("/__update/check", { method: "GET" })
             .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (d) { if (d && d.temAtualizacao && d.disponivel) aplicarSilencioso(d); })
+            .then(function (d) {
+              if (!d || !d.temAtualizacao || !d.disponivel) return;
+              if (d.tipo === "maior") avisarVersaoNova(d); else aplicarSilencioso(d);
+            })
             .catch(function () {});
         }, 4 * 60 * 60 * 1000);
       }

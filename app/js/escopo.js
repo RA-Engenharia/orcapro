@@ -156,7 +156,8 @@
         if (desc.indexOf(termos[i]) > -1) achados++;
       }
       var frac = termos.length ? achados / termos.length : 0;
-      var bonusUnid = (unidade && Util.normalizar(item.unidade) === Util.normalizar(unidade)) ? 0.2 : 0;
+      var _uk = function (u) { return (typeof Util !== "undefined" && Util.unidadeChave) ? Util.unidadeChave(u) : String(u || "").toLowerCase(); };
+      var bonusUnid = (unidade && _uk(item.unidade) === _uk(unidade)) ? 0.2 : 0;
       var score = Math.min(1, frac * 0.8 + bonusUnid);
       return Math.round(score * 100);
     },

@@ -137,7 +137,7 @@
             }
           }
           analHtml += '<tr><td><b>' + (L.numero || Orcamento.itemNumero(ei, ii)) + '</b></td><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
-            '<td>' + Util.esc(it.unidade) + '</td>' +
+            '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="r">' + Util.fmtNum(it.quantidade, 2) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoUnitario) + '</td>' +
             '<td class="r">' + Util.fmtMoeda(L.custoTotal) + '</td></tr>';

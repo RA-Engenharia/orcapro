@@ -261,6 +261,12 @@
     // Valores por item vêm da FONTE ÚNICA do app (Orcamento.calcular) — o xlsx
     // não recalcula nada por conta própria, senão volta a divergir da tela.
     var _calc = (global.Orcamento && Orcamento.calcular) ? Orcamento.calcular(orc) : null;
+    /* Unidade formatada UMA vez para o arquivo inteiro. A Analítica normalizava e
+       a Curva ABC, a Memória de Cálculo e a aba Dados IA saíam CRUAS — duas
+       grafias da mesma unidade dentro do MESMO .xlsx entregue ao cliente. */
+    var _un = function (u) {
+      return (typeof Util !== 'undefined' && Util.unidadeDe) ? (Util.unidadeDe(u, orc) || 'un') : (u || 'un');
+    };
     var _linhaDe = {};
     if (_calc) _calc.linhas.forEach(function (L) { _linhaDe[L.etapaIdx + "|" + L.itemIdx] = L; });
     function fWrap(expr, ehUnitario) {
@@ -336,7 +342,11 @@
             var sc = wa.getCell('A' + r);
             sc.value = '     ' + ((_L0 && _L0.subNumero) || '') + '  ' + _subNome[_sid];
             sc.font = { bold: true, italic: true, size: 10, color: { argb: navy } };
-            sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } };
+            /* cor PRÓPRIA do banner de sub etapa, derivada da faixa da etapa (aco) 30% rumo
+           ao branco. Antes usava cinzaSub, que também é o preenchimento do SUBTOTAL da
+           etapa — a mesma cor fazendo dois papéis no documento que o cliente assina.
+           Texto navy (5,05:1); branco sobre este tom dá 3,00:1 e reprovaria. */
+        sc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF6D9ABB' } };
             sc.border = thin(); sc.alignment = { indent: 1 };
             r++;
           }
@@ -364,7 +374,7 @@
         var fonteIt = it.baseFonte || it.origem || '';
         row.getCell(3).value = (!fonteIt || fonteIt === 'PROPRIO') ? 'Própria' : (fonteIt === 'OUTRA' ? 'Outra' : fonteIt);
         row.getCell(4).value = it.descricao || '';
-        row.getCell(5).value = it.unidade || 'un';
+        row.getCell(5).value = _un(it.unidade);
         row.getCell(6).value = qt;
         row.getCell(7).value = cu;
         row.getCell(8).value  = { formula: fV('F' + r + '*' + fU('G' + r)), result: ct };
@@ -628,7 +638,7 @@
         var fAcum = (ar === hh + 1) ? 'G' + ar : 'H' + (ar - 1) + '+G' + ar;
         row.getCell(1).value = { formula: 'IF(H' + ar + '<=0.8,"A",IF(H' + ar + '<=0.95,"B","C"))', result: l.classe };
         row.getCell(1).alignment = { horizontal: 'center' }; row.getCell(1).font = { bold: true, color: { argb: corCl[l.classe] || navy } };
-        row.getCell(2).value = l.codigo || ''; row.getCell(3).value = l.descricao || ''; row.getCell(4).value = l.unidade || '';
+        row.getCell(2).value = l.codigo || ''; row.getCell(3).value = l.descricao || ''; row.getCell(4).value = _un(l.unidade) || '';
         row.getCell(5).value = num(l.quantidade); row.getCell(5).numFmt = NUM;
         row.getCell(6).value = vivo
           ? { formula: "SUMIFS('" + SH_ANAL + "'!$H$7:$H$" + _fimAnal + ",'" + SH_ANAL + "'!$B$7:$B$" + _fimAnal + ",B" + ar + ')', result: num(l.custoTotal) }
@@ -760,7 +770,7 @@
             row.getCell(2).value = ins.codigo;
             row.getCell(3).value = (ins.tipo === 'COMPOSICAO') ? 'Sub-comp.' : 'Insumo';
             row.getCell(4).value = ins.descricao;
-            row.getCell(5).value = ins.unidade;
+            row.getCell(5).value = _un(ins.unidade);
             row.getCell(6).value = num(ins.coeficiente); row.getCell(6).numFmt = '#,##0.0000';
             row.getCell(7).value = num(ins.custoUnitario); row.getCell(7).numFmt = MOEDA;
             // FASE 2: custo total do insumo por fórmula (coef × custo unit)
@@ -871,7 +881,7 @@
       comMem.forEach(function (x, idx) {
         var row = wmem.getRow(mr);
         row.getCell(1).value = x.num || x.n; row.getCell(2).value = x.it.codigo || '';
-        row.getCell(3).value = x.it.descricao || ''; row.getCell(4).value = x.it.unidade || 'un';
+        row.getCell(3).value = x.it.descricao || ''; row.getCell(4).value = _un(x.it.unidade);
         row.getCell(5).value = { formula: "'" + SH_ANAL + "'!F" + x.r, result: x.qt }; row.getCell(5).numFmt = NUM;
         row.getCell(6).value = String(x.it.memoriaCalculo);
         row.getCell(6).alignment = { wrapText: true, vertical: 'top' };
@@ -902,7 +912,7 @@
         rows: itensFlat.map(function (x) {
           return [x.etapa, x.n,
             refA('B', x.r, x.it.codigo || ''), refA('C', x.r, ''), refA('D', x.r, x.it.descricao || ''),
-            refA('E', x.r, x.it.unidade || 'un'), refA('F', x.r, x.qt), refA('G', x.r, x.cu),
+            refA('E', x.r, _un(x.it.unidade)), refA('F', x.r, x.qt), refA('G', x.r, x.cu),
             refA('H', x.r, x.ct), refA('I', x.r, x.pu), refA('J', x.r, x.pt)];
         })
       });

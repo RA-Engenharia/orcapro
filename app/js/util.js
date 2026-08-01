@@ -142,6 +142,116 @@
       .trim();
   };
 
+  /* ===================================================================
+   * UNIDADES DE MEDIDA — duas funções, dois trabalhos distintos.
+   *
+   * O problema real não é estético. Contamos 122 grafias diferentes nos
+   * arquivos de base: a SINAPI publica tudo em MAIÚSCULA ("M2"), o SICRO/DNIT
+   * publica no padrão da norma ("m²"), e o resto é misto. Um orçamento que
+   * mistura bases — o caso normal — imprime três grafias da mesma unidade na
+   * mesma coluna do mesmo documento.
+   *
+   * A grafia correta pela norma (CONMETRO 12/1988 e ISO 80000) é minúscula,
+   * sem plural, sem ponto e com expoente: m, m², m³, kg, h, km. Maiúscula só
+   * em unidade derivada de nome próprio (N, W, Pa); o litro aceita L para não
+   * confundir com o algarismo 1.
+   *
+   * REGRA DO PRODUTO: normalizamos a EXIBIÇÃO, nunca o DADO. O item guarda a
+   * unidade como o órgão publicou — é isso que sustenta a rastreabilidade em
+   * licitação, e é o que permite reverter sem migrar nada.
+   * =================================================================== */
+
+  /* CHAVE DE COMPARAÇÃO — "M2", "m2", "m²" e "M²" viram a mesma coisa.
+   *
+   * Existia um bug silencioso aqui: Util.normalizar usa NFD, e NFD NÃO
+   * decompõe "²" (o expoente tem decomposição de compatibilidade, NFKD, não
+   * canônica). Resultado: normalizar("M2") !== normalizar("m²"), e na
+   * Parede-Cebola um candidato do SICRO em "m²" era marcado "revisar" contra
+   * uma camada "M2" — e não entrava no orçamento. Perda real, sem erro na tela.
+   *
+   * Use SEMPRE esta função para COMPARAR unidades. Nunca compare as strings
+   * cruas, e nunca use esta função para exibir. */
+  Util.unidadeChave = function (u) {
+    /* A BARRA DE DIVISAO É PRESERVADA como marcador. "M/MES" (SINAPI) e "M3/DIA"
+     * significam POR mês / POR dia — colapsá-las com o "x" de multiplicação faria
+     * "M/MES" ser impresso como "m·mês", invertendo a operação no documento. */
+    var temBarra = /[\/]/.test(String(u == null ? "" : u));
+    var s = Util.normalizar(u).replace(/²/g, "2").replace(/³/g, "3").replace(/[^a-z0-9]/g, "");
+    /* O "x" de multiplicação some: as bases escrevem o mesmo composto como
+     * TXKM, TxKM, txkm, tkm, m3xkm, m3*km e m³km. Só é removido ENTRE
+     * alfanuméricos (nunca no começo/fim), e em laço porque há compostos de
+     * três fatores. O "*" já caiu no filtro acima. */
+    var antes;
+    do { antes = s; s = s.replace(/([a-z0-9])x([a-z0-9])/g, "$1$2"); } while (s !== antes);
+    // apelidos que significam a mesma coisa em bases diferentes
+    if (s === "und" || s === "unid" || s === "uni" || s === "unidade") return "un";
+    if (s === "ms" || s === "mes") return "mes";
+    if (s === "hora" || s === "hr") return "h";
+    /* "U" (SETOP-MG, 485 itens) NAO vira "un": o orgao publica "U" e nao confirmei
+     * que significa unidade. Colapsar aqui faria o app tratar como iguais duas
+     * unidades que talvez nao sejam — e isso e do tipo que ninguem percebe. */
+    return temBarra ? s + "/" : s;   // sufixo marca a divisao e impede o lookup errado
+  };
+
+  /* TABELA DE EXIBIÇÃO — explícita de propósito. Regex "esperta" erraria:
+   * "ML" é METRO LINEAR no ORSE e no SEINFRA (defensas metálicas), mas
+   * "310ML" na SINAPI é mililitro. Sigla ambígua fica como veio.
+   *
+   * O que NÃO está na tabela sai exatamente como entrou. */
+  var UNID_EXIBIR = {
+    // --- SI: converte (é a norma)
+    "m": "m", "m2": "m²", "m3": "m³", "cm": "cm", "cm2": "cm²", "cm3": "cm³",
+    "dm2": "dm²", "dm3": "dm³", "km": "km", "ha": "ha", "kg": "kg", "g": "g",
+    "t": "t", "l": "L", "h": "h", "kwh": "kWh", "mes": "mês", "dia": "dia", "ano": "ano",
+    // --- comerciais: minusculiza por consistência visual (não é norma, é coerência)
+    "un": "un", "cj": "cj", "par": "par", "jg": "jg", "pt": "pt", "pc": "pc",
+    "pca": "pç", "pç": "pç", "vb": "vb", "gl": "gl", "rl": "rl", "sc": "sc",
+    "cento": "cento", "mil": "mil",
+    // --- compostos: o "X"/"x"/"*" das bases é multiplicação; vira o ponto médio
+    "tkm": "t·km", "txkm": "t·km",
+    "m3km": "m³·km", "m3xkm": "m³·km",
+    "m2km": "m²·km", "m2xkm": "m²·km",
+    "mkm": "m·km", "mxkm": "m·km",
+    "kgkm": "kg·km", "kgxkm": "kg·km",
+    "lkm": "L·km", "lxkm": "L·km",
+    "unkm": "un·km", "unxkm": "un·km",
+    "unmes": "un·mês", "unxmes": "un·mês",
+    "m2mes": "m²·mês", "m2xmes": "m²·mês",
+    "m3mes": "m³·mês", "m3xmes": "m³·mês",
+    "mmes": "m·mês", "mxmes": "m·mês",
+    "hmes": "h·mês", "hxmes": "h·mês",
+    "undia": "un·dia", "mdia": "m·dia", "m2dia": "m²·dia", "m3dia": "m³·dia",
+    "ptdia": "pt·dia",
+    /* DIVISÃO — a chave termina em "/" (ver unidadeChave). "M/MES" é POR mês, não
+     * vezes mês: colapsar com a multiplicação inverteria a operação no documento. */
+    "mmes/": "m/mês", "m2mes/": "m²/mês", "m3mes/": "m³/mês",
+    "mdia/": "m/dia", "m2dia/": "m²/dia", "m3dia/": "m³/dia",
+    "undia/": "un/dia", "ptdia/": "pt/dia", "pcadia/": "pç/dia", "hdia/": "h/dia"
+    /* DELIBERADAMENTE FORA (saem como a fonte publicou):
+     *   CHP, CHI  — Custo Horário Produtivo/Improdutivo: sigla da SINAPI, não unidade
+     *   ML, ml    — ambíguo: metro linear (ORSE/SEINFRA) x mililitro (SINAPI "310ML")
+     *   U         — a SETOP-MG publica assim; pode ser "unidade", não confirmado
+     *   ARE       — "are" (100 m²) ou abreviação de "área"? não confirmado
+     *   IMÓVEL, QUADRA, CICLO, BAN, AMV, VG, %, PxD, hxh, M2xARF, PR A1, 100M, 310ML
+     */
+  };
+
+  /* Unidade PARA MOSTRAR. `fiel` = true devolve exatamente o que a fonte
+   * publicou — é o modo usado quando o orçamento é para licitação, onde o
+   * documento tem que espelhar a tabela oficial. */
+  Util.unidadeExibir = function (u, fiel) {
+    var bruto = String(u == null ? "" : u).trim();
+    if (!bruto || fiel) return bruto;
+    var k = Util.unidadeChave(bruto);
+    return UNID_EXIBIR[k] || bruto;
+  };
+
+  /* Atalho para os renderizadores: lê o modo do próprio orçamento. */
+  Util.unidadeDe = function (u, orc) {
+    var fiel = !!(orc && orc.config && orc.config.licitacao && orc.config.licitacao.ativo);
+    return Util.unidadeExibir(u, fiel);
+  };
+
   // ---- Reparo de encoding (mojibake) ----
   // Conserta texto UTF-8 que foi lido/gravado como Windows-1252.
   // Ex.: "INSTALAÃ‡ÃƒO" -> "INSTALAÇÃO", "TRIFÃSICO" -> "TRIFÁSICO", "NÂº" -> "Nº".

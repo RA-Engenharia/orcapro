@@ -21,6 +21,9 @@
   --linha-forte: #a6bdd2;
   --texto: #111d2b;
   --texto-fraco: #516375;
+  /* faixa da SUB ETAPA: --surface-2 30% rumo a --surface. No claro a superficie E branca,
+     entao isto e literalmente "30% mais claro que a etapa" (#eef2f7 -> #f3f6f9). */
+  --faixa-sub: #f3f6f9;
 
   /* Elevação em camadas (difusa = sensação premium), não uma sombra dura só */
   --sombra-sm: 0 1px 1px rgba(15,39,64,.04), 0 1px 2px rgba(15,39,64,.06);
@@ -44,6 +47,7 @@
   --surface-3: #1d3346;
   --linha: #2e455c;
   --linha-forte: #43607c;
+  --faixa-sub: #152636;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
   --texto: #ecf2f8;
   --texto-fraco: #9db0c2;
   --sombra-sm: 0 1px 2px rgba(0,0,0,.35);
@@ -61,6 +65,7 @@
 [data-tema="dark"][data-tom="preto"] {
   --bg: #0a0c0f; --surface: #121519; --surface-2: #181c22; --surface-3: #1f242c;
   --linha: #303845; --linha-forte: #4a5666;
+  --faixa-sub: #161a1f;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
   --card-bg: linear-gradient(180deg, #14181d 0%, #101317 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #171b21 0%, rgba(23,27,33,0) 54%);
 }
@@ -70,6 +75,7 @@
 [data-tema="dark"][data-tom="verde"] {
   --bg: #081711; --surface: #0e2118; --surface-2: #132a1f; --surface-3: #1a3427;
   --linha: #294b39; --linha-forte: #3e6a54;
+  --faixa-sub: #12271d;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
   --card-bg: linear-gradient(180deg, #11271c 0%, #0d2016 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #143024 0%, rgba(20,48,36,0) 54%);
   --anel: 0 0 0 3px rgba(34,197,94,.22);
@@ -80,6 +86,7 @@
 [data-tema="dark"][data-tom="marrom"] {
   --bg: #15100a; --surface: #1e1710; --surface-2: #261d14; --surface-3: #2f2419;
   --linha: #423826; --linha-forte: #5c4d37;
+  --faixa-sub: #241b13;  /* --surface-2 30% rumo a --surface */
   --texto: #f0e9df; --texto-fraco: #a99c8a;
   --card-bg: linear-gradient(180deg, #221a12 0%, #1b140d 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #2a2115 0%, rgba(42,33,21,0) 54%);
@@ -92,6 +99,7 @@
   /* Misto do logo RA: navy de base, verde do R e dourado do "ESPECIAL" nos acentos */
   --bg: #0d1725; --surface: #132133; --surface-2: #182a40; --surface-3: #20344d;
   --linha: #30486a; --linha-forte: #486a91;
+  --faixa-sub: #16273c;  /* --surface-2 30% rumo a --surface */
   --verde: #5ea23a; --verde-claro: #79c455; --amarelo: #b5985a;
   --card-bg: linear-gradient(180deg, #162743 0%, #111f33 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #1a2c47 0%, rgba(26,44,71,0) 54%),
@@ -326,15 +334,34 @@ table.tbl tr.oculta { display: none; }
 }
 table.tbl tr.etapa-row td[data-toggle-etapa] { user-select: none; }
 table.tbl tr.etapa-row td[data-toggle-etapa]:hover { background: var(--surface-3); }
-/* SUB ETAPA (1.1) — mesma linha de etapa, um degrau abaixo: recuo nas duas
-   primeiras células, filete mais claro e peso menor. O número (1.1 vs 1) já é
-   o sinal mais forte de hierarquia, e é o único que sobrevive ao aperto de
-   tela no celular — por isso o item da sub etapa NÃO ganha recuo extra (a
-   coluna já cresce de 1.1 para 1.1.1 sozinha). */
-table.tbl tr.etapa-row.sub td { background: var(--surface); font-weight: 600; box-shadow: inset 3px 0 0 var(--linha-forte); font-size: 13px; }
-table.tbl tr.etapa-row.sub:hover td { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--linha-forte); }
-table.tbl tr.etapa-row.sub td:first-child { padding-left: 22px; }
-table.tbl tr.etapa-row.sub td:nth-child(2) { padding-left: 18px; }
+/* SUB ETAPA (1.1) — MESMA fonte e MESMO tamanho da etapa (pedido do dono): a
+   hierarquia fica por NÚMERO (1.1 vs 1), RECUO e TOM, nunca por tipografia menor.
+   Por isso não há font-size nem font-weight aqui: herdam de .etapa-row.
+
+   O FUNDO É 30% MAIS CLARO QUE O DA ETAPA — mas medido em direção à SUPERFÍCIE
+   DA TABELA, não ao branco absoluto. No tema claro a superfície É branca, então
+   isto é literalmente "30% mais claro" (#eef2f7 → #f3f6f9). No tema ESCURO,
+   clarear 30% rumo ao branco levaria #16293a a #5a6875: a sub etapa passaria a
+   gritar MAIS que a etapa e a hierarquia se inverteria. Indo 30% rumo à
+   superfície (#11202e), ela se aproxima do fundo e continua um degrau ABAIXO —
+   que é a intenção. Uma fórmula, dois temas corretos.
+
+   O número (1.1 vs 1) é o sinal que sobrevive ao aperto de tela no celular — por
+   isso o item da sub etapa NÃO ganha recuo extra (a coluna já cresce de 1.1 para
+   1.1.1 sozinha). */
+table.tbl tr.etapa-row.subetapa td {
+  background: var(--faixa-sub);
+  color: var(--texto);                    /* MESMA cor de texto da etapa (pedido do dono) */
+  box-shadow: inset 3px 0 0 var(--aco);   /* 4,99:1 contra a faixa no tema claro */
+}
+/* hover: um passo a partir do PRÓPRIO repouso da sub etapa. Pintar --surface-2 aqui
+   (como estava) deixava a sub etapa com o fundo EXATO da etapa em repouso — passar o
+   mouse nela a transformava visualmente numa etapa. */
+table.tbl tr.etapa-row.subetapa:hover td { background: color-mix(in srgb, var(--faixa-sub) 88%, var(--aco) 12%); box-shadow: inset 3px 0 0 var(--aco); }
+/* chevron e número na MESMA linha: com o recuo de 22px a célula ficava estreita e
+   o "▾" caía em cima do "1.1", deixando a linha 12px mais alta que a da etapa. */
+table.tbl tr.etapa-row.subetapa td:first-child { padding-left: 22px; white-space: nowrap; }
+table.tbl tr.etapa-row.subetapa td:nth-child(2) { padding-left: 18px; }
 /* seletor "em que grupo este item está" — discreto até o hover, para não
    competir com os números na planilha */
 table.tbl select.sel-sub { max-width: 122px; font-size: 11px; padding: 3px 4px; border: 1px solid transparent; background: transparent; color: var(--texto-fraco); border-radius: 6px; cursor: pointer; }
@@ -629,10 +656,22 @@ table.prop-tbl tfoot td { background: #eef4fa; font-weight: 800; border-top: 2px
    depois; a sub etapa sairia com a cara de um subtotal e o cliente não teria
    como distinguir um do outro no PDF. Aqui ela é um degrau claro abaixo da
    etapa (navy), com recuo e o filete de acento mais fino. */
-.rel-doc table.prop-tbl tr.grp.subetapa td,
-table.prop-tbl tbody tr.grp-lau.subetapa td {
+.rel-doc table.prop-tbl tr.grp.subetapa td {
   background: #dce7f2; color: var(--p-navy); font-weight: 700;
   box-shadow: inset 6px 0 0 var(--p-aco); font-size: 9.8pt;
+}
+/* LAUDO — o par estava INVERTIDO: a etapa (.grp-lau) é #eaf1f8 e a sub herdava
+   #dce7f2, ou seja, saía MAIS ESCURA que a mãe — o contrário da regra. Agora a
+   etapa fica #dce7f2 e a sub #e7eef6, que é exatamente #dce7f2 30% rumo ao branco.
+   Navy sobre as duas: 12,10:1 e 12,97:1 — a hierarquia no papel fica por filete,
+   recuo e numeração, que já existem. */
+table.prop-tbl tbody tr.grp-lau td { background: #dce7f2; }
+table.prop-tbl tbody tr.grp-lau.subetapa td {
+  background: #e7eef6; color: var(--p-navy); font-weight: 700;
+  /* filete MAIS FINO e fonte MENOR que a etapa mãe (que herda 11px e 3px). Antes
+     esta regra dava 9.8pt (=13px) e 6px de filete: a sub etapa imprimia MAIOR e
+     com o dobro da barra de acento do pai — hierarquia invertida no laudo. */
+  box-shadow: inset 3px 0 0 var(--p-aco); font-size: 10px;
 }
 .rel-rod { margin-top: 20px; border-top: 1px solid var(--p-linha); padding-top: 8px; font-size: 8.5pt; color: #7a8a99; }
 

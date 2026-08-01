@@ -745,7 +745,9 @@
           etapa: (L.etapaCodigo ? L.etapaCodigo + " " : "") + L.etapaNome,
           subEtapa: L.subEtapaNome || "",
           numero: L.numero,
-          origem: L.origem, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,
+          origem: L.origem, codigo: L.codigo, descricao: L.descricao,
+          // unidade JA formatada p/ o documento; a crua fica em unidadeFonte
+          unidade: Util.unidadeDe(L.unidade, orc), unidadeFonte: L.unidade,
           quantidade: L.quantidade, custoUnitario: L.custoUnitario,
           custoTotal: L.custoTotal, precoUnitario: L.precoUnit, precoVenda: L.precoTotal
         };

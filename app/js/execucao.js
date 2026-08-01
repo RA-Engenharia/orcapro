@@ -18,6 +18,17 @@
 (function (global) {
   "use strict";
 
+  /* chave de unidade tolerante a grafia ("H", "h", "hora"). Delega ao helper
+     central quando existe; senão resolve sozinho — este módulo é testado
+     isolado. Sem isso o extrator de horas-homem comparava a string crua "H" e
+     uma base em minúscula zeraria a mão de obra SEM erro na tela. */
+  function unKeyEx(u) {
+    if (typeof Util !== "undefined" && Util.unidadeChave) return Util.unidadeChave(u);
+    var s = String(u == null ? "" : u).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]/g, "");
+    return (s === "hora" || s === "hr") ? "h" : s;
+  }
+
   function num(v) {
     if (v == null) return 0;
     if (typeof v === "number") return isFinite(v) ? v : 0;      // número JS = usa direto (coeficiente/qtd)
@@ -139,7 +150,9 @@
           var comp = A.obter(String(cod)); if (!comp || !comp.insumos) return;
           comp.insumos.forEach(function (ins) {
             var coef = num(ins.coeficiente);
-            if (ins.unidade === "H" && ehMoPura(ins.descricao)) {
+            // comparacao crua com "H" quebraria com "h" (SICRO/SETOP) e o agente
+            // dimensionaria equipe e prazo com ZERO hora-homem, sem erro na tela
+            if (unKeyEx(ins.unidade) === "h" && ehMoPura(ins.descricao)) {
               var p = profDe(ins.descricao), s = acc[p] || (acc[p] = { hh: 0, custoHora: 0 });
               s.hh += coef * mult;
               if (!s.custoHora) s.custoHora = num(ins.custoUnitario);
