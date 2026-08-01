@@ -7412,6 +7412,13 @@ renderRequisicoes: function () {
             : '<button class="btn sm primary" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>')
           : "";
         btn = btnTri + btn;
+        /* EDITAR e EXCLUIR estavam escondidos: só dava para chegar neles
+           clicando no número da nota, o que ninguém adivinha. Agora ficam na
+           linha, como no resto do app. E quando a nota já virou dinheiro, o
+           que se oferece é DESFAZER o lançamento — não relançar por cima. */
+        if (jaLanc) btn += ' <button class="btn sm ghost" data-gacao="fiscal-desfazer" data-id="' + n.id + '" title="Apagar as contas a pagar que esta nota gerou (as já pagas ficam)">↩ Desfazer</button>';
+        btn += ' <button class="btn sm ico" data-gacao="fiscal-editar" data-id="' + n.id + '" title="Editar os dados desta nota">✎</button>' +
+          ' <button class="btn sm ico danger" data-gacao="fiscal-excluir" data-id="' + n.id + '" title="Excluir esta nota">🗑</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="fiscal:' + n.id + '"><b>' + Util.esc(numTxt) + "</b></td><td>" + rot(P.fiscalTipo, n.tipo) + "</td><td>" + Util.esc(n.parceiro || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(n.valorTotal)) + "</td><td>" + pill(n.status) + '</td><td class="num">' + btn + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -7542,7 +7549,8 @@ renderRequisicoes: function () {
           '<td><select data-tri-dest="' + i + '"' + (lanc ? " disabled" : "") + ">" + optDest(l.destino) + "</select></td>" +
           '<td><select data-tri-obra="' + i + '"' + (lanc ? " disabled" : "") + ">" + optObra(l.obraId) + "</select></td>" +
           '<td><select data-tri-resp="' + i + '"' + (lanc ? " disabled" : "") + ">" + optResp(l.responsavelId) + "</select></td>" +
-          "<td>" + (lanc ? '<span class="pill" style="background:rgba(22,163,74,.18);color:#15803d">✔ lançado</span>'
+          "<td>" + (lanc ? '<span class="pill" style="background:rgba(22,163,74,.18);color:#15803d">✔ lançado</span> ' +
+              '<button class="btn sm ico" data-gacao="tri-desfazer" data-id="' + i + '" title="Errou o destino? Desfaz este item e devolve para a triagem">↩</button>'
             : (ign ? '<span class="muted">ignorado</span>' : '<span class="pill proprio">a lançar</span>')) + "</td></tr>";
       });
       html += "</tbody></table></div>";
@@ -7794,6 +7802,122 @@ renderRequisicoes: function () {
         });
         if (!reg) throw new Error("não consegui gravar (armazenamento cheio)");
       }
+    },
+
+    /* Lançamentos que ESTA nota gerou no Financeiro (por chave, ou pelo id
+       quando a nota não tem chave de acesso — NFS-e, cupom, recibo). */
+    _lancamentosDaNota: function (nf) {
+      var chave = String(nf.chaveAcesso || "");
+      return lista("financeiro").filter(function (f) {
+        if (chave && String(f.docChave || "") === chave) return true;
+        return !chave && f.docId && String(f.docId) === String(nf.id);
+      });
+    },
+
+    /* DESFAZER O LANÇAMENTO — o oposto do botão Lançar.
+       Parcela já PAGA não se apaga: tem data de pagamento e conciliação. */
+    fiscalDesfazer: function (id) {
+      if (this._bloqueado()) return;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) { UI.toast("Seu usuário não tem permissão no módulo Financeiro.", "erro"); return; }
+      var nf = Store.obter(eid(), "fiscal", id); if (!nf) return;
+      var lanc = this._lancamentosDaNota(nf);
+      if (!lanc.length) { UI.toast("Esta nota não tem lançamento no Financeiro.", "erro"); return; }
+      var pagas = lanc.filter(function (f) { return f.status === "pago"; });
+      var apagar = lanc.filter(function (f) { return f.status !== "pago"; });
+      var soma = function (arr) { return arr.reduce(function (a, f) { return a + Util.num(f.valor); }, 0); };
+      if (!apagar.length) {
+        UI.toast("Todas as " + pagas.length + " parcela(s) desta nota já estão pagas — não dá para desfazer. Edite ou estorne no Financeiro.", "erro");
+        return;
+      }
+      if (!window.confirm("Apagar " + apagar.length + " conta(s) a pagar desta nota (" + Util.fmtMoeda(soma(apagar)) + ")?" +
+        (pagas.length ? "\n\n" + pagas.length + " parcela(s) JÁ PAGA(S) (" + Util.fmtMoeda(soma(pagas)) + ") vão continuar como estão." : "") +
+        "\n\nOs itens já lançados em Estoque/Patrimônio NÃO são afetados — desfaça item a item na tela de Itens, se precisar.")) return;
+      apagar.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
+      if (!pagas.length) { nf.lancadoEm = ""; Store.salvar(eid(), "fiscal", nf); }
+      App.render();
+      UI.toast("↩ " + apagar.length + " conta(s) removida(s). A nota volta a poder ser lançada.", "ok");
+    },
+
+    fiscalEditar: function (id) {
+      var nf = Store.obter(eid(), "fiscal", id);
+      if (!nf) { UI.toast("Nota não encontrada.", "erro"); return; }
+      this.formFiscal(nf);
+    },
+
+    /* EXCLUIR A NOTA — a confirmação conta o que vai junto e, principalmente,
+       o que FICA. Apagar o bem patrimonial porque a nota foi apagada seria
+       destruir cadastro por causa de um documento. */
+    fiscalExcluir: function (id) {
+      if (this._bloqueado()) return;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("fiscal")) { UI.toast("Seu usuário não tem permissão no módulo Fiscal.", "erro"); return; }
+      var nf = Store.obter(eid(), "fiscal", id); if (!nf) return;
+      var lanc = this._lancamentosDaNota(nf);
+      var pagas = lanc.filter(function (f) { return f.status === "pago"; });
+      var pend = lanc.filter(function (f) { return f.status !== "pago"; });
+      var itensLanc = Util.arr(nf.itens).filter(function (it) { return it.st === "lancado"; }).length;
+      var numTxt = (nf.numero || "s/n") + (nf.serie ? "/" + nf.serie : "");
+      var msg = "Excluir a nota " + numTxt + " — " + (nf.parceiro || "") + " (" + Util.fmtMoeda(Util.num(nf.valorTotal)) + ")?\n";
+      if (pend.length) msg += "\nVai junto: " + pend.length + " conta(s) a pagar ainda não paga(s).";
+      if (pagas.length) msg += "\nFICA: " + pagas.length + " parcela(s) já paga(s) — o dinheiro saiu, o registro permanece.";
+      if (itensLanc) msg += "\nFICA: " + itensLanc + " item(ns) já lançado(s) em Estoque/Patrimônio/EPI — o material está aí, não some com o documento.";
+      msg += "\n\nEsta ação não pode ser desfeita.";
+      if (!window.confirm(msg)) return;
+      pend.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
+      Store.excluir(eid(), "fiscal", id);
+      if (this._triagem && this._triagem.notaId === id) this._triagem = null;
+      App.render();
+      UI.toast("Nota excluída" + (pend.length ? " com " + pend.length + " conta(s) a pagar" : "") + ".", "ok");
+    },
+
+    /* DESFAZER UM ITEM DA TRIAGEM — para quando o destino foi escolhido errado.
+       O estoque é ESTORNADO (movimento de saída, que é o certo contabilmente),
+       e o bem patrimonial só sai se o usuário confirmar: pode já estar em uso,
+       com número de tombo colado nele. */
+    triDesfazerItem: function (idx) {
+      if (this._bloqueado()) return;
+      var t = this._triagem, nf = this._triNota(); if (!t || !nf) return;
+      var l = t.linhas[parseInt(idx, 10)]; if (!l || l.st !== "lancado") return;
+      var self = this, qtd = Util.num(l.quantidade);
+      var itemEst = null, bens = [];
+      if (l.destino === "estoque" || l.destino === "epi") {
+        lista("estoque").forEach(function (e) {
+          if (itemEst) return;
+          if (String(e.nome || "").trim().toUpperCase() === String(l.descricao || "").trim().toUpperCase()) itemEst = e;
+        });
+      }
+      if (l.destino === "patrimonio") {
+        bens = lista("patrimonio").filter(function (b) {
+          return String(b.notaId || "") === String(nf.id) && String(b.descricao || "").indexOf(String(l.descricao || "")) === 0;
+        });
+      }
+      var msg = "Desfazer o lançamento de \"" + String(l.descricao).slice(0, 40) + "\"?\n\nO item volta para 'a lançar' e você pode escolher outro destino.";
+      var estorna = false, tiraBens = false;
+      if (itemEst) {
+        var saldo = Util.num(itemEst.saldo);
+        if (saldo >= qtd) { estorna = true; msg += "\n\nVou estornar " + Util.fmtNum(qtd, 2) + " " + (itemEst.unidade || "") + " do estoque (saldo " + Util.fmtNum(saldo, 2) + " → " + Util.fmtNum(saldo - qtd, 2) + ")."; }
+        else msg += "\n\n⚠ O estoque de \"" + itemEst.nome + "\" já está em " + Util.fmtNum(saldo, 2) + " (menos que os " + Util.fmtNum(qtd, 2) + " desta nota) — parte já foi usada, então NÃO vou mexer no saldo. Ajuste manualmente se precisar.";
+      }
+      if (bens.length) msg += "\n\n" + bens.length + " bem(ns) foi(ram) criado(s) no Patrimônio por este item. Clique OK para remover também — se algum já estiver em uso ou com número de tombo, cancele e remova à mão.";
+      if (!window.confirm(msg)) return;
+      if (estorna && itemEst) {
+        itemEst.saldo = Util.num(itemEst.saldo) - qtd;
+        Store.salvar(eid(), "estoque", itemEst);
+        /* estorno é MOVIMENTO, não apagamento: o histórico do almoxarifado
+           precisa mostrar que entrou e depois saiu, com o motivo. */
+        Store.salvar(eid(), "estoque_mov", {
+          itemId: itemEst.id, itemNome: itemEst.nome, tipo: "saida", qtd: qtd,
+          custoUnit: Util.num(l.valorUnitario), data: new Date().toISOString().slice(0, 10),
+          obraId: l.obraId || "", docTipo: "estorno", docNumero: nf.numero || "", docChave: nf.chaveAcesso || "",
+          obs: "Estorno da triagem da NF " + (nf.numero || "")
+        });
+      }
+      if (bens.length) { bens.forEach(function (b) { Store.excluir(eid(), "patrimonio", b.id); }); tiraBens = true; }
+      l.st = "pendente";
+      nf.itens = Util.arr(nf.itens).map(function (it, i) { if (i === parseInt(idx, 10)) it.st = "pendente"; return it; });
+      Store.salvar(eid(), "fiscal", nf);
+      if (typeof Epi !== "undefined") this._epiSyncProprios();
+      App.render();
+      UI.toast("↩ Item liberado para novo destino" + (estorna ? " · estoque estornado" : "") + (tiraBens ? " · " + bens.length + " bem(ns) removido(s)" : "") + ".", "ok");
     },
 
     novoFiscal: function () { this.formFiscal(null); },
@@ -9736,6 +9860,10 @@ renderFolha: function () {
         case "rel-executivo": { var reO = document.getElementById("rex-obra"), reM = document.getElementById("rex-mes"); return this.relatorioExecutivo(reO ? reO.value : "", reM ? reM.value : ""); }
         case "doc-financeiro": return this.lancarDocumento();
         case "tri-abrir": return this.triAbrir(id);
+        case "tri-desfazer": return this.triDesfazerItem(id);
+        case "fiscal-desfazer": return this.fiscalDesfazer(id);
+        case "fiscal-editar": return this.fiscalEditar(id);
+        case "fiscal-excluir": return this.fiscalExcluir(id);
         case "tri-fechar": return this.triFechar();
         case "tri-aplicar-lote": return this.triAplicarLote();
         case "tri-marcar-todas": return this.triMarcarTodas();
