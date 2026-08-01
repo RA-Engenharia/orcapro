@@ -313,6 +313,17 @@ table.tbl tr.etapa-row:hover td { background: var(--surface-3); }
    nunca a .etapa-row, que também é usada no sintético, no cronograma e no
    preview do importador. */
 table.tbl tr.oculta { display: none; }
+/* Tabela larga no celular (triagem da nota tem 11 colunas): a coluna da
+   DESCRIÇÃO fica fixa ao rolar para o lado — sem ela o usuário chega no
+   seletor de obra sem saber de qual produto se trata. */
+@media screen and (max-width: 820px) {
+  .main div[style*="overflow-x"] table.tbl th:nth-child(3),
+  .main div[style*="overflow-x"] table.tbl td:nth-child(3) {
+    position: sticky; left: 0; z-index: 2;
+    background: var(--surface); box-shadow: 2px 0 0 var(--linha);
+    max-width: 46vw;
+  }
+}
 table.tbl tr.etapa-row td[data-toggle-etapa] { user-select: none; }
 table.tbl tr.etapa-row td[data-toggle-etapa]:hover { background: var(--surface-3); }
 table.tbl input.cell { width: 100%; border: 1px solid transparent; background: transparent; padding: 5px 7px; border-radius: 6px; text-align: right; transition: .1s; }

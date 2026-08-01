@@ -7648,6 +7648,15 @@ renderRequisicoes: function () {
 
       var colabs = lista("colaboradores");
       function nomeResp(id) { var c = colabs.filter(function (x) { return x.id === id; })[0]; return c ? c.nome : ""; }
+      /* PERMISSAO SEGUE O DESTINO, nao a tela de origem. A triagem mora no
+         Fiscal mas ESCREVE em Estoque, Patrimonio e EPI — quem so tem o Fiscal
+         estava criando bem patrimonial pela porta dos fundos. O item barrado
+         fica pendente e diz por que, em vez de sumir. */
+      function podeGravarEm(mod) {
+        return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(mod));
+      }
+      var MOD_DO_DESTINO = { estoque: "estoque", epi: "epi", patrimonio: "patrimonio" };
+      var barrados = {};
       var conta = { estoque: 0, patrimonio: 0, epi: 0, consumo: 0 }, erros = [];
 
       t.linhas.forEach(function (l) {
@@ -7655,6 +7664,8 @@ renderRequisicoes: function () {
         /* "ignorar" e uma DECISAO, nao um limbo: sem virar estado a nota ficava
            "2 a triar" para sempre e o botao verde morria sem explicacao. */
         if (l.destino === "ignorar") { l.st = "ignorado"; return; }
+        var modAlvo = MOD_DO_DESTINO[l.destino];
+        if (modAlvo && !podeGravarEm(modAlvo)) { barrados[modAlvo] = (barrados[modAlvo] || 0) + 1; return; }
         try {
           if (l.destino === "estoque" || l.destino === "epi") self._triGravarEstoque(l, nf, nomeResp(l.responsavelId));
           if (l.destino === "epi") self._triGravarEpiCatalogo(l);
@@ -7696,8 +7707,11 @@ renderRequisicoes: function () {
       if (conta.epi) resumo.push(conta.epi + " EPI");
       if (conta.patrimonio) resumo.push(conta.patrimonio + " no patrimônio");
       if (conta.consumo) resumo.push(conta.consumo + " como consumo na obra");
-      UI.toast("✔ " + resumo.join(" · ") + ". O dinheiro entra pelo lançamento financeiro da nota.", "ok");
+      if (resumo.length) UI.toast("✔ " + resumo.join(" · ") + ". O dinheiro entra pelo lançamento financeiro da nota.", "ok");
       if (erros.length) UI.toast("⚠ " + erros.length + " item(ns) não entraram: " + erros[0], "erro");
+      var listaBarr = [];
+      for (var mB in barrados) if (Object.prototype.hasOwnProperty.call(barrados, mB)) listaBarr.push(barrados[mB] + " para " + mB);
+      if (listaBarr.length) UI.toast("🔒 " + listaBarr.join(" · ") + ": seu usuário não tem permissão nesse(s) módulo(s). Os itens continuam pendentes para quem tiver.", "erro");
     },
 
     /* Entrada de estoque com CUSTO MÉDIO PONDERADO: comprar 10 sacos a R$ 30
@@ -7926,6 +7940,11 @@ renderRequisicoes: function () {
           if (fornN) li.push("<li><b>" + fornN + "</b> parceiro(s) cadastrado(s) automaticamente</li>");
           if (semIdN) li.push("<li><b>" + semIdN + "</b> XML sem número/chave de NF-e — ignorado(s)</li>");
           if (semValorN) li.push("<li><b>" + semValorN + "</b> XML sem valor legível — a nota segue aguardando um XML completo</li>");
+          /* recusa por falta do CNPJ da empresa tem causa e solução próprias —
+             misturar com "sem valor legível" mandava o usuário procurar erro no
+             arquivo do fornecedor, que está certo. */
+          /* o aviso do CNPJ vem por toast no _registrarNfe (uma vez por sessão):
+             a nota É importada, só corre o risco de vir com o sentido errado. */
           if (errN) li.push("<li><b>" + errN + "</b> arquivo(s) não reconhecido(s) como NF-e</li>");
           if (!li.length) li.push("<li>Nenhum arquivo processado.</li>");
           var corpo = '<ul style="margin:0 0 10px 18px;padding:0">' + li.join("") + "</ul>" +
@@ -7972,6 +7991,22 @@ renderRequisicoes: function () {
       var proprio = this._cnpjProprio();
       var emitDoc = String(fn.cnpj || "").replace(/\D/g, "");
       var ehSaida = !!(proprio && emitDoc && emitDoc === proprio);
+      /* SEM O CNPJ DA EMPRESA o app não distingue compra de venda, e este
+         caminho grava sem conferência humana — a nota que a própria empresa
+         emitiu entrava como COMPRA, com ela mesma de fornecedora.
+         Bloquear seria pior: quem só recebe nota de fornecedor (a maioria)
+         ficaria sem importar por causa de um campo em branco. Então: usa o
+         NOME como sinal de reserva e avisa uma vez. */
+      if (!proprio) {
+        var nomeEmpresa = "";
+        try { nomeEmpresa = String(((typeof Empresa !== "undefined" ? Empresa.dados() : {}) || {}).nome || ""); } catch (eN) {}
+        var norm = function (x) { return String(x || "").toUpperCase().replace(/[^A-Z0-9]/g, ""); };
+        if (nomeEmpresa && norm(fn.nome) && norm(fn.nome) === norm(nomeEmpresa)) ehSaida = true;
+        if (!this._avisouSemCnpj) {
+          this._avisouSemCnpj = true;
+          UI.toast("Preencha o CNPJ da empresa em ⚙ Empresa: sem ele eu comparo só pelo nome para saber se a nota é compra ou venda — e nome bate errado com facilidade.", "erro");
+        }
+      }
       var parc = ehSaida ? dest : fn;
       var parcDoc = String(parc.cnpj || "").replace(/\D/g, "");
       if (parc.nome) {
@@ -9934,13 +9969,19 @@ case "nova-folha": return this.novoFolha();
       var self = this;
       UI.toast("🤖 A IA está lendo o documento…", "ok");
       this._iaOcupada = true;
+      /* se a resposta nunca chegar (socket pendurado), a trava ficaria ligada
+         ate o usuario recarregar a pagina — e ele nao tem como saber disso. */
+      if (this._iaTimer) clearTimeout(this._iaTimer);
+      this._iaTimer = setTimeout(function () {
+        if (self._iaOcupada) { self._iaOcupada = false; UI.toast("A leitura demorou demais e foi cancelada. Tente de novo.", "erro"); }
+      }, 90000);
       fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(payload) })
         .then(function (r) { return r.json(); }).then(function (j) {
-          self._iaOcupada = false;
+          self._iaOcupada = false; if (self._iaTimer) { clearTimeout(self._iaTimer); self._iaTimer = null; }
           if (!j.ok) { UI.toast(j.error || "A IA não conseguiu ler o documento.", "erro"); return; }
           self._docParaLancamento(j.dados, origem, destino);
         })["catch"](function () {
-          self._iaOcupada = false;
+          self._iaOcupada = false; if (self._iaTimer) { clearTimeout(self._iaTimer); self._iaTimer = null; }
           /* a leitura do PDF/foto é local, mas a INTERPRETAÇÃO é no servidor:
              sem internet não há o que fazer — e o caminho offline existe. */
           UI.toast("Sem internet — a leitura por IA precisa de conexão. Use 📥 XML em lote (funciona offline) ou cadastre a nota manualmente.", "erro");
@@ -10048,7 +10089,22 @@ case "nova-folha": return this.novoFolha();
         valorProdutos: Util.num(dados.valorProdutos), valorImpostos: Util.num(dados.valorImpostos),
         valorTotal: Util.num(dados.valor),
         chaveAcesso: dados.chave || "",
-        itens: Util.arr(dados.itens),
+        /* o caminho do XML entrega item completo; o da IA (PDF/foto) pode vir
+           sem numero de linha ou sem valor unitario. Normalizar AQUI faz a
+           triagem funcionar igual nos dois — e o motor de sugestao depende do
+           valorUnitario para decidir bem x consumo. */
+        itensTruncados: Util.num(dados.itensTruncados),
+        itens: Util.arr(dados.itens).map(function (it, i) {
+          var q = Util.num(it.quantidade), v = Util.num(it.valor), vu = Util.num(it.valorUnitario);
+          return {
+            numero: it.numero || (i + 1), codigo: it.codigo || "", descricao: it.descricao || "",
+            ncm: it.ncm || "", cest: it.cest || "", cfop: it.cfop || "",
+            unidade: it.unidade || "un", quantidade: q,
+            valorUnitario: vu > 0 ? vu : (q > 0 ? Math.round((v / q) * 100) / 100 : v),
+            valor: v > 0 ? v : Math.round(q * vu * 100) / 100,
+            desconto: Util.num(it.desconto), pedido: it.pedido || "", obs: it.obs || ""
+          };
+        }),
         duplicatas: Util.arr(dados.duplicatas),
         formaPgto: dados.formaPgto || "",
         infCpl: dados.infCpl || "",
@@ -10125,11 +10181,17 @@ case "nova-folha": return this.novoFolha();
         var fr = new FileReader();
         fr.onload = function () {
           lib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
-            var texto = "", n = Math.min(pdf.numPages, 3), chain = Promise.resolve();
+            /* DANFE com muitos itens passa de 3 paginas — o teto antigo cortava
+               justamente o quadro de produtos, que e o que alimenta a triagem. */
+            var texto = "", n = Math.min(pdf.numPages, 10), chain = Promise.resolve();
+            if (pdf.numPages > 10) texto += "[o documento tem " + pdf.numPages + " páginas; li as 10 primeiras]\n";
             for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
             chain.then(function () { cb(texto); });
           })["catch"](function () { cb(""); });
         };
+        /* sem onerror, arquivo corrompido ou sem permissao deixava a tela
+           parada em "Lendo o PDF…" para sempre */
+        fr.onerror = function () { UI.toast("Não consegui abrir o arquivo. Tente enviar de novo ou mande uma foto.", "erro"); cb(""); };
         fr.readAsArrayBuffer(file);
       }
       if (this._pdfLib) { extrair(this._pdfLib); return; }
