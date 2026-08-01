@@ -1,5 +1,6 @@
 {
-  "versao": "1.1.125",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.125/OrcaPRO-IA-update-v1.1.125.zip",
-  "notas": "O modal de nova tarefa do Last Planner abria com o titulo duplicado (Novo Nova tarefa) - corrigido. E o sistema nao fica mais com a tela em branco quando um modulo e aberto por um link ou atalho que nao existe: cai no Painel com aviso e saida."
+  "versao": "1.1.139",
+  "tipo": "silenciosa",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.139/OrcaPRO-IA-update-v1.1.139.zip",
+  "notas": "SUB ETAPAS NO ORCAMENTO: a etapa agora pode ser dividida em blocos. \"Servicos Preliminares\" e 1, \"Canteiro de Obras\" vira 1.1, e as composicoes do canteiro entram em sequencia como 1.1.1, 1.1.2. Use \"+ Sub etapa\" na linha da etapa; remover a sub etapa nao apaga item (eles voltam soltos na etapa). A numeracao passou a nascer num lugar so, entao planilha, relatorio, laudo, CSV e o Excel entregue mostram exatamente o mesmo numero. Orcamento sem sub etapa nao muda em nada. Esta atualizacao tambem traz tudo o que saiu desde a 1.1.125: nota fiscal que abre os itens e vira estoque/patrimonio/EPI, folha semanal de diaristas, composicoes proprias, arredondamento no padrao TCU, Central de Atualizacao de Bases e o painel executivo."
 }
