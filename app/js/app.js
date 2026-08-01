@@ -677,6 +677,15 @@
 
       var acao = t.dataset.acao;
       switch (acao) {
+        // v1.1.134 — ciclo completo de composições próprias
+        case "minhas-composicoes": this.minhasComposicoes(); break;
+        case "mc-ver": this.verInsumos(t.dataset.cod); break;
+        case "mc-editar": this.editarComposicao(t.dataset.cod); break;
+        case "mc-duplicar": this.duplicarComposicao(t.dataset.cod); break;
+        case "mc-excluir": this.excluirProprio(t.dataset.cod); break;
+        case "cp-novo-insumo": this._cpNovoInsumoInline(); break;
+        case "cp-salvar-insumo": this._cpSalvarInsumoInline(); break;
+        case "cp-voltar-busca": this._cpBuscar(this._cp && this._cp.busca); break;
         case "entrar": this.entrar(); break;
         case "logout":
           // Na VITRINE (?demo=1): sair = recarregar a página LIMPA (sem ?demo=1). Sem isso,
@@ -2352,6 +2361,7 @@
         };
         var bgP = UI.modal("🔍 Composição própria " + String(codigo) + " — Insumos", UI.renderInsumos(aP, ufAtivo), [
           { texto: "✎ Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
+          { texto: "⧉ Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
           { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
         ]);
         UI.modalConsulta(); // detalhamento é leitura
@@ -2445,6 +2455,132 @@
       };
       this._cpRender();
     },
+    /* ⧉ DUPLICAR (item 9 do cliente): usar uma composição existente como
+     * base para outra. ATENÇÃO à armadilha que fazia isto ser impossível
+     * pela edição: _propriaGravar com código novo REMOVE o antigo (é
+     * rename, não cópia). Aqui o criador abre como COMPOSIÇÃO NOVA
+     * (editando = null), com código PROP novo — o original fica intacto. */
+    duplicarComposicao: function (codigo) {
+      var bp = Bases.obter("PROPRIA", String(codigo));
+      if (!bp) { UI.toast("Composição " + codigo + " não encontrada na base própria.", "erro"); return; }
+      var copia; try { copia = JSON.parse(JSON.stringify(bp)); } catch (e) { copia = bp; }
+      this.criarComposicao(true);            // zera o estado e gera código PROP novo
+      var c = this._cp.comp;
+      c.descricao = String(copia.descricao || "") + " (cópia)";
+      c.codigoSec = copia.codigoSecundario || ""; /* a cópia não perde a referência externa */
+      c.grupo = copia.grupo || "";
+      c.unidade = copia.unidade || "";
+      c.modeloRef = copia.modeloRef || "SINAPI";
+      c.metodo = copia.metodo || "truncar2";
+      c.maoDeObra = !!copia.maoDeObra;
+      c.observacao = copia.observacao || "";
+      c.insumos = copia.insumos || [];
+      this._cp.passo = 2;
+      this._cpRender();
+      UI.toast("Cópia de " + codigo + " aberta como " + c.codigo + " — ajuste e grave. O original não muda.", "ok");
+    },
+    /* remove UM código da base PROPRIA (o único caminho que existia era
+     * apagar a base inteira no Tabelas). Devolve quantos saíram. */
+    _propriaRemoverCodigo: function (codigo) {
+      var payload = Store.lerBasesExtras(Auth.empresaId()) || [];
+      var atual = null;
+      for (var i = 0; i < payload.length; i++) { if (String(payload[i].fonte).toUpperCase() === "PROPRIA") atual = payload[i]; }
+      if (!atual) return 0;
+      var antes = (atual.dados || []).length;
+      var dados = (atual.dados || []).filter(function (d) {
+        return String(d.codigo).toLowerCase() !== String(codigo).toLowerCase();
+      });
+      if (dados.length === antes) return 0;
+      Bases.registrar("PROPRIA", { dados: dados, uf: atual.uf, mes: atual.mes });
+      Bases.persistir(Auth.empresaId());
+      return antes - dados.length;
+    },
+    excluirProprio: function (codigo) {
+      var self = this;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      /* a pergunta tem de contar TUDO o que quebra: excluir um item usado
+         como INSUMO de outra composição própria deixa a outra impossível
+         de regravar (o resolve com fonte explícita nunca cai em fallback)
+         — sem aviso, a causa fica invisível semanas depois. */
+      var refs = [];
+      try {
+        var payloadX = Store.lerBasesExtras(Auth.empresaId()) || [];
+        payloadX.forEach(function (b) {
+          if (String(b.fonte).toUpperCase() !== "PROPRIA") return;
+          (b.dados || []).forEach(function (d) {
+            if (String(d.codigo) === String(codigo)) return;
+            var usa = (d.insumos || []).some(function (i) { return String(i.codigo) === String(codigo); });
+            if (usa) refs.push(d.codigo);
+          });
+        });
+      } catch (eRf) {}
+      var avisoRef = refs.length
+        ? "\n\n⚠ ATENÇÃO: este item é INSUMO de " + refs.length + " composição(ões) própria(s) (" +
+          refs.slice(0, 5).join(", ") + (refs.length > 5 ? "…" : "") + "). Elas não poderão ser " +
+          "regravadas sem substituir essa linha."
+        : "";
+      /* o item some da BASE, não dos orçamentos: item já lançado é snapshot
+         e continua lá — dizer isso na pergunta evita o susto ao contrário */
+      if (!window.confirm("Excluir " + codigo + " do seu banco?\n\nItens JÁ LANÇADOS em orçamentos não mudam (são cópia). " +
+        "O código some das buscas e não poderá ser reprecificado depois." + avisoRef)) return;
+      var n = this._propriaRemoverCodigo(String(codigo));
+      UI.toast(n ? codigo + " excluído do banco próprio." : codigo + " não encontrado.", n ? "ok" : "erro");
+      if (n) this.minhasComposicoes(this._mcFiltro || "");
+    },
+    /* 📋 MINHAS COMPOSIÇÕES E INSUMOS (item 10): a lista de gestão que não
+     * existia — só a linha agregada no Tabelas, cujo único botão apagava a
+     * base INTEIRA. Busca + ver/editar/duplicar/excluir POR ITEM. */
+    minhasComposicoes: function (filtro) {
+      var self = this;
+      this._mcFiltro = String(filtro || "");
+      var bPro = (typeof Bases !== "undefined" && Bases.extras) ? Bases.extras().filter(function (b) { return b.fonte === "PROPRIA"; })[0] : null;
+      var itens = (bPro && bPro.itens ? bPro.itens : []).slice();
+      itens.sort(function (a, b) { return String(a.descricao).localeCompare(String(b.descricao), "pt-BR"); });
+      var f = this._mcFiltro.toLowerCase();
+      var vis = f ? itens.filter(function (d) {
+        return (String(d.codigo) + " " + String(d.descricao)).toLowerCase().indexOf(f) >= 0;
+      }) : itens;
+      var linhas = vis.map(function (d) {
+        var ehComp = String(d.tipoItem) !== "insumo";
+        return '<tr><td><span class="pill proprio">' + Util.esc(d.codigo) + '</span></td>' +
+          '<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Util.esc(d.descricao) + '">' + Util.esc(d.descricao) + '</td>' +
+          '<td>' + (ehComp ? "Composição" : "Insumo") + '</td>' +
+          '<td>' + Util.esc(d.unidade || "") + '</td>' +
+          '<td class="num">' + Util.fmtMoeda(d.custoUnitario) + '</td>' +
+          '<td class="right" style="white-space:nowrap">' +
+            (ehComp ? '<button class="btn sm ghost" data-acao="mc-ver" data-cod="' + Util.esc(d.codigo) + '" title="ver insumos">🔍</button> ' +
+                      '<button class="btn sm ghost" data-acao="mc-editar" data-cod="' + Util.esc(d.codigo) + '" title="editar">✎</button> ' +
+                      '<button class="btn sm ghost" data-acao="mc-duplicar" data-cod="' + Util.esc(d.codigo) + '" title="duplicar">⧉</button> ' : "") +
+            '<button class="btn sm danger" data-acao="mc-excluir" data-cod="' + Util.esc(d.codigo) + '" title="excluir do banco">🗑</button>' +
+          '</td></tr>';
+      }).join("");
+      var corpo = '<div class="field" style="margin-bottom:8px"><input id="mc-filtro" placeholder="Buscar por código ou descrição…" value="' + Util.esc(this._mcFiltro) + '"></div>' +
+        '<p class="muted" style="font-size:11.5px;margin:0 0 8px">' + itens.length + ' item(ns) no seu banco' +
+        (f ? " · " + vis.length + " no filtro" : "") +
+        ' · para <b>lançar</b> num orçamento, use a busca da planilha (pílula <span class="pill proprio">Própria</span>).</p>' +
+        (linhas ? '<div style="max-height:420px;overflow:auto"><table class="tbl" style="width:100%;font-size:12px">' +
+          '<thead><tr><th>Código</th><th>Descrição</th><th>Tipo</th><th>Un</th><th class="num">Custo</th><th></th></tr></thead>' +
+          '<tbody>' + linhas + '</tbody></table></div>'
+        : '<p class="muted">Nenhum item' + (f ? " neste filtro" : " ainda — crie composições na busca do orçamento ou no botão abaixo") + '.</p>');
+      UI.modal("📋 Minhas composições e insumos", corpo, [
+        { texto: "➕ Nova composição", classe: "success", onClick: function () { self.criarComposicao(); } },
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+      UI.modalConsulta(); // lista de gestão: digitar no filtro não pode virar pergunta de "perder"
+      var inp = UI.el("mc-filtro");
+      if (inp) {
+        var timer = null;
+        inp.addEventListener("input", function () {
+          if (timer) clearTimeout(timer);
+          var v = inp.value;
+          timer = setTimeout(function () {
+            self.minhasComposicoes(v);
+            var i2 = UI.el("mc-filtro");
+            if (i2) { i2.focus(); try { i2.setSelectionRange(i2.value.length, i2.value.length); } catch (e) {} }
+          }, 300);
+        });
+      }
+    },
     _cpRender: function () {
       var self = this;
       var bg = UI.modal((this._cp && this._cp.editando ? "Editar composição própria" : "Criar composição própria"), UI.renderCriadorComposicao(this._cp), [
@@ -2478,6 +2614,11 @@
         var timer = null;
         inp.addEventListener("input", function () {
           self._cp.busca = inp.value;
+          /* com o form de insumo inline ABERTO no box, o debounce reescrevia
+             o box inteiro e destruía o formulário meio-digitado sem pergunta.
+             O guard fica AQUI e não no _cpBuscar — lá quebraria o próprio
+             botão "voltar à busca", que chama _cpBuscar com o form no DOM. */
+          if (UI.el("cpi-desc")) return;
           if (timer) clearTimeout(timer);
           timer = setTimeout(function () { self._cpBuscar(inp.value); }, 250);
         });
@@ -2508,6 +2649,54 @@
           '<span class="muted">' + Util.esc(r.item.unidade || "") + ' · ' + Util.fmtMoeda(r.item.custoUnitario) + '</span>' +
           '<button class="btn sm primary" data-cp-add="' + Util.esc(r.item.codigo) + '|' + Util.esc(r.fonte) + '">+ coef.</button></div>';
       }).join("") : '<div class="muted" style="font-size:12px;padding:6px 4px">Nada encontrado nas bases ativas.</div>';
+      /* o ciclo "sair do orçamento → banco de insumos → voltar → reabrir a
+         composição" morre AQUI: cadastro inline dentro do próprio criador.
+         NUNCA um segundo UI.modal — abrir outro modal destrói o criador. */
+      box.innerHTML += '<div style="padding:6px 4px;border-top:1px dashed var(--linha)">' +
+        '<button class="btn sm" data-acao="cp-novo-insumo">➕ Não achei — cadastrar insumo próprio</button></div>';
+    },
+    /* formulário INLINE no box de resultados do passo 2 (item 8 do cliente) */
+    _cpNovoInsumoInline: function () {
+      var box = UI.el("cp-busca-res"); if (!box || !this._cp) return;
+      var campos = (typeof Gestao !== "undefined" && Gestao._insumoProprioCampos)
+        ? Gestao._insumoProprioCampos("cpi", false)
+        : '<div class="field"><label>Descrição *</label><input id="cpi-desc"></div><div class="row"><div class="field" style="max-width:110px"><label>Unidade *</label><input id="cpi-und" value="un"></div><div class="field"><label>Preço (R$)</label><input id="cpi-preco"></div></div><select id="cpi-cat" style="display:none"><option value="MAT" selected>MAT</option></select>';
+      box.innerHTML = '<div style="padding:8px;border:1px solid var(--linha);border-radius:8px;background:rgba(46,111,158,.06)">' +
+        '<div style="font-weight:700;font-size:12.5px;margin-bottom:6px">➕ Cadastrar insumo próprio — entra no seu banco e JÁ nesta composição (coeficiente 1, ajuste na tabela)</div>' +
+        campos +
+        '<div style="display:flex;gap:8px;margin-top:8px">' +
+        '<button class="btn sm success" data-acao="cp-salvar-insumo">Salvar e adicionar</button>' +
+        '<button class="btn sm ghost" data-acao="cp-voltar-busca">← voltar à busca</button></div></div>';
+      var d = UI.el("cpi-desc");
+      if (d) { d.value = String(this._cp.busca || "").trim(); d.focus(); }
+    },
+    _cpSalvarInsumoInline: function () {
+      if (!this._cp) return;
+      var d = (typeof Gestao !== "undefined" && Gestao._insumoProprioColeta) ? Gestao._insumoProprioColeta("cpi")
+        : { descricao: (UI.el("cpi-desc") || {}).value || "", unidade: (UI.el("cpi-und") || {}).value || "un",
+            categoria: (UI.el("cpi-cat") || {}).value || "MAT", preco: Util.num((UI.el("cpi-preco") || {}).value) };
+      var item = this.salvarInsumoProprio(d);
+      if (!item) return; // inválido — o form fica na tela com o toast do motivo
+      var ja = false;
+      this._cp.comp.insumos.forEach(function (i) {
+        if (String(i.codigo) !== String(item.codigo)) return;
+        ja = true;
+        /* o dedupe atualizava SÓ o banco: a linha aberta ficava com o preço
+           velho — e é a linha que grava (ComposicaoPropria.custo lê da
+           linha). Quem recadastra justamente para corrigir o preço via o
+           toast dizer "atualizado" e a composição gravar o antigo. */
+        i.custoUnitario = Util.num(item.custoUnitario);
+        i.descricao = item.descricao; i.unidade = item.unidade; i.categoria = item.categoria;
+      });
+      if (!ja) {
+        this._cp.comp.insumos.push({
+          codigo: item.codigo, descricao: item.descricao, unidade: item.unidade,
+          coeficiente: 1, custoUnitario: Util.num(item.custoUnitario),
+          categoria: item.categoria, tipo: "insumo", fonte: "PROPRIA"
+        });
+      }
+      this._cpRender();
+      UI.toast(item.codigo + (ja ? " já estava na composição — preço atualizado no banco." : " adicionado à composição — ajuste o coeficiente."), "ok");
     },
     _cpColeta1: function () {
       var c = this._cp.comp, v = function (id) { var el = UI.el(id); return el ? el.value : ""; };
@@ -2734,6 +2923,7 @@
     /* v1.1.124 — INSUMO PRÓPRIO (p/ requisições/compras e busca): item simples
      * na base PROPRIA com tipoItem "insumo". Retorna o item ou null (inválido). */
     salvarInsumoProprio: function (dados) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return null; } /* trial não persiste por NENHUM caminho */
       dados = dados || {};
       var desc = String(dados.descricao || "").trim();
       var und = String(dados.unidade || "").trim() || "un";
@@ -2751,7 +2941,15 @@
         });
       } catch (eDx) {}
       var item = {
-        codigo: jaExiste ? jaExiste.codigo : ComposicaoPropria.gerarCodigo(this._cpCodigosExistentes()),
+        /* O CÓDIGO DA COMPOSIÇÃO ABERTA AINDA NÃO FOI GRAVADO — e reservar
+           só o que está persistido fazia o insumo inline ROUBAR o código
+           dela: a composição nascia PROP-0002, o insumo era gravado como
+           PROP-0002, e o "Validar e gravar" travava com "código já existe"
+           acusando o usuário de algo que o próprio app fez. O código em
+           voo entra na lista de reservados. */
+        codigo: jaExiste ? jaExiste.codigo : ComposicaoPropria.gerarCodigo(
+          this._cpCodigosExistentes().concat(
+            this._cp && this._cp.comp && this._cp.comp.codigo ? [String(this._cp.comp.codigo)] : [])),
         descricao: desc, unidade: und, custoUnitario: preco,
         // breakdown por categoria — senão o item some da curva MO/MAT/EQ do orçamento
         custoMO: cat === "MO" ? preco : 0, custoMAT: cat === "MAT" ? preco : 0, custoEQ: cat === "EQ" ? preco : 0,

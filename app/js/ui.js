@@ -191,7 +191,8 @@
           '<td>' + Util.esc((b.competencia || "—") + " / " + (b.uf || "—")) + '</td>' +
           '<td class="num">' + (b.total || 0).toLocaleString("pt-BR") + '</td>' +
           '<td><label style="cursor:pointer"><input type="checkbox" data-base-toggle="' + Util.esc(b.fonte) + '"' + (b.ativa ? " checked" : "") + '> ativa</label></td>' +
-          '<td class="right">' + (b.fonte !== "SINAPI" ? '<button class="btn sm danger" data-base-remover="' + Util.esc(b.fonte) + '">remover</button>' : '') + '</td></tr>';
+          '<td class="right">' + (b.fonte === "PROPRIA" ? '<button class="btn sm" data-acao="minhas-composicoes">📋 ver itens</button> ' : '') +
+            (b.fonte !== "SINAPI" ? '<button class="btn sm danger" data-base-remover="' + Util.esc(b.fonte) + '">remover</button>' : '') + '</td></tr>';
       }).join("");
       var fontes = (typeof Bases !== "undefined" && Bases.META) ? Object.keys(Bases.META).filter(function (k) { return k !== "SINAPI"; }) : ["SICRO", "SEINFRA", "SETOP", "ORSE", "SUDECAP", "SBC", "PROPRIA"];
       var opts = fontes.map(function (x) { var m = (typeof Bases !== "undefined" && Bases.META && Bases.META[x]) || {}; return '<option value="' + x + '">' + Util.esc(m.label || x) + '</option>'; }).join("");
