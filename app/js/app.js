@@ -446,7 +446,17 @@
      * incluído. Fecha modal CRUD aberto (senão a view troca por baixo e o modal
      * fica órfão por cima). Só recebe view JÁ validada por irPara. */
     _navegar: function (view) {
-      try { if (typeof UI !== "undefined" && UI.fecharModal && document.querySelector(".modal-bg")) UI.fecharModal(); } catch (eM) {}
+      /* O CLIQUE ACIDENTAL NÃO PODE CUSTAR O FORMULÁRIO.
+         Reproduzido: duplo-clique rápido mirando a sidebar com um cadastro
+         aberto — o 1º clique fechava o modal (perdendo tudo digitado) e o
+         2º navegava. Se há trabalho não salvo no modal, a navegação PARA e
+         pergunta; recusou, fica onde está, com o formulário intacto. */
+      try {
+        if (typeof UI !== "undefined" && UI.temTrabalhoNaoSalvo && UI.temTrabalhoNaoSalvo()) {
+          if (!window.confirm("Há um cadastro aberto com informações não salvas. Sair desta tela e perder o que foi preenchido?")) return;
+        }
+        if (UI.fecharModal && document.querySelector(".modal-bg")) UI.fecharModal();
+      } catch (eM) {}
       if (view !== "bim" && typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} }
       var ap = document.querySelector(".app"); if (ap) ap.classList.remove("menu-aberto");
       this.view = view;
@@ -504,10 +514,23 @@
         if (itAdd) {
           var ja = this._cp.comp.insumos.some(function (i) { return String(i.codigo) === String(itAdd.codigo); });
           if (ja) { UI.toast("Este insumo já está na composição — ajuste o coeficiente dele.", "erro"); return; }
+          /* A MÃO DE OBRA DO SINAPI ENTRA COMO COMPOSIÇÃO AUXILIAR (88316
+             servente, 88309 pedreiro, "... COM ENCARGOS COMPLEMENTARES") e
+             não traz campo categoria — o fallback antigo carimbava
+             'COMPOSICAO AUXILIAR', string que o catDe não reconhece e joga
+             em MAT. Resultado medido: composição 100 % de mão de obra
+             gravada com custoMO=0 e custoMAT=24,88 — MO virando Material
+             na base, na curva e em todo relatório que deriva dela.
+             A mesma convenção que o analítico já usa (RE_MO) decide aqui. */
+          var catAdd = itAdd.categoria;
+          if (!catAdd && String(itAdd.tipoItem) !== "insumo") {
+            catAdd = / COM ENCARGOS COMPLEMENTARES| COM ENCARGOS SOCIAIS|\(HORISTA\)|\(MENSALISTA\)/
+              .test(String(itAdd.descricao || "").toUpperCase()) ? "MAO DE OBRA" : "COMPOSICAO AUXILIAR";
+          }
           this._cp.comp.insumos.push({
             codigo: itAdd.codigo, descricao: itAdd.descricao, unidade: itAdd.unidade,
             coeficiente: 1, custoUnitario: Util.num(itAdd.custoUnitario),
-            categoria: itAdd.categoria || (String(itAdd.tipoItem) === "insumo" ? "MATERIAL" : "COMPOSICAO AUXILIAR"),
+            categoria: catAdd || (String(itAdd.tipoItem) === "insumo" ? "MATERIAL" : "COMPOSICAO AUXILIAR"),
             tipo: itAdd.tipoItem || "insumo",
             fonte: pAdd[1] // rastreia a base de origem — o resolve nunca confunde códigos homônimos
           });
@@ -1951,6 +1974,7 @@
         '<div id="bs-results"><div class="vazio">Digite ao menos 2 letras…</div></div>';
       UI.modal("Buscar item (composição ou insumo)", corpo,
         [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      UI.modalConsulta(); // busca é consulta: fechar depois de digitar não pode pedir confirmação
 
       function ativarBusca() {
         var prefs = self._lerBuscaPrefs();
@@ -2200,6 +2224,7 @@
       UI.modal("📊 Comparar cenários de preço", UI.renderCenarios(custo, cenarios), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
+      UI.modalConsulta(); // comparação é leitura
     },
     aplicarCenario: function (bdiStr) {
       var p = Util.num(bdiStr), o = this.orcAtual; if (!o) return;
@@ -2214,7 +2239,7 @@
       var umMaisL = denom > 0 ? ((1 + p / 100) * (1 - I)) / denom : 1; // inverte a fórmula TCU p/ achar (1+L)
       var L = (umMaisL - 1) * 100;
       if (!isFinite(L)) L = Util.num(base.L);
-      base.L = Math.round(L * 100) / 100;
+      base.L = Math.round(L * 10000) / 10000; // 4 casas: com 2, cenário de 20 % gravava 20,01 %
       Orcamento.aplicarBdi(o, "custom", base); // grava params + percentual + modeloId juntos
       this.persistir(); UI.fecharModal(); this.render();
       UI.toast("Cenário aplicado — BDI " + Util.fmtNum(o.bdi.percentual, 2) + "%.", "ok");
@@ -2329,6 +2354,7 @@
           { texto: "✎ Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
           { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
         ]);
+        UI.modalConsulta(); // detalhamento é leitura
         var mP = bgP.querySelector(".modal"); if (mP) mP.style.maxWidth = "900px";
         return;
       }
@@ -2422,8 +2448,28 @@
     _cpRender: function () {
       var self = this;
       var bg = UI.modal((this._cp && this._cp.editando ? "Editar composição própria" : "Criar composição própria"), UI.renderCriadorComposicao(this._cp), [
-        { texto: "Cancelar", classe: "ghost", onClick: function () { self._cp = null; UI.fecharModal(); } }
+        { texto: "Cancelar", classe: "ghost", onClick: function () {
+          /* Cancelar com trabalho dentro também pergunta — o criador
+             re-renderiza o corpo a cada insumo e um clique aqui jogava
+             fora a composição inteira sem aviso */
+          if (UI.temTrabalhoNaoSalvo() &&
+              !window.confirm("Descartar esta composição e perder o que foi montado?")) return;
+          self._cp = null; UI.fecharModal();
+        } }
       ]);
+      /* o corpo deste modal é reconstruído a cada mudança (o _tocado do DOM
+         morre junto) — então o "sujo" aqui é decidido pelo ESTADO: há
+         descrição digitada ou insumo adicionado e ainda não gravado */
+      /* baseline no 1º render: "sujo" = o estado MUDOU desde a abertura.
+         Sem isso, EDITAR uma composição perguntava "descartar?" mesmo sem
+         o usuário ter tocado em nada (o estado já nascia preenchido). O
+         que for digitado e ainda não coletado é coberto pelo _tocado do
+         DOM (a guarda combina os dois). */
+      if (this._cp && this._cp.base == null) this._cp.base = JSON.stringify(this._cp.comp);
+      UI.modalSujo(function () {
+        var st2 = self._cp;
+        return !!(st2 && st2.comp && JSON.stringify(st2.comp) !== st2.base);
+      });
       var m = bg.querySelector(".modal"); if (m) m.style.maxWidth = "940px";
       // busca de insumos do passo 2 (debounce) — o texto sobrevive ao re-render
       // (adicionar 5 insumos da mesma pesquisa sem digitá-la 5 vezes)
@@ -2597,6 +2643,42 @@
         };
         item.criadoPor = (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""; // auditoria: quem criou
         self._propriaGravar(item, st.editando, c.uf);
+        /* EDIÇÃO PROPAGA PARA A PLANILHA — com o usuário no comando.
+           Sem isto, o item lançado ficava com o preço velho para sempre
+           (só excluindo e re-adicionando), enquanto o detalhamento já
+           mostrava o novo. A varredura cobre TODOS os orçamentos da
+           empresa; o código antigo também casa (edição pode renomear). */
+        if (st.editando && !self._trialBloqueado()) { /* trial bloqueado nao grava orcamento por NENHUM caminho */
+          try {
+            var eidRp = Auth.empresaId();
+            var afetados = [], listaRp = Store.listarOrcamentos(eidRp);
+            listaRp.forEach(function (o) {
+              var alvo = (self.orcAtual && self.orcAtual.id === o.id) ? self.orcAtual : o;
+              var n = Orcamento.reprecificarPorCodigo(alvo, st.editando, item);
+              if (n > 0) afetados.push({ orc: alvo, n: n, mesmoAberto: alvo === self.orcAtual });
+            });
+            if (afetados.length) {
+              var totRp = afetados.reduce(function (s, a) { return s + a.n; }, 0);
+              if (window.confirm("Esta composição está lançada em " + totRp + " item(ns) de " +
+                  afetados.length + " orçamento(s). Atualizar o preço desses itens agora?\n\n" +
+                  "OK = atualiza para " + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade +
+                  " · Cancelar = mantém como está")) {
+                afetados.forEach(function (a) { Store.salvarOrcamento(eidRp, a.orc); });
+                UI.toast(totRp + " item(ns) reprecificado(s) em " + afetados.length + " orçamento(s).", "ok");
+                if (afetados.some(function (a) { return a.mesmoAberto; })) self.render();
+              } else {
+                /* recusou: recarrega os orçamentos do disco para desfazer a
+                   mutação em memória (a varredura mexeu nos objetos) */
+                var limpo = Store.listarOrcamentos(eidRp);
+                if (self.orcAtual) {
+                  for (var iRp = 0; iRp < limpo.length; iRp++) {
+                    if (limpo[iRp].id === self.orcAtual.id) self.orcAtual = limpo[iRp];
+                  }
+                }
+              }
+            }
+          } catch (eRp) {}
+        }
         // veio da busca do editor ("não achei o serviço") → a composição recém-
         // criada JÁ entra na etapa de onde o orçamentista partiu, quantidade 1.
         // Respeita o limite de itens do plano (mesma régua do escolherItemSinapi).
@@ -2622,10 +2704,13 @@
       };
       if (r.avisos.length) {
         // avisos não bloqueiam, mas exigem decisão EXPLÍCITA (sem margem p/ erro escondido)
+        /* UI.modal zera a guarda ao abrir — re-registrada logo abaixo, senão
+           o ✕ deste aviso descartava a composição inteira sem pergunta */
         UI.modal("⚠ Avisos de parâmetro", '<p style="font-size:13px">O checklist passou sem erros, mas o agente encontrou <b>' + r.avisos.length + ' aviso(s)</b> que merecem conferência:</p><div style="padding:9px 12px;border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.3);font-size:12px">· ' + r.avisos.map(Util.esc).join("<br>· ") + '</div>', [
           { texto: "Voltar e revisar", classe: "ghost", onClick: function () { self._cpRender(); } },
           { texto: "Conferi — gravar assim", classe: "success", onClick: gravar }
         ]);
+        UI.modalSujo(function () { return !!(self._cp && self._cp.comp); });
         return;
       }
       gravar();

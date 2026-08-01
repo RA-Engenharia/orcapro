@@ -326,11 +326,19 @@
       var corpo = p === 1 ? this._html1() : (p === 2 ? this._html2() : this._html3());
       var botoes = [];
       if (p > 1) botoes.push({ texto: "‹ Voltar", classe: "ghost", onClick: function () { self._ir(-1); } });
-      else botoes.push({ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
+      else botoes.push({ texto: "Cancelar", classe: "ghost", onClick: function () {
+        /* mesma regua dos irmaos (CRUD e criador): Cancelar nao descarta digitado sem perguntar */
+        if (UI.temTrabalhoNaoSalvo() && !window.confirm("Descartar este orçamento e perder o que foi preenchido?")) return;
+        UI.fecharModal();
+      } });
       botoes.push(p < 3
         ? { texto: "Avançar ›", classe: "primary", onClick: function () { self._ir(1); } }
         : { texto: "✓ Criar orçamento", classe: "primary", onClick: function () { self._criar(); } });
       UI.modal("Novo orçamento — passo " + p + " de 3", corpo, botoes);
+      /* cada passo recria o modal (UI.modal zera a guarda): re-registrar.
+         Passo > 1 = já há trabalho investido; no passo 1 o _tocado do DOM
+         cobre o que for digitado. */
+      UI.modalSujo(function () { return p > 1; });
       this._injetarCss();
       this._bind(p);
     },

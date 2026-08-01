@@ -37,12 +37,53 @@
         btn.onclick = b.onClick;
         footer.appendChild(btn);
       });
+      /* FECHAR NO CLIQUE-FORA SÓ QUANDO O GESTO COMEÇOU FORA.
+         O navegador sintetiza o click no ANCESTRAL COMUM quando mousedown e
+         mouseup têm alvos diferentes — selecionar o texto de um input
+         arrastando e soltar fora da caixa disparava click no véu e fechava
+         o modal, levando junto tudo que o usuário digitou (reproduzido:
+         mousedown no #cp-descricao + mouseup fora = formulário perdido).
+         Guardar o alvo do mousedown separa o clique real no fundo do
+         acidente de seleção. */
+      bg._downNoBg = false;
+      bg.addEventListener("mousedown", function (e) { bg._downNoBg = (e.target === bg); });
+      /* QUALQUER digitação marca o modal como "tem trabalho": a guarda vale
+         para todo formulário do app sem precisar instrumentar um a um */
+      bg.addEventListener("input", function () { bg._tocado = true; });
+      bg.addEventListener("change", function () { bg._tocado = true; });
       bg.addEventListener("click", function (e) {
-        if (e.target === bg || e.target.hasAttribute("data-fechar")) UI.fecharModal();
+        var fechar = (e.target.hasAttribute && e.target.hasAttribute("data-fechar")) ||
+                     (e.target === bg && bg._downNoBg);
+        if (!fechar) return;
+        /* a confirmação é SÓ para gesto do usuário (véu/✕). Fluxos de salvar
+           fecham por UI.fecharModal() direto e não podem ganhar pergunta. */
+        if (UI.temTrabalhoNaoSalvo() &&
+            !window.confirm("Há informações não salvas neste formulário. Fechar e perder o que foi preenchido?")) return;
+        UI.fecharModal();
       });
       return bg;
     },
-    fecharModal: function () { var m = this.el("modal-bg"); if (m) m.remove(); },
+    /* "sujo" = usuário digitou algo no modal aberto. Um modal pode refinar
+       com UI.modalSujo(fn) — fn decide (ex.: criador de composição, que
+       re-renderiza o corpo e perderia o _tocado do DOM). */
+    _modalDirty: null,
+    _modalConsulta: false,
+    /* modalSujo REFINA PARA CIMA, nunca rebaixa: o fn do criador lia um
+       estado que só sincroniza no "Próximo →", e digitar no passo 1 ficava
+       DESPROTEGIDO (o fn dizia limpo e vencia o _tocado do DOM). Agora é
+       fn() OU _tocado. Modal somente-consulta (busca, detalhamento) usa
+       modalConsulta(): nunca pergunta — pergunta falsa treina o usuário a
+       dar OK no reflexo e corrói a que protege de verdade. */
+    modalSujo: function (fn) { this._modalDirty = fn || null; this._modalConsulta = false; },
+    modalConsulta: function () { this._modalDirty = null; this._modalConsulta = true; },
+    temTrabalhoNaoSalvo: function () {
+      var m = this.el("modal-bg"); if (!m) return false;
+      if (this._modalConsulta) return false;
+      var fnDiz = false;
+      try { fnDiz = !!(this._modalDirty && this._modalDirty()); } catch (e) {}
+      return fnDiz || !!m._tocado;
+    },
+    fecharModal: function () { this._modalDirty = null; this._modalConsulta = false; var m = this.el("modal-bg"); if (m) m.remove(); },
 
     // LOTE 5: overlay de carregamento p/ operações longas (analítico 17MB, IA).
     // Sem isso o app parece travado e a primeira impressão morre ali.
@@ -1280,7 +1321,17 @@
 
     // ----- Aba BDI -----
     renderBdi: function (orc) {
-      var p = orc.bdi.params || Bdi.paramsDoModelo("padrao");
+      /* BDI manual (só percentual, sem params) NÃO pode renderizar o preset
+         padrão por baixo: os campos diziam 27,03 % sob um número grande de
+         20 %, e "Aplicar BDI" sem editar nada trocava o BDI do orçamento.
+         Deriva os params do percentual gravado — idempotente por construção. */
+      var p = orc.bdi.params;
+      if (!p && orc.bdi.percentual != null && isFinite(Util.num(orc.bdi.percentual))) {
+        p = Bdi.paramsParaPercentual(orc.bdi.percentual);
+      }
+      p = p || Bdi.paramsDoModelo("padrao");
+      var modSel = orc.bdi.modeloId;
+      if (!CONFIG.bdiPresets[modSel] && modSel !== "dnit") modSel = "custom";
       var campos = [
         ["AC", "Administração Central"], ["S", "Seguro"], ["R", "Risco"],
         ["G", "Garantia"], ["DF", "Despesas Financeiras"], ["L", "Lucro"], ["I", "Impostos (PIS+COFINS+ISS)"]
@@ -1289,17 +1340,17 @@
         '<div class="flex mb"><b>Modelo:</b>' +
         '<select id="bdi-modelo" class="btn sm">' +
           Object.keys(CONFIG.bdiPresets).map(function (k) {
-            return '<option value="' + k + '"' + (orc.bdi.modeloId === k ? " selected" : "") + '>' + CONFIG.bdiPresets[k].nome + '</option>';
+            return '<option value="' + k + '"' + (modSel === k ? " selected" : "") + '>' + CONFIG.bdiPresets[k].nome + '</option>';
           }).join("") +
-        '<option value="dnit"' + (orc.bdi.modeloId === "dnit" ? " selected" : "") + '>🏛️ DNIT (Acórdão TCU 2.622/2013)</option>' +
-        '<option value="custom"' + (orc.bdi.modeloId === "custom" ? " selected" : "") + '>Personalizado</option>' +
+        '<option value="dnit"' + (modSel === "dnit" ? " selected" : "") + '>🏛️ DNIT (Acórdão TCU 2.622/2013)</option>' +
+        '<option value="custom"' + (modSel === "custom" ? " selected" : "") + '>Personalizado</option>' +
         '</select></div>' +
         (typeof DnitBdi !== "undefined" ? '<div class="muted mb" style="font-size:12px">🏛️ <b>DNIT · Acórdão 2.622/2013</b> — CPRB atualiza por ano (Lei 14.973/2024): ' +
           DnitBdi.cprbDoAno() + '% em ' + (new Date().getFullYear()) + ' · Selic ref. ' + Util.fmtNum(DnitBdi.selic, 2) + '% · ISS ' + Util.fmtNum(DnitBdi.tributos.iss, 2) + '%</div>' : '');
       html += '<div class="row">';
       campos.forEach(function (c) {
         html += '<div class="field"><label>' + c[1] + ' (%)</label>' +
-          '<input id="bdi-' + c[0] + '" type="text" value="' + Util.fmtNum(p[c[0]], 2) + '"></div>';
+          '<input id="bdi-' + c[0] + '" type="text" value="' + Util.fmtNum(p[c[0]], c[0] === "L" ? 4 : 2) + '"></div>';
       });
       html += '</div>';
       html += '<div class="flex between mt">' +

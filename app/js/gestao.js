@@ -8305,7 +8305,12 @@ renderFolha: function () {
       var tit = (titulo && typeof titulo === "object") ? titulo
         : { novo: "Novo " + titulo, editar: "Editar " + titulo, nome: titulo };
       var nome = tit.nome || tit.novo || "";
-      var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () {
+        /* mesma regua do veu/criador: Cancelar a um pixel do Salvar nao
+           pode descartar um formulario digitado sem perguntar */
+        if (UI.temTrabalhoNaoSalvo() && !window.confirm("Descartar este cadastro e perder o que foi preenchido?")) return;
+        UI.fecharModal();
+      } }];
       if (!ehNovo) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
         if (self._bloqueado()) return;
         if (confirm("Excluir este registro? Não pode ser desfeito.")) { Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok"); }

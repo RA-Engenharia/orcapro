@@ -26,6 +26,26 @@
       return Math.round(bdi * 10000) / 100; // % com 2 casas
     },
 
+    /* PARÂMETROS QUE PRODUZEM UM PERCENTUAL-ALVO.
+     * Inverte a fórmula TCU ajustando SÓ o Lucro (L) sobre uma base.
+     * Existe porque um orçamento pode carregar apenas o percentual (BDI
+     * manual digitado no assistente) — e a aba BDI renderizava o preset
+     * "padrão" (27,03 %) por baixo de um percentual configurado de 20 %:
+     * campos contradizendo o número grande, e "Aplicar BDI" sem mexer em
+     * nada trocava 20 % por 27,03 %. Com esta inversão os campos exibidos
+     * SEMPRE produzem o percentual gravado. */
+    paramsParaPercentual: function (alvoPct, base) {
+      var b = base && typeof base === "object" ? JSON.parse(JSON.stringify(base)) : this.paramsDoModelo("padrao");
+      var AC = Util.num(b.AC) / 100, S = Util.num(b.S) / 100, R = Util.num(b.R) / 100,
+          G = Util.num(b.G) / 100, DF = Util.num(b.DF) / 100, I = Util.num(b.I) / 100;
+      if (I >= 1) I = 0.9999;
+      var denom = (1 + AC + S + R + G) * (1 + DF);
+      var umMaisL = denom > 0 ? ((1 + Util.num(alvoPct) / 100) * (1 - I)) / denom : 1;
+      var L = (umMaisL - 1) * 100;
+      b.L = isFinite(L) ? Math.round(L * 10000) / 10000 : Util.num(b.L); // 4 casas: com 2, alvo 20 % reaplicava como 20,01 %
+      return b;
+    },
+
     /* Aplica BDI sobre um custo direto -> preço de venda. */
     aplicar: function (custoDireto, percentualBdi) {
       return Util.num(custoDireto) * (1 + Util.num(percentualBdi) / 100);

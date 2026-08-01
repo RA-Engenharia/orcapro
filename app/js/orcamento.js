@@ -326,6 +326,36 @@
       etapa.itens.push(it);
       return orc;
     },
+    /* REPRECIFICAR OS ITENS QUE VIERAM DE UMA COMPOSIÇÃO EDITADA.
+     * O item lançado é um snapshot (decisão consciente: orçamento não muda
+     * sozinho quando a base gira) — mas quando o USUÁRIO edita a própria
+     * composição, o snapshot congelado vira mentira: o detalhamento lê a
+     * base ao vivo e mostra o preço novo enquanto a planilha soma o velho.
+     * Medido: coeficiente 10→20 dobrou o CU no modal e a planilha seguiu
+     * com R$ 7,80. Esta função varre o orçamento e atualiza os itens que
+     * apontam para o código editado; quem chama decide (com confirmação)
+     * e persiste. codigoAntigo cobre edição que renomeia o código.
+     * Devolve quantos itens mudaram. */
+    reprecificarPorCodigo: function (orc, codigoAntigo, novo) {
+      var n = 0;
+      ((orc && orc.etapas) || []).forEach(function (et) {
+        (et.itens || []).forEach(function (it) {
+          var deProprio = String(it.baseFonte || it.origem || "").toUpperCase() === "PROPRIA" ||
+                          String(it.origem || "").toUpperCase() === "PROPRIO";
+          if (!deProprio) return;
+          if (String(it.codigo) !== String(codigoAntigo) && String(it.codigo) !== String(novo.codigo)) return;
+          it.codigo = novo.codigo;
+          it.descricao = Util.fixEnc(novo.descricao || it.descricao);
+          it.unidade = novo.unidade || it.unidade;
+          it.custoUnitario = Util.num(novo.custoUnitario);
+          it.custoMO = Util.num(novo.custoMO);
+          it.custoMAT = Util.num(novo.custoMAT);
+          it.custoEQ = Util.num(novo.custoEQ);
+          n++;
+        });
+      });
+      return n;
+    },
     atualizarItem: function (orc, etapaId, itemId, campos) {
       var etapa = this._etapa(orc, etapaId);
       if (!etapa) return orc;
