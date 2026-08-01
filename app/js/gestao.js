@@ -6101,20 +6101,50 @@
       var seq = max + 1, pad = "" + seq; while (pad.length < 3) pad = "0" + pad;
       return "EPI-" + ano + "-" + pad;
     },
+    /* Catálogo próprio da empresa por cima do de fábrica. Roda a CADA render da
+       view e ao abrir qualquer busca de EPI (é idempotente): o Epi é singleton
+       global, então sem re-aplicar ao trocar de conta o EPI de uma empresa
+       apareceria na busca da outra. Mesma régua do Blocos.usarOverrides. */
+    _epiSyncProprios: function () {
+      if (typeof Epi === "undefined" || !Epi.usarProprios) return;
+      try { Epi.usarProprios(lista("epi_catalogo"), eid()); } catch (e) {}
+    },
     afterRenderEpi: function () {
-      if (typeof Epi !== "undefined" && !Epi.carregado && !Epi.carregando) Epi.carregar("data/epi-catalogo.json").then(function () { if (typeof App !== "undefined" && App.view === "epi") App.render(); }).catch(function () {});
+      var self = this;
+      /* o argumento "data/epi-catalogo.json" era MORTO (Epi.carregar não recebe
+         parâmetro) e o catálogo é embutido em js/epi.js — o pacote de update
+         não leva data/. */
+      if (typeof Epi !== "undefined" && !Epi.carregado && !Epi.carregando) {
+        Epi.carregar().then(function () { self._epiSyncProprios(); if (typeof App !== "undefined" && App.view === "epi") App.render(); })["catch"](function () {});
+      }
+      /* fora da guarda de carregamento: o carregado===true sai cedo e os
+         próprios precisam ser reaplicados em todo render mesmo assim. */
+      this._epiSyncProprios();
     },
     renderEpi: function () {
       var es = lista("epi").slice().sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); });
       var hoje = new Date(); hoje.setHours(0, 0, 0, 0); // meia-noite local → contagem de dias estável (independe da hora)
       var gasto = 0, aVencer = 0;
-      es.forEach(function (e) { gasto += Util.num(e.valorTotal); (e.itens || []).forEach(function (it) { if (it.validade) { var dias = Math.round((new Date(it.validade + "T00:00:00") - hoje) / 86400000); if (dias <= 60) aVencer++; } }); }); // inclui já vencidos (dias<0) — precisam renovar
+      var caPend = 0;
+      es.forEach(function (e) {
+        gasto += Util.num(e.valorTotal);
+        (e.itens || []).forEach(function (it) {
+          if (it.validade) { var dias = Math.round((new Date(it.validade + "T00:00:00") - hoje) / 86400000); if (dias <= 60) aVencer++; }
+          /* CA em branco era INVISÍVEL: o alarme só olhava validade, então uma
+             ficha NR-6 sem nenhum CA informado não acendia nada em lugar nenhum. */
+          if (typeof Epi !== "undefined" && Epi.caPendente && Epi.caPendente(it.ca)) caPend++;
+        });
+      }); // inclui já vencidos (dias<0) — precisam renovar
       var catN = (typeof Epi !== "undefined" && Epi.carregado) ? Epi.resumo().total : null;
+      var catProp = (typeof Epi !== "undefined" && Epi.carregado && Epi.totalFabrica) ? (Epi.resumo().total - Epi.totalFabrica()) : 0;
       var card = function (val, l, cor) { return '<div class="card" style="flex:1;text-align:center;min-width:90px"><div style="font-size:24px;font-weight:800;color:' + cor + '">' + val + '</div><div class="muted">' + l + "</div></div>"; };
       var kpis = '<div class="row" style="gap:10px;margin:4px 0 14px">'
         + card(es.length, "entregas", "#0f2740") + card(Util.fmtMoeda(gasto), "gasto com EPI", "#16a34a")
-        + card(aVencer, "CA vencido/a vencer", aVencer ? "#dc2626" : "#64748b") + card(catN != null ? catN : "…", "no catálogo", "#2e6f9e") + "</div>";
-      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📖 Catálogo de EPI</button>';
+        + card(aVencer, "CA vencido/a vencer", aVencer ? "#dc2626" : "#64748b")
+        + card(caPend, "CA pendente", caPend ? "#b45309" : "#64748b")
+        + card(catN != null ? catN : "…", "no catálogo" + (catProp > 0 ? " (" + catProp + " seu" + (catProp > 1 ? "s" : "") + ")" : ""), "#2e6f9e") + "</div>";
+      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📖 Catálogo de EPI</button>' +
+        '<button class="btn sm ghost" data-gacao="novo-epi-proprio" style="margin-right:10px;align-self:center" title="Cadastre um EPI que não está na lista — ele passa a aparecer na busca das suas entregas">➕ EPI próprio</button>';
       var html = this._head(svg("epi") + "EPI — Entregas &amp; Fichas", "nova-entrega-epi", "Nova entrega", extra) + kpis;
       html += '<p class="muted" style="margin:-4px 0 14px">Registre a entrega de EPI ao colaborador (com CA e validade), gere a <b>ficha de controle (NR-6)</b> para assinatura e acompanhe o gasto. O catálogo traz os EPIs de obra com valor de referência; o <b>CA é do modelo comprado</b> — use <b>🔎 Consultar CA</b> para conferir online.</p>';
       if (!es.length) return html + vazioBox("Nenhuma entrega de EPI registrada", "nova-entrega-epi", "Registrar primeira entrega");
@@ -6154,7 +6184,10 @@
         el.innerHTML = '<table class="tbl" style="font-size:12px"><thead><tr><th>EPI</th><th>CA</th><th>Validade</th><th class="num">Qtd</th><th class="num">Vlr un.</th><th class="num">Subtot.</th><th></th></tr></thead><tbody>'
           + itensBuf.map(function (it, i) {
             return "<tr><td>" + Util.esc(it.nome) + "</td>"
-              + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">🔎</button></td>'
+              + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">🔎</button>'
+              /* sem CA não é "N/A": é PENDENTE. O número vem da nota do modelo
+                 comprado — inventar um seria falsificar a ficha NR-6. */
+              + (Epi.caPendente(it.ca) ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou — o 🔎 consulta online">CA pendente</span>' : "") + '</td>'
               + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
               + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
               + '<td class="num"><input data-eevu="' + i + '" value="' + Util.esc(String(it.valorUnit).replace(".", ",")) + '" style="width:60px;text-align:right"></td>'
@@ -6179,26 +6212,131 @@
     _wireCatalogoEpi: function (qId, resId, statusId, onPick) {
       var inp = document.getElementById(qId), box = document.getElementById(resId), st = statusId ? document.getElementById(statusId) : null;
       if (!inp || !box) return;
+      /* quem abre a entrega sem passar pela view de EPI também precisa enxergar
+         o que a própria empresa cadastrou */
+      this._epiSyncProprios();
+      var selfW = this;
       function setSt(t) { if (st) st.textContent = t; }
       function pintar(listaR) {
         if (!listaR.length) { box.innerHTML = '<div class="muted" style="font-size:13px;padding:6px">Nenhum EPI encontrado.</div>'; return; }
         box.innerHTML = '<table class="tbl" style="font-size:12.5px"><tbody>' + listaR.map(function (x, i) {
-          return "<tr><td><b>" + Util.esc(x.nome) + '</b> <span class="muted">· ' + Util.esc(Epi.rotuloCategoria(x.categoria)) + "</span></td><td>" + Util.fmtMoeda(x.valorRef) + "</td>"
-            + (onPick ? '<td class="num"><button type="button" class="btn sm primary" data-epiadd="' + i + '">Adicionar</button></td>' : '<td class="muted" style="font-size:11px">vida útil ' + Math.round((x.vidaUtilDias || 0) / 30) + " mês</td>") + "</tr>";
+          var selo = x.proprio ? ' <span class="pill proprio">seu EPI</span>' : "";
+          /* valorRef 0 = não temos preço de referência com fonte (protetor solar
+             é o caso). Mostrar "R$ 0,00" faria parecer EPI de graça. */
+          var vlr = Util.num(x.valorRef) > 0 ? Util.fmtMoeda(x.valorRef) : '<span class="muted" style="font-size:11px" title="Sem valor de referência — informe o preço da sua compra na entrega">informe</span>';
+          /* o que a EMPRESA cadastrou tem de ser corrigível: sem ✎ e 🗑 por
+             linha, um erro de digitação era permanente, ia para todos os
+             aparelhos pela nuvem, e "recadastrar para corrigir" DUPLICAVA. */
+          var acoes = onPick
+            ? '<button type="button" class="btn sm primary" data-epiadd="' + i + '">Adicionar</button>'
+            : (x.proprio
+                ? '<button type="button" class="btn sm ico" data-epiedit="' + i + '" title="Editar este EPI">✎</button> ' +
+                  '<button type="button" class="btn sm ico danger" data-epidel="' + i + '" title="Excluir do seu catálogo">🗑</button>'
+                : '<span class="muted" style="font-size:11px">vida útil ' + Math.round((x.vidaUtilDias || 0) / 30) + " mês</span>");
+          return "<tr><td><b>" + Util.esc(x.nome) + "</b>" + selo + ' <span class="muted">· ' + Util.esc(Epi.rotuloCategoria(x.categoria)) + "</span></td><td>" + vlr + "</td>"
+            + '<td class="num">' + acoes + "</td></tr>";
         }).join("") + "</tbody></table>";
         if (onPick) Array.prototype.forEach.call(box.querySelectorAll("[data-epiadd]"), function (b) { b.onclick = function () { var x = listaR[+b.getAttribute("data-epiadd")]; if (x) onPick(x); }; });
+        /* onclick local (como o data-epiadd ao lado): o roteador global tem
+           lista FIXA de seletores e não enxergaria atributo novo. */
+        Array.prototype.forEach.call(box.querySelectorAll("[data-epiedit]"), function (b) {
+          b.onclick = function () { var x = listaR[+b.getAttribute("data-epiedit")]; if (x) { UI.fecharModal(); selfW.formEpiProprio(x.id); } };
+        });
+        Array.prototype.forEach.call(box.querySelectorAll("[data-epidel]"), function (b) {
+          b.onclick = function () { var x = listaR[+b.getAttribute("data-epidel")]; if (x) selfW.excluirEpiProprio(x.id, function () { rodar(); }); };
+        });
       }
-      function achar() { var res = Epi.buscar(inp.value.trim(), { max: 30 }); setSt(res.length + " EPI(s)"); pintar(res); }
-      function rodar() { if (Epi.carregado) { achar(); return; } setSt("Carregando catálogo…"); Epi.carregar("data/epi-catalogo.json").then(achar).catch(function () { setSt("Não carregou o catálogo — abra pelo servidor local (Iniciar-OrcaPRO.bat)."); }); }
+      /* max acima do total do catálogo: com 30 fixo, o EPI que a empresa acabou
+         de cadastrar (que entra na CAUDA do concat) sumia da tela assim que o
+         usuário limpava a busca — "cadastrei e não apareceu". */
+      function achar() { var res = Epi.buscar(inp.value.trim(), { max: Math.max(200, Epi.itens().length + 20) }); setSt(res.length + " EPI(s)"); pintar(res); }
+      function rodar() { if (Epi.carregado) { achar(); return; } setSt("Carregando catálogo…"); Epi.carregar().then(function () { selfW._epiSyncProprios(); achar(); })["catch"](function () { setSt("Não consegui abrir o catálogo de EPI."); }); }
       inp.oninput = (typeof Util !== "undefined" && Util.debounce) ? Util.debounce(rodar, 200) : rodar;
       if (typeof Epi !== "undefined" && Epi.carregado) { setSt(Epi.resumo().total + " EPIs no catálogo. Digite para buscar."); if (!onPick) pintar(Epi.itens()); }
-      else if (typeof Epi !== "undefined") Epi.carregar("data/epi-catalogo.json").then(function () { setSt(Epi.resumo().total + " EPIs no catálogo. Digite para buscar."); if (!onPick) pintar(Epi.itens()); }).catch(function () {});
+      else if (typeof Epi !== "undefined") Epi.carregar().then(function () { selfW._epiSyncProprios(); setSt(Epi.resumo().total + " EPIs no catálogo. Digite para buscar."); if (!onPick) pintar(Epi.itens()); })["catch"](function () {});
     },
     abrirCatalogoEpi: function () {
+      var self = this;
       var corpo = '<div class="field"><input id="ec-q" placeholder="Buscar EPI (nome ou categoria)" autocomplete="off"></div><div class="muted mb" id="ec-status"></div><div id="ec-res" style="max-height:420px;overflow:auto"></div>';
-      var bg = UI.modal("📖 Catálogo de EPI (NR-6)", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var bg = UI.modal("📖 Catálogo de EPI (NR-6)", corpo, [
+        { texto: "➕ Cadastrar EPI próprio", classe: "primary", onClick: function () { self.formEpiProprio(null); } },
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ]);
+      UI.modalConsulta(); // catálogo é consulta: fechar depois de digitar na busca não pergunta nada
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "720px";
       this._wireCatalogoEpi("ec-q", "ec-res", "ec-status", null);
+    },
+
+    /* Tira do catálogo da empresa. As ENTREGAS já emitidas não são tocadas —
+       a ficha NR-6 é um retrato do que foi entregue e assinado, e mexer nela
+       depois seria adulterar documento. */
+    excluirEpiProprio: function (id, aposFn) {
+      if (this._bloqueado()) return;
+      var reg = Store.obter(eid(), "epi_catalogo", id);
+      if (!reg) { UI.toast("EPI não encontrado.", "erro"); return; }
+      /* conta ENTREGAS, não linhas: o mesmo EPI entra duas vezes na mesma
+         ficha quando são CAs/lotes diferentes, e o número que a pessoa lê
+         antes de apagar algo não pode estar inflado. */
+      var usos = 0;
+      lista("epi").forEach(function (e) {
+        var achou = (e.itens || []).some(function (it) { return String(it.epiId) === String(id); });
+        if (achou) usos++;
+      });
+      if (!confirm('Excluir "' + reg.nome + '" do seu catálogo de EPI?' +
+        (usos ? "\n\nEle já foi usado em " + usos + " entrega(s) — essas fichas NÃO mudam (o que foi entregue continua registrado). Ele só deixa de aparecer na busca." : "") +
+        "\n\nEsta ação não pode ser desfeita.")) return;
+      Store.excluir(eid(), "epi_catalogo", id);
+      this._epiSyncProprios();
+      UI.toast("EPI removido do seu catálogo.", "ok");
+      if (typeof aposFn === "function") aposFn();
+      if (typeof App !== "undefined") App.render();
+    },
+
+    /* EPI que não está no catálogo de fábrica (pedido do cliente). Segue o
+       padrão pesos_bloco: catálogo embutido + o que a EMPRESA cadastrou numa
+       entidade do Store — sem obraId, logo fora de qualquer cascata de exclusão
+       de obra. O CA NÃO entra aqui de propósito: ele é do modelo comprado e se
+       informa na entrega. */
+    formEpiProprio: function (id) {
+      var self = this;
+      var reg = id ? Store.obter(eid(), "epi_catalogo", id) : {};
+      /* o ✎ pega a linha da tela (singleton), mas o registro pode ter morrido
+         em outra aba/aparelho. Sem este guard o "editar" virava "criar" em
+         branco e gravava um id novo — o mesmo tipo de duplicata que o botão
+         existe para evitar. O 🗑 ao lado já checava; a assimetria era o bug. */
+      if (id && !reg) { UI.toast("Este EPI não está mais no seu catálogo (removido em outro aparelho).", "erro"); return; }
+      reg = reg || {};
+      var cats = (typeof Epi !== "undefined" && Epi.categorias) ? Epi.categorias() : [["corpo", "Vestimenta / sinalização"]];
+      var optsCat = cats.map(function (c) {
+        return '<option value="' + Util.esc(c[0]) + '"' + (reg.categoria === c[0] ? " selected" : "") + ">" + Util.esc(c[1]) + "</option>";
+      }).join("");
+      var corpo =
+        campo("Nome do EPI *", inp("ep-nome", reg.nome)) +
+        '<div class="row">' + campo("Categoria", '<select id="ep-cat">' + optsCat + "</select>") +
+          campo("Unidade", inp("ep-und", reg.unidade || "un")) + "</div>" +
+        '<div class="row">' + campo("Valor de referência (R$)", inp("ep-vlr", reg.valorRef)) +
+          campo("Vida útil (dias)", inp("ep-vida", reg.vidaUtilDias)) + "</div>" +
+        campo("Descrição", inp("ep-desc", reg.descricao)) +
+        '<p class="muted" style="font-size:12px;margin:6px 0 0">O <b>CA</b> não se cadastra aqui: ele é do modelo que você comprou e é informado <b>na entrega</b> (com o 🔎 Consultar CA). Até lá o item aparece como <span class="pill proprio">CA pendente</span>.</p>';
+      this._modalForm("epi_catalogo", reg, { novo: "Novo EPI próprio", editar: "Editar EPI próprio", nome: "EPI próprio" }, corpo, function (obj) {
+        obj.nome = v("ep-nome");
+        if (String(obj.nome || "").trim().length < 3) { UI.toast("Informe o nome do EPI.", "erro"); return false; }
+        /* id namespeado: o Store geraria "epi-xxxx" (entidade.slice(0,3)) e
+           colidiria com os ids de fábrica "epi-*" — Epi.item() passaria a
+           devolver o item errado para entregas antigas. */
+        if (!obj.id) obj.id = Util.uid("epiu");
+        obj.categoria = v("ep-cat"); obj.unidade = v("ep-und") || "un";
+        obj.valorRef = nv("ep-vlr"); obj.vidaUtilDias = nv("ep-vida");
+        obj.descricao = v("ep-desc"); obj.ca = "";
+        return true;
+      }, function (obj, ehNovo) {
+        /* cota de armazenamento cheia: o Store devolve null e o item viveria só
+           até o F5 — melhor dizer na hora do que sumir depois. */
+        if (!Store.obter(eid(), "epi_catalogo", obj.id)) { UI.toast("Não consegui salvar o EPI (armazenamento cheio). Libere espaço e tente de novo.", "erro"); return; }
+        self._epiSyncProprios();
+        if (typeof App !== "undefined") App.render(); // o _modalForm já renderizou ANTES do sync
+        UI.toast("EPI " + (ehNovo ? "cadastrado" : "salvo") + " — já aparece na busca das entregas.", "ok");
+      });
     },
     fichaEpi: function (id) {
       var e = Store.obter(eid(), "epi", id); if (!e) return;
@@ -6207,7 +6345,7 @@
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
       var logoE = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(44) : "";
       var linhas = (e.itens || []).map(function (it) {
-        return "<tr><td style='text-align:center;padding:4px'>" + Util.num(it.quantidade) + "</td><td style='padding:4px'>" + Util.esc(it.nome) + "</td><td style='text-align:center;padding:4px'>" + brd(e.data) + "</td><td style='text-align:center;padding:4px'>" + Util.esc(it.ca || "N/A") + "</td><td style='padding:4px'></td></tr>";
+        return "<tr><td style='text-align:center;padding:4px'>" + Util.num(it.quantidade) + "</td><td style='padding:4px'>" + Util.esc(it.nome) + "</td><td style='text-align:center;padding:4px'>" + brd(e.data) + "</td><td style='text-align:center;padding:4px'>" + (Epi.caPendente(it.ca) ? "CA PENDENTE" : Util.esc(it.ca)) + "</td><td style='padding:4px'></td></tr>";
       }).join("");
       var termo = "Declaro ter recebido gratuitamente da empresa os Equipamentos de Proteção Individual (EPI) acima discriminados, em perfeito estado de conservação e funcionamento, bem como orientação/treinamento quanto ao uso correto, guarda e conservação. Comprometo-me a: usá-los durante toda a jornada de trabalho; responsabilizar-me por sua guarda e conservação; comunicar qualquer alteração que os torne impróprios para uso; e devolvê-los quando solicitado. Estou ciente de que o uso é obrigatório e que o não uso constitui ato faltoso (art. 158 da CLT e NR-6).";
       var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:0 auto;padding:8px;font-size:12px">'
@@ -7228,7 +7366,11 @@ renderRequisicoes: function () {
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var extra = '<span class="muted" style="margin-right:12px;align-self:center">Entradas: <b>' + Util.fmtMoeda(totEnt) + "</b> · Saídas: <b>" + Util.fmtMoeda(totSai) + "</b></span>" +
         '<button class="btn" data-gacao="importar-xml-lote" title="Importe vários XMLs de NF-e de uma vez — direto do arquivo, sem IA e sem internet">📥 XML em lote</button> ' +
-        '<button class="btn ghost" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">🔎 Chave de acesso</button>';
+        '<button class="btn ghost" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">🔎 Chave de acesso</button> ' +
+        /* A leitura por IA já existia, só que escondida no Financeiro — quem chega
+           com o DANFE em PDF (ou uma foto dele) procura na tela Fiscal. Mesmo motor,
+           mesma revisão humana antes de gravar; o XML segue sendo o caminho exato. */
+        '<button class="btn ghost" data-gacao="nf-ia" title="Sem o XML? Envie o PDF do DANFE ou uma foto da nota — a IA lê e abre a nota preenchida para você conferir antes de salvar. O XML continua sendo o caminho mais exato.">🤖 NF em PDF/foto</button>';
       var html = this._head(svg("fiscal") + "Fiscal / NF-e", "nova-fiscal", "Nova nota", extra);
       if (!nfs.length) return html + vazioBox("Nenhuma nota fiscal", "nova-fiscal", "Cadastrar primeira");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Tipo</th><th>Parceiro</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
@@ -7250,7 +7392,7 @@ renderRequisicoes: function () {
         '<div class="row">' + campo("Obra", sel("g-obra", optsRec(obras, "nome", n.obraId, "— nenhuma —"))) + campo("Data de emissão", inp("g-data", n.dataEmissao, "", "date")) + "</div>" +
         '<div class="row">' + campo("Valor produtos (R$)", inp("g-vprod", n.valorProdutos)) + campo("Valor impostos (R$)", inp("g-vimp", n.valorImpostos)) + campo("Valor total (R$) *", inp("g-vtot", n.valorTotal)) + "</div>" +
         campo("Chave de acesso", inp("g-chave", n.chaveAcesso));
-      this._modalForm("fiscal", n, "Nota fiscal", corpo, function (obj) {
+      this._modalForm("fiscal", n, { novo: "Nova nota fiscal", editar: "Editar nota fiscal", nome: "Nota fiscal" }, corpo, function (obj) {
         obj.numero = v("g-numero"); obj.serie = v("g-serie"); obj.tipo = v("g-tipo"); obj.status = v("g-status");
         obj.naturezaOp = v("g-natop"); obj.parceiro = v("g-parceiro"); obj.obraId = v("g-obra"); obj.dataEmissao = v("g-data");
         obj.valorProdutos = nv("g-vprod"); obj.valorImpostos = nv("g-vimp"); obj.valorTotal = nv("g-vtot"); obj.chaveAcesso = v("g-chave");
@@ -9069,6 +9211,11 @@ renderFolha: function () {
         case "rever-tour": if (typeof Tour !== "undefined") Tour.iniciar(true); return;
         case "rel-executivo": { var reO = document.getElementById("rex-obra"), reM = document.getElementById("rex-mes"); return this.relatorioExecutivo(reO ? reO.value : "", reM ? reM.value : ""); }
         case "doc-financeiro": return this.lancarDocumento();
+        case "nf-ia":
+          /* RBAC em FUNÇÃO: esconder o botão não basta — a leitura por IA gasta
+             crédito da licença. Mesma régua do módulo Cotações. */
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("fiscal")) { UI.toast("Seu usuário não tem permissão no módulo Fiscal.", "erro"); return; }
+          return this.lancarDocumento("fiscal");
         case "nova-obra": return this.novoObra();
         case "nova-cliente": return this.novoCliente();
         case "novo-contrato": return this.novoContrato();
@@ -9102,6 +9249,7 @@ renderFolha: function () {
         case "config-admin": return this.configurarAdmin();
         case "acesso-movel": return this.acessoMovel(id);
         case "nova-entrega-epi": return this.novoEntregaEpi();
+        case "novo-epi-proprio": return this.formEpiProprio(id);
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
@@ -9252,9 +9400,15 @@ case "nova-folha": return this.novoFolha();
     },
 
     // ---------- Lançar de documento (IA lê NF/fatura/boleto) ----------
-    lancarDocumento: function () {
+    /* destino "fiscal" = chamado da tela Fiscal: a nota abre PREENCHIDA para
+       conferência e só grava no Salvar. Sem destino (botão do Financeiro),
+       comportamento de sempre. */
+    lancarDocumento: function (destino) {
       if (this._bloqueado()) return;
       var self = this;
+      /* cada envio é uma chamada PAGA de IA. Sem trava, dois cliques no botão
+         (ou reenviar o mesmo PDF) cobravam duas vezes. */
+      if (this._iaOcupada) { UI.toast("Já estou lendo um documento — aguarde o resultado.", "erro"); return; }
       var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? String(CONFIG.iaBackend).replace(/\/$/, "") : "";
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       if (!chave) { UI.toast("Ative sua licença pra usar a leitura por IA.", "erro"); return; }
@@ -9265,30 +9419,37 @@ case "nova-folha": return this.novoFolha();
         var ext = String(file.name || "").toLowerCase().split(".").pop();
         if (ext === "xml") {
           var fr = new FileReader();
-          fr.onload = function () { try { var dados = self._parseNfeXml(fr.result); if (!dados) { UI.toast("Não reconheci o XML como NF-e.", "erro"); return; } self._docParaLancamento(dados, "XML da NF-e"); } catch (e) { UI.toast("Falha ao ler o XML: " + e.message, "erro"); } };
+          fr.onload = function () { try { var dados = self._parseNfeXml(fr.result); if (!dados) { UI.toast("Não reconheci o XML como NF-e.", "erro"); return; } self._docParaLancamento(dados, "XML da NF-e", destino); } catch (e) { UI.toast("Falha ao ler o XML: " + e.message, "erro"); } };
           fr.readAsText(file);
         } else if (ext === "pdf") {
           UI.toast("Lendo o PDF…", "ok");
           self._pdfTexto(file, function (texto) {
             if (!texto || texto.trim().length < 20) { UI.toast("PDF sem texto legível — tire uma foto/print e envie como imagem.", "erro"); return; }
-            self._enviarDoc(back, chave, { tipo: "texto", conteudo: texto }, "PDF");
+            self._enviarDoc(back, chave, { tipo: "texto", conteudo: texto }, "PDF", destino);
           });
         } else {
           var fr2 = new FileReader();
-          fr2.onload = function () { self._enviarDoc(back, chave, { tipo: "imagem", conteudo: fr2.result }, "imagem"); };
+          fr2.onload = function () { self._enviarDoc(back, chave, { tipo: "imagem", conteudo: fr2.result }, "imagem", destino); };
           fr2.readAsDataURL(file);
         }
       };
       document.body.appendChild(inp); inp.click(); setTimeout(function () { inp.remove(); }, 60000);
     },
-    _enviarDoc: function (back, chave, payload, origem) {
+    _enviarDoc: function (back, chave, payload, origem, destino) {
       var self = this;
       UI.toast("🤖 A IA está lendo o documento…", "ok");
+      this._iaOcupada = true;
       fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(payload) })
         .then(function (r) { return r.json(); }).then(function (j) {
+          self._iaOcupada = false;
           if (!j.ok) { UI.toast(j.error || "A IA não conseguiu ler o documento.", "erro"); return; }
-          self._docParaLancamento(j.dados, origem);
-        }).catch(function () { UI.toast("Sem conexão com a IA. Tente de novo.", "erro"); });
+          self._docParaLancamento(j.dados, origem, destino);
+        })["catch"](function () {
+          self._iaOcupada = false;
+          /* a leitura do PDF/foto é local, mas a INTERPRETAÇÃO é no servidor:
+             sem internet não há o que fazer — e o caminho offline existe. */
+          UI.toast("Sem internet — a leitura por IA precisa de conexão. Use 📥 XML em lote (funciona offline) ou cadastre a nota manualmente.", "erro");
+        });
     },
     _parseNfeXml: function (xml) {
       var doc = new DOMParser().parseFromString(String(xml), "text/xml");
@@ -9311,8 +9472,43 @@ case "nova-folha": return this.novoFolha();
       var dest = { nome: sub(destEl, "xNome"), cnpj: sub(destEl, "CNPJ") || sub(destEl, "CPF"), cidade: sub(destEl, "xMun"), uf: sub(destEl, "UF") };
       return { tipoLancamento: "despesa", fornecedor: forn, destinatario: dest, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave, natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
     },
-    _docParaLancamento: function (dados, origem) {
+    _docParaLancamento: function (dados, origem, destino) {
       var fn = dados.fornecedor || {}, ehReceita = dados.tipoLancamento === "receita", msgCad = "";
+      /* Chamado da TELA FISCAL: nada é gravado — nem fornecedor, nem a nota.
+         O que a IA leu vai para o formulário e o usuário confere antes de
+         salvar. Uma nota criada sozinha, com obra vazia e imposto zerado,
+         seria uma correção manual disfarçada de automação. */
+      if (destino === "fiscal") {
+        /* QUEM EMITIU DECIDE O SINAL DO DINHEIRO. O parser devolve
+           tipoLancamento "despesa" fixo e o emitente como fornecedor; confiar
+           nisso cru fazia a nota que a PRÓPRIA empresa emitiu abrir como
+           ENTRADA e com o nome dela mesma no campo Parceiro — receita virando
+           despesa no Lançar. Mesma regra do 📥 XML em lote (_registrarNfe). */
+        var destNf = dados.destinatario || {};
+        var proprioCnpj = this._cnpjProprio();
+        var emitCnpj = String(fn.cnpj || "").replace(/\D/g, "");
+        var ehSaidaNf = ehReceita || !!(proprioCnpj && emitCnpj && emitCnpj === proprioCnpj);
+        var parcNf = ehSaidaNf && destNf.nome ? destNf : fn;
+        this.formFiscal({
+          numero: dados.numero || "", serie: dados.serie || "",
+          tipo: ehSaidaNf ? "saida" : "entrada", status: "emitida",
+          naturezaOp: dados.natureza || "", parceiro: parcNf.nome || "", obraId: "",
+          dataEmissao: dados.emissao || "", valorProdutos: 0, valorImpostos: 0,
+          valorTotal: dados.valor || 0, chaveAcesso: dados.chave || "", origem: origem || "documento-ia"
+        });
+        /* nota com a mesma chave ja no livro: o formulario abre igual (o
+           usuario pode estar corrigindo), mas com o aviso na cara — senao a
+           mesma NF-e entra duas vezes e o total de Entradas dobra. */
+        var chaveNv = String(dados.chave || "").replace(/\D/g, "");
+        var jaTemNf = chaveNv ? lista("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === chaveNv; })[0] : null;
+        UI.toast("🤖 Li a nota" + (origem ? " (" + origem + ")" : "") + " com confiança de " + Math.round((dados.confianca || 0) * 100) + "%. Confira os campos e salve — nada foi gravado ainda.", "ok");
+        if (jaTemNf) UI.toast("⚠ Já existe uma nota com esta chave de acesso (nº " + Util.esc(jaTemNf.numero || "s/n") + "). Salvar de novo vai duplicar.", "erro");
+        /* quem decide compra × venda é o CNPJ do emitente contra o SEU. Sem o
+           CNPJ da empresa preenchido não há como distinguir — melhor dizer do
+           que deixar o usuário confirmar um "Entrada" errado no reflexo. */
+        if (!proprioCnpj) UI.toast("Confira o campo Tipo: sem o CNPJ da sua empresa em ⚙ Empresa eu não consigo diferenciar compra de venda sozinho.", "erro");
+        return;
+      }
       if (fn.nome) {
         var entidade = ehReceita ? "clientes" : "fornecedores", docLimpo = String(fn.cnpj || "").replace(/\D/g, "");
         var existe = lista(entidade).filter(function (x) { return (docLimpo && x.doc && String(x.doc).replace(/\D/g, "") === docLimpo) || (x.nome || "").toLowerCase() === String(fn.nome).toLowerCase(); })[0];
@@ -9347,23 +9543,55 @@ case "nova-folha": return this.novoFolha();
       });
       UI.toast("🤖 " + msgCad + "Lançamento preenchido pela IA (confiança " + Math.round((dados.confianca || 0) * 100) + "%). Confira e salve.", "ok");
     },
+    /* Texto de um PDF. O leitor vem do VENDOR LOCAL (js/vendor/pdfjs) — o app roda
+       no canteiro sem internet, e buscar o pdf.js num CDN fazia a leitura de nota
+       por PDF simplesmente não funcionar offline, sem dizer o porquê. O CDN fica
+       só como socorro para instalação antiga que ainda não tem a pasta vendor. */
     _pdfTexto: function (file, cb) {
-      function extrair() {
+      var self = this;
+      function extrair(lib) {
         var fr = new FileReader();
         fr.onload = function () {
-          window.pdfjsLib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
+          lib.getDocument({ data: new Uint8Array(fr.result) }).promise.then(function (pdf) {
             var texto = "", n = Math.min(pdf.numPages, 3), chain = Promise.resolve();
             for (var p = 1; p <= n; p++) (function (pg) { chain = chain.then(function () { return pdf.getPage(pg).then(function (page) { return page.getTextContent().then(function (tc) { texto += tc.items.map(function (it) { return it.str; }).join(" ") + "\n"; }); }); }); })(p);
             chain.then(function () { cb(texto); });
-          }).catch(function () { cb(""); });
+          })["catch"](function () { cb(""); });
         };
         fr.readAsArrayBuffer(file);
       }
-      if (window.pdfjsLib) { extrair(); return; }
-      var s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-      s.onload = function () { try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } catch (e) {} extrair(); };
-      s.onerror = function () { UI.toast("Não carregou o leitor de PDF. Envie como imagem.", "erro"); };
-      document.head.appendChild(s);
+      if (this._pdfLib) { extrair(this._pdfLib); return; }
+      /* o build .mjs publica `window.pdfjsLib` como efeito colateral — se a
+         volumetria já importou, reaproveitamos em vez de baixar de novo; só
+         garantimos o worker, que sem apontamento faz o getDocument travar. */
+      if (window.pdfjsLib) {
+        try {
+          if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("js/vendor/pdfjs/pdf.worker.min.mjs", document.baseURI).href;
+          }
+        } catch (eW) {}
+        this._pdfLib = window.pdfjsLib; extrair(window.pdfjsLib); return;
+      }
+      function viaCdn() {
+        var s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+        s.onload = function () {
+          if (!window.pdfjsLib) { UI.toast("Não carregou o leitor de PDF. Envie como imagem.", "erro"); return; }
+          try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } catch (e) {}
+          self._pdfLib = window.pdfjsLib; extrair(window.pdfjsLib);
+        };
+        s.onerror = function () { UI.toast("Não carregou o leitor de PDF (sem internet e sem o leitor local). Envie a nota como imagem.", "erro"); };
+        document.head.appendChild(s);
+      }
+      /* `import()` resolve a partir do ARQUIVO, não da página: de dentro de
+         js/gestao.js um "./js/..." viraria "/js/js/...". Ancorar no baseURI é o
+         mesmo padrão do leitor de PDF da volumetria (_volPdf). */
+      try {
+        var raiz = document.baseURI;
+        import(new URL("js/vendor/pdfjs/pdf.min.mjs", raiz).href).then(function (lib) {
+          try { lib.GlobalWorkerOptions.workerSrc = new URL("js/vendor/pdfjs/pdf.worker.min.mjs", raiz).href; } catch (e) {}
+          self._pdfLib = lib; extrair(lib);
+        })["catch"](viaCdn);
+      } catch (eImp) { viaCdn(); }
     },
 
     // Comprime um File de imagem em dataURL JPEG ~maxW px de lado maior. cb(dataURL|null) assíncrono.

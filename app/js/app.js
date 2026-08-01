@@ -10,6 +10,59 @@
     aba: "planilha",
     orcAtual: null,
     _addItemEtapaId: null,
+    /* ACCORDION DA PLANILHA (v1.1.135) — etapas recolhidas por orçamento.
+       Mora AQUI, em memória, e nunca dentro de `orc`: Store.salvarOrcamento
+       grava o objeto inteiro, e um `etapa.recolhida` vazaria para o backup, o
+       merge da nuvem e o round-trip do Excel — virava diff fantasma entre
+       máquinas por causa de um clique de tela. O estado é escrito na string do
+       HTML no render, então sobrevive ao re-render sem passe posterior. */
+    _etapasRecolhidas: {},
+    etapaRecolhida: function (orcId, etapaId) {
+      var m = this._etapasRecolhidas[orcId];
+      return !!(m && m[etapaId]);
+    },
+    toggleEtapa: function (etapaId) {
+      var orc = this.orcAtual; if (!orc) return;
+      var m = this._etapasRecolhidas[orc.id] || (this._etapasRecolhidas[orc.id] = {});
+      if (m[etapaId]) delete m[etapaId]; else m[etapaId] = true;
+      this._aplicarRecolhidas(); // passe local: não re-renderiza (não perde foco nem rolagem)
+    },
+    /* usada por quem INSERE item numa etapa: item novo em etapa recolhida
+       nasceria invisível e o usuário jura que o lançamento não pegou. */
+    expandirEtapa: function (etapaId) {
+      var orc = this.orcAtual; if (!orc || !etapaId) return;
+      var m = this._etapasRecolhidas[orc.id];
+      if (m && m[etapaId]) delete m[etapaId];
+    },
+    _aplicarRecolhidas: function () {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      var linhas = document.querySelectorAll("[data-etapa-linhas]");
+      Array.prototype.forEach.call(linhas, function (tr) {
+        var rec = self.etapaRecolhida(orc.id, tr.getAttribute("data-etapa-linhas"));
+        /* esconder por CSS, jamais remover do DOM: _refreshAvisosInsumo mexe
+           nessas linhas e a numeração/subtotal vêm de Orcamento.calcular. */
+        if (rec) tr.classList.add("oculta"); else tr.classList.remove("oculta");
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-chevron-etapa]"), function (el) {
+        var rec = self.etapaRecolhida(orc.id, el.getAttribute("data-chevron-etapa"));
+        el.textContent = rec ? "\u25B8" : "\u25BE";
+        var td = el.parentNode;
+        if (td && td.parentNode) {
+          Array.prototype.forEach.call(td.parentNode.querySelectorAll("[data-toggle-etapa]"), function (c) {
+            c.title = (rec ? "Expandir" : "Recolher") + " esta etapa";
+          });
+        }
+      });
+      /* O BOTÃO GLOBAL TEM DE CONTAR A VERDADE. Como o toggle de uma etapa não
+         re-renderiza (de propósito: não perde foco nem rolagem), o rótulo
+         congelava — e em orçamento grande o usuário clicava em "Recolher
+         todas" e a planilha inteira ABRIA. */
+      var btnTudo = document.querySelector('[data-acao="etapas-recolher-todas"]');
+      if (btnTudo) {
+        var tudoRec = (orc.etapas || []).length > 0 && !(orc.etapas || []).some(function (e) { return !self.etapaRecolhida(orc.id, e.id); });
+        btnTudo.textContent = tudoRec ? "\u25BE Expandir todas" : "\u25B8 Recolher todas";
+      }
+    },
 
     // ---------- Boot ----------
     iniciar: function () {
@@ -495,7 +548,7 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -630,6 +683,8 @@
       if (t.dataset.editEtapa) { this.renomearEtapa(t.dataset.editEtapa); return; }
       // remover etapa
       if (t.dataset.delEtapa) { this.removerEtapa(t.dataset.delEtapa); return; }
+      // recolher/expandir a etapa (accordion) — só marcação, nada de persistir
+      if (t.dataset.toggleEtapa) { this.toggleEtapa(t.dataset.toggleEtapa); return; }
       // reordenar etapa "etapaId|dir" (dir -1 sobe / 1 desce)
       if (t.dataset.moverEtapa) {
         if (t.disabled) return;
@@ -677,6 +732,7 @@
 
       var acao = t.dataset.acao;
       switch (acao) {
+        case "etapas-recolher-todas": return this.recolherTodasEtapas();
         // v1.1.134 — ciclo completo de composições próprias
         case "minhas-composicoes": this.minhasComposicoes(); break;
         case "mc-ver": this.verInsumos(t.dataset.cod); break;
@@ -1525,6 +1581,7 @@
         etapaId = o.etapas[o.etapas.length - 1].id;
       }
       var out = ParedeCebola.aplicarNoOrcamento(o, etapaId, res.camadas);
+      this.expandirEtapa(etapaId); // camadas novas não podem nascer escondidas numa etapa recolhida
       this._pcPreview = null;  // limpa o preview após aplicar
       this.aba = "planilha";  // leva o usuário pro orçamento pra ver as camadas
       this.persistir(); this.render();
@@ -1915,6 +1972,13 @@
       setTimeout(function () { var i = UI.el("et-nome"); if (i) { i.focus(); i.select(); } }, 50);
     },
 
+    recolherTodasEtapas: function () {
+      var orc = this.orcAtual; if (!orc) return;
+      var m = this._etapasRecolhidas[orc.id] || (this._etapasRecolhidas[orc.id] = {});
+      var algumAberto = (orc.etapas || []).some(function (e) { return !m[e.id]; });
+      (orc.etapas || []).forEach(function (e) { if (algumAberto) m[e.id] = true; else delete m[e.id]; });
+      this.render(); // o rótulo do botão muda junto
+    },
     removerEtapa: function (etapaId) {
       // LOTE 1: etapa pode ter dezenas de itens e não há desfazer — confirmar antes.
       var self = this, orc = this.orcAtual;
@@ -1968,11 +2032,14 @@
       } catch (e) {}
     },
 
-    abrirBuscaSinapi: function (etapaId) {
+    /* termoInicial: reabre a busca com o que já estava digitado — é o que
+       sustenta o "Adicionar e continuar" (lançar vários itens da mesma busca
+       sem redigitar). Chamada sem o 2º argumento continua idêntica. */
+    abrirBuscaSinapi: function (etapaId, termoInicial) {
       this._addItemEtapaId = etapaId;
       var self = this;
       var corpo =
-        '<div class="field"><input id="bs-q" placeholder="Buscar por código ou descrição (ex.: alvenaria bloco, concreto fck)" autofocus></div>' +
+        '<div class="field"><input id="bs-q" value="' + Util.esc(termoInicial || "") + '" placeholder="Buscar por código ou descrição (ex.: alvenaria bloco, concreto fck)" autofocus></div>' +
         '<div class="row" style="gap:8px;margin-bottom:4px">' +
           '<div class="field"><label>Banco de preços</label><select id="bs-fonte"><option value="">Todos os bancos ativos</option></select></div>' +
           '<div class="field"><label>Tipo</label><select id="bs-tipo"><option value="">Composições + insumos</option><option value="composicao">Só composições</option><option value="insumo">Só insumos</option></select></div>' +
@@ -2136,6 +2203,7 @@
         }
         if (inp.value.trim().length >= 2) doSearch();
         inp.focus();
+        if (termoInicial) inp.select(); // digitar troca a busca inteira; End/→ refina
       }
 
       // Se a base ainda não carregou, abre assim mesmo e espera (ou avisa em caso de falha)
@@ -2163,7 +2231,35 @@
       var lim = Auth.limite("limiteItensPorOrcamento");
       if (totalItens >= lim) { UI.toast("Limite de itens do plano atingido. Faça upgrade.", "erro"); return; }
       var self = this;
+      /* capturado ANTES do fecharModal: ele faz m.remove() e leva junto o
+         #bs-q e todo o closure da busca. */
+      var termoBusca = String((UI.el("bs-q") || {}).value || "");
+      var etapaAlvo = this._addItemEtapaId;
       UI.fecharModal();
+      /* uma função só para os dois botões: duplicar o corpo abriria espaço para
+         a regra de preço zerado divergir entre "adicionar" e "adicionar e
+         continuar" — que é exatamente o tipo de diferença que ninguém percebe. */
+      function lancar(continuar) {
+        var qtd = Util.num((UI.el("qi-qtd") || {}).value);
+        var cu = Util.num((UI.el("qi-cu") || {}).value);
+        var cfgZ = Orcamento.garantirConfig(self.orcAtual);
+        if (cu <= 0 && !cfgZ.permitirZerado) {
+          UI.toast("Este item está com preço zerado. Informe o custo unitário ou libere em Parâmetros → “Permitir insumos com preço zerado”.", "erro");
+          return;
+        }
+        var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
+        Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd);
+        /* item novo em etapa recolhida nasceria invisível — o usuário reporta
+           como "não lançou". */
+        if (self.expandirEtapa) self.expandirEtapa(etapaAlvo);
+        self.persistir(); UI.fecharModal(); self.render();
+        if (continuar) {
+          UI.toast("Item adicionado — continue lançando.", "ok");
+          self.abrirBuscaSinapi(etapaAlvo, termoBusca);
+        } else {
+          UI.toast("Item adicionado.", "ok");
+        }
+      }
       UI.modal("Quantidade — " + Util.esc(item.codigo),
         '<p>' + Util.esc(item.descricao) + '</p>' +
         '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(item.unidade) + ')</label>' +
@@ -2171,21 +2267,10 @@
         '<div class="field"><label>Custo unitário</label><input id="qi-cu" value="' + Util.fmtNum(item.custoUnitario, 2) + '"></div></div>',
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-          { texto: "Adicionar item", classe: "success", onClick: function () {
-            var qtd = Util.num((UI.el("qi-qtd") || {}).value);
-            var cu = Util.num((UI.el("qi-cu") || {}).value);
-            // Parâmetro do orçamento: item com preço zerado só entra se o usuário
-            // liberou no assistente (senão vira "buraco" invisível na planilha).
-            var cfgZ = Orcamento.garantirConfig(self.orcAtual);
-            if (cu <= 0 && !cfgZ.permitirZerado) {
-              UI.toast("Este item está com preço zerado. Informe o custo unitário ou libere em Parâmetros → “Permitir insumos com preço zerado”.", "erro");
-              return;
-            }
-            var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
-            Orcamento.addItem(self.orcAtual, self._addItemEtapaId, itemAjustado, qtd);
-            self.persistir(); UI.fecharModal(); self.render();
-            UI.toast("Item adicionado.", "ok");
-          } }
+          // Parâmetro do orçamento: item com preço zerado só entra se o usuário
+          // liberou no assistente (senão vira "buraco" invisível na planilha).
+          { texto: "+ Adicionar e lançar outro", classe: "", onClick: function () { lancar(true); } },
+          { texto: "Adicionar item", classe: "success", onClick: function () { lancar(false); } }
         ]);
     },
 
@@ -2873,6 +2958,7 @@
         // Respeita o limite de itens do plano (mesma régua do escolherItemSinapi).
         var addOk = false, limEstourado = false;
         if (st.addNaEtapa && self.orcAtual && (self.orcAtual.etapas || []).some(function (e) { return e.id === st.addNaEtapa; })) {
+          self.expandirEtapa(st.addNaEtapa); // senão o item nasce escondido numa etapa recolhida
           var limCp = Auth.limite("limiteItensPorOrcamento");
           if (Orcamento.totais(self.orcAtual).qtdItens >= limCp) {
             limEstourado = true;
@@ -2986,6 +3072,7 @@
           var item = self.salvarInsumoProprio(d);
           if (!item) return; // inválido — modal fica aberto
           if (etapa && self.orcAtual && (self.orcAtual.etapas || []).some(function (e) { return e.id === etapa; })) {
+            self.expandirEtapa(etapa); // idem: item novo não pode nascer invisível
             if (Orcamento.totais(self.orcAtual).qtdItens >= Auth.limite("limiteItensPorOrcamento")) {
               UI.toast("Insumo salvo, mas não entrou na planilha: limite de itens do plano atingido.", "erro");
             } else {
@@ -3084,7 +3171,9 @@
         var cand = l.candidatos[l.escolhido];
         var item = Util.clone(cand.item);
         item.baseFonte = cand.fonte || "SINAPI";
-        Orcamento.addItem(this.orcAtual, etapaParaLinha(l, item), item, l.quantidade);
+        var etapaDaLinha = etapaParaLinha(l, item);
+        Orcamento.addItem(this.orcAtual, etapaDaLinha, item, l.quantidade);
+        this.expandirEtapa(etapaDaLinha); // lote do Escopo: item invisível vira "não lançou"
         add++;
       }
       this._escopoIA = false;

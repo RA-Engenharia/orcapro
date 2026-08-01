@@ -4,13 +4,21 @@
  * Só cacheia o MESMO domínio (IA, servidor de licença e fontes externas vão direto pra rede). */
 /* IMPORTANTE: o nome do cache carrega a versão. A cada release o 'activate' abaixo apaga
  * os caches de versões antigas -> força buscar o código novo (evita app rodando JS velho após update). */
-var CACHE = 'orcapro-app-v1.1.134';
+var CACHE = 'orcapro-app-v1.1.135';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
   // Pré-cacheia o leitor de .xls (SheetJS): é lazy-load — não é baixado no boot normal do app,
   // então sem isto o import de .xls quebraria offline após instalar. Falha silenciosa (não trava o install).
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.add('./js/vendor/xlsx.full.min.js').catch(function () {}); }));
+  // Idem para o leitor de PDF (pdf.js): nota fiscal em PDF e volumetria de planta
+  // carregam o módulo sob demanda — sem pré-cache, a primeira tentativa offline falha.
+  e.waitUntil(caches.open(CACHE).then(function (c) {
+    return Promise.all([
+      c.add('./js/vendor/xlsx.full.min.js').catch(function () {}),
+      c.add('./js/vendor/pdfjs/pdf.min.mjs').catch(function () {}),
+      c.add('./js/vendor/pdfjs/pdf.worker.min.mjs').catch(function () {})
+    ]);
+  }));
 });
 self.addEventListener('activate', function (e) {
   e.waitUntil(

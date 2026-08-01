@@ -308,6 +308,13 @@ table.tbl tbody tr:last-child td { border-bottom: none; }
 table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
 table.tbl tr.etapa-row td { background: var(--surface-2); font-weight: 700; box-shadow: inset 3px 0 0 var(--aco); }
 table.tbl tr.etapa-row:hover td { background: var(--surface-3); }
+/* accordion da planilha: a linha continua NO DOM (o refresh de avisos e a
+   numeração contam com isso) — some só da tela. A regra fica presa a .oculta,
+   nunca a .etapa-row, que também é usada no sintético, no cronograma e no
+   preview do importador. */
+table.tbl tr.oculta { display: none; }
+table.tbl tr.etapa-row td[data-toggle-etapa] { user-select: none; }
+table.tbl tr.etapa-row td[data-toggle-etapa]:hover { background: var(--surface-3); }
 table.tbl input.cell { width: 100%; border: 1px solid transparent; background: transparent; padding: 5px 7px; border-radius: 6px; text-align: right; transition: .1s; }
 table.tbl input.cell:hover { border-color: var(--linha-forte); background: var(--surface); }
 table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface); box-shadow: 0 0 0 3px rgba(46,111,158,.13); outline: none; }

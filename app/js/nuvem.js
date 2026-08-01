@@ -19,6 +19,10 @@
     // peso de bloco do fornecedor do usuário: 1 registro por peça, sem obraId
     // (é catálogo da empresa, não da obra — logo não entra em cascata nenhuma)
     "pesos_bloco",
+    // EPI que a empresa cadastrou (não está no catálogo de fábrica): também é
+    // catálogo da EMPRESA, sem obraId — e sem estar aqui a exclusão não deixaria
+    // lápide, então o item apagado num aparelho ressuscitaria no outro.
+    "epi_catalogo",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava

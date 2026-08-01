@@ -14,7 +14,10 @@
     categorias: [
       ["cabeca", "Proteção da cabeça"], ["visao", "Olhos e face"], ["auditiva", "Auditiva"],
       ["respiratoria", "Respiratória"], ["maos", "Mãos e braços"], ["pes", "Pés e pernas"],
-      ["tronco", "Tronco"], ["alturas", "Proteção contra quedas"], ["corpo", "Vestimenta / sinalização"]
+      ["tronco", "Tronco"], ["alturas", "Proteção contra quedas"], ["corpo", "Vestimenta / sinalização"],
+      // Grupo G do Anexo I da NR-6 (creme protetor). Faltava categoria de pele —
+      // protetor solar caía em "Vestimenta", que é outra coisa.
+      ["pele", "Proteção da pele"]
     ],
     itens: [
       { id: "epi-cap-aba", categoria: "cabeca", nome: "Capacete de segurança aba frontal", descricao: "Capacete classe B, com suspensão e jugular, para construção civil", unidade: "un", valorRef: 22.90, vidaUtilDias: 1825, ca: "" },
@@ -52,7 +55,12 @@
       { id: "epi-cinturao", categoria: "alturas", nome: "Cinturão paraquedista", descricao: "Cinturão de segurança tipo paraquedista, trabalho em altura", unidade: "un", valorRef: 95.00, vidaUtilDias: 1825, ca: "" },
       { id: "epi-talabarte-y", categoria: "alturas", nome: "Talabarte em Y com absorvedor", descricao: "Talabarte duplo (Y) com absorvedor de energia e ganchos", unidade: "un", valorRef: 120.00, vidaUtilDias: 1825, ca: "" },
       { id: "epi-talabarte-simples", categoria: "alturas", nome: "Talabarte simples", descricao: "Talabarte de posicionamento regulável", unidade: "un", valorRef: 65.00, vidaUtilDias: 1825, ca: "" },
-      { id: "epi-trava-quedas", categoria: "alturas", nome: "Trava-quedas", descricao: "Trava-quedas deslizante para corda/cabo", unidade: "un", valorRef: 85.00, vidaUtilDias: 1825, ca: "" }
+      { id: "epi-trava-quedas", categoria: "alturas", nome: "Trava-quedas", descricao: "Trava-quedas deslizante para corda/cabo", unidade: "un", valorRef: 85.00, vidaUtilDias: 1825, ca: "" },
+      /* valorRef 0 DE PROPÓSITO: não tenho preço de referência com fonte para
+         protetor solar ocupacional, e chutar um número aqui vira custo de EPI
+         na ficha de entrega. Zero = "informe o seu" — é o mesmo tratamento que
+         o app dá a insumo sem preço coletado. */
+      { id: "epi-protetor-solar", categoria: "pele", nome: "Protetor solar FPS 30+", descricao: "Creme protetor de segurança contra radiação solar, trabalho a céu aberto (NR-6, Anexo I, grupo G) — informe o valor da sua compra", unidade: "un", valorRef: 0, vidaUtilDias: 90, ca: "" }
     ]
   };
 
@@ -107,6 +115,60 @@
 
     /* URL de consulta pública do CA — aberta no navegador (o servidor não faz scrape). */
     consultaCaUrl: function (numero) { var n = String(numero || "").replace(/\D/g, ""); return n ? "https://consultaca.com/" + n : "https://consultaca.com/"; },
+
+    /* CA PENDENTE é DERIVADO, nunca um campo gravado: sem dígito nenhum, não há
+     * Certificado de Aprovação informado. Existe porque a ficha NR-6 imprimia
+     * "N/A" para CA vazio — e "não se aplica" é uma afirmação falsa num
+     * documento que o colaborador assina. Inventar número de CA é proibido;
+     * dizer "pendente" é o único jeito honesto. */
+    caPendente: function (v) { return !String(v == null ? "" : v).replace(/\D/g, ""); },
+
+    /* Catálogo próprio da empresa por cima do de fábrica (mesmo contrato do
+     * Blocos.usarOverrides): RESTAURA a fábrica antes de aplicar, senão o EPI
+     * de uma empresa vaza para a outra quando troca de conta sem recarregar.
+     * Recebe a lista PRONTA — o motor não fala com o Store, para continuar
+     * rodando em Node puro. */
+    _propEmpresa: null,
+    usarProprios: function (lista, empresaId) {
+      var self = this, aplicados = [], recusados = [];
+      var deFabrica = {};
+      CATALOGO.itens.forEach(function (it) { deFabrica[it.id] = 1; });
+      var vistos = {};
+      var cats = {};
+      CATALOGO.categorias.forEach(function (c) { cats[c[0]] = 1; });
+      (lista || []).forEach(function (r) {
+        if (!r) return;
+        var nome = String(r.nome == null ? "" : r.nome).trim();
+        if (nome.length < 3) { recusados.push({ id: r && r.id, motivo: "Nome muito curto." }); return; }
+        var id = String(r.id == null ? "" : r.id).trim();
+        /* id de fábrica reaproveitado faria Epi.item() devolver o item errado
+           para entregas antigas — o próprio é recusado, não substitui. */
+        if (!id || deFabrica[id]) { recusados.push({ id: id, motivo: "Código reservado do catálogo de fábrica." }); return; }
+        if (vistos[id]) { recusados.push({ id: id, motivo: "Código repetido." }); return; }
+        vistos[id] = 1;
+        aplicados.push({
+          id: id, categoria: cats[r.categoria] ? r.categoria : "corpo", nome: nome,
+          descricao: String(r.descricao == null ? "" : r.descricao),
+          unidade: String(r.unidade == null ? "" : r.unidade).trim() || "un",
+          valorRef: Number(r.valorRef) > 0 ? Number(r.valorRef) : 0,
+          vidaUtilDias: Number(r.vidaUtilDias) > 0 ? Math.round(Number(r.vidaUtilDias)) : 0,
+          ca: "", /* CA é do modelo comprado — informado na ENTREGA, nunca no cadastro */
+          proprio: true
+        });
+      });
+      /* concat (nunca push): _itens guarda a referência do array literal de
+         CATALOGO.itens — um push contaminaria o catálogo de fábrica em memória
+         e cada re-aplicação duplicaria os próprios. */
+      this._itens = CATALOGO.itens.concat(aplicados);
+      this._cats = CATALOGO.categorias;
+      this.carregado = this._itens.length > 0;
+      this._propEmpresa = empresaId || null;
+      return { ok: true, aplicados: aplicados.length, recusados: recusados, empresaId: empresaId || null };
+    },
+
+    /* Quantos itens são de fábrica (o KPI "no catálogo" deixaria de ser
+       comparável se somasse os próprios sem separar). */
+    totalFabrica: function () { return CATALOGO.itens.length; },
 
     resumo: function () {
       if (!this.carregado) this.carregarDe(CATALOGO);

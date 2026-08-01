@@ -468,8 +468,12 @@
 
     // ----- Aba Planilha (analítico editável) -----
     renderPlanilha: function (orc) {
-      var html = '<div class="flex between mb"><div></div>' +
-        '<button class="btn sm" data-acao="add-etapa">+ Etapa</button></div>';
+      var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas.length)
+        ? !orc.etapas.some(function (e) { return !App.etapaRecolhida(orc.id, e.id); }) : false;
+      var html = '<div class="flex between mb"><div></div><div style="display:flex;gap:6px">' +
+        (orc.etapas.length > 1 ? '<button class="btn sm ghost" data-acao="etapas-recolher-todas" title="Orçamento grande: recolha as etapas para enxergar o todo">' +
+          (recTudo ? "\u25BE Expandir todas" : "\u25B8 Recolher todas") + '</button>' : "") +
+        '<button class="btn sm" data-acao="add-etapa">+ Etapa</button></div></div>';
       if (!orc.etapas.length) {
         html += '<div class="vazio card">Adicione uma <b>etapa</b> (ex.: Serviços Preliminares) e depois itens da SINAPI.</div>';
         return html;
@@ -499,8 +503,13 @@
         var se = { custoDireto: Arred.valor(sm.custo, _c.modo), precoVenda: Arred.valor(sm.venda, _c.modo) };
         // número da etapa = posição (1, 2, 3…); item = 2.1, 2.2… (derivado da posição)
         var numEtapa = String(ei + 1);
-        html += '<tr class="etapa-row"><td><b>' + numEtapa + '</b></td>' +
-          '<td colspan="5">' + Util.esc(e.nome) + '</td>' +
+        /* recolhido é estado de TELA (App._etapasRecolhidas), nunca do dado.
+           A própria linha da etapa jamais some: é ela que segura os subtotais. */
+        var rec = (typeof App !== "undefined" && App.etapaRecolhida) ? App.etapaRecolhida(orc.id, e.id) : false;
+        var nItensEt = e.itens.length;
+        html += '<tr class="etapa-row"><td data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa"><span data-chevron-etapa="' + e.id + '">' + (rec ? "▸" : "▾") + '</span> <b>' + numEtapa + '</b></td>' +
+          '<td colspan="5" data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa">' + Util.esc(e.nome) +
+            ' <span class="muted" style="font-weight:400;font-size:11px">(' + nItensEt + (nItensEt === 1 ? " item" : " itens") + ')</span></td>' +
           '<td class="num">' + Util.fmtMoeda(se.custoDireto) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(se.precoVenda) + '</td>' +
           '<td class="right"><div class="acoes">' +
@@ -523,7 +532,7 @@
           var pillCls = fonte === "SINAPI" ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
           var numItem = Orcamento.itemNumero(ei, ii); // 2.1, 2.2… (mesma regra dos entregáveis)
           var temCod = it.codigo && it.codigo !== "—";
-          html += '<tr>' +
+          html += '<tr data-etapa-linhas="' + e.id + '"' + (rec ? ' class="oculta"' : "") + '>' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
@@ -550,7 +559,7 @@
           if (ehSinapi) {
             var nSem = UI._insumosSemPrecoDe(it.codigo);
             if (nSem > 0) {
-              html += '<tr class="tr-aviso-insumo"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
+              html += '<tr class="tr-aviso-insumo' + (rec ? " oculta" : "") + '" data-etapa-linhas="' + e.id + '"><td colspan="9">' + UI._avisoInsumoHtml(it.codigo, nSem) + '</td></tr>';
             }
           }
         });
