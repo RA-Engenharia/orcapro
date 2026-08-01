@@ -23,6 +23,11 @@
     // catálogo da EMPRESA, sem obraId — e sem estar aqui a exclusão não deixaria
     // lápide, então o item apagado num aparelho ressuscitaria no outro.
     "epi_catalogo",
+    // NOTA FISCAL e o que nasce dela. Ficaram de fora desde sempre: a nota
+    // importada no computador não aparecia no celular, e o bem comprado
+    // tampouco. Com itens e parcelas dentro do registro fiscal, isso deixou
+    // de ser detalhe — é o documento que prova a compra.
+    "fiscal", "patrimonio", "estoque_mov",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava

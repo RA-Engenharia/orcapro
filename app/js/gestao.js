@@ -835,7 +835,7 @@
       ["epi", "entrega(s) de EPI"], ["ponto", "registro(s) de ponto"],
       ["fs_lancamentos", "lançamento(s) da folha semanal"],
       ["folha", "folha(s) de pagamento"], ["frota_mov", "uso(s) de veículo"],
-      ["financeiro", "lançamento(s) financeiro(s)"], ["fiscal", "nota(s) fiscal(is)"],
+      ["financeiro", "lançamento(s) financeiro(s)"],
       ["centrocusto", "registro(s) de centro de custo"],
       /* níveis são do PROJETO daquela obra: o Térreo da obra A não é o da B */
       ["bim_niveis", "nível(is) do projeto"]
@@ -849,6 +849,11 @@
     _ENT_SO_DESVINCULA: [
       ["colaboradores", "colaborador(es) alocado(s)"],
       ["patrimonio", "bem(ns) do patrimônio"],
+      /* NOTA FISCAL NÃO MORRE COM A OBRA. Enquanto o obraId nascia sempre
+         vazio isso não aparecia; agora que a nota é vinculada à obra na
+         triagem, apagar a obra apagaria documento fiscal — que a empresa é
+         obrigada a guardar por 5 anos. Perde o vínculo, não o documento. */
+      ["fiscal", "nota(s) fiscal(is)"],
       ["frota", "veículo(s)"]
     ],
     _vinculosDaObra: function (obraId) {
@@ -942,7 +947,19 @@
       this._ENT_SO_DESVINCULA.forEach(function (par) {
         try {
           Store.listar(e, par[0]).forEach(function (r) {
-            if (r && r.obraId === id) { r.obraId = ""; r.obraNome = ""; Store.salvar(e, par[0], r); }
+            if (!r) return;
+            /* a nota guarda obraId TAMBEM dentro de cada item (a triagem grava
+               ali). Limpar so o topo deixava id de obra morta no item — e ao
+               relancar, as parcelas nasciam apontando para uma obra que nao
+               existe mais: dinheiro fora de qualquer relatorio. */
+            var mudou = false;
+            if (Util.arr(r.itens).length) {
+              Util.arr(r.itens).forEach(function (it) {
+                if (it && it.obraId === id) { it.obraId = ""; it.obraNome = ""; mudou = true; }
+              });
+            }
+            if (r.obraId === id) { r.obraId = ""; r.obraNome = ""; mudou = true; }
+            if (mudou) Store.salvar(e, par[0], r);
           });
         } catch (er) {}
       });
@@ -6883,7 +6900,7 @@ renderRequisicoes: function () {
         + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">➕ Cadastrar insumo próprio (fora das bases oficiais)</button>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
+    afterRender: function (view) { if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -7361,6 +7378,9 @@ renderRequisicoes: function () {
       };
     },
     renderFiscal: function () {
+      /* A triagem é uma SUB-TELA do Fiscal, não uma view nova: assim herda o
+         RBAC do módulo e o roteador de views continua com a lista fixa. */
+      if (this._triagem && this._triagem.notaId) return this._renderTriagem();
       var nfs = lista("fiscal"), obras = lista("obras");
       var totEnt = nfs.filter(function (n) { return n.tipo === "entrada" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
@@ -7378,11 +7398,390 @@ renderRequisicoes: function () {
         var ob = obras.filter(function (o) { return o.id === n.obraId; })[0];
         var numTxt = n.numero ? n.numero : "—";
         if (n.serie) numTxt += "/" + n.serie;
-        var btn = n.status === "emitida" ? '<button class="btn sm primary" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>' : "";
+        var nItens = Util.arr(n.itens).length;
+        var pend = Util.arr(n.itens).filter(function (x) { return x.st !== "lancado" && x.st !== "ignorado"; }).length;
+        /* nota antiga (importada antes desta versão) não tem itens gravados —
+           o botão não aparece em vez de abrir uma tela vazia sem explicação */
+        var btnTri = nItens
+          ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">📦 Itens (' + nItens + ')' +
+            (pend ? ' <span class="pill proprio">' + pend + " a triar</span>" : " ✔") + "</button> "
+          : "";
+        var jaLanc = Util.arr(lista("financeiro")).some(function (f) { return f.docChave && n.chaveAcesso && String(f.docChave) === String(n.chaveAcesso); });
+        var btn = n.status === "emitida"
+          ? (jaLanc ? '<span class="pill" title="Esta nota já virou lançamento no Financeiro">✔ Lançada</span>'
+            : '<button class="btn sm primary" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>')
+          : "";
+        btn = btnTri + btn;
         html += '<tr><td style="cursor:pointer" data-gopen="fiscal:' + n.id + '"><b>' + Util.esc(numTxt) + "</b></td><td>" + rot(P.fiscalTipo, n.tipo) + "</td><td>" + Util.esc(n.parceiro || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(n.valorTotal)) + "</td><td>" + pill(n.status) + '</td><td class="num">' + btn + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
+    /* ============ TRIAGEM DOS ITENS DA NOTA ============================
+       A nota do fornecedor de obra vem misturada: EPI, ferramenta de R$ 3 mil
+       e material de consumo na mesma folha. Aqui o usuário diz, item a item
+       (ou de uma vez), para onde cada coisa vai. O app SUGERE; quem grava é o
+       clique dele. */
+    _triagem: null,
+    triAbrir: function (notaId) {
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("fiscal")) { UI.toast("Seu usuário não tem permissão no módulo Fiscal.", "erro"); return; }
+      var nf = Store.obter(eid(), "fiscal", notaId);
+      if (!nf) { UI.toast("Nota não encontrada.", "erro"); return; }
+      var itens = Util.arr(nf.itens);
+      if (!itens.length) { UI.toast("Esta nota foi importada antes desta versão e não tem os itens guardados. Importe o XML de novo para triar.", "erro"); return; }
+      /* já triado antes? recupera as escolhas; senão parte das sugestões */
+      var linhas = (typeof NFItens !== "undefined") ? NFItens.sugerirNota(itens) : [];
+      itens.forEach(function (it, i) {
+        if (!linhas[i]) return;
+        if (it.destino) linhas[i].destino = it.destino;
+        if (it.obraId) linhas[i].obraId = it.obraId;
+        if (it.responsavelId) linhas[i].responsavelId = it.responsavelId;
+        if (it.st) linhas[i].st = it.st;
+        if (it.ca) linhas[i].ca = it.ca;
+        if (it.categoria) linhas[i].categoria = it.categoria;
+      });
+      this._triagem = { notaId: notaId, linhas: linhas, marcadas: {}, lote: { obra: "", resp: "", dest: "" } };
+      App.view = "fiscal"; App.render();
+    },
+    triFechar: function () { this._triagem = null; App.render(); },
+    _triNota: function () { return this._triagem ? Store.obter(eid(), "fiscal", this._triagem.notaId) : null; },
+
+    _renderTriagem: function () {
+      var self = this, t = this._triagem, nf = this._triNota();
+      if (!nf) { this._triagem = null; return this.renderFiscal(); }
+      var obras = lista("obras"), colabs = lista("colaboradores").filter(function (c) { return c.status !== "inativo"; });
+      /* a soma dos ITENS bate com o valor dos PRODUTOS, nao com o total da nota
+         (que inclui IPI/ST/frete) — comparar com o total acusava divergencia em
+         toda nota com imposto por fora. */
+      var baseConf = Util.num(nf.valorProdutos) > 0 ? Util.num(nf.valorProdutos) : Util.num(nf.valorTotal);
+      var lote = t.lote || (t.lote = { obra: "", resp: "", dest: "" });
+      var R = (typeof NFItens !== "undefined") ? NFItens.resumo(t.linhas, baseConf) : { porDestino: {}, bate: true, somaItens: 0, pendentes: 0, lancados: 0 };
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
+
+      var DEST = [["estoque", "📦 Estoque"], ["patrimonio", "🏷 Patrimônio"], ["consumo", "🚧 Consumo na obra"], ["epi", "🦺 EPI"], ["ignorar", "— Ignorar"]];
+      var optDest = function (sel) {
+        return DEST.map(function (d) { return '<option value="' + d[0] + '"' + (sel === d[0] ? " selected" : "") + ">" + d[1] + "</option>"; }).join("");
+      };
+      var optObra = function (sel) {
+        return '<option value="">— sem obra —</option>' + obras.map(function (o) {
+          return '<option value="' + o.id + '"' + (sel === o.id ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>";
+        }).join("");
+      };
+      var optResp = function (sel) {
+        return '<option value="">— ninguém —</option>' + colabs.map(function (c) {
+          return '<option value="' + c.id + '"' + (sel === c.id ? " selected" : "") + ">" + Util.esc(c.nome) + "</option>";
+        }).join("");
+      };
+
+      var html = '<div class="flex between mb"><h2 style="margin:0">' + svg("fiscal") + " Itens da NF " + Util.esc(nf.numero || "s/n") +
+        (nf.serie ? "/" + Util.esc(nf.serie) : "") + '</h2><button class="btn ghost" data-gacao="tri-fechar">← Voltar para as notas</button></div>';
+
+      html += '<div class="card mb" style="padding:10px 12px">' +
+        "<b>" + Util.esc(nf.parceiro || "—") + "</b>" + (nf.cnpjParceiro ? ' <span class="muted">· ' + Util.esc(nf.cnpjParceiro) + "</span>" : "") +
+        ' <span class="muted">· emissão ' + brd(nf.dataEmissao) + " · " + rot(P.fiscalTipo, nf.tipo) + "</span>" +
+        '<div style="margin-top:6px">Total da nota <b>' + Util.fmtMoeda(Util.num(nf.valorTotal)) + "</b>" +
+        " · produtos " + Util.fmtMoeda(Util.num(nf.valorProdutos)) + " · impostos " + Util.fmtMoeda(Util.num(nf.valorImpostos)) +
+        (Util.arr(nf.duplicatas).length ? " · <b>" + Util.arr(nf.duplicatas).length + " parcela(s)</b> no boleto" : " · à vista") + "</div>" +
+        /* a soma dos itens tem de bater com a nota: divergência aqui é item
+           truncado ou frete/desconto que ninguém distribuiu */
+        (Util.num(nf.itensTruncados) > 0
+          ? '<div style="font-size:12px;margin-top:4px;color:#b45309">⚠ Esta nota tem mais itens do que eu consigo triar de uma vez: ' +
+            Util.num(nf.itensTruncados) + " item(ns) ficaram de fora.</div>"
+          : (R.bate ? '<div class="muted" style="font-size:12px;margin-top:4px">✔ A soma dos ' + t.linhas.length + " itens bate com o valor dos produtos.</div>"
+            : '<div style="font-size:12px;margin-top:4px;color:#b45309">⚠ A soma dos itens (' + Util.fmtMoeda(R.somaItens) + ") difere do valor dos produtos em " +
+              Util.fmtMoeda(Math.abs(R.diferenca)) + " — confira desconto por item, frete ou item faltando.</div>")) +
+        "</div>";
+
+      /* barra de LOTE — é literalmente o pedido: "vincular todos os itens de
+         uma vez para qual obra vai ser a nota" */
+      html += '<div class="card mb" style="padding:10px 12px">' +
+        '<div style="font-weight:700;font-size:13px;margin-bottom:6px">Aplicar a todos os itens marcados</div>' +
+        '<div class="row" style="gap:8px;align-items:end">' +
+        /* o valor escolhido tem de SOBREVIVER ao re-render: marcar as linhas
+           repinta a tela, e o select voltava para "— sem obra —" — o usuário
+           escolhia a obra, marcava todos, clicava Aplicar e o app respondia
+           "escolha o que aplicar". O gesto principal do pedido não funcionava
+           na ordem natural. */
+        '<div class="field"><label>Obra</label><select id="tri-lote-obra">' + optObra(lote.obra) + "</select></div>" +
+        '<div class="field"><label>Responsável</label><select id="tri-lote-resp">' + optResp(lote.resp) + "</select></div>" +
+        '<div class="field"><label>Destino</label><select id="tri-lote-dest"><option value="">— manter —</option>' +
+          DEST.map(function (dd) { return '<option value="' + dd[0] + '"' + (lote.dest === dd[0] ? " selected" : "") + ">" + dd[1] + "</option>"; }).join("") + "</select></div>" +
+        '<div class="field" style="max-width:220px"><label>&nbsp;</label><button class="btn primary" data-gacao="tri-aplicar-lote" style="width:100%">Aplicar aos marcados</button></div>' +
+        "</div>" +
+        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">' +
+        '<button class="btn sm ghost" data-gacao="tri-marcar-todas">☑ Marcar/desmarcar todos</button>' +
+        '<button class="btn sm ghost" data-gacao="tri-aceitar-sugestoes" title="Adota o palpite do sistema em todas as linhas ainda não lançadas — você continua confirmando no botão Lançar">✨ Aceitar as sugestões</button>' +
+        "</div></div>";
+
+      html += '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr>' +
+        "<th></th><th>#</th><th>Descrição</th><th class='num'>Qtd</th><th class='num'>Unit.</th><th class='num'>Total</th>" +
+        "<th>Sugestão</th><th>Destino</th><th>Obra</th><th>Responsável</th><th>Situação</th></tr></thead><tbody>";
+
+      t.linhas.forEach(function (l, i) {
+        var lanc = l.st === "lancado", ign = l.st === "ignorado";
+        var corConf = l.sugestao.confianca === "alta" ? "" : "proprio";
+        html += "<tr" + (lanc ? ' style="opacity:.6"' : "") + ">" +
+          '<td><input type="checkbox" data-tri-mark="' + i + '"' + (t.marcadas[i] ? " checked" : "") + (lanc ? " disabled" : "") + "></td>" +
+          "<td>" + l.numero + "</td>" +
+          "<td><b>" + Util.esc(l.descricao) + "</b>" +
+            /* o número quase sempre JÁ está escrito na descrição ("OCULOS ... CA
+               11268") — repetir ao lado dava "CA 11268 CA 11268", com cara de
+               dado corrompido. Quando já aparece, o selo só confirma que foi
+               reconhecido; quando não, mostra o número. */
+            (l.ca ? (String(l.descricao).replace(/\s+/g, " ").toUpperCase().indexOf("CA " + l.ca) > -1 || String(l.descricao).toUpperCase().indexOf("CA" + l.ca) > -1
+              ? ' <span class="pill" title="Reconheci o CA ' + Util.esc(l.ca) + ' escrito na descrição da nota — não foi inventado">✔ CA reconhecido</span>'
+              : ' <span class="pill" title="CA lido da nota — não foi inventado">CA ' + Util.esc(l.ca) + "</span>") : "") +
+            '<br><span class="muted" style="font-size:10.5px">' + (l.codigo ? "cód. " + Util.esc(l.codigo) + " · " : "") +
+            (l.ncm ? "NCM " + Util.esc(l.ncm) : "") + (l.cfop ? " · CFOP " + Util.esc(l.cfop) : "") + "</span></td>" +
+          '<td class="num">' + Util.fmtNum(l.quantidade, 2) + " " + Util.esc(l.unidade) + "</td>" +
+          '<td class="num">' + Util.fmtMoeda(l.valorUnitario) + "</td>" +
+          '<td class="num"><b>' + Util.fmtMoeda(l.valor) + "</b></td>" +
+          /* "alta"/"baixa" sozinho não diz o que fazer; o glifo diz se precisa
+             olhar, e o title traz o porquê do palpite. */
+          '<td><span class="pill ' + corConf + '" title="' + Util.esc(l.sugestao.motivo) + '">' +
+            (l.sugestao.confianca === "alta" ? "✔ alta" : (l.sugestao.confianca === "media" ? "~ confira" : "⚠ confira")) + "</span></td>" +
+          '<td><select data-tri-dest="' + i + '"' + (lanc ? " disabled" : "") + ">" + optDest(l.destino) + "</select></td>" +
+          '<td><select data-tri-obra="' + i + '"' + (lanc ? " disabled" : "") + ">" + optObra(l.obraId) + "</select></td>" +
+          '<td><select data-tri-resp="' + i + '"' + (lanc ? " disabled" : "") + ">" + optResp(l.responsavelId) + "</select></td>" +
+          "<td>" + (lanc ? '<span class="pill" style="background:rgba(22,163,74,.18);color:#15803d">✔ lançado</span>'
+            : (ign ? '<span class="muted">ignorado</span>' : '<span class="pill proprio">a lançar</span>')) + "</td></tr>";
+      });
+      html += "</tbody></table></div>";
+
+      var resumoTxt = [];
+      for (var k in R.porDestino) if (Object.prototype.hasOwnProperty.call(R.porDestino, k)) resumoTxt.push(R.porDestino[k] + " " + k);
+      html += '<div class="card" style="margin-top:12px;padding:12px">' +
+        '<div class="muted" style="font-size:12.5px;margin-bottom:8px">' + resumoTxt.join(" · ") +
+        " · <b>" + R.pendentes + "</b> a lançar · <b>" + R.lancados + "</b> já lançado(s)</div>" +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+        '<button class="btn success" data-gacao="tri-lancar">Lançar ' + R.pendentes + " item(ns) no sistema</button>" +
+        '<button class="btn" data-gacao="lancar-fiscal" data-id="' + nf.id + '">💰 Lançar ' +
+          (Util.arr(nf.duplicatas).length ? Util.arr(nf.duplicatas).length + " parcelas" : "no Financeiro") + "</button>" +
+        "</div>" +
+        '<p class="muted" style="font-size:12px;margin:8px 0 0">Nada é gravado até você clicar. O dinheiro entra <b>uma vez só</b>, pelo lançamento financeiro da nota — mandar um item para o Estoque ou o Patrimônio não cria despesa nova.</p>' +
+        "</div>";
+      return html;
+    },
+
+    /* liga os selects/checkboxes da triagem (onchange direto, como o resto do
+       app faz em tabela editável — o roteador global tem lista fixa) */
+    _triWire: function () {
+      var self = this, t = this._triagem;
+      if (!t) return;
+      function cada(attr, fn) {
+        Array.prototype.forEach.call(document.querySelectorAll("[" + attr + "]"), function (el) {
+          el.onchange = function () { fn(parseInt(el.getAttribute(attr), 10), el); };
+        });
+      }
+      cada("data-tri-dest", function (i, el) { if (t.linhas[i]) t.linhas[i].destino = el.value; });
+      cada("data-tri-obra", function (i, el) { if (t.linhas[i]) t.linhas[i].obraId = el.value; });
+      cada("data-tri-resp", function (i, el) { if (t.linhas[i]) t.linhas[i].responsavelId = el.value; });
+      cada("data-tri-mark", function (i, el) { if (el.checked) t.marcadas[i] = 1; else delete t.marcadas[i]; });
+      /* os 3 selects do lote guardam a escolha no estado, senao o proximo
+         render (marcar todos, por exemplo) apaga o que o usuario acabou de
+         escolher */
+      var pares = [["tri-lote-obra", "obra"], ["tri-lote-resp", "resp"], ["tri-lote-dest", "dest"]];
+      pares.forEach(function (par) {
+        var el = document.getElementById(par[0]);
+        if (el) el.onchange = function () { t.lote[par[1]] = el.value; };
+      });
+    },
+
+    triAplicarLote: function () {
+      var t = this._triagem; if (!t) return;
+      /* le do DOM quando existe (escolha mais recente) e cai no estado, que
+         sobrevive ao re-render de "marcar todos" */
+      var lote = t.lote || {};
+      var obra = ((UI.el("tri-lote-obra") || {}).value) || lote.obra || "";
+      var resp = ((UI.el("tri-lote-resp") || {}).value) || lote.resp || "";
+      var dest = ((UI.el("tri-lote-dest") || {}).value) || lote.dest || "";
+      t.lote = { obra: obra, resp: resp, dest: dest };
+      var alvos = Object.keys(t.marcadas);
+      if (!alvos.length) { UI.toast("Marque os itens que quer alterar (ou use ☑ Marcar todos).", "erro"); return; }
+      if (!obra && !resp && !dest) { UI.toast("Escolha o que aplicar: obra, responsável ou destino.", "erro"); return; }
+      var n = 0;
+      alvos.forEach(function (k) {
+        var l = t.linhas[parseInt(k, 10)];
+        if (!l || l.st === "lancado") return;
+        if (obra) l.obraId = obra;
+        if (resp) l.responsavelId = resp;
+        if (dest) l.destino = dest;
+        n++;
+      });
+      App.render();
+      UI.toast(n + " item(ns) atualizado(s). Confira e clique em Lançar.", "ok");
+    },
+    triMarcarTodas: function () {
+      var t = this._triagem; if (!t) return;
+      var todas = Object.keys(t.marcadas).length >= t.linhas.filter(function (l) { return l.st !== "lancado"; }).length;
+      t.marcadas = {};
+      if (!todas) t.linhas.forEach(function (l, i) { if (l.st !== "lancado") t.marcadas[i] = 1; });
+      App.render();
+    },
+    triAceitarSugestoes: function () {
+      var t = this._triagem; if (!t) return;
+      var n = 0;
+      t.linhas.forEach(function (l) {
+        if (l.st === "lancado") return;
+        l.destino = l.sugestao.destino; l.categoria = l.sugestao.categoria; l.ca = l.sugestao.ca || l.ca; n++;
+      });
+      App.render();
+      UI.toast(n + " item(ns) com o destino sugerido. Revise antes de lançar — a sugestão é palpite, não decisão.", "ok");
+    },
+
+    /* GRAVA o que a triagem decidiu. Cada destino escreve no seu módulo — e
+       NENHUM deles escreve no financeiro: o dinheiro entra uma vez só, pelo
+       lançamento da nota. Mandar o cortador para o Patrimônio não pode virar
+       uma segunda despesa. */
+    triLancar: function () {
+      if (this._bloqueado()) return;
+      var t = this._triagem, nf = this._triNota();
+      if (!t || !nf) return;
+      var self = this;
+      var pend = t.linhas.filter(function (l) { return l.st !== "lancado" && l.destino !== "ignorar"; });
+      if (!pend.length) { UI.toast("Nada a lançar: todos os itens já foram lançados ou marcados como ignorar.", "erro"); return; }
+      var semObra = pend.filter(function (l) { return !l.obraId; }).length;
+      var msg = "Lançar " + pend.length + " item(ns) no sistema?\n\n" +
+        pend.slice(0, 8).map(function (l) { return "· " + l.descricao.slice(0, 42) + " → " + l.destino; }).join("\n") +
+        (pend.length > 8 ? "\n… e mais " + (pend.length - 8) : "") +
+        (semObra ? "\n\n⚠ " + semObra + " item(ns) sem obra: vão para o cadastro geral da empresa." : "");
+      if (!window.confirm(msg)) return;
+
+      var colabs = lista("colaboradores");
+      function nomeResp(id) { var c = colabs.filter(function (x) { return x.id === id; })[0]; return c ? c.nome : ""; }
+      var conta = { estoque: 0, patrimonio: 0, epi: 0, consumo: 0 }, erros = [];
+
+      t.linhas.forEach(function (l) {
+        if (l.st === "lancado") return;
+        /* "ignorar" e uma DECISAO, nao um limbo: sem virar estado a nota ficava
+           "2 a triar" para sempre e o botao verde morria sem explicacao. */
+        if (l.destino === "ignorar") { l.st = "ignorado"; return; }
+        try {
+          if (l.destino === "estoque" || l.destino === "epi") self._triGravarEstoque(l, nf, nomeResp(l.responsavelId));
+          if (l.destino === "epi") self._triGravarEpiCatalogo(l);
+          if (l.destino === "patrimonio") self._triGravarPatrimonio(l, nf, nomeResp(l.responsavelId));
+          /* consumo direto não cria registro nenhum: o custo já vem pela nota.
+             Criar lançamento aqui seria contar o dinheiro duas vezes. */
+          conta[l.destino] = (conta[l.destino] || 0) + 1;
+          l.st = "lancado";
+        } catch (e) { erros.push(l.descricao.slice(0, 30) + ": " + (e && e.message ? e.message : e)); }
+      });
+
+      /* a decisão do usuário fica GRAVADA na nota: reabrir a triagem amanhã
+         mostra o que já foi feito, em vez de recomeçar do palpite */
+      nf.itens = Util.arr(nf.itens).map(function (it, i) {
+        var l = t.linhas[i]; if (!l) return it;
+        it.destino = l.destino; it.obraId = l.obraId; it.responsavelId = l.responsavelId;
+        it.ca = l.ca; it.categoria = l.categoria; it.st = l.st;
+        return it;
+      });
+      /* a obra da NOTA é a dos itens quando todos foram para a mesma — é o que
+         faz o documento aparecer no custo daquela obra */
+      var obrasUsadas = {};
+      t.linhas.forEach(function (l) { if (l.obraId) obrasUsadas[l.obraId] = 1; });
+      var chavesObra = Object.keys(obrasUsadas);
+      if (chavesObra.length === 1) nf.obraId = chavesObra[0];
+      /* ESTE write e o que registra que os itens ja foram lancados. Se ele
+         falhar em silencio (cota cheia), o estoque e o patrimonio ja entraram
+         e a nota volta a dizer "a triar" — o segundo clique DOBRA o ativo. */
+      if (!Store.salvar(eid(), "fiscal", nf)) {
+        App.render();
+        UI.toast("⚠ Os itens entraram, mas não consegui marcar a nota como lançada (armazenamento cheio). NÃO clique em Lançar de novo — libere espaço e confira Estoque/Patrimônio.", "erro");
+        return;
+      }
+      if (typeof Epi !== "undefined") this._epiSyncProprios();
+
+      App.render();
+      var resumo = [];
+      if (conta.estoque) resumo.push(conta.estoque + " no estoque");
+      if (conta.epi) resumo.push(conta.epi + " EPI");
+      if (conta.patrimonio) resumo.push(conta.patrimonio + " no patrimônio");
+      if (conta.consumo) resumo.push(conta.consumo + " como consumo na obra");
+      UI.toast("✔ " + resumo.join(" · ") + ". O dinheiro entra pelo lançamento financeiro da nota.", "ok");
+      if (erros.length) UI.toast("⚠ " + erros.length + " item(ns) não entraram: " + erros[0], "erro");
+    },
+
+    /* Entrada de estoque com CUSTO MÉDIO PONDERADO: comprar 10 sacos a R$ 30
+       quando havia 5 a R$ 26 não pode simplesmente sobrescrever o custo — o
+       valor do estoque ficaria errado no balanço. */
+    _triGravarEstoque: function (l, nf, respNome) {
+      var chaveForn = String(nf.cnpjParceiro || nf.parceiro || "");
+      var alvo = null;
+      lista("estoque").forEach(function (e) {
+        if (alvo) return;
+        /* mesmo produto do mesmo fornecedor é o casamento mais seguro; sem
+           código, cai para descrição + unidade normalizadas */
+        /* a unidade entra no casamento: o mesmo cProd vendido em CX e em UN é
+           saldo diferente — somar os dois dá um número sem significado na
+           prateleira. */
+        var mesmaUn = String(e.unidade || "").trim().toUpperCase() === String(l.unidade || "").trim().toUpperCase();
+        if (l.codigo && e.codigoFornecedor && String(e.codigoFornecedor) === String(l.codigo) && String(e.fornecedorRef || "") === chaveForn && mesmaUn) alvo = e;
+        else if (String(e.nome || "").trim().toUpperCase() === String(l.descricao || "").trim().toUpperCase() &&
+          String(e.unidade || "").trim().toUpperCase() === String(l.unidade || "").trim().toUpperCase()) alvo = e;
+      });
+      var qtd = Util.num(l.quantidade), custo = Util.num(l.valorUnitario);
+      if (alvo) {
+        var saldoAnt = Util.num(alvo.saldo), custoAnt = Util.num(alvo.custoUnit);
+        var novoSaldo = saldoAnt + qtd;
+        alvo.custoUnit = novoSaldo > 0 ? Math.round(((saldoAnt * custoAnt + qtd * custo) / novoSaldo) * 100) / 100 : custo;
+        alvo.saldo = novoSaldo;
+        if (l.responsavelId) { alvo.responsavelId = l.responsavelId; alvo.responsavelNome = respNome; }
+        if (l.ca) alvo.ca = l.ca;
+        Store.salvar(eid(), "estoque", alvo);
+      } else {
+        alvo = Store.salvar(eid(), "estoque", {
+          nome: l.descricao, categoria: l.destino === "epi" ? "epi" : (l.categoria || "outros"),
+          unidade: l.unidade || "un", saldo: qtd, estoqueMin: 0, custoUnit: custo,
+          obraId: l.obraId || "", localizacao: "",
+          responsavelId: l.responsavelId || "", responsavelNome: respNome || "",
+          codigoFornecedor: l.codigo || "", fornecedorRef: chaveForn, ncm: l.ncm || "", ca: l.ca || "",
+          obs: "Entrada pela NF " + (nf.numero || "") + " — " + (nf.parceiro || "")
+        });
+        if (!alvo) throw new Error("não consegui gravar (armazenamento cheio)");
+      }
+      Store.salvar(eid(), "estoque_mov", {
+        itemId: alvo.id, itemNome: alvo.nome, tipo: "entrada", qtd: qtd, custoUnit: custo,
+        data: nf.dataEmissao || new Date().toISOString().slice(0, 10), obraId: l.obraId || "",
+        docTipo: "NF", docNumero: nf.numero || "", docChave: nf.chaveAcesso || "", responsavelId: l.responsavelId || ""
+      });
+    },
+
+    /* EPI vira item do catálogo da empresa (para aparecer na busca da entrega).
+       O CA vai junto SÓ quando o fornecedor escreveu na nota — e mesmo assim
+       fica no estoque, porque o catálogo guarda o modelo, não o lote. */
+    _triGravarEpiCatalogo: function (l) {
+      var ja = lista("epi_catalogo").filter(function (e) {
+        return String(e.nome || "").trim().toUpperCase() === String(l.descricao || "").trim().toUpperCase();
+      })[0];
+      if (ja) return;
+      Store.salvar(eid(), "epi_catalogo", {
+        id: Util.uid("epiu"), nome: l.descricao,
+        categoria: l.categoria || "corpo", unidade: l.unidade || "un",
+        valorRef: Util.num(l.valorUnitario), vidaUtilDias: 0,
+        descricao: "Cadastrado a partir da nota fiscal", ca: ""
+      });
+    },
+
+    /* Patrimônio: UM registro por unidade. Tombo e depreciação são por bem —
+       "4 óculos" é estoque; "1 roçadeira" é bem, e 2 roçadeiras são 2 bens. */
+    _triGravarPatrimonio: function (l, nf, respNome) {
+      var n = Math.max(1, Math.round(Util.num(l.quantidade) || 1));
+      if (n > 20) throw new Error("são " + n + " unidades — isso é estoque, não patrimônio");
+      for (var i = 0; i < n; i++) {
+        var reg = Store.salvar(eid(), "patrimonio", {
+          descricao: l.descricao + (n > 1 ? " (" + (i + 1) + "/" + n + ")" : ""),
+          categoria: "equipamento", numeroPatrimonio: "",
+          valorAquisicao: Util.num(l.valorUnitario), /* por UNIDADE, não o total da linha */
+          dataAquisicao: nf.dataEmissao || new Date().toISOString().slice(0, 10),
+          depreciacaoAnual: 0, estado: "novo", obraId: l.obraId || "", localizacao: "",
+          responsavelId: l.responsavelId || "", responsavelNome: respNome || "",
+          fornecedor: nf.parceiro || "", notaId: nf.id, notaChave: nf.chaveAcesso || "",
+          codigoFornecedor: l.codigo || "", ncm: l.ncm || "",
+          obs: "Adquirido pela NF " + (nf.numero || "") + " — " + (nf.parceiro || "")
+        });
+        if (!reg) throw new Error("não consegui gravar (armazenamento cheio)");
+      }
+    },
+
     novoFiscal: function () { this.formFiscal(null); },
     formFiscal: function (n) {
       n = n || {}; var obras = lista("obras");
@@ -7400,22 +7799,109 @@ renderRequisicoes: function () {
         return true;
       });
     },
+    /* A NOTA VIRA CONTAS A PAGAR — uma linha POR VENCIMENTO.
+       A compra em 4 boletos (30/60/90/120) entrava como uma despesa única já
+       PAGA no dia da emissão: o "a pagar" da empresa nascia vazio e o fluxo de
+       caixa mentia. Agora cada duplicata do XML vira um lançamento pendente na
+       data em que vence. */
     lancarFiscal: function (fiscalId) {
       var nf = Store.obter(eid(), "fiscal", fiscalId); if (!nf) return;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) { UI.toast("Seu usuário não tem permissão no módulo Financeiro.", "erro"); return; }
+      var self = this;
       var isEntrada = nf.tipo === "entrada";
       var tipoFin = isEntrada ? "despesa" : "receita";
-      var categoria = isEntrada ? "material" : "outros";
       var numTxt = nf.numero ? nf.numero : "s/n";
       if (nf.serie) numTxt += "/" + nf.serie;
-      var corpo = '<p class="muted">NF nº <b>' + Util.esc(numTxt) + "</b> · " + rot(P.fiscalTipo, nf.tipo) + " · Valor: <b>" + Util.fmtMoeda(Util.num(nf.valorTotal)) + "</b></p><p>Gerar um lançamento de <b>" + (isEntrada ? "despesa" : "receita") + "</b> no Financeiro?</p>";
+      var chave = String(nf.chaveAcesso || "");
+      var valor = Util.num(nf.valorTotal);
+      if (!(valor > 0)) { UI.toast("Esta nota está sem valor — complete o XML antes de lançar.", "erro"); return; }
+
+      /* já lançada? o botão some da lista, mas a triagem também chama aqui —
+         e dois cliques significariam o custo em dobro na obra, em silêncio. */
+      /* dedupe tambem por docId: nota sem chave de acesso (NFS-e, cupom) nao
+         tinha como ser reconhecida e duplicava a cada clique. */
+      var jaLanc = lista("financeiro").filter(function (f) {
+        if (chave && String(f.docChave || "") === chave) return true;
+        return !chave && f.docId && String(f.docId) === String(nf.id);
+      });
+      /* parcela JA PAGA nao se apaga: tem data de pagamento, comprovante e
+         conciliacao. Substituir levava o custo realizado embora e ressuscitava
+         a conta como pendente. */
+      var jaPagas = jaLanc.filter(function (f) { return f.status === "pago"; });
+      var subst = jaLanc.filter(function (f) { return f.status !== "pago"; });
+      var numsPagos = {}; jaPagas.forEach(function (f) { numsPagos[String(f.parcelaNum || 0)] = 1; });
+
+      var linhas = (this._triagem && this._triagem.notaId === nf.id) ? this._triagem.linhas
+        : Util.arr(nf.itens).map(function (it) { return { valor: Util.num(it.valor), obraId: it.obraId || nf.obraId || "", destino: it.destino || "estoque" }; });
+      var plano = (typeof NFItens !== "undefined") ? NFItens.parcelas(nf) : { parcelas: [{ num: 1, vencimento: nf.dataEmissao, valor: valor, fonte: "unica" }], ajuste: 0 };
+      var rateadas = (typeof NFItens !== "undefined" && linhas.length) ? NFItens.ratear(plano.parcelas, linhas)
+        : plano.parcelas.map(function (p) { var o = {}; for (var k in p) o[k] = p[k]; o.obraId = nf.obraId || ""; return o; });
+      var categoria = (typeof NFItens !== "undefined" && linhas.length) ? NFItens.categoriaFinanceira(linhas) : (isEntrada ? "material" : "outros");
+
+      var temRateio = rateadas.length > plano.parcelas.length;
+      var obras = lista("obras");
+      function nomeObra(id) { var o = obras.filter(function (x) { return x.id === id; })[0]; return o ? o.nome : "sem obra"; }
+      var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "sem data"; };
+      var nP = plano.parcelas.length;
+
+      var corpo = '<p class="muted">NF nº <b>' + Util.esc(numTxt) + "</b> · " + rot(P.fiscalTipo, nf.tipo) +
+        " · " + Util.esc(nf.parceiro || "") + " · <b>" + Util.fmtMoeda(valor) + "</b></p>";
+      if (jaLanc.length) {
+        corpo += '<p style="color:#b45309"><b>⚠ Esta nota já gerou ' + jaLanc.length + " lançamento(s) no Financeiro" +
+          " (" + Util.fmtMoeda(jaLanc.reduce(function (a, f) { return a + Util.num(f.valor); }, 0)) + ").</b>" +
+          (jaPagas.length
+            ? " <b>" + jaPagas.length + " já está(ão) PAGA(S) e não será(ão) mexida(s)</b> — só as pendentes são refeitas."
+            : " Confirmando, as anteriores são substituídas (não somam).") + "</p>";
+      }
+      corpo += "<p>" + (nP > 1
+        ? "O boleto desta nota tem <b>" + nP + " vencimentos</b>. Cada um vira uma conta a pagar na data certa:"
+        : "Vai entrar como <b>" + (isEntrada ? "despesa" : "receita") + "</b> no Financeiro:") + "</p>";
+      corpo += '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Vencimento</th><th>Descrição</th><th>Obra</th><th class="num">Valor</th></tr></thead><tbody>' +
+        rateadas.map(function (r) {
+          return "<tr><td>" + brd(r.vencimento) + "</td><td>NF " + Util.esc(numTxt) + (nP > 1 ? " (" + r.num + "/" + nP + ")" : "") +
+            "</td><td>" + Util.esc(nomeObra(r.obraId)) + '</td><td class="num">' + Util.fmtMoeda(r.valor) + "</td></tr>";
+        }).join("") + "</tbody></table>";
+      if (plano.ajuste && Math.abs(plano.ajuste) >= 0.01) {
+        corpo += '<p class="muted" style="font-size:12px">As duplicatas do XML somavam ' + Util.fmtMoeda(valor - plano.ajuste) +
+          " e a nota vale " + Util.fmtMoeda(valor) + " — a diferença de " + Util.fmtMoeda(Math.abs(plano.ajuste)) + " entrou na última parcela.</p>";
+      }
+      if (temRateio) corpo += '<p class="muted" style="font-size:12px">Os itens estão em mais de uma obra, então cada parcela foi rateada na proporção do valor dos itens de cada uma.</p>';
+      corpo += '<p class="muted" style="font-size:12px">Categoria sugerida: <b>' + rot(P.finCategoria, categoria) +
+        "</b> (a que pesa mais em dinheiro nesta nota). Entram como <b>pendente</b>, na data de vencimento — marque como pago quando pagar.</p>";
+
       UI.modal("Lançar NF no Financeiro", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-        { texto: "Lançar no Financeiro", classe: "primary", onClick: function () {
+        { texto: jaLanc.length ? "Substituir os lançamentos" : ("Lançar " + rateadas.length + " conta(s)"), classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
-          var valor = Util.num(nf.valorTotal); if (!(valor > 0)) { UI.toast("Valor inválido.", "erro"); return; }
-          var hoje = new Date().toISOString().slice(0, 10);
-          Store.salvar(eid(), "financeiro", { data: nf.dataEmissao || hoje, desc: "NF nº " + numTxt, tipo: tipoFin, categoria: categoria, valor: valor, status: "pago", obraId: nf.obraId || "" });
-          UI.fecharModal(); App.render(); UI.toast("NF lançada no Financeiro.", "ok");
+          /* substituir = apagar as PENDENTES desta mesma nota, nunca somar —
+             e nunca tocar no que já foi pago */
+          if (subst.length) subst.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
+          var gravadas = 0, falhou = false, pulou = 0;
+          rateadas.forEach(function (r) {
+            if (numsPagos[String(r.num)]) { pulou++; return; } /* essa parcela já foi paga */
+            var reg = Store.salvar(eid(), "financeiro", {
+              data: r.vencimento || nf.dataEmissao || new Date().toISOString().slice(0, 10),
+              desc: "NF " + numTxt + (nP > 1 ? " (" + r.num + "/" + nP + ")" : "") + " — " + (nf.parceiro || ""),
+              tipo: tipoFin, categoria: categoria, valor: r.valor, status: "pendente",
+              /* NUNCA cair no obraId da nota quando a linha veio de RATEIO: a
+                 fatia "sem obra" tem obraId vazio de proposito, e o fallback
+                 jogava esse dinheiro na obra — o modal mostrava uma divisao e
+                 a gravacao fazia outra, sem aviso. */
+              obraId: temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || ""),
+              fornecedor: nf.parceiro || "",
+              /* rastro da origem: é o que permite reconhecer, deduplicar e
+                 refazer o lançamento desta nota sem caçar linha por linha */
+              docTipo: "NF", docId: nf.id, docNumero: numTxt, docChave: chave,
+              parcelaNum: r.num, parcelaTotal: nP
+            });
+            if (reg) gravadas++; else falhou = true;
+          });
+          nf.lancadoEm = new Date().toISOString();
+          Store.salvar(eid(), "fiscal", nf);
+          UI.fecharModal(); App.render();
+          if (falhou) UI.toast("Só " + gravadas + " de " + rateadas.length + " conta(s) foram gravadas (armazenamento cheio). Confira o Financeiro.", "erro");
+          else if (pulou) UI.toast("✔ " + gravadas + " conta(s) refeita(s); " + pulou + " já paga(s) mantida(s) como estavam.", "ok");
+          else UI.toast("✔ " + gravadas + " conta(s) a pagar lançada(s)" + (nP > 1 ? " — vencimentos de " + brd(rateadas[0].vencimento) + " a " + brd(rateadas[rateadas.length - 1].vencimento) : "") + ".", "ok");
         } }
       ]);
     },
@@ -7511,16 +7997,19 @@ renderRequisicoes: function () {
         jaTem.dataEmissao = dados.emissao || jaTem.dataEmissao; jaTem.valorTotal = vNovo;
         jaTem.chaveAcesso = dados.chave || jaTem.chaveAcesso || "";
         jaTem.status = "emitida"; jaTem.origem = origem || jaTem.origem;
+        /* a nota que estava só "aguardando XML" recebe agora o conteúdo todo —
+           itens e parcelas inclusive, senão ela ficaria eternamente sem triagem */
+        var completo = this._nfeParaRegistro(dados, ehSaida, origem || jaTem.origem);
+        jaTem.itens = completo.itens; jaTem.duplicatas = completo.duplicatas;
+        jaTem.valorProdutos = completo.valorProdutos; jaTem.valorImpostos = completo.valorImpostos;
+        jaTem.cnpjParceiro = completo.cnpjParceiro || jaTem.cnpjParceiro || "";
+        jaTem.formaPgto = completo.formaPgto || jaTem.formaPgto || "";
+        jaTem.infCpl = completo.infCpl || jaTem.infCpl || "";
         Store.salvar(eid(), "fiscal", jaTem);
         return { nota: jaTem, dup: false, atualizada: true, invalido: false, fornecedorNovo: fornecedorNovo };
       }
       if (jaTem) return { nota: jaTem, dup: true, atualizada: false, invalido: false, fornecedorNovo: fornecedorNovo };
-      var nota = Store.salvar(eid(), "fiscal", {
-        numero: dados.numero || "", serie: dados.serie || "", tipo: ehSaida ? "saida" : "entrada",
-        status: "emitida", naturezaOp: dados.natureza || "", parceiro: parc.nome || "", obraId: "",
-        dataEmissao: dados.emissao || "", valorProdutos: 0, valorImpostos: 0,
-        valorTotal: Util.num(dados.valor), chaveAcesso: dados.chave || "", origem: origem || "xml-lote"
-      });
+      var nota = Store.salvar(eid(), "fiscal", this._nfeParaRegistro(dados, ehSaida, origem || "xml-lote"));
       return { nota: nota, dup: false, atualizada: false, invalido: false, fornecedorNovo: fornecedorNovo };
     },
     /* Decodifica a chave de acesso de 44 dígitos (DANFE/QR-Code) — 100% offline.
@@ -9211,6 +9700,12 @@ renderFolha: function () {
         case "rever-tour": if (typeof Tour !== "undefined") Tour.iniciar(true); return;
         case "rel-executivo": { var reO = document.getElementById("rex-obra"), reM = document.getElementById("rex-mes"); return this.relatorioExecutivo(reO ? reO.value : "", reM ? reM.value : ""); }
         case "doc-financeiro": return this.lancarDocumento();
+        case "tri-abrir": return this.triAbrir(id);
+        case "tri-fechar": return this.triFechar();
+        case "tri-aplicar-lote": return this.triAplicarLote();
+        case "tri-marcar-todas": return this.triMarcarTodas();
+        case "tri-aceitar-sugestoes": return this.triAceitarSugestoes();
+        case "tri-lancar": return this.triLancar();
         case "nf-ia":
           /* RBAC em FUNÇÃO: esconder o botão não basta — a leitura por IA gasta
              crédito da licença. Mesma régua do módulo Cotações. */
@@ -9460,17 +9955,105 @@ case "nova-folha": return this.novoFolha();
       if (!forn.nome) return null;
       var valor = parseFloat(String(g("vNF")).replace(",", ".")) || 0;
       var dh = g("dhEmi") || g("dEmi"); var emissao = dh ? dh.slice(0, 10) : "";
-      var dup = doc.getElementsByTagName("dup")[0]; var vencimento = dup ? sub(dup, "dVenc") : "";
+      /* TODAS as duplicatas, não só a primeira: uma compra em 4 boletos
+         (30/60/90/120) virava um vencimento só com o valor cheio, e o
+         "a pagar" da empresa nascia errado. */
+      var duplicatas = [], dupsEl = doc.getElementsByTagName("dup");
+      for (var d = 0; d < dupsEl.length; d++) {
+        duplicatas.push({
+          num: sub(dupsEl[d], "nDup"),
+          vencimento: sub(dupsEl[d], "dVenc"),
+          valor: parseFloat(String(sub(dupsEl[d], "vDup")).replace(",", ".")) || 0
+        });
+      }
+      var vencimento = duplicatas.length ? duplicatas[0].vencimento : "";
       var numero = g("nNF"), serie = g("serie"), natureza = g("natOp");
       var chave = "";
       var infNfe = doc.getElementsByTagName("infNFe")[0];
       if (infNfe && infNfe.getAttribute && infNfe.getAttribute("Id")) chave = String(infNfe.getAttribute("Id")).replace(/^NFe/i, "");
       if (!chave) chave = g("chNFe");
-      var itens = [], dets = doc.getElementsByTagName("det");
-      for (var i = 0; i < dets.length && i < 60; i++) { var prod = dets[i].getElementsByTagName("prod")[0]; if (prod) itens.push({ descricao: sub(prod, "xProd"), quantidade: parseFloat(sub(prod, "qCom")) || 0, unidade: sub(prod, "uCom"), valor: parseFloat(sub(prod, "vProd")) || 0 }); }
+      /* O item da nota é o que alimenta estoque, patrimônio e EPI — por isso
+         vem inteiro, e não só descrição/qtd/valor. O NCM é o sinal mais
+         confiável de natureza (o fornecedor é obrigado a acertar, é o que
+         define o imposto) e o cProd permite reconhecer a recompra do MESMO
+         produto do MESMO fornecedor. */
+      var TETO_ITENS = 300;
+      var itens = [], dets = doc.getElementsByTagName("det"), truncou = 0;
+      for (var i = 0; i < dets.length && i < TETO_ITENS; i++) {
+        var prod = dets[i].getElementsByTagName("prod")[0];
+        if (!prod) continue;
+        var qCom = parseFloat(String(sub(prod, "qCom")).replace(",", ".")) || 0;
+        var vProd = parseFloat(String(sub(prod, "vProd")).replace(",", ".")) || 0;
+        var vUn = parseFloat(String(sub(prod, "vUnCom")).replace(",", ".")) || 0;
+        itens.push({
+          numero: parseInt(dets[i].getAttribute("nItem"), 10) || (i + 1),
+          codigo: sub(prod, "cProd"),
+          descricao: sub(prod, "xProd"),
+          ncm: sub(prod, "NCM"),
+          cest: sub(prod, "CEST"),
+          cfop: sub(prod, "CFOP"),
+          unidade: sub(prod, "uCom"),
+          quantidade: qCom,
+          valorUnitario: vUn > 0 ? vUn : (qCom > 0 ? vProd / qCom : vProd),
+          valor: vProd,
+          desconto: parseFloat(String(sub(prod, "vDesc")).replace(",", ".")) || 0,
+          pedido: sub(prod, "xPed"),
+          obs: sub(dets[i], "infAdProd")
+        });
+      }
+      /* teto SILENCIOSO seria pior que teto nenhum: a nota entraria pela
+         metade e ninguém saberia. */
+      if (dets.length > TETO_ITENS) truncou = dets.length - TETO_ITENS;
       var destEl = doc.getElementsByTagName("dest")[0];
       var dest = { nome: sub(destEl, "xNome"), cnpj: sub(destEl, "CNPJ") || sub(destEl, "CPF"), cidade: sub(destEl, "xMun"), uf: sub(destEl, "UF") };
-      return { tipoLancamento: "despesa", fornecedor: forn, destinatario: dest, valor: valor, emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave, natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material", itens: itens, confianca: 1 };
+      /* o <ICMSTot> traz produtos e impostos prontos — gravar 0 literal
+         (como era) fazia o campo do formulário existir só para enfeite. */
+      var totEl = doc.getElementsByTagName("ICMSTot")[0];
+      var vProdTot = totEl ? (parseFloat(String(sub(totEl, "vProd")).replace(",", ".")) || 0) : 0;
+      var vImp = 0;
+      if (totEl) {
+        ["vICMS", "vIPI", "vST", "vII"].forEach(function (t) {
+          vImp += parseFloat(String(sub(totEl, t)).replace(",", ".")) || 0;
+        });
+      }
+      var pagEl = doc.getElementsByTagName("detPag")[0];
+      return {
+        tipoLancamento: "despesa", fornecedor: forn, destinatario: dest, valor: valor,
+        emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave,
+        natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material",
+        itens: itens, itensTruncados: truncou, duplicatas: duplicatas,
+        valorProdutos: vProdTot, valorImpostos: Math.round(vImp * 100) / 100,
+        frete: totEl ? (parseFloat(String(sub(totEl, "vFrete")).replace(",", ".")) || 0) : 0,
+        desconto: totEl ? (parseFloat(String(sub(totEl, "vDesc")).replace(",", ".")) || 0) : 0,
+        formaPgto: pagEl ? sub(pagEl, "xPag") : "",
+        infCpl: g("infCpl"),
+        confianca: 1
+      };
+    },
+    /* O REGISTRO DA NOTA, montado em UM lugar só. Antes este objeto estava
+       escrito por extenso em três pontos (import em lote, IA e chave manual);
+       acrescentar um campo exigia lembrar dos três, e esquecer um era o bug
+       mais provável. Aqui os ITENS e as DUPLICATAS finalmente ficam gravados
+       — sem isso a triagem não teria de onde ler depois. */
+    _nfeParaRegistro: function (dados, ehSaida, origem) {
+      var fn = dados.fornecedor || {}, dest = dados.destinatario || {};
+      var parc = ehSaida && dest.nome ? dest : fn;
+      return {
+        numero: dados.numero || "", serie: dados.serie || "",
+        tipo: ehSaida ? "saida" : "entrada", status: "emitida",
+        naturezaOp: dados.natureza || "",
+        parceiro: parc.nome || "", cnpjParceiro: parc.cnpj || "",
+        obraId: "",
+        dataEmissao: dados.emissao || "",
+        valorProdutos: Util.num(dados.valorProdutos), valorImpostos: Util.num(dados.valorImpostos),
+        valorTotal: Util.num(dados.valor),
+        chaveAcesso: dados.chave || "",
+        itens: Util.arr(dados.itens),
+        duplicatas: Util.arr(dados.duplicatas),
+        formaPgto: dados.formaPgto || "",
+        infCpl: dados.infCpl || "",
+        origem: origem || "documento-ia"
+      };
     },
     _docParaLancamento: function (dados, origem, destino) {
       var fn = dados.fornecedor || {}, ehReceita = dados.tipoLancamento === "receita", msgCad = "";
@@ -9484,18 +10067,12 @@ case "nova-folha": return this.novoFolha();
            nisso cru fazia a nota que a PRÓPRIA empresa emitiu abrir como
            ENTRADA e com o nome dela mesma no campo Parceiro — receita virando
            despesa no Lançar. Mesma regra do 📥 XML em lote (_registrarNfe). */
-        var destNf = dados.destinatario || {};
         var proprioCnpj = this._cnpjProprio();
         var emitCnpj = String(fn.cnpj || "").replace(/\D/g, "");
         var ehSaidaNf = ehReceita || !!(proprioCnpj && emitCnpj && emitCnpj === proprioCnpj);
-        var parcNf = ehSaidaNf && destNf.nome ? destNf : fn;
-        this.formFiscal({
-          numero: dados.numero || "", serie: dados.serie || "",
-          tipo: ehSaidaNf ? "saida" : "entrada", status: "emitida",
-          naturezaOp: dados.natureza || "", parceiro: parcNf.nome || "", obraId: "",
-          dataEmissao: dados.emissao || "", valorProdutos: 0, valorImpostos: 0,
-          valorTotal: dados.valor || 0, chaveAcesso: dados.chave || "", origem: origem || "documento-ia"
-        });
+        /* mesma fonte única do import em lote: os itens e as parcelas lidos
+           do documento viajam junto e ficam gravados quando o usuário salvar. */
+        this.formFiscal(this._nfeParaRegistro(dados, ehSaidaNf, origem || "documento-ia"));
         /* nota com a mesma chave ja no livro: o formulario abre igual (o
            usuario pode estar corrigindo), mas com o aviso na cara — senao a
            mesma NF-e entra duas vezes e o total de Entradas dobra. */
@@ -9526,12 +10103,7 @@ case "nova-folha": return this.novoFolha();
           return dados.numero && String(x.numero) === String(dados.numero) && (x.parceiro || "") === (fn.nome || "");
         })[0];
         if (!jaTem) {
-          Store.salvar(eid(), "fiscal", {
-            numero: dados.numero || "", serie: dados.serie || "", tipo: ehReceita ? "saida" : "entrada",
-            status: "emitida", naturezaOp: dados.natureza || "", parceiro: fn.nome || "", obraId: "",
-            dataEmissao: dados.emissao || "", valorProdutos: 0, valorImpostos: 0,
-            valorTotal: dados.valor || 0, chaveAcesso: dados.chave || "", origem: origem || "documento-ia"
-          });
+          Store.salvar(eid(), "fiscal", this._nfeParaRegistro(dados, ehReceita, origem || "documento-ia"));
           msgCad += "NF registrada no Fiscal. ";
         }
       }

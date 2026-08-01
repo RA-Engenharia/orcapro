@@ -193,7 +193,10 @@
      * DESVINCULA (perdem o obraId e continuam na lista). Sem esta lista o merge da nuvem
      * lia "obraId aponta pra obra morta" e apagava o colaborador/veículo/bem no outro
      * aparelho — exatamente o que o modal promete preservar. Achado do gate de 25/07. */
-    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1 },
+    /* "fiscal" entrou junto: a nota fiscal passou a ser vinculada a obra na
+       triagem, e o merge da nuvem apagaria o DOCUMENTO ao ver o obraId de uma
+       obra excluida — documento que a empresa e obrigada a guardar 5 anos. */
+    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
     /* A lápide só serve para o merge da nuvem: entidade que NÃO sincroniza nunca ressuscita,
      * e gravar lápide dela só gastava o teto — empurrando para fora as que importam. */
