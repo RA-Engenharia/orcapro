@@ -1041,26 +1041,72 @@
         });
       } catch (e) {}
     },
+    /* ---------- SINCRONIZAÇÃO AUTOMÁTICA ----------
+     * Ninguém deve precisar achar um menu e clicar num botão para os dados irem
+     * de um aparelho ao outro. O cliente entra com o e-mail e a senha dele e
+     * pronto — é assim que sistema se comporta.
+     *
+     * O que existia aqui tentava UMA vez, no boot, e desistia calado:
+     *     .catch(function () {})
+     * Se a internet estivesse lenta naquele segundo — ou o Firebase demorasse a
+     * responder — o cliente passava a sessão inteira sem sincronizar e SEM SABER.
+     * Depois chegava no suporte como "sumiram meus dados" ou "o celular não traz
+     * nada". Não sumia nada: só nunca tinha subido.
+     *
+     * Agora insiste sozinho: repete com espera crescente e volta a tentar assim
+     * que a internet retorna. A única coisa que o impede é o desligamento pedido
+     * pelo usuário — esse não é burocracia, é revogação de consentimento (LGPD),
+     * e religar continua a um clique.
+     */
+    _nuvemTentativa: 0,
+    _nuvemTimer: null,
+    _nuvemGatilhoRede: false,
+
     _conectarNuvemLicenca: function () {
       var self = this;
       try {
+        clearTimeout(this._nuvemTimer);
+
         var st = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null;
-        if (!st || !st.ativo || st.trial) return;                        // só cliente licenciado
-        if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return; // nuvem ligada no config
-        // o usuário desligou a sincronização: não reconectar sozinho no boot
+        if (!st || !st.ativo || st.trial) return;                        // sem licença não há conta de nuvem
+        if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return;
         if (Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario()) return;
         var chave = Licenca.chave(); if (!chave) return;
         var eid = Auth.empresaId();
+
+        /* A internet voltando é o melhor momento para tentar de novo — instalado
+         * uma única vez, e não a cada chamada (senão empilharia gatilhos). */
+        if (!this._nuvemGatilhoRede && global.addEventListener) {
+          this._nuvemGatilhoRede = true;
+          global.addEventListener("online", function () {
+            self._nuvemTentativa = 0;                 // a rede mudou: recomeça rápido
+            try { self._conectarNuvemLicenca(); } catch (e) {}
+          });
+        }
+
+        // já conectado e escutando: nada a fazer (escutar() também é idempotente)
+        if (Nuvem.ligado && Nuvem.auth && Nuvem.auth.currentUser) { this._nuvemTentativa = 0; return; }
+
         Nuvem.entrarPorLicenca(chave)
           .then(function () { return Nuvem.sincronizar(eid); })
           .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
           .then(function () {
+            self._nuvemTentativa = 0;
             try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); }); } catch (e) {}
             // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
             if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
             if (self.tela === "lista") self.render(); // equipe/dados sincronizados
           })
-          .catch(function () { /* offline: segue com o cache local (offline-first) */ });
+          .catch(function () {
+            /* Offline-first: o trabalho continua no aparelho. Mas a tentativa não
+             * morre aqui — reagenda com espera crescente até 5 min. Sem teto de
+             * tentativas: o cliente pode ficar o dia todo sem sinal na obra e,
+             * quando o sinal voltar, tem de subir sozinho. */
+            self._nuvemTentativa++;
+            var esperas = [3000, 8000, 20000, 60000, 300000];
+            var ms = esperas[Math.min(self._nuvemTentativa - 1, esperas.length - 1)];
+            self._nuvemTimer = setTimeout(function () { try { self._conectarNuvemLicenca(); } catch (e) {} }, ms);
+          });
       } catch (e) {}
     },
     _trocaSenhaPrimeiroAcesso: function () {
@@ -1107,35 +1153,53 @@
       // recarrega a base SINAPI específica desta empresa (se importou uma própria)
       var self = this;
       this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
-      // Sincronização na nuvem — só age se CONFIG.backend.sync === true (inerte por padrão).
-      // NÃO faz o login manual da nuvem quando o tenant-licença já está conectado (multi-aparelho):
-      // evita trocar a conta-tenant pela conta e-mail/senha do login e partir os dados em dois.
-      // e respeita o desligamento pedido pelo usuário — este é o SEGUNDO caminho de
-      // conexão automática (o outro é _conectarNuvemLicenca, no boot); sem a guarda
-      // aqui, bastava fazer login para a sincronização voltar sozinha.
-      if (typeof Nuvem !== "undefined" && Nuvem.disponivel() && !Nuvem.ligado &&
+      /* SINCRONIZAÇÃO APÓS O LOGIN — sem senha nenhuma a mais.
+       *
+       * O cliente licenciado sincroniza pela LICENÇA: a conta da nuvem é derivada
+       * da chave, então qualquer aparelho com a mesma licença chega na mesma
+       * conta sozinho. Ele digita o e-mail e a senha DELE, do sistema, e acabou.
+       *
+       * O que havia aqui era o oposto: tentava entrar na nuvem com a senha do
+       * sistema como se fosse senha de nuvem e, quando não batia, mandava um
+       * aviso do tipo "vá no menu da conta e conecte com a senha certa" — uma
+       * senha que a maioria nem sabia que existia. Era fábrica de chamado. Pior:
+       * se batesse, entrava numa conta Firebase DIFERENTE da conta da licença e
+       * os dados do cliente ficavam divididos entre duas contas.
+       *
+       * Agora, com licença ativa, o login apenas chama o mesmo caminho do boot —
+       * que já tenta de novo sozinho quando falha e quando a internet volta. */
+      var _licL = null;
+      try { _licL = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (eL) {}
+      var _licenciadoL = !!(_licL && _licL.ativo && !_licL.trial && Licenca.chave && Licenca.chave());
+
+      if (typeof Nuvem !== "undefined" && Nuvem.disponivel() &&
           !(Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario())) {
-        var eid = Auth.empresaId();
-        Nuvem.entrar(email, senha)
-          .then(function () { return Nuvem.sincronizar(eid); })
-          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
-          .then(function () {
-            Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
-            if (self.tela === "lista") self.render();
-            UI.toast("☁ Dados sincronizados na nuvem.", "ok");
-          })
-          .catch(function (e) {
-            // NUNCA falhar em silêncio: o usuário precisa saber que NÃO está sincronizando
-            console.warn("[nuvem] " + (e && (e.code || e.message)));
-            var code = e && e.code;
-            if (code === "auth/wrong-password") {
-              UI.toast("☁ Nuvem NÃO conectada: esta senha é diferente da usada no seu outro computador. Menu da conta → ☁ Nuvem para conectar com a senha certa.", "erro");
-            } else if (code === "auth/network-request-failed") {
-              UI.toast("☁ Sem internet agora — seus dados ficam locais e você pode sincronizar depois em: menu da conta → ☁ Nuvem.", "erro");
-            } else {
-              UI.toast("☁ Nuvem não conectada (" + (code || (e && e.message) || "erro") + "). Menu da conta → ☁ Nuvem para tentar de novo.", "erro");
-            }
-          });
+        if (_licenciadoL) {
+          this._nuvemTentativa = 0;                    // login é um bom momento p/ recomeçar rápido
+          try { this._conectarNuvemLicenca(); } catch (eC) {}
+        } else if (!Nuvem.ligado) {
+          /* Sem licença não existe conta derivada. Sobra o caminho antigo por
+             e-mail/senha, mantido para quem já o usava — e ele continua avisando
+             quando falha, porque aí não há retentativa automática que resolva. */
+          var eid = Auth.empresaId();
+          Nuvem.entrar(email, senha)
+            .then(function () { return Nuvem.sincronizar(eid); })
+            .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
+            .then(function () {
+              Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
+              if (self.tela === "lista") self.render();
+              UI.toast("☁ Dados sincronizados na nuvem.", "ok");
+            })
+            .catch(function (e) {
+              console.warn("[nuvem] " + (e && (e.code || e.message)));
+              var code = e && e.code;
+              if (code === "auth/network-request-failed") {
+                UI.toast("☁ Sem internet agora — seus dados ficam neste aparelho e sobem quando a conexão voltar.", "erro");
+              } else if (code !== "auth/wrong-password") {
+                UI.toast("☁ Nuvem não conectada (" + (code || (e && e.message) || "erro") + ").", "erro");
+              }
+            });
+        }
       }
     },
 
@@ -1403,21 +1467,30 @@
       try { lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (e) {}
       var licenciado = !!(lic && lic.ativo && !lic.trial && Licenca.chave && Licenca.chave());
 
-      // 1) Nuvem de pé? Sem ela o celular abre vazio — barrar antes de gerar o QR.
-      var nuvemOk = false, nuvemMotivo = "";
+      /* 1) A sincronização precisa estar de pé — mas isso é problema MEU, não do
+       *    cliente. Se ela ainda não subiu, eu ligo aqui mesmo e sigo com o QR.
+       *    Só existe um caso em que vale barrar: quando o próprio usuário
+       *    DESLIGOU a sincronização. Aí o celular abriria vazio por decisão dele,
+       *    e mandá-lo instalar sem avisar seria pegadinha. */
+      var desligou = false, semNuvem = false;
       try {
-        if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) nuvemMotivo = "A sincronização na nuvem não está disponível nesta instalação.";
-        else if (Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario()) nuvemMotivo = "Você desligou a sincronização na nuvem. Sem ela, o celular abre vazio — os dados ficam só neste computador.";
-        else if (!(Nuvem.auth && Nuvem.auth.currentUser)) nuvemMotivo = "A nuvem ainda não conectou neste computador. Sem ela, o celular abre vazio.";
-        else nuvemOk = true;
-      } catch (e) { nuvemMotivo = "Não consegui verificar a nuvem."; }
+        if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) semNuvem = true;
+        else if (Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario()) desligou = true;
+        else if (!(Nuvem.auth && Nuvem.auth.currentUser)) {
+          try { this._conectarNuvemLicenca(); } catch (e) {}   // liga sozinho; o QR não espera
+        }
+      } catch (e) {}
 
-      if (!nuvemOk) {
+      if (desligou || semNuvem) {
         UI.modal("📱 Usar no celular ou tablet",
-          '<p style="margin-top:0">⚠️ <b>Antes de instalar no celular, ligue a nuvem.</b></p>' +
-          '<p class="muted" style="font-size:13px">' + Util.esc(nuvemMotivo) + '</p>' +
-          '<p class="muted" style="font-size:13px">O celular é <b>outro aparelho</b>: ele não enxerga o que está gravado aqui. Quem leva as suas obras, orçamentos e medições até lá é a sincronização. Ligue-a e volte aqui — leva alguns segundos.</p>',
-          [{ texto: "Abrir a nuvem", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirNuvem(); } }]);
+          '<p style="margin-top:0">⚠️ <b>' + (desligou
+            ? "A sincronização está desligada — por você."
+            : "Esta instalação está sem sincronização na nuvem.") + '</b></p>' +
+          '<p class="muted" style="font-size:13px">O celular é <b>outro aparelho</b>: ele não enxerga o que está gravado aqui. Quem leva as suas obras, orçamentos e medições até lá é a sincronização — e sem ela o aplicativo abriria vazio no celular.</p>' +
+          (desligou ? '<p class="muted" style="font-size:13px">Religar é um clique, no mesmo lugar onde você desligou.</p>' : ""),
+          desligou
+            ? [{ texto: "Religar a sincronização", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirNuvem(); } }]
+            : []);
         return;
       }
 
@@ -1527,14 +1600,29 @@
             }
             UI.toast("☁ Conectando…", "ok");
             p.then(function () { return Nuvem.sincronizar(eid); })
-              .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
-              .then(function () {
+              .then(function (okSync) {
+                if (window.Blocos) Blocos.usarOverrides(eid);
+                return okSync;
+              })
+              .then(function (okSync) {
                 Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
                 // a marca só cai DEPOIS de a reconexão dar certo: se falhar, o
                 // desligamento continua valendo e o boot seguinte não reconecta sozinho
                 if (Nuvem.marcarDesligada) Nuvem.marcarDesligada(false);
                 UI.fecharModal(); self.render();
-                UI.toast("☁ Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
+                /* ANUNCIAR SUCESSO SÓ COM SUCESSO. Este toast já saía sem uma
+                   única leitura ou escrita ter dado certo: `conectado` era lido
+                   de auth.currentUser, que a sessão salva mantém preenchido
+                   mesmo com a sincronização parada. Cliente lia "Sincronizado!"
+                   e ia dormir com os dados só na máquina dele. */
+                var st = (Nuvem.estado && Nuvem.estado()) || {};
+                if (okSync === false || st.cotaEstourada || st.semPermissao) {
+                  UI.toast(st.cotaEstourada
+                    ? "☁ A nuvem recusou as gravações agora (limite do serviço). Seu trabalho está salvo neste aparelho e sobe sozinho mais tarde."
+                    : "☁ NÃO consegui sincronizar. Seu trabalho está salvo neste aparelho — vou tentando sozinho.", "erro");
+                } else {
+                  UI.toast("☁ Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
+                }
               })
               .catch(function (e) {
                 var code = e && e.code;

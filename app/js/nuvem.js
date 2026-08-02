@@ -54,6 +54,7 @@
     ENTIDADES: ENTIDADES,
     ligado: false, uid: null, db: null, auth: null,
     _un: [], _push: {}, _patched: false, _initP: null,
+    _escutando: null,   // empresaId que já tem escuta ativa (ver escutar())
 
     disponivel: function () {
       return !!(typeof CONFIG !== "undefined" && CONFIG.backend && CONFIG.backend.sync && CONFIG.backend.firebaseConfig);
@@ -186,14 +187,34 @@
       var self = this;
       if (!this.ligado) return Promise.resolve(false);
       self._conflitosUltimoMerge = 0;
+      var falhou = 0, tentadas = 0;
       var uma = function (ent) {
+        tentadas++;
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? snap.data().v : null;
           var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
           var merged = self._merge(local, cloud, ent, empresaId);
-          Store.adapter.gravar(empresaId, ent, merged);              // atualiza cache local
-          return self._doc(ent).set({ v: merged, em: Date.now() });  // sobe o mesclado
-        }).catch(function () { /* entidade sem dados / offline: ignora */ });
+          /* cercado: o gravar está monkey-patched e, sem a cerca, dispararia um
+             push por entidade — 27 escritas extras a cada sincronização */
+          self._aplicandoDaNuvem = true;
+          try { Store.adapter.gravar(empresaId, ent, merged); }
+          finally { self._aplicandoDaNuvem = false; }
+          var carga = "";
+          try { carga = JSON.stringify(merged); } catch (e) { carga = ""; }
+          /* nada mudou dos dois lados? não sobe. Antes subia sempre, e o
+             `em: Date.now()` fazia o outro aparelho reagir a uma escrita que
+             não trazia dado nenhum — o começo do laço. */
+          var ck = empresaId + "|" + ent;
+          if (carga && self._ultimoEnviado[ck] === carga) return true;
+          self._ultimoEnviado[ck] = carga;
+          return self._doc(ent).set({ v: merged, em: Date.now() }).then(function () { return true; });
+        }).catch(function (e) {
+          /* NÃO engolir: 32 de 32 entidades reprovadas viravam "sincronizado". */
+          falhou++;
+          delete self._ultimoEnviado[empresaId + "|" + ent];
+          self._registrarFalha(ent, e);
+          return false;
+        });
       };
       // as LÁPIDES vêm primeiro: as demais entidades consultam essa lista para não
       // ressuscitar o que já foi excluído em outro aparelho
@@ -206,6 +227,15 @@
             if (global.UI && global.UI.toast) global.UI.toast("⚠ " + self._conflitosUltimoMerge + " registro(s) editados em 2 aparelhos ao mesmo tempo — a versão mais recente venceu e a anterior ficou guardada dentro do registro (não se perdeu nada).", "erro");
           } catch (e) {}
         }
+        /* Devolve FALSO quando tudo falhou. Antes devolvia `true` mesmo com as
+           32 entidades reprovadas, e quem chamou anunciava "☁ Sincronizado!"
+           sem um único byte ter subido. */
+        if (falhou >= tentadas && tentadas > 0) return false;
+        if (falhou > 0) {
+          try {
+            if (global.UI && global.UI.toast) global.UI.toast("☁ Sincronização parcial: " + falhou + " de " + tentadas + " partes não subiram. O trabalho está salvo neste aparelho e vai de novo sozinho.", "erro");
+          } catch (e) {}
+        }
         return true;
       });
     },
@@ -214,13 +244,47 @@
     escutar: function (empresaId, onChange) {
       var self = this;
       if (!this.ligado) return;
+
+      /* IDEMPOTENTE — sem isto, cada chamada empilhava um jogo INTEIRO de
+       * listeners nos MESMOS documentos, e nada era cancelado. São três os
+       * caminhos que chamam: o boot (_conectarNuvemLicenca), o login (entrar) e
+       * o botão "Sincronizar agora" (abrirNuvem) — este último sem guarda
+       * nenhuma, ou seja, cada clique somava outro jogo.
+       *
+       * Reproduzido no navegador com 27 entidades: boot 27 → login 54 →
+       * 1º clique 81 → 2º clique 108 listeners, ZERO cancelamentos. E o custo
+       * não é só memória: cada callback duplicado dispara um _lapides.get() de
+       * REDE (linha ~222), então uma sincronização com 4 jogos vira uma rajada
+       * de ~104 leituras. É assim que o SDK acaba anunciando
+       * "Using maximum backoff delay to prevent overloading the backend" —
+       * a partir daí ele só tenta de minuto em minuto, e a sincronização do
+       * cliente fica lenta ou para.
+       *
+       * Reescutar o MESMO tenant é no-op; trocar de tenant cancela o anterior
+       * (senão o aparelho continuaria recebendo dados da empresa antiga). */
+      if (this._escutando === empresaId && this._un.length) return;
+      if (this._un.length) {
+        this._un.forEach(function (u) { try { u(); } catch (e) {} });
+        this._un = [];
+      }
+      this._escutando = empresaId;
       /* As lápides precisam estar em dia ANTES de mesclar qualquer entidade — senão o
        * aparelho ainda não sabe o que foi apagado, aceita o registro velho e o reempurra
        * pra nuvem (ressurreição em pingue-pongue). Por isso a escuta de cada entidade
        * baixa as lápides primeiro; e o push manda "_lapides" na frente, sem debounce. */
+      /* `_aplicandoDaNuvem` cerca TODA gravação de dado que veio de fora, para
+       * o patch do Store não empurrar de volta. Sem esta cerca aqui — e a
+       * daquele get de lápides logo abaixo era a pior delas, porque rodava a
+       * cada snapshot de cada uma das outras entidades — dois aparelhos ligados
+       * entram num laço de escrita que não converge. */
+      var deFora = function (ent2, valor) {
+        self._aplicandoDaNuvem = true;
+        try { Store.adapter.gravar(empresaId, ent2, valor); }
+        finally { self._aplicandoDaNuvem = false; }
+      };
       var comLapides = function (fn) {
         return self._doc("_lapides").get().then(function (s) {
-          if (s.exists) Store.adapter.gravar(empresaId, "_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), s.data().v, "_lapides", empresaId));
+          if (s.exists) deFora("_lapides", self._merge(Store.adapter.ler(empresaId, "_lapides", []), s.data().v, "_lapides", empresaId));
         }).catch(function () {}).then(fn);
       };
       ENTIDADES.forEach(function (ent) {
@@ -231,38 +295,117 @@
           var aplicar = function () {
             var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
             var merged = self._merge(local, cloud, ent, empresaId);
-            Store.adapter.gravar(empresaId, ent, merged);
+            /* nada mudou depois do merge? então não grava e não avisa a tela —
+               gravar aqui acionaria o patch e reabriria o caminho do laço */
+            var a = "", b = "";
+            try { a = JSON.stringify(local); b = JSON.stringify(merged); } catch (e) { a = "x"; b = "y"; }
+            if (a === b) return;
+            deFora(ent, merged);
             if (typeof onChange === "function") onChange(ent);
           };
           if (ent === "_lapides") aplicar(); else comLapides(aplicar);
-        }, function () {});
+        }, function (err) {
+          /* handler de erro VAZIO era o que escondia a parada: o SDK encerra o
+             listener de vez em permission-denied e em resource-exhausted, e o
+             app seguia mostrando "conectado" para sempre. */
+          self._registrarFalha(ent, err);
+        });
         self._un.push(un);
       });
     },
 
-    // Monkey-patch idempotente: toda gravação do Store também empurra pra nuvem.
+    /* ---------- ESTADO HONESTO DA SINCRONIZAÇÃO ----------
+     * Sem isto o app dizia "☁ Sincronizado!" sem ter feito uma única leitura
+     * ou escrita. Agora toda falha fica registrada e a tela tem o que mostrar. */
+    _falhas: [],
+    _registrarFalha: function (ent, err) {
+      var cod = (err && (err.code || err.message)) || "erro";
+      this._falhas.push({ entidade: ent, codigo: String(cod) });
+      if (this._falhas.length > 40) this._falhas.shift();
+      try { console.warn("[nuvem] " + ent + ": " + cod); } catch (e) {}
+    },
+    /* Resumo para a tela: quantas falhas e de que tipo. `cota` é o caso que
+     * derruba a sincronização do cliente inteiro e precisa de nome próprio. */
+    estado: function () {
+      var f = this._falhas || [];
+      var cota = f.some(function (x) { return /resource-exhausted|RESOURCE_EXHAUSTED|quota/i.test(x.codigo); });
+      var permissao = f.some(function (x) { return /permission-denied/i.test(x.codigo); });
+      return {
+        ligado: !!this.ligado,
+        autenticado: !!(this.auth && this.auth.currentUser),
+        escutando: !!(this._un && this._un.length),
+        falhas: f.length,
+        cotaEstourada: cota,
+        semPermissao: permissao,
+        ok: !!this.ligado && !!(this._un && this._un.length) && !cota && !permissao
+      };
+    },
+
+    /* Monkey-patch: toda gravação do Store também empurra pra nuvem.
+     *
+     * ⚠ `_aplicandoDaNuvem` é o que impede o PINGUE-PONGUE INFINITO. O que
+     * acontecia com dois aparelhos do mesmo cliente ligados — computador e
+     * celular, exatamente o cenário que o app passou a incentivar:
+     *
+     *   A grava algo → sobe → B recebe o snapshot → B chama gravar(merged) →
+     *   este patch empurra de volta → A recebe → A grava → empurra → …
+     *
+     * e não parava nunca, porque o documento carrega `em: Date.now()` e por
+     * isso MUDA a cada volta, mesmo sem nenhum dado novo. No `_lapides`, que
+     * subia sem espera nenhuma, isso virava várias escritas por segundo no
+     * MESMO documento — muito acima do que o Firestore aceita (≈1/s por
+     * documento). O servidor responde RESOURCE_EXHAUSTED, e é literalmente o
+     * único caso em que o SDK escreve no console
+     * "Using maximum backoff delay to prevent overloading the backend".
+     * Daí em diante o cliente para de sincronizar — e a tela continuava
+     * dizendo "✅ Conectado".
+     *
+     * Dado que veio da nuvem não volta para a nuvem. Ponto. */
+    _aplicandoDaNuvem: false,
+
     _patch: function () {
       if (this._patched) return; this._patched = true;
       var self = this, orig = Store.adapter.gravar.bind(Store.adapter);
       Store.adapter.gravar = function (empresaId, entidade, valor) {
         var ok = orig(empresaId, entidade, valor);
-        if (ok && self.ligado && ENTIDADES.indexOf(entidade) >= 0) self.push(empresaId, entidade);
+        if (ok && self.ligado && !self._aplicandoDaNuvem && ENTIDADES.indexOf(entidade) >= 0) self.push(empresaId, entidade);
         return ok;
       };
     },
 
-    // Empurra uma entidade pra nuvem (debounce por entidade). As LÁPIDES vão sem espera:
-    // se a exclusão chegasse depois da lista já sem os registros, o outro aparelho teria
-    // uma janela para devolver tudo achando que só sumiu.
+    /* Empurra uma entidade pra nuvem (debounce por entidade).
+     *
+     * SEGUNDA TRAVA, independente da primeira: só escreve se o conteúdo mudou
+     * de verdade. Guardamos a última carga enviada por entidade e comparamos —
+     * escrita que não muda nada é escrita que só serve para gastar cota e
+     * acordar o outro aparelho. Com isto, mesmo que algum caminho novo escape
+     * do `_aplicandoDaNuvem`, o laço morre na primeira volta.
+     *
+     * As LÁPIDES continuam na frente das demais (a exclusão precisa chegar
+     * antes da lista sem os registros, senão o outro aparelho devolve tudo
+     * achando que só sumiu), mas não mais SEM espera: 150 ms bastam para vir
+     * à frente e já respeitam o limite por documento. */
+    _ultimoEnviado: {},
+
     push: function (empresaId, ent) {
       var self = this;
       var mandar = function () {
         try {
           var v = Store.adapter.ler(empresaId, ent, vazioDe(ent));
-          self._doc(ent).set({ v: v, em: Date.now() }).catch(function () {});
+          var carga = "";
+          try { carga = JSON.stringify(v); } catch (e) { carga = ""; }
+          var chave = empresaId + "|" + ent;
+          if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
+          self._ultimoEnviado[chave] = carga;
+          self._doc(ent).set({ v: v, em: Date.now() }).catch(function (e) {
+            /* a escrita falhou: esquece a marca, senão a próxima tentativa
+               acharia que já subiu e o dado ficaria só no aparelho */
+            delete self._ultimoEnviado[chave];
+            self._registrarFalha(ent, e);
+          });
         } catch (e) {}
       };
-      if (ent === "_lapides") { clearTimeout(this._push[ent]); mandar(); return; }
+      if (ent === "_lapides") { clearTimeout(this._push[ent]); this._push[ent] = setTimeout(mandar, 150); return; }
       clearTimeout(this._push[ent]);
       this._push[ent] = setTimeout(mandar, 900);
     },
@@ -287,7 +430,7 @@
 
     sair: function (permanente) {
       this._un.forEach(function (u) { try { u(); } catch (e) {} });
-      this._un = []; this.ligado = false; this.uid = null;
+      this._un = []; this._escutando = null; this.ligado = false; this.uid = null;
       if (permanente) this.marcarDesligada(true);
       if (this.auth) this.auth.signOut().catch(function () {});
     }
