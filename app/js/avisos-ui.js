@@ -33,7 +33,23 @@
       var contratos = l("contratos").map(function (c) {
         return { id: c.id, titulo: "Contrato " + (c.numero || ""), fim: c.termino, status: c.status };
       });
-      return { medicoes: l("medicoes"), tarefas: tarefas, restricoes: restricoes, contratos: contratos, obras: l("obras", "obras") };
+      /* ⚠ QUEM SOU EU. O alerta de diário é PESSOAL: "devolvido para VOCÊ" e
+       * "aguardando SUA aprovação". Sem a identidade da sessão, o motor não
+       * tem como filtrar e mostraria trabalho alheio para todo mundo — o que
+       * é pior que não mostrar nada, porque o alerta perde o sentido.
+       * A sessão identifica por `usuarioId` (sub-usuário) ou `email` (dono);
+       * NÃO existe `.id` — o mesmo campo que já deixou o RDO sem autoria. */
+      var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var eu = (typeof RDO !== "undefined" && RDO.idDoUsuario)
+        ? RDO.idDoUsuario(u) : String(u.usuarioId || u.email || "").trim().toLowerCase();
+      return {
+        medicoes: l("medicoes"), tarefas: tarefas, restricoes: restricoes,
+        contratos: contratos, obras: l("obras", "obras"),
+        rdos: l("rdo"),
+        eu: eu,
+        /* mesma régua de RDO.podeAcao: admin/gestor, ou aprovador nomeado */
+        souAprovador: (u.papel !== "usuario") || u.aprovador === true
+      };
     },
 
     _calcular: function () {

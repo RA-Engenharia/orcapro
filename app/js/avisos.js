@@ -99,6 +99,54 @@
         });
       });
 
+      /* 1b) DIÁRIOS — os dois lados do fluxo de aprovação.
+       *
+       * ⚠ O dono pediu, com estas palavras: o gestor "vai poder pedir para o
+       * criador revisar algo onde vai voltar uma mensagem ao criador COMO
+       * ALERTA". O recado era gravado e mostrado só para quem abrisse a lista
+       * de diários — ou seja, quem redigiu podia passar dias sem saber que o
+       * diário voltou. Um pedido de revisão que ninguém vê é o mesmo que
+       * nenhum pedido de revisão.
+       *
+       * `dados.eu` é a identidade da sessão (usuarioId ou e-mail). Sem ela,
+       * mostrar "devolvido para você" a todo mundo seria pior que não mostrar:
+       * o gestor veria alerta de trabalho que não é dele. */
+      var itRdoRev = [], itRdoApr = [];
+      var eu = String((dados.eu == null ? "" : dados.eu)).trim().toLowerCase();
+      (dados.rdos || []).forEach(function (r) {
+        if (!r || r.id == null) return;
+        var est = String(r.estado == null ? "" : r.estado);
+        var nome = nomeObra(obras, r.obraId);
+        var quando = isoDia(r.data);
+        var ondeQuando = (nome ? "Obra " + nome : "Obra não identificada") + (quando ? " — " + fmtBR(quando) : "");
+
+        /* voltou PARA MIM com pedido de correção */
+        if (est === "em_revisao" && eu && String(r.autorId || "").trim().toLowerCase() === eu) {
+          itRdoRev.push({
+            id: r.id, _d: quando || "",
+            titulo: "Diário " + (r.numero || r.id) + " devolvido para revisão",
+            /* o motivo VAI no alerta: mandar a pessoa procurar o texto em
+               outra tela é devolver trabalho sem informação */
+            detalhe: (r.revisaoMotivo ? "“" + String(r.revisaoMotivo).slice(0, 120) + "”" : "sem motivo registrado")
+                     + " · " + ondeQuando,
+            view: "rdo", prioridade: 1
+          });
+        }
+        /* esperando MINHA aprovação — e nunca o que eu mesmo escrevi */
+        if (est === "em_aprovacao" && dados.souAprovador &&
+            !(eu && String(r.autorId || "").trim().toLowerCase() === eu)) {
+          itRdoApr.push({
+            id: r.id, _d: quando || "",
+            titulo: "Diário " + (r.numero || r.id) + " aguardando sua aprovação",
+            detalhe: ondeQuando + (r.autor ? " · elaborado por " + r.autor : ""),
+            view: "rdo", prioridade: 1
+          });
+        }
+      });
+      /* mais antigo primeiro: quem espera há mais tempo aparece antes */
+      itRdoRev.sort(porChave("_d")); itRdoRev.forEach(function (x) { delete x._d; });
+      itRdoApr.sort(porChave("_d")); itRdoApr.forEach(function (x) { delete x._d; });
+
       // 2) tarefas atrasadas: !concluida && prazo && prazo < hoje (string ISO)
       var itTar = [];
       (dados.tarefas || []).forEach(function (t) {
@@ -163,6 +211,10 @@
 
       // monta grupos (vazios ficam FORA), já em ordem de prioridade
       var grupos = [];
+      /* a devolução vem PRIMEIRO: é a única em que alguém está parado
+         esperando uma ação de quem está lendo o alerta */
+      if (itRdoRev.length) grupos.push({ tipo: "rdo-revisao", rotulo: "Diários devolvidos para você", prioridade: 1, itens: itRdoRev });
+      if (itRdoApr.length) grupos.push({ tipo: "rdo-aprovar", rotulo: "Diários a aprovar", prioridade: 1, itens: itRdoApr });
       if (itMed.length) grupos.push({ tipo: "medicao-aprovar", rotulo: "Medições a aprovar", prioridade: 1, itens: itMed });
       if (itTar.length) grupos.push({ tipo: "tarefa-atrasada", rotulo: "Tarefas atrasadas", prioridade: 1, itens: itTar });
       if (itRes.length) grupos.push({ tipo: "restricao-aberta", rotulo: "Restrições abertas", prioridade: 2, itens: itRes });

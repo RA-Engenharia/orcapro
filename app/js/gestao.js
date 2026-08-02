@@ -8,7 +8,12 @@
   "use strict";
 
   // ---------- Fotos dos RDOs (Portal do Cliente) ----------
-  var RDO_MAX_FOTOS = 6;            // teto de fotos por diário
+  var RDO_MAX_FOTOS = 20;           /* teto de fotos por diário. Só pôde subir de 6
+                                     para 20 depois que a foto saiu de DENTRO do
+                                     registro (js/fotos.js): antes cada foto ia em
+                                     base64 no documento sincronizado, e ~8 delas
+                                     estouravam o limite de 1 MiB do Firestore —
+                                     travando a nuvem daquele cliente em silêncio. */
   var RDO_FOTO_MAXW = 1024;         // px no lado maior (reencode)
   var RDO_FOTO_Q = 0.6;             // qualidade JPEG
   var SNAP_MAX_BYTES = 8 * 1024 * 1024; // teto do snapshot serializado (< 10MB da rota + 12MB do body)
@@ -800,6 +805,12 @@
       var obras = lista("obras"), clientes = lista("clientes");
       var html = this._head(svg("obras") + "Obras", "nova-obra", "Nova obra");
       if (!obras.length) return html + vazioBox("Nenhuma obra cadastrada", "nova-obra", "Criar primeira obra");
+      /* atalho para o que o cliente respondeu. Fica aqui, e não escondido dentro
+         do modal do Portal, porque a nota do cliente é informação de gestão:
+         quem abre Obras de manhã tem de topar com ela. */
+      if (obras.some(function (o) { return o.portalUser; })) {
+        html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">⭐ Avaliações dos clientes</button></div>';
+      }
       html += '<div class="grid-cards">';
       obras.forEach(function (o) {
         var cli = clientes.filter(function (c) { return c.id === o.clienteId; })[0];
@@ -932,6 +943,19 @@
         // entidade: com milhares de registros o jeito antigo travava a aba e estourava
         // o teto de lápides, e a nuvem devolvia os órfãos depois.
         Store.lapidarObraEmCascata(e, id);
+        /* ⚠ AS FOTOS DOS DIÁRIOS DA OBRA SAEM JUNTO.
+         * A cascata apagava os registros e deixava as imagens no servidor para
+         * sempre — órfãs, ocupando a cota de 2 GB da licença, sem pertencer a
+         * nada. Excluir a obra é o momento em que MAIS lixo se cria, e era
+         * exatamente onde ninguém limpava. Recolho antes de os registros
+         * sumirem: depois não há mais como saber quais fotos eram dela. */
+        try {
+          var fotosDaObra = [];
+          Store.listar(e, "rdo").forEach(function (r) {
+            if (r && r.obraId === id) (r.fotos || []).forEach(function (f) { if (f) fotosDaObra.push(f); });
+          });
+          if (fotosDaObra.length && typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(fotosDaObra);
+        } catch (eF) {}
         this._ENT_DA_OBRA.forEach(function (par) {
           try {
             var ids = [];
@@ -979,6 +1003,87 @@
       App.render();
       UI.toast("Obra “" + obra.nome + "” excluída" + (apagados ? " com " + apagados + " registro(s) ligados a ela." : "."), "ok");
     },
+    /* Republica o snapshot da obra sem abrir tela nenhuma.
+     *
+     * Existe porque "Publicar" e "Despublicar" um diário mexiam SÓ no registro
+     * local — e o toast dizia "o cliente já vê este diário no Portal" e
+     * "saiu do Portal do cliente". As duas frases eram falsas: o snapshot no
+     * servidor é de quando alguém apertou o botão da obra, e ele continuava
+     * lá, intacto, com o diário retirado dentro. O gestor achava que tinha
+     * tirado do ar uma informação errada e não tinha.
+     *
+     * Falhar aqui não pode ser silencioso: quem despublicou precisa saber que
+     * o cliente AINDA vê. */
+    _republicarPortal: function (obra, aoTerminar) {
+      var base = String((typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "").replace(/\/$/, "");
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!obra || !obra.portalUser) { if (aoTerminar) aoTerminar({ ok: false, semPortal: true }); return; }
+      if (!base || !chave) { if (aoTerminar) aoTerminar({ ok: false, erro: "sem licença" }); return; }
+      /* ⚠ UMA REPUBLICAÇÃO POR VEZ, POR OBRA.
+       * Publicar quatro diários em sequência disparava quatro envios paralelos
+       * com snapshots montados em instantes diferentes — e o servidor SUBSTITUI
+       * a obra inteira. O último a CHEGAR vencia, não o último a sair: dava para
+       * o diário publicado por último sumir do Portal porque um envio anterior,
+       * montado antes dele existir, chegou depois. */
+      this._republicando = this._republicando || {};
+      var st = this._republicando[obra.id];
+      if (st && st.emVoo) { st.pendente = true; st.fila.push(aoTerminar); return; }
+      this._republicando[obra.id] = st = { emVoo: true, pendente: false, fila: [] };
+      var self = this;
+      /* ⚠ GUARDA O CALLBACK DE QUEM PEDIU **ANTES** de trocar `aoTerminar`.
+       * Sem esta variável, `terminar` chamava `aoTerminar(res)` — que a linha
+       * de baixo já tinha apontado para o próprio `terminar`. Recursão
+       * infinita: RangeError na 1ª publicação, o callback do gestor NUNCA
+       * rodava e o toast ficava em "Enviando ao Portal do cliente…" para
+       * sempre. Nem o "Publicado" nem o aviso vermelho de falha apareciam —
+       * ou seja, o gestor não sabia se o cliente estava vendo o diário.
+       * A armadilha é clássica: fechar sobre um parâmetro e depois
+       * sobrescrever esse mesmo parâmetro com o wrapper. */
+      var pedidoOriginal = aoTerminar;
+      var terminar = function (res) {
+        st.emVoo = false;
+        var espera = st.fila.splice(0);
+        if (st.pendente) {
+          /* alguém pediu enquanto este estava no ar: refaz UMA vez, agora com o
+             estado mais recente — é o que a pessoa esperava ver publicado */
+          st.pendente = false;
+          self._republicarPortal(obra, function (r2) {
+            if (pedidoOriginal) pedidoOriginal(r2);
+            espera.forEach(function (cb) { if (cb) cb(r2); });
+          });
+          return;
+        }
+        if (pedidoOriginal) pedidoOriginal(res);
+        espera.forEach(function (cb) { if (cb) cb(res); });
+      };
+      aoTerminar = terminar;
+      var pacote;
+      try { pacote = this._snapshotPortal(obra.id, obra).snapshot; }
+      catch (e) { aoTerminar({ ok: false, erro: "falha ao montar o resumo" }); return; }
+      var fit = this._caberSnapshot(pacote);
+      if (!fit.ok) { aoTerminar({ ok: false, erro: "resumo grande demais" }); return; }
+      /* poda de fotos NÃO pode passar por sucesso limpo: o cliente abriria o
+         diário antigo sem as fotos e ninguém teria sido avisado */
+      if (fit.cortou) {
+        try { UI.toast("Fotos de diários antigos foram omitidas para o envio caber. Elas continuam no sistema, mas não estão no Portal.", "erro"); } catch (e2) {}
+      }
+      /* ⚠ SEM SENHA AQUI. Esta republicação é automática (dispara a cada diário
+       * publicado) e reenviava o que estava guardado na obra; o servidor
+       * trocava o hash a cada envio. Bastava uma obra com a senha desatualizada
+       * para o cliente ser trancado para fora em silêncio — ele digitava a
+       * senha que recebeu e o portal respondia "usuário ou senha inválidos".
+       * Trocar senha é decisão de quem abre a tela do Portal, e só de lá. */
+      fetch(base + "/api/portal/publicar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-licenca": chave },
+        body: JSON.stringify({ user: obra.portalUser,
+          empresa: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "",
+          obra: pacote })
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j && j.ok, j: j }; }); })
+        .then(function (r) { if (aoTerminar) aoTerminar({ ok: !!r.ok, erro: (r.j && r.j.erro) || "" }); })
+        .catch(function () { if (aoTerminar) aoTerminar({ ok: false, erro: "sem conexão" }); });
+    },
+
     _despublicarPortal: function (obra) {
       try {
         var base = String((typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "").replace(/\/$/, "");
@@ -1683,14 +1788,51 @@
       lista("rdo").forEach(function (r) {
         if (r.obraId !== obraId) return;
         Util.arr(r.fotos).forEach(function (foto, i) {
-          if (!foto || !foto.d) return;
+          /* ⚠ `!foto.d` descartava TODA foto do formato novo (js/fotos.js:89 —
+           * a referência tem id/remoto, não os bytes). A Galeria de Fotos da
+           * obra ficava permanentemente vazia mesmo com o diário cheio de foto,
+           * e o Relatório Fotográfico dizia "esta obra não tem fotos".
+           * Agora entra quem tem bytes OU endereço; quem resolve é _galResolver. */
+          if (!foto || !(foto.d || foto.id || foto.remoto)) return;
           var leg = foto.leg || "";
           if (f && (leg.toLowerCase().indexOf(f) < 0) && (String(r.numero || "").toLowerCase().indexOf(f) < 0)) return;
-          out.push({ d: foto.d, leg: leg, data: r.data || "", rdoNumero: r.numero || "", rdoId: r.id, idxNoRdo: i });
+          out.push({ d: foto.d || "", ref: foto, leg: leg, data: r.data || "", rdoNumero: r.numero || "", rdoId: r.id, idxNoRdo: i });
         });
       });
       out.sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
       return out;
+    },
+    /* Bytes de uma foto da galeria. A referência do formato novo guarda o
+       endereço, não a imagem: os bytes vêm do IndexedDB ou do servidor. Guarda
+       o resultado no próprio item para não rebaixar duas vezes. */
+    _galResolver: function (ft) {
+      if (!ft) return Promise.resolve("");
+      if (ft.d) return Promise.resolve(ft.d);
+      if (typeof Fotos === "undefined" || !Fotos.dataURI) return Promise.resolve("");
+      return Fotos.dataURI(ft.ref)
+        .then(function (d) { ft.d = d || ""; return ft.d; })
+        .catch(function () { return ""; });
+    },
+    /* Preenche as miniaturas que nasceram sem src. Roda depois de cada render
+       do grid — inclusive o do filtro, que troca o innerHTML na mão. */
+    _galeriaHidratar: function () {
+      var self = this, fotos = this._galFotos || [];
+      var imgs = document.querySelectorAll("[data-galhid]");
+      Array.prototype.forEach.call(imgs, function (im) {
+        var ft = fotos[+im.getAttribute("data-galhid")];
+        if (!ft || im.getAttribute("src")) return;
+        self._galResolver(ft).then(function (d) {
+          if (d && im.parentNode) im.src = d;
+          else if (im.parentNode) {
+            var fg = im.parentNode;
+            im.style.display = "none";
+            var av = document.createElement("div");
+            av.style.cssText = "height:110px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:10px;color:#7c2d12;background:#fffbeb;padding:6px";
+            av.textContent = "foto ainda não chegou a este aparelho";
+            fg.insertBefore(av, im);
+          }
+        });
+      });
     },
     // Agrupa por mês (YYYY-MM) preservando a ordem desc.
     _galeriaPorMes: function (fotos) {
@@ -1735,7 +1877,7 @@
         g.fotos.forEach(function (ft) {
           var gi = idxGlobal++;
           html += '<figure style="margin:0;border:1px solid var(--linha);border-radius:10px;overflow:hidden;cursor:pointer;background:#fff" data-gacao="galeria-abrir" data-idx="' + gi + '" title="' + Util.esc(ft.leg || "Ampliar") + '">'
-            + '<img src="' + ft.d + '" loading="lazy" style="width:100%;height:110px;object-fit:cover;display:block">'
+            + '<img data-galhid="' + gi + '"' + (ft.d ? ' src="' + ft.d + '"' : "") + ' loading="lazy" style="width:100%;height:110px;object-fit:cover;display:block">'
             + '<figcaption style="padding:5px 7px;font-size:11px;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + (ft.leg ? Util.esc(ft.leg) : '<span class="muted">sem legenda</span>') + '<br><span class="muted" style="font-size:10px">' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + "</span></figcaption></figure>";
         });
         html += "</div>";
@@ -1750,9 +1892,11 @@
         inp.oninput = function () {
           self._galFiltro = inp.value;
           var grid = document.getElementById("gal-grid");
-          if (grid) grid.innerHTML = self._galeriaGridHtml(self._galSel, self._galFiltro);
+          if (grid) { grid.innerHTML = self._galeriaGridHtml(self._galSel, self._galFiltro); self._galeriaHidratar(); }
         };
       }
+      /* o grid do primeiro render também precisa das miniaturas */
+      this._galeriaHidratar();
     },
     galeriaAbrir: function (idx) {
       var fotos = this._galFotos || [];
@@ -1784,15 +1928,26 @@
         };
         ov.onclick = function (e) { if (e.target === ov) self.galeriaFecharLb(); };
       }
+      /* os bytes podem estar só no servidor: resolve e redesenha. Sem isto o
+         lightbox abre preto e o botão Baixar salva um arquivo vazio.
+         `_tentou` evita o laço quando a foto realmente não está disponível. */
+      if (!ft.d && !ft._tentou) {
+        ft._tentou = true;
+        var iAlvo = this._galLbIdx;
+        this._galResolver(ft).then(function () { if (self._galLbIdx === iAlvo) self._galeriaLightbox(); });
+      }
       var nome = "foto-" + (ft.rdoNumero || "obra") + "-" + (this._galLbIdx + 1) + ".jpg";
       var legTxt = (ft.leg ? Util.esc(ft.leg) : "Sem legenda") + '<span style="opacity:.7"> · ' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + " · " + (this._galLbIdx + 1) + "/" + fotos.length + "</span>";
       ov.innerHTML =
         '<div style="position:absolute;top:14px;right:16px;display:flex;gap:10px">' +
-          '<a href="' + ft.d + '" download="' + nome + '" class="btn sm" style="background:#fff;color:#0f2740" onclick="event.stopPropagation()">⬇ Baixar</a>' +
+          (ft.d ? '<a href="' + ft.d + '" download="' + nome + '" class="btn sm" style="background:#fff;color:#0f2740" onclick="event.stopPropagation()">⬇ Baixar</a>' : "") +
           '<button class="btn sm" data-gacao="galeria-fechar" style="background:#fff;color:#0f2740">✕ Fechar</button>' +
         "</div>" +
         '<button class="btn" data-gacao="galeria-nav" data-dir="prev" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;font-size:20px;padding:8px 14px">‹</button>' +
-        '<img src="' + ft.d + '" style="max-width:88vw;max-height:78vh;object-fit:contain;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.5)">' +
+        (ft.d
+          ? '<img src="' + ft.d + '" style="max-width:88vw;max-height:78vh;object-fit:contain;border-radius:8px;box-shadow:0 20px 60px rgba(0,0,0,.5)">'
+          : '<div style="color:#fff;background:rgba(255,255,255,.08);border-radius:8px;padding:40px 30px;text-align:center;max-width:70vw;font-size:13px">' +
+            (ft._tentou ? "Esta foto ainda não chegou a este aparelho.<br><span style=\"opacity:.7\">Ela foi tirada em outro dispositivo e ainda não subiu para a nuvem, ou você está sem internet.</span>" : "Carregando a foto…") + "</div>") +
         '<button class="btn" data-gacao="galeria-nav" data-dir="next" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;font-size:20px;padding:8px 14px">›</button>' +
         '<div style="color:#fff;margin-top:14px;font-size:13px;text-align:center;max-width:80vw">' + legTxt + "</div>";
     },
@@ -1801,20 +1956,37 @@
       var fotos = this._galeriaFotos(obraId, "");
       if (!fotos.length) { UI.toast("Esta obra não tem fotos.", "erro"); return; }
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : ""; };
-      var corpo = '<table style="width:100%;font-size:12px;margin-bottom:12px"><tr><td><b>Obra:</b> ' + Util.esc(obra.nome || "—") + "</td><td><b>Total de fotos:</b> " + fotos.length + "</td></tr>"
-        + (obra.local || obra.endereco ? '<tr><td colspan="2"><b>Local:</b> ' + Util.esc(obra.local || obra.endereco) + "</td></tr>" : "") + "</table>";
       var self = this;
-      this._galeriaPorMes(fotos).forEach(function (g) {
-        corpo += '<div style="font-weight:800;font-size:11px;letter-spacing:.4px;margin:14px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px">' + self._rotuloMes(g.chave).toUpperCase() + " (" + g.fotos.length + ")</div>"
-          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-        g.fotos.forEach(function (ft, i) {
-          corpo += '<figure style="margin:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;page-break-inside:avoid">'
-            + '<img src="' + ft.d + '" style="width:100%;max-height:220px;object-fit:cover;display:block">'
-            + '<figcaption style="padding:4px 8px;font-size:10px;color:#555">' + brd(ft.data) + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + (ft.leg ? " — " + Util.esc(ft.leg) : "") + "</figcaption></figure>";
+      /* os bytes vêm do IndexedDB ou do servidor — resolve TODAS antes de
+         montar, senão o relatório sai com molduras vazias. */
+      UI.toast("Preparando o relatório fotográfico…", "ok");
+      /* devolve a promessa: quem chama (e a suíte) precisa saber quando o
+         documento ficou pronto — antes isto era síncrono. */
+      return Promise.all(fotos.map(function (ft) { return self._galResolver(ft); })).then(function () {
+        var comBytes = fotos.filter(function (ft) { return ft.d; });
+        var faltando = fotos.length - comBytes.length;
+        if (!comBytes.length) {
+          UI.toast("Nenhuma das " + fotos.length + " fotos desta obra está disponível neste aparelho. Conecte-se à internet para baixá-las.", "erro");
+          return;
+        }
+        var corpo = '<table style="width:100%;font-size:12px;margin-bottom:12px"><tr><td><b>Obra:</b> ' + Util.esc(obra.nome || "—") + "</td><td><b>Total de fotos:</b> " + comBytes.length + "</td></tr>"
+          + (obra.local || obra.endereco ? '<tr><td colspan="2"><b>Local:</b> ' + Util.esc(obra.local || obra.endereco) + "</td></tr>" : "") + "</table>";
+        if (faltando) {
+          corpo += '<div style="border:1px solid #f59e0b;border-radius:6px;padding:6px 10px;font-size:10.5px;color:#7c2d12;background:#fffbeb;margin-bottom:10px">'
+            + "<b>" + faltando + " foto(s) desta obra não entraram neste relatório</b> — ainda não chegaram a este aparelho.</div>";
+        }
+        self._galeriaPorMes(comBytes).forEach(function (g) {
+          corpo += '<div style="font-weight:800;font-size:11px;letter-spacing:.4px;margin:14px 0 6px;border-bottom:1px solid #ddd;padding-bottom:3px">' + self._rotuloMes(g.chave).toUpperCase() + " (" + g.fotos.length + ")</div>"
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+          g.fotos.forEach(function (ft) {
+            corpo += '<figure style="margin:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;page-break-inside:avoid">'
+              + '<img src="' + ft.d + '" style="width:100%;max-height:220px;object-fit:cover;display:block">'
+              + '<figcaption style="padding:4px 8px;font-size:10px;color:#555">' + brd(ft.data) + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + (ft.leg ? " — " + Util.esc(ft.leg) : "") + "</figcaption></figure>";
+          });
+          corpo += "</div>";
         });
-        corpo += "</div>";
+        self._abrirDoc("Relatório Fotográfico — " + (obra.nome || ""), self._docShell("RELATÓRIO FOTOGRÁFICO", "#0f2740", corpo));
       });
-      this._abrirDoc("Relatório Fotográfico — " + (obra.nome || ""), this._docShell("RELATÓRIO FOTOGRÁFICO", "#0f2740", corpo));
     },
 
     // =================== BIM 3D ao 7D ===================
@@ -5885,9 +6057,59 @@
         var clima = rot(P.rdoClima, r.climaManha) + (r.climaTarde && r.climaTarde !== r.climaManha ? " / " + rot(P.rdoClima, r.climaTarde) : "");
         var resumo = (r.atividades || "").replace(/\s+/g, " ").slice(0, 60) + ((r.atividades || "").length > 60 ? "…" : "");
         var nf = (r.fotos && r.fotos.length) ? ' <span title="fotos anexadas" style="color:#2e6f9e;font-weight:700">📷' + r.fotos.length + "</span>" : "";
-        var acao = (r.status === "rascunho" ? '<button class="btn sm success" data-gacao="finalizar-rdo" data-id="' + r.id + '">Finalizar</button> ' : "✓ ")
-          + '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">🖨</button>';
-        html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + pill(r.status) + '</td><td class="num">' + acao + "</td></tr>";
+        /* Selo do estado. Quando o gestor pediu revisão, o MOTIVO aparece aqui
+           mesmo — o app não tem caixa de mensagens, e esconder o pedido atrás
+           de um clique faria o autor não ver o que precisa corrigir. */
+        var selo = "";
+        if (typeof RDO !== "undefined") {
+          /* RDO.estadoDe: o diário antigo (só `status`, sem `estado`) ESTÁ no
+             Portal do cliente, e esta lista o mostrava como "Rascunho" — duas
+             telas contando histórias opostas sobre o mesmo diário, sem saída,
+             porque Despublicar só aparecia em "publicado". */
+          var E = RDO.ESTADOS[RDO.estadoDe ? RDO.estadoDe(r, !!(ob && ob.portalUser)) : (r.estado || "rascunho")] || RDO.ESTADOS.rascunho;
+          var cs = { cinza: "#64748b", ambar: "#b45309", vermelho: "#b91c1c", verde: "#15803d", azul: "#2e6f9e" };
+          selo = '<span style="font-size:11px;font-weight:700;color:' + (cs[E.cor] || "#64748b") + '">' + Util.esc(E.rotulo) + "</span>";
+          if ((r.estado === "em_revisao") && r.revisaoMotivo) {
+            selo += '<div style="font-size:11px;color:#b91c1c;max-width:220px">' + Util.esc(r.revisaoMotivo) + "</div>";
+          }
+        } else { selo = pill(r.status); }
+        /* AÇÕES DE APROVAÇÃO — cada uma só aparece para quem realmente pode.
+           Botão que aparece e depois recusa é pior que botão ausente: ensina o
+           usuário a achar que o sistema está quebrado. */
+        /* ⚠ o 2º argumento começa em FALSO de propósito (decisão da sessão A, e
+         * ela tem razão): `status: "finalizado"` é um <select> que alguém
+         * marcou, não prova de que o cliente vê o diário. Numa obra sem Portal
+         * chamá-lo de "Publicado" mentiria na direção oposta à que estávamos
+         * consertando. Aqui a obra está à mão, então dá para responder a
+         * pergunta de verdade — e é o que o gestor precisa saber. */
+        var est = RDO.estadoDe ? RDO.estadoDe(r, !!(ob && ob.portalUser)) : (r.estado || "rascunho");
+        var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        /* numa conta de UM usuário não existe segundo aprovador — sem este
+           contexto o botão Aprovar some e o diário morre em "Aguardando
+           aprovação", que foi o que a minha correção anterior provocou */
+        var ctxAp = { semOutroAprovador: RDO.semOutroAprovador ? RDO.semOutroAprovador(eu, lista("equipe")) : false };
+        var acao = "";
+        if (typeof RDO !== "undefined") {
+          /* `finalizado_legado` entra aqui: é o diário antigo de obra SEM
+             Portal, e `enviar` é por onde ele deveria ter entrado no fluxo
+             novo. Sem isso ele ficava sem ação nenhuma — não podia ser enviado
+             nem despublicado (não há Portal de onde sair). */
+          if (RDO.podeAcao("enviar", eu, r, ctxAp) && (est === "rascunho" || est === "em_revisao" || est === "finalizado_legado"))
+            acao += '<button class="btn sm" data-gacao="rdo-enviar" data-id="' + r.id + '" title="Mandar para o gestor aprovar">Enviar</button> ';
+          if (RDO.podeAcao("aprovar", eu, r, ctxAp) && est === "em_aprovacao")
+            acao += '<button class="btn sm success" data-gacao="rdo-aprovar" data-id="' + r.id + '"' + (ctxAp.semOutroAprovador ? ' title="Você é o único aprovador desta conta — a aprovação fica registrada como sua"' : "") + ">Aprovar</button> ";
+          if (RDO.podeAcao("revisar", eu, r, ctxAp) && (est === "em_aprovacao" || est === "aprovado"))
+            acao += '<button class="btn sm" data-gacao="rdo-revisar" data-id="' + r.id + '" style="background:#b45309;color:#fff" title="Devolver para quem escreveu, com o motivo">Pedir revisão</button> ';
+          if (RDO.podeAcao("publicar", eu, r, ctxAp) && est === "aprovado")
+            acao += '<button class="btn sm" data-gacao="rdo-publicar" data-id="' + r.id + '" style="background:#2e6f9e;color:#fff" title="Liberar para o cliente ver no Portal">Publicar</button> ';
+          /* `publicado_legado` entra aqui: é o diário antigo que ESTÁ no Portal.
+             Sem ele nesta condição o botão Despublicar nunca apareceria e o
+             diário ficaria visível ao cliente sem nenhuma saída pela tela. */
+          if ((est === "publicado" || est === "publicado_legado") && RDO.podeAcao("despublicar", eu, r, ctxAp))
+            acao += '<button class="btn sm ghost" data-gacao="rdo-despublicar" data-id="' + r.id + '" title="Tirar do Portal do cliente">Despublicar</button> ';
+        }
+        acao += '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">🖨</button>';
+        html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + selo + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -5909,51 +6131,1137 @@
           + '<div style="background:#f1f5f9;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">' + tit + "</div>"
           + '<div style="padding:8px 10px;white-space:pre-wrap;min-height:26px">' + Util.esc(txt || "—") + "</div></div>";
       }
+      var self = this;
       var temOcorrencia = r.ocorrencias && !/^sem ocorr/i.test(String(r.ocorrencias).trim());
-      var corpo =
+
+      /* ⚠ CLIMA E EFETIVO — o papel lia os campos do formulário ANTIGO.
+       * O formulário novo grava o clima buscado da API em `r.clima` (objeto
+       * com chuvaMm, descrição e fonte) e o efetivo em `r.efetivo[]`, com os
+       * totais congelados em `r.totaisEfetivo`. O impresso continuava lendo
+       * `climaManha`/`climaTarde` e `efetivoDireto`/`efetivoIndireto`, que
+       * ninguém mais escreve: um dia de 54 mm buscado do Open-Meteo saía
+       * "Ensolarado", e 12 pessoas em duas funções saíam como "Total: 0".
+       *
+       * Isso não é detalhe de layout. É o documento que sustenta pleito de
+       * prazo por chuva e comprovação de mão de obra em medição — mentir nele
+       * é pior do que não emitir. */
+      var clima = r.clima || null;
+      var chuvaForte = !!(clima && Number(clima.chuvaMm) > 0 &&
+        typeof RDO !== "undefined" && RDO.fracaoDiaPerdidoPorChuva &&
+        RDO.fracaoDiaPerdidoPorChuva(clima.chuvaMm) > 0);
+
+      function blocoClima() {
+        /* o registro antigo (só manhã/tarde preenchidos à mão) continua saindo
+           como sempre saiu — ele é válido, só não veio de API */
+        if (!clima) {
+          var m = rot(P.rdoClima, r.climaManha), t2 = rot(P.rdoClima, r.climaTarde);
+          if (!m && !t2) return '<span style="color:#777">não registrado</span>';
+          return "Manhã: " + Util.esc(m || "—") + "<br>Tarde: " + Util.esc(t2 || "—");
+        }
+        var h = Util.esc((typeof RDO !== "undefined" && RDO.textoClima) ? RDO.textoClima(clima) : (clima.descricao || "—"));
+        if (chuvaForte) {
+          /* o critério é o do DNIT/SICRO — dizer de onde vem é o que dá
+             sustentação ao pleito; número sem origem o fiscal recusa */
+          var nd = RDO.fracaoDiaPerdidoPorChuva(clima.chuvaMm);
+          h += '<div style="margin-top:5px;color:#b45309;font-weight:700">Dia impraticável: '
+            + RDO.numBR(Math.round(nd * 1000) / 10) + "%"
+            + '<div style="font-weight:400;font-size:10px;color:#777">critério DNIT/SICRO — nd = (chuva ÷ 3 − 5) ÷ 15</div></div>';
+        }
+        if (r.climaManha || r.climaTarde) {
+          h += '<div style="margin-top:5px;font-size:10px;color:#777">Anotado em obra — manhã: '
+            + Util.esc(rot(P.rdoClima, r.climaManha) || "—") + " · tarde: " + Util.esc(rot(P.rdoClima, r.climaTarde) || "—") + "</div>";
+        }
+        /* procedência da medição: município e coordenada. É o que permite ao
+           fiscal conferir que a chuva caiu NESTA obra, e não numa homônima */
+        if (clima.local || clima.lat != null) {
+          h += '<div style="margin-top:4px;font-size:9.5px;color:#777">Estação de referência: '
+            + Util.esc(clima.local || "—")
+            + (clima.lat != null ? " (" + RDO.numBR(Math.round(clima.lat * 1e4) / 1e4) + ", " + RDO.numBR(Math.round(clima.lon * 1e4) / 1e4) + ")" : "")
+            + "</div>";
+        }
+        return h;
+      }
+
+      function blocoEfetivo() {
+        var tot = r.totaisEfetivo || null;
+        /* recalcula se o registro é antigo mas tem a lista: número congelado
+           errado é pior que número recalculado */
+        if (!tot && r.efetivo && typeof RDO !== "undefined" && RDO.totaisEfetivo) tot = RDO.totaisEfetivo(r.efetivo);
+        if (!tot || !tot.pessoas) {
+          var d = efDir + efInd;
+          if (!d) return '<span style="color:#777">nenhum efetivo lançado</span>';
+          return "Direto: " + efDir + " · Indireto: " + efInd + "<br><b>Total: " + d + " pessoas</b>";
+        }
+        var h = "Direto: " + tot.direta + " · Indireto: " + tot.indireta
+          + (tot.terceiros ? " · Terceiros: " + tot.terceiros : "")
+          + "<br><b>Total: " + tot.pessoas + " pessoas</b>";
+        /* ⚠ O FORMULÁRIO TEM DOIS JEITOS DE LANÇAR GENTE ao mesmo tempo: os
+         * campos numéricos "Efetivo direto/indireto" (que sempre existiram) e
+         * o bloco por função. Quem preencheu os DOIS via o papel imprimir só o
+         * segundo, e o número divergia do que o Portal manda ao cliente.
+         * Divergência entre dois documentos da mesma obra é o que a
+         * fiscalização usa para desqualificar os dois.
+         * NÃO somo: somar inventaria gente que não existe — é o mesmo pessoal
+         * contado de duas formas. Declaro a divergência no papel e deixo quem
+         * assina resolver, que é o único que sabe qual dos dois está certo. */
+        var somaCampos = efDir + efInd;
+        if (somaCampos > 0 && somaCampos !== tot.pessoas) {
+          h += '<div style="margin-top:5px;font-size:10px;color:#b45309;font-weight:700">⚠ Os campos "Efetivo direto/indireto" deste diário somam '
+            + somaCampos + ", diferente das " + tot.pessoas + " pessoas lançadas por função."
+            + '<div style="font-weight:400">Vale o lançamento por função (é o que a medição confere). Acerte os campos numéricos ou zere-os.</div></div>';
+        }
+        if (tot.horas) {
+          h += '<div style="font-size:10px;color:#777">' + RDO.numBR(tot.horas) + " h trabalhadas"
+            + (tot.horasExtras ? " · " + RDO.numBR(tot.horasExtras) + " h extras" : "") + "</div>";
+        }
+        /* por função: é o que a medição confere quando o cliente pergunta
+           quantos pedreiros estavam na frente naquele dia */
+        var fs = Object.keys(tot.porFuncao || {});
+        if (fs.length) {
+          h += '<div style="margin-top:4px;font-size:10px;color:#555">'
+            + fs.map(function (k) { return Util.esc(k) + ": " + tot.porFuncao[k]; }).join(" · ") + "</div>";
+        }
+        return h;
+      }
+
+      /* ⚠ SERVIÇOS EXECUTADOS. O formulário grava os itens lançados em
+       * `atividadesItens` e só o texto livre em `atividades` (linha ~6583).
+       * O impresso lia apenas o texto: um diário com seis serviços lançados e o
+       * "Resumo do dia" em branco saía com o campo de atividades vazio — no
+       * documento que serve de PROVA. Mesmo defeito que travava RDO.validar. */
+      var itens = r.atividadesItens || [];
+      function tabelaServicos() {
+        if (!itens.length) return "";
+        var linhas = itens.map(function (a) {
+          var av = (typeof RDO !== "undefined" && RDO.calcAvanco) ? RDO.calcAvanco(a) : { pct: 0, derivada: false };
+          var sit = a.situacao;
+          if (typeof RDO !== "undefined" && RDO.SITUACOES_SERVICO) {
+            var s = RDO.SITUACOES_SERVICO.filter(function (x) { return x.id === a.situacao; })[0];
+            if (s) sit = s.rotulo;
+          }
+          return '<tr style="border-top:1px solid #e2e8f0">'
+            + '<td style="padding:4px 6px">' + (a.numero ? "<b>" + Util.esc(a.numero) + "</b> " : "") + Util.esc(a.descricao || "—")
+            + (a.etapa ? '<div style="font-size:9px;color:#777">' + Util.esc(a.etapa) + "</div>" : "") + "</td>"
+            + '<td style="padding:4px 6px;text-align:center">' + Util.esc(a.unidade || "—") + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + (a.qtdExecutada || "—") + (av.derivada ? ' <span style="color:#777">(' + av.pct + "%)</span>" : "") + "</td>"
+            + '<td style="padding:4px 6px">' + Util.esc(sit || "—") + "</td></tr>";
+        }).join("");
+        return '<div style="margin-top:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden">'
+          + '<div style="background:#f1f5f9;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">SERVIÇOS EXECUTADOS (' + itens.length + ")</div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+          + '<tr style="background:#fafafa;font-size:10px;color:#555">'
+          + '<th style="text-align:left;padding:4px 6px">Serviço</th><th style="padding:4px 6px">Un.</th>'
+          + '<th style="padding:4px 6px">Previsto</th><th style="padding:4px 6px">Executado</th>'
+          + '<th style="text-align:left;padding:4px 6px">Situação</th></tr>'
+          + linhas + "</table></div>";
+      }
+
+      /* ⚠ O QUE O USUÁRIO LANÇA E O PAPEL NÃO MOSTRAVA.
+       * O formulário grava equipamentos em `equipamentosItens`, ocorrências
+       * tipificadas em `ocorrenciasItens`, a parada em `paralisacao`, os fatos
+       * impeditivos em `impedimentos` e visitas/comunicações/acidente em
+       * campos próprios. O impresso ignorava TODOS: saía só o texto livre
+       * antigo. A pessoa preenchia a tela inteira e o PDF que ela manda para a
+       * fiscalização não trazia nada disso.
+       *
+       * É o que sustenta pleito: parada sem hora e responsável não vale, e
+       * fato impeditivo que não está no diário não atrasa prazo nenhum. */
+      function tabelaEquipamentos() {
+        var eqs = r.equipamentosItens || [];
+        if (!eqs.length) return "";
+        var tt = r.totaisEquip || ((typeof RDO !== "undefined" && RDO.totaisEquipamentos) ? RDO.totaisEquipamentos(eqs) : null);
+        var linhas = eqs.map(function (e) {
+          return '<tr style="border-top:1px solid #e2e8f0">'
+            + '<td style="padding:4px 6px">' + Util.esc(e.descricao || e.nome || "—") + (e.alugado ? ' <span style="font-size:9px;color:#b45309">(alugado)</span>' : "") + "</td>"
+            + '<td style="padding:4px 6px;text-align:center">' + (e.qtd || 1) + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + RDO.numBR(Number(e.hOperacao || 0)) + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + RDO.numBR(Number(e.hOciosa || 0)) + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + RDO.numBR(Number(e.hManutencao || 0)) + "</td></tr>";
+        }).join("");
+        return '<div style="margin-top:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden">'
+          + '<div style="background:#f1f5f9;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">EQUIPAMENTOS (' + eqs.length + ")"
+          /* disponibilidade é o número que denuncia máquina alugada parada */
+          + (tt && tt.disponibilidade != null ? ' <span style="font-weight:400">— disponibilidade ' + RDO.numBR(tt.disponibilidade) + "%</span>" : "") + "</div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+          + '<tr style="background:#fafafa;font-size:10px;color:#555"><th style="text-align:left;padding:4px 6px">Equipamento</th>'
+          + '<th style="padding:4px 6px">Qtd</th><th style="padding:4px 6px">h operação</th>'
+          + '<th style="padding:4px 6px">h ociosa</th><th style="padding:4px 6px">h manutenção</th></tr>'
+          + linhas + "</table></div>";
+      }
+
+      function blocoParalisacao() {
+        var p = r.paralisacao || {};
+        if (!p.houve) return "";
+        function li(rot2, val) { return val ? "<b>" + rot2 + ":</b> " + Util.esc(String(val)) + "<br>" : ""; }
+        return '<div style="margin-top:10px;border:2px solid #b91c1c;border-radius:6px;overflow:hidden">'
+          + '<div style="background:#b91c1c;color:#fff;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">PARALISAÇÃO DA OBRA</div>'
+          + '<div style="padding:8px 10px;font-size:11.5px">'
+          + li("Início", p.inicio) + li("Fim", p.fim) + li("Dias parados", p.dias)
+          + li("Motivo", p.motivo) + li("Responsável pela parada", p.responsavel)
+          + li("Previsão de reinício", p.previsaoReinicio ? String(p.previsaoReinicio).split("-").reverse().join("/") : "")
+          + "</div></div>";
+      }
+
+      function tabelaOcorrencias() {
+        var oc = r.ocorrenciasItens || [];
+        if (!oc.length) {
+          /* registrar EXPRESSAMENTE que nada ocorreu é exigência do formulário
+             do DNIT: diário em branco não prova que o dia correu bem.
+             ⚠ MAS SÓ SE NADA OCORREU MESMO. `semRestricoes` é gravado como
+             "o bloco tipificado está vazio" — e o campo de texto livre, que
+             sempre existiu e é onde a maioria escreve, não entra nessa conta.
+             O papel saía afirmando "Sem restrições" na MESMA página em que
+             imprimia "Chuva forte a partir das 10h, concretagem suspensa".
+             Um documento que se contradiz não protege ninguém: a defesa do
+             outro lado usa a própria contradição. */
+          if (r.semRestricoes && !temOcorrencia && !(r.paralisacao && r.paralisacao.houve) && !r.acidente) {
+            return bloco("OCORRÊNCIAS DO DIA", "Sem restrições — nenhuma ocorrência registrada neste dia.");
+          }
+          return "";
+        }
+        var rotTipo = {};
+        if (typeof RDO !== "undefined" && RDO.TIPOS_OCORRENCIA) {
+          RDO.TIPOS_OCORRENCIA.forEach(function (t2) { rotTipo[t2.id] = t2.rotulo; });
+        }
+        var linhas = oc.map(function (o) {
+          return '<tr style="border-top:1px solid #e2e8f0">'
+            + '<td style="padding:4px 6px">' + Util.esc(rotTipo[o.tipo] || o.tipo || "—") + "</td>"
+            + '<td style="padding:4px 6px">' + Util.esc(o.descricao || "—") + "</td>"
+            + '<td style="padding:4px 6px">' + Util.esc(o.responsavel || "—") + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + (Number(o.horasParadas) ? RDO.numBR(o.horasParadas) : "—") + "</td>"
+            + '<td style="padding:4px 6px;text-align:center">' + (o.prazoCorrecao ? String(o.prazoCorrecao).split("-").reverse().join("/") : "—") + "</td></tr>";
+        }).join("");
+        return '<div style="margin-top:10px;border:1px solid #f59e0b;border-radius:6px;overflow:hidden">'
+          + '<div style="background:#fffbeb;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px;color:#b45309">OCORRÊNCIAS DO DIA (' + oc.length + ")</div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+          + '<tr style="background:#fafafa;font-size:10px;color:#555"><th style="text-align:left;padding:4px 6px">Tipo</th>'
+          + '<th style="text-align:left;padding:4px 6px">O que aconteceu</th><th style="text-align:left;padding:4px 6px">Responsável</th>'
+          + '<th style="padding:4px 6px">h paradas</th><th style="padding:4px 6px">Prazo p/ corrigir</th></tr>'
+          + linhas + "</table></div>";
+      }
+
+      function blocoImpedimentos() {
+        var ids = r.impedimentos || [];
+        if (!ids.length && !r.impedimentosObs) return "";
+        var rotImp = {};
+        if (typeof RDO !== "undefined" && RDO.IMPEDIMENTOS) {
+          RDO.IMPEDIMENTOS.forEach(function (i2) { rotImp[i2.id] = i2.rotulo; });
+        }
+        var lista2 = ids.map(function (i2) { return Util.esc(rotImp[i2] || i2); }).join(" · ");
+        return '<div style="margin-top:10px;border:1px solid #b45309;border-radius:6px;overflow:hidden">'
+          + '<div style="background:#fffbeb;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px;color:#b45309">FATOS IMPEDITIVOS</div>'
+          + '<div style="padding:8px 10px;font-size:11.5px">'
+          + (lista2 ? "<b>" + lista2 + "</b>" : "")
+          + (r.impedimentosObs ? '<div style="margin-top:4px;white-space:pre-wrap">' + Util.esc(r.impedimentosObs) + "</div>" : "")
+          + '<div class="muted" style="font-size:9.5px;margin-top:5px;color:#777">Fatos que atrasaram a obra e não decorrem de quem executa — base para pedido de prorrogação de prazo.</div>'
+          + "</div></div>";
+      }
+
+      function blocoRegistros() {
+        var h = "";
+        if (r.visitas) h += bloco("VISITAS AO CANTEIRO", r.visitas);
+        if (r.comunicacoes) h += bloco("COMUNICAÇÕES E ORDENS DE SERVIÇO", r.comunicacoes);
+        /* acidente sai SEMPRE que houver texto, com destaque: é o registro que
+           a fiscalização e a perícia procuram primeiro */
+        if (r.acidente) h += bloco("ACIDENTE OU DANO ⚠", r.acidente, "#b91c1c");
+        return h;
+      }
+
+      /* ⚠ O PAPEL PRECISA DIZER EM QUE PÉ ESTÁ. Rascunho recusado saía idêntico
+       * a diário aprovado — e é o mesmo PDF que o engenheiro manda ao cliente. */
+      var est = (typeof RDO !== "undefined" && RDO.estadoDe) ? RDO.estadoDe(r, !!ob.portalUser) : (r.estado || "rascunho");
+      var infoEst = (typeof RDO !== "undefined" && RDO.ESTADOS && RDO.ESTADOS[est]) || { rotulo: est };
+      var selo = "";
+      /* ⚠ SÓ carimba quem está mesmo em elaboração.
+       * O diário anterior ao fluxo de aprovação não tem `estado`, caía no
+       * default "rascunho" e saía impresso com "sem validade como registro
+       * definitivo" — um diário que era válido, no PDF que o engenheiro manda
+       * ao cliente. `publicado_legado` (o antigo que ESTÁ no Portal) fica de
+       * fora pelo mesmo motivo: ele não é rascunho de nada. */
+      if (est !== "publicado" && est !== "publicado_legado" && est !== "finalizado_legado" && r.estado) {
+        var corSelo = (est === "aprovado") ? "#0369a1" : "#b45309";
+        selo = '<div style="margin:0 0 10px;border:1.5px solid ' + corSelo + ';border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;color:' + corSelo + ';background:#fffbeb">'
+          + Util.esc(String(infoEst.rotulo || est).toUpperCase())
+          + (est === "aprovado" ? " — aprovado, ainda não publicado ao cliente."
+                                : " — documento em elaboração, sem validade como registro definitivo.")
+          + "</div>";
+      }
+
+      var corpo = selo +
         '<table style="width:100%;border-collapse:collapse;font-size:12px;border:1px solid #ddd;border-radius:6px">'
         + linhaId("Obra", ob.nome) + linhaId("Cliente", cli.nome || ob.clienteNome)
         + linhaId("Local", ob.endereco || ob.local) + (ct.numero ? linhaId("Contrato", ct.numero) : "")
         + linhaId("Data", dataExt) + linhaId("Responsável", r.responsavel || ob.responsavel)
         + "</table>"
         + '<div style="display:flex;gap:10px;margin-top:10px;font-size:12px">'
-        + '<div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>Clima</b><br>Manhã: ' + Util.esc(rot(P.rdoClima, r.climaManha) || "—") + '<br>Tarde: ' + Util.esc(rot(P.rdoClima, r.climaTarde) || "—") + "</div>"
-        + '<div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>Efetivo em obra</b><br>Direto: ' + efDir + " · Indireto: " + efInd + '<br><b>Total: ' + (efDir + efInd) + " pessoas</b></div></div>"
-        + bloco("ATIVIDADES EXECUTADAS", r.atividades)
+        + '<div style="flex:1;border:1px solid ' + (chuvaForte ? "#b45309" : "#ddd") + ';border-radius:6px;padding:8px 10px"><b>Clima</b><br>' + blocoClima() + "</div>"
+        + '<div style="flex:1;border:1px solid #ddd;border-radius:6px;padding:8px 10px"><b>Efetivo em obra</b><br>' + blocoEfetivo() + "</div></div>"
+        + tabelaServicos()
+        + tabelaEquipamentos()
+        + blocoParalisacao()
+        + tabelaOcorrencias()
+        + blocoImpedimentos()
+        + bloco(itens.length ? "RESUMO DO DIA" : "ATIVIDADES EXECUTADAS", r.atividades)
         + bloco("OCORRÊNCIAS / OBSERVAÇÕES" + (temOcorrencia ? " ⚠" : ""), r.ocorrencias, temOcorrencia ? "#f59e0b" : "#ddd")
-        + (r.equipamentos ? bloco("EQUIPAMENTOS EM USO", r.equipamentos) : "");
-      var fotos = (r.fotos || []).filter(function (f) { return f && f.d; });
-      if (fotos.length) {
-        corpo += '<div style="margin-top:10px"><div style="font-weight:800;font-size:11px;letter-spacing:.4px;margin-bottom:6px">REGISTRO FOTOGRÁFICO (' + fotos.length + ")</div>"
-          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
-        fotos.forEach(function (f, i) {
-          corpo += '<figure style="margin:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;page-break-inside:avoid">'
-            + '<img src="' + f.d + '" style="width:100%;max-height:230px;object-fit:cover;display:block">'
-            + '<figcaption style="padding:4px 8px;font-size:10px;color:#555">Foto ' + (i + 1) + (f.leg ? " — " + Util.esc(f.leg) : "") + "</figcaption></figure>";
-        });
-        corpo += "</div></div>";
+        + blocoRegistros()
+        + (r.equipamentos ? bloco("EQUIPAMENTOS EM USO (texto livre)", r.equipamentos) : "");
+
+      /* ⚠ REGISTRO FOTOGRÁFICO. A referência do formato novo (js/fotos.js:89)
+       * NÃO tem `.d` — os bytes ficam no IndexedDB do aparelho ou no servidor.
+       * O filtro `f && f.d` devolvia array vazio SEMPRE e o bloco inteiro nem
+       * era emitido: o diário impresso, que é o entregável com valor de prova,
+       * saía sem uma única foto e sem uma linha dizendo que faltava.
+       * Agora resolve os bytes de verdade — e o que não vier é DECLARADO no
+       * papel, porque documento que omite em silêncio é pior que documento
+       * incompleto. `_abrirPrint` monta um overlay no DOM (js/app.js), não um
+       * popup, então resolver antes de abrir não esbarra em bloqueador. */
+      var refs = (r.fotos || []).slice(0, RDO_MAX_FOTOS);
+      var resolver;
+      if (!refs.length) resolver = Promise.resolve([]);
+      else if (typeof Fotos !== "undefined" && Fotos.dataURI) {
+        if (refs.some(function (f) { return f && !f.d; })) UI.toast("Preparando o diário para impressão…", "ok");
+        /* ⚠ TETO DE TEMPO POR FOTO. `Fotos.baixar` não tem AbortController: com
+         * a foto só na nuvem e a internet ruim, o Promise.all podia nunca
+         * assentar e o clique no 🖨 não abria documento nenhum — sem erro, sem
+         * spinner, para sempre. Documento incompleto que se declara é melhor
+         * que botão que não faz nada. */
+        resolver = Promise.all(refs.map(function (f) {
+          var vazia = { d: "", leg: (f && f.leg) || "" };
+          return Promise.race([
+            Fotos.dataURI(f).then(function (d) { return { d: d || "", leg: (f && f.leg) || "" }; }),
+            new Promise(function (res) { setTimeout(function () { res(vazia); }, 12000); })
+          ]).catch(function () { return vazia; });
+        }));
+      } else resolver = Promise.resolve(refs.map(function (f) { return { d: f.d || "", leg: f.leg || "" }; }));
+
+      resolver.catch(function () { return []; }).then(function (fotos) {
+        var boas = fotos.filter(function (f) { return f.d; });
+        var faltando = fotos.length - boas.length;
+        if (boas.length) {
+          corpo += '<div style="margin-top:10px"><div style="font-weight:800;font-size:11px;letter-spacing:.4px;margin-bottom:6px">REGISTRO FOTOGRÁFICO (' + boas.length + ")</div>"
+            + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+          boas.forEach(function (f, i) {
+            corpo += '<figure style="margin:0;border:1px solid #ddd;border-radius:6px;overflow:hidden;page-break-inside:avoid">'
+              + '<img src="' + f.d + '" style="width:100%;max-height:230px;object-fit:cover;display:block">'
+              + '<figcaption style="padding:4px 8px;font-size:10px;color:#555">Foto ' + (i + 1) + (f.leg ? " — " + Util.esc(f.leg) : "") + "</figcaption></figure>";
+          });
+          corpo += "</div></div>";
+        }
+        if (faltando) {
+          corpo += '<div style="margin-top:8px;border:1px solid #f59e0b;border-radius:6px;padding:6px 10px;font-size:10.5px;color:#7c2d12;background:#fffbeb">'
+            + "<b>" + faltando + " foto(s) deste diário não puderam ser incluídas neste documento</b> — os arquivos não estão neste aparelho e ainda não chegaram à nuvem. "
+            + "Abra o diário com internet para que subam e imprima de novo.</div>";
+        }
+        if (r.status !== "rascunho") corpo += self._qrPortalObra(ob, "Escaneie para acompanhar o andamento desta obra no Portal do Cliente (conforme a última publicação).");
+        corpo += '<div style="display:flex;gap:30px;margin-top:34px;text-align:center;font-size:11px;page-break-inside:avoid">'
+          + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(r.responsavel || ob.responsavel || "Responsável pela obra") + "<br><span style='color:#777'>Responsável pela obra</span></div></div>"
+          + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(cli.nome || ob.clienteNome || "Fiscalização / Cliente") + "<br><span style='color:#777'>Fiscalização / Cliente</span></div></div></div>";
+        self._abrirDoc("Diário de Obra " + (r.numero || ""), self._docShell("DIÁRIO DE OBRA — " + Util.esc(r.numero || ""), "#0f2740", corpo, "rdo"));
+      });
+    },
+
+    /* A foto subiu — agora o REGISTRO precisa aprender o id remoto.
+     *
+     * Sem isto o ciclo fica pela metade e o modo de falhar é traiçoeiro: a foto
+     * sobe, o disco enche, e mesmo assim o OUTRO aparelho nunca a encontra,
+     * porque o diário só tem o id local — que só existe no aparelho que tirou a
+     * foto. O usuário vê a foto no celular, não vê no computador, e não há erro
+     * em lugar nenhum para explicar.
+     *
+     * Gravamos com o Store normal: a entidade é pequena agora (só referências),
+     * então a sincronização leva isso sem esforço. */
+    _ligarRetornoDeFoto: function () {
+      if (this._retornoFotoLigado || typeof Fotos === "undefined") return;
+      this._retornoFotoLigado = true;
+      var self = this;
+      Fotos.aoSubir = function (idLocal, idRemoto, tenant) {
+        try {
+          var rs = Store.listar(eid(), "rdo") || [];
+          for (var i = 0; i < rs.length; i++) {
+            var fs = rs[i].fotos || [], mudou = false;
+            for (var j = 0; j < fs.length; j++) {
+              if (fs[j] && fs[j].id === idLocal && !fs[j].remoto) {
+                fs[j].remoto = idRemoto; fs[j].tenant = tenant; mudou = true;
+              }
+            }
+            if (mudou) {
+              Store.salvar(eid(), "rdo", rs[i]);
+              /* ⚠ A FOTO QUE CHEGA DEPOIS PRECISA ALCANÇAR O CLIENTE.
+               * O encarregado anexa 20 fotos no canteiro sem sinal. A fila
+               * sobe UMA por vez. No escritório o gestor aprova e publica em
+               * um minuto — e o snapshot sai com as 3 ou 4 que já subiram. As
+               * outras 16 terminavam de subir, o registro era corrigido aqui,
+               * e NADA republicava: elas ficavam de fora do Portal para
+               * sempre. O cliente via "20 fotos" no diário e 4 imagens.
+               * Agora, se o diário já está no ar, a obra é reenviada. */
+              self._republicarSeNoAr(rs[i]);
+              return;
+            }
+          }
+        } catch (e) {}
+      };
+    },
+
+    /* Reenvia a obra ao Portal quando um diário JÁ PUBLICADO muda de conteúdo.
+     * `_republicarPortal` já serializa por obra (uma no ar, a próxima entra na
+     * fila e refaz uma vez), então 16 fotos terminando em sequência não viram
+     * 16 envios: viram um envio e um reenvio com o estado final. */
+    _republicarSeNoAr: function (rdo) {
+      try {
+        if (!rdo || typeof RDO === "undefined" || !RDO.podeIrAoPortal) return;
+        if (!RDO.podeIrAoPortal(rdo)) return;                 // não está no ar
+        var ob = Store.obter(eid(), "obras", rdo.obraId);
+        if (!ob || !ob.portalUser) return;                    // obra sem Portal
+        /* ⚠ REENVIAR AO PORTAL É PUBLICAR. `podeAcao("publicar")` exige gestor
+         * justamente porque mexe no que o CLIENTE enxerga — e este caminho é
+         * automático, dispara sozinho quando uma foto termina de subir.
+         * Sem esta checagem: o gestor despublica um diário errado, o cliente
+         * para de vê-lo; no canteiro o celular do encarregado (papel
+         * "usuario", com a fila represada) recupera sinal, a foto sobe e o
+         * app REPUBLICA a obra — devolvendo ao cliente o que o gestor tinha
+         * acabado de tirar do ar, sem ninguém pedir e sem ninguém saber. */
+        var _eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        if (RDO.podeAcao && !RDO.podeAcao("publicar", _eu, rdo)) return;
+        var self = this;
+        /* ⚠ DEBOUNCE NÃO SERVE AQUI, e eu afirmei o contrário no commit
+         * 413eaf5 ("16 fotos terminando em sequência viram UM reenvio"). É
+         * falso: `clearTimeout`+`setTimeout` só junta duas fotos que terminam
+         * DENTRO da mesma janela. No 3G do canteiro — que é o cenário do
+         * próprio conserto — a fila sobe uma foto por vez com intervalos bem
+         * maiores que 4 s, então 20 fotos viravam 20 envios do snapshot
+         * inteiro. Cada envio carrega a obra toda; 20 deles são 20× o tráfego
+         * e 20 gravações no servidor.
+         * O que serve é ESPAÇAMENTO MÍNIMO: no máximo um reenvio por minuto
+         * por obra, e sempre um último depois da fila esvaziar. Se veio cedo
+         * demais, remarca para quando o minuto fechar em vez de descartar —
+         * descartar perderia a última foto, que é o defeito de origem. */
+        var ESPACO = 60000;
+        this._reenvioTimer = this._reenvioTimer || {};
+        this._reenvioUltimo = this._reenvioUltimo || {};
+        var agora = new Date().getTime();
+        var desdeUltimo = agora - (this._reenvioUltimo[ob.id] || 0);
+        var esperar = desdeUltimo >= ESPACO ? 4000 : Math.max(4000, ESPACO - desdeUltimo);
+        clearTimeout(this._reenvioTimer[ob.id]);
+        this._reenvioTimer[ob.id] = setTimeout(function () {
+          self._reenvioUltimo[ob.id] = new Date().getTime();
+          /* ⚠ RELÊ A OBRA NA HORA DE ENVIAR. O objeto capturado no closure
+           * envelhece nesses segundos: se o gestor EXCLUIU a obra (ou tirou o
+           * Portal dela) enquanto o timer corria, o reenvio recriava o acesso
+           * do cliente no servidor — ressuscitando o que acabara de ser
+           * apagado. Obra que sumiu do disco não volta pelo Portal. */
+          var atual = null;
+          try { atual = Store.obter(eid(), "obras", ob.id); } catch (eO) {}
+          if (!atual || !atual.portalUser) return;
+          ob = atual;
+          self._republicarPortal(ob, function (res) {
+            if (res && res.ok) { try { UI.toast("Fotos do diário publicadas para o cliente.", "ok"); } catch (e) {} return; }
+            if (res && res.semPortal) return;
+            /* falhar em silêncio aqui é o defeito original com outra roupa:
+               o gestor precisa saber que o cliente ainda não vê as fotos */
+            try { UI.toast("As fotos subiram, mas o Portal não foi atualizado" + (res && res.erro ? " (" + res.erro + ")" : "") + " — o cliente ainda não as vê. Abra Obras › Portal do cliente para reenviar.", "erro"); } catch (e2) {}
+          });
+        }, esperar);
+      } catch (e) {}
+    },
+
+    /* =================================================================
+     * BLOCOS DO DIÁRIO — o que separa um RDO de um bilhete
+     *
+     * O diário antigo tinha "efetivo direto: 12" e um campo de texto livre
+     * para as atividades. Nenhum dos dois serve de prova: 12 quem, fazendo o
+     * quê, de qual item do contrato? A norma do DNIT (097/2025-PRO, Anexo A)
+     * pede efetivo POR FUNÇÃO e serviço vinculado ao ITEM — e é isso que
+     * permite, depois, confrontar o Hh gasto com o Hh orçado.
+     * ================================================================= */
+
+    /* Atividades vêm de onde já existem — ninguém deve redigitar o que a
+       empresa já orçou. O que não estiver em fonte nenhuma, cadastra na hora. */
+    _fontesAtividade: function (obraId, dataISO) {
+      var out = [];
+      try {
+        var ob = lista("obras").filter(function (o) { return o.id === obraId; })[0];
+        if (ob && ob.orcamentoId && typeof RDO !== "undefined") {
+          var orc = (Store.listar(eid(), "orcamentos") || []).filter(function (o) { return o.id === ob.orcamentoId; })[0];
+          if (orc) out = out.concat(RDO.atividadesDoOrcamento(orc));
+        }
+        if (typeof LastPlanner !== "undefined" && typeof RDO !== "undefined") {
+          var sem = LastPlanner.chaveSemana(dataISO ? new Date(dataISO + "T12:00:00") : new Date());
+          var tf = (Store.listar(eid(), "lp_tarefas") || []).filter(function (t) { return t.obraId === obraId; });
+          out = out.concat(RDO.atividadesDoLastPlanner(tf, sem));
+        }
+      } catch (e) {}
+      return out;
+    },
+
+    _htmlBlocoAtividades: function () {
+      return campo('Serviços executados no dia *<span class="muted" style="font-weight:400;font-size:11px"> — puxe do orçamento ou do Last Planner; o que não existir, cadastre aqui</span>',
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
+          '<button type="button" class="btn sm" id="g-at-fonte" style="background:#1c4b73;color:#fff">+ Do orçamento / Last Planner</button>' +
+          '<button type="button" class="btn sm ghost" id="g-at-nova">+ Cadastrar serviço</button>' +
+        '</div><div id="g-at-painel"></div><div id="g-at-lista"></div>');
+    },
+
+    _htmlBlocoEfetivo: function () {
+      return campo('Efetivo do dia<span class="muted" style="font-weight:400;font-size:11px"> — por função. É o que permite comparar a mão de obra gasta com a orçada</span>',
+        '<button type="button" class="btn sm" id="g-ef-add" style="background:#1c4b73;color:#fff;margin-bottom:8px">+ Função</button>' +
+        '<div id="g-ef-lista"></div><div id="g-ef-tot" class="muted" style="font-size:12px;margin-top:6px"></div>');
+    },
+
+    _htmlBlocoEquip: function () {
+      return campo('Equipamentos<span class="muted" style="font-weight:400;font-size:11px"> — hora parada de máquina alugada é dinheiro indo embora</span>',
+        '<button type="button" class="btn sm ghost" id="g-eq-add" style="margin-bottom:8px">+ Equipamento</button>' +
+        '<div id="g-eq-lista"></div><div id="g-eq-tot" class="muted" style="font-size:12px;margin-top:6px"></div>');
+    },
+
+    _htmlBlocoClima: function (r) {
+      return campo('Clima do dia<span class="muted" style="font-weight:400;font-size:11px"> — buscado de fonte externa; valor digitado à mão não vale como prova</span>',
+        /* domingo o app deduz da data; feriado ele NÃO adivinha — a lista muda
+           por município e por ano, e chutar seria pior que perguntar */
+        '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:8px">' +
+          '<input type="checkbox" id="g-feriado"' + (r.feriado ? " checked" : "") + '> ' +
+          'Feriado <span class="muted" style="font-size:11px">— dia que não seria trabalhado não entra em pleito, mesmo com chuva forte. Domingo o sistema já reconhece sozinho.</span></label>' +
+        '<button type="button" class="btn sm" id="g-cl-buscar" style="background:#2e6f9e;color:#fff;margin-bottom:8px">Buscar o clima deste dia</button>' +
+        '<div id="g-cl-res" style="font-size:13px">' + this._climaHtml(r) + '</div>' +
+        /* ⚠ ESTES DOIS CAMPOS NÃO EXISTIAM.
+         * `RDO.pendenciasDoPleito` cobrava "comparar com a média histórica" e
+         * "descrever o impacto do dia" — e não havia onde preencher nem um nem
+         * outro. A lista "para o pleito se sustentar, ainda falta" NUNCA podia
+         * ser zerada: o sistema mandava fazer algo impossível, toda vez que
+         * chovia. Pior que não cobrar. */
+        '<div id="g-cl-pleito" style="display:' + ((r.clima && Number(r.clima.chuvaMm) > 0) ? "block" : "none") + ';margin-top:10px">' +
+          '<div class="row">' +
+            campo('Média histórica de chuva do local (mm/dia)<span class="muted" style="font-weight:400;font-size:11px"> — preenchida sozinha quando dá; chuva dentro da média não gera pleito</span>',
+              inp("g-cl-media", r.chuvaMediaHistoricaMm != null ? r.chuvaMediaHistoricaMm : "", "Ex.: 12,4")) +
+          "</div>" +
+          campo('Impacto da chuva no dia<span class="muted" style="font-weight:400;font-size:11px"> — dado meteorológico sozinho não ganha prorrogação: é o impacto que se pleiteia</span>',
+            '<textarea id="g-cl-impacto" rows="2" placeholder="Que frentes pararam, quanto efetivo ficou ocioso e por quantas horas">' + Util.esc(r.impactoChuva || "") + "</textarea>") +
+        "</div>");
+    },
+
+    /* O bloco do clima mostra a EVIDÊNCIA (mm, horas, fração do dia pelo
+       critério do DNIT) e, quando há chuva que conta, lista o que ainda falta
+       para o dia parado se sustentar num pleito. Dado meteorológico sozinho
+       não ganha prorrogação: o TCU e o IBAPE são expressos que chuva dentro da
+       média já deveria estar no preço e no prazo. */
+    _climaHtml: function (r) {
+      if (typeof RDO === "undefined" || !r || !r.clima) return '<span class="muted">Ainda não buscado.</span>';
+      var cond = RDO.condicaoPorClima(r.clima, RDO.diaNaoTrabalhavel(r));
+      var pend = RDO.pendenciasDoPleito(r);
+      var cor = cond.condicao === "impraticavel" ? "#b91c1c" : (cond.condicao === "parcial" ? "#b45309" : "#15803d");
+      var h = '<div style="border-left:4px solid ' + cor + ';padding:8px 10px;background:rgba(0,0,0,.03);border-radius:0 8px 8px 0">' +
+        "<b>" + Util.esc(RDO.textoClima(r.clima)) + "</b>";
+      if (cond.motivo) h += '<div style="color:' + cor + ';margin-top:4px">' + Util.esc(cond.motivo) + "</div>";
+      h += "</div>";
+      if (pend.length) {
+        h += '<div style="margin-top:8px;border-left:4px solid #b45309;padding:8px 10px;background:rgba(180,83,9,.06);border-radius:0 8px 8px 0">' +
+          '<b style="font-size:12px">Para este dia parado se sustentar num pleito, ainda falta:</b>' +
+          '<ul style="margin:6px 0 0;padding-left:18px;font-size:12px">' +
+          pend.map(function (x) { return "<li>" + Util.esc(x) + "</li>"; }).join("") + "</ul></div>";
       }
-      if (r.status !== "rascunho") corpo += this._qrPortalObra(ob, "Escaneie para acompanhar o andamento desta obra no Portal do Cliente (conforme a última publicação).");
-      corpo += '<div style="display:flex;gap:30px;margin-top:34px;text-align:center;font-size:11px;page-break-inside:avoid">'
-        + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(r.responsavel || ob.responsavel || "Responsável pela obra") + "<br><span style='color:#777'>Responsável pela obra</span></div></div>"
-        + '<div style="flex:1"><div style="border-top:1px solid #333;padding-top:5px">' + Util.esc(cli.nome || ob.clienteNome || "Fiscalização / Cliente") + "<br><span style='color:#777'>Fiscalização / Cliente</span></div></div></div>";
-      this._abrirDoc("Diário de Obra " + (r.numero || ""), this._docShell("DIÁRIO DE OBRA — " + Util.esc(r.numero || ""), "#0f2740", corpo, "rdo"));
+      return h;
+    },
+
+    /* Liga os blocos ao DOM. Recebe os buffers por referência: quem salva o
+       diário lê deles, então nada aqui grava direto no Store. */
+    _ligarBlocosRdo: function (r, buf) {
+      var self = this;
+      function todos(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
+
+      /* ---------- SERVIÇOS DO DIA ---------- */
+      function renderAtiv() {
+        var el = document.getElementById("g-at-lista"); if (!el) return;
+        if (!buf.ativ.length) {
+          el.innerHTML = '<span class="muted" style="font-size:12px">Nenhum serviço lançado. Um diário sem serviço não registra nada.</span>';
+          return;
+        }
+        el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Serviço</th><th>Un</th><th>Previsto</th><th>Feito hoje</th><th>Situação</th><th></th></tr>' +
+          buf.ativ.map(function (a, i) {
+            var av = RDO.calcAvanco(a);
+            return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
+              '<td style="padding:4px 2px">' + (a.numero ? "<b>" + Util.esc(a.numero) + "</b> " : "") + Util.esc(a.descricao) +
+                '<div class="muted" style="font-size:10px">' + Util.esc((RDO.ORIGENS[a.origem] || a.origem) + (a.etapa ? " · " + a.etapa : "")) + "</div></td>" +
+              '<td style="text-align:center">' + Util.esc(a.unidade || "—") + "</td>" +
+              '<td style="text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>" +
+              '<td style="text-align:right"><input data-atq="' + i + '" value="' + (a.qtdExecutada || "") + '" style="width:70px;text-align:right;font-size:12px;padding:2px 4px">' +
+                '<div class="muted" data-atp="' + i + '" style="font-size:10px">' + (av.derivada ? av.pct + "% do item" : "") + "</div></td>" +
+              '<td><select data-ats="' + i + '" style="font-size:11px;padding:2px">' +
+                RDO.SITUACOES_SERVICO.map(function (x) {
+                  return '<option value="' + x.id + '"' + (a.situacao === x.id ? " selected" : "") + ">" + x.rotulo + "</option>";
+                }).join("") + "</select></td>" +
+              '<td><button type="button" data-atr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>';
+          }).join("") + "</table>";
+
+        todos("[data-atq]", el).forEach(function (x) {
+          x.oninput = function () {
+            var i = +x.getAttribute("data-atq");
+            buf.ativ[i].qtdExecutada = Util.num(x.value);
+            /* atualiza SÓ o rótulo: re-renderizar a tabela inteira a cada tecla
+               tiraria o foco do campo e o usuário perderia o que digitava.
+               Sem isto a % ficava parada em 0% enquanto ele digitava 60 de 240
+               — o número mais importante da linha, mostrando errado. */
+            var lb = el.querySelector('[data-atp="' + i + '"]');
+            if (lb) { var av2 = RDO.calcAvanco(buf.ativ[i]); lb.textContent = av2.derivada ? av2.pct + "% do item" : ""; }
+          };
+        });
+        todos("[data-ats]", el).forEach(function (x) {
+          x.onchange = function () { buf.ativ[+x.getAttribute("data-ats")].situacao = x.value; };
+        });
+        todos("[data-atr]", el).forEach(function (x) {
+          x.onclick = function () { buf.ativ.splice(+x.getAttribute("data-atr"), 1); renderAtiv(); };
+        });
+      }
+
+      var bF = document.getElementById("g-at-fonte");
+      if (bF) bF.onclick = function () {
+        var obraId = v("g-obra");
+        if (!obraId) { UI.toast("Escolha a obra primeiro — é ela que diz de qual orçamento puxar.", "erro"); return; }
+        var fontes = self._fontesAtividade(obraId, v("g-data"));
+        if (!fontes.length) { UI.toast("Esta obra não tem orçamento vinculado nem tarefa aberta no Last Planner. Use \"Cadastrar serviço\".", "erro"); return; }
+        /* o que já está no diário aparece esmaecido e travado — incluir duas
+           vezes o mesmo item dobraria a quantidade executada em silêncio */
+        var jaTem = {}; buf.ativ.forEach(function (a) { if (a.refId) jaTem[a.origem + "|" + a.refId] = 1; });
+        var corpo = '<div style="max-height:52vh;overflow:auto">' + fontes.map(function (f, i) {
+          var dup = jaTem[f.origem + "|" + f.refId];
+          return '<label style="display:flex;gap:8px;align-items:flex-start;padding:6px 4px;border-bottom:1px solid var(--linha,#e2e8f0)' + (dup ? ";opacity:.45" : "") + '">' +
+            '<input type="checkbox" data-fi="' + i + '"' + (dup ? " disabled" : "") + ">" +
+            '<span style="font-size:12px">' + (f.numero ? "<b>" + Util.esc(f.numero) + "</b> " : "") + Util.esc(f.descricao) +
+            '<span class="muted" style="display:block;font-size:10px">' + Util.esc(RDO.ORIGENS[f.origem] || f.origem) +
+            (f.unidade ? " · " + Util.esc(f.unidade) : "") + (dup ? " · já está no diário" : "") + "</span></span></label>";
+        }).join("") + "</div>";
+        /* ⚠ PAINEL INLINE, e não UI.modal: o app tem UM só #modal-bg, então
+           abrir um segundo modal SUBSTITUI o formulário do diário — e fechá-lo
+           levava junto o diário inteiro que a pessoa estava preenchendo. Só
+           apareceu porque testei usando o formulário de verdade. */
+        var pn = document.getElementById("g-at-painel");
+        pn.innerHTML = '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(0,0,0,.02)">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+            '<b style="font-size:12px">Serviços desta obra</b>' +
+            '<button type="button" id="g-at-fechar" class="btn sm ghost" style="padding:1px 8px">×</button></div>' +
+          corpo +
+          '<button type="button" id="g-at-incluir" class="btn sm" style="background:#16a34a;color:#fff;margin-top:8px">Incluir marcados</button></div>';
+        document.getElementById("g-at-fechar").onclick = function () { pn.innerHTML = ""; };
+        document.getElementById("g-at-incluir").onclick = function () {
+          var n = 0;
+          todos("[data-fi]", pn).forEach(function (c) {
+            if (!c.checked) return;
+            var f = fontes[+c.getAttribute("data-fi")];
+            buf.ativ.push({ origem: f.origem, refId: f.refId, etapa: f.etapa, numero: f.numero,
+              descricao: f.descricao, unidade: f.unidade, qtdPrevista: f.qtdPrevista,
+              codigo: f.codigo, qtdExecutada: 0, situacao: "execucao" });
+            n++;
+          });
+          pn.innerHTML = ""; renderAtiv();
+          if (n) UI.toast(n + " serviço(s) incluído(s).", "ok");
+          else UI.toast("Nenhum serviço marcado.", "erro");
+        };
+      };
+
+      var bN = document.getElementById("g-at-nova");
+      if (bN) bN.onclick = function () {
+        /* mesmo motivo do painel acima: nada de modal aninhado aqui */
+        var pn2 = document.getElementById("g-at-painel");
+        pn2.innerHTML = '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(0,0,0,.02)">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+            '<b style="font-size:12px">Cadastrar serviço no diário</b>' +
+            '<button type="button" id="g-nv-fechar" class="btn sm ghost" style="padding:1px 8px">×</button></div>' +
+          campo("Descrição *", inp("nv-desc", "", "O que foi executado")) +
+          '<div class="row">' + campo("Unidade", inp("nv-un", "", "m², m³, un…")) + campo("Quantidade prevista", inp("nv-qp", "")) + "</div>" +
+          '<button type="button" id="g-nv-incluir" class="btn sm" style="background:#16a34a;color:#fff">Incluir</button></div>';
+        document.getElementById("g-nv-fechar").onclick = function () { pn2.innerHTML = ""; };
+        document.getElementById("g-nv-incluir").onclick = function () {
+          var d = v("nv-desc");
+          if (!d) { UI.toast("Descreva o serviço.", "erro"); return; }
+          var a = RDO.atividadeAvulsa(d, v("nv-un"), nv("nv-qp"));
+          a.qtdExecutada = 0; a.situacao = "execucao";
+          buf.ativ.push(a); pn2.innerHTML = ""; renderAtiv();
+        };
+      };
+
+      /* ---------- EFETIVO POR FUNÇÃO ---------- */
+      function totEf() {
+        var tt = document.getElementById("g-ef-tot"); if (!tt || typeof RDO === "undefined") return;
+        var t = RDO.totaisEfetivo(buf.efe);
+        tt.textContent = t.pessoas + " pessoa(s) · direta " + t.direta + " · indireta " + t.indireta +
+          " · terceiros " + t.terceiros + " · " + t.horas + " Hh no dia" +
+          (t.horasExtras ? " (+" + t.horasExtras + " h extras)" : "");
+      }
+      function ligaCampo(el, attr, chave, numero, buffer, aoMudar) {
+        todos("[" + attr + "]", el).forEach(function (x) {
+          var h = function () {
+            var i = +x.getAttribute(attr);
+            buffer[i][chave] = (x.type === "checkbox") ? x.checked : (numero ? Util.num(x.value) : x.value);
+            if (aoMudar) aoMudar();
+          };
+          if (x.type === "checkbox") x.onchange = h; else x.oninput = h;
+        });
+      }
+      function renderEf() {
+        var el = document.getElementById("g-ef-lista"); if (!el) return;
+        if (!buf.efe.length) {
+          el.innerHTML = '<span class="muted" style="font-size:12px">Sem efetivo lançado.</span>';
+          var t0 = document.getElementById("g-ef-tot"); if (t0) t0.textContent = ""; return;
+        }
+        el.innerHTML = '<datalist id="g-ef-funcoes">' + RDO.FUNCOES.map(function (f) { return '<option value="' + Util.esc(f) + '">'; }).join("") + "</datalist>" +
+          '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Função</th><th>Qtd</th><th>Horas</th><th>Extras</th><th>Terceiro</th><th></th></tr>' +
+          buf.efe.map(function (e, i) {
+            return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
+              '<td style="padding:3px 2px"><input data-eff="' + i + '" list="g-ef-funcoes" value="' + Util.esc(e.funcao || "") + '" style="width:100%;font-size:12px;padding:2px 4px"></td>' +
+              '<td><input data-efq="' + i + '" value="' + (e.qtd || 1) + '" style="width:48px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input data-efh="' + i + '" value="' + (e.horas || "") + '" style="width:52px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input data-efx="' + i + '" value="' + (e.horasExtras || "") + '" style="width:48px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td style="text-align:center"><input type="checkbox" data-eft="' + i + '"' + (e.terceiro ? " checked" : "") + "></td>" +
+              '<td><button type="button" data-efr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>';
+          }).join("") + "</table>";
+        ligaCampo(el, "data-eff", "funcao", false, buf.efe, totEf);
+        ligaCampo(el, "data-efq", "qtd", true, buf.efe, totEf);
+        ligaCampo(el, "data-efh", "horas", true, buf.efe, totEf);
+        ligaCampo(el, "data-efx", "horasExtras", true, buf.efe, totEf);
+        ligaCampo(el, "data-eft", "terceiro", false, buf.efe, totEf);
+        todos("[data-efr]", el).forEach(function (x) {
+          x.onclick = function () { buf.efe.splice(+x.getAttribute("data-efr"), 1); renderEf(); };
+        });
+        totEf();
+      }
+      var bE = document.getElementById("g-ef-add");
+      if (bE) bE.onclick = function () { buf.efe.push({ funcao: "", qtd: 1, horas: 8, horasExtras: 0, terceiro: false }); renderEf(); };
+
+      /* ---------- EQUIPAMENTOS ---------- */
+      function totEq() {
+        var tt = document.getElementById("g-eq-tot"); if (!tt || typeof RDO === "undefined") return;
+        var t = RDO.totaisEquipamentos(buf.equip);
+        tt.textContent = t.itens + " item(ns) · " + t.hOperacao + " h em operação · " + t.hOciosa + " h ocioso" +
+          (t.disponibilidade != null ? " · disponibilidade " + t.disponibilidade + "%" : "");
+      }
+      function renderEq() {
+        var el = document.getElementById("g-eq-lista"); if (!el) return;
+        if (!buf.equip.length) {
+          el.innerHTML = '<span class="muted" style="font-size:12px">Sem equipamento lançado.</span>';
+          var t0 = document.getElementById("g-eq-tot"); if (t0) t0.textContent = ""; return;
+        }
+        el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Equipamento</th><th>Prefixo</th><th>Oper.</th><th>Ocioso</th><th>Manut.</th><th>Alug.</th><th></th></tr>' +
+          buf.equip.map(function (e, i) {
+            return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
+              '<td style="padding:3px 2px"><input data-eqt="' + i + '" value="' + Util.esc(e.tipo || "") + '" style="width:100%;font-size:12px;padding:2px 4px"></td>' +
+              '<td><input data-eqp="' + i + '" value="' + Util.esc(e.prefixo || "") + '" style="width:64px;font-size:12px;padding:2px"></td>' +
+              '<td><input data-eqo="' + i + '" value="' + (e.hOperacao || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input data-eqi="' + i + '" value="' + (e.hOciosa || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input data-eqm="' + i + '" value="' + (e.hManutencao || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td style="text-align:center"><input type="checkbox" data-eqa="' + i + '"' + (e.alugado ? " checked" : "") + "></td>" +
+              '<td><button type="button" data-eqr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>';
+          }).join("") + "</table>";
+        ligaCampo(el, "data-eqt", "tipo", false, buf.equip, totEq);
+        ligaCampo(el, "data-eqp", "prefixo", false, buf.equip, totEq);
+        ligaCampo(el, "data-eqo", "hOperacao", true, buf.equip, totEq);
+        ligaCampo(el, "data-eqi", "hOciosa", true, buf.equip, totEq);
+        ligaCampo(el, "data-eqm", "hManutencao", true, buf.equip, totEq);
+        ligaCampo(el, "data-eqa", "alugado", false, buf.equip, totEq);
+        todos("[data-eqr]", el).forEach(function (x) {
+          x.onclick = function () { buf.equip.splice(+x.getAttribute("data-eqr"), 1); renderEq(); };
+        });
+        totEq();
+      }
+      var bQ = document.getElementById("g-eq-add");
+      if (bQ) bQ.onclick = function () { buf.equip.push({ tipo: "", prefixo: "", hOperacao: 0, hOciosa: 0, hManutencao: 0, alugado: false }); renderEq(); };
+
+      /* ---------- CLIMA ---------- */
+      var bC = document.getElementById("g-cl-buscar");
+      if (bC) bC.onclick = function () {
+        var obraId = v("g-obra"), data = v("g-data");
+        if (!obraId || !data) { UI.toast("Escolha a obra e a data primeiro.", "erro"); return; }
+        var ob = lista("obras").filter(function (o) { return o.id === obraId; })[0] || {};
+        bC.disabled = true; bC.textContent = "Buscando…";
+        self._buscarClima(ob, data, function (clima, erro) {
+          bC.disabled = false; bC.textContent = "Buscar o clima deste dia";
+          var box = document.getElementById("g-cl-res");
+          if (!clima) {
+            if (box) box.innerHTML = '<span style="color:#b91c1c">' + Util.esc(erro || "Não consegui buscar.") + "</span>";
+            return;
+          }
+          /* ⚠ CARIMBA A DATA CONSULTADA JUNTO COM O CLIMA.
+           * Sem ela, quem buscasse o clima e depois corrigisse a data do
+           * diário levava a chuva do dia errado para o documento — e o
+           * documento existe para provar que choveu NAQUELE dia. */
+          clima.dataConsultada = data;
+          buf.clima = clima; r.clima = clima;
+          if (box) box.innerHTML = self._climaHtml(r);
+          /* os campos do pleito só fazem sentido quando choveu */
+          var cxP = document.getElementById("g-cl-pleito");
+          if (cxP) cxP.style.display = Number(clima.chuvaMm) > 0 ? "block" : "none";
+          /* média histórica: o app busca sozinho no arquivo do Open-Meteo, em
+             vez de mandar o engenheiro procurar. Falhou? o campo fica em
+             branco para ele preencher — nunca preenchemos com chute. */
+          if (Number(clima.chuvaMm) > 0) {
+            self._mediaHistoricaChuva(clima.lat, clima.lon, data, function (media) {
+              var elM = document.getElementById("g-cl-media");
+              if (media == null || !elM) return;
+              if (String(elM.value || "").trim()) return;      // já preenchido à mão: não sobrescreve
+              elM.value = RDO.numBR(media);
+              r.chuvaMediaHistoricaMm = media;
+              var bx2 = document.getElementById("g-cl-res");
+              if (bx2) bx2.innerHTML = self._climaHtml(r);
+            });
+          }
+          /* o rótulo do dia acompanha a evidência, mas quem decide continua
+             sendo quem está na obra — por isso só preenchemos o seletor */
+          var cond = RDO.condicaoPorClima(clima, RDO.diaNaoTrabalhavel(r));
+          var selC = document.getElementById("g-cond");
+          if (selC && cond.condicao) selC.value = cond.condicao;
+        });
+      };
+
+      renderAtiv(); renderEf(); renderEq();
+    },
+
+    /* Busca o clima do dia. A coordenada vem da obra; se ela não tiver, tenta
+       descobrir pelo endereço e GRAVA na obra — a próxima busca é instantânea.
+       Fonte: Open-Meteo (sem chave de API, com arquivo histórico, que é o que
+       importa porque diário quase sempre é lançado com atraso). */
+    _buscarClima: function (obra, dataISO, cb) {
+      if (typeof RDO === "undefined") { cb(null, "Módulo indisponível."); return; }
+      var hoje = new Date().toISOString().slice(0, 10);
+
+      function comCoord(lat, lon, nomeLocal) {
+        var url = RDO.urlClima(lat, lon, dataISO, hoje);
+        if (!url) { cb(null, "Não consegui montar a consulta."); return; }
+        fetch(url).then(function (x) { return x.json(); }).then(function (j) {
+          var c = RDO.lerRespostaClima(j);
+          if (!c) { cb(null, "A fonte não devolveu dado para este dia."); return; }
+          c.buscadoEm = new Date().toISOString();
+          c.lat = lat; c.lon = lon;
+          /* ⚠ DE ONDE VEIO O CLIMA fica gravado com o dado. Sem isso, ninguém
+           * — nem quem preencheu, nem o fiscal que lê o pleito — tem como
+           * saber se a chuva de 54 mm caiu NESTA obra ou numa homônima a 600
+           * km. Medição sem procedência não sustenta pedido de prazo. */
+          if (nomeLocal) c.local = nomeLocal;
+          cb(c, null);
+        }).catch(function () { cb(null, "Sem internet agora — tente quando conectar."); });
+      }
+
+      if (obra.lat != null && obra.lon != null) { comCoord(obra.lat, obra.lon, obra.climaLocal || ""); return; }
+      var local = String(obra.local || "").trim();
+      if (!local) { cb(null, "A obra não tem endereço — preencha \"Local / Endereço\" no cadastro dela."); return; }
+
+      /* ⚠ O CAMPO É LIVRE: "Rua das Flores, 500, Centro, Uberaba". Buscar
+       * `split(",")[0]` procurava A RUA no geocodificador — que devolve
+       * qualquer "Rua das Flores" do Brasil, ou nada. O clima vinha de outra
+       * cidade e o diário saía com chuva que não caiu ali, no documento que
+       * existe justamente para dar credibilidade ao pleito por chuva.
+       * A cidade costuma ser o ÚLTIMO pedaço; a UF sozinha e o CEP não são
+       * cidade e são descartados. */
+      var mun = RDO.municipioDoEndereco(local);
+      var ultima = mun.cidade || local, uf = mun.uf;
+
+      /* ⚠ `&country=BR` NÃO EXISTE na API de geocodificação do Open-Meteo — ele
+       * é aceito e IGNORADO em silêncio. Conferi chamando a API de verdade:
+       *   "Vitoria"       → 1º resultado: Vitória, PAÍS BASCO (Espanha)
+       *   "Sao Francisco" → 1º resultado: São Francisco, CALIFÓRNIA
+       * A obra em Vitória/ES pegava o clima da Espanha, e a coordenada errada
+       * ficava GRAVADA na obra para sempre — todo diário seguinte nascia com
+       * chuva de outro continente. O filtro tem de ser no resultado. */
+      /* ⚠ `count` é aplicado ANTES do filtro brasileiro — a API não tem filtro
+       * de país. Com 20, um nome ibérico comum ("Santa Cruz", "Santo Antônio")
+       * gastava as vagas com homônimos da Bolívia, Espanha e Portugal, e o
+       * município da obra nem chegava a ser avaliado. 100 é o teto da API. */
+      fetch(RDO.GEO_URL + "?name=" + encodeURIComponent(ultima) + "&count=100&language=pt")
+        .then(function (x) { return x.json(); }).then(function (j) {
+          var todos = (j && j.results) || [];
+          var brasileiros = todos.filter(function (r) { return String(r.country_code || "").toUpperCase() === "BR"; });
+          /* ⚠ país e estado NÃO são município. Sem esta checagem, "Brasil" no
+           * fim do endereço fazia o app aceitar o feature_code PCLI (o país) e
+           * gravar lat −10 / lon −55 — o centro geográfico do Brasil — como
+           * coordenada da obra, em silêncio. Antes desta versão a busca
+           * simplesmente falhava, o que era melhor: errar alto é melhor que
+           * errar quieto. */
+          var achados = brasileiros.filter(function (r) { return RDO.ehMunicipio(r); });
+          if (!achados.length) {
+            cb(null, brasileiros.length
+              ? "\"" + ultima + "\" não é um município — parece um estado ou o país. O clima do diário precisa da CIDADE da obra: confira o \"Local / Endereço\"."
+              : (todos.length
+                ? "Achei \"" + ultima + "\" só fora do Brasil. O clima do diário precisa do município brasileiro — confira o \"Local / Endereço\" da obra."
+                : "Não achei \"" + ultima + "\" no mapa. O clima só entra no diário com o município certo — confira o \"Local / Endereço\" da obra."));
+            return;
+          }
+          /* com UF na mão, escolhe o município do estado certo: há dezenas de
+             homônimos no Brasil e o primeiro resultado não é sempre o daqui.
+             Comparação EXATA pela tabela de UF (ver RDO.ufBate): o `indexOf`
+             que eu tinha escrito casava "SP" com "ESpírito Santo". */
+          var g = achados[0], ufCasou = false;
+          if (uf) {
+            var mesmoUf = achados.filter(function (r) { return RDO.ufBate(uf, r.admin1); })[0];
+            if (mesmoUf) { g = mesmoUf; ufCasou = true; }
+          }
+          /* a UF foi digitada e NENHUM município daquele estado apareceu: dizer
+             nada aqui seria carimbar a coordenada de outro estado como certa */
+          if (uf && !ufCasou) {
+            cb(null, "Achei \"" + ultima + "\", mas em nenhum município de " + uf.toUpperCase() +
+              ". O clima viria do estado errado — confira o \"Local / Endereço\" da obra.");
+            return;
+          }
+          var nome = g.name + (g.admin1 ? " — " + g.admin1 : "");
+          try {
+            var ob = (Store.listar(eid(), "obras") || []).filter(function (o) { return o.id === obra.id; })[0];
+            if (ob) { ob.lat = g.latitude; ob.lon = g.longitude; ob.climaLocal = nome; Store.salvar(eid(), "obras", ob); }
+          } catch (e) {}
+          comCoord(g.latitude, g.longitude, nome);
+        }).catch(function () { cb(null, "Sem internet agora — tente quando conectar."); });
+    },
+
+    /* `RDO.estadoDe` com o 2º argumento respondido pela obra.
+     * Chamar `estadoDe(r)` sem ele devolve `finalizado_legado` para todo
+     * diário antigo — inclusive os que o cliente ESTÁ lendo no Portal. Foi o
+     * esquecimento que já apareceu em `RDO.transicionar` e reapareceu no meu
+     * guarda de edição: um lugar só para não haver um terceiro. */
+    _estadoComPortal: function (r) {
+      if (typeof RDO === "undefined" || !RDO.estadoDe) return (r && r.estado) || "rascunho";
+      var ob = null;
+      try { ob = Store.obter(eid(), "obras", (r || {}).obraId); } catch (e) {}
+      return RDO.estadoDe(r, !!(ob && ob.portalUser));
+    },
+
+    /* Média histórica de chuva do MESMO DIA DO ANO, nos 10 anos anteriores.
+     *
+     * É o número que separa "choveu" de "choveu fora do normal" — e o TCU e o
+     * IBAPE são expressos: chuva dentro da média já deveria estar no preço e
+     * no prazo, então não gera pleito. Mandar o engenheiro achar isso sozinho
+     * era garantir que a lista de pendências nunca fosse zerada.
+     *
+     * Janela de ±7 dias em torno da data, para a média não depender de um
+     * único dia de cada ano. Uma chamada só ao arquivo do Open-Meteo. */
+    _mediaHistoricaChuva: function (lat, lon, dataISO, cb) {
+      try {
+        if (lat == null || lon == null || !dataISO) { cb(null); return; }
+        var d = new Date(dataISO + "T00:00:00");
+        if (isNaN(d.getTime())) { cb(null); return; }
+        var ini = new Date(d.getTime()), fim = new Date(d.getTime());
+        ini.setFullYear(d.getFullYear() - 10); ini.setDate(ini.getDate() - 7);
+        fim.setFullYear(d.getFullYear() - 1);  fim.setDate(fim.getDate() + 7);
+        var url = RDO.CLIMA_URL_HIST + "?latitude=" + lat + "&longitude=" + lon +
+          "&start_date=" + ini.toISOString().slice(0, 10) +
+          "&end_date=" + fim.toISOString().slice(0, 10) +
+          "&daily=precipitation_sum&timezone=auto";
+        var to = setTimeout(function () { to = null; cb(null); }, 12000);
+        fetch(url).then(function (x) { return x.json(); }).then(function (j) {
+          if (!to) return; clearTimeout(to); to = null;
+          var dias = j && j.daily && j.daily.time, mm = j && j.daily && j.daily.precipitation_sum;
+          if (!dias || !mm || !dias.length) { cb(null); return; }
+          /* só os dias na mesma JANELA do calendário (±7 do dia/mês alvo) —
+             a média do ano inteiro diria outra coisa */
+          var alvoM = d.getMonth(), alvoD = d.getDate(), soma = 0, n = 0;
+          for (var i = 0; i < dias.length; i++) {
+            var dd = new Date(dias[i] + "T00:00:00");
+            if (isNaN(dd.getTime())) continue;
+            var difDias = Math.abs((dd.getMonth() - alvoM) * 30.44 + (dd.getDate() - alvoD));
+            if (difDias > 7 && difDias < 358) continue;   // 358: vira o ano (dez↔jan)
+            var v2 = Number(mm[i]);
+            if (isNaN(v2)) continue;
+            soma += v2; n++;
+          }
+          if (!n) { cb(null); return; }
+          cb(Math.round((soma / n) * 10) / 10);
+        })["catch"](function () { if (to) { clearTimeout(to); to = null; cb(null); } });
+      } catch (e) { cb(null); }
+    },
+
+    /* =================================================================
+     * FATIA 2 — o que faz o dia ruim virar número, e o controle do gestor
+     * ================================================================= */
+
+    _htmlBlocoOcorrencias: function () {
+      return campo('Ocorrências do dia<span class="muted" style="font-weight:400;font-size:11px"> — tipo fechado, para o dia ruim virar estatística no fim do mês</span>',
+        '<button type="button" class="btn sm ghost" id="g-oc-add" style="margin-bottom:8px">+ Ocorrência</button>' +
+        '<div id="g-oc-lista"></div>');
+    },
+
+    _htmlBlocoParalisacao: function (r) {
+      var p = r.paralisacao || {};
+      return campo('Paralisação<span class="muted" style="font-weight:400;font-size:11px"> — só preencha se a obra parou; sem hora e responsável não vale em pleito</span>',
+        '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:8px">' +
+          '<input type="checkbox" id="g-pa-houve"' + (p.houve ? " checked" : "") + '> A obra parou hoje</label>' +
+        '<div id="g-pa-campos" style="display:' + (p.houve ? "block" : "none") + '">' +
+          '<div class="row">' + campo("Início", inp("g-pa-ini", p.inicio || "", "", "time")) +
+            campo("Fim", inp("g-pa-fim", p.fim || "", "", "time")) +
+            campo("Dias parados", inp("g-pa-dias", p.dias || "")) + "</div>" +
+          campo("Motivo *", inp("g-pa-motivo", p.motivo || "", "Por que a obra parou")) +
+          '<div class="row">' + campo("Responsável pela parada", inp("g-pa-resp", p.responsavel || "", "Quem deu causa")) +
+            campo("Previsão de reinício", inp("g-pa-volta", p.previsaoReinicio || "", "", "date")) + "</div>" +
+        "</div>");
+    },
+
+    _htmlBlocoImpedimentos: function (r) {
+      var marc = {}; (r.impedimentos || []).forEach(function (i) { marc[i] = 1; });
+      return campo('Fatos impeditivos<span class="muted" style="font-weight:400;font-size:11px"> — o que atrasou a obra e NÃO foi culpa de quem executa. É o que sustenta pedido de prazo</span>',
+        '<div style="display:flex;flex-wrap:wrap;gap:10px">' +
+        RDO.IMPEDIMENTOS.map(function (im) {
+          return '<label style="display:flex;gap:5px;align-items:center;font-size:12px;background:rgba(0,0,0,.03);padding:4px 8px;border-radius:6px">' +
+            '<input type="checkbox" data-imp="' + im.id + '"' + (marc[im.id] ? " checked" : "") + "> " + Util.esc(im.rotulo) + "</label>";
+        }).join("") + "</div>" +
+        campo("", '<textarea id="g-imp-obs" rows="2" placeholder="Detalhe o impedimento (qual frente, desde quando, quem foi avisado)">' + Util.esc(r.impedimentosObs || "") + "</textarea>"));
+    },
+
+    _htmlBlocoRegistros: function (r) {
+      return '<div class="row">' +
+        campo("Visitas ao canteiro", '<textarea id="g-visitas" rows="2" placeholder="Nome, empresa, horário e motivo">' + Util.esc(r.visitas || "") + "</textarea>") +
+        campo("Comunicações e ordens de serviço", '<textarea id="g-comunic" rows="2" placeholder="Consultas à fiscalização, respostas, OS expedidas">' + Util.esc(r.comunicacoes || "") + "</textarea>") +
+        "</div>" +
+        campo('Acidente ou dano<span class="muted" style="font-weight:400;font-size:11px"> — hora, envolvidos, causa, providências e se houve afastamento</span>',
+          '<textarea id="g-acidente" rows="2" placeholder="Em branco = nenhum acidente hoje">' + Util.esc(r.acidente || "") + "</textarea>");
+    },
+
+    /* --- APROVAÇÃO: o selo no formulário e o histórico --------------- */
+    _htmlBlocoAprovacao: function (r) {
+      if (typeof RDO === "undefined") return "";
+      /* mesma leitura da lista: o diário antigo que está no Portal não pode
+         aparecer aqui dentro como "Rascunho" — e só é "Publicado" se a obra
+         tiver Portal de verdade */
+      var _ob = r.obraId ? (Store.obter(eid(), "obras", r.obraId) || {}) : {};
+      var est = RDO.estadoDe ? RDO.estadoDe(r, !!_ob.portalUser) : (r.estado || "rascunho");
+      var e = RDO.ESTADOS[est] || RDO.ESTADOS.rascunho;
+      var cores = { cinza: "#64748b", ambar: "#b45309", vermelho: "#b91c1c", verde: "#15803d", azul: "#2e6f9e" };
+      var cor = cores[e.cor] || "#64748b";
+      var h = '<div style="border-left:4px solid ' + cor + ';padding:8px 10px;background:rgba(0,0,0,.03);border-radius:0 8px 8px 0;margin-bottom:10px">' +
+        '<b style="color:' + cor + '">' + Util.esc(e.rotulo) + "</b>";
+      if (est === "em_revisao" && r.revisaoMotivo) {
+        h += '<div style="margin-top:6px;font-size:12.5px"><b>O gestor pediu:</b> ' + Util.esc(r.revisaoMotivo) +
+          '<div class="muted" style="font-size:11px">' + Util.esc((r.revisaoPor || "") + (r.revisaoEm ? " · " + r.revisaoEm.slice(0, 10).split("-").reverse().join("/") : "")) + "</div></div>";
+      }
+      if (est === "publicado") h += '<div class="muted" style="font-size:12px;margin-top:4px">Este diário está visível para o cliente no Portal.</div>';
+      h += "</div>";
+      return h;
+    },
+
+    /* Liga os blocos da Fatia 2. */
+    _ligarBlocos2Rdo: function (r, buf) {
+      function todos2(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
+
+      /* ---------- OCORRÊNCIAS ---------- */
+      function renderOc() {
+        var el = document.getElementById("g-oc-lista"); if (!el) return;
+        if (!buf.ocor.length) {
+          /* Registrar EXPRESSAMENTE que nada ocorreu é exigência do próprio
+             formulário do DNIT (Anexo B): diário em branco não prova que o dia
+             correu bem, prova que ninguém preencheu. */
+          el.innerHTML = '<span class="muted" style="font-size:12px">Nenhuma ocorrência — o diário sai com "sem restrições" registrado.</span>';
+          return;
+        }
+        el.innerHTML = buf.ocor.map(function (o, i) {
+          return '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:8px;padding:8px;margin-bottom:6px">' +
+            '<div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">' +
+              '<select data-oct="' + i + '" style="font-size:12px;padding:3px">' +
+                RDO.TIPOS_OCORRENCIA.map(function (t) {
+                  return '<option value="' + t.id + '"' + (o.tipo === t.id ? " selected" : "") + ">" + t.rotulo + "</option>";
+                }).join("") + "</select>" +
+              '<input data-och="' + i + '" value="' + (o.horasParadas || "") + '" placeholder="h paradas" style="width:88px;font-size:12px;padding:3px">' +
+              '<button type="button" data-ocr="' + i + '" class="btn sm ghost" style="padding:1px 6px;margin-left:auto">×</button></div>' +
+            '<input data-ocd="' + i + '" value="' + Util.esc(o.descricao || "") + '" placeholder="O que aconteceu e qual a causa" style="width:100%;font-size:12px;padding:4px;margin-bottom:5px">' +
+            '<div style="display:flex;gap:6px">' +
+              '<input data-ocp="' + i + '" value="' + Util.esc(o.responsavel || "") + '" placeholder="Responsável" style="flex:1;font-size:12px;padding:4px">' +
+              '<input data-ocz="' + i + '" value="' + Util.esc(o.prazoCorrecao || "") + '" type="date" style="font-size:12px;padding:4px">' +
+            "</div></div>";
+        }).join("");
+        function lg(attr, chave, num) {
+          todos2("[" + attr + "]", el).forEach(function (x) {
+            var h = function () { buf.ocor[+x.getAttribute(attr)][chave] = num ? Util.num(x.value) : x.value; };
+            if (x.tagName === "SELECT") x.onchange = h; else x.oninput = h;
+          });
+        }
+        lg("data-oct", "tipo", false); lg("data-och", "horasParadas", true);
+        lg("data-ocd", "descricao", false); lg("data-ocp", "responsavel", false);
+        lg("data-ocz", "prazoCorrecao", false);
+        todos2("[data-ocr]", el).forEach(function (x) {
+          x.onclick = function () { buf.ocor.splice(+x.getAttribute("data-ocr"), 1); renderOc(); };
+        });
+      }
+      var bO = document.getElementById("g-oc-add");
+      if (bO) bO.onclick = function () {
+        buf.ocor.push({ tipo: "pessoal", descricao: "", responsavel: "", horasParadas: 0, prazoCorrecao: "" });
+        renderOc();
+      };
+
+      /* ---------- PARALISAÇÃO: campos só quando parou ---------- */
+      var chk = document.getElementById("g-pa-houve");
+      if (chk) chk.onchange = function () {
+        var cp = document.getElementById("g-pa-campos");
+        if (cp) cp.style.display = chk.checked ? "block" : "none";
+      };
+
+      renderOc();
     },
 
     novoRdo: function () { this.formRdo(null); },
     formRdo: function (r) {
-      r = r || {}; var self = this, obras = lista("obras");
+      r = r || {};
+      /* ⚠ DIÁRIO PUBLICADO NÃO SE REESCREVE. A regra existe em
+       * RDO.podeAcao("editar") desde o primeiro dia e NUNCA foi consultada por
+       * ninguém: o motor tinha teste verde para uma regra que a tela ignorava
+       * — motor testado, fiação ausente. Sem este gate, o diário que o cliente
+       * já viu no Portal podia ser reescrito, e o 🗑 do formulário o excluía
+       * sem deixar rastro. O caminho para mexer num diário publicado é
+       * Despublicar primeiro, que é uma ação registrada na trilha. */
+      /* ⚠ O gate barra SÓ o diário publicado — que é o defeito real: reescrever
+       * o que o cliente já viu no Portal. Barrar tudo o que `podeAcao("editar")`
+       * recusa foi um erro meu: este formulário é o ÚNICO visualizador do
+       * módulo, então recusar aqui tirava do usuário até a LEITURA — o
+       * encarregado perdia o próprio diário depois de enviá-lo, e ninguém abria
+       * os diários antigos (que nasceram sem o campo `estado`). */
+      if (r.id && (r.estado === "publicado")) {
+        UI.toast("Diário publicado não pode ser editado. Despublique primeiro — o cliente deixa de vê-lo — e então edite.", "erro");
+        return;
+      }
+      var self = this, obras = lista("obras");
       var num = r.numero || ("RDO-" + String(lista("rdo").length + 1).padStart(4, "0"));
       var hoje = new Date().toISOString().slice(0, 10);
-      var fotosBuf = (r.fotos || []).map(function (f) { return { d: f.d, leg: f.leg || "" }; }); // edição: fotos já salvas
+      /* ⚠ CLONE COMPLETO — não `{ d, leg }`. Copiar só esses dois campos jogava
+       * fora `id`, `remoto`, `tenant` e `bytes` de TODA foto do formato novo
+       * (js/fotos.js:89): abrir um diário salvo para editar e salvar de novo
+       * apagava o endereço da foto que já estava no servidor. A foto continuava
+       * lá, o registro deixava de saber onde, e nenhum outro aparelho a via de
+       * novo. Enquanto o srv() estava quebrado isso passava despercebido, porque
+       * não havia remoto a perder; com as fotos subindo virou perda de dado a
+       * cada edição. Clona campo a campo para o Cancelar não mexer no Store. */
+      var fotosBuf = (r.fotos || []).map(function (f) {
+        var c = {};
+        for (var k in f) { if (Object.prototype.hasOwnProperty.call(f, k)) c[k] = f[k]; }
+        c.leg = f.leg || "";
+        return c;
+      }); // edição: fotos já salvas
+      /* ⚠ o × só MARCA para remover; quem apaga os bytes é o Salvar. Apagando
+       * na hora do clique, sair no Cancelar destruía a foto e deixava o
+       * registro apontando para bytes que não existem mais — o formulário
+       * voltava atrás, o arquivo não. */
+      var fotosRemovidas = [];
       var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
       var autorDef = r.autor || eu.nome || eu.empresa || eu.email || "";
+      /* buffers dos blocos novos — cópia, para o Cancelar realmente cancelar */
+      var buf = {
+        ativ: (r.atividadesItens || []).map(function (a) { return JSON.parse(JSON.stringify(a)); }),
+        efe: (r.efetivo || []).map(function (a) { return JSON.parse(JSON.stringify(a)); }),
+        equip: (r.equipamentosItens || []).map(function (a) { return JSON.parse(JSON.stringify(a)); }),
+        ocor: (r.ocorrenciasItens || []).map(function (a) { return JSON.parse(JSON.stringify(a)); }),
+        clima: r.clima || null
+      };
       var corpo =
+        this._htmlBlocoAprovacao(r) +
         '<div class="row">' + campo("Nº", inp("g-num", num)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Status", sel("g-status", opts(P.rdoStatus, r.status || "rascunho"))) + "</div>" +
         campo("Obra *", sel("g-obra", optsRec(obras, "nome", r.obraId, "— selecionar —"))) +
         '<div class="row">' + campo("Clima (manhã)", sel("g-cmanha", opts(P.rdoClima, r.climaManha || "ensolarado"))) + campo("Clima (tarde)", sel("g-ctarde", opts(P.rdoClima, r.climaTarde || "ensolarado"))) + campo("Condição de trabalho", sel("g-cond", opts(P.rdoCondicao, r.condicao || "praticavel"))) + "</div>" +
         '<div class="row">' + campo("Efetivo direto (nº)", inp("g-efd", r.efetivoDireto)) + campo("Efetivo indireto (nº)", inp("g-efi", r.efetivoIndireto)) + campo("Terceiros / equipes", inp("g-terc", r.terceiros)) + "</div>" +
-        campo("Atividades executadas *", '<textarea id="g-ativ" rows="3" placeholder="O que foi executado no dia">' + Util.esc(r.atividades || "") + "</textarea>") +
+        this._htmlBlocoAtividades() +
+        this._htmlBlocoEfetivo() +
+        this._htmlBlocoEquip() +
+        this._htmlBlocoClima(r) +
+        /* O texto livre CONTINUA — como resumo, não como o registro em si.
+           Tirar de uma vez quebraria o hábito de quem já usa, e o diário
+           antigo (que só tem este campo) precisa continuar abrindo. */
+        this._htmlBlocoOcorrencias() +
+        this._htmlBlocoParalisacao(r) +
+        this._htmlBlocoImpedimentos(r) +
+        this._htmlBlocoRegistros(r) +
+        campo('Resumo do dia <span class="muted" style="font-weight:400;font-size:11px">— observações que não cabem nos serviços acima</span>',
+          '<textarea id="g-ativ" rows="2" placeholder="Observações gerais do dia">' + Util.esc(r.atividades || "") + "</textarea>") +
         (function () { // Last Planner: o diário evidencia a execução → conclui a tarefa da semana
           if (typeof LastPlanner === "undefined") return "";
           var sem = LastPlanner.chaveSemana(new Date());
@@ -5977,7 +7285,107 @@
         if (!obj.obraId) { UI.toast("Selecione a obra do diário.", "erro"); return false; }
         obj.climaManha = v("g-cmanha"); obj.climaTarde = v("g-ctarde"); obj.condicao = v("g-cond");
         obj.efetivoDireto = nv("g-efd"); obj.efetivoIndireto = nv("g-efi"); obj.terceiros = v("g-terc");
-        obj.atividades = v("g-ativ"); if (!obj.atividades) { UI.toast("Descreva as atividades do dia.", "erro"); return false; }
+        obj.atividades = v("g-ativ");
+        obj.atividadesItens = buf.ativ;
+        obj.efetivo = buf.efe;
+        obj.equipamentosItens = buf.equip;
+        obj.ocorrenciasItens = buf.ocor;
+        /* "sem restrições" EXPRESSO: diário em branco não prova que o dia
+           correu bem, prova que ninguém preencheu (Anexo B do DNIT). */
+        obj.semRestricoes = !buf.ocor.length;
+        var _pa = document.getElementById("g-pa-houve");
+        obj.paralisacao = (_pa && _pa.checked) ? {
+          houve: true, inicio: v("g-pa-ini"), fim: v("g-pa-fim"), dias: nv("g-pa-dias"),
+          motivo: v("g-pa-motivo"), responsavel: v("g-pa-resp"), previsaoReinicio: v("g-pa-volta")
+        } : { houve: false };
+        if (obj.paralisacao.houve && !obj.paralisacao.motivo) {
+          UI.toast("Obra parada sem motivo escrito não vale em pleito nenhum. Descreva o motivo.", "erro"); return false;
+        }
+        obj.impedimentos = Array.prototype.slice.call(document.querySelectorAll("[data-imp]"))
+          .filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-imp"); });
+        obj.impedimentosObs = v("g-imp-obs");
+        obj.visitas = v("g-visitas"); obj.comunicacoes = v("g-comunic"); obj.acidente = v("g-acidente");
+        /* os dois campos que RDO.pendenciasDoPleito cobrava e que nao existiam
+           em lugar nenhum — sem eles a lista nunca podia ser zerada */
+        obj.impactoChuva = v("g-cl-impacto");
+        var _fer=document.getElementById("g-feriado");
+        if(_fer) obj.feriado = !!_fer.checked;
+        var _mh = v("g-cl-media");
+        obj.chuvaMediaHistoricaMm = String(_mh || "").trim() ? Util.num(_mh) : null;
+        /* autoria carimbada: sem ela ninguém sabe quem não pode aprovar depois */
+        var _eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        /* ⚠ `_eu.id` NÃO existe: a sessão identifica por `usuarioId`
+         * (js/auth.js:323). Isto gravava autorId "" em todo diário, e com o
+         * autor sempre desconhecido a regra "quem escreve não aprova" nunca
+         * chegava a valer — o controle que o gestor pediu era decorativo.
+         * RDO.carimbarAutor concentra a leitura da identidade num lugar só. */
+        /* ⚠ SÓ no diário NOVO (`r` sem id). Carimbar no salvar de um diário que
+         * já existia fazia quem apenas ABRIU um diário legado (autorId vazio)
+         * constar como seu autor — falsificação de autoria no documento que
+         * serve de prova, causada justamente pela correção da autoria. */
+        if (!r.id && typeof RDO !== "undefined" && RDO.carimbarAutor) RDO.carimbarAutor(obj, _eu);
+        else if (!r.id && !obj.autorId) obj.autorId = String(_eu.usuarioId || _eu.email || "");
+        /* ⚠ NÃO REBAIXE O DIÁRIO ANTIGO PARA RASCUNHO.
+         * O diário anterior ao fluxo não tem `estado`, só `status`. Este
+         * default cego marcava "rascunho" no primeiro salvamento — e um
+         * rascunho não vai ao Portal. Ou seja: o gestor abria um diário que o
+         * CLIENTE JÁ ESTAVA LENDO, corrigia uma vírgula, salvava, e o diário
+         * sumia do Portal sem que ninguém fosse avisado.
+         * `estadoDe` responde com a obra em mãos: com Portal, `publicado_legado`
+         * (continua no ar); sem Portal, `finalizado_legado`. Só um diário
+         * genuinamente novo nasce rascunho. */
+        if (!obj.estado) {
+          var _obEst = lista("obras").filter(function (o) { return o.id === obj.obraId; })[0];
+          obj.estado = (typeof RDO !== "undefined" && RDO.estadoDe)
+            ? RDO.estadoDe(obj, !!(_obEst && _obEst.portalUser))
+            : "rascunho";
+        }
+        /* ⚠ EDITAR UM DIÁRIO APROVADO ANULA A APROVAÇÃO.
+         * O gestor pode corrigir o que aprovou — mas se o texto muda e
+         * `aprovadoPor` fica, o campo passa a mentir: ele viaja no payload do
+         * Portal (js/rdo.js) e o cliente lê um atestado de que fulano leu
+         * aquilo. Fulano leu OUTRA coisa. Então o diário volta para a mesa,
+         * com a razão escrita na trilha — em vez de o sistema fingir que a
+         * conferência continua valendo. */
+        if (r.id && r.estado === "aprovado") {
+          obj.estado = "em_aprovacao";
+          var _q = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+          obj.historico = (obj.historico || []).concat([{
+            acao: "editado_apos_aprovacao", por: _q.nome || _q.email || "—",
+            em: new Date().toISOString(),
+            motivo: "O diário foi alterado depois de aprovado — a aprovação anterior deixou de valer e ele voltou para conferência."
+          }]);
+          obj.aprovadoPor = ""; obj.aprovadoEm = "";
+          setTimeout(function () { UI.toast("O diário foi alterado depois de aprovado: a aprovação anterior não vale mais e ele voltou para o gestor conferir.", "erro"); }, 60);
+        }
+        /* ⚠ O CLIMA É DE UM DIA. Se a data do diário mudou depois da busca, o
+         * dado é de outro dia — e colar chuva do dia errado num documento que
+         * serve de prova é pior que não ter clima nenhum. Descarta e avisa;
+         * quem estiver na obra busca de novo com a data certa. */
+        if (buf.clima) {
+          if (buf.clima.dataConsultada && buf.clima.dataConsultada !== obj.data) {
+            var _dAnt = String(buf.clima.dataConsultada).split("-").reverse().join("/");
+            buf.clima = null; obj.clima = null;
+            setTimeout(function () {
+              UI.toast("A data do diário mudou depois da busca — o clima de " + _dAnt + " foi descartado. Busque de novo para a data certa.", "erro");
+            }, 60);
+          } else {
+            obj.clima = buf.clima;
+          }
+        }
+        /* totais congelados no registro: o impresso e o Portal não precisam
+           recalcular, e o número fica igual ao que foi visto no dia */
+        if (typeof RDO !== "undefined") {
+          obj.totaisEfetivo = RDO.totaisEfetivo(buf.efe);
+          obj.totaisEquip = RDO.totaisEquipamentos(buf.equip);
+          var _ob = lista("obras").filter(function (o) { return o.id === obj.obraId; })[0];
+          obj.prazo = _ob ? RDO.prazo(_ob, obj.data) : null;
+        }
+        /* Um diário precisa registrar ALGUMA coisa: serviço lançado OU resumo
+           escrito. Exigir os dois travaria quem só quer anotar o dia parado. */
+        if (!buf.ativ.length && !obj.atividades) {
+          UI.toast("Lance ao menos um serviço do dia, ou escreva o resumo.", "erro"); return false;
+        }
         // Last Planner: diário evidencia execução → conclui a tarefa da semana.
         // Marca DEPOIS do RDO persistir (gate v1.1.63): se a gravação do RDO falhar
         // (cota/validação), não sobra tarefa "feita" apontando pra diário inexistente.
@@ -5997,35 +7405,168 @@
         }
         obj.ocorrencias = v("g-ocor"); obj.equipamentos = v("g-equip"); obj.responsavel = v("g-resp");
         obj.autor = v("g-autor");
+        /* Carimba o id remoto das fotos que subiram ENQUANTO o formulário
+           estava aberto. Sem isto o diário novo grava remoto:"" e a foto,
+           já no servidor, fica invisível para os outros aparelhos. */
+        try { if (typeof Fotos !== "undefined" && Fotos.carimbarRemotos) Fotos.carimbarRemotos(fotosBuf); } catch (eCR) {}
         obj.fotos = fotosBuf.slice(0, RDO_MAX_FOTOS);
+        /* agora sim: o diário foi salvo, então as fotos que o usuário tirou da
+           galeria podem ir embora do aparelho e do servidor. Confere contra o
+           que ficou gravado — foto removida e depois re-anexada não pode ser
+           apagada por engano. */
+        if (fotosRemovidas.length) {
+          try {
+            var ficaram = {};
+            obj.fotos.forEach(function (f) { if (f && f.id) ficaram[f.id] = 1; });
+            var somem = fotosRemovidas.filter(function (f) { return f && f.id && !ficaram[f.id]; });
+            if (somem.length && typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(somem);
+            fotosRemovidas = [];
+          } catch (eRM) {}
+        }
         var ob = lista("obras").filter(function (o) { return o.id === obj.obraId; })[0];
         obj.obraNome = ob ? ob.nome : "";
         return true;
+      }, null, {
+        /* ⚠ ABRIR PARA LER É LIVRE; GRAVAR CONSULTA A REGRA.
+         * Este formulário é o único visualizador do módulo — recusar a
+         * abertura tirava do encarregado a leitura do próprio diário depois de
+         * enviá-lo. O que não pode é ele SALVAR por cima de um diário que já
+         * saiu das mãos dele: aprovado, reescrito antes de publicar, chegava
+         * ao cliente assinado por um gestor que nunca leu aquele texto. */
+        /* ⚠ AUTORIA INCERTA NÃO PODE VIRAR CADEADO.
+         * Meu guarda, na primeira versão, chamava `podeAcao("editar")` direto.
+         * Para quem não é gestor essa regra exige `autor && emAberto`, e
+         * `autor` depende de `autorId` — que está VAZIO em TODO diário gravado
+         * antes desta versão (o carimbo antigo lia `_eu.id`, inexistente, e o
+         * conserto de hoje só carimba diário NOVO, de propósito).
+         * Resultado do meu conserto: a base inteira do cliente virava
+         * somente-leitura para o encarregado. Ele abria o próprio diário da
+         * semana passada, digitava, clicava Salvar e levava "sem permissão" —
+         * sem caminho nenhum, perdendo o que digitou. E pior: um diário
+         * devolvido para revisão ficava num beco, porque ele só podia reenviar
+         * sem ter podido corrigir.
+         * Consertar um controle não pode custar o uso do produto. Quando a
+         * autoria é DESCONHECIDA, o app não tem base para recusar — e não
+         * recusa. O risco que motivou a recusa (o salvar recarimbar a autoria
+         * de quem só abriu) já está fechado noutro lugar: `carimbarAutor` só
+         * roda em diário sem `id`. */
+        salvar: function () {
+          if (typeof RDO === "undefined" || !RDO.podeAcao || !r.id) return true;
+          var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+          if (RDO.podeAcao("editar", eu, r)) return true;
+          if (RDO.autoriaIncerta && RDO.autoriaIncerta(r)) {
+            /* diário anterior ao controle: só barra o que o CLIENTE já vê */
+            var e0 = self._estadoComPortal(r);
+            if (e0 === "publicado" || e0 === "publicado_legado") {
+              return "Este diário está publicado e o cliente já o vê. Despublique primeiro — aí ele sai do Portal — e então edite.";
+            }
+            return true;
+          }
+          /* `estadoDe` com o 2º argumento: sem ele o diário legado de obra COM
+             Portal caía na mensagem genérica em vez de "Despublique primeiro" */
+          var est = self._estadoComPortal(r);
+          if (est === "aprovado") return "Este diário já foi aprovado. Para mexer nele, peça ao gestor para reabrir (Pedir revisão) — senão o cliente recebe um texto que o gestor não leu, assinado com o nome dele.";
+          if (est === "em_aprovacao") return "Este diário está na mesa do gestor. Espere a resposta: se precisar corrigir algo, peça a ele para devolver para revisão.";
+          if (est === "publicado" || est === "publicado_legado") return "Diário publicado não se reescreve. Despublique primeiro — o cliente deixa de vê-lo — e então edite.";
+          return "Este diário é de outra pessoa e já saiu das mãos dela. Fale com o gestor da obra.";
+        },
+        excluir: function () {
+          if (typeof RDO === "undefined" || !RDO.podeAcao || !r.id) return true;
+          var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+          /* ⚠ o 🗑 deste formulário só consultava trial/licença. Um sub-usuário
+           * apagava o diário APROVADO de outra pessoa, sem trilha e sem
+           * ninguém saber — no documento que serve de prova em pleito. */
+          if (RDO.podeAcao("editar", eu, r)) return true;
+          if (RDO.autoriaIncerta && RDO.autoriaIncerta(r)) {
+            var e1 = self._estadoComPortal(r);
+            if (e1 === "publicado" || e1 === "publicado_legado") {
+              return "Este diário está publicado e o cliente já o vê. Despublique primeiro para poder excluí-lo.";
+            }
+            return true;
+          }
+          return "Este diário já saiu das suas mãos e não pode ser excluído aqui. Fale com o gestor da obra.";
+        },
+        /* as fotos do diário excluído saem junto: do aparelho, da fila e do
+           servidor. `Fotos.apagar` cuida dos três (js/fotos.js:464). */
+        aoExcluir: function (reg) {
+          try {
+            var fs2 = (reg && reg.fotos) || [];
+            if (fs2.length && typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(fs2);
+          } catch (e) {}
+        }
       });
-      // UI.modal já colocou o form no DOM (síncrono). Liga upload + galeria (legenda + remover por foto).
+      // UI.modal já colocou o form no DOM (síncrono). Liga os blocos e as fotos.
+      try { this._ligarBlocosRdo(r, buf); } catch (eB) { console.warn("[rdo] blocos:", eB && eB.message); }
+      try { this._ligarBlocos2Rdo(r, buf); } catch (eB2) { console.warn("[rdo] blocos2:", eB2 && eB2.message); }
       function renderGal() {
         var g = document.getElementById("g-fotos-gal"); if (!g) return;
         if (!fotosBuf.length) { g.innerHTML = '<span class="muted" style="font-size:12px">Nenhuma foto anexada.</span>'; return; }
         g.innerHTML = fotosBuf.map(function (f, i) {
+          /* src vazio e preenchido depois: a foto pode estar no IndexedDB (o
+             normal) ou so no servidor (aparelho novo puxando o diario). */
           return '<div style="position:relative;width:76px">' +
-            '<img src="' + f.d + '" style="width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #d3e0ee">' +
+            '<img data-fotoi="' + i + '" src="' + (f.d || "") + '" style="width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #d3e0ee;background:#eef3f8">' +
             '<button type="button" data-rmf="' + i + '" title="Remover" style="position:absolute;top:-7px;right:-7px;background:#dc2626;color:#fff;border:0;border-radius:50%;width:20px;height:20px;line-height:18px;cursor:pointer;font-size:13px">×</button>' +
             '<input type="text" data-legf="' + i + '" placeholder="legenda" style="width:76px;font-size:10px;margin-top:3px;padding:2px 4px;border:1px solid #d3e0ee;border-radius:5px">' +
             '</div>';
         }).join("");
         Array.prototype.forEach.call(g.querySelectorAll("[data-legf]"), function (el) { var i = +el.getAttribute("data-legf"); el.value = fotosBuf[i].leg || ""; el.oninput = function () { fotosBuf[i].leg = el.value; }; });
-        Array.prototype.forEach.call(g.querySelectorAll("[data-rmf]"), function (b) { b.onclick = function () { fotosBuf.splice(+b.getAttribute("data-rmf"), 1); renderGal(); }; });
+        Array.prototype.forEach.call(g.querySelectorAll("[data-rmf]"), function (b) {
+          b.onclick = function () {
+            var i = +b.getAttribute("data-rmf");
+            var rem = fotosBuf.splice(i, 1)[0];
+            /* fica MARCADA; os bytes só somem quando o diário for salvo. Senão
+               o Cancelar não desfazia: a foto já tinha sido destruída. */
+            if (rem && !rem.d) fotosRemovidas.push(rem);
+            renderGal();
+          };
+        });
+        /* preenche as miniaturas que ainda não têm bytes na mão */
+        Array.prototype.forEach.call(g.querySelectorAll("[data-fotoi]"), function (im) {
+          var i = +im.getAttribute("data-fotoi"), f = fotosBuf[i];
+          if (!f || f.d || !(typeof Fotos !== "undefined" && Fotos.dataURI)) return;
+          Fotos.dataURI(f).then(function (d) { if (d && im.parentNode) im.src = d; });
+        });
       }
       var btn = document.getElementById("g-fotos-btn"), inpF = document.getElementById("g-fotos");
       if (btn && inpF) {
         btn.onclick = function () { inpF.click(); };
         inpF.onchange = function () {
-          Array.prototype.slice.call(inpF.files || []).forEach(function (file) {
-            if (fotosBuf.length >= RDO_MAX_FOTOS) { UI.toast("Máximo de " + RDO_MAX_FOTOS + " fotos por diário.", "erro"); return; }
+          var escolhidas = Array.prototype.slice.call(inpF.files || []);
+          /* ⚠ CORTAR ANTES DE GRAVAR, NÃO DEPOIS.
+           * O teste de limite ficava DEPOIS de `Fotos.guardar`: a foto
+           * excedente já tinha ido para o IndexedDB e para a fila de subida
+           * quando o `return` a descartava. Ela subia para o servidor, comia
+           * cota (2 GB por licença) e ninguém nunca a referenciava — lixo
+           * invisível que só aparecia como "cota cheia" meses depois.
+           * E o aviso saía UMA VEZ POR ARQUIVO: selecionar 40 fotos enchia a
+           * tela de toasts iguais. */
+          var vagas = Math.max(0, RDO_MAX_FOTOS - fotosBuf.length);
+          var sobraram = escolhidas.length - vagas;
+          var lote = escolhidas.slice(0, vagas);
+          if (sobraram > 0) {
+            UI.toast(sobraram === escolhidas.length
+              ? "O diário já está com as " + RDO_MAX_FOTOS + " fotos — nenhuma foi adicionada."
+              : "Só cabiam mais " + vagas + ": as outras " + sobraram + " NÃO foram adicionadas. Escolha as melhores ou lance um segundo diário.", "erro");
+          }
+          lote.forEach(function (file) {
             self._comprimirFoto(file, RDO_FOTO_MAXW, RDO_FOTO_Q, function (d) {
               if (!d) { UI.toast("Foto inválida — ignorada.", "erro"); return; }
-              if (fotosBuf.length >= RDO_MAX_FOTOS) return;
-              fotosBuf.push({ d: d, leg: "" }); renderGal();
+              /* A foto vai para o IndexedDB e entra na fila de subida; o registro
+                 fica só com a referência. Funciona sem sinal — que é a situação
+                 normal de quem está no canteiro. */
+              if (typeof Fotos !== "undefined" && Fotos.guardar) {
+                Fotos.guardar(d, "").then(function (ref) {
+                  /* corrida: dois lotes em voo ao mesmo tempo. Se estourou
+                     mesmo assim, APAGA o que acabou de gravar em vez de
+                     abandonar — abandonar é o defeito original. */
+                  if (fotosBuf.length >= RDO_MAX_FOTOS) {
+                    try { if (Fotos.apagar) Fotos.apagar([ref]); } catch (e) {}
+                    return;
+                  }
+                  fotosBuf.push(ref); renderGal();
+                });
+              } else { fotosBuf.push({ d: d, leg: "" }); renderGal(); }
             });
           });
           inpF.value = "";
@@ -8460,8 +10001,24 @@ renderFolha: function () {
       var despMes = 0, despAcum = 0;
       finO.forEach(function (f) { if (ateFim(f.data)) despAcum += Util.num(f.valor); if (noMes(f.data)) despMes += Util.num(f.valor); });
 
-      var rdos = lista("rdo").filter(function (r) { return r.obraId === obraId && noMes(r.data); });
-      var fotos = []; rdos.forEach(function (r) { (r.fotos || []).forEach(function (f) { if (fotos.length < 6) fotos.push({ d: f.d, leg: f.leg || "", data: r.data }); }); });
+      /* ⚠ ESTE DOCUMENTO VAI À DIRETORIA E AO CLIENTE. Ele contava TODO diário
+       * do mês, inclusive o rascunho e o que o gestor mandou revisar — a
+       * ocorrência de um diário reprovado saía citada como fato da obra. O
+       * fluxo de aprovação existe justamente para isso não acontecer. */
+      var rdosTodos = lista("rdo").filter(function (r) { return r.obraId === obraId && noMes(r.data); });
+      var _apr = { aprovado: 1, publicado: 1, publicado_legado: 1, finalizado_legado: 1 };
+      var rdos = rdosTodos.filter(function (r) {
+        var e = (typeof RDO !== "undefined" && RDO.estadoDe) ? RDO.estadoDe(r, !!obra.portalUser) : (r.estado || "rascunho");
+        return !!_apr[e];
+      });
+      var rdosPendentes = rdosTodos.length - rdos.length;
+      /* ⚠ `f.d` NÃO EXISTE na referência do formato novo (js/fotos.js:89): os
+       * bytes moram no IndexedDB ou no servidor. O relatório montava
+       * <img src='undefined'> — seis molduras quebradas na página que o
+       * engenheiro leva para a reunião. Resolvido de verdade mais abaixo. */
+      var refsFoto = []; rdos.forEach(function (r) {
+        (r.fotos || []).forEach(function (f) { if (refsFoto.length < 6) refsFoto.push({ ref: f, leg: (f && f.leg) || "", data: r.data }); });
+      });
       var ocorr = rdos.filter(function (r) { return r.ocorrencias && !/^sem ocorr/i.test(String(r.ocorrencias).trim()); });
 
       var kpi = function (rot, val, cor) { return '<div style="flex:1;min-width:150px;border:1px solid #d8e0ea;border-radius:10px;padding:12px 14px"><div style="font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:#5a6b7b;font-weight:700">' + rot + '</div><div style="font-size:19px;font-weight:800;margin-top:4px;color:' + (cor || "#14202e") + '">' + val + "</div></div>"; };
@@ -8485,14 +10042,59 @@ renderFolha: function () {
           medsDoMes.map(function (m) { return "<tr><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(m.numero || "—") + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(m.valor) + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(m.status || "—") + "</td></tr>"; }).join("") + "</tbody></table>"
         : "<p style='font-size:11.5px;color:#5a6b7b'>Sem medições registradas no período.</p>";
       corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>CANTEIRO NO MÊS</h3>" +
-        "<p style='font-size:12px'>" + rdos.length + " diário(s) de obra registrados" + (ocorr.length ? " · <b style='color:#dc2626'>" + ocorr.length + " com ocorrência</b>" : " · sem ocorrências relevantes") + ".</p>";
+        "<p style='font-size:12px'>" + rdos.length + " diário(s) de obra aprovados" + (ocorr.length ? " · <b style='color:#dc2626'>" + ocorr.length + " com ocorrência</b>" : " · sem ocorrências relevantes") + "." +
+        /* declarar o que ficou de fora é o que separa relatório de recorte
+           conveniente: quem lê precisa saber que há dia não fechado */
+        (rdosPendentes ? " <span style='color:#b45309'><b>" + rdosPendentes + "</b> diário(s) do mês ainda não aprovados não entram neste relatório.</span>" : "") + "</p>";
       if (ocorr.length) corpo += "<ul style='font-size:11.5px;margin:4px 0 12px'>" + ocorr.slice(0, 6).map(function (r) { return "<li><b>" + Util.esc(String(r.data || "").split("-").reverse().join("/")) + ":</b> " + Util.esc(String(r.ocorrencias).slice(0, 140)) + "</li>"; }).join("") + "</ul>";
-      if (fotos.length) {
-        corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>REGISTRO FOTOGRÁFICO</h3><div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px'>" +
-          fotos.map(function (f) { return "<figure style='margin:0;page-break-inside:avoid'><img src='" + f.d + "' style='width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid #d8e0ea'><figcaption style='font-size:9px;color:#5a6b7b'>" + Util.esc((f.data ? String(f.data).split("-").reverse().join("/") + " — " : "") + (f.leg || "")) + "</figcaption></figure>"; }).join("") + "</div>";
+
+      var self2 = this;
+      function fechar(fotos) {
+        var boas = fotos.filter(function (f) { return f && f.d; });
+        var faltando = fotos.length - boas.length;
+        if (boas.length) {
+          corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>REGISTRO FOTOGRÁFICO</h3><div style='display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px'>" +
+            boas.map(function (f) { return "<figure style='margin:0;page-break-inside:avoid'><img src='" + f.d + "' style='width:100%;height:110px;object-fit:cover;border-radius:8px;border:1px solid #d8e0ea'><figcaption style='font-size:9px;color:#5a6b7b'>" + Util.esc((f.data ? String(f.data).split("-").reverse().join("/") + " — " : "") + (f.leg || "")) + "</figcaption></figure>"; }).join("") + "</div>";
+        }
+        /* o que não veio é DECLARADO. Documento que omite em silêncio é pior
+           que documento incompleto — e moldura quebrada na reunião é pior que
+           os dois. */
+        if (faltando) {
+          corpo += "<p style='font-size:10.5px;color:#b45309;margin:0 0 12px'>" + faltando +
+            " foto(s) do mês não puderam ser carregadas agora (estão no aparelho que as tirou ou o servidor não respondeu). Elas continuam no diário.</p>";
+        }
+        corpo += self2._qrPortalObra(obra, "Escaneie para acompanhar esta obra no Portal do Cliente (conforme a última publicação).");
+        self2._abrirDoc("Relatório Executivo — " + (obra.nome || ""), self2._docShell("RELATÓRIO EXECUTIVO — " + mesRot.toUpperCase(), "#0f2740", corpo, "rexec"));
       }
-      corpo += this._qrPortalObra(obra, "Escaneie para acompanhar esta obra no Portal do Cliente (conforme a última publicação).");
-      this._abrirDoc("Relatório Executivo — " + (obra.nome || ""), this._docShell("RELATÓRIO EXECUTIVO — " + mesRot.toUpperCase(), "#0f2740", corpo, "rexec"));
+
+      if (!refsFoto.length) { fechar([]); return; }
+      if (typeof Fotos === "undefined" || !Fotos.dataURI) {
+        fechar(refsFoto.map(function (x) { return { d: (x.ref && x.ref.d) || "", leg: x.leg, data: x.data }; }));
+        return;
+      }
+      if (refsFoto.some(function (x) { return x.ref && !x.ref.d; })) UI.toast("Buscando as fotos do mês…", "ok");
+      /* teto de tempo por foto, igual ao impresso do diário: sem
+         AbortController em Fotos.baixar, o Promise.all podia nunca assentar e
+         o botão simplesmente não abriria documento nenhum. */
+      /* ⚠ `Fotos.dataURI(ref)` DEVOLVE UMA PROMISE — não recebe callback.
+       * Escrevi callback aqui na primeira versão e o parâmetro teria sido
+       * ignorado em silêncio: nenhuma foto resolveria, e o relatório sairia
+       * exatamente com o defeito que eu estava consertando. */
+      Promise.all(refsFoto.map(function (x) {
+        var pronto = false, res;
+        var espera = new Promise(function (r) { res = r; });
+        var to = setTimeout(function () { if (!pronto) { pronto = true; res({ d: "", leg: x.leg, data: x.data }); } }, 8000);
+        try {
+          Fotos.dataURI(x.ref).then(function (uri) {
+            if (pronto) return; pronto = true; clearTimeout(to);
+            res({ d: uri || "", leg: x.leg, data: x.data });
+          })["catch"](function () {
+            if (pronto) return; pronto = true; clearTimeout(to);
+            res({ d: "", leg: x.leg, data: x.data });
+          });
+        } catch (e) { if (!pronto) { pronto = true; clearTimeout(to); res({ d: "", leg: x.leg, data: x.data }); } }
+        return espera;
+      })).then(fechar);
     },
 
     renderRelatorios: function () {
@@ -9090,8 +10692,30 @@ renderFolha: function () {
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
     // titulo: string com o nome da entidade ("Obra") — recebe o prefixo "Novo "/"Editar ";
     //         ou objeto { novo, editar, nome } quando o título já vem pronto (evita "Novo Nova tarefa").
-    _modalForm: function (entidade, registro, titulo, corpo, coletar, aposSalvar) {
+    /* `guarda` (opcional) = { salvar: fn, excluir: fn }. Cada uma devolve
+     * `true` para liberar ou uma STRING com o motivo da recusa, que vira toast.
+     *
+     * ⚠ POR QUE ISTO EXISTE. Este formulário é genérico e seus botões Salvar e
+     * 🗑 Excluir só consultavam `_bloqueado()` — que é trial/licença, não
+     * permissão. Resultado no RDO: um diário APROVADO podia ser reescrito
+     * antes de o gestor publicar, e o cliente recebia no Portal um texto que o
+     * gestor nunca leu, assinado com o nome dele (`aprovadoPor` viaja no
+     * payload, js/rdo.js). Pior: qualquer sub-usuário com o módulo editava ou
+     * EXCLUÍA o diário de outra pessoa, sem trilha.
+     * A regra já existia em `RDO.podeAcao("editar")`, com teste verde, e
+     * ninguém a chamava — o mesmo "motor testado, fiação ausente" que este
+     * módulo já denunciou duas vezes. Parâmetro opcional de propósito: os
+     * outros módulos que usam este formulário seguem intactos. */
+    _modalForm: function (entidade, registro, titulo, corpo, coletar, aposSalvar, guarda) {
       var self = this, ehNovo = !registro.id;
+      var G = guarda || {};
+      function barra(qual) {
+        if (typeof G[qual] !== "function") return false;
+        var r = G[qual]();
+        if (r === true) return false;
+        UI.toast(typeof r === "string" ? r : "Você não tem permissão para isso.", "erro");
+        return true;
+      }
       var tit = (titulo && typeof titulo === "object") ? titulo
         : { novo: "Novo " + titulo, editar: "Editar " + titulo, nome: titulo };
       var nome = tit.nome || tit.novo || "";
@@ -9103,10 +10727,22 @@ renderFolha: function () {
       } }];
       if (!ehNovo) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
         if (self._bloqueado()) return;
-        if (confirm("Excluir este registro? Não pode ser desfeito.")) { Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok"); }
+        if (barra("excluir")) return;
+        if (confirm("Excluir este registro? Não pode ser desfeito.")) {
+          /* ⚠ O REGISTRO SAI, OS ANEXOS FICAVAM. Excluir um diário apagava a
+           * linha e deixava as fotos no servidor para sempre — lixo que come a
+           * cota de 2 GB da licença e que ninguém consegue achar depois, porque
+           * não pertence mais a diário nenhum. E a mensagem de cota cheia manda
+           * o usuário "apagar diários antigos", o que não resolve.
+           * `aoExcluir` roda ANTES do Store.excluir: se falhar, o registro
+           * continua ali e as fotos continuam alcançáveis. */
+          if (typeof G.aoExcluir === "function") { try { G.aoExcluir(registro); } catch (eX) {} }
+          Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok");
+        }
       } });
       botoes.push({ texto: ehNovo ? "Salvar" : "Salvar alterações", classe: "primary", onClick: function () {
         if (self._bloqueado()) return;
+        if (barra("salvar")) return;
         var obj = Util.clone(registro);
         if (coletar(obj) === false) return;
         Store.salvar(eid(), entidade, obj);
@@ -9855,6 +11491,7 @@ renderFolha: function () {
         case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
         case "portal-obra": return this.portalObra(id);
+        case "avaliacoes-portal": return this.avaliacoesPortal();
         case "excluir-obra": return this.confirmarExcluirObra(id);
         case "rever-tour": if (typeof Tour !== "undefined") Tour.iniciar(true); return;
         case "rel-executivo": { var reO = document.getElementById("rex-obra"), reM = document.getElementById("rex-mes"); return this.relatorioExecutivo(reO ? reO.value : "", reM ? reM.value : ""); }
@@ -9927,6 +11564,114 @@ renderFolha: function () {
         case "novo-modelo": return this.novoModelo();
         case "seed-modelos": return this.seedModelos();
         case "gerar-modelo": return this.gerarModelo(id);
+        /* ---------- FLUXO DE APROVAÇÃO DO DIÁRIO ----------
+         * Uma porta só: toda transição passa por RDO.transicionar, que decide
+         * se pode e por quê. Espalhar a regra pelos botões seria a maneira
+         * certa de um deles esquecer que o autor não aprova o próprio diário.
+         */
+        case "rdo-enviar": case "rdo-aprovar": case "rdo-revisar":
+        case "rdo-publicar": case "rdo-despublicar": {
+          var acaoRdo = gacao.replace("rdo-", "");
+          var rr = Store.obter(eid(), "rdo", id); if (!rr) return;
+          var euR = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+
+          var incerta = function () {
+            return acaoRdo === "aprovar" && typeof RDO !== "undefined" && RDO.autoriaIncerta && RDO.autoriaIncerta(rr);
+          };
+          var aplicar = function (dados) {
+            /* ⚠ AUTORIA INCERTA. Todo diário gravado antes desta versão tem
+             * `autorId` vazio — o carimbo antigo lia `_eu.id`, que não existe.
+             * Nesses, a regra "quem escreve não aprova o próprio diário" NÃO
+             * pode ser verificada: o app não sabe quem redigiu. Aprovar calado
+             * seria fingir um controle que não existe, que é o defeito que este
+             * fluxo veio corrigir. Então ele pergunta — e a resposta vai para a
+             * trilha, que é onde alguém vai procurar depois. */
+            if (incerta()) {
+              var quemDiz = rr.autor || rr.responsavel || "";
+              if (!confirm(
+                "Este diário foi criado antes do controle de autoria — o sistema não registrou quem o redigiu"
+                + (quemDiz ? ' (o campo "Elaborado por" diz: ' + quemDiz + ")" : "") + ".\n\n"
+                + "Por isso a regra \"quem escreve não aprova o próprio diário\" não pode ser verificada aqui.\n\n"
+                + "Confirme que não foi você quem redigiu este diário.")) return;
+            }
+            var d = dados || {};
+            /* conta de um usuário só: sem este contexto o diário morre em
+               "Aguardando aprovação" (não há segundo aprovador possível) */
+            d.semOutroAprovador = RDO.semOutroAprovador ? RDO.semOutroAprovador(euR, lista("equipe")) : false;
+            /* o motor não conhece a obra: sem isto ele lê o diário antigo como
+               "finalizado" mesmo quando o cliente está lendo ele no Portal */
+            var _obEst = Store.obter(eid(), "obras", rr.obraId);
+            d.temPortal = !!(_obEst && _obEst.portalUser);
+            var autoAprovou = acaoRdo === "aprovar" && d.semOutroAprovador &&
+              RDO.idDoUsuario && String(rr.autorId || "") === RDO.idDoUsuario(euR) && !!rr.autorId;
+            var t = RDO.transicionar(rr, acaoRdo, euR, d);
+            if (!t.ok) { UI.toast(t.erro, "erro"); return; }
+            var agora = new Date().toISOString();
+            var quem = euR.nome || euR.email || "—";
+            rr.estado = t.estado;
+            /* trilha: quem fez o quê e quando. Sem ela, "quem liberou isso?"
+               não tem resposta — e é a primeira pergunta quando algo errado
+               chega ao cliente. */
+            var semAutoria = incerta();   // lido ANTES de o registro mudar de estado
+            rr.historico = (rr.historico || []).concat([{ acao: acaoRdo, por: quem, em: agora, motivo: d.motivo || "",
+              autoriaNaoVerificada: semAutoria || undefined,
+              /* quem escreveu aprovou o próprio diário porque é o único aprovador
+                 da conta. Fica na trilha: é a diferença entre uma exceção
+                 declarada e um controle que nunca existiu. */
+              aprovadoPeloProprioAutor: autoAprovou || undefined }]);
+            if (acaoRdo === "aprovar") { rr.aprovadoPor = quem; rr.aprovadoEm = agora; rr.revisaoMotivo = ""; if (semAutoria) rr.aprovadoSemAutoria = true; if (autoAprovou) rr.aprovadoPeloProprioAutor = true; }
+            if (acaoRdo === "revisar") { rr.revisaoMotivo = (dados || {}).motivo; rr.revisaoPor = quem; rr.revisaoEm = agora; }
+            if (acaoRdo === "publicar") { rr.publicadoEm = agora; rr.status = "finalizado"; }
+            if (acaoRdo === "despublicar") { rr.publicadoEm = ""; }
+            Store.salvar(eid(), "rdo", rr);
+            App.render();
+            var msg = { enviar: "Diário enviado para aprovação.", aprovar: "Diário aprovado.",
+                        revisar: "Revisão solicitada — quem escreveu vê o motivo na lista.",
+                        publicar: "Publicado: o cliente já vê este diário no Portal.",
+                        despublicar: "Despublicado — saiu do Portal do cliente." };
+            /* PUBLICAR/DESPUBLICAR mexem no que o cliente enxerga — então o
+               servidor precisa saber AGORA, e não na próxima vez que alguém
+               lembrar de apertar o botão da obra. Enquanto o servidor não
+               confirma, não afirmamos nada ao usuário. */
+            if (acaoRdo === "publicar" || acaoRdo === "despublicar") {
+              var obraDoRdo = Store.obter(eid(), "obras", rr.obraId);
+              if (!obraDoRdo || !obraDoRdo.portalUser) {
+                UI.toast(acaoRdo === "publicar"
+                  ? "Diário aprovado e liberado. Esta obra ainda não tem Portal do Cliente — abra Obras › Portal do cliente para dar acesso a ele."
+                  : "Diário retirado. Esta obra não tem Portal do Cliente publicado.", "ok");
+                return;
+              }
+              UI.toast(acaoRdo === "publicar" ? "Enviando ao Portal do cliente…" : "Retirando do Portal do cliente…", "ok");
+              Gestao._republicarPortal(obraDoRdo, function (res) {
+                if (res.ok) { UI.toast(msg[acaoRdo], "ok"); return; }
+                UI.toast(acaoRdo === "publicar"
+                  ? "O diário foi aprovado aqui, mas NÃO chegou ao Portal (" + (res.erro || "falha") + "). O cliente ainda não vê. Publique a obra de novo com internet."
+                  : "O diário foi retirado aqui, mas o Portal NÃO foi atualizado (" + (res.erro || "falha") + ") — o cliente AINDA VÊ este diário. Refaça com internet.", "erro");
+              });
+              return;
+            }
+            UI.toast(msg[acaoRdo] || "Feito.", acaoRdo === "revisar" ? "erro" : "ok");
+          };
+
+          if (acaoRdo === "revisar") {
+            /* o motivo é obrigatório e vai INTEIRO para quem escreveu: "revisar"
+               sem dizer o quê só devolve trabalho sem informação */
+            UI.modal("Pedir revisão do diário",
+              '<p style="margin-top:0;font-size:13px">Escreva o que precisa ser corrigido. Esta mensagem aparece para quem redigiu o diário.</p>' +
+              campo("O que revisar *", '<textarea id="rv-motivo" rows="3" placeholder="Ex.: faltou a foto da laje do 3º pavimento e o efetivo do subempreiteiro"></textarea>'),
+              [{ texto: "Devolver para revisão", classe: "primary", onClick: function () {
+                var mt = v("rv-motivo");
+                if (!mt) { UI.toast("Escreva o que precisa ser revisado.", "erro"); return; }
+                UI.fecharModal(); aplicar({ motivo: mt });
+              } }]);
+            return;
+          }
+          if (acaoRdo === "publicar") {
+            if (!window.confirm("Publicar este diário no Portal do Cliente?\n\nDepois de publicado ele fica visível para o cliente, com as fotos do dia.")) return;
+          }
+          aplicar({});
+          return;
+        }
         case "finalizar-rdo": {
           var rd = Store.obter(eid(), "rdo", id); if (!rd) return;
           rd.status = "finalizado"; Store.salvar(eid(), "rdo", rd); App.render(); UI.toast("Diário finalizado.", "ok"); return;
@@ -9960,26 +11705,58 @@ case "nova-folha": return this.novoFolha();
         case "lancar-folha-enc": return this.lancarFolhaEnc(id);
       }
     },
-    // ---------- Portal do Cliente: publica o resumo da obra na nuvem ----------
-    portalObra: function (id) {
-      if (this._bloqueado()) return;
-      var obra = Store.obter(eid(), "obras", id); if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
-      var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "");
-      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
-      if (!chave) { UI.toast("Ative sua licença pra publicar no Portal do Cliente.", "erro"); return; }
+    /* ---------- O QUE O CLIENTE PODE VER ----------
+     * Extraído de portalObra porque agora há DOIS caminhos até aqui: o botão
+     * "Portal do cliente" e a republicação automática quando um diário é
+     * publicado ou despublicado. Antes só existia o botão — e por isso
+     * "Despublicar" dizia "saiu do Portal do cliente" sem nada sair de lugar
+     * nenhum: o snapshot no servidor continuava com o diário lá dentro. */
+    _snapshotPortal: function (id, obra) {
       // snapshot CURADO — só o que o cliente pode ver (sem custo interno/margem)
-      var meds = lista("medicoes").filter(function (m) { return m.obraId === id; })
+      /* ⚠ MEDIÇÃO REJEITADA NÃO VAI AO CLIENTE.
+       * O snapshot levava todas — inclusive a que a própria fiscalização
+       * rejeitou. Antes isso só acontecia quando alguém abria a tela do Portal;
+       * agora a publicação é automática a cada diário, então a medição
+       * rejeitada apareceria sozinha na tela do cliente, somando no acumulado,
+       * como se valesse. A pendente CONTINUA indo (ele tem direito de saber que
+       * há medição em análise), mas com o status carimbado. */
+      var meds = lista("medicoes").filter(function (m) { return m.obraId === id && m.status !== "rejeitada"; })
         .sort(function (a, b) { return String(a.numero || "").localeCompare(String(b.numero || "")); });
       var acum = 0, medidoAcum = 0;
       var medicoes = meds.map(function (m) {
         acum += Util.num(m.percentual); medidoAcum += Util.num(m.valor);
-        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10) };
+        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10), situacao: rot(P.medicaoStatus, m.status) || "" };
       });
-      var rdos = lista("rdo").filter(function (r) { return r.obraId === id && r.status !== "rascunho"; })
-        .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); })
+      /* SÓ VAI O QUE FOI APROVADO E PUBLICADO.
+       * Antes o filtro era "tudo que não é rascunho" — ou seja, o diário
+       * chegava ao cliente sem o gestor ter olhado, e o fluxo de aprovação
+       * inteiro não valia nada na única ponta em que ele importa.
+       * Diário do schema antigo (que nasceu antes da aprovação existir) mantém
+       * a regra antiga: aplicar a nova apagaria do Portal o histórico que o
+       * cliente já acompanhava. Quem decide isso é RDO.podeIrAoPortal. */
+      var rdosDaObra = lista("rdo").filter(function (r) { return r.obraId === id; });
+      var segurados = rdosDaObra.filter(function (r) { return !RDO.podeIrAoPortal(r); }).length;
+      var rdosPublicaveis = rdosDaObra.filter(function (r) { return RDO.podeIrAoPortal(r); })
+        .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); });
+      var rdos = rdosPublicaveis
         .map(function (r) {
-          return { numero: r.numero || "", data: r.data || "", climaManha: rot(P.rdoClima, r.climaManha), climaTarde: rot(P.rdoClima, r.climaTarde), condicao: rot(P.rdoCondicao, r.condicao), efetivo: Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto), atividades: r.atividades || "", ocorrencias: r.ocorrencias || "", equipamentos: r.equipamentos || "", responsavel: r.responsavel || "", autor: r.autor || "", fotos: (r.fotos || []).slice(0, RDO_MAX_FOTOS).map(function (f) { return { d: f.d, leg: f.leg || "" }; }) };
+          return RDO.paraPortal(r, {
+            rotClima: function (x) { return rot(P.rdoClima, x); },
+            rotCondicao: function (x) { return rot(P.rdoCondicao, x); },
+            /* o caminho automatico NUNCA leva o texto do acidente: quem decide
+               e quem abre a tela do Portal, para AQUELE acidente */
+            incluirAcidente: false,
+            maxFotos: RDO_MAX_FOTOS
+          });
         });
+      /* fotos que ainda não subiram não têm endereço no servidor — elas
+         simplesmente não aparecem no Portal, e é melhor DIZER isso do que o
+         cliente abrir o diário e achar que ninguém fotografou nada */
+      var fotosPendentes = 0;
+      rdosDaObra.forEach(function (r) {
+        if (!RDO.podeIrAoPortal(r)) return;
+        (r.fotos || []).forEach(function (f) { if (f && !f.remoto && !f.d) fotosPendentes++; });
+      });
       var contratado = Util.num(obra.valor);
       var pctExec = obra.pctExecutado != null ? Util.num(obra.pctExecutado) : Math.min(100, Math.round(acum * 10) / 10);
       // Curva S (planejado × realizado) + cronograma — do orçamento vinculado à obra
@@ -10016,17 +11793,41 @@ case "nova-folha": return this.novoFolha();
         contratado: contratado, pctExecutado: pctExec, medidoAcum: medidoAcum, aFaturar: Math.max(0, contratado - medidoAcum),
         curvaS: curvaS, cronograma: cronograma, medicoes: medicoes, rdos: rdos
       };
+      return { snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
+               segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS };
+    },
+
+    // ---------- Portal do Cliente: publica o resumo da obra na nuvem ----------
+    portalObra: function (id) {
+      if (this._bloqueado()) return;
+      var obra = Store.obter(eid(), "obras", id); if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
+      var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "");
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!chave) { UI.toast("Ative sua licença pra publicar no Portal do Cliente.", "erro"); return; }
+      var _s = this._snapshotPortal(id, obra);
+      var snapshot = _s.snapshot, medicoes = _s.medicoes, rdos = snapshot.rdos,
+          rdosPublicaveis = _s.rdosPublicaveis, segurados = _s.segurados,
+          fotosPendentes = _s.fotosPendentes, pctExec = _s.pctExec, curvaS = _s.curvaS;
+      var rdosDaObra = lista("rdo").filter(function (r) { return r.obraId === id; });
       // Orçamento de bytes: fotos em base64 podem estourar o envio — degrada (corta fotos dos RDOs antigos) até caber.
       var fit = this._caberSnapshot(snapshot);
       if (!fit.ok) { UI.toast("Fotos demais nos diários desta obra. Remova algumas e publique de novo.", "erro"); return; }
       if (fit.cortou) UI.toast("Algumas fotos de diários antigos foram omitidas para caber no envio.", "erro");
       var totFotos = snapshot.rdos.reduce(function (s, r) { return s + (r.fotos ? r.fotos.length : 0); }, 0);
+      var temAcidente = rdosDaObra.some(function (r) { return RDO.podeIrAoPortal(r) && String(r.acidente || "").trim(); });
       var userSug = obra.portalUser || ((obra.clienteNome || obra.nome || "cliente").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "").slice(0, 16) || "cliente");
       var senhaSug = obra.portalSenha || Math.random().toString(36).slice(2, 8);
       var corpo =
         '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO) com fotos. Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
         '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
         '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários" + (totFotos ? " · <b>" + totFotos + "</b> fotos" : "") + " · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
+        /* o que NÃO vai — dito na cara, antes de publicar. Quem publica precisa
+           saber que o diário de ontem ficou de fora porque ninguém aprovou. */
+        (segurados ? '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>' + segurados + "</b> diário(s) NÃO vão: ainda não foram aprovados e publicados. O cliente só vê diário que passou pelo gestor.</div>" : "") +
+        (fotosPendentes ? '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>' + fotosPendentes + "</b> foto(s) ainda estão subindo para a nuvem e não vão aparecer no Portal nesta publicação. Publique de novo com internet boa.</div>" : "") +
+        /* acidente é dado pessoal (envolvido, causa, afastamento). Quem decide
+           se o cliente lê o texto é o responsável técnico, não o programa. */
+        (temAcidente ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;color:#475569"><input type="checkbox" id="g-pacid"><span>Incluir <b>nesta publicação</b> o <b>texto dos registros de acidente/dano</b>. Sem marcar, o cliente vê apenas que houve registro no dia e é orientado a consultar o diário oficial (o texto costuma trazer nome de envolvido e informação de saúde). <b>A caixa nasce desmarcada de propósito</b>: autorização dada hoje vale para o acidente de hoje, não para os próximos.</span></label>' : "") +
         '<div id="portal-result" style="margin-top:12px"></div>';
       UI.modal("📱 Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -10037,11 +11838,53 @@ case "nova-folha": return this.novoFolha();
         var user = ((el("g-puser") || {}).value || "").trim().toLowerCase().replace(/\s+/g, ""), senha = ((el("g-psenha") || {}).value || "").trim();
         if (user.length < 3) { UI.toast("Usuário muito curto (mín. 3).", "erro"); return; }
         if (senha.length < 4) { UI.toast("Senha muito curta (mín. 4).", "erro"); return; }
+        /* o texto do acidente só entra se quem publica marcou AGORA — a escolha
+           fica gravada na obra para a próxima publicação não perguntar de novo */
+        var acid = el("g-pacid");
+        if (acid) {
+          /* ⚠ NÃO GUARDAR ESTA ESCOLHA NA OBRA.
+           * Guardar transformava um "sim" dado hoje, para ESTE acidente, em
+           * consentimento permanente: o próximo acidente — outro trabalhador,
+           * outro afastamento — iria ao Portal sozinho, pela republicação
+           * automática, sem ninguém decidir nada. Autorização de dado pessoal
+           * vale para o que estava na mesa quando ela foi dada. */
+          obra.portalAcidente = false;
+          var incluirAgora = !!acid.checked;
+          snapshot.rdos.forEach(function (rp, ip) {
+            var orig = rdosPublicaveis[ip];
+            rp.acidente = (incluirAgora && orig) ? (orig.acidente || "") : "";
+          });
+        }
         el("portal-result").innerHTML = '<div class="muted">Publicando…</div>';
-        fetch(url + "/api/portal/publicar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ user: user, senha: senha, empresa: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "", obra: snapshot }) })
+        /* trocarSenha explícito: só ESTA tela troca a senha do cliente, e só
+           quando quem publica de fato digitou uma diferente da que está no
+           cadastro da obra. Publicação automática nunca mexe na senha. */
+        var trocar = !obra.portalUser || senha !== (obra.portalSenha || "");
+        fetch(url + "/api/portal/publicar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ user: user, senha: senha, trocarSenha: trocar, empresa: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "", obra: snapshot }) })
           .then(function (r) { return r.json(); }).then(function (j) {
             if (!j.ok) { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">' + Util.esc(j.erro || "Falha ao publicar.") + "</div>"; return; }
+            /* ⚠ TROCAR O USUÁRIO NÃO REVOGAVA O ANTIGO.
+             * Publicar como "clienteB" gravava o novo nome na obra — e o
+             * registro de "clienteA" continuava no servidor, com esta obra
+             * dentro. O cliente anterior seguia entrando e vendo o andamento,
+             * os diários e as FOTOS, por tempo indeterminado. Trocar o acesso
+             * é justamente o que se faz quando alguém não deve mais ver.
+             * Revogo DEPOIS de publicar (se a publicação falhar, o cliente
+             * atual não pode ficar sem nada) e, se a revogação falhar, digo
+             * isso em vermelho: o dono precisa saber que o antigo ainda entra. */
+            var anterior = obra.portalUser;
             obra.portalUser = user; obra.portalSenha = senha; Store.salvar(eid(), "obras", obra);
+            if (anterior && anterior !== user) {
+              fetch(url + "/api/portal/remover", {
+                method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave },
+                body: JSON.stringify({ user: anterior, obraId: obra.id })
+              }).then(function (r2) { return r2.json(); }).then(function (j2) {
+                if (j2 && j2.ok) return;
+                UI.toast("O acesso antigo (" + anterior + ") NÃO foi removido — essa pessoa ainda consegue ver esta obra. Refaça com internet ou fale com o suporte.", "erro");
+              })["catch"](function () {
+                UI.toast("O acesso antigo (" + anterior + ") NÃO foi removido — essa pessoa ainda consegue ver esta obra. Refaça com internet.", "erro");
+              });
+            }
             var link = url + "/portal";
             el("portal-result").innerHTML =
               '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px">' +
@@ -10055,6 +11898,147 @@ case "nova-folha": return this.novoFolha();
             };
           }).catch(function () { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>'; });
       }
+    },
+
+    /* ---------- O QUE O CLIENTE RESPONDEU ----------
+     * O outro lado do Portal. O cliente dá nota de 1 a 5 em cada diário e
+     * escreve recado; isso fica no servidor (o app do engenheiro costuma estar
+     * fechado na hora em que ele lê) e é puxado aqui.
+     *
+     * Duas coisas que este painel resolve e que planilha nenhuma resolve:
+     * mostrar onde a relação está azedando ANTES da reunião, e deixar a nota
+     * gravada no próprio diário — assim ela sobrevive offline e entra no
+     * histórico da obra. */
+    avaliacoesPortal: function () {
+      if (this._bloqueado()) return;
+      /* guarda em FUNÇÃO, não só no botão: este painel lê o retorno de TODOS os
+         clientes do escritório e grava dentro dos diários. Esconder o botão não
+         é controle — a ação pode vir da busca, de um atalho ou de um clique
+         herdado de outra tela. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("rdo")) {
+        UI.toast("Seu usuário não tem permissão no módulo Diário de Obra.", "erro"); return;
+      }
+      var base = String((typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "").replace(/\/$/, "");
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!chave) { UI.toast("Ative sua licença pra ver as avaliações do Portal.", "erro"); return; }
+      var self = this;
+      UI.modal("⭐ O que os seus clientes estão dizendo",
+        '<div id="av-corpo" class="muted" style="font-size:13px">Buscando no Portal…</div>',
+        [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+
+      fetch(base + "/api/portal/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-licenca": chave },
+        body: JSON.stringify({})
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || !j.ok) {
+          var elErr = document.getElementById("av-corpo");
+          if (elErr) elErr.innerHTML = '<span style="color:#b91c1c">' + Util.esc((j && j.erro) || "Não consegui buscar.") + "</span>";
+          return;
+        }
+        /* GRAVA ANTES DE DESENHAR. Estava depois do `if (!el) return`, então
+           fechar a janela enquanto a resposta vinha jogava fora as notas: elas
+           chegaram do servidor e não entravam no diário. A nota é o dado; a
+           tela é só a tela. */
+        var gravadas = self._gravarAvaliacoes(j.obras || []);
+        var el = document.getElementById("av-corpo"); if (!el) return;
+        el.innerHTML = self._avaliacoesHtml(j.obras || [], gravadas);
+      }).catch(function () {
+        var el = document.getElementById("av-corpo");
+        if (el) el.innerHTML = '<span style="color:#b91c1c">Sem conexão com o servidor. Tente de novo.</span>';
+      });
+    },
+
+    /* Estrelas cheias/vazias em texto: o impresso e o dark mode ficam iguais, e
+       não depende de fonte de ícone nenhuma. */
+    _estrelasTexto: function (media) {
+      if (media == null) return '<span class="muted">sem avaliação</span>';
+      var cheias = Math.round(Number(media)), s = "";
+      for (var i = 1; i <= 5; i++) s += (i <= cheias ? "★" : "☆");
+      return '<span style="color:#f5a623;letter-spacing:1px">' + s + '</span> <b>' + Util.fmtNum(media, 1) + "</b>";
+    },
+
+    _avaliacoesHtml: function (obras, gravadas) {
+      var aviso = (gravadas && gravadas.falhas)
+        ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:9px 12px;font-size:12.5px;color:#b91c1c;margin-bottom:10px">' +
+          "Não consegui gravar " + gravadas.falhas + " avaliação(ões) dentro dos diários (armazenamento cheio). Elas continuam no Portal — libere espaço e abra este painel de novo.</div>"
+        : "";
+      if (!obras.length) {
+        return aviso + '<div style="font-size:13.5px;line-height:1.6">Nenhum cliente avaliou ainda.<br><span class="muted">' +
+          "A avaliação aparece quando você publica a obra no Portal do Cliente e libera diários para ele. " +
+          "Cada diário ganha uma nota de 1 a 5 e um espaço de recado.</span></div>";
+      }
+      var self = this;
+      var comNota = obras.filter(function (o) { return o.media != null; });
+      var h = aviso;
+      if (comNota.length) {
+        var soma = 0; comNota.forEach(function (o) { soma += o.media * o.avaliacoes; });
+        var totAv = comNota.reduce(function (s, o) { return s + o.avaliacoes; }, 0);
+        h += '<div style="background:rgba(0,0,0,.03);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:13.5px">' +
+          "Média geral " + this._estrelasTexto(totAv ? Math.round((soma / totAv) * 10) / 10 : null) +
+          ' <span class="muted">· ' + totAv + " avaliação(ões) em " + comNota.length + " obra(s)</span></div>";
+      }
+      h += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th>Cliente</th><th>Nota</th><th class="num">Avaliações</th></tr></thead><tbody>';
+      obras.forEach(function (o) {
+        h += "<tr><td><b>" + Util.esc(o.obra || "(obra)") + "</b></td><td>" + Util.esc(o.cliente || "—") + "</td><td>" +
+          self._estrelasTexto(o.media) + '</td><td class="num">' + (o.avaliacoes || 0) + "</td></tr>";
+      });
+      h += "</tbody></table>";
+
+      /* Os recados vêm depois da tabela, na íntegra e com data: resumir recado
+         de cliente é o melhor jeito de perder a frase que importava. */
+      var temRecado = false;
+      obras.forEach(function (o) {
+        var cs = (o.comentarios || []).slice().reverse();
+        var notasComTexto = Object.keys(o.notas || {}).filter(function (k) { return (o.notas[k].comentario || "").trim(); });
+        if (!cs.length && !notasComTexto.length) return;
+        temRecado = true;
+        h += '<div style="margin-top:10px"><b style="font-size:13px">' + Util.esc(o.obra || "(obra)") + "</b>";
+        cs.forEach(function (c) {
+          h += '<div style="border-left:3px solid #2e6f9e;background:rgba(0,0,0,.02);border-radius:0 8px 8px 0;padding:7px 10px;margin-top:6px;font-size:13px;white-space:pre-wrap">' +
+            Util.esc(c.texto) +
+            '<div class="muted" style="font-size:11px;margin-top:3px">' + Util.esc(c.rdoChave ? "sobre o diário " + c.rdoChave + " · " : "") +
+            Util.esc(self._quandoBR(c.em)) + "</div></div>";
+        });
+        notasComTexto.forEach(function (k) {
+          var n = o.notas[k];
+          h += '<div style="border-left:3px solid #f5a623;background:rgba(0,0,0,.02);border-radius:0 8px 8px 0;padding:7px 10px;margin-top:6px;font-size:13px">' +
+            Util.esc(n.comentario) + '<div class="muted" style="font-size:11px;margin-top:3px">nota ' + Util.esc(String(n.nota)) +
+            " no diário " + Util.esc(k) + " · " + Util.esc(self._quandoBR(n.em)) + "</div></div>";
+        });
+        h += "</div>";
+      });
+      if (!temRecado) h += '<div class="muted" style="font-size:12.5px">Nenhum recado escrito até agora — só notas.</div>';
+      return h;
+    },
+
+    _quandoBR: function (iso) {
+      if (!iso) return "";
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return String(iso).slice(0, 10).split("-").reverse().join("/");
+      return d.toLocaleDateString("pt-BR") + " às " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    },
+
+    /* Carimba a nota DENTRO do diário. Sem isto a avaliação só existiria
+       enquanto a janela estivesse aberta, e o histórico da obra não teria nada.
+       Grava só o que mudou — reescrever todos os diários a cada abertura
+       empurraria a entidade inteira para a nuvem sem motivo. */
+    _gravarAvaliacoes: function (obras) {
+      if (typeof RDO === "undefined" || !RDO.aplicarAvaliacoes) return { gravadas: 0, falhas: 0 };
+      var todos = lista("rdo"), n = 0, falhas = 0;
+      obras.forEach(function (o) {
+        var daObra = todos.filter(function (r) { return String(r.obraId) === String(o.obraId); });
+        if (!daObra.length) return;
+        var mudou = RDO.aplicarAvaliacoes(daObra, o.notas || {});
+        mudou.forEach(function (r) {
+          /* ⚠ Store.salvar devolve null quando a cota estoura. Contar como
+             sucesso fazia o painel dizer que a nota entrou no diário quando ela
+             não entrou — e na próxima abertura ela seria "gravada" de novo, em
+             silêncio, para sempre. */
+          if (Store.salvar(eid(), "rdo", r)) n++; else falhas++;
+        });
+      });
+      return { gravadas: n, falhas: falhas };
     },
 
     // ---------- Lançar de documento (IA lê NF/fatura/boleto) ----------

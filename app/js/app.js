@@ -114,6 +114,10 @@
       // Modo nuvem multi-aparelho: conecta na conta-tenant da licença (dados + usuários
       // compartilhados) e, se este aparelho for secundário, pede login. Async/offline-first.
       try { this._conectarNuvemLicenca(); } catch (eCn) {}
+      /* fila de fotos: sobe o que ficou pendente quando houve obra sem sinal.
+         Instala o gatilho de rede uma vez e anda sozinha. */
+      try { if (typeof Fotos !== "undefined" && Fotos.iniciar) Fotos.iniciar(); } catch (eFt) {}
+      try { if (typeof Gestao !== "undefined" && Gestao._ligarRetornoDeFoto) Gestao._ligarRetornoDeFoto(); } catch (eFr) {}
 
       var self = this;
       // Carrega base SINAPI (própria da empresa, se houver; senão a padrão).
