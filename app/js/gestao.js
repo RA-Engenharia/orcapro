@@ -5681,7 +5681,7 @@
       { p: "Como registro o Diário de Obra (RDO)?", r: "No módulo <b>Diário (RDO)</b>, crie um novo com clima, efetivo, atividades, ocorrências e fotos. Sai impresso com a identidade da sua empresa e as fotos alimentam o Portal do Cliente." },
       { p: "Como faço uma medição?", r: "No módulo <b>Medições</b>, vincule o orçamento e informe o % executado por item no período. O boletim sai no padrão do contratante (anterior, período, acumulado, saldo) e avisa se algum item passar de 100%." },
       { p: "Onde vejo o Previsto × Realizado por etapa?", r: "No módulo <b>Previsto × Real</b>: escolha a obra e veja, por etapa do orçamento, o custo previsto contra o gasto real em barras — com alerta de estouro." },
-      { p: "Funciona offline?", r: "Sim. O sistema roda no seu navegador e seus dados ficam salvos no seu computador. A sincronização na nuvem é opcional (Plus, 3 aparelhos)." },
+      { p: "Funciona offline?", r: "Sim. O sistema roda no seu navegador e seus dados ficam salvos no seu computador. A sincronização na nuvem é opcional (Plus) e é ela que leva os seus dados para o celular e o tablet." },
       { p: "Meus dados ficam salvos onde?", r: "No armazenamento local do seu navegador, no seu computador — nada é enviado sem você mandar. Faça backups pelo menu quando quiser. No Plus, dá para sincronizar entre PC, celular e tablet." },
       { p: "Como adiciono alguém da minha equipe?", r: "No módulo <b>Usuários</b> (só o administrador), crie o sub-usuário com login, senha e os <b>módulos liberados</b>. Marque <b>“pode aprovar”</b> se ele puder aprovar medições, compras e requisições." },
       { p: "Como atualizo a base SINAPI?", r: "A base acompanha as competências publicadas pela Caixa. Você escolhe a competência e a UF no orçamento; quando sai uma nova, é só selecioná-la." },
@@ -8878,7 +8878,7 @@ renderFolha: function () {
     },
     fsExcelPro: function (p) {
       var FS = window.FolhaSemanal, self = this;
-      if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { UI.toast("Módulo Excel indisponível (precisa de internet na 1ª vez).", "erro"); return; }
+      if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { UI.toast("Módulo Excel indisponível (arquivo js/vendor/exceljs.min.js).", "erro"); return; }
       var d = this._fsRelDados(p);
       if (!d.doPer.length) { UI.toast("Nenhum lançamento no período/filtro.", "erro"); return; }
       UI.toast("Gerando o Excel completo…", "ok");
@@ -10301,8 +10301,9 @@ case "nova-folha": return this.novoFolha();
     },
     /* Texto de um PDF. O leitor vem do VENDOR LOCAL (js/vendor/pdfjs) — o app roda
        no canteiro sem internet, e buscar o pdf.js num CDN fazia a leitura de nota
-       por PDF simplesmente não funcionar offline, sem dizer o porquê. O CDN fica
-       só como socorro para instalação antiga que ainda não tem a pasta vendor. */
+       por PDF simplesmente não funcionar offline, sem dizer o porquê. Desde a
+       v1.1.142 NÃO há mais socorro por CDN: um terceiro que só aparece no caminho
+       de erro não dá para declarar na Política nem para o cliente prever. */
     _pdfTexto: function (file, cb) {
       var self = this;
       function extrair(lib) {
@@ -10334,15 +10335,14 @@ case "nova-folha": return this.novoFolha();
         } catch (eW) {}
         this._pdfLib = window.pdfjsLib; extrair(window.pdfjsLib); return;
       }
-      function viaCdn() {
-        var s = document.createElement("script"); s.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
-        s.onload = function () {
-          if (!window.pdfjsLib) { UI.toast("Não carregou o leitor de PDF. Envie como imagem.", "erro"); return; }
-          try { window.pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"; } catch (e) {}
-          self._pdfLib = window.pdfjsLib; extrair(window.pdfjsLib);
-        };
-        s.onerror = function () { UI.toast("Não carregou o leitor de PDF (sem internet e sem o leitor local). Envie a nota como imagem.", "erro"); };
-        document.head.appendChild(s);
+      /* SEM FALLBACK PARA CDN. O leitor de PDF é vendorizado (js/vendor/pdfjs);
+         o fallback que existia aqui saía para a Cloudflare quando o import local
+         falhasse — em silêncio, e justamente com uma NOTA FISCAL na mão. Um
+         terceiro que só aparece no caminho de erro é o pior tipo de terceiro:
+         não dá para declarar honestamente na Política nem para o cliente prever.
+         Falhou o arquivo local? A mensagem diz o que houve e oferece a saída. */
+      function semLeitor() {
+        UI.toast("Não carregou o leitor de PDF local (js/vendor/pdfjs). Envie a nota como imagem, ou reinstale o programa.", "erro");
       }
       /* `import()` resolve a partir do ARQUIVO, não da página: de dentro de
          js/gestao.js um "./js/..." viraria "/js/js/...". Ancorar no baseURI é o
@@ -10352,8 +10352,8 @@ case "nova-folha": return this.novoFolha();
         import(new URL("js/vendor/pdfjs/pdf.min.mjs", raiz).href).then(function (lib) {
           try { lib.GlobalWorkerOptions.workerSrc = new URL("js/vendor/pdfjs/pdf.worker.min.mjs", raiz).href; } catch (e) {}
           self._pdfLib = lib; extrair(lib);
-        })["catch"](viaCdn);
-      } catch (eImp) { viaCdn(); }
+        })["catch"](semLeitor);
+      } catch (eImp) { semLeitor(); }
     },
 
     // Comprime um File de imagem em dataURL JPEG ~maxW px de lado maior. cb(dataURL|null) assíncrono.

@@ -4,7 +4,7 @@
  * Material · Insumos · Mão de obra · Cargas na fundação · Logística ·
  * Parâmetros. Estilo navy/aço, cabeçalho, zebra, bordas, freeze,
  * auto-filtro, subtotais, formatos numéricos.
- * Usa ExcelJS (reaproveita window.Excel.ensureExcelJS — lazy CDN).
+ * Usa ExcelJS (reaproveita window.Excel.ensureExcelJS — lazy, vendorizado).
  * `construir(ExcelJS, pacote, BK)` é montável/testável (recebe as deps).
  * ===================================================================== */
 (function (global) {

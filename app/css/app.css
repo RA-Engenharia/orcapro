@@ -24,6 +24,10 @@
   /* faixa da SUB ETAPA: --surface-2 30% rumo a --surface. No claro a superficie E branca,
      entao isto e literalmente "30% mais claro que a etapa" (#eef2f7 -> #f3f6f9). */
   --faixa-sub: #f3f6f9;
+  /* fundo da faixa TOTAL GERAL da planilha. No claro e o navy da marca; nos
+     tons escuros deriva da superficie do proprio tom (o navy fixo brigava
+     com verde/marrom e sumia no preto). */
+  --tot-fundo: var(--navy);
 
   /* Elevação em camadas (difusa = sensação premium), não uma sombra dura só */
   --sombra-sm: 0 1px 1px rgba(15,39,64,.04), 0 1px 2px rgba(15,39,64,.06);
@@ -48,6 +52,7 @@
   --linha: #2e455c;
   --linha-forte: #43607c;
   --faixa-sub: #152636;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
+  --tot-fundo: #1b3550;
   --texto: #ecf2f8;
   --texto-fraco: #9db0c2;
   --sombra-sm: 0 1px 2px rgba(0,0,0,.35);
@@ -66,6 +71,7 @@
   --bg: #0a0c0f; --surface: #121519; --surface-2: #181c22; --surface-3: #1f242c;
   --linha: #303845; --linha-forte: #4a5666;
   --faixa-sub: #161a1f;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
+  --tot-fundo: #262c35;
   --card-bg: linear-gradient(180deg, #14181d 0%, #101317 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #171b21 0%, rgba(23,27,33,0) 54%);
 }
@@ -76,6 +82,7 @@
   --bg: #081711; --surface: #0e2118; --surface-2: #132a1f; --surface-3: #1a3427;
   --linha: #294b39; --linha-forte: #3e6a54;
   --faixa-sub: #12271d;  /* --surface-2 30% rumo a --surface (mantem a hierarquia no escuro) */
+  --tot-fundo: #1c3b2b;
   --card-bg: linear-gradient(180deg, #11271c 0%, #0d2016 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #143024 0%, rgba(20,48,36,0) 54%);
   --anel: 0 0 0 3px rgba(34,197,94,.22);
@@ -87,6 +94,7 @@
   --bg: #15100a; --surface: #1e1710; --surface-2: #261d14; --surface-3: #2f2419;
   --linha: #423826; --linha-forte: #5c4d37;
   --faixa-sub: #241b13;  /* --surface-2 30% rumo a --surface */
+  --tot-fundo: #362a1c;
   --texto: #f0e9df; --texto-fraco: #a99c8a;
   --card-bg: linear-gradient(180deg, #221a12 0%, #1b140d 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #2a2115 0%, rgba(42,33,21,0) 54%);
@@ -100,6 +108,7 @@
   --bg: #0d1725; --surface: #132133; --surface-2: #182a40; --surface-3: #20344d;
   --linha: #30486a; --linha-forte: #486a91;
   --faixa-sub: #16273c;  /* --surface-2 30% rumo a --surface */
+  --tot-fundo: #223a56;
   --verde: #5ea23a; --verde-claro: #79c455; --amarelo: #b5985a;
   --card-bg: linear-gradient(180deg, #162743 0%, #111f33 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #1a2c47 0%, rgba(26,44,71,0) 54%),
@@ -361,6 +370,16 @@ table.tbl tr.etapa-row.subetapa:hover td { background: color-mix(in srgb, var(--
 /* chevron e número na MESMA linha: com o recuo de 22px a célula ficava estreita e
    o "▾" caía em cima do "1.1", deixando a linha 12px mais alta que a da etapa. */
 table.tbl tr.etapa-row.subetapa td:first-child { padding-left: 22px; white-space: nowrap; }
+/* RODAPÉ DE TOTAIS da planilha — última linha da tabela, para a planilha fechar
+   somando. O total sempre à vista fica nos cartões do topo do editor.
+   Escopado nas DUAS classes (e não em "tfoot td"): outras telas do app têm tfoot
+   com layout próprio e herdariam este fundo/negrito sem pedir. */
+table.tbl tfoot tr.tot-linha td,
+table.tbl tfoot tr.tot-geral td { background: var(--surface-2); font-weight: 700; border-top: 2px solid var(--linha-forte); }
+table.tbl tfoot tr.tot-linha td { font-weight: 600; color: var(--texto-fraco); font-size: 12.5px; }
+table.tbl tfoot tr.tot-geral td { background: var(--tot-fundo); color: #fff; font-size: 14px; border-top: 0; }
+table.tbl tfoot tr.tot-geral td .muted { color: rgba(255,255,255,.72) !important; }
+table.tbl tfoot tr.tot-geral td:nth-last-child(2) { color: #7ee2a8; } /* preço de venda em destaque */
 table.tbl tr.etapa-row.subetapa td:nth-child(2) { padding-left: 18px; }
 /* seletor "em que grupo este item está" — discreto até o hover, para não
    competir com os números na planilha */

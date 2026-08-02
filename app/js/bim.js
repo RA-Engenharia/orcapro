@@ -1545,7 +1545,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     XLS.gerar(pacote, {
       nome: 'Blocok — ' + pacote.obra + ' — ' + pacote.data.replace(/\//g, '-'),
       ok: function () { if (S._hint) S._hint('📊 Planilha Excel baixada — abas por pavimento + romaneio + material + insumos + mão de obra + cargas + logística.'); },
-      erro: function (e) { if (S._hint) S._hint('📊 Não gerou a planilha (' + e + '). O Excel precisa de internet na 1ª vez pra carregar o ExcelJS.'); }
+      erro: function (e) { if (S._hint) S._hint('📊 Não gerou a planilha (' + e + ').'); }
     });
     return pacote;
   }

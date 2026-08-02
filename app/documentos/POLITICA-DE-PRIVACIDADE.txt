@@ -1,0 +1,241 @@
+﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
+Versão 1.1 — vigente a partir de 01/08/2026
+Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+
+EM DUAS FRASES
+
+O OrçaPRO IA roda na sua máquina e os seus dados de trabalho ficam gravados nela.
+Algumas coisas saem daqui — umas automaticamente, outras só quando você clica — e
+esta política lista TODAS, uma por uma, com o que sai, para onde vai e como parar.
+
+
+1. QUEM É O CONTROLADOR
+
+RA ENGENHARIA ESPECIAL LTDA, CNPJ 59.507.116/0001-64, Rua Ovídio Bradamante de Toledo, nº
+100, Apto 101, Bloco B, Bairro Tubalina, Uberlândia/MG, CEP 38412-002.
+Encarregado pelo tratamento de dados (DPO): Eng. Rogério Alves de Souza.
+Canal do titular: contato@raengenhariaespecial.com.br · WhatsApp (34) 9286-9383.
+
+
+2. ONDE SEUS DADOS FICAM GRAVADOS
+
+Tudo o que você cadastra no dia a dia é gravado localmente, no armazenamento do
+navegador, dentro do perfil do seu usuário do Windows:
+
+  · orçamentos, etapas, itens, composições próprias e parâmetros;
+  · obras, clientes e fornecedores;
+  · colaboradores (inclusive CPF, chave PIX e dados de folha, se você os
+    cadastrar);
+  · financeiro, compras, estoque, patrimônio, EPI e documentos anexados;
+  · notas fiscais importadas e os arquivos que você anexa.
+
+Desinstalar o programa NÃO apaga esses dados; para removê-los, limpe os dados do
+site no navegador ou use a função de backup/exclusão dentro do programa.
+
+Atenção: se a sincronização em nuvem estiver ligada (item 3.1), uma CÓPIA desses
+registros também fica no servidor da fornecedora. Nesse caso a fornecedora tem
+acesso técnico a essa cópia — é o que permite dar suporte e recuperar dados —, e
+esse acesso é usado apenas para operar o serviço, jamais para outra finalidade.
+
+
+3. O QUE SAI AUTOMATICAMENTE (sem você pedir)
+
+3.1 SINCRONIZAÇÃO EM NUVEM — nas instalações com licença ativa
+Serve para o sistema abrir igual no computador e no celular. Nas instalações
+licenciadas ela CONECTA SOZINHA ao abrir o programa, usando a sua chave de
+licença. Os registros de 28 módulos são espelhados no Google Cloud Firestore
+(Google LLC, servidores nos Estados Unidos), separados por empresa.
+
+  · O que vai: orçamentos, obras, clientes, contratos, medições, financeiro,
+    compras, estoque, movimentações, RDO (INCLUSIVE AS FOTOS DO DIÁRIO),
+    colaboradores (INCLUSIVE CPF E CHAVE PIX), frota, requisições, EPI, faltas,
+    documentos, templates, usuários e equipe, notas fiscais e patrimônio.
+  · O que NÃO vai: as bases de preços e os arquivos grandes (modelos BIM).
+  · ATENÇÃO — DADO DE TERCEIRO: ao cadastrar colaboradores, clientes e notas,
+    VOCÊ é o controlador desses dados perante a LGPD e precisa ter base legal
+    para tratá-los; a fornecedora atua como operadora.
+  · Base legal: execução do contrato (art. 7º, V) — a sincronização é parte do
+    serviço nas licenças de uso em mais de um aparelho.
+  · Transferência internacional: art. 33 da LGPD.
+  · COMO DESLIGAR: menu da conta → ☁ Nuvem → "Desligar sincronização". Desligada,
+    nada mais é enviado, nem nas próximas aberturas do programa, e o sistema
+    continua funcionando por completo — só deixa de espelhar entre aparelhos.
+    O que já subiu permanece na nuvem; para apagá-lo, peça pelo canal do item 7.
+
+3.2 LICENÇA E USO
+Para validar a licença, impedir uso além dos aparelhos contratados e apoiar o
+suporte, o programa envia ao servidor da fornecedora, ao abrir e a cada 5
+minutos enquanto estiver aberto:
+
+  · a chave de licença e um identificador do dispositivo (gerado no aparelho);
+  · a versão instalada e um identificador da sessão de uso;
+  · o nome da empresa, o e-mail e o nome do usuário logado e o papel dele;
+  · quais módulos foram abertos e quantas vezes.
+  · No período de teste, em vez dos dados de licença, vão o nome, o telefone e
+    o e-mail que você informou no cadastro do teste — com aceite explícito.
+
+  · NÃO vai conteúdo de orçamento, de obra nem de cliente.
+  · Este envio é automático e não pode ser desligado dentro do programa: a
+    validação da licença é condição para o programa funcionar. Para pedir a
+    exclusão dos registros de uso já coletados, use o canal do item 7.
+  · Base legal: execução do contrato e legítimo interesse (art. 7º, V e IX).
+
+3.3 ATUALIZAÇÃO DO PROGRAMA
+O programa verifica se há versão nova ao abrir e a cada 4 horas, e instala
+sozinho as atualizações de correção.
+
+  · Para onde: GitHub (GitHub Inc. / Microsoft, servidores nos Estados Unidos),
+    de onde o pacote é baixado.
+  · O que sai: NENHUM dado seu — só a requisição, que expõe ao GitHub o seu
+    endereço IP e o identificador do navegador, como em qualquer download.
+
+3.4 BASES DE PREÇOS
+O programa consulta o servidor da fornecedora uma vez por dia para saber se há
+competência nova das bases públicas, e baixa a base quando necessário.
+
+  · O que sai: NENHUM dado seu — apenas a sigla do estado e a competência, na
+    própria URL.
+  · Sua base própria importada nunca é substituída por esse processo.
+
+
+4. O QUE SAI SÓ QUANDO VOCÊ ACIONA
+
+4.1 RECURSOS DE INTELIGÊNCIA ARTIFICIAL
+Ao usar escopo inteligente, casamento de itens com as bases, cronograma,
+leitura de nota fiscal por PDF/foto ou cadastro de colaborador por documento, o
+conteúdo enviado vai para o servidor da fornecedora e, dele, para o provedor de
+modelo de IA contratado — hoje a Groq, Inc., com processamento em servidores nos
+Estados Unidos (transferência internacional, art. 33 da LGPD).
+
+  · O que sai, conforme o recurso: o texto do escopo que você escreveu; as
+    descrições dos itens do orçamento; as etapas do cronograma; o texto extraído
+    do PDF ou A IMAGEM INTEIRA da nota; e, no cadastro por documento, A FOTO DO
+    DOCUMENTO DE IDENTIDADE da pessoa (do qual voltam nome e CPF).
+  · Acontece apenas no clique. Nada é enviado em segundo plano.
+  · O conteúdo é usado só para produzir aquela resposta; não alimentamos
+    treinamento de modelo com ele.
+  · Não envie documento de terceiro que você não possa compartilhar.
+  · Base legal: seu consentimento, manifestado pelo uso do recurso.
+
+4.2 PORTAL DO CLIENTE
+Ao publicar uma obra no Portal, um retrato dela fica hospedado no servidor da
+fornecedora para o seu cliente acompanhar com usuário e senha.
+
+  · O que vai: dados da obra, cronograma, curva S planejada × realizada, valor
+    contratado, medido e a faturar, a lista de medições e OS DIÁRIOS DE OBRA
+    COM AS FOTOS. Vai também o usuário e a senha de acesso que você definir.
+  · O que NÃO vai: custo interno, composições e margem.
+  · Cada clique em "Publicar" republica o retrato atual.
+  · Como remover: excluir a obra no programa remove a publicação. Para apagar
+    sem excluir a obra, peça pelo canal do item 7.
+
+4.3 MODELO BIM NA NUVEM E SALA DE REUNIÃO
+Em "Compartilhar na nuvem", o ARQUIVO IFC INTEIRO do projeto é enviado ao
+servidor da fornecedora para abrir no celular ou em realidade virtual por link
+ou QR. O link expira em cerca de 72 horas e o modelo é apagado em seguida.
+
+Na Sala de Reunião, enquanto ela está aberta, saem a posição da sua câmera no
+modelo (várias vezes por segundo), o seu nome, telefone e o logo da empresa,
+para os outros participantes verem o avatar. Ao ligar o botão de áudio — e
+somente então —, o microfone é aberto e A SUA VOZ é transmitida ao servidor da
+fornecedora, que a repassa aos participantes; em silêncio nada é enviado, e não
+há gravação. A câmera do celular usada na realidade aumentada NÃO é transmitida:
+a imagem fica só no aparelho.
+
+4.4 MENSAGENS POR WHATSAPP
+Os botões de WhatsApp abrem o aplicativo com a mensagem pronta. O telefone e o
+texto — que pode conter nome do favorecido, valor de pagamento ou chave de
+licença — vão na URL para a Meta Platforms, como em qualquer link wa.me.
+
+4.5 BUSCA DE COMPOSIÇÕES NO NOSSO SITE (fora do programa)
+A página pública de pesquisa de composições pede nome, e-mail e WhatsApp para
+liberar as consultas gratuitas do dia. Guardamos esse cadastro e o registro das
+consultas feitas, para controlar o limite diário e para falar com quem se
+interessou pelo produto.
+
+  · Isso acontece no site, não dentro do programa instalado.
+  · Base legal: seu consentimento, ao preencher o cadastro.
+  · Retenção e exclusão: mesmo canal do item 7 — apagamos a pedido.
+
+
+4.6 CONSULTA DE CA DE EPI
+Abre um site público de terceiro com o número do CA. Nenhum dado seu é enviado.
+
+
+5. O QUE NUNCA FAZEMOS
+
+  · Não vendemos, alugamos nem cedemos os seus dados.
+  · Não usamos o conteúdo dos seus orçamentos para treinar modelo de IA.
+  · Não instalamos rastreador de publicidade nem pixel de terceiros no programa.
+  · Não acessamos a sua máquina remotamente sem que você peça e autorize.
+  · Não coletamos a sua localização.
+
+
+6. POR QUANTO TEMPO GUARDAMOS
+
+  · Dados locais: enquanto você quiser — estão no seu computador.
+  · Nuvem (item 3.1): enquanto a sincronização estiver ativa; ao desativar e
+    solicitar, apagamos em até 30 dias.
+  · Registros de uso e licença (item 3.2): 12 meses contados do último acesso,
+    apagados automaticamente do nosso servidor depois disso.
+  · Portal do Cliente (item 4.2): enquanto a obra estiver publicada. Excluir a
+    obra remove a publicação; a pedido, apagamos em até 30 dias.
+  · Modelo BIM compartilhado (item 4.3): cerca de 72 horas, apagado em seguida.
+    Posição, identidade e voz da reunião não são gravadas.
+  · Cadastro e consultas da busca de composições do site (item 4.5): enquanto
+    você não pedir a exclusão.
+  · Licença e faturamento: pelo prazo legal aplicável (fiscal e prescricional).
+
+
+7. SEUS DIREITOS
+
+A LGPD garante a você: confirmação e acesso, correção, anonimização ou exclusão,
+portabilidade, informação sobre compartilhamentos, e revogação do consentimento.
+
+Para exercer: contato@raengenhariaespecial.com.br. Respondemos em até 15 dias.
+Boa parte disso você resolve sozinho e na hora, dentro do programa — exportando
+(Excel/PDF/backup), excluindo registros ou desligando a sincronização.
+
+
+8. TERCEIROS QUE RECEBEM ALGUM TRÁFEGO
+
+  · Google LLC — Firebase/Firestore: guarda a cópia sincronizada (item 3.1).
+  · Groq, Inc. — processa o conteúdo enviado aos recursos de IA (item 4.1).
+  · GitHub Inc. (Microsoft) — entrega o pacote de atualização (item 3.3).
+  · Meta Platforms — recebe o que você manda pelos botões de WhatsApp (4.4).
+
+As bibliotecas que o programa usa (planilha, leitor de PDF, 3D, leitor de IFC,
+QR e as fontes) vêm INSTALADAS com ele e funcionam sem internet. A ÚNICA exceção
+é o SDK do Google Firebase, que o programa baixa do servidor do Google quando a
+sincronização em nuvem está ativa (item 3.1) — desligada a sincronização, esse
+download também deixa de acontecer.
+
+Se algum desses mudar, esta política é atualizada e o aviso aparece no programa.
+
+
+9. SEGURANÇA
+
+Transmissões usam conexão criptografada (HTTPS). O acesso à nuvem é isolado por
+empresa e exige a sua licença. O programa tem controle de permissões por usuário
+e registra as ações relevantes. Nenhuma medida elimina risco por completo —
+mantenha o Windows e o navegador atualizados e não compartilhe a sua licença.
+
+
+10. INCIDENTES
+
+Havendo incidente de segurança com risco relevante, comunicaremos os titulares
+afetados e a ANPD nos termos do art. 48 da LGPD.
+
+
+11. MUDANÇAS NESTA POLÍTICA
+
+Alterações relevantes são informadas dentro do programa. A versão vigente
+acompanha cada instalação e fica na pasta do programa, em "documentos".
+
+
+RA ENGENHARIA ESPECIAL LTDA — CNPJ 59.507.116/0001-64
+Rua Ovídio Bradamante de Toledo, nº 100, Apto 101, Bloco B
+Tubalina — Uberlândia/MG — CEP 38412-002
+Encarregado (DPO): Eng. Rogério Alves de Souza
+contato@raengenhariaespecial.com.br · WhatsApp (34) 9286-9383

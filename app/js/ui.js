@@ -148,6 +148,7 @@
             (admin ? '<button class="conta-item" data-acao="empresa"><span>⚙</span>Dados da empresa</button>' : '') +
             '<button class="conta-item" data-acao="tabelas"><span>🗂</span>Tabelas de preço</button>' +
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>☁</span>Nuvem — sincronizar aparelhos</button>' : '') +
+            (admin ? '<button class="conta-item" data-acao="celular"><span>📱</span>Usar no celular ou tablet</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
             '<button class="conta-item" data-acao="tema"><span>🎨</span>Tema do aplicativo</button>' +
             '<button class="conta-item" data-acao="atualizar"><span>🔄</span>Buscar atualização</button>' +
@@ -398,6 +399,26 @@
       return html;
     },
 
+    /* AVISO DE PRECISÃO — modo "Não arredondar".
+     *
+     * O motor guarda os totais com toda a precisão e a tela imprime cada um ao
+     * centavo. Nesse modo (e SÓ nele) isso faz a conta parecer não fechar por um
+     * centavo: round2(custo) + round2(BDI) ≠ round2(preço) quando as frações
+     * conspiram — medido em ~19% dos orçamentos. Nos outros quatro modos,
+     * inclusive o padrão TCU, fecha sempre.
+     *
+     * A tentação é "consertar" o número exibido. Não dá: o mesmo trio aparece em
+     * seis lugares (cartões, planilha, sintético, relatório, Excel, laudo), e
+     * ajustar alguns deles cria DUAS verdades na mesma página — pior que a
+     * diferença de um centavo. Então o número fica o do motor, igual em todos, e
+     * o documento AVISA de onde vem a diferença. Quem não quer conviver com ela
+     * troca o arredondamento em Parâmetros. */
+    _seloPrecisao: function (modo) {
+      return modo === "nenhum"
+        ? ' · valores exibidos ao centavo (arredondamento: "não arredondar")'
+        : "";
+    },
+
     // ---------- Tela: Editor de orçamento ----------
     renderEditor: function (orc, abaAtiva) {
       var t = Orcamento.totais(orc);
@@ -630,7 +651,32 @@
           lst.forEach(function (it, k) { html += linhaItem(it, k, lst.length, sx.id); });
         });
       });
-      html += '</tbody></table>';
+      /* RODAPÉ DE TOTAIS — a planilha fechava sem somar nada e o usuário tinha de
+         subir até os cartões do topo para saber quanto deu. Os números saem do
+         MESMO _c de Orcamento.calcular que gerou as linhas acima, então batem
+         com os cartões, o Excel, o relatório e o laudo.
+         Com o BDI apartado ("no preço final") o preço unitário dos itens é de
+         CUSTO: aí o BDI PRECISA aparecer como linha própria, senão a coluna não
+         fecha com o total — o mesmo cuidado que o relatório completo já tem. */
+      var _tt = _c; // mesmos números do motor que geraram as linhas acima
+      html += '</tbody><tfoot>';
+      if (!_c.bdiNoPU) {
+        html += '<tr class="tot-linha"><td colspan="6">Custo direto</td>' +
+          '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td><td class="num">—</td><td></td></tr>' +
+          '<tr class="tot-linha"><td colspan="6">BDI ' + Util.fmtPct(_c.pct) + ' (sobre o preço final)</td>' +
+          '<td class="num">—</td><td class="num">' + Util.fmtMoeda(_tt.bdiValor) + '</td><td></td></tr>';
+      }
+      html += '<tr class="tot-geral"><td colspan="6">TOTAL GERAL' +
+          '<span class="muted" style="font-weight:400;font-size:11px">' +
+          ' — ' + _c.qtdItens + (_c.qtdItens === 1 ? " item" : " itens") +
+          " em " + _c.qtdEtapas + (_c.qtdEtapas === 1 ? " etapa" : " etapas") +
+          (_c.qtdSubEtapas ? " e " + _c.qtdSubEtapas + (_c.qtdSubEtapas === 1 ? " sub etapa" : " sub etapas") : "") +
+          (_c.bdiNoPU ? " · BDI " + Util.fmtPct(_c.pct) + " embutido no preço unitário" : "") +
+          this._seloPrecisao(_c.modo) +
+          '</span></td>' +
+        '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' +
+        '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
+        '</tfoot></table>';
       return html;
     },
 
@@ -1359,7 +1405,7 @@
         html += '<tr><td colspan="6">Custo direto</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) + '</td></tr>' +
           '<tr><td colspan="7">BDI ' + Util.fmtPct(t.bdiPercentual) + ' (sobre o preço final)</td><td class="r">' + Util.fmtMoeda(t.bdiValor) + '</td></tr>';
       }
-      html += '<tr><td colspan="6">TOTAL GERAL</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
+      html += '<tr><td colspan="6">TOTAL GERAL' + this._seloPrecisao(calc.modo) + '</td><td class="r">' + Util.fmtMoeda(t.custoDireto) +
         '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td></tr></tfoot></table>';
 
       // 3) COMPOSIÇÕES E INSUMOS (analítico SINAPI) — cada composição detalhada em seus insumos

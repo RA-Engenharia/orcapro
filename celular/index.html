@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OrçaPRO no celular e no tablet — como instalar</title>
+<meta name="description" content="Instale o OrçaPRO no celular ou no tablet: ícone próprio na tela inicial, funciona sem internet e sincroniza com o computador.">
+<meta name="theme-color" content="#0f2740">
+<link rel="icon" href="../favicon.svg">
+<style>
+:root{--navy:#0f2740;--navy2:#1c4b73;--aco:#2e6f9e;--verde:#16a34a;--verde2:#6fd08a;
+      --ink:#1e293b;--mut:#64748b;--linha:#e2e8f0;--bg:#f6f9fc;--card:#fff}
+@media(prefers-color-scheme:dark){
+  :root{--ink:#e8eef5;--mut:#93a4b8;--linha:#24384f;--bg:#0b1725;--card:#12253a;--navy:#dce8f4}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+     font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif;line-height:1.6;-webkit-text-size-adjust:100%}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px}
+header{background:var(--navy2);color:#fff}
+@media(prefers-color-scheme:dark){header{background:#0d2136}}
+header .wrap{display:flex;align-items:center;gap:10px;height:60px}
+header a{color:#fff;text-decoration:none;font-weight:700;font-size:17px;display:flex;align-items:center;gap:9px}
+header span{color:var(--verde2)}
+.volta{margin-left:auto;font-weight:500;font-size:14px;opacity:.85}
+
+.hero{padding:44px 0 30px;text-align:center}
+h1{font-size:clamp(26px,5vw,38px);line-height:1.2;margin:0 0 12px;letter-spacing:-.5px;color:var(--navy)}
+@media(prefers-color-scheme:dark){h1{color:#fff}}
+.sub{color:var(--mut);font-size:17px;max-width:640px;margin:0 auto}
+
+.card{background:var(--card);border:1px solid var(--linha);border-radius:14px;padding:22px;margin:16px 0}
+.card h2{margin:0 0 14px;font-size:19px;color:var(--navy)}
+@media(prefers-color-scheme:dark){.card h2{color:#fff}}
+
+/* Passos */
+ol.passos{list-style:none;counter-reset:p;margin:0;padding:0}
+ol.passos li{counter-increment:p;position:relative;padding:0 0 16px 44px;margin:0}
+ol.passos li::before{content:counter(p);position:absolute;left:0;top:0;width:29px;height:29px;
+  border-radius:50%;background:var(--aco);color:#fff;font-weight:700;font-size:14px;
+  display:flex;align-items:center;justify-content:center}
+ol.passos li b{display:block;color:var(--ink)}
+ol.passos li span{color:var(--mut);font-size:14.5px}
+
+/* Abas de plataforma */
+.abas{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.aba{border:1px solid var(--linha);background:transparent;color:var(--mut);border-radius:999px;
+     padding:8px 16px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.aba[aria-selected=true]{background:var(--navy2);border-color:var(--navy2);color:#fff}
+.painel[hidden]{display:none}
+
+/* QR */
+.qrbox{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.qrbox .qr{flex:0 0 auto;background:#fff;padding:12px;border:1px solid var(--linha);border-radius:12px;line-height:0}
+.qrbox .txt{flex:1;min-width:240px}
+.btn{display:inline-block;background:var(--verde);color:#fff;text-decoration:none;font-weight:700;
+     padding:14px 26px;border-radius:10px;font-size:16px;border:0;cursor:pointer}
+.btn.sec{background:transparent;color:var(--aco);border:1px solid var(--aco)}
+.aviso{border-left:4px solid #d97706;background:rgba(217,119,6,.08);padding:14px 16px;border-radius:0 10px 10px 0;margin:16px 0}
+.aviso b{color:#b45309}
+@media(prefers-color-scheme:dark){.aviso b{color:#fbbf24}}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--linha);vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em}
+td:first-child{font-weight:600;width:42%}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px}
+.tag.sim{background:rgba(22,163,74,.13);color:#15803d}
+.tag.pc{background:rgba(46,111,158,.13);color:var(--aco)}
+@media(prefers-color-scheme:dark){.tag.sim{color:#6fd08a}}
+footer{color:var(--mut);font-size:13px;text-align:center;padding:30px 20px 40px}
+footer a{color:var(--aco)}
+</style>
+</head>
+<body>
+
+<header><div class="wrap">
+  <a href="../"><svg width="28" height="28" viewBox="0 0 100 100" aria-hidden="true"><rect x="2" y="2" width="96" height="96" rx="24" fill="#1c4b73"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg> Orça<span>PRO</span></a>
+  <a class="volta" href="../">← voltar ao site</a>
+</div></header>
+
+<div class="wrap">
+
+  <div class="hero">
+    <h1>O OrçaPRO no seu celular e no seu tablet</h1>
+    <p class="sub">Ícone próprio na tela inicial, abre em tela cheia e funciona mesmo sem sinal.
+       Não passa por loja de aplicativos: instala direto pelo navegador, em menos de um minuto.</p>
+  </div>
+
+  <!-- Bloco que muda conforme o aparelho -->
+  <div class="card" id="abrir"></div>
+
+  <!-- Instruções por plataforma -->
+  <div class="card">
+    <h2>Passo a passo</h2>
+    <div class="abas" role="tablist">
+      <button class="aba" role="tab" id="t-and" aria-selected="false" aria-controls="p-and">Android</button>
+      <button class="aba" role="tab" id="t-ios" aria-selected="false" aria-controls="p-ios">iPhone / iPad</button>
+    </div>
+
+    <div class="painel" id="p-and" role="tabpanel" aria-labelledby="t-and" hidden>
+      <ol class="passos">
+        <li><b>Abra o aplicativo no Chrome</b><span>Use o botão verde acima, ou aponte a câmera para o QR se estiver no computador.</span></li>
+        <li><b>Toque nos três pontinhos ⋮</b><span>No canto superior direito do Chrome.</span></li>
+        <li><b>Escolha “Instalar aplicativo”</b><span>Em alguns aparelhos aparece como “Adicionar à tela inicial”. Se o Chrome já tiver oferecido sozinho, é só aceitar.</span></li>
+        <li><b>Pronto: ícone na tela inicial</b><span>A partir daí ele abre em tela cheia, sem a barra do navegador.</span></li>
+      </ol>
+      <p style="color:var(--mut);font-size:13.5px;margin:4px 0 0">Funciona também no Samsung Internet e no Edge. No Firefox do Android o caminho é ⋮ → <b>Instalar</b>.</p>
+    </div>
+
+    <div class="painel" id="p-ios" role="tabpanel" aria-labelledby="t-ios" hidden>
+      <ol class="passos">
+        <li><b>Abra o aplicativo no Safari</b><span>Precisa ser o Safari — no iPhone e no iPad, só ele instala na tela inicial.</span></li>
+        <li><b>Toque no botão compartilhar</b><span>É o quadradinho com a seta para cima ⬆, embaixo (iPhone) ou em cima (iPad).</span></li>
+        <li><b>Role e toque em “Adicionar à Tela de Início”</b><span>Depois confirme em “Adicionar”, no canto superior direito.</span></li>
+        <li><b>Pronto: ícone na tela inicial</b><span>Abre em tela cheia, com a cara de aplicativo.</span></li>
+      </ol>
+      <p style="color:var(--mut);font-size:13.5px;margin:4px 0 0">Se abriu o link pelo Chrome do iPhone, toque em ⋯ → <b>Abrir no Safari</b> antes de instalar.</p>
+    </div>
+  </div>
+
+  <div class="aviso">
+    <b>⚠ Antes de instalar: ligue a nuvem no computador.</b>
+    <div style="font-size:14.5px;margin-top:4px">O celular é outro aparelho — ele não enxerga o que está gravado no seu computador.
+    Quem leva as suas obras, orçamentos e medições até lá é a sincronização na nuvem.
+    No computador, abra <b>⚙ (seu nome) → ☁ Nuvem — sincronizar aparelhos</b> e conecte.
+    Sem isso, o aplicativo abre no celular <b>vazio</b>.</div>
+  </div>
+
+  <div class="card">
+    <h2>O que dá para fazer com o aparelho na mão</h2>
+    <table>
+      <tr><th>Na obra, pelo celular</th><th>Onde é melhor</th></tr>
+      <tr><td>Diário de obra (RDO) com foto</td><td><span class="tag sim">celular</span> tirar a foto e lançar na hora</td></tr>
+      <tr><td>Last Planner — marcar tarefa concluída</td><td><span class="tag sim">celular</span></td></tr>
+      <tr><td>Consultar preço SINAPI e composição</td><td><span class="tag sim">celular</span></td></tr>
+      <tr><td>Ver o orçamento e o painel da obra</td><td><span class="tag sim">celular</span></td></tr>
+      <tr><td>Lançar medição e registrar avanço</td><td><span class="tag sim">celular</span></td></tr>
+      <tr><td>Modelo 3D / BIM e realidade aumentada</td><td><span class="tag sim">celular</span> modelos grandes pedem paciência</td></tr>
+      <tr><td>Montar um orçamento grande do zero</td><td><span class="tag pc">computador</span> muita digitação e planilha larga</td></tr>
+      <tr><td>Exportar Excel e imprimir proposta</td><td><span class="tag pc">computador</span></td></tr>
+    </table>
+    <p style="color:var(--mut);font-size:13.5px;margin:14px 0 0">
+      É o mesmo sistema, sem versão reduzida — a tabela acima é sobre conforto, não sobre limite.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Perguntas que sempre aparecem</h2>
+    <p><b>Funciona sem internet?</b><br>
+      <span style="color:var(--mut)">Sim. Depois de instalado, ele abre e trabalha sem sinal — importante em obra.
+      O que precisa de internet é a sincronização: quando o sinal volta, o que você lançou sobe sozinho.</span></p>
+    <p><b>Gasta muito dado?</b><br>
+      <span style="color:var(--mut)">Para abrir, cerca de 6 MB uma única vez. A tabela de preços do seu estado, cerca de 1 a 3 MB —
+      e também só na primeira vez.</span></p>
+    <p><b>Preciso comprar outra licença para o celular?</b><br>
+      <span style="color:var(--mut)">Não. É a mesma licença: computador, celular e tablet da sua equipe usam a mesma chave.</span></p>
+    <p><b>Vai aparecer na Play Store ou na App Store?</b><br>
+      <span style="color:var(--mut)">Não, e é de propósito: instalando direto, as atualizações chegam na hora, sem depender
+      da fila de aprovação das lojas.</span></p>
+    <p style="margin-bottom:0"><b>E se eu trocar de celular?</b><br>
+      <span style="color:var(--mut)">Instala de novo no aparelho novo e entra com o mesmo e-mail e senha: os dados descem da nuvem.</span></p>
+  </div>
+
+</div>
+
+<footer>
+  OrçaPRO IA — RA Engenharia Especial LTDA ·
+  <a href="../termos.html">Termos e Privacidade</a> ·
+  <a href="../">Site</a>
+</footer>
+
+<script src="../app/js/vendor/qrcode.min.js"></script>
+<script>
+(function () {
+  "use strict";
+  var URL_APP = "https://ra-engenharia.github.io/orcapro/app/";
+
+  /* A licença pode vir na URL desta página (?lic=…) quando o cliente manda o link
+     da própria instalação — repassamos para o app para ele não digitar a chave. */
+  var lic = "";
+  try { lic = new URLSearchParams(location.search || "").get("lic") || ""; } catch (e) {}
+  var alvo = URL_APP + (lic ? "?lic=" + encodeURIComponent(lic) : "");
+
+  var ua = navigator.userAgent || "";
+  /* Detectar "é celular" pelo userAgent é furado, e o furo é justamente nos
+     aparelhos que mais interessam: o iPad no Safari pede site de computador por
+     PADRÃO e se declara Macintosh, e o Android com "Site para computador" ligado
+     perde o "Android" do userAgent. Nos dois casos o tablet cairia no ramo do
+     computador e veria "aponte a câmera" — apontar a câmera para si mesmo.
+     Por isso o botão de abrir aparece SEMPRE (funciona em qualquer aparelho) e o
+     userAgent decide só o que é enfeite: mostrar também o QR. */
+  var iOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  /* "pointer: coarse" = o ponteiro PRINCIPAL é o dedo. É o sinal certo, e não
+     "tem toque": notebook com tela sensível tem toque mas é operado no trackpad —
+     esse merece ver o QR para mandar ao próprio celular. Celular e tablet são
+     coarse e ficam com o botão. maxTouchPoints só entra se o navegador for velho
+     demais para matchMedia. */
+  var toque = (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) ||
+              (!window.matchMedia && (navigator.maxTouchPoints || 0) > 1);
+  var telaLarga = Math.max(window.innerWidth || 0, window.screen ? window.screen.width : 0) >= 820;
+  var valeQR = telaLarga && !toque;   // só onde faz sentido apontar OUTRO aparelho
+
+  var svg = "";
+  if (valeQR) {
+    try {
+      if (typeof qrcode !== "undefined") {
+        var q = qrcode(0, "M"); q.addData(alvo); q.make();
+        var n = q.getModuleCount(), m = 4, tot = n + m * 2, d = "";
+        for (var y = 0; y < n; y++) for (var x = 0; x < n; x++)
+          if (q.isDark(y, x)) d += "M" + (x + m) + " " + (y + m) + "h1v1h-1z";
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + tot + ' ' + tot + '" width="188" height="188" shape-rendering="crispEdges" role="img" aria-label="QR code para abrir o aplicativo"><rect width="' + tot + '" height="' + tot + '" fill="#fff"/><path d="' + d + '" fill="#000"/></svg>';
+      }
+    } catch (e) {}
+  }
+
+  var box = document.getElementById("abrir");
+  box.innerHTML =
+    "<h2>" + (svg ? "Aponte a câmera do celular" : "Abra o aplicativo neste aparelho") + "</h2>" +
+    '<div class="qrbox">' +
+      (svg ? '<div class="qr">' + svg + "</div>" : "") +
+      '<div class="txt">' +
+        (svg
+          ? '<p style="margin-top:0">Abra a câmera do celular ou do tablet e aponte para o código — o aplicativo abre no navegador do aparelho.</p>' +
+            '<p style="color:var(--mut);font-size:14px">Já está lendo isto no aparelho? Então é só:</p>'
+          : '<p style="margin-top:0">Ele abre no navegador. Logo depois, siga o passo a passo abaixo para deixar o ícone na tela inicial.</p>') +
+        '<a class="btn' + (svg ? " sec" : "") + '" href="' + alvo.replace(/"/g, "&quot;") + '">Abrir o OrçaPRO</a>' +
+        '<p style="color:var(--mut);font-size:13.5px;margin-bottom:0">Ou digite no navegador do aparelho:<br>' +
+        '<b style="word-break:break-all">ra-engenharia.github.io/orcapro/app/</b></p>' +
+      "</div>" +
+    "</div>";
+
+  /* ---- abas: já abre na do aparelho de quem está lendo ---- */
+  var abas = [["t-and", "p-and"], ["t-ios", "p-ios"]];
+  function mostrar(id) {
+    abas.forEach(function (a) {
+      var sel = a[0] === id;
+      document.getElementById(a[0]).setAttribute("aria-selected", sel ? "true" : "false");
+      document.getElementById(a[1]).hidden = !sel;
+    });
+  }
+  abas.forEach(function (a) {
+    document.getElementById(a[0]).addEventListener("click", function () { mostrar(a[0]); });
+  });
+  mostrar(iOS ? "t-ios" : "t-and");   // no computador, Android é o caso mais comum no Brasil
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+﻿TERMO DE LICENÇA DE USO — OrçaPRO IA
+Versão 1.0 — vigente a partir de 01/08/2026
+
+Leia antes de instalar. Ao marcar "Aceito", você concorda com as condições
+abaixo. Se não concordar, cancele a instalação.
+
+
+1. QUEM FORNECE O PROGRAMA
+
+O OrçaPRO IA é fornecido por RA ENGENHARIA ESPECIAL LTDA, inscrita no CNPJ sob
+o nº 59.507.116/0001-64, com sede na Rua Ovídio Bradamante de Toledo, nº 100, Apto 101,
+Bloco B, Bairro Tubalina, Uberlândia/MG, CEP 38412-002, doravante "a fornecedora".
+Responsável técnico: Eng. Rogério Alves de Souza — CREA-MG 323736.
+Contato: contato@raengenhariaespecial.com.br · WhatsApp (34) 9286-9383.
+
+
+2. O QUE VOCÊ ESTÁ CONTRATANDO
+
+Você recebe uma licença de uso do programa — não a propriedade dele. A licença
+é pessoal e intransferível, e vale conforme o plano contratado (mensal, anual
+ou vitalícia) e a quantidade de ativações que ele permite.
+
+A licença permite: instalar e usar o programa nos dispositivos previstos no seu
+plano, usar os documentos gerados (orçamentos, propostas, relatórios, laudos e
+planilhas) livremente no seu trabalho, inclusive comercialmente.
+
+A licença NÃO permite: revender, sublicenciar, alugar ou redistribuir o
+programa; remover ou alterar avisos de autoria; tentar burlar o controle de
+licença; usar o programa para prestar serviço de orçamentação a terceiros na
+forma de plataforma (isto é, oferecer o próprio OrçaPRO como serviço).
+
+
+3. TESTE GRATUITO, PAGAMENTO E GARANTIA
+
+O programa pode ser testado gratuitamente por 7 (sete) dias, com os recursos
+liberados. Terminado o teste, é preciso ativar com uma chave de licença válida.
+
+O pagamento é feito por PIX ou boleto. Confirmado o pagamento, a chave de
+licença e o link de download são entregues digitalmente.
+
+Garantia de satisfação: 7 (sete) dias contados da compra. Nesse prazo, se o
+produto não atender ao que foi apresentado, o valor pago é devolvido mediante
+solicitação pelos canais de contato do item 1. Esse prazo não se confunde com
+o direito de arrependimento do art. 49 do Código de Defesa do Consumidor, que
+continua garantido a quem compra fora do estabelecimento comercial.
+
+
+4. AS BASES DE PREÇOS SÃO DE TERCEIROS
+
+O programa acompanha bases públicas de preços de referência: SINAPI (Caixa
+Econômica Federal / IBGE), SICRO (DNIT), e bases estaduais e municipais como
+SETOP-MG, SEINFRA-CE, ORSE-SE, IOPES-ES, SUDECAP-BH e AGETOP/GOINFRA-GO.
+
+Esses dados pertencem aos órgãos que os publicam e são reproduzidos como
+referência. A fornecedora não é autora deles, não os altera e não garante a
+vigência de uma competência específica — quem define isso é o órgão publicador.
+Confira sempre a competência indicada no cabeçalho dos seus documentos.
+
+
+5. RESPONSABILIDADE TÉCNICA É SUA
+
+Este é um ponto sério e você precisa lê-lo com atenção.
+
+O OrçaPRO IA é uma FERRAMENTA DE APOIO. Ele calcula com os dados que você
+informa e com as bases que você escolhe. Ele não substitui o julgamento do
+profissional habilitado nem a responsabilidade técnica pela obra.
+
+A conferência dos quantitativos, dos preços, do BDI, dos encargos, do regime de
+oneração e da adequação de cada composição ao serviço real é do usuário. Em
+peças destinadas a licitação, a conformidade com o edital e com a legislação
+aplicável (inclusive a Lei nº 14.133/2021) é responsabilidade de quem assina.
+
+Recursos com apoio de inteligência artificial — leitura de documentos, sugestão
+de composições, estimativas a partir de modelos BIM — produzem SUGESTÕES que
+exigem conferência humana antes do uso. O programa sinaliza quando um item está
+pendente ou sem preço; não ignore esses avisos.
+
+A fornecedora não responde por prejuízo decorrente de erro de digitação, de
+quantitativo, de escolha de composição, de base desatualizada ou de decisão
+comercial tomada com base nos relatórios.
+
+
+6. SEUS DADOS FICAM COM VOCÊ
+
+O programa roda na sua máquina. Os dados que você cadastra — obras, orçamentos,
+clientes, colaboradores, financeiro — são gravados localmente, no armazenamento
+do navegador, na pasta de perfil do seu usuário do Windows.
+
+A fornecedora NÃO tem acesso a esses dados por padrão e não os recebe.
+
+Parte da informação sai da sua máquina — a Política de Privacidade que acompanha
+esta instalação lista TODOS os casos, um a um. Em resumo:
+
+  AUTOMÁTICO: a validação da licença e os dados de uso do programa; a busca de
+  atualização; a checagem das bases de preços; e, nas instalações licenciadas, a
+  sincronização em nuvem — que espelha os seus registros de trabalho, inclusive
+  CPF e chave PIX de colaboradores e as fotos do diário de obra. A sincronização
+  pode ser desligada dentro do programa, em ☁ Nuvem.
+
+  SÓ QUANDO VOCÊ ACIONA: os recursos de inteligência artificial; a publicação da
+  obra no Portal do Cliente (que inclui as fotos do diário); o compartilhamento
+  do modelo BIM na nuvem e a sala de reunião com voz; e os botões de WhatsApp.
+
+Leia a Política antes de usar esses recursos com dados de terceiros: ao cadastrar
+colaboradores e clientes, é você quem responde por eles perante a LGPD.
+
+
+7. ATUALIZAÇÕES
+
+O programa se atualiza sozinho, em segundo plano, com correções e melhorias.
+A atualização automática é parte do funcionamento do produto e não pode ser
+desligada dentro do programa — é ela que mantém as bases de preços e os cálculos
+corretos em toda a frota. Atualizações que mudem a forma de instalação avisam
+antes e pedem a sua ação.
+
+
+8. GARANTIA E LIMITE DE RESPONSABILIDADE
+
+O programa é fornecido no estado em que se encontra. A fornecedora se empenha
+para mantê-lo correto e disponível, corrige defeitos relatados e mantém as bases
+atualizadas conforme os órgãos publicam.
+
+Não há garantia de que o programa atenda a toda e qualquer necessidade nem de
+funcionamento ininterrupto. Salvo nos casos em que a lei não admite limitação,
+a responsabilidade total da fornecedora fica limitada ao valor efetivamente pago
+pela licença nos 12 meses anteriores ao fato.
+
+Nada aqui afasta os direitos que o Código de Defesa do Consumidor garante ao
+usuário pessoa física.
+
+
+9. VIGÊNCIA E ENCERRAMENTO
+
+A licença vale enquanto o plano estiver ativo. O descumprimento das vedações do
+item 2 permite o encerramento da licença. Encerrada a licença, você deve
+desinstalar o programa — mas os seus dados continuam seus, e o programa permite
+exportá-los a qualquer momento (Excel, PDF e backup).
+
+
+10. FORO
+
+Fica eleito o foro da comarca de Uberlândia/MG para dirimir questões deste
+termo, ressalvada a faculdade do consumidor de escolher o foro do seu domicílio.
+
+
+RA ENGENHARIA ESPECIAL LTDA — CNPJ 59.507.116/0001-64
+Rua Ovídio Bradamante de Toledo, nº 100, Apto 101, Bloco B
+Tubalina — Uberlândia/MG — CEP 38412-002
+Dúvidas: contato@raengenhariaespecial.com.br · WhatsApp (34) 9286-9383

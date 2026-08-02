@@ -299,11 +299,87 @@
       return this._trilha(3) +
         '<div class="ow-sec"><h4>SINAPI</h4>' +
         '<div class="row"><div class="field"><label>Local (estado)</label><select id="ow-uf"><option value="' + esc(s.uf) + '">' + esc(s.uf) + "</option></select></div>" +
-        '<div class="field"><label>Versão (competência)</label><input id="ow-comp" value="' + esc(s.competencia) + '" readonly></div></div>' +
+        '<div class="field"><label>Versão (competência)</label><select id="ow-comp"><option value="' + esc(s.competencia) + '">' + esc(s.competencia || "—") + '</option></select>' +
+        '<small class="ow-hint" id="ow-comp-hint"></small></div></div>' +
         '<p class="muted ow-nota">Regime declarado no passo anterior: <b>' + (s.encargos.tipo === "desonerado" ? "desonerado" : "não desonerado") +
         '</b>. Trocar o estado recarrega a base e o detalhamento de insumos daquele local.</p></div>' +
         '<div class="ow-sec"><h4>Outras tabelas neste orçamento</h4>' + linhas + "</div>";
     },
+    /* "2026-06" e "06/2026" são a MESMA competência. Sem normalizar, a lista
+       mostrava a mesma data-base duas vezes e a ordenação lexicográfica jogava
+       o formato antigo para o topo. Usa o helper do auto-update quando existe. */
+    _normComp: function (c) {
+      c = String(c == null ? "" : c).trim();
+      try { if (global.Atualizacao && Atualizacao._normComp) return Atualizacao._normComp(c); } catch (e) {}
+      var m = c.match(/^(\d{2})[\/\-](\d{4})$/); // MM/AAAA -> AAAA-MM
+      return m ? (m[2] + "-" + m[1]) : c;
+    },
+
+    _popularComp: function (compDoEstado, ufEscolhida) {
+      var sel = UI.el("ow-comp"); if (!sel) return;
+      var s = this, st = this._st;
+      /* Para a UF que está CARREGADA vale a competência da base viva, não a do
+         manifesto: o manifesto é estático do build e o auto-update anda sozinho —
+         a divergência mensal fazia o campo oferecer uma data-base que já não era
+         a dos preços na memória. Para outra UF, o manifesto é o que se sabe. */
+      var ufBase = "";
+      try { ufBase = ((this._app && this._app._baseUf) || (global.Sinapi ? Sinapi.uf : "") || "").toUpperCase(); } catch (e) {}
+      var ufAlvo = String(ufEscolhida || st.uf || "").toUpperCase();
+      var compBase = "";
+      try { compBase = (global.Sinapi && Sinapi.competencia) || ""; } catch (e) {}
+      /* Remontar o passo NÃO é trocar de base: voltar e avançar não pode apagar a
+         competência que o usuário escolheu de propósito. A escolha vale só para a
+         UF em que foi feita — trocar de estado recalcula, como tem que ser. */
+      var escolha = (st._compEscolhida && ufAlvo === String(st._compEscolhidaUf || "").toUpperCase()) ? st._compEscolhida : "";
+      var preferida = escolha || ((ufAlvo && ufAlvo === ufBase && compBase) ? compBase : (compDoEstado || st.competencia || ""));
+
+      var lista = this._competenciasDisponiveis(preferida);
+      var atual = preferida || lista[0] || "";
+      var achou = false;
+      lista.forEach(function (c) { if (s._normComp(c) === s._normComp(atual)) achou = true; });
+      if (!achou && atual) lista.unshift(atual);
+      sel.innerHTML = lista.map(function (c) {
+        return '<option value="' + esc(c) + '"' + (s._normComp(c) === s._normComp(atual) ? " selected" : "") + ">" + esc(c) + "</option>";
+      }).join("");
+      sel.value = atual;
+      st.competencia = atual;
+      var hint = UI.el("ow-comp-hint");
+      if (hint) {
+        hint.innerHTML = lista.length > 1
+          ? "Competências instaladas neste computador. A base da competência escolhida é carregada ao criar."
+          : "Só esta competência está instalada. Para orçar em outra data-base, baixe a versão em <b>🗂 Tabelas</b>.";
+      }
+    },
+
+    /* COMPETÊNCIAS QUE EXISTEM DE VERDADE.
+     *
+     * O campo era readonly, e isso tinha um motivo: escolher uma competência que
+     * o app NÃO possui faria o documento declarar uma data-base e imprimir preços
+     * de outra — em licitação isso é impugnação. A lista traz só o que está
+     * instalado, e quem precisa de outra é mandado para a Central de Atualização
+     * de Bases. Ao criar, _criar() CARREGA a base da competência escolhida e só
+     * grava o rótulo se ela subir: escolha com lastro, não campo decorativo. */
+    _competenciasDisponiveis: function (ufComp) {
+      var self = this, vistas = {}, out = [];
+      function add(c) {
+        c = String(c || "").trim(); if (!c) return;
+        var k = self._normComp(c);
+        if (!vistas[k]) { vistas[k] = 1; out.push(c); }
+      }
+      add(ufComp);
+      try { if (global.Sinapi && Sinapi.competencia) add(Sinapi.competencia); } catch (e) {}
+      try { add(CONFIG.sinapi.competenciaPadrao); } catch (e) {}
+      try {
+        (Bases.lista() || []).forEach(function (b) { if (String(b.fonte).toUpperCase() === "SINAPI") add(b.competencia); });
+      } catch (e) {}
+      // mais nova primeiro — comparando a forma NORMALIZADA (AAAA-MM ordena sozinho)
+      out.sort(function (a, b) {
+        var na = self._normComp(a), nb = self._normComp(b);
+        return na < nb ? 1 : (na > nb ? -1 : 0);
+      });
+      return out;
+    },
+
     _coletar3: function () {
       var s = this._st;
       s.uf = (val("ow-uf") || s.uf || "").toUpperCase();
@@ -380,6 +456,16 @@
       }
       if (p === 3) {
         var sel = UI.el("ow-uf"), app = this._app;
+        var wz = this;
+        /* preenche o <select> de competência com o que EXISTE de verdade */
+        var preencherComp = function (compDoEstado, ufEscolhida) { wz._popularComp(compDoEstado, ufEscolhida); };
+        preencherComp(this._st.competencia, this._st.uf);
+        var selC = UI.el("ow-comp");
+        if (selC) selC.addEventListener("change", function () {
+          wz._st.competencia = selC.value;
+          wz._st._compEscolhida = selC.value;                              // escolha explícita do usuário
+          wz._st._compEscolhidaUf = String(wz._st.uf || "").toUpperCase(); // vale só para esta UF
+        });
         if (sel && app && app._carregarEstados) {
           app._carregarEstados().then(function (ests) {
             if (!UI.el("ow-uf")) return; // modal fechou no meio do caminho
@@ -396,7 +482,7 @@
             sel.addEventListener("change", function () {
               var e2 = null;
               for (var i = 0; i < ests.length; i++) { if (ests[i].uf === sel.value) e2 = ests[i]; }
-              var c = UI.el("ow-comp"); if (c && e2 && e2.competencia) c.value = e2.competencia;
+              preencherComp(e2 && e2.competencia, sel.value);
             });
           }).catch(function () {});
         }
@@ -446,24 +532,56 @@
       UI.fecharModal();
       if (this._st.aoCriar) { try { this._st.aoCriar(orc); } catch (e) {} }
       if (app) {
-        app.orcAtual = orc; app.tela = "editor"; app.aba = "planilha"; app.view = null;
+        /* view = "orcamentos", não null: com Gestão ligada o app resolve view nula
+           como "dashboard" e o editor abriria por baixo do Painel. */
+        app.orcAtual = orc; app.tela = "editor"; app.aba = "planilha"; app.view = "orcamentos";
         app.render();
-        // Troca o estado da base se o usuário escolheu outro no passo 3.
-        // O orçamento só assume a UF nova DEPOIS que a base carregou: se falhar,
-        // o cabeçalho não pode dizer "PA" enquanto os preços continuam de "MG".
+        /* O orçamento nasce vazio e o próximo passo é SEMPRE a primeira etapa —
+           abrir o cadastro aqui poupa o clique e deixa claro por onde começar.
+           Guardas: só se ninguém pediu outro destino (aoCriar), só se o editor
+           ainda estiver com ESTE orçamento na tela e ainda sem etapa. Quem vai
+           importar planilha só cancela. */
+        if (!this._st.aoCriar && !Util.arr(orc.etapas).length && app.addEtapa) {
+          setTimeout(function () {
+            if (app.tela !== "editor" || app.view !== "orcamentos" || app.orcAtual !== orc) return;
+            if (Util.arr(orc.etapas).length) return;
+            /* NUNCA atropelar formulário que o usuário abriu nesta janela de 240ms:
+               UI.modal() começa com fecharModal(), que arranca o modal aberto SEM
+               perguntar — o trabalho digitado nele iria embora sem aviso. */
+            if (document.getElementById("modal-bg")) return;
+            try { app.addEtapa(); } catch (e) {}
+          }, 240);
+        }
+        /* A BASE DE PREÇO TEM QUE SER A QUE O DOCUMENTO DECLARA.
+         *
+         * O orçamento só assume a UF e a competência novas DEPOIS que a base
+         * carregou: se falhar, o cabeçalho não pode dizer "PA · 2026-06" enquanto
+         * os preços continuam de "MG · 2026-07". Vale para os dois campos do passo
+         * 3 — antes só a UF disparava recarga, e a competência escolhida virava
+         * rótulo sem lastro (achado do gate: impugnação em licitação). */
         var ufAtual = (app._baseUf || (global.Sinapi ? Sinapi.uf : "") || "").toUpperCase();
-        if (orc.uf && orc.uf !== ufAtual && app.trocarEstadoSinapi) {
-          var ufPedida = orc.uf;
+        var compAtual = (global.Sinapi && Sinapi.competencia) || "";
+        var precisaUf = !!(orc.uf && orc.uf !== ufAtual);
+        var precisaComp = !!(orc.competenciaSinapi && compAtual && this._normComp(orc.competenciaSinapi) !== this._normComp(compAtual));
+        if ((precisaUf || precisaComp) && app.trocarBaseSinapi) {
+          var ufPedida = orc.uf || ufAtual, compPedida = orc.competenciaSinapi || "";
+          var orcId = orc.id;
           orc.uf = ufAtual || orc.uf;
+          orc.competenciaSinapi = compAtual || orc.competenciaSinapi;
           Store.salvarOrcamento(Auth.empresaId(), orc);
-          app.trocarEstadoSinapi(ufPedida, function (ok) {
+          app.trocarBaseSinapi(ufPedida, precisaComp ? compPedida : "", function (ok) {
             var ufReal = (app._baseUf || (global.Sinapi ? Sinapi.uf : "") || "").toUpperCase();
+            /* grava na versão VIVA do orçamento: o usuário pode ter reaberto o
+               registro nesses segundos, e o objeto do closure ficaria obsoleto. */
+            var vivo = (app.orcAtual && app.orcAtual.id === orcId) ? app.orcAtual : orc;
             if (ok && ufReal === ufPedida) {
-              orc.uf = ufPedida;
-              if (global.Sinapi && Sinapi.competencia) orc.competenciaSinapi = Sinapi.competencia;
-              Store.salvarOrcamento(Auth.empresaId(), orc);
+              vivo.uf = ufPedida;
+              if (global.Sinapi && Sinapi.competencia) vivo.competenciaSinapi = Sinapi.competencia;
+              Store.salvarOrcamento(Auth.empresaId(), vivo);
             } else {
-              UI.toast("Não deu para carregar a base de " + ufPedida + ". O orçamento continua em " + (orc.uf || "—") + " — troque em 🗂 Tabelas quando quiser.", "erro");
+              UI.toast("Não deu para carregar a base de " + ufPedida + (precisaComp ? " · " + compPedida : "") +
+                ". O orçamento continua em " + (vivo.uf || "—") + " · " + (vivo.competenciaSinapi || "—") +
+                " — troque em 🗂 Tabelas quando quiser.", "erro");
             }
             if (app.tela === "editor") app.render();
           });

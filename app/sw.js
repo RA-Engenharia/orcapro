@@ -4,7 +4,7 @@
  * Só cacheia o MESMO domínio (IA, servidor de licença e fontes externas vão direto pra rede). */
 /* IMPORTANTE: o nome do cache carrega a versão. A cada release o 'activate' abaixo apaga
  * os caches de versões antigas -> força buscar o código novo (evita app rodando JS velho após update). */
-var CACHE = 'orcapro-app-v1.1.140';
+var CACHE = 'orcapro-app-v1.1.143';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -12,9 +12,13 @@ self.addEventListener('install', function (e) {
   // então sem isto o import de .xls quebraria offline após instalar. Falha silenciosa (não trava o install).
   // Idem para o leitor de PDF (pdf.js): nota fiscal em PDF e volumetria de planta
   // carregam o módulo sob demanda — sem pré-cache, a primeira tentativa offline falha.
+  // E idem para o GERADOR de planilha (ExcelJS), vendorizado na v1.1.142: antes vinha
+  // de CDN e nunca passava por aqui; agora é arquivo nosso, lazy como os outros dois —
+  // sem esta linha, exportar Excel offline falharia justamente em quem instalou o app.
   e.waitUntil(caches.open(CACHE).then(function (c) {
     return Promise.all([
       c.add('./js/vendor/xlsx.full.min.js').catch(function () {}),
+      c.add('./js/vendor/exceljs.min.js').catch(function () {}),
       c.add('./js/vendor/pdfjs/pdf.min.mjs').catch(function () {}),
       c.add('./js/vendor/pdfjs/pdf.worker.min.mjs').catch(function () {})
     ]);
@@ -31,7 +35,7 @@ self.addEventListener('fetch', function (e) {
   if (req.method !== 'GET') return;
   var url;
   try { url = new URL(req.url); } catch (err) { return; }
-  if (url.origin !== self.location.origin) return; // IA (:3041), licença (VPS), Google Fonts: rede direto
+  if (url.origin !== self.location.origin) return; // IA (:3041), licença (VPS), SDK do Firebase: rede direto
   e.respondWith(
     fetch(req).then(function (r) {
       if (r && r.ok) { var cp = r.clone(); caches.open(CACHE).then(function (c) { c.put(req, cp); }); }

@@ -1069,15 +1069,26 @@
   var ExcelOrc = {
     construir: construir,
 
+    /* ExcelJS — VENDORIZADO, offline (js/vendor/exceljs.min.js, 4.4.0).
+     *
+     * Vinha do cdnjs até a v1.1.141: era a ÚNICA biblioteca de fora e, além de
+     * exigir internet na primeira exportação da sessão, punha a Cloudflare na
+     * lista de terceiros que recebem o IP do cliente — coisa que a Política de
+     * Privacidade tem de declarar. Embarcado, sai da lista e a exportação passa a
+     * funcionar 100% offline, como o resto do produto.
+     *
+     * Continua LAZY: 947 KB só entram na memória de quem exporta planilha.
+     * O id da tag segue "exceljs-cdn" de propósito — instalação antiga que já
+     * tenha a tag na página não pode ganhar uma segunda. */
     ensureExcelJS: function (cb) {
       if (global.ExcelJS) { cb(); return; }
-      var avisarFalha = function () { if (global.UI) UI.toast("Não foi possível carregar o gerador de Excel (precisa de internet na 1ª vez).", "erro"); };
+      var avisarFalha = function () { if (global.UI) UI.toast("Não foi possível carregar o gerador de Excel (arquivo js/vendor/exceljs.min.js).", "erro"); };
       if (document.getElementById("exceljs-cdn")) {
         var t = setInterval(function () { if (global.ExcelJS) { clearInterval(t); cb(); } }, 120);
         setTimeout(function () { clearInterval(t); if (!global.ExcelJS) avisarFalha(); }, 15000); return;
       }
       var s = document.createElement("script"); s.id = "exceljs-cdn";
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+      s.src = "js/vendor/exceljs.min.js";
       s.onload = function () { cb(); };
       s.onerror = function () { var el = document.getElementById("exceljs-cdn"); if (el) el.remove(); avisarFalha(); }; // remove a tag morta p/ permitir nova tentativa
       document.head.appendChild(s);

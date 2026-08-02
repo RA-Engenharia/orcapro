@@ -783,6 +783,7 @@
         case "licenca": this.abrirLicenca(); break;
         case "backup": this.abrirBackup(); break;
         case "nuvem": this.abrirNuvem(); break;
+        case "celular": this.abrirCelular(); break;
         case "backup-export": this.exportarBackup(); break;
         case "menu": { var _apT = document.querySelector(".app"); if (_apT) _apT.classList.toggle("menu-aberto"); break; }
         case "conta": { var _c = t.closest(".topbar-conta"); if (_c) _c.classList.toggle("aberto"); break; }
@@ -1046,6 +1047,8 @@
         var st = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null;
         if (!st || !st.ativo || st.trial) return;                        // só cliente licenciado
         if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return; // nuvem ligada no config
+        // o usuário desligou a sincronização: não reconectar sozinho no boot
+        if (Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario()) return;
         var chave = Licenca.chave(); if (!chave) return;
         var eid = Auth.empresaId();
         Nuvem.entrarPorLicenca(chave)
@@ -1107,7 +1110,11 @@
       // Sincronização na nuvem — só age se CONFIG.backend.sync === true (inerte por padrão).
       // NÃO faz o login manual da nuvem quando o tenant-licença já está conectado (multi-aparelho):
       // evita trocar a conta-tenant pela conta e-mail/senha do login e partir os dados em dois.
-      if (typeof Nuvem !== "undefined" && Nuvem.disponivel() && !Nuvem.ligado) {
+      // e respeita o desligamento pedido pelo usuário — este é o SEGUNDO caminho de
+      // conexão automática (o outro é _conectarNuvemLicenca, no boot); sem a guarda
+      // aqui, bastava fazer login para a sincronização voltar sozinha.
+      if (typeof Nuvem !== "undefined" && Nuvem.disponivel() && !Nuvem.ligado &&
+          !(Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario())) {
         var eid = Auth.empresaId();
         Nuvem.entrar(email, senha)
           .then(function () { return Nuvem.sincronizar(eid); })
@@ -1231,19 +1238,46 @@
     // busca AO VIVO no servidor (mesma rota dos analíticos, .json.gz descomprimido
     // pelo VPS). Pacote de estado único ou instalação antiga deixam de ser beco
     // sem saída — só falha de verdade sem internet E sem arquivo local.
-    trocarEstadoSinapi: function (uf, cb) {
+    trocarEstadoSinapi: function (uf, cb) { return this.trocarBaseSinapi(uf, "", cb); },
+
+    /* TROCA DE BASE POR UF **E** COMPETÊNCIA.
+     *
+     * Nasceu como trocarEstadoSinapi(uf) — só a UF mudava, e a competência vinha
+     * de carona do manifesto. Quando o assistente passou a deixar o usuário
+     * ESCOLHER a competência (v1.1.141), isso virou um problema de licitação: a
+     * escolha só trocava o rótulo do documento e os preços continuavam os da base
+     * carregada. Agora a competência pedida também carrega a base dela — e, se
+     * essa base não existir, o chamador recebe false e NÃO pode gravar o rótulo.
+     * compPedida vazia = "a do manifesto", que é o comportamento de sempre. */
+    trocarBaseSinapi: function (uf, compPedida, cb) {
       var self = this;
       uf = String(uf || "").toUpperCase();
+      compPedida = String(compPedida || "").trim();
       var est = (self._estados || []).filter(function (e) { return e.uf === uf; })[0];
-      var comp = (est && est.competencia) || (self._estados && self._estados[0] && self._estados[0].competencia) || CONFIG.sinapi.competenciaPadrao;
-      var arqLocal = (est && est.arquivo) || ("data/sinapi-" + uf + "-" + comp + ".json");
+      var comp = compPedida || (est && est.competencia) || (self._estados && self._estados[0] && self._estados[0].competencia) || CONFIG.sinapi.competenciaPadrao;
+      // com competência pedida o nome do arquivo é derivado dela, não do manifesto
+      var arqLocal = (!compPedida && est && est.arquivo) || ("data/sinapi-" + uf + "-" + comp + ".json");
       var req = ++self._ufReq; // só a troca mais recente comita (evita corrida em cliques rápidos)
-      UI.toast("Carregando SINAPI " + uf + "…", "ok");
+      UI.toast("Carregando SINAPI " + uf + (compPedida ? " · " + compPedida : "") + "…", "ok");
       // Só um pacote VÁLIDO chega ao Sinapi.carregarDe — achados do gate: (a) JSON 200
       // de proxy/erro clobberava a base atual antes da checagem de UF; (b) pacote sem
       // 'uf' assumia MG e passava batido quando a UF pedida era MG. Validar ANTES.
+      // mesma normalização do auto-update: "2026-06" e "06/2026" são a MESMA competência
+      var normC = function (c) {
+        c = String(c || "").trim();
+        try { if (global.Atualizacao && Atualizacao._normComp) return Atualizacao._normComp(c); } catch (e) {}
+        var m = c.match(/^(\d{2})[\/\-](\d{4})$/); // MM/AAAA -> AAAA-MM
+        return m ? (m[2] + "-" + m[1]) : c;
+      };
+      // a competência do pacote mora em "mes" (é assim que o Sinapi.carregarDe lê,
+      // sinapi.js:22); "competencia" só existe como apelido em pacote importado
+      var compDoPacote = function (j) { return (j && (j.mes || j.competencia)) || ""; };
       var pacoteValido = function (j) {
-        return j && Array.isArray(j.dados) && j.dados.length > 0 && String(j.uf || "").toUpperCase() === uf;
+        if (!(j && Array.isArray(j.dados) && j.dados.length > 0 && String(j.uf || "").toUpperCase() === uf)) return false;
+        // competência PEDIDA: o pacote tem que ser dela. Sem isto, um arquivo de
+        // outra data-base com a UF certa passaria e o documento mentiria o rótulo.
+        if (compPedida && normC(compDoPacote(j)) !== normC(compPedida)) return false;
+        return true;
       };
       var aplicar = function () {
         if (req !== self._ufReq) return; // troca obsoleta — descarta silenciosamente
@@ -1252,7 +1286,19 @@
           UI.toast("Base SINAPI de " + uf + " não confere (arquivo inesperado).", "erro");
           if (cb) cb(false); return;
         }
-        self._analiticoArquivo = (est && est.analitico) || ("data/sinapi-" + uf + "-analitico.json");
+        if (compPedida && normC(Sinapi.competencia) !== normC(compPedida)) {
+          UI.toast("A base carregada é " + (Sinapi.competencia || "?") + ", não " + compPedida + ".", "erro");
+          if (cb) cb(false); return;
+        }
+        /* O analítico do PACOTE é da competência embarcada no build. Se a base que
+           acabou de subir é de outra data-base, o detalhamento tem que vir do
+           servidor — senão o insumo é de um mês e o custo unitário é de outro.
+           Mesma guarda que carregarBaseSinapi e a Central de Atualização já fazem. */
+        var _compEmb = normC((est && est.competencia) || CONFIG.sinapi.competenciaPadrao || "");
+        var _compViva = normC(Sinapi.competencia);
+        self._analiticoArquivo = (_compViva && _compEmb && _compViva > _compEmb)
+          ? (String(CONFIG.licencaServer).replace(/\/$/, "") + "/analitico/sinapi-" + uf + "-analitico.json")
+          : ((est && est.analitico) || ("data/sinapi-" + uf + "-analitico.json"));
         self._baseUf = uf;
         if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset(); // descarta analítico da UF anterior
         UI.toast("SINAPI " + uf + " · " + (Sinapi.competencia || "") + " — " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens.", "ok");
@@ -1273,8 +1319,10 @@
         // Local falhou → base AO VIVO do servidor. Tenta a competência local e, se o
         // servidor não a tiver (404 após o giro mensal / instalação antiga), tenta a
         // competência padrão do config — que sobe atualizado em todo update da frota.
+        // Com competência PEDIDA não há segunda tentativa: cair para outra data-base
+        // seria carregar preço de um mês e rotular de outro.
         var comps = [comp];
-        if (CONFIG.sinapi.competenciaPadrao && CONFIG.sinapi.competenciaPadrao !== comp) comps.push(CONFIG.sinapi.competenciaPadrao);
+        if (!compPedida && CONFIG.sinapi.competenciaPadrao && CONFIG.sinapi.competenciaPadrao !== comp) comps.push(CONFIG.sinapi.competenciaPadrao);
         UI.toast("Base local de " + uf + " indisponível — baixando ao vivo…", "ok");
         var tentar = function (idx) {
           if (idx >= comps.length) {
@@ -1337,6 +1385,85 @@
       else UI.toast(r.total.toLocaleString("pt-BR") + " itens carregados. " + grav.erro, "erro");
     },
 
+    /* ---------- 📱 Usar no celular / tablet ----------
+     * Celular e tablet não instalam .exe: o app é instalado PELA WEB (PWA) e ganha
+     * ícone próprio na tela inicial. O caminho curto é o QR — o cliente aponta a
+     * câmera e o aparelho abre já com a licença ativada, sem digitar a chave (que
+     * é longa e no teclado do celular é receita de erro).
+     *
+     * A GUARDA DA NUVEM não é decoração: o app do celular roda em OUTRO domínio,
+     * e o navegador guarda os dados por domínio. Sem sincronização ligada aqui, o
+     * cliente escaneia, o app abre — e está VAZIO. Ele conclui que "não funciona"
+     * e liga reclamando. Por isso o QR só sai depois de a nuvem estar de pé. */
+    URL_PWA: "https://ra-engenharia.github.io/orcapro/app/",
+
+    abrirCelular: function () {
+      var self = this;
+      var lic = null;
+      try { lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (e) {}
+      var licenciado = !!(lic && lic.ativo && !lic.trial && Licenca.chave && Licenca.chave());
+
+      // 1) Nuvem de pé? Sem ela o celular abre vazio — barrar antes de gerar o QR.
+      var nuvemOk = false, nuvemMotivo = "";
+      try {
+        if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) nuvemMotivo = "A sincronização na nuvem não está disponível nesta instalação.";
+        else if (Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario()) nuvemMotivo = "Você desligou a sincronização na nuvem. Sem ela, o celular abre vazio — os dados ficam só neste computador.";
+        else if (!(Nuvem.auth && Nuvem.auth.currentUser)) nuvemMotivo = "A nuvem ainda não conectou neste computador. Sem ela, o celular abre vazio.";
+        else nuvemOk = true;
+      } catch (e) { nuvemMotivo = "Não consegui verificar a nuvem."; }
+
+      if (!nuvemOk) {
+        UI.modal("📱 Usar no celular ou tablet",
+          '<p style="margin-top:0">⚠️ <b>Antes de instalar no celular, ligue a nuvem.</b></p>' +
+          '<p class="muted" style="font-size:13px">' + Util.esc(nuvemMotivo) + '</p>' +
+          '<p class="muted" style="font-size:13px">O celular é <b>outro aparelho</b>: ele não enxerga o que está gravado aqui. Quem leva as suas obras, orçamentos e medições até lá é a sincronização. Ligue-a e volte aqui — leva alguns segundos.</p>',
+          [{ texto: "Abrir a nuvem", classe: "primary", onClick: function () { UI.fecharModal(); self.abrirNuvem(); } }]);
+        return;
+      }
+
+      // 2) A licença viaja no link só para o cliente não digitar a chave no celular.
+      //    O app do celular a apaga da barra de endereço assim que lê (replaceState).
+      var url = this.URL_PWA;
+      if (licenciado) { try { url += "?lic=" + encodeURIComponent(Licenca.chave()); } catch (e) {} }
+
+      var svg = "";
+      try { if (typeof QR !== "undefined") svg = QR.svg(url, { tamanhoPx: 208, correcao: "M" }); } catch (e) {}
+
+      var corpo =
+        '<p style="margin-top:0">Aponte a câmera do celular para o código. O aplicativo abre no navegador' +
+        (licenciado ? ' <b>já com a sua licença ativada</b>' : "") + ' — e depois você o instala na tela inicial, com ícone próprio.</p>' +
+        '<div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap">' +
+          '<div style="flex:0 0 auto;padding:10px;background:#fff;border:1px solid #d8e0ea;border-radius:10px">' +
+            (svg || '<div class="muted" style="width:208px;height:208px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:12px">Não consegui gerar o código.<br>Use o endereço abaixo.</div>') +
+          '</div>' +
+          '<div style="flex:1;min-width:230px">' +
+            '<div style="font-weight:700;margin-bottom:6px">Depois de abrir, instale:</div>' +
+            '<div class="muted" style="font-size:13px;line-height:1.7">' +
+              '<b>Android (Chrome):</b> toque nos ⋮ do navegador → <b>Instalar aplicativo</b><br>' +
+              '<b>iPhone / iPad (Safari):</b> toque no ⬆ compartilhar → <b>Adicionar à Tela de Início</b>' +
+            '</div>' +
+            '<div class="muted" style="font-size:12px;margin-top:12px;padding-top:10px;border-top:1px solid var(--linha,#d8e0ea)">' +
+              'Você vai entrar com o <b>mesmo e-mail e senha</b> que usa aqui.' +
+              (licenciado ? '' : '<br>⚠️ Sem licença ativa, o celular abre em modo de teste e <b>não traz os seus dados</b>.') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="field" style="margin-top:14px"><label>Ou envie este endereço para o aparelho</label>' +
+          '<input id="cel-url" class="cell" style="width:100%;font-size:12px" readonly value="' + Util.esc(url) + '"></div>' +
+        (licenciado ? '<p class="muted" style="font-size:11px;margin:6px 0 0">🔒 Este endereço contém a sua chave de licença: mande só para aparelhos seus ou da sua equipe.</p>' : "");
+
+      UI.modal("📱 Usar no celular ou tablet", corpo, [
+        { texto: "Copiar endereço", classe: "ghost", onClick: function () {
+          var i = UI.el("cel-url"); if (!i) return;
+          i.select(); i.setSelectionRange(0, 99999);
+          var ok = false;
+          try { ok = document.execCommand("copy"); } catch (e) {}
+          if (!ok && navigator.clipboard) { try { navigator.clipboard.writeText(i.value); ok = true; } catch (e) {} }
+          UI.toast(ok ? "Endereço copiado." : "Não consegui copiar — selecione o texto e copie à mão.", ok ? "ok" : "erro");
+        } }
+      ]);
+    },
+
     // ---------- Backup dos Orçamentos (exportar/importar) ----------
     // ☁ Nuvem: conectar/sincronizar A QUALQUER HORA (não só no login) — p/ quem
     // trabalha em 2+ computadores (escritório e casa). Regra de ouro: usar o MESMO
@@ -1347,26 +1474,65 @@
       var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
       var conectado = !!(Nuvem.auth && Nuvem.auth.currentUser);
       var emailNuvem = conectado ? (Nuvem.auth.currentUser.email || "") : "";
+      var desligada = !!(Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario());
+      /* CLIENTE LICENCIADO SINCRONIZA PELA LICENÇA, não por e-mail/senha da nuvem.
+         Religar pelo formulário criaria/entraria em OUTRA conta Firebase e os dados
+         do aparelho ficariam em dois lugares — o cliente veria "sumiram orçamentos".
+         Então, quando há licença ativa, religar refaz exatamente o caminho do boot. */
+      var _lic = null;
+      try { _lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (e) {}
+      var porLicenca = !!(_lic && _lic.ativo && !_lic.trial && Licenca.chave && Licenca.chave());
       var body =
         '<p style="margin-top:0">' + (conectado
           ? '✅ Conectado como <b>' + Util.esc(emailNuvem) + '</b>. Seus orçamentos sincronizam sozinhos entre os aparelhos conectados com este mesmo e-mail e senha.'
-          : '⚠️ <b>Nuvem não conectada</b> — seus dados estão só neste computador.') + '</p>' +
-        '<p class="muted" style="font-size:12px">Trabalha no escritório e em casa? Use o <b>MESMO e-mail e a MESMA senha</b> da nuvem nos dois computadores — os orçamentos aparecem em todos (até 3 aparelhos na sua licença).</p>' +
-        '<div class="row"><div style="flex:1"><label class="muted" style="font-size:11px">E-mail da nuvem</label><input id="nv-email" class="cell" style="width:100%" value="' + Util.esc(u.email || "") + '"></div></div>' +
-        '<div class="row"><div style="flex:1"><label class="muted" style="font-size:11px">Senha da nuvem (a do OUTRO computador, se já usa lá)</label><input id="nv-senha" type="password" class="cell" style="width:100%" placeholder="••••••••"></div></div>';
-      UI.modal("☁ Nuvem — sincronizar entre aparelhos", body, [
+          : (desligada
+            ? '⏸ <b>Sincronização desligada por você</b> — os dados ficam só neste aparelho e nada é enviado. Conecte abaixo quando quiser religar.'
+            : '⚠️ <b>Nuvem não conectada</b> — seus dados estão só neste computador.')) + '</p>' +
+        (porLicenca
+          /* Sem número de aparelhos no texto: o limite mora no servidor
+             (licencaDispositivos) e já foi 1, 3 e 30. Um número escrito aqui vira
+             mentira na virada seguinte — e assusta quem quer pôr celular e tablet.
+             Quem estourar recebe a recusa do servidor, com o limite real dele. */
+          ? '<p class="muted" style="font-size:12px">Nesta instalação a sincronização usa a <b>sua licença</b> — computador, celular e tablet com a mesma chave enxergam os mesmos dados, sem senha extra.</p>'
+          : '<p class="muted" style="font-size:12px">Trabalha no escritório e em casa? Use o <b>MESMO e-mail e a MESMA senha</b> da nuvem nos dois computadores — os orçamentos aparecem em todos.</p>' +
+            '<div class="row"><div style="flex:1"><label class="muted" style="font-size:11px">E-mail da nuvem</label><input id="nv-email" class="cell" style="width:100%" value="' + Util.esc(u.email || "") + '"></div></div>' +
+            '<div class="row"><div style="flex:1"><label class="muted" style="font-size:11px">Senha da nuvem (a do OUTRO computador, se já usa lá)</label><input id="nv-senha" type="password" class="cell" style="width:100%" placeholder="••••••••"></div></div>');
+      var botoes = [];
+      /* Desligar a sincronização é direito do titular (revogação de consentimento) e
+         precisa valer também nas próximas aberturas — daí o desligamento permanente. */
+      /* O botão aparece sempre que a sincronização NÃO está desligada — inclusive
+         quando o Firebase ainda não autenticou (offline, proxy): senão o cliente
+         que quer parar de enviar dependeria de a nuvem estar no ar para conseguir. */
+      if (!desligada) {
+        botoes.push({ texto: "Desligar sincronização", classe: "ghost", onClick: function () {
+          if (!window.confirm("Desligar a sincronização na nuvem?\n\nOs dados deste aparelho continuam aqui, e nada mais será enviado — nem quando o programa for reaberto.\n\nO que já foi enviado permanece na nuvem; para apagá-lo, peça pelo canal do titular na Política de Privacidade.")) return;
+          try { Nuvem.sair(true); } catch (e) {}
+          UI.fecharModal(); self.render();
+          UI.toast("Sincronização desligada. Este aparelho não envia mais nada para a nuvem.", "ok");
+        } });
+      }
+      botoes.push(
         { texto: conectado ? "Sincronizar agora" : "Conectar e sincronizar", classe: "primary", onClick: function () {
-            var email = String((UI.el("nv-email") || {}).value || "").trim().toLowerCase();
-            var senha = String((UI.el("nv-senha") || {}).value || "");
-            if (!email || (!conectado && !senha)) { UI.toast("Preencha e-mail e senha da nuvem.", "erro"); return; }
+            var eid = Auth.empresaId(), p;
+            if (porLicenca) {
+              /* MESMO caminho do boot. Entrar por e-mail/senha aqui criaria OUTRA conta
+                 Firebase, e os dados do cliente ficariam divididos entre duas contas —
+                 na tela dele, "sumiram orçamentos". */
+              p = conectado ? Promise.resolve() : Nuvem.entrarPorLicenca(Licenca.chave());
+            } else {
+              var email = String((UI.el("nv-email") || {}).value || "").trim().toLowerCase();
+              var senha = String((UI.el("nv-senha") || {}).value || "");
+              if (!email || (!conectado && !senha)) { UI.toast("Preencha e-mail e senha da nuvem.", "erro"); return; }
+              p = conectado ? Promise.resolve() : Nuvem.entrar(email, senha);
+            }
             UI.toast("☁ Conectando…", "ok");
-            var eid = Auth.empresaId();
-            var p = conectado ? Promise.resolve() : Nuvem.entrar(email, senha);
             p.then(function () { return Nuvem.sincronizar(eid); })
               .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
-          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
               .then(function () {
                 Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
+                // a marca só cai DEPOIS de a reconexão dar certo: se falhar, o
+                // desligamento continua valendo e o boot seguinte não reconecta sozinho
+                if (Nuvem.marcarDesligada) Nuvem.marcarDesligada(false);
                 UI.fecharModal(); self.render();
                 UI.toast("☁ Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
               })
@@ -1376,8 +1542,8 @@
                 else if (code === "auth/network-request-failed") UI.toast("Sem internet agora. Tente novamente quando conectar.", "erro");
                 else UI.toast("Não conectou: " + (code || (e && e.message) || "erro"), "erro");
               });
-          } }
-      ]);
+          } });
+      UI.modal("☁ Nuvem — sincronizar entre aparelhos", body, botoes);
     },
 
     abrirBackup: function () {
@@ -1996,6 +2162,8 @@
             self.persistir(); UI.fecharModal(); self.render();
           } }
         ]);
+      // o cursor já entra no campo (o assistente abre este modal sozinho ao criar o orçamento)
+      var _n = UI.el("et-nome"); if (_n) _n.focus();
     },
 
     renomearEtapa: function (etapaId) {
@@ -3499,7 +3667,7 @@
         return;
       }
       fr.onload = function () {
-        if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { cb(null, "módulo Excel indisponível (precisa de internet na 1ª vez)"); return; }
+        if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { cb(null, "módulo Excel indisponível (arquivo js/vendor/exceljs.min.js)"); return; }
         ExcelOrc.ensureExcelJS(function () {
           try {
             var wb = new ExcelJS.Workbook();

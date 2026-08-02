@@ -267,9 +267,28 @@
       this._push[ent] = setTimeout(mandar, 900);
     },
 
-    sair: function () {
+    /* DESLIGAMENTO PELO USUÁRIO — é a revogação de consentimento da LGPD.
+     *
+     * `sair()` sozinho só valia até fechar o app: no boot seguinte o
+     * _conectarNuvemLicenca reconectava pela chave de licença e a sincronização
+     * voltava sem o usuário pedir. A marca abaixo é persistente e o boot a
+     * respeita; religar é um clique no mesmo lugar. Não apaga NADA — nem o que
+     * está no aparelho, nem o que já subiu (para isso existe o canal do titular). */
+    CHAVE_DESLIGADA: "orcapro:nuvem:desligada",
+    desligadaPeloUsuario: function () {
+      try { return localStorage.getItem(this.CHAVE_DESLIGADA) === "1"; } catch (e) { return false; }
+    },
+    marcarDesligada: function (v) {
+      try {
+        if (v) localStorage.setItem(this.CHAVE_DESLIGADA, "1");
+        else localStorage.removeItem(this.CHAVE_DESLIGADA);
+      } catch (e) {}
+    },
+
+    sair: function (permanente) {
       this._un.forEach(function (u) { try { u(); } catch (e) {} });
       this._un = []; this.ligado = false; this.uid = null;
+      if (permanente) this.marcarDesligada(true);
       if (this.auth) this.auth.signOut().catch(function () {});
     }
   };
