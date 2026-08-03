@@ -695,6 +695,47 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
 .rel-rod { margin-top: 20px; border-top: 1px solid var(--p-linha); padding-top: 8px; font-size: 8.5pt; color: #7a8a99; }
 
 @media print {
+  /* ⚠⚠ O PAPEL É BRANCO — E ISTO AQUI FAZIA O PDF SAIR PRETO.
+   * `data-tema="dark"` mora no <html> e CONTINUA valendo na hora de imprimir.
+   * Todo o conteúdo do documento usa os tokens (--surface, --texto, --bg…),
+   * então herdava as cores do modo escuro; e a regra `print-color-adjust:
+   * exact` logo abaixo — que existe para o navy da capa sair de verdade —
+   * FORÇAVA esse preto a ser impresso. Quem trabalha no tema escuro (e o
+   * tema é lembrado por aparelho) recebia um PDF preto, ilegível e que come
+   * o cartucho inteiro.
+   * Aqui os tokens voltam aos valores claros para a impressão, independente
+   * do tema da tela — que continua como o usuário gosta.
+   * ⚠ E A LISTA NÃO PODE SER NOMINAL. Na primeira versão deste bloco eu
+   * escrevi os tons um por um e ESQUECI o "RA Engenharia" (`data-tom="ra"`) —
+   * justamente o tema com o nome da empresa. Ele tem especificidade (0,2,0) e
+   * vencia o `[data-tema="dark"]` (0,1,0) daqui, então continuava escuro; e
+   * como ele não declara `--texto`, o texto ERA resetado para escuro: o
+   * entregável saía com letra quase preta sobre fundo navy, pior do que antes
+   * do conserto. `[data-tema="dark"][data-tom]` casa QUALQUER tom, inclusive
+   * os que ainda não existem. */
+  :root,
+  [data-tema="dark"],
+  [data-tema="dark"][data-tom] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #eef2f7;
+    --surface-3: #e5ecf4;
+    --linha: #c9d6e4;
+    --linha-forte: #a6bdd2;
+    --texto: #111d2b;
+    --texto-fraco: #516375;
+    --faixa-sub: #f3f6f9;
+    --tot-fundo: #0f2740;
+    --card-bg: #ffffff;
+    --bg-grad: none;
+    --sombra-sm: none; --sombra: none; --sombra-lg: none; --sombra-navy: none;
+    --realce: none;
+  }
+  /* as tarjas do detalhamento também eram versões escuras */
+  [data-tema="dark"] .tbl-analitico .lin-comp td { background: rgba(22, 163, 74, .10) !important; }
+  [data-tema="dark"] .tbl-analitico .lin-sub  td { background: rgba(46, 111, 158, .10) !important; }
+  [data-tema="dark"] .tbl-analitico .lin-ins  td { background: rgba(245, 158, 11, .08) !important; }
+
   /* CORE FIX de impressão: html/body têm height:100% (l.59) e a media mobile (max-width:820px)
      aplica overflow-x:hidden — AMBOS disparam no print (A4 ≈ 794px < 820px), viram um container
      de altura fixa e CORTAVAM o conteúdo em fluxo (.rel-doc) na 1ª página. Liberamos altura e
@@ -965,3 +1006,35 @@ table.tbl tr.etapa-row:hover td { box-shadow: inset 3px 0 0 var(--aco); }
 .selo-user { font-size: 11px; cursor: help; }
 .tbl-analitico .lin-pendente td { background: rgba(220,38,38,.07) !important; }
 input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38,38,.08) !important; box-shadow: 0 0 0 2px rgba(220,38,38,.15); }
+
+/* ---------- Foto da obra, logo da empresa e foto de perfil (v1.1.148) ----------
+   A capa da obra tem altura FIXA e `object-fit:cover`: foto de celular vem em
+   qualquer proporção, e sem isso cada card ficaria de um tamanho, com a lista
+   toda desalinhada. O espaço já nasce reservado porque a imagem chega depois
+   (ela mora no IndexedDB) — sem isso o card "pula" quando ela carrega. */
+/* ⚠ o recuo negativo tem que ser o padding REAL do card (24px). Eu tinha
+   escrito -19/-21 de cabeca e sobrava uma moldura de 4px nas laterais e 6px no
+   topo — a foto ficava "solta" dentro do card em vez de ser a capa dele.
+   O raio fica por conta do proprio card, que ja tem overflow:hidden. */
+.orc-card .obra-capa { margin: -24px -24px 14px; height: 132px; overflow: hidden; background: var(--surface-2); }
+.orc-card .obra-capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+@media screen and (max-width: 820px) { .orc-card .obra-capa { height: 152px; } }
+
+/* pré-visualização no formulário da obra */
+.obra-foto-prev { width: 132px; height: 88px; border: 1.5px dashed var(--linha-forte); border-radius: 10px; background: var(--surface-2); display: flex; align-items: center; justify-content: center; overflow: hidden; flex: none; }
+.obra-foto-prev img { width: 100%; height: 100%; object-fit: cover; }
+.obra-foto-vazia { font-size: 11.5px; color: var(--texto-fraco); }
+
+/* barra do topo: logo da empresa + foto de quem está logado */
+.conta-logo { height: 22px; max-width: 84px; object-fit: contain; border-radius: 4px; background: rgba(255,255,255,.92); padding: 1px 3px; flex: none; }
+.conta-foto { width: 26px; height: 26px; border-radius: 50%; object-fit: cover; flex: none; border: 1.5px solid rgba(255,255,255,.45); }
+.conta-foto.ini { display: inline-flex; align-items: center; justify-content: center; background: rgba(255,255,255,.18); font-size: 11px; font-weight: 800; letter-spacing: .3px; color: #fff; }
+@media screen and (max-width: 620px) { .conta-logo { display: none; } }   /* no celular a barra é curta: fica a foto, que identifica a pessoa */
+
+/* pré-visualização em "Minha foto de perfil" */
+.perfil-prev { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; background: var(--surface-2); border: 2px solid var(--linha-forte); display: flex; align-items: center; justify-content: center; flex: none; }
+.perfil-prev img { width: 100%; height: 100%; object-fit: cover; }
+.perfil-prev .ini { font-size: 30px; font-weight: 800; color: var(--texto-fraco); }
+
+/* no papel a capa não entra: o impresso tem cabeçalho próprio */
+@media print { .orc-card .obra-capa, .conta-logo, .conta-foto { display: none !important; } }

@@ -131,6 +131,10 @@
                barra do topo ele diz, o dia inteiro, de quem e aquele sistema —
                que e o que faz o cliente sentir que o programa e da empresa
                dele. Sem logo, cai no ⚙ de sempre: nada quebra. */
+            /* o tamanho desta imagem NÃO depende só do css/app.css: veja
+               UI.chaoDeEstilo(), no fim deste arquivo — ele existe porque um
+               tablet do cliente abriu o logo em 1200px por causa de folha de
+               estilo velha presa no cache do service worker */
             (function () {
               var lg = (typeof Empresa !== "undefined" && Empresa.logo) ? Empresa.logo() : "";
               if (lg) return '<img class="conta-logo" src="' + lg + '" alt="">';
@@ -1633,6 +1637,54 @@
   function kpi(rotulo, valor, cls) {
     return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rotulo + '</div><div class="num">' + valor + '</div></div>';
   }
+
+  /* ============================================================
+   * CHÃO DE ESTILO DAS IMAGENS DO USUÁRIO
+   *
+   * POR QUE ISTO EXISTE — aconteceu num tablet do cliente: o logo da
+   * empresa apareceu do tamanho ORIGINAL do arquivo (1200 px), cobrindo
+   * meia tela, junto com a foto de perfil gigante.
+   *
+   * A causa NÃO foi CSS errado. Foi CSS que não CHEGOU: o nome do cache
+   * do service worker ficou parado na v1.1.146 durante as v1.1.147 e
+   * v1.1.148 — e a v1.1.148 é justamente a que criou `.conta-logo`,
+   * `.conta-foto` e `.obra-capa`. O JS novo desenhava elementos que a
+   * folha de estilo antiga não sabia dimensionar. Nenhum erro, em lugar
+   * nenhum: só a tela quebrada.
+   *
+   * A regra que fica: imagem que vem do USUÁRIO tem tamanho desconhecido,
+   * então o dimensionamento dela não pode morar SÓ no css/app.css.
+   *
+   * Aqui vai por <style> injetado, e NÃO por style inline em cada <img>,
+   * porque inline vence media query — a primeira tentativa deste conserto
+   * travou a capa da obra em 132px e comeu os 152px que ela tem no tablet
+   * e no celular. Injetado, o responsivo continua funcionando.
+   *
+   * São as MESMAS regras do css/app.css (linhas ~1019-1040). Duplicadas de
+   * propósito: se um dia mudarem lá, mude aqui junto — quem garante isso é
+   * o tools/e2e-imagem-sem-css.js, que derruba as regras da folha de
+   * estilo e exige que os tamanhos se mantenham.
+   * ============================================================ */
+  UI.chaoDeEstilo = function () {
+    try {
+      var d = global.document;
+      if (!d || !d.head || d.getElementById("ui-chao-imagens")) return false;
+      var st = d.createElement("style");
+      st.id = "ui-chao-imagens";
+      st.textContent = [
+        ".conta-logo{height:22px;max-width:84px;width:auto;object-fit:contain;border-radius:4px;background:rgba(255,255,255,.92);padding:1px 3px;flex:none}",
+        ".conta-foto{width:26px;height:26px;border-radius:50%;object-fit:cover;flex:none}",
+        ".orc-card .obra-capa{margin:-24px -24px 14px;height:132px;overflow:hidden;background:var(--surface-2,#eef1f5)}",
+        ".orc-card .obra-capa img{width:100%;height:100%;object-fit:cover;display:block}",
+        "@media screen and (max-width:820px){.orc-card .obra-capa{height:152px}}",
+        "@media screen and (max-width:620px){.conta-logo{display:none}}",
+        "@media print{.orc-card .obra-capa,.conta-logo,.conta-foto{display:none!important}}"
+      ].join("\n");
+      d.head.appendChild(st);
+      return true;
+    } catch (e) { return false; }
+  };
+  UI.chaoDeEstilo();
 
   global.UI = UI;
 })(window);

@@ -826,7 +826,14 @@
              chega depois (a foto mora no IndexedDB, leitura assincrona), por
              isso o espaco ja nasce reservado — senao o card "pula" quando a
              imagem carrega e a lista inteira dança. */
-          (o.foto ? '<div class="obra-capa"><img data-obrafoto="' + Util.esc(o.id) + '" alt=""></div>' : "") +
+          /* ⚠ tamanho embutido, pelo mesmo motivo do logo na barra do topo:
+             a foto vem do celular do cliente (1080x1440 e mais) e, se a folha
+             de estilo estiver velha ou ainda não tiver chegado, o cartão inteiro
+             é empurrado por uma imagem em tamanho natural. Foi o que aconteceu
+             num tablet: a `.obra-capa` nasceu na mesma versão em que o cache do
+             service worker deixou de ser purgado. */
+          (o.foto ? '<div class="obra-capa">' +
+            '<img data-obrafoto="' + Util.esc(o.id) + '" alt=""></div>' : "") +
           '<div class="flex between"><h3>' + Util.esc(o.nome) + "</h3>" + pill(o.status) + "</div>" +
           '<div class="meta">' + (cli ? "👤 " + Util.esc(cli.nome) + " · " : "") + (o.tipo ? rot(P.obraTipo, o.tipo) : "") + (o.local ? " · 📍 " + Util.esc(o.local) : "") + "</div>" +
           '<div class="valor">' + Util.fmtMoeda(o.valor) + "</div>" +
