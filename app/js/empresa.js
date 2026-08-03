@@ -104,7 +104,60 @@
       if (this.docsCfg().creditos) return (typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.nome) || "OrçaPRO IA";
       return this.nomeDoc() || " ";
     },
-    DEFAULT: DEFAULT
+    DEFAULT: DEFAULT,
+
+    /* =================================================================
+     * FOTO DE PERFIL DE QUEM ESTA USANDO O SISTEMA
+     *
+     * ⚠ ONDE GUARDAR NAO E DETALHE. As prefs sao POR EMPRESA, nao por
+     * pessoa: se a foto do sub-usuario fosse para la, o encarregado subiria
+     * a dele e ela apareceria para todo mundo da conta. Entao:
+     *   - dono da conta  -> prefs da empresa (`fotoDono`), que e dele mesmo;
+     *   - sub-usuario    -> o registro dele em `equipe`.
+     *
+     * E fica como data URI pequeno (128 px, ~10 KB), NAO como referencia de
+     * IndexedDB: a barra do topo desenha em toda tela e nao pode esperar uma
+     * Promise para saber se mostra a foto ou as iniciais. Nesse tamanho o
+     * peso e irrelevante para a sincronizacao — diferente da foto de obra,
+     * que e grande e por isso vai por referencia.
+     * ================================================================= */
+    fotoUsuario: function () {
+      try {
+        var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        if (u.usuarioId) {
+          var m = (Store.listar(Auth.empresaId(), "equipe") || []).filter(function (x) { return x && x.id === u.usuarioId; })[0];
+          return (m && m.foto) || "";
+        }
+        return this._prefs().fotoDono || "";
+      } catch (e) { return ""; }
+    },
+
+    salvarFotoUsuario: function (dataURI) {
+      var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      if (u.usuarioId) {
+        var eq = Store.listar(Auth.empresaId(), "equipe") || [];
+        var m = eq.filter(function (x) { return x && x.id === u.usuarioId; })[0];
+        if (!m) return false;
+        if (dataURI) m.foto = dataURI; else delete m.foto;
+        Store.salvar(Auth.empresaId(), "equipe", m);
+        return true;
+      }
+      var p = this._prefs();
+      if (dataURI) p.fotoDono = dataURI; else delete p.fotoDono;
+      Store.salvarPrefs(Auth.empresaId(), p);
+      return true;
+    },
+
+    /* Iniciais para quando nao ha foto — melhor que um bonequinho generico:
+       o usuario reconhece a propria conta de relance. */
+    iniciais: function (nome) {
+      var n = String(nome || "").trim();
+      if (!n) return "?";
+      var p = n.split(/\s+/).filter(function (x) { return x.length > 1; });
+      if (!p.length) return n.charAt(0).toUpperCase();
+      if (p.length === 1) return p[0].substring(0, 2).toUpperCase();
+      return (p[0].charAt(0) + p[p.length - 1].charAt(0)).toUpperCase();
+    }
   };
 
   global.Empresa = Empresa;

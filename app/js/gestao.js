@@ -129,6 +129,7 @@
     estoque: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/><path d="m7.5 4.3 9 5.2"/>',
     rdo: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M8 11h8M8 15h5"/>',
     colaboradores: '<path d="M2 18h20"/><path d="M4 18v-2a8 8 0 0 1 16 0v2"/><path d="M10 8V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3"/>',
+    producao: '<path d="M4 20h16M6 20v-6a6 6 0 0 1 12 0v6M10 8V5a2 2 0 0 1 4 0v3"/><path d="M9 16h6"/>',
     folhasemanal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h5M14 15.5h3.5"/>',
     ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
@@ -166,6 +167,7 @@
       { id: "tarefas", nome: "Tarefas", g: 3 },
       { id: "lastplanner", nome: "Last Planner (PPC)", g: 4 },
       { id: "rdo", nome: "Diário (RDO)", g: 4 },
+      { id: "producao", nome: "Produção (por serviço)", g: 4 },
       { id: "galeria", nome: "Galeria de Fotos", g: 4 },
       { id: "medicoes", nome: "Medições", g: 4 },
       { id: "insumos", nome: "Banco de Insumos", g: 5 },
@@ -238,6 +240,7 @@
         case "compras": return this.renderCompras();
         case "estoque": return this.renderEstoque();
         case "rdo": return this.renderRdo();
+        case "producao": return this.renderProducao();
         case "galeria": return this.renderGaleria();
         case "bim": return this.renderBim();
         case "colaboradores": return this.renderColaboradores();
@@ -329,7 +332,7 @@
         var chip = function (n, rot, view) { return n > 0 ? '<button class="btn sm" data-view="' + view + '" style="margin-right:8px">' + rot + ": <b>" + n + "</b></button>" : ""; };
         html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("relogio") + 'Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309;margin-left:8px">' + pend.total + '</span></h3>' +
           '<div class="muted" style="margin-bottom:10px;font-size:13px">Itens aguardando o seu aval. Clique para revisar e aprovar/rejeitar.</div>' +
-          chip(pend.medicoes, "Medições", "medicoes") + chip(pend.compras, "Pedidos de compra", "compras") + chip(pend.requisicoes, "Requisições", "requisicoes") +
+          chip(pend.medicoes, "Medições", "medicoes") + chip(pend.compras, "Pedidos de compra", "compras") + chip(pend.requisicoes, "Requisições", "requisicoes") + chip(pend.producao, "Produção a pagar", "producao") +
           "</div>";
       }
       // G4: tarefas atrasadas / a fazer
@@ -817,7 +820,13 @@
         // lixeira visível no card (só admin): antes, excluir exigia abrir o cadastro e
         // rolar até o rodapé do modal — no celular ninguém achava.
         var podeExcluir = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin());
-        html += '<div class="card orc-card" data-gopen="obras:' + o.id + '">' +
+        html += '<div class="card orc-card' + (o.foto ? " com-foto" : "") + '" data-gopen="obras:' + o.id + '">' +
+          /* a capa entra ANTES do titulo e so existe se a obra tem foto: quem
+             nao cadastrou foto continua com o card exatamente como era. O src
+             chega depois (a foto mora no IndexedDB, leitura assincrona), por
+             isso o espaco ja nasce reservado — senao o card "pula" quando a
+             imagem carrega e a lista inteira dança. */
+          (o.foto ? '<div class="obra-capa"><img data-obrafoto="' + Util.esc(o.id) + '" alt=""></div>' : "") +
           '<div class="flex between"><h3>' + Util.esc(o.nome) + "</h3>" + pill(o.status) + "</div>" +
           '<div class="meta">' + (cli ? "👤 " + Util.esc(cli.nome) + " · " : "") + (o.tipo ? rot(P.obraTipo, o.tipo) : "") + (o.local ? " · 📍 " + Util.esc(o.local) : "") + "</div>" +
           '<div class="valor">' + Util.fmtMoeda(o.valor) + "</div>" +
@@ -828,6 +837,23 @@
             '<button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">📱 Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button>" +
           "</div></div>";
       });
+      /* As fotos sao lidas do IndexedDB (Promise), entao entram depois que a
+         lista ja esta na tela. `setTimeout(0)` porque este metodo devolve HTML
+         que o App ainda vai inserir no DOM — procurar os <img> agora nao acha
+         nada. */
+      if (obras.some(function (o) { return o.foto; }) && typeof Fotos !== "undefined" && Fotos.dataURI) {
+        setTimeout(function () {
+          obras.forEach(function (o) {
+            if (!o.foto) return;
+            var im = document.querySelector('[data-obrafoto="' + o.id + '"]');
+            if (!im) return;
+            Fotos.dataURI(o.foto).then(function (d) {
+              if (!d) { var cap = im.parentNode; if (cap && cap.parentNode) cap.parentNode.removeChild(cap); return; }
+              im.src = d;
+            }).catch(function () {});
+          });
+        }, 0);
+      }
       return html + "</div>";
     },
     novoObra: function () { this.formObra(null); },
@@ -845,6 +871,14 @@
       ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
       ["epi", "entrega(s) de EPI"], ["ponto", "registro(s) de ponto"],
       ["fs_lancamentos", "lançamento(s) da folha semanal"],
+      /* ⚠ ENTRA NA CASCATA, e eu tinha deixado de fora com o argumento de que
+         "é o comprovante do pagamento". O gate provou o contrário: excluindo a
+         obra com os registros, o lançamento da folha ia embora e a medição
+         ficava — com o botão "Mandar p/ folha" ainda armado. Um clique criava
+         pagamento NOVO numa obra que não existe, agrupado na Folha sob o id
+         cru da obra como se fosse nome, e com o diário de origem já apagado:
+         nada mais reconciliava. Se o pagamento sai, a medição sai junto. */
+      ["producao_med", "medição(ões) de produção"],
       ["folha", "folha(s) de pagamento"], ["frota_mov", "uso(s) de veículo"],
       ["financeiro", "lançamento(s) financeiro(s)"],
       ["centrocusto", "registro(s) de centro de custo"],
@@ -934,6 +968,9 @@
       UI.modal("🗑 Excluir obra?", corpo, botoes);
     },
     _excluirObra: function (id, cascata) {
+      /* o filtro da tela Produção guardava o id da obra apagada: a tela
+         abria vazia e sem dizer por quê */
+      if (this._prodF && this._prodF.obraId === id) this._prodF.obraId = "";
       var self = this, e = eid();
       var obra = Store.obter(e, "obras", id);
       if (!obra) { UI.fecharModal(); return; }
@@ -990,6 +1027,12 @@
       // o Portal do Cliente vive no servidor: sem isto o cliente continuaria entrando
       // e vendo medições e fotos de uma obra que não existe mais aqui.
       if (obra.portalUser) this._despublicarPortal(obra);
+      /* ⚠ a capa mora FORA do registro (IndexedDB + servidor). Apagar so a
+         linha da obra deixaria os bytes la, invisiveis, comendo a cota de 2 GB
+         da licenca — foi exatamente o que ja aconteceu com foto de diario. */
+      if (obra.foto && typeof Fotos !== "undefined" && Fotos.apagar) {
+        try { Fotos.apagar([obra.foto]); } catch (eF) {}
+      }
       Store.excluir(e, "obras", id);
       // filtros em memória apontando para a obra apagada deixariam telas vazias sem explicação
       if (this._lpObra === id) this._lpObra = null;
@@ -1110,9 +1153,27 @@
         '<div class="row">' + campo("Início", inp("g-inicio", o.inicio, "", "date")) + campo("Previsão de término", inp("g-termino", o.termino, "", "date")) + "</div>" +
         '<div class="row">' + campo("Área construída (m²)", inp("g-areac", o.areaConstruida)) + campo("Área do terreno (m²)", inp("g-areat", o.areaTerreno)) + "</div>" +
         campo("Vincular a um orçamento", sel("g-orc", optsRec(orcs, "nome", o.orcamentoId, "— nenhum —"))) +
-        campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(o.obs || "") + "</textarea>");
+        campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(o.obs || "") + "</textarea>") +
+        /* ⚠ A FOTO NAO ENTRA NO REGISTRO DA OBRA.
+         * Ela vai para o mesmo lugar das fotos do diario (IndexedDB + fila de
+         * subida) e o registro guarda so a REFERENCIA. Foto de celular tem de
+         * 3 a 12 MB; dentro do registro ela estoura o limite de 1 MiB por
+         * documento da nuvem e a sincronizacao para — em silencio, que foi
+         * exatamente o defeito que ja custou uma versao inteira no diario. */
+        '<div class="field"><label>Foto da obra <span class="muted" style="font-weight:400">— aparece no card da lista</span></label>' +
+          '<div id="g-foto-area" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">' +
+            '<div id="g-foto-prev" class="obra-foto-prev">' + (o.foto ? '<span class="muted" style="font-size:12px">carregando…</span>' : '<span class="obra-foto-vazia">sem foto</span>') + '</div>' +
+            '<div style="display:flex;flex-direction:column;gap:6px">' +
+              '<input type="file" id="g-foto-in" accept="image/*" style="max-width:230px">' +
+              '<button type="button" class="btn sm" id="g-foto-tirar" style="display:none">Remover foto</button>' +
+            '</div>' +
+          '</div></div>';
+      var fotoRef = o.foto || null, fotoTrocou = false;
       this._modalForm("obras", o, "Obra", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome da obra.", "erro"); return false; }
+        /* a referencia so troca quando a pessoa mexeu: salvar o cadastro sem
+           tocar na foto nao pode apagar a que ja estava la */
+        if (fotoTrocou) { if (fotoRef) obj.foto = fotoRef; else delete obj.foto; }
         obj.clienteId = v("g-cliente"); obj.tipo = v("g-tipo"); obj.fase = v("g-fase"); obj.status = v("g-status");
         obj.valor = nv("g-valor"); obj.local = v("g-local"); obj.inicio = v("g-inicio"); obj.termino = v("g-termino");
         obj.areaConstruida = nv("g-areac"); obj.areaTerreno = nv("g-areat"); obj.orcamentoId = v("g-orc"); obj.obs = v("g-obs");
@@ -1120,6 +1181,45 @@
         obj.clienteNome = cli ? cli.nome : "";
         return true;
       });
+
+      /* UI.modal ja colocou o form no DOM (sincrono) — mesma ordem usada no
+         diario. Daqui para baixo e a fiacao da foto. */
+      var selfF = this;
+      function pintarPrev(dataURI) {
+        var pv = document.getElementById("g-foto-prev"), bt = document.getElementById("g-foto-tirar");
+        if (!pv) return;
+        if (dataURI) {
+          pv.innerHTML = '<img src="' + dataURI + '" alt="">';
+          if (bt) bt.style.display = "";
+        } else {
+          pv.innerHTML = '<span class="obra-foto-vazia">sem foto</span>';
+          if (bt) bt.style.display = "none";
+        }
+      }
+      /* foto que ja existia: le do IndexedDB (Promise) e pinta quando chegar */
+      if (fotoRef && typeof Fotos !== "undefined" && Fotos.dataURI) {
+        Fotos.dataURI(fotoRef).then(function (d) { pintarPrev(d || ""); }).catch(function () { pintarPrev(""); });
+      } else { pintarPrev(""); }
+
+      var inFoto = document.getElementById("g-foto-in");
+      if (inFoto) inFoto.onchange = function () {
+        var f = inFoto.files && inFoto.files[0]; if (!f) return;
+        selfF._comprimirFoto(f, 1280, 0.82, function (d) {
+          if (!d) { UI.toast("Arquivo não é uma imagem válida.", "erro"); inFoto.value = ""; return; }
+          if (typeof Fotos === "undefined" || !Fotos.guardar) { UI.toast("Não foi possível guardar a foto neste navegador.", "erro"); return; }
+          Fotos.guardar(d, "Foto da obra").then(function (ref) {
+            fotoRef = ref; fotoTrocou = true;
+            pintarPrev(d);
+            UI.toast("Foto escolhida — clique em Salvar para gravar na obra.", "ok");
+          });
+        });
+      };
+      var btTirar = document.getElementById("g-foto-tirar");
+      if (btTirar) btTirar.onclick = function () {
+        fotoRef = null; fotoTrocou = true;
+        if (inFoto) inFoto.value = "";
+        pintarPrev("");
+      };
     },
 
     // =================== CLIENTES ===================
@@ -1195,6 +1295,7 @@
 
     // =================== MEDIÇÕES ===================
     renderMedicoes: function () {
+      var self = this;
       var ms = lista("medicoes"), obras = lista("obras"), contratos = lista("contratos");
       var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição", '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">📥 CSV</button>');
       if (!ms.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
@@ -1203,7 +1304,7 @@
         var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
         var docs = '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">🖨</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">📊</button> ';
         var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">✕ rejeitada</span>' : "✓")));
-        html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '"><b>' + Util.esc(m.numero || "—") + "</b></td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + '</td><td class="num">' + acao + "</td></tr>";
+        html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '"><b>' + Util.esc(m.numero || "—") + "</b></td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -1235,7 +1336,7 @@
       this._modalForm("medicoes", m, "Medição", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.obraId = v("g-obra");
         if (!obj.obraId) { UI.toast("Selecione a obra da medição.", "erro"); return false; }
-        if (!self._gateStatusForm(obj, stAntigo)) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
+        if (!self._gateStatusForm(obj, stAntigo, "medicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
         obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
         // #18: com orçamento selecionado, valor e % NASCEM dos itens (não se digita)
@@ -5754,7 +5855,13 @@
     },
 
     // =================== TAREFAS ===================
-    _hojeISO: function () { return new Date().toISOString().slice(0, 10); },
+    /* ⚠ data LOCAL, nao UTC. `toISOString()` devolve UTC: no fuso -3, das 21h
+       a meia-noite ele ja esta no dia seguinte — a aprovacao feita as 21h30 de
+       segunda ficava carimbada como terca. */
+    _hojeISO: function () {
+      var d = new Date(), m = d.getMonth() + 1, dia = d.getDate();
+      return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (dia < 10 ? "0" : "") + dia;
+    },
     // Data de HOJE no fuso LOCAL (evita off-by-one noturno do toISOString/UTC nas comparações de prazo).
     _hojeLocal: function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); },
     // Atrasada = tem prazo, o prazo já passou e a tarefa não está concluída/cancelada.
@@ -5955,6 +6062,7 @@
 
     // =================== COMPRAS (pedidos de compra) ===================
     renderCompras: function () {
+      var self = this;
       var cs = lista("compras").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
       var obras = lista("obras");
       var total = cs.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
@@ -5967,7 +6075,7 @@
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
         var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">🖨</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
           : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : (c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">✕ rejeitado</span>' : ""))));
-        html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + '</td><td class="num">' + acao + "</td></tr>";
+        html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -5987,7 +6095,7 @@
         (c.status === "recebido" ? '<p class="muted">✓ Recebida — já lançou uma despesa no Financeiro.</p>' : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>');
       this._modalForm("compras", c, "Pedido de compra", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.fornecedorId = v("g-forn"); obj.obraId = v("g-obra");
-        if (!self._gateStatusForm(obj, stAntigo)) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
+        if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.descricao = v("g-desc"); if (!obj.descricao) { UI.toast("Descreva o que será comprado.", "erro"); return false; }
         obj.valor = nv("g-valor"); obj.categoria = v("g-cat"); obj.formaPgto = v("g-forma");
         obj.data = v("g-data"); obj.previsaoEntrega = v("g-entrega"); obj.obs = v("g-obs");
@@ -6669,6 +6777,99 @@
       function todos(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
 
       /* ---------- SERVIÇOS DO DIA ---------- */
+      /* -----------------------------------------------------------------
+       * PRODUÇÃO INDIVIDUAL POR SERVIÇO (v1.1.149)
+       *
+       * Quem pode aparecer aqui é quem o motor considera elegível: terceiro,
+       * empreiteiro, PJ, autônomo — ou quem foi marcado "paga por produção"
+       * no cadastro. CLT e diarista não entram sozinhos porque já recebem por
+       * salário/diária, e lançar produção neles pagaria o mesmo dia duas vezes.
+       * ----------------------------------------------------------------- */
+      function elegiveisProducao() {
+        if (typeof Producao === "undefined") return [];
+        return Producao.elegiveis(lista("colaboradores"));
+      }
+      function conferenciaTexto(a) {
+        if (typeof Producao === "undefined") return "";
+        var v2 = Producao.validarItem(a);
+        if (v2.erros.length) return '<span style="color:#b91c1c;font-weight:700">' + Util.esc(v2.erros[0]) + "</span>";
+        if (v2.avisos.length) return '<span style="color:#b45309">' + Util.esc(v2.avisos[0]) + "</span>";
+        if ((a.producao || []).length) return '<span style="color:#15803d">✓ ' + v2.soma + " de " + v2.executado + " lançado por pessoa</span>";
+        return "";
+      }
+      function atualizarConferencia(el, i) {
+        var box = el.querySelector('[data-atconf="' + i + '"]');
+        if (box) box.innerHTML = conferenciaTexto(buf.ativ[i]);
+      }
+      function linhaProducao(a, i) {
+        var eleg = elegiveisProducao();
+        var prod = a.producao || [];
+        if (!eleg.length && !prod.length) {
+          return '<span class="muted" style="font-size:10.5px">Produção por pessoa: nenhum colaborador está marcado para receber por produção. '
+            + 'Marque no cadastro (Colaboradores) para poder lançar aqui.</span>';
+        }
+        var linhas = prod.map(function (p, j) {
+          return '<div style="display:flex;gap:6px;align-items:center;margin-top:4px">' +
+            '<select data-prc="' + i + '_' + j + '" style="font-size:11px;padding:2px;flex:1;max-width:230px">' +
+              '<option value="">— quem produziu —</option>' +
+              eleg.map(function (c) {
+                return '<option value="' + Util.esc(c.id) + '"' + (p.colaboradorId === c.id ? " selected" : "") + ">" + Util.esc(c.nome) + (c.funcao ? " · " + Util.esc(c.funcao) : "") + "</option>";
+              }).join("") +
+              /* quem já foi lançado e depois saiu da lista (virou inativo, mudou
+                 de contrato) não pode sumir do diário: o dia dele existiu. */
+              (p.colaboradorId && !eleg.some(function (c) { return c.id === p.colaboradorId; })
+                ? '<option value="' + Util.esc(p.colaboradorId) + '" selected>' + Util.esc(p.nome || "(fora da lista)") + " — não está mais elegível</option>" : "") +
+            "</select>" +
+            '<input data-prq="' + i + "_" + j + '" value="' + Util.esc(p.qtd == null ? "" : p.qtd) + '" placeholder="qtd" style="width:74px;text-align:right;font-size:11px;padding:2px 4px">' +
+            '<span class="muted" style="font-size:10.5px">' + Util.esc(a.unidade || "") + "</span>" +
+            '<button type="button" data-prr="' + i + "_" + j + '" class="btn sm ghost" style="padding:1px 6px">×</button></div>';
+        }).join("");
+        return '<div style="border-left:3px solid var(--linha-forte);padding-left:9px;margin-left:2px">' +
+          '<div style="font-size:10.5px;font-weight:700;letter-spacing:.3px;color:var(--texto-fraco)">PRODUÇÃO POR PESSOA <span style="font-weight:400">(opcional — é o que vira medição de quem ganha por produção)</span></div>' +
+          linhas +
+          '<div style="margin-top:5px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+            (eleg.length ? '<button type="button" data-pra="' + i + '" class="btn sm" style="font-size:11px;padding:3px 9px">+ pessoa</button>' : "") +
+            '<span data-atconf="' + i + '" style="font-size:10.5px">' + conferenciaTexto(a) + "</span>" +
+          "</div></div>";
+      }
+      function ligarProducao(el) {
+        todos("[data-pra]", el).forEach(function (b2) {
+          b2.onclick = function () {
+            var i = +b2.getAttribute("data-pra");
+            buf.ativ[i].producao = buf.ativ[i].producao || [];
+            buf.ativ[i].producao.push({ colaboradorId: "", nome: "", qtd: "" });
+            renderAtiv();
+          };
+        });
+        todos("[data-prc]", el).forEach(function (x) {
+          x.onchange = function () {
+            var p2 = x.getAttribute("data-prc").split("_"), i = +p2[0], j = +p2[1];
+            var linha = buf.ativ[i].producao[j];
+            linha.colaboradorId = x.value;
+            /* o NOME fica gravado junto: se o colaborador for excluído depois,
+               o diário continua dizendo quem fez — apagar o cadastro não pode
+               apagar a história do dia. */
+            var c = lista("colaboradores").filter(function (y) { return y.id === x.value; })[0];
+            linha.nome = c ? c.nome : "";
+            atualizarConferencia(el, i);
+          };
+        });
+        todos("[data-prq]", el).forEach(function (x) {
+          x.oninput = function () {
+            var p2 = x.getAttribute("data-prq").split("_"), i = +p2[0], j = +p2[1];
+            buf.ativ[i].producao[j].qtd = Util.num(x.value);
+            atualizarConferencia(el, i);
+          };
+        });
+        todos("[data-prr]", el).forEach(function (x) {
+          x.onclick = function () {
+            var p2 = x.getAttribute("data-prr").split("_"), i = +p2[0], j = +p2[1];
+            buf.ativ[i].producao.splice(j, 1);
+            renderAtiv();
+          };
+        });
+      }
+
       function renderAtiv() {
         var el = document.getElementById("g-at-lista"); if (!el) return;
         if (!buf.ativ.length) {
@@ -6681,7 +6882,14 @@
             var av = RDO.calcAvanco(a);
             return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
               '<td style="padding:4px 2px">' + (a.numero ? "<b>" + Util.esc(a.numero) + "</b> " : "") + Util.esc(a.descricao) +
-                '<div class="muted" style="font-size:10px">' + Util.esc((RDO.ORIGENS[a.origem] || a.origem) + (a.etapa ? " · " + a.etapa : "")) + "</div></td>" +
+                /* ⚠ item SEM origem (diário antigo, importado, criado por
+                   outro caminho) caía em RDO.ORIGENS[undefined] e a tela
+                   escrevia literalmente "undefined" embaixo do serviço. */
+                (function () {
+                  var org = a.origem ? (RDO.ORIGENS[a.origem] || a.origem) : "";
+                  var txt = org + (a.etapa ? (org ? " · " : "") + a.etapa : "");
+                  return txt ? '<div class="muted" style="font-size:10px">' + Util.esc(txt) + "</div>" : "";
+                })() + "</td>" +
               '<td style="text-align:center">' + Util.esc(a.unidade || "—") + "</td>" +
               '<td style="text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>" +
               '<td style="text-align:right"><input data-atq="' + i + '" value="' + (a.qtdExecutada || "") + '" style="width:70px;text-align:right;font-size:12px;padding:2px 4px">' +
@@ -6690,13 +6898,23 @@
                 RDO.SITUACOES_SERVICO.map(function (x) {
                   return '<option value="' + x.id + '"' + (a.situacao === x.id ? " selected" : "") + ">" + x.rotulo + "</option>";
                 }).join("") + "</select></td>" +
-              '<td><button type="button" data-atr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>';
+              '<td><button type="button" data-atr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>' +
+              /* ⚠ PRODUÇÃO INDIVIDUAL — segunda linha, embaixo do serviço.
+               * Fica aqui, e não numa tela à parte, porque é AQUI que a pessoa
+               * que apontou o dia sabe quem fez o quê. Preencher depois, de
+               * memória, no fim da semana, é o que o cliente faz hoje no
+               * caderno — e é o que a gente está tirando dele.
+               * É opcional: serviço sem produção lançada continua igual. */
+              '<tr data-atprod="' + i + '"><td colspan="6" style="padding:0 2px 8px">' + linhaProducao(a, i) + '</td></tr>';
           }).join("") + "</table>";
+
+        ligarProducao(el);
 
         todos("[data-atq]", el).forEach(function (x) {
           x.oninput = function () {
             var i = +x.getAttribute("data-atq");
             buf.ativ[i].qtdExecutada = Util.num(x.value);
+            atualizarConferencia(el, i);
             /* atualiza SÓ o rótulo: re-renderizar a tabela inteira a cada tecla
                tiraria o foco do campo e o usuário perderia o que digitava.
                Sem isto a % ficava parada em 0% enquanto ele digitava 60 de 240
@@ -7286,6 +7504,39 @@
         obj.climaManha = v("g-cmanha"); obj.climaTarde = v("g-ctarde"); obj.condicao = v("g-cond");
         obj.efetivoDireto = nv("g-efd"); obj.efetivoIndireto = nv("g-efi"); obj.terceiros = v("g-terc");
         obj.atividades = v("g-ativ");
+        /* ⚠ TRAVA DA PRODUÇÃO — isto vira PAGAMENTO. Deixar salvar produção
+           maior do que o executado é assinar medição de serviço que não foi
+           feito. Barra aqui, na porta do salvar, e não só no aviso da tela:
+           o aviso da tela some, o dado gravado fica. */
+        if (typeof Producao !== "undefined") {
+          /* ⚠ A LIMPEZA VEM ANTES DA VALIDAÇÃO, e essa ordem é o defeito.
+             Estava ao contrário: quem clicava "+ pessoa" e desistia ficava com
+             uma linha vazia, a validação reclamava "escolha a pessoa" e o
+             diário INTEIRO não salvava — justamente o que o comentário logo
+             abaixo prometia que não aconteceria. */
+          buf.ativ.forEach(function (a2) {
+            if (!a2.producao) return;
+            a2.producao = a2.producao.filter(function (p3) { return p3.colaboradorId && Producao.num(p3.qtd) > 0; });
+            if (!a2.producao.length) delete a2.producao;
+          });
+          /* ⚠ TRAVA DA PRODUÇÃO — isto vira PAGAMENTO. Deixar salvar produção
+             maior do que o executado é assinar medição de serviço que não foi
+             feito. Barra aqui, na porta do salvar, e não só no aviso da tela:
+             o aviso da tela some, o dado gravado fica. */
+          var erroProd = null;
+          buf.ativ.forEach(function (a2, i2) {
+            if (erroProd || !(a2.producao || []).length) return;
+            var vp = Producao.validarItem(a2);
+            if (!vp.ok) erroProd = "Serviço " + (a2.numero || i2 + 1) + " — " + vp.erros[0];
+          });
+          if (erroProd) { UI.toast(erroProd, "erro"); return false; }
+          /* ⚠ ID ESTÁVEL DO ITEM — é o que sustenta a trava do pagamento
+             duplo. A chave de origem usava a POSIÇÃO do serviço na lista;
+             apagar um serviço deslocava todo mundo e a produção do vizinho
+             passava a casar com o pagamento de outro. Carimba antes de gravar
+             (idempotente: item que já tem pid não muda). */
+          Producao.carimbarPids(buf.ativ);
+        }
         obj.atividadesItens = buf.ativ;
         obj.efetivo = buf.efe;
         obj.equipamentosItens = buf.equip;
@@ -7599,11 +7850,25 @@
         '<div class="row">' + campo("Remuneração (R$)", inp("g-rem", c.remuneracao)) + campo("Base", sel("g-un", opts(P.unidadeRem, c.unidadeRem || "mensal"))) + campo("Admissão", inp("g-adm", c.admissao, "", "date")) + "</div>" +
         '<div class="row">' + campo("Obra (alocação)", sel("g-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + campo("Status", sel("g-status", opts(P.colabStatus, c.status || "ativo"))) + "</div>" +
         '<div class="row">' + campo("Favorecido do pagamento", inp("g-fav", c.favorecido, "Quem recebe (se for outra pessoa)")) + campo("Chave PIX", inp("g-pix", c.chavePix, "CPF, celular ou e-mail")) + "</div>" +
+        /* ⚠ PAGAMENTO POR PRODUÇÃO — a marcação existe por um motivo.
+         * Terceirizado, empreiteiro, PJ e autônomo já são pagos por serviço
+         * entregue: entram sozinhos. CLT e diarista NÃO — o CLT tem salário e o
+         * diarista tem diária na Folha Semanal. Se eles entrassem por padrão,
+         * lançar produção no diário pagaria a MESMA pessoa duas vezes pelo
+         * mesmo dia, e a diferença só apareceria no extrato. Aqui a exceção é
+         * uma decisão consciente de quem cadastra. */
+        campo("Pagamento por produção",
+          '<label class="chk" style="display:flex;gap:8px;align-items:flex-start;font-weight:400">' +
+          '<input type="checkbox" id="g-prod"' + (c.pagaProducao ? " checked" : "") + ' style="margin-top:3px">' +
+          '<span>Pode receber por <b>produção medida</b> (quantidade lançada no Diário de Obra).' +
+          '<br><span class="muted" style="font-size:11.5px">Terceirizado, empreiteiro, PJ e autônomo já podem, mesmo sem marcar. ' +
+          'Marque para CLT ou diarista só se o combinado for por produção — senão ele receberia pela diária E pela produção do mesmo dia.</span></span></label>') +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(c.obs || "") + "</textarea>");
       this._modalForm("colaboradores", c, "Colaborador", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome do colaborador.", "erro"); return false; }
         obj.funcao = v("g-func"); obj.tipoContrato = v("g-tipo"); obj.cpf = v("g-cpf"); obj.telefone = v("g-tel");
         obj.remuneracao = nv("g-rem"); obj.unidadeRem = v("g-un"); obj.admissao = v("g-adm"); obj.obraId = v("g-obra");
+        var chkProd = UI.el("g-prod"); obj.pagaProducao = !!(chkProd && chkProd.checked);
         obj.status = v("g-status"); obj.obs = v("g-obs");
         obj.favorecido = v("g-fav"); obj.chavePix = v("g-pix");
         return true;
@@ -8162,6 +8427,7 @@
     },
 
 renderRequisicoes: function () {
+      var self = this;
       var rs = lista("requisicoes"), obras = lista("obras");
       var abertas = rs.filter(function (r) { return r.status === "aberta" || r.status === "cotando"; }).length;
       var urgentes = rs.filter(function (r) { return r.prioridade === "urgente" && r.status !== "comprada" && r.status !== "cancelada"; }).length;
@@ -8180,7 +8446,7 @@ renderRequisicoes: function () {
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
         var nItens = (r.itens && r.itens.length) || 0;
         var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "");
-        html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + reqInfo + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + '</td><td class="num">' + acoes + "</td></tr>";
+        html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + reqInfo + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + self._aprovLinha(r) + '</td><td class="num">' + acoes + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -8358,7 +8624,7 @@ renderRequisicoes: function () {
       var opcoes = "";
       if (d.mistoCompleto) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="misto" checked style="width:auto"> <span><b>Misto</b> — cada item do mais barato: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' <span style="color:var(--verde);font-weight:700">(economiza ' + Util.fmtMoeda(d.economiaMisto) + ")</span>" : "") + "</span></label>";
       if (d.vencedorUnico != null) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="unico"' + (d.mistoCompleto ? "" : " checked") + ' style="width:auto"> <span><b>Fornecedor único</b> — ' + Util.esc(d.totais[d.vencedorUnico].nome) + " entrega tudo: <b>" + Util.fmtMoeda(d.totalUnico) + "</b> (menos entregas pra receber)</span></label>";
-      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor (status Aprovado), marca a requisição como comprada e conclui a cotação.</p>', [
+      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor <b>aguardando aprovação</b> (quem aprova é outra pessoa, em Compras), marca a requisição como comprada e conclui a cotação.</p>', [
         { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.formCotacao(cot); } },
         { texto: "Gerar pedidos", classe: "primary", onClick: function () {
           var modo = (document.querySelector("input[name=ct-modo]:checked") || {}).value || (d.mistoCompleto ? "misto" : "unico");
@@ -8366,7 +8632,10 @@ renderRequisicoes: function () {
           if (!peds.length) { UI.toast("Cenário sem pedidos — confira os preços.", "erro"); return; }
           peds.forEach(function (p, k) {
             var pc = "PC-" + new Date().getFullYear() + "-" + ("" + (new Date().getTime() + k)).slice(-4);
-            Store.salvar(eid(), "compras", { numero: pc, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "aprovado", categoria: "material", itens: p.itens, cotacaoId: cot.id || null, formaPgto: p.condPgto || "", obs: (p.prazoDias != null && p.prazoDias > 0 ? "Prazo de entrega: " + p.prazoDias + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." });
+            /* a autoria vai junto: sem ela quem gerou o pedido aprova o proprio
+               pedido, e o texto do modal promete que "quem aprova e outra
+               pessoa". O carimbo so acontecia no formulario. */
+            Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null, formaPgto: p.condPgto || "", obs: (p.prazoDias != null && p.prazoDias > 0 ? "Prazo de entrega: " + p.prazoDias + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
           });
           cot.status = "concluida"; cot.cenario = modo; Store.salvar(eid(), "cotacoes", cot);
           if (cot.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId); if (rq && (rq.status === "cotando" || rq.status === "aprovada")) { rq.status = "comprada"; Store.salvar(eid(), "requisicoes", rq); } }
@@ -8441,7 +8710,7 @@ renderRequisicoes: function () {
         + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">➕ Cadastrar insumo próprio (fora das bases oficiais)</button>'
         + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
+    afterRender: function (view) { if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
@@ -8577,7 +8846,7 @@ renderRequisicoes: function () {
         if (!itensBuf.length) { UI.toast("Adicione ao menos um item (busque no banco ou use item manual).", "erro"); return false; }
         obj.numero = v("g-numero"); obj.data = v("g-data"); obj.obraId = v("g-obra"); obj.solicitante = v("g-solic");
         obj.prioridade = v("g-prioridade"); obj.status = v("g-status"); obj.observacoes = v("g-obs");
-        if (!self._gateStatusForm(obj, stAntigo)) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
+        if (!self._gateStatusForm(obj, stAntigo, "requisicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.itens = itensBuf.slice();
         obj.descricao = self._reqResumo(itensBuf);
         obj.valorEstimado = self._reqValor(itensBuf);
@@ -8642,6 +8911,7 @@ renderRequisicoes: function () {
       renderItens();
     },
     comprarRequisicao: function (id) {
+      var self = this;
       var r = Store.obter(eid(), "requisicoes", id); if (!r) return;
       if (r.status !== "aprovada") { UI.toast("Aprove a requisição antes de gerar o pedido.", "erro"); return; }
       var obras = lista("obras");
@@ -8657,7 +8927,7 @@ renderRequisicoes: function () {
           if (Gestao._bloqueado()) return;
           var desc = v("g-pdesc"); if (!desc) { UI.toast("Informe a descrição.", "erro"); return; }
           var pc = "PC-" + new Date().getFullYear() + "-" + ("" + (new Date().getTime())).slice(-4);
-          Store.salvar(eid(), "compras", { numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id });
+          Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id }, true));
           r.status = "comprada"; Store.salvar(eid(), "requisicoes", r);
           UI.fecharModal(); App.render(); UI.toast("Pedido " + pc + " criado.", "ok");
         } }
@@ -10170,6 +10440,423 @@ renderFolha: function () {
     _fsLancs: function () { var s = this._fsSemana, o = this._fsObra; return this._fsTodos().filter(function (l) { return l.semana === s && (!o || l.obraId === o); }); },
     _fsNomeObra: function (id) { var o = Store.obter(eid(), "obras", id); return o ? o.nome : (id || "— sem obra —"); },
     fsTroca: function (campo, val) { if (val == null) return; if (campo === "semana") this._fsSemana = val; else this._fsObra = val; App.render(); },
+
+    /* =================================================================
+     * PRODUCAO — a tela onde a producao lancada no diario vira pagamento
+     *
+     * Ela NAO e uma medicao de contrato. Medicao (modulo Medicoes) e o que a
+     * empresa COBRA do cliente — receita. Isto aqui e o que a empresa PAGA a
+     * quem trabalha por producao — despesa. Misturar os dois na mesma entidade
+     * faria pagamento de operario aparecer como receita no Financeiro; por
+     * isso a entidade e propria (`producao_med`).
+     * ================================================================= */
+    _prodF: null,
+    _prodFiltro: function () {
+      if (!this._prodF) this._prodF = { obraId: "", de: "", ate: "" };
+      return this._prodF;
+    },
+    _prodPrecos: function () { return (Store.lerPrefs(eid()) || {}).precosProducao || {}; },
+    _prodSalvarPrecos: function (mapa) {
+      var pr = Store.lerPrefs(eid()) || {};
+      pr.precosProducao = mapa;
+      Store.salvarPrefs(eid(), pr);
+    },
+    _prodNomeObra: function (id) {
+      var o = id ? Store.obter(eid(), "obras", id) : null;
+      return o ? o.nome : (id ? "(obra removida)" : "—");
+    },
+    /* precos digitados na tela -> mapa, SEM gravar zero: campo em branco e
+       "ainda nao sei", e vira linha pendente la no motor. */
+    _prodLerPrecosDaTela: function () {
+      var mapa = {}, atual = this._prodPrecos(), k;
+      for (k in atual) { if (Object.prototype.hasOwnProperty.call(atual, k)) mapa[k] = atual[k]; }
+      Array.prototype.forEach.call(document.querySelectorAll("[data-prodpu]"), function (i) {
+        var chave = i.getAttribute("data-prodpu");
+        var txt = String(i.value == null ? "" : i.value).trim();
+        if (!txt) { delete mapa[chave]; return; }
+        var n = Producao.num(txt);
+        if (n > 0) mapa[chave] = n;
+      });
+      return mapa;
+    },
+
+    renderProducao: function () {
+      if (typeof Producao === "undefined") return this._head("Produção", "", "") + '<div class="card">Motor de produção não carregado.</div>';
+      var self = this, f = this._prodFiltro(), obras = lista("obras");
+      var precos = this._prodPrecos();
+      var jaPago = Producao.jaMedido(lista("producao_med"));
+      var ac = Producao.acumular(lista("rdo"), { obraId: f.obraId, de: f.de, ate: f.ate, jaMedido: jaPago });
+      var med = Producao.medir(ac.linhas, precos);
+      var pessoas = Producao.porPessoa(med.linhas);
+
+      var selObra = '<select data-gacao="prod-obra" style="max-width:190px"><option value="">Todas as obras</option>' +
+        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === f.obraId ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
+      var extra = selObra +
+        ' <input type="date" id="prod-de" value="' + Util.esc(f.de) + '" title="Diários a partir de" style="max-width:150px">' +
+        ' <input type="date" id="prod-ate" value="' + Util.esc(f.ate) + '" title="Diários até" style="max-width:150px">' +
+        (med.linhas.length ? ' <button class="btn sm primary" data-gacao="prod-gerar">Gerar medição de produção</button>' : "");
+      var html = this._head(svg("producao") + "Produção · pagamento por serviço executado", "", "", extra);
+
+      html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
+        /* ⚠ A REGRA 3 VALIA NA LINHA E NÃO VALIA AQUI. Com produção lançada e
+           nenhum preço informado, este cartão estampava um "R$ 0,00" verde e
+           grande — que se lê como "não há nada a pagar", quando o certo é
+           "ainda não sei quanto". Zero só aparece quando é zero mesmo. */
+        '<div class="card kpi destaque"><div class="rotulo">A medir (com preço)</div><div class="num">' +
+          ((med.total === 0 && med.semPreco) ? '<span title="Há produção lançada, mas nenhuma linha tem preço ainda.">—</span>' : Util.fmtMoeda(med.total)) + "</div></div>" +
+        '<div class="card kpi"><div class="rotulo">Pessoas</div><div class="num">' + pessoas.length + "</div></div>" +
+        '<div class="card kpi ' + (med.semPreco ? "custo" : "") + '"><div class="rotulo">Sem preço</div><div class="num">' + med.semPreco + "</div></div>" +
+        '<div class="card kpi ' + (ac.pendentes.length ? "custo" : "") + '"><div class="rotulo">Aguardando aprovação do diário</div><div class="num">' + ac.pendentes.length + "</div></div></div>";
+
+      /* ⚠ a tabela "A medir" só existe se houver o que medir. Com apenas
+         pendentes ela renderizava VAZIA, com rodapé "Total a medir R$ 0,00" —
+         um zero que parece resultado e é só ausência de linha. */
+      if (!med.linhas.length) {
+        html += ac.pendentes.length ? "" : ('<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhuma produção individual lançada ainda.</b><br>' +
+          '<span class="muted">A produção nasce no <b>Diário de obra</b>: em cada serviço do dia há o bloco <b>"produção por pessoa"</b>. ' +
+          'Quem aparece lá é quem recebe por produção (terceirizado, empreiteiro, PJ, autônomo — ou quem você marcou no cadastro). ' +
+          'Depois de o diário ser aprovado, a produção cai aqui e vira medição sem redigitar nada.</span></div>');
+      } else {
+        html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:auto">' +
+          '<div style="padding:12px 14px 6px"><b>A medir</b> <span class="muted" style="font-size:12px">— preencha o <b>R$/unidade</b> de cada linha. Linha sem preço não é paga e não vira zero: fica marcada como pendente.</span></div>' +
+          '<table class="tbl"><thead><tr><th>Pessoa</th><th>Serviço</th><th>Obra</th><th class="num">Qtd</th><th>Un</th><th class="num">Dias</th><th class="num">R$/un</th><th class="num">Total</th></tr></thead><tbody>';
+        med.linhas.forEach(function (l, iL) {
+          var chave = l.colaboradorId + "|" + (l.codigo || l.servico || "");
+          /* ⚠ O SELETOR É PELO ÍNDICE, não pela chave. A chave carrega a
+             DESCRIÇÃO do serviço, e descrição de obra tem aspas ("tubo 3/4\"") —
+             `querySelector('[data-prodtot="…3/4"…"]')` estourava SyntaxError e
+             o total ao vivo parava de atualizar: a pessoa digitava o preço e a
+             linha continuava dizendo "sem preço". A chave segue no atributo
+             (é ela que grava o preço), mas quem procura no DOM usa o índice. */
+          html += "<tr" + (l.pendente ? ' style="background:rgba(245,158,11,.08)"' : "") + "><td><b>" + Util.esc(l.nome || "—") + "</b></td>" +
+            "<td>" + (l.codigo ? '<span class="muted">' + Util.esc(l.codigo) + "</span> " : "") + Util.esc(l.servico || "—") + "</td>" +
+            "<td>" + Util.esc(self._prodNomeObra(l.obraId)) + "</td>" +
+            '<td class="num" data-prodqtd="' + iL + '">' + Util.fmtNum(l.qtd) + "</td><td>" + Util.esc(l.unidade || "") + '</td><td class="num">' + l.dias + "</td>" +
+            '<td class="num"><input data-prodi="' + iL + '" data-prodpu="' + Util.esc(chave) + '" value="' + (l.precoUnit == null ? "" : Util.esc(l.precoUnit)) + '" placeholder="informe" title="Preço por unidade combinado com esta pessoa. Em branco = ainda não definido: a linha fica pendente, não vira zero." style="width:86px;text-align:right;padding:2px 5px;font-size:12px"></td>' +
+            '<td class="num" data-prodtot="' + iL + '">' + (l.pendente ? '<span style="color:#b45309;font-weight:700">sem preço</span>' : "<b>" + Util.fmtMoeda(l.valor) + "</b>") + "</td></tr>";
+        });
+        /* mesmo motivo do cartão: com tudo pendente, o rodapé dizia
+           "Total a medir R$ 0,00" — soma de nada com cara de conta fechada. */
+        html += '</tbody><tfoot><tr><th colspan="7" class="num">Total a medir</th><th class="num">' +
+          ((med.total === 0 && med.semPreco) ? '<span class="muted">a definir</span>' : Util.fmtMoeda(med.total)) +
+          "</th></tr>" +
+          (med.semPreco ? '<tr><td colspan="8" class="muted" style="font-size:11.5px;padding:6px 10px">' + med.semPreco +
+            " linha(s) sem preço não entram no total e não são pagas até você informar o R$/unidade.</td></tr>" : "") +
+          "</tfoot></table></div>";
+      }
+
+      /* ⚠ `jaPagos` era calculado pelo motor e descartado pela tela. Quem
+         procurasse a produção de um dia já medido não achava nada e não tinha
+         como saber por quê — parecia que o lançamento tinha se perdido. */
+      if (ac.jaPagos.length) {
+        var porPessoaPaga = {};
+        ac.jaPagos.forEach(function (p3) { porPessoaPaga[p3.nome || p3.colaboradorId] = (porPessoaPaga[p3.nome || p3.colaboradorId] || 0) + 1; });
+        html += '<div class="card" style="border-left:4px solid var(--verde);margin-bottom:14px;padding:10px 14px"><b>✓ Já medido antes:</b> ' +
+          Object.keys(porPessoaPaga).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porPessoaPaga[n] + " lançamento(s))"; }).join(" · ") +
+          ' <span class="muted">— não aparece na lista acima porque já virou medição. Se a medição foi cancelada ou rejeitada, a produção volta sozinha.</span></div>';
+      }
+
+      if (ac.pendentes.length) {
+        var porRdo = {};
+        ac.pendentes.forEach(function (p2) { porRdo[p2.nome || p2.colaboradorId] = (porRdo[p2.nome || p2.colaboradorId] || 0) + 1; });
+        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>⚠ Produção lançada em diário que ainda não foi aprovado:</b> ' +
+          Object.keys(porRdo).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porRdo[n] + ")"; }).join(" · ") +
+          ' <span class="muted">— não entra na medição enquanto o diário não for aprovado, porque um diário em rascunho ainda pode mudar. Aprove o diário no módulo <b>Diário (RDO)</b>.</span></div>';
+      }
+
+      /* historico: e o que prova o que ja foi pago (e o que impede pagar de novo) */
+      var feitas = lista("producao_med").slice().sort(function (a, b) { return String(b.criadoEm || "").localeCompare(String(a.criadoEm || "")); });
+      if (feitas.length) {
+        html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 6px"><b>Medições de produção geradas</b></div>' +
+          '<table class="tbl"><thead><tr><th>Pessoa</th><th>Período</th><th>Obra</th><th class="num">Itens</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>';
+        feitas.forEach(function (m) {
+          /* ⚠ havia uma pill "paga" desenhada que NINGUÉM gravava — estado
+             pintado e inalcançável. O que existe de verdade é "está na folha",
+             que é o que o `fsLancamentoId` diz. */
+          var pill = m.cancelada ? '<span class="g-pill" style="background:var(--surface-3);text-decoration:line-through">cancelada</span>'
+            : (m.fsLancamentoId ? '<span class="g-pill" style="background:#2563eb22;color:#1d4ed8">na folha</span>'
+            : (m.status === "aprovada" ? '<span class="g-pill" style="background:#16a34a22;color:#15803d">aprovada</span>'
+            : (m.status === "rejeitada" ? '<span class="g-pill" style="background:#dc262622;color:#b91c1c">rejeitada</span>'
+            : '<span class="g-pill" style="background:var(--surface-3)">pendente</span>')));
+          var acoes = '<button class="btn sm" data-gacao="prod-print" data-id="' + m.id + '" title="Recibo de produção">🖨</button> ';
+          if (!m.cancelada) {
+            if (m.status === "pendente") acoes += '<button class="btn sm success" data-gacao="prod-aprovar" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="prod-rejeitar" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>';
+            /* o botão some depois de lançada — antes ficava para sempre, e só
+               não repagava por causa de um guard que a exclusão da obra furava */
+            else if (m.status === "aprovada" && !m.fsLancamentoId) acoes += '<button class="btn sm primary" data-gacao="prod-folha" data-id="' + m.id + '" title="Lança na Folha Semanal como produtividade medida">Mandar p/ folha</button>';
+            acoes += ' <button class="btn sm danger" data-gacao="prod-excluir" data-id="' + m.id + '" title="Cancelar esta medição (a produção volta a ficar disponível)">🗑</button>';
+          }
+          html += "<tr><td><b>" + Util.esc(m.nome || "—") + "</b>" + self._aprovLinha(m) +
+            (m.fsLancamentoId ? '<div class="muted" style="font-size:11px">✓ lançada na Folha Semanal</div>' : "") + "</td>" +
+            "<td>" + Util.esc(self._prodPeriodo(m)) + "</td><td>" + Util.esc(self._prodNomeObra(m.obraId)) + '</td><td class="num">' + (m.linhas || []).length + '</td>' +
+            '<td class="num"><b>' + Util.fmtMoeda(m.total) + "</b></td><td>" + pill + '</td><td class="num" style="white-space:nowrap">' + acoes + "</td></tr>";
+        });
+        html += "</tbody></table></div>";
+      }
+      return html;
+    },
+    _prodPeriodo: function (m) {
+      function br(iso) { var p = String(iso || "").slice(0, 10).split("-"); return p.length === 3 ? p[2] + "/" + p[1] : ""; }
+      var a = br(m.de), b = br(m.ate);
+      return a && b ? (a === b ? a : a + " a " + b) : (a || b || "—");
+    },
+    /* o total da linha acompanha o que esta sendo digitado — sem isso a pessoa
+       digita o preco e nao ve o efeito antes de gerar a medicao. */
+    afterRenderProducao: function () {
+      var self = this;
+      /* ⚠ estes dois sao INPUT, e o `change` global do app.js so despacha
+         SELECT — com data-gacao eles seriam campos MORTOS. Ligados aqui. */
+      ["de", "ate"].forEach(function (k) {
+        var el = document.getElementById("prod-" + k);
+        if (!el) return;
+        el.onchange = function () { self._prodFiltro()[k] = el.value; App.render(); };
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-prodpu]"), function (i) {
+        var idx = i.getAttribute("data-prodi");
+        i.oninput = function () {
+          var cel = document.querySelector('[data-prodtot="' + idx + '"]');
+          var cQtd = document.querySelector('[data-prodqtd="' + idx + '"]');
+          if (!cel || !cQtd) return;
+          var qtd = Producao.num(cQtd.textContent);
+          var pu = Producao.num(i.value);
+          cel.innerHTML = (String(i.value).trim() && pu > 0)
+            ? "<b>" + Util.fmtMoeda(Math.round(qtd * pu * 100) / 100) + "</b>"
+            : '<span style="color:#b45309;font-weight:700">sem preço</span>';
+        };
+        /* ⚠ O PREÇO SÓ ERA LIDO NO "Gerar". Trocar a obra ou a data
+           re-renderizava a tela e a coluna inteira voltava vazia, sem aviso —
+           o cliente redigitava tudo achando que tinha errado. Agora cada campo
+           grava ao sair, que é como o resto do app se comporta. */
+        i.onchange = function () {
+          var chave = i.getAttribute("data-prodpu");
+          var mapa = self._prodPrecos(), copia = {}, k;
+          for (k in mapa) { if (Object.prototype.hasOwnProperty.call(mapa, k)) copia[k] = mapa[k]; }
+          var txt = String(i.value == null ? "" : i.value).trim();
+          var n = Producao.num(txt);
+          if (!txt || n <= 0) delete copia[chave]; else copia[chave] = n;
+          self._prodSalvarPrecos(copia);
+        };
+      });
+    },
+
+    /* GERAR: uma medicao por PESSOA x OBRA.
+       Por pessoa porque o pagamento e por pessoa, e isso permite aprovar o de
+       um sem travar o do outro. Por OBRA porque o custo tem que ficar na obra
+       certa: juntar obras carimbava o custo inteiro numa so, e ia assim para a
+       Folha e para o Previsto x Real. */
+    prodGerar: function () {
+      if (this._bloqueado()) return;
+      var self = this, f = this._prodFiltro();
+      var mapa = this._prodLerPrecosDaTela();
+      this._prodSalvarPrecos(mapa);
+      var jaPago = Producao.jaMedido(lista("producao_med"));
+      var ac = Producao.acumular(lista("rdo"), { obraId: f.obraId, de: f.de, ate: f.ate, jaMedido: jaPago });
+      var med = Producao.medir(ac.linhas, mapa);
+      var pessoas = Producao.porPessoa(med.linhas);
+      var comValor = pessoas.filter(function (p2) { return p2.total > 0; });
+      if (!comValor.length) {
+        UI.toast("Nenhuma linha tem preço ainda. Preencha o R$/unidade — sem preço não se gera pagamento.", "erro");
+        return;
+      }
+      var nPend = med.semPreco;
+      /* ⚠ A elegibilidade só era consultada para montar o <select> do diário.
+         Quem virou CLT (ou teve "paga por produção" desmarcado) DEPOIS do
+         lançamento continuava gerando medição e pagamento, sem uma palavra. */
+      var avisosPessoa = [];
+      comValor.forEach(function (p2) {
+        var c = p2.colaboradorId ? Store.obter(eid(), "colaboradores", p2.colaboradorId) : null;
+        if (!c) { avisosPessoa.push(Util.esc(p2.nome || "(sem cadastro)") + " — o cadastro não existe mais"); return; }
+        if (!Producao.elegivel(c)) avisosPessoa.push(Util.esc(c.nome || p2.nome) + " — hoje não é mais pago por produção (" + Util.esc(Producao.motivoInelegivel(c)) + ")");
+        else if (Producao.recebeTambemPorDia(c)) avisosPessoa.push(Util.esc(c.nome || p2.nome) + " — recebe diária E produção: confira se o dia não vai sair pago duas vezes");
+      });
+      UI.modal("Gerar medição de produção",
+        '<p style="margin-top:0;font-size:13px">Vai gerar <b>' + comValor.length + " medição(ões)</b> — uma por pessoa — somando <b>" + Util.fmtMoeda(med.total) + "</b>.</p>" +
+        (nPend ? '<p style="font-size:13px;color:#b45309;margin:6px 0"><b>' + nPend + " linha(s) sem preço ficam de fora</b> e continuam disponíveis aqui até você informar o valor. Nada é pago a zero.</p>" : "") +
+        (avisosPessoa.length ? '<div style="font-size:12.5px;color:#b45309;margin:8px 0;border-left:3px solid var(--amarelo);padding-left:9px"><b>Confira antes:</b><br>' + avisosPessoa.join("<br>") + "</div>" : "") +
+        '<p class="muted" style="font-size:12.5px;margin-bottom:0">Depois de gerada, a produção destes dias <b>não aparece mais nesta lista</b> — é o que impede pagar duas vezes o mesmo serviço. A medição nasce <b>pendente</b> e precisa de aprovação de outra pessoa antes de virar pagamento.</p>',
+        [{ texto: "Gerar", classe: "primary", onClick: function () {
+          UI.fecharModal();
+          var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+          var criadas = 0;
+          comValor.forEach(function (p2) {
+            var linhas = p2.itens.filter(function (l) { return !l.pendente; });
+            if (!linhas.length) return;
+            /* ⚠ PERÍODO REAL, sempre. Estava `f.de || per.de`: com o filtro de
+               datas preenchido, a medição e o RECIBO carimbavam as datas do
+               filtro, não os dias efetivamente trabalhados — um recibo que a
+               pessoa assina dizendo ter trabalhado num período que não é o
+               dela. O filtro serve para escolher o que entra, não para
+               reescrever quando aconteceu. */
+            var per = self._prodPeriodoDe(ac, p2.colaboradorId, p2.obraId);
+            var obj = {
+              colaboradorId: p2.colaboradorId, nome: p2.nome,
+              obraId: p2.obraId || (linhas[0] && linhas[0].obraId) || "",
+              de: per.de, ate: per.ate,
+              linhas: linhas, total: p2.total, status: "pendente",
+              criadoEm: new Date().toISOString()
+            };
+            /* autoria carimbada aqui porque esta medicao nao nasce de
+               formulario — sem ela a regra "quem preencheu nao aprova o
+               proprio" nao teria com o que comparar. */
+            if (typeof Aprovacao !== "undefined" && Aprovacao.carimbarAutor) Aprovacao.carimbarAutor(obj, eu);
+            Store.salvar(eid(), "producao_med", obj);
+            criadas++;
+          });
+          App.render();
+          UI.toast(criadas + " medição(ões) de produção gerada(s). Falta aprovar antes de pagar.", "ok");
+        } }, { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    /* periodo REAL daquela pessoa (a primeira e a ultima data que o motor
+       acumulou), para o recibo nao dizer um periodo que nao existiu quando o
+       filtro de datas esta em branco. */
+    _prodPeriodoDe: function (ac, colaboradorId, obraId) {
+      var de = "", ate = "";
+      (ac.linhas || []).forEach(function (l) {
+        if (l.colaboradorId !== colaboradorId) return;
+        if (obraId != null && obraId !== "" && l.obraId !== obraId) return;
+        if (l.primeiraData && (!de || l.primeiraData < de)) de = l.primeiraData;
+        if (l.ultimaData && (!ate || l.ultimaData > ate)) ate = l.ultimaData;
+      });
+      return { de: de, ate: ate };
+    },
+
+    /* a semana de um dia ISO ("2026-07-20"), sem passar por new Date(iso) —
+       que lê como meia-noite UTC e, no fuso -3, volta para o dia anterior */
+    _prodSemanaDe: function (iso, FS) {
+      var p = String(iso || "").slice(0, 10).split("-");
+      if (p.length !== 3) return null;
+      var d = new Date(+p[0], +p[1] - 1, +p[2]);
+      if (isNaN(d.getTime())) return null;
+      return FS.chaveSemana(d);
+    },
+    /* MANDAR PARA A FOLHA — a produtividade medida entra na Folha Semanal como
+       um lancamento de valor fechado, do jeito que o pagamento sai hoje. */
+    prodParaFolha: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      var m = Store.obter(eid(), "producao_med", id); if (!m) return;
+      if (m.status !== "aprovada") { UI.toast("Só medição aprovada vai para a folha.", "erro"); return; }
+      if (m.fsLancamentoId && Store.obter(eid(), "fs_lancamentos", m.fsLancamentoId)) {
+        UI.toast("Esta medição já está lançada na Folha Semanal — lançar de novo pagaria duas vezes.", "erro"); return;
+      }
+      var FS = window.FolhaSemanal;
+      if (!FS) { UI.toast("Motor da Folha Semanal não carregado.", "erro"); return; }
+      var col = m.colaboradorId ? Store.obter(eid(), "colaboradores", m.colaboradorId) : null;
+      /* ⚠ A SEMANA É A DA PRODUÇÃO, não a que estava aberta na outra tela.
+         Era `this._fsSemana` — estado do filtro da Folha Semanal. Quem tivesse
+         voltado para conferir uma semana antiga lançava o pagamento LÁ, numa
+         semana já fechada, e o dinheiro sumia do fechamento da semana certa. */
+      var semana = this._prodSemanaDe(m.ate || m.de, FS) || FS.chaveSemana(new Date());
+      var lanc = {
+        obraId: m.obraId || "", colaboradorId: m.colaboradorId || "", nome: m.nome || (col ? col.nome : ""),
+        funcao: col ? col.funcao || "" : "",
+        favorecido: col ? col.favorecido || "" : "", chavePix: col ? col.chavePix || "" : "",
+        tipo: "producao", valor: Producao.num(m.total), usarValor: true, dias: {}, faltas: [], he: 0,
+        semana: semana,
+        obs: "Produtividade medida " + this._prodPeriodo(m) + " · " + (m.linhas || []).length + " serviço(s)",
+        producaoMedId: m.id
+      };
+
+      /* ⚠ DIÁRIA + PRODUÇÃO NA MESMA SEMANA: é o pagamento em dobro que o
+         módulo inteiro diz evitar, e ninguém conferia. Pior: a Lista PIX
+         agrupa por favorecido, então os dois saem numa linha só e quem paga
+         vê um número só. Não bloqueio (pode ser proposital: meio período de
+         diária, resto por produção) — mas tem que ser uma decisão, não um
+         descuido. */
+      var diariaNaSemana = 0;
+      Store.listar(eid(), "fs_lancamentos").forEach(function (l) {
+        if (!l || l.semana !== semana) return;
+        if (l.colaboradorId && m.colaboradorId && l.colaboradorId !== m.colaboradorId) return;
+        if (!l.colaboradorId && String(l.nome || "") !== String(lanc.nome || "")) return;
+        if (l.tipo && l.tipo !== "diaria") return;
+        diariaNaSemana += FS.totalFinal(l);
+      });
+
+      function gravar() {
+        Store.salvar(eid(), "fs_lancamentos", lanc);
+        m.fsLancamentoId = lanc.id;
+        Store.salvar(eid(), "producao_med", m);
+        App.render();
+        UI.toast("Lançado na Folha Semanal (" + FS.periodoDaChave(semana) + ") como produtividade medida (" + Util.fmtMoeda(m.total) + ").", "ok");
+      }
+
+      if (diariaNaSemana > 0) {
+        UI.modal("Esta pessoa já tem diária nesta semana",
+          '<p style="margin-top:0;font-size:13px"><b>' + Util.esc(lanc.nome) + "</b> já tem <b>" + Util.fmtMoeda(diariaNaSemana) +
+            "</b> em diárias na semana de <b>" + FS.periodoDaChave(semana) + "</b>.</p>" +
+          '<p style="font-size:13px">Lançar mais <b>' + Util.fmtMoeda(m.total) + "</b> de produtividade medida deixa a semana em <b>" +
+            Util.fmtMoeda(diariaNaSemana + Producao.num(m.total)) + "</b> para a mesma pessoa.</p>" +
+          '<p class="muted" style="font-size:12.5px;margin-bottom:0">Isso é normal se parte da semana foi por dia e parte por produção. ' +
+            'Se os mesmos dias já foram pagos na diária, <b>o serviço sairia pago duas vezes</b> — e na Lista PIX os dois valores aparecem somados numa linha só.</p>',
+          [{ texto: "Lançar mesmo assim", classe: "primary", onClick: function () { UI.fecharModal(); gravar(); } },
+           { texto: "Não lançar", classe: "ghost", onClick: function () { UI.fecharModal(); UI.toast("Nada foi lançado.", "ok"); } }]);
+        return;
+      }
+      gravar();
+    },
+    /* ⚠ AQUI MORAVA O PIOR DEFEITO DO MÓDULO, e ele foi reproduzido no
+     * navegador: o botão APAGAVA o registro `producao_med`. Só que esse
+     * registro É a memória do pagamento — `Producao.jaMedido` monta o conjunto
+     * do que já foi pago lendo justamente ele. Apagado o registro, a mesma
+     * produção voltava para "a medir", era gerada de novo e ia para a folha de
+     * novo: R$ 1.200 pagos por R$ 600 de serviço, e a tela mostrando UMA
+     * medição só. O único sinal era um parágrafo de texto no modal.
+     *
+     * Duas mudanças: (1) cancelar MARCA `cancelada` em vez de apagar — o motor
+     * já perdoa esse campo, ele existia e nunca era escrito; (2) se houver
+     * lançamento vivo na folha, o cancelamento ESTORNA junto, numa ação só.
+     * Deixar o usuário "lembrar de apagar lá também" é o mesmo tipo de passo
+     * manual que já congelou a frota por 14 versões. */
+    prodExcluir: function (id) {
+      if (this._bloqueado()) return;
+      var m = Store.obter(eid(), "producao_med", id); if (!m) return;
+      if (m.cancelada) { UI.toast("Esta medição já está cancelada.", "erro"); return; }
+      var lanc = m.fsLancamentoId ? Store.obter(eid(), "fs_lancamentos", m.fsLancamentoId) : null;
+      var self = this;
+      var corpo = '<p style="margin-top:0;font-size:13px">Cancelar a medição de <b>' + Util.esc(m.nome || "") + "</b> (" + Util.fmtMoeda(m.total) + ")?</p>";
+      if (lanc) {
+        corpo += '<p style="font-size:13px;border-left:3px solid var(--amarelo);padding-left:9px"><b>Ela já está na Folha Semanal</b> (' +
+          Util.fmtMoeda(window.FolhaSemanal ? window.FolhaSemanal.totalFinal(lanc) : lanc.valor) + ", semana " +
+          (window.FolhaSemanal ? window.FolhaSemanal.periodoDaChave(lanc.semana) : Util.esc(lanc.semana || "")) +
+          '). Cancelar aqui <b>remove esse lançamento junto</b> — se ele já foi pago de verdade, não cancele: acerte com um lançamento de ajuste na folha.</p>';
+      }
+      corpo += '<p class="muted" style="font-size:12.5px;margin-bottom:0">A produção destes dias <b>volta a aparecer</b> na lista de "a medir". ' +
+        'A medição não é apagada: fica registrada como <b>cancelada</b>, porque quem confere depois precisa ver que ela existiu.</p>';
+      UI.modal("Cancelar medição de produção", corpo,
+        [{ texto: lanc ? "Cancelar medição e estornar da folha" : "Cancelar medição", classe: "danger", onClick: function () {
+          UI.fecharModal();
+          /* o estorno vem PRIMEIRO: se falhasse depois de marcar cancelada, a
+             produção voltaria para a lista com o pagamento ainda de pé */
+          if (lanc) Store.excluir(eid(), "fs_lancamentos", lanc.id);
+          var reg = Store.obter(eid(), "producao_med", id);
+          reg.cancelada = true;
+          reg.canceladaPor = self._quemAprova();
+          reg.canceladaEm = self._hojeISO();
+          reg.fsLancamentoId = "";
+          Store.salvar(eid(), "producao_med", reg);
+          App.render();
+          UI.toast(lanc ? "Medição cancelada e lançamento removido da folha — a produção voltou para a lista."
+                        : "Medição cancelada — a produção voltou para a lista.", "ok");
+        } }, { texto: "Deixar como está", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    prodRecibo: function (id) {
+      var m = Store.obter(eid(), "producao_med", id); if (!m) return;
+      var linhas = (m.linhas || []).map(function (l) {
+        return "<tr><td>" + Util.esc((l.codigo ? l.codigo + " · " : "") + (l.servico || "")) + '</td><td style="text-align:center">' + Util.esc(l.unidade || "") +
+          '</td><td style="text-align:right">' + Util.fmtNum(l.qtd) + '</td><td style="text-align:right">' + Util.fmtMoeda(l.precoUnit) +
+          '</td><td style="text-align:right">' + Util.fmtMoeda(l.valor) + "</td></tr>";
+      }).join("");
+      var corpo = '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        '<tr><td style="padding:2px 0"><b>Trabalhador:</b> ' + Util.esc(m.nome || "") + "</td><td><b>Obra:</b> " + Util.esc(this._prodNomeObra(m.obraId)) + "</td></tr>" +
+        "<tr><td><b>Período:</b> " + Util.esc(this._prodPeriodo(m)) + "</td><td><b>Situação:</b> " + Util.esc(m.status || "") + "</td></tr></table>" +
+        '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:12px"><thead><tr style="background:#eef2f7">' +
+        '<th style="text-align:left;padding:5px">Serviço executado</th><th>Un</th><th style="text-align:right">Qtd</th><th style="text-align:right">R$/un</th><th style="text-align:right">Total</th></tr></thead><tbody>' +
+        linhas + '</tbody><tfoot><tr><th colspan="4" style="text-align:right;padding:6px">TOTAL</th><th style="text-align:right">' + Util.fmtMoeda(m.total) + "</th></tr></tfoot></table>" +
+        '<p style="font-size:11px;margin-top:14px">Declaro haver executado os serviços acima e recebido o valor total indicado.</p>' +
+        '<div style="margin-top:34px;border-top:1px solid #333;width:60%">' + Util.esc(m.nome || "") + "</div>";
+      App._abrirPrint("Recibo de produção — " + (m.nome || ""), this._docShell("RECIBO DE PRODUÇÃO", "#0f2740", corpo, "producao_recibo"));
+    },
+
     renderFolhaSemanal: function () {
       var FS = window.FolhaSemanal; if (!FS) return this._head("Folha Semanal", "", "") + '<div class="card">Motor da Folha Semanal não carregado.</div>';
       var self = this;
@@ -10188,14 +10875,26 @@ renderFolha: function () {
         ' <button class="btn sm primary" data-gacao="fs-entregaveis">📄 Entregáveis (PDF·Word·Excel)</button>' +
         ' <button class="btn sm" data-gacao="fs-financeiro">💸 Lançar no Financeiro</button>';
       var html = this._head(svg("folhasemanal") + "Folha Semanal · Diaristas", "fs-nova", "Lançamento", extra);
-      var lancs = this._fsLancs(), fech = FS.fechamento(lancs), pix = FS.listaPix(lancs);
+      var lancs = this._fsLancs(), fech = FS.fechamento(lancs);
+      /* ⚠ O PIX É POR PESSOA, NÃO POR OBRA. Quem trabalhou em duas obras na
+         mesma semana recebe UM pagamento só. A lista vinha de `lancs`, que
+         respeita o filtro de obra da barra: com o filtro ligado a tela
+         mostrava meia diária e o botão "Marcar pago" registrava a semana
+         inteira — o valor na tela e o valor gravado não batiam. A tabela de
+         pagamento passa a ser sempre da semana toda (o resto da tela continua
+         obedecendo o filtro, que é para conferir obra por obra). */
+      var lancsSemana = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
+      var pix = FS.listaPix(lancsSemana);
+      /* o KPI compara com `fechSemana`, nao com `fech` (que respeita o filtro):
+         misturar os dois fazia "Falta pagar" zerar com gente por pagar. */
+      var fechSemana = FS.fechamento(lancsSemana);
       var pagos = this._fsPagos(), pagosN = 0, pagoTotal = 0;
       pix.forEach(function (p) { if (pagos[p.favKey] && pagos[p.favKey].pago) { pagosN++; pagoTotal += p.total; } });
       html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
         '<div class="card kpi destaque"><div class="rotulo">Total da semana</div><div class="num">' + Util.fmtMoeda(fech.total) + '</div></div>' +
         '<div class="card kpi"><div class="rotulo">Obras com folha</div><div class="num">' + Object.keys(fech.porObra).length + '</div></div>' +
         '<div class="card kpi"><div class="rotulo">PIX pagos</div><div class="num">' + pagosN + ' / ' + pix.length + '</div></div>' +
-        '<div class="card kpi ' + (fech.total - pagoTotal > 0 ? 'custo' : 'destaque') + '"><div class="rotulo">Falta pagar</div><div class="num">' + Util.fmtMoeda(Math.max(0, fech.total - pagoTotal)) + '</div></div></div>';
+        '<div class="card kpi ' + (fechSemana.total - pagoTotal > 0 ? 'custo' : 'destaque') + '"><div class="rotulo">Falta pagar</div><div class="num">' + Util.fmtMoeda(Math.max(0, fechSemana.total - pagoTotal)) + '</div></div></div>';
       var cfl = FS.conflitos(lancs);
       if (cfl.length) {
         html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>⚠ Possível conflito de alocação:</b> ' +
@@ -10237,11 +10936,30 @@ renderFolha: function () {
     // pagamentos: mapa favKey → registro {semana, favKey, pago, assinatura}
     _fsPagos: function () { var s = this._fsSemana, m = {}; Store.listar(eid(), "fs_pagamentos").forEach(function (p) { if (p.semana === s) m[p.favKey] = p; }); return m; },
     fsTogglePago: function (favKey) {
+      /* ⚠ AQUI EU TINHA POSTO `_podeAprovarGuard` E ESTAVA ERRADO.
+       * O módulo `folhasemanal` é preset dos departamentos Financeiro e RH
+       * (DEPTO_MODULOS, no topo deste arquivo) e a flag "aprovador" nasce
+       * DESMARCADA — a legenda dela nem fala de folha, fala de medição,
+       * pedido e requisição. Resultado: a pessoa do Financeiro, dona do
+       * módulo, clicava "Marcar pago" e não acontecia nada além de um toast
+       * sobre aprovar/rejeitar, que não é o que ela pediu. Pior: o único
+       * conserto seria marcar a flag, que também libera aprovar medição — e
+       * medição aprovada vira fatura no cliente.
+       * Quem decide quem mexe na folha é a PERMISSÃO DE MÓDULO, que já
+       * existe. O que faltava não era trava, era registro: agora fica gravado
+       * quem deu a baixa. */
       var FS = window.FolhaSemanal;
       var p = this._fsPagos()[favKey] || { semana: this._fsSemana, favKey: favKey };
       p.pago = !p.pago; p.em = p.pago ? Util.agoraISO() : null;
+      p.por = p.pago ? this._quemAprova() : "";   // sem isto, "quem deu baixa?" não tem resposta
       // snapshot p/ auditoria e KPI por obra: valor e obras cobertas por este PIX
-      var grupo = FS.listaPix(this._fsLancs()).filter(function (g) { return g.favKey === favKey; })[0];
+      /* ⚠ a semana INTEIRA, nao `_fsLancs()`, que respeita o filtro de obra da
+         barra: o PIX de quem trabalhou em duas obras era marcado como pago
+         inteiro enquanto so a parte de uma obra estava na tela — e o valor
+         guardado na baixa saia menor que o que foi pago de verdade. */
+      var self = this;
+      var daSemana = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
+      var grupo = FS.listaPix(daSemana).filter(function (g) { return g.favKey === favKey; })[0];
       if (grupo) { p.valor = grupo.total; p.obras = grupo.itens.map(function (i) { return i.obraId; }).filter(function (v, i, a) { return v && a.indexOf(v) === i; }); }
       Store.salvar(eid(), "fs_pagamentos", p); App.render();
     },
@@ -10302,9 +11020,19 @@ renderFolha: function () {
       App._abrirPrint("Resumo Mensal da Folha — " + rotMes, this._docShell("RESUMO MENSAL — FOLHA DE DIARISTAS", "#2e6f9e", corpo, "fs_mes"));
     },
     fsRecibos: function () {
-      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      /* ⚠ a guarda tem que olhar a MESMA lista do documento. A Lista PIX e os
+         Recibos saem da semana INTEIRA (pagamento e por pessoa), mas a guarda
+         ficou no filtro de obra: com o filtro numa obra sem diaria, o papel
+         recusava abrir dizendo "sem lancamentos nesta semana" — e a semana
+         tinha gente a pagar. (`fsCsv` segue o filtro de proposito: exporta o
+         que esta na tela.) */
+      var FS = window.FolhaSemanal, self = this;
+      var lancs = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
-      var pix = FS.listaPix(lancs), pagos = this._fsPagos(), periodo = FS.periodoDaChave(this._fsSemana);
+      /* PIX e recibo sao por PESSOA: semana inteira, igual a tela e a baixa.
+         Filtrado por obra, o papel pagava menos do que o sistema registrou. */
+      var self0 = this;
+      var pix = FS.listaPix(this._fsTodos().filter(function (l) { return l.semana === self0._fsSemana; })), pagos = this._fsPagos(), periodo = FS.periodoDaChave(this._fsSemana);
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
       var corpo = "";
       pix.forEach(function (p, i) {
@@ -10555,7 +11283,7 @@ renderFolha: function () {
       var diasIn = FS.DIAS.map(function (d) { var v = l.faltas && l.faltas.indexOf(d) !== -1 ? "x" : (l.dias && l.dias[d]) || ""; return campo(FS.ROT[d].slice(0, 3), inp("g-fs-" + d, v, "R$ ou x")); }).join("");
       var corpo = '<div class="row">' + campo("Obra *", sel("g-fs-obra", optsRec(obras, "nome", l.obraId, "— escolha —"))) +
         campo("Colaborador", sel("g-fs-colab", optsRec(cols, "nome", l.colaboradorId, "— avulso / manual —"))) +
-        campo("Tipo", sel("g-fs-tipo", opts([["diaria", "Diária (dia a dia)"], ["empreita", "Empreita"], ["frete", "Frete"], ["reembolso", "Reembolso"], ["fornecedor", "Fornecedor"], ["outro", "Outro"]], l.tipo || "diaria"))) + "</div>" +
+        campo("Tipo", sel("g-fs-tipo", opts([["diaria", "Diária (dia a dia)"], ["empreita", "Empreita"], ["producao", "Produtividade medida"], ["frete", "Frete"], ["reembolso", "Reembolso"], ["fornecedor", "Fornecedor"], ["outro", "Outro"]], l.tipo || "diaria"))) + "</div>" +
         '<div class="row">' + campo("Nome no lançamento *", inp("g-fs-nome", l.nome, "Ex.: Rosivaldo Pedreiro")) + campo("Favorecido (quem recebe)", inp("g-fs-fav", l.favorecido)) + campo("Chave PIX", inp("g-fs-pix", l.chavePix)) + "</div>" +
         '<div class="row">' + diasIn + "</div>" +
         '<div class="row">' + campo("Hora extra (R$)", inp("g-fs-he", l.he)) + campo("Valor fechado (empreita/frete…)", inp("g-fs-valor", l.valor)) + campo("Observação", inp("g-fs-obs", l.obs)) + "</div>" +
@@ -10633,11 +11361,18 @@ renderFolha: function () {
       });
     },
     fsPrint: function (qual) {
-      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      /* ⚠ a guarda tem que olhar a MESMA lista do documento. A Lista PIX e os
+         Recibos saem da semana INTEIRA (pagamento e por pessoa), mas a guarda
+         ficou no filtro de obra: com o filtro numa obra sem diaria, o papel
+         recusava abrir dizendo "sem lancamentos nesta semana" — e a semana
+         tinha gente a pagar. (`fsCsv` segue o filtro de proposito: exporta o
+         que esta na tela.) */
+      var FS = window.FolhaSemanal, self = this;
+      var lancs = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
       var periodo = FS.periodoDaChave(this._fsSemana), corpo = "";
       if (qual === "pix") {
-        var pix = FS.listaPix(lancs), tot = 0;
+        var pix = FS.listaPix(self._fsTodos().filter(function (l) { return l.semana === self._fsSemana; })), tot = 0;
         corpo = '<p style="margin:0 0 10px">Semana <b>' + periodo + "</b> · pagamentos agrupados por favorecido</p><table style=\"width:100%;border-collapse:collapse;font-size:11px\"><tr style=\"background:#f0f4f8\"><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Favorecido</th><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Chave PIX</th><th style=\"text-align:left;padding:6px;border:1px solid #ccc\">Referente a</th><th style=\"text-align:right;padding:6px;border:1px solid #ccc\">Valor</th><th style=\"padding:6px;border:1px solid #ccc\">Pago ✓</th></tr>";
         pix.forEach(function (p) {
           tot += p.total;
@@ -10672,10 +11407,29 @@ renderFolha: function () {
       App._abrirPrint("Fechamento de Folha Semanal — " + periodo, this._docShell("FECHAMENTO DE FOLHA SEMANAL", "#16a34a", corpo, "fs_fechamento"));
     },
     fsFinanceiro: function () {
-      var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
+      /* Quem mexe na folha é quem tem o módulo — ver a explicação em
+         `fsTogglePago`, onde eu tinha posto uma trava que barrava o próprio
+         Financeiro. Mas ESTA ação não escreve na folha: escreve uma despesa
+         no FINANCEIRO. Ter a folha (o RH tem) não dá acesso ao financeiro,
+         então quem não tem o módulo não lança lá por uma porta lateral. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Lançar a folha cria uma despesa no Financeiro, e seu usuário não tem esse módulo. A folha continua fechada aqui; peça ao Financeiro para lançar.", "erro");
+        return;
+      }
+      var FS = window.FolhaSemanal, self = this;
+      /* ⚠ `_fsLancs()` respeita o filtro "obra" da barra de cima. Fechar a
+         semana com o filtro numa obra lançava SÓ AQUELA e o toast dizia que
+         estava tudo lançado — as outras obras ficavam sem o custo de mão de
+         obra, sem nada na tela denunciando. Fechamento é da SEMANA INTEIRA;
+         o filtro serve para olhar, não para decidir o que sai. */
+      var lancs = this._fsTodos().filter(function (l) { return l.semana === self._fsSemana; });
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
       var fech = FS.fechamento(lancs), periodo = FS.periodoDaChave(this._fsSemana);
-      if (!confirm("Lançar a folha desta semana (" + periodo + ") como despesa de Mão de obra no Financeiro, uma por obra? Se já existir o lançamento da semana, ele é atualizado (não duplica).")) return;
+      var nObras = Object.keys(fech.porObra).filter(function (o) { return o && o !== "—"; }).length;
+      if (!confirm("Lançar a folha desta semana (" + periodo + ") como despesa de Mão de obra no Financeiro?\n\n"
+        + nObras + " obra(s) · total " + Util.fmtMoeda(fech.total)
+        + (this._fsObra ? "\n\nA semana INTEIRA entra, não só a obra que está filtrada na tela." : "")
+        + "\n\nSe já existir o lançamento da semana, ele é atualizado (não duplica).")) return;
       var fin = lista("financeiro"), n = 0;
       Object.keys(fech.porObra).forEach(function (ob) {
         if (!ob || ob === "—") return;
@@ -10684,9 +11438,12 @@ renderFolha: function () {
         var exist = null; fin.forEach(function (f) { if (f.obraId === ob && (f.desc || "").indexOf(marca) === 0) exist = f; });
         var obj = exist || { tipo: "despesa", categoria: "mao_obra", obraId: ob, status: "pago", data: self._fsSemana };
         obj.desc = desc; obj.valor = fech.porObra[ob].total;
+        /* a despesa nasce como PAGA: sem isto, "quem lançou este custo na
+           obra?" não tem resposta em lugar nenhum */
+        obj.lancadoPor = self._quemAprova(); obj.lancadoEm = self._hojeISO();
         Store.salvar(eid(), "financeiro", obj); n++;
       });
-      UI.toast("💸 " + n + " despesa(s) de mão de obra lançada(s) no Financeiro — custo real na obra certa.", "ok");
+      UI.toast("💸 " + n + " despesa(s) de mão de obra lançada(s) — " + Util.fmtMoeda(fech.total) + " na(s) obra(s) certa(s).", "ok");
     },
 
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
@@ -10744,13 +11501,132 @@ renderFolha: function () {
         if (self._bloqueado()) return;
         if (barra("salvar")) return;
         var obj = Util.clone(registro);
+        /* ⚠ A AUTORIA TEM QUE NASCER ANTES DO `coletar`.
+         * Ela ficava depois, e isso abria o furo mais bobo de todos: criar o
+         * documento JÁ com Status "Aprovada". O `coletar` chama o
+         * `_gateStatusForm`, que pergunta ao `_guardaAutor` quem é o autor —
+         * e nesse instante `autorId` ainda não existia, então a regra via
+         * "autoria incerta" e liberava. A pessoa aprovava a própria medição
+         * no ato de criá-la, em um clique. */
+        if (ehNovo && typeof Aprovacao !== "undefined" && Aprovacao.MODULOS[entidade]) {
+          self._aprovCarimbar(obj, true);
+        }
+        self._aprovRejPendente = null;   // ver o ramo de rejeição em _gateStatusForm
         if (coletar(obj) === false) return;
+        /* A AUTORIA NASCE ACIMA, e só no documento NOVO.
+         * Sem `autorId` a regra "quem preencheu não aprova o próprio" não tem
+         * o que comparar — foi exatamente o que deixou o controle do RDO
+         * decorativo por uma versão inteira. Carimbar num registro que já
+         * existia faria constar como autor quem apenas o abriu, que é
+         * falsificação de autoria no documento que serve de prova.
+         * Fica antes do Store.salvar: `aposSalvar` roda DEPOIS e exigiria uma
+         * segunda gravação. */
         Store.salvar(eid(), entidade, obj);
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
         else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
+        /* ⚠ A REJEIÇÃO PELO FORMULÁRIO SÓ ACONTECE AQUI, com o save JÁ FEITO.
+         * Antes eu agendava um `setTimeout` lá dentro do `_gateStatusForm` —
+         * e o `coletar` ainda podia recusar o save depois disso (em Compras a
+         * validação da descrição está na linha seguinte ao gate). O timer não
+         * era cancelado: o modal do motivo abria por cima, o `UI.modal` mata o
+         * formulário sem a guarda de "informações não salvas", e o que a
+         * pessoa digitou sumia — e a rejeição ainda era gravada em cima do
+         * registro do disco, de um save que o app tinha recusado.
+         * Aqui em baixo nada disso é possível: se o save não aconteceu, este
+         * ponto não é alcançado. E o `obj.id` já existe, então rejeitar um
+         * registro recém-criado também funciona. */
+        var rej = self._aprovRejPendente; self._aprovRejPendente = null;
+        if (rej && obj.id) self._rejeitar(rej.entidade, obj.id, rej.status);
       } });
       UI.modal(ehNovo ? tit.novo : tit.editar, corpo, botoes);
+    },
+
+    /* =================================================================
+     * APROVAÇÃO GENERALIZADA — a fiação de js/aprovacao.js
+     *
+     * O fluxo "quem faz manda para quem responde, e só depois vale" nasceu no
+     * Diário de Obra e é da empresa, não do diário. Medição vira fatura,
+     * requisição vira compra, cotação escolhe fornecedor e folha vira
+     * pagamento a pessoa física — todas com a mesma estrutura.
+     *
+     * Estes três helpers são o CONTRATO com a tela. Cada módulo ganha o selo e
+     * os botões com uma linha, e o despachante é um só — assim não há quatro
+     * cópias da mesma regra para divergirem com o tempo (que foi o que o RDO
+     * ensinou quando a regra existia no motor e a tela nunca perguntava).
+     *
+     * ⚠ ADITIVO POR CONSTRUÇÃO. O campo é `estadoAprovacao`; o `status` que
+     * cada módulo já tem continua intocado. Todo registro que o cliente já tem
+     * nasce sem `estadoAprovacao` e é lido como "rascunho" — ninguém fica
+     * trancado fora do que já era dele.
+     * ================================================================= */
+
+    /* O contexto que o motor não conhece: existe outro aprovador nesta conta? */
+    _aprovCtx: function () {
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      return { semOutroAprovador: (typeof Aprovacao !== "undefined" && Aprovacao.semOutroAprovador)
+        ? Aprovacao.semOutroAprovador(eu, lista("equipe")) : false };
+    },
+
+    /* ⚠⚠ NÃO ESTÃO FIADOS NA TELA — e é de propósito. Leia antes de "ligar".
+     *
+     * `_aprovSelo`, `_aprovBotoes` e o despachante `aprov-*` desenham a máquina
+     * de estados nova (`estadoAprovacao`: rascunho → em_aprovacao → em_revisao
+     * → aprovado). Medição, compra e requisição JÁ têm o `status` antigo com
+     * selo e botões próprios. Ligar isto ao lado deixaria DOIS selos e DOIS
+     * "Aprovar" na mesma linha, gravando em dois campos diferentes — e o
+     * relatório passaria a depender de qual dos dois a pessoa clicou.
+     *
+     * O que foi para produção é a regra, não a segunda tela: `_guardaAutor`
+     * usa o mesmo motor (`js/aprovacao.js`) dentro do `_aprovar`/`_rejeitar`
+     * que já existiam, então "quem preencheu não aprova o próprio" e a trilha
+     * valem em medição, compra e requisição com UM vocabulário só.
+     *
+     * Adotar `estadoAprovacao` de vez é migração, não fiação: exige converter
+     * os registros antigos, trocar os selos e refazer os relatórios que hoje
+     * leem `status`. Fica aqui pronto e testado (tools/test-aprovacao.js) para
+     * essa decisão — que é do dono, porque muda a rotina de quem usa. */
+    _aprovSelo: function (doc) {
+      if (typeof Aprovacao === "undefined" || !doc) return "";
+      var est = Aprovacao.estadoDe(doc);
+      if (est === "rascunho" && !doc.estadoAprovacao) return "";
+      var e = Aprovacao.ESTADOS[est] || {};
+      var cores = { cinza: "#64748b", ambar: "#b45309", vermelho: "#b91c1c", verde: "#15803d" };
+      var cor = cores[e.cor] || "#64748b";
+      var h = '<span style="display:inline-block;font-size:10.5px;font-weight:800;color:' + cor +
+        ';border:1.5px solid ' + cor + ';border-radius:5px;padding:1px 6px;white-space:nowrap">' +
+        Util.esc(e.rotulo || est) + "</span>";
+      /* o motivo da devolução VAI JUNTO: mandar procurar em outra tela é
+         devolver trabalho sem informação */
+      if (est === "em_revisao" && doc.revisaoMotivo) {
+        h += '<div style="font-size:11px;color:#b91c1c;margin-top:3px;max-width:340px">' +
+          "<b>O gestor pediu:</b> " + Util.esc(String(doc.revisaoMotivo).slice(0, 160)) + "</div>";
+      }
+      return h;
+    },
+
+    /* Botões do que ESTA pessoa pode fazer com ESTE documento, agora.
+       A tela não decide regra: desenha o que o motor autoriza. */
+    _aprovBotoes: function (doc, entidade) {
+      if (typeof Aprovacao === "undefined" || !doc || !doc.id) return "";
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var acoes = Aprovacao.acoesDisponiveis(doc, eu, this._aprovCtx());
+      if (!acoes.length) return "";
+      var classe = { aprovar: "success", rejeitar: "danger", revisar: "", enviar: "", reabrir: "ghost" };
+      return acoes.map(function (a) {
+        return '<button class="btn sm ' + (classe[a] || "") + '" data-gacao="aprov-' + a +
+          '" data-ent="' + Util.esc(entidade) + '" data-id="' + Util.esc(doc.id) + '" style="font-size:11.5px">' +
+          Util.esc(Aprovacao.ROTULO_ACAO[a] || a) + "</button> ";
+      }).join("");
+    },
+
+    /* Carimba a autoria no documento NOVO. Só no novo: carimbar num registro
+       que já existia faria constar como autor quem apenas o abriu — foi
+       exatamente o defeito que o RDO teve. */
+    _aprovCarimbar: function (obj, ehNovo) {
+      if (typeof Aprovacao === "undefined" || !ehNovo) return obj;
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      return Aprovacao.carimbarAutor(obj, eu);
     },
 
     // ---------- G3: workflow de aprovação (papel de aprovador + auditoria + rejeição) ----------
@@ -10763,12 +11639,79 @@ renderFolha: function () {
       return true;
     },
     // Aprova um registro: grava status + trilha aprovadoPor/aprovadoEm.
+    /* ⚠ QUEM PREENCHEU NÃO APROVA O PRÓPRIO DOCUMENTO.
+     *
+     * Esta é a regra que o dono pediu, e ela FALTAVA aqui — `_aprovar` só
+     * checava `Auth.podeAprovar()`, ou seja, "esta pessoa tem o cargo?", nunca
+     * "esta pessoa é a mesma que preencheu?". O gestor que lançava a própria
+     * medição aprovava a si mesmo, e a medição aprovada vira fatura.
+     *
+     * Escolhi ELEVAR este ponto em vez de fiar um fluxo paralelo. `_aprovar` e
+     * `_rejeitar` já servem medição, requisição E compras — os três ganham a
+     * regra de uma vez, com UM vocabulário (`status`, que todos os
+     * consumidores já leem: `pagar-medicao`, `comprarRequisicao`, o Portal, o
+     * relatório executivo). Um segundo campo `estadoAprovacao` ao lado criaria
+     * dois botões "Aprovar" na mesma linha fazendo coisas diferentes, e a
+     * aprovação nova seria decorativa exatamente na ponta onde vira dinheiro.
+     *
+     * A regra do autor mora em `js/aprovacao.js` (64 asserts) — aqui só a
+     * consultamos, para não haver duas cópias divergindo com o tempo. */
+    _semAutoria: function (reg) {
+      return !!(typeof Aprovacao !== "undefined" && Aprovacao.autoriaIncerta && Aprovacao.autoriaIncerta(reg));
+    },
+    _guardaAutor: function (reg, entidade) {
+      if (typeof Aprovacao === "undefined") return true;
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var ctx = this._aprovCtx();
+      /* A conta com um aprovador só responde pelo próprio documento — senão a
+         empresa de uma pessoa não consegue tocar o trabalho. Sai antes de
+         qualquer outra checagem porque nela nada disso faz diferença. */
+      if (ctx.semOutroAprovador) return true;
+      /* ⚠ AQUI TINHA UM `window.confirm` E ELE ERA UMA ARMADILHA.
+       * Documento sem `autorId` não é caso raro: é o acervo INTEIRO que a
+       * frota já tem hoje (o carimbo só nasce nesta versão). Ou seja, o
+       * diálogo apareceria em toda aprovação. Depois do terceiro, o navegador
+       * oferece "impedir que esta página crie novos diálogos" — o usuário
+       * marca, `confirm` passa a devolver false, e o botão "Aprovar" fica
+       * morto e MUDO. Foi exatamente por isso que o `_rejeitar` saiu do
+       * `window.prompt`; colocar o mesmo padrão na aprovação seria repetir o
+       * defeito no caminho onde o dinheiro anda.
+       * Sem autoria não dá para verificar a regra — e fingir que verificou
+       * seria pior. Então libera e registra na trilha que NÃO foi verificado,
+       * que é a informação honesta para quem for auditar depois. */
+      if (Aprovacao.autoriaIncerta(reg)) return true;
+      if (Aprovacao.podeAcao("aprovar", eu, { estadoAprovacao: "em_aprovacao", autorId: reg.autorId }, ctx)) return true;
+      UI.toast("Quem preencheu não pode aprovar o próprio documento. Peça a outro aprovador da empresa.", "erro");
+      return false;
+    },
+
+    /* Trilha: "quem liberou isso?" é a primeira pergunta quando algo errado
+       chega ao cliente. Sem ela não tem resposta. */
+    _trilhaAprov: function (reg, acao, dados) {
+      if (typeof Aprovacao === "undefined" || !Aprovacao.registrar) return;
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      try { Aprovacao.registrar(reg, acao, eu, dados || {}, new Date().toISOString()); }
+      catch (e) {
+        /* ⚠ NÃO engolir. A trilha é a resposta para "quem liberou isso?" — se
+           ela falhar calada, a aprovação acontece e não sobra registro de quem
+           respondeu. A ação segue (travar aqui pararia a obra por um defeito
+           nosso), mas a falha aparece na tela e no console. */
+        if (typeof console !== "undefined" && console.error) console.error("[aprovação] trilha falhou:", e);
+        UI.toast("Atenção: a ação foi feita, mas não foi possível gravar o registro de quem aprovou.", "erro");
+      }
+    },
+
     _aprovar: function (entidade, id, statusOk, msg) {
       if (!this._podeAprovarGuard()) return;
       var reg = Store.obter(eid(), entidade, id); if (!reg) return;
+      if (!this._guardaAutor(reg, entidade)) return;
       reg.status = statusOk;
+      /* tirei o diálogo, mas a informação não pode sumir junto: quando não dá
+         para saber quem preencheu, isso fica ESCRITO na trilha em vez de
+         virar uma aprovação que parece conferida. */
+      this._trilhaAprov(reg, "aprovar", { autoriaNaoVerificada: this._semAutoria(reg) });
       reg.aprovadoPor = this._quemAprova();
-      reg.aprovadoEm = new Date().toISOString().slice(0, 10);
+      reg.aprovadoEm = this._hojeISO();
       reg.motivoRejeicao = ""; reg.rejeitadoPor = ""; reg.rejeitadoEm = ""; // limpa rejeição anterior (reaprovação)
       Store.salvar(eid(), entidade, reg);
       App.render(); UI.toast(msg || "Aprovado.", "ok");
@@ -10777,43 +11720,154 @@ renderFolha: function () {
     _rejeitar: function (entidade, id, statusRej) {
       if (!this._podeAprovarGuard()) return;
       var reg = Store.obter(eid(), entidade, id); if (!reg) return;
-      var motivo = window.prompt("Motivo da rejeição (obrigatório):", "");
-      if (motivo == null) return;
-      motivo = String(motivo).trim();
-      if (!motivo) { UI.toast("Informe o motivo da rejeição.", "erro"); return; }
-      reg.status = statusRej;
-      reg.rejeitadoPor = this._quemAprova();
-      reg.rejeitadoEm = new Date().toISOString().slice(0, 10);
-      reg.motivoRejeicao = motivo;
-      Store.salvar(eid(), entidade, reg);
-      App.render(); UI.toast("Registro rejeitado.", "ok");
+      /* ⚠ saiu do `window.prompt`: o navegador oferece "impedir que esta página
+       * crie novos diálogos" e, depois disso, o prompt devolve null igualzinho
+       * a um cancelamento — a rejeição some e o usuário não entende por quê.
+       * Fora isso o prompt é uma linha só para escrever um motivo que fica
+       * registrado. O resto do app pede texto por `UI.modal`. */
+      var self = this;
+      UI.modal("Rejeitar — motivo obrigatório",
+        '<p style="margin-top:0;font-size:13px">Escreva o motivo. Esta mensagem fica registrada e aparece para quem preencheu.</p>' +
+        campo("Motivo *", '<textarea id="rej-motivo" rows="3" placeholder="Ex.: o quantitativo do item 3.2 não bate com a medição anterior"></textarea>'),
+        [{ texto: "Rejeitar", classe: "danger", onClick: function () {
+          var motivo = v("rej-motivo");
+          if (!motivo) { UI.toast("Escreva o motivo da rejeição.", "erro"); return; }
+          UI.fecharModal();
+          reg.status = statusRej;
+          self._trilhaAprov(reg, "rejeitar", { motivo: motivo });
+          reg.rejeitadoPor = self._quemAprova();
+          reg.rejeitadoEm = self._hojeISO();
+          reg.motivoRejeicao = motivo;
+          /* ⚠ limpar a aprovação anterior: sem isto o documento fica com
+             carimbo de aprovado E de rejeitado ao mesmo tempo, e a linha da
+             lista mostra um dos dois conforme a ordem dos campos. O caminho
+             do formulário fazia essa limpeza e ela se perdeu quando a
+             rejeição passou a acontecer aqui. */
+          reg.aprovadoPor = ""; reg.aprovadoEm = "";
+          Store.salvar(eid(), entidade, reg);
+          App.render(); UI.toast("Registro rejeitado — quem preencheu vê o motivo na lista.", "erro");
+        } },
+        /* sem esta saída, fechar a caixa deixava o usuário sem entender o que
+           aconteceu com o registro — ainda mais quando ela abre logo depois de
+           um "salvo" que ele acabou de ler */
+        { texto: "Deixar como está", classe: "ghost", onClick: function () {
+          UI.fecharModal();
+          UI.toast("Nada mudou — o registro continua como estava. A rejeição só vale com o motivo escrito.", "ok");
+        } }]);
     },
     _APROV_OK: { aprovada: 1, aprovado: 1 },
     _APROV_REJ: { rejeitada: 1, rejeitado: 1 },
+
+    /* A trilha só vale se der para LER. O motivo da rejeição morava apenas no
+     * `title=` do "✕ rejeitada" — e tooltip não abre no celular, que é onde o
+     * encarregado trabalha: quem preencheu não conseguia descobrir por que o
+     * documento voltou, e ficava reenviando o mesmo erro.
+     * Aqui o motivo vira texto na linha, junto com a resposta da pergunta que
+     * sempre vem primeiro quando algo dá errado: quem liberou isso.
+     * Sem gênero no texto ("Quem aprovou"), porque a mesma linha serve medição
+     * (feminino), pedido (masculino) e requisição. */
+    _aprovLinha: function (doc) {
+      if (!doc) return "";
+      /* ⚠ NÃO usar Util.fmtData aqui: `aprovadoEm`/`rejeitadoEm` são data pura
+         ("2026-07-30"), e `new Date` a lê como meia-noite UTC — no fuso -3 isso
+         volta para o dia 29. A aprovação apareceria um dia antes da que foi.
+         Data pura se formata pelo texto, sem Date no meio. */
+      var quando = function (iso) {
+        var p = String(iso || "").slice(0, 10).split("-");
+        return p.length === 3 ? " — " + p[2] + "/" + p[1] + "/" + p[0] : "";
+      };
+      if (this._APROV_REJ[doc.status]) {
+        var m = doc.motivoRejeicao || "";
+        if (!m && !doc.rejeitadoPor) return "";
+        return '<div style="font-size:11px;line-height:1.35;margin-top:3px;color:#b91c1c">'
+          + (m ? "Motivo: " + Util.esc(m) : "")
+          + (doc.rejeitadoPor ? (m ? "<br>" : "") + "Quem rejeitou: " + Util.esc(doc.rejeitadoPor) + quando(doc.rejeitadoEm) : "")
+          + "</div>";
+      }
+      if (!doc.aprovadoPor) return "";
+      return '<div class="muted" style="font-size:11px;line-height:1.35;margin-top:3px">Quem aprovou: '
+        + Util.esc(doc.aprovadoPor) + quando(doc.aprovadoEm) + "</div>";
+    },
     // Estados terminais pós-aprovação: avançar PELO FORM direto p/ eles também exige aprovador,
     // senão um sub-usuário sem a flag pula a fila (pendente -> paga/recebido/comprada) sem aprovação.
     _APROV_TERM: { paga: 1, recebido: 1, comprada: 1 },
+    /* ⚠ A REGRA DA BAIXA, NUM LUGAR SO — e foi preciso errar dos DOIS lados
+     * para chegar nela. Primeiro exigi a flag "aprovador": travou o Financeiro,
+     * que e dono do modulo e nasce sem a flag. Depois tirei tudo e deixei so
+     * "o documento esta aprovado?": isso checa o DOCUMENTO, nao a PESSOA — um
+     * usuario da Engenharia, sem o modulo Financeiro, passou a lancar despesa
+     * la dentro.
+     * Dar baixa exige as duas coisas, e nada alem:
+     *   1. o documento JA estar aprovado (nao se pula a fila);
+     *   2. a pessoa ter o modulo FINANCEIRO, porque a baixa escreve um
+     *      lancamento la — ter Medicoes nao da acesso ao dinheiro.
+     * Aprovar continua sendo outra coisa, com outra regra. */
+    _guardaBaixa: function (reg, entidade) {
+      if (!this._APROV_OK[(reg || {}).status]) {
+        UI.toast("Este documento ainda não foi aprovado. A baixa só entra depois da aprovação.", "erro");
+        return false;
+      }
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Dar baixa lança no Financeiro, e seu usuário não tem esse módulo. Peça ao Financeiro para registrar.", "erro");
+        return false;
+      }
+      return true;
+    },
+    /* estado em que cada modulo nasce — usado quando nao ha estado anterior */
+    _APROV_INICIAL: { medicoes: "pendente", compras: "cotacao", requisicoes: "aberta", producao_med: "pendente" },
     // G3 (fix): quando o STATUS é mudado PELO FORMULÁRIO de detalhe para aprovar/rejeitar/dar baixa,
     // aplica o MESMO gate + auditoria dos botões. Retorna false p/ ABORTAR o save.
-    _gateStatusForm: function (obj, statusAntigo) {
+    _gateStatusForm: function (obj, statusAntigo, entidade) {
       var novo = obj.status;
       if (novo === statusAntigo) return true;                 // status não mudou → nada a validar
       var ehOk = this._APROV_OK[novo], ehRej = this._APROV_REJ[novo], ehTerm = this._APROV_TERM[novo];
       if (!ehOk && !ehRej && !ehTerm) return true;            // não é estado controlado por aprovação
-      if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+      /* a baixa NAO passa pelo gate de aprovador — ver `_guardaBaixa` */
+      if (!ehTerm && typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
         UI.toast("Você não tem permissão para aprovar, rejeitar ou dar baixa. Peça a um aprovador da equipe.", "erro");
         return false;
       }
+      /* ⚠ ESTE É O MESMO ESTADO QUE O BOTÃO DA LISTA PRODUZ, POR OUTRA PORTA.
+       * Sem esta linha, a regra "quem preencheu não aprova o próprio" era
+       * contornável em dois cliques: a gestora leva o toast no botão Aprovar,
+       * abre o MESMO registro pelo número da linha, troca o select de Status
+       * para "aprovada" e salva. Regra que só vale numa das portas não é
+       * regra — é enfeite na porta da frente. */
+      /* ⚠ o formulario tem que dar a MESMA resposta do botao. Antes ele barrava
+         a baixa que o botao liberava E deixava pular a fila que o botao barrava
+         — duas incoerencias opostas na mesma acao. Baixa usa a regra da baixa
+         (sobre o status ANTERIOR, que e o estado real do documento); aprovacao
+         usa a regra do autor. */
+      if (ehTerm) return this._guardaBaixa({ status: statusAntigo }, entidade);
+      if (ehOk && !this._guardaAutor(obj, entidade)) return false;
       if (ehOk) {
+        /* ⚠ a trilha vem ANTES do carimbo, igual ao `_aprovar`: `Aprovacao.
+           registrar` também escreve `aprovadoPor`/`aprovadoEm`, com o ISO
+           completo. Invertendo a ordem, o mesmo campo passaria a guardar
+           formatos diferentes conforme a porta usada. */
+        this._trilhaAprov(obj, "aprovar", { autoriaNaoVerificada: this._semAutoria(obj) });
         obj.aprovadoPor = this._quemAprova(); obj.aprovadoEm = this._hojeISO();
         obj.motivoRejeicao = ""; obj.rejeitadoPor = ""; obj.rejeitadoEm = ""; // reaprovar limpa rejeição
       } else if (ehRej) {
-        var motivo = window.prompt("Motivo da rejeição (obrigatório):", obj.motivoRejeicao || "");
-        if (motivo == null) return false;
-        motivo = String(motivo).trim();
-        if (!motivo) { UI.toast("Informe o motivo da rejeição.", "erro"); return false; }
-        obj.rejeitadoPor = this._quemAprova(); obj.rejeitadoEm = this._hojeISO(); obj.motivoRejeicao = motivo;
-        obj.aprovadoPor = ""; obj.aprovadoEm = "";
+        /* ⚠ AQUI TINHA `window.prompt` — o mesmo diálogo nativo que o botão
+         * Rejeitar deixou de usar. Suprimido pelo navegador ele devolve null e
+         * o Salvar abortava sem dizer nada. Em vez de pedir o motivo por uma
+         * caixa que pode não abrir, o formulário manda para a MESMA caixa da
+         * lista: aborta este save (o status volta ao que era) e abre o modal,
+         * que grava a rejeição inteira, com motivo e trilha. */
+        if (!entidade) { UI.toast("Rejeite pelo botão da lista.", "erro"); return false; }
+        /* o status volta ao que era e o save SEGUE: assim tudo o que a pessoa
+           mexeu no formulário fica gravado. Abortar aqui jogaria fora as outras
+           edições sem avisar. A caixa do motivo é aberta pelo `_modalForm`
+           DEPOIS de gravar — nunca daqui, senão ela abriria mesmo quando uma
+           validação seguinte recusasse o save. */
+        /* ⚠ registro NOVO tem `statusAntigo` VAZIO (nao existia antes). Voltar
+           para "" gravava o documento sem status nenhum: ele sumia de todas as
+           filas e do Painel. Sem estado anterior, o certo e o primeiro estado
+           do modulo — o que a tela ja usaria se a pessoa nao tivesse mexido. */
+        obj.status = statusAntigo || this._APROV_INICIAL[entidade] || "pendente";
+        this._aprovRejPendente = { entidade: entidade, status: novo };
+        return true;
       }
       // ehTerm (paga/recebido/comprada): passou o gate de permissão; sem carimbo extra (é baixa, não aprovação)
       return true;
@@ -10823,7 +11877,12 @@ renderFolha: function () {
       var med = lista("medicoes").filter(function (m) { return m.status === "pendente"; });
       var com = lista("compras").filter(function (c) { return c.status === "cotacao"; });
       var req = lista("requisicoes").filter(function (r) { return r.status === "aberta" || r.status === "cotando"; });
-      return { medicoes: med.length, compras: com.length, requisicoes: req.length, total: med.length + com.length + req.length };
+      /* a medição de produção nasce PENDENTE e é pagamento a pessoa física:
+         fora desta fila ela ficaria esperando sem ninguém saber, e quem
+         trabalhou não recebe. */
+      var pro = lista("producao_med").filter(function (p) { return p.status === "pendente"; });
+      return { medicoes: med.length, compras: com.length, requisicoes: req.length, producao: pro.length,
+        total: med.length + com.length + req.length + pro.length };
     },
 
     // ---------- Integração: criar obra a partir de um orçamento ----------
@@ -11411,7 +12470,7 @@ renderFolha: function () {
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "tar-filtro": 1, "tar-obra": 1,
-      "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1,
+      "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1
     },
@@ -11427,6 +12486,17 @@ renderFolha: function () {
       if (!this._isentoDoBloqueio(gacao) && this._bloqueado()) return;
       // RBAC em FUNÇÃO (regra A.5 / achado do gate v1.1.63): ação de cotação exige o módulo, não basta esconder o botão
       if ((gacao === "nova-cotacoes" || gacao === "cotar-requisicao" || gacao === "doc-cotacao" || gacao === "excluir-cotacao") && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("cotacoes")) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Cotações.", "erro"); return; }
+      /* ⚠ GUARDA EM FUNÇÃO, não só no menu. Toda ação prod-* mexe em
+         PAGAMENTO A PESSOA FÍSICA: gerar medição, aprovar, mandar para a
+         folha, cancelar, imprimir recibo. Esconder a tela do sub-usuário não
+         protege nada — o dispatcher é global e a ação chega por qualquer
+         caminho que dispare um data-gacao. (O filtro de obra fica de fora:
+         olhar não é gravar, e ele nem chega aqui sem o módulo.) */
+      if (gacao.indexOf("prod-") === 0 && gacao !== "prod-obra" &&
+          typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("producao")) {
+        if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Produção — ele decide pagamento por serviço executado.", "erro");
+        return;
+      }
       switch (gacao) {
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
@@ -11514,13 +12584,36 @@ renderFolha: function () {
         case "nova-obra": return this.novoObra();
         case "nova-cliente": return this.novoCliente();
         case "novo-contrato": return this.novoContrato();
+        /* ---- Produção: do diário ao pagamento ---- */
+        case "prod-obra": {
+          /* ⚠ o clique que ABRE o <select> chega sem value; trocar o filtro
+             para "undefined" faria a lista esvaziar sozinha no toque. */
+          if (dataset.value === undefined) return null;
+          this._prodFiltro().obraId = dataset.value;
+          return App.render();
+        }
+        case "prod-gerar": return this.prodGerar();
+        case "prod-aprovar": return this._aprovar("producao_med", id, "aprovada", "Medição de produção aprovada.");
+        case "prod-rejeitar": return this._rejeitar("producao_med", id, "rejeitada");
+        case "prod-folha": return this.prodParaFolha(id);
+        case "prod-excluir": return this.prodExcluir(id);
+        case "prod-print": return this.prodRecibo(id);
         case "nova-medicao": return this.novoMedicao();
         case "novo-lancamento": return this.novoLancamento();
         case "aprovar-medicao": return this._aprovar("medicoes", id, "aprovada", "Medição aprovada.");
         case "rejeitar-medicao": return this._rejeitar("medicoes", id, "rejeitada");
         case "pagar-medicao": {
           var md = Store.obter(eid(), "medicoes", id); if (!md) return;
-          md.status = "paga"; md.dataPgto = new Date().toISOString().slice(0, 10); Store.salvar(eid(), "medicoes", md);
+          /* ⚠ AQUI EU TINHA POSTO O GATE DE APROVACAO E ESTAVA ERRADO.
+             Dar baixa NAO e aprovar: a aprovacao ja aconteceu, e por outra
+             pessoa. Exigir a flag "aprovador" tirou a baixa do Financeiro
+             (que tem o modulo Medicoes e nasce sem a flag) — a mesma armadilha
+             que eu ja tinha corrigido na folha. E a regra do autor travava
+             quem gerou o documento de registrar o pagamento dele.
+             O que precisa ser impedido e PULAR A FILA: ir de pendente direto
+             para paga sem passar pela aprovacao. E o que este botao checa. */
+          if (!this._guardaBaixa(md, "medicoes")) return;
+          md.status = "paga"; md.dataPgto = this._hojeISO(); Store.salvar(eid(), "medicoes", md);
           // gera receita no financeiro (líquido de retenção)
           var liq = Util.num(md.valor) * (1 - Util.num(md.retencao) / 100);
           Store.salvar(eid(), "financeiro", { data: md.dataPgto, desc: "Recebimento medição " + (md.numero || ""), tipo: "receita", categoria: "medicao", valor: liq, status: "pago", obraId: md.obraId, contratoId: md.contratoId });
@@ -11533,7 +12626,11 @@ renderFolha: function () {
         case "rejeitar-compra": return this._rejeitar("compras", id, "rejeitado");
         case "receber-compra": {
           var pcr = Store.obter(eid(), "compras", id); if (!pcr) return;
-          pcr.status = "recebido"; pcr.dataRecebimento = new Date().toISOString().slice(0, 10); Store.salvar(eid(), "compras", pcr);
+          /* mesmo caso do "pagar-medicao": receber material nao e aprovar — a
+             aprovacao ja foi feita por outro. Em obra pequena quem compra e
+             quem recebe. O que se impede e receber sem aprovacao. */
+          if (!this._guardaBaixa(pcr, "compras")) return;
+          pcr.status = "recebido"; pcr.dataRecebimento = this._hojeISO(); Store.salvar(eid(), "compras", pcr);
           Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || ""), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, formaPgto: pcr.formaPgto });
           App.render(); UI.toast("Compra recebida e despesa lançada no Financeiro (pendente).", "ok"); return;
         }
@@ -11569,6 +12666,70 @@ renderFolha: function () {
          * se pode e por quê. Espalhar a regra pelos botões seria a maneira
          * certa de um deles esquecer que o autor não aprova o próprio diário.
          */
+        /* ---------- APROVAÇÃO GENERALIZADA: UM despachante para 4 módulos ----
+         * `data-ent` diz a entidade, `data-id` o registro. Quatro cópias desta
+         * lógica seria a maneira certa de uma delas esquecer, com o tempo, que
+         * quem preencheu não aprova o próprio documento.
+         * ⚠ HOJE NENHUM BOTÃO CHEGA AQUI: quem os emitiria é `_aprovBotoes`,
+         * que não está fiado de propósito. O motivo está por extenso lá em
+         * cima, junto da função. A regra do autor está em produção pelo
+         * `_guardaAutor`, dentro do `_aprovar`/`_rejeitar`. */
+        case "aprov-enviar": case "aprov-aprovar": case "aprov-revisar":
+        case "aprov-rejeitar": case "aprov-reabrir": {
+          if (typeof Aprovacao === "undefined") return;
+          var acaoAp = gacao.replace("aprov-", "");
+          /* ⚠ o parâmetro chama-se `dataset` — escrevi `ds` e os 5 botões
+             teriam morrido no primeiro clique, sem erro no console. É a mesma
+             armadilha que já matou os botões do RDO uma vez (`gacao` vs `a`). */
+          var entAp = dataset && dataset.ent;
+          if (!entAp) return;
+          var docAp = Store.obter(eid(), entAp, id); if (!docAp) return;
+          var euAp = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+          var rotAp = (Aprovacao.MODULOS[entAp] || {}).rotulo || "Documento";
+          var selfAp = this;
+
+          var aplicarAp = function (dadosAp) {
+            var dAp = dadosAp || {};
+            dAp.semOutroAprovador = selfAp._aprovCtx().semOutroAprovador;
+            var tAp = Aprovacao.transicionar(docAp, acaoAp, euAp, dAp);
+            if (!tAp.ok) { UI.toast(tAp.erro, "erro"); return; }
+            docAp.estadoAprovacao = tAp.estado;
+            Aprovacao.registrar(docAp, acaoAp, euAp, dAp, new Date().toISOString());
+            Store.salvar(eid(), entAp, docAp);
+            App.render();
+            var msgAp = {
+              enviar: rotAp + " enviada para aprovação.",
+              aprovar: rotAp + " aprovada.",
+              revisar: "Revisão solicitada — quem preencheu vê o motivo na lista.",
+              rejeitar: rotAp + " rejeitada. O motivo fica registrado.",
+              reabrir: rotAp + " reaberta para correção — a aprovação anterior não vale mais."
+            };
+            UI.toast(msgAp[acaoAp] || "Feito.", (acaoAp === "revisar" || acaoAp === "rejeitar") ? "erro" : "ok");
+          };
+
+          /* recusar em silêncio devolve trabalho sem informação: o motivo é
+             obrigatório e é ele que chega a quem preencheu */
+          if (acaoAp === "revisar" || acaoAp === "rejeitar") {
+            var tituloAp = acaoAp === "revisar" ? "Pedir revisão" : "Rejeitar";
+            UI.modal(tituloAp + " — " + rotAp,
+              '<p style="margin-top:0;font-size:13px">Escreva o motivo. Esta mensagem aparece para quem preencheu.</p>' +
+              campo("Motivo *", '<textarea id="ap-motivo" rows="3" placeholder="Ex.: o quantitativo do item 3.2 não bate com a medição anterior"></textarea>'),
+              [{ texto: tituloAp, classe: acaoAp === "rejeitar" ? "danger" : "primary", onClick: function () {
+                var mAp = v("ap-motivo");
+                if (!mAp) { UI.toast("Escreva o motivo.", "erro"); return; }
+                UI.fecharModal(); aplicarAp({ motivo: mAp });
+              } }]);
+            return;
+          }
+          /* aprovar move dinheiro: quem clica confirma sabendo o quê */
+          if (acaoAp === "aprovar") {
+            var porqueAp = (Aprovacao.MODULOS[entAp] || {}).porque || "";
+            if (!window.confirm("Aprovar " + rotAp.toLowerCase() + "?" + (porqueAp ? "\n\n" + porqueAp : ""))) return;
+          }
+          aplicarAp({});
+          return;
+        }
+
         case "rdo-enviar": case "rdo-aprovar": case "rdo-revisar":
         case "rdo-publicar": case "rdo-despublicar": {
           var acaoRdo = gacao.replace("rdo-", "");

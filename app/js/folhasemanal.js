@@ -125,7 +125,7 @@
   }
 
   /* rótulos dos tipos de lançamento (a "categoria" do custo) */
-  var ROT_TIPO = { diaria: "Mão de obra (diárias)", empreita: "Empreita", frete: "Frete", reembolso: "Reembolso", fornecedor: "Material / Fornecedor", outro: "Outros" };
+  var ROT_TIPO = { diaria: "Mão de obra (diárias)", empreita: "Empreita", producao: "Produtividade medida", frete: "Frete", reembolso: "Reembolso", fornecedor: "Material / Fornecedor", outro: "Outros" };
 
   /* total por tipo (MO, empreita, frete, material…) */
   function porTipo(lancs) {

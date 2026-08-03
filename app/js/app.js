@@ -780,6 +780,7 @@
           if (this._demo) { try { location.href = location.pathname; } catch (eD) {} break; }
           if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
         case "tema": this.abrirTema(); break;
+        case "minha-foto": this.abrirMinhaFoto(); break;
         case "atualizar": if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); break; // botão manual: puxa a versão nova limpando o cache (essencial no celular, que não tem Ctrl+Shift+R)
         case "tema-op": this.aplicarTema(t.dataset.temaVal, t.dataset.tomVal); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
@@ -2040,6 +2041,57 @@
       if (abertos.length) abertos.forEach(function (b) { b.classList.toggle("on", b.dataset.temaVal === tema && (tema === "light" || b.dataset.tomVal === tom)); });
     },
     // Seletor de tema: Claro (como o site) + 5 tons de escuro (cores do logo RA)
+    /* =================================================================
+     * MINHA FOTO DE PERFIL
+     * Fica no menu da conta porque e da PESSOA, nao da empresa: o logo da
+     * empresa ja tem lugar proprio em ⚙ Empresa. Sub-usuario e dono usam a
+     * mesma tela; quem decide onde gravar e o Empresa.salvarFotoUsuario.
+     * ================================================================= */
+    abrirMinhaFoto: function () {
+      var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var quem = u.nome || u.empresa || u.email || "";
+      var atual = (typeof Empresa !== "undefined" && Empresa.fotoUsuario) ? Empresa.fotoUsuario() : "";
+      var ini = (typeof Empresa !== "undefined" && Empresa.iniciais) ? Empresa.iniciais(quem) : "?";
+      var escolhida = null, mexeu = false;
+      UI.modal("🙂 Minha foto de perfil",
+        '<p class="muted" style="margin-top:0;font-size:13px">Aparece na barra do topo, ao lado do nome da empresa. Só você vê a sua — cada pessoa da equipe tem a dela.</p>' +
+        '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
+          '<div id="mf-prev" class="perfil-prev">' + (atual ? '<img src="' + atual + '" alt="">' : '<span class="ini">' + Util.esc(ini) + '</span>') + '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:8px">' +
+            '<input type="file" id="mf-in" accept="image/*">' +
+            '<button type="button" class="btn sm" id="mf-rm"' + (atual ? '' : ' style="display:none"') + '>Voltar para as iniciais</button>' +
+            '<span class="muted" style="font-size:11.5px">A imagem é reduzida para 128 px — fica leve e não atrapalha a sincronização.</span>' +
+          '</div>' +
+        '</div>',
+        [{ texto: "Salvar", classe: "primary", onClick: function () {
+            if (!mexeu) { UI.fecharModal(); return; }
+            if (typeof Empresa === "undefined" || !Empresa.salvarFotoUsuario) { UI.toast("Não foi possível salvar.", "erro"); return; }
+            if (Empresa.salvarFotoUsuario(escolhida) === false) { UI.toast("Não achei seu cadastro na equipe para guardar a foto.", "erro"); return; }
+            UI.fecharModal(); App.render();
+            UI.toast(escolhida ? "Foto atualizada." : "Voltou para as iniciais.", "ok");
+          } },
+         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+
+      function pintar(d) {
+        var pv = UI.el("mf-prev"), rm = UI.el("mf-rm");
+        if (!pv) return;
+        pv.innerHTML = d ? '<img src="' + d + '" alt="">' : '<span class="ini">' + Util.esc(ini) + '</span>';
+        if (rm) rm.style.display = d ? "" : "none";
+      }
+      var inp = UI.el("mf-in");
+      if (inp) inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        /* 128 px e o dobro do tamanho que a barra desenha (retina) — mais que
+           isso e peso a toa num dado que viaja na sincronizacao. */
+        Gestao._comprimirFoto(f, 128, 0.85, function (d) {
+          if (!d) { UI.toast("Arquivo não é uma imagem válida.", "erro"); inp.value = ""; return; }
+          escolhida = d; mexeu = true; pintar(d);
+        });
+      };
+      var rm = UI.el("mf-rm");
+      if (rm) rm.onclick = function () { escolhida = null; mexeu = true; if (inp) inp.value = ""; pintar(""); };
+    },
+
     abrirTema: function () {
       var temaAtual = document.documentElement.getAttribute("data-tema") || "light";
       var tomAtual = document.documentElement.getAttribute("data-tom") || "azul";

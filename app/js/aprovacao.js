@@ -55,15 +55,27 @@
   /* Que módulos usam este fluxo, e o que cada um chama de "documento".
    * `valorEmJogo` diz se o documento move dinheiro — o que muda o texto que o
    * gestor lê antes de aprovar. */
+  /* ⚠ AS CHAVES SÃO OS NOMES DE ENTIDADE DO Store, não rótulos bonitos.
+   * A tela passa `data-ent="medicoes"` e o despachante busca aqui; com a
+   * chave errada o módulo cai no rótulo genérico e o texto de confirmação
+   * some — o aviso que explica POR QUE aquilo precisa de aprovação. */
   Aprovacao.MODULOS = {
-    medicao:    { rotulo: "Medição",     artigo: "a", valorEmJogo: true,
-                  porque: "a medição vira fatura: aprovada errada, o cliente é cobrado errado" },
-    requisicao: { rotulo: "Requisição",  artigo: "a", valorEmJogo: true,
-                  porque: "requisição aprovada vira compra — e compra vira dinheiro saindo" },
-    cotacao:    { rotulo: "Cotação",     artigo: "a", valorEmJogo: true,
-                  porque: "escolher fornecedor é decisão de compra, não de coleta de preço" },
-    folha:      { rotulo: "Folha",       artigo: "a", valorEmJogo: true,
-                  porque: "folha aprovada vira pagamento a pessoa física" }
+    medicoes:       { rotulo: "Medição",     valorEmJogo: true,
+                      porque: "A medição vira fatura: aprovada errada, o cliente é cobrado errado." },
+    requisicoes:    { rotulo: "Requisição",  valorEmJogo: true,
+                      porque: "Requisição aprovada vira compra — e compra vira dinheiro saindo." },
+    /* ⚠ `compras` FALTAVA AQUI e isso deixava a regra inerte justamente onde o
+       dinheiro sai. O carimbo de autoria só acontece para entidade que esteja
+       nesta lista, então nenhum pedido de compra recebia `autorId` — nem hoje,
+       nem daqui a um ano — e quem lançava o pedido podia aprovar o próprio. */
+    compras:        { rotulo: "Pedido de compra", valorEmJogo: true,
+                      porque: "Pedido aprovado autoriza a despesa: o dinheiro sai da obra." },
+    cotacoes:       { rotulo: "Cotação",     valorEmJogo: true,
+                      porque: "Escolher fornecedor é decisão de compra, não coleta de preço." },
+    fs_lancamentos: { rotulo: "Folha",       valorEmJogo: true,
+                      porque: "Folha aprovada vira pagamento a pessoa física." },
+    producao_med:   { rotulo: "Medição de produção", valorEmJogo: true,
+                      porque: "É pagamento por serviço executado: aprovada errada, paga-se serviço que não foi feito." }
   };
 
   /* --- IDENTIDADE ----------------------------------------------------
@@ -80,7 +92,13 @@
 
   Aprovacao.carimbarAutor = function (doc, usuario) {
     var d = doc || {};
-    if (Aprovacao.autoriaIncerta(d)) d.autorId = Aprovacao.idDoUsuario(usuario);
+    /* ⚠ NÃO gravar autoria vazia. Na instalação sem conta cadastrada a sessão
+       local nasce com email "" e usuarioId null, então `idDoUsuario` devolve
+       "" — e gravar `autorId: ""` cria um campo que MENTE: parece carimbado e
+       continua sem autor. Melhor deixar ausente, que é a verdade, e o fluxo
+       trata como autoria não verificada. */
+    var id = Aprovacao.idDoUsuario(usuario);
+    if (id && Aprovacao.autoriaIncerta(d)) d.autorId = id;
     return d;
   };
 

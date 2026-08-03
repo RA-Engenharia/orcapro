@@ -28,6 +28,9 @@
     // tampouco. Com itens e parcelas dentro do registro fiscal, isso deixou
     // de ser detalhe — é o documento que prova a compra.
     "fiscal", "patrimonio", "estoque_mov",
+    // medição de produção: nasce do diário no celular do encarregado e é paga
+    // no computador do escritório — sem sincronizar, o pagamento não chega lá.
+    "producao_med",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava

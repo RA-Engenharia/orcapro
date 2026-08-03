@@ -126,7 +126,27 @@
         })() +
         '<div class="topbar-conta">' +
           '<button class="conta-btn" data-acao="conta" aria-label="Conta e configurações" title="Conta e configurações">' +
-            '<span class="conta-ic">⚙</span><span class="conta-nome">' + Util.esc(usuario.empresa) + '</span><span class="conta-ca">▾</span>' +
+            /* A MARCA DE QUEM ESTA USANDO, NAO A NOSSA.
+               O logo da empresa ja existia e so aparecia nos impressos. Na
+               barra do topo ele diz, o dia inteiro, de quem e aquele sistema —
+               que e o que faz o cliente sentir que o programa e da empresa
+               dele. Sem logo, cai no ⚙ de sempre: nada quebra. */
+            (function () {
+              var lg = (typeof Empresa !== "undefined" && Empresa.logo) ? Empresa.logo() : "";
+              if (lg) return '<img class="conta-logo" src="' + lg + '" alt="">';
+              return '<span class="conta-ic">⚙</span>';
+            })() +
+            '<span class="conta-nome">' + Util.esc(usuario.empresa) + '</span>' +
+            /* e a foto de QUEM esta logado: sem foto, as iniciais — melhor que
+               um bonequinho generico, porque a pessoa se reconhece de relance */
+            (function () {
+              var f = (typeof Empresa !== "undefined" && Empresa.fotoUsuario) ? Empresa.fotoUsuario() : "";
+              var quem = usuario.nome || usuario.empresa || usuario.email || "";
+              if (f) return '<img class="conta-foto" src="' + f + '" alt="" title="' + Util.esc(quem) + '">';
+              var ini = (typeof Empresa !== "undefined" && Empresa.iniciais) ? Empresa.iniciais(quem) : "?";
+              return '<span class="conta-foto ini" title="' + Util.esc(quem) + '">' + Util.esc(ini) + '</span>';
+            })() +
+            '<span class="conta-ca">▾</span>' +
           '</button>' +
           '<div class="conta-drop">' +
             '<div class="conta-cab"><b>' + Util.esc(usuario.empresa) + '</b><span>' + (admin ? Util.esc(usuario.email) : Util.esc(usuario.nome || usuario.email) + ' · ' + Util.esc(deptoLbl)) + '</span></div>' +
@@ -150,6 +170,7 @@
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>☁</span>Nuvem — sincronizar aparelhos</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="celular"><span>📱</span>Usar no celular ou tablet</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
+            '<button class="conta-item" data-acao="minha-foto"><span>🙂</span>Minha foto de perfil</button>' +
             '<button class="conta-item" data-acao="tema"><span>🎨</span>Tema do aplicativo</button>' +
             '<button class="conta-item" data-acao="atualizar"><span>🔄</span>Buscar atualização</button>' +
             '<div class="conta-sep"></div>' +

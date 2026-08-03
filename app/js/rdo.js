@@ -956,6 +956,19 @@
 
     var cond = r.clima ? RDO.condicaoPorClima(r.clima, RDO.diaNaoTrabalhavel(r)) : null;
 
+    /* ⚠ PRODUÇÃO INDIVIDUAL FORA DO PACOTE DO CLIENTE.
+     * A defesa que já funciona é o `map` de `servicos` logo abaixo: ele monta
+     * um objeto NOVO campo a campo (allowlist), então `producao` nunca subiu.
+     * Só que allowlist é uma linha de distância de deixar de ser: basta
+     * alguém trocar por um spread "para não esquecer campo nenhum" e o nome
+     * do trabalhador, com o valor que ele recebe, vai para o cliente.
+     * `Producao.limparParaPortal` era a defesa DECLARADA no cabeçalho do
+     * módulo e não estava ligada em lugar nenhum — código morto protegendo no
+     * papel. Ligada aqui, sobre uma cópia: o diário original não é tocado. */
+    var itensPortal = (typeof Producao !== "undefined" && Producao.limparParaPortal)
+      ? Producao.limparParaPortal(r.atividadesItens || [])
+      : (r.atividadesItens || []);
+
     var p = {
       v: RDO.PORTAL_VERSAO,
       id: r.id || "",
@@ -976,7 +989,7 @@
       climaTexto: r.clima ? RDO.textoClima(r.clima) : "",
       climaEvidencia: (cond && cond.motivo) || "",
       climaCondicao: cond ? cond.condicao : "",
-      servicos: (r.atividadesItens || []).map(function (a) {
+      servicos: itensPortal.map(function (a) {
         var av = RDO.calcAvanco(a);
         return {
           numero: a.numero || "", descricao: a.descricao || "", etapa: a.etapa || "",
