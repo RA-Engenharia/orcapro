@@ -253,7 +253,8 @@
       } catch (e1) {}
       try {
         if (!empresa.nome && typeof global.Auth !== "undefined" && global.Auth.usuario && global.Auth.usuario()) {
-          empresa.nome = global.Auth.usuario().empresa || "";
+          empresa.nome = (global.Empresa && global.Empresa.nomeDoc && global.Empresa.nomeDoc()) ||
+            global.Auth.usuario().empresa || "";
         }
       } catch (e2) {}
       var basesTxt = "";

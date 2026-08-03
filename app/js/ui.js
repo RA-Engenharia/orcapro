@@ -140,7 +140,15 @@
               if (lg) return '<img class="conta-logo" src="' + lg + '" alt="">';
               return '<span class="conta-ic">⚙</span>';
             })() +
-            '<span class="conta-nome">' + Util.esc(usuario.empresa) + '</span>' +
+            /* ⚠ O NOME QUE APARECE AQUI É O DA EMPRESA DO CLIENTE.
+               `usuario.empresa` vem da CONTA/licença — no cliente que comprou,
+               isso mostrava o nome de quem vendeu o sistema, não o dele. Ele
+               abria o próprio OrçaPRO e via outra empresa na barra o dia
+               inteiro. O nome certo é o que ele cadastrou em ⚙ Empresa, que é
+               o mesmo que já sai nos documentos (Empresa.nomeDoc). */
+            '<span class="conta-nome">' + Util.esc(
+              (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) || usuario.empresa
+            ) + '</span>' +
             /* e a foto de QUEM esta logado: sem foto, as iniciais — melhor que
                um bonequinho generico, porque a pessoa se reconhece de relance */
             (function () {

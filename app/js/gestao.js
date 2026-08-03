@@ -1130,7 +1130,9 @@
         method: "POST",
         headers: { "Content-Type": "application/json", "x-licenca": chave },
         body: JSON.stringify({ user: obra.portalUser,
-          empresa: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "",
+          /* o Portal mostra "Portal fornecido por X": X é a empresa DELE */
+          empresa: (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) ||
+            ((typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : ""),
           obra: pacote })
       }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j && j.ok, j: j }; }); })
         .then(function (r) { if (aoTerminar) aoTerminar({ ok: !!r.ok, erro: (r.j && r.j.erro) || "" }); })
@@ -13252,7 +13254,7 @@ case "nova-folha": return this.novoFolha();
            quando quem publica de fato digitou uma diferente da que está no
            cadastro da obra. Publicação automática nunca mexe na senha. */
         var trocar = !obra.portalUser || senha !== (obra.portalSenha || "");
-        fetch(url + "/api/portal/publicar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ user: user, senha: senha, trocarSenha: trocar, empresa: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "", obra: snapshot }) })
+        fetch(url + "/api/portal/publicar", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify({ user: user, senha: senha, trocarSenha: trocar, empresa: (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) || ((typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : ""), obra: snapshot }) })
           .then(function (r) { return r.json(); }).then(function (j) {
             if (!j.ok) { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">' + Util.esc(j.erro || "Falha ao publicar.") + "</div>"; return; }
             /* ⚠ TROCAR O USUÁRIO NÃO REVOGAVA O ANTIGO.
