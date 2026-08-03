@@ -561,7 +561,24 @@
     if (acao === "aprovar") {
       if (!aprovador) return false;
       if (!autor) return true;
-      return c.semOutroAprovador === true;   // conta de um usuário só
+      /* AUTOR APROVANDO O PRÓPRIO DIÁRIO
+       *
+       * A regra dos quatro olhos ("quem escreve não aprova") continua valendo
+       * para SUB-USUÁRIO: encarregado não homologa o próprio dia.
+       *
+       * Mas ADMINISTRADOR aprova o que ele mesmo escreveu, e isso é decisão de
+       * produto: a maior parte das contas é de uma pessoa só — o engenheiro
+       * lança o diário e é ele quem responde tecnicamente por ele. Exigir um
+       * segundo aprovador que não existe travava o diário em "aguardando" para
+       * sempre, e o cliente ficava sem o documento.
+       *
+       * ⚠ O que se perde: o diário é prova em discussão contratual, e o
+       * carimbo de aprovação vale mais quando outra pessoa confere. Quem
+       * trabalha com contrato grande pode ligar `exigirOutroAprovador` na
+       * Empresa e voltar aos quatro olhos — a trava continua no código, só
+       * deixou de ser obrigatória. */
+      if (c.exigirOutroAprovador === true) return false;
+      return gestor || c.semOutroAprovador === true;
     }
     if (acao === "revisar")  return aprovador;
     /* ⚠ publicar/despublicar mexem no que o CLIENTE enxerga — voltaram a exigir
