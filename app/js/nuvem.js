@@ -31,6 +31,11 @@
     // medição de produção: nasce do diário no celular do encarregado e é paga
     // no computador do escritório — sem sincronizar, o pagamento não chega lá.
     "producao_med",
+    // R$/unidade da produção. Estava dentro de `prefs`, e o merge de prefs é
+    // "o local vence campo a campo" — o preço aprovado no escritório nunca
+    // chegava ao celular do encarregado, que pagava outro valor sem erro
+    // nenhum. Dinheiro tem que passar pelo merge por id, com atualizadoEm.
+    "producao_preco",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava

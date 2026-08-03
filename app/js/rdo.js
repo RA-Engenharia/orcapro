@@ -361,7 +361,11 @@
           numero: pai + "." + (ii + 1),
           descricao: it.descricao || "",
           unidade: it.unidade || "",
-          qtdPrevista: Number(it.qtd || 0),
+          /* ⚠ o item do orçamento guarda `quantidade` (Orcamento.addItem), não
+             `qtd`. Lendo o campo errado, TODO serviço puxado do orçamento
+             nascia com quantidade prevista ZERO e a tela mostrava "—", sem erro
+             nenhum. As duas suítes passavam porque montavam o item à mão. */
+          qtdPrevista: Number(it.quantidade || it.qtd || 0),
           codigo: it.codigo || ""
         });
       });

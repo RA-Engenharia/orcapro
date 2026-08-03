@@ -886,6 +886,9 @@
          cru da obra como se fosse nome, e com o diário de origem já apagado:
          nada mais reconciliava. Se o pagamento sai, a medição sai junto. */
       ["producao_med", "medição(ões) de produção"],
+      /* o preço por produção é combinado POR OBRA: sai junto com ela, senão
+         fica preço órfão pré-preenchendo linha de obra nenhuma */
+      ["producao_preco", "preço(s) por produção combinado(s)"],
       ["folha", "folha(s) de pagamento"], ["frota_mov", "uso(s) de veículo"],
       ["financeiro", "lançamento(s) financeiro(s)"],
       ["centrocusto", "registro(s) de centro de custo"],
@@ -10473,11 +10476,98 @@ renderFolha: function () {
       if (!this._prodF) this._prodF = { obraId: "", de: "", ate: "" };
       return this._prodF;
     },
-    _prodPrecos: function () { return (Store.lerPrefs(eid()) || {}).precosProducao || {}; },
+    /* ⚠ O PREÇO DA PRODUÇÃO NÃO MORA MAIS EM `prefs`.
+       Preço por produção é DINHEIRO, e `prefs` é um objeto único cujo merge da
+       nuvem (js/nuvem.js) é `Object.assign({}, nuvem, local)` — o LOCAL vence
+       campo a campo, sem olhar `atualizadoEm`. Na prática: o preço aprovado no
+       computador do escritório NUNCA chegava ao celular do encarregado, que
+       seguia com o dele e pagava outro valor, sem erro em lugar nenhum. E o
+       fluxo desenhado pela casa é justamente esse — o diário nasce no celular
+       e é pago no escritório —, então era o pior lugar possível.
+       Agora cada preço é um REGISTRO da entidade `producao_preco`, que passa
+       pelo merge normal por id, com `atualizadoEm` decidindo. */
+    _prodPrecos: function () {
+      var mapa = {};
+      (lista("producao_preco") || []).forEach(function (r) {
+        if (r && r.chave) mapa[r.chave] = r.valor;
+      });
+      return mapa;
+    },
+    /* orçamento de cada obra que aparece nas linhas — carregado UMA vez por
+       render, porque `Store.obterOrcamento` lê e desserializa a planilha
+       inteira e há linha para cada pessoa × serviço */
+    _prodOrcamentos: function (linhas) {
+      var mapa = {}, vistos = {};
+      (linhas || []).forEach(function (l) {
+        var ob = l.obraId || "";
+        if (!ob || vistos[ob]) return;
+        vistos[ob] = 1;
+        var obra = Store.obter(eid(), "obras", ob);
+        if (!obra || !obra.orcamentoId) { mapa[ob] = null; return; }
+        try { mapa[ob] = Store.obterOrcamento(eid(), obra.orcamentoId) || null; }
+        catch (e) { mapa[ob] = null; }
+      });
+      return mapa;
+    },
+
+    /* DE ONDE A TELA TIRA A MÃO DE OBRA DE UM ITEM
+       O `custoMO` gravado no item é um retrato da base SINTÉTICA, e o SINAPI
+       sintético NÃO separa MO/MAT/EQ (0 de 12.815 itens de MG têm o campo) —
+       ou seja, para o banco principal do produto o retrato nasce zerado. Quem
+       separa é a base ANALÍTICA, que o app já carrega para o detalhamento.
+       `Analitico.quebra` aplica a PROPORÇÃO de mão de obra da composição sobre
+       o custo unitário que o item tem HOJE: não inventa número (a proporção é
+       da base, o custo é do orçamento) e ainda acompanha o preço que o usuário
+       editou à mão, que era o outro furo. Sem a analítica carregada, devolve
+       nada e o motor recusa dizendo por quê — nunca chuta. */
+    _prodMO: function () {
+      if (typeof Analitico === "undefined" || !Analitico.carregado) return null;
+      return function (it) {
+        if (!it || !it.codigo) return null;
+        var q = Analitico.quebra(it.codigo, Util.num(it.custoUnitario));
+        if (!q || !(q.custoMO > 0)) return null;
+        return { valor: Math.round(q.custoMO * 100) / 100,
+          fonte: "proporção de mão de obra da composição " + it.codigo };
+      };
+    },
+
     _prodSalvarPrecos: function (mapa) {
-      var pr = Store.lerPrefs(eid()) || {};
-      pr.precosProducao = mapa;
-      Store.salvarPrefs(eid(), pr);
+      var E = eid(), atuais = {}, k;
+      (lista("producao_preco") || []).forEach(function (r) { if (r && r.chave) atuais[r.chave] = r; });
+      for (k in (mapa || {})) {
+        if (!Object.prototype.hasOwnProperty.call(mapa, k)) continue;
+        var v = mapa[k], reg = atuais[k];
+        if (v == null || v === "") { if (reg) Store.excluir(E, "producao_preco", reg.id); continue; }
+        if (reg) { if (Producao.num(reg.valor) !== Producao.num(v)) { reg.valor = v; Store.salvar(E, "producao_preco", reg); } }
+        else Store.salvar(E, "producao_preco", { chave: k, valor: v, obraId: String(k).split("|")[1] || "" });
+      }
+      for (k in atuais) {
+        if (!Object.prototype.hasOwnProperty.call(atuais, k)) continue;
+        if (!Object.prototype.hasOwnProperty.call(mapa || {}, k)) Store.excluir(E, "producao_preco", atuais[k].id);
+      }
+    },
+
+    /* MIGRAÇÃO DAS CHAVES VELHAS — roda ao abrir a Produção, uma vez.
+       A chave antiga (`pessoa|1.1`) é ambígua: o "1.1" é a POSIÇÃO do item, e a
+       mesma posição é outro serviço em outra obra. Migrar tudo às cegas seria
+       repetir o defeito, então só migra o par que aponta para um serviço só.
+       O resto NÃO vira preço: a linha volta a "sem preço" (regra 3 do módulo) e
+       a tela diz quantos precisam ser reconfirmados. O mapa original fica
+       guardado em `precosProducaoLegado` — nada some sem rastro. */
+    _prodMigrarPrecos: function (linhas) {
+      var E = eid(), pr = Store.lerPrefs(E) || {};
+      var antigo = pr.precosProducao;
+      if (!antigo || !Object.keys(antigo).length) return null;
+      var r = Producao.migrarPrecos(antigo, linhas || []);
+      var k, n = 0;
+      for (k in r.precos) {
+        if (!Object.prototype.hasOwnProperty.call(r.precos, k)) continue;
+        Store.salvar(E, "producao_preco", { chave: k, valor: r.precos[k], obraId: String(k).split("|")[1] || "" }); n++;
+      }
+      pr.precosProducaoLegado = antigo;
+      delete pr.precosProducao;
+      Store.salvarPrefs(E, pr);
+      return { migrados: n, ambiguos: r.ambiguos.length };
     },
     _prodNomeObra: function (id) {
       var o = id ? Store.obter(eid(), "obras", id) : null;
@@ -10501,17 +10591,36 @@ renderFolha: function () {
     renderProducao: function () {
       if (typeof Producao === "undefined") return this._head("Produção", "", "") + '<div class="card">Motor de produção não carregado.</div>';
       var self = this, f = this._prodFiltro(), obras = lista("obras");
-      var precos = this._prodPrecos();
       var jaPago = Producao.jaMedido(lista("producao_med"));
+      /* acumula SEM filtro para migrar: a chave velha pode pertencer a uma obra
+         que não está no filtro de agora, e migrar com a lista filtrada julgaria
+         "unívoca" uma chave que na verdade é ambígua */
+      var todasLinhas = Producao.acumular(lista("rdo"), { jaMedido: jaPago }).linhas;
+      var mig = this._prodMigrarPrecos(todasLinhas);
+      this._prodMigracao = mig;
+      var precos = this._prodPrecos();
       var ac = Producao.acumular(lista("rdo"), { obraId: f.obraId, de: f.de, ate: f.ate, jaMedido: jaPago });
       var med = Producao.medir(ac.linhas, precos);
       var pessoas = Producao.porPessoa(med.linhas);
+      /* quanto de MÃO DE OBRA cada serviço já custa no orçamento da obra.
+         É referência para negociar, não é o preço do terceiro — o texto que
+         acompanha o número diz isso, e nada é gravado sem o usuário confirmar. */
+      var orcs = this._prodOrcamentos(med.linhas);
+      var moDe = this._prodMO();
+      var sugestoes = {};
+      med.linhas.forEach(function (l, iL) {
+        var r = Producao.precoDoOrcamento(l, orcs[l.obraId || ""], Util.unidadeChave, moDe);
+        sugestoes[iL] = r;
+      });
+      var nSugeridos = med.linhas.filter(function (l, iL) { return sugestoes[iL].ok && l.pendente; }).length;
+      this._prodSugestoes = sugestoes;
 
       var selObra = '<select data-gacao="prod-obra" style="max-width:190px"><option value="">Todas as obras</option>' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === f.obraId ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
       var extra = selObra +
         ' <input type="date" id="prod-de" value="' + Util.esc(f.de) + '" title="Diários a partir de" style="max-width:150px">' +
         ' <input type="date" id="prod-ate" value="' + Util.esc(f.ate) + '" title="Diários até" style="max-width:150px">' +
+        (nSugeridos ? ' <button class="btn sm" data-gacao="prod-doorc" title="Preenche o R$/unidade das linhas sem preço com o custo de mão de obra que já está no orçamento da obra">Puxar preço do orçamento (' + nSugeridos + ")</button>" : "") +
         (med.linhas.length ? ' <button class="btn sm primary" data-gacao="prod-gerar">Gerar medição de produção</button>' : "");
       var html = this._head(svg("producao") + "Produção · pagamento por serviço executado", "", "", extra);
 
@@ -10539,7 +10648,11 @@ renderFolha: function () {
           '<div style="padding:12px 14px 6px"><b>A medir</b> <span class="muted" style="font-size:12px">— preencha o <b>R$/unidade</b> de cada linha. Linha sem preço não é paga e não vira zero: fica marcada como pendente.</span></div>' +
           '<table class="tbl"><thead><tr><th>Pessoa</th><th>Serviço</th><th>Obra</th><th class="num">Qtd</th><th>Un</th><th class="num">Dias</th><th class="num">R$/un</th><th class="num">Total</th></tr></thead><tbody>';
         med.linhas.forEach(function (l, iL) {
-          var chave = l.colaboradorId + "|" + (l.codigo || l.servico || "");
+          /* a chave é a ESTÁVEL (pessoa × obra × serviço × unidade). A antiga
+             usava o número POSICIONAL do item, e duas linhas de obras diferentes
+             dividiam o mesmo `data-prodpu`: digitar numa apagava a outra, e o
+             preço de um serviço pré-preenchia outro. */
+          var chave = Producao.chavePreco(l);
           /* ⚠ O SELETOR É PELO ÍNDICE, não pela chave. A chave carrega a
              DESCRIÇÃO do serviço, e descrição de obra tem aspas ("tubo 3/4\"") —
              `querySelector('[data-prodtot="…3/4"…"]')` estourava SyntaxError e
@@ -10551,7 +10664,22 @@ renderFolha: function () {
             "<td>" + Util.esc(self._prodNomeObra(l.obraId)) + "</td>" +
             '<td class="num" data-prodqtd="' + iL + '">' + Util.fmtNum(l.qtd) + "</td><td>" + Util.esc(l.unidade || "") + '</td><td class="num">' + l.dias + "</td>" +
             '<td class="num"><input data-prodi="' + iL + '" data-prodpu="' + Util.esc(chave) + '" value="' + (l.precoUnit == null ? "" : Util.esc(l.precoUnit)) + '" placeholder="informe" title="Preço por unidade combinado com esta pessoa. Em branco = ainda não definido: a linha fica pendente, não vira zero." style="width:86px;text-align:right;padding:2px 5px;font-size:12px"></td>' +
-            '<td class="num" data-prodtot="' + iL + '">' + (l.pendente ? '<span style="color:#b45309;font-weight:700">sem preço</span>' : "<b>" + Util.fmtMoeda(l.valor) + "</b>") + "</td></tr>";
+            '<td class="num" data-prodtot="' + iL + '">' + (l.pendente ? '<span style="color:#b45309;font-weight:700">sem preço</span>' : "<b>" + Util.fmtMoeda(l.valor) + "</b>") + "</td></tr>" +
+            /* a sugestão fica NA LINHA, com o valor à vista: quem negocia
+               precisa ver de quanto está falando antes de aceitar */
+            (sugestoes[iL] && sugestoes[iL].ok
+              /* ⚠ o texto vem do MOTOR (`explicacao`), não é reescrito aqui.
+                 Antes a tela imprimia só o número e a fonte, e a ressalva de que
+                 aquilo é o custo pela folha DA EMPRESA — não o preço do
+                 terceiro — só existia dentro do modal. Quem lia o número na
+                 linha e digitava à mão nunca via a ressalva. */
+              ? '<tr><td colspan="8" style="padding:0 8px 6px"><span class="muted" style="font-size:11px">' +
+                Util.esc(sugestoes[iL].explicacao || "") + " <b>" +
+                Util.fmtMoeda(sugestoes[iL].valor) + "/" + Util.esc(sugestoes[iL].unidade || l.unidade || "") + "</b> (" +
+                Util.esc(sugestoes[iL].fonte) + " · " + Util.esc(sugestoes[iL].regimeRotulo) + ")</span> " +
+                (l.pendente ? '<button class="btn sm" data-gacao="prod-doorc" data-id="' + iL + '" style="padding:1px 8px;font-size:11px">usar este</button>' : "") +
+                "</td></tr>"
+              : "");
         });
         /* mesmo motivo do cartão: com tudo pendente, o rodapé dizia
            "Total a medir R$ 0,00" — soma de nada com cara de conta fechada. */
@@ -10621,6 +10749,21 @@ renderFolha: function () {
     /* o total da linha acompanha o que esta sendo digitado — sem isso a pessoa
        digita o preco e nao ve o efeito antes de gerar a medicao. */
     afterRenderProducao: function () {
+      /* AVISO DA MIGRAÇÃO — o usuário precisa saber que preço voltou a pendente.
+         As chaves antigas usavam o número POSICIONAL do item, que é ambíguo
+         entre obras e muda quando o orçamento é reordenado. O que apontava para
+         um serviço só foi migrado; o resto NÃO virou preço, porque reaplicar
+         chave ambígua é o próprio defeito que estamos consertando. Some sem
+         avisar seria pior do que o bug. */
+      var mg = this._prodMigracao;
+      this._prodMigracao = null;
+      if (mg && (mg.migrados || mg.ambiguos) && typeof UI !== "undefined") {
+        if (mg.ambiguos) {
+          UI.toast(mg.ambiguos + " preço(s) por produção precisam ser reconfirmados: a forma antiga de guardar usava o número do item, que muda de serviço quando o orçamento é reordenado. Eles aparecem como \"sem preço\" — puxe do orçamento ou digite.", "erro");
+        } else if (mg.migrados) {
+          UI.toast(mg.migrados + " preço(s) por produção foram reorganizados por obra e serviço. Confira antes de gerar medição.", "ok");
+        }
+      }
       var self = this;
       /* ⚠ estes dois sao INPUT, e o `change` global do app.js so despacha
          SELECT — com data-gacao eles seriam campos MORTOS. Ligados aqui. */
@@ -10655,6 +10798,75 @@ renderFolha: function () {
           self._prodSalvarPrecos(copia);
         };
       });
+    },
+
+    /* PUXAR O PREÇO DO ORÇAMENTO
+     *
+     * ⚠ O número que entra é o **custo de mão de obra** do item — o que o
+     * serviço custaria pela SUA folha, com os encargos do regime que o
+     * orçamento escolheu. Quem trabalha por produção cobra os encargos DELE e
+     * o lucro dele por fora, então isto é REFERÊNCIA para negociar, não o
+     * preço do terceiro. O modal diz isso com todas as letras, porque um
+     * número que aparece sozinho na tela vira "o preço do sistema".
+     *
+     * Só preenche linha PENDENTE: preço que o usuário já digitou é decisão
+     * dele, e sobrescrever caladamente seria trocar o valor de um pagamento. */
+    prodPuxarDoOrcamento: function (idLinha) {
+      if (this._bloqueado()) return;
+      var self = this;
+      var f = this._prodFiltro();
+      var jaPago = Producao.jaMedido(lista("producao_med"));
+      var ac = Producao.acumular(lista("rdo"), { obraId: f.obraId, de: f.de, ate: f.ate, jaMedido: jaPago });
+      var med = Producao.medir(ac.linhas, this._prodPrecos());
+      /* ⚠ A SUGESTÃO É RECALCULADA AQUI, não reaproveitada do render.
+         `_prodSugestoes` é indexado por POSIÇÃO na lista e só é reescrito no
+         render. Se um diário chegou do celular (ou de outra aba) enquanto a
+         tela estava parada, a lista fresca tem outra ordem — e emparelhar a
+         linha nova com a sugestão velha pelo índice carimbava o preço de um
+         serviço em outro. Recalcular custa um passe e elimina a classe toda. */
+      var orcsF = this._prodOrcamentos(med.linhas);
+      var moDeF = this._prodMO();
+      var alvos = [];
+      med.linhas.forEach(function (l, iL) {
+        if (idLinha != null && idLinha !== "" && String(iL) !== String(idLinha)) return;
+        if (!l.pendente) return;                    /* não sobrescreve o que já tem preço */
+        var r = Producao.precoDoOrcamento(l, orcsF[l.obraId || ""], Util.unidadeChave, moDeF);
+        if (r && r.ok) alvos.push({ i: iL, linha: l, preco: r });
+      });
+      if (!alvos.length) {
+        UI.toast("Nenhuma linha sem preço tem custo de mão de obra no orçamento da obra.", "erro");
+        return;
+      }
+      var total = 0;
+      alvos.forEach(function (a) { total = Math.round((total + a.linha.qtd * a.preco.valor) * 100) / 100; });
+      var linhasHtml = alvos.slice(0, 8).map(function (a) {
+        return "<tr><td>" + Util.esc(a.linha.nome) + "</td><td>" + Util.esc(a.linha.servico) +
+          '</td><td class="num">' + Util.fmtMoeda(a.preco.valor) + "/" + Util.esc(a.preco.unidade || "") +
+          '</td><td class="num">' + Util.fmtMoeda(a.linha.qtd * a.preco.valor) + "</td></tr>";
+      }).join("");
+      UI.modal("Puxar o preço do orçamento",
+        '<p style="margin-top:0;font-size:13px">Vai preencher <b>' + alvos.length + " linha(s)</b> com o <b>custo de mão de obra</b> que já está no orçamento da obra.</p>" +
+        '<table class="tbl" style="font-size:12px"><thead><tr><th>Pessoa</th><th>Serviço</th><th class="num">R$/un</th><th class="num">Daria</th></tr></thead><tbody>' +
+        linhasHtml + (alvos.length > 8 ? '<tr><td colspan="4" class="muted">+ ' + (alvos.length - 8) + " linha(s)</td></tr>" : "") +
+        '</tbody><tfoot><tr><th colspan="3" class="num">Total</th><th class="num">' + Util.fmtMoeda(total) + "</th></tr></tfoot></table>" +
+        '<div style="border-left:3px solid var(--amarelo);padding-left:10px;margin-top:12px;font-size:12.5px">' +
+          "<b>Leia antes de aceitar:</b> esse número é o que o serviço custaria pela <b>sua folha</b> " +
+          "(salário + encargos, no regime do orçamento). <b>Quem trabalha por produção cobra diferente</b> — " +
+          "ele embute os encargos dele, ferramenta, deslocamento e o lucro dele. " +
+          "Use como referência para negociar; o preço combinado é o que você digitar." +
+        "</div>" +
+        '<p class="muted" style="font-size:12px;margin-bottom:0">Linhas que você já preencheu não são tocadas.</p>',
+        [{ texto: "Usar estes preços", classe: "primary", onClick: function () {
+          UI.fecharModal();
+          var mapa = self._prodPrecos(), copia = {}, k;
+          for (k in mapa) { if (Object.prototype.hasOwnProperty.call(mapa, k)) copia[k] = mapa[k]; }
+          alvos.forEach(function (a) {
+            copia[Producao.chavePreco(a.linha)] = a.preco.valor;
+          });
+          self._prodSalvarPrecos(copia);
+          App.render();
+          UI.toast(alvos.length + " preço(s) preenchido(s) com o custo de MO do orçamento — confira antes de gerar a medição.", "ok");
+        } }, { texto: "Não usar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
     },
 
     /* GERAR: uma medicao por PESSOA x OBRA.
@@ -12610,6 +12822,7 @@ renderFolha: function () {
           this._prodFiltro().obraId = dataset.value;
           return App.render();
         }
+        case "prod-doorc": return this.prodPuxarDoOrcamento(id);
         case "prod-gerar": return this.prodGerar();
         case "prod-aprovar": return this._aprovar("producao_med", id, "aprovada", "Medição de produção aprovada.");
         case "prod-rejeitar": return this._rejeitar("producao_med", id, "rejeitada");

@@ -296,7 +296,10 @@
           var base = {
             colaboradorId: p.colaboradorId, nome: p.nome || "",
             servico: it.descricao || "", codigo: it.numero || "", unidade: it.unidade || "",
-            etapa: it.etapa || "", obraId: r.obraId || "", data: d, qtd: q, origem: origem
+            etapa: it.etapa || "", obraId: r.obraId || "", data: d, qtd: q, origem: origem,
+            /* vínculo com o item do ORÇAMENTO, quando o serviço veio de lá:
+               é o que permite puxar o custo de mão de obra sem adivinhar */
+            refId: it.refId || "", origemItem: it.origem || "", codigoBase: it.codigo || ""
           };
 
           /* o que já foi pago naquela origem sai da conta; o RESTO continua
@@ -321,6 +324,7 @@
               colaboradorId: p.colaboradorId, nome: p.nome || "",
               servico: it.descricao || "", codigo: it.numero || "", unidade: it.unidade || "",
               etapa: it.etapa || "", obraId: r.obraId || "",
+              refId: it.refId || "", origemItem: it.origem || "", codigoBase: it.codigo || "",
               qtd: 0, dias: 0, origens: [], primeiraData: d, ultimaData: d
             };
             linhas.push(porChave[k]);
@@ -346,27 +350,94 @@
   /* -------------------------------------------------------------------
    * DAR PREÇO À PRODUÇÃO
    *
-   * `precos` é um mapa "colaboradorId|codigoOuServico" -> R$/unidade, com
-   * queda para "*|codigoOuServico" (preço do serviço, valendo para todos).
+   * A CHAVE DO PREÇO — leia antes de mexer.
+   *
+   * Até a v1.1.151 a chave era `colaboradorId|numeroDoItem`, e isso pagava
+   * errado de duas maneiras, as duas reproduzidas com o motor real:
+   *
+   *  (a) ENTRE OBRAS. O mapa de preços é da EMPRESA, não da obra. O "1.1" da
+   *      obra A é alvenaria e o "1.1" da obra B é pintura. Quem puxava o preço
+   *      da alvenaria via a linha da PINTURA, em outra obra, já preenchida com
+   *      aquele valor — não pendente, entrando no total e no pagamento.
+   *
+   *  (b) DENTRO DA MESMA OBRA. O número do item é POSICIONAL: a v1.1.116
+   *      deixou reordenar o orçamento, e o diário renumera por posição. Inserir
+   *      um serviço no começo da etapa faz o preço do serviço antigo
+   *      pré-preencher o serviço novo que herdou aquele número.
+   *
+   * O módulo já tinha aprendido essa lição na chave de ORIGEM ("a chave usa o
+   * id do item, nunca a posição dele na lista") — a chave do PREÇO é que tinha
+   * ficado de fora. Agora a identidade é: pessoa × OBRA × serviço × unidade,
+   * onde "serviço" é o código da base ou o id do item do orçamento, nunca o
+   * número. A unidade entra porque um R$/m² não pode cair num item em m³.
+   *
+   * Queda para "*|..." (preço do serviço valendo para todos) continua, com a
+   * MESMA parte estável.
    * Sem preço, a linha volta `pendente: true` e valor null — NUNCA zero.
    * ------------------------------------------------------------------- */
-  Producao.precoDe = function (precos, colaboradorId, codigo) {
+  function un(u) { return String(u == null ? "" : u).trim().toLowerCase(); }
+
+  /* identidade do SERVIÇO, sem a pessoa — é o que entra nas duas chaves */
+  Producao.identidadeServico = function (l) {
+    var x = l || {};
+    if (x.codigoBase) return "b:" + String(x.codigoBase);
+    if (x.refId) return "r:" + String(x.obraId || "") + ":" + String(x.refId);
+    return "d:" + String(x.obraId || "") + ":" + String(x.servico || x.codigo || "");
+  };
+
+  Producao.chavePreco = function (l) {
+    var x = l || {};
+    return String(x.colaboradorId) + "|" + String(x.obraId || "") + "|" +
+      Producao.identidadeServico(x) + "|" + un(x.unidade);
+  };
+
+  Producao.precoDe = function (precos, linha) {
     var p = precos || {};
-    var chaveP = String(colaboradorId) + "|" + String(codigo);
-    if (p[chaveP] != null && p[chaveP] !== "") return num(p[chaveP]);
-    var chaveG = "*|" + String(codigo);
-    if (p[chaveG] != null && p[chaveG] !== "") return num(p[chaveG]);
+    var k = Producao.chavePreco(linha);
+    if (p[k] != null && p[k] !== "") return num(p[k]);
+    var g = "*|" + String((linha || {}).obraId || "") + "|" +
+      Producao.identidadeServico(linha) + "|" + un((linha || {}).unidade);
+    if (p[g] != null && p[g] !== "") return num(p[g]);
     return null;
+  };
+
+  /* MIGRAÇÃO DAS CHAVES ANTIGAS
+   *
+   * As chaves velhas (`colab|1.1`) são AMBÍGUAS por construção: o mesmo "1.1"
+   * pode ser dois serviços em duas obras. Reaplicar sem conferir é o próprio
+   * defeito. Então só migra o que for provadamente UNÍVOCO — o par
+   * (pessoa, número) que, em todos os diários, aponta para uma identidade e
+   * uma unidade só. O ambíguo NÃO vira preço: a linha volta a "sem preço", que
+   * é a regra 3 do módulo (sem preço nunca é R$ 0,00), e o usuário reconfirma.
+   * Devolve também o que ficou de fora, para a tela poder avisar. */
+  Producao.migrarPrecos = function (precosAntigos, linhas) {
+    var novos = {}, ambiguos = [], vistos = {}, k;
+    var porAntiga = {};
+    (linhas || []).forEach(function (l) {
+      var antiga = String(l.colaboradorId) + "|" + String(l.codigo || l.servico || "");
+      if (!porAntiga[antiga]) porAntiga[antiga] = [];
+      var nova = Producao.chavePreco(l);
+      if (porAntiga[antiga].indexOf(nova) === -1) porAntiga[antiga].push(nova);
+    });
+    for (k in (precosAntigos || {})) {
+      if (!Object.prototype.hasOwnProperty.call(precosAntigos, k)) continue;
+      /* chave já no formato novo (3 barras) passa direto */
+      if (k.split("|").length >= 4) { novos[k] = precosAntigos[k]; continue; }
+      var destinos = porAntiga[k] || [];
+      if (destinos.length === 1) { novos[destinos[0]] = precosAntigos[k]; vistos[k] = 1; }
+      else ambiguos.push({ chave: k, valor: precosAntigos[k], destinos: destinos.length });
+    }
+    return { precos: novos, ambiguos: ambiguos };
   };
 
   Producao.medir = function (linhas, precos) {
     var out = [], total = 0, semPreco = 0;
     (linhas || []).forEach(function (l) {
-      var cod = l.codigo || l.servico || "";
-      var pu = Producao.precoDe(precos, l.colaboradorId, cod);
+      var pu = Producao.precoDe(precos, l);
       var linha = {
         colaboradorId: l.colaboradorId, nome: l.nome, servico: l.servico, codigo: l.codigo,
         unidade: l.unidade, qtd: l.qtd, dias: l.dias, obraId: l.obraId,
+        refId: l.refId || "", codigoBase: l.codigoBase || "",
         origens: (l.origens || []).slice(),
         precoUnit: pu, valor: null, pendente: false
       };
@@ -400,6 +471,158 @@
     return out;
   };
 
+
+  /* -------------------------------------------------------------------
+   * PUXAR O PREÇO DO ORÇAMENTO — a mão de obra que já está orçada
+   *
+   * O orçamento guarda, por item, `custoMO` = quanto de MÃO DE OBRA custa
+   * UMA unidade daquele serviço (o SINAPI separa MO / material / equipamento,
+   * e `js/analitico.js` reparticiona quando a base não separa).
+   *
+   * ⚠ ISSO NÃO É "O PREÇO DO TERCEIRO" — e a tela precisa dizer isso.
+   * O custo de MO do SINAPI é o que o serviço custaria pela SUA folha: salário
+   * mais encargos sociais, no regime que o orçamento escolheu (desonerado ou
+   * não). Quem contrata por produção paga outra coisa: o terceiro embute os
+   * encargos DELE, ferramenta, deslocamento e lucro. Os dois números vivem no
+   * mesmo lugar da planilha, mas não são a mesma conta.
+   *
+   * Então o que esta função devolve é uma REFERÊNCIA — o teto do que aquele
+   * serviço já custa no seu orçamento — para quem negocia ter em que se apoiar.
+   * Quem decide o preço é o usuário; por isso nada é gravado sem ele confirmar.
+   *
+   * NÃO CONVERTE UNIDADE. Se o diário mediu em m² e o item está em m³, a
+   * função recusa e diz por quê: converter caladamente é como um item some do
+   * orçamento sem erro nenhum (foi o que a Parede-Cebola já ensinou).
+   * ------------------------------------------------------------------- */
+  Producao.REGIME_ROTULO = { desonerado: "encargos desonerados", nao_desonerado: "encargos não desonerados" };
+
+  /* acha o item do orçamento que corresponde à linha da produção.
+     Ordem: id do item (exato) → código da base.
+
+     ⚠ NÃO existe terceiro critério "pelo número do item". Ele existiu e era
+     duas vezes errado: (1) item de orçamento NÃO guarda `numero` — o número
+     nasce em Orcamento.calcular() e vive na linha calculada, então o critério
+     estava morto e só parecia vivo porque a fixture do teste escrevia o campo
+     à mão; (2) mesmo que existisse, o diário e o orçamento numeram cada um por
+     conta própria, então casar por número seria pagar por COINCIDÊNCIA de
+     numeração — pior do que não casar, porque paga o serviço errado calado. */
+  Producao.itemDoOrcamento = function (linha, orc) {
+    if (!linha || !orc || !orc.etapas) return null;
+    var achado = null, porCodigo = null;
+    var refId = String(linha.refId || "");
+    var cod = String(linha.codigoBase || "");
+    orc.etapas.forEach(function (et) {
+      (et.itens || []).forEach(function (it) {
+        if (!it) return;
+        if (refId && it.id === refId) achado = it;
+        if (!porCodigo && cod && String(it.codigo || "") === cod) porCodigo = it;
+      });
+    });
+    return achado || porCodigo || null;
+  };
+
+  /* O REGIME DE ENCARGOS É LIDO, NÃO ASSUMIDO.
+     Orçamento que não nasceu do assistente (importador, BIM, obra demo) tem
+     `desonerado:false` E `config.encargos.tipo:"desonerado"` ao mesmo tempo —
+     ler só o config faz a tela dizer "desonerado" num orçamento onerado. A
+     regra de desempate é a mesma que Orcamento.garantirConfig aplica: o
+     booleano `desonerado`, quando existe, MANDA. */
+  Producao.regimeDoOrcamento = function (orc) {
+    var o = orc || {};
+    if (typeof o.desonerado === "boolean") return o.desonerado ? "desonerado" : "nao_desonerado";
+    return (o.config && o.config.encargos && o.config.encargos.tipo) || "desonerado";
+  };
+
+  Producao.precoDoOrcamento = function (linha, orc, unidadeChave, moDoItem) {
+    var cmp = typeof unidadeChave === "function" ? unidadeChave : function (u) {
+      return String(u == null ? "" : u).trim().toLowerCase();
+    };
+    if (!orc) return { ok: false, motivo: "Esta obra não está vinculada a nenhum orçamento. Vincule em Obras › editar." };
+    var it = Producao.itemDoOrcamento(linha, orc);
+    if (!it) return { ok: false, motivo: "Não achei este serviço no orçamento da obra (nem pelo item, nem pelo código)." };
+
+    var uLinha = cmp(linha && linha.unidade), uItem = cmp(it.unidade);
+    if (uLinha && uItem && uLinha !== uItem) {
+      return { ok: false, item: it,
+        motivo: "O diário mediu em \"" + (linha.unidade || "") + "\" e o item do orçamento está em \"" +
+          (it.unidade || "") + "\". Não converto unidade sozinho — confira qual das duas está certa." };
+    }
+
+    /* DE ONDE SAI A MÃO DE OBRA — e por que não pode ser só o `it.custoMO`.
+     *
+     * `it.custoMO` é um retrato tirado no momento em que o item entrou no
+     * orçamento. Ele falha em dois casos, os dois medidos no pacote real:
+     *
+     *  (a) SINAPI. A base SINTÉTICA (a que o addItem copia) NÃO traz a
+     *      separação MO/MAT/EQ: 0 de 12.815 itens de MG têm custoMO. Ou seja,
+     *      para o banco principal do produto o retrato nasce zerado e a
+     *      sugestão nunca apareceria. Quem tem a separação é a base ANALÍTICA,
+     *      que o app já carrega para o detalhamento da composição.
+     *
+     *  (b) PREÇO EDITADO. Se o usuário negocia e troca o custo unitário para
+     *      R$ 25,00, o custoMO continua o da base (R$ 31,20) — e a tela
+     *      sugeriria pagar de mão de obra MAIS do que o item inteiro custa.
+     *
+     * Nos dois casos a saída honesta é a mesma: aplicar a PROPORÇÃO de mão de
+     * obra da composição sobre o custo unitário que o item tem HOJE. Isso não
+     * inventa número — a proporção é da base, o custo é do orçamento. Quem
+     * fornece essa proporção é o `moDoItem` que a tela injeta (Analitico.quebra);
+     * sem ele, sobra o retrato, e se o retrato não fecha com o custo unitário
+     * atual a função RECUSA em vez de sugerir errado. */
+    var cu = num(it.custoUnitario);
+    var mo = 0, fonteMO = "orçamento";
+    var somaRetrato = num(it.custoMO) + num(it.custoMAT) + num(it.custoEQ);
+    var retratoBate = num(it.custoMO) > 0 && cu > 0 && Math.abs(somaRetrato - cu) <= Math.max(0.02, cu * 0.02);
+
+    if (retratoBate) { mo = num(it.custoMO); fonteMO = "separação do próprio orçamento"; }
+    else if (typeof moDoItem === "function") {
+      var r = moDoItem(it);
+      if (r && num(r.valor) > 0) { mo = num(r.valor); fonteMO = r.fonte || "composição da base"; }
+    }
+    /* último recurso: o retrato, mas só se ele couber dentro do custo unitário */
+    if (!(mo > 0) && num(it.custoMO) > 0 && (!(cu > 0) || num(it.custoMO) <= cu)) {
+      mo = num(it.custoMO); fonteMO = "separação do próprio orçamento";
+    }
+
+    if (!(mo > 0)) {
+      if (!(cu > 0)) return { ok: false, item: it, motivo: "Este item está sem custo no orçamento." };
+      /* o retrato existe mas NÃO CABE no custo unitário: é o caso do preço
+         editado à mão. Dizer só "não consigo separar" esconderia a causa. */
+      if (num(it.custoMO) > cu) {
+        return { ok: false, item: it,
+          motivo: "A mão de obra guardada neste item (R$ " + num(it.custoMO) + ") é maior que o custo unitário atual (R$ " + cu +
+            ") — o custo foi editado à mão e a separação de mão de obra ficou a da base. Confira o item antes de usar este número." };
+      }
+      return { ok: false, item: it,
+        motivo: "Não consigo separar a mão de obra deste item. O orçamento guarda só o custo total (R$ " + cu +
+          ") e a composição da base não está carregada para abrir a parte de mão de obra. Informe o preço à mão." };
+    }
+
+    var regime = Producao.regimeDoOrcamento(orc);
+    return {
+      ok: true, item: it, valor: Math.round(mo * 100) / 100,
+      unidade: it.unidade || linha.unidade || "",
+      regime: regime, regimeRotulo: Producao.REGIME_ROTULO[regime] || regime,
+      fonte: it.baseFonte || it.origem || "orçamento", fonteMO: fonteMO,
+      codigo: it.codigo || "", descricao: it.descricao || "",
+      /* o texto que a tela mostra — a ressalva anda junto com o número */
+      explicacao: "Mão de obra deste serviço no seu orçamento (" + (it.baseFonte || it.origem || "base") + ", " + fonteMO +
+        ", " + (Producao.REGIME_ROTULO[regime] || regime) + "). " +
+        "É o que ele custaria pela sua folha; quem trabalha por produção cobra os encargos e o lucro dele por fora."
+    };
+  };
+
+  /* sugere preço para VÁRIAS linhas de uma vez — devolve o que deu e o que não
+     deu, com motivo, porque sumir com as que falharam esconde o problema */
+  Producao.sugerirPrecos = function (linhas, orcPorObra, unidadeChave, moDoItem) {
+    var ok = [], falhas = [];
+    (linhas || []).forEach(function (l) {
+      var r = Producao.precoDoOrcamento(l, (orcPorObra || {})[l.obraId || ""], unidadeChave, moDoItem);
+      if (r.ok) ok.push({ linha: l, preco: r });
+      else falhas.push({ linha: l, motivo: r.motivo });
+    });
+    return { ok: ok, falhas: falhas };
+  };
 
   global.Producao = Producao;
   if (typeof module !== "undefined" && module.exports) module.exports = Producao;
