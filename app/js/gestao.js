@@ -415,21 +415,26 @@
      * com value undefined — early-return senão o re-render fecha o dropdown aberto. */
     /* aceita uma obra ou VÁRIAS. O <select> é múltiplo: quem escolhe 3 obras
        vê o painel inteiro somando só as 3. "Todas" limpa a seleção. */
+    /* Duas entradas, e a ordem importa:
+       1) com `id` (ou uma lista) explícito — chamada programática, manda o id;
+       2) sem id — é o usuário mexendo no <select> múltiplo, e aí a VERDADE está
+          na tela: o roteador não consegue passar mais de um valor, então lemos
+          quais opções ficaram marcadas. Se o id vencesse sempre, escolher três
+          obras guardaria só uma; se a tela vencesse sempre, nenhuma chamada
+          programática funcionaria. */
     dashTrocaObra: function (id, el) {
-      /* ⚠ o roteador de ações (acao: function (gacao, dataset, app)) NÃO passa o
-         elemento — buscar aqui é mais seguro do que mudar a assinatura dele, que
-         é usada por dezenas de ações. */
-      if (!el && typeof document !== "undefined") el = document.querySelector('[data-gacao="dash-obra"]');
-      if (el && el.multiple) {
-        var sel = [];
-        for (var i = 0; i < el.options.length; i++) {
-          if (el.options[i].selected && el.options[i].value !== "todas") sel.push(el.options[i].value);
-        }
-        this._dashObra = sel.length ? (sel.length === 1 ? sel[0] : sel) : "todas";
+      if (id != null && id !== "") {
+        this._dashObra = Object.prototype.toString.call(id) === "[object Array]"
+          ? (id.length ? id : "todas") : id;
         App.render(); return;
       }
-      if (id == null) return;
-      this._dashObra = id || "todas";
+      if (!el && typeof document !== "undefined") el = document.querySelector('[data-gacao="dash-obra"]');
+      if (!el || !el.options) return;
+      var sel = [];
+      for (var i = 0; i < el.options.length; i++) {
+        if (el.options[i].selected && el.options[i].value !== "todas") sel.push(el.options[i].value);
+      }
+      this._dashObra = sel.length ? (sel.length === 1 ? sel[0] : sel) : "todas";
       App.render();
     },
     _fmtK: function (v) {
@@ -12811,7 +12816,9 @@ renderFolha: function () {
         case "elevacao-parede": return this._elevacao();
         case "niv-excluir": return this._nivExcluir(dataset.id);
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
-        case "dash-obra": return this.dashTrocaObra(dataset.value, el);
+        /* de propósito sem valor: numa seleção múltipla o dataset carrega UM
+           valor só, e passá-lo descartaria as outras obras escolhidas. */
+        case "dash-obra": return this.dashTrocaObra(null);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
         case "tar-obra": return this.tarTrocaObra(dataset.value);
