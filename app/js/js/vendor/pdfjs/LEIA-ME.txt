@@ -1,0 +1,5 @@
+pdf.js 4.10.38 — Mozilla Foundation — Apache License 2.0
+Vendorizado (offline-first, como three.js e xlsx): o OrçaPRO roda sem internet.
+Usado para (a) rasterizar página de PDF num canvas e (b) extrair os traços vetoriais
+de uma prancha, no pipeline "desenho -> volumetria".
+Origem: https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/

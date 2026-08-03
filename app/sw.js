@@ -4,7 +4,14 @@
  * Só cacheia o MESMO domínio (IA, servidor de licença e fontes externas vão direto pra rede). */
 /* IMPORTANTE: o nome do cache carrega a versão. A cada release o 'activate' abaixo apaga
  * os caches de versões antigas -> força buscar o código novo (evita app rodando JS velho após update). */
-var CACHE = 'orcapro-app-v1.1.146';
+/* ⚠ ESTE NÚMERO TEM QUE SER O MESMO DE js/config.js.
+ * Ele ficou parado na 1.1.146 enquanto o app ia para a 1.1.148 — duas releases
+ * sem purgar o cache do PWA. Como o fetch é network-first, quem estava online
+ * não viu problema; quem abriu offline seguiu com arquivo velho, sem erro em
+ * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
+ * agora o packer REPROVA o pacote se os dois números divergirem
+ * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
+var CACHE = 'orcapro-app-v1.1.149';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
