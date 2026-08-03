@@ -6216,8 +6216,19 @@
           if ((est === "publicado" || est === "publicado_legado") && RDO.podeAcao("despublicar", eu, r, ctxAp))
             acao += '<button class="btn sm ghost" data-gacao="rdo-despublicar" data-id="' + r.id + '" title="Tirar do Portal do cliente">Despublicar</button> ';
         }
+        /* ⚠ EDITAR NÃO TINHA BOTÃO. A regra (`RDO.podeAcao("editar")`) sempre
+           existiu e funcionava, mas o único jeito de abrir o diário era clicar
+           no NÚMERO dele, na primeira coluna. No computador havia um
+           `cursor:pointer` como pista; no tablet — que é onde o encarregado
+           trabalha — não existe cursor nem hover, então a edição era invisível
+           por completo. Quem precisava corrigir um rascunho ou atender a um
+           pedido de revisão não achava por onde.
+           O botão respeita a MESMA regra de antes: diário publicado ninguém
+           reescreve, e sub-usuário não mexe no diário de outra pessoa. */
+        if (typeof RDO !== "undefined" && RDO.podeAcao("editar", eu, r, ctxAp))
+          acao += '<button class="btn sm" data-gopen="rdo:' + r.id + '" title="Abrir o diário para editar">✎</button> ';
         acao += '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">🖨</button>';
-        html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + selo + '</td><td class="num">' + acao + "</td></tr>";
+        html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '" title="Abrir este diário"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + selo + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
