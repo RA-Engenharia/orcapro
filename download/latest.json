@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.154",
+  "versao": "1.1.155",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.154/OrcaPRO-IA-update-v1.1.154.zip",
-  "notas": "O ADMINISTRADOR APROVA O PROPRIO DIARIO. Ate agora quem escreveu o diario nao podia aprova-lo. So que a maioria das contas e de UMA pessoa: o diario travava em Aguardando aprovacao para sempre e o cliente nao recebia o documento. Agora o administrador aprova o que ele mesmo escreveu. Sub-usuario continua sem aprovar o proprio — encarregado nao homologa o proprio dia. Quem trabalha com contrato grande pode ligar a opcao exigir outro aprovador e voltar aos quatro olhos.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.154/OrcaPRO-IA-Instalador-v1.1.154.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.155/OrcaPRO-IA-update-v1.1.155.zip",
+  "notas": "O FILTRO DE OBRA DO PAINEL PASSOU A VALER PARA TUDO. Voce escolhia uma obra e os graficos de despesa por categoria, custo por obra e custo por m2 continuavam somando a carteira inteira - inclusive a OBRA TESTE. Agora o filtro alcanca todos os graficos e todos os indicadores da tela. E da para escolher MAIS DE UMA obra: segure Ctrl e clique nas obras que quer somar; o painel mostra quantas estao somadas. Todas as Obras continua sendo a visao global.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.155/OrcaPRO-IA-Instalador-v1.1.155.exe"
 }

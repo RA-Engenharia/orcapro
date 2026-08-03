@@ -413,7 +413,25 @@
     // ========== HOME EXECUTIVA/FINANCEIRA (visual aprovado no protótipo) ==========
     /* Selects com data-gacao também recebem o CLIQUE da delegação (antes do change),
      * com value undefined — early-return senão o re-render fecha o dropdown aberto. */
-    dashTrocaObra: function (id) { if (id == null) return; this._dashObra = id || "todas"; App.render(); },
+    /* aceita uma obra ou VÁRIAS. O <select> é múltiplo: quem escolhe 3 obras
+       vê o painel inteiro somando só as 3. "Todas" limpa a seleção. */
+    dashTrocaObra: function (id, el) {
+      /* ⚠ o roteador de ações (acao: function (gacao, dataset, app)) NÃO passa o
+         elemento — buscar aqui é mais seguro do que mudar a assinatura dele, que
+         é usada por dezenas de ações. */
+      if (!el && typeof document !== "undefined") el = document.querySelector('[data-gacao="dash-obra"]');
+      if (el && el.multiple) {
+        var sel = [];
+        for (var i = 0; i < el.options.length; i++) {
+          if (el.options[i].selected && el.options[i].value !== "todas") sel.push(el.options[i].value);
+        }
+        this._dashObra = sel.length ? (sel.length === 1 ? sel[0] : sel) : "todas";
+        App.render(); return;
+      }
+      if (id == null) return;
+      this._dashObra = id || "todas";
+      App.render();
+    },
     _fmtK: function (v) {
       var neg = v < 0 ? "−" : ""; v = Math.abs(Util.num(v));
       if (v >= 999500) return neg + "R$ " + (v / 1000000).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) + " mi";
@@ -427,11 +445,18 @@
       var self = this;
       if (this._dashPer == null) this._dashPer = "6m";
       if (this._dashObra == null) this._dashObra = "todas";
-      var obraSel = this._dashObra, obras = lista("obras");
-      if (obraSel !== "todas" && !obras.some(function (o) { return o.id === obraSel; })) { obraSel = this._dashObra = "todas"; }
+      var obras = lista("obras");
+      /* obra que saiu do cadastro não pode continuar filtrando em silêncio */
+      var ids = this._dashObras();
+      if (ids) {
+        ids = ids.filter(function (id) { return obras.some(function (o) { return o.id === id; }); });
+        if (!ids.length) { this._dashObra = "todas"; ids = null; }
+        else this._dashObra = ids.length === 1 ? ids[0] : ids;
+      }
+      var obraSel = ids && ids.length === 1 ? ids[0] : "todas";   /* detalhe por etapa só faz sentido em UMA obra */
       var finTudo = lista("financeiro");
       var finPer = this._periodoFin(finTudo, this._dashPer);
-      var fin = finPer.filter(function (f) { return obraSel === "todas" || f.obraId === obraSel; });
+      var fin = finPer.filter(function (f) { return !ids || ids.indexOf(f.obraId) > -1; });
 
       var receitas = 0, despesas = 0, aReceber = 0, aPagar = 0;
       var porCat = Object.create(null), porMes = Object.create(null);
@@ -496,7 +521,8 @@
           if (semEtapa > 0) prevReal.push({ rotulo: "Sem etapa apropriada", previsto: 0, real: Math.max(0, semEtapa), estourou: false });
         }
       } else {
-        obras.forEach(function (o) {
+        /* previsto × realizado por obra: só as obras do recorte */
+        obras.filter(function (o) { return self._dashNaObra(o.id); }).forEach(function (o) {
           if (!o.orcamentoId) return;
           var orc2 = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc2) return;
           var prev = Orcamento.totais(orc2).custoDireto;
@@ -684,12 +710,17 @@
       var temFin = lista("financeiro").length > 0;
 
       // ---- barra de filtros globais ----
-      var optO = '<option value="todas"' + (d.obraSel === "todas" ? " selected" : "") + '>Todas as Obras (Visão Global)</option>' +
-        obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === d.obraSel ? " selected" : "") + '>' + Util.esc(o.nome) + '</option>'; }).join("");
+      var selIds = self._dashObras();   /* null = todas */
+      var optO = '<option value="todas"' + (!selIds ? " selected" : "") + '>Todas as Obras (Visão Global)</option>' +
+        obras.map(function (o) {
+          var m = !!(selIds && selIds.indexOf(o.id) > -1);
+          return '<option value="' + Util.esc(o.id) + '"' + (m ? " selected" : "") + '>' + Util.esc(o.nome) + '</option>';
+        }).join("");
       var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + '>' + perRot[p] + '</option>'; }).join("");
       var _ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
       var html = '<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 16px">' +
-        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("obra") + 'Obra <select data-gacao="dash-obra" style="max-width:250px">' + optO + '</select></label>' +
+        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("obra") + 'Obra <select data-gacao="dash-obra" multiple size="1" title="Segure Ctrl (ou toque) para escolher mais de uma obra" style="max-width:250px">' + optO + '</select></label>' +
+        (selIds && selIds.length > 1 ? '<span style="font-size:11px;font-weight:700;color:var(--verde)">' + selIds.length + ' obras somadas</span>' : "") +
         '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("periodo") + 'Período <select data-gacao="dash-periodo" style="max-width:170px">' + optP + '</select></label>' +
         '<span class="muted" style="margin-left:auto;font-size:11.5px">' + (d.obraSel === "todas" ? "Portfólio completo" : Util.esc((obras.filter(function (o) { return o.id === d.obraSel; })[0] || {}).nome || "")) + ' · ' + perRot[this._dashPer] + '</span></div>';
 
@@ -772,8 +803,39 @@
         return true;
       });
     },
+    /* ------------------------------------------------------------------
+     * O FILTRO DE OBRA VALE PARA TODO O PAINEL
+     *
+     * ⚠ `_dashGraficosDados` NÃO recebia a obra selecionada e nem olhava para
+     * ela: os gráficos de categoria, custo por obra e custo/m² somavam SEMPRE
+     * o portfólio inteiro. Na tela isso ficava assim: o usuário escolhia uma
+     * obra, os cartões de cima mudavam, e logo abaixo continuava aparecendo
+     * "OBRA TESTE" com valores que não eram daquela obra. Quem lê o painel não
+     * tem como saber que metade dele ignorou o filtro.
+     *
+     * `_dashObras()` é agora a ÚNICA fonte de "quais obras estão no recorte":
+     * "todas" devolve null (sem filtro) e uma seleção devolve o conjunto de
+     * ids. Quem somar dinheiro no painel passa por aqui.
+     * ------------------------------------------------------------------ */
+    _dashObras: function () {
+      var sel = this._dashObra;
+      if (sel == null || sel === "todas") return null;         // portfólio inteiro
+      if (Object.prototype.toString.call(sel) === "[object Array]") {
+        var v = sel.filter(function (x) { return !!x; });
+        return v.length ? v : null;
+      }
+      return [sel];
+    },
+    _dashNaObra: function (obraId) {
+      var ids = this._dashObras();
+      return !ids || ids.indexOf(obraId) > -1;
+    },
+
     _dashGraficosDados: function (periodo, ref) {
       var self = this, fin = this._periodoFin(lista("financeiro"), periodo, ref), obras = lista("obras");
+      /* o recorte de obra entra AQUI, antes de qualquer soma */
+      fin = fin.filter(function (f) { return self._dashNaObra(f.obraId); });
+      obras = obras.filter(function (o) { return self._dashNaObra(o.id); });
       var porCat = {};
       fin.forEach(function (f) { if (f.tipo === "despesa") { var c = f.categoria || "outros"; porCat[c] = (porCat[c] || 0) + Util.num(f.valor); } });
       var cats = [];
@@ -12749,7 +12811,7 @@ renderFolha: function () {
         case "elevacao-parede": return this._elevacao();
         case "niv-excluir": return this._nivExcluir(dataset.id);
         case "dash-periodo": return this.dashTrocaPeriodo(dataset.value);
-        case "dash-obra": return this.dashTrocaObra(dataset.value);
+        case "dash-obra": return this.dashTrocaObra(dataset.value, el);
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
         case "tar-obra": return this.tarTrocaObra(dataset.value);
