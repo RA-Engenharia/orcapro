@@ -8064,15 +8064,103 @@
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Colaborador</th><th class="num">Itens</th><th class="num">Valor</th><th></th></tr></thead><tbody>';
       es.forEach(function (e) {
         var nI = (e.itens && e.itens.length) || 0;
-        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="ficha-epi" data-id="' + e.id + '">🖨 Ficha</button></td></tr>';
+        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="epi-editar" data-id="' + e.id + '" title="Editar esta entrega">✎</button> '
+          + '<button class="btn sm" data-gacao="epi-duplicar" data-id="' + e.id + '" title="Duplicar para outro colaborador">⧉</button> '
+          + '<button class="btn sm" data-gacao="ficha-epi" data-id="' + e.id + '">🖨 Ficha</button></td></tr>';
       });
       return html + "</tbody></table>";
     },
     novoEntregaEpi: function () { this.formEntregaEpi(null); },
+
+    /* Tudo o que a empresa COMPROU e pode carregar um CA: os itens de
+       estoque (é onde o lançamento da NF-e grava o CA lido da descrição) e
+       o catálogo próprio, que também pode ter CA preenchido. */
+    _epiComprados: function () {
+      var out = lista("estoque").slice();
+      try {
+        var pr = Store.lerPrefs(eid()) || {};
+        (pr.epiProprios || []).forEach(function (p2) {
+          if (p2 && p2.ca) out.push({ nome: p2.nome, ca: p2.ca, epiId: p2.id });
+        });
+      } catch (e) {}
+      return out;
+    },
+
+    epiEditar: function (id) {
+      var r = lista("epi").filter(function (x2) { return x2.id === id; })[0];
+      if (!r) { UI.toast("Entrega não encontrada.", "erro"); return; }
+      this.formEntregaEpi(r);
+    },
+
+    /* ------------------------------------------------------------------
+     * DUPLICAR para outro(s) colaborador(es).
+     *
+     * Na obra o mesmo kit vai para o time inteiro; refazer a ficha item a
+     * item para cada um é o que faz o encarregado desistir de registrar.
+     * Cada cópia nasce com NÚMERO PRÓPRIO e data de hoje — nunca com a
+     * assinatura de quem recebeu a original.
+     * ------------------------------------------------------------------ */
+    epiDuplicar: function (id) {
+      var self = this, o = lista("epi").filter(function (x2) { return x2.id === id; })[0];
+      if (!o) { UI.toast("Entrega não encontrada.", "erro"); return; }
+      var colabs = lista("colaboradores").filter(function (c) { return c.status === "ativo" && c.id !== o.colaboradorId; });
+      if (!colabs.length) { UI.toast("Não há outro colaborador ativo para receber a cópia.", "aviso"); return; }
+      var hoje = new Date().toISOString().slice(0, 10);
+      var nI = (o.itens || []).length;
+      var corpo = '<p class="muted" style="margin:0 0 10px">Copiando os <b>' + nI + ' EPI' + (nI === 1 ? "" : "s")
+        + '</b> da entrega <b>' + Util.esc(o.numero || "—") + "</b> (" + Util.esc(o.colaboradorNome || "—") + "). "
+        + "Cada colaborador escolhido recebe uma ficha nova, com número próprio — a assinatura não é copiada.</p>"
+        + '<div class="row">' + campo("Data da nova entrega", inp("g-ddata", hoje, "", "date")) + "</div>"
+        + campo("Para quem (pode marcar vários) *",
+          '<div style="max-height:220px;overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:6px">'
+          + colabs.map(function (c) {
+            return '<label style="display:flex;gap:8px;align-items:center;padding:3px 2px;cursor:pointer">'
+              + '<input type="checkbox" data-dupcol="' + Util.esc(c.id) + '">'
+              + "<span>" + Util.esc(c.nome) + (c.funcao ? ' <span class="muted" style="font-size:12px">· ' + Util.esc(c.funcao) + "</span>" : "") + "</span></label>";
+          }).join("") + "</div>");
+      UI.modal("⧉ Duplicar entrega de EPI", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Duplicar", classe: "primary", onClick: function () {
+          var marcados = [];
+          Array.prototype.forEach.call(document.querySelectorAll("[data-dupcol]"), function (cb) {
+            if (cb.checked) marcados.push(cb.getAttribute("data-dupcol"));
+          });
+          if (!marcados.length) { UI.toast("Marque pelo menos um colaborador.", "erro"); return; }
+          var data = v("g-ddata") || hoje, feitas = 0;
+          marcados.forEach(function (cid) {
+            var c = lista("colaboradores").filter(function (x2) { return x2.id === cid; })[0];
+            if (!c) return;
+            /* o número é pedido DENTRO do laço: _proxNumeroEpi lê o que já
+               está salvo, então duplicar para 5 pessoas de uma vez daria 5
+               fichas com o mesmo número se calculássemos uma vez só. */
+            var novo = Epi.duplicarEntrega(o, c, { numero: self._proxNumeroEpi(), data: data });
+            Store.salvar(eid(), "epi", novo);
+            feitas++;
+          });
+          UI.fecharModal();
+          App.render();
+          UI.toast(feitas === 1 ? "Entrega duplicada." : feitas + " entregas criadas.", "ok");
+        } }
+      ]);
+    },
     formEntregaEpi: function (e) {
       e = e || {}; var self = this, colabs = lista("colaboradores"), obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
       var numero = e.numero || this._proxNumeroEpi();
       var itensBuf = this._epiItens(e);
+      /* ao ABRIR uma entrega antiga, o que está com CA pendente também
+         procura na nota — senão a ficha velha continuaria pedindo à mão um
+         número que a empresa já tem. Nada é sobrescrito: só preenche vazio. */
+      (function () {
+        var comprados = self._epiComprados(), achou = 0;
+        itensBuf.forEach(function (it) {
+          if (!Epi.caPendente(it.ca)) return;
+          var a2 = Epi.caDeCompras(it.nome, comprados, it.epiId);
+          if (a2) { it.ca = a2.ca; it.caFonte = a2.de; achou++; }
+        });
+        if (achou) setTimeout(function () {
+          UI.toast(achou === 1 ? "1 CA preenchido pela nota de compra." : achou + " CAs preenchidos pelas notas de compra.", "ok");
+        }, 400);
+      })();
       var corpo =
         '<div class="row">' + campo("Número", inp("g-num", numero)) + campo("Data", inp("g-data", e.data || hoje, "", "date")) + campo("Obra", sel("g-obra", optsRec(obras, "nome", e.obraId, "— nenhuma —"))) + "</div>" +
         campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", e.colaboradorId, "— selecionar —"))) +
@@ -8100,7 +8188,9 @@
               + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">🔎</button>'
               /* sem CA não é "N/A": é PENDENTE. O número vem da nota do modelo
                  comprado — inventar um seria falsificar a ficha NR-6. */
-              + (Epi.caPendente(it.ca) ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou — o 🔎 consulta online">CA pendente</span>' : "") + '</td>'
+              + (Epi.caPendente(it.ca)
+                ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou — o 🔎 consulta online">CA pendente</span>'
+                : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : "")) + '</td>' 
               + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
               + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
               + '<td class="num"><input data-eevu="' + i + '" value="' + Util.esc(String(it.valorUnit).replace(".", ",")) + '" style="width:60px;text-align:right"></td>'
@@ -8117,8 +8207,14 @@
         Array.prototype.forEach.call(el.querySelectorAll("[data-eerm]"), function (b) { b.onclick = function () { itensBuf.splice(+b.getAttribute("data-eerm"), 1); renderItens(); }; });
       }
       this._wireCatalogoEpi("ee-q", "ee-res", "ee-status", function (epi) {
-        itensBuf.push({ epiId: epi.id, nome: epi.nome, ca: epi.ca || "", validade: "", quantidade: 1, valorUnit: Util.num(epi.valorRef) || 0 });
-        renderItens(); UI.toast("EPI adicionado.", "ok");
+        var it = { epiId: epi.id, nome: epi.nome, ca: epi.ca || "", validade: "", quantidade: 1, valorUnit: Util.num(epi.valorRef) || 0 };
+        /* o CA já entrou pela NOTA quando o EPI foi comprado — não faz sentido
+           pedir de novo. Só o que NÃO tem sobra para o 🔎 consultar. */
+        var achado = Epi.caPendente(it.ca) ? Epi.caDeCompras(it.nome, self._epiComprados(), it.epiId) : null;
+        if (achado) { it.ca = achado.ca; it.caFonte = achado.de; }
+        itensBuf.push(it);
+        renderItens();
+        UI.toast(achado ? "EPI adicionado — CA " + achado.ca + " veio da nota." : "EPI adicionado.", "ok");
       });
       renderItens();
     },
@@ -12960,6 +13056,8 @@ renderFolha: function () {
         case "nova-entrega-epi": return this.novoEntregaEpi();
         case "novo-epi-proprio": return this.formEpiProprio(id);
         case "catalogo-epi": return this.abrirCatalogoEpi();
+        case "epi-editar": return this.epiEditar(dataset.id);
+        case "epi-duplicar": return this.epiDuplicar(dataset.id);
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
         case "falta-lote": return this.faltasLote();

@@ -123,6 +123,96 @@
      * dizer "pendente" é o único jeito honesto. */
     caPendente: function (v) { return !String(v == null ? "" : v).replace(/\D/g, ""); },
 
+    /* ------------------------------------------------------------------
+     * O CA QUE JÁ ENTROU PELA NOTA
+     *
+     * Quando a NF-e é lançada, o CA lido da descrição do produto fica
+     * gravado no item de estoque. Digitar o mesmo número de novo na ficha
+     * de entrega é trabalho repetido — e é onde nasce o erro de digitação
+     * que a fiscalização acha. Aqui a entrega PESCA esse CA; o 🔎 online
+     * fica só para o que realmente não tem.
+     *
+     * Recebe a lista pronta (o motor não fala com o Store, para rodar em
+     * Node puro). Devolve { ca, de } ou null.
+     * ------------------------------------------------------------------ */
+    normNome: function (t) {
+      var s2 = String(t == null ? "" : t);
+      if (s2.normalize) s2 = s2.normalize("NFD").replace(/[̀-ͯ]/g, "");
+      return s2.toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+    },
+
+    /* Palavras que importam. "DE/DA/COM/PARA" não distinguem EPI nenhum e
+       eram justamente o que impedia "BOTINA DE SEGURANCA" de casar com
+       "BOTINA SEGURANCA COURO" — o jeito que a nota escreve de verdade. */
+    _VAZIAS: { DE: 1, DA: 1, DO: 1, DAS: 1, DOS: 1, COM: 1, PARA: 1, EM: 1, E: 1, A: 1, O: 1, TIPO: 1, UNID: 1, UN: 1, PAR: 1, PARES: 1, CX: 1, PCT: 1 },
+    palavras: function (t) {
+      var self = this;
+      return this.normNome(t).split(" ").filter(function (w) {
+        return w.length >= 3 && !self._VAZIAS[w] && !/^\d+$/.test(w);
+      });
+    },
+
+    caDeCompras: function (nome, itensComprados, epiId) {
+      var self = this, alvo = this.normNome(nome), achado = null;
+      if (!alvo) return null;
+      (itensComprados || []).forEach(function (it) {
+        if (achado) return;
+        if (self.caPendente(it && it.ca)) return;           /* só serve quem TEM CA */
+        /* 1) casamento forte: o item de estoque aponta para o mesmo EPI */
+        if (epiId && it.epiId && String(it.epiId) === String(epiId)) { achado = it; return; }
+        /* 2) nome igual, já normalizado (acento, caixa e pontuação fora) */
+        var n = self.normNome(it.nome || it.descricao || "");
+        if (!n) return;
+        if (n === alvo) { achado = it; return; }
+        /* 3) todas as palavras que importam do nome do EPI aparecem na
+              descrição da nota (ou o contrário). A nota escreve "BOTINA
+              SEGURANCA COURO PRETA" para a "Botina de segurança" — casar
+              por texto inteiro nunca pegaria isso. Exigir 2 palavras (ou 1
+              longa) evita que "LUVA" case com qualquer luva do mundo. */
+        var pa = self.palavras(nome), pn = self.palavras(it.nome || it.descricao || "");
+        if (!pa.length || !pn.length) return;
+        var menor = pa.length <= pn.length ? pa : pn, maior = pa.length <= pn.length ? pn : pa;
+        var forca = (menor.length >= 2) || (menor.length === 1 && menor[0].length >= 6);
+        if (!forca) return;
+        var todas = menor.every(function (w) { return maior.indexOf(w) > -1; });
+        if (todas) achado = it;
+      });
+      if (!achado) return null;
+      return { ca: String(achado.ca).replace(/\D/g, ""), de: achado.nome || achado.descricao || "", nota: achado.notaNumero || achado.nf || "" };
+    },
+
+    /* ------------------------------------------------------------------
+     * DUPLICAR A ENTREGA PARA OUTRO COLABORADOR
+     *
+     * Copia os EPIs, não a assinatura: a nova ficha nasce com número novo,
+     * data de hoje e SEM o recibo/assinatura da anterior — senão seria o
+     * documento de uma pessoa carimbado com o aceite de outra.
+     * ------------------------------------------------------------------ */
+    duplicarEntrega: function (origem, colaborador, opcoes) {
+      var o = origem || {}, c = colaborador || {}, op = opcoes || {};
+      var itens = (o.itens || []).map(function (it) {
+        var n = {};
+        for (var k in it) if (it.hasOwnProperty(k)) n[k] = it[k];
+        return n;                                            /* cópia rasa: os itens não podem
+                                                                compartilhar objeto com a origem */
+      });
+      return {
+        numero: op.numero || "",
+        data: op.data || o.data || "",
+        obraId: op.obraId != null ? op.obraId : o.obraId,
+        colaboradorId: c.id || "",
+        colaboradorNome: c.nome || "",
+        colaboradorFuncao: c.funcao || "",
+        colaboradorCpf: c.cpf || "",
+        itens: itens,
+        valorTotal: this.valorTotal ? this.valorTotal(itens) : itens.reduce(function (s2, it) {
+          return s2 + (Number(it.quantidade) || 0) * (Number(it.valorUnit) || 0);
+        }, 0),
+        observacoes: o.observacoes || "",
+        duplicadaDe: o.id || ""
+      };
+    },
+
     /* Catálogo próprio da empresa por cima do de fábrica (mesmo contrato do
      * Blocos.usarOverrides): RESTAURA a fábrica antes de aplicar, senão o EPI
      * de uma empresa vaza para a outra quando troca de conta sem recarregar.
