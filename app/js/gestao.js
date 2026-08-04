@@ -195,6 +195,106 @@
     GRUPOS_MENU: { 1: "1 · Orçar & vender", 2: "2 · Modelo 3D (BIM)", 3: "3 · Fechar & estruturar", 4: "4 · Canteiro", 5: "5 · Abastecer a obra", 6: "6 · Equipe & ativos", 7: "7 · Dinheiro & comando" },
 
     // ---------- Sidebar (nav de módulos) ----------
+    /* ==================================================================
+     * MENU ENXUTO — o cliente escolhe o que fica à vista
+     *
+     * São muitos módulos. Quem toca obra usa 5 ou 6 todo dia e o resto
+     * uma vez por mês, mas paga o preço visual dos 20 o tempo inteiro.
+     * Aqui ele FIXA os do dia a dia; os outros descem para "Mais módulos",
+     * que abre ao passar o mouse (desktop) ou ao tocar (celular).
+     *
+     * REGRAS QUE NÃO PODEM CAIR:
+     *  • nada é escondido sem o cliente mandar — a instalação de hoje
+     *    continua exatamente como está até ele organizar o menu;
+     *  • esconder é do MENU, não do sistema: o módulo continua existindo,
+     *    acessível pelo "Mais módulos" e pela busca (Ctrl+K);
+     *  • o módulo ABERTO nunca some da barra, mesmo escondido — some ele
+     *    e a pessoa perde a referência de onde está;
+     *  • a preferência é de TELA e mora no aparelho: cada um organiza o
+     *    seu menu sem reescrever o do colega pela nuvem.
+     * ================================================================== */
+    _menuChave: function () {
+      var e = (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : "";
+      var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      return "orcapro:menu:" + e + ":" + (u.usuarioId || u.email || "dono");
+    },
+    /* null = ainda não organizou → tudo à vista (comportamento de hoje) */
+    _menuFixados: function () {
+      try {
+        var v = localStorage.getItem(this._menuChave());
+        if (!v) return null;
+        var a = JSON.parse(v);
+        return (Object.prototype.toString.call(a) === "[object Array]" && a.length) ? a : null;
+      } catch (e) { return null; }
+    },
+    _menuSalvar: function (ids) {
+      try {
+        if (!ids || !ids.length) localStorage.removeItem(this._menuChave());
+        else localStorage.setItem(this._menuChave(), JSON.stringify(ids));
+      } catch (e) {}
+    },
+    menuMaisToggle: function () {
+      var el = document.getElementById("sb-mais");
+      if (el) el.classList.toggle("aberto");
+    },
+    menuOrganizar: function () {
+      var self = this;
+      var mods = this.modulos.filter(function (m) {
+        return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id);
+      });
+      var fix = this._menuFixados();
+      var marcado = function (id) { return !fix || fix.indexOf(id) > -1; };
+      var corpo = '<p class="muted" style="margin:0 0 10px">Marque o que você usa no dia a dia — fica sempre à vista na barra lateral. '
+        + 'O que não estiver marcado continua no sistema, dentro de <b>Mais módulos</b> (abre passando o mouse, ou tocando no celular) e na busca <b>Ctrl+K</b>.</p>'
+        + '<div style="display:flex;gap:8px;margin-bottom:8px">'
+        + '<button type="button" class="btn sm" id="mn-todos">Marcar todos</button>'
+        + '<button type="button" class="btn sm" id="mn-essenc">Só o essencial</button>'
+        + '<span class="muted" style="font-size:12px;align-self:center" id="mn-cont"></span></div>'
+        + '<div style="max-height:320px;overflow:auto;border:1px solid var(--linha);border-radius:8px;padding:6px">'
+        + mods.map(function (m) {
+          return '<label style="display:flex;gap:8px;align-items:center;padding:3px 2px;cursor:pointer">'
+            + '<input type="checkbox" data-mnid="' + Util.esc(m.id) + '"' + (marcado(m.id) ? " checked" : "") + ">"
+            + '<span style="display:inline-flex;align-items:center;gap:6px">' + svg(m.id, 16) + Util.esc(m.nome) + "</span></label>";
+        }).join("") + "</div>";
+      UI.modal("Organizar menu", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var ids = [];
+          Array.prototype.forEach.call(document.querySelectorAll("[data-mnid]"), function (cb) {
+            if (cb.checked) ids.push(cb.getAttribute("data-mnid"));
+          });
+          /* marcar tudo = voltar ao padrão (guardar a lista inteira daria o
+             mesmo resultado, mas congelaria o menu: módulo novo de uma versão
+             futura nasceria escondido sem ninguém ter pedido). */
+          if (ids.length >= mods.length) self._menuSalvar(null);
+          else if (!ids.length) { UI.toast("Deixe pelo menos um módulo à vista.", "erro"); return; }
+          else self._menuSalvar(ids);
+          UI.fecharModal(); App.render();
+          UI.toast("Menu organizado.", "ok");
+        } }
+      ]);
+      setTimeout(function () {
+        function cont() {
+          var n = document.querySelectorAll("[data-mnid]:checked").length;
+          var c = document.getElementById("mn-cont");
+          if (c) c.textContent = n + " de " + mods.length + " à vista";
+        }
+        Array.prototype.forEach.call(document.querySelectorAll("[data-mnid]"), function (cb) { cb.onchange = cont; });
+        var t = document.getElementById("mn-todos"), e2 = document.getElementById("mn-essenc");
+        if (t) t.onclick = function () { Array.prototype.forEach.call(document.querySelectorAll("[data-mnid]"), function (cb) { cb.checked = true; }); cont(); };
+        /* "essencial" = o ciclo que toda obra roda: painel, obras, orçamento,
+           diário, medição e financeiro. É sugestão, não regra — dá para mexer. */
+        if (e2) e2.onclick = function () {
+          var ess = { dashboard: 1, obras: 1, orcamentos: 1, rdo: 1, medicoes: 1, financeiro: 1 };
+          Array.prototype.forEach.call(document.querySelectorAll("[data-mnid]"), function (cb) {
+            cb.checked = !!ess[cb.getAttribute("data-mnid")];
+          });
+          cont();
+        };
+        cont();
+      }, 60);
+    },
+
     renderSidebar: function (viewAtiva) {
       // Vitrine (?demo=1): Gestão sempre liberada, mesmo que a licença do navegador
       // diga outra coisa (cliente já licenciado explorando a demo) — espelha App.render().
@@ -205,6 +305,13 @@
       // Cabeçalhos de grupo seguem a jornada da obra (só quando há 2+ grupos visíveis — FREE fica limpo)
       var grupos = {}; mods.forEach(function (m) { if (m.g) grupos[m.g] = 1; });
       var comLabels = Object.keys(grupos).length > 1;
+      /* separa o que fica à vista do que desce para "Mais módulos".
+         O módulo ABERTO entra à força na parte visível. */
+      var fix = this._menuFixados();
+      var visivel = function (m) { return !fix || fix.indexOf(m.id) > -1 || m.id === viewAtiva; };
+      var escondidos = fix ? mods.filter(function (m) { return !visivel(m); }) : [];
+      if (fix) mods = mods.filter(visivel);
+
       var self = this, ultimoG = null;
       var itens = mods.map(function (m) {
         var pre = "";
@@ -217,8 +324,36 @@
         return pre + '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
       }).join("");
       if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">⭐</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
+
+      /* "Mais módulos": abre no hover (mouse) e no clique (toque). O clique
+         funciona nos DOIS — em tablet não existe hover, e um menu que só
+         responde a mouse some do celular sem aviso. */
+      var mais = "";
+      if (escondidos.length) {
+        mais = '<div id="sb-mais" class="sb-mais">'
+          + '<button class="sb-item sb-mais-bt" data-gacao="menu-mais" title="Passe o mouse ou toque para ver os outros módulos">'
+          + '<span class="sb-ic">⋯</span><span>Mais módulos</span><span class="sb-mais-n">' + escondidos.length + "</span></button>"
+          + '<div class="sb-mais-lista">'
+          + escondidos.map(function (m) {
+            return '<button class="sb-item" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
+          }).join("") + "</div></div>";
+      }
+      /* estilo injetado de propósito: o css/app.css já ficou preso no cache
+         do service worker por duas versões, e um menu meio pintado é pior
+         que menu nenhum. */
+      var est = '<style id="sb-menu-css">'
+        + ".sb-mais{position:relative}"
+        + ".sb-mais-lista{display:none;padding-left:6px;border-left:2px solid var(--linha);margin:2px 0 6px 10px}"
+        + ".sb-mais:hover .sb-mais-lista,.sb-mais.aberto .sb-mais-lista{display:block}"
+        + ".sb-mais-bt{opacity:.75}.sb-mais:hover .sb-mais-bt,.sb-mais.aberto .sb-mais-bt{opacity:1}"
+        + ".sb-mais-n{margin-left:auto;font-size:11px;font-weight:700;opacity:.7}"
+        + ".sb-org{width:100%;background:none;border:0;color:inherit;opacity:.6;font-size:11.5px;text-align:left;padding:6px 10px;cursor:pointer}"
+        + ".sb-org:hover{opacity:1;text-decoration:underline}"
+        + "@media (hover:none){.sb-mais:hover .sb-mais-lista{display:none}.sb-mais.aberto .sb-mais-lista{display:block}}"
+        + "</style>";
       return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#sbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg></div>' +
-        '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + "</nav>";
+        est + '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + mais
+        + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">⚙ Organizar menu</button></nav>';
     },
 
     // ---------- Dispatcher de view ----------
@@ -13228,6 +13363,8 @@ renderFolha: function () {
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "epi-editar": return this.epiEditar(dataset.id);
         case "epi-duplicar": return this.epiDuplicar(dataset.id);
+        case "menu-organizar": return this.menuOrganizar();
+        case "menu-mais": return this.menuMaisToggle();
         case "rdo-obra": return this.rdoTrocaObra(dataset.value);
         case "rdo-fotos": return this.rdoFotos();
         case "ficha-epi": return this.fichaEpi(id);

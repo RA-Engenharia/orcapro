@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.160",
+  "versao": "1.1.161",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.160/OrcaPRO-IA-update-v1.1.160.zip",
-  "notas": "RDO: AS FOTOS APARECEM NA GALERIA. Na versao anterior a tela Fotos da obra abria com sem imagem em todas as miniaturas - a galeria pedia a foto passando so o codigo dela, e o sistema precisa do registro completo para achar a imagem no aparelho ou baixa-la do servidor. Corrigido: as fotos dos diarios aparecem agrupadas por obra e por dia, com a legenda de cada uma.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.160/OrcaPRO-IA-Instalador-v1.1.160.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.161/OrcaPRO-IA-update-v1.1.161.zip",
+  "notas": "MENU ENXUTO: VOCE ESCOLHE O QUE FICA A VISTA. Sao muitos modulos, e quem toca obra usa 5 ou 6 todo dia. Agora tem o botao Organizar menu no fim da barra lateral: marque os que voce usa e os outros descem para Mais modulos, que abre passando o mouse no computador ou tocando no celular. Nada foi escondido de ninguem - ate voce organizar, o menu continua exatamente como esta. Esconder e do MENU, nao do sistema: o modulo escondido continua acessivel em Mais modulos e na busca Ctrl+K, e o modulo que estiver ABERTO nunca some da barra. Marcar todos volta ao padrao. A escolha e por pessoa e por aparelho, entao cada um organiza o seu sem mexer no do colega.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.161/OrcaPRO-IA-Instalador-v1.1.161.exe"
 }
