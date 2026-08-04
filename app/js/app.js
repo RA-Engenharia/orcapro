@@ -424,7 +424,15 @@
       // sidebar de módulos (na vitrine/demo TAMBÉM: o possível cliente explora a Gestão com dados de exemplo)
       if (sidebar) {
         if (typeof Gestao === "undefined") { sidebar.innerHTML = ""; if (app) app.classList.remove("com-sidebar"); }
-        else { sidebar.innerHTML = Gestao.renderSidebar(view); if (app) app.classList.add("com-sidebar"); }
+        else {
+          sidebar.innerHTML = Gestao.renderSidebar(view);
+          if (app) app.classList.add("com-sidebar");
+          /* modo foco: a classe manda no grid das colunas e tem de ser
+             reaplicada a CADA render — o render reescreve a barra, e sem
+             isto a preferência sumia ao trocar de módulo (que é justamente
+             quando o cliente quer a tela maior). */
+          if (Gestao._aplicarFoco) Gestao._aplicarFoco();
+        }
       }
       // módulos da Gestão
       if (view !== "orcamentos" && typeof Gestao !== "undefined") {

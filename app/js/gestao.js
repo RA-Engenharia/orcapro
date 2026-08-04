@@ -233,6 +233,34 @@
         else localStorage.setItem(this._menuChave(), JSON.stringify(ids));
       } catch (e) {}
     },
+    /* ------------------------------------------------------------------
+     * MODO FOCO — a barra vira um trilho de ícones e a tela de trabalho
+     * cresce ~160px. O menu volta inteiro ao encostar o mouse no trilho
+     * (e pelo ☰ no celular), então trocar de módulo continua a um gesto.
+     *
+     * Fica DESLIGADO até o cliente ligar, pelo mesmo motivo do menu
+     * enxuto: ninguém deve abrir o sistema e achar que o menu sumiu.
+     * A escolha mora no aparelho — é preferência de tela, não dado de obra.
+     * ------------------------------------------------------------------ */
+    _focoChave: function () { return this._menuChave() + ":foco"; },
+    menuFoco: function () {
+      try { return localStorage.getItem(this._focoChave()) === "1"; } catch (e) { return false; }
+    },
+    menuFocoToggle: function () {
+      var lig = !this.menuFoco();
+      try { localStorage.setItem(this._focoChave(), lig ? "1" : "0"); } catch (e) {}
+      this._aplicarFoco();
+      UI.toast(lig ? "Modo foco ligado — encoste o mouse na barra para ver os módulos."
+        : "Modo foco desligado.", "ok");
+      App.render();
+    },
+    /* a classe vai no CONTAINER do app, que é quem manda no grid das colunas */
+    _aplicarFoco: function () {
+      var app = document.getElementById("app") || document.querySelector(".app");
+      if (!app) return;
+      if (this.menuFoco()) app.classList.add("foco"); else app.classList.remove("foco");
+    },
+
     menuMaisToggle: function () {
       var el = document.getElementById("sb-mais");
       if (el) el.classList.toggle("aberto");
@@ -350,9 +378,28 @@
         + ".sb-org{width:100%;background:none;border:0;color:inherit;opacity:.6;font-size:11.5px;text-align:left;padding:6px 10px;cursor:pointer}"
         + ".sb-org:hover{opacity:1;text-decoration:underline}"
         + "@media (hover:none){.sb-mais:hover .sb-mais-lista{display:none}.sb-mais.aberto .sb-mais-lista{display:block}}"
+        /* MODO FOCO — só no desktop: abaixo de 820px a barra já é gaveta (☰),
+           e encolher uma gaveta não devolve tela nenhuma. */
+        + "@media screen and (min-width:821px){"
+        + ".app.com-sidebar.foco{grid-template-columns:54px 1fr}"
+        + ".app.foco > .sidebar{width:54px;transition:width .14s ease;z-index:60}"
+        + ".app.foco > .sidebar:hover{width:212px;box-shadow:6px 0 26px rgba(8,18,30,.35)}"
+        /* no trilho fica só o ícone; o rótulo volta junto com a barra */
+        + ".app.foco > .sidebar:not(:hover) .sb-item > span:not(.sb-ic){display:none}"
+        + ".app.foco > .sidebar:not(:hover) .sb-lbl,"
+        + ".app.foco > .sidebar:not(:hover) .sb-grp,"
+        + ".app.foco > .sidebar:not(:hover) .sb-mais-n{display:none}"
+        + ".app.foco > .sidebar:not(:hover) .sb-org{font-size:0;padding:6px 0;text-align:center}"
+        + ".app.foco > .sidebar:not(:hover) .sb-org::before{content:'⚙';font-size:13px}"
+        + ".app.foco > .sidebar:not(:hover) .sb-foco{font-size:0;padding:6px 0;text-align:center}"
+        + ".app.foco > .sidebar:not(:hover) .sb-foco::before{content:'⇥';font-size:13px}"
+        + ".app.foco > .sidebar .sb-item{white-space:nowrap;overflow:hidden}"
+        + "}"
         + "</style>";
       return '<div class="sb-top"><svg width="34" height="34" viewBox="0 0 100 100"><defs><linearGradient id="sbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#163a5c"/><stop offset="1" stop-color="#2e6f9e"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="24" fill="url(#sbg)"/><rect x="24" y="52" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="44" y="38" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="64" y="24" width="13" height="50" rx="4" fill="#6fd08a"/></svg></div>' +
         est + '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + mais
+        + '<button class="sb-org sb-foco" data-gacao="menu-foco" title="Recolher a barra para sobrar tela; o menu volta ao encostar o mouse">'
+        + (this.menuFoco() ? "⇥ Mostrar menu fixo" : "⇤ Modo foco (mais tela)") + "</button>"
         + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">⚙ Organizar menu</button></nav>';
     },
 
@@ -13363,6 +13410,7 @@ renderFolha: function () {
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "epi-editar": return this.epiEditar(dataset.id);
         case "epi-duplicar": return this.epiDuplicar(dataset.id);
+        case "menu-foco": return this.menuFocoToggle();
         case "menu-organizar": return this.menuOrganizar();
         case "menu-mais": return this.menuMaisToggle();
         case "rdo-obra": return this.rdoTrocaObra(dataset.value);
