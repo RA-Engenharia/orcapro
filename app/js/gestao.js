@@ -258,7 +258,22 @@
     _aplicarFoco: function () {
       var app = document.getElementById("app") || document.querySelector(".app");
       if (!app) return;
-      if (this.menuFoco()) app.classList.add("foco"); else app.classList.remove("foco");
+      var lig = this.menuFoco();
+      if (lig) app.classList.add("foco"); else app.classList.remove("foco");
+
+      var sb = document.getElementById("sidebar");
+      if (!sb) return;
+      sb.classList.remove("aberta");            /* render novo começa recolhido */
+      if (!lig) return;
+      var topo = sb.querySelector(".sb-top");
+      if (!topo) return;
+      /* Os listeners são reatados a cada render DE PROPÓSITO: renderSidebar
+         reescreve o HTML inteiro da barra, então o listener do render
+         anterior morreu junto com o elemento — não há acúmulo. */
+      topo.onmouseenter = function () { sb.classList.add("aberta"); };
+      /* toque não tem "passar por cima": no tablet o logo alterna */
+      topo.onclick = function () { sb.classList.toggle("aberta"); };
+      sb.onmouseleave = function () { sb.classList.remove("aberta"); };
     },
 
     menuMaisToggle: function () {
@@ -383,16 +398,24 @@
         + "@media screen and (min-width:821px){"
         + ".app.com-sidebar.foco{grid-template-columns:54px 1fr}"
         + ".app.foco > .sidebar{width:54px;transition:width .14s ease;z-index:60}"
-        + ".app.foco > .sidebar:hover{width:212px;box-shadow:6px 0 26px rgba(8,18,30,.35)}"
-        /* no trilho fica só o ícone; o rótulo volta junto com a barra */
-        + ".app.foco > .sidebar:not(:hover) .sb-item > span:not(.sb-ic){display:none}"
-        + ".app.foco > .sidebar:not(:hover) .sb-lbl,"
-        + ".app.foco > .sidebar:not(:hover) .sb-grp,"
-        + ".app.foco > .sidebar:not(:hover) .sb-mais-n{display:none}"
-        + ".app.foco > .sidebar:not(:hover) .sb-org{font-size:0;padding:6px 0;text-align:center}"
-        + ".app.foco > .sidebar:not(:hover) .sb-org::before{content:'⚙';font-size:13px}"
-        + ".app.foco > .sidebar:not(:hover) .sb-foco{font-size:0;padding:6px 0;text-align:center}"
-        + ".app.foco > .sidebar:not(:hover) .sb-foco::before{content:'⇥';font-size:13px}"
+        /* ABRE PELO LOGO, FECHA AO SAIR DO MENU — igual à gaveta do celular.
+           Antes bastava encostar em qualquer ponto do trilho e a barra
+           saltava sozinha ao atravessar a tela com o mouse. Agora o gesto é
+           deliberado: mira no logo para abrir, e ela só recolhe quando o
+           ponteiro deixa a área do menu. */
+        + ".app.foco > .sidebar.aberta{width:212px;box-shadow:6px 0 26px rgba(8,18,30,.35)}"
+        + ".app.foco > .sidebar .sb-top{cursor:pointer;position:relative}"
+        /* o logo ganha um alvo maior e uma dica de que é ele que abre */
+        + ".app.foco > .sidebar:not(.aberta) .sb-top::after{content:'›';position:absolute;right:6px;top:50%;"
+        + "transform:translateY(-50%);font-size:16px;font-weight:700;opacity:.5}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-item > span:not(.sb-ic){display:none}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-lbl,"
+        + ".app.foco > .sidebar:not(.aberta) .sb-grp,"
+        + ".app.foco > .sidebar:not(.aberta) .sb-mais-n{display:none}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-org{font-size:0;padding:6px 0;text-align:center}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-org::before{content:'⚙';font-size:13px}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-foco{font-size:0;padding:6px 0;text-align:center}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-foco::before{content:'⇥';font-size:13px}"
         + ".app.foco > .sidebar .sb-item{white-space:nowrap;overflow:hidden}"
         + "}"
         + "</style>";

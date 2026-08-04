@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.162",
+  "versao": "1.1.163",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.162/OrcaPRO-IA-update-v1.1.162.zip",
-  "notas": "MODO FOCO: MAIS TELA PARA TRABALHAR. No pe da barra lateral tem o botao Modo foco (mais tela): a barra recolhe para um trilho de icones e a area de trabalho cresce cerca de 160 pixels - medido: barra de 212px para 54px, tela de trabalho de 1068px para 1226px. Para trocar de modulo, basta encostar o mouse no trilho que o menu volta inteiro por cima, sem empurrar o conteudo; no celular e tablet continua o botao de menu de sempre. A escolha fica gravada e nao se perde ao trocar de modulo, e um clique no mesmo botao devolve a barra fixa. Vem DESLIGADO: ninguem deve abrir o sistema e achar que o menu sumiu.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.162/OrcaPRO-IA-Instalador-v1.1.162.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.163/OrcaPRO-IA-update-v1.1.163.zip",
+  "notas": "MODO FOCO: O MENU VOLTA PELO LOGO. Antes bastava encostar em qualquer ponto do trilho e o menu saltava sozinho ao atravessar a tela com o mouse. Agora o gesto e deliberado, igual a gaveta do celular: passe o ponteiro sobre o LOGO do OrcaPRO e o menu abre inteiro; ele so recolhe quando o ponteiro sai da area do menu - andar entre os modulos mantem tudo aberto. No trilho aparece uma setinha ao lado do logo indicando que e por ali. No tablet, um toque no logo abre e outro fecha.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.163/OrcaPRO-IA-Instalador-v1.1.163.exe"
 }
