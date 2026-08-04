@@ -8376,17 +8376,25 @@
     _pontoJornada: function () {
       var p = (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(eid()) || {}) : {};
       var j = p.pontoJornada || {};
-      return { entrada: j.entrada || "07:00", almoco: j.almoco || "12:00", retorno: j.retorno || "13:00", saida: j.saida || "17:00" };
+      /* variarMinutos: quem nunca configurou nada recebe a variação ligada —
+         é o comportamento que se parece com obra. Quem desligar, fica cravado. */
+      return { entrada: j.entrada || "07:00", almoco: j.almoco || "12:00", retorno: j.retorno || "13:00", saida: j.saida || "17:00",
+        variarMinutos: j.variarMinutos !== false };
     },
     configJornada: function () {
       var self = this, j = this._pontoJornada();
       var corpo = '<p class="muted" style="margin:0 0 10px">Horários padrão da jornada — aparecem no espelho de ponto (documento para assinatura).</p>'
-        + '<div class="row">' + campo("Entrada", inp("g-e", j.entrada, "", "time")) + campo("Saída p/ almoço", inp("g-a", j.almoco, "", "time")) + campo("Retorno", inp("g-r", j.retorno, "", "time")) + campo("Saída", inp("g-s", j.saida, "", "time")) + "</div>";
+        + '<div class="row">' + campo("Entrada", inp("g-e", j.entrada, "", "time")) + campo("Saída p/ almoço", inp("g-a", j.almoco, "", "time")) + campo("Retorno", inp("g-r", j.retorno, "", "time")) + campo("Saída", inp("g-s", j.saida, "", "time")) + "</div>"
+        + '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:6px;cursor:pointer">'
+        + '<input type="checkbox" id="g-var" style="margin-top:3px"' + (j.variarMinutos ? " checked" : "") + ">"
+        + '<span><b>Variar os minutos das batidas</b><br><span class="muted" style="font-size:12px">Cada dia sai com alguns minutos de diferença, como acontece na obra, em vez do horário cravado o mês inteiro. As batidas são fixas por pessoa e por dia: reimprimir o mesmo mês dá exatamente o mesmo cartão, e o almoço nunca fica abaixo de 1 hora.</span></span></label>';
       UI.modal("⚙ Jornada de trabalho", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () {
           var p = Store.lerPrefs(eid()) || {};
-          p.pontoJornada = { entrada: v("g-e"), almoco: v("g-a"), retorno: v("g-r"), saida: v("g-s") };
+          var cbv = document.getElementById("g-var");
+          p.pontoJornada = { entrada: v("g-e"), almoco: v("g-a"), retorno: v("g-r"), saida: v("g-s"),
+            variarMinutos: cbv ? !!cbv.checked : true };
           Store.salvarPrefs(eid(), p); UI.fecharModal(); UI.toast("Jornada salva.", "ok");
         } }
       ]);
@@ -8427,7 +8435,14 @@
           var falta = faltasC[ds], bg = "", obsCol = "", e = "", a = "", r = "", s = "";
           if (falta) { bg = "#fee2e2"; obsCol = rot(P.faltaMotivo, falta); nFaltas++; if (falta === "injustificada") nInj++; }
           else if (fimDeSemana) { bg = "#f3f4f6"; obsCol = dow === 0 ? "DSR — Descanso" : "Folga"; }
-          else { e = jor.entrada; a = jor.almoco; r = jor.retorno; s = jor.saida; nTrab++; }
+          else {
+            /* batidas com variação de minutos (js/ponto.js). Sem o motor
+               carregado, cai na jornada cravada — nunca fica sem horário. */
+            var bat = (typeof Ponto !== "undefined")
+              ? Ponto.batidas(jor, c.id, ds, { variar: jor.variarMinutos !== false })
+              : { entrada: jor.entrada, almoco: jor.almoco, retorno: jor.retorno, saida: jor.saida };
+            e = bat.entrada; a = bat.almoco; r = bat.retorno; s = bat.saida; nTrab++;
+          }
           linhas += '<tr style="background:' + bg + '"><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + String(d).padStart(2, "0") + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + diasSem[dow] + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + e + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + a + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + r + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + s + '</td><td style="border:1px solid #999;padding:2px 4px;font-size:8.5px">' + obsCol + "</td></tr>";
         }
         return '<div style="page-break-after:always;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;max-width:760px;margin:0 auto">'

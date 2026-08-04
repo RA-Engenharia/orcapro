@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.155",
+  "versao": "1.1.156",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.155/OrcaPRO-IA-update-v1.1.155.zip",
-  "notas": "O FILTRO DE OBRA DO PAINEL PASSOU A VALER PARA TUDO. Voce escolhia uma obra e os graficos de despesa por categoria, custo por obra e custo por m2 continuavam somando a carteira inteira - inclusive a OBRA TESTE. Agora o filtro alcanca todos os graficos e todos os indicadores da tela. E da para escolher MAIS DE UMA obra: segure Ctrl e clique nas obras que quer somar; o painel mostra quantas estao somadas. Todas as Obras continua sendo a visao global.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.155/OrcaPRO-IA-Instalador-v1.1.155.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.156/OrcaPRO-IA-update-v1.1.156.zip",
+  "notas": "CARTAO DE PONTO COM VARIACAO DE MINUTOS. O espelho de ponto repetia 07:00 / 12:00 / 13:00 / 17:00 em todos os dias e para todo mundo - ninguem bate ponto no minuto cravado o mes inteiro. Agora cada dia sai com alguns minutos de diferenca, como acontece na obra. As batidas sao fixas por pessoa e por dia: reimprimir o mesmo mes da exatamente o mesmo cartao, entao o papel assinado nunca deixa de bater com o sistema. O intervalo de almoco nunca fica abaixo de 1 hora (CLT art. 71) e a jornada nao vira hora extra por acidente. Em Ponto > Jornada da para desligar a variacao e voltar ao horario cravado.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.156/OrcaPRO-IA-Instalador-v1.1.156.exe"
 }
