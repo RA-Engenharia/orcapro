@@ -7580,7 +7580,6 @@
       diarios.forEach(function (r) {
         r.fotos.forEach(function (ft) {
           var alvo = j++;
-          var ref = ft.id || ft.ref || ft;
           function pinta(d) {
             var el = document.getElementById("rf-" + alvo);
             if (!el) return;
@@ -7589,7 +7588,12 @@
           }
           if (ft.d) { pinta(ft.d); return; }                    /* formato antigo: já vem embutida */
           if (typeof Fotos !== "undefined" && Fotos.dataURI) {
-            Fotos.dataURI(ref).then(function (d) { pinta(d || ""); }).catch(function () { pinta(""); });
+            /* ⚠ dataURI recebe o OBJETO da foto inteiro — ele precisa de
+               `id` para achar no IndexedDB e de `remoto`+`tenant` para
+               baixar do servidor quando o aparelho não tem a cópia local.
+               Passar só o id devolvia string vazia em TODAS as fotos, e a
+               galeria inteira mostrava "sem imagem". */
+            Fotos.dataURI(ft).then(function (d) { pinta(d || ""); }).catch(function () { pinta(""); });
           } else pinta("");
         });
       });
