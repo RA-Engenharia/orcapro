@@ -213,6 +213,20 @@
      *  • a preferência é de TELA e mora no aparelho: cada um organiza o
      *    seu menu sem reescrever o do colega pela nuvem.
      * ================================================================== */
+    /* Os últimos módulos abertos. Quem enxugou o menu ainda volta a um
+       módulo escondido de vez em quando — e caçá-lo na lista toda vez é o
+       custo escondido de ter organizado. */
+    _recChave: function () { return this._menuChave() + ":rec"; },
+    _menuRecentes: function () {
+      try { return JSON.parse(localStorage.getItem(this._recChave()) || "[]") || []; } catch (e) { return []; }
+    },
+    menuMarcarUso: function (id) {
+      if (!id) return;
+      var r = this._menuRecentes().filter(function (v) { return v !== id; });
+      r.unshift(id);
+      try { localStorage.setItem(this._recChave(), JSON.stringify(r.slice(0, 4))); } catch (e) {}
+    },
+
     _menuChave: function () {
       var e = (typeof Auth !== "undefined" && Auth.empresaId) ? Auth.empresaId() : "";
       var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
@@ -271,6 +285,11 @@
          reescreve o HTML inteiro da barra, então o listener do render
          anterior morreu junto com o elemento — não há acúmulo. */
       topo.onmouseenter = function () { sb.classList.add("aberta"); };
+      /* escolheu o módulo → o gesto terminou, a barra sai da frente sozinha.
+         Sem isto ela ficava aberta por cima do conteúdo até o mouse sair. */
+      Array.prototype.forEach.call(sb.querySelectorAll("[data-view]"), function (b) {
+        b.addEventListener("click", function () { sb.classList.remove("aberta"); });
+      });
       /* toque não tem "passar por cima": no tablet o logo alterna */
       topo.onclick = function () { sb.classList.toggle("aberta"); };
       sb.onmouseleave = function () { sb.classList.remove("aberta"); };
@@ -350,6 +369,9 @@
       var comLabels = Object.keys(grupos).length > 1;
       /* separa o que fica à vista do que desce para "Mais módulos".
          O módulo ABERTO entra à força na parte visível. */
+      /* registrar aqui pega TODO caminho de navegação — clique na barra,
+         busca Ctrl+K, link interno — porque a barra é redesenhada em todos. */
+      this.menuMarcarUso(viewAtiva);
       var fix = this._menuFixados();
       var visivel = function (m) { return !fix || fix.indexOf(m.id) > -1 || m.id === viewAtiva; };
       var escondidos = fix ? mods.filter(function (m) { return !visivel(m); }) : [];
@@ -377,6 +399,19 @@
           + '<button class="sb-item sb-mais-bt" data-gacao="menu-mais" title="Passe o mouse ou toque para ver os outros módulos">'
           + '<span class="sb-ic">⋯</span><span>Mais módulos</span><span class="sb-mais-n">' + escondidos.length + "</span></button>"
           + '<div class="sb-mais-lista">'
+          + (function () {
+            /* os escondidos que você abriu por último sobem — sem isso, quem
+               enxugou o menu paga uma caçada na lista toda vez que precisa
+               de um módulo de uso mensal. */
+            var rec = self._menuRecentes(), ordem = {};
+            rec.forEach(function (id, i) { ordem[id] = i; });
+            escondidos.sort(function (a2, b2) {
+              var ra = ordem[a2.id] === undefined ? 99 : ordem[a2.id];
+              var rb = ordem[b2.id] === undefined ? 99 : ordem[b2.id];
+              return ra - rb;
+            });
+            return "";
+          })()
           + escondidos.map(function (m) {
             return '<button class="sb-item" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
           }).join("") + "</div></div>";
@@ -409,6 +444,9 @@
         + ".app.foco > .sidebar:not(.aberta) .sb-top::after{content:'›';position:absolute;right:6px;top:50%;"
         + "transform:translateY(-50%);font-size:16px;font-weight:700;opacity:.5}"
         + ".app.foco > .sidebar:not(.aberta) .sb-item > span:not(.sb-ic){display:none}"
+        /* com a barra recolhida, abrir a sanfona de "Mais módulos" dentro de
+           54px daria uma coluna de ícones sem nome nenhum — pior que fechada */
+        + ".app.foco > .sidebar:not(.aberta) .sb-mais-lista{display:none!important}"
         + ".app.foco > .sidebar:not(.aberta) .sb-lbl,"
         + ".app.foco > .sidebar:not(.aberta) .sb-grp,"
         + ".app.foco > .sidebar:not(.aberta) .sb-mais-n{display:none}"
