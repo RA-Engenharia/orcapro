@@ -1112,6 +1112,78 @@
     return mudou;
   };
 
+  /* ====================================================================
+   * BASEAR O DIÁRIO DE HOJE NO ANTERIOR
+   *
+   * Na obra, de um dia para o outro muda a ATIVIDADE — a equipe, os
+   * equipamentos e as condições costumam ser os mesmos. Redigitar tudo é o
+   * que faz o encarregado parar de lançar RDO.
+   *
+   * O QUE NUNCA É COPIADO, e por quê — esta lista é a parte importante:
+   *  • clima e chuva: vêm da fonte meteorológica DAQUELE dia e alimentam o
+   *    critério de dia impraticável (SICRO). Copiar a chuva de ontem é
+   *    fabricar prova de paralisação.
+   *  • ocorrências, acidente, paralisação, visitas, comunicações: são fatos
+   *    de um dia específico. Um acidente que se repete sozinho no papel é
+   *    problema sério, não conveniência.
+   *  • fotos: são o registro daquele dia.
+   *  • quantidade executada dos serviços: a descrição do serviço volta (é o
+   *    que poupa digitação), mas o QUANTO foi feito nasce zerado — senão a
+   *    medição do mês soma a mesma produção todo dia.
+   *  • estado, aprovação, assinatura, número e data: o diário novo nasce
+   *    rascunho, com número e data próprios.
+   *
+   * `origem` DEVE ser da mesma obra que se está lançando — quem chama é
+   * responsável por isso, e a função marca `baseadoEm` para deixar rastro.
+   * ==================================================================== */
+  RDO.CAMPOS_HERDADOS = ["obraId", "condicao", "terceiros", "efetivoDireto", "efetivoIndireto", "semRestricoes", "impedimentos", "impedimentosObs"];
+
+  RDO.basearEm = function (origem, opcoes) {
+    var o = origem || {}, op = opcoes || {}, novo = {};
+    RDO.CAMPOS_HERDADOS.forEach(function (k) { if (o[k] !== undefined) novo[k] = o[k]; });
+
+    /* equipe e equipamentos vêm inteiros — é o grosso da digitação */
+    novo.efetivo = (o.efetivo || []).map(function (e) { return JSON.parse(JSON.stringify(e)); });
+    novo.equipamentosItens = (o.equipamentosItens || []).map(function (e) { return JSON.parse(JSON.stringify(e)); });
+
+    /* serviços: volta a LISTA, zerada no que é produção do dia */
+    novo.atividadesItens = (o.atividadesItens || []).map(function (a) {
+      var n = JSON.parse(JSON.stringify(a));
+      ["quantidade", "qtd", "qtdExecutada", "quantidadeExecutada", "percentual", "pct", "avanco"].forEach(function (k) {
+        if (n[k] !== undefined) n[k] = 0;
+      });
+      /* a produção por colaborador é do dia; some, mas o serviço fica */
+      if (n.producao) n.producao = [];
+      if (n.situacao) n.situacao = "em_andamento";
+      return n;
+    });
+    if (op.semServicos) novo.atividadesItens = [];
+
+    novo.atividades = "";                 /* o texto do dia é do dia */
+    novo.estado = "rascunho";
+    novo.status = "rascunho";
+    novo.fotos = [];
+    novo.baseadoEm = o.id || "";
+    novo.baseadoEmNumero = o.numero || "";
+    return novo;
+  };
+
+  /* Último diário DA MESMA OBRA — nunca de outra: equipe e equipamentos de
+     uma obra não descrevem outra, e herdar entre obras seria um erro que o
+     usuário não teria como perceber no papel. */
+  RDO.ultimoDaObra = function (diarios, obraId, exceptoId) {
+    var alvo = String(obraId || ""), melhor = null;
+    if (!alvo) return null;
+    (diarios || []).forEach(function (r) {
+      if (!r || String(r.obraId || "") !== alvo) return;
+      if (exceptoId && r.id === exceptoId) return;
+      if (!melhor) { melhor = r; return; }
+      var a = String(r.data || ""), b = String(melhor.data || "");
+      if (a > b || (a === b && String(r.numero || "") > String(melhor.numero || ""))) melhor = r;
+    });
+    return melhor;
+  };
+
   if (typeof window !== "undefined") window.RDO = RDO;
   if (typeof module !== "undefined" && module.exports) module.exports = RDO;
 })(typeof window !== "undefined" ? window : globalThis);

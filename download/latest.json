@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.157",
+  "versao": "1.1.158",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.157/OrcaPRO-IA-update-v1.1.157.zip",
-  "notas": "EPI: EDITAR, DUPLICAR E O CA QUE VEM DA NOTA. A entrega de EPI ganhou o botao Editar (✎) na linha - antes, corrigir uma ficha lancada errada nao tinha caminho. Ganhou tambem Duplicar (⧉): marque quantos colaboradores quiser e cada um recebe uma ficha nova com os mesmos EPIs, numero proprio e a data de hoje; a assinatura de quem recebeu a original NAO e copiada. E o CA parou de ser digitado duas vezes: quando o EPI foi comprado por NF-e, o CA lido da nota entra sozinho na entrega, com o selo da nota ao lado - inclusive nas fichas antigas que estavam com CA pendente. So o que realmente nao tem CA continua indo para a consulta online (🔎).",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.157/OrcaPRO-IA-Instalador-v1.1.157.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.158/OrcaPRO-IA-update-v1.1.158.zip",
+  "notas": "RDO: PUXAR DO DIARIO ANTERIOR, FILTRO POR OBRA E FOTOS POR OBRA. Ao criar um diario novo o sistema pergunta a obra e oferece dois caminhos: Puxar do anterior ou Comecar do zero. Puxando, vem a equipe, os equipamentos e a lista de servicos da obra - so as atividades do dia precisam ser lancadas. O anterior e SEMPRE da mesma obra, e da para escolher de qual obra puxar quando ha mais de uma. NAO vem junto: clima e chuva do dia (que alimentam o dia impraticavel do DNIT), ocorrencias, acidentes, visitas, fotos e assinatura - isso e do dia e nao se repete; a quantidade executada dos servicos nasce zerada, para nao somar a mesma producao na medicao do mes. A lista de diarios ganhou filtro por obra com a contagem de cada uma, e o botao Fotos da obra reune todas as fotos dos diarios agrupadas por obra e por dia.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.158/OrcaPRO-IA-Instalador-v1.1.158.exe"
 }

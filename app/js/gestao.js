@@ -6233,10 +6233,32 @@
 
     // =================== RDO — DIÁRIO DE OBRA ===================
     renderRdo: function () {
-      var rs = lista("rdo").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
+      var self = this;
+      var todos = lista("rdo").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
       var obras = lista("obras");
       var html = this._head(svg("rdo") + "Diário de Obra (RDO)", "novo-rdo", "Novo diário");
-      if (!rs.length) return html + vazioBox("Nenhum diário registrado", "novo-rdo", "Registrar primeiro diário");
+      if (!todos.length) return html + vazioBox("Nenhum diário registrado", "novo-rdo", "Registrar primeiro diário");
+
+      /* FILTRO POR OBRA. Com 3 obras rodando, uma lista única de diários não
+         é consultável: o encarregado procura o diário de ONTEM da obra dele.
+         O filtro também manda na galeria de fotos abaixo. */
+      var fObra = this._rdoObraFiltro || "todas";
+      /* obra que sumiu do cadastro não pode deixar a tela vazia para sempre */
+      if (fObra !== "todas" && !obras.filter(function (o) { return o.id === fObra; }).length) fObra = this._rdoObraFiltro = "todas";
+      var rs = fObra === "todas" ? todos : todos.filter(function (r) { return r.obraId === fObra; });
+      var porObra = {};
+      todos.forEach(function (r) { porObra[r.obraId || ""] = (porObra[r.obraId || ""] || 0) + 1; });
+      html += '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px">'
+        + '<label style="font-weight:700;font-size:13px">Obra</label>'
+        + '<select data-gacao="rdo-obra" style="max-width:280px">'
+        + '<option value="todas"' + (fObra === "todas" ? " selected" : "") + ">Todas as obras (" + todos.length + ")</option>"
+        + obras.map(function (o) {
+          var n = porObra[o.id] || 0;
+          return '<option value="' + Util.esc(o.id) + '"' + (o.id === fObra ? " selected" : "") + ">" + Util.esc(o.nome) + " (" + n + ")</option>";
+        }).join("") + "</select>"
+        + '<span class="muted" style="font-size:12px">' + rs.length + " diário" + (rs.length === 1 ? "" : "s") + " nesta lista</span>"
+        + '<button class="btn sm" data-gacao="rdo-fotos" style="margin-left:auto">📷 Fotos da obra</button></div>';
+      if (!rs.length) return html + vazioBox("Nenhum diário nesta obra", "novo-rdo", "Registrar diário desta obra");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Clima</th><th class="num">Efetivo</th><th>Atividades</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
@@ -7499,7 +7521,138 @@
       renderOc();
     },
 
-    novoRdo: function () { this.formRdo(null); },
+    /* ------------------------------------------------------------------
+     * FOTOS DA OBRA — todas as fotos dos diários, separadas por obra e por
+     * dia. Antes, para rever a foto de uma frente de serviço era preciso
+     * lembrar em qual diário ela tinha sido lançada e abrir um por um.
+     * Respeita o filtro de obra da lista.
+     * ------------------------------------------------------------------ */
+    rdoFotos: function () {
+      var obras = lista("obras"), f = this._rdoObraFiltro || "todas";
+      var diarios = lista("rdo").filter(function (r) {
+        return (r.fotos && r.fotos.length) && (f === "todas" || r.obraId === f);
+      }).sort(function (a2, b2) { return (b2.data || "").localeCompare(a2.data || ""); });
+
+      var total = diarios.reduce(function (n, r) { return n + r.fotos.length; }, 0);
+      if (!total) {
+        UI.modal("📷 Fotos da obra", '<p class="muted" style="margin:0">Nenhuma foto lançada nos diários'
+          + (f === "todas" ? "" : " desta obra") + " ainda. As fotos aparecem aqui assim que forem anexadas a um diário.</p>",
+          [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+      var nomeObra = function (id) {
+        var o = obras.filter(function (x2) { return x2.id === id; })[0];
+        return o ? o.nome : "Sem obra";
+      };
+      /* agrupa por OBRA e, dentro dela, por diário/dia */
+      var grupos = {}, ordem = [];
+      diarios.forEach(function (r) {
+        var k = r.obraId || "";
+        if (!grupos[k]) { grupos[k] = []; ordem.push(k); }
+        grupos[k].push(r);
+      });
+      var corpo = '<p class="muted" style="margin:0 0 10px">' + total + " foto" + (total === 1 ? "" : "s")
+        + " em " + diarios.length + " diário" + (diarios.length === 1 ? "" : "s")
+        + (f === "todas" ? ", agrupadas por obra." : " desta obra.") + "</p>";
+      var idx = 0;
+      corpo += ordem.map(function (k) {
+        return '<div style="margin-bottom:14px"><div style="font-weight:800;border-bottom:2px solid var(--linha);padding-bottom:4px;margin-bottom:8px">'
+          + Util.esc(nomeObra(k)) + '</div>'
+          + grupos[k].map(function (r) {
+            var cab = '<div style="font-size:12px;font-weight:700;margin:6px 0 4px">'
+              + Util.esc(r.numero || "—") + " · " + (r.data ? r.data.split("-").reverse().join("/") : "—")
+              + ' <span class="muted" style="font-weight:400">(' + r.fotos.length + " foto" + (r.fotos.length === 1 ? "" : "s") + ")</span></div>";
+            var thumbs = r.fotos.map(function (ft) {
+              var i2 = idx++;
+              return '<div style="width:118px"><div id="rf-' + i2 + '" style="width:118px;height:88px;border:1px solid var(--linha);border-radius:6px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;overflow:hidden">carregando…</div>'
+                + '<div class="muted" style="font-size:10.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Util.esc(ft.leg || "") + '">' + Util.esc(ft.leg || "sem legenda") + "</div></div>";
+            }).join("");
+            return cab + '<div style="display:flex;flex-wrap:wrap;gap:8px">' + thumbs + "</div>";
+          }).join("") + "</div>";
+      }).join("");
+
+      UI.modal("📷 Fotos da obra", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+
+      /* as imagens vivem no IndexedDB: pinta cada uma quando chegar, sem
+         travar a abertura do modal. Falha de leitura vira aviso na própria
+         miniatura — nunca um quadrado vazio sem explicação. */
+      var j = 0;
+      diarios.forEach(function (r) {
+        r.fotos.forEach(function (ft) {
+          var alvo = j++;
+          var ref = ft.id || ft.ref || ft;
+          function pinta(d) {
+            var el = document.getElementById("rf-" + alvo);
+            if (!el) return;
+            if (!d) { el.textContent = "sem imagem"; return; }
+            el.innerHTML = '<img src="' + d + '" style="width:100%;height:100%;object-fit:cover">';
+          }
+          if (ft.d) { pinta(ft.d); return; }                    /* formato antigo: já vem embutida */
+          if (typeof Fotos !== "undefined" && Fotos.dataURI) {
+            Fotos.dataURI(ref).then(function (d) { pinta(d || ""); }).catch(function () { pinta(""); });
+          } else pinta("");
+        });
+      });
+    },
+
+    _rdoObraFiltro: "todas",
+    rdoTrocaObra: function (id) { this._rdoObraFiltro = id || "todas"; App.render(); },
+
+    /* ------------------------------------------------------------------
+     * NOVO DIÁRIO — do zero ou PUXANDO O ANTERIOR DA MESMA OBRA.
+     *
+     * De um dia para o outro muda a atividade; equipe e equipamentos são os
+     * mesmos. Sem isto o encarregado redigita a obra inteira todo dia — e
+     * quando cansa, para de lançar.
+     *
+     * A obra é escolhida ANTES, porque o diário anterior tem de ser da MESMA
+     * obra: herdar a equipe de uma obra para outra seria um erro invisível
+     * no papel assinado.
+     * ------------------------------------------------------------------ */
+    novoRdo: function () {
+      var self = this, obras = lista("obras"), diarios = lista("rdo");
+      if (!diarios.length || !obras.length) { this.formRdo(null); return; }
+      /* obra sugerida: a do filtro, senão a do último diário lançado */
+      var sug = this._rdoObraFiltro !== "todas" ? this._rdoObraFiltro
+        : ((diarios.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); })[0] || {}).obraId || "");
+
+      function resumo(obraId) {
+        var ult = RDO.ultimoDaObra(lista("rdo"), obraId);
+        if (!ult) return '<div class="muted" style="font-size:13px">Esta obra ainda não tem diário — o novo vai começar do zero.</div>';
+        var nEq = (ult.efetivo || []).length, nEp = (ult.equipamentosItens || []).length, nSv = (ult.atividadesItens || []).length;
+        return '<div style="border:1px solid var(--linha);border-radius:8px;padding:8px;font-size:13px">'
+          + "<b>" + Util.esc(ult.numero || "—") + "</b> · " + (ult.data ? ult.data.split("-").reverse().join("/") : "—")
+          + '<div class="muted" style="font-size:12px;margin-top:4px">Vem junto: <b>' + nEq + "</b> pessoa" + (nEq === 1 ? "" : "s")
+          + ", <b>" + nEp + "</b> equipamento" + (nEp === 1 ? "" : "s") + " e <b>" + nSv + "</b> serviço" + (nSv === 1 ? "" : "s")
+          + " (com a quantidade zerada).</div>"
+          + '<div style="font-size:12px;color:#b45309;margin-top:4px">NÃO vem: clima e chuva do dia, ocorrências, acidentes, fotos e assinatura — isso é do dia, não se repete.</div></div>';
+      }
+
+      var corpo = campo("Obra", sel("g-robra", optsRec(obras, "nome", sug, "— escolher —")))
+        + '<div id="rdo-prev" style="margin-top:8px">' + resumo(sug) + "</div>";
+      UI.modal("📓 Novo diário de obra", corpo, [
+        { texto: "Começar do zero", classe: "ghost", onClick: function () {
+          var oid = v("g-robra"); UI.fecharModal(); self.formRdo(oid ? { obraId: oid } : null);
+        } },
+        { texto: "Puxar do anterior", classe: "primary", onClick: function () {
+          var oid = v("g-robra");
+          if (!oid) { UI.toast("Escolha a obra.", "erro"); return; }
+          var ult = RDO.ultimoDaObra(lista("rdo"), oid);
+          if (!ult) { UI.toast("Esta obra ainda não tem diário anterior — vai começar do zero.", "aviso"); UI.fecharModal(); self.formRdo({ obraId: oid }); return; }
+          var novo = RDO.basearEm(ult);
+          novo.obraId = oid;                      /* cinto e suspensório: nunca sai da obra escolhida */
+          UI.fecharModal();
+          self.formRdo(novo);
+          UI.toast("Puxado do " + (ult.numero || "diário anterior") + " — confira e lance as atividades de hoje.", "ok");
+        } }
+      ]);
+      setTimeout(function () {
+        var selO = document.getElementById("g-robra");
+        if (selO) selO.onchange = function () {
+          var box = document.getElementById("rdo-prev"); if (box) box.innerHTML = resumo(selO.value);
+        };
+      }, 60);
+    },
     formRdo: function (r) {
       r = r || {};
       /* ⚠ DIÁRIO PUBLICADO NÃO SE REESCREVE. A regra existe em
@@ -13058,6 +13211,8 @@ renderFolha: function () {
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "epi-editar": return this.epiEditar(dataset.id);
         case "epi-duplicar": return this.epiDuplicar(dataset.id);
+        case "rdo-obra": return this.rdoTrocaObra(dataset.value);
+        case "rdo-fotos": return this.rdoFotos();
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
         case "falta-lote": return this.faltasLote();
