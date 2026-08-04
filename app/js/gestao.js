@@ -8341,9 +8341,11 @@
               + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">🔎</button>'
               /* sem CA não é "N/A": é PENDENTE. O número vem da nota do modelo
                  comprado — inventar um seria falsificar a ficha NR-6. */
-              + (Epi.caPendente(it.ca)
-                ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou — o 🔎 consulta online">CA pendente</span>'
-                : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : "")) + '</td>' 
+              + (Epi.caNaoSeAplica(it.ca)
+                ? ' <span class="pill" style="background:#e2e8f0;color:#475569" title="Você marcou que este item não tem CA — nada pendente aqui">não se aplica</span>'
+                : Epi.caPendente(it.ca)
+                  ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — o 🔎 consulta online">CA pendente</span>'
+                  : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : "")) + '</td>' 
               + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
               + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
               + '<td class="num"><input data-eevu="' + i + '" value="' + Util.esc(String(it.valorUnit).replace(".", ",")) + '" style="width:60px;text-align:right"></td>'
@@ -8352,7 +8354,18 @@
           }).join("")
           + '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total</b></td><td class="num"><b data-eetot>' + Util.fmtMoeda(self._epiValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>";
         function upd(i) { var s = el.querySelector('[data-eesub="' + i + '"]'); if (s) s.textContent = Util.fmtMoeda(Util.num(itensBuf[i].quantidade) * Util.num(itensBuf[i].valorUnit)); var t = el.querySelector("[data-eetot]"); if (t) t.textContent = Util.fmtMoeda(self._epiValor(itensBuf)); }
-        Array.prototype.forEach.call(el.querySelectorAll("[data-eeca]"), function (x) { x.onchange = function () { itensBuf[+x.getAttribute("data-eeca")].ca = x.value.trim(); }; });
+        Array.prototype.forEach.call(el.querySelectorAll("[data-eeca]"), function (x) {
+          x.onchange = function () {
+            var i = +x.getAttribute("data-eeca");
+            /* "na", "n.a.", "não se aplica" e "-" viram todos "N/A": um campo
+               que aceita cinco grafias vira cinco relatórios diferentes. */
+            var v2 = Epi.caNormalizado(x.value);
+            itensBuf[i].ca = v2;
+            if (Epi.caNaoSeAplica(v2)) itensBuf[i].caFonte = "";
+            if (v2 !== x.value.trim()) x.value = v2;
+            renderItens();                       /* repinta o selo na hora */
+          };
+        });
         Array.prototype.forEach.call(el.querySelectorAll("[data-eeval]"), function (x) { x.onchange = function () { itensBuf[+x.getAttribute("data-eeval")].validade = x.value; }; });
         Array.prototype.forEach.call(el.querySelectorAll("[data-eeqtd]"), function (x) { x.onchange = function () { var i = +x.getAttribute("data-eeqtd"); itensBuf[i].quantidade = Util.num(x.value) || 0; upd(i); }; });
         Array.prototype.forEach.call(el.querySelectorAll("[data-eevu]"), function (x) { x.onchange = function () { var i = +x.getAttribute("data-eevu"); itensBuf[i].valorUnit = Util.num(x.value) || 0; upd(i); }; });
@@ -8507,7 +8520,7 @@
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
       var logoE = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(44) : "";
       var linhas = (e.itens || []).map(function (it) {
-        return "<tr><td style='text-align:center;padding:4px'>" + Util.num(it.quantidade) + "</td><td style='padding:4px'>" + Util.esc(it.nome) + "</td><td style='text-align:center;padding:4px'>" + brd(e.data) + "</td><td style='text-align:center;padding:4px'>" + (Epi.caPendente(it.ca) ? "CA PENDENTE" : Util.esc(it.ca)) + "</td><td style='padding:4px'></td></tr>";
+        return "<tr><td style='text-align:center;padding:4px'>" + Util.num(it.quantidade) + "</td><td style='padding:4px'>" + Util.esc(it.nome) + "</td><td style='text-align:center;padding:4px'>" + brd(e.data) + "</td><td style='text-align:center;padding:4px'>" + (Epi.caNaoSeAplica(it.ca) ? "N/A" : Epi.caPendente(it.ca) ? "CA PENDENTE" : Util.esc(it.ca)) + "</td><td style='padding:4px'></td></tr>";
       }).join("");
       var termo = "Declaro ter recebido gratuitamente da empresa os Equipamentos de Proteção Individual (EPI) acima discriminados, em perfeito estado de conservação e funcionamento, bem como orientação/treinamento quanto ao uso correto, guarda e conservação. Comprometo-me a: usá-los durante toda a jornada de trabalho; responsabilizar-me por sua guarda e conservação; comunicar qualquer alteração que os torne impróprios para uso; e devolvê-los quando solicitado. Estou ciente de que o uso é obrigatório e que o não uso constitui ato faltoso (art. 158 da CLT e NR-6).";
       var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:720px;margin:0 auto;padding:8px;font-size:12px">'

@@ -121,7 +121,36 @@
      * "N/A" para CA vazio — e "não se aplica" é uma afirmação falsa num
      * documento que o colaborador assina. Inventar número de CA é proibido;
      * dizer "pendente" é o único jeito honesto. */
-    caPendente: function (v) { return !String(v == null ? "" : v).replace(/\D/g, ""); },
+    /* "N/A" É UMA RESPOSTA, NÃO UMA LACUNA.
+     * Nem tudo que a empresa entrega tem CA — uniforme e camisa não são EPI
+     * certificado. Quem escreveu "N/A" já respondeu; continuar cobrando "CA
+     * pendente" na cara dele todo dia é o sistema não escutar, e ainda
+     * atrapalha quem usa o contador de pendências para saber o que falta de
+     * verdade. Guardamos sempre na forma "N/A" para não virar cinco grafias
+     * diferentes no banco. */
+    NAO_SE_APLICA: "N/A",
+    caNaoSeAplica: function (v) {
+      var t = String(v == null ? "" : v).trim().toUpperCase();
+      if (!t) return false;
+      if (t.normalize) t = t.normalize("NFD").replace(/[̀-ͯ]/g, "");
+      t = t.replace(/[.\s]/g, "");
+      return t === "N/A" || t === "NA" || t === "-" || t === "--" || t === "—"
+        || t === "NAOSEAPLICA" || t === "NAOAPLICA" || t === "NAOSEAPLICAVEL" || t === "SEMCA";
+    },
+    /* devolve o texto normalizado quando for "não se aplica"; senão o valor original */
+    caNormalizado: function (v) {
+      return this.caNaoSeAplica(v) ? this.NAO_SE_APLICA : String(v == null ? "" : v).trim();
+    },
+    /* PENDENTE = ninguém respondeu ainda. "N/A" não é pendente; número também não. */
+    caPendente: function (v) {
+      if (this.caNaoSeAplica(v)) return false;
+      return !String(v == null ? "" : v).replace(/\D/g, "");
+    },
+    /* tem número de CA de verdade — é o que vale como certificado */
+    caTemNumero: function (v) {
+      if (this.caNaoSeAplica(v)) return false;
+      return !!String(v == null ? "" : v).replace(/\D/g, "");
+    },
 
     /* ------------------------------------------------------------------
      * O CA QUE JÁ ENTROU PELA NOTA
@@ -157,7 +186,10 @@
       if (!alvo) return null;
       (itensComprados || []).forEach(function (it) {
         if (achado) return;
-        if (self.caPendente(it && it.ca)) return;           /* só serve quem TEM CA */
+        /* ⚠ aqui NÃO basta "não é pendente": um item marcado "N/A" passaria
+           por caPendente e traria um CA vazio para a ficha. Só serve quem tem
+           NÚMERO. */
+        if (!self.caTemNumero(it && it.ca)) return;
         /* 1) casamento forte: o item de estoque aponta para o mesmo EPI */
         if (epiId && it.epiId && String(it.epiId) === String(epiId)) { achado = it; return; }
         /* 2) nome igual, já normalizado (acento, caixa e pontuação fora) */

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.158",
+  "versao": "1.1.159",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.158/OrcaPRO-IA-update-v1.1.158.zip",
-  "notas": "RDO: PUXAR DO DIARIO ANTERIOR, FILTRO POR OBRA E FOTOS POR OBRA. Ao criar um diario novo o sistema pergunta a obra e oferece dois caminhos: Puxar do anterior ou Comecar do zero. Puxando, vem a equipe, os equipamentos e a lista de servicos da obra - so as atividades do dia precisam ser lancadas. O anterior e SEMPRE da mesma obra, e da para escolher de qual obra puxar quando ha mais de uma. NAO vem junto: clima e chuva do dia (que alimentam o dia impraticavel do DNIT), ocorrencias, acidentes, visitas, fotos e assinatura - isso e do dia e nao se repete; a quantidade executada dos servicos nasce zerada, para nao somar a mesma producao na medicao do mes. A lista de diarios ganhou filtro por obra com a contagem de cada uma, e o botao Fotos da obra reune todas as fotos dos diarios agrupadas por obra e por dia.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.158/OrcaPRO-IA-Instalador-v1.1.158.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.159/OrcaPRO-IA-update-v1.1.159.zip",
+  "notas": "EPI: N/A NO CA DEIXA DE SER COBRADO COMO PENDENCIA. Nem tudo que a empresa entrega tem CA - uniforme e camisa nao sao EPI certificado. Quem escrevia N/A continuava vendo o aviso CA pendente todo dia, e o item entrava na contagem do que falta. Agora N/A e tratado como RESPOSTA: some o selo de pendente, aparece nao se aplica no lugar, sai N/A na ficha impressa e o item nao conta mais como pendencia. Escrever na, n.a., nao se aplica ou - da tudo no mesmo: o campo normaliza para N/A, para nao virar cinco grafias diferentes no relatorio. O campo em BRANCO continua sendo pendente, e o CA que vem da nota so entra em quem ainda nao respondeu.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.159/OrcaPRO-IA-Instalador-v1.1.159.exe"
 }
