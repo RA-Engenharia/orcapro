@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OrçaPRO — Socorro de Dados (somente leitura)</title>
+<!-- =====================================================================
+ * socorro.html — PÁGINA DE SOCORRO, SOMENTE LEITURA.
+ *
+ * POR QUE ELA EXISTE: um cliente perdeu as composições próprias (base
+ * PROPRIA — o único dado AUTORAL dele que vive só no aparelho). A guarda
+ * anti-perda entrou na v1.1.166, mas nada foi RECUPERADO ainda. Esta página
+ * abre no aparelho do cliente e mostra o que AINDA EXISTE no disco, sem
+ * gravar absolutamente nada.
+ *
+ * GARANTIA DE NÃO-ESCRITA (regra dura desta página):
+ *   1. NENHUMA transação "readwrite". Só `readonly`. Não há put/add/delete
+ *      em lugar nenhum deste arquivo — procure: não existe.
+ *   2. O IndexedDB é aberto SEM número de versão -> nunca dispara upgrade
+ *      numa base existente. Se o banco NÃO existir, o `onupgradeneeded`
+ *      aborta a transação de criação: o banco criado é desfeito e a página
+ *      não deixa rastro.
+ *   3. Não registra service worker, não importa nenhum JS do app, não toca
+ *      em localStorage a não ser para LER (nomes e tamanhos).
+ *   4. O único arquivo que ela escreve é o .json que o usuário baixa
+ *      clicando — vai para a pasta de Downloads dele, nunca para o app.
+ *
+ * ⚠ Precisa ser aberta no MESMO ENDEREÇO do app (http://localhost:8754/
+ * socorro.html). Aberta como arquivo solto (file://) o navegador mostra
+ * outro armazenamento e ela não enxerga nada — a página detecta e avisa.
+ * ===================================================================== -->
+<style>
+  :root{
+    --bg:#0e1420; --card:#151d2c; --card2:#1b2537; --linha:#2a3548;
+    --txt:#e8edf5; --txt2:#9fb0c8; --azul:#3b82f6; --verde:#22c55e; --ambar:#f59e0b;
+    --vermelho:#ef4444; --aco:#64748b;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f4f6fa; --card:#ffffff; --card2:#eef2f8; --linha:#d6deea; --txt:#15202f; --txt2:#4c5f7a; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.5 "Segoe UI",system-ui,-apple-system,Arial,sans-serif;padding:18px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:20px;margin:0 0 4px}
+  h2{font-size:15px;margin:22px 0 8px;color:var(--txt)}
+  .sub{color:var(--txt2);font-size:13px;margin:0 0 16px}
+  .card{background:var(--card);border:1px solid var(--linha);border-radius:12px;padding:14px 16px;margin:12px 0}
+  .aviso{border-left:4px solid var(--ambar);background:rgba(245,158,11,.10)}
+  .erro{border-left:4px solid var(--vermelho);background:rgba(239,68,68,.10)}
+  .ok{border-left:4px solid var(--verde);background:rgba(34,197,94,.10)}
+  .info{border-left:4px solid var(--azul);background:rgba(59,130,246,.08)}
+  .pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;border:1px solid var(--linha);background:var(--card2);color:var(--txt2)}
+  .pill.autoral{background:rgba(34,197,94,.16);border-color:rgba(34,197,94,.4);color:#4ade80}
+  .pill.backup{background:rgba(59,130,246,.16);border-color:rgba(59,130,246,.4);color:#93c5fd}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--linha);vertical-align:top}
+  th{color:var(--txt2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
+  .rolagem{overflow-x:auto}
+  button{font:inherit;font-weight:600;padding:9px 14px;border-radius:9px;border:1px solid var(--linha);background:var(--card2);color:var(--txt);cursor:pointer}
+  button.primario{background:var(--azul);border-color:var(--azul);color:#fff}
+  button.verde{background:var(--verde);border-color:var(--verde);color:#062}
+  button:hover{filter:brightness(1.12)}
+  .botoes{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  code,.mono{font-family:ui-monospace,Consolas,"Courier New",monospace;font-size:12px}
+  .mudo{color:var(--txt2)}
+  .grande{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .selo{display:inline-block;padding:3px 10px;border-radius:99px;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.35);color:#4ade80;font-size:12px;font-weight:600}
+  .linhas{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}
+  .kpi{background:var(--card2);border:1px solid var(--linha);border-radius:10px;padding:10px 12px}
+  .kpi .rot{font-size:11px;color:var(--txt2);text-transform:uppercase;letter-spacing:.04em}
+  details{margin-top:8px}
+  summary{cursor:pointer;color:var(--txt2);font-size:13px}
+  pre{white-space:pre-wrap;word-break:break-word;background:var(--card2);border:1px solid var(--linha);border-radius:8px;padding:10px;font-size:12px;max-height:280px;overflow:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>🛟 OrçaPRO — Socorro de Dados</h1>
+  <p class="sub">
+    <span class="selo">SOMENTE LEITURA</span>
+    Esta página <b>não grava, não apaga e não corrige nada</b>. Ela só abre o armazenamento
+    deste aparelho e mostra o que ainda existe — principalmente as <b>composições próprias</b>
+    (base PRÓPRIA), que são o dado autoral que vive só aqui.
+  </p>
+
+  <div class="card aviso">
+    <b>Antes de qualquer coisa, neste aparelho:</b><br>
+    · <b>Não limpe o cache</b> do navegador e <b>não desinstale/reinstale</b> o OrçaPRO.<br>
+    · Se existe um <b>segundo aparelho</b> que não foi aberto depois da atualização, ele pode
+    ter a cópia íntegra — abra esta mesma página lá também, antes de mexer nele.<br>
+    · Achou algo? Clique em <b>“Baixar o que foi encontrado”</b> e guarde o arquivo. É o
+    material da recuperação.
+  </div>
+
+  <div id="ambiente"></div>
+  <div id="resultado"><div class="card"><span class="mudo">Lendo o armazenamento deste aparelho…</span></div></div>
+
+  <div class="botoes" id="acoes" style="display:none">
+    <button class="primario" id="btn-baixar">💾 Baixar o que foi encontrado (.json)</button>
+    <button class="verde" id="btn-baixar-propria">🧱 Baixar só as composições próprias</button>
+    <button id="btn-resumo">📋 Copiar resumo para o suporte</button>
+    <button id="btn-reler">🔄 Ler de novo</button>
+  </div>
+
+  <h2>O que esta página leu</h2>
+  <div class="card info" id="tecnico"><span class="mudo">…</span></div>
+
+</div>
+
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * Nada daqui para baixo escreve: não há transação de escrita, nem
+ * gravação/remoção de chave, em nenhum caminho deste arquivo.
+ * Quem garante isso a cada release é tools/e2e-socorro.js, bloco [6] —
+ * ele varre este JS e REPROVA se qualquer caminho de escrita aparecer.
+ * ------------------------------------------------------------------ */
+
+var DB_NOME = "orcapro-idb";
+var STORE = "kv";
+var achados = null;      // resultado consolidado da varredura
+var log = [];            // trilha técnica do que foi tentado
+
+function reg(msg){ log.push(msg); }
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); }
+function n(x){ return (Number(x) || 0).toLocaleString("pt-BR"); }
+function bytes(b){
+  b = Number(b) || 0;
+  if (b < 1024) return b + " B";
+  if (b < 1024*1024) return (b/1024).toFixed(1).replace(".", ",") + " KB";
+  return (b/1024/1024).toFixed(1).replace(".", ",") + " MB";
+}
+
+/* ---------- Abertura do IndexedDB, sem criar e sem migrar ---------- */
+function abrirSomenteLeitura(){
+  return new Promise(function(res){
+    if (!window.indexedDB) { reg("indexedDB indisponível neste navegador."); res({ db:null, inexistente:false, erro:"IndexedDB indisponível" }); return; }
+    var rq, criou = false;
+    try { rq = window.indexedDB.open(DB_NOME); }   // SEM versão: nunca dispara upgrade em base existente
+    catch (e) { reg("open lançou: " + e.message); res({ db:null, inexistente:false, erro:e.message }); return; }
+
+    rq.onupgradeneeded = function(ev){
+      // Só chega aqui se o banco NÃO EXISTIA. Abortamos a criação para não
+      // deixar rastro — a página é somente leitura de verdade.
+      criou = true;
+      reg("O banco \"" + DB_NOME + "\" não existia neste armazenamento — criação abortada de propósito.");
+      try { ev.target.transaction.abort(); } catch (e) {}
+    };
+    rq.onsuccess = function(){
+      if (criou) { try { rq.result.close(); } catch(e){} res({ db:null, inexistente:true }); return; }
+      res({ db: rq.result, inexistente:false });
+    };
+    rq.onerror = rq.onblocked = function(){
+      if (criou) { res({ db:null, inexistente:true }); return; }
+      var msg = (rq.error && rq.error.message) || "falha ao abrir";
+      reg("Falha ao abrir o banco: " + msg);
+      res({ db:null, inexistente:false, erro: msg });
+    };
+  });
+}
+
+function lerTudoDoKv(db){
+  return new Promise(function(res){
+    if (!db || !db.objectStoreNames.contains(STORE)) { reg("O banco existe mas não tem o armazém \"" + STORE + "\"."); res([]); return; }
+    var tx, st;
+    try { tx = db.transaction(STORE, "readonly"); st = tx.objectStore(STORE); }   // readonly — sempre
+    catch (e) { reg("Não consegui abrir transação de leitura: " + e.message); res([]); return; }
+    var chaves = st.getAllKeys();
+    chaves.onerror = function(){ reg("getAllKeys falhou."); res([]); };
+    chaves.onsuccess = function(){
+      var ks = chaves.result || [], saida = [], pend = ks.length;
+      reg("Chaves encontradas no IndexedDB: " + ks.length + ".");
+      if (!pend) { res([]); return; }
+      ks.forEach(function(k){
+        var g = st.get(k);
+        g.onsuccess = function(){ saida.push({ chave:String(k), valor:g.result }); if (!--pend) res(saida); };
+        g.onerror  = function(){ reg("Não consegui ler a chave " + k + "."); saida.push({ chave:String(k), valor:null, erroLeitura:true }); if (!--pend) res(saida); };
+      });
+    };
+  });
+}
+
+/* ---------- Interpretação do que foi lido ---------- */
+// payload gravado: [{ fonte, mes, uf, dados:[...] }]  |  extras em memória usam { competencia, itens }
+function normalizaBases(payload){
+  return (Array.isArray(payload) ? payload : []).map(function(b){
+    var itens = (b && (b.dados || b.itens)) || [];
+    return {
+      fonte: String((b && b.fonte) || "?").toUpperCase(),
+      uf: (b && b.uf) || "",
+      competencia: (b && (b.mes || b.competencia)) || "",
+      itens: Array.isArray(itens) ? itens : [],
+      total: Array.isArray(itens) ? itens.length : 0
+    };
+  });
+}
+
+function varrerLocalStorage(){
+  // INVENTÁRIO, não conteúdo: nomes e tamanhos. O app guarda cadastro de gente
+  // (CPF, PIX) no localStorage — o conteúdo NÃO é lido nem exportado aqui.
+  var inv = [], legado = [];
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i), v = "";
+      try { v = localStorage.getItem(k) || ""; } catch (e) {}
+      inv.push({ chave:k, tamanho:v.length });
+      // exceção deliberada: cópia LEGADO das bases que o app ainda não migrou p/ IndexedDB
+      if (/:bases_extras(__anterior)?$/.test(k) && v) {
+        try { legado.push({ chave:k, valor: JSON.parse(v) }); } catch (e) { reg("Cópia legado em localStorage ilegível: " + k); }
+      }
+    }
+  } catch (e) { reg("Não consegui listar o localStorage: " + e.message); }
+  inv.sort(function(a,b){ return b.tamanho - a.tamanho; });
+  return { inventario: inv, legado: legado };
+}
+
+function varrer(){
+  achados = null;
+  log = [];
+  document.getElementById("resultado").innerHTML = '<div class="card"><span class="mudo">Lendo o armazenamento deste aparelho…</span></div>';
+  document.getElementById("acoes").style.display = "none";
+
+  var ls = varrerLocalStorage();
+
+  return abrirSomenteLeitura().then(function(r){
+    if (!r.db) return { registros: [], inexistente: !!r.inexistente, erroAbertura: r.erro || null };
+    return lerTudoDoKv(r.db).then(function(regs){
+      try { r.db.close(); } catch (e) {}
+      return { registros: regs, inexistente:false, erroAbertura:null };
+    });
+  }).then(function(res){
+    var empresas = {};   // empresaId -> { atual, anterior, sinapi }
+    function slot(eid){ if (!empresas[eid]) empresas[eid] = { empresaId:eid, atual:null, anterior:null, sinapi:null, outros:[] }; return empresas[eid]; }
+
+    function classifica(chave, valor, origem){
+      var m = /^orcapro:(.+):(bases_extras__anterior|bases_extras|sinapi_base)$/.exec(chave);
+      if (!m) { slot("(fora do padrão)").outros.push({ chave:chave, origem:origem, tipo: typeof valor }); return; }
+      var eid = m[1], ent = m[2], s = slot(eid);
+      if (ent === "bases_extras")            s.atual    = { origem:origem, bases: normalizaBases(valor) };
+      else if (ent === "bases_extras__anterior") s.anterior = { origem:origem, em: (valor && valor.em) || "", bases: normalizaBases(valor && valor.payload) };
+      else if (ent === "sinapi_base")        s.sinapi   = { origem:origem, total: (valor && (valor.dados || valor.itens) || []).length || 0 };
+    }
+
+    (res.registros || []).forEach(function(x){ classifica(x.chave, x.valor, "IndexedDB"); });
+    (ls.legado || []).forEach(function(x){
+      // só entra se o IndexedDB não tiver a mesma chave (o legado é o "resto" da migração)
+      var jaTem = (res.registros || []).some(function(y){ return y.chave === x.chave; });
+      if (!jaTem) { reg("Cópia LEGADO achada no localStorage: " + x.chave); classifica(x.chave, x.valor, "localStorage (legado)"); }
+    });
+
+    achados = {
+      geradoEm: new Date().toISOString(),
+      origem: location.origin + location.pathname,
+      inexistente: res.inexistente,
+      erroAbertura: res.erroAbertura,
+      empresas: Object.keys(empresas).map(function(k){ return empresas[k]; }),
+      inventarioLocalStorage: ls.inventario,
+      trilha: log
+    };
+    render();
+    return achados;
+  }).catch(function(e){
+    reg("ERRO inesperado: " + (e && e.message));
+    document.getElementById("resultado").innerHTML =
+      '<div class="card erro"><b>Não consegui concluir a leitura.</b><br>' + esc(e && e.message) +
+      '<br><span class="mudo">Nada foi alterado. Mande um print desta tela para o suporte.</span></div>';
+    renderTecnico();
+  });
+}
+
+/* ---------- Tela ---------- */
+function ambiente(){
+  var box = document.getElementById("ambiente"), h = "";
+  if (location.protocol === "file:") {
+    h += '<div class="card erro"><b>⛔ Aberta como arquivo solto (file://).</b><br>'
+      +  'Assim o navegador mostra <i>outro</i> armazenamento e esta página não enxerga os dados do OrçaPRO.<br>'
+      +  'Abra o app normalmente e depois troque o endereço para <code>http://localhost:8754/socorro.html</code>.</div>';
+  } else {
+    h += '<div class="card info">Lendo o armazenamento de <code>' + esc(location.origin) + '</code>. '
+      +  '<span class="mudo">Precisa ser o MESMO endereço em que o OrçaPRO abre — normalmente <code>http://localhost:8754</code>. '
+      +  'Se o app abre em outro endereço/porta, esta página tem que ser aberta lá.</span></div>';
+  }
+  box.innerHTML = h;
+}
+
+function itensPropria(bases){
+  var b = (bases || []).filter(function(x){ return x.fonte === "PROPRIA"; })[0];
+  return b ? b.itens : [];
+}
+
+function tabelaBases(bases){
+  if (!bases || !bases.length) return '<span class="mudo">— nenhuma base nesta cópia —</span>';
+  var h = '<div class="rolagem"><table><thead><tr><th>Base</th><th>UF</th><th>Competência</th><th class="num">Itens</th><th></th></tr></thead><tbody>';
+  bases.forEach(function(b){
+    var autoral = b.fonte === "PROPRIA";
+    h += '<tr><td><b>' + esc(b.fonte) + '</b>' + (autoral ? ' <span class="pill autoral">AUTORAL</span>' : '') + '</td>'
+      +  '<td>' + esc(b.uf || "—") + '</td><td>' + esc(b.competencia || "—") + '</td>'
+      +  '<td class="num">' + n(b.total) + '</td>'
+      +  '<td class="mudo">' + (autoral ? 'composições/insumos criados por você' : 'base de preços — pode ser reimportada') + '</td></tr>';
+  });
+  return h + '</tbody></table></div>';
+}
+
+function tabelaComposicoes(itens){
+  if (!itens || !itens.length) return '';
+  var lim = Math.min(itens.length, 400);
+  var h = '<div class="rolagem"><table><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Custo</th><th>Tipo</th><th>Criado em</th></tr></thead><tbody>';
+  for (var i = 0; i < lim; i++) {
+    var it = itens[i] || {};
+    h += '<tr><td class="mono">' + esc(it.codigo) + '</td><td>' + esc(it.descricao) + '</td>'
+      +  '<td>' + esc(it.unidade || "") + '</td>'
+      +  '<td class="num">' + (it.custoUnitario != null ? Number(it.custoUnitario).toLocaleString("pt-BR", {minimumFractionDigits:2, maximumFractionDigits:2}) : "—") + '</td>'
+      +  '<td>' + esc(it.tipoItem || (it.insumos ? "composicao" : "")) + '</td>'
+      +  '<td class="mudo">' + esc(String(it.criadoEm || "").slice(0,10)) + '</td></tr>';
+  }
+  h += '</tbody></table></div>';
+  if (itens.length > lim) h += '<p class="mudo">…e mais ' + n(itens.length - lim) + ' — todos entram no arquivo baixado.</p>';
+  return h;
+}
+
+function blocoEmpresa(e){
+  var atuais = (e.atual && e.atual.bases) || [];
+  var anteriores = (e.anterior && e.anterior.bases) || [];
+  var pAtual = itensPropria(atuais), pAnt = itensPropria(anteriores);
+  var melhor = Math.max(pAtual.length, pAnt.length);
+
+  var h = '<div class="card">';
+  h += '<h2 style="margin-top:0">Empresa <code>' + esc(e.empresaId) + '</code></h2>';
+
+  h += '<div class="linhas">'
+    +  '<div class="kpi"><div class="rot">Composições próprias — agora</div><div class="grande">' + n(pAtual.length) + '</div></div>'
+    +  '<div class="kpi"><div class="rot">Composições próprias — cópia anterior</div><div class="grande">' + n(pAnt.length) + '</div>'
+    +     (e.anterior && e.anterior.em ? '<div class="mudo">de ' + esc(String(e.anterior.em).slice(0,19).replace("T"," ")) + '</div>' : '') + '</div>'
+    +  '<div class="kpi"><div class="rot">Bases de preço guardadas</div><div class="grande">' + n(atuais.length) + '</div></div>'
+    +  '</div>';
+
+  if (melhor > 0) {
+    h += '<div class="card ok" style="margin:12px 0 0"><b>✅ Achei composições próprias neste aparelho: ' + n(melhor) + '.</b><br>'
+      +  (pAnt.length > pAtual.length
+            ? 'A <b>cópia anterior</b> tem mais itens que a atual (' + n(pAnt.length) + ' contra ' + n(pAtual.length) + ') — é dela que sai a recuperação.'
+            : 'Estão na cópia atual.')
+      +  '<br>Clique em <b>“Baixar o que foi encontrado”</b> agora e guarde o arquivo antes de mexer em qualquer outra coisa.</div>';
+  } else {
+    h += '<div class="card aviso" style="margin:12px 0 0"><b>Nenhuma composição própria nesta empresa.</b><br>'
+      +  'Não significa que sumiu para sempre: confira se o app costuma abrir com <b>outro usuário/empresa</b>, '
+      +  'e repita esta leitura em qualquer <b>outro aparelho</b> que tenha usado o OrçaPRO — sobretudo um que '
+      +  'não foi aberto depois da atualização.</div>';
+  }
+
+  h += '<h2>Cópia atual <span class="pill">bases_extras</span> <span class="mudo mono">' + esc((e.atual && e.atual.origem) || "não existe") + '</span></h2>';
+  h += tabelaBases(atuais);
+
+  h += '<h2>Cópia anterior <span class="pill backup">bases_extras__anterior</span> <span class="mudo mono">' + esc((e.anterior && e.anterior.origem) || "não existe") + '</span></h2>';
+  h += anteriores.length ? tabelaBases(anteriores)
+     : '<span class="mudo">— não há cópia anterior guardada (ela passou a ser criada na v1.1.166, a cada gravação de base) —</span>';
+
+  var lista = pAnt.length >= pAtual.length ? pAnt : pAtual;
+  if (lista.length) {
+    h += '<details open><summary>Ver as ' + n(lista.length) + ' composições/insumos próprios encontrados</summary>' + tabelaComposicoes(lista) + '</details>';
+  }
+
+  if (e.sinapi) h += '<p class="mudo">Base SINAPI carregada neste aparelho: ' + n(e.sinapi.total) + ' itens (essa sempre pode ser reimportada).</p>';
+  if (e.outros && e.outros.length) h += '<details><summary>' + e.outros.length + ' chave(s) fora do padrão</summary><pre>' + esc(JSON.stringify(e.outros, null, 2)) + '</pre></details>';
+
+  return h + '</div>';
+}
+
+function render(){
+  var box = document.getElementById("resultado"), h = "";
+
+  if (achados.inexistente) {
+    h += '<div class="card erro"><b>O armazenamento do OrçaPRO não existe neste endereço.</b><br>'
+      +  'Isso acontece quando a página foi aberta num endereço diferente do app (outra porta, outro domínio, '
+      +  'ou uma janela anônima). Abra o OrçaPRO como você abre todo dia e troque só o final do endereço para '
+      +  '<code>/socorro.html</code>.<br><span class="mudo">Nada foi criado nem alterado.</span></div>';
+  } else if (achados.erroAbertura) {
+    h += '<div class="card erro"><b>Não consegui abrir o armazenamento:</b> ' + esc(achados.erroAbertura) + '<br>'
+      +  '<span class="mudo">Feche outras janelas do OrçaPRO e clique em “Ler de novo”. Nada foi alterado.</span></div>';
+  }
+
+  var comDados = achados.empresas.filter(function(e){ return e.empresaId !== "(fora do padrão)"; });
+  if (!comDados.length && !achados.inexistente) {
+    h += '<div class="card aviso"><b>O armazenamento existe, mas não há nenhuma base gravada nele.</b><br>'
+      +  'Repita esta leitura em qualquer outro aparelho que tenha usado o OrçaPRO — em especial um que '
+      +  '<b>não foi aberto depois da atualização</b>. E, neste aqui: não limpe cache, não reinstale.</div>';
+  }
+  comDados.forEach(function(e){ h += blocoEmpresa(e); });
+
+  var fora = achados.empresas.filter(function(e){ return e.empresaId === "(fora do padrão)"; })[0];
+  if (fora && fora.outros.length) {
+    h += '<div class="card"><h2 style="margin-top:0">Outras chaves no armazenamento</h2><pre>' + esc(JSON.stringify(fora.outros, null, 2)) + '</pre></div>';
+  }
+
+  box.innerHTML = h;
+  document.getElementById("acoes").style.display = "flex";
+  renderTecnico();
+}
+
+function renderTecnico(){
+  var inv = (achados && achados.inventarioLocalStorage) || [];
+  var top = inv.slice(0, 25);
+  var h = '<b>Endereço lido:</b> <code>' + esc(location.origin) + '</code><br>'
+        + '<b>Banco:</b> <code>' + DB_NOME + '</code> · armazém <code>' + STORE + '</code> · <b>transações usadas: apenas readonly</b><br>'
+        + '<details><summary>Trilha da leitura (' + log.length + ' evento(s))</summary><pre>' + esc(log.join("\n") || "—") + '</pre></details>'
+        + '<details><summary>Inventário do localStorage — ' + inv.length + ' chave(s), só nome e tamanho (o conteúdo não é lido nem exportado)</summary>'
+        + '<div class="rolagem"><table><thead><tr><th>Chave</th><th class="num">Tamanho</th></tr></thead><tbody>'
+        + top.map(function(x){ return '<tr><td class="mono">' + esc(x.chave) + '</td><td class="num">' + bytes(x.tamanho) + '</td></tr>'; }).join("")
+        + '</tbody></table></div>' + (inv.length > top.length ? '<p class="mudo">…e mais ' + (inv.length - top.length) + '.</p>' : '') + '</details>';
+  document.getElementById("tecnico").innerHTML = h;
+}
+
+/* ---------- Downloads (arquivo do usuário; não toca no app) ---------- */
+function baixar(nome, obj){
+  var blob = new Blob([JSON.stringify(obj, null, 2)], { type:"application/json" });
+  var url = URL.createObjectURL(blob), a = document.createElement("a");
+  a.href = url; a.download = nome; document.body.appendChild(a); a.click();
+  setTimeout(function(){ URL.revokeObjectURL(url); a.remove(); }, 1500);
+}
+function carimbo(){ return new Date().toISOString().slice(0,19).replace(/[:T]/g, "-"); }
+
+document.getElementById("btn-baixar").onclick = function(){
+  if (!achados) return;
+  baixar("orcapro-socorro-" + carimbo() + ".json", achados);
+};
+/* O arquivo das composições sai no FORMATO DE BACKUP do OrçaPRO — o mesmo que
+ * “🗄 Backup → Restaurar de um backup (.json)” lê. Sem isso o cliente teria em
+ * mãos a prova de que o dado existe e nenhum caminho para colocá-lo de volta.
+ * Conteúdo: a UNIÃO da cópia atual com a anterior (em código repetido vence a
+ * gravação mais recente) — recuperar é somar, nunca escolher. */
+function unirProprias(listas){
+  var porCodigo = {}, ordem = [];
+  listas.forEach(function(lista){
+    (lista || []).forEach(function(it){
+      if (!it || it.codigo == null) return;
+      var k = String(it.codigo).toLowerCase(), ja = porCodigo[k];
+      if (!ja) { porCodigo[k] = it; ordem.push(k); return; }
+      if (String(it.criadoEm || "") > String(ja.criadoEm || "")) porCodigo[k] = it;
+    });
+  });
+  return ordem.map(function(k){ return porCodigo[k]; });
+}
+function baseDe(bases){ return (bases || []).filter(function(b){ return b.fonte === "PROPRIA"; })[0] || null; }
+
+document.getElementById("btn-baixar-propria").onclick = function(){
+  if (!achados) return;
+  var alvo = null, uni = [], det = [];
+  achados.empresas.forEach(function(e){
+    var atual = itensPropria((e.atual && e.atual.bases) || []);
+    var ant   = itensPropria((e.anterior && e.anterior.bases) || []);
+    if (!atual.length && !ant.length) return;
+    // a anterior primeiro: a atual (mais nova) sobrepõe em código repetido
+    var lista = unirProprias([ant, atual]);
+    det.push({ empresaId:e.empresaId, atual:atual.length, anterior:ant.length, uniao:lista.length, anteriorEm:(e.anterior && e.anterior.em) || "" });
+    if (lista.length > uni.length) {
+      uni = lista;
+      alvo = baseDe((e.atual && e.atual.bases) || []) || baseDe((e.anterior && e.anterior.bases) || []);
+    }
+  });
+  if (!uni.length) { alert("Não há composições próprias para baixar neste aparelho."); return; }
+  baixar("orcapro-composicoes-proprias-" + carimbo() + ".json", {
+    app: "OrçaPRO", origem: "socorro.html", exportadoEm: new Date().toISOString(),
+    orcamentos: [],                                  // este arquivo é só das composições
+    basePropria: { fonte:"PROPRIA", uf:(alvo && alvo.uf) || "", mes:(alvo && alvo.competencia) || "", dados: uni },
+    _diagnostico: det
+  });
+  alert("Arquivo salvo com " + uni.length + " composição(ões)/insumo(s).\n\n"
+      + "Para colocar de volta: abra o OrçaPRO → 🗄 Backup → \"Restaurar de um backup (.json)\" e escolha este arquivo.\n"
+      + "A restauração SOMA ao que já existe — não apaga nada.");
+};
+document.getElementById("btn-resumo").onclick = function(){
+  if (!achados) return;
+  var l = ["OrçaPRO — socorro de dados (" + new Date().toLocaleString("pt-BR") + ")", "Endereço: " + achados.origem];
+  if (achados.inexistente) l.push("Armazenamento NÃO EXISTE neste endereço.");
+  achados.empresas.forEach(function(e){
+    if (e.empresaId === "(fora do padrão)") return;
+    var a = itensPropria((e.atual && e.atual.bases) || []).length;
+    var b = itensPropria((e.anterior && e.anterior.bases) || []).length;
+    l.push("Empresa " + e.empresaId + ": próprias agora=" + a + ", cópia anterior=" + b
+      + (e.anterior && e.anterior.em ? " (de " + String(e.anterior.em).slice(0,19).replace("T"," ") + ")" : "")
+      + ", bases guardadas=" + (((e.atual && e.atual.bases) || []).length));
+  });
+  var txt = l.join("\n");
+  var ok = function(){ alert("Resumo copiado. Cole na conversa com o suporte."); };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, function(){ prompt("Copie o resumo:", txt); });
+  else prompt("Copie o resumo:", txt);
+};
+document.getElementById("btn-reler").onclick = function(){ varrer(); };
+
+ambiente();
+varrer();
+</script>
+</body>
+</html>
