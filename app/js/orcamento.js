@@ -61,6 +61,65 @@
       };
     },
 
+    /* ==================================================================
+     * COPIAR DE UM ORÇAMENTO EXISTENTE
+     *
+     * Duas obras parecidas têm 80% da planilha igual. Refazer etapa por
+     * etapa é o trabalho que faz o orçamentista abrir o Excel em vez do
+     * sistema.
+     *
+     * O QUE NÃO VEM JUNTO, e por quê — é aqui que uma cópia inocente vira
+     * problema de dinheiro:
+     *  • número: o novo é ORC próprio. Dois orçamentos com o mesmo número
+     *    é rastreabilidade perdida em licitação.
+     *  • aprovação / boletim aprovado / assinatura: o novo nasce ABERTO. Um
+     *    orçamento que já nasce "aprovado" porque copiou o carimbo do outro
+     *    é o pior defeito possível neste módulo.
+     *  • cliente e obra: só vêm se quem copiou pedir — o mais comum é a
+     *    mesma planilha para OUTRO cliente.
+     *  • datas de criação/atualização: são do novo.
+     *
+     * O QUE VEM: etapas, sub etapas, itens com quantidade, BDI e todos os
+     * parâmetros (encargos, arredondamento, competência, UF) — copiar a
+     * planilha sem os parâmetros dela daria outro total, em silêncio.
+     * ================================================================== */
+    copiarDe: function (origem, dados) {
+      var o = origem || {}, d = dados || {};
+      var copia = JSON.parse(JSON.stringify(o));   /* fundo, para não dividir
+                                                      etapas/itens com a origem */
+      copia.id = Util.uid("orc");
+      copia.numero = d.numero || ("ORC-" + new Date().getFullYear() + "-" + Math.floor(Math.random() * 9000 + 1000));
+      copia.nome = d.nome || ("Cópia de " + (o.nome || "orçamento"));
+      copia.criadoEm = Util.agoraISO();
+      copia.atualizadoEm = Util.agoraISO();
+      copia.copiadoDe = o.id || "";
+      copia.copiadoDeNumero = o.numero || "";
+
+      /* cliente/obra: em branco por padrão; só herda se pedirem */
+      if (!d.manterCliente) copia.cliente = { nome: d.cliente || "", doc: "", contato: "" };
+      else if (d.cliente) copia.cliente = { nome: d.cliente, doc: (o.cliente || {}).doc || "", contato: (o.cliente || {}).contato || "" };
+      if (!d.manterObra) copia.obra = { nome: d.obra || "", local: "", regime: (o.obra || {}).regime || "Empreitada" };
+
+      /* nasce ABERTO — nenhum carimbo de aprovação atravessa a cópia */
+      ["aprovado", "aprovadoEm", "aprovadoPor", "aprovacao", "assinatura",
+       "boletimAprovado", "travado", "status", "estado", "propostaGerada",
+       "propostaEm", "obraId", "contratoId", "medicoes"].forEach(function (k) {
+        if (copia[k] !== undefined) delete copia[k];
+      });
+
+      /* itens sem quantidade: útil para reaproveitar SÓ a estrutura de
+         serviços quando a obra nova tem metragem diferente */
+      if (d.semQuantidades) {
+        (copia.etapas || []).forEach(function (e) {
+          (e.itens || []).forEach(function (it) { it.quantidade = 0; });
+          (e.subetapas || []).forEach(function (se) {
+            (se.itens || []).forEach(function (it) { it.quantidade = 0; });
+          });
+        });
+      }
+      return copia;
+    },
+
     /* Categorias de obra (tipologias usuais de obra pública/privada) — usadas
      * no Passo 1 do assistente para classificar o orçamento. */
     CATEGORIAS_OBRA: [

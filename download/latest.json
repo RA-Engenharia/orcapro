@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.164",
+  "versao": "1.1.165",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.164/OrcaPRO-IA-update-v1.1.164.zip",
-  "notas": "MENU MAIS REDONDO. Tres acertos no que foi entregue nas ultimas versoes: (1) no modo foco, ESCOLHER um modulo recolhe a barra sozinha - o gesto terminou, ela sai da frente sem precisar mover o mouse; (2) os modulos escondidos que voce abriu por ultimo SOBEM para o topo de Mais modulos, entao o modulo de uso mensal nao vira cacada na lista; (3) com a barra recolhida no trilho, a sanfona de Mais modulos nao abre mais dentro de 54 pixels, onde daria uma coluna de icones sem nome nenhum. Nada disso muda quem nao usa o modo foco nem organizou o menu.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.164/OrcaPRO-IA-Instalador-v1.1.164.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.165/OrcaPRO-IA-update-v1.1.165.zip",
+  "notas": "NOVO ORCAMENTO COPIANDO DE OUTRO. Na tela Meus Orcamentos apareceu o botao Copiar de outro: escolha um orcamento que ja existe e o novo nasce com as etapas, sub etapas, itens e quantidades prontos, junto com o BDI e os parametros de calculo (encargos, arredondamento, base, competencia e UF) - copiar a planilha sem os parametros dela daria outro total, em silencio. Tem tambem a opcao Trazer so os servicos, sem as quantidades, para quando a obra nova tem outra metragem. O que NAO vem: aprovacao, assinatura, vinculo de obra e o numero - o novo nasce ABERTO e com numero proprio, porque orcamento que ja nasce aprovado por ter copiado o carimbo de outro e o pior defeito possivel neste modulo. O cliente fica em branco para voce preencher, e a copia e independente: mexer nela nao altera o original.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.165/OrcaPRO-IA-Instalador-v1.1.165.exe"
 }

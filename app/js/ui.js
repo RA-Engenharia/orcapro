@@ -408,6 +408,7 @@
       }
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
                  '<div class="flex"><button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("reimportar") + 'Importar planilha</button>' +
+                 '<button class="btn" data-acao="copiar-orc" title="Criar um orçamento a partir de outro que já existe">⧉ Copiar de outro</button> ' +
                  '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
       if (!orcamentos.length) {
         html += '<div class="vazio card"><h3>Nenhum orçamento ainda</h3>' +

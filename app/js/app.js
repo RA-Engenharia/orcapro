@@ -812,6 +812,7 @@
         case "parede-explodir": this.paredeExplodir(); break;
         case "parede-aplicar": this.paredeAplicar(); break;
         case "novo": this.novoOrcamento(); break;
+        case "copiar-orc": this.copiarOrcamento(); break;
         case "importar-sinapi": this.abrirImportSinapi(); break;
         case "atualizar": this.abrirAtualizar(); break;
         case "processar-import": this.processarImportSinapi(); break;
@@ -2124,6 +2125,76 @@
     },
 
     // ---------- Orçamentos ----------
+    /* ------------------------------------------------------------------
+     * CRIAR A PARTIR DE UM ORÇAMENTO QUE JÁ EXISTE
+     * Duas obras parecidas têm quase a mesma planilha; refazer do zero é o
+     * que empurra o orçamentista de volta para o Excel.
+     * ------------------------------------------------------------------ */
+    copiarOrcamento: function () {
+      var self = this, eid = Auth.empresaId();
+      var lista = Store.listarOrcamentos(eid).slice().sort(function (a, b) {
+        return String(b.atualizadoEm || "").localeCompare(String(a.atualizadoEm || ""));
+      });
+      if (!lista.length) { UI.toast("Você ainda não tem orçamento para copiar.", "aviso"); return; }
+      var limite = Auth.limite("limiteOrcamentos");
+      if (lista.length >= limite) {
+        UI.toast("Plano " + CONFIG.planos[Auth.plano()].nome + " permite só " + limite + " orçamentos. Faça upgrade.", "erro");
+        return;
+      }
+      function resumo(o) {
+        var nE = (o.etapas || []).length, nI = 0;
+        (o.etapas || []).forEach(function (e) {
+          nI += (e.itens || []).length;
+          (e.subetapas || []).forEach(function (se) { nI += (se.itens || []).length; });
+        });
+        return nE + " etapa" + (nE === 1 ? "" : "s") + " · " + nI + " item" + (nI === 1 ? "" : "ns");
+      }
+      var opts = lista.map(function (o) {
+        return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome || "(sem nome)")
+          + " — " + Util.esc(o.numero || "") + " (" + resumo(o) + ")</option>";
+      }).join("");
+      var corpo = '<div class="field"><label>Copiar de qual orçamento?</label><select id="co-orig">' + opts + "</select></div>"
+        + '<div id="co-res" class="muted" style="font-size:12px;margin:-4px 0 10px"></div>'
+        + '<div class="field"><label>Nome do novo orçamento</label><input id="co-nome" placeholder="Ex.: Residência — Rua B"></div>'
+        + '<div class="row"><div class="field"><label>Cliente</label><input id="co-cli" placeholder="deixe em branco para preencher depois"></div>'
+        + '<div class="field"><label>Obra / Local</label><input id="co-obra" placeholder="Ex.: Bairro Centro"></div></div>'
+        + '<label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer;margin-top:4px">'
+        + '<input type="checkbox" id="co-semqtd" style="margin-top:3px">'
+        + '<span><b>Trazer só os serviços, sem as quantidades</b><br><span class="muted" style="font-size:12px">'
+        + "Marque quando a obra nova tem outra metragem: a lista de serviços vem pronta e você lança as quantidades.</span></span></label>"
+        + '<p class="muted" style="font-size:12px;margin:10px 0 0">Vêm junto: etapas, sub etapas, itens, BDI e os parâmetros de cálculo '
+        + "(encargos, arredondamento, base e competência). <b>Não vem</b> aprovação, assinatura nem o número — o novo nasce aberto e com número próprio.</p>";
+      UI.modal("Copiar de um orçamento existente", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Criar cópia", classe: "primary", onClick: function () {
+          var origem = lista.filter(function (o) { return o.id === (UI.el("co-orig") || {}).value; })[0];
+          if (!origem) { UI.toast("Escolha o orçamento de origem.", "erro"); return; }
+          /* ⚠ ler do STORE, não da lista da tela: a lista pode ser um resumo
+             sem as etapas, e copiar dela geraria uma planilha vazia. */
+          var completo = Store.lerOrcamento ? (Store.lerOrcamento(eid, origem.id) || origem) : origem;
+          var novo = Orcamento.copiarDe(completo, {
+            nome: (UI.el("co-nome") || {}).value || "",
+            cliente: (UI.el("co-cli") || {}).value || "",
+            obra: (UI.el("co-obra") || {}).value || "",
+            semQuantidades: !!((UI.el("co-semqtd") || {}).checked)
+          });
+          Store.salvarOrcamento(eid, novo);
+          UI.fecharModal();
+          self.orcAtual = novo; self.tela = "editor"; self.aba = "planilha";
+          self.render();
+          UI.toast("Cópia criada a partir de " + (completo.numero || completo.nome || "orçamento") + ".", "ok");
+        } }
+      ]);
+      setTimeout(function () {
+        var sel = UI.el("co-orig"), box = UI.el("co-res");
+        function pinta() {
+          var o = lista.filter(function (x2) { return x2.id === sel.value; })[0];
+          if (o && box) box.textContent = resumo(o) + " · atualizado em " + String(o.atualizadoEm || "").slice(0, 10).split("-").reverse().join("/");
+        }
+        if (sel) { sel.onchange = pinta; pinta(); }
+      }, 60);
+    },
+
     novoOrcamento: function () {
       var lista = Store.listarOrcamentos(Auth.empresaId());
       var limite = Auth.limite("limiteOrcamentos");
