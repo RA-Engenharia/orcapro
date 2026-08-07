@@ -1103,10 +1103,10 @@
 
         Nuvem.entrarPorLicenca(chave)
           .then(function () { return Nuvem.sincronizar(eid); })
-          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
+          .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
           .then(function () {
             self._nuvemTentativa = 0;
-            try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); }); } catch (e) {}
+            try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && ent === PropriaSync.ENTIDADE) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); }); } catch (e) {}
             // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
             if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
             if (self.tela === "lista") self.render(); // equipe/dados sincronizados
@@ -1198,9 +1198,9 @@
           var eid = Auth.empresaId();
           Nuvem.entrar(email, senha)
             .then(function () { return Nuvem.sincronizar(eid); })
-            .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); })
+            .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
             .then(function () {
-              Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
+              Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && ent === PropriaSync.ENTIDADE) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
               if (self.tela === "lista") self.render();
               UI.toast("☁ Dados sincronizados na nuvem.", "ok");
             })
@@ -1616,10 +1616,11 @@
             p.then(function () { return Nuvem.sincronizar(eid); })
               .then(function (okSync) {
                 if (window.Blocos) Blocos.usarOverrides(eid);
+                try { self._propriaDaNuvem(); } catch (e) {}
                 return okSync;
               })
               .then(function (okSync) {
-                Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (self.tela === "lista") self.render(); });
+                Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && ent === PropriaSync.ENTIDADE) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
                 // a marca só cai DEPOIS de a reconexão dar certo: se falhar, o
                 // desligamento continua valendo e o boot seguinte não reconecta sozinho
                 if (Nuvem.marcarDesligada) Nuvem.marcarDesligada(false);
@@ -1649,23 +1650,125 @@
     },
 
     abrirBackup: function () {
-      var n = Store.listarOrcamentos(Auth.empresaId()).length;
-      var html = '<p>Você tem <b>' + n + '</b> orçamento(s) salvos nesta conta (' + Util.esc((Auth.usuario() || {}).email || "") + ').</p>' +
-        '<p class="muted">Exporte um arquivo <b>.json</b> para guardar/transferir. Importar <b>restaura/mescla</b> os orçamentos do arquivo nesta conta — nada é apagado.</p>' +
+      var eid = Auth.empresaId();
+      var n = Store.listarOrcamentos(eid).length;
+      var prop = this._propriasDoDisco(eid);
+      var nProp = (prop && prop.dados.length) || 0;
+      var html = '<p>Você tem <b>' + n + '</b> orçamento(s) salvos nesta conta (' + Util.esc((Auth.usuario() || {}).email || "") + ')'
+        + (nProp ? ' e <b>' + nProp + '</b> composição(ões)/insumo(s) <b>próprios</b>' : '') + '.</p>' +
+        '<p class="muted">Exporte um arquivo <b>.json</b> para guardar/transferir. Importar <b>restaura/mescla</b> o conteúdo do arquivo nesta conta — nada é apagado.</p>' +
+        /* o estado do backup automático fica ESCRITO: backup que ninguém vê é
+           backup em que ninguém confia — e o cliente só descobre que não tinha
+           no dia em que precisa. */
+        '<div id="bkp-auto" class="muted" style="margin:10px 0;padding:9px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25)">⏳ verificando o backup automático…</div>' +
         '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">💾 Exportar backup</button></div>' +
         '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>';
       UI.modal("💾 Backup dos Orçamentos", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      try {
+        fetch("/__backup/status").then(function (r) { return r.json(); }).then(function (j) {
+          var box = UI.el("bkp-auto"); if (!box) return;
+          if (!j || !j.ok) { box.innerHTML = "⚠ <b>Backup automático desligado</b> — o app foi aberto sem o servidor local. Exporte o backup à mão, por enquanto."; return; }
+          box.innerHTML = (j.total
+            ? "✅ <b>Backup automático ligado</b> — " + j.total + " cópia(s) guardadas em disco. Última: <b>"
+              + Util.esc(String(j.ultimoEm || "").slice(0, 19).replace("T", " ")) + "</b>."
+              + (j.melhorComposicoes ? " A melhor cópia das composições próprias tem <b>" + j.melhorComposicoes + "</b> item(ns) e nunca é apagada." : "")
+            : "✅ <b>Backup automático ligado</b> — ainda sem cópia gravada (a primeira sai depois da próxima alteração).")
+            + '<br><span class="mono" style="font-size:11px">' + Util.esc(j.pasta || "") + "</span>";
+        }).catch(function () {
+          var box = UI.el("bkp-auto"); if (box) box.innerHTML = "⚠ Não consegui falar com o servidor local — backup automático indisponível agora.";
+        });
+      } catch (e) {}
+    },
+    /* A base PRÓPRIA (composições e insumos criados pelo cliente) é o ÚNICO
+     * dado autoral que vivia só no IndexedDB deste aparelho — fora do backup,
+     * fora da nuvem. Foi o que um cliente perdeu. Agora viaja no backup. As
+     * outras bases ficam de fora de propósito: são grandes e reimportáveis. */
+    _propriasDoDisco: function (eid) {
+      try {
+        var payload = Store.lerBasesExtras(eid) || [];
+        for (var i = 0; i < payload.length; i++) {
+          if (String(payload[i].fonte).toUpperCase() === "PROPRIA") {
+            return { fonte: "PROPRIA", uf: payload[i].uf || "", mes: payload[i].mes || "", dados: Util.arr(payload[i].dados) };
+          }
+        }
+      } catch (e) {}
+      return null;
+    },
+    _dumpBackup: function (eid) {
+      return { app: "OrçaPRO", versao: CONFIG.versao, exportadoEm: Util.agoraISO(),
+        empresa: (Auth.usuario() || {}).empresa, email: (Auth.usuario() || {}).email,
+        orcamentos: Store.listarOrcamentos(eid), prefs: Store.lerPrefs(eid), basePropria: this._propriasDoDisco(eid) };
+    },
+
+    /* ==================================================================
+     * BACKUP AUTOMÁTICO EM ARQUIVO — sem depender de o cliente lembrar.
+     * O dado mora no navegador; o servidor local (que já serve o app) tem
+     * disco. Aqui o app manda a cópia para lá sozinho, e ela sobrevive a
+     * limpar cache, trocar de navegador e reinstalar.
+     * Falha em silêncio de propósito: o app aberto direto do arquivo, ou
+     * sem o servidor, não pode encher a tela de erro por causa disso —
+     * o estado real aparece em 💾 Backup, escrito.
+     * ================================================================== */
+    _bkpTimer: null, _bkpUltimo: 0, _bkpInfo: null,
+    backupAuto: function (opts) {
+      opts = opts || {};
+      var self = this;
+      /* composição própria é dado AUTORAL e insubstituível: fura a espera de
+         5 min (só o agrupamento de 15 s continua, p/ não gerar 1 arquivo por tecla) */
+      if (!opts.urgente && (Date.now() - this._bkpUltimo) < 5 * 60 * 1000) return;
+      if (this._bkpTimer) clearTimeout(this._bkpTimer);
+      this._bkpTimer = setTimeout(function () { self._bkpTimer = null; self._backupEnviar(); }, 15000);
+    },
+    _backupEnviar: function () {
+      var self = this, eid, dump;
+      try { eid = Auth.empresaId(); dump = this._dumpBackup(eid); } catch (e) { return; }
+      if (!dump.orcamentos.length && !(dump.basePropria && dump.basePropria.dados.length)) return;
+      try {
+        fetch("/__backup/salvar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dump) })
+          .then(function (r) { return r.json(); })
+          .then(function (j) { if (j && j.ok) { self._bkpUltimo = Date.now(); self._bkpInfo = j; } })
+          .catch(function () {});
+      } catch (e) {}
     },
     exportarBackup: function () {
       var eid = Auth.empresaId();
-      var dump = { app: "OrçaPRO", versao: CONFIG.versao, exportadoEm: Util.agoraISO(), empresa: (Auth.usuario() || {}).empresa, email: (Auth.usuario() || {}).email, orcamentos: Store.listarOrcamentos(eid), prefs: Store.lerPrefs(eid) };
+      var dump = this._dumpBackup(eid);
       var blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
       var url = URL.createObjectURL(blob);
       var a = document.createElement("a");
       a.href = url; a.download = "orcapro-backup-" + new Date().toISOString().slice(0, 10) + ".json";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
-      UI.toast(dump.orcamentos.length + " orçamento(s) exportado(s).", "ok");
+      var nProp = (dump.basePropria && dump.basePropria.dados.length) || 0;
+      UI.toast(dump.orcamentos.length + " orçamento(s)" + (nProp ? " e " + nProp + " composição(ões) própria(s)" : "") + " exportado(s).", "ok");
+    },
+
+    /* Restaura a base PRÓPRIA do backup SOMANDO ao que já existe.
+     * Nunca reduz: o backup é remédio para perda de dado, seria absurdo ele
+     * mesmo apagar o que o cliente criou depois. Em código repetido, vence a
+     * gravação mais recente (criadoEm é reescrito a cada save). */
+    _restaurarPropria: function (eid, doBackup) {
+      var vindo = (doBackup && Util.arr(doBackup.dados)) || [];
+      if (!vindo.length) return { novos: 0, atualizados: 0, total: 0 };
+      var atual = this._propriasDoDisco(eid) || { fonte: "PROPRIA", uf: "", mes: "", dados: [] };
+      var porCodigo = {}, ordem = [];
+      atual.dados.forEach(function (it) { if (it && it.codigo != null) { porCodigo[String(it.codigo).toLowerCase()] = it; ordem.push(String(it.codigo).toLowerCase()); } });
+      var novos = 0, atualizados = 0;
+      vindo.forEach(function (it) {
+        if (!it || it.codigo == null) return;
+        var k = String(it.codigo).toLowerCase(), ja = porCodigo[k];
+        if (!ja) { porCodigo[k] = it; ordem.push(k); novos++; return; }
+        if (String(it.criadoEm || "") > String(ja.criadoEm || "")) { porCodigo[k] = it; atualizados++; }
+      });
+      var dados = ordem.map(function (k) { return porCodigo[k]; });
+      Bases.registrar("PROPRIA", { dados: dados, uf: atual.uf || doBackup.uf || "", mes: atual.mes || doBackup.mes || "" });
+      Bases.persistir(eid);
+      try { this.backupAuto({ urgente: true }); } catch (e) {}
+      /* o que foi restaurado também vai para o espelho: recuperar num aparelho
+         tem de chegar aos outros — senão o próximo merge trata como "não existe" */
+      var self2 = this;
+      dados.forEach(function (it) { self2._propriaEspelhar(it); });
+      return { novos: novos, atualizados: atualizados, total: dados.length };
     },
     importarBackup: function (file) {
       var self = this, rd = new FileReader();
@@ -1673,15 +1776,20 @@
         try {
           var dump = JSON.parse(rd.result);
           var orcs = Util.arr(dump.orcamentos);
-          if (!orcs.length) { UI.toast("Backup sem orçamentos.", "erro"); return; }
+          var temPropria = !!(dump.basePropria && Util.arr(dump.basePropria.dados).length);
+          /* backup SÓ com composições próprias é válido: é exatamente o arquivo
+             que a página de socorro produz num aparelho que perdeu a base. */
+          if (!orcs.length && !temPropria) { UI.toast("Backup sem orçamentos e sem composições próprias.", "erro"); return; }
           var eid = Auth.empresaId();
           orcs.forEach(function (o) { Store.salvarOrcamento(eid, o); });
+          var rProp = temPropria ? self._restaurarPropria(eid, dump.basePropria) : null;
           if (dump.prefs && typeof dump.prefs === "object") {
             var atual = Store.lerPrefs(eid) || {};
             for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];
             Store.salvarPrefs(eid, atual);
           }
-          UI.toast(orcs.length + " orçamento(s) restaurado(s).", "ok");
+          UI.toast(orcs.length + " orçamento(s) restaurado(s)"
+            + (rProp ? " · composições próprias: " + rProp.novos + " nova(s), " + rProp.atualizados + " atualizada(s), " + rProp.total + " no total" : "") + ".", "ok");
           UI.fecharModal(); self.tela = "lista"; self.render();
         } catch (e) { UI.toast("Arquivo inválido: " + e.message, "erro"); }
       };
@@ -3111,6 +3219,8 @@
       if (dados.length === antes) return 0;
       Bases.registrar("PROPRIA", { dados: dados, uf: atual.uf, mes: atual.mes });
       Bases.persistir(Auth.empresaId());
+      try { this.backupAuto({ urgente: true }); } catch (e) {}
+      this._propriaEspelhoExcluir(codigo);
       return antes - dados.length;
     },
     excluirProprio: function (codigo) {
@@ -3537,7 +3647,69 @@
       dados.push(item);
       Bases.registrar("PROPRIA", { dados: dados, uf: (atual && atual.uf) || ufNova || String(this._baseUf || Sinapi.uf || ""), mes: (atual && atual.mes) || new Date().toISOString().slice(0, 7) });
       Bases.persistir(Auth.empresaId());
+      try { this.backupAuto({ urgente: true }); } catch (e) {} // dado autoral: cópia em arquivo sem esperar
+      /* edição com código novo é RENAME: o código antigo tem de morrer no
+         espelho também, senão a versão velha volta da nuvem como item extra */
+      if (substituirCodigo && String(substituirCodigo).toLowerCase() !== String(item.codigo).toLowerCase()) {
+        this._propriaEspelhoExcluir(substituirCodigo);
+      }
+      this._propriaEspelhar(item);
       return item;
+    },
+
+    /* ==================================================================
+     * ESPELHO DAS COMPOSIÇÕES PRÓPRIAS (entidade `composicoes_proprias`)
+     * A base PRÓPRIA é um blob no IndexedDB e a nuvem só sincroniza
+     * entidades do localStorage, por id. O espelho é o que permite o merge
+     * ITEM A ITEM entre aparelhos — ver js/propriasync.js.
+     * ================================================================== */
+    _propriaEspelhar: function (item) {
+      try {
+        if (typeof PropriaSync === "undefined") return;
+        var reg = PropriaSync.paraRegistro(item, Util.agoraISO());
+        if (reg) Store.salvar(Auth.empresaId(), PropriaSync.ENTIDADE, reg);
+      } catch (e) {}
+    },
+    _propriaEspelhoExcluir: function (codigo) {
+      try {
+        if (typeof PropriaSync === "undefined") return;
+        // lápide: sem ela, o merge da nuvem devolve o item excluído
+        Store.excluir(Auth.empresaId(), PropriaSync.ENTIDADE, String(codigo).trim().toLowerCase());
+      } catch (e) {}
+    },
+
+    /* Traz o que veio da nuvem para a base PRÓPRIA e manda para a nuvem o que
+     * só existe aqui. União nos dois sentidos: nunca reduz, e no mesmo código
+     * vence o `atualizadoEm` mais novo. Chamado depois de sincronizar e a cada
+     * mudança recebida na entidade. */
+    _propriaDaNuvem: function () {
+      try {
+        if (typeof PropriaSync === "undefined" || typeof Bases === "undefined") return null;
+        var eid = Auth.empresaId();
+        var atual = this._propriasDoDisco(eid) || { fonte: "PROPRIA", uf: "", mes: "", dados: [] };
+        var regs = Store.listar(eid, PropriaSync.ENTIDADE) || [];
+        var mortos = {};
+        try { mortos = Store.lapidesDe(eid, PropriaSync.ENTIDADE) || {}; } catch (e) {}
+        var dados = PropriaSync.mesclar(atual.dados, regs, mortos);
+
+        // 1) o que a nuvem trouxe entra na base local
+        var mudou = dados.length !== atual.dados.length;
+        if (!mudou) {
+          try { mudou = JSON.stringify(dados) !== JSON.stringify(atual.dados); } catch (e) { mudou = true; }
+        }
+        if (mudou) {
+          Bases.registrar("PROPRIA", { dados: dados, uf: atual.uf, mes: atual.mes });
+          Bases.persistir(eid);
+        }
+
+        // 2) o que só existe aqui sobe (1º uso: o espelho nasce vazio e a base
+        //    já tem tudo — sem isto a nuvem começaria sem as composições antigas)
+        var faltando = PropriaSync.faltandoNoEspelho(dados, regs);
+        var self = this;
+        faltando.forEach(function (it) { self._propriaEspelhar(it); });
+
+        return { total: dados.length, subiram: faltando.length, mudou: mudou };
+      } catch (e) { return null; }
     },
     /* v1.1.124 — INSUMO PRÓPRIO (p/ requisições/compras e busca): item simples
      * na base PROPRIA com tipoItem "insumo". Retorna o item ou null (inválido). */
@@ -4113,7 +4285,7 @@
         this._avisouQuota = true;
         UI.toast("Não foi possível salvar — armazenamento cheio. Exporte um backup (💾) e remova a base SINAPI grande do navegador.", "erro");
         try { this.abrirBackup(); } catch (e) {}
-      } else if (ok) { this._avisouQuota = false; }
+      } else if (ok) { this._avisouQuota = false; try { this.backupAuto(); } catch (e) {} }
     }
   };
 

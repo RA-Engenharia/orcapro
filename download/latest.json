@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.166",
+  "versao": "1.1.167",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.166/OrcaPRO-IA-update-v1.1.166.zip",
-  "notas": "PROTECAO DAS SUAS COMPOSICOES E BASES. Um cliente perdeu as composicoes proprias que tinha criado. Encontramos a causa: quando o sistema regravava o pacote de bases, ele gravava o que estava na memoria naquele instante - e num inicio em que a leitura do disco ainda nao tinha terminado, o que ia gravado era VAZIO, por cima de tudo. Sem erro, sem aviso. A partir desta versao o sistema RECUSA qualquer gravacao que apagaria uma base inteira ou suas composicoes proprias, avisa na tela e nao mexe no que ja estava salvo - so remove quando VOCE manda remover. E antes de cada regravacao ele guarda uma copia da versao anterior no proprio aparelho. Atualize assim que puder: esta versao protege o que ja esta lancado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.166/OrcaPRO-IA-Instalador-v1.1.166.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.167/OrcaPRO-IA-update-v1.1.167.zip",
+  "notas": "RECUPERACAO E PROTECAO DAS SUAS COMPOSICOES PROPRIAS. 1) Pagina de socorro: se alguma composicao sumir, abra http://localhost:8754/socorro.html no seu computador - ela le o que existe no aparelho SEM gravar nada, mostra o que da para recuperar e gera um arquivo que voce restaura em Backup. 2) Backup automatico em arquivo: o sistema passa a guardar sozinho uma copia em Documentos, na pasta OrcaPRO-Backups, fora da pasta do programa, e nunca apaga a copia com mais composicoes. 3) Suas composicoes proprias agora entram no backup e na SINCRONIZACAO: criou no computador, aparece no celular, e excluir em um aparelho nao volta pelo outro. 4) Alarme de queda brusca: gravacao que faria sumir muitos itens de uma vez e recusada, com aviso na tela, sem apagar nada.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.167/OrcaPRO-IA-Instalador-v1.1.167.exe"
 }

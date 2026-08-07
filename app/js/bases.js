@@ -221,6 +221,44 @@
       return perdidas;
     },
 
+    /* ==================================================================
+     * ALARME DE QUEDA BRUSCA — o furo que a guarda acima NÃO cobria.
+     *
+     * `perdaDeBase` só reage quando a base fica em ZERO. Uma gravação que
+     * derruba a PRÓPRIA de 60 para 4 composições passava limpa: sobra
+     * base, sobra fonte, e o cliente só descobre semanas depois, quando
+     * procura uma composição que não existe mais.
+     *
+     * Onde a régua fica: bloqueia quando a queda é GRANDE (>= 30% do que
+     * havia) E TEM VOLUME (>= 3 itens). Os dois juntos, de propósito:
+     *  - excluir 1 composição de 2 é 50%, mas é 1 item -> passa (é o uso
+     *    normal: excluirProprio apaga um código de cada vez);
+     *  - perder 20 de 60 é 33% e 20 itens -> não existe caminho de uso
+     *    que faça isso item a item. Isso é defeito, e é barrado.
+     * Remoção em massa deliberada segue possível: quem chama passa
+     * `permitirRemocao` (é o botão de apagar a base, que já pergunta).
+     * ================================================================== */
+    QUEDA_PCT: 0.30,
+    QUEDA_MIN: 3,
+    quedaBrusca: function (anterior, novo) {
+      var self = this, antes = {}, quedas = [];
+      (anterior || []).forEach(function (b) {
+        var f = String((b && b.fonte) || "").toUpperCase();
+        if (f) antes[f] = ((b && (b.dados || b.itens)) || []).length || 0;
+      });
+      (novo || []).forEach(function (b) {
+        var f = String((b && b.fonte) || "").toUpperCase();
+        if (!f || !(antes[f] > 0)) return;
+        var agora = ((b && (b.dados || b.itens)) || []).length || 0;
+        var perda = antes[f] - agora;
+        if (perda <= 0) return;
+        if (perda >= self.QUEDA_MIN && perda >= antes[f] * self.QUEDA_PCT) {
+          quedas.push({ fonte: f, de: antes[f], para: agora, perda: perda, pct: Math.round(perda * 100 / antes[f]) });
+        }
+      });
+      return quedas;
+    },
+
     persistir: function (empresaId, opcoes) {
       if (typeof Store === "undefined") return { ok: false };
       var op = opcoes || {};
@@ -241,6 +279,20 @@
           }
         } catch (e2) {}
         return { ok: false, bloqueado: true, perdidas: perdidas };
+      }
+
+      /* queda grande DENTRO da base (a base sobrevive, o conteúdo não) */
+      var quedas = this.quedaBrusca(anterior, payload);
+      if (quedas.length && !op.permitirRemocao) {
+        var texto = quedas.map(function (q) { return q.fonte + " (" + q.de + " → " + q.para + " itens, −" + q.pct + "%)"; }).join(", ");
+        try {
+          console.error("[bases] GRAVAÇÃO RECUSADA — queda brusca: " + texto);
+          if (typeof UI !== "undefined" && UI.toast) {
+            UI.toast("⚠ Gravação bloqueada: sumiriam muitos itens de uma vez — " + texto
+              + ". Nada foi apagado. Feche e abra o app; se repetir, chame o suporte antes de mexer.", "erro");
+          }
+        } catch (e4) {}
+        return { ok: false, bloqueado: true, quedas: quedas };
       }
 
       /* CÓPIA DA VERSÃO ANTERIOR antes de sobrescrever — recuperação em um

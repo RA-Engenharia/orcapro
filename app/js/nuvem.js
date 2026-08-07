@@ -36,6 +36,13 @@
     // chegava ao celular do encarregado, que pagava outro valor sem erro
     // nenhum. Dinheiro tem que passar pelo merge por id, com atualizadoEm.
     "producao_preco",
+    /* composições próprias: o ÚNICO dado AUTORAL do cliente que vivia só no
+     * aparelho — fora do backup e fora daqui. Um cliente perdeu as dele.
+     * Entra como ESPELHO (1 registro por código, id = código normalizado),
+     * não como o blob da base: mandar o blob repetiria o mesmo defeito entre
+     * aparelhos — o último a gravar apagaria o que o outro criou. Ver
+     * js/propriasync.js. */
+    "composicoes_proprias",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
