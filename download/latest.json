@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.165",
+  "versao": "1.1.166",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.165/OrcaPRO-IA-update-v1.1.165.zip",
-  "notas": "NOVO ORCAMENTO COPIANDO DE OUTRO. Na tela Meus Orcamentos apareceu o botao Copiar de outro: escolha um orcamento que ja existe e o novo nasce com as etapas, sub etapas, itens e quantidades prontos, junto com o BDI e os parametros de calculo (encargos, arredondamento, base, competencia e UF) - copiar a planilha sem os parametros dela daria outro total, em silencio. Tem tambem a opcao Trazer so os servicos, sem as quantidades, para quando a obra nova tem outra metragem. O que NAO vem: aprovacao, assinatura, vinculo de obra e o numero - o novo nasce ABERTO e com numero proprio, porque orcamento que ja nasce aprovado por ter copiado o carimbo de outro e o pior defeito possivel neste modulo. O cliente fica em branco para voce preencher, e a copia e independente: mexer nela nao altera o original.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.165/OrcaPRO-IA-Instalador-v1.1.165.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.166/OrcaPRO-IA-update-v1.1.166.zip",
+  "notas": "PROTECAO DAS SUAS COMPOSICOES E BASES. Um cliente perdeu as composicoes proprias que tinha criado. Encontramos a causa: quando o sistema regravava o pacote de bases, ele gravava o que estava na memoria naquele instante - e num inicio em que a leitura do disco ainda nao tinha terminado, o que ia gravado era VAZIO, por cima de tudo. Sem erro, sem aviso. A partir desta versao o sistema RECUSA qualquer gravacao que apagaria uma base inteira ou suas composicoes proprias, avisa na tela e nao mexe no que ja estava salvo - so remove quando VOCE manda remover. E antes de cada regravacao ele guarda uma copia da versao anterior no proprio aparelho. Atualize assim que puder: esta versao protege o que ja esta lancado.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.166/OrcaPRO-IA-Instalador-v1.1.166.exe"
 }

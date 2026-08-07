@@ -189,11 +189,79 @@
     },
 
     /* Persistência por empresa (localStorage via Store). */
-    persistir: function (empresaId) {
+    /* ==================================================================
+     * GUARDA ANTI-PERDA — puro, Node-testável.
+     *
+     * O DEFEITO QUE ISTO IMPEDE (e que já custou as composições próprias de
+     * um cliente): `persistir` grava o pacote INTEIRO por cima, a partir do
+     * que está na memória. E `Store._bigGet` lê de um espelho em memória —
+     * num boot em que o IndexedDB ainda não terminou de carregar, ele
+     * devolve vazio, EXTRA fica vazio, e a primeira gravação apaga tudo.
+     * Sem erro, sem aviso, sem volta.
+     *
+     * Regra: PERDER UMA BASE INTEIRA nunca é efeito colateral legítimo.
+     * Só acontece quando o usuário manda remover — e aí quem chama diz
+     * `permitirRemocao`. Fora disso, a gravação é RECUSADA.
+     * ================================================================== */
+    perdaDeBase: function (anterior, novo) {
+      var antes = {}, perdidas = [];
+      (anterior || []).forEach(function (b) {
+        var f = String((b && b.fonte) || "").toUpperCase();
+        if (f) antes[f] = ((b.dados || b.itens || []).length) || 0;
+      });
+      var agora = {};
+      (novo || []).forEach(function (b) {
+        var f = String((b && b.fonte) || "").toUpperCase();
+        if (f) agora[f] = ((b.dados || b.itens || []).length) || 0;
+      });
+      for (var f2 in antes) {
+        if (!antes.hasOwnProperty(f2)) continue;
+        if (antes[f2] > 0 && !(agora[f2] > 0)) perdidas.push({ fonte: f2, itens: antes[f2] });
+      }
+      return perdidas;
+    },
+
+    persistir: function (empresaId, opcoes) {
       if (typeof Store === "undefined") return { ok: false };
+      var op = opcoes || {};
       var payload = EXTRA.map(function (b) { return { fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens }; });
+
+      /* o que JÁ ESTÁ gravado — a régua da comparação */
+      var anterior = [];
+      try { anterior = Store.lerBasesExtras(empresaId) || []; } catch (e) { anterior = []; }
+
+      var perdidas = this.perdaDeBase(anterior, payload);
+      if (perdidas.length && !op.permitirRemocao) {
+        var nomes = perdidas.map(function (p2) { return p2.fonte + " (" + p2.itens + " itens)"; }).join(", ");
+        try {
+          console.error("[bases] GRAVAÇÃO RECUSADA — perderia: " + nomes);
+          if (typeof UI !== "undefined" && UI.toast) {
+            UI.toast("⚠ Gravação bloqueada para proteger suas bases: " + nomes
+              + ". Nada foi apagado. Recarregue o app e tente de novo.", "erro");
+          }
+        } catch (e2) {}
+        return { ok: false, bloqueado: true, perdidas: perdidas };
+      }
+
+      /* CÓPIA DA VERSÃO ANTERIOR antes de sobrescrever — recuperação em um
+         clique, no próprio aparelho, sem depender de nuvem nem de suporte. */
+      try {
+        if (anterior && anterior.length && Store._bigSet) {
+          Store._bigSet(empresaId, "bases_extras__anterior", {
+            em: (typeof Util !== "undefined" && Util.agoraISO) ? Util.agoraISO() : "",
+            payload: anterior
+          });
+        }
+      } catch (e3) {}
+
       Store.salvarBasesExtras(empresaId, payload); // IndexedDB — sem cota do localStorage
       return { ok: true };
+    },
+
+    /* Devolve a versão anterior guardada (o "desfazer" da gravação em massa) */
+    versaoAnterior: function (empresaId) {
+      try { return (Store._bigGet && Store._bigGet(empresaId, "bases_extras__anterior")) || null; }
+      catch (e) { return null; }
     },
     carregar: function (empresaId, ufAtiva) {
       if (typeof Store === "undefined") return 0;

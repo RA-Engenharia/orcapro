@@ -758,11 +758,11 @@
           var nRem = bRem && bRem.itens ? bRem.itens.length : 0;
           UI.modal("⚠ Apagar a base própria?", '<p style="font-size:13px">A base própria tem <b>' + nRem + ' composição(ões) criada(s) por você</b>. Diferente das bases importadas, elas <b>não existem em nenhum arquivo</b> para reimportar — apagar é definitivo.</p>', [
             { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-            { texto: "Apagar mesmo assim", classe: "danger", onClick: function () { Bases.remover("PROPRIA"); Bases.persistir(Auth.empresaId()); UI.fecharModal(); UI.toast("Base própria removida.", "ok"); selfRem.abrirTabelas(); } }
+            { texto: "Apagar mesmo assim", classe: "danger", onClick: function () { Bases.remover("PROPRIA"); Bases.persistir(Auth.empresaId(), { permitirRemocao: true }); UI.fecharModal(); UI.toast("Base própria removida.", "ok"); selfRem.abrirTabelas(); } }
           ]);
           return;
         }
-        Bases.remover(fonteRem); Bases.persistir(Auth.empresaId()); UI.toast("Base removida.", "ok"); this.abrirTabelas(); return;
+        Bases.remover(fonteRem); Bases.persistir(Auth.empresaId(), { permitirRemocao: true }); UI.toast("Base removida.", "ok"); this.abrirTabelas(); return;
       }
       // atualizar competência (carregar do cache / baixar da Caixa)
       if (t.dataset.atzCarregar) { this.carregarCompetencia(t.dataset.atzCarregar, true); return; }
