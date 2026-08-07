@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.167",
+  "versao": "1.1.168",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.167/OrcaPRO-IA-update-v1.1.167.zip",
-  "notas": "RECUPERACAO E PROTECAO DAS SUAS COMPOSICOES PROPRIAS. 1) Pagina de socorro: se alguma composicao sumir, abra http://localhost:8754/socorro.html no seu computador - ela le o que existe no aparelho SEM gravar nada, mostra o que da para recuperar e gera um arquivo que voce restaura em Backup. 2) Backup automatico em arquivo: o sistema passa a guardar sozinho uma copia em Documentos, na pasta OrcaPRO-Backups, fora da pasta do programa, e nunca apaga a copia com mais composicoes. 3) Suas composicoes proprias agora entram no backup e na SINCRONIZACAO: criou no computador, aparece no celular, e excluir em um aparelho nao volta pelo outro. 4) Alarme de queda brusca: gravacao que faria sumir muitos itens de uma vez e recusada, com aviso na tela, sem apagar nada.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.167/OrcaPRO-IA-Instalador-v1.1.167.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.168/OrcaPRO-IA-update-v1.1.168.zip",
+  "notas": "CORRECAO IMPORTANTE DA SINCRONIZACAO DAS COMPOSICOES PROPRIAS (complementa a 1.1.167). Uma composicao propria excluida num aparelho nao saia dos outros - e voltava na sincronizacao seguinte, como se tivesse sido recriada. Agora a exclusao viaja junto com o aviso de que foi voce quem mandou excluir, e o item nao ressuscita em aparelho nenhum. Junto vem a 1.1.167: pagina de socorro (http://localhost:8754/socorro.html), backup automatico em Documentos/OrcaPRO-Backups, composicoes proprias no backup e na sincronizacao, e alarme de queda brusca de registros.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.168/OrcaPRO-IA-Instalador-v1.1.168.exe"
 }

@@ -1106,7 +1106,7 @@
           .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
           .then(function () {
             self._nuvemTentativa = 0;
-            try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && ent === PropriaSync.ENTIDADE) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); }); } catch (e) {}
+            try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); }); } catch (e) {}
             // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
             if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
             if (self.tela === "lista") self.render(); // equipe/dados sincronizados
@@ -1200,7 +1200,7 @@
             .then(function () { return Nuvem.sincronizar(eid); })
             .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
             .then(function () {
-              Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && ent === PropriaSync.ENTIDADE) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
+              Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
               if (self.tela === "lista") self.render();
               UI.toast("☁ Dados sincronizados na nuvem.", "ok");
             })
@@ -1620,7 +1620,7 @@
                 return okSync;
               })
               .then(function (okSync) {
-                Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && ent === PropriaSync.ENTIDADE) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
+                Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
                 // a marca só cai DEPOIS de a reconexão dar certo: se falhar, o
                 // desligamento continua valendo e o boot seguinte não reconecta sozinho
                 if (Nuvem.marcarDesligada) Nuvem.marcarDesligada(false);
@@ -3698,8 +3698,21 @@
           try { mudou = JSON.stringify(dados) !== JSON.stringify(atual.dados); } catch (e) { mudou = true; }
         }
         if (mudou) {
+          /* EXCLUSÃO FEITA EM OUTRO APARELHO — o teste de dois aparelhos reais
+           * mostrou o que ninguém tinha visto: o item saía do espelho, a lápide
+           * chegava, e a base local NÃO mudava. Motivo: apagar a última
+           * composição zera a base, e o alarme anti-perda RECUSA a gravação
+           * (com razão — ele não sabe que a ordem veio do dono, de outro
+           * aparelho). Sem isto, o item ficava aqui e ainda subia de volta:
+           * ressuscitava para todo mundo.
+           * A permissão é ESTREITA de propósito: só quando TODO item que saiu
+           * tem lápide. Qualquer sumiço sem lápide continua barrado. */
+          var vivos = {};
+          dados.forEach(function (it) { vivos[String(it.codigo || "").trim().toLowerCase()] = 1; });
+          var sairam = atual.dados.filter(function (it) { return !vivos[String(it.codigo || "").trim().toLowerCase()]; });
+          var todosComLapide = sairam.length > 0 && sairam.every(function (it) { return !!mortos[String(it.codigo || "").trim().toLowerCase()]; });
           Bases.registrar("PROPRIA", { dados: dados, uf: atual.uf, mes: atual.mes });
-          Bases.persistir(eid);
+          Bases.persistir(eid, todosComLapide ? { permitirRemocao: true } : undefined);
         }
 
         // 2) o que só existe aqui sobe (1º uso: o espelho nasce vazio e a base
