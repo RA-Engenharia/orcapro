@@ -7008,6 +7008,14 @@
       var todos = lista("rdo").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
       var obras = lista("obras");
       var html = this._head(svg("rdo") + "Diário de Obra (RDO)", "novo-rdo", "Novo diário");
+
+      /* DIÁRIO QUE CHEGOU PELO WHATSAPP.
+         Fica ANTES do `return` de lista vazia de propósito: quem ainda não tem
+         nenhum diário é justamente quem pode ter um esperando na caixa. A busca
+         automática roda ao abrir a tela (com freio) e o botão existe para quem
+         não quer esperar, ou para quando a rede falhou antes. */
+      this._entradaAuto();
+      html += this._entradaAviso();
       if (!todos.length) return html + vazioBox("Nenhum diário registrado", "novo-rdo", "Registrar primeiro diário");
 
       /* FILTRO POR OBRA. Com 3 obras rodando, uma lista única de diários não
@@ -8373,6 +8381,83 @@
 
     _rdoObraFiltro: "todas",
     rdoTrocaObra: function (id) { this._rdoObraFiltro = id || "todas"; App.render(); },
+
+    /* --------------------------------------------------------------------
+     * DIÁRIO QUE CHEGA PELO WHATSAPP
+     *
+     * O mestre manda áudio, o n8n transcreve e estrutura, e deposita numa
+     * caixa no VPS. Aqui o app vem buscar e cria o diário como RASCUNHO.
+     * A lógica está em js/entradardo.js (testada sem rede e sem app); estas
+     * funções só fazem a ligação com a tela.
+     * ------------------------------------------------------------------ */
+
+    /* Freio: a tela do RDO redesenha a cada ação (filtro, foto, salvar) e sem
+       isto cada redesenho viraria uma ida ao servidor. */
+    _entradaAuto: function () {
+      var self = this;
+      if (typeof EntradaRDO === "undefined") return;
+      var agora = Date.now();
+      if (this._entradaEm && (agora - this._entradaEm) < 120000) return;
+      this._entradaEm = agora;
+      /* fora do fluxo de desenho: a tela não pode esperar a rede para aparecer */
+      setTimeout(function () { self.rdoBuscarEntrada(false); }, 50);
+    },
+
+    /* O aviso do que veio de fora. Barra permanente sobre uma função que quase
+       nunca tem novidade vira ruído, e o usuário para de ler justo no dia em
+       que ela diz algo — por isso o texto muda conforme o que aconteceu. */
+    _entradaAviso: function () {
+      var r = this._entradaUltimo;
+      var botao = '<button class="btn sm" data-gacao="rdo-entrada">📲 Buscar diários do WhatsApp</button>';
+      var caixa = function (borda, txt) {
+        return '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;margin-bottom:10px'
+          + (borda ? ';border-left:3px solid ' + borda : "") + '">' + botao
+          + '<span style="font-size:12px">' + txt + "</span></div>";
+      };
+      if (!r || (!r.criados && !r.erro)) {
+        return caixa("", '<span class="muted">Áudio do mestre no WhatsApp vira rascunho de diário aqui.</span>');
+      }
+      if (r.erro) {
+        return caixa("#c90", "Não consegui falar com o servidor agora. Os diários continuam guardados lá — pode tentar de novo.");
+      }
+      var pend = r.comPendencia
+        ? " <b>" + r.comPendencia + "</b> precisa" + (r.comPendencia === 1 ? "" : "m")
+          + " de conferência (faltou obra, efetivo ou o serviço do dia)."
+        : "";
+      return caixa("#2a7", "Chegaram <b>" + r.criados + "</b> diário" + (r.criados === 1 ? "" : "s")
+        + " pelo WhatsApp, como <b>rascunho</b>." + pend + " Confira antes de finalizar.");
+    },
+
+    rdoBuscarEntrada: function (manual) {
+      var self = this;
+      if (typeof EntradaRDO === "undefined") return;
+      var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer) : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!srv || !chave) {
+        if (manual) UI.toast("Isto precisa de licença ativa e internet.", "erro");
+        return;
+      }
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      EntradaRDO.sincronizar({
+        url: srv, licenca: chave,
+        buscar: function (u, i) { return fetch(u, i); },
+        obras: lista("obras"),
+        hoje: (new Date()).toISOString().slice(0, 10),
+        idNovo: function () { return Util.uid("rdo"); },
+        autorId: String(eu.usuarioId || eu.email || ""),
+        /* devolve true SÓ se gravou: é isto que autoriza a baixa lá fora */
+        gravar: function (diario) { Store.salvar(eid(), "rdo", diario); return true; }
+      }).then(function (r) {
+        self._entradaUltimo = r;
+        if (r.criados) {
+          UI.toast(r.criados + " diário(s) do WhatsApp viraram rascunho.", "ok");
+          App.render();
+        } else if (manual) {
+          UI.toast(r.erro ? "Não consegui falar com o servidor agora." : "Nenhum diário novo no WhatsApp.", r.erro ? "erro" : "ok");
+          App.render();
+        }
+      });
+    },
 
     /* ------------------------------------------------------------------
      * NOVO DIÁRIO — do zero ou PUXANDO O ANTERIOR DA MESMA OBRA.
@@ -14241,6 +14326,7 @@ renderFolha: function () {
         case "menu-mais": return this.menuMaisToggle();
         case "rdo-obra": return this.rdoTrocaObra(dataset.value);
         case "rdo-fotos": return this.rdoFotos();
+        case "rdo-entrada": return this.rdoBuscarEntrada(true);
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
         case "falta-lote": return this.faltasLote();
