@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.169",
+  "versao": "1.1.170",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.169/OrcaPRO-IA-update-v1.1.169.zip",
-  "notas": "A ATUALIZACAO PASSA A CONCLUIR SOZINHA. Ate agora, atualizar trocava os arquivos do programa, mas a parte que roda por tras continuava sendo a antiga ate voce fechar e abrir o OrcaPRO - e recursos novos ficavam parados sem avisar nada. Agora o sistema se reinicia sozinho ao terminar de atualizar. Junto vem o pacote das versoes 1.1.167 e 1.1.168: pagina de socorro das composicoes proprias (http://localhost:8754/socorro.html), backup automatico em Documentos, na pasta OrcaPRO-Backups, composicoes proprias no backup e na sincronizacao entre aparelhos, e alarme de queda brusca de registros.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.169/OrcaPRO-IA-Instalador-v1.1.169.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.170/OrcaPRO-IA-update-v1.1.170.zip",
+  "notas": "MEDICOES COMPLETAS. 1) Medicao aprovada virou DOCUMENTO: nada de dinheiro muda mais depois de aprovada - antes, a medicao feita por VALOR ficava com o campo aberto e dava para aprovar um valor e trocar por outro no mesmo boletim. 2) Reabrir uma medicao aprovada agora exige um aprovador, apaga a aprovacao anterior e fica registrado quem reabriu; medicao ja PAGA nao reabre (estorne o pagamento antes). 3) Botao de editar na propria linha da medicao - com cadeado quando ela ja esta aprovada. 4) Seta que abre O QUE FOI MEDIDO sem entrar no formulario: etapa, codigo, descricao do servico, quantidade contratada e medida, % anterior, % do periodo e valor, com o total do boletim. Na medicao por valor aparecem a descricao dos servicos e a retencao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.170/OrcaPRO-IA-Instalador-v1.1.170.exe"
 }

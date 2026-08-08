@@ -1624,11 +1624,57 @@
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       ms.forEach(function (m) {
         var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
-        var docs = '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">🖨</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">📊</button> ';
+        /* ✎ EDITAR de verdade, na linha. O pedido do cliente foi literalmente
+         * "botão de editar": abrir a medição só era possível clicando no NÚMERO,
+         * que não parece clicável em lugar nenhum da tela. E aprovado mostra
+         * cadeado, com o motivo — em vez de abrir um formulário que ignora o
+         * que a pessoa digitar. */
+        var travadaEd = self._ehAprovado(m.status);
+        var docs = '<button class="btn sm" data-gopen="medicoes:' + m.id + '" title="' +
+          (travadaEd ? "Ver a medição (aprovada — travada)" : "Editar a medição") + '">' + (travadaEd ? "🔒" : "✎") + '</button> ' +
+          '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">🖨</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">📊</button> ';
         var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">✕ rejeitada</span>' : "✓")));
-        html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '"><b>' + Util.esc(m.numero || "—") + "</b></td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
+        var nIt = Util.arr(m.itens).length;
+        var seta = '<button class="btn sm" data-gacao="med-itens" data-id="' + m.id + '" title="' +
+          (nIt ? "Ver os " + nIt + " item(ns) medidos" : "Ver o que foi medido") + '" style="min-width:28px">▸</button> ';
+        html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '">' + seta + '<b>' + Util.esc(m.numero || "—") + "</b>" +
+          (nIt ? ' <span class="muted" style="font-size:11px">' + nIt + " itens</span>" : "") +
+          "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
+        html += '<tr id="medi-' + m.id + '" style="display:none"><td colspan="7" style="background:rgba(46,111,158,.06);padding:10px 14px">' + self._medItensHtml(m) + "</td></tr>";
       });
       return html + "</tbody></table>";
+    },
+
+    /* O QUE foi medido, em texto, fora do formulário e fora do papel impresso.
+     * Vale para os dois tipos de medição: por itens do orçamento (a tabela) e
+     * manual (a descrição dos serviços — que é tudo o que existe ali; dizer
+     * "sem itens" e parar seria esconder a única informação que há). */
+    _medItensHtml: function (m) {
+      var its = Util.arr(m.itens);
+      if (!its.length) {
+        var d = String(m.descricao || "").trim();
+        return '<div style="font-size:12px"><b>Medição por valor</b> (sem itens do orçamento).' +
+          (d ? '<br><span class="muted">Serviços medidos:</span> ' + Util.esc(d) : ' <span class="muted">Nenhuma descrição foi preenchida nesta medição.</span>') +
+          (Util.num(m.retencao) > 0 ? '<br><span class="muted">Retenção:</span> ' + Util.fmtNum(m.retencao, 1) + "%" : "") + "</div>";
+      }
+      var h = '<table class="tbl" style="font-size:12px;margin:0"><thead><tr><th>Etapa</th><th>Item</th><th>Und</th>' +
+        '<th class="num">Qtd contr.</th><th class="num">Qtd medida</th><th class="num">% ant.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
+      its.forEach(function (it) {
+        var acum = Util.num(it.pctAnterior) + Util.num(it.pctPeriodo);
+        h += "<tr><td>" + Util.esc(String(it.etapa || "—").slice(0, 30)) + "</td>" +
+          "<td>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(String(it.descricao || "").slice(0, 70)) + "</td>" +
+          "<td>" + Util.esc(it.unidade || "") + "</td>" +
+          '<td class="num">' + Util.fmtNum(it.qtdContratada, 2) + "</td>" +
+          '<td class="num">' + Util.fmtNum(it.qtdMedida, 2) + "</td>" +
+          '<td class="num muted">' + Util.fmtNum(it.pctAnterior, 1) + "%</td>" +
+          '<td class="num"><b>' + Util.fmtNum(it.pctPeriodo, 1) + "%</b>" +
+          (acum >= 99.95 ? ' <span title="item 100% medido" style="color:#16a34a">✓</span>' : "") + "</td>" +
+          '<td class="num">' + Util.fmtMoeda(it.valor) + "</td></tr>";
+      });
+      h += '</tbody><tfoot><tr><td colspan="7" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr>";
+      if (Util.num(m.bdiValor) > 0) h += '<tr><td colspan="7" style="text-align:right" class="muted">(inclui BDI de ' + Util.fmtMoeda(m.bdiValor) + " faturado à parte)</td><td></td></tr>";
+      h += "</tfoot></table>";
+      return h;
     },
     novoMedicao: function () { this.formMedicao(null); },
     // #18: acumulado ANTERIOR por item (medições da mesma obra + mesmo orçamento, exceto a atual)
@@ -1661,6 +1707,28 @@
         if (!self._gateStatusForm(obj, stAntigo, "medicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
         obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
+        /* ===== BOLETIM APROVADO É DOCUMENTO: NADA DE DINHEIRO MUDA =====
+         * Esta guarda vem ANTES do desvio por orçamento/manual de propósito.
+         * Havia dois furos abaixo, dos dois lados:
+         *  - medição MANUAL aprovada não travava nada (valor aberto: aprovava
+         *    R$ 40.000 e virava R$ 60.000 no mesmo documento);
+         *  - medição por ITENS aprovada perdia os itens se alguém trocasse o
+         *    seletor para "medição por valor" — o boletim ficava sem as linhas
+         *    que ele mesmo imprime.
+         * Enquanto o status continuar aprovado/pago, o boletim inteiro fica
+         * como está. Para remedir, reabra (aprovador + trilha). */
+        if (m && self._ehAprovado(m.status) && obj.status === m.status) {
+          obj.orcamentoId = m.orcamentoId || null;
+          obj.itens = m.itens ? Util.clone(m.itens) : null;
+          obj.valor = Util.num(m.valor); obj.percentual = m.percentual;
+          obj.retencao = m.retencao; obj.descricao = m.descricao;
+          obj.periodoInicio = m.periodoInicio; obj.periodoFim = m.periodoFim;
+          obj.valorContratado = m.valorContratado == null ? null : Util.num(m.valorContratado);
+          obj.bdiValor = m.bdiValor == null ? null : Util.num(m.bdiValor);
+          obj.totalItens = m.totalItens == null ? null : Util.num(m.totalItens);
+          obj.bdiNoPU = m.bdiNoPU;
+          return true;
+        }
         // #18: com orçamento selecionado, valor e % NASCEM dos itens (não se digita)
         var orcId = v("g-orcmed");
         if (orcId) {
@@ -1701,7 +1769,8 @@
         } else {
           // Voltou para medição MANUAL: limpa o que era do orçamento vinculado,
           // senão o boletim continuaria calculando % contra um contratado congelado
-          // de um orçamento que ele não mede mais.
+          // de um orçamento que ele não mede mais. (Boletim aprovado nem chega
+          // aqui — a guarda do topo já devolveu tudo como estava.)
           obj.orcamentoId = null; obj.itens = null;
           obj.valorContratado = null; obj.bdiValor = null; obj.totalItens = null; obj.bdiNoPU = null;
           obj.percentual = nv("g-pct"); obj.valor = nv("g-valor");
@@ -12640,9 +12709,43 @@ renderFolha: function () {
     _APROV_INICIAL: { medicoes: "pendente", compras: "cotacao", requisicoes: "aberta", producao_med: "pendente" },
     // G3 (fix): quando o STATUS é mudado PELO FORMULÁRIO de detalhe para aprovar/rejeitar/dar baixa,
     // aplica o MESMO gate + auditoria dos botões. Retorna false p/ ABORTAR o save.
+    /* ==================================================================
+     * REABERTURA — desfazer uma aprovação é decisão de aprovador, com nome.
+     *
+     * O BURACO QUE ISTO FECHA: "aprovada -> pendente" não é estado de
+     * aprovação, então NÃO passava por gate nenhum. Qualquer pessoa com
+     * acesso ao formulário abria um boletim aprovado, jogava o status para
+     * pendente, salvava — e a partir daí reeditava valor à vontade. A trava
+     * do documento contratual existia, e a porta de trás ao lado dela.
+     *
+     * Agora reabrir: exige permissão de aprovador, pergunta na cara (o
+     * boletim já emitido deixa de valer) e fica na trilha, com quem fez.
+     * ================================================================== */
+    _APROV_REABRE: { pendente: 1, rascunho: 1, aberto: 1, aberta: 1 },
+    _ehAprovado: function (st) { return !!(this._APROV_OK[st] || this._APROV_TERM[st]); },
+    _guardaReabertura: function (obj, statusAntigo, entidade) {
+      if (!this._ehAprovado(statusAntigo) || !this._APROV_REABRE[obj.status]) return true;
+      if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+        UI.toast("Só um aprovador pode reabrir um documento já aprovado. Peça a um aprovador da equipe.", "erro");
+        return false;
+      }
+      /* documento já pago não volta por aqui: o dinheiro saiu, e desfazer a
+         aprovação sem estornar deixaria caixa e documento contando histórias
+         diferentes. O caminho é estornar o pagamento primeiro. */
+      if (this._APROV_TERM[statusAntigo]) {
+        UI.toast("Este documento está " + statusAntigo + " — estorne o pagamento antes de reabrir.", "erro");
+        return false;
+      }
+      this._trilhaAprov(obj, "reabrir", { de: statusAntigo, para: obj.status });
+      obj.reabertoPor = this._quemAprova(); obj.reabertoEm = this._hojeISO();
+      obj.aprovadoPor = ""; obj.aprovadoEm = "";   // a aprovação anterior deixou de valer
+      return true;
+    },
+
     _gateStatusForm: function (obj, statusAntigo, entidade) {
       var novo = obj.status;
       if (novo === statusAntigo) return true;                 // status não mudou → nada a validar
+      if (!this._guardaReabertura(obj, statusAntigo, entidade)) return false;
       var ehOk = this._APROV_OK[novo], ehRej = this._APROV_REJ[novo], ehTerm = this._APROV_TERM[novo];
       if (!ehOk && !ehRej && !ehTerm) return true;            // não é estado controlado por aprovação
       /* a baixa NAO passa pelo gate de aprovador — ver `_guardaBaixa` */
@@ -12663,6 +12766,9 @@ renderFolha: function () {
          usa a regra do autor. */
       if (ehTerm) return this._guardaBaixa({ status: statusAntigo }, entidade);
       if (ehOk && !this._guardaAutor(obj, entidade)) return false;
+      /* nada aqui: a REABERTURA (aprovada -> pendente) é tratada antes, em
+         _guardaReabertura — ela não é um estado de aprovação, e por isso passava
+         livre por este gate. */
       if (ehOk) {
         /* ⚠ a trilha vem ANTES do carimbo, igual ao `_aprovar`: `Aprovacao.
            registrar` também escreve `aprovadoPor`/`aprovadoEm`, com o ISO
@@ -13424,6 +13530,20 @@ renderFolha: function () {
         case "prod-folha": return this.prodParaFolha(id);
         case "prod-excluir": return this.prodExcluir(id);
         case "prod-print": return this.prodRecibo(id);
+        /* O QUE FOI MEDIDO, sem abrir o formulário. Era o "descrição dos itens
+         * medidos" do pedido: a lista mostrava número, período, % e valor — o
+         * QUE gerou aquele valor só aparecia no papel impresso ou dentro do
+         * formulário de edição, que é justamente onde não se quer entrar num
+         * boletim aprovado. */
+        case "med-itens": {
+          var linha = document.getElementById("medi-" + id);
+          if (!linha) return null;
+          var abrindo = linha.style.display === "none" || !linha.style.display;
+          linha.style.display = abrindo ? "" : "none";
+          var bt = document.querySelector('[data-gacao="med-itens"][data-id="' + id + '"]');
+          if (bt) bt.textContent = abrindo ? "▾" : "▸";
+          return null;
+        }
         case "nova-medicao": return this.novoMedicao();
         case "novo-lancamento": return this.novoLancamento();
         case "aprovar-medicao": return this._aprovar("medicoes", id, "aprovada", "Medição aprovada.");
