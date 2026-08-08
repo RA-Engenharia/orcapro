@@ -103,6 +103,17 @@
       if (!porObra[k]) porObra[k] = { total: 0, linhas: [] };
       porObra[k].total += t; porObra[k].linhas.push(l); total += t;
     });
+    /* Ordem das pessoas dentro de cada obra: hierarquia de função primeiro
+       (mestre → pedreiro → ajudante → limpeza → eletricista → pintor) e
+       alfabética dentro dela. Pedido do cliente, e vale para a folha na
+       tela, no fechamento assinado e no Excel — os três saem da mesma
+       lista, então a ordem não diverge entre o papel e a planilha.
+       Sem o motor carregado (Node puro, teste antigo), fica como estava. */
+    if (typeof Ordem !== "undefined" && Ordem.pessoas) {
+      Object.keys(porObra).forEach(function (k) {
+        porObra[k].linhas = Ordem.pessoas(porObra[k].linhas, { modo: "hierarquia" });
+      });
+    }
     return { porObra: porObra, total: total };
   }
 

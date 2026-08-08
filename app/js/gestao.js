@@ -112,7 +112,30 @@
   function inp(id, val, ph, tipo) { return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">'; }
   function sel(id, o) { return '<select id="' + id + '">' + o + "</select>"; }
   function eid() { return Auth.empresaId(); }
-  function lista(ent) { return Store.listar(eid(), ent); }
+  /* ⚠ ORDEM DE PESSOAS NASCE AQUI, e de propósito.
+   * O cliente pediu os funcionários em ordem alfabética e agrupados por
+   * hierarquia de função — e pediu que valesse para todo módulo. Havia 27
+   * pontos chamando `lista("colaboradores")`, cada tela ordenando do seu
+   * jeito (ou não ordenando): o mesmo time saía numa sequência na folha,
+   * noutra no ponto e numa terceira no EPI, e quem confere papel com papel
+   * perde a linha. Ordenar no funil resolve os 27 de uma vez — tela nova
+   * já nasce certa, sem ninguém precisar lembrar. */
+  function lista(ent) {
+    var arr = Store.listar(eid(), ent);
+    if (ent === "colaboradores" && typeof Ordem !== "undefined") {
+      return Ordem.pessoas(arr, { modo: "hierarquia", ordem: ordemFuncoes() });
+    }
+    return arr;
+  }
+  /* Hierarquia da empresa. Sem nada configurado, vale o padrão do canteiro
+     (js/ordem.js). Fica em prefs para o dono poder reordenar. */
+  function ordemFuncoes() {
+    try {
+      var p = Store.lerPrefs ? Store.lerPrefs(eid()) : null;
+      var o = p && p.ordemFuncoes;
+      return (o && o.length) ? o : null;
+    } catch (e) { return null; }
+  }
   function vazioBox(txt, gacao, btn) { return '<div class="vazio card"><h3>' + txt + "</h3>" + (gacao ? '<button class="btn primary mt" data-gacao="' + gacao + '">+ ' + btn + "</button>" : "") + "</div>"; }
 
   // Ícones profissionais (monoline SVG, estilo Lucide) — sem emoji.
@@ -1479,6 +1502,16 @@
         '<div class="row">' + campo("Tipo", sel("g-tipo", '<option value="">—</option>' + opts(P.obraTipo, o.tipo))) + campo("Fase atual", sel("g-fase", '<option value="">—</option>' + opts(P.obraFase, o.fase))) + "</div>" +
         '<div class="row">' + campo("Status", sel("g-status", opts(P.obraStatus, o.status || "planejamento"))) + campo("Valor do contrato (R$)", inp("g-valor", o.valor)) + "</div>" +
         campo("Local / Endereço", inp("g-local", o.local, "Rua, nº, bairro, cidade")) +
+        /* ENTREGA E CONFERÊNCIA — vão impressos no pedido de compra. Sem estes
+           campos o pedido saía dizendo só o NOME da obra, e o motorista do
+           fornecedor ligava para o escritório perguntando onde descarregar e
+           com quem falar. O endereço de entrega fica à parte do "Local" porque
+           nem sempre são o mesmo (canteiro x depósito x portaria do condomínio). */
+        '<h4 style="margin:14px 0 6px;font-size:13px;border-top:1px solid var(--borda);padding-top:10px">Entrega de materiais nesta obra</h4>' +
+        campo("Endereço de entrega <span class=\"muted\" style=\"font-weight:400\">— só se for diferente do local acima</span>", inp("g-endentrega", o.enderecoEntrega, "Rua, nº, ponto de referência, portaria…")) +
+        '<div class="row">' + campo("Responsável pelo recebimento", inp("g-receb", o.responsavelRecebimento, "quem confere o material na obra"))
+          + campo("Telefone do responsável", inp("g-recebtel", o.telefoneRecebimento, "(34) 90000-0000"))
+          + campo("Horário para receber", inp("g-recebhora", o.horarioRecebimento, "Ex.: 08h às 17h, seg a sex")) + "</div>" +
         '<div class="row">' + campo("Início", inp("g-inicio", o.inicio, "", "date")) + campo("Previsão de término", inp("g-termino", o.termino, "", "date")) + "</div>" +
         '<div class="row">' + campo("Área construída (m²)", inp("g-areac", o.areaConstruida)) + campo("Área do terreno (m²)", inp("g-areat", o.areaTerreno)) + "</div>" +
         campo("Vincular a um orçamento", sel("g-orc", optsRec(orcs, "nome", o.orcamentoId, "— nenhum —"))) +
@@ -1505,6 +1538,8 @@
         if (fotoTrocou) { if (fotoRef) obj.foto = fotoRef; else delete obj.foto; }
         obj.clienteId = v("g-cliente"); obj.tipo = v("g-tipo"); obj.fase = v("g-fase"); obj.status = v("g-status");
         obj.valor = nv("g-valor"); obj.local = v("g-local"); obj.inicio = v("g-inicio"); obj.termino = v("g-termino");
+        obj.enderecoEntrega = v("g-endentrega"); obj.responsavelRecebimento = v("g-receb");
+        obj.telefoneRecebimento = v("g-recebtel"); obj.horarioRecebimento = v("g-recebhora");
         obj.areaConstruida = nv("g-areac"); obj.areaTerreno = nv("g-areat"); obj.orcamentoId = v("g-orc"); obj.obs = v("g-obs");
         var cli = lista("clientes").filter(function (c) { return c.id === obj.clienteId; })[0];
         obj.clienteNome = cli ? cli.nome : "";
@@ -1658,6 +1693,30 @@
      * "sem itens" e parar seria esconder a única informação que há). */
     _medItensHtml: function (m) {
       var its = Util.arr(m.itens);
+      /* Medição por PREÇOS UNITÁRIOS: não há % nem quantidade contratada —
+         o acompanhamento é por quantidade executada de cada serviço. Mostrar
+         a tabela do orçamento aqui exibiria colunas vazias e um percentual
+         sem denominador. */
+      if (its.length && its[0] && its[0].atividadeId) {
+        var res = (typeof Atividades !== "undefined")
+          ? Atividades.resumo(m, lista("medicoes"))
+          : { linhas: its.map(function (l) { return { descricao: l.descricao, unidade: l.unidade, valorUnitario: l.valorUnitario, qtdAnterior: 0, qtd: l.qtd, qtdAcumulada: l.qtd, valor: l.valor }; }), total: Util.num(m.valor) };
+        var ha = '<table class="tbl" style="font-size:12px;margin:0"><thead><tr><th>Atividade</th><th>Und</th>'
+          + '<th class="num">Valor unit.</th><th class="num">Qtd anterior</th><th class="num">Qtd no período</th><th class="num">Qtd acumulada</th><th class="num">Valor</th></tr></thead><tbody>';
+        res.linhas.forEach(function (l) {
+          ha += "<tr><td>" + (l.codigo ? "<b>" + Util.esc(l.codigo) + "</b> " : "") + Util.esc(String(l.descricao || "").slice(0, 70)) + "</td>"
+            + "<td>" + Util.esc(l.unidade || "") + "</td>"
+            + '<td class="num">' + Util.fmtMoeda(l.valorUnitario) + "</td>"
+            + '<td class="num muted">' + Util.fmtNum(l.qtdAnterior, 2) + "</td>"
+            + '<td class="num"><b>' + Util.fmtNum(l.qtd, 2) + "</b></td>"
+            + '<td class="num">' + Util.fmtNum(l.qtdAcumulada, 2) + "</td>"
+            + '<td class="num">' + Util.fmtMoeda(l.valor) + "</td></tr>";
+        });
+        ha += '</tbody><tfoot><tr><td colspan="6" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr>";
+        if (Util.num(m.retencao) > 0) ha += '<tr><td colspan="6" style="text-align:right" class="muted">Retenção ' + Util.fmtNum(m.retencao, 1) + "%</td><td class=\"num muted\">− " + Util.fmtMoeda(Util.num(m.valor) * Util.num(m.retencao) / 100) + "</td></tr>";
+        ha += "</tfoot></table>";
+        return ha;
+      }
       if (!its.length) {
         var d = String(m.descricao || "").trim();
         return '<div style="font-size:12px"><b>Medição por valor</b> (sem itens do orçamento).' +
@@ -1684,6 +1743,102 @@
       return h;
     },
     novoMedicao: function () { this.formMedicao(null); },
+    /* Modo de medição do registro. Registro antigo não tem `modo` gravado —
+       deduz pelo que ele carrega, e o padrão de quem não tem nada é
+       "orcamento" para não mudar o comportamento de quem já usava. */
+    _medModo: function (m) {
+      m = m || {};
+      if (m.modo === "orcamento" || m.modo === "atividades" || m.modo === "valor") return m.modo;
+      if (m.orcamentoId) return "orcamento";
+      if (Util.arr(m.itens).some(function (it) { return it && it.atividadeId; })) return "atividades";
+      if (m.id) return "valor";           // registro salvo, sem itens: era medição manual
+      return "orcamento";
+    },
+    /* ---------- Tabela de preços unitários da obra: cadastro e cópia ----------
+     * Fica dentro do fluxo da medição de propósito: é ali que o usuário
+     * descobre que precisa dela. O formulário é próprio (não o _modalForm),
+     * porque ele abre POR CIMA do modal da medição — e o UI.modal não aninha
+     * (já perdi um formulário inteiro assim). */
+    atvNova: function (obraId) { this._formAtividade(null, obraId); },
+    atvEditar: function (id) {
+      var a = Store.obter(eid(), "atividades", id);
+      if (a) this._formAtividade(a, a.obraId);
+    },
+    _formAtividade: function (a, obraId) {
+      var self = this; a = a || {};
+      var corpo = '<div class="row">' + campo("Código (opcional)", inp("g-atv-cod", a.codigo, "Ex.: SV-01"))
+        + campo("Descrição do serviço *", inp("g-atv-desc", a.descricao, "Ex.: Reboco interno"))
+        + campo("Unidade *", inp("g-atv-und", a.unidade, "Ex.: m², m³, un, h")) + "</div>"
+        + '<div class="row">' + campo("Valor unitário (R$) *", inp("g-atv-vu", a.valorUnitario, "Ex.: 32,00")) + "</div>"
+        + '<p class="muted" style="font-size:12px;margin:4px 0 0">Esta tabela é <b>desta obra</b>. Medições já emitidas guardam o preço que foi usado — mexer aqui não altera boletim antigo.</p>';
+      var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      if (a.id) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
+        /* atividade já medida NÃO some: o boletim guarda a cópia dela, mas a
+           linha da tabela some da lista e o acumulado do serviço fica sem
+           origem visível. Desativar preserva o histórico. */
+        var usada = lista("medicoes").some(function (m) { return Util.arr(m.itens).some(function (it) { return it && it.atividadeId === a.id; }); });
+        if (usada) {
+          if (!confirm("Esta atividade já foi medida em pelo menos um boletim.\n\nEla será DESATIVADA (some da lista de novas medições) e os boletins já emitidos continuam intactos.\n\nDesativar?")) return;
+          a.ativo = false; Store.salvar(eid(), "atividades", a);
+          UI.fecharModal(); self._reabrirAtv(obraId); UI.toast("Atividade desativada. Os boletins antigos continuam como estavam.", "ok");
+          return;
+        }
+        if (!confirm("Excluir esta atividade da tabela desta obra?")) return;
+        Store.excluir(eid(), "atividades", a.id);
+        UI.fecharModal(); self._reabrirAtv(obraId); UI.toast("Atividade excluída.", "ok");
+      } });
+      botoes.push({ texto: a.id ? "Salvar alterações" : "Salvar", classe: "primary", onClick: function () {
+        var desc = v("g-atv-desc"), und = v("g-atv-und"), vu = Util.num(v("g-atv-vu"));
+        if (!desc) { UI.toast("Informe a descrição do serviço.", "erro"); return; }
+        if (!und) { UI.toast("Informe a unidade (m², m³, un…).", "erro"); return; }
+        if (!(vu > 0)) { UI.toast("Informe o valor unitário — sem preço não dá para medir.", "erro"); return; }
+        var reg = a.id ? a : { obraId: obraId, ativo: true };
+        reg.codigo = v("g-atv-cod"); reg.descricao = desc; reg.unidade = und; reg.valorUnitario = vu;
+        if (!reg.obraId) reg.obraId = obraId;
+        Store.salvar(eid(), "atividades", reg);
+        UI.fecharModal(); self._reabrirAtv(obraId);
+        UI.toast(a.id ? "Atividade atualizada." : "Atividade cadastrada.", "ok");
+      } });
+      UI.modal(a.id ? "Editar atividade" : "Nova atividade", corpo, botoes);
+    },
+    /* volta para o painel da medição depois de mexer na tabela */
+    _reabrirAtv: function (obraId) {
+      var box = UI.el("med-itens");
+      if (box && typeof this._medRepintar === "function") { this._medRepintar(); return; }
+      if (typeof App !== "undefined") App.render();
+    },
+    atvCopiar: function (obraId) {
+      var self = this;
+      var outras = lista("obras").filter(function (o) { return o.id !== obraId; })
+        .filter(function (o) { return self._atividadesDaObra(o.id).length > 0; });
+      if (!outras.length) { UI.toast("Nenhuma outra obra tem tabela de preços para copiar.", "erro"); return; }
+      var linhas = outras.map(function (o) {
+        return [o.id, o.nome + " (" + self._atividadesDaObra(o.id).length + " atividade(s))"];
+      });
+      var corpo = campo("Copiar a tabela de qual obra?", sel("g-atv-origem", opts(linhas, linhas[0][0])))
+        + '<p class="muted" style="font-size:12px;margin:6px 0 0">As atividades entram como <b>cópias desta obra</b>: mudar o preço aqui não mexe na obra de origem. O que já existir com o mesmo código (ou mesma descrição e unidade) <b>não é duplicado</b>.</p>';
+      UI.modal("📋 Copiar tabela de preços", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Copiar", classe: "primary", onClick: function () {
+          var origemId = v("g-atv-origem");
+          var origem = self._atividadesDaObra(origemId);
+          var res = Atividades.copiarParaObra(origem, self._atividadesDaObra(obraId), obraId);
+          res.novas.forEach(function (n) { delete n.id; Store.salvar(eid(), "atividades", n); });
+          UI.fecharModal(); self._reabrirAtv(obraId);
+          UI.toast(res.novas.length + " atividade(s) copiada(s)" + (res.puladas ? " · " + res.puladas + " já existia(m) e foi(ram) mantida(s)" : "") + ".", "ok");
+        } }
+      ]);
+    },
+    /* Tabela de preços unitários DA OBRA (js/atividades.js é o motor). */
+    _atividadesDaObra: function (obraId) {
+      if (!obraId) return [];
+      return lista("atividades").filter(function (a) { return a.obraId === obraId && a.ativo !== false; })
+        .sort(function (a, b) {
+          var ca = String(a.codigo || ""), cb = String(b.codigo || "");
+          if (ca && cb && ca !== cb) return ca.localeCompare(cb, "pt-BR", { numeric: true });
+          return String(a.descricao || "").localeCompare(String(b.descricao || ""), "pt-BR");
+        });
+    },
     // #18: acumulado ANTERIOR por item (medições da mesma obra + mesmo orçamento, exceto a atual)
     _pctAnterioresPorItem: function (obraId, orcamentoId, medicaoAtualId) {
       var acc = {};
@@ -1702,8 +1857,21 @@
       var corpo =
         '<div class="row">' + campo("Nº da medição", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.medicaoStatus, m.status || "pendente"))) + "</div>" +
         '<div class="row">' + campo("Obra *", sel("g-obra", optsRec(obras, "nome", m.obraId, "— selecionar —"))) + campo("Contrato", sel("g-contrato", optsRec(contratos, "numero", m.contratoId, "— nenhum —"))) + "</div>" +
-        // #18: medição vinculada ao orçamento — os itens orçados viram linhas mediveis
-        '<div class="row">' + campo("Orçamento (medir por itens)", sel("g-orcmed", optsRec(orcs, "nome", m.orcamentoId, "— medição por valor (manual) —"))) + "</div>" +
+        /* COMO MEDIR — três caminhos, escolhidos de propósito e não adivinhados:
+         *  · orcamento  : % de execução sobre os itens orçados (precisa de contrato);
+         *  · atividades : preço unitário da tabela DA OBRA × quantidade executada.
+         *                 É o caminho de quem toca obra SEM valor global fechado
+         *                 (administração, série de preços, execução por diária);
+         *  · valor      : um número e uma descrição, como sempre foi.
+         * O modo fica GRAVADO no registro. Antes ele era adivinhado pelo campo
+         * `orcamentoId` estar preenchido, e não havia como distinguir "medição
+         * por valor" de "medição por atividades". */
+        '<div class="row">' + campo("Como medir *", sel("g-medmodo", opts([
+          ["orcamento", "Por itens do orçamento (% de execução)"],
+          ["atividades", "Por atividades da obra (preço unitário)"],
+          ["valor", "Por valor (manual)"]
+        ], self._medModo(m)))) + "</div>" +
+        '<div class="row" id="med-linha-orc">' + campo("Orçamento", sel("g-orcmed", optsRec(orcs, "nome", m.orcamentoId, "— selecione o orçamento —"))) + "</div>" +
         '<div id="med-itens"></div>' +
         '<div class="row">' + campo("Período (início)", inp("g-pini", m.periodoInicio, "", "date")) + campo("Período (fim)", inp("g-pfim", m.periodoFim, "", "date")) + "</div>" +
         '<div class="row">' + campo("% executado no período", inp("g-pct", m.percentual)) + campo("Valor medido (R$) *", inp("g-valor", m.valor)) + campo("Retenção (%)", inp("g-ret", m.retencao == null ? 5 : m.retencao)) + "</div>" +
@@ -1736,8 +1904,38 @@
           obj.bdiNoPU = m.bdiNoPU;
           return true;
         }
+        var modo = v("g-medmodo") || "orcamento";
+        obj.modo = modo;
+
+        /* ===== MODO ATIVIDADES: preço unitário × quantidade =====
+         * A linha guarda descrição, unidade e preço COPIADOS — nunca uma
+         * referência à atividade. Reajustar a tabela em setembro não pode
+         * mudar o valor de um boletim emitido em agosto. */
+        if (modo === "atividades") {
+          if (typeof Atividades === "undefined") { UI.toast("Módulo de atividades não carregou. Recarregue a página.", "erro"); return false; }
+          var itensAtv = [];
+          Array.prototype.forEach.call(document.querySelectorAll("[data-medqtd]"), function (i2) {
+            var aid = i2.getAttribute("data-medqtd"), q = Util.num(i2.value);
+            if (!(q > 0)) return;
+            var atv = Store.obter(eid(), "atividades", aid); if (!atv) return;
+            var vuEl = document.querySelector('[data-medvu="' + aid + '"]');
+            itensAtv.push(Atividades.linhaDaAtividade(atv, q, vuEl ? vuEl.value : null));
+          });
+          if (!itensAtv.length) { UI.toast("Informe a quantidade de ao menos 1 atividade.", "erro"); return false; }
+          var semPreco = itensAtv.filter(function (l) { return !(Util.num(l.valorUnitario) > 0); });
+          if (semPreco.length) { UI.toast("Atividade sem valor unitário: " + Util.esc(semPreco[0].descricao || "—") + ". Preencha o preço antes de medir.", "erro"); return false; }
+          obj.itens = itensAtv;
+          obj.valor = Atividades.totalMedicao(itensAtv);
+          /* sem valor global não existe % do contrato — deixar o campo com um
+             número velho faria o boletim afirmar um percentual sem denominador */
+          obj.percentual = null;
+          obj.orcamentoId = null; obj.valorContratado = null;
+          obj.bdiValor = null; obj.totalItens = null; obj.bdiNoPU = null;
+          return true;
+        }
+
         // #18: com orçamento selecionado, valor e % NASCEM dos itens (não se digita)
-        var orcId = v("g-orcmed");
+        var orcId = modo === "orcamento" ? v("g-orcmed") : "";
         if (orcId) {
           var orc = Store.obterOrcamento(eid(), orcId);
           if (!orc) { UI.toast("Orçamento não encontrado.", "erro"); return false; }
@@ -1786,15 +1984,83 @@
       });
       setTimeout(function () { self._ligarMedItens(m); }, 60); // pós-abertura do modal
     },
+    /* Painel do modo ATIVIDADES: a tabela de preços da obra com um campo de
+       quantidade por linha. O valor do boletim NASCE daqui (qtd × preço) e o
+       campo "Valor medido" fica travado — digitar um total que não fecha com
+       as próprias linhas é como o boletim deixa de provar o que cobra. */
+    _medAtividadesHtml: function (m, obraId) {
+      var self = this;
+      if (!obraId) return '<div class="muted" style="margin:8px 0">Selecione a obra para carregar a tabela de preços dela.</div>';
+      var atvs = this._atividadesDaObra(obraId);
+      var barra = '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">'
+        + '<button type="button" class="btn sm" data-gacao="atv-nova" data-val="' + Util.esc(obraId) + '">+ Atividade</button>'
+        + '<button type="button" class="btn sm" data-gacao="atv-copiar" data-val="' + Util.esc(obraId) + '">📋 Copiar de outra obra</button>'
+        + "</div>";
+      if (!atvs.length) {
+        return barra + '<div class="muted" style="padding:10px;border:1px dashed var(--borda);border-radius:8px;font-size:12px">'
+          + "Esta obra ainda não tem tabela de preços. Cadastre as atividades (descrição, unidade e valor unitário) "
+          + "ou copie a tabela de uma obra que você já fez.</div>";
+      }
+      var travado = this._ehAprovado(m.status);
+      var salvos = {}, salvosVu = {};
+      Util.arr(m.itens).forEach(function (it) { if (it && it.atividadeId) { salvos[it.atividadeId] = it.qtd; salvosVu[it.atividadeId] = it.valorUnitario; } });
+      var ant = (typeof Atividades !== "undefined")
+        ? Atividades.qtdAnteriorPorAtividade(lista("medicoes"), obraId, m.id) : {};
+      var h = barra + '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Atividade</th><th>Und</th>'
+        + '<th class="num">Valor unit.</th><th class="num">Qtd anterior</th><th class="num">Qtd no período</th><th class="num">Valor</th><th></th></tr></thead><tbody>';
+      atvs.forEach(function (a) {
+        var qs = salvos[a.id], vu = salvosVu[a.id];
+        h += "<tr><td>" + (a.codigo ? "<b>" + Util.esc(a.codigo) + "</b> " : "") + Util.esc(String(a.descricao || "").slice(0, 60)) + "</td>"
+          + "<td>" + Util.esc(a.unidade || "") + "</td>"
+          + '<td class="num"><input type="text" data-medvu="' + Util.esc(a.id) + '" value="'
+          + Util.esc(Util.fmtNum(vu == null ? a.valorUnitario : vu, 2)) + '" style="width:88px;text-align:right"' + (travado ? " readonly" : "") + "></td>"
+          + '<td class="num muted">' + Util.fmtNum(ant[a.id] || 0, 2) + "</td>"
+          + '<td class="num"><input type="text" data-medqtd="' + Util.esc(a.id) + '" value="' + (qs ? Util.esc(Util.fmtNum(qs, 2)) : "")
+          + '" placeholder="0" style="width:88px;text-align:right"' + (travado ? " readonly" : "") + "></td>"
+          + '<td class="num" data-medval="' + Util.esc(a.id) + '">—</td>'
+          + '<td class="num"><button type="button" class="btn sm" data-gacao="atv-editar" data-val="' + Util.esc(a.id) + '" title="editar esta atividade">✎</button></td></tr>';
+      });
+      h += '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b id="med-atv-total">—</b></td><td></td></tr></tfoot></table>'
+        + '<p class="muted" style="font-size:12px;margin:2px 0 0">Digite a <b>quantidade executada no período</b>. O valor unitário pode ser ajustado nesta linha quando esta obra combinou outro preço — o boletim guarda o que foi usado, então reajustar a tabela depois não muda documento já emitido.</p>';
+      return h;
+    },
     // #18: tabela de itens mediveis dentro do modal (recalcula ao digitar %)
     _ligarMedItens: function (m) {
       var self = this;
       var selOrc = UI.el("g-orcmed"), box = UI.el("med-itens");
       if (!selOrc || !box) return;
+      /* soma ao vivo do modo atividades */
+      function somarAtividades() {
+        if (typeof Atividades === "undefined") return;
+        var linhas = [];
+        Array.prototype.forEach.call(document.querySelectorAll("[data-medqtd]"), function (i2) {
+          var aid = i2.getAttribute("data-medqtd"), q = Util.num(i2.value);
+          var vuEl = document.querySelector('[data-medvu="' + aid + '"]');
+          var l = { qtd: q, valorUnitario: vuEl ? Util.num(vuEl.value) : 0 };
+          var cel = document.querySelector('[data-medval="' + aid + '"]');
+          if (cel) cel.innerHTML = q > 0 ? Util.fmtMoeda(Atividades.valorLinha(l)) : '<span class="muted">—</span>';
+          if (q > 0) linhas.push(l);
+        });
+        var tot = Atividades.totalMedicao(linhas);
+        var elT = UI.el("med-atv-total"); if (elT) elT.innerHTML = Util.fmtMoeda(tot);
+        var gv = UI.el("g-valor");
+        if (gv) { gv.value = tot.toFixed(2).replace(".", ","); gv.readOnly = true; }
+      }
+      self._medSomarAtividades = somarAtividades;
       function pintar() {
+        var modo = v("g-medmodo"), gv = UI.el("g-valor"), gp = UI.el("g-pct");
+        var linhaOrc = UI.el("med-linha-orc");
+        if (linhaOrc) linhaOrc.style.display = (modo === "orcamento") ? "" : "none";
+        if (modo === "atividades") {
+          box.innerHTML = self._medAtividadesHtml(m, v("g-obra"));
+          if (gp) { gp.readOnly = true; gp.value = ""; }
+          Array.prototype.forEach.call(document.querySelectorAll("[data-medqtd],[data-medvu]"), function (i2) { i2.oninput = somarAtividades; });
+          somarAtividades();
+          return;
+        }
+        if (modo === "valor") { box.innerHTML = ""; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orcId = selOrc.value;
-        var gv = UI.el("g-valor"), gp = UI.el("g-pct");
-        if (!orcId) { box.innerHTML = ""; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
+        if (!orcId) { box.innerHTML = '<div class="muted" style="margin:8px 0">Selecione o orçamento que será medido.</div>'; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orc = Store.obterOrcamento(eid(), orcId);
         if (!orc) { box.innerHTML = '<div class="muted">Orçamento não encontrado.</div>'; return; }
         // Boletim APROVADO/PAGO: mostra os valores SALVOS, travados — a prévia não
@@ -1873,14 +2139,17 @@
         recalc();
       }
       selOrc.addEventListener("change", pintar);
+      var gModo = UI.el("g-medmodo");
+      if (gModo) gModo.addEventListener("change", pintar);
       var gObra = UI.el("g-obra");
       if (gObra) gObra.addEventListener("change", function () {
         // obra criada a partir de orçamento já aponta o orçamento certo
         var ob = Store.obter(eid(), "obras", gObra.value);
         if (ob && ob.orcamentoId && !selOrc.value) selOrc.value = ob.orcamentoId;
-        pintar();
+        pintar(); // trocar de obra troca a TABELA DE PREÇOS do modo atividades
       });
-      if (selOrc.value) pintar();
+      self._medRepintar = pintar;  // usado depois de criar/copiar atividade
+      pintar();                    // pinta sempre: o modo pode ser atividades ou valor
     },
 
     // Chave ÚNICA de ordenação da sequência de medições (mesma em _medicaoCalc e no histórico do Excel).
@@ -1940,13 +2209,26 @@
         + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #16a34a;padding-bottom:10px;margin-bottom:14px"><div>' + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:14px">' + Util.esc(emp.nome || "") + "</b><br><span style='font-size:9px'>" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.contato ? " · " + Util.esc(emp.contato) : "") + "</span></div><div style='text-align:right'><b style='font-size:13px;color:#16a34a'>BOLETIM DE MEDIÇÃO</b><br><span>Nº " + Util.esc(m.numero || "—") + "</span></div></div>"
         + "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:22%'><b>Obra</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra.nome || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Cliente</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra.clienteNome || "—") + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Período</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(periodo || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Local</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra.local || "—") + "</td></tr></table>"
         + "<h3 style='border-bottom:2px solid #16a34a;padding-bottom:4px;font-size:13px'>RESUMO FINANCEIRO DA MEDIÇÃO</h3>"
-        + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:6px;text-align:left'>Descrição</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>Valor (R$)</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>% do contrato</th></tr></thead><tbody>"
-        + lin("Valor contratado", c.contratado, c.contratado > 0 ? 100 : null)
-        + lin("Medição anterior (acumulado)", c.anterior, c.pctAnt)
-        + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, c.contratado > 0 ? c.atual / c.contratado * 100 : null)
-        + lin("Acumulado até esta medição", c.acumulado, c.pctAcum, true)
-        + lin("Saldo a executar", c.saldo, c.contratado > 0 ? c.saldo / c.contratado * 100 : null)
-        + "</tbody></table>"
+        /* ⚠ OBRA SEM VALOR GLOBAL (administração, série de preços): as linhas de
+         * contrato saem do documento em vez de sair zeradas. "Valor contratado
+         * R$ 0,00" é ruído, mas "Saldo a executar R$ 0,00" é MENTIRA — afirma
+         * que não há mais nada a executar justamente na obra que não tem fim
+         * contratado. A coluna de % também some: sem contrato não há
+         * denominador, e uma coluna vazia convida a interpretar como zero. */
+        + (c.contratado > 0
+          ? "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:6px;text-align:left'>Descrição</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>Valor (R$)</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>% do contrato</th></tr></thead><tbody>"
+            + lin("Valor contratado", c.contratado, 100)
+            + lin("Medição anterior (acumulado)", c.anterior, c.pctAnt)
+            + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, c.atual / c.contratado * 100)
+            + lin("Acumulado até esta medição", c.acumulado, c.pctAcum, true)
+            + lin("Saldo a executar", c.saldo, c.saldo / c.contratado * 100)
+            + "</tbody></table>"
+          : "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:6px;text-align:left'>Descrição</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>Valor (R$)</th></tr></thead><tbody>"
+            + lin("Medição anterior (acumulado)", c.anterior, null)
+            + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, null)
+            + lin("Acumulado até esta medição", c.acumulado, null, true)
+            + "</tbody></table>"
+            + "<p style='font-size:10px;color:#555;margin:4px 0 0'>Esta obra não tem valor global contratado: a medição é do que foi executado no período. Por isso o documento não apresenta percentual de contrato nem saldo a executar.</p>")
         + "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-top:10px'><tbody>"
         + lin("Retenção contratual (" + Util.fmtNum(c.retencao, 1) + "%)", c.retVal, null)
         + lin("Líquido a faturar nesta medição", c.liquido, null, true)
@@ -1954,6 +2236,33 @@
         + (function () { // #18: itens medidos do orçamento vinculado (memória do boletim)
           var its = Util.arr(m.itens); if (!its.length) return "";
           var td = function (s, dir) { return "<td style='border:1px solid #bbb;padding:5px" + (dir ? ";text-align:right" : "") + "'>" + s + "</td>"; };
+          /* MEDIÇÃO POR PREÇOS UNITÁRIOS (obra sem valor global): a tabela do
+             orçamento não serve — não existe quantidade contratada nem % do
+             contrato. O que o cliente assina aqui é quantidade × preço. */
+          if (its[0] && its[0].atividadeId) {
+            var resA = (typeof Atividades !== "undefined") ? Atividades.resumo(m, lista("medicoes")) : null;
+            var linsA = resA ? resA.linhas : its.map(function (l) { return { codigo: l.codigo, descricao: l.descricao, unidade: l.unidade, valorUnitario: l.valorUnitario, qtdAnterior: 0, qtd: l.qtd, qtdAcumulada: l.qtd, valor: l.valor }; });
+            var hA = "<h3 style='border-bottom:2px solid #16a34a;padding-bottom:4px;font-size:13px;margin-top:14px'>SERVIÇOS MEDIDOS NESTE BOLETIM</h3>"
+              + "<table style='width:100%;border-collapse:collapse;font-size:11px'><thead><tr style='background:#0f2740;color:#fff'>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:left'>Código</th>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:left'>Serviço</th>"
+              + "<th style='border:1px solid #bbb;padding:5px'>Und</th>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor unit.</th>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd anterior</th>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd no período</th>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:right'>Qtd acumulada</th>"
+              + "<th style='border:1px solid #bbb;padding:5px;text-align:right'>Valor (R$)</th></tr></thead><tbody>";
+            linsA.forEach(function (l) {
+              hA += "<tr>" + td(Util.esc(l.codigo || "—")) + td(Util.esc(l.descricao)) + td(Util.esc(l.unidade))
+                + td(Util.fmtMoeda(l.valorUnitario), 1) + td(Util.fmtNum(l.qtdAnterior, 2), 1)
+                + td("<b>" + Util.fmtNum(l.qtd, 2) + "</b>", 1) + td(Util.fmtNum(l.qtdAcumulada, 2), 1)
+                + td(Util.fmtMoeda(l.valor), 1) + "</tr>";
+            });
+            hA += "</tbody><tfoot><tr style='background:#eef4fa;font-weight:bold'><td colspan='7' style='border:1px solid #bbb;padding:5px;text-align:right'>TOTAL MEDIDO</td>"
+              + "<td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(m.valor) + "</td></tr></tfoot></table>"
+              + "<p style='font-size:10px;color:#555;margin:4px 0 0'>Medição por preços unitários: o valor é o executado no período, serviço a serviço. Esta obra não tem valor global contratado, portanto não há percentual de contrato a apresentar.</p>";
+            return hA;
+          }
           // Orçamento com BDI sobre o preço FINAL: o preço unitário é de custo e o
           // BDI vem como parcela — sem essas linhas a tabela do boletim não fecha.
           var bdiFora = (m.bdiNoPU === false), vBdi = Util.num(m.bdiValor);
@@ -2112,7 +2421,49 @@
       var rows = itens.length
         ? itens.map(function (it, i) { var vu = Util.num(it.precoRef != null ? it.precoRef : it.valorUnit), sub = Util.num(it.quantidade) * vu; return "<tr><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + (it.codigo || i + 1) + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(it.descricao) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.fmtNum(it.quantidade, 2) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.esc(it.unidade) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + (vu > 0 ? Util.fmtMoeda(vu) : "—") + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + (vu > 0 ? Util.fmtMoeda(sub) : "—") + "</td></tr>"; }).join("")
         : "<tr><td style='border:1px solid #bbb;padding:6px;text-align:center'>1</td><td colspan='4' style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.descricao || "—") + "</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(c.valor) + "</td></tr>";
-      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Pedido Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Fornecedor</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(forn ? forn.nome : (c.fornecedorNome || "—")) + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra/Destino</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td></tr>" + (c.previsaoEntrega ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prev. entrega</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.previsaoEntrega) + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Pagamento</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(rot(P.formaPgto, c.formaPgto) || "—") + "</td></tr>" : "") + "</table>"
+      /* ===== O PEDIDO PRECISA SE BASTAR =====
+       * Ele saía com o NOME do fornecedor e o NOME da obra, e só. Quem recebe
+       * ligava para o escritório perguntando onde descarregar, com quem falar
+       * e para onde pagar. Agora vão no papel: contato e WhatsApp do
+       * fornecedor, endereço de ENTREGA, quem confere na obra com telefone e
+       * horário, e os dados de pagamento.
+       * Cada bloco só aparece se houver o dado — linha vazia rotulada é pior
+       * que ausência: parece que a informação não existe em lugar nenhum. */
+      var linhaSe = function (rot1, val1, rot2, val2) {
+        if (!val1 && !val2) return "";
+        return "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>" + rot1 + "</b></td><td style='border:1px solid #bbb;padding:6px'>" + (val1 || "—") + "</td>"
+          + "<td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>" + rot2 + "</b></td><td style='border:1px solid #bbb;padding:6px'>" + (val2 || "—") + "</td></tr>";
+      };
+      var zap = forn ? (forn.whatsapp || forn.telefone) : "";
+      var fFone = (typeof FolhaSemanal !== "undefined" && FolhaSemanal.foneDaChave) ? FolhaSemanal.foneDaChave(zap) : null;
+      var fornContato = forn
+        ? [forn.contato ? "Contato: " + Util.esc(forn.contato) : "", forn.telefone ? "Tel.: " + Util.esc(forn.telefone) : "",
+           forn.whatsapp && forn.whatsapp !== forn.telefone ? "WhatsApp: " + Util.esc(forn.whatsapp) : (fFone ? "WhatsApp: " + Util.esc(forn.telefone) : ""),
+           forn.email ? Util.esc(forn.email) : ""].filter(Boolean).join(" · ")
+        : "";
+      var fornEnd = forn ? [forn.endereco, forn.cidade, forn.uf].filter(Boolean).map(Util.esc).join(", ") : "";
+      /* endereço de entrega: o da obra quando cadastrado, senão o local dela */
+      var entregaEnd = obra ? (obra.enderecoEntrega || obra.local || "") : "";
+      var confere = obra ? [obra.responsavelRecebimento, obra.telefoneRecebimento].filter(Boolean).map(Util.esc).join(" · ") : "";
+      var banco = forn ? [
+        forn.chavePix ? "PIX: " + Util.esc(forn.chavePix) : "",
+        forn.banco ? "Banco " + Util.esc(forn.banco) : "",
+        forn.agencia ? "Ag. " + Util.esc(forn.agencia) : "",
+        forn.conta ? "C/" + (forn.tipoConta === "poupanca" ? "P" : "C") + " " + Util.esc(forn.conta) : "",
+        forn.titular ? "Titular: " + Util.esc(forn.titular) + (forn.titularDoc ? " (" + Util.esc(forn.titularDoc) + ")" : "") : ""
+      ].filter(Boolean).join(" · ") : "";
+
+      var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Pedido Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Fornecedor</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(forn ? forn.nome : (c.fornecedorNome || "—")) + (forn && forn.doc ? "<br><span style='font-size:10px;color:#555'>" + Util.esc(forn.tipo === "PF" ? "CPF " : "CNPJ ") + Util.esc(forn.doc) + "</span>" : "") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra/Destino</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td></tr>"
+        + linhaSe("Contato do fornecedor", fornContato, "Endereço do fornecedor", fornEnd)
+        + (c.previsaoEntrega ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prev. entrega</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.previsaoEntrega) + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Pagamento</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(rot(P.formaPgto, c.formaPgto) || "—") + "</td></tr>" : "") + "</table>"
+        + (entregaEnd || confere || banco
+          ? "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'>"
+            + (entregaEnd ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#eef4fa;width:18%'><b>Entregar em</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + Util.esc(entregaEnd)
+                + (obra && obra.horarioRecebimento ? "<br><span style='font-size:10px;color:#555'>Horário para receber: " + Util.esc(obra.horarioRecebimento) + "</span>" : "") + "</td></tr>" : "")
+            + (confere ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#eef4fa'><b>Recebe e confere</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + confere + "</td></tr>" : "")
+            + (banco ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#eef4fa'><b>Pagamento ao fornecedor</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + banco + "</td></tr>" : "")
+            + "</table>"
+          : "")
         + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;width:10%'>Cód.</th><th style='border:1px solid #bbb;padding:5px'>Descrição</th><th style='border:1px solid #bbb;padding:5px;width:10%'>Qtd</th><th style='border:1px solid #bbb;padding:5px;width:8%'>Un</th><th style='border:1px solid #bbb;padding:5px;width:14%'>V. unit</th><th style='border:1px solid #bbb;padding:5px;width:14%'>Subtotal</th></tr></thead><tbody>" + rows + "<tr style='background:#eef4fa;font-weight:bold'><td colspan='5' style='border:1px solid #bbb;padding:6px;text-align:right'>TOTAL GERAL</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(totalDoc) + "</td></tr></tbody></table>"
         + (c.obs ? "<p style='margin-top:10px;font-size:11px'><b>Obs.:</b> " + Util.esc(c.obs) + "</p>" : "")
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:30px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Solicitante</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Aprovação</div></div>";
@@ -6444,16 +6795,23 @@
       var corpo =
         '<div class="row">' + campo("Nome / Razão social *", inp("g-nome", f.nome)) + campo("Categoria", sel("g-cat", opts(P.fornCategoria, f.categoria || "material"))) + "</div>" +
         '<div class="row">' + campo("Tipo", sel("g-tipo", opts(P.clienteTipo, f.tipo || "PJ"))) + campo("CPF / CNPJ", inp("g-doc", f.doc)) + campo("Inscr. Estadual", inp("g-ie", f.ie)) + "</div>" +
-        '<div class="row">' + campo("Telefone *", inp("g-tel", f.telefone, "(34) 90000-0000")) + campo("E-mail", inp("g-email", f.email, "", "email")) + campo("Contato (pessoa)", inp("g-contato", f.contato)) + "</div>" +
-        campo("Endereço", inp("g-end", f.endereco)) +
+        '<div class="row">' + campo("Telefone *", inp("g-tel", f.telefone, "(34) 90000-0000")) + campo("WhatsApp", inp("g-zap", f.whatsapp, "só se for diferente do telefone")) + campo("E-mail", inp("g-email", f.email, "", "email")) + "</div>" +
+        '<div class="row">' + campo("Contato (pessoa)", inp("g-contato", f.contato)) + campo("Endereço", inp("g-end", f.endereco)) + "</div>" +
         '<div class="row"><div class="field" style="flex:2"><label>Cidade</label>' + inp("g-cidade", f.cidade) + "</div>" + campo("UF", sel("g-uf", optsUf(f.uf))) + campo("Status", sel("g-status", opts(P.fornStatus, f.status || "ativo"))) + "</div>" +
+        /* DADOS BANCÁRIOS — não existiam. O pedido de compra saía sem dizer
+           para onde pagar, e o dado vivia em papel ou no WhatsApp de alguém. */
+        '<h4 style="margin:14px 0 6px;font-size:13px;border-top:1px solid var(--borda);padding-top:10px">Dados para pagamento</h4>' +
+        '<div class="row">' + campo("Chave PIX", inp("g-pix", f.chavePix, "CNPJ, telefone, e-mail ou aleatória")) + campo("Titular da conta", inp("g-titular", f.titular, "quem recebe, se for diferente do nome")) + campo("CPF/CNPJ do titular", inp("g-titdoc", f.titularDoc)) + "</div>" +
+        '<div class="row">' + campo("Banco", inp("g-banco", f.banco, "Ex.: 341 Itaú")) + campo("Agência", inp("g-ag", f.agencia)) + campo("Conta", inp("g-conta", f.conta)) + campo("Tipo", sel("g-tipoconta", opts([["", "—"], ["corrente", "Corrente"], ["poupanca", "Poupança"], ["pagamento", "Pagamento"]], f.tipoConta || ""))) + "</div>" +
         campo("Produtos / serviços fornecidos", '<textarea id="g-prod" rows="2">' + Util.esc(f.produtos || "") + "</textarea>") +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(f.obs || "") + "</textarea>");
       this._modalForm("fornecedores", f, "Fornecedor", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome do fornecedor.", "erro"); return false; }
         obj.categoria = v("g-cat"); obj.tipo = v("g-tipo"); obj.doc = v("g-doc"); obj.ie = v("g-ie");
-        obj.telefone = v("g-tel"); obj.email = v("g-email"); obj.contato = v("g-contato"); obj.endereco = v("g-end");
+        obj.telefone = v("g-tel"); obj.whatsapp = v("g-zap"); obj.email = v("g-email"); obj.contato = v("g-contato"); obj.endereco = v("g-end");
         obj.cidade = v("g-cidade"); obj.uf = v("g-uf"); obj.status = v("g-status"); obj.produtos = v("g-prod"); obj.obs = v("g-obs");
+        obj.chavePix = v("g-pix"); obj.titular = v("g-titular"); obj.titularDoc = v("g-titdoc");
+        obj.banco = v("g-banco"); obj.agencia = v("g-ag"); obj.conta = v("g-conta"); obj.tipoConta = v("g-tipoconta");
         return true;
       });
     },
@@ -13745,6 +14103,9 @@ renderFolha: function () {
         case "config-jornada": return this.configJornada();
         case "excluir-falta": return this.excluirFalta(id);
         case "nova-he": return this.formHoraExtra(null);
+        case "atv-nova": return this.atvNova(dataset.value);
+        case "atv-editar": return this.atvEditar(dataset.value);
+        case "atv-copiar": return this.atvCopiar(dataset.value);
         case "editar-he": return this.editarHe(id);
         case "excluir-he": return this.excluirHe(id);
         case "recibo-folha": return this.reciboFolha(id);
