@@ -1665,8 +1665,20 @@
         '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>';
       UI.modal("💾 Backup dos Orçamentos", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
       try {
-        fetch("/__backup/status").then(function (r) { return r.json(); }).then(function (j) {
+        fetch("/__backup/status").then(function (r) {
+          /* 404 aqui NÃO é "sem servidor": é servidor ANTIGO. A troca de versão
+             substitui os arquivos, mas o Node já está carregado — ele segue
+             servindo o código velho até o app ser fechado e aberto. Dizer
+             "indisponível" nesse caso manda o dono procurar defeito onde não
+             tem: o certo é dizer o que resolve. */
+          if (r.status === 404) return { __servidorAntigo: true };
+          return r.json();
+        }).then(function (j) {
           var box = UI.el("bkp-auto"); if (!box) return;
+          if (j && j.__servidorAntigo) {
+            box.innerHTML = "⚠ <b>Falta concluir a atualização.</b> O programa já foi atualizado, mas a parte que grava o backup só entra quando você <b>fecha e abre o OrçaPRO</b>. Faça isso quando puder — leva 10 segundos e o backup automático começa sozinho.";
+            return;
+          }
           if (!j || !j.ok) { box.innerHTML = "⚠ <b>Backup automático desligado</b> — o app foi aberto sem o servidor local. Exporte o backup à mão, por enquanto."; return; }
           box.innerHTML = (j.total
             ? "✅ <b>Backup automático ligado</b> — " + j.total + " cópia(s) guardadas em disco. Última: <b>"
@@ -1675,7 +1687,17 @@
             : "✅ <b>Backup automático ligado</b> — ainda sem cópia gravada (a primeira sai depois da próxima alteração).")
             + '<br><span class="mono" style="font-size:11px">' + Util.esc(j.pasta || "") + "</span>";
         }).catch(function () {
-          var box = UI.el("bkp-auto"); if (box) box.innerHTML = "⚠ Não consegui falar com o servidor local — backup automático indisponível agora.";
+          var box = UI.el("bkp-auto"); if (!box) return;
+          /* sem resposta nenhuma: ou é o app do celular/navegador (não existe
+             servidor local), ou o servidor caiu. As duas coisas se resolvem de
+             jeitos diferentes — perguntar ao /__update/check separa uma da outra. */
+          fetch("/__update/check").then(function (r2) {
+            box.innerHTML = r2.ok
+              ? "⚠ <b>Falta concluir a atualização</b> — feche e abra o OrçaPRO para o backup automático entrar no ar."
+              : "ℹ️ <b>Backup automático é do computador.</b> Aqui no navegador/celular, use o <b>Exportar backup</b> abaixo.";
+          }).catch(function () {
+            box.innerHTML = "ℹ️ <b>Backup automático é do computador.</b> Você abriu o app pelo navegador/celular — aqui, use o <b>Exportar backup</b> abaixo.";
+          });
         });
       } catch (e) {}
     },
