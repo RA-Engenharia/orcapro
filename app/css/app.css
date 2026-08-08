@@ -479,6 +479,32 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
    impresso do sistema sairia com os campos empilhados. Ja custou um conserto. */
 @media screen and (max-width: 640px) { .row { grid-template-columns: 1fr; } }
 
+/* ⚠ O MENU DA CONTA SAÍA PELA BORDA ESQUERDA NO CELULAR.
+ * `.conta-drop` ancora em `right: 0` do CHIP (`.topbar-conta`, position:relative).
+ * No desktop o chip fica na direita da tela e os 252px do menu cabem folgados.
+ * No celular o chip desce para a segunda linha e vai para a ESQUERDA (x=67 num
+ * aparelho de 375): `right: 0` dele jogava o menu para `left: -96`, ou seja
+ * 38% dele fora da tela. "Dados da empresa", "Tabelas de preço" e "Nuvem" —
+ * exatamente os itens que o cliente citou — ficavam cortados na borda.
+ *
+ * Conserto: o menu passa a pendurar pela ESQUERDA do chip. Quando a barra
+ * quebra, o chip está encostado na borda esquerda, então o menu abre para
+ * dentro da tela. Quando não quebra, o chip está na direita e o menu, com
+ * seus 252px contra os 230 de largura máxima do chip, ultrapassa a borda
+ * dele em no máximo 22px — que é menos que o respiro da barra.
+ *
+ * ⚠ E SEM MEDIA QUERY, DE PROPÓSITO. Minha primeira tentativa travou isto em
+ * `max-width: 640px` e, medindo em 790px, o menu AINDA saía em `left: -10`
+ * com os 10 itens cortados: a barra passa a duas linhas muito antes dos 640,
+ * e o ponto exato depende do nome da empresa e dos botões que estiverem no
+ * topo. Breakpoint aqui é chute que volta a quebrar quando o conteúdo muda.
+ *
+ * ⚠ E NÃO ancorei na `.topbar` inteira (tirando o `relative` do chip), que
+ * também resolvia o vazamento: em 790px o menu ia parar em 516–790 enquanto
+ * o botão ficava em 12–242, do outro lado da tela. Menu solto do botão que o
+ * abriu é conserto que troca um defeito por outro. */
+.conta-drop { right: auto; left: 0; max-width: calc(100vw - 20px); min-width: 0; transform-origin: top left; }
+
 /* ---------- Busca SINAPI ---------- */
 .sinapi-result { border: 1px solid var(--linha); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
 .sinapi-result:hover { border-color: var(--aco); background: var(--surface-2); }
