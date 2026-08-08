@@ -13,10 +13,15 @@
  *
  * REGRAS QUE VIERAM DO SANGUE, e por que cada uma existe:
  *
- * 1. QUEM PROPÕE NÃO APROVA. Sem identidade estável na sessão essa regra não
- *    vale — e "não valer" é pior que não existir, porque a tela mostra o
- *    controle e o controle não controla nada. A sessão do OrçaPRO identifica
- *    por `usuarioId` (sub-usuário) ou `email` (dono da conta). NÃO existe `id`.
+ * 1. QUEM PROPÕE NÃO APROVA — POR PADRÃO. Sem identidade estável na sessão essa
+ *    regra não vale — e "não valer" é pior que não existir, porque a tela
+ *    mostra o controle e o controle não controla nada. A sessão do OrçaPRO
+ *    identifica por `usuarioId` (sub-usuário) ou `email` (dono da conta). NÃO
+ *    existe `id`.
+ *    EXCEÇÃO por configuração (pedido do cliente, 08/2026): o ADMIN e o usuário
+ *    marcado com `autoAprovar` aprovam a própria criação — e a empresa pode
+ *    forçar quatro olhos de volta com `exigirOutroAprovador`. Ver
+ *    Aprovacao.podeAutoAprovar.
  * 2. RECUSAR SEM MOTIVO É DEVOLVER TRABALHO SEM INFORMAÇÃO. O motivo é
  *    obrigatório e viaja inteiro até quem redigiu.
  * 3. CONTA DE UM HOMEM SÓ NÃO PODE TRAVAR. Se não há um segundo aprovador
@@ -126,6 +131,20 @@
     return outros.length === 0;
   };
 
+  /* Quem pode aprovar o PRÓPRIO documento. Fora daqui para não repetir a
+     regra em três lugares (aprovar, rejeitar, revisar). Ver Aprovacao.podeAcao. */
+  Aprovacao.podeAutoAprovar = function (u, c) {
+    u = u || {}; c = c || {};
+    /* regra 3 vence tudo: a conta de um aprovador só NÃO pode travar, senão o
+       documento morre em "aguardando" para sempre — nem a trava a barra. */
+    if (c.semOutroAprovador === true) return true;
+    /* a empresa pode FORÇAR quatro olhos de volta para todo mundo, inclusive
+       admin — a mesma trava opcional do RDO (`exigirOutroAprovador`). */
+    if (c.exigirOutroAprovador === true) return false;
+    return (u.papel === "admin")     // autoridade da conta
+        || (u.autoAprovar === true); // usuário MARCADO para isso
+  };
+
   Aprovacao.podeAcao = function (acao, usuario, doc, ctx) {
     var u = usuario || {}, d = doc || {}, c = ctx || {};
     var eu = Aprovacao.idDoUsuario(u);
@@ -136,9 +155,13 @@
     if (acao === "reabrir") return gestor;
     if (acao === "aprovar" || acao === "rejeitar" || acao === "revisar") {
       if (!gestor) return false;
-      /* a exceção declarada da regra 3: o único aprovador da conta responde
-         pelo próprio documento, e a trilha registra que foi assim */
-      if (autor) return c.semOutroAprovador === true;
+      /* AUTOAPROVAÇÃO (pedido do cliente, 08/2026). Quatro olhos continua o
+         PADRÃO do sub-usuário comum: quem preenche não aprova o próprio. A
+         exceção, que antes valia só para a conta de um aprovador só, agora
+         alcança o ADMIN e o usuário MARCADO com `autoAprovar` — e some se a
+         empresa exigir um segundo aprovador. A trilha grava
+         `aprovadoPeloProprioAutor`: exceção declarada, não furo. */
+      if (autor) return Aprovacao.podeAutoAprovar(u, c);
       return true;
     }
     /* editar: enquanto não estiver aprovado. Documento aprovado que muda por

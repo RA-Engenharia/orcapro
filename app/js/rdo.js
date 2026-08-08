@@ -577,8 +577,14 @@
        * trabalha com contrato grande pode ligar `exigirOutroAprovador` na
        * Empresa e voltar aos quatro olhos — a trava continua no código, só
        * deixou de ser obrigatória. */
+      /* regra 3 vence a trava: conta de um aprovador só não pode travar o
+         diário para sempre, nem com `exigirOutroAprovador` ligado. */
+      if (c.semOutroAprovador === true) return true;
       if (c.exigirOutroAprovador === true) return false;
-      return gestor || c.semOutroAprovador === true;
+      /* `autoAprovar` entrou junto com a autoaprovação do motor compartilhado
+         (js/aprovacao.js, 08/2026): sub-usuário MARCADO homologa o próprio
+         diário, do mesmo jeito que o admin. */
+      return gestor || u.autoAprovar === true;
     }
     if (acao === "revisar")  return aprovador;
     /* ⚠ publicar/despublicar mexem no que o CLIENTE enxerga — voltaram a exigir

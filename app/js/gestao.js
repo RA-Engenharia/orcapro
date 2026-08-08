@@ -5758,7 +5758,7 @@
         '<div class="row">' +
         campo("Cor do uniforme", '<input id="g-av-c1" type="color" value="' + (av.c1 || "#222b34") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
         campo("Cor do capacete", '<input id="g-av-c2" type="color" value="' + (av.c2 || "#f59e0b") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
-        campo("Altura", sel("g-av-esc", opts([["normal", "Normal"], ["alto", "Alto"], ["baixo", "Baixo"]], av.esc || "normal"))) + "</div>" +
+        campo("Altura do avatar", sel("g-av-esc", opts([["normal", "Normal"], ["alto", "Alto"], ["baixo", "Baixo"]], av.esc || "normal"))) + "</div>" +
         '<p class="muted" style="font-size:12px;margin:6px 0 0">💡 Use o modo <b>✈️ Voo</b> (WASD + mouse) pra andar pelo modelo. Precisa de internet; a sala fecha sozinha quando todos saem.</p>';
       UI.modal("👥 Reunião no modelo", corpo, [
         { texto: "🚀 Entrar na reunião", classe: "primary", onClick: function () {
@@ -6682,7 +6682,7 @@
       var corpo =
         campo("Tarefa *", inp("g-titulo", t.titulo, "Ex.: Comprar cimento para a laje")) +
         '<div class="row">' + campo("Responsável", sel("g-resp", optsRec(cols, "nome", t.responsavelId, "— ninguém —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", t.obraId, "— nenhuma —"))) + "</div>" +
-        '<div class="row">' + campo("Prazo", inp("g-prazo", t.prazo, "", "date")) + campo("Prioridade", sel("g-prio", opts(P.tarefaPrioridade, t.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.tarefaStatus, t.status || "afazer"))) + "</div>" +
+        '<div class="row">' + campo("Prazo de conclusão", inp("g-prazo", t.prazo, "", "date")) + campo("Prioridade", sel("g-prio", opts(P.tarefaPrioridade, t.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.tarefaStatus, t.status || "afazer"))) + "</div>" +
         campo("Detalhes", '<textarea id="g-desc" rows="3">' + Util.esc(t.descricao || "") + "</textarea>");
       this._modalForm("tarefas", t, "Tarefa", corpo, function (obj) {
         obj.titulo = v("g-titulo"); if (!obj.titulo) { UI.toast("Informe a tarefa.", "erro"); return false; }
@@ -6883,7 +6883,7 @@
       i = i || {}; var obras = lista("obras");
       var corpo =
         '<div class="row">' + campo("Nome do item *", inp("g-nome", i.nome, "Ex.: Cimento CP-II 50kg")) + campo("Categoria", sel("g-cat", opts(P.estoqueCategoria, i.categoria || "outros"))) + "</div>" +
-        '<div class="row">' + campo("Unidade", inp("g-un", i.unidade, "sc, m², kg, un")) + campo("Saldo atual", inp("g-saldo", i.saldo)) + campo("Estoque mínimo", inp("g-min", i.estoqueMin)) + "</div>" +
+        '<div class="row">' + campo("Unidade", inp("g-un", i.unidade, "sc, m², kg, un")) + campo("Saldo atual (na unidade acima)", inp("g-saldo", i.saldo)) + campo("Estoque mínimo (na unidade acima)", inp("g-min", i.estoqueMin)) + "</div>" +
         '<div class="row">' + campo("Custo unitário (R$)", inp("g-custo", i.custoUnit)) + campo("Obra", sel("g-obra", optsRec(obras, "nome", i.obraId, "— Central —"))) + campo("Localização", inp("g-loc", i.localizacao, "Ex.: Galpão A")) + "</div>" +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(i.obs || "") + "</textarea>") +
         '<p class="muted">Use <b>+ Entrada</b> / <b>− Saída</b> na lista para movimentar o saldo (registra a movimentação).</p>';
@@ -6973,7 +6973,8 @@
         /* numa conta de UM usuário não existe segundo aprovador — sem este
            contexto o botão Aprovar some e o diário morre em "Aguardando
            aprovação", que foi o que a minha correção anterior provocou */
-        var ctxAp = { semOutroAprovador: RDO.semOutroAprovador ? RDO.semOutroAprovador(eu, lista("equipe")) : false };
+        var ctxAp = { semOutroAprovador: RDO.semOutroAprovador ? RDO.semOutroAprovador(eu, lista("equipe")) : false,
+          exigirOutroAprovador: self._exigeOutroAprovador() };
         var acao = "";
         if (typeof RDO !== "undefined") {
           /* `finalizado_legado` entra aqui: é o diário antigo de obra SEM
@@ -7774,7 +7775,7 @@
             '<b style="font-size:12px">Cadastrar serviço no diário</b>' +
             '<button type="button" id="g-nv-fechar" class="btn sm ghost" style="padding:1px 8px">×</button></div>' +
           campo("Descrição *", inp("nv-desc", "", "O que foi executado")) +
-          '<div class="row">' + campo("Unidade", inp("nv-un", "", "m², m³, un…")) + campo("Quantidade prevista", inp("nv-qp", "")) + "</div>" +
+          '<div class="row">' + campo("Unidade", inp("nv-un", "", "m², m³, un…")) + campo("Quantidade prevista (na unidade acima)", inp("nv-qp", "")) + "</div>" +
           '<button type="button" id="g-nv-incluir" class="btn sm" style="background:#16a34a;color:#fff">Incluir</button></div>';
         document.getElementById("g-nv-fechar").onclick = function () { pn2.innerHTML = ""; };
         document.getElementById("g-nv-incluir").onclick = function () {
@@ -9496,7 +9497,7 @@
       var corpo =
         '<div class="row">' + campo("Competência (mês)", inp("g-comp", comp, "", "month")) + campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", p.colaboradorId, "— selecionar —"))) + "</div>" +
         '<div class="row">' + campo("Obra", sel("g-obra", optsRec(obras, "nome", p.obraId, "— nenhuma —"))) + campo("Dias trabalhados", inp("g-dias", p.dias)) + campo("Faltas", inp("g-faltas", p.faltas)) + "</div>" +
-        '<div class="row">' + campo("Horas extras", inp("g-he", p.horasExtras)) + campo("Valor a lançar (R$) *", inp("g-valor", p.valor)) + campo("Status", sel("g-status", opts(P.pontoStatus, p.status || "aberto"))) + "</div>" +
+        '<div class="row">' + campo("Horas extras (h)", inp("g-he", p.horasExtras, "total do mês")) + campo("Valor a lançar (R$) *", inp("g-valor", p.valor)) + campo("Status", sel("g-status", opts(P.pontoStatus, p.status || "aberto"))) + "</div>" +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(p.obs || "") + "</textarea>") +
         '<p class="muted">A remuneração base fica no cadastro do Colaborador. Informe os dias e o valor do período; ao <b>Lançar folha</b>, vira uma despesa de mão de obra no Financeiro (vinculada à obra).</p>';
       this._modalForm("ponto", p, "Registro de ponto", corpo, function (obj) {
@@ -9682,7 +9683,7 @@ renderRequisicoes: function () {
           '<div style="font-weight:800;font-size:12px;margin-bottom:6px">Fornecedor ' + (f + 1) + "</div>" +
           sel("ctf-id-" + f, '<option value="">— avulso —</option>' + forns.map(function (x) { return '<option value="' + x.id + '"' + (fr.fornecedorId === x.id ? " selected" : "") + ">" + Util.esc(x.nome) + "</option>"; }).join("")) +
           inp("ctf-nome-" + f, fr.nome || "", "ou digite o nome") +
-          '<div class="row" style="gap:6px;margin-top:6px">' + inp("ctf-frete-" + f, fr.frete != null ? fr.frete : "", "Frete R$", "number") + inp("ctf-prazo-" + f, fr.prazoDias != null ? fr.prazoDias : "", "Prazo (dias)", "number") + "</div>" +
+          '<div class="row" style="gap:6px;margin-top:6px">' + inp("ctf-frete-" + f, fr.frete != null ? fr.frete : "", "Frete R$", "number") + inp("ctf-prazo-" + f, fr.prazoDias != null ? fr.prazoDias : "", "Prazo de entrega (dias)", "number") + "</div>" +
           inp("ctf-cond-" + f, fr.condPgto || "", "Condição (ex.: 28 dias)") + "</div>";
       }
       var linhas = "";
@@ -10162,7 +10163,8 @@ renderRequisicoes: function () {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return this._semPermissao("usuarios");
       var us = lista("equipe").slice().sort(function (a, b) { return (a.nome || "").localeCompare(b.nome || ""); });
       var ativos = us.filter(function (u) { return u.ativo !== false; }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">' + us.length + " de " + LIMITE_USUARIOS + " usuários · " + ativos + " ativos</span>";
+      var extra = '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">⚙ Aprovações</button>'
+        + '<span class="muted" style="margin-right:12px;align-self:center">' + us.length + " de " + LIMITE_USUARIOS + " usuários · " + ativos + " ativos</span>";
       var podeAdd = us.length < LIMITE_USUARIOS;
       var html = this._head(svg("usuarios") + "Usuários &amp; Permissões", podeAdd ? "novo-usuario" : "", podeAdd ? "Novo usuário" : "", extra);
       html += '<p class="muted" style="margin:-4px 0 14px">Você (dono da conta) é o <b>administrador</b>. Cadastre até <b>' + LIMITE_USUARIOS + '</b> usuários e libere os módulos por <b>departamento</b> — cada um entra com o próprio login e senha e vê só o que foi liberado.</p>';
@@ -10235,6 +10237,30 @@ renderRequisicoes: function () {
       };
     },
     novoUsuario: function () { this.formUsuario(null); },
+    /* Política de aprovação da empresa. A autoaprovação (admin e usuário
+       marcado aprovam a própria criação) é o padrão pedido pelo cliente;
+       aqui o admin pode voltar aos quatro olhos para todo mundo. */
+    configAprovacao: function () {
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador muda a política de aprovação.", "erro"); return; }
+      var exige = this._exigeOutroAprovador();
+      var corpo = '<p class="muted" style="margin:0 0 12px">Vale para medições, pedidos de compra, requisições, folha, medição de produção e diário de obra.</p>'
+        + '<label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;border:1px solid var(--borda);border-radius:10px;padding:12px">'
+        + '<input type="checkbox" id="g-exige" style="margin-top:3px"' + (exige ? " checked" : "") + ">"
+        + '<span><b>Exigir sempre um segundo aprovador (quatro olhos)</b><br><span class="muted" style="font-size:12.5px">'
+        + 'Ligado: <b>ninguém</b> aprova a própria criação — nem o administrador, nem quem estiver marcado. Todo documento precisa de outra pessoa para aprovar.<br>'
+        + 'Desligado (padrão): o <b>administrador</b> e os usuários <b>marcados com "aprovar a própria criação"</b> homologam o que eles mesmos lançaram. A autoaprovação fica registrada na trilha.</span></span></label>'
+        + '<p class="muted" style="font-size:12px;margin:10px 0 0">Quem pode aprovar cada um marca no cadastro do usuário (Aprovações). Numa conta de uma pessoa só, essa pessoa sempre aprova — senão o documento travaria para sempre.</p>';
+      UI.modal("⚙ Política de aprovação", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var p = Store.lerPrefs(eid()) || {};
+          p.exigirOutroAprovador = !!(document.getElementById("g-exige") && document.getElementById("g-exige").checked);
+          Store.salvarPrefs(eid(), p); UI.fecharModal();
+          UI.toast(p.exigirOutroAprovador ? "Agora todo documento exige um segundo aprovador." : "Administrador e usuários marcados podem aprovar a própria criação.", "ok");
+          App.render();
+        } }
+      ]);
+    },
     formUsuario: function (u) {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador gerencia usuários.", "erro"); return; }
       u = u || {}; var self = this, ehNovo = !u.id;
@@ -10252,7 +10278,13 @@ renderRequisicoes: function () {
         '<div class="row">' + campo(ehNovo ? "Senha provisória (branco = gerar automática)" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "deixe em branco p/ gerar" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
         '<div class="row">' + campo("WhatsApp do usuário", inp("g-ufone", u.fone, "(34) 90000-0000")) + campo("E-mail do usuário", inp("g-uemail", u.email, "usuario@empresa.com")) + "</div>" +
         campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">↺ preset do departamento</button>', checkboxes) +
-        campo("Aprovações", '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>');
+        campo("Aprovações",
+          '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>'
+          /* autoaprovação: por padrão vale quatro olhos (quem preenche não
+             aprova o próprio). Marque para este usuário dispensar o segundo
+             aprovador na PRÓPRIA criação. Só faz efeito junto com "Pode
+             aprovar" acima — sem poder de aprovação, não há o que dispensar. */
+          + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-autoaprovar"' + (u.autoAprovar ? " checked" : "") + ' style="margin-top:3px"> <span>Pode <b>aprovar a própria criação</b> (dispensa o segundo aprovador)<br><span class="muted" style="font-size:12px">O administrador já pode por padrão. A ação fica registrada na trilha como autoaprovação.</span></span></label>');
       this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome.", "erro"); return false; }
         obj.login = String(v("g-login") || "").trim().toLowerCase(); if (obj.login.length < 3) { UI.toast("Login muito curto (mín. 3).", "erro"); return false; }
@@ -10274,6 +10306,7 @@ renderRequisicoes: function () {
         Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) { if (c.checked && c.getAttribute("data-mod") !== "dashboard") mods.push(c.getAttribute("data-mod")); });
         obj.modulos = mods;
         obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
+        obj.autoAprovar = !!(document.getElementById("g-autoaprovar") && document.getElementById("g-autoaprovar").checked);
         senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
         return true;
       }, ehNovo ? function (obj) { self._usuarioCriado(obj, senhaGerada); } : null);
@@ -12661,7 +12694,7 @@ renderFolha: function () {
         campo("Tipo", sel("g-fs-tipo", opts([["diaria", "Diária (dia a dia)"], ["empreita", "Empreita"], ["producao", "Produtividade medida"], ["frete", "Frete"], ["reembolso", "Reembolso"], ["fornecedor", "Fornecedor"], ["outro", "Outro"]], l.tipo || "diaria"))) + "</div>" +
         '<div class="row">' + campo("Nome no lançamento *", inp("g-fs-nome", l.nome, "Ex.: Rosivaldo Pedreiro")) + campo("Favorecido (quem recebe)", inp("g-fs-fav", l.favorecido)) + campo("Chave PIX", inp("g-fs-pix", l.chavePix)) + "</div>" +
         '<div class="row">' + diasIn + "</div>" +
-        '<div class="row">' + campo("Hora extra (R$)", inp("g-fs-he", l.he)) + campo("Valor fechado (empreita/frete/produção)", inp("g-fs-valor", l.valor)) + campo("Observação", inp("g-fs-obs", l.obs)) + "</div>" +
+        '<div class="row">' + campo("Hora extra (R$)", inp("g-fs-he", l.he)) + campo("Valor fechado em R$ (empreita/frete/produção)", inp("g-fs-valor", l.valor)) + campo("Observação", inp("g-fs-obs", l.obs)) + "</div>" +
         '<p class="muted" style="font-size:12px;margin:4px 0 0">Nos dias: digite o valor da diária (ex.: <b>166</b>) ou <b>x</b> pra falta. Escolhendo um colaborador, favorecido e PIX vêm do cadastro.<br>O total da linha é <b>diárias + hora extra + valor fechado</b>: a mesma pessoa pode ter dias trabalhados e uma produção fechada na mesma semana.</p>' +
         /* linha importada em que a planilha mandou: quem abre precisa saber por que
            os dias na tela não somam com o total — senão "corrige" e paga errado */
@@ -12956,8 +12989,19 @@ renderFolha: function () {
     /* O contexto que o motor não conhece: existe outro aprovador nesta conta? */
     _aprovCtx: function () {
       var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
-      return { semOutroAprovador: (typeof Aprovacao !== "undefined" && Aprovacao.semOutroAprovador)
-        ? Aprovacao.semOutroAprovador(eu, lista("equipe")) : false };
+      return {
+        semOutroAprovador: (typeof Aprovacao !== "undefined" && Aprovacao.semOutroAprovador)
+          ? Aprovacao.semOutroAprovador(eu, lista("equipe")) : false,
+        /* trava opcional: com ela ligada, NEM admin nem usuário marcado aprova
+           a própria criação — voltam os quatro olhos para todo mundo. */
+        exigirOutroAprovador: this._exigeOutroAprovador()
+      };
+    },
+    /* Config da empresa (⚙ Aprovações). Padrão: admin e usuário marcado podem
+       aprovar a própria criação. Ligue para exigir sempre um segundo aprovador. */
+    _exigeOutroAprovador: function () {
+      try { var p = Store.lerPrefs ? Store.lerPrefs(eid()) : null; return !!(p && p.exigirOutroAprovador); }
+      catch (e) { return false; }
     },
 
     /* ⚠⚠ NÃO ESTÃO FIADOS NA TELA — e é de propósito. Leia antes de "ligar".
@@ -14084,6 +14128,7 @@ renderFolha: function () {
         case "saida-estoque": return this._movEstoque(id, "saida");
         case "novo-rdo": return this.novoRdo();
         case "novo-usuario": return this.novoUsuario();
+        case "config-aprovacao": return this.configAprovacao();
         case "config-admin": return this.configurarAdmin();
         case "acesso-movel": return this.acessoMovel(id);
         case "nova-entrega-epi": return this.novoEntregaEpi();

@@ -181,7 +181,7 @@
         for (var j = 0; j < equipe.length; j++) {
           var u = equipe[j];
           if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _trocarSenha: u.trocarSenha === true } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true } };
           }
         }
       }
@@ -277,7 +277,7 @@
       for (var i = 0; i < eq.length; i++) {
         var u = eq[i];
         if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _trocarSenha: u.trocarSenha === true } };
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true } };
         }
       }
       return { ok: false, erro: "Usuário ou senha inválidos." };
@@ -324,6 +324,7 @@
         departamento: u._departamento || "",
         modulos: u._modulos || null,  // null = admin (todos os módulos)
         aprovador: u._aprovador === true,
+        autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
         trocarSenha: u._trocarSenha === true   // 1º acesso do sub-usuário: força definir a própria senha
       };
       localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
