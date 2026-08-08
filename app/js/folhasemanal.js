@@ -60,11 +60,39 @@
     return f(ini) + " a " + f(fim) + "/" + fim.getFullYear();
   }
 
-  /* total de uma linha: diária = soma dos dias + HE; avulso = valor fixo */
+  /* Total de uma linha. UMA fonte só — quem quiser o valor da linha chama daqui.
+   *
+   * ⚠ O QUE ESTAVA ERRADO (bug de dinheiro, corrigido em 07/08/2026):
+   * a mesma pessoa pode ter, na MESMA semana, dias trabalhados (diária
+   * combinada) E um valor fechado de produção/empreita. O cálculo antigo
+   * escolhia UM dos dois e jogava o outro fora em silêncio:
+   *   - tipo "diaria"  → somava os dias e IGNORAVA o valor fechado;
+   *   - outros tipos   → pegava o valor fechado e IGNORAVA dias e hora extra.
+   * Quem preenchia os dias e o "Valor fechado" via o total sair só com as
+   * diárias. O dinheiro da produção não aparecia em lugar nenhum — nem na
+   * tela, nem na lista PIX, nem no Excel.
+   *
+   * REGRA AGORA: dias + hora extra + valor fechado, SOMADOS, para qualquer tipo.
+   * O tipo é a CATEGORIA do custo (para o relatório por tipo), não uma chave
+   * que decide qual campo conta.
+   *
+   * A ÚNICA exceção é `usarValor`: linha importada em que o total da planilha
+   * divergiu do calculado e a planilha mandou. Ali `valor` JÁ É o total
+   * fechado da linha — somar os dias de novo pagaria a semana duas vezes. */
   function totalLinha(l) {
-    if (l.tipo && l.tipo !== "diaria") return num(l.valor);
+    if (!l) return 0;
+    if (l.usarValor) return num(l.valor);
     var t = 0; DIAS.forEach(function (d) { t += num(l.dias && l.dias[d]); });
-    return t + num(l.he);
+    return t + num(l.he) + num(l.valor);
+  }
+
+  /* quanto veio de cada parte — a tela precisa disso para o total FECHAR à vista */
+  function partesLinha(l) {
+    if (!l) return { dias: 0, he: 0, fechado: 0, total: 0, planilha: false };
+    if (l.usarValor) return { dias: 0, he: 0, fechado: num(l.valor), total: num(l.valor), planilha: true };
+    var d = 0; DIAS.forEach(function (k) { d += num(l.dias && l.dias[k]); });
+    var he = num(l.he), f = num(l.valor);
+    return { dias: d, he: he, fechado: f, total: d + he + f, planilha: false };
   }
 
   /* fechamento: totais por obra + geral */
@@ -276,8 +304,11 @@
     return { obras: obras, lancamentos: lancs, avisos: avisos };
   }
 
-  /* total considerando ajuste manual (linhas onde a planilha mandou) */
-  function totalFinal(l) { return l.usarValor ? num(l.valor) : totalLinha(l); }
+  /* Mantido pelo nome porque meia dúzia de telas já chamam assim. O `usarValor`
+     hoje é tratado DENTRO do totalLinha — havia duas contas diferentes para a
+     mesma linha (o fechamento interno usava totalLinha e ignorava a planilha;
+     o exportado usava totalFinal e respeitava), e elas divergiam. */
+  function totalFinal(l) { return totalLinha(l); }
 
   var FolhaSemanal = {
     DIAS: DIAS, ROT: ROT,
@@ -285,9 +316,12 @@
     chaveSemana: chaveSemana, periodoDaChave: periodoDaChave, semanaVizinha: semanaVizinha,
     foneDaChave: foneDaChave, conflitos: conflitos, resumoMensal: resumoMensal,
     ROT_TIPO: ROT_TIPO, porTipo: porTipo, semanasDoMes: semanasDoMes, medicao: medicao,
-    totalLinha: totalLinha, totalFinal: totalFinal,
-    fechamento: function (lancs) { var f = fechamento(lancs); var t2 = 0, po = {}; (lancs || []).forEach(function (l) { var k = l.obraId || l.obra || "—", v = totalFinal(l); if (!po[k]) po[k] = { total: 0, linhas: [] }; po[k].total += v; po[k].linhas.push(l); t2 += v; }); return { porObra: po, total: t2 }; },
-    listaPix: function (lancs) { var out = listaPix((lancs || []).map(function (l) { var c = {}; for (var k in l) c[k] = l[k]; if (l.usarValor) { c.tipo = "outro"; c.valor = l.valor; } return c; })); return out; },
+    totalLinha: totalLinha, totalFinal: totalFinal, partesLinha: partesLinha,
+    /* Eram dois embrulhos que refaziam a conta por fora porque o totalLinha
+       antigo não sabia de `usarValor`. Agora sabe, então quem soma é ele —
+       e a lista PIX parou de precisar fingir que a linha era de outro tipo. */
+    fechamento: fechamento,
+    listaPix: listaPix,
     parseOperario: parseOperario, parsePlanilha: parsePlanilha
   };
 

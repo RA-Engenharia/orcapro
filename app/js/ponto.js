@@ -46,6 +46,29 @@
       return (h < 10 ? "0" : "") + h + ":" + (i < 10 ? "0" : "") + i;
     },
 
+    /* Como o minParaHhmm, mas SEM dar a volta na meia-noite: 1470 min vira
+       "24:30", não "00:30". Existe por causa da hora extra — uma saída que
+       passa da meia-noite mostrada como 00:30 parece que a pessoa entrou de
+       madrugada, e o cartão de ponto vira prova contra a empresa. */
+    minParaHhmmExtenso: function (min) {
+      var t = Math.round(Number(min) || 0);
+      if (t < 0) t = 0;
+      var h = Math.floor(t / 60), i = t % 60;
+      return (h < 10 ? "0" : "") + h + ":" + (i < 10 ? "0" : "") + i;
+    },
+
+    /* Horas digitadas pelo usuário → minutos. Aceita "2", "2,5", "2.5" e
+       "2:30". Devolve 0 no que não for hora — nunca NaN em documento. */
+    horasParaMin: function (h) {
+      if (h == null || h === "") return 0;
+      if (typeof h === "number") return isFinite(h) ? Math.round(h * 60) : 0;
+      var s = String(h).trim().replace(",", ".");
+      var m = /^(\d{1,2}):([0-5]\d)$/.exec(s);
+      if (m) return Number(m[1]) * 60 + Number(m[2]);
+      var n = parseFloat(s);
+      return isFinite(n) && n > 0 ? Math.round(n * 60) : 0;
+    },
+
     /* Semente estável: mesma chave → mesmo número. É o hash djb2, que basta
        aqui — não queremos criptografia, queremos repetibilidade. */
     semente: function (chave) {
@@ -89,7 +112,19 @@
       if (e0 == null || a0 == null || r0 == null || s0 == null) return {
         entrada: j.entrada || "", almoco: j.almoco || "", retorno: j.retorno || "", saida: j.saida || ""
       };
-      if (o.variar === false) return { entrada: j.entrada, almoco: j.almoco, retorno: j.retorno, saida: j.saida };
+      /* HORA EXTRA DO DIA: minutos que ESTICAM a saída. Entra depois do
+         fechamento da jornada nominal, de propósito — a variação de minutos
+         existe para NÃO criar hora extra por acidente, então a extra tem que
+         vir de um lançamento com data, nunca do sorteio. */
+      var extra = Math.max(0, Math.round(Number(o.extraMin) || 0));
+
+      if (o.variar === false) {
+        return {
+          entrada: j.entrada, almoco: j.almoco, retorno: j.retorno,
+          saida: extra ? this.minParaHhmmExtenso(s0 + extra) : j.saida,
+          extraMin: extra
+        };
+      }
 
       /* amplitude em minutos — configurável, mas com teto: passar de ~15 min
          deixa de ser variação de ponto e vira outra jornada. */
@@ -125,11 +160,50 @@
       if (retorno < almoco + intervaloMin) retorno = almoco + intervaloMin;
       if (saida <= retorno) saida = retorno + 1;
 
+      saida += extra; // a extra estica o dia; não é absorvida pelo ajuste acima
+
       return {
         entrada: this.minParaHhmm(entrada),
         almoco: this.minParaHhmm(almoco),
         retorno: this.minParaHhmm(retorno),
-        saida: this.minParaHhmm(saida)
+        saida: this.minParaHhmmExtenso(saida),
+        extraMin: extra
+      };
+    },
+
+    /* Dia SEM jornada (sábado, domingo, feriado) em que houve hora extra.
+       O cartão precisa mostrar o horário de quem foi trabalhar naquele dia —
+       deixar a linha vazia com "Folga" e um total de HE no rodapé é um cartão
+       que se contradiz. Aqui a jornada não é a nominal: são só as horas extras,
+       começando no horário de entrada cadastrado.
+       Acima de 6 horas entra 1 hora de intervalo (CLT art. 71). */
+    batidasExtraAvulsa: function (jornada, colaboradorId, data, extraMin, opcoes) {
+      var j = jornada || {}, o = opcoes || {};
+      var extra = Math.max(0, Math.round(Number(extraMin) || 0));
+      if (!extra) return null;
+      var e0 = this.hhmmParaMin(j.entrada);
+      if (e0 == null) e0 = 7 * 60;
+      var entrada = e0;
+      if (o.variar !== false) {
+        var sem = this.semente(String(colaboradorId || "") + "|" + String(data || "") + "|extra");
+        var amp = Math.max(1, Math.min(15, Math.round(Number(o.amplitude) || 7)));
+        entrada = e0 + this._desvio(sem, 1, -amp, Math.ceil(amp / 2));
+      }
+      if (extra <= 360) {
+        return {
+          entrada: this.minParaHhmm(entrada), almoco: "", retorno: "",
+          saida: this.minParaHhmmExtenso(entrada + extra), extraMin: extra, avulsa: true
+        };
+      }
+      var metade = Math.round(extra / 2);
+      var almoco = entrada + metade;
+      var retorno = almoco + 60;
+      return {
+        entrada: this.minParaHhmm(entrada),
+        almoco: this.minParaHhmm(almoco),
+        retorno: this.minParaHhmm(retorno),
+        saida: this.minParaHhmmExtenso(retorno + (extra - metade)),
+        extraMin: extra, avulsa: true
       };
     },
 

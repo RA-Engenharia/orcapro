@@ -45,6 +45,14 @@
     "composicoes_proprias",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
+    /* tabela de preços unitários da obra (descrição, unidade, R$/unidade). É o
+     * que permite medir obra SEM valor global fechado — obra por administração,
+     * série de preços. TEM obraId, então entra na cascata da obra. */
+    "atividades",
+    /* hora extra de um DIA. Fica de fora da cascata da obra de propósito, pelo
+     * mesmo motivo das faltas: é jornada de PESSOA. Apagar uma obra não pode
+     * apagar o cartão de ponto de ninguém. */
+    "horas_extras",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"

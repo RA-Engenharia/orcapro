@@ -1203,8 +1203,15 @@
       ["financeiro", "lançamento(s) financeiro(s)"],
       ["centrocusto", "registro(s) de centro de custo"],
       /* níveis são do PROJETO daquela obra: o Térreo da obra A não é o da B */
-      ["bim_niveis", "nível(is) do projeto"]
+      ["bim_niveis", "nível(is) do projeto"],
+      /* a tabela de preços unitários é combinada POR OBRA (o m² de reboco da
+         obra A não é o da B). Sai junto; para reaproveitar em outra obra existe
+         o "copiar de outra obra", que gera cópias próprias — nunca referência. */
+      ["atividades", "atividade(s) da tabela de preços"]
     ],
+    /* `horas_extras` NÃO entra na cascata, pelo mesmo motivo de `faltas`: é
+       jornada de PESSOA, não da obra. Apagar uma obra não pode furar o cartão
+       de ponto de quem trabalhou nela. */
     /* fs_pagamentos ficou de FORA de propósito: o pagamento é do FAVORECIDO na semana e
      * pode cobrir várias obras (campo `obras: []`, não `obraId`) — levá-lo junto apagaria
      * o comprovante do pagamento das outras obras. Os lançamentos da obra saem; o
@@ -8861,7 +8868,10 @@
       var faltas = lista("faltas").filter(function (f) { return String(f.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
       var ativos = colabs.filter(function (c) { return c.status === "ativo"; }).length;
       var inj = faltas.filter(function (f) { return f.motivo === "injustificada"; }).length;
-      var extra = '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">📋 Lançar em lote</button>'
+      var hes = lista("horas_extras").filter(function (h) { return String(h.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
+      var minHE = hes.reduce(function (s, h) { return s + (typeof Ponto !== "undefined" ? Ponto.horasParaMin(h.horas) : 0); }, 0);
+      var extra = '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
+        + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">📋 Lançar em lote</button>'
         + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">🖨 Espelho de ponto</button>'
         + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">⚙ Jornada</button>';
       var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "nova-falta", "Registrar falta", extra);
@@ -8876,6 +8886,31 @@
           var col = colabs.filter(function (c) { return c.id === f.colaboradorId; })[0];
           var cor = f.motivo === "injustificada" ? "#dc2626" : "#64748b";
           html += "<tr><td>" + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(col ? col.nome : (f.colaboradorNome || "—")) + '</b></td><td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + rot(P.faltaMotivo, f.motivo) + '</span></td><td class="num"><button class="btn sm" data-gacao="excluir-falta" data-id="' + f.id + '" style="color:#dc2626">✕</button></td></tr>';
+        });
+        html += "</tbody></table>";
+      }
+      /* Horas extras do mês, dia a dia. É o que alimenta o espelho de ponto:
+         estica a saída do dia útil e, em sábado/domingo/feriado, gera as
+         batidas de quem foi trabalhar. Sem valor em R$ de propósito —
+         aqui é controle de jornada, o pagamento é lançado à parte. */
+      html += '<h3 style="margin:20px 0 8px;font-size:15px">Horas extras de ' + mesBR
+        + (minHE ? ' <span class="muted" style="font-size:13px;font-weight:normal">— total ' + (typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(minHE) : "") + " em " + hes.length + " lançamento(s)</span>" : "") + "</h3>";
+      if (!hes.length) html += vazioBox("Nenhuma hora extra lançada neste mês", "nova-he", "Lançar hora extra");
+      else {
+        html += '<table class="tbl"><thead><tr><th>Data</th><th>Colaborador</th><th class="num">Horas</th><th>Obra</th><th>Motivo</th><th></th></tr></thead><tbody>';
+        hes.forEach(function (h) {
+          var col = colabs.filter(function (c) { return c.id === h.colaboradorId; })[0];
+          var ob = h.obraId ? obras.filter(function (o) { return o.id === h.obraId; })[0] : null;
+          var dt = h.data ? new Date(h.data + "T12:00:00") : null;
+          var dsem = dt ? ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"][dt.getDay()] : "";
+          var fds = dt && (dt.getDay() === 0 || dt.getDay() === 6);
+          html += "<tr><td>" + Util.esc(h.data ? h.data.split("-").reverse().join("/") : "—")
+            + ' <span class="muted" style="font-size:11px' + (fds ? ";color:#b45309;font-weight:700" : "") + '">' + dsem + "</span></td>"
+            + "<td><b>" + Util.esc(col ? col.nome : "—") + "</b></td>"
+            + '<td class="num"><b>' + Util.esc(typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(Ponto.horasParaMin(h.horas)) : String(h.horas || "")) + "</b></td>"
+            + "<td>" + Util.esc(ob ? ob.nome : "—") + "</td>"
+            + '<td class="muted" style="font-size:12px">' + Util.esc(h.motivo || "") + "</td>"
+            + '<td class="num"><button class="btn sm" data-gacao="editar-he" data-id="' + h.id + '">✎</button> <button class="btn sm" data-gacao="excluir-he" data-id="' + h.id + '" style="color:#dc2626">✕</button></td></tr>';
         });
         html += "</tbody></table>";
       }
@@ -8897,6 +8932,41 @@
       if (el) el.onchange = function () { self._pontoMes = el.value || null; if (typeof App !== "undefined") App.render(); };
     },
     novoFalta: function () { this.registrarFalta(); },
+    novoHe: function () { this.formHoraExtra(null); },
+    editarHe: function (id) { this.formHoraExtra(Store.obter(eid(), "horas_extras", id)); },
+    excluirHe: function (id) {
+      if (!confirm("Excluir esta hora extra? Ela sai do cartão de ponto.")) return;
+      Store.excluir(eid(), "horas_extras", id); App.render(); UI.toast("Hora extra excluída.", "ok");
+    },
+    /* Hora extra de UM DIA. Só horas — sem R$ de propósito: isto é controle de
+       jornada e prova de cartão de ponto. O pagamento continua sendo lançado
+       onde já era (folha semanal / registro mensal), e misturar as duas coisas
+       aqui faria o mesmo número existir em dois lugares com donos diferentes. */
+    formHoraExtra: function (h) {
+      var self = this; h = h || {};
+      var colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
+      var obras = lista("obras");
+      var hoje = h.data || new Date().toISOString().slice(0, 10);
+      var corpo = '<div class="row">' + campo("Colaborador *", sel("g-he-colab", optsRec(colabs, "nome", h.colaboradorId, "— selecionar —")))
+        + campo("Data *", inp("g-he-data", hoje, "", "date"))
+        + campo("Horas *", inp("g-he-horas", h.horas, "Ex.: 2  ou  2:30")) + "</div>"
+        + '<div class="row">' + campo("Obra", sel("g-he-obra", optsRec(obras, "nome", h.obraId, "— nenhuma —")))
+        + campo("Motivo / observação", inp("g-he-motivo", h.motivo, "Ex.: concretagem da laje")) + "</div>"
+        + '<p class="muted" style="font-size:12px;margin:4px 0 0">Em <b>dia útil</b>, as horas esticam a saída daquele dia no cartão de ponto. Em <b>sábado, domingo ou dia de falta</b>, o cartão passa a mostrar as batidas de quem foi trabalhar — acima de 6 horas entra 1 hora de intervalo.<br>Aqui vão <b>só as horas</b>: o pagamento é lançado à parte, na folha.</p>';
+      this._modalForm("horas_extras", h, { novo: "Lançar hora extra", editar: "Editar hora extra", nome: "Hora extra" }, corpo, function (obj) {
+        obj.colaboradorId = v("g-he-colab"); if (!obj.colaboradorId) { UI.toast("Selecione o colaborador.", "erro"); return false; }
+        obj.data = v("g-he-data"); if (!obj.data) { UI.toast("Informe a data da hora extra.", "erro"); return false; }
+        var min = (typeof Ponto !== "undefined") ? Ponto.horasParaMin(v("g-he-horas")) : 0;
+        if (min <= 0) { UI.toast("Informe as horas (ex.: 2 ou 2:30).", "erro"); return false; }
+        /* teto de sanidade: 12h extras num dia já é jornada inteira em cima da
+           jornada. Passar disso é quase sempre erro de digitação — e um cartão
+           com saída no dia seguinte não prova nada a favor de ninguém. */
+        if (min > 12 * 60) { UI.toast("Máximo de 12 horas extras num mesmo dia. Confira o valor digitado.", "erro"); return false; }
+        obj.horas = v("g-he-horas"); obj.minutos = min;
+        obj.obraId = v("g-he-obra"); obj.motivo = v("g-he-motivo");
+        return true;
+      });
+    },
     registrarFalta: function () {
       var self = this, colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
       var hoje = new Date().toISOString().slice(0, 10);
@@ -9003,32 +9073,58 @@
       var jor = this._pontoJornada(), diasSem = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
       var ano = Util.num(mes.split("-")[0]), mm = Util.num(mes.split("-")[1]);
       var nDias = new Date(ano, mm, 0).getDate();
-      var todasFaltas = lista("faltas");
+      var todasFaltas = lista("faltas"), todasHE = lista("horas_extras");
       var paginas = colabsLista.map(function (c) {
         var faltasC = {}; todasFaltas.forEach(function (f) { if (f.colaboradorId === c.id && String(f.data || "").slice(0, 7) === mes) faltasC[f.data] = f.motivo; });
-        var linhas = "", nFaltas = 0, nInj = 0, nTrab = 0;
+        /* hora extra do dia: soma quando houver mais de um lançamento na mesma data */
+        var heC = {}, heObs = {};
+        todasHE.forEach(function (h) {
+          if (h.colaboradorId !== c.id || String(h.data || "").slice(0, 7) !== mes) return;
+          var min = (typeof Ponto !== "undefined") ? Ponto.horasParaMin(h.horas) : Math.round(Util.num(h.horas) * 60);
+          if (min <= 0) return;
+          heC[h.data] = (heC[h.data] || 0) + min;
+          if (h.motivo) heObs[h.data] = (heObs[h.data] ? heObs[h.data] + " · " : "") + String(h.motivo);
+        });
+        var linhas = "", nFaltas = 0, nInj = 0, nTrab = 0, minExtraMes = 0, nDiasExtra = 0;
         for (var d = 1; d <= nDias; d++) {
           var ds = ano + "-" + String(mm).padStart(2, "0") + "-" + String(d).padStart(2, "0");
           var dt = new Date(ds + "T12:00:00"), dow = dt.getDay(), fimDeSemana = (dow === 0 || dow === 6);
-          var falta = faltasC[ds], bg = "", obsCol = "", e = "", a = "", r = "", s = "";
-          if (falta) { bg = "#fee2e2"; obsCol = rot(P.faltaMotivo, falta); nFaltas++; if (falta === "injustificada") nInj++; }
+          var falta = faltasC[ds], extraMin = heC[ds] || 0;
+          var bg = "", obsCol = "", e = "", a = "", r = "", s = "", heCol = "";
+          if (falta && !extraMin) { bg = "#fee2e2"; obsCol = rot(P.faltaMotivo, falta); nFaltas++; if (falta === "injustificada") nInj++; }
+          else if ((fimDeSemana || falta) && extraMin) {
+            /* trabalhou em dia sem jornada (sábado, domingo, feriado) ou voltou
+               num dia marcado como falta: o cartão mostra as horas de quem foi.
+               Deixar a linha vazia e só somar no rodapé é cartão que se contradiz. */
+            var bx = (typeof Ponto !== "undefined") ? Ponto.batidasExtraAvulsa(jor, c.id, ds, extraMin, { variar: jor.variarMinutos !== false }) : null;
+            if (bx) { e = bx.entrada; a = bx.almoco; r = bx.retorno; s = bx.saida; }
+            bg = "#fef9c3";
+            obsCol = (falta ? rot(P.faltaMotivo, falta) + " · " : "") + (fimDeSemana ? (dow === 0 ? "DSR trabalhado" : "Sábado trabalhado") : "") + (heObs[ds] ? " · " + heObs[ds] : "");
+            if (falta) { nFaltas++; if (falta === "injustificada") nInj++; }
+          }
           else if (fimDeSemana) { bg = "#f3f4f6"; obsCol = dow === 0 ? "DSR — Descanso" : "Folga"; }
           else {
             /* batidas com variação de minutos (js/ponto.js). Sem o motor
                carregado, cai na jornada cravada — nunca fica sem horário. */
             var bat = (typeof Ponto !== "undefined")
-              ? Ponto.batidas(jor, c.id, ds, { variar: jor.variarMinutos !== false })
+              ? Ponto.batidas(jor, c.id, ds, { variar: jor.variarMinutos !== false, extraMin: extraMin })
               : { entrada: jor.entrada, almoco: jor.almoco, retorno: jor.retorno, saida: jor.saida };
             e = bat.entrada; a = bat.almoco; r = bat.retorno; s = bat.saida; nTrab++;
+            if (extraMin) { bg = "#fef9c3"; obsCol = heObs[ds] || "Hora extra"; }
           }
-          linhas += '<tr style="background:' + bg + '"><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + String(d).padStart(2, "0") + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + diasSem[dow] + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + e + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + a + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + r + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + s + '</td><td style="border:1px solid #999;padding:2px 4px;font-size:8.5px">' + obsCol + "</td></tr>";
+          if (extraMin) {
+            heCol = (typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(extraMin) : "";
+            minExtraMes += extraMin; nDiasExtra++;
+          }
+          linhas += '<tr style="background:' + bg + '"><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + String(d).padStart(2, "0") + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + diasSem[dow] + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + e + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + a + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + r + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + s + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + heCol + '</td><td style="border:1px solid #999;padding:2px 4px;font-size:8.5px">' + obsCol + "</td></tr>";
         }
+        var heMes = (typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(minExtraMes) : "00:00";
         return '<div style="page-break-after:always;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;max-width:760px;margin:0 auto">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:8px">'
           + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">ESPELHO DE PONTO</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
           + '<div style="display:flex;border:1px solid #999;margin-bottom:6px"><div style="flex:2;padding:4px;border-right:1px solid #999"><b>Colaborador:</b> ' + Util.esc(c.nome || "") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>Função:</b> ' + Util.esc(c.funcao || "—") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>CPF:</b> ' + Util.esc(c.cpf || "—") + '</div><div style="flex:1;padding:4px"><b>Admissão:</b> ' + (c.admissao ? c.admissao.split("-").reverse().join("/") : "—") + "</div></div>"
-          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:8%">Dia</th><th style="border:1px solid #999;padding:3px;width:8%">Sem</th><th style="border:1px solid #999;padding:3px;width:13%">Entrada</th><th style="border:1px solid #999;padding:3px;width:13%">Almoço</th><th style="border:1px solid #999;padding:3px;width:13%">Retorno</th><th style="border:1px solid #999;padding:3px;width:13%">Saída</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
-          + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + "</div></div></div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:7%">Dia</th><th style="border:1px solid #999;padding:3px;width:7%">Sem</th><th style="border:1px solid #999;padding:3px;width:12%">Entrada</th><th style="border:1px solid #999;padding:3px;width:12%">Almoço</th><th style="border:1px solid #999;padding:3px;width:12%">Retorno</th><th style="border:1px solid #999;padding:3px;width:12%">Saída</th><th style="border:1px solid #999;padding:3px;width:9%">H. extra</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
+          + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + '</div></div><div style="flex:1;padding:5px"><div style="color:#b45309;font-weight:bold">Horas extras</div><div style="font-size:15px;font-weight:bold">' + heMes + '</div><div style="font-size:8px;color:#555">' + (nDiasExtra ? "em " + nDiasExtra + " dia(s)" : "nenhum dia") + "</div></div></div>"
           + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador</div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
           + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + '</div>';
       }).join("");
@@ -11643,7 +11739,11 @@ renderFolha: function () {
         obraId: m.obraId || "", colaboradorId: m.colaboradorId || "", nome: m.nome || (col ? col.nome : ""),
         funcao: col ? col.funcao || "" : "",
         favorecido: col ? col.favorecido || "" : "", chavePix: col ? col.chavePix || "" : "",
-        tipo: "producao", valor: Producao.num(m.total), usarValor: true, dias: {}, faltas: [], he: 0,
+        /* sem `usarValor`: essa bandeira quer dizer "o total veio da planilha
+           importada e os dias não somam". Aqui não há dias — o total já é o
+           valor fechado pela conta normal. Marcar aqui dava dois significados
+           à mesma bandeira, e era por aí que o valor da produção se perdia. */
+        tipo: "producao", valor: Producao.num(m.total), dias: {}, faltas: [], he: 0,
         semana: semana,
         obs: "Produtividade medida " + this._prodPeriodo(m) + " · " + (m.linhas || []).length + " serviço(s)",
         producaoMedId: m.id
@@ -11797,17 +11897,27 @@ renderFolha: function () {
       Object.keys(fech.porObra).forEach(function (ob) {
         var g = fech.porObra[ob];
         html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:auto"><div style="padding:12px 14px 8px;display:flex;justify-content:space-between;align-items:center"><b>' + Util.esc(self._fsNomeObra(ob)) + '</b><b style="color:var(--verde)">' + Util.fmtMoeda(g.total) + "</b></div>" +
-          '<table class="tbl"><thead><tr><th>Operário / lançamento</th><th class="num">Seg</th><th class="num">Ter</th><th class="num">Qua</th><th class="num">Qui</th><th class="num">Sex</th><th class="num">Sáb</th><th class="num">Dom</th><th class="num">H.E.</th><th class="num">Total</th><th></th></tr></thead><tbody>';
+          '<table class="tbl"><thead><tr><th>Operário / lançamento</th><th class="num">Seg</th><th class="num">Ter</th><th class="num">Qua</th><th class="num">Qui</th><th class="num">Sex</th><th class="num">Sáb</th><th class="num">Dom</th><th class="num">H.E.</th><th class="num">Fechado</th><th class="num">Total</th><th></th></tr></thead><tbody>';
         g.linhas.forEach(function (l) {
+          /* Os dias aparecem SEMPRE que existirem. Antes, linha de tipo ≠ diária
+             mostrava "—" nos sete dias mesmo tendo dia preenchido: o valor ficava
+             invisível na tela e, como o total também o ignorava, ninguém achava
+             o dinheiro que faltava. */
+          var pt = FS.partesLinha(l);
+          var temDia = pt.dias > 0 || (l.faltas && l.faltas.length) || l.tipo === "diaria" || l.usarValor;
           var cels = FS.DIAS.map(function (d) {
-            if (l.tipo !== "diaria" && !l.usarValor) return '<td class="num muted">—</td>';
+            if (!temDia) return '<td class="num muted">—</td>';
             if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td class="num" style="color:var(--vermelho);font-weight:700">✕</td>';
             var v = l.dias && l.dias[d]; return '<td class="num">' + (v ? Util.fmtNum(v, 0) : "") + "</td>";
           }).join("");
           var rotTipo = l.tipo && l.tipo !== "diaria" ? ' <span class="g-pill" style="background:var(--surface-3)">' + Util.esc(l.tipo) + "</span>" : "";
-          html += '<tr><td><b>' + Util.esc(l.nome || "—") + "</b>" + (l.funcao ? ' <span class="muted">· ' + Util.esc(l.funcao) + "</span>" : "") + rotTipo +
+          /* linha travada pela planilha: os dias não somam, e isso precisa estar ESCRITO */
+          var selo = l.usarValor ? ' <span class="g-pill" title="O total desta linha veio da planilha importada, que divergiu do calculado. Os dias ficam como presença e não somam." style="background:var(--surface-3)">total da planilha</span>' : "";
+          html += '<tr><td><b>' + Util.esc(l.nome || "—") + "</b>" + (l.funcao ? ' <span class="muted">· ' + Util.esc(l.funcao) + "</span>" : "") + rotTipo + selo +
             (l.favorecido || l.chavePix ? '<br><span class="muted" style="font-size:11px">' + Util.esc(l.favorecido || "") + (l.chavePix ? " · PIX " + Util.esc(l.chavePix) : "") + "</span>" : "") + "</td>" +
-            cels + '<td class="num">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td><td class="num"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + '</b></td>' +
+            cels + '<td class="num">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td>' +
+            '<td class="num">' + (pt.fechado ? Util.fmtNum(pt.fechado, 0) : "") + '</td>' +
+            '<td class="num"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + '</b></td>' +
             '<td class="num" style="white-space:nowrap"><button class="btn sm" data-gacao="fs-edit" data-val="' + l.id + '">✎</button> <button class="btn sm danger" data-gacao="fs-del" data-val="' + l.id + '">🗑</button></td></tr>';
         });
         html += "</tbody></table></div>";
@@ -11941,10 +12051,14 @@ renderFolha: function () {
     fsCsv: function () {
       var FS = window.FolhaSemanal, self = this, lancs = this._fsLancs();
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
-      var linhas = [["Obra", "Nome", "Função", "Tipo", "Favorecido", "Chave PIX", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom", "Hora extra", "Total"].join(";")];
+      /* coluna "Fechado" junto: o Total já somava o valor fechado, mas ele não
+         aparecia em coluna nenhuma — quem conferisse o CSV veria um total maior
+         que a soma das colunas e não teria onde conferir a diferença */
+      var linhas = [["Obra", "Nome", "Função", "Tipo", "Favorecido", "Chave PIX", "Seg", "Ter", "Qua", "Qui", "Sex", "Sab", "Dom", "Hora extra", "Fechado", "Total"].join(";")];
       lancs.forEach(function (l) {
         var dias = FS.DIAS.map(function (d) { return (l.faltas && l.faltas.indexOf(d) !== -1) ? "x" : String((l.dias && l.dias[d]) || "").replace(".", ","); });
-        linhas.push([self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", l.tipo || "", l.favorecido || "", l.chavePix || ""].map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(";") + ";" + dias.join(";") + ";" + String(FS.num(l.he) || "").replace(".", ",") + ";" + String(FS.totalFinal(l)).replace(".", ","));
+        var pt = FS.partesLinha(l);
+        linhas.push([self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", l.tipo || "", l.favorecido || "", l.chavePix || ""].map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(";") + ";" + dias.join(";") + ";" + String(FS.num(l.he) || "").replace(".", ",") + ";" + String(pt.fechado || "").replace(".", ",") + ";" + String(FS.totalFinal(l)).replace(".", ","));
       });
       var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-semanal-" + this._fsSemana + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
@@ -12116,23 +12230,34 @@ renderFolha: function () {
         var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
         // --- Aba Lancamentos (base de tudo: fórmulas vivas) ---
         var wl = wb.addWorksheet("Lancamentos");
-        cab(wl, ["Obra", "Nome", "Função", "Tipo", "Favorecido", "Chave PIX", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom", "H.Extra", "Total", "Semana"], [22, 22, 14, 12, 26, 20, 8, 8, 8, 8, 8, 8, 8, 9, 13, 14]);
+        /* Coluna "Fechado" (O) entrou aqui: sem ela o valor de empreita/produção não
+           existia na planilha, e o Total de uma linha de diária era uma fórmula que
+           só somava os dias e a hora extra. Quem conferisse o Excel não achava o
+           dinheiro da produção — e as fórmulas das outras abas somam ESTA coluna. */
+        cab(wl, ["Obra", "Nome", "Função", "Tipo", "Favorecido", "Chave PIX", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom", "H.Extra", "Fechado", "Total", "Semana"], [22, 22, 14, 12, 26, 20, 8, 8, 8, 8, 8, 8, 8, 9, 11, 13, 14]);
         d.doPer.forEach(function (l, i) {
           var rn = i + 2, fav = String(l.favorecido || l.nome || "").replace(/\s+/g, " ").trim(); // igual ao listaPix → SUMIF casa
           var dias = FS.DIAS.map(function (dd) { return (l.faltas && l.faltas.indexOf(dd) !== -1) ? "x" : ((l.dias && l.dias[dd]) || null); });
+          var pt = FS.partesLinha(l);
           var row = [self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", FS.ROT_TIPO[l.tipo] || l.tipo || "", fav, l.chavePix || ""].concat(dias).concat([FS.num(l.he) || null,
-            (l.tipo === "diaria" && !l.usarValor) ? { formula: "SUM(G" + rn + ":M" + rn + ")+IF(N" + rn + '="",0,N' + rn + ")" } : FS.totalFinal(l),
+            pt.fechado || null,
+            /* linha travada pela planilha importada continua com o total cravado:
+               ali os dias são presença e não somam, então fórmula mentiria */
+            l.usarValor ? FS.totalFinal(l) : { formula: "SUM(G" + rn + ":M" + rn + ")+IF(N" + rn + '="",0,N' + rn + ')+IF(O' + rn + '="",0,O' + rn + ")" },
             FS.periodoDaChave(l.semana)]);
           wl.addRow(row);
         });
-        for (var c2 = 7; c2 <= 15; c2++) wl.getColumn(c2).numFmt = MOEDA;
+        for (var c2 = 7; c2 <= 16; c2++) wl.getColumn(c2).numFmt = MOEDA;
         // --- Aba Pagamentos (SUMIF vivo + link WhatsApp) ---
         var pix = FS.listaPix(d.doPer), pagos = self._fsPagos();
         var wp = wb.addWorksheet("Pagamentos");
         cab(wp, ["Favorecido", "Chave PIX", "Valor (fórmula)", "Status", "Avisar", "Assinado"], [28, 22, 16, 11, 22, 10]);
         pix.forEach(function (g, i) {
           var rn = i + 2, pg = pagos[g.favKey], fone = FS.foneDaChave(g.chavePix);
-          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIFS(Lancamentos!O:O,Lancamentos!E:E,A' + rn + ",Lancamentos!F:F,B" + rn + ")" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
+          /* ⚠ a coluna do Total virou P (entrou "Fechado" em O). Toda fórmula que
+             soma o total de lançamentos aponta para P — somar O pagaria só o
+             valor fechado, e a aba Pagamentos é a que vira PIX de verdade. */
+          var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIFS(Lancamentos!P:P,Lancamentos!E:E,A' + rn + ",Lancamentos!F:F,B" + rn + ")" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
           if (fone) { var cel = row.getCell(5); cel.value = { text: "💬 WhatsApp", hyperlink: "https://wa.me/" + fone + "?text=" + encodeURIComponent("Olá, " + g.favorecido + "! Seu pagamento (" + p.rot + ") foi enviado via PIX.") }; cel.font = { color: { argb: "FF2E6F9E" }, underline: true }; }
           if (pg && pg.pago) row.getCell(4).font = { color: { argb: VERDE }, bold: true };
         });
@@ -12144,7 +12269,7 @@ renderFolha: function () {
         var obrasSet = {}; d.doPer.forEach(function (l) { obrasSet[self._fsNomeObra(l.obraId)] = 1; });
         Object.keys(obrasSet).forEach(function (nomeOb, i) {
           var rn = i + 2;
-          wo.addRow([nomeOb].concat(tipos.map(function (t) { return { formula: 'SUMIFS(Lancamentos!$O:$O,Lancamentos!$A:$A,$A' + rn + ',Lancamentos!$D:$D,"' + (FS.ROT_TIPO[t] || t).replace(/"/g, "") + '")' }; })).concat([{ formula: "SUM(B" + rn + ":" + String.fromCharCode(66 + tipos.length - 1) + rn + ")" }]));
+          wo.addRow([nomeOb].concat(tipos.map(function (t) { return { formula: 'SUMIFS(Lancamentos!$P:$P,Lancamentos!$A:$A,$A' + rn + ',Lancamentos!$D:$D,"' + (FS.ROT_TIPO[t] || t).replace(/"/g, "") + '")' }; })).concat([{ formula: "SUM(B" + rn + ":" + String.fromCharCode(66 + tipos.length - 1) + rn + ")" }]));
         });
         for (var c3 = 2; c3 <= tipos.length + 2; c3++) wo.getColumn(c3).numFmt = MOEDA;
         // --- Aba Resumo (KPIs com fórmula) ---
@@ -12152,11 +12277,11 @@ renderFolha: function () {
         wr.getColumn(1).width = 34; wr.getColumn(2).width = 20;
         wr.addRow(["FOLHA SEMANAL — RESUMO"]).getCell(1).font = { bold: true, size: 14, color: { argb: NAVY } };
         wr.addRow(["Empresa", emp.nome || ""]); wr.addRow(["Período", p.rot]); wr.addRow([]);
-        [["Total do período", "SUM(Lancamentos!O:O)"], ["Pago", 'SUMIF(Pagamentos!D:D,"PAGO",Pagamentos!C:C)'], ["Em aberto", "B5-B6"]].forEach(function (par) {
+        [["Total do período", "SUM(Lancamentos!P:P)"], ["Pago", 'SUMIF(Pagamentos!D:D,"PAGO",Pagamentos!C:C)'], ["Em aberto", "B5-B6"]].forEach(function (par) {
           var r3 = wr.addRow([par[0], { formula: par[1] }]); r3.getCell(1).font = { bold: true }; r3.getCell(2).numFmt = MOEDA;
         });
         wr.addRow([]); wr.addRow(["Por tipo"]).getCell(1).font = { bold: true };
-        tipos.forEach(function (t) { var r4 = wr.addRow([FS.ROT_TIPO[t], { formula: 'SUMIF(Lancamentos!D:D,"' + (FS.ROT_TIPO[t] || t).replace(/"/g, "") + '",Lancamentos!O:O)' }]); r4.getCell(2).numFmt = MOEDA; });
+        tipos.forEach(function (t) { var r4 = wr.addRow([FS.ROT_TIPO[t], { formula: 'SUMIF(Lancamentos!D:D,"' + (FS.ROT_TIPO[t] || t).replace(/"/g, "") + '",Lancamentos!P:P)' }]); r4.getCell(2).numFmt = MOEDA; });
         // --- Aba Parametros ---
         var wpar = wb.addWorksheet("Parametros");
         wpar.getColumn(1).width = 26; wpar.getColumn(2).width = 46;
@@ -12178,8 +12303,11 @@ renderFolha: function () {
         campo("Tipo", sel("g-fs-tipo", opts([["diaria", "Diária (dia a dia)"], ["empreita", "Empreita"], ["producao", "Produtividade medida"], ["frete", "Frete"], ["reembolso", "Reembolso"], ["fornecedor", "Fornecedor"], ["outro", "Outro"]], l.tipo || "diaria"))) + "</div>" +
         '<div class="row">' + campo("Nome no lançamento *", inp("g-fs-nome", l.nome, "Ex.: Rosivaldo Pedreiro")) + campo("Favorecido (quem recebe)", inp("g-fs-fav", l.favorecido)) + campo("Chave PIX", inp("g-fs-pix", l.chavePix)) + "</div>" +
         '<div class="row">' + diasIn + "</div>" +
-        '<div class="row">' + campo("Hora extra (R$)", inp("g-fs-he", l.he)) + campo("Valor fechado (empreita/frete…)", inp("g-fs-valor", l.valor)) + campo("Observação", inp("g-fs-obs", l.obs)) + "</div>" +
-        '<p class="muted" style="font-size:12px;margin:4px 0 0">Nos dias: digite o valor da diária (ex.: <b>166</b>) ou <b>x</b> pra falta. Escolhendo um colaborador, favorecido e PIX vêm do cadastro.</p>';
+        '<div class="row">' + campo("Hora extra (R$)", inp("g-fs-he", l.he)) + campo("Valor fechado (empreita/frete/produção)", inp("g-fs-valor", l.valor)) + campo("Observação", inp("g-fs-obs", l.obs)) + "</div>" +
+        '<p class="muted" style="font-size:12px;margin:4px 0 0">Nos dias: digite o valor da diária (ex.: <b>166</b>) ou <b>x</b> pra falta. Escolhendo um colaborador, favorecido e PIX vêm do cadastro.<br>O total da linha é <b>diárias + hora extra + valor fechado</b>: a mesma pessoa pode ter dias trabalhados e uma produção fechada na mesma semana.</p>' +
+        /* linha importada em que a planilha mandou: quem abre precisa saber por que
+           os dias na tela não somam com o total — senão "corrige" e paga errado */
+        (l.usarValor ? '<p style="font-size:12px;margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--surface-3)"><b>⚠ Total travado pela planilha importada.</b> Nesta linha o total da sua planilha divergiu do calculado e o da planilha foi mantido: valem os <b>R$ ' + Util.fmtNum(FS.num(l.valor), 2) + "</b> do campo <i>Valor fechado</i>, e os dias acima ficam como registro de presença, sem somar. Para voltar a somar dia a dia, zere o Valor fechado.</p>" : "");
       this._modalForm("fs_lancamentos", l, "Lançamento da folha", corpo, function (obj) {
         obj.obraId = v("g-fs-obra"); if (!obj.obraId) { UI.toast("Escolha a obra.", "erro"); return false; }
         obj.colaboradorId = v("g-fs-colab");
@@ -12193,8 +12321,15 @@ renderFolha: function () {
         obj.dias = {}; obj.faltas = [];
         FS.DIAS.forEach(function (d) { var x = v("g-fs-" + d); if (FS.ehFalta(x)) obj.faltas.push(d); else { var n = FS.num(x); if (n > 0) obj.dias[d] = n; } });
         obj.he = FS.num(v("g-fs-he")); obj.valor = FS.num(v("g-fs-valor")); obj.obs = v("g-fs-obs");
-        obj.usarValor = false;
-        if (obj.tipo === "diaria" && !Object.keys(obj.dias).length && obj.valor > 0) obj.usarValor = true;
+        /* ⚠ Aqui havia `obj.usarValor = false` fixo, e ele fazia dois estragos:
+         * 1) num lançamento normal, com dias E valor fechado, o valor fechado
+         *    era descartado da conta (hoje o totalLinha soma os dois);
+         * 2) numa linha IMPORTADA em que o total da planilha mandou, abrir e
+         *    salvar o formulário derrubava esse "a planilha manda" — o total da
+         *    linha mudava sozinho só por alguém ter aberto para olhar.
+         * `usarValor` agora só nasce na importação e é preservado no clone. */
+        // saída do travamento da planilha: zerou o valor fechado, volta a somar dia a dia
+        if (obj.usarValor && !(obj.valor > 0)) obj.usarValor = false;
         return true;
       });
       // escolheu o colaborador → puxa nome/favorecido/PIX e preenche a DIÁRIA PADRÃO do cadastro
@@ -12280,19 +12415,26 @@ renderFolha: function () {
       Object.keys(fech.porObra).forEach(function (ob) {
         var g = fech.porObra[ob];
         corpo += '<h3 style="margin:14px 0 6px;font-size:13px;border-left:4px solid #16a34a;padding-left:8px">' + Util.esc(self._fsNomeObra(ob)) + "</h3>" +
-          '<table style="width:100%;border-collapse:collapse;font-size:10.5px"><tr style="background:#f0f4f8"><th style="text-align:left;padding:5px;border:1px solid #ccc">Operário</th><th style="padding:5px;border:1px solid #ccc">Seg</th><th style="padding:5px;border:1px solid #ccc">Ter</th><th style="padding:5px;border:1px solid #ccc">Qua</th><th style="padding:5px;border:1px solid #ccc">Qui</th><th style="padding:5px;border:1px solid #ccc">Sex</th><th style="padding:5px;border:1px solid #ccc">Sáb</th><th style="padding:5px;border:1px solid #ccc">Dom</th><th style="padding:5px;border:1px solid #ccc">H.E.</th><th style="padding:5px;border:1px solid #ccc;text-align:right">Total</th></tr>';
+          '<table style="width:100%;border-collapse:collapse;font-size:10.5px"><tr style="background:#f0f4f8"><th style="text-align:left;padding:5px;border:1px solid #ccc">Operário</th><th style="padding:5px;border:1px solid #ccc">Seg</th><th style="padding:5px;border:1px solid #ccc">Ter</th><th style="padding:5px;border:1px solid #ccc">Qua</th><th style="padding:5px;border:1px solid #ccc">Qui</th><th style="padding:5px;border:1px solid #ccc">Sex</th><th style="padding:5px;border:1px solid #ccc">Sáb</th><th style="padding:5px;border:1px solid #ccc">Dom</th><th style="padding:5px;border:1px solid #ccc">H.E.</th><th style="padding:5px;border:1px solid #ccc">Fechado</th><th style="padding:5px;border:1px solid #ccc;text-align:right">Total</th></tr>';
         g.linhas.forEach(function (l) {
+          /* este documento é assinado: o total TEM que fechar com o que está impresso.
+             Por isso a coluna Fechado — sem ela, diária + produção na mesma linha dava
+             um total maior que a soma dos dias, sem nada na página que explicasse. */
+          var pt = FS.partesLinha(l);
+          var temDia = pt.dias > 0 || (l.faltas && l.faltas.length) || l.tipo === "diaria" || l.usarValor;
           var cels = FS.DIAS.map(function (d) {
-            if (l.tipo !== "diaria" && !l.usarValor) return '<td style="padding:5px;border:1px solid #ccc;text-align:center">—</td>';
+            if (!temDia) return '<td style="padding:5px;border:1px solid #ccc;text-align:center">—</td>';
             if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td style="padding:5px;border:1px solid #ccc;text-align:center;color:#dc2626">✕</td>';
             var vv = l.dias && l.dias[d];
             return '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (vv ? Util.fmtNum(vv, 0) : "") + "</td>";
           }).join("");
-          corpo += '<tr><td style="padding:5px;border:1px solid #ccc"><b>' + Util.esc(l.nome) + "</b>" + (l.funcao ? " · " + Util.esc(l.funcao) : "") + (l.tipo !== "diaria" ? " · " + Util.esc(l.tipo).toUpperCase() : "") +
+          corpo += '<tr><td style="padding:5px;border:1px solid #ccc"><b>' + Util.esc(l.nome) + "</b>" + (l.funcao ? " · " + Util.esc(l.funcao) : "") + (l.tipo !== "diaria" ? " · " + Util.esc(l.tipo).toUpperCase() : "") + (l.usarValor ? " · TOTAL DA PLANILHA" : "") +
             (l.favorecido ? '<br><span style="font-size:9px;color:#555">Favorecido: ' + Util.esc(l.favorecido) + (l.chavePix ? " · PIX: " + Util.esc(l.chavePix) : "") + "</span>" : "") + "</td>" + cels +
-            '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td><td style="padding:5px;border:1px solid #ccc;text-align:right"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + "</b></td></tr>";
+            '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td>' +
+            '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (pt.fechado ? Util.fmtNum(pt.fechado, 0) : "") + '</td>' +
+            '<td style="padding:5px;border:1px solid #ccc;text-align:right"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + "</b></td></tr>";
         });
-        corpo += '<tr style="background:#0f2740;color:#fff"><td colspan="9" style="padding:6px;border:1px solid #0f2740"><b>FECHAMENTO DE FOLHA — ' + Util.esc(self._fsNomeObra(ob)) + '</b></td><td style="padding:6px;border:1px solid #0f2740;text-align:right"><b>' + Util.fmtMoeda(g.total) + "</b></td></tr></table>";
+        corpo += '<tr style="background:#0f2740;color:#fff"><td colspan="10" style="padding:6px;border:1px solid #0f2740"><b>FECHAMENTO DE FOLHA — ' + Util.esc(self._fsNomeObra(ob)) + '</b></td><td style="padding:6px;border:1px solid #0f2740;text-align:right"><b>' + Util.fmtMoeda(g.total) + "</b></td></tr></table>";
       });
       corpo += '<p style="margin:14px 0 4px;text-align:right;font-size:13px">TOTAL GERAL DA SEMANA: <b style="color:#16a34a">' + Util.fmtMoeda(fech.total) + "</b></p>" +
         '<div style="display:flex;gap:40px;margin-top:44px"><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:10px">Responsável pela obra</div><div style="flex:1;border-top:1px solid #333;text-align:center;padding-top:4px;font-size:10px">Financeiro</div></div>';
@@ -13602,6 +13744,9 @@ renderFolha: function () {
         case "espelho-ponto": return this.espelhoPonto();
         case "config-jornada": return this.configJornada();
         case "excluir-falta": return this.excluirFalta(id);
+        case "nova-he": return this.formHoraExtra(null);
+        case "editar-he": return this.editarHe(id);
+        case "excluir-he": return this.excluirHe(id);
         case "recibo-folha": return this.reciboFolha(id);
         case "boletim-medicao": return this.boletimMedicao(id);
         case "excel-medicao": return this.excelMedicao(id);
