@@ -465,7 +465,19 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 .field input:hover, .field select:hover, .field textarea:hover { border-color: var(--aco-claro); }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--aco); outline: none; box-shadow: var(--anel); }
 .field input::placeholder, .field textarea::placeholder { color: var(--texto-fraco); opacity: .7; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+/* A grade era 1fr 1fr FIXO: toda linha de formulario tinha duas colunas,
+   tivesse ela 1, 3 ou 4 campos. Das 112 linhas do sistema, 57 saiam erradas —
+   as de 3 campos viravam 2 + 1 orfao (169px de altura em vez de 79, com um
+   buraco de 347px ao lado) e as de 1 campo ocupavam metade da largura a toa.
+   Era o "nao aproveita o espaco" que o cliente descreveu.
+   Agora a linha cria quantas colunas couberem e os campos esticam para
+   preencher: 2 campos continuam 2 colunas, 3 campos viram 3, e no celular
+   o `min(100%, ...)` derruba tudo para uma coluna so. */
+.row { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr)); gap: 14px; }
+/* ⚠ `screen and` é obrigatorio: sem isso a regra vale no PRINT tambem, porque
+   a folha A4 tem ~794px de largura — menos que o ponto de corte — e todo
+   impresso do sistema sairia com os campos empilhados. Ja custou um conserto. */
+@media screen and (max-width: 640px) { .row { grid-template-columns: 1fr; } }
 
 /* ---------- Busca SINAPI ---------- */
 .sinapi-result { border: 1px solid var(--linha); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }

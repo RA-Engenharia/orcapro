@@ -535,9 +535,90 @@
     },
 
     // =================== PAINEL / DASHBOARD ===================
+    /* METAS DA EMPRESA — o Painel julgava todo mundo pela mesma régua, cravada
+     * no código: margem "saudável" a partir de 15%, PPC verde a partir de 80%,
+     * conta "vencendo" em 7 dias. Construtora de obra pública e reforma
+     * residencial não têm a mesma margem, e cada empresa combina o seu PPC.
+     *
+     * ⚠ E havia uma CONTRADIÇÃO: o indicador ficava verde com PPC ≥ 80%, mas o
+     * gráfico do Last Planner desenhava a linha de meta em 85%. Uma semana com
+     * 82% saía verde no KPI e abaixo da meta no gráfico, na mesma tela. Agora
+     * as duas leem daqui. */
+    METAS_PADRAO: { margem: 15, ppc: 85, contasDias: 7 },
+    _metas: function () {
+      var p = {};
+      try { p = (Store.lerPrefs ? Store.lerPrefs(eid()) : {}) || {}; } catch (e) { p = {}; }
+      var m = p.metas || {}, d = this.METAS_PADRAO;
+      var n = function (v, padrao) { var x = Util.num(v); return x > 0 ? x : padrao; };
+      return { margem: n(m.margem, d.margem), ppc: n(m.ppc, d.ppc), contasDias: n(m.contasDias, d.contasDias) };
+    },
+    /* Onde a empresa define a própria régua. Sem esta tela, "parametrizado"
+       seria só uma promessa: o valor existiria no código e ninguém alcançaria. */
+    metasForm: function () {
+      var self = this, m = this._metas(), d = this.METAS_PADRAO;
+      var corpo = '<div class="row">'
+        + campo("Margem saudável a partir de (%)", inp("g-mt-margem", m.margem, "padrão: " + d.margem))
+        + campo("Meta de PPC (%)", inp("g-mt-ppc", m.ppc, "padrão: " + d.ppc))
+        + campo("Avisar contas a vencer em (dias)", inp("g-mt-dias", m.contasDias, "padrão: " + d.contasDias))
+        + "</div>"
+        + '<p class="muted" style="font-size:12px;margin:6px 0 0">A <b>margem</b> é calculada sobre o que foi recebido: abaixo da meta, o indicador fica laranja. O <b>PPC</b> vale para o indicador do Painel e para a linha de meta do gráfico do Last Planner — os dois usam este número.<br>Deixe em branco para voltar ao padrão.</p>';
+      UI.modal("⚙ Metas da empresa", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Voltar ao padrão", classe: "ghost", onClick: function () {
+          var p = (Store.lerPrefs(eid()) || {}); delete p.metas; Store.salvarPrefs(eid(), p);
+          UI.fecharModal(); App.render(); UI.toast("Metas de volta ao padrão.", "ok");
+        } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var mg = Util.num(v("g-mt-margem")), pp = Util.num(v("g-mt-ppc")), di = Util.num(v("g-mt-dias"));
+          /* percentual acima de 100 não é meta, é engano de digitação — e uma
+             meta impossível deixaria o indicador laranja para sempre */
+          if (mg > 100 || pp > 100) { UI.toast("Margem e PPC são percentuais: no máximo 100.", "erro"); return; }
+          if (di > 90) { UI.toast("Avisar contas com mais de 90 dias de antecedência não ajuda ninguém.", "erro"); return; }
+          var p = (Store.lerPrefs(eid()) || {});
+          p.metas = { margem: mg > 0 ? mg : d.margem, ppc: pp > 0 ? pp : d.ppc, contasDias: di > 0 ? di : d.contasDias };
+          Store.salvarPrefs(eid(), p);
+          UI.fecharModal(); App.render(); UI.toast("Metas salvas — o Painel já usa as suas.", "ok");
+        } }
+      ]);
+    },
+    /* ESCOPO DO PAINEL — fonte única de "o que está no recorte".
+     *
+     * ⚠ O Painel tinha DOIS escopos na mesma página e nada dizia isso: o bloco
+     * financeiro do topo obedecia ao filtro de obra, e o bloco "Operação"
+     * logo abaixo ignorava — mostrava a empresa inteira. Escolhendo UMA obra,
+     * "Obras em andamento" continuava dizendo 3/3 e "Valor contratado"
+     * continuava somando o portfólio. Dois números sobre coisas diferentes,
+     * lado a lado, sem rótulo. Quem lê acredita no que está escrito.
+     *
+     * Agora quem quiser dado do Painel pede aqui, e vem no recorte certo. */
+    _dashEscopo: function () {
+      var ids = this._dashObras();                       // null = portfólio inteiro
+      var naObra = function (x) { return !ids || (x && ids.indexOf(x.obraId) > -1); };
+      var todas = lista("obras");
+      return {
+        filtrado: !!ids,
+        ids: ids,
+        obras: ids ? todas.filter(function (o) { return ids.indexOf(o.id) > -1; }) : todas,
+        contratos: lista("contratos").filter(naObra),
+        medicoes: lista("medicoes").filter(naObra),
+        financeiro: lista("financeiro").filter(naObra),
+        compras: lista("compras").filter(naObra),
+        estoque: lista("estoque").filter(naObra),
+        rdo: lista("rdo").filter(naObra),
+        lpTarefas: lista("lp_tarefas").filter(naObra)
+      };
+    },
+    /* Como o recorte se chama na tela. Sem isto, o usuário não sabe se o
+       número é da obra dele ou da empresa toda. */
+    _dashEscopoRotulo: function (esc) {
+      if (!esc.filtrado) return "todas as obras";
+      if (esc.obras.length === 1) return "somente " + Util.esc(esc.obras[0].nome || "a obra escolhida");
+      return esc.obras.length + " obras selecionadas";
+    },
     renderDashboard: function () {
-      var obras = lista("obras"), clientes = lista("clientes"), contratos = lista("contratos"), med = lista("medicoes"), fin = lista("financeiro"), orc = Store.listarOrcamentos(eid());
-      var compras = lista("compras"), estoque = lista("estoque"), rdos = lista("rdo");
+      var esc = this._dashEscopo(), metas = this._metas();
+      var obras = esc.obras, clientes = lista("clientes"), contratos = esc.contratos, med = esc.medicoes, fin = esc.financeiro, orc = Store.listarOrcamentos(eid());
+      var compras = esc.compras, estoque = esc.estoque, rdos = esc.rdo;
       var comprasAbertas = compras.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
       var valorEstoque = estoque.reduce(function (s, i) { return s + Util.num(i.saldo) * Util.num(i.custoUnit); }, 0);
       var emAndamento = obras.filter(function (o) { return o.status === "andamento"; }).length;
@@ -558,9 +639,11 @@
       var html = '<h1 class="mb">Painel de Gestão</h1>' +
         // Bloco executivo/financeiro (filtros globais + KPIs de caixa + gráficos)
         this._dashFinHtml() +
-        _sec("obra", "Operação", "visão geral de obras, suprimentos e campo") +
+        /* o subtítulo DIZ o recorte: o mesmo bloco significa coisas diferentes
+           com "Todas as obras" e com uma obra escolhida */
+        _sec("obra", "Operação", "visão geral de obras, suprimentos e campo · <b>" + this._dashEscopoRotulo(esc) + "</b>") +
         '<div class="kpis kpis-g">' +
-          k("Obras em andamento", emAndamento + " / " + obras.length) +
+          k(esc.filtrado ? "Obras no recorte (em andamento)" : "Obras em andamento", emAndamento + " / " + obras.length) +
           k("Valor contratado", Util.fmtMoeda(valorContratado), "custo") +
           k("Recebido", Util.fmtMoeda(receitas), "destaque") +
           k("A receber", Util.fmtMoeda(aReceber)) +
@@ -574,14 +657,14 @@
       if (!obras.length) html += this._obraDemoCard();
       // Last Planner — pulso da semana (agregado de todas as obras) + atalho pro quadro
       if (typeof LastPlanner !== "undefined") {
-        var lpTs = lista("lp_tarefas");
+        var lpTs = esc.lpTarefas;   // o PPC também é do recorte, não da empresa toda
         if (lpTs.length) {
           var lpLook = LastPlanner.semanas(new Date(), 6);
           var lpRes = LastPlanner.resumo(lpTs, lpLook);
           var lpCols = { execucao: 0, impedida: 0, liberada: 0 };
           lpTs.forEach(function (t) { if (!t) return; var c = LastPlanner.classificarQuadro(t, lpLook[0].chave); if (lpCols[c] != null) lpCols[c]++; });
           var lpPpc = lpRes.ppcSemana == null ? "—" : Math.round(lpRes.ppcSemana * 100) + "%";
-          var lpCor = lpRes.ppcSemana == null ? "var(--texto-fraco)" : (lpRes.ppcSemana >= .8 ? "var(--verde)" : "#ea580c");
+          var lpCor = lpRes.ppcSemana == null ? "var(--texto-fraco)" : (lpRes.ppcSemana >= metas.ppc / 100 ? "var(--verde)" : "#ea580c");
           html += '<div class="card mt"' + (lpCols.impedida ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("cronograma") + 'Last Planner — semana</h3>' +
             '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">' +
             '<span style="font-size:13px">PPC: <b style="color:' + lpCor + '">' + lpPpc + '</b> <span class="muted">(' + lpRes.feitas + "/" + lpRes.comprometidas + ' tarefas)</span></span>' +
@@ -596,7 +679,7 @@
       var pend = this._pendentesAprovacao();
       if (podeAp && pend.total > 0) {
         var chip = function (n, rot, view) { return n > 0 ? '<button class="btn sm" data-view="' + view + '" style="margin-right:8px">' + rot + ": <b>" + n + "</b></button>" : ""; };
-        html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("relogio") + 'Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309;margin-left:8px">' + pend.total + '</span></h3>' +
+        html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("relogio") + 'Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309;margin-left:8px">' + pend.total + '</span>' + (esc.filtrado ? '<span class="muted" style="font-size:11.5px;font-weight:400;margin-left:8px">de todas as obras</span>' : '') + '</h3>' +
           '<div class="muted" style="margin-bottom:10px;font-size:13px">Itens aguardando o seu aval. Clique para revisar e aprovar/rejeitar.</div>' +
           chip(pend.medicoes, "Medições", "medicoes") + chip(pend.compras, "Pedidos de compra", "compras") + chip(pend.requisicoes, "Requisições", "requisicoes") + chip(pend.producao, "Produção a pagar", "producao") +
           "</div>";
@@ -615,16 +698,23 @@
       html += '<div class="card mt"><h3 style="margin:0 0 10px">Resumo por obra</h3>';
       if (!obras.length) html += '<p class="muted">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> (ou gere a partir de um orçamento).</p>';
       else {
-        html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num">Margem</th></tr></thead><tbody>';
+        html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num" title="(recebido − custo real) ÷ recebido. Sem receita lançada, a margem não existe e aparece —">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
           var ctr = contratos.filter(function (c) { return c.obraId === o.id; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
           var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var base = ctr || Util.num(o.valor);
-          var margem = base > 0 ? ((base - custo) / base * 100) : 0;
+          /* ⚠ ISTO NAO ERA MARGEM. A conta era (contratado - custo) / contratado,
+           * que responde "quanto do contrato ainda nao foi gasto" — numa obra
+           * recem-comecada, sem despesa lancada, dava "Margem 100,0%". O dono
+           * lia lucro altissimo onde so havia obra que nao comecou a gastar.
+           * Margem se mede contra o que ENTROU, e quando nao entrou nada ela
+           * nao existe: "—", como o KPI do bloco financeiro ja fazia (a mesma
+           * definicao da linha do `_dashFinExec`). */
+          var margem = rec > 0 ? ((rec - custo) / rec * 100) : null;
           var area = Util.num(o.areaConstruida);
           var cm2 = area > 0 ? (Util.fmtMoeda(custo / area) + "/m²") : '<span class="muted" title="Cadastre a área construída na obra">—</span>';
-          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtPct(margem, 1) + "</td></tr>";
+          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem == null ? "var(--texto-fraco)" : (margem >= 0 ? "var(--verde)" : "var(--vermelho)")) + '" title="' + (margem == null ? "sem receita lançada nesta obra — margem não existe ainda" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
         });
         html += "</tbody></table>";
       }
@@ -834,14 +924,15 @@
       if (medPend.length) alertas.push({ tipo: "prazo", texto: medPend.length + " medição(ões) aguardando aprovação — " + this._fmtK(medPend.reduce(function (s, m) { return s + Util.num(m.valor); }, 0)) });
       // contas a pagar são ESTOQUE (como aReceber/aPagar): a base é a lista completa
       // com filtro de obra — o período nunca esconde um vencimento iminente
-      var em7 = new Date(Date.now() + 7 * 86400000);
+      var _md = this._metas().contasDias;
+      var em7 = new Date(Date.now() + _md * 86400000);
       var contas = finTudo.filter(function (f) {
         if (f.tipo !== "despesa" || f.status !== "pendente" || !f.data) return false;
         if (obraSel !== "todas" && f.obraId !== obraSel) return false;
         var dv = new Date(String(f.data) + "T00:00:00");
         return !isNaN(dv.getTime()) && dv <= em7;
       });
-      if (contas.length) alertas.push({ tipo: "prazo", texto: contas.length + " conta(s) a pagar vencida(s)/vencendo até 7 dias — " + this._fmtK(contas.reduce(function (s, f) { return s + Util.num(f.valor); }, 0)) });
+      if (contas.length) alertas.push({ tipo: "prazo", texto: contas.length + " conta(s) a pagar vencida(s)/vencendo até " + _md + " dia(s) — " + this._fmtK(contas.reduce(function (s, f) { return s + Util.num(f.valor); }, 0)) });
 
       var resultado = receitas - despesas;
       return {
@@ -975,7 +1066,7 @@
     _dashFinHtml: function () {
       // RBAC: números financeiros só p/ quem tem o módulo Financeiro (admin sempre tem)
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return "";
-      var self = this, d = this._dashFinExec(), obras = lista("obras");
+      var self = this, d = this._dashFinExec(), obras = lista("obras"), _mt = this._metas();
       var perRot = { mes: "Este mês", "6m": "Últimos 6 meses", ano: "Este ano", tudo: "Desde sempre" };
       // sem NENHUM lançamento financeiro: não polui o Painel de conta nova
       var temFin = lista("financeiro").length > 0;
@@ -993,7 +1084,8 @@
         '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("obra") + 'Obra <select data-gacao="dash-obra" multiple size="1" title="Segure Ctrl (ou toque) para escolher mais de uma obra" style="max-width:250px">' + optO + '</select></label>' +
         (selIds && selIds.length > 1 ? '<span style="font-size:11px;font-weight:700;color:var(--verde)">' + selIds.length + ' obras somadas</span>' : "") +
         '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("periodo") + 'Período <select data-gacao="dash-periodo" style="max-width:170px">' + optP + '</select></label>' +
-        '<span class="muted" style="margin-left:auto;font-size:11.5px">' + (d.obraSel === "todas" ? "Portfólio completo" : Util.esc((obras.filter(function (o) { return o.id === d.obraSel; })[0] || {}).nome || "")) + ' · ' + perRot[this._dashPer] + '</span></div>';
+        '<button class="btn sm" data-gacao="dash-metas" style="margin-left:auto" title="Definir a margem saudavel, a meta de PPC e o aviso de contas a vencer">&#9881; Metas</button>' +
+        '<span class="muted" style="font-size:11.5px">' + (d.obraSel === "todas" ? "Portfólio completo" : Util.esc((obras.filter(function (o) { return o.id === d.obraSel; })[0] || {}).nome || "")) + ' · ' + perRot[this._dashPer] + '</span></div>';
 
       if (!temFin) return html; // filtros ficam; KPIs/gráficos aparecem quando houver lançamentos
 
@@ -1018,7 +1110,9 @@
         this._lpKpi("Receitas (recebido)", this._fmtK(d.receitas), "medições e faturas no período", "var(--texto)") +
         this._lpKpi("Despesas (pago)", this._fmtK(d.despesas), "custo desembolsado no período", "var(--texto)") +
         this._lpKpi("Resultado (caixa)", this._fmtK(d.resultado), this._fmtK(d.aReceber) + " a receber · " + this._fmtK(d.aPagar) + " a pagar", d.resultado >= 0 ? "var(--verde)" : "#dc2626") +
-        this._lpKpi("Margem", d.margem == null ? "—" : d.margem.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%", d.margem == null ? "sem receita no período" : (d.margem >= 15 ? "saudável (meta ≥ 15%)" : "abaixo da meta de 15%"), d.margem == null ? "var(--texto-fraco)" : d.margem >= 15 ? "var(--verde)" : "#ea580c") +
+        /* a meta de margem era 15% cravada, no texto E na comparação: construtora
+           de obra pública e reforma residencial não vivem da mesma margem */
+        this._lpKpi("Margem", d.margem == null ? "—" : d.margem.toLocaleString("pt-BR", { maximumFractionDigits: 1 }) + "%", d.margem == null ? "sem receita no período" : (d.margem >= _mt.margem ? "saudável (meta ≥ " + Util.fmtNum(_mt.margem, 0) + "%)" : "abaixo da meta de " + Util.fmtNum(_mt.margem, 0) + "%"), d.margem == null ? "var(--texto-fraco)" : d.margem >= _mt.margem ? "var(--verde)" : "#ea580c") +
         kpiPR + '</div>';
 
       // ---- alertas executivos ----
@@ -11564,7 +11658,7 @@ renderFolha: function () {
       if (!obras.length) {
         html += vazioBox("Nenhuma obra cadastrada", "", "");
       } else {
-        html += '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Contratado</th><th class="num">Custo</th><th class="num">Recebido</th><th class="num">Margem %</th></tr></thead><tbody>';
+        html += '<table class="tbl"><thead><tr><th>Obra</th><th class="num">Contratado</th><th class="num">Custo</th><th class="num">Recebido</th><th class="num">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
           var contratado = 0, custo = 0, recebido = 0;
           contratos.forEach(function (c) { if (c.obraId === o.id) contratado += Util.num(c.valor); });
@@ -11573,8 +11667,10 @@ renderFolha: function () {
             if (l.tipo === "despesa") custo += Util.num(l.valor);
             else if (l.tipo === "receita") recebido += Util.num(l.valor);
           });
-          var margem = contratado > 0 ? (contratado - custo) / contratado * 100 : 0;
-          html += "<tr><td><b>" + Util.esc(o.nome) + '</b></td><td class="num">' + Util.fmtMoeda(contratado) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + Util.fmtMoeda(recebido) + '</td><td class="num" style="color:' + (margem >= 0 ? "#16a34a" : "#dc2626") + '">' + Util.fmtPct(margem, 1) + "</td></tr>";
+          /* mesma correcao do Painel: margem e sobre o RECEBIDO, e nao existe
+             quando nao houve receita (ver Resumo por obra) */
+          var margem = recebido > 0 ? (recebido - custo) / recebido * 100 : null;
+          html += "<tr><td><b>" + Util.esc(o.nome) + '</b></td><td class="num">' + Util.fmtMoeda(contratado) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + Util.fmtMoeda(recebido) + '</td><td class="num" style="color:' + (margem == null ? "#94a3b8" : (margem >= 0 ? "#16a34a" : "#dc2626")) + '" title="' + (margem == null ? "sem receita lançada nesta obra" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
         });
         html += "</tbody></table>";
       }
@@ -13466,7 +13562,7 @@ renderFolha: function () {
       // KPIs
       var ppcSem = res.ppcSemana == null ? "—" : Math.round(res.ppcSemana * 100) + "%";
       var ppcMed = res.ppcMedio == null ? "—" : Math.round(res.ppcMedio * 100) + "%";
-      var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= .8 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
+      var corPpc = res.ppcSemana == null ? "var(--aco)" : (res.ppcSemana >= this._metas().ppc / 100 ? "var(--verde)" : (res.ppcSemana < .5 ? "#dc2626" : "#ea580c"));
       // Aderência Previsto × Real (média dos desvios das obras com cronograma+medição)
       var kpiPR = "";
       var prDados = this._lpPrevRealDados();
@@ -13555,9 +13651,12 @@ renderFolha: function () {
         svg += '<line x1="' + padL + '" y1="' + y(g) + '" x2="' + (W - padR) + '" y2="' + y(g) + '" stroke="var(--linha)" stroke-width="1"/>' +
           '<text x="' + (padL - 5) + '" y="' + (y(g) + 3) + '" text-anchor="end" font-size="8.5" fill="var(--texto-fraco)">' + g + '</text>';
       });
-      // meta 85% tracejada
-      svg += '<line x1="' + padL + '" y1="' + y(85) + '" x2="' + (W - padR) + '" y2="' + y(85) + '" stroke="var(--texto-fraco)" stroke-width="1" stroke-dasharray="5 4"/>' +
-        '<text x="' + (W - padR) + '" y="' + (y(85) - 4) + '" text-anchor="end" font-size="8.5" fill="var(--texto-fraco)">Meta 85%</text>';
+      /* meta tracejada — vinha 85 cravada aqui enquanto o KPI ficava verde a
+         partir de 80: uma semana com 82% saía verde no indicador e abaixo da
+         linha no gráfico, na mesma tela. As duas leem a meta da empresa. */
+      var _mp = this._metas().ppc;
+      svg += '<line x1="' + padL + '" y1="' + y(_mp) + '" x2="' + (W - padR) + '" y2="' + y(_mp) + '" stroke="var(--texto-fraco)" stroke-width="1" stroke-dasharray="5 4"/>' +
+        '<text x="' + (W - padR) + '" y="' + (y(_mp) - 4) + '" text-anchor="end" font-size="8.5" fill="var(--texto-fraco)">Meta ' + Util.fmtNum(_mp, 0) + '%</text>';
       if (pts.length >= 2) {
         var linha = pts.map(function (p) { return p.x + "," + p.y; }).join(" ");
         svg += '<polygon points="' + linha + " " + pts[pts.length - 1].x + "," + y(0) + " " + pts[0].x + "," + y(0) + '" fill="var(--aco)" opacity=".08"/>';
@@ -13942,7 +14041,7 @@ renderFolha: function () {
      *     cadastro nem abria (contradizendo o próprio contrato). */
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
-      "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "tar-filtro": 1, "tar-obra": 1,
+      "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1
@@ -13993,6 +14092,7 @@ renderFolha: function () {
         /* de propósito sem valor: numa seleção múltipla o dataset carrega UM
            valor só, e passá-lo descartaria as outras obras escolhidas. */
         case "dash-obra": return this.dashTrocaObra(null);
+        case "dash-metas": return this.metasForm();
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
         case "tar-obra": return this.tarTrocaObra(dataset.value);
