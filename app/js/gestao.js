@@ -168,6 +168,7 @@
     tarefas: '<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
     lastplanner: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/><path d="m8 15 2 2 3-3"/>',
     ajuda: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/>',
+    relatos: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/>',
     bim: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5"/><path d="M12 12v10"/><path d="M12 12L3 7"/>',
     insumos: '<path d="M4 7l8-4 8 4-8 4-8-4z"/><path d="M4 7v10l8 4 8-4V7"/><path d="M12 11v10"/>',
     usuarios: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
@@ -213,7 +214,11 @@
       { id: "centrocusto", nome: "Centro de Custo", g: 7 },
       { id: "relatorios", nome: "Relatórios", g: 7 },
       { id: "usuarios", nome: "Usuários", g: 7 },
-      { id: "ajuda", nome: "Ajuda", g: 8 }
+      { id: "ajuda", nome: "Ajuda", g: 8 },
+      /* fica ao lado da Ajuda porque é para lá que a pessoa vai quando algo dá
+         errado — e como a Ajuda é liberada para TODO usuário (Auth.podeModulo),
+         quem encontra o problema é quem consegue relatar, não só o admin */
+      { id: "relatos", nome: "Falar com o suporte", g: 8 }
     ],
     GRUPOS_MENU: { 1: "1 · Orçar & vender", 2: "2 · Modelo 3D (BIM)", 3: "3 · Fechar & estruturar", 4: "4 · Canteiro", 5: "5 · Abastecer a obra", 6: "6 · Equipe & ativos", 7: "7 · Dinheiro & comando" },
 
@@ -524,6 +529,7 @@
         case "modelos": return this.renderModelos();
         case "usuarios": return this.renderUsuarios();
         case "ajuda": return this.renderAjuda();
+        case "relatos": return this.renderRelatos();
       }
       return "";
     },
@@ -8383,6 +8389,119 @@
     rdoTrocaObra: function (id) { this._rdoObraFiltro = id || "todas"; App.render(); },
 
     /* --------------------------------------------------------------------
+     * FALAR COM O SUPORTE
+     * O motor está em js/relatos.js (sem rede, testável). Aqui só a tela.
+     * ------------------------------------------------------------------ */
+    renderRelatos: function () {
+      var self = this;
+      var html = this._head(svg("relatos") + "Falar com o suporte", "", "");
+      html += '<div class="card" style="margin-bottom:12px">'
+        + '<p style="margin:0 0 10px;font-size:14px">Encontrou um problema ou pensou numa melhoria? Conte aqui. '
+        + 'Eu leio <b>todos</b> — problema vira conserto, sugestão vai para avaliação.</p>'
+        + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
+        + '<button class="btn primary" data-gacao="relato-problema">🐞 Relatar um problema</button>'
+        + '<button class="btn" data-gacao="relato-melhoria">💡 Sugerir uma melhoria</button></div>'
+        /* a promessa de privacidade fica na tela, não só no documento */
+        + '<div class="muted" style="font-size:12px;margin-top:10px">Vai apenas o que você escrever, mais a tela em que estava e a versão. '
+        + '<b>Nenhum dado de orçamento, obra, cliente ou colaborador é enviado</b> — e você vê tudo antes de mandar.</div></div>';
+
+      var r = this._relatosMeus;
+      if (!r) { this._carregarRelatos(); return html + '<div class="card muted" style="font-size:13px">Carregando seus relatos…</div>'; }
+      if (r.erro) return html + '<div class="card" style="font-size:13px">Não consegui buscar seus relatos agora. O envio continua funcionando.</div>';
+      if (!r.itens.length) return html + '<div class="card muted" style="font-size:13px">Você ainda não enviou nenhum relato.</div>';
+
+      html += '<div class="card"><h3 style="margin:0 0 10px">Seus relatos</h3><table class="tbl"><thead><tr>'
+        + "<th>Quando</th><th>Tipo</th><th>Assunto</th><th>Situação</th></tr></thead><tbody>";
+      html += r.itens.map(function (i) {
+        var e = Relatos.estadoDe(i.estado);
+        var d = new Date(i.criadoEm || 0);
+        var quando = isNaN(d.getTime()) ? "—" : ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+        return "<tr><td>" + quando + "</td>"
+          + "<td>" + (i.tipo === "melhoria" ? "💡 Melhoria" : "🐞 Problema") + "</td>"
+          + "<td>" + Util.esc(i.titulo || "—")
+          + (i.resposta ? '<div class="muted" style="font-size:12px;margin-top:3px">↳ ' + Util.esc(i.resposta) + "</div>" : "")
+          + "</td>"
+          + '<td><span style="color:' + e.cor + ';font-weight:600">' + e.rotulo + "</span>"
+          + '<div class="muted" style="font-size:11px">' + e.diz + "</div></td></tr>";
+      }).join("");
+      return html + "</tbody></table></div>";
+    },
+
+    _carregarRelatos: function () {
+      var self = this;
+      if (this._relatosBuscando) return;
+      this._relatosBuscando = true;
+      Relatos.meus(this._relatoDeps()).then(function (r) {
+        self._relatosBuscando = false;
+        self._relatosMeus = r;
+        App.render();
+      });
+    },
+
+    _relatoDeps: function () {
+      return {
+        url: (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer) : "",
+        licenca: (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "",
+        buscar: function (u, i) { return fetch(u, i); }
+      };
+    },
+
+    /* O formulário. A PRÉVIA do que vai é obrigatória: a política promete que
+       nada sai em segundo plano, e o jeito de o cliente conferir isso é ver o
+       pacote antes de apertar enviar. */
+    relatoNovo: function (tipo) {
+      var self = this;
+      var ehMelhoria = tipo === "melhoria";
+      var corpo =
+        campo(ehMelhoria ? "O que você gostaria que o sistema fizesse? *" : "O que aconteceu? *",
+          inp("rl-titulo", "", ehMelhoria ? "Ex.: poder copiar uma medição para o mês seguinte" : "Ex.: o total da folha não bate com o cartão de ponto")) +
+        campo(ehMelhoria ? "Conte com suas palavras (quanto mais detalhe, melhor) *"
+                         : "Conte o passo a passo: o que você fez, o que esperava e o que apareceu *",
+          '<textarea id="rl-texto" rows="7" placeholder="' + (ehMelhoria
+            ? "Hoje eu preciso digitar tudo de novo todo mês. Se desse para..."
+            : "Abri a Folha Semanal, lancei 5 diaristas, e o total apareceu...") + '"></textarea>');
+
+      UI.modal(ehMelhoria ? "💡 Sugerir uma melhoria" : "🐞 Relatar um problema", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Continuar →", classe: "primary", onClick: function () {
+          var p = Relatos.montar(
+            { tipo: tipo, titulo: v("rl-titulo"), texto: v("rl-texto") },
+            { tela: String(self._telaAnterior || "relatos"), versao: (typeof CONFIG !== "undefined" && CONFIG.versao) || "" }
+          );
+          var val = Relatos.validar(p);
+          if (!val.ok) { UI.toast(val.erro, "erro"); return; }
+          self._relatoPrevia(p);
+        } }
+      ]);
+    },
+
+    _relatoPrevia: function (p) {
+      var self = this;
+      var linhas = Relatos.previa(p).map(function (l) {
+        return '<div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--linha,#e5e7eb)">'
+          + '<div class="muted" style="min-width:150px;font-size:12px">' + Util.esc(l.campo) + "</div>"
+          + '<div style="font-size:13px;white-space:pre-wrap">' + Util.esc(l.valor) + "</div></div>";
+      }).join("");
+      UI.modal("Confira o que vai ser enviado",
+        '<p style="margin-top:0;font-size:13px">É <b>exatamente isto</b> que sai do seu computador — nada além:</p>'
+        + '<div class="card" style="padding:8px 12px">' + linhas + "</div>"
+        + '<p class="muted" style="font-size:12px;margin-top:10px">Nenhum orçamento, obra, cliente, colaborador, valor ou foto acompanha este envio.</p>', [
+          { texto: "Voltar e editar", classe: "ghost", onClick: function () { UI.fecharModal(); self.relatoNovo(p.tipo); } },
+          { texto: "Enviar", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            Relatos.enviar(p, self._relatoDeps()).then(function (r) {
+              if (r.ok) {
+                UI.toast("Recebido! Obrigado — isso ajuda de verdade.", "ok");
+                self._relatosMeus = null; App.render();
+              } else {
+                UI.toast(r.erro, "erro");
+              }
+            });
+          } }
+        ]);
+    },
+
+    /* --------------------------------------------------------------------
      * DIÁRIO QUE CHEGA PELO WHATSAPP
      *
      * O mestre manda áudio, o n8n transcreve e estrutura, e deposita numa
@@ -14327,6 +14446,8 @@ renderFolha: function () {
         case "rdo-obra": return this.rdoTrocaObra(dataset.value);
         case "rdo-fotos": return this.rdoFotos();
         case "rdo-entrada": return this.rdoBuscarEntrada(true);
+        case "relato-problema": return this.relatoNovo("problema");
+        case "relato-melhoria": return this.relatoNovo("melhoria");
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
         case "falta-lote": return this.faltasLote();

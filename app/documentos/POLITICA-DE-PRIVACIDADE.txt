@@ -1,5 +1,5 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.1 — vigente a partir de 01/08/2026
+Versão 1.2 — vigente a partir de 08/08/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
 
 
@@ -161,6 +161,33 @@ interessou pelo produto.
 
 4.6 CONSULTA DE CA DE EPI
 Abre um site público de terceiro com o número do CA. Nenhum dado seu é enviado.
+
+
+4.7 FALAR COM O SUPORTE (relatar problema ou sugerir melhoria)
+Quando voce usa a aba "Falar com o suporte" e aperta ENVIAR, saem do seu
+computador exatamente cinco coisas, e nada alem delas:
+
+  · se e um problema ou uma sugestao;
+  · o titulo que voce escreveu;
+  · o texto que voce escreveu;
+  · o nome da tela em que voce estava (por exemplo "folhasemanal") — o NOME
+    da tela, nunca o que estava nela;
+  · a versao do OrcaPRO instalada.
+
+Antes de enviar, o programa mostra esses cinco campos numa tela de conferencia.
+O que voce ve ali e literalmente o que sai. Nada e enviado em segundo plano.
+
+NAO acompanha o envio: conteudo de orcamento, obra, cliente, fornecedor ou
+colaborador; CPF, CNPJ, chave PIX, salario, ponto ou folha; valores, medicoes,
+contratos e notas; fotos e modelos 3D; e o conteudo do armazenamento do
+programa no seu computador.
+
+Para que serve: o relato entra numa fila de conserto (se for problema) ou vai
+para avaliacao da RA Engenharia (se for sugestao). Voce acompanha a situacao
+do seu relato na propria aba.
+
+Por quanto tempo: o relato ja resolvido ou recusado e apagado 180 dias depois
+do fechamento. Voce pode pedir a exclusao antes disso (item 9).
 
 
 5. O QUE NUNCA FAZEMOS

@@ -218,7 +218,10 @@
     nome: function () { var u = this._usuario; return u ? (u.nome || u.empresa || u.email || "") : ""; },
     podeModulo: function (id) {
       if (this.ehAdmin()) return true;                 // dono/demo vê tudo
-      if (id === "dashboard" || id === "ajuda") return true; // painel e ajuda sempre acessíveis
+      /* "relatos" entra aqui junto com a ajuda: quem topa com o defeito é o
+         sub-usuário que usa a tela o dia inteiro, não o admin. Trancar o canal
+         de suporte no admin é garantir que o problema não chegue. */
+      if (id === "dashboard" || id === "ajuda" || id === "relatos") return true; // painel, ajuda e suporte sempre acessíveis
       if (id === "usuarios") return false;             // gestão de usuários é exclusiva do admin
       var mods = (this._usuario && this._usuario.modulos) || [];
       return mods.indexOf(id) > -1;
