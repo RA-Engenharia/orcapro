@@ -814,6 +814,7 @@
         case "novo": this.novoOrcamento(); break;
         case "copiar-orc": this.copiarOrcamento(); break;
         case "importar-sinapi": this.abrirImportSinapi(); break;
+        case "base-oficial": this.voltarBaseOficial(); break;
         case "atualizar": this.abrirAtualizar(); break;
         case "processar-import": this.processarImportSinapi(); break;
         case "voltar": this.tela = "lista"; this.orcAtual = null; this.render(); break;
@@ -1431,10 +1432,47 @@
 
     abrirImportSinapi: function () {
       var self = this;
-      UI.modal("⬆ Importar base SINAPI", UI.renderImportSinapi(Sinapi.resumo()), [
+      UI.modal("⬆ Importar base SINAPI", UI.renderImportSinapi(Sinapi.resumo(), self._temBasePropria()), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Importar", classe: "primary", onClick: function () { self.processarImportSinapi(); } }
       ]);
+    },
+
+    /* Mesma pergunta que a atualização faz (Atualizacao._basePropriaDoCliente):
+       base gravada que NÃO veio da atualização oficial é do cliente. */
+    _temBasePropria: function () {
+      try {
+        var b = Store.lerBaseSinapi(Auth.empresaId());
+        return !!(b && b.dados && b.dados.length && b._origem !== "atualizacao-oficial");
+      } catch (e) { return false; }
+    },
+
+    /* Volta para a SINAPI que veio no pacote. Some SÓ a tabela de preços
+       importada (`sinapi_base`); as composições próprias moram em
+       `bases_extras` e não são tocadas — a confirmação diz isso porque a
+       diferença entre as duas é justamente o que NÃO dá para reimportar. */
+    voltarBaseOficial: function () {
+      var self = this, b = null;
+      try { b = Store.lerBaseSinapi(Auth.empresaId()); } catch (e) {}
+      var n = (b && b.dados && b.dados.length) || 0;
+      var comp = (b && (b.mes || b.competencia)) || "—";
+      UI.modal("↩ Voltar para a SINAPI oficial?",
+        '<p style="font-size:13px;margin-top:0">Sai a base importada de <b>' + Util.esc(String(comp)) +
+        '</b> (' + n.toLocaleString("pt-BR") + ' itens) e volta a valer a SINAPI que veio no pacote.</p>' +
+        '<p style="font-size:13px">Se essa planilha tinha <b>preços negociados</b>, guarde o arquivo antes: ' +
+        'o sistema não tem como reconstruí-la.</p>' +
+        '<p class="muted" style="font-size:12px">Não são afetados: composições próprias, orçamentos, obras e o resto dos seus dados.</p>', [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Voltar para a oficial", classe: "danger", onClick: function () {
+            try { Store.apagarBaseSinapi(Auth.empresaId()); } catch (e) {}
+            UI.fecharModal();
+            /* sem a persistida, o boot lê a do pacote */
+            self.carregarBaseSinapi().then(function () {
+              UI.toast("De volta à SINAPI oficial. Rode “Verificar atualização” para pegar a competência nova.", "ok");
+              self.render();
+            }).catch(function () { location.reload(); });
+          } }
+        ]);
     },
 
     processarImportSinapi: function () {

@@ -1532,7 +1532,9 @@
     },
 
     // ---------- Importar base SINAPI ----------
-    renderImportSinapi: function (resumo) {
+    /* `temPropria`: existe base importada gravada para esta empresa. Ver o
+       bloco no fim desta função — é a saída que faltava. */
+    renderImportSinapi: function (resumo, temPropria) {
       return '' +
         '<p class="muted">Use a base SINAPI da sua região/competência. Aceita <b>JSON</b> (export do ' +
         'sinapi-fetcher) ou <b>CSV</b> com colunas Código, Descrição, Unidade e Custo.</p>' +
@@ -1540,7 +1542,23 @@
         '<div class="field"><label>UF</label><input id="imp-uf" value="' + Util.esc(resumo.uf || "") + '" placeholder="MG"></div></div>' +
         '<div class="field"><label>Arquivo (.json / .csv)</label><input id="imp-file" type="file" accept=".json,.csv,.txt"></div>' +
         '<div class="field"><label>…ou cole o conteúdo aqui</label><textarea id="imp-text" rows="5" placeholder=\'{"mes":"2026-05","uf":"MG","dados":[...]}  ou  Codigo;Descricao;Unidade;Custo\'></textarea></div>' +
-        '<div class="watermark-hint">A base fica salva por empresa e passa a ser usada na busca e no Escopo. Bases muito grandes podem ficar só na sessão atual (aviso na hora).</div>';
+        '<div class="watermark-hint">A base fica salva por empresa e passa a ser usada na busca e no Escopo. Bases muito grandes podem ficar só na sessão atual (aviso na hora).</div>' +
+        /* ⚠ A SAÍDA PRECISA EXISTIR AQUI.
+           Quem importa uma base própria para de receber a atualização oficial, e
+           isso é DE PROPÓSITO: o auto-update já destruiu tabela de preço
+           negociada uma vez. Só que o aviso mandava "remova a base própria em
+           ⬆ Importar" e esta tela não tinha como remover — `Store.apagarBaseSinapi`
+           existia no store sem UMA chamada no app inteiro. O cliente ficava preso
+           numa competência velha sem caminho de volta: no caso real, 8.380 itens
+           contra 12.815 da oficial, ~4.400 serviços fora da busca e do Escopo. */
+        (temPropria
+          ? '<div class="card" style="margin-top:12px;padding:10px 12px;border-left:3px solid #c90">'
+            + '<div style="font-size:13px;margin-bottom:8px">Você usa uma <b>base própria importada</b>. '
+            + 'Enquanto ela estiver aqui, a atualização oficial da SINAPI não roda.</div>'
+            + '<button class="btn sm" data-acao="base-oficial">↩ Voltar para a SINAPI oficial</button>'
+            + '<div class="muted" style="font-size:11px;margin-top:6px">Apaga só a tabela de preços importada. '
+            + 'Suas <b>composições próprias</b>, orçamentos e obras não são tocados.</div></div>'
+          : "");
     },
 
     // ---------- Agente Importador: preview + mapeamento de colunas ----------
