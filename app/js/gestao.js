@@ -597,6 +597,68 @@
      * lado a lado, sem rótulo. Quem lê acredita no que está escrito.
      *
      * Agora quem quiser dado do Painel pede aqui, e vem no recorte certo. */
+    /* --------------------------------------------------------------------
+     * DINHEIRO FECHADO QUE NINGUÉM LANÇOU
+     *
+     * O sistema já liga folha → despesa, produção → folha e medição paga →
+     * receita. Só que cada ponte é um BOTÃO. Quando ninguém aperta, não
+     * acontece nada: sem erro, sem marca, sem alarme — e a obra aparece mais
+     * lucrativa do que é. Numa obra tocada por diarista, uma semana de folha
+     * esquecida é a maior despesa do mês sumindo em silêncio.
+     *
+     * O card não conserta nada: mostra o que ficou pelo caminho, com o valor
+     * e o caminho. Quem lança dinheiro é gente.
+     * ------------------------------------------------------------------ */
+    _dashReconciliacaoHtml: function () {
+      if (typeof Reconciliacao === "undefined") return "";
+      var esc = this._dashEscopo();
+      var naObra = function (x) { return !esc.ids || (x && esc.ids.indexOf(x.obraId) > -1); };
+      var r;
+      try {
+        r = Reconciliacao.achar({
+          fsLancamentos: lista("fs_lancamentos").filter(naObra),
+          financeiro: esc.financeiro,
+          producaoMed: lista("producao_med").filter(naObra),
+          medicoes: esc.medicoes,
+          obras: esc.obras,
+          hoje: String(this._hojeISO()).slice(0, 10)
+        });
+      } catch (e) { return ""; }
+      if (!r.total) return "";
+
+      var linhas = r.itens.slice(0, 8).map(function (i) {
+        var cor = i.gravidade >= 3 ? "#c2410c" : "#7c3aed";
+        return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--linha,#e5e7eb)">'
+          + '<div style="min-width:110px;text-align:right;font-weight:700;color:' + cor + '">' + Util.fmtMoeda(i.valor) + '</div>'
+          + '<div style="flex:1">'
+          + '<div style="font-weight:600;font-size:13px">' + Util.esc(i.titulo) + '</div>'
+          + '<div class="muted" style="font-size:12px">' + Util.esc(i.detalhe) + '</div>'
+          + '<div style="font-size:12px;margin-top:3px">' + Util.esc(i.porque) + '</div>'
+          + '<div class="muted" style="font-size:11.5px;margin-top:2px">&rarr; ' + Util.esc(i.acao) + '</div>'
+          + '</div>'
+          + '<button class="btn sm" data-view="' + Util.esc(i.view) + '">Resolver</button></div>';
+      }).join("");
+
+      /* os dois totais dizem coisas OPOSTAS e por isso não se somam:
+         custo que falta = a margem está mentindo para CIMA
+         receita que falta = o caixa está mentindo para BAIXO */
+      var resumo = [];
+      if (r.custoQueFalta > 0) resumo.push('<span style="color:#c2410c"><b>' + Util.fmtMoeda(r.custoQueFalta)
+        + '</b> de custo que ainda não entrou na obra</span>');
+      if (r.receitaQueFalta > 0) resumo.push('<span style="color:#7c3aed"><b>' + Util.fmtMoeda(r.receitaQueFalta)
+        + '</b> aprovado e não recebido</span>');
+
+      return '<div class="card mt" style="border-left:3px solid #c2410c">'
+        + '<h3 style="margin:0 0 4px">&#9888; Dinheiro fechado que ninguém lançou</h3>'
+        + '<div class="muted" style="font-size:12px;margin-bottom:6px">'
+        + r.total + ' ponta(s) solta(s) &middot; ' + resumo.join(' &nbsp;&middot;&nbsp; ')
+        + '</div>'
+        + '<div class="muted" style="font-size:11.5px;margin-bottom:4px">'
+        + 'Nada aqui é erro do sistema: é trabalho já feito cujo passo de dinheiro ninguém deu ainda.</div>'
+        + linhas
+        + (r.total > 8 ? '<div class="muted" style="font-size:12px;padding-top:8px">…e mais ' + (r.total - 8) + ' ponta(s).</div>' : '')
+        + '</div>';
+    },
     _dashEscopo: function () {
       var ids = this._dashObras();                       // null = portfólio inteiro
       var naObra = function (x) { return !ids || (x && ids.indexOf(x.obraId) > -1); };
@@ -623,10 +685,18 @@
     },
     renderDashboard: function () {
       var esc = this._dashEscopo(), metas = this._metas();
-      var obras = esc.obras, clientes = lista("clientes"), contratos = esc.contratos, med = esc.medicoes, fin = esc.financeiro, orc = Store.listarOrcamentos(eid());
-      var compras = esc.compras, estoque = esc.estoque, rdos = esc.rdo;
+      /* ⚠ RBAC EM FUNÇÃO, NÃO SÓ NO MENU — e definido AQUI, antes do primeiro
+       * uso. Dinheiro (contratado, recebido, despesa, margem por obra) só sai
+       * para quem tem o módulo Financeiro. O bloco `_dashFinHtml` já fazia
+       * isso; o resto do Painel imprimia para todo mundo, e o encarregado com
+       * acesso só ao RDO enxergava a margem de cada obra da empresa. */
+      var _podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+      /* ⚠ `clientes` e `orc` eram lidos e DESCARTADOS. `Store.listarOrcamentos`
+       * é a leitura mais cara do sistema (desserializa todo orçamento da
+       * empresa) e o resultado não era usado em lugar nenhum deste método. */
+      var obras = esc.obras, contratos = esc.contratos, med = esc.medicoes, fin = esc.financeiro;
+      var compras = esc.compras, rdos = esc.rdo;
       var comprasAbertas = compras.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
-      var valorEstoque = estoque.reduce(function (s, i) { return s + Util.num(i.saldo) * Util.num(i.custoUnit); }, 0);
       var emAndamento = obras.filter(function (o) { return o.status === "andamento"; }).length;
       var valorContratado = contratos.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
@@ -650,13 +720,19 @@
         _sec("obra", "Operação", "visão geral de obras, suprimentos e campo · <b>" + this._dashEscopoRotulo(esc) + "</b>") +
         '<div class="kpis kpis-g">' +
           k(esc.filtrado ? "Obras no recorte (em andamento)" : "Obras em andamento", emAndamento + " / " + obras.length) +
-          k("Valor contratado", Util.fmtMoeda(valorContratado), "custo") +
-          k("Recebido", Util.fmtMoeda(receitas), "destaque") +
-          k("A receber", Util.fmtMoeda(aReceber)) +
-          k("Despesas", Util.fmtMoeda(despesas)) +
+          /* ⚠ MESMO GATE DO BLOCO DE CIMA. Estes quatro são dinheiro e
+           * imprimiam para todo mundo, enquanto o bloco financeiro logo acima
+           * já se escondia de quem não tem o módulo (_dashFinHtml). Quem tinha
+           * acesso só ao RDO enxergava o contratado, o recebido e a despesa da
+           * empresa inteira. */
+          (_podeFin
+            ? k("Valor contratado", Util.fmtMoeda(valorContratado), "custo") +
+              k("Recebido", Util.fmtMoeda(receitas), "destaque") +
+              k("A receber", Util.fmtMoeda(aReceber)) +
+              k("Despesas", Util.fmtMoeda(despesas))
+            : "") +
           k("Medições pendentes", medPend) +
           k("Compras em aberto", comprasAbertas) +
-          k("Valor em estoque", Util.fmtMoeda(valorEstoque)) +
           k("Diários (RDO)", rdos.length) +
         "</div>";
       // Sem nenhuma obra ainda: o CTA da obra de demonstração sobe pro TOPO (1ª impressão)
@@ -700,14 +776,28 @@
           (tAtras ? '<button class="btn sm" data-view="tarefas" style="color:#dc2626;margin-right:8px">⚠ Atrasadas: <b>' + tAtras + "</b></button>" : "") +
           "</div>";
       }
-      // resumo por obra (orçado x contratado x custo real)
-      html += '<div class="card mt"><h3 style="margin:0 0 10px">Resumo por obra</h3>';
+      // dinheiro fechado que ninguém lançou (motor em js/reconciliacao.js)
+      if (_podeFin) html += this._dashReconciliacaoHtml();
+      // resumo por obra (contratado x custo real, ACUMULADO da obra)
+      if (_podeFin) {
+      html += '<div class="card mt"><h3 style="margin:0 0 4px">Resumo por obra</h3>'
+        /* ⚠ A BASE PRECISA ESTAR ESCRITA. Esta tabela é o ACUMULADO da obra
+         * desde o início (contratado é vitalício), enquanto os cards de cima
+         * seguem o período do filtro. Sem dizer isso, o mesmo "custo/m²"
+         * aparecia com valores muito diferentes em dois pontos da mesma
+         * página, e quem lia concluía que um dos dois estava errado. */
+        + '<div class="muted" style="font-size:12px;margin-bottom:10px">Acumulado de cada obra desde o início · regime de caixa (só o que foi pago e recebido) · independe do período escolhido acima</div>';
       if (!obras.length) html += '<p class="muted">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> (ou gere a partir de um orçamento).</p>';
       else {
         html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num" title="(recebido − custo real) ÷ recebido. Sem receita lançada, a margem não existe e aparece —">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
           var ctr = contratos.filter(function (c) { return c.obraId === o.id; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
-          var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          /* ⚠ REGIME MISTURADO NA MESMA LINHA. O custo somava despesa PENDENTE
+           * junto; a receita da linha de baixo já excluía a pendente. A margem
+           * saía pessimista por construção — despesa que ainda não saiu contra
+           * receita que já entrou — e no card de cima o mesmo par era otimista.
+           * Agora as duas pontas usam CAIXA: só o que efetivamente andou. */
+          var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var base = ctr || Util.num(o.valor);
           /* ⚠ ISTO NAO ERA MARGEM. A conta era (contratado - custo) / contratado,
@@ -725,6 +815,7 @@
         html += "</tbody></table>";
       }
       html += "</div>";
+      }   // fecha o gate de RBAC do "Resumo por obra"
       // G5: Análise visual (gráficos reutilizando o motor SVG do ui.js) com filtro de período
       html += this._dashAnalise();
       // Obra de demonstração — só p/ o ADMIN, fora da vitrine e com licença ativa
@@ -821,9 +912,20 @@
         else this._dashObra = ids.length === 1 ? ids[0] : ids;
       }
       var obraSel = ids && ids.length === 1 ? ids[0] : "todas";   /* detalhe por etapa só faz sentido em UMA obra */
+      /* ⚠ UM FILTRO SÓ, PARA TODO MUNDO.
+       * Havia DOIS recortes convivendo nesta função: `ids` (multi-obra, o que o
+       * usuário escolheu) e `obraSel` (que desaba para "todas" assim que ele
+       * marca duas obras). O `fin` usava `ids`; "A receber", "A pagar", as
+       * medições pendentes, as contas a vencer e o gráfico de custo por obra
+       * usavam `obraSel` ou a lista crua — então com DUAS obras escolhidas
+       * esses cinco voltavam a somar o portfólio inteiro, calados, ao lado de
+       * números que respeitavam o recorte.
+       * `obraSel` continua existindo só para o que EXIGE obra única (detalhe
+       * por etapa e rótulo). Recorte de dado é isto aqui. */
+      var naObra = function (x) { return !ids || (x && ids.indexOf(x.obraId) > -1); };
       var finTudo = lista("financeiro");
       var finPer = this._periodoFin(finTudo, this._dashPer);
-      var fin = finPer.filter(function (f) { return !ids || ids.indexOf(f.obraId) > -1; });
+      var fin = finPer.filter(naObra);
 
       var receitas = 0, despesas = 0, aReceber = 0, aPagar = 0;
       var porCat = Object.create(null), porMes = Object.create(null);
@@ -845,7 +947,7 @@
       // contas em aberto = estoque (independe do período; respeita o filtro de obra)
       finTudo.forEach(function (f) {
         if (f.status !== "pendente") return;
-        if (obraSel !== "todas" && f.obraId !== obraSel) return;
+        if (!naObra(f)) return;
         var v = Util.num(f.valor);
         if (f.tipo === "receita") aReceber += v; else if (f.tipo === "despesa") aPagar += v;
       });
@@ -908,9 +1010,12 @@
       var realTot = realComp + semComparacao;
       var nEstouros = prevReal.filter(function (x) { return x.estourou; }).length;
 
-      // empilhado por obra (portfólio, período aplicado — comparativo entre obras)
+      /* empilhado por obra (período aplicado — comparativo entre obras)
+         ⚠ iterava `obras` cru: com uma obra escolhida no filtro, este card
+         continuava desenhando o portfólio inteiro ao lado dos KPIs já
+         recortados, e sem uma nota dizendo isso. */
       var catsEmp = ["material", "mao_obra", "equipamento"];
-      var empilhado = obras.map(function (o) {
+      var empilhado = obras.filter(function (o) { return !ids || ids.indexOf(o.id) > -1; }).map(function (o) {
         var soma = {}, total = 0;
         finPer.forEach(function (f) {
           if (f.obraId !== o.id || f.tipo !== "despesa" || f.status === "pendente") return;
@@ -926,7 +1031,7 @@
         var pct = Math.round((x.real / x.previsto - 1) * 100);
         alertas.push({ tipo: "estouro", texto: (porEtapa ? "Etapa " : "") + x.rotulo + ": custo " + pct + "% acima do orçado (" + self._fmtK(x.real - x.previsto) + " a mais)" });
       });
-      var medPend = lista("medicoes").filter(function (m) { return (obraSel === "todas" || m.obraId === obraSel) && m.status === "pendente"; });
+      var medPend = lista("medicoes").filter(function (m) { return naObra(m) && m.status === "pendente"; });
       if (medPend.length) alertas.push({ tipo: "prazo", texto: medPend.length + " medição(ões) aguardando aprovação — " + this._fmtK(medPend.reduce(function (s, m) { return s + Util.num(m.valor); }, 0)) });
       // contas a pagar são ESTOQUE (como aReceber/aPagar): a base é a lista completa
       // com filtro de obra — o período nunca esconde um vencimento iminente
@@ -934,7 +1039,7 @@
       var em7 = new Date(Date.now() + _md * 86400000);
       var contas = finTudo.filter(function (f) {
         if (f.tipo !== "despesa" || f.status !== "pendente" || !f.data) return false;
-        if (obraSel !== "todas" && f.obraId !== obraSel) return false;
+        if (!naObra(f)) return false;
         var dv = new Date(String(f.data) + "T00:00:00");
         return !isNaN(dv.getTime()) && dv <= em7;
       });
