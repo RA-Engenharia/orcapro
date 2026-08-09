@@ -130,6 +130,30 @@
         if (typeof Atualizacao !== "undefined" && Atualizacao.checarAuto) {
           setTimeout(function () { try { Atualizacao.checarAuto(); } catch (eAu) {} }, 9000);
         }
+        /* v1.1.185 — AUTO-RECUPERAÇÃO DO PORTAL DO CLIENTE.
+         * Obra já publicada cujo retrato foi gerado por versão anterior se
+         * republica sozinha, uma vez. Sem isto, todo recurso novo do Portal
+         * nasce invisível: a 1.1.184 subiu e ficou sem aparecer em 12 das 13
+         * obras publicadas — inclusive as de outros escritórios licenciados,
+         * cujas obras nem estão nesta máquina para alguém consertar.
+         *
+         * 14 s (depois do update de bases, aos 9 s) porque o envio carrega
+         * fotos: quem acabou de abrir o programa tem de conseguir trabalhar
+         * primeiro. Falha aqui é silenciosa por definição — tenta de novo na
+         * próxima abertura, e desiste depois de 3 (PortalSync). */
+        if (typeof Gestao !== "undefined" && Gestao._recuperarPortais) {
+          setTimeout(function () {
+            try {
+              Gestao._recuperarPortais(function (res) {
+                if (!res || (!res.ok && !res.falhou)) return;
+                try {
+                  var msg = (typeof PortalSync !== "undefined") ? PortalSync.recado(res) : "";
+                  if (msg) UI.toast(String(msg).replace(/<[^>]+>/g, ""), res.falhou ? "erro" : "ok");
+                } catch (e2) {}
+              });
+            } catch (ePs) {}
+          }, 14000);
+        }
       }).catch(function (e) {
         console.warn("[SINAPI] não carregou:", e.message);
         UI.toast("Base SINAPI não carregou (rode via servidor local).", "erro");

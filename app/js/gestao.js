@@ -15516,7 +15516,18 @@ case "nova-folha": return this.novoFolha();
        * calculada nem embarcada — não adianta esconder a caixa e mandar a
        * data dentro do JSON. */
       var previsao = null;
-      var mostrarPrevisao = obra.portalPrevisao !== false;
+      /* ⚠ MUDOU NA 1.1.185, E A MUDANÇA É DELIBERADA.
+       * Era `!== false` (nasce ligada). Com a auto-recuperação, obra de
+       * QUALQUER escritório licenciado passa a se republicar sozinha — e
+       * ligar uma projeção de prazo no portal do cliente de outra empresa,
+       * sem ninguém daquela empresa ter decidido, é opinar sobre um contrato
+       * que não é nosso. Agora só liga com um `true` gravado de propósito, o
+       * que só acontece publicando pela TELA, onde a escolha vem com o aviso
+       * de que projeção pode ser lida como compromisso.
+       * Quem já tinha ligado continua ligado (o `true` está gravado). */
+      var mostrarPrevisao = (typeof PortalSync !== "undefined")
+        ? PortalSync.mostrarPrevisao(obra)
+        : obra.portalPrevisao === true;
       if (mostrarPrevisao && fisico && typeof Fisico !== "undefined" && Fisico.previsao) {
         try {
           previsao = Fisico.previsao(fisico.serieSemana, { pct: fisico.pct, termino: obra.termino || "" });
@@ -15740,6 +15751,60 @@ case "nova-folha": return this.novoFolha();
       };
     },
 
+    /* ---------- AUTO-RECUPERAÇÃO DO PORTAL ----------
+     * O Portal mostra o RETRATO da última publicação. Quando o programa ganha
+     * blocos novos (projeção, marcos, galeria, documentos, financeiro), eles
+     * não aparecem para ninguém até alguém clicar em "Publicar" de novo — e a
+     * 1.1.184 provou isso: o recurso subiu e ficou invisível em 12 das 13
+     * obras publicadas, incluindo as de outros escritórios licenciados, cujas
+     * obras nem estão nesta máquina.
+     *
+     * Aqui a obra se atualiza sozinha, UMA vez por versão. O que segura o
+     * laço está em `js/portalsync.js` (motor puro, 40 verificações).
+     *
+     * ⚠ A PROJEÇÃO DE TÉRMINO NÃO ENTRA POR AQUI — ver a regra 3 de lá. */
+    _recuperarPortais: function (aoTerminar) {
+      if (typeof PortalSync === "undefined") { if (aoTerminar) aoTerminar(null); return; }
+      var versao = (typeof CONFIG !== "undefined" && CONFIG.versao) ? String(CONFIG.versao) : "";
+      var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!versao || !chave) { if (aoTerminar) aoTerminar(null); return; }
+
+      var self = this;
+      var f = PortalSync.fila(lista("obras"), versao);
+      if (!f.fila.length) { if (aoTerminar) aoTerminar(null); return; }
+
+      var res = { ok: 0, falhou: 0, sobraram: f.sobraram, nomes: [] };
+      var i = 0;
+      /* ⚠ UMA POR VEZ, EM SÉRIE. Cinco snapshots de ~1 MB em paralelo, logo
+         depois do boot, competem com a tela que a pessoa está tentando usar —
+         e o servidor SUBSTITUI a obra, então concorrência aqui é risco à toa. */
+      function proxima() {
+        if (i >= f.fila.length) {
+          if (res.ok || res.falhou) {
+            try { Store.salvarPrefs(eid(), Object.assign(Store.lerPrefs(eid()) || {}, { portalSyncEm: new Date().toISOString() })); } catch (e) {}
+          }
+          if (aoTerminar) aoTerminar(res);
+          return;
+        }
+        var obra = f.fila[i++];
+        self._republicarPortal(obra, function (r) {
+          var atual = Store.obter(eid(), "obras", obra.id) || obra;
+          if (r && r.ok) {
+            PortalSync.marcarSucesso(atual, versao, new Date().toISOString());
+            res.ok++; res.nomes.push(atual.nome || obra.id);
+          } else {
+            PortalSync.marcarFalha(atual, versao);
+            res.falhou++;
+          }
+          Store.salvar(eid(), "obras", atual);
+          /* respiro entre uma e outra: o app tem de continuar respondendo ao
+             dedo de quem abriu o programa para trabalhar */
+          setTimeout(proxima, 900);
+        });
+      }
+      proxima();
+    },
+
     /* ---------- AVISO SEMANAL AO CLIENTE ----------
      * O Portal só existe se o cliente lembrar de abrir. Este é o empurrão.
      *
@@ -15902,6 +15967,8 @@ case "nova-folha": return this.novoFolha();
            projeção que pode ser lida como compromisso de prazo. */
         campo("Previsão de término",
           '<label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;cursor:pointer;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:11px 13px">' +
+          /* nasce MARCADA na tela (é a recomendação), mas o que vale é o que
+             ficar gravado ao clicar em Publicar — o clique é a decisão */
           '<input type="checkbox" id="g-pprev"' + ((obra.portalPrevisao !== false) ? " checked" : "") + ' style="margin-top:3px">' +
           '<span>Mostrar ao cliente a <b>data provável de término</b> calculada pelo ritmo dos diários' +
           '<br><span class="muted" style="font-size:12px">' +
@@ -16007,8 +16074,11 @@ case "nova-folha": return this.novoFolha();
           if (c.checked) novos.push(c.getAttribute("data-rel"));
         });
         var cxPrev = document.getElementById("g-pprev");
-        var querPrev = cxPrev ? !!cxPrev.checked : (obra.portalPrevisao !== false);
-        var mudouPrev = querPrev !== (obra.portalPrevisao !== false);
+        var querPrev = cxPrev ? !!cxPrev.checked : (obra.portalPrevisao === true);
+        /* publicar pela tela SEMPRE grava a escolha — inclusive um "false"
+           explícito. É o que transforma "nunca decidiu" em "decidiu que não",
+           e é o que a auto-recuperação respeita depois. */
+        var mudouPrev = querPrev !== (obra.portalPrevisao === true) || obra.portalPrevisao === undefined;
         var mudouRel = novos.slice().sort().join("|") !== (relSel || []).slice().sort().join("|");
         if (mudouRel || mudouPrev) {
           obra.portalRelatorios = novos;
@@ -16056,7 +16126,14 @@ case "nova-folha": return this.novoFolha();
              * atual não pode ficar sem nada) e, se a revogação falhar, digo
              * isso em vermelho: o dono precisa saber que o antigo ainda entra. */
             var anterior = obra.portalUser;
-            obra.portalUser = user; obra.portalSenha = senha; Store.salvar(eid(), "obras", obra);
+            obra.portalUser = user; obra.portalSenha = senha;
+            /* marca a versão que gerou este retrato: é ela que faz a
+               auto-recuperação saber que esta obra está em dia (e não
+               republicá-la de novo ao abrir o app) */
+            if (typeof PortalSync !== "undefined" && typeof CONFIG !== "undefined") {
+              PortalSync.marcarSucesso(obra, String(CONFIG.versao || ""), new Date().toISOString());
+            }
+            Store.salvar(eid(), "obras", obra);
             if (anterior && anterior !== user) {
               fetch(url + "/api/portal/remover", {
                 method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave },
