@@ -16120,6 +16120,23 @@ case "nova-folha": return this.novoFolha();
            se o cliente lê o texto é o responsável técnico, não o programa. */
         (temAcidente ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;color:#475569"><input type="checkbox" id="g-pacid"><span>Incluir <b>nesta publicação</b> o <b>texto dos registros de acidente/dano</b>. Sem marcar, o cliente vê apenas que houve registro no dia e é orientado a consultar o diário oficial (o texto costuma trazer nome de envolvido e informação de saúde). <b>A caixa nasce desmarcada de propósito</b>: autorização dada hoje vale para o acidente de hoje, não para os próximos.</span></label>' : "") +
         '<div id="portal-result" style="margin-top:12px"></div>';
+      /* ---- lista de acessos extras, editável antes de publicar ----
+         Remover daqui NÃO revoga sozinho: revogar é ação de segurança e tem
+         de ser explícita, com confirmação — tirar o fiscal da lista por
+         engano e ele perder o acesso na próxima publicação automática seria
+         o mesmo tipo de surpresa silenciosa que este bloco veio consertar.
+
+         ⚠ ESTAS DUAS LINHAS PRECISAM VIR ANTES DO `UI.modal`.
+         Elas estavam DEPOIS. `var` sobe a declaração mas não o valor, então
+         `renderAcessos()` — chamado logo após abrir o modal — encontrava
+         `acessosBuf` como `undefined` e estourava em `.length`. E, pior, no
+         clique em Publicar o mesmo `undefined` estourava DENTRO do `.then`
+         do envio, onde o `.catch` escrevia "Sem conexão com o servidor".
+         A obra era publicada com sucesso e o usuário lia que tinha falhado —
+         desde a v1.1.184, em toda publicação manual. */
+      var acessosBuf = (obra.portalAcessosExtras || []).map(function (a) { return { user: a.user, senha: a.senha, rotulo: a.rotulo || "" }; });
+      var revogar = [];
+
       UI.modal("📱 Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Publicar", classe: "success", onClick: publicar }
@@ -16146,14 +16163,11 @@ case "nova-folha": return this.novoFolha();
       })();
       function el(i) { return document.getElementById(i); }
 
-      /* ---- lista de acessos extras, editável antes de publicar ----
-         Remover daqui NÃO revoga sozinho: revogar é ação de segurança e tem
-         de ser explícita, com confirmação — tirar o fiscal da lista por
-         engano e ele perder o acesso na próxima publicação automática seria
-         o mesmo tipo de surpresa silenciosa que este bloco veio consertar. */
-      var acessosBuf = (obra.portalAcessosExtras || []).map(function (a) { return { user: a.user, senha: a.senha, rotulo: a.rotulo || "" }; });
       function renderAcessos() {
         var box = el("g-pacessos"); if (!box) return;
+        /* cinto de segurança: se alguém voltar a declarar `acessosBuf` depois
+           daqui, a tela fica pobre em vez de o Portal inteiro quebrar */
+        if (!acessosBuf) acessosBuf = [];
         if (!acessosBuf.length) {
           box.innerHTML = '<span class="muted" style="font-size:12px">Nenhum acesso extra. Só o usuário acima entra nesta obra.</span>';
           return;
@@ -16176,7 +16190,9 @@ case "nova-folha": return this.novoFolha();
           };
         });
       }
-      var revogar = [];
+      /* (`revogar` é declarado lá em cima, junto de `acessosBuf`, antes do
+         `UI.modal` — a segunda declaração que existia aqui era o mesmo furo
+         de hoisting e reatribuía a lista para vazia.) */
 
       function publicar() {
         var user = ((el("g-puser") || {}).value || "").trim().toLowerCase().replace(/\s+/g, ""), senha = ((el("g-psenha") || {}).value || "").trim();
@@ -16339,7 +16355,34 @@ case "nova-folha": return this.novoFolha();
                   if (!pendentes) { obra.portalAcessosExtras = extras; Store.salvar(eid(), "obras", obra); terminarExtras(); }
                 });
             });
-          }).catch(function () { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>'; });
+          }).catch(function (err) {
+            /* ⚠ ESTE `catch` MENTIU POR DUAS VERSÕES.
+             * Ele dizia "Sem conexão com o servidor" para QUALQUER erro — e um
+             * `.catch` de promessa também pega exceção lançada DENTRO do
+             * `.then`. Um `undefined.filter` no código de acessos extras virou
+             * "sem conexão": o servidor tinha recebido e gravado a publicação,
+             * o cliente já estava vendo a obra, e a tela dizia que falhou.
+             * Quem lê isso reinicia o roteador, republica cinco vezes e liga
+             * para o suporte — exatamente o que a mensagem errada provoca.
+             *
+             * Rede que cai de verdade gera TypeError do fetch ("Failed to
+             * fetch"/"NetworkError"). O resto é defeito nosso e tem de
+             * aparecer como defeito nosso, com o texto do erro na tela e o
+             * rastro no console — senão o próximo custa outras duas versões. */
+            var msg = (err && err.message) ? String(err.message) : "";
+            var ehRede = (err instanceof TypeError) || /failed to fetch|networkerror|load failed|network request failed/i.test(msg);
+            var caixa = el("portal-result");
+            if (!caixa) return;
+            if (ehRede) {
+              caixa.innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>';
+              return;
+            }
+            try { console.error("[portal] falha ao publicar:", err); } catch (e2) {}
+            caixa.innerHTML = '<div style="color:#dc2626;font-size:14px"><b>Falha no programa ao publicar</b> — não foi a sua internet.' +
+              '<div style="font-size:12.5px;margin-top:6px;color:#7f1d1d">' + Util.esc(msg || "erro sem descrição") + "</div>" +
+              '<div style="font-size:12px;margin-top:6px;color:#475569">⚠ A obra <b>pode já ter sido publicada</b> — o erro aconteceu depois do envio. ' +
+              "Confira no Portal antes de tentar de novo, e avise o suporte com esta mensagem.</div></div>";
+          });
       }
     },
 
