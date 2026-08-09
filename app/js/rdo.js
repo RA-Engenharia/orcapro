@@ -1018,10 +1018,27 @@
       climaCondicao: cond ? cond.condicao : "",
       servicos: itensPortal.map(function (a) {
         var av = RDO.calcAvanco(a);
+        /* ⚠ ACUMULADO NO PACOTE DO CLIENTE.
+         * `pct` sempre foi o do DIA (executado ÷ previsto), e sozinho ele
+         * engana: 18 de 200 sai como 9% tanto no primeiro dia quanto no
+         * último. Quem abre o Portal quer saber ONDE o serviço está, não
+         * quanto andou hoje.
+         * Só entra quando o chamador passa `opts.rdos` — sem a lista dos
+         * outros diários não há acumulado, e inventar um seria pior que não
+         * ter. `pct` fica no lugar: portal publicado antes desta versão
+         * continua lendo o campo que já conhecia. */
+        var ac = null;
+        if (o.rdos && typeof Avanco !== "undefined") {
+          ac = Avanco.calcular({ rdos: o.rdos, obraId: r.obraId, data: r.data, rdoId: r.id, item: a });
+        }
         return {
           numero: a.numero || "", descricao: a.descricao || "", etapa: a.etapa || "",
           unidade: a.unidade || "", qtdPrevista: Number(a.qtdPrevista || 0),
           qtdExecutada: Number(a.qtdExecutada || 0), pct: av.pct,
+          qtdAnterior: ac ? ac.anterior : null,
+          qtdAcumulada: ac ? ac.total : null,
+          qtdSaldo: ac && ac.temPrevisto ? ac.saldo : null,
+          pctAcumulado: ac && ac.temPrevisto ? ac.pctTotal : null,
           situacao: a.situacao || "", situacaoRotulo: rotuloDe(RDO.SITUACOES_SERVICO, a.situacao)
         };
       }),

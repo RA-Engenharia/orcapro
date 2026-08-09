@@ -190,6 +190,51 @@ Por quanto tempo: o relato ja resolvido ou recusado e apagado 180 dias depois
 do fechamento. Voce pode pedir a exclusao antes disso (item 9).
 
 
+4.8 DIÁRIO DE OBRA POR WHATSAPP (caixa de entrada)
+Se você ativar este recurso, o mestre ou encarregado manda a informação do dia
+por WhatsApp para o número da RA Engenharia, e ela chega ao OrçaPRO como um
+diário em RASCUNHO, para você conferir e aprovar.
+
+O que fica no nosso servidor, por mensagem recebida:
+
+  · o TEXTO da mensagem já organizado em campos de diário (data, obra, efetivo,
+    clima, atividades, impedimento);
+  · o TELEFONE de quem mandou;
+  · o identificador da mensagem, para não gravar a mesma duas vezes;
+  · o e-mail da conta para a qual ela deve ir.
+
+⚠ ISTO ENVOLVE DADO DE OUTRA PESSOA — o seu funcionário. Nessa relação quem
+decide o que é coletado é VOCÊ (a lei chama isso de controlador); nós apenas
+operamos o canal a seu pedido. Avise a equipe de que as mensagens mandadas para
+esse número entram no sistema da empresa, e use o recurso só com quem trabalha
+na obra.
+
+Por quanto tempo: a caixa é uma PASSAGEM, não um arquivo. Assim que o OrçaPRO
+baixa a mensagem, ela é apagada do nosso servidor em até 7 dias. O que fica
+guardado é o diário dentro do seu OrçaPRO, como qualquer outro. Se nada baixar,
+a caixa guarda no máximo 200 mensagens por conta e descarta as mais antigas,
+registrando isso no log — perder em silêncio seria pior que perder.
+
+O que NÃO entra por aqui: foto, áudio, arquivo e qualquer coisa acima de 64 KB —
+o servidor recusa. Áudio não é transcrito por nós.
+
+Para desligar: basta parar de usar o número. Sem mensagem, não há caixa. A
+pedido, apagamos na hora o que estiver pendente (item 7).
+
+
+4.9 CLIMA DO DIA NO DIÁRIO DE OBRA
+Quando você aperta "Buscar o clima deste dia", o programa consulta um serviço
+público de meteorologia (Open-Meteo, Alemanha). Vão para lá, nessa ordem:
+
+  · o NOME DO MUNICÍPIO da obra, uma única vez, para descobrir a coordenada —
+    depois disso a coordenada fica gravada na obra e essa consulta não se repete;
+  · a COORDENADA e a DATA, para trazer a condição do tempo daquele dia.
+
+Não vão: o nome da obra, o endereço completo, o cliente, nem qualquer conteúdo
+do diário. Não é a sua localização — é o município que você cadastrou na obra.
+Sem apertar o botão, nada é consultado.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
@@ -210,6 +255,8 @@ do fechamento. Voce pode pedir a exclusao antes disso (item 9).
     obra remove a publicação; a pedido, apagamos em até 30 dias.
   · Modelo BIM compartilhado (item 4.3): cerca de 72 horas, apagado em seguida.
     Posição, identidade e voz da reunião não são gravadas.
+  · Diário por WhatsApp (item 4.8): apagado do nosso servidor em até 7 dias
+    depois de o OrçaPRO baixar; no máximo 200 mensagens pendentes por conta.
   · Cadastro e consultas da busca de composições do site (item 4.5): enquanto
     você não pedir a exclusão.
   · Licença e faturamento: pelo prazo legal aplicável (fiscal e prescricional).
@@ -231,10 +278,15 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
   · Groq, Inc. — processa o conteúdo enviado aos recursos de IA (item 4.1).
   · GitHub Inc. (Microsoft) — entrega o pacote de atualização (item 3.3).
   · Meta Platforms — recebe o que você manda pelos botões de WhatsApp (4.4).
+  · Open-Meteo (Alemanha) — recebe município e coordenada da obra ao buscar o
+    clima do diário (item 4.9).
+  · consultaca.com — site público aberto por você para consultar o CA do EPI
+    (item 4.6); nenhum dado seu acompanha, só o número do CA.
 
 As bibliotecas que o programa usa (planilha, leitor de PDF, 3D, leitor de IFC,
 QR e as fontes) vêm INSTALADAS com ele e funcionam sem internet. A ÚNICA exceção
-é o SDK do Google Firebase, que o programa baixa do servidor do Google quando a
+é o SDK do Google Firebase, que o programa baixa do servidor do Google
+(www.gstatic.com) quando a
 sincronização em nuvem está ativa (item 3.1) — desligada a sincronização, esse
 download também deixa de acontecer.
 

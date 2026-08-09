@@ -7437,29 +7437,53 @@
       var itens = r.atividadesItens || [];
       function tabelaServicos() {
         if (!itens.length) return "";
+        /* ⚠ O IMPRESSO PASSOU A CARREGAR O ACUMULADO.
+         * Ele mostrava só "Executado" — a quantidade do DIA. Quem recebia o
+         * diário (o cliente, a fiscalização) via 18 m² e não tinha como saber
+         * se a parede estava em 9% ou em 99%: o previsto × realizado só
+         * aparecia na medição, semanas depois. Agora cada linha diz de onde
+         * saiu e para onde vai.
+         * O `rdos` vem da base, e o próprio diário é excluído do "anterior"
+         * pelo id — senão ele se somaria e o total sairia dobrado no papel. */
+        var temAv = typeof Avanco !== "undefined";
+        var baseRdos = temAv ? lista("rdo") : [];
         var linhas = itens.map(function (a) {
-          var av = (typeof RDO !== "undefined" && RDO.calcAvanco) ? RDO.calcAvanco(a) : { pct: 0, derivada: false };
+          var c = temAv ? Avanco.calcular({ rdos: baseRdos, obraId: r.obraId, data: r.data, rdoId: r.id, item: a }) : null;
           var sit = a.situacao;
           if (typeof RDO !== "undefined" && RDO.SITUACOES_SERVICO) {
             var s = RDO.SITUACOES_SERVICO.filter(function (x) { return x.id === a.situacao; })[0];
             if (s) sit = s.rotulo;
+          }
+          var nb = function (x) { return RDO.numBR(x); };
+          var celAcum = "—", celTotal = "—", celFalta = "—";
+          if (c) {
+            celAcum = c.anterior ? nb(c.anterior) : "—";
+            celTotal = c.total ? nb(c.total) + (c.temPrevisto ? '<div style="font-size:9px;color:' +
+              (c.excedeu ? "#b91c1c" : "#777") + '">' + nb(c.pctTotal) + "%</div>" : "") : "—";
+            celFalta = !c.temPrevisto ? "—"
+              : (c.excedeu ? '<span style="color:#b91c1c">+' + nb(c.excedente) + "</span>" : nb(c.saldo));
           }
           return '<tr style="border-top:1px solid #e2e8f0">'
             + '<td style="padding:4px 6px">' + (a.numero ? "<b>" + Util.esc(a.numero) + "</b> " : "") + Util.esc(a.descricao || "—")
             + (a.etapa ? '<div style="font-size:9px;color:#777">' + Util.esc(a.etapa) + "</div>" : "") + "</td>"
             + '<td style="padding:4px 6px;text-align:center">' + Util.esc(a.unidade || "—") + "</td>"
             + '<td style="padding:4px 6px;text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>"
-            + '<td style="padding:4px 6px;text-align:right">' + (a.qtdExecutada || "—") + (av.derivada ? ' <span style="color:#777">(' + av.pct + "%)</span>" : "") + "</td>"
+            + '<td style="padding:4px 6px;text-align:right;color:#777">' + celAcum + "</td>"
+            + '<td style="padding:4px 6px;text-align:right"><b>' + (a.qtdExecutada || "—") + "</b></td>"
+            + '<td style="padding:4px 6px;text-align:right">' + celTotal + "</td>"
+            + '<td style="padding:4px 6px;text-align:right">' + celFalta + "</td>"
             + '<td style="padding:4px 6px">' + Util.esc(sit || "—") + "</td></tr>";
         }).join("");
         return '<div style="margin-top:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden">'
           + '<div style="background:#f1f5f9;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">SERVIÇOS EXECUTADOS (' + itens.length + ")</div>"
-          + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
+          + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11px">'
           + '<tr style="background:#fafafa;font-size:10px;color:#555">'
           + '<th style="text-align:left;padding:4px 6px">Serviço</th><th style="padding:4px 6px">Un.</th>'
-          + '<th style="padding:4px 6px">Previsto</th><th style="padding:4px 6px">Executado</th>'
+          + '<th style="padding:4px 6px">Previsto</th><th style="padding:4px 6px">Antes</th>'
+          + '<th style="padding:4px 6px">Hoje</th><th style="padding:4px 6px">Acumulado</th>'
+          + '<th style="padding:4px 6px">Falta</th>'
           + '<th style="text-align:left;padding:4px 6px">Situação</th></tr>'
-          + linhas + "</table></div>";
+          + linhas + "</table></div></div>";
       }
 
       /* ⚠ O QUE O USUÁRIO LANÇA E O PAPEL NÃO MOSTRAVA.
@@ -7967,6 +7991,91 @@
         });
       }
 
+      /* -----------------------------------------------------------------
+       * AVANÇO ACUMULADO DO SERVIÇO
+       *
+       * Antes disto a linha só sabia o de HOJE: 18 de 200 virava "9% do
+       * item" — o mesmo 9% que apareceria se a equipe já tivesse levantado
+       * 180 m² da mesma parede nos dias anteriores. Quem apontava o dia não
+       * tinha como saber se estava começando ou terminando.
+       *
+       * ⚠ A obra e a DATA saem dos campos VIVOS do formulário, não de uma
+       * cópia. Trocar a obra no meio do preenchimento muda de que diários o
+       * acumulado vem; congelar isso mostraria o avanço da obra errada.
+       * --------------------------------------------------------------- */
+      function ctxAvanco(i) {
+        return {
+          rdos: lista("rdo"), obraId: v("g-obra"), data: v("g-data"),
+          rdoId: r.id || "", item: buf.ativ[i]
+        };
+      }
+      /* RDO.numBR e nao Util.fmtNum: fmtNum forca duas casas e "18 m2" viraria
+         "18,00 m2" em toda linha do diario. Quantidade de obra se le melhor sem
+         casa decimal quando ela e inteira. */
+      function nUn(x) { return RDO.numBR(x); }
+      function avancoHtml(i) {
+        if (typeof Avanco === "undefined") return "";
+        var a = buf.ativ[i];
+        var c = Avanco.calcular(ctxAvanco(i));
+        var un = c.unidade ? " " + Util.esc(c.unidade) : "";
+
+        if (!c.temPrevisto) {
+          /* sem previsto não há porcentagem honesta; ainda assim o acumulado
+             vale — é o total executado do serviço até aqui */
+          return '<div class="muted" style="font-size:10px;line-height:1.5">' +
+            (c.anterior ? "Antes: <b>" + nUn(c.anterior) + un + "</b> · " : "") +
+            "Total: <b>" + nUn(c.total) + un + "</b>" +
+            '<div style="color:#b45309">sem quantidade prevista — não dá para calcular %</div></div>';
+        }
+
+        var cor = c.excedeu ? "#b91c1c" : (c.concluido ? "#15803d" : "#1c4b73");
+        var barra = Math.max(0, Math.min(100, c.pctTotal));
+        var barraAnt = Math.max(0, Math.min(100, c.pctAnterior));
+        return '<div style="font-size:10px;line-height:1.55;margin-top:3px">' +
+          /* a barra mostra o que já havia (mais claro) e o de hoje (cheio):
+             é o que responde "estou no começo ou terminando?" de relance */
+          '<div style="height:5px;background:var(--linha,#e2e8f0);border-radius:3px;overflow:hidden;position:relative;margin-bottom:3px">' +
+            '<div style="position:absolute;left:0;top:0;bottom:0;width:' + barra + '%;background:' + cor + ';opacity:.35"></div>' +
+            '<div style="position:absolute;left:0;top:0;bottom:0;width:' + barraAnt + '%;background:' + cor + ';opacity:.85"></div>' +
+          "</div>" +
+          '<div class="muted">Antes <b>' + nUn(c.anterior) + '</b> + hoje <b>' + nUn(c.hoje) + '</b> = ' +
+            '<b style="color:' + cor + '">' + nUn(c.total) + un + "</b> de " + nUn(c.previsto) + un +
+            ' <b style="color:' + cor + '">(' + nUn(c.pctTotal) + "%)</b></div>" +
+          (c.excedeu
+            ? '<div style="color:#b91c1c;font-weight:700">passou ' + nUn(c.excedente) + un + " do previsto (" + nUn(c.pctTotal - 100) + "% a mais)</div>"
+            : '<div class="muted">falta <b>' + nUn(c.saldo) + un + "</b> (" + nUn(c.pctSaldo) + "%)" +
+              (c.diarios ? " · " + c.diarios + " lançamento(s) antes" : "") + "</div>") +
+          (c.semChave ? '<div style="color:#b45309">sem código nem descrição: não dá para juntar com os outros dias</div>' : "") +
+          "</div>";
+      }
+      function atualizarAvanco(el, i) {
+        var box = el.querySelector('[data-atav="' + i + '"]');
+        if (box) box.innerHTML = avancoHtml(i);
+      }
+
+      /* -----------------------------------------------------------------
+       * ENTRADA POR PORCENTAGEM (o parâmetro por atividade)
+       *
+       * ⚠ "20%" É AMBÍGUO e a ambiguidade corrompe quantidade em silêncio:
+       * pode ser "hoje eu fiz 20% do serviço" ou "o serviço chegou a 20%".
+       * Com 200 previstos e 150 feitos, o primeiro vale 40 e o segundo é
+       * impossível. Por isso são DOIS modos, escritos por extenso, e o que
+       * fica gravado é sempre a QUANTIDADE — a % é só a forma de digitar.
+       * --------------------------------------------------------------- */
+      var MODOS = [
+        { id: "qtd",    rotulo: "quantidade" },
+        { id: "hoje",   rotulo: "% feito hoje" },
+        { id: "acum",   rotulo: "% que o item atingiu" }
+      ];
+      function seletorModo(i) {
+        var a = buf.ativ[i];
+        var m = a.modoEntrada || "qtd";
+        return '<select data-atm="' + i + '" style="font-size:9.5px;padding:1px;margin-top:2px;max-width:118px">' +
+          MODOS.map(function (x) {
+            return '<option value="' + x.id + '"' + (m === x.id ? " selected" : "") + ">" + x.rotulo + "</option>";
+          }).join("") + "</select>";
+      }
+
       function renderAtiv() {
         var el = document.getElementById("g-at-lista"); if (!el) return;
         if (!buf.ativ.length) {
@@ -7976,7 +8085,6 @@
         el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
           '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Serviço</th><th>Un</th><th>Previsto</th><th>Feito hoje</th><th>Situação</th><th></th></tr>' +
           buf.ativ.map(function (a, i) {
-            var av = RDO.calcAvanco(a);
             return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
               '<td style="padding:4px 2px">' + (a.numero ? "<b>" + Util.esc(a.numero) + "</b> " : "") + Util.esc(a.descricao) +
                 /* ⚠ item SEM origem (diário antigo, importado, criado por
@@ -7989,8 +8097,15 @@
                 })() + "</td>" +
               '<td style="text-align:center">' + Util.esc(a.unidade || "—") + "</td>" +
               '<td style="text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>" +
-              '<td style="text-align:right"><input data-atq="' + i + '" value="' + (a.qtdExecutada || "") + '" style="width:70px;text-align:right;font-size:12px;padding:2px 4px">' +
-                '<div class="muted" data-atp="' + i + '" style="font-size:10px">' + (av.derivada ? av.pct + "% do item" : "") + "</div></td>" +
+              '<td style="text-align:right;min-width:230px">' +
+                '<div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">' +
+                  '<input data-atq="' + i + '" value="' + ((a.modoEntrada && a.modoEntrada !== "qtd") ? "" : (a.qtdExecutada || "")) +
+                    '" placeholder="' + ((a.modoEntrada && a.modoEntrada !== "qtd") ? "%" : Util.esc(a.unidade || "qtd")) +
+                    '" style="width:70px;text-align:right;font-size:12px;padding:2px 4px">' +
+                  seletorModo(i) +
+                "</div>" +
+                '<div data-atconv="' + i + '" class="muted" style="font-size:10px;text-align:right"></div>' +
+                '<div data-atav="' + i + '" style="text-align:left">' + avancoHtml(i) + "</div></td>" +
               '<td><select data-ats="' + i + '" style="font-size:11px;padding:2px">' +
                 RDO.SITUACOES_SERVICO.map(function (x) {
                   return '<option value="' + x.id + '"' + (a.situacao === x.id ? " selected" : "") + ">" + x.rotulo + "</option>";
@@ -8010,14 +8125,55 @@
         todos("[data-atq]", el).forEach(function (x) {
           x.oninput = function () {
             var i = +x.getAttribute("data-atq");
-            buf.ativ[i].qtdExecutada = Util.num(x.value);
+            var a = buf.ativ[i];
+            var modo = a.modoEntrada || "qtd";
+            var conv = el.querySelector('[data-atconv="' + i + '"]');
+
+            if (modo === "qtd") {
+              a.qtdExecutada = Util.num(x.value);
+              if (conv) {
+                /* o caminho inverso: digitando quantidade, mostra a % que ela
+                   representa — o usuário pensa nas duas moedas */
+                var p = (typeof Avanco !== "undefined") ? Avanco.pctDeQtd(a.qtdExecutada, Util.num(a.qtdPrevista)) : 0;
+                conv.textContent = (Util.num(a.qtdPrevista) > 0 && a.qtdExecutada) ? "= " + nUn(p) + "% do item hoje" : "";
+              }
+            } else if (typeof Avanco !== "undefined") {
+              /* ⚠ o que fica GRAVADO é sempre a quantidade. A % é forma de
+                 digitar, não unidade de medida: guardar % faria o diário
+                 mudar de valor sozinho se alguém corrigisse o previsto. */
+              var c = Avanco.calcular(ctxAvanco(i));
+              var res = Avanco.qtdDePct(Util.num(x.value), { previsto: c.previsto, anterior: c.anterior },
+                modo === "acum" ? "acumulado" : "hoje");
+              if (res.ok) {
+                a.qtdExecutada = res.qtd;
+                if (conv) conv.innerHTML = '<b>= ' + nUn(res.qtd) + " " + Util.esc(a.unidade || "") + "</b> hoje";
+              } else {
+                a.qtdExecutada = 0;
+                if (conv) {
+                  conv.innerHTML = res.motivo === "impossivel"
+                    ? '<span style="color:#b91c1c">o item já está em ' + nUn(res.jaEm) + "% — não dá para voltar para menos</span>"
+                    : '<span style="color:#b45309">sem quantidade prevista: digite em ' + Util.esc(a.unidade || "quantidade") + "</span>";
+                }
+              }
+            }
+
             atualizarConferencia(el, i);
-            /* atualiza SÓ o rótulo: re-renderizar a tabela inteira a cada tecla
+            /* atualiza SÓ os rótulos: re-renderizar a tabela a cada tecla
                tiraria o foco do campo e o usuário perderia o que digitava.
                Sem isto a % ficava parada em 0% enquanto ele digitava 60 de 240
                — o número mais importante da linha, mostrando errado. */
-            var lb = el.querySelector('[data-atp="' + i + '"]');
-            if (lb) { var av2 = RDO.calcAvanco(buf.ativ[i]); lb.textContent = av2.derivada ? av2.pct + "% do item" : ""; }
+            atualizarAvanco(el, i);
+          };
+        });
+        todos("[data-atm]", el).forEach(function (x) {
+          x.onchange = function () {
+            var i = +x.getAttribute("data-atm");
+            /* trocar de modo NÃO apaga o que já foi lançado: a quantidade
+               continua a mesma, muda só a forma de digitar daqui para a
+               frente. Zerar aqui faria o usuário perder o dia dele por ter
+               clicado no seletor errado. */
+            buf.ativ[i].modoEntrada = x.value;
+            renderAtiv();
           };
         });
         todos("[data-ats]", el).forEach(function (x) {
@@ -8229,6 +8385,21 @@
       };
 
       renderAtiv(); renderEf(); renderEq();
+
+      /* ⚠ TROCAR A OBRA OU A DATA MUDA O ACUMULADO.
+       * O "já executado" vem dos outros diários DA MESMA OBRA e com data
+       * ANTERIOR. Sem religar aqui, quem começasse o diário na obra errada
+       * e corrigisse depois continuaria vendo o avanço da primeira — número
+       * errado, sem nenhum aviso, no campo que decide quanto falta. */
+      ["g-obra", "g-data"].forEach(function (id) {
+        var c = document.getElementById(id);
+        if (!c) return;
+        var antes = c.onchange;
+        c.onchange = function (ev) {
+          if (antes) { try { antes.call(this, ev); } catch (e) {} }
+          renderAtiv();
+        };
+      });
     },
 
     /* Busca o clima do dia. A coordenada vem da obra; se ela não tiver, tenta
@@ -14912,6 +15083,13 @@ case "nova-folha": return this.novoFolha();
       var rdos = rdosPublicaveis
         .map(function (r) {
           return RDO.paraPortal(r, {
+            /* ⚠ O ACUMULADO DO PORTAL SÓ CONTA O QUE O CLIENTE PODE VER.
+               Passar `rdosDaObra` (que inclui rascunho e diário segurado na
+               aprovação) daria um total MAIOR que a soma dos diários na tela dele,
+               e a primeira pergunta seria "de onde saíram esses 40 m² que não estão
+               em lugar nenhum?". Com os publicáveis, a conta do cliente fecha com o
+               que está diante dele. */
+            rdos: rdosPublicaveis,
             rotClima: function (x) { return rot(P.rdoClima, x); },
             rotCondicao: function (x) { return rot(P.rdoCondicao, x); },
             /* o caminho automatico NUNCA leva o texto do acidente: quem decide
