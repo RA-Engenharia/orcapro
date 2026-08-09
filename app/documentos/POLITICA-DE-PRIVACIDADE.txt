@@ -363,6 +363,11 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
     clima do diário (item 4.9).
   · consultaca.com — site público aberto por você para consultar o CA do EPI
     (item 4.6); nenhum dado seu acompanha, só o número do CA.
+  · Asaas Gestão Financeira S.A. — processa o PAGAMENTO quando você compra o
+    programa ou um adicional. Recebe o seu nome, e-mail, CPF ou CNPJ e telefone
+    para emitir a cobrança (PIX, boleto ou cartão) e nos avisar quando ela é
+    paga. Nenhum dado de obra, orçamento ou diário vai para lá. Pagando por PIX
+    manual, nem esses dados saem: a cobrança é montada aqui mesmo.
 
 As bibliotecas que o programa usa (planilha, leitor de PDF, 3D, leitor de IFC,
 QR e as fontes) vêm INSTALADAS com ele e funcionam sem internet. A ÚNICA exceção

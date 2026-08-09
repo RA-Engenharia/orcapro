@@ -859,7 +859,7 @@
       var corBol = opts.corBolacha || "#f2b8b8";
       var traco = opts.traco || "#334155";
 
-      var h = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + larg + " " + Math.round(altPx) + '" width="100%" style="max-width:' + larg + 'px;background:#fff">';
+      var h = '<svg data-desenho="paginacao" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + larg + " " + Math.round(altPx) + '" width="100%" style="max-width:' + larg + 'px;background:#fff">';
       h += '<defs><pattern id="pgHachB" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">' +
            '<line x1="0" y1="0" x2="0" y2="6" stroke="#c23a3a" stroke-width="1.4"/></pattern></defs>';
 

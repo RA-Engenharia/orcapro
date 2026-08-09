@@ -542,7 +542,7 @@
       function X(v) { return mgE + v * esc; }
       function Y(v) { return mgT + altDes - v * esc; }
 
-      var h = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + larg + " " + Math.round(alt) +
+      var h = '<svg data-desenho="elevacao" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + larg + " " + Math.round(alt) +
               '" width="100%" style="max-width:' + larg + 'px;background:#fff">' + this._defs();
 
       /* fiadas */

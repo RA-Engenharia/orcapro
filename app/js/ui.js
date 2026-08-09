@@ -8,12 +8,53 @@
   var UI = {
     el: function (id) { return document.getElementById(id); },
 
+    /* =================================================================
+     * RÓTULO COM ÍCONE — título de modal, botão de rodapé e toast
+     *
+     * ⚠ POR QUE ISTO EXISTE (09/08/2026, v1.1.190 já na frota):
+     * Esses três lugares são slots de TEXTO (`textContent` / `Util.esc`).
+     * Quando os emoji viraram ícones próprios, passou-se a inlinar
+     * `Icones.get(...)` — que devolve MARKUP — dentro deles. Resultado no
+     * cliente: o título do modal virou o código-fonte do SVG, literalmente
+     * `<svg class="ic-svg" viewBox="0 0 24 24" …> Composição 92543`.
+     * São 50 títulos, 32 botões de rodapé e 46 toasts com o mesmo defeito.
+     *
+     * ⚠ E A CORREÇÃO NÃO PODE SER "DEIXAR O SVG PASSAR".
+     * Por estes rótulos passa dado que não é nosso: nome de obra, e-mail e,
+     * em uma dúzia de pontos, a mensagem de erro que o SERVIDOR devolveu
+     * (`UI.toast(r.erro)`). Desescapar o trecho que "parece ícone" abriria
+     * execução de script — provei que `<svg class="ic-svg"><animate
+     * onbegin="…">` dispara.
+     * Por isso aqui o ícone é REGENERADO a partir do nome (`data-ic`), nunca
+     * recolado: mesmo que alguém digite o markup inteiro num campo, o pior
+     * que acontece é aparecer um ícone da nossa própria biblioteca.
+     * ================================================================= */
+    _rotuloHtml: function (txt) {
+      var s = String(txt == null ? "" : txt);
+      if (typeof Icones === "undefined" || s.indexOf('class="ic-svg"') < 0) return Util.esc(s);
+      var re = /<svg class="ic-svg" data-ic="([A-Za-z0-9_-]+)"[^>]*width="(\d+)"[^>]*>[\s\S]*?<\/svg>/g;
+      var out = "", ultimo = 0, m;
+      /* laço global: o ícone aparece no começo, no meio e às vezes três vezes
+         no mesmo toast — uma versão ancorada em `^` cobriria só metade */
+      while ((m = re.exec(s)) !== null) {
+        out += Util.esc(s.slice(ultimo, m.index));
+        out += (Icones.tem(m[1]) ? Icones.get(m[1], Number(m[2]) || 15) : "");
+        ultimo = m.index + m[0].length;
+      }
+      return out + Util.esc(s.slice(ultimo));
+    },
+    _rotulo: function (el, txt) {
+      var s = String(txt == null ? "" : txt);
+      if (typeof Icones === "undefined" || s.indexOf('class="ic-svg"') < 0) { el.textContent = s; return; }
+      el.innerHTML = this._rotuloHtml(s);
+    },
+
     // ---------- Toast ----------
     toast: function (msg, tipo) {
       var wrap = this.el("toasts");
       var t = document.createElement("div");
       t.className = "toast " + (tipo || "");
-      t.textContent = msg;
+      this._rotulo(t, msg);
       wrap.appendChild(t);
       setTimeout(function () { t.style.opacity = "0"; setTimeout(function () { t.remove(); }, 250); }, 2600);
     },
@@ -24,7 +65,7 @@
       var bg = document.createElement("div");
       bg.className = "modal-bg"; bg.id = "modal-bg";
       bg.innerHTML =
-        '<div class="modal"><header><h2>' + Util.esc(titulo) + '</h2>' +
+        '<div class="modal"><header><h2>' + this._rotuloHtml(titulo) + '</h2>' +
         '<span style="flex:1"></span><button class="btn ghost sm" data-fechar>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></header>' +
         '<div class="body">' + corpoHTML + '</div>' +
         '<footer id="modal-footer"></footer></div>';
@@ -33,7 +74,7 @@
       (rodapeBotoes || []).forEach(function (b) {
         var btn = document.createElement("button");
         btn.className = "btn " + (b.classe || "");
-        btn.textContent = b.texto;
+        UI._rotulo(btn, b.texto);
         btn.onclick = b.onClick;
         footer.appendChild(btn);
       });

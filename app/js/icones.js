@@ -151,7 +151,12 @@
       var d = P[nome];
       if (!d) return "";
       var s = size || 15;
-      return '<svg class="ic-svg" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px;margin-right:6px;flex:0 0 auto' + (extraStyle ? ";" + extraStyle : "") + '">' + d + "</svg>";
+      /* ⚠ `data-ic` não é enfeite: é o que permite ao `UI._rotulo` REGENERAR o
+         ícone a partir do nome em vez de recolar markup que veio de uma
+         string. Sem ele, a única saída seria confiar no texto — e por esses
+         rótulos passa nome de obra, mensagem de erro do servidor e outros
+         dados que não são nossos. */
+      return '<svg class="ic-svg" data-ic="' + nome + '" viewBox="0 0 24 24" width="' + s + '" height="' + s + '" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-2.5px;margin-right:6px;flex:0 0 auto' + (extraStyle ? ";" + extraStyle : "") + '">' + d + "</svg>";
     },
     /* Variante sem margem (ícone sozinho, ex.: botão-ícone). */
     solo: function (nome, size) {

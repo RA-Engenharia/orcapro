@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.190",
+  "versao": "1.1.191",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.190/OrcaPRO-IA-update-v1.1.190.zip",
-  "notas": "",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.190/OrcaPRO-IA-Instalador-v1.1.190.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.191/OrcaPRO-IA-update-v1.1.191.zip",
+  "notas": "Correcao de aparencia: o titulo da janela, o rotulo do botao e o aviso passaram a mostrar o codigo do icone no lugar do texto (a partir da 1.1.190). Eram 128 lugares. Agora aparece o texto, com o icone do lado.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.191/OrcaPRO-IA-Instalador-v1.1.191.exe"
 }
