@@ -166,7 +166,7 @@
         var u0 = Auth.usuario();
         if (u0) {
           var sd = Store.saude(u0.empresaId);
-          if (sd.usoPct >= 80) UI.toast("⚠ Armazenamento local em " + sd.usoPct + "% — faça 💾 Backup e remova bases não usadas em 🗂 Tabelas.", "erro");
+          if (sd.usoPct >= 80) UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Armazenamento local em " + sd.usoPct + "% — faça " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup e remova bases não usadas em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas.", "erro");
         }
       } catch (eSd) {}
       // LOTE 5: CTA de upgrade quando o teste grátis está acabando (últimos 2 dias)
@@ -189,7 +189,7 @@
             var _t = 0, _iv = setInterval(function () {
               _t++;
               if (window.BIM && BIM.imersivo && BIM.visiveis && BIM.visiveis() > 0) { clearInterval(_iv); BIM.imersivo("caminhar"); }
-              else if (_t > 48) { clearInterval(_iv); if (typeof UI !== "undefined") UI.toast("Abra ou gere o modelo 3D e toque em 🥽 RA/RV.", "info"); }
+              else if (_t > 48) { clearInterval(_iv); if (typeof UI !== "undefined") UI.toast("Abra ou gere o modelo 3D e toque em " + (typeof Icones !== "undefined" ? Icones.get("vr", 15) : "") + " RA/RV.", "info"); }
             }, 250);
           } else if (typeof UI !== "undefined") { UI.toast("A RA/RV fica no módulo BIM (plano com Gestão de Obras).", "erro"); }
         }
@@ -218,14 +218,14 @@
         '<div id="rvfull" style="position:fixed;inset:0;background:#0b1a2b">' +
         '<div id="bim-canvas" style="width:100%;height:100%;position:relative"></div>' +
         // 🔄 buscar atualização — no celular não tem Ctrl+Shift+R; puxa a versão nova limpando o cache (preserva o token do link)
-        '<button id="rv-upd" title="Buscar atualização" style="position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;z-index:2147483000;background:rgba(15,39,64,.92);color:#dbe8f5;border:1px solid #24435f;border-radius:9px;padding:8px 11px;font-size:14px;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">🔄</button>' +
+        '<button id="rv-upd" title="Buscar atualização" style="position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);right:8px;z-index:2147483000;background:rgba(15,39,64,.92);color:#dbe8f5;border:1px solid #24435f;border-radius:9px;padding:8px 11px;font-size:14px;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</button>' +
         // 👥 Reunião — QUALQUER pessoa do link entra na mesma sala e vê os outros (cap 20). Escondido até o modelo carregar.
-        '<button id="rv-reun" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:2147483000;background:rgba(22,115,74,.94);color:#eafff2;border:1px solid #1c7a4a;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">👥 Reunião</button>' +
+        '<button id="rv-reun" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 8px);left:8px;z-index:2147483000;background:rgba(22,115,74,.94);color:#eafff2;border:1px solid #1c7a4a;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('pessoas', 15) : '') + ' Reunião</button>' +
         // 🎤 áudio walkie-talkie — só aparece dentro de uma reunião (precisa de toque p/ liberar o mic)
-        '<button id="rv-audio" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 50px);left:8px;z-index:2147483000;background:rgba(15,39,64,.94);color:#dbe8f5;border:1px solid #2e6f9e;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">🎤 Áudio</button>' +
+        '<button id="rv-audio" style="display:none;position:absolute;top:calc(env(safe-area-inset-top,0px) + 50px);left:8px;z-index:2147483000;background:rgba(15,39,64,.94);color:#dbe8f5;border:1px solid #2e6f9e;border-radius:9px;padding:8px 12px;font-size:13px;font-weight:600;font-family:Inter,system-ui,sans-serif;cursor:pointer;-webkit-tap-highlight-color:transparent">' + (typeof Icones !== 'undefined' ? Icones.get('microfone', 15) : '') + ' Áudio</button>' +
         '<div id="rv-load" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dbe8f5;font-family:Inter,system-ui,sans-serif;gap:10px;text-align:center;padding:20px">' +
-        '<div style="font-size:34px">☁️</div><div id="rv-load-txt" style="font-size:15px">Baixando o projeto…</div>' +
-        '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois, toque em 👣 Caminhar (ou 📱 RA no Android) no painel.</div></div></div>';
+        '<div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</div><div id="rv-load-txt" style="font-size:15px">Baixando o projeto…</div>' +
+        '<div style="font-size:12px;color:#8fa3b8;max-width:320px">Depois, toque em ' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar (ou ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no Android) no painel.</div></div></div>';
       (function () { var b = document.getElementById("rv-upd"); if (b) b.onclick = function () { if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); }; })();
       var origin = location.origin;
       function txt(t) { var e = document.getElementById("rv-load-txt"); if (e) e.textContent = t; }
@@ -238,11 +238,11 @@
           // opts.onReuniao mantém o contador no botão; onReuniaoFalha avisa quando cai a conexão
           try { BIM.montar(document.getElementById("bim-canvas"), {
             onReuniao: function (n) { App._rvReunBadge(n); },
-            onReuniaoFalha: function () { App._rvReunBadge(0); alert("A reunião caiu (sem internet?). O modelo segue normal — toque em 👥 pra reconectar."); },
-            onReuniaoCheia: function () { App._rvReunBadge(0); alert("👥 Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair."); },
+            onReuniaoFalha: function () { App._rvReunBadge(0); alert("A reunião caiu (sem internet?). O modelo segue normal — toque em " + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " pra reconectar."); },
+            onReuniaoCheia: function () { App._rvReunBadge(0); alert("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair."); },
             onVoz: function (on) { App._rvAudioBadge(on); },
             onFala: function (falando) { var b = document.getElementById("rv-audio"); if (b && BIM.reuniao.audioAtiva) b.style.boxShadow = falando ? "0 0 0 3px rgba(22,163,74,.9)" : "none"; },
-            onVozErro: function (nm) { App._rvAudioBadge(false); alert(nm === "NotAllowedError" ? "🎤 Você negou o microfone. Toque em 🎤 de novo e permita." : "🎤 Não consegui abrir o microfone: " + nm); }
+            onVozErro: function (nm) { App._rvAudioBadge(false); alert(nm === "NotAllowedError" ? "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Você negou o microfone. Toque em " + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " de novo e permita." : "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Não consegui abrir o microfone: " + nm); }
           }); }
           catch (e) { erro("Falha ao iniciar o visualizador."); return; }
           fetch(origin + "/rv/t/" + token).then(function (r) { return r.json(); }).then(function (man) {
@@ -272,13 +272,13 @@
       var b = document.getElementById("rv-reun"); if (!b) return;
       var ativa = (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa);
       if (ativa) { b.textContent = "👥 " + (n || 1) + " — sair"; b.style.background = "rgba(15,39,64,.94)"; b.style.borderColor = "#2e6f9e"; }
-      else { b.textContent = "👥 Reunião"; b.style.background = "rgba(22,115,74,.94)"; b.style.borderColor = "#1c7a4a"; }
+      else { b.textContent = "" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Reunião"; b.style.background = "rgba(22,115,74,.94)"; b.style.borderColor = "#1c7a4a"; }
       var a = document.getElementById("rv-audio"); if (a) { a.style.display = ativa ? "block" : "none"; if (!ativa) App._rvAudioBadge(false); } // áudio só faz sentido na reunião
     },
     _rvAudioBadge: function (on) {
       var a = document.getElementById("rv-audio"); if (!a) return;
-      if (on) { a.textContent = "🎤 Áudio ligado"; a.style.background = "rgba(22,163,74,.94)"; a.style.borderColor = "#16a34a"; }
-      else { a.textContent = "🎤 Áudio"; a.style.background = "rgba(15,39,64,.94)"; a.style.borderColor = "#2e6f9e"; a.style.boxShadow = "none"; }
+      if (on) { a.textContent = "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Áudio ligado"; a.style.background = "rgba(22,163,74,.94)"; a.style.borderColor = "#16a34a"; }
+      else { a.textContent = "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Áudio"; a.style.background = "rgba(15,39,64,.94)"; a.style.borderColor = "#2e6f9e"; a.style.boxShadow = "none"; }
     },
     _rvReuniao: function (sala) {
       var self = this;
@@ -299,15 +299,15 @@
         ov.style.cssText = "position:fixed;inset:0;z-index:2147483600;background:rgba(4,12,22,.86);display:flex;align-items:center;justify-content:center;padding:16px;font-family:Inter,system-ui,sans-serif";
         ov.innerHTML =
           '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:360px;width:100%;padding:20px;color:#dbe8f5">' +
-          '<b style="font-size:15px">👥 Entrar na reunião</b>' +
+          '<b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('pessoas', 15) : '') + ' Entrar na reunião</b>' +
           '<p style="font-size:12.5px;color:#9fb2c8;margin:8px 0 14px">Todo mundo com este link se vê dentro do modelo. Seu nome e telefone aparecem na camisa do seu avatar (até 20 pessoas).</p>' +
           '<label style="font-size:12px;color:#9fb2c8">Seu nome *</label>' +
           '<input id="rvr-nome" value="' + (self._escAttr(g.nome || "")) + '" placeholder="Como os outros te veem" style="width:100%;box-sizing:border-box;margin:4px 0 12px;padding:10px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:14px">' +
           '<label style="font-size:12px;color:#9fb2c8">Você é</label>' +
-          '<div style="display:flex;gap:8px;margin:4px 0 12px"><button type="button" data-sx="h" class="rvr-sx" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:13px;cursor:pointer">👷 Homem</button><button type="button" data-sx="m" class="rvr-sx" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:13px;cursor:pointer">👷‍♀️ Mulher</button></div>' +
+          '<div style="display:flex;gap:8px;margin:4px 0 12px"><button type="button" data-sx="h" class="rvr-sx" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:13px;cursor:pointer">' + (typeof Icones !== 'undefined' ? Icones.get('capacete', 15) : '') + ' Homem</button><button type="button" data-sx="m" class="rvr-sx" style="flex:1;padding:9px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:13px;cursor:pointer">👷‍♀️ Mulher</button></div>' +
           '<label style="font-size:12px;color:#9fb2c8">Telefone (aparece na camisa)</label>' +
           '<input id="rvr-tel" value="' + (self._escAttr(g.tel || "")) + '" placeholder="(00) 00000-0000" inputmode="tel" style="width:100%;box-sizing:border-box;margin:4px 0 16px;padding:10px;border-radius:9px;border:1.5px solid #24435f;background:#0b1e33;color:#eaf2fb;font-size:14px">' +
-          '<div style="display:flex;gap:8px"><button type="button" id="rvr-ok" style="flex:1;padding:11px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-size:14px;font-weight:700;cursor:pointer">🚀 Entrar</button><button type="button" id="rvr-cancel" style="padding:11px 14px;border-radius:9px;border:1.5px solid #24435f;background:transparent;color:#cbd8e6;font-size:14px;cursor:pointer">Cancelar</button></div>' +
+          '<div style="display:flex;gap:8px"><button type="button" id="rvr-ok" style="flex:1;padding:11px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-size:14px;font-weight:700;cursor:pointer">' + (typeof Icones !== 'undefined' ? Icones.get('foguete', 15) : '') + ' Entrar</button><button type="button" id="rvr-cancel" style="padding:11px 14px;border-radius:9px;border:1.5px solid #24435f;background:transparent;color:#cbd8e6;font-size:14px;cursor:pointer">Cancelar</button></div>' +
           '</div>';
         document.body.appendChild(ov);
         var sexo = g.sexo === "m" ? "m" : "h";
@@ -341,7 +341,7 @@
       if (ab) ab.onclick = function () { // o TOQUE aqui libera o mic (getUserMedia + AudioContext exigem gesto)
         if (typeof BIM === "undefined" || !BIM.reuniao || !BIM.reuniao.ativa) return;
         if (BIM.reuniao.audioAtiva) { BIM.reuniao.audioSair(); self._rvAudioBadge(false); }
-        else { ab.textContent = "🎤 Ativando…"; BIM.reuniao.audioEntrar(); } // onVoz confirma; erro → onVozErro
+        else { ab.textContent = "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Ativando…"; BIM.reuniao.audioEntrar(); } // onVoz confirma; erro → onVozErro
       };
     },
     _escAttr: function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); },
@@ -659,7 +659,7 @@
           Atualizacao.atualizarSinapi(function (r) {
             if (!r.ok) { pinta("⚠ " + r.erro); UI.toast(r.erro, "erro"); return; }
             if (r.basePropria) {
-              pinta("Você usa uma base PRÓPRIA importada (competência " + Atualizacao.fmtComp(r.de) + ") — a atualização oficial não mexe nela. Para voltar à SINAPI oficial, remova a base própria em ⬆ Importar.", true);
+              pinta("Você usa uma base PRÓPRIA importada (competência " + Atualizacao.fmtComp(r.de) + ") — a atualização oficial não mexe nela. Para voltar à SINAPI oficial, remova a base própria em " + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Importar.", true);
               return;
             }
             if (r.atualizou) {
@@ -682,7 +682,7 @@
           var inst = (Bases.lista() || []).filter(function (b) { return cfgAtu[2].indexOf(String(b.fonte).toUpperCase()) >= 0; })[0];
           var compLocal = inst ? Atualizacao._normComp(inst.competencia) : null;
           if (!inst) {
-            pinta("Base não instalada. A mais recente no servidor é a competência " + Atualizacao.fmtComp(srv.competencia) + ", no ar desde " + Atualizacao.fmtData(srv.publicadoEm) + " — instale nos botões 📦 abaixo.");
+            pinta("Base não instalada. A mais recente no servidor é a competência " + Atualizacao.fmtComp(srv.competencia) + ", no ar desde " + Atualizacao.fmtData(srv.publicadoEm) + " — instale nos botões " + (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + " abaixo.");
             return;
           }
           if (String(srv.competencia) <= String(compLocal)) {
@@ -699,8 +699,8 @@
           Bases.carregarInclusa(urlAtu, fonteAtu).then(function (r) {
             UI.toast(fonteAtu + " atualizada: competência " + Atualizacao.fmtComp(compLocal) + " → " + Atualizacao.fmtComp(r.competencia || srv.competencia) + " (" + (r.total || 0).toLocaleString("pt-BR") + " itens).", "ok");
             selfA.abrirTabelas();
-          }).catch(function (e) { pinta("⚠ Falhou ao baixar: " + ((e && e.message) || "erro")); });
-        }).catch(function () { pinta("⚠ Sem conexão com o servidor OrçaPRO agora — a base atual foi mantida."); });
+          }).catch(function (e) { pinta("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Falhou ao baixar: " + ((e && e.message) || "erro")); });
+        }).catch(function () { pinta("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Sem conexão com o servidor OrçaPRO agora — a base atual foi mantida."); });
         return;
       }
       // carregar base inclusa (1 clique) — LIVE-FIRST: tenta a versão mais recente
@@ -780,7 +780,7 @@
         if (fonteRem === "PROPRIA") {
           var bRem = Bases.extras().filter(function (x) { return x.fonte === "PROPRIA"; })[0];
           var nRem = bRem && bRem.itens ? bRem.itens.length : 0;
-          UI.modal("⚠ Apagar a base própria?", '<p style="font-size:13px">A base própria tem <b>' + nRem + ' composição(ões) criada(s) por você</b>. Diferente das bases importadas, elas <b>não existem em nenhum arquivo</b> para reimportar — apagar é definitivo.</p>', [
+          UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Apagar a base própria?", '<p style="font-size:13px">A base própria tem <b>' + nRem + ' composição(ões) criada(s) por você</b>. Diferente das bases importadas, elas <b>não existem em nenhum arquivo</b> para reimportar — apagar é definitivo.</p>', [
             { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
             { texto: "Apagar mesmo assim", classe: "danger", onClick: function () { Bases.remover("PROPRIA"); Bases.persistir(Auth.empresaId(), { permitirRemocao: true }); UI.fecharModal(); UI.toast("Base própria removida.", "ok"); selfRem.abrirTabelas(); } }
           ]);
@@ -1072,7 +1072,7 @@
         Licenca.ativarOnline(lic, function (r) {
           self._ativandoPorLink = false;
           if (r && r.ok) {
-            if (typeof UI !== "undefined") UI.toast("✅ Licença da empresa ativada neste aparelho! Entre com o seu usuário e senha.", "ok");
+            if (typeof UI !== "undefined") UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Licença da empresa ativada neste aparelho! Entre com o seu usuário e senha.", "ok");
             try { if (typeof Telemetria !== "undefined") Telemetria.iniciar(); } catch (e2) {}
             try { self._conectarNuvemLicenca(); } catch (e) {}
             self.render();
@@ -1156,7 +1156,7 @@
       var corpo = '<p class="muted" style="margin:0 0 12px">Este é o seu <b>primeiro acesso</b>. Defina uma senha só sua para continuar.</p>' +
         '<div class="field"><label>Nova senha *</label><input id="ts-s1" type="password" placeholder="mínimo 4 caracteres" autocomplete="new-password"></div>' +
         '<div class="field"><label>Repita a nova senha *</label><input id="ts-s2" type="password" placeholder="repita" autocomplete="new-password"></div>';
-      UI.modal("🔐 Primeiro acesso — crie sua senha", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Primeiro acesso — crie sua senha", corpo, [
         { texto: "Salvar e continuar", classe: "primary", onClick: function () {
           var s1 = (UI.el("ts-s1") || {}).value || "", s2 = (UI.el("ts-s2") || {}).value || "";
           if (s1.length < 4) { UI.toast("A senha precisa de ao menos 4 caracteres.", "erro"); return; }
@@ -1230,15 +1230,15 @@
             .then(function () {
               Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); });
               if (self.tela === "lista") self.render();
-              UI.toast("☁ Dados sincronizados na nuvem.", "ok");
+              UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Dados sincronizados na nuvem.", "ok");
             })
             .catch(function (e) {
               console.warn("[nuvem] " + (e && (e.code || e.message)));
               var code = e && e.code;
               if (code === "auth/network-request-failed") {
-                UI.toast("☁ Sem internet agora — seus dados ficam neste aparelho e sobem quando a conexão voltar.", "erro");
+                UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Sem internet agora — seus dados ficam neste aparelho e sobem quando a conexão voltar.", "erro");
               } else if (code !== "auth/wrong-password") {
-                UI.toast("☁ Nuvem não conectada (" + (code || (e && e.message) || "erro") + ").", "erro");
+                UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Nuvem não conectada (" + (code || (e && e.message) || "erro") + ").", "erro");
               }
             });
         }
@@ -1459,7 +1459,7 @@
 
     abrirImportSinapi: function () {
       var self = this;
-      UI.modal("⬆ Importar base SINAPI", UI.renderImportSinapi(Sinapi.resumo(), self._temBasePropria()), [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Importar base SINAPI", UI.renderImportSinapi(Sinapi.resumo(), self._temBasePropria()), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Importar", classe: "primary", onClick: function () { self.processarImportSinapi(); } }
       ]);
@@ -1483,7 +1483,7 @@
       try { b = Store.lerBaseSinapi(Auth.empresaId()); } catch (e) {}
       var n = (b && b.dados && b.dados.length) || 0;
       var comp = (b && (b.mes || b.competencia)) || "—";
-      UI.modal("↩ Voltar para a SINAPI oficial?",
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Voltar para a SINAPI oficial?",
         '<p style="font-size:13px;margin-top:0">Sai a base importada de <b>' + Util.esc(String(comp)) +
         '</b> (' + n.toLocaleString("pt-BR") + ' itens) e volta a valer a SINAPI que veio no pacote.</p>' +
         '<p style="font-size:13px">Se essa planilha tinha <b>preços negociados</b>, guarde o arquivo antes: ' +
@@ -1561,7 +1561,7 @@
       } catch (e) {}
 
       if (desligou || semNuvem) {
-        UI.modal("📱 Usar no celular ou tablet",
+        UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "") + " Usar no celular ou tablet",
           '<p style="margin-top:0">⚠️ <b>' + (desligou
             ? "A sincronização está desligada — por você."
             : "Esta instalação está sem sincronização na nuvem.") + '</b></p>' +
@@ -1592,19 +1592,19 @@
             '<div style="font-weight:700;margin-bottom:6px">Depois de abrir, instale:</div>' +
             '<div class="muted" style="font-size:13px;line-height:1.7">' +
               '<b>Android (Chrome):</b> toque nos ⋮ do navegador → <b>Instalar aplicativo</b><br>' +
-              '<b>iPhone / iPad (Safari):</b> toque no ⬆ compartilhar → <b>Adicionar à Tela de Início</b>' +
+              '<b>iPhone / iPad (Safari):</b> toque no ' + (typeof Icones !== 'undefined' ? Icones.get('importar', 15) : '') + ' compartilhar → <b>Adicionar à Tela de Início</b>' +
             '</div>' +
             '<div class="muted" style="font-size:12px;margin-top:12px;padding-top:10px;border-top:1px solid var(--linha,#d8e0ea)">' +
               'Você vai entrar com o <b>mesmo e-mail e senha</b> que usa aqui.' +
-              (licenciado ? '' : '<br>⚠️ Sem licença ativa, o celular abre em modo de teste e <b>não traz os seus dados</b>.') +
+              (licenciado ? '' : '<br>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Sem licença ativa, o celular abre em modo de teste e <b>não traz os seus dados</b>.') +
             '</div>' +
           '</div>' +
         '</div>' +
         '<div class="field" style="margin-top:14px"><label>Ou envie este endereço para o aparelho</label>' +
           '<input id="cel-url" class="cell" style="width:100%;font-size:12px" readonly value="' + Util.esc(url) + '"></div>' +
-        (licenciado ? '<p class="muted" style="font-size:11px;margin:6px 0 0">🔒 Este endereço contém a sua chave de licença: mande só para aparelhos seus ou da sua equipe.</p>' : "");
+        (licenciado ? '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Este endereço contém a sua chave de licença: mande só para aparelhos seus ou da sua equipe.</p>' : "");
 
-      UI.modal("📱 Usar no celular ou tablet", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "") + " Usar no celular ou tablet", corpo, [
         { texto: "Copiar endereço", classe: "ghost", onClick: function () {
           var i = UI.el("cel-url"); if (!i) return;
           i.select(); i.setSelectionRange(0, 99999);
@@ -1636,7 +1636,7 @@
       var porLicenca = !!(_lic && _lic.ativo && !_lic.trial && Licenca.chave && Licenca.chave());
       var body =
         '<p style="margin-top:0">' + (conectado
-          ? '✅ Conectado como <b>' + Util.esc(emailNuvem) + '</b>. Seus orçamentos sincronizam sozinhos entre os aparelhos conectados com este mesmo e-mail e senha.'
+          ? '' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Conectado como <b>' + Util.esc(emailNuvem) + '</b>. Seus orçamentos sincronizam sozinhos entre os aparelhos conectados com este mesmo e-mail e senha.'
           : (desligada
             ? '⏸ <b>Sincronização desligada por você</b> — os dados ficam só neste aparelho e nada é enviado. Conecte abaixo quando quiser religar.'
             : '⚠️ <b>Nuvem não conectada</b> — seus dados estão só neste computador.')) + '</p>' +
@@ -1677,7 +1677,7 @@
               if (!email || (!conectado && !senha)) { UI.toast("Preencha e-mail e senha da nuvem.", "erro"); return; }
               p = conectado ? Promise.resolve() : Nuvem.entrar(email, senha);
             }
-            UI.toast("☁ Conectando…", "ok");
+            UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Conectando…", "ok");
             p.then(function () { return Nuvem.sincronizar(eid); })
               .then(function (okSync) {
                 if (window.Blocos) Blocos.usarOverrides(eid);
@@ -1698,10 +1698,10 @@
                 var st = (Nuvem.estado && Nuvem.estado()) || {};
                 if (okSync === false || st.cotaEstourada || st.semPermissao) {
                   UI.toast(st.cotaEstourada
-                    ? "☁ A nuvem recusou as gravações agora (limite do serviço). Seu trabalho está salvo neste aparelho e sobe sozinho mais tarde."
-                    : "☁ NÃO consegui sincronizar. Seu trabalho está salvo neste aparelho — vou tentando sozinho.", "erro");
+                    ? "" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " A nuvem recusou as gravações agora (limite do serviço). Seu trabalho está salvo neste aparelho e sobe sozinho mais tarde."
+                    : "" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " NÃO consegui sincronizar. Seu trabalho está salvo neste aparelho — vou tentando sozinho.", "erro");
                 } else {
-                  UI.toast("☁ Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
+                  UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Sincronizado! Seus orçamentos agora aparecem em todos os aparelhos conectados.", "ok");
                 }
               })
               .catch(function (e) {
@@ -1711,7 +1711,7 @@
                 else UI.toast("Não conectou: " + (code || (e && e.message) || "erro"), "erro");
               });
           } });
-      UI.modal("☁ Nuvem — sincronizar entre aparelhos", body, botoes);
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("nuvem", 15) : "") + " Nuvem — sincronizar entre aparelhos", body, botoes);
     },
 
     abrirBackup: function () {
@@ -1726,9 +1726,9 @@
            backup em que ninguém confia — e o cliente só descobre que não tinha
            no dia em que precisa. */
         '<div id="bkp-auto" class="muted" style="margin:10px 0;padding:9px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25)">⏳ verificando o backup automático…</div>' +
-        '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">💾 Exportar backup</button></div>' +
+        '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Exportar backup</button></div>' +
         '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>';
-      UI.modal("💾 Backup dos Orçamentos", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup dos Orçamentos", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
       try {
         fetch("/__backup/status").then(function (r) {
           /* 404 aqui NÃO é "sem servidor": é servidor ANTIGO. A troca de versão
@@ -1886,7 +1886,7 @@
     // ---------- Licença ----------
     abrirLicenca: function () {
       var self = this;
-      UI.modal("🔑 Licença do OrçaPRO", UI.renderLicenca(Licenca.status()), [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("chave", 15) : "") + " Licença do OrçaPRO", UI.renderLicenca(Licenca.status()), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Ativar", classe: "primary", onClick: function () { self.salvarLicenca(); } }
       ]);
@@ -1899,7 +1899,7 @@
       Licenca.ativarOnline(chave, function (r) {
         if (!r.ok) { UI.toast(r.erro || "Chave inválida.", "erro"); return; }
         UI.fecharModal();
-        UI.toast(r.offline ? "✓ Licença ativada." : "✓ Licença ativada e vinculada a esta máquina!", "ok");
+        UI.toast(r.offline ? "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Licença ativada." : "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Licença ativada e vinculada a esta máquina!", "ok");
         self.render();
       });
     },
@@ -1926,15 +1926,15 @@
       var html = "<p>Uma versão nova do OrçaPRO (<b>" + Util.esc(d.versao) + "</b>) está disponível! 🎉</p>" + nov +
         "<p class=\"muted\" style=\"margin-top:10px\">Pode atualizar tranquilo: <b>seus orçamentos e dados continuam salvos</b> (ficam no seu navegador).</p>";
       var botoes = [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
-      if (d.downloadUrl) botoes.push({ texto: "⬇ Baixar atualização", classe: "primary", onClick: function () { window.open(d.downloadUrl, "_blank"); UI.fecharModal(); } });
-      UI.modal("🔄 Atualização disponível", html, botoes);
+      if (d.downloadUrl) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Baixar atualização", classe: "primary", onClick: function () { window.open(d.downloadUrl, "_blank"); UI.fecharModal(); } });
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Atualização disponível", html, botoes);
     },
 
     // ---------- Empresa / Responsável Técnico ----------
     abrirEmpresa: function () {
       var self = this;
       this._logoPendente = undefined; // undefined=inalterado · string=novo logo
-      var bg = UI.modal("⚙ Empresa / Responsável Técnico", UI.renderEmpresa(Empresa.dados(), Empresa.logo()), [
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Empresa / Responsável Técnico", UI.renderEmpresa(Empresa.dados(), Empresa.logo()), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () { self.salvarEmpresa(); } }
       ]);
@@ -1953,7 +1953,7 @@
 
     // ---------- Atualizar tabelas (backend sinapi-fetcher) ----------
     abrirAtualizar: function () {
-      var bg = UI.modal("🔄 Atualizar Tabelas de Preço", '<div id="atz-body" class="muted">Verificando o backend (sinapi-fetcher :3040)…</div>',
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Atualizar Tabelas de Preço", '<div id="atz-body" class="muted">Verificando o backend (sinapi-fetcher :3040)…</div>',
         [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "640px";
       Atualizacao.verificar().then(function (info) {
@@ -2098,7 +2098,7 @@
         };
       });
       var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
-      UI.toast("🤖 Consultando a IA do ERP (planejador)…", "ok");
+      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Consultando a IA do ERP (planejador)…", "ok");
       fetch(back + "/ia/cronograma", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ etapas: etapas, equipes: (r.params.equipes || 1) }) })
         .then(function (resp) { return resp.json(); })
         .then(function (j) {
@@ -2107,7 +2107,7 @@
           var n = 0;
           (j.etapas || []).forEach(function (x) { var et = etapas[x.i]; if (et && x.dias >= 1) { o.cronograma.duracoes[et.id] = Math.round(Util.num(x.dias)); o.cronograma.iaMotivos[et.id] = x.motivo || ""; o.cronograma.duracoesAgente[et.id] = "ia"; n++; } });
           self.persistir();
-          UI.toast("🤖 " + n + " etapas refinadas pela IA (" + (j.provider || "") + "). Passe o mouse no 🤖 p/ ver o motivo; edite se quiser.", "ok");
+          UI.toast("🤖 " + n + " etapas refinadas pela IA (" + (j.provider || "") + "). Passe o mouse no " + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " p/ ver o motivo; edite se quiser.", "ok");
           self.render();
         })
         .catch(function (e) { UI.toast("Sem conexão com a IA — o ERP/servidor (porta 3040) está ligado? " + e.message, "erro"); });
@@ -2167,7 +2167,7 @@
     // ---------- Tabelas de Preço (multi-base) ----------
     abrirTabelas: function () {
       var self = this;
-      var bg = UI.modal("🗂 Tabelas de Preço (multi-base)", UI.renderTabelas(Bases.lista()), [
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas de Preço (multi-base)", UI.renderTabelas(Bases.lista()), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Importar base", classe: "primary", onClick: function () { self.importarBase(); } }
       ]);
@@ -2296,7 +2296,7 @@
       var atual = (typeof Empresa !== "undefined" && Empresa.fotoUsuario) ? Empresa.fotoUsuario() : "";
       var ini = (typeof Empresa !== "undefined" && Empresa.iniciais) ? Empresa.iniciais(quem) : "?";
       var escolhida = null, mexeu = false;
-      UI.modal("🙂 Minha foto de perfil",
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("pessoa", 15) : "") + " Minha foto de perfil",
         '<p class="muted" style="margin-top:0;font-size:13px">Aparece na barra do topo, ao lado do nome da empresa. Só você vê a sua — cada pessoa da equipe tem a dela.</p>' +
         '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
           '<div id="mf-prev" class="perfil-prev">' + (atual ? '<img src="' + atual + '" alt="">' : '<span class="ini">' + Util.esc(ini) + '</span>') + '</div>' +
@@ -2504,18 +2504,18 @@
         if (obras.length) vinculos.push(obras.length + " obra(s) vinculada(s)");
         if (meds.length) vinculos.push(meds.length + " medição(ões) por itens");
       } catch (e) {}
-      UI.modal("🗑 Excluir orçamento?",
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir orçamento?",
         '<div style="padding:10px 12px;border-radius:10px;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);margin-bottom:12px">' +
           '<b>' + Util.esc(orc.nome) + '</b><br>' +
           '<span class="muted">' + Util.esc(orc.numero) + ' · ' + t.qtdEtapas + ' etapa(s) · ' + t.qtdItens + ' item(ns) · ' + Util.fmtMoeda(t.precoVenda) + '</span>' +
         '</div>' +
         '<p style="margin:0 0 6px">Esta ação <b>não pode ser desfeita</b>. O orçamento sai deste aparelho e da nuvem sincronizada.</p>' +
         (vinculos.length
-          ? '<p style="margin:0;color:#b45309;font-size:12.5px">⚠ Existem ' + vinculos.join(" e ") + ' apontando para este orçamento — os registros continuam, mas perdem o vínculo (previsto×real e medição por itens param de calcular).</p>'
+          ? '<p style="margin:0;color:#b45309;font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Existem ' + vinculos.join(" e ") + ' apontando para este orçamento — os registros continuam, mas perdem o vínculo (previsto×real e medição por itens param de calcular).</p>'
           : '<p class="muted" style="margin:0;font-size:12.5px">Nenhuma obra ou medição vinculada a ele.</p>'),
         [
           { texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } },
-          { texto: "🗑 Excluir definitivamente", classe: "danger", onClick: function () {
+          { texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir definitivamente", classe: "danger", onClick: function () {
             Store.excluirOrcamento(Auth.empresaId(), orc.id);
             if (self.orcAtual && self.orcAtual.id === orc.id) { self.orcAtual = null; self.tela = "lista"; }
             UI.fecharModal();
@@ -2775,12 +2775,12 @@
       var et = orc && (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
       var nItens = et ? (et.itens || []).length : 0;
       var nSubs = et ? Orcamento.subEtapas(et).length : 0;
-      UI.modal("🗑 Remover etapa",
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Remover etapa",
         '<p>Remover a etapa <b>' + Util.esc((et && et.nome) || "") + '</b>' +
         (nSubs ? ' com <b>' + nSubs + ' sub etapa(s)</b>' + (nItens ? ' e' : '') : '') +
         (nItens ? ' com <b>' + nItens + ' item(ns)</b>' : '') + '?<br><span class="muted">Essa ação não tem desfazer.</span></p>', [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-          { texto: "🗑 Remover", classe: "", onClick: function () {
+          { texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Remover", classe: "", onClick: function () {
               UI.fecharModal();
               Orcamento.removerEtapa(orc, etapaId);
               self.persistir(); self.render();
@@ -2800,7 +2800,7 @@
       if (!it) return;
       var body = '<p class="muted" style="margin-top:0">Registre como o quantitativo de <b>' + Util.esc(String(it.descricao || "").slice(0, 90)) + '</b> foi calculado (ex.: <i>"2 paredes × 3,20 m × 2,70 m − 1 porta 0,80×2,10"</i>). Sai na aba <b>Memória de Cálculo</b> do Excel — exigência comum em licitação (Lei 14.133).</p>' +
         '<textarea id="mem-texto" class="cell" style="width:100%;min-height:130px;resize:vertical" placeholder="Descreva o cálculo do quantitativo…">' + Util.esc(it.memoriaCalculo || "") + '</textarea>';
-      UI.modal("📝 Memória de cálculo — " + (it.codigo || ""), body, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Memória de cálculo — " + (it.codigo || ""), body, [
         { texto: "Salvar", classe: "primary", onClick: function () {
             it.memoriaCalculo = String((UI.el("mem-texto") || {}).value || "").trim();
             self.persistir(); UI.fecharModal(); self.render();
@@ -2877,7 +2877,7 @@
                 opts.push('<option value="__add:' + f + '">＋ ' + Util.esc(Bases.META[f].label) + '…</option>');
               });
             }
-            opts.push('<option value="__manage">🗂 Gerenciar bancos / outro estado ou competência…</option>');
+            opts.push('<option value="__manage">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Gerenciar bancos / outro estado ou competência…</option>');
             selF.innerHTML = opts.join("");
             if (atualFonte && carregadas[atualFonte]) selF.value = atualFonte; // preserva escolha (viva ou do prefs no 1º paint)
           }
@@ -2915,13 +2915,13 @@
           var res = (typeof Bases !== "undefined") ? Bases.buscar(q, f)
             : Sinapi.buscar(q, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
           if (!res.length) {
-            var dica = f.tipo === "insumo" ? " — esta base pode não ter insumos (carregue uma base de insumos em 🗂 Tabelas)" : (f.desonerado === false ? " — verifique se a base ONERADA está carregada" : "");
+            var dica = f.tipo === "insumo" ? " — esta base pode não ter insumos (carregue uma base de insumos em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas)" : (f.desonerado === false ? " — verifique se a base ONERADA está carregada" : "");
             // v1.1.124 — não existe nas bases? cria DAQUI, sem sair do fluxo. O
             // atalho acompanha o filtro: buscando INSUMO → cadastra insumo próprio;
             // senão → cria composição própria (descrição aproveitada nos dois).
             var ehIns0 = f.tipo === "insumo";
             box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>" +
-              '<button type="button" class="btn primary" id="bs-criar-cp" style="width:100%;margin-top:8px">' + (ehIns0 ? "➕ Cadastrar insumo próprio com esta descrição" : "➕ Criar composição própria com esta descrição") + '</button>';
+              '<button type="button" class="btn primary" id="bs-criar-cp" style="width:100%;margin-top:8px">' + (ehIns0 ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio com esta descrição" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria com esta descrição") + '</button>';
             var bCp0 = UI.el("bs-criar-cp");
             if (bCp0) bCp0.onclick = function () { if (ehIns0) self.criarInsumoDaBusca(q); else self.criarComposicaoDaBusca(q); };
             return;
@@ -2939,9 +2939,9 @@
                 Util.esc(it.descricao) + "</div>" +
                 '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + "</div></div>";
             }).join("");
-            html2 += (res.length > ate ? '<button type="button" class="btn ghost" id="bs-mais" style="width:100%;margin-top:8px">➕ Mostrar mais ' + Math.min(PAG, res.length - ate) + " (de " + (res.length - ate) + " restantes)</button>" : "") +
+            html2 += (res.length > ate ? '<button type="button" class="btn ghost" id="bs-mais" style="width:100%;margin-top:8px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Mostrar mais ' + Math.min(PAG, res.length - ate) + " (de " + (res.length - ate) + " restantes)</button>" : "") +
               // v1.1.124 — achou resultados mas nenhum serve? cria DAQUI, sem sair da busca
-              '<button type="button" class="btn ghost" id="bs-criar-cp" style="width:100%;margin-top:6px;font-size:12px">Nenhum serve? ' + (ehInsR ? "➕ Cadastrar insumo próprio" : "➕ Criar composição própria") + ' com esta descrição</button>';
+              '<button type="button" class="btn ghost" id="bs-criar-cp" style="width:100%;margin-top:6px;font-size:12px">Nenhum serve? ' + (ehInsR ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria") + ' com esta descrição</button>';
             box.innerHTML = html2;
             Array.prototype.forEach.call(box.querySelectorAll("[data-pick]"), function (row) {
               row.onclick = function () { self.escolherItemSinapi(row.dataset.pick); };
@@ -3010,7 +3010,7 @@
           if (UI.el("bs-q")) ativarBusca();
         }).catch(function () {
           var b = UI.el("bs-results");
-          if (b) b.innerHTML = '<div class="vazio">⚠️ Não foi possível carregar a base SINAPI.<br>' +
+          if (b) b.innerHTML = '<div class="vazio">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Não foi possível carregar a base SINAPI.<br>' +
             'Abra o app pelo <b>servidor local</b> (Iniciar-OrcaPRO.bat) — não funciona abrindo o index.html direto (file://).</div>';
         });
       }
@@ -3109,7 +3109,7 @@
         { nome: "Padrão", desc: "Seu BDI atual", bdi: p, cor: "#16a34a", dest: true },
         { nome: "Conservador", desc: "Margem maior, mais segurança", bdi: Math.round((p + 7) * 100) / 100, cor: "#0f2740" }
       ];
-      UI.modal("📊 Comparar cenários de preço", UI.renderCenarios(custo, cenarios), [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Comparar cenários de preço", UI.renderCenarios(custo, cenarios), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
       UI.modalConsulta(); // comparação é leitura
@@ -3197,7 +3197,7 @@
         }).join("") + '</tbody></table>';
       UI.modal("Reimportar Excel — revisar mudanças", html, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-        { texto: "✅ Aplicar selecionadas", classe: "primary", onClick: function () {
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Aplicar selecionadas", classe: "primary", onClick: function () {
           var aceitas = [];
           Array.prototype.forEach.call(document.querySelectorAll("[data-rt]"), function (c) {
             if (c.checked) aceitas.push(difs[+c.getAttribute("data-rt")]);
@@ -3238,8 +3238,8 @@
               custoTotal: Util.num(i.coeficiente) * Util.num(i.custoUnitario), categoria: normCat(i.categoria) };
           })
         };
-        var bgP = UI.modal("🔍 Composição própria " + String(codigo) + " — Insumos", UI.renderInsumos(aP, ufAtivo), [
-          { texto: "✎ Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
+        var bgP = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Composição própria " + String(codigo) + " — Insumos", UI.renderInsumos(aP, ufAtivo), [
+          { texto: "" + (typeof Icones !== "undefined" ? Icones.get("editar", 15) : "") + " Editar composição", classe: "ghost", onClick: function () { UI.fecharModal(); self.editarComposicao(String(codigo)); } },
           { texto: "⧉ Duplicar", classe: "ghost", onClick: function () { UI.fecharModal(); self.duplicarComposicao(String(codigo)); } },
           { texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }
         ]);
@@ -3259,7 +3259,7 @@
             [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
           return;
         }
-        var bg = UI.modal("🔍 Composição " + codigo + " — Insumos", UI.renderInsumos(a, ufAtivo), [
+        var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Composição " + codigo + " — Insumos", UI.renderInsumos(a, ufAtivo), [
           // v1.1.124 — "quero essa, mas com MEU coeficiente": clona p/ composição própria
           { texto: "🧬 Criar minha versão", classe: "ghost", onClick: function () { self.criarVersaoPropria(String(codigo)); } },
           { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
@@ -3272,7 +3272,7 @@
       // mesmo que o disco do cliente não tenha o arquivo, o detalhamento carrega ao vivo.
       var urls = self._analiticoUrls();
       if (!urls.local && !urls.live) { // só quando não há UF de forma alguma
-        UI.toast("Sem UF ativa para o detalhamento. Escolha um estado em 🗂 Tabelas.", "erro");
+        UI.toast("Sem UF ativa para o detalhamento. Escolha um estado em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas.", "erro");
         return;
       }
       // Trocou de UF desde o último carregamento → descarta e recarrega o analítico certo.
@@ -3429,10 +3429,10 @@
           '<td>' + Util.esc(d.unidade || "") + '</td>' +
           '<td class="num">' + Util.fmtMoeda(d.custoUnitario) + '</td>' +
           '<td class="right" style="white-space:nowrap">' +
-            (ehComp ? '<button class="btn sm ghost" data-acao="mc-ver" data-cod="' + Util.esc(d.codigo) + '" title="ver insumos">🔍</button> ' +
-                      '<button class="btn sm ghost" data-acao="mc-editar" data-cod="' + Util.esc(d.codigo) + '" title="editar">✎</button> ' +
+            (ehComp ? '<button class="btn sm ghost" data-acao="mc-ver" data-cod="' + Util.esc(d.codigo) + '" title="ver insumos">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '</button> ' +
+                      '<button class="btn sm ghost" data-acao="mc-editar" data-cod="' + Util.esc(d.codigo) + '" title="editar">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> ' +
                       '<button class="btn sm ghost" data-acao="mc-duplicar" data-cod="' + Util.esc(d.codigo) + '" title="duplicar">⧉</button> ' : "") +
-            '<button class="btn sm danger" data-acao="mc-excluir" data-cod="' + Util.esc(d.codigo) + '" title="excluir do banco">🗑</button>' +
+            '<button class="btn sm danger" data-acao="mc-excluir" data-cod="' + Util.esc(d.codigo) + '" title="excluir do banco">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
           '</td></tr>';
       }).join("");
       var corpo = '<div class="field" style="margin-bottom:8px"><input id="mc-filtro" placeholder="Buscar por código ou descrição…" value="' + Util.esc(this._mcFiltro) + '"></div>' +
@@ -3443,8 +3443,8 @@
           '<thead><tr><th>Código</th><th>Descrição</th><th>Tipo</th><th>Un</th><th class="num">Custo</th><th></th></tr></thead>' +
           '<tbody>' + linhas + '</tbody></table></div>'
         : '<p class="muted">Nenhum item' + (f ? " neste filtro" : " ainda — crie composições na busca do orçamento ou no botão abaixo") + '.</p>');
-      UI.modal("📋 Minhas composições e insumos", corpo, [
-        { texto: "➕ Nova composição", classe: "success", onClick: function () { self.criarComposicao(); } },
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + " Minhas composições e insumos", corpo, [
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Nova composição", classe: "success", onClick: function () { self.criarComposicao(); } },
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
       UI.modalConsulta(); // lista de gestão: digitar no filtro não pode virar pergunta de "perder"
@@ -3534,7 +3534,7 @@
          composição" morre AQUI: cadastro inline dentro do próprio criador.
          NUNCA um segundo UI.modal — abrir outro modal destrói o criador. */
       box.innerHTML += '<div style="padding:6px 4px;border-top:1px dashed var(--linha)">' +
-        '<button class="btn sm" data-acao="cp-novo-insumo">➕ Não achei — cadastrar insumo próprio</button></div>';
+        '<button class="btn sm" data-acao="cp-novo-insumo">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Não achei — cadastrar insumo próprio</button></div>';
     },
     /* formulário INLINE no box de resultados do passo 2 (item 8 do cliente) */
     _cpNovoInsumoInline: function () {
@@ -3543,11 +3543,11 @@
         ? Gestao._insumoProprioCampos("cpi", false)
         : '<div class="field"><label>Descrição *</label><input id="cpi-desc"></div><div class="row"><div class="field" style="max-width:110px"><label>Unidade *</label><input id="cpi-und" value="un"></div><div class="field"><label>Preço (R$)</label><input id="cpi-preco"></div></div><select id="cpi-cat" style="display:none"><option value="MAT" selected>MAT</option></select>';
       box.innerHTML = '<div style="padding:8px;border:1px solid var(--linha);border-radius:8px;background:rgba(46,111,158,.06)">' +
-        '<div style="font-weight:700;font-size:12.5px;margin-bottom:6px">➕ Cadastrar insumo próprio — entra no seu banco e JÁ nesta composição (coeficiente 1, ajuste na tabela)</div>' +
+        '<div style="font-weight:700;font-size:12.5px;margin-bottom:6px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Cadastrar insumo próprio — entra no seu banco e JÁ nesta composição (coeficiente 1, ajuste na tabela)</div>' +
         campos +
         '<div style="display:flex;gap:8px;margin-top:8px">' +
         '<button class="btn sm success" data-acao="cp-salvar-insumo">Salvar e adicionar</button>' +
-        '<button class="btn sm ghost" data-acao="cp-voltar-busca">← voltar à busca</button></div></div>';
+        '<button class="btn sm ghost" data-acao="cp-voltar-busca">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' voltar à busca</button></div></div>';
       var d = UI.el("cpi-desc");
       if (d) { d.value = String(this._cp.busca || "").trim(); d.focus(); }
     },
@@ -3698,7 +3698,7 @@
       var r = ComposicaoPropria.validar(st.comp, ctx);
       var box = UI.el("cp-valida");
       if (!r.ok) {
-        if (box) box.innerHTML = '<div style="padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.3);font-size:12px"><b>⛔ Corrija antes de gravar (sem margem para erro):</b><br>· ' + r.erros.map(Util.esc).join("<br>· ") + '</div>';
+        if (box) box.innerHTML = '<div style="padding:9px 12px;border-radius:8px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.3);font-size:12px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('proibido', 15) : '') + ' Corrija antes de gravar (sem margem para erro):</b><br>· ' + r.erros.map(Util.esc).join("<br>· ") + '</div>';
         return;
       }
       var gravar = function () {
@@ -3777,7 +3777,7 @@
         // avisos não bloqueiam, mas exigem decisão EXPLÍCITA (sem margem p/ erro escondido)
         /* UI.modal zera a guarda ao abrir — re-registrada logo abaixo, senão
            o ✕ deste aviso descartava a composição inteira sem pergunta */
-        UI.modal("⚠ Avisos de parâmetro", '<p style="font-size:13px">O checklist passou sem erros, mas o agente encontrou <b>' + r.avisos.length + ' aviso(s)</b> que merecem conferência:</p><div style="padding:9px 12px;border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.3);font-size:12px">· ' + r.avisos.map(Util.esc).join("<br>· ") + '</div>', [
+        UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Avisos de parâmetro", '<p style="font-size:13px">O checklist passou sem erros, mas o agente encontrou <b>' + r.avisos.length + ' aviso(s)</b> que merecem conferência:</p><div style="padding:9px 12px;border-radius:8px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.3);font-size:12px">· ' + r.avisos.map(Util.esc).join("<br>· ") + '</div>', [
           { texto: "Voltar e revisar", classe: "ghost", onClick: function () { self._cpRender(); } },
           { texto: "Conferi — gravar assim", classe: "success", onClick: gravar }
         ]);
@@ -3966,7 +3966,7 @@
     criarVersaoPropria: function (codigo) {
       var self = this;
       var ref = (typeof Analitico !== "undefined") ? Analitico.obter(String(codigo)) : null;
-      if (!ref) { UI.toast("Detalhamento de " + codigo + " não está carregado — abra o 🔍 Insumos primeiro.", "erro"); return; }
+      if (!ref) { UI.toast("Detalhamento de " + codigo + " não está carregado — abra o " + (typeof Icones !== "undefined" ? Icones.get("buscar", 15) : "") + " Insumos primeiro.", "erro"); return; }
       this.criarComposicao(true);
       var prop = ComposicaoPropria.daReferencia(ref, { resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); } });
       var c = this._cp.comp;
@@ -3988,7 +3988,7 @@
       if (!Sinapi.carregado) { UI.toast("Base SINAPI ainda carregando…", "erro"); return; }
       var self = this;
       this._escopo = null;
-      UI.modal("✨ Escopo Inteligente", UI.renderEscopoEntrada(), [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("escopo", 15) : "") + " Escopo Inteligente", UI.renderEscopoEntrada(), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
       setTimeout(function () { var t = UI.el("esc-txt"); if (t) t.focus(); }, 50);
@@ -4003,7 +4003,7 @@
       var self = this;
       var body = UI.renderEscopoResultado(this._escopo, this.orcAtual.etapas);
       // reabre o modal com o resultado + rodapé de confirmação
-      var bg = UI.modal("✨ Escopo Inteligente — revisão", body, [
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("escopo", 15) : "") + " Escopo Inteligente — revisão", body, [
         { texto: "Voltar", classe: "ghost", onClick: function () { self.abrirEscopo(); } },
         { texto: "Adicionar selecionados", classe: "success", onClick: function () { self.confirmarEscopo(); } }
       ]);
@@ -4063,7 +4063,7 @@
       if (!Util.naoVazio(txt)) { UI.toast("Cole a descrição da obra primeiro.", "erro"); return; }
       var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
       this._escBack = back;
-      UI.toast("🤖 Estruturando o escopo com a IA do ERP…", "ok");
+      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Estruturando o escopo com a IA do ERP…", "ok");
       fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ descricao: txt }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
@@ -4072,7 +4072,7 @@
           if (!self._escopo.length) { UI.toast("A IA não retornou itens.", "erro"); return; }
           self._escopoIA = true;
           var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;
-          UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão). Use 🎯 Refinar p/ a IA escolher o código exato.", "ok");
+          UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão). Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar p/ a IA escolher o código exato.", "ok");
           self._mostrarEscopoResultado(0);
         })
         .catch(function (e) { console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — veja o Console (F12). ERP na porta 3040?", "erro"); });
@@ -4116,7 +4116,7 @@
     // botão "🎯 Refinar com IA" na revisão do escopo
     refinarEscopoCasar: function () {
       var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
-      UI.toast("🎯 Refinando os matches com a IA…", "ok");
+      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinando os matches com a IA…", "ok");
       this._casarEscopoIA(back).then(function (r) {
         var msg = r.refinados + " serviços refinados pela IA.";
         if (r.limite) msg += " ⏳ Limite da IA grátis/min atingido — restam " + r.restam + ", clique de novo daqui ~1 min.";
@@ -4128,7 +4128,7 @@
     _mostrarEscopoResultado: function (refinados) {
       var self = this;
       var body = UI.renderEscopoResultado(this._escopo, this.orcAtual.etapas);
-      var bg = UI.modal("✨ Escopo (IA) — revisão · " + this._escopo.length + " serviços" + (refinados ? " · 🎯 " + refinados + " confirmados pela IA" : ""), body, [
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("escopo", 15) : "") + " Escopo (IA) — revisão · " + this._escopo.length + " serviços" + (refinados ? " · 🎯 " + refinados + " confirmados pela IA" : ""), body, [
         { texto: "Voltar", classe: "ghost", onClick: function () { self.abrirEscopo(); } },
         { texto: "Adicionar selecionados", classe: "success", onClick: function () { self.confirmarEscopo(); } }
       ]);
@@ -4141,16 +4141,16 @@
       if (!Auth.podeUsar("proposta")) { UI.toast("Proposta Comercial é recurso PRO.", "erro"); return; }
       var val = Proposta.validar(this.orcAtual);
       if (!val.ok) {
-        UI.toast("Faltam dados: " + val.faltando.join(", ") + ". Abra ⚙ Dados.", "erro");
+        UI.toast("Faltam dados: " + val.faltando.join(", ") + ". Abra " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados.", "erro");
         return;
       }
       // LOTE 4: avisos NÃO-bloqueantes de acabamento — proposta sai, mas o usuário sabe
       try {
-        if (typeof Empresa !== "undefined" && !Empresa.logo()) UI.toast("Sem logo em ⚙ Empresa — a capa sai com [LOGO]. Suba o logo p/ proposta 100% profissional.", "erro");
+        if (typeof Empresa !== "undefined" && !Empresa.logo()) UI.toast("Sem logo em " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Empresa — a capa sai com [LOGO]. Suba o logo p/ proposta 100% profissional.", "erro");
         var _c = this.orcAtual.comercial || {};
-        if (!Util.naoVazio(_c.apresentacao)) UI.toast("Apresentação em ⚙ Dados vazia — saiu o texto padrão. Personalize p/ este cliente.", "erro");
+        if (!Util.naoVazio(_c.apresentacao)) UI.toast("Apresentação em " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados vazia — saiu o texto padrão. Personalize p/ este cliente.", "erro");
       } catch (eAv) {}
-      this._abrirPrint("📄 Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()));
+      this._abrirPrint("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()));
     },
 
     // Anexo Técnico de Orçamento p/ LAUDO pericial (não comercial)
@@ -4159,7 +4159,7 @@
       if (!Auth.podeUsar("proposta")) { UI.toast("Anexo p/ laudo é recurso PRO.", "erro"); return; }
       var val = Laudo.validar(this.orcAtual);
       if (!val.ok) { UI.toast("Faltam dados: " + val.faltando.join(", "), "erro"); return; }
-      this._abrirPrint("📑 Anexo de Orçamento p/ Laudo — " + this.orcAtual.numero, Laudo.gerarHTML(this.orcAtual, Auth.usuario()));
+      this._abrirPrint("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Anexo de Orçamento p/ Laudo — " + this.orcAtual.numero, Laudo.gerarHTML(this.orcAtual, Auth.usuario()));
     },
 
     // Relatório técnico completo: sintético + analítico detalhado
@@ -4169,7 +4169,7 @@
       if (t.qtdItens < 1) { UI.toast("Adicione itens antes de gerar o relatório.", "erro"); return; }
       var self = this;
       function abrir() {
-        self._abrirPrint("🧾 Relatório de Orçamento — " + self.orcAtual.numero,
+        self._abrirPrint("" + (typeof Icones !== "undefined" ? Icones.get("relatorio", 15) : "") + " Relatório de Orçamento — " + self.orcAtual.numero,
           UI.renderRelatorioCompleto(self.orcAtual, Auth.usuario()));
       }
       // Carrega o analítico da UF (1ª vez) p/ incluir a seção de composições e insumos; degrada sem travar.
@@ -4305,14 +4305,14 @@
       if (imp.abas && imp.abas.length > 1) {
         var opts = imp.abas.map(function (a, i) { return '<option value="' + i + '"' + (i === imp.abaIdx ? " selected" : "") + ">" + Util.esc(a.nome) + "</option>"; }).join("");
         picker = '<div class="card" style="background:#eff6ff;border-color:#bfdbfe;padding:8px 12px;margin-bottom:10px;font-size:12.5px;color:#1e3a5f">' +
-          "📑 Esta planilha tem <b>" + imp.abas.length + " abas</b>. Importando de " +
+          "" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Esta planilha tem <b>" + imp.abas.length + " abas</b>. Importando de " +
           '<select id="imp-aba" style="margin:0 6px;padding:2px 6px;font-size:12.5px">' + opts + "</select>" +
-          '<span class="muted">— se não for a aba do orçamento, troque e clique <b>🔄 Reanalisar</b>.</span></div>';
+          '<span class="muted">— se não for a aba do orçamento, troque e clique <b>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Reanalisar</b>.</span></div>';
       }
-      UI.modal("📊 Importar planilha — " + Util.esc(imp.nome || ""), picker + UI.renderImportPreview(imp), [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Importar planilha — " + Util.esc(imp.nome || ""), picker + UI.renderImportPreview(imp), [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-        { texto: "🔄 Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
-        { texto: "✅ Importar como orçamento", classe: "success", onClick: function () { self.criarOrcamentoDaImportacao(); } }
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("ciclo", 15) : "") + " Reanalisar", classe: "", onClick: function () { self.importRemapear(); } },
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Importar como orçamento", classe: "success", onClick: function () { self.criarOrcamentoDaImportacao(); } }
       ]);
     },
     importRemapear: function () {
@@ -4403,7 +4403,7 @@
       overlay.className = "proposta-overlay"; overlay.id = "proposta-print";
       overlay.innerHTML =
         '<div class="prop-toolbar no-print"><span class="ttl">' + Util.esc(titulo) + '</span>' +
-        '<button class="btn sm success" data-acao="proposta-imprimir">🖨 Imprimir / Salvar PDF</button>' +
+        '<button class="btn sm success" data-acao="proposta-imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir / Salvar PDF</button>' +
         '<button class="btn sm" data-acao="proposta-fechar">Fechar</button></div>' +
         htmlConteudo;
       document.body.appendChild(overlay);
@@ -4434,7 +4434,7 @@
       else if (s.outroDispositivo) msg = "Esta licença está ativada em outra máquina. Fale com o suporte para liberar.";
       else if (s.revalidar) msg = "Reconecte à internet para revalidar sua licença (alguns dias sem checar).";
       else if (s.trial && s.expirado) msg = "⏰ Seu teste grátis de 7 dias terminou. Ative uma licença (🔑) para continuar salvando e exportando — seus orçamentos estão preservados.";
-      else msg = "🔒 Ative sua licença (🔑) para salvar e exportar.";
+      else msg = "" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Ative sua licença (🔑) para salvar e exportar.";
       UI.toast(msg, "erro");
       try { this.abrirLicenca(); } catch (e) {}
     },
@@ -4442,7 +4442,7 @@
     persistir: function () {
       if (!this.orcAtual) return;
       if (this._trialBloqueado()) {
-        if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("🔒 Modo demonstração — para salvar, ative sua licença (🔑).", "erro"); }
+        if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — para salvar, ative sua licença (🔑).", "erro"); }
         return;
       }
       try { Orcamento.sincronizarPrazo(this.orcAtual); } catch (e) {} // FASE 1.4: prazo segue o agente (depois do gate de licença)

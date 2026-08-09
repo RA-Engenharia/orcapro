@@ -102,12 +102,12 @@
     recarregarPendente = true;
     function tentar() {
       if (seguroRecarregar()) {
-        faixa('<span class="opr-ic">✅</span><div class="opr-tx"><b>Atualizado para a versão ' + esc(versao) + ' — recarregando…</b></div>');
+        faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span><div class="opr-tx"><b>Atualizado para a versão ' + esc(versao) + ' — recarregando…</b></div>');
         // re-checa DEPOIS da faixa aparecer: se o cliente voltou a mexer nesses 400ms, espera de novo
         setTimeout(function () { if (seguroRecarregar()) limparCachesERecarregar(); else setTimeout(tentar, 15000); }, 400);
       } else {
         // discreto: avisa que está pronto e recarrega sozinho quando o cliente terminar o que está fazendo
-        faixa('<span class="opr-ic">✅</span><div class="opr-tx"><b>Versão ' + esc(versao) + ' instalada.</b><small>O app recarrega sozinho assim que você concluir o que está fazendo.</small></div>');
+        faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span><div class="opr-tx"><b>Versão ' + esc(versao) + ' instalada.</b><small>O app recarrega sozinho assim que você concluir o que está fazendo.</small></div>');
         setTimeout(tentar, 15000);
       }
     }
@@ -135,7 +135,7 @@
           /* O usuário CLICOU em "Atualizar agora": sumir em silêncio faz ele achar
              que atualizou. Quando ele não pediu (update silencioso), o silêncio é
              correto — o próximo check tenta de novo sozinho. */
-          faixa('<span class="opr-ic">⚠</span><div class="opr-tx"><b>Não consegui atualizar agora.</b>' +
+          faixa('<span class="opr-ic">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</span><div class="opr-tx"><b>Não consegui atualizar agora.</b>' +
             '<small>Verifique a internet — o app tenta de novo sozinho. Você pode continuar trabalhando normalmente.</small></div>');
           setTimeout(fechar, 12000);
         } else { fechar(); } // silencioso: próximo check tenta de novo
@@ -239,7 +239,7 @@
       ov.style.cssText = "position:fixed;inset:0;z-index:2147483647;display:flex;flex-direction:column;gap:14px;" +
         "align-items:center;justify-content:center;background:rgba(11,26,43,.94);color:#fff;text-align:center;padding:24px;" +
         "font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:16px;font-weight:600";
-      ov.innerHTML = '<div class="opr-sp" style="width:30px;height:30px"></div><div>🔄 Buscando a versão mais nova…</div>';
+      ov.innerHTML = '<div class="opr-sp" style="width:30px;height:30px"></div><div>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Buscando a versão mais nova…</div>';
       document.body.appendChild(ov);
     }
     limparCachesERecarregar();

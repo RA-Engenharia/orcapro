@@ -117,13 +117,13 @@
         '<span><small>Competência</small><b>' + esc(this._st.competencia || "—") + '</b></span>' +
         '<span><small>Regime</small><b>' + regTxt + '</b></span>' +
         '<span><small>BDI atual</small><b>' + Util.fmtPct(this._st.bdiPercentual) + '</b></span>' +
-        '<small class="ow-ctx-dica">Estado e competência trocam em 🗂 Tabelas — aqui ajustam-se os critérios de cálculo.</small></div>';
+        '<small class="ow-ctx-dica">Estado e competência trocam em ' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas — aqui ajustam-se os critérios de cálculo.</small></div>';
       var corpo =
         '<p class="muted ow-nota" style="margin-top:0">Mudanças aqui <b>recalculam todos os totais</b> deste orçamento — inclusive o que já foi exportado. Confira antes de reemitir a planilha.</p>' +
         faixaCtx +
         '<div class="ow-sec"><h4>Dados do orçamento</h4>' + this._corpo1() + "</div>" +
         this._corpo2() + blocoBases;
-      UI.modal("⚙ Parâmetros do orçamento", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Parâmetros do orçamento", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () { self._salvarParametros(); } }
       ]);
@@ -295,7 +295,7 @@
               '<i class="pill ' + esc(b.cor || "outra") + '">' + esc(b.fonte) + "</i>" +
               "<small>Local: " + esc(b.uf || "—") + " · Versão: " + esc(b.competencia || "—") + " · " + esc((b.itens && b.itens.length) || 0) + " itens</small></span></label>";
           }).join("")
-        : '<p class="muted ow-nota">Nenhuma tabela extra instalada além do SINAPI. Você pode instalar SICRO, IOPES, ORSE e outras em <b>🗂 Tabelas</b> — e voltar a este orçamento depois.</p>';
+        : '<p class="muted ow-nota">Nenhuma tabela extra instalada além do SINAPI. Você pode instalar SICRO, IOPES, ORSE e outras em <b>' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas</b> — e voltar a este orçamento depois.</p>';
       return this._trilha(3) +
         '<div class="ow-sec"><h4>SINAPI</h4>' +
         '<div class="row"><div class="field"><label>Local (estado)</label><select id="ow-uf"><option value="' + esc(s.uf) + '">' + esc(s.uf) + "</option></select></div>" +
@@ -347,7 +347,7 @@
       if (hint) {
         hint.innerHTML = lista.length > 1
           ? "Competências instaladas neste computador. A base da competência escolhida é carregada ao criar."
-          : "Só esta competência está instalada. Para orçar em outra data-base, baixe a versão em <b>🗂 Tabelas</b>.";
+          : "Só esta competência está instalada. Para orçar em outra data-base, baixe a versão em <b>" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas</b>.";
       }
     },
 
@@ -409,7 +409,7 @@
       } });
       botoes.push(p < 3
         ? { texto: "Avançar ›", classe: "primary", onClick: function () { self._ir(1); } }
-        : { texto: "✓ Criar orçamento", classe: "primary", onClick: function () { self._criar(); } });
+        : { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Criar orçamento", classe: "primary", onClick: function () { self._criar(); } });
       UI.modal("Novo orçamento — passo " + p + " de 3", corpo, botoes);
       /* cada passo recria o modal (UI.modal zera a guarda): re-registrar.
          Passo > 1 = já há trabalho investido; no passo 1 o _tocado do DOM
@@ -581,7 +581,7 @@
             } else {
               UI.toast("Não deu para carregar a base de " + ufPedida + (precisaComp ? " · " + compPedida : "") +
                 ". O orçamento continua em " + (vivo.uf || "—") + " · " + (vivo.competenciaSinapi || "—") +
-                " — troque em 🗂 Tabelas quando quiser.", "erro");
+                " — troque em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas quando quiser.", "erro");
             }
             if (app.tela === "editor") app.render();
           });

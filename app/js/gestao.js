@@ -452,7 +452,7 @@
         }
         return pre + '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
       }).join("");
-      if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">⭐</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
+      if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + '</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
 
       /* "Mais módulos": abre no hover (mouse) e no clique (toque). O clique
          funciona nos DOIS — em tablet não existe hover, e um menu que só
@@ -525,7 +525,7 @@
         est + '<div class="sb-lbl">Módulos</div><nav class="sb-nav">' + itens + mais
         + '<button class="sb-org sb-foco" data-gacao="menu-foco" title="Recolher a barra para sobrar tela; o menu volta ao encostar o mouse">'
         + (this.menuFoco() ? "⇥ Mostrar menu fixo" : "⇤ Modo foco (mais tela)") + "</button>"
-        + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">⚙ Organizar menu</button></nav>';
+        + '<button class="sb-org" data-gacao="menu-organizar" title="Escolher quais módulos ficam à vista">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Organizar menu</button></nav>';
     },
 
     // ---------- Dispatcher de view ----------
@@ -604,7 +604,7 @@
         + campo("Avisar contas a vencer em (dias)", inp("g-mt-dias", m.contasDias, "padrão: " + d.contasDias))
         + "</div>"
         + '<p class="muted" style="font-size:12px;margin:6px 0 0">A <b>margem</b> é calculada sobre o que foi recebido: abaixo da meta, o indicador fica laranja. O <b>PPC</b> vale para o indicador do Painel e para a linha de meta do gráfico do Last Planner — os dois usam este número.<br>Deixe em branco para voltar ao padrão.</p>';
-      UI.modal("⚙ Metas da empresa", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Metas da empresa", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Voltar ao padrão", classe: "ghost", onClick: function () {
           var p = (Store.lerPrefs(eid()) || {}); delete p.metas; Store.salvarPrefs(eid(), p);
@@ -870,7 +870,7 @@
       if (tAfazer > 0 || tAtras > 0) {
         html += '<div class="card mt"' + (tAtras ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px">🗒️ Tarefas</h3>' +
           '<button class="btn sm" data-view="tarefas" style="margin-right:8px">A fazer: <b>' + tAfazer + "</b></button>" +
-          (tAtras ? '<button class="btn sm" data-view="tarefas" style="color:#dc2626;margin-right:8px">⚠ Atrasadas: <b>' + tAtras + "</b></button>" : "") +
+          (tAtras ? '<button class="btn sm" data-view="tarefas" style="color:#dc2626;margin-right:8px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Atrasadas: <b>' + tAtras + "</b></button>" : "") +
           "</div>";
       }
       // dinheiro fechado que ninguém lançou (motor em js/reconciliacao.js)
@@ -936,13 +936,13 @@
       if (!this._obraDemoPode()) return "";
       var temDemo = ObraDemo.existe();
       return '<div class="card mt" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' +
-        '<div style="flex:1;min-width:240px"><h3 style="margin:0 0 4px">🏗 Obra de demonstração</h3>' +
+        '<div style="flex:1;min-width:240px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Obra de demonstração</h3>' +
         '<p class="muted" style="font-size:12.5px;margin:0">' + (temDemo
           ? 'A <b>OBRA TESTE ORÇAPRO</b> está criada — todos os módulos têm dados de exemplo pra apresentar o sistema. Ao remover, só os dados de demonstração saem.'
           : 'Crie a <b>OBRA TESTE ORÇAPRO</b> com tudo preenchido (orçamento SINAPI, Last Planner, diários com fotos, medições, compras, equipe, folha, frota, financeiro…) pra demonstrar o sistema funcionando.') + '</p></div>' +
         (temDemo
-          ? '<button class="btn sm" data-gacao="obrademo-remover">🗑 Remover dados de demonstração</button>'
-          : '<button class="btn primary sm" data-gacao="obrademo-criar">🏗 Criar OBRA TESTE ORÇAPRO</button>') +
+          ? '<button class="btn sm" data-gacao="obrademo-remover">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Remover dados de demonstração</button>'
+          : '<button class="btn primary sm" data-gacao="obrademo-criar">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Criar OBRA TESTE ORÇAPRO</button>') +
         '</div>';
     },
     obraDemoCriar: function () {
@@ -1259,7 +1259,7 @@
         var nome = String(d.rotulo || ""); if (nome.length > maxC) nome = nome.slice(0, Math.max(3, maxC - 1)) + "…";
         var yNome = zig ? (i % 2 ? H - 15 : H - 25) : H - 15;
         svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="3" fill="var(--aco-claro)" opacity=".8"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
-          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="3" fill="' + (d.estourou ? "#dc2626" : "var(--navy)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " ⚠ ESTOURO" : "") + '</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="3" fill="' + (d.estourou ? "#dc2626" : "var(--navy)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " " + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " ESTOURO" : "") + '</title></rect>' +
           '<text x="' + cx + '" y="' + yNome + '" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + Util.esc(nome) + '<title>' + Util.esc(d.rotulo) + '</title></text>' +
           (d.previsto > 0 ? '<text x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + (d.estourou ? "#dc2626" : "var(--verde)") + '">' + (d.real > d.previsto ? "+" : "") + Math.round((d.real / d.previsto - 1) * 100) + '%</text>' : "");
       });
@@ -1344,7 +1344,7 @@
       if (!d.prevReal.length) kpiPR = "";
       else kpiPR = this._lpKpi("Previsto × Realizado", this._fmtK(d.realTot),
         estouroKpi ? "⚠ " + this._fmtK(d.realComp - d.prevTot) + " ACIMA do orçado (" + this._fmtK(d.prevTot) + ")" + notaSem
-          : d.nEstouros ? "⚠ orçado " + this._fmtK(d.prevTot) + " · " + d.nEstouros + " estouro(s)" + notaSem
+          : d.nEstouros ? "" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " orçado " + this._fmtK(d.prevTot) + " · " + d.nEstouros + " estouro(s)" + notaSem
             : "dentro do orçado (" + this._fmtK(d.prevTot) + ")" + notaSem,
         estouroKpi || d.nEstouros ? (estouroKpi ? "#dc2626" : "#ea580c") : "var(--verde)");
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:12px">' +
@@ -1463,7 +1463,7 @@
       var gd = this._dashGraficosDados(this._dashPer || "6m");
       if (!gd.custoM2.length) return "";
       var barH = (typeof UI !== "undefined" && UI._barH) ? UI._barH : function () { return ""; };
-      return '<div class="card mt"><h3 style="margin:0 0 10px" title="Custo real ÷ área construída cadastrada na obra">📐 Custo por m²</h3>' + barH(gd.custoM2) + '</div>';
+      return '<div class="card mt"><h3 style="margin:0 0 10px" title="Custo real ÷ área construída cadastrada na obra">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Custo por m²</h3>' + barH(gd.custoM2) + '</div>';
     },
     dashTrocaPeriodo: function (p) {
       if (p == null) return; // clique da delegação (sem value) não re-renderiza
@@ -1480,7 +1480,7 @@
          do modal do Portal, porque a nota do cliente é informação de gestão:
          quem abre Obras de manhã tem de topar com ela. */
       if (obras.some(function (o) { return o.portalUser; })) {
-        html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">⭐ Avaliações dos clientes</button></div>';
+        html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + ' Avaliações dos clientes</button></div>';
       }
       html += '<div class="grid-cards">';
       obras.forEach(function (o) {
@@ -1509,9 +1509,9 @@
           // de status e um toque no selo abria o modal de excluir (achado do gate)
           '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:flex-end">' +
             (podeExcluir ? '<button class="btn sm ico danger" data-gacao="excluir-obra" data-id="' + Util.esc(o.id) + '" title="Excluir esta obra (pede confirmação)" style="margin-right:auto;min-width:44px;min-height:38px">' + Icones.get("lixeira", 15) + "</button>" : "") +
-            '<button class="btn sm ghost" data-gacao="docs-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="ART/RRT, alvará, apólice — o que o cliente vê no Portal">🗂️ Documentos' + ((o.portalDocumentos || []).length ? " (" + o.portalDocumentos.length + ")" : "") + "</button>" +
-            (o.portalUser ? '<button class="btn sm ghost" data-gacao="aviso-semanal" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="Gera o resumo da semana pronto para mandar ao cliente">📣 Aviso semanal</button>' : "") +
-            '<button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">📱 Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button>" +
+            '<button class="btn sm ghost" data-gacao="docs-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="ART/RRT, alvará, apólice — o que o cliente vê no Portal">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Documentos' + ((o.portalDocumentos || []).length ? " (" + o.portalDocumentos.length + ")" : "") + "</button>" +
+            (o.portalUser ? '<button class="btn sm ghost" data-gacao="aviso-semanal" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="Gera o resumo da semana pronto para mandar ao cliente">' + (typeof Icones !== 'undefined' ? Icones.get('megafone', 15) : '') + ' Aviso semanal</button>' : "") +
+            '<button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button>" +
           "</div></div>";
       });
       /* As fotos sao lidas do IndexedDB (Promise), entao entram depois que a
@@ -1641,18 +1641,18 @@
         "</div>" +
         '<p style="margin:0 0 4px">O que está ligado a esta obra:</p>' + listaHtml + soltaHtml +
         (orc ? '<p style="margin:10px 0 0;font-size:12.5px">O orçamento <b>' + Util.esc(orc.nome) + "</b> <b>não</b> será apagado — ele vive na tela de Orçamentos.</p>" : "") +
-        (obra.portalUser ? '<p style="margin:10px 0 0;color:#b45309;font-size:12.5px">⚠ Esta obra está publicada no <b>Portal do Cliente</b> (' + Util.esc(obra.portalUser) + "). O acesso do cliente a ela também será removido.</p>" : "") +
+        (obra.portalUser ? '<p style="margin:10px 0 0;color:#b45309;font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta obra está publicada no <b>Portal do Cliente</b> (' + Util.esc(obra.portalUser) + "). O acesso do cliente a ela também será removido.</p>" : "") +
         '<p style="margin:12px 0 0;font-size:12.5px">Esta ação <b>não pode ser desfeita</b>' +
           (v.total ? " — escolha abaixo se os " + v.total + " registro(s) vão junto." : ".") + "</p>";
 
       var botoes = [{ texto: "Cancelar", classe: "primary", onClick: function () { UI.fecharModal(); } }];
       if (v.total) {
         botoes.push({ texto: "Excluir só a obra", classe: "ghost", onClick: function () { self._excluirObra(id, false); } });
-        botoes.push({ texto: "🗑 Excluir a obra e os " + v.total + " registro(s)", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
+        botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir a obra e os " + v.total + " registro(s)", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
       } else {
-        botoes.push({ texto: "🗑 Excluir definitivamente", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
+        botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir definitivamente", classe: "danger", onClick: function () { self._excluirObra(id, true); } });
       }
-      UI.modal("🗑 Excluir obra?", corpo, botoes);
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir obra?", corpo, botoes);
     },
     _excluirObra: function (id, cascata) {
       /* o filtro da tela Produção guardava o id da obra apagada: a tela
@@ -1858,6 +1858,11 @@
     },
 
     formObra: function (o) {
+      /* ⚠ NOME PRÓPRIO, DE PROPÓSITO. Não use `self` aqui: o navegador já tem
+         um `self` embutido (é o `window`), então escrever `self` por engano
+         não dá erro — dá silêncio, e o silêncio custou o cadastro do diário
+         por WhatsApp de todo mundo até 09/08/2026. */
+      var selfObra = this;
       o = o || {}; var clientes = lista("clientes"), orcs = Store.listarOrcamentos(eid());
       var corpo =
         '<div class="row">' + campo("Nome da obra *", inp("g-nome", o.nome, "Ex.: Residência Silva")) + campo("Cliente", sel("g-cliente", optsRec(clientes, "nome", o.clienteId, "— nenhum —"))) + "</div>" +
@@ -1892,7 +1897,7 @@
            * no lugar errado.
            * ------------------------------------------------------------- */
           '<h4 style="margin:14px 0 6px;font-size:13px;border-top:1px solid var(--borda);padding-top:10px">' +
-            '📱 Diário de obra pelo WhatsApp</h4>' +
+            '' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Diário de obra pelo WhatsApp</h4>' +
           '<div class="muted" style="font-size:12px;margin-bottom:8px">' +
             'O mestre manda o recado do dia pelo WhatsApp e ele chega aqui como <b>rascunho</b> de diário, ' +
             'para você conferir e aprovar. Cadastre quem pode mandar.</div>' +
@@ -1957,9 +1962,32 @@
             if (!vWa.ok) { UI.toast(vWa.erros[0], "erro"); return false; }
             obj.rdoWhatsResp = vWa.responsaveis;
           }
-          var _selfWa = self;
+          /* ⚠ AQUI MORAVA O DEFEITO, E ELE ERA MUDO (09/08/2026).
+             Estava `var _selfWa = self;`. `self` NÃO é declarado nesta função
+             — o que existe é `selfF`, mais abaixo. E `self` não deu
+             ReferenceError porque o navegador tem um `self` embutido: ele é o
+             próprio `window`. Resultado: `window._waSalvarCanal` é undefined,
+             o `if` abaixo pulava sempre, e o cadastro do telefone do mestre
+             NUNCA saía do aparelho. A obra salvava, aparecia "Obra criado.",
+             e o servidor não ficava sabendo de nada — sem erro em lugar
+             nenhum. Foi assim com o telefone da Débora, e teria sido assim
+             com o de qualquer cliente.
+             É o mesmo tropeço do `todos()` algumas linhas acima: usar um nome
+             que já existe no navegador troca o erro barulhento por silêncio.
+             `selfObra` é declarado no topo do formObra e não colide com nada. */
+          var _selfWa = selfObra;
           setTimeout(function () {
-            if (_selfWa._waSalvarCanal) _selfWa._waSalvarCanal(obj, function (erro) {
+            if (!_selfWa || typeof _selfWa._waSalvarCanal !== "function") {
+              /* ⚠ E SE UM DIA FALTAR, QUE FALTE ALTO. O `if` silencioso é o
+                 que fez este defeito viver escondido: o usuário achava que
+                 tinha cadastrado. */
+              if (window.console) console.error("[canal] _waSalvarCanal ausente — o cadastro não foi registrado");
+              if (obj.rdoWhatsAtivo) {
+                UI.toast("Não consegui registrar o diário por WhatsApp desta obra. Salve de novo.", "erro");
+              }
+              return;
+            }
+            _selfWa._waSalvarCanal(obj, function (erro) {
               if (erro) UI.toast("Diário por WhatsApp: " + erro, "erro");
               else if (obj.rdoWhatsAtivo) UI.toast("Diário por WhatsApp ligado nesta obra.", "ok");
             });
@@ -2224,8 +2252,8 @@
           /* Puxar do mês anterior: o pedido do cliente era não redigitar a
              mesma lista de serviços todo mês. Fica ao lado de "Nova medição"
              porque é ali que ele decide como começar. */
-          '<button class="btn sm" data-gacao="puxar-medicao" style="margin-right:8px;align-self:center">📋 Puxar do mês anterior</button>' +
-          '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">📥 CSV</button>');
+          '<button class="btn sm" data-gacao="puxar-medicao" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Puxar do mês anterior</button>' +
+          '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>');
       if (!ms.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       ms.forEach(function (m) {
@@ -2238,8 +2266,8 @@
         var travadaEd = self._ehAprovado(m.status);
         var docs = '<button class="btn sm" data-gopen="medicoes:' + m.id + '" title="' +
           (travadaEd ? "Ver a medição (aprovada — travada)" : "Editar a medição") + '">' + (travadaEd ? "🔒" : "✎") + '</button> ' +
-          '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">🖨</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">📊</button> ';
-        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">✕ rejeitada</span>' : "✓")));
+          '<button class="btn sm" data-gacao="boletim-medicao" data-id="' + m.id + '" title="Boletim de medição">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excel-medicao" data-id="' + m.id + '" title="Excel de medição">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + '</button> ';
+        var acao = docs + (m.status === "pendente" ? '<button class="btn sm success" data-gacao="aprovar-medicao" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-medicao" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>' : (m.status === "aprovada" ? '<button class="btn sm primary" data-gacao="pagar-medicao" data-id="' + m.id + '">Registrar pgto</button>' : (m.status === "rejeitada" ? '<span class="muted" title="' + Util.esc(m.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>' : "✓")));
         var nIt = Util.arr(m.itens).length;
         var seta = '<button class="btn sm" data-gacao="med-itens" data-id="' + m.id + '" title="' +
           (nIt ? "Ver os " + nIt + " item(ns) medidos" : "Ver o que foi medido") + '" style="min-width:28px">▸</button> ';
@@ -2298,7 +2326,7 @@
           '<td class="num">' + Util.fmtNum(it.qtdMedida, 2) + "</td>" +
           '<td class="num muted">' + Util.fmtNum(it.pctAnterior, 1) + "%</td>" +
           '<td class="num"><b>' + Util.fmtNum(it.pctPeriodo, 1) + "%</b>" +
-          (acum >= 99.95 ? ' <span title="item 100% medido" style="color:#16a34a">✓</span>' : "") + "</td>" +
+          (acum >= 99.95 ? ' <span title="item 100% medido" style="color:#16a34a">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span>' : "") + "</td>" +
           '<td class="num">' + Util.fmtMoeda(it.valor) + "</td></tr>";
       });
       h += '</tbody><tfoot><tr><td colspan="7" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr>";
@@ -2428,7 +2456,7 @@
             + this._datalistEtapas(obraId, "g-etapas-atv")) + "</div>"
         + '<p class="muted" style="font-size:12px;margin:4px 0 0">Esta tabela é <b>desta obra</b>. Medições já emitidas guardam o preço que foi usado — mexer aqui não altera boletim antigo.</p>';
       var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
-      if (a.id) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
+      if (a.id) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir", classe: "danger", onClick: function () {
         /* atividade já medida NÃO some: o boletim guarda a cópia dela, mas a
            linha da tabela some da lista e o acumulado do serviço fica sem
            origem visível. Desativar preserva o histórico. */
@@ -2474,7 +2502,7 @@
       });
       var corpo = campo("Copiar a tabela de qual obra?", sel("g-atv-origem", opts(linhas, linhas[0][0])))
         + '<p class="muted" style="font-size:12px;margin:6px 0 0">As atividades entram como <b>cópias desta obra</b>: mudar o preço aqui não mexe na obra de origem. O que já existir com o mesmo código (ou mesma descrição e unidade) <b>não é duplicado</b>.</p>';
-      UI.modal("📋 Copiar tabela de preços", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + " Copiar tabela de preços", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Copiar", classe: "primary", onClick: function () {
           var origemId = v("g-atv-origem");
@@ -2651,7 +2679,7 @@
       var atvs = this._atividadesDaObra(obraId);
       var barra = '<div style="display:flex;gap:8px;margin:8px 0;flex-wrap:wrap">'
         + '<button type="button" class="btn sm" data-gacao="atv-nova" data-val="' + Util.esc(obraId) + '">+ Atividade</button>'
-        + '<button type="button" class="btn sm" data-gacao="atv-copiar" data-val="' + Util.esc(obraId) + '">📋 Copiar de outra obra</button>'
+        + '<button type="button" class="btn sm" data-gacao="atv-copiar" data-val="' + Util.esc(obraId) + '">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar de outra obra</button>'
         + "</div>";
       if (!atvs.length) {
         return barra + '<div class="muted" style="padding:10px;border:1px dashed var(--borda);border-radius:8px;font-size:12px">'
@@ -2675,7 +2703,7 @@
           + '<td class="num"><input type="text" data-medqtd="' + Util.esc(a.id) + '" value="' + (qs ? Util.esc(Util.fmtNum(qs, 2)) : "")
           + '" placeholder="0" style="width:88px;text-align:right"' + (travado ? " readonly" : "") + "></td>"
           + '<td class="num" data-medval="' + Util.esc(a.id) + '">—</td>'
-          + '<td class="num"><button type="button" class="btn sm" data-gacao="atv-editar" data-val="' + Util.esc(a.id) + '" title="editar esta atividade">✎</button></td></tr>';
+          + '<td class="num"><button type="button" class="btn sm" data-gacao="atv-editar" data-val="' + Util.esc(a.id) + '" title="editar esta atividade">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button></td></tr>';
       });
       h += '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total do boletim</b></td><td class="num"><b id="med-atv-total">—</b></td><td></td></tr></tfoot></table>'
         + '<p class="muted" style="font-size:12px;margin:2px 0 0">Digite a <b>quantidade executada no período</b>. O valor unitário pode ser ajustado nesta linha quando esta obra combinou outro preço — o boletim guarda o que foi usado, então reajustar a tabela depois não muda documento já emitido.</p>';
@@ -2726,7 +2754,7 @@
         var travado = (m.status === "aprovada" || m.status === "paga") && Util.num(m.valorContratado) > 0 && m.orcamentoId === orcId;
         if (travado) {
           var td2 = function (s, dir) { return '<td class="' + (dir ? "num" : "") + '">' + s + "</td>"; };
-          var h2 = '<div style="padding:8px 10px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin:6px 0">🔒 Boletim <b>' + Util.esc(m.status) + '</b> — os valores estão travados (documento contratual). Para remedir, volte o status para <b>pendente</b> e salve.</div>' +
+          var h2 = '<div style="padding:8px 10px;border-radius:8px;background:rgba(245,158,11,.12);font-size:12px;margin:6px 0">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Boletim <b>' + Util.esc(m.status) + '</b> — os valores estão travados (documento contratual). Para remedir, volte o status para <b>pendente</b> e salve.</div>' +
             '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">Preço unit.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
           Util.arr(m.itens).forEach(function (it) {
             h2 += "<tr>" + td2((it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(String(it.descricao || "").slice(0, 60))) +
@@ -3159,8 +3187,8 @@
       var obras = lista("obras");
       var rec = fs.filter(function (f) { return f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var desp = fs.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var extra = '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📄 Lançar de documento (IA)</button>' +
-        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">📥 CSV</button>' +
+      var extra = '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
+        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>' +
         '<span class="muted" style="margin-right:12px;align-self:center">Saldo: <b style="color:' + (rec - desp >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(rec - desp) + "</b></span>";
       var html = this._head(svg("financeiro") + "Financeiro", "novo-lancamento", "Novo lançamento", extra);
       if (!fs.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
@@ -3364,7 +3392,7 @@
       var sel = '<select data-gacao="galeria-troca-obra" style="max-width:280px">' +
         obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._galSel ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
       var totObra = this._galeriaFotos(this._galSel, "").length;
-      var btnRel = totObra ? '<button class="btn sm" data-gacao="galeria-relatorio" style="margin-right:8px">🖨 Relatório fotográfico</button>' : "";
+      var btnRel = totObra ? '<button class="btn sm" data-gacao="galeria-relatorio" style="margin-right:8px">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Relatório fotográfico</button>' : "";
       var html = this._head(svg("galeria") + "Galeria de Fotos", "", "", btnRel + '<span class="muted" style="align-self:center;margin-right:10px">Obra:</span>' + sel);
       if (!obras.length) return html + vazioBox("Nenhuma obra ainda", "", "Crie uma obra e registre diários com fotos");
       if (!totObra) return html + '<div class="card"><p class="muted">Esta obra ainda não tem fotos. As fotos aparecem aqui automaticamente quando você anexa imagens aos <b>Diários de Obra (RDO)</b> desta obra.</p></div>';
@@ -3447,8 +3475,8 @@
       var legTxt = (ft.leg ? Util.esc(ft.leg) : "Sem legenda") + '<span style="opacity:.7"> · ' + (ft.data ? ft.data.split("-").reverse().join("/") : "") + (ft.rdoNumero ? " · " + Util.esc(ft.rdoNumero) : "") + " · " + (this._galLbIdx + 1) + "/" + fotos.length + "</span>";
       ov.innerHTML =
         '<div style="position:absolute;top:14px;right:16px;display:flex;gap:10px">' +
-          (ft.d ? '<a href="' + ft.d + '" download="' + nome + '" class="btn sm" style="background:#fff;color:#0f2740" onclick="event.stopPropagation()">⬇ Baixar</a>' : "") +
-          '<button class="btn sm" data-gacao="galeria-fechar" style="background:#fff;color:#0f2740">✕ Fechar</button>' +
+          (ft.d ? '<a href="' + ft.d + '" download="' + nome + '" class="btn sm" style="background:#fff;color:#0f2740" onclick="event.stopPropagation()">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Baixar</a>' : "") +
+          '<button class="btn sm" data-gacao="galeria-fechar" style="background:#fff;color:#0f2740">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Fechar</button>' +
         "</div>" +
         '<button class="btn" data-gacao="galeria-nav" data-dir="prev" style="position:absolute;left:14px;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.15);color:#fff;font-size:20px;padding:8px 14px">‹</button>' +
         (ft.d
@@ -3786,7 +3814,7 @@
                ? "<b>" + n.peDireito.toFixed(2) + "</b>" + (n.ultimo ? ' <span class="muted" style="font-size:11px">(informado)</span>' : ' <span class="muted" style="font-size:11px">(até o de cima)</span>')
                : '<span style="color:#b45309">—</span>') + "</td>" +
              '<td><input type="number" step="0.05" data-gniv="corte" data-id="' + Util.esc(n.id) + '" value="' + n.corte + '" style="width:80px"></td>' +
-             '<td><button class="btn sm" data-gacao="niv-excluir" data-id="' + Util.esc(n.id) + '" style="color:#dc2626;font-size:11px;padding:1px 6px" title="excluir nível">✕</button></td></tr>';
+             '<td><button class="btn sm" data-gacao="niv-excluir" data-id="' + Util.esc(n.id) + '" style="color:#dc2626;font-size:11px;padding:1px 6px" title="excluir nível">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
       });
       h += "</tbody></table>";
       h += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">' +
@@ -4047,7 +4075,7 @@
                  (o.faixa ? '<br><span class="muted" style="font-size:10.5px">' + o.faixa.min + "–" + o.faixa.max + " kg em " + o.faixa.n + " catálogos</span>" : "") +
                "</td>" +
                '<td><button class="btn btn-sm" data-gacao="alv-peso-reverter" data-peca="' + Util.esc(pc.id) +
-                 '" style="font-size:11px;padding:1px 6px" title="voltar ao padrão">↺</button></td></tr>';
+                 '" style="font-size:11px;padding:1px 6px" title="voltar ao padrão">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + '</button></td></tr>';
         });
         h += "</tbody></table></div>";
       });
@@ -4090,7 +4118,7 @@
         /* apagar o campo não apagava nada e não dizia nada: a tela ficava em
            branco enquanto o peso vigente seguia valendo por baixo */
         this._alvPesoPintar(box, pecaId);
-        UI.toast("Para voltar ao peso de referência, use o ↺ na linha.", "aviso");
+        UI.toast("Para voltar ao peso de referência, use o " + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " na linha.", "aviso");
         return;
       }
       var r = B.definirPeso(pecaId, v, {});
@@ -4486,7 +4514,7 @@
                  return '<label style="font-size:10.5px">' + ["da esquerda", "do piso", "largura", "altura"][ki] +
                    '<input type="number" step="0.05" data-pagvao="' + i + ":" + k + '" value="' + v[k] + '" style="width:72px;display:block"></label>';
                }).join("") +
-               '<button class="btn sm" data-pagacao="vao-del" data-i="' + i + '" style="color:#dc2626">✕</button></div>';
+               '<button class="btn sm" data-pagacao="vao-del" data-i="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
         });
         h += "</div>";
       }
@@ -4769,7 +4797,7 @@
             : '<label style="font-size:10.5px">peitoril<input type="number" step="0.05" data-elevao="' + i + ':y" value="' + v.y + '" style="width:72px;display:block"></label>') +
           '<label style="font-size:10.5px">largura<input type="number" step="0.05" data-elevao="' + i + ':l" value="' + v.l + '" style="width:72px;display:block"></label>' +
           '<label style="font-size:10.5px">altura<input type="number" step="0.05" data-elevao="' + i + ':a" value="' + v.a + '" style="width:72px;display:block"></label>' +
-          '<button class="btn sm" data-elevacao="del" data-i="' + i + '" style="color:#dc2626">✕</button></div>';
+          '<button class="btn sm" data-elevacao="del" data-i="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
       });
       h += "</div>";
 
@@ -5163,7 +5191,7 @@
           '<label style="font-size:12px">Pé-direito (m)<input type="number" step="0.05" data-vol="peDireito" value="' +
           g.peDireito + '" style="width:90px;display:block"></label>' +
           '<button class="btn sm primary" data-volacao="gerar">Gerar o 3D</button>' +
-          '<button class="btn sm" data-volacao="voltar2">← voltar à escala</button></div>';
+          '<button class="btn sm" data-volacao="voltar2">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' voltar à escala</button></div>';
         h += '<div style="border:1px solid var(--linha);border-radius:8px;background:#fff;padding:6px;margin-bottom:10px;overflow:auto">' +
           '<canvas id="vol-canvas" style="display:block;max-width:100%"></canvas></div>';
         h += '<table class="tbl pag-num" style="width:100%;font-size:12px"><tbody>';
@@ -5408,7 +5436,7 @@
                prancha grande perde as últimas paredes e o desenho parece
                só "incompleto". Se estourou, não é precisão de projeto. */
             if (r.stats.estourou) {
-              g.avisos.unshift("⚠ ESTA PÁGINA PASSOU DO TETO DE " + r.stats.segmentos + " TRAÇOS e a leitura " +
+              g.avisos.unshift("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " ESTA PÁGINA PASSOU DO TETO DE " + r.stats.segmentos + " TRAÇOS e a leitura " +
                 "PAROU ali. Tudo o que o PDF desenha depois desse ponto ficou de fora — provavelmente " +
                 "paredes inteiras. NÃO use este resultado para orçar a prancha toda: recorte uma região " +
                 "menor (uma planta por vez) e repita.");
@@ -5987,7 +6015,7 @@
         '<div id="bim-drawer" style="position:absolute;top:0;right:0;bottom:0;width:min(440px,94%);background:var(--surface);border-left:1px solid var(--linha-forte);box-shadow:-14px 0 34px rgba(0,0,0,.3);z-index:6;display:none;flex-direction:column">' +
           '<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:2px solid var(--linha)">' +
             '<b id="bim-drawer-tit" style="font-size:14px">Análise</b>' +
-            '<button class="btn sm ghost" data-gacao="bim-drawer-fechar" style="margin-left:auto" title="Fechar painel">✕</button></div>' +
+            '<button class="btn sm ghost" data-gacao="bim-drawer-fechar" style="margin-left:auto" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
           '<div id="bim-drawer-body" style="flex:1;overflow-y:auto;padding:12px">' +
 
         '<div id="bim-modelos" style="display:none">' +
@@ -6147,7 +6175,7 @@
       plano.etapas.forEach(function (et) {
         linhas += '<tr><td colspan="4" style="background:var(--surface-2);font-weight:800;font-size:12px">' + Util.esc(et.nome) + "</td></tr>";
         et.servicos.forEach(function (s) {
-          linhas += "<tr><td>" + Util.esc(s.nome) + (s.carimbo ? ' <span class="g-pill" style="background:#0e749022;color:#0e7490;font-size:10px" title="Vem carimbado do Revit (OrcaPRO_Etapa)">🔗 Revit</span>' : "") + (s.aviso ? ' <span class="muted" style="font-size:11px" title="' + Util.esc(s.aviso) + '">ⓘ</span>' : "") + '</td><td class="num">' + (s.quantidade != null ? Util.fmtNum(s.quantidade) : "—") + "</td><td>" + Util.esc(s.unidade || "—") + '</td><td>' + self._eapChipFonte(s.fonte) + "</td></tr>";
+          linhas += "<tr><td>" + Util.esc(s.nome) + (s.carimbo ? ' <span class="g-pill" style="background:#0e749022;color:#0e7490;font-size:10px" title="Vem carimbado do Revit (OrcaPRO_Etapa)">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Revit</span>' : "") + (s.aviso ? ' <span class="muted" style="font-size:11px" title="' + Util.esc(s.aviso) + '">ⓘ</span>' : "") + '</td><td class="num">' + (s.quantidade != null ? Util.fmtNum(s.quantidade) : "—") + "</td><td>" + Util.esc(s.unidade || "—") + '</td><td>' + self._eapChipFonte(s.fonte) + "</td></tr>";
         });
       });
       var avisos = plano.avisos.length ? '<div class="card" style="padding:8px 10px;margin-top:8px;font-size:12px;background:#fffbeb;border:1px solid #fde68a;color:#92400e">' + plano.avisos.map(function (a) { return "• " + Util.esc(a); }).join("<br>") + "</div>" : "";
@@ -6160,7 +6188,7 @@
         '<label style="display:flex;gap:6px;align-items:center">Empolamento entulho <input id="eap-empol" value="' + op.fatorEmpolamento + '" style="width:64px" inputmode="decimal"></label>' +
         '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-prel"' + (op.incluirPreliminares ? " checked" : "") + ' style="width:auto"> Preliminares</label>' +
         '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-limp"' + (op.incluirLimpeza ? " checked" : "") + ' style="width:auto"> Limpeza final</label>' +
-        '<button type="button" class="btn sm" id="eap-recalc">↻ Reaplicar</button></div>' +
+        '<button type="button" class="btn sm" id="eap-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Reaplicar</button></div>' +
         '<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;font-size:12.5px;margin:2px 0 6px">' +
         '<label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="eap-estrut"' + (op.estimarEstrutura ? " checked" : "") + ' style="width:auto"> <b>Estimar armadura + fôrma</b> <span class="muted">(paramétrico — sem projeto estrutural nada fica de fora)</span></label>' +
         '<span class="muted">Aço kg/m³:</span>' +
@@ -6170,7 +6198,7 @@
         '<label style="display:flex;gap:4px;align-items:center">Laje <input id="eap-tx-laje" value="' + (op.taxasAco ? op.taxasAco.laje : 80) + '" style="width:48px" inputmode="numeric"></label>' +
         '</div>' +
         '<div style="max-height:46vh;overflow:auto"><table class="tbl" style="font-size:12px"><thead><tr><th>Serviço</th><th class="num">Qtd</th><th>Un</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" + avisos;
-      UI.modal("🧠 Agente EAP — o que o modelo diz que a obra precisa", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Agente EAP — o que o modelo diz que a obra precisa", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Casar com a base →", classe: "primary", onClick: function () { self._eapOpts = self._eapLerOpts(); self.bimeapCasar(); } }
       ]);
@@ -6241,9 +6269,9 @@
       var corpo = avisoBase +
         '<p class="muted" style="font-size:12.5px;margin-bottom:8px">Escolha a composição de cada serviço (o agente sugere por confiança — <b>nunca inventa código</b>: sem escolha, o item entra pendente com custo 0 pra você completar). Quantidades são editáveis; o memorial de cálculo rastreável (elementos IFC + fórmula) vai junto em cada item.</p>' +
         '<div style="max-height:48vh;overflow:auto"><table class="tbl" style="font-size:12px"><thead><tr><th></th><th>Serviço</th><th>Qtd</th><th>Composição da base</th><th>Conf.</th></tr></thead><tbody>' + html + "</tbody></table></div>" + vinculo;
-      UI.modal("🧠 Agente EAP — casar serviços com a base (" + linhas.length + ")", corpo, [
-        { texto: "← Voltar", classe: "ghost", onClick: function () { self.bimeapAbrir(self._eapOpts); } },
-        { texto: "✅ Gerar orçamento", classe: "primary", onClick: function () { self.bimeapGerar(); } }
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Agente EAP — casar serviços com a base (" + linhas.length + ")", corpo, [
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Voltar", classe: "ghost", onClick: function () { self.bimeapAbrir(self._eapOpts); } },
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Gerar orçamento", classe: "primary", onClick: function () { self.bimeapGerar(); } }
       ]);
       var raiz = document.getElementById("modal-bg") || document;
       raiz.addEventListener("change", function (ev) {
@@ -6319,11 +6347,11 @@
       if (obra && vinc && vinc.checked) { obra.orcamentoId = orc.id; Store.salvar(eid(), "obras", obra); }
       UI.fecharModal();
       App.orcAtual = orc; App.tela = "editor"; App.aba = "planilha"; App.render();
-      UI.toast("Orçamento gerado do modelo: " + orc.etapas.length + " etapas, " + linhas.length + " itens (" + nPend + " pendentes), memorial de cálculo rastreável em cada item." + (truncou ? " ⚠️ Limite do plano: itens excedentes ficaram de fora." : ""), "ok");
+      UI.toast("Orçamento gerado do modelo: " + orc.etapas.length + " etapas, " + linhas.length + " itens (" + nPend + " pendentes), memorial de cálculo rastreável em cada item." + (truncou ? " " + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Limite do plano: itens excedentes ficaram de fora." : ""), "ok");
     },
 
     // painel "Modelos carregados": disciplina + transparência + olhinho + remover, por IFC
-    _BIM_DISCS: [["estrutural", "🏗 Estrutural"], ["arquitetura", "🏠 Arquitetura"], ["hidraulica", "🚿 Hidráulica"], ["eletrica", "⚡ Elétrica"], ["mecanica", "❄ Mecânica/AVAC"], ["outra", "📦 Outra"]],
+    _BIM_DISCS: [["estrutural", "" + (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + " Estrutural"], ["arquitetura", "🏠 Arquitetura"], ["hidraulica", "🚿 Hidráulica"], ["eletrica", "⚡ Elétrica"], ["mecanica", "❄ Mecânica/AVAC"], ["outra", "" + (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + " Outra"]],
     _bimRenderModelos: function (lista) {
       var card = document.getElementById("bim-modelos"), box = document.getElementById("bim-modelos-lista");
       if (!card || !box) return;
@@ -6344,7 +6372,7 @@
           '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--texto-fraco)">Transparência <input data-m="alpha" type="range" min="10" max="100" value="' + Math.round((mo.alpha || 1) * 100) + '" style="width:130px"><b data-m="alphapct" style="min-width:38px">' + Math.round((mo.alpha || 1) * 100) + "%</b></label>" +
           '<span style="flex:1"></span>' +
           '<button data-m="vis" class="btn sm" title="Mostrar/ocultar este modelo">' + (mo.visivel ? "👁" : "🚫") + "</button>" +
-          '<button data-m="del" class="btn sm danger" title="Remover este modelo">🗑</button>';
+          '<button data-m="del" class="btn sm danger" title="Remover este modelo">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
         // wiring direto (painel dinâmico — sem passar pelo dispatcher global)
         linha.querySelector('[data-m="disc"]').onchange = function () { BIM.setDisciplina(mo.mid, this.value); };
         var rng = linha.querySelector('[data-m="alpha"]'), pct = linha.querySelector('[data-m="alphapct"]');
@@ -6363,22 +6391,22 @@
         // já na sala: oferecer COPIAR o código (é assim que a equipe se encontra) além de sair
         var salaAtual = BIM.reuniao.sala, nOnline = BIM.reuniao.participantes;
         var audioOn = !!BIM.reuniao.audioAtiva;
-        UI.modal("👥 Você está na sala",
+        UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Você está na sala",
           '<p style="margin:0 0 10px">Sala atual: <b>' + Util.esc(salaAtual) + "</b> · " + nOnline + " online</p>" +
           '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Copie o código e mande pro colega (WhatsApp mesmo) — ele clica em <b>Reunião</b>, cola no campo <b>Sala</b> e aparece do seu lado dentro do modelo.</p>' +
-          '<p class="muted" style="font-size:12px;margin:0">🎤 O áudio é <b>por voz</b>: quando você fala, os outros ouvem; quando cala, seu som pausa sozinho (aparece um 🎤 sobre quem está falando).</p>', [
-          { texto: audioOn ? "🔇 Desligar áudio" : "🎤 Ativar áudio", classe: audioOn ? "ghost" : "primary", onClick: function () {
+          '<p class="muted" style="font-size:12px;margin:0">' + (typeof Icones !== 'undefined' ? Icones.get('microfone', 15) : '') + ' O áudio é <b>por voz</b>: quando você fala, os outros ouvem; quando cala, seu som pausa sozinho (aparece um ' + (typeof Icones !== 'undefined' ? Icones.get('microfone', 15) : '') + ' sobre quem está falando).</p>', [
+          { texto: audioOn ? "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Desligar áudio" : "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Ativar áudio", classe: audioOn ? "ghost" : "primary", onClick: function () {
             // o CLIQUE libera o microfone (getUserMedia + AudioContext exigem gesto)
             if (BIM.reuniao.audioAtiva) { BIM.reuniao.audioSair(); } else { BIM.reuniao.audioEntrar(); }
             UI.fecharModal();
           } },
-          { texto: "📋 Copiar código da sala", classe: "ghost", onClick: function () {
+          { texto: "" + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + " Copiar código da sala", classe: "ghost", onClick: function () {
             // writeText é Promise: rejeição assíncrona (iframe sem clipboard-write, doc sem foco) NÃO pode virar toast verde
             if (navigator.clipboard && navigator.clipboard.writeText) {
               navigator.clipboard.writeText(salaAtual).then(function () { UI.toast("Código copiado — mande pro colega.", "ok"); }, function () { UI.toast("Não consegui copiar — o código é: " + salaAtual, "erro"); });
             } else UI.toast("Não consegui copiar — o código é: " + salaAtual, "erro");
           } },
-          { texto: "🚪 Sair da sala", classe: "ghost", onClick: function () { BIM.reuniao.sair(); UI.fecharModal(); UI.toast("Você saiu da reunião.", "ok"); } },
+          { texto: "" + (typeof Icones !== "undefined" ? Icones.get("porta", 15) : "") + " Sair da sala", classe: "ghost", onClick: function () { BIM.reuniao.sair(); UI.fecharModal(); UI.toast("Você saiu da reunião.", "ok"); } },
           { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
         ]);
         return;
@@ -6407,23 +6435,23 @@
         '<p class="muted" style="margin:0 0 12px">Todos que entrarem na <b>mesma sala</b> se veem dentro do modelo — cada um com seu avatar e nome. Perfeito pra <b>compatibilização e reunião de projeto</b> (um aponta o conflito, os outros voam até lá).</p>' +
         '<div class="row">' + campo("Seu nome no avatar *", inp("g-av-nome", av.nome || usuario.nome || usuario.empresa || "", "Como os outros te veem")) +
         campo("Sala da reunião *", inp("g-av-sala", salaDefault, "mesmo nome de sala = mesma reunião")) + "</div>" +
-        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-2px 0 10px"><button id="g-av-copiar" class="btn sm" type="button">📋 Copiar código da sala</button><span class="muted" style="font-size:12px">mande pro colega — ele cola no mesmo campo e entra com você</span></div>' +
+        '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:-2px 0 10px"><button id="g-av-copiar" class="btn sm" type="button">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar código da sala</button><span class="muted" style="font-size:12px">mande pro colega — ele cola no mesmo campo e entra com você</span></div>' +
         '<div class="row">' +
-        campo("Você é", sel("g-av-sexo", opts([["h", "👷 Homem"], ["m", "👷‍♀️ Mulher"]], av.sexo || "h"))) +
+        campo("Você é", sel("g-av-sexo", opts([["h", "" + (typeof Icones !== "undefined" ? Icones.get("capacete", 15) : "") + " Homem"], ["m", "👷‍♀️ Mulher"]], av.sexo || "h"))) +
         campo("Telefone (aparece na camisa)", inp("g-av-tel", av.tel || empTel || "", "(00) 00000-0000")) + "</div>" +
         (empLogo ? '<p class="muted" style="font-size:12px;margin:-4px 0 8px">👕 O <b>logo da sua empresa</b> + nome + telefone vão na camisa do seu avatar, pra todos te identificarem na reunião.</p>' : "") +
         '<div class="row">' +
         campo("Cor do uniforme", '<input id="g-av-c1" type="color" value="' + (av.c1 || "#222b34") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
         campo("Cor do capacete", '<input id="g-av-c2" type="color" value="' + (av.c2 || "#f59e0b") + '" style="width:100%;height:38px;padding:2px;border:1.5px solid var(--linha);border-radius:9px">') +
         campo("Altura do avatar", sel("g-av-esc", opts([["normal", "Normal"], ["alto", "Alto"], ["baixo", "Baixo"]], av.esc || "normal"))) + "</div>" +
-        '<p class="muted" style="font-size:12px;margin:6px 0 0">💡 Use o modo <b>✈️ Voo</b> (WASD + mouse) pra andar pelo modelo. Precisa de internet; a sala fecha sozinha quando todos saem.</p>';
-      UI.modal("👥 Reunião no modelo", corpo, [
-        { texto: "🚀 Entrar na reunião", classe: "primary", onClick: function () {
+        '<p class="muted" style="font-size:12px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Use o modo <b>✈️ Voo</b> (WASD + mouse) pra andar pelo modelo. Precisa de internet; a sala fecha sozinha quando todos saem.</p>';
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Reunião no modelo", corpo, [
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("foguete", 15) : "") + " Entrar na reunião", classe: "primary", onClick: function () {
           var cfg = { nome: (UI.el("g-av-nome") || {}).value || "", sala: ((UI.el("g-av-sala") || {}).value || "").trim(), c1: (UI.el("g-av-c1") || {}).value, c2: (UI.el("g-av-c2") || {}).value, esc: (UI.el("g-av-esc") || {}).value, sexo: (UI.el("g-av-sexo") || {}).value || "h", tel: ((UI.el("g-av-tel") || {}).value || "").trim(), logo: self2._avLogoSmall || "" };
           if (cfg.nome.trim().length < 2) { UI.toast("Diga seu nome no avatar.", "erro"); return; }
           if (!cfg.sala) { UI.toast("Dê um nome pra sala.", "erro"); return; }
           try { var salvo = {}; for (var k in cfg) if (k !== "logo") salvo[k] = cfg[k]; localStorage.setItem("orcapro:bim:avatar", JSON.stringify(salvo)); } catch (e) {}
-          if (BIM.reuniao.entrar(cfg)) { UI.fecharModal(); UI.toast("👥 Você entrou na sala \"" + cfg.sala + "\" — quem entrar nela te vê no modelo.", "ok"); }
+          if (BIM.reuniao.entrar(cfg)) { UI.fecharModal(); UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Você entrou na sala \"" + cfg.sala + "\" — quem entrar nela te vê no modelo.", "ok"); }
           else UI.toast("Não consegui conectar na sala (sem internet?). O modelo segue normal.", "erro");
         } },
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
@@ -6469,7 +6497,7 @@
         var nEx = p.elementos.filter(function (e) { return e.exato; }).length, nTot = p.elementos.length;
         var selo = nEx
           ? '<span title="Elementos com etapa carimbada no Revit (property OrcaPRO_Etapa) casada com o cronograma — 4D preciso, não estimado" style="display:inline-flex;align-items:center;gap:5px;background:rgba(34,197,94,.16);color:#16a34a;font-weight:700;border-radius:99px;padding:2px 10px;margin-right:6px">🏷️ 4D exato: ' + nEx + "/" + nTot + " carimbados</span>"
-          : '<span class="muted" title="Nenhum elemento carimbado — 4D estimado pela categoria do tipo IFC. Para 4D preciso, use no Revit os botões “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”." style="margin-right:6px">📐 4D estimado por tipo</span>';
+          : '<span class="muted" title="Nenhum elemento carimbado — 4D estimado pela categoria do tipo IFC. Para 4D preciso, use no Revit os botões “Criar Campos OrçaPRO” + “Exportar IFC p/ OrçaPRO”." style="margin-right:6px">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' 4D estimado por tipo</span>';
         leg.innerHTML = selo + p.fases.map(function (f) {
           return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:' + f.cor + ';display:inline-block"></span>' + Util.esc(f.nome) + ' <span class="muted">(' + f.qtd + ")</span></span>";
         }).join("");
@@ -6559,7 +6587,7 @@
       });
       h += "</tbody></table>";
       if (plano.alertaVup && plano.alertaVup.length) {
-        h += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">⚠️ Vida útil dentro do horizonte de ' + plano.horizonteAnos + " anos (substituição prevista): <b>" + Util.esc(plano.alertaVup.map(nomeCat).join(", ")) + "</b></p>";
+        h += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Vida útil dentro do horizonte de ' + plano.horizonteAnos + " anos (substituição prevista): <b>" + Util.esc(plano.alertaVup.map(nomeCat).join(", ")) + "</b></p>";
       }
       if (temCusto && ciclo && ciclo.anos && ciclo.anos.length) {
         var max = 0; ciclo.anos.forEach(function (a) { if (a.custoAcumulado > max) max = a.custoAcumulado; });
@@ -6596,7 +6624,7 @@
         this._bimClashes.sort(function (a, b) { return (ordG[a.geo] - ordG[b.geo]) || (b.penetracao - a.penetracao); }); // confirmados primeiro (mesma array do r.clashes)
       }
       var byId = {}; els.forEach(function (e) { byId[e.id] = e; });
-      if (!r.total) { res.innerHTML = '<div style="padding:6px 0"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">✓ Nenhum conflito entre disciplinas</span> <span class="muted" style="font-size:12.5px">— ' + els.length + " elementos analisados (folga 5 mm).</span></div>"; return; }
+      if (!r.total) { res.innerHTML = '<div style="padding:6px 0"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Nenhum conflito entre disciplinas</span> <span class="muted" style="font-size:12.5px">— ' + els.length + " elementos analisados (folga 5 mm).</span></div>"; return; }
       var cor = { grave: "#dc2626", media: "#f59e0b", leve: "#64748b" }, nome = { grave: "graves", media: "médios", leve: "leves" };
       // pós-refino, chips e contagem por par contam SÓ o que ficou de pé (confirmado + não-verificável) —
       // senão o banner diz "0 confirmados" com a pill "20 graves" do envelope do lado (contraditório)
@@ -6616,8 +6644,8 @@
         return '<span class="muted" style="font-size:12px">' + Util.esc(p) + ": <b>" + parFonte[p] + "</b></span>";
       }).join(" · ");
       var SELO = {
-        confirmado: '<span title="CONFIRMADO pela geometria: um triângulo real de um elemento atravessa o outro" style="color:#16a34a;font-weight:800">✔</span>',
-        descartado: '<span title="As caixas se tocam, mas a geometria real não se cruza — provável falso alarme do envelope" style="color:#94a3b8">✕</span>',
+        confirmado: '<span title="CONFIRMADO pela geometria: um triângulo real de um elemento atravessa o outro" style="color:#16a34a;font-weight:800">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span>',
+        descartado: '<span title="As caixas se tocam, mas a geometria real não se cruza — provável falso alarme do envelope" style="color:#94a3b8">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</span>',
         "nao-verificavel": '<span title="Não-verificável (elemento sem malha própria ou acima do limite de triângulos) — confira no 3D" style="color:#f59e0b">~</span>'
       };
       var LIM = 80, linhas = this._bimClashes.slice(0, LIM).map(function (c, i) {
@@ -6625,7 +6653,7 @@
         return '<tr class="lin"' + (c.geo === "descartado" ? ' style="opacity:.55"' : "") + '><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cor[c.severidade] + '"></span>' + (c.geo ? " " + SELO[c.geo] : "") + "</td>" +
           "<td>" + Util.esc(c.par) + '</td><td style="font-size:12px">' + Util.esc(String(descA)) + " ✕ " + Util.esc(String(descB)) + "</td>" +
           '<td class="num">' + (c.penetracao * 100).toFixed(1) + " cm</td>" +
-          '<td><button class="btn sm" data-clash="' + i + '">👁 ver</button></td></tr>';
+          '<td><button class="btn sm" data-clash="' + i + '">' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' ver</button></td></tr>';
       }).join("");
       var cab = refinou
         ? ('<b style="font-size:15px">' + nGeo.confirmado + " conflito(s) confirmados</b>" +
@@ -6633,17 +6661,17 @@
           (nGeo.descartado ? ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700">✕ ' + nGeo.descartado + " descartados pela geometria</span>" : ""))
         : ('<b style="font-size:15px">' + r.total + " conflito(s)</b>");
       var bannerLimpo = (refinou && nGeo.confirmado === 0 && nGeo["nao-verificavel"] === 0)
-        ? '<div style="padding:4px 0 8px"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">✓ Nenhum conflito CONFIRMADO pela geometria</span> <span class="muted" style="font-size:12px">— os ' + nGeo.descartado + " alarmes do envelope eram caixas se tocando sem cruzamento real (lista abaixo, pra auditoria).</span></div>"
+        ? '<div style="padding:4px 0 8px"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Nenhum conflito CONFIRMADO pela geometria</span> <span class="muted" style="font-size:12px">— os ' + nGeo.descartado + " alarmes do envelope eram caixas se tocando sem cruzamento real (lista abaixo, pra auditoria).</span></div>"
         : "";
       res.innerHTML =
         bannerLimpo +
-        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' + cab + " " + chips + '<span style="flex:1"></span><button class="btn sm ghost" data-clash-limpar="1">✖ limpar destaque</button></div>' +
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' + cab + " " + chips + '<span style="flex:1"></span><button class="btn sm ghost" data-clash-limpar="1">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' limpar destaque</button></div>' +
         (pares ? '<div style="margin-bottom:8px">' + pares + "</div>" : "") +
         '<div style="max-height:280px;overflow:auto"><table class="tbl"><thead><tr><th></th><th>Disciplinas</th><th>Elementos</th><th class="num">Penetração</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
         (r.total > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando os ' + LIM + " piores de " + r.total + (refinou ? " (confirmados primeiro)" : " (ordenados por penetração)") + ".</p>" : "") +
         (refinou
-          ? '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Envelope (AABB) + <b>confirmação por geometria real</b> (triângulo a triângulo na zona da interseção): ✔ confirmado · ✕ descartado (caixas se tocam, geometria não) · ~ não-verificável (sem malha própria/limite de triângulos — confira no 3D). Folga de 5 mm entre disciplinas.</p>'
-          : '<p class="muted" style="font-size:11px;margin:6px 0 0">🔎 Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>');
+          ? '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Envelope (AABB) + <b>confirmação por geometria real</b> (triângulo a triângulo na zona da interseção): ' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' confirmado · ' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' descartado (caixas se tocam, geometria não) · ~ não-verificável (sem malha própria/limite de triângulos — confira no 3D). Folga de 5 mm entre disciplinas.</p>'
+          : '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>');
     },
     // Quantitativos: roda o motor BIMQto sobre os elementos (com AABB) e lista o levantamento por disciplina.
     _bimQuantificar: function () {
@@ -6659,7 +6687,7 @@
         if (f === "demolir" || f === "demolicao") { nDemol++; return false; }
         return true;
       });
-      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">♻️ Todos os elementos do modelo são de reforma (existente/demolir) — nada a construir. Use o <b>🧠 Agente EAP</b> para gerar os serviços de demolição.</p>'; return; }
+      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">' + (typeof Icones !== 'undefined' ? Icones.get('reciclar', 15) : '') + ' Todos os elementos do modelo são de reforma (existente/demolir) — nada a construir. Use o <b>' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Agente EAP</b> para gerar os serviços de demolição.</p>'; return; }
       var r; try { r = BIMQto.levantar(els); } catch (e) { res.innerHTML = '<p class="muted">Falha ao levantar: ' + Util.esc(String(e)) + "</p>"; return; }
       this._bimQto = r;
       if (!r.linhas.length) { res.innerHTML = '<p class="muted">Nenhum elemento reconhecido para levantamento.</p>'; return; }
@@ -6673,15 +6701,15 @@
       var avisos = (r.avisos || []).map(function (a) { return '<p class="muted" style="font-size:11.5px;margin:4px 0 0">⚠️ ' + Util.esc(a) + "</p>"; }).join("");
       res.innerHTML =
         '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + r.linhas.length + " serviços · " + r.resumo.nElementos + ' elementos</b><span style="flex:1"></span>' +
-        '<button class="btn sm success" id="bim-qto-lancar">✅ Lançar no orçamento</button></div>' +
+        '<button class="btn sm success" id="bim-qto-lancar">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançar no orçamento</button></div>' +
         '<div style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Disciplina / serviço</th><th class="num">Qtd</th><th>Un</th><th class="num">Elem.</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
         avisos +
         (function () { // honestidade: peça criada no editor NÃO vem de BaseQuantities do IFC
           var nEd = els.filter(function (e2) { return e2.mid === "edit" || /^edit:/.test(String(e2.id || "")); }).length;
-          return nEd ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">✏️ Inclui <b>' + nEd + ' elemento(s) criados no editor</b> (sintéticos, QTO exato das peças — não vem do IFC).</p>' : "";
+          return nEd ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Inclui <b>' + nEd + ' elemento(s) criados no editor</b> (sintéticos, QTO exato das peças — não vem do IFC).</p>' : "";
         })() +
-        (nExist || nDemol ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">♻️ Reforma (OrcaPRO_Fase): ' + nExist + ' elemento(s) "existente" fora do levantamento (não se constrói o que já existe)' + (nDemol ? ' · ' + nDemol + ' "demolir" fora — use o <b>🧠 Agente EAP</b> para demolição/entulho' : "") + ".</p>" : "") +
-        '<p class="muted" style="font-size:11px;margin:6px 0 0">📐 Levantamento automático — o custo entra zerado; case no SINAPI ou informe o preço no editor. <b>"estimado"</b> = medido pela caixa do elemento (revise).</p>';
+        (nExist || nDemol ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('reciclar', 15) : '') + ' Reforma (OrcaPRO_Fase): ' + nExist + ' elemento(s) "existente" fora do levantamento (não se constrói o que já existe)' + (nDemol ? ' · ' + nDemol + ' "demolir" fora — use o <b>' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Agente EAP</b> para demolição/entulho' : "") + ".</p>" : "") +
+        '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Levantamento automático — o custo entra zerado; case no SINAPI ou informe o preço no editor. <b>"estimado"</b> = medido pela caixa do elemento (revise).</p>';
     },
     _bimVerClash: function (i) {
       var c = this._bimClashes && this._bimClashes[i]; if (!c) return;
@@ -6689,10 +6717,10 @@
       var box = document.getElementById("bim-info");
       if (box) {
         box.style.maxWidth = "260px"; // o painel de propriedades (420px) pode ter ficado aberto
-        var geoTxt = c.geo === "confirmado" ? " · <span style='color:#16a34a;font-weight:700'>✔ confirmado pela geometria</span>"
-          : c.geo === "descartado" ? " · <span style='color:#94a3b8;font-weight:700'>✕ descartado pela geometria (provável falso alarme)</span>"
+        var geoTxt = c.geo === "confirmado" ? " · <span style='color:#16a34a;font-weight:700'>" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " confirmado pela geometria</span>"
+          : c.geo === "descartado" ? " · <span style='color:#94a3b8;font-weight:700'>" + (typeof Icones !== "undefined" ? Icones.get("fechar", 15) : "") + " descartado pela geometria (provável falso alarme)</span>"
           : c.geo ? " · <span style='color:#f59e0b;font-weight:700'>~ não-verificável — confira no 3D</span>" : "";
-        box.style.display = ""; box.innerHTML = "<b>🧩 Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>Penetração " + (c.penetracao * 100).toFixed(1) + " cm · " + Util.esc(c.severidade) + geoTxt + "</span>";
+        box.style.display = ""; box.innerHTML = "<b>" + (typeof Icones !== "undefined" ? Icones.get("quebracabeca", 15) : "") + " Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>Penetração " + (c.penetracao * 100).toFixed(1) + " cm · " + Util.esc(c.severidade) + geoTxt + "</span>";
       }
     },
     _bimLimparClash: function () {
@@ -6726,7 +6754,7 @@
       var h = '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'
         + '<b style="font-size:12.5px">' + Util.esc(info.nome || info.tipo || "Elemento")
         + (info.familia ? ' <span style="font-weight:400;opacity:.85">· ' + Util.esc(info.familia) + "</span>" : "") + "</b>"
-        + '<button class="btn sm" id="bim-props-fechar" title="Fechar" style="padding:1px 8px;line-height:1.4">✕</button></div>';
+        + '<button class="btn sm" id="bim-props-fechar" title="Fechar" style="padding:1px 8px;line-height:1.4">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
       if (!grupos.length) {
         h += '<p style="margin:8px 0 0;font-size:12px;opacity:.85">Este elemento não trouxe property sets no IFC.</p>';
       } else {
@@ -6796,7 +6824,7 @@
     _bimRenderFamilias: function () {
       var box = document.getElementById("bim-familias-lista"); if (!box) return;
       var fams = lista("familias");
-      if (!fams.length) { box.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Clique num elemento do modelo e use <b>💾 Salvar família</b>.</p>'; return; }
+      if (!fams.length) { box.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Clique num elemento do modelo e use <b>' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Salvar família</b>.</p>'; return; }
       var h = '<div style="display:flex;flex-wrap:wrap;gap:8px">';
       fams.forEach(function (f) {
         var d = f.dims || {}, t = String(f.tipoIfc || "").toUpperCase(), dimsTxt = "";
@@ -6809,7 +6837,7 @@
           + (f.thumb ? '<img src="' + Util.esc(f.thumb) + '" alt="" style="width:100%;border-radius:8px">' : "")
           + '<b style="font-size:11.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden" title="' + Util.esc(f.nome) + '">' + Util.esc(f.nome) + "</b>"
           + (dimsTxt ? '<span class="muted" style="font-size:11px">' + dimsTxt + "</span>" : "")
-          + '<div style="display:flex;gap:4px;margin-top:auto"><button class="btn sm" data-fam-usar="' + Util.esc(f.id) + '" title="Aplica as dimensões desta família no editor do visualizador">✏️ Usar</button><button class="btn sm danger" data-fam-excluir="' + Util.esc(f.id) + '" title="Excluir do banco">✕</button></div>'
+          + '<div style="display:flex;gap:4px;margin-top:auto"><button class="btn sm" data-fam-usar="' + Util.esc(f.id) + '" title="Aplica as dimensões desta família no editor do visualizador">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Usar</button><button class="btn sm danger" data-fam-excluir="' + Util.esc(f.id) + '" title="Excluir do banco">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>'
           + "</div>";
       });
       box.innerHTML = h + "</div>";
@@ -6849,20 +6877,20 @@
         ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
         ov.innerHTML =
           '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
-          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">📱 Abrir a RA/RV no aparelho</b><button class="btn sm" data-rv="fechar">✕</button></div>' +
-          '<button class="btn primary" data-rv="nuvem" style="width:100%;margin-bottom:10px">☁️ Compartilhar na nuvem — abre em QUALQUER celular</button>' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Abrir a RA/RV no aparelho</b><button class="btn sm" data-rv="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
+          '<button class="btn primary" data-rv="nuvem" style="width:100%;margin-bottom:10px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' Compartilhar na nuvem — abre em QUALQUER celular</button>' +
           '<div style="font-size:11px;color:#8fa3b8;text-align:center;margin-bottom:8px">— ou o QR abaixo, só pra aparelho na <b>mesma rede Wi-Fi</b> —</div>' +
           '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
           '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Endereço:</b> ' + Util.esc(url) + '</div>' +
           '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Este QR abre a tela de <b>RA/RV</b> — no <b>tablet/celular que já tem este modelo carregado</b> (mesmo aparelho, ou outro na mesma rede com o mesmo IFC aberto):' +
           '<ul style="margin:6px 0;padding-left:18px">' +
-          '<li><b>Android</b>: <b>📱 RA no ambiente</b> — aponte pro chão, toque pra fixar, <b>🔒 trave</b> e escolha a <b>disciplina</b> (ex.: Hidráulica, pra não furar em cima do cano).</li>' +
-          '<li><b>iPhone/iPad</b>: <b>👣 Caminhar</b> (o Safari não tem RA no navegador).</li>' +
+          '<li><b>Android</b>: <b>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no ambiente</b> — aponte pro chão, toque pra fixar, <b>' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' trave</b> e escolha a <b>disciplina</b> (ex.: Hidráulica, pra não furar em cima do cano).</li>' +
+          '<li><b>iPhone/iPad</b>: <b>' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar</b> (o Safari não tem RA no navegador).</li>' +
           '</ul></div>' +
           '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:6px">' + Util.esc(lanNota) + '</div>' +
           '<div style="font-size:11px;color:#8fa3b8;line-height:1.35;margin-bottom:12px">ℹ️ Enviar o modelo automaticamente pra qualquer celular (sem carregar lá) é a próxima atualização (compartilhamento em nuvem).</div>' +
           (alts && alts.length ? '<div style="font-size:11px;color:#9fb2c8;margin-bottom:10px">Não abriu? Tente outro IP: ' + alts.map(function (u) { return '<button class="btn sm" data-rvip="' + Util.esc(u) + '" style="font-size:11px;padding:3px 7px;margin:2px">' + Util.esc(u.replace(/^https?:\/\//, "").replace(/\/#rv$/, "")) + '</button>'; }).join("") + '</div>' : '') +
-          '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">🖨 Imprimir cartão pra obra</button><button class="btn sm" data-rv="copiar" style="flex:1">📋 Copiar link</button></div>' +
+          '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir cartão pra obra</button><button class="btn sm" data-rv="copiar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
           '</div>';
         document.body.appendChild(ov);
         ov.addEventListener("click", function (e) {
@@ -6897,7 +6925,7 @@
         var emp = (typeof Store !== "undefined" && Store.empresa) ? (Store.empresa(Auth.empresaId()) || {}) : {};
         w.document.write('<!doctype html><meta charset="utf-8"><title>RA/RV na obra</title>' +
           '<style>@page{size:A5;margin:12mm}body{font-family:Arial;color:#0f2740;text-align:center}h1{font-size:20px;margin:6px 0}p{font-size:13px;color:#334}</style>' +
-          '<h1>📱 Ver o projeto em Realidade Aumentada</h1>' +
+          '<h1>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Ver o projeto em Realidade Aumentada</h1>' +
           '<p><b>' + Util.esc(emp.nome || "Visita virtual da obra") + '</b></p>' +
           '<div style="margin:14px auto;width:220px">' + (svg || "") + '</div>' +
           '<p>Aponte a câmera do celular pro QR (mesmo Wi-Fi).<br>Android: RA no ambiente · iPhone: Caminhar no projeto.</p>' +
@@ -6944,7 +6972,7 @@
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.86);display:flex;align-items:center;justify-content:center;padding:16px";
-      ov.innerHTML = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:420px;width:100%;padding:22px;color:#dbe8f5;text-align:center"><div style="font-size:30px">☁️</div><b data-rvp="txt" style="display:block;margin:10px 0">Enviando o modelo pra nuvem…</b><div class="muted" style="font-size:12px">Não feche esta janela.</div></div>';
+      ov.innerHTML = '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:420px;width:100%;padding:22px;color:#dbe8f5;text-align:center"><div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</div><b data-rvp="txt" style="display:block;margin:10px 0">Enviando o modelo pra nuvem…</b><div class="muted" style="font-size:12px">Não feche esta janela.</div></div>';
       document.body.appendChild(ov);
       function setTxt(t) { var e = ov.querySelector('[data-rvp="txt"]'); if (e) e.textContent = t; }
       var enviados = [];
@@ -6984,14 +7012,14 @@
       ov.style.cssText = "position:fixed;inset:0;z-index:9999;background:rgba(4,12,22,.82);display:flex;align-items:center;justify-content:center;padding:16px";
       ov.innerHTML =
         '<div style="background:#0f2740;border:1px solid #24435f;border-radius:16px;max-width:440px;width:100%;padding:20px;color:#dbe8f5;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:92vh;overflow:auto">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">☁️ RA/RV na nuvem — qualquer celular</b><button class="btn sm" data-rv="fechar">✕</button></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><b style="font-size:15px">' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' RA/RV na nuvem — qualquer celular</b><button class="btn sm" data-rv="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
         '<div style="background:#fff;border-radius:12px;padding:14px;display:flex;justify-content:center">' + (svg || '<span style="color:#333">QR indisponível</span>') + '</div>' +
         '<div style="font-size:12px;color:#9fb2c8;margin-top:10px;word-break:break-all"><b>Link:</b> ' + Util.esc(url) + '</div>' +
         '<div style="font-size:12.5px;color:#cbd8e6;line-height:1.5;margin:12px 0 6px">Aponte a câmera de <b>qualquer celular ou tablet</b> (não precisa estar na mesma rede) — o modelo abre direto na RA/RV:' +
         '<ul style="margin:6px 0;padding-left:18px"><li><b>Android</b>: RA no ambiente (fixe no chão e trave) + escolha a disciplina.</li><li><b>iPhone/iPad</b>: Caminhar no projeto.</li></ul></div>' +
         '<div style="font-size:11.5px;color:#f0b94a;line-height:1.35;margin-bottom:12px">⏳ O link vale <b>' + dias + ' dia(s)</b> e só quem tem ele acessa. Depois disso o modelo é apagado do servidor.</div>' +
-        (salaLink ? '<button data-rv="entrar" style="width:100%;margin-bottom:8px;padding:10px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-weight:700;font-size:13px;cursor:pointer">👥 Entrar você também na reunião deste link</button>' : '') +
-        '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">🖨 Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">📋 Copiar link</button></div>' +
+        (salaLink ? '<button data-rv="entrar" style="width:100%;margin-bottom:8px;padding:10px;border-radius:9px;border:0;background:#16a34a;color:#fff;font-weight:700;font-size:13px;cursor:pointer">' + (typeof Icones !== 'undefined' ? Icones.get('pessoas', 15) : '') + ' Entrar você também na reunião deste link</button>' : '') +
+        '<div style="display:flex;gap:8px"><button class="btn sm primary" data-rv="imprimir" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir cartão</button><button class="btn sm" data-rv="copiar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
         '</div>';
       document.body.appendChild(ov);
       ov.addEventListener("click", function (e) {
@@ -7009,7 +7037,7 @@
           self._avatarLogoSmall(function (logo) {
             var cfg = { sala: salaLink, nome: av.nome || usuario.nome || usuario.empresa || "Eng.", sexo: av.sexo || "h", tel: av.tel || empTel || "", c1: av.c1 || "#222b34", c2: av.c2 || "#f59e0b", esc: av.esc || "normal", logo: logo || "" };
             var ok = false; try { ok = BIM.reuniao.entrar(cfg); } catch (e3) {}
-            if (ok) { UI.toast("👥 Você entrou na reunião deste link — quem abrir o QR te vê no modelo.", "ok"); ov.remove(); }
+            if (ok) { UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("pessoas", 15) : "") + " Você entrou na reunião deste link — quem abrir o QR te vê no modelo.", "ok"); ov.remove(); }
             else UI.toast("Não consegui conectar na reunião (sem internet?).", "erro");
           });
         }
@@ -7080,7 +7108,7 @@
         + "</tr></thead><tbody>" + linhas + "</tbody></table>";
       corpo += "<p style='margin-top:10px;font-size:10px;color:#555'>Quantidades das BaseQuantities do IFC; itens sem medida contam por unidade."
         + (nExist ? "<br>" + nExist + " elementos de fase 'existente' (reforma) fora do quantitativo." : "")
-        + (nDemol ? "<br>" + nDemol + " elementos de fase 'demolir' fora do quantitativo — demolição/entulho é papel do 🧠 Agente EAP." : "") + "</p>";
+        + (nDemol ? "<br>" + nDemol + " elementos de fase 'demolir' fora do quantitativo — demolição/entulho é papel do " + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Agente EAP." : "") + "</p>";
       this._abrirDoc("Quantitativo Ilustrado — " + (obra ? obra.nome : "modelo BIM"), this._docShell("QUANTITATIVO ILUSTRADO · FAMÍLIAS DO MODELO", "#0e7490", corpo));
     },
     _bimWire: function () {
@@ -7136,7 +7164,7 @@
         if (bX) {
           var fid = bX.getAttribute("data-fam-excluir"), f = Store.obter(eid(), "familias", fid);
           UI.modal("Excluir família", '<p style="margin:0">Excluir a família <b>' + Util.esc((f && f.nome) || "—") + "</b> do banco? Os modelos IFC não mudam.</p>", [
-            { texto: "🗑 Excluir", classe: "danger", onClick: function () { Store.excluir(eid(), "familias", fid); UI.fecharModal(); self._bimRenderFamilias(); UI.toast("Família excluída do banco.", "ok"); } },
+            { texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir", classe: "danger", onClick: function () { Store.excluir(eid(), "familias", fid); UI.fecharModal(); self._bimRenderFamilias(); UI.toast("Família excluída do banco.", "ok"); } },
             { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
           ]);
         }
@@ -7165,8 +7193,8 @@
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { var icR = (typeof Icones !== "undefined") ? Icones.get("obra", 14) : ""; b.innerHTML = icR + (n > 0 ? "Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "Na sala…" : "Reunião")); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
             onReuniaoCheia: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Sala cheia — o limite é de 20 pessoas nesta reunião. Tente de novo quando alguém sair.", "erro"); },
-            onVoz: function (on) { UI.toast(on ? "🎤 Áudio ligado — fale normalmente; quem não fala fica em silêncio." : "🎤 Áudio desligado.", "ok"); },
-            onVozErro: function (nm) { UI.toast(nm === "NotAllowedError" ? "🎤 Microfone negado. Clique de novo e permita." : "🎤 Não consegui abrir o microfone: " + nm, "erro"); },
+            onVoz: function (on) { UI.toast(on ? "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Áudio ligado — fale normalmente; quem não fala fica em silêncio." : "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Áudio desligado.", "ok"); },
+            onVozErro: function (nm) { UI.toast(nm === "NotAllowedError" ? "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Microfone negado. Clique de novo e permita." : "" + (typeof Icones !== "undefined" ? Icones.get("microfone", 15) : "") + " Não consegui abrir o microfone: " + nm, "erro"); },
             /* A FITA TEM DE SABER QUE O MODELO CHEGOU.
                Sem este _bimCascaContexto, abrir um IFC pela barra do viewer
                carregava 452 elementos na cena e a fita continuava achando
@@ -7208,7 +7236,7 @@
                 if (info.qto.volume > 0) qtxt.push(Util.fmtNum(info.qto.volume, 2) + " m³");
                 if (qtxt.length) h += "<br><span style='opacity:.85;font-size:11px'>📐 " + qtxt.join(" · ") + "</span>";
               }
-              h += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-props-btn">📋 Propriedades</button> <button class="btn sm" id="bim-fam-salvar">💾 Salvar família</button></div>';
+              h += '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-props-btn">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Propriedades</button> <button class="btn sm" id="bim-fam-salvar">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Salvar família</button></div>';
               box.innerHTML = h;
               // wiring direto (balão dinâmico — mesmo padrão dos painéis do _bimWire)
               var bP = document.getElementById("bim-props-btn"); if (bP) bP.onclick = function () { self._bimVerProps(info); };
@@ -7255,7 +7283,7 @@
           return;
         }
         if (tentativas++ < 60) setTimeout(montarViewer, 200);
-        else { var a = document.getElementById("bim-aviso"); if (a) a.innerHTML = '<div style="font-size:34px;margin-bottom:8px">🏗️</div>Não consegui iniciar o visualizador 3D. Atualize o app para a versão mais recente e tente de novo; se persistir, abra um IFC em outro navegador.'; }
+        else { var a = document.getElementById("bim-aviso"); if (a) a.innerHTML = '<div style="font-size:34px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + '</div>Não consegui iniciar o visualizador 3D. Atualize o app para a versão mais recente e tente de novo; se persistir, abra um IFC em outro navegador.'; }
       }
       montarViewer();
     },
@@ -7324,10 +7352,10 @@
         var corPrz = atras ? ' style="color:#dc2626;font-weight:700"' : "";
         var corPri = t.prioridade === "urgente" ? "#dc2626" : (t.prioridade === "alta" ? "#ea580c" : "#64748b");
         var acao = "";
-        if (t.status === "afazer") acao = '<button class="btn sm" data-gacao="tar-fazer" data-id="' + t.id + '">▶ Iniciar</button> <button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">✓ Concluir</button>';
-        else if (t.status === "fazendo") acao = '<button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">✓ Concluir</button>';
-        else if (t.status === "feita") acao = '<button class="btn sm" data-gacao="tar-reabrir" data-id="' + t.id + '">↺ Reabrir</button>';
-        html += '<tr><td style="cursor:pointer" data-gopen="tarefas:' + t.id + '"><b>' + Util.esc(t.titulo || "—") + "</b>" + (atras ? ' <span title="Prazo vencido">⚠</span>' : "") + "</td><td>" + Util.esc(resp ? resp.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td" + corPrz + ">" + prazoTxt + '</td><td><b style="color:' + corPri + '">' + rot(P.tarefaPrioridade, t.prioridade) + "</b></td><td>" + pill(t.status) + '</td><td class="num">' + acao + "</td></tr>";
+        if (t.status === "afazer") acao = '<button class="btn sm" data-gacao="tar-fazer" data-id="' + t.id + '">▶ Iniciar</button> <button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Concluir</button>';
+        else if (t.status === "fazendo") acao = '<button class="btn sm success" data-gacao="tar-concluir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Concluir</button>';
+        else if (t.status === "feita") acao = '<button class="btn sm" data-gacao="tar-reabrir" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Reabrir</button>';
+        html += '<tr><td style="cursor:pointer" data-gopen="tarefas:' + t.id + '"><b>' + Util.esc(t.titulo || "—") + "</b>" + (atras ? ' <span title="Prazo vencido">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</span>' : "") + "</td><td>" + Util.esc(resp ? resp.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td" + corPrz + ">" + prazoTxt + '</td><td><b style="color:' + corPri + '">' + rot(P.tarefaPrioridade, t.prioridade) + "</b></td><td>" + pill(t.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -7392,7 +7420,7 @@
       // checklist de primeiros passos (auto-detectado dos seus dados)
       var chk = this._ajudaChecklist(), feitos = chk.filter(function (c) { return c.feito; }).length;
       var pct = Math.round(feitos / chk.length * 100);
-      html += '<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px">🚀 Primeiros passos <span class="muted" style="font-weight:400">' + feitos + "/" + chk.length + '</span><button class="btn sm" data-gacao="rever-tour" style="float:right" title="Tour guiado pelas telas principais">🎯 Rever o tour</button></h3>' +
+      html += '<div class="card" style="margin-bottom:14px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('foguete', 15) : '') + ' Primeiros passos <span class="muted" style="font-weight:400">' + feitos + "/" + chk.length + '</span><button class="btn sm" data-gacao="rever-tour" style="float:right" title="Tour guiado pelas telas principais">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Rever o tour</button></h3>' +
         '<div style="background:#eef2f7;border-radius:99px;height:10px;overflow:hidden;margin:8px 0 12px"><div style="height:100%;width:' + pct + '%;background:var(--verde,#16a34a);border-radius:99px;transition:width .3s"></div></div>';
       html += chk.map(function (c) {
         return '<div style="display:flex;align-items:center;gap:10px;padding:5px 0">' +
@@ -7408,8 +7436,8 @@
       // suporte
       html += '<div class="card" style="margin-top:12px"><h3 style="margin:0 0 6px">Ainda precisa de ajuda?</h3>' +
         '<p class="muted" style="margin:0 0 10px;font-size:14px">Fale direto com o Eng. Rogério (CREA-MG 323736) no WhatsApp — resposta rápida em horário comercial.</p>' +
-        '<a class="btn sm primary" href="https://wa.me/553492869383" target="_blank" rel="noopener">💬 Falar no WhatsApp</a>' +
-        '<span class="muted" style="font-size:12px;margin-left:12px">🎬 Tutoriais em vídeo: em breve.</span></div>';
+        '<a class="btn sm primary" href="https://wa.me/553492869383" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' Falar no WhatsApp</a>' +
+        '<span class="muted" style="font-size:12px;margin-left:12px">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Tutoriais em vídeo: em breve.</span></div>';
       return html;
     },
     _ajudaFaqHtml: function (filtro) {
@@ -7480,14 +7508,14 @@
       var obras = lista("obras");
       var total = cs.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       var pend = cs.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
-      var extra = '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">📥 CSV</button><span class="muted" style="margin-right:12px;align-self:center">Em aberto: <b>' + pend + "</b> · Total: <b>" + Util.fmtMoeda(total) + "</b></span>";
+      var extra = '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button><span class="muted" style="margin-right:12px;align-self:center">Em aberto: <b>' + pend + "</b> · Total: <b>" + Util.fmtMoeda(total) + "</b></span>";
       var html = this._head(svg("compras") + "Compras", "nova-compra", "Novo pedido", extra);
       if (!cs.length) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
-        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">🖨</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
-          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : (c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">✕ rejeitado</span>' : ""))));
+        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
+          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : (c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitado</span>' : ""))));
         html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -7505,7 +7533,7 @@
         '<div class="row">' + campo("Valor total (R$) *", inp("g-valor", c.valor)) + campo("Categoria", sel("g-cat", opts(P.fornCategoria, c.categoria || "material"))) + campo("Forma de pagamento", sel("g-forma", '<option value="">—</option>' + opts(P.formaPgto, c.formaPgto))) + "</div>" +
         '<div class="row">' + campo("Data do pedido", inp("g-data", c.data || hoje, "", "date")) + campo("Previsão de entrega", inp("g-entrega", c.previsaoEntrega, "", "date")) + "</div>" +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(c.obs || "") + "</textarea>") +
-        (c.status === "recebido" ? '<p class="muted">✓ Recebida — já lançou uma despesa no Financeiro.</p>' : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>');
+        (c.status === "recebido" ? '<p class="muted">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Recebida — já lançou uma despesa no Financeiro.</p>' : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>');
       this._modalForm("compras", c, "Pedido de compra", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.fornecedorId = v("g-forn"); obj.obraId = v("g-obra");
         if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
@@ -7599,7 +7627,7 @@
           return '<option value="' + Util.esc(o.id) + '"' + (o.id === fObra ? " selected" : "") + ">" + Util.esc(o.nome) + " (" + n + ")</option>";
         }).join("") + "</select>"
         + '<span class="muted" style="font-size:12px">' + rs.length + " diário" + (rs.length === 1 ? "" : "s") + " nesta lista</span>"
-        + '<button class="btn sm" data-gacao="rdo-fotos" style="margin-left:auto">📷 Fotos da obra</button></div>';
+        + '<button class="btn sm" data-gacao="rdo-fotos" style="margin-left:auto">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Fotos da obra</button></div>';
       if (!rs.length) return html + vazioBox("Nenhum diário nesta obra", "novo-rdo", "Registrar diário desta obra");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Clima</th><th class="num">Efetivo</th><th>Atividades</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
@@ -7670,8 +7698,8 @@
            O botão respeita a MESMA regra de antes: diário publicado ninguém
            reescreve, e sub-usuário não mexe no diário de outra pessoa. */
         if (typeof RDO !== "undefined" && RDO.podeAcao("editar", eu, r, ctxAp))
-          acao += '<button class="btn sm" data-gopen="rdo:' + r.id + '" title="Abrir o diário para editar">✎</button> ';
-        acao += '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">🖨</button>';
+          acao += '<button class="btn sm" data-gopen="rdo:' + r.id + '" title="Abrir o diário para editar">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> ';
+        acao += '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '" title="Abrir este diário"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + selo + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -7769,7 +7797,7 @@
          * assina resolver, que é o único que sabe qual dos dois está certo. */
         var somaCampos = efDir + efInd;
         if (somaCampos > 0 && somaCampos !== tot.pessoas) {
-          h += '<div style="margin-top:5px;font-size:10px;color:#b45309;font-weight:700">⚠ Os campos "Efetivo direto/indireto" deste diário somam '
+          h += '<div style="margin-top:5px;font-size:10px;color:#b45309;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Os campos "Efetivo direto/indireto" deste diário somam '
             + somaCampos + ", diferente das " + tot.pessoas + " pessoas lançadas por função."
             + '<div style="font-weight:400">Vale o lançamento por função (é o que a medição confere). Acerte os campos numéricos ou zere-os.</div></div>';
         }
@@ -9153,7 +9181,7 @@
 
       var total = diarios.reduce(function (n, r) { return n + r.fotos.length; }, 0);
       if (!total) {
-        UI.modal("📷 Fotos da obra", '<p class="muted" style="margin:0">Nenhuma foto lançada nos diários'
+        UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("camera", 15) : "") + " Fotos da obra", '<p class="muted" style="margin:0">Nenhuma foto lançada nos diários'
           + (f === "todas" ? "" : " desta obra") + " ainda. As fotos aparecem aqui assim que forem anexadas a um diário.</p>",
           [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
         return;
@@ -9189,7 +9217,7 @@
           }).join("") + "</div>";
       }).join("");
 
-      UI.modal("📷 Fotos da obra", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("camera", 15) : "") + " Fotos da obra", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
 
       /* as imagens vivem no IndexedDB: pinta cada uma quando chegar, sem
          travar a abertura do modal. Falha de leitura vira aviso na própria
@@ -9231,8 +9259,8 @@
         + '<p style="margin:0 0 10px;font-size:14px">Encontrou um problema ou pensou numa melhoria? Conte aqui. '
         + 'Eu leio <b>todos</b> — problema vira conserto, sugestão vai para avaliação.</p>'
         + '<div style="display:flex;gap:8px;flex-wrap:wrap">'
-        + '<button class="btn primary" data-gacao="relato-problema">🐞 Relatar um problema</button>'
-        + '<button class="btn" data-gacao="relato-melhoria">💡 Sugerir uma melhoria</button></div>'
+        + '<button class="btn primary" data-gacao="relato-problema">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Relatar um problema</button>'
+        + '<button class="btn" data-gacao="relato-melhoria">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Sugerir uma melhoria</button></div>'
         /* a promessa de privacidade fica na tela, não só no documento */
         + '<div class="muted" style="font-size:12px;margin-top:10px">Vai apenas o que você escrever, mais a tela em que estava e a versão. '
         + '<b>Nenhum dado de orçamento, obra, cliente ou colaborador é enviado</b> — e você vê tudo antes de mandar.</div></div>';
@@ -9249,7 +9277,7 @@
         var d = new Date(i.criadoEm || 0);
         var quando = isNaN(d.getTime()) ? "—" : ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
         return "<tr><td>" + quando + "</td>"
-          + "<td>" + (i.tipo === "melhoria" ? "💡 Melhoria" : "🐞 Problema") + "</td>"
+          + "<td>" + (i.tipo === "melhoria" ? "" + (typeof Icones !== "undefined" ? Icones.get("lampada", 15) : "") + " Melhoria" : "" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Problema") + "</td>"
           + "<td>" + Util.esc(i.titulo || "—")
           + (i.resposta ? '<div class="muted" style="font-size:12px;margin-top:3px">↳ ' + Util.esc(i.resposta) + "</div>" : "")
           + "</td>"
@@ -9293,7 +9321,7 @@
             ? "Hoje eu preciso digitar tudo de novo todo mês. Se desse para..."
             : "Abri a Folha Semanal, lancei 5 diaristas, e o total apareceu...") + '"></textarea>');
 
-      UI.modal(ehMelhoria ? "💡 Sugerir uma melhoria" : "🐞 Relatar um problema", corpo, [
+      UI.modal(ehMelhoria ? "" + (typeof Icones !== "undefined" ? Icones.get("lampada", 15) : "") + " Sugerir uma melhoria" : "" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Relatar um problema", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Continuar →", classe: "primary", onClick: function () {
           var p = Relatos.montar(
@@ -9359,7 +9387,7 @@
        que ela diz algo — por isso o texto muda conforme o que aconteceu. */
     _entradaAviso: function () {
       var r = this._entradaUltimo;
-      var botao = '<button class="btn sm" data-gacao="rdo-entrada">📲 Buscar diários do WhatsApp</button>';
+      var botao = '<button class="btn sm" data-gacao="rdo-entrada">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Buscar diários do WhatsApp</button>';
       var caixa = function (borda, txt) {
         return '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 12px;margin-bottom:10px'
           + (borda ? ';border-left:3px solid ' + borda : "") + '">' + botao
@@ -9442,7 +9470,7 @@
 
       var corpo = campo("Obra", sel("g-robra", optsRec(obras, "nome", sug, "— escolher —")))
         + '<div id="rdo-prev" style="margin-top:8px">' + resumo(sug) + "</div>";
-      UI.modal("📓 Novo diário de obra", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Novo diário de obra", corpo, [
         { texto: "Começar do zero", classe: "ghost", onClick: function () {
           var oid = v("g-robra"); UI.fecharModal(); self.formRdo(oid ? { obraId: oid } : null);
         } },
@@ -9885,7 +9913,7 @@
     renderColaboradores: function () {
       var cs = lista("colaboradores"), obras = lista("obras");
       var ativos = cs.filter(function (c) { return c.status === "ativo"; }).length;
-      var extra = '<button class="btn sm" data-gacao="colab-doc" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📄 Cadastrar de documento (IA)</button><span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
+      var extra = '<button class="btn sm" data-gacao="colab-doc" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Cadastrar de documento (IA)</button><span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
       var html = this._head(svg("colaboradores") + "Colaboradores", "novo-colaborador", "Novo colaborador", extra);
       if (!cs.length) return html + vazioBox("Nenhum colaborador cadastrado", "novo-colaborador", "Cadastrar primeiro colaborador");
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Função</th><th>Contrato</th><th>Obra</th><th class="num">Remuneração</th><th>Status</th></tr></thead><tbody>';
@@ -10021,17 +10049,17 @@
         + card(aVencer, "CA vencido/a vencer", aVencer ? "#dc2626" : "#64748b")
         + card(caPend, "CA pendente", caPend ? "#b45309" : "#64748b")
         + card(catN != null ? catN : "…", "no catálogo" + (catProp > 0 ? " (" + catProp + " seu" + (catProp > 1 ? "s" : "") + ")" : ""), "#2e6f9e") + "</div>";
-      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">📖 Catálogo de EPI</button>' +
-        '<button class="btn sm ghost" data-gacao="novo-epi-proprio" style="margin-right:10px;align-self:center" title="Cadastre um EPI que não está na lista — ele passa a aparecer na busca das suas entregas">➕ EPI próprio</button>';
+      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('livro', 15) : '') + ' Catálogo de EPI</button>' +
+        '<button class="btn sm ghost" data-gacao="novo-epi-proprio" style="margin-right:10px;align-self:center" title="Cadastre um EPI que não está na lista — ele passa a aparecer na busca das suas entregas">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' EPI próprio</button>';
       var html = this._head(svg("epi") + "EPI — Entregas &amp; Fichas", "nova-entrega-epi", "Nova entrega", extra) + kpis;
-      html += '<p class="muted" style="margin:-4px 0 14px">Registre a entrega de EPI ao colaborador (com CA e validade), gere a <b>ficha de controle (NR-6)</b> para assinatura e acompanhe o gasto. O catálogo traz os EPIs de obra com valor de referência; o <b>CA é do modelo comprado</b> — use <b>🔎 Consultar CA</b> para conferir online.</p>';
+      html += '<p class="muted" style="margin:-4px 0 14px">Registre a entrega de EPI ao colaborador (com CA e validade), gere a <b>ficha de controle (NR-6)</b> para assinatura e acompanhe o gasto. O catálogo traz os EPIs de obra com valor de referência; o <b>CA é do modelo comprado</b> — use <b>' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Consultar CA</b> para conferir online.</p>';
       if (!es.length) return html + vazioBox("Nenhuma entrega de EPI registrada", "nova-entrega-epi", "Registrar primeira entrega");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Colaborador</th><th class="num">Itens</th><th class="num">Valor</th><th></th></tr></thead><tbody>';
       es.forEach(function (e) {
         var nI = (e.itens && e.itens.length) || 0;
-        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="epi-editar" data-id="' + e.id + '" title="Editar esta entrega">✎</button> '
+        html += '<tr><td style="cursor:pointer" data-gopen="epi:' + e.id + '"><b>' + Util.esc(e.numero || "—") + "</b></td><td>" + Util.esc(e.data ? e.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(e.colaboradorNome || "—") + '</td><td class="num">' + nI + '</td><td class="num">' + Util.fmtMoeda(e.valorTotal) + '</td><td class="num"><button class="btn sm" data-gacao="epi-editar" data-id="' + e.id + '" title="Editar esta entrega">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> '
           + '<button class="btn sm" data-gacao="epi-duplicar" data-id="' + e.id + '" title="Duplicar para outro colaborador">⧉</button> '
-          + '<button class="btn sm" data-gacao="ficha-epi" data-id="' + e.id + '">🖨 Ficha</button></td></tr>';
+          + '<button class="btn sm" data-gacao="ficha-epi" data-id="' + e.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Ficha</button></td></tr>';
       });
       return html + "</tbody></table>";
     },
@@ -10150,19 +10178,19 @@
         el.innerHTML = '<table class="tbl" style="font-size:12px"><thead><tr><th>EPI</th><th>CA</th><th>Validade</th><th class="num">Qtd</th><th class="num">Vlr un.</th><th class="num">Subtot.</th><th></th></tr></thead><tbody>'
           + itensBuf.map(function (it, i) {
             return "<tr><td>" + Util.esc(it.nome) + "</td>"
-              + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">🔎</button>'
+              + '<td><input data-eeca="' + i + '" value="' + Util.esc(it.ca) + '" placeholder="CA" style="width:66px"> <button type="button" class="btn sm" data-eeconsulta="' + i + '" title="Consultar CA online">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '</button>'
               /* sem CA não é "N/A": é PENDENTE. O número vem da nota do modelo
                  comprado — inventar um seria falsificar a ficha NR-6. */
               + (Epi.caNaoSeAplica(it.ca)
                 ? ' <span class="pill" style="background:#e2e8f0;color:#475569" title="Você marcou que este item não tem CA — nada pendente aqui">não se aplica</span>'
                 : Epi.caPendente(it.ca)
-                  ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — o 🔎 consulta online">CA pendente</span>'
+                  ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — o ' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' consulta online">CA pendente</span>'
                   : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : "")) + '</td>' 
               + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
               + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
               + '<td class="num"><input data-eevu="' + i + '" value="' + Util.esc(String(it.valorUnit).replace(".", ",")) + '" style="width:60px;text-align:right"></td>'
               + '<td class="num" data-eesub="' + i + '">' + Util.fmtMoeda(Util.num(it.quantidade) * Util.num(it.valorUnit)) + "</td>"
-              + '<td class="num"><button type="button" class="btn sm" data-eerm="' + i + '" style="color:#dc2626">✕</button></td></tr>';
+              + '<td class="num"><button type="button" class="btn sm" data-eerm="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
           }).join("")
           + '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total</b></td><td class="num"><b data-eetot>' + Util.fmtMoeda(self._epiValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>";
         function upd(i) { var s = el.querySelector('[data-eesub="' + i + '"]'); if (s) s.textContent = Util.fmtMoeda(Util.num(itensBuf[i].quantidade) * Util.num(itensBuf[i].valorUnit)); var t = el.querySelector("[data-eetot]"); if (t) t.textContent = Util.fmtMoeda(self._epiValor(itensBuf)); }
@@ -10217,8 +10245,8 @@
           var acoes = onPick
             ? '<button type="button" class="btn sm primary" data-epiadd="' + i + '">Adicionar</button>'
             : (x.proprio
-                ? '<button type="button" class="btn sm ico" data-epiedit="' + i + '" title="Editar este EPI">✎</button> ' +
-                  '<button type="button" class="btn sm ico danger" data-epidel="' + i + '" title="Excluir do seu catálogo">🗑</button>'
+                ? '<button type="button" class="btn sm ico" data-epiedit="' + i + '" title="Editar este EPI">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> ' +
+                  '<button type="button" class="btn sm ico danger" data-epidel="' + i + '" title="Excluir do seu catálogo">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>'
                 : '<span class="muted" style="font-size:11px">vida útil ' + Math.round((x.vidaUtilDias || 0) / 30) + " mês</span>");
           return "<tr><td><b>" + Util.esc(x.nome) + "</b>" + selo + ' <span class="muted">· ' + Util.esc(Epi.rotuloCategoria(x.categoria)) + "</span></td><td>" + vlr + "</td>"
             + '<td class="num">' + acoes + "</td></tr>";
@@ -10245,8 +10273,8 @@
     abrirCatalogoEpi: function () {
       var self = this;
       var corpo = '<div class="field"><input id="ec-q" placeholder="Buscar EPI (nome ou categoria)" autocomplete="off"></div><div class="muted mb" id="ec-status"></div><div id="ec-res" style="max-height:420px;overflow:auto"></div>';
-      var bg = UI.modal("📖 Catálogo de EPI (NR-6)", corpo, [
-        { texto: "➕ Cadastrar EPI próprio", classe: "primary", onClick: function () { self.formEpiProprio(null); } },
+      var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("livro", 15) : "") + " Catálogo de EPI (NR-6)", corpo, [
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar EPI próprio", classe: "primary", onClick: function () { self.formEpiProprio(null); } },
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
       UI.modalConsulta(); // catálogo é consulta: fechar depois de digitar na busca não pergunta nada
@@ -10304,7 +10332,7 @@
         '<div class="row">' + campo("Valor de referência (R$)", inp("ep-vlr", reg.valorRef)) +
           campo("Vida útil (dias)", inp("ep-vida", reg.vidaUtilDias)) + "</div>" +
         campo("Descrição", inp("ep-desc", reg.descricao)) +
-        '<p class="muted" style="font-size:12px;margin:6px 0 0">O <b>CA</b> não se cadastra aqui: ele é do modelo que você comprou e é informado <b>na entrega</b> (com o 🔎 Consultar CA). Até lá o item aparece como <span class="pill proprio">CA pendente</span>.</p>';
+        '<p class="muted" style="font-size:12px;margin:6px 0 0">O <b>CA</b> não se cadastra aqui: ele é do modelo que você comprou e é informado <b>na entrega</b> (com o ' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Consultar CA). Até lá o item aparece como <span class="pill proprio">CA pendente</span>.</p>';
       this._modalForm("epi_catalogo", reg, { novo: "Novo EPI próprio", editar: "Editar EPI próprio", nome: "EPI próprio" }, corpo, function (obj) {
         obj.nome = v("ep-nome");
         if (String(obj.nome || "").trim().length < 3) { UI.toast("Informe o nome do EPI.", "erro"); return false; }
@@ -10360,9 +10388,9 @@
       var hes = lista("horas_extras").filter(function (h) { return String(h.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
       var minHE = hes.reduce(function (s, h) { return s + (typeof Ponto !== "undefined" ? Ponto.horasParaMin(h.horas) : 0); }, 0);
       var extra = '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
-        + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">📋 Lançar em lote</button>'
-        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">🖨 Espelho de ponto</button>'
-        + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">⚙ Jornada</button>';
+        + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lançar em lote</button>'
+        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Espelho de ponto</button>'
+        + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada</button>';
       var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "nova-falta", "Registrar falta", extra);
       html += '<div class="row" style="align-items:center;gap:14px;margin:-4px 0 12px">'
         + '<div class="field" style="max-width:170px"><label>Mês de referência</label><input type="month" id="pt-mes" value="' + mes + '"></div>'
@@ -10374,7 +10402,7 @@
         faltas.forEach(function (f) {
           var col = colabs.filter(function (c) { return c.id === f.colaboradorId; })[0];
           var cor = f.motivo === "injustificada" ? "#dc2626" : "#64748b";
-          html += "<tr><td>" + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(col ? col.nome : (f.colaboradorNome || "—")) + '</b></td><td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + rot(P.faltaMotivo, f.motivo) + '</span></td><td class="num"><button class="btn sm" data-gacao="excluir-falta" data-id="' + f.id + '" style="color:#dc2626">✕</button></td></tr>';
+          html += "<tr><td>" + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(col ? col.nome : (f.colaboradorNome || "—")) + '</b></td><td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + rot(P.faltaMotivo, f.motivo) + '</span></td><td class="num"><button class="btn sm" data-gacao="excluir-falta" data-id="' + f.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         });
         html += "</tbody></table>";
       }
@@ -10399,7 +10427,7 @@
             + '<td class="num"><b>' + Util.esc(typeof Ponto !== "undefined" ? Ponto.minParaHhmmExtenso(Ponto.horasParaMin(h.horas)) : String(h.horas || "")) + "</b></td>"
             + "<td>" + Util.esc(ob ? ob.nome : "—") + "</td>"
             + '<td class="muted" style="font-size:12px">' + Util.esc(h.motivo || "") + "</td>"
-            + '<td class="num"><button class="btn sm" data-gacao="editar-he" data-id="' + h.id + '">✎</button> <button class="btn sm" data-gacao="excluir-he" data-id="' + h.id + '" style="color:#dc2626">✕</button></td></tr>';
+            + '<td class="num"><button class="btn sm" data-gacao="editar-he" data-id="' + h.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-he" data-id="' + h.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         });
         html += "</tbody></table>";
       }
@@ -10525,7 +10553,7 @@
         + '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:6px;cursor:pointer">'
         + '<input type="checkbox" id="g-var" style="margin-top:3px"' + (j.variarMinutos ? " checked" : "") + ">"
         + '<span><b>Variar os minutos das batidas</b><br><span class="muted" style="font-size:12px">Cada dia sai com alguns minutos de diferença, como acontece na obra, em vez do horário cravado o mês inteiro. As batidas são fixas por pessoa e por dia: reimprimir o mesmo mês dá exatamente o mesmo cartão, e o almoço nunca fica abaixo de 1 hora.</span></span></label>';
-      UI.modal("⚙ Jornada de trabalho", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Jornada de trabalho", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () {
           var p = Store.lerPrefs(eid()) || {};
@@ -10541,8 +10569,8 @@
       if (!colabs.length) { UI.toast("Cadastre colaboradores primeiro.", "erro"); return; }
       var mes = this._pontoMes || new Date().toISOString().slice(0, 7);
       var corpo = '<div class="row">' + campo("Mês de referência", inp("g-mes", mes, "", "month")) + campo("Colaborador", sel("g-colab", optsRec(colabs.filter(function (c) { return c.status === "ativo"; }), "nome", "", "— Todos os ativos —"))) + "</div>"
-        + '<p class="muted" style="margin:6px 0 0">O espelho usa a jornada padrão (⚙ Jornada) e marca as faltas do mês. Documento pronto para impressão e assinatura (NR/CLT).</p>';
-      UI.modal("🖨 Espelho de Ponto", corpo, [
+        + '<p class="muted" style="margin:6px 0 0">O espelho usa a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada) e marca as faltas do mês. Documento pronto para impressão e assinatura (NR/CLT).</p>';
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Espelho de Ponto", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Gerar", classe: "primary", onClick: function () {
           var m = v("g-mes") || mes, cid = v("g-colab");
@@ -10705,12 +10733,12 @@ renderRequisicoes: function () {
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
-        var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">🖨</button> ';
+        var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ';
         if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada" && r.status !== "cotando") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-requisicao" data-id="' + r.id + '" style="color:#dc2626">Rejeitar</button> ';
         if (r.status === "aprovada") acoes += '<button class="btn sm" data-gacao="cotar-requisicao" data-id="' + r.id + '" title="Comparar fornecedores antes de comprar">🆚 Cotar</button> <button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
         else if (r.status === "cotando") acoes += '<span class="muted" title="Cotação em andamento — conclua ou exclua a cotação no módulo Cotações">🆚 em cotação</span>';
         else if (r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada") acoes += '<button class="btn sm" disabled title="Aprove a requisição antes de gerar o pedido" style="opacity:.5;cursor:not-allowed">Gerar pedido</button>';
-        else if (r.status === "rejeitada") acoes += '<span class="muted" title="' + Util.esc(r.motivoRejeicao || "") + '">✕ rejeitada</span>';
+        else if (r.status === "rejeitada") acoes += '<span class="muted" title="' + Util.esc(r.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
         var nItens = (r.itens && r.itens.length) || 0;
         var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "");
@@ -10740,12 +10768,12 @@ renderRequisicoes: function () {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
         var d = (typeof Cotacoes !== "undefined") ? Cotacoes.decisao(c) : { totalMisto: null, totalUnico: null };
         var melhor = d.totalMisto != null ? d.totalMisto : d.totalUnico;
-        var acoes = '<button class="btn sm" data-gacao="doc-cotacao" data-id="' + c.id + '" title="Imprimir o Mapa de Cotação">🖨</button> <button class="btn sm" data-gacao="excluir-cotacao" data-id="' + c.id + '" style="color:#dc2626">✕</button>';
+        var acoes = '<button class="btn sm" data-gacao="doc-cotacao" data-id="' + c.id + '" title="Imprimir o Mapa de Cotação">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-cotacao" data-id="' + c.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button>';
         var st = c.status || "rascunho", corSt = st === "concluida" ? "#16a34a" : "#0e7490"; // pill próprio: no genérico, "rascunho" do RDO roubaria o rótulo
         var pillCot = '<span class="g-pill" style="background:' + corSt + '22;color:' + corSt + '">' + Util.esc(rot(P.cotStatus, st)) + "</span>";
         html += '<tr><td style="cursor:pointer" data-gopen="cotacoes:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + ((c.itens || []).length) + '</td><td class="num">' + ((c.fornecedores || []).length) + '</td><td class="num">' + (melhor != null ? "<b>" + Util.fmtMoeda(melhor) + "</b>" : "—") + "</td><td>" + pillCot + '</td><td class="num">' + acoes + "</td></tr>";
       });
-      return html + "</tbody></table><p class=\"muted\" style=\"margin-top:10px\">💡 Crie a cotação a partir de uma <b>Requisição aprovada</b> (botão 🆚 Cotar) — os itens já vêm preenchidos. Ao concluir, os <b>pedidos de compra</b> nascem sozinhos, um por fornecedor vencedor.</p>";
+      return html + "</tbody></table><p class=\"muted\" style=\"margin-top:10px\">" + (typeof Icones !== "undefined" ? Icones.get("lampada", 15) : "") + " Crie a cotação a partir de uma <b>Requisição aprovada</b> (botão 🆚 Cotar) — os itens já vêm preenchidos. Ao concluir, os <b>pedidos de compra</b> nascem sozinhos, um por fornecedor vencedor.</p>";
     },
     _proxNumeroCot: function () {
       var cs = lista("cotacoes"), ano = new Date().getFullYear(), max = 0;
@@ -10793,8 +10821,8 @@ renderRequisicoes: function () {
         return "<tr" + (venc ? ' style="background:#f0fdf4;font-weight:700"' : "") + "><td>" + (venc ? "🏆 " : "") + Util.esc(t.nome) + '</td><td class="num">' + t.cotados + "/" + cot.itens.length + '</td><td class="num">' + Util.fmtMoeda(t.subtotal) + '</td><td class="num">' + Util.fmtMoeda(t.frete) + '</td><td class="num"><b>' + Util.fmtMoeda(t.total) + "</b>" + (t.completo ? "" : ' <span class="muted" style="font-size:10px">(incompleto — não vence sozinho)</span>') + "</td></tr>";
       }).join("");
       var rodape = "";
-      if (d.totalMisto != null && d.vencedorUnico != null) rodape = '<p style="font-size:13px;margin-top:8px">🧠 Comprando <b>cada item do mais barato</b> (misto): <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' — economia de <b style="color:var(--verde)">' + Util.fmtMoeda(d.economiaMisto) + "</b> vs fornecedor único." : " — fornecedor único já é o melhor cenário.") + "</p>";
-      else if (d.totalMisto != null) rodape = '<p style="font-size:13px;margin-top:8px">🧠 Cenário misto: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>. Nenhum fornecedor cotou todos os itens — só o misto fecha a compra.</p>";
+      if (d.totalMisto != null && d.vencedorUnico != null) rodape = '<p style="font-size:13px;margin-top:8px">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Comprando <b>cada item do mais barato</b> (misto): <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' — economia de <b style="color:var(--verde)">' + Util.fmtMoeda(d.economiaMisto) + "</b> vs fornecedor único." : " — fornecedor único já é o melhor cenário.") + "</p>";
+      else if (d.totalMisto != null) rodape = '<p style="font-size:13px;margin-top:8px">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Cenário misto: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>. Nenhum fornecedor cotou todos os itens — só o misto fecha a compra.</p>";
       var ref = Cotacoes.economiaVsReferencia(cot, d.totalMisto != null ? "misto" : "unico");
       if (ref && ref.economia !== 0) rodape += '<p class="muted" style="font-size:12px">Contra o preço de referência do banco (' + ref.itensComparados + " item(ns)): " + (ref.economia > 0 ? '<b style="color:var(--verde)">' + Util.fmtMoeda(ref.economia) + " abaixo</b>" : '<b style="color:var(--vermelho)">' + Util.fmtMoeda(-ref.economia) + " acima</b>") + " da referência.</p>";
       return '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Fornecedor</th><th class="num">Cotou</th><th class="num">Subtotal</th><th class="num">Frete</th><th class="num">Total</th></tr></thead><tbody>' + linhas + "</tbody></table>" + rodape;
@@ -10834,10 +10862,10 @@ renderRequisicoes: function () {
         '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0">' + cabF + "</div>" +
         '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Cód.</th><th>Item</th><th>Un</th><th>Qtd</th><th style="display:none"></th>' + cabPrecos + "</tr></thead><tbody id=\"ct-linhas\">" + linhas + "</tbody></table></div>" +
         (ehConcluida ? "" : '<button type="button" class="btn sm" id="ct-add-item" style="margin-top:6px">+ item</button>' + (nF < maxF ? ' <button type="button" class="btn sm" id="ct-add-forn" style="margin-top:6px;margin-left:6px">+ fornecedor</button>' : "")) +
-        '<div class="card" style="margin-top:12px;padding:12px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">⚖️ Decisão (recalcula enquanto você digita)</div><div id="ct-decisao"></div></div>';
+        '<div class="card" style="margin-top:12px;padding:12px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('balanca', 15) : '') + ' Decisão (recalcula enquanto você digita)</div><div id="ct-decisao"></div></div>';
       var botoes = ehConcluida ? [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-        { texto: "🖨 Imprimir mapa", classe: "primary", onClick: function () { UI.fecharModal(); self.documentoCotacao(c.id); } }
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Imprimir mapa", classe: "primary", onClick: function () { UI.fecharModal(); self.documentoCotacao(c.id); } }
       ] : [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "", onClick: function () {
@@ -10849,7 +10877,7 @@ renderRequisicoes: function () {
           if (cot.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId); if (rq && rq.status === "aprovada") { rq.status = "cotando"; Store.salvar(eid(), "requisicoes", rq); } }
           UI.fecharModal(); App.render(); UI.toast("Cotação salva.", "ok");
         } },
-        { texto: "✅ Concluir e gerar pedidos", classe: "primary", onClick: function () {
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Concluir e gerar pedidos", classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
           var cot = self._cotDoForm(c);
           var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : ["Motor de cotações não carregado."];
@@ -10969,14 +10997,14 @@ renderRequisicoes: function () {
           + card(r.mo.toLocaleString("pt-BR"), "Mão de obra", "#16a34a")
           + card(r.eq.toLocaleString("pt-BR"), "Equipamento", "#ea580c")
           + "</div>"
-        : '<div class="muted" style="margin:4px 0 14px">Banco de preços do estado ativo (SINAPI analítico + bases carregadas em 🗂 Tabelas). Carrega na 1ª busca.</div>';
+        : '<div class="muted" style="margin:4px 0 14px">Banco de preços do estado ativo (SINAPI analítico + bases carregadas em ' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas). Carrega na 1ª busca.</div>';
       return this._head(svg("insumos") + "Banco de Insumos", "", "")
         + kpis
         + '<div class="field"><input id="bi-q" placeholder="Buscar insumo por código ou descrição (ex.: cimento, vergalhão, tijolo, servente)" autocomplete="off"></div>'
         + '<div class="muted mb" id="bi-status">Digite ao menos 2 letras…</div>'
         + '<div id="bi-res"></div>'
-        + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">➕ Cadastrar insumo próprio (fora das bases oficiais)</button>'
-        + '<p class="muted" style="margin-top:14px">💡 Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>🔍 no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
+        + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Cadastrar insumo próprio (fora das bases oficiais)</button>'
+        + '<p class="muted" style="margin-top:14px">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
     afterRender: function (view) { if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
@@ -11100,7 +11128,7 @@ renderRequisicoes: function () {
           '<input id="ri-q" placeholder="🔍 Buscar no banco de insumos (código ou descrição)" autocomplete="off" style="margin-bottom:6px">' +
           '<div class="muted" id="ri-status" style="font-size:12px;margin-bottom:6px"></div>' +
           '<div id="ri-res" style="max-height:190px;overflow:auto;margin-bottom:8px"></div>' +
-          '<button type="button" class="btn sm" id="ri-manual" style="margin-bottom:6px">➕ Não achou? Cadastrar insumo / item manual</button>' +
+          '<button type="button" class="btn sm" id="ri-manual" style="margin-bottom:6px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Não achou? Cadastrar insumo / item manual</button>' +
           '<div id="ri-novo" style="display:none;padding:10px 12px;border-radius:9px;box-shadow:inset 0 0 0 1px var(--linha);margin-bottom:10px"></div>' +
           '<div id="ri-itens"></div>') +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(r.observacoes || "") + "</textarea>");
@@ -11132,7 +11160,7 @@ renderRequisicoes: function () {
               + '<td class="num"><input data-riq="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:64px;text-align:right"></td>'
               + '<td class="num">' + (it.precoRef > 0 ? Util.fmtMoeda(it.precoRef) : "—") + "</td>"
               + '<td class="num" data-risub="' + i + '">' + (it.precoRef > 0 ? Util.fmtMoeda(Util.num(it.quantidade) * it.precoRef) : "—") + "</td>"
-              + '<td class="num"><button type="button" class="btn sm" data-rirm="' + i + '" style="color:#dc2626">✕</button></td></tr>';
+              + '<td class="num"><button type="button" class="btn sm" data-rirm="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
           }).join("")
           + '</tbody><tfoot><tr><td colspan="4" style="text-align:right"><b>Total estimado</b></td><td class="num"><b data-ritot>' + Util.fmtMoeda(self._reqValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>";
         Array.prototype.forEach.call(el.querySelectorAll("[data-riq]"), function (input) {
@@ -11222,7 +11250,7 @@ renderRequisicoes: function () {
       }
       html += '<table class="tbl"><thead><tr><th>Modelo</th><th>Título</th><th></th></tr></thead><tbody>';
       ts.forEach(function (t) {
-        html += '<tr><td style="cursor:pointer" data-gopen="templates:' + t.id + '"><b>' + Util.esc(t.nome || "—") + "</b></td><td>" + Util.esc(t.titulo || "—") + '</td><td class="num"><button class="btn sm primary" data-gacao="gerar-modelo" data-id="' + t.id + '">🖨 Gerar</button> <button class="btn sm" data-gopen="templates:' + t.id + '">Editar</button></td></tr>';
+        html += '<tr><td style="cursor:pointer" data-gopen="templates:' + t.id + '"><b>' + Util.esc(t.nome || "—") + "</b></td><td>" + Util.esc(t.titulo || "—") + '</td><td class="num"><button class="btn sm primary" data-gacao="gerar-modelo" data-id="' + t.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Gerar</button> <button class="btn sm" data-gopen="templates:' + t.id + '">Editar</button></td></tr>';
       });
       return html + "</tbody></table>";
     },
@@ -11283,9 +11311,9 @@ renderRequisicoes: function () {
     },
     _semPermissao: function (view) {
       var m = this.modulos.filter(function (x) { return x.id === view; })[0];
-      return '<div class="flex between mb"><h1 style="margin:0">🔒 Sem acesso</h1></div>'
+      return '<div class="flex between mb"><h1 style="margin:0">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Sem acesso</h1></div>'
         + '<div class="card" style="text-align:center;padding:34px">'
-        + '<div style="font-size:42px;margin-bottom:8px">🔒</div>'
+        + '<div style="font-size:42px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + '</div>'
         + '<p style="font-size:15px">Você não tem permissão para o módulo <b>' + Util.esc(m ? m.nome : view) + "</b>.</p>"
         + '<p class="muted">Fale com o administrador da conta para liberar este módulo ao seu departamento.</p></div>';
     },
@@ -11293,7 +11321,7 @@ renderRequisicoes: function () {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return this._semPermissao("usuarios");
       var us = lista("equipe").slice().sort(function (a, b) { return (a.nome || "").localeCompare(b.nome || ""); });
       var ativos = us.filter(function (u) { return u.ativo !== false; }).length;
-      var extra = '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">⚙ Aprovações</button>'
+      var extra = '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Aprovações</button>'
         + '<span class="muted" style="margin-right:12px;align-self:center">' + us.length + " de " + LIMITE_USUARIOS + " usuários · " + ativos + " ativos</span>";
       var podeAdd = us.length < LIMITE_USUARIOS;
       var html = this._head(svg("usuarios") + "Usuários &amp; Permissões", podeAdd ? "novo-usuario" : "", podeAdd ? "Novo usuário" : "", extra);
@@ -11305,7 +11333,7 @@ renderRequisicoes: function () {
       us.forEach(function (u) {
         var nMod = (u.modulos && u.modulos.length) || 0;
         var st = u.ativo === false ? '<span class="g-pill" style="background:#64748b22;color:#64748b">inativo</span>' : '<span class="g-pill" style="background:#16a34a22;color:#16a34a">ativo</span>';
-        html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gacao="acesso-movel" data-id="' + u.id + '" title="Enviar o acesso pelo celular/tablet (link + QR — abre já ativado com a licença da empresa)">📱</button> <button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
+        html += '<tr><td style="cursor:pointer" data-gopen="equipe:' + u.id + '"><b>' + Util.esc(u.nome || "—") + "</b></td><td>" + Util.esc(u.login || "—") + "</td><td>" + rot(P.departamento, u.departamento) + '</td><td class="num">' + nMod + "</td><td>" + st + '</td><td class="num"><button class="btn sm" data-gacao="acesso-movel" data-id="' + u.id + '" title="Enviar o acesso pelo celular/tablet (link + QR — abre já ativado com a licença da empresa)">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</button> <button class="btn sm" data-gopen="equipe:' + u.id + '">Editar</button></td></tr>';
       });
       return html + "</tbody></table>";
     },
@@ -11321,7 +11349,7 @@ renderRequisicoes: function () {
       }
       return '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
         '<span>📱 <b>Ative o acesso multi-aparelho:</b> defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.</span>' +
-        '<button class="btn sm primary" data-gacao="config-admin">🔗 Configurar admin</button></div>';
+        '<button class="btn sm primary" data-gacao="config-admin">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Configurar admin</button></div>';
     },
     configurarAdmin: function () {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador configura isto.", "erro"); return; }
@@ -11330,7 +11358,7 @@ renderRequisicoes: function () {
       var corpo = '<p class="muted" style="margin:0 0 12px">Defina a conta de <b>administrador</b> desta licença. É com ela que você entra em <b>outros aparelhos</b> (celular/tablet) e é o que permite os <b>usuários</b> criados logarem nos aparelhos deles — tudo com a <b>mesma licença</b>.</p>' +
         '<div class="field"><label>E-mail do administrador</label><input id="ca-email" type="email" value="' + String(emailPad).replace(/"/g, "&quot;") + '" placeholder="voce@empresa.com"></div>' +
         '<div class="field"><label>Senha de administrador</label><input id="ca-senha" type="text" placeholder="crie uma senha (mín. 4)"></div>';
-      UI.modal("🔗 Acesso multi-aparelho", corpo, [{ texto: "Salvar", classe: "primary", onClick: function () {
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("link", 15) : "") + " Acesso multi-aparelho", corpo, [{ texto: "Salvar", classe: "primary", onClick: function () {
         var email = (UI.el("ca-email") || {}).value || "", senha = (UI.el("ca-senha") || {}).value || "";
         var r = Auth.criarContaMestre((Auth.usuario() || {}).empresa, email, senha);
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
@@ -11343,8 +11371,8 @@ renderRequisicoes: function () {
     acessoMovel: function (id) {
       var u = Store.obter(eid(), "equipe", id); if (!u) return;
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
-      if (!chave) { UI.toast("Ative a licença primeiro (⚙ → 🔑 Licença) para gerar o link de acesso.", "erro"); return; }
-      if (typeof Auth !== "undefined" && Auth.contaMestre && !Auth.contaMestre()) { UI.toast("Antes, clique em 🔗 Configurar admin (faixa no topo) — é o que liga o acesso multi-aparelho.", "erro"); return; }
+      if (!chave) { UI.toast("Ative a licença primeiro (⚙ → " + (typeof Icones !== "undefined" ? Icones.get("chave", 15) : "") + " Licença) para gerar o link de acesso.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.contaMestre && !Auth.contaMestre()) { UI.toast("Antes, clique em " + (typeof Icones !== "undefined" ? Icones.get("link", 15) : "") + " Configurar admin (faixa no topo) — é o que liga o acesso multi-aparelho.", "erro"); return; }
       var base = (typeof CONFIG !== "undefined" && CONFIG.appWebUrl) ? CONFIG.appWebUrl : "https://ra-engenharia.github.io/orcapro/app/";
       var link = base + "?lic=" + encodeURIComponent(chave) + "&u=" + encodeURIComponent(u.login || "");
       var msg = "Olá " + (u.nome || u.login) + "! Seu acesso ao OrçaPRO no celular/tablet:\n\n1) Toque no link abaixo — o sistema abre já ativado;\n2) Entre com seu usuário \"" + (u.login || "") + "\" e a sua senha.\n\n" + link;
@@ -11356,10 +11384,10 @@ renderRequisicoes: function () {
         (qrSvg ? '<div style="display:flex;justify-content:center;margin:8px 0 12px"><div style="background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:12px;padding:10px">' + qrSvg + '</div></div>' : '') +
         '<div style="border:1.5px dashed var(--linha,#e2e8f0);border-radius:10px;background:#f8fafc;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:11px;word-break:break-all">' + Util.esc(link) + '</div>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">' +
-        (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">📱 Enviar por WhatsApp</a>' : '') +
-        '<button class="btn" id="am-copiar">📋 Copiar link</button></div>' +
+        (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Enviar por WhatsApp</a>' : '') +
+        '<button class="btn" id="am-copiar">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar link</button></div>' +
         (!wa ? '<p class="muted" style="font-size:12px;margin-top:8px">Dica: preencha o WhatsApp do usuário no cadastro pra enviar em 1 clique.</p>' : '');
-      UI.modal("📱 Acesso no celular/tablet — " + Util.esc(u.nome || u.login), corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "") + " Acesso no celular/tablet — " + Util.esc(u.nome || u.login), corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
       var cp = document.getElementById("am-copiar");
       if (cp) cp.onclick = function () {
         try { navigator.clipboard.writeText(link).then(function () { UI.toast("Link copiado.", "ok"); }, function () { UI.toast("Copie manualmente do quadro.", "erro"); }); }
@@ -11380,7 +11408,7 @@ renderRequisicoes: function () {
         + 'Ligado: <b>ninguém</b> aprova a própria criação — nem o administrador, nem quem estiver marcado. Todo documento precisa de outra pessoa para aprovar.<br>'
         + 'Desligado (padrão): o <b>administrador</b> e os usuários <b>marcados com "aprovar a própria criação"</b> homologam o que eles mesmos lançaram. A autoaprovação fica registrada na trilha.</span></span></label>'
         + '<p class="muted" style="font-size:12px;margin:10px 0 0">Quem pode aprovar cada um marca no cadastro do usuário (Aprovações). Numa conta de uma pessoa só, essa pessoa sempre aprova — senão o documento travaria para sempre.</p>';
-      UI.modal("⚙ Política de aprovação", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Política de aprovação", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () {
           var p = Store.lerPrefs(eid()) || {};
@@ -11407,7 +11435,7 @@ renderRequisicoes: function () {
         '<div class="row">' + campo("Nome *", inp("g-nome", u.nome, "Ex.: Maria Souza")) + campo("Login (usuário) *", inp("g-login", u.login, "ex.: maria")) + "</div>" +
         '<div class="row">' + campo(ehNovo ? "Senha provisória (branco = gerar automática)" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "deixe em branco p/ gerar" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
         '<div class="row">' + campo("WhatsApp do usuário", inp("g-ufone", u.fone, "(34) 90000-0000")) + campo("E-mail do usuário", inp("g-uemail", u.email, "usuario@empresa.com")) + "</div>" +
-        campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">↺ preset do departamento</button>', checkboxes) +
+        campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' preset do departamento</button>', checkboxes) +
         campo("Aprovações",
           '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>'
           /* autoaprovação: por padrão vale quatro olhos (quem preenche não
@@ -11474,9 +11502,9 @@ renderRequisicoes: function () {
         '<div><b>Login:</b> <span style="font-family:monospace">' + Util.esc(u.login) + '</span></div>' +
         '<div><b>Senha provisória:</b> <span style="font-family:monospace">' + Util.esc(senha) + '</span></div></div>';
       var botoes = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">' +
-        (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">📱 Enviar por WhatsApp</a>' : '') +
-        (mail ? '<a class="btn" href="' + mail + '">✉️ Enviar por E-mail</a>' : '') +
-        '<button class="btn ghost" id="uc-copiar">📋 Copiar dados</button></div>' +
+        (wa ? '<a class="btn primary" href="' + wa + '" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Enviar por WhatsApp</a>' : '') +
+        (mail ? '<a class="btn" href="' + mail + '">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' Enviar por E-mail</a>' : '') +
+        '<button class="btn ghost" id="uc-copiar">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar dados</button></div>' +
         (!wa && !mail ? '<p class="muted" style="font-size:12px;margin-top:8px">Dica: preencha o WhatsApp ou o e-mail do usuário no cadastro para enviar em 1 clique. Por ora, use “Copiar dados”.</p>' : '');
       var corpo = '<p style="margin:0 0 6px">✅ <b>Usuário criado com sucesso!</b></p>' +
         '<p class="muted" style="font-size:13px;margin:0 0 8px">Envie os dados de acesso para <b>' + Util.esc(nome) + '</b> — ele vai <b>trocar a senha no primeiro acesso</b>.</p>' +
@@ -11496,12 +11524,12 @@ renderRequisicoes: function () {
       var totEnt = nfs.filter(function (n) { return n.tipo === "entrada" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var extra = '<span class="muted" style="margin-right:12px;align-self:center">Entradas: <b>' + Util.fmtMoeda(totEnt) + "</b> · Saídas: <b>" + Util.fmtMoeda(totSai) + "</b></span>" +
-        '<button class="btn" data-gacao="importar-xml-lote" title="Importe vários XMLs de NF-e de uma vez — direto do arquivo, sem IA e sem internet">📥 XML em lote</button> ' +
-        '<button class="btn ghost" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">🔎 Chave de acesso</button> ' +
+        '<button class="btn" data-gacao="importar-xml-lote" title="Importe vários XMLs de NF-e de uma vez — direto do arquivo, sem IA e sem internet">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' XML em lote</button> ' +
+        '<button class="btn ghost" data-gacao="consultar-chave" title="Cole a chave de acesso (44 dígitos do DANFE) — valida e identifica a nota na hora">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Chave de acesso</button> ' +
         /* A leitura por IA já existia, só que escondida no Financeiro — quem chega
            com o DANFE em PDF (ou uma foto dele) procura na tela Fiscal. Mesmo motor,
            mesma revisão humana antes de gravar; o XML segue sendo o caminho exato. */
-        '<button class="btn ghost" data-gacao="nf-ia" title="Sem o XML? Envie o PDF do DANFE ou uma foto da nota — a IA lê e abre a nota preenchida para você conferir antes de salvar. O XML continua sendo o caminho mais exato.">🤖 NF em PDF/foto</button>';
+        '<button class="btn ghost" data-gacao="nf-ia" title="Sem o XML? Envie o PDF do DANFE ou uma foto da nota — a IA lê e abre a nota preenchida para você conferir antes de salvar. O XML continua sendo o caminho mais exato.">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' NF em PDF/foto</button>';
       var html = this._head(svg("fiscal") + "Fiscal / NF-e", "nova-fiscal", "Nova nota", extra);
       if (!nfs.length) return html + vazioBox("Nenhuma nota fiscal", "nova-fiscal", "Cadastrar primeira");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Tipo</th><th>Parceiro</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
@@ -11514,12 +11542,12 @@ renderRequisicoes: function () {
         /* nota antiga (importada antes desta versão) não tem itens gravados —
            o botão não aparece em vez de abrir uma tela vazia sem explicação */
         var btnTri = nItens
-          ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">📦 Itens (' + nItens + ')' +
+          ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Itens (' + nItens + ')' +
             (pend ? ' <span class="pill proprio">' + pend + " a triar</span>" : " ✔") + "</button> "
           : "";
         var jaLanc = Util.arr(lista("financeiro")).some(function (f) { return f.docChave && n.chaveAcesso && String(f.docChave) === String(n.chaveAcesso); });
         var btn = n.status === "emitida"
-          ? (jaLanc ? '<span class="pill" title="Esta nota já virou lançamento no Financeiro">✔ Lançada</span>'
+          ? (jaLanc ? '<span class="pill" title="Esta nota já virou lançamento no Financeiro">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançada</span>'
             : '<button class="btn sm primary" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>')
           : "";
         btn = btnTri + btn;
@@ -11527,9 +11555,9 @@ renderRequisicoes: function () {
            clicando no número da nota, o que ninguém adivinha. Agora ficam na
            linha, como no resto do app. E quando a nota já virou dinheiro, o
            que se oferece é DESFAZER o lançamento — não relançar por cima. */
-        if (jaLanc) btn += ' <button class="btn sm ghost" data-gacao="fiscal-desfazer" data-id="' + n.id + '" title="Apagar as contas a pagar que esta nota gerou (as já pagas ficam)">↩ Desfazer</button>';
-        btn += ' <button class="btn sm ico" data-gacao="fiscal-editar" data-id="' + n.id + '" title="Editar os dados desta nota">✎</button>' +
-          ' <button class="btn sm ico danger" data-gacao="fiscal-excluir" data-id="' + n.id + '" title="Excluir esta nota">🗑</button>';
+        if (jaLanc) btn += ' <button class="btn sm ghost" data-gacao="fiscal-desfazer" data-id="' + n.id + '" title="Apagar as contas a pagar que esta nota gerou (as já pagas ficam)">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button>';
+        btn += ' <button class="btn sm ico" data-gacao="fiscal-editar" data-id="' + n.id + '" title="Editar os dados desta nota">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
+          ' <button class="btn sm ico danger" data-gacao="fiscal-excluir" data-id="' + n.id + '" title="Excluir esta nota">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="fiscal:' + n.id + '"><b>' + Util.esc(numTxt) + "</b></td><td>" + rot(P.fiscalTipo, n.tipo) + "</td><td>" + Util.esc(n.parceiro || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(n.valorTotal)) + "</td><td>" + pill(n.status) + '</td><td class="num">' + btn + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -11575,7 +11603,7 @@ renderRequisicoes: function () {
       var R = (typeof NFItens !== "undefined") ? NFItens.resumo(t.linhas, baseConf) : { porDestino: {}, bate: true, somaItens: 0, pendentes: 0, lancados: 0 };
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
 
-      var DEST = [["estoque", "📦 Estoque"], ["patrimonio", "🏷 Patrimônio"], ["consumo", "🚧 Consumo na obra"], ["epi", "🦺 EPI"], ["ignorar", "— Ignorar"]];
+      var DEST = [["estoque", "" + (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + " Estoque"], ["patrimonio", "🏷 Patrimônio"], ["consumo", "🚧 Consumo na obra"], ["epi", "🦺 EPI"], ["ignorar", "— Ignorar"]];
       var optDest = function (sel) {
         return DEST.map(function (d) { return '<option value="' + d[0] + '"' + (sel === d[0] ? " selected" : "") + ">" + d[1] + "</option>"; }).join("");
       };
@@ -11591,7 +11619,7 @@ renderRequisicoes: function () {
       };
 
       var html = '<div class="flex between mb"><h2 style="margin:0">' + svg("fiscal") + " Itens da NF " + Util.esc(nf.numero || "s/n") +
-        (nf.serie ? "/" + Util.esc(nf.serie) : "") + '</h2><button class="btn ghost" data-gacao="tri-fechar">← Voltar para as notas</button></div>';
+        (nf.serie ? "/" + Util.esc(nf.serie) : "") + '</h2><button class="btn ghost" data-gacao="tri-fechar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar para as notas</button></div>';
 
       html += '<div class="card mb" style="padding:10px 12px">' +
         "<b>" + Util.esc(nf.parceiro || "—") + "</b>" + (nf.cnpjParceiro ? ' <span class="muted">· ' + Util.esc(nf.cnpjParceiro) + "</span>" : "") +
@@ -11602,10 +11630,10 @@ renderRequisicoes: function () {
         /* a soma dos itens tem de bater com a nota: divergência aqui é item
            truncado ou frete/desconto que ninguém distribuiu */
         (Util.num(nf.itensTruncados) > 0
-          ? '<div style="font-size:12px;margin-top:4px;color:#b45309">⚠ Esta nota tem mais itens do que eu consigo triar de uma vez: ' +
+          ? '<div style="font-size:12px;margin-top:4px;color:#b45309">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta nota tem mais itens do que eu consigo triar de uma vez: ' +
             Util.num(nf.itensTruncados) + " item(ns) ficaram de fora.</div>"
-          : (R.bate ? '<div class="muted" style="font-size:12px;margin-top:4px">✔ A soma dos ' + t.linhas.length + " itens bate com o valor dos produtos.</div>"
-            : '<div style="font-size:12px;margin-top:4px;color:#b45309">⚠ A soma dos itens (' + Util.fmtMoeda(R.somaItens) + ") difere do valor dos produtos em " +
+          : (R.bate ? '<div class="muted" style="font-size:12px;margin-top:4px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' A soma dos ' + t.linhas.length + " itens bate com o valor dos produtos.</div>"
+            : '<div style="font-size:12px;margin-top:4px;color:#b45309">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' A soma dos itens (' + Util.fmtMoeda(R.somaItens) + ") difere do valor dos produtos em " +
               Util.fmtMoeda(Math.abs(R.diferenca)) + " — confira desconto por item, frete ou item faltando.</div>")) +
         "</div>";
 
@@ -11626,8 +11654,8 @@ renderRequisicoes: function () {
         '<div class="field" style="max-width:220px"><label>&nbsp;</label><button class="btn primary" data-gacao="tri-aplicar-lote" style="width:100%">Aplicar aos marcados</button></div>' +
         "</div>" +
         '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">' +
-        '<button class="btn sm ghost" data-gacao="tri-marcar-todas">☑ Marcar/desmarcar todos</button>' +
-        '<button class="btn sm ghost" data-gacao="tri-aceitar-sugestoes" title="Adota o palpite do sistema em todas as linhas ainda não lançadas — você continua confirmando no botão Lançar">✨ Aceitar as sugestões</button>' +
+        '<button class="btn sm ghost" data-gacao="tri-marcar-todas">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Marcar/desmarcar todos</button>' +
+        '<button class="btn sm ghost" data-gacao="tri-aceitar-sugestoes" title="Adota o palpite do sistema em todas as linhas ainda não lançadas — você continua confirmando no botão Lançar">' + (typeof Icones !== 'undefined' ? Icones.get('escopo', 15) : '') + ' Aceitar as sugestões</button>' +
         "</div></div>";
 
       html += '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr>' +
@@ -11646,7 +11674,7 @@ renderRequisicoes: function () {
                dado corrompido. Quando já aparece, o selo só confirma que foi
                reconhecido; quando não, mostra o número. */
             (l.ca ? (String(l.descricao).replace(/\s+/g, " ").toUpperCase().indexOf("CA " + l.ca) > -1 || String(l.descricao).toUpperCase().indexOf("CA" + l.ca) > -1
-              ? ' <span class="pill" title="Reconheci o CA ' + Util.esc(l.ca) + ' escrito na descrição da nota — não foi inventado">✔ CA reconhecido</span>'
+              ? ' <span class="pill" title="Reconheci o CA ' + Util.esc(l.ca) + ' escrito na descrição da nota — não foi inventado">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' CA reconhecido</span>'
               : ' <span class="pill" title="CA lido da nota — não foi inventado">CA ' + Util.esc(l.ca) + "</span>") : "") +
             '<br><span class="muted" style="font-size:10.5px">' + (l.codigo ? "cód. " + Util.esc(l.codigo) + " · " : "") +
             (l.ncm ? "NCM " + Util.esc(l.ncm) : "") + (l.cfop ? " · CFOP " + Util.esc(l.cfop) : "") + "</span></td>" +
@@ -11656,12 +11684,12 @@ renderRequisicoes: function () {
           /* "alta"/"baixa" sozinho não diz o que fazer; o glifo diz se precisa
              olhar, e o title traz o porquê do palpite. */
           '<td><span class="pill ' + corConf + '" title="' + Util.esc(l.sugestao.motivo) + '">' +
-            (l.sugestao.confianca === "alta" ? "✔ alta" : (l.sugestao.confianca === "media" ? "~ confira" : "⚠ confira")) + "</span></td>" +
+            (l.sugestao.confianca === "alta" ? "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " alta" : (l.sugestao.confianca === "media" ? "~ confira" : "" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " confira")) + "</span></td>" +
           '<td><select data-tri-dest="' + i + '"' + (lanc ? " disabled" : "") + ">" + optDest(l.destino) + "</select></td>" +
           '<td><select data-tri-obra="' + i + '"' + (lanc ? " disabled" : "") + ">" + optObra(l.obraId) + "</select></td>" +
           '<td><select data-tri-resp="' + i + '"' + (lanc ? " disabled" : "") + ">" + optResp(l.responsavelId) + "</select></td>" +
-          "<td>" + (lanc ? '<span class="pill" style="background:rgba(22,163,74,.18);color:#15803d">✔ lançado</span> ' +
-              '<button class="btn sm ico" data-gacao="tri-desfazer" data-id="' + i + '" title="Errou o destino? Desfaz este item e devolve para a triagem">↩</button>'
+          "<td>" + (lanc ? '<span class="pill" style="background:rgba(22,163,74,.18);color:#15803d">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' lançado</span> ' +
+              '<button class="btn sm ico" data-gacao="tri-desfazer" data-id="' + i + '" title="Errou o destino? Desfaz este item e devolve para a triagem">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + '</button>'
             : (ign ? '<span class="muted">ignorado</span>' : '<span class="pill proprio">a lançar</span>')) + "</td></tr>";
       });
       html += "</tbody></table></div>";
@@ -11673,7 +11701,7 @@ renderRequisicoes: function () {
         " · <b>" + R.pendentes + "</b> a lançar · <b>" + R.lancados + "</b> já lançado(s)</div>" +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="btn success" data-gacao="tri-lancar">Lançar ' + R.pendentes + " item(ns) no sistema</button>" +
-        '<button class="btn" data-gacao="lancar-fiscal" data-id="' + nf.id + '">💰 Lançar ' +
+        '<button class="btn" data-gacao="lancar-fiscal" data-id="' + nf.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Lançar ' +
           (Util.arr(nf.duplicatas).length ? Util.arr(nf.duplicatas).length + " parcelas" : "no Financeiro") + "</button>" +
         "</div>" +
         '<p class="muted" style="font-size:12px;margin:8px 0 0">Nada é gravado até você clicar. O dinheiro entra <b>uma vez só</b>, pelo lançamento financeiro da nota — mandar um item para o Estoque ou o Patrimônio não cria despesa nova.</p>' +
@@ -11715,7 +11743,7 @@ renderRequisicoes: function () {
       var dest = ((UI.el("tri-lote-dest") || {}).value) || lote.dest || "";
       t.lote = { obra: obra, resp: resp, dest: dest };
       var alvos = Object.keys(t.marcadas);
-      if (!alvos.length) { UI.toast("Marque os itens que quer alterar (ou use ☑ Marcar todos).", "erro"); return; }
+      if (!alvos.length) { UI.toast("Marque os itens que quer alterar (ou use " + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Marcar todos).", "erro"); return; }
       if (!obra && !resp && !dest) { UI.toast("Escolha o que aplicar: obra, responsável ou destino.", "erro"); return; }
       var n = 0;
       alvos.forEach(function (k) {
@@ -11815,7 +11843,7 @@ renderRequisicoes: function () {
          e a nota volta a dizer "a triar" — o segundo clique DOBRA o ativo. */
       if (!Store.salvar(eid(), "fiscal", nf)) {
         App.render();
-        UI.toast("⚠ Os itens entraram, mas não consegui marcar a nota como lançada (armazenamento cheio). NÃO clique em Lançar de novo — libere espaço e confira Estoque/Patrimônio.", "erro");
+        UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Os itens entraram, mas não consegui marcar a nota como lançada (armazenamento cheio). NÃO clique em Lançar de novo — libere espaço e confira Estoque/Patrimônio.", "erro");
         return;
       }
       if (typeof Epi !== "undefined") this._epiSyncProprios();
@@ -12028,7 +12056,7 @@ renderRequisicoes: function () {
       Store.salvar(eid(), "fiscal", nf);
       if (typeof Epi !== "undefined") this._epiSyncProprios();
       App.render();
-      UI.toast("↩ Item liberado para novo destino" + (estorna ? " · estoque estornado" : "") + (tiraBens ? " · " + bens.length + " bem(ns) removido(s)" : "") + ".", "ok");
+      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Item liberado para novo destino" + (estorna ? " · estoque estornado" : "") + (tiraBens ? " · " + bens.length + " bem(ns) removido(s)" : "") + ".", "ok");
     },
 
     novoFiscal: function () { this.formFiscal(null); },
@@ -12096,7 +12124,7 @@ renderRequisicoes: function () {
       var corpo = '<p class="muted">NF nº <b>' + Util.esc(numTxt) + "</b> · " + rot(P.fiscalTipo, nf.tipo) +
         " · " + Util.esc(nf.parceiro || "") + " · <b>" + Util.fmtMoeda(valor) + "</b></p>";
       if (jaLanc.length) {
-        corpo += '<p style="color:#b45309"><b>⚠ Esta nota já gerou ' + jaLanc.length + " lançamento(s) no Financeiro" +
+        corpo += '<p style="color:#b45309"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta nota já gerou ' + jaLanc.length + " lançamento(s) no Financeiro" +
           " (" + Util.fmtMoeda(jaLanc.reduce(function (a, f) { return a + Util.num(f.valor); }, 0)) + ").</b>" +
           (jaPagas.length
             ? " <b>" + jaPagas.length + " já está(ão) PAGA(S) e não será(ão) mexida(s)</b> — só as pendentes são refeitas."
@@ -12239,7 +12267,7 @@ renderRequisicoes: function () {
         if (nomeEmpresa && norm(fn.nome) && norm(fn.nome) === norm(nomeEmpresa)) ehSaida = true;
         if (!this._avisouSemCnpj) {
           this._avisouSemCnpj = true;
-          UI.toast("Preencha o CNPJ da empresa em ⚙ Empresa: sem ele eu comparo só pelo nome para saber se a nota é compra ou venda — e nome bate errado com facilidade.", "erro");
+          UI.toast("Preencha o CNPJ da empresa em " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Empresa: sem ele eu comparo só pelo nome para saber se a nota é compra ou venda — e nome bate errado com facilidade.", "erro");
         }
       }
       var parc = ehSaida ? dest : fn;
@@ -12332,16 +12360,16 @@ renderRequisicoes: function () {
         "<br>Emitente: <b>" + (parceiro ? Util.esc(parceiro.nome) : r.docTipo + " " + r.docFmt) + "</b>" +
         "<br>Emissão: " + r.competencia + " · " + r.uf;
       if (jaTem) {
-        res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">✓ Chave válida — <b>nota já registrada</b> no Fiscal (' + rot(P.fiscalStatus, jaTem.status) + ").<br>" + linhas + "</div>";
+        res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Chave válida — <b>nota já registrada</b> no Fiscal (' + rot(P.fiscalStatus, jaTem.status) + ").<br>" + linhas + "</div>";
         return;
       }
       if (!r.importavel) {
-        res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">✓ Chave válida.<br>' + linhas +
+        res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Chave válida.<br>' + linhas +
           '<br><span class="muted">Documento do tipo ' + Util.esc(r.modeloNome) + " não entra pela importação de XML — se precisar, registre pela <b>+ Nova nota</b>.</span></div>";
         return;
       }
       this._ultimaChave = { dec: r, parceiro: parceiro ? parceiro.nome : "" };
-      res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">✓ Chave válida.<br>' + linhas +
+      res.innerHTML = '<div class="card" style="border-left:4px solid var(--verde);padding:10px 12px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Chave válida.<br>' + linhas +
         '<br><button id="g-chave-reg" class="btn sm primary mt">Registrar no Fiscal — completo depois com o XML</button></div>';
       var b = UI.el("g-chave-reg"); if (b) b.onclick = function () { Gestao.registrarChavePendente(); };
     },
@@ -12462,7 +12490,7 @@ renderFolha: function () {
       fls.forEach(function (f) {
         var col = cols.filter(function (c) { return c.id === f.colaboradorId; })[0];
         var ob = obras.filter(function (o) { return o.id === f.obraId; })[0];
-        var acao = '<button class="btn sm" data-gacao="recibo-folha" data-id="' + f.id + '">🖨 Recibo</button> ' + (f.status === "aberta" ? '<button class="btn sm primary" data-gacao="lancar-folha-enc" data-id="' + f.id + '">Lançar</button>' : "");
+        var acao = '<button class="btn sm" data-gacao="recibo-folha" data-id="' + f.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Recibo</button> ' + (f.status === "aberta" ? '<button class="btn sm primary" data-gacao="lancar-folha-enc" data-id="' + f.id + '">Lançar</button>' : "");
         html += '<tr><td style="cursor:pointer" data-gopen="folha:' + f.id + '"><b>' + Util.esc(f.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(f.salarioBase)) + '</td><td class="num"><b>' + Util.fmtMoeda(Util.num(f.custoTotal)) + "</b></td><td>" + pill(f.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -12678,12 +12706,12 @@ renderFolha: function () {
       var html = this._head(svg("relatorios") + "Relatórios Gerenciais", "", "", "");
       // Relatório executivo mensal em 1 clique (promessa do site)
       var mesPassado = (function () { var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); })();
-      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">📈 Relatório executivo mensal</h3>' +
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' Relatório executivo mensal</h3>' +
         '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Avanço físico, custo real × orçado, medições, diários e fotos do mês — o documento de 1 página pra reunião de diretoria ou pro cliente.</p>' +
         '<div class="flex" style="flex-wrap:wrap;gap:10px">' +
         '<select id="rex-obra" style="max-width:280px">' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '">' + Util.esc(o.nome) + "</option>"; }).join("") + "</select>" +
         '<input id="rex-mes" type="month" value="' + mesPassado + '" style="max-width:170px">' +
-        '<button class="btn sm primary" data-gacao="rel-executivo">📈 Gerar relatório</button></div>' +
+        '<button class="btn sm primary" data-gacao="rel-executivo">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' Gerar relatório</button></div>' +
         (obras.length ? "" : '<p class="muted" style="font-size:12px;margin:8px 0 0">Cadastre uma obra primeiro.</p>') + "</div>";
       html += '<div class="kpis">';
       html += '<div class="kpi"><span class="rotulo">Receitas totais</span><span class="num">' + Util.fmtMoeda(totRec) + "</span></div>";
@@ -12978,7 +13006,7 @@ renderFolha: function () {
       if (ac.jaPagos.length) {
         var porPessoaPaga = {};
         ac.jaPagos.forEach(function (p3) { porPessoaPaga[p3.nome || p3.colaboradorId] = (porPessoaPaga[p3.nome || p3.colaboradorId] || 0) + 1; });
-        html += '<div class="card" style="border-left:4px solid var(--verde);margin-bottom:14px;padding:10px 14px"><b>✓ Já medido antes:</b> ' +
+        html += '<div class="card" style="border-left:4px solid var(--verde);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Já medido antes:</b> ' +
           Object.keys(porPessoaPaga).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porPessoaPaga[n] + " lançamento(s))"; }).join(" · ") +
           ' <span class="muted">— não aparece na lista acima porque já virou medição. Se a medição foi cancelada ou rejeitada, a produção volta sozinha.</span></div>';
       }
@@ -12986,7 +13014,7 @@ renderFolha: function () {
       if (ac.pendentes.length) {
         var porRdo = {};
         ac.pendentes.forEach(function (p2) { porRdo[p2.nome || p2.colaboradorId] = (porRdo[p2.nome || p2.colaboradorId] || 0) + 1; });
-        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>⚠ Produção lançada em diário que ainda não foi aprovado:</b> ' +
+        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Produção lançada em diário que ainda não foi aprovado:</b> ' +
           Object.keys(porRdo).slice(0, 6).map(function (n) { return Util.esc(n) + " (" + porRdo[n] + ")"; }).join(" · ") +
           ' <span class="muted">— não entra na medição enquanto o diário não for aprovado, porque um diário em rascunho ainda pode mudar. Aprove o diário no módulo <b>Diário (RDO)</b>.</span></div>';
       }
@@ -13005,16 +13033,16 @@ renderFolha: function () {
             : (m.status === "aprovada" ? '<span class="g-pill" style="background:#16a34a22;color:#15803d">aprovada</span>'
             : (m.status === "rejeitada" ? '<span class="g-pill" style="background:#dc262622;color:#b91c1c">rejeitada</span>'
             : '<span class="g-pill" style="background:var(--surface-3)">pendente</span>')));
-          var acoes = '<button class="btn sm" data-gacao="prod-print" data-id="' + m.id + '" title="Recibo de produção">🖨</button> ';
+          var acoes = '<button class="btn sm" data-gacao="prod-print" data-id="' + m.id + '" title="Recibo de produção">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ';
           if (!m.cancelada) {
             if (m.status === "pendente") acoes += '<button class="btn sm success" data-gacao="prod-aprovar" data-id="' + m.id + '">Aprovar</button> <button class="btn sm" data-gacao="prod-rejeitar" data-id="' + m.id + '" style="color:#dc2626">Rejeitar</button>';
             /* o botão some depois de lançada — antes ficava para sempre, e só
                não repagava por causa de um guard que a exclusão da obra furava */
             else if (m.status === "aprovada" && !m.fsLancamentoId) acoes += '<button class="btn sm primary" data-gacao="prod-folha" data-id="' + m.id + '" title="Lança na Folha Semanal como produtividade medida">Mandar p/ folha</button>';
-            acoes += ' <button class="btn sm danger" data-gacao="prod-excluir" data-id="' + m.id + '" title="Cancelar esta medição (a produção volta a ficar disponível)">🗑</button>';
+            acoes += ' <button class="btn sm danger" data-gacao="prod-excluir" data-id="' + m.id + '" title="Cancelar esta medição (a produção volta a ficar disponível)">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
           }
           html += "<tr><td><b>" + Util.esc(m.nome || "—") + "</b>" + self._aprovLinha(m) +
-            (m.fsLancamentoId ? '<div class="muted" style="font-size:11px">✓ lançada na Folha Semanal</div>' : "") + "</td>" +
+            (m.fsLancamentoId ? '<div class="muted" style="font-size:11px">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' lançada na Folha Semanal</div>' : "") + "</td>" +
             "<td>" + Util.esc(self._prodPeriodo(m)) + "</td><td>" + Util.esc(self._prodNomeObra(m.obraId)) + '</td><td class="num">' + (m.linhas || []).length + '</td>' +
             '<td class="num"><b>' + Util.fmtMoeda(m.total) + "</b></td><td>" + pill + '</td><td class="num" style="white-space:nowrap">' + acoes + "</td></tr>";
         });
@@ -13382,13 +13410,13 @@ renderFolha: function () {
       var selObra = '<select data-gacao="fs-obra" style="max-width:180px"><option value="">Todas as obras</option>' + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._fsObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
       var extra = selSem + " " + selObra +
         ' <button class="btn sm" data-gacao="fs-copiar" title="Recria nesta semana a equipe da semana anterior (só diárias)">⟳ Copiar semana ant.</button>' +
-        ' <button class="btn sm" data-gacao="fs-importar">📥 Importar planilha</button>' +
-        ' <button class="btn sm" data-gacao="fs-print" data-val="fechamento">🖨 Fechamento</button>' +
-        ' <button class="btn sm" data-gacao="fs-print" data-val="pix">🧾 Lista PIX</button>' +
-        ' <button class="btn sm" data-gacao="fs-recibos">✍ Recibos</button>' +
-        ' <button class="btn sm" data-gacao="fs-mes">📅 Resumo do mês</button>' +
-        ' <button class="btn sm primary" data-gacao="fs-entregaveis">📄 Entregáveis (PDF·Word·Excel)</button>' +
-        ' <button class="btn sm" data-gacao="fs-financeiro">💸 Lançar no Financeiro</button>';
+        ' <button class="btn sm" data-gacao="fs-importar">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Importar planilha</button>' +
+        ' <button class="btn sm" data-gacao="fs-print" data-val="fechamento">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Fechamento</button>' +
+        ' <button class="btn sm" data-gacao="fs-print" data-val="pix">' + (typeof Icones !== 'undefined' ? Icones.get('relatorio', 15) : '') + ' Lista PIX</button>' +
+        ' <button class="btn sm" data-gacao="fs-recibos">' + (typeof Icones !== 'undefined' ? Icones.get('assinar', 15) : '') + ' Recibos</button>' +
+        ' <button class="btn sm" data-gacao="fs-mes">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' Resumo do mês</button>' +
+        ' <button class="btn sm primary" data-gacao="fs-entregaveis">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Entregáveis (PDF·Word·Excel)</button>' +
+        ' <button class="btn sm" data-gacao="fs-financeiro">' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Lançar no Financeiro</button>';
       var html = this._head(svg("folhasemanal") + "Folha Semanal · Diaristas", "fs-nova", "Lançamento", extra);
       var lancs = this._fsLancs(), fech = FS.fechamento(lancs);
       /* ⚠ O PIX É POR PESSOA, NÃO POR OBRA. Quem trabalhou em duas obras na
@@ -13412,11 +13440,11 @@ renderFolha: function () {
         '<div class="card kpi ' + (fechSemana.total - pagoTotal > 0 ? 'custo' : 'destaque') + '"><div class="rotulo">Falta pagar</div><div class="num">' + Util.fmtMoeda(Math.max(0, fechSemana.total - pagoTotal)) + '</div></div></div>';
       var cfl = FS.conflitos(lancs);
       if (cfl.length) {
-        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>⚠ Possível conflito de alocação:</b> ' +
+        html += '<div class="card" style="border-left:4px solid var(--amarelo);margin-bottom:14px;padding:10px 14px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Possível conflito de alocação:</b> ' +
           cfl.slice(0, 3).map(function (c) { return c.nome + " tem diária em " + c.obras.length + " obras na " + c.rotDia; }).join(" · ") +
           (cfl.length > 3 ? " · +" + (cfl.length - 3) + " caso(s)" : "") + ' <span class="muted">— confira se é proposital (meio período em cada).</span></div>';
       }
-      if (!lancs.length) return html + '<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhum lançamento nesta semana.</b><br><span class="muted">Clique em <b>+ Lançamento</b> pra lançar as diárias — ou <b>📥 Importar planilha</b> pra trazer a sua planilha semanal inteira (uma obra por aba, com favorecido e chave PIX): o sistema cadastra obras, colaboradores e a semana sozinho.</span></div>';
+      if (!lancs.length) return html + '<div class="card" style="text-align:center;padding:34px 20px"><b>Nenhum lançamento nesta semana.</b><br><span class="muted">Clique em <b>+ Lançamento</b> pra lançar as diárias — ou <b>' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Importar planilha</b> pra trazer a sua planilha semanal inteira (uma obra por aba, com favorecido e chave PIX): o sistema cadastra obras, colaboradores e a semana sozinho.</span></div>';
       Object.keys(fech.porObra).forEach(function (ob) {
         var g = fech.porObra[ob];
         html += '<div class="card" style="margin-bottom:14px;padding:0;overflow:auto"><div style="padding:12px 14px 8px;display:flex;justify-content:space-between;align-items:center"><b>' + Util.esc(self._fsNomeObra(ob)) + '</b><b style="color:var(--verde)">' + Util.fmtMoeda(g.total) + "</b></div>" +
@@ -13430,7 +13458,7 @@ renderFolha: function () {
           var temDia = pt.dias > 0 || (l.faltas && l.faltas.length) || l.tipo === "diaria" || l.usarValor;
           var cels = FS.DIAS.map(function (d) {
             if (!temDia) return '<td class="num muted">—</td>';
-            if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td class="num" style="color:var(--vermelho);font-weight:700">✕</td>';
+            if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td class="num" style="color:var(--vermelho);font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</td>';
             var v = l.dias && l.dias[d]; return '<td class="num">' + (v ? Util.fmtNum(v, 0) : "") + "</td>";
           }).join("");
           var rotTipo = l.tipo && l.tipo !== "diaria" ? ' <span class="g-pill" style="background:var(--surface-3)">' + Util.esc(l.tipo) + "</span>" : "";
@@ -13441,18 +13469,18 @@ renderFolha: function () {
             cels + '<td class="num">' + (FS.num(l.he) ? Util.fmtNum(l.he, 0) : "") + '</td>' +
             '<td class="num">' + (pt.fechado ? Util.fmtNum(pt.fechado, 0) : "") + '</td>' +
             '<td class="num"><b>' + Util.fmtMoeda(FS.totalFinal(l)) + '</b></td>' +
-            '<td class="num" style="white-space:nowrap"><button class="btn sm" data-gacao="fs-edit" data-val="' + l.id + '">✎</button> <button class="btn sm danger" data-gacao="fs-del" data-val="' + l.id + '">🗑</button></td></tr>';
+            '<td class="num" style="white-space:nowrap"><button class="btn sm" data-gacao="fs-edit" data-val="' + l.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> <button class="btn sm danger" data-gacao="fs-del" data-val="' + l.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button></td></tr>';
         });
         html += "</tbody></table></div>";
       });
       // pagamentos da semana: pago na tela + WhatsApp + assinatura
-      html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 8px"><b>💸 Pagamentos da semana (PIX)</b> <span class="muted" style="font-size:12px">— marque quem já recebeu; o recibo guarda a assinatura</span></div>' +
+      html += '<div class="card" style="padding:0;overflow:auto"><div style="padding:12px 14px 8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Pagamentos da semana (PIX)</b> <span class="muted" style="font-size:12px">— marque quem já recebeu; o recibo guarda a assinatura</span></div>' +
         '<table class="tbl"><thead><tr><th>Favorecido</th><th>Chave PIX</th><th class="num">Valor</th><th>Contato</th><th>Assinatura</th><th>Status</th></tr></thead><tbody>';
       pix.forEach(function (p) {
         var pg = pagos[p.favKey], fone = FS.foneDaChave(p.chavePix);
-        var zap = fone ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + fone + '?text=' + encodeURIComponent("Olá, " + p.favorecido + "! Seu pagamento da semana (" + FS.periodoDaChave(self._fsSemana) + ") foi enviado: " + Util.fmtMoeda(p.total) + " via PIX.") + '">💬 WhatsApp</a>' : '<span class="muted">—</span>';
-        var ass = pg && pg.assinatura ? '<span style="color:var(--verde);font-weight:700">✓ assinado</span>' : '<button class="btn sm" data-gacao="fs-assinar" data-val="' + Util.esc(p.favKey) + '">✍ Colher</button>';
-        var st = pg && pg.pago ? '<button class="btn sm success" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '">✓ Pago</button>' : '<button class="btn sm" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '" style="border-color:var(--amarelo)">Marcar pago</button>';
+        var zap = fone ? '<a class="btn sm" target="_blank" rel="noopener" href="https://wa.me/' + fone + '?text=' + encodeURIComponent("Olá, " + p.favorecido + "! Seu pagamento da semana (" + FS.periodoDaChave(self._fsSemana) + ") foi enviado: " + Util.fmtMoeda(p.total) + " via PIX.") + '">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' WhatsApp</a>' : '<span class="muted">—</span>';
+        var ass = pg && pg.assinatura ? '<span style="color:var(--verde);font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' assinado</span>' : '<button class="btn sm" data-gacao="fs-assinar" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('assinar', 15) : '') + ' Colher</button>';
+        var st = pg && pg.pago ? '<button class="btn sm success" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Pago</button>' : '<button class="btn sm" data-gacao="fs-pago" data-val="' + Util.esc(p.favKey) + '" style="border-color:var(--amarelo)">Marcar pago</button>';
         html += '<tr><td><b>' + Util.esc(p.favorecido) + '</b><br><span class="muted" style="font-size:11px">' + p.itens.map(function (i) { return Util.esc(i.nome || ""); }).join(", ") + '</span></td><td>' + Util.esc(p.chavePix || "—") + '</td><td class="num"><b>' + Util.fmtMoeda(p.total) + "</b></td><td>" + zap + "</td><td>" + ass + "</td><td>" + st + "</td></tr>";
       });
       html += "</tbody></table></div>";
@@ -13490,7 +13518,7 @@ renderFolha: function () {
     },
     fsAssinar: function (favKey) {
       var self = this;
-      UI.modal("✍ Assinatura do recebedor", '<p class="muted" style="margin:0 0 8px">Peça pra pessoa assinar com o dedo (celular) ou o mouse — fica guardada no recibo desta semana.</p>' +
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("assinar", 15) : "") + " Assinatura do recebedor", '<p class="muted" style="margin:0 0 8px">Peça pra pessoa assinar com o dedo (celular) ou o mouse — fica guardada no recibo desta semana.</p>' +
         '<canvas id="fs-ass" width="600" height="190" style="width:100%;border:1.5px dashed var(--linha-forte);border-radius:10px;background:#fff;touch-action:none"></canvas>',
         [{ texto: "Limpar", classe: "ghost", onClick: function () { var c = UI.el("fs-ass"), x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); } },
          { texto: "Salvar assinatura", classe: "primary", onClick: function () {
@@ -13585,7 +13613,7 @@ renderFolha: function () {
       });
       var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-semanal-" + this._fsSemana + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
-      UI.toast("⬇ CSV da semana baixado (abre direto no Excel).", "ok");
+      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " CSV da semana baixado (abre direto no Excel).", "ok");
     },
     // ---------- Central de Entregáveis (PDF · Word · Excel PRO · CSV) ----------
     fsEntregaveis: function () {
@@ -13608,11 +13636,11 @@ renderFolha: function () {
         '<label style="cursor:pointer"><input type="checkbox" id="g-rel-pag" checked> Status de pagamento</label>' +
         '<label style="cursor:pointer"><input type="checkbox" id="g-rel-det"> Detalhar lançamentos</label></div>' +
         '<p class="muted" style="font-size:12px;margin:8px 0 0">PDF abre pronto pra salvar · Word (.doc) baixa editável · <b>Excel completo</b> sai com 5 abas, fórmulas vivas e link de WhatsApp por favorecido.</p>';
-      UI.modal("📄 Entregáveis da Folha", corpo, [
-        { texto: "📄 PDF", classe: "primary", onClick: function () { self.fsRelGerar("pdf"); } },
-        { texto: "📝 Word", classe: "primary", onClick: function () { self.fsRelGerar("word"); } },
-        { texto: "📊 Excel completo", classe: "success", onClick: function () { self.fsRelGerar("excel"); } },
-        { texto: "⬇ CSV", classe: "ghost", onClick: function () { self.fsCsv(); } },
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Entregáveis da Folha", corpo, [
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " PDF", classe: "primary", onClick: function () { self.fsRelGerar("pdf"); } },
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Word", classe: "primary", onClick: function () { self.fsRelGerar("word"); } },
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Excel completo", classe: "success", onClick: function () { self.fsRelGerar("excel"); } },
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " CSV", classe: "ghost", onClick: function () { self.fsCsv(); } },
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
       ]);
       function desenhaSems() {
@@ -13643,7 +13671,7 @@ renderFolha: function () {
         if (!de || !ate) { UI.toast("Informe as datas De e Até.", "erro"); return null; }
         var s = FS.chaveSemana(new Date(de + "T12:00:00")), fim = FS.chaveSemana(new Date(ate + "T12:00:00")), guard = 0;
         while (s <= fim && guard++ < 120) { p.semanas.push(s); s = FS.semanaVizinha(s, 1); }
-        if (s <= fim) UI.toast("⚠ Intervalo muito longo: limitei a 120 semanas (~2 anos e 4 meses). O relatório sai até " + FS.periodoDaChave(p.semanas[p.semanas.length - 1]) + ".", "erro");
+        if (s <= fim) UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Intervalo muito longo: limitei a 120 semanas (~2 anos e 4 meses). O relatório sai até " + FS.periodoDaChave(p.semanas[p.semanas.length - 1]) + ".", "erro");
         p.rot = "De " + de.split("-").reverse().join("/") + " até " + ate.split("-").reverse().join("/");
       }
       if (!p.semanas.length) { UI.toast("Escolha pelo menos uma semana.", "erro"); return null; }
@@ -13731,7 +13759,7 @@ renderFolha: function () {
         var doc = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><title>Folha</title><!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View></w:WordDocument></xml><![endif]--></head><body>' + html + "</body></html>";
         var blob = new Blob(["﻿", doc], { type: "application/msword" });
         var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-" + (p.grp === "obra" ? "obras" : "favorecidos") + ".doc"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
-        UI.toast("📝 Word (.doc) baixado — abre e edita normal.", "ok"); return;
+        UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Word (.doc) baixado — abre e edita normal.", "ok"); return;
       }
       App._abrirPrint(titulo, html);
     },
@@ -13781,7 +13809,7 @@ renderFolha: function () {
              soma o total de lançamentos aponta para P — somar O pagaria só o
              valor fechado, e a aba Pagamentos é a que vira PIX de verdade. */
           var row = wp.addRow([g.favorecido, g.chavePix || "", { formula: 'SUMIFS(Lancamentos!P:P,Lancamentos!E:E,A' + rn + ",Lancamentos!F:F,B" + rn + ")" }, (pg && pg.pago) ? "PAGO" : "ABERTO", "", (pg && pg.assinatura) ? "SIM" : "—"]);
-          if (fone) { var cel = row.getCell(5); cel.value = { text: "💬 WhatsApp", hyperlink: "https://wa.me/" + fone + "?text=" + encodeURIComponent("Olá, " + g.favorecido + "! Seu pagamento (" + p.rot + ") foi enviado via PIX.") }; cel.font = { color: { argb: "FF2E6F9E" }, underline: true }; }
+          if (fone) { var cel = row.getCell(5); cel.value = { text: "" + (typeof Icones !== "undefined" ? Icones.get("mensagem", 15) : "") + " WhatsApp", hyperlink: "https://wa.me/" + fone + "?text=" + encodeURIComponent("Olá, " + g.favorecido + "! Seu pagamento (" + p.rot + ") foi enviado via PIX.") }; cel.font = { color: { argb: "FF2E6F9E" }, underline: true }; }
           if (pg && pg.pago) row.getCell(4).font = { color: { argb: VERDE }, bold: true };
         });
         wp.getColumn(3).numFmt = MOEDA;
@@ -13812,7 +13840,7 @@ renderFolha: function () {
         wb.xlsx.writeBuffer().then(function (buf) {
           var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
           var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-completa-" + (p.semanas[0] || "periodo") + ".xlsx"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
-          UI.toast("📊 Excel completo baixado: 5 abas, fórmulas vivas e links de WhatsApp.", "ok");
+          UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("graficos", 15) : "") + " Excel completo baixado: 5 abas, fórmulas vivas e links de WhatsApp.", "ok");
         }).catch(function (e) { UI.toast("Falha ao gerar o Excel: " + ((e && e.message) || e), "erro"); });
       });
     },
@@ -13830,7 +13858,7 @@ renderFolha: function () {
         '<p class="muted" style="font-size:12px;margin:4px 0 0">Nos dias: digite o valor da diária (ex.: <b>166</b>) ou <b>x</b> pra falta. Escolhendo um colaborador, favorecido e PIX vêm do cadastro.<br>O total da linha é <b>diárias + hora extra + valor fechado</b>: a mesma pessoa pode ter dias trabalhados e uma produção fechada na mesma semana.</p>' +
         /* linha importada em que a planilha mandou: quem abre precisa saber por que
            os dias na tela não somam com o total — senão "corrige" e paga errado */
-        (l.usarValor ? '<p style="font-size:12px;margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--surface-3)"><b>⚠ Total travado pela planilha importada.</b> Nesta linha o total da sua planilha divergiu do calculado e o da planilha foi mantido: valem os <b>R$ ' + Util.fmtNum(FS.num(l.valor), 2) + "</b> do campo <i>Valor fechado</i>, e os dias acima ficam como registro de presença, sem somar. Para voltar a somar dia a dia, zere o Valor fechado.</p>" : "");
+        (l.usarValor ? '<p style="font-size:12px;margin:6px 0 0;padding:8px 10px;border-radius:8px;background:var(--surface-3)"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Total travado pela planilha importada.</b> Nesta linha o total da sua planilha divergiu do calculado e o da planilha foi mantido: valem os <b>R$ ' + Util.fmtNum(FS.num(l.valor), 2) + "</b> do campo <i>Valor fechado</i>, e os dias acima ficam como registro de presença, sem somar. Para voltar a somar dia a dia, zere o Valor fechado.</p>" : "");
       this._modalForm("fs_lancamentos", l, "Lançamento da folha", corpo, function (obj) {
         obj.obraId = v("g-fs-obra"); if (!obj.obraId) { UI.toast("Escolha a obra.", "erro"); return false; }
         obj.colaboradorId = v("g-fs-colab");
@@ -13869,7 +13897,7 @@ renderFolha: function () {
     },
     fsExcluir: function (id) { if (!confirm("Excluir este lançamento da folha?")) return; Store.excluir(eid(), "fs_lancamentos", id); App.render(); UI.toast("Lançamento excluído.", "ok"); },
     fsImportar: function () {
-      UI.modal("📥 Importar planilha semanal", '<p class="muted">Selecione o Excel da sua folha semanal — <b>uma obra por aba</b>, operário com FAVORECIDO e CHAVE PIX, valores por dia (x = falta), empreitas/fretes e fechamento. O sistema <b>cadastra as obras e os colaboradores que faltarem</b> e lança a semana inteira. Nada é inventado: total divergente vem com aviso.</p><div class="field"><input type="file" id="fs-file" accept=".xlsx,.xls,.csv"></div>', [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Importar planilha semanal", '<p class="muted">Selecione o Excel da sua folha semanal — <b>uma obra por aba</b>, operário com FAVORECIDO e CHAVE PIX, valores por dia (x = falta), empreitas/fretes e fechamento. O sistema <b>cadastra as obras e os colaboradores que faltarem</b> e lança a semana inteira. Nada é inventado: total divergente vem com aviso.</p><div class="field"><input type="file" id="fs-file" accept=".xlsx,.xls,.csv"></div>', [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
     },
     fsImportarArquivo: function (file) {
       var self = this, FS = window.FolhaSemanal;
@@ -13947,7 +13975,7 @@ renderFolha: function () {
           var temDia = pt.dias > 0 || (l.faltas && l.faltas.length) || l.tipo === "diaria" || l.usarValor;
           var cels = FS.DIAS.map(function (d) {
             if (!temDia) return '<td style="padding:5px;border:1px solid #ccc;text-align:center">—</td>';
-            if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td style="padding:5px;border:1px solid #ccc;text-align:center;color:#dc2626">✕</td>';
+            if (l.faltas && l.faltas.indexOf(d) !== -1) return '<td style="padding:5px;border:1px solid #ccc;text-align:center;color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</td>';
             var vv = l.dias && l.dias[d];
             return '<td style="padding:5px;border:1px solid #ccc;text-align:center">' + (vv ? Util.fmtNum(vv, 0) : "") + "</td>";
           }).join("");
@@ -14039,7 +14067,7 @@ renderFolha: function () {
         if (UI.temTrabalhoNaoSalvo() && !window.confirm("Descartar este cadastro e perder o que foi preenchido?")) return;
         UI.fecharModal();
       } }];
-      if (!ehNovo) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
+      if (!ehNovo) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir", classe: "danger", onClick: function () {
         if (self._bloqueado()) return;
         if (barra("excluir")) return;
         if (confirm("Excluir este registro? Não pode ser desfeito.")) {
@@ -14504,7 +14532,7 @@ renderFolha: function () {
     // Modo demonstração: abrir formulários é livre; QUALQUER gravação exige licença ativa.
     _bloqueado: function () {
       if (typeof App !== "undefined" && App._trialBloqueado && App._trialBloqueado()) {
-        UI.toast("🔒 Modo demonstração — ative sua licença (🔓, no topo) para salvar.", "erro");
+        UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — ative sua licença (🔓, no topo) para salvar.", "erro");
         return true;
       }
       return false;
@@ -14525,7 +14553,7 @@ renderFolha: function () {
       var mods = ["Obras", "Contratos", "Medições", "Financeiro", "Fornecedores", "Compras", "Estoque", "Diário (RDO)", "Colaboradores", "Ponto/Folha", "Frota"];
       var pills = mods.map(function (m) { return '<span style="background:#eef4fb;border:1px solid #d7e6f5;color:#143454;font-size:12.5px;font-weight:600;padding:5px 11px;border-radius:8px">' + m + "</span>"; }).join("");
       var html =
-        '<div style="text-align:center;margin-bottom:12px"><span style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-weight:800;font-size:12px;letter-spacing:.5px;padding:6px 16px;border-radius:99px;box-shadow:0 5px 14px rgba(249,115,22,.35)">' + (cd ? "🚀 OFERTA DE LANÇAMENTO" : "⭐ VERSÃO PLUS") + '</span></div>' +
+        '<div style="text-align:center;margin-bottom:12px"><span style="display:inline-block;background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;font-weight:800;font-size:12px;letter-spacing:.5px;padding:6px 16px;border-radius:99px;box-shadow:0 5px 14px rgba(249,115,22,.35)">' + (cd ? "" + (typeof Icones !== "undefined" ? Icones.get("foguete", 15) : "") + " OFERTA DE LANÇAMENTO" : "" + (typeof Icones !== "undefined" ? Icones.get("estrela", 15) : "") + " VERSÃO PLUS") + '</span></div>' +
         '<p style="font-size:15.5px;color:#334155;text-align:center;margin-bottom:14px">Você já monta orçamentos com IA. Agora <b>gerencie a obra inteira</b> — do contrato à medição, com a <b>margem em tempo real</b>. É a <b>versão Plus</b>:</p>' +
         '<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-bottom:14px">' + pills + "</div>" +
         '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:12px;padding:13px 16px;text-align:center;color:#143454;font-size:14px;margin-bottom:14px">📊 <b>Custo real × contratado</b> e <b>margem de cada obra</b>, sem planilha, num lugar só.</div>' +
@@ -14537,7 +14565,7 @@ renderFolha: function () {
         "</div>";
       var bg = UI.modal("Desbloquear a Gestão de Obras", html, [
         { texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } },
-        { texto: "⭐ Garantir o Plus agora", classe: "primary", onClick: function () { try { window.open(url, "_blank"); } catch (e) {} UI.fecharModal(); } }
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("estrela", 15) : "") + " Garantir o Plus agora", classe: "primary", onClick: function () { try { window.open(url, "_blank"); } catch (e) {} UI.fecharModal(); } }
       ]);
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "540px";
     },
@@ -14591,7 +14619,7 @@ renderFolha: function () {
       var visao = this._lpVisaoAtual();
       var selObra = '<select data-gacao="lp-obra" style="max-width:230px">' + (obras.length ? "" : '<option value="">— sem obra —</option>') + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === self._lpObra ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>";
       var vBtn = function (val, rot) { return '<button class="btn sm' + (visao === val ? " primary" : "") + '" data-gacao="lp-visao" data-val="' + val + '">' + rot + '</button>'; };
-      var extra = selObra + ' <span class="lp-vtoggle">' + vBtn("quadro", "🗂 Quadro") + vBtn("semanal", "📋 Semanal") + '</span> <button class="btn sm" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">📅 Puxar do cronograma</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">🖨 Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">📊 Relatório PPC</button>';
+      var extra = selObra + ' <span class="lp-vtoggle">' + vBtn("quadro", "" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Quadro") + vBtn("semanal", "" + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + " Semanal") + '</span> <button class="btn sm" data-gacao="lp-puxar" title="Puxa as etapas do cronograma do orçamento vinculado que caem nesta semana e cria as tarefas do plano">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' Puxar do cronograma</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="semana">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Plano semanal</button> <button class="btn sm" data-gacao="lp-imprimir" data-val="ppc">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Relatório PPC</button>';
       var html = this._head(svg("lastplanner") + "Last Planner · PPC", "lp-nova", "Nova Tarefa", extra);
       if (!obras.length) return html + vazioBox("Cadastre uma obra primeiro — o Last Planner planeja a semana de uma obra.", "nova-obra", "Nova obra");
 
@@ -14623,13 +14651,13 @@ renderFolha: function () {
       // Plano da Semana
       var estaSem = look[0];
       var comp = LP.daSemana(ts, estaSem.chave).filter(function (t) { return t.comprometida; });
-      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 8px">🗓 Plano da Semana <span class="muted" style="font-weight:400;font-size:13px">· ' + estaSem.periodo + '</span></h3>';
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 8px">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' Plano da Semana <span class="muted" style="font-weight:400;font-size:13px">· ' + estaSem.periodo + '</span></h3>';
       if (!comp.length) html += '<p class="muted" style="font-size:13px;margin:0">Nenhuma tarefa comprometida nesta semana. Comprometa tarefas <b>livres</b> (sem restrição) no lookahead abaixo.</p>';
       else {
         html += '<table class="tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Status</th><th></th></tr></thead><tbody>';
         comp.forEach(function (t) {
-          var st = t.status === "feito" ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">✓ Feito</span>' : (t.status === "naofeito" ? '<span class="g-pill" style="background:#dc262622;color:#dc2626">✗ Não feito' + (t.causa ? " · " + Util.esc(t.causa) : "") + '</span>' : '<span class="g-pill" style="background:#64748b22;color:#64748b">a fazer</span>');
-          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + Util.esc(t.id) + '" title="Concluída">✓</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + Util.esc(t.id) + '" title="Não cumprida">✗</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + Util.esc(t.id) + '" title="Tirar do plano">↩</button>';
+          var st = t.status === "feito" ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Feito</span>' : (t.status === "naofeito" ? '<span class="g-pill" style="background:#dc262622;color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Não feito' + (t.causa ? " · " + Util.esc(t.causa) : "") + '</span>' : '<span class="g-pill" style="background:#64748b22;color:#64748b">a fazer</span>');
+          var ac = '<button class="btn sm success" data-gacao="lp-feito" data-id="' + Util.esc(t.id) + '" title="Concluída">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</button> <button class="btn sm" data-gacao="lp-naofeito" data-id="' + Util.esc(t.id) + '" title="Não cumprida">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button> <button class="btn sm" data-gacao="lp-descomprometer" data-id="' + Util.esc(t.id) + '" title="Tirar do plano">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + '</button>';
           html += '<tr><td><b>' + Util.esc(t.titulo) + '</b></td><td>' + Util.esc(t.responsavel || "—") + '</td><td>' + st + '</td><td class="num">' + ac + '</td></tr>';
         });
         html += '</tbody></table>';
@@ -14637,13 +14665,13 @@ renderFolha: function () {
       html += '</div>';
 
       // Lookahead 6 semanas
-      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">📋 Lookahead 6 semanas</h3><p class="muted" style="font-size:12.5px;margin:0 0 10px">Médio prazo — clique numa tarefa pra <b>gerir restrições</b>. Só tarefa livre (sem restrição aberta) vira comprometida.</p><div style="display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:8px;overflow-x:auto">';
+      html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lookahead 6 semanas</h3><p class="muted" style="font-size:12.5px;margin:0 0 10px">Médio prazo — clique numa tarefa pra <b>gerir restrições</b>. Só tarefa livre (sem restrição aberta) vira comprometida.</p><div style="display:grid;grid-template-columns:repeat(6,minmax(150px,1fr));gap:8px;overflow-x:auto">';
       look.forEach(function (s, i) {
         html += '<div style="background:#f7fafd;border:1px solid var(--linha);border-radius:10px;padding:8px"><div style="text-align:center;font-size:12px;font-weight:700;color:var(--navy)">' + s.rotulo + '</div><div style="text-align:center;font-size:11px;color:#64748b;margin-bottom:6px">' + s.periodo + '</div>';
         LP.daSemana(ts, s.chave).forEach(function (t) {
           var ra = LP.restricoesAbertas(t);
           var bg = t.comprometida ? "#dbeafe" : (ra ? "#fff7ed" : "#dcfce7"), bd = t.comprometida ? "#93c5fd" : (ra ? "#fdba74" : "#86efac");
-          var tag = t.comprometida ? "✓ no plano" : (ra ? "🔒 " + ra + " restr." : "✔ livre");
+          var tag = t.comprometida ? "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " no plano" : (ra ? "🔒 " + ra + " restr." : "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " livre");
           html += '<div data-gacao="lp-abrir" data-id="' + Util.esc(t.id) + '" style="cursor:pointer;background:' + bg + ';border:1px solid ' + bd + ';border-radius:7px;padding:6px 8px;margin-bottom:5px;font-size:12px"><b>' + Util.esc(t.titulo) + '</b><div style="font-size:10.5px;color:#475569;margin-top:2px">' + Util.esc(t.responsavel || "—") + ' · ' + tag + '</div></div>';
         });
         html += '<button class="btn sm" data-gacao="lp-nova-sem" data-val="' + i + '" style="width:100%;font-size:11.5px">+ Tarefa</button></div>';
@@ -14751,11 +14779,11 @@ renderFolha: function () {
       var html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;align-items:start;margin-bottom:16px">';
 
       // 1) PPC — linha com meta 85%
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">📈 PPC — Percentual do Planejamento Concluído</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Últimas 6 semanas · meta 85%</p>' + this._lpSvgPpc(h) + '</div>';
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' PPC — Percentual do Planejamento Concluído</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Últimas 6 semanas · meta 85%</p>' + this._lpSvgPpc(h) + '</div>';
 
       // 2) Avanço físico — Previsto × Realizado por obra (só com dados reais)
       var pr = this._lpPrevRealDados();
-      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">📊 Avanço físico — Previsto × Realizado</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Cronograma × medições acumuladas, por obra</p>';
+      html += '<div class="card"><h3 style="margin:0 0 2px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Avanço físico — Previsto × Realizado</h3><p class="muted" style="font-size:11.5px;margin:0 0 8px">Cronograma × medições acumuladas, por obra</p>';
       if (pr.length) html += this._lpSvgPrevReal(pr);
       else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (com data de início) e lance medições — o gráfico compara o previsto do cronograma com o medido.</p>';
       html += '</div>';
@@ -14783,7 +14811,7 @@ renderFolha: function () {
 
       // 4) Pareto de causas (mantido)
       var ca = LP.causasAgregadas(ts);
-      html += '<div class="card"><h3 style="margin:0 0 10px">⚠ Causas de não-cumprimento</h3>';
+      html += '<div class="card"><h3 style="margin:0 0 10px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Causas de não-cumprimento</h3>';
       if (!ca.total) html += '<p class="muted" style="font-size:13px;margin:0">Sem causas registradas ainda.</p>';
       else {
         html += '<table class="tbl" style="font-size:13px"><tbody>';
@@ -14839,14 +14867,14 @@ renderFolha: function () {
         if (colId === "feito") chipSem = '<span class="lp-qchip ok">✓ ' + esc(String(t.concluidaEm || t.semana || "").slice(5).split("-").reverse().join("/")) + '</span>';
         var tags = "";
         if (t.frente) tags += '<span class="lp-qtag">' + esc(t.frente) + '</span>';
-        if (t.origem === "cronograma") tags += '<span class="lp-qtag crono" title="Criada a partir do cronograma do orçamento">📅 cronograma</span>';
+        if (t.origem === "cronograma") tags += '<span class="lp-qtag crono" title="Criada a partir do cronograma do orçamento">' + (typeof Icones !== 'undefined' ? Icones.get('calendario', 15) : '') + ' cronograma</span>';
         var extra = "";
         if (colId === "impedida") {
           var abertas = (Array.isArray(t.restricoes) ? t.restricoes : []).filter(function (r) { return r && !r.removida; });
           var r0 = abertas[0] || {};
           extra = '<div class="lp-qmotivo">⚠ ' + esc(r0.tipo ? r0.tipo + ": " : "") + esc(r0.descricao || "restrição aberta") + (abertas.length > 1 ? " (+" + (abertas.length - 1) + ")" : "") + '</div>';
         } else if (colId === "naofeito" && t.causa) {
-          extra = '<div class="lp-qmotivo">✗ Causa: ' + esc(t.causa) + '</div>';
+          extra = '<div class="lp-qmotivo">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Causa: ' + esc(t.causa) + '</div>';
         }
         var ini = (String(t.responsavel || "").trim().split(/\s+/).map(function (p) { return p.charAt(0); }).slice(0, 2).join("") || "•").toUpperCase();
         return '<article class="lp-qcard" draggable="true" tabindex="0" role="button" data-lpid="' + esc(t.id) + '" data-gacao="lp-abrir" data-id="' + esc(t.id) + '" title="Clique ou toque: ações e restrições · no computador, arraste p/ mudar de coluna">' +
@@ -14855,15 +14883,15 @@ renderFolha: function () {
           '<div class="lp-qpe"><span class="lp-qresp"><span class="lp-qav">' + esc(ini) + '</span>' + esc(t.responsavel || "—") + '</span>' + chipSem + '</div>' +
           '</article>';
       };
-      var html = '<div class="card" style="margin-bottom:16px;padding:14px"><h3 style="margin:0 0 2px">🗂 Quadro da Obra <span class="muted" style="font-weight:400;font-size:13px">· cada coluna é um passo do Last Planner</span></h3>' +
+      var html = '<div class="card" style="margin-bottom:16px;padding:14px"><h3 style="margin:0 0 2px">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Quadro da Obra <span class="muted" style="font-weight:400;font-size:13px">· cada coluna é um passo do Last Planner</span></h3>' +
         '<p class="muted" style="font-size:12px;margin:0 0 10px">No computador, <b>arraste</b> os cartões; no celular/tablet, <b>toque</b> no cartão p/ as ações. Comprometer exige tarefa <b>livre</b> (sem restrição) — a trava do LPS vale nos dois caminhos.' + (ocultas ? " · " + ocultas + " concluída(s) antiga(s) fora do quadro (histórico completo no PPC)." : "") + '</p>' +
         '<div id="lp-quadro" class="lp-q">';
       LP.QUADRO_COLUNAS.forEach(function (c) {
         var doCol = cols[c.id], n = doCol.length;
         html += '<section class="lp-qcol' + (c.id === "impedida" ? " imp" : "") + (c.id === "feito" ? " ok" : "") + '" data-lpcol="' + c.id + '">' +
           '<header class="lp-qcab">' +
-          (c.id === "impedida" ? '<span class="lp-qicone' + (n ? " pulso" : "") + '">⚠</span>' : "") +
-          (c.id === "feito" ? '<span class="lp-qicone vd">✓</span>' : "") +
+          (c.id === "impedida" ? '<span class="lp-qicone' + (n ? " pulso" : "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</span>' : "") +
+          (c.id === "feito" ? '<span class="lp-qicone vd">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span>' : "") +
           (c.id === "execucao" ? '<span class="lp-qponto"></span>' : "") +
           '<span class="lp-qnome">' + c.nome + '<small>' + c.desc + '</small></span>' +
           '<span class="lp-qn' + (c.id === "impedida" && n ? " alerta" : "") + '">' + n + '</span></header>' +
@@ -14994,7 +15022,7 @@ renderFolha: function () {
       // mesma marca de conclusão do quadro (o chip da coluna Concluída usa concluidaEm)
       var hj = new Date(), p2 = function (n) { return (n < 10 ? "0" : "") + n; };
       t.concluidaEm = hj.getFullYear() + "-" + p2(hj.getMonth() + 1) + "-" + p2(hj.getDate());
-      this._lpSalvar(t, "✓ Concluída.");
+      this._lpSalvar(t, "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Concluída.");
     },
     lpNaoFeito: function (id) {
       var self = this, t = this._lpObter(id); if (!t) return;
@@ -15009,7 +15037,7 @@ renderFolha: function () {
       if (!r.length) return '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem restrições — tarefa livre pra comprometer.</p>';
       return '<table class="tbl" style="font-size:12.5px;margin:6px 0"><tbody>' + r.map(function (x, i) {
         var st = x.removida ? '<span class="g-pill" style="background:#16a34a22;color:#16a34a">removida</span>' : '<span class="g-pill" style="background:#ea580c22;color:#ea580c">pendente</span>';
-        var ac = x.removida ? '' : '<button class="btn sm success" data-gacao="lp-rem-restr" data-id="' + t.id + '" data-val="' + i + '">✓ Remover</button>';
+        var ac = x.removida ? '' : '<button class="btn sm success" data-gacao="lp-rem-restr" data-id="' + t.id + '" data-val="' + i + '">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Remover</button>';
         return '<tr><td><b>' + Util.esc(x.tipo || "") + '</b> · ' + Util.esc(x.descricao || "") + (x.prazo ? ' <span class="muted">(' + x.prazo.split("-").reverse().join("/") + ')</span>' : "") + '</td><td>' + st + '</td><td class="num">' + ac + '</td></tr>';
       }).join("") + '</tbody></table>';
     },
@@ -15023,14 +15051,14 @@ renderFolha: function () {
       var botoes = [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); App.render(); } },
         { texto: "+ Restrição", classe: "", onClick: function () { self._lpAddRestr(t.id); } },
-        { texto: "🗑 Excluir", classe: "", onClick: function () { if (confirm("Excluir esta tarefa do Last Planner?")) { Store.excluir(eid(), "lp_tarefas", t.id); UI.fecharModal(); App.render(); } } }
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir", classe: "", onClick: function () { if (confirm("Excluir esta tarefa do Last Planner?")) { Store.excluir(eid(), "lp_tarefas", t.id); UI.fecharModal(); App.render(); } } }
       ];
       // Ações de status TAMBÉM por toque (tablet/celular não tem arrasto) — mesmas travas
       // do quadro: lpMoverQuadro passa pelo motor (restrições, causa, histórico).
-      if (t.comprometida) botoes.push({ texto: "↩ Tirar do plano", classe: "", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "liberada"); } });
-      if (t.comprometida && t.status === "afazer") botoes.push({ texto: "✗ Não cumprida", classe: "", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "naofeito"); } });
-      if (t.status !== "feito") botoes.push({ texto: "✓ Concluir", classe: "success", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "feito"); } });
-      if (LP.podeComprometer(t) && !t.comprometida) botoes.push({ texto: "✅ Comprometer", classe: "success", onClick: function () { UI.fecharModal(); self.lpComprometer(t.id); } });
+      if (t.comprometida) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Tirar do plano", classe: "", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "liberada"); } });
+      if (t.comprometida && t.status === "afazer") botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("fechar", 15) : "") + " Não cumprida", classe: "", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "naofeito"); } });
+      if (t.status !== "feito") botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Concluir", classe: "success", onClick: function () { UI.fecharModal(); self.lpMoverQuadro(t.id, "feito"); } });
+      if (LP.podeComprometer(t) && !t.comprometida) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Comprometer", classe: "success", onClick: function () { UI.fecharModal(); self.lpComprometer(t.id); } });
       UI.modal("Restrições · " + Util.esc(t.titulo), corpo, botoes);
     },
     _lpAddRestr: function (id) {
@@ -15062,7 +15090,7 @@ renderFolha: function () {
         corpo = '<p><b>Obra:</b> ' + Util.esc(obra.nome) + ' &nbsp; <b>Semana:</b> ' + estaSem.periodo + '</p>';
         corpo += '<table class="prop-tbl"><thead><tr><th>Tarefa</th><th>Responsável</th><th>Frente</th><th class="r">Feito?</th></tr></thead><tbody>' +
           (comp.length ? comp.map(function (t) { return '<tr><td>' + Util.esc(t.titulo) + '</td><td>' + Util.esc(t.responsavel || "—") + '</td><td>' + Util.esc(t.frente || "—") + '</td><td class="r">☐</td></tr>'; }).join("") : '<tr><td colspan="4">Nenhuma tarefa comprometida.</td></tr>') + '</tbody></table>';
-        corpo += '<p style="margin-top:16px;font-size:12px;color:#555">Reunião semanal (Last Planner) — marque ✓ o que foi feito; para o que não foi, anote a causa. O PPC da semana = feitas ÷ comprometidas.</p>';
+        corpo += '<p style="margin-top:16px;font-size:12px;color:#555">Reunião semanal (Last Planner) — marque ' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' o que foi feito; para o que não foi, anote a causa. O PPC da semana = feitas ÷ comprometidas.</p>';
         this._abrirDoc("Plano Semanal — " + (obra.nome || ""), this._docShell("PLANO DA SEMANA · LAST PLANNER", "#0f2740", corpo));
       }
     },
@@ -15918,7 +15946,7 @@ case "nova-folha": return this.novoFolha();
           campo("Observação", inp("dc-obs", "", "Ex.: cobre execução de estrutura e alvenaria")) +
           '<button type="button" class="btn sm" id="dc-add" style="background:#16a34a;color:#fff">+ Adicionar</button></div>';
 
-      UI.modal("🗂️ Documentos da obra — " + Util.esc(obra.nome || ""), corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Documentos da obra — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () {
           obra.portalDocumentos = buf;
@@ -16079,7 +16107,7 @@ case "nova-folha": return this.novoFolha();
       var corpo =
         (veredito.pode
           ? ""
-          : '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:11px 14px;font-size:13px;color:#7c2d12;margin-bottom:12px"><b>⚠ Esta semana já foi avisada.</b><br>' +
+          : '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:11px 14px;font-size:13px;color:#7c2d12;margin-bottom:12px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta semana já foi avisada.</b><br>' +
             Util.esc(veredito.explicacao || "") + "</div>") +
         (r.vazio
           ? '<div style="background:#f1f5f9;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:12px">Nada aconteceu nesta semana. Mandar um aviso assim toda semana treina o cliente a ignorar o canal — só envie se houver motivo.</div>'
@@ -16088,7 +16116,7 @@ case "nova-folha": return this.novoFolha();
         '<textarea id="av-txt" rows="16" style="width:100%;font-size:13px;font-family:inherit;line-height:1.55">' + Util.esc(r.texto) + "</textarea>" +
         '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Dá para editar antes de mandar. Ao copiar, esta semana fica <b>travada</b> para esta obra — é a trava que impede o reenvio em laço.</p>';
 
-      UI.modal("📣 Aviso semanal — " + Util.esc(obra.nome || ""), corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("megafone", 15) : "") + " Aviso semanal — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: veredito.pode ? "Copiar e travar a semana" : "Copiar mesmo assim", classe: veredito.pode ? "success" : "ghost",
           onClick: function () {
@@ -16185,7 +16213,7 @@ case "nova-folha": return this.novoFolha();
             var on = relSel.indexOf(r.id) > -1;
             return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer' + (r.sensivel ? ";background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:7px 9px" : "") + '">' +
               '<input type="checkbox" data-rel="' + r.id + '"' + (on ? " checked" : "") + ' style="margin-top:2px">' +
-              "<span><b>" + Util.esc(r.nome) + "</b>" + (r.sensivel ? ' <span style="color:#b45309;font-weight:800">⚠ revela custo</span>' : "") +
+              "<span><b>" + Util.esc(r.nome) + "</b>" + (r.sensivel ? ' <span style="color:#b45309;font-weight:800">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' revela custo</span>' : "") +
               '<br><span class="muted" style="font-size:11px">' + Util.esc(r.desc) + "</span></span></label>";
           }).join("") + "</div>") +
         /* o que NÃO vai — dito na cara, antes de publicar. Quem publica precisa
@@ -16213,7 +16241,7 @@ case "nova-folha": return this.novoFolha();
       var acessosBuf = (obra.portalAcessosExtras || []).map(function (a) { return { user: a.user, senha: a.senha, rotulo: a.rotulo || "" }; });
       var revogar = [];
 
-      UI.modal("📱 Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "") + " Portal do Cliente — " + Util.esc(obra.nome || ""), corpo, [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Publicar", classe: "success", onClick: publicar }
       ]);
@@ -16398,7 +16426,7 @@ case "nova-folha": return this.novoFolha();
               }
               el("portal-result").innerHTML =
                 '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px">' +
-                '<b style="color:#15803d">✓ Publicado!</b> Envie estes dados pro seu cliente:<br>' +
+                '<b style="color:#15803d">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Publicado!</b> Envie estes dados pro seu cliente:<br>' +
                 listaAcessos +
                 '<button class="btn sm primary" id="portal-copy" style="margin-top:10px">Copiar mensagem pro cliente</button></div>';
               var cp = el("portal-copy");
@@ -16456,7 +16484,7 @@ case "nova-folha": return this.novoFolha();
             try { console.error("[portal] falha ao publicar:", err); } catch (e2) {}
             caixa.innerHTML = '<div style="color:#dc2626;font-size:14px"><b>Falha no programa ao publicar</b> — não foi a sua internet.' +
               '<div style="font-size:12.5px;margin-top:6px;color:#7f1d1d">' + Util.esc(msg || "erro sem descrição") + "</div>" +
-              '<div style="font-size:12px;margin-top:6px;color:#475569">⚠ A obra <b>pode já ter sido publicada</b> — o erro aconteceu depois do envio. ' +
+              '<div style="font-size:12px;margin-top:6px;color:#475569">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' A obra <b>pode já ter sido publicada</b> — o erro aconteceu depois do envio. ' +
               "Confira no Portal antes de tentar de novo, e avise o suporte com esta mensagem.</div></div>";
           });
       }
@@ -16484,7 +16512,7 @@ case "nova-folha": return this.novoFolha();
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
       if (!chave) { UI.toast("Ative sua licença pra ver as avaliações do Portal.", "erro"); return; }
       var self = this;
-      UI.modal("⭐ O que os seus clientes estão dizendo",
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("estrela", 15) : "") + " O que os seus clientes estão dizendo",
         '<div id="av-corpo" class="muted" style="font-size:13px">Buscando no Portal…</div>',
         [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
 
@@ -16703,7 +16731,7 @@ case "nova-folha": return this.novoFolha();
           self._iaOcupada = false; if (self._iaTimer) { clearTimeout(self._iaTimer); self._iaTimer = null; }
           /* a leitura do PDF/foto é local, mas a INTERPRETAÇÃO é no servidor:
              sem internet não há o que fazer — e o caminho offline existe. */
-          UI.toast("Sem internet — a leitura por IA precisa de conexão. Use 📥 XML em lote (funciona offline) ou cadastre a nota manualmente.", "erro");
+          UI.toast("Sem internet — a leitura por IA precisa de conexão. Use " + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " XML em lote (funciona offline) ou cadastre a nota manualmente.", "erro");
         });
     },
     _parseNfeXml: function (xml) {
@@ -16853,12 +16881,12 @@ case "nova-folha": return this.novoFolha();
            mesma NF-e entra duas vezes e o total de Entradas dobra. */
         var chaveNv = String(dados.chave || "").replace(/\D/g, "");
         var jaTemNf = chaveNv ? lista("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === chaveNv; })[0] : null;
-        UI.toast("🤖 Li a nota" + (origem ? " (" + origem + ")" : "") + " com confiança de " + Math.round((dados.confianca || 0) * 100) + "%. Confira os campos e salve — nada foi gravado ainda.", "ok");
-        if (jaTemNf) UI.toast("⚠ Já existe uma nota com esta chave de acesso (nº " + Util.esc(jaTemNf.numero || "s/n") + "). Salvar de novo vai duplicar.", "erro");
+        UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Li a nota" + (origem ? " (" + origem + ")" : "") + " com confiança de " + Math.round((dados.confianca || 0) * 100) + "%. Confira os campos e salve — nada foi gravado ainda.", "ok");
+        if (jaTemNf) UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Já existe uma nota com esta chave de acesso (nº " + Util.esc(jaTemNf.numero || "s/n") + "). Salvar de novo vai duplicar.", "erro");
         /* quem decide compra × venda é o CNPJ do emitente contra o SEU. Sem o
            CNPJ da empresa preenchido não há como distinguir — melhor dizer do
            que deixar o usuário confirmar um "Entrada" errado no reflexo. */
-        if (!proprioCnpj) UI.toast("Confira o campo Tipo: sem o CNPJ da sua empresa em ⚙ Empresa eu não consigo diferenciar compra de venda sozinho.", "erro");
+        if (!proprioCnpj) UI.toast("Confira o campo Tipo: sem o CNPJ da sua empresa em " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Empresa eu não consigo diferenciar compra de venda sozinho.", "erro");
         return;
       }
       if (fn.nome) {

@@ -66,8 +66,8 @@
       if (drop) { drop.parentNode.removeChild(drop); return; } // toggle
       var r = this._calcular();
       drop = document.createElement("div"); drop.id = "avisos-drop";
-      var h = '<div class="avisos-cab"><b>🔔 Central de avisos</b><span>' + (r.total ? r.total + " item(ns) pedindo atenção" : "tudo em dia") + "</span></div>";
-      if (!r.total) h += '<div class="avisos-zen">✅ Nenhuma pendência: medições, tarefas e restrições em dia.</div>';
+      var h = '<div class="avisos-cab"><b>' + (typeof Icones !== 'undefined' ? Icones.get('sino', 15) : '') + ' Central de avisos</b><span>' + (r.total ? r.total + " item(ns) pedindo atenção" : "tudo em dia") + "</span></div>";
+      if (!r.total) h += '<div class="avisos-zen">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Nenhuma pendência: medições, tarefas e restrições em dia.</div>';
       r.grupos.forEach(function (g) {
         h += '<div class="avisos-grp">' + Util.esc(g.rotulo) + "</div>";
         g.itens.slice(0, 8).forEach(function (it) {

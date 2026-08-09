@@ -25,7 +25,7 @@
       bg.className = "modal-bg"; bg.id = "modal-bg";
       bg.innerHTML =
         '<div class="modal"><header><h2>' + Util.esc(titulo) + '</h2>' +
-        '<span style="flex:1"></span><button class="btn ghost sm" data-fechar>✕</button></header>' +
+        '<span style="flex:1"></span><button class="btn ghost sm" data-fechar>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></header>' +
         '<div class="body">' + corpoHTML + '</div>' +
         '<footer id="modal-footer"></footer></div>';
       document.body.appendChild(bg);
@@ -118,10 +118,10 @@
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
         '<span class="spacer"></span>' +
-        '<button class="topo-ic-btn" data-busca-abrir aria-label="Busca universal (Ctrl+K)" title="Busca universal — pule pra qualquer obra, orçamento ou ação (Ctrl+K)">🔍<span class="topo-kbd">Ctrl+K</span></button>' +
+        '<button class="topo-ic-btn" data-busca-abrir aria-label="Busca universal (Ctrl+K)" title="Busca universal — pule pra qualquer obra, orçamento ou ação (Ctrl+K)">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '<span class="topo-kbd">Ctrl+K</span></button>' +
         (function () {
           var n = (typeof AvisosUI !== "undefined") ? AvisosUI.contar() : 0;
-          return '<button class="topo-ic-btn" data-avisos-abrir aria-label="Central de avisos" title="Central de avisos — medições a aprovar, tarefas atrasadas e restrições">🔔' +
+          return '<button class="topo-ic-btn" data-avisos-abrir aria-label="Central de avisos" title="Central de avisos — medições a aprovar, tarefas atrasadas e restrições">' + (typeof Icones !== "undefined" ? Icones.solo("sino", 17) : "") +
             (n ? '<span class="aviso-badge">' + (n > 99 ? "99+" : n) + "</span>" : "") + "</button>";
         })() +
         '<div class="topbar-conta">' +
@@ -138,7 +138,7 @@
             (function () {
               var lg = (typeof Empresa !== "undefined" && Empresa.logo) ? Empresa.logo() : "";
               if (lg) return '<img class="conta-logo" src="' + lg + '" alt="">';
-              return '<span class="conta-ic">⚙</span>';
+              return '<span class="conta-ic">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + '</span>';
             })() +
             /* ⚠ O NOME QUE APARECE AQUI É O DA EMPRESA DO CLIENTE.
                `usuario.empresa` vem da CONTA/licença — no cliente que comprou,
@@ -175,18 +175,18 @@
               else if (lic.revalidar) { lbl = "Reconecte para validar"; alerta = true; }
               else if (lic.diasRestantes != null) { lbl = "Licença: " + lic.diasRestantes + " dias"; alerta = lic.diasRestantes <= 7; }
               else lbl = "Licenciado";
-              return '<button class="conta-item' + (alerta ? " alerta" : "") + '" data-acao="licenca"><span>🔑</span>' + Util.esc(lbl) + '</button>';
+              return '<button class="conta-item' + (alerta ? " alerta" : "") + '" data-acao="licenca"><span>' + (typeof Icones !== 'undefined' ? Icones.get('chave', 15) : '') + '</span>' + Util.esc(lbl) + '</button>';
             })() +
-            (admin ? '<button class="conta-item" data-acao="empresa"><span>⚙</span>Dados da empresa</button>' : '') +
-            '<button class="conta-item" data-acao="tabelas"><span>🗂</span>Tabelas de preço</button>' +
-            (admin ? '<button class="conta-item" data-acao="nuvem"><span>☁</span>Nuvem — sincronizar aparelhos</button>' : '') +
-            (admin ? '<button class="conta-item" data-acao="celular"><span>📱</span>Usar no celular ou tablet</button>' : '') +
-            (admin ? '<button class="conta-item" data-acao="backup"><span>💾</span>Backup dos dados</button>' : '') +
-            '<button class="conta-item" data-acao="minha-foto"><span>🙂</span>Minha foto de perfil</button>' +
-            '<button class="conta-item" data-acao="tema"><span>🎨</span>Tema do aplicativo</button>' +
-            '<button class="conta-item" data-acao="atualizar"><span>🔄</span>Buscar atualização</button>' +
+            (admin ? '<button class="conta-item" data-acao="empresa"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + '</span>Dados da empresa</button>' : '') +
+            '<button class="conta-item" data-acao="tabelas"><span>' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</span>Tabelas de preço</button>' +
+            (admin ? '<button class="conta-item" data-acao="nuvem"><span>' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</span>Nuvem — sincronizar aparelhos</button>' : '') +
+            (admin ? '<button class="conta-item" data-acao="celular"><span>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</span>Usar no celular ou tablet</button>' : '') +
+            (admin ? '<button class="conta-item" data-acao="backup"><span>' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + '</span>Backup dos dados</button>' : '') +
+            '<button class="conta-item" data-acao="minha-foto"><span>' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>Minha foto de perfil</button>' +
+            '<button class="conta-item" data-acao="tema"><span>' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + '</span>Tema do aplicativo</button>' +
+            '<button class="conta-item" data-acao="atualizar"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</span>Buscar atualização</button>' +
             '<div class="conta-sep"></div>' +
-            '<button class="conta-item sair" data-acao="logout"><span>🚪</span>Sair</button>' +
+            '<button class="conta-item sair" data-acao="logout"><span>' + (typeof Icones !== 'undefined' ? Icones.get('porta', 15) : '') + '</span>Sair</button>' +
             '<div class="conta-sep"></div>' +
             '<div style="padding:4px 12px 6px;font-size:11.5px;color:var(--texto-fraco);text-align:center">' + Util.esc(CONFIG.marca.nomeProduto || "OrçaPRO IA") + ' · <b>v' + Util.esc(CONFIG.versao) + '</b></div>' +
           '</div>' +
@@ -197,13 +197,13 @@
     renderAtualizar: function (info) {
       if (!info.online) {
         return '<div class="vazio card">⚠️ <b>Backend offline.</b><br>O atualizador automático usa o servidor <b>sinapi-fetcher</b> do ERP (porta 3040). ' +
-          'Ligue o ERP/servidor e tente de novo — ou use <b>🗂 Tabelas</b> / <b>⬆ Importar base SINAPI</b> para subir o arquivo manualmente.</div>';
+          'Ligue o ERP/servidor e tente de novo — ou use <b>' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas</b> / <b>' + (typeof Icones !== 'undefined' ? Icones.get('importar', 15) : '') + ' Importar base SINAPI</b> para subir o arquivo manualmente.</div>';
       }
       var html = '<p>Backend <b style="color:var(--verde,#16a34a)">conectado</b> · base atual no app: <b>' + Util.esc(info.atual || "—") + ' / ' + Util.esc(info.uf) + '</b></p>';
       if (info.desatualizado) {
-        html += '<div class="card" style="border-color:var(--amarelo,#f59e0b)">⚠️ Competência mais nova disponível na Caixa: <b>' + Util.esc(info.ultimaOficial || info.ultimaCache) + '</b></div>';
+        html += '<div class="card" style="border-color:var(--amarelo,#f59e0b)">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Competência mais nova disponível na Caixa: <b>' + Util.esc(info.ultimaOficial || info.ultimaCache) + '</b></div>';
       } else {
-        html += '<div class="muted mb">✔ Sua base está na competência mais recente.</div>';
+        html += '<div class="muted mb">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Sua base está na competência mais recente.</div>';
       }
       html += '<h3 style="margin:12px 0 6px">Competências prontas no cache</h3>';
       if (info.cacheMeses.length) {
@@ -213,7 +213,7 @@
       } else { html += '<p class="muted">Nenhuma no cache.</p>'; }
       if (info.ultimaOficial && info.cacheMeses.indexOf(info.ultimaOficial) === -1) {
         html += '<h3 style="margin:14px 0 6px">Baixar da Caixa</h3>' +
-          '<button class="btn sm success" data-atz-baixar="' + Util.esc(info.ultimaOficial) + '">⬇ Baixar ' + Util.esc(info.ultimaOficial) + ' (30–60s)</button>';
+          '<button class="btn sm success" data-atz-baixar="' + Util.esc(info.ultimaOficial) + '">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' Baixar ' + Util.esc(info.ultimaOficial) + ' (30–60s)</button>';
       }
       return html;
     },
@@ -225,7 +225,7 @@
           '<td>' + Util.esc((b.competencia || "—") + " / " + (b.uf || "—")) + '</td>' +
           '<td class="num">' + (b.total || 0).toLocaleString("pt-BR") + '</td>' +
           '<td><label style="cursor:pointer"><input type="checkbox" data-base-toggle="' + Util.esc(b.fonte) + '"' + (b.ativa ? " checked" : "") + '> ativa</label></td>' +
-          '<td class="right">' + (b.fonte === "PROPRIA" ? '<button class="btn sm" data-acao="minhas-composicoes">📋 ver itens</button> ' : '') +
+          '<td class="right">' + (b.fonte === "PROPRIA" ? '<button class="btn sm" data-acao="minhas-composicoes">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' ver itens</button> ' : '') +
             (b.fonte !== "SINAPI" ? '<button class="btn sm danger" data-base-remover="' + Util.esc(b.fonte) + '">remover</button>' : '') + '</td></tr>';
       }).join("");
       var fontes = (typeof Bases !== "undefined" && Bases.META) ? Object.keys(Bases.META).filter(function (k) { return k !== "SINAPI"; }) : ["SICRO", "SEINFRA", "SETOP", "ORSE", "SUDECAP", "SBC", "PROPRIA"];
@@ -245,7 +245,7 @@
         var inst = (lista || []).filter(function (b) { return par[1].indexOf(String(b.fonte).toUpperCase()) >= 0; })[0];
         atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
           '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(par[0]) + '</span>' +
-          '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(inst.competencia || "—") + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões 📦 abaixo</span>') + '</span>' +
+          '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(inst.competencia || "—") + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões ' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' abaixo</span>') + '</span>' +
           '<button class="btn sm" data-atu-base="' + par[0] + '" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
           '<span class="muted" id="atu-st-' + par[0] + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
       });
@@ -264,28 +264,28 @@
         '<div class="field"><label>UF (opcional)</label><input id="tab-uf" placeholder="MG"></div></div>' +
         '<div class="field"><label>Arquivo (planilha oficial: Excel .xlsx/.xls, CSV, ou JSON do fetcher)</label><input type="file" id="tab-file" accept=".xlsx,.xls,.json,.csv,.txt"></div>' +
         '<div class="field"><label>ou cole o conteúdo (JSON, ou CSV: Código;Descrição;Custo)</label><textarea id="tab-text" rows="3"></textarea></div>' +
-        '<h3 style="margin:18px 0 6px">📦 Bases prontas (1 clique, já inclusas no app)</h3>' +
+        '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Bases prontas (1 clique, já inclusas no app)</h3>' +
         '<div class="flex" style="flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
-        '<button class="btn sm primary" data-inclusa="data/sudecap-BH-current.json|SUDECAP">📦 SUDECAP · Belo Horizonte (atual)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/seinfra-CE-current.json|SEINFRA">📦 SEINFRA · Ceará (atual)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/sicro-ES-current.json|SICRO" title="SICRO/DNIT — custos rodoviários oficiais. Relatório Sintético de Composições, trimestral.">📦 SICRO/DNIT · ES (rodoviárias)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/iopes-ES-current.json|IOPES" title="IOPES/DER-ES — Tabela Referencial de Edificações do Espírito Santo (não desonerada, BDI 0%), mensal.">📦 IOPES/DER-ES · ES (edificações)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/orse-SE-current.json|ORSE" title="ORSE/CEHOP-SE — Orçamento de Obras de Sergipe (consulta pública oficial), mensal.">📦 ORSE · Sergipe</button>' +
+        '<button class="btn sm primary" data-inclusa="data/sudecap-BH-current.json|SUDECAP">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SUDECAP · Belo Horizonte (atual)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/seinfra-CE-current.json|SEINFRA">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SEINFRA · Ceará (atual)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/sicro-ES-current.json|SICRO" title="SICRO/DNIT — custos rodoviários oficiais. Relatório Sintético de Composições, trimestral.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SICRO/DNIT · ES (rodoviárias)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/iopes-ES-current.json|IOPES" title="IOPES/DER-ES — Tabela Referencial de Edificações do Espírito Santo (não desonerada, BDI 0%), mensal.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' IOPES/DER-ES · ES (edificações)</button>' +
+        '<button class="btn sm primary" data-inclusa="data/orse-SE-current.json|ORSE" title="ORSE/CEHOP-SE — Orçamento de Obras de Sergipe (consulta pública oficial), mensal.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' ORSE · Sergipe</button>' +
         '<span class="flex" style="gap:4px;align-items:center"><select id="setop-regiao" class="btn sm" style="padding:5px">' +
         [["Triangulo", "Triângulo"], ["Central", "Central"], ["Norte", "Norte"], ["Sul", "Sul"], ["Leste", "Leste"], ["Jequitinhonha", "Jequitinhonha/Mucuri"]].map(function (r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join("") +
         '</select><select id="setop-regime" class="btn sm" style="padding:5px"><option value="desonerada">Desonerada</option><option value="onerada">Onerada</option></select>' +
-        '<button class="btn sm primary" data-acao="carregar-setop">📦 SETOP · MG (ago/2023)</button></span>' +
+        '<button class="btn sm primary" data-acao="carregar-setop">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SETOP · MG (ago/2023)</button></span>' +
         '<span class="flex" style="gap:4px;align-items:center"><select id="goinfra-regime" class="btn sm" style="padding:5px"><option value="onerada">Sem desoneração</option><option value="desonerada">Com desoneração</option></select>' +
         '<select id="goinfra-preco" class="btn sm" style="padding:5px" title="Custo direto: o app aplica o seu BDI. Com BDI: usa o preço final oficial da GOINFRA (27,21%)."><option value="direto">Custo direto (sem BDI)</option><option value="comBDI">Preço com BDI (oficial)</option></select>' +
-        '<button class="btn sm primary" data-acao="carregar-goinfra">📦 GOINFRA/AGETOP · GO (rodoviárias)</button></span>' +
+        '<button class="btn sm primary" data-acao="carregar-goinfra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' GOINFRA/AGETOP · GO (rodoviárias)</button></span>' +
         '</div>' +
-        '<h3 style="margin:18px 0 6px">📁 Escanear pasta inteira (de uma vez)</h3>' +
+        '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear pasta inteira (de uma vez)</h3>' +
         '<p class="muted" style="font-size:12px">Pasta DENTRO do projeto do ERP (ex.: <b>mg-01-2026</b> = SICRO-MG). O fetcher parseia TUDO (composições com MO/MAT/EQ + materiais + equipamentos + mão de obra) e organiza no multi-base sozinho.</p>' +
         '<div class="row"><div class="field"><label>Pasta</label><input id="scan-pasta" value="mg-01-2026"></div>' +
         '<div class="field"><label>UF</label><input id="scan-uf" placeholder="MG (auto)"></div>' +
         '<div class="field"><label>Competência</label><input id="scan-mes" placeholder="2026-01 (auto)"></div></div>' +
         '<div class="flex" style="align-items:center;gap:12px"><label style="cursor:pointer"><input type="checkbox" id="scan-deson"> com desoneração</label>' +
-        '<button class="btn sm primary" data-acao="escanear-pasta">📁 Escanear e organizar</button></div>';
+        '<button class="btn sm primary" data-acao="escanear-pasta">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear e organizar</button></div>';
     },
 
     // ---------- Comparar cenários de preço ----------
@@ -312,11 +312,11 @@
     renderLicenca: function (st) {
       var html = '<p class="muted mb">Status da sua licença do OrçaPRO.</p>';
       if (st.trial && st.ativo) {
-        html += '<div class="card"><b>🔓 Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
+        html += '<div class="card"><b>' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
       } else if (st.trial) {
         html += '<div class="card"><b>⏰ Teste grátis encerrado</b><br>Seus orçamentos estão preservados. Ative sua licença com a chave da compra para voltar a salvar e exportar.</div>';
       } else {
-        html += '<div class="card"><b style="color:var(--verde,#16a34a)">✓ Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
+        html += '<div class="card"><b style="color:var(--verde,#16a34a)">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
       }
       html += '<div class="field" style="margin-top:12px"><label>Chave de licença</label><input id="lic-chave" placeholder="cole aqui a chave que você recebeu"></div>';
       return html;
@@ -375,7 +375,7 @@
               '<li>Cronograma de Gantt e Excel profissional</li>' +
               '<li>Proposta comercial e anexo para laudo pericial</li>' +
             '</ul>' +
-            '<div class="lh-trust">🔒 Roda no seu PC · seus orçamentos ficam salvos no dispositivo</div>' +
+            '<div class="lh-trust">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Roda no seu PC · seus orçamentos ficam salvos no dispositivo</div>' +
           '</div></div>' +
           '<div class="login-formside"><div class="login-card">' +
             '<div class="brand"><div class="lc-logo">' + badge + '<span class="nome">OrçaPRO<span class="ia">IA</span></span></div>' +
@@ -403,8 +403,8 @@
         html += '<div class="card flex between mb" style="padding:12px 16px">' +
           '<div><span class="pill sinapi">SINAPI</span> <b>' + Util.esc(baseInfo.competencia) + ' / ' + Util.esc(baseInfo.uf) + '</b> · ' +
           baseInfo.total.toLocaleString("pt-BR") + ' itens <span class="muted">(' + origem + ')</span></div>' +
-          '<div class="flex"><button class="btn sm" data-acao="atualizar">🔄 Atualizar</button> ' +
-          '<button class="btn sm" data-acao="importar-sinapi">⬆ Importar base SINAPI</button></div></div>';
+          '<div class="flex"><button class="btn sm" data-acao="atualizar">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Atualizar</button> ' +
+          '<button class="btn sm" data-acao="importar-sinapi">' + (typeof Icones !== 'undefined' ? Icones.get('importar', 15) : '') + ' Importar base SINAPI</button></div></div>';
       }
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
                  '<div class="flex"><button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("reimportar") + 'Importar planilha</button>' +
@@ -421,7 +421,7 @@
         var t = Orcamento.totais(o);
         html += '<div class="card orc-card" data-abrir="' + o.id + '">' +
           // 🗑 dentro do card clicável: o dispatch resolve o botão ANTES do abrir
-          '<button class="btn sm ico danger orc-del" data-del-orc="' + o.id + '" title="Excluir este orçamento (pede confirmação)">🗑</button>' +
+          '<button class="btn sm ico danger orc-del" data-del-orc="' + o.id + '" title="Excluir este orçamento (pede confirmação)">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
           '<h3>' + Util.esc(o.nome) + '</h3>' +
           '<div class="meta">' + Util.esc(o.numero) + ' · ' + Util.esc(o.cliente.nome || "Sem cliente") + '</div>' +
           '<div class="meta">' + t.qtdEtapas + ' etapas · ' + t.qtdItens + ' itens · BDI ' + Util.fmtPct(t.bdiPercentual) + '</div>' +
@@ -457,7 +457,7 @@
     renderEditor: function (orc, abaAtiva) {
       var t = Orcamento.totais(orc);
       var html = '<div class="flex between mb">' +
-        '<div><button class="btn ghost sm" data-acao="voltar">← Voltar</button> ' +
+        '<div><button class="btn ghost sm" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
         '<span style="font-size:20px;font-weight:800;margin-left:8px">' + Util.esc(orc.nome) + '</span> ' +
         '<span class="muted">' + Util.esc(orc.numero) + '</span></div>' +
         '<div class="flex">' +
@@ -574,8 +574,8 @@
           '<button class="btn sm ico" data-mover-etapa="' + e.id + '|1"' + (ei === nEtapas - 1 ? ' disabled' : '') + ' title="Descer etapa">▼</button>' +
           '<button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
           '<button class="btn sm" data-add-sub="' + e.id + '" title="Dividir esta etapa em sub etapas (ex.: 1.1 Canteiro de Obras)">+ Sub etapa</button>' +
-          '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">✎</button>' +
-          '<button class="btn sm ico danger" data-del-etapa="' + e.id + '" title="Remover etapa">✕</button></div></td></tr>';
+          '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
+          '<button class="btn sm ico danger" data-del-etapa="' + e.id + '" title="Remover etapa">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
 
         /* CORPO DA ETAPA — soltos primeiro, depois um bloco por sub etapa (a mesma
            ordem canônica que Orcamento._normalizarEtapa impõe em e.itens; render
@@ -637,9 +637,9 @@
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
-              (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">🔍 Insumos</button>' : '') +
-              '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">📝</button>' +
-              '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">✕</button></div></td></tr>';
+              (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Insumos</button>' : '') +
+              '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + '</button>' +
+              '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
           // v1.1.123 — SEMPRE que a composição tiver insumo sem preço coletado no
           // detalhamento, o aviso fica AQUI, embaixo dela na planilha (pedido do
           // Rogério): o usuário clica e informa a cotação manualmente no modal.
@@ -677,8 +677,8 @@
             '<button class="btn sm ico" data-mover-sub="' + e.id + '|' + sx.id + '|-1"' + (si === 0 ? ' disabled' : '') + ' title="Subir sub etapa">▲</button>' +
             '<button class="btn sm ico" data-mover-sub="' + e.id + '|' + sx.id + '|1"' + (si === _subs.length - 1 ? ' disabled' : '') + ' title="Descer sub etapa">▼</button>' +
             '<button class="btn sm" data-add-item="' + e.id + '|' + sx.id + '">+ Item</button>' +
-            '<button class="btn sm ico" data-edit-sub="' + e.id + '|' + sx.id + '" title="Renomear sub etapa">✎</button>' +
-            '<button class="btn sm ico danger" data-del-sub="' + e.id + '|' + sx.id + '" title="Remover sub etapa (os itens voltam para a etapa)">✕</button></div></td></tr>';
+            '<button class="btn sm ico" data-edit-sub="' + e.id + '|' + sx.id + '" title="Renomear sub etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
+            '<button class="btn sm ico danger" data-del-sub="' + e.id + '|' + sx.id + '" title="Remover sub etapa (os itens voltam para a etapa)">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
           if (!lst.length) {
             html += '<tr data-etapa-linhas="' + sx.id + ' ' + e.id + '"' + ((rec || recS) ? ' class="oculta"' : "") + '><td></td><td colspan="8" class="muted" style="font-size:12px">Sub etapa ainda sem itens — use <b>+ Item</b> na linha acima.</td></tr>';
           }
@@ -776,7 +776,7 @@
           '<div class="field"><label>Descrição do serviço *</label><input id="cp-descricao" value="' + Util.esc(c.descricao || "") + '" placeholder="Ex.: Assentamento de tubo PVC DN 100 com anel elástico, inclusive escavação"></div>' +
           '<div class="row"><div class="field"><label>Tipo de composição (grupo) *</label><select id="cp-grupo"><option value="">— escolha —</option>' + gruposOpts + '</select></div>' +
           '<div class="field" style="max-width:140px"><label>Unidade *</label><input id="cp-unidade" value="' + Util.esc(c.unidade || "") + '" placeholder="m, m2, un…"></div></div>' +
-          '<div class="row"><div class="field"><label>Estado (base de preços ativa)</label><input value="' + Util.esc(c.uf || "") + '" disabled title="A composição usa os preços da base ativa — troque o estado em 🗂 Tabelas"></div>' +
+          '<div class="row"><div class="field"><label>Estado (base de preços ativa)</label><input value="' + Util.esc(c.uf || "") + '" disabled title="A composição usa os preços da base ativa — troque o estado em ' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas"></div>' +
           '<div class="field"><label>Modelo de referência</label><div class="flex" style="gap:12px;padding-top:8px">' +
             '<label style="cursor:pointer"><input type="radio" name="cp-modelo" value="SINAPI"' + (c.modeloRef !== "SICRO" ? " checked" : "") + '> SINAPI</label>' +
             '<label style="cursor:pointer"><input type="radio" name="cp-modelo" value="SICRO"' + (c.modeloRef === "SICRO" ? " checked" : "") + '> SICRO3</label></div></div></div>' +
@@ -807,7 +807,7 @@
               : Util.fmtMoeda(i.custoUnitario)) + '</td>' +
             '<td>' + Util.esc(i.categoria || "") + '</td>' +
             '<td class="num" data-cp-tot="' + idx + '">' + Util.fmtMoeda(tot) + '</td>' +
-            '<td><button class="btn sm ico danger" data-cp-del="' + idx + '">✕</button></td></tr>';
+            '<td><button class="btn sm ico danger" data-cp-del="' + idx + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         }).join("");
         html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util.esc(c.codigo) + '</b> — ' + Util.esc(c.descricao || "(sem descrição)") + ' · ' + Util.esc(c.unidade || "?") + (st.referencia ? ' · <span class="pill sinapi">ref. ' + Util.esc(st.referencia.codigo) + '</span>' : '') + '</div>' +
           '<div class="field"><label>Adicionar insumo/composição das bases reais (busque por código ou descrição)</label>' +
@@ -822,7 +822,7 @@
             '<div class="kpi destaque"><div class="rotulo">Custo unitário (' + (c.metodo === "nenhum" ? "sem arredondar" : c.metodo === "arred2" ? "arredondado" : "truncado · TCU") + ')</div><div class="num destaque" id="cp-kpi-total">' + Util.fmtMoeda(custo.total) + '</div></div></div>' +
           '<div id="cp-valida" style="margin-top:10px"></div>' +
           '<div class="flex" style="gap:8px;margin-top:10px">' +
-            '<button class="btn ghost" data-acao="cp-passo1">← Voltar</button>' +
+            '<button class="btn ghost" data-acao="cp-passo1">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button>' +
             '<button class="btn success" data-acao="cp-salvar" style="margin-left:auto">' + _ic("check") + 'Validar e gravar na base própria</button></div>';
       }
       return html;
@@ -837,7 +837,7 @@
       }
       var anaUf = (typeof Analitico !== "undefined") ? Analitico.uf : null;
       var aviso = (ufAtivo && anaUf && ufAtivo !== anaUf)
-        ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">⚠ Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
+        ? '<div class="muted mb" style="color:#f59e0b;font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Analítico de referência da UF <b>' + Util.esc(anaUf) + '</b> (a base ativa é <b>' + Util.esc(ufAtivo) + '</b>). Coeficientes são nacionais; os preços exibidos aqui são da UF de referência.</div>'
         : '';
       var html = aviso + '<div class="muted mb"><b>' + Util.esc(a.codigo) + '</b> · ' + Util.esc(a.unidade) +
         (a.grupo ? ' · ' + Util.esc(a.grupo) : '') + '<br>' + Util.esc(a.descricao) + '</div>';
@@ -880,13 +880,13 @@
           var totMeu = Util.num(it.coeficiente) * Util.num(meu.preco);
           somaIns += totMeu;
           celUnit = '<input class="preco-user" data-preco-insumo="' + Util.esc(it.codigo) + '" value="' + Util.fmtNum(meu.preco, 2) + '" title="Preço informado por você — edite ou apague para voltar a pendente">';
-          celTotal = Util.fmtMoeda(totMeu) + ' <span class="selo-user" title="Calculado com o preço que você informou">👤</span>';
+          celTotal = Util.fmtMoeda(totMeu) + ' <span class="selo-user" title="Calculado com o preço que você informou">' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>';
         } else {
           // PENDENTE: o SINAPI não coletou nesta UF — o usuário precisa cotar
           temZero = true; pendentes++;
           classeExtra = " lin-pendente";
           celUnit = '<input class="preco-user pendente" data-preco-insumo="' + Util.esc(it.codigo) + '" placeholder="informe R$" title="Preço não coletado pelo SINAPI nesta UF — informe a sua cotação">';
-          celTotal = '<span class="txt-pendente">⚠ sem preço</span>';
+          celTotal = '<span class="txt-pendente">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' sem preço</span>';
         }
         // sub-composição: código clicável abre o detalhamento DELA (drill-down)
         var celCod = sub
@@ -964,13 +964,13 @@
         '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="cron-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:80px"></div>' +
         '<div class="field" style="margin:0"><label>Paralelismo</label><select id="cron-paral">' + opt(0, "Nenhum", p.paralelismo) + opt(0.15, "Leve 15%", p.paralelismo) + opt(0.3, "Médio 30%", p.paralelismo) + opt(0.5, "Alto 50%", p.paralelismo) + '</select></div>' +
         '<div class="field" style="margin:0"><label>R$/dia-equipe</label><input id="cron-custodia" type="number" value="' + p.custoDiaEquipe + '" style="width:100px"></div>' +
-        '<button class="btn sm primary" data-acao="cron-recalc">↻ Recalcular</button>' +
+        '<button class="btn sm primary" data-acao="cron-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Recalcular</button>' +
         '<button class="btn sm" data-acao="cron-reset">Limpar edições</button>' +
-        '<button class="btn sm" data-acao="cron-ia" title="Refina as durações com a IA do ERP (planejador)">🤖 Refinar com IA</button>' +
+        '<button class="btn sm" data-acao="cron-ia" title="Refina as durações com a IA do ERP (planejador)">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Refinar com IA</button>' +
         '</div></div>';
       html += '<div class="flex" style="gap:18px;margin-bottom:8px;align-items:baseline"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
         '<span class="muted">' + r.dataInicio.toLocaleDateString("pt-BR") + ' → ' + r.dataFim.toLocaleDateString("pt-BR") + '</span>' +
-        '<span class="muted" style="font-size:12px">🧠 estimado pelo agente · edite a duração na tabela</span></div>';
+        '<span class="muted" style="font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' estimado pelo agente · edite a duração na tabela</span></div>';
       html += this._gantt(r);
       html += '<table class="tbl" style="margin-top:12px"><thead><tr><th>Etapa</th><th>Categoria (agente)</th><th class="num">Eq-dias</th><th class="num">Duração (d)</th><th>Início</th><th>Fim</th></tr></thead><tbody>';
       r.etapas.forEach(function (e) {
@@ -978,7 +978,7 @@
         html += '<tr><td>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + '</td>' +
           '<td><span class="pill" style="background:' + c.cor + '22;color:' + c.cor + '">' + Util.esc(c.nome) + '</span></td>' +
           '<td class="num">' + e.equipeDias + '</td>' +
-          '<td class="num"><input class="cell" type="number" min="1" data-cron-dur="' + e.id + '" value="' + e.duracao + '" style="width:60px;text-align:right' + (e.editado ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (iaM[e.id] ? ' <span title="🤖 IA: ' + Util.esc(iaM[e.id]) + '" style="cursor:help">🤖</span>' : '') + '</td>' +
+          '<td class="num"><input class="cell" type="number" min="1" data-cron-dur="' + e.id + '" value="' + e.duracao + '" style="width:60px;text-align:right' + (e.editado ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (iaM[e.id] ? ' <span title="🤖 IA: ' + Util.esc(iaM[e.id]) + '" style="cursor:help">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + '</span>' : '') + '</td>' +
           '<td>' + e.dataInicio.toLocaleDateString("pt-BR") + '</td><td>' + e.dataFim.toLocaleDateString("pt-BR") + '</td></tr>';
       });
       html += '</tbody></table>';
@@ -1010,7 +1010,7 @@
         '<div class="field" style="margin:0"><label>Jornada (h/dia)</label><input id="exec-jornada" type="number" min="1" max="12" value="' + p.jornadaH + '" style="width:80px"></div>' +
         '<div class="field" style="margin:0"><label>Dias úteis/sem.</label><input id="exec-dias" type="number" min="1" max="7" value="' + p.diasUteisSemana + '" style="width:80px"></div>' +
         '<div class="field" style="margin:0"><label title="Onera a diária de colaboradores CLT p/ comparar com o SINAPI (que já vem onerado). Diarista/autônomo/PJ entram cheios.">Encargos CLT (%)</label><input id="exec-encargos" type="number" min="0" max="150" value="' + (p.encargosPct || 0) + '" style="width:90px"></div>' +
-        '<button class="btn sm primary" data-acao="exec-recalc">↻ Recalcular</button>' +
+        '<button class="btn sm primary" data-acao="exec-recalc">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Recalcular</button>' +
         '<button class="btn sm" data-acao="exec-cronograma" title="Usar estas durações no Cronograma">' + Icones.get("cronograma") + 'Enviar ao cronograma</button>' +
         '</div>' +
         '<div class="muted" style="font-size:11px;margin-top:8px">Produtividade = coeficientes de mão-de-obra do SINAPI (horas-homem). Custo/dia = diária dos seus colaboradores (RH); onde não há colaborador da profissão, usa a <b>referência SINAPI</b>.' +
@@ -1026,8 +1026,8 @@
         var parcial = sim.nEtapasSemBase > 0; // prazo cobre só as etapas estimáveis; as estaduais ficam de fora
         html += '<b style="font-size:16px">⏱ ' + sim.prazoDias + ' dias úteis (~' + sim.prazoSemanas + ' semanas)' + (parcial ? ' <span style="color:#b45309">*parcial</span>' : '') + '</b>' +
           (sim.dataFim ? '<span class="muted">' + sim.dataInicio.toLocaleDateString("pt-BR") + ' → ' + sim.dataFim.toLocaleDateString("pt-BR") + (parcial ? ' (só etapas estimáveis)' : '') + '</span>' : '') +
-          (sim.metaAtingida === false ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">⚠ não bate a entrega pedida</span>' : '') +
-          (parcial ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">⚠ prazo parcial — ' + sim.nEtapasSemBase + ' etapa(s) sem base de MO fora da conta</span>' : '');
+          (sim.metaAtingida === false ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' não bate a entrega pedida</span>' : '') +
+          (parcial ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' prazo parcial — ' + sim.nEtapasSemBase + ' etapa(s) sem base de MO fora da conta</span>' : '');
       }
       html += '<span class="pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + (ROT[sim.status] || sim.status) + (sim.reconConfiavel ? ' · ' + (sim.desvioPct >= 0 ? "+" : "") + sim.desvioPct.toFixed(1) + '%' : '') + '</span>';
       if (!semBase) html += '<span class="muted" style="font-size:12px' + (sim.coberturaBaixa ? ';color:#b45309;font-weight:600' : '') + '">🧠 ' + sim.cobertura.pct + '% dos itens (com qtd) têm produtividade SINAPI' + (sim.coberturaBaixa ? ' — reconciliação parcial' : '') + '</span>';
@@ -1035,7 +1035,7 @@
 
       // aviso forte quando é 100% base estadual/própria sem custo de MO
       if (semBase) {
-        html += '<div class="card" style="margin-bottom:12px;border-left:4px solid #b45309;background:#f59e0b0d"><b style="color:#b45309">⚠ Orçamento de base estadual/própria sem custo de mão-de-obra.</b><div class="muted" style="font-size:12px;margin-top:4px">O agente precisa de composições SINAPI (horas-homem) — ou da produtividade informada — para dimensionar equipe, prazo e custo. Os números abaixo NÃO são uma estimativa de obra.</div></div>';
+        html += '<div class="card" style="margin-bottom:12px;border-left:4px solid #b45309;background:#f59e0b0d"><b style="color:#b45309">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Orçamento de base estadual/própria sem custo de mão-de-obra.</b><div class="muted" style="font-size:12px;margin-top:4px">O agente precisa de composições SINAPI (horas-homem) — ou da produtividade informada — para dimensionar equipe, prazo e custo. Os números abaixo NÃO são uma estimativa de obra.</div></div>';
       } else {
         // reconciliação — SÓ sobre a porção com DIÁRIA REAL (real × orçado-SINAPI da mesma profissão)
         html += '<div class="card" style="margin-bottom:12px;border-left:4px solid ' + cor + '">';
@@ -1046,7 +1046,7 @@
             '<div><div class="muted" style="font-size:12px">MO simulada (diárias reais do RH)</div><b style="font-size:18px;color:' + cor + '">' + moeda(sim.custoMOReal) + '</b></div>' +
             '<div><div class="muted" style="font-size:12px">Diferença</div><b style="font-size:16px;color:' + cor + '">' + (sim.desvio >= 0 ? "+" : "") + moeda(sim.desvio) + ' (' + (sim.desvioPct >= 0 ? "+" : "") + sim.desvioPct.toFixed(1) + '%)</b></div>' +
             '</div>' +
-            (sim.coberturaBaixa ? '<div class="pill" style="display:inline-block;margin-top:8px;background:#f59e0b22;color:#b45309;font-weight:600;font-size:11px">⚠ Cobre só ' + Math.round(sim.reconCobPct) + '% do custo de MO-SINAPI — só as profissões com diária real cadastrada</div>' : '');
+            (sim.coberturaBaixa ? '<div class="pill" style="display:inline-block;margin-top:8px;background:#f59e0b22;color:#b45309;font-weight:600;font-size:11px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Cobre só ' + Math.round(sim.reconCobPct) + '% do custo de MO-SINAPI — só as profissões com diária real cadastrada</div>' : '');
         } else {
           html += '<div style="font-size:13px">' + (sim.orcadoMOExato > 0 ? 'Há itens SINAPI, mas nenhuma <b>diária real</b> no RH que case as profissões — comparar SINAPI × SINAPI daria sempre 0%. Cadastre sua equipe em RH para reconciliar custo real × orçado.' : 'Nenhum item com composição SINAPI para reconciliar o custo de MO — a base é própria/estadual.') + '</div>';
         }
@@ -1062,7 +1062,7 @@
       // equipe de pico
       var picoKeys = Object.keys(sim.equipePico);
       if (picoKeys.length) {
-        html += '<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:14px">👷 Equipe de pico (máximo simultâneo no canteiro)</h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
+        html += '<div class="card" style="margin-bottom:12px"><h3 style="margin:0 0 8px;font-size:14px">' + (typeof Icones !== 'undefined' ? Icones.get('capacete', 15) : '') + ' Equipe de pico (máximo simultâneo no canteiro)</h3><div class="flex" style="gap:8px;flex-wrap:wrap">';
         picoKeys.sort(function (a, b) { return sim.equipePico[b] - sim.equipePico[a]; }).forEach(function (pf) {
           var estim = pf.indexOf("estimada") >= 0;
           var lbl = estim ? (sim.equipePico[pf] + '× equipe geral (est.)') : (sim.equipePico[pf] + '× ' + curto(pf));
@@ -1138,7 +1138,7 @@
           if (c.candidatos && c.candidatos.length) {
             codCel = '<select data-pc-cand="' + c.seq + '" style="max-width:340px">' + c.candidatos.map(function (k, i) {
               return '<option value="' + i + '"' + (i === c.escolhido ? " selected" : "") + '>' + esc((k.item.codigo || "—") + " · " + (k.item.descricao || "").slice(0, 60)) + " [" + (k.item.unidade || "?") + "]</option>";
-            }).join("") + '</select>' + (c.unidadeDivergente ? ' <span class="muted" style="color:#b45309;font-size:11px">⚠ unidade ' + esc(cand ? cand.item.unidade : "") + ' ≠ ' + c.unidade + '</span>' : "");
+            }).join("") + '</select>' + (c.unidadeDivergente ? ' <span class="muted" style="color:#b45309;font-size:11px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' unidade ' + esc(cand ? cand.item.unidade : "") + ' ≠ ' + c.unidade + '</span>' : "");
           } else {
             codCel = '<span class="muted" style="color:#dc2626">nenhum código casou — ajuste o termo ou lance manualmente</span>';
           }
@@ -1150,12 +1150,12 @@
         });
         html += '</tbody></table>';
         var etapas = (orc.etapas || []);
-        var selEt = '<select id="pc-etapa"><option value="__nova__">➕ Nova etapa: Parede — ' + esc(r.parede.nome) + '</option>' +
+        var selEt = '<select id="pc-etapa"><option value="__nova__">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Nova etapa: Parede — ' + esc(r.parede.nome) + '</option>' +
           etapas.map(function (e) { return '<option value="' + e.id + '">' + esc((e.codigo ? e.codigo + " " : "") + e.nome) + '</option>'; }).join("") + '</select>';
         var aplicaveis = r.nOk + (r.nRevisar ? 0 : 0);
         html += '<div class="flex" style="gap:10px;align-items:flex-end;margin-top:12px;flex-wrap:wrap">' +
           '<div class="field" style="margin:0"><label>Adicionar em</label>' + selEt + '</div>' +
-          '<button class="btn sm primary" data-acao="parede-aplicar" title="Só as camadas com código casado (OK) entram. Pendentes e as de unidade divergente ficam de fora.">➕ Adicionar ' + r.nOk + ' camada(s) ao orçamento</button>' +
+          '<button class="btn sm primary" data-acao="parede-aplicar" title="Só as camadas com código casado (OK) entram. Pendentes e as de unidade divergente ficam de fora.">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Adicionar ' + r.nOk + ' camada(s) ao orçamento</button>' +
           (r.nRevisar || r.nPendentes ? '<span class="muted" style="font-size:11px">' + (r.nRevisar ? r.nRevisar + ' de unidade divergente' : "") + (r.nRevisar && r.nPendentes ? " e " : "") + (r.nPendentes ? r.nPendentes + ' sem código' : "") + ' NÃO entram — resolva antes.</span>' : "") +
           '</div>';
         html += '<div class="muted" style="font-size:11px;margin-top:8px">Cada camada vira um <b>item normal do orçamento</b> (código SINAPI + qtd) — então o Agente de Execução (aba Execução) dimensiona equipe, prazo e custo dessas camadas automaticamente.</div>';
@@ -1511,7 +1511,7 @@
           Object.keys(CONFIG.bdiPresets).map(function (k) {
             return '<option value="' + k + '"' + (modSel === k ? " selected" : "") + '>' + CONFIG.bdiPresets[k].nome + '</option>';
           }).join("") +
-        '<option value="dnit"' + (modSel === "dnit" ? " selected" : "") + '>🏛️ DNIT (Acórdão TCU 2.622/2013)</option>' +
+        '<option value="dnit"' + (modSel === "dnit" ? " selected" : "") + '>' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' DNIT (Acórdão TCU 2.622/2013)</option>' +
         '<option value="custom"' + (modSel === "custom" ? " selected" : "") + '>Personalizado</option>' +
         '</select></div>' +
         (typeof DnitBdi !== "undefined" ? '<div class="muted mb" style="font-size:12px">🏛️ <b>DNIT · Acórdão 2.622/2013</b> — CPRB atualiza por ano (Lei 14.973/2024): ' +
@@ -1555,7 +1555,7 @@
           ? '<div class="card" style="margin-top:12px;padding:10px 12px;border-left:3px solid #c90">'
             + '<div style="font-size:13px;margin-bottom:8px">Você usa uma <b>base própria importada</b>. '
             + 'Enquanto ela estiver aqui, a atualização oficial da SINAPI não roda.</div>'
-            + '<button class="btn sm" data-acao="base-oficial">↩ Voltar para a SINAPI oficial</button>'
+            + '<button class="btn sm" data-acao="base-oficial">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar para a SINAPI oficial</button>'
             + '<div class="muted" style="font-size:11px;margin-top:6px">Apaga só a tabela de preços importada. '
             + 'Suas <b>composições próprias</b>, orçamentos e obras não são tocados.</div></div>'
           : "");
@@ -1579,9 +1579,9 @@
       }
       var conf = Math.round((res.confianca || 0) * 100), corConf = conf >= 80 ? "#16a34a" : conf >= 50 ? "#f59e0b" : "#dc2626";
       var html = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">' +
-        '<span class="g-pill" style="background:' + corConf + '22;color:' + corConf + ';font-weight:700">🤖 Confiança ' + conf + "%</span>" +
+        '<span class="g-pill" style="background:' + corConf + '22;color:' + corConf + ';font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Confiança ' + conf + "%</span>" +
         '<span class="muted" style="font-size:13px">' + res.resumo.etapas + " etapas · " + res.resumo.itens + " itens" + (res.resumo.ignoradas ? " · " + res.resumo.ignoradas + " linhas ignoradas (totais/vazias)" : "") + "</span></div>";
-      html += '<p class="muted" style="font-size:12.5px;margin:0 0 6px">O agente detectou o mapeamento abaixo. Se alguma coluna estiver errada, corrija e clique <b>🔄 Reanalisar</b>.</p>';
+      html += '<p class="muted" style="font-size:12.5px;margin:0 0 6px">O agente detectou o mapeamento abaixo. Se alguma coluna estiver errada, corrija e clique <b>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Reanalisar</b>.</p>';
       html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin-bottom:10px">' + roles.map(selCol).join("") + "</div>";
       html += '<input id="imp-header" type="hidden" value="' + (res.headerRow != null ? res.headerRow : -1) + '">';
       if (res.avisos && res.avisos.length) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;padding:8px 12px;margin-bottom:12px;font-size:12.5px;color:#92400e">⚠️ ' + res.avisos.map(function (a) { return Util.esc(a); }).join("<br>⚠️ ") + "</div>";
@@ -1601,9 +1601,9 @@
     renderEscopoEntrada: function () {
       return '' +
         '<p class="muted">Cole a <b>descrição da obra</b> (texto livre / trecho do laudo) ou itens linha a linha. ' +
-        'O <b>🤖 Estruturar com IA</b> quebra a obra em serviços, casa com as bases (SINAPI/SICRO/SUDECAP/SEINFRA/SETOP) e estima as quantidades. Nunca inventa código.</p>' +
+        'O <b>' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</b> quebra a obra em serviços, casa com as bases (SINAPI/SICRO/SUDECAP/SEINFRA/SETOP) e estima as quantidades. Nunca inventa código.</p>' +
         '<div class="field"><textarea id="esc-txt" rows="8" placeholder="Ex. (prosa livre): Reforma de banheiro 6m²: demolir revestimento antigo, novo contrapiso, assentar porcelanato no piso e paredes, instalar bacia e lavatório, impermeabilizar o box e pintar o forro...&#10;&#10;ou linha a linha:&#10;240 m2 alvenaria de bloco ceramico&#10;12 m3 concreto fck 25"></textarea></div>' +
-        '<div class="flex" style="gap:8px;margin-bottom:6px"><button class="btn primary" data-acao="escopo-ia">🤖 Estruturar com IA</button>' +
+        '<div class="flex" style="gap:8px;margin-bottom:6px"><button class="btn primary" data-acao="escopo-ia">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</button>' +
         '<button class="btn" data-acao="escopo-analisar">Analisar linha a linha (sem IA)</button></div>' +
         '<div class="watermark-hint">Sem match, o item fica <b>Pendente</b> — nunca inventamos código. (A IA precisa do ERP ligado na porta 3040.)</div>';
     },
@@ -1615,7 +1615,7 @@
       var html = '<div class="flex between mb"><div><b>' + analise.length + '</b> serviços · ' +
         '<span style="color:var(--verde)">' + totalOk + ' com sugestão</span> · ' +
         '<span style="color:var(--vermelho)">' + (analise.length - totalOk) + ' pendentes</span>' +
-        (temIA ? ' <button class="btn sm primary" data-acao="escopo-casar" title="A IA escolhe o código exato entre os candidatos (em lotes)" style="margin-left:8px">🎯 Refinar com IA</button>' : '') + '</div>' +
+        (temIA ? ' <button class="btn sm primary" data-acao="escopo-casar" title="A IA escolhe o código exato entre os candidatos (em lotes)" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Refinar com IA</button>' : '') + '</div>' +
         '<div class="flex"><label class="muted" style="font-size:12px">Adicionar à etapa:</label>' +
         '<select id="esc-etapa" class="btn sm">' +
           (temIA ? '<option value="__por_ia__" selected>★ Criar etapas conforme a IA</option>' : '') +
@@ -1642,7 +1642,7 @@
         sel += '<option value="-1"' + (l.escolhido === -1 ? " selected" : "") + '>— Ignorar / pendente —</option></select>';
 
         var confHtml = "—";
-        var marca = l.refinadoIA ? ' <span title="Código escolhido pela IA do ERP">🎯</span>' : '';
+        var marca = l.refinadoIA ? ' <span title="Código escolhido pela IA do ERP">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + '</span>' : '';
         if (l.escolhido > -1 && l.candidatos[l.escolhido]) {
           var c = l.candidatos[l.escolhido];
           var n = Escopo.nivel(c.confianca);

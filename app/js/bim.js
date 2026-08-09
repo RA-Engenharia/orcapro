@@ -289,12 +289,12 @@ function montar(host, opts) {
       var hBar = bar.offsetHeight || 46;
       if (hHost > 0) dock.style.maxHeight = Math.max(120, hHost - hBar - 16) + 'px';
     } catch (eD) {}
-    barToggle.innerHTML = barraAberta ? (ehTelaPequena ? '✕ Fechar ferramentas' : '⤢ Esconder') : '🧰 Ferramentas';
+    barToggle.innerHTML = barraAberta ? (ehTelaPequena ? '' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Fechar ferramentas' : '⤢ Esconder') : '' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ferramentas';
   }
   function setBarra(aberta) {
     barraAberta = !!aberta;
     bar.style.display = aberta ? 'flex' : 'none';
-    barToggle.innerHTML = aberta ? (ehTelaPequena ? '✕ Fechar ferramentas' : '⤢ Esconder') : '🧰 Ferramentas';
+    barToggle.innerHTML = aberta ? (ehTelaPequena ? '' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Fechar ferramentas' : '⤢ Esconder') : '' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ferramentas';
     try { localStorage.setItem('orcapro:bim:barra', aberta ? 'aberta' : 'recolhida'); } catch (_) {}
     // página rolada longe do viewer: abrir a barra sem trazê-la à vista parecia "não fez nada"
     if (aberta && ehTelaPequena && host.scrollIntoView) { try { host.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (_) {} }
@@ -342,7 +342,7 @@ function montar(host, opts) {
   function trocarTema() {
     temaId = temaId === 'orcapro' ? 'revit' : (temaId === 'revit' ? 'claro' : 'orcapro');
     aplicarTema();
-    if (S && S._hint) S._hint('🎨 Tema: ' + TEMAS[temaId].nome);
+    if (S && S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Tema: ' + TEMAS[temaId].nome);
   }
   /* v1.1.127 — a casca (bimshell) precisa MANDAR o tema, não só ciclar: quando o
    * ambiente está no claro do Revit, a cena tem de acompanhar, senão fica uma
@@ -439,7 +439,7 @@ function montar(host, opts) {
 
   var over = document.createElement('div');
   over.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2;pointer-events:none';
-  over.innerHTML = '<div style="pointer-events:auto;text-align:center;background:rgba(15,39,64,.82);border:2px dashed #2e6f9e;border-radius:16px;padding:28px 34px;max-width:420px;color:#dbe8f5"><div style="font-size:34px">🏗️</div><h3 style="margin:8px 0 6px">Arraste um <b>.IFC</b> aqui</h3><p style="color:#a9c1d8;font-size:13px;margin:4px 0">Exporte do Revit/pyRevit e solte — abre em 3D, offline. Ou clique em <b>Carregar exemplo</b>.</p></div>';
+  over.innerHTML = '<div style="pointer-events:auto;text-align:center;background:rgba(15,39,64,.82);border:2px dashed #2e6f9e;border-radius:16px;padding:28px 34px;max-width:420px;color:#dbe8f5"><div style="font-size:34px">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + '</div><h3 style="margin:8px 0 6px">Arraste um <b>.IFC</b> aqui</h3><p style="color:#a9c1d8;font-size:13px;margin:4px 0">Exporte do Revit/pyRevit e solte — abre em 3D, offline. Ou clique em <b>Carregar exemplo</b>.</p></div>';
   host.appendChild(over);
 
   var loading = document.createElement('div');
@@ -461,7 +461,7 @@ function montar(host, opts) {
   try { renderer.xr.enabled = true; } catch (_) {}
   renderer.domElement.style.cssText = 'display:block;width:100%;height:100%;outline:none';
   host.appendChild(renderer.domElement);
-  renderer.domElement.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (S) { S.alive = false; if (S.raf) cancelAnimationFrame(S.raf); } try { over.style.display = 'flex'; over.querySelector('div').innerHTML = '<div style="font-size:30px">🧊</div><h3 style="margin:8px 0">O 3D ficou pesado demais</h3><p style="color:#a9c1d8;font-size:13px">A memória de vídeo esgotou (modelos grandes / Ultra). Recarregue a aba BIM com menos modelos, ou desligue o ✨ Ultra.</p>'; } catch (_) {} }, false);
+  renderer.domElement.addEventListener('webglcontextlost', function (e) { e.preventDefault(); if (S) { S.alive = false; if (S.raf) cancelAnimationFrame(S.raf); } try { over.style.display = 'flex'; over.querySelector('div').innerHTML = '<div style="font-size:30px">🧊</div><h3 style="margin:8px 0">O 3D ficou pesado demais</h3><p style="color:#a9c1d8;font-size:13px">A memória de vídeo esgotou (modelos grandes / Ultra). Recarregue a aba BIM com menos modelos, ou desligue o ' + (typeof Icones !== 'undefined' ? Icones.get('escopo', 15) : '') + ' Ultra.</p>'; } catch (_) {} }, false);
   var hemi = new THREE.HemisphereLight(0xffffff, 0x223344, 0.55); scene.add(hemi); // reduzido: o ambiente PMREM abaixo faz o preenchimento
   var dir = new THREE.DirectionalLight(0xffffff, 1.0); dir.position.set(30, 50, 20); scene.add(dir);
   // v1.1.89 — ILUMINAÇÃO BASEADA EM IMAGEM (PMREM): reflexos suaves + shading premium em TODO
@@ -857,7 +857,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else { medir.pts = []; tirarProv(); btnCotas(); esconderSnapMarca(); } // sai: descarta 1º ponto pendente
     var bm = bar.querySelector('[data-b="medir"]'); if (bm) { bm.style.background = on ? corAtiva() : ''; bm.style.color = on ? '#fff' : ''; }
     atualizarCursor();
-    S._hint(on ? (planta.on ? '📏 Trena na planta: clique em 2 pontos — a cota é a distância horizontal.' : '📏 Trena: clique em 2 pontos do modelo pra medir. Esc sai.') : (planta.on ? '📐 Planta baixa. Ajuste a altura do corte no painel.' : ''));
+    S._hint(on ? (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Trena na planta: clique em 2 pontos — a cota é a distância horizontal.' : '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Trena: clique em 2 pontos do modelo pra medir. Esc sai.') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
   S._setMedir = setMedir;
   // captura por CLIQUE-SEM-ARRASTE (não atrapalha a órbita: se arrastou, é rotação).
@@ -916,9 +916,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       tirarProv(); // a marca definitiva do 1º ponto é desenhada por desenharMedida (evita marca dupla)
       var ok = desenharMedida(medir.pts[0].p, medir.pts[1].p); medir.pts = [];
       marcarFechamento(); // duplo-clique no 2º ponto não planta o 1º ponto da próxima cota
-      S._hint(ok ? '📏 Medido! Clique 2 pontos pra medir de novo, ou Esc pra sair.' : '📏 Pontos muito próximos — clique 2 pontos distintos.');
+      S._hint(ok ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medido! Clique 2 pontos pra medir de novo, ou Esc pra sair.' : '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.');
     } else {
-      var m0 = pontoMarca(medir.pts[0].p); addMed(m0); medir.prov = m0; S._hint('📏 Agora clique no 2º ponto.');
+      var m0 = pontoMarca(medir.pts[0].p); addMed(m0); medir.prov = m0; S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Agora clique no 2º ponto.');
     }
   });
   // hover do snap: feedback ao vivo de onde a trena vai "agarrar" (throttle p/ não pesar o raycast)
@@ -1005,7 +1005,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else { limparTmp(area.tmp); area.pts = []; esconderSnapMarca(); btnCotas(); }
     var b = bar.querySelector('[data-b="area"]'); if (b) { b.style.background = on ? corAtiva() : ''; b.style.color = on ? '#fff' : ''; }
     atualizarCursor();
-    S._hint(on ? ('▱ Área: clique os cantos (3+)' + (planta.on ? ' na planta' : '') + ' e feche clicando de novo no 1º ponto (ou duplo-clique).') : (planta.on ? '📐 Planta baixa. Ajuste a altura do corte no painel.' : ''));
+    S._hint(on ? ('▱ Área: clique os cantos (3+)' + (planta.on ? ' na planta' : '') + ' e feche clicando de novo no 1º ponto (ou duplo-clique).') : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
   S._setArea = setArea;
   function areaClique(p) {
@@ -1055,7 +1055,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else { limparTmp(ang.tmp); ang.pts = []; esconderSnapMarca(); btnCotas(); }
     var b = bar.querySelector('[data-b="angulo"]'); if (b) { b.style.background = on ? corAtiva() : ''; b.style.color = on ? '#fff' : ''; }
     atualizarCursor();
-    S._hint(on ? '∠ Ângulo: clique o 1º ponto, depois o VÉRTICE, depois o 2º ponto.' : (planta.on ? '📐 Planta baixa. Ajuste a altura do corte no painel.' : ''));
+    S._hint(on ? '∠ Ângulo: clique o 1º ponto, depois o VÉRTICE, depois o 2º ponto.' : (planta.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte no painel.' : ''));
   }
   S._setAng = setAng;
   function angClique(p) {
@@ -1103,12 +1103,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.planta = planta;
   var cortePanel = document.createElement('div');
   cortePanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:220px';
-  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>📐 Altura do corte</b><span data-c="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
+  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Altura do corte</b><span data-c="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
     '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:#22c55e">' +
-    '<div style="font-size:11px;color:#9fb2c8">Esconde o que está acima do corte — a planta baixa do pavimento. A 📏 trena funciona aqui (cota horizontal).</div>' +
-    '<button class="btn sm primary" data-c="planta2d" style="width:100%">📄 Planta baixa técnica (2D)</button>' +
-    '<button class="btn sm" data-c="estilo" style="width:100%">✏️ Estilo desenho (branco)</button>' +
-    '<button class="btn sm" data-c="cortetec" style="width:100%">📝 Gerar corte técnico (A–A)</button>';
+    '<div style="font-size:11px;color:#9fb2c8">Esconde o que está acima do corte — a planta baixa do pavimento. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona aqui (cota horizontal).</div>' +
+    '<button class="btn sm primary" data-c="planta2d" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica (2D)</button>' +
+    '<button class="btn sm" data-c="estilo" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Estilo desenho (branco)</button>' +
+    '<button class="btn sm" data-c="cortetec" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico (A–A)</button>';
   host.appendChild(cortePanel);
   S.cortePanel = cortePanel; // guardado p/ re-parentar no re-home (senão o slider some ao revisitar a aba)
   function setAlturaCorte(frac) {
@@ -1134,7 +1134,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       cortePanel.querySelector('[data-c="alt"]').value = 620; setAlturaCorte(0.62); // ~altura de peitoril
       if (bp) { bp.style.background = corAtiva(); bp.style.color = '#fff'; }
       if (!estiloD.on && !sisColor.on) setEstiloDesenho(true); // planta "como deve ser": entra já em modo desenho (branco + arestas). MAS se o usuário ligou "colorir por sistema", a planta sai COLORIDA (é o pedido: cores do sistema na planta baixa)
-      S._hint('📐 Planta baixa. Ajuste a altura do corte e gere a 📄 planta técnica com cotas no painel. Toque em 📐 de novo pra sair.');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta baixa. Ajuste a altura do corte e gere a ' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' planta técnica com cotas no painel. Toque em ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' de novo pra sair.');
     } else {
       ctecCancelar(); // desenho/config do corte técnico só faz sentido NA planta (incondicional: pega a config aberta)
       plantaCfg.style.display = 'none'; // config da planta técnica idem
@@ -1143,7 +1143,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       orbit.enableRotate = true; // volta a permitir órbita livre
       cortePanel.style.display = 'none';
       if (bp) { bp.style.background = ''; bp.style.color = ''; }
-      enquadrar(); S._hint(medir.on ? '📏 Trena: clique em 2 pontos do modelo pra medir. Esc sai.' : '');
+      enquadrar(); S._hint(medir.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Trena: clique em 2 pontos do modelo pra medir. Esc sai.' : '');
     }
   }
   S._setPlanta = setPlanta;
@@ -1182,7 +1182,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var corteLPanel = document.createElement('div');
   corteLPanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:240px';
   corteLPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>✂️ Plano de corte</b><span data-k="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Plano de corte</b><span data-k="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
     '<div style="display:flex;gap:5px"><button class="btn sm" data-k="ph" style="flex:1">Horizontal</button><button class="btn sm" data-k="pns" style="flex:1">N–S</button><button class="btn sm" data-k="plo" style="flex:1">L–O</button></div>' +
     '<label style="display:flex;justify-content:space-between;font-size:11px;color:#9fb2c8">Ângulo (azimute) <span data-k="azv">0°</span></label>' +
     '<input type="range" data-k="az" min="0" max="359" value="0" style="width:100%;accent-color:#22c55e">' +
@@ -1190,8 +1190,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<input type="range" data-k="inc" min="0" max="90" value="0" style="width:100%;accent-color:#22c55e">' +
     '<label style="display:flex;justify-content:space-between;font-size:11px;color:#9fb2c8">Posição do corte <span data-k="posv">50%</span></label>' +
     '<input type="range" data-k="pos" min="0" max="1000" value="500" style="width:100%;accent-color:#22c55e">' +
-    '<button class="btn sm" data-k="inv" style="width:100%">🔄 Inverter lado visível</button>' +
-    '<div style="font-size:11px;color:#9fb2c8">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A 📏 trena funciona na face do corte.</div>';
+    '<button class="btn sm" data-k="inv" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Inverter lado visível</button>' +
+    '<div style="font-size:11px;color:#9fb2c8">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona na face do corte.</div>';
   host.appendChild(corteLPanel);
   S.corteLPanel = corteLPanel;
   function corteNormal() {
@@ -1232,12 +1232,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       corteLPanel.style.display = 'flex';
       if (bc) { bc.style.background = corAtiva(); bc.style.color = '#fff'; }
       aplicarCorteL();
-      S._hint('✂️ Corte livre: escolha a direção e arraste a posição — o modelo abre ao vivo. Esc sai.');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Corte livre: escolha a direção e arraste a posição — o modelo abre ao vivo. Esc sai.');
     } else {
       renderer.clippingPlanes = []; renderer.localClippingEnabled = false;
       corteLPanel.style.display = 'none';
       if (bc) { bc.style.background = ''; bc.style.color = ''; }
-      S._hint(medir.on ? '📏 Trena: clique em 2 pontos do modelo pra medir. Esc sai.' : '');
+      S._hint(medir.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Trena: clique em 2 pontos do modelo pra medir. Esc sai.' : '');
     }
   }
   S._setCorteL = setCorteL; S._aplicarCorteL = aplicarCorteL;
@@ -1269,7 +1269,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var snapPanel = document.createElement('div');
   snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:210px';
   snapPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b>🧲 Snap da trena</b><button class="btn sm" data-s="on" style="padding:2px 9px">ON</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('ima', 15) : '') + ' Snap da trena</b><button class="btn sm" data-s="on" style="padding:2px 9px">ON</button></div>' +
     '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
     '<button class="btn sm" data-s="v" style="flex:1" title="Agarra no fim de linha (canto/vértice)">▪ Vértice</button>' +
     '<button class="btn sm" data-s="m" style="flex:1" title="Agarra no meio da aresta">● Meio</button>' +
@@ -1293,10 +1293,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         '<b style="color:#9fb2c8;font-weight:600">' + cnt[k] + '</b></label>';
     }).join('');
     sisPanel.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🎨 Sistemas hidrossanitários</b>' +
-      '<button class="btn sm" data-sx="fechar" style="padding:2px 8px" title="Desligar as cores por sistema">✕</button></div>' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Sistemas hidrossanitários</b>' +
+      '<button class="btn sm" data-sx="fechar" style="padding:2px 8px" title="Desligar as cores por sistema">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
       (linhas || '<div style="color:#9fb2c8;line-height:1.4">Nenhum sistema hidráulico reconhecido pelos nomes dos elementos. As cores aparecem quando o IFC tiver tubulação nomeada (água fria, esgoto, pluvial, gás, incêndio…).</div>') +
-      '<div style="display:flex;gap:6px;margin-top:2px"><button class="btn sm" data-sx="padrao" style="flex:1" title="Voltar às cores padrão">↺ Cores padrão</button></div>' +
+      '<div style="display:flex;gap:6px;margin-top:2px"><button class="btn sm" data-sx="padrao" style="flex:1" title="Voltar às cores padrão">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Cores padrão</button></div>' +
       '<div style="font-size:11px;color:#9fb2c8;line-height:1.4">Estas cores também valem na <b>Planta baixa</b> e no <b>RA/RV</b>. Clique numa cor pra trocar.</div>';
   }
   // legenda compacta (chips) para o overlay do imersivo — pintada dentro do xrHud
@@ -1323,7 +1323,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // no imersivo NÃO abre o painel lateral (tampa a vista) — a legenda vai como chips no HUD
     if (!(S.xr && S.xr.on)) { sisPanel.style.display = on ? 'flex' : 'none'; if (on) fecharPaineis(sisPanel); }
     if (S._sisImersivoSync) S._sisImersivoSync();
-    if (S._hint) S._hint(on ? '🎨 Colorido por sistema hidrossanitário. Toque nas cores da legenda pra personalizar.' : 'Cores originais do modelo restauradas.');
+    if (S._hint) S._hint(on ? '' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Colorido por sistema hidrossanitário. Toque nas cores da legenda pra personalizar.' : 'Cores originais do modelo restauradas.');
   }
   S._setSistema = setSisColor;
   S._sisColorOn = function () { return !!sisColor.on; };
@@ -1505,12 +1505,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   function gerarBlocok(opts) {
     opts = opts || {};
-    if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return null; }
+    if (!blocokLiberado()) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return null; }
     var BK = getBK();
-    if (!BK) { if (S._hint) S._hint('🧱 Motor Blocok não carregou (js/blocok.js).'); return null; }
-    if (!(S.modelos && S.modelos.length)) { if (S._hint) S._hint('🧱 Abra um IFC primeiro — o Blocok lê as paredes do modelo.'); return null; }
+    if (!BK) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Motor Blocok não carregou (js/blocok.js).'); return null; }
+    if (!(S.modelos && S.modelos.length)) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Abra um IFC primeiro — o Blocok lê as paredes do modelo.'); return null; }
     var ext = extrairParedesBlocok(), paredes = ext.paredes;
-    if (!paredes.length) { if (S._hint) S._hint('🧱 Nenhuma parede visível reconhecida (IfcWall). Verifique se o andar/disciplina está ligado.'); return { paredes: [], material: null, carga: null, insumos: null }; }
+    if (!paredes.length) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Nenhuma parede visível reconhecida (IfcWall). Verifique se o andar/disciplina está ligado.'); return { paredes: [], material: null, carga: null, insumos: null }; }
     var mat = BK.material(paredes, { pesoPorEsp: blocokCfg.pesoPorEsp });
     var carga = BK.cargaFundacao(paredes, { pesoPorEsp: blocokCfg.pesoPorEsp });
     var ins = BK.insumos(paredes, ensureInsCfg());
@@ -1524,13 +1524,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   // 📊 planilha Excel multi-abas (Resumo, por pavimento, romaneio, material, insumos, MO, cargas, logística)
   function gerarPlanilhaBlocok() {
-    if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Recurso exclusivo (liberado por licença).'); return null; }
-    var BK = getBK(); if (!BK) { if (S._hint) S._hint('🧱 Motor Blocok não carregou.'); return null; }
+    if (!blocokLiberado()) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Recurso exclusivo (liberado por licença).'); return null; }
+    var BK = getBK(); if (!BK) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Motor Blocok não carregou.'); return null; }
     var XLS = (typeof window !== 'undefined' && window.BlocokXLS) || null;
-    if (!XLS) { if (S._hint) S._hint('📊 Módulo de planilha não carregou (js/blocokxls.js).'); return null; }
-    if (!(S.modelos && S.modelos.length)) { if (S._hint) S._hint('🧱 Abra um IFC primeiro.'); return null; }
+    if (!XLS) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Módulo de planilha não carregou (js/blocokxls.js).'); return null; }
+    if (!(S.modelos && S.modelos.length)) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Abra um IFC primeiro.'); return null; }
     var ext = extrairParedesBlocok(), paredes = ext.paredes;
-    if (!paredes.length) { if (S._hint) S._hint('🧱 Nenhuma parede visível reconhecida (IfcWall).'); return null; }
+    if (!paredes.length) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Nenhuma parede visível reconhecida (IfcWall).'); return null; }
     var pesoCfg = { pesoPorEsp: blocokCfg.pesoPorEsp }, ic = ensureInsCfg();
     var mat = BK.material(paredes, pesoCfg);
     var pacote = {
@@ -1541,11 +1541,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       juntaNome: (ic.junta && ic.junta.tipo === 'argamassa') ? 'argamassa polimérica (junta preenchida)' : (ic.junta && ic.junta.tipo === 'seca') ? 'encaixe seco' : 'cola/adesivo polimérico (cordão)',
       premissas: { faceCm: ic.faceCm, cimento: ic.mix && ic.mix.cimento, areia: ic.mix && ic.mix.areia, pedrisco: ic.mix && ic.mix.pedrisco, aditivo: ic.mix && ic.mix.aditivo }
     };
-    if (S._hint) S._hint('📊 Gerando a planilha Excel (' + paredes.length + ' paredes, ' + mat.totalPlacas + ' placas)…');
+    if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Gerando a planilha Excel (' + paredes.length + ' paredes, ' + mat.totalPlacas + ' placas)…');
     XLS.gerar(pacote, {
       nome: 'Blocok — ' + pacote.obra + ' — ' + pacote.data.replace(/\//g, '-'),
-      ok: function () { if (S._hint) S._hint('📊 Planilha Excel baixada — abas por pavimento + romaneio + material + insumos + mão de obra + cargas + logística.'); },
-      erro: function (e) { if (S._hint) S._hint('📊 Não gerou a planilha (' + e + ').'); }
+      ok: function () { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Planilha Excel baixada — abas por pavimento + romaneio + material + insumos + mão de obra + cargas + logística.'); },
+      erro: function (e) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Não gerou a planilha (' + e + ').'); }
     });
     return pacote;
   }
@@ -1553,7 +1553,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   function abrirRelatorioBlocok(d) {
     var w = null; try { w = window.open('', '_blank'); } catch (_) {}
-    if (!w) { if (S._hint) S._hint('🖨 O navegador bloqueou a nova aba — libere pop-ups pra ver as pranchas Blocok.'); return; }
+    if (!w) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' O navegador bloqueou a nova aba — libere pop-ups pra ver as pranchas Blocok.'); return; }
     var obra = (S.opts && (S.opts.obraNome || S.opts.obra)) || 'Obra', hoje = new Date().toLocaleDateString('pt-BR');
     var m = d.material, cg = d.carga;
     function card(v, l) { return '<div class="cd"><b>' + v + '</b><span>' + esc(l) + '</span></div>'; }
@@ -1583,16 +1583,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + '.pbtn{background:#16a34a;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer}'
       + '@media print{.pbtn,.noprint{display:none}body{background:#fff}}';
     var html = '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Plantas Executivas Blocok — ' + esc(obra) + '</title><style>' + css + '</style></head><body>'
-      + '<header><div><h1>🧱 Plantas Executivas — Sistema Blocok</h1><div class="sub">' + esc(obra) + ' · ' + hoje + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' · gerado no OrçaPRO BIM':'') + '</div></div><button class="pbtn noprint" onclick="window.print()">🖨 Imprimir / PDF</button></header>'
+      + '<header><div><h1>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Plantas Executivas — Sistema Blocok</h1><div class="sub">' + esc(obra) + ' · ' + hoje + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' · gerado no OrçaPRO BIM':'') + '</div></div><button class="pbtn noprint" onclick="window.print()">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir / PDF</button></header>'
       + '<div class="wrap">'
       + '<div class="cards">' + cards + '</div>'
       + '<div class="leg"><span><i class="sw" style="background:#e6f0fb"></i> placa inteira 90×90 cm</span><span><i class="sw" style="background:#fdecc8"></i> recorte (dimensão em cm)</span><span><i class="sw" style="background:#e8ecef;border-style:dashed"></i> vão (porta/janela)</span></div>'
-      + (mapa ? '<h2>🗺️ Mapa de localização das paredes</h2>' + mapa : '')
-      + '<h2>📦 Material — placas por espessura</h2><table><thead><tr><th>Espessura</th><th>Placas</th><th>Inteiras</th><th>Recortes</th><th>Área (m²)</th><th>Peso (kg)</th></tr></thead><tbody>' + trEsp + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>' + m.totalPlacas + '</td><td>' + m.totalInteiras + '</td><td>' + m.totalRecortes + '</td><td>' + fmtB(m.areaPlacas) + '</td><td>' + fmtB(m.pesoTotalKg) + '</td></tr></tbody></table>'
+      + (mapa ? '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('planta', 15) : '') + ' Mapa de localização das paredes</h2>' + mapa : '')
+      + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Material — placas por espessura</h2><table><thead><tr><th>Espessura</th><th>Placas</th><th>Inteiras</th><th>Recortes</th><th>Área (m²)</th><th>Peso (kg)</th></tr></thead><tbody>' + trEsp + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>' + m.totalPlacas + '</td><td>' + m.totalInteiras + '</td><td>' + m.totalRecortes + '</td><td>' + fmtB(m.areaPlacas) + '</td><td>' + fmtB(m.pesoTotalKg) + '</td></tr></tbody></table>'
       + '<h2>🏭 Insumos de produção das placas <span style="font-size:11px;color:#5a6a78;font-weight:400">(fábrica — por placa cheia produzida: ' + fmtB(ins.areaCheia) + ' m²)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trProd + '</tbody></table>'
-      + '<h2>🧱 Insumos de montagem/assentamento <span style="font-size:11px;color:#5a6a78;font-weight:400">(obra — junta: ' + esc(juntaNome) + ' · por ' + fmtB(ins.areaInstalada) + ' m² instalados)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trMont + '</tbody></table>'
-      + '<h2>🏗️ Carga própria das paredes na fundação</h2><table><thead><tr><th>Parede</th><th>Comp. (m)</th><th>Esp. (cm)</th><th>Placas</th><th>Peso (kg)</th><th>Carga (kg/m)</th><th>Carga (kN/m)</th></tr></thead><tbody>' + trCg + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>—</td><td>—</td><td>' + m.totalPlacas + '</td><td>' + fmtB(cg.pesoTotalKg) + '</td><td>—</td><td>—</td></tr></tbody></table>'
-      + '<h2>📐 Pranchas executivas por parede</h2>' + pranchas
+      + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Insumos de montagem/assentamento <span style="font-size:11px;color:#5a6a78;font-weight:400">(obra — junta: ' + esc(juntaNome) + ' · por ' + fmtB(ins.areaInstalada) + ' m² instalados)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trMont + '</tbody></table>'
+      + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Carga própria das paredes na fundação</h2><table><thead><tr><th>Parede</th><th>Comp. (m)</th><th>Esp. (cm)</th><th>Placas</th><th>Peso (kg)</th><th>Carga (kg/m)</th><th>Carga (kN/m)</th></tr></thead><tbody>' + trCg + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>—</td><td>—</td><td>' + m.totalPlacas + '</td><td>' + fmtB(cg.pesoTotalKg) + '</td><td>—</td><td>—</td></tr></tbody></table>'
+      + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Pranchas executivas por parede</h2>' + pranchas
       + '</div>'
       + '<footer><b>Observações e premissas (honestidade técnica):</b><br>'
       + '1) Os insumos são uma <b>estimativa técnica calculada</b> a partir da geometria do painel (2 faces de micro concreto + núcleo EPS + junta de assentamento) com um <b>traço de referência editável</b>: produção por placa cheia produzida, assentamento por m² instalado conforme a <b>junta escolhida</b>. Ajuste traço/junta/peso no painel se a sua fábrica usar valores próprios.<br>'
@@ -1601,7 +1601,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + '4) A carga na fundação é o <b>peso próprio LÍQUIDO</b> das paredes (área de placa efetivamente instalada — o retalho do recorte é descartado, não pesa na parede). Já o card <b>“peso p/ compra”</b> soma <b>placas cheias</b> (o que você adquire/transporta). Não inclui laje, cobertura nem sobrecarga de uso — some às demais cargas no dimensionamento estrutural.<br>'
       + '5) Placas numeradas em fiadas da <b>base para o topo</b>, da <b>esquerda para a direita</b>. ' + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'Gerado no OrçaPRO BIM.':'') + '</footer>'
       + '</body></html>';
-    try { w.document.write(html); w.document.close(); } catch (_) { if (S._hint) S._hint('🧱 Não deu pra montar a prancha na nova aba.'); }
+    try { w.document.write(html); w.document.close(); } catch (_) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Não deu pra montar a prancha na nova aba.'); }
   }
 
   // painel flutuante do Blocok (espessura + peso + insumos editáveis + desconto de vãos)
@@ -1634,7 +1634,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + linhaNum('Capac./viagem', 'data-bklg="pesoViagemKg"', lc.pesoViagemKg, 'kg')
       + linhaNum('Placas/pallet', 'data-bklg="placasPallet"', lc.placasPallet, 'un');
     blocokPanel.innerHTML =
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>🧱 Plantas Executivas Blocok</b><button class="btn sm" data-bk="fechar" style="padding:2px 8px">✕</button></div>'
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Plantas Executivas Blocok</b><button class="btn sm" data-bk="fechar" style="padding:2px 8px">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>'
       + '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
       + '<label style="display:flex;flex-direction:column;gap:2px"><span style="color:#9fb2c8">Espessura Blocok</span><select data-bk="esp" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + espOpts + '</select></label>'
       + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:#9fb2c8">Junta de assentamento</span><select data-bk="junta" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
@@ -1642,12 +1642,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Peso por placa (compra)</summary>' + pesos + '</details>'
       + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Mão de obra & logística (planilha)</summary>' + molog + '</details>'
       + '<label style="display:flex;align-items:center;gap:6px;margin-top:2px"><input type="checkbox" data-bk="vaos"' + (blocokCfg.descontarVaos ? ' checked' : '') + '> descontar vãos (portas/janelas)</label>'
-      + '<button class="btn sm primary" data-bk="gerar" style="margin-top:2px">📐 Gerar plantas executivas</button>'
-      + '<button class="btn sm" data-bk="planilha" style="margin-top:2px">📊 Gerar planilha (Excel)</button>'
+      + '<button class="btn sm primary" data-bk="gerar" style="margin-top:2px">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Gerar plantas executivas</button>'
+      + '<button class="btn sm" data-bk="planilha" style="margin-top:2px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Gerar planilha (Excel)</button>'
       + '<div style="font-size:10px;color:#8296ab;line-height:1.3">Planilha com abas por pavimento, romaneio de placas, material, insumos, mão de obra, cargas e logística. Insumos <b>calculados</b> (traço editável).</div>';
   }
   function toggleBlocokPanel() {
-    if (!blocokLiberado()) { if (S._hint) S._hint('🧱 Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return; }
+    if (!blocokLiberado()) { if (S._hint) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Plantas Executivas Blocok é um recurso exclusivo (liberado por licença).'); return; }
     var abrir = (blocokPanel.style.display === 'none' || !blocokPanel.style.display);
     if (abrir) { pintarBlocokPanel(); fecharPaineis(blocokPanel); blocokPanel.style.display = 'flex'; }
     else blocokPanel.style.display = 'none';
@@ -1829,7 +1829,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S.plantaCfg) S.plantaCfg.style.display = 'none'; // config da planta técnica não pode ficar cobrindo os cliques A/B
     if (edit && edit.on) setEdit(false); // corte técnico e editor disputariam o mesmo clique
     ctecLimparDesenho(); ctec.ativo = true;
-    S._hint('📝 Clique o 1º ponto da linha de corte (A) sobre a planta.');
+    S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Clique o 1º ponto da linha de corte (A) sobre a planta.');
   }
   function ctecCancelar(pergunta) {
     var tinha = ctec.ativo || ctecCfg.style.display !== 'none' || ctec.objs.length;
@@ -1844,23 +1844,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     scene.add(m); ctec.objs.push(m); rescaleObj(m);
     var rot = labelSprite(ctec.pts.length === 1 ? 'A' : "A'"); rot.position.copy(p).add(new THREE.Vector3(0, 0.02, 0));
     scene.add(rot); ctec.objs.push(rot); rescaleObj(rot);
-    if (ctec.pts.length === 1) { S._hint("📝 Agora clique o 2º ponto (A')."); return; }
+    if (ctec.pts.length === 1) { S._hint("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Agora clique o 2º ponto (A')."); return; }
     var line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([ctec.pts[0], ctec.pts[1]]), new THREE.LineBasicMaterial({ color: 0x38bdf8, depthTest: false }));
     line.renderOrder = 997; scene.add(line); ctec.objs.push(line);
     ctec.ativo = false;
     marcarFechamento(); // duplo-clique no A' não vaza o irmão pra trena/área coexistente
-    ctecCfg.style.display = 'flex'; S._hint('📝 Configure o corte e clique Gerar.');
+    ctecCfg.style.display = 'flex'; S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Configure o corte e clique Gerar.');
   }
   // painel de configuração do corte
   var ctecCfg = document.createElement('div');
   ctecCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:260px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
   ctecCfg.innerHTML =
-    '<b>📝 Gerar corte técnico</b>' +
+    '<b>' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico</b>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Tipo de vista <select data-t="tipo" class="inp" style="width:130px"><option value="corte">Corte (A–A)</option><option value="fachada">Fachada/Elevação</option></select></label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-t="esc" class="inp" style="width:130px"><option value="50">1:50</option><option value="75">1:75</option><option value="100" selected>1:100</option><option value="200">1:200</option></select></label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade de visão <input data-t="prof" class="inp" type="number" min="0.5" step="0.5" value="10" style="width:70px"> m</label>' +
     '<label style="display:flex;gap:6px;align-items:center;font-size:12px"><input data-t="inv" type="checkbox"> Olhar para o outro lado</label>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Auxílio visual de coordenação, não substitui o projeto executivo. Faces cortadas saem <b>hachuradas</b>; superfícies curvas/tubos podem sair sem contorno. Confira sempre pela escala gráfica.</div>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Auxílio visual de coordenação, não substitui o projeto executivo. Faces cortadas saem <b>hachuradas</b>; superfícies curvas/tubos podem sair sem contorno. Confira sempre pela escala gráfica.</div>' +
     '<div style="display:flex;gap:6px"><button class="btn sm primary" data-t="gerar" style="flex:1">Gerar</button><button class="btn sm" data-t="cancelar" style="flex:1">Cancelar</button></div>';
   host.appendChild(ctecCfg);
   S.ctecCfg = ctecCfg;
@@ -1870,7 +1870,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   ctecModal.innerHTML =
     '<div style="display:flex;flex-direction:column;gap:9px;max-width:92%;max-height:92%;background:#0f2740;border:1px solid #24435f;border-radius:12px;padding:13px">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;color:#dbe8f5;font-size:13px"><b data-r="titulo">Corte técnico</b>' +
-    '<span><button class="btn sm" data-r="ajustar" title="Mudar escala/tipo/profundidade sem redesenhar a linha">🔧 Ajustar</button> <button class="btn sm" data-r="imprimir">🖨 Imprimir</button> <button class="btn sm" data-r="baixar">⬇ PNG</button> <button class="btn sm" data-r="fechar">✕</button></span></div>' +
+    '<span><button class="btn sm" data-r="ajustar" title="Mudar escala/tipo/profundidade sem redesenhar a linha">🔧 Ajustar</button> <button class="btn sm" data-r="imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir</button> <button class="btn sm" data-r="baixar">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' PNG</button> <button class="btn sm" data-r="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></span></div>' +
     '<div style="overflow:auto;background:#fff;border-radius:6px;text-align:center"><img data-r="img" style="max-width:100%;display:block;margin:0 auto"></div></div>';
   host.appendChild(ctecModal);
   S.ctecModal = ctecModal;
@@ -2028,7 +2028,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       inv: ctecCfg.querySelector('[data-t="inv"]').checked
     });
     ctecCfg.style.display = 'none';
-    if (!res) { ctecIniciar(); S._hint('📝 Linha muito curta — clique o 1º ponto da linha de corte (A) de novo.'); return; } // re-arma (senão a ferramenta fica morta)
+    if (!res) { ctecIniciar(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Linha muito curta — clique o 1º ponto da linha de corte (A) de novo.'); return; } // re-arma (senão a ferramenta fica morta)
     ctecModal._ajustar = null; ctecModal._nomeArq = null; // modal é compartilhado com a planta técnica: limpa os hooks dela
     ctecModal._res = res; // guarda p/ imprimir em mm físicos
     ctecModal.querySelector('[data-r="img"]').src = res.url;
@@ -2042,14 +2042,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (k === 'fechar') { S._fecharCtecModal(); }
     else if (k === 'ajustar') {
       ctecModal.style.display = 'none';
-      if (ctecModal._ajustar) { ctecModal._ajustar(); S._hint('📄 Ajuste e clique Gerar.'); } // planta técnica reabre a config DELA
-      else { ctecCfg.style.display = 'flex'; S._hint('📝 Ajuste e clique Gerar (a linha A–A foi mantida).'); } // pts preservados
+      if (ctecModal._ajustar) { ctecModal._ajustar(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Ajuste e clique Gerar.'); } // planta técnica reabre a config DELA
+      else { ctecCfg.style.display = 'flex'; S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Ajuste e clique Gerar (a linha A–A foi mantida).'); } // pts preservados
     }
     else if (k === 'baixar') { var aEl = document.createElement('a'); aEl.href = url; aEl.download = ctecModal._nomeArq || 'corte-tecnico.png'; aEl.click(); }
     else if (k === 'imprimir') {
       // imprime na DIMENSÃO FÍSICA (mm) pra a escala do carimbo valer no papel — max-width:100% encolheria
       var w = null; try { w = window.open('', '_blank'); } catch (_) {}
-      if (!w) { S._hint('🖨 O navegador bloqueou a janela de impressão — use ⬇ PNG e imprima o arquivo em 100%.'); return; }
+      if (!w) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' O navegador bloqueou a janela de impressão — use ' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' PNG e imprima o arquivo em 100%.'); return; }
       try {
         var ttlImp = esc((ctecModal.querySelector('[data-r="titulo"]').textContent || 'Desenho técnico')) + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?' — OrçaPRO BIM':'');
         w.document.write('<!doctype html><meta charset="utf-8"><title>' + ttlImp + '</title>' +
@@ -2057,7 +2057,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           '<p class="av">Imprima em <b>100%</b> (sem “ajustar à página”) para a escala do carimbo valer. A escala gráfica de 1 m serve de conferência.</p>' +
           '<img src="' + url + '" style="width:' + (res.larguraMM || 200).toFixed(1) + 'mm;height:' + (res.alturaMM || 150).toFixed(1) + 'mm;display:block" onload="setTimeout(function(){window.print()},300)">');
         w.document.close();
-      } catch (_) { S._hint('🖨 Não deu pra abrir a impressão — use ⬇ PNG.'); }
+      } catch (_) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Não deu pra abrir a impressão — use ' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' PNG.'); }
     }
   });
 
@@ -2109,7 +2109,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       h2.style.background = '#fff';
       _chao.visible = false; // fundo branco: o blob da sombra de contato viraria borrão cinza (some no fundo escuro normal)
       if (bt) bt.style.outline = '2px solid ' + corAtiva();
-      if (!silencioso) S._hint('✏️ Estilo desenho: massas + arestas no fundo branco (as cores voltam ao sair).');
+      if (!silencioso) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Estilo desenho: massas + arestas no fundo branco (as cores voltam ao sair).');
     } else {
       _chao.visible = true;
       todasMalhas(function (m) {
@@ -2132,11 +2132,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var plantaCfg = document.createElement('div');
   plantaCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:270px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
   plantaCfg.innerHTML =
-    '<b>📄 Planta baixa técnica</b>' +
+    '<b>' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica</b>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-q="esc" class="inp" style="width:130px"><option value="50" selected>1:50</option><option value="75">1:75</option><option value="100">1:100</option><option value="200">1:200</option></select></label>' +
     '<label style="display:flex;gap:6px;align-items:center"><input data-q="cotas" type="checkbox" checked> Cotas automáticas nas paredes</label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade abaixo do corte <input data-q="prof" class="inp" type="number" min="0.5" step="0.5" value="3" style="width:64px"> m</label>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ As cotas saem dos alinhamentos das faces das paredes retas nos eixos do modelo. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a 📏 trena.</div>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' As cotas saem dos alinhamentos das faces das paredes retas nos eixos do modelo. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena.</div>' +
     '<div style="display:flex;gap:6px"><button class="btn sm primary" data-q="gerar" style="flex:1">Gerar</button><button class="btn sm" data-q="cancelar" style="flex:1">Cancelar</button></div>';
   host.appendChild(plantaCfg);
   S.plantaCfg = plantaCfg;
@@ -2305,7 +2305,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // avisos honestos numa FAIXA reservada no topo (nunca por cima do desenho)
     var avisos = [];
     if (cad && cad.diagonais) avisos.push('⚠ ' + cad.diagonais + ' parede(s) fora de esquadro/curtas sem cota automática — meça com a trena');
-    if (o.cotas && !temCotas) avisos.push('⚠ Nenhuma parede reta atravessa o corte — sem cotas automáticas');
+    if (o.cotas && !temCotas) avisos.push('' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Nenhuma parede reta atravessa o corte — sem cotas automáticas');
     var padTop = avisos.length ? (avisos.length * 15 + 8) : 0;
     var padL = (cad && cad.z) ? Math.round(17 * PPM96) : 0; // 17 mm p/ cadeia vertical
     var padB = (cad && cad.x) ? Math.round(17 * PPM96) : 0;
@@ -2341,7 +2341,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var b = e.target.closest('[data-q]'); if (!b) return; var k = b.getAttribute('data-q');
     if (k === 'cancelar') { plantaCfg.style.display = 'none'; return; }
     if (k !== 'gerar') return;
-    if (!planta.on || !planta.plane) { plantaCfg.style.display = 'none'; S._hint('📐 Abra a Planta primeiro — o corte usa a altura do slider.'); return; }
+    if (!planta.on || !planta.plane) { plantaCfg.style.display = 'none'; S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Abra a Planta primeiro — o corte usa a altura do slider.'); return; }
     var res = gerarPlantaTec({
       y: planta.plane.constant,
       escala: +plantaCfg.querySelector('[data-q="esc"]').value,
@@ -2350,7 +2350,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       rotAlt: (cortePanel.querySelector('[data-c="v"]') || {}).textContent
     });
     plantaCfg.style.display = 'none';
-    if (!res) { S._hint('📄 Carregue um modelo primeiro.'); return; }
+    if (!res) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Carregue um modelo primeiro.'); return; }
     ctecModal._res = res;
     ctecModal._nomeArq = 'planta-baixa.png';
     ctecModal._ajustar = function () { plantaCfg.style.display = 'flex'; };
@@ -2427,9 +2427,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._pavLista = pavLista;
   function pavRender() {
     var lst = pavLista();
-    var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>🏢 Pavimentos</b><button class="btn sm" data-p="todos" title="Mostrar todos os pavimentos de novo">↺ Todos</button></div>';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('niveis', 15) : '') + ' Pavimentos</b><button class="btn sm" data-p="todos" title="Mostrar todos os pavimentos de novo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos</button></div>';
     if (!lst.length) {
-      html += '<div style="font-size:11px;color:#9fb2c8">Este IFC não declara pavimentos (IfcBuildingStorey). Use a 📐 Planta com o slider de altura.</div>';
+      html += '<div style="font-size:11px;color:#9fb2c8">Este IFC não declara pavimentos (IfcBuildingStorey). Use a ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta com o slider de altura.</div>';
     } else {
       var base = null;
       lst.forEach(function (pv) { if (pv.y0 != null && (base == null || pv.y0 < base)) base = pv.y0; });
@@ -2438,10 +2438,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var nivel = (pv.y0 != null && base != null) ? ' <span style="color:#9fb2c8;font-size:11px">nível +' + fmtDist(Math.max(0, pv.y0 - base)) + '</span>' : '';
         html += '<div style="display:flex;align-items:center;gap:5px;border:1px solid ' + (atv ? corAtiva() : 'transparent') + ';border-radius:7px;padding:2px 4px">' +
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(pv.nome) + ' · ' + pv.n + ' elementos">' + esc(pv.nome) + nivel + '</span>' +
-          '<button class="btn sm" data-p="iso" data-n="' + esc(pv.nome) + '" title="Isolar este pavimento">🎯</button>' +
-          '<button class="btn sm" data-p="pl" data-n="' + esc(pv.nome) + '" title="Planta baixa deste pavimento">📐</button></div>';
+          '<button class="btn sm" data-p="iso" data-n="' + esc(pv.nome) + '" title="Isolar este pavimento">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + '</button>' +
+          '<button class="btn sm" data-p="pl" data-n="' + esc(pv.nome) + '" title="Planta baixa deste pavimento">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + '</button></div>';
       });
-      html += '<div style="font-size:11px;color:#9fb2c8">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ↺ Todos restaura.</div>';
+      html += '<div style="font-size:11px;color:#9fb2c8">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos restaura.</div>';
     }
     pavPanel.innerHTML = html;
     var bp2 = bar.querySelector('[data-b="pav"]'); if (bp2) { bp2.style.background = pav.isolado ? corAtiva() : ''; bp2.style.color = pav.isolado ? '#fff' : ''; bp2.style.outline = (pavPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
@@ -2460,8 +2460,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!alvo) return false;
     todasMalhas(function (m) { m.visible = !!alvo.uids[m.userData.mid + ':' + m.userData.expressID] && !ehFuturo4d(m) && !ehRemovidoEd(m); });
     pav.isolado = alvo.nome; pav.manual = false; pavRender();
-    if (visiveisEfetivos() === 0) S._hint('🏢 "' + alvo.nome + '" isolado, mas nada visível — o pavimento pertence a um modelo desligado (religue no painel Modelos) ou não tem geometria/está no futuro do 4D. ↺ Todos restaura.');
-    else S._hint('🏢 Pavimento "' + alvo.nome + '" isolado. ↺ Todos (painel 🏢) restaura.');
+    if (visiveisEfetivos() === 0) S._hint('🏢 "' + alvo.nome + '" isolado, mas nada visível — o pavimento pertence a um modelo desligado (religue no painel Modelos) ou não tem geometria/está no futuro do 4D. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos restaura.');
+    else S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('niveis', 15) : '') + ' Pavimento "' + alvo.nome + '" isolado. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos (painel 🏢) restaura.');
     return true;
   }
   S._isolarPavimento = isolarPavimento;
@@ -2480,15 +2480,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     setAlturaCorte(frac);
     // rótulo honesto: merge com cotas diferentes / pavimento sem geometria têm ressalva explícita
     var aviso = '';
-    if (alvo.y0 == null) aviso = ' ⚠ Este pavimento não tem geometria própria — o corte ficou na base do modelo.';
-    else if (alvo.spread) aviso = ' ⚠ Há "' + alvo.nome + '" em cotas diferentes entre os modelos — parte pode ficar acima do corte (ajuste no slider).';
-    S._hint('📐 Planta do pavimento "' + alvo.nome + '".' + aviso + ' Ajuste fino no slider; ↺ Todos (painel 🏢) traz o prédio de volta.');
+    if (alvo.y0 == null) aviso = ' ' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Este pavimento não tem geometria própria — o corte ficou na base do modelo.';
+    else if (alvo.spread) aviso = ' ' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Há "' + alvo.nome + '" em cotas diferentes entre os modelos — parte pode ficar acima do corte (ajuste no slider).';
+    S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta do pavimento "' + alvo.nome + '".' + aviso + ' Ajuste fino no slider; ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos (painel 🏢) traz o prédio de volta.');
     return true;
   }
   S._plantaPavimento = plantaPavimento;
   pavPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-p]'); if (!b) return; var k = b.getAttribute('data-p');
-    if (k === 'todos') { restaurarVisibilidade(); S._hint('🏢 Todos os pavimentos visíveis.'); }
+    if (k === 'todos') { restaurarVisibilidade(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('niveis', 15) : '') + ' Todos os pavimentos visíveis.'); }
     else if (k === 'iso') isolarPavimento(b.getAttribute('data-n'));
     else if (k === 'pl') plantaPavimento(b.getAttribute('data-n'));
   });
@@ -2509,41 +2509,41 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // ✕ próprio (padrão dos outros painéis): sem ele, o único jeito de fechar era o
     // botão "Ver" lá dentro do leque do dock — e com a barra recolhida o painel ficava
     // órfão na tela, sem nenhum fechador alcançável.
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>👁 Visibilidade</b>' +
-      '<button class="btn sm" data-v="fechar" title="Fechar este painel" style="padding:2px 8px;line-height:1.2">✕</button></div>' +
-    '<button class="btn sm" data-v="iso" title="Esconde tudo, menos o elemento selecionado">🎯 Isolar seleção</button>' +
-    '<button class="btn sm" data-v="occ" title="Esconde o elemento selecionado">🙈 Ocultar seleção</button>' +
-    '<button class="btn sm" data-v="tipo" title="Mostra só os elementos do MESMO tipo do selecionado (ex.: todas as paredes)">🧩 Só este tipo</button>' +
-    '<button class="btn sm" data-v="rx" title="Raio-X: deixa o resto translúcido (não some) e destaca o elemento. Enxergue o que está atrás/dentro.">🫥 Raio-X da seleção</button>' +
-    '<button class="btn sm" data-v="rxt" title="Raio-X por tipo: destaca todos deste tipo (ex.: toda a hidráulica) e translucidez o resto — bom pra ver onde há cano antes de furar.">🫥 Raio-X deste tipo</button>' +
-    '<button class="btn sm" data-v="tudo" title="Volta a mostrar tudo">↺ Restaurar tudo</button>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Visibilidade</b>' +
+      '<button class="btn sm" data-v="fechar" title="Fechar este painel" style="padding:2px 8px;line-height:1.2">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
+    '<button class="btn sm" data-v="iso" title="Esconde tudo, menos o elemento selecionado">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Isolar seleção</button>' +
+    '<button class="btn sm" data-v="occ" title="Esconde o elemento selecionado">' + (typeof Icones !== 'undefined' ? Icones.get('olhoFechado', 15) : '') + ' Ocultar seleção</button>' +
+    '<button class="btn sm" data-v="tipo" title="Mostra só os elementos do MESMO tipo do selecionado (ex.: todas as paredes)">' + (typeof Icones !== 'undefined' ? Icones.get('quebracabeca', 15) : '') + ' Só este tipo</button>' +
+    '<button class="btn sm" data-v="rx" title="Raio-X: deixa o resto translúcido (não some) e destaca o elemento. Enxergue o que está atrás/dentro.">' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X da seleção</button>' +
+    '<button class="btn sm" data-v="rxt" title="Raio-X por tipo: destaca todos deste tipo (ex.: toda a hidráulica) e translucidez o resto — bom pra ver onde há cano antes de furar.">' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X deste tipo</button>' +
+    '<button class="btn sm" data-v="tudo" title="Volta a mostrar tudo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo</button>' +
     '<div style="font-size:11px;color:#9fb2c8">Dê <b>dois cliques</b> num elemento do modelo pra selecionar antes.</div>';
   host.appendChild(visPanel);
   S.visPanel = visPanel;
   function selInfo() { return (S.selected && S.selected.userData && S.selected.userData.expressID != null) ? { mid: S.selected.userData.mid, eid: S.selected.userData.expressID, tipo: S.selected.userData.tipo } : null; }
   function isolarSelecao() {
-    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento do modelo primeiro.'); return; }
+    var si = selInfo(); if (!si) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Dê dois cliques num elemento do modelo primeiro.'); return; }
     todasMalhas(function (m) { m.visible = (m.userData.mid === si.mid && m.userData.expressID === si.eid) && !ehFuturo4d(m) && !ehRemovidoEd(m); });
     pav.isolado = null; pav.manual = true; pavRender(); // isolamento manual substitui o de pavimento (e é restaurável)
-    if (visiveisEfetivos() === 0) S._hint('🎯 Isolado, mas nada visível — o modelo desse elemento está desligado no painel Modelos. ↺ Restaurar tudo volta o modelo.');
-    else S._hint('🎯 Elemento isolado. ↺ Restaurar tudo (painel 👁) volta o modelo.');
+    if (visiveisEfetivos() === 0) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Isolado, mas nada visível — o modelo desse elemento está desligado no painel Modelos. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta o modelo.');
+    else S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Elemento isolado. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo (painel 👁) volta o modelo.');
   }
   S._isolarSelecao = isolarSelecao;
   function ocultarSelecao() {
-    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento do modelo primeiro.'); return; }
+    var si = selInfo(); if (!si) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Dê dois cliques num elemento do modelo primeiro.'); return; }
     // devolve o material e desseleciona ANTES de esconder — senão o selMat fica preso no mesh oculto
     if (S.selected) { S.selected.material = S.prevMat; S.selected = null; S.prevMat = null; contornoSelecao(null); if (opts.onPick) { try { opts.onPick(null); } catch (_) {} } } // contornoSelecao(null): senão o contorno verde fica flutuando sobre o vazio (gate v1.1.89)
     todasMalhas(function (m) { if (m.userData.mid === si.mid && m.userData.expressID === si.eid) m.visible = false; });
     pav.manual = true; // remover/carregar modelo restaura (nada fica escondido "pra sempre" sem marcador)
-    S._hint('🙈 Elemento oculto. ↺ Restaurar tudo (painel 👁) traz de volta.');
+    S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olhoFechado', 15) : '') + ' Elemento oculto. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo (painel 👁) traz de volta.');
   }
   S._ocultarSelecao = ocultarSelecao;
   function isolarTipo() {
-    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento do modelo primeiro.'); return; }
+    var si = selInfo(); if (!si) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Dê dois cliques num elemento do modelo primeiro.'); return; }
     todasMalhas(function (m) { m.visible = (m.userData.tipo === si.tipo) && !ehFuturo4d(m) && !ehRemovidoEd(m); });
     pav.isolado = null; pav.manual = true; pavRender();
-    if (visiveisEfetivos() === 0) S._hint('🧩 Só "' + rotuloDisciplina(si.tipo) + '", mas nada visível — o modelo está desligado no painel Modelos. ↺ Restaurar tudo volta.');
-    else S._hint('🧩 Mostrando só "' + rotuloDisciplina(si.tipo) + '". ↺ Restaurar tudo volta o modelo.');
+    if (visiveisEfetivos() === 0) S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('quebracabeca', 15) : '') + ' Só "' + rotuloDisciplina(si.tipo) + '", mas nada visível — o modelo está desligado no painel Modelos. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.');
+    else S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('quebracabeca', 15) : '') + ' Mostrando só "' + rotuloDisciplina(si.tipo) + '". ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta o modelo.');
   }
   S._isolarTipo = isolarTipo;
   // ---- 🫥 RAIO-X: deixa o resto translúcido (não oculto) para ver o que está DENTRO/ATRÁS
@@ -2563,17 +2563,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (ehAlvo(m)) { nAlvo++; return; } // alvo permanece sólido
       m.material = ghostMat(); xray.ghosted.push(m);
     });
-    if (!nAlvo) { limparRaioX(); S._hint('🫥 Nada correspondeu ao alvo do raio-X.'); return; } // agora restaura de verdade
+    if (!nAlvo) { limparRaioX(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Nada correspondeu ao alvo do raio-X.'); return; } // agora restaura de verdade
     S._hint(msg);
   }
   function raioXSelecao() {
-    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento primeiro.'); return; }
-    aplicarRaioX(function (m) { return m.userData.mid === si.mid && m.userData.expressID === si.eid; }, '🫥 Raio-X: elemento em destaque, resto translúcido. ↺ Restaurar tudo volta.');
+    var si = selInfo(); if (!si) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Dê dois cliques num elemento primeiro.'); return; }
+    aplicarRaioX(function (m) { return m.userData.mid === si.mid && m.userData.expressID === si.eid; }, '' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X: elemento em destaque, resto translúcido. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.');
     if (S.selected) contornoSelecao(S.selected);
   }
   function raioXTipo() {
-    var si = selInfo(); if (!si) { S._hint('👁 Dê dois cliques num elemento primeiro.'); return; }
-    aplicarRaioX(function (m) { return m.userData.tipo === si.tipo; }, '🫥 Raio-X de "' + rotuloDisciplina(si.tipo) + '": resto translúcido — bom pra ver onde há cano/eletroduto antes de furar. ↺ Restaurar tudo volta.');
+    var si = selInfo(); if (!si) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' Dê dois cliques num elemento primeiro.'); return; }
+    aplicarRaioX(function (m) { return m.userData.tipo === si.tipo; }, '' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X de "' + rotuloDisciplina(si.tipo) + '": resto translúcido — bom pra ver onde há cano/eletroduto antes de furar. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo volta.');
   }
   S._raioXSelecao = raioXSelecao; S._raioXTipo = raioXTipo;
   visPanel.addEventListener('click', function (e) {
@@ -2584,7 +2584,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'tipo') isolarTipo();
     else if (k === 'rx') raioXSelecao();
     else if (k === 'rxt') raioXTipo();
-    else if (k === 'tudo') { restaurarVisibilidade(); S._hint('↺ Tudo visível de novo.'); }
+    else if (k === 'tudo') { restaurarVisibilidade(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Tudo visível de novo.'); }
   });
   function toggleVisPanel() {
     var abrir = (visPanel.style.display === 'none' || !visPanel.style.display);
@@ -2730,7 +2730,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
 
   function tirarFoto() {
-    if (!S.modelos.length) { S._hint('📸 Carregue um modelo primeiro.'); return null; }
+    if (!S.modelos.length) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Carregue um modelo primeiro.'); return null; }
     var prevBg = scene.background, url;
     var vLn = _selLn ? _selLn.visible : null; // o contorno verde de seleção é overlay de UI: não sai no PNG entregável
     try {
@@ -2739,7 +2739,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       renderer.render(scene, camera);
       url = renderer.domElement.toDataURL('image/png');
     } catch (_) { url = null; } finally { scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn; }
-    if (!url) { S._hint('📸 Não consegui capturar a imagem.'); return null; }
+    if (!url) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Não consegui capturar a imagem.'); return null; }
     var img = new Image();
     img.onload = function () {
       try {
@@ -2760,8 +2760,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         g2.fillStyle = '#7fe0a3'; g2.font = 'bold 16px Segoe UI, Arial';
         g2.fillText((((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') ? ((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') + ' · ' : '') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'OrçaPRO BIM · ':'') + new Date().toLocaleString('pt-BR') + ' · ' + rotEl + (pav.isolado ? ' · pavimento: ' + pav.isolado : ''), 12, img.height + 28);
         var a2 = document.createElement('a'); a2.href = cnv.toDataURL('image/png'); a2.download = 'bim-foto.png'; a2.click();
-        S._hint('📸 Foto salva (bim-foto.png).');
-      } catch (_) { S._hint('📸 Não consegui montar o arquivo da foto.'); }
+        S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Foto salva (bim-foto.png).');
+      } catch (_) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Não consegui montar o arquivo da foto.'); }
     };
     img.src = url;
     return url; // p/ testes (dataURL do render puro)
@@ -2810,17 +2810,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var box = new THREE.Box3().setFromObject(modelRoot);
     var vazio = box.isEmpty();
     var discs = disciplinasPresentes();
-    var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>🥽 Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">✕</button></div>';
+    var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
     if (vazio) { html += '<div style="font-size:11px;color:#9fb2c8">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
     if (!xr.on) {
       html += '<div style="font-size:11px;color:#9fb2c8">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
-        '<button class="btn sm primary" data-x="camera" style="width:100%">📷 Câmera + Projeto (ver no seu ambiente)</button>' +
-        '<button class="btn sm" data-x="caminhar" style="width:100%">👣 Caminhar no projeto (fundo liso)</button>' +
-        '<button class="btn sm" data-x="ar" style="width:100%" disabled>📱 RA com âncora (Android) <span data-x="arst" style="color:#9fb2c8">(verificando…)</span></button>' +
-        '<button class="btn sm" data-x="vr" style="width:100%" disabled>🥽 VR imersivo <span data-x="vrst" style="color:#9fb2c8">(verificando…)</span></button>' +
-        '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ☁️ da nuvem). 📱 RA com âncora (fixa no chão) só no Android/ARCore.</div>';
+        '<button class="btn sm primary" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
+        '<button class="btn sm" data-x="caminhar" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar no projeto (fundo liso)</button>' +
+        '<button class="btn sm" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#9fb2c8">(verificando…)</span></button>' +
+        '<button class="btn sm" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#9fb2c8">(verificando…)</span></button>' +
+        '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão) só no Android/ARCore.</div>';
     } else {
-      var em = xr.mode === 'ar' ? '📱 RA no ambiente' : xr.mode === 'vr' ? '🥽 VR imersivo' : xr.mode === 'camera' ? '📷 Câmera + Projeto' : '👣 Caminhando';
+      var em = xr.mode === 'ar' ? '' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no ambiente' : xr.mode === 'vr' ? '' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo' : xr.mode === 'camera' ? '' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto' : '' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhando';
       html += '<div style="font-size:11px;color:#7fe0a3"><b>' + em + '</b> ativo</div>';
       // escala — no AR de mesa (hit-test) e agora TAMBÉM no câmera/caminhar (1:1 real OU miniatura na sala)
       if (xr.mode === 'ar') {
@@ -2836,24 +2836,24 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         html += '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-x="esc2" class="inp" style="width:150px">' +
           ESCS2.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === selVal ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
           '<div style="display:flex;gap:6px">' +
-          '<button class="btn sm" data-x="centralizar" style="flex:1">📍 Centralizar</button>' +
-          '<button class="btn sm" data-x="travarcam" style="flex:1">' + (xr.travado ? '🔓 Destravar' : '🔒 Travar') + '</button></div>' +
-          '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. 📍 recoloca à frente; 🔒 fixa no lugar.</div>';
+          '<button class="btn sm" data-x="centralizar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Centralizar</button>' +
+          '<button class="btn sm" data-x="travarcam" style="flex:1">' + (xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Destravar' : '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Travar') + '</button></div>' +
+          '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' recoloca à frente; ' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' fixa no lugar.</div>';
       }
       // altura do corte de visão (reflete o valor atual — não reseta no repaint)
       var cf = (xr.cortefrac == null ? 1000 : xr.cortefrac);
-      html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>✂️ Teto de visão</span><span data-x="cortev" style="color:#7fe0a3">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Teto de visão</span><span data-x="cortev" style="color:#7fe0a3">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
         '<input type="range" data-x="corte" min="0" max="1000" value="' + cf + '" style="width:100%;accent-color:#22c55e">';
       // passos: sensibilidade (só caminhar/câmera — no AR a locomoção é do WebXR). Tablet precisa de mais
       // sensibilidade (movimento gentil); o usuário ajusta se não anda ou anda demais.
       if (xr.mode !== 'ar' && xr.mode !== 'vr') {
         var ps = Math.round(_passSens() * 100); // valor REAL (localStorage c/ fallback), não o default fixo — bate com o aplicado
-        html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>🚶 Sensibilidade dos passos</span><span data-x="passv" style="color:#7fe0a3">' + (ps / 100).toFixed(1) + '×</span></div>' +
+        html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Sensibilidade dos passos</span><span data-x="passv" style="color:#7fe0a3">' + (ps / 100).toFixed(1) + '×</span></div>' +
           '<input type="range" data-x="passsens" min="40" max="300" value="' + ps + '" style="width:100%;accent-color:#0d9488">' +
           '<div style="font-size:10.5px;color:#9fb2c8;line-height:1.25;margin-top:-2px">Ande com o aparelho na mão pra andar no projeto. Se o projeto não anda, <b>aumente</b>; se anda sozinho, <b>diminua</b>. (No tablet costuma precisar mais.)</div>';
       }
       // medir
-      html += '<button class="btn sm" data-x="medir" style="width:100%">📏 Medir na escala (toque 2 pontos)</button>';
+      html += '<button class="btn sm" data-x="medir" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir na escala (toque 2 pontos)</button>';
       // disciplinas
       if (discs.length > 1) {
         html += '<div style="font-size:11px;color:#9fb2c8;margin-top:2px">Disciplinas (toque pra ligar/desligar):</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
@@ -2864,7 +2864,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         html += '</div>';
       }
       if (xr.mode === 'ar') {
-        html += '<button class="btn sm" data-x="travar" style="width:100%">' + (xr.travado ? '🔓 Destravar do ponto' : '🔒 Travar neste ponto') + '</button>' +
+        html += '<button class="btn sm" data-x="travar" style="width:100%">' + (xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Destravar do ponto' : '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Travar neste ponto') + '</button>' +
           '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">Aponte pro chão, toque pra fixar o projeto no lugar real; trave pra ele não sair do lugar.</div>';
       }
       html += '<button class="btn sm" data-x="sair" style="width:100%">⏹ Sair do imersivo</button>';
@@ -2931,7 +2931,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function aplicarEscalaImersivo(f) {
     if (xr.mode === 'ar') { aplicarEscalaXR(f); return; }
     if (!xr.on || !xr.boxLocal) return; // só no imersivo câmera/caminhar
-    if (xr.travado) { S._hint('🔒 Destrave pra mudar a escala.'); pintarXRPanel(); return; } // repinta pro <select> voltar ao valor real
+    if (xr.travado) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Destrave pra mudar a escala.'); pintarXRPanel(); return; } // repinta pro <select> voltar ao valor real
     xr.escala = f > 0 ? f : 1;
     modelRoot.scale.setScalar(xr.escala);
     if (xr.escala >= 0.999) { // 1:1 real: modelo nas coords locais, câmera no piso do centro (andar DENTRO)
@@ -2942,18 +2942,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       xrDica('Escala real 1:1 — você está DENTRO do projeto. Vire o celular; ande com o joystick.');
     } else { // miniatura à frente (na sua sala)
       posicionarNaFrente(2.0);
-      xrDica('Miniatura na sua frente. Vire o celular pra olhar; 📍 recentraliza; joystick pra rodear.');
+      xrDica('Miniatura na sua frente. Vire o celular pra olhar; ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' recentraliza; joystick pra rodear.');
     }
     if (xr.cortefrac != null && xr.cortefrac < 999) aplicarTetoVisao(xr.cortefrac / 1000); // recalcula o teto de visão p/ a nova escala (senão o corte fica na altura de mundo antiga e some o modelo)
   }
   S._aplicarEscalaImersivo = aplicarEscalaImersivo;
   function centralizarProjeto() {
-    if (xr.mode === 'ar') { if (!xr.travado) { xr.placed = false; xrDica('Aponte pro chão e toque pra fixar de novo.'); } else S._hint('🔒 Destrave pra reposicionar.'); return; }
+    if (xr.mode === 'ar') { if (!xr.travado) { xr.placed = false; xrDica('Aponte pro chão e toque pra fixar de novo.'); } else S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Destrave pra reposicionar.'); return; }
     if (!xr.on || !xr.boxLocal) return; // simétrico com aplicarEscalaImersivo: fora do imersivo câmera/caminhar não faz nada
-    if (xr.travado) { S._hint('🔒 Destrave pra reposicionar.'); return; }
+    if (xr.travado) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Destrave pra reposicionar.'); return; }
     if (xr.escala >= 0.999) { xr.boxLocal.getCenter(_imC); camera.position.set(_imC.x, xr.boxLocal.min.y + EYE, _imC.z); xr._pisoY = xr.boxLocal.min.y; }
     else posicionarNaFrente(2.0);
-    S._hint('📍 Projeto recolocado à sua frente.');
+    S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Projeto recolocado à sua frente.');
   }
   S._centralizarImersivo = centralizarProjeto;
   // re-snapshot da âncora (boxLocal) quando modelos entram/saem DURANTE o imersivo câmera/caminhar —
@@ -2993,13 +2993,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var chips = discs.length > 1 ? discs.map(function (d) { var off = !!xr.discOcultas[d.chave]; return '<button data-har="' + esc(d.chave) + '" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 11px;font-size:12px;color:#fff;background:' + (off ? 'rgba(90,110,130,.7)' : corAtiva()) + '">' + esc(d.nome) + '</button>'; }).join('') : '';
     var barra = '<div style="position:absolute;left:0;right:0;bottom:16px;display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:0 10px">' +
       chips +
-      '<button data-har="centralizar" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#2563eb;font-weight:600">📍 Centralizar</button>' +
+      '<button data-har="centralizar" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#2563eb;font-weight:600">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Centralizar</button>' +
       // Passos SÓ em Caminhar/Câmera (no AR a locomoção é do WebXR, o botão seria morto). Rótulo reflete
       // o estado REAL (listener ativo) — nunca mostra "on" sem sensor ligado (gate v1.1.93).
-      (comReticulo ? '' : '<button data-har="passos" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + ((xr._pass && xr._pass.on) ? '#0d9488' : 'rgba(90,110,130,.7)') + '">🚶 Passos: ' + ((xr._pass && xr._pass.on) ? 'on' : 'off') + '</button>') +
-      '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">📏 Medir</button>' +
-      '<button data-har="sistema" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + (sisColor.on ? corAtiva() : '#334a63') + '">🎨 Sistemas</button>' +
-      '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">⚙️ Ajustes</button>' +
+      (comReticulo ? '' : '<button data-har="passos" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + ((xr._pass && xr._pass.on) ? '#0d9488' : 'rgba(90,110,130,.7)') + '">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Passos: ' + ((xr._pass && xr._pass.on) ? 'on' : 'off') + '</button>') +
+      '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir</button>' +
+      '<button data-har="sistema" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + (sisColor.on ? corAtiva() : '#334a63') + '">' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Sistemas</button>' +
+      '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ajustes</button>' +
       '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
     xrHud.innerHTML =
       (comReticulo ? '' : '<div data-h="joy" style="position:absolute;left:16px;bottom:60px;width:108px;height:108px;border-radius:50%;background:rgba(20,40,64,.4);border:2px solid rgba(127,224,163,.5);pointer-events:auto;touch-action:none">' +
@@ -3020,7 +3020,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (xr._passH) { xr._pass.on = !xr._pass.on; _syncPassosHud(xr._pass.on ? 'Andar com o celular na mão move você no projeto (por passos).' : 'Passos desligados — use o joystick.'); }
       else { ligarPassos(); } // sem listener (permissão negada/pendente) → re-tenta de fato em vez de mentir "on"
     }
-    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '📏 Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
     else if (k === 'ajustes') { var aberto = xrPanel.style.display === 'flex'; if (aberto) { xrPanel.style.display = 'none'; } else { pintarXRPanel(); xrPanel.style.display = 'flex'; if (S._ajustarTop) S._ajustarTop(); } }
     else if (k === 'sistema') { if (S._setSistema) S._setSistema(!(S._sisColorOn && S._sisColorOn())); } // recolore por sistema; _sisImersivoSync remonta o HUD (botão + legenda)
     else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
@@ -3038,7 +3038,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // permissão de Movimento foi negada/está pendente no iOS (gate v1.1.93).
   function _syncPassosHud(dica) {
     var b = xrHud.querySelector('[data-har="passos"]');
-    if (b) { var on = !!(xr._pass && xr._pass.on); b.textContent = '🚶 Passos: ' + (on ? 'on' : 'off'); b.style.background = on ? '#0d9488' : 'rgba(90,110,130,.7)'; }
+    if (b) { var on = !!(xr._pass && xr._pass.on); b.textContent = '' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Passos: ' + (on ? 'on' : 'off'); b.style.background = on ? '#0d9488' : 'rgba(90,110,130,.7)'; }
     if (dica) xrDica(dica);
   }
   S._xrPassosHud = function (n) { var b = xrHud.querySelector('[data-har="passos"]'); if (b && xr._pass && xr._pass.on) b.textContent = '🚶 ' + n + ' passos'; };
@@ -3239,25 +3239,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     canvasEl.addEventListener('pointerdown', xrPointerDown); canvasEl.addEventListener('pointermove', xrPointerMove); window.addEventListener('pointerup', xrPointerUp);
     marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none';
     // câmera: começa como MINIATURA na frente (vê o projeto inteiro na sala); caminhar: 1:1 DENTRO
-    if (modo === 'camera') { aplicarEscalaImersivo(fitEscala()); S._hint('📷 Projeto no seu ambiente. Vire o celular pra olhar; ⚙️ Ajustes p/ escala (1:1 = andar dentro) e 📍 Centralizar. ⏹ Sair.'); }
-    else { xrDica('👣 Você está DENTRO em escala real 1:1. Vire o celular pra olhar; joystick pra andar.'); S._hint('👣 Dentro do projeto 1:1. Vire o celular; joystick pra andar. ⏹ Sair.'); }
+    if (modo === 'camera') { aplicarEscalaImersivo(fitEscala()); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Projeto no seu ambiente. Vire o celular pra olhar; ' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ajustes p/ escala (1:1 = andar dentro) e ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Centralizar. ⏹ Sair.'); }
+    else { xrDica('' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Você está DENTRO em escala real 1:1. Vire o celular pra olhar; joystick pra andar.'); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Dentro do projeto 1:1. Vire o celular; joystick pra andar. ⏹ Sair.'); }
   }
   function entrarCaminhar() { iniciarAndar('caminhar'); }
   // ---- ENTRAR: Câmera + Projeto (RA simples: vídeo da câmera de fundo + modelo por cima) ----
   function entrarCamera() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { S._hint('📷 Este navegador não dá acesso à câmera.'); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Este navegador não dá acesso à câmera.'); return; }
     // câmera só em contexto seguro (HTTPS ou localhost) — regra do navegador. No QR da rede local (http) não rola.
     // (fix v1.1.90: o regex antigo `^https:$` NUNCA batia em "https://host" — bloqueava a câmera em TODO HTTPS, inclusive o link da nuvem)
     var h = location.hostname;
     var origemSegura = (location.protocol === 'https:') || (typeof window.isSecureContext !== 'undefined' && window.isSecureContext) || h === 'localhost' || h === '127.0.0.1' || h === '::1' || /\.localhost$/.test(h);
     if (!origemSegura) {
-      S._hint('📷 A câmera só abre por HTTPS. Use o link ☁️ da nuvem (ou rode no próprio computador).');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' A câmera só abre por HTTPS. Use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem (ou rode no próprio computador).');
       return;
     }
     if (xr.on || xr._camPend) return; // já imersivo ou pedido de câmera em voo: ignora toque duplo (senão orfã stream + corrompe posOrig)
     xr._camPend = true;
     _pedirSensores(); // AINDA no gesto do toque: concede giroscópio+passos p/ o iPhone (o getUserMedia().then já gastaria o gesto)
-    S._hint('📷 Pedindo acesso à câmera…');
+    S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Pedindo acesso à câmera…');
     navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }).then(function (stream) {
       xr._camPend = false;
       if (xr.on) { try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (_) {} return; } // usuário já entrou em outro modo enquanto pedíamos a câmera → descarta o stream
@@ -3271,7 +3271,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     }).catch(function (e) {
       xr._camPend = false;
       var nm = (e && e.name) || e;
-      S._hint(nm === 'NotAllowedError' ? '📷 Você negou a câmera. Toque de novo e permita.' : '📷 Não consegui abrir a câmera: ' + nm);
+      S._hint(nm === 'NotAllowedError' ? '' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Você negou a câmera. Toque de novo e permita.' : '' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Não consegui abrir a câmera: ' + nm);
     });
   }
   function limparCamera() {
@@ -3299,10 +3299,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (!xr.on) return; // sessão já encerrada antes deste callback (Esc/tirou o headset) — não ressuscita o loop
         xr._xrActivePrev = S._xrActive; S._xrActive = true; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
         renderer.setAnimationLoop(xrLoop);
-      }).catch(function (e) { sairImersivo(); S._hint('🥽 Falha ao iniciar a sessão VR: ' + (e && e.message || e)); });
+      }).catch(function (e) { sairImersivo(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Falha ao iniciar a sessão VR: ' + (e && e.message || e)); });
       session.addEventListener('end', sairImersivo);
       marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none'; // no imersivo o painel grande some (tampava a vista no celular); ⚙️ Ajustes reabre
-    }).catch(function (e) { S._hint('🥽 Não deu pra entrar em VR: ' + (e && e.message || e)); });
+    }).catch(function (e) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Não deu pra entrar em VR: ' + (e && e.message || e)); });
   }
 
   // ---- ENTRAR: RA no ambiente (WebXR immersive-ar, Android) ----
@@ -3331,13 +3331,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           session.requestHitTestSource({ space: vs }).then(function (src) { if (xr.on) xr.hitSrc = src; else { try { src.cancel(); } catch (_) {} } });
         });
         renderer.setAnimationLoop(xrLoop);
-      }).catch(function (e) { sairImersivo(); S._hint('📱 Falha ao iniciar a sessão RA: ' + (e && e.message || e)); });
+      }).catch(function (e) { sairImersivo(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' Falha ao iniciar a sessão RA: ' + (e && e.message || e)); });
       // toque no AR: mede (se a régua estiver ligada) ou fixa o projeto
       session.addEventListener('select', function () { if (xr.medir.on && xr.placed) medirTocar({}); else arColocar(); });
       session.addEventListener('end', sairImersivo);
       xrDica('Aponte a câmera pro chão e toque na tela pra fixar o projeto.');
       marcarBtnXR(true); pintarXRPanel(); xrPanel.style.display = 'none'; // no imersivo o painel grande some (tampava a vista no celular); ⚙️ Ajustes reabre
-    }).catch(function (e) { xrHud.style.display = 'none'; S._hint('📱 RA indisponível neste aparelho: ' + (e && e.message || e)); });
+    }).catch(function (e) { xrHud.style.display = 'none'; S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA indisponível neste aparelho: ' + (e && e.message || e)); });
   }
   function arColocar() {
     if (xr.travado || !xr.reticle || !xr.reticle.visible) return;
@@ -3384,7 +3384,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var my = -((((e.clientY != null ? e.clientY : r.top + r.height / 2) - r.top) / r.height) * 2 - 1);
     ray.setFromCamera({ x: mx, y: my }, camera);
     var hit = primeiroHit(ray.intersectObjects(modelRoot.children, true));
-    if (!hit) { xrDica('📏 Mire numa superfície do modelo.'); return; }
+    if (!hit) { xrDica('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Mire numa superfície do modelo.'); return; }
     xr.medir.pts.push(hit.point.clone());
     var m = pontoMarca(hit.point.clone()); scene.add(m); xr.medir.objs.push(m); rescaleObj(m);
     if (xr.medir.pts.length === 2) {
@@ -3395,7 +3395,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var lab = labelSprite(fmtDist(dReal)); lab.position.copy(a.clone().add(b).multiplyScalar(0.5)); scene.add(lab); xr.medir.objs.push(lab); rescaleObj(lab);
       xrDica('📏 ' + fmtDist(dReal) + ' (real). Toque 2 pontos pra medir de novo.');
       xr.medir.pts = [];
-    } else xrDica('📏 Agora toque no 2º ponto.');
+    } else xrDica('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Agora toque no 2º ponto.');
   }
   function limparMedirXR() { xr.medir.objs.forEach(function (o) { scene.remove(o); if (o.geometry) o.geometry.dispose(); }); xr.medir.objs = []; xr.medir.pts = []; }
 
@@ -3453,8 +3453,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'sair') { sairImersivo(); }
     else if (k === 'travar') { xr.travado = !xr.travado; if (xr.reticle) xr.reticle.visible = false; pintarXRPanel(); }
     else if (k === 'centralizar') { centralizarProjeto(); }
-    else if (k === 'travarcam') { xr.travado = !xr.travado; S._hint(xr.travado ? '🔒 Projeto travado no lugar.' : '🔓 Projeto liberado — dá pra reposicionar/escalar.'); pintarXRPanel(); }
-    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); xrDica(xr.medir.on ? '📏 Toque 2 pontos do modelo pra medir na escala.' : ''); b.style.background = xr.medir.on ? corAtiva() : ''; b.style.color = xr.medir.on ? '#fff' : ''; }
+    else if (k === 'travarcam') { xr.travado = !xr.travado; S._hint(xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Projeto travado no lugar.' : '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Projeto liberado — dá pra reposicionar/escalar.'); pintarXRPanel(); }
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); xrDica(xr.medir.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Toque 2 pontos do modelo pra medir na escala.' : ''); b.style.background = xr.medir.on ? corAtiva() : ''; b.style.color = xr.medir.on ? '#fff' : ''; }
   });
   xrPanel.addEventListener('change', function (e) {
     var b = e.target.closest('[data-x]'); if (!b) return; var k = b.getAttribute('data-x');
@@ -3477,7 +3477,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var p3dSeq = 0;
   function carregarSintetico(caixas, nome) {
     caixas = caixas || [];
-    if (!caixas.length) { S._hint('🏗 Nenhuma parede ligada pra gerar.'); return null; }
+    if (!caixas.length) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Nenhuma parede ligada pra gerar.'); return null; }
     if (S.modelos.length >= 8) { S._hint('Limite de 8 modelos abertos — remova um antes.'); return null; }
     var mid = 'p3d' + (++p3dSeq);
     var modelo = { mid: mid, sintetico: true, nome: nome || ('Planta 2D→3D (' + caixas.length + ' paredes)'), disciplina: 'arquitetura', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: { IFCWALL: caixas.length }, nEl: 0, nTri: 0, pavimentos: [], carimbos: {}, qto: {} };
@@ -3546,28 +3546,28 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var editPanel = document.createElement('div');
   editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:10px 12px;color:#dbe8f5;font-size:12px;width:280px;max-width:94%';
   editPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b>✏️ Editor <span style="color:#9fb2c8;font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">✕</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor <span style="color:#9fb2c8;font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
-    '<button class="btn sm" data-ed="parede">🧱 Parede</button>' +
-    '<button class="btn sm" data-ed="laje">⬜ Laje</button>' +
-    '<button class="btn sm" data-ed="pilar">🏛 Pilar</button>' +
+    '<button class="btn sm" data-ed="parede">' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Parede</button>' +
+    '<button class="btn sm" data-ed="laje">' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Laje</button>' +
+    '<button class="btn sm" data-ed="pilar">' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' Pilar</button>' +
     '<button class="btn sm" data-ed="mover">↔️ Mover</button>' +
-    '<button class="btn sm" data-ed="apagar">🗑 Apagar</button>' +
-    '<button class="btn sm" data-ed="anotar">📍 Anotar</button></div>' +
+    '<button class="btn sm" data-ed="apagar">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Apagar</button>' +
+    '<button class="btn sm" data-ed="anotar">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Anotar</button></div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
     '<label style="display:flex;gap:4px;align-items:center">Esp. <input data-ed="esp" class="inp" type="number" value="0.15" step="0.01" min="0.05" max="1.0" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Alt. <input data-ed="alt" class="inp" type="number" value="2.80" step="0.1" min="0.3" max="8" style="width:56px"> m</label>' +
     '<label style="display:flex;gap:4px;align-items:center">Pilar <input data-ed="secao" class="inp" type="number" value="0.20" step="0.05" min="0.1" max="1" style="width:56px"> m</label></div>' +
-    '<input data-ed="txt" class="inp" placeholder="Texto da anotação (p/ 📍 Anotar)" maxlength="200" style="width:100%">' +
+    '<input data-ed="txt" class="inp" placeholder="Texto da anotação (p/ ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Anotar)" maxlength="200" style="width:100%">' +
     // v1.1.82 — controles de desenho estilo Revit (orto/ângulo/encadear)
     '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +
     '<button class="btn sm" data-ed="orto" title="Trava a parede na horizontal/vertical (ou segure Shift enquanto desenha)">⟂ Orto</button>' +
     '<button class="btn sm" data-ed="angpre" title="Ângulos predefinidos: livre → 45° → 15°">∠ Livre</button>' +
     '<button class="btn sm" data-ed="chain" title="A próxima parede continua do fim da anterior (Esc encerra a cadeia)">⛓ Encadear</button>' +
     '</div>' +
-    '<div style="font-size:10.5px;color:#9fb2c8">💡 Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter — igual no Revit.</div>' +
-    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">↩️ Desfazer</button><span data-ed="st" style="color:#9fb2c8;font-size:11.5px"></span></div>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
+    '<div style="font-size:10.5px;color:#9fb2c8">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter — igual no Revit.</div>' +
+    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button><span data-ed="st" style="color:#9fb2c8;font-size:11.5px"></span></div>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
   host.appendChild(editPanel);
   S.editPanel = editPanel; // re-home re-parenteia via S.* — fora da lista o painel fica órfão
   var editMats = null;
@@ -3683,7 +3683,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // conclui a parede em p2 (2º clique OU distância digitada) com o traço ENCADEADO
   function editConcluirParede(p2) {
     var cxP = BimEdit.parede({ x: edit.p1.x, z: edit.p1.z }, { x: p2.x, z: p2.z }, edit.esp, edit.alt, edit.base);
-    if (!cxP) { S._hint('🧱 Pontos muito próximos — clique 2 pontos distintos.'); return; }
+    if (!cxP) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.'); return; }
     editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cxP });
     var comp = cxP.comprimento.toFixed(2).replace('.', ',');
     if (edit.chain) {
@@ -3692,17 +3692,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       editPreviewLimpar();
       edit.p1 = p2.clone();
       edit.prov = pontoMarca(p2); scene.add(edit.prov); rescaleObj(edit.prov);
-      S._hint('🧱 Parede criada (' + comp + ' m). ⛓ Continuando do fim — clique o próximo ponto, ou Esc pra encerrar.');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Parede criada (' + comp + ' m). ⛓ Continuando do fim — clique o próximo ponto, ou Esc pra encerrar.');
     } else {
       editTirarProv();
-      S._hint('🧱 Parede criada (' + comp + ' m). Siga clicando, ou Esc.');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Parede criada (' + comp + ' m). Siga clicando, ou Esc.');
     }
     marcarFechamento();
   }
   // Esc no meio da cadeia: encerra SÓ o traço (não fecha o editor)
   S._editFimCadeia = function () {
     editTirarProv();
-    S._hint(edit.sub ? '✏️ Traço encerrado — clique o INÍCIO da próxima parede.' : '');
+    S._hint(edit.sub ? '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Traço encerrado — clique o INÍCIO da próxima parede.' : '');
     marcarFechamento();
   };
   // preview no pointermove (registrado lá em cima via S._ — o handler nasce antes deste bloco)
@@ -3809,13 +3809,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._tickExtra.push(function () { for (var i = 0; i < edit.sprites.length; i++) rescaleObj(edit.sprites[i]); });
   function editOp(o) { edit.ops.push(o); editRebuild(); }
   function editHintSub() {
-    var h = { parede: '🧱 Clique o INÍCIO e o FIM da parede (no modelo ou no chão vazio).',
-              laje: '⬜ Clique 2 cantos OPOSTOS do retângulo da laje.',
-              pilar: '🏛 Clique onde o pilar nasce.',
+    var h = { parede: '' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Clique o INÍCIO e o FIM da parede (no modelo ou no chão vazio).',
+              laje: '' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Clique 2 cantos OPOSTOS do retângulo da laje.',
+              pilar: '' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' Clique onde o pilar nasce.',
               mover: '↔️ Clique num elemento CRIADO AQUI e depois no novo lugar (IFC não se move — honestidade).',
-              apagar: '🗑 Clique no elemento: criado aqui = removido; do IFC = ocultado como "removido na edição".',
-              anotar: '📍 Escreva o texto no campo e clique no ponto do modelo.' };
-    S._hint(edit.sub ? h[edit.sub] : '✏️ Editor: escolha uma ferramenta no painel.');
+              apagar: '' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique no elemento: criado aqui = removido; do IFC = ocultado como "removido na edição".',
+              anotar: '' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto no campo e clique no ponto do modelo.' };
+    S._hint(edit.sub ? h[edit.sub] : '' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor: escolha uma ferramenta no painel.');
   }
   function editClique(e, hit) {
     var sn = hit ? aplicarSnap(hit, raioToque(e)) : null;
@@ -3823,14 +3823,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (sn) mostrarSnapMarca(sn, e.clientX, e.clientY);
     var sub = edit.sub;
     if (sub === 'apagar') {
-      if (!hit) { S._hint('🗑 Clique em cima de um elemento.'); return; }
+      if (!hit) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Clique em cima de um elemento.'); return; }
       var mA = _ultimosHits[0].object, midA = mA.userData.mid, idA = mA.userData.expressID;
-      if (midA === 'edit') { editOp({ op: 'apagar', id: idA }); S._hint('🗑 Removido (Desfazer volta).'); }
+      if (midA === 'edit') { editOp({ op: 'apagar', id: idA }); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Removido (Desfazer volta).'); }
       else {
         var moRem = S.modelos.filter(function (x) { return x.mid === midA; })[0];
         // arq+eid = identidade que sobrevive a F5/ordem de abertura (o mid é da sessão)
         editOp({ op: 'apagarIfc', uid: midA + ':' + idA, arq: moRem ? moRem.nome : null, eid: idA });
-        S._hint('🗑 Elemento do modelo OCULTADO como removido na edição — o arquivo original não muda.');
+        S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + ' Elemento do modelo OCULTADO como removido na edição — o arquivo original não muda.');
       }
       marcarFechamento(); return;
     }
@@ -3847,32 +3847,32 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       S._hint('↔️ Movido. Clique noutro elemento pra mover de novo, ou Esc.');
       marcarFechamento(); return;
     }
-    if (!p) { S._hint('✏️ Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
+    if (!p) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Não achei o ponto — clique no modelo ou no plano do chão.'); return; }
     if (sub === 'pilar') {
       var cP = BimEdit.pilar({ x: p.x, z: p.z }, edit.secao, edit.alt, edit.base);
-      if (cP) { editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cP }); S._hint('🏛 Pilar criado. Clique pra outro, ou Esc.'); }
+      if (cP) { editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cP }); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('pilar', 15) : '') + ' Pilar criado. Clique pra outro, ou Esc.'); }
       marcarFechamento(); return;
     }
     if (sub === 'anotar') {
       var txt = (editPanel.querySelector('[data-ed="txt"]').value || '').trim();
-      if (!txt) { S._hint('📍 Escreva o texto da anotação no painel primeiro.'); return; }
+      if (!txt) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Escreva o texto da anotação no painel primeiro.'); return; }
       editOp({ op: 'anotar', id: 'a' + (++edit.seq), x: p.x, y: p.y, z: p.z, texto: txt });
-      S._hint('📍 Anotado! O pin fica salvo com a obra.');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Anotado! O pin fica salvo com a obra.');
       marcarFechamento(); return;
     }
     if (sub === 'parede' || sub === 'laje') {
       if (!edit.p1) {
         edit.p1 = p.clone();
         edit.prov = pontoMarca(p); scene.add(edit.prov); rescaleObj(edit.prov);
-        S._hint(sub === 'parede' ? '🧱 Agora clique o FIM da parede (ou digite a distância na caixinha + Enter).' : '⬜ Agora clique o canto OPOSTO.');
+        S._hint(sub === 'parede' ? '' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Agora clique o FIM da parede (ou digite a distância na caixinha + Enter).' : '' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Agora clique o canto OPOSTO.');
         return;
       }
       if (sub === 'parede') { editConcluirParede(editAjustarPonto(p, e)); return; } // orto/ângulo/encadeado/distância
       var cx2 = BimEdit.laje({ x: edit.p1.x, z: edit.p1.z }, { x: p.x, z: p.z }, Math.min(edit.espLaje, 0.4), edit.base);
       editTirarProv();
-      if (!cx2) { S._hint('✏️ Pontos muito próximos — clique 2 pontos distintos.'); return; }
+      if (!cx2) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Pontos muito próximos — clique 2 pontos distintos.'); return; }
       editOp({ op: 'criar', id: 'e' + (++edit.seq), caixa: cx2 });
-      S._hint('⬜ Laje criada (' + cx2.area.toFixed(2).replace('.', ',') + ' m²).');
+      S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Laje criada (' + cx2.area.toFixed(2).replace('.', ',') + ' m²).');
       marcarFechamento(); return;
     }
   }
@@ -3941,7 +3941,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   editPanel.addEventListener('click', function (e) {
     var b = e.target.closest('[data-ed]'); if (!b) return; var k = b.getAttribute('data-ed');
     if (k === 'fechar') setEdit(false);
-    else if (k === 'undo') { if (edit.ops.length) { edit.ops.pop(); editTirarProv(); editRebuild(); S._hint('↩️ Desfeito.'); } else { S._hint('↩️ Nada pra desfazer.'); } } // TirarProv: cadeia não pode ficar apontando pra parede que sumiu
+    else if (k === 'undo') { if (edit.ops.length) { edit.ops.pop(); editTirarProv(); editRebuild(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfeito.'); } else { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Nada pra desfazer.'); } } // TirarProv: cadeia não pode ficar apontando pra parede que sumiu
     else if (k === 'orto') { edit.orto = !edit.orto; b.style.background = edit.orto ? corAtiva() : ''; b.style.color = edit.orto ? '#fff' : ''; S._hint(edit.orto ? '⟂ Orto LIGADO — paredes só na horizontal/vertical.' : '⟂ Orto desligado (Shift também trava).'); }
     else if (k === 'angpre') {
       edit.angPre = edit.angPre === 0 ? 45 : (edit.angPre === 45 ? 15 : 0);
@@ -3999,17 +3999,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var p3dPanel = document.createElement('div');
   p3dPanel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:480px;max-width:94%;max-height:92%;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.5)';
   p3dPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b>🏗 Planta 2D → 3D (DXF)</b><button class="btn sm" data-p3="fechar">✕</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Planta 2D → 3D (DXF)</b><button class="btn sm" data-p3="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-    '<button class="btn sm primary" data-p3="abrir">📂 Abrir .DXF</button>' +
+    '<button class="btn sm primary" data-p3="abrir">' + (typeof Icones !== 'undefined' ? Icones.get('abrir', 15) : '') + ' Abrir .DXF</button>' +
     '<label style="display:flex;gap:5px;align-items:center">Pé-direito <input data-p3="pd" class="inp" type="number" value="2.80" step="0.1" min="2" max="6" style="width:64px"> m</label>' +
     '<label style="display:flex;gap:5px;align-items:center">Unidade <select data-p3="un" class="inp" style="width:76px"><option value="">auto</option><option value="0.001">mm</option><option value="0.01">cm</option><option value="1">m</option></select></label>' +
     '<input type="file" data-p3="file" accept=".dxf" style="display:none"></div>' +
     '<div data-p3="info" style="font-size:11.5px;color:#9fb2c8">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
     '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid #24435f;border-radius:8px;cursor:pointer;display:none"></canvas>' +
     '<div data-p3="res" style="font-size:12px"></div>' +
-    '<button class="btn sm primary" data-p3="gerar" style="display:none">🏗 Gerar 3D</button>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">⚠ Volumetria de ESTUDO (paredes por par de linhas paralelas de 6–40 cm) — clique numa parede verde do preview pra ligar/desligar. Portas, janelas e cobertura não entram nesta fase. Não substitui o projeto.</div>';
+    '<button class="btn sm primary" data-p3="gerar" style="display:none">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Gerar 3D</button>' +
+    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria de ESTUDO (paredes por par de linhas paralelas de 6–40 cm) — clique numa parede verde do preview pra ligar/desligar. Portas, janelas e cobertura não entram nesta fase. Não substitui o projeto.</div>';
   host.appendChild(p3dPanel);
   S.p3dPanel = p3dPanel;
   function toggleP3dPanel() { var abrir = p3dPanel.style.display === 'none' || !p3dPanel.style.display; fecharPaineis(null); p3dPanel.style.display = abrir ? 'flex' : 'none'; }
@@ -4075,16 +4075,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           '6–40 cm) e explode os blocos no CAD antes de exportar.';
       return;
     }
-    bg.style.display = ''; bg.textContent = '🏗 Gerar 3D (' + ligadas.length + ' paredes)';
+    bg.style.display = ''; bg.textContent = '' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Gerar 3D (' + ligadas.length + ' paredes)';
   }
   function p3dProcessar(texto, nome) {
-    if (typeof window === 'undefined' || !window.DXF || !window.Planta3D) { S._hint('🏗 Motores 2D→3D não carregados — atualize o app.'); return; }
+    if (typeof window === 'undefined' || !window.DXF || !window.Planta3D) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Motores 2D→3D não carregados — atualize o app.'); return; }
     p3d._texto = String(texto || ''); // guardado: trocar a unidade re-processa (a UI instrui isso)
     var fu = parseFloat(p3dPanel.querySelector('[data-p3="un"]').value) || 0;
     p3d.parse = window.DXF.parse(texto, fu > 0 ? { fatorUnidade: fu } : {});
     p3d.nome = nome || 'planta.dxf';
     var info = p3dPanel.querySelector('[data-p3="info"]');
-    if (!p3d.parse.segmentos.length) { info.innerHTML = '⚠ Não achei geometria 2D neste DXF (só ' + JSON.stringify(p3d.parse.stats.ignoradas) + '). Exporte como DXF ASCII (R12/2000) com as linhas das paredes.'; p3d.det = null; p3dDesenhar(); p3dResumo(); return; }
+    if (!p3d.parse.segmentos.length) { info.innerHTML = '' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Não achei geometria 2D neste DXF (só ' + JSON.stringify(p3d.parse.stats.ignoradas) + '). Exporte como DXF ASCII (R12/2000) com as linhas das paredes.'; p3d.det = null; p3dDesenhar(); p3dResumo(); return; }
     /* ESCADA, HACHURA E COTA SAEM ANTES — este painel chamava o detector
        direto e não passava pelo filtro de famílias que o assistente de
        volumetria usa. Um lance de escada de 28 cm cai no meio da faixa de
@@ -4096,12 +4096,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var ign = Object.keys(p3d.parse.stats.ignoradas || {}).map(function (k) { return k + '×' + p3d.parse.stats.ignoradas[k]; }).join(', ');
     info.innerHTML = '<b>' + esc(p3d.nome) + '</b> · ' + p3d.parse.segmentos.length + ' segmentos · envergadura ' + env +
       (p3d.parse.unidade.origem.indexOf('heuristica') === 0 ? ' · <span style="color:#f0b94a">unidade ASSUMIDA (' + p3d.parse.unidade.origem.slice(11) + ') — confira a envergadura e corrija no seletor se preciso</span>' : '');
-    if (ign) info.innerHTML += '<br>⚠ Entidades ignoradas: ' + esc(ign) + (/INSERT/.test(ign) ? ' — geometria DENTRO de bloco não entra: exploda os blocos no CAD antes de exportar.' : '.');
-    if (!p3d.det.paredes.length) info.innerHTML += '<br>⚠ Nenhum par de linhas com cara de parede (6–40 cm). Confira a UNIDADE — envergadura errada = espessuras fora da faixa.';
+    if (ign) info.innerHTML += '<br>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Entidades ignoradas: ' + esc(ign) + (/INSERT/.test(ign) ? ' — geometria DENTRO de bloco não entra: exploda os blocos no CAD antes de exportar.' : '.');
+    if (!p3d.det.paredes.length) info.innerHTML += '<br>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Nenhum par de linhas com cara de parede (6–40 cm). Confira a UNIDADE — envergadura errada = espessuras fora da faixa.';
     /* o que saiu e o que entrou DESMARCADO tem de aparecer: sem isso o
        painel diz "N paredes" e gera outro número */
     if (p3d.familias.length) {
-      info.innerHTML += '<br>🚫 Descartado como não-parede: ' + p3d.familias.map(function (fx) {
+      info.innerHTML += '<br>' + (typeof Icones !== 'undefined' ? Icones.get('proibido', 15) : '') + ' Descartado como não-parede: ' + p3d.familias.map(function (fx) {
         return fx.linhas + ' linhas a ' + Math.round(fx.espacamento * 100) + ' cm (' + esc(fx.motivo) + ')';
       }).join(' · ') + '. Parede tem DUAS faces.';
     }
@@ -4119,7 +4119,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var pd = parseFloat(p3dPanel.querySelector('[data-p3="pd"]').value) || 2.8;
       var caixas = window.Planta3D.extrudar(p3d.det.paredes, pd);
       var mid = carregarSintetico(caixas, p3d.nome.replace(/\.dxf$/i, '') + ' (2D→3D)');
-      if (mid) { p3dPanel.style.display = 'none'; S._hint('🏗 ' + caixas.length + ' paredes no 3D! O QTO já mede os m² — e a 🧱 Parede-Cebola explode em camadas SINAPI no orçamento.'); }
+      if (mid) { p3dPanel.style.display = 'none'; S._hint('🏗 ' + caixas.length + ' paredes no 3D! O QTO já mede os m² — e a ' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Parede-Cebola explode em camadas SINAPI no orçamento.'); }
     }
   });
   p3dPanel.addEventListener('change', function (e) {
@@ -4644,7 +4644,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       try { if (typeof modelo !== 'undefined' && modelo && S.modelos.indexOf(modelo) === -1) { (modelo.grupo.children || []).forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } }); Object.keys(modelo.matCache || {}).forEach(function (k) { try { modelo.matCache[k].dispose(); } catch (_) {} }); modelRoot.remove(modelo.grupo); } } catch (_) {}
       try { rebuildIndices(); } catch (_) {} // meshPorId E meshPorUid sem restos do modelo que falhou (o manual só limpava o Uid)
       loading.style.display = 'none'; if (!S.modelos.length) over.style.display = 'flex';
-      over.querySelector('div').innerHTML = '<div style="font-size:30px">⚠️</div><h3 style="margin:8px 0">Não consegui ler este IFC</h3><p style="color:#a9c1d8;font-size:13px">' + esc(String(err && err.message || err)) + '</p><p style="color:#a9c1d8;font-size:12px">Confira se é um .ifc válido (IFC2x3 ou IFC4).</p>';
+      over.querySelector('div').innerHTML = '<div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + '</div><h3 style="margin:8px 0">Não consegui ler este IFC</h3><p style="color:#a9c1d8;font-size:13px">' + esc(String(err && err.message || err)) + '</p><p style="color:#a9c1d8;font-size:12px">Confira se é um .ifc válido (IFC2x3 ou IFC4).</p>';
     }
   }
   function rotuloDisciplina(ifcName) { var u = String(ifcName).toUpperCase(); return TIPOS[u] || String(ifcName).replace(/^IFC/, ''); }
@@ -4658,7 +4658,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // v1.1.97 — exemplo = modelo REAL de obra (Murumbir, RA Engenharia) da nuvem; atualizável sem
     // release e sem inchar o pacote. Offline/sem nuvem cai no exemplo embutido (bim/samples/exemplo.ifc).
     var CLOUD = 'https://orcapro.raengenhariaespecial.com.br/samples/murumbir-demolicao.ifc';
-    function embutido() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc'); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">🗂️</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
+    function embutido() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc'); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
     fetch(CLOUD).then(function (r) { if (!r.ok) throw new Error('http'); return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'Murumbir — Demolição (exemplo)'); }); }).catch(embutido);
   }
   S._abrirArquivo = abrirArquivo; S._carregarExemplo = carregarExemplo;

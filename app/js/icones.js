@@ -113,7 +113,36 @@
     expandir: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
     sol: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.5 1.5M17.6 17.6l1.5 1.5M19.1 4.9l-1.5 1.5M6.4 17.6l-1.5 1.5"/>',
     avancar: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
-    copiar: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>'
+    copiar: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a1 1 0 0 1 1-1h11"/>',
+
+    /* ---------------------------------------------------------------
+     * v1.1.190 — os que faltavam para aposentar os emoji de interface.
+     * Mesmo traço dos demais (24×24, stroke 1.8, cantos redondos), para a
+     * barra de botões não ficar com dois desenhos diferentes convivendo.
+     * --------------------------------------------------------------- */
+    estoque: '<path d="M21 8v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8"/><rect x="2" y="4" width="20" height="4" rx="1"/><path d="M10 12h4"/>',
+    celular: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M10.5 18.5h3"/>',
+    pessoa: '<circle cx="12" cy="8" r="3.6"/><path d="M4.5 20c.6-3.9 3.7-6 7.5-6s6.9 2.1 7.5 6"/>',
+    pessoas: '<circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.5-3.5 3.2-5.4 6.5-5.4s6 1.9 6.5 5.4"/><path d="M16.5 5.2a3.2 3.2 0 0 1 0 5.9"/><path d="M18 14.9c2 .7 3.2 2.5 3.5 5.1"/>',
+    capacete: '<path d="M3 16a9 9 0 0 1 18 0"/><path d="M9.5 7.6V5.2a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2.4"/><rect x="2" y="16" width="20" height="3.4" rx="1.2"/>',
+    cadeado: '<rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7.2a4 4 0 0 1 8 0v3.3"/>',
+    destravado: '<rect x="4" y="10.5" width="16" height="10.5" rx="2"/><path d="M8 10.5V7.2a4 4 0 0 1 7.4-2.1"/>',
+    chave: '<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8"/><path d="M17 6l2 2"/><path d="M14.5 8.5l2 2"/>',
+    nuvem: '<path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.2 11.1 3.5 3.5 0 0 0 7 18z"/>',
+    microfone: '<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0"/><path d="M12 18v3.5"/>',
+    sino: '<path d="M18 9a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16S18 14 18 9z"/><path d="M13.7 19.5a2 2 0 0 1-3.4 0"/>',
+    lampada: '<path d="M9.2 17h5.6"/><path d="M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.5.4.8 1 .8 1.6h5.6c0-.6.3-1.2.8-1.6A6 6 0 0 0 12 3z"/>',
+    foguete: '<path d="M12 2.5c3 2 5 5.5 5 9.5l-2.5 2.5h-5L7 12c0-4 2-7.5 5-9.5z"/><circle cx="12" cy="10" r="1.8"/><path d="M9.5 17.5C8 19 7.5 21 7.5 21s2-.5 3.5-2"/><path d="M14.5 17.5c1.5 1.5 2 3.5 2 3.5s-2-.5-3.5-2"/>',
+    mensagem: '<path d="M20.5 12.5a7.5 7.5 0 0 1-10.9 6.7L4 20.5l1.4-5.4A7.5 7.5 0 1 1 20.5 12.5z"/>',
+    megafone: '<path d="M4 10v4a1 1 0 0 0 1 1h2.5L14 19.5v-15L7.5 9H5a1 1 0 0 0-1 1z"/><path d="M17.5 9.5a3.5 3.5 0 0 1 0 5"/>',
+    livro: '<path d="M4 4.5A2 2 0 0 1 6 3h13v15.5H6a2 2 0 0 0-2 2z"/><path d="M4 20.5A2 2 0 0 1 6 18.5h13V21H6a2 2 0 0 1-2-2z"/>',
+    assinar: '<path d="M3 20.5c3.5 0 3.5-3 7-3s3.5 3 7 3 4-1.5 4-1.5"/><path d="M6.5 14.5 16 5a2.1 2.1 0 0 1 3 3l-9.5 9.5-4 1z"/>',
+    caminhar: '<circle cx="13" cy="4.2" r="2"/><path d="M11 21l1.5-6.5L9.5 12V8.2l3.5-1 3 3 2.5 1"/><path d="M9 21l1.5-4"/>',
+    quebracabeca: '<path d="M10 3h4v2.6a1.6 1.6 0 1 0 3 1.4H21v4h-2.6a1.6 1.6 0 1 0-1.4 3V21h-4v-2.6a1.6 1.6 0 1 0-3-1.4H3v-4h2.6A1.6 1.6 0 1 0 7 9V6h3z"/>',
+    proibido: '<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>',
+    caminhao: '<rect x="1.5" y="6.5" width="12" height="9" rx="1"/><path d="M13.5 10h4l4 3.5v2h-8z"/><circle cx="6" cy="18" r="2"/><circle cx="17.5" cy="18" r="2"/>',
+    reciclar: '<path d="M7 6.5 9.5 2.8l2.5 3.7"/><path d="M9.5 3v7.5"/><path d="M17.5 9.5 21 12l-3.5 2.5"/><path d="M20.5 12H13"/><path d="M6 17.5 3 15l3-2.5"/><path d="M3.5 15H11"/>',
+    olhoFechado: '<path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2"/><path d="M20.4 9.4c.4.9.6 1.6.6 2.6 0 0-3.5 6-9 6-1.2 0-2.3-.3-3.3-.7"/><path d="M4 4l16 16"/>'
   };
 
   var Icones = {

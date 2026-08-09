@@ -96,7 +96,7 @@
       if (!ov) {
         ov = document.createElement("div"); ov.id = "busca-ov";
         ov.innerHTML = '<div class="busca-caixa" role="dialog" aria-label="Busca universal">' +
-          '<div class="busca-topo"><span class="busca-lupa">🔍</span>' +
+          '<div class="busca-topo"><span class="busca-lupa">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '</span>' +
           '<input id="busca-inp" type="text" placeholder="Buscar obra, orçamento, módulo ou ação…" autocomplete="off" spellcheck="false">' +
           '<span class="busca-esc">Esc</span></div>' +
           '<div id="busca-res" class="busca-res"></div>' +
@@ -170,7 +170,7 @@
       if (r.tipo === "acao") {
         if (r.id === "novo-orcamento" && typeof App !== "undefined") { App.irPara("orcamentos"); App.novoOrcamento(); }
         else if (r.id === "tour" && typeof Tour !== "undefined") Tour.iniciar(true);
-        else if (r.id === "backup") { var b = document.querySelector('[data-acao="backup"]'); if (b) b.click(); else if (typeof UI !== "undefined") UI.toast("Abra ⚙ (menu da conta) → 💾 Backup.", "ok"); }
+        else if (r.id === "backup") { var b = document.querySelector('[data-acao="backup"]'); if (b) b.click(); else if (typeof UI !== "undefined") UI.toast("Abra ⚙ (menu da conta) → " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup.", "ok"); }
         return;
       }
       if (r.tipo === "modulo" && typeof App !== "undefined") { App.irPara(r.id); return; }

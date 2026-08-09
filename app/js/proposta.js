@@ -97,8 +97,8 @@
 
       // 4) INCLUSO / EXCLUSO
       P.push(pg("3. Está Incluso / Não Está Incluso",
-        '<div class="cols"><div><h3>✔ Incluso</h3><ul>' + this._lista(c.incluso) + '</ul></div>' +
-        '<div><h3>✘ Não incluso</h3><ul>' + this._lista(c.excluso) + '</ul></div></div>'));
+        '<div class="cols"><div><h3>' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Incluso</h3><ul>' + this._lista(c.incluso) + '</ul></div>' +
+        '<div><h3>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Não incluso</h3><ul>' + this._lista(c.excluso) + '</ul></div></div>'));
 
       // 5) PREMISSAS E METODOLOGIA
       P.push(pg("4. Premissas e Metodologia",
