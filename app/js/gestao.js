@@ -1877,6 +1877,32 @@
         '<div class="row">' + campo("Início", inp("g-inicio", o.inicio, "", "date")) + campo("Previsão de término", inp("g-termino", o.termino, "", "date")) + "</div>" +
         '<div class="row">' + campo("Área construída (m²)", inp("g-areac", o.areaConstruida)) + campo("Área do terreno (m²)", inp("g-areat", o.areaTerreno)) + "</div>" +
         campo("Vincular a um orçamento", sel("g-orc", optsRec(orcs, "nome", o.orcamentoId, "— nenhum —"))) +
+          /* ---------------------------------------------------------------
+           * DIÁRIO DE OBRA PELO WHATSAPP — o cadastro fica AQUI, na obra
+           *
+           * Antes disto o mapa "telefone → obra" era um JSON no servidor que
+           * só quem tinha acesso ao VPS editava. Cada obra nova de cada
+           * cliente exigia alguém mexendo em servidor — não escala para
+           * cliente nenhum. Agora quem cadastra é o dono da obra.
+           *
+           * ⚠ Fica no formulário da OBRA, e não numa tela de configuração
+           * geral, porque a pergunta é da obra: "quem manda o diário DESTA
+           * obra?". Numa tela geral, o usuário teria de repetir a obra em
+           * todo cadastro — e errar a obra aqui é lançar o dia de trabalho
+           * no lugar errado.
+           * ------------------------------------------------------------- */
+          '<h4 style="margin:14px 0 6px;font-size:13px;border-top:1px solid var(--borda);padding-top:10px">' +
+            '📱 Diário de obra pelo WhatsApp</h4>' +
+          '<div class="muted" style="font-size:12px;margin-bottom:8px">' +
+            'O mestre manda o recado do dia pelo WhatsApp e ele chega aqui como <b>rascunho</b> de diário, ' +
+            'para você conferir e aprovar. Cadastre quem pode mandar.</div>' +
+          '<label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:8px">' +
+            '<input type="checkbox" id="g-wa-ativo"' + (o.rdoWhatsAtivo ? " checked" : "") + '> ' +
+            'Ligar o diário por WhatsApp nesta obra</label>' +
+          '<div id="g-wa-lista"></div>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">' +
+            '<button type="button" class="btn sm" id="g-wa-add" style="font-size:12px">+ pessoa</button>' +
+            '<span id="g-wa-msg" style="font-size:11.5px"></span></div>' +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(o.obs || "") + "</textarea>") +
         /* ⚠ A FOTO NAO ENTRA NO REGISTRO DA OBRA.
          * Ela vai para o mesmo lugar das fotos do diario (IndexedDB + fila de
@@ -1905,12 +1931,107 @@
         obj.areaConstruida = nv("g-areac"); obj.areaTerreno = nv("g-areat"); obj.orcamentoId = v("g-orc"); obj.obs = v("g-obs");
         var cli = lista("clientes").filter(function (c) { return c.id === obj.clienteId; })[0];
         obj.clienteNome = cli ? cli.nome : "";
+
+          /* canal do WhatsApp: guarda na obra e registra no servidor.
+             ⚠ o registro é ASSÍNCRONO e a recusa vem de lá (telefone que já
+             é de outra conta). Por isso o aviso aparece depois, por toast:
+             segurar o formulário esperando a rede deixaria o usuário preso
+             numa tela travada justo quando estivesse na obra, sem sinal. */
+          var chkWa = document.getElementById("g-wa-ativo");
+          obj.rdoWhatsAtivo = !!(chkWa && chkWa.checked);
+          obj.rdoWhatsResp = waResp.filter(function (r) { return (r.nome || "").trim() || (r.fone || "").trim(); });
+          if (typeof RDOCanal !== "undefined") {
+            var vWa = RDOCanal.validar({ ativo: obj.rdoWhatsAtivo, responsaveis: obj.rdoWhatsResp });
+            if (!vWa.ok) { UI.toast(vWa.erros[0], "erro"); return false; }
+            obj.rdoWhatsResp = vWa.responsaveis;
+          }
+          var _selfWa = self;
+          setTimeout(function () {
+            if (_selfWa._waSalvarCanal) _selfWa._waSalvarCanal(obj, function (erro) {
+              if (erro) UI.toast("Diário por WhatsApp: " + erro, "erro");
+              else if (obj.rdoWhatsAtivo) UI.toast("Diário por WhatsApp ligado nesta obra.", "ok");
+            });
+          }, 30);
         return true;
       });
 
       /* UI.modal ja colocou o form no DOM (sincrono) — mesma ordem usada no
          diario. Daqui para baixo e a fiacao da foto. */
       var selfF = this;
+        /* ---------------- fiação do canal do WhatsApp ----------------
+         * ⚠ O QUE FICA GRAVADO NA OBRA é só a lista e o liga/desliga. Quem
+         * guarda o vínculo "telefone → conta" é o SERVIDOR, porque é ele
+         * que recebe o recado do WhatsApp e precisa saber de quem é — a
+         * obra vive no aparelho do cliente, o servidor não a enxerga.
+         * ------------------------------------------------------------- */
+        /* ⚠ `todos()` NAO e global — ele e declarado dentro do editor de RDO.
+           Eu usei aqui por habito e o `waPintar` estourava com ReferenceError
+           DEPOIS de ja ter pintado o HTML: a lista aparecia na tela, os campos
+           nao gravavam nada, e nao havia erro visivel para o usuario. Helper
+           proprio, com nome proprio, resolve e nao colide com o de ninguem. */
+        function waTodos(sel, el) { return Array.prototype.slice.call((el || document).querySelectorAll(sel)); }
+        var waResp = Array.isArray(o.rdoWhatsResp) ? o.rdoWhatsResp.slice() : [];
+        function waPintar() {
+          var el = document.getElementById("g-wa-lista");
+          if (!el) return;
+          if (!waResp.length) {
+            el.innerHTML = '<span class="muted" style="font-size:12px">Ninguém cadastrado ainda.</span>';
+            return;
+          }
+          el.innerHTML = waResp.map(function (r, i) {
+            return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">' +
+              '<input data-wan="' + i + '" value="' + Util.esc(r.nome || "") + '" placeholder="nome de quem manda" style="flex:1;max-width:220px;font-size:12px;padding:3px 5px">' +
+              '<input data-waf="' + i + '" value="' + Util.esc(r.fone || "") + '" placeholder="(34) 98888-7777" style="width:150px;font-size:12px;padding:3px 5px">' +
+              '<span class="muted" style="font-size:10.5px;min-width:130px">' +
+                (typeof RDOCanal !== "undefined" && RDOCanal.normalizarFone(r.fone)
+                  ? RDOCanal.exibirFone(r.fone)
+                  : (r.fone ? '<span style="color:#b91c1c">número inválido</span>' : "")) + "</span>" +
+              '<button type="button" data-war="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></div>';
+          }).join("");
+          waTodos("[data-wan]", el).forEach(function (x) {
+            x.oninput = function () { waResp[+x.getAttribute("data-wan")].nome = x.value; };
+          });
+          waTodos("[data-waf]", el).forEach(function (x) {
+            /* só repinta ao SAIR do campo: repintar a cada tecla tiraria o
+               foco e o usuário perderia o número no meio da digitação */
+            x.onchange = function () {
+              waResp[+x.getAttribute("data-waf")].fone = x.value;
+              waPintar();
+            };
+            x.oninput = function () { waResp[+x.getAttribute("data-waf")].fone = x.value; };
+          });
+          waTodos("[data-war]", el).forEach(function (x) {
+            x.onclick = function () { waResp.splice(+x.getAttribute("data-war"), 1); waPintar(); };
+          });
+        }
+        var bWaAdd = document.getElementById("g-wa-add");
+        if (bWaAdd) bWaAdd.onclick = function () { waResp.push({ nome: "", fone: "" }); waPintar(); };
+        waPintar();
+
+        /* leva o cadastro ao servidor. Só o servidor sabe dizer se o número
+           já é de outra conta — e essa recusa tem de aparecer para o usuário,
+           não sumir num log. */
+        this._waSalvarCanal = function (obj, cb) {
+          var lic = (typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave()) || "";
+          var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "";
+          if (!lic || !base) { cb(null); return; }
+          if (typeof RDOCanal === "undefined") { cb(null); return; }
+          var v = RDOCanal.validar({ ativo: obj.rdoWhatsAtivo, responsaveis: obj.rdoWhatsResp });
+          if (!v.ok) { cb(v.erros[0]); return; }
+          fetch(String(base).replace(/\/$/, "") + "/api/rdo-canal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-licenca": lic },
+            body: JSON.stringify({ obraId: obj.id, obraNome: obj.nome,
+              ativo: !!obj.rdoWhatsAtivo, responsaveis: v.responsaveis })
+          }).then(function (r) { return r.json().then(function (j) { return { s: r.status, j: j }; }); })
+            .then(function (x) { cb(x.s === 200 ? null : (x.j && x.j.erro) || "não consegui registrar o canal"); })
+            .catch(function () {
+              /* sem rede o cadastro local fica salvo; o canal é que não
+                 passa a valer — e dizer isso evita o usuário achar que
+                 ligou e ficar esperando recado que não vem */
+              cb("sem conexão: o cadastro ficou salvo, mas o canal só passa a valer quando você estiver online");
+            });
+        };
       function pintarPrev(dataURI) {
         var pv = document.getElementById("g-foto-prev"), bt = document.getElementById("g-foto-tirar");
         if (!pv) return;

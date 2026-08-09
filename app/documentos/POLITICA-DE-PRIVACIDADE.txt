@@ -126,9 +126,33 @@ fornecedora para o seu cliente acompanhar com usuário e senha.
     contratado, medido e a faturar, a lista de medições e OS DIÁRIOS DE OBRA
     COM AS FOTOS. Vai também o usuário e a senha de acesso que você definir.
   · O que NÃO vai: custo interno, composições e margem.
+  · O que só vai SE VOCÊ MARCAR na tela de publicar: as compras da obra (com
+    fornecedor e valor pago), a sua posição financeira com o cliente (o que
+    ele já pagou e o que falta), os documentos da obra (ART, alvará, apólice
+    — número e validade, não o arquivo) e a projeção de término. Cada um tem
+    caixa própria e o que fica desmarcado NÃO É ENVIADO ao servidor.
   · Cada clique em "Publicar" republica o retrato atual.
   · Como remover: excluir a obra no programa remove a publicação. Para apagar
     sem excluir a obra, peça pelo canal do item 7.
+
+4.2.1 O QUE O SEU CLIENTE ESCREVE E FAZ NO PORTAL
+Além de ler, o cliente pode responder — e isso é gravado no servidor da
+fornecedora, fora do retrato da obra (para não ser apagado a cada publicação):
+
+  · NOTA E RECADO por diário, com a data.
+  · ACEITE DE MEDIÇÃO: quando ele clica em "Dar ciência" num boletim, ficam
+    gravados o NOME que ele digitou, a data e hora, e a ressalva, se escrever.
+    Esse registro é uma CIÊNCIA E ACEITE — não é assinatura digital com
+    certificado ICP-Brasil e não substitui assinatura prevista em contrato.
+  · REGISTRO DE LEITURA: quando ele abre o Portal, o programa envia
+    AUTOMATICAMENTE — sem ele pedir — a lista dos diários e medições que estão
+    na tela, e o servidor guarda a data da PRIMEIRA e da última vez que cada
+    um foi visto, mais quantas vezes. Serve para o escritório poder comprovar
+    que um documento foi apresentado ao cliente. NÃO é enviado o que ele leu
+    dentro do documento, nem localização, nem qualquer identificador do
+    aparelho — só a lista de itens da obra dele e o horário do servidor.
+  · Esses registros ficam visíveis para o escritório que publicou a obra, e
+    para mais ninguém. Retenção no item 6.
 
 4.3 MODELO BIM NA NUVEM E SALA DE REUNIÃO
 Em "Compartilhar na nuvem", o ARQUIVO IFC INTEIRO do projeto é enviado ao
@@ -203,6 +227,19 @@ O que fica no nosso servidor, por mensagem recebida:
   · o identificador da mensagem, para não gravar a mesma duas vezes;
   · o e-mail da conta para a qual ela deve ir.
 
+O CADASTRO DE QUEM PODE MANDAR. Para o canal funcionar, você cadastra na
+obra, dentro do OrçaPRO, o NOME e o TELEFONE de cada pessoa autorizada a
+mandar o diário. Esse cadastro é enviado ao nosso servidor e fica guardado lá
+— é ele que permite saber de quem é o recado quando a mensagem chega.
+
+  · fica guardado enquanto o cadastro existir; apagar a pessoa da lista na
+    obra (ou desligar o recurso) remove o registro do nosso servidor;
+  · um telefone só pode estar cadastrado em UMA empresa. Se o número já
+    estiver em outra conta do OrçaPRO, o cadastro é recusado e o programa
+    avisa — é o que impede o diário de uma empresa cair na conta de outra;
+  · esse cadastro NÃO dá ao nosso servidor acesso ao WhatsApp da pessoa. Ele
+    só serve para reconhecer o número quando ELA escreve para o nosso número.
+
 ⚠ ISTO ENVOLVE DADO DE OUTRA PESSOA — o seu funcionário. Nessa relação quem
 decide o que é coletado é VOCÊ (a lei chama isso de controlador); nós apenas
 operamos o canal a seu pedido. Avise a equipe de que as mensagens mandadas para
@@ -271,6 +308,9 @@ Sem apertar o botão, nada é consultado.
     obra remove a publicação; a pedido, apagamos em até 30 dias.
   · Modelo BIM compartilhado (item 4.3): cerca de 72 horas, apagado em seguida.
     Posição, identidade e voz da reunião não são gravadas.
+  · Cadastro de quem manda o diário (item 4.8 — nome e telefone): enquanto
+    o cadastro existir na obra. Removeu da lista ou desligou o recurso, sai
+    do nosso servidor.
   · Fotos do diário por WhatsApp (item 4.8): saem da área de passagem assim
     que o seu OrçaPRO as baixa; o que não for baixado é apagado em 7 dias.
   · Diário por WhatsApp (item 4.8): apagado do nosso servidor em até 7 dias
