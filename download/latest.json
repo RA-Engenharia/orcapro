@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.179",
+  "versao": "1.1.180",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.179/OrcaPRO-IA-update-v1.1.179.zip",
-  "notas": "O MENU DE CONFIGURACOES NO CELULAR. Quem abria o menu da conta (a engrenagem) no telefone — o que leva para Dados da empresa, Tabelas de preco, Nuvem e Usar no celular — via o menu sair pela borda esquerda da tela, com os itens cortados pela metade. Acontecia sempre que a barra do topo quebrava em duas linhas, o que comeca bem antes do tamanho de um celular: em tela de tablet e de notebook pequeno tambem. Corrigido e verificado em nove larguras, de 320px a 1440px. ESTE CONSERTO VEIO PELA ABA FALAR COM O SUPORTE, lancada na versao anterior: foi relatado por um usuario, entrou na fila de conserto e esta resolvido — que e exatamente para isso que ela existe. Continue mandando: problema vira conserto, sugestao vai para avaliacao.",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.180/OrcaPRO-IA-update-v1.1.180.zip",
+  "notas": "OS GRAFICOS DO PAINEL. O eixo agora anda em numeros que da para ler: ele mostrava marcas como 0 / 89,4 mil / 179 mil / 268 mil, com que ninguem consegue estimar de relance, e agora sai 0 / 100 mil / 200 mil / 300 mil. Nao e so aparencia — o eixo passou a SEMPRE incluir o zero, porque grafico de barra que comeca no meio faz uma diferenca de 3 por cento parecer o dobro, que e a forma mais comum de um grafico verdadeiro enganar quem olha. E a barra deixou de boiar: no Previsto x Realizado, quando voce tinha uma obra so, as barras ficavam finas e perdidas num card com dois tercos vazios. Agora elas engordam e ficam centralizadas; com muitas obras, nada muda.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.174/OrcaPRO-IA-Instalador-v1.1.174.exe"
 }

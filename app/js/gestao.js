@@ -1062,7 +1062,17 @@
       var iw = W - padL - padR, ih = H - padT - padB;
       var vals = [];
       fluxo.forEach(function (f) { vals.push(f.receita, f.despesa, f.acumulado, 0); });
-      var max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
+      /* ⚠ O EIXO ERA O INTERVALO CRU DIVIDIDO EM TERÇOS.
+       * Com dado real isso dava "R$ 0,00 / 89,4 mil / 179 mil / 268 mil" —
+       * números que ninguém usa para estimar de relance, e o detalhe que faz
+       * o painel parecer planilha exportada. Agora o eixo anda em passos que
+       * a cabeça reconhece (js/escala.js), e o mesmo dado vira
+       * "0 / 100 mil / 200 mil / 300 mil". */
+      var eixo = (typeof Escala !== "undefined")
+        ? Escala.calcular(Math.min.apply(null, vals), Math.max.apply(null, vals), 4)
+        : null;
+      var max = eixo ? eixo.max : Math.max.apply(null, vals);
+      var min = eixo ? eixo.min : Math.min.apply(null, vals);
       if (max === min) max = min + 1;
       var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
       var x = function (i) { return padL + (fluxo.length > 1 ? i / (fluxo.length - 1) : .5) * iw; };
@@ -1076,8 +1086,10 @@
         return s;
       };
       var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
-      for (var g = 0; g <= 3; g++) {
-        var gv = min + (max - min) * g / 3;
+      /* marcas do eixo redondo (js/escala.js); sem ele, o terco antigo */
+      var _marcas = eixo ? eixo.marcas : [0,1,2,3].map(function(i){ return min + (max-min)*i/3; });
+      for (var g = 0; g < _marcas.length; g++) {
+        var gv = _marcas[g];
         svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha-forte)" stroke-width="1"/>' +
           '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
@@ -1111,21 +1123,37 @@
       var iw = W - padL - padR, ih = H - padT - padB;
       var max = 1;
       dados.forEach(function (d) { if (d.previsto > max) max = d.previsto; if (d.real > max) max = d.real; });
+      /* mesmo eixo redondo do fluxo (js/escala.js). Barra SEMPRE contra o
+         zero: eixo de barra que começa no meio faz 3% de diferença parecer o
+         dobro, que é a forma mais comum de mentir com gráfico verdadeiro. */
+      var eixo = (typeof Escala !== "undefined") ? Escala.calcular(0, max, 4) : null;
+      if (eixo) max = eixo.max;
       var y = function (v) { return padT + (1 - v / max) * ih; };
       var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
-      for (var g = 0; g <= 3; g++) {
-        var gv = max * g / 3;
+      /* idem; barra sempre contra o zero */
+      var _marcas = eixo ? eixo.marcas : [0,1,2,3].map(function(i){ return max*i/3; });
+      for (var g = 0; g < _marcas.length; g++) {
+        var gv = _marcas[g];
         svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha-forte)" stroke-width="1"/>' +
           '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
-      var gw = iw / dados.length, bw = Math.min(18, gw / 3);
+      /* ⚠ A BARRA SOZINHA PERDIDA NO VAZIO.
+       * O slot era `iw / dados.length`: com UMA obra ele virava a largura
+       * inteira do grafico e as duas barrinhas de 18px ficavam boiando num
+       * card com dois tercos vazios — e a construtora pequena, que toca uma
+       * obra por vez, via exatamente isso. Agora o slot tem TETO e o grupo e
+       * CENTRALIZADO: com poucas barras elas engordam e ficam no meio; com
+       * oito, nada muda (o slot ja era menor que o teto). */
+      var gw = Math.min(iw / dados.length, 120);
+      var esq = padL + (iw - gw * dados.length) / 2;
+      var bw = Math.min(26, gw / 3);
       // Rótulo do eixo X: truncagem pelo ESPAÇO do slot (~5.6px/char a 9.5px) e, se
       // ainda assim vizinhos encostarem (5+ barras), alterna em 2 alturas (zigue-zague)
       // — achado do gate: nomes de etapa colidiam e viravam uma faixa ilegível.
       var maxC = Math.max(5, Math.floor(gw / 5.6));
       var zig = dados.length >= 5;
       dados.forEach(function (d, i) {
-        var cx = padL + gw * i + gw / 2;
+        var cx = esq + gw * i + gw / 2;
         var nome = String(d.rotulo || ""); if (nome.length > maxC) nome = nome.slice(0, Math.max(3, maxC - 1)) + "…";
         var yNome = zig ? (i % 2 ? H - 15 : H - 25) : H - 15;
         svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="3" fill="var(--aco-claro)" opacity=".8"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
