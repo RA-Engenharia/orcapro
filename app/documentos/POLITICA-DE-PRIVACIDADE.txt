@@ -267,7 +267,28 @@ e por um caminho separado do texto, que vale a pena entender:
     aplicativo, e segue as mesmas regras (item 4.2, se a obra estiver
     publicada no Portal).
 
-O que NÃO entra por aqui: áudio, arquivo que não seja imagem, e texto acima de
+ÁUDIO (nota de voz). Nos planos que incluem o recurso — ou com o adicional
+contratado —, a nota de voz do mestre é transcrita e o TEXTO vira o diário.
+Vale a pena entender o caminho:
+
+  · o áudio vai para a Groq, a mesma fornecedora que já processa os recursos
+    de IA (item 4.1). Não entra empresa nova nesta história;
+  · ⚠ ÁUDIO CARREGA A VOZ DA PESSOA, que é um dado mais sensível que o texto.
+    Por isso o recurso é OPCIONAL e desligável na obra, e quem não quiser
+    usar segue mandando o diário escrito, sem limite;
+  · o áudio é enviado para transcrever e NÃO é guardado por nós — o que fica
+    é o texto, dentro do diário. A Groq trata o envio conforme a política
+    dela;
+  · há um teto de minutos por mês, por conta. Ao acabar, o programa avisa e
+    pede o texto — não transcreve calado nem cobra a mais;
+  · avise a equipe de que a nota de voz mandada para esse número é transcrita
+    e vira documento da obra.
+
+Se preferir não usar nenhum serviço de transcrição, o teclado do próprio
+celular faz isso sem sair do aparelho: o mestre segura o microfone do teclado,
+fala, e manda como texto. Nada sai para fornecedor nenhum.
+
+O que NÃO entra por aqui: arquivo que não seja imagem ou áudio, e texto acima de
 64 KB — o servidor recusa. Áudio não é transcrito por nós. Foto sozinha, sem o
 texto do dia, não vira diário: o programa responde pedindo o texto junto.
 
@@ -308,6 +329,8 @@ Sem apertar o botão, nada é consultado.
     obra remove a publicação; a pedido, apagamos em até 30 dias.
   · Modelo BIM compartilhado (item 4.3): cerca de 72 horas, apagado em seguida.
     Posição, identidade e voz da reunião não são gravadas.
+  · Áudio do diário (item 4.8): enviado para transcrever e não guardado por
+    nós; o que fica é o texto, dentro do diário.
   · Cadastro de quem manda o diário (item 4.8 — nome e telefone): enquanto
     o cadastro existir na obra. Removeu da lista ou desligou o recurso, sai
     do nosso servidor.
