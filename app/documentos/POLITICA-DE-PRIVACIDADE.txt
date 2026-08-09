@@ -215,8 +215,24 @@ guardado é o diário dentro do seu OrçaPRO, como qualquer outro. Se nada baixa
 a caixa guarda no máximo 200 mensagens por conta e descarta as mais antigas,
 registrando isso no log — perder em silêncio seria pior que perder.
 
-O que NÃO entra por aqui: foto, áudio, arquivo e qualquer coisa acima de 64 KB —
-o servidor recusa. Áudio não é transcrito por nós.
+FOTO DA OBRA. Se o mestre mandar foto junto com o recado, ela também entra —
+e por um caminho separado do texto, que vale a pena entender:
+
+  · a foto NÃO fica junto do diário na caixa. Ela vai para uma área de
+    PASSAGEM no nosso servidor, e o que viaja com o recado é só um código de
+    24 letras que aponta para ela;
+  · quem baixa a foto é o SEU OrçaPRO, com a sua licença. Nenhuma outra
+    licença consegue baixá-la — o servidor confere de quem é antes de
+    entregar, e a conta é sempre a da licença, nunca um endereço na URL;
+  · assim que o programa baixa, a foto sai da passagem. O que não for baixado
+    é apagado em 7 dias, como o texto;
+  · a partir daí ela é uma foto de diário como qualquer outra tirada pelo
+    aplicativo, e segue as mesmas regras (item 4.2, se a obra estiver
+    publicada no Portal).
+
+O que NÃO entra por aqui: áudio, arquivo que não seja imagem, e texto acima de
+64 KB — o servidor recusa. Áudio não é transcrito por nós. Foto sozinha, sem o
+texto do dia, não vira diário: o programa responde pedindo o texto junto.
 
 Para desligar: basta parar de usar o número. Sem mensagem, não há caixa. A
 pedido, apagamos na hora o que estiver pendente (item 7).
@@ -255,6 +271,8 @@ Sem apertar o botão, nada é consultado.
     obra remove a publicação; a pedido, apagamos em até 30 dias.
   · Modelo BIM compartilhado (item 4.3): cerca de 72 horas, apagado em seguida.
     Posição, identidade e voz da reunião não são gravadas.
+  · Fotos do diário por WhatsApp (item 4.8): saem da área de passagem assim
+    que o seu OrçaPRO as baixa; o que não for baixado é apagado em 7 dias.
   · Diário por WhatsApp (item 4.8): apagado do nosso servidor em até 7 dias
     depois de o OrçaPRO baixar; no máximo 200 mensagens pendentes por conta.
   · Cadastro e consultas da busca de composições do site (item 4.5): enquanto

@@ -35,6 +35,42 @@
     diretoria:      null   // null = todos os módulos atribuíveis
   };
 
+  /* ---------------------------------------------------------------
+   * RELATÓRIOS DO PORTAL DO CLIENTE
+   *
+   * O catálogo mora aqui e é espelhado em loja/portal.html — o app decide
+   * QUEM pode e o portal decide COMO desenha. Cada id aparece nos dois
+   * lugares; id novo exige mexer nos dois (é o preço de o portal ser uma
+   * página estática que não conhece o app).
+   *
+   * `sensivel: true` significa que o relatório carrega dado que o cliente
+   * normalmente NÃO deveria ver numa empreitada — hoje só as compras, que
+   * expõem o valor pago ao fornecedor e portanto a margem. Ele nasce
+   * DESLIGADO e a tela de publicação diz o que ele revela, na cara, antes de
+   * alguém marcar. Numa obra por administração ligar é o certo; numa obra
+   * por preço fechado, ligar por engano entrega a margem ao cliente e não há
+   * como voltar atrás depois que ele leu.
+   * --------------------------------------------------------------- */
+  var RELATORIOS_PORTAL = [
+    { id: "etapas", nome: "Avanço por etapa", desc: "Quanto cada etapa da obra já andou, com quantidade acumulada" },
+    { id: "previsto", nome: "Previsto × Realizado", desc: "Serviço a serviço: previsto, executado, saldo e %" },
+    { id: "medicoes", nome: "Medições", desc: "Boletins, valores, retenção e acumulado" },
+    { id: "diario", nome: "Diário de obra", desc: "Os diários do período, um bloco por dia" },
+    { id: "semanal", nome: "Semanal", desc: "O que cada semana produziu, com efetivo e avanço" },
+    { id: "mensal", nome: "Mensal", desc: "O mesmo recorte, fechado por mês" },
+    { id: "ocorrencias", nome: "Ocorrências", desc: "Paralisações, fatos impeditivos e registros do período" },
+    { id: "fotografico", nome: "Fotográfico", desc: "As fotos dos diários com data e legenda" },
+    { id: "efetivo", nome: "Mão de obra", desc: "Efetivo e horas trabalhadas por dia" },
+    { id: "clima", nome: "Clima e dias improdutivos", desc: "Condição do dia e o que parou — base de pleito de prazo" },
+    { id: "marcos", nome: "Marcos da obra", desc: "As etapas em linguagem de leigo: o que terminou, o que está em andamento" },
+    { id: "galeria", nome: "Galeria de fotos", desc: "As fotos da obra reunidas e filtráveis por etapa e período" },
+    { id: "documentos", nome: "Documentos da obra", desc: "ART/RRT, alvará, apólice, contrato — número, emissão e validade" },
+    { id: "financeiro", nome: "Posição financeira do cliente", sensivel: true,
+      desc: "O que ELE já pagou, o que falta e a próxima parcela. Não leva custo nem despesa da obra — mas expõe o cronograma de desembolso" },
+    { id: "compras", nome: "Compras da obra", sensivel: true,
+      desc: "Pedidos, fornecedor e valor pago. Revela quanto a obra CUSTOU — só faz sentido em obra por administração" }
+  ];
+
   // ---------- Parametrização (enums do domínio) ----------
   var P = {
     obraStatus: [["planejamento", "Planejamento"], ["andamento", "Em andamento"], ["pausada", "Pausada"], ["concluida", "Concluída"]],
@@ -2068,7 +2104,15 @@
       var corpo = '<div class="row">' + campo("Código (opcional)", inp("g-atv-cod", a.codigo, "Ex.: SV-01"))
         + campo("Descrição do serviço *", inp("g-atv-desc", a.descricao, "Ex.: Reboco interno"))
         + campo("Unidade *", inp("g-atv-und", a.unidade, "Ex.: m², m³, un, h")) + "</div>"
-        + '<div class="row">' + campo("Valor unitário (R$) *", inp("g-atv-vu", a.valorUnitario, "Ex.: 32,00")) + "</div>"
+        + '<div class="row">' + campo("Valor unitário (R$) *", inp("g-atv-vu", a.valorUnitario, "Ex.: 32,00"))
+        /* A etapa entra aqui pelo mesmo motivo do diário: é o que agrupa o
+           serviço no avanço que o cliente lê. E aqui ela vale duas vezes —
+           esta tabela é a que dá PREÇO ao serviço, e é o preço que pondera o
+           percentual da obra (Fisico.ponderar). Sem etapa, o serviço pesa no
+           total mas não aparece em etapa nenhuma. */
+        + campo('Etapa da obra<span class="muted" style="font-weight:400;font-size:11px"> — agrupa este serviço no avanço do Portal</span>',
+            '<input id="g-atv-etapa" list="g-etapas-atv" value="' + Util.esc(a.etapa || "") + '" placeholder="Ex.: Alvenaria">'
+            + this._datalistEtapas(obraId, "g-etapas-atv")) + "</div>"
         + '<p class="muted" style="font-size:12px;margin:4px 0 0">Esta tabela é <b>desta obra</b>. Medições já emitidas guardam o preço que foi usado — mexer aqui não altera boletim antigo.</p>';
       var botoes = [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
       if (a.id) botoes.push({ texto: "🗑 Excluir", classe: "danger", onClick: function () {
@@ -2093,6 +2137,7 @@
         if (!(vu > 0)) { UI.toast("Informe o valor unitário — sem preço não dá para medir.", "erro"); return; }
         var reg = a.id ? a : { obraId: obraId, ativo: true };
         reg.codigo = v("g-atv-cod"); reg.descricao = desc; reg.unidade = und; reg.valorUnitario = vu;
+        reg.etapa = String(v("g-atv-etapa") || "").replace(/\s+/g, " ").trim();
         if (!reg.obraId) reg.obraId = obraId;
         Store.salvar(eid(), "atividades", reg);
         UI.fecharModal(); self._reabrirAtv(obraId);
@@ -7823,6 +7868,71 @@
       return out;
     },
 
+    /* -----------------------------------------------------------------
+     * OS NOMES DE ETAPA DA OBRA — o vocabulário de classificação do serviço.
+     *
+     * ⚠ NÃO CONFUNDIR COM `_etapasDaObra` (lá em cima, no Previsto ×
+     * Realizado). Aquele devolve REGISTROS `{id, nome, previsto…}` do
+     * orçamento; este devolve NOMES em texto, porque a etapa lançada no
+     * diário é livre — pode ter sido digitada em campo, vir do Last Planner
+     * ou de um orçamento que já mudou. Chamei este de `_etapasDaObra` na
+     * primeira escrita e ele SOBRESCREVEU o outro (mesmo objeto literal, a
+     * última definição vence): a tela de apropriação por etapa passou a
+     * receber strings onde esperava `x.id`, e jogaria tudo no balde "não
+     * apropriado" sem erro nenhum. Quem pegou foi test-gap1.
+     *
+     * É o que alimenta o seletor "para qual etapa?" no cadastro do serviço e,
+     * por consequência, o avanço por etapa que o cliente vê no Portal.
+     *
+     * Vem de quatro lugares, nesta ordem de autoridade:
+     *   1) etapas do ORÇAMENTO vinculado à obra (a EAP contratada)
+     *   2) etapas do CRONOGRAMA daquele orçamento (as com data)
+     *   3) etapas já usadas nos DIÁRIOS desta obra (inclusive digitadas à mão)
+     *   4) etapas da TABELA DE PREÇOS da obra (obra sem valor global)
+     *
+     * ⚠ NÃO INVENTA LISTA PADRÃO. Tentei carregar `P.obraFase` como fallback
+     * ("Fundação, Estrutura, Alvenaria…") e é errado: a etapa tem de casar com
+     * a do orçamento, senão o avanço por etapa do Portal não fecha com o
+     * boletim de medição — dois documentos da mesma obra, com nomes de etapa
+     * diferentes, na mão do mesmo cliente. Obra sem orçamento começa com a
+     * lista vazia e o campo aceita texto livre.
+     * ----------------------------------------------------------------- */
+    _nomesDeEtapa: function (obraId) {
+      var vistas = {}, out = [];
+      function por(nome) {
+        var n = String(nome == null ? "" : nome).replace(/\s+/g, " ").trim();
+        if (!n) return;
+        var k = n.toLowerCase();
+        if (vistas[k]) return;
+        vistas[k] = 1; out.push(n);
+      }
+      try {
+        var ob = lista("obras").filter(function (o) { return o.id === obraId; })[0];
+        var orc = (ob && ob.orcamentoId)
+          ? (Store.listar(eid(), "orcamentos") || []).filter(function (o) { return o.id === ob.orcamentoId; })[0]
+          : null;
+        if (orc && orc.etapas) orc.etapas.forEach(function (e) { por(e.nome); });
+        if (orc && typeof Cronograma !== "undefined" && Cronograma.estimar) {
+          try { (Cronograma.estimar(orc).etapas || []).forEach(function (e) { por(e.nome); }); } catch (e) {}
+        }
+        lista("rdo").forEach(function (r) {
+          if (!r || r.obraId !== obraId) return;
+          (r.atividadesItens || []).forEach(function (a) { if (a) por(a.etapa); });
+        });
+        lista("atividades").forEach(function (a) { if (a && a.obraId === obraId) por(a.etapa); });
+      } catch (e) {}
+      return out;
+    },
+
+    /* O <datalist> reaproveitado por todo campo de etapa do módulo: uma lista
+       só, um id só — dois datalists com o mesmo id fariam o navegador usar o
+       primeiro e o segundo campo mostraria a lista de outra obra. */
+    _datalistEtapas: function (obraId, idLista) {
+      var et = this._nomesDeEtapa(obraId);
+      return '<datalist id="' + (idLista || "g-etapas-obra") + '">' +
+        et.map(function (e) { return '<option value="' + Util.esc(e) + '">'; }).join("") + "</datalist>";
+    },
+
     _htmlBlocoAtividades: function () {
       return campo('Serviços executados no dia *<span class="muted" style="font-weight:400;font-size:11px"> — puxe do orçamento ou do Last Planner; o que não existir, cadastre aqui</span>',
         '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">' +
@@ -8092,9 +8202,19 @@
                    escrevia literalmente "undefined" embaixo do serviço. */
                 (function () {
                   var org = a.origem ? (RDO.ORIGENS[a.origem] || a.origem) : "";
-                  var txt = org + (a.etapa ? (org ? " · " : "") + a.etapa : "");
-                  return txt ? '<div class="muted" style="font-size:10px">' + Util.esc(txt) + "</div>" : "";
-                })() + "</td>" +
+                  return org ? '<div class="muted" style="font-size:10px">' + Util.esc(org) + "</div>" : "";
+                })() +
+                /* A ETAPA É EDITÁVEL AQUI, e não só no cadastro: serviço que
+                   veio do Last Planner sem frente, ou de diário antigo criado
+                   antes de a etapa existir, chegava sem classificação e não
+                   havia onde corrigir sem apagar e relançar o serviço — o que
+                   levaria junto a quantidade já digitada do dia. Vazio aparece
+                   em laranja porque é lacuna que o cliente vai ver. */
+                '<input data-atet="' + i + '" list="g-etapas-rdo-lista" value="' + Util.esc(a.etapa || "") + '"' +
+                  ' placeholder="sem etapa" title="Etapa da obra — agrupa o avanço no Portal do cliente"' +
+                  ' style="width:100%;max-width:190px;margin-top:3px;font-size:10.5px;padding:1px 4px;border:1px dashed ' +
+                  (a.etapa ? "var(--linha,#e2e8f0);color:#64748b" : "#fdba74;color:#b45309") + ';background:transparent">' +
+                "</td>" +
               '<td style="text-align:center">' + Util.esc(a.unidade || "—") + "</td>" +
               '<td style="text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>" +
               '<td style="text-align:right;min-width:230px">' +
@@ -8179,9 +8299,25 @@
         todos("[data-ats]", el).forEach(function (x) {
           x.onchange = function () { buf.ativ[+x.getAttribute("data-ats")].situacao = x.value; };
         });
+        /* etapa: grava a cada tecla no buffer, sem re-renderizar (re-render
+           tiraria o foco do campo no meio da digitação, como já aconteceu com
+           a quantidade). A borda muda de cor só quando o campo perde o foco. */
+        todos("[data-atet]", el).forEach(function (x) {
+          x.oninput = function () { buf.ativ[+x.getAttribute("data-atet")].etapa = String(x.value || "").replace(/\s+/g, " ").trim(); };
+          x.onblur = function () {
+            var preenchida = !!String(x.value || "").trim();
+            x.style.borderColor = preenchida ? "var(--linha,#e2e8f0)" : "#fdba74";
+            x.style.color = preenchida ? "#64748b" : "#b45309";
+          };
+        });
         todos("[data-atr]", el).forEach(function (x) {
           x.onclick = function () { buf.ativ.splice(+x.getAttribute("data-atr"), 1); renderAtiv(); };
         });
+        /* o datalist da lista fica FORA das linhas (um por tabela, não um por
+           serviço): 30 serviços gerariam 30 datalists com o mesmo id */
+        if (!document.getElementById("g-etapas-rdo-lista")) {
+          el.insertAdjacentHTML("beforeend", self._datalistEtapas(v("g-obra"), "g-etapas-rdo-lista"));
+        }
       }
 
       var bF = document.getElementById("g-at-fonte");
@@ -8232,19 +8368,32 @@
       var bN = document.getElementById("g-at-nova");
       if (bN) bN.onclick = function () {
         /* mesmo motivo do painel acima: nada de modal aninhado aqui */
+        var obraIdN = v("g-obra");
+        var etapas = self._nomesDeEtapa(obraIdN);
         var pn2 = document.getElementById("g-at-painel");
         pn2.innerHTML = '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px;margin-bottom:10px;background:rgba(0,0,0,.02)">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
             '<b style="font-size:12px">Cadastrar serviço no diário</b>' +
             '<button type="button" id="g-nv-fechar" class="btn sm ghost" style="padding:1px 8px">×</button></div>' +
           campo("Descrição *", inp("nv-desc", "", "O que foi executado")) +
+          /* A ETAPA É PERGUNTADA NA HORA DO CADASTRO — é o único momento em que
+             quem aponta sabe a que parte da obra o serviço pertence. Sem ela o
+             serviço cai em "Sem etapa" no painel do cliente e o avanço por
+             etapa fica com um buraco que ninguém sabe de onde veio. */
+          '<div class="row">' +
+            campo('Etapa da obra<span class="muted" style="font-weight:400;font-size:11px"> — é por ela que o cliente vê o avanço agrupado no Portal' +
+              (etapas.length ? "" : ". Esta obra ainda não tem etapas: vincule um orçamento ou digite o nome") + "</span>",
+              '<input id="nv-etapa" list="g-etapas-rdo" placeholder="' + (etapas.length ? Util.esc(etapas[0]) : "Ex.: Estrutura") + '">' +
+              self._datalistEtapas(obraIdN, "g-etapas-rdo")) +
+          "</div>" +
           '<div class="row">' + campo("Unidade", inp("nv-un", "", "m², m³, un…")) + campo("Quantidade prevista (na unidade acima)", inp("nv-qp", "")) + "</div>" +
+          '<p class="muted" style="font-size:11px;margin:0 0 8px">Sem <b>quantidade prevista</b> este serviço aparece no diário com a quantidade executada, mas fica <b>fora do cálculo do percentual</b> da obra — não existe % sem o total previsto.</p>' +
           '<button type="button" id="g-nv-incluir" class="btn sm" style="background:#16a34a;color:#fff">Incluir</button></div>';
         document.getElementById("g-nv-fechar").onclick = function () { pn2.innerHTML = ""; };
         document.getElementById("g-nv-incluir").onclick = function () {
           var d = v("nv-desc");
           if (!d) { UI.toast("Descreva o serviço.", "erro"); return; }
-          var a = RDO.atividadeAvulsa(d, v("nv-un"), nv("nv-qp"));
+          var a = RDO.atividadeAvulsa(d, v("nv-un"), nv("nv-qp"), v("nv-etapa"));
           a.qtdExecutada = 0; a.situacao = "execucao";
           buf.ativ.push(a); pn2.innerHTML = ""; renderAtiv();
         };
@@ -15107,7 +15256,59 @@ case "nova-folha": return this.novoFolha();
         (r.fotos || []).forEach(function (f) { if (f && !f.remoto && !f.d) fotosPendentes++; });
       });
       var contratado = Util.num(obra.valor);
-      var pctExec = obra.pctExecutado != null ? Util.num(obra.pctExecutado) : Math.min(100, Math.round(acum * 10) / 10);
+
+      /* =================================================================
+       * EXECUÇÃO FÍSICA — de onde ela vem, e por que mudou
+       *
+       * ⚠ ISTO MOSTRAVA 0% COM A OBRA ANDANDO. `pctExecutado` era o acumulado
+       * das MEDIÇÕES; numa obra com 36 diários lançados e nenhum boletim
+       * emitido — que é a situação normal do primeiro mês — o cliente abria o
+       * Portal e lia "0% concluído do total previsto", com a equipe em campo
+       * há semanas. O RDO sabia o que tinha sido executado; o painel não lia.
+       *
+       * Ordem de autoridade agora:
+       *   1) `obra.pctExecutado` — quando alguém digitou à mão, a pessoa manda
+       *   2) avanço FÍSICO dos diários publicáveis (Fisico.pacote)
+       *   3) acumulado das medições (o comportamento antigo, como último caso)
+       *
+       * O pacote leva também de onde o número saiu (`base`) e o que ficou de
+       * fora da conta — porque um cliente que compara dois meses precisa saber
+       * se a régua mudou no meio.
+       * ================================================================= */
+      var fisico = null;
+      try {
+        if (typeof Fisico !== "undefined") {
+          /* os preços que dão peso ao percentual: o orçamento vinculado e a
+             tabela de preços da obra. Só o VALOR entra na conta — o pacote
+             que vai ao cliente carrega peso normalizado, nunca R$/unidade. */
+          var precos = [];
+          var orcP = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
+          if (orcP && orcP.etapas) {
+            orcP.etapas.forEach(function (e) {
+              (e.itens || []).forEach(function (it) {
+                precos.push({ origem: "orcamento", refId: it.id || "", codigo: it.codigo || "",
+                              descricao: it.descricao || "", unidade: it.unidade || "",
+                              valorUnitario: Util.num(it.valorUnitario != null ? it.valorUnitario : it.precoUnitario) });
+              });
+            });
+          }
+          this._atividadesDaObra(id).forEach(function (a) {
+            precos.push({ codigo: a.codigo || "", descricao: a.descricao || "",
+                          unidade: a.unidade || "", valorUnitario: Util.num(a.valorUnitario) });
+          });
+          /* SÓ OS DIÁRIOS PUBLICÁVEIS. Passar `rdosDaObra` faria o percentual
+             do cliente contar rascunho e diário ainda parado na aprovação — um
+             número maior do que a soma do que está diante dele na tela. */
+          fisico = Fisico.pacote(rdosPublicaveis, id, { precos: precos });
+        }
+      } catch (e) { fisico = null; }
+
+      var pctMedicoes = Math.min(100, Math.round(acum * 10) / 10);
+      var pctExec, fonteExec;
+      if (obra.pctExecutado != null) { pctExec = Util.num(obra.pctExecutado); fonteExec = "manual"; }
+      else if (fisico && fisico.pct !== null) { pctExec = fisico.pct; fonteExec = "diario"; }
+      else { pctExec = pctMedicoes; fonteExec = "medicao"; }
+      if (fisico) { fisico.fonte = fonteExec; fisico.pctMedicoes = pctMedicoes; }
       // Curva S (planejado × realizado) + cronograma — do orçamento vinculado à obra
       var curvaS = null, cronograma = [];
       try {
@@ -15117,38 +15318,221 @@ case "nova-folha": return this.novoFolha();
           var labels = []; for (i = 0; i < nM; i++) labels.push("Mês " + (i + 1));
           var realizado = []; for (i = 0; i < nM; i++) realizado.push(0);
           var iniMs = obra.inicio ? new Date(obra.inicio + "T00:00:00").getTime() : Date.now();
-          medicoes.slice().sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); }).forEach(function (m) {
-            var mi = 0; if (m.data) { var d = new Date(m.data + "T00:00:00").getTime(); mi = Math.max(0, Math.min(nM - 1, Math.floor((d - iniMs) / (30.44 * 86400000)))); }
-            for (var k = mi; k < nM; k++) realizado[k] = m.acumuladoPct;
-          });
-          curvaS = { labels: labels, planejado: (cr.acumPct || []).slice(), realizado: realizado };
+          /* ⚠ A CURVA S DESENHAVA UMA LINHA RASTEIRA NO ZERO.
+           * O "realizado" saía SÓ das medições — o mesmo defeito que o número
+           * grande tinha, um bloco acima na mesma tela. Numa obra sem boletim
+           * emitido, o cabeçalho passou a dizer 44,6% e o gráfico logo abaixo
+           * continuava colado no eixo, na mesma página, para o mesmo cliente.
+           * Agora a curva usa o avanço FÍSICO por mês (a mesma fonte do
+           * cabeçalho) e só cai nas medições quando não há avanço físico —
+           * exatamente a ordem de autoridade do `fonteExec`. */
+          var fezPorFisico = false;
+          if (fonteExec === "diario" && fisico && fisico.serieMes && fisico.serieMes.periodos.length) {
+            fisico.serieMes.periodos.forEach(function (p) {
+              if (p.pctAcumulado === null) return;
+              var mi = 0;
+              var d = new Date(p.chave + "-01T00:00:00").getTime();
+              mi = Math.max(0, Math.min(nM - 1, Math.floor((d - iniMs) / (30.44 * 86400000))));
+              for (var k = mi; k < nM; k++) realizado[k] = p.pctAcumulado;
+            });
+            fezPorFisico = true;
+          }
+          if (!fezPorFisico) {
+            medicoes.slice().sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); }).forEach(function (m) {
+              var mi = 0; if (m.data) { var d = new Date(m.data + "T00:00:00").getTime(); mi = Math.max(0, Math.min(nM - 1, Math.floor((d - iniMs) / (30.44 * 86400000)))); }
+              for (var k = mi; k < nM; k++) realizado[k] = m.acumuladoPct;
+            });
+          }
+          curvaS = { labels: labels, planejado: (cr.acumPct || []).slice(), realizado: realizado,
+                     fonte: fezPorFisico ? "diario" : "medicao" };
           if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
             var est = Cronograma.estimar(orc), totC = 0, accW = 0;
             (est.etapas || []).forEach(function (e) { totC += Util.num(e.custo); }); totC = totC || 1;
             var addDias = function (ini, wd) { if (!ini) return ""; var d = new Date(ini + "T00:00:00"); d.setDate(d.getDate() + Math.round(Util.num(wd) * 7 / 5)); return d.toISOString().slice(0, 10); };
+            /* ⚠ O GANTT MOSTRAVA FICÇÃO AO LADO DA VERDADE.
+             * `pct` da etapa era o percentual GLOBAL distribuído entre as
+             * etapas por peso de custo — um modelo, não uma medição. Agora que
+             * `fisico.etapas` traz o avanço REAL de cada etapa, a mesma página
+             * podia mostrar "Estrutura 62%" no Gantt e "Estrutura 50%" no
+             * bloco de etapas. Duas respostas para a mesma pergunta é pior que
+             * uma resposta faltando.
+             * O avanço medido MANDA; a distribuição por custo continua só para
+             * a etapa que ainda não teve lançamento nenhum no diário (senão
+             * ela sumiria do Gantt e o cliente perderia a linha do tempo). */
+            var medidoPorEtapa = {};
+            if (fisico && fisico.etapas) {
+              fisico.etapas.forEach(function (e) {
+                if (e.pct === null) return;
+                medidoPorEtapa[String(e.etapa || "").toLowerCase().trim()] = e.pct;
+              });
+            }
             cronograma = (est.etapas || []).map(function (e) {
               var w0 = accW / totC, w1 = (accW + Util.num(e.custo)) / totC; accW += Util.num(e.custo);
               var pe = pctExec / 100, p = pe <= w0 ? 0 : (pe >= w1 ? 100 : (pe - w0) / ((w1 - w0) || 1) * 100);
-              return { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim), pct: Math.round(p) };
+              var real = medidoPorEtapa[String(e.nome || "").toLowerCase().trim()];
+              var medido = real !== undefined;
+              return { etapa: e.nome, inicio: addDias(obra.inicio, e.inicio), fim: addDias(obra.inicio, e.fim),
+                       pct: Math.round(medido ? Math.min(100, real) : p),
+                       /* o cliente precisa saber qual das duas está lendo: uma
+                          é o que foi apontado, a outra é uma estimativa */
+                       fonte: medido ? "diario" : "estimado" };
             });
           }
         }
       } catch (e) { curvaS = null; cronograma = []; }
+
+      /* ---------- PREVISÃO DE TÉRMINO — LIGADA POR OBRA ----------
+       * O painel mostrava a data do CONTRATO e nada mais. O cliente quer
+       * saber outra coisa: no ritmo de hoje, quando acaba?
+       *
+       * ⚠ POR QUE ISTO TEM INTERRUPTOR, E POR QUE O INTERRUPTOR É POR OBRA:
+       * projeção que o cliente lê como COMPROMISSO vira discussão contratual
+       * de graça. Numa obra por administração ela é ótima; numa empreitada
+       * com multa por atraso, o engenheiro pode preferir tratar prazo só pelo
+       * canal formal. Quem conhece o contrato é ele, não o programa.
+       * Nasce LIGADA (foi o pedido), e o que a segura é a etiqueta: a tela do
+       * cliente diz "projeção", mostra a faixa e nunca escreve "término".
+       *
+       * E é guarda de DADO como as demais: desligado, a previsão não é
+       * calculada nem embarcada — não adianta esconder a caixa e mandar a
+       * data dentro do JSON. */
+      var previsao = null;
+      var mostrarPrevisao = obra.portalPrevisao !== false;
+      if (mostrarPrevisao && fisico && typeof Fisico !== "undefined" && Fisico.previsao) {
+        try {
+          previsao = Fisico.previsao(fisico.serieSemana, { pct: fisico.pct, termino: obra.termino || "" });
+        } catch (e) { previsao = null; }
+      }
+
+      /* ---------- RELATÓRIOS QUE ESTE CLIENTE PODE GERAR ----------
+       * A permissão é POR ACESSO (fica gravada na obra, junto do usuário do
+       * cliente) e vale como GUARDA DE DADO, não como esconder botão: o que
+       * não está liberado não é EMBARCADO no snapshot. Mandar as compras e
+       * apenas não desenhar o botão deixaria o preço de fornecedor — que é a
+       * margem — dentro do JSON que o navegador do cliente recebe.
+       * Nasce com tudo liberado MENOS compras, pelo mesmo motivo. */
+      var relPermitidos = Array.isArray(obra.portalRelatorios)
+        ? obra.portalRelatorios.slice()
+        : RELATORIOS_PORTAL.filter(function (r) { return !r.sensivel; }).map(function (r) { return r.id; });
+      function podeRel(x) { return relPermitidos.indexOf(x) > -1; }
+
+      /* ---------- A POSIÇÃO FINANCEIRA **DO CLIENTE** ----------
+       * ⚠ SÓ RECEITA. Nunca despesa.
+       * O que o cliente tem direito de ver é o desembolso DELE — o que já
+       * pagou, o que falta, quando vence. Despesa da obra é CUSTO, e custo ao
+       * lado do valor contratado é a margem do escritório entregue de mão
+       * beijada. É a mesma linha que separa "Compras" (sensível) do resto.
+       * A categoria e o fornecedor também não vão: numa receita eles às vezes
+       * carregam o nome de quem pagou por fora. */
+      var financeiro = null;
+      if (podeRel("financeiro")) {
+        var recs = lista("financeiro").filter(function (f) {
+          return f.obraId === id && f.tipo === "receita";
+        }).sort(function (a, b) { return String(a.data || "").localeCompare(String(b.data || "")); });
+        var pago = 0, aReceber = 0, proxima = null;
+        var hojeISO = new Date().toISOString().slice(0, 10);
+        var parcelas = recs.map(function (f) {
+          var v = Util.num(f.valor), quitada = f.status === "pago";
+          if (quitada) pago += v; else {
+            aReceber += v;
+            if (!proxima || String(f.data || "") < String(proxima.data || "")) proxima = { data: f.data || "", valor: v, desc: f.desc || "" };
+          }
+          return { data: f.data || "", descricao: f.desc || "", valor: v,
+                   situacao: quitada ? "Pago" : "Em aberto",
+                   atrasada: !quitada && f.data && f.data < hojeISO };
+        });
+        financeiro = {
+          contratado: contratado, medidoAcum: medidoAcum,
+          pago: Math.round(pago * 100) / 100,
+          aReceber: Math.round(aReceber * 100) / 100,
+          retencao: medicoes.reduce(function (s, m) { return s + Util.num(m.retencao); }, 0),
+          proxima: proxima, parcelas: parcelas
+        };
+      }
+
+      /* ---------- DOCUMENTOS DA OBRA ----------
+       * ART/RRT, alvará, apólice, contrato. É o que o cliente pede por
+       * WhatsApp toda semana.
+       *
+       * ⚠ O QUE VAI É O REGISTRO, NÃO O ARQUIVO. O servidor de arquivos do
+       * Portal só aceita imagem (a auditoria do disco achou 85 arquivos,
+       * todos .jpg) — anexar PDF exige rota nova, com varredura de tipo e
+       * cota, e isso é outra entrega. O que resolve HOJE a pergunta real do
+       * cliente ("a ART está válida?") é número + emissão + validade, com
+       * link opcional para onde o documento já esteja hospedado.
+       * A validade é calculada aqui para o Portal não precisar saber a regra. */
+      var documentos = [];
+      if (podeRel("documentos")) {
+        var hoje2 = new Date().toISOString().slice(0, 10);
+        documentos = (obra.portalDocumentos || []).map(function (d) {
+          var venceu = d.validade && String(d.validade) < hoje2;
+          var perto = !venceu && d.validade && Util.dias
+            ? false : false;
+          return { nome: d.nome || "", tipo: d.tipo || "", numero: d.numero || "",
+                   emissao: d.emissao || "", validade: d.validade || "",
+                   link: /^https?:\/\//i.test(String(d.link || "")) ? d.link : "",
+                   vencido: !!venceu, obs: d.obs || "" };
+        });
+      }
+
+      /* ---------- MARCOS, EM LINGUAGEM DE LEIGO ----------
+       * O cliente não pensa em "percentual ponderado"; pensa em "quando fica
+       * pronta a laje". Os marcos são as etapas do cronograma traduzidas:
+       * o que já terminou, o que está em andamento e o que ainda nem começou,
+       * com a data prevista de cada um. */
+      var marcos = [];
+      if (podeRel("marcos")) {
+        marcos = cronograma.map(function (c) {
+          var p = Util.num(c.pct);
+          return { nome: c.etapa || "", previstoFim: c.fim || "", previstoInicio: c.inicio || "",
+                   pct: p, fonte: c.fonte || "estimado",
+                   situacao: p >= 100 ? "concluido" : (p > 0 ? "andamento" : "aguardando") };
+        });
+      }
+
+      /* COMPRAS — só quando explicitamente liberado nesta obra.
+         Vai sem preço unitário e sem margem: número, data, categoria,
+         descrição, status e valor total do pedido. É o que faz sentido numa
+         obra por administração, em que o cliente paga o custo + taxa. */
+      var compras = [];
+      if (podeRel("compras")) {
+        compras = lista("compras").filter(function (c) { return c.obraId === id; })
+          .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); })
+          .map(function (c) {
+            return { numero: c.numero || "", data: c.data || "", descricao: c.descricao || "",
+                     categoria: rot(P.fornCategoria, c.categoria) || "", fornecedor: c.fornecedorNome || "",
+                     valor: Util.num(c.valor), situacao: rot(P.compraStatus, c.status) || "",
+                     previsaoEntrega: c.previsaoEntrega || "" };
+          });
+      }
+
       var snapshot = {
         obraId: id, nome: obra.nome || "", cliente: obra.clienteNome || "", local: obra.local || "",
         tipo: rot(P.obraTipo, obra.tipo) || "", fase: rot(P.obraFase, obra.fase) || "", status: obra.status || "",
         inicio: obra.inicio || "", termino: obra.termino || "",
         areaConstruida: Util.num(obra.areaConstruida), areaTerreno: Util.num(obra.areaTerreno),
         contratado: contratado, pctExecutado: pctExec, medidoAcum: medidoAcum, aFaturar: Math.max(0, contratado - medidoAcum),
+        /* de onde saiu o percentual do cabeçalho — o Portal escreve isso
+           embaixo do número, porque "42%" sem dizer de onde veio é um número
+           que o cliente não tem como conferir */
+        fonteExecucao: fonteExec,
+        fisico: fisico,
+        previsao: previsao,
+        relatorios: relPermitidos,
+        compras: compras, financeiro: financeiro, documentos: documentos, marcos: marcos,
         curvaS: curvaS, cronograma: cronograma, medicoes: medicoes, rdos: rdos
       };
       return { snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
-               segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS };
+               segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS,
+               fisico: fisico, fonteExec: fonteExec, relatorios: relPermitidos, compras: compras,
+               previsao: previsao, mostrarPrevisao: mostrarPrevisao, financeiro: financeiro,
+               documentos: documentos, marcos: marcos };
     },
 
     // ---------- Portal do Cliente: publica o resumo da obra na nuvem ----------
     portalObra: function (id) {
       if (this._bloqueado()) return;
+      var self = this;
       var obra = Store.obter(eid(), "obras", id); if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
       var url = (typeof CONFIG !== "undefined" && CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "");
       var chave = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
@@ -15156,7 +15540,8 @@ case "nova-folha": return this.novoFolha();
       var _s = this._snapshotPortal(id, obra);
       var snapshot = _s.snapshot, medicoes = _s.medicoes, rdos = snapshot.rdos,
           rdosPublicaveis = _s.rdosPublicaveis, segurados = _s.segurados,
-          fotosPendentes = _s.fotosPendentes, pctExec = _s.pctExec, curvaS = _s.curvaS;
+          fotosPendentes = _s.fotosPendentes, pctExec = _s.pctExec, curvaS = _s.curvaS,
+          fisico = _s.fisico, fonteExec = _s.fonteExec, relSel = _s.relatorios;
       var rdosDaObra = lista("rdo").filter(function (r) { return r.obraId === id; });
       // Orçamento de bytes: fotos em base64 podem estourar o envio — degrada (corta fotos dos RDOs antigos) até caber.
       var fit = this._caberSnapshot(snapshot);
@@ -15170,6 +15555,29 @@ case "nova-folha": return this.novoFolha();
         '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO) com fotos. Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
         '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
         '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários" + (totFotos ? " · <b>" + totFotos + "</b> fotos" : "") + " · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
+        /* DE ONDE VEM O ANDAMENTO — dito antes de publicar, porque é o número
+           que o cliente vai repetir na reunião. Quando ele nasce do diário, a
+           frase também conta o que ficou de fora da conta. */
+        (function () {
+          var txt = "", cor = "#143454", bg = "#f8fafc", bd = "#e2e8f0";
+          if (fonteExec === "manual") txt = "O andamento vai como <b>" + Util.fmtPct(pctExec, 0) + "</b> porque foi <b>digitado à mão</b> no cadastro da obra — o avanço calculado pelos diários não é usado enquanto esse campo estiver preenchido.";
+          else if (fonteExec === "diario") txt = "O andamento vem do <b>avanço físico dos diários</b>. " + Util.esc((fisico && fisico.aviso) || "");
+          else { txt = "O andamento vem do <b>acumulado das medições</b> — os diários desta obra ainda não têm serviço com <b>quantidade prevista</b>, e sem isso não há percentual a calcular a partir deles."; cor = "#7c2d12"; bg = "#fff7ed"; bd = "#fdba74"; }
+          return '<div style="background:' + bg + ";border:1px solid " + bd + ";border-radius:10px;padding:10px 14px;font-size:12.5px;color:" + cor + ';margin-top:8px">' + txt + "</div>";
+        })() +
+        /* ---------- O QUE ESTE CLIENTE PODE GERAR ----------
+           Não é decoração: o que ficar desmarcado NÃO É EMBARCADO no
+           snapshot. Por isso a lista aparece na hora de publicar — é aqui que
+           se decide o que sai do escritório. */
+        campo('Relatórios liberados para <b>este cliente</b><span class="muted" style="font-weight:400;font-size:11px"> — o que ficar desmarcado não é enviado ao Portal, nem o dado nem o botão</span>',
+          '<div id="g-prel" style="display:grid;grid-template-columns:1fr;gap:5px;max-height:210px;overflow:auto;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px">' +
+          RELATORIOS_PORTAL.map(function (r) {
+            var on = relSel.indexOf(r.id) > -1;
+            return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer' + (r.sensivel ? ";background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:7px 9px" : "") + '">' +
+              '<input type="checkbox" data-rel="' + r.id + '"' + (on ? " checked" : "") + ' style="margin-top:2px">' +
+              "<span><b>" + Util.esc(r.nome) + "</b>" + (r.sensivel ? ' <span style="color:#b45309;font-weight:800">⚠ revela custo</span>' : "") +
+              '<br><span class="muted" style="font-size:11px">' + Util.esc(r.desc) + "</span></span></label>";
+          }).join("") + "</div>") +
         /* o que NÃO vai — dito na cara, antes de publicar. Quem publica precisa
            saber que o diário de ontem ficou de fora porque ninguém aprovou. */
         (segurados ? '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>' + segurados + "</b> diário(s) NÃO vão: ainda não foram aprovados e publicados. O cliente só vê diário que passou pelo gestor.</div>" : "") +
@@ -15187,6 +15595,29 @@ case "nova-folha": return this.novoFolha();
         var user = ((el("g-puser") || {}).value || "").trim().toLowerCase().replace(/\s+/g, ""), senha = ((el("g-psenha") || {}).value || "").trim();
         if (user.length < 3) { UI.toast("Usuário muito curto (mín. 3).", "erro"); return; }
         if (senha.length < 4) { UI.toast("Senha muito curta (mín. 4).", "erro"); return; }
+
+        /* ---------- PERMISSÃO DE RELATÓRIO: GRAVA E REMONTA ----------
+         * ⚠ O SNAPSHOT PRECISA SER REFEITO AQUI, não reaproveitado.
+         * Ele foi montado ANTES do modal abrir, com a permissão que estava
+         * gravada na obra. Se quem publica desmarcou "Compras" agora, mandar o
+         * pacote antigo enviaria as compras assim mesmo — o cliente veria o
+         * botão sumir e continuaria com o valor pago a cada fornecedor dentro
+         * do JSON que o navegador dele recebeu. Guarda de DADO, não de botão. */
+        var novos = [];
+        Array.prototype.forEach.call(document.querySelectorAll("#g-prel [data-rel]"), function (c) {
+          if (c.checked) novos.push(c.getAttribute("data-rel"));
+        });
+        var mudouRel = novos.slice().sort().join("|") !== (relSel || []).slice().sort().join("|");
+        if (mudouRel) {
+          obra.portalRelatorios = novos;
+          Store.salvar(eid(), "obras", obra);
+          var _r = self._snapshotPortal(id, obra);
+          snapshot = _r.snapshot; rdosPublicaveis = _r.rdosPublicaveis;
+          var fit2 = self._caberSnapshot(snapshot);
+          if (!fit2.ok) { UI.toast("Fotos demais nos diários desta obra. Remova algumas e publique de novo.", "erro"); return; }
+          relSel = novos;
+        }
+
         /* o texto do acidente só entra se quem publica marcou AGORA — a escolha
            fica gravada na obra para a próxima publicação não perguntar de novo */
         var acid = el("g-pacid");

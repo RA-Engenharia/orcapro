@@ -97,6 +97,74 @@
     return d;
   }
 
+  /* ---------------------------------------------------------------------
+   * AS FOTOS QUE VIERAM PELO WHATSAPP
+   *
+   * ⚠ ELAS NÃO VÊM DENTRO DA CAIXA. A caixa tem teto de 64 KB por diário
+   * justamente porque uma foto em base64 (~5 MB) a estouraria; o que chega
+   * na caixa são REFERÊNCIAS (`{id, leg}`), e os bytes ficam numa área de
+   * passagem no servidor.
+   *
+   * ⚠ E ELAS NÃO PODEM SER GRAVADAS DIRETO NO DIÁRIO. Quem baixa é o app,
+   * porque só ele sabe qual licença está usando — e é a licença que define
+   * a pasta (`tenant`) onde a foto tem de morar. Na base de produção, 4 de
+   * 15 contas têm mais de uma chave: quem tentasse adivinhar pelo e-mail
+   * gravaria numa pasta que o app não lê. Por isso a foto entra pelo MESMO
+   * caminho da câmera (`guardarFoto` → `Fotos.guardar`), ganhando de graça
+   * a redução de tamanho, o IndexedDB e a fila de upload.
+   *
+   * ⚠ FOTO QUE FALHA NÃO PODE DERRUBAR O DIÁRIO. O mestre digitou o dia de
+   * trabalho; perder o texto inteiro porque uma imagem não baixou seria
+   * trocar um problema pequeno por um grande. Falhou, vira pendência.
+   * ------------------------------------------------------------------- */
+  function baixarFotos(it, d) {
+    var refs = (it && it.rdo && it.rdo.fotos) || [];
+    if (!refs.length || typeof d.guardarFoto !== "function" || typeof d.buscar !== "function") {
+      return Promise.resolve({ fotos: [], ids: [], falhas: refs.length ? refs.length : 0 });
+    }
+    var base = String(d.url || "").replace(/\/$/, "");
+    var lic = String(d.licenca || "");
+    var fotos = [], ids = [], falhas = 0;
+
+    return refs.reduce(function (fila, ref) {
+      return fila.then(function () {
+        var id = texto(ref && ref.id);
+        if (!/^[0-9a-f]{24}$/.test(id)) { falhas++; return; }
+        return d.buscar(base + "/api/entrada/foto/" + id, { headers: { "x-licenca": lic } })
+          .then(function (r) {
+            if (!r || !r.ok) throw new Error("http " + (r && r.status));
+            return r.blob ? r.blob() : r.arrayBuffer();
+          })
+          .then(function (bin) { return paraDataURI(bin); })
+          .then(function (uri) { return d.guardarFoto(uri, texto(ref.leg)); })
+          .then(function (nova) { if (nova) { fotos.push(nova); ids.push(id); } })
+          .catch(function () { falhas++; });
+      });
+    }, Promise.resolve()).then(function () {
+      return { fotos: fotos, ids: ids, falhas: falhas };
+    });
+  }
+
+  /* Blob ou ArrayBuffer -> data URI, que é o que o Fotos.guardar come. */
+  function paraDataURI(bin) {
+    if (typeof bin === "string") return Promise.resolve(bin);
+    if (typeof FileReader !== "undefined" && bin && bin.size !== undefined) {
+      return new Promise(function (res, rej) {
+        var fr = new FileReader();
+        fr.onload = function () { res(String(fr.result)); };
+        fr.onerror = function () { rej(new Error("falha ao ler a foto")); };
+        fr.readAsDataURL(bin);
+      });
+    }
+    /* fora do navegador (teste): monta na mão */
+    var buf = bin && bin.byteLength !== undefined ? bin : null;
+    if (!buf) return Promise.reject(new Error("formato de foto desconhecido"));
+    var bytes = new Uint8Array(buf), bin2 = "";
+    for (var i = 0; i < bytes.length; i++) bin2 += String.fromCharCode(bytes[i]);
+    var b64 = (typeof btoa === "function") ? btoa(bin2) : Buffer.from(bytes).toString("base64");
+    return Promise.resolve("data:image/jpeg;base64," + b64);
+  }
+
   /* Converte a caixa inteira. Devolve o que gravar e o que dizer ao usuário. */
   function preparar(itens, ctx) {
     var diarios = (itens || []).map(function (i) { return paraDiario(i, ctx); });
@@ -134,27 +202,61 @@
         var itens = (j && j.itens) || [];
         if (!itens.length) return { criados: 0, comPendencia: 0, vazio: true };
 
-        var gravados = [], pend = 0;
-        itens.forEach(function (it) {
-          var diario = paraDiario(it, d);
-          var ok = false;
-          /* uma falha de gravação NÃO pode derrubar as outras nem virar baixa:
-             o item fica na caixa e volta na próxima */
-          try { ok = d.gravar(diario) !== false; } catch (e) { ok = false; }
-          if (ok) { gravados.push(it.id); if (diario.pendencias.length) pend++; }
-        });
+        var gravados = [], pend = 0, fotosBaixadas = [], comFoto = 0, fotosFalhas = 0;
+
+        /* um item por vez, em fila: são fotos, e disparar tudo junto num
+           celular de obra com 3G é o jeito rápido de estourar a memória */
+        return itens.reduce(function (fila, it) {
+          return fila.then(function () {
+            return baixarFotos(it, d).then(function (fs) {
+              var diario = paraDiario(it, d);
+              if (fs.fotos.length) { diario.fotos = fs.fotos; comFoto += fs.fotos.length; }
+              if (fs.falhas) {
+                fotosFalhas += fs.falhas;
+                /* dizer que faltou foto é melhor que entregar um diário que
+                   parece completo e não está */
+                diario.pendencias.push(fs.falhas + " foto(s) não baixaram — confira com quem mandou");
+              }
+              var ok = false;
+              /* uma falha de gravação NÃO pode derrubar as outras nem virar
+                 baixa: o item fica na caixa e volta na próxima */
+              try { ok = d.gravar(diario) !== false; } catch (e) { ok = false; }
+              if (ok) {
+                gravados.push(it.id);
+                /* ⚠ a baixa da FOTO só entra na lista depois de o diário ter
+                   sido gravado. Apagar a foto da passagem antes disso perderia
+                   a imagem para sempre se a gravação falhasse. */
+                fotosBaixadas = fotosBaixadas.concat(fs.ids);
+                if (diario.pendencias.length) pend++;
+              }
+            });
+          });
+        }, Promise.resolve()).then(function () {
         if (!gravados.length) return { criados: 0, comPendencia: 0 };
 
+        /* libera o espaço das fotos que já entraram no diário. Falhar aqui não
+           é problema do usuário: a faxina de 7 dias limpa de qualquer jeito. */
+        var liberar = fotosBaixadas.length
+          ? buscar(base + "/api/entrada/foto/baixa", {
+              method: "POST", headers: { "Content-Type": "application/json", "x-licenca": lic },
+              body: JSON.stringify({ ids: fotosBaixadas })
+            }).catch(function () {})
+          : Promise.resolve();
+
+        return liberar.then(function () {
         return buscar(base + "/api/entrada/baixa", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ licenca: lic, ids: gravados })
         }).then(function () {
-          return { criados: gravados.length, comPendencia: pend };
+          return { criados: gravados.length, comPendencia: pend, fotos: comFoto, fotosFalhas: fotosFalhas };
         }).catch(function () {
           /* a baixa falhou mas os diários EXISTEM. Não é erro para o usuário:
              a caixa vai reentregar e a idempotência do servidor impede o
              duplicado. Dizer "falhou" aqui assustaria à toa. */
-          return { criados: gravados.length, comPendencia: pend, baixaPendente: true };
+          return { criados: gravados.length, comPendencia: pend, fotos: comFoto,
+                   fotosFalhas: fotosFalhas, baixaPendente: true };
+        });
+        });
         });
       })
       .catch(function (e) {

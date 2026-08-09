@@ -155,6 +155,10 @@
         id: typeof novoId === "function" ? novoId(a, i) : undefined,
         obraId: obraDestinoId,
         codigo: limpo(a.codigo), descricao: limpo(a.descricao),
+        /* a etapa vai junto na cópia: sem ela a obra destino recebia a tabela
+           inteira "sem etapa" e o avanço por etapa do Portal nascia vazio
+           justamente na obra que copiou de uma que já estava classificada */
+        etapa: limpo(a.etapa),
         unidade: limpo(a.unidade), valorUnitario: num(a.valorUnitario),
         ativo: a.ativo !== false
       });

@@ -417,12 +417,21 @@
     });
   };
 
-  /* Digitada na hora, quando não existe em fonte nenhuma. */
-  RDO.atividadeAvulsa = function (descricao, unidade, qtdPrevista) {
+  /* Digitada na hora, quando não existe em fonte nenhuma.
+   *
+   * ⚠ A ETAPA É PARÂMETRO, NÃO SOBRA. Ela nascia sempre "" aqui — e como o
+   * serviço avulso é justamente o que a obra tem de fora do orçamento, todo
+   * apontamento digitado em campo caía em "Sem etapa" no painel do cliente.
+   * O avanço por etapa (Fisico.porEtapa) só existe se alguém disser a qual
+   * etapa o serviço pertence, e o único momento em que se sabe isso é o
+   * cadastro. Continua aceitando vazio: obrigar a classificar na pressa do
+   * canteiro faria o encarregado escolher qualquer uma para o formulário
+   * deixar salvar — e etapa errada é pior que etapa em branco. */
+  RDO.atividadeAvulsa = function (descricao, unidade, qtdPrevista, etapa) {
     return {
       origem: "avulsa",
       refId: "",
-      etapa: "",
+      etapa: String(etapa || "").trim(),
       numero: "",
       descricao: String(descricao || "").trim(),
       unidade: String(unidade || "").trim(),
@@ -1032,6 +1041,13 @@
           ac = Avanco.calcular({ rdos: o.rdos, obraId: r.obraId, data: r.data, rdoId: r.id, item: a });
         }
         return {
+          /* A CHAVE DO SERVIÇO VAI JUNTO — é o que permite ao Portal
+             reagrupar, filtrar e ponderar do lado do cliente sem pedir nada
+             ao servidor a cada clique de filtro. Ela não revela nada: é
+             origem+refId (ou código, ou descrição) + unidade, tudo já visível
+             na própria linha. O que NÃO vai é o preço — o peso viaja
+             normalizado em `fisico.pesos`. */
+          chave: (typeof Avanco !== "undefined" && Avanco.chaveServico) ? Avanco.chaveServico(a) : "",
           numero: a.numero || "", descricao: a.descricao || "", etapa: a.etapa || "",
           unidade: a.unidade || "", qtdPrevista: Number(a.qtdPrevista || 0),
           qtdExecutada: Number(a.qtdExecutada || 0), pct: av.pct,
