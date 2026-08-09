@@ -1509,6 +1509,8 @@
           // de status e um toque no selo abria o modal de excluir (achado do gate)
           '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:flex-end">' +
             (podeExcluir ? '<button class="btn sm ico danger" data-gacao="excluir-obra" data-id="' + Util.esc(o.id) + '" title="Excluir esta obra (pede confirmação)" style="margin-right:auto;min-width:44px;min-height:38px">' + Icones.get("lixeira", 15) + "</button>" : "") +
+            '<button class="btn sm ghost" data-gacao="docs-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="ART/RRT, alvará, apólice — o que o cliente vê no Portal">🗂️ Documentos' + ((o.portalDocumentos || []).length ? " (" + o.portalDocumentos.length + ")" : "") + "</button>" +
+            (o.portalUser ? '<button class="btn sm ghost" data-gacao="aviso-semanal" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px" title="Gera o resumo da semana pronto para mandar ao cliente">📣 Aviso semanal</button>' : "") +
             '<button class="btn sm" data-gacao="portal-obra" data-id="' + o.id + '" style="font-size:12px;padding:6px 12px">📱 Portal do cliente' + (o.portalUser ? " ✓" : "") + "</button>" +
           "</div></div>";
       });
@@ -1801,17 +1803,42 @@
        * para o cliente ser trancado para fora em silêncio — ele digitava a
        * senha que recebeu e o portal respondia "usuário ou senha inválidos".
        * Trocar senha é decisão de quem abre a tela do Portal, e só de lá. */
-      fetch(base + "/api/portal/publicar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-licenca": chave },
-        body: JSON.stringify({ user: obra.portalUser,
+      var empresaNome = (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) ||
+        ((typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : "");
+      /* ⚠ A REPUBLICAÇÃO AUTOMÁTICA TEM DE ATINGIR **TODOS** OS ACESSOS.
+       * Ela mandava só para `obra.portalUser`. Com os acessos extras (sócio,
+       * fiscal, banco), o principal receberia o diário de hoje e os outros
+       * ficariam olhando o retrato da semana passada — sem erro, sem aviso, e
+       * cada um jurando que está vendo "o Portal da obra". Duas verdades
+       * diferentes da mesma obra na mão de pessoas que se falam é pior que
+       * portal nenhum.
+       * Sem senha em nenhum deles: republicação automática nunca mexe em
+       * senha (ver o bloco acima). */
+      var alvos = [obra.portalUser].concat(
+        (obra.portalAcessosExtras || []).map(function (a) { return a && a.user; })
+      ).filter(function (u, i, arr) { return u && arr.indexOf(u) === i; });
+
+      var faltam = alvos.length, houveErro = "", algumOk = false;
+      alvos.forEach(function (u) {
+        fetch(base + "/api/portal/publicar", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-licenca": chave },
           /* o Portal mostra "Portal fornecido por X": X é a empresa DELE */
-          empresa: (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) ||
-            ((typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? Auth.usuario().empresa : ""),
-          obra: pacote })
-      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j && j.ok, j: j }; }); })
-        .then(function (r) { if (aoTerminar) aoTerminar({ ok: !!r.ok, erro: (r.j && r.j.erro) || "" }); })
-        .catch(function () { if (aoTerminar) aoTerminar({ ok: false, erro: "sem conexão" }); });
+          body: JSON.stringify({ user: u, empresa: empresaNome, obra: pacote })
+        }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok && j && j.ok, j: j }; }); })
+          .then(function (r) {
+            if (r.ok) algumOk = true;
+            else if (!houveErro) houveErro = ((r.j && r.j.erro) || "falha") + (u !== obra.portalUser ? " (acesso " + u + ")" : "");
+          })
+          .catch(function () { if (!houveErro) houveErro = "sem conexão"; })
+          .then(function () {
+            if (--faltam > 0) return;
+            /* ⚠ SÓ É SUCESSO SE TODOS FORAM. Reportar ok porque o principal
+               passou esconderia justamente o caso novo: o acesso extra parado
+               no retrato antigo. */
+            if (aoTerminar) aoTerminar({ ok: !houveErro && algumOk, erro: houveErro });
+          });
+      });
     },
 
     _despublicarPortal: function (obra) {
@@ -1996,7 +2023,12 @@
     renderMedicoes: function () {
       var self = this;
       var ms = lista("medicoes"), obras = lista("obras"), contratos = lista("contratos");
-      var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição", '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">📥 CSV</button>');
+      var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição",
+          /* Puxar do mês anterior: o pedido do cliente era não redigitar a
+             mesma lista de serviços todo mês. Fica ao lado de "Nova medição"
+             porque é ali que ele decide como começar. */
+          '<button class="btn sm" data-gacao="puxar-medicao" style="margin-right:8px;align-self:center">📋 Puxar do mês anterior</button>' +
+          '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">📥 CSV</button>');
       if (!ms.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       ms.forEach(function (m) {
@@ -2077,6 +2109,90 @@
       h += "</tfoot></table>";
       return h;
     },
+      /* ---------------------------------------------------------------
+       * PUXAR A MEDIÇÃO DO MÊS ANTERIOR
+       *
+       * Pedido do cliente: não redigitar a mesma lista de serviços todo mês.
+       *
+       * ⚠ ABRE O FORMULÁRIO, NÃO GRAVA. Boletim é documento de dinheiro:
+       * gerar um direto na base, sem ninguém olhar, criaria cobrança que
+       * ninguém conferiu. O que sai daqui é um RASCUNHO na tela, com o valor
+       * zerado e o status pendente — o usuário preenche o quanto andou e
+       * salva, como sempre.
+       * ------------------------------------------------------------- */
+      puxarMedicao: function () {
+        var self = this;
+        if (typeof MedicaoSeguinte === "undefined") {
+          UI.toast("Recurso indisponível nesta versão.", "erro"); return;
+        }
+        var obras = lista("obras");
+        if (!obras.length) { UI.toast("Cadastre uma obra primeiro.", "erro"); return; }
+        var meds = lista("medicoes");
+
+        /* só as obras que TÊM de onde puxar entram na lista: oferecer obra
+           sem medição nenhuma é oferecer um caminho que termina em erro */
+        var hoje = new Date().toISOString().slice(0, 10);
+        var comBase = obras.filter(function (o) {
+          return !!MedicaoSeguinte.ultimaDaObra(meds, o.id, hoje);
+        });
+        if (!comBase.length) {
+          UI.toast("Nenhuma obra tem medição anterior para puxar. Faça a primeira pelo botão \"Nova medição\".", "erro");
+          return;
+        }
+
+        var corpo = campo("Obra *", sel("g-pux-obra", optsRec(comBase, "nome", comBase[0].id, "— selecionar —"))) +
+          '<div id="g-pux-previa" style="margin-top:8px"></div>';
+
+        UI.modal("Puxar do mês anterior", corpo, [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Puxar e abrir", classe: "primary", onClick: function () {
+            var obraId = v("g-pux-obra");
+            var r = MedicaoSeguinte.puxar({ medicoes: lista("medicoes"), obraId: obraId, hoje: hoje,
+              orcamentosValidos: Store.listarOrcamentos(eid()) });
+            if (!r.ok) {
+              UI.toast(r.motivo === "so-futuras"
+                ? "Esta obra só tem boletim com data futura — confira as datas antes de puxar."
+                : "Esta obra ainda não tem medição anterior.", "erro");
+              return;
+            }
+            UI.fecharModal();
+            /* ⚠ o UI.modal NÃO ANINHA — já custou um formulário inteiro neste
+               sistema. O form da medição só pode abrir DEPOIS que este sair
+               da tela, por isso o setTimeout. */
+            setTimeout(function () {
+              self.formMedicao(r.medicao);
+              if (r.avisos.length) UI.toast(r.avisos[0], "aviso");
+            }, 60);
+          } }
+        ]);
+
+        /* prévia viva: trocar a obra mostra de qual boletim vai puxar */
+        var atualiza = function () {
+          var box = document.getElementById("g-pux-previa");
+          if (!box) return;
+          var r = MedicaoSeguinte.puxar({ medicoes: lista("medicoes"), obraId: v("g-pux-obra"), hoje: hoje,
+            orcamentosValidos: Store.listarOrcamentos(eid()) });
+          if (!r.ok) { box.innerHTML = '<span class="muted" style="font-size:12px">Sem medição anterior nesta obra.</span>'; return; }
+          box.innerHTML =
+            '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:8px;padding:9px;font-size:12px">' +
+              '<div><b>Vai puxar da ' + Util.esc(r.base.numero || "última") + '</b>' +
+                (r.base.periodoInicio ? ' <span class="muted">(' + Util.esc(r.base.periodoInicio) + " a " + Util.esc(r.base.periodoFim) + ")</span>" : "") + "</div>" +
+              '<div class="muted" style="margin-top:3px">' + r.base.itens + " serviço(s) · novo período: <b>" +
+                (r.medicao.periodoInicio ? Util.esc(r.medicao.periodoInicio) + " a " + Util.esc(r.medicao.periodoFim) : "a informar") +
+                "</b> · nº <b>" + Util.esc(r.medicao.numero) + "</b></div>" +
+              /* dizer o que NÃO vem é tão importante quanto o que vem: é o que
+                 impede a pessoa de achar que o boletim já está pronto */
+              '<div class="muted" style="margin-top:5px">Vem a lista de serviços, o contrato e os preços. ' +
+                "<b>Não vem</b> o valor nem o quanto foi medido — isso é o que você lança agora.</div>" +
+              (r.avisos.length ? '<div style="margin-top:5px;color:#b45309">⚠ ' + Util.esc(r.avisos.join(" ")) + "</div>" : "") +
+            "</div>";
+        };
+        var selObra = document.getElementById("g-pux-obra");
+        if (selObra) selObra.onchange = atualiza;
+        atualiza();
+      },
+
+
     novoMedicao: function () { this.formMedicao(null); },
     /* Modo de medição do registro. Registro antigo não tem `modo` gravado —
        deduz pelo que ele carrega, e o padrão de quem não tem nada é
@@ -14859,6 +14975,8 @@ renderFolha: function () {
         case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
         case "portal-obra": return this.portalObra(id);
+        case "docs-obra": return this.docsObra(id);
+        case "aviso-semanal": return this.avisoSemanal(id);
         case "avaliacoes-portal": return this.avaliacoesPortal();
         case "excluir-obra": return this.confirmarExcluirObra(id);
         case "rever-tour": if (typeof Tour !== "undefined") Tour.iniciar(true); return;
@@ -14986,6 +15104,7 @@ renderFolha: function () {
         case "doc-compra": return this.documentoCompra(id);
         case "export-financeiro": return this.exportarModulo("financeiro");
         case "export-compras": return this.exportarModulo("compras");
+        case "puxar-medicao": return this.puxarMedicao();
         case "export-medicoes": return this.exportarModulo("medicoes");
         case "colab-doc": return this.cadastrarColaboradorDoc();
         case "novo-modelo": return this.novoModelo();
@@ -15466,8 +15585,6 @@ case "nova-folha": return this.novoFolha();
         var hoje2 = new Date().toISOString().slice(0, 10);
         documentos = (obra.portalDocumentos || []).map(function (d) {
           var venceu = d.validade && String(d.validade) < hoje2;
-          var perto = !venceu && d.validade && Util.dias
-            ? false : false;
           return { nome: d.nome || "", tipo: d.tipo || "", numero: d.numero || "",
                    emissao: d.emissao || "", validade: d.validade || "",
                    link: /^https?:\/\//i.test(String(d.link || "")) ? d.link : "",
@@ -15529,6 +15646,210 @@ case "nova-folha": return this.novoFolha();
                documentos: documentos, marcos: marcos };
     },
 
+    /* ---------- DOCUMENTOS DA OBRA (o que vai ao Portal) ----------
+     * "A ART está válida?" é a pergunta que o cliente faz por WhatsApp toda
+     * semana. Aqui ela passa a ter resposta sozinha.
+     *
+     * ⚠ REGISTRO, NÃO ARQUIVO — e isso é escolha, não preguiça. O servidor de
+     * arquivos do Portal só aceita imagem (a auditoria do disco achou 85
+     * arquivos, todos .jpg). Anexar PDF pede rota nova com varredura de tipo,
+     * cota por licença e limpeza — outra entrega. O que responde HOJE à
+     * pergunta real é número + emissão + validade, com link opcional para
+     * onde o documento já esteja (Drive, site do CREA, portal da seguradora).
+     *
+     * ⚠ O LINK É VALIDADO. Só http(s) entra: `javascript:` colado aqui vira
+     * um clique executando script na tela do cliente. A guarda está em DOIS
+     * lugares (aqui, ao salvar, e no snapshot, ao publicar) porque registro
+     * antigo pode ter sido gravado antes desta tela existir. */
+    docsObra: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      var obra = Store.obter(eid(), "obras", id);
+      if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
+      var buf = (obra.portalDocumentos || []).map(function (d) { return JSON.parse(JSON.stringify(d)); });
+
+      function linkValido(u) { return /^https?:\/\//i.test(String(u || "").trim()); }
+      function render() {
+        var el = document.getElementById("dc-lista"); if (!el) return;
+        if (!buf.length) {
+          el.innerHTML = '<span class="muted" style="font-size:12.5px">Nenhum documento cadastrado. O bloco não aparece no Portal enquanto estiver vazio.</span>';
+          return;
+        }
+        var hoje = new Date().toISOString().slice(0, 10);
+        el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
+          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Documento</th><th>Número</th><th>Emissão</th><th>Validade</th><th></th></tr>' +
+          buf.map(function (d, i) {
+            var venc = d.validade && String(d.validade) < hoje;
+            return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
+              '<td style="padding:4px 2px"><b>' + Util.esc(d.nome || "—") + "</b>" +
+                (d.tipo ? '<div class="muted" style="font-size:10px">' + Util.esc(d.tipo) + "</div>" : "") +
+                (d.link ? '<div style="font-size:10px;color:#2e6f9e;word-break:break-all">' + Util.esc(d.link) + "</div>" : "") + "</td>" +
+              '<td style="text-align:center">' + Util.esc(d.numero || "—") + "</td>" +
+              '<td style="text-align:center">' + (d.emissao ? Util.fmtData(d.emissao) : "—") + "</td>" +
+              '<td style="text-align:center' + (venc ? ";color:#b91c1c;font-weight:800" : "") + '">' +
+                (d.validade ? Util.fmtData(d.validade) + (venc ? " ⚠" : "") : "—") + "</td>" +
+              '<td style="text-align:right"><button type="button" class="btn sm ghost" data-dcr="' + i + '" style="padding:1px 7px">×</button></td></tr>';
+          }).join("") + "</table>";
+        Array.prototype.forEach.call(el.querySelectorAll("[data-dcr]"), function (b) {
+          b.onclick = function () { buf.splice(+b.getAttribute("data-dcr"), 1); render(); };
+        });
+      }
+
+      var corpo =
+        '<p class="muted" style="margin:0 0 12px;font-size:13px">O que o cliente vê no Portal: <b>qual documento existe, o número e até quando vale</b>. ' +
+        'Não sobe arquivo — se o documento já estiver hospedado em algum lugar (Drive, site do CREA, portal da seguradora), cole o link.</p>' +
+        '<div id="dc-lista" style="margin-bottom:12px"></div>' +
+        '<div style="border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:11px;background:rgba(0,0,0,.02)">' +
+          '<b style="font-size:12px;display:block;margin-bottom:7px">Adicionar documento</b>' +
+          '<div class="row">' + campo("Nome *", inp("dc-nome", "", "Ex.: ART de execução")) +
+            campo("Tipo", sel("dc-tipo", opts([["ART", "ART / RRT"], ["Alvará", "Alvará / Licença"], ["Apólice", "Apólice de seguro"], ["Contrato", "Contrato / Aditivo"], ["Projeto", "Projeto / Prancha"], ["Outro", "Outro"]], "ART"))) + "</div>" +
+          '<div class="row">' + campo("Número", inp("dc-num", "", "Ex.: 28202600123456")) +
+            campo("Data de emissão", inp("dc-emi", "", "", "date")) +
+            campo("Válido até", inp("dc-val", "", "", "date")) + "</div>" +
+          campo('Link (opcional)<span class="muted" style="font-weight:400;font-size:11px"> — precisa começar com http:// ou https://</span>', inp("dc-link", "", "https://…")) +
+          campo("Observação", inp("dc-obs", "", "Ex.: cobre execução de estrutura e alvenaria")) +
+          '<button type="button" class="btn sm" id="dc-add" style="background:#16a34a;color:#fff">+ Adicionar</button></div>';
+
+      UI.modal("🗂️ Documentos da obra — " + Util.esc(obra.nome || ""), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          obra.portalDocumentos = buf;
+          Store.salvar(eid(), "obras", obra);
+          UI.fecharModal();
+          UI.toast(buf.length + " documento(s) salvos. Publique o Portal para o cliente ver.", "ok");
+          /* republica sozinho se a obra já tem Portal: senão o documento fica
+             salvo aqui e o cliente continua sem ver, sem ninguém saber por quê
+             — é o mesmo buraco que o "Despublicar" tinha */
+          if (obra.portalUser && typeof self._republicarPortal === "function") self._republicarPortal(obra);
+          if (typeof App !== "undefined") App.render();
+        } }
+      ]);
+      render();
+      var add = document.getElementById("dc-add");
+      if (add) add.onclick = function () {
+        var nome = v("dc-nome");
+        if (!nome) { UI.toast("Informe o nome do documento.", "erro"); return; }
+        var link = String(v("dc-link") || "").trim();
+        if (link && !linkValido(link)) { UI.toast("O link precisa começar com http:// ou https://.", "erro"); return; }
+        buf.push({ nome: nome, tipo: v("dc-tipo"), numero: v("dc-num"), emissao: v("dc-emi"),
+                   validade: v("dc-val"), link: link, obs: v("dc-obs") });
+        ["dc-nome", "dc-num", "dc-emi", "dc-val", "dc-link", "dc-obs"].forEach(function (i) {
+          var e = document.getElementById(i); if (e) e.value = "";
+        });
+        render();
+      };
+    },
+
+    /* ---------- AVISO SEMANAL AO CLIENTE ----------
+     * O Portal só existe se o cliente lembrar de abrir. Este é o empurrão.
+     *
+     * ⚠ POR QUE ELE NÃO DISPARA SOZINHO (ainda).
+     * O canal de avisos deste sistema já mandou ~5.500 mensagens repetidas —
+     * 1.509 sobre o mesmo pedido — por falta de trava. O motor da trava está
+     * pronto e testado (`js/resumocliente.js`, 46 verificações), mas o ENVIO
+     * automático depende de agendador no VPS + gateway de WhatsApp, e ligar
+     * isso sem conseguir exercitar o caminho de falha é exatamente como o
+     * incidente aconteceu. Aqui o texto é gerado, a semana é TRAVADA no mesmo
+     * clique, e quem manda é uma pessoa. Quando o disparo automático entrar,
+     * ele reusa esta mesma trava — que é o ponto.
+     */
+    avisoSemanal: function (id) {
+      if (this._bloqueado()) return;
+      if (typeof ResumoCliente === "undefined") { UI.toast("Módulo de resumo não carregado.", "erro"); return; }
+      var self = this;
+      var obra = Store.obter(eid(), "obras", id);
+      if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
+
+      var hojeISO = new Date().toISOString().slice(0, 10);
+      var seg = ResumoCliente.segundaDe(hojeISO);
+      var chave = ResumoCliente.chaveAviso(id, hojeISO);
+      var livro = obra.portalAvisos || {};
+      /* ⚠ A TRAVA É CONSULTADA ANTES DE COMPOR QUALQUER COISA. */
+      var veredito = ResumoCliente.podeEnviar(livro[chave]);
+
+      /* números da semana, do mesmo motor que alimenta o Portal */
+      var rdosPub = lista("rdo").filter(function (r) { return r.obraId === id && RDO.podeIrAoPortal(r); });
+      var fimSem = (function () { var d = new Date(seg + "T12:00:00"); d.setDate(d.getDate() + 6); return d.toISOString().slice(0, 10); })();
+      var daSemana = rdosPub.filter(function (r) { return r.data >= seg && r.data <= fimSem; });
+      var pctDepois = null, pctAntes = null, prevObj = null, servicos = [];
+      try {
+        var _s = this._snapshotPortal(id, obra);
+        pctDepois = _s.fisico ? _s.fisico.pct : null;
+        prevObj = _s.previsao;
+        /* o "antes" é o acumulado até o domingo anterior — a mesma conta,
+           com corte de data, para o avanço da semana ser a diferença real */
+        var antesLista = rdosPub.filter(function (r) { return r.data < seg; });
+        var pkAntes = (typeof Fisico !== "undefined") ? Fisico.pacote(antesLista, id, {}) : null;
+        pctAntes = pkAntes ? pkAntes.pct : null;
+        /* ⚠ os dois têm de sair do MESMO denominador. `pacote` sobre a lista
+           recortada reponderaria só os serviços que apareceram até lá, e o
+           "avanço da semana" viria inflado. Uso o pacote completo com `ate`. */
+        if (typeof Fisico !== "undefined") {
+          var domingo = (function () { var d = new Date(seg + "T12:00:00"); d.setDate(d.getDate() - 1); return d.toISOString().slice(0, 10); })();
+          var pk2 = Fisico.pacote(rdosPub, id, { ate: domingo });
+          if (pk2 && pk2.pct !== null) pctAntes = pk2.pct;
+        }
+      } catch (e) {}
+      var porServ = {};
+      daSemana.forEach(function (r) {
+        (r.atividadesItens || []).forEach(function (a) {
+          var q = Util.num(a.qtdExecutada); if (!q) return;
+          var k = (a.descricao || "") + "|" + (a.unidade || "");
+          if (!porServ[k]) porServ[k] = { descricao: a.descricao || "", unidade: a.unidade || "", qtd: 0 };
+          porServ[k].qtd += q;
+        });
+      });
+      Object.keys(porServ).forEach(function (k) { servicos.push(porServ[k]); });
+      servicos.sort(function (a, b) { return b.qtd - a.qtd; });
+
+      var base = String((typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "").replace(/\/$/, "");
+      var r = ResumoCliente.resumo({
+        obraId: id, obra: obra.nome || "", cliente: obra.clienteNome || "", semana: hojeISO,
+        pctAntes: pctAntes == null ? 0 : pctAntes, pctDepois: pctDepois == null ? 0 : pctDepois,
+        diarios: daSemana.length,
+        fotos: daSemana.reduce(function (s, x) { return s + ((x.fotos || []).length); }, 0),
+        servicos: servicos, previsao: prevObj,
+        ocorrencias: daSemana.reduce(function (s, x) { return s + ((x.ocorrenciasItens || []).length); }, 0),
+        paralisacoes: daSemana.filter(function (x) { return x.paralisacao && x.paralisacao.houve; }).length,
+        link: base ? base + "/portal" : ""
+      });
+
+      var corpo =
+        (veredito.pode
+          ? ""
+          : '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:11px 14px;font-size:13px;color:#7c2d12;margin-bottom:12px"><b>⚠ Esta semana já foi avisada.</b><br>' +
+            Util.esc(veredito.explicacao || "") + "</div>") +
+        (r.vazio
+          ? '<div style="background:#f1f5f9;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:11px 14px;font-size:13px;margin-bottom:12px">Nada aconteceu nesta semana. Mandar um aviso assim toda semana treina o cliente a ignorar o canal — só envie se houver motivo.</div>'
+          : "") +
+        '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Semana de <b>' + Util.fmtData(r.semana) + "</b> a <b>" + Util.fmtData(r.semanaFim) + "</b> · obra <b>" + Util.esc(obra.nome || "") + "</b></p>" +
+        '<textarea id="av-txt" rows="16" style="width:100%;font-size:13px;font-family:inherit;line-height:1.55">' + Util.esc(r.texto) + "</textarea>" +
+        '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Dá para editar antes de mandar. Ao copiar, esta semana fica <b>travada</b> para esta obra — é a trava que impede o reenvio em laço.</p>';
+
+      UI.modal("📣 Aviso semanal — " + Util.esc(obra.nome || ""), corpo, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: veredito.pode ? "Copiar e travar a semana" : "Copiar mesmo assim", classe: veredito.pode ? "success" : "ghost",
+          onClick: function () {
+            var t = (document.getElementById("av-txt") || {}).value || r.texto;
+            /* ⚠ TRAVA PRIMEIRO, COPIA DEPOIS. Se a ordem inverter e a
+               gravação falhar, a semana fica destravada com a mensagem já na
+               mão de quem vai mandar — que é o começo do laço. */
+            if (r.chave) {
+              livro[r.chave] = ResumoCliente.marcarEnviado(
+                ResumoCliente.marcarTentativa(r.chave, new Date().toISOString(), "manual"),
+                new Date().toISOString());
+              obra.portalAvisos = livro;
+              Store.salvar(eid(), "obras", obra);
+            }
+            if (navigator.clipboard) navigator.clipboard.writeText(t).then(function () {
+              UI.toast("Aviso copiado. Cole no WhatsApp do cliente.", "ok");
+            }, function () { UI.toast("Copie manualmente o texto acima.", "erro"); });
+            else UI.toast("Copie manualmente o texto acima.", "erro");
+            UI.fecharModal();
+          } }
+      ]);
+    },
+
     // ---------- Portal do Cliente: publica o resumo da obra na nuvem ----------
     portalObra: function (id) {
       if (this._bloqueado()) return;
@@ -15541,7 +15862,7 @@ case "nova-folha": return this.novoFolha();
       var snapshot = _s.snapshot, medicoes = _s.medicoes, rdos = snapshot.rdos,
           rdosPublicaveis = _s.rdosPublicaveis, segurados = _s.segurados,
           fotosPendentes = _s.fotosPendentes, pctExec = _s.pctExec, curvaS = _s.curvaS,
-          fisico = _s.fisico, fonteExec = _s.fonteExec, relSel = _s.relatorios;
+          fisico = _s.fisico, fonteExec = _s.fonteExec, relSel = _s.relatorios, prev = _s.previsao;
       var rdosDaObra = lista("rdo").filter(function (r) { return r.obraId === id; });
       // Orçamento de bytes: fotos em base64 podem estourar o envio — degrada (corta fotos dos RDOs antigos) até caber.
       var fit = this._caberSnapshot(snapshot);
@@ -15554,6 +15875,15 @@ case "nova-folha": return this.novoFolha();
       var corpo =
         '<p style="color:#475569;font-size:14px;margin-bottom:12px">Crie um acesso pro seu cliente <b>acompanhar esta obra online</b> — andamento, medições e diário de obra (RDO) com fotos. Ele acessa pelo link com o usuário e senha abaixo. Clique em <b>Publicar</b> sempre que quiser atualizar as informações.</p>' +
         '<div class="row">' + campo("Usuário do cliente", inp("g-puser", userSug)) + campo("Senha", inp("g-psenha", senhaSug)) + "</div>" +
+        /* Acessos extras: uma obra costuma ter mais de uma pessoa olhando.
+           Antes, criar um segundo usuário aqui REVOGAVA o primeiro. */
+        campo('Outros acessos a esta obra<span class="muted" style="font-weight:400;font-size:11px"> — sócio, fiscal, gerente do banco. Cada um entra com o próprio usuário e vê a mesma obra</span>',
+          '<div id="g-pacessos"></div>' +
+          '<div class="row" style="margin-top:6px">' +
+            campo("Quem é", inp("pa-rot", "", "Ex.: Fiscal da prefeitura")) +
+            campo("Usuário", inp("pa-user", "", "ex.: fiscal")) +
+            campo("Senha", inp("pa-senha", "")) + "</div>" +
+          '<button type="button" class="btn sm ghost" id="pa-add">+ Adicionar acesso</button>') +
         '<div style="background:#eef7ff;border:1px solid #d3e6fb;border-radius:10px;padding:11px 14px;font-size:13px;color:#143454">Vai publicar: <b>' + medicoes.length + "</b> medições · <b>" + rdos.length + "</b> diários" + (totFotos ? " · <b>" + totFotos + "</b> fotos" : "") + " · andamento <b>" + Util.fmtPct(pctExec, 0) + "</b>" + (curvaS ? " · Curva S + cronograma" : "") + ".</div>" +
         /* DE ONDE VEM O ANDAMENTO — dito antes de publicar, porque é o número
            que o cliente vai repetir na reunião. Quando ele nasce do diário, a
@@ -15565,6 +15895,22 @@ case "nova-folha": return this.novoFolha();
           else { txt = "O andamento vem do <b>acumulado das medições</b> — os diários desta obra ainda não têm serviço com <b>quantidade prevista</b>, e sem isso não há percentual a calcular a partir deles."; cor = "#7c2d12"; bg = "#fff7ed"; bd = "#fdba74"; }
           return '<div style="background:' + bg + ";border:1px solid " + bd + ";border-radius:10px;padding:10px 14px;font-size:12.5px;color:" + cor + ';margin-top:8px">' + txt + "</div>";
         })() +
+        /* ---------- PREVISÃO DE TÉRMINO: LIGA/DESLIGA ----------
+           Fica FORA da lista de relatórios de propósito: não é um documento
+           que o cliente gera, é um número que aparece sozinho na tela dele.
+           E o risco é de outra natureza — não é dado sigiloso vazando, é uma
+           projeção que pode ser lida como compromisso de prazo. */
+        campo("Previsão de término",
+          '<label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;cursor:pointer;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:11px 13px">' +
+          '<input type="checkbox" id="g-pprev"' + ((obra.portalPrevisao !== false) ? " checked" : "") + ' style="margin-top:3px">' +
+          '<span>Mostrar ao cliente a <b>data provável de término</b> calculada pelo ritmo dos diários' +
+          '<br><span class="muted" style="font-size:12px">' +
+          (prev && prev.ok && !prev.concluida && prev.dataProvavel
+            ? 'Hoje calcularia <b>' + Util.esc(Util.fmtData ? Util.fmtData(prev.dataProvavel) : prev.dataProvavel) + '</b>' +
+              (prev.desvioDias != null ? " (" + (prev.desvioDias > 0 ? "+" + prev.desvioDias + " dias sobre o contrato" : (prev.desvioDias < 0 ? prev.desvioDias + " dias, adiantada" : "no prazo")) + ")" : "") + ". "
+            : (prev && prev.ok && prev.foraDeEscala ? "Hoje o ritmo está baixo demais para projetar data — o Portal diria isso, sem inventar data. "
+              : (prev && !prev.ok ? "Hoje ainda não há base para projetar (" + Util.esc(prev.explicacao || "") + "). " : ""))) +
+          'A tela do cliente sempre chama de <b>projeção</b> e mostra a faixa otimista/provável. Desligue se o contrato desta obra trata prazo só pelo canal formal — projeção lida como promessa vira discussão.</span></span></label>') +
         /* ---------- O QUE ESTE CLIENTE PODE GERAR ----------
            Não é decoração: o que ficar desmarcado NÃO É EMBARCADO no
            snapshot. Por isso a lista aparece na hora de publicar — é aqui que
@@ -15590,7 +15936,60 @@ case "nova-folha": return this.novoFolha();
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Publicar", classe: "success", onClick: publicar }
       ]);
+      renderAcessos();
+      (function () {
+        var bAdd = document.getElementById("pa-add");
+        if (!bAdd) return;
+        bAdd.onclick = function () {
+          var u = String(v("pa-user") || "").trim().toLowerCase().replace(/\s+/g, "");
+          var s = String(v("pa-senha") || "").trim();
+          if (u.length < 3) { UI.toast("Usuário muito curto (mín. 3).", "erro"); return; }
+          if (s.length < 4) { UI.toast("Senha muito curta (mín. 4).", "erro"); return; }
+          var principal = String((el("g-puser") || {}).value || "").trim().toLowerCase();
+          if (u === principal) { UI.toast("Este já é o usuário principal desta obra.", "erro"); return; }
+          if (acessosBuf.some(function (a) { return a.user === u; })) { UI.toast("Já existe um acesso com esse usuário nesta obra.", "erro"); return; }
+          /* senha digitada AGORA vale como troca: se o usuário já existir no
+             servidor (de outra obra), sem isto ele continuaria com a antiga e
+             o cartão impresso aqui estaria errado */
+          acessosBuf.push({ user: u, senha: s, rotulo: v("pa-rot"), trocarSenha: true });
+          ["pa-rot", "pa-user", "pa-senha"].forEach(function (i) { var e = document.getElementById(i); if (e) e.value = ""; });
+          renderAcessos();
+        };
+      })();
       function el(i) { return document.getElementById(i); }
+
+      /* ---- lista de acessos extras, editável antes de publicar ----
+         Remover daqui NÃO revoga sozinho: revogar é ação de segurança e tem
+         de ser explícita, com confirmação — tirar o fiscal da lista por
+         engano e ele perder o acesso na próxima publicação automática seria
+         o mesmo tipo de surpresa silenciosa que este bloco veio consertar. */
+      var acessosBuf = (obra.portalAcessosExtras || []).map(function (a) { return { user: a.user, senha: a.senha, rotulo: a.rotulo || "" }; });
+      function renderAcessos() {
+        var box = el("g-pacessos"); if (!box) return;
+        if (!acessosBuf.length) {
+          box.innerHTML = '<span class="muted" style="font-size:12px">Nenhum acesso extra. Só o usuário acima entra nesta obra.</span>';
+          return;
+        }
+        box.innerHTML = acessosBuf.map(function (a, i) {
+          return '<div style="display:flex;gap:8px;align-items:center;font-size:12.5px;padding:4px 0;border-bottom:1px solid var(--linha,#e2e8f0)">' +
+            "<span style=\"flex:1 1 auto\"><b>" + Util.esc(a.user) + "</b> / " + Util.esc(a.senha) +
+            (a.rotulo ? ' <span class="muted">— ' + Util.esc(a.rotulo) + "</span>" : "") + "</span>" +
+            '<button type="button" class="btn sm ghost danger" data-par="' + i + '" style="padding:1px 8px" title="Revogar este acesso">Revogar</button></div>';
+        }).join("");
+        Array.prototype.forEach.call(box.querySelectorAll("[data-par]"), function (b) {
+          b.onclick = function () {
+            var i = +b.getAttribute("data-par"), a = acessosBuf[i];
+            if (!confirm("Revogar o acesso de \"" + a.user + "\" a esta obra?\n\nEssa pessoa deixa de ver o andamento, os diários e as fotos assim que você publicar.")) return;
+            acessosBuf.splice(i, 1);
+            /* marca para revogar no servidor ao publicar: some da lista E do
+               registro lá, senão ela continua entrando por tempo indeterminado */
+            revogar.push(a.user);
+            renderAcessos();
+          };
+        });
+      }
+      var revogar = [];
+
       function publicar() {
         var user = ((el("g-puser") || {}).value || "").trim().toLowerCase().replace(/\s+/g, ""), senha = ((el("g-psenha") || {}).value || "").trim();
         if (user.length < 3) { UI.toast("Usuário muito curto (mín. 3).", "erro"); return; }
@@ -15607,9 +16006,13 @@ case "nova-folha": return this.novoFolha();
         Array.prototype.forEach.call(document.querySelectorAll("#g-prel [data-rel]"), function (c) {
           if (c.checked) novos.push(c.getAttribute("data-rel"));
         });
+        var cxPrev = document.getElementById("g-pprev");
+        var querPrev = cxPrev ? !!cxPrev.checked : (obra.portalPrevisao !== false);
+        var mudouPrev = querPrev !== (obra.portalPrevisao !== false);
         var mudouRel = novos.slice().sort().join("|") !== (relSel || []).slice().sort().join("|");
-        if (mudouRel) {
+        if (mudouRel || mudouPrev) {
           obra.portalRelatorios = novos;
+          obra.portalPrevisao = querPrev;
           Store.salvar(eid(), "obras", obra);
           var _r = self._snapshotPortal(id, obra);
           snapshot = _r.snapshot; rdosPublicaveis = _r.rdosPublicaveis;
@@ -15666,16 +16069,78 @@ case "nova-folha": return this.novoFolha();
               });
             }
             var link = url + "/portal";
-            el("portal-result").innerHTML =
-              '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px">' +
-              '<b style="color:#15803d">✓ Publicado!</b> Envie estes dados pro seu cliente:<br>' +
-              '<div style="margin-top:8px;line-height:1.9"><b>Link:</b> <a href="' + link + '" target="_blank" style="color:#2e6f9e">' + link + '</a><br><b>Usuário:</b> ' + Util.esc(user) + "<br><b>Senha:</b> " + Util.esc(senha) + "</div>" +
-              '<button class="btn sm primary" id="portal-copy" style="margin-top:10px">Copiar mensagem pro cliente</button></div>';
-            var cp = el("portal-copy");
-            if (cp) cp.onclick = function () {
-              var msg = "Olá! Acompanhe a sua obra online pelo portal:\nLink: " + link + "\nUsuário: " + user + "\nSenha: " + senha;
-              if (navigator.clipboard) navigator.clipboard.writeText(msg).then(function () { UI.toast("Mensagem copiada!", "ok"); }); else UI.toast("Copie manualmente os dados acima.", "ok");
-            };
+            /* ---------- OS OUTROS ACESSOS DA MESMA OBRA ----------
+             * Uma obra costuma ter mais de uma pessoa acompanhando: o dono, o
+             * sócio, o fiscal da prefeitura, o gerente do banco que libera a
+             * parcela. Até aqui só existia UM usuário por obra, e criar um
+             * segundo pela mesma tela REVOGAVA o primeiro (a guarda logo
+             * acima) — quem tentasse dar acesso ao sócio tirava o do cliente,
+             * em silêncio, e só descobriria pelo telefone.
+             *
+             * O servidor sempre soube lidar com isso (o painel de avaliações
+             * junta a mesma obra publicada para dois acessos); faltava a tela.
+             * Cada acesso extra recebe o MESMO snapshot — a permissão de
+             * relatório é da obra, não da pessoa. */
+            /* revogações pedidas nesta tela, antes de tudo: quem saiu da lista
+               não pode continuar entrando */
+            revogar.forEach(function (u) {
+              fetch(url + "/api/portal/remover", {
+                method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave },
+                body: JSON.stringify({ user: u, obraId: obra.id })
+              }).then(function (r4) { return r4.json(); }).then(function (j4) {
+                if (j4 && j4.ok) return;
+                UI.toast("O acesso de " + u + " NÃO foi revogado — essa pessoa ainda vê esta obra. Tente de novo com internet.", "erro");
+              })["catch"](function () {
+                UI.toast("O acesso de " + u + " NÃO foi revogado — essa pessoa ainda vê esta obra. Tente de novo com internet.", "erro");
+              });
+            });
+            revogar = [];
+            var extras = acessosBuf.filter(function (a) { return a && a.user && a.user !== user; });
+            var pendentes = extras.length;
+            function terminarExtras() {
+              if (pendentes > 0) return;
+              var listaAcessos = '<div style="margin-top:8px;line-height:1.9"><b>Link:</b> <a href="' + link + '" target="_blank" style="color:#2e6f9e">' + link + '</a><br><b>Usuário:</b> ' + Util.esc(user) + "<br><b>Senha:</b> " + Util.esc(senha) + "</div>";
+              if (extras.length) {
+                listaAcessos += '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #86efac;font-size:13px"><b>Outros acessos desta obra:</b>' +
+                  extras.map(function (a) {
+                    return '<div style="margin-top:3px">' + Util.esc(a.rotulo || "acesso") + " — <b>" + Util.esc(a.user) + "</b> / " + Util.esc(a.senha) + (a.erro ? ' <span style="color:#b91c1c">(falhou: ' + Util.esc(a.erro) + ")</span>" : "") + "</div>";
+                  }).join("") + "</div>";
+              }
+              el("portal-result").innerHTML =
+                '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:14px 16px;font-size:14px">' +
+                '<b style="color:#15803d">✓ Publicado!</b> Envie estes dados pro seu cliente:<br>' +
+                listaAcessos +
+                '<button class="btn sm primary" id="portal-copy" style="margin-top:10px">Copiar mensagem pro cliente</button></div>';
+              var cp = el("portal-copy");
+              if (cp) cp.onclick = function () {
+                var msg = "Olá! Acompanhe a sua obra online pelo portal:\nLink: " + link + "\nUsuário: " + user + "\nSenha: " + senha;
+                if (navigator.clipboard) navigator.clipboard.writeText(msg).then(function () { UI.toast("Mensagem copiada!", "ok"); }); else UI.toast("Copie manualmente os dados acima.", "ok");
+              };
+            }
+            if (!pendentes) { terminarExtras(); return; }
+            extras.forEach(function (a) {
+              fetch(url + "/api/portal/publicar", {
+                method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave },
+                /* ⚠ `trocarSenha:false` nos extras. Publicar com `true` aqui
+                   redefiniria a senha do acesso extra a cada publicação
+                   automática — e a publicação virou automática a cada diário.
+                   O fiscal seria trancado para fora sem ninguém saber, que é
+                   exatamente o defeito que a guarda do `trocarSenha` nasceu
+                   para impedir no acesso principal. A senha do extra só muda
+                   quando alguém a edita nesta tela (aí `trocarSenha` vem no
+                   próprio registro). */
+                body: JSON.stringify({ user: a.user, senha: a.senha, trocarSenha: a.trocarSenha === true,
+                  empresa: (typeof Empresa !== "undefined" && Empresa.nomeDoc && Empresa.nomeDoc()) || "",
+                  obra: snapshot })
+              }).then(function (r3) { return r3.json(); }).then(function (j3) {
+                if (!j3 || !j3.ok) a.erro = (j3 && j3.erro) || "falha";
+                else delete a.trocarSenha;   // já aplicada
+              })["catch"](function () { a.erro = "sem conexão"; })
+                .then(function () {
+                  pendentes--;
+                  if (!pendentes) { obra.portalAcessosExtras = extras; Store.salvar(eid(), "obras", obra); terminarExtras(); }
+                });
+            });
           }).catch(function () { el("portal-result").innerHTML = '<div style="color:#dc2626;font-size:14px">Sem conexão com o servidor. Tente de novo.</div>'; });
       }
     },
@@ -15721,8 +16186,16 @@ case "nova-folha": return this.novoFolha();
            chegaram do servidor e não entravam no diário. A nota é o dado; a
            tela é só a tela. */
         var gravadas = self._gravarAvaliacoes(j.obras || []);
+        /* O aceite entra no MESMO caminho da nota, e fora do `if (el)` pelo
+           mesmo motivo: ele já chegou do servidor, e fechar a janela não pode
+           jogar fora um "de acordo" de boletim. */
+        var aceites = self._gravarAceites(j.obras || []);
         var el = document.getElementById("av-corpo"); if (!el) return;
-        el.innerHTML = self._avaliacoesHtml(j.obras || [], gravadas);
+        el.innerHTML = (aceites.gravados
+          ? '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:10px 13px;font-size:13px;color:#15803d;margin-bottom:12px">'
+            + "<b>✓ " + aceites.gravados + " aceite(s) de medição</b> registrados pelos clientes foram carimbados nos boletins."
+            + (aceites.falhas ? ' <span style="color:#b91c1c">' + aceites.falhas + " não couberam no armazenamento.</span>" : "") + "</div>"
+          : "") + self._avaliacoesHtml(j.obras || [], gravadas);
       }).catch(function () {
         var el = document.getElementById("av-corpo");
         if (el) el.innerHTML = '<span style="color:#b91c1c">Sem conexão com o servidor. Tente de novo.</span>';
@@ -15819,6 +16292,43 @@ case "nova-folha": return this.novoFolha();
         });
       });
       return { gravadas: n, falhas: falhas };
+    },
+
+    /* Carimba o ACEITE do cliente DENTRO do boletim de medição, pelo mesmo
+     * motivo da nota no diário: o registro vive no VPS (o app costuma estar
+     * fechado quando o cliente clica), mas o documento que vale é o boletim.
+     * Sem isto, o "de acordo" existiria só na nuvem — e sumiria da vista de
+     * quem emite a fatura, que é justamente quem precisa dele.
+     *
+     * ⚠ NÃO SOBRESCREVE ACEITE JÁ GRAVADO. A data do aceite é a informação
+     * mais importante do registro; reescrever a cada abertura do painel a
+     * moveria para sempre, e um documento que muda de data sozinho não prova
+     * nada. Só entra o que ainda não está lá, ou ressalva nova. */
+    _gravarAceites: function (obras) {
+      var todas = lista("medicoes"), n = 0, falhas = 0;
+      (obras || []).forEach(function (o) {
+        var ac = o.aceites || {};
+        Object.keys(ac).forEach(function (numero) {
+          var a = ac[numero];
+          if (!a || !a.em) return;
+          var m = todas.filter(function (x) {
+            return String(x.obraId) === String(o.obraId) && String(x.numero || "") === String(numero);
+          })[0];
+          if (!m) return;
+          var atual = m.aceiteCliente;
+          var extras = (a.ressalvasExtras || []).length;
+          if (atual && atual.em === a.em && (atual.ressalvasExtras || []).length === extras) return;
+          m.aceiteCliente = {
+            em: a.em, porNome: a.porNome || "", ressalva: a.ressalva || "",
+            ressalvasExtras: (a.ressalvasExtras || []).slice(),
+            /* deixa gravado o que este registro É — para nenhum impresso
+               futuro escrever "assinado digitalmente" em cima dele */
+            natureza: "ciencia-portal"
+          };
+          if (Store.salvar(eid(), "medicoes", m)) n++; else falhas++;
+        });
+      });
+      return { gravados: n, falhas: falhas };
     },
 
     // ---------- Lançar de documento (IA lê NF/fatura/boleto) ----------
