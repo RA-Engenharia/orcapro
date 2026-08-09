@@ -598,6 +598,61 @@
      *
      * Agora quem quiser dado do Painel pede aqui, e vem no recorte certo. */
     /* --------------------------------------------------------------------
+     * O QUE PRECISA DE VOCÊ HOJE
+     *
+     * Quatro coisas que o sistema já sabia e não mostrava em lugar nenhum:
+     * obra além do prazo contratual (com a multa que isso expõe — campo que
+     * era gravado e nunca lido), EPI vencido, estoque abaixo do mínimo e
+     * diário aprovado que o cliente nunca viu.
+     *
+     * ⚠ O FILTRO É POR ACHADO, não pelo card inteiro. O painel já vazou
+     * margem por obra para quem só tinha o Diário; aqui cada linha declara o
+     * módulo que exige (js/atencao.js) e some para quem não o tem. O
+     * encarregado vê o EPI vencido, que é problema dele, e não vê a multa.
+     * ------------------------------------------------------------------ */
+    _dashAtencaoHtml: function () {
+      if (typeof Atencao === "undefined") return "";
+      var esc = this._dashEscopo();
+      var naObra = function (x) { return !esc.ids || (x && esc.ids.indexOf(x.obraId) > -1); };
+      var r;
+      try {
+        r = Atencao.achar({
+          obras: esc.obras, contratos: esc.contratos, estoque: esc.estoque, rdo: esc.rdo,
+          epi: lista("epi").filter(naObra),
+          hoje: String(this._hojeISO()).slice(0, 10)
+        });
+      } catch (e) { return ""; }
+
+      var pode = function (mod) {
+        return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(mod));
+      };
+      var itens = r.itens.filter(function (i) { return pode(i.modulo); });
+      if (!itens.length) return "";
+
+      var linhas = itens.slice(0, 6).map(function (i) {
+        var cor = i.gravidade >= 3 ? "#c2410c" : (i.gravidade === 2 ? "#a16207" : "#64748b");
+        return '<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--linha,#e5e7eb)">'
+          + '<div style="min-width:8px;align-self:stretch;border-radius:4px;background:' + cor + '"></div>'
+          + '<div style="flex:1">'
+          + '<div style="font-weight:600;font-size:13px">' + Util.esc(i.titulo)
+          + (i.valor > 0 ? ' <span style="color:' + cor + '">· ' + Util.fmtMoeda(i.valor) + '</span>' : '')
+          + '</div>'
+          + '<div class="muted" style="font-size:12px">' + Util.esc(i.detalhe) + '</div>'
+          + '<div style="font-size:12px;margin-top:3px">' + Util.esc(i.porque) + '</div>'
+          + '<div class="muted" style="font-size:11.5px;margin-top:2px">&rarr; ' + Util.esc(i.acao) + '</div>'
+          + '</div>'
+          + '<button class="btn sm" data-view="' + Util.esc(i.view) + '">Ver</button></div>';
+      }).join("");
+
+      return '<div class="card mt" style="border-left:3px solid #a16207">'
+        + '<h3 style="margin:0 0 4px">&#128204; Precisa de você</h3>'
+        + '<div class="muted" style="font-size:12px;margin-bottom:4px">'
+        + itens.length + ' ponto(s) que o sistema ja sabia e nao mostrava</div>'
+        + linhas
+        + (itens.length > 6 ? '<div class="muted" style="font-size:12px;padding-top:8px">…e mais ' + (itens.length - 6) + '.</div>' : '')
+        + '</div>';
+    },
+    /* --------------------------------------------------------------------
      * DINHEIRO FECHADO QUE NINGUÉM LANÇOU
      *
      * O sistema já liga folha → despesa, produção → folha e medição paga →
@@ -697,6 +752,8 @@
       var obras = esc.obras, contratos = esc.contratos, med = esc.medicoes, fin = esc.financeiro;
       var compras = esc.compras, rdos = esc.rdo;
       var comprasAbertas = compras.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
+      /* soma a retenção das medições aprovadas e pagas (js/atencao.js) */
+      var _retido = (typeof Atencao !== "undefined") ? Atencao.retencaoPresa(med) : 0;
       var emAndamento = obras.filter(function (o) { return o.status === "andamento"; }).length;
       var valorContratado = contratos.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
@@ -731,6 +788,10 @@
               k("A receber", Util.fmtMoeda(aReceber)) +
               k("Despesas", Util.fmtMoeda(despesas))
             : "") +
+          /* RETENÇÃO PRESA: dinheiro dele que fica parado até alguém lembrar
+             de cobrar. Não é alerta — é informação, e por isso vem como KPI e
+             não como linha de "precisa de você". Só aparece quando existe. */
+          (_podeFin && _retido > 0 ? k("Retenção presa", Util.fmtMoeda(_retido), "custo") : "") +
           k("Medições pendentes", medPend) +
           k("Compras em aberto", comprasAbertas) +
           k("Diários (RDO)", rdos.length) +
@@ -777,6 +838,11 @@
           "</div>";
       }
       // dinheiro fechado que ninguém lançou (motor em js/reconciliacao.js)
+      /* ⚠ SEM o gate financeiro, de propósito. EPI vencido, estoque no
+         mínimo e diário não publicado não são dinheiro — e quem precisa
+         deles é justamente quem NÃO tem o módulo Financeiro. O filtro de
+         permissão é por ACHADO, dentro do próprio card (js/atencao.js). */
+      html += this._dashAtencaoHtml();
       if (_podeFin) html += this._dashReconciliacaoHtml();
       // resumo por obra (contratado x custo real, ACUMULADO da obra)
       if (_podeFin) {
