@@ -3,7 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <script>/* LOTE 5: aplica o tema salvo ANTES do primeiro paint (mata o flash branco no dark) */
-  try { document.documentElement.setAttribute("data-tema", localStorage.getItem("orcapro:tema") || "light"); document.documentElement.setAttribute("data-tom", localStorage.getItem("orcapro:tom") || "azul"); } catch (e) {}</script>
+  try { var _t = localStorage.getItem("orcapro:tema") || "light";
+        var _f = localStorage.getItem("orcapro:fonte"); _f = (_f === "source") ? "source" : "plex";
+        document.documentElement.setAttribute("data-tema", _t);
+        document.documentElement.setAttribute("data-fonte", _f); } catch (e) {}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>OrçaPRO — Orçamento Inteligente de Obras</title>
   <!-- BIM: resolve os specifiers dos módulos ES do visualizador (js/bim.js + OrbitControls) -->
@@ -18,7 +21,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="OrçaPRO IA">
   <link rel="apple-touch-icon" href="img/app-icon-192.png">
-  <!-- Inter agora é vendorizado (base64) dentro de css/app.css → offline-first, sem CDN do Google -->
+  <!-- As familias dos temas vao embutidas em base64 no css/fontes.css: offline-first, sem CDN.
+       Ordem importa: fontes.css primeiro, porque o app.css referencia as familias nos tokens. -->
+  <!-- as duas familias dos temas, embutidas em base64 (offline-first, sem CDN) -->
+  <link rel="stylesheet" href="css/fontes.css">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/bim-revit.css">
 </head>

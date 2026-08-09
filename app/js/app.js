@@ -79,10 +79,10 @@
     // ---------- Boot ----------
     iniciar: function () {
       Auth.init();
-      // tema salvo (tema = claro/escuro; tom = variação do escuro: azul/preto/verde/marrom/ra)
-      var tema = localStorage.getItem("orcapro:tema") || "light";
-      document.documentElement.setAttribute("data-tema", tema);
-      document.documentElement.setAttribute("data-tom", localStorage.getItem("orcapro:tom") || "azul");
+      /* aparencia salva: dois eixos independentes — iluminacao (claro/escuro)
+         e letra (Plex/Source). `aplicarTema` faz a migracao de quem ainda
+         tem o `orcapro:tom` antigo gravado no aparelho. */
+      this.aplicarTema(localStorage.getItem("orcapro:tema") || "light", null);
 
       // MODO DEMO (?demo=1) — orçamento genérico para vitrine/teste na página de vendas
       if (/[?&]demo=1/.test(location.search || "")) { return this._iniciarDemo(location.search || ""); }
@@ -814,7 +814,10 @@
         case "tema": this.abrirTema(); break;
         case "minha-foto": this.abrirMinhaFoto(); break;
         case "atualizar": if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); break; // botão manual: puxa a versão nova limpando o cache (essencial no celular, que não tem Ctrl+Shift+R)
-        case "tema-op": this.aplicarTema(t.dataset.temaVal, t.dataset.tomVal); break;
+        /* dois eixos, dois despachos: iluminação e letra são escolhas
+           independentes — trocar uma não pode zerar a outra */
+        case "tema-op": this.aplicarTema(t.dataset.temaVal, null); break;
+        case "tema-fonte": this.aplicarTema(document.documentElement.getAttribute("data-tema"), t.dataset.fonteVal); break;
         case "esqueci-senha": this.redefinirSenhaUI(); break;
         case "empresa": this.abrirEmpresa(); break;
         case "licenca": this.abrirLicenca(); break;
@@ -2227,19 +2230,58 @@
       return itens;
     },
 
-    alternarTema: function () { // atalho claro↔escuro (preserva o tom escolhido)
+    /* =================================================================
+     * APARÊNCIA — v1.1.188
+     *
+     * Antes eram SEIS temas: claro + cinco tons de escuro (azul, preto,
+     * verde, marrom e "RA Engenharia"). Cada tom redeclarava um punhado de
+     * cores por conta própria, e o resultado é que cor semântica sumia em
+     * uns e não em outros — o verde de "aprovado" desaparecia no tom verde,
+     * o texto fraco morria no preto. Cinco variantes de fundo é escolha de
+     * papel de parede; nenhuma delas resolvia o que importa, que é o
+     * sistema inteiro ser legível.
+     *
+     * Agora são DOIS eixos independentes e ortogonais:
+     *   · claro ↔ escuro   (data-tema)  — como a tela ilumina
+     *   · Plex ↔ Source    (data-fonte) — como a tela lê
+     *
+     * Os dois têm contraste MEDIDO, não estimado: tools/test-contraste.js
+     * reprova qualquer par abaixo da régua WCAG. Foi ele que pegou o aço da
+     * marca em 3,06:1 sobre o escuro e o ocre em 4,24:1 sobre o branco.
+     * ================================================================= */
+    alternarTema: function () { // atalho claro↔escuro (preserva a fonte escolhida)
       this.aplicarTema(document.documentElement.getAttribute("data-tema") === "dark" ? "light" : "dark", null);
     },
-    aplicarTema: function (tema, tom) {
+    /* ⚠ MIGRAÇÃO: quem já usava tem `orcapro:tom` gravado com azul/preto/
+     * verde/marrom/ra. Esses tons não existem mais. Deixar o atributo velho
+     * no <html> não quebra nada (nenhuma regra casa com ele), mas o valor
+     * precisa parar de ser lido — senão a preferência de fonte nunca pega.
+     * O modo claro/escuro da pessoa é PRESERVADO: aquilo ela escolheu de
+     * verdade, e mexer nisso seria trocar a tela dela sem pedir. */
+    _fonteSalva: function () {
+      var f = "";
+      try { f = localStorage.getItem("orcapro:fonte") || ""; } catch (e) {}
+      return (f === "source") ? "source" : "plex";   // Plex é o padrão
+    },
+    aplicarTema: function (tema, fonte) {
       tema = tema === "dark" ? "dark" : "light";
-      tom = tom || localStorage.getItem("orcapro:tom") || "azul";
-      document.documentElement.setAttribute("data-tema", tema);
-      document.documentElement.setAttribute("data-tom", tom);
-      localStorage.setItem("orcapro:tema", tema);
-      localStorage.setItem("orcapro:tom", tom);
-      // marca a opção ativa se o modal de temas estiver aberto
-      var abertos = document.querySelectorAll(".tema-op");
-      if (abertos.length) abertos.forEach(function (b) { b.classList.toggle("on", b.dataset.temaVal === tema && (tema === "light" || b.dataset.tomVal === tom)); });
+      fonte = (fonte === "source" || fonte === "plex") ? fonte : this._fonteSalva();
+      var raiz = document.documentElement;
+      raiz.setAttribute("data-tema", tema);
+      raiz.setAttribute("data-fonte", fonte);
+      raiz.removeAttribute("data-tom");             // o eixo antigo sai de cena
+      try {
+        localStorage.setItem("orcapro:tema", tema);
+        localStorage.setItem("orcapro:fonte", fonte);
+        localStorage.removeItem("orcapro:tom");
+      } catch (e) {}
+      // marca a opção ativa se a tela de aparência estiver aberta
+      var ops = document.querySelectorAll(".tema-op");
+      for (var i = 0; i < ops.length; i++) {
+        var b = ops[i], t = b.getAttribute("data-tema-val"), f = b.getAttribute("data-fonte-val");
+        b.classList.toggle("on", t ? t === tema : f === fonte);
+        b.setAttribute("aria-pressed", (t ? t === tema : f === fonte) ? "true" : "false");
+      }
     },
     // Seletor de tema: Claro (como o site) + 5 tons de escuro (cores do logo RA)
     /* =================================================================
@@ -2295,24 +2337,51 @@
 
     abrirTema: function () {
       var temaAtual = document.documentElement.getAttribute("data-tema") || "light";
-      var tomAtual = document.documentElement.getAttribute("data-tom") || "azul";
-      var ops = [
-        { tema: "light", tom: "azul",   nome: "Claro",         desc: "Branco, como o site",             sw: ["#f4f7fb", "#ffffff", "#0f2740", "#16a34a"] },
-        { tema: "dark",  tom: "azul",   nome: "Escuro Azul",   desc: "Navy OrçaPRO (padrão)",           sw: ["#0b1622", "#11202e", "#5a9bc9", "#22c55e"] },
-        { tema: "dark",  tom: "preto",  nome: "Escuro Preto",  desc: "Neutro, foco total",              sw: ["#0a0c0f", "#121519", "#8b98a5", "#22c55e"] },
-        { tema: "dark",  tom: "verde",  nome: "Escuro Verde",  desc: "O verde do logo RA",              sw: ["#081711", "#0e2118", "#4d8b2f", "#79c455"] },
-        { tema: "dark",  tom: "marrom", nome: "Escuro Marrom", desc: "O terra do logo RA",              sw: ["#15100a", "#1e1710", "#877457", "#b5985a"] },
-        { tema: "dark",  tom: "ra",     nome: "RA Engenharia", desc: "Misto do logo: navy + verde + dourado", sw: ["#0d1725", "#132133", "#5ea23a", "#b5985a"] }
+      var fonteAtual = this._fonteSalva();
+
+      /* dois grupos, porque são duas perguntas diferentes: como a tela
+         ilumina, e como a tela lê. Misturar as duas num cardápio de seis
+         combinações é o que fazia ninguém achar o que queria. */
+      var luz = [
+        { v: "light", nome: "Claro", desc: "Para o escritório e para a luz do dia",
+          sw: ["#f4f7fb", "#ffffff", "#0f2740", "#15803d"] },
+        { v: "dark", nome: "Escuro", desc: "Para trabalhar à noite e cansar menos a vista",
+          sw: ["#0b1622", "#11202e", "#7fb4da", "#4cae6d"] }
       ];
-      var cards = ops.map(function (o) {
-        var on = (o.tema === temaAtual && (o.tema === "light" || o.tom === tomAtual));
-        return '<button type="button" class="tema-op' + (on ? " on" : "") + '" data-acao="tema-op" data-tema-val="' + o.tema + '" data-tom-val="' + o.tom + '">' +
+      var fontes = [
+        /* ⚠ ASPAS SIMPLES no nome da família.
+         * Com aspas duplas o `style="font-family:"IBM Plex Mono"…"` fecha o
+         * atributo no meio — e as duas amostras caíam na fonte herdada, ou
+         * seja, a tela que existe para MOSTRAR a diferença mostrava a mesma
+         * coisa duas vezes. */
+        { v: "plex", nome: "IBM Plex", desc: "Número de largura fixa: na planilha, a vírgula fica embaixo da vírgula",
+          amostra: "1.234,56", fam: "'IBM Plex Mono', monospace" },
+        { v: "source", nome: "Source Sans", desc: "Traço mais macio e arredondado, letra um pouco mais aberta",
+          amostra: "1.234,56", fam: "'Source Sans 3', sans-serif" }
+      ];
+
+      function cardLuz(o) {
+        var on = o.v === temaAtual;
+        return '<button type="button" class="tema-op' + (on ? " on" : "") + '" data-acao="tema-op"' +
+          ' data-tema-val="' + o.v + '" aria-pressed="' + (on ? "true" : "false") + '">' +
           '<span class="sw">' + o.sw.map(function (c) { return '<i style="background:' + c + '"></i>'; }).join("") + "</span>" +
           "<b>" + o.nome + "</b><small>" + o.desc + "</small></button>";
-      }).join("");
-      UI.modal("🎨 Tema do aplicativo",
-        '<p class="muted" style="margin:0 0 12px">Escolha como o OrçaPRO fica na sua tela — a mudança é na hora e fica salva neste aparelho.</p>' +
-        '<div class="tema-ops">' + cards + "</div>",
+      }
+      function cardFonte(o) {
+        var on = o.v === fonteAtual;
+        return '<button type="button" class="tema-op' + (on ? " on" : "") + '" data-acao="tema-fonte"' +
+          ' data-fonte-val="' + o.v + '" aria-pressed="' + (on ? "true" : "false") + '">' +
+          '<span class="sw-txt" style="font-family:' + o.fam + '">' + o.amostra + "</span>" +
+          "<b>" + o.nome + "</b><small>" + o.desc + "</small></button>";
+      }
+
+      UI.modal("Aparência",
+        '<p class="muted" style="margin:0 0 6px;font-size:var(--t-peq)">A mudança é na hora e fica salva neste aparelho. Cada pessoa da equipe tem a sua.</p>' +
+        '<div class="tema-grupo"><span class="tema-rot">Iluminação da tela</span>' +
+          '<div class="tema-ops">' + luz.map(cardLuz).join("") + "</div></div>" +
+        '<div class="tema-grupo"><span class="tema-rot">Letra</span>' +
+          '<div class="tema-ops">' + fontes.map(cardFonte).join("") + "</div></div>" +
+        '<p class="muted" style="margin:14px 0 0;font-size:var(--t-micro)">As quatro combinações são conferidas por medição de contraste a cada versão — nenhum texto, número ou botão fica apagado por causa da cor em nenhuma delas.</p>',
         [{ texto: "Fechar", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
 

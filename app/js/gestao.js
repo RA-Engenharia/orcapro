@@ -1903,6 +1903,18 @@
           '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:6px">' +
             '<button type="button" class="btn sm" id="g-wa-add" style="font-size:12px">+ pessoa</button>' +
             '<span id="g-wa-msg" style="font-size:11.5px"></span></div>' +
+          /* ⚠ DUAS COISAS QUE O USUÁRIO SÓ DESCOBRIA QUANDO JÁ ERA TARDE:
+           * (1) que o diário por ÁUDIO existe e se ele tem direito — hoje a
+           *     primeira notícia era a recusa, no dia em que o mestre estava
+           *     gravando o dia de trabalho;
+           * (2) que o robô do WhatsApp está fora do ar — em 08/08 ficou 20
+           *     horas assim e ninguém viu.
+           * Os dois ficam AQUI, dentro do bloco do WhatsApp da obra, porque é
+           * aqui que a pessoa está quando as duas coisas importam. Preenchidos
+           * depois, por consulta ao servidor: se ele não responder, o espaço
+           * simplesmente não aparece — nunca uma promessa em branco. */
+          '<div id="g-wa-audio" style="margin-top:10px"></div>' +
+          '<div id="g-wa-canal" style="margin-top:6px"></div>' +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(o.obs || "") + "</textarea>") +
         /* ⚠ A FOTO NAO ENTRA NO REGISTRO DA OBRA.
          * Ela vai para o mesmo lugar das fotos do diario (IndexedDB + fila de
@@ -2032,6 +2044,70 @@
               cb("sem conexão: o cadastro ficou salvo, mas o canal só passa a valer quando você estiver online");
             });
         };
+
+        /* ------------- o áudio e a saúde do canal, aqui do lado -------------
+         * ⚠ NADA APARECE ENQUANTO NÃO SE SABE. Os dois espaços nascem vazios
+         * e só recebem texto quando o servidor responde. Um "carregando…" que
+         * nunca vira nada, ou um "tudo certo" escrito antes de perguntar, é
+         * pior que o espaço em branco: vira informação errada na cara de quem
+         * está decidindo se confia no canal.
+         * ------------------------------------------------------------- */
+        (function () {
+          var lic = (typeof Licenca !== "undefined" && Licenca.chave && Licenca.chave()) || "";
+          var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "";
+          if (!lic || !base) return;
+          base = String(base).replace(/\/$/, "");
+          var cab = { "x-licenca": lic };
+
+          function cx(cor, fundo, html) {
+            return '<div style="font-size:12px;border:1px solid ' + cor + ';background:' + fundo +
+              ';border-radius:8px;padding:8px 10px;line-height:1.45">' + html + "</div>";
+          }
+
+          fetch(base + "/api/audio/meu", { headers: cab })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+              var el = document.getElementById("g-wa-audio");
+              if (!el || !d || !d.ok) return;
+              if (d.incluidoNoPlano) {
+                el.innerHTML = cx("#b9e6c8", "rgba(34,197,94,.10)",
+                  "🎙️ <b>Diário por áudio incluído no seu plano.</b> O mestre pode gravar a nota de " +
+                  "voz no grupo — o robô devolve o que entendeu antes de fechar o diário." +
+                  (d.teto ? " Limite de " + d.teto + " min/mês (usados: " + d.usado + ").": ""));
+              } else if (d.temDireito) {
+                var ate = d.ate ? new Date(d.ate) : null;
+                /* ⚠ o aviso de vencimento sai ANTES de vencer. A primeira
+                   notícia não pode ser a recusa no dia da gravação. */
+                var faltam = ate ? Math.ceil((d.ate - Date.now()) / 86400000) : 0;
+                var perto = faltam > 0 && faltam <= 7;
+                el.innerHTML = cx(perto ? "#fde68a" : "#b9e6c8",
+                  perto ? "rgba(234,179,8,.12)" : "rgba(34,197,94,.10)",
+                  "🎙️ <b>Diário por áudio ativo" + (ate ? " até " + ate.toLocaleDateString("pt-BR") : "") +
+                  "</b>" + (perto ? " — faltam " + faltam + " dia(s). " +
+                    '<a href="' + base + "/audio#lic=" + encodeURIComponent(lic) +
+                    '" target="_blank" rel="noopener">renovar</a>.' : ".") +
+                  (d.teto ? " Usados " + d.usado + " de " + d.teto + " min neste mês." : ""));
+              } else {
+                el.innerHTML = cx("var(--borda)", "transparent",
+                  "🎙️ <b>Diário por áudio</b> — o mestre grava a nota de voz e ela vira diário, " +
+                  "com confirmação do que foi entendido. Não está no seu plano: " +
+                  '<a href="' + base + "/audio#lic=" + encodeURIComponent(lic) +
+                  '" target="_blank" rel="noopener">contratar por R$ ' + (d.valorMes || 20) +
+                  "/mês</a>. O diário por <b>texto</b> continua sem limite.");
+              }
+            })
+            .catch(function (e) { if (window.console) console.warn("audio/meu:", e); });
+
+          fetch(base + "/api/canal/estado", { headers: cab })
+            .then(function (r) { return r.ok ? r.json() : null; })
+            .then(function (d) {
+              var el = document.getElementById("g-wa-canal");
+              /* só fala quando há o que dizer: canal de pé é silêncio */
+              if (!el || !d || !d.recado) return;
+              el.innerHTML = cx("#fecaca", "rgba(239,68,68,.10)", "⚠️ " + Util.esc(d.recado));
+            })
+            .catch(function (e) { if (window.console) console.warn("canal/estado:", e); });
+        })();
       function pintarPrev(dataURI) {
         var pv = document.getElementById("g-foto-prev"), bt = document.getElementById("g-foto-tirar");
         if (!pv) return;

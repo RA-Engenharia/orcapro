@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.188",
+  "versao": "1.1.189",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.188/OrcaPRO-IA-update-v1.1.188.zip",
-  "notas": "DIARIO POR AUDIO — nos planos completos, ou com o adicional contratado, a nota de voz do mestre vira diario. Ele grava, o texto chega, e o robo devolve o que entendeu ANTES de fechar o diario: \"Ouvi o seu audio. Entendi assim: ...\". Essa confirmacao existe porque transcricao erra, e as vezes erra mudando o sentido — quem manda ve o que foi entendido e corrige na hora. Ha um teto de minutos por mes; ao acabar, o programa avisa e pede o texto, que nao tem limite. SE PREFERIR NAO USAR TRANSCRICAO NENHUMA: o teclado do proprio celular faz isso sem sair do aparelho — o mestre segura o microfone do teclado, fala, e manda como texto, sem nada sair para fornecedor nenhum. PRIVACIDADE: o audio carrega a VOZ da pessoa, que e mais sensivel que texto. Por isso o recurso e opcional, desligavel na obra, e o item 4.8 da Politica descreve o caminho por inteiro: quem transcreve, que o audio nao fica guardado conosco, e qual e o teto.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.188/OrcaPRO-IA-Instalador-v1.1.188.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.189/OrcaPRO-IA-update-v1.1.189.zip",
+  "notas": "",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.189/OrcaPRO-IA-Instalador-v1.1.189.exe"
 }
