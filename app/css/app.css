@@ -1250,3 +1250,32 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 [data-tema="dark"] .cmp-cel.desce .cmp-sub, [data-tema="dark"] .aj-desce { color: #4ade80; }
 [data-tema="dark"] .cmp-alerta { background: rgba(245, 158, 11, .14); }
 [data-tema="dark"] input.coef-edit.mexido { border-color: #f0b429; background: rgba(245, 158, 11, .10); }
+
+/* =====================================================================
+ * FAIXA DE TOTAIS DO FINANCEIRO — o recorte e os números DELE
+ *
+ * O primeiro bloco é o rótulo do recorte, e não um KPI: quem olha precisa
+ * ler "estou vendo a obra X" ANTES de ler os valores, senão o saldo de uma
+ * obra passa por saldo da empresa.
+ * ===================================================================== */
+.fin-faixa {
+  display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 10px 12px;
+  border: 1px solid var(--linha); border-left: 3px solid var(--navy);
+  border-radius: var(--raio); background: var(--surface-2);
+}
+.fin-faixa .fin-rec, .fin-faixa .fin-kpi {
+  display: flex; flex-direction: column; gap: 1px; min-width: 118px;
+  padding-right: 12px; border-right: 1px solid var(--linha);
+}
+.fin-faixa .fin-kpi:last-of-type { border-right: 0; }
+.fin-faixa .fin-lbl {
+  font-size: var(--t-micro); color: var(--texto-fraco);
+  text-transform: uppercase; letter-spacing: .05em; font-weight: var(--p-medio);
+}
+.fin-faixa b { font-size: var(--t-med); font-variant-numeric: tabular-nums; color: var(--texto); }
+.fin-faixa .fin-rec b { font-size: var(--t-base); }
+.fin-faixa .fin-sub { font-size: var(--t-micro); color: var(--texto-fraco); font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) {
+  .fin-faixa .fin-rec, .fin-faixa .fin-kpi { border-right: 0; min-width: 46%; }
+}

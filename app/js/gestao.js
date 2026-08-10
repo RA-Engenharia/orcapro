@@ -3210,28 +3210,132 @@
     },
     exportarModulo: function (modulo) {
       var self = this, dados, cols, nome;
-      if (modulo === "financeiro") { dados = lista("financeiro"); nome = "financeiro"; cols = [{ label: "Data", key: "data" }, { label: "Descrição", key: "desc" }, { label: "Tipo", get: function (x) { return rot(P.finTipo, x.tipo); } }, { label: "Categoria", get: function (x) { return rot(P.finCategoria, x.categoria); } }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.finStatus, x.status); } }]; }
+      if (modulo === "financeiro") {
+        /* ⚠ EXPORTA O RECORTE DA TELA, não a empresa inteira. Filtrar,
+           exportar e receber tudo é a pior forma de errar: o arquivo tem a
+           cara do recorte e o conteúdo de outra coisa — e quem abre no Excel
+           não tem como desconfiar. O nome do arquivo carrega a obra. */
+        var escF = this._finEscopo();
+        dados = escF.lista;
+        nome = "financeiro" + (escF.sel === "todas" ? "" : "-" + String(FinObra.rotuloDe(escF.sel, escF.obras)).replace(/[^\w\-]+/g, "_"));
+        /* a coluna Obra NÃO existia: financeiro exportado sem dizer de qual
+           obra é cada lançamento não serve para conferir obra nenhuma */
+        cols = [{ label: "Data", key: "data" }, { label: "Descrição", key: "desc" },
+          { label: "Obra", get: function (x) {
+              var o = (escF.obras || []).filter(function (y) { return String(y.id) === String(x.obraId); })[0];
+              return o ? o.nome : (String(x.obraId || "").trim() ? "(obra excluída)" : "(sem obra)");
+            } },
+          { label: "Tipo", get: function (x) { return rot(P.finTipo, x.tipo); } },
+          { label: "Categoria", get: function (x) { return rot(P.finCategoria, x.categoria); } },
+          { label: "Valor", key: "valor" },
+          { label: "Status", get: function (x) { return rot(P.finStatus, x.status); } }];
+      }
       else if (modulo === "compras") { dados = lista("compras"); nome = "compras"; cols = [{ label: "Nº", key: "numero" }, { label: "Fornecedor", key: "fornecedorNome" }, { label: "Descrição", key: "descricao" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.compraStatus, x.status); } }]; }
       else if (modulo === "medicoes") { dados = lista("medicoes"); nome = "medicoes"; cols = [{ label: "Nº", key: "numero" }, { label: "Obra", get: function (x) { return (Store.obter(eid(), "obras", x.obraId) || {}).nome || ""; } }, { label: "Período", get: function (x) { return (x.periodoInicio || "") + " a " + (x.periodoFim || ""); } }, { label: "%", key: "percentual" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.medicaoStatus, x.status); } }]; }
       else return;
       this._exportarCSV(dados, nome, cols);
     },
     // =================== FINANCEIRO ===================
+    /* FILTRO POR OBRA — mora aqui, não no localStorage, de propósito: recorte
+       que sobrevive ao recarregamento faz o usuário abrir o Financeiro dias
+       depois vendo um pedaço e achando que é o todo. Some ao recarregar, e o
+       cabeçalho sempre diz qual recorte está na tela. */
+    _finObra: "todas",
+    /* ⚠ chega por DOIS caminhos, com nomes diferentes: o <select> é roteado
+       pelo `change` do app.js como `{value}`, e o clique na linha do quadro
+       (ou no botão "Ver todas") vem pelo `click` como `{id}` — ou sem nada.
+       Ler só um dos dois deixaria metade dos controles morta, que é o defeito
+       do "entregue ≠ clicável" registrado na doutrina da casa. */
+    finTrocaObra: function (d) {
+      var v = (d && d.value != null && d.value !== "") ? d.value
+        : (d && d.id != null && d.id !== "") ? d.id : "todas";
+      this._finObra = v;
+      App.render();
+    },
+    /* o que está na tela AGORA — fonte única para tabela, totais e CSV.
+       Foi o que evitou o defeito clássico: filtrar a tabela e exportar tudo. */
+    _finEscopo: function () {
+      var todos = lista("financeiro"), obras = lista("obras");
+      var sel = this._finObra || "todas";
+      /* obra escolhida que deixou de existir volta para "todas" — senão a
+         tela fica vazia para sempre, sem o usuário entender por quê */
+      if (sel !== "todas" && sel !== FinObra.SEM_OBRA && sel !== FinObra.ORFAO &&
+        !obras.some(function (o) { return String(o.id) === String(sel); })) sel = this._finObra = "todas";
+      return { sel: sel, obras: obras, todos: todos, lista: FinObra.filtrar(todos, sel, obras) };
+    },
+
     renderFinanceiro: function () {
-      var fs = lista("financeiro").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
-      var obras = lista("obras");
-      var rec = fs.filter(function (f) { return f.tipo === "receita"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var desp = fs.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var extra = '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
-        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>' +
-        '<span class="muted" style="margin-right:12px;align-self:center">Saldo: <b style="color:' + (rec - desp >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(rec - desp) + "</b></span>";
+      var e = this._finEscopo(), obras = e.obras;
+      var fs = e.lista.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
+      var t = FinObra.totais(fs);                       /* ⚠ total do que está na tela */
+      var ops = FinObra.opcoes(e.todos, obras);
+      var temAlgum = e.todos.length > 0;
+
+      var selHtml = '<select data-gacao="fin-obra" title="Separar os lançamentos por obra" style="max-width:230px">' +
+        ops.map(function (o) {
+          return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
+            Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+        }).join("") + "</select>";
+
+      var extra = (temAlgum ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
+          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
+        '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
+        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>';
+
       var html = this._head(svg("financeiro") + "Financeiro", "novo-lancamento", "Novo lançamento", extra);
-      if (!fs.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
+      if (!e.todos.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
+
+      /* faixa de totais: diz o recorte E os números DELE. Saldo por
+         competência e caixa realizado lado a lado — misturar conta paga com
+         conta a pagar num número só não é saldo de nada. */
+      html += '<div class="fin-faixa">' +
+        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(FinObra.rotuloDe(e.sel, obras)) + '</b>' +
+          '<span class="fin-sub">' + t.n + ' lançamento(s)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Receitas</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.receita) + '</b>' +
+          '<span class="fin-sub">' + Util.fmtMoeda(t.recebido) + ' recebido</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Despesas</span><b style="color:var(--vermelho)">' + Util.fmtMoeda(t.despesa) + '</b>' +
+          '<span class="fin-sub">' + Util.fmtMoeda(t.pago) + ' pago</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Saldo</span><b style="color:' + (t.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(t.saldo) + '</b>' +
+          '<span class="fin-sub">caixa ' + Util.fmtMoeda(t.saldoRealizado) + '</span></div>' +
+        (t.aReceber || t.aPagar ? '<div class="fin-kpi"><span class="fin-lbl">Em aberto</span><b>' + Util.fmtMoeda(t.aReceber - t.aPagar) + '</b>' +
+          '<span class="fin-sub">' + Util.fmtMoeda(t.aReceber) + ' a receber · ' + Util.fmtMoeda(t.aPagar) + ' a pagar</span></div>' : "") +
+        (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="fin-obra" style="align-self:center">Ver todas</button>' : "") +
+        "</div>";
+
+      /* quadro por obra: responde "quanto cada obra consumiu" sem obrigar a
+         escolher uma por vez. Só faz sentido no recorte "todas". */
+      if (e.sel === "todas" && obras.length) {
+        var grupos = FinObra.porObra(e.todos, obras);
+        if (grupos.length > 1) {
+          html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Lanç.</th>' +
+            '<th class="num">Receitas</th><th class="num">Despesas</th><th class="num">Saldo</th><th class="num">Em aberto</th></tr></thead><tbody>';
+          grupos.forEach(function (g) {
+            html += '<tr class="lin" style="cursor:pointer" data-gacao="fin-obra" data-id="' + Util.esc(g.chave) + '">' +
+              "<td><b>" + Util.esc(g.nome) + "</b>" +
+              (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") + "</td>" +
+              '<td class="num">' + g.n + "</td>" +
+              '<td class="num" style="color:var(--verde)">' + Util.fmtMoeda(g.receita) + "</td>" +
+              '<td class="num" style="color:var(--vermelho)">' + Util.fmtMoeda(g.despesa) + "</td>" +
+              '<td class="num"><b style="color:' + (g.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + '">' + Util.fmtMoeda(g.saldo) + "</b></td>" +
+              '<td class="num muted">' + Util.fmtMoeda(g.aReceber - g.aPagar) + "</td></tr>";
+          });
+          html += "</tbody></table>";
+        }
+      }
+
+      if (!fs.length) {
+        return html + '<div class="vazio card">Nenhum lançamento em <b>' + Util.esc(FinObra.rotuloDe(e.sel, obras)) +
+          '</b>. <button class="btn sm" data-gacao="fin-obra">Ver todas as obras</button></div>';
+      }
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
       fs.forEach(function (f) {
-        var ob = obras.filter(function (o) { return o.id === f.obraId; })[0];
+        var ob = obras.filter(function (o) { return String(o.id) === String(f.obraId); })[0];
         var cor = f.tipo === "receita" ? "var(--verde)" : "var(--vermelho)";
-        html += '<tr class="lin" style="cursor:pointer" data-gopen="financeiro:' + f.id + '"><td>' + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(f.desc) + "</b></td><td>" + rot(P.finCategoria, f.categoria) + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num" style="color:' + cor + '">' + (f.tipo === "despesa" ? "− " : "+ ") + Util.fmtMoeda(f.valor) + "</td><td>" + pill(f.status) + "</td></tr>";
+        /* obra com vínculo quebrado precisa gritar aqui também: "—" faria
+           parecer despesa de escritório, que é outra coisa */
+        var celObra = ob ? Util.esc(ob.nome)
+          : (String(f.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—");
+        html += '<tr class="lin" style="cursor:pointer" data-gopen="financeiro:' + f.id + '"><td>' + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(f.desc) + "</b></td><td>" + rot(P.finCategoria, f.categoria) + "</td><td>" + celObra + '</td><td class="num" style="color:' + cor + '">' + (f.tipo === "despesa" ? "− " : "+ ") + Util.fmtMoeda(f.valor) + "</td><td>" + pill(f.status) + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -15179,6 +15283,7 @@ renderFolha: function () {
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
+      "fin-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1
@@ -15229,6 +15334,7 @@ renderFolha: function () {
         /* de propósito sem valor: numa seleção múltipla o dataset carrega UM
            valor só, e passá-lo descartaria as outras obras escolhidas. */
         case "dash-obra": return this.dashTrocaObra(null);
+        case "fin-obra": return this.finTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
