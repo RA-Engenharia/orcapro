@@ -158,7 +158,18 @@ body {
   font-optical-sizing: auto;
   font-feature-settings: "cv05" 1, "cv11" 1;
 }
-button, input, select, textarea { font-family: inherit; font-size: inherit; }
+/* ⚠ A COR TAMBÉM SE HERDA — E ERA ELA QUE FALTAVA.
+ * Esta regra passava `font-family` e `font-size` adiante e parava aí. Campo
+ * de formulário NÃO herda `color` do pai: sem declaração explícita ele usa a
+ * cor padrão do navegador, que é quase preta. No tema claro ninguém notou;
+ * no escuro, toda coluna EDITÁVEL da planilha (quantidade e custo unitário)
+ * ficava cinza-escuro sobre fundo escuro, enquanto as colunas calculadas ao
+ * lado — que são <td> comum e herdam `--texto` — apareciam claras.
+ * Foi assim que o orçamentista viu "letras difíceis de ler" só em duas
+ * colunas, e só no escuro. Reportado na 1.1.191. */
+button, input, select, textarea { font-family: inherit; font-size: inherit; color: var(--texto); }
+/* a dica do campo continua mais fraca que o valor digitado — mas legível */
+input::placeholder, textarea::placeholder { color: var(--texto-fraco); }
 /* Números alinham em coluna em toda tabela/KPI/gráfico (leitura de planilha) */
 table.tbl, .kpi .num, .g-pill, .cell, input[type="number"] { font-variant-numeric: tabular-nums; }
 /* Ícones SVG inline (js/icones.js) herdam a cor do texto e alinham com o rótulo */

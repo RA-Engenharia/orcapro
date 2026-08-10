@@ -209,8 +209,94 @@
     return r;
   }
 
+  /* =====================================================================
+   * ISTO AQUI É UM DIÁRIO, OU É OUTRO ASSUNTO?
+   *
+   * ⚠ POR QUE PRECISOU EXISTIR (09/08/2026): a `confianca` acima era
+   * calculada e NINGUÉM decidia com ela. Medi o que acontecia com recado que
+   * não é diário — "me manda o comprovante do pagamento", "não vou hoje,
+   * filha doente", "kkkk pois é" — e TODOS viravam rascunho de diário, com o
+   * texto inteiro caindo no campo de atividades. Quem manda recado no grupo
+   * da obra manda de tudo; sem esta porta, a caixa do cliente vira lixo e ele
+   * para de olhar — que é o mesmo que o recurso não existir.
+   *
+   * ⚠ E A PORTA ERRA PARA O LADO DE PERGUNTAR, NUNCA O DE DESCARTAR.
+   * Recusar em silêncio é o pecado que este projeto inteiro persegue: quem
+   * gravou o dia de trabalho acha que registrou. Quando não parece diário, o
+   * robô devolve uma frase dizendo o que faltou — a pessoa reenvia e pronto.
+   *
+   * O que conta como sinal de obra, e o porquê de serem TRÊS:
+   *   - efetivo: alguém contou gente. Ninguém escreve "5 pedreiros" por acaso.
+   *   - obra reconhecida: o nome bateu com uma obra cadastrada.
+   *   - vocabulário de canteiro: "concretamos a laje", "chapisco", "escavação".
+   * Um só já basta. Exigir dois recusaria o diário curto e legítimo
+   * ("hoje só limpeza no terreno"), e diário curto é o mais comum de todos.
+   * ===================================================================== */
+  var VOCAB = new RegExp("\\b(" + [
+    "obra", "canteiro", "servico", "servicos", "laje", "lage", "viga", "pilar", "pilares",
+    "alvenaria", "bloco", "blocos", "tijolo", "reboco", "chapisco", "emboco", "massa",
+    "concret\\w*", "concretagem", "forma", "formas", "armacao", "ferragem", "escora",
+    "fundacao", "sapata", "baldrame", "radier", "estaca", "brocas?",
+    "escavacao", "aterro", "terraplanagem", "compactacao", "nivelamento",
+    "telhado", "telha", "cobertura", "calha", "forro", "gesso", "drywall",
+    "piso", "contrapiso", "revestimento", "azulejo", "porcelanato", "rejunte",
+    "pintura", "pintar", "massa corrida", "selador", "textura",
+    "hidraulic\\w*", "eletric\\w*", "eletrica", "tubulacao", "conduite", "fiacao",
+    "esquadria", "janela", "porta", "portas", "vidro", "impermeabiliz\\w*",
+    "demolicao", "demolir", "limpeza", "entulho", "carga", "descarga",
+    "muro", "calcada", "meio.?fio", "drenagem", "esgoto", "caixa d.?agua",
+    "betoneira", "andaime", "guincho", "retroescavadeira", "caminhao",
+    "medicao", "topografia", "locacao", "gabarito", "prumo", "esquadro"
+  ].join("|") + ")\\b");
+
+  function pareceDiario(r) {
+    r = r || {};
+    var temEfetivo = (Number(r.efetivoDireto) || 0) + (Number(r.efetivoIndireto) || 0) > 0;
+    var temObra = !!texto(r.obraNome);
+    var corpo = texto(r.atividades) + " " + texto(r.impedimentos);
+    var temVocab = VOCAB.test(normal(corpo));
+
+    /* ⚠ PERGUNTA NÃO É RELATO, mesmo falando de obra. "Você prefere bloco de
+       14 ou de 19 nessa parede?" tem vocabulário de canteiro e virava diário.
+       Só vale quando o recado INTEIRO é a pergunta e não há gente contada nem
+       obra dita — um diário de verdade que termine perguntando algo
+       ("Concretamos a laje. Viu a foto?") continua passando, porque tem
+       efetivo, obra ou mais de uma frase de conteúdo. */
+    var soUmaFrase = texto(corpo).split(/[.;\n!?]+/).filter(function (f) { return texto(f).length > 3; }).length <= 1;
+    /* ⚠ NÃO DÁ PARA OLHAR O "?": `acharAtividades` separa as frases por
+       `[.;\n!?]+` e a interrogação some no caminho. Escrevi essa checagem
+       primeiro e ela era código morto com cara de regra — pior que não ter
+       regra nenhuma, porque parece coberto. O que sobra, e funciona, é a
+       palavra que abre a frase. */
+    var ehPergunta = /^(voce|vc|sera|qual|quais|quando|quanto|quantos|como|onde|porque|por que|pode|poderia|consegue|tem como)\b/.test(normal(corpo));
+    if (temVocab && !temEfetivo && !temObra && ehPergunta && soUmaFrase) {
+      return {
+        ok: false, motivo: "e-pergunta",
+        aviso: "Isso me pareceu uma pergunta, não o diário do dia, então não registrei. " +
+               "Se for o diário, me manda quantas pessoas trabalharam e o que foi feito.",
+        sinais: { efetivo: false, obra: false, vocabulario: true, pergunta: true }
+      };
+    }
+
+    if (temEfetivo || temObra || temVocab) {
+      return { ok: true, sinais: { efetivo: temEfetivo, obra: temObra, vocabulario: temVocab } };
+    }
+    return {
+      ok: false,
+      motivo: texto(r.atividades) ? "sem-sinal-de-obra" : "sem-conteudo",
+      /* a frase é o produto desta função: quem chama é um robô, e a decisão
+         de recusar só serve se vier com o que fazer em seguida */
+      aviso: texto(r.atividades)
+        ? "Não entendi isso como diário de obra, então não registrei nada. " +
+          "Se for o diário, me manda de novo dizendo quantas pessoas trabalharam e o que foi feito. " +
+          "Se for outro assunto, fale direto com o responsável — eu só anoto diário."
+        : "Não veio nada que eu consiga registrar. Me diga a obra, quantas pessoas trabalharam e o que foi feito.",
+      sinais: { efetivo: false, obra: false, vocabulario: false }
+    };
+  }
+
   var RDOTexto = {
-    interpretar: interpretar, contarEfetivo: contarEfetivo, acharClima: acharClima,
+    interpretar: interpretar, pareceDiario: pareceDiario, contarEfetivo: contarEfetivo, acharClima: acharClima,
     acharImpedimentos: acharImpedimentos, acharObraNome: acharObraNome,
     acharData: acharData, numDe: numDe
   };
