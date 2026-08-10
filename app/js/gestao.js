@@ -953,17 +953,52 @@
         UI.toast("OBRA TESTE ORÇAPRO criada — todos os módulos alimentados. Explore pelo menu à esquerda.", "ok");
       } catch (e) {
         // seed parcial não fica pra trás: desfaz o que entrou antes da falha
-        try { ObraDemo.remover(); } catch (e2) {}
+        /* rollback de uma criação que falhou: aqui nada pôde ter sido
+             editado pelo usuário, então limpa tudo mesmo */
+          try { ObraDemo.remover({ apagarMexidos: true }); } catch (e2) {}
         App.render();
         UI.toast("Falhou ao criar a demonstração: " + e.message, "erro");
       }
     },
+    /* ⚠ ESTE BOTÃO JÁ APAGOU DIÁRIO DE VERDADE (09/08/2026).
+       A remoção varria pelo id `demo-ot-*`, e quem aproveita o registro da
+       demonstração — abre, troca número, data e texto pelos reais e segue
+       usando — tinha o documento levado junto, sem pergunta e sem rastro.
+       A confirmação dizia "os seus dados reais não são tocados": era
+       exatamente a frase que dava a segurança falsa.
+       Agora a tela mostra a CONTA antes, e sobretudo o que FICA. */
     obraDemoRemover: function () {
       if (!this._obraDemoPode()) { UI.toast("Só o administrador pode remover a obra de demonstração.", "erro"); return; }
-      if (!confirm("Remover a OBRA TESTE ORÇAPRO e TODOS os dados de demonstração? Os seus dados reais não são tocados.")) return;
-      var n = ObraDemo.remover();
-      App.render();
-      UI.toast(n + " registro(s) de demonstração removido(s).", "ok");
+      var plano;
+      try { plano = ObraDemo.planoDeRemocao(); }
+      catch (e) { UI.toast("Não consegui conferir o que seria removido: " + e.message, "erro"); return; }
+
+      var lista = plano.mantem.slice(0, 12).map(function (x) {
+        return "<li><b>" + Util.esc(x.rot) + "</b> <span class='muted'>(" + Util.esc(x.ch) + ")</span></li>";
+      }).join("");
+      var corpo = "<p>Vão sair <b>" + plano.apaga.length + "</b> registro(s) de demonstração.</p>" +
+        (plano.mantem.length
+          ? "<div style='background:rgba(34,197,94,.10);border:1px solid var(--linha-forte);border-radius:10px;padding:12px 14px;margin-top:10px'>" +
+            "<b>" + plano.mantem.length + " registro(s) NÃO serão apagados</b> porque você mexeu neles — " +
+            "deixaram de ser demonstração e viraram documento seu:" +
+            "<ul style='margin:8px 0 0 18px;font-size:13px'>" + lista +
+            (plano.mantem.length > 12 ? "<li>… e mais " + (plano.mantem.length - 12) + "</li>" : "") + "</ul></div>"
+          : "") +
+        (!plano.temMapa
+          ? "<p class='muted' style='font-size:12.5px;margin-top:10px'>Esta demonstração foi criada numa versão anterior, " +
+            "que não guardava o que era original. Por segurança, diários, medições e contratos ficam — " +
+            "apague à mão os que não quiser.</p>"
+          : "");
+      UI.modal("Remover dados de demonstração", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Remover só a demonstração", classe: "primary", onClick: function () {
+            UI.fecharModal();
+            var r = ObraDemo.remover();
+            App.render();
+            UI.toast(r.removidos + " registro(s) de demonstração removido(s)" +
+              (r.mantidos.length ? " · " + r.mantidos.length + " mantido(s) por terem sido editados" : "") + ".", "ok");
+          } }
+      ]);
     },
     // ========== HOME EXECUTIVA/FINANCEIRA (visual aprovado no protótipo) ==========
     /* Selects com data-gacao também recebem o CLIQUE da delegação (antes do change),

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.195",
+  "versao": "1.1.196",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.195/OrcaPRO-IA-update-v1.1.195.zip",
-  "notas": "Alterar o preco de um item que veio da SINAPI agora deixa marca na planilha: um selo com o percentual na propria celula, que abre o comparativo com o valor da base, mostra a diferenca em reais e restaura o preco oficial num clique. Ha campo de justificativa (exigida pela Lei 14.133 quando o preco fica acima da referencia), uma faixa no alto somando o impacto em dinheiro e uma lista de tudo que foi alterado, ordenada por impacto. O coeficiente da composicao tambem ficou editavel, sempre dentro do item do orcamento - a base nunca e alterada.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.195/OrcaPRO-IA-Instalador-v1.1.195.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.196/OrcaPRO-IA-update-v1.1.196.zip",
+  "notas": "PROTECAO DE DADO — atualize. Remover os dados de demonstracao apagava tambem os registros da demo que voce tinha editado e adotado como seus: foi assim que diarios de verdade sumiram, sem aviso nenhum. Agora registro que voce mexeu deixa de ser demonstracao, a tela mostra o que sai e o que FICA antes de apagar, e recriar a demonstracao nao escreve por cima do seu. E o backup automatico passou a guardar a Gestao inteira (obras, diarios, medicoes, financeiro, folha, EPI, ponto, frota) — antes so levava orcamentos e a base de precos, e por isso nao havia de onde restaurar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.196/OrcaPRO-IA-Instalador-v1.1.196.exe"
 }

@@ -390,7 +390,9 @@
           }
         } catch (eOD) {
           // rollback: cota estourada no meio deixaria a OBRA TESTE pela metade (KPIs incoerentes)
-          try { ObraDemo.remover(); } catch (e2) {}
+          /* rollback de uma criação que falhou: aqui nada pôde ter sido
+             editado pelo usuário, então limpa tudo mesmo */
+          try { ObraDemo.remover({ apagarMexidos: true }); } catch (e2) {}
         }
         // re-render só se não atropela o visitante (modal aberto / digitando num campo)
         var ae = document.activeElement;
@@ -1806,10 +1808,35 @@
       } catch (e) {}
       return null;
     },
+    /* ⚠ O BACKUP NÃO GUARDAVA A GESTÃO — e foi descoberto do pior jeito
+       (09/08/2026): sumiram diários e não havia de onde restaurar. Ele levava
+       orçamentos, preferências e a base de preços; obras, diários, medições,
+       financeiro, folha, EPI, ponto, frota e patrimônio ficavam de fora.
+       Backup que não guarda o que a pessoa mais teme perder não é backup.
+
+       A lista vem do que SINCRONIZA (`Nuvem.ENTIDADES`), e não de uma lista
+       própria aqui: lista paralela é lista que alguém esquece de atualizar ao
+       criar o módulo seguinte — e o esquecimento só aparece no dia do socorro.
+       Fora dela ficam só `orcamentos` e `prefs`, que já viajam em campo
+       próprio, e as lápides, que registram exclusão e não conteúdo. */
+    _ENT_FORA_DO_BACKUP: ["orcamentos", "prefs", "_lapides"],
+    _dumpGestao: function (eid) {
+      var g = {}, fora = this._ENT_FORA_DO_BACKUP;
+      var ents = (typeof Nuvem !== "undefined" && Nuvem.ENTIDADES) ? Nuvem.ENTIDADES : [];
+      ents.forEach(function (ent) {
+        if (fora.indexOf(ent) > -1) return;
+        try {
+          var v = Store.listar(eid, ent);
+          if (v && v.length) g[ent] = v;
+        } catch (e) { /* entidade que ainda não existe não impede o backup do resto */ }
+      });
+      return g;
+    },
     _dumpBackup: function (eid) {
       return { app: "OrçaPRO", versao: CONFIG.versao, exportadoEm: Util.agoraISO(),
         empresa: (Auth.usuario() || {}).empresa, email: (Auth.usuario() || {}).email,
-        orcamentos: Store.listarOrcamentos(eid), prefs: Store.lerPrefs(eid), basePropria: this._propriasDoDisco(eid) };
+        orcamentos: Store.listarOrcamentos(eid), prefs: Store.lerPrefs(eid), basePropria: this._propriasDoDisco(eid),
+        gestao: this._dumpGestao(eid) };
     },
 
     /* ==================================================================
@@ -1834,7 +1861,11 @@
     _backupEnviar: function () {
       var self = this, eid, dump;
       try { eid = Auth.empresaId(); dump = this._dumpBackup(eid); } catch (e) { return; }
-      if (!dump.orcamentos.length && !(dump.basePropria && dump.basePropria.dados.length)) return;
+      /* ⚠ e a GESTÃO conta como motivo para gravar. Antes, uma conta que só
+         usasse obras e diários — sem orçamento e sem base própria — nunca
+         gerava backup nenhum: o arquivo simplesmente não nascia. */
+      var temGestao = !!(dump.gestao && Object.keys(dump.gestao).length);
+      if (!dump.orcamentos.length && !(dump.basePropria && dump.basePropria.dados.length) && !temGestao) return;
       try {
         fetch("/__backup/salvar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(dump) })
           .then(function (r) { return r.json(); })

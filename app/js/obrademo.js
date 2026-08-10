@@ -59,9 +59,20 @@
       if (typeof global.LastPlanner === "undefined" || typeof global.Orcamento === "undefined") {
         throw new Error("Módulos ainda carregando — tente de novo em instantes.");
       }
+      /* ⚠ CRIAR DE NOVO SOBRESCREVE PELOS MESMOS IDS — e isso apagaria a
+         edição de quem adotou os registros da demonstração, do mesmo jeito
+         que a remoção fazia. Antes de recriar, recusa e diz o que está em
+         risco: o dono decide se apaga ou renomeia. */
+      var jaMexido = this.planoDeRemocao().mantem;
+      if (jaMexido.length) {
+        throw new Error("Você editou " + jaMexido.length + " registro(s) que vieram da demonstração (" +
+          jaMexido.slice(0, 3).map(function (x) { return x.rot; }).join(", ") +
+          (jaMexido.length > 3 ? "…" : "") + "). Recriar a demonstração escreveria por cima deles. " +
+          "Remova a demonstração primeiro (os editados ficam) ou apague-os à mão.");
+      }
       // Limpa qualquer resquício antes (inclusive órfãos de uma obra demo excluída
       // pelo módulo Obras) — criar é sempre do zero, idempotente de verdade.
-      this.remover();
+      this.remover({ apagarMexidos: true });
       var hoje = new Date();
       var iniObra = segunda(dias(hoje, -70));            // obra começou ~10 semanas atrás
       var obraId = PRE + "obra";
@@ -366,19 +377,84 @@
       // ---------- 20) Centro de custo ----------
       salvar("centrocusto", { id: PRE + "cc1", codigo: "CC-OT1", nome: "OBRA TESTE ORÇAPRO", tipo: "direto", obraId: obraId, valorOrcado: precoVenda, obs: "Centro de custo da obra de demonstração." });
 
+      /* ⚠ a digital é gravada AQUI, no fim da criação: é ela que permite
+         distinguir depois o registro intocado do que a pessoa adotou. */
+      try { ObraDemo.marcarOriginais(); } catch (e) {}
       return { obraId: obraId, precoVenda: precoVenda };
     },
 
-    remover: function () {
-      var chaves = ["clientes", "fornecedores", "colaboradores", "obras", "contratos", "medicoes", "lp_tarefas", "tarefas", "rdo", "requisicoes", "cotacoes", "compras", "estoque", "estoque_mov", "epi", "ponto", "faltas", "folha", "fs_lancamentos", "fs_pagamentos", "frota", "frota_mov", "patrimonio", "financeiro", "fiscal", "centrocusto"];
-      var n = 0, e = eid();
-      chaves.forEach(function (ch) {
+    /* =====================================================================
+     * ⚠ ISTO APAGOU TRABALHO DE VERDADE (09/08/2026).
+     *
+     * O cabeçalho deste arquivo dizia "remover apaga só o que é da demo (nada
+     * do cliente é tocado)". Estava errado, e o erro custou 5 diários.
+     *
+     * O que fazia: apagar tudo cujo ID começa com `demo-ot-`. Só que o caminho
+     * natural de quem está conhecendo o programa NÃO é apagar a demo e começar
+     * do zero — é abrir o diário que já está lá, trocar número, data e texto
+     * pelos reais, e seguir usando. O id continua o da demo. Aí "remover dados
+     * de demonstração" leva junto, sem perguntar e sem deixar rastro na tela.
+     *
+     * Regra nova: **registro TOCADO pelo usuário não é mais da demo.**
+     * Comparo com a digital gravada na criação; o que mudou, fica.
+     * Errar para o lado de MANTER é o único erro aceitável: sobra um registro
+     * de demonstração que se apaga em dois cliques, contra perder um documento
+     * que não volta.
+     * ===================================================================== */
+    CHAVES: ["clientes", "fornecedores", "colaboradores", "obras", "contratos", "medicoes", "lp_tarefas", "tarefas", "rdo", "requisicoes", "cotacoes", "compras", "estoque", "estoque_mov", "epi", "ponto", "faltas", "folha", "fs_lancamentos", "fs_pagamentos", "frota", "frota_mov", "patrimonio", "financeiro", "fiscal", "centrocusto"],
+
+    /* os campos que a pessoa mexe primeiro quando adota o registro para valer */
+    _digital: function (r) {
+      return JSON.stringify([r && r.numero, r && r.data, r && r.nome, r && r.descricao,
+                             r && r.atividades, r && r.valor, r && r.obraId]);
+    },
+    _chaveDigital: function (e) { return "orcapro:demo:digital:" + e; },
+
+    /* chamado logo depois de criar a demo: guarda a digital de cada registro,
+       para que a remoção saiba o que foi mexido depois */
+    marcarOriginais: function () {
+      var e = eid(), mapa = {}, self = this;
+      this.CHAVES.forEach(function (ch) {
         Store.listar(e, ch).forEach(function (r) {
-          if (r && String(r.id).indexOf(PRE) === 0) { Store.excluir(e, ch, r.id); n++; }
+          if (r && String(r.id).indexOf(PRE) === 0) mapa[ch + "|" + r.id] = self._digital(r);
         });
       });
+      try { localStorage.setItem(this._chaveDigital(e), JSON.stringify(mapa)); } catch (err) {}
+      return mapa;
+    },
+
+    /* O que a remoção FARIA, sem fazer. É com isto que a tela pergunta antes —
+       e é a diferença entre um aviso genérico e dizer "estes 5 diários você
+       editou; eles NÃO serão apagados". */
+    planoDeRemocao: function () {
+      var e = eid(), mapa = {}, self = this;
+      try { mapa = JSON.parse(localStorage.getItem(this._chaveDigital(e)) || "{}"); } catch (err) {}
+      var temMapa = Object.keys(mapa).length > 0;
+      var apaga = [], mantem = [];
+      this.CHAVES.forEach(function (ch) {
+        Store.listar(e, ch).forEach(function (r) {
+          if (!r || String(r.id).indexOf(PRE) !== 0) return;
+          var orig = mapa[ch + "|" + r.id];
+          /* ⚠ SEM DIGITAL GRAVADA, MANTÉM O QUE TEM CARA DE DOCUMENTO. Quem
+             instalou a demo antes desta versão não tem como provar o que
+             mexeu; apagar às cegas repetiria o defeito justamente em quem já
+             está exposto a ele. */
+          var mexido = temMapa ? (orig !== undefined && orig !== self._digital(r))
+                               : (ch === "rdo" || ch === "medicoes" || ch === "contratos");
+          (mexido ? mantem : apaga).push({ ch: ch, id: r.id, rot: r.numero || r.nome || r.descricao || r.id });
+        });
+      });
+      return { apaga: apaga, mantem: mantem, temMapa: temMapa };
+    },
+
+    remover: function (opts) {
+      opts = opts || {};
+      var e = eid(), plano = this.planoDeRemocao(), n = 0;
+      plano.apaga.forEach(function (x) { Store.excluir(e, x.ch, x.id); n++; });
+      /* só leva o que foi mexido quando a pessoa disser, com todas as letras */
+      if (opts.apagarMexidos === true) plano.mantem.forEach(function (x) { Store.excluir(e, x.ch, x.id); n++; });
       try { if (Store.obterOrcamento(e, PRE + "orc")) { Store.excluirOrcamento(e, PRE + "orc"); n++; } } catch (err) {}
-      return n;
+      return { removidos: n, mantidos: (opts.apagarMexidos === true ? [] : plano.mantem) };
     }
   };
 
