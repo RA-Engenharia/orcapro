@@ -9513,7 +9513,16 @@
         return;
       }
       var self = this, obras = lista("obras");
-      var num = r.numero || ("RDO-" + String(lista("rdo").length + 1).padStart(4, "0"));
+      /* ⚠ SEQUÊNCIA POR OBRA (v1.1.193). Era `lista("rdo").length + 1`:
+       * contagem GLOBAL do escritório, então duas obras rodando juntas
+       * ficavam com 1,3,4,7 e 2,5,6 — número que não diz nada sobre a
+       * própria obra, num documento que é citado em medição e em pleito.
+       * E `length + 1` REPETIA número depois de qualquer exclusão.
+       * A regra agora vive em RDO.proximoNumero (maior da obra + 1) e é
+       * recalculada quando a obra muda no seletor, logo abaixo. */
+      var num = r.numero || (typeof RDO !== "undefined" && RDO.proximoNumero
+        ? RDO.proximoNumero(lista("rdo"), r.obraId || "")
+        : "RDO-0001");
       var hoje = new Date().toISOString().slice(0, 10);
       /* ⚠ CLONE COMPLETO — não `{ d, leg }`. Copiar só esses dois campos jogava
        * fora `id`, `remoto`, `tenant` e `bytes` de TODA foto do formato novo
@@ -9546,7 +9555,7 @@
       };
       var corpo =
         this._htmlBlocoAprovacao(r) +
-        '<div class="row">' + campo("Nº", inp("g-num", num)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Status", sel("g-status", opts(P.rdoStatus, r.status || "rascunho"))) + "</div>" +
+        '<div class="row">' + campo('Nº<span class="muted" id="g-num-dica" style="font-weight:400;font-size:var(--t-micro);margin-left:6px"></span>', inp("g-num", num)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Status", sel("g-status", opts(P.rdoStatus, r.status || "rascunho"))) + "</div>" +
         campo("Obra *", sel("g-obra", optsRec(obras, "nome", r.obraId, "— selecionar —"))) +
         '<div class="row">' + campo("Clima (manhã)", sel("g-cmanha", opts(P.rdoClima, r.climaManha || "ensolarado"))) + campo("Clima (tarde)", sel("g-ctarde", opts(P.rdoClima, r.climaTarde || "ensolarado"))) + campo("Condição de trabalho", sel("g-cond", opts(P.rdoCondicao, r.condicao || "praticavel"))) + "</div>" +
         '<div class="row">' + campo("Efetivo direto (nº)", inp("g-efd", r.efetivoDireto)) + campo("Efetivo indireto (nº)", inp("g-efi", r.efetivoIndireto)) + campo("Terceiros / equipes", inp("g-terc", r.terceiros)) + "</div>" +
@@ -9831,6 +9840,35 @@
       });
       // UI.modal já colocou o form no DOM (síncrono). Liga os blocos e as fotos.
       try { this._ligarBlocosRdo(r, buf); } catch (eB) { console.warn("[rdo] blocos:", eB && eB.message); }
+
+      /* ---- o número acompanha a OBRA escolhida ----
+       * A sequência é por obra, então trocar a obra no seletor tem de trocar
+       * o número sugerido — senão o diário da obra B nasce com o próximo
+       * número da obra A, que é exatamente a bagunça que este trabalho veio
+       * resolver.
+       * ⚠ Só mexe em diário NOVO e enquanto ninguém tiver digitado por cima:
+       * renumerar um diário já salvo mudaria a identificação de um documento
+       * que o cliente pode já ter visto no Portal. */
+      (function () {
+        if (r && r.id) return;                       // já salvo: número é dele
+        var selObra = document.getElementById("g-obra");
+        var campoNum = document.getElementById("g-num");
+        if (!selObra || !campoNum || typeof RDO === "undefined" || !RDO.proximoNumero) return;
+        var sugerido = campoNum.value;               // o que o sistema propôs
+        campoNum.addEventListener("input", function () { sugerido = null; }); // digitou: manda ele
+        selObra.addEventListener("change", function () {
+          if (sugerido === null) return;             // respeitando o que foi digitado
+          var novo = RDO.proximoNumero(lista("rdo"), selObra.value || "");
+          campoNum.value = novo; sugerido = novo;
+          var q = RDO.quantosNaObra(lista("rdo"), selObra.value || "");
+          var dica = document.getElementById("g-num-dica");
+          if (dica) {
+            dica.textContent = selObra.value
+              ? (q ? "será o " + (q + 1) + "º diário desta obra" : "primeiro diário desta obra")
+              : "";
+          }
+        });
+      })();
       try { this._ligarBlocos2Rdo(r, buf); } catch (eB2) { console.warn("[rdo] blocos2:", eB2 && eB2.message); }
       function renderGal() {
         var g = document.getElementById("g-fotos-gal"); if (!g) return;

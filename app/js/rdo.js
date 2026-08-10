@@ -442,6 +442,68 @@
 
   RDO.ORIGENS = { orcamento: "Orçamento", cronograma: "Cronograma", lastplanner: "Last Planner", avulsa: "Cadastrada no diário" };
 
+  /* ---------------------------------------------------------------
+   * O NÚMERO DO DIÁRIO — SEQUÊNCIA POR OBRA
+   *
+   * Antes o número saía de `lista("rdo").length + 1`: contagem GLOBAL de
+   * todos os diários do escritório. Com duas obras rodando juntas, a obra A
+   * ficava com 1, 3, 4, 7 e a obra B com 2, 5, 6 — cada diário impresso
+   * saindo com um número que não diz nada sobre a própria obra. Numa
+   * empresa com dez obras isso é ilegível, e diário é documento: o número
+   * é como ele é citado numa medição, num pleito e no Portal do cliente.
+   *
+   * ⚠ E `length + 1` REPETE NÚMERO. Apagar um diário reduz a contagem, e o
+   * próximo nasce com um número que já existe na base — dois documentos
+   * distintos com a mesma identificação. Aqui a conta é MAIOR JÁ USADO + 1,
+   * que é imune a exclusão.
+   *
+   * ⚠ NÃO RENUMERA O QUE JÁ EXISTE. Diário publicado já foi visto pelo
+   * cliente no Portal, pode estar citado num boletim e ter aceite gravado
+   * com aquele número. Mudar a identificação de um documento emitido é o
+   * tipo de "arrumação" que quebra a confiança na base inteira. Obra que já
+   * tem diário com a numeração antiga CONTINUA de onde parou; obra nova
+   * começa em 1.
+   * --------------------------------------------------------------- */
+  RDO.numeroSeq = function (numero) {
+    /* pega a sequência de qualquer formato já usado: "RDO-0007", "0007",
+       "7", "DIARIO 7/2026". Vale o ÚLTIMO grupo de dígitos — em "7/2026" o
+       que identifica o diário é o 7, mas em "RDO-0007" é o 0007, e os dois
+       casos se resolvem pegando o primeiro grupo depois de um prefixo de
+       letras. Sem dígito nenhum, devolve 0 (não entra na conta). */
+    var s = String(numero == null ? "" : numero).trim();
+    if (!s) return 0;
+    var m = /(\d+)/.exec(s);
+    return m ? parseInt(m[1], 10) || 0 : 0;
+  };
+
+  RDO.proximoNumero = function (rdos, obraId, opc) {
+    var o = opc || {};
+    var prefixo = o.prefixo === undefined ? "RDO-" : o.prefixo;
+    var casas = o.casas || 4;
+    var maior = 0;
+    (rdos || []).forEach(function (r) {
+      if (!r) return;
+      /* SÓ a obra pedida. É isto que separa as sequências. */
+      if (String(r.obraId || "") !== String(obraId || "")) return;
+      var n = RDO.numeroSeq(r.numero);
+      if (n > maior) maior = n;
+    });
+    var prox = maior + 1;
+    var txt = String(prox);
+    while (txt.length < casas) txt = "0" + txt;
+    return prefixo + txt;
+  };
+
+  /* Quantos diários esta obra já tem — para a tela poder dizer
+     "é o 8º diário desta obra" em vez de só mostrar um número solto. */
+  RDO.quantosNaObra = function (rdos, obraId) {
+    var n = 0;
+    (rdos || []).forEach(function (r) {
+      if (r && String(r.obraId || "") === String(obraId || "")) n++;
+    });
+    return n;
+  };
+
   /* O avanço do dia. `qtdExecutada` é o que vale; a % é derivada dela quando há
    * quantidade prevista — nunca as duas digitadas em paralelo, senão elas
    * divergem e ninguém sabe qual é a verdade. */
