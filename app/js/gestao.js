@@ -3217,7 +3217,7 @@
            não tem como desconfiar. O nome do arquivo carrega a obra. */
         var escF = this._finEscopo();
         dados = escF.lista;
-        nome = "financeiro" + (escF.sel === "todas" ? "" : "-" + String(FinObra.rotuloDe(escF.sel, escF.obras)).replace(/[^\w\-]+/g, "_"));
+        nome = "financeiro" + (escF.sel === "todas" || typeof PorObra === "undefined" ? "" : "-" + String(PorObra.rotuloDe(escF.sel, escF.obras)).replace(/[^\w\-]+/g, "_"));
         /* a coluna Obra NÃO existia: financeiro exportado sem dizer de qual
            obra é cada lançamento não serve para conferir obra nenhuma */
         cols = [{ label: "Data", key: "data" }, { label: "Descrição", key: "desc" },
@@ -3230,7 +3230,20 @@
           { label: "Valor", key: "valor" },
           { label: "Status", get: function (x) { return rot(P.finStatus, x.status); } }];
       }
-      else if (modulo === "compras") { dados = lista("compras"); nome = "compras"; cols = [{ label: "Nº", key: "numero" }, { label: "Fornecedor", key: "fornecedorNome" }, { label: "Descrição", key: "descricao" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.compraStatus, x.status); } }]; }
+      else if (modulo === "compras") {
+        /* mesmo contrato do financeiro: exporta o RECORTE da tela e diz de qual
+           obra e cada pedido — a coluna Obra tambem nao existia aqui. */
+        var escC = this._comprasEscopo();
+        dados = escC.lista;
+        nome = "compras" + (escC.sel === "todas" || typeof PorObra === "undefined" ? "" : "-" + String(PorObra.rotuloDe(escC.sel, escC.obras)).replace(/[^\w\-]+/g, "_"));
+        cols = [{ label: "Nº", key: "numero" }, { label: "Fornecedor", key: "fornecedorNome" },
+          { label: "Obra", get: function (x) {
+              var o = (escC.obras || []).filter(function (y) { return String(y.id) === String(x.obraId); })[0];
+              return o ? o.nome : (String(x.obraId || "").trim() ? "(obra excluída)" : "(sem obra)");
+            } },
+          { label: "Descrição", key: "descricao" }, { label: "Valor", key: "valor" },
+          { label: "Status", get: function (x) { return rot(P.compraStatus, x.status); } }];
+      }
       else if (modulo === "medicoes") { dados = lista("medicoes"); nome = "medicoes"; cols = [{ label: "Nº", key: "numero" }, { label: "Obra", get: function (x) { return (Store.obter(eid(), "obras", x.obraId) || {}).nome || ""; } }, { label: "Período", get: function (x) { return (x.periodoInicio || "") + " a " + (x.periodoFim || ""); } }, { label: "%", key: "percentual" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.medicaoStatus, x.status); } }]; }
       else return;
       this._exportarCSV(dados, nome, cols);
@@ -3256,20 +3269,25 @@
        Foi o que evitou o defeito clássico: filtrar a tabela e exportar tudo. */
     _finEscopo: function () {
       var todos = lista("financeiro"), obras = lista("obras");
+      /* ⚠ SEM O MOTOR, A TELA AINDA ABRE. Se o porobra.js não carregar
+         (arquivo faltando num pacote, erro de sintaxe futuro), o módulo
+         inteiro ficaria em branco — e módulo em branco o cliente lê como
+         "meus dados sumiram". Degrada para a lista completa, sem filtro. */
+      if (typeof PorObra === "undefined") return { semMotor: true, sel: "todas", obras: obras, todos: todos, lista: todos };
       var sel = this._finObra || "todas";
       /* obra escolhida que deixou de existir volta para "todas" — senão a
          tela fica vazia para sempre, sem o usuário entender por quê */
-      if (sel !== "todas" && sel !== FinObra.SEM_OBRA && sel !== FinObra.ORFAO &&
+      if (sel !== "todas" && sel !== PorObra.SEM_OBRA && sel !== PorObra.ORFAO &&
         !obras.some(function (o) { return String(o.id) === String(sel); })) sel = this._finObra = "todas";
-      return { sel: sel, obras: obras, todos: todos, lista: FinObra.filtrar(todos, sel, obras) };
+      return { sel: sel, obras: obras, todos: todos, lista: PorObra.filtrar(todos, sel, obras) };
     },
 
     renderFinanceiro: function () {
       var e = this._finEscopo(), obras = e.obras;
       var fs = e.lista.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
-      var t = FinObra.totais(fs);                       /* ⚠ total do que está na tela */
-      var ops = FinObra.opcoes(e.todos, obras);
-      var temAlgum = e.todos.length > 0;
+      var t = e.semMotor ? null : PorObra.totais(fs);   /* ⚠ total do que está na tela */
+      var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+      var temAlgum = e.todos.length > 0 && !e.semMotor;
 
       var selHtml = '<select data-gacao="fin-obra" title="Separar os lançamentos por obra" style="max-width:230px">' +
         ops.map(function (o) {
@@ -3288,8 +3306,8 @@
       /* faixa de totais: diz o recorte E os números DELE. Saldo por
          competência e caixa realizado lado a lado — misturar conta paga com
          conta a pagar num número só não é saldo de nada. */
-      html += '<div class="fin-faixa">' +
-        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(FinObra.rotuloDe(e.sel, obras)) + '</b>' +
+      if (t) html += '<div class="fin-faixa">' +
+        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) + '</b>' +
           '<span class="fin-sub">' + t.n + ' lançamento(s)</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">Receitas</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.receita) + '</b>' +
           '<span class="fin-sub">' + Util.fmtMoeda(t.recebido) + ' recebido</span></div>' +
@@ -3304,8 +3322,8 @@
 
       /* quadro por obra: responde "quanto cada obra consumiu" sem obrigar a
          escolher uma por vez. Só faz sentido no recorte "todas". */
-      if (e.sel === "todas" && obras.length) {
-        var grupos = FinObra.porObra(e.todos, obras);
+      if (!e.semMotor && e.sel === "todas" && obras.length) {
+        var grupos = PorObra.porObra(e.todos, obras);
         if (grupos.length > 1) {
           html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Lanç.</th>' +
             '<th class="num">Receitas</th><th class="num">Despesas</th><th class="num">Saldo</th><th class="num">Em aberto</th></tr></thead><tbody>';
@@ -3324,7 +3342,8 @@
       }
 
       if (!fs.length) {
-        return html + '<div class="vazio card">Nenhum lançamento em <b>' + Util.esc(FinObra.rotuloDe(e.sel, obras)) +
+        if (e.semMotor) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
+        return html + '<div class="vazio card">Nenhum lançamento em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
           '</b>. <button class="btn sm" data-gacao="fin-obra">Ver todas as obras</button></div>';
       }
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
@@ -7641,21 +7660,104 @@
     },
 
     // =================== COMPRAS (pedidos de compra) ===================
+    /* mesmo desenho do Financeiro (v1.1.198): recorte em memória, seletor com
+       contagem, totais do recorte e quadro por obra. O motor é o mesmo
+       `PorObra`; muda só o agregador, porque compra tem status próprio. */
+    _comprasObra: "todas",
+    comprasTrocaObra: function (d) {
+      var v = (d && d.value != null && d.value !== "") ? d.value
+        : (d && d.id != null && d.id !== "") ? d.id : "todas";
+      this._comprasObra = v;
+      App.render();
+    },
+    _comprasEscopo: function () {
+      var todos = lista("compras"), obras = lista("obras");
+      /* ⚠ SEM O MOTOR, A TELA AINDA ABRE. Se o porobra.js não carregar
+         (arquivo faltando num pacote, erro de sintaxe futuro), o módulo
+         inteiro ficaria em branco — e módulo em branco o cliente lê como
+         "meus dados sumiram". Degrada para a lista completa, sem filtro. */
+      if (typeof PorObra === "undefined") return { semMotor: true, sel: "todas", obras: obras, todos: todos, lista: todos };
+      var sel = this._comprasObra || "todas";
+      if (sel !== "todas" && sel !== PorObra.SEM_OBRA && sel !== PorObra.ORFAO &&
+        !obras.some(function (o) { return String(o.id) === String(sel); })) sel = this._comprasObra = "todas";
+      return { sel: sel, obras: obras, todos: todos, lista: PorObra.filtrar(todos, sel, obras) };
+    },
+
     renderCompras: function () {
       var self = this;
-      var cs = lista("compras").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
-      var obras = lista("obras");
-      var total = cs.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
-      var pend = cs.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
-      var extra = '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button><span class="muted" style="margin-right:12px;align-self:center">Em aberto: <b>' + pend + "</b> · Total: <b>" + Util.fmtMoeda(total) + "</b></span>";
+      var e = this._comprasEscopo(), obras = e.obras;
+      var cs = e.lista.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
+      var t = e.semMotor ? null : PorObra.totaisCompras(cs);   /* ⚠ totais do recorte */
+      var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+
+      var selHtml = '<select data-gacao="compras-obra" title="Separar os pedidos por obra" style="max-width:230px">' +
+        ops.map(function (o) {
+          return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
+            Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+        }).join("") + "</select>";
+
+      var extra = (e.todos.length && !e.semMotor ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
+          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
+        '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>';
+
       var html = this._head(svg("compras") + "Compras", "nova-compra", "Novo pedido", extra);
-      if (!cs.length) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
+      if (!e.todos.length) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
+
+      /* ⚠ o "Total" antigo somava TUDO, inclusive rejeitado e cancelado — um
+         pedido recusado de R$ 50 mil entrava na conta de compras da obra.
+         Agora o total é só o que vale, e o descartado aparece à parte para
+         ninguém achar que os pedidos sumiram. */
+      if (t) html += '<div class="fin-faixa">' +
+        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) + '</b>' +
+          '<span class="fin-sub">' + t.n + ' pedido(s)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Total válido</span><b>' + Util.fmtMoeda(t.total) + '</b>' +
+          '<span class="fin-sub">cotação + aprovado + recebido</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Recebido</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.recebido) + '</b>' +
+          '<span class="fin-sub">' + t.nRecebido + ' pedido(s)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Comprometido</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.aprovado) + '</b>' +
+          '<span class="fin-sub">' + t.nAprovado + ' aprovado(s), a entregar</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Em cotação</span><b>' + Util.fmtMoeda(t.cotacao) + '</b>' +
+          '<span class="fin-sub">' + t.nCotacao + ' aguardando decisão</span></div>' +
+        (t.nDescartado ? '<div class="fin-kpi"><span class="fin-lbl">Fora da conta</span><b class="muted">' + Util.fmtMoeda(t.descartado) + '</b>' +
+          '<span class="fin-sub">' + t.nDescartado + ' rejeitado(s)/cancelado(s)</span></div>' : "") +
+        (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="compras-obra" style="align-self:center">Ver todas</button>' : "") +
+        "</div>";
+
+      if (!e.semMotor && e.sel === "todas" && obras.length) {
+        var grupos = PorObra.porObra(e.todos, obras, PorObra.totaisCompras);
+        if (grupos.length > 1) {
+          html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Pedidos</th>' +
+            '<th class="num">Recebido</th><th class="num">Comprometido</th><th class="num">Em cotação</th><th class="num">Total válido</th></tr></thead><tbody>';
+          grupos.forEach(function (g) {
+            html += '<tr class="lin" style="cursor:pointer" data-gacao="compras-obra" data-id="' + Util.esc(g.chave) + '">' +
+              "<td><b>" + Util.esc(g.nome) + "</b>" +
+              (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") +
+              (g.nDescartado ? ' <span class="muted" style="font-size:11px">· ' + g.nDescartado + " fora da conta</span>" : "") + "</td>" +
+              '<td class="num">' + g.n + "</td>" +
+              '<td class="num" style="color:var(--verde)">' + Util.fmtMoeda(g.recebido) + "</td>" +
+              '<td class="num" style="color:var(--amarelo)">' + Util.fmtMoeda(g.aprovado) + "</td>" +
+              '<td class="num muted">' + Util.fmtMoeda(g.cotacao) + "</td>" +
+              '<td class="num"><b>' + Util.fmtMoeda(g.total) + "</b></td></tr>";
+          });
+          html += "</tbody></table>";
+        }
+      }
+
+      if (!cs.length) {
+        if (e.semMotor) return html + vazioBox("Nenhum pedido de compra", "nova-compra", "Criar primeiro pedido");
+        return html + '<div class="vazio card">Nenhum pedido em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
+          '</b>. <button class="btn sm" data-gacao="compras-obra">Ver todas as obras</button></div>';
+      }
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
-        var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
+        var ob = obras.filter(function (o) { return String(o.id) === String(c.obraId); })[0];
         var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
           : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : (c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitado</span>' : ""))));
-        html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td class="num">' + acao + "</td></tr>";
+        /* vínculo quebrado grita aqui também: "—" faria o pedido de uma obra
+           excluída passar por compra do escritório, que é outra coisa */
+        var celObraC = ob ? Util.esc(ob.nome)
+          : (String(c.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—");
+        html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + celObraC + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -15283,7 +15385,7 @@ renderFolha: function () {
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
-      "fin-obra": 1,
+      "fin-obra": 1, "compras-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1
@@ -15335,6 +15437,7 @@ renderFolha: function () {
            valor só, e passá-lo descartaria as outras obras escolhidas. */
         case "dash-obra": return this.dashTrocaObra(null);
         case "fin-obra": return this.finTrocaObra(dataset);
+        case "compras-obra": return this.comprasTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);

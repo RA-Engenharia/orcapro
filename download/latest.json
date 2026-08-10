@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.198",
+  "versao": "1.1.199",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.198/OrcaPRO-IA-update-v1.1.198.zip",
-  "notas": "O Financeiro agora separa por obra. No topo do modulo ha um seletor com a contagem de lancamentos de cada obra, e os totais na faixa passam a ser do recorte escolhido: receitas, despesas, saldo e o que ainda esta em aberto. Escolhendo Todas, aparece um quadro com o resultado de cada obra, do maior movimento para o menor, e clicar na linha filtra por ela. Lancamento sem obra (luz do escritorio, imposto) tem opcao propria e continua contado, e lancamento de obra ja excluida aparece separado, avisando para rever o vinculo. O CSV passou a exportar o recorte que esta na tela, com a coluna Obra.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.198/OrcaPRO-IA-Instalador-v1.1.198.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.199/OrcaPRO-IA-update-v1.1.199.zip",
+  "notas": "Compras agora separa por obra, igual ao Financeiro: seletor no topo com a contagem de pedidos de cada obra, totais do recorte escolhido e um quadro com o resultado de cada obra. IMPORTANTE: o total de compras deixou de somar pedido rejeitado ou cancelado. Antes, um pedido recusado entrava na conta como se fosse gasto; agora o total conta cotacao, aprovado e recebido, e o descartado aparece a parte. A faixa separa o que ja foi recebido, o que esta comprometido (aprovado e ainda nao entregue) e o que esta em cotacao. O CSV exporta o recorte da tela e ganhou a coluna Obra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.199/OrcaPRO-IA-Instalador-v1.1.199.exe"
 }

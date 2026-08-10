@@ -1,5 +1,12 @@
 /* =====================================================================
- * finobra.js — O FINANCEIRO SEPARADO POR OBRA
+ * porobra.js — SEPARAR POR OBRA (Financeiro, Compras e o que vier)
+ *
+ * GENÉRICO DE PROPÓSITO. Nasceu no Financeiro (v1.1.198) e Compras entrou
+ * junto (v1.1.199) sem copiar uma linha: a classificação por obra, os dois
+ * baldes especiais, o seletor com contagem e a conferência de integridade são
+ * os mesmos. O que muda de módulo para módulo é só O QUE SE SOMA — por isso
+ * `porObra` recebe o agregador. Medições, RDO e estoque também têm `obraId` e
+ * cabem aqui; duplicar isso em cada módulo é como as regras divergem.
  *
  * POR QUE EXISTE: o módulo Financeiro listava todo lançamento da empresa numa
  * tabela só. Com três obras rodando, a tela vira uma mistura de compra de
@@ -114,8 +121,9 @@
    * Os baldes "Sem obra" e "Obra removida" entram na lista como qualquer
    * outro — some deles é que seria o defeito.
    * ------------------------------------------------------------- */
-  function porObra(lancamentos, obras) {
+  function porObra(lancamentos, obras, agregador) {
     var idx = indice(obras), grupos = {}, ordem = [];
+    var agg = agregador || totais;
     arr(lancamentos).forEach(function (f) {
       if (!f) return;
       var k = baldeDe(f, idx);
@@ -123,8 +131,8 @@
       grupos[k].push(f);
     });
     var out = ordem.map(function (k) {
-      var t = totais(grupos[k]);
-      return {
+      var t = agg(grupos[k]);
+      var g = {
         chave: k,
         nome: k === SEM_OBRA ? "Sem obra vinculada"
           : k === ORFAO ? "Obra removida"
@@ -132,13 +140,50 @@
         semObra: k === SEM_OBRA,
         orfao: k === ORFAO,
         obraId: (k === SEM_OBRA || k === ORFAO) ? "" : k,
-        n: t.n, receita: t.receita, despesa: t.despesa, saldo: t.saldo,
-        recebido: t.recebido, pago: t.pago, aReceber: t.aReceber, aPagar: t.aPagar,
-        movimento: t.receita + t.despesa
+        itens: grupos[k]
       };
+      /* o agregador manda: quem chama decide o que somar (o financeiro soma
+         receita/despesa; compras soma comprometido/recebido). `movimento` é o
+         que define a ordem, e cada agregador devolve o seu. */
+      for (var campo in t) { if (Object.prototype.hasOwnProperty.call(t, campo)) g[campo] = t[campo]; }
+      if (g.movimento == null) g.movimento = num(t.total != null ? t.total : (num(t.receita) + num(t.despesa)));
+      return g;
     });
     out.sort(function (a, b) { return b.movimento - a.movimento; });
     return out;
+  }
+
+  /* ---------------------------------------------------------------
+   * AGREGADOR DE COMPRAS — o dinheiro de um pedido de compra não é como o de
+   * um lançamento financeiro, e somar tudo junto seria mentira:
+   *
+   *   cotação   → intenção. Ninguém se comprometeu com nada ainda.
+   *   aprovado  → COMPROMISSO assumido, mercadoria não chegou.
+   *   recebido  → realizado.
+   *   rejeitado / cancelado → NÃO É DINHEIRO. Não entra em total nenhum.
+   *
+   * ⚠ O total da tela somava TUDO, inclusive rejeitado e cancelado — pedido
+   * recusado inflava o "Total" de compras da obra. Aqui `total` é só o que
+   * vale (cotação + aprovado + recebido) e o descartado vai à parte, visível,
+   * para ninguém achar que sumiu.
+   * ------------------------------------------------------------- */
+  function totaisCompras(compras) {
+    var r = { n: 0, total: 0, cotacao: 0, aprovado: 0, recebido: 0, descartado: 0,
+      nCotacao: 0, nAprovado: 0, nRecebido: 0, nDescartado: 0, comprometido: 0, movimento: 0 };
+    arr(compras).forEach(function (c) {
+      if (!c) return;
+      var v = num(c.valor), st = texto(c.status);
+      r.n++;
+      if (st === "rejeitado" || st === "cancelado") { r.descartado += v; r.nDescartado++; return; }
+      if (st === "recebido") { r.recebido += v; r.nRecebido++; }
+      else if (st === "aprovado") { r.aprovado += v; r.nAprovado++; }
+      else { r.cotacao += v; r.nCotacao++; }      /* cotação e qualquer status novo */
+      r.total += v;
+    });
+    /* o que já foi decidido e ainda vai sair do caixa */
+    r.comprometido = r.aprovado;
+    r.movimento = r.total;
+    return r;
   }
 
   /* ---------------------------------------------------------------
@@ -205,12 +250,12 @@
     return { ok: soma === L.length, nosBaldes: soma, naLista: L.length, baldes: Object.keys(vistos).length };
   }
 
-  var FinObra = {
+  var PorObra = {
     TODAS: TODAS, SEM_OBRA: SEM_OBRA, ORFAO: ORFAO,
-    baldeDe: baldeDe, filtrar: filtrar, totais: totais,
+    baldeDe: baldeDe, filtrar: filtrar, totais: totais, totaisCompras: totaisCompras,
     porObra: porObra, opcoes: opcoes, rotuloDe: rotuloDe, confere: confere,
     _num: num
   };
-  global.FinObra = FinObra;
-  if (typeof module !== "undefined" && module.exports) module.exports = FinObra;
+  global.PorObra = PorObra;
+  if (typeof module !== "undefined" && module.exports) module.exports = PorObra;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
