@@ -1183,12 +1183,16 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
 .selo-ajuste + .selo-ajuste { margin-left: 4px; }
 .selo-ajuste:hover { border-color: var(--linha-forte); }
 .selo-ajuste:focus-visible { outline: 2px solid var(--linha-forte); outline-offset: 1px; }
-.selo-ajuste.sobe  { background: rgba(170, 98, 0, .14);  color: var(--amarelo); border-color: rgba(170, 98, 0, .30); }
-.selo-ajuste.desce { background: rgba(26, 156, 75, .12); color: var(--verde-claro); border-color: rgba(26, 156, 75, .28); }
+/* ⚠ CORES PRÓPRIAS, não os tokens --amarelo/--verde-claro: medidos sobre o
+   fundo tintado do próprio selo, aqueles davam 3,67 e 2,90 de contraste — o
+   selo saía apagado no tema claro, o mesmo defeito da v1.1.192 (que era no
+   escuro). Estes dão 5,18 e 5,77, acima do mínimo de 4,5:1 da WCAG AA. */
+.selo-ajuste.sobe  { background: rgba(170, 98, 0, .14);  color: #8f5200; border-color: rgba(170, 98, 0, .30); }
+.selo-ajuste.desce { background: rgba(26, 156, 75, .12); color: #0f6b33; border-color: rgba(26, 156, 75, .28); }
 .selo-ajuste.novo  { background: rgba(46, 111, 158, .14); color: var(--texto); border-color: rgba(46, 111, 158, .30); }
 .selo-ajuste.coef  { background: var(--surface-3); color: var(--texto-fraco); border-color: var(--linha); }
-.aj-sobe  { color: var(--amarelo); font-weight: var(--p-medio); }
-.aj-desce { color: var(--verde-claro); font-weight: var(--p-medio); }
+.aj-sobe  { color: #8f5200; font-weight: var(--p-medio); }
+.aj-desce { color: #0f6b33; font-weight: var(--p-medio); }
 
 /* campo de coeficiente ajustado: a borda marca sem gritar */
 input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98, 0, .06); }
@@ -1221,9 +1225,9 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 .cmp-lbl { font-size: var(--t-micro); color: var(--texto-fraco); text-transform: uppercase; letter-spacing: .04em; }
 .cmp-sub { font-size: var(--t-micro); color: var(--texto-fraco); }
 .cmp-cel.sobe  { border-color: rgba(170, 98, 0, .38);  background: rgba(170, 98, 0, .08); }
-.cmp-cel.sobe b, .cmp-cel.sobe .cmp-sub { color: var(--amarelo); }
+.cmp-cel.sobe b, .cmp-cel.sobe .cmp-sub { color: #8f5200; }
 .cmp-cel.desce { border-color: rgba(26, 156, 75, .34); background: rgba(26, 156, 75, .07); }
-.cmp-cel.desce b, .cmp-cel.desce .cmp-sub { color: var(--verde-claro); }
+.cmp-cel.desce b, .cmp-cel.desce .cmp-sub { color: #0f6b33; }
 .cmp-seta { display: flex; align-items: center; color: var(--texto-fraco); font-size: var(--t-med); }
 .cmp-impacto { margin-top: 8px; font-size: var(--t-peq); color: var(--texto); }
 .cmp-meta { margin: 8px 0; font-size: var(--t-micro); color: var(--texto-fraco); }
