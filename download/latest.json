@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.196",
+  "versao": "1.1.197",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.196/OrcaPRO-IA-update-v1.1.196.zip",
-  "notas": "PROTECAO DE DADO — atualize. Remover os dados de demonstracao apagava tambem os registros da demo que voce tinha editado e adotado como seus: foi assim que diarios de verdade sumiram, sem aviso nenhum. Agora registro que voce mexeu deixa de ser demonstracao, a tela mostra o que sai e o que FICA antes de apagar, e recriar a demonstracao nao escreve por cima do seu. E o backup automatico passou a guardar a Gestao inteira (obras, diarios, medicoes, financeiro, folha, EPI, ponto, frota) — antes so levava orcamentos e a base de precos, e por isso nao havia de onde restaurar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.196/OrcaPRO-IA-Instalador-v1.1.196.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.197/OrcaPRO-IA-update-v1.1.197.zip",
+  "notas": "O que voce alterou sobre o preco da base agora sai nos documentos, nao so na tela. O relatorio de orcamento ganha a secao Quadro de Justificativa de Precos: item, preco da base, preco adotado, variacao, impacto em reais e a sua justificativa, ordenado pelo impacto e fechando com o efeito liquido. O Excel ganha a aba equivalente, com quantidade e preco amarrados por formula a Analitica, e na Analitica a celula do custo alterado fica destacada com uma observacao mostrando o valor da base. O rodape do relatorio passa a declarar quantos itens seguem o preco da base.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.197/OrcaPRO-IA-Instalador-v1.1.197.exe"
 }

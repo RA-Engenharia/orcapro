@@ -391,31 +391,6 @@
           row.getCell(k2).protection = { locked: false };
           row.getCell(k2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9E0' } };
         });
-        /* PREÇO ALTERADO PELO USUÁRIO: âmbar na célula do Custo Unit + observação
-           com o valor da base. Marca NA CÉLULA e não em coluna nova de propósito —
-           a Sintética, a Curva ABC e a aba Dados IA referenciam a Analítica por
-           LETRA de coluna ('Analítica'!F, !H, !J); inserir uma coluna aqui
-           deslocaria tudo e quebraria as fórmulas em silêncio. */
-        if (typeof Ajustes !== "undefined" && Ajustes.delta) {
-          var _dA = Ajustes.delta(it, "custoUnitario", cu);
-          var _coefA = Ajustes.campos(it).filter(function (c) { return c.indexOf("coef:") === 0; });
-          if (_dA || _coefA.length) {
-            var cCU = row.getCell(7);
-            cCU.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFDE8C8' } };
-            var nota = [];
-            if (_dA) {
-              nota.push("Preço alterado por você.");
-              nota.push("Na base: " + (_dA.semBase ? "sem preço coletado" : Ajustes.fmtN(_dA.base, 2) +
-                (_dA.fonte ? " (" + _dA.fonte + (_dA.competencia ? " " + _dA.competencia : "") + ")" : "")));
-              nota.push("Adotado: " + Ajustes.fmtN(_dA.atual, 2));
-              if (!_dA.semBase) nota.push("Variação: " + Ajustes.fmtPct(_dA.pct));
-              if (_dA.motivo) nota.push("Justificativa: " + _dA.motivo);
-              else if (_dA.dif > 0) nota.push("Justificativa: (a registrar)");
-            }
-            if (_coefA.length) nota.push(_coefA.length + " coeficiente(s) da composição ajustado(s).");
-            cCU.note = nota.join("\n");
-          }
-        }
         r++;
       });
       var last = r - 1, sr = wa.getRow(r);
@@ -912,88 +887,6 @@
         row.getCell(6).alignment = { wrapText: true, vertical: 'top' };
         for (var k = 1; k <= 6; k++) { row.getCell(k).border = thin(); if (idx % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
         mr++;
-      });
-    }
-
-    // ============ JUSTIFICATIVA DE PREÇOS (Lei 14.133/2021) ============
-    // Aba própria, não coluna: quem analisa quer a lista curta do que difere da
-    // referência oficial com o motivo ao lado — e a Analítica não pode ganhar
-    // coluna sem quebrar as fórmulas das outras abas (ver nota lá em cima).
-    var wajs = null;
-    var _resAj = (typeof Ajustes !== "undefined" && Ajustes.resumo) ? Ajustes.resumo(orc) : { n: 0, itens: [] };
-    if (_resAj.n) {
-      /* o número do item vem do itensFlat — MESMA fonte da Analítica, senão o
-         quadro e a planilha numerariam o mesmo item de formas diferentes */
-      var numPorId = {};
-      itensFlat.forEach(function (x) { if (x.it && x.it.id) numPorId[x.it.id] = { num: x.num, r: x.r }; });
-
-      wajs = wb.addWorksheet('Justificativa de Preços', { properties: { tabColor: { argb: 'FFF59E0B' } }, views: [{ state: 'frozen', ySplit: 5 }] });
-      wajs.columns = [{ width: 8 }, { width: 12 }, { width: 44 }, { width: 6 }, { width: 11 },
-        { width: 14 }, { width: 14 }, { width: 9 }, { width: 15 }, { width: 52 }];
-      wajs.mergeCells('A1:J1'); wajs.getCell('A1').value = empresa;
-      wajs.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
-      wajs.mergeCells('A2:J2');
-      wajs.getCell('A2').value = 'QUADRO DE JUSTIFICATIVA DE PREÇOS — ' + (orc.numero || '');
-      wajs.getCell('A2').font = { bold: true, size: 11 };
-      wajs.mergeCells('A3:J3');
-      wajs.getCell('A3').value = _resAj.n + ' item(ns) com preço diferente do da base de referência' +
-        (_resAj.nCoeficientes ? ' e ' + _resAj.nCoeficientes + ' coeficiente(s) de composição ajustado(s)' : '') +
-        '. Os demais seguem integralmente o preço da base. Ordenado pelo impacto em reais.';
-      wajs.getCell('A3').font = { size: 9, italic: true, color: { argb: 'FF64748B' } };
-      wajs.getRow(3).height = 26; wajs.getCell('A3').alignment = { wrapText: true, vertical: 'top' };
-
-      ['Item', 'Código', 'Descrição', 'Und', 'Qtd', 'Preço da base', 'Preço adotado', 'Var. %', 'Impacto (R$)', 'Justificativa']
-        .forEach(function (h, i) { hStyle(wajs.getRow(5).getCell(i + 1)); wajs.getRow(5).getCell(i + 1).value = h; });
-
-      var ar = 6;
-      _resAj.itens.forEach(function (i2, idx) {
-        var d = i2.preco, ref = numPorId[i2.itemId] || {}, row2 = wajs.getRow(ar);
-        var coefs = i2.deltas.filter(function (x) { return x.coeficiente; });
-        row2.getCell(1).value = ref.num || '';
-        row2.getCell(2).value = i2.codigo || '';
-        row2.getCell(3).value = i2.descricao + (coefs.length
-          ? '\n(' + coefs.length + ' coef.: ' + coefs.map(function (c) {
-              return String(c.campo).slice(5) + ' ' + Ajustes.fmtN(c.base, 4) + '→' + Ajustes.fmtN(c.atual, 4);
-            }).join(' · ') + ')' : '');
-        row2.getCell(3).alignment = { wrapText: true, vertical: 'top' };
-        row2.getCell(4).value = _un(i2.unidade);
-        /* Qtd por fórmula amarrada à Analítica: mexeu lá, o quadro acompanha —
-           quadro com quantidade congelada vira documento que contradiz a
-           planilha do mesmo arquivo */
-        row2.getCell(5).value = ref.r ? { formula: "'" + SH_ANAL + "'!F" + ref.r, result: i2.quantidade } : i2.quantidade;
-        row2.getCell(5).numFmt = NUM;
-        if (d) {
-          row2.getCell(6).value = d.semBase ? 'sem preço na base' : d.base;
-          if (!d.semBase) row2.getCell(6).numFmt = MOEDA;
-          row2.getCell(7).value = ref.r ? { formula: "'" + SH_ANAL + "'!G" + ref.r, result: d.atual } : d.atual;
-          row2.getCell(7).numFmt = MOEDA;
-          row2.getCell(8).value = d.semBase ? '—' : d.pct / 100;
-          if (!d.semBase) row2.getCell(8).numFmt = '+0.0%;-0.0%';
-          row2.getCell(9).value = i2.impacto; row2.getCell(9).numFmt = MOEDA;
-          if (d.dif > 0) row2.getCell(9).font = { color: { argb: 'FFB45309' }, bold: true };
-        } else {
-          [6, 7, 8, 9].forEach(function (k) { row2.getCell(k).value = '—'; });
-        }
-        var just = (d && d.motivo) || (i2.deltas[0] && i2.deltas[0].motivo) || '';
-        row2.getCell(10).value = just || (d && d.dif > 0 ? '(a justificar)' : '—');
-        row2.getCell(10).alignment = { wrapText: true, vertical: 'top' };
-        if (!just && d && d.dif > 0) row2.getCell(10).font = { italic: true, color: { argb: 'FFB45309' } };
-        for (var k3 = 1; k3 <= 10; k3++) {
-          row2.getCell(k3).border = thin();
-          if (idx % 2 === 1) row2.getCell(k3).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } };
-        }
-        ar++;
-      });
-
-      var rt = wajs.getRow(ar);
-      rt.getCell(1).value = 'Efeito líquido das alterações sobre o custo direto';
-      wajs.mergeCells('A' + ar + ':H' + ar);
-      rt.getCell(1).font = { bold: true };
-      rt.getCell(9).value = { formula: 'SUM(I6:I' + (ar - 1) + ')', result: _resAj.impacto };
-      rt.getCell(9).numFmt = MOEDA; rt.getCell(9).font = { bold: true };
-      [1, 9, 10].forEach(function (k) {
-        rt.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinzaSub } };
-        rt.getCell(k).border = thin();
       });
     }
 

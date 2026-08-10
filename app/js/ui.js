@@ -974,87 +974,6 @@
     },
 
     /* -----------------------------------------------------------------
-     * QUADRO DE JUSTIFICATIVA DE PREÇOS — o anexo do orçamento impresso.
-     *
-     * POR QUE ISTO É UM ANEXO E NÃO UMA COLUNA: quem analisa um orçamento não
-     * lê a planilha inteira procurando o que foi mexido; quer a lista curta do
-     * que difere da referência oficial, com o motivo ao lado. É a peça que a
-     * Lei 14.133/2021 espera junto da proposta quando há preço acima da base —
-     * e a que o TCU pede para entender como se chegou nele.
-     *
-     * Sai ordenado por IMPACTO EM DINHEIRO, não por número do item: um desvio
-     * de 40% num item de R$ 200 importa menos que 3% num item de R$ 80.000, e
-     * quem revisa tem tempo para os primeiros da lista.
-     * ----------------------------------------------------------------- */
-    renderQuadroAjustes: function (orc, numeroSecao) {
-      if (typeof Ajustes === "undefined" || !Ajustes.resumo) return "";
-      var r = Ajustes.resumo(orc);
-      if (!r.n) return "";
-      var semJust = r.itens.filter(function (i) { return i.preco && i.preco.dif > 0 && !i.preco.motivo; }).length;
-
-      /* o número do item vem da MESMA fonte da planilha (Orcamento.calcular) —
-         numerar por índice aqui produziria "2.3" no quadro e "2.1.3" na
-         planilha para o mesmo item, e quem confere as duas acha erro */
-      var numDe = {};
-      try {
-        Util.arr(Orcamento.calcular(orc).linhas).forEach(function (L) {
-          if (L && L.itemId) numDe[L.itemId] = L.numero || "";
-        });
-      } catch (e) {}
-
-      var html = '<h2 class="rel-tit">' + (numeroSecao ? numeroSecao + ". " : "") +
-        'Quadro de Justificativa de Preços</h2>';
-      html += '<p class="muted" style="margin:-6px 0 10px;font-size:12px">' +
-        '<b>' + r.n + '</b> item(ns) com preço diferente do da base de referência' +
-        (r.nCoeficientes ? ', e <b>' + r.nCoeficientes + '</b> coeficiente(s) de composição ajustado(s)' : '') +
-        '. Os demais itens do orçamento seguem integralmente o preço da base ' +
-        Util.esc(Orcamento.basesUsadasTexto(orc)) + '. Ordenado pelo impacto em reais.</p>';
-
-      html += '<table class="prop-tbl"><thead><tr>' +
-        '<th>Item</th><th>Código</th><th>Descrição</th><th class="r">Qtd</th>' +
-        '<th class="r">Preço da base</th><th class="r">Preço adotado</th>' +
-        '<th class="r">Var.</th><th class="r">Impacto</th><th>Justificativa</th>' +
-        '</tr></thead><tbody>';
-
-      r.itens.forEach(function (i) {
-        var d = i.preco;
-        var coefs = i.deltas.filter(function (x) { return x.coeficiente; });
-        var just = (d && d.motivo) || (i.deltas[0] && i.deltas[0].motivo) || "";
-        html += '<tr>' +
-          '<td>' + Util.esc(numDe[i.itemId] || "") + '</td>' +
-          '<td>' + Util.esc(i.codigo) + '</td>' +
-          '<td>' + Util.esc(Util.fixEnc(i.descricao)) +
-            (coefs.length ? '<br><span class="muted" style="font-size:10.5px">' + coefs.length +
-              ' coeficiente(s) ajustado(s): ' +
-              Util.esc(coefs.map(function (c) {
-                return String(c.campo).slice(5) + " " + Ajustes.fmtN(c.base, 4) + "→" + Ajustes.fmtN(c.atual, 4);
-              }).join(" · ")) + '</span>' : '') + '</td>' +
-          '<td class="r">' + Util.fmtNum(i.quantidade, 2) + ' ' + Util.esc(i.unidade || "") + '</td>' +
-          (d
-            ? '<td class="r">' + (d.semBase ? "—" : Util.fmtMoeda(d.base)) + '</td>' +
-              '<td class="r"><b>' + Util.fmtMoeda(d.atual) + '</b></td>' +
-              '<td class="r">' + (d.semBase ? "sem preço na base" : Ajustes.fmtPct(d.pct)) + '</td>' +
-              '<td class="r">' + (i.impacto > 0 ? "+" : "−") + Util.fmtMoeda(Math.abs(i.impacto)) + '</td>'
-            : '<td class="r">—</td><td class="r">—</td><td class="r">—</td><td class="r">—</td>') +
-          '<td>' + (just ? Util.esc(just)
-            : '<span style="font-style:italic">' + (d && d.dif > 0 ? "a justificar" : "—") + '</span>') + '</td>' +
-          '</tr>';
-      });
-
-      html += '<tr class="sub"><td colspan="7">Efeito líquido das alterações sobre o custo direto</td>' +
-        '<td class="r"><b>' + (r.impacto > 0 ? "+" : "−") + Util.fmtMoeda(Math.abs(r.impacto)) + '</b>' +
-        (r.pct == null ? "" : '<br><span class="muted" style="font-size:10.5px">' + Ajustes.fmtPct(r.pct) +
-          ' sobre estes itens</span>') + '</td><td></td></tr>';
-      html += '</tbody></table>';
-
-      if (semJust) {
-        html += '<p class="muted" style="font-size:11.5px;margin-top:6px">' +
-          '<b>' + semJust + '</b> item(ns) acima do preço de referência ainda sem justificativa registrada.</p>';
-      }
-      return html;
-    },
-
-    /* -----------------------------------------------------------------
      * CÉLULA DO COEFICIENTE no detalhamento analítico.
      *
      * Editável só quando o modal foi aberto por um ITEM do orçamento
@@ -1589,10 +1508,6 @@
         '</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr></tfoot></table>';
 
       // 2) Planilha ANALÍTICA (detalhada, item a item, por etapa)
-      /* as seções 3 e 4 são condicionais (a analítica pode não estar carregada,
-         e o quadro só existe se houve alteração) — numerar por contador evita
-         o relatório sair "1, 2, 4" quando uma delas não aparece */
-      var _secRel = 2;
       html += '<h2 class="rel-tit">2. Planilha Analítica (detalhada)</h2>';
       html += '<table class="prop-tbl"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un</th>' +
         '<th class="r">Qtd</th><th class="r">Custo Unit.</th><th class="r">Custo Total</th><th class="r">Preço Venda</th></tr></thead><tbody>';
@@ -1656,8 +1571,7 @@
           });
         });
         if (comps.length) {
-          _secRel++;
-          html += '<h2 class="rel-tit">' + _secRel + '. Composições e Insumos (analítico SINAPI)</h2>';
+          html += '<h2 class="rel-tit">3. Composições e Insumos (analítico SINAPI)</h2>';
           html += '<p class="muted" style="margin:-6px 0 10px;font-size:12px">' + comps.length +
             ' composição(ões) do orçamento, detalhada(s) em insumos, mão de obra e equipamentos — coeficientes da base SINAPI ' +
             Util.esc((Analitico.competencia || "") + (Analitico.uf ? " / " + Analitico.uf : "")) + '.</p>';
@@ -1683,25 +1597,10 @@
         }
       }
 
-      /* o quadro de justificativa fecha o relatório: quem analisa lê a planilha
-         primeiro e vem aqui conferir o que destoou da referência */
-      var _qa = this.renderQuadroAjustes(orc, _secRel + 1);
-      if (_qa) { _secRel++; html += _qa; }
-
       var credRel = (typeof Empresa !== "undefined" && Empresa.creditoTexto) ? Empresa.creditoTexto() : "";
-      /* declaração factual de conformidade de preços: um analista precisa saber
-         se "não tem quadro de justificativa" quer dizer "nada foi alterado" ou
-         "o relatório não mostra isso". A frase responde, e é conferível. */
-      var _rAj = (typeof Ajustes !== "undefined" && Ajustes.resumo) ? Ajustes.resumo(orc) : { n: 0 };
-      var _totIt = Orcamento.totais(orc).qtdItens;
       html += '<div class="rel-rod">' + (credRel ? Util.esc(credRel) + " · " : "") + hoje +
         ' · Custos ref. ' + Util.esc(Orcamento.basesUsadasTexto(orc)) +
-        ' com BDI ' + Util.fmtPct(pct) + ' incluso no preço de venda.' +
-        (_rAj.n
-          ? ' Preços: ' + (_totIt - _rAj.n) + ' de ' + _totIt + ' itens conforme a base; <b>' + _rAj.n +
-            '</b> com preço próprio, detalhado(s) no quadro de justificativa.'
-          : ' Todos os ' + _totIt + ' itens seguem o preço da base, sem alteração.') +
-        '</div>';
+        ' com BDI ' + Util.fmtPct(pct) + ' incluso no preço de venda.</div>';
       html += '</div>';
       return html;
     },
