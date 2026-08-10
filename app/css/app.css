@@ -3,6 +3,11 @@
  * Identidade própria (navy/aço), dark-ready, foco visível, alvos clicáveis.
  * ===================================================================== */
 :root {
+  /* ⚠ diz ao NAVEGADOR em que tom desenhar o que ele mesmo desenha: a lista
+     do <select>, a barra de rolagem, a marca do checkbox. Sem isto, alguns
+     navegadores ignoram o fundo do <option> e voltam a pintar de branco — que
+     foi o defeito do seletor de obras do Painel. */
+  color-scheme: light;
   --navy: #0f2740;
   --navy-2: #15324f;
   --aco: #2e6f9e;
@@ -104,6 +109,7 @@
 }
 
 [data-tema="dark"] {
+  color-scheme: dark;
   --bg: #0b1622;
   --surface: #11202e;
   --surface-2: #16293a;
@@ -168,6 +174,26 @@ body {
  * Foi assim que o orçamentista viu "letras difíceis de ler" só em duas
  * colunas, e só no escuro. Reportado na 1.1.191. */
 button, input, select, textarea { font-family: inherit; font-size: inherit; color: var(--texto); }
+
+/* ⚠ COR SEM FUNDO É COMO SE FABRICA TEXTO INVISÍVEL — e foi o que aconteceu.
+ * A regra acima dava `color: var(--texto)` (quase branco, no escuro) ao
+ * `<select>` e NÃO dava fundo. O campo fechado até se virava porque fica sobre
+ * o card escuro, mas a LISTA que o navegador abre é desenhada por ele, com
+ * fundo claro do sistema — e o texto quase branco sumia dentro dela. O
+ * `<option>` não tinha regra nenhuma.
+ *
+ * Rogério viu isso no seletor de obras do Painel, na v1.1.192: os nomes das
+ * obras ilegíveis dentro da lista aberta.
+ *
+ * ⚠ E O TESTE DE CONTRASTE AFIRMAVA METADE DO PAR: ele exigia que
+ * `input/select/textarea` recebessem `color: var(--texto)` e nunca exigiu um
+ * fundo junto. Guarda que confere só a cor aprova exatamente este defeito.
+ *
+ * `color-scheme` é o que faz o navegador desenhar a lista, a barra de rolagem
+ * e a marca de seleção no tom certo — sem ele, alguns navegadores ignoram o
+ * fundo do `<option>` e voltam a pintar de branco. */
+select, option, optgroup { background-color: var(--surface); color: var(--texto); }
+select:disabled, option:disabled { color: var(--texto-fraco); }
 /* a dica do campo continua mais fraca que o valor digitado — mas legível */
 input::placeholder, textarea::placeholder { color: var(--texto-fraco); }
 /* Números alinham em coluna em toda tabela/KPI/gráfico (leitura de planilha) */
@@ -1138,3 +1164,85 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
  * ===================================================================== */
 .tbl td.num, .tbl th.num, td.num, .num.tnum, .kpi .num,
 .tnum, [class*="tnum"] { font-family: var(--fonte-num); font-variant-numeric: tabular-nums; }
+
+/* =====================================================================
+ * SELO "ALTERADO POR VOCÊ" — desvio em cima do preço da base
+ *
+ * Cor por DIREÇÃO, não por juízo de valor: acima da base é âmbar (chama
+ * atenção porque é o que a fiscalização questiona), abaixo é azul-esverdeado
+ * (informativo, não "bom"). Vermelho ficaria para erro, e alterar preço não
+ * é erro — é decisão do orçamentista.
+ * ===================================================================== */
+.selo-ajuste {
+  display: inline-block; margin: 3px 0 0 0; padding: 1px 6px;
+  border: 1px solid transparent; border-radius: var(--raio-sm);
+  font-size: var(--t-micro); font-weight: var(--p-medio);
+  font-variant-numeric: tabular-nums; line-height: 1.5;
+  cursor: pointer; background: var(--surface-2); color: var(--texto);
+}
+.selo-ajuste + .selo-ajuste { margin-left: 4px; }
+.selo-ajuste:hover { border-color: var(--linha-forte); }
+.selo-ajuste:focus-visible { outline: 2px solid var(--linha-forte); outline-offset: 1px; }
+.selo-ajuste.sobe  { background: rgba(170, 98, 0, .14);  color: var(--amarelo); border-color: rgba(170, 98, 0, .30); }
+.selo-ajuste.desce { background: rgba(26, 156, 75, .12); color: var(--verde-claro); border-color: rgba(26, 156, 75, .28); }
+.selo-ajuste.novo  { background: rgba(46, 111, 158, .14); color: var(--texto); border-color: rgba(46, 111, 158, .30); }
+.selo-ajuste.coef  { background: var(--surface-3); color: var(--texto-fraco); border-color: var(--linha); }
+.aj-sobe  { color: var(--amarelo); font-weight: var(--p-medio); }
+.aj-desce { color: var(--verde-claro); font-weight: var(--p-medio); }
+
+/* campo de coeficiente ajustado: a borda marca sem gritar */
+input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98, 0, .06); }
+
+/* faixa de resumo no alto da planilha */
+.faixa-ajustes {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px; padding: 8px 12px;
+  border: 1px solid rgba(170, 98, 0, .28); border-left: 3px solid var(--amarelo);
+  border-radius: var(--raio); background: rgba(170, 98, 0, .07);
+  font-size: var(--t-peq); color: var(--texto);
+}
+.faixa-ajustes .fa-ico { display: flex; color: var(--amarelo); }
+.faixa-ajustes .fa-txt { flex: 1 1 260px; }
+
+/* comparativo base × seu valor, dentro do modal */
+.cmp-ajuste {
+  border: 1px solid var(--linha); border-radius: var(--raio);
+  padding: 12px; margin-bottom: 12px; background: var(--surface-2);
+}
+.cmp-linha { margin-bottom: 8px; }
+.cmp-rot { font-weight: var(--p-forte); font-size: var(--t-peq); color: var(--texto); }
+.cmp-nums { display: flex; align-items: stretch; gap: 10px; flex-wrap: wrap; }
+.cmp-cel {
+  flex: 1 1 110px; padding: 8px 10px; border-radius: var(--raio-sm);
+  background: var(--surface); border: 1px solid var(--linha);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.cmp-cel b { font-size: var(--t-med); font-variant-numeric: tabular-nums; color: var(--texto); }
+.cmp-lbl { font-size: var(--t-micro); color: var(--texto-fraco); text-transform: uppercase; letter-spacing: .04em; }
+.cmp-sub { font-size: var(--t-micro); color: var(--texto-fraco); }
+.cmp-cel.sobe  { border-color: rgba(170, 98, 0, .38);  background: rgba(170, 98, 0, .08); }
+.cmp-cel.sobe b, .cmp-cel.sobe .cmp-sub { color: var(--amarelo); }
+.cmp-cel.desce { border-color: rgba(26, 156, 75, .34); background: rgba(26, 156, 75, .07); }
+.cmp-cel.desce b, .cmp-cel.desce .cmp-sub { color: var(--verde-claro); }
+.cmp-seta { display: flex; align-items: center; color: var(--texto-fraco); font-size: var(--t-med); }
+.cmp-impacto { margin-top: 8px; font-size: var(--t-peq); color: var(--texto); }
+.cmp-meta { margin: 8px 0; font-size: var(--t-micro); color: var(--texto-fraco); }
+.cmp-alerta {
+  margin-top: 8px; padding: 8px 10px; border-radius: var(--raio-sm);
+  background: rgba(170, 98, 0, .10); border: 1px solid rgba(170, 98, 0, .26);
+  font-size: var(--t-peq); color: var(--texto);
+}
+.cmp-just { display: block; margin-top: 12px; font-size: var(--t-peq); color: var(--texto); }
+.cmp-just > span { display: block; margin-bottom: 4px; font-weight: var(--p-medio); }
+
+/* no tema escuro os fundos translúcidos precisam de mais opacidade para
+   não sumirem contra a superfície escura (a lição da v1.1.192) */
+[data-tema="dark"] .selo-ajuste.sobe,
+[data-tema="dark"] .faixa-ajustes { background: rgba(245, 158, 11, .16); }
+[data-tema="dark"] .selo-ajuste.sobe, [data-tema="dark"] .faixa-ajustes .fa-ico,
+[data-tema="dark"] .cmp-cel.sobe b, [data-tema="dark"] .cmp-cel.sobe .cmp-sub,
+[data-tema="dark"] .aj-sobe { color: #f0b429; }
+[data-tema="dark"] .selo-ajuste.desce, [data-tema="dark"] .cmp-cel.desce b,
+[data-tema="dark"] .cmp-cel.desce .cmp-sub, [data-tema="dark"] .aj-desce { color: #4ade80; }
+[data-tema="dark"] .cmp-alerta { background: rgba(245, 158, 11, .14); }
+[data-tema="dark"] input.coef-edit.mexido { border-color: #f0b429; background: rgba(245, 158, 11, .10); }

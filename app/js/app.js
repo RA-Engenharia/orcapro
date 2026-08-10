@@ -596,7 +596,7 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -771,8 +771,28 @@
         var pm = t.dataset.memoria.split("|");
         this.abrirMemoria(pm[0], pm[1]); return;
       }
+      // selo "alterado por você": abre o comparativo com o preço da base
+      if (t.dataset.ajuste) {
+        var pa = String(t.dataset.ajuste).split("|");
+        this.abrirAjuste(pa[0], pa[1]); return;
+      }
+      if (t.dataset.ajustesLista) { this.abrirAjustesLista(); return; }
+      if (t.dataset.ajusteRestaurar) {
+        var pr = String(t.dataset.ajusteRestaurar).split("|");
+        this._restaurarAjuste(pr[0], pr[1], pr.slice(2).join("|")); return;
+      }
+      /* restaurar coeficiente pelo selo, sem sair do detalhamento */
+      if (t.dataset.coefRestaurar) {
+        var cx = UI._ajusteCtx;
+        if (cx) {
+          var baseC = Ajustes.delta(cx.item, "coef:" + t.dataset.coefRestaurar,
+            Ajustes.valorAtual(cx.item, "coef:" + t.dataset.coefRestaurar));
+          if (baseC) this._ajustarCoeficiente(t.dataset.coefRestaurar, baseC.base);
+        }
+        return;
+      }
       // ver insumos (composição explodida)
-      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos); return; }
+      if (t.dataset.verInsumos) { this.verInsumos(t.dataset.verInsumos, t.dataset.viItem); return; }
       // remover base extra — a PROPRIA guarda composições AUTORAIS (não há como
       // reimportar), então exige confirmação explícita antes de apagar
       if (t.dataset.baseRemover) {
@@ -972,6 +992,11 @@
           }
           this._cpAtualizarPrevia(idxPre);
         }
+        return;
+      }
+      /* coeficiente ajustado dentro da composição de um item do orçamento */
+      if (e.target.matches("input[data-coef-aj]")) {
+        this._ajustarCoeficiente(e.target.dataset.coefAj, e.target.value);
         return;
       }
       if (e.target.matches("input[data-preco-insumo]")) {
@@ -2809,6 +2834,215 @@
       ]);
     },
 
+    /* =================================================================
+     * ALTERAÇÕES SOBRE O PREÇO DA BASE
+     *
+     * A tela responde a três perguntas, nesta ordem — que é a ordem em que
+     * elas aparecem na cabeça de quem revisa um orçamento:
+     *   1. de quanto era?   2. quanto mudou, em R$ e em %?   3. dá pra voltar?
+     *
+     * O campo de justificativa não é enfeite: preço acima da referência
+     * oficial precisa de motivo escrito quando o orçamento vai para um órgão
+     * público (Lei 14.133/2021). Escrever na hora da alteração é a única
+     * chance real de o motivo existir — três meses depois ninguém lembra.
+     * ================================================================= */
+    abrirAjuste: function (etapaId, itemId) {
+      var self = this, orc = this.orcAtual; if (!orc) return;
+      var etapa = (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
+      var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
+      if (!it || typeof Ajustes === "undefined") return;
+      var ds = Ajustes.doItem(it);
+      if (!ds.length) return;
+      var q = Util.num(it.quantidade);
+
+      var body = '<p class="muted" style="margin-top:0"><b>' + Util.esc(it.codigo || "") + '</b> · ' +
+        Util.esc(String(it.descricao || "").slice(0, 95)) + '</p>';
+
+      ds.forEach(function (d) {
+        var casas = d.coeficiente ? 4 : 2;
+        var cls = d.semBase ? "novo" : (d.dif > 0 ? "sobe" : "desce");
+        body += '<div class="cmp-ajuste">' +
+          '<div class="cmp-linha"><span class="cmp-rot">' + Util.esc(Ajustes.rotulo(d.campo)) + '</span></div>' +
+          '<div class="cmp-nums">' +
+            '<div class="cmp-cel"><span class="cmp-lbl">Na base</span><b>' + Ajustes.fmtN(d.base, casas) + '</b>' +
+              (d.fonte ? '<span class="cmp-sub">' + Util.esc(d.fonte + (d.competencia ? " " + d.competencia : "") + (d.uf ? "/" + d.uf : "")) + '</span>' : '') + '</div>' +
+            '<div class="cmp-seta">→</div>' +
+            '<div class="cmp-cel"><span class="cmp-lbl">Seu valor</span><b>' + Ajustes.fmtN(d.atual, casas) + '</b></div>' +
+            '<div class="cmp-cel ' + cls + '"><span class="cmp-lbl">Diferença</span><b>' +
+              (d.dif > 0 ? "+" : "") + Ajustes.fmtN(d.dif, casas) + '</b>' +
+              '<span class="cmp-sub">' + (d.semBase ? "sem preço na base" : Ajustes.fmtPct(d.pct)) + '</span></div>' +
+          '</div>';
+        /* o que a diferença representa no orçamento — a pergunta seguinte de
+           quem revisa é sempre "e isso dá quanto no total?" */
+        if (!d.coeficiente && q > 0) {
+          body += '<div class="cmp-impacto">Nos <b>' + Util.fmtNum(q, 2) + ' ' + Util.esc(it.unidade || "") +
+            '</b> deste item: <b>' + (d.dif > 0 ? "+" : "−") + Util.fmtMoeda(Math.abs(d.dif * q)).replace("R$", "R$ ") +
+            '</b> em relação ao preço da base.</div>';
+        }
+        if (d.baseMudou) {
+          body += '<div class="cmp-alerta">A base mudou depois da sua alteração: era ' +
+            Ajustes.fmtN(d.baseMudou.de, casas) + ' e passou a ' + Ajustes.fmtN(d.baseMudou.para, casas) +
+            '. A comparação acima já usa o valor atual.</div>';
+        }
+        body += '<div class="cmp-meta">' + (d.por ? "Por " + Util.esc(d.por) + " · " : "") +
+          (d.em ? Util.fmtData(d.em) : "") + '</div>' +
+          '<button class="btn sm" data-ajuste-restaurar="' + etapaId + '|' + itemId + '|' + Util.esc(d.campo) + '">' +
+          (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + ' Restaurar ' + Ajustes.fmtN(d.base, casas) + '</button>' +
+          '</div>';
+      });
+
+      var dPreco = ds.filter(function (d) { return d.campo === "custoUnitario"; })[0];
+      body += '<label class="cmp-just"><span>Justificativa <span class="muted">(sai no relatório de alterações e na exportação)</span></span>' +
+        '<textarea id="aj-motivo" class="cell" style="width:100%;min-height:64px;resize:vertical" placeholder="Ex.: cotação local com 3 fornecedores em 08/2026; insumo indisponível na região.">' +
+        Util.esc((dPreco && dPreco.motivo) || (ds[0] && ds[0].motivo) || "") + '</textarea></label>';
+      if (dPreco && dPreco.dif > 0) {
+        body += '<div class="cmp-alerta">Preço <b>acima</b> da referência oficial. Em orçamento para órgão público, ' +
+          'a justificativa é exigida (Lei 14.133/2021) — escreva agora enquanto o motivo está fresco.</div>';
+      }
+
+      UI.modal("Valor alterado por você", body, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar justificativa", classe: "primary", onClick: function () {
+            var m = String((UI.el("aj-motivo") || {}).value || "").trim();
+            (it.ajustes ? Object.keys(it.ajustes) : []).forEach(function (k) { it.ajustes[k].motivo = m; });
+            self.persistir(); UI.fecharModal(); self.render();
+            UI.toast(m ? "Justificativa salva." : "Justificativa removida.", "ok");
+          } }
+      ]);
+    },
+
+    /* -----------------------------------------------------------------
+     * COEFICIENTE AJUSTADO — grava o desvio e reprecifica o item.
+     *
+     * O preço NÃO é recomposto do zero (Σ coef × preço), e sim por DIFERENÇA
+     * sobre o preço oficial. Motivo em `ajustes.js`: a SINAPI não coleta o
+     * preço de todo insumo em toda UF, então a soma dos insumos costuma ficar
+     * abaixo do oficial. Recompor derrubaria o item em silêncio — o usuário
+     * mexeria num coeficiente e veria o preço cair 30% sem entender.
+     * ----------------------------------------------------------------- */
+    _ajustarCoeficiente: function (codigoInsumo, valor) {
+      var ctx = UI._ajusteCtx;
+      if (!ctx || !ctx.item || typeof Ajustes === "undefined") return;
+      var it = ctx.item, cod = String(codigoInsumo), novo = Util.num(valor);
+      var ana = (typeof Analitico !== "undefined" && Analitico.obter) ? Analitico.obter(ctx.codigo) : null;
+      var ins = ana && Util.arr(ana.insumos).filter(function (i) { return String(i.codigo) === cod; })[0];
+      if (!ins) return;
+      if (novo < 0) { UI.toast("Coeficiente não pode ser negativo — valor anterior mantido.", "erro"); this.verInsumos(ctx.codigo, ctx.etapaId + "|" + ctx.itemId); return; }
+      var atualAntes = (it.coeficientes && cod in it.coeficientes) ? Util.num(it.coeficientes[cod]) : Util.num(ins.coeficiente);
+
+      Orcamento._registrarAjuste(this.orcAtual, it, "coef:" + cod, atualAntes, novo);
+      if (Ajustes.tem(it, "coef:" + cod)) {
+        if (!it.coeficientes) it.coeficientes = {};
+        it.coeficientes[cod] = novo;
+      } else if (it.coeficientes) {             /* voltou ao da base: some o override */
+        delete it.coeficientes[cod];
+        if (!Object.keys(it.coeficientes).length) delete it.coeficientes;
+      }
+      this._aplicarDeltaCoef(it, ins, atualAntes, novo);
+      this.persistir();
+      UI.toast("Coeficiente de " + cod + " ajustado — o custo unitário do item foi recalculado.", "ok");
+      this.verInsumos(ctx.codigo, ctx.etapaId + "|" + ctx.itemId);   /* redesenha o modal */
+      this.render();
+    },
+
+    /* -----------------------------------------------------------------
+     * Aplica ao preço SÓ o incremento desta mexida:
+     *     preço += (coefNovo − coefAnterior) × preço do insumo
+     *
+     * Por que incremental e não "recompor do oficial": quem já tinha corrigido
+     * o preço à mão (cotação local, 25 → 26) perderia essa correção assim que
+     * encostasse num coeficiente — o preço voltaria para a conta oficial sem
+     * avisar. Incremental respeita as duas coisas: a correção manual continua
+     * de pé e o ajuste de produtividade entra por cima dela.
+     *
+     * Também é o que faz o restaurar fechar a conta: voltar o coeficiente ao
+     * valor da base desconta exatamente o que ele tinha somado.
+     * ----------------------------------------------------------------- */
+    _aplicarDeltaCoef: function (it, insumo, coefAntes, coefDepois) {
+      var precoIns = Util.num(insumo.custoUnitario);
+      /* insumo sem preço coletado na UF não move o total — não há o que
+         multiplicar. O coeficiente fica registrado assim mesmo: quando o
+         preço for informado, ele já vale. */
+      if (!precoIns) return;
+      var novoPreco = Math.round((Util.num(it.custoUnitario) + (Util.num(coefDepois) - Util.num(coefAntes)) * precoIns) * 100) / 100;
+      if (novoPreco < 0) novoPreco = 0;
+      Orcamento._registrarAjuste(this.orcAtual, it, "custoUnitario", it.custoUnitario, novoPreco);
+      it.custoUnitario = novoPreco;
+    },
+
+    /* restaurar UM campo: devolve o valor da base e recalcula tudo */
+    _restaurarAjuste: function (etapaId, itemId, campo) {
+      var orc = this.orcAtual; if (!orc || typeof Ajustes === "undefined") return;
+      var etapa = (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
+      var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
+      if (!it) return;
+      var base = Ajustes.restaurar(it, campo);
+      if (base === null) return;
+      if (campo === "custoUnitario") it.custoUnitario = base;
+      else if (String(campo).indexOf("coef:") === 0) {
+        /* desconta do preço exatamente o que este coeficiente tinha somado */
+        var cod = String(campo).slice(5);
+        var atual = (it.coeficientes && cod in it.coeficientes) ? Util.num(it.coeficientes[cod]) : base;
+        var anaR = (typeof Analitico !== "undefined" && Analitico.obter) ? Analitico.obter(String(it.codigo)) : null;
+        var insR = anaR && Util.arr(anaR.insumos).filter(function (i) { return String(i.codigo) === cod; })[0];
+        if (insR) this._aplicarDeltaCoef(it, insR, atual, base);
+        if (it.coeficientes) { delete it.coeficientes[cod]; if (!Object.keys(it.coeficientes).length) delete it.coeficientes; }
+      }
+      this.persistir(); UI.fecharModal(); this.render();
+      UI.toast("Valor da base restaurado.", "ok");
+    },
+
+    abrirAjustesLista: function () {
+      var self = this, orc = this.orcAtual; if (!orc || typeof Ajustes === "undefined") return;
+      var r = Ajustes.resumo(orc);
+      if (!r.n) { UI.toast("Nenhum valor alterado neste orçamento.", "ok"); return; }
+      var body = '<p class="muted" style="margin-top:0">Tudo que foi alterado em cima do preço da base, do maior impacto para o menor. ' +
+        'O que <b>não</b> aparece aqui está exatamente como a base entrega.</p>' +
+        '<table class="tbl" style="font-size:12.5px"><thead><tr>' +
+        '<th>Código</th><th>Descrição</th><th class="num">Na base</th><th class="num">Seu valor</th>' +
+        '<th class="num">%</th><th class="num">Impacto</th><th>Justificativa</th><th></th></tr></thead><tbody>';
+      r.itens.forEach(function (i) {
+        var d = i.preco;
+        var coefs = i.deltas.filter(function (x) { return x.coeficiente; }).length;
+        body += '<tr><td><b>' + Util.esc(i.codigo) + '</b></td>' +
+          '<td>' + Util.esc(String(i.descricao).slice(0, 46)) + (coefs ? ' <span class="pill">' + coefs + ' coef.</span>' : '') + '</td>' +
+          (d ? '<td class="num">' + Ajustes.fmtN(d.base, 2) + '</td>' +
+               '<td class="num"><b>' + Ajustes.fmtN(d.atual, 2) + '</b></td>' +
+               '<td class="num ' + (d.dif > 0 ? "aj-sobe" : "aj-desce") + '">' + (d.semBase ? "novo" : Ajustes.fmtPct(d.pct)) + '</td>' +
+               '<td class="num ' + (i.impacto > 0 ? "aj-sobe" : "aj-desce") + '">' + (i.impacto > 0 ? "+" : "−") + Util.fmtMoeda(Math.abs(i.impacto)) + '</td>'
+             : '<td class="num muted">—</td><td class="num muted">—</td><td class="num muted">—</td><td class="num muted">—</td>') +
+          '<td class="muted" style="font-size:11.5px">' + Util.esc(String((d && d.motivo) || (i.deltas[0] && i.deltas[0].motivo) || "").slice(0, 40)) +
+            (!((d && d.motivo) || (i.deltas[0] && i.deltas[0].motivo)) && d && d.dif > 0 ? '<span class="aj-sobe">sem justificativa</span>' : '') + '</td>' +
+          '<td><button class="btn sm ghost" data-ajuste="' + i.etapaId + '|' + i.itemId + '">ver</button></td></tr>';
+      });
+      body += '</tbody></table>';
+      var semJust = r.itens.filter(function (i) {
+        return i.preco && i.preco.dif > 0 && !i.preco.motivo;
+      }).length;
+      if (semJust) {
+        body += '<div class="cmp-alerta">' + semJust + ' item(ns) <b>acima</b> da base sem justificativa escrita. ' +
+          'Em licitação isso é o primeiro ponto questionado.</div>';
+      }
+      UI.modal("Alterações sobre o preço da base (" + r.n + ")", body, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Restaurar TODOS os preços da base", classe: "ghost danger", onClick: function () {
+            if (!window.confirm("Restaurar os " + r.n + " itens para o preço da base?\n\n" +
+              "As suas alterações E as justificativas escritas serão perdidas. Não há como desfazer.")) return;
+            r.itens.forEach(function (i) {
+              var et = (orc.etapas || []).filter(function (e) { return e.id === i.etapaId; })[0];
+              var it = et && (et.itens || []).filter(function (x) { return x.id === i.itemId; })[0];
+              if (!it) return;
+              Ajustes.restaurarTudo(it).forEach(function (c) {
+                if (c.campo === "custoUnitario") it.custoUnitario = c.base;
+              });
+              if (it.coeficientes) delete it.coeficientes;
+            });
+            self.persistir(); UI.fecharModal(); self.render();
+            UI.toast("Todos os preços voltaram para a base.", "ok");
+          } }
+      ]);
+    },
+
     // ---------- Busca SINAPI ----------
     // Preferências do seletor de banco/tipo/oneração da busca (lembra entre buscas).
     _lerBuscaPrefs: function () {
@@ -3212,9 +3446,22 @@
     },
 
     // ---------- Ver composição → insumos (base analítica, por estado) ----------
-    verInsumos: function (codigo) {
+    verInsumos: function (codigo, refItem) {
       var self = this;
       var ufAtivo = self._baseUf || Sinapi.uf || null;
+      /* CONTEXTO DE AJUSTE: coeficiente só é editável quando o modal foi aberto
+         a partir de um ITEM do orçamento — é lá que o ajuste mora. Abrindo pela
+         aba de bases, o detalhamento é somente leitura: mexer ali mudaria a
+         referência de todos os orçamentos (regra 1 do ajustes.js). */
+      UI._ajusteCtx = null;
+      if (refItem && this.orcAtual) {
+        var pv = String(refItem).split("|");
+        var etv = (this.orcAtual.etapas || []).filter(function (e) { return e.id === pv[0]; })[0];
+        var itv = etv && (etv.itens || []).filter(function (x) { return x.id === pv[1]; })[0];
+        if (itv && String(itv.codigo) === String(codigo)) {
+          UI._ajusteCtx = { etapaId: pv[0], itemId: pv[1], item: itv, codigo: String(codigo) };
+        }
+      }
       if (!codigo || !String(codigo).trim()) {
         UI.modal("ℹ️ Sem composição detalhada", '<p>Este item foi <b>lançado manualmente</b> (sem código SINAPI), então não há composição de insumos para detalhar. O valor usado é o que você digitou.</p>', [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
         return;

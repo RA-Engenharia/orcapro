@@ -574,6 +574,7 @@
         html += '<div class="vazio card">Adicione uma <b>etapa</b> (ex.: Serviços Preliminares) e depois itens da SINAPI.</div>';
         return html;
       }
+      html += this._faixaAjustes(orc);
       html += '<table class="tbl"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
@@ -661,14 +662,15 @@
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
             '<td>' + (temCod
-              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
+              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
               : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             '<td>' + Util.esc(it.descricao) + '</td>' +
             '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
             // custo ZERADO = pendência que trava a finalização: o campo grita
             '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
-              (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '></td>' +
+              (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '>' +
+              UI._seloAjuste(e.id, it) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(L.custoTotal) + '</td>' +
             '<td class="num">' + Util.fmtMoeda(L.precoTotal) + '</td>' +
             '<td class="right"><div class="acoes">' +
@@ -678,7 +680,7 @@
               '<button class="btn sm ico" data-mover-item="' + e.id + '|' + it.id + '|1"' + (posNoGrupo === tamGrupo - 1 ? ' disabled' : '') + ' title="Descer item">▼</button>' +
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
-              (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" title="Ver os insumos que compõem esta composição">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Insumos</button>' : '') +
+              (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Ver e ajustar os insumos e coeficientes desta composição">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Insumos</button>' : '') +
               '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + '</button>' +
               '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
           // v1.1.123 — SEMPRE que a composição tiver insumo sem preço coletado no
@@ -938,7 +940,7 @@
           '<td>' + celCod + '</td>' +
           '<td>' + Util.esc(it.descricao) + '</td>' +
           '<td>' + Util.esc(Util.unidadeExibir(it.unidade)) + '</td>' +
-          '<td class="num">' + Util.fmtNum(it.coeficiente, 4) + '</td>' +
+          '<td class="num">' + UI._celCoeficiente(it) + '</td>' +
           '<td class="num">' + celUnit + '</td>' +
           '<td class="num">' + celTotal + '</td>' +
           '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || it.categoria) + '</span></td></tr>';
@@ -969,6 +971,80 @@
         (typeof Analitico !== "undefined" ? (Analitico.competencia || "") + " / " + (Analitico.uf || "") : "") +
         ' — composição → insumos com coeficientes. Clique no código de uma sub-composição (S) para abrir o detalhamento dela. O orçamento usa o preço da sua competência.</p>';
       return html;
+    },
+
+    /* -----------------------------------------------------------------
+     * CÉLULA DO COEFICIENTE no detalhamento analítico.
+     *
+     * Editável só quando o modal foi aberto por um ITEM do orçamento
+     * (`UI._ajusteCtx`). Pela aba de bases continua texto: ali o usuário está
+     * olhando a referência oficial, e campo editável naquele contexto sugere
+     * que dá para reescrever a SINAPI — que é justamente o que não pode.
+     * ----------------------------------------------------------------- */
+    _celCoeficiente: function (ins) {
+      var ctx = UI._ajusteCtx;
+      var cod = String(ins.codigo || "");
+      if (!ctx || !ctx.item || typeof Ajustes === "undefined") return Util.fmtNum(ins.coeficiente, 4);
+      var ajust = ctx.item.coeficientes || {};
+      var val = (cod in ajust) ? Util.num(ajust[cod]) : Util.num(ins.coeficiente);
+      var d = Ajustes.delta(ctx.item, "coef:" + cod, val);
+      var out = '<input class="cell coef-edit' + (d ? " mexido" : "") + '" data-coef-aj="' + Util.esc(cod) +
+        '" value="' + Util.fmtNum(val, 4) + '" style="width:82px"' +
+        ' title="Coeficiente da composição. Altere para a produtividade da sua equipe — a referência da base fica guardada.">';
+      if (d) {
+        out += '<button class="selo-ajuste ' + (d.dif > 0 ? "sobe" : "desce") + '" data-coef-restaurar="' + Util.esc(cod) + '"' +
+          ' title="Era ' + Ajustes.fmtN(d.base, 4) + ' na base. Clique para restaurar.">' + Util.esc(Ajustes.selo(d)) + '</button>';
+      }
+      return out;
+    },
+
+    /* -----------------------------------------------------------------
+     * SELO "ALTERADO POR VOCÊ" — mora DENTRO da célula do custo unitário.
+     *
+     * Por que não uma coluna nova: a planilha já tem 9 colunas e é o lugar
+     * mais disputado da tela. Uma coluna a mais espremeria descrição em toda
+     * linha por causa de um aviso que aparece em 4% delas. O selo fica
+     * embaixo do próprio campo que mudou — onde o olho já está.
+     *
+     * O selo é BOTÃO, não texto: quem vê "+4,0%" quer saber de quanto era, e
+     * a resposta tem que estar a um clique, não numa outra tela.
+     * ----------------------------------------------------------------- */
+    _seloAjuste: function (etapaId, it) {
+      if (typeof Ajustes === "undefined" || !Ajustes.delta) return "";
+      var d = Ajustes.delta(it, "custoUnitario", it.custoUnitario);
+      var nCoef = Ajustes.campos(it).filter(function (c) { return c.indexOf("coef:") === 0; }).length;
+      if (!d && !nCoef) return "";
+      var out = "";
+      if (d) {
+        var cls = d.semBase ? "novo" : (d.dif > 0 ? "sobe" : "desce");
+        out += '<button class="selo-ajuste ' + cls + '" data-ajuste="' + etapaId + '|' + it.id + '"' +
+          ' title="' + Util.esc(Ajustes.frase(d)) + ' Clique para ver e restaurar.">' +
+          Util.esc(Ajustes.selo(d)) + '</button>';
+      }
+      if (nCoef) {
+        out += '<button class="selo-ajuste coef" data-ajuste="' + etapaId + '|' + it.id + '"' +
+          ' title="' + nCoef + ' coeficiente(s) desta composição alterado(s) por você. Clique para ver e restaurar.">' +
+          nCoef + ' coef.</button>';
+      }
+      return out;
+    },
+
+    /* Faixa no alto da planilha: o revisor precisa da conta em DINHEIRO
+       ("12 itens mexidos somam +R$ 8.430"), não do número de itens solto. */
+    _faixaAjustes: function (orc) {
+      if (typeof Ajustes === "undefined" || !Ajustes.resumo) return "";
+      var r = Ajustes.resumo(orc);
+      if (!r.n) return "";
+      var sinal = r.impacto > 0 ? "acima" : (r.impacto < 0 ? "abaixo" : "no mesmo valor");
+      var pct = r.pct == null ? "" : " (" + Ajustes.fmtPct(r.pct) + ")";
+      return '<div class="faixa-ajustes">' +
+        '<span class="fa-ico">' + (typeof Icones !== "undefined" ? Icones.get("editar", 16) : "") + '</span>' +
+        '<span class="fa-txt"><b>' + r.n + ' item(ns) com valor alterado por você</b> — ' +
+        (r.impacto === 0 ? 'as alterações se anulam, o total fica ' + sinal :
+          'somam <b>' + Util.fmtMoeda(Math.abs(r.impacto)) + '</b> ' + sinal + ' do preço da base' + pct) +
+        (r.nCoeficientes ? ' · ' + r.nCoeficientes + ' coeficiente(s) ajustado(s)' : '') +
+        '</span>' +
+        '<button class="btn sm" data-ajustes-lista="1">Ver todos</button></div>';
     },
 
     // ----- Aba Sintético -----

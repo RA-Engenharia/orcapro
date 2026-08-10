@@ -527,9 +527,32 @@
         if (q > 0) it.quantidade = q;
         else { try { if (global.UI && global.UI.toast) global.UI.toast("Quantidade deve ser maior que zero — valor anterior mantido.", "erro"); } catch (e) {} }
       }
-      if (campos.custoUnitario != null) it.custoUnitario = Util.num(campos.custoUnitario);
+      if (campos.custoUnitario != null) {
+        var novo = Util.num(campos.custoUnitario);
+        /* ANTES de gravar: registra o desvio em relação ao preço da base. Na
+           primeira edição o valor que está no item AINDA é o da base — é ele
+           que vira a referência congelada (ver regra 2 do ajustes.js). */
+        this._registrarAjuste(orc, it, "custoUnitario", it.custoUnitario, novo);
+        it.custoUnitario = novo;
+      }
       if (campos.descricao != null) it.descricao = campos.descricao;
       return orc;
+    },
+
+    /* Um único ponto de entrada para o selo de "alterado por você": todo
+       caminho que grava preço passa por aqui (edição na planilha, reimportação
+       do Excel, ajuste de coeficiente). Espalhar isso pelas telas garantiria
+       que um dos caminhos ficasse de fora e a alteração sumisse em silêncio. */
+    _registrarAjuste: function (orc, item, campo, antes, depois) {
+      if (typeof Ajustes === "undefined" || !Ajustes.registrar) return;
+      try {
+        Ajustes.registrar(item, campo, antes, depois, {
+          fonte: item.fonte || item.origem || "",
+          competencia: (orc && orc.competenciaSinapi) || "",
+          uf: (orc && orc.uf) || "",
+          por: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? (Auth.usuario().email || "") : ""
+        });
+      } catch (e) { /* o selo é informativo: nunca pode impedir a gravação */ }
     },
     removerItem: function (orc, etapaId, itemId) {
       var etapa = this._etapa(orc, etapaId);

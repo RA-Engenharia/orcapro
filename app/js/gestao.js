@@ -870,7 +870,7 @@
       if (tAfazer > 0 || tAtras > 0) {
         html += '<div class="card mt"' + (tAtras ? ' style="border-left:4px solid #dc2626"' : "") + '><h3 style="margin:0 0 8px">🗒️ Tarefas</h3>' +
           '<button class="btn sm" data-view="tarefas" style="margin-right:8px">A fazer: <b>' + tAfazer + "</b></button>" +
-          (tAtras ? '<button class="btn sm" data-view="tarefas" style="color:#dc2626;margin-right:8px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Atrasadas: <b>' + tAtras + "</b></button>" : "") +
+          (tAtras ? '<button class="btn sm" data-view="tarefas" style="color:var(--vermelho);margin-right:8px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Atrasadas: <b>' + tAtras + "</b></button>" : "") +
           "</div>";
       }
       // dinheiro fechado que ninguém lançou (motor em js/reconciliacao.js)

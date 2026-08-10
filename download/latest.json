@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.193",
+  "versao": "1.1.194",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.193/OrcaPRO-IA-update-v1.1.193.zip",
-  "notas": "",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.193/OrcaPRO-IA-Instalador-v1.1.193.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.194/OrcaPRO-IA-update-v1.1.194.zip",
+  "notas": "Correcao de leitura: dentro da lista aberta do seletor (a de escolher obra, por exemplo) os nomes ficavam quase invisiveis no tema escuro. Medido: 1,13 para 1 de contraste, quando o minimo legivel e 4,5. Vale para TODOS os seletores do programa, nao so o do Painel.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.194/OrcaPRO-IA-Instalador-v1.1.194.exe"
 }
