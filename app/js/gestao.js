@@ -2280,19 +2280,93 @@
     },
 
     // =================== MEDIÇÕES ===================
+    /* terceiro módulo no mesmo motor (v1.1.200). Medição é o dinheiro que a
+       obra FATURA — muda só o agregador. */
+    _medObra: "todas",
+    medTrocaObra: function (d) {
+      var v = (d && d.value != null && d.value !== "") ? d.value
+        : (d && d.id != null && d.id !== "") ? d.id : "todas";
+      this._medObra = v;
+      App.render();
+    },
+    _medEscopo: function () {
+      var todos = lista("medicoes"), obras = lista("obras");
+      if (typeof PorObra === "undefined") return { semMotor: true, sel: "todas", obras: obras, todos: todos, lista: todos };
+      var sel = this._medObra || "todas";
+      if (sel !== "todas" && sel !== PorObra.SEM_OBRA && sel !== PorObra.ORFAO &&
+        !obras.some(function (o) { return String(o.id) === String(sel); })) sel = this._medObra = "todas";
+      return { sel: sel, obras: obras, todos: todos, lista: PorObra.filtrar(todos, sel, obras) };
+    },
+
     renderMedicoes: function () {
       var self = this;
-      var ms = lista("medicoes"), obras = lista("obras"), contratos = lista("contratos");
+      var e = this._medEscopo(), obras = e.obras, contratos = lista("contratos");
+      var ms = e.lista;
+      var t = e.semMotor ? null : PorObra.totaisMedicoes(ms);
+      var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+      var selMed = (e.todos.length && !e.semMotor)
+        ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
+          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + 'Obra <select data-gacao="med-obra" title="Separar as medições por obra" style="max-width:230px">' +
+          ops.map(function (o) {
+            return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
+              Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+          }).join("") + "</select></label>"
+        : "";
       var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição",
+          selMed +
           /* Puxar do mês anterior: o pedido do cliente era não redigitar a
              mesma lista de serviços todo mês. Fica ao lado de "Nova medição"
              porque é ali que ele decide como começar. */
           '<button class="btn sm" data-gacao="puxar-medicao" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Puxar do mês anterior</button>' +
           '<button class="btn sm" data-gacao="export-medicoes" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>');
-      if (!ms.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
+      if (!e.todos.length) return html + vazioBox("Nenhuma medição registrada", "nova-medicao", "Registrar primeira medição");
+
+      /* medição é o que a obra FATURA: separar medido, a receber e já pago é a
+         diferença entre saber e achar que sabe. Rejeitada fica fora do total e
+         visível à parte, como em Compras. */
+      if (t) html += '<div class="fin-faixa">' +
+        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) + '</b>' +
+          '<span class="fin-sub">' + t.n + ' medição(ões)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Medido</span><b>' + Util.fmtMoeda(t.medido) + '</b>' +
+          '<span class="fin-sub">pendente + aprovada + paga</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Recebido</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.paga) + '</b>' +
+          '<span class="fin-sub">' + t.nPaga + ' paga(s)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">A receber</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.aReceber) + '</b>' +
+          '<span class="fin-sub">' + t.nAprovada + ' aprovada(s), não paga(s)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Em aprovação</span><b>' + Util.fmtMoeda(t.pendente) + '</b>' +
+          '<span class="fin-sub">' + t.nPendente + ' aguardando o cliente</span></div>' +
+        (t.nRejeitada ? '<div class="fin-kpi"><span class="fin-lbl">Fora da conta</span><b class="muted">' + Util.fmtMoeda(t.rejeitada) + '</b>' +
+          '<span class="fin-sub">' + t.nRejeitada + ' rejeitada(s)</span></div>' : "") +
+        (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="med-obra" style="align-self:center">Ver todas</button>' : "") +
+        "</div>";
+
+      if (!e.semMotor && e.sel === "todas" && obras.length) {
+        var grupos = PorObra.porObra(e.todos, obras, PorObra.totaisMedicoes);
+        if (grupos.length > 1) {
+          html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Medições</th>' +
+            '<th class="num">Recebido</th><th class="num">A receber</th><th class="num">Em aprovação</th><th class="num">Medido</th></tr></thead><tbody>';
+          grupos.forEach(function (g) {
+            html += '<tr class="lin" style="cursor:pointer" data-gacao="med-obra" data-id="' + Util.esc(g.chave) + '">' +
+              "<td><b>" + Util.esc(g.nome) + "</b>" +
+              (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") +
+              (g.nRejeitada ? ' <span class="muted" style="font-size:11px">· ' + g.nRejeitada + " fora da conta</span>" : "") + "</td>" +
+              '<td class="num">' + g.n + "</td>" +
+              '<td class="num" style="color:var(--verde)">' + Util.fmtMoeda(g.paga) + "</td>" +
+              '<td class="num" style="color:var(--amarelo)">' + Util.fmtMoeda(g.aReceber) + "</td>" +
+              '<td class="num muted">' + Util.fmtMoeda(g.pendente) + "</td>" +
+              '<td class="num"><b>' + Util.fmtMoeda(g.medido) + "</b></td></tr>";
+          });
+          html += "</tbody></table>";
+        }
+      }
+
+      if (!ms.length) {
+        return html + '<div class="vazio card">Nenhuma medição em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
+          '</b>. <button class="btn sm" data-gacao="med-obra">Ver todas as obras</button></div>';
+      }
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Obra</th><th>Período</th><th class="num">%</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
       ms.forEach(function (m) {
-        var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
+        var ob = obras.filter(function (o) { return String(o.id) === String(m.obraId); })[0];
         /* ✎ EDITAR de verdade, na linha. O pedido do cliente foi literalmente
          * "botão de editar": abrir a medição só era possível clicando no NÚMERO,
          * que não parece clicável em lugar nenhum da tela. E aprovado mostra
@@ -2308,7 +2382,7 @@
           (nIt ? "Ver os " + nIt + " item(ns) medidos" : "Ver o que foi medido") + '" style="min-width:28px">▸</button> ';
         html += '<tr><td style="cursor:pointer" data-gopen="medicoes:' + m.id + '">' + seta + '<b>' + Util.esc(m.numero || "—") + "</b>" +
           (nIt ? ' <span class="muted" style="font-size:11px">' + nIt + " itens</span>" : "") +
-          "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
+          "</td><td>" + (ob ? Util.esc(ob.nome) : (String(m.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—")) + "</td><td>" + Util.esc((m.periodoInicio || "") + (m.periodoFim ? " a " + m.periodoFim : "")) + '</td><td class="num">' + Util.fmtPct(m.percentual, 1) + '</td><td class="num">' + Util.fmtMoeda(m.valor) + "</td><td>" + pill(m.status) + self._aprovLinha(m) + '</td><td class="num">' + acao + "</td></tr>";
         html += '<tr id="medi-' + m.id + '" style="display:none"><td colspan="7" style="background:rgba(46,111,158,.06);padding:10px 14px">' + self._medItensHtml(m) + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -3244,7 +3318,15 @@
           { label: "Descrição", key: "descricao" }, { label: "Valor", key: "valor" },
           { label: "Status", get: function (x) { return rot(P.compraStatus, x.status); } }];
       }
-      else if (modulo === "medicoes") { dados = lista("medicoes"); nome = "medicoes"; cols = [{ label: "Nº", key: "numero" }, { label: "Obra", get: function (x) { return (Store.obter(eid(), "obras", x.obraId) || {}).nome || ""; } }, { label: "Período", get: function (x) { return (x.periodoInicio || "") + " a " + (x.periodoFim || ""); } }, { label: "%", key: "percentual" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.medicaoStatus, x.status); } }]; }
+      else if (modulo === "medicoes") {
+        var escM = this._medEscopo();
+        dados = escM.lista;
+        nome = "medicoes" + (escM.sel === "todas" || typeof PorObra === "undefined" ? "" : "-" + String(PorObra.rotuloDe(escM.sel, escM.obras)).replace(/[^\w\-]+/g, "_")); cols = [{ label: "Nº", key: "numero" }, { label: "Obra", get: function (x) {
+            /* vazio esconderia o vinculo quebrado: quem confere a planilha
+               nao saberia se a medicao e do escritorio ou de obra apagada */
+            var o = Store.obter(eid(), "obras", x.obraId);
+            return o ? (o.nome || "") : (String(x.obraId || "").trim() ? "(obra excluída)" : "(sem obra)");
+          } }, { label: "Período", get: function (x) { return (x.periodoInicio || "") + " a " + (x.periodoFim || ""); } }, { label: "%", key: "percentual" }, { label: "Valor", key: "valor" }, { label: "Status", get: function (x) { return rot(P.medicaoStatus, x.status); } }]; }
       else return;
       this._exportarCSV(dados, nome, cols);
     },
@@ -15385,7 +15467,7 @@ renderFolha: function () {
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
-      "fin-obra": 1, "compras-obra": 1,
+      "fin-obra": 1, "compras-obra": 1, "med-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1
@@ -15438,6 +15520,7 @@ renderFolha: function () {
         case "dash-obra": return this.dashTrocaObra(null);
         case "fin-obra": return this.finTrocaObra(dataset);
         case "compras-obra": return this.comprasTrocaObra(dataset);
+        case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);

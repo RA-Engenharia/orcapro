@@ -187,6 +187,39 @@
   }
 
   /* ---------------------------------------------------------------
+   * AGREGADOR DE MEDIÇÕES — é o dinheiro que a obra FATURA, e cada status
+   * significa uma coisa diferente para quem espera receber:
+   *
+   *   pendente  → medida, ainda não aprovada pelo cliente. Não é faturável.
+   *   aprovada  → aprovada e A RECEBER. É o que sustenta o fluxo de caixa.
+   *   paga      → entrou.
+   *   rejeitada → NÃO É DINHEIRO. Fora de qualquer total.
+   *
+   * `medido` é o que vale (pendente + aprovada + paga); `aReceber` é a
+   * aprovada que ainda não entrou — a pergunta que o dono faz antes de
+   * assumir compromisso. Rejeitada aparece à parte, como em Compras: some do
+   * total, nunca da tela.
+   * ------------------------------------------------------------- */
+  function totaisMedicoes(medicoes) {
+    var r = { n: 0, medido: 0, total: 0, pendente: 0, aprovada: 0, paga: 0, rejeitada: 0,
+      nPendente: 0, nAprovada: 0, nPaga: 0, nRejeitada: 0, aReceber: 0, movimento: 0 };
+    arr(medicoes).forEach(function (m) {
+      if (!m) return;
+      var v = num(m.valor), st = texto(m.status);
+      r.n++;
+      if (st === "rejeitada") { r.rejeitada += v; r.nRejeitada++; return; }
+      if (st === "paga") { r.paga += v; r.nPaga++; }
+      else if (st === "aprovada") { r.aprovada += v; r.nAprovada++; }
+      else { r.pendente += v; r.nPendente++; }   /* pendente e status novo */
+      r.medido += v;
+    });
+    r.total = r.medido;            /* nome genérico, para o quadro por obra */
+    r.aReceber = r.aprovada;
+    r.movimento = r.medido;
+    return r;
+  }
+
+  /* ---------------------------------------------------------------
    * OPÇÕES DO SELETOR — com a contagem em cada uma. Sem o número, o usuário
    * escolhe uma obra, vê a tela vazia e não sabe se filtrou errado ou se
    * realmente não há lançamento ali.
@@ -252,7 +285,8 @@
 
   var PorObra = {
     TODAS: TODAS, SEM_OBRA: SEM_OBRA, ORFAO: ORFAO,
-    baldeDe: baldeDe, filtrar: filtrar, totais: totais, totaisCompras: totaisCompras,
+    baldeDe: baldeDe, filtrar: filtrar, totais: totais,
+    totaisCompras: totaisCompras, totaisMedicoes: totaisMedicoes,
     porObra: porObra, opcoes: opcoes, rotuloDe: rotuloDe, confere: confere,
     _num: num
   };

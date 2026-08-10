@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.199",
+  "versao": "1.1.200",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.199/OrcaPRO-IA-update-v1.1.199.zip",
-  "notas": "Compras agora separa por obra, igual ao Financeiro: seletor no topo com a contagem de pedidos de cada obra, totais do recorte escolhido e um quadro com o resultado de cada obra. IMPORTANTE: o total de compras deixou de somar pedido rejeitado ou cancelado. Antes, um pedido recusado entrava na conta como se fosse gasto; agora o total conta cotacao, aprovado e recebido, e o descartado aparece a parte. A faixa separa o que ja foi recebido, o que esta comprometido (aprovado e ainda nao entregue) e o que esta em cotacao. O CSV exporta o recorte da tela e ganhou a coluna Obra.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.199/OrcaPRO-IA-Instalador-v1.1.199.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.200/OrcaPRO-IA-update-v1.1.200.zip",
+  "notas": "Medicoes agora separa por obra, como o Financeiro e o Compras: seletor no topo com a contagem de cada obra, totais do recorte e um quadro com o resultado de cada obra. O modulo nao tinha totais nenhum; agora mostra o medido, o que ja foi recebido, o que esta a receber e o que ainda aguarda aprovacao do cliente. A receber conta so as medicoes APROVADAS - medicao pendente nao entra ai, porque o cliente ainda pode recusar. Medicao rejeitada fica fora do total e aparece a parte. O CSV exporta o recorte da tela e a coluna Obra deixou de sair vazia quando a obra foi excluida.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.200/OrcaPRO-IA-Instalador-v1.1.200.exe"
 }
