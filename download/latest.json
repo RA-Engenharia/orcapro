@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.201",
+  "versao": "1.1.202",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.201/OrcaPRO-IA-update-v1.1.201.zip",
-  "notas": "O Diario de Obra ganhou o mesmo filtro por obra dos outros modulos, e agora acha tudo: diario sem obra vinculada, ou de obra que foi excluida, antes era contado no total e nao aparecia em opcao nenhuma do seletor - ficava inalcancavel. No diario nao ha dinheiro, entao a faixa mostra o que a obra acumula em prova: o ultimo diario e ha quantos dias foi, homens-dia, quantos tem foto, quantos ainda nao estao fechados e quantos o cliente ja ve. O quadro por obra ordena pela obra mais LARGADA, nao pela mais movimentada - buraco no diario so aparece quando alguem precisa dele. A galeria de fotos e a sugestao de obra ao criar diario acompanharam o filtro novo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.201/OrcaPRO-IA-Instalador-v1.1.201.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.202/OrcaPRO-IA-update-v1.1.202.zip",
+  "notas": "Corrigido um erro que recusava insumo REAL ao criar sua versao propria de uma composicao do SINAPI. A mensagem dizia 'codigo nao existe nas bases ativas', mas o insumo existia - o proprio detalhamento mostrava ele na tela, com preco. A causa: quando a CAIXA nao coleta o preco de um insumo no seu estado, ela calcula o custo da composicao usando o preco de Sao Paulo, e esse insumo fica de fora da tabela de precos da UF, aparecendo so no detalhamento oficial. O sistema so olhava a tabela de precos. Agora ele tambem consulta o detalhamento, que e fonte da CAIXA e traz o preco da CAIXA - nada e estimado por nos. Nao era caso isolado: dependendo do estado, de 20% (SP) a 49% (AM/RR) das composicoes do SINAPI davam esse erro ao virar composicao propria. Codigo que realmente nao existe continua bloqueado, e insumo sem preco continua pedindo cotacao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.202/OrcaPRO-IA-Instalador-v1.1.202.exe"
 }

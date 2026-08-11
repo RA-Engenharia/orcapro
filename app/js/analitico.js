@@ -27,6 +27,7 @@
         if (it && it.codigo != null) this._porCodigo[String(it.codigo)] = it;
       }
       this._total = dados.length;
+      this._idxInsumos = null; // base nova -> índice de insumos refeito sob demanda
       this.competencia = (pacote && pacote.mes) || null;
       this.uf = (pacote && pacote.uf) || null;
       this._normalizar(); // FASE 1.1: corrige categorias de sub-composições vindas erradas do gerador
@@ -79,7 +80,7 @@
     reset: function () {
       this._epoca++; // invalida qualquer fetch em voo (o .then vê época obsoleta e descarta)
       this.carregado = false; this.carregando = false; this._promise = null;
-      this._porCodigo = {}; this._total = 0; this.competencia = null; this.uf = null;
+      this._porCodigo = {}; this._total = 0; this._idxInsumos = null; this.competencia = null; this.uf = null;
     },
 
     /* FASE 1.1 — Normaliza categorias: o gerador classificava SUB-COMPOSIÇÕES por
@@ -159,6 +160,52 @@
     /* Retorna o analítico de uma composição (ou null se não houver). */
     obter: function (codigo) { return this._porCodigo[String(codigo)] || null; },
     tem: function (codigo) { return !!this._porCodigo[String(codigo)]; },
+
+    /* v1.1.202 — ÍNDICE DE INSUMOS DO ANALÍTICO (código -> insumo real).
+     * O sintético da UF (aba ISD da Referência) só traz insumo COM coleta de
+     * preço no estado. Sem coleta, a CAIXA precifica a composição pelo preço de
+     * SÃO PAULO (coluna %AS) — o insumo entra no ANALÍTICO com preço oficial e
+     * precoAtribuidoSP, mas NÃO existe na base de preços daquela UF. São ~1.500
+     * a ~2.800 códigos por estado, presentes em 20% (SP) a 49% (AM) das
+     * composições. Sem este índice, um insumo OFICIAL (ex.: 40547 no DF) era
+     * acusado de "não existe nas bases ativas" ao criar composição própria.
+     * Construído sob demanda; invalidado em carregarDe()/reset(). */
+    _idxInsumos: null,
+    _indexarInsumos: function () {
+      var idx = {}, self = this;
+      Object.keys(this._porCodigo).forEach(function (cod) {
+        var ins = self._porCodigo[cod].insumos;
+        if (!Array.isArray(ins)) return;
+        for (var i = 0; i < ins.length; i++) {
+          var it = ins[i];
+          if (!it || it.codigo == null) continue;
+          var c = String(it.codigo), atual = idx[c];
+          // o mesmo insumo pode aparecer zerado numa composição e precificado
+          // em outra: fica a ocorrência COM preço
+          if (!atual || (!(Number(atual.custoUnitario) > 0) && Number(it.custoUnitario) > 0)) idx[c] = it;
+        }
+      });
+      this._idxInsumos = idx;
+    },
+    /* Insumo REAL do analítico (nunca sub-composição): último recurso de
+     * resolução/precificação quando o sintético da UF não tem o código.
+     * origemPreco "SP" = preço atribuído pela CAIXA por falta de coleta na UF. */
+    insumo: function (codigo) {
+      if (!this.carregado) return null;
+      if (!this._idxInsumos) this._indexarInsumos();
+      var it = this._idxInsumos[String(codigo)];
+      if (!it || String(it.tipo).toUpperCase() === "COMPOSICAO") return null;
+      return {
+        codigo: String(it.codigo),
+        descricao: it.descricao || "",
+        unidade: it.unidade || "",
+        custoUnitario: Number(it.custoUnitario) || 0,
+        categoria: it.categoria || "",
+        tipoItem: "insumo",
+        fonte: "SINAPI",
+        origemPreco: it.precoAtribuidoSP ? "SP" : "UF"
+      };
+    },
     /* v1.1.123 — lista completa (p/ o agente de composição buscar análogas) */
     todos: function () {
       var self = this, out = [];

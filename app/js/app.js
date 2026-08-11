@@ -3890,6 +3890,20 @@
         }
         if (!item) item = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(String(codigo)) : null;
       }
+      // v1.1.202 — ÚLTIMO RECURSO OFICIAL: o insumo pode ser REAL e mesmo assim
+      // não estar no sintético da UF. A aba ISD da Referência só lista insumo
+      // COM coleta de preço no estado; sem coleta, a CAIXA precifica pelo valor
+      // de SÃO PAULO e o item aparece só no ANALÍTICO (precoAtribuidoSP). Eram
+      // ~2.000 códigos por UF (20%–49% das composições) recusados como
+      // "código não existe nas bases ativas" — ex.: 40547/39443/39435 na 96114
+      // do DF. Aqui o analítico responde: o código existe e o preço é o oficial.
+      if (!item && (!fonte || fonte === "SINAPI") && typeof Analitico !== "undefined" && Analitico.carregado) {
+        item = Analitico.insumo ? Analitico.insumo(String(codigo)) : null;
+        if (!item) { // sub-composição oficial fora do CSD da UF (mesma causa)
+          var sub = Analitico.obter(String(codigo));
+          if (sub) item = { codigo: String(sub.codigo), descricao: sub.descricao || "", unidade: sub.unidade || "", custoUnitario: Number(sub.custoUnitario) || 0, categoria: "", tipoItem: "composicao", fonte: "SINAPI" };
+        }
+      }
       // sem preço na base? a cotação que o usuário já informou vale (mesma da planilha)
       if (!item || !(Number(item.custoUnitario) > 0)) {
         try {

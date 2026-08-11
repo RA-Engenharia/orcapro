@@ -1,0 +1,195 @@
+TERMO DE REUNIÃO POR VÍDEO — OrçaPRO IA
+Versão 1.0 — 09/08/2026
+Complementa a Política de Privacidade (item 4.10) e o Termo de Uso.
+
+
+PARA QUE ESTE ARQUIVO EXISTE
+
+Aqui ficam os TEXTOS EXATOS que a sala mostra na tela. Não é um documento
+jurídico paralelo: é a fonte do que o usuário lê no momento de decidir.
+
+⚠ A REGRA: o que aparece na tela é literalmente o que está escrito aqui. Se um
+texto mudar na tela e não mudar aqui, o consentimento passa a ser dado sobre uma
+frase que ninguém revisou. É o mesmo princípio da tela de conferência do "Falar
+com o suporte" (item 4.7 da política): o que a pessoa vê é o que acontece.
+
+Consentimento, para valer, precisa ser informado, específico e destacado
+(art. 8º da LGPD). Por isso cada permissão é pedida separada, na hora, e some
+quando a reunião acaba. Não existe "aceito tudo" nesta sala.
+
+
+─────────────────────────────────────────────────────────────────────
+1. ANTES DE ENTRAR NA SALA — todos veem, sempre
+─────────────────────────────────────────────────────────────────────
+
+  Antes de entrar
+
+  Esta reunião NÃO É GRAVADA. Nem imagem, nem som, nem tela.
+
+  Sua imagem e sua voz vão direto para os outros participantes,
+  criptografadas. Quando a sua rede não permite a ligação direta, elas
+  passam por um servidor da RA Engenharia que só repassa — sem abrir e
+  sem guardar.
+
+  Fica registrado apenas: o nome que você digitar, e a hora em que
+  você entrou e saiu.
+
+  Você escolhe entrar com câmera, só com voz, ou só ouvindo. Pode
+  desligar qualquer um a qualquer momento, e sair fechando a aba.
+
+  [ Entrar ]   [ Não quero entrar ]
+
+  Detalhes no item 4.10 da Política de Privacidade.
+
+
+─────────────────────────────────────────────────────────────────────
+2. COMPARTILHAR A TELA — mostrado a quem vai compartilhar
+─────────────────────────────────────────────────────────────────────
+
+  Você vai compartilhar sua tela
+
+  O navegador vai perguntar o que você quer mostrar: uma janela, uma aba
+  ou a tela inteira.
+
+  ⚠ Tudo o que estiver na tela escolhida será visto por quem está na
+  sala — inclusive o que não tem a ver com a reunião. Escolhendo a tela
+  inteira, aparecem também as notificações que chegarem.
+
+  Feche antes o que não quiser mostrar. Você interrompe quando quiser,
+  pelo botão da tarja.
+
+  [ Escolher o que mostrar ]   [ Agora não ]
+
+
+─────────────────────────────────────────────────────────────────────
+3. OS TRÊS NÍVEIS DE ACESSO À SUA TELA DO ORÇAPRO
+   Cada um é pedido SEPARADO, na hora, e some ao fim da reunião.
+─────────────────────────────────────────────────────────────────────
+
+3.1 NÍVEL 1 — VER
+
+  <NOME> quer ver a sua tela do OrçaPRO
+
+  Ele vai enxergar a tela do OrçaPRO que estiver na sua frente,
+  acompanhando o que você faz. Não clica e não digita nada.
+
+  ⚠ Ele vai ver o que estiver na tela: obra, cliente, colaborador,
+  valores. Senha, chave PIX e CPF aparecem mascarados (•••) — o
+  conteúdo desses campos não sai do seu aparelho.
+
+  É SÓ O ORÇAPRO. Nada do resto do computador: nem arquivos, nem
+  e-mail, nem outro programa, nem outra aba.
+
+  Encerra sozinho em 15 minutos, ao fim da reunião, ou quando você
+  apertar ESC.
+
+  [ Autorizar ver ]   [ Não autorizar ]
+
+3.2 NÍVEL 2 — APONTAR
+
+  <NOME> quer apontar na sua tela
+
+  Além de ver, ele vai poder mover um cursor e desenhar setas na sua
+  tela, para mostrar onde clicar. Continua sem clicar e sem digitar.
+
+  [ Autorizar apontar ]   [ Só ver ]   [ Não autorizar ]
+
+3.3 NÍVEL 3 — COMANDAR   ⚠ o mais forte
+
+  <NOME> quer mexer no seu OrçaPRO
+
+  Ele vai poder clicar e digitar DENTRO do seu OrçaPRO, como se
+  estivesse no seu lugar.
+
+  O que ele NÃO consegue fazer, mesmo autorizado:
+
+    · excluir qualquer registro
+    · comprar, contratar ou mexer em pagamento
+    · publicar obra no Portal do Cliente
+    · trocar a sua senha ou a de qualquer usuário
+    · exportar a sua base de dados
+    · digitar em campo de senha, chave PIX ou CPF
+
+  O programa RECUSA esses comandos sozinho. Não é promessa de conduta
+  do atendente: é trava no código. Qualquer ação que mexa em dinheiro
+  ou apague algo abre a confirmação na SUA tela, para VOCÊ decidir.
+
+  Enquanto durar, uma tarja vermelha fica visível o tempo todo.
+  ESC encerra na hora. Encerra sozinho em 15 minutos.
+
+  Tudo o que ele fizer fica registrado no seu OrçaPRO, com hora e
+  resultado, e você pode conferir e baixar depois.
+
+  [ Autorizar por 15 minutos ]   [ Só ver ]   [ Não autorizar ]
+
+
+─────────────────────────────────────────────────────────────────────
+4. A TARJA — fica na tela o tempo inteiro, enquanto durar
+─────────────────────────────────────────────────────────────────────
+
+  Nível VER      →  <NOME> está vendo esta tela do OrçaPRO · 14:32 · [Encerrar (ESC)]
+  Nível APONTAR  →  <NOME> está vendo e apontando nesta tela · 14:32 · [Encerrar (ESC)]
+  Nível COMANDAR →  <NOME> está COMANDANDO o seu OrçaPRO · 14:32 · [Encerrar (ESC)]
+
+  Vermelha, no topo, acima de tudo. Não fecha, não minimiza e não some
+  ao trocar de módulo. Ao encerrar: "Acesso encerrado. Ninguém está mais
+  vendo esta tela."
+
+
+─────────────────────────────────────────────────────────────────────
+5. SALA QUE VOCÊ ABRE COM O SEU CLIENTE (Portal)
+   Mostrado ao ESCRITÓRIO, antes de gerar o convite.
+─────────────────────────────────────────────────────────────────────
+
+  Você está convidando alguém de fora
+
+  Quem convida é você, e é você quem responde por este convite. A RA
+  Engenharia só opera a sala a seu pedido.
+
+  ⚠ Avise o convidado do que a reunião é, e mostre apenas o que a obra
+  dele envolve.
+
+  Nesta sala NÃO EXISTE o nível "comandar" — nem para você, nem para a
+  RA Engenharia. Ver e apontar, apenas.
+
+  Continua valendo: nada é gravado, e a imagem e o som vão direto entre
+  os participantes.
+
+  [ Gerar o convite ]   [ Cancelar ]
+
+  E o convidado, ao abrir o link, vê o texto do item 1 acrescido de:
+
+  Você foi convidado por <ESCRITÓRIO>. Quem organiza esta reunião é
+  <ESCRITÓRIO>, não a RA Engenharia.
+
+
+─────────────────────────────────────────────────────────────────────
+6. QUEM PEDE REUNIÃO PELO SITE (ainda não é cliente)
+─────────────────────────────────────────────────────────────────────
+
+  Ao enviar este pedido, ficam guardados o seu nome, e-mail, WhatsApp,
+  empresa e o motivo que você escreveu — para marcarmos a conversa e
+  falarmos com você sobre ela.
+
+  Nada mais é coletado, e você pode pedir a exclusão quando quiser em
+  contato@raengenhariaespecial.com.br.
+
+  [ ] Concordo em ser contatado sobre esta reunião
+
+  (a caixa nasce DESMARCADA e o botão de enviar só liga quando ela
+   for marcada — consentimento não vem pré-aceito)
+
+
+─────────────────────────────────────────────────────────────────────
+7. O QUE NUNCA APARECE NESTA SALA
+─────────────────────────────────────────────────────────────────────
+
+  · botão de gravar — não existe, em nível nenhum, para ninguém;
+  · "lembrar desta autorização" — toda permissão morre com a reunião;
+  · consentimento pré-marcado ou embutido em outro aceite;
+  · acesso que continue depois que a pessoa fecha a aba.
+
+
+RA ENGENHARIA ESPECIAL LTDA — CNPJ 59.507.116/0001-64
+Encarregado (DPO): Eng. Rogério Alves de Souza
+contato@raengenhariaespecial.com.br · WhatsApp (34) 9286-9383

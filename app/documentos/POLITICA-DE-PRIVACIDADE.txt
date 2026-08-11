@@ -1,6 +1,10 @@
 ﻿POLÍTICA DE PRIVACIDADE — OrçaPRO IA
-Versão 1.2 — vigente a partir de 08/08/2026
+Versão 1.3 — vigente a partir de 09/08/2026
 Elaborada conforme a Lei nº 13.709/2018 (LGPD)
+
+O que mudou na 1.3: entrou o item 4.10 — a REUNIÃO POR VÍDEO do OrçaPRO
+(atendimento, treinamento e apresentação), com o que sai, o que não sai e como
+funciona o acesso assistido à sua tela. Nada é gravado.
 
 
 EM DUAS FRASES
@@ -309,12 +313,108 @@ do diário. Não é a sua localização — é o município que você cadastrou 
 Sem apertar o botão, nada é consultado.
 
 
+4.10 REUNIÃO POR VÍDEO (a sala do OrçaPRO)
+
+A sala de reunião por vídeo do OrçaPRO — usada para atendimento, treinamento e
+apresentação do sistema. Não confunda com a Sala de Reunião DENTRO DO MODELO BIM,
+que é outra coisa e está no item 4.3.
+
+A sala é liberada por etapas. Cada parte descrita aqui só existe de fato quando
+ela aparece no programa; enquanto não aparecer, nada do que está abaixo acontece.
+
+⚠ NADA É GRAVADO. Nem imagem, nem som, nem tela. Não existe botão de gravar,
+não existe endereço no nosso servidor que aceite mídia e não existe pasta onde
+ela caia. Não é uma promessa de conduta: é a ausência do caminho.
+
+⚠ A IMAGEM E O SOM NÃO PASSAM PELO NOSSO SERVIDOR. Eles vão direto do navegador
+de um participante para o do outro, criptografados de ponta a ponta pelo próprio
+navegador. A única exceção é a rede que não permite ligação direta (comum em 4G
+e em rede de empresa): aí um servidor nosso repassa os pacotes AINDA
+CRIPTOGRAFADOS, sem ter como abri-los, e sem guardar nada.
+
+O QUE O NOSSO SERVIDOR SABE DA REUNIÃO:
+
+  · o código da sala e o horário em que ela abriu e fechou;
+  · o nome que cada participante digitou ao entrar, e a hora de entrada e saída;
+  · quando a reunião foi agendada: o nome, o e-mail, o WhatsApp, a empresa e o
+    MOTIVO que a pessoa escreveu ao pedir a reunião.
+
+Serve para você entrar na sala certa, para nós sabermos que a reunião aconteceu
+e para o atendimento ter histórico. Nada além disso é registrado.
+
+CÂMERA E MICROFONE. Só abrem quando VOCÊ autoriza, no próprio navegador, e você
+escolhe: entrar com imagem e voz, só com voz, ou só ouvindo. Fechar a aba encerra
+tudo na hora. Quando o seu microfone está aberto e você não está falando, o
+programa reduz o som que sai do seu aparelho — o que passa é menos, nunca mais.
+
+FILTROS DE IMAGEM (luz e pele). Rodam DENTRO DO SEU APARELHO, antes de qualquer
+coisa sair. O que os outros recebem é a imagem já tratada; a imagem original não
+viaja para lugar nenhum e não é vista por nós.
+
+COMPARTILHAMENTO DE TELA. Só acontece no seu clique, e o navegador pergunta o
+que você quer compartilhar — uma janela, uma aba ou a tela inteira. Você
+interrompe quando quiser.
+  ⚠ Enquanto durar, TUDO o que estiver naquela tela é visto por quem está na
+  sala, inclusive o que não tem a ver com a reunião. Feche antes o que não
+  quiser mostrar. Compartilhar a tela inteira mostra também as notificações
+  que aparecerem.
+
+ESPELHO DO ORÇAPRO E CONTROLE ASSISTIDO. Para o atendimento resolver junto com
+você, sem você precisar descrever o problema por telefone. São três níveis, e
+CADA UM é autorizado por você, na hora, um a um:
+
+  · VER — o atendente enxerga a sua tela do OrçaPRO;
+  · APONTAR — além de ver, ele desenha setas e move um cursor na sua tela;
+  · COMANDAR — ele clica e digita dentro do seu OrçaPRO.
+
+  · ⚠ Enquanto qualquer um dos três durar, quem está do outro lado VÊ O QUE
+    ESTÁ NA SUA TELA DO ORÇAPRO — inclusive dado de obra, de cliente e de
+    colaborador. Campos de senha, chave PIX e CPF vão mascarados (•••) e o
+    conteúdo deles não sai do seu aparelho.
+  · É SÓ O ORÇAPRO. Não dá acesso ao resto do computador: nem arquivos, nem
+    e-mail, nem outro programa, nem outra aba do navegador.
+  · O QUE A AUTORIZAÇÃO NÃO PERMITE, EM NENHUM NÍVEL: excluir registro, comprar,
+    publicar obra no Portal, trocar senha e exportar base. O próprio programa
+    recusa esses comandos — não é regra de conduta do atendente, é trava de
+    código. Ação que mexe em dinheiro ou apaga algo só acontece se VOCÊ
+    confirmar, na sua tela.
+  · COMO PARAR: a tecla ESC encerra na hora, e há um botão na tarja vermelha
+    que fica visível o tempo todo enquanto durar. Encerra sozinho em 15 minutos
+    e ao fim da reunião.
+  · FICA REGISTRADO: cada comando executado, com hora e resultado, guardado no
+    SEU OrçaPRO. Você pode conferir e baixar depois.
+
+REUNIÃO QUE VOCÊ ABRE COM O SEU CLIENTE (pelo Portal). Você pode usar a sala para
+falar com o contratante da SUA obra.
+  · ⚠ ISTO ENVOLVE DADO DE OUTRA PESSOA. Quem convida é você e quem responde por
+    esse convite é você (a lei chama isso de controlador); nós apenas operamos a
+    sala a seu pedido. Avise o convidado do que a reunião é.
+  · Nessa sala NÃO EXISTE o nível COMANDAR — nem para nós, nem para você. Ver e
+    apontar, apenas.
+  · Continua valendo tudo o que está acima: nada gravado, mídia direto entre os
+    participantes.
+
+Base legal: execução do contrato (art. 7º, V) no atendimento a quem já é cliente;
+e o seu consentimento, manifestado ao pedir a reunião, ao entrar na sala e ao
+autorizar cada nível de acesso — revogável a qualquer momento, saindo da sala ou
+apertando ESC.
+
+Por quanto tempo: o registro da reunião (item por item, acima) e a ata que o
+atendente digitou ficam 90 dias e são apagados. Pode pedir antes, pelo item 7.
+
+Para não usar: não peça reunião e não entre em sala nenhuma. Nada aqui funciona
+em segundo plano — sem alguém clicando, não existe reunião.
+
+
 5. O QUE NUNCA FAZEMOS
 
   · Não vendemos, alugamos nem cedemos os seus dados.
   · Não usamos o conteúdo dos seus orçamentos para treinar modelo de IA.
   · Não instalamos rastreador de publicidade nem pixel de terceiros no programa.
-  · Não acessamos a sua máquina remotamente sem que você peça e autorize.
+  · Não acessamos a sua máquina remotamente sem que você peça e autorize. E
+    quando você pede e autoriza (item 4.10), o acesso é ao ORÇAPRO e a mais
+    nada no computador — nem arquivo, nem e-mail, nem outro programa.
+  · Não gravamos as reuniões. Nem imagem, nem som, nem tela (item 4.10).
   · Não coletamos a sua localização.
 
 
@@ -340,6 +440,11 @@ Sem apertar o botão, nada é consultado.
     depois de o OrçaPRO baixar; no máximo 200 mensagens pendentes por conta.
   · Cadastro e consultas da busca de composições do site (item 4.5): enquanto
     você não pedir a exclusão.
+  · Reunião por vídeo (item 4.10): o registro da reunião (código da sala,
+    horários, nome de quem entrou) e o pedido de agendamento ficam 90 dias e
+    são apagados. Imagem, som e tela NÃO são gravados — não há o que guardar.
+  · Ata da reunião (item 4.10): 90 dias no nosso servidor. A cópia que virar
+    tarefa ou anexo dentro do seu OrçaPRO é sua e fica com você.
   · Licença e faturamento: pelo prazo legal aplicável (fiscal e prescricional).
 
 
@@ -368,6 +473,11 @@ Boa parte disso você resolve sozinho e na hora, dentro do programa — exportan
     para emitir a cobrança (PIX, boleto ou cartão) e nos avisar quando ela é
     paga. Nenhum dado de obra, orçamento ou diário vai para lá. Pagando por PIX
     manual, nem esses dados saem: a cobrança é montada aqui mesmo.
+
+A REUNIÃO POR VÍDEO (item 4.10) NÃO ACRESCENTA NINGUÉM A ESTA LISTA. Não há
+Zoom, Meet, Teams nem provedor de vídeo por trás: a imagem e o som vão direto
+entre os participantes e, quando a rede não permite a ligação direta, passam por
+um servidor da própria RA Engenharia, que só repassa pacote criptografado.
 
 As bibliotecas que o programa usa (planilha, leitor de PDF, 3D, leitor de IFC,
 QR e as fontes) vêm INSTALADAS com ele e funcionam sem internet. A ÚNICA exceção
