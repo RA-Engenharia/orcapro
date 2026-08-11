@@ -7934,23 +7934,89 @@
 
       /* FILTRO POR OBRA. Com 3 obras rodando, uma lista única de diários não
          é consultável: o encarregado procura o diário de ONTEM da obra dele.
-         O filtro também manda na galeria de fotos abaixo. */
+         O filtro também manda na galeria de fotos abaixo.
+
+         ⚠ Desde a v1.1.201 quem classifica é o `PorObra`, o mesmo motor do
+         Financeiro, Compras e Medições. O filtro artesanal daqui tinha um furo:
+         diário SEM obra ou de obra EXCLUÍDA era contado no "Todas" e não
+         aparecia em opção nenhuma — ficava inalcançável, e as contagens do
+         seletor não fechavam com o total. */
+      var semMotorR = (typeof PorObra === "undefined");
       var fObra = this._rdoObraFiltro || "todas";
       /* obra que sumiu do cadastro não pode deixar a tela vazia para sempre */
-      if (fObra !== "todas" && !obras.filter(function (o) { return o.id === fObra; }).length) fObra = this._rdoObraFiltro = "todas";
-      var rs = fObra === "todas" ? todos : todos.filter(function (r) { return r.obraId === fObra; });
-      var porObra = {};
-      todos.forEach(function (r) { porObra[r.obraId || ""] = (porObra[r.obraId || ""] || 0) + 1; });
+      if (!semMotorR && fObra !== "todas" && fObra !== PorObra.SEM_OBRA && fObra !== PorObra.ORFAO &&
+        !obras.filter(function (o) { return String(o.id) === String(fObra); }).length) fObra = this._rdoObraFiltro = "todas";
+      var rs = semMotorR ? todos : PorObra.filtrar(todos, fObra, obras);
+      var hojeR = new Date().toISOString().slice(0, 10);
+      var aggR = function (x) { return PorObra.totaisRdo(x, hojeR); };
+      var tR = semMotorR ? null : PorObra.totaisRdo(rs, hojeR);
       html += '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px">'
         + '<label style="font-weight:700;font-size:13px">Obra</label>'
         + '<select data-gacao="rdo-obra" style="max-width:280px">'
-        + '<option value="todas"' + (fObra === "todas" ? " selected" : "") + ">Todas as obras (" + todos.length + ")</option>"
-        + obras.map(function (o) {
-          var n = porObra[o.id] || 0;
-          return '<option value="' + Util.esc(o.id) + '"' + (o.id === fObra ? " selected" : "") + ">" + Util.esc(o.nome) + " (" + n + ")</option>";
-        }).join("") + "</select>"
+        + (semMotorR
+          ? '<option value="todas">Todas as obras (' + todos.length + ")</option>"
+          : PorObra.opcoes(todos, obras).map(function (o) {
+              return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(fObra) ? " selected" : "") + ">" +
+                Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+            }).join("")) + "</select>"
         + '<span class="muted" style="font-size:12px">' + rs.length + " diário" + (rs.length === 1 ? "" : "s") + " nesta lista</span>"
         + '<button class="btn sm" data-gacao="rdo-fotos" style="margin-left:auto">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Fotos da obra</button></div>';
+
+      /* FAIXA DE COBERTURA. No diário não há dinheiro: o que a obra acumula é
+         PROVA. "Faz N dias" é o número que interessa — buraco no diário só
+         aparece quando alguém precisa dele num pleito, e aí não dá mais para
+         preencher. */
+      if (tR) html += '<div class="fin-faixa">' +
+        '<div class="fin-rec"><span class="fin-lbl">Recorte</span><b>' + Util.esc(PorObra.rotuloDe(fObra, obras)) + '</b>' +
+          '<span class="fin-sub">' + tR.n + ' diário(s)</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Último diário</span><b>' +
+          (tR.ultimaData ? Util.esc(tR.ultimaData.split("-").reverse().join("/")) : "—") + '</b>' +
+          '<span class="fin-sub">' + (tR.diasSemDiario == null ? "sem data válida"
+            : tR.diasSemDiario === 0 ? "hoje"
+            : tR.diasSemDiario === 1 ? "ontem"
+            : "há " + tR.diasSemDiario + " dias") + '</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Homens-dia</span><b>' + Util.fmtNum(tR.homensDia, 0) + '</b>' +
+          '<span class="fin-sub">efetivo somado</span></div>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Com foto</span><b>' + tR.comFoto + '/' + tR.n + '</b>' +
+          '<span class="fin-sub">' + tR.nFotos + ' foto(s)</span></div>' +
+        (tR.emAprovacao || tR.emRevisao || tR.rascunho
+          ? '<div class="fin-kpi"><span class="fin-lbl">Não fechados</span><b style="color:var(--amarelo)">' +
+            (tR.rascunho + tR.emAprovacao + tR.emRevisao) + '</b>' +
+            '<span class="fin-sub">' + tR.rascunho + ' rascunho · ' + tR.emAprovacao + ' aguardando</span></div>' : "") +
+        /* ⚠ o diário APROVADO e não publicado não caía em KPI nenhum: nem em
+           "não fechados" (ele está fechado) nem em "publicados" (o cliente não
+           vê). Ficava invisível — e "aprovado que o cliente nunca viu" é um dos
+           alertas que o Painel já levanta. Agora aparece aqui, ao lado. */
+        '<div class="fin-kpi"><span class="fin-lbl">Publicados</span><b style="color:var(--verde)">' + tR.publicado + '</b>' +
+          '<span class="fin-sub">' + (tR.aprovado
+            ? tR.aprovado + " aprovado(s) que o cliente ainda não vê"
+            : "o cliente vê") + '</span></div>' +
+        (fObra !== "todas" ? '<button class="btn sm ghost" data-gacao="rdo-obra" data-id="todas" style="align-self:center">Ver todas</button>' : "") +
+        "</div>";
+
+      /* QUADRO POR OBRA, ordenado pelo ABANDONO: a obra sem diário há mais
+         tempo sobe, não a que tem mais diários. */
+      if (!semMotorR && fObra === "todas" && obras.length) {
+        var gruposR = PorObra.porObra(todos, obras, aggR);
+        if (gruposR.length > 1) {
+          html += '<table class="tbl" style="margin-bottom:10px"><thead><tr><th>Obra</th><th class="num">Diários</th>' +
+            '<th>Último</th><th class="num">Sem diário há</th><th class="num">Homens-dia</th><th class="num">Publicados</th></tr></thead><tbody>';
+          gruposR.forEach(function (g) {
+            var alerta = g.diasSemDiario != null && g.diasSemDiario >= 7;
+            html += '<tr class="lin" style="cursor:pointer" data-gacao="rdo-obra" data-id="' + Util.esc(g.chave) + '">' +
+              "<td><b>" + Util.esc(g.nome) + "</b>" +
+              (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") + "</td>" +
+              '<td class="num">' + g.n + "</td>" +
+              "<td>" + (g.ultimaData ? Util.esc(g.ultimaData.split("-").reverse().join("/")) : "—") + "</td>" +
+              '<td class="num"' + (alerta ? ' style="color:var(--amarelo);font-weight:700"' : "") + ">" +
+                (g.diasSemDiario == null ? "—" : g.diasSemDiario + " dia" + (g.diasSemDiario === 1 ? "" : "s")) + "</td>" +
+              '<td class="num">' + Util.fmtNum(g.homensDia, 0) + "</td>" +
+              '<td class="num">' + g.publicado + "</td></tr>";
+          });
+          html += "</tbody></table>";
+        }
+      }
+
       if (!rs.length) return html + vazioBox("Nenhum diário nesta obra", "novo-rdo", "Registrar diário desta obra");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Clima</th><th class="num">Efetivo</th><th>Atividades</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
@@ -7984,7 +8050,11 @@
          * chamá-lo de "Publicado" mentiria na direção oposta à que estávamos
          * consertando. Aqui a obra está à mão, então dá para responder a
          * pergunta de verdade — e é o que o gestor precisa saber. */
-        var est = RDO.estadoDe ? RDO.estadoDe(r, !!(ob && ob.portalUser)) : (r.estado || "rascunho");
+        /* ⚠ ACHADO DE PASSAGEM (v1.1.201): o `else` do bloco acima trata o caso
+           de `RDO` ausente, mas ESTA linha usava `RDO.estadoDe` sem guarda —
+           então o else era código morto e a tela quebrava dois passos depois.
+           Guarda que não cobre o caminho inteiro dá falsa sensação de rede. */
+        var est = (typeof RDO !== "undefined" && RDO.estadoDe) ? RDO.estadoDe(r, !!(ob && ob.portalUser)) : (r.estado || "rascunho");
         var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
         /* numa conta de UM usuário não existe segundo aprovador — sem este
            contexto o botão Aprovar some e o diário morre em "Aguardando
@@ -9498,9 +9568,12 @@
      * ------------------------------------------------------------------ */
     rdoFotos: function () {
       var obras = lista("obras"), f = this._rdoObraFiltro || "todas";
-      var diarios = lista("rdo").filter(function (r) {
-        return (r.fotos && r.fotos.length) && (f === "todas" || r.obraId === f);
-      }).sort(function (a2, b2) { return (b2.data || "").localeCompare(a2.data || ""); });
+      /* ⚠ o filtro agora aceita "sem obra" e "obra removida"; comparar
+         `r.obraId === f` com esses valores não casaria com NADA e a galeria
+         abriria vazia sem explicação. Quem classifica é o mesmo motor da lista. */
+      var comFoto = lista("rdo").filter(function (r) { return r.fotos && r.fotos.length; });
+      var diarios = (typeof PorObra === "undefined" ? comFoto : PorObra.filtrar(comFoto, f, obras))
+        .sort(function (a2, b2) { return (b2.data || "").localeCompare(a2.data || ""); });
 
       var total = diarios.reduce(function (n, r) { return n + r.fotos.length; }, 0);
       if (!total) {
@@ -9569,7 +9642,18 @@
     },
 
     _rdoObraFiltro: "todas",
-    rdoTrocaObra: function (id) { this._rdoObraFiltro = id || "todas"; App.render(); },
+    /* ⚠ chega por DOIS caminhos: o <select> manda `{value}` pelo `change`, e
+       a linha do quadro (e o botão "Ver todas") mandam `{id}` pelo `click`.
+       A rota passava só `dataset.value` — com isso a linha do quadro nasceria
+       MORTA, o defeito do "entregue ≠ clicável" que já custou 8 versões.
+       Aceita string solta também, para quem chamar de fora. */
+    rdoTrocaObra: function (d) {
+      var v = (typeof d === "string") ? d
+        : (d && d.value != null && d.value !== "") ? d.value
+        : (d && d.id != null && d.id !== "") ? d.id : "todas";
+      this._rdoObraFiltro = v || "todas";
+      App.render();
+    },
 
     /* --------------------------------------------------------------------
      * FALAR COM O SUPORTE
@@ -9776,7 +9860,12 @@
       var self = this, obras = lista("obras"), diarios = lista("rdo");
       if (!diarios.length || !obras.length) { this.formRdo(null); return; }
       /* obra sugerida: a do filtro, senão a do último diário lançado */
-      var sug = this._rdoObraFiltro !== "todas" ? this._rdoObraFiltro
+      /* ⚠ "sem obra" e "obra removida" NÃO são obras: sugerir um deles gravaria
+         o diário novo com um obraId inventado ("__sem__"), que não existe no
+         cadastro — o diário nasceria órfão por causa do filtro. */
+      var fSug = this._rdoObraFiltro;
+      if (typeof PorObra !== "undefined" && (fSug === PorObra.SEM_OBRA || fSug === PorObra.ORFAO)) fSug = "todas";
+      var sug = fSug !== "todas" ? fSug
         : ((diarios.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); })[0] || {}).obraId || "");
 
       function resumo(obraId) {
@@ -15467,7 +15556,7 @@ renderFolha: function () {
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
-      "fin-obra": 1, "compras-obra": 1, "med-obra": 1,
+      "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1
@@ -15670,7 +15759,7 @@ renderFolha: function () {
         case "menu-foco": return this.menuFocoToggle();
         case "menu-organizar": return this.menuOrganizar();
         case "menu-mais": return this.menuMaisToggle();
-        case "rdo-obra": return this.rdoTrocaObra(dataset.value);
+        case "rdo-obra": return this.rdoTrocaObra(dataset);
         case "rdo-fotos": return this.rdoFotos();
         case "rdo-entrada": return this.rdoBuscarEntrada(true);
         case "relato-problema": return this.relatoNovo("problema");

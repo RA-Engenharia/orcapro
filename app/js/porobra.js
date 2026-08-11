@@ -220,6 +220,67 @@
   }
 
   /* ---------------------------------------------------------------
+   * AGREGADOR DO DIÁRIO (RDO) — aqui não há dinheiro. O que a obra "acumula"
+   * no diário é PROVA: dias registrados, gente em campo e fotos. E a pergunta
+   * que o gestor faz olhando várias obras não é "quanto", é:
+   *
+   *   "faz quantos dias que ninguém escreve o diário desta obra?"
+   *
+   * Diário é a peça que sustenta pleito de prazo, defende a empresa em
+   * discussão contratual e alimenta o avanço físico. Buraco no diário só
+   * aparece quando alguém precisa dele — e aí não dá mais para preencher.
+   * Por isso `diasSemDiario` é o número que ordena o quadro: a obra mais
+   * ABANDONADA sobe, não a mais movimentada.
+   *
+   * ⚠ `hoje` entra por PARÂMETRO. Ler o relógio aqui dentro tornaria o teste
+   * dependente do dia em que roda — e um teste que passa hoje e falha em
+   * janeiro é um teste que alguém vai desabilitar.
+   * ------------------------------------------------------------- */
+  function diasEntre(aISO, bISO) {
+    var a = String(aISO || "").slice(0, 10), b = String(bISO || "").slice(0, 10);
+    if (a.length !== 10 || b.length !== 10) return null;
+    var ta = Date.parse(a + "T00:00:00Z"), tb = Date.parse(b + "T00:00:00Z");
+    if (isNaN(ta) || isNaN(tb)) return null;
+    return Math.round((tb - ta) / 86400000);
+  }
+  function totaisRdo(rdos, hoje) {
+    var r = { n: 0, homensDia: 0, comFoto: 0, nFotos: 0,
+      rascunho: 0, emAprovacao: 0, emRevisao: 0, aprovado: 0, publicado: 0,
+      primeiraData: "", ultimaData: "", diasSemDiario: null, movimento: 0 };
+    arr(rdos).forEach(function (d) {
+      if (!d) return;
+      r.n++;
+      r.homensDia += num(d.efetivoDireto) + num(d.efetivoIndireto);
+      var nf = (d.fotos && d.fotos.length) ? d.fotos.length : 0;
+      if (nf) { r.comFoto++; r.nFotos += nf; }
+      var data = texto(d.data).slice(0, 10);
+      if (data) {
+        if (!r.primeiraData || data < r.primeiraData) r.primeiraData = data;
+        if (!r.ultimaData || data > r.ultimaData) r.ultimaData = data;
+      }
+      /* o diário ANTIGO não tem `estado` e já estava ao alcance do cliente —
+         contá-lo como rascunho seria repetir o defeito que a lista já teve */
+      var est = texto(d.estado);
+      if (!est) est = texto(d.status) === "finalizado" ? "publicado" : "rascunho";
+      if (est === "publicado" || est === "publicado_legado" || est === "publicado_sem_portal") r.publicado++;
+      else if (est === "aprovado") r.aprovado++;
+      else if (est === "em_revisao") r.emRevisao++;
+      else if (est === "em_aprovacao") r.emAprovacao++;
+      else r.rascunho++;
+    });
+    if (hoje && r.ultimaData) r.diasSemDiario = diasEntre(r.ultimaData, hoje);
+    /* ORDENAÇÃO PELO ABANDONO: quanto mais dias sem diário, mais alto.
+       ⚠ O `1e9` NÃO é "obra sem diário nenhum" — essa nem chega aqui, porque
+       `porObra` só cria balde para obra que tem item. É o balde cujos diários
+       estão todos SEM DATA VÁLIDA: não dá para saber há quanto tempo, e dado
+       corrompido é o que mais precisa de olho, então sobe ao topo em vez de
+       afundar num zero silencioso. Sem `hoje`, a ordem cai no volume. */
+    if (hoje) r.movimento = (r.diasSemDiario == null) ? 1e9 : r.diasSemDiario;
+    else r.movimento = r.n;
+    return r;
+  }
+
+  /* ---------------------------------------------------------------
    * OPÇÕES DO SELETOR — com a contagem em cada uma. Sem o número, o usuário
    * escolhe uma obra, vê a tela vazia e não sabe se filtrou errado ou se
    * realmente não há lançamento ali.
@@ -286,7 +347,8 @@
   var PorObra = {
     TODAS: TODAS, SEM_OBRA: SEM_OBRA, ORFAO: ORFAO,
     baldeDe: baldeDe, filtrar: filtrar, totais: totais,
-    totaisCompras: totaisCompras, totaisMedicoes: totaisMedicoes,
+    totaisCompras: totaisCompras, totaisMedicoes: totaisMedicoes, totaisRdo: totaisRdo,
+    diasEntre: diasEntre,
     porObra: porObra, opcoes: opcoes, rotuloDe: rotuloDe, confere: confere,
     _num: num
   };

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.200",
+  "versao": "1.1.201",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.200/OrcaPRO-IA-update-v1.1.200.zip",
-  "notas": "Medicoes agora separa por obra, como o Financeiro e o Compras: seletor no topo com a contagem de cada obra, totais do recorte e um quadro com o resultado de cada obra. O modulo nao tinha totais nenhum; agora mostra o medido, o que ja foi recebido, o que esta a receber e o que ainda aguarda aprovacao do cliente. A receber conta so as medicoes APROVADAS - medicao pendente nao entra ai, porque o cliente ainda pode recusar. Medicao rejeitada fica fora do total e aparece a parte. O CSV exporta o recorte da tela e a coluna Obra deixou de sair vazia quando a obra foi excluida.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.200/OrcaPRO-IA-Instalador-v1.1.200.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.201/OrcaPRO-IA-update-v1.1.201.zip",
+  "notas": "O Diario de Obra ganhou o mesmo filtro por obra dos outros modulos, e agora acha tudo: diario sem obra vinculada, ou de obra que foi excluida, antes era contado no total e nao aparecia em opcao nenhuma do seletor - ficava inalcancavel. No diario nao ha dinheiro, entao a faixa mostra o que a obra acumula em prova: o ultimo diario e ha quantos dias foi, homens-dia, quantos tem foto, quantos ainda nao estao fechados e quantos o cliente ja ve. O quadro por obra ordena pela obra mais LARGADA, nao pela mais movimentada - buraco no diario so aparece quando alguem precisa dele. A galeria de fotos e a sugestao de obra ao criar diario acompanharam o filtro novo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.201/OrcaPRO-IA-Instalador-v1.1.201.exe"
 }
