@@ -262,10 +262,33 @@
     // ---------- Tabelas de Preço (multi-base) ----------
     renderTabelas: function (lista) {
       var rows = (lista || []).map(function (b) {
-        return '<tr><td><span class="pill ' + (b.cor || "proprio") + '">' + Util.esc(b.label) + '</span></td>' +
-          '<td>' + Util.esc((b.competencia || "—") + " / " + (b.uf || "—")) + '</td>' +
+        /* v1.1.203 — a VARIANTE carregada aparece aqui. Sem isto, uma SETOP
+           instalada na região Central e outra em Triângulo eram
+           indistinguíveis na tela, e como só existe UMA cópia de cada banco
+           no app, era impossível saber qual preço estava valendo. */
+        var varTxt = "";
+        try {
+          if (b.sel && typeof BasesCat !== "undefined") {
+            var e = BasesCat.get(b.catId || b.fonte), p = [];
+            Object.keys(b.sel).forEach(function (k) {
+              var v = b.sel[k];
+              if (e) (e.eixos || []).forEach(function (ex) {
+                if (ex.id !== k) return;
+                (ex.opcoes || []).forEach(function (o) { if (String(o.v) === String(v)) v = o.r; });
+              });
+              if (v) p.push(v);
+            });
+            if (p.length) varTxt = '<small style="display:block;opacity:.7">' + Util.esc(p.join(" · ")) + "</small>";
+          }
+        } catch (eV) {}
+        var comp = (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? (BasesCat.fmtVersao(b.competencia) || "—") : (b.competencia || "—");
+        /* ⚠ desativada por estar em OUTRA UF não é o mesmo que desmarcada
+           pelo usuário — e o checkbox mostra a ESCOLHA, não a circunstância */
+        var porUf = b.inativaPorUf ? '<small style="display:block;color:#b45309">silenciada: base de ' + Util.esc(b.uf || "?") + ', a atual é outra UF</small>' : "";
+        return '<tr><td><span class="pill ' + (b.cor || "proprio") + '">' + Util.esc(b.label) + '</span>' + varTxt + '</td>' +
+          '<td>' + Util.esc(comp + " / " + (b.uf || "—")) + '</td>' +
           '<td class="num">' + (b.total || 0).toLocaleString("pt-BR") + '</td>' +
-          '<td><label style="cursor:pointer"><input type="checkbox" data-base-toggle="' + Util.esc(b.fonte) + '"' + (b.ativa ? " checked" : "") + '> ativa</label></td>' +
+          '<td><label style="cursor:pointer"><input type="checkbox" data-base-toggle="' + Util.esc(b.fonte) + '"' + (b.ativaUsuario !== false ? " checked" : "") + '> ativa</label>' + porUf + '</td>' +
           '<td class="right">' + (b.fonte === "PROPRIA" ? '<button class="btn sm" data-acao="minhas-composicoes">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' ver itens</button> ' : '') +
             (b.fonte !== "SINAPI" ? '<button class="btn sm danger" data-base-remover="' + Util.esc(b.fonte) + '">remover</button>' : '') + '</td></tr>';
       }).join("");

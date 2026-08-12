@@ -47,12 +47,51 @@
       return b;
     },
 
-    /* Registra/atualiza uma base extra a partir de um pacote { dados, mes, uf }. */
-    registrar: function (fonte, pacote) {
+    /* ==================================================================
+     * ⚠ DOIS MOTIVOS DIFERENTES PARA UMA BASE ESTAR DESLIGADA — e misturar
+     * os dois num campo só apagava base de cliente.
+     *
+     * `ativaUsuario`  é ESCOLHA: o cliente desmarcou o checkbox em 🗂 Tabelas
+     *                 (app.js:961). Isso é decisão dele e TEM de sobreviver
+     *                 ao reload — hoje não sobrevive, some no boot seguinte.
+     * `inativaPorUf`  é CIRCUNSTÂNCIA: a base é de outra UF que não a que
+     *                 está carregada, então `carregar()` a silencia para não
+     *                 precificar obra de MG com tabela do Acre. Isso vale só
+     *                 para ESTA sessão e NUNCA pode ser gravado.
+     *
+     * Enquanto era um campo só, bastava QUALQUER `persistir()` acontecer
+     * depois de um boot em UF diferente para a desativação circunstancial
+     * virar `ativa:false` no disco — permanente, silenciosa, sem volta. Quem
+     * abrisse o app uma vez no Acre perdia a SETOP-MG para sempre.
+     *
+     * Usável = escolheu manter E a circunstância permite.
+     * ================================================================== */
+    usavel: function (b) { return !!b && b.ativaUsuario !== false && !b.inativaPorUf; },
+
+    /* Registra/atualiza uma base extra a partir de um pacote { dados, mes, uf }.
+     * opts: { sel, catId, ativaUsuario } — `sel` é a variante escolhida
+     * (região do SETOP, regime/preço da GOINFRA) e `catId` liga a base ao
+     * catálogo (BasesCat). Guardados aqui porque sem eles a tela não sabe
+     * dizer QUAL variante está instalada — e reinstalar por engano troca o
+     * preço de quem já orçou. */
+    registrar: function (fonte, pacote, opts) {
       fonte = String(fonte || "PROPRIA").toUpperCase();
+      opts = opts || {};
       var dados = (pacote && pacote.dados) ? pacote.dados : (Array.isArray(pacote) ? pacote : []);
       var meta = this.META[fonte] || { label: fonte, cor: "proprio" };
-      var b = this._indexar({ fonte: fonte, label: meta.label, cor: meta.cor, competencia: (pacote && pacote.mes) || null, uf: (pacote && pacote.uf) || null, itens: dados, ativa: true });
+      /* reinstalar NÃO religa o que o usuário desligou de propósito */
+      var antiga = EXTRA.filter(function (x) { return x.fonte === fonte; })[0];
+      var ativaU = (opts.ativaUsuario !== undefined) ? !!opts.ativaUsuario
+        : (antiga ? antiga.ativaUsuario !== false : true);
+      var b = this._indexar({
+        fonte: fonte, label: meta.label, cor: meta.cor,
+        competencia: (pacote && pacote.mes) || null, uf: (pacote && pacote.uf) || null,
+        itens: dados,
+        ativaUsuario: ativaU,
+        inativaPorUf: false,           // runtime; quem decide é carregar()
+        sel: opts.sel || (antiga ? antiga.sel : null) || null,
+        catId: opts.catId || (antiga ? antiga.catId : null) || null
+      });
       EXTRA = EXTRA.filter(function (x) { return x.fonte !== fonte; });
       EXTRA.push(b);
       return dados.length;
@@ -60,19 +99,35 @@
 
     extras: function () { return EXTRA; },
     remover: function (fonte) { fonte = String(fonte).toUpperCase(); EXTRA = EXTRA.filter(function (x) { return x.fonte !== fonte; }); },
+    /* escolha do usuário — é ela que vai para o disco */
     setAtiva: function (fonte, val) {
       fonte = String(fonte).toUpperCase();
       if (fonte === "SINAPI") { this.sinapiAtiva = !!val; return; }
-      var b = EXTRA.filter(function (x) { return x.fonte === fonte; })[0]; if (b) b.ativa = !!val;
+      var b = EXTRA.filter(function (x) { return x.fonte === fonte; })[0]; if (b) b.ativaUsuario = !!val;
+    },
+    /* circunstância da sessão — NUNCA é persistida (ver o bloco acima) */
+    setInativaPorUf: function (fonte, val) {
+      fonte = String(fonte).toUpperCase();
+      var b = EXTRA.filter(function (x) { return x.fonte === fonte; })[0]; if (b) b.inativaPorUf = !!val;
     },
 
-    /* Lista de TODAS as bases (inclui SINAPI) p/ a UI do gerenciador. */
+    /* Lista de TODAS as bases (inclui SINAPI) p/ a UI do gerenciador.
+     * `ativa` continua existindo com o MESMO significado de sempre (dá para
+     * usar agora?) — quem consome não precisa saber da separação. Quem
+     * precisa (o checkbox, a persistência) lê ativaUsuario/inativaPorUf. */
     lista: function () {
-      var out = [];
+      var self = this, out = [];
       if (typeof Sinapi !== "undefined" && Sinapi.carregado) {
-        out.push({ fonte: "SINAPI", label: "SINAPI", cor: "sinapi", competencia: Sinapi.competencia, uf: Sinapi.uf, total: Sinapi.resumo().total, ativa: this.sinapiAtiva });
+        out.push({ fonte: "SINAPI", label: "SINAPI", cor: "sinapi", competencia: Sinapi.competencia, uf: Sinapi.uf, total: Sinapi.resumo().total, ativa: this.sinapiAtiva, ativaUsuario: this.sinapiAtiva, inativaPorUf: false, sel: null, catId: "SINAPI" });
       }
-      EXTRA.forEach(function (b) { out.push({ fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf, total: b.itens.length, ativa: b.ativa }); });
+      EXTRA.forEach(function (b) {
+        out.push({
+          fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf,
+          total: b.itens.length, ativa: self.usavel(b),
+          ativaUsuario: b.ativaUsuario !== false, inativaPorUf: !!b.inativaPorUf,
+          sel: b.sel || null, catId: b.catId || b.fonte
+        });
+      });
       return out;
     },
 
@@ -118,7 +173,7 @@
         Sinapi.buscar(texto, { max: max * 2, tipo: fTipo }).forEach(function (it) { if (passa(it)) out.push({ item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: self.tipoDe(it) }); });
       }
       EXTRA.forEach(function (b) {
-        if (!b.ativa) return;
+        if (!self.usavel(b)) return;
         if (permit && !permit[String(b.fonte).toUpperCase()]) return;
         if (negar && negar[String(b.fonte).toUpperCase()]) return;
         if (fFonte && b.fonte !== fFonte) return;
@@ -155,17 +210,119 @@
       return null;
     },
 
-    /* Carrega uma base inclusa no app (JSON em data/), same-origin. */
-    carregarInclusa: function (arquivo, fonte, regiao) {
+    /* ==================================================================
+     * _pegar — o ÚNICO buscador de base com prazo. Absorve as três cópias
+     * de live-first dos EXTRAS (data-inclusa, carregarSetop, carregarGoinfra).
+     *
+     * ⚠ NÃO ABSORVE o `trocarBaseSinapi` nem o `Analitico._fetchJson`, e isso
+     * é decisão, não esquecimento: aqueles dois são LOCAL-first de propósito,
+     * têm .gz com DecompressionStream e estão no BOOT. Se algo der errado
+     * neles o sintoma não é "a tabela ficou feia", é "o app não abre".
+     *
+     * ⚠ PRAZO EM DUAS ETAPAS, e não um número só. O ORSE tem 4 MB. Um prazo
+     * único de 6 s mata o live-first exatamente onde ele é anunciado — numa
+     * 4G de obra, 4 MB não chegam em 6 s e o cliente cairia sempre no arquivo
+     * do pacote, tendo gasto a banda assim mesmo. Então: prazo CURTO até o
+     * servidor responder (é isso que diz se ele está vivo) e prazo LARGO,
+     * proporcional ao tamanho, para o corpo descer.
+     * ================================================================== */
+    PRAZO_CABECA: 6000,
+    PRAZO_MB: 20000,          // por MB declarado, depois que a resposta começou
+    PRAZO_CORPO_MIN: 30000,
+    _pegar: function (url, opts) {
+      opts = opts || {};
+      var cabeca = opts.prazoCabeca || this.PRAZO_CABECA;
+      var corpo = opts.prazoCorpo || Math.max(this.PRAZO_CORPO_MIN, (Number(opts.pesoMb) || 1) * this.PRAZO_MB);
+      var temAC = (typeof AbortController !== "undefined");
+      var ctrl = temAC ? new AbortController() : null;
+      return new Promise(function (res, rej) {
+        var timer = null, acabou = false;
+        function encerrar(fn, arg) {
+          if (acabou) return;
+          acabou = true;
+          if (timer) { clearTimeout(timer); timer = null; }
+          fn(arg);
+        }
+        /* ⚠ O PRAZO REJEITA POR CONTA PRÓPRIA, e não é preciosismo.
+           A primeira versão disto só chamava ctrl.abort() e esperava o fetch
+           rejeitar sozinho. Um fetch que não coopera com o abort — polyfill,
+           WebView antiga, ou o AbortController simplesmente não existir —
+           deixaria esta promise pendurada PARA SEMPRE, que é exatamente o
+           defeito que a função existe para matar. O teste pegou: com um
+           fetch de mentira que nunca settla, nada acontecia.
+           Então: abort para PARAR o download (economiza banda de 4G), e
+           reject para SOLTAR quem está esperando. As duas coisas. */
+        function armar(ms, msg) {
+          if (timer) clearTimeout(timer);
+          timer = setTimeout(function () {
+            if (ctrl) { try { ctrl.abort(); } catch (e) {} }
+            encerrar(rej, new Error("tempo esgotado (" + msg + ")"));
+          }, ms);
+        }
+        armar(cabeca, "servidor não respondeu em " + Math.round(cabeca / 1000) + "s");
+        var p;
+        try { p = fetch(url, ctrl ? { signal: ctrl.signal } : undefined); }
+        catch (e) { return encerrar(rej, e); }
+        p.then(function (r) {
+          if (acabou) return null;               // o prazo já venceu: não mexe mais
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          armar(corpo, "download passou de " + Math.round(corpo / 1000) + "s");
+          return r.json();
+        }).then(function (j) { if (!acabou) encerrar(res, j); })
+          .catch(function (e) { encerrar(rej, e); });
+      });
+    },
+
+    /* Carrega uma base inclusa no app (JSON em data/), same-origin.
+     * opts: { sel, catId } — a variante escolhida e o vínculo com o catálogo. */
+    carregarInclusa: function (arquivo, fonte, regiao, opts) {
       var self = this;
-      return fetch(arquivo).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (pacote) {
+      opts = opts || {};
+      return this._pegar(arquivo, opts).then(function (pacote) {
         // base regionalizada (ex.: SETOP): usa o preço da região escolhida
         if (regiao && pacote.dados) pacote.dados.forEach(function (it) { if (it.precos && it.precos[regiao] != null) it.custoUnitario = it.precos[regiao]; });
-        var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote);
+        var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
         var grav = { ok: true };
         if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
-        return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, persistido: grav.ok, gravErro: grav.erro };
+        return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, sel: opts.sel || null, persistido: grav.ok, gravErro: grav.erro };
       });
+    },
+
+    /* ==================================================================
+     * instalar — UM caminho de instalação, dirigido pelo catálogo.
+     *
+     * Hoje existem QUATRO caminhos separados (data-inclusa, carregarSetop,
+     * carregarGoinfra, importarBase), cada um com sua própria ideia de
+     * live-first, de default de variante e de rota no servidor. Foi assim
+     * que a GOINFRA acabou com dois defaults para o mesmo dado.
+     *
+     * Aqui a variante vem do catálogo (que já espelha os defaults de hoje),
+     * o arquivo sai de BasesCat.resolver e a ordem é: servidor primeiro
+     * (mais novo), arquivo do pacote depois (sempre existe, offline).
+     * Devolve `live:true/false` para a tela dizer de onde veio.
+     * ================================================================== */
+    instalar: function (catId, sel, opts) {
+      var self = this;
+      opts = opts || {};
+      if (typeof BasesCat === "undefined") return Promise.reject(new Error("catálogo indisponível"));
+      var e = BasesCat.get(catId);
+      if (!e) return Promise.reject(new Error("banco fora do catálogo: " + catId));
+      var av = BasesCat.avaliar(e, opts.ctx || {});
+      // ⚠ porta fechada por dentro: banco sem fonte não instala nem se alguém
+      // chamar isto na mão pelo console
+      if (!av.podeUsar) return Promise.reject(new Error(e.nome + " não tem fonte conectada — importe a planilha do órgão em Tabelas."));
+      var r = BasesCat.resolver(catId, sel, opts.ctx);
+      if (!r || !r.arquivo) return Promise.reject(new Error("não sei qual arquivo abrir para " + catId));
+      var pesoMb = opts.pesoMb || 0;
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      var live = (r.vps && base) ? (base + r.rotaVps + r.vps) : null;
+      var chamar = function (url, ehLive) {
+        return self.carregarInclusa(url, e.id, r.remap, { sel: sel || null, catId: e.id, pesoMb: pesoMb })
+          .then(function (res) { res.live = ehLive; return res; });
+      };
+      return live
+        ? chamar(live, true).catch(function () { return chamar(r.arquivo, false); })
+        : chamar(r.arquivo, false);
     },
 
     /* Importa base extra de texto colado/arquivo (JSON do fetcher ou CSV). */
@@ -262,7 +419,17 @@
     persistir: function (empresaId, opcoes) {
       if (typeof Store === "undefined") return { ok: false };
       var op = opcoes || {};
-      var payload = EXTRA.map(function (b) { return { fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens }; });
+      /* ⚠ `inativaPorUf` NÃO entra no payload. Ele é a razão circunstancial
+         da sessão (base de outra UF silenciada no boot); gravá-lo tornaria
+         permanente uma desativação que ninguém pediu. Só `ativaUsuario`, que
+         é escolha explícita no checkbox, atravessa para o disco. */
+      var payload = EXTRA.map(function (b) {
+        return {
+          fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens,
+          ativaUsuario: b.ativaUsuario !== false,
+          sel: b.sel || null, catId: b.catId || null
+        };
+      });
 
       /* o que JÁ ESTÁ gravado — a régua da comparação */
       var anterior = [];
@@ -326,12 +493,17 @@
       var desativadas = [];
       (Array.isArray(arr) ? arr : []).forEach(function (p) {
         if (!p || !p.fonte) return;
-        self.registrar(p.fonte, p); n++;
+        /* payload legado não tem ativaUsuario/sel/catId: `undefined` cai no
+           padrão de registrar() (ativa, sem variante) e nada quebra */
+        self.registrar(p.fonte, p, { ativaUsuario: p.ativaUsuario, sel: p.sel, catId: p.catId }); n++;
         var ufBase = String(p.uf || "").toUpperCase();
         // a base PROPRIA é AUTORAL (composições criadas pelo cliente) — vale em
         // qualquer UF e nunca é desativada pela troca de estado
         if (ufAtiva && ufBase && ufBase !== ufAtiva && ufBase !== "BR" && String(p.fonte).toUpperCase() !== "PROPRIA") {
-          self.setAtiva(p.fonte, false);
+          /* ⚠ setInativaPorUf, NÃO setAtiva: isto é circunstância da sessão.
+             Com setAtiva, o primeiro persistir() seguinte gravaria a base
+             como desligada no disco e ela nunca mais voltaria sozinha. */
+          self.setInativaPorUf(p.fonte, true);
           desativadas.push(p.fonte + " (" + ufBase + ")");
         }
       });

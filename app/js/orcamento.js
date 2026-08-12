@@ -416,10 +416,54 @@
         });
       });
       var META = (typeof Bases !== "undefined" && Bases.META) || {};
+      /* ⚠ O DOCUMENTO TEM DE DECLARAR A VARIANTE, não só a sigla.
+       * O Passo 3 deixa escolher região do SETOP (6 opções, com preços
+       * diferentes em 910 das 3.977 composições) e regime da GOINFRA (527 dos
+       * 566 códigos divergem). Enquanto o laudo dizia só "SETOP-MG", dois
+       * orçamentos com preços diferentes emitiam o MESMO texto de base — e em
+       * licitação a peça tem de dizer de onde saiu o número.
+       * A fonte da verdade é o registro DO ORÇAMENTO (config.bases e
+       * config.basesV2), nunca o que está carregado agora: reemitir um laudo
+       * meses depois não pode reescrever a base que aquela peça declarou. */
+      var cfgB = (orc.config && orc.config.bases) || [];
+      var v2 = (orc.config && orc.config.basesV2) || null;
+      function registroDe(f) {
+        for (var i = 0; i < cfgB.length; i++) { if (String(cfgB[i].fonte).toUpperCase() === f) return cfgB[i]; }
+        return null;
+      }
+      function varianteDe(f) {
+        if (!v2 || !v2.extras) return "";
+        for (var i = 0; i < v2.extras.length; i++) {
+          if (String(v2.extras[i].catId).toUpperCase() !== f) continue;
+          var sel = v2.extras[i].sel; if (!sel) return "";
+          var e = (typeof BasesCat !== "undefined") ? BasesCat.get(f) : null;
+          var partes = [];
+          Object.keys(sel).forEach(function (k) {
+            var rot = sel[k];
+            if (e) {
+              (e.eixos || []).forEach(function (ex) {
+                if (ex.id !== k) return;
+                (ex.opcoes || []).forEach(function (o) { if (String(o.v) === String(sel[k])) rot = o.r; });
+              });
+            }
+            if (rot) partes.push(rot);
+          });
+          return partes.join(" · ");
+        }
+        return "";
+      }
+      function comp(c) {
+        return (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(c) : c;
+      }
       var out = Object.keys(cont).map(function (f) {
         var label = (f === "PROPRIO") ? "Composição própria" : (f === "OUTRA" ? "Outra base" : ((META[f] && META[f].label) || f));
         var texto = label;
         if (f === "SINAPI") texto = "SINAPI " + (orc.competenciaSinapi || "") + (orc.uf ? "/" + orc.uf : "");
+        else if (f !== "PROPRIO" && f !== "OUTRA") {
+          var reg = registroDe(f), vr = varianteDe(f);
+          if (reg && reg.competencia) texto += " " + comp(reg.competencia);
+          if (vr) texto += " (" + vr + ")";
+        }
         return { fonte: f, label: label, texto: texto, n: cont[f] };
       });
       out.sort(function (a, b) {
