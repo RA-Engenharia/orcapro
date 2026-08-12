@@ -2243,7 +2243,7 @@
       }).join("");
       var comCusto = dados.filter(function (it) { return Number(it.custoUnitario) > 0; }).length;
       UI.modal("Confira antes de atualizar a SETOP",
-        '<p>Li <b>' + n(dados.length) + '</b> linhas, <b>' + n(comCusto) + '</b> com preço. Vai entrar como <b>' +
+        '<p>Li <b>' + n(dados.length) + '</b> ' + (dados.length === 1 ? "linha" : "linhas") + ', <b>' + n(comCusto) + '</b> com preço. Vai entrar como <b>' +
         esc(opts.regiao) + '</b> · <b>' + esc(opts.regime) + '</b>' + (opts.competencia ? ' · <b>' + esc(opts.competencia) + '</b>' : '') + '.</p>' +
         '<p class="muted" style="font-size:12px">Confira os valores abaixo contra a planilha aberta. Se a publicação trouxer as seis regiões em colunas lado a lado, o custo aqui pode ser o de outra região — nesse caso cancele e baixe a planilha da região específica.</p>' +
         '<table class="tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Custo</th></tr></thead><tbody>' +
@@ -2279,10 +2279,11 @@
          acervo só cresce, então a guarda fica de pé, como deve. */
       var grav = Bases.persistir(Auth.empresaId(), substituir ? { permitirRemocao: true } : undefined);
       var n = function (x) { return (x || 0).toLocaleString("pt-BR"); };
+      var pl = function (x, sing, plur) { return n(x) + " " + (x === 1 ? sing : plur); };
       var msg = "SETOP · " + r.regiao + (r.competencia ? " · " + r.competencia : "") + " · " + (r.regime || "") + ": "
-        + n(r.atualizados) + " atualizados, " + n(r.novos) + " novos"
-        + (r.semCusto ? " · " + n(r.semCusto) + " linhas sem preço ignoradas" : "")
-        + (r.semPrecoNaRegiao ? " · ⚠ " + n(r.semPrecoNaRegiao) + " sem preço nesta região (entram como R$ 0,00)" : "")
+        + pl(r.atualizados, "atualizado", "atualizados") + ", " + pl(r.novos, "novo", "novos")
+        + (r.semCusto ? " · " + pl(r.semCusto, "linha sem preço ignorada", "linhas sem preço ignoradas") : "")
+        + (r.semPrecoNaRegiao ? " · ⚠ " + pl(r.semPrecoNaRegiao, "item ficou", "itens ficaram") + " sem preço nesta região (R$ 0,00)" : "")
         + ".";
       /* gravação bloqueada já se explica sozinha na tela (persistir avisa com
          o motivo). Aqui só não deixo passar em silêncio o caso mudo. */
