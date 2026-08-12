@@ -15,10 +15,46 @@
     _porCodigo: {},      // índice código -> item
     _tokens: [],         // descrição normalizada por item (mesma ordem de _itens)
 
+    /* ==================================================================
+     * ⚠ CONSERTA O REGIME DE PACOTE ANTIGO, NA CARGA.
+     *
+     * Até a v1.1.203 os pacotes gravavam `desonerado: true` em todos os
+     * itens, mas o dado vem das abas CSD/ISD — que a CAIXA publica como
+     * "ENCARGOS SOCIAIS SEM DESONERAÇÃO", ou seja, ONERADO. O gerador foi
+     * corrigido na v1.1.204, só que **o pacote de atualização não leva
+     * `data/`** (de propósito: preserva as bases do cliente). Sem isto,
+     * quem atualiza pelo caminho silencioso ficaria com código novo e dado
+     * velho — e a mensagem nova da busca ("a SINAPI que vem no app é a NÃO
+     * DESONERADA") passaria a mentir justamente para essa pessoa.
+     *
+     * Não é chute nem invenção: o regime é DERIVADO do campo `fonte`, que é
+     * o nome da aba de onde cada linha saiu e está gravado item a item nos
+     * pacotes antigos (CSD/ISD = sem desoneração; CCD/ICD = com). Item sem
+     * `fonte` reconhecível fica exatamente como está.
+     *
+     * Idempotente: em pacote novo (que já traz `desonerado` no topo) não há
+     * nada a fazer e a função sai na primeira linha.
+     * ================================================================== */
+    ABA_REGIME: { CSD: false, ISD: false, CCD: true, ICD: true },
+    _corrigirRegime: function (pacote, itens) {
+      if (pacote && typeof pacote.desonerado === "boolean") return 0;   // pacote já corrigido
+      var mapa = this.ABA_REGIME, n = 0;
+      for (var i = 0; i < itens.length; i++) {
+        var certo = mapa[String(itens[i].fonte || "").toUpperCase()];
+        if (certo === undefined) continue;                              // aba desconhecida: não mexe
+        if (itens[i].desonerado !== certo) { itens[i].desonerado = certo; n++; }
+      }
+      if (n) {
+        try { console.warn("[SINAPI] regime corrigido na carga em " + n + " itens (pacote anterior à v1.1.204 gravava o flag invertido)."); } catch (e) {}
+      }
+      return n;
+    },
+
     /* Carrega de um objeto já parseado (ou {dados:[...]}) */
     carregarDe: function (pacote) {
       var dados = pacote && pacote.dados ? pacote.dados : (Array.isArray(pacote) ? pacote : []);
       this._itens = Util.arr(dados).filter(function (d) { return d && Util.naoVazio(d.codigo); });
+      this.regimeCorrigidos = this._corrigirRegime(pacote, this._itens);
       this.competencia = (pacote && pacote.mes) || CONFIG.sinapi.competenciaPadrao;
       this.uf = (pacote && pacote.uf) || CONFIG.sinapi.ufPadrao;
       this._indexar();
