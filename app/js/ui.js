@@ -274,17 +274,26 @@
      * usa. Banco novo no catálogo aparece aqui sozinho; banco sem fonte não
      * aparece de jeito nenhum, porque nem está no catálogo.
      * ================================================================== */
-    _basesProntas: function (lista) {
+    _basesProntas: function (lista, srv) {
       if (typeof BasesCat === "undefined") return '<p class="muted">Catálogo de bancos indisponível.</p>';
       var inst = {};
       (lista || []).forEach(function (b) { inst[b.fonte] = b; });
+      /* o que o servidor anunciou na última consulta: é daqui que saem as UFs
+         do SICRO e da SINAPI desonerada. Sem isso, a linha aparece sem opção
+         de Local — que é o certo: não se oferece estado que não foi publicado. */
+      srv = srv || {};
+      var ctxSrv = {
+        instaladas: inst,
+        sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; }),
+        sinapiDesUfs: (srv.sinapiDesoneradaUfs || []).map(function (u) { return { v: u, r: u }; })
+      };
       var ic = (typeof Icones !== "undefined") ? Icones.get("estoque", 15) : "";
       var linhas = BasesCat.CATALOGO.filter(function (e) {
         return !e.principal && !(e.entrega && e.entrega.autoral);
       }).map(function (e) {
         var jaTem = inst[e.id];
-        var av = BasesCat.avaliar(e, { instaladas: inst });
-        var eixos = (e.eixos || []).filter(function (x) { return BasesCat.opcoesDoEixo(e, x, {}).length > 1; });
+        var av = BasesCat.avaliar(e, ctxSrv);
+        var eixos = (e.eixos || []).filter(function (x) { return BasesCat.opcoesDoEixo(e, x, ctxSrv).length > 1; });
         var selects = eixos.map(function (ex) {
           var atual = (jaTem && jaTem.sel && jaTem.sel[ex.id]) || ex.padrao;
           /* largura travada: com dois eixos (SETOP, AGETOP) os selects em
@@ -292,7 +301,7 @@
              lista perdia o alinhamento de coluna */
           return '<select id="tabi-' + Util.esc(e.id) + "-" + Util.esc(ex.id) + '" class="btn sm" style="padding:5px;max-width:150px" ' +
             'aria-label="' + Util.esc(ex.rotulo + " de " + e.nome) + '">' +
-            BasesCat.opcoesDoEixo(e, ex, {}).map(function (o) {
+            BasesCat.opcoesDoEixo(e, ex, ctxSrv).map(function (o) {
               return '<option value="' + Util.esc(o.v) + '"' + (String(o.v) === String(atual) ? " selected" : "") + ">" + Util.esc(o.r || o.v) + "</option>";
             }).join("") + "</select>";
         }).join("");
@@ -385,7 +394,7 @@
         '<div class="field"><label>Arquivo (planilha oficial: Excel .xlsx/.xls, CSV, ou JSON do fetcher)</label><input type="file" id="tab-file" accept=".xlsx,.xls,.json,.csv,.txt"></div>' +
         '<div class="field"><label>ou cole o conteúdo (JSON, ou CSV: Código;Descrição;Custo)</label><textarea id="tab-text" rows="3"></textarea></div>' +
         '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Bases prontas (1 clique)</h3>' +
-        this._basesProntas(lista) +
+        this._basesProntas(lista, (typeof Atualizacao !== "undefined" && Atualizacao._ultimoStatus) || null) +
         '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear pasta inteira (de uma vez)</h3>' +
         '<p class="muted" style="font-size:12px">Pasta DENTRO do projeto do ERP (ex.: <b>mg-01-2026</b> = SICRO-MG). O fetcher parseia TUDO (composições com MO/MAT/EQ + materiais + equipamentos + mão de obra) e organiza no multi-base sozinho.</p>' +
         '<div class="row"><div class="field"><label>Pasta</label><input id="scan-pasta" value="mg-01-2026"></div>' +

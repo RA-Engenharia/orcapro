@@ -2216,6 +2216,22 @@
 
     // ---------- Tabelas de Preço (multi-base) ----------
     abrirTabelas: function () {
+      /* primeira abertura da sessão ainda não tem o anúncio do servidor (as UFs
+         do SICRO e da SINAPI desonerada saem de lá). Dispara a consulta e
+         redesenha quando ela chega — sem travar a abertura, que tem de ser
+         instantânea mesmo offline. */
+      if (typeof Atualizacao !== "undefined" && Atualizacao.statusServidor && !Atualizacao._ultimoStatus) {
+        var selfT0 = this;
+        Atualizacao.statusServidor().then(function () {
+          /* ⚠ só redesenha se a tela AINDA for a de Tabelas. No meio segundo da
+             consulta o usuário pode ter fechado, ou aberto outro modal — e
+             UI.modal() arranca o que estiver aberto SEM perguntar (ui.js:64),
+             levando junto o que ele tivesse digitado. A pergunta é feita ao
+             DOM (existe botão de instalar na tela?), não a uma flag que
+             alguém precise lembrar de desligar em todo caminho de saída. */
+          if (document.querySelector("#modal-bg [data-instalar]")) selfT0.abrirTabelas();
+        }).catch(function () {});
+      }
       var self = this;
       var bg = UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas de Preço (multi-base)", UI.renderTabelas(Bases.lista()), [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -2644,6 +2660,85 @@
       } catch (e) {}
     },
 
+    /* ==================================================================
+     * A BASE DECLARADA NÃO É CAMPO DE TEXTO LIVRE.
+     *
+     * ⚠ Aqui havia dois <input> soltos gravando direto em `orc.uf` e
+     * `orc.competenciaSinapi` — os dois valores que saem no cabeçalho da
+     * planilha, do laudo e da proposta. Dava para digitar "SP" num orçamento
+     * inteiro precificado em MG e o documento passava a declarar uma
+     * data-base que não é a dos preços. Em licitação isso é impugnação, e era
+     * o caminho mais curto para chegar lá: um campo de texto, sem guarda
+     * nenhuma, ao lado do nome do cliente.
+     *
+     * A régua é o que o orçamento JÁ TEM DENTRO:
+     *  - com itens lançados, os preços vieram de uma base específica e o
+     *    rótulo tem de continuar sendo o dela → só leitura;
+     *  - sem itens, não há o que rotular errado → dá para escolher, mas de
+     *    uma lista REAL (o manifesto de estados), e a gravação só acontece
+     *    depois que a base sobe. É a mesma guarda do assistente ao criar.
+     * ================================================================== */
+    _edItens: function (o) {
+      var n = 0;
+      Util.arr(o.etapas).forEach(function (e) { n += Util.arr(e.itens).length; });
+      return n;
+    },
+    _edBaseCampos: function (o) {
+      var comp = (typeof BasesCat !== "undefined") ? (BasesCat.fmtVersao(o.competenciaSinapi) || "—") : (o.competenciaSinapi || "—");
+      var temItens = this._edItens(o) > 0;
+      var carregada = (this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
+      var compCarregada = (typeof Sinapi !== "undefined" && Sinapi.competencia) || "";
+      var diverge = !!(carregada && String(o.uf || "").toUpperCase() !== carregada);
+
+      if (temItens) {
+        return '<div class="field"><label>Base de preços declarada por este orçamento</label>' +
+          '<div class="ed-base-fixa"><b>SINAPI · ' + Util.esc(o.uf || "—") + ' · ' + Util.esc(comp) + "</b>" +
+          '<small>Os ' + this._edItens(o) + ' itens já lançados foram precificados com ela. O documento tem de declarar a base dos preços que ele imprime — por isso não se troca por aqui.</small>' +
+          (diverge ? '<small class="ed-base-alerta">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+            " A base carregada agora é " + Util.esc(carregada) + (compCarregada ? " · " + Util.esc(BasesCat.fmtVersao(compCarregada)) : "") +
+            ". Isso é normal se você trocou de estado para consultar outro preço — os itens deste orçamento continuam com o preço de " + Util.esc(o.uf) + ".</small>" : "") +
+          "</div></div>";
+      }
+      /* orçamento vazio: escolher é seguro, mas de uma lista real */
+      return '<div class="field"><label>Base de preços deste orçamento</label>' +
+        '<select id="ed-uf"><option value="' + Util.esc(o.uf || "") + '">' + Util.esc(o.uf || "—") + "</option></select>" +
+        '<small>Ainda não há item lançado, então dá para trocar. Ao salvar, a base do estado escolhido é carregada — e o orçamento só passa a declará-la se ela subir.</small></div>';
+    },
+    /* Preenche o select com os estados que EXISTEM (manifesto). */
+    _edBindBase: function (o) {
+      var sel = UI.el("ed-uf"); if (!sel || !this._carregarEstados) return;
+      var atual = String(o.uf || "").toUpperCase();
+      this._carregarEstados().then(function (ests) {
+        if (!UI.el("ed-uf")) return;
+        if (!ests || !ests.length) return;
+        sel.innerHTML = ests.map(function (e) {
+          return '<option value="' + Util.esc(e.uf) + '"' + (e.uf === atual ? " selected" : "") + ">" + Util.esc(e.uf) +
+            (e.competencia ? " · " + Util.esc(BasesCat.fmtVersao(e.competencia)) : "") + "</option>";
+        }).join("");
+        sel.value = atual;
+      }).catch(function () {});
+    },
+    /* Troca a base ANTES de gravar o rótulo — e só grava se ela subir.
+       Mesma regra do assistente: rótulo sem lastro é o defeito, não a feature. */
+    _edSalvarBase: function (o, pronto) {
+      var sel = UI.el("ed-uf");
+      var pedida = sel ? String(sel.value || "").toUpperCase() : "";
+      var atual = String(o.uf || "").toUpperCase();
+      if (!pedida || pedida === atual || !this.trocarBaseSinapi) return pronto();
+      var self = this;
+      UI.toast("Carregando a base de " + pedida + "…", "ok");
+      this.trocarBaseSinapi(pedida, "", function (ok) {
+        var real = (self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
+        if (ok && real === pedida) {
+          o.uf = pedida;
+          if (typeof Sinapi !== "undefined" && Sinapi.competencia) o.competenciaSinapi = Sinapi.competencia;
+        } else {
+          UI.toast("Não consegui carregar a base de " + pedida + " — o orçamento continua em " + (o.uf || "—") + ".", "erro");
+        }
+        pronto();
+      });
+    },
+
     editarDadosOrc: function () {
       var o = this.orcAtual, self = this;
       o.cliente = o.cliente || { nome: "", doc: "", contato: "" };
@@ -2653,8 +2748,7 @@
         '<div class="field"><label>Nome</label><input id="ed-nome" value="' + Util.esc(o.nome) + '"></div>' +
         '<div class="row"><div class="field"><label>Cliente</label><input id="ed-cliente" value="' + Util.esc(o.cliente.nome) + '"></div>' +
         '<div class="field"><label>Obra/Local</label><input id="ed-obra" value="' + Util.esc(o.obra.nome) + '"></div></div>' +
-        '<div class="row"><div class="field"><label>Competência SINAPI</label><input id="ed-comp" value="' + Util.esc(o.competenciaSinapi) + '"></div>' +
-        '<div class="field"><label>UF</label><input id="ed-uf" value="' + Util.esc(o.uf) + '"></div></div>' +
+        this._edBaseCampos(o) +
         '<div class="field"><label>ART/RRT nº (obrigatório p/ o Anexo de Laudo)</label><input id="ed-art" value="' + Util.esc(o.art || "") + '" placeholder="ex.: MG20260000000"></div>' +
         '<div class="field"><label>Data da vistoria (obrigatória p/ o Anexo de Laudo)</label><input id="ed-vistoria" value="' + Util.esc(o.dataVistoria || "") + '" placeholder="ex.: 05/07/2026"></div>' +
         '<h3 style="margin:8px 0;border-top:1px solid var(--linha);padding-top:14px">Dados para a Proposta Comercial</h3>' +
@@ -2670,8 +2764,6 @@
             o.nome = (UI.el("ed-nome") || {}).value || o.nome;
             o.cliente.nome = (UI.el("ed-cliente") || {}).value || "";
             o.obra.nome = (UI.el("ed-obra") || {}).value || "";
-            o.competenciaSinapi = (UI.el("ed-comp") || {}).value || o.competenciaSinapi;
-            o.uf = (UI.el("ed-uf") || {}).value || o.uf;
             o.art = (UI.el("ed-art") || {}).value || "";
             o.dataVistoria = (UI.el("ed-vistoria") || {}).value || "";
             c.condicoesPagamento = (UI.el("ed-pag") || {}).value || "";
@@ -2680,9 +2772,12 @@
             c.garantia = (UI.el("ed-gar") || {}).value || "";
             c.incluso = (UI.el("ed-inc") || {}).value || "";
             c.excluso = (UI.el("ed-exc") || {}).value || "";
-            self.persistir(); UI.fecharModal(); self.render(); UI.toast("Dados salvos.", "ok");
+            self._edSalvarBase(o, function () {
+              self.persistir(); UI.fecharModal(); self.render(); UI.toast("Dados salvos.", "ok");
+            });
           } }
         ]);
+      this._edBindBase(o);
     },
 
     addEtapa: function () {

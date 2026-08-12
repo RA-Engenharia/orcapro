@@ -58,7 +58,12 @@
      sinapi-sample.json são 30 itens de demonstração que se apresentam como
      SINAPI (sobrescreveria o índice bom); sudecap-BH-2026-01.json é a versão
      anterior e não tem tipoItem em nenhum dos 2.025 itens; orcamento-leilah
-     é um ORÇAMENTO de cliente real, com dado pessoal, que nem base é. */
+     é um ORÇAMENTO de cliente real, com dado pessoal, que nem base é.
+     ⚠ O orcamento-leilah SAIU do repositório em 12/08/2026 (foi para
+     Documents\RA_Engenharia\Backups
+ecuperacao-orcamento-cliente-2026-07),
+     mas continua nesta lista de propósito: se alguém devolver o arquivo para
+     data/ durante uma recuperação, ele não pode virar linha de catálogo. */
   var NUNCA = ["data/sinapi-sample.json", "data/sudecap-BH-2026-01.json", "data/orcamento-leilah.json"];
 
   /* ------------------------------------------------------------------
@@ -103,6 +108,28 @@
          produz o desonerado (--regime desonerada, abas CCD/ICD); ligar o eixo
          aqui depende de decidir como entregar mais ~88 MB ao cliente. */
       nota: "Vem no app o regime NÃO DESONERADO (abas CSD/ISD da CAIXA). O desonerado (CCD/ICD) o gerador já sabe produzir, mas ainda não é distribuído."
+    },
+    {
+      /* ⚠ POR QUE A DESONERADA E UMA LINHA SEPARADA, e nao um eixo de regime
+         na linha do SINAPI: trocar o regime pelo eixo exigiria ensinar o
+         `trocarBaseSinapi` a montar outro nome de arquivo — e ele e o caminho
+         de BOOT do app, onde errar nao deixa a tela feia, deixa o app sem
+         abrir. Como base do multi-base, ela entra pelo mesmo `Bases.instalar`
+         que SETOP e ORSE usam, com zero risco no boot, e o filtro de regime da
+         busca passa a ter os dois lados de verdade: Onerada devolve a SINAPI
+         principal, Desonerada devolve esta.
+         ⚠ E NAO VEM NO PACOTE — seriam +79 MB no ZIP do cliente. Fica so no
+         servidor; o app baixa 3 MB da UF que a pessoa escolher. Por isso
+         `entrega` tem `vps` e NAO tem `local`. */
+      id: "SINAPI_DES", nome: "SINAPI desonerada", orgao: "SINAPI — encargos sociais COM desoneração (abas CCD/ICD da Referência da CAIXA)",
+      regiao: "nacional", uf: "BR", localRotulo: "",
+      entrega: { vps: "sinapi-<UF>-2026-06-desonerada.json" },
+      chaveStatus: "sinapi", coleta: "manual",
+      versaoPacote: "2026-06", itens: 324702, pesoMb: 3.12,
+      /* as UFs saem do servidor, como no SICRO. Sem resposta, nao ha opcao —
+         e a linha, sem `local`, nem se oferece para instalar. */
+      eixos: [{ id: "uf", rotulo: "Local", de: "sinapiDesUfs", padrao: "MG", opcoes: [] }],
+      nota: "O par desonerado da SINAPI. Em Minas, 7.740 dos 12.815 preços diferem do regime não desonerado (−2,4% em média). Baixa do servidor: 3 MB do estado escolhido."
     },
     {
       id: "SICRO", nome: "SICRO", orgao: "Sistema de Custos Referenciais de Obras — DNIT",
@@ -191,7 +218,7 @@
         { id: "regime", rotulo: "Regime", padrao: "onerada", tipo: "arquivo", opcoes: [{ v: "onerada", r: "Onerada" }, { v: "desonerada", r: "Desonerada" }] },
         { id: "preco", rotulo: "Preço", padrao: "direto", opcoes: [{ v: "direto", r: "Custo direto" }, { v: "comBDI", r: "Com BDI oficial" }] }
       ],
-      nota: "Só a tabela rodoviária (terraplenagem, pavimentação e OAE). O detalhamento desta base não fecha com o preço em 507 das 566 composições — origem em apuração."
+      nota: "Só a tabela rodoviária (terraplenagem, pavimentação e OAE). No detalhamento, os coeficientes são da EQUIPE POR HORA e o preço é por unidade de serviço — a soma dos insumos não fecha com o preço porque falta o divisor: a produção horária da equipe, que ainda não é coletada."
     },
     /* ---------------- autoral ---------------- */
     {
@@ -340,10 +367,15 @@
         loc = loc[chave] || null;
         if (vps && typeof vps === "object") vps = vps[chave] || null;
       }
-      if (e.id === "SICRO" && loc) {
-        var uf = up(sel.uf || "ES");
-        loc = loc.replace("<UF>", uf);
-        if (vps) vps = String(vps).replace("<UF>", uf);
+      /* troca o <UF> em quem tem eixo de UF — no caminho local E no do servidor.
+         A SINAPI desonerada so tem o do servidor (nao vem no pacote). */
+      var eixoUf = (e.eixos || []).filter(function (x) { return x.id === "uf" && x.de !== "estados"; })[0];
+      if (eixoUf) {
+        var uf = up(sel.uf || eixoUf.padrao || "");
+        if (uf) {
+          if (loc) loc = String(loc).replace("<UF>", uf);
+          if (vps) vps = String(vps).replace("<UF>", uf);
+        }
       }
       // o remapeamento de preço dentro do arquivo (região do SETOP, direto/
       // comBDI da GOINFRA): é o 3º argumento de Bases.carregarInclusa
@@ -352,7 +384,9 @@
         if (ex.tipo === "arquivo" || ex.de) return;
         if (sel[ex.id]) remap = sel[ex.id];
       });
-      return { arquivo: loc || null, vps: vps || null, rotaVps: e.entrega.rotaVps || "/bases/", remap: remap || null };
+      /* `arquivo` pode ser null numa entrada que so existe no servidor — quem
+         instala tem de saber que, para ela, nao ha queda para o pacote. */
+      return { arquivo: loc || null, vps: vps || null, soServidor: !loc && !!vps, rotaVps: e.entrega.rotaVps || "/bases/", remap: remap || null };
     },
 
     /* ----------------------------------------------------------------

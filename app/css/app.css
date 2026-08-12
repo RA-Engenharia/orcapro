@@ -1279,3 +1279,11 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 @media (max-width: 700px) {
   .fin-faixa .fin-rec, .fin-faixa .fin-kpi { border-right: 0; min-width: 46%; }
 }
+
+/* ⚠ Base declarada do orçamento (⚙ Dados) — era campo de texto livre e virou
+   leitura quando há item lançado: o documento tem de declarar a base dos
+   preços que ele imprime. Ver App._edBaseCampos. */
+.ed-base-fixa{padding:10px 12px;border-radius:9px;background:rgba(46,111,158,.08);box-shadow:inset 0 0 0 1px var(--linha,#c9d6e4)}
+.ed-base-fixa b{font-size:var(--t-base);display:block}
+.ed-base-fixa small{display:block;font-size:var(--t-micro);opacity:.72;line-height:1.45;margin-top:4px}
+.ed-base-fixa .ed-base-alerta{color:var(--amarelo);opacity:1;font-weight:var(--p-medio)}

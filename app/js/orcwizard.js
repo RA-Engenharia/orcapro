@@ -301,7 +301,8 @@
         instaladas: inst,
         servidor: srv,
         estados: estados,
-        sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; })
+        sicroUfs: (srv.sicroUfs || []).map(function (u) { return { v: u, r: u }; }),
+        sinapiDesUfs: (srv.sinapiDesoneradaUfs || []).map(function (u) { return { v: u, r: u }; })
       };
     },
 

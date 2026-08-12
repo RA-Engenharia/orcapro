@@ -18,6 +18,7 @@
     sinapiAtiva: true,
     META: {
       SINAPI: { label: "SINAPI", cor: "sinapi" },
+      SINAPI_DES: { label: "SINAPI desonerada", cor: "sinapi" },
       SICRO: { label: "SICRO (DNIT)", cor: "sicro" },
       SEINFRA: { label: "SEINFRA-CE", cor: "seinfra" },
       SETOP: { label: "SETOP-MG", cor: "setop" },
@@ -312,7 +313,7 @@
       // chamar isto na mão pelo console
       if (!av.podeUsar) return Promise.reject(new Error(e.nome + " não tem fonte conectada — importe a planilha do órgão em Tabelas."));
       var r = BasesCat.resolver(catId, sel, opts.ctx);
-      if (!r || !r.arquivo) return Promise.reject(new Error("não sei qual arquivo abrir para " + catId));
+      if (!r || (!r.arquivo && !r.vps)) return Promise.reject(new Error("não sei qual arquivo abrir para " + catId));
       var pesoMb = opts.pesoMb || 0;
       var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       var live = (r.vps && base) ? (base + r.rotaVps + r.vps) : null;
@@ -320,6 +321,15 @@
         return self.carregarInclusa(url, e.id, r.remap, { sel: sel || null, catId: e.id, pesoMb: pesoMb })
           .then(function (res) { res.live = ehLive; return res; });
       };
+      /* ⚠ base que SÓ existe no servidor (a SINAPI desonerada: 79 MB nas 27 UFs,
+         não cabe no pacote) não tem para onde cair. Sem internet ela não
+         instala — e é melhor dizer isso do que fingir uma queda que não existe. */
+      if (r.soServidor) {
+        if (!live) return Promise.reject(new Error(e.nome + " só existe no servidor e não há endereço configurado."));
+        return chamar(live, true).catch(function (err) {
+          throw new Error(e.nome + " vem do servidor e não veio no aplicativo — precisa de internet para instalar (" + err.message + ").");
+        });
+      }
       return live
         ? chamar(live, true).catch(function () { return chamar(r.arquivo, false); })
         : chamar(r.arquivo, false);

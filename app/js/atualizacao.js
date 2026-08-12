@@ -41,9 +41,20 @@
     },
 
     /* Consulta o status dos bancos no servidor OrçaPRO (VPS). */
+    /* ⚠ GUARDA A ÚLTIMA RESPOSTA. A tela 🗂 Tabelas é montada como STRING, de
+     * uma vez, e não sabe esperar promessa — mas precisa do que o servidor
+     * anunciou para montar os seletores de Local (as UFs do SICRO e as da
+     * SINAPI desonerada). Sem esta memória, a tela abriria sempre sem opção e
+     * só mostraria os estados depois que alguém clicasse em "Verificar
+     * atualização". Com ela, a primeira consulta da sessão serve todas as
+     * aberturas seguintes. Nunca é usada para AFIRMAR que há versão nova —
+     * isso continua saindo de uma consulta fresca. */
+    _ultimoStatus: null,
     statusServidor: function () {
+      var self = this;
       return fetch(CONFIG.licencaServer + "/api/bases-status", { cache: "no-store" })
-        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); });
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (j) { self._ultimoStatus = j; return j; });
     },
 
     /* A base persistida da empresa é uma base PRÓPRIA (importada pelo cliente,
