@@ -55,9 +55,35 @@
         return { email: seg[0], exp: parseInt(seg[1], 10) || 0, tier: seg[2] || "" };
       } catch (e) { return null; }
     },
+    /* ==================================================================
+     * ESCADA DE PLANOS — e por que o tier do SERVIDOR pode subir o da chave.
+     *
+     * O tier viaja assinado dentro da chave (base|plus|bim). Isso resolve o
+     * caso normal, mas trava um caso real: cliente que comprou o Plus e
+     * ganhou o BIM numa promoção. Reemitir a chave obrigaria ele a reativar
+     * tudo, e queimaria o slot de dispositivo.
+     *
+     * Então o servidor pode CONCEDER mais do que a chave diz, por um campo
+     * no registro de ativação daquela chave (tierOverride). E a regra aqui é
+     * de mão única: fica sempre o MAIOR entre o que a chave diz e o que o
+     * servidor concedeu. Concessão nunca vira revogação — se o servidor
+     * responder algo menor (registro incompleto, resposta velha em cache), o
+     * cliente não perde o que pagou.
+     * ================================================================== */
+    TIERS: ["base", "plus", "bim"],
+    _maiorTier: function (a, b) {
+      var T = this.TIERS;
+      var ia = T.indexOf(String(a || "").toLowerCase());
+      var ib = T.indexOf(String(b || "").toLowerCase());
+      if (ia < 0 && ib < 0) return String(a || b || "");   // tier desconhecido: devolve como veio
+      return (ib > ia) ? T[ib] : (ia >= 0 ? T[ia] : T[ib]);
+    },
     _ativarLocal: function (chave, v, verificado) {
       var l = this._ler() || {};
       l.chave = String(chave).trim(); l.email = v.email; l.expira = v.expira;
+      /* o que o SERVIDOR disse — guardado para o status() poder subir o tier
+         da chave. Nunca desce: ver _maiorTier. */
+      if (v.tier) l.tierServidor = this._maiorTier(l.tierServidor, v.tier);
       l.ativadoEm = agora(); l.deviceId = this.deviceId();
       l.verificado = !!verificado; if (verificado) l.validadoEm = agora();
       this._gravar(l);
@@ -71,7 +97,7 @@
       fetch(srv + "/api/ativar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: c, deviceId: this.deviceId() }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.ok) { self._ativarLocal(c, { email: d.email, expira: d.expira }, true); cb({ ok: true, email: d.email, expira: d.expira }); }
+          if (d && d.ok) { self._ativarLocal(c, { email: d.email, expira: d.expira, tier: d.tier }, true); cb({ ok: true, email: d.email, expira: d.expira, tier: d.tier || "" }); }
           else cb({ ok: false, erro: (d && d.erro) || "Não foi possível ativar." });
         }, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença. Tente novamente com a internet." }); });
     },
@@ -84,7 +110,13 @@
       fetch(srv + "/api/ativar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave, deviceId: this.deviceId() }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.ok) { l.validadoEm = agora(); l.email = d.email; l.expira = d.expira; self._gravar(l); cb({ ok: true }); }
+          if (d && d.ok) {
+            l.validadoEm = agora(); l.email = d.email; l.expira = d.expira;
+            // a revalidação é o caminho por onde uma concessão nova CHEGA a
+            // quem já estava ativado — sem reativar, sem chave nova
+            if (d.tier) l.tierServidor = self._maiorTier(l.tierServidor, d.tier);
+            self._gravar(l); cb({ ok: true, tier: l.tierServidor || "" });
+          }
           else if (d && d.bloqueado) { try { localStorage.removeItem(KEY); } catch (e) {} cb({ ok: false, bloqueado: true, erro: d.erro }); }
           else cb({ ok: true }); // recusa temporária: mantém (a carência cobre)
         }, function () { cb({ ok: true, offline: true }); });
@@ -114,7 +146,11 @@
           if (expirada) return { ativo: false, trial: false, expirada: true, email: (l.email || (info && info.email)) };
           if (l.deviceId && l.deviceId !== this.deviceId()) return { ativo: false, trial: false, outroDispositivo: true };
           var dias = (info && info.exp) ? Math.ceil((info.exp - agora()) / 86400000) : null;
-          if (agora() < (l.validadoEm || 0) + GRACE_MS) return { ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias, tier: (info && info.tier) || "" };
+          if (agora() < (l.validadoEm || 0) + GRACE_MS) {
+            return { ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias,
+              /* o maior entre o que a chave carrega e o que o servidor concedeu */
+              tier: this._maiorTier((info && info.tier) || "", l.tierServidor || "") };
+          }
           return { ativo: false, trial: false, revalidar: true, email: l.email, diasRestantes: dias }; // carência vencida: reconectar
         }
         // chave presente mas sem ativação verificada pelo servidor -> não concede (cai p/ trial)

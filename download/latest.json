@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.206",
+  "versao": "1.1.207",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.206/OrcaPRO-IA-update-v1.1.206.zip",
-  "notas": "A SINAPI DESONERADA chegou. Ate agora o aplicativo trazia so o regime nao desonerado e filtrar por Desonerada na busca nao devolvia nada; agora o par existe e a diferenca e real: em Minas, 7.740 dos 12.815 precos mudam entre os dois regimes. Ela nao vem dentro do pacote (seriam 79 MB nas 27 UFs) - fica no servidor e voce baixa 3 MB do seu estado com um clique em Tabelas de Preco. Tambem nesta versao: a base de precos declarada pelo orcamento parou de ser campo de texto livre. Em Dados do Orcamento dava para digitar outra UF por cima e o cabecalho da planilha e do laudo passava a declarar uma data-base que nao era a dos precos - risco direto de impugnacao em licitacao. Agora, com itens lancados a base e so leitura (e avisa se a base carregada no momento for outra); sem itens, e uma lista dos estados que existem, e a troca so grava depois que a base carrega. E o detalhamento da tabela rodoviaria de Goias ganhou explicacao: os coeficientes dela sao de equipe por hora e o preco e por unidade de servico, entao a soma dos insumos nao fecha com o preco - falta a producao horaria no meio da conta. A linha da base agora diz isso, em vez de deixar parecer erro do sistema.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.206/OrcaPRO-IA-Instalador-v1.1.206.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.207/OrcaPRO-IA-update-v1.1.207.zip",
+  "notas": "Agora da para conceder um plano superior a uma licenca ja emitida sem trocar a chave do cliente. Serve para honrar promocao e cortesia: antes seria preciso reemitir a chave, o que obriga o cliente a reativar tudo e queima o slot de dispositivo dele. A chave continua a mesma e o plano novo chega sozinho na proxima vez que o aplicativo conversa com o servidor. A regra e de mao unica: uma concessao nunca rebaixa ninguem - se o servidor responder um plano menor que o da chave, por qualquer motivo, o cliente nao perde o que pagou.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.207/OrcaPRO-IA-Instalador-v1.1.207.exe"
 }
