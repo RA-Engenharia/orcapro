@@ -285,7 +285,22 @@
         /* ⚠ desativada por estar em OUTRA UF não é o mesmo que desmarcada
            pelo usuário — e o checkbox mostra a ESCOLHA, não a circunstância */
         var porUf = b.inativaPorUf ? '<small style="display:block;color:#b45309">silenciada: base de ' + Util.esc(b.uf || "?") + ', a atual é outra UF</small>' : "";
-        return '<tr><td><span class="pill ' + (b.cor || "proprio") + '">' + Util.esc(b.label) + '</span>' + varTxt + '</td>' +
+        /* ⚠ base regionalizada atualizada a mão (SETOP/SICOR) pode ter uma
+           competência POR REGIÃO. A coluna "Competência" mostra UMA; sem esta
+           linha, Central de 2026 e Norte de 2023 pareceriam a mesma coisa. */
+        var regTxt = "";
+        try {
+          if (b.regioesMeta) {
+            var pr = [];
+            for (var rk2 in b.regioesMeta) {
+              if (!Object.prototype.hasOwnProperty.call(b.regioesMeta, rk2)) continue;
+              var m2 = b.regioesMeta[rk2] || {};
+              pr.push(rk2 + (m2.competencia ? " " + m2.competencia : ""));
+            }
+            if (pr.length) regTxt = '<small style="display:block;opacity:.7">atualizado por você: ' + Util.esc(pr.join(" · ")) + "</small>";
+          }
+        } catch (eM) {}
+        return '<tr><td><span class="pill ' + (b.cor || "proprio") + '">' + Util.esc(b.label) + '</span>' + varTxt + regTxt + '</td>' +
           '<td>' + Util.esc(comp + " / " + (b.uf || "—")) + '</td>' +
           '<td class="num">' + (b.total || 0).toLocaleString("pt-BR") + '</td>' +
           '<td><label style="cursor:pointer"><input type="checkbox" data-base-toggle="' + Util.esc(b.fonte) + '"' + (b.ativaUsuario !== false ? " checked" : "") + '> ativa</label>' + porUf + '</td>' +
@@ -298,6 +313,48 @@
       // responde a competência mais recente e QUANDO entrou no ar. Sem novidade,
       // a resposta é honesta: "sem atualização — a última é a de tal data".
       var _icT = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 14) : ""; };
+
+      /* ==================================================================
+       * SETOP × SICOR — o único banco do app cuja fonte fechou a porta.
+       *
+       * O pacote traz 08/2023, a última competência publicada em download
+       * aberto por Minas. De 2024 em diante a tabela vive no SICOR-MG, atrás
+       * de login no portal do DER-MG, e o coletor anônimo não alcança. Em vez
+       * de deixar o cliente achando que 08/2023 é "o atual", a tela diz o que
+       * está acontecendo, dá o endereço do cadastro e aceita a planilha que
+       * ele baixar logado — mesclando só a região escolhida.
+       * ================================================================== */
+      var REG_SETOP = [["Triangulo", "Triângulo/Alto Paranaíba"], ["Central", "Central"], ["Norte", "Norte"],
+        ["Sul", "Sul"], ["Leste", "Leste"], ["Jequitinhonha", "Jequitinhonha/Mucuri"]];
+      var setopB = (lista || []).filter(function (b) { return String(b.fonte).toUpperCase() === "SETOP"; })[0];
+      var setopSicor = (function () {
+        var st = "";
+        /* procedência por região: uma base com Central de 2026 e Norte de
+           2023 tem DUAS competências, e é obrigação da tela dizer isso. */
+        if (setopB && setopB.regioesMeta) {
+          var ps = [];
+          for (var rk in setopB.regioesMeta) {
+            if (!Object.prototype.hasOwnProperty.call(setopB.regioesMeta, rk)) continue;
+            var mm = setopB.regioesMeta[rk] || {};
+            var rot = rk;
+            REG_SETOP.forEach(function (p) { if (p[0] === rk) rot = p[1]; });
+            ps.push(rot + (mm.competencia ? " · " + mm.competencia : "") + (mm.regime ? " · " + mm.regime : ""));
+          }
+          if (ps.length) st = '<p style="font-size:12px;margin:8px 0 0;padding:6px 8px;border-left:3px solid var(--ok,#16a34a);background:var(--fundo-fraco,rgba(22,163,74,.06))">Já atualizado por você: <b>' + Util.esc(ps.join("  |  ")) + '</b></p>';
+        }
+        if (!setopB) st += '<p class="muted" style="font-size:12px;margin:8px 0 0">A SETOP ainda não está instalada — carregue primeiro no botão <b>SETOP · MG (ago/2023)</b> acima, depois atualize a sua região por aqui.</p>';
+        return '<h3 style="margin:18px 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualizar a SETOP-MG (SICOR · portal do DER-MG)</h3>' +
+          '<p class="muted" style="font-size:12px;margin:-2px 0 8px">A SETOP que vem no app é a de <b>08/2023</b>, a última publicada em download aberto. De 2024 em diante Minas passou a tabela para o <b>SICOR-MG</b>, que <b>exige cadastro</b> — por isso ela não se atualiza sozinha como os outros bancos. O cadastro é <b>gratuito</b> e aceita login gov.br: ' +
+          '<a href="https://portal.der.mg.gov.br/portal-servicos-frontend/login" target="_blank" rel="noopener noreferrer">portal.der.mg.gov.br</a>. ' +
+          'Baixe lá a planilha da <b>sua região</b> e traga o arquivo aqui — o app reconhece as colunas sozinho e <b>mescla só a região que você escolher</b>, sem tocar nas outras.</p>' +
+          '<div class="row"><div class="field"><label>Região desta planilha</label><select id="sicor-regiao">' +
+          REG_SETOP.map(function (r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join("") + '</select></div>' +
+          '<div class="field"><label>Regime</label><select id="sicor-regime"><option value="desonerada">Desonerada</option><option value="onerada">Onerada</option></select></div>' +
+          '<div class="field"><label>Competência (AAAA-MM)</label><input id="sicor-comp" placeholder="2026-04"></div></div>' +
+          '<div class="field"><label>Planilha baixada do SICOR (.xlsx, .xls ou .csv)</label><input type="file" id="sicor-file" accept=".xlsx,.xls,.csv"></div>' +
+          '<button class="btn primary" data-acao="importar-sicor">' + _icT("reimportar") + 'Atualizar a região escolhida</button>' +
+          st;
+      })();
       var compSin = (typeof Atualizacao !== "undefined" && Atualizacao.fmtComp) ? Atualizacao.fmtComp(Sinapi.competencia) : (Sinapi.competencia || "—");
       // GOINFRA instala com fonte "AGETOP" (nome oficial do órgão) — aceitar os dois
       var extrasAtu = [["SICRO", ["SICRO"]], ["IOPES", ["IOPES"]], ["ORSE", ["ORSE"]], ["GOINFRA", ["GOINFRA", "AGETOP"]]];
@@ -343,6 +400,7 @@
         '<select id="goinfra-preco" class="btn sm" style="padding:5px" title="Custo direto: o app aplica o seu BDI. Com BDI: usa o preço final oficial da GOINFRA (27,21%)."><option value="direto">Custo direto (sem BDI)</option><option value="comBDI">Preço com BDI (oficial)</option></select>' +
         '<button class="btn sm primary" data-acao="carregar-goinfra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' GOINFRA/AGETOP · GO (rodoviárias)</button></span>' +
         '</div>' +
+        setopSicor +
         '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear pasta inteira (de uma vez)</h3>' +
         '<p class="muted" style="font-size:12px">Pasta DENTRO do projeto do ERP (ex.: <b>mg-01-2026</b> = SICRO-MG). O fetcher parseia TUDO (composições com MO/MAT/EQ + materiais + equipamentos + mão de obra) e organiza no multi-base sozinho.</p>' +
         '<div class="row"><div class="field"><label>Pasta</label><input id="scan-pasta" value="mg-01-2026"></div>' +

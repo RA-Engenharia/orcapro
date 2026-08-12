@@ -139,7 +139,7 @@
            escolhe o arquivo sem sufixo quando o select vem vazio */
         { id: "regime", rotulo: "Regime", padrao: "desonerada", tipo: "arquivo", opcoes: [{ v: "desonerada", r: "Desonerada" }, { v: "onerada", r: "Onerada" }] }
       ],
-      nota: "Congelada em 08/2023: de 2024 em diante o portal de MG passou a exigir login no SICOR e o coletor não tem credencial."
+      nota: "Pacote congelado em 08/2023: de 2024 em diante o portal de MG passou a exigir login no SICOR e o coletor não tem credencial. Dá para atualizar por conta própria em Tabelas › Atualizar a SETOP-MG (SICOR) — você baixa a planilha da sua região logado no portal do DER-MG e o app mescla só aquela região."
     },
     {
       id: "SUDECAP", nome: "SUDECAP", orgao: "Superintendência de Desenvolvimento da Capital — Prefeitura de Belo Horizonte",

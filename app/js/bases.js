@@ -90,7 +90,19 @@
         ativaUsuario: ativaU,
         inativaPorUf: false,           // runtime; quem decide é carregar()
         sel: opts.sel || (antiga ? antiga.sel : null) || null,
-        catId: opts.catId || (antiga ? antiga.catId : null) || null
+        catId: opts.catId || (antiga ? antiga.catId : null) || null,
+        /* procedência POR REGIÃO (só bases regionalizadas usam).
+         * ⚠ A regra aqui é a CHAVE PRESENTE, não o valor — e a diferença
+         * importa. Quem troca o acervo inteiro (instalar arquivo do pacote,
+         * importar planilha plana) manda `regioesMeta: null` de propósito:
+         * os itens são outros, então a memória de "Central veio de 2026-04"
+         * virou mentira e tem de morrer junto. Quem só mexe em detalhe omite
+         * a chave e herda. Com `||` puro, o null do primeiro caso caía no
+         * herdado e a tela seguiria anunciando uma competência que não está
+         * mais lá. */
+        regioesMeta: (Object.prototype.hasOwnProperty.call(opts, "regioesMeta")
+          ? (opts.regioesMeta || null)
+          : ((antiga && antiga.regioesMeta) || null))
       });
       EXTRA = EXTRA.filter(function (x) { return x.fonte !== fonte; });
       EXTRA.push(b);
@@ -125,7 +137,8 @@
           fonte: b.fonte, label: b.label, cor: b.cor, competencia: b.competencia, uf: b.uf,
           total: b.itens.length, ativa: self.usavel(b),
           ativaUsuario: b.ativaUsuario !== false, inativaPorUf: !!b.inativaPorUf,
-          sel: b.sel || null, catId: b.catId || b.fonte
+          sel: b.sel || null, catId: b.catId || b.fonte,
+          regioesMeta: b.regioesMeta || null
         });
       });
       return out;
@@ -281,11 +294,166 @@
       return this._pegar(arquivo, opts).then(function (pacote) {
         // base regionalizada (ex.: SETOP): usa o preço da região escolhida
         if (regiao && pacote.dados) pacote.dados.forEach(function (it) { if (it.precos && it.precos[regiao] != null) it.custoUnitario = it.precos[regiao]; });
-        var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId });
+        /* regioesMeta: null — instalar um arquivo do pacote REDEFINE a base
+           inteira, então a procedência por região do que havia antes não
+           vale mais (ver o bloco em registrar). */
+        var n = self.registrar(fonte || pacote.fonte || "PROPRIA", pacote, { sel: opts.sel, catId: opts.catId, regioesMeta: null });
         var grav = { ok: true };
         if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = self.persistir(Auth.empresaId());
         return { total: n, fonte: (fonte || pacote.fonte || "PROPRIA"), competencia: pacote.mes, uf: pacote.uf, regiao: regiao || null, sel: opts.sel || null, persistido: grav.ok, gravErro: grav.erro };
       });
+    },
+
+    /* ==================================================================
+     * MESCLAR REGIÃO — a volta por cima do portal que fechou.
+     *
+     * De 2024 em diante a tabela de MG saiu do download aberto e entrou no
+     * SICOR (portal do DER-MG, com login). Coletor anônimo não passa, e
+     * guardar senha de cliente para raspar portal de governo não é opção —
+     * então quem traz a competência nova é o próprio usuário, com a planilha
+     * que ele baixou logado.
+     *
+     * ⚠ O QUE NÃO DÁ para fazer é jogar essa planilha no importador comum.
+     * Ele devolve lista PLANA (um `custoUnitario` só) e a SETOP é
+     * REGIONALIZADA: o preço mora em precos{Triangulo,Central,…}. Importar
+     * plano apagaria as 6 regiões de uma vez, e o seletor de região da tela
+     * viraria enfeite — mexer nele não mudaria mais preço nenhum.
+     *
+     * Esta função mescla UMA região sobre o acervo, preservando as outras.
+     * PURA: recebe e devolve arrays, não toca em EXTRA nem no DOM.
+     * ================================================================== */
+    mesclarPrecosRegiao: function (itensAtuais, dados, regiao, opts) {
+      opts = opts || {};
+      regiao = String(regiao == null ? "" : regiao).trim();
+      if (!regiao) return { ok: false, erro: "Região não informada." };
+      var lista = Array.isArray(dados) ? dados : [];
+      if (!lista.length) return { ok: false, erro: "Planilha sem itens legíveis." };
+      var tem = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+
+      /* CÓPIA antes de mexer: se a mescla falhar no meio, a base viva não
+         pode ter sido alterada pela metade. */
+      var out = [], porCod = {};
+      (Array.isArray(itensAtuais) ? itensAtuais : []).forEach(function (it) {
+        if (!it || it.codigo == null) return;
+        var c = {}, k;
+        for (k in it) if (tem(it, k)) c[k] = it[k];
+        c.precos = {};
+        if (it.precos) for (k in it.precos) if (tem(it.precos, k)) c.precos[k] = it.precos[k];
+        var cod = String(c.codigo);
+        if (porCod[cod]) return;                 // duplicado no acervo: vale o primeiro
+        porCod[cod] = c; out.push(c);
+      });
+
+      var novos = 0, atualizados = 0, semCusto = 0;
+      lista.forEach(function (it) {
+        if (!it || it.codigo == null) return;
+        var cod = String(it.codigo).trim();
+        if (!cod) return;
+        var custo = Number(it.custoUnitario);
+        /* ⚠ custo zero/inválido NÃO grava. A planilha do SICOR traz linha de
+           seção, cabeçalho repetido e rodapé sem preço; deixá-las passar
+           zeraria um preço bom que já estava na base. Perda silenciosa de
+           dado é o defeito que esta camada inteira existe para evitar —
+           então some no contador `semCusto` e aparece na tela. */
+        if (!isFinite(custo) || !(custo > 0)) { semCusto++; return; }
+        var alvo = porCod[cod];
+        if (!alvo) {
+          alvo = {
+            codigo: cod, descricao: String(it.descricao || "").trim(),
+            unidade: String(it.unidade || "un").trim(), precos: {},
+            origem: opts.origem || "SETOP", tipoItem: it.tipoItem || "composicao"
+          };
+          porCod[cod] = alvo; out.push(alvo); novos++;
+        } else {
+          atualizados++;
+          if (it.descricao) alvo.descricao = String(it.descricao).trim();
+          if (it.unidade) alvo.unidade = String(it.unidade).trim();
+        }
+        alvo.precos[regiao] = Math.round(custo * 100) / 100;
+      });
+
+      if (!novos && !atualizados) return { ok: false, erro: "Nenhum item com preço reconhecido (preciso de código + custo)." };
+
+      var regioes = [], vistas = {};
+      out.forEach(function (it) {
+        for (var r in it.precos) if (tem(it.precos, r) && !vistas[r]) { vistas[r] = 1; regioes.push(r); }
+      });
+      return { ok: true, itens: out, novos: novos, atualizados: atualizados, semCusto: semCusto, regioes: regioes };
+    },
+
+    /* Reprojeta custoUnitario a partir de precos[regiao] — a mesma conta que
+     * carregarInclusa faz ao instalar, isolada para a mescla reusar.
+     *
+     * ⚠ Item que NÃO tem preço nessa região vai a ZERO, de propósito. Manter
+     * o custo anterior deixaria um preço de OUTRA região passando por preço
+     * desta, sem nada na tela dizendo — que é precisamente como um orçamento
+     * sai errado sem ninguém perceber. Zero é visível; o número errado não.
+     * Devolve quantos ficaram assim, para quem chamou poder avisar. */
+    projetarRegiao: function (itens, regiao) {
+      var lista = Array.isArray(itens) ? itens : [], falta = 0;
+      regiao = String(regiao == null ? "" : regiao).trim();
+      lista.forEach(function (it) {
+        if (!it || !it.precos) return;           // base plana (sem regiões): não é assunto desta função
+        var p = it.precos[regiao];
+        if (p != null && isFinite(Number(p))) { it.custoUnitario = Number(p); it.semPrecoRegiao = false; }
+        else { it.custoUnitario = 0; it.semPrecoRegiao = true; falta++; }
+      });
+      return falta;
+    },
+
+    /* Aplica a mescla na base VIVA e devolve o resumo para a tela.
+     * opts: { regiao, regime, competencia, uf, substituir } */
+    mesclarRegiao: function (fonte, dados, opts) {
+      opts = opts || {};
+      fonte = String(fonte || "SETOP").toUpperCase();
+      var tem = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+      var regiao = String(opts.regiao || "").trim();
+      var b = EXTRA.filter(function (x) { return x.fonte === fonte; })[0];
+
+      /* ⚠ REGIME NÃO SE MISTURA. Desonerada e onerada são dois universos de
+         preço para os MESMOS códigos. Mesclar Central-onerada sobre
+         Triângulo-desonerada produz uma base que não corresponde a nenhuma
+         publicação real — e ninguém veria, porque o número continua com cara
+         de preço. Aqui a mescla PARA e devolve o conflito; quem decide
+         substituir é o usuário, avisado. */
+      var regimeAtual = (b && b.sel && b.sel.regime) || null;
+      if (b && b.itens.length && regimeAtual && opts.regime && regimeAtual !== opts.regime && !opts.substituir) {
+        return {
+          ok: false, conflitoRegime: true, regimeAtual: regimeAtual, regimeNovo: opts.regime,
+          erro: "A SETOP instalada é " + regimeAtual + " e a planilha é " + opts.regime + "."
+        };
+      }
+
+      var atuais = (b && !opts.substituir) ? b.itens : [];
+      var r = this.mesclarPrecosRegiao(atuais, dados, regiao, { origem: fonte });
+      if (!r.ok) return r;
+      var falta = this.projetarRegiao(r.itens, regiao);
+
+      /* PROCEDÊNCIA POR REGIÃO — sem isto a tela mente. Uma base com Central
+         de 2026 e Norte de 2023 tem DUAS competências; chamar o conjunto de
+         "2026" faria o cliente orçar o Norte com preço velho achando que era
+         o novo. Cada região carrega a sua. */
+      var meta = (b && b.regioesMeta && !opts.substituir) ? b.regioesMeta : {};
+      var copia = {}, k;
+      for (k in meta) if (tem(meta, k)) copia[k] = meta[k];
+      copia[regiao] = { competencia: opts.competencia || null, regime: opts.regime || regimeAtual || null };
+
+      var sel = {};
+      if (b && b.sel && !opts.substituir) for (k in b.sel) if (tem(b.sel, k)) sel[k] = b.sel[k];
+      sel.regiao = regiao;
+      if (opts.regime) sel.regime = opts.regime;
+
+      this.registrar(fonte, {
+        dados: r.itens,
+        mes: opts.competencia || (b && b.competencia) || null,
+        uf: opts.uf || (b && b.uf) || "MG"
+      }, { sel: sel, catId: (b && b.catId) || fonte, regioesMeta: copia });
+
+      return {
+        ok: true, total: r.itens.length, novos: r.novos, atualizados: r.atualizados,
+        semCusto: r.semCusto, semPrecoNaRegiao: falta, regioes: r.regioes, regiao: regiao,
+        competencia: opts.competencia || null, regime: sel.regime || null, substituiu: !!opts.substituir
+      };
     },
 
     /* ==================================================================
@@ -340,7 +508,9 @@
       } else { return { ok: false, erro: "CSV não suportado." }; }
       if (opts.competencia) pacote.mes = opts.competencia;
       if (opts.uf) pacote.uf = opts.uf;
-      var n = this.registrar(fonte, pacote);
+      /* planilha/JSON plano substitui o acervo: procedência por região zera
+         junto (uma lista plana não tem região nenhuma para atestar). */
+      var n = this.registrar(fonte, pacote, { regioesMeta: null });
       if (!n) return { ok: false, erro: "Nenhum item válido." };
       return { ok: true, total: n, fonte: String(fonte).toUpperCase(), pacote: pacote };
     },
@@ -427,7 +597,11 @@
         return {
           fonte: b.fonte, mes: b.competencia, uf: b.uf, dados: b.itens,
           ativaUsuario: b.ativaUsuario !== false,
-          sel: b.sel || null, catId: b.catId || null
+          sel: b.sel || null, catId: b.catId || null,
+          /* atravessa para o disco junto com `sel`: é a resposta a "de que
+             competência é o preço da MINHA região", e perdê-la no reload
+             transformaria uma base honesta numa base sem procedência. */
+          regioesMeta: b.regioesMeta || null
         };
       });
 
@@ -495,7 +669,7 @@
         if (!p || !p.fonte) return;
         /* payload legado não tem ativaUsuario/sel/catId: `undefined` cai no
            padrão de registrar() (ativa, sem variante) e nada quebra */
-        self.registrar(p.fonte, p, { ativaUsuario: p.ativaUsuario, sel: p.sel, catId: p.catId }); n++;
+        self.registrar(p.fonte, p, { ativaUsuario: p.ativaUsuario, sel: p.sel, catId: p.catId, regioesMeta: p.regioesMeta }); n++;
         var ufBase = String(p.uf || "").toUpperCase();
         // a base PROPRIA é AUTORAL (composições criadas pelo cliente) — vale em
         // qualquer UF e nunca é desativada pela troca de estado

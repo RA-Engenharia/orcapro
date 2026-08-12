@@ -852,6 +852,7 @@
         case "tabelas": this.abrirTabelas(); break;
         case "escanear-pasta": this.escanearPastaUI(); break;
         case "carregar-setop": this.carregarSetop(); break;
+        case "importar-sicor": this.importarSicor(); break;
         case "carregar-goinfra": this.carregarGoinfra(); break;
         case "cron-recalc": this.cronRecalc(); break;
         case "cron-reset": this.cronReset(); break;
@@ -2175,10 +2176,119 @@
       var regime = (UI.el("setop-regime") || {}).value || "desonerada";
       var arq = regime === "onerada" ? "data/setop-MG-onerada-current.json" : "data/setop-MG-current.json";
       UI.toast("Carregando SETOP (" + reg + ", " + regime + ")…", "ok");
-      Bases.carregarInclusa(arq, "SETOP", reg).then(function (r) {
+      /* ⚠ `sel`/`catId` vão junto — este botão é o caminho LEGADO (o do
+         catálogo já mandava) e sem eles a base ficava instalada sem dizer
+         QUAL variante era. Duas consequências reais: a tela Tabelas não
+         mostrava a região carregada, e a mescla do SICOR não tinha como
+         saber o regime instalado para barrar a mistura desonerada/onerada. */
+      Bases.carregarInclusa(arq, "SETOP", reg, { sel: { regiao: reg, regime: regime }, catId: "SETOP" }).then(function (r) {
         UI.toast("SETOP-MG · " + reg + " · " + regime + ": " + r.total.toLocaleString("pt-BR") + " itens." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
         self.abrirTabelas();
       }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
+    },
+
+    /* =================================================================
+     * SICOR-MG — atualizar a SETOP com a planilha que o cliente baixou.
+     *
+     * POR QUE ISTO EXISTE. O pacote do app traz a SETOP de 08/2023 e ela
+     * está congelada aí desde então: em 2024 o estado migrou a tabela para
+     * o SICOR, no portal do DER-MG, atrás de login. O coletor da RA é
+     * anônimo e não passa — e a alternativa de guardar a credencial do
+     * cliente para raspar portal de governo foi descartada por três motivos
+     * independentes, cada um bastando sozinho: (1) o app é estático, o
+     * navegador não faz fetch cross-origin no portal de qualquer forma;
+     * (2) guardar senha de gov.br de cliente é responsabilidade que nenhum
+     * orçamentista pediu para a gente assumir; (3) sessão/captcha do portal
+     * quebrariam o coletor sem aviso.
+     *
+     * Então o dado novo entra pela mão de quem TEM acesso: o usuário baixa
+     * logado, escolhe aqui a região/regime/competência da planilha, e o app
+     * mescla no lugar certo. Ele traz o arquivo verdadeiro do órgão — nada
+     * é inventado, e nada de outra região é sobrescrito.
+     * ================================================================= */
+    importarSicor: function () {
+      var self = this;
+      var regiao = String((UI.el("sicor-regiao") || {}).value || "").trim();
+      var regime = String((UI.el("sicor-regime") || {}).value || "desonerada").trim();
+      var comp = String((UI.el("sicor-comp") || {}).value || "").trim();
+      var fileInput = UI.el("sicor-file");
+      var f = fileInput && fileInput.files && fileInput.files[0];
+      if (!regiao) { UI.toast("Escolha a região da planilha.", "erro"); return; }
+      if (!f) { UI.toast("Escolha o arquivo que você baixou do SICOR (.xlsx, .xls ou .csv).", "erro"); return; }
+      /* competência é opcional, mas se vier tem de ser AAAA-MM: é ela que a
+         tela mostra como procedência daquela região, e "abril" ou "04/26"
+         gravados crus deixariam a comparação entre regiões sem sentido. */
+      if (comp && !/^\d{4}-(0[1-9]|1[0-2])$/.test(comp)) { UI.toast("Competência no formato AAAA-MM (ex.: 2026-04).", "erro"); return; }
+      UI.toast("Lendo a planilha do SICOR…", "ok");
+      self._lerPlanilha(f, function (matriz, erro) {
+        if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+        var dados = self._baseItensDaMatriz(matriz, "SETOP");
+        if (!dados.length) { UI.toast("Nenhum item de preço reconhecido — a planilha precisa ter código, descrição e custo.", "erro"); return; }
+        self._preverSicor(dados, { regiao: regiao, regime: regime, competencia: comp, uf: "MG" });
+      });
+    },
+
+    /* ⚠ CONFERÊNCIA ANTES DE APLICAR — e isto não é excesso de zelo.
+     * O detector de colunas acerta a maioria das planilhas de órgão, mas ele
+     * ESCOLHE uma coluna de preço. Se a publicação do SICOR vier com as seis
+     * regiões lado a lado, ele vai pegar uma e não tem como saber qual — e
+     * preço de outra região entrando calado é o pior defeito possível aqui,
+     * porque o número continua parecendo certo. Então o usuário vê uma
+     * amostra do que eu li, confere contra a planilha aberta, e decide. */
+    _preverSicor: function (dados, opts) {
+      var self = this, esc = Util.esc, n = function (x) { return (x || 0).toLocaleString("pt-BR"); };
+      var amostra = dados.slice(0, 8).map(function (it) {
+        return '<tr><td>' + esc(it.codigo || "—") + '</td><td>' + esc(String(it.descricao || "").slice(0, 64)) + '</td>' +
+          '<td>' + esc(it.unidade || "") + '</td><td class="num">' + Util.fmtNum(it.custoUnitario || 0) + '</td></tr>';
+      }).join("");
+      var comCusto = dados.filter(function (it) { return Number(it.custoUnitario) > 0; }).length;
+      UI.modal("Confira antes de atualizar a SETOP",
+        '<p>Li <b>' + n(dados.length) + '</b> linhas, <b>' + n(comCusto) + '</b> com preço. Vai entrar como <b>' +
+        esc(opts.regiao) + '</b> · <b>' + esc(opts.regime) + '</b>' + (opts.competencia ? ' · <b>' + esc(opts.competencia) + '</b>' : '') + '.</p>' +
+        '<p class="muted" style="font-size:12px">Confira os valores abaixo contra a planilha aberta. Se a publicação trouxer as seis regiões em colunas lado a lado, o custo aqui pode ser o de outra região — nesse caso cancele e baixe a planilha da região específica.</p>' +
+        '<table class="tbl"><thead><tr><th>Código</th><th>Descrição</th><th>Un</th><th class="num">Custo</th></tr></thead><tbody>' +
+        (amostra || '<tr><td colspan="4">—</td></tr>') + '</tbody></table>',
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Confirmar e atualizar", classe: "primary", onClick: function () { UI.fecharModal(); self._aplicarSicor(dados, opts, false); } }]);
+    },
+
+    /* Aplica a mescla. Separado de importarSicor porque o caminho de
+       SUBSTITUIR (regime diferente) volta aqui depois da confirmação. */
+    _aplicarSicor: function (dados, opts, substituir) {
+      var self = this;
+      var r = Bases.mesclarRegiao("SETOP", dados, {
+        regiao: opts.regiao, regime: opts.regime, competencia: opts.competencia,
+        uf: opts.uf || "MG", substituir: !!substituir
+      });
+
+      if (!r.ok && r.conflitoRegime) {
+        UI.modal("Regime diferente do que está instalado",
+          '<p>A SETOP instalada está em <b>' + Util.esc(r.regimeAtual) + '</b> e esta planilha é <b>' + Util.esc(r.regimeNovo) + '</b>.</p>' +
+          '<p class="muted">Desonerada e onerada são dois conjuntos de preço para os mesmos códigos. Misturar os dois produz uma base que não corresponde a publicação nenhuma — e o erro não aparece na tela, porque o número continua com cara de preço.</p>' +
+          '<p>Para usar esta planilha, a base precisa ser <b>substituída</b>: as regiões já carregadas em ' + Util.esc(r.regimeAtual) + ' são descartadas e a SETOP recomeça só com o que vier deste arquivo.</p>',
+          [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+           { texto: "Substituir a base", classe: "danger", onClick: function () { UI.fecharModal(); self._aplicarSicor(dados, opts, true); } }]);
+        return;
+      }
+      if (!r.ok) { UI.toast("Importação falhou: " + r.erro, "erro"); return; }
+
+      /* ⚠ permitirRemocao SÓ na substituição, e só porque o usuário acabou
+         de confirmar na tela acima. A guarda de queda brusca existe para
+         barrar perda acidental (3.977 → 600 itens); numa troca de regime
+         pedida de propósito ela barraria a operação legítima. Na MESCLA o
+         acervo só cresce, então a guarda fica de pé, como deve. */
+      var grav = Bases.persistir(Auth.empresaId(), substituir ? { permitirRemocao: true } : undefined);
+      var n = function (x) { return (x || 0).toLocaleString("pt-BR"); };
+      var msg = "SETOP · " + r.regiao + (r.competencia ? " · " + r.competencia : "") + " · " + (r.regime || "") + ": "
+        + n(r.atualizados) + " atualizados, " + n(r.novos) + " novos"
+        + (r.semCusto ? " · " + n(r.semCusto) + " linhas sem preço ignoradas" : "")
+        + (r.semPrecoNaRegiao ? " · ⚠ " + n(r.semPrecoNaRegiao) + " sem preço nesta região (entram como R$ 0,00)" : "")
+        + ".";
+      /* gravação bloqueada já se explica sozinha na tela (persistir avisa com
+         o motivo). Aqui só não deixo passar em silêncio o caso mudo. */
+      if (!grav.ok && !grav.bloqueado) UI.toast(msg + " ⚠ não consegui gravar — os dados valem só nesta sessão.", "erro");
+      else UI.toast(msg, "ok");
+      self.abrirTabelas();
     },
 
     // GOINFRA/AGETOP-GO (rodoviárias de Goiás) — 2 regimes (com/sem desoneração) e 2 preços
@@ -2251,7 +2361,7 @@
           if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
           var dados = self._baseItensDaMatriz(matriz, fonte);
           if (!dados.length) { UI.toast("Nenhum item de preço reconhecido (preciso de código/descrição + custo).", "erro"); return; }
-          Bases.registrar(fonte, { dados: dados, uf: uf });
+          Bases.registrar(fonte, { dados: dados, uf: uf }, { regioesMeta: null });
           var grav = Bases.persistir(Auth.empresaId());
           UI.toast(dados.length.toLocaleString("pt-BR") + " itens de " + String(fonte).toUpperCase() + " importados da planilha" + (grav.ok ? "." : " — " + grav.erro), grav.ok ? "ok" : "erro");
           self.abrirTabelas();
