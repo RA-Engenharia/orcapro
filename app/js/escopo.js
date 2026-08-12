@@ -86,18 +86,18 @@
   var Escopo = {
 
     /* Analisa um bloco de texto: 1 item por linha. */
-    analisar: function (texto) {
+    analisar: function (texto, opts) {
       var linhas = String(texto || "").split(/\r?\n/);
       var out = [];
       for (var i = 0; i < linhas.length; i++) {
         var bruto = linhas[i].trim();
         if (!bruto) continue;
-        out.push(this.analisarLinha(bruto));
+        out.push(this.analisarLinha(bruto, opts));
       }
       return out;
     },
 
-    analisarLinha: function (bruto) {
+    analisarLinha: function (bruto, opts) {
       var norm = Util.normalizar(bruto);
       // #22: unidade colada no número ("10m2 de piso", "3,5m3 concreto") —
       // separa dígito+letra p/ o token da unidade nascer solto e ser achado.
@@ -138,7 +138,7 @@
       // 5) Busca por termos + ranking de confiança (multi-base)
       var candidatos = [];
       if (termos.length) {
-        var res = this._buscar(termos.join(" "), 8);
+        var res = this._buscar(termos.join(" "), 8, opts);
         candidatos = res.map(function (r) {
           return { item: r.item, fonte: r.fonte || "SINAPI", confianca: Escopo._confianca(termos, unidade, r.item), motivo: "busca por termos" };
         }).sort(function (a, b) { return b.confianca - a.confianca; }).slice(0, 3);
@@ -182,9 +182,35 @@
     },
 
     // Busca/obter multi-base (Bases) com fallback p/ Sinapi. Retorna [{item,fonte}].
-    _buscar: function (q, max) {
-      if (typeof Bases !== "undefined" && Bases.buscar) return Bases.buscar(q, max || 8);
-      if (typeof Sinapi !== "undefined" && Sinapi.buscar) return Sinapi.buscar(q, { max: max || 8 }).map(function (it) { return { item: it, fonte: "SINAPI" }; });
+    /* ⚠ AQUI A DENYLIST DO ORÇAMENTO VALE — e em `_obter` (logo abaixo) NÃO.
+     * A assimetria é proposital. O que sai daqui é um CANDIDATO escolhido pelo
+     * ranking, que o usuário aceita em lote num clique só ("Adicionar
+     * selecionados"): ele não escolheu a base, o score escolheu. Se o banco foi
+     * desmarcado no passo 3, lançar preço dele é exatamente o que o usuário
+     * pediu para não acontecer — e a linha tem estado honesto para a falta
+     * ("Pendente"), então filtrar não esconde nada, só adia.
+     * Em `_obter` o gesto é outro: o usuário DIGITOU o código. Digitar código é
+     * escolher a base de propósito; filtrar ali transformaria escolha explícita
+     * em "esse código não existe".
+     *
+     * ⚠ O MÓDULO CONTINUA PURO: a lista chega por PARÂMETRO. Nada de ler App
+     * ou Orcamento daqui — tools/test-escopo.js e tools/test-medios.js carregam
+     * este arquivo direto no Node, sem window. Sem `opts`, o comportamento é
+     * byte a byte o de sempre. */
+    _buscar: function (q, max, opts) {
+      var negar = (opts && opts.excluirFontes && opts.excluirFontes.length) ? opts.excluirFontes : null;
+      if (typeof Bases !== "undefined" && Bases.buscar) {
+        if (!negar) return Bases.buscar(q, max || 8);
+        return Bases.buscar(q, { max: max || 8, excluirFontes: negar });
+      }
+      if (typeof Sinapi !== "undefined" && Sinapi.buscar) {
+        /* sem a camada multi-base o fallback é a SINAPI crua — e ele NÃO pode
+           reintroduzir justamente o banco que o usuário desmarcou */
+        for (var i = 0; negar && i < negar.length; i++) {
+          if (String(negar[i]).toUpperCase() === "SINAPI") return [];
+        }
+        return Sinapi.buscar(q, { max: max || 8 }).map(function (it) { return { item: it, fonte: "SINAPI" }; });
+      }
       return [];
     },
     // FASE 1.2: devolve { item, fonte } com a fonte REAL de onde o código saiu.
@@ -212,11 +238,11 @@
 
     // Recebe os itens estruturados pela IA do ERP ({etapa,descricao,unidade,quantidade})
     // e casa cada um com as bases — reusa analisarLinha (que já busca + ranqueia).
-    analisarItensIA: function (itens) {
+    analisarItensIA: function (itens, opts) {
       var self = this, out = [];
       (itens || []).forEach(function (it) {
         if (!it || !Util.naoVazio(it.descricao)) return;
-        var l = self.analisarLinha(String(it.descricao));
+        var l = self.analisarLinha(String(it.descricao), opts);
         var q = Util.num(it.quantidade); if (q > 0) { l.quantidade = q; l.qtdInferida = false; }
         if (Util.naoVazio(it.unidade)) l.unidade = it.unidade;
         l.etapaSugerida = it.etapa || "";

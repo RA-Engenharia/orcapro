@@ -246,7 +246,7 @@
       var nAus = BasesCat.AUSENTES.length;
       h += '<button type="button" class="p3-toggle" data-p3-toggle="1">' +
         (st.mostrarAusentes ? "Ocultar" : "Ver") + " os " + nAus + " bancos que ainda não distribuímos</button>";
-      h += '<p class="p3-rodape">Desmarcar tira o banco da <b>busca de itens</b> deste orçamento — não desinstala nada e não afeta os outros orçamentos. Banco instalado depois entra sozinho.</p>';
+      h += '<p class="p3-rodape">Desmarcar tira o banco das buscas que <b>lançam item neste orçamento</b> — busca de itens, Escopo Inteligente e Parede-Cebola. Não desinstala nada, não afeta os outros orçamentos, o banco de insumos nem as suas composições próprias. Banco instalado depois entra sozinho.</p>';
       return h + "</div>";
     },
 

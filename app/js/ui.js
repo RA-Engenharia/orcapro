@@ -259,6 +259,56 @@
       return html;
     },
 
+    /* ==================================================================
+     * BASES PRONTAS — uma linha por banco, dirigida pelo CATÁLOGO.
+     *
+     * ⚠ AQUI MORAVAM TRÊS DOS QUATRO CAMINHOS DE INSTALAÇÃO. Eram cinco
+     * botões `data-inclusa` com o caminho do arquivo escrito na mão, mais um
+     * bloco de selects para o SETOP (`carregar-setop`) e outro para a GOINFRA
+     * (`carregar-goinfra`) — cada um com a sua ideia de qual é o padrão. Foi
+     * assim que a GOINFRA acabou com DOIS defaults para o mesmo dado: um no
+     * `<option>` desta tela e outro no `|| "onerada"` do handler.
+     *
+     * Agora a lista sai de BasesCat: os eixos de variante, os rótulos, o
+     * arquivo e o peso vêm todos da mesma fonte que o Passo 3 do assistente
+     * usa. Banco novo no catálogo aparece aqui sozinho; banco sem fonte não
+     * aparece de jeito nenhum, porque nem está no catálogo.
+     * ================================================================== */
+    _basesProntas: function (lista) {
+      if (typeof BasesCat === "undefined") return '<p class="muted">Catálogo de bancos indisponível.</p>';
+      var inst = {};
+      (lista || []).forEach(function (b) { inst[b.fonte] = b; });
+      var ic = (typeof Icones !== "undefined") ? Icones.get("estoque", 15) : "";
+      var linhas = BasesCat.CATALOGO.filter(function (e) {
+        return !e.principal && !(e.entrega && e.entrega.autoral);
+      }).map(function (e) {
+        var jaTem = inst[e.id];
+        var av = BasesCat.avaliar(e, { instaladas: inst });
+        var eixos = (e.eixos || []).filter(function (x) { return BasesCat.opcoesDoEixo(e, x, {}).length > 1; });
+        var selects = eixos.map(function (ex) {
+          var atual = (jaTem && jaTem.sel && jaTem.sel[ex.id]) || ex.padrao;
+          /* largura travada: com dois eixos (SETOP, AGETOP) os selects em
+             tamanho natural empurravam o botão para a linha de baixo e a
+             lista perdia o alinhamento de coluna */
+          return '<select id="tabi-' + Util.esc(e.id) + "-" + Util.esc(ex.id) + '" class="btn sm" style="padding:5px;max-width:150px" ' +
+            'aria-label="' + Util.esc(ex.rotulo + " de " + e.nome) + '">' +
+            BasesCat.opcoesDoEixo(e, ex, {}).map(function (o) {
+              return '<option value="' + Util.esc(o.v) + '"' + (String(o.v) === String(atual) ? " selected" : "") + ">" + Util.esc(o.r || o.v) + "</option>";
+            }).join("") + "</select>";
+        }).join("");
+        return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 0;border-bottom:1px dashed var(--linha)">' +
+          '<b style="font-size:12.5px;min-width:92px">' + Util.esc(e.nome) + "</b>" +
+          '<span class="muted" style="font-size:11.5px;flex:1;min-width:150px">' + Util.esc(e.localRotulo || e.uf) +
+          " · " + Util.esc(BasesCat.fmtVersao(av.versao) || "—") +
+          (e.pesoMb ? " · " + String(e.pesoMb).replace(".", ",") + " MB" : "") + "</span>" +
+          selects +
+          '<button class="btn sm ' + (jaTem ? "" : "primary") + '" data-instalar="' + Util.esc(e.id) + '">' + ic + " " +
+          (jaTem ? "Reinstalar" : "Instalar") + "</button></div>";
+      }).join("");
+      return '<p class="muted" style="font-size:12px;margin:-2px 0 8px">O app tenta primeiro a versão mais nova no servidor da RA e cai no arquivo que veio no pacote se estiver sem internet.</p>' +
+        '<div style="margin-bottom:6px">' + linhas + "</div>";
+    },
+
     // ---------- Tabelas de Preço (multi-base) ----------
     renderTabelas: function (lista) {
       var rows = (lista || []).map(function (b) {
@@ -299,19 +349,25 @@
       // a resposta é honesta: "sem atualização — a última é a de tal data".
       var _icT = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 14) : ""; };
       var compSin = (typeof Atualizacao !== "undefined" && Atualizacao.fmtComp) ? Atualizacao.fmtComp(Sinapi.competencia) : (Sinapi.competencia || "—");
-      // GOINFRA instala com fonte "AGETOP" (nome oficial do órgão) — aceitar os dois
-      var extrasAtu = [["SICRO", ["SICRO"]], ["IOPES", ["IOPES"]], ["ORSE", ["ORSE"]], ["GOINFRA", ["GOINFRA", "AGETOP"]]];
+      /* Os bancos que TÊM canal de atualização saem do catálogo (quem declara
+         `chaveStatus`), não de um array escrito aqui — era a quarta cópia da
+         mesma informação, e foi por causa dela que a GOINFRA precisava de um
+         desvio próprio no handler. */
+      var comCanal = (typeof BasesCat !== "undefined")
+        ? BasesCat.CATALOGO.filter(function (e) { return e.chaveStatus && !e.principal; })
+        : [];
       var atuLinhas = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
         '<span class="pill sinapi">SINAPI</span><span style="font-size:12.5px">competência ativa: <b>' + Util.esc(compSin) + '</b> · ' + Util.esc(String(Sinapi.uf || "")) + '</span>' +
         '<button class="btn sm primary" data-atu-base="SINAPI" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
         '<span class="muted" id="atu-st-SINAPI" style="flex-basis:100%;font-size:11.5px"></span></div>';
-      extrasAtu.forEach(function (par) {
-        var inst = (lista || []).filter(function (b) { return par[1].indexOf(String(b.fonte).toUpperCase()) >= 0; })[0];
+      comCanal.forEach(function (e) {
+        var inst = (lista || []).filter(function (b) { return String(b.fonte).toUpperCase() === e.id; })[0];
+        var comp = inst ? (BasesCat.fmtVersao(inst.competencia) || "—") : "";
         atuLinhas += '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-bottom:1px dashed var(--linha)">' +
-          '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(par[0]) + '</span>' +
-          '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(inst.competencia || "—") + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões ' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' abaixo</span>') + '</span>' +
-          '<button class="btn sm" data-atu-base="' + par[0] + '" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
-          '<span class="muted" id="atu-st-' + par[0] + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
+          '<span class="pill ' + Util.esc((inst && inst.cor) || "proprio") + '">' + Util.esc(e.nome) + '</span>' +
+          '<span style="font-size:12.5px">' + (inst ? "competência ativa: <b>" + Util.esc(comp) + "</b> · " + Util.esc(inst.uf || "") : '<span class="muted">não instalada — instale nos botões ' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' abaixo</span>') + '</span>' +
+          '<button class="btn sm" data-atu-base="' + Util.esc(e.id) + '" style="margin-left:auto">' + _icT("reimportar") + 'Verificar atualização</button>' +
+          '<span class="muted" id="atu-st-' + Util.esc(e.id) + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
       });
       return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
         '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere no servidor OrçaPRO se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b> (1× por dia, silencioso).</p>' +
@@ -328,21 +384,8 @@
         '<div class="field"><label>UF (opcional)</label><input id="tab-uf" placeholder="MG"></div></div>' +
         '<div class="field"><label>Arquivo (planilha oficial: Excel .xlsx/.xls, CSV, ou JSON do fetcher)</label><input type="file" id="tab-file" accept=".xlsx,.xls,.json,.csv,.txt"></div>' +
         '<div class="field"><label>ou cole o conteúdo (JSON, ou CSV: Código;Descrição;Custo)</label><textarea id="tab-text" rows="3"></textarea></div>' +
-        '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Bases prontas (1 clique, já inclusas no app)</h3>' +
-        '<div class="flex" style="flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
-        '<button class="btn sm primary" data-inclusa="data/sudecap-BH-current.json|SUDECAP">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SUDECAP · Belo Horizonte (atual)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/seinfra-CE-current.json|SEINFRA">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SEINFRA · Ceará (atual)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/sicro-ES-current.json|SICRO" title="SICRO/DNIT — custos rodoviários oficiais. Relatório Sintético de Composições, trimestral.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SICRO/DNIT · ES (rodoviárias)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/iopes-ES-current.json|IOPES" title="IOPES/DER-ES — Tabela Referencial de Edificações do Espírito Santo (não desonerada, BDI 0%), mensal.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' IOPES/DER-ES · ES (edificações)</button>' +
-        '<button class="btn sm primary" data-inclusa="data/orse-SE-current.json|ORSE" title="ORSE/CEHOP-SE — Orçamento de Obras de Sergipe (consulta pública oficial), mensal.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' ORSE · Sergipe</button>' +
-        '<span class="flex" style="gap:4px;align-items:center"><select id="setop-regiao" class="btn sm" style="padding:5px">' +
-        [["Triangulo", "Triângulo"], ["Central", "Central"], ["Norte", "Norte"], ["Sul", "Sul"], ["Leste", "Leste"], ["Jequitinhonha", "Jequitinhonha/Mucuri"]].map(function (r) { return '<option value="' + r[0] + '">' + r[1] + '</option>'; }).join("") +
-        '</select><select id="setop-regime" class="btn sm" style="padding:5px"><option value="desonerada">Desonerada</option><option value="onerada">Onerada</option></select>' +
-        '<button class="btn sm primary" data-acao="carregar-setop">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' SETOP · MG (ago/2023)</button></span>' +
-        '<span class="flex" style="gap:4px;align-items:center"><select id="goinfra-regime" class="btn sm" style="padding:5px"><option value="onerada">Sem desoneração</option><option value="desonerada">Com desoneração</option></select>' +
-        '<select id="goinfra-preco" class="btn sm" style="padding:5px" title="Custo direto: o app aplica o seu BDI. Com BDI: usa o preço final oficial da GOINFRA (27,21%)."><option value="direto">Custo direto (sem BDI)</option><option value="comBDI">Preço com BDI (oficial)</option></select>' +
-        '<button class="btn sm primary" data-acao="carregar-goinfra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' GOINFRA/AGETOP · GO (rodoviárias)</button></span>' +
-        '</div>' +
+        '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Bases prontas (1 clique)</h3>' +
+        this._basesProntas(lista) +
         '<h3 style="margin:18px 0 6px">' + (typeof Icones !== 'undefined' ? Icones.get('pasta', 15) : '') + ' Escanear pasta inteira (de uma vez)</h3>' +
         '<p class="muted" style="font-size:12px">Pasta DENTRO do projeto do ERP (ex.: <b>mg-01-2026</b> = SICRO-MG). O fetcher parseia TUDO (composições com MO/MAT/EQ + materiais + equipamentos + mão de obra) e organiza no multi-base sozinho.</p>' +
         '<div class="row"><div class="field"><label>Pasta</label><input id="scan-pasta" value="mg-01-2026"></div>' +
@@ -1351,14 +1394,20 @@
           (r.nRevisar ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + r.nRevisar + ' p/ revisar</span>' : '') +
           (r.nPendentes ? '<span class="pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + r.nPendentes + ' sem código</span>' : '') +
           '</div>';
-        html += '<table class="tbl" style="margin-top:10px;font-size:13px"><thead><tr><th>#</th><th>Camada</th><th style="text-align:right">Qtd</th><th>Un</th><th>Código SINAPI casado</th><th>Confiança</th><th></th></tr></thead><tbody>';
+        html += '<table class="tbl" style="margin-top:10px;font-size:13px"><thead><tr><th>#</th><th>Camada</th><th style="text-align:right">Qtd</th><th>Un</th><th>Código casado (base)</th><th>Confiança</th><th></th></tr></thead><tbody>';
         r.camadas.forEach(function (c) {
           var cand = (c.escolhido >= 0 && c.candidatos[c.escolhido]) ? c.candidatos[c.escolhido] : null;
           var b = badge[c.status] || badge.pendente;
           var codCel;
           if (c.candidatos && c.candidatos.length) {
             codCel = '<select data-pc-cand="' + c.seq + '" style="max-width:340px">' + c.candidatos.map(function (k, i) {
-              return '<option value="' + i + '"' + (i === c.escolhido ? " selected" : "") + '>' + esc((k.item.codigo || "—") + " · " + (k.item.descricao || "").slice(0, 60)) + " [" + (k.item.unidade || "?") + "]</option>";
+              /* ⚠ a FONTE na cara. A coluna dizia "Código SINAPI casado" e a
+                 opção não mostrava banco nenhum — item de SICRO ou SETOP era
+                 lançado com o usuário lendo "SINAPI". k.fonte já existe desde
+                 sempre (paredecebola.js) e era jogado fora. Agora que a
+                 denylist age aqui, ver a origem deixou de ser cosmético: é
+                 como o usuário percebe que o filtro agiu (ou não). */
+              return '<option value="' + i + '"' + (i === c.escolhido ? " selected" : "") + '>' + esc("[" + (k.fonte || "SINAPI") + "] " + (k.item.codigo || "—") + " · " + (k.item.descricao || "").slice(0, 60)) + " [" + (k.item.unidade || "?") + "]</option>";
             }).join("") + '</select>' + (c.unidadeDivergente ? ' <span class="muted" style="color:#b45309;font-size:11px">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' unidade ' + esc(cand ? cand.item.unidade : "") + ' ≠ ' + c.unidade + '</span>' : "");
           } else {
             codCel = '<span class="muted" style="color:#dc2626">nenhum código casou — ajuste o termo ou lance manualmente</span>';

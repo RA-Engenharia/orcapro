@@ -6462,6 +6462,10 @@
             }
             if (!cands.length && s.termos && s.termos.length) {
               var achados = [];
+              /* ⚠ SEM denylist: aqui o orçamento ainda NÃO EXISTE — ele é criado
+                 depois, no fim deste fluxo. Filtrar exigiria pegar emprestada a
+                 config de outro orçamento, que é o vazamento que o passo 3
+                 promete não existir. Guardado em tools/test-escopo-denylist.js [8]. */
               try { achados = Bases.buscar(s.termos.join(" "), { max: 6, tipo: "composicao" }) || []; } catch (eB) { achados = []; }
               achados.forEach(function (c) { cands.push({ item: c.item, fonte: c.fonte, conf: Bimeap.pontuar(s, c.item) }); });
               cands.sort(function (a, b) { return b.conf - a.conf; });
@@ -11494,6 +11498,10 @@ renderRequisicoes: function () {
         // extras (inclui a PROPRIA) — sem o filtro o mesmo PROP sairia 2×.
         try {
           if (typeof Bases !== "undefined" && Bases.buscar) {
+            /* ⚠ SEM denylist: isto é requisição de COMPRA, amarrada à obra e não
+               a orçamento (App._navegar zera orcAtual em toda view de Gestão). A
+               denylist é preferência de precificação, não de o que o comprador
+               pode solicitar. Guardado em tools/test-escopo-denylist.js [8]. */
             var prop = Bases.buscar(q, { max: 10, fonte: "PROPRIA", tipo: "insumo" }).map(function (r) {
               return { codigo: r.item.codigo, descricao: r.item.descricao, unidade: r.item.unidade || "un",
                 custoUnitario: Util.num(r.item.custoUnitario), categoria: String(r.item.categoria || "MAT").toUpperCase(), fonte: "PRÓPRIO" };

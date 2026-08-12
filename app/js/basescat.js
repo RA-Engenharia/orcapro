@@ -96,11 +96,13 @@
          a tela prometer estado que não veio no ZIP daquele cliente */
       eixos: [{ id: "uf", rotulo: "Local", de: "estados", padrao: "" }],
       principal: true,
-      /* ⚠ SEM eixo de regime, e isso é decisão, não esquecimento: os 324.702
-         itens gravam desonerado:true mas vêm das abas CSD/ISD, que são SEM
-         desoneração. Oferecer o eixo carimbaria o rótulo errado em 324 mil
-         itens. Preferimos não oferecer a mentir — pendência do gerador. */
-      nota: "Regime único no pacote (o eixo desonerado/onerado será liberado quando o gerador separar as duas abas)."
+      /* ⚠ SEM eixo de regime porque só distribuímos UM regime, não porque o
+         rótulo esteja errado — isso foi corrigido na v1.1.204: os 324.702
+         itens agora declaram desonerado:false, que é o que as abas CSD/ISD
+         dizem de si mesmas ("ENCARGOS SOCIAIS SEM DESONERAÇÃO"). O gerador já
+         produz o desonerado (--regime desonerada, abas CCD/ICD); ligar o eixo
+         aqui depende de decidir como entregar mais ~88 MB ao cliente. */
+      nota: "Vem no app o regime NÃO DESONERADO (abas CSD/ISD da CAIXA). O desonerado (CCD/ICD) o gerador já sabe produzir, mas ainda não é distribuído."
     },
     {
       id: "SICRO", nome: "SICRO", orgao: "Sistema de Custos Referenciais de Obras — DNIT",

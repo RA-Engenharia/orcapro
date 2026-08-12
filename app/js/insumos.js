@@ -143,6 +143,8 @@
         try {
           var vistos = {}; out.forEach(function (x) { vistos[x.fonte + ":" + x.codigo] = 1; });
           var sec = [];
+          /* ⚠ SEM denylist: mesmo fluxo de compras do gestao.js, sem orçamento
+             corrente. Guardado em tools/test-escopo-denylist.js [8]. */
           Bases.buscar(texto, { max: max, tipo: "insumo" }).forEach(function (r) {
             var it = r.item || {}; var chave = (r.fonte || "") + ":" + it.codigo;
             if (!it.codigo || Insumos._porChave[chave] || vistos[chave]) return; // já no índice ou já listado

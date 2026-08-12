@@ -313,7 +313,7 @@
         s._p3 = BasesUI.estadoInicial(this._ctx3(), excl);
       }
       return this._trilha(3) +
-        '<p class="muted ow-nota" style="margin-top:0">Marque os bancos que <b>este orçamento</b> pode usar na busca de itens. ' +
+        '<p class="muted ow-nota" style="margin-top:0">Marque os bancos que <b>este orçamento</b> pode usar para lançar itens (busca de itens, Escopo Inteligente e Parede-Cebola). ' +
         'Regime declarado no passo anterior: <b>' + (s.encargos.tipo === "desonerado" ? "desonerado" : "não desonerado") + "</b>.</p>" +
         '<div id="ow-p3">' + this._tabela3() + "</div>";
     },

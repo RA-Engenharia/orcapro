@@ -598,7 +598,7 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-inclusa],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -673,51 +673,73 @@
           });
           return;
         }
-        // Extras (SICRO/IOPES/ORSE/GOINFRA): status → compara → recarrega live se houver nova.
-        // GOINFRA instala com fonte "AGETOP" (nome oficial do órgão) — aceitar os dois.
-        var MAPA_ATU = { SICRO: ["sicro", "sicro-ES-current.json", ["SICRO"]], IOPES: ["iopes", "iopes-ES-current.json", ["IOPES"]], ORSE: ["orse", "orse-SE-current.json", ["ORSE"]], GOINFRA: ["goinfra", null, ["GOINFRA", "AGETOP"]] };
-        var cfgAtu = MAPA_ATU[fonteAtu];
-        if (!cfgAtu) { pinta("Este banco não tem atualização online."); return; }
+        /* EXTRAS: status do servidor → compara → reinstala se houver nova.
+         * Quem sabe a chave do servidor, o arquivo e a variante é o CATÁLOGO —
+         * o mapa que existia aqui era a quarta cópia dessa informação, e a
+         * GOINFRA ainda precisava de um desvio próprio por causa dela. */
+        var eAtu = (typeof BasesCat !== "undefined") ? BasesCat.get(fonteAtu === "GOINFRA" ? "AGETOP" : fonteAtu) : null;
+        if (!eAtu || !eAtu.chaveStatus) { pinta("Este banco não tem atualização online."); return; }
         Atualizacao.statusServidor().then(function (st) {
-          var srv = st && st[cfgAtu[0]];
+          var srv = st && st[eAtu.chaveStatus];
           if (!srv || !srv.competencia) { pinta("O servidor não informou este banco agora — tente mais tarde."); return; }
-          var inst = (Bases.lista() || []).filter(function (b) { return cfgAtu[2].indexOf(String(b.fonte).toUpperCase()) >= 0; })[0];
-          var compLocal = inst ? Atualizacao._normComp(inst.competencia) : null;
+          var inst = (Bases.lista() || []).filter(function (b) { return String(b.fonte).toUpperCase() === eAtu.id; })[0];
           if (!inst) {
             pinta("Base não instalada. A mais recente no servidor é a competência " + Atualizacao.fmtComp(srv.competencia) + ", no ar desde " + Atualizacao.fmtData(srv.publicadoEm) + " — instale nos botões " + (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + " abaixo.");
             return;
           }
-          if (String(srv.competencia) <= String(compLocal)) {
+          /* ⚠ cmpVersao, e NÃO String(a) <= String(b). A comparação de string
+             concluía besteira em competência que não é data — a SEINFRA
+             publica "028.1". Aqui, null = "não sei comparar", e não saber
+             NUNCA pode virar "tem versão nova". */
+          var cmp = BasesCat.cmpVersao(srv.competencia, inst.competencia);
+          if (cmp === null) {
+            pinta("Este banco numera a tabela em vez de datar a competência (aqui: " + (inst.competencia || "—") + "); não dá para comparar automaticamente. O servidor está em " + Atualizacao.fmtComp(srv.competencia) + " — reinstale abaixo se quiser trocar.");
+            return;
+          }
+          if (cmp <= 0) {
             pinta("Sem atualização — a mais recente é a competência " + Atualizacao.fmtComp(srv.competencia) + ", no ar desde " + Atualizacao.fmtData(srv.publicadoEm) + ". Você já está nela.", true);
             return;
           }
           pinta("Baixando a competência " + Atualizacao.fmtComp(srv.competencia) + "…");
-          if (fonteAtu === "GOINFRA") {
-            selfA.carregarGoinfra(); // fluxo próprio (regime/preço) — toast informa o resultado
-            pinta("Baixando pelo canal GOINFRA — o aviso no canto confirma quando terminar.");
-            return;
-          }
-          var urlAtu = String(CONFIG.licencaServer).replace(/\/$/, "") + "/bases/" + cfgAtu[1];
-          Bases.carregarInclusa(urlAtu, fonteAtu).then(function (r) {
-            UI.toast(fonteAtu + " atualizada: competência " + Atualizacao.fmtComp(compLocal) + " → " + Atualizacao.fmtComp(r.competencia || srv.competencia) + " (" + (r.total || 0).toLocaleString("pt-BR") + " itens).", "ok");
+          /* reinstala com a MESMA variante que já estava carregada: atualizar
+             competência não pode trocar a região do SETOP nem o regime da
+             GOINFRA pelas costas do usuário */
+          var deComp = inst.competencia;
+          Bases.instalar(eAtu.id, inst.sel || null, { pesoMb: eAtu.pesoMb }).then(function (r) {
+            UI.toast(eAtu.nome + " atualizada: competência " + Atualizacao.fmtComp(deComp) + " → " + Atualizacao.fmtComp(r.competencia || srv.competencia) + " (" + (r.total || 0).toLocaleString("pt-BR") + " itens).", "ok");
             selfA.abrirTabelas();
           }).catch(function (e) { pinta("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Falhou ao baixar: " + ((e && e.message) || "erro")); });
         }).catch(function () { pinta("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Sem conexão com o servidor OrçaPRO agora — a base atual foi mantida."); });
         return;
       }
-      // carregar base inclusa (1 clique) — LIVE-FIRST: tenta a versão mais recente
-      // regenerada no VPS (rota /bases/), cai na inclusa do pacote se offline.
-      if (t.dataset.inclusa) {
-        var pin = String(t.dataset.inclusa).split("|"); var selfI = this;
-        UI.toast("Carregando base inclusa…", "ok");
-        var nomeArq = String(pin[0]).split("/").pop();
-        var liveUrl = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? (String(CONFIG.licencaServer).replace(/\/$/, "") + "/bases/" + nomeArq) : null;
-        function cair(url, ehLive) { return Bases.carregarInclusa(url, pin[1]).then(function (r) { r._live = ehLive; return r; }); }
-        var pInc = liveUrl ? cair(liveUrl, true).catch(function () { return cair(pin[0], false); }) : cair(pin[0], false);
-        pInc.then(function (r) {
-          UI.toast(r.fonte + " carregada: " + r.total.toLocaleString("pt-BR") + " itens (" + (r.competencia || "") + "/" + (r.uf || "") + ")" + (r._live ? " — online, mais recente" : " — inclusa") + "." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
-          selfI.abrirTabelas();
-        }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
+      /* INSTALAR UM BANCO — o único caminho, dirigido pelo catálogo.
+       * Substituiu os três que existiam (data-inclusa com o caminho escrito na
+       * mão, carregar-setop e carregar-goinfra, cada um com seu default). A
+       * variante sai dos selects que a própria linha desenhou a partir dos
+       * eixos do catálogo, então tela e handler não têm como divergir. */
+      if (t.dataset.instalar) {
+        if (t.disabled) return;                       // clique duplo disparava dois downloads
+        var catId = String(t.dataset.instalar).toUpperCase(), selfI = this, btnI = t;
+        var eI = (typeof BasesCat !== "undefined") ? BasesCat.get(catId) : null;
+        if (!eI) { UI.toast("Banco fora do catálogo: " + catId, "erro"); return; }
+        var selI = {};
+        (eI.eixos || []).forEach(function (ex) {
+          var el = UI.el("tabi-" + eI.id + "-" + ex.id);
+          selI[ex.id] = (el && el.value) || ex.padrao;
+        });
+        var rotuloI = btnI.textContent;
+        btnI.disabled = true; btnI.textContent = "Instalando…";
+        Bases.instalar(catId, selI, { pesoMb: eI.pesoMb }).then(function (r) {
+          UI.toast(eI.nome + " instalada: " + r.total.toLocaleString("pt-BR") + " itens (" +
+            ((typeof BasesCat !== "undefined" && BasesCat.fmtVersao(r.competencia)) || r.competencia || "") +
+            (r.uf ? " · " + r.uf : "") + ")" +
+            (r.live ? " — do servidor, mais recente" : " — a que veio no app") + "." +
+            (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
+          selfI.abrirTabelas();                       // re-render com a linha já instalada
+        }).catch(function (err) {
+          btnI.disabled = false; btnI.textContent = rotuloI;
+          UI.toast("Não consegui instalar " + eI.nome + ": " + err.message, "erro");
+        });
         return;
       }
 
@@ -851,8 +873,6 @@
         case "conta": { var _c = t.closest(".topbar-conta"); if (_c) _c.classList.toggle("aberto"); break; }
         case "tabelas": this.abrirTabelas(); break;
         case "escanear-pasta": this.escanearPastaUI(); break;
-        case "carregar-setop": this.carregarSetop(); break;
-        case "carregar-goinfra": this.carregarGoinfra(); break;
         case "cron-recalc": this.cronRecalc(); break;
         case "cron-reset": this.cronReset(); break;
         case "cron-ia": this.cronRefinarIA(); break;
@@ -2104,7 +2124,7 @@
       if (!(Util.num(inp.area) > 0) && !(Util.num(inp.comprimento) > 0 && Util.num(inp.altura) > 0)) {
         UI.toast("Informe a área (m²) ou comprimento × altura da parede.", "erro"); return;
       }
-      var res = ParedeCebola.explodir(inp);
+      var res = ParedeCebola.explodir(inp, { excluirFontes: this._fontesExcluidas() });
       this._pcPreview = { orcId: o.id, inputs: inp, resultado: res };  // transiente (não persistido/sincronizado)
       this.render();
       if (!(Util.num(res.parede.areaLiquida) > 0)) UI.toast("Área líquida = 0 (vãos ≥ área da parede). Revise a área ou os vãos — nada a aplicar.", "erro");
@@ -2169,40 +2189,14 @@
         .catch(function (e) { UI.toast("Sem conexão com a IA — o ERP/servidor (porta 3040) está ligado? " + e.message, "erro"); });
     },
 
-    // SETOP regionalizado — carrega usando o preço da região escolhida
-    carregarSetop: function () {
-      var self = this, reg = (UI.el("setop-regiao") || {}).value || "Triangulo";
-      var regime = (UI.el("setop-regime") || {}).value || "desonerada";
-      var arq = regime === "onerada" ? "data/setop-MG-onerada-current.json" : "data/setop-MG-current.json";
-      UI.toast("Carregando SETOP (" + reg + ", " + regime + ")…", "ok");
-      Bases.carregarInclusa(arq, "SETOP", reg).then(function (r) {
-        UI.toast("SETOP-MG · " + reg + " · " + regime + ": " + r.total.toLocaleString("pt-BR") + " itens." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
-        self.abrirTabelas();
-      }).catch(function (e) { UI.toast("Falhou: " + e.message, "erro"); });
-    },
-
-    // GOINFRA/AGETOP-GO (rodoviárias de Goiás) — 2 regimes (com/sem desoneração) e 2 preços
-    // (custo direto sem BDI = app aplica o BDI do cliente | preço com o BDI oficial 27,21%).
-    // O "preço" entra como o arg regiao do carregarInclusa, que remapeia custoUnitario de precos[preco].
-    carregarGoinfra: function () {
-      var self = this;
-      var regime = (UI.el("goinfra-regime") || {}).value || "onerada";   // padrão: SEM desoneração (o que o cliente usa)
-      var preco = (UI.el("goinfra-preco") || {}).value || "direto";      // padrão: custo direto (o app aplica o BDI)
-      var nome = "goinfra-GO" + (regime === "onerada" ? "-onerada" : "") + "-current.json";
-      var inclusa = "data/" + nome;
-      // auto-update: tenta a base AO VIVO no VPS (regenerada a cada bimestre pela GOINFRA);
-      // se offline/indisponível, cai na base inclusa no pacote (offline-first).
-      var live = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? (String(CONFIG.licencaServer).replace(/\/$/, "") + "/goinfra/" + nome) : null;
-      var rotReg = regime === "onerada" ? "sem desoneração" : "com desoneração";
-      var rotPre = preco === "comBDI" ? "com BDI 27,21%" : "custo direto (sem BDI)";
-      UI.toast("Carregando GOINFRA (" + rotReg + " · " + rotPre + ")…", "ok");
-      function carregar(url, ehLive) { return Bases.carregarInclusa(url, "AGETOP", preco).then(function (r) { r._live = ehLive; return r; }); }
-      var promessa = live ? carregar(live, true).catch(function () { return carregar(inclusa, false); }) : carregar(inclusa, false);
-      promessa.then(function (r) {
-        UI.toast("AGETOP-GO · " + rotReg + " · " + rotPre + ": " + r.total.toLocaleString("pt-BR") + " itens " + (r._live ? "(online, mais recente)" : "(inclusa)") + "." + (r.persistido ? "" : " ⚠ " + r.gravErro), r.persistido ? "ok" : "erro");
-        self.abrirTabelas();
-      }).catch(function (e) { UI.toast("Falhou ao carregar GOINFRA: " + e.message, "erro"); });
-    },
+    /* ⚠ carregarSetop e carregarGoinfra foram REMOVIDOS na v1.1.204.
+     * Eram dois dos quatro caminhos de instalação, cada um com o seu default
+     * escrito no `||` do handler e outro no `<option>` da tela — a origem do
+     * "dois defaults para o mesmo dado" que trocava o preço da GOINFRA por
+     * omissão. Agora existe UM caminho: `Bases.instalar(catId, sel)`, com a
+     * variante saindo dos eixos do catálogo (js/basescat.js). Quem procurar
+     * por esses nomes vindo de um commit antigo: é o handler `data-instalar`
+     * em App.onClick. */
 
     // Escanear pasta inteira (multi-base) via fetcher
     escanearPastaUI: function () {
@@ -3163,11 +3157,7 @@
           // DENYLIST do passo 3: só o que o usuário DESMARCOU sai da busca deste
           // orçamento. Tabela instalada depois aparece sozinha — allowlist escondia
           // banco novo e a UI prometia o contrário.
-          var excluidas = null;
-          try {
-            var cfgF = self.orcAtual && Orcamento.garantirConfig(self.orcAtual);
-            if (cfgF && Util.arr(cfgF.basesExcluidas).length) excluidas = cfgF.basesExcluidas;
-          } catch (e) {}
+          var excluidas = self._fontesExcluidas();
           return { max: 120, fonte: (UI.el("bs-fonte") || {}).value || "", excluirFontes: excluidas,
             tipo: (UI.el("bs-tipo") || {}).value || "", desonerado: dv === "des" ? true : (dv === "one" ? false : null) };
         }
@@ -3180,7 +3170,22 @@
           var res = (typeof Bases !== "undefined") ? Bases.buscar(q, f)
             : Sinapi.buscar(q, { max: 40, tipo: f.tipo }).map(function (it) { return { item: it, fonte: "SINAPI", label: "SINAPI", cor: "sinapi", tipo: "composicao" }; });
           if (!res.length) {
-            var dica = f.tipo === "insumo" ? " — esta base pode não ter insumos (carregue uma base de insumos em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas)" : (f.desonerado === false ? " — verifique se a base ONERADA está carregada" : "");
+            /* ⚠ A DICA DE REGIME TAMBÉM ESTAVA INVERTIDA, pelo mesmo motivo do
+               flag: ela avisava "verifique se a base ONERADA está carregada"
+               justamente quando o usuário filtrava por ONERADA — e ficava muda
+               no caso que realmente não tem resultado. Desde a v1.1.204 a
+               SINAPI que vem no app é a das abas CSD/ISD, que a própria
+               planilha declara SEM DESONERAÇÃO: filtrar "Desonerada" não
+               devolve SINAPI porque nós não distribuímos esse regime, e a tela
+               tem de dizer isso em vez de deixar o usuário procurando. */
+            var dica = "";
+            if (f.tipo === "insumo") {
+              dica = " — esta base pode não ter insumos (carregue uma base de insumos em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas)";
+            } else if (f.desonerado === true) {
+              dica = " — a SINAPI que vem no app é a NÃO DESONERADA (encargos sociais sem desoneração, como a CAIXA publica nas abas CSD/ISD). Tire o filtro de oneração para vê-la";
+            } else if (f.desonerado === false) {
+              dica = " — nenhuma base carregada declara o regime não desonerado para este termo";
+            }
             // v1.1.124 — não existe nas bases? cria DAQUI, sem sair do fluxo. O
             // atalho acompanha o filtro: buscando INSUMO → cadastra insumo próprio;
             // senão → cria composição própria (descrição aproveitada nos dois).
@@ -3800,6 +3805,11 @@
     _cpBuscar: function (q) {
       var box = UI.el("cp-busca-res"); if (!box) return;
       if (!q || String(q).trim().length < 2) { box.innerHTML = ""; return; }
+      /* ⚠ SEM denylist de propósito: o que sai daqui vira INGREDIENTE de uma
+         composição gravada na base da EMPRESA (visível a todos os orçamentos),
+         não item deste orçamento. Filtrar faria o conteúdo de um ativo
+         compartilhado depender de qual orçamento estava aberto por acaso.
+         Guardado em tools/test-escopo-denylist.js [8]. */
       var res = Bases.buscar(String(q).trim(), { max: 8 });
       box.innerHTML = res.length ? res.map(function (r) {
         return '<div style="display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px dashed var(--linha);font-size:12px">' +
@@ -3916,6 +3926,31 @@
         } catch (eCot) {}
       }
       return item || null;
+    },
+    /* ==================================================================
+     * A DENYLIST DESTE ORÇAMENTO — leitor único.
+     *
+     * Estava em linha, dentro da busca de itens. Virou função porque agora
+     * TRÊS lugares precisam dela, e os três têm a mesma regra: só filtra
+     * quem LANÇA ITEM COM PREÇO na planilha deste orçamento (busca de itens,
+     * Escopo Inteligente e Parede-Cebola).
+     *
+     * ⚠ NÃO chame isto do criador de composição própria, do agente EAP do
+     * BIM, do banco de insumos nem da requisição de compra. Nesses quatro o
+     * resultado não é item deste orçamento — é ingrediente de um ativo da
+     * EMPRESA, ou compra amarrada à obra — e em três deles nem existe
+     * orçamento corrente para ler (App._navegar zera orcAtual em toda view
+     * de Gestão). Filtrar ali seria pegar emprestada a config de outro
+     * orçamento, que é justamente o vazamento que o passo 3 promete não
+     * existir. Há teste guardando isso: tools/test-escopo-denylist.js [8].
+     *
+     * null (e não []) quando não há orçamento ou a lista está vazia — é o que
+     * Bases.buscar espera para "sem denylist". */
+    _fontesExcluidas: function () {
+      try {
+        var c = this.orcAtual && Orcamento.garantirConfig(this.orcAtual);
+        return (c && Util.arr(c.basesExcluidas).length) ? c.basesExcluidas : null;
+      } catch (e) { return null; }
     },
     /* O código da composição própria colide com alguma base OFICIAL? → fonte */
     _cpExisteOficial: function (codigo) {
@@ -4289,7 +4324,7 @@
     analisarEscopo: function () {
       var txt = (UI.el("esc-txt") || {}).value || "";
       if (!Util.naoVazio(txt)) { UI.toast("Cole o escopo primeiro.", "erro"); return; }
-      this._escopo = Escopo.analisar(txt);
+      this._escopo = Escopo.analisar(txt, { excluirFontes: this._fontesExcluidas() });
       if (!this._escopo.length) { UI.toast("Nenhuma linha reconhecida.", "erro"); return; }
 
       var self = this;
@@ -4360,7 +4395,7 @@
         .then(function (r) { return r.json(); })
         .then(function (j) {
           if (!j.ok || !j.resultado) { UI.toast("IA: " + (j.error || "não retornou estrutura"), "erro"); return; }
-          self._escopo = Escopo.analisarItensIA(j.resultado.etapas || []);
+          self._escopo = Escopo.analisarItensIA(j.resultado.etapas || [], { excluirFontes: self._fontesExcluidas() });
           if (!self._escopo.length) { UI.toast("A IA não retornou itens.", "erro"); return; }
           self._escopoIA = true;
           var ok = self._escopo.filter(function (l) { return l.escolhido > -1; }).length;

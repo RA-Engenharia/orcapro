@@ -100,6 +100,11 @@
     explodir: function (parede, override) {
       parede = parede || {};
       var p = {};
+      /* ⚠ lido ANTES do laço de override: aquele laço copia TODAS as chaves de
+         `override` para `p`, então depender dele para achar a denylist seria
+         depender de um efeito colateral. A denylist não é parâmetro de receita
+         — é de quem pode entrar no orçamento. */
+      var negar = (override && override.excluirFontes && override.excluirFontes.length) ? override.excluirFontes : null;
       for (var k in this.DEFAULTS) p[k] = this.DEFAULTS[k];
       ["faces", "receita", "incluiAlvenaria"].forEach(function (kk) { if (parede[kk] != null) p[kk] = parede[kk]; });
       if (override) for (k in override) if (override[k] != null) p[k] = override[k];
@@ -125,7 +130,10 @@
       var itens = [];
       especs.forEach(function (es) { if (es.termoOk) itens.push({ etapa: parede.nome || "Parede", descricao: es.c.termo, unidade: es.c.un, quantidade: es.qtd }); });
       var E = this._E();
-      var linhas = (E && E.analisarItensIA) ? E.analisarItensIA(itens) : [];
+      /* mesma régua do Escopo: o que sai daqui vira Orcamento.addItem COM
+         PREÇO (aplicarNoOrcamento, abaixo), então banco desmarcado no passo 3
+         não pode virar camada — a camada sem candidato sai "pendente". */
+      var linhas = (E && E.analisarItensIA) ? E.analisarItensIA(itens, negar ? { excluirFontes: negar } : undefined) : [];
 
       var camadas = [], nOk = 0, nPend = 0, nRev = 0, nZero = 0, bi = 0;
       especs.forEach(function (es, i) {
