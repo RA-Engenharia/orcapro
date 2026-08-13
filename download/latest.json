@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.207",
+  "versao": "1.1.208",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.207/OrcaPRO-IA-update-v1.1.207.zip",
-  "notas": "Agora da para conceder um plano superior a uma licenca ja emitida sem trocar a chave do cliente. Serve para honrar promocao e cortesia: antes seria preciso reemitir a chave, o que obriga o cliente a reativar tudo e queima o slot de dispositivo dele. A chave continua a mesma e o plano novo chega sozinho na proxima vez que o aplicativo conversa com o servidor. A regra e de mao unica: uma concessao nunca rebaixa ninguem - se o servidor responder um plano menor que o da chave, por qualquer motivo, o cliente nao perde o que pagou.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.207/OrcaPRO-IA-Instalador-v1.1.207.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.208/OrcaPRO-IA-update-v1.1.208.zip",
+  "notas": "O insumo que voce mesmo cadastra agora pode ser corrigido. Antes, se a unidade ou o preco saiam errados - o caso mais comum e digitar o salario do mes onde vai o valor da hora - a lista so oferecia a lixeira, e excluir tira o codigo das buscas e deixa sem preco a composicao que usa aquele insumo. Agora ha um lapis na linha, tanto em Minhas composicoes e insumos quanto no Banco de Insumos: o codigo continua o mesmo, entao nada que ja usa o insumo quebra. Se aquele insumo estiver dentro de composicoes suas ou lancado em orcamentos, o sistema mostra onde e pergunta uma vez se deve atualizar tudo; se voce disser que nao, so o insumo muda e o resto fica exatamente como estava.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.208/OrcaPRO-IA-Instalador-v1.1.208.exe"
 }

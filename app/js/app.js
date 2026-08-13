@@ -843,6 +843,7 @@
         case "minhas-composicoes": this.minhasComposicoes(); break;
         case "mc-ver": this.verInsumos(t.dataset.cod); break;
         case "mc-editar": this.editarComposicao(t.dataset.cod); break;
+        case "mc-editar-insumo": this.editarInsumoProprio(t.dataset.cod); break;
         case "mc-duplicar": this.duplicarComposicao(t.dataset.cod); break;
         case "mc-excluir": this.excluirProprio(t.dataset.cod); break;
         case "cp-novo-insumo": this._cpNovoInsumoInline(); break;
@@ -3809,7 +3810,12 @@
           '<td class="right" style="white-space:nowrap">' +
             (ehComp ? '<button class="btn sm ghost" data-acao="mc-ver" data-cod="' + Util.esc(d.codigo) + '" title="ver insumos">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '</button> ' +
                       '<button class="btn sm ghost" data-acao="mc-editar" data-cod="' + Util.esc(d.codigo) + '" title="editar">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> ' +
-                      '<button class="btn sm ghost" data-acao="mc-duplicar" data-cod="' + Util.esc(d.codigo) + '" title="duplicar">⧉</button> ' : "") +
+                      '<button class="btn sm ghost" data-acao="mc-duplicar" data-cod="' + Util.esc(d.codigo) + '" title="duplicar">⧉</button> '
+                    /* O INSUMO PRÓPRIO TAMBÉM SE EDITA. Só a composição tinha lápis:
+                       quem cadastrou o insumo com a unidade ou o preço errado (é o
+                       caso mais comum — salário no lugar de hora) só tinha a lixeira,
+                       e excluir quebra as composições que usam esse código. */
+                    : '<button class="btn sm ghost" data-acao="mc-editar-insumo" data-cod="' + Util.esc(d.codigo) + '" title="editar insumo">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> ') +
             '<button class="btn sm danger" data-acao="mc-excluir" data-cod="' + Util.esc(d.codigo) + '" title="excluir do banco">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
           '</td></tr>';
       }).join("");
@@ -4300,7 +4306,9 @@
       } catch (e) { return null; }
     },
     /* v1.1.124 — INSUMO PRÓPRIO (p/ requisições/compras e busca): item simples
-     * na base PROPRIA com tipoItem "insumo". Retorna o item ou null (inválido). */
+     * na base PROPRIA com tipoItem "insumo". Retorna o item ou null (inválido).
+     * dados.codigoEditando (v1.1.208) = REGRAVAÇÃO do insumo que já existe:
+     * mantém o código, não deduplica contra si mesmo e não recria. */
     salvarInsumoProprio: function (dados) {
       if (this._trialBloqueado()) { this._avisoTrial(); return null; } /* trial não persiste por NENHUM caminho */
       dados = dados || {};
@@ -4309,16 +4317,25 @@
       var preco = Util.num(dados.preco);
       if (desc.length < 3) { UI.toast("Descreva o insumo (mínimo 3 letras).", "erro"); return null; }
       var cat = ["MO", "MAT", "EQ"].indexOf(String(dados.categoria || "").toUpperCase()) >= 0 ? String(dados.categoria).toUpperCase() : "MAT";
+      var editando = String(dados.codigoEditando || "").trim();
       // DEDUPE: mesmo insumo (descrição+unidade, sem caixa/acento) ATUALIZA o
       // existente em vez de criar PROP novo a cada cadastro repetido
       var norm = function (s) { s = String(s == null ? "" : s).toLowerCase(); try { s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {} return s.replace(/\s+/g, " ").trim(); };
-      var jaExiste = null;
+      var jaExiste = null, alvoEdicao = null;
       try {
         var bPro = (typeof Bases !== "undefined" && Bases.extras) ? Bases.extras().filter(function (b) { return b.fonte === "PROPRIA"; })[0] : null;
         (bPro && bPro.itens ? bPro.itens : []).forEach(function (d) {
+          if (editando && String(d.codigo) === editando) { alvoEdicao = d; return; } // ele mesmo nunca é "duplicado"
           if (String(d.tipoItem) === "insumo" && norm(d.descricao) === norm(desc) && norm(d.unidade) === norm(und)) jaExiste = d;
         });
       } catch (eDx) {}
+      if (editando && !alvoEdicao) { UI.toast("Insumo " + editando + " não está mais no seu banco.", "erro"); return null; }
+      /* editar até virar a CÓPIA de outro insumo seria fusão silenciosa: o
+         dedupe gravaria por cima do outro código e um dos dois sumiria. */
+      if (editando && jaExiste) {
+        UI.toast("Já existe o insumo " + jaExiste.codigo + " com essa descrição e unidade — ajuste a descrição ou edite aquele.", "erro");
+        return null;
+      }
       var item = {
         /* O CÓDIGO DA COMPOSIÇÃO ABERTA AINDA NÃO FOI GRAVADO — e reservar
            só o que está persistido fazia o insumo inline ROUBAR o código
@@ -4326,19 +4343,141 @@
            PROP-0002, e o "Validar e gravar" travava com "código já existe"
            acusando o usuário de algo que o próprio app fez. O código em
            voo entra na lista de reservados. */
-        codigo: jaExiste ? jaExiste.codigo : ComposicaoPropria.gerarCodigo(
+        codigo: (alvoEdicao || jaExiste) ? (alvoEdicao || jaExiste).codigo : ComposicaoPropria.gerarCodigo(
           this._cpCodigosExistentes().concat(
             this._cp && this._cp.comp && this._cp.comp.codigo ? [String(this._cp.comp.codigo)] : [])),
         descricao: desc, unidade: und, custoUnitario: preco,
         // breakdown por categoria — senão o item some da curva MO/MAT/EQ do orçamento
         custoMO: cat === "MO" ? preco : 0, custoMAT: cat === "MAT" ? preco : 0, custoEQ: cat === "EQ" ? preco : 0,
         tipoItem: "insumo", origem: "PROPRIA", categoria: cat,
-        criadoEm: (jaExiste && jaExiste.criadoEm) || Util.agoraISO(),
-        criadoPor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "" // auditoria
+        criadoEm: (alvoEdicao && alvoEdicao.criadoEm) || (jaExiste && jaExiste.criadoEm) || Util.agoraISO(),
+        /* O ESPELHO DA NUVEM ORDENA POR ESTA DATA. Sem ela, regravar preservando
+           o criadoEm antigo mandava para a nuvem um registro com data velha — e
+           o merge devolvia a versão anterior do outro aparelho, desfazendo a
+           correção sem erro nenhum. */
+        atualizadoEm: Util.agoraISO(),
+        criadoPor: (alvoEdicao && alvoEdicao.criadoPor) || ((typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "") // auditoria
       };
       this._propriaGravar(item, null, null);
-      UI.toast("Insumo " + item.codigo + (jaExiste ? " ATUALIZADO no seu banco" : " salvo no seu banco") + (preco > 0 ? " (" + Util.fmtMoeda(preco) + "/" + und + ")" : "") + " — aparece nas buscas de requisição e de orçamento.", "ok");
+      UI.toast("Insumo " + item.codigo + (alvoEdicao ? " regravado" : (jaExiste ? " ATUALIZADO no seu banco" : " salvo no seu banco")) + (preco > 0 ? " (" + Util.fmtMoeda(preco) + "/" + und + ")" : "") + " — aparece nas buscas de requisição e de orçamento.", "ok");
       return item;
+    },
+    /* ------------------------------------------------------------------
+     * EDITAR UM INSUMO PRÓPRIO (v1.1.208)
+     * O cliente que cadastra "ENCARREGADO · un · R$ 5.500,00" descobre o erro
+     * depois — e até aqui a lista só oferecia a lixeira. Excluir não servia:
+     * o código sai das buscas e as composições que o usam ficam sem preço.
+     * Agora corrige no lugar, com a mesma pergunta de propagação que a
+     * composição já faz (nada muda em orçamento sem o usuário mandar).
+     * ------------------------------------------------------------------ */
+    editarInsumoProprio: function (codigo, aoConcluir) {
+      var self = this;
+      var ins = Bases.obter("PROPRIA", String(codigo));
+      if (!ins) { UI.toast("Insumo " + codigo + " não encontrado na base própria.", "erro"); return; }
+      if (String(ins.tipoItem) !== "insumo") { this.editarComposicao(codigo); return; } // composição tem editor próprio
+      var campos = (typeof Gestao !== "undefined" && Gestao._insumoProprioCampos)
+        ? Gestao._insumoProprioCampos("eip", false)
+        : '<div class="field"><label>Descrição *</label><input id="eip-desc"></div><div class="row"><div class="field" style="max-width:110px"><label>Unidade *</label><input id="eip-und"></div><div class="field"><label>Preço (R$)</label><input id="eip-preco"></div></div><select id="eip-cat"><option value="MAT">MAT</option><option value="MO">MO</option><option value="EQ">EQ</option></select>';
+      UI.modal("Editar insumo " + Util.esc(ins.codigo),
+        '<p class="muted" style="font-size:12px">O código <b>' + Util.esc(ins.codigo) + '</b> não muda — quem já usa este insumo continua apontando para ele.</p>' + campos, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar alterações", classe: "success", onClick: function () {
+          var d = (typeof Gestao !== "undefined" && Gestao._insumoProprioColeta) ? Gestao._insumoProprioColeta("eip")
+            : { descricao: (UI.el("eip-desc") || {}).value || "", unidade: (UI.el("eip-und") || {}).value || "un", categoria: (UI.el("eip-cat") || {}).value || "MAT", preco: Util.num((UI.el("eip-preco") || {}).value) };
+          d.codigoEditando = ins.codigo;
+          var novo = self.salvarInsumoProprio(d);
+          if (!novo) return; // inválido — o modal fica aberto com o que foi digitado
+          UI.fecharModal();
+          self._propriaPropagarInsumo(ins, novo);
+          /* quem chamou decide para onde voltar: da lista do orçamento, ela
+             mesma; do Banco de Insumos da Gestão, a busca se repinta (abrir
+             a lista do orçamento ali seria um modal do módulo errado) */
+          if (typeof aoConcluir === "function") { try { aoConcluir(novo); } catch (eCb) {} }
+          else self.minhasComposicoes(self._mcFiltro || "");
+        } }
+      ]);
+      // o helper de campos nasce vazio (é o mesmo do cadastro) — preencher é aqui
+      var dsc = UI.el("eip-desc"); if (dsc) { dsc.value = ins.descricao || ""; dsc.focus(); }
+      var und = UI.el("eip-und"); if (und) und.value = ins.unidade || "un";
+      var pre = UI.el("eip-preco"); if (pre) pre.value = Util.num(ins.custoUnitario) ? String(Util.num(ins.custoUnitario).toFixed(2)).replace(".", ",") : "";
+      var cat = UI.el("eip-cat");
+      if (cat) cat.value = ["MO", "MAT", "EQ"].indexOf(String(ins.categoria || "").toUpperCase()) >= 0 ? String(ins.categoria).toUpperCase() : "MAT";
+    },
+    /* Depois de regravar um insumo próprio: quem depende dele fica mentindo
+     * (a composição soma o preço velho, a planilha idem). Levanta os dois
+     * usos, pergunta UMA vez e só então propaga. */
+    _propriaPropagarInsumo: function (antigo, novo) {
+      var self = this;
+      var mudouPreco = Util.num(antigo.custoUnitario) !== Util.num(novo.custoUnitario);
+      var mudouRotulo = String(antigo.descricao || "") !== String(novo.descricao || "") ||
+                        String(antigo.unidade || "") !== String(novo.unidade || "") ||
+                        String(antigo.categoria || "") !== String(novo.categoria || "");
+      if (!mudouPreco && !mudouRotulo) return;
+      // 1) composições próprias que têm este insumo na estrutura
+      var comps = [];
+      try {
+        var bPro = (typeof Bases !== "undefined" && Bases.extras) ? Bases.extras().filter(function (b) { return b.fonte === "PROPRIA"; })[0] : null;
+        (bPro && bPro.itens ? bPro.itens : []).forEach(function (d) {
+          if (String(d.codigo) === String(novo.codigo)) return;
+          if ((d.insumos || []).some(function (i) { return String(i.codigo) === String(novo.codigo); })) comps.push(d);
+        });
+      } catch (eC) {}
+      /* 2) as composições REFEITAS em memória — antes de perguntar, porque é o
+         preço novo DELAS que a planilha precisa levar (um orçamento pode usar
+         só a composição, sem nunca ter lançado o insumo solto). Nada vai para
+         o disco enquanto o usuário não disser sim. */
+      var atualizadas = [];
+      comps.forEach(function (c) {
+        var copia; try { copia = JSON.parse(JSON.stringify(c)); } catch (e) { return; }
+        (copia.insumos || []).forEach(function (i) {
+          if (String(i.codigo) !== String(novo.codigo)) return;
+          i.descricao = novo.descricao; i.unidade = novo.unidade;
+          i.custoUnitario = Util.num(novo.custoUnitario); i.categoria = novo.categoria;
+        });
+        var r = ComposicaoPropria.custo(copia.insumos, copia.metodo);
+        copia.custoUnitario = r.total; copia.custoMO = r.mo; copia.custoMAT = r.mat; copia.custoEQ = r.eq;
+        copia.atualizadoEm = Util.agoraISO(); // idem: sem data nova o espelho devolve a versão velha
+        atualizadas.push(copia);
+      });
+      // 3) itens de orçamento: o código do insumo E o de cada composição refeita
+      var eid = Auth.empresaId(), afetados = [], totItens = 0;
+      if (!this._trialBloqueado()) { /* trial não grava orçamento por NENHUM caminho */
+        try {
+          Store.listarOrcamentos(eid).forEach(function (o) {
+            var alvo = (self.orcAtual && self.orcAtual.id === o.id) ? self.orcAtual : o;
+            var n = Orcamento.reprecificarPorCodigo(alvo, novo.codigo, novo);
+            atualizadas.forEach(function (c) { n += Orcamento.reprecificarPorCodigo(alvo, c.codigo, c); });
+            if (n > 0) { afetados.push({ orc: alvo, n: n, mesmoAberto: alvo === self.orcAtual }); totItens += n; }
+          });
+        } catch (eO) {}
+      }
+      if (!atualizadas.length && !afetados.length) return;
+      var pergunta = "O insumo " + novo.codigo + " mudou" +
+        (mudouPreco ? " de " + Util.fmtMoeda(antigo.custoUnitario) + " para " + Util.fmtMoeda(novo.custoUnitario) : "") + ".\n\n" +
+        "Ele é usado em:\n" +
+        (atualizadas.length ? "· " + atualizadas.length + " composição(ões) própria(s) (" + atualizadas.slice(0, 5).map(function (c) { return c.codigo; }).join(", ") + (atualizadas.length > 5 ? "…" : "") + ")\n" : "") +
+        (afetados.length ? "· " + totItens + " item(ns) de " + afetados.length + " orçamento(s)\n" : "") +
+        "\nOK = atualiza tudo agora · Cancelar = só o insumo muda (o resto fica com o valor antigo)";
+      if (!window.confirm(pergunta)) {
+        /* recusou: os orçamentos foram mexidos EM MEMÓRIA pela varredura —
+           recarrega do disco, senão o "não" viraria "sim" no próximo salvar.
+           As composições nem chegaram ao disco (só a cópia em memória). */
+        if (afetados.length) {
+          try {
+            var limpo = Store.listarOrcamentos(eid);
+            if (self.orcAtual) {
+              for (var i = 0; i < limpo.length; i++) { if (limpo[i].id === self.orcAtual.id) self.orcAtual = limpo[i]; }
+            }
+          } catch (eR) {}
+        }
+        if (atualizadas.length) UI.toast(atualizadas.length + " composição(ões) continuam com o preço antigo deste insumo — reabra e regrave quando quiser atualizar.", "erro");
+        return;
+      }
+      atualizadas.forEach(function (c) { self._propriaGravar(c, null, null); });
+      afetados.forEach(function (a) { Store.salvarOrcamento(eid, a.orc); });
+      if (afetados.some(function (a) { return a.mesmoAberto; })) this.render();
+      UI.toast("Atualizado: " + (atualizadas.length ? atualizadas.length + " composição(ões)" : "") + (atualizadas.length && totItens ? " e " : "") +
+        (totItens ? totItens + " item(ns) de orçamento" : "") + ".", "ok");
     },
     /* v1.1.124 — busca do editor sem resultado bom → cria a composição JÁ com a
      * descrição digitada e, ao gravar, o item entra na etapa de origem. */

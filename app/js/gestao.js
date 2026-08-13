@@ -11463,7 +11463,7 @@ renderRequisicoes: function () {
     afterRender: function (view) { if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
-      this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true });
+      this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true, comEditar: true });
       var bNovo = document.getElementById("bi-novo");
       if (bNovo) bNovo.onclick = function () { self.formInsumoProprio(); };
     },
@@ -11484,10 +11484,25 @@ renderRequisicoes: function () {
               + "<td>" + Util.esc(x.descricao) + "</td><td>" + Util.esc(x.unidade) + "</td>"
               + '<td class="num">' + (x.custoUnitario > 0 ? Util.fmtMoeda(x.custoUnitario) : "—") + "</td>"
               + '<td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + x.categoria + "</span></td>"
-              + '<td class="num"><button type="button" class="btn sm primary" data-ins="' + i + '">' + (opts.comAcao ? "＋ Requisição" : "Adicionar") + "</button></td></tr>";
+              /* O LÁPIS SÓ NA VIEW, NUNCA DENTRO DE MODAL (opts.comEditar).
+                 A mesma busca serve a requisição de compra, e ali abrir o
+                 editor seria um 2º UI.modal — que fecha a requisição inteira
+                 e leva junto os itens já montados.
+                 A linha do item próprio chega rotulada "PRÓPRIO" (ramo da base
+                 PROPRIA) ou "PROPRIA" (índice do Insumos): as duas são o mesmo. */
+              + '<td class="num">' + (opts.comEditar && ["PROPRIO", "PROPRIA"].indexOf(String(x.fonte || "").toUpperCase().replace("Ó", "O")) >= 0
+                  ? '<button type="button" class="btn sm ghost" data-ins-edit="' + Util.esc(x.codigo) + '" title="editar insumo próprio">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '✎') + "</button> " : "")
+              + '<button type="button" class="btn sm primary" data-ins="' + i + '">' + (opts.comAcao ? "＋ Requisição" : "Adicionar") + "</button></td></tr>";
           }).join("") + "</tbody></table>";
         Array.prototype.forEach.call(box.querySelectorAll("[data-ins]"), function (b) {
           b.onclick = function () { var ins = listaR[+b.getAttribute("data-ins")]; if (ins) onPick(ins); };
+        });
+        Array.prototype.forEach.call(box.querySelectorAll("[data-ins-edit]"), function (b) {
+          b.onclick = function () {
+            if (typeof App === "undefined" || !App.editarInsumoProprio) return;
+            // ao concluir, a própria busca se repinta: o preço novo aparece na hora
+            App.editarInsumoProprio(b.getAttribute("data-ins-edit"), function () { rodar(); });
+          };
         });
       }
       function achar(q) {
