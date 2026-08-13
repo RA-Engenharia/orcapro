@@ -524,6 +524,10 @@
         custoMAT: Util.num(sinapiItem.custoMAT),
         custoEQ: Util.num(sinapiItem.custoEQ)
       };
+      /* o modo escolhido e o custo cheio VIAJAM com o item — sem isto a
+         escolha se perde no lançamento e o item volta a somar tudo */
+      if (sinapiItem.modoCusto && sinapiItem.modoCusto !== "total") it.modoCusto = sinapiItem.modoCusto;
+      if (sinapiItem.custoBase != null) it.custoBase = Util.num(sinapiItem.custoBase);
       // destino opcional: sub etapa da MESMA etapa (id desconhecido vira solto)
       if (subEtapaId && this.subEtapas(etapa).filter(function (s) { return s.id === subEtapaId; }).length) it.subEtapaId = subEtapaId;
       etapa.itens.push(it);
@@ -1011,6 +1015,84 @@
       orc.diasEditados.push(dia);
       if (orc.diasEditados.length > 400) orc.diasEditados = orc.diasEditados.slice(-400);
       return orc.diasEditados.length;
+    },
+
+    /* ==================================================================
+     * COMPOSIÇÃO POR CATEGORIA (MO × MAT+EQ)
+     * Quem faz empreitada só de mão de obra tinha de refazer a composição na
+     * mão. O dado já estava no item: custoMO, custoMAT e custoEQ vêm
+     * separados da base e alimentam a curva. Escolher o modo NÃO recalcula
+     * nada da base — escolhe QUAL das parcelas vira o custo unitário. Por
+     * isso é reversível: as três parcelas ficam intactas no item.
+     * ================================================================== */
+    MODOS_CUSTO: {
+      total: { rotulo: "Completa", curto: "", ajuda: "Mão de obra + material + equipamento" },
+      mo: { rotulo: "Só mão de obra", curto: "só MO", ajuda: "Empreitada de mão de obra: o material fica por conta do contratante" },
+      matEq: { rotulo: "Só material e ferramental", curto: "só MAT+EQ", ajuda: "Fornecimento: a mão de obra fica por conta do contratante" }
+    },
+
+    /* Quanto o item vale em cada modo. Puro. */
+    parcelasDe: function (item) {
+      var it = item || {};
+      var mo = Util.num(it.custoMO), mat = Util.num(it.custoMAT), eq = Util.num(it.custoEQ);
+      return {
+        total: Util.num(it.custoBase != null ? it.custoBase : it.custoUnitario),
+        mo: mo, matEq: mat + eq, temBreakdown: (mo + mat + eq) > 0
+      };
+    },
+
+    /* Aplica o modo NO ITEM. Devolve { ok } ou { ok:false, erro }.
+     * ⚠ Item de base que não publica a separação (MO/MAT/EQ zerados) não pode
+     * virar item de R$ 0,00 calado — a recusa é explícita e diz o motivo. */
+    aplicarModoCusto: function (item, modo) {
+      if (!item) return { ok: false, erro: "Item inválido." };
+      modo = this.MODOS_CUSTO[modo] ? modo : "total";
+      var p = this.parcelasDe(item);
+      /* guarda o cheio na PRIMEIRA troca: é o que permite voltar */
+      if (item.custoBase == null) item.custoBase = Util.num(item.custoUnitario);
+      if (modo !== "total" && !p.temBreakdown) {
+        return { ok: false, erro: "Esta base não publica a separação entre mão de obra e material neste item — não dá para lançar só uma parte sem inventar número." };
+      }
+      var novo = modo === "mo" ? p.mo : (modo === "matEq" ? p.matEq : Util.num(item.custoBase));
+      if (modo !== "total" && !(novo > 0)) {
+        return { ok: false, erro: "Neste item a parcela escolhida é zero — lançar assim seria um item de R$ 0,00 sem explicação." };
+      }
+      item.modoCusto = modo;
+      item.custoUnitario = novo;
+      return { ok: true, valor: novo };
+    },
+
+    /* FASE 5 — os números que o dono olha. Conversão conta DOCUMENTO, não
+     * evento: um orçamento enviado três vezes é um enviado só. */
+    indicadoresCarteira: function (orcamentos, hoje, diasParado) {
+      var arr = Array.isArray(orcamentos) ? orcamentos : [];
+      var lim = Number(diasParado) > 0 ? Number(diasParado) : 15;
+      var d0 = new Date(String(hoje || "").slice(0, 10) + "T12:00:00");
+      if (isNaN(d0.getTime())) d0 = new Date();
+      var enviados = 0, aprovados = 0, parados = [];
+      arr.forEach(function (o) {
+        var hist = Util.arr(o && o.historicoAprovacao);
+        var jaEnviou = hist.some(function (h) { return h && h.acao === "enviar"; });
+        if (jaEnviou) enviados++;
+        var est = "rascunho";
+        try { if (typeof Aprovacao !== "undefined") est = Aprovacao.estadoDe(o); } catch (e) {}
+        if (est === "aprovado") aprovados++;
+        /* parado = ninguém mexeu há N dias E ainda não foi enviado. Orçamento
+           aguardando decisão de OUTRA pessoa não é culpa de quem preencheu. */
+        if (!jaEnviou && est !== "aprovado") {
+          var ult = new Date(String((o && o.atualizadoEm) || ""));
+          if (!isNaN(ult.getTime())) {
+            var dias = Math.floor((d0 - ult) / 86400000);
+            if (dias >= lim) parados.push({ orc: o, dias: dias });
+          }
+        }
+      });
+      parados.sort(function (a, b) { return b.dias - a.dias; });
+      return {
+        enviados: enviados, aprovados: aprovados,
+        conversao: enviados ? (aprovados / enviados) * 100 : null,   // null ≠ 0%: nada enviado ainda
+        parados: parados, limiteParado: lim
+      };
     },
 
     /* FASE 4 — ORCAMENTO APROVADO NAO SE EDITA POR BAIXO.

@@ -3531,6 +3531,14 @@
           return;
         }
         var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
+        /* modo escolhido: aplica DEPOIS do custo digitado, para o cheio ficar
+           guardado em custoBase — é ele que permite voltar para "Completa". */
+        var modoEl = document.querySelector('input[name="qi-modo"]:checked');
+        var modo = modoEl ? modoEl.value : "total";
+        if (modo !== "total") {
+          var rm = Orcamento.aplicarModoCusto(itemAjustado, modo);
+          if (!rm.ok) { UI.toast(rm.erro, "erro"); return; }
+        }
         Orcamento.addItem(self.orcAtual, etapaAlvo, itemAjustado, qtd, subAlvo);
         /* item novo em etapa (ou sub etapa) recolhida nasceria invisível — o
            usuário reporta como "não lançou". */
@@ -3545,6 +3553,22 @@
       }
       UI.modal("Quantidade — " + Util.esc(item.codigo),
         '<p>' + Util.esc(item.descricao) + '</p>' +
+        /* COMPOSIÇÃO POR CATEGORIA: a escolha é aqui, na hora de lançar. Só
+           aparece quando a base publica a separação — oferecer a opção e
+           depois recusar seria pior que não oferecer. */
+        (function () {
+          var p = Orcamento.parcelasDe(item);
+          if (!p.temBreakdown) return "";
+          var op = function (id, val) {
+            var m = Orcamento.MODOS_CUSTO[id];
+            return '<label style="display:block;cursor:pointer;padding:2px 0;font-size:12.5px" title="' + Util.esc(m.ajuda) + '">' +
+              '<input type="radio" name="qi-modo" value="' + id + '"' + (id === "total" ? " checked" : "") + '> ' +
+              Util.esc(m.rotulo) + ' <b>' + Util.fmtMoeda(val) + '</b>/' + Util.esc(Util.unidadeExibir(item.unidade)) + '</label>';
+          };
+          return '<div class="field"><label>O que entra deste serviço</label>' +
+            op("total", p.total) + op("mo", p.mo) + op("matEq", p.matEq) +
+            '<span class="muted" style="font-size:11px">O item guarda as três parcelas — dá para trocar depois sem refazer nada.</span></div>';
+        })() +
         '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(Util.unidadeExibir(item.unidade)) + ')</label>' +
         '<input id="qi-qtd" value="1" autofocus></div>' +
         '<div class="field"><label>Custo unitário</label><input id="qi-cu" value="' + Util.fmtNum(item.custoUnitario, 2) + '"></div></div>',

@@ -551,7 +551,10 @@
          filtro vive em App._filtroOrc — estado de TELA, nunca do orçamento. */
       var f = (typeof App !== "undefined" && App._filtroOrc) || {};
       var r = Orcamento.filtrarLista(orcamentos, f, Util.agoraISO());
-      var k = r.kpis, temFiltro = !!(f.busca || f.cliente || f.tipo || f.faixa || f.prazo);
+      var k = r.kpis, temFiltro = !!(f.busca || f.cliente || f.tipo || f.faixa || f.prazo || f.estado);
+      /* indicadores sobre a carteira INTEIRA, não sobre o filtro: conversão de
+         um recorte não é conversão, é amostra escolhida a dedo. */
+      var ind = Orcamento.indicadoresCarteira(orcamentos, Util.agoraISO());
 
       var kpi = function (v, rot, cor) {
         return '<div class="card" style="flex:1;min-width:120px;text-align:center;padding:10px 8px">' +
@@ -568,7 +571,24 @@
           /* sem nenhum prazo controlado, o KPI vira convite — e explica onde
              se liga isso, senão o usuário não descobre que existe */
           : kpi("—", "prazo: ligue em Parâmetros")) +
-      '</div>';
+        /* FASE 5 — o número que o dono olha. « — » quando nada foi enviado
+           ainda: 0% ali seria mentira sobre um funil que nem começou. */
+        (ind.enviados
+          ? kpi(Util.fmtNum(ind.conversao, 1) + "%", "conversão (" + ind.aprovados + " de " + ind.enviados + ")",
+                ind.conversao >= 50 ? "#16a34a" : "#0f2740")
+          : kpi("—", "conversão: nada enviado ainda")) +
+      '</div>' +
+      /* orçamento parado: quem preencheu esqueceu, e ninguém cobra o que não
+         aparece. Só conta o que AINDA NÃO FOI ENVIADO — esperar decisão de
+         outra pessoa não é atraso de quem orçou. */
+      (ind.parados.length
+        ? '<div class="card" style="padding:9px 12px;margin-bottom:12px;background:rgba(234,88,12,.08);border-color:rgba(234,88,12,.3);font-size:12.5px">' +
+          (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "⚠") + ' <b>' + ind.parados.length +
+          ' orçamento(s) parado(s)</b> há mais de ' + ind.limiteParado + ' dias sem edição e ainda não enviados: ' +
+          ind.parados.slice(0, 3).map(function (p) {
+            return Util.esc(p.orc.nome || p.orc.numero) + " (" + p.dias + "d)";
+          }).join(" · ") + (ind.parados.length > 3 ? " …" : "") + '</div>'
+        : "");
 
       var opt = function (v, rot, sel) { return '<option value="' + Util.esc(v) + '"' + (sel === v ? " selected" : "") + '>' + Util.esc(rot) + '</option>'; };
       html += '<div class="card" style="padding:10px 12px;margin-bottom:12px"><div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">' +
@@ -840,7 +860,15 @@
             '<td>' + (temCod
               ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
               : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
-            '<td>' + Util.esc(it.descricao) + '</td>' +
+            /* ⚠ ITEM PARCIAL NÃO PODE PARECER IGUAL AOS OUTROS. Um serviço
+               lançado só com a mão de obra soma ~40% do preço de tabela — sem
+               a etiqueta, a planilha entregue não explica a diferença e quem
+               confere pensa em erro de preço. */
+            '<td>' + Util.esc(it.descricao) +
+              (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
+                ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
+                  Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
+                  Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].curto) + '</span>' : "") + '</td>' +
             '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
             // custo ZERADO = pendência que trava a finalização: o campo grita

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.215",
+  "versao": "1.1.216",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.215/OrcaPRO-IA-update-v1.1.215.zip",
-  "notas": "O orcamento entrou no ciclo de aprovacao que a medicao, a requisicao e a compra ja usavam. Agora ele tem estado - rascunho, aguardando aprovacao, revisao solicitada, aprovado ou rejeitado - com os botoes na barra do editor e a etiqueta colorida no cartao da lista. Da para filtrar a carteira por estado e ver quanto valor esta parado esperando decisao. Quem pede revisao ou rejeita precisa escrever o motivo, e essa mensagem chega a quem preencheu; tudo fica registrado em uma trilha com quem fez e quando. E o principal: orcamento aprovado nao muda mais por baixo. Se voce tentar salvar uma alteracao nele, o sistema avisa e oferece criar uma revisao - um orcamento proprio, numerado -R1, com todo o conteudo copiado, enquanto o aprovado fica intacto para consulta. Orcamentos que ja existiam continuam como rascunho, sem nenhuma migracao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.215/OrcaPRO-IA-Instalador-v1.1.215.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.216/OrcaPRO-IA-update-v1.1.216.zip",
+  "notas": "Duas novidades. A primeira: agora da para lancar um servico considerando so a mao de obra, ou so o material e o ferramental, em vez da composicao completa. Na hora de lancar o item o sistema mostra os tres valores e voce escolhe - quem faz empreitada so de mao de obra parou de precisar refazer a composicao na mao. Os tres valores ficam guardados no item, entao da para voltar atras a qualquer momento sem refazer nada, e a planilha marca com uma etiqueta os itens que entraram parciais, para ninguem confundir com erro de preco. Quando a tabela de precos nao publica essa separacao, o sistema avisa em vez de lancar um item zerado. A segunda: a lista de orcamentos ganhou a taxa de conversao (quantos dos enviados foram aprovados) e um aviso de orcamentos parados - sem edicao ha mais de 15 dias e que ainda nao foram enviados a ninguem.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.216/OrcaPRO-IA-Instalador-v1.1.216.exe"
 }
