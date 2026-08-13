@@ -523,13 +523,27 @@
           '<button class="btn sm" data-acao="importar-sinapi">' + (typeof Icones !== 'undefined' ? Icones.get('importar', 15) : '') + ' Importar base SINAPI</button></div></div>';
       }
       html += '<div class="flex between mb"><h1 style="margin:0">Meus Orçamentos</h1>' +
-                 '<div class="flex"><button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("reimportar") + 'Importar planilha</button>' +
+                 /* "RECUPERAR" TEM PORTA PRÓPRIA (v1.1.212). Quem perdeu um orçamento
+                    não procura "importar" — procura "recuperar", e por isso passava
+                    reto pelo botão que resolvia o problema dele. São ações diferentes:
+                    importar é ler planilha de TERCEIRO por heurística; recuperar é
+                    devolver o que ESTE sistema gravou, sem adivinhar nada. */
+                 '<div class="flex"><button class="btn" data-acao="recuperar-planilha" title="Perdeu um orçamento e tem o Excel que o sistema gerou? Ele volta inteiro — etapas, sub etapas, BDI, cronograma e memórias de cálculo">' + Icones.get("reimportar") + 'Recuperar de uma planilha</button>' +
+                 '<button class="btn" data-acao="importar-planilha" title="Importe uma planilha de orçamento (Excel/CSV) de QUALQUER formato — o agente detecta as etapas e itens e casa o código SINAPI">' + Icones.get("importar") + 'Importar planilha</button>' +
                  '<button class="btn" data-acao="copiar-orc" title="Criar um orçamento a partir de outro que já existe">⧉ Copiar de outro</button> ' +
                  '<button class="btn primary" data-acao="novo">+ Novo Orçamento</button></div></div>';
       if (!orcamentos.length) {
+        /* A LISTA VAZIA É EXATAMENTE A TELA DE QUEM PERDEU O ORÇAMENTO.
+           Oferecer só "criar o primeiro" a quem acabou de perder o dele é a
+           mensagem errada na hora errada — e foi o que aconteceu com um
+           cliente que tinha o Excel na mão e redigitaria tudo. */
         html += '<div class="vazio card"><h3>Nenhum orçamento ainda</h3>' +
                 '<p>Crie seu primeiro orçamento e comece a buscar composições SINAPI.</p>' +
-                '<button class="btn primary mt" data-acao="novo">+ Criar primeiro orçamento</button></div>';
+                '<button class="btn primary mt" data-acao="novo">+ Criar primeiro orçamento</button>' +
+                '<p class="muted" style="font-size:12.5px;margin:14px 0 0">Já tinha um orçamento aqui e ele sumiu? ' +
+                'Se você exportou o Excel dele, <b>o orçamento inteiro está dentro daquele arquivo</b> — ' +
+                'etapas, sub etapas, BDI, cronograma e memórias de cálculo.</p>' +
+                '<button class="btn mt" data-acao="recuperar-planilha">' + Icones.get("reimportar") + 'Recuperar de uma planilha</button></div>';
         return html;
       }
       html += '<div class="grid-cards">';

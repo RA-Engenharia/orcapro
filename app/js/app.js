@@ -901,6 +901,7 @@
         case "exportar-excel": this.exportarExcel(); break;
         case "reimportar-excel": this.reimportarExcel(); break;
         case "importar-planilha": this.importarPlanilha(); break;
+        case "recuperar-planilha": this.recuperarPlanilha(); break;
         case "import-reanalisar": this.importRemapear(); break;
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
         case "config-orc": this.editarDadosOrc(); break;
@@ -4757,6 +4758,47 @@
     },
 
     // ---------- AGENTE IMPORTADOR: planilha (Excel/CSV) de qualquer formato → etapas+itens ----------
+    /* RECUPERAR ≠ IMPORTAR (v1.1.212). Duas ações que pareciam uma só:
+     * importar é ler planilha de TERCEIRO por heurística; recuperar é devolver
+     * o que ESTE sistema gravou, sem adivinhar nada. Quem perdeu um orçamento
+     * procura "recuperar" e passava reto pelo botão que resolvia o problema.
+     * Aqui a promessa é estreita de propósito: arquivo sem a marca do sistema
+     * é recusado COM SAÍDA, não empurrado para a heurística por baixo. */
+    recuperarPlanilha: function () {
+      var self = this;
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".xlsx"; inp.style.display = "none";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        if (f.size > 25 * 1024 * 1024) { UI.toast("Planilha muito grande (máx. 25 MB).", "erro"); return; }
+        UI.toast("Procurando o orçamento dentro da planilha…", "ok");
+        self._lerPlanilha(f, function (matriz, erro, meta) {
+          if (erro) { UI.toast("Não consegui ler a planilha: " + erro, "erro"); return; }
+          if (meta && meta.snapshot) { self._abrirRestaurarSnapshot(meta.snapshot, f.name, matriz, meta); return; }
+          /* sem a marca: dizer POR QUE e oferecer o outro caminho, em vez de
+             um "não deu" seco que deixa o usuário sem próximo passo */
+          UI.modal((typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Esta planilha não foi gerada por este sistema",
+            '<p style="font-size:13px">O arquivo <b>' + Util.esc(f.name) + '</b> não tem a marca que o OrçaPRO grava ao exportar — ' +
+            'então não há um orçamento pronto dentro dele para recuperar.</p>' +
+            '<p class="muted" style="font-size:12.5px">Isso acontece quando o Excel foi <b>refeito ou salvo por outro programa</b> ' +
+            '(Google Sheets, LibreOffice, "salvar como" de outro formato), ou quando a planilha é de outra origem. ' +
+            'Nesse caso dá para ler os itens por leitura assistida — mas aí é leitura de planilha comum: ' +
+            'as etapas e os códigos são detectados, e o que não casar você revisa antes de entrar.</p>',
+            [
+              { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+              { texto: "Ler como planilha comum", classe: "primary", onClick: function () {
+                UI.fecharModal();
+                if (!matriz || !matriz.length) { UI.toast("A planilha está vazia.", "erro"); return; }
+                var res = Importador.analisar(matriz);
+                self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
+                self._abrirImportPreview();
+              } }
+            ]);
+          UI.modalConsulta();
+        });
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
     importarPlanilha: function () {
       var self = this;
       var inp = document.createElement("input");

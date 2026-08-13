@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.211",
+  "versao": "1.1.212",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.211/OrcaPRO-IA-update-v1.1.211.zip",
-  "notas": "Perdeu um orcamento e tem o Excel dele? Ele volta inteiro. A planilha que o sistema exporta guarda o orcamento completo dentro do arquivo, mas o botao Importar planilha nunca olhava para la: tratava o proprio Excel do sistema como planilha de terceiro e refazia tudo por adivinhacao, perdendo sub etapa, BDI, cronograma, memoria de calculo e o preco que voce tinha ajustado a mao. Agora o sistema reconhece o arquivo dele mesmo e oferece restaurar o orcamento exatamente como estava - e avisa antes, se voce ja tiver aquele orcamento aberto. As composicoes proprias tambem passaram a viajar dentro da planilha: antes elas voltavam como preco fixo, sem os insumos, e nao davam para reprecificar. Isso vale para as exportacoes feitas desta versao em diante. Junto: as unidades de medida dos documentos impressos (boletim de medicao, requisicao, pedido e mapa de cotacao) sairam padronizadas.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.211/OrcaPRO-IA-Instalador-v1.1.211.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.212/OrcaPRO-IA-update-v1.1.212.zip",
+  "notas": "Recuperar um orcamento ganhou porta propria. Na versao anterior o sistema passou a trazer de volta o orcamento inteiro a partir do Excel que ele mesmo exportou, mas isso ficava escondido atras do botao Importar planilha - e quem perde um orcamento procura recuperar, nao importar. Agora existe o botao Recuperar de uma planilha na lista de orcamentos, e a lista vazia (que e justamente a tela de quem acabou de perder o seu) avisa que, se voce exportou o Excel, o orcamento inteiro esta dentro daquele arquivo. Se a planilha escolhida nao tiver sido gerada pelo sistema, ele explica o motivo e oferece a leitura assistida, em vez de tentar adivinhar por baixo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.212/OrcaPRO-IA-Instalador-v1.1.212.exe"
 }
