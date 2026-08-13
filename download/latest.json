@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.213",
+  "versao": "1.1.214",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.213/OrcaPRO-IA-update-v1.1.213.zip",
-  "notas": "A lista de orcamentos virou uma tela de gestao. No topo ficam os numeros da carteira: quantos orcamentos, valor total, valor medio e quantos prazos estao a vencer ou vencidos. Abaixo, uma barra para filtrar por cliente, tipo de obra, faixa de valor e prazo, com busca livre por nome, numero, cliente ou obra - e a busca ignora acento, entao digitar galpao acha Galpao. Da para ordenar por atualizacao, maior valor, prazo mais proximo ou nome. Cada cartao mostra ha quanto tempo aquele orcamento esta em elaboracao. E, se voce marcar a opcao Acompanhar este prazo ao criar o orcamento, o cartao ganha um selo colorido avisando quantos dias faltam - verde com folga, laranja perto do fim, vermelho quando vence. Nada disso aparece para quem nao pediu o acompanhamento: prazo so vira alerta quando voce liga.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.213/OrcaPRO-IA-Instalador-v1.1.213.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.214/OrcaPRO-IA-update-v1.1.214.zip",
+  "notas": "O tempo de elaboracao no cartao do orcamento passou a medir trabalho, e nao calendario. Antes a conta ia da criacao ate a ultima edicao, entao um orcamento mexido em tres tardes ao longo de duas semanas aparecia como 12 dias - contando fim de semana e todo dia em que ninguem abriu o arquivo. Agora cada vez que voce salva, o sistema marca aquele dia, e o cartao mostra em quantos dias o orcamento foi realmente trabalhado. Salvar varias vezes no mesmo dia conta como um dia so. Orcamentos criados antes desta versao continuam mostrando a contagem antiga, e passar o mouse sobre o texto diz qual das duas contas esta na tela.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.214/OrcaPRO-IA-Instalador-v1.1.214.exe"
 }

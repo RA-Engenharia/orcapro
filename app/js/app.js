@@ -5263,6 +5263,13 @@
         return;
       }
       try { Orcamento.sincronizarPrazo(this.orcAtual); } catch (e) {} // FASE 1.4: prazo segue o agente (depois do gate de licença)
+      /* FASE 3 — ESFORÇO, NÃO CALENDÁRIO. `criadoEm → atualizadoEm` conta fim
+         de semana e orçamento parado como se fosse trabalho. Marcar o DIA a
+         cada salvamento do usuário mede o que ele realmente tocou.
+         Fica AQUI, no salvar do orçamento aberto, e não no Store: restauração
+         de planilha e reprecificação em lote gravam por lá e não são dia de
+         elaboração de ninguém. */
+      try { Orcamento.marcarDiaEdicao(this.orcAtual, Util.agoraISO()); } catch (e) {}
       var ok = Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
       if (!ok && !this._avisouQuota) {
         this._avisouQuota = true;

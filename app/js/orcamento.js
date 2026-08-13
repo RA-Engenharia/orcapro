@@ -989,9 +989,28 @@
      * dado que não temos (esforço real é a fase 3 do plano). */
     tempoElaboracao: function (orc) {
       var ini = new Date(String((orc && orc.criadoEm) || "")), fim = new Date(String((orc && orc.atualizadoEm) || ""));
-      if (isNaN(ini.getTime()) || isNaN(fim.getTime())) return { dias: null };
+      var trab = Array.isArray(orc && orc.diasEditados) ? orc.diasEditados.length : null;
+      if (isNaN(ini.getTime()) || isNaN(fim.getTime())) return { dias: null, diasTrabalhados: trab };
       var dias = Math.max(0, Math.round((fim - ini) / 86400000));
-      return { dias: dias, horas: Math.max(0, Math.round((fim - ini) / 3600000)) };
+      return { dias: dias, horas: Math.max(0, Math.round((fim - ini) / 3600000)), diasTrabalhados: trab };
+    },
+
+    /* FASE 3 — registra o DIA em que o usuário mexeu. Guarda a data (não o
+     * horário): o que interessa é "em quantos dias este orçamento foi
+     * trabalhado", e data é 10 bytes contra um carimbo por clique.
+     * Idempotente: salvar 50 vezes no mesmo dia conta 1.
+     * O teto de 400 existe para o campo não virar um vetor infinito num
+     * orçamento que acompanha uma obra por anos — perder o dia 401 não muda
+     * nenhuma decisão, e um blob que só cresce, sim. */
+    marcarDiaEdicao: function (orc, agoraISO) {
+      if (!orc) return null;
+      var dia = String(agoraISO || "").slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return null;
+      if (!Array.isArray(orc.diasEditados)) orc.diasEditados = [];
+      if (orc.diasEditados.indexOf(dia) >= 0) return orc.diasEditados.length;
+      orc.diasEditados.push(dia);
+      if (orc.diasEditados.length > 400) orc.diasEditados = orc.diasEditados.slice(-400);
+      return orc.diasEditados.length;
     },
 
     /* Faixa de valor — rótulos fixos para o filtro não mentir quando a

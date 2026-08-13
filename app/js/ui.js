@@ -620,8 +620,15 @@
           '<div class="meta">' + t.qtdEtapas + ' etapas · ' + t.qtdItens + ' itens · BDI ' + Util.fmtPct(t.bdiPercentual) + '</div>' +
           '<div class="valor">' + Util.fmtMoeda(t.precoVenda) + '</div>' +
           '<div class="meta mt">' + selo + 'Atualizado ' + Util.fmtData(o.atualizadoEm) +
-            (el.dias != null ? ' · <span title="Do primeiro salvamento até a última edição (tempo de calendário)">elaboração: ' +
-              (el.dias >= 1 ? el.dias + (el.dias === 1 ? " dia" : " dias") : (el.horas || 0) + "h") + '</span>' : "") +
+            /* esforço quando existe (dias em que o orçamento foi mexido),
+               calendário como retaguarda para quem é anterior à fase 3 —
+               e o title diz QUAL das duas contas está na tela, senão o
+               número muda de significado sem o usuário perceber */
+            (el.diasTrabalhados
+              ? ' · <span title="Dias em que este orçamento foi editado (esforço, não calendário)">elaboração: ' +
+                el.diasTrabalhados + (el.diasTrabalhados === 1 ? " dia" : " dias") + ' de trabalho</span>'
+              : (el.dias != null ? ' · <span title="Do primeiro salvamento até a última edição (tempo de calendário)">elaboração: ' +
+                (el.dias >= 1 ? el.dias + (el.dias === 1 ? " dia" : " dias") : (el.horas || 0) + "h") + '</span>' : "")) +
           '</div>' +
         '</div>';
       });
