@@ -2996,7 +2996,7 @@
         /* o que a diferença representa no orçamento — a pergunta seguinte de
            quem revisa é sempre "e isso dá quanto no total?" */
         if (!d.coeficiente && q > 0) {
-          body += '<div class="cmp-impacto">Nos <b>' + Util.fmtNum(q, 2) + ' ' + Util.esc(it.unidade || "") +
+          body += '<div class="cmp-impacto">Nos <b>' + Util.fmtNum(q, 2) + ' ' + Util.esc(Util.unidadeExibir(it.unidade)) +
             '</b> deste item: <b>' + (d.dif > 0 ? "+" : "−") + Util.fmtMoeda(Math.abs(d.dif * q)).replace("R$", "R$ ") +
             '</b> em relação ao preço da base.</div>';
         }
@@ -3301,7 +3301,11 @@
             var html2 = res.slice(0, ate).map(function (r) {
               var it = r.item, tg = r.tipo === "insumo" ? ' <span class="pill proprio">insumo</span>' : "";
               return '<div class="sinapi-result" data-pick="' + Util.esc(it.codigo) + '|' + Util.esc(r.fonte) + '">' +
-                '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + "</span>" + tg + " " + Util.esc(it.codigo) + " · " + Util.esc(it.unidade) + "</div>" +
+                /* a busca varre TODAS as bases ao mesmo tempo — sem normalizar,
+                   a mesma unidade aparece "M2" na linha da SINAPI e "m²" na do
+                   SICRO, uma embaixo da outra. Aqui é tela, não documento: a
+                   grafia fiel da licitação é decidida na planilha (unidadeDe). */
+                '<div class="desc"><div class="cod"><span class="pill ' + (r.cor || "sinapi") + '">' + Util.esc(r.label) + "</span>" + tg + " " + Util.esc(it.codigo) + " · " + Util.esc(Util.unidadeExibir(it.unidade)) + "</div>" +
                 Util.esc(it.descricao) + "</div>" +
                 '<div class="preco">' + Util.fmtMoeda(it.custoUnitario) + "</div></div>";
             }).join("");
@@ -3422,7 +3426,7 @@
       }
       UI.modal("Quantidade — " + Util.esc(item.codigo),
         '<p>' + Util.esc(item.descricao) + '</p>' +
-        '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(item.unidade) + ')</label>' +
+        '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(Util.unidadeExibir(item.unidade)) + ')</label>' +
         '<input id="qi-qtd" value="1" autofocus></div>' +
         '<div class="field"><label>Custo unitário</label><input id="qi-cu" value="' + Util.fmtNum(item.custoUnitario, 2) + '"></div></div>',
         [
@@ -3805,7 +3809,7 @@
         return '<tr><td><span class="pill proprio">' + Util.esc(d.codigo) + '</span></td>' +
           '<td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + Util.esc(d.descricao) + '">' + Util.esc(d.descricao) + '</td>' +
           '<td>' + (ehComp ? "Composição" : "Insumo") + '</td>' +
-          '<td>' + Util.esc(d.unidade || "") + '</td>' +
+          '<td>' + Util.esc(Util.unidadeExibir(d.unidade)) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(d.custoUnitario) + '</td>' +
           '<td class="right" style="white-space:nowrap">' +
             (ehComp ? '<button class="btn sm ghost" data-acao="mc-ver" data-cod="' + Util.esc(d.codigo) + '" title="ver insumos">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '</button> ' +
@@ -4360,6 +4364,14 @@
       };
       this._propriaGravar(item, null, null);
       UI.toast("Insumo " + item.codigo + (alvoEdicao ? " regravado" : (jaExiste ? " ATUALIZADO no seu banco" : " salvo no seu banco")) + (preco > 0 ? " (" + Util.fmtMoeda(preco) + "/" + und + ")" : "") + " — aparece nas buscas de requisição e de orçamento.", "ok");
+      /* v1.1.210 — o insumo próprio nunca conferiu unidade: aceitava qualquer
+         texto calado, e o dedo escorregado só aparecia meses depois, dentro de
+         uma composição. AVISA DEPOIS DE GRAVAR, de propósito — o insumo já está
+         salvo e o aviso é para conferir, não para barrar (mesma régua da
+         composição própria, que também não bloqueia por vocabulário). */
+      if (typeof ComposicaoPropria !== "undefined" && ComposicaoPropria.unidadeValida && !ComposicaoPropria.unidadeValida(und)) {
+        UI.toast("Unidade \"" + und + "\" está fora do catálogo — confira se é isso mesmo (un, m², m³, kg, h, cx, vb, cj…). O insumo foi salvo assim mesmo.", "erro");
+      }
       return item;
     },
     /* ------------------------------------------------------------------

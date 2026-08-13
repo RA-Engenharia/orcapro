@@ -937,7 +937,11 @@
           return '<tr>' +
             '<td><span class="pill sinapi">' + Util.esc(i.codigo) + '</span></td>' +
             '<td style="max-width:320px">' + Util.esc(i.descricao) + '</td>' +
-            '<td>' + Util.esc(i.unidade || "") + '</td>' +
+            /* a composição própria mistura bases de propósito (um insumo da
+               SINAPI, outro do SICRO): sem normalizar, a MESMA unidade sai
+               "M2" numa linha e "m²" na de baixo, na mesma tabela. O DADO
+               continua como o órgão publicou — só a exibição é uniformizada. */
+            '<td>' + Util.esc(Util.unidadeExibir(i.unidade)) + '</td>' +
             '<td class="num"><input class="cell" data-cp-coef="' + idx + '" value="' + Util.fmtNum(i.coeficiente, 4) + '" style="width:86px"></td>' +
             // sem preço coletado na região → o usuário informa a cotação AQUI
             // (fica salva p/ a empresa, igual ao modal de detalhamento)
@@ -948,7 +952,7 @@
             '<td class="num" data-cp-tot="' + idx + '">' + Util.fmtMoeda(tot) + '</td>' +
             '<td><button class="btn sm ico danger" data-cp-del="' + idx + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
         }).join("");
-        html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util.esc(c.codigo) + '</b> — ' + Util.esc(c.descricao || "(sem descrição)") + ' · ' + Util.esc(c.unidade || "?") + (st.referencia ? ' · <span class="pill sinapi">ref. ' + Util.esc(st.referencia.codigo) + '</span>' : '') + '</div>' +
+        html += '<div class="muted" style="font-size:12px;margin-bottom:8px"><b>' + Util.esc(c.codigo) + '</b> — ' + Util.esc(c.descricao || "(sem descrição)") + ' · ' + Util.esc(Util.unidadeExibir(c.unidade) || "?") + (st.referencia ? ' · <span class="pill sinapi">ref. ' + Util.esc(st.referencia.codigo) + '</span>' : '') + '</div>' +
           '<div class="field"><label>Adicionar insumo/composição das bases reais (busque por código ou descrição)</label>' +
           '<input id="cp-busca" placeholder="Ex.: 88316, servente, tubo pvc 100…"></div>' +
           '<div id="cp-busca-res" style="max-height:180px;overflow-y:auto;margin-bottom:10px"></div>' +
@@ -1125,7 +1129,7 @@
               Util.esc(coefs.map(function (c) {
                 return String(c.campo).slice(5) + " " + Ajustes.fmtN(c.base, 4) + "→" + Ajustes.fmtN(c.atual, 4);
               }).join(" · ")) + '</span>' : '') + '</td>' +
-          '<td class="r">' + Util.fmtNum(i.quantidade, 2) + ' ' + Util.esc(i.unidade || "") + '</td>' +
+          '<td class="r">' + Util.fmtNum(i.quantidade, 2) + ' ' + Util.esc(Util.unidadeExibir(i.unidade)) + '</td>' +
           (d
             ? '<td class="r">' + (d.semBase ? "—" : Util.fmtMoeda(d.base)) + '</td>' +
               '<td class="r"><b>' + Util.fmtMoeda(d.atual) + '</b></td>' +

@@ -2430,7 +2430,9 @@
         var acum = Util.num(it.pctAnterior) + Util.num(it.pctPeriodo);
         h += "<tr><td>" + Util.esc(String(it.etapa || "—").slice(0, 30)) + "</td>" +
           "<td>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(String(it.descricao || "").slice(0, 70)) + "</td>" +
-          "<td>" + Util.esc(it.unidade || "") + "</td>" +
+          // tela de medição: a unidade vem do contrato, que veio do orçamento
+          // (multi-base). O boletim IMPRESSO segue fiel ao que a fonte publicou.
+          "<td>" + Util.esc(Util.unidadeExibir(it.unidade)) + "</td>" +
           '<td class="num">' + Util.fmtNum(it.qtdContratada, 2) + "</td>" +
           '<td class="num">' + Util.fmtNum(it.qtdMedida, 2) + "</td>" +
           '<td class="num muted">' + Util.fmtNum(it.pctAnterior, 1) + "%</td>" +
@@ -2867,7 +2869,7 @@
             '<table class="tbl" style="font-size:12px;margin:6px 0"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd contr.</th><th class="num">Preço unit.</th><th class="num">% período</th><th class="num">Valor</th></tr></thead><tbody>';
           Util.arr(m.itens).forEach(function (it) {
             h2 += "<tr>" + td2((it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(String(it.descricao || "").slice(0, 60))) +
-              td2(Util.esc(it.unidade || "")) + td2(Util.fmtNum(it.qtdContratada, 2), 1) + td2(Util.fmtMoeda(it.precoUnit), 1) +
+              td2(Util.esc(Util.unidadeExibir(it.unidade))) + td2(Util.fmtNum(it.qtdContratada, 2), 1) + td2(Util.fmtMoeda(it.precoUnit), 1) +
               td2(Util.fmtNum(it.pctPeriodo, 1) + "%", 1) + td2(Util.fmtMoeda(it.valor), 1) + "</tr>";
           });
           h2 += '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr></tfoot></table>";
@@ -7885,7 +7887,7 @@
       its.forEach(function (i) {
         var ob = obras.filter(function (o) { return o.id === i.obraId; })[0];
         var baixo = Util.num(i.estoqueMin) > 0 && Util.num(i.saldo) <= Util.num(i.estoqueMin);
-        var saldoTxt = Util.fmtNum(i.saldo, 2) + " " + Util.esc(i.unidade || "") + (baixo ? ' <span class="g-pill" style="background:#f59e0b22;color:#f59e0b">baixo</span>' : "");
+        var saldoTxt = Util.fmtNum(i.saldo, 2) + " " + Util.esc(Util.unidadeExibir(i.unidade)) + (baixo ? ' <span class="g-pill" style="background:#f59e0b22;color:#f59e0b">baixo</span>' : "");
         html += '<tr><td style="cursor:pointer" data-gopen="estoque:' + i.id + '"><b>' + Util.esc(i.nome) + "</b></td><td>" + rot(P.estoqueCategoria, i.categoria) + "</td><td>" + Util.esc(ob ? ob.nome : "Central") + '</td><td class="num">' + saldoTxt + '</td><td class="num">' + Util.fmtMoeda(i.custoUnit) + '</td><td class="num">' + Util.fmtMoeda(Util.num(i.saldo) * Util.num(i.custoUnit)) + '</td><td class="num"><button class="btn sm success" data-gacao="entrada-estoque" data-id="' + i.id + '">+ Entrada</button> <button class="btn sm" data-gacao="saida-estoque" data-id="' + i.id + '">− Saída</button></td></tr>';
       });
       return html + "</tbody></table>";
@@ -11484,7 +11486,9 @@ renderRequisicoes: function () {
           + listaR.map(function (x, i) {
             var cor = x.categoria === "MO" ? "#16a34a" : (x.categoria === "EQ" ? "#ea580c" : "#2e6f9e");
             return '<tr><td><b>' + Util.esc(x.codigo) + "</b>" + (x.fonte && x.fonte !== "SINAPI" ? '<div class="muted" style="font-size:10px">' + Util.esc(x.fonte) + "</div>" : "") + "</td>"
-              + "<td>" + Util.esc(x.descricao) + "</td><td>" + Util.esc(x.unidade) + "</td>"
+              // busca unificada (SINAPI + extras + PRÓPRIA): sem normalizar, a
+              // mesma unidade sai em três grafias na mesma lista de resultados
+              + "<td>" + Util.esc(x.descricao) + "</td><td>" + Util.esc(Util.unidadeExibir(x.unidade)) + "</td>"
               + '<td class="num">' + (x.custoUnitario > 0 ? Util.fmtMoeda(x.custoUnitario) : "—") + "</td>"
               + '<td><span class="g-pill" style="background:' + cor + "22;color:" + cor + '">' + x.categoria + "</span></td>"
               /* O LÁPIS SÓ NA VIEW, NUNCA DENTRO DE MODAL (opts.comEditar).
@@ -11633,7 +11637,7 @@ renderRequisicoes: function () {
         el.innerHTML = '<table class="tbl" style="font-size:13px"><thead><tr><th>Item</th><th>Und</th><th class="num">Qtd</th><th class="num">Preço ref.</th><th class="num">Subtotal</th><th></th></tr></thead><tbody>'
           + itensBuf.map(function (it, i) {
             return "<tr><td>" + (it.codigo ? "<b>" + Util.esc(it.codigo) + "</b> " : "") + Util.esc(it.descricao) + "</td>"
-              + "<td>" + Util.esc(it.unidade) + "</td>"
+              + "<td>" + Util.esc(Util.unidadeExibir(it.unidade)) + "</td>"
               + '<td class="num"><input data-riq="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:64px;text-align:right"></td>'
               + '<td class="num">' + (it.precoRef > 0 ? Util.fmtMoeda(it.precoRef) : "—") + "</td>"
               + '<td class="num" data-risub="' + i + '">' + (it.precoRef > 0 ? Util.fmtMoeda(Util.num(it.quantidade) * it.precoRef) : "—") + "</td>"

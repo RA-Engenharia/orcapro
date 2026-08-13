@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.209",
+  "versao": "1.1.210",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.209/OrcaPRO-IA-update-v1.1.209.zip",
-  "notas": "A unidade de medida nao trava mais a composicao propria. Antes, digitar cx (caixa) parava o Validar e gravar com Unidade nao e reconhecida - e nao era so cx: o catalogo tinha 27 unidades enquanto os bancos que o proprio aplicativo embarca usam 71. Agora o catalogo traz 81 unidades, incluindo as de comercio que tabela de orgao nao tem (cx, fardo, barra, pacote, duzia, kit, lata, rolo), e o campo passa a sugerir a lista enquanto voce digita. O ponto principal: unidade fora do catalogo deixou de bloquear - vira aviso, e voce grava confirmando. Nenhuma lista cobre o que o fornecedor escreve na nota, e o sistema nao deve impedir ninguem de gravar o proprio servico por causa disso. Junto, saiu um texto solto que vazava embaixo do campo Estado no criador de composicao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.209/OrcaPRO-IA-Instalador-v1.1.209.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.210/OrcaPRO-IA-update-v1.1.210.zip",
+  "notas": "A unidade de medida aparece com uma grafia so nas telas. Cada tabela de preco publica do seu jeito - a SINAPI escreve M2, o SICRO escreve m², o SEINFRA escreve M3 - e como a busca do sistema procura em todas as bases ao mesmo tempo, a mesma unidade saia de tres jeitos na mesma coluna. Agora a tela mostra sempre m², m³, h, kg, e o valor guardado continua exatamente como o orgao publicou, que e o que sustenta a rastreabilidade em licitacao. Os documentos impressos (requisicao, pedido, mapa de cotacao e boletim de medicao) seguem fieis a fonte, sem mudanca. Junto: o insumo proprio passou a conferir a unidade - se ela ficar fora do catalogo, o insumo e salvo do mesmo jeito e o sistema avisa para voce conferir, nunca barra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.210/OrcaPRO-IA-Instalador-v1.1.210.exe"
 }
