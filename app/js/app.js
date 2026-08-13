@@ -478,7 +478,51 @@
         var baseInfo = { competencia: r.competencia, uf: r.uf, total: r.total,
           personalizada: Store.temBaseSinapi(Auth.empresaId()) };
         main.innerHTML = UI.renderLista(Store.listarOrcamentos(Auth.empresaId()), baseInfo);
+        this._ligarFiltroLista();
       }
+    },
+
+    /* ============ FILTRO DA CARTEIRA (fase 1 do plano) ============
+     * Estado de TELA: mora aqui, nunca no orçamento. Sobrevive à navegação
+     * dentro da sessão; some ao recarregar, que é o que o usuário espera de
+     * um filtro (e evita a pergunta "cadê meus orçamentos?" na abertura). */
+    _filtroOrc: null,
+    _ligarFiltroLista: function () {
+      var self = this;
+      var liga = function (id, campo, evento) {
+        var el = UI.el(id); if (!el) return;
+        el.addEventListener(evento || "change", function () {
+          self._filtroOrc = self._filtroOrc || {};
+          self._filtroOrc[campo] = el.value;
+          self.render();
+          /* devolve o foco e o cursor ao campo de busca: o render refaz a
+             tela inteira, e sem isto o usuário perde o campo a cada letra */
+          if (campo === "busca") {
+            var novo = UI.el(id);
+            if (novo) { novo.focus(); try { novo.setSelectionRange(novo.value.length, novo.value.length); } catch (e) {} }
+          }
+        });
+      };
+      var busca = UI.el("fo-busca");
+      if (busca) {
+        var timer = null;
+        busca.addEventListener("input", function () {
+          if (timer) clearTimeout(timer);
+          var v = busca.value;
+          timer = setTimeout(function () {
+            self._filtroOrc = self._filtroOrc || {};
+            self._filtroOrc.busca = v;
+            self.render();
+            var novo = UI.el("fo-busca");
+            if (novo) { novo.focus(); try { novo.setSelectionRange(novo.value.length, novo.value.length); } catch (e) {} }
+          }, 250);
+        });
+      }
+      liga("fo-cliente", "cliente");
+      liga("fo-tipo", "tipo");
+      liga("fo-faixa", "faixa");
+      liga("fo-prazo", "prazo");
+      liga("fo-ordem", "ordem");
     },
 
     // ---------- Eventos globais (delegação) ----------
@@ -902,6 +946,7 @@
         case "reimportar-excel": this.reimportarExcel(); break;
         case "importar-planilha": this.importarPlanilha(); break;
         case "recuperar-planilha": this.recuperarPlanilha(); break;
+        case "fo-limpar": this._filtroOrc = null; this.render(); break;
         case "import-reanalisar": this.importRemapear(); break;
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
         case "config-orc": this.editarDadosOrc(); break;

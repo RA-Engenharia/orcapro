@@ -546,9 +546,72 @@
                 '<button class="btn mt" data-acao="recuperar-planilha">' + Icones.get("reimportar") + 'Recuperar de uma planilha</button></div>';
         return html;
       }
+      /* ============ CARTEIRA: filtros, KPIs e prazo (fases 1 e 2) ============
+         O motor (Orcamento.filtrarLista) faz a conta; aqui só desenha. O
+         filtro vive em App._filtroOrc — estado de TELA, nunca do orçamento. */
+      var f = (typeof App !== "undefined" && App._filtroOrc) || {};
+      var r = Orcamento.filtrarLista(orcamentos, f, Util.agoraISO());
+      var k = r.kpis, temFiltro = !!(f.busca || f.cliente || f.tipo || f.faixa || f.prazo);
+
+      var kpi = function (v, rot, cor) {
+        return '<div class="card" style="flex:1;min-width:120px;text-align:center;padding:10px 8px">' +
+          '<div style="font-size:20px;font-weight:800;color:' + (cor || "var(--tinta)") + '">' + v + '</div>' +
+          '<div class="muted" style="font-size:11.5px">' + rot + '</div></div>';
+      };
+      html += '<div class="row" style="gap:10px;margin-bottom:12px;flex-wrap:wrap">' +
+        kpi(k.qtd + (temFiltro ? '<span style="font-size:12px;font-weight:600;color:var(--cinza)"> / ' + r.total + '</span>' : ""), temFiltro ? "no filtro" : "orçamentos") +
+        kpi(Util.fmtMoeda(k.carteira), "carteira" + (temFiltro ? " (filtrada)" : "")) +
+        kpi(Util.fmtMoeda(k.medio), "valor médio") +
+        (k.comControle
+          ? kpi(k.aVencer + (k.vencidos ? ' <span style="color:#dc2626">+' + k.vencidos + '</span>' : ""),
+                k.vencidos ? "a vencer · vencidos" : "prazos a vencer", k.vencidos ? "#ea580c" : "#16a34a")
+          /* sem nenhum prazo controlado, o KPI vira convite — e explica onde
+             se liga isso, senão o usuário não descobre que existe */
+          : kpi("—", "prazo: ligue em Parâmetros")) +
+      '</div>';
+
+      var opt = function (v, rot, sel) { return '<option value="' + Util.esc(v) + '"' + (sel === v ? " selected" : "") + '>' + Util.esc(rot) + '</option>'; };
+      html += '<div class="card" style="padding:10px 12px;margin-bottom:12px"><div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end">' +
+        /* min-width:0 em TODO campo da barra: item de flex nasce com
+           min-width:auto e não encolhe abaixo do conteúdo — o placeholder
+           longo da busca empurrava o campo por cima do select de Cliente. */
+        '<div class="field" style="flex:2;min-width:180px;margin:0"><label style="font-size:11px">Buscar</label>' +
+          '<input id="fo-busca" style="width:100%;box-sizing:border-box" placeholder="nome, número, cliente…" value="' + Util.esc(f.busca || "") + '" autocomplete="off"></div>' +
+        '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Cliente</label><select style="width:100%;box-sizing:border-box" id="fo-cliente">' +
+          opt("", "Todos", f.cliente || "") + r.clientes.map(function (c) { return opt(c, c, f.cliente || ""); }).join("") + '</select></div>' +
+        (r.tipos.length ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Tipo</label><select style="width:100%;box-sizing:border-box" id="fo-tipo">' +
+          opt("", "Todos", f.tipo || "") + r.tipos.map(function (c) { return opt(c, c, f.tipo || ""); }).join("") + '</select></div>' : "") +
+        '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Valor</label><select style="width:100%;box-sizing:border-box" id="fo-faixa">' +
+          opt("", "Qualquer", f.faixa || "") + Orcamento.FAIXAS.map(function (x) { return opt(x.id, x.rotulo, f.faixa || ""); }).join("") + '</select></div>' +
+        (k.comControle ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Prazo</label><select style="width:100%;box-sizing:border-box" id="fo-prazo">' +
+          opt("", "Todos", f.prazo || "") + opt("avencer", "A vencer", f.prazo || "") + opt("vencidos", "Vencidos", f.prazo || "") + '</select></div>' : "") +
+        '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Ordenar por</label><select style="width:100%;box-sizing:border-box" id="fo-ordem">' +
+          opt("atualizado", "Atualização", f.ordem || "atualizado") + opt("valor", "Maior valor", f.ordem || "atualizado") +
+          opt("prazo", "Prazo mais próximo", f.ordem || "atualizado") + opt("nome", "Nome", f.ordem || "atualizado") + '</select></div>' +
+        (temFiltro ? '<button class="btn sm ghost" data-acao="fo-limpar" style="margin-bottom:2px">Limpar filtros</button>' : "") +
+      '</div></div>';
+
+      /* VAZIO POR FILTRO ≠ VAZIO DE VERDADE. Sem esta distinção, quem filtra
+         demais acha que perdeu orçamento de novo — e a tela de recuperação,
+         aqui, seria a resposta errada. */
+      if (!r.lista.length) {
+        html += '<div class="vazio card"><h3>Nenhum orçamento neste filtro</h3>' +
+                '<p>São ' + r.total + ' no total — ajuste ou limpe o filtro para vê-los.</p>' +
+                '<button class="btn mt" data-acao="fo-limpar">Limpar filtros</button></div>';
+        return html;
+      }
+
       html += '<div class="grid-cards">';
-      orcamentos.forEach(function (o) {
-        var t = Orcamento.totais(o);
+      r.lista.forEach(function (m) {
+        var o = m.orc, t = m.tot, p = m.prazo;
+        var selo = "";
+        if (p.controla) {
+          var cor = p.estado === "vencido" ? "#dc2626" : (p.estado === "ok" ? "#16a34a" : "#ea580c");
+          var txt = p.estado === "vencido" ? "vencido há " + Math.abs(p.dias) + "d"
+                  : (p.estado === "hoje" ? "vence hoje" : "vence em " + p.dias + "d");
+          selo = '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + txt + '</span> ';
+        }
+        var el = Orcamento.tempoElaboracao(o);
         html += '<div class="card orc-card" data-abrir="' + o.id + '">' +
           // 🗑 dentro do card clicável: o dispatch resolve o botão ANTES do abrir
           '<button class="btn sm ico danger orc-del" data-del-orc="' + o.id + '" title="Excluir este orçamento (pede confirmação)">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
@@ -556,7 +619,10 @@
           '<div class="meta">' + Util.esc(o.numero) + ' · ' + Util.esc(o.cliente.nome || "Sem cliente") + '</div>' +
           '<div class="meta">' + t.qtdEtapas + ' etapas · ' + t.qtdItens + ' itens · BDI ' + Util.fmtPct(t.bdiPercentual) + '</div>' +
           '<div class="valor">' + Util.fmtMoeda(t.precoVenda) + '</div>' +
-          '<div class="meta mt">Atualizado ' + Util.fmtData(o.atualizadoEm) + '</div>' +
+          '<div class="meta mt">' + selo + 'Atualizado ' + Util.fmtData(o.atualizadoEm) +
+            (el.dias != null ? ' · <span title="Do primeiro salvamento até a última edição (tempo de calendário)">elaboração: ' +
+              (el.dias >= 1 ? el.dias + (el.dias === 1 ? " dia" : " dias") : (el.horas || 0) + "h") + '</span>' : "") +
+          '</div>' +
         '</div>';
       });
       html += '</div>';

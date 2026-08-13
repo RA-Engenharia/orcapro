@@ -46,7 +46,7 @@
         aoCriar: aoCriar || null,
         numero: "ORC-" + new Date().getFullYear() + "-" + Math.floor(Math.random() * 9000 + 1000),
         nome: "", cliente: "", obra: "", local: "",
-        categoria: "", prazoEntrega: "", permitirZerado: false,
+        categoria: "", prazoEntrega: "", controlarPrazo: false, permitirZerado: false,
         licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
         arredondamento: base.arredondamento,
         bdiIncidencia: base.bdiIncidencia,
@@ -69,7 +69,7 @@
         passo: 0, aoCriar: null, orc: orc,
         numero: orc.numero || "", nome: orc.nome || "",
         cliente: (orc.cliente && orc.cliente.nome) || "", obra: (orc.obra && orc.obra.nome) || "",
-        categoria: cfg.categoria || "", prazoEntrega: cfg.prazoEntrega || "",
+        categoria: cfg.categoria || "", prazoEntrega: cfg.prazoEntrega || "", controlarPrazo: !!cfg.controlarPrazo,
         permitirZerado: !!cfg.permitirZerado,
         licitacao: {
           ativo: !!(cfg.licitacao && cfg.licitacao.ativo),
@@ -145,7 +145,7 @@
       // percentual do usuário com parcelas que não são dele.
       if (s.bdiManual) { orc.bdi.modeloId = "manual"; orc.bdi.params = null; }
       var cfg = Orcamento.garantirConfig(orc);
-      cfg.categoria = s.categoria; cfg.prazoEntrega = s.prazoEntrega;
+      cfg.categoria = s.categoria; cfg.prazoEntrega = s.prazoEntrega; cfg.controlarPrazo = !!s.controlarPrazo;
       cfg.permitirZerado = s.permitirZerado;
       cfg.arredondamento = s.arredondamento; cfg.bdiIncidencia = s.bdiIncidencia;
       cfg.encargos = { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista };
@@ -194,7 +194,13 @@
         return '<option value="' + esc(t) + '"' + (s.licitacao.tipo === t ? " selected" : "") + ">" + esc(t) + "</option>";
       }).join("");
       return '<div class="row"><div class="field"><label>Código do orçamento</label><input id="ow-numero" value="' + esc(s.numero) + '"></div>' +
-        '<div class="field"><label>Prazo de entrega</label><input id="ow-prazo" type="date" value="' + esc(s.prazoEntrega) + '"></div></div>' +
+        '<div class="field"><label>Prazo de entrega</label><input id="ow-prazo" type="date" value="' + esc(s.prazoEntrega) + '">' +
+          /* O CONTROLE É OPT-IN. Semáforo de prazo que ninguém ligou vira
+             vermelho de enfeite na lista, e vermelho de enfeite ensina a
+             ignorar alerta de verdade. Quem quer cobrança, marca. */
+          '<label class="ow-check" style="margin-top:6px;font-size:12px"><input type="checkbox" id="ow-controlar-prazo"' +
+          (s.controlarPrazo ? " checked" : "") + '> Acompanhar este prazo na lista de orçamentos</label>' +
+        '</div></div>' +
         '<div class="field"><label>Descrição do orçamento *</label><input id="ow-nome" value="' + esc(s.nome) + '" placeholder="Ex.: Reforma da Escola Municipal — Bloco A"></div>' +
         '<div class="row"><div class="field"><label>Cliente</label><input id="ow-cliente" value="' + esc(s.cliente) + '" placeholder="Nome do contratante"></div>' +
         '<div class="field"><label>Obra / Local</label><input id="ow-obra" value="' + esc(s.obra) + '" placeholder="Ex.: Bairro Centro"></div></div>' +
@@ -217,6 +223,7 @@
       s.obra = val("ow-obra").trim();
       s.categoria = val("ow-categoria");
       s.prazoEntrega = val("ow-prazo");
+      s.controlarPrazo = marcado("ow-controlar-prazo");
       s.permitirZerado = marcado("ow-zerado");
       s.licitacao = {
         ativo: marcado("ow-lic"),
@@ -634,6 +641,7 @@
       orc.config = {
         categoria: s.categoria,
         prazoEntrega: s.prazoEntrega,
+        controlarPrazo: !!s.controlarPrazo,
         arredondamento: s.arredondamento,
         bdiIncidencia: s.bdiIncidencia,
         encargos: { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista },

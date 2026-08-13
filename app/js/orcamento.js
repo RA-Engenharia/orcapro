@@ -959,6 +959,119 @@
         soma += tm; totaisMes.push(tm); acum.push((soma / total) * 100);
       }
       return { meses: meses, etapas: etapas, totaisMes: totaisMes, acumPct: acum, total: total };
+    },
+
+    /* ==================================================================
+     * GESTÃO DA CARTEIRA (fases 1 e 2 do PLANO-GESTAO-ORCAMENTOS.md)
+     * Funções PURAS: a tela só desenha o que sai daqui. Nenhuma delas
+     * grava nada — filtro é estado de tela, nunca do orçamento.
+     * ================================================================== */
+
+    /* Prazo de elaboração. Só existe quando o usuário PEDIU controle:
+     * `config.controlarPrazo`. Semáforo que ninguém ligou vira vermelho de
+     * enfeite, e vermelho de enfeite ensina a ignorar alerta de verdade.
+     * `hoje` entra por parâmetro — data do sistema dentro de função pura
+     * é teste que quebra sozinho na virada do dia. */
+    prazoDe: function (orc, hoje) {
+      var cfg = (orc && orc.config) || {};
+      var data = String(cfg.prazoEntrega || "").slice(0, 10);
+      if (!cfg.controlarPrazo || !/^\d{4}-\d{2}-\d{2}$/.test(data)) return { controla: false };
+      var d0 = new Date(String(hoje || "").slice(0, 10) + "T12:00:00");
+      if (isNaN(d0.getTime())) d0 = new Date();
+      var d1 = new Date(data + "T12:00:00");
+      var dias = Math.round((d1 - new Date(d0.getFullYear(), d0.getMonth(), d0.getDate(), 12)) / 86400000);
+      var estado = dias < 0 ? "vencido" : (dias === 0 ? "hoje" : (dias <= 3 ? "proximo" : "ok"));
+      return { controla: true, data: data, dias: dias, estado: estado };
+    },
+
+    /* Tempo de elaboração: do nascimento à última edição. É duração de
+     * calendário, e o rótulo diz isso — não fingimos medir esforço com
+     * dado que não temos (esforço real é a fase 3 do plano). */
+    tempoElaboracao: function (orc) {
+      var ini = new Date(String((orc && orc.criadoEm) || "")), fim = new Date(String((orc && orc.atualizadoEm) || ""));
+      if (isNaN(ini.getTime()) || isNaN(fim.getTime())) return { dias: null };
+      var dias = Math.max(0, Math.round((fim - ini) / 86400000));
+      return { dias: dias, horas: Math.max(0, Math.round((fim - ini) / 3600000)) };
+    },
+
+    /* Faixa de valor — rótulos fixos para o filtro não mentir quando a
+     * carteira muda de tamanho. */
+    FAIXAS: [
+      { id: "ate50", rotulo: "até R$ 50 mil", min: 0, max: 50000 },
+      { id: "50a200", rotulo: "R$ 50 mil a 200 mil", min: 50000, max: 200000 },
+      { id: "acima200", rotulo: "acima de R$ 200 mil", min: 200000, max: Infinity }
+    ],
+
+    /* FILTRA E ORDENA a lista. Devolve { lista, kpis, clientes, tipos }.
+     * `f` é estado de tela: { busca, cliente, tipo, faixa, prazo, ordem }.
+     * Nunca modifica os orçamentos recebidos. */
+    filtrarLista: function (orcamentos, f, hoje) {
+      f = f || {};
+      var self = this, arr = Array.isArray(orcamentos) ? orcamentos.slice() : [];
+      var norm = function (s) {
+        s = String(s == null ? "" : s).toLowerCase();
+        try { s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+        return s.replace(/\s+/g, " ").trim();
+      };
+      /* calcula UMA vez por orçamento: totais() varre etapas e itens, e
+         chamar dentro de sort() faria isso N·log N vezes numa carteira
+         grande — a lista é justamente quem tem muitos orçamentos */
+      var meta = arr.map(function (o) {
+        var t; try { t = self.totais(o); } catch (e) { t = { precoVenda: 0, qtdItens: 0, qtdEtapas: 0, bdiPercentual: 0 }; }
+        return { orc: o, tot: t, prazo: self.prazoDe(o, hoje) };
+      });
+      var clientes = {}, tipos = {};
+      meta.forEach(function (m) {
+        var c = String((m.orc.cliente && m.orc.cliente.nome) || "").trim();
+        if (c) clientes[c] = (clientes[c] || 0) + 1;
+        var tp = String((m.orc.config && m.orc.config.categoria) || "").trim();
+        if (tp) tipos[tp] = (tipos[tp] || 0) + 1;
+      });
+      var busca = norm(f.busca);
+      var vis = meta.filter(function (m) {
+        var o = m.orc;
+        if (busca) {
+          var alvo = norm([o.nome, o.numero, (o.cliente || {}).nome, (o.obra || {}).nome].join(" "));
+          if (alvo.indexOf(busca) < 0) return false;
+        }
+        if (f.cliente && String((o.cliente || {}).nome || "").trim() !== f.cliente) return false;
+        if (f.tipo && String((o.config || {}).categoria || "").trim() !== f.tipo) return false;
+        if (f.faixa) {
+          var fx = self.FAIXAS.filter(function (x) { return x.id === f.faixa; })[0];
+          if (fx && !(m.tot.precoVenda >= fx.min && m.tot.precoVenda < fx.max)) return false;
+        }
+        if (f.prazo === "avencer" && !(m.prazo.controla && m.prazo.estado !== "vencido")) return false;
+        if (f.prazo === "vencidos" && !(m.prazo.controla && m.prazo.estado === "vencido")) return false;
+        return true;
+      });
+      var ordem = f.ordem || "atualizado";
+      vis.sort(function (a, b) {
+        if (ordem === "valor") return b.tot.precoVenda - a.tot.precoVenda;
+        if (ordem === "nome") return String(a.orc.nome || "").localeCompare(String(b.orc.nome || ""), "pt-BR");
+        if (ordem === "prazo") {
+          /* sem prazo controlado vai para o FIM: quem ligou o controle quer
+             ver os dele primeiro, não uma lista embaralhada com os outros */
+          var pa = a.prazo.controla ? a.prazo.dias : Infinity;
+          var pb = b.prazo.controla ? b.prazo.dias : Infinity;
+          if (pa !== pb) return pa - pb;
+        }
+        return String(b.orc.atualizadoEm || "").localeCompare(String(a.orc.atualizadoEm || ""));
+      });
+      var soma = vis.reduce(function (s, m) { return s + m.tot.precoVenda; }, 0);
+      return {
+        lista: vis,
+        total: meta.length,
+        kpis: {
+          qtd: vis.length,
+          carteira: soma,
+          medio: vis.length ? soma / vis.length : 0,
+          aVencer: meta.filter(function (m) { return m.prazo.controla && m.prazo.estado !== "vencido"; }).length,
+          vencidos: meta.filter(function (m) { return m.prazo.controla && m.prazo.estado === "vencido"; }).length,
+          comControle: meta.filter(function (m) { return m.prazo.controla; }).length
+        },
+        clientes: Object.keys(clientes).sort(function (a, b) { return a.localeCompare(b, "pt-BR"); }),
+        tipos: Object.keys(tipos).sort(function (a, b) { return a.localeCompare(b, "pt-BR"); })
+      };
     }
   };
 
