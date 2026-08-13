@@ -877,6 +877,19 @@
       } catch (e) {}
     },
 
+    /* v1.1.209 — as unidades que o app conhece, oferecidas em TODO campo de
+     * unidade (composição própria e insumo próprio). Um <datalist> só: o id é
+     * fixo e o navegador aceita o mesmo para vários inputs; repetir o bloco em
+     * cada modal duplicaria 80 <option> por abertura de tela. */
+    datalistUnidades: function () {
+      var us = (typeof ComposicaoPropria !== "undefined" && ComposicaoPropria.unidadesSugeridas)
+        ? ComposicaoPropria.unidadesSugeridas() : [];
+      if (!us.length) return "";
+      return '<datalist id="lista-unidades">' +
+        us.map(function (u) { return '<option value="' + Util.esc(u) + '">'; }).join("") +
+        '</datalist>';
+    },
+
     /* v1.1.123 — CRIADOR DE COMPOSIÇÃO PRÓPRIA (2 passos, paridade de mercado).
      * st = App._cp: { passo, comp{codigo,codigoSec,descricao,grupo,unidade,uf,
      *   modeloRef,metodo,maoDeObra,observacao,insumos[]}, referencia, valida } */
@@ -893,8 +906,16 @@
           '<div class="field"><label>Código secundário (opcional)</label><input id="cp-codigosec" value="' + Util.esc(c.codigoSec || "") + '" placeholder="Seu código interno"></div></div>' +
           '<div class="field"><label>Descrição do serviço *</label><input id="cp-descricao" value="' + Util.esc(c.descricao || "") + '" placeholder="Ex.: Assentamento de tubo PVC DN 100 com anel elástico, inclusive escavação"></div>' +
           '<div class="row"><div class="field"><label>Tipo de composição (grupo) *</label><select id="cp-grupo"><option value="">— escolha —</option>' + gruposOpts + '</select></div>' +
-          '<div class="field" style="max-width:140px"><label>Unidade *</label><input id="cp-unidade" value="' + Util.esc(c.unidade || "") + '" placeholder="m, m2, un…"></div></div>' +
-          '<div class="row"><div class="field"><label>Estado (base de preços ativa)</label><input value="' + Util.esc(c.uf || "") + '" disabled title="A composição usa os preços da base ativa — troque o estado em ' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + ' Tabelas"></div>' +
+          /* as unidades vêm do catálogo do motor (datalist): digitar continua
+             livre — a lista é atalho, não gaiola. Antes o campo era um input
+             seco e a única pista do vocabulário era a mensagem de erro. */
+          '<div class="field" style="max-width:140px"><label>Unidade *</label><input id="cp-unidade" list="lista-unidades" autocomplete="off" value="' + Util.esc(c.unidade || "") + '" placeholder="m², un, cx…">' + UI.datalistUnidades() + '</div></div>' +
+          /* ⚠ ÍCONE NUNCA DENTRO DE title="". O Icones.get devolve um <svg …>
+             com aspas duplas: a primeira delas FECHAVA o title e o resto do
+             texto vazava para a tela — o modal mostrava um « Tabelas"> » solto
+             embaixo do campo Estado, e o tooltip nunca aparecia. title é texto
+             puro; o nome da tela basta. */
+          '<div class="row"><div class="field"><label>Estado (base de preços ativa)</label><input value="' + Util.esc(c.uf || "") + '" disabled title="A composição usa os preços da base ativa — troque o estado na tela Tabelas"></div>' +
           '<div class="field"><label>Modelo de referência</label><div class="flex" style="gap:12px;padding-top:8px">' +
             '<label style="cursor:pointer"><input type="radio" name="cp-modelo" value="SINAPI"' + (c.modeloRef !== "SICRO" ? " checked" : "") + '> SINAPI</label>' +
             '<label style="cursor:pointer"><input type="radio" name="cp-modelo" value="SICRO"' + (c.modeloRef === "SICRO" ? " checked" : "") + '> SICRO3</label></div></div></div>' +

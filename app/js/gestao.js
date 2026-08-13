@@ -10638,7 +10638,10 @@
               + (Epi.caNaoSeAplica(it.ca)
                 ? ' <span class="pill" style="background:#e2e8f0;color:#475569" title="Você marcou que este item não tem CA — nada pendente aqui">não se aplica</span>'
                 : Epi.caPendente(it.ca)
-                  ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — o ' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' consulta online">CA pendente</span>'
+                  /* mesmo defeito do campo Estado da composição própria: o <svg>
+                     do ícone tem aspas duplas e fechava o title no meio, jogando
+                     « consulta online">CA pendente… » na tela. title é texto puro. */
+                  ? ' <span class="pill proprio" title="Informe o CA do modelo que você comprou, ou escreva N/A se este item não tem CA — a busca consulta online">CA pendente</span>'
                   : (it.caFonte ? ' <span class="pill" style="background:#dcfce7;color:#166534" title="Veio da nota: ' + Util.esc(it.caFonte) + '">da nota</span>' : "")) + '</td>' 
               + '<td><input data-eeval="' + i + '" type="date" value="' + Util.esc(it.validade) + '" style="width:130px"></td>'
               + '<td class="num"><input data-eeqtd="' + i + '" value="' + Util.esc(String(it.quantidade).replace(".", ",")) + '" style="width:46px;text-align:right"></td>'
@@ -11550,7 +11553,8 @@ renderRequisicoes: function () {
      * modal na view do banco). Coleta devolve {descricao,unidade,categoria,preco,salvar}. */
     _insumoProprioCampos: function (px, comSalvar) {
       return '<div class="row"><div class="field" style="flex:2"><label>Descrição do insumo *</label><input id="' + px + '-desc" placeholder="Ex.: Bloco cerâmico 9x19x39 · Locação de betoneira 400L"></div>' +
-        '<div class="field" style="max-width:110px"><label>Unidade *</label><input id="' + px + '-und" value="un" placeholder="un, m², kg…"></div></div>' +
+        // mesmo catálogo de unidades da composição própria (digitar segue livre)
+        '<div class="field" style="max-width:110px"><label>Unidade *</label><input id="' + px + '-und" list="lista-unidades" autocomplete="off" value="un" placeholder="un, m², cx…">' + (UI.datalistUnidades ? UI.datalistUnidades() : "") + '</div></div>' +
         '<div class="row"><div class="field"><label>Categoria</label><select id="' + px + '-cat"><option value="MAT">Material</option><option value="MO">Mão de obra</option><option value="EQ">Equipamento</option></select></div>' +
         '<div class="field"><label>Preço de referência (R$) — opcional</label><input id="' + px + '-preco" placeholder="0,00"></div></div>' +
         (comSalvar ? '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin:4px 0"><input type="checkbox" id="' + px + '-salvar" checked> Salvar no meu banco (código PROP — aparece nas próximas buscas de requisição e de orçamento)</label>' : "");

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.208",
+  "versao": "1.1.209",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.208/OrcaPRO-IA-update-v1.1.208.zip",
-  "notas": "O insumo que voce mesmo cadastra agora pode ser corrigido. Antes, se a unidade ou o preco saiam errados - o caso mais comum e digitar o salario do mes onde vai o valor da hora - a lista so oferecia a lixeira, e excluir tira o codigo das buscas e deixa sem preco a composicao que usa aquele insumo. Agora ha um lapis na linha, tanto em Minhas composicoes e insumos quanto no Banco de Insumos: o codigo continua o mesmo, entao nada que ja usa o insumo quebra. Se aquele insumo estiver dentro de composicoes suas ou lancado em orcamentos, o sistema mostra onde e pergunta uma vez se deve atualizar tudo; se voce disser que nao, so o insumo muda e o resto fica exatamente como estava.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.208/OrcaPRO-IA-Instalador-v1.1.208.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.209/OrcaPRO-IA-update-v1.1.209.zip",
+  "notas": "A unidade de medida nao trava mais a composicao propria. Antes, digitar cx (caixa) parava o Validar e gravar com Unidade nao e reconhecida - e nao era so cx: o catalogo tinha 27 unidades enquanto os bancos que o proprio aplicativo embarca usam 71. Agora o catalogo traz 81 unidades, incluindo as de comercio que tabela de orgao nao tem (cx, fardo, barra, pacote, duzia, kit, lata, rolo), e o campo passa a sugerir a lista enquanto voce digita. O ponto principal: unidade fora do catalogo deixou de bloquear - vira aviso, e voce grava confirmando. Nenhuma lista cobre o que o fornecedor escreve na nota, e o sistema nao deve impedir ninguem de gravar o proprio servico por causa disso. Junto, saiu um texto solto que vazava embaixo do campo Estado no criador de composicao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.209/OrcaPRO-IA-Instalador-v1.1.209.exe"
 }

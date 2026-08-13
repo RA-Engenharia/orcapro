@@ -26,8 +26,90 @@
     return (modo === "arred2" ? Math.round(cent) : Math.floor(cent + 1e-9)) / 100;
   }
 
-  // unidades aceitas (vocabulário SINAPI/SICRO usual, minúsculo/normalizado)
-  var UNIDADES = ["m", "m2", "m²", "m3", "m³", "un", "und", "kg", "t", "h", "l", "km", "cm", "mm", "vb", "par", "cj", "jg", "mes", "mês", "sc", "gl", "rl", "pc", "dm3", "dm³", "m3xkm", "txkm", "unxm", "m2xmes", "hxm"];
+  /* =====================================================================
+   * CATÁLOGO DE UNIDADES (v1.1.209)
+   *
+   * A lista tinha 27 entradas e barrava a gravação: "Unidade «cx» não é
+   * reconhecida". Só que "cx" é caixa — unidade de compra de metade do
+   * material de acabamento. E não era caso isolado: MEDI as unidades dos
+   * 8 bancos que o app já embarca (SINAPI, SETOP, ORSE, SEINFRA, SICRO,
+   * IOPES, GOINFRA, SUDECAP — 59.697 itens) e elas usam 71 unidades
+   * distintas depois de normalizadas. A lista velha cobria menos da
+   * metade: faltavam pt, chp, chi, dia, ha, kwh, cento, mil, %, ciclo e
+   * todos os compostos de transporte fora dos três que estavam ali.
+   *
+   * Duas decisões, e é a segunda que resolve de verdade:
+   *  1. o catálogo abaixo nasce do que os bancos REALMENTE publicam, mais
+   *     as unidades de comércio que o orçamentista digita todo dia (cx,
+   *     fd, br, pct…) e que banco de órgão não tem porque não compra nada;
+   *  2. unidade fora do catálogo NÃO BLOQUEIA MAIS — vira aviso. Bloquear
+   *     era o defeito: nenhuma lista, por maior que seja, cobre o que o
+   *     fornecedor inventa na nota, e o app não tem o direito de impedir
+   *     alguém de gravar o próprio serviço por causa disso. Aviso ainda
+   *     pega o dedo errado (o fluxo exige "Conferi — gravar assim").
+   *
+   * Grafia normativa na exibição (CONMETRO 12/1988): m², m³, kg, h, L.
+   * A comparação é por chave — "M2", "m2" e "m²" são a mesma unidade.
+   * ===================================================================== */
+  var UNIDADES = [
+    // — as mais usadas, primeiro (ordem da lista de sugestão)
+    "un", "m", "m²", "m³", "kg", "h", "vb", "cj", "pç", "par", "jg", "pt",
+    // — comprimento, área, volume
+    "cm", "cm²", "cm³", "mm", "dm²", "dm³", "km", "ha", "are",
+    // — massa, volume líquido, energia
+    "g", "t", "L", "ml", "kWh",
+    // — tempo e locação
+    "min", "dia", "mês", "ano",
+    // — custo horário do SICRO/DNIT (sigla do órgão, não unidade SI)
+    "chp", "chi",
+    // — contagem e embalagem de comércio (o que o banco de órgão não tem)
+    "cx", "fd", "br", "bd", "pct", "sc", "saco", "rl", "rolo", "gl", "lata",
+    "dz", "kit", "cento", "mil", "%", "u",
+    // — o que os bancos publicam e não cabe nas famílias acima
+    "ciclo", "quadra", "imóvel", "tb", "pa",
+    // — compostos de transporte e de locação (multiplicação)
+    "t·km", "m³·km", "m²·km", "m·km", "kg·km", "L·km", "un·km",
+    "un·mês", "m²·mês", "m³·mês", "m·mês", "h·mês",
+    "un·dia", "m·dia", "m²·dia", "m³·dia", "pt·dia",
+    // — compostos de divisão (POR mês, POR dia): a barra é preservada na chave
+    "m/mês", "m²/mês", "m³/mês", "un/dia", "m/dia", "m²/dia", "m³/dia", "h/dia",
+    "pt/dia", "pç/dia"
+    /* FORA DE PROPÓSITO (viram aviso, nunca bloqueio): VG, ARF, BAN, AMV, IM,
+       PR A1, % A1, 100M, 310ML. São siglas de um órgão só, sem significado
+       confirmado — a util.js já as deixa passar sem tradução pelo mesmo
+       motivo, e sugerir o que não se entende é pior que não sugerir. */
+  ];
+
+  /* Chave de comparação: a MESMA do resto do app (Util.unidadeChave), com
+   * réplica local porque este motor roda em Node puro nos testes — sem DOM
+   * e sem util.js. Duas implementações da mesma regra é o defeito clássico;
+   * por isso a de fora vence sempre que existir. */
+  function chaveUnidade(u) {
+    var U = global.Util || (typeof require === "function" ? (function () { try { return require("./util.js"); } catch (e) { return null; } })() : null);
+    if (U && U.unidadeChave) return U.unidadeChave(u);
+    var temBarra = /[\/]/.test(String(u == null ? "" : u));
+    var s = norm(u).replace(/²/g, "2").replace(/³/g, "3").replace(/[^a-z0-9]/g, "");
+    var antes;
+    do { antes = s; s = s.replace(/([a-z0-9])x([a-z0-9])/g, "$1$2"); } while (s !== antes);
+    if (s === "und" || s === "unid" || s === "uni" || s === "unidade") return "un";
+    if (s === "ms" || s === "mes") return "mes";
+    if (s === "hora" || s === "hr") return "h";
+    return temBarra ? s + "/" : s;
+  }
+  var _chaves = null;
+  function chavesAceitas() {
+    if (_chaves) return _chaves;
+    _chaves = {};
+    for (var i = 0; i < UNIDADES.length; i++) {
+      var u = UNIDADES[i];
+      _chaves[chaveUnidade(u)] = 1;
+      /* "%" (7 itens no ORSE) não sobrevive à chave: ela derruba tudo que não
+         é alfanumérico e sobra string vazia. A chave é do app inteiro e não se
+         mexe nela por causa de um símbolo — o cru normalizado entra junto. */
+      _chaves["cru:" + norm(u).replace(/\s+/g, "")] = 1;
+    }
+    return _chaves;
+  }
 
   // grupos/classes de serviço do criador (paridade com o mercado; edição livre)
   var GRUPOS = [
@@ -78,8 +160,14 @@
     },
 
     unidadeValida: function (u) {
-      return UNIDADES.indexOf(norm(u).replace(/\s+/g, "")) >= 0;
+      var aceitas = chavesAceitas(), k = chaveUnidade(u);
+      if (k && aceitas[k] === 1) return true;
+      var cru = norm(u).replace(/\s+/g, "");
+      return !!cru && aceitas["cru:" + cru] === 1;
     },
+    /* Sugestões para o campo (datalist da tela). Devolve cópia: a lista é
+     * do motor, e uma tela que ordenasse in-place mudaria a validação. */
+    unidadesSugeridas: function () { return UNIDADES.slice(); },
 
     /* Custo da composição a partir dos insumos, no método de cálculo escolhido.
      * Cada linha: coef × preço no método; total = Σ linhas no método (igual à
@@ -116,7 +204,13 @@
       }
       if (String(comp.descricao || "").trim().length < 10) erros.push("Descrição muito curta — descreva o serviço com pelo menos 10 caracteres.");
       if (!comp.unidade) erros.push("Unidade é obrigatória.");
-      else if (!this.unidadeValida(comp.unidade)) erros.push("Unidade \"" + comp.unidade + "\" não é reconhecida (use m, m2, m3, un, kg, h…).");
+      /* AVISO, NÃO ERRO (v1.1.209): "cx" existe, o catálogo é que não a tinha —
+         e o app barrava a gravação da composição inteira por causa disso.
+         Nenhuma lista cobre a unidade que o fornecedor põe na nota; travar a
+         gravação por vocabulário é o app decidindo o que o orçamentista pode
+         vender. O aviso ainda pega o dedo escorregado, e passar por ele exige
+         o "Conferi — gravar assim". */
+      else if (!this.unidadeValida(comp.unidade)) avisos.push("Unidade \"" + comp.unidade + "\" está fora do catálogo — confira se é isso mesmo (o catálogo tem un, m, m², m³, kg, h, cx, vb, cj, pç…).");
       if (!comp.grupo) erros.push("Escolha o tipo/grupo do serviço.");
       if (!comp.metodo || ["truncar2", "arred2", "nenhum"].indexOf(comp.metodo) < 0) erros.push("Método de cálculo inválido.");
 
