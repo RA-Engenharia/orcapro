@@ -1086,13 +1086,59 @@
     wmeta.state = 'veryHidden';
     var metaJson = JSON.stringify(orc);
     var FATIA = 30000, metaPartes = Math.max(1, Math.ceil(metaJson.length / FATIA));
+
+    /* ===== AS COMPOSIÇÕES PRÓPRIAS VÃO JUNTO (v1.1.211) =====
+     * O item lançado é um snapshot: leva o CUSTO da composição própria, nunca a
+     * estrutura dela. Enquanto o orçamento existe no app isso basta — a base
+     * PRÓPRIA está do lado. Mas quando a planilha é a única cópia que sobrou
+     * (cliente apagou o orçamento e voltou pelo Excel), o PROP-0016 renascia
+     * como item de preço fixo: sem insumo, sem coeficiente, impossível de
+     * reprecificar. O orçamento voltava; a autoria dele, não.
+     *
+     * Vai em COLUNA SEPARADA de propósito: quem lê só a coluna A (versão
+     * anterior do app) continua lendo o orçamento igual, sem enxergar isto.
+     * Compatibilidade para trás sem campo novo dentro do orçamento. */
+    var propriasJson = '', propriasPartes = 0, propriasQtd = 0;
+    try {
+      if (typeof Bases !== 'undefined' && Bases.obter) {
+        var vistos = {}, pilha = [], lista = [];
+        (orc.etapas || []).forEach(function (e) {
+          (e.itens || []).forEach(function (it) {
+            var f = String(it.baseFonte || it.origem || '').toUpperCase();
+            if ((f === 'PROPRIA' || f === 'PROPRIO') && it.codigo) pilha.push(String(it.codigo));
+          });
+        });
+        // transitivo: composição própria pode usar OUTRO item próprio como insumo
+        while (pilha.length) {
+          var cod = pilha.shift(), k = String(cod).toLowerCase();
+          if (vistos[k]) continue;
+          vistos[k] = 1;
+          var reg = Bases.obter('PROPRIA', cod);
+          if (!reg) continue;
+          lista.push(reg);
+          (reg.insumos || []).forEach(function (i) {
+            if (String(i.fonte || '').toUpperCase() === 'PROPRIA' && i.codigo) pilha.push(String(i.codigo));
+          });
+        }
+        if (lista.length) {
+          propriasJson = JSON.stringify({ v: 1, itens: lista });
+          propriasPartes = Math.max(1, Math.ceil(propriasJson.length / FATIA));
+          propriasQtd = lista.length;
+        }
+      }
+    } catch (ePr) { propriasJson = ''; propriasPartes = 0; propriasQtd = 0; }
+
     wmeta.getCell('A1').value = JSON.stringify({
       v: 1, tipo: 'orcapro-meta', partes: metaPartes,
       schemaVersao: orc.schemaVersao || null, id: orc.id || '', numero: orc.numero || '',
-      geradoEm: dtEmissao.toISOString()
+      geradoEm: dtEmissao.toISOString(),
+      propriasPartes: propriasPartes, propriasQtd: propriasQtd
     });
     for (var mi = 0; mi < metaPartes; mi++) {
       wmeta.getCell('A' + (mi + 2)).value = metaJson.slice(mi * FATIA, (mi + 1) * FATIA);
+    }
+    for (var pi = 0; pi < propriasPartes; pi++) {
+      wmeta.getCell('B' + (pi + 2)).value = propriasJson.slice(pi * FATIA, (pi + 1) * FATIA);
     }
 
     // ===================== FASE 2: verificações automáticas (Resumo) =====================

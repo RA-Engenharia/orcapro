@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.210",
+  "versao": "1.1.211",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.210/OrcaPRO-IA-update-v1.1.210.zip",
-  "notas": "A unidade de medida aparece com uma grafia so nas telas. Cada tabela de preco publica do seu jeito - a SINAPI escreve M2, o SICRO escreve m², o SEINFRA escreve M3 - e como a busca do sistema procura em todas as bases ao mesmo tempo, a mesma unidade saia de tres jeitos na mesma coluna. Agora a tela mostra sempre m², m³, h, kg, e o valor guardado continua exatamente como o orgao publicou, que e o que sustenta a rastreabilidade em licitacao. Os documentos impressos (requisicao, pedido, mapa de cotacao e boletim de medicao) seguem fieis a fonte, sem mudanca. Junto: o insumo proprio passou a conferir a unidade - se ela ficar fora do catalogo, o insumo e salvo do mesmo jeito e o sistema avisa para voce conferir, nunca barra.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.210/OrcaPRO-IA-Instalador-v1.1.210.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.211/OrcaPRO-IA-update-v1.1.211.zip",
+  "notas": "Perdeu um orcamento e tem o Excel dele? Ele volta inteiro. A planilha que o sistema exporta guarda o orcamento completo dentro do arquivo, mas o botao Importar planilha nunca olhava para la: tratava o proprio Excel do sistema como planilha de terceiro e refazia tudo por adivinhacao, perdendo sub etapa, BDI, cronograma, memoria de calculo e o preco que voce tinha ajustado a mao. Agora o sistema reconhece o arquivo dele mesmo e oferece restaurar o orcamento exatamente como estava - e avisa antes, se voce ja tiver aquele orcamento aberto. As composicoes proprias tambem passaram a viajar dentro da planilha: antes elas voltavam como preco fixo, sem os insumos, e nao davam para reprecificar. Isso vale para as exportacoes feitas desta versao em diante. Junto: as unidades de medida dos documentos impressos (boletim de medicao, requisicao, pedido e mapa de cotacao) sairam padronizadas.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.211/OrcaPRO-IA-Instalador-v1.1.211.exe"
 }

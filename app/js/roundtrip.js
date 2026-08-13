@@ -24,8 +24,37 @@
         if (!cab || cab.tipo !== "orcapro-meta") return { erro: "sem-meta" };
         var json = "";
         for (var i = 0; i < (cab.partes || 1); i++) json += String(ws.getCell("A" + (i + 2)).value || "");
-        return { cab: cab, orc: JSON.parse(json) };
+        var out = { cab: cab, orc: JSON.parse(json) };
+        /* COLUNA B — as composições próprias usadas pelo orçamento (v1.1.211).
+           Só existe em planilha gerada da 1.1.211 para cá; arquivo mais velho
+           simplesmente não tem, e isso NÃO é erro: o orçamento volta igual, só
+           sem a estrutura das próprias. Falha aqui nunca derruba a leitura do
+           orçamento — a coluna A é o que importa. */
+        try {
+          if (cab.propriasPartes > 0) {
+            var jp = "";
+            for (var p = 0; p < cab.propriasPartes; p++) jp += String(ws.getCell("B" + (p + 2)).value || "");
+            var pr = JSON.parse(jp);
+            if (pr && Array.isArray(pr.itens) && pr.itens.length) out.proprias = pr.itens;
+          }
+        } catch (ep) { out.propriasErro = String((ep && ep.message) || ep); }
+        return out;
       } catch (e) { return { erro: "meta-corrompida", detalhe: e.message }; }
+    },
+    /* Quais composições próprias do arquivo NÃO estão (ou estão desatualizadas)
+     * na base do usuário. Puro: quem resolve o código é quem chama. */
+    propriasFaltando: function (proprias, resolve) {
+      var out = [];
+      (Array.isArray(proprias) ? proprias : []).forEach(function (p) {
+        if (!p || !p.codigo) return;
+        var atual = null;
+        try { atual = resolve(p.codigo); } catch (e) {}
+        if (!atual) { out.push({ item: p, motivo: "ausente" }); return; }
+        var difere = Number(atual.custoUnitario) !== Number(p.custoUnitario) ||
+          (Util.arr(atual.insumos).length !== Util.arr(p.insumos).length);
+        if (difere) out.push({ item: p, motivo: "diferente", atual: atual });
+      });
+      return out;
     },
 
     /* Itens do snapshot achatados NA MESMA ORDEM em que o gerador escreve

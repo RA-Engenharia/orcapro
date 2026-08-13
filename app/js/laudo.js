@@ -155,7 +155,8 @@
         Util.arr(e.itens).forEach(function (it) {
           if (!Util.naoVazio(it.memoriaCalculo)) return;
           memHtml += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +
-            '<td class="r">' + Util.fmtNum(it.quantidade, 2) + ' ' + Util.esc(it.unidade || '') + '</td>' +
+            // mesma régua da tabela analítica acima (unidadeDe respeita licitação)
+            '<td class="r">' + Util.fmtNum(it.quantidade, 2) + ' ' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
             '<td>' + Util.esc(it.memoriaCalculo) + '</td></tr>';
         });
       });

@@ -4767,12 +4767,155 @@
         UI.toast("Lendo a planilha…", "ok");
         self._lerPlanilha(f, function (matriz, erro, meta) {
           if (erro || !matriz || !matriz.length) { UI.toast("Não consegui ler a planilha: " + (erro || "vazia"), "erro"); return; }
+          // planilha gerada por este app: o orçamento inteiro está na _meta
+          if (meta && meta.snapshot) { self._abrirRestaurarSnapshot(meta.snapshot, f.name, matriz, meta); return; }
           var res = Importador.analisar(matriz);
           self._imp = { matriz: matriz, nome: f.name, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
           self._abrirImportPreview();
         });
       };
       document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
+    /* ==================================================================
+     * RESTAURAR O ORÇAMENTO DA PRÓPRIA PLANILHA (v1.1.211)
+     *
+     * O caso que originou isto: o cliente montou o orçamento no app, exportou
+     * o Excel, perdeu o orçamento — e o botão "Importar planilha" devolvia
+     * outra coisa. Não porque o dado tivesse sumido: ele estava INTEIRO na aba
+     * `_meta` do arquivo que o cliente tinha na mão. O importador só nunca
+     * olhou para lá; tratava o Excel do próprio app como planilha de terceiro
+     * e refazia tudo por heurística de grade.
+     *
+     * O que a heurística perdia, medido no arquivo dele: as 5 sub etapas, o
+     * BDI de 27,03%, o cronograma, a memória de cálculo de 2 itens, o preço
+     * ajustado à mão de 1 item, a ART, a vistoria, o cliente e a obra. E a
+     * composição própria virava item solto.
+     *
+     * Aqui não há adivinhação nenhuma: é o snapshot que o app gravou.
+     * ================================================================== */
+    _abrirRestaurarSnapshot: function (snap, nomeArq, matriz, meta) {
+      var self = this, cab = snap.cab || {}, orc = snap.orc || {};
+      var val = Roundtrip.validar(cab, null);
+      if (val.erro === "schema-novo") {
+        UI.toast("Esta planilha veio de uma versão MAIS NOVA do OrçaPRO (schema " + cab.schemaVersao + "). Atualize o app antes de restaurar — importar assim corromperia o orçamento.", "erro");
+        return;
+      }
+      var nEt = Util.arr(orc.etapas).length, nSub = 0, nIt = 0, custo = 0, nMem = 0, nAju = 0;
+      Util.arr(orc.etapas).forEach(function (e) {
+        nSub += Util.arr(e.subetapas).length;
+        Util.arr(e.itens).forEach(function (it) {
+          nIt++; custo += Util.num(it.quantidade) * Util.num(it.custoUnitario);
+          if (it.memoriaCalculo) nMem++;
+          if (it.ajustes) nAju++;
+        });
+      });
+      var jaExiste = null;
+      try {
+        Store.listarOrcamentos(Auth.empresaId()).forEach(function (o) { if (o.id === orc.id) jaExiste = o; });
+      } catch (eL) {}
+      var bdiP = (orc.bdi && Util.num(orc.bdi.percentual)) || 0;
+      var linha = function (r, v) { return '<tr><td class="muted" style="padding:2px 10px 2px 0;white-space:nowrap">' + r + '</td><td style="padding:2px 0"><b>' + v + '</b></td></tr>'; };
+      var corpo =
+        '<p style="font-size:13px;margin:0 0 10px">Esta planilha foi <b>gerada por este sistema</b> e carrega o orçamento inteiro dentro dela. ' +
+        'Dá para trazer tudo de volta exatamente como estava — sem redigitar e sem adivinhação.</p>' +
+        '<div class="card" style="padding:10px 12px;margin-bottom:10px"><table style="font-size:12.5px;border-collapse:collapse">' +
+          linha("Orçamento", Util.esc(String(orc.nome || "").trim() || "(sem nome)") + " · " + Util.esc(orc.numero || "")) +
+          linha("Cliente", Util.esc(String((orc.cliente && orc.cliente.nome) || "—").trim())) +
+          linha("Obra", Util.esc(String((orc.obra && orc.obra.nome) || "—").trim())) +
+          linha("Estrutura", nEt + " etapa(s) · " + nSub + " sub etapa(s) · " + nIt + " item(ns)") +
+          linha("Custo", Util.fmtMoeda(custo) + (bdiP ? " · com BDI de " + Util.fmtNum(bdiP, 2) + "% = " + Util.fmtMoeda(custo * (1 + bdiP / 100)) : "")) +
+          (nMem || nAju ? linha("Também volta", (nMem ? nMem + " memória(s) de cálculo" : "") + (nMem && nAju ? " · " : "") + (nAju ? nAju + " preço(s) ajustado(s) à mão" : "")) : "") +
+          linha("Exportado em", Util.esc(String(cab.geradoEm || "").slice(0, 10).split("-").reverse().join("/"))) +
+        '</table></div>' +
+        (jaExiste
+          ? '<div style="padding:9px 12px;border-radius:8px;background:rgba(234,88,12,.09);border:1px solid rgba(234,88,12,.32);font-size:12.5px">' +
+            (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "⚠") + ' <b>Este orçamento ainda existe aqui</b> (' + Util.esc(jaExiste.numero || jaExiste.id) + '). ' +
+            'Restaurar por cima <b>substitui</b> o que está no app pelo que está na planilha. Se quiser comparar antes, use <b>Reimportar</b> com o orçamento aberto.</div>'
+          : '<p class="muted" style="font-size:12px;margin:0">O orçamento não está mais no app — vai entrar como novo, com o mesmo número.</p>');
+      var botoes = [
+        { texto: "Ler como planilha comum", classe: "ghost", onClick: function () {
+          /* saída honesta: se o usuário quer MESMO a leitura por heurística
+             (ex.: quer só os itens, sem a estrutura), o caminho antigo segue lá */
+          var res = Importador.analisar(matriz);
+          self._imp = { matriz: matriz, nome: nomeArq, res: res, abas: (meta && meta.abas) || null, abaIdx: (meta && meta.idx) || 0 };
+          self._abrirImportPreview();
+        } },
+        { texto: (typeof Icones !== "undefined" ? Icones.get("reimportar", 15) : "") + (jaExiste ? " Substituir pelo da planilha" : " Restaurar este orçamento"), classe: "success", onClick: function () {
+          self._restaurarSnapshot(snap, !!jaExiste);
+        } }
+      ];
+      UI.modal((typeof Icones !== "undefined" ? Icones.get("reimportar", 15) : "") + " Orçamento encontrado dentro da planilha", corpo, botoes);
+      UI.modalConsulta(); // só leitura até o usuário decidir — não é formulário
+    },
+    /* Grava o snapshot como orçamento de verdade. Sem remontar nada: o objeto
+     * é o que o app gravou na exportação, e passa pelo MESMO caminho de
+     * persistência dos outros (migração e validação inclusas). */
+    _restaurarSnapshot: function (snap, substituindo) {
+      var self0 = this;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var orc;
+      try { orc = JSON.parse(JSON.stringify(snap.orc)); } catch (e) { UI.toast("Não consegui ler o orçamento de dentro da planilha.", "erro"); return; }
+      var eid = Auth.empresaId();
+      /* limite do plano: só conta como NOVO quando não é substituição */
+      if (!substituindo) {
+        try {
+          var qtd = Store.listarOrcamentos(eid).length, lim = Auth.limite("limiteOrcamentos");
+          if (lim && qtd >= lim) {
+            UI.toast("Limite de " + lim + " orçamento(s) do seu plano atingido — faça upgrade ou apague um antes de restaurar.", "erro");
+            return;
+          }
+        } catch (eLim) {}
+      }
+      var limIt = Auth.limite("limiteItensPorOrcamento");
+      var nIt = Util.arr(orc.etapas).reduce(function (s, e) { return s + Util.arr(e.itens).length; }, 0);
+      if (limIt && nIt > limIt) {
+        UI.toast("A planilha tem " + nIt + " itens e o seu plano permite " + limIt + " por orçamento. Restauração cancelada para não entregar um orçamento pela metade.", "erro");
+        return;
+      }
+      orc.atualizadoEm = Util.agoraISO();
+      orc.restauradoEm = Util.agoraISO();       // rastro: este orçamento voltou de um Excel
+      try {
+        Store.salvarOrcamento(eid, orc);
+      } catch (eS) { UI.toast("Falhou ao gravar o orçamento restaurado: " + ((eS && eS.message) || eS), "erro"); return; }
+      /* ===== AS COMPOSIÇÕES PRÓPRIAS VOLTAM ANTES DO ORÇAMENTO =====
+         O item lançado é snapshot e sozinho já mostra o preço certo — mas sem a
+         estrutura ele é um preço fixo: não abre no detalhamento e não dá para
+         reprecificar. Regravar a própria PRIMEIRO faz o orçamento nascer já com
+         a autoria dele de volta. Nunca sobrescreve o que o usuário tem de
+         diferente sem perguntar: código que já existe com outro conteúdo é
+         decisão dele, não do arquivo. */
+      var nPro = 0, nCon = 0;
+      try {
+        var pros = snap.proprias;
+        if (pros && pros.length && typeof Roundtrip !== "undefined" && Roundtrip.propriasFaltando) {
+          var falt = Roundtrip.propriasFaltando(pros, function (cod) { return Bases.obter("PROPRIA", cod); });
+          var ausentes = falt.filter(function (f) { return f.motivo === "ausente"; });
+          var conflitos = falt.filter(function (f) { return f.motivo === "diferente"; });
+          ausentes.forEach(function (f) { self0._propriaGravar(f.item, null, null); nPro++; });
+          if (conflitos.length) {
+            nCon = conflitos.length;
+            var lista = conflitos.slice(0, 5).map(function (f) { return f.item.codigo; }).join(", ");
+            if (window.confirm("A planilha traz " + conflitos.length + " composição(ões) própria(s) que JÁ EXISTEM no seu banco com conteúdo diferente (" +
+                lista + (conflitos.length > 5 ? "…" : "") + ").\n\nOK = usar a versão da planilha (sobrescreve a sua)\nCancelar = manter a sua (o orçamento não muda: o item já carrega o preço da época)")) {
+              conflitos.forEach(function (f) { self0._propriaGravar(f.item, null, null); nPro++; });
+              nCon = 0;
+            }
+          }
+        }
+      } catch (ePr) {}
+      UI.fecharModal();
+      /* ABRE PELO CAMINHO OFICIAL, não setando orcAtual na mão. O abrirOrcamento
+         conserta acento corrompido, RENORMALIZA AS SUB ETAPAS (o próprio código
+         de lá avisa que o round-trip do Excel entrega os itens de um grupo
+         intercalados), repara a fonte de cada item e sincroniza o prazo. Um
+         orçamento que acabou de voltar de um arquivo é justamente quem mais
+         precisa dessa passagem. */
+      this.abrirOrcamento(orc.id);
+      UI.toast("Orçamento " + (orc.numero || "") + " " + (substituindo ? "substituído" : "restaurado") + " da planilha — " +
+        Util.arr(orc.etapas).length + " etapa(s) e " + nIt + " item(ns), com BDI, cronograma e memórias de cálculo." +
+        (nPro ? " " + nPro + " composição(ões) própria(s) voltaram para o seu banco." : ""), "ok");
+      if (nCon) UI.toast(nCon + " composição(ões) própria(s) da planilha foram IGNORADAS — você preferiu manter as suas. Os itens do orçamento seguem com o preço da época.", "erro");
+      try { this.backupAuto({ urgente: true }); } catch (eB) {} // dado recuperado: cópia em arquivo na hora
     },
     _lerPlanilha: function (file, cb) {
       var nome = String(file.name || "").toLowerCase(), fr = new FileReader();
@@ -4814,8 +4957,22 @@
               var abas = [];
               (wb.worksheets || []).forEach(function (w) { var m = matDe(w); if (m.length) abas.push({ nome: String(w.name || ("Aba " + (abas.length + 1))), matriz: m }); });
               if (!abas.length) { cb(null, "planilha sem abas legíveis"); return; }
+              /* ⚠ ESTA PLANILHA PODE SER NOSSA. O Excel que o app exporta leva a
+                 aba _meta com o orçamento INTEIRO em JSON — etapas, sub etapas,
+                 BDI, cronograma, memória de cálculo, preço ajustado à mão. Ler
+                 isso por heurística de grade, como se fosse planilha de terceiro,
+                 é jogar fora o que está escrito e adivinhar de novo: foi assim
+                 que a reimportação devolveu composição "bugada" e sub etapa
+                 sumida para um cliente que tinha o arquivo certo na mão. */
+              var snap = null;
+              try {
+                if (typeof Roundtrip !== "undefined" && Roundtrip.lerMeta) {
+                  var m0 = Roundtrip.lerMeta(wb);
+                  if (m0 && !m0.erro && m0.orc) snap = m0;
+                }
+              } catch (eSn) {}
               var idx = App._melhorAba(abas);
-              cb(abas[idx].matriz, null, { abas: abas, idx: idx });
+              cb(abas[idx].matriz, null, { abas: abas, idx: idx, snapshot: snap });
             }).catch(function (e) { cb(null, App._msgExcelErro(e)); });
           } catch (e) { cb(null, App._msgExcelErro(e)); }
         });
