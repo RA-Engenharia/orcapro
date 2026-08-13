@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.214",
+  "versao": "1.1.215",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.214/OrcaPRO-IA-update-v1.1.214.zip",
-  "notas": "O tempo de elaboracao no cartao do orcamento passou a medir trabalho, e nao calendario. Antes a conta ia da criacao ate a ultima edicao, entao um orcamento mexido em tres tardes ao longo de duas semanas aparecia como 12 dias - contando fim de semana e todo dia em que ninguem abriu o arquivo. Agora cada vez que voce salva, o sistema marca aquele dia, e o cartao mostra em quantos dias o orcamento foi realmente trabalhado. Salvar varias vezes no mesmo dia conta como um dia so. Orcamentos criados antes desta versao continuam mostrando a contagem antiga, e passar o mouse sobre o texto diz qual das duas contas esta na tela.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.214/OrcaPRO-IA-Instalador-v1.1.214.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.215/OrcaPRO-IA-update-v1.1.215.zip",
+  "notas": "O orcamento entrou no ciclo de aprovacao que a medicao, a requisicao e a compra ja usavam. Agora ele tem estado - rascunho, aguardando aprovacao, revisao solicitada, aprovado ou rejeitado - com os botoes na barra do editor e a etiqueta colorida no cartao da lista. Da para filtrar a carteira por estado e ver quanto valor esta parado esperando decisao. Quem pede revisao ou rejeita precisa escrever o motivo, e essa mensagem chega a quem preencheu; tudo fica registrado em uma trilha com quem fez e quando. E o principal: orcamento aprovado nao muda mais por baixo. Se voce tentar salvar uma alteracao nele, o sistema avisa e oferece criar uma revisao - um orcamento proprio, numerado -R1, com todo o conteudo copiado, enquanto o aprovado fica intacto para consulta. Orcamentos que ja existiam continuam como rascunho, sem nenhuma migracao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.215/OrcaPRO-IA-Instalador-v1.1.215.exe"
 }

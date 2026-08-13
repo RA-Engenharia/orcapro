@@ -684,6 +684,16 @@
       // busca de itens deste orçamento. Nada de Bases.setAtiva aqui: isso é estado
       // global da sessão e desligaria a tabela para todos os outros orçamentos.
 
+      /* FASE 4 — AUTORIA NO NASCIMENTO. Sem `autorId` o ciclo de aprovação
+         degrada: o motor não sabe quem preencheu, "quem preencheu não aprova
+         o próprio" vira carimbo e nem o botão Enviar aparece. Carimba SÓ aqui,
+         no orçamento novo — carimbar num que já existia faria constar como
+         autor quem apenas o abriu (foi o defeito que o RDO teve). */
+      try {
+        if (typeof Aprovacao !== "undefined" && Aprovacao.carimbarAutor) {
+          Aprovacao.carimbarAutor(orc, (Auth.usuario && Auth.usuario()) || {});
+        }
+      } catch (eA) {}
       Store.salvarOrcamento(Auth.empresaId(), orc);
       UI.fecharModal();
       this._instalarMarcadas(orc, s);

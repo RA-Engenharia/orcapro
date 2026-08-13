@@ -80,7 +80,14 @@
     fs_lancamentos: { rotulo: "Folha",       valorEmJogo: true,
                       porque: "Folha aprovada vira pagamento a pessoa física." },
     producao_med:   { rotulo: "Medição de produção", valorEmJogo: true,
-                      porque: "É pagamento por serviço executado: aprovada errada, paga-se serviço que não foi feito." }
+                      porque: "É pagamento por serviço executado: aprovada errada, paga-se serviço que não foi feito." },
+    /* FASE 4 (v1.1.215): o orçamento é o documento que ORIGINA todos os
+       outros — dele saem o contrato, a medição e a compra. Ficava de fora do
+       ciclo que ele mesmo alimenta: qualquer um podia mandar para o cliente
+       um preço que ninguém conferiu, e não havia como responder "quem
+       liberou isso?". Entra na máquina que já existe, sem estado paralelo. */
+    orcamentos:     { rotulo: "Orçamento",   valorEmJogo: true,
+                      porque: "É o preço que vai ao cliente e vira contrato: aprovado errado, a obra inteira nasce torta." }
   };
 
   /* --- IDENTIDADE ----------------------------------------------------

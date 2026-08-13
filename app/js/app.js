@@ -486,6 +486,77 @@
      * Estado de TELA: mora aqui, nunca no orçamento. Sobrevive à navegação
      * dentro da sessão; some ao recarregar, que é o que o usuário espera de
      * um filtro (e evita a pergunta "cadê meus orçamentos?" na abertura). */
+    /* ===== FASE 4: as AÇÕES do ciclo dentro do orçamento =====
+     * A tela não decide regra nenhuma: desenha o que o motor autoriza para
+     * ESTA pessoa, e o motor é o mesmo de medição/requisição/compras.
+     * Wiring próprio (e não o `_aprovar` da Gestão) porque orçamento não é
+     * entidade genérica do Store: mora em salvarOrcamento/obterOrcamento. */
+    _aprovBotoesOrc: function (orc) {
+      if (typeof Aprovacao === "undefined" || !orc || !orc.id) return "";
+      var eu = (Auth.usuario && Auth.usuario()) || {};
+      var ctx = {};
+      try {
+        ctx = {
+          semOutroAprovador: Aprovacao.semOutroAprovador ? Aprovacao.semOutroAprovador(eu, Store.listar(Auth.empresaId(), "equipe") || []) : false,
+          exigirOutroAprovador: false
+        };
+      } catch (e) {}
+      var acoes = Aprovacao.acoesDisponiveis(orc, eu, ctx) || [];
+      if (!acoes.length) return "";
+      var classe = { aprovar: "success", rejeitar: "danger", revisar: "", enviar: "primary", reabrir: "ghost" };
+      var est = Aprovacao.estadoDe(orc), info = Aprovacao.ESTADOS[est] || {};
+      var CORES = { cinza: "#64748b", ambar: "#ea580c", verde: "#16a34a", vermelho: "#dc2626" };
+      var cor = CORES[info.cor] || "#64748b";
+      return '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700;margin-right:6px">' +
+        Util.esc(info.rotulo || est) + '</span>' +
+        acoes.map(function (a) {
+          return '<button class="btn sm ' + (classe[a] || "") + '" data-acao="orc-aprov" data-aprov="' + Util.esc(a) + '">' +
+            Util.esc((Aprovacao.ROTULO_ACAO && Aprovacao.ROTULO_ACAO[a]) || a) + '</button> ';
+        }).join("");
+    },
+    /* Executa a ação. Motivo obrigatório em revisar/rejeitar é regra do motor —
+     * pedimos aqui e deixamos ELE recusar se vier vazio. */
+    orcAprovar: function (acao) {
+      var orc = this.orcAtual;
+      if (!orc || typeof Aprovacao === "undefined") return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var eu = (Auth.usuario && Auth.usuario()) || {};
+      var dados = {};
+      if (acao === "revisar" || acao === "rejeitar") {
+        var m = window.prompt("Escreva o motivo — é essa mensagem que chega a quem preencheu:", "");
+        if (m === null) return;                       // desistiu
+        dados.motivo = String(m || "").trim();
+      }
+      var r = Aprovacao.transicionar(orc, acao, eu, dados);
+      if (!r || !r.ok) { UI.toast((r && r.erro) || "Ação não permitida agora.", "erro"); return; }
+      Aprovacao.registrar(orc, acao, eu, dados, Util.agoraISO());
+      orc.estadoAprovacao = r.estado;
+      orc.atualizadoEm = Util.agoraISO();
+      /* grava DIRETO: o persistir() recusa aprovado, e é justamente aprovar
+         que precisa gravar o aprovado. */
+      Store.salvarOrcamento(Auth.empresaId(), orc);
+      this._avisouTravado = null;
+      this.render();
+      var rot = (Aprovacao.ESTADOS[r.estado] || {}).rotulo || r.estado;
+      UI.toast(orc.numero + " → " + rot + (acao === "aprovar" ? ". A partir de agora só muda por revisão." : "."), "ok");
+    },
+    /* Cria a revisão de um aprovado e abre ELA. O original fica onde está —
+     * é isso que separa revisão de edição por baixo. */
+    criarRevisao: function (orc) {
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      var nova = Orcamento.novaRevisao(orc, Util.agoraISO());
+      if (!nova) { UI.toast("Não consegui montar a revisão deste orçamento.", "erro"); return; }
+      var eid = Auth.empresaId();
+      try {
+        var lim = Auth.limite("limiteOrcamentos"), qtd = Store.listarOrcamentos(eid).length;
+        if (lim && qtd >= lim) { UI.toast("Limite de " + lim + " orçamento(s) do seu plano atingido — a revisão é um orçamento novo.", "erro"); return; }
+      } catch (eL) {}
+      Store.salvarOrcamento(eid, nova);
+      this._avisouTravado = null;
+      this.abrirOrcamento(nova.id);
+      UI.toast("Revisão " + nova.numero + " criada a partir do aprovado " + (orc.numero || "") +
+        " — edite à vontade aqui; o aprovado continua intacto.", "ok");
+    },
     _filtroOrc: null,
     _ligarFiltroLista: function () {
       var self = this;
@@ -521,6 +592,7 @@
       liga("fo-cliente", "cliente");
       liga("fo-tipo", "tipo");
       liga("fo-faixa", "faixa");
+      liga("fo-estado", "estado");
       liga("fo-prazo", "prazo");
       liga("fo-ordem", "ordem");
     },
@@ -946,6 +1018,7 @@
         case "reimportar-excel": this.reimportarExcel(); break;
         case "importar-planilha": this.importarPlanilha(); break;
         case "recuperar-planilha": this.recuperarPlanilha(); break;
+        case "orc-aprov": this.orcAprovar(t.dataset.aprov); break;
         case "fo-limpar": this._filtroOrc = null; this.render(); break;
         case "import-reanalisar": this.importRemapear(); break;
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
@@ -5260,6 +5333,28 @@
       if (!this.orcAtual) return;
       if (this._trialBloqueado()) {
         if (!this._avisouSalvar) { this._avisouSalvar = true; UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Modo demonstração — para salvar, ative sua licença (🔑).", "erro"); }
+        return;
+      }
+      /* ⚠ APROVADO NÃO GRAVA (fase 4). O aprovado é o preço que foi ao cliente
+         e virou contrato: editar por baixo faz o documento entregue e a tela
+         divergirem sem nada registrando a troca. Recusar em silêncio seria
+         pior ainda — o usuário digitaria a tarde inteira achando que salvou.
+         Então avisa UMA vez por abertura e oferece o caminho que existe. */
+      if (Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(this.orcAtual)) {
+        if (this._avisouTravado !== this.orcAtual.id) {
+          this._avisouTravado = this.orcAtual.id;
+          var self0 = this, alvo = this.orcAtual;
+          UI.modal((typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Orçamento aprovado — alteração não gravada",
+            '<p style="font-size:13px">O <b>' + Util.esc(alvo.numero || "") + '</b> está <b>aprovado</b>. ' +
+            'O que foi aprovado é o preço que chegou ao cliente — mudá-lo por baixo faria o documento entregue e o que está aqui virarem coisas diferentes, sem registro nenhum da troca.</p>' +
+            '<p class="muted" style="font-size:12.5px">O caminho é a <b>revisão</b>: nasce como orçamento próprio (<b>' +
+            Util.esc(String(alvo.numero || "").replace(/-R\d+$/, "")) + '-R…</b>), já com todo o conteúdo copiado, e o aprovado fica intacto para consulta.</p>',
+            [
+              { texto: "Voltar sem gravar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+              { texto: (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar revisão e editar nela", classe: "success",
+                onClick: function () { UI.fecharModal(); self0.criarRevisao(alvo); } }
+            ]);
+        }
         return;
       }
       try { Orcamento.sincronizarPrazo(this.orcAtual); } catch (e) {} // FASE 1.4: prazo segue o agente (depois do gate de licença)

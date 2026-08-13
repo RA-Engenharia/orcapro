@@ -579,6 +579,9 @@
           '<input id="fo-busca" style="width:100%;box-sizing:border-box" placeholder="nome, número, cliente…" value="' + Util.esc(f.busca || "") + '" autocomplete="off"></div>' +
         '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Cliente</label><select style="width:100%;box-sizing:border-box" id="fo-cliente">' +
           opt("", "Todos", f.cliente || "") + r.clientes.map(function (c) { return opt(c, c, f.cliente || ""); }).join("") + '</select></div>' +
+        (k.porEstado && Object.keys(k.porEstado).length > 1 ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Estado</label><select style="width:100%;box-sizing:border-box" id="fo-estado">' +
+          opt("", "Todos", f.estado || "") + Orcamento.ORDEM_ESTADO.filter(function (e) { return k.porEstado[e]; }).map(function (e) {
+            return opt(e, ((typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[e]) ? Aprovacao.ESTADOS[e].rotulo : e) + " (" + k.porEstado[e].qtd + ")", f.estado || ""); }).join("") + '</select></div>' : "") +
         (r.tipos.length ? '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Tipo</label><select style="width:100%;box-sizing:border-box" id="fo-tipo">' +
           opt("", "Todos", f.tipo || "") + r.tipos.map(function (c) { return opt(c, c, f.tipo || ""); }).join("") + '</select></div>' : "") +
         '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Valor</label><select style="width:100%;box-sizing:border-box" id="fo-faixa">' +
@@ -587,7 +590,7 @@
           opt("", "Todos", f.prazo || "") + opt("avencer", "A vencer", f.prazo || "") + opt("vencidos", "Vencidos", f.prazo || "") + '</select></div>' : "") +
         '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Ordenar por</label><select style="width:100%;box-sizing:border-box" id="fo-ordem">' +
           opt("atualizado", "Atualização", f.ordem || "atualizado") + opt("valor", "Maior valor", f.ordem || "atualizado") +
-          opt("prazo", "Prazo mais próximo", f.ordem || "atualizado") + opt("nome", "Nome", f.ordem || "atualizado") + '</select></div>' +
+          opt("prazo", "Prazo mais próximo", f.ordem || "atualizado") + opt("estado", "Estado da aprovação", f.ordem || "atualizado") + opt("nome", "Nome", f.ordem || "atualizado") + '</select></div>' +
         (temFiltro ? '<button class="btn sm ghost" data-acao="fo-limpar" style="margin-bottom:2px">Limpar filtros</button>' : "") +
       '</div></div>';
 
@@ -611,6 +614,12 @@
                   : (p.estado === "hoje" ? "vence hoje" : "vence em " + p.dias + "d");
           selo = '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700">' + txt + '</span> ';
         }
+        /* pilula do estado: rascunho nao vira ruido visual - so aparece quando
+           o orcamento JA entrou no ciclo (foi enviado alguma vez) */
+        var est = m.estado, info = (typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[est]) ? Aprovacao.ESTADOS[est] : null;
+        var CORES = { cinza: "#64748b", ambar: "#ea580c", verde: "#16a34a", vermelho: "#dc2626" };
+        var pilula = (info && est !== "rascunho")
+          ? '<span class="g-pill" style="background:' + CORES[info.cor] + '22;color:' + CORES[info.cor] + ';font-weight:700">' + Util.esc(info.rotulo) + '</span> ' : "";
         var el = Orcamento.tempoElaboracao(o);
         html += '<div class="card orc-card" data-abrir="' + o.id + '">' +
           // 🗑 dentro do card clicável: o dispatch resolve o botão ANTES do abrir
@@ -619,7 +628,7 @@
           '<div class="meta">' + Util.esc(o.numero) + ' · ' + Util.esc(o.cliente.nome || "Sem cliente") + '</div>' +
           '<div class="meta">' + t.qtdEtapas + ' etapas · ' + t.qtdItens + ' itens · BDI ' + Util.fmtPct(t.bdiPercentual) + '</div>' +
           '<div class="valor">' + Util.fmtMoeda(t.precoVenda) + '</div>' +
-          '<div class="meta mt">' + selo + 'Atualizado ' + Util.fmtData(o.atualizadoEm) +
+          '<div class="meta mt">' + pilula + selo + 'Atualizado ' + Util.fmtData(o.atualizadoEm) +
             /* esforço quando existe (dias em que o orçamento foi mexido),
                calendário como retaguarda para quem é anterior à fase 3 —
                e o title diz QUAL das duas contas está na tela, senão o
@@ -666,6 +675,11 @@
         '<div class="flex">' +
           '<button class="btn sm primary" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>' +
           '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>' +
+          /* FASE 4 — o ciclo de aprovação começa ANTES da proposta: é o preço
+             conferido que vai ao cliente, não o contrário. Por isso a pílula
+             e as ações abrem a barra. Sai vazio quando o motor não autoriza
+             nada para esta pessoa — a tela não inventa botão. */
+          ((typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "") +
           '<button class="btn sm success" data-acao="proposta">' + Icones.get("proposta") + 'Gerar Proposta</button>' +
           '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
           '<button class="btn sm" data-acao="laudo">' + Icones.get("laudo") + 'Anexo p/ Laudo</button>' +

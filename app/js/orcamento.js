@@ -1013,8 +1013,45 @@
       return orc.diasEditados.length;
     },
 
+    /* FASE 4 — ORCAMENTO APROVADO NAO SE EDITA POR BAIXO.
+     * O aprovado e o preco que foi ao cliente e virou contrato. Deixar
+     * editar depois destroi a rastreabilidade: o documento entregue e o que
+     * esta na tela passam a ser coisas diferentes, sem nada registrando a
+     * troca. O caminho para consertar existe e e a REVISAO, que nasce como
+     * documento proprio e deixa o aprovado intacto. */
+    travadoPorAprovacao: function (orc) {
+      var e = String((orc && orc.estadoAprovacao) || "").trim();
+      return e === "aprovado";
+    },
+
+    /* Cria a REVISAO de um orcamento aprovado: copia o conteudo, ganha
+     * numero -R1 (-R2, -R3...), volta para rascunho e aponta para a origem.
+     * O original NAO e tocado - e isso que separa revisao de edicao. */
+    novaRevisao: function (orc, agoraISO) {
+      if (!orc) return null;
+      var copia;
+      try { copia = JSON.parse(JSON.stringify(orc)); } catch (e) { return null; }
+      var base = String(orc.numero || ""), m = base.match(/^(.*)-R(\d+)$/);
+      var raiz = m ? m[1] : base, n = m ? (parseInt(m[2], 10) || 1) + 1 : 1;
+      copia.id = Util.uid("orc");
+      copia.numero = raiz + "-R" + n;
+      copia.revisaoDe = orc.id;
+      copia.revisaoNumero = n;
+      /* o ciclo recomeca: revisao nao herda carimbo de aprovacao nenhum */
+      copia.estadoAprovacao = "rascunho";
+      delete copia.aprovadoPor; delete copia.aprovadoEm; delete copia.aprovadoPeloProprioAutor;
+      delete copia.historicoAprovacao; delete copia.revisaoMotivo; delete copia.revisaoPor; delete copia.revisaoEm;
+      copia.criadoEm = agoraISO || copia.criadoEm;
+      copia.atualizadoEm = agoraISO || copia.atualizadoEm;
+      copia.diasEditados = [];
+      return copia;
+    },
+
     /* Faixa de valor — rótulos fixos para o filtro não mentir quando a
      * carteira muda de tamanho. */
+    /* ordem de leitura do gestor: o que espera decisao primeiro */
+    ORDEM_ESTADO: ["em_aprovacao", "em_revisao", "rascunho", "aprovado", "rejeitado"],
+
     FAIXAS: [
       { id: "ate50", rotulo: "até R$ 50 mil", min: 0, max: 50000 },
       { id: "50a200", rotulo: "R$ 50 mil a 200 mil", min: 50000, max: 200000 },
@@ -1037,7 +1074,12 @@
          grande — a lista é justamente quem tem muitos orçamentos */
       var meta = arr.map(function (o) {
         var t; try { t = self.totais(o); } catch (e) { t = { precoVenda: 0, qtdItens: 0, qtdEtapas: 0, bdiPercentual: 0 }; }
-        return { orc: o, tot: t, prazo: self.prazoDe(o, hoje) };
+        /* FASE 4 — o estado sai da máquina que já existe (aprovacao.js), não
+           de um campo paralelo. Sem ela carregada (Node puro do teste), tudo
+           é "rascunho" — que é exatamente o default dela. */
+        var est = "rascunho";
+        try { if (typeof Aprovacao !== "undefined" && Aprovacao.estadoDe) est = Aprovacao.estadoDe(o); } catch (e2) {}
+        return { orc: o, tot: t, prazo: self.prazoDe(o, hoje), estado: est };
       });
       var clientes = {}, tipos = {};
       meta.forEach(function (m) {
@@ -1059,6 +1101,7 @@
           var fx = self.FAIXAS.filter(function (x) { return x.id === f.faixa; })[0];
           if (fx && !(m.tot.precoVenda >= fx.min && m.tot.precoVenda < fx.max)) return false;
         }
+        if (f.estado && m.estado !== f.estado) return false;
         if (f.prazo === "avencer" && !(m.prazo.controla && m.prazo.estado !== "vencido")) return false;
         if (f.prazo === "vencidos" && !(m.prazo.controla && m.prazo.estado === "vencido")) return false;
         return true;
@@ -1066,6 +1109,9 @@
       var ordem = f.ordem || "atualizado";
       vis.sort(function (a, b) {
         if (ordem === "valor") return b.tot.precoVenda - a.tot.precoVenda;
+        if (ordem === "estado") { var oe = self.ORDEM_ESTADO;
+          var ia = oe.indexOf(a.estado), ib = oe.indexOf(b.estado);
+          if (ia !== ib) return ia - ib; }
         if (ordem === "nome") return String(a.orc.nome || "").localeCompare(String(b.orc.nome || ""), "pt-BR");
         if (ordem === "prazo") {
           /* sem prazo controlado vai para o FIM: quem ligou o controle quer
@@ -1086,7 +1132,13 @@
           medio: vis.length ? soma / vis.length : 0,
           aVencer: meta.filter(function (m) { return m.prazo.controla && m.prazo.estado !== "vencido"; }).length,
           vencidos: meta.filter(function (m) { return m.prazo.controla && m.prazo.estado === "vencido"; }).length,
-          comControle: meta.filter(function (m) { return m.prazo.controla; }).length
+          comControle: meta.filter(function (m) { return m.prazo.controla; }).length,
+          /* carteira por estado: o gestor quer saber quanto esta parado esperando
+             aprovacao, nao so quantos orcamentos existem */
+          porEstado: meta.reduce(function (acc, m) {
+            var e = acc[m.estado] || { qtd: 0, valor: 0 };
+            e.qtd++; e.valor += m.tot.precoVenda; acc[m.estado] = e; return acc;
+          }, {})
         },
         clientes: Object.keys(clientes).sort(function (a, b) { return a.localeCompare(b, "pt-BR"); }),
         tipos: Object.keys(tipos).sort(function (a, b) { return a.localeCompare(b, "pt-BR"); })
