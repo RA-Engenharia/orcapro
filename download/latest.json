@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.227",
+  "versao": "1.1.228",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.227/OrcaPRO-IA-update-v1.1.227.zip",
-  "notas": "Agora da para fechar o orcamento em um valor. Terminou em R$ 130 mil e voce precisa entregar R$ 150 mil, ou o cliente pediu desconto? Digite o valor final e o sistema distribui a diferenca. Voce escolhe de onde ela sai: no BDI (o mais defensavel, porque nenhum custo e alterado), distribuida em todos os itens, ou somente na mao de obra, no material ou em equipamento. Antes de aplicar, a tela simula e mostra o efeito real, com aviso quando o BDI sai da faixa do TCU ou quando uma parcela pequena teria de absorver tudo sozinha. Cada item alterado guarda a justificativa, que ja sai no Excel. E tem desfazer: os precos voltam exatamente ao que eram.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.227/OrcaPRO-IA-Instalador-v1.1.227.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.228/OrcaPRO-IA-update-v1.1.228.zip",
+  "notas": "Agora da para fechar o orcamento em um valor, e o botao ficou onde ele faz sentido: dentro do card de Preco de Venda, logo abaixo do numero. Digite quanto voce quer que o orcamento de e o sistema distribui a diferenca - no BDI (o mais defensavel, porque nenhum custo e alterado), em todos os itens, ou so na mao de obra, no material ou em equipamento. Simula antes de aplicar, avisa quando o BDI sai da faixa do TCU, registra a justificativa em cada item alterado e tem desfazer que volta os precos ao centavo exato.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.228/OrcaPRO-IA-Instalador-v1.1.228.exe"
 }

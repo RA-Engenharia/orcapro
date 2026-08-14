@@ -716,29 +716,35 @@
       html += '<div class="kpis">' +
         kpi("Custo Direto", Util.fmtMoeda(t.custoDireto), "custo") +
         kpi("BDI", Util.fmtPct(t.bdiPercentual) + " (" + Util.fmtMoeda(t.bdiValor) + ")", "") +
-        kpi("Preço de Venda", Util.fmtMoeda(t.precoVenda), "destaque") +
+        /* FECHAR EM UM VALOR — DENTRO do card de Preço de Venda, porque é a
+           pergunta que nasce olhando exatamente para esse número: "preciso que
+           dê outro". Ficou solto entre os KPIs e as abas na primeira versão e
+           não foi encontrado. Ação longe do número que ela muda é ação que
+           ninguém acha. */
+        kpi("Preço de Venda", Util.fmtMoeda(t.precoVenda), "destaque",
+          (typeof Fechamento === "undefined") ? "" :
+          ('<button class="btn sm primary" data-acao="fechar-valor" style="width:100%" ' +
+           'title="Chegar a um valor final definido, distribuindo a diferença no BDI, nos itens ou numa parcela">' +
+           (typeof Icones !== "undefined" ? Icones.get("dinheiro", 14) : "") + " Fechar em um valor…</button>" +
+           (orc.fechamento
+             ? '<button class="btn sm ghost" data-acao="fechar-desfazer" style="width:100%;margin-top:5px" ' +
+               'title="Volta os preços ao que eram antes do fechamento">Desfazer fechamento</button>'
+             : ""))) +
         kpi("Itens / Etapas", t.qtdItens + " / " + t.qtdEtapas, "") +
       '</div>';
 
-      /* FECHAR EM UM VALOR (v1.1.227) — fica colado no Preço de Venda porque é
-         a pergunta que nasce olhando para ele: "preciso que dê outro número".
-         Quando há fechamento ativo, o selo mostra de onde o orçamento veio e
-         oferece o desfazer — mexer no preço de todos os itens sem volta
-         visível é o tipo de recurso que ninguém usa duas vezes. */
-      if (typeof Fechamento !== "undefined") {
-        var _fx = orc.fechamento;
-        html += '<div class="flex" style="gap:8px;align-items:center;margin:-6px 0 12px;flex-wrap:wrap">' +
-          '<button class="btn sm primary" data-acao="fechar-valor" title="Chegar a um valor final definido, distribuindo a diferença">' +
-            (typeof Icones !== "undefined" ? Icones.get("dinheiro", 15) : "") + ' Fechar em um valor…</button>';
-        if (_fx) {
-          var _dl = Util.num(_fx.delta);
-          html += '<span style="font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(46,111,158,.12);border:1px solid rgba(46,111,158,.35)">' +
-            'Fechado em <b>' + Util.fmtMoeda(_fx.alvo) + '</b> · ' +
-            (_dl >= 0 ? "acréscimo" : "desconto") + " de <b>" + Util.fmtMoeda(Math.abs(_dl)) + "</b>" +
-            ' <span class="muted">(' + Util.esc(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo) + ')</span></span>' +
-            '<button class="btn sm ghost" data-acao="fechar-desfazer" title="Volta os preços ao que eram antes do fechamento">Desfazer fechamento</button>';
-        }
-        html += "</div>";
+      /* Selo do fechamento ativo: de onde este preço veio. Fica FORA do card
+         porque é informação de rastreio, não ação — e porque o texto é longo
+         demais para caber num KPI sem espremer o número. */
+      if (typeof Fechamento !== "undefined" && orc.fechamento) {
+        var _fx = orc.fechamento, _dl = Util.num(_fx.delta);
+        html += '<div style="margin:-4px 0 12px;font-size:12px;padding:7px 12px;border-radius:8px;' +
+          'background:rgba(46,111,158,.10);border:1px solid rgba(46,111,158,.30)">' +
+          "Este orçamento foi <b>fechado em " + Util.fmtMoeda(_fx.alvo) + "</b> — " +
+          (_dl >= 0 ? "acréscimo" : "desconto") + " de <b>" + Util.fmtMoeda(Math.abs(_dl)) + "</b> sobre os " +
+          Util.fmtMoeda(_fx.valorAnterior) + " originais, " +
+          Util.esc(String(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo).toLowerCase()) + "." +
+          "</div>";
       }
 
       // Pendência de preço: faixa de erro ANTES das abas (não finaliza zerado)
@@ -2181,8 +2187,14 @@
     }
   };
 
-  function kpi(rotulo, valor, cls) {
-    return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rotulo + '</div><div class="num">' + valor + '</div></div>';
+  /* `extra` sai DENTRO do card, embaixo do número (v1.1.227.1). Nasceu porque
+     o botão de fechar em um valor, solto entre os KPIs e a barra de abas,
+     simplesmente não era encontrado — o Rogério não achou. Ali é ponto morto:
+     abaixo de quatro cards grandes e acima das abas, que puxam o olho. A ação
+     tem de morar no card do número que ela muda. */
+  function kpi(rotulo, valor, cls, extra) {
+    return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rotulo + '</div><div class="num">' + valor + '</div>' +
+      (extra ? '<div style="margin-top:7px">' + extra + "</div>" : "") + "</div>";
   }
 
   /* ============================================================
