@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.222",
+  "versao": "1.1.223",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.222/OrcaPRO-IA-update-v1.1.222.zip",
-  "notas": "Agora da para anexar a planta ou o memorial dentro do Escopo Inteligente. O sistema le as etiquetas de ambiente com area - aquele SALA 12,50 m2 que o arquiteto escreve no comodo e repete no quadro de areas - e traz cada ambiente para o escopo com a metragem, somando o total. Vale para planta em DXF e para PDF com texto. Ele le o que esta ESCRITO, nao mede o desenho: area calculada de traco aberto sai errada sem ninguem perceber, e a etiqueta e o que o projetista assinou. Etiqueta repetida em duas vistas conta uma vez, escala e cota nao viram ambiente. Sobre DWG, com todas as letras: nao da para ler no navegador, porque e um formato fechado da Autodesk. Se voce escolher um DWG o sistema explica isso na hora e mostra o caminho - no AutoCAD, Salvar como DXF, que sai do mesmo desenho com as mesmas etiquetas.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.222/OrcaPRO-IA-Instalador-v1.1.222.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.223/OrcaPRO-IA-update-v1.1.223.zip",
+  "notas": "Agora cada coeficiente da sua composicao propria pode explicar de onde veio. Ao lado do coeficiente aparece um botao por que?, e ali voce calcula: pecas por metro quadrado (largura x altura da peca, com perda), consumo por unidade, produtividade da equipe ou volume por espessura. A calculadora nao devolve so o numero - ela escreve a conta: 1 dividido por (0,390 m x 0,190 m) igual a 13,50 pecas por m2; com 5% de perda, 14,1777. E essa frase que defende o seu preco quando alguem perguntar, e ela aparece embaixo do coeficiente no detalhamento da composicao. Quem prefere escrever a justificativa com as proprias palavras tambem pode. O botao fica verde quando a linha ja esta justificada, entao bate o olho e voce ve o que ainda falta explicar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.223/OrcaPRO-IA-Instalador-v1.1.223.exe"
 }

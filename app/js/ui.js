@@ -1073,7 +1073,16 @@
                "M2" numa linha e "m²" na de baixo, na mesma tabela. O DADO
                continua como o órgão publicou — só a exibição é uniformizada. */
             '<td>' + Util.esc(Util.unidadeExibir(i.unidade)) + '</td>' +
-            '<td class="num"><input class="cell" data-cp-coef="' + idx + '" value="' + Util.fmtNum(i.coeficiente, 4) + '" style="width:86px"></td>' +
+            /* MEMÓRIA DO COEFICIENTE (v1.1.223): o número mais difícil de
+               defender numa própria ganha o "por quê" ao lado. A calculadora
+               abre no clique; o campo aceita texto livre para quem prefere
+               escrever. Verde quando já tem justificativa — é o sinal de que
+               aquela linha se defende sozinha. */
+            '<td class="num"><input class="cell" data-cp-coef="' + idx + '" value="' + Util.fmtNum(i.coeficiente, 4) + '" style="width:86px">' +
+              '<button class="btn sm ' + (i.memoria ? "success" : "ghost") + '" data-acao="cp-memoria" data-i="' + idx + '" ' +
+              'style="font-size:10px;padding:1px 5px;margin-top:2px" title="' +
+              (i.memoria ? Util.esc(String(i.memoria).replace(/\n/g, " · ")) : "Justificar este coeficiente (calculadora ou texto)") + '">' +
+              (i.memoria ? "✓ justificado" : "por quê?") + '</button></td>' +
             // sem preço coletado na região → o usuário informa a cotação AQUI
             // (fica salva p/ a empresa, igual ao modal de detalhamento)
             '<td class="num">' + (semPreco
@@ -1171,7 +1180,12 @@
           '<td>' + celCod + '</td>' +
           '<td>' + Util.esc(it.descricao) + '</td>' +
           '<td>' + Util.esc(Util.unidadeExibir(it.unidade)) + '</td>' +
-          '<td class="num">' + UI._celCoeficiente(it) + '</td>' +
+          /* JUSTIFICATIVA DO COEFICIENTE (v1.1.223): quem abre o detalhamento
+             está perguntando "de onde vem esse número". Quando a composição
+             própria responde, a resposta fica ali, não escondida. */
+          '<td class="num">' + UI._celCoeficiente(it) +
+            (it.memoria ? '<div class="watermark-hint" style="max-width:220px;white-space:normal;text-align:left" title="' +
+              Util.esc(it.memoria) + '">' + Util.esc(String(it.memoria).replace(/\n/g, " · ").slice(0, 90)) + '</div>' : "") + '</td>' +
           '<td class="num">' + celUnit + '</td>' +
           '<td class="num">' + celTotal + '</td>' +
           '<td><span class="pill ' + (it.categoria === "MAT" ? "sinapi" : "proprio") + '">' + (catLabel[it.categoria] || it.categoria) + '</span></td></tr>';

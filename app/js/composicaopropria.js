@@ -366,6 +366,78 @@
       };
     },
 
+    /* ==================================================================
+     * MEMÓRIA DO COEFICIENTE (v1.1.223)
+     *
+     * O coeficiente é o número mais difícil de defender numa composição
+     * própria: "12,5 blocos por m²" está certo, mas quem pergunta "por quê?"
+     * não tem resposta na tela — e é a primeira pergunta de qualquer
+     * auditoria. A composição oficial traz o coeficiente medido; a própria
+     * traz o coeficiente de alguém.
+     *
+     * As calculadoras abaixo fazem a conta E REDIGEM a justificativa. Cada
+     * insumo passa a poder guardar a sua em `insumo.memoria`.
+     *
+     * ⚠ MOSTRA A CONTA, não o resultado. "1 ÷ (0,19 × 0,39) = 13,50 pç/m²;
+     * com 5% de perda = 14,18" defende sozinho. "14,18" não defende nada.
+     * ================================================================== */
+    FORMAS_COEF: {
+      porPeca: { rotulo: "Peças por m² (bloco, piso, telha)", campos: [
+        { id: "largura", rotulo: "Largura da peça (m)" },
+        { id: "altura", rotulo: "Altura da peça (m)" },
+        { id: "perda", rotulo: "Perda (%)", padrao: 0 }
+      ] },
+      consumo: { rotulo: "Consumo por unidade", campos: [
+        { id: "consumo", rotulo: "Consumo por unidade de serviço" },
+        { id: "perda", rotulo: "Perda (%)", padrao: 0 }
+      ] },
+      produtividade: { rotulo: "Produtividade (mão de obra)", campos: [
+        { id: "unidadesHora", rotulo: "Unidades por hora da equipe" },
+        { id: "equipe", rotulo: "Pessoas na equipe", padrao: 1 }
+      ] },
+      espessura: { rotulo: "Volume por espessura", campos: [
+        { id: "espessura", rotulo: "Espessura (m)" },
+        { id: "perda", rotulo: "Perda (%)", padrao: 0 }
+      ] }
+    },
+
+    calcularCoeficiente: function (forma, d) {
+      var F = this.FORMAS_COEF[forma];
+      if (!F) return { ok: false, erro: "Forma de cálculo desconhecida." };
+      d = d || {};
+      var n = function (k, pad) { var v = Number(String(d[k] == null ? "" : d[k]).replace(",", ".")); return (v > 0) ? v : (pad != null ? pad : 0); };
+      var fm = function (v, c) { return valor(v, "nenhum").toFixed(c == null ? 4 : c).replace(".", ","); };
+      var perda = n("perda", 0), coef = 0, texto = "";
+      if (forma === "porPeca") {
+        var L = n("largura"), A = n("altura");
+        if (!(L > 0 && A > 0)) return { ok: false, erro: "Informe largura e altura da peça." };
+        var base = 1 / (L * A);
+        coef = base * (1 + perda / 100);
+        texto = "1 ÷ (" + fm(L, 3) + " m × " + fm(A, 3) + " m) = " + fm(base, 2) + " peças/m²" +
+          (perda > 0 ? "\ncom " + fm(perda, 1) + "% de perda = " + fm(coef, 4) : "");
+      } else if (forma === "consumo") {
+        var c0 = n("consumo");
+        if (!(c0 > 0)) return { ok: false, erro: "Informe o consumo." };
+        coef = c0 * (1 + perda / 100);
+        texto = "Consumo " + fm(c0, 4) + " por unidade" + (perda > 0 ? "\ncom " + fm(perda, 1) + "% de perda = " + fm(coef, 4) : "");
+      } else if (forma === "produtividade") {
+        var uh = n("unidadesHora"), eq = n("equipe", 1);
+        if (!(uh > 0)) return { ok: false, erro: "Informe quantas unidades a equipe faz por hora." };
+        coef = eq / uh;
+        texto = eq === 1
+          ? "1 h ÷ " + fm(uh, 2) + " un/h = " + fm(coef, 4) + " h por unidade"
+          : fm(eq, 0) + " pessoa(s) ÷ " + fm(uh, 2) + " un/h = " + fm(coef, 4) + " h por unidade";
+      } else {
+        var e0 = n("espessura");
+        if (!(e0 > 0)) return { ok: false, erro: "Informe a espessura." };
+        coef = e0 * (1 + perda / 100);
+        texto = "Espessura " + fm(e0, 3) + " m × 1 m² = " + fm(e0, 4) + " m³/m²" +
+          (perda > 0 ? "\ncom " + fm(perda, 1) + "% de perda = " + fm(coef, 4) : "");
+      }
+      if (!(coef > 0)) return { ok: false, erro: "A conta deu zero — confira os valores." };
+      return { ok: true, coeficiente: Math.round(coef * 10000) / 10000, texto: texto };
+    },
+
     /* ⚠ REFORÇO DE IA — SÓ TEXTO E ESCOLHA, NUNCA NÚMERO (v1.1.221)
      *
      * A IA faz duas coisas aqui, ambas seguras:
@@ -442,6 +514,7 @@
           descricao: i.descricao,
           unidade: i.unidade,
           coeficiente: Number(i.coeficiente) || 0,
+          memoria: i.memoria || "",   // justificativa viaja com o insumo
           custoUnitario: (atual && Number(atual.custoUnitario) > 0) ? Number(atual.custoUnitario) : (Number(i.custoUnitario) || 0),
           categoria: i.categoria || i.tipoInsumo || "",
           tipo: i.tipo || "insumo",

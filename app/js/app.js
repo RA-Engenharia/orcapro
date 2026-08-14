@@ -1051,6 +1051,7 @@
         case "mc-editar-insumo": this.editarInsumoProprio(t.dataset.cod); break;
         case "mc-duplicar": this.duplicarComposicao(t.dataset.cod); break;
         case "mc-excluir": this.excluirProprio(t.dataset.cod); break;
+        case "cp-memoria": this.cpMemoria(t.dataset.i); break;
         case "cp-novo-insumo": this._cpNovoInsumoInline(); break;
         case "cp-salvar-insumo": this._cpSalvarInsumoInline(); break;
         case "cp-voltar-busca": this._cpBuscar(this._cp && this._cp.busca); break;
@@ -4776,6 +4777,65 @@
      * na etapa de origem ao gravar. `opts.aoFechar`: quem chamou volta para
      * onde estava (o Escopo, por exemplo).
      * ================================================================== */
+    /* Justificar o coeficiente: calculadora OU texto livre (v1.1.223).
+     * ⚠ A calculadora escreve a conta; quem prefere escrever, escreve. O que
+     * não pode é o coeficiente ficar sem explicação — é a primeira pergunta
+     * de qualquer auditoria e a que a composição própria não sabia responder. */
+    cpMemoria: function (i) {
+      var self = this, idx = +i;
+      var ins = (this._cp && this._cp.comp && this._cp.comp.insumos || [])[idx];
+      if (!ins) return;
+      var formas = Object.keys(ComposicaoPropria.FORMAS_COEF);
+      var campos = formas.map(function (k) {
+        var F = ComposicaoPropria.FORMAS_COEF[k];
+        return '<div class="cpm-forma" data-f="' + k + '" style="display:none">' +
+          F.campos.map(function (c) {
+            return '<div class="field" style="margin:4px 0"><label style="font-size:11px">' + Util.esc(c.rotulo) + '</label>' +
+              '<input id="cpm-' + k + '-' + c.id + '" value="' + (c.padrao != null ? c.padrao : "") + '"></div>';
+          }).join("") + '</div>';
+      }).join("");
+      UI.modal("Por que este coeficiente? — " + Util.esc(String(ins.descricao || ins.codigo).slice(0, 50)),
+        '<p class="muted" style="font-size:12.5px">Coeficiente atual: <b>' + Util.fmtNum(ins.coeficiente, 4) + '</b> ' +
+        Util.esc(Util.unidadeExibir(ins.unidade)) + ' por unidade do serviço.</p>' +
+        '<div class="field"><label>Calcular por</label><select id="cpm-forma">' +
+          '<option value="">— escrever à mão —</option>' +
+          formas.map(function (k) { return '<option value="' + k + '">' + Util.esc(ComposicaoPropria.FORMAS_COEF[k].rotulo) + '</option>'; }).join("") +
+        '</select></div>' + campos +
+        '<div class="field"><label>Justificativa (sai no detalhamento e no laudo)</label>' +
+          '<textarea id="cpm-txt" rows="3">' + Util.esc(ins.memoria || "") + '</textarea></div>' +
+        '<div id="cpm-res" class="muted" style="font-size:12px"></div>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Calcular", classe: "primary", onClick: function () {
+            var f = (UI.el("cpm-forma") || {}).value;
+            if (!f) { UI.toast("Escolha uma forma de cálculo ou escreva à mão.", "erro"); return; }
+            var d = {};
+            ComposicaoPropria.FORMAS_COEF[f].campos.forEach(function (c) { d[c.id] = (UI.el("cpm-" + f + "-" + c.id) || {}).value; });
+            var r = ComposicaoPropria.calcularCoeficiente(f, d);
+            if (!r.ok) { UI.el("cpm-res").innerHTML = '<span style="color:#dc2626">' + Util.esc(r.erro) + '</span>'; return; }
+            UI.el("cpm-txt").value = r.texto;
+            UI.el("cpm-res").innerHTML = '<b style="color:#16a34a">Coeficiente: ' + Util.fmtNum(r.coeficiente, 4) + '</b>' +
+              ' — confira e grave; o coeficiente da linha será atualizado.';
+            UI.el("cpm-res").setAttribute("data-coef", String(r.coeficiente));
+          } },
+          { texto: "Gravar justificativa", classe: "success", onClick: function () {
+            var txt = String((UI.el("cpm-txt") || {}).value || "").trim();
+            var novoCoef = (UI.el("cpm-res") || {}).getAttribute ? (UI.el("cpm-res").getAttribute("data-coef") || "") : "";
+            ins.memoria = txt;
+            if (novoCoef) ins.coeficiente = Number(novoCoef);
+            UI.fecharModal();
+            self._cpRender();
+            UI.toast(txt ? "Justificativa gravada." : "Justificativa apagada.", "ok");
+          } }
+        ]);
+      var sel = UI.el("cpm-forma");
+      if (sel) sel.addEventListener("change", function () {
+        Array.prototype.forEach.call(document.querySelectorAll(".cpm-forma"), function (d) {
+          d.style.display = d.getAttribute("data-f") === sel.value ? "" : "none";
+        });
+      });
+    },
+
     /* Botão da linha PENDENTE do Escopo: manda a descrição original ao agente
      * e, ao voltar, o escopo continua de onde estava. */
     escopoElaborar: function (i) {
