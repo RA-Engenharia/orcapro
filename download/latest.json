@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.219",
+  "versao": "1.1.220",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.219/OrcaPRO-IA-update-v1.1.219.zip",
-  "notas": "O Escopo Inteligente ficou mais completo. Voce escreve alvenaria e ele lembra do que vem junto: marcacao, verga e contraverga, encunhamento. Ha um nivel de detalhe para escolher - enxuto traz so o que voce escreveu, padrao acrescenta os principais complementos e completo traz tudo. Cada sugestao explica por que entrou, ja vem marcada e tem Desmarcar todos, entao tirar o que nao serve e um clique. Os complementos entram no texto do escopo, nao direto no orcamento: voce revisa como sempre antes de lancar. E agora da para anexar a planilha de quantitativos do arquiteto (Excel ou CSV) dentro do escopo: o sistema le descricao, quantidade e unidade e transforma em linhas de escopo, avisando quantos servicos vieram e quantas linhas de total foram ignoradas.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.219/OrcaPRO-IA-Instalador-v1.1.219.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.220/OrcaPRO-IA-update-v1.1.220.zip",
+  "notas": "Chegou o agente Elaborar Composicao. Descreva o servico e ele monta a composicao propria para voce - com os insumos e os coeficientes da composicao oficial mais parecida da base analitica. Ele nao inventa nada: coeficiente e resultado de medicao de produtividade, e se nao encontrar uma composicao oficial parecida o bastante ele diz isso e mostra as mais proximas, em vez de montar do nada. O que ele entrega e uma proposta: abre no criador para voce conferir coeficiente por coeficiente antes de gravar, e avisa quando a semelhanca com a referencia foi so media ou baixa. O agente aparece onde a falta de composicao trava o trabalho: na linha Pendente do Escopo Inteligente, quando nenhuma base tem o servico, e na busca de itens do orcamento sem resultado. As composicoes criadas agora ganham codigo legivel - PROP-ALV-001 para alvenaria, PROP-PIS-001 para piso - em vez de numero sequencial, e os codigos antigos continuam valendo exatamente como estao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.220/OrcaPRO-IA-Instalador-v1.1.220.exe"
 }

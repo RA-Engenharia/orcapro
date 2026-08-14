@@ -159,6 +159,39 @@
       return "PROP-" + prox;
     },
 
+    /* Sigla de 3 letras por grupo — é o que torna o código legível e
+     * procurável ("PROP-ALV-001" diz o que é; "PROP-0007" não diz nada). */
+    SIGLAS: {
+      "ALVENARIA E VEDAÇÃO": "ALV", "ASSENTAMENTO DE TUBOS E PEÇAS": "TUB",
+      "CONCRETO E ARMADURA": "CON", "COBERTURA E TELHADO": "COB",
+      "DEMOLIÇÃO E RETIRADA": "DEM", "ESQUADRIAS E VIDROS": "ESQ",
+      "FUNDAÇÕES": "FUN", "IMPERMEABILIZAÇÃO": "IMP",
+      "INSTALAÇÕES ELÉTRICAS": "ELE", "INSTALAÇÕES HIDROSSANITÁRIAS": "HID",
+      "MOVIMENTO DE TERRA": "TER", "PAVIMENTAÇÃO": "PAV",
+      "PINTURA E ACABAMENTO": "PIN", "REVESTIMENTO": "REV",
+      "SERVIÇOS PRELIMINARES": "PRE", "SERVIÇOS COMPLEMENTARES": "COM",
+      "TRANSPORTE E CARGA": "TRA", "OUTROS": "GER"
+    },
+
+    /* CÓDIGO LEGÍVEL POR GRUPO: PROP-ALV-001.
+     *
+     * ⚠ CONVIVE COM O LEGADO. Os PROP-0001 já gravados continuam válidos e
+     * continuam sendo encontrados — a sequência nova é POR SIGLA e não
+     * disputa numeração com eles. Renumerar o que o cliente já lançou em
+     * orçamento seria trocar o código de um item que já está numa planilha
+     * entregue: o oposto de rastreabilidade. */
+    gerarCodigoLegivel: function (grupo, codigosExistentes) {
+      var sig = this.SIGLAS[String(grupo || "").toUpperCase()] || "GER";
+      var max = 0, re = new RegExp("^PROP-" + sig + "-(\\d{1,4})$", "i");
+      (codigosExistentes || []).forEach(function (c) {
+        var m = String(c || "").match(re);
+        if (m) { var n = parseInt(m[1], 10); if (n > max) max = n; }
+      });
+      var prox = String(max + 1);
+      while (prox.length < 3) prox = "0" + prox;
+      return "PROP-" + sig + "-" + prox;
+    },
+
     unidadeValida: function (u) {
       var aceitas = chavesAceitas(), k = chaveUnidade(u);
       if (k && aceitas[k] === 1) return true;
@@ -253,6 +286,78 @@
     /* Composições ANÁLOGAS na base analítica real (para o agente): score de
      * sobreposição de tokens + bônus por termos na mesma ordem. Nunca inventa:
      * só devolve o que existe, com o score explicando o porquê. */
+    /* ==================================================================
+     * ELABORAR COMPOSIÇÃO — o agente, num ponto de entrada só (v1.1.220)
+     *
+     * "Agentes treinados pela engenharia do OrçaPRO" é isto, e vale dizer o
+     * que significa aqui: o agente NÃO INVENTA. Ele procura, na base
+     * analítica REAL, a composição oficial mais parecida com a descrição, e
+     * copia dela os insumos e os COEFICIENTES — que são o resultado de
+     * medição de produtividade, não de opinião.
+     *
+     * ⚠ SEM ANÁLOGA BOA, ELE DIZ QUE NÃO ACHOU. Montar do nada produziria um
+     * preço que ninguém defende em auditoria — que é o oposto do que uma
+     * composição própria existe para fazer.
+     *
+     * ctx: { analitico:[], resolve(cod,fonte), codigosExistentes:[],
+     *        unidade, grupo, minimo }
+     * Devolve { ok, comp, referencia, confianca, alternativas } ou
+     * { ok:false, erro, alternativas }.
+     * ================================================================== */
+    LIMIAR: { alta: 0.60, media: 0.35, minimo: 0.20 },
+
+    elaborar: function (descricao, ctx) {
+      ctx = ctx || {};
+      var desc = String(descricao || "").trim();
+      if (desc.length < 4) return { ok: false, erro: "Descreva o serviço com pelo menos 4 letras." };
+      var analitico = ctx.analitico || [];
+      if (!analitico.length) {
+        return { ok: false, erro: "A base analítica não está carregada — é dela que saem os insumos e os coeficientes reais." };
+      }
+      var cands = this.analogas(desc, analitico, 5);
+      var minimo = ctx.minimo != null ? ctx.minimo : this.LIMIAR.minimo;
+      if (!cands.length || cands[0].score < minimo) {
+        return {
+          ok: false,
+          erro: "Não achei composição oficial parecida o bastante com \"" + desc + "\". " +
+                "Monte manualmente ou descreva com os termos do serviço (material, espessura, aplicação).",
+          alternativas: cands.slice(0, 3)
+        };
+      }
+      var ref = cands[0];
+      var prop = this.daReferencia(ref._comp, { resolve: ctx.resolve });
+      var grupo = ctx.grupo || prop.grupo || "";
+      if (GRUPOS.indexOf(String(grupo).toUpperCase()) < 0) grupo = "OUTROS";
+      var unidade = ctx.unidade || prop.unidade || ref.unidade || "";
+      var conf = ref.score >= this.LIMIAR.alta ? "alta" : (ref.score >= this.LIMIAR.media ? "media" : "baixa");
+      var comp = {
+        codigo: this.gerarCodigoLegivel(grupo, ctx.codigosExistentes || []),
+        codigoSec: "",
+        /* a descrição é a do USUÁRIO, não a da referência: ele pediu o
+           serviço dele, e a referência é meio, não fim */
+        descricao: desc,
+        grupo: grupo,
+        unidade: String(unidade).toLowerCase(),
+        modeloRef: "SINAPI",
+        metodo: "truncar2",
+        maoDeObra: !!prop.maoDeObra,
+        observacao: prop.observacao || "",
+        insumos: prop.insumos || []
+      };
+      var custo = this.custo(comp.insumos, comp.metodo);
+      return {
+        ok: true, comp: comp, custo: custo,
+        referencia: { codigo: ref.codigo, descricao: ref.descricao, unidade: ref.unidade, score: ref.score },
+        confianca: conf,
+        /* o usuário pode preferir outra referência — mostrar as demais é o que
+           impede o agente de parecer um oráculo de uma resposta só */
+        alternativas: cands.slice(1, 4),
+        aviso: conf === "alta" ? "" :
+          "Semelhança " + (conf === "media" ? "média" : "baixa") + " com a referência " + ref.codigo +
+          " — confira coeficiente por coeficiente antes de gravar."
+      };
+    },
+
     analogas: function (descricao, dadosAnalitico, n) {
       var alvo = tokens(descricao);
       if (!alvo.length || !dadosAnalitico || !dadosAnalitico.length) return [];

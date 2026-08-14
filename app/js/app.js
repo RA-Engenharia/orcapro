@@ -1108,6 +1108,7 @@
         case "importar-planilha": this.importarPlanilha(); break;
         case "recuperar-planilha": this.recuperarPlanilha(); break;
         case "orc-aprov": this.orcAprovar(t.dataset.aprov); break;
+        case "esc-elaborar": this.escopoElaborar(t.dataset.i); break;
         case "escopo-sugerir": this.escopoSugerir(); break;
         case "escopo-aux-nenhum": this.escopoAuxNenhum(); break;
         case "escopo-aux-add": this.escopoAuxAdd(); break;
@@ -3502,6 +3503,17 @@
             var ehIns0 = f.tipo === "insumo";
             box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>" +
               '<button type="button" class="btn primary" id="bs-criar-cp" style="width:100%;margin-top:8px">' + (ehIns0 ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio com esta descrição" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria com esta descrição") + '</button>';
+            var _ehIns0 = (typeof ehIns0 !== "undefined") ? ehIns0 : false;
+            if (!_ehIns0) {
+              /* o agente e a resposta melhor quando a base nao tem o servico:
+                 monta a estrutura a partir da oficial mais parecida */
+              var _bx = box.querySelector("#bs-criar-cp");
+              if (_bx) { var _b = document.createElement("button"); _b.type = "button";
+                _b.className = "btn success"; _b.style.cssText = "width:100%;margin-top:6px";
+                _b.title = "Monta a composicao a partir da composicao oficial mais parecida — insumos e coeficientes reais, nunca inventados";
+                _b.innerHTML = (typeof Icones !== "undefined" ? Icones.get("escopo", 15) : "") + " Elaborar com o agente";
+                _b.onclick = function () { self.elaborarComposicao(q, { etapa: self._addItemEtapaId || null, sub: self._addItemSubId || "" }); };
+                _bx.parentNode.insertBefore(_b, _bx.nextSibling); } }
             var bCp0 = UI.el("bs-criar-cp");
             if (bCp0) bCp0.onclick = function () { if (ehIns0) self.criarInsumoDaBusca(q); else self.criarComposicaoDaBusca(q); };
             return;
@@ -3532,6 +3544,17 @@
             });
             var mais = UI.el("bs-mais");
             if (mais) mais.onclick = function () { pintarResultados(ate + PAG); };
+            var _ehIns = (typeof ehInsR !== "undefined") ? ehInsR : false;
+            if (!_ehIns) {
+              /* o agente e a resposta melhor quando a base nao tem o servico:
+                 monta a estrutura a partir da oficial mais parecida */
+              var _bx = box.querySelector("#bs-criar-cp");
+              if (_bx) { var _b = document.createElement("button"); _b.type = "button";
+                _b.className = "btn success"; _b.style.cssText = "width:100%;margin-top:6px";
+                _b.title = "Monta a composicao a partir da composicao oficial mais parecida — insumos e coeficientes reais, nunca inventados";
+                _b.innerHTML = (typeof Icones !== "undefined" ? Icones.get("escopo", 15) : "") + " Elaborar com o agente";
+                _b.onclick = function () { self.elaborarComposicao(q, { etapa: self._addItemEtapaId || null, sub: self._addItemSubId || "" }); };
+                _bx.parentNode.insertBefore(_b, _bx.nextSibling); } }
             var bCp = UI.el("bs-criar-cp");
             if (bCp) bCp.onclick = function () { if (ehInsR) self.criarInsumoDaBusca(q); else self.criarComposicaoDaBusca(q); };
           }
@@ -4740,6 +4763,85 @@
       UI.toast("Atualizado: " + (atualizadas.length ? atualizadas.length + " composição(ões)" : "") + (atualizadas.length && totItens ? " e " : "") +
         (totItens ? totItens + " item(ns) de orçamento" : "") + ".", "ok");
     },
+    /* ==================================================================
+     * ELABORAR COMPOSIÇÃO — o agente, chamável de qualquer lugar (v1.1.220)
+     *
+     * Recebe uma descrição e devolve a composição montada em cima de uma
+     * composição OFICIAL análoga: insumos e coeficientes reais, código
+     * legível, custo calculado. Abre no criador para o usuário conferir —
+     * nunca grava sozinho.
+     *
+     * `opts.etapa`/`opts.sub`: quando vem do editor, a composição já entra
+     * na etapa de origem ao gravar. `opts.aoFechar`: quem chamou volta para
+     * onde estava (o Escopo, por exemplo).
+     * ================================================================== */
+    /* Botão da linha PENDENTE do Escopo: manda a descrição original ao agente
+     * e, ao voltar, o escopo continua de onde estava. */
+    escopoElaborar: function (i) {
+      var l = (this._escopo || [])[+i];
+      if (!l) return;
+      var self = this;
+      this.elaborarComposicao(l.textoOriginal, {
+        unidade: l.unidade || "",
+        aoFechar: function () { self.analisarEscopo(); }
+      });
+    },
+
+    elaborarComposicao: function (descricao, opts) {
+      var self = this, o = opts || {};
+      var desc = String(descricao || "").trim();
+      if (!desc) { UI.toast("Descreva o serviço para o agente elaborar.", "erro"); return; }
+      var rodar = function () {
+        var r = ComposicaoPropria.elaborar(desc, {
+          analitico: Analitico.todos(),
+          resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); },
+          codigosExistentes: self._cpCodigosExistentes(),
+          unidade: o.unidade || "", grupo: o.grupo || ""
+        });
+        if (!r.ok) {
+          /* ⚠ RECUSA COM SAÍDA. O agente não montar é resultado legítimo —
+             mas deixar o usuário sem próximo passo, não. */
+          UI.modal((typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Não consegui elaborar esta composição",
+            '<p style="font-size:13px">' + Util.esc(r.erro) + '</p>' +
+            ((r.alternativas || []).length
+              ? '<p class="muted" style="font-size:12.5px">O mais próximo que achei foi: ' +
+                r.alternativas.map(function (a) { return "<b>" + Util.esc(a.codigo) + "</b> " + Util.esc(String(a.descricao).slice(0, 60)); }).join(" · ") + '</p>'
+              : "") +
+            '<p class="muted" style="font-size:12px">O agente monta a partir de composição oficial parecida — ele não inventa insumo nem coeficiente. Sem base próxima, o caminho é montar à mão.</p>',
+            [
+              { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); if (o.aoFechar) o.aoFechar(); } },
+              { texto: "Montar à mão", classe: "primary", onClick: function () {
+                UI.fecharModal(); self.criarComposicao(true);
+                self._cp.comp.descricao = desc;
+                if (o.etapa) { self._cp.addNaEtapa = o.etapa; self._cp.addNaSub = o.sub || ""; }
+                self._cpRender();
+              } }
+            ]);
+          return;
+        }
+        /* abre no criador, no passo 2, com a estrutura montada — é lá que o
+           usuário confere coeficiente por coeficiente antes de gravar */
+        self.criarComposicao(true);
+        var c = self._cp.comp;
+        c.codigo = r.comp.codigo; c.descricao = r.comp.descricao; c.unidade = r.comp.unidade;
+        c.grupo = r.comp.grupo; c.maoDeObra = r.comp.maoDeObra; c.metodo = r.comp.metodo;
+        c.observacao = r.comp.observacao; c.insumos = r.comp.insumos;
+        self._cp.referencia = { codigo: r.referencia.codigo, descricao: r.referencia.descricao };
+        self._cp.passo = 2;
+        if (o.etapa) { self._cp.addNaEtapa = o.etapa; self._cp.addNaSub = o.sub || ""; }
+        self._cpRender();
+        UI.toast("Composição " + c.codigo + " elaborada a partir da " + r.referencia.codigo +
+          " (" + Util.fmtMoeda(r.custo.total) + "/" + c.unidade + ") — " +
+          (r.aviso || "confira os coeficientes e grave."), r.confianca === "alta" ? "ok" : "erro");
+      };
+      if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
+      var urls = this._analiticoUrls();
+      UI.loading("Carregando a base analítica para o agente…");
+      Analitico.carregarArquivo(urls.local || urls.live, urls.live)
+        .then(function () { UI.loadingFim(); rodar(); })
+        .catch(function () { UI.loadingFim(); UI.toast("Não consegui carregar o detalhamento — o agente precisa dele para não inventar coeficiente.", "erro"); });
+    },
+
     /* v1.1.124 — busca do editor sem resultado bom → cria a composição JÁ com a
      * descrição digitada e, ao gravar, o item entra na etapa de origem. */
     criarComposicaoDaBusca: function (q) {

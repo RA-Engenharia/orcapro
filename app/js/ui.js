@@ -2118,7 +2118,13 @@
           var n = Escopo.nivel(c.confianca);
           confHtml = '<span class="pill" style="background:var(--' + n.cor + ');color:#fff">' + n.rotulo + ' ' + c.confianca + '%</span>' + marca;
         } else {
-          confHtml = '<span class="pill proprio">Pendente</span>' + marca;
+          /* ⚠ PENDENTE É ONDE O AGENTE MAIS VALE. O escopo já sabe exatamente
+             o que não casou com base nenhuma — e é justamente aí que o
+             orçamentista abandonava o sistema e ia para o Excel. */
+          confHtml = '<span class="pill proprio">Pendente</span>' + marca +
+            '<br><button class="btn sm success" data-acao="esc-elaborar" data-i="' + idx + '" ' +
+            'style="margin-top:4px;font-size:11px" title="O agente monta uma composição própria a partir da composição oficial mais parecida — insumos e coeficientes reais, nunca inventados">' +
+            (typeof Icones !== 'undefined' ? Icones.get('escopo', 14) : '') + ' Elaborar composição</button>';
         }
 
         html += '<tr><td>' + Util.esc(l.textoOriginal) + '</td>' +
