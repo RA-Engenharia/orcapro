@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.218",
+  "versao": "1.1.219",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.218/OrcaPRO-IA-update-v1.1.218.zip",
-  "notas": "A lista de orcamentos agora exporta para Excel do jeito que estiver na tela. Sai numero, orcamento, cliente, obra, tipo, estado da aprovacao, etapas, itens, BDI, preco de venda, prazo e dias restantes, tempo de elaboracao e ultima atualizacao, com linha de total no fim. Se voce estiver com algum filtro aplicado, o proprio arquivo registra o recorte no cabecalho e diz quantos de quantos foram exportados - lista que omite o filtro vira a carteira inteira numa reuniao, e a decisao sai de um numero que nao e o que a pessoa pensa. Filtro sem resultado nao gera planilha em branco: o sistema avisa.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.218/OrcaPRO-IA-Instalador-v1.1.218.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.219/OrcaPRO-IA-update-v1.1.219.zip",
+  "notas": "O Escopo Inteligente ficou mais completo. Voce escreve alvenaria e ele lembra do que vem junto: marcacao, verga e contraverga, encunhamento. Ha um nivel de detalhe para escolher - enxuto traz so o que voce escreveu, padrao acrescenta os principais complementos e completo traz tudo. Cada sugestao explica por que entrou, ja vem marcada e tem Desmarcar todos, entao tirar o que nao serve e um clique. Os complementos entram no texto do escopo, nao direto no orcamento: voce revisa como sempre antes de lancar. E agora da para anexar a planilha de quantitativos do arquiteto (Excel ou CSV) dentro do escopo: o sistema le descricao, quantidade e unidade e transforma em linhas de escopo, avisando quantos servicos vieram e quantas linhas de total foram ignoradas.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.219/OrcaPRO-IA-Instalador-v1.1.219.exe"
 }

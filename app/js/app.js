@@ -1108,6 +1108,10 @@
         case "importar-planilha": this.importarPlanilha(); break;
         case "recuperar-planilha": this.recuperarPlanilha(); break;
         case "orc-aprov": this.orcAprovar(t.dataset.aprov); break;
+        case "escopo-sugerir": this.escopoSugerir(); break;
+        case "escopo-aux-nenhum": this.escopoAuxNenhum(); break;
+        case "escopo-aux-add": this.escopoAuxAdd(); break;
+        case "escopo-planilha": this.escopoPlanilha(); break;
         case "qi-calcular": this.qiCalcular(); break;
         case "fo-exportar": this.exportarCarteira(); break;
         case "fo-limpar": this._filtroOrc = null; this.render(); break;
@@ -4812,6 +4816,73 @@
       setTimeout(function () { var t = UI.el("esc-txt"); if (t) t.focus(); }, 50);
     },
 
+    /* Mostra os auxiliares que a boa técnica exige. Vêm MARCADOS (é o pedido:
+     * com pouca informação, trazer o serviço inteiro), mas com o "porquê" à
+     * vista e com desmarcar em massa — apagar tem de ser barato. */
+    escopoSugerir: function () {
+      var box = UI.el("esc-aux"), txt = (UI.el("esc-txt") || {}).value || "";
+      if (!box) return;
+      var nivel = (UI.el("esc-nivel") || {}).value || "padrao";
+      var aux = Escopo.auxiliaresPara(txt, nivel);
+      if (!aux.length) {
+        box.innerHTML = '<div class="muted" style="font-size:12px;margin-bottom:6px">' +
+          (nivel === "enxuto" ? "Nível enxuto: nenhum complemento é sugerido."
+            : "Nenhum complemento a sugerir para o que está escrito.") + '</div>';
+        return;
+      }
+      this._escAux = aux;
+      box.innerHTML = '<div class="card" style="padding:9px 12px;margin-bottom:8px">' +
+        '<div class="flex between" style="margin-bottom:6px"><b style="font-size:12.5px">A boa técnica também pede:</b>' +
+          '<button type="button" class="btn sm ghost" data-acao="escopo-aux-nenhum">Desmarcar todos</button></div>' +
+        aux.map(function (a, i) {
+          return '<label style="display:block;cursor:pointer;padding:3px 0;font-size:12.5px">' +
+            '<input type="checkbox" class="esc-aux-ck" data-i="' + i + '" checked> <b>' + Util.esc(a.termo) + '</b>' +
+            ' <span class="muted">— ' + Util.esc(a.porque) + '</span></label>';
+        }).join("") +
+        '<button type="button" class="btn sm success" data-acao="escopo-aux-add" style="margin-top:6px">Somar ao escopo</button></div>';
+    },
+    escopoAuxNenhum: function () {
+      Array.prototype.forEach.call(document.querySelectorAll(".esc-aux-ck"), function (c) { c.checked = false; });
+    },
+    /* Soma ao TEXTO, não ao orçamento: o usuário ainda vai analisar e revisar.
+     * Nada entra na planilha sem passar pela revisão de sempre. */
+    escopoAuxAdd: function () {
+      var t = UI.el("esc-txt"); if (!t || !this._escAux) return;
+      var escolhidos = [];
+      Array.prototype.forEach.call(document.querySelectorAll(".esc-aux-ck"), function (c) {
+        if (c.checked) { var a = App._escAux[+c.getAttribute("data-i")]; if (a) escolhidos.push(a.termo); }
+      });
+      if (!escolhidos.length) { UI.toast("Nenhum complemento marcado.", "erro"); return; }
+      t.value = String(t.value || "").replace(/\s*$/, "") + "\n" + escolhidos.join("\n");
+      UI.el("esc-aux").innerHTML = "";
+      this._escAux = null;
+      UI.toast(escolhidos.length + " complemento(s) somado(s) ao escopo — revise antes de analisar.", "ok");
+      t.focus();
+    },
+    /* Planilha do arquiteto vira texto de escopo. Reusa o leitor que já existe
+     * (.xlsx, .xls e .csv) — nada de leitor novo. */
+    escopoPlanilha: function () {
+      var self = this;
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".xlsx,.xls,.csv"; inp.style.display = "none";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        UI.toast("Lendo a planilha…", "ok");
+        self._lerPlanilha(f, function (matriz, erro) {
+          if (erro || !matriz) { UI.toast("Não consegui ler: " + (erro || "vazia"), "erro"); return; }
+          var r = Escopo.daMatriz(matriz);
+          if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+          var t = UI.el("esc-txt"); if (!t) return;
+          var antes = String(t.value || "").trim();
+          t.value = (antes ? antes + "\n" : "") + r.texto;
+          UI.toast(r.linhas.length + " serviço(s) trazido(s) da planilha" +
+            (r.ignoradas ? " (" + r.ignoradas + " linha(s) de total/cabeçalho ignorada(s))" : "") +
+            " — revise antes de analisar.", "ok");
+          t.focus();
+        });
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
     analisarEscopo: function () {
       var txt = (UI.el("esc-txt") || {}).value || "";
       if (!Util.naoVazio(txt)) { UI.toast("Cole o escopo primeiro.", "erro"); return; }

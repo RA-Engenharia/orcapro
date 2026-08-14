@@ -2058,8 +2058,23 @@
         '<p class="muted">Cole a <b>descrição da obra</b> (texto livre / trecho do laudo) ou itens linha a linha. ' +
         'O <b>' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</b> quebra a obra em serviços, casa com as bases (SINAPI/SICRO/SUDECAP/SEINFRA/SETOP) e estima as quantidades. Nunca inventa código.</p>' +
         '<div class="field"><textarea id="esc-txt" rows="8" placeholder="Ex. (prosa livre): Reforma de banheiro 6m²: demolir revestimento antigo, novo contrapiso, assentar porcelanato no piso e paredes, instalar bacia e lavatório, impermeabilizar o box e pintar o forro...&#10;&#10;ou linha a linha:&#10;240 m2 alvenaria de bloco ceramico&#10;12 m3 concreto fck 25"></textarea></div>' +
+        /* NÍVEL DE DETALHE (v1.1.219): com pouca informação, trazer o serviço
+           inteiro é o certo — mas quem quer só o que escreveu tem de poder
+           dizer isso. Padrão é "padrao": completo de saída viraria ruído. */
+        '<div class="row" style="gap:8px;align-items:flex-end;margin-bottom:8px">' +
+          '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Nível de detalhe</label>' +
+            '<select id="esc-nivel" style="width:100%;box-sizing:border-box">' +
+            Object.keys(Escopo.NIVEIS).map(function (k) {
+              var N = Escopo.NIVEIS[k];
+              return '<option value="' + k + '"' + (k === "padrao" ? " selected" : "") + ' title="' + Util.esc(N.ajuda) + '">' + Util.esc(N.rotulo) + '</option>';
+            }).join("") + '</select></div>' +
+          '<button class="btn" data-acao="escopo-planilha" title="Traz a planilha de quantitativos do arquiteto para cá — descrição, quantidade e unidade viram linhas do escopo">' +
+            (typeof Icones !== 'undefined' ? Icones.get('excel', 15) : '') + ' Anexar planilha</button>' +
+        '</div>' +
+        '<div id="esc-aux"></div>' +
         '<div class="flex" style="gap:8px;margin-bottom:6px"><button class="btn primary" data-acao="escopo-ia">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</button>' +
-        '<button class="btn" data-acao="escopo-analisar">Analisar linha a linha (sem IA)</button></div>' +
+        '<button class="btn" data-acao="escopo-analisar">Analisar linha a linha (sem IA)</button>' +
+        '<button class="btn ghost" data-acao="escopo-sugerir" title="Mostra os serviços auxiliares que a boa técnica exige para o que você escreveu">Sugerir complementos</button></div>' +
         '<div class="watermark-hint">Sem match, o item fica <b>Pendente</b> — nunca inventamos código. (A IA precisa do ERP ligado na porta 3040.)</div>';
     },
 

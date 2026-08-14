@@ -85,6 +85,172 @@
 
   var Escopo = {
 
+    /* ==================================================================
+     * PACOTES DE ATIVIDADE (v1.1.219)
+     *
+     * O cliente escreve "alvenaria" e espera o serviço INTEIRO. Hoje volta
+     * uma linha só, e o que a boa técnica exige junto — marcação, vergas,
+     * encunhamento — fica por conta da memória de quem orça. É exatamente o
+     * que some num orçamento apressado e vira aditivo depois.
+     *
+     * ⚠ VEM MARCADO, MAS APAGAR TEM DE SER BARATO. Trazer a mais só é a
+     * decisão certa se desmarcar for um clique — senão a lista vira ruído e
+     * o orçamentista para de ler.
+     *
+     * ⚠ CADA AUXILIAR DIZ POR QUE ENTROU. Sem isso o cliente não sabe o que
+     * está apagando, e apagar no escuro é pior que não sugerir.
+     * ================================================================== */
+    PACOTES: {
+      alvenaria: {
+        gatilhos: ["alvenaria", "parede", "bloco ceramico", "bloco de concreto", "tijolo"],
+        auxiliares: [
+          { termo: "marcação de alvenaria", porque: "primeira fiada e locação — sempre precede a elevação" },
+          { termo: "verga e contraverga em concreto", porque: "obrigatório sobre vãos de porta e janela" },
+          { termo: "encunhamento de alvenaria", porque: "fecha a última fiada na viga; some do orçamento e vira aditivo" },
+          { termo: "tela de amarração alvenaria estrutura", porque: "ligação da parede ao pilar" }
+        ]
+      },
+      revestimentoParede: {
+        gatilhos: ["reboco", "emboco", "chapisco", "revestimento de parede", "massa unica"],
+        auxiliares: [
+          { termo: "chapisco em parede", porque: "camada de aderência: sem ela o reboco descola" },
+          { termo: "taliscamento e mestras", porque: "define prumo e espessura antes do reboco" }
+        ]
+      },
+      piso: {
+        gatilhos: ["piso", "contrapiso", "porcelanato", "ceramica", "concreto usinado"],
+        auxiliares: [
+          { termo: "regularização de base para piso", porque: "nivelamento sob o revestimento" },
+          { termo: "junta de dilatação", porque: "pano grande sem junta trinca" },
+          { termo: "rejuntamento", porque: "acabamento que fecha o serviço" }
+        ]
+      },
+      pintura: {
+        gatilhos: ["pintura", "tinta acrilica", "latex", "esmalte"],
+        auxiliares: [
+          { termo: "massa corrida em parede", porque: "regulariza antes da tinta" },
+          { termo: "fundo selador acrilico", porque: "sela o substrato e reduz o consumo de tinta" },
+          { termo: "lixamento de parede", porque: "preparo entre demãos" }
+        ]
+      },
+      cobertura: {
+        gatilhos: ["telhado", "cobertura", "telha", "estrutura de madeira"],
+        auxiliares: [
+          { termo: "estrutura de madeira para telhado", porque: "sustenta a telha" },
+          { termo: "calha e rufo", porque: "sem eles a água entra na alvenaria" }
+        ]
+      },
+      demolicao: {
+        gatilhos: ["demolicao", "remocao", "retirada"],
+        auxiliares: [
+          { termo: "carga e transporte de entulho", porque: "o material demolido tem de sair da obra" },
+          { termo: "caçamba para entulho", porque: "destinação do resíduo" }
+        ]
+      }
+    },
+
+    NIVEIS: {
+      enxuto: { rotulo: "Enxuto", ajuda: "Só o que foi escrito — nada de auxiliares.", auxiliares: 0 },
+      padrao: { rotulo: "Padrão", ajuda: "O serviço mais os auxiliares que a boa técnica exige.", auxiliares: 2 },
+      completo: { rotulo: "Completo", ajuda: "Tudo: auxiliares, preparo e serviços de apoio.", auxiliares: 99 }
+    },
+
+    /* Quais auxiliares o texto pede. Puro: devolve sugestões, não mexe em nada.
+     * `jaTem` evita sugerir o que o próprio usuário já escreveu. */
+    auxiliaresPara: function (texto, nivel) {
+      var N = this.NIVEIS[nivel] || this.NIVEIS.padrao;
+      if (!N.auxiliares) return [];
+      var t = Util.normalizar(String(texto || ""));
+      var out = [], vistos = {};
+      var self = this;
+      Object.keys(this.PACOTES).forEach(function (k) {
+        var p = self.PACOTES[k];
+        var casou = p.gatilhos.some(function (g) { return t.indexOf(Util.normalizar(g)) >= 0; });
+        if (!casou) return;
+        p.auxiliares.slice(0, N.auxiliares).forEach(function (a) {
+          var chave = Util.normalizar(a.termo);
+          if (vistos[chave]) return;
+          /* já escrito pelo usuário: não sugerir o que ele mesmo pediu */
+          if (t.indexOf(chave) >= 0) return;
+          vistos[chave] = 1;
+          out.push({ termo: a.termo, porque: a.porque, pacote: k });
+        });
+      });
+      return out;
+    },
+
+    /* ==================================================================
+     * PLANILHA → TEXTO DE ESCOPO (v1.1.219)
+     *
+     * O cliente recebe a planilha de quantitativos do arquiteto e redigita
+     * linha por linha. A matriz já chega pronta (App._lerPlanilha lê .xlsx,
+     * .xls e .csv desde sempre) — o que faltava era virar escopo.
+     *
+     * ⚠ NÃO É O IMPORTADOR. O Importador monta orçamento com etapas e casa
+     * código. Aqui é MATÉRIA-PRIMA para o escopo: descrição + quantidade +
+     * unidade viram linhas de texto que o agente analisa como se tivessem
+     * sido digitadas. Quem decide o que entra continua sendo o usuário.
+     * ================================================================== */
+    daMatriz: function (matriz, opts) {
+      opts = opts || {};
+      var linhas = Array.isArray(matriz) ? matriz : [];
+      if (!linhas.length) return { ok: false, erro: "Planilha vazia." };
+      var val = function (c) {
+        if (c == null) return "";
+        if (typeof c === "object") return String(c.text || c.result || c.richText && c.richText.map(function (r) { return r.text; }).join("") || "");
+        return String(c);
+      };
+      var num = function (c) {
+        var s = val(c).replace(/\s/g, "");
+        if (!s) return 0;
+        /* pt-BR: 1.234,56 → 1234.56 */
+        if (s.indexOf(",") >= 0) s = s.replace(/\./g, "").replace(",", ".");
+        var n = parseFloat(s.replace(/[^\d.\-]/g, ""));
+        return isNaN(n) ? 0 : n;
+      };
+      /* acha as colunas pelo cabeçalho; sem cabeçalho reconhecível, usa a
+         coluna de texto mais longa como descrição — é o que a planilha de
+         quantitativo tem de mais estável */
+      var iDesc = -1, iQtd = -1, iUn = -1, cabLinha = -1;
+      for (var r = 0; r < Math.min(linhas.length, 25); r++) {
+        var L = linhas[r] || [];
+        for (var c = 0; c < L.length; c++) {
+          var t = Util.normalizar(val(L[c]));
+          if (iDesc < 0 && /descri|servi|discrimina|especifica/.test(t)) { iDesc = c; cabLinha = r; }
+          if (iQtd < 0 && /^(qtd|quant)/.test(t)) { iQtd = c; cabLinha = r; }
+          if (iUn < 0 && /^(un|und|unid)/.test(t)) { iUn = c; cabLinha = r; }
+        }
+        if (iDesc >= 0 && iQtd >= 0) break;
+      }
+      if (iDesc < 0) {
+        var maior = {}, melhor = -1, best = 0;
+        linhas.slice(0, 60).forEach(function (L) {
+          (L || []).forEach(function (cel, ci) {
+            var s = val(cel); if (s.length > 12 && !/^\d/.test(s)) maior[ci] = (maior[ci] || 0) + 1;
+          });
+        });
+        Object.keys(maior).forEach(function (ci) { if (maior[ci] > best) { best = maior[ci]; melhor = +ci; } });
+        iDesc = melhor;
+      }
+      if (iDesc < 0) return { ok: false, erro: "Não achei uma coluna de descrição nesta planilha." };
+      var out = [], ignoradas = 0;
+      for (var i = (cabLinha >= 0 ? cabLinha + 1 : 0); i < linhas.length; i++) {
+        var lin = linhas[i] || [];
+        var desc = val(lin[iDesc]).trim();
+        if (desc.length < 4) { ignoradas++; continue; }
+        /* linha de etapa/total não é serviço: não tem quantidade e costuma
+           vir em caixa alta — mandar isso ao agente polui o escopo inteiro */
+        if (/^(total|subtotal|etapa|item)\b/i.test(desc)) { ignoradas++; continue; }
+        var q = iQtd >= 0 ? num(lin[iQtd]) : 0;
+        var u = iUn >= 0 ? val(lin[iUn]).trim() : "";
+        out.push({ descricao: desc, quantidade: q, unidade: u,
+                   texto: desc + (q > 0 ? " " + String(q).replace(".", ",") + (u ? " " + u : "") : "") });
+      }
+      if (!out.length) return { ok: false, erro: "Nenhuma linha de serviço reconhecida nesta planilha." };
+      return { ok: true, linhas: out, texto: out.map(function (x) { return x.texto; }).join("\n"),
+               colunas: { descricao: iDesc, quantidade: iQtd, unidade: iUn }, ignoradas: ignoradas };
+    },
+
     /* Analisa um bloco de texto: 1 item por linha. */
     analisar: function (texto, opts) {
       var linhas = String(texto || "").split(/\r?\n/);
