@@ -511,6 +511,22 @@
       var etapa = this._etapa(orc, etapaId);
       if (!etapa) return orc;
       var origem = this._origemDe(sinapiItem.codigo, sinapiItem.baseFonte || null);
+      /* ===== QUANTIDADE PENDENTE (v1.1.226) =====
+         Aqui era `Util.num(quantidade) || 1`. Vazio, 0, texto e negativo viravam
+         1 CALADOS — um metro quadrado que ninguém digitou entrando no total do
+         orçamento. O Parede-Cebola já tinha um guard próprio para não cair
+         nisso (js/paredecebola.js), o que mostra que o buraco era conhecido.
+
+         Agora o item pode nascer SEM quantidade, de propósito: é o fluxo de
+         trazer a composição primeiro e calcular a metragem depois, no memorial.
+         Quem nasce assim fica com quantidade 0 e `qtdPendente: true`, aparece
+         marcado na planilha e NÃO soma no total — some do total é mentira
+         menor que somar um número inventado.
+
+         `qtdPendente` some sozinho no instante em que uma quantidade real
+         entra (ver atualizarItem e aplicarMemoriaQuantidade). */
+      var _q = Util.num(quantidade);
+      var _pendente = !(_q > 0);
       var it = {
         id: Util.uid("itm"),
         origem: origem,
@@ -518,7 +534,7 @@
         codigo: sinapiItem.codigo || "—",
         descricao: Util.fixEnc(sinapiItem.descricao || "Item próprio"),
         unidade: Util.fixEnc(sinapiItem.unidade || "un"),
-        quantidade: Util.num(quantidade) || 1,
+        quantidade: _pendente ? 0 : _q,
         custoUnitario: Util.num(sinapiItem.custoUnitario),
         custoMO: Util.num(sinapiItem.custoMO),
         custoMAT: Util.num(sinapiItem.custoMAT),
@@ -531,6 +547,7 @@
       /* a memória de cálculo nasce COM o item quando veio da calculadora —
          justificar a metragem depois é o que ninguém volta para fazer */
       if (sinapiItem.memoriaCalculo) it.memoriaCalculo = String(sinapiItem.memoriaCalculo);
+      if (_pendente) it.qtdPendente = true;
       // destino opcional: sub etapa da MESMA etapa (id desconhecido vira solto)
       if (subEtapaId && this.subEtapas(etapa).filter(function (s) { return s.id === subEtapaId; }).length) it.subEtapaId = subEtapaId;
       etapa.itens.push(it);
@@ -575,7 +592,8 @@
       // LOTE 2: quantidade ≤ 0 vira item fantasma silencioso — rejeita e mantém o valor
       if (campos.quantidade != null) {
         var q = Util.num(campos.quantidade);
-        if (q > 0) it.quantidade = q;
+        // quantidade real chegou: o item deixa de ser pendente e volta a somar
+        if (q > 0) { it.quantidade = q; delete it.qtdPendente; }
         else { try { if (global.UI && global.UI.toast) global.UI.toast("Quantidade deve ser maior que zero — valor anterior mantido.", "erro"); } catch (e) {} }
       }
       if (campos.custoUnitario != null) {
@@ -1054,6 +1072,49 @@
       contagem: { rotulo: "Contagem", unidade: "un", campos: [
         { id: "itens", rotulo: "Quantos" },
         { id: "repeticoes", rotulo: "Por ambiente / pavimento", padrao: 1 }
+      ] },
+      /* ===== v1.1.226 — as formas que faltavam =====
+         As cinco de cima cobriam o caso simples. Estas cobrem o que aparece
+         no dia a dia de quem orça e obrigava a fazer a conta na calculadora
+         do celular e digitar só o resultado — que é exatamente como memória
+         de cálculo deixa de existir. */
+      perimetro: { rotulo: "Perímetro de ambiente", unidade: "m", campos: [
+        { id: "comprimento", rotulo: "Comprimento do ambiente (m)" },
+        { id: "largura", rotulo: "Largura do ambiente (m)" },
+        { id: "repeticoes", rotulo: "Quantos ambientes", padrao: 1 }
+      ] },
+      paredeVaos: { rotulo: "Parede com vãos (portas/janelas)", unidade: "m2", campos: [
+        { id: "comprimento", rotulo: "Comprimento da parede (m)" },
+        { id: "altura", rotulo: "Pé-direito (m)" },
+        { id: "repeticoes", rotulo: "Quantas paredes iguais", padrao: 1 },
+        { id: "portas", rotulo: "Quantas portas", padrao: 0 },
+        { id: "portaL", rotulo: "Largura da porta (m)", padrao: 0.8 },
+        { id: "portaA", rotulo: "Altura da porta (m)", padrao: 2.1 },
+        { id: "janelas", rotulo: "Quantas janelas", padrao: 0 },
+        { id: "janelaL", rotulo: "Largura da janela (m)", padrao: 1.2 },
+        { id: "janelaA", rotulo: "Altura da janela (m)", padrao: 1.2 }
+      ] },
+      duasFaces: { rotulo: "Serviço nas duas faces (chapisco/reboco)", unidade: "m2", campos: [
+        { id: "area", rotulo: "Área de uma face (m²)" },
+        { id: "faces", rotulo: "Quantas faces", padrao: 2 }
+      ] },
+      pintura: { rotulo: "Pintura por demãos", unidade: "m2", campos: [
+        { id: "area", rotulo: "Área a pintar (m²)" },
+        { id: "demaos", rotulo: "Quantas demãos", padrao: 2 }
+      ] },
+      escavacao: { rotulo: "Escavação / vala", unidade: "m3", campos: [
+        { id: "comprimento", rotulo: "Comprimento da vala (m)" },
+        { id: "largura", rotulo: "Largura (m)" },
+        { id: "profundidade", rotulo: "Profundidade (m)" },
+        { id: "repeticoes", rotulo: "Quantas valas", padrao: 1 }
+      ] },
+      telhado: { rotulo: "Telhado (área inclinada)", unidade: "m2", campos: [
+        { id: "area", rotulo: "Área em planta (m²)" },
+        { id: "inclinacao", rotulo: "Inclinação (%)", padrao: 30 }
+      ] },
+      perdas: { rotulo: "Área/volume com perdas", unidade: "m2", campos: [
+        { id: "area", rotulo: "Quantidade líquida" },
+        { id: "perda", rotulo: "Perda (%)", padrao: 10 }
       ] }
     },
 
@@ -1083,6 +1144,65 @@
         if (!(cl > 0)) return { ok: false, erro: "Informe o comprimento." };
         qtd = cl * rep;
         texto = fm(cl) + " m" + (rep > 1 ? " × " + fm(rep, 0) + " trecho(s)" : "") + " = " + fm(qtd) + " m";
+      } else if (forma === "perimetro") {
+        var pc = n("comprimento"), pl = n("largura");
+        if (!(pc > 0 && pl > 0)) return { ok: false, erro: "Informe comprimento e largura do ambiente." };
+        var umP = 2 * (pc + pl);
+        qtd = umP * rep;
+        texto = "Perímetro = 2 × (" + fm(pc) + " m + " + fm(pl) + " m) = " + fm(umP) + " m" +
+          (rep > 1 ? "\n" + fm(umP) + " m × " + fm(rep, 0) + " ambiente(s) = " + fm(qtd) + " m" : "");
+      } else if (forma === "paredeVaos") {
+        /* a conta que mais se faz em obra e a que mais se erra na pressa:
+           área bruta menos os vãos, com os vãos DISCRIMINADOS um a um — é o
+           detalhe que o fiscal cobra e que o orçamentista não lembra depois */
+        var wc = n("comprimento"), wa = n("altura");
+        if (!(wc > 0 && wa > 0)) return { ok: false, erro: "Informe o comprimento e o pé-direito da parede." };
+        var nP = n("portas", 0), pL = n("portaL", 0.8), pA = n("portaA", 2.1);
+        var nJ = n("janelas", 0), jL = n("janelaL", 1.2), jA = n("janelaA", 1.2);
+        var brutaW = wc * wa * rep;
+        var areaP = nP > 0 ? nP * pL * pA : 0, areaJ = nJ > 0 ? nJ * jL * jA : 0;
+        qtd = Math.max(0, brutaW - areaP - areaJ);
+        texto = "Área bruta: " + fm(wc) + " m × " + fm(wa) + " m" +
+          (rep > 1 ? " × " + fm(rep, 0) + " parede(s)" : "") + " = " + fm(brutaW) + " m²";
+        if (nP > 0) texto += "\nPortas: " + fm(nP, 0) + " × (" + fm(pL) + " × " + fm(pA) + ") = −" + fm(areaP) + " m²";
+        if (nJ > 0) texto += "\nJanelas: " + fm(nJ, 0) + " × (" + fm(jL) + " × " + fm(jA) + ") = −" + fm(areaJ) + " m²";
+        if (nP > 0 || nJ > 0) texto += "\nÁrea líquida: " + fm(qtd) + " m²";
+      } else if (forma === "duasFaces") {
+        var af = n("area"), nf = n("faces", 2);
+        if (!(af > 0)) return { ok: false, erro: "Informe a área de uma face." };
+        qtd = af * nf;
+        texto = fm(af) + " m² × " + fm(nf, 0) + " face(s) = " + fm(qtd) + " m²";
+      } else if (forma === "pintura") {
+        var ap = n("area"), dm = n("demaos", 2);
+        if (!(ap > 0)) return { ok: false, erro: "Informe a área a pintar." };
+        /* ⚠ DEMÃO NÃO MULTIPLICA ÁREA. A composição de pintura da SINAPI já
+           traz o consumo das demãos no coeficiente da tinta — multiplicar aqui
+           cobraria a mesma parede duas vezes. A quantidade é a área; as demãos
+           entram como registro. */
+        qtd = ap;
+        texto = fm(ap) + " m² (" + fm(dm, 0) + " demão(s))" +
+          "\nA quantidade é a ÁREA: o consumo das demãos já está no coeficiente da tinta na composição.";
+      } else if (forma === "escavacao") {
+        var ec = n("comprimento"), el = n("largura"), ep = n("profundidade");
+        if (!(ec > 0 && el > 0 && ep > 0)) return { ok: false, erro: "Informe comprimento, largura e profundidade." };
+        var umaV = ec * el * ep;
+        qtd = umaV * rep;
+        texto = fm(ec) + " m × " + fm(el) + " m × " + fm(ep) + " m = " + fm(umaV, 3) + " m³" +
+          (rep > 1 ? "\n" + fm(umaV, 3) + " m³ × " + fm(rep, 0) + " vala(s) = " + fm(qtd, 3) + " m³" : "");
+      } else if (forma === "telhado") {
+        var at = n("area"), inc = n("inclinacao", 30);
+        if (!(at > 0)) return { ok: false, erro: "Informe a área em planta." };
+        /* área real do plano inclinado = área em planta × √(1 + i²) */
+        var i = inc / 100, fator = Math.sqrt(1 + i * i);
+        qtd = at * fator;
+        texto = "Área em planta: " + fm(at) + " m²\nInclinação " + fm(inc, 0) + "% → fator √(1 + " +
+          fm(i, 2) + "²) = " + fm(fator, 4) + "\nÁrea real do telhado: " + fm(at) + " × " + fm(fator, 4) + " = " + fm(qtd) + " m²";
+      } else if (forma === "perdas") {
+        var aq = n("area"), pp = n("perda", 10);
+        if (!(aq > 0)) return { ok: false, erro: "Informe a quantidade líquida." };
+        qtd = aq * (1 + pp / 100);
+        texto = "Líquido: " + fm(aq) + "\nPerda de " + fm(pp, 1) + "%: +" + fm(aq * pp / 100) +
+          "\nTotal com perda: " + fm(qtd);
       } else {
         var it = n("itens");
         if (!(it > 0)) return { ok: false, erro: "Informe a quantidade." };
@@ -1107,35 +1227,171 @@
       /* números em pt-BR: 2,20 e 2.20 são o mesmo; 1.500,00 é mil e quinhentos */
       var achados = [];
       t.replace(/(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(m2|m²|m3|m³|metros? quadrados?|metros? cubicos?|metros? lineares?|metros?|ml|cm|un|unidades?|pecas?|pontos?)?/g,
-        function (todo, num, uni) {
+        function (todo, num, uni, pos) {
           var v = num.indexOf(",") >= 0 ? num.replace(/\./g, "").replace(",", ".") : num;
           var x = parseFloat(v);
           if (!(x > 0)) return todo;
           var u = String(uni || "");
           var tipo = /m2|m²|quadrado/.test(u) ? "area" : (/m3|m³|cubico/.test(u) ? "volume"
                    : (/cm/.test(u) ? "cm" : (/un|unidade|peca|ponto/.test(u) ? "un" : (u ? "m" : ""))));
-          achados.push({ valor: x, tipo: tipo, unidade: u });
+          /* `pos` (v1.1.226): a POSIÇÃO do número na frase. Sem ela, um número
+             que já foi lido como CONTADOR continuava valendo como MEDIDA —
+             "4 paredes de 3,20 por 2,70" calculava 4 × 3,20 em vez de
+             3,20 × 2,70 × 4. O contador tem de sair da lista de medidas. */
+          achados.push({ valor: x, tipo: tipo, unidade: u, pos: pos });
           return todo;
         });
       if (!achados.length) return { ok: false, erro: "Não encontrei medidas na descrição. Ex.: “alvenaria 100 m por 2,20 de altura”." };
       /* área direta: "220 m2" */
       var direta = achados.filter(function (a) { return a.tipo === "area" || a.tipo === "volume" || a.tipo === "un"; })[0];
       var lineares = achados.filter(function (a) { return a.tipo === "m" || a.tipo === ""; });
-      /* dois comprimentos = área (o caso do pedido: 100 m × 2,20 de altura) */
-      if (lineares.length >= 2) {
-        var r = this.calcularMemoria("retangulo", { comprimento: lineares[0].valor, altura: lineares[1].valor, repeticoes: 1 });
-        if (r.ok) { r.forma = "retangulo"; r.confianca = "alta"; return r; }
+
+      /* ===== v1.1.226 — o que a frase diz ALÉM das medidas =====
+         O parser antigo só via números. Estas leituras são o que separa
+         "100 × 2,2 = 220" de uma memória que o fiscal aceita. Cada uma é uma
+         pergunta que o orçamentista responderia de cabeça lendo a frase. */
+      /* Todo número lido como contador é MARCADO como consumido pela posição,
+         e some da lista de medidas logo abaixo. */
+      var consumidos = {};
+      var _int = function (re) {
+        var m = t.match(re);
+        if (!m) return 0;
+        // posição do número dentro do trecho casado (m.index é o início do trecho)
+        var desloc = m[0].indexOf(m[1]);
+        consumidos[m.index + (desloc < 0 ? 0 : desloc)] = 1;
+        return parseInt(m[1], 10);
+      };
+      // "4 paredes", "3 ambientes", "2 pavimentos", "5 trechos", "3 valas"
+      var vezes = _int(/(\d+)\s*(?:x\s*)?(?:paredes?|ambientes?|comodos?|pavimentos?|andares?|trechos?|valas?|pecas?|panos?)/);
+      // "2 portas", "descontando 3 janelas"
+      var portas = _int(/(\d+)\s*portas?/);
+      var janelas = _int(/(\d+)\s*janelas?/);
+      // "duas faces", "ambos os lados", "frente e verso"
+      var duasFaces = /(?:duas|2)\s*faces|ambos os lados|frente e verso|dois lados/.test(t);
+      // "2 demãos", "duas demaos"
+      var demaos = _int(/(\d+)\s*demaos?/) || (/duas demaos?/.test(t) ? 2 : 0);
+      // "10% de perda", "perda de 15%"
+      var mPerda = t.match(/(?:perda|quebra)\D{0,12}(\d+(?:[.,]\d+)?)\s*%/) || t.match(/(\d+(?:[.,]\d+)?)\s*%\s*de\s*(?:perda|quebra)/);
+      var perda = mPerda ? parseFloat(String(mPerda[1]).replace(",", ".")) : 0;
+      // espessura em cm ("laje de 12 cm", "contrapiso 5cm") — vira volume
+      var emCm = achados.filter(function (a) { return a.tipo === "cm"; })[0];
+      // a palavra manda: escavação/vala é volume, não área
+      var ehEscavacao = /escavac|vala|vala|trincheira|bota-?fora|aterro/.test(t);
+      var ehTelhado = /telhad|cobertura|telha/.test(t) && /inclinac|caimento|%/.test(t);
+      /* serviço que corre pela BORDA do ambiente é linear, não de área. Sem
+         isto, "rodapé de 2 ambientes de 5 × 4" virava 20 m² em vez de 36 m. */
+      var ehPerimetro = /rodape|meia-?cana|cordao|guarda-?corpo|testeira|arremate de borda|moldura/.test(t);
+
+      // ⚠ tira da lista de MEDIDAS tudo que já foi lido como CONTADOR
+      var _vale = function (a) { return !consumidos[a.pos]; };
+      achados = achados.filter(_vale);
+      direta = achados.filter(function (a) { return a.tipo === "area" || a.tipo === "volume" || a.tipo === "un"; })[0];
+      lineares = achados.filter(function (a) { return a.tipo === "m" || a.tipo === ""; });
+
+      var self = this, res = null, comoLi = [];
+
+      // 0) perímetro: serviço de borda com as duas medidas do ambiente
+      if (ehPerimetro && lineares.length >= 2) {
+        res = this.calcularMemoria("perimetro", { comprimento: lineares[0].valor, largura: lineares[1].valor, repeticoes: vezes || 1 });
+        if (res.ok) { res.forma = "perimetro"; res.confianca = "alta";
+                      comoLi.push("li como serviço de borda: a quantidade é o PERÍMETRO, não a área"); }
       }
-      if (direta) {
+
+      // 1) escavação: três medidas lineares = volume, não área
+      if (!res && ehEscavacao && lineares.length >= 3) {
+        res = this.calcularMemoria("escavacao", { comprimento: lineares[0].valor, largura: lineares[1].valor,
+                                                  profundidade: lineares[2].valor, repeticoes: vezes || 1 });
+        if (res.ok) { res.forma = "escavacao"; res.confianca = "alta"; comoLi.push("li como escavação (volume)"); }
+      }
+      // 2) parede com vãos — o caso mais comum e o que mais se erra
+      if (!res && lineares.length >= 2 && (portas > 0 || janelas > 0)) {
+        res = this.calcularMemoria("paredeVaos", { comprimento: lineares[0].valor, altura: lineares[1].valor,
+                                                   repeticoes: vezes || 1, portas: portas, janelas: janelas });
+        if (res.ok) { res.forma = "paredeVaos"; res.confianca = "alta";
+                      comoLi.push("descontei " + (portas ? portas + " porta(s)" : "") +
+                                  (portas && janelas ? " e " : "") + (janelas ? janelas + " janela(s)" : "") +
+                                  " nas medidas padrão — ajuste na calculadora se forem outras"); }
+      }
+      // 3) dois comprimentos = área (o caso original: 100 m × 2,20 de altura)
+      if (!res && lineares.length >= 2) {
+        res = this.calcularMemoria("retangulo", { comprimento: lineares[0].valor, altura: lineares[1].valor, repeticoes: vezes || 1 });
+        if (res.ok) { res.forma = "retangulo"; res.confianca = "alta";
+                      if (vezes > 1) comoLi.push("entendi " + vezes + " repetições"); }
+      }
+      // 4) medida direta em m²/m³/un
+      if (!res && direta) {
         var un = direta.tipo === "area" ? "m2" : (direta.tipo === "volume" ? "m3" : "un");
-        return { ok: true, qtd: direta.valor, unidade: un, forma: "direta", confianca: "alta",
-                 texto: Util.fmtNum(direta.valor, 2) + " " + (un === "m2" ? "m²" : (un === "m3" ? "m³" : "un")) + " (informado na descrição)" };
+        res = { ok: true, qtd: direta.valor, unidade: un, forma: "direta", confianca: "alta",
+                texto: Util.fmtNum(direta.valor, 2) + " " + (un === "m2" ? "m²" : (un === "m3" ? "m³" : "un")) + " (informado na descrição)" };
       }
-      if (lineares.length === 1) {
-        var rl = this.calcularMemoria("linear", { comprimento: lineares[0].valor, repeticoes: 1 });
-        if (rl.ok) { rl.forma = "linear"; rl.confianca = "media"; return rl; }
+      // 5) um comprimento só
+      if (!res && lineares.length === 1) {
+        res = this.calcularMemoria("linear", { comprimento: lineares[0].valor, repeticoes: vezes || 1 });
+        if (res.ok) { res.forma = "linear"; res.confianca = vezes > 1 ? "alta" : "media"; }
       }
-      return { ok: false, erro: "Entendi as medidas, mas não a forma do cálculo. Use a calculadora." };
+      if (!res || !res.ok) return { ok: false, erro: "Entendi as medidas, mas não a forma do cálculo. Use a calculadora abaixo." };
+
+      /* ===== camadas que se aplicam DEPOIS da conta base =====
+         A ordem importa e é a da obra: primeiro a área, depois as faces,
+         depois a espessura (que troca a unidade), por último a perda. */
+      var aplicar = function (forma, dados, rotulo) {
+        var r2 = self.calcularMemoria(forma, dados);
+        if (!r2.ok) return;
+        r2.texto = res.texto + "\n\n" + rotulo + "\n" + r2.texto;
+        r2.forma = res.forma + "+" + forma;
+        r2.confianca = res.confianca;
+        res = r2;
+      };
+      if (duasFaces && res.unidade === "m2") aplicar("duasFaces", { area: res.qtd, faces: 2 }, "Nas duas faces:");
+      if (emCm && res.unidade === "m2") {
+        aplicar("volume", { area: res.qtd, espessura: emCm.valor / 100 },
+                "Espessura de " + Util.fmtNum(emCm.valor, 0) + " cm (" + Util.fmtNum(emCm.valor / 100, 3) + " m):");
+        comoLi.push("converti " + Util.fmtNum(emCm.valor, 0) + " cm em espessura — o resultado virou m³");
+      }
+      if (ehTelhado && res.unidade === "m2") {
+        var mInc = t.match(/(\d+(?:[.,]\d+)?)\s*%/);
+        if (mInc) aplicar("telhado", { area: res.qtd, inclinacao: parseFloat(String(mInc[1]).replace(",", ".")) }, "Correção da inclinação:");
+      }
+      if (perda > 0) aplicar("perdas", { area: res.qtd, perda: perda }, "Perda declarada na descrição:");
+      if (demaos > 1 && res.unidade === "m2") {
+        res.texto += "\n\n" + demaos + " demãos: a quantidade continua sendo a ÁREA — o consumo das demãos já está no coeficiente da tinta.";
+        comoLi.push("as demãos NÃO multiplicaram a área (o coeficiente da tinta já as considera)");
+      }
+      if (comoLi.length) res.comoLi = comoLi;
+      return res;
+    },
+
+    /* Sobe a quantidade calculada para o item, junto com a memória que a
+     * justifica. As duas coisas andam juntas de propósito: número sem conta é
+     * o que ninguém consegue defender depois, e é o que a Lei 14.133 cobra.
+     * Devolve { ok, erro? } — recusa unidade incompatível em vez de converter
+     * no chute (m³ entrando em item de m² multiplica preço em silêncio). */
+    aplicarMemoriaQuantidade: function (orc, etapaId, itemId, r) {
+      if (!r || !r.ok || !(r.qtd > 0)) return { ok: false, erro: "Não há quantidade calculada para subir." };
+      var etapa = this._etapa(orc, etapaId);
+      var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
+      if (!it) return { ok: false, erro: "Item não encontrado." };
+      if (it.unidade && r.unidade && !this.unidadeCompativel(it.unidade, r.unidade)) {
+        return { ok: false, erro: "A conta deu " + Util.fmtNum(r.qtd, 2) + " " + Util.unidadeExibir(r.unidade) +
+                 ", mas este item é em " + Util.unidadeExibir(it.unidade) + ". Ajuste a descrição ou a unidade do item." };
+      }
+      it.quantidade = Util.num(r.qtd);
+      delete it.qtdPendente;
+      if (r.texto) it.memoriaCalculo = String(r.texto);
+      return { ok: true, qtd: it.quantidade };
+    },
+
+    /* Itens que entraram sem quantidade e continuam esperando. Espelha o
+     * itensSemPreco que já existe — é o que a tela usa para avisar antes de
+     * alguém mandar a proposta com um item valendo zero. */
+    itensSemQuantidade: function (orc) {
+      var fora = [];
+      ((orc && orc.etapas) || []).forEach(function (et) {
+        (et.itens || []).forEach(function (it) {
+          if (it.qtdPendente || !(Util.num(it.quantidade) > 0)) fora.push({ etapa: et, item: it });
+        });
+      });
+      return fora;
     },
 
     /* A unidade proposta bate com a do item? Divergência aqui multiplica preço

@@ -872,7 +872,12 @@
                   Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
                   Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].curto) + '</span>' : "") + '</td>' +
             '<td>' + Util.esc(Util.unidadeDe(it.unidade, orc)) + '</td>' +
-            '<td class="num"><input class="cell" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.quantidade, 2) + '"></td>' +
+            /* QUANTIDADE PENDENTE (v1.1.226): item trazido de propósito sem
+               metragem, para calcular no memorial depois. Ele NÃO soma no
+               total — e some do total calado seria pior que o 1 fabricado que
+               isto substituiu. Por isso o campo grita, igual ao custo zerado. */
+            '<td class="num"><input class="cell' + (it.qtdPendente ? ' cell-erro' : '') + '" data-edit="quantidade" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + (it.qtdPendente ? '' : Util.fmtNum(it.quantidade, 2)) + '"' +
+              (it.qtdPendente ? ' placeholder="pendente" title="QUANTIDADE PENDENTE — este item não está somando no total. Abra a memória de cálculo para calcular e lançar."' : '') + '></td>' +
             // custo ZERADO = pendência que trava a finalização: o campo grita
             '<td class="num"><input class="cell' + (Util.num(it.custoUnitario) > 0 ? '' : ' cell-erro') + '" data-edit="custoUnitario" data-eta="' + e.id + '" data-itm="' + it.id + '" value="' + Util.fmtNum(it.custoUnitario, 2) + '"' +
               (Util.num(it.custoUnitario) > 0 ? '' : ' title="SEM PREÇO — informe o custo unitário. Orçamento com item zerado não gera proposta nem apresentação."') + '>' +
@@ -887,7 +892,9 @@
               (_subs.length ? '<select class="cell sel-sub" data-item-sub="' + e.id + '|' + it.id + '" title="Mover este item para outro grupo da etapa">' +
                 _optsSub.replace('value="' + (subId || "") + '"', 'value="' + (subId || "") + '" selected') + '</select>' : '') +
               (ehSinapi || ehPropriaDet ? '<button class="btn sm" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Ver e ajustar os insumos e coeficientes desta composição">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Insumos</button>' : '') +
-              '<button class="btn sm ico' + (it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + '</button>' +
+              /* com quantidade pendente o botão do memorial vira o caminho
+                 principal: é lá que a metragem nasce, então ele se destaca */
+              '<button class="btn sm' + (it.qtdPendente ? ' primary' : ' ico') + (!it.qtdPendente && it.memoriaCalculo ? ' primary' : '') + '" data-memoria="' + e.id + '|' + it.id + '" title="' + (it.qtdPendente ? 'CALCULAR A QUANTIDADE — descreva o serviço e o agente monta a conta' : 'Memória de cálculo do quantitativo (Lei 14.133) — sai na aba Memória do Excel') + '">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + (it.qtdPendente ? ' Calcular' : '') + '</button>' +
               '<button class="btn sm ico danger" data-del-item="' + e.id + '|' + it.id + '" title="Remover item">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
           // v1.1.123 — SEMPRE que a composição tiver insumo sem preço coletado no
           // detalhamento, o aviso fica AQUI, embaixo dela na planilha (pedido do

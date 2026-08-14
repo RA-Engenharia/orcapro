@@ -1116,6 +1116,10 @@
         case "escopo-planilha": this.escopoPlanilha(); break;
         case "escopo-documento": this.escopoDocumento(); break;
         case "qi-calcular": this.qiCalcular(); break;
+        // memorial de cálculo: agente, IA de reforço e calculadora
+        case "mem-agente": this.memAgente(false); break;
+        case "mem-agente-ia": this.memAgente(true); break;
+        case "mem-calc": this.memCalcular(); break;
         case "fo-exportar": this.exportarCarteira(); break;
         case "fo-limpar": this._filtroOrc = null; this.render(); break;
         case "import-reanalisar": this.importRemapear(); break;
@@ -3156,20 +3160,232 @@
     },
     // FASE 3: memória de cálculo do quantitativo (Lei 14.133) — o Excel (aba
     // "Memória de Cálculo", lote 5) já exporta item.memoriaCalculo; aqui é onde digita.
+    /* =================================================================
+     * MEMORIAL DE CÁLCULO — agente + calculadoras + subir a quantidade
+     *
+     * Era um <textarea> e um Salvar. Virou o lugar onde a quantidade NASCE:
+     * o orçamentista lança a composição sem quantidade, descreve o serviço em
+     * português, o agente monta a conta, ele confere e SOBE.
+     *
+     * ⚠ O agente PROPÕE, não lança. O botão de subir é um segundo clique, e
+     * fica desligado até existir conta. Número que entra em orçamento sem
+     * alguém olhar é como se perde obra.
+     *
+     * ⚠ A quantidade e a memória sobem JUNTAS. Número sem a conta ao lado é
+     * o que ninguém consegue defender na hora da fiscalização (Lei 14.133).
+     * ================================================================= */
     abrirMemoria: function (etapaId, itemId) {
       var self = this, orc = this.orcAtual; if (!orc) return;
       var etapa = (orc.etapas || []).filter(function (e) { return e.id === etapaId; })[0];
       var it = etapa && (etapa.itens || []).filter(function (x) { return x.id === itemId; })[0];
       if (!it) return;
-      var body = '<p class="muted" style="margin-top:0">Registre como o quantitativo de <b>' + Util.esc(String(it.descricao || "").slice(0, 90)) + '</b> foi calculado (ex.: <i>"2 paredes × 3,20 m × 2,70 m − 1 porta 0,80×2,10"</i>). Sai na aba <b>Memória de Cálculo</b> do Excel — exigência comum em licitação (Lei 14.133).</p>' +
-        '<textarea id="mem-texto" class="cell" style="width:100%;min-height:130px;resize:vertical" placeholder="Descreva o cálculo do quantitativo…">' + Util.esc(it.memoriaCalculo || "") + '</textarea>';
+      this._mem = { etapaId: etapaId, itemId: itemId, r: null };
+      var un = Util.unidadeExibir(it.unidade);
+      var pend = it.qtdPendente || !(Util.num(it.quantidade) > 0);
+
+      var opForma = "";
+      for (var k in Orcamento.FORMAS_MEMORIA) {
+        if (!Orcamento.FORMAS_MEMORIA.hasOwnProperty(k)) continue;
+        var F = Orcamento.FORMAS_MEMORIA[k];
+        opForma += '<option value="' + k + '">' + Util.esc(F.rotulo) + " (" + Util.unidadeExibir(F.unidade) + ")</option>";
+      }
+
+      var body =
+        '<div class="muted" style="margin-top:0;font-size:12px">' +
+          "<b>" + Util.esc(String(it.descricao || "").slice(0, 100)) + "</b><br>" +
+          "Item em <b>" + Util.esc(un) + "</b>" +
+          (pend ? ' · <span style="color:#ea580c;font-weight:600">quantidade pendente</span>'
+                : " · quantidade atual <b>" + Util.esc(Util.fmtNum(it.quantidade, 2)) + "</b>") +
+        "</div>" +
+
+        // ---- 1. o agente ----
+        '<div style="margin-top:12px;padding:10px;border:1px solid var(--borda);border-radius:8px">' +
+          '<label style="font-weight:600;font-size:12px">Descreva o serviço e as medidas</label>' +
+          '<div class="muted" style="font-size:11px;margin:2px 0 6px">' +
+            'Ex.: <i>"4 paredes de 3,20 m por 2,70 descontando 2 portas e 1 janela"</i> · ' +
+            '<i>"contrapiso 45 m² com 5 cm"</i> · <i>"escavação de vala 25 m por 0,60 por 1,20, 3 valas"</i>' +
+          "</div>" +
+          '<textarea id="mem-desc" class="cell" style="width:100%;min-height:52px;resize:vertical" ' +
+            'placeholder="Descreva com as medidas…"></textarea>' +
+          '<div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">' +
+            '<button class="btn primary" data-acao="mem-agente" type="button">Gerar memorial</button>' +
+            '<button class="btn ghost" data-acao="mem-agente-ia" type="button" title="Usa a IA para frases que o cálculo local não entendeu">Tentar com IA</button>' +
+          "</div>" +
+          '<div id="mem-saida" style="margin-top:8px;font-size:12px"></div>' +
+        "</div>" +
+
+        // ---- 2. as calculadoras ----
+        '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Calculadora (escolher a forma da conta)</summary>' +
+          '<div style="padding:10px 0 0">' +
+            '<select id="mem-forma" class="cell" style="width:100%">' +
+              '<option value="">— escolha a forma do cálculo —</option>' + opForma +
+            "</select>" +
+            '<div id="mem-campos" style="margin-top:8px"></div>' +
+          "</div>" +
+        "</details>" +
+
+        // ---- 3. o texto final ----
+        '<label style="font-weight:600;font-size:12px;display:block;margin-top:12px">Memória de cálculo</label>' +
+        '<div class="muted" style="font-size:11px;margin-bottom:4px">Sai na coluna da Analítica e na aba <b>Memória de Cálculo</b> do Excel, e no laudo. Pode editar à mão.</div>' +
+        '<textarea id="mem-texto" class="cell" style="width:100%;min-height:110px;resize:vertical" ' +
+          'placeholder="Descreva o cálculo do quantitativo…">' + Util.esc(it.memoriaCalculo || "") + "</textarea>";
+
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Memória de cálculo — " + (it.codigo || ""), body, [
-        { texto: "Salvar", classe: "primary", onClick: function () {
+        { texto: "Salvar só o texto", classe: "ghost", onClick: function () {
             it.memoriaCalculo = String((UI.el("mem-texto") || {}).value || "").trim();
             self.persistir(); UI.fecharModal(); self.render();
             UI.toast(it.memoriaCalculo ? "Memória de cálculo salva." : "Memória de cálculo removida.", "ok");
-          } }
+          } },
+        { texto: "Usar a quantidade no orçamento", classe: "primary", onClick: function () { self.memSubir(); } }
       ]);
+      // liga a troca de forma da calculadora (o modal já está no DOM)
+      var sel = UI.el("mem-forma");
+      if (sel) sel.onchange = function () { self.memForma(); };
+    },
+
+    /* Roda o agente local na descrição e mostra a conta. */
+    memAgente: function (comIA) {
+      var self = this, el = UI.el("mem-desc"), box = UI.el("mem-saida");
+      if (!el || !box) return;
+      var texto = String(el.value || "").trim();
+      if (!texto) { box.innerHTML = '<span style="color:#dc2626">Escreva a descrição com as medidas.</span>'; return; }
+      var r = Orcamento.lerDescricaoQuantitativo(texto);
+      if (r.ok) { this._memMostrar(r); return; }
+      if (!comIA) {
+        box.innerHTML = '<span style="color:#dc2626">' + Util.esc(r.erro) + "</span>" +
+          '<div class="muted" style="font-size:11px;margin-top:4px">Use a calculadora abaixo, ou clique em <b>Tentar com IA</b>.</div>';
+        return;
+      }
+      this._memIA(texto, box);
+    },
+
+    /* Reforço de IA: só para a frase que o cálculo local NÃO entendeu.
+     * ⚠ A IA não devolve quantidade pronta — ela devolve a FORMA e os
+     * PARÂMETROS, e quem calcula continua sendo o motor local. Número vindo
+     * direto do modelo não é conferível e não pode virar metragem de obra. */
+    _memIA: function (texto, box) {
+      var self = this;
+      var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) || "";
+      if (!back) { box.innerHTML = '<span style="color:#dc2626">IA não configurada neste aparelho.</span>'; return; }
+      box.innerHTML = '<span class="muted">Consultando a IA…</span>';
+      var ctrl = null;
+      try { ctrl = new AbortController(); setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 12000); } catch (e) {}
+      var formas = [];
+      for (var k in Orcamento.FORMAS_MEMORIA) {
+        if (!Orcamento.FORMAS_MEMORIA.hasOwnProperty(k)) continue;
+        formas.push({ forma: k, unidade: Orcamento.FORMAS_MEMORIA[k].unidade,
+                      campos: Orcamento.FORMAS_MEMORIA[k].campos.map(function (c) { return c.id; }) });
+      }
+      fetch(back + "/ia/quantitativo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") },
+        body: JSON.stringify({ descricao: texto, formas: formas }),
+        signal: ctrl ? ctrl.signal : undefined
+      }).then(function (resp) { return resp.json(); }).then(function (j) {
+        var pr = j && j.ok && j.resultado;
+        if (!pr || !pr.forma || !Orcamento.FORMAS_MEMORIA[pr.forma]) {
+          box.innerHTML = '<span style="color:#dc2626">A IA não conseguiu montar a conta. Use a calculadora abaixo.</span>';
+          return;
+        }
+        var r = Orcamento.calcularMemoria(pr.forma, pr.dados || {});
+        if (!r.ok) { box.innerHTML = '<span style="color:#dc2626">' + Util.esc(r.erro) + "</span>"; return; }
+        r.forma = pr.forma; r.confianca = pr.confianca || "media"; r.viaIA = true;
+        if (pr.premissas && pr.premissas.length) r.comoLi = pr.premissas.slice(0, 4);
+        self._memMostrar(r);
+      }).catch(function () {
+        box.innerHTML = '<span style="color:#dc2626">Sem conexão com a IA. Use a calculadora abaixo — ela funciona offline.</span>';
+      });
+    },
+
+    /* Desenha os campos da forma escolhida na calculadora. */
+    memForma: function () {
+      var sel = UI.el("mem-forma"), box = UI.el("mem-campos");
+      if (!sel || !box) return;
+      var F = Orcamento.FORMAS_MEMORIA[sel.value];
+      if (!F) { box.innerHTML = ""; return; }
+      var h = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">';
+      F.campos.forEach(function (c) {
+        h += '<div><label style="font-size:11px;display:block">' + Util.esc(c.rotulo) + "</label>" +
+             '<input class="cell" style="width:100%;box-sizing:border-box" id="memc-' + Util.esc(c.id) + '" ' +
+             'inputmode="decimal" value="' + (c.padrao != null ? c.padrao : "") + '"></div>';
+      });
+      h += "</div>" +
+        '<button class="btn" data-acao="mem-calc" type="button" style="margin-top:8px">Calcular</button>';
+      box.innerHTML = h;
+    },
+
+    /* Roda a calculadora com o que está nos campos. */
+    memCalcular: function () {
+      var sel = UI.el("mem-forma"), box = UI.el("mem-saida");
+      if (!sel || !box) return;
+      var F = Orcamento.FORMAS_MEMORIA[sel.value];
+      if (!F) return;
+      var d = {};
+      F.campos.forEach(function (c) { var e = UI.el("memc-" + c.id); d[c.id] = e ? e.value : ""; });
+      var r = Orcamento.calcularMemoria(sel.value, d);
+      if (!r.ok) { box.innerHTML = '<span style="color:#dc2626">' + Util.esc(r.erro) + "</span>"; return; }
+      r.forma = sel.value; r.confianca = "alta";
+      this._memMostrar(r);
+    },
+
+    /* Mostra a conta, guarda o resultado e joga o texto no campo do memorial. */
+    _memMostrar: function (r) {
+      var box = UI.el("mem-saida"); if (!box) return;
+      this._mem = this._mem || {};
+      this._mem.r = r;
+      var it = this._memItem();
+      var bate = !it || !it.unidade || Orcamento.unidadeCompativel(it.unidade, r.unidade);
+      var h = '<div style="padding:8px;border-radius:6px;background:' + (bate ? "rgba(22,163,74,.08)" : "rgba(234,88,12,.10)") + '">' +
+        '<b style="color:' + (bate ? "#16a34a" : "#ea580c") + ';font-size:15px">' +
+        Util.esc(Util.fmtNum(r.qtd, 2)) + " " + Util.esc(Util.unidadeExibir(r.unidade)) + "</b>" +
+        (r.viaIA ? ' <span class="muted" style="font-size:10px">· via IA, conta feita localmente</span>' : "") +
+        '<div style="margin-top:4px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:11px">' +
+        Util.esc(r.texto) + "</div>";
+      if (r.comoLi && r.comoLi.length) {
+        h += '<div class="muted" style="font-size:11px;margin-top:6px">Como eu li: ' +
+             Util.esc(r.comoLi.join(" · ")) + "</div>";
+      }
+      if (!bate) {
+        h += '<div style="margin-top:6px;color:#ea580c;font-size:11px"><b>Confira:</b> este item é em <b>' +
+             Util.esc(Util.unidadeExibir(it.unidade)) + "</b>. Não dá para subir uma quantidade em " +
+             Util.esc(Util.unidadeExibir(r.unidade)) + " — ajuste a descrição ou a unidade do item.</div>";
+      }
+      h += "</div>";
+      box.innerHTML = h;
+      var t = UI.el("mem-texto");
+      if (t) t.value = r.texto;
+      /* ⚠ ROLAR ATÉ A CONTA. Medido no navegador: o modal não cabe inteiro na
+         tela, e a conta nascia ABAIXO da dobra — o usuário clicava em "Gerar
+         memorial", nada parecia acontecer, e ele clicava de novo. O resultado
+         precisa aparecer sozinho, senão o recurso parece quebrado. */
+      try { box.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) {}
+    },
+
+    _memItem: function () {
+      var m = this._mem, orc = this.orcAtual;
+      if (!m || !orc) return null;
+      var et = (orc.etapas || []).filter(function (e) { return e.id === m.etapaId; })[0];
+      return et && (et.itens || []).filter(function (x) { return x.id === m.itemId; })[0];
+    },
+
+    /* Sobe a quantidade calculada (e a memória junto) para o item. */
+    memSubir: function () {
+      var m = this._mem, orc = this.orcAtual;
+      if (!m || !orc) return;
+      var it = this._memItem();
+      if (!it) { UI.toast("Item não encontrado.", "erro"); return; }
+      // o usuário pode ter editado o texto à mão — o que vale é o que está na tela
+      var textoTela = String((UI.el("mem-texto") || {}).value || "").trim();
+      if (!m.r || !m.r.ok) {
+        UI.toast("Gere a conta primeiro — sem ela não há quantidade para subir.", "erro");
+        return;
+      }
+      var r = { ok: true, qtd: m.r.qtd, unidade: m.r.unidade, texto: textoTela || m.r.texto };
+      var res = Orcamento.aplicarMemoriaQuantidade(orc, m.etapaId, m.itemId, r);
+      if (!res.ok) { UI.toast(res.erro, "erro"); return; }
+      this.persistir(); UI.fecharModal(); this.render();
+      UI.toast("Quantidade " + Util.fmtNum(res.qtd, 2) + " " + Util.unidadeExibir(it.unidade) +
+               " lançada com a memória de cálculo.", "ok");
     },
 
     /* =================================================================
@@ -4465,11 +4681,17 @@
           if (Orcamento.totais(self.orcAtual).qtdItens >= limCp) {
             limEstourado = true;
           } else {
+            /* ⚠ ENTRA SEM QUANTIDADE, de propósito (v1.1.226).
+               Aqui era `1` cravado, e o toast pedia "ajuste" — um metro
+               quadrado que ninguém digitou somando no total até alguém
+               reparar. Agora entra PENDENTE: não soma, aparece marcado na
+               planilha e o botão da memória vira "Calcular". É o fluxo de
+               montar a composição primeiro e levantar a metragem depois. */
             Orcamento.addItem(self.orcAtual, st.addNaEtapa, {
               codigo: item.codigo, descricao: item.descricao, unidade: item.unidade,
               custoUnitario: item.custoUnitario, custoMO: item.custoMO, custoMAT: item.custoMAT,
               custoEQ: item.custoEQ, baseFonte: "PROPRIA"
-            }, 1, st.addNaSub || "");
+            }, 0, st.addNaSub || "");
             self.persistir();
             addOk = true;
           }
@@ -4477,7 +4699,7 @@
         self._cp = null;
         UI.fecharModal();
         if (addOk) self.render();
-        UI.toast("Composição " + item.codigo + " gravada na base própria (" + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade + ")" + (addOk ? " e adicionada à planilha (quantidade 1 — ajuste)." : (limEstourado ? ". Não entrou na planilha: limite de itens do plano atingido — faça upgrade." : " — já aparece na busca de itens.")), "ok");
+        UI.toast("Composição " + item.codigo + " gravada na base própria (" + Util.fmtMoeda(item.custoUnitario) + "/" + item.unidade + ")" + (addOk ? " e adicionada à planilha. Clique em Calcular na linha dela para levantar a quantidade." : (limEstourado ? ". Não entrou na planilha: limite de itens do plano atingido — faça upgrade." : " — já aparece na busca de itens.")), "ok");
       };
       if (r.avisos.length) {
         // avisos não bloqueiam, mas exigem decisão EXPLÍCITA (sem margem p/ erro escondido)

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.225",
+  "versao": "1.1.226",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.225/OrcaPRO-IA-update-v1.1.225.zip",
-  "notas": "A memoria de calculo agora sai no Excel em dois lugares. Na aba Analitica, numa coluna ao lado do item que ela justifica, para quem confere linha a linha sem precisar trocar de aba. E na aba Memoria de Calculo, que passou a trazer tambem a justificativa dos coeficientes das suas composicoes proprias: o porque de cada coeficiente, que antes so existia dentro do sistema e nao acompanhava a planilha entregue. A planilha impressa nao mudou de tamanho: a coluna nova fica fora da area de impressao, entao o PDF de licitacao continua saindo exatamente como sempre saiu. Se voce criou algum orcamento na versao anterior, a aba Memoria de Calculo continua saindo nele normalmente.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.225/OrcaPRO-IA-Instalador-v1.1.225.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.226/OrcaPRO-IA-update-v1.1.226.zip",
+  "notas": "A memoria de calculo agora e onde a quantidade nasce. Voce lanca a composicao sem colocar metragem, escreve o servico em portugues (ex.: \"4 paredes de 3,20 por 2,70 descontando 2 portas e 1 janela\") e o agente monta a conta inteira, discriminada. Confere e clica em Usar a quantidade no orcamento: o numero sobe junto com a memoria que o justifica. Sao 12 formas de calculo e um agente que conhece as regras da obra: demao nao multiplica area, telhado se mede pelo plano inclinado, escavacao e volume, rodape e perimetro. Mudanca importante: item lancado sem quantidade nao vira mais 1 automatico. Ele fica marcado como pendente, nao soma no total, e o botao da linha vira Calcular. Antes, um metro quadrado que voce nao digitou entrava na conta em silencio.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.226/OrcaPRO-IA-Instalador-v1.1.226.exe"
 }
