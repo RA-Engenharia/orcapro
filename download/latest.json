@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.216",
+  "versao": "1.1.217",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.216/OrcaPRO-IA-update-v1.1.216.zip",
-  "notas": "Duas novidades. A primeira: agora da para lancar um servico considerando so a mao de obra, ou so o material e o ferramental, em vez da composicao completa. Na hora de lancar o item o sistema mostra os tres valores e voce escolhe - quem faz empreitada so de mao de obra parou de precisar refazer a composicao na mao. Os tres valores ficam guardados no item, entao da para voltar atras a qualquer momento sem refazer nada, e a planilha marca com uma etiqueta os itens que entraram parciais, para ninguem confundir com erro de preco. Quando a tabela de precos nao publica essa separacao, o sistema avisa em vez de lancar um item zerado. A segunda: a lista de orcamentos ganhou a taxa de conversao (quantos dos enviados foram aprovados) e um aviso de orcamentos parados - sem edicao ha mais de 15 dias e que ainda nao foram enviados a ninguem.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.216/OrcaPRO-IA-Instalador-v1.1.216.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.217/OrcaPRO-IA-update-v1.1.217.zip",
+  "notas": "Agora voce descreve o servico e o sistema faz a conta. Ao lancar um item, escreva por exemplo execucao de alvenaria, 100 m lineares por 2,20 de altura e clique em Calcular: ele entende as medidas, preenche a quantidade e escreve a memoria de calculo mostrando a conta - 100,00 m x 2,20 m = 220,00 m2 - que fica guardada no item e sai no laudo. E a conta que aparece, nao so o resultado: e ela que justifica a metragem numa auditoria e da confianca para lancar. O sistema propoe, voce confere: nada e lancado sozinho. Se a conta der uma unidade diferente da do item (metro cubico onde o item e metro quadrado), ele avisa e nao preenche, em vez de multiplicar o preco sem ninguem perceber. Funciona sem internet.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.217/OrcaPRO-IA-Instalador-v1.1.217.exe"
 }

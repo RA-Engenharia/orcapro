@@ -528,6 +528,9 @@
          escolha se perde no lançamento e o item volta a somar tudo */
       if (sinapiItem.modoCusto && sinapiItem.modoCusto !== "total") it.modoCusto = sinapiItem.modoCusto;
       if (sinapiItem.custoBase != null) it.custoBase = Util.num(sinapiItem.custoBase);
+      /* a memória de cálculo nasce COM o item quando veio da calculadora —
+         justificar a metragem depois é o que ninguém volta para fazer */
+      if (sinapiItem.memoriaCalculo) it.memoriaCalculo = String(sinapiItem.memoriaCalculo);
       // destino opcional: sub etapa da MESMA etapa (id desconhecido vira solto)
       if (subEtapaId && this.subEtapas(etapa).filter(function (s) { return s.id === subEtapaId; }).length) it.subEtapaId = subEtapaId;
       etapa.itens.push(it);
@@ -1015,6 +1018,133 @@
       orc.diasEditados.push(dia);
       if (orc.diasEditados.length > 400) orc.diasEditados = orc.diasEditados.slice(-400);
       return orc.diasEditados.length;
+    },
+
+    /* ==================================================================
+     * MEMORIAL DE CÁLCULO — calculadoras e leitura da descrição
+     *
+     * A memória já existia (`item.memoriaCalculo`, texto livre, sai no laudo).
+     * O que faltava era COMO chegar no número: o orçamentista fazia a conta
+     * fora e digitava só o resultado — e número sem conta não justifica
+     * metragem nenhuma numa auditoria.
+     *
+     * ⚠ A MEMÓRIA MOSTRA A CONTA, não o resultado. É esse texto que dá ao
+     * orçamentista confiança para lançar, que é o objetivo declarado.
+     * ================================================================== */
+    FORMAS_MEMORIA: {
+      retangulo: { rotulo: "Área retangular", unidade: "m2", campos: [
+        { id: "comprimento", rotulo: "Comprimento (m)" },
+        { id: "altura", rotulo: "Altura / largura (m)" },
+        { id: "repeticoes", rotulo: "Repetições", padrao: 1 }
+      ] },
+      areaDesconto: { rotulo: "Área com descontos", unidade: "m2", campos: [
+        { id: "comprimento", rotulo: "Comprimento (m)" },
+        { id: "altura", rotulo: "Altura (m)" },
+        { id: "repeticoes", rotulo: "Repetições", padrao: 1 },
+        { id: "descontos", rotulo: "Descontar vãos (m²)", padrao: 0 }
+      ] },
+      volume: { rotulo: "Volume", unidade: "m3", campos: [
+        { id: "area", rotulo: "Área (m²)" },
+        { id: "espessura", rotulo: "Espessura (m)" }
+      ] },
+      linear: { rotulo: "Comprimento linear", unidade: "m", campos: [
+        { id: "comprimento", rotulo: "Comprimento de cada trecho (m)" },
+        { id: "repeticoes", rotulo: "Quantos trechos", padrao: 1 }
+      ] },
+      contagem: { rotulo: "Contagem", unidade: "un", campos: [
+        { id: "itens", rotulo: "Quantos" },
+        { id: "repeticoes", rotulo: "Por ambiente / pavimento", padrao: 1 }
+      ] }
+    },
+
+    /* Calcula e REDIGE. Devolve { ok, qtd, unidade, texto } ou { ok:false }. */
+    calcularMemoria: function (forma, d) {
+      var F = this.FORMAS_MEMORIA[forma];
+      if (!F) return { ok: false, erro: "Forma de cálculo desconhecida." };
+      d = d || {};
+      var n = function (k, pad) { var v = Util.num(d[k]); return v > 0 ? v : (pad != null ? pad : 0); };
+      var fm = function (v, casas) { return Util.fmtNum(v, casas == null ? 2 : casas); };
+      var qtd = 0, texto = "";
+      var rep = n("repeticoes", 1);
+      if (forma === "retangulo" || forma === "areaDesconto") {
+        var c = n("comprimento"), a = n("altura"), desc = n("descontos", 0);
+        if (!(c > 0 && a > 0)) return { ok: false, erro: "Informe comprimento e altura." };
+        var bruta = c * a * rep;
+        qtd = Math.max(0, bruta - desc);
+        texto = fm(c) + " m × " + fm(a) + " m" + (rep > 1 ? " × " + fm(rep, 0) + " (repetições)" : "") +
+          " = " + fm(bruta) + " m²" + (desc > 0 ? "\nDescontos de vãos: −" + fm(desc) + " m²\nTotal: " + fm(qtd) + " m²" : "");
+      } else if (forma === "volume") {
+        var ar = n("area"), esp = n("espessura");
+        if (!(ar > 0 && esp > 0)) return { ok: false, erro: "Informe área e espessura." };
+        qtd = ar * esp;
+        texto = fm(ar) + " m² × " + fm(esp, 3) + " m (espessura) = " + fm(qtd, 3) + " m³";
+      } else if (forma === "linear") {
+        var cl = n("comprimento");
+        if (!(cl > 0)) return { ok: false, erro: "Informe o comprimento." };
+        qtd = cl * rep;
+        texto = fm(cl) + " m" + (rep > 1 ? " × " + fm(rep, 0) + " trecho(s)" : "") + " = " + fm(qtd) + " m";
+      } else {
+        var it = n("itens");
+        if (!(it > 0)) return { ok: false, erro: "Informe a quantidade." };
+        qtd = it * rep;
+        texto = fm(it, 0) + (rep > 1 ? " × " + fm(rep, 0) : "") + " = " + fm(qtd, 0) + " un";
+      }
+      return { ok: true, qtd: Math.round(qtd * 10000) / 10000, unidade: F.unidade, texto: texto };
+    },
+
+    /* AGENTE DE QUANTITATIVO — lê a descrição em português e propõe a conta.
+     *
+     * ⚠ RODA LOCAL, sem rede. É determinístico e conferível: a mesma frase dá
+     * sempre a mesma conta, e o teste consegue provar. O backend de IA entra
+     * depois como reforço para frase que este parser não entende — nunca como
+     * o piso, senão o recurso morre offline (obra é onde a internet falha).
+     *
+     * ⚠ PROPÕE, não lança. Quem confere é o orçamentista. */
+    lerDescricaoQuantitativo: function (texto) {
+      var t = String(texto == null ? "" : texto).toLowerCase();
+      try { t = t.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
+      if (t.trim().length < 3) return { ok: false, erro: "Descreva o serviço com as medidas." };
+      /* números em pt-BR: 2,20 e 2.20 são o mesmo; 1.500,00 é mil e quinhentos */
+      var achados = [];
+      t.replace(/(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)\s*(m2|m²|m3|m³|metros? quadrados?|metros? cubicos?|metros? lineares?|metros?|ml|cm|un|unidades?|pecas?|pontos?)?/g,
+        function (todo, num, uni) {
+          var v = num.indexOf(",") >= 0 ? num.replace(/\./g, "").replace(",", ".") : num;
+          var x = parseFloat(v);
+          if (!(x > 0)) return todo;
+          var u = String(uni || "");
+          var tipo = /m2|m²|quadrado/.test(u) ? "area" : (/m3|m³|cubico/.test(u) ? "volume"
+                   : (/cm/.test(u) ? "cm" : (/un|unidade|peca|ponto/.test(u) ? "un" : (u ? "m" : ""))));
+          achados.push({ valor: x, tipo: tipo, unidade: u });
+          return todo;
+        });
+      if (!achados.length) return { ok: false, erro: "Não encontrei medidas na descrição. Ex.: “alvenaria 100 m por 2,20 de altura”." };
+      /* área direta: "220 m2" */
+      var direta = achados.filter(function (a) { return a.tipo === "area" || a.tipo === "volume" || a.tipo === "un"; })[0];
+      var lineares = achados.filter(function (a) { return a.tipo === "m" || a.tipo === ""; });
+      /* dois comprimentos = área (o caso do pedido: 100 m × 2,20 de altura) */
+      if (lineares.length >= 2) {
+        var r = this.calcularMemoria("retangulo", { comprimento: lineares[0].valor, altura: lineares[1].valor, repeticoes: 1 });
+        if (r.ok) { r.forma = "retangulo"; r.confianca = "alta"; return r; }
+      }
+      if (direta) {
+        var un = direta.tipo === "area" ? "m2" : (direta.tipo === "volume" ? "m3" : "un");
+        return { ok: true, qtd: direta.valor, unidade: un, forma: "direta", confianca: "alta",
+                 texto: Util.fmtNum(direta.valor, 2) + " " + (un === "m2" ? "m²" : (un === "m3" ? "m³" : "un")) + " (informado na descrição)" };
+      }
+      if (lineares.length === 1) {
+        var rl = this.calcularMemoria("linear", { comprimento: lineares[0].valor, repeticoes: 1 });
+        if (rl.ok) { rl.forma = "linear"; rl.confianca = "media"; return rl; }
+      }
+      return { ok: false, erro: "Entendi as medidas, mas não a forma do cálculo. Use a calculadora." };
+    },
+
+    /* A unidade proposta bate com a do item? Divergência aqui multiplica preço
+     * sem ninguém perceber — m³ lançado onde o item é m² passa despercebido. */
+    unidadeCompativel: function (unidadeItem, unidadeCalc) {
+      var k = function (u) {
+        return (typeof Util !== "undefined" && Util.unidadeChave) ? Util.unidadeChave(u) : String(u || "").toLowerCase();
+      };
+      return k(unidadeItem) === k(unidadeCalc);
     },
 
     /* ==================================================================

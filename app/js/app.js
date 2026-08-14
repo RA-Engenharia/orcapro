@@ -540,6 +540,34 @@
       var rot = (Aprovacao.ESTADOS[r.estado] || {}).rotulo || r.estado;
       UI.toast(orc.numero + " → " + rot + (acao === "aprovar" ? ". A partir de agora só muda por revisão." : "."), "ok");
     },
+    /* O agente lê a descrição, faz a conta e PROPÕE. Nunca lança sozinho:
+     * quem confere é o orçamentista, e é por isso que a conta aparece
+     * escrita — número sem conta não justifica metragem em auditoria. */
+    qiCalcular: function () {
+      var el = UI.el("qi-desc"), box = UI.el("qi-memo");
+      if (!el || !box) return;
+      var r = Orcamento.lerDescricaoQuantitativo(el.value);
+      if (!r.ok) {
+        box.innerHTML = '<span style="color:#dc2626">' + Util.esc(r.erro) + '</span>';
+        return;
+      }
+      var unItem = (this._qiItem && this._qiItem.unidade) || "";
+      var bate = !unItem || Orcamento.unidadeCompativel(unItem, r.unidade);
+      var q = UI.el("qi-qtd");
+      /* ⚠ UNIDADE QUE NÃO CASA NÃO PREENCHE. m³ lançado onde o item é m²
+         passa despercebido e multiplica preço — avisa em vez de lançar. */
+      if (!bate) {
+        box.innerHTML = '<span style="color:#ea580c"><b>Confira:</b> a conta deu ' +
+          Util.esc(Util.fmtNum(r.qtd, 2)) + " " + Util.esc(Util.unidadeExibir(r.unidade)) +
+          ', mas este item é em <b>' + Util.esc(Util.unidadeExibir(unItem)) + '</b>. Não preenchi a quantidade — ajuste a descrição ou digite à mão.</span>';
+        return;
+      }
+      if (q) q.value = Util.fmtNum(r.qtd, 2);
+      this._qiMemoria = r.texto;
+      box.innerHTML = '<b style="color:#16a34a">' + Util.esc(Util.fmtNum(r.qtd, 2)) + " " +
+        Util.esc(Util.unidadeExibir(r.unidade)) + '</b> — ' + Util.esc(r.texto).replace(/\n/g, "<br>") +
+        '<br><span style="font-size:11px">Confira antes de lançar; a conta vai junto como memória de cálculo.</span>';
+    },
     /* Cria a revisão de um aprovado e abre ELA. O original fica onde está —
      * é isso que separa revisão de edição por baixo. */
     criarRevisao: function (orc) {
@@ -1019,6 +1047,7 @@
         case "importar-planilha": this.importarPlanilha(); break;
         case "recuperar-planilha": this.recuperarPlanilha(); break;
         case "orc-aprov": this.orcAprovar(t.dataset.aprov); break;
+        case "qi-calcular": this.qiCalcular(); break;
         case "fo-limpar": this._filtroOrc = null; this.render(); break;
         case "import-reanalisar": this.importRemapear(); break;
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
@@ -3522,6 +3551,7 @@
       /* uma função só para os dois botões: duplicar o corpo abriria espaço para
          a regra de preço zerado divergir entre "adicionar" e "adicionar e
          continuar" — que é exatamente o tipo de diferença que ninguém percebe. */
+      self._qiItem = item; self._qiMemoria = null;
       function lancar(continuar) {
         var qtd = Util.num((UI.el("qi-qtd") || {}).value);
         var cu = Util.num((UI.el("qi-cu") || {}).value);
@@ -3531,6 +3561,8 @@
           return;
         }
         var itemAjustado = Util.clone(item); itemAjustado.custoUnitario = cu; itemAjustado.baseFonte = fonte;
+        // a conta escrita viaja com o item: e ela que justifica a metragem
+        if (self._qiMemoria) itemAjustado.memoriaCalculo = self._qiMemoria;
         /* modo escolhido: aplica DEPOIS do custo digitado, para o cheio ficar
            guardado em custoBase — é ele que permite voltar para "Completa". */
         var modoEl = document.querySelector('input[name="qi-modo"]:checked');
@@ -3569,6 +3601,14 @@
             op("total", p.total) + op("mo", p.mo) + op("matEq", p.matEq) +
             '<span class="muted" style="font-size:11px">O item guarda as três parcelas — dá para trocar depois sem refazer nada.</span></div>';
         })() +
+        /* MEMORIAL: descrever em português e deixar o sistema fazer a conta.
+           Fica ANTES da quantidade porque é assim que o orçamentista pensa —
+           ele sabe as medidas, não o total. */
+        '<div class="field"><label>Como você chegou nessa quantidade? <span class="muted" style="font-weight:400">(opcional)</span></label>' +
+          '<div class="flex" style="gap:6px">' +
+            '<input id="qi-desc" style="flex:1" placeholder="Ex.: alvenaria de 100 m por 2,20 de altura" autocomplete="off">' +
+            '<button type="button" class="btn sm primary" data-acao="qi-calcular">Calcular</button></div>' +
+          '<div id="qi-memo" class="muted" style="font-size:11.5px;margin-top:4px"></div></div>' +
         '<div class="row"><div class="field"><label>Quantidade (' + Util.esc(Util.unidadeExibir(item.unidade)) + ')</label>' +
         '<input id="qi-qtd" value="1" autofocus></div>' +
         '<div class="field"><label>Custo unitário</label><input id="qi-cu" value="' + Util.fmtNum(item.custoUnitario, 2) + '"></div></div>',
