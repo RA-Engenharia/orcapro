@@ -47,6 +47,8 @@
         numero: "ORC-" + new Date().getFullYear() + "-" + Math.floor(Math.random() * 9000 + 1000),
         nome: "", cliente: "", obra: "", local: "",
         categoria: "", prazoEntrega: "", controlarPrazo: false, permitirZerado: false,
+        /* padrao: so no laudo - ver o comentario no passo 1 */
+        memorial: { laudo: true, excel: false, proposta: false },
         licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
         arredondamento: base.arredondamento,
         bdiIncidencia: base.bdiIncidencia,
@@ -71,6 +73,11 @@
         cliente: (orc.cliente && orc.cliente.nome) || "", obra: (orc.obra && orc.obra.nome) || "",
         categoria: cfg.categoria || "", prazoEntrega: cfg.prazoEntrega || "", controlarPrazo: !!cfg.controlarPrazo,
         permitirZerado: !!cfg.permitirZerado,
+        memorial: {
+          laudo: !cfg.memorial || cfg.memorial.laudo !== false,
+          excel: !!(cfg.memorial && cfg.memorial.excel),
+          proposta: !!(cfg.memorial && cfg.memorial.proposta)
+        },
         licitacao: {
           ativo: !!(cfg.licitacao && cfg.licitacao.ativo),
           tipo: (cfg.licitacao && cfg.licitacao.tipo) || "",
@@ -146,6 +153,7 @@
       if (s.bdiManual) { orc.bdi.modeloId = "manual"; orc.bdi.params = null; }
       var cfg = Orcamento.garantirConfig(orc);
       cfg.categoria = s.categoria; cfg.prazoEntrega = s.prazoEntrega; cfg.controlarPrazo = !!s.controlarPrazo;
+      cfg.memorial = { laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, proposta: !!s.memorial.proposta };
       cfg.permitirZerado = s.permitirZerado;
       cfg.arredondamento = s.arredondamento; cfg.bdiIncidencia = s.bdiIncidencia;
       cfg.encargos = { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista };
@@ -207,6 +215,17 @@
         '<div class="field"><label>Categoria da obra</label><select id="ow-categoria">' + cats + "</select></div>" +
         '<label class="ow-check"><input type="checkbox" id="ow-zerado"' + (s.permitirZerado ? " checked" : "") + '> ' +
         "<span>Permitir insumos com preço zerado <small>(itens sem preço na base entram com R$ 0,00 em vez de bloquear o lançamento)</small></span></label>" +
+        /* ONDE O MEMORIAL SAI (v1.1.224). A justificativa de quantidade e de
+           coeficiente é trabalho seu; quem decide se ela vai junto ao cliente
+           é você. Padrão: sai no laudo (documento técnico, onde justificar é o
+           ponto) e NÃO na proposta comercial — cliente final raramente quer a
+           conta, e mandar sem escolher é decidir por ele. */
+        '<label class="ow-check"><input type="checkbox" id="ow-mem-laudo"' + (s.memorial.laudo ? " checked" : "") + '> ' +
+        "<span>Memória de cálculo no <b>laudo</b> <small>(justificativa das quantidades e dos coeficientes)</small></span></label>" +
+        '<label class="ow-check"><input type="checkbox" id="ow-mem-excel"' + (s.memorial.excel ? " checked" : "") + '> ' +
+        "<span>Memória de cálculo no <b>Excel</b> <small>(coluna a mais na aba Analítica)</small></span></label>" +
+        '<label class="ow-check"><input type="checkbox" id="ow-mem-proposta"' + (s.memorial.proposta ? " checked" : "") + '> ' +
+        "<span>Memória de cálculo na <b>proposta comercial</b> <small>(pense duas vezes: expõe a sua conta ao cliente)</small></span></label>" +
         '<label class="ow-check"><input type="checkbox" id="ow-lic"' + (s.licitacao.ativo ? " checked" : "") + '> ' +
         "<span><b>Este orçamento é para LICITAÇÃO</b> <small>(os dados abaixo saem no cabeçalho da planilha e do laudo)</small></span></label>" +
         '<div id="ow-licbox" class="ow-box"' + (s.licitacao.ativo ? "" : ' style="display:none"') + ">" +
@@ -225,6 +244,7 @@
       s.prazoEntrega = val("ow-prazo");
       s.controlarPrazo = marcado("ow-controlar-prazo");
       s.permitirZerado = marcado("ow-zerado");
+      s.memorial = { laudo: marcado("ow-mem-laudo"), excel: marcado("ow-mem-excel"), proposta: marcado("ow-mem-proposta") };
       s.licitacao = {
         ativo: marcado("ow-lic"),
         tipo: val("ow-lic-tipo"),
@@ -642,6 +662,7 @@
         categoria: s.categoria,
         prazoEntrega: s.prazoEntrega,
         controlarPrazo: !!s.controlarPrazo,
+        memorial: { laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, proposta: !!s.memorial.proposta },
         arredondamento: s.arredondamento,
         bdiIncidencia: s.bdiIncidencia,
         encargos: { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista },

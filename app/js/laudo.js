@@ -150,8 +150,14 @@
 
       // ---- 5.1 MEMÓRIA DE CÁLCULO (Lei 14.133 — justificativa dos quantitativos) ----
       // LOTE 4: o campo já era capturado na UI mas não saía no PDF do laudo.
+      /* v1.1.224 — respeita a escolha do usuário. Padrão é SAIR: o laudo é o
+         documento técnico, onde justificar quantidade é o ponto. Quem não
+         quiser desmarca em Parâmetros; quem nunca abriu os parâmetros continua
+         com o comportamento de sempre. */
+      var _cfgMem = (orc.config && orc.config.memorial) || null;
+      var _saiMem = !_cfgMem || _cfgMem.laudo !== false;
       var memHtml = '';
-      Util.arr(orc.etapas).forEach(function (e) {
+      Util.arr(_saiMem ? orc.etapas : []).forEach(function (e) {
         Util.arr(e.itens).forEach(function (it) {
           if (!Util.naoVazio(it.memoriaCalculo)) return;
           memHtml += '<tr><td>' + Util.esc(it.codigo) + '</td><td>' + Util.esc(it.descricao) + '</td>' +

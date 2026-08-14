@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.223",
+  "versao": "1.1.224",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.223/OrcaPRO-IA-update-v1.1.223.zip",
-  "notas": "Agora cada coeficiente da sua composicao propria pode explicar de onde veio. Ao lado do coeficiente aparece um botao por que?, e ali voce calcula: pecas por metro quadrado (largura x altura da peca, com perda), consumo por unidade, produtividade da equipe ou volume por espessura. A calculadora nao devolve so o numero - ela escreve a conta: 1 dividido por (0,390 m x 0,190 m) igual a 13,50 pecas por m2; com 5% de perda, 14,1777. E essa frase que defende o seu preco quando alguem perguntar, e ela aparece embaixo do coeficiente no detalhamento da composicao. Quem prefere escrever a justificativa com as proprias palavras tambem pode. O botao fica verde quando a linha ja esta justificada, entao bate o olho e voce ve o que ainda falta explicar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.223/OrcaPRO-IA-Instalador-v1.1.223.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.224/OrcaPRO-IA-update-v1.1.224.zip",
+  "notas": "Agora voce escolhe onde a memoria de calculo aparece. Em Parametros do orcamento ha tres opcoes: no laudo, no Excel e na proposta comercial. O laudo ja vem marcado, porque e o documento tecnico onde justificar quantidade e justamente o ponto. A proposta comercial vem desmarcada de proposito - mandar a sua conta junto com o preco expoe como voce chegou nele, e essa escolha e sua, nao do sistema. Orcamentos que voce ja tem continuam se comportando exatamente como antes: quem nunca abriu os parametros nao vai encontrar um documento que encolheu sozinho.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.224/OrcaPRO-IA-Instalador-v1.1.224.exe"
 }
