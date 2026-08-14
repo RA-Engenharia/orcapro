@@ -298,6 +298,27 @@
     var wabc = abc   ? wb.addWorksheet("Curva ABC",  { properties: { tabColor: { argb: 'FFF59E0B' } }, views: [{ state: 'frozen', ySplit: 7 }] }) : null;
     var wcr  = crono ? wb.addWorksheet("Cronograma", { properties: { tabColor: { argb: 'FF8B5CF6' } }, views: [{ state: 'frozen', ySplit: 4 }] }) : null;
 
+    /* ===== v1.1.225 — destino do memorial (Parâmetros do orçamento) =====
+       A aba "Memória de Cálculo" existe desde a 1.1.217 e SEMPRE saiu quando
+       havia memória. A partir daqui ela passa a obedecer a um parâmetro — e é
+       aí que mora a armadilha, que quase foi para a frota.
+
+       Não basta ler `excel !== false`. A 1.1.224 GRAVOU `excel:false` no dado
+       do cliente, explícito, em dois pontos: ao criar orçamento
+       (orcwizard.js `_criar`) e a CADA Salvar em Parâmetros
+       (orcwizard.js `_salvarParametros`) — inclusive de orçamento antigo em que
+       o usuário só foi mexer no BDI. Naquela versão nada lia o campo, então
+       ninguém escolheu aquele `false`: ele é entulho de um default meu.
+
+       Ler o `false` como escolha arrancaria a aba de quem já tinha — a aba de
+       justificativa de quantitativos (art. 23 da Lei 14.133) sumindo calada do
+       xlsx entregue. Por isso a escolha é VERSIONADA: só vale como escolha do
+       usuário o que foi gravado pela 1.1.225 em diante (`v >= 2`). O que veio
+       sem carimbo é entulho e cai no comportamento de sempre — a aba sai. */
+    var _cfgMemX = (orc.config && orc.config.memorial) || null;
+    var _escolhaMemVale = !!(_cfgMemX && Number(_cfgMemX.v) >= 2);
+    var _memNoExcel = !_escolhaMemVale || _cfgMemX.excel !== false;
+
     // ===================== ANALÍTICA (preenche 1º p/ saber as linhas) =====================
     wa.columns = [{ width: 6 }, { width: 12 }, { width: 11 }, { width: 50 }, { width: 7 }, { width: 10 }, { width: 14 }, { width: 15 }, { width: 14 }, { width: 16 }];
     wa.mergeCells('A1:J1'); wa.getCell('A1').value = empresa; wa.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
@@ -312,6 +333,20 @@
     // SUMIFS da Sintética (fim das referências fixas tipo 'Analítica'!H16).
     wa.getRow(hr).getCell(11).value = 'Etapa';
     wa.getColumn(11).width = 14; wa.getColumn(11).hidden = true;
+    /* v1.1.225 — a COLUNA do memorial, ao lado do item que ela justifica.
+       Vai em L, DEPOIS da última coluna usada, nunca no meio: a Sintética, a
+       Curva ABC e a aba Dados IA referenciam a Analítica por LETRA de coluna
+       ('Analítica'!F, !H, !J). Inserir no meio deslocaria tudo e quebraria as
+       fórmulas em silêncio — o mesmo motivo que já manteve a justificativa de
+       preço fora daqui. Em L, nada se desloca.
+       A aba "Memória de Cálculo" continua existindo: lá cabe o texto longo e a
+       justificativa dos coeficientes; aqui é a leitura de quem confere linha a
+       linha sem trocar de aba. */
+    if (_memNoExcel) {
+      wa.getRow(hr).getCell(12).value = 'Memória de cálculo';
+      hStyle(wa.getRow(hr).getCell(12));
+      wa.getColumn(12).width = 60;
+    }
 
     var r = hr + 1, n = 0, subCustoCells = [], subVendaCells = [], etInfo = [], grandCusto = 0, grandVenda = 0, grandMO = 0, grandMAT = 0, grandEQ = 0;
     var itensFlat = []; // FASE 4 (AI-ready): 1 registro por item p/ a Table tblItens da aba "Dados IA"
@@ -381,6 +416,12 @@
         row.getCell(9).value  = { formula: bdiNoPU ? fU('G' + r + '*(1+' + BDI_CELL + '/100)') : fU('G' + r), result: pu };
         row.getCell(10).value = { formula: fV('F' + r + '*I' + r), result: pt };
         row.getCell(11).value = etKey; // âncora SUMIFS (coluna oculta; vazia em banner/subtotal)
+        if (_memNoExcel && it.memoriaCalculo) {
+          row.getCell(12).value = String(it.memoriaCalculo);
+          row.getCell(12).alignment = { wrapText: true, vertical: 'top' };
+          row.getCell(12).font = { size: 9, color: { argb: muted } };
+          row.getCell(12).border = thin();
+        }
         itensFlat.push({ r: r, etapa: etKey, n: n, num: (_L && _L.numero) || ((etIdx + 1) + '.' + (itIdx + 1)), qt: qt, cu: cu, ct: ct, pu: pu, pt: pt, it: it });
         row.getCell(6).numFmt = NUM;
         [7, 8, 9, 10].forEach(function (k) { row.getCell(k).numFmt = MOEDA; });
@@ -894,8 +935,31 @@
 
     // ===================== FASE 3: memória de cálculo (Lei 14.133) =====================
     // Só entra se algum item tiver o campo memoriaCalculo preenchido no app.
-    var wmem = null, comMem = itensFlat.filter(function (x) { return x.it && x.it.memoriaCalculo; });
-    if (comMem.length) {
+    // (_memNoExcel foi resolvido lá em cima, antes da Analítica — a coluna L usa o mesmo parâmetro)
+    var wmem = null, comMem = _memNoExcel ? itensFlat.filter(function (x) { return x.it && x.it.memoriaCalculo; }) : [];
+    /* JUSTIFICATIVA DOS COEFICIENTES (v1.1.225): a composição própria passou a
+       guardar o "por quê" de cada coeficiente. Ele defende o preço tanto quanto
+       a memória de quantidade — e quem confere a planilha não tem o app aberto
+       do lado para clicar no detalhamento. */
+    var coefMem = [];
+    if (_memNoExcel) {
+      try {
+        var vistosCM = {};
+        itensFlat.forEach(function (x) {
+          var it = x.it || {};
+          if (String(it.baseFonte || it.origem || "").toUpperCase().indexOf("PROPRI") !== 0) return;
+          if (vistosCM[it.codigo]) return;
+          vistosCM[it.codigo] = 1;
+          var comp = (typeof Bases !== "undefined" && Bases.obter) ? Bases.obter("PROPRIA", it.codigo) : null;
+          ((comp && comp.insumos) || []).forEach(function (i) {
+            if (!i || !i.memoria) return;
+            coefMem.push({ comp: it.codigo, compDesc: it.descricao || "", ins: i.codigo || "",
+                           insDesc: i.descricao || "", coef: Number(i.coeficiente) || 0, memoria: String(i.memoria) });
+          });
+        });
+      } catch (eCM) { coefMem = []; }
+    }
+    if (comMem.length || coefMem.length) {
       wmem = wb.addWorksheet('Memória de Cálculo', { properties: { tabColor: { argb: 'FF8B5CF6' } } });
       wmem.columns = [{ width: 6 }, { width: 12 }, { width: 44 }, { width: 6 }, { width: 10 }, { width: 70 }];
       wmem.mergeCells('A1:F1'); wmem.getCell('A1').value = empresa; wmem.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
@@ -913,6 +977,30 @@
         for (var k = 1; k <= 6; k++) { row.getCell(k).border = thin(); if (idx % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
         mr++;
       });
+      /* segundo bloco: o "por quê" de cada coeficiente das composições
+         próprias. Separado do de quantidade de propósito — são perguntas
+         diferentes: um justifica QUANTO, o outro justifica COMO se compõe. */
+      if (coefMem.length) {
+        mr++;
+        wmem.mergeCells('A' + mr + ':F' + mr);
+        wmem.getCell('A' + mr).value = 'JUSTIFICATIVA DOS COEFICIENTES — composições próprias';
+        wmem.getCell('A' + mr).font = { bold: true, size: 11, color: { argb: navy } };
+        mr += 2;
+        ['Composição', 'Serviço', 'Insumo', 'Descrição do insumo', 'Coef.', 'Como se chegou nele'].forEach(function (h, i) {
+          hStyle(wmem.getRow(mr).getCell(i + 1)); wmem.getRow(mr).getCell(i + 1).value = h;
+        });
+        mr++;
+        coefMem.forEach(function (c, idx2) {
+          var row = wmem.getRow(mr);
+          row.getCell(1).value = c.comp; row.getCell(2).value = String(c.compDesc).slice(0, 60);
+          row.getCell(3).value = c.ins; row.getCell(4).value = String(c.insDesc).slice(0, 60);
+          row.getCell(5).value = c.coef; row.getCell(5).numFmt = '0.0000';
+          row.getCell(6).value = c.memoria;
+          row.getCell(6).alignment = { wrapText: true, vertical: 'top' };
+          for (var k2 = 1; k2 <= 6; k2++) { row.getCell(k2).border = thin(); if (idx2 % 2 === 1) row.getCell(k2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
+          mr++;
+        });
+      }
     }
 
     // ============ JUSTIFICATIVA DE PREÇOS (Lei 14.133/2021) ============
@@ -1195,16 +1283,23 @@
     // ===================== FASE 2: impressão + proteção =====================
     // Impressão pronta p/ PDF/licitação: A4, ajusta à largura, cabeçalho repetido
     // e rodapé com nº do orçamento + página.
-    function pset(ws, orient, titles) {
+    function pset(ws, orient, titles, area) {
       if (!ws) return;
       ws.pageSetup = {
         paperSize: 9, orientation: orient, fitToPage: true, fitToWidth: 1, fitToHeight: 0,
         margins: { left: 0.4, right: 0.4, top: 0.55, bottom: 0.55, header: 0.2, footer: 0.25 },
         printTitlesRow: titles
       };
+      /* v1.1.225 — área de impressão explícita. A coluna L (memória) tem 60 de
+         largura; com fitToWidth:1 ela espremeria a planilha impressa inteira e
+         o PDF de licitação sairia menor do que sempre saiu. Fixando A:K, o que
+         se imprime continua idêntico e a memória fica só na tela (e na aba
+         "Memória de Cálculo", que é a que se imprime para isso). */
+      if (area) ws.pageSetup.printArea = area;
       ws.headerFooter.oddFooter = '&L&8' + (credito ? 'OrçaPRO — ' : '') + (orc.numero || '') + '&C&8' + (empresa || '') + '&R&8Pág. &P de &N';
     }
-    pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6'); pset(wa, 'landscape', '1:6');
+    pset(wr, 'portrait'); pset(wsi, 'portrait', '1:6');
+    pset(wa, 'landscape', '1:6', _memNoExcel ? ('A1:K' + (r > 7 ? r : 7)) : null);
     pset(wins, 'landscape', '1:5'); pset(wabc, 'portrait', '1:8'); pset(wcr, 'landscape', '1:4');
     pset(wdad, 'landscape', '2:2'); pset(wleia, 'portrait'); pset(wmem, 'landscape', '1:5'); pset(wpar, 'landscape', '1:5');
 

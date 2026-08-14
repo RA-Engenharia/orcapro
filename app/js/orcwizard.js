@@ -48,7 +48,7 @@
         nome: "", cliente: "", obra: "", local: "",
         categoria: "", prazoEntrega: "", controlarPrazo: false, permitirZerado: false,
         /* padrao: so no laudo - ver o comentario no passo 1 */
-        memorial: { laudo: true, excel: false, proposta: false },
+        memorial: { laudo: true, excel: true, proposta: false },
         licitacao: { ativo: false, tipo: "", abertura: "", processo: "" },
         arredondamento: base.arredondamento,
         bdiIncidencia: base.bdiIncidencia,
@@ -73,9 +73,14 @@
         cliente: (orc.cliente && orc.cliente.nome) || "", obra: (orc.obra && orc.obra.nome) || "",
         categoria: cfg.categoria || "", prazoEntrega: cfg.prazoEntrega || "", controlarPrazo: !!cfg.controlarPrazo,
         permitirZerado: !!cfg.permitirZerado,
+        /* MEM_V: só é escolha do usuário o que a 1.1.225+ gravou (v>=2). A
+           1.1.224 gravava `excel:false` sozinha, sem ninguém ler o campo — se
+           esta tela mostrasse aquele false como se fosse decisão do usuário, o
+           checkbox apareceria desmarcado e o Salvar carimbaria o entulho como
+           escolha de verdade. Ver a nota longa em js/excel.js. */
         memorial: {
           laudo: !cfg.memorial || cfg.memorial.laudo !== false,
-          excel: !!(cfg.memorial && cfg.memorial.excel),
+          excel: !(cfg.memorial && Number(cfg.memorial.v) >= 2) || cfg.memorial.excel !== false,
           proposta: !!(cfg.memorial && cfg.memorial.proposta)
         },
         licitacao: {
@@ -153,7 +158,8 @@
       if (s.bdiManual) { orc.bdi.modeloId = "manual"; orc.bdi.params = null; }
       var cfg = Orcamento.garantirConfig(orc);
       cfg.categoria = s.categoria; cfg.prazoEntrega = s.prazoEntrega; cfg.controlarPrazo = !!s.controlarPrazo;
-      cfg.memorial = { laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, proposta: !!s.memorial.proposta };
+      // v:2 = carimbo de "isto foi escolhido de verdade" (ver nota em js/excel.js)
+      cfg.memorial = { v: 2, laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, proposta: !!s.memorial.proposta };
       cfg.permitirZerado = s.permitirZerado;
       cfg.arredondamento = s.arredondamento; cfg.bdiIncidencia = s.bdiIncidencia;
       cfg.encargos = { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista };
@@ -219,11 +225,16 @@
            coeficiente é trabalho seu; quem decide se ela vai junto ao cliente
            é você. Padrão: sai no laudo (documento técnico, onde justificar é o
            ponto) e NÃO na proposta comercial — cliente final raramente quer a
-           conta, e mandar sem escolher é decidir por ele. */
+           conta, e mandar sem escolher é decidir por ele.
+           v1.1.225: Excel nasce LIGADO, e não desligado como saiu na 1.1.224.
+           A aba "Memória de Cálculo" já existia antes deste parâmetro e sempre
+           saiu — estrear o parâmetro desligado tiraria a aba de quem nunca vai
+           abrir esta tela. Ninguém chegou a sentir o default anterior: na
+           1.1.224 nada lia este campo ainda. */
         '<label class="ow-check"><input type="checkbox" id="ow-mem-laudo"' + (s.memorial.laudo ? " checked" : "") + '> ' +
         "<span>Memória de cálculo no <b>laudo</b> <small>(justificativa das quantidades e dos coeficientes)</small></span></label>" +
         '<label class="ow-check"><input type="checkbox" id="ow-mem-excel"' + (s.memorial.excel ? " checked" : "") + '> ' +
-        "<span>Memória de cálculo no <b>Excel</b> <small>(coluna a mais na aba Analítica)</small></span></label>" +
+        "<span>Memória de cálculo no <b>Excel</b> <small>(coluna ao lado do item na Analítica + aba própria com a justificativa dos coeficientes)</small></span></label>" +
         '<label class="ow-check"><input type="checkbox" id="ow-mem-proposta"' + (s.memorial.proposta ? " checked" : "") + '> ' +
         "<span>Memória de cálculo na <b>proposta comercial</b> <small>(pense duas vezes: expõe a sua conta ao cliente)</small></span></label>" +
         '<label class="ow-check"><input type="checkbox" id="ow-lic"' + (s.licitacao.ativo ? " checked" : "") + '> ' +
@@ -662,7 +673,7 @@
         categoria: s.categoria,
         prazoEntrega: s.prazoEntrega,
         controlarPrazo: !!s.controlarPrazo,
-        memorial: { laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, proposta: !!s.memorial.proposta },
+        memorial: { v: 2, laudo: !!s.memorial.laudo, excel: !!s.memorial.excel, proposta: !!s.memorial.proposta },
         arredondamento: s.arredondamento,
         bdiIncidencia: s.bdiIncidencia,
         encargos: { tipo: s.encargos.tipo, horista: s.encargos.horista, mensalista: s.encargos.mensalista },

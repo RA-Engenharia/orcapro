@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.224",
+  "versao": "1.1.225",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.224/OrcaPRO-IA-update-v1.1.224.zip",
-  "notas": "Agora voce escolhe onde a memoria de calculo aparece. Em Parametros do orcamento ha tres opcoes: no laudo, no Excel e na proposta comercial. O laudo ja vem marcado, porque e o documento tecnico onde justificar quantidade e justamente o ponto. A proposta comercial vem desmarcada de proposito - mandar a sua conta junto com o preco expoe como voce chegou nele, e essa escolha e sua, nao do sistema. Orcamentos que voce ja tem continuam se comportando exatamente como antes: quem nunca abriu os parametros nao vai encontrar um documento que encolheu sozinho.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.224/OrcaPRO-IA-Instalador-v1.1.224.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.225/OrcaPRO-IA-update-v1.1.225.zip",
+  "notas": "A memoria de calculo agora sai no Excel em dois lugares. Na aba Analitica, numa coluna ao lado do item que ela justifica, para quem confere linha a linha sem precisar trocar de aba. E na aba Memoria de Calculo, que passou a trazer tambem a justificativa dos coeficientes das suas composicoes proprias: o porque de cada coeficiente, que antes so existia dentro do sistema e nao acompanhava a planilha entregue. A planilha impressa nao mudou de tamanho: a coluna nova fica fora da area de impressao, entao o PDF de licitacao continua saindo exatamente como sempre saiu. Se voce criou algum orcamento na versao anterior, a aba Memoria de Calculo continua saindo nele normalmente.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.225/OrcaPRO-IA-Instalador-v1.1.225.exe"
 }
