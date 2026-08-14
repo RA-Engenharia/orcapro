@@ -720,6 +720,27 @@
         kpi("Itens / Etapas", t.qtdItens + " / " + t.qtdEtapas, "") +
       '</div>';
 
+      /* FECHAR EM UM VALOR (v1.1.227) — fica colado no Preço de Venda porque é
+         a pergunta que nasce olhando para ele: "preciso que dê outro número".
+         Quando há fechamento ativo, o selo mostra de onde o orçamento veio e
+         oferece o desfazer — mexer no preço de todos os itens sem volta
+         visível é o tipo de recurso que ninguém usa duas vezes. */
+      if (typeof Fechamento !== "undefined") {
+        var _fx = orc.fechamento;
+        html += '<div class="flex" style="gap:8px;align-items:center;margin:-6px 0 12px;flex-wrap:wrap">' +
+          '<button class="btn sm primary" data-acao="fechar-valor" title="Chegar a um valor final definido, distribuindo a diferença">' +
+            (typeof Icones !== "undefined" ? Icones.get("dinheiro", 15) : "") + ' Fechar em um valor…</button>';
+        if (_fx) {
+          var _dl = Util.num(_fx.delta);
+          html += '<span style="font-size:12px;padding:4px 10px;border-radius:999px;background:rgba(46,111,158,.12);border:1px solid rgba(46,111,158,.35)">' +
+            'Fechado em <b>' + Util.fmtMoeda(_fx.alvo) + '</b> · ' +
+            (_dl >= 0 ? "acréscimo" : "desconto") + " de <b>" + Util.fmtMoeda(Math.abs(_dl)) + "</b>" +
+            ' <span class="muted">(' + Util.esc(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo) + ')</span></span>' +
+            '<button class="btn sm ghost" data-acao="fechar-desfazer" title="Volta os preços ao que eram antes do fechamento">Desfazer fechamento</button>';
+        }
+        html += "</div>";
+      }
+
       // Pendência de preço: faixa de erro ANTES das abas (não finaliza zerado)
       var _semPreco = Orcamento.itensSemPreco ? Orcamento.itensSemPreco(orc) : [];
       if (_semPreco.length) {

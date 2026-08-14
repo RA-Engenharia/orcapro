@@ -1117,6 +1117,8 @@
         case "escopo-documento": this.escopoDocumento(); break;
         case "qi-calcular": this.qiCalcular(); break;
         // memorial de cálculo: agente, IA de reforço e calculadora
+        case "fechar-valor": this.fecharValor(); break;
+        case "fechar-desfazer": this.fecharDesfazer(); break;
         case "mem-agente": this.memAgente(false); break;
         case "mem-agente-ia": this.memAgente(true); break;
         case "mem-calc": this.memCalcular(); break;
@@ -3160,6 +3162,190 @@
     },
     // FASE 3: memória de cálculo do quantitativo (Lei 14.133) — o Excel (aba
     // "Memória de Cálculo", lote 5) já exporta item.memoriaCalculo; aqui é onde digita.
+    /* =================================================================
+     * FECHAR O ORÇAMENTO EM UM VALOR (v1.1.227)
+     *
+     * "Deu R$ 130 mil e eu preciso fechar em R$ 150 mil." A tela responde
+     * três perguntas, nesta ordem — que é a ordem da cabeça de quem decide:
+     *   1. quanto falta (ou sobra) para o valor que eu quero?
+     *   2. de onde esse dinheiro sai — do meu lucro ou do custo?
+     *   3. o que exatamente vai acontecer se eu confirmar?
+     *
+     * ⚠ NADA É APLICADO SEM SIMULAR ANTES. A simulação roda a cada tecla e
+     * mostra o efeito real, com os avisos. É a diferença entre uma ferramenta
+     * de decisão e uma roleta.
+     * ================================================================= */
+    fecharValor: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc) return;
+      if (typeof Fechamento === "undefined") { UI.toast("Módulo de fechamento indisponível.", "erro"); return; }
+      var t = Orcamento.totais(orc);
+      if (!(Util.num(t.precoVenda) > 0)) { UI.toast("Lance itens no orçamento antes de fechar em um valor.", "erro"); return; }
+
+      this._fx = { modo: "bdi" };
+      var opc = "";
+      Fechamento.ORDEM_MODOS.forEach(function (id, i) {
+        var M = Fechamento.MODOS[id];
+        /* display:flex explícito: `.ow-check` é inline por padrão e as cinco
+           opções escorriam uma na linha da outra, com o rótulo de uma colado
+           na explicação da anterior — ilegível justamente na tela em que a
+           escolha é a decisão mais importante. */
+        opc += '<label class="ow-check" style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--borda)">' +
+          '<input type="radio" name="fx-modo" value="' + id + '"' + (i === 0 ? " checked" : "") + '>' +
+          "<span><b>" + Util.esc(M.rotulo) + "</b>" + (i === 0 ? ' <span style="font-size:10px;color:#16a34a;font-weight:700">RECOMENDADO</span>' : "") +
+          '<br><span class="muted" style="font-size:11px">' + Util.esc(M.resumo) + "</span>" +
+          '<br><span class="muted" style="font-size:11px;font-style:italic">' + Util.esc(M.quando) + "</span></span></label>";
+      });
+
+      var body =
+        '<div class="muted" style="font-size:12px;margin-top:0">O orçamento está hoje em ' +
+          "<b>" + Util.fmtMoeda(t.precoVenda) + "</b> " +
+          '<span style="font-size:11px">(custo ' + Util.fmtMoeda(t.custoDireto) + " + BDI " + Util.fmtPct(t.bdiPercentual) + ")</span></div>" +
+
+        '<div style="margin-top:12px">' +
+          '<label style="font-weight:600;font-size:12px;display:block">Quanto você quer que o orçamento dê?</label>' +
+          '<input id="fx-alvo" class="cell" style="width:100%;font-size:19px;padding:9px;font-weight:700" ' +
+            'inputmode="decimal" placeholder="Ex.: 150.000,00" autocomplete="off">' +
+        "</div>" +
+
+        '<div id="fx-efeito" style="margin-top:10px"></div>' +
+
+        '<div style="margin-top:12px">' +
+          '<label style="font-weight:600;font-size:12px;display:block;margin-bottom:2px">De onde sai a diferença?</label>' +
+          '<div class="muted" style="font-size:11px;margin-bottom:4px">Esta escolha é o que separa um orçamento que se defende de um que não se explica.</div>' +
+          opc +
+        "</div>" +
+
+        '<div id="fx-avisos" style="margin-top:8px"></div>';
+
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("dinheiro", 15) : "") + " Fechar o orçamento em um valor", body, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Aplicar", classe: "primary", onClick: function () { self.fecharAplicar(); } }
+      ]);
+
+      var campo = UI.el("fx-alvo");
+      if (campo) {
+        campo.oninput = function () { self.fecharSimular(); };
+        campo.focus();
+      }
+      var rads = document.querySelectorAll('input[name="fx-modo"]');
+      for (var i = 0; i < rads.length; i++) {
+        rads[i].onchange = function () { self._fx.modo = this.value; self.fecharSimular(); };
+      }
+    },
+
+    _fxAlvo: function () {
+      var el = UI.el("fx-alvo");
+      return el ? Util.num(el.value) : 0;
+    },
+
+    /* Simula a cada tecla. O usuário vê o efeito ANTES de decidir. */
+    fecharSimular: function () {
+      var orc = this.orcAtual, box = UI.el("fx-efeito"), cxAv = UI.el("fx-avisos");
+      if (!orc || !box) return;
+      var alvo = this._fxAlvo(), modo = (this._fx && this._fx.modo) || "bdi";
+      if (!(alvo > 0)) { box.innerHTML = ""; if (cxAv) cxAv.innerHTML = ""; this._fx.sim = null; return; }
+
+      var s = Fechamento.simular(orc, alvo, modo);
+      this._fx.sim = s;
+      if (!s.ok) {
+        box.innerHTML = '<div style="padding:8px;border-radius:6px;background:rgba(220,38,38,.08);color:#dc2626;font-size:12px">' + Util.esc(s.erro) + "</div>";
+        if (cxAv) cxAv.innerHTML = "";
+        return;
+      }
+
+      var sobe = s.delta > 0;
+      var cor = sobe ? "#16a34a" : "#ea580c";
+      var h = '<div style="padding:9px 11px;border-radius:8px;background:' + (sobe ? "rgba(22,163,74,.08)" : "rgba(234,88,12,.08)") + '">' +
+        '<span style="font-size:13px">' + (sobe ? "Acréscimo" : "Desconto") + ' de <b style="color:' + cor + ';font-size:16px">' +
+        Util.fmtMoeda(Math.abs(s.delta)) + "</b> " +
+        '<span class="muted" style="font-size:11px">(' + Util.fmtNum(Math.abs(s.delta) / s.atual * 100, 2) + "% sobre o valor atual)</span></span>";
+
+      if (s.modo === "bdi") {
+        h += '<div style="margin-top:5px;font-size:12px">BDI vai de <b>' + Util.fmtPct(s.bdiAtual) +
+             "</b> para <b>" + Util.fmtPct(s.bdiNovo) + "</b>. " +
+             '<span class="muted">Nenhum custo é alterado.</span></div>';
+      } else {
+        h += '<div style="margin-top:5px;font-size:12px">' + s.itensAfetados + " item(ns) terão o custo ajustado" +
+             (s.fator ? " (fator <b>" + Util.fmtNum(s.fator, 4) + "</b>)" : "") + ". " +
+             '<span class="muted">O BDI não muda.</span></div>';
+      }
+      h += "</div>";
+      box.innerHTML = h;
+
+      if (cxAv) {
+        var av = "";
+        (s.bloqueios || []).forEach(function (b) {
+          av += '<div style="padding:8px 10px;border-radius:6px;background:rgba(220,38,38,.10);border:1px solid rgba(220,38,38,.35);font-size:12px;margin-bottom:5px">' +
+                "⛔ <b>Não dá para aplicar:</b> " + Util.esc(b) + "</div>";
+        });
+        (s.avisos || []).forEach(function (a) {
+          av += '<div style="padding:8px 10px;border-radius:6px;background:rgba(234,88,12,.08);border:1px solid rgba(234,88,12,.28);font-size:12px;margin-bottom:5px">' +
+                "⚠ " + Util.esc(a) + "</div>";
+        });
+        cxAv.innerHTML = av;
+      }
+    },
+
+    fecharAplicar: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc) return;
+      var alvo = this._fxAlvo(), modo = (this._fx && this._fx.modo) || "bdi";
+      if (!(alvo > 0)) { UI.toast("Informe o valor final desejado.", "erro"); return; }
+
+      var s = Fechamento.simular(orc, alvo, modo);
+      if (!s.ok) { UI.toast(s.erro, "erro"); return; }
+      if (s.bloqueios && s.bloqueios.length) { UI.toast(s.bloqueios[0], "erro"); return; }
+
+      var aplicar = function () {
+        var r = Fechamento.aplicar(orc, alvo, modo, {
+          por: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? (Auth.usuario().email || "") : ""
+        });
+        if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+        self.persistir(); UI.fecharModal(); self.render();
+        var msg = "Orçamento fechado em " + Util.fmtMoeda(r.atingido);
+        if (r.sobra && Math.abs(r.sobra) >= 0.01) msg += " (o mais perto possível de " + Util.fmtMoeda(alvo) + ")";
+        if (r.itensAfetados) msg += " — " + r.itensAfetados + " item(ns) ajustado(s), com justificativa registrada.";
+        else msg += " — BDI ajustado, nenhum custo alterado.";
+        UI.toast(msg, "ok");
+      };
+
+      /* Mexer no custo de item que veio de base oficial pede uma confirmação
+         explícita: é o que vira divergência a justificar numa análise. */
+      if (Fechamento.MODOS[modo].mexeEmCusto) {
+        UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Confirmar o ajuste nos custos",
+          '<p style="font-size:13px;margin-top:0">Isto vai alterar o <b>custo unitário de ' + s.itensAfetados +
+          " item(ns)</b> para o orçamento fechar em <b>" + Util.fmtMoeda(alvo) + "</b>.</p>" +
+          '<p style="font-size:12px" class="muted">Cada item alterado fica marcado na planilha com o selo de ajuste e guarda a justificativa — ' +
+          "ela sai na aba de justificativas do Excel. Dá para desfazer tudo depois, num clique.</p>",
+          [
+            { texto: "Voltar", classe: "ghost", onClick: function () { self.fecharValor(); } },
+            { texto: "Confirmar e aplicar", classe: "primary", onClick: aplicar }
+          ]);
+      } else {
+        aplicar();
+      }
+    },
+
+    fecharDesfazer: function () {
+      var self = this, orc = this.orcAtual;
+      if (!orc || typeof Fechamento === "undefined") return;
+      var f = orc.fechamento;
+      if (!f) { UI.toast("Este orçamento não tem fechamento para desfazer.", "erro"); return; }
+      UI.modal("Desfazer o fechamento",
+        '<p style="font-size:13px;margin-top:0">Os preços voltam exatamente ao que eram antes do fechamento em <b>' +
+        Util.fmtMoeda(f.alvo) + "</b>.</p>",
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Desfazer", classe: "primary", onClick: function () {
+              var r = Fechamento.desfazer(orc);
+              if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+              self.persistir(); UI.fecharModal(); self.render();
+              UI.toast("Fechamento desfeito — o orçamento voltou a " + Util.fmtMoeda(r.voltouPara) + ".", "ok");
+            } }
+        ]);
+    },
+
     /* =================================================================
      * MEMORIAL DE CÁLCULO — agente + calculadoras + subir a quantidade
      *

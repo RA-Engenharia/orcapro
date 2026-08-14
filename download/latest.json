@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.226",
+  "versao": "1.1.227",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.226/OrcaPRO-IA-update-v1.1.226.zip",
-  "notas": "A memoria de calculo agora e onde a quantidade nasce. Voce lanca a composicao sem colocar metragem, escreve o servico em portugues (ex.: \"4 paredes de 3,20 por 2,70 descontando 2 portas e 1 janela\") e o agente monta a conta inteira, discriminada. Confere e clica em Usar a quantidade no orcamento: o numero sobe junto com a memoria que o justifica. Sao 12 formas de calculo e um agente que conhece as regras da obra: demao nao multiplica area, telhado se mede pelo plano inclinado, escavacao e volume, rodape e perimetro. Mudanca importante: item lancado sem quantidade nao vira mais 1 automatico. Ele fica marcado como pendente, nao soma no total, e o botao da linha vira Calcular. Antes, um metro quadrado que voce nao digitou entrava na conta em silencio.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.226/OrcaPRO-IA-Instalador-v1.1.226.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.227/OrcaPRO-IA-update-v1.1.227.zip",
+  "notas": "Agora da para fechar o orcamento em um valor. Terminou em R$ 130 mil e voce precisa entregar R$ 150 mil, ou o cliente pediu desconto? Digite o valor final e o sistema distribui a diferenca. Voce escolhe de onde ela sai: no BDI (o mais defensavel, porque nenhum custo e alterado), distribuida em todos os itens, ou somente na mao de obra, no material ou em equipamento. Antes de aplicar, a tela simula e mostra o efeito real, com aviso quando o BDI sai da faixa do TCU ou quando uma parcela pequena teria de absorver tudo sozinha. Cada item alterado guarda a justificativa, que ja sai no Excel. E tem desfazer: os precos voltam exatamente ao que eram.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.227/OrcaPRO-IA-Instalador-v1.1.227.exe"
 }
