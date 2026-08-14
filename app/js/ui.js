@@ -611,6 +611,8 @@
         '<div class="field" style="flex:1;min-width:0;margin:0"><label style="font-size:11px">Ordenar por</label><select style="width:100%;box-sizing:border-box" id="fo-ordem">' +
           opt("atualizado", "Atualização", f.ordem || "atualizado") + opt("valor", "Maior valor", f.ordem || "atualizado") +
           opt("prazo", "Prazo mais próximo", f.ordem || "atualizado") + opt("estado", "Estado da aprovação", f.ordem || "atualizado") + opt("nome", "Nome", f.ordem || "atualizado") + '</select></div>' +
+        '<button class="btn sm" data-acao="fo-exportar" style="margin-bottom:2px" title="Exporta a lista como está na tela — o arquivo registra o filtro aplicado">' +
+          (typeof Icones !== "undefined" ? Icones.get("excel", 15) : "") + 'Exportar</button>' +
         (temFiltro ? '<button class="btn sm ghost" data-acao="fo-limpar" style="margin-bottom:2px">Limpar filtros</button>' : "") +
       '</div></div>';
 

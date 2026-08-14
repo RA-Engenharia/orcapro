@@ -585,6 +585,67 @@
       UI.toast("Revisão " + nova.numero + " criada a partir do aprovado " + (orc.numero || "") +
         " — edite à vontade aqui; o aprovado continua intacto.", "ok");
     },
+    /* EXPORTAR A CARTEIRA como está na tela (fase 5, último item).
+     * ⚠ O ARQUIVO DIZ QUE ESTÁ FILTRADO. Lista exportada que omite o recorte
+     * vira "a carteira inteira" numa reunião — e a decisão sai de um número
+     * que não é o que a pessoa pensa que é. */
+    exportarCarteira: function () {
+      var self = this;
+      var f = this._filtroOrc || {};
+      var r = Orcamento.filtrarLista(Store.listarOrcamentos(Auth.empresaId()), f, Util.agoraISO());
+      if (!r.lista.length) { UI.toast("Nada para exportar neste filtro.", "erro"); return; }
+      var recorte = [];
+      if (f.busca) recorte.push('busca "' + f.busca + '"');
+      if (f.cliente) recorte.push("cliente: " + f.cliente);
+      if (f.tipo) recorte.push("tipo: " + f.tipo);
+      if (f.estado) recorte.push("estado: " + (((typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[f.estado]) || {}).rotulo || f.estado));
+      if (f.faixa) recorte.push("valor: " + (Orcamento.FAIXAS.filter(function (x) { return x.id === f.faixa; })[0] || {}).rotulo);
+      if (f.prazo) recorte.push("prazo: " + (f.prazo === "vencidos" ? "vencidos" : "a vencer"));
+      if (typeof ExcelOrc === "undefined" || !ExcelOrc.ensureExcelJS) { UI.toast("Módulo Excel indisponível.", "erro"); return; }
+      UI.toast("Gerando a planilha da carteira…", "ok");
+      ExcelOrc.ensureExcelJS(function () {
+        try {
+          var wb = new ExcelJS.Workbook();
+          var ws = wb.addWorksheet("Carteira");
+          ws.addRow(["CARTEIRA DE ORÇAMENTOS — " + ((typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "")]);
+          ws.addRow([recorte.length ? "RECORTE APLICADO: " + recorte.join(" · ") + "  (" + r.lista.length + " de " + r.total + ")"
+                                    : "Carteira completa — " + r.total + " orçamento(s)"]);
+          ws.addRow(["Gerado em " + new Date().toLocaleString("pt-BR")]);
+          ws.addRow([]);
+          var cab = ["Número", "Orçamento", "Cliente", "Obra", "Tipo", "Estado", "Etapas", "Itens",
+                     "BDI %", "Preço de venda", "Prazo", "Dias p/ prazo", "Elaboração (dias)", "Atualizado em"];
+          ws.addRow(cab);
+          ws.getRow(1).font = { bold: true, size: 13 };
+          ws.getRow(5).font = { bold: true };
+          r.lista.forEach(function (m) {
+            var o = m.orc, el = Orcamento.tempoElaboracao(o);
+            var est = ((typeof Aprovacao !== "undefined" && Aprovacao.ESTADOS[m.estado]) || {}).rotulo || m.estado;
+            ws.addRow([
+              o.numero || "", o.nome || "", (o.cliente || {}).nome || "", (o.obra || {}).nome || "",
+              (o.config || {}).categoria || "", est, m.tot.qtdEtapas, m.tot.qtdItens,
+              Util.num(m.tot.bdiPercentual), Util.num(m.tot.precoVenda),
+              m.prazo.controla ? m.prazo.data : "", m.prazo.controla ? m.prazo.dias : "",
+              el.diasTrabalhados != null ? el.diasTrabalhados : (el.dias != null ? el.dias : ""),
+              String(o.atualizadoEm || "").slice(0, 10).split("-").reverse().join("/")
+            ]);
+          });
+          ws.addRow([]);
+          ws.addRow(["", "", "", "", "", "", "", "", "TOTAL", Util.num(r.kpis.carteira)]).font = { bold: true };
+          ws.getColumn(10).numFmt = '"R$" #,##0.00';
+          ws.getColumn(9).numFmt = '0.00"%"';
+          [14, 40, 26, 24, 20, 20, 8, 8, 9, 16, 12, 12, 14, 13].forEach(function (w, i) { ws.getColumn(i + 1).width = w; });
+          ws.views = [{ state: "frozen", ySplit: 5 }];
+          wb.xlsx.writeBuffer().then(function (buf) {
+            var blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+            a.download = "carteira-orcamentos" + (recorte.length ? "-filtrada" : "") + ".xlsx";
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+            UI.toast(r.lista.length + " orçamento(s) exportado(s)" + (recorte.length ? " — o arquivo registra o filtro aplicado." : "."), "ok");
+          }).catch(function (e) { UI.toast("Falha ao escrever a planilha: " + (e && e.message), "erro"); });
+        } catch (e) { UI.toast("Falha ao gerar a planilha: " + (e && e.message), "erro"); }
+      });
+    },
     _filtroOrc: null,
     _ligarFiltroLista: function () {
       var self = this;
@@ -1048,6 +1109,7 @@
         case "recuperar-planilha": this.recuperarPlanilha(); break;
         case "orc-aprov": this.orcAprovar(t.dataset.aprov); break;
         case "qi-calcular": this.qiCalcular(); break;
+        case "fo-exportar": this.exportarCarteira(); break;
         case "fo-limpar": this._filtroOrc = null; this.render(); break;
         case "import-reanalisar": this.importRemapear(); break;
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
