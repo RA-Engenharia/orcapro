@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.221",
+  "versao": "1.1.222",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.221/OrcaPRO-IA-update-v1.1.221.zip",
-  "notas": "O agente Elaborar Composicao ficou mais esperto onde da para ser: quando duas composicoes oficiais sao igualmente parecidas com o que voce descreveu, a IA ajuda a escolher a melhor e sugere um nome tecnico melhor para a sua composicao. So isso. Coeficiente, insumo, preco e unidade continuam vindo da tabela oficial, sempre - numero que sai de uma IA dentro de um orcamento e numero que ninguem consegue defender depois, e defender preco e o seu trabalho. Se a IA sugerir uma referencia que nao esta entre as que o sistema encontrou, ela e recusada. E se a internet cair ou demorar, o agente entrega o resultado normalmente pelo caminho de sempre: ele nunca dependeu de rede e continua nao dependendo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.221/OrcaPRO-IA-Instalador-v1.1.221.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.222/OrcaPRO-IA-update-v1.1.222.zip",
+  "notas": "Agora da para anexar a planta ou o memorial dentro do Escopo Inteligente. O sistema le as etiquetas de ambiente com area - aquele SALA 12,50 m2 que o arquiteto escreve no comodo e repete no quadro de areas - e traz cada ambiente para o escopo com a metragem, somando o total. Vale para planta em DXF e para PDF com texto. Ele le o que esta ESCRITO, nao mede o desenho: area calculada de traco aberto sai errada sem ninguem perceber, e a etiqueta e o que o projetista assinou. Etiqueta repetida em duas vistas conta uma vez, escala e cota nao viram ambiente. Sobre DWG, com todas as letras: nao da para ler no navegador, porque e um formato fechado da Autodesk. Se voce escolher um DWG o sistema explica isso na hora e mostra o caminho - no AutoCAD, Salvar como DXF, que sai do mesmo desenho com as mesmas etiquetas.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.222/OrcaPRO-IA-Instalador-v1.1.222.exe"
 }

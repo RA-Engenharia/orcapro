@@ -2070,6 +2070,8 @@
             }).join("") + '</select></div>' +
           '<button class="btn" data-acao="escopo-planilha" title="Traz a planilha de quantitativos do arquiteto para cá — descrição, quantidade e unidade viram linhas do escopo">' +
             (typeof Icones !== 'undefined' ? Icones.get('excel', 15) : '') + ' Anexar planilha</button>' +
+          '<button class="btn" data-acao="escopo-documento" title="Planta em DXF ou memorial em PDF: o sistema le as etiquetas de ambiente com area (SALA 12,50 m2) e traz para o escopo">' +
+            (typeof Icones !== 'undefined' ? Icones.get('laudo', 15) : '') + ' Anexar planta/PDF</button>' +
         '</div>' +
         '<div id="esc-aux"></div>' +
         '<div class="flex" style="gap:8px;margin-bottom:6px"><button class="btn primary" data-acao="escopo-ia">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</button>' +

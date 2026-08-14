@@ -1113,6 +1113,7 @@
         case "escopo-aux-nenhum": this.escopoAuxNenhum(); break;
         case "escopo-aux-add": this.escopoAuxAdd(); break;
         case "escopo-planilha": this.escopoPlanilha(); break;
+        case "escopo-documento": this.escopoDocumento(); break;
         case "qi-calcular": this.qiCalcular(); break;
         case "fo-exportar": this.exportarCarteira(); break;
         case "fo-limpar": this._filtroOrc = null; this.render(); break;
@@ -5002,6 +5003,62 @@
       UI.toast(escolhidos.length + " complemento(s) somado(s) ao escopo — revise antes de analisar.", "ok");
       t.focus();
     },
+    /* PLANTA (DXF) e MEMORIAL (PDF) viram escopo (v1.1.222).
+     *
+     * ⚠ NÃO ACEITA .dwg, de propósito. DWG é binário fechado da Autodesk e
+     * não se lê no navegador. Aceitar a extensão e falhar depois seria
+     * prometer o que o produto não cumpre — pior que não oferecer. O aviso
+     * diz como exportar em DXF, que é um comando no AutoCAD.
+     *
+     * ⚠ LÊ O QUE ESTÁ ESCRITO, não mede o desenho: área calculada de traço
+     * aberto sai errada em silêncio; a etiqueta é o que o projetista assinou. */
+    escopoDocumento: function () {
+      var self = this;
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".dxf,.pdf,.dwg"; inp.style.display = "none";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        var nome = String(f.name || "").toLowerCase();
+        if (/\.dwg$/.test(nome)) {
+          UI.modal((typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " DWG não dá para ler aqui",
+            '<p style="font-size:13px">O <b>DWG</b> é um formato fechado da Autodesk — nenhum navegador lê sem o AutoCAD instalado. ' +
+            'Prometer que lê e falhar depois seria pior do que dizer isto agora.</p>' +
+            '<p class="muted" style="font-size:12.5px">No AutoCAD: <b>Salvar como → DXF</b>. ' +
+            'O DXF sai do mesmo desenho, com as mesmas etiquetas de ambiente — e esse eu leio.</p>',
+            [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
+        var aplicar = function (r, rotulo) {
+          if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+          var t = UI.el("esc-txt"); if (!t) return;
+          var antes = String(t.value || "").trim();
+          t.value = (antes ? antes + "\n" : "") + r.texto;
+          UI.toast(r.ambientes.length + " ambiente(s) do " + rotulo + " · " +
+            Util.fmtNum(r.total, 2) + " m² no total — escolha o serviço de cada um e analise.", "ok");
+          t.focus();
+        };
+        if (/\.dxf$/.test(nome)) {
+          var fr = new FileReader();
+          fr.onload = function () {
+            try {
+              var p = DXF.parse(String(fr.result));
+              aplicar(Escopo.daPlantaDXF(p), "desenho");
+            } catch (e) { UI.toast("Não consegui ler o DXF: " + ((e && e.message) || e), "erro"); }
+          };
+          fr.onerror = function () { UI.toast("Falha ao ler o arquivo.", "erro"); };
+          fr.readAsText(f);
+          return;
+        }
+        if (typeof Gestao === "undefined" || !Gestao._pdfTexto) { UI.toast("Leitor de PDF indisponível.", "erro"); return; }
+        UI.toast("Lendo o PDF…", "ok");
+        Gestao._pdfTexto(f, function (texto) {
+          if (!texto) { UI.toast("Não consegui extrair texto deste PDF — se for uma imagem escaneada, não há texto para ler.", "erro"); return; }
+          aplicar(Escopo.deTextos(String(texto).split(/\r?\n/)), "documento");
+        });
+      };
+      document.body.appendChild(inp); inp.click(); setTimeout(function () { try { inp.remove(); } catch (e) {} }, 0);
+    },
+
     /* Planilha do arquiteto vira texto de escopo. Reusa o leitor que já existe
      * (.xlsx, .xls e .csv) — nada de leitor novo. */
     escopoPlanilha: function () {

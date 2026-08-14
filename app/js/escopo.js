@@ -251,6 +251,68 @@
                colunas: { descricao: iDesc, quantidade: iQtd, unidade: iUn }, ignoradas: ignoradas };
     },
 
+    /* ==================================================================
+     * DOCUMENTO → ESCOPO (v1.1.222): planta DXF e PDF
+     *
+     * Um extrator só para as duas fontes, de propósito: o que interessa numa
+     * planta e num memorial é a mesma coisa — AMBIENTE + ÁREA. O arquiteto
+     * escreve "SALA 12,50 m²" na etiqueta do cômodo e repete no quadro de
+     * áreas do PDF. Ler as duas com a mesma regra é uma regra para manter,
+     * não duas para divergirem.
+     *
+     * ⚠ ISTO NÃO MEDE O DESENHO. Não fecha polilinha nem calcula área de
+     * geometria: lê o que está ESCRITO. Área calculada de traço aberto sai
+     * errada em silêncio, e num orçamento isso vira preço errado — enquanto
+     * a etiqueta é o que o próprio projetista assinou.
+     * ================================================================== */
+    deTextos: function (linhas, opts) {
+      opts = opts || {};
+      var arr = Array.isArray(linhas) ? linhas : String(linhas || "").split(/\r?\n/);
+      var achados = [], vistos = {};
+      /* "SALA DE ESTAR 12,50 m2" / "A=12,50m²" / "Área: 12.50 m2" */
+      var reArea = /([0-9]{1,3}(?:\.[0-9]{3})*(?:,[0-9]+)?|[0-9]+(?:[.,][0-9]+)?)\s*m\s*(?:²|2\b)/i;
+      arr.forEach(function (bruto) {
+        var s = String(bruto == null ? "" : bruto).replace(/\s+/g, " ").trim();
+        if (s.length < 3 || s.length > 160) return;
+        var m = s.match(reArea);
+        if (!m) return;
+        var v = m[1];
+        v = v.indexOf(",") >= 0 ? v.replace(/\./g, "").replace(",", ".") : v;
+        var area = parseFloat(v);
+        if (!(area > 0) || area > 100000) return;      // 100 mil m² num rótulo é erro de leitura
+        /* o nome é o que sobra antes da medida, sem o ruído de cota */
+        var nome = s.slice(0, m.index).replace(/[=:\-–—.]+\s*$/, "").replace(/\b(a|área|area)\s*$/i, "").trim();
+        if (nome.length < 3) return;                    // "12,50 m²" solto não é ambiente
+        var chave = Util.normalizar(nome) + "|" + area.toFixed(2);
+        if (vistos[chave]) return;                      // etiqueta repetida em duas vistas
+        vistos[chave] = 1;
+        achados.push({ ambiente: nome, area: Math.round(area * 100) / 100, origem: s });
+      });
+      if (!achados.length) return { ok: false, erro: "Não achei ambientes com área escrita (ex.: \"SALA 12,50 m²\")." };
+      var total = achados.reduce(function (s, a) { return s + a.area; }, 0);
+      return {
+        ok: true, ambientes: achados,
+        total: Math.round(total * 100) / 100,
+        /* vira linha de escopo com a área do ambiente — o serviço quem escolhe
+           é o usuário, porque planta não diz se o piso é porcelanato ou vinílico */
+        texto: achados.map(function (a) {
+          return a.ambiente + " " + String(a.area).replace(".", ",") + " m2";
+        }).join("\n")
+      };
+    },
+
+    /* Da planta DXF: as etiquetas de ambiente. `layers` entra como pista do
+     * que o projeto tem, mas não vira quantidade — nome de layer não é medida. */
+    daPlantaDXF: function (parsed, opts) {
+      if (!parsed || !parsed.textos) return { ok: false, erro: "DXF sem textos legíveis." };
+      var r = this.deTextos(parsed.textos.map(function (t) { return t.txt; }), opts);
+      if (r.ok) {
+        r.layers = Object.keys(parsed.layers || {}).slice(0, 40);
+        r.unidade = parsed.unidade || null;
+      }
+      return r;
+    },
+
     /* Analisa um bloco de texto: 1 item por linha. */
     analisar: function (texto, opts) {
       var linhas = String(texto || "").split(/\r?\n/);
