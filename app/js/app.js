@@ -4819,6 +4819,47 @@
             ]);
           return;
         }
+        /* REFORÇO DE IA (v1.1.221) — opcional por definição.
+           Só entra quando há EMPATE TÉCNICO entre análogas: se a primeira
+           ganha folgado, perguntar é gastar rede para confirmar o óbvio.
+           Falha, timeout ou offline seguem para o resultado do motor sem
+           reclamar — o agente nunca dependeu de rede e não vai passar a
+           depender agora. */
+        var alt0 = (r.alternativas || [])[0];
+        var empate = alt0 && (r.referencia.score - alt0.score) < 0.12;
+        var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
+        if (!empate || !back || o.semIA) { abrir(r); return; }
+        var ctrl = null;
+        try { ctrl = new AbortController(); setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 6000); } catch (e) {}
+        fetch(back + "/ia/composicao", {
+          method: "POST", signal: ctrl ? ctrl.signal : undefined,
+          headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") },
+          body: JSON.stringify({
+            descricao: desc,
+            candidatas: [r.referencia].concat(r.alternativas || []).map(function (a) {
+              return { codigo: a.codigo, descricao: a.descricao, unidade: a.unidade };
+            })
+          })
+        }).then(function (resp) { return resp.json(); }).then(function (j) {
+          var ref = ComposicaoPropria.aplicarReforcoIA(r, (j && j.resultado) || j);
+          if (ref.trocarPara) {
+            /* refaz pelo MOTOR com a referência que a IA escolheu: a estrutura
+               continua vindo da base, só o alvo mudou */
+            var r2 = ComposicaoPropria.elaborar(desc, {
+              analitico: Analitico.todos(),
+              resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); },
+              codigosExistentes: self._cpCodigosExistentes(),
+              unidade: o.unidade || "", grupo: o.grupo || "",
+              forcarReferencia: ref.trocarPara.codigo
+            });
+            if (r2.ok) { r2.viaIA = true; if (ref.descricaoSugerida) r2.comp.descricao = ref.descricaoSugerida; abrir(r2); return; }
+          }
+          if (ref.descricaoSugerida) { r.comp.descricao = ref.descricaoSugerida; r.viaIA = true; }
+          abrir(r);
+        }).catch(function () { abrir(r); });   // offline/timeout: segue com o motor
+        return;
+      };
+      var abrir = function (r) {
         /* abre no criador, no passo 2, com a estrutura montada — é lá que o
            usuário confere coeficiente por coeficiente antes de gravar */
         self.criarComposicao(true);

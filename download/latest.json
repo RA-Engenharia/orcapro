@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.220",
+  "versao": "1.1.221",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.220/OrcaPRO-IA-update-v1.1.220.zip",
-  "notas": "Chegou o agente Elaborar Composicao. Descreva o servico e ele monta a composicao propria para voce - com os insumos e os coeficientes da composicao oficial mais parecida da base analitica. Ele nao inventa nada: coeficiente e resultado de medicao de produtividade, e se nao encontrar uma composicao oficial parecida o bastante ele diz isso e mostra as mais proximas, em vez de montar do nada. O que ele entrega e uma proposta: abre no criador para voce conferir coeficiente por coeficiente antes de gravar, e avisa quando a semelhanca com a referencia foi so media ou baixa. O agente aparece onde a falta de composicao trava o trabalho: na linha Pendente do Escopo Inteligente, quando nenhuma base tem o servico, e na busca de itens do orcamento sem resultado. As composicoes criadas agora ganham codigo legivel - PROP-ALV-001 para alvenaria, PROP-PIS-001 para piso - em vez de numero sequencial, e os codigos antigos continuam valendo exatamente como estao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.220/OrcaPRO-IA-Instalador-v1.1.220.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.221/OrcaPRO-IA-update-v1.1.221.zip",
+  "notas": "O agente Elaborar Composicao ficou mais esperto onde da para ser: quando duas composicoes oficiais sao igualmente parecidas com o que voce descreveu, a IA ajuda a escolher a melhor e sugere um nome tecnico melhor para a sua composicao. So isso. Coeficiente, insumo, preco e unidade continuam vindo da tabela oficial, sempre - numero que sai de uma IA dentro de um orcamento e numero que ninguem consegue defender depois, e defender preco e o seu trabalho. Se a IA sugerir uma referencia que nao esta entre as que o sistema encontrou, ela e recusada. E se a internet cair ou demorar, o agente entrega o resultado normalmente pelo caminho de sempre: ele nunca dependeu de rede e continua nao dependendo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.221/OrcaPRO-IA-Instalador-v1.1.221.exe"
 }

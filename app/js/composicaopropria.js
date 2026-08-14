@@ -325,6 +325,14 @@
         };
       }
       var ref = cands[0];
+      /* referência escolhida por fora (o reforço de IA desempatando): só vale
+         se estiver ENTRE AS CANDIDATAS que este motor achou — aceitar um
+         código de fora seria deixar a IA inventar a referência, que é a porta
+         por onde o coeficiente inventado entraria depois. */
+      if (ctx.forcarReferencia) {
+        var forc = cands.filter(function (c) { return String(c.codigo) === String(ctx.forcarReferencia); })[0];
+        if (forc) ref = forc;
+      }
       var prop = this.daReferencia(ref._comp, { resolve: ctx.resolve });
       var grupo = ctx.grupo || prop.grupo || "";
       if (GRUPOS.indexOf(String(grupo).toUpperCase()) < 0) grupo = "OUTROS";
@@ -356,6 +364,44 @@
           "Semelhança " + (conf === "media" ? "média" : "baixa") + " com a referência " + ref.codigo +
           " — confira coeficiente por coeficiente antes de gravar."
       };
+    },
+
+    /* ⚠ REFORÇO DE IA — SÓ TEXTO E ESCOLHA, NUNCA NÚMERO (v1.1.221)
+     *
+     * A IA faz duas coisas aqui, ambas seguras:
+     *   1. ESCOLHER entre análogas que o score não separou (empate técnico);
+     *   2. NOMEAR a composição em linguagem de orçamento.
+     *
+     * O que ela NÃO faz, por decisão de projeto: coeficiente, insumo, preço,
+     * unidade. Esses vêm da base analítica REAL, sempre. Um número que veio
+     * de modelo de linguagem dentro de um orçamento é um número que ninguém
+     * consegue defender — e defender preço é o trabalho do orçamentista.
+     *
+     * Puro: recebe a resposta já decodificada e devolve o que aceita dela.
+     * A rede fica na tela; o julgamento fica aqui, testável.
+     */
+    aplicarReforcoIA: function (base, resposta) {
+      var out = { comp: base && base.comp, usouIA: false, mudou: [] };
+      if (!base || !base.ok || !resposta) return out;
+      var r = resposta || {};
+      /* 1. troca de referência: só vale se o código veio das candidatas que o
+         MOTOR ofereceu. Código de fora seria a IA inventando referência. */
+      var escolhido = String(r.referencia || "").trim();
+      if (escolhido && base.referencia && escolhido !== base.referencia.codigo) {
+        var permitidas = (base.alternativas || []).filter(function (a) { return String(a.codigo) === escolhido; });
+        if (permitidas.length) { out.trocarPara = permitidas[0]; out.usouIA = true; out.mudou.push("referencia"); }
+      }
+      /* 2. nome: texto, e só texto. Limite de tamanho e sem código dentro —
+         descrição com código confunde a busca da planilha depois. */
+      var nome = String(r.descricao || "").trim().replace(/\s+/g, " ");
+      if (nome.length >= 10 && nome.length <= 180 && !/^\d/.test(nome)) {
+        out.comp = out.comp || {};
+        out.descricaoSugerida = nome; out.usouIA = true; out.mudou.push("descricao");
+      }
+      /* ⚠ qualquer coeficiente/preço que venha na resposta é IGNORADO em
+         silêncio: não é campo dela, e aceitar "só desta vez" é como isso
+         começa a virar praxe. */
+      return out;
     },
 
     analogas: function (descricao, dadosAnalitico, n) {
