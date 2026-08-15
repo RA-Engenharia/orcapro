@@ -39,12 +39,21 @@
              registro. O else antigo jogava a própria inteira em Material — o
              laudo imprimia 100% MAT para um serviço quase todo de mão de obra,
              divergindo do Resumo do Excel gerado do MESMO orçamento. */
-          var somaIt = Util.num(it.custoMO) + Util.num(it.custoMAT) + Util.num(it.custoEQ);
-          if (somaIt > 0 && Util.num(it.custoUnitario) > 0) {
-            var cuIt = Util.num(it.custoBase != null ? it.custoBase : it.custoUnitario) || somaIt;
-            mo += ct * (Util.num(it.custoMO) / cuIt);
-            mat += ct * (Util.num(it.custoMAT) / cuIt);
-            eq += ct * (Util.num(it.custoEQ) / cuIt);
+          /* v1.1.236 — o rateio agora é DENTRO do custo do item, pelas parcelas
+             que ele realmente fatura (Orcamento.repartirCusto). O denominador
+             antigo era o custo cheio da composição, e com isso duas coisas
+             saíam erradas neste documento ASSINADO:
+              • item "só mão de obra" imprimia 60% de material — justo o que o
+                CONTRATANTE fornece — enquanto a tela mostrava 100% MO;
+              • preço editado à mão na planilha fazia a "Composição do custo"
+                não fechar com o "Custo direto" impresso logo acima (e, no caso
+                de DESCONTO, a composição saía MAIOR que o todo).
+             Ratear dentro de `ct` faz a soma bater com o custo direto por
+             construção, não por sorte. */
+          var rep = (typeof Orcamento !== "undefined" && Orcamento.repartirCusto)
+            ? Orcamento.repartirCusto(it, ct) : null;
+          if (rep) {
+            mo += rep.mo; mat += rep.mat; eq += rep.eq;
           } else if (a && a.custoUnitario > 0) {
             mo += ct * ((a.custoMO || 0) / a.custoUnitario);
             mat += ct * ((a.custoMAT || 0) / a.custoUnitario);

@@ -100,10 +100,23 @@
       else if (d.cliente) copia.cliente = { nome: d.cliente, doc: (o.cliente || {}).doc || "", contato: (o.cliente || {}).contato || "" };
       if (!d.manterObra) copia.obra = { nome: d.obra || "", local: "", regime: (o.obra || {}).regime || "Empreitada" };
 
-      /* nasce ABERTO — nenhum carimbo de aprovação atravessa a cópia */
+      /* nasce ABERTO — nenhum carimbo de aprovação atravessa a cópia
+         ⚠ v1.1.236 — esta lista tinha SÓ os nomes legados. A máquina de
+         estados atual grava em `estadoAprovacao`/`historicoAprovacao`, e esses
+         dois passavam direto: a cópia nascia aprovada e TRAVADA (qualquer
+         edição recusada por App.persistir, o usuário digitando sem gravar), e
+         o histórico herdado ainda contava a cópia como enviada e aprovada nos
+         indicadores da carteira — inflando a taxa de conversão com um
+         orçamento que nunca foi ao cliente. É o defeito que o comentário
+         acima chama de "o pior possível neste módulo", entrando por outra
+         porta. `fechamento` também sai: o desfazer da cópia restauraria
+         preços de um snapshot tirado no orçamento de origem. */
       ["aprovado", "aprovadoEm", "aprovadoPor", "aprovacao", "assinatura",
        "boletimAprovado", "travado", "status", "estado", "propostaGerada",
-       "propostaEm", "obraId", "contratoId", "medicoes"].forEach(function (k) {
+       "propostaEm", "obraId", "contratoId", "medicoes",
+       "estadoAprovacao", "historicoAprovacao", "revisaoMotivo", "revisaoPor",
+       "revisaoEm", "aprovadoPeloProprioAutor", "revisaoDe", "revisaoNumero",
+       "fechamento"].forEach(function (k) {
         if (copia[k] !== undefined) delete copia[k];
       });
 
@@ -627,10 +640,104 @@
            primeira edição o valor que está no item AINDA é o da base — é ele
            que vira a referência congelada (ver regra 2 do ajustes.js). */
         this._registrarAjuste(orc, it, "custoUnitario", it.custoUnitario, novo);
+        var antesU = Util.num(it.custoUnitario);
         it.custoUnitario = novo;
+        /* ⚠ v1.1.236 — E AS PARCELAS VÃO JUNTO. Gravar só o unitário deixava
+           MO/MAT/EQ com os números da base: o item cotado a 80,00 continuava
+           com parcelas somando 50,00. Isso não ficava escondido — vazava para
+           fora em documento assinado (o laudo imprimia "Custo direto 8.000" e
+           logo abaixo uma "Composição do custo" de 5.000) e envenenava o
+           fechamento em um valor, que reconstrói o unitário a partir delas. */
+        this.repartirParcelas(it, novo, this.garantirConfig(orc).arredondamento, antesU);
       }
       if (campos.descricao != null) it.descricao = campos.descricao;
       return orc;
+    },
+
+    /* =================================================================
+     * AS PARCELAS DO ITEM (MO / MAT / EQ)
+     *
+     * INVARIANTE DA CASA: quando o item traz as parcelas discriminadas, o
+     * custo unitário É a soma das parcelas ATIVAS — as que o modo de custo
+     * do item realmente fatura. Item "só mão de obra" fatura custoMO; item
+     * "só material+equipamento" fatura custoMAT+custoEQ.
+     *
+     * Quem escreve o unitário sozinho quebra esse invariante em silêncio, e
+     * o estrago aparece longe de onde nasceu: no laudo pericial, na pizza do
+     * xlsx e, pior, no fechamento em um valor — que reconstruía o unitário a
+     * partir das parcelas velhas e derrubava o preço que o usuário tinha
+     * cotado à mão, empurrando o dinheiro para os outros itens sem avisar.
+     * ================================================================= */
+    PARCELAS: ["custoMO", "custoMAT", "custoEQ"],
+    parcelasAtivas: function (it) {
+      if (it && it.modoCusto === "mo") return ["custoMO"];
+      if (it && it.modoCusto === "matEq") return ["custoMAT", "custoEQ"];
+      return this.PARCELAS;
+    },
+
+    /* Reparte um CUSTO TOTAL (qtd × unitário) entre MO/MAT/EQ na proporção das
+     * parcelas ATIVAS do item. Devolve null quando o item não tem parcelas
+     * discriminadas — aí quem chama decide o fallback (o xlsx usa a razão da
+     * composição analítica; o laudo joga em material).
+     *
+     * Existe para que os ENTREGÁVEIS parem de refazer esta conta cada um do
+     * seu jeito: a pizza do xlsx, o Resumo do xlsx e o laudo pericial tinham
+     * três implementações, e as três ignoravam o modo de custo. Um item "só
+     * mão de obra" — em que o material é justamente o que o CONTRATANTE
+     * fornece — saía com 60% de material no documento assinado, enquanto a
+     * tela mostrava 100% MO. Ratear sempre dentro do custo total garante, de
+     * quebra, que MO+MAT+EQ feche com o Custo Direto impresso acima. */
+    repartirCusto: function (it, ct) {
+      if (!it) return null;
+      var ativas = this.parcelasAtivas(it), soma = 0;
+      ativas.forEach(function (p) { soma += Util.num(it[p]); });
+      if (!(soma > 0)) return null;
+      var r = { mo: 0, mat: 0, eq: 0 }, c = Util.num(ct);
+      if (ativas.indexOf("custoMO") >= 0) r.mo = c * (Util.num(it.custoMO) / soma);
+      if (ativas.indexOf("custoMAT") >= 0) r.mat = c * (Util.num(it.custoMAT) / soma);
+      if (ativas.indexOf("custoEQ") >= 0) r.eq = c * (Util.num(it.custoEQ) / soma);
+      return r;
+    },
+
+    /* Rateia `novoUnit` entre as parcelas ativas na proporção em que elas
+     * estavam. O resíduo do truncamento vai para a MAIOR parcela, de forma
+     * que a soma feche EXATAMENTE com o unitário — e não por sorte de
+     * arredondamento. Item sem parcelas discriminadas não ganha parcela
+     * inventada: devolve false e o unitário fica sozinho, como já era.
+     * `antesUnit` (opcional) é a referência para escalar custoBase — o item
+     * com modo de custo guarda ali o unitário CHEIO da composição. */
+    repartirParcelas: function (it, novoUnit, modo, antesUnit) {
+      if (!it) return false;
+      var A0 = A(), u = Util.num(novoUnit);
+      var ativas = this.parcelasAtivas(it), soma = 0, usadas = [];
+      ativas.forEach(function (p) { var v = Util.num(it[p]); if (v > 0) { soma += v; usadas.push(p); } });
+      if (!(soma > 0)) return false;
+      /* unitário zerado (desconto que levou o item a zero): as parcelas ativas
+         vão a zero junto, senão sobra um item de preço 0 com composição cheia */
+      if (!(u > 0)) { usadas.forEach(function (p) { it[p] = 0; }); return true; }
+
+      var acum = 0;
+      usadas.forEach(function (p) {
+        var v = A0.unitario(u * Util.num(it[p]) / soma, modo);
+        it[p] = v; acum += v;
+      });
+      var maior = usadas[0];
+      usadas.forEach(function (p) { if (Util.num(it[p]) > Util.num(it[maior])) maior = p; });
+      var resto = u - acum;
+      if (Math.abs(resto) > 1e-9) {
+        var v2 = Util.num(it[maior]) + resto;
+        /* 1e-6 mata o ruído de ponto flutuante sem estragar o modo "nenhum",
+           que é o único onde o unitário pode ter mais de 2 casas */
+        it[maior] = v2 < 0 ? 0 : Math.round(v2 * 1e6) / 1e6;
+      }
+      /* custoBase é o unitário CHEIO da composição (item lançado como só MO
+         ou só MAT+EQ). Escala junto, senão o "voltar ao custo cheio" devolve
+         o preço da base em vez do preço que o usuário negociou. */
+      if (it.custoBase != null) {
+        var ref = Util.num(antesUnit);
+        if (ref > 0) it.custoBase = A0.unitario(Util.num(it.custoBase) * (u / ref), modo);
+      }
+      return true;
     },
 
     /* Um único ponto de entrada para o selo de "alterado por você": todo

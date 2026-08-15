@@ -488,7 +488,12 @@
       antes.itens.push({
         etapaId: x.etapa.id, itemId: x.item.id,
         custoUnitario: num(x.item.custoUnitario), custoMO: num(x.item.custoMO),
-        custoMAT: num(x.item.custoMAT), custoEQ: num(x.item.custoEQ)
+        custoMAT: num(x.item.custoMAT), custoEQ: num(x.item.custoEQ),
+        /* custoBase junto (o combinado, em aplicarMulti, já salvava): o
+           fechamento escala o custo cheio do item com modo de custo, e sem
+           isto no snapshot o desfazer devolvia o preço mas deixava a base
+           esticada — "voltar ao custo cheio" traria outro número. */
+        custoBase: x.item.custoBase != null ? num(x.item.custoBase) : null
       });
     });
 
@@ -598,33 +603,31 @@
           it.custoUnitario = tr2(num(it.custoUnitario) + dif);
           if (it.custoUnitario < 0) it.custoUnitario = 0;
         } else {
-          /* Rateio no custo cheio. ⚠ AQUI MORAVA UM BUG: escalar as três
-             parcelas e o unitário de forma independente trunca QUATRO vezes,
-             e os truncamentos não fecham entre si — medido, o item de concreto
-             ficou com parcelas somando 208,45 contra um unitário de 208,57.
-             Doze centavos que fazem a aba Insumos e a Curva ABC mentirem.
-             A correção é construir na ordem certa: escala as parcelas, e o
-             unitário passa a ser a SOMA delas. Assim a coerência não depende
-             de sorte de arredondamento — ela é o próprio jeito de calcular.
-             Item sem parcelas discriminadas segue pelo caminho simples. */
-          var razao = antesParcela > 0 ? (novo / antesParcela) : 1;
-          /* ⚠ SÓ as parcelas ATIVAS do modo de custo (v1.1.232). O unitário de
-             um item "só MO" É o custoMO — reconstruí-lo como MO+MAT+EQ fazia o
+          /* Rateio no custo cheio. ⚠ AQUI MORARAM DOIS BUGS, e o segundo era
+             pior que o primeiro.
+             (1) Escalar as três parcelas e o unitário de forma independente
+                 trunca QUATRO vezes, e os truncamentos não fecham entre si —
+                 medido, o item de concreto ficou com parcelas somando 208,45
+                 contra um unitário de 208,57. Doze centavos que fazem a aba
+                 Insumos e a Curva ABC mentirem.
+             (2) A correção de então foi escalar as parcelas e fazer o unitário
+                 ser a SOMA delas. Só que isso PRESSUPÕE que a soma já valia o
+                 unitário — e não valia quando o usuário tinha editado o preço
+                 na planilha (cotação do fornecedor). O item cotado a 80,00 com
+                 parcelas de 50,00 voltava a 50,00 escalado: o preço negociado
+                 era jogado fora e a diferença ia calada para os outros itens.
+                 O total batia o alvo ao centavo, então nada avisava.
+             Agora a ordem é a inversa e não depende de premissa nenhuma: o
+             unitário novo sai do PRÓPRIO unitário (`novo`, já escalado por k),
+             e as parcelas são rateadas dentro dele. A coerência
+             unitário = Σ parcelas continua sendo o jeito de calcular.
+             ⚠ SÓ as parcelas ATIVAS do modo de custo (v1.1.232): o unitário de
+             um item "só MO" É o custoMO — reparti-lo entre MO+MAT+EQ fazia o
              fechamento devolver ao preço o material que o cliente forneceria.
-             As parcelas fora do modo continuam existindo como informação, mas
-             não entram na soma nem são escaladas. */
-          var ativas = parcelasAtivas(it);
-          var temParcelas = ativas.reduce(function (s, p) { return s + num(it[p]); }, 0) > 0;
-          if (temParcelas) {
-            var soma = 0;
-            ativas.forEach(function (p) {
-              if (num(it[p]) > 0) { it[p] = tr2(num(it[p]) * razao); soma += num(it[p]); }
-            });
-            it.custoUnitario = tr2(soma);
-            if (it.custoBase != null) it.custoBase = tr2(num(it.custoBase) * razao);
-          } else {
-            it.custoUnitario = novo;
-          }
+             Item sem parcelas discriminadas segue pelo caminho simples. */
+          it.custoUnitario = novo;
+          var Orc0 = O();
+          if (Orc0 && Orc0.repartirParcelas) Orc0.repartirParcelas(it, novo, "truncar2", antesParcela);
         }
       });
     }
@@ -685,25 +688,15 @@
           m.it.custoUnitario = tr2(num(m.it.custoUnitario) + delta);
           if (m.it.custoUnitario < 0) m.it.custoUnitario = 0;
         } else {
-          /* mesmo cuidado da convergência: o resíduo entra numa PARCELA e o
-             unitário volta a ser a soma delas — senão é justamente o último
-             centavo que descola as parcelas do total. */
-          /* mesmas parcelas ATIVAS da convergência — o resíduo num item "só MO"
-             entra na MO, e o unitário é a soma só do que o item fatura */
-          var ativasR = parcelasAtivas(m.it);
-          var temP = ativasR.reduce(function (s, p) { return s + num(m.it[p]); }, 0) > 0;
-          if (temP) {
-            var maiorP = ativasR[0];
-            ativasR.forEach(function (p) {
-              if (num(m.it[p]) > num(m.it[maiorP])) maiorP = p;
-            });
-            var pNovo = tr2(num(m.it[maiorP]) + delta);
-            if (pNovo < 0) pNovo = 0;
-            m.it[maiorP] = pNovo;
-            m.it.custoUnitario = tr2(ativasR.reduce(function (s, p) { return s + num(m.it[p]); }, 0));
-          } else {
-            m.it.custoUnitario = novoC;
-          }
+          /* mesmo cuidado da convergência, e pelo MESMO motivo: o unitário
+             manda, as parcelas o acompanham. Somar o resíduo numa parcela e
+             refazer o unitário como a soma delas repetia aqui o defeito do
+             `_convergir` — num item de preço editado à mão, o último centavo
+             derrubava o unitário para a soma das parcelas antigas. */
+          var atualU = num(m.it.custoUnitario);
+          m.it.custoUnitario = novoC;
+          var Orc1 = O();
+          if (Orc1 && Orc1.repartirParcelas) Orc1.repartirParcelas(m.it, novoC, "truncar2", atualU);
         }
         /* relê do motor em vez de deduzir: o truncamento por item faz o efeito
            real diferir da conta de guardanapo, e é o motor que manda */

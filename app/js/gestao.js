@@ -152,7 +152,18 @@
      multiplicava saldo de estoque e preço de cotação por mil. O formulário de
      EPI já fazia a conversão na mão — aqui ela vale para todos de uma vez. */
   function numBR(val) { return (typeof val === "number" && isFinite(val)) ? String(val).replace(".", ",") : val; }
-  function inp(id, val, ph, tipo) { if (tipo !== "date" && tipo !== "time" && tipo !== "month") val = numBR(val); return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">'; }
+  /* ⚠ v1.1.236 — "number" ENTROU NA LISTA DE EXCEÇÕES, e não por elegância.
+     `<input type="number" value="150,5">` é sanitizado pelo próprio HTML: a
+     vírgula não é numérica, o navegador descarta o valor inteiro e `.value`
+     devolve STRING VAZIA. Ou seja, a correção de 2026 contra o ×1000 abriu um
+     buraco pior nos dois campos que usam input numérico: reabrir uma cotação
+     salva e clicar em Salvar regravava o frete de R$ 150,50 como R$ 0,00
+     (mudando quem ganha o Mapa de Cotação), e "Criar pedido" a partir de uma
+     requisição de R$ 3.847,55 nascia com valor zero no Financeiro. Só quebrava
+     com centavos — valor inteiro passava ileso, que é o pior tipo de defeito.
+     O input numérico já aceita ponto decimal e o Util.num lê ponto decimal
+     corretamente, então aqui a grafia BR não tem o que resolver. */
+  function inp(id, val, ph, tipo) { if (tipo !== "date" && tipo !== "time" && tipo !== "month" && tipo !== "number") val = numBR(val); return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">'; }
   function sel(id, o) { return '<select id="' + id + '">' + o + "</select>"; }
   function eid() { return Auth.empresaId(); }
   /* ⚠ ORDEM DE PESSOAS NASCE AQUI, e de propósito.
@@ -1598,20 +1609,25 @@
       ["lp_tarefas", "tarefa(s) do Last Planner"], ["tarefas", "tarefa(s)"],
       ["requisicoes", "requisição(ões)"], ["cotacoes", "cotação(ões)"], ["compras", "compra(s)"],
       ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
-      ["epi", "entrega(s) de EPI"], ["ponto", "registro(s) de ponto"],
-      ["fs_lancamentos", "lançamento(s) da folha semanal"],
-      /* ⚠ ENTRA NA CASCATA, e eu tinha deixado de fora com o argumento de que
-         "é o comprovante do pagamento". O gate provou o contrário: excluindo a
-         obra com os registros, o lançamento da folha ia embora e a medição
-         ficava — com o botão "Mandar p/ folha" ainda armado. Um clique criava
-         pagamento NOVO numa obra que não existe, agrupado na Folha sob o id
-         cru da obra como se fosse nome, e com o diário de origem já apagado:
-         nada mais reconciliava. Se o pagamento sai, a medição sai junto. */
+      ["epi", "entrega(s) de EPI"],
+      /* ⚠ ponto / folha / fs_lancamentos / frota_mov SAÍRAM DAQUI na v1.1.236.
+         Estavam nesta lista E em Store._IMUNES_CASCATA ao mesmo tempo — duas
+         regras opostas sobre os mesmos quatro registros, e ninguém percebia
+         porque o efeito só aparece depois do sync: a exclusão apagava tudo
+         aqui, o merge da nuvem via a entidade como imune, mantinha o registro
+         e o DEVOLVIA no ciclo seguinte, agora órfão, sem obra. Folha de
+         pagamento e cartão de ponto ressuscitados entravam de novo nos
+         totais, e a exclusão nunca convergia entre os aparelhos.
+         Quem ficou com a razão foi o store.js: jornada e dinheiro são de
+         PESSOA, não da obra — a obra some, o que se deve a alguém não some
+         junto. Eles passaram para _ENT_SO_DESVINCULA, que é exatamente o que
+         o merge já fazia. (O argumento antigo aqui era o "Mandar p/ folha"
+         disparando pagamento novo numa obra morta; não se aplica mais, porque
+         é a `producao_med` que sai — o botão morre com ela.) */
       ["producao_med", "medição(ões) de produção"],
       /* o preço por produção é combinado POR OBRA: sai junto com ela, senão
          fica preço órfão pré-preenchendo linha de obra nenhuma */
       ["producao_preco", "preço(s) por produção combinado(s)"],
-      ["folha", "folha(s) de pagamento"], ["frota_mov", "uso(s) de veículo"],
       ["financeiro", "lançamento(s) financeiro(s)"],
       ["centrocusto", "registro(s) de centro de custo"],
       /* níveis são do PROJETO daquela obra: o Térreo da obra A não é o da B */
@@ -1638,7 +1654,15 @@
          triagem, apagar a obra apagaria documento fiscal — que a empresa é
          obrigada a guardar por 5 anos. Perde o vínculo, não o documento. */
       ["fiscal", "nota(s) fiscal(is)"],
-      ["frota", "veículo(s)"]
+      ["frota", "veículo(s)"],
+      /* v1.1.236 — jornada e dinheiro de PESSOA. Perdem o vínculo com a obra,
+         não a existência. Estes quatro já eram imunes à cascata no merge da
+         nuvem (Store._IMUNES_CASCATA): apagá-los aqui só produzia registro
+         ressuscitado órfão no sync seguinte. Ver a nota em _ENT_DA_OBRA. */
+      ["ponto", "registro(s) de ponto"],
+      ["folha", "folha(s) de pagamento"],
+      ["fs_lancamentos", "lançamento(s) da folha semanal"],
+      ["frota_mov", "uso(s) de veículo"]
     ],
     _vinculosDaObra: function (obraId) {
       var e = eid(), out = [], total = 0;
@@ -12100,6 +12124,21 @@ renderRequisicoes: function () {
       var html = this._head(svg("fiscal") + "Fiscal / NF-e", "nova-fiscal", "Nova nota", extra);
       if (!nfs.length) return html + vazioBox("Nenhuma nota fiscal", "nova-fiscal", "Cadastrar primeira");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Tipo</th><th>Parceiro</th><th>Obra</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+      /* ⚠ v1.1.236 — "já lançada" reconhecia a nota SÓ pela chave de acesso, e
+         o resto do módulo já reconhecia por chave OU por docId justamente
+         porque NFS-e, cupom e recibo não têm chave (ver _lancamentosDaNota e a
+         dedupe do lancarFiscal). Resultado: nota cadastrada à mão sem chave
+         nunca mostrava a pílula "Lançada", o botão azul "Lançar" ficava
+         exposto como se nada tivesse acontecido e o "Desfazer" — a ÚNICA forma
+         de apagar as contas geradas — nunca era renderizado. Desfazer o
+         lançamento de uma NFS-e era impossível pela interface.
+         Os dois índices saem de UMA leitura do financeiro: a versão anterior
+         relia a lista inteira dentro do laço, uma vez por nota. */
+      var _idxChave = {}, _idxDoc = {};
+      Util.arr(lista("financeiro")).forEach(function (f) {
+        if (f && f.docChave) _idxChave[String(f.docChave)] = 1;
+        if (f && f.docId) _idxDoc[String(f.docId)] = 1;
+      });
       nfs.forEach(function (n) {
         var ob = obras.filter(function (o) { return o.id === n.obraId; })[0];
         var numTxt = n.numero ? n.numero : "—";
@@ -12112,7 +12151,9 @@ renderRequisicoes: function () {
           ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Itens (' + nItens + ')' +
             (pend ? ' <span class="pill proprio">' + pend + " a triar</span>" : " ✔") + "</button> "
           : "";
-        var jaLanc = Util.arr(lista("financeiro")).some(function (f) { return f.docChave && n.chaveAcesso && String(f.docChave) === String(n.chaveAcesso); });
+        /* mesmo critério de _lancamentosDaNota: com chave, vale a chave; sem
+           chave, vale o id do documento */
+        var jaLanc = n.chaveAcesso ? !!_idxChave[String(n.chaveAcesso)] : !!_idxDoc[String(n.id)];
         var btn = n.status === "emitida"
           ? (jaLanc ? '<span class="pill" title="Esta nota já virou lançamento no Financeiro">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançada</span>'
             : '<button class="btn sm primary" data-gacao="lancar-fiscal" data-id="' + n.id + '">Lançar</button>')
@@ -14145,14 +14186,31 @@ renderFolha: function () {
       var deLa = this._fsTodos().filter(function (l) { return l.semana === ant && l.tipo === "diaria"; });
       if (!deLa.length) { UI.toast("A semana anterior (" + FS.periodoDaChave(ant) + ") não tem diárias pra copiar.", "erro"); return; }
       if (!confirm("Copiar " + deLa.length + " diárias da semana " + FS.periodoDaChave(ant) + " pra esta semana? (Vêm com os mesmos valores de diária, sem faltas, sem hora extra — empreitas e fretes não são copiados.)")) return;
-      var jaTem = {}; this._fsLancs().forEach(function (l) { jaTem[(l.obraId || "") + "|" + (l.nome || "").toUpperCase()] = 1; });
-      var n = 0;
+      /* ⚠ A GUARDA TEM QUE OLHAR A MESMA LISTA DA ORIGEM — pela terceira vez
+         neste módulo (ver as notas em fsRecibos e no envio à folha). A origem
+         vem de `_fsTodos()` (todas as obras) e a guarda vinha de `_fsLancs()`,
+         que respeita o filtro "obra" da barra de cima. Com o filtro numa obra
+         qualquer, `jaTem` nascia sem enxergar as diárias das OUTRAS obras e a
+         cópia duplicava o lançamento: a Lista PIX agrupa por favorecido e SOMA
+         as duas linhas — a pessoa recebia a semana em dobro, no PIX e no
+         recibo assinado, e o toast ainda dizia "2 diárias copiadas".
+         O filtro serve para OLHAR, não para decidir. `tipo` entra na chave
+         porque a mesma pessoa pode ter diária e empreita na mesma obra. */
+      var jaTem = {}, chave = function (l) {
+        return (l.obraId || "") + "|" + (l.nome || "").toUpperCase() + "|" + (l.tipo || "");
+      };
+      this._fsTodos().forEach(function (l) { if (l.semana === self._fsSemana) jaTem[chave(l)] = 1; });
+      var n = 0, pulados = 0;
       deLa.forEach(function (l) {
-        if (jaTem[(l.obraId || "") + "|" + (l.nome || "").toUpperCase()]) return;
+        if (jaTem[chave(l)]) { pulados++; return; }
+        jaTem[chave(l)] = 1;   // duas linhas iguais na semana anterior não viram duas aqui
         Store.salvar(eid(), "fs_lancamentos", { semana: self._fsSemana, obraId: l.obraId, colaboradorId: l.colaboradorId || "", nome: l.nome, funcao: l.funcao || "", favorecido: l.favorecido || "", chavePix: l.chavePix || "", tipo: "diaria", dias: Util.clone(l.dias || {}), faltas: [], he: 0, obs: "" });
         n++;
       });
-      App.render(); UI.toast("⟳ " + n + " diárias copiadas da semana anterior. Ajuste faltas e exceções.", "ok");
+      App.render();
+      UI.toast("⟳ " + n + " diárias copiadas da semana anterior" +
+        (pulados ? " (" + pulados + " já existia(m) nesta semana e foi(ram) pulada(s))" : "") +
+        ". Ajuste faltas e exceções.", "ok");
     },
     fsResumoMes: function () {
       var FS = window.FolhaSemanal, self = this, mes = this._fsSemana.slice(0, 7);
@@ -17538,6 +17596,16 @@ case "nova-folha": return this.novoFolha();
       var _cnpjP = this._cnpjProprio ? this._cnpjProprio() : "";
       var _emitC = String(fn.cnpj || "").replace(/\D/g, "");
       if (!ehReceita && _cnpjP && _emitC && _emitC === _cnpjP) ehReceita = true;
+      /* v1.1.236 — e o tpNF ainda tinha ficado de fora DESTE caminho. A regra
+         "NF-e de entrada emitida pela própria empresa (tpNF=0 — produtor
+         rural, importação, devolução recebida) é dinheiro que SAI" só existia
+         em _registrarNfe, usado pelo 📥 XML em lote. O mesmo arquivo, aberto
+         pelo botão "XML da NF-e" ou lido pela IA, entrava com o sinal
+         invertido: um PAGAMENTO virava recebimento no caixa e a nota era
+         gravada como saída, com o parceiro trocado pelo destinatário.
+         Dois caminhos para o mesmo documento, dois sinais opostos — foi a
+         duplicação da regra que deixou metade da correção para trás. */
+      if (ehReceita && String(dados.tpNF) === "0") ehReceita = false;
       /* Chamado da TELA FISCAL: nada é gravado — nem fornecedor, nem a nota.
          O que a IA leu vai para o formulário e o usuário confere antes de
          salvar. Uma nota criada sozinha, com obra vazia e imposto zerado,

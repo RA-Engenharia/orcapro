@@ -213,12 +213,17 @@
       }
       if (pts && pts.length) g.curvaS = _pngCurvaS(pts, totalTxt);
 
-      // MO/MAT/EQ — mesmos totais da pizza do ui.js (soma qtd × custoMO/MAT/EQ)
+      /* MO/MAT/EQ — os MESMOS números do donut da tela (UI._mmeOrc) e do motor.
+         Somar as três parcelas cruas ignorava o modo de custo do item: a pizza
+         do arquivo entregue mostrava Material como fatia relevante num
+         orçamento de empreitada de mão de obra, contradizendo a tela e o
+         Custo Direto da aba Resumo do próprio arquivo. */
       var mo = 0, mat = 0, eq = 0;
       (orc.etapas || []).forEach(function (e) {
         (e.itens || []).forEach(function (it) {
-          var q = num(it.quantidade);
-          mo += num(it.custoMO) * q; mat += num(it.custoMAT) * q; eq += num(it.custoEQ) * q;
+          var q = num(it.quantidade), m = it.modoCusto;
+          if (m !== "matEq") mo += num(it.custoMO) * q;
+          if (m !== "mo") { mat += num(it.custoMAT) * q; eq += num(it.custoEQ) * q; }
         });
       });
       if (mo + mat + eq > 0) {
@@ -394,9 +399,18 @@
         var pu = _L ? _L.precoUnit : (bdiNoPU ? aUni(cu * (1 + bdiPct / 100)) : aUni(cu));
         var pt = _L ? _L.precoTotal : aVal(qt * pu);
         etCusto += ct; etVenda += pt;
-        // quebra MO/MAT/EQ do item (razão da composição analítica × custo real; próprio → material)
+        /* quebra MO/MAT/EQ do item. As parcelas do PRÓPRIO item mandam — é o
+           único lugar onde o modo de custo aparece. Item lançado como "só mão
+           de obra" (o cliente fornece o material) saía daqui com 60% de
+           material no arquivo entregue, enquanto a tela mostrava 100% MO: a
+           razão da composição CHEIA era aplicada sem olhar o que o item
+           realmente fatura. Sem parcelas, cai na razão do analítico como antes
+           e, na falta dele, tudo em material. */
+        var _rep = (global.Orcamento && Orcamento.repartirCusto) ? Orcamento.repartirCusto(it, ct) : null;
         var ana = insMap && insMap[String(it.codigo)];
-        if (ana && ana.custoUnitario > 0) {
+        if (_rep) {
+          grandMO += _rep.mo; grandMAT += _rep.mat; grandEQ += _rep.eq;
+        } else if (ana && ana.custoUnitario > 0) {
           grandMO += ct * ((ana.custoMO || 0) / ana.custoUnitario);
           grandMAT += ct * ((ana.custoMAT || 0) / ana.custoUnitario);
           grandEQ += ct * ((ana.custoEQ || 0) / ana.custoUnitario);

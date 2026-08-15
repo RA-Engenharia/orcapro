@@ -371,7 +371,24 @@
     try { rdos = Store.listar(emp, "rdo") || []; } catch (e) { if (aoTerminar) aoTerminar(null); return; }
     var peso = Fotos.pesoDoRegistro(rdos);
     if (!peso.bytesEmbutidos) { if (aoTerminar) aoTerminar({ diarios: 0, fotos: 0 }); return; }
-    var gravar = function (r) { try { Store.salvar(emp, "rdo", r); } catch (e) {} };
+    /* ⚠ v1.1.236 — GRAVA SÓ O CAMPO QUE A MIGRAÇÃO PRODUZIU.
+       A cadeia é sequencial (uma decodificação de imagem + um Idb.set por
+       FOTO): com algumas centenas de fotos ela leva minutos, e o `rdos` acima
+       é um RETRATO tirado no segundo 12 do boot. Se nesse meio-tempo o usuário
+       abrir um daqueles diários e corrigir o efetivo, as atividades e a
+       produção do dia, ao alcançá-lo a migração gravava o objeto ANTIGO por
+       cima — as correções sumiam sem erro nenhum. E como Store.salvar carimba
+       `atualizadoEm` novo, a versão obsoleta virava a mais recente, vencia o
+       merge e propagava a perda para o celular do encarregado.
+       Relendo o registro na hora de gravar, só `fotos` (o que esta rotina de
+       fato mudou) atravessa; o resto é o que estiver salvo agora. */
+    var gravar = function (r) {
+      try {
+        var atual = (r && r.id && Store.obter) ? Store.obter(emp, "rdo", r.id) : null;
+        if (atual) { atual.fotos = r.fotos; r = atual; }
+        Store.salvar(emp, "rdo", r);
+      } catch (e) {}
+    };
     Fotos.migrarRdos(rdos, gravar).then(function (res) {
       /* 2ª fase: empurra a fila e só então tira o base64 das que o servidor
          confirmou. Sem isto a 1ª fase seria uma troca de peso por perda — e

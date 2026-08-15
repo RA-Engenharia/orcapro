@@ -2247,7 +2247,27 @@
              orçamento nenhum era rejeitada aqui com o próprio arquivo na mão. */
           if (!orcs.length && !temPropria && !temGestao) { UI.toast("Backup sem orçamentos, sem composições próprias e sem dados da Gestão.", "erro"); return; }
           var eid = Auth.empresaId();
-          orcs.forEach(function (o) { Store.salvarOrcamento(eid, o); });
+          /* ===== v1.1.236 — O MAIS NOVO VENCE, TAMBÉM AQUI =====
+             O modal promete, com estas palavras: "Importar restaura/mescla o
+             conteúdo do arquivo nesta conta — nada é apagado." As outras duas
+             metades desta mesma função honravam isso (a Gestão logo abaixo, a
+             base própria por criadoEm). A dos ORÇAMENTOS não tinha guarda
+             nenhuma e `Store.salvarOrcamento` substitui o registro inteiro
+             pelo id: importar o backup de segunda para recuperar um orçamento
+             apagado por engano levava junto a semana de trabalho de OUTRO
+             orçamento — que voltava de 51 itens para 1, sem aviso, com o toast
+             dizendo "1 orçamento(s) restaurado(s)".
+             E o carimbo do arquivo é preservado, senão o retrocesso venceria o
+             merge da nuvem e viajaria para os outros aparelhos. */
+          var _idxOrc = {};
+          try { Store.listarOrcamentos(eid).forEach(function (x) { if (x && x.id) _idxOrc[x.id] = String(x.atualizadoEm || ""); }); } catch (eI) {}
+          var nOrc = 0, orcMantidos = 0;
+          orcs.forEach(function (o) {
+            if (!o || !o.id) return;
+            if (_idxOrc[o.id] != null && _idxOrc[o.id] >= String(o.atualizadoEm || "")) { orcMantidos++; return; }
+            Store.salvarOrcamento(eid, o, true);
+            nOrc++;
+          });
           var rProp = temPropria ? self._restaurarPropria(eid, dump.basePropria) : null;
           /* ===== v1.1.232 — A GESTÃO VOLTA. O _dumpBackup grava `gestao` com
              TODAS as entidades desde 09/08, mas a restauração nunca a leu: o
@@ -2284,7 +2304,8 @@
             for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];
             Store.salvarPrefs(eid, atual);
           }
-          UI.toast(orcs.length + " orçamento(s) restaurado(s)"
+          UI.toast(nOrc + " orçamento(s) restaurado(s)"
+            + (orcMantidos ? " (" + orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s))" : "")
             + (rProp ? " · composições próprias: " + rProp.novos + " nova(s), " + rProp.atualizados + " atualizada(s), " + rProp.total + " no total" : "")
             + (temGestao ? " · Gestão: " + nGest + " registro(s) em " + entsGest + " módulo(s)" : "") + ".", "ok");
           UI.fecharModal(); self.tela = "lista"; self.render();
@@ -3657,6 +3678,17 @@
       var self = this;
       var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) || "";
       if (!back) { box.innerHTML = '<span style="color:#dc2626">IA não configurada neste aparelho.</span>'; return; }
+      /* ⚠ v1.1.236 — A RESPOSTA TEM DONO. A consulta demora até 12 s e o modal
+         continua interativo: quem se cansa fecha, abre a Memória de OUTRO item
+         e faz a conta dele. Quando a resposta antiga chegava, `_memMostrar`
+         escrevia por cima — os ids dos campos são os mesmos em qualquer modal
+         de memória. O item B ficava com a metragem de A e com a memória de
+         cálculo de A como justificativa (a peça que a Lei 14.133 exige), e
+         `aplicarMemoriaQuantidade` só barra quando a unidade difere — dois
+         serviços em m² passavam direto. Guardar o objeto `_mem` do disparo e
+         comparar por identidade resolve: `abrirMemoria` cria um novo a cada
+         abertura, então "é outro objeto" significa "é outro item". */
+      var alvo = this._mem;
       box.innerHTML = '<span class="muted">Consultando a IA…</span>';
       var ctrl = null;
       try { ctrl = new AbortController(); setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 12000); } catch (e) {}
@@ -3672,6 +3704,7 @@
         body: JSON.stringify({ descricao: texto, formas: formas }),
         signal: ctrl ? ctrl.signal : undefined
       }).then(function (resp) { return resp.json(); }).then(function (j) {
+        if (self._mem !== alvo) return;   // o usuário já está em outro item: descarta calado
         var pr = j && j.ok && j.resultado;
         if (!pr || !pr.forma || !Orcamento.FORMAS_MEMORIA[pr.forma]) {
           box.innerHTML = '<span style="color:#dc2626">A IA não conseguiu montar a conta. Use a calculadora abaixo.</span>';
@@ -3683,6 +3716,7 @@
         if (pr.premissas && pr.premissas.length) r.comoLi = pr.premissas.slice(0, 4);
         self._memMostrar(r);
       }).catch(function () {
+        if (self._mem !== alvo) return;
         box.innerHTML = '<span style="color:#dc2626">Sem conexão com a IA. Use a calculadora abaixo — ela funciona offline.</span>';
       });
     },
@@ -4580,6 +4614,10 @@
       return (propria && propria.dados ? propria.dados : []).map(function (d) { return d.codigo; });
     },
     criarComposicao: function (semRender) {
+      /* abrir o criador — por qualquer porta — invalida o reforço de IA que
+         ainda estiver voando: a resposta dele não pode cair por cima do que o
+         usuário começou a montar depois (ver a nota em elaborarComposicao) */
+      this._elabReq = (this._elabReq || 0) + 1;
       var cods = this._cpCodigosExistentes();
       this._cp = {
         passo: 1,
@@ -5516,6 +5554,16 @@
         var empate = alt0 && (r.referencia.score - alt0.score) < 0.12;
         var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
         if (!empate || !back || o.semIA) { abrir(r); return; }
+        /* ⚠ v1.1.236 — o reforço demora até 6 s SEM overlay e SEM modal: para
+           quem clicou, a tela simplesmente não mudou. É natural clicar
+           "Elaborar" na linha seguinte (ou "Montar à mão"), começar a ajustar
+           coeficientes — e então a resposta antiga chegava, `abrir()` chamava
+           `criarComposicao(true)`, que zera `_cp` e reabre o modal SEM passar
+           pela guarda de trabalho não salvo. O formulário em edição era
+           destruído sem pergunta, com um toast que ainda parecia confirmação
+           de sucesso. Carimbo de requisição: só a última pedida abre. */
+        var elabId = (self._elabReq = (self._elabReq || 0) + 1);
+        var abrirSeMinha = function (rr) { if (elabId === self._elabReq) abrir(rr); };
         var ctrl = null;
         try { ctrl = new AbortController(); setTimeout(function () { try { ctrl.abort(); } catch (e) {} }, 6000); } catch (e) {}
         fetch(back + "/ia/composicao", {
@@ -5539,11 +5587,11 @@
               unidade: o.unidade || "", grupo: o.grupo || "",
               forcarReferencia: ref.trocarPara.codigo
             });
-            if (r2.ok) { r2.viaIA = true; if (ref.descricaoSugerida) r2.comp.descricao = ref.descricaoSugerida; abrir(r2); return; }
+            if (r2.ok) { r2.viaIA = true; if (ref.descricaoSugerida) r2.comp.descricao = ref.descricaoSugerida; abrirSeMinha(r2); return; }
           }
           if (ref.descricaoSugerida) { r.comp.descricao = ref.descricaoSugerida; r.viaIA = true; }
-          abrir(r);
-        }).catch(function () { abrir(r); });   // offline/timeout: segue com o motor
+          abrirSeMinha(r);
+        }).catch(function () { abrirSeMinha(r); });   // offline/timeout: segue com o motor
         return;
       };
       var abrir = function (r) {
@@ -5838,10 +5886,29 @@
       if (!Util.naoVazio(txt)) { UI.toast("Cole a descrição da obra primeiro.", "erro"); return; }
       var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
       this._escBack = back;
+      /* ⚠ v1.1.236 — A RESPOSTA VOLTA PARA O ORÇAMENTO QUE A PEDIU, e para
+         nenhum outro. A chamada leva de 15 a 45 s mostrando só um toast: o app
+         inteiro continua navegável. Quem acha que travou fecha o modal, volta
+         para a lista e abre OUTRO orçamento — e o `.then` montava o modal de
+         revisão com as etapas de quem estivesse aberto na hora. Um clique em
+         "Adicionar selecionados" e o escopo inteiro da obra A entrava no
+         orçamento B, com preços e etapas criadas lá. Voltando para a LISTA era
+         pior de outro jeito: `orcAtual` nulo estourava TypeError e o catch
+         culpava a rede ("veja o Console, ERP na porta 3040?"), com todo o
+         trabalho da IA perdido.
+         Carimbo duplo: o id do orçamento e um contador de requisição — o
+         contador também descarta a resposta velha quando o usuário manda
+         analisar duas vezes seguidas no MESMO orçamento. */
+      var reqId = (this._escReq = (this._escReq || 0) + 1);
+      var orcId = this.orcAtual ? this.orcAtual.id : "";
+      var meuTurno = function () {
+        return reqId === self._escReq && self.orcAtual && self.orcAtual.id === orcId;
+      };
       UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Estruturando o escopo com a IA do ERP…", "ok");
       fetch(back + "/ia/orcamento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") }, body: JSON.stringify({ descricao: txt }) })
         .then(function (r) { return r.json(); })
         .then(function (j) {
+          if (!meuTurno()) { UI.toast("O escopo estruturado pela IA foi descartado: você saiu do orçamento que o pediu.", "erro"); return; }
           if (!j.ok || !j.resultado) { UI.toast("IA: " + (j.error || "não retornou estrutura"), "erro"); return; }
           self._escopo = Escopo.analisarItensIA(j.resultado.etapas || [], { excluirFontes: self._fontesExcluidas() });
           if (!self._escopo.length) { UI.toast("A IA não retornou itens.", "erro"); return; }
@@ -5891,8 +5958,16 @@
     // botão "🎯 Refinar com IA" na revisão do escopo
     refinarEscopoCasar: function () {
       var self = this, back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+      /* mesma trava do analisarEscopoIA, e aqui ela pesa ainda mais: o refino
+         roda em LOTES e pode levar minutos, sobrando tempo de sobra para o
+         usuário sair do orçamento */
+      var reqId = (this._escReq = (this._escReq || 0) + 1);
+      var orcId = this.orcAtual ? this.orcAtual.id : "";
       UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinando os matches com a IA…", "ok");
       this._casarEscopoIA(back).then(function (r) {
+        if (reqId !== self._escReq || !self.orcAtual || self.orcAtual.id !== orcId) {
+          UI.toast("O refino da IA foi descartado: você saiu do orçamento que o pediu.", "erro"); return;
+        }
         var msg = r.refinados + " serviços refinados pela IA.";
         if (r.limite) msg += " ⏳ Limite da IA grátis/min atingido — restam " + r.restam + ", clique de novo daqui ~1 min.";
         UI.toast(msg, r.limite ? "erro" : "ok");

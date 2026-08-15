@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.235",
+  "versao": "1.1.236",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.235/OrcaPRO-IA-update-v1.1.235.zip",
-  "notas": "Quarta rodada de correcoes, com duas importantes: quantidade com tres casas decimais vinda de planilha (0,125 m3 de concreto) estava sendo lida como 125 — corrigido; e o aviso de conflito de sincronizacao, que continuava aparecendo para quem so recebia dados do outro aparelho, agora so aparece em conflito de verdade. Tambem: a apresentacao ao cliente nao e mais interrompida por atualizacao automatica e responde a Espaco/Enter; o diario que chega por WhatsApp so recebe baixa depois de gravado de verdade; e o modal do teste gratis nao deixa mais a tela em branco.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.235/OrcaPRO-IA-Instalador-v1.1.235.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.236/OrcaPRO-IA-update-v1.1.236.zip",
+  "notas": "Quinta rodada de correcoes, a mais importante delas no dinheiro: fechar o orcamento em um valor pelo modo 'distribuido em todos os itens' podia DERRUBAR o preco de um item que voce tinha cotado a mao, empurrando a diferenca calada para os demais — o total batia o alvo e nada avisava. Corrigido, junto com a causa: editar o preco unitario na planilha agora reparte o valor nas parcelas de mao de obra, material e equipamento, entao o laudo e o Excel voltam a fechar com o custo direto que eles mesmos imprimem. Tambem: restaurar um backup nao sobrescreve mais orcamento com trabalho mais recente; copiar as diarias da semana anterior nao duplica pagamento quando o filtro de obra esta ligado; a copia de um orcamento aprovado nasce aberta (antes nascia travada e ja contava como aprovada na carteira); nota de entrada emitida pela propria empresa nao entra mais como receita; e frete e valor de pedido com centavos deixaram de salvar R$ 0,00.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.236/OrcaPRO-IA-Instalador-v1.1.236.exe"
 }

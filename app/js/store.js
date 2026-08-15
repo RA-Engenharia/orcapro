@@ -150,8 +150,13 @@
       return lista;
     },
 
-    salvarOrcamento: function (empresaId, orc) {
-      orc.atualizadoEm = Util.agoraISO();
+    /* `manterCarimbo` existe para UM caso: restaurar backup. O registro que vem
+       do arquivo tem que entrar com o atualizadoEm DELE — carimbar "agora" num
+       conteúdo de semana passada faz o merge da nuvem tratar o retrocesso como
+       a versão mais recente e propagá-lo para os outros aparelhos. Em todo o
+       resto do app o carimbo é sempre agora, que é o comportamento padrão. */
+    salvarOrcamento: function (empresaId, orc, manterCarimbo) {
+      if (!(manterCarimbo && orc && orc.atualizadoEm)) orc.atualizadoEm = Util.agoraISO();
       var lista = this.listarOrcamentos(empresaId);
       var idx = -1;
       for (var i = 0; i < lista.length; i++) { if (lista[i].id === orc.id) { idx = i; break; } }
