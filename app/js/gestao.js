@@ -6731,6 +6731,16 @@
         this._bimFecharDrawer(); // gaveta aberta num painel que acabou de esvaziar viraria casca vazia (achado do gate)
         return;
       }
+      /* v1.1.233 — modelo MUDOU: o levantamento antigo morre. Sem isto, o
+         usuário apagava 3 paredes no editor e o botão "Lançar no orçamento"
+         seguia vivo com os números de ANTES — m² que já não existe entrando
+         na planilha sem aviso. Invalidar e devolver o placeholder é o único
+         estado honesto; re-Levantar custa 1 clique. */
+      if (this._bimQto) {
+        this._bimQto = null;
+        var qresV = document.getElementById("bim-qto-res");
+        if (qresV) qresV.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">O modelo mudou desde o último levantamento — clique em <b>Levantar</b> de novo para atualizar os quantitativos.</p>';
+      }
       var crono = null, obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
       if (obra && obra.orcamentoId && Store.obterOrcamento && typeof Cronograma !== "undefined" && Cronograma.estimar) {
         var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
@@ -13032,6 +13042,10 @@ renderFolha: function () {
       });
     },
     lancarFolhaEnc: function (folhaId) {
+      // v1.1.233 — mesmo guard do lancar-ponto: lançar cria despesa no Financeiro
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Lançar a folha cria uma despesa no Financeiro — módulo que seu usuário não tem. Peça a quem cuida do Financeiro.", "erro"); return;
+      }
       var fl = Store.obter(eid(), "folha", folhaId); if (!fl) return;
       var cols = lista("colaboradores");
       var col = cols.filter(function (c) { return c.id === fl.colaboradorId; })[0];
@@ -16031,6 +16045,13 @@ renderFolha: function () {
         case "novo-colaborador": return this.novoColaborador();
         case "novo-ponto": return this.novoPonto();
         case "lancar-ponto": {
+          /* v1.1.233 — lançar cria DESPESA PAGA no Financeiro: exige o módulo.
+             O RH via este botão na tela de Ponto (que ele tem) e gravava no
+             Financeiro (que ele NÃO tem) — porta lateral que todo o resto do
+             código fecha. Ver e conferir o ponto continua livre. */
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+            UI.toast("Lançar a folha cria uma despesa no Financeiro — módulo que seu usuário não tem. Peça a quem cuida do Financeiro.", "erro"); return;
+          }
           var pt = Store.obter(eid(), "ponto", id); if (!pt) return;
           pt.status = "lancado"; pt.dataLancamento = new Date().toISOString().slice(0, 10); Store.salvar(eid(), "ponto", pt);
           Store.salvar(eid(), "financeiro", { data: pt.dataLancamento, desc: "Folha " + (pt.competencia || "") + " — " + (pt.colaboradorNome || ""), tipo: "despesa", categoria: "mao_obra", valor: Util.num(pt.valor), status: "pago", obraId: pt.obraId });
@@ -16388,8 +16409,18 @@ case "nova-folha": return this.novoFolha();
         fisico: fisico,
         previsao: previsao,
         relatorios: relPermitidos,
+        /* ===== v1.1.233 — O CHECKBOX MANDA NO DADO, NÃO SÓ NO BOTÃO =====
+           A tela promete: "o que ficar desmarcado não é enviado ao Portal, nem
+           o dado nem o botão". Mas medições (valor e retenção de cada boletim)
+           e diários embarcavam INCONDICIONALMENTE no retrato publicado — quem
+           desmarcava "Medições" escondia o botão e publicava os valores mesmo
+           assim, legíveis no JSON por qualquer um com o link. O gate agora
+           vale na CAMADA DO DADO para todo relatório que carrega conteúdo. */
         compras: compras, financeiro: financeiro, documentos: documentos, marcos: marcos,
-        curvaS: curvaS, cronograma: cronograma, medicoes: medicoes, rdos: rdos
+        curvaS: curvaS, cronograma: cronograma,
+        medicoes: podeRel("medicoes") ? medicoes : [],
+        rdos: (podeRel("diario") || podeRel("semanal") || podeRel("mensal") || podeRel("ocorrencias") ||
+               podeRel("fotografico") || podeRel("efetivo") || podeRel("clima") || podeRel("galeria")) ? rdos : []
       };
       return { snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
                segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS,

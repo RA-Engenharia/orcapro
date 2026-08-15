@@ -736,7 +736,13 @@
           var pu = bdiNoPU ? A0.unitario(Util.num(it.custoUnitario) * (1 + pct / 100), modo) : cu;
           var pt = A0.valor(q * pu, modo);
           custoDireto += ct; somaVenda += pt;
-          mo += q * Util.num(it.custoMO); mat += q * Util.num(it.custoMAT); eq += q * Util.num(it.custoEQ);
+          /* v1.1.233 — MO/MAT/EQ do orçamento respeitam o modo de custo do
+             item: "só MO" não soma o material que o cliente fornece. É este
+             agregado que alimenta o Resumo, a pizza do xlsx e o laudo — somar
+             a parcela que NÃO está no preço fazia o gráfico contradizer a
+             planilha. */
+          if (it.modoCusto !== "matEq") mo += q * Util.num(it.custoMO);
+          if (it.modoCusto !== "mo") { mat += q * Util.num(it.custoMAT); eq += q * Util.num(it.custoEQ); }
           if (sid) { var g2 = gRef[sid]; g2.qtdItens++; g2.custoTotal += ct; g2.precoTotal += pt; }
           linhas.push({
             etapaIdx: ei, etapaId: e.id, etapaCodigo: e.codigo || "", etapaNome: e.nome || "",

@@ -29,6 +29,27 @@
     _gravar: function (o) { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (e) {} },
     chave: function () { var l = this._ler() || {}; return l.chave || ""; },
 
+    /* ===== v1.1.233 — a identidade da máquina ancora no DISCO =====
+       Só no localStorage, limpar os dados do site zerava o deviceId e o
+       servidor abria outro trial de 7 dias — infinito, com dois cliques. O
+       servidor local (que já serve o app) guarda o id num arquivo: na 1ª vez
+       ele ADOTA o id que o navegador já tem (instalação ativada continua
+       sendo o mesmo dispositivo); depois, storage limpo é RESTAURADO do
+       disco. No PWA (sem servidor local) o fetch falha calado e fica o
+       comportamento de sempre — o cerco fecha onde há onde ancorar. */
+    sincronizarDevice: function () {
+      try {
+        if (typeof fetch === "undefined" || typeof localStorage === "undefined") return;
+        var cur = null; try { cur = localStorage.getItem("orcapro:deviceid"); } catch (e) {}
+        fetch("/__device" + (cur ? "?seed=" + encodeURIComponent(cur) : ""))
+          .then(function (r) { return r.json(); })
+          .then(function (j) {
+            if (!j || !j.ok || !j.id) return;
+            try { if (localStorage.getItem("orcapro:deviceid") !== j.id && !cur) localStorage.setItem("orcapro:deviceid", j.id); } catch (e2) {}
+          })["catch"](function () {});
+      } catch (e3) {}
+    },
+
     // ID do dispositivo (gerado 1x e guardado) — base da trava anti-compartilhamento
     deviceId: function () {
       try {
@@ -165,5 +186,7 @@
   };
 
   global.Licenca = Licenca;
+  // âncora da identidade no disco — roda no carregamento, sem depender de ninguém chamar
+  try { if (typeof window !== "undefined") Licenca.sincronizarDevice(); } catch (eSd) {}
   if (typeof module !== "undefined" && module.exports) { module.exports = Licenca; }
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

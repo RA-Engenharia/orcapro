@@ -22,7 +22,9 @@
       var podeGestao = (typeof Gestao !== "undefined" && Gestao.podeGestao) ? Gestao.podeGestao() : false;
 
       // ações rápidas (primeiro no ranking por tipo)
-      f.push({ tipo: "acao", id: "novo-orcamento", titulo: "Novo Orçamento", subtitulo: "criar um orçamento em branco", palavras: "criar novo adicionar" });
+      // v1.1.233 — RBAC também aqui: sub-usuário sem o módulo Orçamentos criava
+      // e gravava orçamento pelo Ctrl+K, contornando a permissão da sidebar
+      if (this._pode("orcamentos")) f.push({ tipo: "acao", id: "novo-orcamento", titulo: "Novo Orçamento", subtitulo: "criar um orçamento em branco", palavras: "criar novo adicionar" });
       if (typeof Tour !== "undefined") f.push({ tipo: "acao", id: "tour", titulo: "Rever o tour guiado", subtitulo: "conheça o sistema em 60 segundos", palavras: "ajuda tutorial guia" });
       // backup é ação de DONO (sub-usuário não tem o menu — sem beco sem saída)
       if (logado.papel !== "usuario") f.push({ tipo: "acao", id: "backup", titulo: "Backup dos dados", subtitulo: "exportar ou restaurar", palavras: "exportar salvar restaurar seguranca" });
@@ -173,6 +175,8 @@
          com um formulário aberto destruía o modal que o confirm tinha acabado
          de proteger — o cancelar virava "sim". */
       if (r.tipo === "acao") {
+        // re-checa no clique (a permissão pode ter mudado com a equipe sincronizando)
+        if (r.id === "novo-orcamento" && !this._pode("orcamentos")) { if (typeof UI !== "undefined") UI.toast("Sem permissão para o módulo Orçamentos.", "erro"); return; }
         if (r.id === "novo-orcamento" && typeof App !== "undefined") { if (App.irPara("orcamentos") === false) return; App.novoOrcamento(); }
         else if (r.id === "tour" && typeof Tour !== "undefined") Tour.iniciar(true);
         else if (r.id === "backup") { var b = document.querySelector('[data-acao="backup"]'); if (b) b.click(); else if (typeof UI !== "undefined") UI.toast("Abra ⚙ (menu da conta) → " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup.", "ok"); }

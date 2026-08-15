@@ -442,6 +442,14 @@
       if (typeof Gestao !== "undefined" && !this._demo && !Gestao.podeGestao()) {
         // Sem Plus (base/sem licença): Gestão bloqueada p/ TODOS (dono e sub-usuário) → só Orçamento
         if (view !== "orcamentos") { view = "orcamentos"; this.view = "orcamentos"; }
+        /* v1.1.233 — o RBAC continua valendo SEM o Plus. Este ramo jogava todo
+           sub-usuário em Orçamentos mesmo quem não tem o módulo: a licença
+           vencer não pode ABRIR porta que a permissão fecha. Sem módulo nenhum
+           acessível, a tela honesta é o login. */
+        if (Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+          try { UI.toast("Seu usuário não tem acesso ao módulo Orçamentos, e a licença atual não dá acesso à Gestão. Fale com o administrador da conta.", "erro"); } catch (eT) {}
+          Auth.logout(); this.tela = "login"; this.orcAtual = null;
+        }
       } else if (podeGestao && Auth.podeModulo && !Auth.podeModulo(view)) {
         // Plus: sub-usuário sem permissão p/ a view → vai p/ um módulo permitido (Painel é sempre liberado)
         view = Auth.podeModulo("dashboard") ? "dashboard" : "orcamentos";
@@ -521,7 +529,18 @@
       if (!orc || typeof Aprovacao === "undefined") return;
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       var eu = (Auth.usuario && Auth.usuario()) || {};
+      /* v1.1.233 — o CONTEXTO de aprovação viaja junto, como na Gestão. Sem
+         ele, a política "exigir outro aprovador" configurada nas preferências
+         simplesmente não chegava ao clique do ORÇAMENTO: o motor a lia como
+         desligada e quem preencheu aprovava o próprio documento — a regra
+         valia numa porta e não na outra. */
       var dados = {};
+      try {
+        var eidAp = Auth.empresaId();
+        var prefsAp = Store.lerPrefs ? Store.lerPrefs(eidAp) : null;
+        dados.exigirOutroAprovador = !!(prefsAp && prefsAp.exigirOutroAprovador);
+        if (Aprovacao.semOutroAprovador) dados.semOutroAprovador = Aprovacao.semOutroAprovador(eu, Store.listar(eidAp, "equipe"));
+      } catch (eCtx) {}
       if (acao === "revisar" || acao === "rejeitar") {
         var m = window.prompt("Escreva o motivo — é essa mensagem que chega a quem preencheu:", "");
         if (m === null) return;                       // desistiu
@@ -1193,7 +1212,8 @@
         if (cam && cam.candidatos[idx]) {
           cam.escolhido = idx;
           var cand = cam.candidatos[idx];
-          var div = String(cand.item.unidade || "").toUpperCase().replace(/\s/g, "") !== String(cam.unidade || "").toUpperCase().replace(/\s/g, "");
+          // mesma régua do motor (v1.1.233): unidadeChave normaliza ²→2 — o compare cru derrubava m² × M2
+          var div = Util.unidadeChave(cand.item.unidade) !== Util.unidadeChave(cam.unidade);
           cam.unidadeDivergente = div; cam.status = cam.qtdZero ? cam.status : (div ? "revisar" : "ok"); cam.confianca = Util.num(cand.confianca);
           // recomputa os contadores p/ o botão/pills não ficarem stale
           var r = this._pcPreview.resultado, nOk = 0, nRev = 0, nPend = 0;
@@ -2446,8 +2466,13 @@
           if (!isNaN(idx) && c.candidatos[idx]) {
             c.escolhido = idx;
             var cand = c.candidatos[idx];
-            // re-checa unidade do candidato agora escolhido (usuário pode ter corrigido p/ um M2)
-            var div = String((cand.item.unidade || "")).toUpperCase().replace(/\s/g, "") !== String(c.unidade || "").toUpperCase().replace(/\s/g, "");
+            /* re-checa unidade do candidato agora escolhido — pela MESMA régua
+               do motor (v1.1.233). O compare cru repetia aqui o bug que o
+               paredecebola.js já tinha corrigido: "m²".toUpperCase() é "M²",
+               que não é "M2" — camada de base SICRO/SETOP mostrada como
+               "casou" era derrubada para "revisar" NA HORA DE APLICAR e sumia
+               do orçamento em silêncio. unidadeChave normaliza ²→2. */
+            var div = Util.unidadeChave(cand.item.unidade) !== Util.unidadeChave(c.unidade);
             c.unidadeDivergente = div; c.status = div ? "revisar" : "ok";
           }
         }

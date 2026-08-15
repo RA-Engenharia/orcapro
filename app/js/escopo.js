@@ -200,14 +200,12 @@
         if (typeof c === "object") return String(c.text || c.result || c.richText && c.richText.map(function (r) { return r.text; }).join("") || "");
         return String(c);
       };
-      var num = function (c) {
-        var s = val(c).replace(/\s/g, "");
-        if (!s) return 0;
-        /* pt-BR: 1.234,56 → 1234.56 */
-        if (s.indexOf(",") >= 0) s = s.replace(/\./g, "").replace(",", ".");
-        var n = parseFloat(s.replace(/[^\d.\-]/g, ""));
-        return isNaN(n) ? 0 : n;
-      };
+      /* v1.1.233 — Util.num, não um parser local. O daqui só tratava o ponto
+         como milhar QUANDO havia vírgula: célula-texto "1.500" (mil e
+         quinhentos, comum em CSV BR) virava 1,5 — quantidade 1000× menor
+         entrando na planilha do orçamento sem aviso. Util.num já decide pelo
+         padrão BR ("1.500"→1500, "1.250,50"→1250,50, "12.5"→12,5). */
+      var num = function (c) { return Util.num(val(c)); };
       /* acha as colunas pelo cabeçalho; sem cabeçalho reconhecível, usa a
          coluna de texto mais longa como descrição — é o que a planilha de
          quantitativo tem de mais estável */
@@ -276,9 +274,9 @@
         if (s.length < 3 || s.length > 160) return;
         var m = s.match(reArea);
         if (!m) return;
-        var v = m[1];
-        v = v.indexOf(",") >= 0 ? v.replace(/\./g, "").replace(",", ".") : v;
-        var area = parseFloat(v);
+        /* v1.1.233 — mesma correção do daMatriz: "GALPAO 1.250 m2" convertia
+           para 1,25 m² porque o milhar só era tratado com vírgula presente */
+        var area = Util.num(m[1]);
         if (!(area > 0) || area > 100000) return;      // 100 mil m² num rótulo é erro de leitura
         /* o nome é o que sobra antes da medida, sem o ruído de cota */
         var nome = s.slice(0, m.index).replace(/[=:\-–—.]+\s*$/, "").replace(/\b(a|área|area)\s*$/i, "").trim();
@@ -332,15 +330,28 @@
       norm = norm.replace(/(\d)([a-z])/g, "$1 $2");
       var tokens = norm.split(" ").filter(Boolean);
 
-      // 1) Quantidade: primeiro número da linha (aceita 1.234,56)
+      /* 1) Quantidade (v1.1.233 — dois defeitos moravam aqui):
+         a) o ramo de milhar com `*` casava "125" DENTRO de "1250" e parava —
+            todo inteiro de 4+ dígitos era truncado (1250 m² → 125). O `+`
+            exige o grupo de milhar de verdade; sem ele, o número inteiro cai
+            no 2º ramo.
+         b) o PRIMEIRO número da linha nem sempre é a quantidade: em
+            "BLOCO 14X19X39 250 m2" ela é o 250 — o número colado à unidade.
+            A preferência agora é essa; o primeiro número segue como último
+            recurso para linha sem unidade. */
       var quantidade = 1, qtdAchada = false;
-      var mNum = bruto.match(/(\d{1,3}(?:\.\d{3})*(?:,\d+)?|\d+(?:[.,]\d+)?)/);
+      var mNum = bruto.match(/(\d{1,3}(?:\.\d{3})+(?:,\d+)?|\d+(?:[.,]\d+)?)/);
       if (mNum) { quantidade = Util.num(mNum[1]) || 1; qtdAchada = true; }
 
       // 2) Unidade: token que bate com UNID
-      var unidade = null;
+      var unidade = null, uIdx = -1;
       for (var u = 0; u < tokens.length; u++) {
-        if (UNID[tokens[u]]) { unidade = UNID[tokens[u]]; break; }
+        if (UNID[tokens[u]]) { unidade = UNID[tokens[u]]; uIdx = u; break; }
+      }
+      // o número imediatamente ANTES da unidade é o quantitativo de verdade
+      if (uIdx > 0 && /^\d/.test(tokens[uIdx - 1])) {
+        var qAntes = Util.num(tokens[uIdx - 1]);
+        if (qAntes > 0) { quantidade = qAntes; qtdAchada = true; }
       }
 
       // 3) Termos de busca: tira números, unidades, stopwords; aplica sinônimos
@@ -354,8 +365,16 @@
         termos.push(SINONIMOS[tk] || tk);
       }
 
-      // 4) Código digitado direto? -> match certo (multi-base)
+      /* 4) Código digitado direto? -> match certo (multi-base)
+         v1.1.233 — número de NORMA não é código de base. "CONFORME NBR 12721
+         50 m2" casava um insumo aleatório com confiança 100 e pré-selecionado:
+         a NBR virava cotovelo de cobre na planilha. O código digitado em
+         qualquer posição continua valendo (é fluxo documentado no teste da
+         denylist) — só a referência normativa é descartada. */
       var codDigitado = (bruto.match(/\b(\d{5,7})\b/) || [])[1];
+      if (codDigitado && new RegExp("\\b(?:NBR|NM|ISO|ABNT|DIN|ASTM|NR|EB|MB)\\s*[:.\\-]?\\s*" + codDigitado + "\\b", "i").test(bruto)) {
+        codDigitado = null;
+      }
       var hit = codDigitado ? this._obter(codDigitado) : null;
       if (hit) {
         var itx = hit.item;

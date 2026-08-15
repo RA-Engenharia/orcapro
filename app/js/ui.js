@@ -1732,9 +1732,18 @@
         '<div class="muted" style="font-size:11px">Custo distribuído ao longo das ' + nSem + ' semanas do cronograma (etapas em paralelo somam na semana). Total: ' + Util.fmtMoeda(totalCusto) + '.</div>';
     },
 
+    /* v1.1.233 — respeita o MODO DE CUSTO. Item "só MO" fatura só a mão de
+       obra: somar as três parcelas cruas fazia a pizza mostrar Material que o
+       CLIENTE fornece como se fosse custo do orçamento — o gráfico contradizia
+       a planilha da tela ao lado. */
     _mmeOrc: function (orc) {
       var mo = 0, mat = 0, eq = 0;
-      (orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) { var q = Util.num(it.quantidade); mo += Util.num(it.custoMO) * q; mat += Util.num(it.custoMAT) * q; eq += Util.num(it.custoEQ) * q; }); });
+      (orc.etapas || []).forEach(function (e) { (e.itens || []).forEach(function (it) {
+        var q = Util.num(it.quantidade);
+        var m = it.modoCusto;
+        if (m !== "matEq") mo += Util.num(it.custoMO) * q;
+        if (m !== "mo") { mat += Util.num(it.custoMAT) * q; eq += Util.num(it.custoEQ) * q; }
+      }); });
       return { mo: mo, mat: mat, eq: eq, total: mo + mat + eq };
     },
     _barH: function (dados) {
@@ -1758,6 +1767,13 @@
       var tot = dados.reduce(function (s, d) { return s + d.valor; }, 0) || 1, ang = -Math.PI / 2, R = 60, cx = 80, cy = 80, parts = "";
       dados.forEach(function (d) {
         var frac = d.valor / tot, a0 = ang, a1 = ang + frac * 2 * Math.PI; ang = a1;
+        /* fatia de ~100%: o arco com início = fim degenera e o SVG não desenha
+           NADA — orçamento só de material aparecia como donut vazio (v1.1.233).
+           Círculo cheio resolve o caso extremo sem tocar nos normais. */
+        if (frac >= 0.999) {
+          parts += '<circle cx="' + cx + '" cy="' + cy + '" r="' + R + '" fill="' + d.cor + '"><title>' + Util.esc(d.rotulo) + ': ' + Util.fmtPct(frac * 100, 1) + '</title></circle>';
+          return;
+        }
         var x0 = cx + R * Math.cos(a0), y0 = cy + R * Math.sin(a0), x1 = cx + R * Math.cos(a1), y1 = cy + R * Math.sin(a1), large = frac > 0.5 ? 1 : 0;
         parts += '<path d="M' + cx + ',' + cy + ' L' + x0.toFixed(1) + ',' + y0.toFixed(1) + ' A' + R + ',' + R + ' 0 ' + large + ',1 ' + x1.toFixed(1) + ',' + y1.toFixed(1) + ' Z" fill="' + d.cor + '"><title>' + Util.esc(d.rotulo) + ': ' + Util.fmtPct(frac * 100, 1) + '</title></path>';
       });

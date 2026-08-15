@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.232",
+  "versao": "1.1.233",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.232/OrcaPRO-IA-update-v1.1.232.zip",
-  "notas": "Grande rodada de correcoes: 22 defeitos encontrados numa varredura completa do sistema. Os que voce pode ter sentido: cotacao ou item de estoque reaberto multiplicava valores por mil ao salvar sem mexer em nada; medicao paga em varios boletins deixava centavos sem faturar; restaurar backup nao devolvia os dados da Gestao (diarios, medicoes, financeiro); um aviso falso de conflito de sincronizacao aparecia ao abrir o app depois de o outro aparelho trabalhar; e marcar medicao como Paga pelo formulario nao lancava a receita no Financeiro. Tudo corrigido, com testes travando cada um.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.232/OrcaPRO-IA-Instalador-v1.1.232.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.233/OrcaPRO-IA-update-v1.1.233.zip",
+  "notas": "Segunda rodada da varredura de correcoes: mais 17 defeitos corrigidos. Os que voce podia sentir: quantidade do Escopo Inteligente errando por mil com numeros como 1.500 (e 1250 virando 125); camada da Parede-Cebola que aparecia como casada mas nao entrava no orcamento; janela de andar superior sem desconto no Blocok; desmarcar Medicoes no Portal do Cliente escondia o botao mas publicava os valores mesmo assim; e graficos de MO/Material contando material fornecido pelo cliente como custo. Tudo com teste travando.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.233/OrcaPRO-IA-Instalador-v1.1.233.exe"
 }

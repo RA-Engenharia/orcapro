@@ -229,6 +229,15 @@
         var along = rx * w.ux + rz * w.uz, perp = Math.abs(-rx * w.uz + rz * w.ux);
         if (perp > (w.esp / 2 + folga)) return;      // fora da espessura desta parede (+ folga)
         if (along < -0.2 || along > w.L + 0.2) return;
+        /* ⚠ SOBREPOSIÇÃO VERTICAL (v1.1.233). Sem este teste, prédio de 2+
+           pavimentos com paredes empilhadas na MESMA linha de base empatava
+           em perp=0 e a PRIMEIRA da lista (tipicamente o térreo) levava a
+           janela do andar de cima — o clip Y então a colapsava e o vão sumia
+           SEM DESCONTO NENHUM. Provado em Node: o resultado dependia só da
+           ordem de travessia das malhas. Placas, peso, logística e carga na
+           fundação saíam superestimados com "descontar vãos" LIGADO. */
+        var vy0 = +v.y0 || 0, vy1 = +v.y1 || 0;
+        if (vy1 <= w.yMin + 0.01 || vy0 >= w.yMin + w.H - 0.01) return; // vão não cruza esta parede na vertical
         if (perp < melhorPerp) { melhorPerp = perp; dono = w; alongDono = along; }
       });
       if (!dono) return;
