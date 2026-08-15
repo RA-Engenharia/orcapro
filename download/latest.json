@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.230",
+  "versao": "1.1.231",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.230/OrcaPRO-IA-update-v1.1.230.zip",
-  "notas": "Correcao: ao abrir o Relatorio, a Proposta ou o Anexo para laudo, aparecia um trecho de codigo no topo da janela — e o mesmo trecho saia impresso no cabecalho do PDF que voce entrega ao cliente. Agora o titulo sai limpo, na tela e no papel.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.230/OrcaPRO-IA-Instalador-v1.1.230.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.231/OrcaPRO-IA-update-v1.1.231.zip",
+  "notas": "CORRECAO IMPORTANTE de sincronizacao. Fornecedores e cotacoes cadastrados no computador nao apareciam no celular ou tablet. Ao investigar, nao eram so esses dois: doze tipos de cadastro nunca sincronizaram e ficavam presos no aparelho onde foram criados - fornecedores, cotacoes, familias, centro de custo, tarefas do planejamento, edicoes do BIM, folha de diaristas, lancamentos e pagamentos da folha, cartao de ponto e movimentacao de frota. Todos passam a sincronizar agora. Ao atualizar, abra o app em cada aparelho uma vez para que o que estava preso suba e se junte.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.231/OrcaPRO-IA-Instalador-v1.1.231.exe"
 }

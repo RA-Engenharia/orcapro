@@ -196,7 +196,15 @@
     /* "fiscal" entrou junto: a nota fiscal passou a ser vinculada a obra na
        triagem, e o merge da nuvem apagaria o DOCUMENTO ao ver o obraId de uma
        obra excluida — documento que a empresa e obrigada a guardar 5 anos. */
-    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1 },
+    /* v1.1.231 — folha, ponto e movimento de frota entram aqui junto com a
+       correção da sincronização. Enquanto não sincronizavam, a cascata não os
+       alcançava e o problema não existia; passando a sincronizar, o merge
+       leria "obraId aponta pra obra morta" e apagaria PAGAMENTO FEITO e CARTÃO
+       DE PONTO no outro aparelho. É o mesmo motivo que já mantém `faltas` e
+       `horas_extras` fora da cascata: jornada e dinheiro são de PESSOA, não da
+       obra — a obra some, o que se deve a alguém não some junto. */
+    _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1,
+                       folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
     /* A lápide só serve para o merge da nuvem: entidade que NÃO sincroniza nunca ressuscita,
      * e gravar lápide dela só gastava o teto — empurrando para fora as que importam. */

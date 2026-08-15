@@ -53,6 +53,29 @@
      * mesmo motivo das faltas: é jornada de PESSOA. Apagar uma obra não pode
      * apagar o cartão de ponto de ninguém. */
     "horas_extras",
+    /* ===== v1.1.231 — DOZE ENTIDADES QUE NUNCA SINCRONIZARAM =====
+     * Um cliente reportou que fornecedor e cotação cadastrados no computador
+     * não apareciam no celular. Ao cruzar TODAS as entidades que o Store grava
+     * contra esta lista, não eram duas: eram doze. Elas simplesmente nunca
+     * estiveram aqui, então o dado ficava preso no aparelho onde nasceu — sem
+     * erro nenhum, que é o que fez isso durar tanto.
+     *
+     * `erro` (log de falhas) ficou de fora de propósito: é diagnóstico local,
+     * não dado do usuário, e sincronizar log só gastaria cota.
+     *
+     * ⚠ Sobre a cascata da obra, ver `_IMUNES_CASCATA` em js/store.js: folha,
+     *   ponto e movimento de frota entraram lá junto com esta mudança. Apagar
+     *   uma obra não pode apagar pagamento feito nem cartão de ponto de
+     *   ninguém — é o mesmo motivo que já mantinha `faltas` e `horas_extras`
+     *   fora da cascata. */
+    // cadastros da EMPRESA (sem obraId)
+    "fornecedores", "familias", "centrocusto",
+    // compras e planejamento (têm obraId → entram na cascata da obra)
+    "cotacoes", "lp_tarefas", "tarefas", "bim_edicoes",
+    // folha de diaristas e ponto: DINHEIRO e JORNADA DE PESSOA (imunes à cascata)
+    "folha", "fs_lancamentos", "fs_pagamentos", "ponto",
+    // movimento de frota: a frota já era imune; o movimento dela também é
+    "frota_mov",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"
