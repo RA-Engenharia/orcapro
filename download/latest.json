@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.234",
+  "versao": "1.1.235",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.234/OrcaPRO-IA-update-v1.1.234.zip",
-  "notas": "Terceira rodada da varredura: mais 22 correcoes. As mais importantes: medicao rejeitada nao conta mais como ja medido (o boletim seguinte nascia com saldo errado); nota fiscal da propria empresa nao vira mais despesa nem gera lancamento em dobro; o importador de planilhas para de transformar linhas de TOTAL em itens (obra somada em dobro) e le planilhas de verba; o PWA volta a abrir offline logo apos atualizar; e o boletim de medicao passa a usar o valor do contrato — onde mora o aditivo. Somando as tres rodadas: 61 defeitos corrigidos, cada um com teste travando.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.234/OrcaPRO-IA-Instalador-v1.1.234.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.235/OrcaPRO-IA-update-v1.1.235.zip",
+  "notas": "Quarta rodada de correcoes, com duas importantes: quantidade com tres casas decimais vinda de planilha (0,125 m3 de concreto) estava sendo lida como 125 — corrigido; e o aviso de conflito de sincronizacao, que continuava aparecendo para quem so recebia dados do outro aparelho, agora so aparece em conflito de verdade. Tambem: a apresentacao ao cliente nao e mais interrompida por atualizacao automatica e responde a Espaco/Enter; o diario que chega por WhatsApp so recebe baixa depois de gravado de verdade; e o modal do teste gratis nao deixa mais a tela em branco.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.235/OrcaPRO-IA-Instalador-v1.1.235.exe"
 }

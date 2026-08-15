@@ -293,6 +293,9 @@
         '<div class="apres-contador">1 / ' + n + "</div>" +
         '<button type="button" class="apres-fechar" aria-label="Fechar apresentação (Esc)">&#10005;</button>';
       document.body.appendChild(el);
+      /* v1.1.235 — o overlay TOMA o foco. Sem isto o botao Apresentar continua
+         focado e Espaco/Enter voltam para ele, reabrindo o deck do inicio. */
+      try { el.setAttribute("tabindex", "-1"); el.focus({ preventScroll: true }); } catch (eF) {}
 
       var nodes = el.querySelectorAll(".apres-slide");
       var contador = el.querySelector(".apres-contador");
@@ -315,6 +318,15 @@
           if (e.preventDefault) e.preventDefault(); ir(idx + 1);
         } else if (k === "ArrowLeft" || k === 37 || k === "PageUp" || k === 33) {
           if (e.preventDefault) e.preventDefault(); ir(idx - 1);
+        } else if (k === " " || k === "Spacebar" || k === 32 || k === "Enter" || k === 13) {
+          /* ⚠ v1.1.235 — ESPAÇO E ENTER AVANÇAM, e é isso que se espera de um
+             deck. Sem tratá-los, o navegador entregava a tecla ao BOTÃO que
+             ainda tinha o foco (o "Apresentar" clicado para abrir): o clique
+             sintético reabria a apresentação do slide 1 e derrubava a tela
+             cheia — no meio da conversa com o cliente. Shift+Espaço volta,
+             como em qualquer apresentador. */
+          if (e.preventDefault) e.preventDefault();
+          ir(e.shiftKey ? idx - 1 : idx + 1);
         } else if (k === "Escape" || k === "Esc" || k === 27) {
           if (e.preventDefault) e.preventDefault(); fechar();
         }
@@ -398,7 +410,10 @@
         "radial-gradient(900px 620px at -8% 112%,rgba(34,197,94,.10) 0%,rgba(34,197,94,0) 58%)," +
         "var(--navy,#0f2740)}" +
         ".apres-palco{position:absolute;inset:0}" +
-        ".apres-slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+        /* v1.1.235 — overflow-y:auto: slide de etapas com 14 linhas era CORTADO em
+   cima e embaixo, sem rolagem — o cliente via metade da lista e nao havia
+   como chegar no resto. Com saida, o conteudo que excede rola. */
+        ".apres-slide{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow-y:auto;" +
         "padding:clamp(24px,5vw,72px);opacity:0;transform:translateX(48px);" +
         "transition:opacity .38s ease,transform .38s ease;pointer-events:none}" +
         ".apres-slide.antes{transform:translateX(-48px)}" +

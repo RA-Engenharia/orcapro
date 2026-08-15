@@ -200,12 +200,20 @@
         if (typeof c === "object") return String(c.text || c.result || c.richText && c.richText.map(function (r) { return r.text; }).join("") || "");
         return String(c);
       };
-      /* v1.1.233 — Util.num, não um parser local. O daqui só tratava o ponto
-         como milhar QUANDO havia vírgula: célula-texto "1.500" (mil e
-         quinhentos, comum em CSV BR) virava 1,5 — quantidade 1000× menor
-         entrando na planilha do orçamento sem aviso. Util.num já decide pelo
-         padrão BR ("1.500"→1500, "1.250,50"→1250,50, "12.5"→12,5). */
-      var num = function (c) { return Util.num(val(c)); };
+      /* v1.1.233 — Util.num, não um parser local: célula-texto "1.500" (mil e
+         quinhentos, comum em CSV BR) virava 1,5 com o parser antigo.
+         ⚠ v1.1.235 — E NÚMERO NÃO VIRA TEXTO. A troca acima criou um defeito
+         PIOR: a célula NUMÉRICA do ExcelJS chega como Number (0.125), o val()
+         a stringificava para "0.125", e o parser BR lia isso como MILHAR →
+         125 m³ de concreto no lugar de 0,125. O dado chegou não-ambíguo e era
+         destruído por um round-trip desnecessário — justo na faixa de 3 casas,
+         que é o padrão de volume (m³) e peso (t) em quantitativo brasileiro.
+         Número (e resultado de fórmula) passa direto; só texto vai ao parser. */
+      var num = function (c) {
+        var v = (c && typeof c === "object") ? (c.result != null ? c.result : c.value) : c;
+        if (typeof v === "number") return isFinite(v) ? v : 0;
+        return Util.num(val(c));
+      };
       /* acha as colunas pelo cabeçalho; sem cabeçalho reconhecível, usa a
          coluna de texto mais longa como descrição — é o que a planilha de
          quantitativo tem de mais estável */

@@ -62,6 +62,12 @@
     try {
       if (document.querySelector(".modal-bg")) return false;                 // modal aberto
       if (document.getElementById("proposta-print")) return false;           // documento em impressão
+      /* ⚠ v1.1.235 — APRESENTAÇÃO AO CLIENTE É AO VIVO. Recarregar a página
+         no meio dela derruba o deck na frente de quem está comprando: a tela
+         pisca, volta ao Painel e o vendedor perde o fio. Mesma razão da
+         reunião RA/RV logo abaixo — o update espera o próximo boot. */
+      if (document.querySelector(".apres-overlay")) return false;            // apresentação em curso
+      if (document.fullscreenElement) return false;                          // qualquer tela cheia (deck, viewer)
       if (document.getElementById("opr-upd-forcar")) return false;           // update manual em curso
       if (global.BIM && BIM.reuniao && BIM.reuniao.ativa) return false;      // reunião RA/RV ao vivo
       // modelo IFC carregado vive só em MEMÓRIA — recarregar descartaria o trabalho do viewer;

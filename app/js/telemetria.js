@@ -105,6 +105,21 @@
           if (typeof aoLiberar === "function") aoLiberar();
         } }
       ]);
+      /* ⚠ v1.1.235 — ESTE MODAL NÃO PODE SER FECHADO NO ✕. O gate aborta o
+         boot ANTES do render: com o modal fechado no ✕ ou no clique fora, o
+         que sobra é a tela BRANCA (o index nasce com sidebar/topbar/main
+         vazios) e o usuário só sai disso recarregando a página — na primeira
+         impressão do produto. Ou preenche, ou o modal continua ali.
+         O ✕ é removido do DOM em vez de escondido: escondê-lo deixaria o
+         atalho de teclado ainda funcionando. */
+      try {
+        var bgT = document.querySelector(".modal-bg");
+        if (bgT) {
+          var xT = bgT.querySelector("[data-fechar], .modal-x");
+          if (xT && xT.parentNode) xT.parentNode.removeChild(xT);
+          bgT.dataset.semFecharFora = "1";
+        }
+      } catch (eX) {}
       return true;
     }
   };

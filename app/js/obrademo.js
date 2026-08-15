@@ -70,6 +70,13 @@
           (jaMexido.length > 3 ? "…" : "") + "). Recriar a demonstração escreveria por cima deles. " +
           "Remova a demonstração primeiro (os editados ficam) ou apague-os à mão.");
       }
+      /* ⚠ v1.1.235 — DAQUI PARA BAIXO A CRIAÇÃO JÁ ESCREVE. A marca diz ao
+         chamador que existe algo desta chamada para desfazer. Sem ela, o
+         catch do botão fazia rollback `apagarMexidos:true` MESMO quando o
+         erro tinha vindo da verificação acima — a guarda que existe para
+         PROTEGER o registro adotado pelo usuário virava o gatilho que o
+         apagava. Ver Gestao.obraDemoCriar. */
+      this._criouAlgo = true;
       // Limpa qualquer resquício antes (inclusive órfãos de uma obra demo excluída
       // pelo módulo Obras) — criar é sempre do zero, idempotente de verdade.
       this.remover({ apagarMexidos: true });

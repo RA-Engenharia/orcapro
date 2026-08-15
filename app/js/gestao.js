@@ -957,18 +957,25 @@
     },
     obraDemoCriar: function () {
       if (!this._obraDemoPode()) { UI.toast("Só o administrador (com licença ativa) cria a obra de demonstração.", "erro"); return; }
+      ObraDemo._criouAlgo = false;
       try {
         ObraDemo.criar();
         App.render();
         UI.toast("OBRA TESTE ORÇAPRO criada — todos os módulos alimentados. Explore pelo menu à esquerda.", "ok");
       } catch (e) {
-        // seed parcial não fica pra trás: desfaz o que entrou antes da falha
-        /* rollback de uma criação que falhou: aqui nada pôde ter sido
-             editado pelo usuário, então limpa tudo mesmo */
-          try { ObraDemo.remover({ apagarMexidos: true }); } catch (e2) {}
+        /* ⚠ v1.1.235 — ROLLBACK SÓ DO QUE ESTA CHAMADA CRIOU.
+           O `criar()` começa CONFERINDO se o usuário adotou registros da
+           demonstração e, se adotou, LANÇA para não escrever por cima deles.
+           O catch respondia a esse erro com `apagarMexidos: true` — apagando
+           justamente os documentos que a guarda acabara de proteger. É a
+           repetição exata do incidente de 09/08/2026 registrado aqui embaixo,
+           por outra porta. Sem escrita nenhuma, não há o que desfazer. */
+        if (ObraDemo._criouAlgo) { try { ObraDemo.remover({ apagarMexidos: true }); } catch (e2) {} }
+        ObraDemo._criouAlgo = false;
         App.render();
         UI.toast("Falhou ao criar a demonstração: " + e.message, "erro");
       }
+      ObraDemo._criouAlgo = false;
     },
     /* ⚠ ESTE BOTÃO JÁ APAGOU DIÁRIO DE VERDADE (09/08/2026).
        A remoção varria pelo id `demo-ot-*`, e quem aproveita o registro da
@@ -9906,8 +9913,16 @@
         hoje: (new Date()).toISOString().slice(0, 10),
         idNovo: function () { return Util.uid("rdo"); },
         autorId: String(eu.usuarioId || eu.email || ""),
-        /* devolve true SÓ se gravou: é isto que autoriza a baixa lá fora */
-        gravar: function (diario) { Store.salvar(eid(), "rdo", diario); return true; }
+        /* devolve true SÓ se gravou: é isto que autoriza a baixa lá fora.
+           ⚠ v1.1.235 — E ANTES DEVOLVIA true SEMPRE. O comentário dizia a
+           regra certa e a linha fazia o contrário: com o armazenamento cheio
+           (ou qualquer falha do adapter), Store.salvar devolve null, o app
+           dizia "gravei" e o servidor DAVA BAIXA na mensagem — o diário do
+           encarregado sumia da caixa sem ter entrado em lugar nenhum. Perda
+           definitiva de dado de campo, que não se refaz.
+           Devolvendo false, o entradardo.js deixa a mensagem na caixa e ela
+           volta na próxima sincronização. */
+        gravar: function (diario) { return Store.salvar(eid(), "rdo", diario) != null; }
       }).then(function (r) {
         self._entradaUltimo = r;
         if (r.criados) {

@@ -96,6 +96,9 @@
         var fechar = (e.target.hasAttribute && e.target.hasAttribute("data-fechar")) ||
                      (e.target === bg && bg._downNoBg);
         if (!fechar) return;
+        /* v1.1.235 — modal BLOQUEANTE (o do teste grátis): fechar deixaria o
+           app numa tela branca, porque o gate aborta o boot antes do render */
+        if (bg.dataset && bg.dataset.semFecharFora === "1") return;
         /* a confirmação é SÓ para gesto do usuário (véu/✕). Fluxos de salvar
            fecham por UI.fecharModal() direto e não podem ganhar pergunta. */
         if (UI.temTrabalhoNaoSalvo() &&

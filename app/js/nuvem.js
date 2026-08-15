@@ -286,6 +286,14 @@
           self._aplicandoDaNuvem = true;
           try { Store.adapter.gravar(empresaId, ent, merged); }
           finally { self._aplicandoDaNuvem = false; }
+          /* ⚠ v1.1.235 — A MARCA TAMBÉM NASCE AQUI. Ela só era gravada no
+             push deste aparelho; quem apenas RECEBIA (o celular que abre o app
+             depois de o escritório trabalhar) nunca tinha marca, a guarda do
+             _merge não valia e o falso "editado em 2 aparelhos" continuava
+             aparecendo — exatamente o que a v1.1.232 anunciou ter fechado.
+             A base comum é o que ficou igual nos DOIS lados, não só o que
+             este aparelho subiu. */
+          self._marcarSync(empresaId, ent, merged);
           var carga = "";
           try { carga = JSON.stringify(merged); } catch (e) { carga = ""; }
           /* nada mudou dos dois lados? não sobe. Antes subia sempre, e o
@@ -368,6 +376,8 @@
         self._aplicandoDaNuvem = true;
         try { Store.adapter.gravar(empresaId, ent2, valor); }
         finally { self._aplicandoDaNuvem = false; }
+        // v1.1.235 — aplicado da nuvem = nova base comum (ver nota no sincronizar)
+        self._marcarSync(empresaId, ent2, valor);
       };
       var comLapides = function (fn) {
         return self._doc("_lapides").get().then(function (s) {

@@ -33,8 +33,13 @@
         var iP = s.lastIndexOf(".");
         s = s.slice(0, iP).replace(/\./g, "") + "." + s.slice(iP + 1);
       }
-    } else if (temP && /^-?\d{1,3}(\.\d{3})+$/.test(s)) {
-      s = s.replace(/\./g, ""); // "1.000", "25.000"
+    } else if (temP && /^-?\d{1,3}(\.\d{3})+$/.test(s) && !/^-?0\./.test(s)) {
+      /* "1.000", "25.000" → milhar. ⚠ v1.1.235 — MAS "0.125" NÃO: ninguém
+         escreve milhar começando com zero, e essa leitura transformava
+         0,125 m³ em 125 m³ (mil vezes) quando o valor vinha como texto. É a
+         mesma guarda de zero-à-esquerda que o js/importador.js:82 já tinha —
+         ela faltava aqui, no helper que o app inteiro usa. */
+      s = s.replace(/\./g, "");
     }
     var n = parseFloat(s);
     return isFinite(n) ? n : 0;
