@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.236",
+  "versao": "1.1.237",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.236/OrcaPRO-IA-update-v1.1.236.zip",
-  "notas": "Quinta rodada de correcoes, a mais importante delas no dinheiro: fechar o orcamento em um valor pelo modo 'distribuido em todos os itens' podia DERRUBAR o preco de um item que voce tinha cotado a mao, empurrando a diferenca calada para os demais — o total batia o alvo e nada avisava. Corrigido, junto com a causa: editar o preco unitario na planilha agora reparte o valor nas parcelas de mao de obra, material e equipamento, entao o laudo e o Excel voltam a fechar com o custo direto que eles mesmos imprimem. Tambem: restaurar um backup nao sobrescreve mais orcamento com trabalho mais recente; copiar as diarias da semana anterior nao duplica pagamento quando o filtro de obra esta ligado; a copia de um orcamento aprovado nasce aberta (antes nascia travada e ja contava como aprovada na carteira); nota de entrada emitida pela propria empresa nao entra mais como receita; e frete e valor de pedido com centavos deixaram de salvar R$ 0,00.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.236/OrcaPRO-IA-Instalador-v1.1.236.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.237/OrcaPRO-IA-update-v1.1.237.zip",
+  "notas": "Correcao da RETENCAO das medicoes, que estava sendo mostrada como dinheiro quando na verdade era o percentual. Dois lugares erravam: o KPI 'Retencao presa' do Painel somava os percentuais das medicoes aprovadas — tres medicoes a 5% apareciam como 'R$ 15,00' em vez da retencao de verdade; e o Portal do Cliente mostrava a mesma confusao na coluna Retencao de cada medicao, e somava no total. Ou seja, o cliente da obra estava lendo um numero que nao era dinheiro nenhum. Agora os dois mostram o valor retido de verdade. A posicao financeira do Portal sempre esteve certa. Entra tambem a base do modulo financeiro avancado (calculo de dinheiro em centavos exatos), que ainda nao muda nada na tela.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.237/OrcaPRO-IA-Instalador-v1.1.237.exe"
 }

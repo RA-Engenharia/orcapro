@@ -16252,7 +16252,16 @@ case "nova-folha": return this.novoFolha();
       var acum = 0, medidoAcum = 0;
       var medicoes = meds.map(function (m) {
         acum += Util.num(m.percentual); medidoAcum += Util.num(m.valor);
-        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10), situacao: rot(P.medicaoStatus, m.status) || "" };
+        /* ⚠ RETENÇÃO VAI EM DINHEIRO, não em percentual. O Portal renderiza
+           esta coluna com brMoney() e a soma no total da tabela
+           (loja/portal.html:1767 e :2146, cabeçalho "Retenção" ao lado de
+           "Valor"). Mandando `m.retencao` cru — que é o PERCENTUAL do
+           formulário — o cliente final da obra lia "R$ 5,00" no lugar da
+           retenção de verdade, e o total somava percentuais. O agregado da
+           posição financeira (logo abaixo) sempre esteve certo: é só aqui,
+           na linha por medição, que o número saía com a unidade errada. */
+        var _retVal = Math.round(Util.num(m.valor) * Util.num(m.retencao) / 100 * 100) / 100;
+        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: _retVal, retencaoPct: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10), situacao: rot(P.medicaoStatus, m.status) || "" };
       });
       /* SÓ VAI O QUE FOI APROVADO E PUBLICADO.
        * Antes o filtro era "tudo que não é rascunho" — ou seja, o diário

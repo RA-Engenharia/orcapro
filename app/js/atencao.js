@@ -156,13 +156,22 @@
 
   /* Dinheiro RETIDO nas medições aprovadas. Não é alerta: é informação —
      dinheiro dele que fica parado até alguém lembrar de cobrar. Por isso sai
-     como número, e não como linha de "precisa da sua atenção". */
+     como número, e não como linha de "precisa da sua atenção".
+     ⚠ `m.retencao` é PERCENTUAL, não valor. O formulário da medição pede
+     "Retenção (%)" com padrão 5 (js/gestao.js:2719) e o líquido sai de
+     `valor × (1 − retencao/100)` (js/gestao.js:15959). É a mesma convenção do
+     contrato, que guarda `retencao` em % e `retVal` em dinheiro.
+     Esta função SOMAVA OS PERCENTUAIS, e quem exibe formata com fmtMoeda
+     (js/gestao.js:851): três medições a 5% viravam "Retenção presa: R$ 15,00"
+     no Painel — um número que não é dinheiro nenhum, com cara de dinheiro.
+     O teste não pegou porque ele mesmo passava `retencao: 5000`, como se
+     fosse valor: teste que repete a premissa errada do código não é teste. */
   function retencaoPresa(medicoes) {
     return (medicoes || []).reduce(function (s, m) {
       if (!m) return s;
       var st = texto(m.status);
       if (st !== "aprovado" && st !== "aprovada" && st !== "paga") return s;
-      return s + num(m.retencao);
+      return s + (num(m.valor) * num(m.retencao) / 100);
     }, 0);
   }
 
