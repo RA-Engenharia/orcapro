@@ -7,6 +7,18 @@
 (function (global) {
   "use strict";
 
+  /* ---------- ciclo de vida do lançamento financeiro ----------
+     No app o js/finstatus.js já foi carregado pelo index.html. As suítes do
+     gate carregam gestao.js sozinho no Node, e sem esta linha o KPI do Painel
+     estourava ReferenceError — o gate pegou na hora (test-gap1, test-gap5).
+     Resolve pelo global e cai no require só no Node. NÃO reimplementa a
+     lógica aqui: réplica de regra em dois lugares é como as duas divergem, e
+     esta decide o que é dinheiro realizado. Mesmo padrão do js/fechamento.js. */
+  var FinStatus = global.FinStatus;
+  if (!FinStatus && typeof require === "function") {
+    try { FinStatus = require("./finstatus.js"); } catch (eFS) {}
+  }
+
   // ---------- Fotos dos RDOs (Portal do Cliente) ----------
   var RDO_MAX_FOTOS = 20;           /* teto de fotos por diário. Só pôde subir de 6
                                      para 20 depois que a foto saiu de DENTRO do
@@ -88,7 +100,13 @@
     medicaoStatus: [["pendente", "Pendente"], ["aprovada", "Aprovada"], ["rejeitada", "Rejeitada"], ["paga", "Paga"]],
     finTipo: [["receita", "Receita"], ["despesa", "Despesa"]],
     finCategoria: [["obra", "Obra"], ["material", "Material"], ["mao_obra", "Mão de obra"], ["equipamento", "Equipamento"], ["administrativo", "Administrativo"], ["impostos", "Impostos"], ["medicao", "Medição"], ["outros", "Outros"]],
-    finStatus: [["pago", "Pago / Recebido"], ["pendente", "Pendente"]],
+    /* v1.1.238 — o ciclo de vida completo vem de js/finstatus.js, que é onde
+       moram as transições e as perguntas ("realizado?", "em aberto?").
+       Fallback só para o caso do módulo não ter carregado: os dois estados
+       de sempre, para a tela nunca ficar sem opção. */
+    finStatus: (typeof FinStatus !== "undefined" && FinStatus.opcoes)
+      ? FinStatus.opcoes()
+      : [["pago", "Pago / Recebido"], ["pendente", "Pendente"]],
     fornCategoria: [["material", "Material"], ["servico", "Serviço"], ["equipamento", "Equipamento"], ["mao_obra", "Mão de obra"], ["transporte", "Transporte"], ["locacao", "Locação"], ["outros", "Outros"]],
     fornStatus: [["ativo", "Ativo"], ["homologado", "Homologado"], ["inativo", "Inativo"]],
     compraStatus: [["cotacao", "Em cotação"], ["aprovado", "Aprovado"], ["rejeitado", "Rejeitado"], ["recebido", "Recebido"], ["cancelado", "Cancelado"]],
@@ -125,6 +143,10 @@
     ativo: "#16a34a", prospecto: "#2e6f9e", inativo: "#94a3b8",
     elaboracao: "#64748b", aguardando: "#f59e0b", suspenso: "#f59e0b", concluido: "#16a34a", rescindido: "#dc2626", cancelado: "#94a3b8",
     pendente: "#f59e0b", aprovada: "#2e6f9e", paga: "#16a34a", pago: "#16a34a", receita: "#16a34a", despesa: "#dc2626",
+    /* ciclo de vida do lançamento financeiro (js/finstatus.js). `cancelado`
+       já existia acima, na mesma cor. Sem estes, a pílula do estado novo sai
+       cinza-padrão e o usuário não distingue agendado de previsto. */
+    previsto: "#64748b", agendado: "#2563eb", falhou: "#dc2626", estornado: "#94a3b8",
     homologado: "#16a34a", cotacao: "#f59e0b", aprovado: "#2e6f9e", recebido: "#16a34a", entrada: "#16a34a", saida: "#dc2626",
     rascunho: "#64748b", finalizado: "#16a34a",
     afastado: "#f59e0b", desligado: "#94a3b8", aberto: "#f59e0b", lancado: "#16a34a",
@@ -604,13 +626,24 @@
      * gráfico do Last Planner desenhava a linha de meta em 85%. Uma semana com
      * 82% saía verde no KPI e abaixo da meta no gráfico, na mesma tela. Agora
      * as duas leem daqui. */
-    METAS_PADRAO: { margem: 15, ppc: 85, contasDias: 7 },
+    /* `prazoReceber`: quantos dias corridos depois da APROVAÇÃO da medição o
+       recebível vence. 7 é a régua da casa, definida em 15/08/2026.
+       ⚠ Dias CORRIDOS, e sem ajuste de fim de semana ou feriado — não há
+       calendário de feriado no repo, e inventar um só para o vencimento seria
+       pior que não ter: erraria calado nos anos seguintes. Vencimento que cai
+       em dia não útil fica na data cheia; quem paga resolve no dia útil
+       seguinte, como já faz hoje.
+       ⚠ E o texto padrão da proposta comercial diz outra coisa — "5 dias
+       úteis após a aprovação da medição" (js/orcamento.js:199). Os dois
+       números precisam ser conciliados: o daqui rege o app, o de lá rege o
+       que o cliente assina. */
+    METAS_PADRAO: { margem: 15, ppc: 85, contasDias: 7, prazoReceber: 7 },
     _metas: function () {
       var p = {};
       try { p = (Store.lerPrefs ? Store.lerPrefs(eid()) : {}) || {}; } catch (e) { p = {}; }
       var m = p.metas || {}, d = this.METAS_PADRAO;
       var n = function (v, padrao) { var x = Util.num(v); return x > 0 ? x : padrao; };
-      return { margem: n(m.margem, d.margem), ppc: n(m.ppc, d.ppc), contasDias: n(m.contasDias, d.contasDias) };
+      return { margem: n(m.margem, d.margem), ppc: n(m.ppc, d.ppc), contasDias: n(m.contasDias, d.contasDias), prazoReceber: n(m.prazoReceber, d.prazoReceber) };
     },
     /* Onde a empresa define a própria régua. Sem esta tela, "parametrizado"
        seria só uma promessa: o valor existiria no código e ninguém alcançaria. */
@@ -620,8 +653,9 @@
         + campo("Margem saudável a partir de (%)", inp("g-mt-margem", m.margem, "padrão: " + d.margem))
         + campo("Meta de PPC (%)", inp("g-mt-ppc", m.ppc, "padrão: " + d.ppc))
         + campo("Avisar contas a vencer em (dias)", inp("g-mt-dias", m.contasDias, "padrão: " + d.contasDias))
+        + campo("Recebimento vence em (dias após a medição)", inp("g-mt-receber", m.prazoReceber, "padrão: " + d.prazoReceber))
         + "</div>"
-        + '<p class="muted" style="font-size:12px;margin:6px 0 0">A <b>margem</b> é calculada sobre o que foi recebido: abaixo da meta, o indicador fica laranja. O <b>PPC</b> vale para o indicador do Painel e para a linha de meta do gráfico do Last Planner — os dois usam este número.<br>Deixe em branco para voltar ao padrão.</p>';
+        + '<p class="muted" style="font-size:12px;margin:6px 0 0">A <b>margem</b> é calculada sobre o que foi recebido: abaixo da meta, o indicador fica laranja. O <b>PPC</b> vale para o indicador do Painel e para a linha de meta do gráfico do Last Planner — os dois usam este número. O <b>recebimento</b> é o prazo que o app sugere ao lançar uma receita de medição — dias corridos, sem pular fim de semana ou feriado.<br>Deixe em branco para voltar ao padrão.</p>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Metas da empresa", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Voltar ao padrão", classe: "ghost", onClick: function () {
@@ -629,13 +663,14 @@
           UI.fecharModal(); App.render(); UI.toast("Metas de volta ao padrão.", "ok");
         } },
         { texto: "Salvar", classe: "primary", onClick: function () {
-          var mg = Util.num(v("g-mt-margem")), pp = Util.num(v("g-mt-ppc")), di = Util.num(v("g-mt-dias"));
+          var mg = Util.num(v("g-mt-margem")), pp = Util.num(v("g-mt-ppc")), di = Util.num(v("g-mt-dias")), pr = Util.num(v("g-mt-receber"));
           /* percentual acima de 100 não é meta, é engano de digitação — e uma
              meta impossível deixaria o indicador laranja para sempre */
           if (mg > 100 || pp > 100) { UI.toast("Margem e PPC são percentuais: no máximo 100.", "erro"); return; }
           if (di > 90) { UI.toast("Avisar contas com mais de 90 dias de antecedência não ajuda ninguém.", "erro"); return; }
+          if (pr > 365) { UI.toast("Prazo de recebimento acima de um ano não é prazo — confira o número.", "erro"); return; }
           var p = (Store.lerPrefs(eid()) || {});
-          p.metas = { margem: mg > 0 ? mg : d.margem, ppc: pp > 0 ? pp : d.ppc, contasDias: di > 0 ? di : d.contasDias };
+          p.metas = { margem: mg > 0 ? mg : d.margem, ppc: pp > 0 ? pp : d.ppc, contasDias: di > 0 ? di : d.contasDias, prazoReceber: pr > 0 ? pr : d.prazoReceber };
           Store.salvarPrefs(eid(), p);
           UI.fecharModal(); App.render(); UI.toast("Metas salvas — o Painel já usa as suas.", "ok");
         } }
@@ -814,9 +849,9 @@
       var _ctrVivo = function (c) { return c.status !== "cancelado" && c.status !== "rescindido"; };
       var valorContratado = contratos.filter(_ctrVivo).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
-      var receitas = fin.filter(function (f) { return f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+      var receitas = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-      var aReceber = fin.filter(function (f) { return f.tipo === "receita" && f.status === "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+      var aReceber = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.emAberto(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
       function k(rot, num, cls) { return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div></div>"; }
       var _icP = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 15) : ""; };
@@ -920,8 +955,8 @@
            * saía pessimista por construção — despesa que ainda não saiu contra
            * receita que já entrou — e no card de cima o mesmo par era otimista.
            * Agora as duas pontas usam CAIXA: só o que efetivamente andou. */
-          var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-          var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var base = ctr || Util.num(o.valor);
           /* ⚠ ISTO NAO ERA MARGEM. A conta era (contratado - custo) / contratado,
            * que responde "quanto do contrato ainda nao foi gasto" — numa obra
@@ -1096,7 +1131,7 @@
       var porCat = Object.create(null), porMes = Object.create(null);
       fin.forEach(function (f) {
         var v = Util.num(f.valor);
-        if (f.status === "pendente") return; // pendência é ESTOQUE (contado abaixo, sem período)
+        if (!FinStatus.realizado(f)) return; // só o realizado entra no período; o resto é ESTOQUE (abaixo)
         if (f.tipo === "receita") receitas += v;
         else if (f.tipo === "despesa") {
           despesas += v;
@@ -1111,7 +1146,7 @@
       });
       // contas em aberto = estoque (independe do período; respeita o filtro de obra)
       finTudo.forEach(function (f) {
-        if (f.status !== "pendente") return;
+        if (!FinStatus.emAberto(f)) return;
         if (!naObra(f)) return;
         var v = Util.num(f.valor);
         if (f.tipo === "receita") aReceber += v; else if (f.tipo === "despesa") aPagar += v;
@@ -1183,7 +1218,7 @@
       var empilhado = obras.filter(function (o) { return !ids || ids.indexOf(o.id) > -1; }).map(function (o) {
         var soma = {}, total = 0;
         finPer.forEach(function (f) {
-          if (f.obraId !== o.id || f.tipo !== "despesa" || f.status === "pendente") return;
+          if (f.obraId !== o.id || f.tipo !== "despesa" || !FinStatus.realizado(f)) return;
           var c = catsEmp.indexOf(f.categoria) >= 0 ? f.categoria : "outros";
           var v = Util.num(f.valor); soma[c] = (soma[c] || 0) + v; total += v;
         });
@@ -1200,13 +1235,32 @@
       if (medPend.length) alertas.push({ tipo: "prazo", texto: medPend.length + " medição(ões) aguardando aprovação — " + this._fmtK(medPend.reduce(function (s, m) { return s + Util.num(m.valor); }, 0)) });
       // contas a pagar são ESTOQUE (como aReceber/aPagar): a base é a lista completa
       // com filtro de obra — o período nunca esconde um vencimento iminente
+      /* Comparação entre datas ISO puras, sem hora e sem fuso — o mesmo jeito
+         que `_hojeLocal` (js/gestao.js:7646) já usa para as tarefas. Troca
+         `new Date(Date.now() + N*86400000)` por `_diaLocalMais(N)`.
+         ⚠ ISTO NÃO CORRIGE UM ERRO DE UM DIA — eu tinha escrito aqui que
+         corrigia, e não corrige: para os dois horizontes a conta de D+N entra
+         e a de D+N+1 não, em qualquer hora de abertura. Medido em 40 datas ×
+         3 horários: zero divergência. O que a troca dá é (a) não construir um
+         Date por registro dentro do filtro, e (b) ficar imune a virada de mês,
+         de ano e a horário de verão, que a soma de milissegundos não trata.
+         Ganho de robustez, não correção de defeito — e a diferença entre as
+         duas coisas importa num arquivo que decide sobre dinheiro.
+         ⚠ `f.vencimento || f.data`: o vencimento manda quando existe. Ele é
+         OPCIONAL e nunca derivado — o formulário é o único que o escreve
+         (js/gestao.js:3583), e ausente significa "igual à data de
+         lançamento", que é o que o registro sempre quis dizer quando só
+         havia um campo. Numa tentativa anterior eu o derivei na migração
+         SEM ele existir na tela: o campo congelava e a conta vencia sem
+         aviso. Campo derivado sem dono é armadilha; este tem dono. */
       var _md = this._metas().contasDias;
-      var em7 = new Date(Date.now() + _md * 86400000);
+      var _limite = this._diaLocalMais(_md);
       var contas = finTudo.filter(function (f) {
-        if (f.tipo !== "despesa" || f.status !== "pendente" || !f.data) return false;
+        if (f.tipo !== "despesa" || !FinStatus.emAberto(f)) return false;
         if (!naObra(f)) return false;
-        var dv = new Date(String(f.data) + "T00:00:00");
-        return !isNaN(dv.getTime()) && dv <= em7;
+        var dv = String(f.vencimento || f.data || "");
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dv)) return false;
+        return dv <= _limite;
       });
       if (contas.length) alertas.push({ tipo: "prazo", texto: contas.length + " conta(s) a pagar vencida(s)/vencendo até " + _md + " dia(s) — " + this._fmtK(contas.reduce(function (s, f) { return s + Util.num(f.valor); }, 0)) });
 
@@ -1337,7 +1391,11 @@
       var R = 42, C = 2 * Math.PI * R, off = 0, self = this;
       var svg = '<svg viewBox="0 0 120 120" style="width:148px;height:148px;flex:0 0 auto;font-variant-numeric:tabular-nums">';
       cats.forEach(function (f) {
-        var frac = total > 0 ? f.valor / total : 0, arco = Math.max(0, frac * C - 2);
+        /* fatia negativa não existe: além de não desenhar, ela empurraria o
+           `off` para trás e desalinharia as seguintes (ver a nota em
+           _dashGraficosDados sobre estorno). Guarda dupla, de propósito —
+           este SVG é chamado de mais de um lugar. */
+        var frac = (total > 0 && f.valor > 0) ? f.valor / total : 0, arco = Math.max(0, frac * C - 2);
         svg += '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + f.cor + '" stroke-width="16" stroke-dasharray="' + arco + " " + (C - arco) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 60 60)"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f.valor) + '</title></circle>';
         off += frac * C;
       });
@@ -1507,8 +1565,15 @@
       obras = obras.filter(function (o) { return self._dashNaObra(o.id); });
       var porCat = {};
       fin.forEach(function (f) { if (f.tipo === "despesa") { var c = f.categoria || "outros"; porCat[c] = (porCat[c] || 0) + Util.num(f.valor); } });
+      /* ⚠ CATEGORIA NEGATIVA É POSSÍVEL DESDE O ESTORNO (fase 1.4): no MÊS da
+         reversão a categoria pode ter só o lançamento espelho, de sinal
+         oposto. O donut faz `off += frac * C` para encadear as fatias — com
+         fração negativa o offset ANDA PARA TRÁS e as fatias seguintes saem
+         desalinhadas, sobrepostas. Cortar aqui é o mesmo tratamento que o KPI
+         de categorias do Painel já dá (js/gestao.js:1155), e mantém a soma
+         das fatias coerente com o total que o donut escreve no meio. */
       var cats = [];
-      for (var k in porCat) if (porCat.hasOwnProperty(k)) cats.push({ rotulo: rot(P.finCategoria, k), valor: porCat[k], cor: self._CORCAT[k] || "#94a3b8" });
+      for (var k in porCat) if (porCat.hasOwnProperty(k) && porCat[k] > 0) cats.push({ rotulo: rot(P.finCategoria, k), valor: porCat[k], cor: self._CORCAT[k] || "#94a3b8" });
       cats.sort(function (a, b) { return b.valor - a.valor; });
       var custoObra = obras.map(function (o) {
         var c = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
@@ -3439,6 +3504,128 @@
       this._finObra = v;
       App.render();
     },
+
+    /* =================================================================
+     * ESTORNAR UM LANÇAMENTO — o oposto de apagar.
+     *
+     * Baixa de conta já paga não se reescreve nem se apaga: o dinheiro saiu
+     * (ou entrou) do banco, e o extrato do cliente não muda porque alguém
+     * clicou no lugar errado. Estorno é MOVIMENTO — a mesma doutrina que o
+     * almoxarifado já segue (js/gestao.js:12743).
+     *
+     * ⚠ O ESPELHO CARREGA O DINHEIRO; O ORIGINAL NÃO MUDA DE ESTADO.
+     *   O plano da fase 1 dizia "marca o original como estornado E cria o
+     *   espelho". Isso conta a reversão DUAS VEZES: o original sairia do
+     *   realizado (−1.000) e o espelho entraria (−1.000) — −2.000 para uma
+     *   reversão de 1.000. Aqui o original continua `pago`, porque ele FOI
+     *   pago e o mês em que isso aconteceu não pode passar a mentir. O
+     *   espelho, de sinal oposto e datado de HOJE, faz o par somar zero e
+     *   mostra a devolução no mês em que ela de fato ocorreu.
+     *
+     * ⚠ IDEMPOTENTE, E A TRAVA MORA NO ESPELHO. Estornar duas vezes criaria
+     *   crédito do nada. A pergunta é "existe espelho apontando para este
+     *   lançamento?" — nada é escrito no original, porque um campo lá seria
+     *   apagado por qualquer um dos doze caminhos que regravam o registro
+     *   inteiro. O id do espelho é derivado do original, então dois aparelhos
+     *   offline produzem o MESMO id e o merge os colapsa.
+     * ================================================================= */
+    finEstornar: function (id) {
+      if (this._bloqueado()) return;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Seu usuário não tem permissão no módulo Financeiro.", "erro"); return;
+      }
+      var self = this, e = eid();
+      var f = Store.obter(e, "financeiro", id);
+      if (!f) { UI.toast("Lançamento não encontrado.", "erro"); return; }
+      if (f.estornoDe) { UI.toast("Este lançamento JÁ É um estorno — estornar o estorno recriaria o valor original.", "erro"); return; }
+      if (this._finEstornado(f)) { UI.toast("Este lançamento já foi estornado.", "erro"); return; }
+      if (!FinStatus.realizado(f)) {
+        UI.toast("Só se estorna o que já foi pago ou recebido. Em aberto, use Cancelar.", "erro"); return;
+      }
+
+      var ehDespesa = f.tipo === "despesa";
+      var vAbs = Math.abs(Util.num(f.valor));
+      var hoje = this._hojeLocal();
+      var corpo =
+        '<p style="margin:0 0 10px">Vou lançar um <b>estorno</b> de ' + Util.fmtMoeda(vAbs) +
+        " — " + (ehDespesa ? "devolução de uma despesa" : "devolução de uma receita") + ".</p>" +
+        '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
+        "<tr><td style='padding:4px 0'>Original (" + (f.data ? f.data.split("-").reverse().join("/") : "—") + ")</td>" +
+        "<td style='text-align:right'>" + (ehDespesa ? "− " : "+ ") + Util.fmtMoeda(vAbs) + "</td></tr>" +
+        "<tr><td style='padding:4px 0'><b>Estorno (" + hoje.split("-").reverse().join("/") + ")</b></td>" +
+        "<td style='text-align:right'><b>" + (ehDespesa ? "+ " : "− ") + Util.fmtMoeda(vAbs) + "</b></td></tr>" +
+        "<tr style='border-top:1px solid var(--borda)'><td style='padding:4px 0'>Efeito no resultado</td>" +
+        "<td style='text-align:right'><b>R$ 0,00</b></td></tr></table>" +
+        '<p class="muted" style="font-size:12px;margin:10px 0 0">O lançamento original <b>continua na lista</b>, marcado como estornado: ' +
+        "ele aconteceu, e o mês em que aconteceu não muda. O estorno entra na data de hoje, que é quando o dinheiro voltou.</p>";
+
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Estornar lançamento", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Lançar o estorno", classe: "danger", onClick: function () {
+          /* relê: o modal ficou aberto e outro aparelho pode ter estornado
+             nesse meio-tempo (o merge da nuvem roda em segundo plano) */
+          var todos = Store.listar(e, "financeiro");
+          var atual = null;
+          for (var i = 0; i < todos.length; i++) if (todos[i].id === id) { atual = todos[i]; break; }
+          if (!atual) { UI.fecharModal(); UI.toast("O lançamento foi excluído enquanto o modal estava aberto.", "erro"); App.render(); return; }
+          if (self._finEstornado(atual, todos)) {
+            UI.fecharModal(); UI.toast("Este lançamento já foi estornado em outro aparelho.", "erro"); App.render(); return;
+          }
+          var espelho = {
+            id: self._finIdEstorno(atual.id),
+            data: hoje, vencimento: "", dataPgto: hoje,
+            desc: "Estorno — " + (atual.desc || "lançamento"),
+            /* MESMO tipo e MESMA categoria, valor NEGATIVO: é o que faz o par
+               somar zero sem inflar receita com despesa devolvida (trocar o
+               tipo jogaria a devolução de uma despesa dentro do faturamento). */
+            tipo: atual.tipo, categoria: atual.categoria || "outros",
+            valor: -vAbs, status: "pago",
+            obraId: atual.obraId || "", contratoId: atual.contratoId || "", etapaId: atual.etapaId || "",
+            fornecedor: atual.fornecedor || "", formaPgto: atual.formaPgto || "",
+            obs: "Estorno automático do lançamento " + atual.id + (atual.obs ? " · " + atual.obs : ""),
+            estornoDe: atual.id
+          };
+          /* UMA gravação só, e nenhuma no original: o vínculo mora no
+             espelho. Duas gravações eram duas janelas para falhar, e o campo
+             no original era apagado por qualquer outro caminho que
+             regravasse o registro inteiro. */
+          var novo = Store.salvar(e, "financeiro", espelho);
+          if (!novo) { UI.toast("Não consegui gravar o estorno (armazenamento cheio). Nada foi alterado.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          UI.toast("Estorno de " + Util.fmtMoeda(vAbs) + " lançado. O par soma zero no resultado.", "ok");
+        } }
+      ]);
+    },
+
+    /* ⚠ O VÍNCULO MORA SÓ NO ESPELHO, e isso é a correção de dois defeitos
+       que a revisão adversarial provou executando o merge de verdade:
+       (a) um campo `estornoId` no ORIGINAL era apagado por qualquer gravação
+           de registro inteiro que não o conhecesse — e há doze delas (o
+           formulário, a folha semanal, a NF, o merge da nuvem). Apagado o
+           vínculo, o botão Estornar voltava e o usuário estornava de novo.
+       (b) o original precisava de uma SEGUNDA gravação depois do espelho —
+           uma janela a mais para falhar, e um `atualizadoEm` novo que o merge
+           podia perder.
+       Agora nada é escrito no original. "Estornado" é a resposta a uma
+       PERGUNTA feita sobre o conjunto: existe espelho apontando para ele?
+       Índice montado uma vez por render — O(n), não O(n²). */
+    _finIndiceEstornos: function (lista) {
+      var m = Object.create(null);
+      Util.arr(lista).forEach(function (f) { if (f && f.estornoDe) m[f.estornoDe] = f.id || true; });
+      return m;
+    },
+    _finEstornado: function (f, lista) {
+      if (!f || !f.id) return false;
+      var l = lista || Store.listar(eid(), "financeiro");
+      for (var i = 0; i < l.length; i++) if (l[i] && l[i].estornoDe === f.id) return true;
+      return false;
+    },
+    /* id DETERMINÍSTICO do espelho: dois aparelhos offline que estornem o
+       mesmo lançamento produzem o MESMO id, e o merge por id (js/nuvem.js)
+       colapsa os dois num só. Com id aleatório os dois espelhos sobreviviam
+       e o realizado virava crédito negativo — R$ 17.360 de despesa viravam
+       R$ 17.360 de crédito que nunca existiu. */
+    _finIdEstorno: function (idOriginal) { return "est_" + String(idOriginal); },
     /* o que está na tela AGORA — fonte única para tabela, totais e CSV.
        Foi o que evitou o defeito clássico: filtrar a tabela e exportar tudo. */
     _finEscopo: function () {
@@ -3457,7 +3644,12 @@
     },
 
     renderFinanceiro: function () {
+      var self = this;                    // o laço da tabela pergunta pelo estorno
       var e = this._finEscopo(), obras = e.obras;
+      /* quem está estornado sai do PRÓPRIO espelho, não de um campo no
+         original: índice montado uma vez, do conjunto TODO (o espelho pode
+         estar fora do filtro de obra/período e o original dentro) */
+      var estornados = this._finIndiceEstornos(e.todos || e.lista);
       var fs = e.lista.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
       var t = e.semMotor ? null : PorObra.totais(fs);   /* ⚠ total do que está na tela */
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
@@ -3523,12 +3715,35 @@
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
       fs.forEach(function (f) {
         var ob = obras.filter(function (o) { return String(o.id) === String(f.obraId); })[0];
-        var cor = f.tipo === "receita" ? "var(--verde)" : "var(--vermelho)";
+        /* a cor acompanha o SINAL, não o tipo: o espelho de uma despesa
+           devolve dinheiro ao caixa e por isso sai verde, não vermelho */
+        var cor = (Util.num(f.valor) < 0 ? f.tipo !== "receita" : f.tipo === "receita") ? "var(--verde)" : "var(--vermelho)";
         /* obra com vínculo quebrado precisa gritar aqui também: "—" faria
            parecer despesa de escritório, que é outra coisa */
         var celObra = ob ? Util.esc(ob.nome)
           : (String(f.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—");
-        html += '<tr class="lin" style="cursor:pointer" data-gopen="financeiro:' + f.id + '"><td>' + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + "</td><td><b>" + Util.esc(f.desc) + "</b></td><td>" + rot(P.finCategoria, f.categoria) + "</td><td>" + celObra + '</td><td class="num" style="color:' + cor + '">' + (f.tipo === "despesa" ? "− " : "+ ") + Util.fmtMoeda(f.valor) + "</td><td>" + pill(f.status) + "</td></tr>";
+        /* ⚠ "estornado" é BADGE, não estado: sai da EXISTÊNCIA de um espelho
+           apontando para este lançamento (ver finEstornar). O espelho ganha a
+           seta de volta, para ninguém ler um valor negativo solto na lista e
+           achar que é erro de digitação. */
+        var _ic = (typeof Icones !== "undefined") ? Icones.get("voltar", 13) : "";
+        /* ⚠ O SINAL SAI DO EFEITO NO CAIXA, não do `tipo` sozinho. Antes era
+           `tipo === "despesa" ? "− " : "+ "` concatenado com fmtMoeda(valor):
+           no espelho de uma despesa (valor negativo) isso imprimia
+           "− -R$ 17.360,00" — dois menos, que se lêem como positivo. Agora o
+           sinal é calculado e o valor sai em módulo. */
+        var _neg = Util.num(f.valor) < 0;
+        var _saiCaixa = (f.tipo === "despesa") !== _neg;   // despesa positiva OU receita estornada
+        var _sinal = _saiCaixa ? "− " : "+ ";
+        var selo = "";
+        if (estornados[f.id]) selo = ' <span class="g-pill" style="background:#94a3b822;color:#64748b" title="Este lançamento foi estornado — o par soma zero no resultado">' + _ic + " estornado</span>";
+        else if (f.estornoDe) selo = ' <span class="g-pill" style="background:#94a3b822;color:#64748b" title="Este é o estorno de outro lançamento">' + _ic + " estorno</span>";
+        /* o botão só aparece no que já foi realizado e ainda não foi
+           estornado — oferecer onde não cabe é convite a erro */
+        var btnEst = (FinStatus.realizado(f) && !estornados[f.id] && !f.estornoDe)
+          ? ' <button class="btn sm ghost" data-gacao="fin-estornar" data-id="' + f.id + '" title="Lançar o estorno deste valor (o original continua na lista)">' + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Estornar</button>"
+          : "";
+        html += '<tr class="lin"><td style="cursor:pointer" data-gopen="financeiro:' + f.id + '">' + Util.esc(f.data ? f.data.split("-").reverse().join("/") : "—") + '</td><td style="cursor:pointer" data-gopen="financeiro:' + f.id + '"><b>' + Util.esc(f.desc) + "</b>" + selo + "</td><td>" + rot(P.finCategoria, f.categoria) + "</td><td>" + celObra + '</td><td class="num" style="color:' + cor + '">' + _sinal + Util.fmtMoeda(Math.abs(Util.num(f.valor))) + '</td><td>' + pill(f.status) + btnEst + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -3551,7 +3766,17 @@
       var hoje = new Date().toISOString().slice(0, 10);
       var etapasIni = this._etapasDaObra(f.obraId);
       var corpo =
-        '<div class="row">' + campo("Data", inp("g-data", f.data || hoje, "", "date")) + campo("Tipo", sel("g-tipo", opts(P.finTipo, f.tipo || "despesa"))) + "</div>" +
+        /* ⚠ TRÊS DATAS, TRÊS SENTIDOS — e é por isso que elas existem separadas.
+           O registro tinha UM campo `data` fazendo os três papéis conforme
+           quem gravava: lançamento pelo formulário, vencimento quando vinha
+           de NF-e, pagamento quando vinha de medição. Um registro pendente
+           era ambíguo por construção.
+           ⚠ E o campo aqui é o que torna `vencimento` confiável: numa
+           tentativa anterior ele foi derivado na migração SEM existir na
+           tela, e como o formulário gravava só `data`, o campo congelava e a
+           conta vencia sem aviso. Quem escreve e quem lê nascem juntos. */
+        '<div class="row">' + campo("Data (lançamento)", inp("g-data", f.data || hoje, "", "date")) + campo("Tipo", sel("g-tipo", opts(P.finTipo, f.tipo || "despesa"))) + "</div>" +
+        '<div class="row">' + campo("Vencimento da conta", inp("g-venc", f.vencimento || "", "", "date")) + campo("Pago / recebido em", inp("g-dtpgto", f.dataPgto || "", "", "date")) + "</div>" +
         campo("Descrição *", inp("g-desc", f.desc)) +
         '<div class="row">' + campo("Categoria", sel("g-cat", opts(P.finCategoria, f.categoria || "material"))) + campo("Valor (R$) *", inp("g-valor", f.valor)) + campo("Status", sel("g-status", opts(P.finStatus, f.status || "pago"))) + "</div>" +
         '<div class="row">' + campo("Obra", sel("g-obra", optsRec(obras, "nome", f.obraId, "— nenhuma —"))) + campo("Contrato", sel("g-contrato", optsRec(contratos, "numero", f.contratoId, "— nenhum —"))) + "</div>" +
@@ -3561,8 +3786,57 @@
       this._modalForm("financeiro", f, "Lançamento", corpo, function (obj) {
         obj.desc = v("g-desc"); if (!obj.desc) { UI.toast("Informe a descrição.", "erro"); return false; }
         obj.data = v("g-data"); obj.tipo = v("g-tipo"); obj.categoria = v("g-cat"); obj.valor = nv("g-valor"); obj.status = v("g-status");
+        obj.vencimento = v("g-venc"); obj.dataPgto = v("g-dtpgto");
+        /* ⚠ A TRANSIÇÃO É GUARDADA. "pago → previsto" apagaria a baixa de uma
+           conta já conciliada sem deixar rastro; quem quer desfazer um
+           pagamento usa ESTORNO, que cria registro espelho em vez de
+           reescrever a história. O <select> oferece tudo, mas o save recusa o
+           que o ciclo de vida não permite — e diz para onde dá para ir. */
+        if (typeof FinStatus !== "undefined" && !FinStatus.podeIr(f.status, obj.status)) {
+          var destinos = (FinStatus.TRANSICOES[FinStatus.norm(f.status)] || [])
+            .map(function (d) { return FinStatus.rotulo(d); });
+          UI.toast("De “" + FinStatus.rotulo(f.status) + "” não dá para ir direto a “" +
+            FinStatus.rotulo(obj.status) + "”." +
+            (destinos.length ? " Caminhos possíveis: " + destinos.join(", ") + "." : ""), "erro");
+          return false;
+        }
+        /* uma conta marcada como paga sem dizer QUANDO deixa o fluxo de caixa
+           sem data; o lançamento é a melhor resposta que o formulário tem */
+        if (obj.status === "pago" && !obj.dataPgto) obj.dataPgto = obj.data || "";
         obj.obraId = v("g-obra"); obj.contratoId = v("g-contrato"); obj.etapaId = v("g-etapa"); obj.fornecedor = v("g-forn"); obj.formaPgto = v("g-forma"); obj.obs = v("g-obs");
         return true;
+      }, null, {
+        /* ⚠ PAR DE ESTORNO NÃO SE QUEBRA PELA METADE.
+           Sem esta guarda, excluir o original deixava o espelho negativo
+           órfão e o custo da obra caía abaixo de zero; excluir o espelho
+           devolvia o valor ao resultado com a linha ainda marcada como
+           estornada. E editar o original depois de estornado desfazia a
+           invariante em silêncio (R$ 1.000 estornado, corrigido para
+           R$ 1.500, virava "meio estorno" de R$ 500). Tudo provado pela
+           revisão adversarial executando o código de produção. */
+        /* contrato do `guarda` (js/gestao.js:14952): a função é chamada SEM
+           argumentos e `true` libera; string bloqueia com aquela mensagem. */
+        excluir: function () {
+          if (f.estornoDe) return "Este é o lançamento de estorno. Para desfazer a reversão, exclua o par inteiro — apagar só ele devolveria o valor ao resultado.";
+          if (f.id && self._finEstornado(f)) return "Este lançamento foi estornado. Apagar só ele deixaria o estorno negativo sozinho, tirando do caixa dinheiro que nunca voltou.";
+          return true;
+        },
+        salvar: function () {
+          if (!f.id) return true;                       // lançamento novo, nada a proteger
+          if (f.estornoDe) {
+            /* o espelho é gerado, não digitado: deixar editar o valor dele é
+               o mesmo furo pelo outro lado */
+            if (Util.num(v("g-valor")) !== Math.abs(Util.num(f.valor))) return "Este é um lançamento de estorno — o valor dele espelha o original. Exclua o par e lance de novo.";
+            return true;
+          }
+          if (!self._finEstornado(f)) return true;
+          /* estornado: descrição, obra e observação seguem editáveis; o que
+             não pode mudar é o que faz o par somar zero */
+          if (Util.num(v("g-valor")) !== Util.num(f.valor)) return "Este lançamento foi estornado — mudar o valor faria o par deixar de somar zero. Exclua o par e lance de novo.";
+          if (v("g-tipo") !== f.tipo) return "Este lançamento foi estornado — trocar receita/despesa quebraria o par.";
+          if (v("g-status") !== f.status) return "Este lançamento foi estornado — o estado dele é o que o estorno reverteu.";
+          return true;
+        }
       });
       // Ao trocar a obra, repovoa as etapas do orçamento vinculado (mantém "não apropriado" quando a obra não tem orçamento)
       var selObra = document.getElementById("g-obra"), selEt = document.getElementById("g-etapa");
@@ -7644,6 +7918,16 @@
     },
     // Data de HOJE no fuso LOCAL (evita off-by-one noturno do toISOString/UTC nas comparações de prazo).
     _hojeLocal: function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); },
+    /* Hoje + N dias, em data local ISO. `setHours(0,0,0,0)` ANTES do `setDate`
+       tira a hora do caminho — sem isso o resultado muda conforme a hora em
+       que o app foi aberto. E `setDate` cuida de virada de mês, ano e horário
+       de verão sozinho; somar `N*86400000` não cuida de nenhum dos três. */
+    _diaLocalMais: function (n) {
+      var d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() + (Number(n) || 0));
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    },
     // Atrasada = tem prazo, o prazo já passou e a tarefa não está concluída/cancelada.
     _tarefaAtrasada: function (t) {
       if (!t.prazo || t.status === "feita" || t.status === "cancelada") return false;
@@ -15839,6 +16123,7 @@ renderFolha: function () {
            valor só, e passá-lo descartaria as outras obras escolhidas. */
         case "dash-obra": return this.dashTrocaObra(null);
         case "fin-obra": return this.finTrocaObra(dataset);
+        case "fin-estornar": return this.finEstornar(id);
         case "compras-obra": return this.comprasTrocaObra(dataset);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
@@ -16488,14 +16773,19 @@ case "nova-folha": return this.novoFolha();
         var pago = 0, aReceber = 0, proxima = null;
         var hojeISO = new Date().toISOString().slice(0, 10);
         var parcelas = recs.map(function (f) {
-          var v = Util.num(f.valor), quitada = f.status === "pago";
+          var v = Util.num(f.valor), quitada = FinStatus.realizado(f);
+          /* o que o cliente precisa ver de uma parcela em aberto é o
+             VENCIMENTO, não a data em que ela foi lançada. Ausente, vale a
+             data — é o que o registro sempre quis dizer quando só havia um
+             campo (ver a nota no formulário do financeiro). */
+          var dRef = String(f.vencimento || f.data || "");
           if (quitada) pago += v; else {
             aReceber += v;
-            if (!proxima || String(f.data || "") < String(proxima.data || "")) proxima = { data: f.data || "", valor: v, desc: f.desc || "" };
+            if (!proxima || dRef < String(proxima.data || "")) proxima = { data: dRef, valor: v, desc: f.desc || "" };
           }
-          return { data: f.data || "", descricao: f.desc || "", valor: v,
+          return { data: dRef, descricao: f.desc || "", valor: v,
                    situacao: quitada ? "Pago" : "Em aberto",
-                   atrasada: !quitada && f.data && f.data < hojeISO };
+                   atrasada: !quitada && !!dRef && dRef < hojeISO };
         });
         financeiro = {
           contratado: contratado, medidoAcum: medidoAcum,
@@ -16907,10 +17197,10 @@ case "nova-folha": return this.novoFolha();
            E o risco é de outra natureza — não é dado sigiloso vazando, é uma
            projeção que pode ser lida como compromisso de prazo. */
         campo("Previsão de término",
-          '<label style="display:flex;gap:9px;align-items:flex-start;font-size:13px;cursor:pointer;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:11px 13px">' +
+          '<label class="opt-linha">' +
           /* nasce MARCADA na tela (é a recomendação), mas o que vale é o que
              ficar gravado ao clicar em Publicar — o clique é a decisão */
-          '<input type="checkbox" id="g-pprev"' + ((obra.portalPrevisao !== false) ? " checked" : "") + ' style="margin-top:3px">' +
+          '<input type="checkbox" id="g-pprev"' + ((obra.portalPrevisao !== false) ? " checked" : "") + ">" +
           '<span>Mostrar ao cliente a <b>data provável de término</b> calculada pelo ritmo dos diários' +
           '<br><span class="muted" style="font-size:12px">' +
           (prev && prev.ok && !prev.concluida && prev.dataProvavel
@@ -16927,8 +17217,8 @@ case "nova-folha": return this.novoFolha();
           '<div id="g-prel" style="display:grid;grid-template-columns:1fr;gap:5px;max-height:210px;overflow:auto;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px">' +
           RELATORIOS_PORTAL.map(function (r) {
             var on = relSel.indexOf(r.id) > -1;
-            return '<label style="display:flex;gap:8px;align-items:flex-start;font-size:12.5px;cursor:pointer' + (r.sensivel ? ";background:#fff7ed;border:1px solid #fdba74;border-radius:8px;padding:7px 9px" : "") + '">' +
-              '<input type="checkbox" data-rel="' + r.id + '"' + (on ? " checked" : "") + ' style="margin-top:2px">' +
+            return '<label class="opt-linha' + (r.sensivel ? " opt-alerta" : "") + '" style="font-size:12.5px">' +
+              '<input type="checkbox" data-rel="' + r.id + '"' + (on ? " checked" : "") + ">" +
               "<span><b>" + Util.esc(r.nome) + "</b>" + (r.sensivel ? ' <span style="color:#b45309;font-weight:800">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' revela custo</span>' : "") +
               '<br><span class="muted" style="font-size:11px">' + Util.esc(r.desc) + "</span></span></label>";
           }).join("") + "</div>") +
@@ -16938,7 +17228,7 @@ case "nova-folha": return this.novoFolha();
         (fotosPendentes ? '<div style="background:#fff7ed;border:1px solid #fdba74;border-radius:10px;padding:10px 14px;font-size:13px;color:#7c2d12;margin-top:8px"><b>' + fotosPendentes + "</b> foto(s) ainda estão subindo para a nuvem e não vão aparecer no Portal nesta publicação. Publique de novo com internet boa.</div>" : "") +
         /* acidente é dado pessoal (envolvido, causa, afastamento). Quem decide
            se o cliente lê o texto é o responsável técnico, não o programa. */
-        (temAcidente ? '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;color:#475569"><input type="checkbox" id="g-pacid"><span>Incluir <b>nesta publicação</b> o <b>texto dos registros de acidente/dano</b>. Sem marcar, o cliente vê apenas que houve registro no dia e é orientado a consultar o diário oficial (o texto costuma trazer nome de envolvido e informação de saúde). <b>A caixa nasce desmarcada de propósito</b>: autorização dada hoje vale para o acidente de hoje, não para os próximos.</span></label>' : "") +
+        (temAcidente ? '<label class="opt-linha" style="margin-top:10px;font-size:12.5px"><input type="checkbox" id="g-pacid"><span>Incluir <b>nesta publicação</b> o <b>texto dos registros de acidente/dano</b>. Sem marcar, o cliente vê apenas que houve registro no dia e é orientado a consultar o diário oficial (o texto costuma trazer nome de envolvido e informação de saúde). <b>A caixa nasce desmarcada de propósito</b>: autorização dada hoje vale para o acidente de hoje, não para os próximos.</span></label>' : "") +
         '<div id="portal-result" style="margin-top:12px"></div>';
       /* ---- lista de acessos extras, editável antes de publicar ----
          Remover daqui NÃO revoga sozinho: revogar é ação de segurança e tem

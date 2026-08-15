@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.237",
+  "versao": "1.1.238",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.237/OrcaPRO-IA-update-v1.1.237.zip",
-  "notas": "Correcao da RETENCAO das medicoes, que estava sendo mostrada como dinheiro quando na verdade era o percentual. Dois lugares erravam: o KPI 'Retencao presa' do Painel somava os percentuais das medicoes aprovadas — tres medicoes a 5% apareciam como 'R$ 15,00' em vez da retencao de verdade; e o Portal do Cliente mostrava a mesma confusao na coluna Retencao de cada medicao, e somava no total. Ou seja, o cliente da obra estava lendo um numero que nao era dinheiro nenhum. Agora os dois mostram o valor retido de verdade. A posicao financeira do Portal sempre esteve certa. Entra tambem a base do modulo financeiro avancado (calculo de dinheiro em centavos exatos), que ainda nao muda nada na tela.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.237/OrcaPRO-IA-Instalador-v1.1.237.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.238/OrcaPRO-IA-update-v1.1.238.zip",
+  "notas": "Versao de tela: o app deixou de quebrar no celular e no tablet. O que mais incomodava: no iPad em pe a pagina inteira ficava maior que a tela, com a marca cortada em cima e os cards cortados na direita — todas as regras de tela pequena paravam numa largura menor que a do iPad. Na planilha do orcamento, os campos Quantidade e Custo Unitario cortavam o numero digitado (voce digitava 12,50 e via 1), em qualquer janela menor que um monitor grande. Na Folha Semanal, os botoes Entregaveis e Lancar no Financeiro ficavam fora da tela ate no monitor. As caixas de marcar dos modais viravam um retangulo enorme com o texto espremido do lado. E o X dos modais nao fechava quando voce tocava bem em cima do simbolo. Tudo corrigido. Entra tambem o botao Instalar app FIXO na barra de cima, que agora aparece no iPhone e no iPad (antes nao existia neles) e nao some mais depois de dispensado. Por baixo, comeca a base do modulo financeiro avancado — calculo em centavos exatos, vencimento proprio e estorno — que ainda nao muda nada na sua tela.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.238/OrcaPRO-IA-Instalador-v1.1.238.exe"
 }

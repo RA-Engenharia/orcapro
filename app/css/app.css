@@ -222,12 +222,34 @@ table.tbl, .kpi .num, .g-pill, .cell, input[type="number"] { font-variant-numeri
 .kpi .num, .orc-card .valor, table.tbl td.num, table.tbl th.num, .sinapi-result .preco { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
 
 /* ---------- Layout app ---------- */
-.app { display: grid; grid-template-rows: 58px 1fr; height: 100vh; }
+/* ⚠ `100vh` NO SAFARI DO IPHONE NÃO É A ALTURA VISÍVEL: ele conta a tela sem
+   descontar a barra de endereço, então o rodapé fica escondido embaixo dela e
+   a página ganha um pedaço que só aparece ao rolar. `100dvh` (dynamic viewport
+   height) é a medida que acompanha a barra aparecendo e sumindo. A linha do
+   `100vh` fica antes como reserva para navegador antigo que não conheça
+   `dvh` — quem conhece usa a segunda e ignora a primeira. */
+.app { display: grid; grid-template-rows: 58px 1fr; height: 100vh; height: 100dvh; }
+
+/* ---------- ÁREA SEGURA DO IPHONE (notch e barra de gestos) ----------
+   Só faz efeito com `viewport-fit=cover` no index.html e com o app INSTALADO
+   (em modo standalone o sistema não reserva mais as margens). Sem isto, no
+   iPhone com notch a barra de cima passa por baixo da ilha dinâmica e os
+   botões do rodapé do modal ficam sob a barra de gestos — dá para ver, não
+   dá para tocar. `max()` mantém o espaçamento normal em quem não tem notch. */
+@supports (padding: max(0px)) {
+  .topbar { padding-left: max(22px, env(safe-area-inset-left)); padding-right: max(22px, env(safe-area-inset-right)); }
+  .modal-bg { padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+}
 /* Na tela de login não há topbar: colapsa a linha e remove padding/scroll do main */
 .app.tela-login { grid-template-rows: 1fr; }
 .app.tela-login .main { padding: 0; overflow: hidden; }
+/* ⚠ `flex-wrap: wrap` VALE EM TODA LARGURA. Ele só age quando não cabe, então
+   no desktop largo não muda nada — mas estava preso dentro do
+   `@media (max-width: 820px)`, e por isso o iPad em pé (834px) e o iPhone
+   deitado (852–956px) caíam numa zona morta: barra que não quebra e layout
+   que não encolhe. Foi a causa das capturas do dono, não o Safari. */
 .topbar {
-  display: flex; align-items: center; gap: 16px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 16px;
   background: linear-gradient(180deg, #17395c 0%, var(--navy) 100%); color: #fff; padding: 0 22px;
   box-shadow: var(--sombra-navy); position: relative; z-index: 20;
   border-bottom: 1px solid rgba(255,255,255,.06);
@@ -277,7 +299,13 @@ table.tbl, .kpi .num, .g-pill, .cell, input[type="number"] { font-variant-numeri
 .main { overflow: auto; padding: 28px 34px; background: var(--bg-grad); }
 
 /* ---------- Sidebar de módulos (Gestão) ---------- */
-.app.com-sidebar { grid-template-columns: 212px 1fr; grid-template-areas: "side top" "side main"; }
+/* ⚠ `minmax(0, 1fr)`, NÃO `1fr`. `1fr` é `minmax(auto, 1fr)`: a coluna nunca
+   encolhe abaixo do min-content do que está dentro dela, e a barra de cima
+   (que não quebrava linha acima de 820px) travava o app inteiro em ~1013px.
+   No iPad Pro 11" em pé (834px) a página inteira ficava 189px maior que a
+   tela, com a marca cortada no topo e os cards cortados na direita. */
+.app.com-sidebar { grid-template-columns: 212px minmax(0, 1fr); grid-template-areas: "side top" "side main"; }
+.app > .main, .app > .topbar, .app.com-sidebar > .topbar, .app.com-sidebar > .sidebar { min-width: 0; }
 .app.com-sidebar > .sidebar { grid-area: side; }
 .app.com-sidebar > .topbar { grid-area: top; }
 .app.com-sidebar > .main { grid-area: main; }
@@ -316,6 +344,21 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 @media (max-width: 720px) { .kpis.kpis-g { grid-template-columns: repeat(2, 1fr); } }
 
 /* ---------- Botões ---------- */
+/* ⚠ EXCEÇÃO PARA RÓTULO LONGO. O `white-space: nowrap` do `.btn` está certo
+   para os botões curtos das barras — mas num rótulo de frase inteira ele
+   trava tudo numa linha, e o `justify-content: center` derrama o excedente
+   PARA OS DOIS LADOS: o usuário lê o meio da frase, sem começo nem fim.
+   Marcar o botão com `longo` deixa o texto quebrar, em vez de mexer no `.btn`. */
+/* ⚠ BARRA DE BOTÕES QUEBRA EM QUALQUER LARGURA. Estava dentro do media
+   query de 820px, e a barra da Folha Semanal (2 selects + 8 botões) mede
+   1779px FIXOS: "Entregáveis" e "Lançar no Financeiro" ficavam fora da tela
+   em toda largura acima de 820px — inclusive no monitor de 1440px, onde
+   sobravam 722px para fora. Só o celular mostrava esses botões.
+   Quebrar linha só acontece quando não cabe, então no desktop largo nada
+   muda. `.modal .flex` entra junto: o modal é anexado ao body, não ao
+   `.main`, e por isso a fileira de botões dele nunca quebrava. */
+.main .flex, .modal .flex { flex-wrap: wrap; }
+.btn.longo { white-space: normal; text-align: center; line-height: 1.25; }
 .btn {
   display: inline-flex; align-items: center; gap: 7px; justify-content: center;
   border: 1px solid var(--linha-forte); background: var(--surface); color: var(--texto);
@@ -366,7 +409,12 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .kpi.custo::after { background: radial-gradient(circle, rgba(46,111,158,.10), transparent 70%); }
 
 /* ---------- Abas ---------- */
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--linha); margin-bottom: 24px; }
+/* rolagem lateral em QUALQUER largura: quando as abas cabem o navegador não
+   desenha barra nenhuma, então não há custo no desktop. Preso no media query
+   de 820px, as 8 abas do editor somam 1059px e as duas últimas ("Relatórios"
+   e "BDI & Parâmetros") ficavam fora da tela no iPad. */
+.tabs { display: flex; gap: 2px; overflow-x: auto; -webkit-overflow-scrolling: touch; border-bottom: 1px solid var(--linha); margin-bottom: 24px; }
+.tabs > .tab { flex: 0 0 auto; }
 .tab { position: relative; display: inline-flex; align-items: center; padding: 11px 16px; cursor: pointer; border-bottom: 2px solid transparent; color: var(--texto-fraco); font-weight: var(--p-medio); transition: .14s; border-radius: 8px 8px 0 0; white-space: nowrap; }
 .tab:hover { color: var(--texto); background: var(--surface-2); }
 .tab.ativa { color: var(--aco); font-weight: var(--p-forte); }
@@ -446,6 +494,29 @@ table.tbl select.sel-sub { max-width: 122px; font-size: var(--t-micro); padding:
 table.tbl select.sel-sub:hover, table.tbl select.sel-sub:focus { border-color: var(--linha-forte); background: var(--surface); color: var(--texto); }
 @media screen and (max-width: 820px) { table.tbl select.sel-sub { max-width: 88px; } }
 table.tbl input.cell { width: 100%; border: 1px solid transparent; background: transparent; padding: 5px 7px; border-radius: var(--raio-sm); text-align: right; transition: .1s; }
+/* ⚠ COLUNA DE NÚMERO NÃO PODE SER DIMENSIONADA PELA PALAVRA DO CABEÇALHO.
+   `width: 100%` num input dentro de célula de tabela não pede largura
+   nenhuma: a coluna fecha no min-content, que aqui é a palavra "Qtd". Com o
+   padding de 16px de cada lado da célula sobravam 23,7px para o campo — e
+   "12,50" precisa de 59px. Medido: o orçamentista via literalmente "1" no
+   lugar de "12,50", e "1.2" no lugar de "1.234,56". Não é estética: ele não
+   consegue LER a quantidade que digitou, nem acertar um alvo de 23,7px.
+   Some no monitor largo (a partir de ~1440px o campo cresce sozinho), e é
+   por isso que passou despercebido — quebrava no iPhone, no iPad e em
+   qualquer janela abaixo de ~1366px.
+   O `min-width` fica escopado em `[data-edit]` de propósito: os outros
+   `.cell` do app (coeficiente, preço de insumo, duração do cronograma) têm
+   largura própria em estilo inline e não podem ser alargados por tabela. */
+/* 88px = 14 de padding + 2 de borda + 72 de conteúdo. A medição do achado deu
+   59px para "12,50" na coluna Qtd; "1.234,56" no Custo Unitário pede mais, e
+   é a mesma regra que atende as duas. 72px de conteúdo cobre as duas com
+   folga, sem alargar a tabela a ponto de estorvar no desktop. */
+table.tbl input.cell[data-edit] { min-width: 88px; }
+/* e a coluna aperta o padding lateral para devolver espaço ao número, em vez
+   de gastá-lo em margem — só onde a tela é estreita */
+@media screen and (max-width: 1100px) {
+  table.tbl td.num, table.tbl th.num { padding-left: 8px; padding-right: 8px; }
+}
 table.tbl input.cell:hover { border-color: var(--linha-forte); background: var(--surface); }
 table.tbl input.cell:focus { border-color: var(--aco); background: var(--surface); box-shadow: 0 0 0 3px rgba(46,111,158,.13); outline: none; }
 table.tbl td.right { text-align: right; white-space: nowrap; }
@@ -516,10 +587,49 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 /* ---------- Form ---------- */
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: var(--t-peq); font-weight: var(--p-medio); color: var(--texto-fraco); margin-bottom: 5px; }
-.field input, .field select, .field textarea {
+/* ⚠ CHECKBOX E RADIO FICAM DE FORA. Esta regra veste campo de digitação —
+   largura cheia, padding e borda. Aplicada a uma caixa de marcar, ela
+   transformava a checkbox num retângulo de largura total com borda, e o texto
+   ao lado era empurrado para fora do container: no celular e no iPad virava
+   uma caixa enorme e vazia com o texto espremido numa coluna cortada. */
+.field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {
   width: 100%; padding: 10px 12px; border: 1px solid var(--linha-forte);
   border-radius: var(--raio-sm); background: var(--surface); color: var(--texto);
   transition: border-color .14s, box-shadow .14s;
+}
+.field input[type="checkbox"], .field input[type="radio"] { width: auto; margin: 3px 0 0; }
+
+/* ⚠ CAIXA DE MARCAR NÃO ESTICA — REGRA GLOBAL, e ela existe por causa do
+   Safari do iPhone.
+   O Chrome trava a checkbox no tamanho intrínseco e ignora `width`, então o
+   defeito NÃO aparece em emulação — foi por isso que eu não consegui
+   reproduzir a captura do cliente a 375px. O Safari do iOS faz o contrário:
+   com padding/border aplicados a caixa sai do desenho nativo e vira um
+   retângulo que estica até a largura do container, empurrando o texto ao lado
+   para fora da tela. É a "caixa enorme e vazia com o texto cortado".
+   `flex: 0 0 auto` fecha a porta em qualquer motor: dentro de um container
+   flex — que é como TODAS as 60 linhas de opção do app são montadas — a
+   caixa não cresce nem encolhe, independentemente do que outra regra tente. */
+input[type="checkbox"], input[type="radio"] { flex: 0 0 auto; }
+
+/* ---------- LINHA DE OPÇÃO: [caixa de marcar] + texto explicativo ----------
+   O padrão aparece dezenas de vezes (publicar no Portal, relatórios liberados,
+   consentimento, escolhas de exportação) e vinha escrito à mão em cada lugar,
+   com medidas ligeiramente diferentes. Aqui vira uma classe só.
+   ⚠ `min-width:0` no texto é o que impede o estouro horizontal: um item de
+   flex não encolhe abaixo do próprio conteúdo por padrão (`min-width:auto`),
+   e uma frase longa empurra o container para fora da tela — que é como o
+   modal do Portal ganhava barra de rolagem lateral no celular. */
+.opt-linha { display: flex; gap: 9px; align-items: flex-start; font-size: var(--t-base); cursor: pointer;
+  border: 1px solid var(--linha); border-radius: var(--raio); padding: 11px 13px; }
+.opt-linha + .opt-linha { margin-top: 6px; }
+.opt-linha > span { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.opt-linha.opt-alerta { background: #fff7ed; border-color: #fdba74; }
+.opt-linha.opt-nu { border: 0; padding: 0; }
+/* alvo de toque confortável no celular, sem mexer no desenho do desktop */
+@media (max-width: 820px) {
+  .opt-linha { padding: 12px; }
+  .opt-linha input[type="checkbox"], .opt-linha input[type="radio"] { width: 18px; height: 18px; }
 }
 .field input:hover, .field select:hover, .field textarea:hover { border-color: var(--aco-claro); }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--aco); outline: none; box-shadow: var(--anel); }
@@ -603,6 +713,45 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 }
 
 /* ========== Mobile / Tablet (app instalável no celular) ========== */
+/* ⚠ O ZOOM DO iOS É QUESTÃO DE APARELHO, NÃO DE LARGURA.
+ * O Safari do iPhone e do iPad AMPLIA a página inteira ao focar qualquer
+ * campo com fonte abaixo de 16px, e depois não desfaz o zoom — o usuário
+ * fica com a tela deslocada e tem que reenquadrar na mão a cada digitação.
+ * A regra que sobe a fonte para 17px existia, mas presa no
+ * `@media (max-width: 820px)`: o iPad em pé tem 834px e ficava de fora,
+ * justamente onde há mais formulário na tela. `(pointer: coarse)` pergunta
+ * o que importa — se o apontador é o dedo — e pega iPhone, iPad e tablet
+ * Android em qualquer largura, sem tocar no desktop.
+ * (O Chrome no Android não amplia; a regra é inofensiva lá.) */
+@media (hover: none) and (pointer: coarse) {
+  input, select, textarea { font-size: max(16px, var(--t-med)); }
+}
+
+/* =====================================================================
+ * A ZONA MORTA DO IPAD — 821px a 1100px
+ *
+ * ⚠ TODAS as regras responsivas do app paravam em 820px. O iPad Pro 11" em
+ *   pé tem 834px; o iPad de 13" em pé, 1024px; o iPhone moderno deitado, de
+ *   852 a 956px. Nessa faixa não havia NEM o layout de celular NEM espaço
+ *   para o de desktop: barra que não quebrava, abas que não rolavam, tabela
+ *   larga saindo por fora do cartão e a página inteira deslizando de lado.
+ *   Foi isto que o dono fotografou — e não é defeito do Safari: reproduz no
+ *   Chrome, medido.
+ *
+ *   Este bloco fica SEPARADO do de 820px de propósito: lá moram as coisas de
+ *   CELULAR (gaveta de menu, esconder elementos), que não valem para tablet.
+ *   Aqui mora só o que é questão de LARGURA.
+ * ===================================================================== */
+@media screen and (max-width: 1100px) {
+  /* tabela larga rola dentro do próprio cartão, em vez de empurrar a coluna */
+  .main table.tbl { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* barras de filtro e de botões quebram em vez de sair da tela.
+     ⚠ o `.main` do seletor antigo deixava os MODAIS de fora — eles são
+     anexados ao body, não ao main, e por isso a fileira de botões do modal
+     não quebrava nem no celular. */
+  .modal .body > div[style*="display:flex"] { flex-wrap: wrap; }
+}
+
 @media screen and (max-width: 820px) {
   /* fix-raiz do "estouro" horizontal: coluna nunca passa da viewport e main não estica com tabela larga */
   html, body { overflow-x: hidden; }
@@ -618,7 +767,6 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
   .topbar .spacer { flex-basis: 100%; height: 0; order: 5; }
   .main { padding: 14px 12px; }
   /* barras de botões (toolbar do editor etc.) quebram linha em vez de empurrar a largura */
-  .main .flex { flex-wrap: wrap; }
   /* cabeçalho: título em linha própria (nome quebra), toolbar na linha de baixo */
   .main .flex.between > div:first-child { flex: 1 1 100%; margin-bottom: 6px; }
 
@@ -658,7 +806,6 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
   .modal { max-width: 100%; max-height: 92vh; }
   /* botões e campos com alvo de toque confortável */
   .btn { min-height: 40px; }
-  input, select, textarea { font-size: var(--t-med); } /* evita zoom automático do iOS */
   /* login cabe na largura da tela */
   .login-formside { padding: 24px 16px; }
   .login-card { max-width: 100%; }
@@ -870,6 +1017,13 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
 /* ---------- Topbar: busca universal + central de avisos ---------- */
 .topo-ic-btn { position: relative; display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,.10); border: 1px solid rgba(255,255,255,.16); color: #fff; border-radius: var(--raio); padding: 7px 11px; cursor: pointer; font-size: var(--t-base); margin-right: 8px; transition: .14s; }
 .topo-ic-btn:hover { background: rgba(255,255,255,.18); }
+/* "Instalar app": verde discreto para se distinguir dos ícones neutros da
+   barra sem gritar. Ele fica na tela enquanto o app não estiver instalado —
+   some sozinho em modo standalone, que é o único motivo de sumir. */
+.topo-instalar { background: rgba(111,208,138,.16); border-color: rgba(111,208,138,.38); }
+.topo-instalar:hover { background: rgba(111,208,138,.26); }
+/* no celular sobra pouca barra: fica o ícone, que o alvo de toque preserva */
+@media (max-width: 760px) { .topo-instalar-txt { display: none; } }
 .topo-kbd { font-size: var(--t-micro); font-weight: var(--p-forte); letter-spacing: .4px; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.22); border-radius: var(--raio-sm); padding: 1px 6px; opacity: .85; }
 .aviso-badge { position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; border-radius: 999px; background: #dc2626; color: #fff; font-size: var(--t-micro); font-weight: var(--p-forte); display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--navy); }
 @media (max-width: 760px) { .topo-kbd { display: none; } .topo-ic-btn { padding: 7px 9px; } }

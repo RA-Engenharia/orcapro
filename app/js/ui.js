@@ -93,8 +93,21 @@
       bg.addEventListener("input", function () { bg._tocado = true; });
       bg.addEventListener("change", function () { bg._tocado = true; });
       bg.addEventListener("click", function (e) {
-        var fechar = (e.target.hasAttribute && e.target.hasAttribute("data-fechar")) ||
-                     (e.target === bg && bg._downNoBg);
+        /* ⚠ O ALVO DE UM TOQUE SOBRE ÍCONE NUNCA É O BOTÃO.
+           `data-fechar` está no <button>, mas o conteúdo dele é um <svg>
+           inline: o alvo do evento é o <svg> ou o <path>, jamais o <button>
+           que os contém. Com a comparação direta, o ✕ só fechava quando o
+           clique caía no anel de padding em volta do ícone de 15px — no mouse
+           o usuário tem hover e acerta a borda; no dedo o alvo é o centro, e
+           o modal simplesmente não fechava. Subir a árvore com `closest`
+           resolve, e `getAttribute` no fallback cobre navegador sem closest. */
+        var alvoFechar = null;
+        try { alvoFechar = e.target.closest ? e.target.closest("[data-fechar]") : null; } catch (eC) {}
+        if (!alvoFechar) {
+          var n = e.target;
+          while (n && n !== bg) { if (n.hasAttribute && n.hasAttribute("data-fechar")) { alvoFechar = n; break; } n = n.parentNode; }
+        }
+        var fechar = !!alvoFechar || (e.target === bg && bg._downNoBg);
         if (!fechar) return;
         /* v1.1.235 — modal BLOQUEANTE (o do teste grátis): fechar deixaria o
            app numa tela branca, porque o gate aborta o boot antes do render */
@@ -162,6 +175,23 @@
         '</div>' +
         '<span class="badge-plano ' + freeCls + '">' + (CONFIG.planos[plano] ? CONFIG.planos[plano].nome : plano) + '</span>' +
         '<span class="spacer"></span>' +
+        /* ⚠ INSTALAR COMO APP MORA NA BARRA, NÃO FLUTUANDO — e não some.
+           O botão anterior era um balão no canto inferior direito que (a) só
+           nascia no evento `beforeinstallprompt`, que NÃO EXISTE no iOS, então
+           iPhone e iPad nunca viam; (b) tinha um ✕ que gravava dispensa
+           PERMANENTE em localStorage — um clique sem querer e ele não voltava
+           nunca mais; e (c) disputava o canto com o FAB do BIM.
+           Aqui ele é parte da barra: aparece sempre que o app NÃO está
+           instalado, em qualquer aparelho, e desaparece sozinho quando passa
+           a rodar em modo standalone — que é o único motivo legítimo de
+           sumir. */
+        (function () {
+          var jaInstalado = false;
+          try { jaInstalado = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true; } catch (eI) {}
+          if (jaInstalado) return "";
+          return '<button class="topo-ic-btn topo-instalar" data-acao="instalar-app" aria-label="Instalar o OrçaPRO como aplicativo" title="Instalar o OrçaPRO IA como aplicativo — ícone na tela inicial, tela cheia e abre offline">' +
+            (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + '<span class="topo-instalar-txt">Instalar app</span></button>';
+        })() +
         '<button class="topo-ic-btn" data-busca-abrir aria-label="Busca universal (Ctrl+K)" title="Busca universal — pule pra qualquer obra, orçamento ou ação (Ctrl+K)">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + '<span class="topo-kbd">Ctrl+K</span></button>' +
         (function () {
           var n = (typeof AvisosUI !== "undefined") ? AvisosUI.contar() : 0;
@@ -1115,7 +1145,11 @@
           '<label style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;margin:6px 0"><input type="checkbox" id="cp-mo"' + (c.maoDeObra ? " checked" : "") + '> Composição com mão de obra</label>' +
           '<div class="field"><label>Observação</label><textarea id="cp-obs" rows="2">' + Util.esc(c.observacao || "") + '</textarea></div>' +
           '<div class="flex" style="gap:8px;margin-top:6px;flex-wrap:wrap">' +
-            '<button class="btn primary" data-acao="cp-agente">' + _ic("escopo") + 'Agente especialista — montar pela referência oficial</button>' +
+            /* `longo`: o rótulo tem 355px e a caixa cabe em 313px a 375px. Sem a
+               exceção, o `white-space: nowrap` do `.btn` trava tudo numa linha
+               e a centralização derrama o excedente PARA OS DOIS LADOS — o
+               usuário lia um pedaço do meio da frase, sem começo nem fim. */
+            '<button class="btn primary longo" data-acao="cp-agente">' + _ic("escopo") + 'Agente especialista — montar pela referência oficial</button>' +
             '<button class="btn success" data-acao="cp-passo2" style="margin-left:auto">Próximo →</button></div>' +
           '<p class="muted" style="font-size:11px;margin-top:8px">O agente lê a sua descrição, encontra a composição oficial mais parecida no detalhamento da sua UF e propõe a estrutura com <b>coeficientes reais</b> — nunca inventa código nem preço; você revisa tudo no passo 2.</p>';
       } else {

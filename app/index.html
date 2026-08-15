@@ -7,7 +7,11 @@
         var _f = localStorage.getItem("orcapro:fonte"); _f = (_f === "source") ? "source" : "plex";
         document.documentElement.setAttribute("data-tema", _t);
         document.documentElement.setAttribute("data-fonte", _f); } catch (e) {}</script>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- viewport-fit=cover: sem isto o env(safe-area-inset-*) devolve 0 e o
+       app instalado no iPhone com notch desenha por baixo da ilha e da barra
+       de gestos. So tem efeito com o PWA instalado — que e justamente o que o
+       botao "Instalar app" passou a oferecer em todo aparelho. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>OrçaPRO — Orçamento Inteligente de Obras</title>
   <!-- BIM: resolve os specifiers dos módulos ES do visualizador (js/bim.js + OrbitControls) -->
   <script type="importmap">
@@ -39,6 +43,15 @@
   <!-- Camadas: config -> util -> store/auth -> motores -> ui -> app -->
   <script src="js/config.js"></script>
   <script src="js/util.js"></script>
+  <!-- ⚠ ANTES do store.js: a migração do financeiro (v1→v2) converte o valor
+       para centavos e precisa do Dinheiro já definido. Ele não depende de
+       ninguém — só usa Util.num, resolvido na hora da chamada.
+       Não substitui o arredondamento.js, que é do ORÇAMENTO e TRUNCA por
+       regra do TCU: são dois domínios com regras diferentes de propósito. -->
+  <script src="js/dinheiro.js"></script>
+  <!-- finstatus.js: o ciclo de vida do lançamento financeiro. Cedo na ordem
+       porque gestao.js, porobra.js e o Portal perguntam por ele. -->
+  <script src="js/finstatus.js"></script>
   <script src="js/icones.js"></script>
   <script src="js/idb.js"></script>
   <script src="js/store.js"></script>
@@ -51,10 +64,6 @@
   <script src="js/atualizacao.js"></script>
   <script src="js/escopo.js"></script>
   <script src="js/arredondamento.js"></script>
-  <!-- dinheiro.js: centavos INTEIROS para o financeiro (boleto, Pix, nota).
-       Não substitui o arredondamento.js, que é do orçamento e TRUNCA por
-       regra do TCU — são dois domínios com regras diferentes de propósito. -->
-  <script src="js/dinheiro.js"></script>
   <script src="js/ponto.js"></script>
   <script src="js/ordem.js"></script>
   <script src="js/atividades.js"></script>
@@ -150,28 +159,27 @@
   <script>
   (function () {
     if ('serviceWorker' in navigator) { window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
-    var deferIns = null;
-    function standalone() { try { return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone; } catch (e) { return false; } }
-    function mostra() {
-      if (standalone() || document.getElementById('opr-install')) return;
-      try { if (localStorage.getItem('opr_install_dismiss')) return; } catch (e) {}
-      var wrap = document.createElement('div');
-      wrap.id = 'opr-install';
-      wrap.style.cssText = 'position:fixed;right:18px;bottom:18px;z-index:99999;display:flex;align-items:center;background:#0f2740;color:#eaf2fa;border:1px solid rgba(255,255,255,.14);border-radius:12px;box-shadow:0 12px 32px rgba(8,18,30,.42);font:600 13px/1 Inter,system-ui,Arial,sans-serif;overflow:hidden';
-      var b = document.createElement('button');
-      b.type = 'button'; b.innerHTML = '<span style="color:#6fd08a;font-size:15px">⬇️</span> Instalar como app';
-      b.title = 'Instalar o OrçaPRO IA como aplicativo';
-      b.style.cssText = 'background:none;border:0;color:inherit;font:inherit;font-weight:700;padding:12px 10px 12px 16px;cursor:pointer;white-space:nowrap';
-      b.onclick = function () { if (deferIns) { deferIns.prompt(); deferIns = null; wrap.remove(); } };
-      var x = document.createElement('button');
-      x.type = 'button'; x.textContent = '✕'; x.title = 'Agora não';
-      x.style.cssText = 'background:none;border:0;color:#7f93a8;font-size:13px;padding:12px 14px 12px 8px;cursor:pointer';
-      x.onclick = function () { try { localStorage.setItem('opr_install_dismiss', '1'); } catch (e) {} wrap.remove(); };
-      wrap.appendChild(b); wrap.appendChild(x);
-      document.body.appendChild(wrap);
-    }
-    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); deferIns = e; mostra(); });
-    window.addEventListener('appinstalled', function () { var w = document.getElementById('opr-install'); if (w) w.remove(); });
+    /* ⚠ O BOTÃO SAIU DAQUI E FOI PARA A BARRA DE CIMA (js/ui.js).
+       O balão flutuante que morava aqui tinha três defeitos que o deixavam
+       invisível justamente para quem mais precisa dele:
+       (a) só nascia no evento `beforeinstallprompt`, que NÃO EXISTE no iOS —
+           iPhone e iPad nunca viram esse botão;
+       (b) o ✕ gravava dispensa PERMANENTE em localStorage: um toque sem
+           querer e o recurso não voltava nunca mais;
+       (c) disputava o canto inferior direito com o FAB do BIM.
+       Aqui fica só o registro do service worker e a captura do evento, que
+       é guardado em `window.OPR_INSTALL` para o botão da barra usar quando
+       o navegador de fato oferecer instalação nativa. */
+    window.OPR_INSTALL = null;
+    window.addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); window.OPR_INSTALL = e; });
+    window.addEventListener('appinstalled', function () {
+      window.OPR_INSTALL = null;
+      /* o botão da barra some sozinho: ele pergunta por display-mode standalone */
+      try { if (window.App && App.render) App.render(); } catch (e) {}
+    });
+    /* limpa a dispensa permanente que a versão antiga podia ter gravado —
+       sem isto, quem clicou no ✕ uma vez continuaria sem o recurso */
+    try { localStorage.removeItem('opr_install_dismiss'); } catch (e) {}
   })();
   </script>
 </body>

@@ -1109,6 +1109,7 @@
         case "backup-export": this.exportarBackup(); break;
         case "menu": { var _apT = document.querySelector(".app"); if (_apT) _apT.classList.toggle("menu-aberto"); break; }
         case "conta": { var _c = t.closest(".topbar-conta"); if (_c) _c.classList.toggle("aberto"); break; }
+        case "instalar-app": this.instalarApp(); break;
         case "tabelas": this.abrirTabelas(); break;
         case "escanear-pasta": this.escanearPastaUI(); break;
         case "cron-recalc": this.cronRecalc(); break;
@@ -2575,6 +2576,43 @@
     },
 
     // ---------- Tabelas de Preço (multi-base) ----------
+    /* =================================================================
+     * INSTALAR COMO APP
+     *
+     * ⚠ O iOS NUNCA dispara `beforeinstallprompt`. Safari não tem API de
+     *   instalação: quem instala é o usuário, pelo menu Compartilhar. Um
+     *   botão que só funcionasse com o evento seria um botão morto em todo
+     *   iPhone e iPad — que é metade da obra. Por isso aqui há DOIS caminhos:
+     *   com o evento guardado, dispara o instalador do navegador; sem ele,
+     *   ensina o caminho da mão, com o passo a passo do aparelho certo.
+     * ================================================================= */
+    instalarApp: function () {
+      var pronto = global.OPR_INSTALL && global.OPR_INSTALL.prompt;
+      if (pronto) {
+        try {
+          global.OPR_INSTALL.prompt();
+          global.OPR_INSTALL = null;
+          return;
+        } catch (e) { /* cai no passo a passo abaixo */ }
+      }
+      var ua = String(navigator.userAgent || "");
+      var ehIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+      var passos = ehIOS
+        ? '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
+            "<li>Toque no botão <b>Compartilhar</b> (o quadrado com a seta para cima), na barra do Safari.</li>" +
+            "<li>Role a lista e toque em <b>Adicionar à Tela de Início</b>.</li>" +
+            "<li>Confirme em <b>Adicionar</b>.</li></ol>" +
+          '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Precisa ser pelo <b>Safari</b> — Chrome e Firefox no iPhone não têm essa opção, é limitação do sistema, não do OrçaPRO.</p>'
+        : '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
+            "<li>Abra o menu do navegador (os três pontinhos).</li>" +
+            "<li>Toque em <b>Instalar aplicativo</b> ou <b>Adicionar à tela inicial</b>.</li>" +
+            "<li>Confirme.</li></ol>" +
+          '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Se a opção não aparecer, o navegador pode não suportar — o OrçaPRO continua funcionando normalmente pelo endereço de sempre.</p>';
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Instalar o OrçaPRO como aplicativo",
+        '<p style="margin:0 0 12px">Instalado, ele ganha <b>ícone na tela inicial</b>, abre em <b>tela cheia</b> (sem a barra do navegador) e <b>funciona offline</b> — o que na obra, com internet ruim, é a diferença entre trabalhar e esperar.</p>' + passos,
+        [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+    },
+
     abrirTabelas: function () {
       /* primeira abertura da sessão ainda não tem o anúncio do servidor (as UFs
          do SICRO e da SINAPI desonerada saem de lá). Dispara a consulta e

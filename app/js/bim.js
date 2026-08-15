@@ -267,7 +267,12 @@ function montar(host, opts) {
       // FIXED (viewport): o viewer costuma ser mais alto que a tela do celular — ancorado no
       // host, o botão sumia ao rolar (relato real do cliente). Fixo, está SEMPRE à mão enquanto
       // a aba BIM existir (é filho do host: sai junto quando troca de módulo). O toast
-      // "Instalar como app" (#opr-install) senta no mesmo canto → o FAB sobe pra cima dele.
+      // ⚠ O balão "Instalar como app" (#opr-install) MORAVA neste canto e o FAB subia
+      // pra cima dele. Ele deixou de existir: virou botão fixo na barra de cima
+      // (js/ui.js), porque flutuando não aparecia no iOS e podia ser dispensado para
+      // sempre. A leitura abaixo fica de propósito — devolve 14 (o lugar natural do
+      // FAB) quando não acha nada, e volta a ceder espaço se algum dia outro balão
+      // usar esse id.
       // z-index 40: acima de tudo do viewer (z≤7) e ABAIXO de modal (z-50), busca (z-70) e
       // toasts (z-100) — o FAB nunca cobre a UI do app (achado do gate).
       var inst = document.getElementById('opr-install');

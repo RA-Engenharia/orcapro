@@ -104,6 +104,126 @@
     return o;
   }
 
+  /* =====================================================================
+   * MIGRAÇÃO DAS ENTIDADES DA GESTÃO
+   *
+   * ⚠ ISTO NÃO EXISTIA. `migrarOrcamento` roda dentro de `listarOrcamentos`
+   *   e só cobre orçamentos; o `listar` genérico — o que serve obras,
+   *   medições, financeiro, fiscal e mais vinte entidades — devolvia o array
+   *   cru. Ou seja: campo novo em entidade da Gestão sempre foi "torcer para
+   *   que todo leitor tolere `undefined`".
+   *
+   * ⚠ MIGRA NA LEITURA, EM MEMÓRIA, E NÃO GRAVA.
+   *   A tentação é varrer tudo no boot e salvar. Não: `Store.salvar` carimba
+   *   `atualizadoEm` novo, e aí a migração VENCE o merge da nuvem e se
+   *   propaga por cima do que o outro aparelho tinha de mais recente. Foi
+   *   exatamente esse mecanismo que apagou diário editado na migração de
+   *   fotos (corrigido na v1.1.236). Aqui o registro é normalizado ao ser
+   *   lido; a forma nova só encosta no disco quando algo o salvar por outro
+   *   motivo — e aí o carimbo é legítimo.
+   *
+   * ⚠ TEM DE SER BARATO. `listar` é chamado dentro de laços em várias telas
+   *   (a lista Fiscal chamava `lista("financeiro")` uma vez por nota). Por
+   *   isso: entidade sem migrador sai por uma consulta a objeto, e registro
+   *   já migrado sai por uma leitura de propriedade. Nada de map por padrão.
+   * ===================================================================== */
+
+  /* Converte para centavos usando o módulo de dinheiro. Se ele ainda não
+     estiver carregado, devolve null e o migrador DESISTE da versão — melhor
+     tentar de novo na próxima leitura do que carimbar v2 num registro pela
+     metade. (No app o dinheiro.js vem antes deste arquivo; em teste Node,
+     quem carrega decide.) */
+  function _cent(v) {
+    var D = global.Dinheiro;
+    if (!D || !D.paraCentavos) return null;
+    return D.paraCentavos(v);
+  }
+
+  /* --- financeiro v1 -> v2 ---------------------------------------------
+   * Converte o valor para centavos exatos. `valor` (float) continua gravado
+   * como espelho: dez leitores somam `f.valor` hoje, e trocar todos de uma
+   * vez seria a refatoração de vinte arquivos que o manual da casa proíbe.
+   *
+   * ⚠ `vencimento` E `dataPgto` FICARAM DE FORA — E A TENTATIVA DE INCLUÍ-LOS
+   *   AQUI VIROU DEFEITO, então a nota fica registrada.
+   *
+   *   O registro tem UM campo de data com três significados conforme quem
+   *   gravou (lançamento no formulário, vencimento quando veio de NF-e,
+   *   pagamento quando veio de medição). Desdobrar isso é necessário — mas
+   *   não desta forma. Eu derivei `vencimento = data` na migração e passei a
+   *   consumi-lo no alerta de contas a vencer. Só que o formulário grava
+   *   apenas `data` (js/gestao.js:3574), sobre um clone do registro já
+   *   migrado: corrigir a data de uma conta deixava `vencimento` congelado no
+   *   valor antigo, e como a migração recusa `schemaVersao >= 2`, não havia
+   *   segunda chance. A conta vencia sem aviso — ou aparecia como vencida
+   *   para sempre — num campo que o usuário não vê nem consegue editar.
+   *
+   *   A lição não é "faltou re-derivar no save". É que eu criei um CONSUMIDOR
+   *   de um campo antes de existir quem o mantivesse honesto.
+   *
+   *   O desenho certo apareceu quando o campo ganhou dono — o formulário do
+   *   financeiro (js/gestao.js:3583) passou a gravar `vencimento` e
+   *   `dataPgto` como campos de verdade, que a pessoa vê e edita. Com dono,
+   *   o campo não precisa ser derivado em lugar NENHUM: ele é OPCIONAL, e
+   *   ausente significa "igual à data de lançamento". Quem lê usa
+   *   `f.vencimento || f.data` (o alerta do Painel e o Portal do Cliente).
+   *   Assim não existe estado a manter em sincronia e, portanto, não existe
+   *   como ficar obsoleto — que é a única garantia que vale.
+   * ------------------------------------------------------------------- */
+  function migrarFinanceiro(o) {
+    if (!o || (o.schemaVersao || 1) >= 2) return false;
+    var c = _cent(o.valor);
+    if (c === null) return false;             // Dinheiro ausente: tenta na próxima
+    o.valorCent = c;
+    o.schemaVersao = 2;
+    return true;
+  }
+
+  /* Registro por entidade. Quem não está aqui passa direto, sem custo. */
+  var MIGRADORES = { financeiro: migrarFinanceiro };
+
+  /* =====================================================================
+   * NORMALIZAR NA GRAVAÇÃO — o que mantém o espelho honesto.
+   *
+   * ⚠ SEM ISTO A MIGRAÇÃO PLANTA UMA MINA. `valorCent` é DERIVADO de
+   *   `valor`, e o formulário do financeiro grava só `valor`
+   *   (js/gestao.js:3576, `obj.valor = nv("g-valor")`) sobre um clone do
+   *   registro já migrado — que carrega o `valorCent` antigo. Editar R$ 100
+   *   para R$ 250 deixaria `valor: 250` com `valorCent: 10000`. Como ainda
+   *   ninguém consome `valorCent`, o estrago só apareceria quando a cobrança
+   *   passasse a usá-lo: aí o boleto sairia com o valor velho e ninguém
+   *   saberia por quê.
+   *
+   *   A guarda mora AQUI, e não no formulário, porque há doze caminhos que
+   *   gravam lançamento financeiro (NF, medição, compra, folha, ponto,
+   *   frota, folha semanal, IA de documento…) e cada um deles é uma chance
+   *   de esquecer. `salvar` é por onde todos passam.
+   *
+   *   Campo derivado que não pode ser derivado não sobrevive: se o módulo
+   *   Dinheiro não estiver carregado, `valorCent` é REMOVIDO em vez de ficar
+   *   valendo um número velho.
+   * ===================================================================== */
+  function normalizarFinanceiro(o) {
+    if (!o) return o;
+    var c = _cent(o.valor);
+    if (c === null) { if (o.valorCent != null) delete o.valorCent; return o; }
+    o.valorCent = c;
+    return o;
+  }
+
+  var NORMALIZADORES = { financeiro: normalizarFinanceiro };
+
+  /* ⚠ O LOG É UMA VEZ POR SESSÃO, NÃO POR REGISTRO.
+     `logMigracao` faz getItem + JSON.parse + setItem no localStorage: chamá-lo
+     por linha seria um round-trip por registro, num caminho que já roda dentro
+     de laço em algumas telas. E como o adapter reparseia o localStorage a cada
+     leitura (a migração é em memória e não é gravada), o mesmo registro é
+     migrado de novo a cada `listar` — o log encheria o teto de 200 entradas em
+     segundos e empurraria para fora as migrações de orçamento, que importam.
+     Uma linha por entidade por sessão diz o que o log precisa dizer: que a
+     forma antiga ainda existe no disco deste aparelho. */
+  var _logado = {};
+
   /* ---------- API pública ---------- */
   var Store = {
     adapter: LocalAdapter,
@@ -319,7 +439,16 @@
     },
 
     // ----- CRUD genérico de entidades da Gestão (obras, clientes, contratos, medicoes, financeiro) -----
-    listar: function (empresaId, entidade) { return Util.arr(this.adapter.ler(empresaId, entidade, [])); },
+    listar: function (empresaId, entidade) {
+      var l = Util.arr(this.adapter.ler(empresaId, entidade, []));
+      var m = MIGRADORES[entidade];
+      if (m) {                                   // em memória; ver a nota da migração
+        var n = 0;
+        for (var i = 0; i < l.length; i++) if (m(l[i])) n++;
+        if (n && !_logado[entidade]) { _logado[entidade] = 1; logMigracao(1, 2, entidade + " ×" + n); }
+      }
+      return l;
+    },
     obter: function (empresaId, entidade, id) {
       var l = this.listar(empresaId, entidade);
       for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
@@ -329,6 +458,8 @@
       if (!obj.id) obj.id = Util.uid(entidade.slice(0, 3));
       obj.atualizadoEm = Util.agoraISO();
       if (!obj.criadoEm) obj.criadoEm = obj.atualizadoEm;
+      var nz = NORMALIZADORES[entidade];
+      if (nz) nz(obj);                       // campos derivados: ver a nota acima
       var l = this.listar(empresaId, entidade), i = -1;
       for (var k = 0; k < l.length; k++) if (l[k].id === obj.id) { i = k; break; }
       if (i >= 0) l[i] = obj; else l.push(obj);

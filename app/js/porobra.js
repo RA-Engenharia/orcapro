@@ -100,13 +100,22 @@
     arr(lancamentos).forEach(function (f) {
       if (!f) return;
       var v = num(f.valor), ehReceita = texto(f.tipo) === "receita";
-      /* o cadastro só tem "pago" (rotulado "Pago / Recebido") e "pendente".
-         Qualquer outro valor conta como NÃO quitado — chutar o contrário
-         inflaria o caixa realizado com dinheiro que não entrou. */
-      var quitado = texto(f.status) === "pago";
+      /* Só "pago" é dinheiro que entrou ou saiu. Qualquer outro valor conta
+         como NÃO quitado — chutar o contrário inflaria o caixa realizado com
+         dinheiro que não entrou. Este módulo já era o único leitor defensivo
+         do app quando o cadastro tinha só dois estados. */
+      var FS = global.FinStatus;
+      var quitado = FS ? FS.realizado(f) : (texto(f.status) === "pago");
+      /* ⚠ mas "não quitado" não é o mesmo que "ainda devo". Com o ciclo de
+         vida completo existem CANCELADO e ESTORNADO: registro morto, que não
+         é dívida nem crédito. Sem esta distinção o `else` os somaria em
+         "a receber"/"a pagar" para sempre, e o dono cobraria um cliente que
+         já cancelou. Sem o FinStatus carregado, mantém o comportamento
+         antigo — que é o correto enquanto só existirem pago/pendente. */
+      var aberto = FS ? FS.emAberto(f) : !quitado;
       r.n++;
-      if (ehReceita) { r.receita += v; if (quitado) r.recebido += v; else r.aReceber += v; }
-      else { r.despesa += v; if (quitado) r.pago += v; else r.aPagar += v; }
+      if (ehReceita) { r.receita += v; if (quitado) r.recebido += v; else if (aberto) r.aReceber += v; }
+      else { r.despesa += v; if (quitado) r.pago += v; else if (aberto) r.aPagar += v; }
     });
     r.saldo = r.receita - r.despesa;
     r.saldoRealizado = r.recebido - r.pago;
