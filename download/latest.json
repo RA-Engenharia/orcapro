@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.228",
+  "versao": "1.1.229",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.228/OrcaPRO-IA-update-v1.1.228.zip",
-  "notas": "Agora da para fechar o orcamento em um valor, e o botao ficou onde ele faz sentido: dentro do card de Preco de Venda, logo abaixo do numero. Digite quanto voce quer que o orcamento de e o sistema distribui a diferenca - no BDI (o mais defensavel, porque nenhum custo e alterado), em todos os itens, ou so na mao de obra, no material ou em equipamento. Simula antes de aplicar, avisa quando o BDI sai da faixa do TCU, registra a justificativa em cada item alterado e tem desfazer que volta os precos ao centavo exato.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.228/OrcaPRO-IA-Instalador-v1.1.228.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.229/OrcaPRO-IA-update-v1.1.229.zip",
+  "notas": "No fechamento do orcamento, agora da para COMBINAR criterios: marque mais de uma forma de distribuir a diferenca e diga quanto vai em cada uma - por exemplo, parte no BDI e parte na mao de obra. As porcentagens ja vem sugeridas na proporcao do peso de cada base no seu orcamento, e voce pode mudar. A tela mostra a divisao linha a linha antes de aplicar. Os custos sao ajustados primeiro e o BDI fecha por ultimo, porque ele e o unico que nao distorce custo nenhum.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.229/OrcaPRO-IA-Instalador-v1.1.229.exe"
 }

@@ -743,7 +743,16 @@
           "Este orçamento foi <b>fechado em " + Util.fmtMoeda(_fx.alvo) + "</b> — " +
           (_dl >= 0 ? "acréscimo" : "desconto") + " de <b>" + Util.fmtMoeda(Math.abs(_dl)) + "</b> sobre os " +
           Util.fmtMoeda(_fx.valorAnterior) + " originais, " +
-          Util.esc(String(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo).toLowerCase()) + "." +
+          /* no combinado o interessante é a DIVISÃO, não a palavra "combinado":
+             é ela que responde "de onde saiu esse dinheiro?" seis meses depois */
+          (_fx.modo === "combinado" && _fx.criterios
+            ? _fx.criterios.map(function (c) {
+                return Util.esc(String(((Fechamento.MODOS[c.modo] || {}).rotulo) || c.modo).toLowerCase()) +
+                       /* 1 casa, não 0: com inteiro, 57,5 + 42,5 virava
+                          "58% + 43%" = 101% na cara do usuário */
+                       " <b>" + Util.fmtNum(c.pct, 1) + "%</b>";
+              }).join(" + ")
+            : Util.esc(String(((Fechamento.MODOS[_fx.modo] || {}).rotulo) || _fx.modo).toLowerCase())) + "." +
           "</div>";
       }
 

@@ -3182,7 +3182,13 @@
       var t = Orcamento.totais(orc);
       if (!(Util.num(t.precoVenda) > 0)) { UI.toast("Lance itens no orçamento antes de fechar em um valor.", "erro"); return; }
 
-      this._fx = { modo: "bdi" };
+      /* SELEÇÃO MÚLTIPLA (v1.1.229): dá para combinar — "metade no BDI, metade
+         na mão de obra". Marcando mais de um, aparece a divisão em % ao lado,
+         já preenchida na PROPORÇÃO DO PESO de cada base no orçamento. Meio a
+         meio seria a divisão errada por padrão: pedir que uma parcela de 5% do
+         custo carregue metade da diferença é o mesmo exagero que o modo único
+         já avisa. */
+      this._fx = { modos: ["bdi"], pesos: {} };
       var opc = "";
       Fechamento.ORDEM_MODOS.forEach(function (id, i) {
         var M = Fechamento.MODOS[id];
@@ -3190,11 +3196,15 @@
            opções escorriam uma na linha da outra, com o rótulo de uma colado
            na explicação da anterior — ilegível justamente na tela em que a
            escolha é a decisão mais importante. */
-        opc += '<label class="ow-check" style="display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-top:1px solid var(--borda)">' +
-          '<input type="radio" name="fx-modo" value="' + id + '"' + (i === 0 ? " checked" : "") + '>' +
-          "<span><b>" + Util.esc(M.rotulo) + "</b>" + (i === 0 ? ' <span style="font-size:10px;color:#16a34a;font-weight:700">RECOMENDADO</span>' : "") +
+        opc += '<div style="border-top:1px solid var(--borda);padding:8px 0">' +
+          '<label class="ow-check" style="display:flex;align-items:flex-start;gap:8px;margin:0">' +
+          '<input type="checkbox" class="fx-modo" value="' + id + '"' + (i === 0 ? " checked" : "") + '>' +
+          "<span style=\"flex:1\"><b>" + Util.esc(M.rotulo) + "</b>" + (i === 0 ? ' <span style="font-size:10px;color:#16a34a;font-weight:700">RECOMENDADO</span>' : "") +
           '<br><span class="muted" style="font-size:11px">' + Util.esc(M.resumo) + "</span>" +
-          '<br><span class="muted" style="font-size:11px;font-style:italic">' + Util.esc(M.quando) + "</span></span></label>";
+          '<br><span class="muted" style="font-size:11px;font-style:italic">' + Util.esc(M.quando) + "</span></span>" +
+          '<span class="fx-peso-box" data-para="' + id + '" style="display:none;white-space:nowrap">' +
+            '<input class="cell fx-peso" data-modo="' + id + '" style="width:62px;text-align:right;padding:4px" inputmode="decimal"> %' +
+          "</span></label></div>";
       });
 
       var body =
@@ -3228,10 +3238,51 @@
         campo.oninput = function () { self.fecharSimular(); };
         campo.focus();
       }
-      var rads = document.querySelectorAll('input[name="fx-modo"]');
-      for (var i = 0; i < rads.length; i++) {
-        rads[i].onchange = function () { self._fx.modo = this.value; self.fecharSimular(); };
+      var chks = document.querySelectorAll(".fx-modo");
+      for (var i = 0; i < chks.length; i++) {
+        chks[i].onchange = function () { self._fxSincronizar(true); };
       }
+      var pesos = document.querySelectorAll(".fx-peso");
+      for (var j = 0; j < pesos.length; j++) {
+        // mexeu num % à mão: para de sugerir e respeita o que ele digitou
+        pesos[j].oninput = function () { self._fx.manual = true; self.fecharSimular(); };
+      }
+      this._fxSincronizar(true);
+    },
+
+    /* Mostra/esconde os campos de % e repõe a sugestão proporcional. */
+    _fxSincronizar: function (recalcular) {
+      var self = this, orc = this.orcAtual;
+      var marcados = [];
+      document.querySelectorAll(".fx-modo").forEach(function (c) { if (c.checked) marcados.push(c.value); });
+      this._fx.modos = marcados;
+
+      // com um critério só, % não faz sentido: ele leva 100%
+      var varios = marcados.length > 1;
+      document.querySelectorAll(".fx-peso-box").forEach(function (b) {
+        b.style.display = (varios && marcados.indexOf(b.dataset.para) >= 0) ? "" : "none";
+      });
+
+      if (varios && recalcular && !this._fx.manual) {
+        var sug = Fechamento.pesosSugeridos(orc, marcados);
+        sug.forEach(function (s) {
+          var el = document.querySelector('.fx-peso[data-modo="' + s.modo + '"]');
+          if (el) el.value = Util.fmtNum(s.pct, 1);
+        });
+      }
+      this.fecharSimular();
+    },
+
+    /* Os critérios como o motor espera: [{modo, pct}]. */
+    _fxCriterios: function () {
+      var out = [];
+      var marcados = (this._fx && this._fx.modos) || [];
+      if (marcados.length === 1) return [{ modo: marcados[0], pct: 100 }];
+      marcados.forEach(function (id) {
+        var el = document.querySelector('.fx-peso[data-modo="' + id + '"]');
+        out.push({ modo: id, pct: el ? Util.num(el.value) : 0 });
+      });
+      return out;
     },
 
     _fxAlvo: function () {
@@ -3243,10 +3294,24 @@
     fecharSimular: function () {
       var orc = this.orcAtual, box = UI.el("fx-efeito"), cxAv = UI.el("fx-avisos");
       if (!orc || !box) return;
-      var alvo = this._fxAlvo(), modo = (this._fx && this._fx.modo) || "bdi";
+      var alvo = this._fxAlvo(), crit = this._fxCriterios();
+      if (!crit.length) {
+        box.innerHTML = '<div style="padding:8px;border-radius:6px;background:rgba(220,38,38,.08);color:#dc2626;font-size:12px">Marque ao menos uma forma de distribuir a diferença.</div>';
+        if (cxAv) cxAv.innerHTML = ""; this._fx.sim = null; return;
+      }
       if (!(alvo > 0)) { box.innerHTML = ""; if (cxAv) cxAv.innerHTML = ""; this._fx.sim = null; return; }
 
-      var s = Fechamento.simular(orc, alvo, modo);
+      var somaPct = 0; crit.forEach(function (c) { somaPct += Util.num(c.pct); });
+      if (crit.length > 1 && Math.abs(somaPct - 100) > 0.5) {
+        /* Não normalizo em silêncio: se ele digitou 60 + 30, precisa VER que
+           faltam 10 — normalizar por baixo dos panos entrega uma divisão que
+           ele não pediu e não tem como conferir. */
+        box.innerHTML = '<div style="padding:8px;border-radius:6px;background:rgba(234,88,12,.10);color:#ea580c;font-size:12px">' +
+          "As porcentagens somam <b>" + Util.fmtNum(somaPct, 1) + "%</b> — ajuste para fechar 100%.</div>";
+        if (cxAv) cxAv.innerHTML = ""; this._fx.sim = null; return;
+      }
+
+      var s = (crit.length > 1) ? Fechamento.simularMulti(orc, alvo, crit) : Fechamento.simular(orc, alvo, crit[0].modo);
       this._fx.sim = s;
       if (!s.ok) {
         box.innerHTML = '<div style="padding:8px;border-radius:6px;background:rgba(220,38,38,.08);color:#dc2626;font-size:12px">' + Util.esc(s.erro) + "</div>";
@@ -3261,7 +3326,23 @@
         Util.fmtMoeda(Math.abs(s.delta)) + "</b> " +
         '<span class="muted" style="font-size:11px">(' + Util.fmtNum(Math.abs(s.delta) / s.atual * 100, 2) + "% sobre o valor atual)</span></span>";
 
-      if (s.modo === "bdi") {
+      if (s.multi) {
+        /* A cascata mostrada linha a linha: o usuário precisa ver QUANTO vai
+           para cada critério, e que o BDI entra por último — ele é o que
+           absorve sem distorcer custo. */
+        h += '<div style="margin-top:6px;font-size:12px">';
+        (s.partes || []).forEach(function (p) {
+          var M = Fechamento.MODOS[p.modo] || {};
+          h += '<div style="display:flex;justify-content:space-between;gap:8px;padding:2px 0">' +
+            "<span>" + Util.esc(M.rotulo || p.modo) + ' <span class="muted">' + Util.fmtNum(p.pct, 1) + "%</span></span>" +
+            "<b>" + Util.fmtMoeda(p.valor) + "</b>" +
+            (p.bdiNovo != null ? ' <span class="muted">(BDI → ' + Util.fmtPct(p.bdiNovo) + ")</span>"
+                               : (p.itens ? ' <span class="muted">(' + p.itens + " itens)</span>" : "")) +
+            "</div>";
+        });
+        h += '<div class="muted" style="font-size:11px;margin-top:4px">Os custos são ajustados primeiro e o BDI fecha por último — é o único que não distorce custo nenhum.</div>';
+        h += "</div>";
+      } else if (s.modo === "bdi") {
         h += '<div style="margin-top:5px;font-size:12px">BDI vai de <b>' + Util.fmtPct(s.bdiAtual) +
              "</b> para <b>" + Util.fmtPct(s.bdiNovo) + "</b>. " +
              '<span class="muted">Nenhum custo é alterado.</span></div>';
@@ -3290,17 +3371,23 @@
     fecharAplicar: function () {
       var self = this, orc = this.orcAtual;
       if (!orc) return;
-      var alvo = this._fxAlvo(), modo = (this._fx && this._fx.modo) || "bdi";
+      var alvo = this._fxAlvo(), crit = this._fxCriterios();
+      if (!crit.length) { UI.toast("Marque ao menos uma forma de distribuir a diferença.", "erro"); return; }
       if (!(alvo > 0)) { UI.toast("Informe o valor final desejado.", "erro"); return; }
+      var somaPct = 0; crit.forEach(function (c) { somaPct += Util.num(c.pct); });
+      if (crit.length > 1 && Math.abs(somaPct - 100) > 0.5) {
+        UI.toast("As porcentagens somam " + Util.fmtNum(somaPct, 1) + "% — ajuste para fechar 100%.", "erro"); return;
+      }
 
-      var s = Fechamento.simular(orc, alvo, modo);
+      var multi = crit.length > 1;
+      var s = multi ? Fechamento.simularMulti(orc, alvo, crit) : Fechamento.simular(orc, alvo, crit[0].modo);
       if (!s.ok) { UI.toast(s.erro, "erro"); return; }
       if (s.bloqueios && s.bloqueios.length) { UI.toast(s.bloqueios[0], "erro"); return; }
 
       var aplicar = function () {
-        var r = Fechamento.aplicar(orc, alvo, modo, {
-          por: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? (Auth.usuario().email || "") : ""
-        });
+        var opts = { por: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? (Auth.usuario().email || "") : "" };
+        var r = multi ? Fechamento.aplicarMulti(orc, alvo, crit, opts)
+                      : Fechamento.aplicar(orc, alvo, crit[0].modo, opts);
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
         self.persistir(); UI.fecharModal(); self.render();
         var msg = "Orçamento fechado em " + Util.fmtMoeda(r.atingido);
@@ -3312,9 +3399,11 @@
 
       /* Mexer no custo de item que veio de base oficial pede uma confirmação
          explícita: é o que vira divergência a justificar numa análise. */
-      if (Fechamento.MODOS[modo].mexeEmCusto) {
+      var mexeCusto = crit.some(function (c) { return Fechamento.MODOS[c.modo].mexeEmCusto; });
+      var nItens = multi ? (s.partes || []).reduce(function (a, p) { return a + (p.itens || 0); }, 0) : s.itensAfetados;
+      if (mexeCusto) {
         UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Confirmar o ajuste nos custos",
-          '<p style="font-size:13px;margin-top:0">Isto vai alterar o <b>custo unitário de ' + s.itensAfetados +
+          '<p style="font-size:13px;margin-top:0">Isto vai alterar o <b>custo unitário de ' + nItens +
           " item(ns)</b> para o orçamento fechar em <b>" + Util.fmtMoeda(alvo) + "</b>.</p>" +
           '<p style="font-size:12px" class="muted">Cada item alterado fica marcado na planilha com o selo de ajuste e guarda a justificativa — ' +
           "ela sai na aba de justificativas do Excel. Dá para desfazer tudo depois, num clique.</p>",

@@ -231,6 +231,189 @@
     return out;
   }
 
+  /* ===================================================================
+   * COMBINAR CRITÉRIOS — "metade no BDI, metade na mão de obra"
+   *
+   * ⚠ A ORDEM NÃO É LIVRE, e é aqui que uma implementação ingênua erra.
+   *   Os critérios NÃO são independentes: o BDI é um PERCENTUAL sobre o custo,
+   *   então mexer no custo depois de fixar o BDI muda quanto o BDI rende. Se as
+   *   duas coisas acontecem "ao mesmo tempo", nenhuma das duas fecha.
+   *
+   *   A solução é aplicar em CASCATA, cada critério mirando um alvo
+   *   intermediário, com o BDI SEMPRE POR ÚLTIMO. Duas razões:
+   *     · o BDI absorve sem distorcer nada — é o único que não mexe em custo;
+   *     · ele tem a granularidade mais fina, então é quem consegue fechar o
+   *       centavo depois que os custos já se acomodaram.
+   *
+   * A divisão padrão é PROPORCIONAL AO PESO de cada base no orçamento, não
+   * meio a meio: pedir que uma parcela de 5% do custo carregue metade da
+   * diferença é o mesmo erro que o modo único já avisa.
+   * =================================================================== */
+  function pesosSugeridos(orc, modos) {
+    var Orc = O();
+    var t = Orc ? Orc.totais(orc) : { custoDireto: 0, bdiValor: 0 };
+    var pesos = {}, soma = 0;
+    modos.forEach(function (id) {
+      var M = MODOS[id], p;
+      if (!M) return;
+      if (id === "bdi") p = num(t.bdiValor);
+      else if (id === "total") p = num(t.custoDireto);
+      else p = baseDe(orc, M.parcela);
+      p = Math.max(p, 0.01);            // base zerada ainda participa, com peso mínimo
+      pesos[id] = p; soma += p;
+    });
+    var out = [];
+    modos.forEach(function (id) {
+      if (pesos[id] == null) return;
+      out.push({ modo: id, pct: soma > 0 ? (pesos[id] / soma * 100) : (100 / modos.length) });
+    });
+    return out;
+  }
+
+  /* Ordena a cascata: custos primeiro, BDI por último. */
+  function _ordenarCascata(criterios) {
+    var custos = [], bdiC = [];
+    criterios.forEach(function (c) { (c.modo === "bdi" ? bdiC : custos).push(c); });
+    return custos.concat(bdiC);
+  }
+
+  function simularMulti(orc, alvo, criterios) {
+    var Orc = O();
+    if (!Orc) return { ok: false, erro: "Motor de orçamento indisponível." };
+    criterios = (criterios || []).filter(function (c) { return c && MODOS[c.modo] && num(c.pct) > 0; });
+    if (!criterios.length) return { ok: false, erro: "Escolha ao menos uma forma de distribuir a diferença." };
+    if (criterios.length === 1) return simular(orc, alvo, criterios[0].modo);
+
+    var t = Orc.totais(orc);
+    var atual = num(t.precoVenda);
+    alvo = num(alvo);
+    if (!(alvo > 0)) return { ok: false, erro: "Informe o valor final desejado." };
+    if (Math.abs(alvo - atual) < 0.01) return { ok: false, erro: "O orçamento já está nesse valor." };
+
+    var somaPct = 0;
+    criterios.forEach(function (c) { somaPct += num(c.pct); });
+    if (somaPct <= 0) return { ok: false, erro: "As porcentagens somam zero." };
+
+    var delta = tr2(alvo - atual);
+    var ordem = _ordenarCascata(criterios);
+    var partes = [], avisos = [], bloqueios = [];
+
+    /* Simula a cascata numa CÓPIA: o usuário tem de ver o efeito real de cada
+       etapa antes de qualquer coisa ser gravada. Copiar o orçamento inteiro é
+       barato perto de aplicar e descobrir depois que um dos passos não cabia. */
+    var copia = JSON.parse(JSON.stringify(orc));
+    var acumulado = atual;
+    ordem.forEach(function (c) {
+      var fatia = delta * (num(c.pct) / somaPct);
+      var alvoParcial = tr2(acumulado + fatia);
+      var s = simular(copia, alvoParcial, c.modo);
+      var parte = { modo: c.modo, pct: num(c.pct), valor: tr2(fatia), alvoParcial: alvoParcial, ok: !!s.ok };
+      if (!s.ok) { parte.erro = s.erro; bloqueios.push(MODOS[c.modo].rotulo + ": " + s.erro); }
+      else {
+        if (s.bloqueios && s.bloqueios.length) { parte.bloqueio = s.bloqueios[0]; bloqueios.push(MODOS[c.modo].rotulo + ": " + s.bloqueios[0]); }
+        (s.avisos || []).forEach(function (a) { if (avisos.indexOf(a) < 0) avisos.push(a); });
+        if (c.modo === "bdi") parte.bdiNovo = s.bdiNovo;
+        else { parte.itens = s.itensAfetados; parte.fator = s.fator; }
+        var r = aplicar(copia, alvoParcial, c.modo, { forcar: true, silencioso: true });
+        if (r.ok) acumulado = num(r.atingido);
+      }
+      partes.push(parte);
+    });
+
+    return {
+      ok: true, multi: true, alvo: alvo, atual: atual, delta: delta,
+      sentido: delta > 0 ? "acrescimo" : "desconto",
+      custoAtual: num(t.custoDireto), bdiAtual: num(t.bdiPercentual),
+      partes: partes, previsto: tr2(acumulado),
+      avisos: avisos, bloqueios: bloqueios
+    };
+  }
+
+  function aplicarMulti(orc, alvo, criterios, opts) {
+    opts = opts || {};
+    var Orc = O();
+    criterios = (criterios || []).filter(function (c) { return c && MODOS[c.modo] && num(c.pct) > 0; });
+    if (!criterios.length) return { ok: false, erro: "Escolha ao menos uma forma de distribuir a diferença." };
+    if (criterios.length === 1) return aplicar(orc, alvo, criterios[0].modo, opts);
+
+    var sim = simularMulti(orc, alvo, criterios);
+    if (!sim.ok) return { ok: false, erro: sim.erro };
+    if (sim.bloqueios && sim.bloqueios.length && !opts.forcar) {
+      return { ok: false, erro: sim.bloqueios[0], bloqueios: sim.bloqueios };
+    }
+
+    /* UM snapshot só, antes de tudo — o desfazer tem de voltar o combinado
+       inteiro, não a última etapa da cascata. */
+    var antes = { bdiPercentual: (orc.bdi ? num(orc.bdi.percentual) : 0), itens: [] };
+    var vistos = {};
+    ["custoMO", "custoMAT", "custoEQ", null].forEach(function (p) {
+      itensElegiveis(orc, p).forEach(function (x) {
+        if (vistos[x.item.id]) return;
+        vistos[x.item.id] = 1;
+        antes.itens.push({
+          etapaId: x.etapa.id, itemId: x.item.id,
+          custoUnitario: num(x.item.custoUnitario), custoMO: num(x.item.custoMO),
+          custoMAT: num(x.item.custoMAT), custoEQ: num(x.item.custoEQ)
+        });
+      });
+    });
+
+    var somaPct = 0;
+    criterios.forEach(function (c) { somaPct += num(c.pct); });
+    var delta = num(sim.delta);
+    var ordem = _ordenarCascata(criterios);
+    var motivo = opts.motivo || ("Fechamento do orçamento em " + fmt(num(sim.alvo)) + " (combinado: " +
+      ordem.map(function (c) { return MODOS[c.modo].rotulo + " " + fmtPct(num(c.pct)); }).join(" + ") + ")");
+
+    var acumulado = num(sim.atual), aplicadas = [], avisos = [];
+    ordem.forEach(function (c) {
+      var fatia = delta * (num(c.pct) / somaPct);
+      var alvoParcial = tr2(acumulado + fatia);
+      var r = aplicar(orc, alvoParcial, c.modo, { forcar: true, motivo: motivo, silencioso: true, por: opts.por });
+      if (!r.ok) { aplicadas.push({ modo: c.modo, ok: false, erro: r.erro }); return; }
+      acumulado = num(r.atingido);
+      aplicadas.push({ modo: c.modo, ok: true, pct: num(c.pct), valor: tr2(fatia),
+                       atingido: acumulado, itens: r.itensAfetados || 0, bdiNovo: r.bdiNovo });
+      (r.avisos || []).forEach(function (a) { if (avisos.indexOf(a) < 0) avisos.push(a); });
+    });
+
+    // o registro do combinado sobrepõe os parciais que cada `aplicar` gravou
+    orc.fechamento = {
+      em: opts.agora || (U() && U().agoraISO ? U().agoraISO() : new Date().toISOString()),
+      alvo: num(sim.alvo), antes: antes, modo: "combinado", motivo: motivo,
+      criterios: ordem.map(function (c) { return { modo: c.modo, pct: num(c.pct) }; }),
+      valorAnterior: num(sim.atual), delta: delta, por: opts.por || ""
+    };
+
+    /* AJUSTE FINO NO FIM DA CASCATA. O BDI fecha por último e tem degraus (o
+       preço é a soma de unitários truncados), então sobram alguns reais. Se
+       algum critério de CUSTO estiver na combinação, ele consegue o ajuste ao
+       centavo que o percentual não alcança — o troco do troco. */
+    var fim = Orc.totais(orc);
+    var sobra = tr2(num(sim.alvo) - num(fim.precoVenda));
+    if (Math.abs(sobra) >= 0.01) {
+      var deCusto = ordem.filter(function (c) { return MODOS[c.modo].mexeEmCusto; });
+      if (deCusto.length) {
+        var ultimo = deCusto[deCusto.length - 1];
+        var parcelaU = MODOS[ultimo.modo].parcela;
+        var listaU = itensElegiveis(orc, parcelaU);
+        if (listaU.length) {
+          _resolverResiduo(orc, { alvo: num(sim.alvo) }, parcelaU, listaU);
+          fim = Orc.totais(orc);
+          sobra = tr2(num(sim.alvo) - num(fim.precoVenda));
+        }
+      }
+    }
+    if (Math.abs(sobra) >= 0.01) {
+      avisos.push("Cheguei a " + fmt(num(fim.precoVenda)) + " — " + fmt(Math.abs(sobra)) +
+        (sobra > 0 ? " abaixo" : " acima") + " do alvo. É o degrau de arredondamento do orçamento; " +
+        "incluir a opção “distribuído em todos os itens” na combinação costuma fechar exato.");
+    }
+    return { ok: true, modo: "combinado", alvo: num(sim.alvo), atingido: num(fim.precoVenda),
+             sobra: sobra, partes: aplicadas, avisos: avisos,
+             itensAfetados: aplicadas.reduce(function (s, a) { return s + (a.itens || 0); }, 0) };
+  }
+
   function nomeParcela(p) {
     return p === "custoMO" ? "mão de obra" : (p === "custoMAT" ? "material" : (p === "custoEQ" ? "equipamento" : "parcela"));
   }
@@ -536,10 +719,17 @@
     var f = orc && orc.fechamento;
     if (!f || !f.antes) return { ok: false, erro: "Este orçamento não tem fechamento para desfazer." };
 
-    if (f.modo === "bdi") {
-      orc.bdi = orc.bdi || {};
-      orc.bdi.percentual = num(f.antes.bdiPercentual);
-    } else {
+    /* ⚠ RESTAURA OS DOIS, SEMPRE. Aqui havia um `if (modo === "bdi") … else …`
+       que quebrou no instante em que passou a existir fechamento COMBINADO:
+       modo "combinado" caía no `else`, os custos voltavam e o BDI ficava para
+       trás — o desfazer devolvia um orçamento que nunca existiu. Medido: saiu
+       de R$ 346.281,20, fechou em R$ 400.000 e "desfez" para R$ 371.210,71.
+       Restaurar os dois é correto em todos os casos: no modo BDI a lista de
+       itens vem vazia, e nos modos de custo o percentual salvo é o mesmo que
+       já está lá. */
+    orc.bdi = orc.bdi || {};
+    orc.bdi.percentual = num(f.antes.bdiPercentual);
+    {
       var porEtapa = {};
       ((orc.etapas) || []).forEach(function (e) { porEtapa[e.id] = e; });
       (f.antes.itens || []).forEach(function (a) {
@@ -564,6 +754,7 @@
   global.Fechamento = {
     MODOS: MODOS, ORDEM_MODOS: ORDEM_MODOS,
     simular: simular, aplicar: aplicar, desfazer: desfazer, ativo: ativo,
+    simularMulti: simularMulti, aplicarMulti: aplicarMulti, pesosSugeridos: pesosSugeridos,
     baseDe: baseDe, itensElegiveis: itensElegiveis, elegivel: elegivel
   };
   if (typeof module !== "undefined" && module.exports) module.exports = global.Fechamento;
