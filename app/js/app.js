@@ -2595,19 +2595,46 @@
           return;
         } catch (e) { /* cai no passo a passo abaixo */ }
       }
+      /* ⚠ TRÊS CAMINHOS, NÃO DOIS — e o do Mac faltava.
+         A primeira versão só separava "iOS" de "o resto", e um Mac de verdade
+         caía no ramo que manda procurar "os três pontinhos": menu que NÃO
+         EXISTE no Safari do macOS, onde a instalação é `Arquivo → Adicionar
+         ao Dock` (Safari 17+, Sonoma). O usuário tentou instalar no Mac e não
+         conseguiu — a instrução estava errada, não o app.
+         A checagem de `Macintosh` com toque continua valendo para o iPad, que
+         desde o iPadOS 13 se apresenta como Macintosh no user agent; é por
+         isso que a ordem dos testes importa. */
       var ua = String(navigator.userAgent || "");
-      var ehIOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
-      var passos = ehIOS
-        ? '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
-            "<li>Toque no botão <b>Compartilhar</b> (o quadrado com a seta para cima), na barra do Safari.</li>" +
-            "<li>Role a lista e toque em <b>Adicionar à Tela de Início</b>.</li>" +
-            "<li>Confirme em <b>Adicionar</b>.</li></ol>" +
-          '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Precisa ser pelo <b>Safari</b> — Chrome e Firefox no iPhone não têm essa opção, é limitação do sistema, não do OrçaPRO.</p>'
-        : '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
-            "<li>Abra o menu do navegador (os três pontinhos).</li>" +
-            "<li>Toque em <b>Instalar aplicativo</b> ou <b>Adicionar à tela inicial</b>.</li>" +
-            "<li>Confirme.</li></ol>" +
+      var ehIPadDisfarcado = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+      var ehIOS = /iPad|iPhone|iPod/.test(ua) || ehIPadDisfarcado;
+      var ehSafari = /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR|Brave/.test(ua);
+      var ehMac = /Macintosh|Mac OS X/.test(ua) && !ehIPadDisfarcado;
+      var passos;
+      if (ehIOS) {
+        passos = '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
+          "<li>Toque no botão <b>Compartilhar</b> (o quadrado com a seta para cima), na barra do Safari.</li>" +
+          "<li>Role a lista e toque em <b>Adicionar à Tela de Início</b>.</li>" +
+          "<li>Confirme em <b>Adicionar</b>.</li></ol>" +
+          '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Precisa ser pelo <b>Safari</b> — Chrome e Firefox no iPhone não têm essa opção, é limitação do sistema, não do OrçaPRO.</p>';
+      } else if (ehMac && ehSafari) {
+        passos = '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
+          "<li>No menu de cima, abra <b>Arquivo</b>.</li>" +
+          "<li>Clique em <b>Adicionar ao Dock…</b>.</li>" +
+          "<li>Confirme em <b>Adicionar</b>.</li></ol>" +
+          '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Essa opção existe no <b>Safari 17 ou mais novo</b> (macOS Sonoma em diante). Em Mac mais antigo, use o <b>Chrome</b> ou o <b>Edge</b>: eles instalam pelo ícone que aparece na barra de endereço.<br><b>O instalador .exe é do Windows e não roda no Mac</b> — no Mac o OrçaPRO é instalado assim, pelo próprio navegador.</p>';
+      } else if (ehMac) {
+        passos = '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
+          "<li>Procure o ícone de <b>instalar</b> na barra de endereço (um monitor com uma seta), à direita.</li>" +
+          "<li>Ou abra o menu do navegador e clique em <b>Instalar OrçaPRO IA…</b>.</li>" +
+          "<li>Confirme.</li></ol>" +
+          '<p class="muted" style="font-size:12.5px;margin:10px 0 0"><b>O instalador .exe é do Windows e não roda no Mac</b> — no Mac o OrçaPRO é instalado assim, pelo próprio navegador.</p>';
+      } else {
+        passos = '<ol style="margin:0;padding-left:20px;line-height:1.9">' +
+          "<li>Abra o menu do navegador (os três pontinhos).</li>" +
+          "<li>Toque em <b>Instalar aplicativo</b> ou <b>Adicionar à tela inicial</b>.</li>" +
+          "<li>Confirme.</li></ol>" +
           '<p class="muted" style="font-size:12.5px;margin:10px 0 0">Se a opção não aparecer, o navegador pode não suportar — o OrçaPRO continua funcionando normalmente pelo endereço de sempre.</p>';
+      }
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Instalar o OrçaPRO como aplicativo",
         '<p style="margin:0 0 12px">Instalado, ele ganha <b>ícone na tela inicial</b>, abre em <b>tela cheia</b> (sem a barra do navegador) e <b>funciona offline</b> — o que na obra, com internet ruim, é a diferença entre trabalhar e esperar.</p>' + passos,
         [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
