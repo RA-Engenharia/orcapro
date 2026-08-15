@@ -97,13 +97,30 @@
   /* Item entra no rateio? Fora ficam os que não têm o que ratear e os que o
      usuário travou. Item pendente de quantidade não pode participar: ele não
      soma no total hoje, então distribuir nele é jogar dinheiro num buraco. */
+  /* As parcelas que realmente COMPÕEM o preço faturado do item, respeitando o
+     modo de custo (v1.1.232). Item "só MO" fatura apenas custoMO; "só MAT+EQ"
+     fatura MAT e EQ. Sem esta noção, o fechamento tratava todo item como
+     MO+MAT+EQ — e recobrava do cliente a parte que ele mesmo forneceria. */
+  function parcelasAtivas(it) {
+    if (it && it.modoCusto === "mo") return ["custoMO"];
+    if (it && it.modoCusto === "matEq") return ["custoMAT", "custoEQ"];
+    return ["custoMO", "custoMAT", "custoEQ"];
+  }
+
   function elegivel(it, parcela) {
     if (!it) return false;
     if (it.fechamentoTravado) return false;
     if (it.qtdPendente) return false;
     if (!(num(it.quantidade) > 0)) return false;
     if (!(num(it.custoUnitario) > 0)) return false;
-    if (parcela) return num(it[parcela]) > 0;
+    if (parcela) {
+      /* ⚠ a parcela precisa EXISTIR no item E compor o preço dele. Distribuir
+         "somente no material" num item lançado como "só mão de obra" somava
+         dinheiro de material num preço que não fatura material — o cliente
+         pagava o que tinha combinado fornecer. */
+      if (parcelasAtivas(it).indexOf(parcela) < 0) return false;
+      return num(it[parcela]) > 0;
+    }
     return true;
   }
 
@@ -353,7 +370,8 @@
         antes.itens.push({
           etapaId: x.etapa.id, itemId: x.item.id,
           custoUnitario: num(x.item.custoUnitario), custoMO: num(x.item.custoMO),
-          custoMAT: num(x.item.custoMAT), custoEQ: num(x.item.custoEQ)
+          custoMAT: num(x.item.custoMAT), custoEQ: num(x.item.custoEQ),
+          custoBase: x.item.custoBase != null ? num(x.item.custoBase) : null
         });
       });
     });
@@ -590,13 +608,20 @@
              de sorte de arredondamento — ela é o próprio jeito de calcular.
              Item sem parcelas discriminadas segue pelo caminho simples. */
           var razao = antesParcela > 0 ? (novo / antesParcela) : 1;
-          var temParcelas = (num(it.custoMO) + num(it.custoMAT) + num(it.custoEQ)) > 0;
+          /* ⚠ SÓ as parcelas ATIVAS do modo de custo (v1.1.232). O unitário de
+             um item "só MO" É o custoMO — reconstruí-lo como MO+MAT+EQ fazia o
+             fechamento devolver ao preço o material que o cliente forneceria.
+             As parcelas fora do modo continuam existindo como informação, mas
+             não entram na soma nem são escaladas. */
+          var ativas = parcelasAtivas(it);
+          var temParcelas = ativas.reduce(function (s, p) { return s + num(it[p]); }, 0) > 0;
           if (temParcelas) {
             var soma = 0;
-            ["custoMO", "custoMAT", "custoEQ"].forEach(function (p) {
+            ativas.forEach(function (p) {
               if (num(it[p]) > 0) { it[p] = tr2(num(it[p]) * razao); soma += num(it[p]); }
             });
             it.custoUnitario = tr2(soma);
+            if (it.custoBase != null) it.custoBase = tr2(num(it.custoBase) * razao);
           } else {
             it.custoUnitario = novo;
           }
@@ -663,16 +688,19 @@
           /* mesmo cuidado da convergência: o resíduo entra numa PARCELA e o
              unitário volta a ser a soma delas — senão é justamente o último
              centavo que descola as parcelas do total. */
-          var temP = (num(m.it.custoMO) + num(m.it.custoMAT) + num(m.it.custoEQ)) > 0;
+          /* mesmas parcelas ATIVAS da convergência — o resíduo num item "só MO"
+             entra na MO, e o unitário é a soma só do que o item fatura */
+          var ativasR = parcelasAtivas(m.it);
+          var temP = ativasR.reduce(function (s, p) { return s + num(m.it[p]); }, 0) > 0;
           if (temP) {
-            var maiorP = "custoMAT";
-            ["custoMO", "custoMAT", "custoEQ"].forEach(function (p) {
+            var maiorP = ativasR[0];
+            ativasR.forEach(function (p) {
               if (num(m.it[p]) > num(m.it[maiorP])) maiorP = p;
             });
             var pNovo = tr2(num(m.it[maiorP]) + delta);
             if (pNovo < 0) pNovo = 0;
             m.it[maiorP] = pNovo;
-            m.it.custoUnitario = tr2(num(m.it.custoMO) + num(m.it.custoMAT) + num(m.it.custoEQ));
+            m.it.custoUnitario = tr2(ativasR.reduce(function (s, p) { return s + num(m.it[p]); }, 0));
           } else {
             m.it.custoUnitario = novoC;
           }
@@ -739,6 +767,8 @@
         if (!it) return;
         it.custoUnitario = a.custoUnitario;
         it.custoMO = a.custoMO; it.custoMAT = a.custoMAT; it.custoEQ = a.custoEQ;
+        // o fechamento escala custoBase junto (item com modo de custo) — volta tambem
+        if (a.custoBase != null) it.custoBase = a.custoBase;
         // tira o selo de "alterado por você" que o fechamento criou
         try { if (typeof Ajustes !== "undefined" && Ajustes.restaurar) Ajustes.restaurar(it, "custoUnitario"); } catch (eR) {}
       });

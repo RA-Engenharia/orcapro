@@ -96,15 +96,22 @@
         Util.arr(e.itens).forEach(function (it) { porId[it.id] = it; });
       });
       var mudancas = [];
+      /* v1.1.232 — a recusa de zero fica, mas deixa de ser MUDA. Cliente que
+         zerava Qtd ou Custo no Excel ouvia "Nenhuma diferença entre o Excel e
+         o orçamento" — mensagem falsa: havia diferença, o app a descartou.
+         As recusadas voltam em `mudancas.recusadas` para a tela listar. */
+      mudancas.recusadas = [];
       var r4 = function (n) { return Math.round((Util.num(n) + Number.EPSILON) * 10000) / 10000; };
       (Array.isArray(edicoes) ? edicoes : []).forEach(function (ed) {
         var it = porId[ed.itemId];
         if (!it) return; // item removido no app depois do export — ignora
-        if (r4(it.quantidade) !== r4(ed.qtd) && ed.qtd > 0) {
-          mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "quantidade", de: Util.num(it.quantidade), para: r4(ed.qtd) });
+        if (r4(it.quantidade) !== r4(ed.qtd)) {
+          if (ed.qtd > 0) mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "quantidade", de: Util.num(it.quantidade), para: r4(ed.qtd) });
+          else mudancas.recusadas.push({ codigo: ed.codigo, campo: "quantidade", motivo: "zerada no Excel — zero não é quantidade; para remover o item, remova no app" });
         }
-        if (r4(it.custoUnitario) !== r4(ed.custoUnit) && ed.custoUnit > 0) {
-          mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "custoUnitario", de: Util.num(it.custoUnitario), para: r4(ed.custoUnit) });
+        if (r4(it.custoUnitario) !== r4(ed.custoUnit)) {
+          if (ed.custoUnit > 0) mudancas.push({ itemId: ed.itemId, codigo: ed.codigo, descricao: ed.descricao, etapa: ed.etapa, campo: "custoUnitario", de: Util.num(it.custoUnitario), para: r4(ed.custoUnit) });
+          else mudancas.recusadas.push({ codigo: ed.codigo, campo: "custo unitário", motivo: "zerado no Excel — zero não é preço; cote e preencha no app" });
         }
       });
       return mudancas;

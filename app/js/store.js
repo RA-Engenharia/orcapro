@@ -233,8 +233,16 @@
         this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
       } catch (e) {}
     },
+    /* v1.1.232 — lápide ganha `atualizadoEm = em`. O merge da nuvem decide por
+       atualizadoEm; a lápide só tinha `em`, então duas lápides do mesmo id
+       empatavam ("" === "") e o LOCAL vencia sempre — a re-exclusão nunca
+       propagava. Provado em Node: no ciclo excluir→recriar→excluir de entidade
+       com id determinístico (peso de bloco, composição própria), o registro
+       excluído ressuscitava no outro aparelho para sempre. Dar à lápide o
+       campo que o merge já compara conserta sem tocar no merge. */
     _porLapide: function (l, nova) {
-      for (var i = 0; i < l.length; i++) if (l[i] && l[i].id === nova.id) { l[i].em = nova.em; return; }
+      nova.atualizadoEm = nova.em;
+      for (var i = 0; i < l.length; i++) if (l[i] && l[i].id === nova.id) { l[i].em = nova.em; l[i].atualizadoEm = nova.em; return; }
       l.push(nova);
     },
     /* poda pela DATA (não pela posição no array: depois do merge da nuvem a ordem não é

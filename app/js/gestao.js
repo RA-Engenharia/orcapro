@@ -145,7 +145,14 @@
   function v(id) { var e = UI.el(id); return e ? e.value.trim() : ""; }
   function nv(id) { return Util.num(v(id)); }
   function campo(label, inner) { return '<div class="field"><label>' + label + "</label>" + inner + "</div>"; }
-  function inp(id, val, ph, tipo) { return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">'; }
+  /* ===== v1.1.232 — NÚMERO ENTRA NO INPUT EM GRAFIA BR =====
+     O buraco: o registro guarda 12.375 (número JS). O input recebia "12.375"
+     (ponto), e no salvar o Util.num lê ponto como separador de MILHAR pt-BR:
+     12.375 → 12375. Abrir um formulário e salvar SEM MEXER EM NADA
+     multiplicava saldo de estoque e preço de cotação por mil. O formulário de
+     EPI já fazia a conversão na mão — aqui ela vale para todos de uma vez. */
+  function numBR(val) { return (typeof val === "number" && isFinite(val)) ? String(val).replace(".", ",") : val; }
+  function inp(id, val, ph, tipo) { if (tipo !== "date" && tipo !== "time" && tipo !== "month") val = numBR(val); return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">'; }
   function sel(id, o) { return '<select id="' + id + '">' + o + "</select>"; }
   function eid() { return Auth.empresaId(); }
   /* ⚠ ORDEM DE PESSOAS NASCE AQUI, e de propósito.
@@ -11309,9 +11316,11 @@ renderRequisicoes: function () {
         var precosTd = "";
         for (var f2 = 0; f2 < nF; f2++) {
           var pv = (c.fornecedores[f2] && c.fornecedores[f2].precos && c.fornecedores[f2].precos[i] != null) ? c.fornecedores[f2].precos[i] : "";
-          precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(pv) + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
+          /* numBR: preço gravado como número reabria com ponto e o salvar lia
+             milhar — cotação de R$ 4,125/un virava R$ 4.125 (v1.1.232) */
+          precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(numBR(pv)) + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
         }
-        linhas += '<tr data-ct-item="' + i + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(it.quantidade || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(it.precoRef || "") + '"></td>' + precosTd + "</tr>";
+        linhas += '<tr data-ct-item="' + i + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '"></td>' + precosTd + "</tr>";
       });
       var cabPrecos = ""; for (var f3 = 0; f3 < nF; f3++) cabPrecos += "<th>Forn. " + (f3 + 1) + "</th>";
       var corpo =
@@ -14949,7 +14958,29 @@ renderFolha: function () {
          — duas incoerencias opostas na mesma acao. Baixa usa a regra da baixa
          (sobre o status ANTERIOR, que e o estado real do documento); aprovacao
          usa a regra do autor. */
-      if (ehTerm) return this._guardaBaixa({ status: statusAntigo }, entidade);
+      if (ehTerm) {
+        if (!this._guardaBaixa({ status: statusAntigo }, entidade)) return false;
+        /* ===== v1.1.232 — A BAIXA PELO FORMULÁRIO FAZ O MESMO QUE O BOTÃO =====
+           Marcar "Paga"/"Recebido" pelo select passava no gate e gravava SÓ o
+           status: a receita da medição e a despesa da compra nunca entravam no
+           Financeiro, e o documento travava em estado terminal sem o lançamento
+           que o justifica — o caixa mentia por caminho legítimo da UI. O
+           lançamento abaixo é o MESMO dos botões "pagar-medicao" e
+           "receber-compra" da lista; a data já preenchida é o guarda de
+           idempotência (pagar de novo não lança duas vezes). */
+        if (entidade === "medicoes" && novo === "paga" && !obj.dataPgto) {
+          obj.dataPgto = this._hojeISO();
+          var liqF = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
+          Store.salvar(eid(), "financeiro", { data: obj.dataPgto, desc: "Recebimento medição " + (obj.numero || ""), tipo: "receita", categoria: "medicao", valor: liqF, status: "pago", obraId: obj.obraId, contratoId: obj.contratoId });
+          try { UI.toast("Receita da medição lançada no Financeiro.", "ok"); } catch (eT) {}
+        }
+        if (entidade === "compras" && novo === "recebido" && !obj.dataRecebimento) {
+          obj.dataRecebimento = this._hojeISO();
+          Store.salvar(eid(), "financeiro", { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto });
+          try { UI.toast("Despesa da compra lançada no Financeiro (pendente).", "ok"); } catch (eT2) {}
+        }
+        return true;
+      }
       if (ehOk && !this._guardaAutor(obj, entidade)) return false;
       /* nada aqui: a REABERTURA (aprovada -> pendente) é tratada antes, em
          _guardaReabertura — ela não é um estado de aprovação, e por isso passava
@@ -17201,18 +17232,30 @@ case "nova-folha": return this.novoFolha();
       var self = this;
       UI.toast("🤖 A IA está lendo o documento…", "ok");
       this._iaOcupada = true;
-      /* se a resposta nunca chegar (socket pendurado), a trava ficaria ligada
-         ate o usuario recarregar a pagina — e ele nao tem como saber disso. */
+      /* v1.1.232 — o watchdog agora ABORTA de verdade. Antes ele só soltava a
+         trava e dizia "foi cancelada": a chamada seguia viva, e a resposta
+         tardia rodava o _docParaLancamento por cima do formulário que o
+         usuário já estava conferindo da 2ª tentativa — e cobrava duas vezes.
+         O id de requisição descarta qualquer resposta que não seja a corrente. */
+      var reqId = (this._iaReqId = (this._iaReqId || 0) + 1);
+      var ctrl = null;
+      try { ctrl = new AbortController(); } catch (eA) {}
       if (this._iaTimer) clearTimeout(this._iaTimer);
       this._iaTimer = setTimeout(function () {
-        if (self._iaOcupada) { self._iaOcupada = false; UI.toast("A leitura demorou demais e foi cancelada. Tente de novo.", "erro"); }
+        if (self._iaOcupada) {
+          self._iaOcupada = false;
+          try { if (ctrl) ctrl.abort(); } catch (eAb) {}
+          UI.toast("A leitura demorou demais e foi cancelada. Tente de novo.", "erro");
+        }
       }, 90000);
-      fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(payload) })
+      fetch(back + "/ia/documento", { method: "POST", headers: { "Content-Type": "application/json", "x-licenca": chave }, body: JSON.stringify(payload), signal: ctrl ? ctrl.signal : undefined })
         .then(function (r) { return r.json(); }).then(function (j) {
+          if (reqId !== self._iaReqId) return; // resposta de uma tentativa já cancelada
           self._iaOcupada = false; if (self._iaTimer) { clearTimeout(self._iaTimer); self._iaTimer = null; }
           if (!j.ok) { UI.toast(j.error || "A IA não conseguiu ler o documento.", "erro"); return; }
           self._docParaLancamento(j.dados, origem, destino);
         })["catch"](function () {
+          if (reqId !== self._iaReqId) return; // o abort do watchdog cai aqui — já foi avisado
           self._iaOcupada = false; if (self._iaTimer) { clearTimeout(self._iaTimer); self._iaTimer = null; }
           /* a leitura do PDF/foto é local, mas a INTERPRETAÇÃO é no servidor:
              sem internet não há o que fazer — e o caminho offline existe. */

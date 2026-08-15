@@ -765,6 +765,18 @@
           (_semPreco.length > 5 ? '…' : '') +
           ' — informe o custo unitário nos campos em vermelho. <b>Proposta e apresentação ficam bloqueadas</b> enquanto houver item zerado.</div>';
       }
+      /* v1.1.232 — a MESMA faixa para quantidade pendente. O item trazido sem
+         metragem (fluxo do memorial) não soma no total, e sem este aviso a
+         única pista era o campo marcado na linha — fácil de não ver num
+         orçamento de 60 itens, e a proposta agora bloqueia por causa dele. */
+      var _semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
+      if (_semQtd.length) {
+        html += '<div style="padding:10px 14px;border-radius:10px;background:rgba(234,88,12,.10);border:1px solid rgba(234,88,12,.35);font-size:13px;margin-bottom:12px">' +
+          '⚠ <b>' + _semQtd.length + ' item(ns) sem quantidade:</b> ' +
+          _semQtd.slice(0, 5).map(function (x) { return '<b>' + Util.esc(x.item.codigo || String(x.item.descricao || '').slice(0, 18)) + '</b>'; }).join(', ') +
+          (_semQtd.length > 5 ? '…' : '') +
+          ' — eles não somam no total. Clique em <b>Calcular</b> na linha para levantar a metragem. <b>Proposta e laudo ficam bloqueados</b> enquanto houver item pendente.</div>';
+      }
 
       // Abas — ícone SVG padronizado em todas (nada de emoji)
       var abas = [

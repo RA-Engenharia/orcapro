@@ -1222,12 +1222,27 @@
       geradoEm: dtEmissao.toISOString(),
       propriasPartes: propriasPartes, propriasQtd: propriasQtd
     });
-    for (var mi = 0; mi < metaPartes; mi++) {
-      wmeta.getCell('A' + (mi + 2)).value = metaJson.slice(mi * FATIA, (mi + 1) * FATIA);
-    }
-    for (var pi = 0; pi < propriasPartes; pi++) {
-      wmeta.getCell('B' + (pi + 2)).value = propriasJson.slice(pi * FATIA, (pi + 1) * FATIA);
-    }
+    /* v1.1.232 — FRONTEIRA SEGURA. O slice cego em i*FATIA podia cair no MEIO
+       de um par substituto (um emoji na descrição de um item basta): cada
+       metade vira U+FFFD ao gravar, e o orçamento RESTAURADO do Excel volta
+       com o texto corrompido — em silêncio, provado com o ExcelJS real. Se o
+       corte cai num high surrogate, recua 1 (a fatia fica com FATIA−1 chars,
+       ainda longe do limite de 32.767 do Excel). */
+    var fatiar = function (str, total) {
+      var out = [], ini = 0;
+      for (var fi = 0; fi < total; fi++) {
+        var fim = Math.min(ini + FATIA, str.length);
+        var cc = str.charCodeAt(fim - 1);
+        if (fim < str.length && cc >= 0xD800 && cc <= 0xDBFF) fim--;
+        out.push(str.slice(ini, fim)); ini = fim;
+      }
+      if (ini < str.length) out[out.length - 1] += str.slice(ini); // os recuos somam menos que uma fatia
+      return out;
+    };
+    var fatiasMeta = fatiar(metaJson, metaPartes);
+    for (var mi = 0; mi < metaPartes; mi++) wmeta.getCell('A' + (mi + 2)).value = fatiasMeta[mi] || '';
+    var fatiasProp = fatiar(propriasJson, propriasPartes);
+    for (var pi = 0; pi < propriasPartes; pi++) wmeta.getCell('B' + (pi + 2)).value = fatiasProp[pi] || '';
 
     // ===================== FASE 2: verificações automáticas (Resumo) =====================
     // Sanidade viva: se o usuário editar algo e um total desalinhar, o Resumo

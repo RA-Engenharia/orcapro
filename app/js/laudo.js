@@ -20,6 +20,9 @@
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : null;
       if (!emp || !Util.naoVazio(emp.crea)) f.push("Registro CREA/CAU (preencha em ⚙ Empresa)");
       if (!Util.naoVazio(orc.dataVistoria)) f.push("Data da vistoria (preencha em ⚙ Dados)");
+      // v1.1.232 — item sem quantidade num laudo PERICIAL e metragem faltando
+      var semQtdL = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
+      if (semQtdL.length) f.push("Quantidade em " + semQtdL.length + " item(ns) — use o botao Calcular na linha");
       return { ok: f.length === 0, faltando: f };
     },
 
@@ -31,7 +34,18 @@
         Util.arr(e.itens).forEach(function (it) {
           var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
           var a = it.origem === "SINAPI" ? Analitico.obter(it.codigo) : null;
-          if (a && a.custoUnitario > 0) {
+          /* v1.1.232 — o ITEM tem prioridade: composição própria (e qualquer
+             item lançado com as parcelas) guarda custoMO/MAT/EQ no próprio
+             registro. O else antigo jogava a própria inteira em Material — o
+             laudo imprimia 100% MAT para um serviço quase todo de mão de obra,
+             divergindo do Resumo do Excel gerado do MESMO orçamento. */
+          var somaIt = Util.num(it.custoMO) + Util.num(it.custoMAT) + Util.num(it.custoEQ);
+          if (somaIt > 0 && Util.num(it.custoUnitario) > 0) {
+            var cuIt = Util.num(it.custoBase != null ? it.custoBase : it.custoUnitario) || somaIt;
+            mo += ct * (Util.num(it.custoMO) / cuIt);
+            mat += ct * (Util.num(it.custoMAT) / cuIt);
+            eq += ct * (Util.num(it.custoEQ) / cuIt);
+          } else if (a && a.custoUnitario > 0) {
             mo += ct * ((a.custoMO || 0) / a.custoUnitario);
             mat += ct * ((a.custoMAT || 0) / a.custoUnitario);
             eq += ct * ((a.custoEQ || 0) / a.custoUnitario);

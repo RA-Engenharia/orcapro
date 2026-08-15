@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.231",
+  "versao": "1.1.232",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.231/OrcaPRO-IA-update-v1.1.231.zip",
-  "notas": "CORRECAO IMPORTANTE de sincronizacao. Fornecedores e cotacoes cadastrados no computador nao apareciam no celular ou tablet. Ao investigar, nao eram so esses dois: doze tipos de cadastro nunca sincronizaram e ficavam presos no aparelho onde foram criados - fornecedores, cotacoes, familias, centro de custo, tarefas do planejamento, edicoes do BIM, folha de diaristas, lancamentos e pagamentos da folha, cartao de ponto e movimentacao de frota. Todos passam a sincronizar agora. Ao atualizar, abra o app em cada aparelho uma vez para que o que estava preso suba e se junte.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.231/OrcaPRO-IA-Instalador-v1.1.231.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.232/OrcaPRO-IA-update-v1.1.232.zip",
+  "notas": "Grande rodada de correcoes: 22 defeitos encontrados numa varredura completa do sistema. Os que voce pode ter sentido: cotacao ou item de estoque reaberto multiplicava valores por mil ao salvar sem mexer em nada; medicao paga em varios boletins deixava centavos sem faturar; restaurar backup nao devolvia os dados da Gestao (diarios, medicoes, financeiro); um aviso falso de conflito de sincronizacao aparecia ao abrir o app depois de o outro aparelho trabalhar; e marcar medicao como Paga pelo formulario nao lancava a receita no Financeiro. Tudo corrigido, com testes travando cada um.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.232/OrcaPRO-IA-Instalador-v1.1.232.exe"
 }

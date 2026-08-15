@@ -167,19 +167,24 @@
     _executar: function (r) {
       if (!r) return;
       this.fechar();
+      /* v1.1.232 — a navegação pode ser RECUSADA (cadastro aberto com dados
+         não salvos → o usuário cancela o confirm). irPara devolve false nesse
+         caso, e a ação encadeada NÃO roda: antes, o Ctrl+K + "novo orçamento"
+         com um formulário aberto destruía o modal que o confirm tinha acabado
+         de proteger — o cancelar virava "sim". */
       if (r.tipo === "acao") {
-        if (r.id === "novo-orcamento" && typeof App !== "undefined") { App.irPara("orcamentos"); App.novoOrcamento(); }
+        if (r.id === "novo-orcamento" && typeof App !== "undefined") { if (App.irPara("orcamentos") === false) return; App.novoOrcamento(); }
         else if (r.id === "tour" && typeof Tour !== "undefined") Tour.iniciar(true);
         else if (r.id === "backup") { var b = document.querySelector('[data-acao="backup"]'); if (b) b.click(); else if (typeof UI !== "undefined") UI.toast("Abra ⚙ (menu da conta) → " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup.", "ok"); }
         return;
       }
       if (r.tipo === "modulo" && typeof App !== "undefined") { App.irPara(r.id); return; }
-      if (r.tipo === "orcamento" && typeof App !== "undefined") { App.irPara("orcamentos"); App.abrirOrcamento(r.id); return; }
+      if (r.tipo === "orcamento" && typeof App !== "undefined") { if (App.irPara("orcamentos") === false) return; App.abrirOrcamento(r.id); return; }
       // entidades: "ent:id" → navega e abre o registro (re-checa RBAC na hora do clique)
       var p = String(r.id).split(":");
       if (p.length === 2 && typeof App !== "undefined" && typeof Gestao !== "undefined") {
         if (!this._pode(p[0])) { if (typeof UI !== "undefined") UI.toast("Sem permissão para este módulo.", "erro"); return; }
-        App.irPara(p[0]);
+        if (App.irPara(p[0]) === false) return;
         setTimeout(function () { try { Gestao.abrir(p[0], p[1]); } catch (e) {} }, 60);
       }
     }

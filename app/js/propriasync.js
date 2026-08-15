@@ -61,6 +61,15 @@
       mortos = mortos || {};
       var porId = {}, ordem = [], self = this;
 
+      /* Mesma composição ou colisão? O código sequencial (PROP-ALV-001) é
+         determinístico: dois aparelhos criando composições DIFERENTES geram o
+         mesmo código sem saber um do outro. A assinatura separa os casos:
+         conteúdo igual = a mesma composição propagando; conteúdo diferente
+         com criadoEm diferente = duas criações independentes colidindo. */
+      function assinatura(x) {
+        try { return JSON.stringify({ d: x.descricao, u: x.unidade, i: x.insumos }); } catch (e) { return "?"; }
+      }
+
       function poe(x, deOndeEspelho) {
         var k = chaveDe(x);
         if (!k) return;
@@ -68,7 +77,37 @@
         if (t && !(quando(x) > String(t))) return;       // excluído e não recriado depois
         var ja = porId[k];
         if (!ja) { porId[k] = { v: x, esp: deOndeEspelho }; ordem.push(k); return; }
-        if (quando(x) > quando(ja.v)) porId[k] = { v: x, esp: deOndeEspelho };
+        /* Colisão de verdade exige AUTORES diferentes: a edição preserva o
+           criadoPor original (app.js), então mesmo autor = mesma linhagem =
+           o mais novo vence, como sempre foi. Registro antigo sem criadoPor
+           também cai na regra de sempre — na dúvida, não duplica. */
+        var colisao = x.criadoPor && ja.v.criadoPor &&
+                      String(x.criadoPor) !== String(ja.v.criadoPor) &&
+                      assinatura(x) !== assinatura(ja.v);
+        if (!colisao) {
+          if (quando(x) > quando(ja.v)) porId[k] = { v: x, esp: deOndeEspelho };
+          return;
+        }
+        /* ===== COLISÃO REAL (v1.1.232) — as DUAS sobrevivem. Antes, o merge
+           ficava com a mais nova e a composição do outro usuário sumia em
+           silêncio — dado autoral substituído sem aviso. Agora quem foi criada
+           PRIMEIRO fica com o código; a outra é renomeada para o sufixo livre
+           seguinte, com `renomeadaDe` para rastreio. A regra é determinística
+           (mesmas entradas → mesmo resultado), então os dois aparelhos
+           convergem para o mesmo par. */
+        var xPrimeiro = String(x.criadoEm || "") < String(ja.v.criadoEm || "");
+        var fica = xPrimeiro ? x : ja.v, ficaEsp = xPrimeiro ? deOndeEspelho : ja.esp;
+        var sai = xPrimeiro ? ja.v : x, saiEsp = xPrimeiro ? ja.esp : deOndeEspelho;
+        porId[k] = { v: fica, esp: ficaEsp };
+        var baseCod = String(sai.codigo), n = 2, kk;
+        do { kk = (baseCod + "-" + n).toLowerCase(); n++; } while (porId[kk] || mortos[kk]);
+        var clone = {}, kc;
+        for (kc in sai) if (Object.prototype.hasOwnProperty.call(sai, kc)) clone[kc] = sai[kc];
+        clone.codigo = baseCod + "-" + (n - 1);
+        clone.renomeadaDe = baseCod;
+        if (clone.id) clone.id = kk;
+        porId[kk] = { v: clone, esp: saiEsp };
+        ordem.push(kk);
       }
 
       (itensBase || []).forEach(function (it) { poe(it, false); });

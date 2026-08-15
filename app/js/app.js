@@ -739,15 +739,15 @@
       if (fn && typeof this[fn] === "function") {
         // modal abre POR CIMA da tela atual: só navega se o estado já estiver
         // quebrado (senão perderia o orçamento aberto no editor)
-        if (this.view && !this.viewValida(this.view)) this._navegar(this.viewPadrao());
+        if (this.view && !this.viewValida(this.view)) { if (this._navegar(this.viewPadrao()) === false) return false; }
         try { this[fn](); } catch (eA) {}
-        return;
+        return true;
       }
       if (!this.viewValida(view)) {
         try { if (typeof UI !== "undefined" && UI.toast) UI.toast('Módulo "' + view + '" não existe — abrindo o Painel.', "erro"); } catch (eT2) {}
         view = this.viewPadrao();
       }
-      this._navegar(view);
+      return this._navegar(view);
     },
 
     /* Troca de view de fato — mesmo caminho do clique na sidebar, teardown do BIM
@@ -761,7 +761,11 @@
          pergunta; recusou, fica onde está, com o formulário intacto. */
       try {
         if (typeof UI !== "undefined" && UI.temTrabalhoNaoSalvo && UI.temTrabalhoNaoSalvo()) {
-          if (!window.confirm("Há um cadastro aberto com informações não salvas. Sair desta tela e perder o que foi preenchido?")) return;
+          /* v1.1.232 — devolve FALSE: quem chamou precisa saber que o usuario
+             RECUSOU sair. A busca universal encadeava irPara()+novoOrcamento()
+             e a acao rodava mesmo com a navegacao cancelada — destruindo o
+             modal cheio de dados que o confirm tinha acabado de proteger. */
+          if (!window.confirm("Há um cadastro aberto com informações não salvas. Sair desta tela e perder o que foi preenchido?")) return false;
         }
         if (UI.fecharModal && document.querySelector(".modal-bg")) UI.fecharModal();
       } catch (eM) {}
@@ -772,6 +776,7 @@
       this.orcAtual = null;
       try { if (typeof Telemetria !== "undefined") Telemetria.contaModulo(view); } catch (eTm) {}
       this.render();
+      return true;
     },
 
     /* Aviso com saída, usado quando um módulo não produz conteúdo. Melhor isto do
@@ -1061,7 +1066,14 @@
           // (a) o seed assíncrono da OBRA TESTE poderia gravar no tenant errado após o logout
           // e (b) a flag _demo sobreviveria a um login real na mesma página (bypass de licença).
           if (this._demo) { try { location.href = location.pathname; } catch (eD) {} break; }
-          if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} } if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
+          if (typeof BIM !== "undefined" && BIM.reuniao && BIM.reuniao.ativa) { try { BIM.reuniao.sair(); } catch (eR) {} }
+          /* v1.1.232 — o logout desarma TUDO que reconecta sozinho. O gatilho
+             de 'online' e o timer de retentativa ficavam vivos e religavam a
+             nuvem SEM usuário logado: Auth.empresaId() sem sessão cai no
+             namespace 'default', e a escuta ficava presa lá — os dados da
+             empresa paravam de sincronizar até recarregar a página, sem erro. */
+          try { clearTimeout(this._nuvemTimer); this._nuvemTimer = null; } catch (eNt) {}
+          if (typeof Nuvem !== "undefined") Nuvem.sair(); Auth.logout(); this.tela = "login"; this.orcAtual = null; this.render(); break;
         case "tema": this.abrirTema(); break;
         case "minha-foto": this.abrirMinhaFoto(); break;
         case "atualizar": if (typeof AutoUpdate !== "undefined" && AutoUpdate.forcar) AutoUpdate.forcar(); break; // botão manual: puxa a versão nova limpando o cache (essencial no celular, que não tem Ctrl+Shift+R)
@@ -1142,6 +1154,14 @@
           var _sp = Orcamento.itensSemPreco(this.orcAtual);
           if (_sp.length) {
             UI.toast("⛔ " + _sp.length + " item(ns) sem preço (" + _sp.slice(0, 3).map(function (i) { return i.numero; }).join(", ") + (_sp.length > 3 ? "…" : "") + "). Preencha o custo na planilha antes de apresentar.", "erro");
+            break;
+          }
+          // v1.1.232 — quantidade pendente vale o mesmo que preço zerado aqui:
+          // projetar um total que não contém um dos serviços listados é pior
+          // que não apresentar
+          var _sq = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(this.orcAtual) : [];
+          if (_sq.length) {
+            UI.toast("⚠ " + _sq.length + " item(ns) sem quantidade. Clique em Calcular na linha para levantar a metragem antes de apresentar.", "erro");
             break;
           }
           Apresentacao.abrir(this.orcAtual); break;
@@ -1384,8 +1404,17 @@
         if (!st || !st.ativo || st.trial) return;                        // sem licença não há conta de nuvem
         if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return;
         if (Nuvem.desligadaPeloUsuario && Nuvem.desligadaPeloUsuario()) return;
+        /* v1.1.232 — SEM USUÁRIO LOGADO, NÃO CONECTA. A licença é do aparelho
+           e sobrevive ao logout; o gatilho de 'online' disparava isto na tela
+           de login e o empresaId() sem sessão caía em 'default' — a nuvem
+           inteira sincronizava no namespace errado. */
+        if (typeof Auth !== "undefined" && Auth.usuario && !Auth.usuario()) return;
         var chave = Licenca.chave(); if (!chave) return;
         var eid = Auth.empresaId();
+        /* escuta presa noutro tenant (login trocado sem recarregar): re-escuta */
+        if (typeof Nuvem !== "undefined" && Nuvem._escutando && Nuvem._escutando !== eid && Nuvem._un && Nuvem._un.length) {
+          try { Nuvem._un.forEach(function (u) { u(); }); Nuvem._un = []; Nuvem._escutando = null; } catch (eUn) {}
+        }
 
         /* A internet voltando é o melhor momento para tentar de novo — instalado
          * uma única vez, e não a cada chamada (senão empilharia gatilhos). */
@@ -1405,7 +1434,25 @@
           .then(function () { if (window.Blocos) Blocos.usarOverrides(eid); try { self._propriaDaNuvem(); } catch (e) {} })
           .then(function () {
             self._nuvemTentativa = 0;
-            try { Nuvem.escutar(eid, function (ent) { if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid); if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem(); if (self.tela === "lista") self.render(); }); } catch (e) {}
+            try { Nuvem.escutar(eid, function (ent) {
+              if (ent === "pesos_bloco" && window.Blocos) Blocos.usarOverrides(eid);
+              if (typeof PropriaSync !== "undefined" && (ent === PropriaSync.ENTIDADE || ent === "_lapides")) self._propriaDaNuvem();
+              /* v1.1.232 — o EDITOR reage à exclusão vinda do outro aparelho.
+                 Antes só a lista re-renderizava: quem estivesse com o orçamento
+                 excluído ABERTO continuava editando um fantasma, e o próximo
+                 persistir() o regravava — ressuscitando em todos os aparelhos
+                 o que o outro usuário tinha acabado de apagar. */
+              if ((ent === "orcamentos" || ent === "_lapides") && self.orcAtual && self.tela === "editor") {
+                var aindaExiste = !!Store.obterOrcamento(eid, self.orcAtual.id);
+                if (!aindaExiste) {
+                  var numExc = self.orcAtual.numero || "";
+                  self.orcAtual = null; self.tela = "lista"; self.render();
+                  UI.toast("O orçamento " + numExc + " foi excluído em outro aparelho — o editor foi fechado. Se precisar dele de volta, restaure do backup.", "erro");
+                  return;
+                }
+              }
+              if (self.tela === "lista") self.render();
+            }); } catch (e) {}
             // aparelho secundário (o tenant já tem admin, mas aqui a sessão é anônima) → exige login
             if (Auth.precisaLoginNuvem && Auth.precisaLoginNuvem()) { Auth.logout(); self.tela = "login"; self.render(); return; }
             if (self.tela === "lista") self.render(); // equipe/dados sincronizados
@@ -2164,19 +2211,53 @@
           var dump = JSON.parse(rd.result);
           var orcs = Util.arr(dump.orcamentos);
           var temPropria = !!(dump.basePropria && Util.arr(dump.basePropria.dados).length);
+          var temGestao = !!(dump.gestao && Object.keys(dump.gestao).length);
           /* backup SÓ com composições próprias é válido: é exatamente o arquivo
-             que a página de socorro produz num aparelho que perdeu a base. */
-          if (!orcs.length && !temPropria) { UI.toast("Backup sem orçamentos e sem composições próprias.", "erro"); return; }
+             que a página de socorro produz num aparelho que perdeu a base.
+             E backup SÓ com Gestão também: a conta que usa obras/diários sem
+             orçamento nenhum era rejeitada aqui com o próprio arquivo na mão. */
+          if (!orcs.length && !temPropria && !temGestao) { UI.toast("Backup sem orçamentos, sem composições próprias e sem dados da Gestão.", "erro"); return; }
           var eid = Auth.empresaId();
           orcs.forEach(function (o) { Store.salvarOrcamento(eid, o); });
           var rProp = temPropria ? self._restaurarPropria(eid, dump.basePropria) : null;
+          /* ===== v1.1.232 — A GESTÃO VOLTA. O _dumpBackup grava `gestao` com
+             TODAS as entidades desde 09/08, mas a restauração nunca a leu: o
+             cliente que trocasse de máquina importava o arquivo — que CONTINHA
+             os diários, medições, financeiro e folha — via "N orçamento(s)
+             restaurado(s)" e encontrava a Gestão vazia. O dado estava no
+             arquivo; o app não o devolvia. Exatamente o buraco que o backup
+             prometeu fechar.
+             MESCLA por id, nunca substitui: Store.salvar já une pelo id, e o
+             que existe no aparelho e não está no arquivo continua onde está.
+             O registro do arquivo entra com o próprio atualizadoEm — se o
+             aparelho tem versão mais nova, a nuvem resolve no próximo merge. */
+          var nGest = 0, entsGest = 0;
+          if (temGestao) {
+            Object.keys(dump.gestao).forEach(function (ent) {
+              var lista = Util.arr(dump.gestao[ent]);
+              if (!lista.length) return;
+              entsGest++;
+              lista.forEach(function (reg) {
+                if (!reg || !reg.id) return;
+                try {
+                  var atualReg = Store.obter(eid, ent, reg.id);
+                  /* o mais novo vence — restaurar backup velho por cima de
+                     trabalho recente seria trocar um dado bom por um velho */
+                  if (atualReg && String(atualReg.atualizadoEm || "") >= String(reg.atualizadoEm || "")) return;
+                  Store.salvar(eid, ent, reg);
+                  nGest++;
+                } catch (eG) {}
+              });
+            });
+          }
           if (dump.prefs && typeof dump.prefs === "object") {
             var atual = Store.lerPrefs(eid) || {};
             for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];
             Store.salvarPrefs(eid, atual);
           }
           UI.toast(orcs.length + " orçamento(s) restaurado(s)"
-            + (rProp ? " · composições próprias: " + rProp.novos + " nova(s), " + rProp.atualizados + " atualizada(s), " + rProp.total + " no total" : "") + ".", "ok");
+            + (rProp ? " · composições próprias: " + rProp.novos + " nova(s), " + rProp.atualizados + " atualizada(s), " + rProp.total + " no total" : "")
+            + (temGestao ? " · Gestão: " + nGest + " registro(s) em " + entsGest + " módulo(s)" : "") + ".", "ok");
           UI.fecharModal(); self.tela = "lista"; self.render();
         } catch (e) { UI.toast("Arquivo inválido: " + e.message, "erro"); }
       };
@@ -4311,7 +4392,21 @@
             var eds = Roundtrip.extrairEdicoes(wb, meta.orc);
             if (eds.erro) { UI.toast("Reimportação bloqueada: " + (eds.detalhe || eds.erro), "erro"); return; }
             var difs = Roundtrip.diff(orc, eds);
-            if (!difs.length) { UI.toast("Nenhuma diferença entre o Excel e o orçamento — nada a importar.", "ok"); return; }
+            /* v1.1.232 — edição RECUSADA (Qtd/Custo zerados no Excel) aparece,
+               não some. "Nenhuma diferença" com diferença descartada era
+               mensagem falsa: o app e a planilha entregue ficavam divergentes
+               e o cliente confiando que estavam iguais. */
+            var rec = difs.recusadas || [];
+            if (!difs.length) {
+              if (rec.length) {
+                UI.toast("⚠ " + rec.length + " edição(ões) do Excel NÃO aplicada(s): " +
+                  rec.slice(0, 3).map(function (r) { return r.codigo + " (" + r.campo + " " + r.motivo.split(" — ")[0] + ")"; }).join("; ") +
+                  (rec.length > 3 ? "…" : "") + ". Zero não entra — ajuste no app.", "erro");
+              } else {
+                UI.toast("Nenhuma diferença entre o Excel e o orçamento — nada a importar.", "ok");
+              }
+              return;
+            }
             self._modalRoundtrip(difs);
           }).catch(function (e) { UI.loadingFim(); UI.toast("Falha ao ler o arquivo: " + e.message, "erro"); });
         });

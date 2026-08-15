@@ -566,6 +566,13 @@
      * Devolve quantos itens mudaram. */
     reprecificarPorCodigo: function (orc, codigoAntigo, novo) {
       var n = 0;
+      /* ⚠ ORÇAMENTO APROVADO NÃO SE REPRECIFICA (v1.1.232). A varredura de
+         cpSalvar/_propriaPropagarInsumo passava por TODOS os orçamentos da
+         empresa — inclusive os aprovados, que a trava de aprovação promete
+         congelar. Editar uma composição mudava por baixo o preço de um
+         orçamento já aceito pelo cliente. Preço aprovado é contrato: quem
+         quiser o preço novo cria uma revisão. */
+      if (this.travadoPorAprovacao && this.travadoPorAprovacao(orc)) return 0;
       ((orc && orc.etapas) || []).forEach(function (et) {
         (et.itens || []).forEach(function (it) {
           var deProprio = String(it.baseFonte || it.origem || "").toUpperCase() === "PROPRIA" ||
@@ -575,10 +582,28 @@
           it.codigo = novo.codigo;
           it.descricao = Util.fixEnc(novo.descricao || it.descricao);
           it.unidade = novo.unidade || it.unidade;
-          it.custoUnitario = Util.num(novo.custoUnitario);
           it.custoMO = Util.num(novo.custoMO);
           it.custoMAT = Util.num(novo.custoMAT);
           it.custoEQ = Util.num(novo.custoEQ);
+          /* ⚠ RESPEITA O MODO DE CUSTO (v1.1.232). Aqui se gravava sempre o
+             preço CHEIO da composição: um item lançado como "só mão de obra"
+             passava a cobrar MO+MAT+EQ na primeira edição da composição — o
+             material que o cliente forneceria voltava a ser cobrado dele, em
+             silêncio. O item que tem modo guarda o cheio em custoBase e fatura
+             só a parcela escolhida. */
+          if (it.modoCusto === "mo" || it.modoCusto === "matEq") {
+            it.custoBase = Util.num(novo.custoUnitario);
+            var parcela = it.modoCusto === "mo" ? Util.num(novo.custoMO)
+                                                : Util.num(novo.custoMAT) + Util.num(novo.custoEQ);
+            /* a composição editada deixou de publicar a parcela? Cai para o
+               cheio AVISANDO pelo próprio número (não zera calado) e solta o
+               modo, que não tem mais base para existir. */
+            if (parcela > 0) { it.custoUnitario = parcela; }
+            else { it.custoUnitario = Util.num(novo.custoUnitario); delete it.modoCusto; delete it.custoBase; }
+          } else {
+            it.custoUnitario = Util.num(novo.custoUnitario);
+            if (it.custoBase != null) it.custoBase = Util.num(novo.custoUnitario);
+          }
           n++;
         });
       });
@@ -806,8 +831,32 @@
         var ant = Util.num((pctAnteriorPorItem || {})[L.itemId]);
         if (ant + p > 100.0001) avisos.push((L.codigo || L.descricao.slice(0, 20)) + " passa de 100% (" + Util.fmtNum(ant + p, 1) + "% acum.)");
         var qtdMed = L.quantidade * p / 100;
-        // 100% do item fatura exatamente o valor contratado (sem sobra de centavo)
-        var valor = (p >= 99.9999 && ant <= 0.0001) ? L.precoTotal : A0.valor(qtdMed * L.precoUnit, modo);
+        /* ===== FECHAR 100% FECHA AO CENTAVO (v1.1.232) =====
+           O caso especial antigo só valia para 100% NUM boletim só. Medido por
+           parciais (30% + 40% + 30%), cada período truncava o próprio valor e
+           os centavos perdidos nunca voltavam: o acumulado batia 100% com o
+           faturado ABAIXO do contratado — dinheiro do empreiteiro que ficava
+           na mesa, um pouco em cada item, para sempre.
+           No boletim que FECHA o item, o valor sai por DIFERENÇA: contratado
+           menos o que a regra dos períodos anteriores já faturou. */
+        /* ===== MÉTODO DA POSIÇÃO ACUMULADA (v1.1.232) =====
+           Cada boletim fatura a DIFERENÇA entre a posição acumulada de agora e
+           a anterior: valor = F(ant+p) − F(ant), com F(100%) = o contratado.
+           A soma dos períodos vira telescópica — F(100) − F(0) — e fecha AO
+           CENTAVO com o contratado POR CONSTRUÇÃO, não importa em quantos
+           boletins nem com que percentuais o item foi medido.
+           Antes, cada período truncava o próprio valor isoladamente: medir
+           3 × 33,33% deixava centavos sem faturar em cada item, para sempre —
+           provado: 2 itens em 3 boletins já perdiam R$ 0,02 do contratado. */
+        var F = function (x) {
+          if (x >= 99.9999) return L.precoTotal;
+          if (x <= 0.0001) return 0;
+          return A0.valor(L.quantidade * x / 100 * L.precoUnit, modo);
+        };
+        var bruto = F(ant + p) - F(ant);
+        /* no modo "nenhum" NADA se arredonda — forçar centavos criaria a
+           diferença que o próprio critério do orçamento proíbe */
+        var valor = (modo === "nenhum") ? bruto : Math.round(bruto * 100) / 100;
         somaItens += valor;
         itens.push({
           itemId: L.itemId, etapa: L.etapaNome, codigo: L.codigo, descricao: L.descricao, unidade: L.unidade,

@@ -25,6 +25,16 @@
           semPreco.slice(0, 3).map(function (i) { return i.numero + (i.codigo ? " (" + i.codigo + ")" : ""); }).join(", ") +
           (semPreco.length > 3 ? "…" : ""));
       }
+      /* v1.1.232 — QUANTIDADE PENDENTE bloqueia igual ao preco zerado. O item
+         trazido sem metragem (fluxo do memorial) passava por aqui valendo R$ 0:
+         a proposta saia com o servico LISTADO no escopo e valendo nada — o
+         cliente aceitava um preco que nao continha aquele servico. */
+      var semQtd = Orcamento.itensSemQuantidade ? Orcamento.itensSemQuantidade(orc) : [];
+      if (semQtd.length) {
+        faltando.push("Quantidade em " + semQtd.length + " item(ns): " +
+          semQtd.slice(0, 3).map(function (x) { return (x.item.codigo || x.item.descricao.slice(0, 18)); }).join(", ") +
+          (semQtd.length > 3 ? "…" : "") + " — use o botao Calcular na linha");
+      }
       Orcamento.garantirComercial(orc);
       if (!Util.naoVazio(orc.comercial.condicoesPagamento)) faltando.push("Condições de pagamento");
       return { ok: faltando.length === 0, faltando: faltando };

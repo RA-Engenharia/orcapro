@@ -173,6 +173,36 @@
     // o vencedor guarda a cópia perdedora em _conflitoDe (até ~50KB; acima
     // disso, só metadados) e o contador alimenta o aviso pós-sync.
     _conflitosUltimoMerge: 0,
+
+    /* ===== v1.1.232 — MARCAS DA ÚLTIMA SINCRONIZAÇÃO =====
+       O merge antigo tratava QUALQUER diferença de atualizadoEm como "editado
+       em 2 aparelhos": bastava A trabalhar um dia e B abrir o app para B ver o
+       aviso de conflito — em edição normal, vinda de UM aparelho só. Pior: o
+       vencedor ganhava uma cópia integral do perdedor (_conflitoDe) que subia
+       para a nuvem e, a cada ida-e-volta, aninhava a anterior.
+       A marca resolve: guarda, por registro, o atualizadoEm da última versão
+       que ESTE aparelho sincronizou. Se um dos lados ainda está na marca, ele
+       simplesmente não foi editado desde o último sync — é propagação, não
+       conflito. Conflito de verdade é quando OS DOIS saíram da marca.
+       "_syncmarcas" fica fora de ENTIDADES de propósito: é estado do aparelho,
+       não dado do usuário — não sobe nem entra em backup. */
+    _marcasDe: function (empresaId, ent) {
+      try { var m = Store.adapter.ler(empresaId, "_syncmarcas", {}); return (m && m[ent]) || {}; } catch (e) { return {}; }
+    },
+    _marcarSync: function (empresaId, ent, lista) {
+      if (ent === "prefs" || ent === "conta") return;
+      try {
+        var m = Store.adapter.ler(empresaId, "_syncmarcas", {}) || {};
+        var mm = {};
+        Util.arr(lista).forEach(function (o) { if (o && o.id) mm[o.id] = String(o.atualizadoEm || ""); });
+        m[ent] = mm;
+        var antes = this._aplicandoDaNuvem;
+        this._aplicandoDaNuvem = true; // marca não é dado: nunca dispara push
+        try { Store.adapter.gravar(empresaId, "_syncmarcas", m); }
+        finally { this._aplicandoDaNuvem = antes; }
+      } catch (e) {}
+    },
+
     _merge: function (local, cloud, ent, empresaId) {
       if (ent === "prefs" || ent === "conta") {
         // objeto único (prefs, conta mestre): mescla campo a campo; o mais novo (atualizadoEm) vence
@@ -185,6 +215,7 @@
       /* quem foi excluído (em qualquer aparelho) não volta: a lápide vence o registro
        * mais antigo que ela. A própria lista de lápides não se filtra. */
       var semLapide = (ent === "_lapides" || !empresaId);
+      var marcas = empresaId ? this._marcasDe(empresaId, ent) : {};
       var mortos = semLapide ? Object.create(null) : Store.lapidesDe(empresaId, ent);
       /* obra apagada em cascata: o que APONTA para ela morreu junto (1 lápide cobre o lote).
        * Exceto os cadastros da empresa (equipe, patrimônio, frota): a exclusão só os
@@ -216,10 +247,20 @@
         var tl = String(o.atualizadoEm || ""), tc = String(c.atualizadoEm || "");
         if (tl === tc) { byId[o.id] = o; return; } // mesma versão: sem conflito
         var venc = tl > tc ? o : c, perd = tl > tc ? c : o;
+        /* Um dos lados ainda está na marca do último sync? Então SÓ o outro
+           editou — propagação normal, o mais novo vence e ponto. O ramo de
+           conflito fica reservado para o caso real: os dois saíram da marca. */
+        var marca = String(marcas[o.id] || "");
+        if (marca && (tl === marca || tc === marca)) { byId[o.id] = venc; return; }
         try {
-          var json = JSON.stringify(perd);
+          /* cópia SEM o _conflitoDe do perdedor: aninhar a cadeia inteira fazia
+             o registro crescer a cada ida-e-volta (provado em Node: 2ª rodada
+             já carregava 3 versões dentro de si) */
+          var raso = perd;
+          if (perd && perd._conflitoDe) { raso = Object.assign({}, perd); delete raso._conflitoDe; }
+          var json = JSON.stringify(raso);
           venc._conflitoDe = (json.length <= 51200)
-            ? { em: perd.atualizadoEm || "", quando: new Date().toISOString(), copia: perd }
+            ? { em: perd.atualizadoEm || "", quando: new Date().toISOString(), copia: raso }
             : { em: perd.atualizadoEm || "", quando: new Date().toISOString(), resumo: String(perd.nome || perd.numero || perd.id) };
           self._conflitosUltimoMerge++;
         } catch (e) {}
@@ -443,7 +484,9 @@
           var chave = empresaId + "|" + ent;
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
           self._ultimoEnviado[chave] = carga;
-          self._doc(ent).set({ v: v, em: Date.now() }).catch(function (e) {
+          self._doc(ent).set({ v: v, em: Date.now() }).then(function () {
+            self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum
+          }).catch(function (e) {
             /* a escrita falhou: esquece a marca, senão a próxima tentativa
                acharia que já subiu e o dado ficaria só no aparelho */
             delete self._ultimoEnviado[chave];
