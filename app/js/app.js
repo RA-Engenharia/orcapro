@@ -5796,7 +5796,7 @@
         var _c = this.orcAtual.comercial || {};
         if (!Util.naoVazio(_c.apresentacao)) UI.toast("Apresentação em " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados vazia — saiu o texto padrão. Personalize p/ este cliente.", "erro");
       } catch (eAv) {}
-      this._abrirPrint("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()));
+      this._abrirPrint("Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()), "nota");
     },
 
     // Anexo Técnico de Orçamento p/ LAUDO pericial (não comercial)
@@ -5805,7 +5805,7 @@
       if (!Auth.podeUsar("proposta")) { UI.toast("Anexo p/ laudo é recurso PRO.", "erro"); return; }
       var val = Laudo.validar(this.orcAtual);
       if (!val.ok) { UI.toast("Faltam dados: " + val.faltando.join(", "), "erro"); return; }
-      this._abrirPrint("" + (typeof Icones !== "undefined" ? Icones.get("nota", 15) : "") + " Anexo de Orçamento p/ Laudo — " + this.orcAtual.numero, Laudo.gerarHTML(this.orcAtual, Auth.usuario()));
+      this._abrirPrint("Anexo de Orçamento p/ Laudo — " + this.orcAtual.numero, Laudo.gerarHTML(this.orcAtual, Auth.usuario()), "nota");
     },
 
     // Relatório técnico completo: sintético + analítico detalhado
@@ -5815,8 +5815,8 @@
       if (t.qtdItens < 1) { UI.toast("Adicione itens antes de gerar o relatório.", "erro"); return; }
       var self = this;
       function abrir() {
-        self._abrirPrint("" + (typeof Icones !== "undefined" ? Icones.get("relatorio", 15) : "") + " Relatório de Orçamento — " + self.orcAtual.numero,
-          UI.renderRelatorioCompleto(self.orcAtual, Auth.usuario()));
+        self._abrirPrint("Relatório de Orçamento — " + self.orcAtual.numero,
+          UI.renderRelatorioCompleto(self.orcAtual, Auth.usuario()), "relatorio");
       }
       // Carrega o analítico da UF (1ª vez) p/ incluir a seção de composições e insumos; degrada sem travar.
       var ana = (typeof Analitico !== "undefined") ? Analitico : null;
@@ -6235,18 +6235,34 @@
     },
 
     // Overlay de impressão compartilhado (proposta e relatório)
-    _abrirPrint: function (titulo, htmlConteudo) {
+    /* `icone` é o NOME do ícone (ex.: "relatorio"), nunca o markup dele.
+     *
+     * ⚠ TÍTULO É TEXTO PURO, E ISSO NÃO É PREFERÊNCIA — É O QUE SAI IMPRESSO.
+     *   Três chamadas daqui (proposta, laudo, relatório) montavam o título
+     *   concatenando `Icones.get(...)`, que devolve um <svg> inteiro. O
+     *   resultado ia para DOIS lugares ruins de uma vez:
+     *     1. `document.title`, que o navegador estampa no cabeçalho de toda
+     *        página impressa — o PDF do cliente saía com uma linha de código;
+     *     2. a barra da janela, onde o `Util.esc()` (correto, e que fica) o
+     *        exibia como texto cru.
+     *   Agora o ícone entra por fora, e o título que chega aqui é limpo de
+     *   qualquer marcação antes de ir para o `document.title`. A limpeza é
+     *   defensiva de propósito: são mais de 20 pontos de chamada, e basta um
+     *   deles repetir o erro para o cliente receber um PDF sujo de novo. */
+    _abrirPrint: function (titulo, htmlConteudo, icone) {
       this.fecharProposta();
+      var limpo = String(titulo == null ? "" : titulo).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
       // White-label: o <title> da página sai no cabeçalho/rodapé de impressão do
       // navegador — enquanto o documento está aberto, o título vira o do DOCUMENTO
       // (com o nome da empresa do cliente), não o do produto. Restaura ao fechar.
       if (this._tituloApp == null) this._tituloApp = document.title;
       var nomeEmp = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : "";
-      try { document.title = (titulo || "Documento") + (nomeEmp ? " — " + nomeEmp : ""); } catch (eT) {}
+      try { document.title = (limpo || "Documento") + (nomeEmp ? " — " + nomeEmp : ""); } catch (eT) {}
+      var ic = (icone && typeof Icones !== "undefined") ? Icones.get(icone, 15) : "";
       var overlay = document.createElement("div");
       overlay.className = "proposta-overlay"; overlay.id = "proposta-print";
       overlay.innerHTML =
-        '<div class="prop-toolbar no-print"><span class="ttl">' + Util.esc(titulo) + '</span>' +
+        '<div class="prop-toolbar no-print"><span class="ttl">' + ic + Util.esc(limpo) + '</span>' +
         '<button class="btn sm success" data-acao="proposta-imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir / Salvar PDF</button>' +
         '<button class="btn sm" data-acao="proposta-fechar">Fechar</button></div>' +
         htmlConteudo;
