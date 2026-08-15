@@ -147,6 +147,12 @@
     _salvarParametros: function () {
       if (!this._coletar1() || !this._coletar2()) return;
       var s = this._st, orc = s.orc, app = this._app;
+      /* v1.1.234 — cinto e suspensório: mesmo que alguém abra o wizard por
+         outro caminho, aprovado não grava (a porta principal já bloqueia). */
+      if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(orc)) {
+        if (typeof UI !== "undefined") UI.toast("Orçamento aprovado não muda — crie uma revisão.", "erro");
+        return;
+      }
       orc.numero = s.numero; orc.nome = s.nome;
       orc.cliente = orc.cliente || {}; orc.cliente.nome = s.cliente;
       orc.obra = orc.obra || {}; orc.obra.nome = s.obra;

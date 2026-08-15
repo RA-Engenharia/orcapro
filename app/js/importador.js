@@ -30,13 +30,18 @@
   };
   var UNID = { "m2": 1, "m²": 1, "m3": 1, "m³": 1, "m": 1, "ml": 1, "kg": 1, "un": 1, "und": 1, "unid": 1, "pc": 1, "vb": 1, "cj": 1, "l": 1, "t": 1, "h": 1, "dia": 1, "mes": 1, "gl": 1, "pt": 1, "cx": 1, "par": 1, "km": 1, "ha": 1 };
   var UNID_NORM = { "m2": "m²", "m²": "m²", "m3": "m³", "m³": "m³", "und": "un", "unid": "un", "ml": "m" };
-  var TOTAL_KW = ["total", "subtotal", "total geral", "totais", "bdi", "resumo"];
+  /* v1.1.234 — as grafias de total que apareciam em planilha REAL e passavam:
+     "SUB-TOTAL" (a norm troca o hífen por espaço → "sub total"), "TOTAL:",
+     "VALOR TOTAL", "CUSTO TOTAL DA OBRA". Cada uma virava ITEM com o valor do
+     subtotal — a obra somava em DOBRO. */
+  var TOTAL_KW = ["total", "subtotal", "sub total", "total geral", "totais", "valor total",
+                  "custo total", "custo total da obra", "valor global", "bdi", "resumo"];
 
   // minúsculo, sem acento, SEM pontuação (. - _ / viram espaço) → casa "Quant."/"P. Unit"/"Un."
   function norm(s) {
     s = String(s == null ? "" : s).toLowerCase();
     try { s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
-    return s.replace(/[.\-_/]+/g, " ").replace(/\s+/g, " ").trim();
+    return s.replace(/[.\-_/:]+/g, " ").replace(/\s+/g, " ").trim(); // ":" idem — "TOTAL:" é total (v1.1.234)
   }
   var HDR_N = {}; (function () { for (var r in HDR) { HDR_N[r] = HDR[r].map(function (x) { return norm(x); }); } })();
 
@@ -247,6 +252,15 @@
     var temQtd = cols.quantidade != null && num(row[cols.quantidade]) > 0;
     var temUnit = cols.custoUnit != null && num(row[cols.custoUnit]) > 0;
     var temTot = cols.custoTotal != null && num(row[cols.custoTotal]) > 0;
+    /* v1.1.234 — linha de ETAPA que carrega o subtotal do grupo: descrição sem
+       código, sem quantidade e sem unitário, SÓ com o total. Virava "item
+       fantasma" de R$ 0 e roubava o lugar da etapa — a estrutura inteira do
+       orçamento importado se perdia, e o subtotal ainda arriscava dupla soma.
+       ⚠ SÓ vale quando a planilha TEM colunas de qtd/unitário e a linha as
+       deixou vazias — na planilha de verba (Descrição + Total apenas), toda
+       linha é assim e todas são ITENS, não etapas. */
+    var planTemDetalhe = cols.quantidade != null || cols.custoUnit != null;
+    if (desc && !temCod && !temQtd && !temUnit && temTot && planTemDetalhe) return "etapa";
     // item real precisa de descrição OU código (linha só-com-valor-perdido não vira item fantasma)
     if ((desc || temCod) && (temCod || temUnit || temTot || temQtd)) return "item";
     if (desc) return "etapa";                    // etapa clássica: nome na coluna de descrição
@@ -295,6 +309,11 @@
         var tot = cols.custoTotal != null ? num(row[cols.custoTotal], dmT) : NaN;
         if (!(unit > 0) && tot > 0 && qtd > 0) unit = tot / qtd;
         if (!(qtd > 0) && tot > 0 && unit > 0) qtd = tot / unit;
+        /* v1.1.234 — planilha só com Descrição + Valor Total (orçamento por
+           verba, comum em proposta de terceiro): sem esta linha, TODOS os
+           itens importavam a R$ 0,00 e o valor da obra sumia. Item de verba:
+           quantidade 1, unitário = o total. */
+        if (!(unit > 0) && tot > 0 && !(qtd > 0)) { qtd = 1; unit = tot; }
         if (!(qtd > 0)) { qtd = 1; semQtd++; }
         if (!(unit >= 0) || isNaN(unit)) unit = 0;
         if (!(unit > 0)) semCusto++;

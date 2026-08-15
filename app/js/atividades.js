@@ -107,6 +107,7 @@
     var daParaOrdenar = kAtual !== "|";
     (medicoes || []).forEach(function (m) {
       if (!m || m.obraId !== obraId) return;
+      if (m.status === "rejeitada") return; // v1.1.234 — boletim recusado não é medido
       if (atualId != null && String(m.id) === String(atualId)) return;
       if (daParaOrdenar && chaveOrdem(m) >= kAtual) return;
       (m.itens || []).forEach(function (l) {

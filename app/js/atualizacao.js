@@ -196,6 +196,14 @@
       uf = (uf || "MG").toUpperCase(); var self = this;
       var pegar = function () {
         return self._get("/sinapi/dados?mes=" + encodeURIComponent(mes) + "&uf=" + encodeURIComponent(uf) + "&tipo=composicoes").then(function (pacote) {
+          /* v1.1.234 — PACOTE VAZIO NÃO ENTRA. Sem este guard, uma resposta
+             {count:0, dados:[]} do backend zerava a base em memória, persistia
+             o VAZIO por cima da base da empresa e ainda dizia "SINAPI
+             atualizada: 0 itens" — o app orçando com base nenhuma, provado em
+             Node. É a mesma régua que o atualizarSinapi já aplicava. */
+          if (!pacote || !pacote.dados || !pacote.dados.length) {
+            throw new Error("O servidor devolveu um pacote vazio para " + uf + " " + mes + " — a base atual foi mantida.");
+          }
           if (typeof Sinapi !== "undefined") Sinapi.carregarDe(pacote);
           var grav = { ok: true };
           if (typeof Store !== "undefined" && typeof Auth !== "undefined") grav = Store.salvarBaseSinapi(Auth.empresaId(), pacote) || { ok: true };

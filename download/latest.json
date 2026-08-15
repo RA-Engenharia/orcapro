@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.233",
+  "versao": "1.1.234",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.233/OrcaPRO-IA-update-v1.1.233.zip",
-  "notas": "Segunda rodada da varredura de correcoes: mais 17 defeitos corrigidos. Os que voce podia sentir: quantidade do Escopo Inteligente errando por mil com numeros como 1.500 (e 1250 virando 125); camada da Parede-Cebola que aparecia como casada mas nao entrava no orcamento; janela de andar superior sem desconto no Blocok; desmarcar Medicoes no Portal do Cliente escondia o botao mas publicava os valores mesmo assim; e graficos de MO/Material contando material fornecido pelo cliente como custo. Tudo com teste travando.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.233/OrcaPRO-IA-Instalador-v1.1.233.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.234/OrcaPRO-IA-update-v1.1.234.zip",
+  "notas": "Terceira rodada da varredura: mais 22 correcoes. As mais importantes: medicao rejeitada nao conta mais como ja medido (o boletim seguinte nascia com saldo errado); nota fiscal da propria empresa nao vira mais despesa nem gera lancamento em dobro; o importador de planilhas para de transformar linhas de TOTAL em itens (obra somada em dobro) e le planilhas de verba; o PWA volta a abrir offline logo apos atualizar; e o boletim de medicao passa a usar o valor do contrato — onde mora o aditivo. Somando as tres rodadas: 61 defeitos corrigidos, cada um com teste travando.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.234/OrcaPRO-IA-Instalador-v1.1.234.exe"
 }

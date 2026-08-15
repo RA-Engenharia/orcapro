@@ -798,7 +798,10 @@
       /* soma a retenção das medições aprovadas e pagas (js/atencao.js) */
       var _retido = (typeof Atencao !== "undefined") ? Atencao.retencaoPresa(med) : 0;
       var emAndamento = obras.filter(function (o) { return o.status === "andamento"; }).length;
-      var valorContratado = contratos.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
+      /* v1.1.234 — contrato cancelado/rescindido fora do KPI: o painel somava
+         contrato morto no Valor contratado e o numero mentia para cima */
+      var _ctrVivo = function (c) { return c.status !== "cancelado" && c.status !== "rescindido"; };
+      var valorContratado = contratos.filter(_ctrVivo).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
       var receitas = fin.filter(function (f) { return f.tipo === "receita" && f.status !== "pendente"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
@@ -900,7 +903,7 @@
       else {
         html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num" title="(recebido − custo real) ÷ recebido. Sem receita lançada, a margem não existe e aparece —">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
-          var ctr = contratos.filter(function (c) { return c.obraId === o.id; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
+          var ctr = contratos.filter(function (c) { return c.obraId === o.id && c.status !== "cancelado" && c.status !== "rescindido"; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
           /* ⚠ REGIME MISTURADO NA MESMA LINHA. O custo somava despesa PENDENTE
            * junto; a receita da linha de baixo já excluía a pendente. A margem
            * saía pessimista por construção — despesa que ainda não saiu contra
@@ -2648,6 +2651,11 @@
       lista("medicoes").forEach(function (x) {
         if (x.obraId !== obraId || x.orcamentoId !== orcamentoId) return;
         if (medicaoAtualId && String(x.id) === String(medicaoAtualId)) return;
+        /* v1.1.234 — REJEITADA NÃO É MEDIDO. Ela contava no acumulado: o item
+           aparecia como "já medido 50%" por um boletim que o fiscal RECUSOU, e
+           o boletim seguinte nascia com o saldo errado — faturamento a menor,
+           sem aviso, para sempre. */
+        if (x.status === "rejeitada") return;
         Util.arr(x.itens).forEach(function (it) { acc[it.itemId] = (acc[it.itemId] || 0) + Util.num(it.pctPeriodo); });
       });
       return acc;
@@ -2965,14 +2973,27 @@
       // ORÇAMENTO (fonte da verdade) — fallback no valor digitado da obra.
       // Boletim já emitido guarda o contratado CONGELADO (documento contratual):
       // reimprimir não pode mudar o valor porque o orçamento foi editado depois.
+      /* v1.1.234 — a base do contratado em ORDEM DE AUTORIDADE:
+         congelado no boletim > CONTRATO apontado (é onde o aditivo mora —
+         antes era ignorado e o aditivo de R$ 50 mil não aparecia no papel
+         que o fiscal assina) > preço de venda do orçamento > valor da obra. */
       if (Util.num(m.valorContratado) > 0) {
         contratado = Util.num(m.valorContratado);
-      } else if (m.orcamentoId && typeof Orcamento !== "undefined") {
-        var orcV = Store.obterOrcamento ? Store.obterOrcamento(eid(), m.orcamentoId) : null;
-        if (orcV) { var tv = Orcamento.totais(orcV); if (Util.num(tv.precoVenda) > 0) contratado = tv.precoVenda; }
+      } else {
+        var ctrB = m.contratoId ? Store.obter(eid(), "contratos", m.contratoId) : null;
+        if (ctrB && Util.num(ctrB.valor) > 0) {
+          contratado = Util.num(ctrB.valor);
+        } else if (m.orcamentoId && typeof Orcamento !== "undefined") {
+          var orcV = Store.obterOrcamento ? Store.obterOrcamento(eid(), m.orcamentoId) : null;
+          if (orcV) { var tv = Orcamento.totais(orcV); if (Util.num(tv.precoVenda) > 0) contratado = tv.precoVenda; }
+        }
       }
-      var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })
-        .sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
+      /* v1.1.234 — boletim rejeitado fora da sequência (a própria medição
+         impressa fica, mesmo rejeitada: imprimir o boletim recusado é lícito;
+         somar o valor dele no acumulado dos OUTROS é que era o erro) */
+      var meds = lista("medicoes").filter(function (x) {
+        return x.obraId === m.obraId && (x.status !== "rejeitada" || String(x.id) === String(m.id));
+      }).sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
       var anterior = 0, atual = Util.num(m.valor), acumulado = 0, achou = false;
       for (var i = 0; i < meds.length; i++) {
         if (String(meds[i].id) === String(m.id)) { anterior = acumulado; acumulado += atual; achou = true; break; }
@@ -3130,7 +3151,31 @@
           });
           // #18: medição VINCULADA ao orçamento -> aba com os itens medidos (padrão que o
           // contratante espera: ant/período/acum POR ITEM). Medição manual não tem m.itens.
-          if (m.itens && m.itens.length) {
+          /* v1.1.234 — MEDIÇÃO POR ATIVIDADES tem os próprios campos. Os itens
+             dela carregam atividadeId/qtd/valorUnitario, não pctPeriodo/
+             qtdContratada — a aba antiga lia os campos do outro formato e o
+             Excel saía com quantidades, preços e percentuais ZERADOS, só as
+             descrições certas: papel de medição sem os números da medição. */
+          if (m.itens && m.itens.length && m.itens[0].atividadeId && typeof Atividades !== "undefined") {
+            var resA2 = Atividades.resumo(m, lista("medicoes"));
+            var wa2 = wb.addWorksheet("Itens Medidos", { views: [{ state: "frozen", ySplit: 2 }] });
+            wa2.columns = [{ width: 11 }, { width: 44 }, { width: 7 }, { width: 13 }, { width: 12 }, { width: 12 }, { width: 12 }, { width: 14 }];
+            wa2.mergeCells("A1:H1");
+            wa2.getCell("A1").value = "ITENS MEDIDOS — Boletim Nº " + (m.numero || "") + "  ·  medição por atividades";
+            wa2.getCell("A1").font = { bold: true, size: 12, color: { argb: navy } };
+            var ha2 = wa2.getRow(2); ha2.values = ["Código", "Serviço", "Und", "Valor unit.", "Qtd ant.", "Qtd período", "Qtd acum.", "Valor (R$)"];
+            ha2.eachCell(function (cell) { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: navy } }; });
+            (resA2.linhas || []).forEach(function (l, i) {
+              var r2 = wa2.getRow(3 + i);
+              r2.values = [l.codigo || "", l.descricao || "", l.unidade || "", Util.num(l.valorUnitario), Util.num(l.qtdAnterior), Util.num(l.qtd), Util.num(l.qtdAcumulada), Util.num(l.valor)];
+              r2.getCell(4).numFmt = "R$ #,##0.00"; [5, 6, 7].forEach(function (cN) { r2.getCell(cN).numFmt = "#,##0.00"; });
+              r2.getCell(8).numFmt = "R$ #,##0.00";
+            });
+            var rt2 = wa2.getRow(3 + (resA2.linhas || []).length);
+            rt2.getCell(2).value = "TOTAL MEDIDO NESTE BOLETIM"; rt2.getCell(2).font = { bold: true };
+            rt2.getCell(8).value = Util.num(resA2.total); rt2.getCell(8).numFmt = "R$ #,##0.00";
+            rt2.getCell(8).font = { bold: true, color: { argb: verde } };
+          } else if (m.itens && m.itens.length) {
             var wi = wb.addWorksheet("Itens Medidos", { views: [{ state: "frozen", ySplit: 2 }] });
             wi.columns = [{ width: 16 }, { width: 11 }, { width: 44 }, { width: 7 }, { width: 12 }, { width: 13 }, { width: 9 }, { width: 10 }, { width: 10 }, { width: 12 }, { width: 14 }];
             wi.mergeCells("A1:K1");
@@ -3166,9 +3211,10 @@
             rt.getCell(11).value = bdiForaX ? Util.num(m.valor) : totItens;
             rt.getCell(11).numFmt = "R$ #,##0.00"; rt.getCell(11).font = { bold: true, color: { argb: verde } };
           }
-          // Aba histórico de medições da obra
-          var meds = lista("medicoes").filter(function (x) { return x.obraId === m.obraId; })
-            .sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
+          // Aba histórico de medições da obra (rejeitada fora do acumulado — v1.1.234)
+          var meds = lista("medicoes").filter(function (x) {
+            return x.obraId === m.obraId && (x.status !== "rejeitada" || String(x.id) === String(m.id));
+          }).sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
           var wh = wb.addWorksheet("Histórico", { views: [{ state: "frozen", ySplit: 1 }] });
           wh.columns = [{ width: 10 }, { width: 26 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 12 }];
           var hh = wh.getRow(1); hh.values = ["Nº", "Período", "Atual", "Acumulado", "Saldo", "%"];
@@ -3281,7 +3327,13 @@
           var val = typeof c.get === "function" ? c.get(item) : item[c.key];
           if (val == null) val = "";
           if (typeof val === "number") val = String(val).replace(".", ",");
-          return '"' + String(val).replace(/"/g, '""') + '"';
+          val = String(val);
+          /* v1.1.234 — INJEÇÃO DE FÓRMULA (OWASP). Descrição digitada como
+             "=HYPERLINK(...)" ou "@cmd" vira FÓRMULA quando o Excel abre o
+             CSV — código de terceiro rodando na máquina de quem confere o
+             financeiro. Apóstrofo na frente neutraliza sem mudar o texto. */
+          if (/^[=+\-@]/.test(val) && !/^-?\d/.test(val)) val = "'" + val;
+          return '"' + val.replace(/"/g, '""') + '"';
         }).join(";"));
       });
       var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
@@ -12754,6 +12806,12 @@ renderRequisicoes: function () {
       var proprio = this._cnpjProprio();
       var emitDoc = String(fn.cnpj || "").replace(/\D/g, "");
       var ehSaida = !!(proprio && emitDoc && emitDoc === proprio);
+      /* v1.1.234 — tpNF corrige o sentido: NF-e de ENTRADA emitida pela
+         própria empresa (tpNF=0 — produtor rural, importação, devolução
+         recebida) tem emitente = empresa, mas o dinheiro SAI. Sem isto ela
+         virava venda: o produtor era cadastrado como CLIENTE e o Lançar
+         gerava RECEITA de um valor que na verdade é pagamento. */
+      if (ehSaida && String(dados.tpNF) === "0") ehSaida = false;
       /* SEM O CNPJ DA EMPRESA o app não distingue compra de venda, e este
          caminho grava sem conferência humana — a nota que a própria empresa
          emitiu entrava como COMPRA, com ela mesma de fornecedora.
@@ -12795,6 +12853,12 @@ renderRequisicoes: function () {
         jaTem.dataEmissao = dados.emissao || jaTem.dataEmissao; jaTem.valorTotal = vNovo;
         jaTem.chaveAcesso = dados.chave || jaTem.chaveAcesso || "";
         jaTem.status = "emitida"; jaTem.origem = origem || jaTem.origem;
+        /* v1.1.234 — o TIPO também se corrige com o XML em mãos. O registro
+           por chave chuta o sentido (sem CNPJ configurado, chuta "entrada");
+           quando o XML chega dizendo o contrário, todos os outros campos eram
+           corrigidos MENOS o tipo — a venda ficava como compra para sempre,
+           com o Lançar gerando despesa do valor de uma receita. */
+        jaTem.tipo = ehSaida ? "saida" : "entrada";
         /* a nota que estava só "aguardando XML" recebe agora o conteúdo todo —
            itens e parcelas inclusive, senão ela ficaria eternamente sem triagem */
         var completo = this._nfeParaRegistro(dados, ehSaida, origem || jaTem.origem);
@@ -13003,7 +13067,17 @@ renderFolha: function () {
       var f = Store.obter(eid(), "folha", id); if (!f) return;
       var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
       var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(46) : "";
-      var col = lista("colaboradores").filter(function (c) { return c.id === f.colaboradorId; })[0] || {};
+      /* v1.1.234 — colaborador EXCLUÍDO (aqui ou por sync de outro aparelho)
+         deixava o recibo sair com nome/CPF em branco: documento trabalhista
+         inválido, e a folha não guarda snapshot. O fallback usa o que a folha
+         tiver; sem nada, bloqueia com o motivo em vez de imprimir um recibo
+         sem favorecido. */
+      var col = lista("colaboradores").filter(function (c) { return c.id === f.colaboradorId; })[0] ||
+                (f.colaboradorNome ? { nome: f.colaboradorNome, funcao: f.colaboradorFuncao || "", cpf: f.colaboradorCpf || "" } : null);
+      if (!col || !col.nome) {
+        UI.toast("O colaborador desta folha foi excluído e o registro não guarda o nome — recibo sem favorecido não vale como documento. Recadastre o colaborador ou registre o nome na folha.", "erro");
+        return;
+      }
       var base = Util.num(f.salarioBase), he = Util.num(f.horasExtras), desc = Util.num(f.descontos), enc = Util.num(f.encargosPct);
       var faltas = lista("faltas").filter(function (x) { return x.colaboradorId === f.colaboradorId && String(x.data || "").slice(0, 7) === (f.competencia || "") && x.motivo === "injustificada"; }).length;
       var venc = base + he, liq = venc - desc, fgts = base * 0.08;
@@ -13035,6 +13109,10 @@ renderFolha: function () {
       this._modalForm("folha", f, "Folha de pagamento", corpo, function (obj) {
         obj.competencia = v("g-comp"); if (!obj.competencia) { UI.toast("Informe a competência.", "erro"); return false; }
         obj.colaboradorId = v("g-col"); obj.obraId = v("g-obra");
+        /* v1.1.234 — snapshot do favorecido NA folha (como o ponto já faz):
+           colaborador excluído depois não pode deixar o recibo sem nome/CPF */
+        var colSnap = lista("colaboradores").filter(function (c) { return c.id === obj.colaboradorId; })[0];
+        if (colSnap) { obj.colaboradorNome = colSnap.nome || ""; obj.colaboradorFuncao = colSnap.funcao || ""; obj.colaboradorCpf = colSnap.cpf || ""; }
         obj.salarioBase = nv("g-base"); obj.encargosPct = nv("g-enc"); obj.horasExtras = nv("g-he"); obj.descontos = nv("g-desc");
         obj.status = v("g-status");
         obj.custoTotal = Gestao.calcFolha(obj);
@@ -13089,11 +13167,14 @@ renderFolha: function () {
         if (ateFim(d)) medAcum += v;
         if (noMes(d)) { medMes += v; medsDoMes.push(m); }
       });
-      var contrato = lista("contratos").filter(function (c) { return c.obraId === obraId; })[0];
-      // Base do avanço físico: contrato > PREÇO DE VENDA do orçamento (medição é a
-      // preço de venda — dividir pelo custo direto inflava o % e o Math.min mascarava
-      // em "100%"; revisão do líder). Mesmo padrão do boletim (#18/_medicaoCalc).
-      var baseContr = contrato ? Util.num(contrato.valor) : 0;
+      /* v1.1.234 — TODOS os contratos vivos da obra, não só o primeiro. Obra
+         com 2 contratos (execução + complementar) media contra a base do
+         primeiro em ordem de inserção: o % de avanço saltava e o Math.min o
+         mascarava em 100% — relatório mensal dizendo obra concluída com
+         metade do valor medido. */
+      var baseContr = lista("contratos").filter(function (c) {
+        return c.obraId === obraId && c.status !== "cancelado" && c.status !== "rescindido";
+      }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
       if (!(baseContr > 0) && orc && typeof Orcamento !== "undefined" && Orcamento.totais) {
         try { baseContr = Util.num(Orcamento.totais(orc).precoVenda); } catch (eB) { baseContr = 0; }
       }
@@ -14113,7 +14194,8 @@ renderFolha: function () {
       lancs.forEach(function (l) {
         var dias = FS.DIAS.map(function (d) { return (l.faltas && l.faltas.indexOf(d) !== -1) ? "x" : String((l.dias && l.dias[d]) || "").replace(".", ","); });
         var pt = FS.partesLinha(l);
-        linhas.push([self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", l.tipo || "", l.favorecido || "", l.chavePix || ""].map(function (c) { return '"' + String(c).replace(/"/g, '""') + '"'; }).join(";") + ";" + dias.join(";") + ";" + String(FS.num(l.he) || "").replace(".", ",") + ";" + String(pt.fechado || "").replace(".", ",") + ";" + String(FS.totalFinal(l)).replace(".", ","));
+        // v1.1.234 — mesma neutralização de fórmula do _exportarCSV (nome/favorecido/PIX são digitados)
+        linhas.push([self._fsNomeObra(l.obraId), l.nome || "", l.funcao || "", l.tipo || "", l.favorecido || "", l.chavePix || ""].map(function (c) { var v = String(c); if (/^[=+\-@]/.test(v) && !/^-?\d/.test(v)) v = "'" + v; return '"' + v.replace(/"/g, '""') + '"'; }).join(";") + ";" + dias.join(";") + ";" + String(FS.num(l.he) || "").replace(".", ",") + ";" + String(pt.fechado || "").replace(".", ",") + ";" + String(FS.totalFinal(l)).replace(".", ","));
       });
       var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "folha-semanal-" + this._fsSemana + ".csv"; document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 400);
@@ -16337,7 +16419,12 @@ case "nova-folha": return this.novoFolha();
           contratado: contratado, medidoAcum: medidoAcum,
           pago: Math.round(pago * 100) / 100,
           aReceber: Math.round(aReceber * 100) / 100,
-          retencao: medicoes.reduce(function (s, m) { return s + Util.num(m.retencao); }, 0),
+          /* v1.1.234 — retenção em REAIS, não a soma dos percentuais. O portal
+             formata este campo como dinheiro: 3 boletins com 5% de retenção
+             mostravam "R$ 15,00" retidos ao cliente — número sem sentido no
+             documento que ele confere. O valor retido de cada boletim é
+             valor × retenção%, somado. */
+          retencao: Math.round(medicoes.reduce(function (s, m) { return s + Util.num(m.valor) * Util.num(m.retencao) / 100; }, 0) * 100) / 100,
           proxima: proxima, parcelas: parcelas
         };
       }
@@ -17364,8 +17451,15 @@ case "nova-folha": return this.novoFolha();
         });
       }
       var pagEl = doc.getElementsByTagName("detPag")[0];
+      /* v1.1.234 — tpNF (0=entrada, 1=saída) e finNFe (4=devolução) sempre
+         estiveram no XML e nunca eram lidos: NF-e de ENTRADA emitida pela
+         própria empresa (produtor rural, importação) entrava como VENDA e
+         gerava receita fantasma; devolução entrava como operação normal. */
+      var ideEl = doc.getElementsByTagName("ide")[0];
+      var tpNF = ideEl ? sub(ideEl, "tpNF") : "";
+      var finNFe = ideEl ? sub(ideEl, "finNFe") : "";
       return {
-        tipoLancamento: "despesa", fornecedor: forn, destinatario: dest, valor: valor,
+        tipoLancamento: "despesa", fornecedor: forn, destinatario: dest, valor: valor, tpNF: tpNF, finNFe: finNFe,
         emissao: emissao, vencimento: vencimento, numero: numero, serie: serie, chave: chave,
         natureza: natureza, descricao: "NF " + numero + " — " + forn.nome, categoria: "material",
         itens: itens, itensTruncados: truncou, duplicatas: duplicatas,
@@ -17419,6 +17513,16 @@ case "nova-folha": return this.novoFolha();
     },
     _docParaLancamento: function (dados, origem, destino) {
       var fn = dados.fornecedor || {}, ehReceita = dados.tipoLancamento === "receita", msgCad = "";
+      /* ===== v1.1.234 — O SINAL DO DINHEIRO VALE NOS DOIS RAMOS =====
+         A correção "quem emitiu decide" existia SÓ no ramo destino==='fiscal'.
+         Pelo botão do FINANCEIRO (destino vazio), o XML da nota que a PRÓPRIA
+         empresa emitiu seguia o tipoLancamento 'despesa' fixo do parser: a
+         empresa era cadastrada como FORNECEDORA de si mesma, a venda entrava
+         no Fiscal como compra e o formulário abria como DESPESA do valor da
+         venda. O cálculo sobe para cá e os dois ramos usam o mesmo. */
+      var _cnpjP = this._cnpjProprio ? this._cnpjProprio() : "";
+      var _emitC = String(fn.cnpj || "").replace(/\D/g, "");
+      if (!ehReceita && _cnpjP && _emitC && _emitC === _cnpjP) ehReceita = true;
       /* Chamado da TELA FISCAL: nada é gravado — nem fornecedor, nem a nota.
          O que a IA leu vai para o formulário e o usuário confere antes de
          salvar. Uma nota criada sozinha, com obra vazia e imposto zerado,
@@ -17457,6 +17561,7 @@ case "nova-folha": return this.novoFolha();
         }
       }
       // NF identificada (número/chave): registra também na entidade fiscal, sem duplicar
+      var nfSalva = null;
       if (dados.numero || dados.chave) {
         var chaveLimpa = String(dados.chave || "").replace(/\D/g, "");
         var jaTem = lista("fiscal").filter(function (x) {
@@ -17465,15 +17570,22 @@ case "nova-folha": return this.novoFolha();
           return dados.numero && String(x.numero) === String(dados.numero) && (x.parceiro || "") === (fn.nome || "");
         })[0];
         if (!jaTem) {
-          Store.salvar(eid(), "fiscal", this._nfeParaRegistro(dados, ehReceita, origem || "documento-ia"));
+          nfSalva = Store.salvar(eid(), "fiscal", this._nfeParaRegistro(dados, ehReceita, origem || "documento-ia"));
           msgCad += "NF registrada no Fiscal. ";
-        }
+        } else { nfSalva = jaTem; }
       }
+      /* v1.1.234 — O LANÇAMENTO CARREGA O VÍNCULO COM A NOTA. Sem docChave, o
+         lançamento salvo por este formulário era invisível para o dedupe da
+         tela Fiscal: a MESMA nota continuava exibindo "Lançar", o usuário
+         clicava acreditando que nunca fora lançada, e as parcelas entravam
+         POR CIMA — despesa em dobro, sem aviso nenhum. */
       this.formFinanceiro({
         tipo: ehReceita ? "receita" : "despesa",
         data: dados.vencimento || dados.emissao || new Date().toISOString().slice(0, 10),
         valor: dados.valor || 0, categoria: dados.categoria || "material",
-        desc: dados.descricao || ("Documento — " + (fn.nome || "")), fornecedor: fn.nome || "", status: "pendente"
+        desc: dados.descricao || ("Documento — " + (fn.nome || "")), fornecedor: fn.nome || "", status: "pendente",
+        docTipo: "NF", docId: (nfSalva && nfSalva.id) || "",
+        docNumero: dados.numero || "", docChave: String(dados.chave || "").replace(/\D/g, "")
       });
       UI.toast("🤖 " + msgCad + "Lançamento preenchido pela IA (confiança " + Math.round((dados.confianca || 0) * 100) + "%). Confira e salve.", "ok");
     },

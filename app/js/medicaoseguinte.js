@@ -54,6 +54,7 @@
   function ultimaDaObra(medicoes, obraId, ate) {
     var lista = (medicoes || []).filter(function (m) {
       if (!m || texto(m.obraId) !== texto(obraId)) return false;
+      if (m.status === "rejeitada") return false; // v1.1.234 — puxar de boletim recusado semearia acumulado errado
       if (ate && texto(m.periodoFim) && texto(m.periodoFim) > ate) return false;
       return true;
     });
@@ -115,6 +116,7 @@
     var porItem = {}, porAtividade = {};
     (medicoes || []).forEach(function (m) {
       if (!m || texto(m.obraId) !== texto(obraId)) return;
+      if (m.status === "rejeitada") return; // v1.1.234
       if (excluirId && texto(m.id) === texto(excluirId)) return;
       var fim = texto(m.periodoFim);
       if (ate && fim && fim >= ate) return;          // só o que fechou ANTES

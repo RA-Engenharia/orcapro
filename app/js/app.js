@@ -1159,6 +1159,15 @@
         case "import-confirmar": this.criarOrcamentoDaImportacao(); break;
         case "config-orc": this.editarDadosOrc(); break;
         case "parametros-orc":
+          /* v1.1.234 — APROVADO NÃO MUDA NEM POR AQUI. O wizard grava com
+             Store.salvarOrcamento direto, por fora do persistir() que recusa
+             aprovado: trocar o BDI em ⚙ Parâmetros alterava o preço de um
+             orçamento que o cliente já aceitou — a trava valia numa porta e
+             não na outra. Quem precisa mexer cria revisão. */
+          if (this.orcAtual && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(this.orcAtual)) {
+            UI.toast("Este orçamento está " + ((Aprovacao.ESTADOS[this.orcAtual.estadoAprovacao] || {}).rotulo || "aprovado") + " — os parâmetros não mudam mais. Para alterar, crie uma revisão.", "erro");
+            break;
+          }
           if (typeof OrcWizard !== "undefined" && this.orcAtual) OrcWizard.editarParametros(this, this.orcAtual);
           break;
         case "escopo": this.abrirEscopo(); break;
@@ -6256,7 +6265,16 @@
       var linhas = [], linha = [], cur = "", q = false;
       for (var i = 0; i < txt.length; i++) {
         var ch = txt[i];
-        if (ch === '"') { if (q && txt[i + 1] === '"') { cur += '"'; i++; } else q = !q; }
+        if (ch === '"') {
+          if (q && txt[i + 1] === '"') { cur += '"'; i++; }
+          /* v1.1.234 — aspa de POLEGADA não abre citação. `TUBO PVC 3/4"` numa
+             planilha de hidráulica ligava o modo-citação no MEIO do campo e o
+             parser engolia delimitadores e quebras de linha até achar outra
+             aspa — itens inteiros sumiam da importação, calados. Aspa só abre
+             citação no INÍCIO do campo (regra do RFC 4180); no meio, é texto. */
+          else if (!q && cur !== "") { cur += '"'; }
+          else q = !q;
+        }
         else if (ch === delim && !q) { linha.push(cur); cur = ""; }
         else if (ch === "\n" && !q) { linha.push(cur); linhas.push(linha); linha = []; cur = ""; }
         else cur += ch;

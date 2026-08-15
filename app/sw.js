@@ -11,7 +11,7 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.1.233';
+var CACHE = 'orcapro-app-v1.1.234';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
@@ -23,12 +23,24 @@ self.addEventListener('install', function (e) {
   // de CDN e nunca passava por aqui; agora é arquivo nosso, lazy como os outros dois —
   // sem esta linha, exportar Excel offline falharia justamente em quem instalou o app.
   e.waitUntil(caches.open(CACHE).then(function (c) {
-    return Promise.all([
-      c.add('./js/vendor/xlsx.full.min.js').catch(function () {}),
-      c.add('./js/vendor/exceljs.min.js').catch(function () {}),
-      c.add('./js/vendor/pdfjs/pdf.min.mjs').catch(function () {}),
-      c.add('./js/vendor/pdfjs/pdf.worker.min.mjs').catch(function () {})
-    ]);
+    /* v1.1.234 — O SHELL TAMBÉM SE PRÉ-CACHEIA. Só os vendors entravam no
+       install; index/css/js só caíam no cache quando uma página CONTROLADA os
+       buscava. Depois de cada atualização (que apaga os caches e desregistra
+       o SW), a primeira visita carrega SEM controlador — nada era cacheado e
+       o PWA não abria offline até a SEGUNDA visita online. No canteiro sem
+       sinal, isso é o app não abrir no dia seguinte ao update.
+       A lista vem do próprio index.html em runtime (fetch + regex nos <script>
+       e <link>): lista à mão aqui dessincronizaria na primeira release. */
+    var fixos = ['./', './index.html', './manifest.webmanifest',
+      './js/vendor/xlsx.full.min.js', './js/vendor/exceljs.min.js',
+      './js/vendor/pdfjs/pdf.min.mjs', './js/vendor/pdfjs/pdf.worker.min.mjs'];
+    return fetch('./index.html').then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; })
+      .then(function (html) {
+        var extras = [];
+        var re = /(?:src|href)="((?:js|css)\/[^"]+)"/g, m;
+        while ((m = re.exec(html))) extras.push('./' + m[1]);
+        return Promise.all(fixos.concat(extras).map(function (u) { return c.add(u).catch(function () {}); }));
+      });
   }));
 });
 self.addEventListener('activate', function (e) {
