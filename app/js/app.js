@@ -947,6 +947,7 @@
        * variante sai dos selects que a própria linha desenhou a partir dos
        * eixos do catálogo, então tela e handler não têm como divergir. */
       if (t.dataset.instalar) {
+        if (!this._podeBases()) { this._recusaBases("Instalar uma tabela de preço"); return; }
         if (t.disabled) return;                       // clique duplo disparava dois downloads
         var catId = String(t.dataset.instalar).toUpperCase(), selfI = this, btnI = t;
         var eI = (typeof BasesCat !== "undefined") ? BasesCat.get(catId) : null;
@@ -1049,6 +1050,7 @@
       // remover base extra — a PROPRIA guarda composições AUTORAIS (não há como
       // reimportar), então exige confirmação explícita antes de apagar
       if (t.dataset.baseRemover) {
+        if (!this._podeBases()) { this._recusaBases("Remover uma tabela de preço"); return; }
         var fonteRem = String(t.dataset.baseRemover).toUpperCase(), selfRem = this;
         if (fonteRem === "PROPRIA") {
           var bRem = Bases.extras().filter(function (x) { return x.fonte === "PROPRIA"; })[0];
@@ -1631,9 +1633,11 @@
       if (!Util.naoVazio(nova)) { UI.toast("Senha vazia.", "erro"); return; }
       var r = Auth.redefinirSenha(email, nova);
       if (!r.ok) { UI.toast(r.erro, "erro"); return; }
-      UI.toast("Senha redefinida! Entrando…", "ok");
-      this.tela = "lista"; this.render();
-      var self = this; this.carregarBaseSinapi().then(function () { if (self.tela === "lista") self.render(); });
+      /* ⚠ NÃO entra direto. Redefinir senha não é autenticar — era exatamente
+         por entrar direto que qualquer um virava admin digitando o e-mail do
+         dono. Redefiniu, entra pelo login com a senha nova. */
+      UI.toast("Senha redefinida. Entre com a senha nova.", "ok");
+      this.tela = "login"; this.render();
     },
 
     // URLs do analítico da UF ativa: {local} no disco + {live} no VPS (fallback garantido).
@@ -2285,6 +2289,17 @@
       return { novos: novos, atualizados: atualizados, total: dados.length };
     },
     importarBackup: function (file) {
+      /* ⚠ O PAR ESTAVA ASSIMÉTRICO. `abrirBackup` e `exportarBackup` ganharam a
+         guarda de administrador na auditoria de 15/08 (js/app.js:2101 e :2244),
+         mas a IMPORTAÇÃO ficou de fora — e ela é o lado que ESCREVE. Um arquivo
+         .json escolhido pelo usuário reescreve `equipe` (modulos, aprovador,
+         ativo, senhaHash) e `conta` (e-mail e senha do administrador): quem
+         importa se promove a admin e troca a senha do dono. Ler exigia ser
+         admin; gravar não exigia nada. */
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) {
+        UI.toast("Só o administrador da conta pode importar backup.", "erro");
+        return;
+      }
       var self = this, rd = new FileReader();
       rd.onload = function () {
         try {
@@ -2690,6 +2705,21 @@
         [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
 
+    /* ⚠ A base de preço é patrimônio da EMPRESA, não do usuário: instalar,
+       importar, sobrescrever ou remover atinge todo mundo e sincroniza. O menu
+       da engrenagem (js/ui.js:255) imprime "Tabelas de preço" para QUALQUER
+       sessão — só empresa/nuvem/celular/backup eram gateados ali. Um
+       encarregado com acesso só ao Diário apagava o acervo em dois cliques.
+       Guarda em FUNÇÃO, como manda a doutrina da casa (js/app.js:2101). */
+    _podeBases: function () {
+      if (typeof Auth === "undefined" || !Auth.ehAdmin) return true;
+      return Auth.ehAdmin();
+    },
+    _recusaBases: function (oQue) {
+      try { UI.toast(oQue + " altera a base de preço da empresa inteira. Só o administrador da conta pode fazer isso.", "erro"); } catch (e) {}
+      return false;
+    },
+
     abrirTabelas: function () {
       /* primeira abertura da sessão ainda não tem o anúncio do servidor (as UFs
          do SICRO e da SINAPI desonerada saem de lá). Dispara a consulta e
@@ -2715,6 +2745,7 @@
       var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "740px";
     },
     importarBase: function () {
+      if (!this._podeBases()) { this._recusaBases("Importar uma tabela de preço"); return; }
       var self = this;
       var fonte = (UI.el("tab-fonte") || {}).value || "PROPRIA";
       var uf = (UI.el("tab-uf") || {}).value || "";
@@ -4748,6 +4779,14 @@
     /* v1.1.123 — reabre uma composição própria existente no criador (errou o
      * coeficiente? corrige e regrava — o código original é sobrescrito). */
     editarComposicao: function (codigo) {
+      /* Composição própria é acervo de ORÇAMENTO — quem tem o módulo cuida
+         dela. Chegava por ⚙ → Tabelas → "ver itens", que a engrenagem mostra
+         para qualquer sessão: sub-usuário sem Orçamentos lia código, descrição
+         e CUSTO UNITÁRIO de cada composição autoral, e ainda editava e excluía. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        try { UI.toast("Seu usuário não tem permissão no módulo Orçamentos.", "erro"); } catch (e) {}
+        return;
+      }
       var bp = Bases.obter("PROPRIA", String(codigo));
       if (!bp) { UI.toast("Composição " + codigo + " não encontrada na base própria.", "erro"); return; }
       var copia; try { copia = JSON.parse(JSON.stringify(bp)); } catch (e) { copia = bp; }
@@ -4770,6 +4809,14 @@
      * rename, não cópia). Aqui o criador abre como COMPOSIÇÃO NOVA
      * (editando = null), com código PROP novo — o original fica intacto. */
     duplicarComposicao: function (codigo) {
+      /* Composição própria é acervo de ORÇAMENTO — quem tem o módulo cuida
+         dela. Chegava por ⚙ → Tabelas → "ver itens", que a engrenagem mostra
+         para qualquer sessão: sub-usuário sem Orçamentos lia código, descrição
+         e CUSTO UNITÁRIO de cada composição autoral, e ainda editava e excluía. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        try { UI.toast("Seu usuário não tem permissão no módulo Orçamentos.", "erro"); } catch (e) {}
+        return;
+      }
       var bp = Bases.obter("PROPRIA", String(codigo));
       if (!bp) { UI.toast("Composição " + codigo + " não encontrada na base própria.", "erro"); return; }
       var copia; try { copia = JSON.parse(JSON.stringify(bp)); } catch (e) { copia = bp; }
@@ -4807,6 +4854,14 @@
       return antes - dados.length;
     },
     excluirProprio: function (codigo) {
+      /* Composição própria é acervo de ORÇAMENTO — quem tem o módulo cuida
+         dela. Chegava por ⚙ → Tabelas → "ver itens", que a engrenagem mostra
+         para qualquer sessão: sub-usuário sem Orçamentos lia código, descrição
+         e CUSTO UNITÁRIO de cada composição autoral, e ainda editava e excluía. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        try { UI.toast("Seu usuário não tem permissão no módulo Orçamentos.", "erro"); } catch (e) {}
+        return;
+      }
       var self = this;
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       /* a pergunta tem de contar TUDO o que quebra: excluir um item usado
@@ -4842,6 +4897,14 @@
      * existia — só a linha agregada no Tabelas, cujo único botão apagava a
      * base INTEIRA. Busca + ver/editar/duplicar/excluir POR ITEM. */
     minhasComposicoes: function (filtro) {
+      /* Composição própria é acervo de ORÇAMENTO — quem tem o módulo cuida
+         dela. Chegava por ⚙ → Tabelas → "ver itens", que a engrenagem mostra
+         para qualquer sessão: sub-usuário sem Orçamentos lia código, descrição
+         e CUSTO UNITÁRIO de cada composição autoral, e ainda editava e excluía. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        try { UI.toast("Seu usuário não tem permissão no módulo Orçamentos.", "erro"); } catch (e) {}
+        return;
+      }
       var self = this;
       this._mcFiltro = String(filtro || "");
       var bPro = (typeof Bases !== "undefined" && Bases.extras) ? Bases.extras().filter(function (b) { return b.fonte === "PROPRIA"; })[0] : null;
@@ -5436,6 +5499,14 @@
      * composição já faz (nada muda em orçamento sem o usuário mandar).
      * ------------------------------------------------------------------ */
     editarInsumoProprio: function (codigo, aoConcluir) {
+      /* Composição própria é acervo de ORÇAMENTO — quem tem o módulo cuida
+         dela. Chegava por ⚙ → Tabelas → "ver itens", que a engrenagem mostra
+         para qualquer sessão: sub-usuário sem Orçamentos lia código, descrição
+         e CUSTO UNITÁRIO de cada composição autoral, e ainda editava e excluía. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        try { UI.toast("Seu usuário não tem permissão no módulo Orçamentos.", "erro"); } catch (e) {}
+        return;
+      }
       var self = this;
       var ins = Bases.obter("PROPRIA", String(codigo));
       if (!ins) { UI.toast("Insumo " + codigo + " não encontrado na base própria.", "erro"); return; }

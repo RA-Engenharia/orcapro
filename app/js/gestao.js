@@ -835,6 +835,10 @@
        * isso; o resto do Painel imprimia para todo mundo, e o encarregado com
        * acesso só ao RDO enxergava a margem de cada obra da empresa. */
       var _podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+      /* ⚠ O Painel é o único módulo que TODO sub-usuário recebe, então é o
+         lugar onde um agregado descuidado entrega o que a tela do módulo
+         esconde. Mesmo formato do _podeFin, para qualquer módulo. */
+      var _podeMod = function (m) { return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(m)); };
       /* ⚠ `clientes` e `orc` eram lidos e DESCARTADOS. `Store.listarOrcamentos`
        * é a leitura mais cara do sistema (desserializa todo orçamento da
        * empresa) e o resultado não era usado em lugar nenhum deste método. */
@@ -884,14 +888,18 @@
              de cobrar. Não é alerta — é informação, e por isso vem como KPI e
              não como linha de "precisa de você". Só aparece quando existe. */
           (_podeFin && _retido > 0 ? k("Retenção presa", Util.fmtMoeda(_retido), "custo") : "") +
-          k("Medições pendentes", medPend) +
-          k("Compras em aberto", comprasAbertas) +
-          k("Diários (RDO)", rdos.length) +
+          /* ⚠ Estes três não são dinheiro, mas são VOLUME de módulo: dizer
+             "Medições pendentes: 7" a quem não tem Medições entrega o ritmo da
+             obra e o tamanho da operação a quem o admin decidiu não mostrar.
+             O gate de dinheiro acima já existia; faltava o de módulo. */
+          (_podeMod("medicoes") ? k("Medições pendentes", medPend) : "") +
+          (_podeMod("compras") ? k("Compras em aberto", comprasAbertas) : "") +
+          (_podeMod("rdo") ? k("Diários (RDO)", rdos.length) : "") +
         "</div>";
       // Sem nenhuma obra ainda: o CTA da obra de demonstração sobe pro TOPO (1ª impressão)
       if (!obras.length) html += this._obraDemoCard();
       // Last Planner — pulso da semana (agregado de todas as obras) + atalho pro quadro
-      if (typeof LastPlanner !== "undefined") {
+      if (typeof LastPlanner !== "undefined" && _podeMod("lastplanner")) {
         var lpTs = esc.lpTarefas;   // o PPC também é do recorte, não da empresa toda
         if (lpTs.length) {
           var lpLook = LastPlanner.semanas(new Date(), 6);
@@ -912,15 +920,20 @@
       // G3: fila de aprovações pendentes (só aparece quando há algo esperando, e só p/ quem aprova)
       var podeAp = (typeof Auth === "undefined" || !Auth.podeAprovar) ? true : Auth.podeAprovar();
       var pend = this._pendentesAprovacao();
+      /* o total do cabeçalho tem de contar SÓ o que a pessoa pode ver — senão
+         o número denuncia o volume dos módulos negados. */
+      pend = { medicoes: _podeMod("medicoes") ? pend.medicoes : 0, compras: _podeMod("compras") ? pend.compras : 0,
+               requisicoes: _podeMod("requisicoes") ? pend.requisicoes : 0, producao: _podeMod("producao") ? pend.producao : 0, total: 0 };
+      pend.total = pend.medicoes + pend.compras + pend.requisicoes + pend.producao;
       if (podeAp && pend.total > 0) {
         var chip = function (n, rot, view) { return n > 0 ? '<button class="btn sm" data-view="' + view + '" style="margin-right:8px">' + rot + ": <b>" + n + "</b></button>" : ""; };
         html += '<div class="card mt" style="border-left:4px solid #f59e0b"><h3 style="margin:0 0 8px;display:flex;align-items:center">' + _icP("relogio") + 'Pendentes de aprovação <span class="g-pill" style="background:#f59e0b22;color:#b45309;margin-left:8px">' + pend.total + '</span>' + (esc.filtrado ? '<span class="muted" style="font-size:11.5px;font-weight:400;margin-left:8px">de todas as obras</span>' : '') + '</h3>' +
           '<div class="muted" style="margin-bottom:10px;font-size:13px">Itens aguardando o seu aval. Clique para revisar e aprovar/rejeitar.</div>' +
-          chip(pend.medicoes, "Medições", "medicoes") + chip(pend.compras, "Pedidos de compra", "compras") + chip(pend.requisicoes, "Requisições", "requisicoes") + chip(pend.producao, "Produção a pagar", "producao") +
+          chip(_podeMod("medicoes") ? pend.medicoes : 0, "Medições", "medicoes") + chip(_podeMod("compras") ? pend.compras : 0, "Pedidos de compra", "compras") + chip(_podeMod("requisicoes") ? pend.requisicoes : 0, "Requisições", "requisicoes") + chip(_podeMod("producao") ? pend.producao : 0, "Produção a pagar", "producao") +
           "</div>";
       }
       // G4: tarefas atrasadas / a fazer
-      var self = this, tarefas = lista("tarefas");
+      var self = this, tarefas = _podeMod("tarefas") ? lista("tarefas") : [];
       var tAtras = tarefas.filter(function (t) { return self._tarefaAtrasada(t); }).length;
       var tAfazer = tarefas.filter(function (t) { return t.status === "afazer" || t.status === "fazendo"; }).length;
       if (tAfazer > 0 || tAtras > 0) {
@@ -1583,6 +1596,13 @@
       return { porCategoria: cats, custoPorObra: custoObra.map(function (x) { return { rotulo: x.rotulo, valor: x.valor }; }), custoM2: custoM2 };
     },
     _dashAnalise: function () {
+      /* ⚠ RBAC: custo/m² É DINHEIRO DO FINANCEIRO (custo real ÷ área). O
+         "Resumo por obra" logo acima já está atrás de `_podeFin`
+         (js/gestao.js:940) e este card ficou fora — então o Painel, que TODO
+         sub-usuário recebe, imprimia "Obra Alfa · R$ 1.975,31/m²" para quem só
+         tem o Diário. Guarda na função, não no call site: assim tela nova que
+         chamar isto nasce certa. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return "";
       // Enxuto desde a Home executiva: donut de categorias e custo-por-obra moraram
       // pro bloco financeiro do topo (com filtro global). Aqui fica só o que é
       // EXCLUSIVO: custo por m² comparativo entre obras (período global do Painel).
@@ -3440,6 +3460,14 @@
       UI.toast("CSV exportado.", "ok");
     },
     exportarModulo: function (modulo) {
+      /* ⚠ Guarda em FUNÇÃO. Os ids passados aqui ("financeiro", "compras",
+         "medicoes") são os mesmos do RBAC, então uma linha cobre as três. A
+         tela pode estar bloqueada e o CSV sair mesmo assim — foi assim que o
+         irmão desta ação (exportarBackup) precisou de guarda própria. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(modulo)) {
+        UI.toast("Seu usuário não tem permissão no módulo " + modulo + ".", "erro");
+        return;
+      }
       var self = this, dados, cols, nome;
       if (modulo === "financeiro") {
         /* ⚠ EXPORTA O RECORTE DA TELA, não a empresa inteira. Filtrar,
@@ -3880,6 +3908,11 @@
       };
     },
     renderPrevistoReal: function () {
+      /* ⚠ Esta tela É o Financeiro por outro caminho: a coluna "Realizado" é a
+         soma das despesas lançadas. Ter o módulo desta tela não é ter o
+         Financeiro — e sem ele a tela não tem o que mostrar de honesto. Mesmo
+         padrão dos Relatórios (js/gestao.js) e do Painel. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return this._semPermissao("financeiro");
       var obras = lista("obras");
       var self = this;
       // obra selecionada persiste no módulo (default: 1ª com orçamento vinculado)
@@ -13342,6 +13375,11 @@ renderPatrimonio: function () {
     },
 
 renderCentrocusto: function () {
+      /* ⚠ Esta tela É o Financeiro por outro caminho: a coluna "Realizado" é a
+         soma das despesas lançadas. Ter o módulo desta tela não é ter o
+         Financeiro — e sem ele a tela não tem o que mostrar de honesto. Mesmo
+         padrão dos Relatórios (js/gestao.js) e do Painel. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return this._semPermissao("financeiro");
       var ccs = lista("centrocusto"), obras = lista("obras"), fin = lista("financeiro");
       var totOrcado = ccs.reduce(function (s, c) { return s + Util.num(c.valorOrcado); }, 0);
       var realPorObra = {};

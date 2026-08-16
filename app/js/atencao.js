@@ -61,12 +61,26 @@
          Mostro a exposição de UM percentual sobre o contrato e digo que é
          estimativa — inventar "× dias" seria multiplicar um chute. */
       var exposicao = pct > 0 && valorC > 0 ? valorC * pct / 100 : 0;
+      /* ⚠ A exposição é VALOR DE CONTRATO disfarçado: mostrar "R$ 500.000" e
+         dizer ao lado "multa de 2%" entrega o contrato numa divisão. O alerta é
+         do módulo "obras", então chegava a quem tem só Obras.
+         O atraso continua aparecendo — é informação de obra e quem toca a obra
+         precisa dela. Some só o NÚMERO.
+         ⚠ E o texto não pode virar mentira: zerar `exposicao` sozinho fazia o
+         "porque" dizer "sem multa cadastrada" havendo multa. Por isso a
+         condição do texto é `temMulta`, não o valor. */
+      var _podeValor = !(typeof Auth !== "undefined" && Auth.podeModulo
+        && !Auth.podeModulo("contratos") && !Auth.podeModulo("financeiro"));
+      var temMulta = exposicao > 0;
+      if (!_podeValor) exposicao = 0;
       achados.push({
         tipo: "obra-atrasada", gravidade: 3, modulo: "obras",
         titulo: "Obra passou do término contratual",
         detalhe: (ob.nome || "obra") + " · terminava em " + fim + " · " + atraso + " dia(s) atrás",
-        porque: exposicao > 0
-          ? "O contrato prevê multa de " + pct.toString().replace(".", ",") + "% — exposição estimada nesse percentual."
+        porque: temMulta
+          ? (_podeValor
+              ? "O contrato prevê multa de " + pct.toString().replace(".", ",") + "% — exposição estimada nesse percentual."
+              : "O contrato prevê multa por atraso. O valor exposto fica com quem tem acesso a Contratos.")
           : "Sem multa cadastrada no contrato, mas o prazo combinado já venceu.",
         valor: exposicao, obraId: ob.id, view: "obras",
         acao: exposicao > 0

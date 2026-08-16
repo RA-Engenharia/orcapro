@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.243",
+  "versao": "1.1.244",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.243/OrcaPRO-IA-update-v1.1.243.zip",
-  "notas": "Correcao no armazenamento de senhas e no acesso por link. No primeiro login apos a atualizacao o sistema pede uma senha nova. Recomendamos atualizar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.243/OrcaPRO-IA-Instalador-v1.1.243.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.244/OrcaPRO-IA-update-v1.1.244.zip",
+  "notas": "Correcao no controle de acesso por usuario. Recomendamos atualizar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.244/OrcaPRO-IA-Instalador-v1.1.244.exe"
 }

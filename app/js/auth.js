@@ -123,19 +123,12 @@
         if (s && s.email) this._usuario = s;
       } catch (e) {}
       var u = this._usuario;
-      // v1.1.79 (1× por empresa): módulo Cotações é novo — quem já operava Requisições ganha acesso;
-      // depois da migração, o que o admin marcar/desmarcar no usuário vale normalmente.
-      if (u && u.empresaId && typeof Store !== "undefined" && Store.listar) {
-        try {
-          var flagCot = "orcapro:mig:cotacoes79:" + u.empresaId;
-          if (!localStorage.getItem(flagCot)) {
-            (Store.listar(u.empresaId, "equipe") || []).forEach(function (m) {
-              if (m && m.modulos && m.modulos.indexOf("requisicoes") > -1 && m.modulos.indexOf("cotacoes") === -1) { m.modulos.push("cotacoes"); Store.salvar(u.empresaId, "equipe", m); }
-            });
-            localStorage.setItem(flagCot, "1");
-          }
-        } catch (eMig) {}
-      }
+      /* ⚠ REMOVIDA a migração do módulo "cotacoes" (v1.1.79, ago/2026).
+         Ela dava `push("cotacoes")` em quem tinha "requisicoes" e REGRAVAVA o
+         registro — ou seja, desfazia o que o admin tinha acabado de desmarcar,
+         e a cada aparelho que ainda não tinha rodado a marca voltava. Permissão
+         que se re-concede sozinha não é permissão. A migração já correu na
+         frota há um mês; quem precisa de Cotações recebe do admin, na tela. */
       // sub-usuário: re-sincroniza permissões (o admin pode ter alterado/desativado desde o último login)
       if (u && u.papel === "usuario" && u.usuarioId) {
         var eq = this._equipe(u.empresaId), atual = null;
@@ -285,10 +278,30 @@
       return false;
     },
     // Papel/permissões da sessão atual
-    ehAdmin: function () { var u = this._usuario; return !u || u.papel !== "usuario"; },
-    papel: function () { return (this._usuario && this._usuario.papel) || "admin"; },
+    /* ⚠ FALHA FECHADA. Isto era `!u || u.papel !== "usuario"`: a AUSÊNCIA de
+     * sessão valia ADMIN. Quem não estava logado respondia `true` aqui, `true`
+     * em `podeModulo` para QUALQUER módulo (inclusive "usuarios") e `true` em
+     * `podeAprovar`. A tela de login de `App.render` (js/app.js:411) segurava a
+     * porta da frente, mas toda entrada que não passa por ela — handler solto,
+     * deep-link, código que roda antes do `init`, harness — herdava tudo.
+     *
+     * E a correção do `autoEntrar` na v1.1.242 tornou o caso MAIS comum, não
+     * menos: antes ele criava uma sessão; agora devolve `null` (certo) e o app
+     * pode seguir sem sessão nenhuma. `Auth.init` também desloga sozinho quando
+     * o admin desativa o sub-usuário (linha ~143).
+     *
+     * Sem sessão o certo é NÃO PODER NADA. A vitrine não é afetada: ela monta
+     * `Auth._usuario` com empresaId "demo" (js/app.js:350), então tem sessão. */
+    temSessao: function () { return !!this._usuario; },
+    ehAdmin: function () { var u = this._usuario; return !!u && u.papel !== "usuario"; },
+    papel: function () { return (this._usuario && this._usuario.papel) || (this._usuario ? "admin" : ""); },
     nome: function () { var u = this._usuario; return u ? (u.nome || u.empresa || u.email || "") : ""; },
     podeModulo: function (id) {
+      /* ⚠ ANTES do atalho dos módulos "sempre liberados": sem sessão não há
+         "sempre liberado". Painel/Ajuda/Relatos devolviam `true` mesmo sem
+         ninguém logado, e o Painel é justamente a tela que agrega número de
+         financeiro, folha e custo. */
+      if (!this._usuario) return false;
       if (this.ehAdmin()) return true;                 // dono/demo vê tudo
       /* "relatos" entra aqui junto com a ajuda: quem topa com o defeito é o
          sub-usuário que usa a tela o dia inteiro, não o admin. Trancar o canal
@@ -414,10 +427,40 @@
          quem chegou aqui tem login e senha, e é com eles que entra. */
       return !!(this.contaMestre() || this._temEquipeLocal());
     },
+    /* ⚠ ESCALADA DE PRIVILÉGIO — era a porta mais larga do sistema.
+     *
+     * Isto fazia `_iniciarSessao(r.usuario)` com o registro CRU da conta, que
+     * não tem `_papel` nem `_modulos`. Resultado: `papel` caía no default
+     * "admin" e `modulos` virava `null` — e `null` significa "todos". Somando à
+     * única barreira existente, que é só `existeEmail`:
+     *
+     *   sub-usuário de RDO → "Sair" → digita o e-mail do DONO → "Esqueci a
+     *   senha" → escolhe uma senha → está ADMIN da empresa, no namespace REAL,
+     *   com Financeiro, Folha, Contratos e a tela de Usuários abertos.
+     *
+     * Duas coisas erradas, e as duas precisam cair:
+     * 1) Redefinir senha NÃO É autenticar. Não abre sessão. Redefiniu, vai
+     *    para o login e entra com a senha nova.
+     * 2) Tirar o auto-login sozinho não bastava: ela definiria a senha e
+     *    entraria com ela. Onde há EQUIPE ou CONTA MESTRE, o reset local é
+     *    tomada de conta — quem redefine senha de gente é o administrador.
+     *    É a mesma doutrina do `autoEntrar` (v1.1.242): o "é o seu próprio
+     *    navegador" só vale quando o navegador é mesmo só seu. */
     redefinirSenha: function (email, nova) {
-      var r = this.backend.redefinirSenha(email, nova);
-      if (r.ok) this._iniciarSessao(r.usuario);
-      return r;
+      if (this.contaMestre() || this._temEquipeLocal() || this._temEquipeDeQualquerDono()) {
+        return { ok: false, erro: "Esta conta tem usuários vinculados. Só o administrador redefine senha — fale com ele." };
+      }
+      return this.backend.redefinirSenha(email, nova);
+    },
+    /* varre as contas registradas: qualquer uma com equipe já é multiusuário */
+    _temEquipeDeQualquerDono: function () {
+      var contas = [];
+      try { contas = this.backend._lerUsuarios() || []; } catch (e) { return false; }
+      for (var i = 0; i < contas.length; i++) {
+        var eq = this._equipe(contas[i].empresaId);
+        if (eq && eq.length) return true;
+      }
+      return false;
     },
 
     // Auto-entrada (uso solo/local): abre o app direto, sem a barreira de login.
