@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.241",
+  "versao": "1.1.242",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.241/OrcaPRO-IA-update-v1.1.241.zip",
-  "notas": "Correcoes no layout em celular e tablet, na instalacao como aplicativo pelo Mac e no controle de acesso a tela de Relatorios.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.241/OrcaPRO-IA-Instalador-v1.1.241.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.242/OrcaPRO-IA-update-v1.1.242.zip",
+  "notas": "Correcoes no controle de acesso por usuario: telas de Relatorios e Backup e entrada no sistema. Recomendamos atualizar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.242/OrcaPRO-IA-Instalador-v1.1.242.exe"
 }

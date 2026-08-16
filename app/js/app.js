@@ -1529,7 +1529,26 @@
           UI.toast("Senha incorreta para " + email + ". Tente de novo ou use “Esqueci a senha” (se for o dono da conta).", "erro");
           return;
         }
-        // e-mail novo → cria conta (1º acesso)
+        /* ⚠ APARELHO QUE JÁ É DE UMA EMPRESA NÃO CRIA DONO NOVO.
+           `existeEmail`/`existeLoginEquipe` só enxergam contas registradas
+           LOCALMENTE (`orcapro:usuarios`). No aparelho do funcionário essa
+           lista é vazia, então um login de equipe que falhasse caía aqui e o
+           app RESPONDIA CRIANDO UMA CONTA DE DONO — papel admin — para quem
+           acabou de errar a senha. O "criar no 1º acesso" existe para quem
+           abre o app pela primeira vez no próprio aparelho, não para quem
+           bateu na porta de uma empresa que já mora aqui.
+           Achado na auditoria de permissão de 15/08/2026, mesma família da
+           v1.1.240. */
+        var _temEmpresa = false;
+        try {
+          _temEmpresa = !!((Auth._temEquipeLocal && Auth._temEquipeLocal()) ||
+                           (Auth.contaMestre && Auth.contaMestre()));
+        } catch (eE) {}
+        if (_temEmpresa) {
+          UI.toast("Usuário ou senha inválidos. Se você é da equipe, confira com o administrador da conta.", "erro");
+          return;
+        }
+        // e-mail novo, aparelho sem empresa → cria conta (1º acesso de verdade)
         r = Auth.registrar(empresa, email, senha);
         if (!r.ok) { UI.toast(r.erro, "erro"); return; }
         UI.toast("Conta criada. Bem-vindo!", "ok");
@@ -2063,6 +2082,17 @@
     },
 
     abrirBackup: function () {
+      /* ⚠ GUARDA NA FUNÇÃO, não só no menu. O backup leva a empresa
+         INTEIRA num arquivo: orçamentos, financeiro, folha, contratos,
+         fiscal e a própria tabela `equipe`. O botão só aparece no menu do
+         admin (js/ui.js:258) e o Ctrl+K exclui sub-usuário, mas esconder
+         controle nunca foi guarda — a ação é alcançável pelo despacho
+         (js/app.js:1106 e :1109). Achado na auditoria de permissão de
+         15/08/2026, mesma família da v1.1.240. */
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) {
+        try { UI.toast("O backup leva os dados de toda a empresa. Apenas o administrador da conta pode gerar.", "erro"); } catch (eB) {}
+        return;
+      }
       var eid = Auth.empresaId();
       var n = Store.listarOrcamentos(eid).length;
       var prop = this._propriasDoDisco(eid);
@@ -2195,6 +2225,17 @@
       } catch (e) {}
     },
     exportarBackup: function () {
+      /* ⚠ GUARDA NA FUNÇÃO, não só no menu. O backup leva a empresa
+         INTEIRA num arquivo: orçamentos, financeiro, folha, contratos,
+         fiscal e a própria tabela `equipe`. O botão só aparece no menu do
+         admin (js/ui.js:258) e o Ctrl+K exclui sub-usuário, mas esconder
+         controle nunca foi guarda — a ação é alcançável pelo despacho
+         (js/app.js:1106 e :1109). Achado na auditoria de permissão de
+         15/08/2026, mesma família da v1.1.240. */
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) {
+        try { UI.toast("O backup leva os dados de toda a empresa. Apenas o administrador da conta pode gerar.", "erro"); } catch (eB) {}
+        return;
+      }
       var eid = Auth.empresaId();
       var dump = this._dumpBackup(eid);
       var blob = new Blob([JSON.stringify(dump, null, 2)], { type: "application/json" });
@@ -6616,8 +6657,15 @@
       var ok = Store.salvarOrcamento(Auth.empresaId(), this.orcAtual);
       if (!ok && !this._avisouQuota) {
         this._avisouQuota = true;
-        UI.toast("Não foi possível salvar — armazenamento cheio. Exporte um backup (💾) e remova a base SINAPI grande do navegador.", "erro");
-        try { this.abrirBackup(); } catch (e) {}
+        /* ⚠ o backup agora é só do administrador (leva a empresa inteira).
+           Mandar o sub-usuário "exportar um backup" e em seguida recusar
+           seria dar uma ordem e negá-la na mesma tela — para ele, a saída é
+           avisar quem pode. */
+        var _adm = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin());
+        UI.toast(_adm
+          ? "Não foi possível salvar — armazenamento cheio. Exporte um backup (💾) e remova a base SINAPI grande do navegador."
+          : "Não foi possível salvar — armazenamento deste aparelho cheio. Avise o administrador da conta.", "erro");
+        if (_adm) { try { this.abrirBackup(); } catch (e) {} }
       } else if (ok) { this._avisouQuota = false; try { this.backupAuto(); } catch (e) {} }
     }
   };
