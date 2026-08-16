@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.239",
+  "versao": "1.1.240",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.239/OrcaPRO-IA-update-v1.1.239.zip",
-  "notas": "Instalar como app no Mac: o passo a passo estava errado. Quem abria no Mac era mandado a procurar 'os tres pontinhos' do navegador — menu que nao existe no Safari do macOS, onde a instalacao e Arquivo > Adicionar ao Dock (Safari 17 ou mais novo). Agora cada aparelho recebe o caminho que existe nele: iPhone e iPad pelo Compartilhar > Adicionar a Tela de Inicio, Mac com Safari pelo Arquivo > Adicionar ao Dock, Mac com Chrome ou Edge pelo icone de instalar na barra de endereco. E o texto do Mac avisa o que faltava dizer: o instalador .exe e do Windows e nao roda no Mac — la o OrcaPRO se instala pelo proprio navegador.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.239/OrcaPRO-IA-Instalador-v1.1.239.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.240/OrcaPRO-IA-update-v1.1.240.zip",
+  "notas": "CORRECAO DE SEGURANCA — atualize. Um cliente relatou, e nos reproduzimos: um funcionario com permissao de apenas um modulo conseguia ver o sistema inteiro. Bastava clicar em Sair: a pagina recarregava e o app entrava sozinho como ADMINISTRADOR, com Financeiro, Folha, Contratos e a lista de usuarios abertos. Acontecia em quem usa o OrcaPRO sem ter registrado uma conta com e-mail (o modo mais comum) e criou usuarios da equipe. Corrigido: onde existe usuario cadastrado, o app passa a EXIGIR login — e o dono e a equipe continuam entrando normalmente com as senhas de sempre. Se voce criou usuarios para funcionarios, vale conferir com eles o que estavam conseguindo ver.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.240/OrcaPRO-IA-Instalador-v1.1.240.exe"
 }

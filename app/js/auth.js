@@ -160,7 +160,26 @@
       if (sub.ok) { this._iniciarSessao(sub.usuario); return sub; }
       var nuv = this.loginNuvem(email, senha, this.empresaId()); // 3) modo nuvem: conta mestre + equipe sincronizadas (multi-aparelho)
       if (nuv.ok) { this._iniciarSessao(nuv.usuario); return nuv; }
+      /* ⚠ 4) O NAMESPACE "local" PRECISA SER TENTADO EXPLICITAMENTE.
+         Sem sessão, `empresaId()` devolve "default" (linha 144) — e no uso
+         solo os dados e a equipe estão em "local". Sem este passo, fechar o
+         `autoEntrar` (a correção de segurança acima) trancaria TODO MUNDO
+         para fora: o dono e os sub-usuários, sobre os próprios dados. Os
+         passos 1 a 3 continuam antes porque cobrem os casos com conta
+         registrada e multi-aparelho; este é a rede de baixo. */
+      if (this.empresaId() !== "local") {
+        var loc = this.loginNuvem(email, senha, "local");
+        if (loc.ok) { this._iniciarSessao(loc.usuario); return loc; }
+      }
       return r;
+    },
+
+    /* Existe RBAC configurado neste aparelho? Olha o namespace do uso solo
+       ("local") e os das contas registradas. Basta UM sub-usuário para que a
+       entrada automática deixe de ser aceitável — ela abriria como admin. */
+    _temEquipeLocal: function () {
+      var eq = this._equipe("local");
+      return !!(eq && eq.length);
     },
 
     existeEmail: function (email) { return this.backend.existe(email); },
@@ -308,6 +327,21 @@
         var eq = this._equipe(contas[i].empresaId);
         if (eq && eq.length) return null;
       }
+      /* ⚠ FALHA DE PERMISSÃO RELATADA POR CLIENTE (15/08/2026) — CORRIGIDA AQUI.
+         O laço acima só olhava as contas de dono REGISTRADAS (orcapro:usuarios).
+         Quem usa o app em "uso solo" nunca registra conta: os dados — e a
+         EQUIPE — vivem no namespace "local". Com a lista de contas vazia, o
+         laço não rodava e a execução caía na sessão anônima de admin lá
+         embaixo, no MESMO namespace onde estão os dados da empresa.
+         Efeito real, reproduzido: o sub-usuário com permissão só de RDO
+         clicava em "Sair", a página recarregava e o app entrava sozinho como
+         ADMINISTRADOR — com Financeiro, Folha, Contratos e a própria lista de
+         usuários (com os hashes de senha) abertos. Um clique, sem má
+         intenção e sem conhecimento técnico.
+         A guarda não pode depender de haver conta registrada: se existe
+         EQUIPE em qualquer lugar deste aparelho, existe RBAC, e RBAC exige
+         login. Ver `_temEquipeLocal`. */
+      if (this._temEquipeLocal()) return null;
       if (contas.length) {                                     // dono solo já cadastrado -> entra nele (sem senha)
         var dono = contas[0]; dono._papel = "admin";
         this._iniciarSessao(dono);
