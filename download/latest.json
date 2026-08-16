@@ -2,6 +2,6 @@
   "versao": "1.1.240",
   "tipo": "silenciosa",
   "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.240/OrcaPRO-IA-update-v1.1.240.zip",
-  "notas": "CORRECAO DE SEGURANCA — atualize. Um cliente relatou, e nos reproduzimos: um funcionario com permissao de apenas um modulo conseguia ver o sistema inteiro. Bastava clicar em Sair: a pagina recarregava e o app entrava sozinho como ADMINISTRADOR, com Financeiro, Folha, Contratos e a lista de usuarios abertos. Acontecia em quem usa o OrcaPRO sem ter registrado uma conta com e-mail (o modo mais comum) e criou usuarios da equipe. Corrigido: onde existe usuario cadastrado, o app passa a EXIGIR login — e o dono e a equipe continuam entrando normalmente com as senhas de sempre. Se voce criou usuarios para funcionarios, vale conferir com eles o que estavam conseguindo ver.",
+  "notas": "Correcao no controle de acesso por usuario. Recomendamos atualizar.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.240/OrcaPRO-IA-Instalador-v1.1.240.exe"
 }
