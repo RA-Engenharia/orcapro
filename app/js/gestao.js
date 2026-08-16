@@ -13487,6 +13487,15 @@ renderFolha: function () {
      * orçado (financeiro × orçamento vinculado), diários e fotos do mês. Fontes 100%
      * reais dos módulos — onde não há dado, o relatório DIZ que não há (nada inventado). */
     relatorioExecutivo: function (obraId, mesISO) {
+      /* ⚠ GUARDA NA FUNÇÃO, não só no botão. O documento traz custo real
+         contra orçado — é dinheiro. Esconder o botão de quem não tem o
+         módulo Financeiro não basta: a ação é alcançável pelo despacho
+         (js/gestao.js:16194) e por qualquer caminho que chame o método.
+         Mesma doutrina do resto do app: quem decide é a função. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("O relatório executivo traz custo real × orçado. Seu usuário não tem permissão no módulo Financeiro.", "erro");
+        return;
+      }
       var obra = obraId ? Store.obter(eid(), "obras", obraId) : null;
       if (!obra) { UI.toast("Selecione a obra.", "erro"); return; }
       mesISO = String(mesISO || "").slice(0, 7);
@@ -13621,6 +13630,16 @@ renderFolha: function () {
     },
 
     renderRelatorios: function () {
+      /* ⚠ ESTA TELA E DINHEIRO DE PONTA A PONTA — e nao tinha guarda.
+         `renderRelatorios` imprime Receitas totais, Despesas totais,
+         Resultado, a margem por obra e as despesas por categoria. O unico
+         portao no caminho era o despacho (js/gestao.js:574), que confere
+         `podeModulo("relatorios")` — quem tinha Relatorios e NAO tinha
+         Financeiro via a posicao financeira inteira da empresa. Achado na
+         auditoria do incidente de permissao de 15/08/2026.
+         Mesmo gate do Painel (js/gestao.js:837): o modulo Financeiro e que
+         manda no numero, nao a porta por onde se chegou nele. */
+      var _podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
       var fin = lista("financeiro"), obras = lista("obras"), contratos = lista("contratos");
       var totRec = 0, totDesp = 0;
       fin.forEach(function (l) {
@@ -13638,6 +13657,7 @@ renderFolha: function () {
         '<input id="rex-mes" type="month" value="' + mesPassado + '" style="max-width:170px">' +
         '<button class="btn sm primary" data-gacao="rel-executivo">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' Gerar relatório</button></div>' +
         (obras.length ? "" : '<p class="muted" style="font-size:12px;margin:8px 0 0">Cadastre uma obra primeiro.</p>') + "</div>";
+      if (_podeFin) {
       html += '<div class="kpis">';
       html += '<div class="kpi"><span class="rotulo">Receitas totais</span><span class="num">' + Util.fmtMoeda(totRec) + "</span></div>";
       html += '<div class="kpi"><span class="rotulo">Despesas totais</span><span class="num">' + Util.fmtMoeda(totDesp) + "</span></div>";
@@ -13686,6 +13706,11 @@ renderFolha: function () {
         html += "</tbody></table>";
       }
       html += "</div>";
+      } // fecha o gate do Financeiro
+      else {
+        /* honesto em vez de tela vazia: diz o que falta e a quem pedir */
+        html += '<div class="card"><p class="muted" style="margin:0">Os números desta tela vêm do módulo <b>Financeiro</b>, que não está liberado para o seu usuário. Fale com o administrador da conta se precisar deles.</p></div>';
+      }
       return html;
     },
 
