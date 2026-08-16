@@ -12329,7 +12329,16 @@ renderRequisicoes: function () {
         if (ehNovo && lista("equipe").length >= LIMITE_USUARIOS) { UI.toast("Limite de " + LIMITE_USUARIOS + " usuários atingido.", "erro"); return false; }
         var senha = v("g-senha");
         if (ehNovo && !senha) { senha = self._gerarSenhaPadrao(); } // senha padrão automática se em branco
-        if (senha) obj.senhaHash = (typeof Auth !== "undefined" && Auth._hashSenha) ? Auth._hashSenha(senha) : btoa(unescape(encodeURIComponent(senha)));
+        /* ⚠ O `else` daqui era `btoa(...)` — Base64, reversível. Um fallback
+           silencioso para o formato vazado recria o defeito no único lugar onde
+           senha de gente nasce. Sem hash de verdade, RECUSA e diz por quê. */
+        if (senha) {
+          if (typeof Auth === "undefined" || !Auth._hashSenha) {
+            UI.toast("Não foi possível proteger a senha neste navegador. O usuário não foi salvo.", "erro");
+            return false;
+          }
+          obj.senhaHash = Auth._hashSenha(senha);
+        }
         if (ehNovo) obj.trocarSenha = true; // 1º acesso: o usuário define a própria senha
         obj.departamento = v("g-depto");
         obj.fone = String(v("g-ufone") || "").trim();

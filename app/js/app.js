@@ -1501,10 +1501,19 @@
     },
     _trocaSenhaPrimeiroAcesso: function () {
       var self = this;
-      var corpo = '<p class="muted" style="margin:0 0 12px">Este é o seu <b>primeiro acesso</b>. Defina uma senha só sua para continuar.</p>' +
+      /* Dois motivos chegam aqui, e o texto tem de dizer qual. Chamar de
+         "primeiro acesso" quem já usa o sistema há meses faz a pessoa achar que
+         é engano e procurar suporte — ou pior, desconfiar do update. */
+      var motivo = (typeof Auth.motivoTrocaSenha === "function") ? Auth.motivoTrocaSenha() : "primeiro";
+      var seg = motivo === "seguranca";
+      var titulo = seg ? "Crie uma nova senha" : "Primeiro acesso — crie sua senha";
+      var texto = seg
+        ? 'Melhoramos a proteção das senhas do sistema. Para concluir, <b>defina uma senha nova</b> — a anterior deixa de valer.'
+        : 'Este é o seu <b>primeiro acesso</b>. Defina uma senha só sua para continuar.';
+      var corpo = '<p class="muted" style="margin:0 0 12px">' + texto + '</p>' +
         '<div class="field"><label>Nova senha *</label><input id="ts-s1" type="password" placeholder="mínimo 4 caracteres" autocomplete="new-password"></div>' +
         '<div class="field"><label>Repita a nova senha *</label><input id="ts-s2" type="password" placeholder="repita" autocomplete="new-password"></div>';
-      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Primeiro acesso — crie sua senha", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " " + titulo, corpo, [
         { texto: "Salvar e continuar", classe: "primary", onClick: function () {
           var s1 = (UI.el("ts-s1") || {}).value || "", s2 = (UI.el("ts-s2") || {}).value || "";
           if (s1.length < 4) { UI.toast("A senha precisa de ao menos 4 caracteres.", "erro"); return; }

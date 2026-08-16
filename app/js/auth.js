@@ -42,6 +42,13 @@
     },
     _conferir: function (senha, armazenado) {
       var s = String(armazenado || "");
+      /* ⚠ Registro SEM senha gravada não autentica NINGUÉM, e senha vazia não
+         autentica em lugar nenhum. Sem esta linha, `btoa("") === ""` casa: um
+         registro sem `senhaHash` entraria com o campo de senha em branco.
+         Antes isso não acontecia por acidente (`undefined === ""` é falso);
+         ao normalizar com `|| ""` para conferir o formato, o acidente sumiu e
+         a porta apareceu. */
+      if (!s || String(senha || "") === "") return { ok: false, legado: false };
       if (s.indexOf("v2$") === 0) {
         var partes = s.split("$");
         return { ok: this._hashV2(senha, partes[1] || "") === s, legado: false };
@@ -186,7 +193,49 @@
     listarContas: function () { return this.backend.listar(); },
 
     // ---------- Equipe: sub-usuários por empresa (RBAC de módulos) ----------
-    _hashSenha: function (senha) { return btoa(unescape(encodeURIComponent(String(senha || "")))); },
+    /* ⚠ Isto era `btoa()` — Base64 é CODIFICAÇÃO, não hash: `c2VuaGExMjM=`
+     * volta a ser `senha123` numa linha. E as duas entidades que guardam senha
+     * SINCRONIZAM (`equipe` e `conta`), então cada sub-usuário tinha no próprio
+     * aparelho a senha de todos os colegas — e a do dono.
+     *
+     * Agora grava no mesmo formato v2 que a conta registrada já usava desde o
+     * LOTE 3 (SHA-256 iterado 3000× com salt por usuário, `_hashV2` no topo).
+     *
+     * ⚠ NÃO trocar isto por `crypto.subtle`/PBKDF2. O app abre em `http://` e
+     *   `file://`, onde `crypto.subtle` simplesmente não existe (a nota está no
+     *   topo do arquivo) — e o fallback que faltasse cairia de volta no Base64,
+     *   reproduzindo o buraco exatamente onde ele estava. */
+    _hashSenha: function (senha) {
+      return this.backend._hashV2(String(senha || ""), this.backend._salt());
+    },
+    /* Confere nos DOIS formatos e diz se veio do antigo.
+     * ⚠ Com salt por usuário não dá mais para calcular UM hash e comparar com
+     *   `===` contra a lista toda: tem de conferir registro a registro. Era
+     *   assim que os quatro caminhos abaixo funcionavam, e é o que muda neles. */
+    _confereSenha: function (senha, armazenado) {
+      try { return this.backend._conferir(String(senha || ""), armazenado); }
+      catch (e) { return { ok: false, legado: false }; }
+    },
+    /* Primeiro login válido com o formato antigo: regrava em v2 e EXIGE senha
+     * nova. Re-hashear sozinho seria cosmético — o Base64 de todo mundo já está
+     * no aparelho de cada colega, e só uma senha NOVA tira a vazada de circulação.
+     * ⚠ Falha de gravação não pode trancar ninguém: o app é offline-first, e a
+     *   sessão já sai com `trocarSenha` mesmo se o disco recusar. */
+    _migrarSenhaEquipe: function (empresaId, rec, senha) {
+      rec.trocarSenha = true;
+      try {
+        rec.senhaHash = this._hashSenha(senha);
+        if (typeof Store !== "undefined" && Store.salvar) Store.salvar(empresaId, "equipe", rec);
+      } catch (e) {}
+    },
+    _migrarSenhaConta: function (empresaId, conta, senha) {
+      conta.trocarSenha = true;
+      try {
+        conta.senhaHash = this._hashSenha(senha);
+        conta.atualizadoEm = Util.agoraISO();
+        var a = this._adapter(); if (a) a.gravar(empresaId, "conta", conta);
+      } catch (e) {}
+    },
     _equipe: function (empresaId) {
       if (typeof Store === "undefined" || !Store.listar) return [];
       try { return Store.listar(empresaId, "equipe") || []; } catch (e) { return []; }
@@ -194,13 +243,17 @@
     _loginEquipe: function (login, senha) {
       login = String(login || "").trim().toLowerCase();
       if (!login) return { ok: false, erro: "Usuário ou senha inválidos." };
-      var hash = this._hashSenha(senha), contas = this.backend._lerUsuarios();
+      var contas = this.backend._lerUsuarios();
       for (var i = 0; i < contas.length; i++) {
         var dono = contas[i], equipe = this._equipe(dono.empresaId);
         for (var j = 0; j < equipe.length; j++) {
           var u = equipe[j];
-          if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true } };
+          if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login) {
+            var c = this._confereSenha(senha, u.senhaHash);
+            if (!c.ok) continue;
+            if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
+            var mot = c.legado ? "seguranca" : "";
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
           }
         }
       }
@@ -252,18 +305,47 @@
       return !!(this._usuario && this._usuario.aprovador);
     },
     // 1º acesso do sub-usuário: precisa definir a própria senha antes de usar o sistema.
-    precisaTrocarSenha: function () { return !!(this._usuario && this._usuario.papel === "usuario" && this._usuario.trocarSenha); },
-    // Sub-usuário troca a própria senha (1º acesso). Atualiza o registro na equipe + a sessão.
+    /* ⚠ O DONO também cai aqui agora. Antes a regra exigia `papel === "usuario"`,
+       e o admin não tinha caminho nenhum para trocar a própria senha — mas a
+       senha dele estava no mesmo Base64, no aparelho de cada funcionário. Deixar
+       só a equipe trocar consertaria todo mundo menos quem tem acesso a tudo. */
+    precisaTrocarSenha: function () { return !!(this._usuario && this._usuario.trocarSenha); },
+    /* Por que a senha está sendo pedida — muda o texto da tela, não a regra.
+       "seguranca" = a senha estava no formato antigo e acabou de ser migrada. */
+    motivoTrocaSenha: function () {
+      var u = this._usuario;
+      if (!u || !u.trocarSenha) return "";
+      return u.motivoTroca === "seguranca" ? "seguranca" : "primeiro";
+    },
+    // Troca a própria senha: sub-usuário grava na equipe, dono grava na conta mestre.
     trocarMinhaSenha: function (nova) {
       var u = this._usuario;
-      if (!u || u.papel !== "usuario" || !u.usuarioId) return { ok: false, erro: "Apenas sub-usuário troca a própria senha aqui." };
+      if (!u) return { ok: false, erro: "Nenhuma sessão ativa." };
       if (!Util.naoVazio(nova) || String(nova).length < 4) return { ok: false, erro: "A nova senha precisa de ao menos 4 caracteres." };
-      var eq = this._equipe(u.empresaId), rec = null;
-      for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { rec = eq[i]; break; } }
-      if (!rec) return { ok: false, erro: "Usuário não encontrado." };
-      rec.senhaHash = this._hashSenha(nova); rec.trocarSenha = false;
-      try { Store.salvar(u.empresaId, "equipe", rec); } catch (e) { return { ok: false, erro: "Falha ao salvar a nova senha." }; }
-      u.trocarSenha = false; localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
+
+      if (u.papel === "usuario") {
+        if (!u.usuarioId) return { ok: false, erro: "Usuário não encontrado." };
+        var eq = this._equipe(u.empresaId), rec = null;
+        for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { rec = eq[i]; break; } }
+        if (!rec) return { ok: false, erro: "Usuário não encontrado." };
+        rec.senhaHash = this._hashSenha(nova); rec.trocarSenha = false;
+        try { Store.salvar(u.empresaId, "equipe", rec); } catch (e) { return { ok: false, erro: "Falha ao salvar a nova senha." }; }
+      } else {
+        /* Dono. A senha dele mora na conta mestre (sincronizada), e é a mesma
+           que abre o sistema em qualquer aparelho da empresa. */
+        var conta = this.contaMestre(u.empresaId);
+        if (!conta) return { ok: false, erro: "Não há conta de administrador neste aparelho." };
+        conta.senhaHash = this._hashSenha(nova);
+        conta.trocarSenha = false;
+        conta.atualizadoEm = Util.agoraISO();
+        var a = this._adapter(); if (!a) return { ok: false, erro: "Armazenamento indisponível." };
+        try { a.gravar(u.empresaId, "conta", conta); } catch (e) { return { ok: false, erro: "Falha ao salvar a nova senha." }; }
+        /* A conta registrada localmente (`orcapro:usuarios`), quando existe, é
+           o mesmo dono e o mesmo e-mail — deixar a antiga valendo manteria a
+           senha vazada abrindo o sistema por esse caminho. */
+        try { if (u.email && this.backend.existe(u.email)) this.backend.redefinirSenha(u.email, nova); } catch (e) {}
+      }
+      u.trocarSenha = false; u.motivoTroca = ""; localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       return { ok: true };
     },
 
@@ -290,24 +372,47 @@
     // sob empresaId — funciona em QUALQUER aparelho, sem dono registrado localmente.
     loginNuvem: function (idOuEmail, senha, empresaId) {
       empresaId = empresaId || this.empresaId();
-      var login = String(idOuEmail || "").trim().toLowerCase(), hash = this._hashSenha(senha);
+      var login = String(idOuEmail || "").trim().toLowerCase();
       var conta = this.contaMestre(empresaId);
-      if (conta && conta.email === login && conta.senhaHash === hash) {
-        return { ok: true, usuario: { empresaId: empresaId, empresa: conta.empresa, email: conta.email, nome: conta.empresa, plano: "PRO", _papel: "admin" } };
+      if (conta && conta.email === login) {
+        var cc = this._confereSenha(senha, conta.senhaHash);
+        if (cc.ok) {
+          if (cc.legado) this._migrarSenhaConta(empresaId, conta, senha);
+          return { ok: true, usuario: { empresaId: empresaId, empresa: conta.empresa, email: conta.email, nome: conta.empresa, plano: "PRO", _papel: "admin", _trocarSenha: conta.trocarSenha === true, _motivoTroca: cc.legado ? "seguranca" : "" } };
+        }
       }
       var eq = this._equipe(empresaId);
       for (var i = 0; i < eq.length; i++) {
         var u = eq[i];
-        if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login && u.senhaHash === hash) {
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true } };
+        if (u.ativo !== false && String(u.login || "").trim().toLowerCase() === login) {
+          var c = this._confereSenha(senha, u.senhaHash);
+          if (!c.ok) continue;
+          if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
+          var mot = c.legado ? "seguranca" : "";
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
         }
       }
       return { ok: false, erro: "Usuário ou senha inválidos." };
     },
     // Este aparelho é secundário/anônimo mas o tenant já tem admin? → precisa logar (não auto-entra).
     precisaLoginNuvem: function () {
-      var u = this._usuario, conta = this.contaMestre();
-      return !!(conta && u && u.papel === "admin" && !u.email && !u.usuarioId);
+      var u = this._usuario;
+      /* só interessa a sessão ANÔNIMA de admin — a que o `autoEntrar` cria
+         em aparelho virgem. A sessão de gente de verdade tem e-mail (dono) ou
+         usuarioId (equipe) e não é tocada aqui. */
+      if (!u || u.papel !== "admin" || u.email || u.usuarioId) return false;
+      /* ⚠ A EQUIPE TAMBÉM CONTA, e a falta disso deixava um caminho aberto.
+         Antes, só a conta mestre disparava o login. Mas no aparelho VIRGEM
+         que abre o link de acesso a ordem é outra: o `autoEntrar` cria a
+         sessão anônima ANTES de existir qualquer dado local (e por isso a
+         guarda de `_temEquipeLocal` lá não pega), e só DEPOIS a ativação da
+         licença sincroniza a empresa inteira. Se o dono nunca configurou a
+         conta mestre, `contaMestre()` era null, isto devolvia false — e o
+         funcionário ficava como administrador anônimo sobre os dados que
+         acabaram de descer.
+         Aparelho que guarda a equipe de uma empresa não roda sessão anônima:
+         quem chegou aqui tem login e senha, e é com eles que entra. */
+      return !!(this.contaMestre() || this._temEquipeLocal());
     },
     redefinirSenha: function (email, nova) {
       var r = this.backend.redefinirSenha(email, nova);
@@ -362,7 +467,8 @@
         modulos: u._modulos || null,  // null = admin (todos os módulos)
         aprovador: u._aprovador === true,
         autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
-        trocarSenha: u._trocarSenha === true   // 1º acesso do sub-usuário: força definir a própria senha
+        trocarSenha: u._trocarSenha === true,  // força definir a própria senha (1º acesso OU migração de senha)
+        motivoTroca: u._motivoTroca || ""       // "seguranca" = a senha estava no formato antigo e foi migrada agora
       };
       localStorage.setItem(SESSAO_KEY, JSON.stringify(this._usuario));
     },
