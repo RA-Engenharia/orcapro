@@ -74,7 +74,13 @@
         var puxar = function (ent, tipo, tit, sub) {
           if (!self._pode(ent)) return; // sub-usuário sem o módulo não vê nem o título
           try {
-            (Store.listar(eid, ent) || []).forEach(function (r) {
+            /* ⚠ o funil de Gestao.lista nao passa por aqui: a busca le o Store
+               direto. Sem este filtro o Ctrl+K entrega obra e registro que a
+               tela esconde — atalho vira porta dos fundos. */
+            var _fil = (typeof Gestao !== "undefined" && Gestao.filtrarPorObra)
+              ? Gestao.filtrarPorObra(ent, Store.listar(eid, ent) || [])
+              : (Store.listar(eid, ent) || []);
+            _fil.forEach(function (r) {
               var t = tit(r); if (!t) return;
               f.push({ tipo: tipo, id: ent + ":" + r.id, titulo: t, subtitulo: sub(r), palavras: "" });
             });

@@ -196,13 +196,84 @@
    * noutra no ponto e numa terceira no EPI, e quem confere papel com papel
    * perde a linha. Ordenar no funil resolve os 27 de uma vez — tela nova
    * já nasce certa, sem ninguém precisar lembrar. */
+  /* ===== ESCOPO POR OBRA =====
+   * Entidades que PERTENCEM a uma obra. O que não está aqui é cadastro da
+   * empresa (fornecedor, colaborador, insumo, patrimônio, frota, cliente,
+   * equipe, modelos) e não se filtra — esconder fornecedor de quem lança
+   * compra quebra o trabalho sem proteger nada.
+   * ⚠ "obras" é caso à parte: filtra por `id`, não por `obraId`. */
+  var ENT_POR_OBRA = {
+    medicoes: 1, rdo: 1, financeiro: 1, contratos: 1, compras: 1, requisicoes: 1,
+    cotacoes: 1, producao_med: 1, epi: 1, ponto: 1, folha: 1, fs_lancamentos: 1,
+    estoque_mov: 1, tarefas: 1, lastplanner: 1, galeria: 1, atividades: 1
+  };
+  /* ⚠ O FILTRO MORA AQUI, NUNCA NO `Store.listar`.
+   * `Store.salvar` (js/store.js) LÊ a lista e REGRAVA ela inteira. Se o Store
+   * devolvesse a lista podada, um usuário limitado a 2 obras que salvasse UM
+   * lançamento APAGARIA do disco os registros das outras 8 — e o sync levaria
+   * o estrago para os outros aparelhos. O mesmo vale para excluirVarios, para
+   * o backup e para a cascata de exclusão de obra. Filtro só na leitura de
+   * tela, que é este funil. */
+  function filtrarPorObra(ent, arr) {
+    var permitidas = (typeof Auth !== "undefined" && Auth.obrasPermitidas) ? Auth.obrasPermitidas() : null;
+    if (permitidas === null) return arr;            // admin, vitrine, ou sem restrição
+    if (ent === "obras") {
+      return Util.arr(arr).filter(function (o) { return o && permitidas.indexOf(String(o.id)) > -1; });
+    }
+    if (!ENT_POR_OBRA[ent]) return arr;             // cadastro da empresa
+    return Util.arr(arr).filter(function (r) {
+      if (!r) return false;
+      var oid = String(r.obraId || "");
+      /* ⚠ REGISTRO SEM OBRA fica VISÍVEL. É despesa geral do escritório,
+         estoque central e material que ainda não foi apropriado — esconder
+         faria sumir da tela um lançamento que existe e que a pessoa precisa
+         apropriar, e ninguém entenderia por quê. Some da tela ≠ some do
+         relatório: quem não pode ver dinheiro já é barrado pelo módulo. */
+      if (!oid) return true;
+      return permitidas.indexOf(oid) > -1;
+    });
+  }
   function lista(ent) {
-    var arr = Store.listar(eid(), ent);
+    var arr = filtrarPorObra(ent, Store.listar(eid(), ent));
     if (ent === "colaboradores" && typeof Ordem !== "undefined") {
       return Ordem.pessoas(arr, { modo: "hierarquia", ordem: ordemFuncoes() });
     }
     return arr;
   }
+  /* ⚠ LEITURA CRUA, sem o filtro por obra. Existe para os poucos casos em que
+     olhar só as obras da pessoa daria resposta ERRADA — hoje a numeração de
+     documento. Não use para montar tela: tela usa `lista`. */
+  function listaTodas(ent) { return Store.listar(eid(), ent); }
+
+  /* ⚠ NUMERAÇÃO POR MAIOR + 1, nunca por `length + 1`.
+   *
+   * `length` já repetia número depois de qualquer exclusão (foi o que motivou
+   * a mudança do RDO na v1.1.193, ver RDO.proximoNumero). E com o escopo por
+   * obra ele fica pior: a lista encolhe para o tamanho do que a pessoa vê, e
+   * dois engenheiros em obras diferentes criam CT-2026-006 os dois.
+   *
+   * Por isso lê `listaTodas`: o contador é da EMPRESA mesmo quando a tela é
+   * de uma obra só. O número do documento não pode depender de quem olha. */
+  function proxNumero(ent, opc) {
+    var o = opc || {}, maior = 0, pre = o.prefixo || "";
+    Util.arr(listaTodas(ent)).forEach(function (r) {
+      if (!r || !r.numero) return;
+      var txt = String(r.numero);
+      /* ⚠ Só conta quem tem o MESMO prefixo. Sem isto, um "CT-2025-012" faria
+         o primeiro contrato de 2026 nascer 013 — a sequência do ano novo
+         herdaria o tamanho do ano anterior. */
+      if (pre && txt.indexOf(pre) !== 0) return;
+      /* pega o ÚLTIMO grupo de dígitos: serve a "CT-2026-007", "PC-2026-007"
+         e "07ª" sem precisar de um parser por formato. */
+      var m = txt.match(/(\d+)(?!.*\d)/);
+      var n = m ? parseInt(m[1], 10) : 0;
+      if (n > maior) maior = n;
+    });
+    var txt = String(maior + 1);
+    while (txt.length < (o.casas || 3)) txt = "0" + txt;
+    return (o.prefixo || "") + txt + (o.sufixo || "");
+  }
+
   /* Hierarquia da empresa. Sem nada configurado, vale o padrão do canteiro
      (js/ordem.js). Fica em prefs para o dono poder reordenar. */
   function ordemFuncoes() {
@@ -255,6 +326,11 @@
 
   var Gestao = {
     P: P, rot: rot,
+    /* usado pelos leitores que NAO passam pelo funil (busca Ctrl+K, sino de
+       avisos): sem isto eles entregariam obra alheia pelo atalho. */
+    filtrarPorObra: function (ent, arr) { return filtrarPorObra(ent, arr); },
+    listaTodas: function (ent) { return listaTodas(ent); },
+
     modulos: [
       // Ordem = jornada da obra (a MESMA da landing): 1 orçar → 2 BIM → 3 estruturar →
       // 4 canteiro → 5 abastecer → 6 equipe/ativos → 7 dinheiro/comando. g = grupo do menu.
@@ -2380,7 +2456,7 @@
     novoContrato: function () { this.formContrato(null); },
     formContrato: function (c) {
       c = c || {}; var obras = lista("obras"), clientes = lista("clientes"), orcs = Store.listarOrcamentos(eid());
-      var num = c.numero || ("CT-" + new Date().getFullYear() + "-" + String(lista("contratos").length + 1).padStart(3, "0"));
+      var num = c.numero || proxNumero("contratos", { prefixo: "CT-" + new Date().getFullYear() + "-", casas: 3 });
       var corpo =
         '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.contratoStatus, c.status || "elaboracao"))) + "</div>" +
         '<div class="row">' + campo("Cliente", sel("g-cliente", optsRec(clientes, "nome", c.clienteId, "— selecionar —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", c.obraId, "— selecionar —"))) + "</div>" +
@@ -2780,7 +2856,7 @@
       var self = this;
       m = m || {}; var stAntigo = m.status || ""; var obras = lista("obras"), contratos = lista("contratos");
       var orcs = Store.listarOrcamentos(eid());
-      var num = m.numero || String(lista("medicoes").length + 1).padStart(2, "0") + "ª";
+      var num = m.numero || proxNumero("medicoes", { casas: 2, sufixo: "ª" });
       var corpo =
         '<div class="row">' + campo("Nº da medição", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.medicaoStatus, m.status || "pendente"))) + "</div>" +
         '<div class="row">' + campo("Obra *", sel("g-obra", optsRec(obras, "nome", m.obraId, "— selecionar —"))) + campo("Contrato", sel("g-contrato", optsRec(contratos, "numero", m.contratoId, "— nenhum —"))) + "</div>" +
@@ -8270,7 +8346,7 @@
     formCompra: function (c) {
       var self = this;
       c = c || {}; var stAntigo = c.status || ""; var forn = lista("fornecedores"), obras = lista("obras");
-      var num = c.numero || ("PC-" + new Date().getFullYear() + "-" + String(lista("compras").length + 1).padStart(3, "0"));
+      var num = c.numero || proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
       var hoje = new Date().toISOString().slice(0, 10);
       var corpo =
         '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.compraStatus, c.status || "cotacao"))) + "</div>" +
@@ -12338,12 +12414,33 @@ renderRequisicoes: function () {
           var dis = m.id === "dashboard" ? " disabled" : "";
           return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer"><input type="checkbox" data-mod="' + m.id + '"' + (on ? " checked" : "") + dis + "> " + Util.esc(m.nome) + (m.id === "dashboard" ? ' <span class="muted">(sempre)</span>' : "") + "</label>";
         }).join("") + "</div>";
+      /* ===== ESCOPO POR OBRA =====
+         Vazio = todas (regra da LEITURA, ver Auth.obrasPermitidas). Por isso o
+         padrão da tela é "todas marcadas": o admin restringe DESMARCANDO, e o
+         estado inicial tem de espelhar o que já vale hoje. */
+      var _obrasEmp = listaTodas("obras");
+      var _obrasSel = (u.obras && u.obras.length) ? u.obras.slice() : _obrasEmp.map(function (o) { return o.id; });
+      var _todasMarcadas = !(u.obras && u.obras.length);
+      var caixasObra = !_obrasEmp.length
+        ? '<p class="muted" style="font-size:13px;margin:0">Nenhuma obra cadastrada ainda. Quando houver, você poderá escolher quais este usuário enxerga.</p>'
+        : '<label class="opt-linha" style="margin-bottom:8px"><input type="checkbox" id="us-obras-todas"' + (_todasMarcadas ? " checked" : "") + '> <b>Todas as obras</b> <span class="muted">(inclusive as que forem criadas depois)</span></label>'
+          + '<div id="us-obras" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:180px;overflow:auto;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px' + (_todasMarcadas ? ";opacity:.5;pointer-events:none" : "") + '">'
+          + _obrasEmp.map(function (o) {
+              return '<label class="opt-linha" style="font-size:13px"><input type="checkbox" data-obra="' + o.id + '"' + (_obrasSel.indexOf(o.id) > -1 ? " checked" : "") + '> ' + Util.esc(o.nome || o.id) + "</label>";
+            }).join("") + "</div>"
+          /* ⚠ Honestidade na tela: o escopo esconde o que a pessoa VÊ. A
+             sincronização baixa a empresa inteira para o aparelho, porque a
+             identidade na nuvem é da EMPRESA (js/nuvem.js:158) e não da
+             pessoa. Prometer "não tem acesso aos dados" seria mentira. */
+          + '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Define o que a pessoa <b>vê no app</b>. Não substitui a confidencialidade combinada com ela.</p>';
+
       var senhaGerada = ""; // plaintext capturado só p/ o envio ao usuário (nunca é salvo)
       var corpo =
         '<div class="row">' + campo("Nome *", inp("g-nome", u.nome, "Ex.: Maria Souza")) + campo("Login (usuário) *", inp("g-login", u.login, "ex.: maria")) + "</div>" +
         '<div class="row">' + campo(ehNovo ? "Senha provisória (branco = gerar automática)" : "Nova senha (branco = manter)", '<input id="g-senha" type="text" placeholder="' + (ehNovo ? "deixe em branco p/ gerar" : "manter atual") + '">') + campo("Departamento", sel("g-depto", opts(P.departamento, u.departamento || "engenharia"))) + campo("Status", sel("g-ativo", '<option value="1"' + (u.ativo !== false ? " selected" : "") + '>Ativo</option><option value="0"' + (u.ativo === false ? " selected" : "") + ">Inativo</option>")) + "</div>" +
         '<div class="row">' + campo("WhatsApp do usuário", inp("g-ufone", u.fone, "(34) 90000-0000")) + campo("E-mail do usuário", inp("g-uemail", u.email, "usuario@empresa.com")) + "</div>" +
         campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' preset do departamento</button>', checkboxes) +
+        campo("Obras que este usuário enxerga", caixasObra) +
         campo("Aprovações",
           '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>'
           /* autoaprovação: por padrão vale quatro olhos (quem preenche não
@@ -12380,11 +12477,39 @@ renderRequisicoes: function () {
         var mods = ["dashboard"];
         Array.prototype.forEach.call(document.querySelectorAll("#us-mods [data-mod]"), function (c) { if (c.checked && c.getAttribute("data-mod") !== "dashboard") mods.push(c.getAttribute("data-mod")); });
         obj.modulos = mods;
+        /* ⚠ O GESTO MAIS RESTRITIVO NÃO PODE GRAVAR O RESULTADO MAIS PERMISSIVO.
+           Vazio significa "todas" na leitura. Se o admin desmarcasse todas as
+           obras e isso fosse gravado como [], a pessoa passaria a ver TUDO —
+           exatamente o contrário do que ele acabou de fazer. Ou marca "Todas"
+           de propósito, ou escolhe pelo menos uma. */
+        var _todas = document.getElementById("us-obras-todas");
+        if (_todas && !_todas.checked) {
+          var obrasSel = [];
+          Array.prototype.forEach.call(document.querySelectorAll("#us-obras [data-obra]"), function (c) {
+            if (c.checked) obrasSel.push(c.getAttribute("data-obra"));
+          });
+          if (!obrasSel.length) {
+            UI.toast("Escolha ao menos uma obra, ou marque \"Todas as obras\".", "erro");
+            return false;
+          }
+          obj.obras = obrasSel;
+        } else {
+          obj.obras = [];   // [] = todas, e é uma escolha explícita do admin
+        }
         obj.aprovador = !!(document.getElementById("g-aprovador") && document.getElementById("g-aprovador").checked);
         obj.autoAprovar = !!(document.getElementById("g-autoaprovar") && document.getElementById("g-autoaprovar").checked);
         senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
         return true;
       }, ehNovo ? function (obj) { self._usuarioCriado(obj, senhaGerada); } : null);
+      /* "Todas as obras" apaga a malha em vez de escondê-la: o admin continua
+         vendo quais obras existem, e entende que marcar Todas é uma escolha. */
+      var _tds = document.getElementById("us-obras-todas"), _malha = document.getElementById("us-obras");
+      if (_tds && _malha) {
+        _tds.onchange = function () {
+          _malha.style.opacity = _tds.checked ? ".5" : "";
+          _malha.style.pointerEvents = _tds.checked ? "none" : "";
+        };
+      }
       var preset = document.getElementById("us-preset");
       if (preset) preset.onclick = function () {
         var dep = (document.getElementById("g-depto") || {}).value || "engenharia";
@@ -18142,6 +18267,14 @@ case "nova-folha": return this.novoFolha();
       if (!this.podeGestao()) { if (typeof UI !== "undefined") UI.toast("Gestão de Obras é recurso do plano Plus.", "erro"); return; }
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(entidade)) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro"); return; }
       var r = Store.obter(eid(), entidade, id); if (!r) return;
+      /* ⚠ ESCOPO POR OBRA: `Store.obter` busca por id e NÃO passa pelo funil.
+         Sem esta linha, o registro sumia da lista mas continuava abrindo por
+         deep-link, busca ou link antigo — esconder a linha e deixar a porta
+         é o pior dos dois mundos, porque parece protegido. */
+      if (typeof Auth !== "undefined" && Auth.podeObra) {
+        var _oid = (entidade === "obras") ? r.id : r.obraId;
+        if (!Auth.podeObra(_oid)) { if (typeof UI !== "undefined") UI.toast("Este registro é de uma obra que não está liberada para você.", "erro"); return; }
+      }
       if (entidade === "obras") return this.formObra(r);
       if (entidade === "tarefas") return this.formTarefa(r);
       if (entidade === "clientes") return this.formCliente(r);

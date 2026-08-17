@@ -134,7 +134,7 @@
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
         if (!atual || atual.ativo === false) { this.logout(); return null; } // removido/desativado → desloga
-        u.modulos = atual.modulos || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.aprovador = atual.aprovador === true; u.trocarSenha = atual.trocarSenha === true;
+        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.aprovador = atual.aprovador === true; u.trocarSenha = atual.trocarSenha === true;
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -246,7 +246,7 @@
             if (!c.ok) continue;
             if (c.legado) this._migrarSenhaEquipe(dono.empresaId, u, senha);
             var mot = c.legado ? "seguranca" : "";
-            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
+            return { ok: true, usuario: { empresaId: dono.empresaId, empresa: dono.empresa, email: u.login, nome: u.nome || u.login, plano: dono.plano || "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
           }
         }
       }
@@ -311,6 +311,26 @@
       var mods = (this._usuario && this._usuario.modulos) || [];
       return mods.indexOf(id) > -1;
     },
+    /* ===== ESCOPO POR OBRA =====
+     * `null` = sem restrição (admin, vitrine, ou sub-usuário sem obras
+     * atribuídas). Array = só estas obras.
+     * ⚠ Nunca "podar" id de obra excluída deste array: uma limpeza esvaziaria
+     *   a lista de quem só tocava obras encerradas e o vazio significa TODAS —
+     *   ou seja, a faxina promoveria a pessoa. Id órfão é inofensivo. */
+    obrasPermitidas: function () {
+      var u = this._usuario;
+      if (!u) return [];                       // sem sessão não vê obra nenhuma
+      if (this.ehAdmin()) return null;         // dono e vitrine veem tudo
+      var l = u.obras;
+      return (l && l.length) ? l : null;       // vazio = todas (regra da leitura)
+    },
+    podeObra: function (id) {
+      var l = this.obrasPermitidas();
+      if (l === null) return true;
+      if (!id) return true;                    // sem obra = despesa geral, ver nota no funil
+      return l.indexOf(String(id)) > -1;
+    },
+
     // G3: quem pode APROVAR/rejeitar medições, compras e requisições.
     // Dono/demo sempre pode; sub-usuário só com a flag "aprovador" marcada pelo admin.
     podeAprovar: function () {
@@ -402,7 +422,7 @@
           if (!c.ok) continue;
           if (c.legado) this._migrarSenhaEquipe(empresaId, u, senha);
           var mot = c.legado ? "seguranca" : "";
-          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
+          return { ok: true, usuario: { empresaId: empresaId, empresa: (conta && conta.empresa) || "Minha Empresa", email: u.login, nome: u.nome || u.login, plano: "PRO", _papel: "usuario", _usuarioId: u.id, _departamento: u.departamento || "", _modulos: u.modulos || [], _obras: u.obras || [], _aprovador: u.aprovador === true, _autoAprovar: u.autoAprovar === true, _trocarSenha: u.trocarSenha === true, _motivoTroca: mot } };
         }
       }
       return { ok: false, erro: "Usuário ou senha inválidos." };
@@ -508,6 +528,12 @@
         usuarioId: u._usuarioId || null,
         departamento: u._departamento || "",
         modulos: u._modulos || null,  // null = admin (todos os módulos)
+        /* ⚠ ESCOPO POR OBRA. Vazio/ausente = TODAS as obras na LEITURA — assim
+           ninguém fica trancado no dia do update e não há migração a rodar.
+           ⚠ Mas NUNCA vazio na ESCRITA: desmarcar tudo é o gesto mais
+           restritivo do admin e gravaria o resultado mais permissivo. Quem
+           impede isso é o formulário (recusa salvar com zero marcadas). */
+        obras: u._obras || null,
         aprovador: u._aprovador === true,
         autoAprovar: u._autoAprovar === true,  // pode aprovar a própria criação (medição/compra/requisição/RDO)
         trocarSenha: u._trocarSenha === true,  // força definir a própria senha (1º acesso OU migração de senha)

@@ -15,7 +15,12 @@
       var vazio = { medicoes: [], tarefas: [], restricoes: [], contratos: [], obras: [] };
       if (!(typeof Gestao !== "undefined" && Gestao.podeGestao && Gestao.podeGestao())) return vazio;
       var eid = Auth.empresaId(), self = this;
-      var l = function (ent, mod) { if (!self._pode(mod || ent)) return []; try { return Store.listar(eid, ent) || []; } catch (e) { return []; } };
+      /* ⚠ mesmo motivo da busca: le o Store direto, fora do funil. O sino
+         contava medicao e tarefa de obra alheia. */
+      var l = function (ent, mod) { if (!self._pode(mod || ent)) return []; try {
+        var arr = Store.listar(eid, ent) || [];
+        return (typeof Gestao !== "undefined" && Gestao.filtrarPorObra) ? Gestao.filtrarPorObra(ent, arr) : arr;
+      } catch (e) { return []; } };
       // tarefas do app usam status afazer/fazendo/FEITA/cancelada → motor espera boolean
       var tarefas = l("tarefas").map(function (t) {
         return { id: t.id, titulo: t.titulo, prazo: t.prazo, obraId: t.obraId, concluida: (t.status === "feita" || t.status === "concluida" || t.status === "cancelada") };

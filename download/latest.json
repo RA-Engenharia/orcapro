@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.244",
+  "versao": "1.1.245",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.244/OrcaPRO-IA-update-v1.1.244.zip",
-  "notas": "Correcao no controle de acesso por usuario. Recomendamos atualizar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.244/OrcaPRO-IA-Instalador-v1.1.244.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.245/OrcaPRO-IA-update-v1.1.245.zip",
+  "notas": "Novidade: agora voce escolhe quais OBRAS cada usuario enxerga no sistema. Em Usuarios, ao cadastrar ou editar alguem, marque as obras dele - ou deixe em 'Todas as obras'. Quem ja usa continua vendo tudo ate voce mudar. Tambem: correcao na numeracao de contratos, medicoes e pedidos de compra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.245/OrcaPRO-IA-Instalador-v1.1.245.exe"
 }
