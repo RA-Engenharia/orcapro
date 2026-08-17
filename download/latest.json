@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.246",
+  "versao": "1.1.247",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.246/OrcaPRO-IA-update-v1.1.246.zip",
-  "notas": "Correcao ao salvar alteracoes de usuario. Recomendamos atualizar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.246/OrcaPRO-IA-Instalador-v1.1.246.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.247/OrcaPRO-IA-update-v1.1.247.zip",
+  "notas": "Novidade no Almoxarifado: agora existe o Extrato, que mostra toda entrada e saida de material com saldo acumulado, e da para filtrar por item, obra e periodo. E receber um pedido de compra passa a dar entrada no estoque automaticamente, sem digitar de novo.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.247/OrcaPRO-IA-Instalador-v1.1.247.exe"
 }

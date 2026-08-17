@@ -8369,11 +8369,18 @@
     },
 
     // =================== ESTOQUE / ALMOXARIFADO ===================
+    _estoqueAba: "itens",
     renderEstoque: function () {
+      /* O extrato NAO e modulo novo: e a outra aba do Estoque. Assim herda a
+         permissao do modulo (quem pode ver almoxarifado ve o extrato dele) e
+         nao gasta uma linha do menu, que ja tem 34. */
+      if (this._estoqueAba === "extrato") return this.renderKardex();
       var its = lista("estoque"), obras = lista("obras");
       var valorTotal = its.reduce(function (s, i) { return s + Util.num(i.saldo) * Util.num(i.custoUnit); }, 0);
       var baixos = its.filter(function (i) { return Util.num(i.estoqueMin) > 0 && Util.num(i.saldo) <= Util.num(i.estoqueMin); }).length;
       var extra = '<span class="muted" style="margin-right:12px;align-self:center">' + (baixos ? '<b style="color:var(--laranja,#f59e0b)">' + baixos + ' abaixo do mínimo</b> · ' : "") + 'Valor: <b>' + Util.fmtMoeda(valorTotal) + "</b></span>";
+      extra = '<button class="btn sm" data-gacao="abrir-kardex" style="margin-right:10px;align-self:center" title="Todas as entradas e saidas, com saldo acumulado">'
+        + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + ' Extrato</button>' + extra;
       var html = this._head(svg("estoque") + "Estoque / Almoxarifado", "novo-item-estoque", "Novo item", extra);
       if (!its.length) return html + vazioBox("Nenhum item em estoque", "novo-item-estoque", "Cadastrar primeiro item");
       html += '<table class="tbl"><thead><tr><th>Item</th><th>Categoria</th><th>Obra</th><th class="num">Saldo</th><th class="num">Custo un.</th><th class="num">Total</th><th></th></tr></thead><tbody>';
@@ -8381,10 +8388,212 @@
         var ob = obras.filter(function (o) { return o.id === i.obraId; })[0];
         var baixo = Util.num(i.estoqueMin) > 0 && Util.num(i.saldo) <= Util.num(i.estoqueMin);
         var saldoTxt = Util.fmtNum(i.saldo, 2) + " " + Util.esc(Util.unidadeExibir(i.unidade)) + (baixo ? ' <span class="g-pill" style="background:#f59e0b22;color:#f59e0b">baixo</span>' : "");
-        html += '<tr><td style="cursor:pointer" data-gopen="estoque:' + i.id + '"><b>' + Util.esc(i.nome) + "</b></td><td>" + rot(P.estoqueCategoria, i.categoria) + "</td><td>" + Util.esc(ob ? ob.nome : "Central") + '</td><td class="num">' + saldoTxt + '</td><td class="num">' + Util.fmtMoeda(i.custoUnit) + '</td><td class="num">' + Util.fmtMoeda(Util.num(i.saldo) * Util.num(i.custoUnit)) + '</td><td class="num"><button class="btn sm success" data-gacao="entrada-estoque" data-id="' + i.id + '">+ Entrada</button> <button class="btn sm" data-gacao="saida-estoque" data-id="' + i.id + '">− Saída</button></td></tr>';
+        html += '<tr><td style="cursor:pointer" data-gopen="estoque:' + i.id + '"><b>' + Util.esc(i.nome) + "</b></td><td>" + rot(P.estoqueCategoria, i.categoria) + "</td><td>" + Util.esc(ob ? ob.nome : "Central") + '</td><td class="num">' + saldoTxt + '</td><td class="num">' + Util.fmtMoeda(i.custoUnit) + '</td><td class="num">' + Util.fmtMoeda(Util.num(i.saldo) * Util.num(i.custoUnit)) + '</td><td class="num"><button class="btn sm success" data-gacao="entrada-estoque" data-id="' + i.id + '">+ Entrada</button> <button class="btn sm" data-gacao="saida-estoque" data-id="' + i.id + '">− Saída</button> <button class="btn sm ghost" data-gacao="kardex-item" data-id="' + i.id + '" title="Para onde foi este item">Extrato</button></td></tr>';
       });
       return html + "</tbody></table>";
     },
+    /* ===================== KARDEX — EXTRATO DO ALMOXARIFADO =====================
+     * Toda entrada e saída já era gravada em `estoque_mov` por TRÊS caminhos
+     * (movimento manual, entrada pela nota fiscal e estorno da triagem) e
+     * NENHUMA tela lia. O saldo respondia "quanto sobrou" e nada respondia
+     * "para onde foi" — que é a pergunta que o dono faz quando o material
+     * acaba antes da hora.
+     * ⚠ O saldo acumulado é calculado do mais ANTIGO para o mais novo e depois
+     *   a lista é invertida para exibir. Acumular na ordem de exibição daria um
+     *   saldo que anda para trás. */
+    _kardexFiltro: { itemId: "", obraId: "", de: "", ate: "" },
+    kardexFiltrar: function () {
+      var f = this._kardexFiltro;
+      f.itemId = (UI.el("kx-item") || {}).value || "";
+      f.obraId = (UI.el("kx-obra") || {}).value || "";
+      f.de = (UI.el("kx-de") || {}).value || "";
+      f.ate = (UI.el("kx-ate") || {}).value || "";
+      App.render();
+    },
+    kardexLimpar: function () {
+      this._kardexFiltro = { itemId: "", obraId: "", de: "", ate: "" };
+      App.render();
+    },
+    _kardexDados: function () {
+      var f = this._kardexFiltro;
+      var todos = lista("estoque_mov").filter(function (m) {
+        if (!m) return false;
+        if (f.itemId && String(m.itemId) !== f.itemId) return false;
+        if (f.obraId && String(m.obraId || "") !== f.obraId) return false;
+        return true;
+      });
+      /* ⚠ SALDO ANTERIOR. Acumular do zero dentro do recorte dá saldo NEGATIVO
+       * e mentiroso: filtrar "de 06/08" jogava fora a entrada de 200 do dia 01
+       * e o extrato mostrava −20 num item que tem 120 em estoque. Extrato de
+       * almoxarifado começa pelo que já havia — é o que o contador espera e o
+       * que faz a última linha bater com o saldo do item. */
+      var anterior = 0;
+      if (f.de) {
+        todos.forEach(function (m) {
+          if (String(m.data || "") >= f.de) return;
+          anterior += (m.tipo === "entrada" ? 1 : -1) * Util.num(m.qtd);
+        });
+      }
+      var movs = todos.filter(function (m) {
+        var d = String(m.data || "");
+        if (f.de && d < f.de) return false;
+        if (f.ate && d > f.ate) return false;
+        return true;
+      });
+      /* mais antigo primeiro para acumular; `id` desempata mesma data e mantém
+         a ordem estável entre aparelhos (o merge da nuvem não garante ordem) */
+      movs.sort(function (a, b) {
+        var c = String(a.data || "").localeCompare(String(b.data || ""));
+        return c !== 0 ? c : String(a.id || "").localeCompare(String(b.id || ""));
+      });
+      var acum = anterior, entradas = 0, saidas = 0, vEnt = 0, vSai = 0;
+      movs.forEach(function (m) {
+        var q = Util.num(m.qtd), v = q * Util.num(m.custoUnit);
+        if (m.tipo === "entrada") { acum += q; entradas += q; vEnt += v; }
+        else { acum -= q; saidas += q; vSai += v; }
+        m._acum = acum;
+      });
+      return { movs: movs.reverse(), entradas: entradas, saidas: saidas, vEnt: vEnt, vSai: vSai,
+               saldo: acum, anterior: anterior, temPeriodo: !!(f.de || f.ate) };
+    },
+    renderKardex: function () {
+      var self = this, f = this._kardexFiltro;
+      var itens = lista("estoque"), obras = lista("obras");
+      var d = this._kardexDados();
+      var umItem = f.itemId ? itens.filter(function (i) { return i.id === f.itemId; })[0] : null;
+      var un = umItem ? (Util.unidadeExibir(umItem.unidade) || "un") : "";
+
+      var html = this._head(svg("estoque") + "Extrato do Almoxarifado", "", "",
+        '<button class="btn sm" data-gacao="voltar-estoque" style="margin-right:10px;align-self:center">'
+        + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + ' Voltar ao estoque</button>');
+      html += '<div class="card" style="margin-bottom:14px"><div class="row">'
+        + campo("Item", '<select id="kx-item"><option value="">— todos os itens —</option>'
+            + itens.map(function (i) { return '<option value="' + Util.esc(i.id) + '"' + (i.id === f.itemId ? " selected" : "") + ">" + Util.esc(i.nome) + "</option>"; }).join("") + "</select>")
+        + campo("Obra", '<select id="kx-obra"><option value="">— todas —</option>'
+            + obras.map(function (o) { return '<option value="' + Util.esc(o.id) + '"' + (o.id === f.obraId ? " selected" : "") + ">" + Util.esc(o.nome) + "</option>"; }).join("") + "</select>")
+        + campo("De", inp("kx-de", f.de, "", "date"))
+        + campo("Até", inp("kx-ate", f.ate, "", "date"))
+        + "</div>"
+        + '<div class="flex" style="gap:8px">'
+        + '<button class="btn primary sm" data-gacao="kardex-filtrar">Aplicar</button>'
+        + '<button class="btn sm" data-gacao="kardex-limpar">Limpar</button></div></div>';
+
+      if (!d.movs.length) {
+        return html + vazioBox(lista("estoque_mov").length
+          ? "Nenhuma movimentação com esses filtros"
+          : "Nenhuma movimentação registrada ainda — use + Entrada ou − Saída na tela de Estoque", "", "");
+      }
+
+      /* ⚠ o saldo final só é honesto com UM item filtrado: somar quantidade de
+         cimento com quantidade de areia não significa nada. */
+      var kpis = '<div class="kpis kpis-g" style="margin-bottom:14px">'
+        + '<div class="kpi"><span class="kpi-lbl">Entradas</span><span class="kpi-val">' + Util.fmtNum(d.entradas, 2) + " " + Util.esc(un) + "</span></div>"
+        + '<div class="kpi"><span class="kpi-lbl">Saídas</span><span class="kpi-val">' + Util.fmtNum(d.saidas, 2) + " " + Util.esc(un) + "</span></div>"
+        + (umItem && d.temPeriodo ? '<div class="kpi"><span class="kpi-lbl">Saldo anterior</span><span class="kpi-val">' + Util.fmtNum(d.anterior, 2) + " " + Util.esc(un) + "</span></div>" : "")
+        + (umItem ? '<div class="kpi"><span class="kpi-lbl">Saldo final</span><span class="kpi-val">' + Util.fmtNum(d.saldo, 2) + " " + Util.esc(un) + "</span></div>" : "")
+        + '<div class="kpi"><span class="kpi-lbl">Valor que saiu</span><span class="kpi-val">' + Util.fmtMoeda(d.vSai) + "</span></div>"
+        + "</div>";
+      html += kpis;
+
+      html += '<table class="tbl"><thead><tr><th>Data</th><th>Item</th><th>Movimento</th>'
+        + '<th class="num">Qtd</th><th class="num">Custo un.</th><th class="num">Valor</th>'
+        + "<th>Obra</th><th>Origem</th>" + (umItem ? '<th class="num">Saldo</th>' : "") + "</tr></thead><tbody>";
+      d.movs.forEach(function (m) {
+        var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
+        var ent = m.tipo === "entrada";
+        var q = Util.num(m.qtd);
+        var pill = '<span class="g-pill" style="background:' + (ent ? "#16a34a22;color:#15803d" : "#dc262622;color:#b91c1c") + '">'
+          + (ent ? "entrada" : "saída") + "</span>";
+        var origem = m.docTipo === "NF" ? ("NF " + Util.esc(m.docNumero || ""))
+          : m.docTipo === "estorno" ? "estorno"
+          : m.docTipo === "manual" ? "manual" : "—";
+        html += "<tr><td>" + Util.esc(self._brData(m.data)) + "</td>"
+          + "<td>" + Util.esc(m.itemNome || "—") + "</td>"
+          + "<td>" + pill + (m.obs ? ' <span class="muted" style="font-size:12px">' + Util.esc(m.obs) + "</span>" : "") + "</td>"
+          + '<td class="num">' + (ent ? "+" : "−") + Util.fmtNum(q, 2) + "</td>"
+          + '<td class="num">' + Util.fmtMoeda(m.custoUnit) + "</td>"
+          + '<td class="num">' + Util.fmtMoeda(q * Util.num(m.custoUnit)) + "</td>"
+          + "<td>" + Util.esc(ob ? ob.nome : "Central") + "</td>"
+          + "<td>" + origem + "</td>"
+          + (umItem ? '<td class="num"><b>' + Util.fmtNum(m._acum, 2) + "</b></td>" : "")
+          + "</tr>";
+      });
+      if (umItem && d.temPeriodo) {
+        html += '<tr><td colspan="8" style="text-align:right" class="muted">saldo anterior a ' + Util.esc(self._brData(f.de)) + "</td>"
+          + '<td class="num muted"><b>' + Util.fmtNum(d.anterior, 2) + "</b></td></tr>";
+      }
+      return html + "</tbody></table>";
+    },
+    /* ===== RECEBIMENTO DE COMPRA → ENTRADA NO ALMOXARIFADO =====
+     * Receber um pedido mudava o status e lançava a despesa, e o material
+     * nunca entrava no estoque: quem quisesse controlar almoxarifado digitava
+     * tudo de novo, à mão. Pedido nascido de Cotação ou de Requisição já
+     * carrega itens com descrição, unidade, quantidade e preço — a informação
+     * existia e não era usada.
+     *
+     * ⚠ NÃO LANÇA NADA NO FINANCEIRO. A despesa já é criada no recebimento;
+     *   um segundo lançamento contaria a MESMA compra duas vezes. Entrada de
+     *   estoque move quantidade, não move dinheiro.
+     *
+     * ⚠ Idempotente por carimbo (`estoqueLancado`): o botão só aparece em
+     *   pedido "aprovado", mas dois aparelhos podem receber o mesmo pedido
+     *   antes de sincronizar, e aí o estoque dobraria sem ninguém ver.
+     *
+     * ⚠ Procura o item com `listaTodas`, NÃO com `lista`: o escopo por obra
+     *   filtraria o catálogo e o comprador criaria um item duplicado só porque
+     *   o existente é de uma obra que ele não enxerga. */
+    _estoqueDaCompra: function (pc) {
+      if (!pc || pc.estoqueLancado) return { lancados: 0, jaFeito: !!(pc && pc.estoqueLancado) };
+      var itens = Util.arr(pc.itens).filter(function (i) {
+        return i && String(i.descricao || "").trim() && Util.num(i.quantidade) > 0;
+      });
+      if (!itens.length) return { lancados: 0, semItens: true };
+
+      var catalogo = listaTodas("estoque"), n = 0;
+      var chave = function (s) { return String(s || "").trim().toUpperCase(); };
+      itens.forEach(function (it) {
+        var nome = String(it.descricao).trim();
+        var qtd = Util.num(it.quantidade);
+        var custo = Util.num(it.precoUnit != null ? it.precoUnit : (it.valorUnitario != null ? it.valorUnitario : it.precoRef));
+        var alvo = catalogo.filter(function (e) { return chave(e.nome) === chave(nome); })[0];
+        if (alvo) {
+          var saldoAnt = Util.num(alvo.saldo), custoAnt = Util.num(alvo.custoUnit), novoSaldo = saldoAnt + qtd;
+          /* mesma fórmula de custo médio da entrada por nota e da entrada
+             manual — as três precisam concordar, senão o valor do
+             almoxarifado depende do caminho por onde o material entrou. */
+          if (custo > 0) {
+            alvo.custoUnit = novoSaldo > 0
+              ? Math.round(((saldoAnt * custoAnt + qtd * custo) / novoSaldo) * 100) / 100
+              : custo;
+          }
+          alvo.saldo = novoSaldo;
+          Store.salvar(eid(), "estoque", alvo);
+        } else {
+          alvo = Store.salvar(eid(), "estoque", {
+            nome: nome, categoria: "outros", unidade: it.unidade || "un",
+            saldo: qtd, estoqueMin: 0, custoUnit: custo, obraId: pc.obraId || "",
+            localizacao: "", obs: "Criado pelo recebimento do pedido " + (pc.numero || "")
+          });
+          if (!alvo) return;                 // armazenamento cheio: o Store já avisou
+          catalogo.push(alvo);               // o próximo item do mesmo pedido acha este
+        }
+        Store.salvar(eid(), "estoque_mov", {
+          itemId: alvo.id, itemNome: alvo.nome, tipo: "entrada", qtd: qtd, custoUnit: custo,
+          data: pc.dataRecebimento || new Date().toISOString().slice(0, 10),
+          obraId: pc.obraId || "", docTipo: "PC", docNumero: pc.numero || "",
+          obs: "Recebimento do pedido " + (pc.numero || "")
+        });
+        n++;
+      });
+      return { lancados: n };
+    },
+
+    /* data em pt-BR sem depender de fuso: a string já vem como AAAA-MM-DD */
+    _brData: function (iso) {
+      var s = String(iso || "");
+      return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : (s || "—");
+    },
+
     novoItemEstoque: function () { this.formEstoque(null); },
     formEstoque: function (i) {
       i = i || {}; var obras = lista("obras");
@@ -8401,18 +8610,80 @@
         return true;
       });
     },
+    /* ⚠ Era `window.prompt` pedindo só a quantidade — a mesma armadilha que a
+     * casa já documentou noutros pontos: caixa do navegador não valida, não
+     * formata número BR, não cabe num segundo campo e o iOS às vezes nem
+     * mostra. E faltava o que mais importa: a entrada NÃO recalculava o custo
+     * médio, enquanto a entrada pela nota fiscal recalcula
+     * (`_triGravarEstoque`). Duas entradas do mesmo cimento por caminhos
+     * diferentes deixavam o custo do item divergente do que foi pago — e o
+     * valor total do almoxarifado saía errado sem ninguém perceber. */
     _movEstoque: function (id, tipo) {
-      var it = Store.obter(eid(), "estoque", id); if (!it) return;
-      var lbl = tipo === "entrada" ? "entrada (adicionar ao saldo)" : "saída (baixar do saldo)";
-      var q = window.prompt("Quantidade de " + lbl + ' para "' + it.nome + '" (' + (it.unidade || "un") + "):", "");
-      if (q === null) return;
-      var qtd = Util.num(q); if (!(qtd > 0)) { UI.toast("Quantidade inválida.", "erro"); return; }
-      var saldoAtual = Util.num(it.saldo);
-      if (tipo === "saida" && qtd > saldoAtual) { UI.toast("Saída maior que o saldo (" + Util.fmtNum(saldoAtual, 2) + ").", "erro"); return; }
-      it.saldo = tipo === "entrada" ? saldoAtual + qtd : saldoAtual - qtd;
-      Store.salvar(eid(), "estoque", it);
-      Store.salvar(eid(), "estoque_mov", { itemId: it.id, itemNome: it.nome, tipo: tipo, qtd: qtd, custoUnit: Util.num(it.custoUnit), data: new Date().toISOString().slice(0, 10), obraId: it.obraId });
-      App.render(); UI.toast("Movimentação registrada. Novo saldo: " + Util.fmtNum(it.saldo, 2) + " " + (it.unidade || ""), "ok");
+      var self = this, it = Store.obter(eid(), "estoque", id); if (!it) return;
+      var ehEntrada = tipo === "entrada";
+      var un = Util.unidadeExibir(it.unidade) || "un";
+      var saldoAtual = Util.num(it.saldo), custoAtual = Util.num(it.custoUnit);
+      var obras = lista("obras");
+
+      var corpo =
+        '<p class="muted" style="margin:0 0 12px">' + Util.esc(it.nome) + ' · saldo atual <b>'
+          + Util.fmtNum(saldoAtual, 2) + " " + Util.esc(un) + '</b>'
+          + (custoAtual > 0 ? ' · custo <b>' + Util.fmtMoeda(custoAtual) + "</b>" : "") + "</p>" +
+        '<div class="row">' + campo("Quantidade * (" + Util.esc(un) + ")", inp("mv-qtd", "", "0,00"))
+          + campo("Data", inp("mv-data", new Date().toISOString().slice(0, 10), "", "date")) + "</div>" +
+        (ehEntrada
+          /* o custo só é perguntado na ENTRADA: saída não muda preço, consome o
+             que já está lá. Em branco = mantém o custo atual do item. */
+          ? '<div class="row">' + campo("Custo unitário desta entrada (R$)", inp("mv-custo", "", "em branco = manter " + Util.fmtMoeda(custoAtual)))
+            + campo("Obra", sel("mv-obra", optsRec(obras, "nome", it.obraId, "— Central —"))) + "</div>"
+          : '<div class="row">' + campo("Obra que consumiu", sel("mv-obra", optsRec(obras, "nome", it.obraId, "— Central —"))) + "</div>") +
+        campo("Observação", inp("mv-obs", "", ehEntrada ? "Ex.: compra avulsa, devolução de obra" : "Ex.: aplicado na alvenaria do 2º pavimento"));
+
+      UI.modal((ehEntrada ? "+ Entrada" : "− Saída") + " de estoque", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Registrar", classe: "primary", onClick: function () {
+          var qtd = Util.num((UI.el("mv-qtd") || {}).value);
+          if (!(qtd > 0)) { UI.toast("Informe uma quantidade maior que zero.", "erro"); return; }
+          var atual = Store.obter(eid(), "estoque", id) || it;   // relê: pode ter mudado
+          var saldo = Util.num(atual.saldo);
+          if (!ehEntrada && qtd > saldo) {
+            UI.toast("Saída de " + Util.fmtNum(qtd, 2) + " " + un + " maior que o saldo de " + Util.fmtNum(saldo, 2) + " " + un + ".", "erro");
+            return;
+          }
+          var data = (UI.el("mv-data") || {}).value || new Date().toISOString().slice(0, 10);
+          var obraMov = (UI.el("mv-obra") || {}).value || "";
+          var obs = String((UI.el("mv-obs") || {}).value || "").trim();
+          var custoMov = Util.num(atual.custoUnit);
+
+          if (ehEntrada) {
+            var digitado = String((UI.el("mv-custo") || {}).value || "").trim();
+            if (digitado !== "") {
+              custoMov = Util.num(digitado);
+              /* ⚠ MESMA CONTA DA ENTRADA POR NOTA (`_triGravarEstoque`): custo
+                 médio ponderado pelo saldo. Manter as duas fórmulas iguais é o
+                 ponto — foi a divergência entre elas que gerou este conserto. */
+              var novoSaldo = saldo + qtd;
+              atual.custoUnit = novoSaldo > 0
+                ? Math.round(((saldo * Util.num(atual.custoUnit) + qtd * custoMov) / novoSaldo) * 100) / 100
+                : custoMov;
+            }
+            atual.saldo = saldo + qtd;
+          } else {
+            atual.saldo = saldo - qtd;
+          }
+          if (!Store.salvar(eid(), "estoque", atual)) { UI.toast("Não consegui gravar o saldo.", "erro"); return; }
+          Store.salvar(eid(), "estoque_mov", {
+            itemId: atual.id, itemNome: atual.nome, tipo: tipo, qtd: qtd,
+            custoUnit: custoMov, data: data, obraId: obraMov,
+            docTipo: "manual", obs: obs
+          });
+          UI.fecharModal();
+          App.render();
+          UI.toast("Movimentação registrada. Saldo: " + Util.fmtNum(atual.saldo, 2) + " " + un
+            + (ehEntrada && Util.num(atual.custoUnit) !== custoAtual ? " · custo médio agora " + Util.fmtMoeda(atual.custoUnit) : ""), "ok");
+        } }
+      ]);
+      void self;
     },
 
     // =================== RDO — DIÁRIO DE OBRA ===================
@@ -16453,12 +16724,28 @@ renderFolha: function () {
              aprovacao ja foi feita por outro. Em obra pequena quem compra e
              quem recebe. O que se impede e receber sem aprovacao. */
           if (!this._guardaBaixa(pcr, "compras")) return;
-          pcr.status = "recebido"; pcr.dataRecebimento = this._hojeISO(); Store.salvar(eid(), "compras", pcr);
+          pcr.status = "recebido"; pcr.dataRecebimento = this._hojeISO();
+          /* o material entra no almoxarifado ANTES de carimbar, para que uma
+             falha de gravação não deixe o pedido "recebido" sem estoque */
+          var est = this._estoqueDaCompra(pcr);
+          if (est.lancados) pcr.estoqueLancado = true;
+          Store.salvar(eid(), "compras", pcr);
           Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || ""), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, formaPgto: pcr.formaPgto });
-          App.render(); UI.toast("Compra recebida e despesa lançada no Financeiro (pendente).", "ok"); return;
+          App.render();
+          UI.toast(est.lancados
+            ? "Compra recebida. Despesa lançada no Financeiro (pendente) e " + est.lancados + " item(ns) no almoxarifado."
+            /* pedido digitado à mão só tem texto livre — dizer isso é melhor
+               que dar entrada em nada e deixar o usuário procurando. */
+            : "Compra recebida e despesa lançada no Financeiro (pendente). Este pedido não tem itens detalhados, então nada entrou no estoque.", "ok");
+          return;
         }
         case "entrada-estoque": return this._movEstoque(id, "entrada");
         case "saida-estoque": return this._movEstoque(id, "saida");
+        case "abrir-kardex": this._estoqueAba = "extrato"; this._kardexFiltro = { itemId: "", obraId: "", de: "", ate: "" }; App.render(); return;
+        case "kardex-item": this._estoqueAba = "extrato"; this._kardexFiltro = { itemId: id, obraId: "", de: "", ate: "" }; App.render(); return;
+        case "voltar-estoque": this._estoqueAba = "itens"; App.render(); return;
+        case "kardex-filtrar": return this.kardexFiltrar();
+        case "kardex-limpar": return this.kardexLimpar();
         case "novo-rdo": return this.novoRdo();
         case "novo-usuario": return this.novoUsuario();
         case "config-aprovacao": return this.configAprovacao();
