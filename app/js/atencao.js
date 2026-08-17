@@ -180,16 +180,32 @@
      no Painel — um número que não é dinheiro nenhum, com cara de dinheiro.
      O teste não pegou porque ele mesmo passava `retencao: 5000`, como se
      fosse valor: teste que repete a premissa errada do código não é teste. */
+  /* ⚠ RETENÇÃO JÁ LIBERADA SAI DA CONTA. Sem isto o KPI "Retenção presa" só
+   * cresce: o dono devolve a retenção no fim da obra e o Painel continua
+   * dizendo que ela está lá. Número que nunca desce é número que ninguém olha.
+   * `retencaoLiberadaEm` é gravado na medição quando a retenção é devolvida
+   * (ver a aba Retenção em Medições). */
   function retencaoPresa(medicoes) {
     return (medicoes || []).reduce(function (s, m) {
       if (!m) return s;
+      if (m.retencaoLiberadaEm) return s;
       var st = texto(m.status);
       if (st !== "aprovado" && st !== "aprovada" && st !== "paga") return s;
       return s + (num(m.valor) * num(m.retencao) / 100);
     }, 0);
   }
+  /* Só a retenção de medição PAGA pode ser devolvida: antes do pagamento o
+   * cliente não reteve nada — o valor inteiro ainda é a receber. A tela mostra
+   * as duas parcelas separadas para o número do Painel continuar batendo. */
+  function retencaoLiberavel(medicoes) {
+    return (medicoes || []).reduce(function (s, m) {
+      if (!m || m.retencaoLiberadaEm) return s;
+      if (texto(m.status) !== "paga") return s;
+      return s + (num(m.valor) * num(m.retencao) / 100);
+    }, 0);
+  }
 
-  var Atencao = { achar: achar, retencaoPresa: retencaoPresa };
+  var Atencao = { achar: achar, retencaoPresa: retencaoPresa, retencaoLiberavel: retencaoLiberavel };
   global.Atencao = Atencao;
   if (typeof module !== "undefined" && module.exports) module.exports = Atencao;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

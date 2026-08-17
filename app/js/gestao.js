@@ -963,7 +963,11 @@
           /* RETENÇÃO PRESA: dinheiro dele que fica parado até alguém lembrar
              de cobrar. Não é alerta — é informação, e por isso vem como KPI e
              não como linha de "precisa de você". Só aparece quando existe. */
-          (_podeFin && _retido > 0 ? k("Retenção presa", Util.fmtMoeda(_retido), "custo") : "") +
+          (_podeFin && _retido > 0 && _podeMod("medicoes")
+            /* ⚠ ERA UM NÚMERO SEM DESTINO. Agora leva à tela onde se devolve. */
+            ? '<button class="kpi" data-gacao="abrir-retencao" style="text-align:left;cursor:pointer;border:0;font:inherit" title="Ver e devolver a retenção">'
+              + '<span class="kpi-lbl">Retenção presa</span><span class="kpi-val">' + Util.fmtMoeda(_retido) + "</span></button>"
+            : (_podeFin && _retido > 0 ? k("Retenção presa", Util.fmtMoeda(_retido), "custo") : "")) +
           /* ⚠ Estes três não são dinheiro, mas são VOLUME de módulo: dizer
              "Medições pendentes: 7" a quem não tem Medições entrega o ritmo da
              obra e o tamanho da operação a quem o admin decidiu não mostrar.
@@ -2500,7 +2504,109 @@
       return { sel: sel, obras: obras, todos: todos, lista: PorObra.filtrar(todos, sel, obras) };
     },
 
+    /* ===================== RETENÇÃO CONTRATUAL =====================
+     * Era o único lugar do produto onde dinheiro entrava e não tinha porta de
+     * saída: a cada medição o sistema descontava a retenção, imprimia no
+     * boletim, lançava só o líquido no Financeiro — e a retenção sumia. Não
+     * havia tela para devolvê-la no fim da obra, nem baixa, nem saldo. O
+     * Painel mostrava "Retenção presa: R$ X" e não havia onde clicar.
+     *
+     * ⚠ NÃO HÁ CONTAGEM DUPLA: a medição paga já lançou o LÍQUIDO como receita;
+     *   liberar lança a RETENÇÃO. Líquido + retenção = valor da medição, uma
+     *   vez só. Há teste provando a soma.
+     * ⚠ Só medição PAGA pode ser liberada: antes do pagamento o cliente não
+     *   reteve nada, o valor inteiro ainda é a receber. O que está aprovado e
+     *   não pago aparece na tela como "ainda não retida", para o número do
+     *   Painel continuar batendo com o que se vê aqui. */
+    _medAba: "lista",
+    _retencaoDados: function () {
+      var meds = lista("medicoes"), obras = lista("obras");
+      var nomeObra = {};
+      obras.forEach(function (o) { if (o && o.id) nomeObra[o.id] = o.nome || ""; });
+      var st = function (m) { return String(m.status || "").trim().toLowerCase(); };
+      var vRet = function (m) { return Util.num(m.valor) * Util.num(m.retencao) / 100; };
+      var grupos = {}, totLib = 0, totPrev = 0, totDev = 0;
+      meds.forEach(function (m) {
+        if (!m || !(Util.num(m.retencao) > 0)) return;
+        var e = st(m);
+        var paga = e === "paga", aprov = e === "aprovado" || e === "aprovada";
+        if (!paga && !aprov) return;
+        var k = m.obraId || "";
+        var g = grupos[k] || (grupos[k] = { obraId: k, obra: nomeObra[k] || "Sem obra", liberavel: [], prevista: [], devolvida: [], somaLib: 0, somaPrev: 0, somaDev: 0 });
+        var v = vRet(m);
+        if (m.retencaoLiberadaEm) { g.devolvida.push(m); g.somaDev += v; totDev += v; }
+        else if (paga) { g.liberavel.push(m); g.somaLib += v; totLib += v; }
+        else { g.prevista.push(m); g.somaPrev += v; totPrev += v; }
+      });
+      var lista_ = Object.keys(grupos).map(function (k) { return grupos[k]; })
+        .sort(function (a, b) { return b.somaLib - a.somaLib; });
+      return { grupos: lista_, totLib: totLib, totPrev: totPrev, totDev: totDev };
+    },
+    renderRetencao: function () {
+      var self = this, d = this._retencaoDados();
+      var html = this._head(svg("medicoes") + "Retenção contratual", "", "",
+        '<button class="btn sm" data-gacao="voltar-medicoes" style="margin-right:10px;align-self:center">'
+        + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Voltar às medições</button>");
+
+      html += '<div class="kpis kpis-g" style="margin-bottom:14px">'
+        + '<div class="kpi"><span class="kpi-lbl">Retida — pode devolver</span><span class="kpi-val">' + Util.fmtMoeda(d.totLib) + "</span></div>"
+        + '<div class="kpi"><span class="kpi-lbl">Ainda não retida (medição não paga)</span><span class="kpi-val">' + Util.fmtMoeda(d.totPrev) + "</span></div>"
+        + '<div class="kpi"><span class="kpi-lbl">Já devolvida</span><span class="kpi-val">' + Util.fmtMoeda(d.totDev) + "</span></div></div>";
+
+      if (!d.grupos.length) {
+        return html + vazioBox("Nenhuma medição com retenção", "", "");
+      }
+      html += '<p class="muted" style="font-size:13px;margin:0 0 12px">Devolver a retenção lança uma <b>receita</b> no Financeiro. A medição paga já lançou o líquido — juntos, os dois somam o valor cheio da medição, sem contar duas vezes.</p>';
+
+      d.grupos.forEach(function (g) {
+        html += '<div class="card mt"><div class="flex between" style="align-items:center;margin-bottom:8px">'
+          + "<h3 style=\"margin:0\">" + Util.esc(g.obra) + "</h3>"
+          + '<div style="text-align:right">'
+          + (g.somaLib > 0
+              ? '<b style="font-size:15px">' + Util.fmtMoeda(g.somaLib) + "</b>"
+                + ' <button class="btn sm primary" data-gacao="retencao-liberar-obra" data-id="' + Util.esc(g.obraId) + '" style="margin-left:8px">Devolver tudo</button>'
+              : '<span class="muted">nada a devolver</span>')
+          + "</div></div>";
+        html += '<table class="tbl"><thead><tr><th>Medição</th><th>Status</th><th class="num">Valor</th><th class="num">Ret. %</th><th class="num">Retido</th><th></th></tr></thead><tbody>';
+        [].concat(g.liberavel, g.prevista, g.devolvida).forEach(function (m) {
+          var v = Util.num(m.valor) * Util.num(m.retencao) / 100;
+          var devolvida = !!m.retencaoLiberadaEm;
+          var paga = String(m.status || "").toLowerCase() === "paga";
+          var sit = devolvida
+            ? '<span class="g-pill" style="background:#16a34a22;color:#15803d">devolvida em ' + Util.esc(self._brData(m.retencaoLiberadaEm)) + "</span>"
+            : (paga ? '<span class="g-pill" style="background:#f59e0b22;color:#b45309">retida</span>'
+                    : '<span class="g-pill" style="background:#64748b22;color:#475569">medição não paga</span>');
+          html += "<tr><td><b>" + Util.esc(m.numero || m.id) + "</b></td><td>" + sit + "</td>"
+            + '<td class="num">' + Util.fmtMoeda(m.valor) + "</td>"
+            + '<td class="num">' + Util.fmtNum(m.retencao, 1) + "%</td>"
+            + '<td class="num"><b>' + Util.fmtMoeda(v) + "</b></td>"
+            + '<td class="num">' + (!devolvida && paga
+                ? '<button class="btn sm" data-gacao="retencao-liberar" data-id="' + Util.esc(m.id) + '">Devolver</button>' : "")
+            + "</td></tr>";
+        });
+        html += "</tbody></table></div>";
+      });
+      return html;
+    },
+    /* devolve a retenção de UMA medição. Idempotente pelo carimbo. */
+    _retencaoLiberar: function (m) {
+      if (!m || m.retencaoLiberadaEm) return 0;
+      if (String(m.status || "").trim().toLowerCase() !== "paga") return 0;
+      var v = Util.num(m.valor) * Util.num(m.retencao) / 100;
+      if (!(v > 0)) return 0;
+      var hoje = this._hojeISO();
+      m.retencaoLiberadaEm = hoje;
+      Store.salvar(eid(), "medicoes", m);
+      Store.salvar(eid(), "financeiro", {
+        data: hoje, desc: "Devolução de retenção — medição " + (m.numero || ""),
+        tipo: "receita", categoria: "medicao", valor: v, status: "pendente",
+        obraId: m.obraId, contratoId: m.contratoId, medicaoId: m.id, retencaoDe: m.id
+      });
+      return v;
+    },
+
     renderMedicoes: function () {
+      if (this._medAba === "retencao") return this.renderRetencao();
       var self = this;
       var e = this._medEscopo(), obras = e.obras, contratos = lista("contratos");
       var ms = e.lista;
@@ -2515,6 +2621,10 @@
           }).join("") + "</select></label>"
         : "";
       var html = this._head(svg("medicoes") + "Medições", "nova-medicao", "Nova medição",
+          /* a retenção mora aqui porque é dinheiro DA medição — não vira módulo
+             novo, herda a permissão de Medições e não gasta linha do menu. */
+          '<button class="btn sm" data-gacao="abrir-retencao" style="margin-right:10px;align-self:center" title="Ver e devolver a retenção contratual">'
+          + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + " Retenção</button>" +
           selMed +
           /* Puxar do mês anterior: o pedido do cliente era não redigitar a
              mesma lista de serviços todo mês. Fica ao lado de "Nova medição"
@@ -16785,6 +16895,32 @@ renderFolha: function () {
         }
         case "entrada-estoque": return this._movEstoque(id, "entrada");
         case "saida-estoque": return this._movEstoque(id, "saida");
+        case "abrir-retencao": this._medAba = "retencao"; App.render(); return;
+        case "voltar-medicoes": this._medAba = "lista"; App.render(); return;
+        case "retencao-liberar": {
+          var mr = Store.obter(eid(), "medicoes", id); if (!mr) return;
+          var vr = this._retencaoLiberar(mr);
+          App.render();
+          UI.toast(vr > 0 ? "Retenção de " + Util.fmtMoeda(vr) + " devolvida e lançada como receita." : "Esta retenção já foi devolvida.", vr > 0 ? "ok" : "erro");
+          return;
+        }
+        case "retencao-liberar-obra": {
+          var self_ = this;
+          var alvo = lista("medicoes").filter(function (m) {
+            return m && String(m.obraId || "") === String(id || "") && !m.retencaoLiberadaEm
+              && String(m.status || "").toLowerCase() === "paga" && Util.num(m.retencao) > 0;
+          });
+          if (!alvo.length) { UI.toast("Não há retenção a devolver nesta obra.", "erro"); return; }
+          var soma = alvo.reduce(function (t, m) { return t + Util.num(m.valor) * Util.num(m.retencao) / 100; }, 0);
+          /* ⚠ devolver em lote mexe em dinheiro de várias medições de uma vez:
+             confirma com o VALOR na frente, não com "tem certeza?". */
+          if (!window.confirm("Devolver a retenção de " + alvo.length + " medição(ões), somando " + Util.fmtMoeda(soma) + "?\n\nIsso lança uma receita no Financeiro para cada uma.")) return;
+          var tot = 0;
+          alvo.forEach(function (m) { tot += self_._retencaoLiberar(m); });
+          App.render();
+          UI.toast("Devolvida a retenção de " + alvo.length + " medição(ões): " + Util.fmtMoeda(tot) + ".", "ok");
+          return;
+        }
         case "abrir-kardex": this._estoqueAba = "extrato"; this._kardexFiltro = { itemId: "", obraId: "", de: "", ate: "" }; App.render(); return;
         case "kardex-item": this._estoqueAba = "extrato"; this._kardexFiltro = { itemId: id, obraId: "", de: "", ate: "" }; App.render(); return;
         case "voltar-estoque": this._estoqueAba = "itens"; App.render(); return;

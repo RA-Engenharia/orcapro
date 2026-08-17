@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.249",
+  "versao": "1.1.250",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.249/OrcaPRO-IA-update-v1.1.249.zip",
-  "notas": "Importante: o antigo Espelho de Ponto passa a se chamar Demonstrativo de Frequencia e declara no proprio documento que os horarios sao a jornada CONTRATADA, nao marcacao de ponto. Ele continua mostrando dias trabalhados, faltas e horas extras. Nao substitui o registro de ponto exigido pelo art. 74 da CLT.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.249/OrcaPRO-IA-Instalador-v1.1.249.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.250/OrcaPRO-IA-update-v1.1.250.zip",
+  "notas": "Novidade: a retencao contratual agora tem onde ser devolvida. Em Medicoes ha a aba Retencao, com o quanto esta retido em cada obra e a devolucao de uma medicao ou de todas de uma vez. O aviso Retencao presa do Painel passa a levar direto para essa tela.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.250/OrcaPRO-IA-Instalador-v1.1.250.exe"
 }
