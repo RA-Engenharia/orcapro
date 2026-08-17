@@ -477,7 +477,15 @@
           if (reg && reg.competencia) texto += " " + comp(reg.competencia);
           if (vr) texto += " (" + vr + ")";
         }
-        return { fonte: f, label: label, texto: texto, n: cont[f] };
+        /* ⚠ A IDADE VIAJA JUNTO COM A BASE. O documento já dizia qual base e de
+           que competência; não dizia que aquele preço tem quase três anos, e a
+           ressalva morava só na tela de tabelas. Quem orça e entrega estava
+           assinando preço velho sem saber. */
+        var _v = (f === "SINAPI") ? (orc.competenciaSinapi || "") : ((registroDe(f) || {}).competencia || "");
+        var _meses = (typeof BasesCat !== "undefined" && BasesCat.idadeMeses) ? BasesCat.idadeMeses(_v) : null;
+        var _idade = (typeof BasesCat !== "undefined" && BasesCat.idadeTexto) ? BasesCat.idadeTexto(_v) : "";
+        return { fonte: f, label: label, texto: texto, n: cont[f],
+                 competencia: _v, idadeMeses: _meses, idadeTexto: _idade };
       });
       out.sort(function (a, b) {
         if (a.fonte === "SINAPI") return -1; if (b.fonte === "SINAPI") return 1;
@@ -488,6 +496,35 @@
     },
     // Texto das bases p/ cabeçalhos/documentos: "SINAPI 05/2026/MG · AGETOP-GO".
     // Sem itens (orçamento vazio) cai no rótulo SINAPI padrão só p/ não quebrar.
+    /* ⚠ RESSALVA DE BASE DESATUALIZADA, para ir NO DOCUMENTO.
+     *
+     * Devolve só as bases cuja competência passou do limite — e devolve texto
+     * pronto, para o Excel, o laudo e a proposta dizerem a MESMA coisa. Réplica
+     * de regra em três lugares é como os três divergem.
+     *
+     * ⚠ Base sem competência legível NÃO entra: afirmar "desatualizada" sem
+     *   saber a data seria inventar ressalva, e ressalva falsa num documento
+     *   que vai a licitação é pior que ressalva nenhuma.
+     * Limite de 12 meses porque é o ponto em que qualquer base referencial já
+     * passou por reajuste de insumo relevante no Brasil. */
+    basesDesatualizadas: function (orc, mesesLimite) {
+      var lim = typeof mesesLimite === "number" ? mesesLimite : 12;
+      return this.basesUsadas(orc).filter(function (b) {
+        return b.fonte !== "PROPRIO" && b.fonte !== "OUTRA"
+          && typeof b.idadeMeses === "number" && b.idadeMeses >= lim;
+      });
+    },
+    /* Frase única para o cabeçalho dos documentos. "" quando não há o que
+       ressalvar — nunca imprime aviso vazio. */
+    ressalvaBasesTexto: function (orc, mesesLimite) {
+      var v = this.basesDesatualizadas(orc, mesesLimite);
+      if (!v.length) return "";
+      return "Atenção: " + v.map(function (b) {
+        return b.label + " " + ((typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(b.competencia) : b.competencia)
+          + " (" + b.idadeTexto + ")";
+      }).join(" · ") + ". Preço de referência dessa data — confira com o mercado antes de assinar.";
+    },
+
     basesUsadasTexto: function (orc, sep) {
       var l = this.basesUsadas(orc);
       if (!l.length) return "SINAPI " + ((orc && orc.competenciaSinapi) || "—") + "/" + ((orc && orc.uf) || "—");

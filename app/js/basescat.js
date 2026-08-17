@@ -303,6 +303,42 @@ ecuperacao-orcamento-cliente-2026-07),
       var br = s.match(/^(\d{2})\/(\d{4})$/);
       return br ? (br[2] + "-" + br[1]) : "";
     },
+    /* ⚠ IDADE DA BASE, EM MESES — a peça que faltava no documento.
+     *
+     * O orçamento já declarava a base e a competência ("SETOP 08/2023"), mas
+     * cabia ao leitor fazer a conta e perceber que aquele preço tem quase três
+     * anos. Quem instala a base, orça e entrega ao cliente está assinando preço
+     * velho sem saber, e a ressalva vivia só na tela de tabelas — não no papel.
+     *
+     * Devolve null quando não dá para saber (versão fora do padrão de data).
+     * ⚠ null é o valor importante: documento nenhum pode afirmar idade que não
+     *   conseguiu calcular. Melhor calar do que carimbar "0 meses" num dado que
+     *   não é data. */
+    idadeMeses: function (versao, hojeISO) {
+      var iso = this._iso(versao);
+      if (!iso) return null;
+      var h = String(hojeISO || "").match(/^(\d{4})-(\d{2})/);
+      if (!h) {
+        var d = new Date();
+        h = [null, String(d.getFullYear()), ("0" + (d.getMonth() + 1)).slice(-2)];
+      }
+      var av = Number(iso.slice(0, 4)), mv = Number(iso.slice(5, 7));
+      var ah = Number(h[1]), mh = Number(h[2]);
+      if (!av || !mv || !ah || !mh) return null;
+      var m = (ah - av) * 12 + (mh - mv);
+      return m < 0 ? 0 : m;                 // versão futura: trata como atual
+    },
+    /* Idade em texto de gente: "3 meses", "1 ano e 2 meses". */
+    idadeTexto: function (versao, hojeISO) {
+      var m = this.idadeMeses(versao, hojeISO);
+      if (m == null) return "";
+      if (m < 1) return "deste mês";
+      if (m < 12) return m + (m === 1 ? " mês" : " meses");
+      var anos = Math.floor(m / 12), resto = m % 12;
+      var t = anos + (anos === 1 ? " ano" : " anos");
+      return resto ? t + " e " + resto + (resto === 1 ? " mês" : " meses") : t;
+    },
+
     /* 1 = a mais nova · 0 = iguais · -1 = a mais velha · null = NÃO SEI.
        null é o valor mais importante daqui: nenhum caminho de atualização
        pode concluir "tem versão nova" sem saber comparar. */

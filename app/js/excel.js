@@ -329,7 +329,14 @@
     wa.mergeCells('A1:J1'); wa.getCell('A1').value = empresa; wa.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
     wa.mergeCells('A2:J2'); wa.getCell('A2').value = 'PLANILHA ORÇAMENTÁRIA ANALÍTICA — ' + (orc.numero || '') + (orc.nome ? ' · ' + orc.nome : ''); wa.getCell('A2').font = { bold: true, size: 11 };
     wa.mergeCells('A3:J3'); wa.getCell('A3').value = 'Cliente: ' + ((orc.cliente && orc.cliente.nome) || '-') + '   |   Obra: ' + ((orc.obra && orc.obra.nome) || '-') + (orc.obra && orc.obra.local ? ' (' + orc.obra.local + ')' : ''); wa.getCell('A3').font = { size: 9, color: { argb: muted } };
+    /* ⚠ a ressalva de base velha vai NO DOCUMENTO, nao so na tela de tabelas:
+       quem orca e entrega estava assinando preco de anos atras sem saber. */
+    var _ressalva = (Orcamento.ressalvaBasesTexto ? Orcamento.ressalvaBasesTexto(orc) : '');
     wa.mergeCells('A4:J4'); wa.getCell('A4').value = Orcamento.basesUsadasTexto(orc) + '   |   BDI ' + fmtNum(bdiPct, 2) + '%   |   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado'); wa.getCell('A4').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
+    if (_ressalva) {
+      wa.mergeCells('A5:J5'); wa.getCell('A5').value = _ressalva;
+      wa.getCell('A5').font = { italic: true, bold: true, size: 9, color: { argb: 'FFB45309' } };
+    }
 
     var hr = 6, colsA = ['Item', 'Código', 'Fonte', 'Descrição', 'Und', 'Qtd', 'Custo Unit', 'Custo Total',
       bdiNoPU ? 'Preço Unit c/BDI' : 'Preço Unit (BDI no final)', bdiNoPU ? 'Preço Total c/BDI' : 'Preço Total (BDI no final)'];

@@ -91,6 +91,11 @@
           row("Data da vistoria", Util.naoVazio(orc.dataVistoria) ? orc.dataVistoria : "[____]") +
           row("Data de referência", hoje) +
           row((Orcamento.basesUsadas(orc).length > 1 ? "Bases de preços" : "Base de preços"), Orcamento.basesUsadasTexto(orc)) +
+          /* ⚠ Peça que vai a juízo declarando preço de base velha SEM dizer que
+             é velha é o pior lugar para essa omissão: o assistente da outra
+             parte faz a conta e a peça perde credibilidade inteira. */
+          ((Orcamento.ressalvaBasesTexto && Orcamento.ressalvaBasesTexto(orc))
+            ? rowRaw("Ressalva", '<span style="color:#b45309">' + Util.esc(Orcamento.ressalvaBasesTexto(orc)) + "</span>") : "") +
           rowRaw("Valor total estimado", '<b style="color:var(--p-verde,#16a34a)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
         '</div>' +
         '<div class="capa-rod">' + Util.esc(empresa) + ' · Documento técnico de subsídio ao laudo pericial</div></section>');

@@ -8833,11 +8833,55 @@
     },
 
     // =================== RDO — DIÁRIO DE OBRA ===================
+    /* ===================== DIAS SEM DIÁRIO =====================
+     * `RDO.buracosNaSequencia` existia testada e sem nenhum chamador. Dia sem
+     * diário é a primeira coisa que a fiscalização procura, e o sistema já
+     * sabia quais eram — só não contava a ninguém.
+     *
+     * ⚠ A FUNÇÃO DEVOLVE TODOS OS DIAS DO CALENDÁRIO, fim de semana incluído.
+     *   Ligada crua, uma obra de seis meses apareceria com ~180 "faltas", das
+     *   quais ~50 são domingos. Alarme que grita errado é pior que alarme
+     *   nenhum: o usuário aprende a ignorar e perde também os avisos certos.
+     *   Por isso conto SEGUNDA A SEXTA e digo isso na tela. Sábado fica de
+     *   fora porque nem toda obra trabalha aos sábados — subestimar é mais
+     *   honesto que acusar falta que não existe.
+     * ⚠ Sem feriado: não há calendário de feriados no repositório, e inventar
+     *   um erraria calado nos anos seguintes (mesma pendência do vencimento
+     *   em feriado, no financeiro). */
+    _buracosRdoHtml: function (todos, obras) {
+      if (typeof RDO === "undefined" || !RDO.buracosNaSequencia || !todos.length) return "";
+      var porObra = [];
+      obras.forEach(function (o) {
+        if (!o || !o.id) return;
+        if (String(o.status || "") !== "andamento") return;   // obra parada não deve diário
+        var faltas = RDO.buracosNaSequencia(todos, o.id).filter(function (d) {
+          if (RDO.ehDomingo && RDO.ehDomingo(d)) return false;
+          var dd = new Date(d + "T12:00:00");
+          return !isNaN(dd.getTime()) && dd.getDay() !== 6;    // sábado fora
+        });
+        if (faltas.length) porObra.push({ obra: o.nome || o.id, faltas: faltas });
+      });
+      if (!porObra.length) return "";
+      porObra.sort(function (a, b) { return b.faltas.length - a.faltas.length; });
+      var self = this;
+      var linhas = porObra.map(function (g) {
+        var ult = g.faltas.slice(-5).map(function (d) { return self._brData(d); }).join(" · ");
+        return "<li><b>" + Util.esc(g.obra) + "</b> — " + g.faltas.length + " dia(s) útil(eis) sem diário"
+          + '<br><span class="muted" style="font-size:12px">' + (g.faltas.length > 5 ? "últimos: " : "") + Util.esc(ult) + "</span></li>";
+      }).join("");
+      return '<div class="card" style="border-left:4px solid #f59e0b;margin-bottom:14px">'
+        + '<h3 style="margin:0 0 6px">' + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "")
+        + " Dias úteis sem diário</h3>"
+        + '<p class="muted" style="margin:0 0 8px;font-size:13px">Entre o primeiro e o último diário de cada obra em andamento. Sábados, domingos e feriados não entram na conta.</p>'
+        + '<ul style="margin:0;padding-left:18px;font-size:13px">' + linhas + "</ul></div>";
+    },
+
     renderRdo: function () {
       var self = this;
       var todos = lista("rdo").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
       var obras = lista("obras");
       var html = this._head(svg("rdo") + "Diário de Obra (RDO)", "novo-rdo", "Novo diário");
+      html += this._buracosRdoHtml(todos, obras);
 
       /* DIÁRIO QUE CHEGOU PELO WHATSAPP.
          Fica ANTES do `return` de lista vazia de propósito: quem ainda não tem
@@ -9641,6 +9685,26 @@
       var h = '<div style="border-left:4px solid ' + cor + ';padding:8px 10px;background:rgba(0,0,0,.03);border-radius:0 8px 8px 0">' +
         "<b>" + Util.esc(RDO.textoClima(r.clima)) + "</b>";
       if (cond.motivo) h += '<div style="color:' + cor + ';margin-top:4px">' + Util.esc(cond.motivo) + "</div>";
+      /* ⚠ A COMPARAÇÃO QUE NUNCA ERA FEITA. O app já buscava a média histórica
+       * do Open-Meteo e a gravava em `chuvaMediaHistoricaMm` (ver a busca do
+       * clima), e `RDO.chuvaExtraordinaria` já existia testada — só que os dois
+       * nunca se encontravam. Sem isto o diário registra "choveu 48 mm" e cabe
+       * ao leitor saber se 48 mm é muito naquele lugar naquele mês.
+       * É exatamente a perna que sustenta pleito de prorrogação: chuva
+       * EXTRAORDINÁRIA é a que supera a normal climatológica, e o número que
+       * prova isso já estava no registro. */
+      var _ex = (typeof RDO.chuvaExtraordinaria === "function")
+        ? RDO.chuvaExtraordinaria(r.clima.chuvaMm, r.chuvaMediaHistoricaMm) : null;
+      if (_ex && _ex.chuvaMm > 0) {
+        var _corE = _ex.extraordinaria ? "#b45309" : "#475569";
+        h += '<div style="margin-top:6px;font-size:12px;color:' + _corE + '">'
+          + (_ex.extraordinaria
+              ? "<b>Chuva acima da média histórica</b> — " + RDO.numBR(_ex.chuvaMm) + " mm contra "
+                + RDO.numBR(_ex.mediaMm) + " mm de média para a data (" + RDO.numBR(_ex.vezes) + "× a normal)."
+              : "Chuva dentro da média histórica — " + RDO.numBR(_ex.chuvaMm) + " mm contra "
+                + RDO.numBR(_ex.mediaMm) + " mm de média para a data.")
+          + "</div>";
+      }
       h += "</div>";
       if (pend.length) {
         h += '<div style="margin-top:8px;border-left:4px solid #b45309;padding:8px 10px;background:rgba(180,83,9,.06);border-radius:0 8px 8px 0">' +

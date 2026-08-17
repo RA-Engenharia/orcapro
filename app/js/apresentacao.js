@@ -261,6 +261,11 @@
       try {
         if (typeof global.Orcamento !== "undefined" && global.Orcamento.basesUsadasTexto) {
           basesTxt = global.Orcamento.basesUsadasTexto(orc);
+          /* ⚠ a proposta é o papel que o cliente ASSINA. Se o preço vier de
+             base de anos atrás, ele tem de ler isso antes de assinar, não
+             depois de a obra não fechar. */
+          var _rb = global.Orcamento.ressalvaBasesTexto ? global.Orcamento.ressalvaBasesTexto(orc) : "";
+          if (_rb) basesTxt += " — " + _rb;
         }
       } catch (e3) {}
 
