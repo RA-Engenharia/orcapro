@@ -1,29 +1,18 @@
 /* =====================================================================
  * ponto.js — batidas do cartão de ponto com variação de minutos
  *
- * POR QUE EXISTE: o espelho de ponto repetia 07:00 / 12:00 / 13:00 / 17:00
- * em TODOS os dias e para TODOS os colaboradores. Ninguém bate ponto no
- * minuto cravado — na obra a variação de alguns minutos é o normal, e um
- * cartão com a hora exata o mês inteiro não se parece com registro de
- * jornada nenhum.
- *
- * DUAS REGRAS QUE NÃO PODEM CAIR:
- *
- * 1) ESTÁVEL. O mesmo colaborador, no mesmo dia, tem SEMPRE a mesma batida.
- *    O sorteio vem de um número derivado do id + da data (não de
- *    Math.random), senão reimprimir o cartão geraria horários diferentes do
- *    que já foi assinado — e aí o documento não vale nada.
- *
- * 2) O INTERVALO NUNCA ENCOLHE. A CLT (art. 71) exige no mínimo 1 hora de
- *    intervalo em jornada acima de 6 horas. A variação pode alongar o
- *    almoço, nunca deixá-lo abaixo do que a jornada cadastrada define nem
- *    abaixo de 60 minutos. Um cartão que mostra 55 min de almoço é prova
- *    contra a empresa, não a favor.
- *
- * A jornada trabalhada também não vira hora extra por acidente: a saída é
- * recalculada para manter o total do dia dentro de poucos minutos do
- * nominal.
- * ===================================================================== */
+ * ⚠ POR QUE ESTE MÓDULO MUDOU DE PAPEL (17/08/2026).
+ * Ele nasceu para variar os minutos do impresso, porque repetir
+ * 07:00/12:00/13:00/17:00 o mês inteiro "não parecia obra". Só que o
+ * documento se chamava ESPELHO DE PONTO e era assinado pelo empregado:
+ * o que o módulo fazia, na prática, era deixar verossímil um registro
+ * de jornada que ninguém marcou. Em reclamação trabalhista isso é prova
+ * contra a construtora — e contra quem forneceu o sistema.
+ * O impresso virou DEMONSTRATIVO DE FREQUÊNCIA, declara que o horário é
+ * a jornada CONTRATUAL, e a variação foi desligada em toda a aplicação.
+ * O que continua valendo aqui: conversão de horário, cálculo de hora
+ * extra e os totais do mês — isso é conta, não invenção.
+*/
 (function (global) {
   "use strict";
 
@@ -105,6 +94,15 @@
      * como veio — é melhor um cartão sem variação do que um cartão com
      * horário inventado em cima de dado quebrado.
      * ------------------------------------------------------------------ */
+    /* ⚠ `opcoes.variar` está DESCONTINUADO e o produto sempre passa `false`.
+     * A variação existia para o impresso "se parecer com obra" — a nota
+     * histórica abaixo chega a dizer que sem ela o padrão seria "denunciado".
+     * Era, na prática, um gerador de registro trabalhista verossímil de uma
+     * jornada que ninguém marcou, impresso sob o nome ESPELHO DE PONTO e
+     * assinado pelo empregado. O documento passou a se chamar DEMONSTRATIVO DE
+     * FREQUÊNCIA e a declarar que o horário é a jornada CONTRATUAL.
+     * ⚠ Não religue: o caminho `variar !== false` só continua aqui porque as
+     *   suítes o exercitam. Nenhuma tela o alcança. */
     batidas: function (jornada, colaboradorId, data, opcoes) {
       var j = jornada || {}, o = opcoes || {};
       var e0 = this.hhmmParaMin(j.entrada), a0 = this.hhmmParaMin(j.almoco);

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.248",
+  "versao": "1.1.249",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.248/OrcaPRO-IA-update-v1.1.248.zip",
-  "notas": "Melhoria no Almoxarifado: o sistema passa a reconhecer o mesmo material escrito de formas diferentes (Cimento CP-II 50kg e CIMENTO CP II 50 KG viram o mesmo item), somando no saldo em vez de criar item repetido. Produtos diferentes continuam separados. O Estoque tambem passa a apontar itens que ja estavam cadastrados em duplicidade.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.248/OrcaPRO-IA-Instalador-v1.1.248.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.249/OrcaPRO-IA-update-v1.1.249.zip",
+  "notas": "Importante: o antigo Espelho de Ponto passa a se chamar Demonstrativo de Frequencia e declara no proprio documento que os horarios sao a jornada CONTRATADA, nao marcacao de ponto. Ele continua mostrando dias trabalhados, faltas e horas extras. Nao substitui o registro de ponto exigido pelo art. 74 da CLT.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.249/OrcaPRO-IA-Instalador-v1.1.249.exe"
 }

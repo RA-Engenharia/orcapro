@@ -11653,7 +11653,7 @@
       var minHE = hes.reduce(function (s, h) { return s + (typeof Ponto !== "undefined" ? Ponto.horasParaMin(h.horas) : 0); }, 0);
       var extra = '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
         + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lançar em lote</button>'
-        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Espelho de ponto</button>'
+        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Demonstrativo de frequência</button>'
         + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada</button>';
       var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "nova-falta", "Registrar falta", extra);
       html += '<div class="row" style="align-items:center;gap:14px;margin:-4px 0 12px">'
@@ -11812,18 +11812,18 @@
     },
     configJornada: function () {
       var self = this, j = this._pontoJornada();
-      var corpo = '<p class="muted" style="margin:0 0 10px">Horários padrão da jornada — aparecem no espelho de ponto (documento para assinatura).</p>'
+      var corpo = '<p class="muted" style="margin:0 0 10px">Horários contratados da jornada de trabalho.</p>'
         + '<div class="row">' + campo("Entrada", inp("g-e", j.entrada, "", "time")) + campo("Saída p/ almoço", inp("g-a", j.almoco, "", "time")) + campo("Retorno", inp("g-r", j.retorno, "", "time")) + campo("Saída", inp("g-s", j.saida, "", "time")) + "</div>"
-        + '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:6px;cursor:pointer">'
-        + '<input type="checkbox" id="g-var" style="margin-top:3px"' + (j.variarMinutos ? " checked" : "") + ">"
-        + '<span><b>Variar os minutos das batidas</b><br><span class="muted" style="font-size:12px">Cada dia sai com alguns minutos de diferença, como acontece na obra, em vez do horário cravado o mês inteiro. As batidas são fixas por pessoa e por dia: reimprimir o mesmo mês dá exatamente o mesmo cartão, e o almoço nunca fica abaixo de 1 hora.</span></span></label>';
+        /* ⚠ REMOVIDA a opção "variar os minutos das batidas". Ela existia para o
+           documento se parecer com marcação real; sob o nome honesto não há o
+           que variar — a jornada contratual É a mesma todo dia. */
+        + '<p class="muted" style="font-size:12px;margin:8px 0 0">Estes horários saem no <b>Demonstrativo de Frequência</b> como a jornada contratada. O demonstrativo não é registro de ponto: ele mostra os dias trabalhados, as faltas e as horas extras lançadas.</p>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Jornada de trabalho", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "primary", onClick: function () {
           var p = Store.lerPrefs(eid()) || {};
-          var cbv = document.getElementById("g-var");
           p.pontoJornada = { entrada: v("g-e"), almoco: v("g-a"), retorno: v("g-r"), saida: v("g-s"),
-            variarMinutos: cbv ? !!cbv.checked : true };
+            variarMinutos: false };   // opção removida: ver a nota acima
           Store.salvarPrefs(eid(), p); UI.fecharModal(); UI.toast("Jornada salva.", "ok");
         } }
       ]);
@@ -11834,7 +11834,7 @@
       var mes = this._pontoMes || new Date().toISOString().slice(0, 7);
       var corpo = '<div class="row">' + campo("Mês de referência", inp("g-mes", mes, "", "month")) + campo("Colaborador", sel("g-colab", optsRec(colabs.filter(function (c) { return c.status === "ativo"; }), "nome", "", "— Todos os ativos —"))) + "</div>"
         + '<p class="muted" style="margin:6px 0 0">O espelho usa a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada) e marca as faltas do mês. Documento pronto para impressão e assinatura (NR/CLT).</p>';
-      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Espelho de Ponto", corpo, [
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Demonstrativo de Frequência", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Gerar", classe: "primary", onClick: function () {
           var m = v("g-mes") || mes, cid = v("g-colab");
@@ -11877,7 +11877,7 @@
             /* trabalhou em dia sem jornada (sábado, domingo, feriado) ou voltou
                num dia marcado como falta: o cartão mostra as horas de quem foi.
                Deixar a linha vazia e só somar no rodapé é cartão que se contradiz. */
-            var bx = (typeof Ponto !== "undefined") ? Ponto.batidasExtraAvulsa(jor, c.id, ds, extraMin, { variar: jor.variarMinutos !== false }) : null;
+            var bx = (typeof Ponto !== "undefined") ? Ponto.batidasExtraAvulsa(jor, c.id, ds, extraMin, { variar: false }) : null;
             if (bx) { e = bx.entrada; a = bx.almoco; r = bx.retorno; s = bx.saida; }
             bg = "#fef9c3";
             obsCol = (falta ? rot(P.faltaMotivo, falta) + " · " : "") + (fimDeSemana ? (dow === 0 ? "DSR trabalhado" : "Sábado trabalhado") : "") + (heObs[ds] ? " · " + heObs[ds] : "");
@@ -11885,10 +11885,18 @@
           }
           else if (fimDeSemana) { bg = "#f3f4f6"; obsCol = dow === 0 ? "DSR — Descanso" : "Folga"; }
           else {
-            /* batidas com variação de minutos (js/ponto.js). Sem o motor
-               carregado, cai na jornada cravada — nunca fica sem horário. */
+            /* ⚠ `variar: false`, SEMPRE. A variação de minutos existia para o
+               documento "se parecer com obra" — e a nota em js/ponto.js dizia,
+               com todas as letras, que sem ela o padrão seria "denunciado".
+               Ou seja: o recurso servia para que horário FABRICADO não
+               parecesse fabricado, num papel chamado ESPELHO DE PONTO e
+               assinado pelo empregado. Isso não é documento mal rotulado, é
+               registro trabalhista verossímil de uma jornada que ninguém
+               marcou — prova contra a construtora e contra quem vendeu o
+               sistema. O horário agora é a JORNADA CONTRATUAL, igual todo dia,
+               que é exatamente o que ele é. */
             var bat = (typeof Ponto !== "undefined")
-              ? Ponto.batidas(jor, c.id, ds, { variar: jor.variarMinutos !== false, extraMin: extraMin })
+              ? Ponto.batidas(jor, c.id, ds, { variar: false, extraMin: extraMin })
               : { entrada: jor.entrada, almoco: jor.almoco, retorno: jor.retorno, saida: jor.saida };
             e = bat.entrada; a = bat.almoco; r = bat.retorno; s = bat.saida; nTrab++;
             if (extraMin) { bg = "#fef9c3"; obsCol = heObs[ds] || "Hora extra"; }
@@ -11902,15 +11910,18 @@
         var heMes = (typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(minExtraMes) : "00:00";
         return '<div style="page-break-after:always;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;max-width:760px;margin:0 auto">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:8px">'
-          + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">ESPELHO DE PONTO</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
+          + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">DEMONSTRATIVO DE FREQUÊNCIA</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
           + '<div style="display:flex;border:1px solid #999;margin-bottom:6px"><div style="flex:2;padding:4px;border-right:1px solid #999"><b>Colaborador:</b> ' + Util.esc(c.nome || "") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>Função:</b> ' + Util.esc(c.funcao || "—") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>CPF:</b> ' + Util.esc(c.cpf || "—") + '</div><div style="flex:1;padding:4px"><b>Admissão:</b> ' + (c.admissao ? c.admissao.split("-").reverse().join("/") : "—") + "</div></div>"
+          + '<div style="border:1px solid #999;border-left:3px solid #b45309;background:#fffbeb;padding:5px 7px;margin-bottom:6px;font-size:9px;line-height:1.45">'
+          + '<b>Os horários abaixo são a JORNADA CONTRATUAL, não marcação de ponto.</b> Este documento demonstra os dias trabalhados, faltas e horas extras lançadas no sistema. '
+          + 'Ele <b>não substitui</b> o registro de ponto exigido pelo art. 74 da CLT.</div>'
           + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:7%">Dia</th><th style="border:1px solid #999;padding:3px;width:7%">Sem</th><th style="border:1px solid #999;padding:3px;width:12%">Entrada</th><th style="border:1px solid #999;padding:3px;width:12%">Almoço</th><th style="border:1px solid #999;padding:3px;width:12%">Retorno</th><th style="border:1px solid #999;padding:3px;width:12%">Saída</th><th style="border:1px solid #999;padding:3px;width:9%">H. extra</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
           + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + '</div></div><div style="flex:1;padding:5px"><div style="color:#b45309;font-weight:bold">Horas extras</div><div style="font-size:15px;font-weight:bold">' + heMes + '</div><div style="font-size:8px;color:#555">' + (nDiasExtra ? "em " + nDiasExtra + " dia(s)" : "nenhum dia") + "</div></div></div>"
-          + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador</div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
+          + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador<br><span style="font-size:8px;color:#555">Ciênte dos dias, faltas e horas extras acima</span></div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
           + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + '</div>';
       }).join("");
-      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Espelho de Ponto — " + this._mesExtenso(mes), paginas);
-      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Espelho de Ponto</title></head><body>" + paginas + "</body></html>"); w.document.close(); } }
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Demonstrativo de Frequência — " + this._mesExtenso(mes), paginas);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Demonstrativo de Frequência</title></head><body>" + paginas + "</body></html>"); w.document.close(); } }
     },
     novoPonto: function () { this.formPonto(null); },
     formPonto: function (p) {
