@@ -147,6 +147,31 @@
       .trim();
   };
 
+  /* CHAVE DE COMPARAÇÃO DE MATERIAL — "Cimento CP-II 50kg", "Cimento CP II
+   * 50 kg" e "CIMENTO CP-II 50KG" são o MESMO item de almoxarifado.
+   *
+   * O problema é real e caro: o item nasce no catálogo com a grafia de quem
+   * cadastrou, e volta no pedido com a grafia do fornecedor. Comparando as
+   * strings cruas, o recebimento criava um item NOVO em vez de somar no que já
+   * existia — e o almoxarifado passava a ter dois "cimento", cada um com seu
+   * saldo e seu custo médio. Nenhum dos dois responde quanto há na obra.
+   *
+   * ⚠ O PERIGO É O OPOSTO, e por isso a regra é conservadora: normalizar
+   *   demais FUNDE produtos diferentes. "CP-II" e "CP-IV" são cimentos
+   *   distintos; bloco "14x19x39" não é bloco "19x19x39". Por isso aqui só
+   *   caem acento, caixa e pontuação — LETRA E DÍGITO NUNCA SÃO REMOVIDOS, e
+   *   plural não é tratado ("bloco" ≠ "blocos", de propósito: adivinhar
+   *   singular em português erraria em "gesso", "vidros", "lápis").
+   *
+   * ⚠ Ao contrário de `Util.unidadeChave`, o "x" É PRESERVADO: em material ele
+   *   separa dimensão, não multiplica unidade.
+   *
+   * Use para COMPARAR. Nunca para exibir — o item guarda o nome como foi
+   * escrito, que é o que o almoxarife reconhece na prateleira. */
+  Util.itemChave = function (nome) {
+    return Util.normalizar(nome).replace(/[^a-z0-9]/g, "");
+  };
+
   /* ===================================================================
    * UNIDADES DE MEDIDA — duas funções, dois trabalhos distintos.
    *

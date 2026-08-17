@@ -8379,9 +8379,37 @@
       var valorTotal = its.reduce(function (s, i) { return s + Util.num(i.saldo) * Util.num(i.custoUnit); }, 0);
       var baixos = its.filter(function (i) { return Util.num(i.estoqueMin) > 0 && Util.num(i.saldo) <= Util.num(i.estoqueMin); }).length;
       var extra = '<span class="muted" style="margin-right:12px;align-self:center">' + (baixos ? '<b style="color:var(--laranja,#f59e0b)">' + baixos + ' abaixo do mínimo</b> · ' : "") + 'Valor: <b>' + Util.fmtMoeda(valorTotal) + "</b></span>";
+      /* ⚠ A normalização de nome (Util.itemChave) só vale para o que entrar
+       * DAQUI EM DIANTE. Quem já tinha "Cimento CP-II 50kg" e "Cimento CP II
+       * 50 kg" no catálogo continua com os dois, cada um com seu saldo — e
+       * nenhum dos dois responde quanto há na obra.
+       * Aponta, NÃO funde: juntar dois itens é decidir qual nome fica, somar
+       * saldo e refazer custo médio. É cirurgia em dado de cliente e a decisão
+       * é do dono, não de uma varredura automática. */
+      var dupGrupos = {};
+      its.forEach(function (i) {
+        var k = Util.itemChave(i.nome); if (!k) return;
+        (dupGrupos[k] = dupGrupos[k] || []).push(i);
+      });
+      var dups = Object.keys(dupGrupos).filter(function (k) { return dupGrupos[k].length > 1; });
+      if (dups.length) {
+        var listaDup = dups.map(function (k) {
+          return "<li>" + dupGrupos[k].map(function (i) {
+            return "<b>" + Util.esc(i.nome) + "</b> (" + Util.fmtNum(i.saldo, 2) + " " + Util.esc(Util.unidadeExibir(i.unidade)) + ")";
+          }).join(" &nbsp;·&nbsp; ") + "</li>";
+        }).join("");
+        var aviso = '<div class="card" style="border-left:4px solid #f59e0b;margin-bottom:14px">'
+          + "<h3 style=\"margin:0 0 6px\">" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "")
+          + " " + dups.length + (dups.length > 1 ? " itens parecem repetidos" : " item parece repetido") + "</h3>"
+          + '<p class="muted" style="margin:0 0 8px;font-size:13px">O mesmo material foi cadastrado com grafias diferentes. Cada linha tem saldo próprio, então nenhuma mostra o total real. Junte à mão: escolha qual fica, some o saldo e exclua a outra.</p>'
+          + '<ul style="margin:0;padding-left:18px;font-size:13px">' + listaDup + "</ul></div>";
+        this._estoqueAviso = aviso;
+      } else { this._estoqueAviso = ""; }
+
       extra = '<button class="btn sm" data-gacao="abrir-kardex" style="margin-right:10px;align-self:center" title="Todas as entradas e saidas, com saldo acumulado">'
         + (typeof Icones !== "undefined" ? Icones.get("checklist", 15) : "") + ' Extrato</button>' + extra;
       var html = this._head(svg("estoque") + "Estoque / Almoxarifado", "novo-item-estoque", "Novo item", extra);
+      html += this._estoqueAviso || "";
       if (!its.length) return html + vazioBox("Nenhum item em estoque", "novo-item-estoque", "Cadastrar primeiro item");
       html += '<table class="tbl"><thead><tr><th>Item</th><th>Categoria</th><th>Obra</th><th class="num">Saldo</th><th class="num">Custo un.</th><th class="num">Total</th><th></th></tr></thead><tbody>';
       its.forEach(function (i) {
@@ -8550,12 +8578,17 @@
       if (!itens.length) return { lancados: 0, semItens: true };
 
       var catalogo = listaTodas("estoque"), n = 0;
-      var chave = function (s) { return String(s || "").trim().toUpperCase(); };
+      /* chave de comparação da casa: acento, caixa e pontuação não separam
+         o mesmo material. Ver a nota em Util.itemChave. */
+      var chave = function (s) { return Util.itemChave(s); };
       itens.forEach(function (it) {
         var nome = String(it.descricao).trim();
         var qtd = Util.num(it.quantidade);
         var custo = Util.num(it.precoUnit != null ? it.precoUnit : (it.valorUnitario != null ? it.valorUnitario : it.precoRef));
-        var alvo = catalogo.filter(function (e) { return chave(e.nome) === chave(nome); })[0];
+        /* ⚠ chave vazia (nome só com pontuação) casaria com qualquer outra
+           chave vazia e fundiria itens sem relação nenhuma. */
+        var k = chave(nome);
+        var alvo = k ? catalogo.filter(function (e) { return chave(e.nome) === k; })[0] : null;
         if (alvo) {
           var saldoAnt = Util.num(alvo.saldo), custoAnt = Util.num(alvo.custoUnit), novoSaldo = saldoAnt + qtd;
           /* mesma fórmula de custo médio da entrada por nota e da entrada
@@ -13204,10 +13237,10 @@ renderRequisicoes: function () {
         /* a unidade entra no casamento: o mesmo cProd vendido em CX e em UN é
            saldo diferente — somar os dois dá um número sem significado na
            prateleira. */
-        var mesmaUn = String(e.unidade || "").trim().toUpperCase() === String(l.unidade || "").trim().toUpperCase();
+        var mesmaUn = Util.unidadeChave(e.unidade) === Util.unidadeChave(l.unidade);
         if (l.codigo && e.codigoFornecedor && String(e.codigoFornecedor) === String(l.codigo) && String(e.fornecedorRef || "") === chaveForn && mesmaUn) alvo = e;
-        else if (String(e.nome || "").trim().toUpperCase() === String(l.descricao || "").trim().toUpperCase() &&
-          String(e.unidade || "").trim().toUpperCase() === String(l.unidade || "").trim().toUpperCase()) alvo = e;
+        else if (Util.itemChave(e.nome) && Util.itemChave(e.nome) === Util.itemChave(l.descricao) &&
+          Util.unidadeChave(e.unidade) === Util.unidadeChave(l.unidade)) alvo = e;
       });
       var qtd = Util.num(l.quantidade), custo = Util.num(l.valorUnitario);
       if (alvo) {
@@ -13241,7 +13274,7 @@ renderRequisicoes: function () {
        fica no estoque, porque o catálogo guarda o modelo, não o lote. */
     _triGravarEpiCatalogo: function (l) {
       var ja = lista("epi_catalogo").filter(function (e) {
-        return String(e.nome || "").trim().toUpperCase() === String(l.descricao || "").trim().toUpperCase();
+        return !!Util.itemChave(e.nome) && Util.itemChave(e.nome) === Util.itemChave(l.descricao);
       })[0];
       if (ja) return;
       Store.salvar(eid(), "epi_catalogo", {
@@ -13351,7 +13384,7 @@ renderRequisicoes: function () {
       if (l.destino === "estoque" || l.destino === "epi") {
         lista("estoque").forEach(function (e) {
           if (itemEst) return;
-          if (String(e.nome || "").trim().toUpperCase() === String(l.descricao || "").trim().toUpperCase()) itemEst = e;
+          if (Util.itemChave(e.nome) && Util.itemChave(e.nome) === Util.itemChave(l.descricao)) itemEst = e;
         });
       }
       if (l.destino === "patrimonio") {
