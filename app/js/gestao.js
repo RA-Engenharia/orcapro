@@ -2995,6 +2995,9 @@
         if (!self._gateStatusForm(obj, stAntigo, "medicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
         obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
+        /* mesma trava do botão Aprovar: aprovar pelo formulário também congela
+           a base do contrato, senão o caminho de trás continua aberto. */
+        if (obj.status === "aprovada" || obj.status === "paga") self._congelarBaseContrato("medicoes", obj);
         /* ===== BOLETIM APROVADO É DOCUMENTO: NADA DE DINHEIRO MUDA =====
          * Esta guarda vem ANTES do desvio por orçamento/manual de propósito.
          * Havia dois furos abaixo, dos dois lados:
@@ -15862,11 +15865,40 @@ renderFolha: function () {
       }
     },
 
+    /* ⚠ CONGELA A BASE DO CONTRATO QUANDO A MEDIÇÃO É APROVADA.
+     *
+     * O boletim calcula o percentual acumulado contra o "valor contratado", e
+     * esse valor era lido AO VIVO do contrato quando a medição não vinha de um
+     * orçamento. Consequência silenciosa: bastava editar o valor do contrato —
+     * que é como o aditivo é feito hoje, à mão — para TODO boletim ainda não
+     * congelado passar a calcular contra a base nova, PARA TRÁS. O cliente
+     * aumenta o contrato em julho e as medições de março mudam de percentual
+     * sozinhas, num documento que ele já assinou. Ninguém percebe até a
+     * conferência.
+     *
+     * A base vinda de ORÇAMENTO já era congelada; a de CONTRATO não era, e é o
+     * caminho de quem mede por contrato sem orçamento vinculado.
+     *
+     * ⚠ Congela na APROVAÇÃO, não na criação: enquanto o boletim é rascunho,
+     *   uma correção legítima do contrato deve valer. Depois de aprovado, o
+     *   papel virou documento e a base dele não pode mudar por baixo.
+     * ⚠ Não sobrescreve o que já está congelado — reaprovar não recalcula. */
+    _congelarBaseContrato: function (entidade, reg) {
+      if (entidade !== "medicoes" || !reg) return;
+      if (Util.num(reg.valorContratado) > 0) return;
+      if (!reg.contratoId) return;
+      try {
+        var c = Store.obter(eid(), "contratos", reg.contratoId);
+        if (c && Util.num(c.valor) > 0) reg.valorContratado = Util.num(c.valor);
+      } catch (e) {}
+    },
+
     _aprovar: function (entidade, id, statusOk, msg) {
       if (!this._podeAprovarGuard()) return;
       var reg = Store.obter(eid(), entidade, id); if (!reg) return;
       if (!this._guardaAutor(reg, entidade)) return;
       reg.status = statusOk;
+      this._congelarBaseContrato(entidade, reg);
       /* tirei o diálogo, mas a informação não pode sumir junto: quando não dá
          para saber quem preencheu, isso fica ESCRITO na trilha em vez de
          virar uma aprovação que parece conferida. */

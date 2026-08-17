@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.250",
+  "versao": "1.1.251",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.250/OrcaPRO-IA-update-v1.1.250.zip",
-  "notas": "Novidade: a retencao contratual agora tem onde ser devolvida. Em Medicoes ha a aba Retencao, com o quanto esta retido em cada obra e a devolucao de uma medicao ou de todas de uma vez. O aviso Retencao presa do Painel passa a levar direto para essa tela.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.250/OrcaPRO-IA-Instalador-v1.1.250.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.251/OrcaPRO-IA-update-v1.1.251.zip",
+  "notas": "Correcao no calculo do boletim de medicao. Recomendamos atualizar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.251/OrcaPRO-IA-Instalador-v1.1.251.exe"
 }
