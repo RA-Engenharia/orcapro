@@ -264,15 +264,43 @@
     },
     // Login de sub-usuário deve ser ÚNICO GLOBALMENTE (senão o login cairia na empresa errada em navegador multi-conta).
     // Retorna true se o login já é usado por OUTRO usuário (ignora o próprio registro em edição).
+    /* ⚠ DOIS DEFEITOS, um em cada direção, e a mesma causa: a varredura saía
+     * das contas de dono REGISTRADAS localmente e a exceção do próprio
+     * registro exigia bater TAMBÉM o empresaId.
+     *
+     * FALSO POSITIVO (o que o cliente viu): conta registrada com `empresaId`
+     * de uma ativação antiga, diferente do `empresaId` da sessão. O registro
+     * de Deborah era encontrado com o mesmo login, mas `empId !== except`, e
+     * a exceção não pegava — resultado: EDITAR qualquer usuário sem mudar o
+     * login respondia 'Já existe um usuário com o login "dedes"'. Não dava
+     * para salvar alteração nenhuma.
+     *
+     * FALSO NEGATIVO: no modo nuvem/licença a lista de contas registradas é
+     * VAZIA, então o laço não rodava e a função devolvia false para tudo —
+     * dois usuários podiam nascer com o mesmo login, e aí o login cairia na
+     * pessoa errada.
+     *
+     * Correções: varrer também a empresa da SESSÃO, e excluir pelo ID do
+     * registro, que é único e é o que a pergunta realmente significa
+     * ("existe OUTRO usuário com este login?"). */
     loginEquipeEmUso: function (login, exceptEmpresaId, exceptId) {
       login = String(login || "").trim().toLowerCase();
       if (!login) return false;
-      var contas = this.backend._lerUsuarios();
-      for (var i = 0; i < contas.length; i++) {
-        var empId = contas[i].empresaId, equipe = this._equipe(empId);
+      var alvos = [], vistos = {};
+      var add = function (id) { if (id && !vistos[id]) { vistos[id] = 1; alvos.push(id); } };
+      add(this.empresaId());                 // a empresa em uso — pode não estar registrada
+      add(exceptEmpresaId);
+      var contas = [];
+      try { contas = this.backend._lerUsuarios() || []; } catch (e) {}
+      for (var i = 0; i < contas.length; i++) add(contas[i].empresaId);
+
+      for (var a = 0; a < alvos.length; a++) {
+        var equipe = this._equipe(alvos[a]);
         for (var j = 0; j < equipe.length; j++) {
           var u = equipe[j];
-          if (String(u.login || "").trim().toLowerCase() === login && !(empId === exceptEmpresaId && u.id === exceptId)) return true;
+          if (String(u.login || "").trim().toLowerCase() !== login) continue;
+          if (exceptId && String(u.id) === String(exceptId)) continue;  // é o próprio, em edição
+          return true;
         }
       }
       return false;
