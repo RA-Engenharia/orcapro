@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.252",
+  "versao": "1.1.253",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.252/OrcaPRO-IA-update-v1.1.252.zip",
-  "notas": "Duas novidades. No Diario de Obra: a chuva do dia agora e comparada com a media historica do local, que e o que sustenta pleito de prorrogacao de prazo, e a tela avisa quais dias uteis ficaram sem diario. No Orcamento: a planilha, o laudo e a proposta passam a declarar a IDADE do preco quando a base de referencia tem mais de um ano.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.252/OrcaPRO-IA-Instalador-v1.1.252.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.253/OrcaPRO-IA-update-v1.1.253.zip",
+  "notas": "Manutencao interna, sem mudanca no uso do sistema.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.253/OrcaPRO-IA-Instalador-v1.1.253.exe"
 }

@@ -11,11 +11,22 @@
   var EID = "demo";
 
   var DemoGestao = {
-    seed: function () {
+    /* opts.obra: nome da obra de exemplo. O Painel de Apresentação manda o nome
+       da empresa do lead para o cliente se ver usando o produto. Sem opts, nada
+       muda — a vitrine pública continua com "Residencial Vila Verde". */
+    seed: function (opts) {
+      opts = opts || {};
+      var nomeObra = String(opts.obra || "").trim().slice(0, 60) || "Residencial Vila Verde — 8 casas";
       try {
         if (typeof Store === "undefined") return false;
-        var jaTem = (Store.listar(EID, "obras") || []).some(function (o) { return o.id === "dg-obra1"; });
-        if (jaTem) return true;
+        var ja = (Store.listar(EID, "obras") || []).filter(function (o) { return o.id === "dg-obra1"; })[0];
+        if (ja) {
+          /* ⚠ DUAS APRESENTAÇÕES NA MESMA MÁQUINA. A demo já semeada carregava o
+             nome do lead ANTERIOR: o próximo cliente veria a obra do concorrente
+             dele na tela. Renomeia em vez de sair pela porta do `jaTem`. */
+          if (ja.nome !== nomeObra) { ja.nome = nomeObra; Store.salvar(EID, "obras", ja); }
+          return true;
+        }
 
         Store.salvar(EID, "clientes", {
           id: "dg-cli1", nome: "Incorporadora Horizonte Ltda", tipo: "PJ", doc: "12.345.678/0001-90",
@@ -24,7 +35,7 @@
         });
 
         Store.salvar(EID, "obras", {
-          id: "dg-obra1", nome: "Residencial Vila Verde — 8 casas", clienteId: "dg-cli1",
+          id: "dg-obra1", nome: nomeObra, clienteId: "dg-cli1",
           tipo: "residencial", fase: "estrutura", status: "andamento",
           local: "Uberlândia / MG", endereco: "Rua das Palmeiras, 450 — B. Jardim Colina",
           valor: 1850000, inicio: "2026-03-02", previsaoFim: "2026-12-18",

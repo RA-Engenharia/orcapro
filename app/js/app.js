@@ -347,10 +347,24 @@
     _escAttr: function (s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); },
     _iniciarDemo: function (qs) {
       var aba = (qs.match(/[?&]aba=([a-z]+)/) || [])[1] || "planilha";
-      Auth._usuario = { empresaId: "demo", empresa: "Construtora Modelo", email: "demo@orcapro.app", plano: "PRO" };
+      /* ⚠ NOME DO CLIENTE NA DEMONSTRAÇÃO. O Painel de Apresentação passa
+       * ?empresa= e ?obra= para o relatório sair com o nome da empresa DELE em
+       * vez de "Construtora Modelo" — é daí que vem a familiaridade que faz o
+       * cliente se ver usando o produto. Sem os parâmetros, tudo continua como
+       * era: a vitrine pública do site não muda.
+       * ⚠ `decodeURIComponent` pode explodir com "%" solto na URL; um nome de
+       *   empresa mal escapado não pode derrubar a demonstração inteira. */
+      function _qsTxt(chave) {
+        var m = qs.match(new RegExp("[?&]" + chave + "=([^&]+)"));
+        if (!m) return "";
+        try { return decodeURIComponent(m[1].replace(/\+/g, " ")).trim().slice(0, 60); }
+        catch (e) { return ""; }
+      }
+      var _emp = _qsTxt("empresa"), _obraNome = _qsTxt("obra");
+      Auth._usuario = { empresaId: "demo", empresa: _emp || "Construtora Modelo", email: "demo@orcapro.app", plano: "PRO" };
       try {
         if (typeof Empresa !== "undefined") Empresa.salvar({
-          nome: "Construtora Modelo Ltda", cnpj: "00.000.000/0001-00", responsavel: "Eng. João da Silva",
+          nome: _emp || "Construtora Modelo Ltda", cnpj: "00.000.000/0001-00", responsavel: "Eng. João da Silva",
           titulo: "Engenheiro Civil", crea: "CREA-MG 000000", registroNacional: "0000000000",
           cidade: "Uberlândia / MG", contato: "contato@construtoramodelo.com.br"
         });
@@ -362,7 +376,7 @@
       this.aba = aba;
       // vitrine da GESTÃO: semeia dados de exemplo (empresa "demo") e permite deep-link
       // ?demo=1&view=<modulo> (dashboard, obras, rdos, medicoes, financeiro...) p/ site e screenshots
-      try { if (typeof DemoGestao !== "undefined") DemoGestao.seed(); } catch (e) {}
+      try { if (typeof DemoGestao !== "undefined") DemoGestao.seed({ obra: _obraNome }); } catch (e) {}
       var vw = (qs.match(/[?&]view=([a-z]+)/) || [])[1];
       // ?view= inválido é o caminho mais provável de um visitante cair em tela
       // branca: ignora a view (cai no Painel logo abaixo) e, se for uma AÇÃO
