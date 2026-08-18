@@ -541,6 +541,26 @@
        `undefined` = ainda não perguntei · `null` = perguntando · true/false = resposta.
        Quando a resposta chega positiva, redesenha a barra para o botão aparecer
        sem exigir que o usuário navegue de novo. */
+    /* ⚠ "SÓ COMIGO": o dono da conta, não qualquer administrador.
+       `Auth.ehAdmin()` deixa passar o papel "admin" também — um gestor da
+       equipe da RA veria o botão de venda. Aqui o critério é o e-mail da CONTA
+       MESTRE, que é quem assina a licença.
+       ⚠ COM SAÍDA DE EMERGÊNCIA, de propósito: se não houver registro de conta
+       mestre (instalação antiga, dado ainda não sincronizado), cai em
+       `ehAdmin()` em vez de negar. Trancar o dono fora da própria ferramenta
+       de venda é pior do que um gestor ver o botão — e a barreira que protege
+       o CLIENTE não é esta, é a ausência do arquivo. */
+    _ehDonoDaConta: function () {
+      try {
+        if (typeof Auth === "undefined" || !Auth.ehAdmin) return true;   /* sem Auth, nada a filtrar */
+        if (!Auth.ehAdmin()) return false;                               /* sub-usuário: nunca */
+        var m = Auth.contaMestre && Auth.contaMestre();
+        var meu = String((Auth._usuario && Auth._usuario.email) || "").trim().toLowerCase();
+        if (!m || !m.email || !meu) return true;                         /* sem referência: não tranca */
+        return meu === String(m.email).trim().toLowerCase();
+      } catch (e) { return true; }
+    },
+
     _probarPainelVenda: function () {
       var self = this;
       this._painelVenda = null;
@@ -626,7 +646,7 @@
          (Botão solto entre blocos já custou um recurso inteiro na v1.1.227:
          estava pronto e o Rogério respondeu "não encontrei".) */
       if (this._painelVenda === undefined) this._probarPainelVenda();
-      if (this._painelVenda === true && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) {
+      if (this._painelVenda === true && this._ehDonoDaConta()) {
         itens += '<div class="sb-sep"></div>'
           + '<button class="sb-item sb-venda" data-gacao="abrir-apresentacao" title="Gerar o link do cliente e apresentar">'
           + '<span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 19) : '') + '</span>'
