@@ -600,6 +600,32 @@
       catch (e) { if (typeof UI !== "undefined") UI.toast("Não consegui abrir o painel.", "erro"); }
     },
 
+    /* Endereço da loja. Mesma resolução do _qrPortalObra: sai do
+       CONFIG.licencaServer e troca o sslip.io (uso interno) pelo domínio
+       oficial. Cravar o domínio aqui criaria um segundo lugar para errar
+       quando ele mudar. */
+    _urlLoja: function () {
+      var base = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      if (base && base.indexOf("sslip.io") > -1) base = "https://orcapro.raengenhariaespecial.com.br";
+      return base;
+    },
+
+    /* PAINEL DE VENDAS — pedidos, licenças, assinaturas, contrato e nota fiscal.
+       ⚠ ABRE O PAINEL QUE JÁ EXISTE NA LOJA, não uma cópia dentro do app.
+       Reimplementar aqui significaria: guardar a senha de admin no navegador
+       do app, abrir CORS nas rotas /api/admin (que hoje só respondem à própria
+       origem) e manter duas telas que precisam contar a mesma verdade sobre
+       dinheiro. Uma tela só, servida por quem tem os dados. */
+    _abrirPainelVendas: function () {
+      var base = this._urlLoja();
+      if (!base) {
+        if (typeof UI !== "undefined") UI.toast("Não sei o endereço da loja (CONFIG.licencaServer vazio).", "erro");
+        return;
+      }
+      try { window.open(base + "/admin", "_blank", "noopener"); }
+      catch (e) { if (typeof UI !== "undefined") UI.toast("Não consegui abrir o painel de vendas.", "erro"); }
+    },
+
     renderSidebar: function (viewAtiva) {
       // Vitrine (?demo=1): Gestão sempre liberada, mesmo que a licença do navegador
       // diga outra coisa (cliente já licenciado explorando a demo) — espelha App.render().
@@ -650,7 +676,13 @@
         itens += '<div class="sb-sep"></div>'
           + '<button class="sb-item sb-venda" data-gacao="abrir-apresentacao" title="Gerar o link do cliente e apresentar">'
           + '<span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 19) : '') + '</span>'
-          + '<span>Apresentação comercial</span></button>';
+          + '<span>Apresentação comercial</span></button>'
+          /* O painel de vendas mora no MESMO portão: presença do arquivo +
+             dono da conta. Fica colado na apresentação porque é a mesma
+             cabeça — vender e acompanhar o que foi vendido. */
+          + '<button class="sb-item sb-venda" data-gacao="abrir-painel-vendas" title="Pedidos, licenças, assinaturas, contrato e nota fiscal">'
+          + '<span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 19) : '') + '</span>'
+          + '<span>Painel de vendas</span></button>';
       }
 
       /* "Mais módulos": abre no hover (mouse) e no clique (toque). O clique
@@ -16971,6 +17003,7 @@ renderFolha: function () {
         case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
         case "abrir-apresentacao": return this._abrirApresentacao();
+        case "abrir-painel-vendas": return this._abrirPainelVendas();
         case "portal-obra": return this.portalObra(id);
         case "docs-obra": return this.docsObra(id);
         case "aviso-semanal": return this.avisoSemanal(id);
