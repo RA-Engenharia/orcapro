@@ -537,6 +537,49 @@
       }, 60);
     },
 
+    /* pergunta UMA vez se esta instalação tem o Painel de Apresentação.
+       `undefined` = ainda não perguntei · `null` = perguntando · true/false = resposta.
+       Quando a resposta chega positiva, redesenha a barra para o botão aparecer
+       sem exigir que o usuário navegue de novo. */
+    _probarPainelVenda: function () {
+      var self = this;
+      this._painelVenda = null;
+      try {
+        if (typeof fetch === "undefined") { this._painelVenda = false; return; }
+        /* ⚠ PERGUNTA AO SERVIDOR, que responde 200 com um booleano. Antes isto
+           era `HEAD apresentacao.html` e usava o 404 como resposta "não" — o
+           que deixaria um erro vermelho no console de TODO cliente, uma vez
+           por sessão. Ruído de console tem custo: foi um 404 repetido que
+           escondeu a rota /__device morta por meses. */
+        fetch("__venda").then(function (r) { return r.ok ? r.json() : null; }).then(function (j) {
+          self._painelVenda = !!(j && j.painel);
+          /* ⚠ REPINTA O #sidebar DIRETO, que é o alvo real (js/app.js:476).
+             Chamar `render()` aqui NÃO funcionava: ele redesenha a área
+             principal e não a barra, então o botão só aparecia se a sonda
+             respondesse ANTES do primeiro desenho — corrida que dá certo na
+             máquina rápida e falha na lenta, do jeito mais difícil de
+             reproduzir depois. Medido no navegador antes de trocar.
+             ⚠ Só repinta se ACHOU: na instalação do cliente a resposta é
+             sempre não, e o botão nunca chegou a ser desenhado. */
+          if (self._painelVenda) {
+            try {
+              var sb = document.getElementById("sidebar");
+              var vw = (typeof App !== "undefined" && App.view) || self.view || "";
+              if (sb) sb.innerHTML = self.renderSidebar(vw);
+            } catch (e) {}
+          }
+        })["catch"](function () { self._painelVenda = false; });
+      } catch (e) { this._painelVenda = false; }
+    },
+
+    /* abre em ABA NOVA de propósito: durante a reunião o app fica aberto do
+       lado, e o painel dirige uma cópia dele em modo demonstração. Trocar a
+       aba atual tiraria da tela o trabalho de verdade de quem apresenta. */
+    _abrirApresentacao: function () {
+      try { window.open("venda/apresentacao-links.html", "_blank", "noopener"); }
+      catch (e) { if (typeof UI !== "undefined") UI.toast("Não consegui abrir o painel.", "erro"); }
+    },
+
     renderSidebar: function (viewAtiva) {
       // Vitrine (?demo=1): Gestão sempre liberada, mesmo que a licença do navegador
       // diga outra coisa (cliente já licenciado explorando a demo) — espelha App.render().
@@ -569,6 +612,26 @@
         return pre + '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
       }).join("");
       if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + '</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
+
+      /* ===== APRESENTAÇÃO COMERCIAL — só na máquina de quem vende =====
+         ⚠ O botão pergunta ao servidor local se o `apresentacao.html` existe,
+         em vez de conferir uma lista de quem pode ver. O Painel é material de
+         venda e NÃO é empacotado para o cliente (`venda/` e `apresentacao.html`
+         estão fora da allowlist e na trava de proibidos do empacotador), então
+         na instalação do cliente o arquivo não está lá e o botão simplesmente
+         não nasce. Lista de e-mail autorizado envelhece e vaza; presença de
+         arquivo é a mesma verdade que o empacotador já garante.
+         ⚠ Fica no fim da barra, depois de um separador — não no meio dos
+         módulos do produto, que é o que o cliente vê numa demonstração.
+         (Botão solto entre blocos já custou um recurso inteiro na v1.1.227:
+         estava pronto e o Rogério respondeu "não encontrei".) */
+      if (this._painelVenda === undefined) this._probarPainelVenda();
+      if (this._painelVenda === true && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) {
+        itens += '<div class="sb-sep"></div>'
+          + '<button class="sb-item sb-venda" data-gacao="abrir-apresentacao" title="Gerar o link do cliente e apresentar">'
+          + '<span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 19) : '') + '</span>'
+          + '<span>Apresentação comercial</span></button>';
+      }
 
       /* "Mais módulos": abre no hover (mouse) e no clique (toque). O clique
          funciona nos DOIS — em tablet não existe hover, e um menu que só
@@ -16887,6 +16950,7 @@ renderFolha: function () {
         case "galeria-fechar": return this.galeriaFecharLb();
         case "galeria-relatorio": return this.galeriaRelatorio();
         case "upsell-plus": return this._upsell();
+        case "abrir-apresentacao": return this._abrirApresentacao();
         case "portal-obra": return this.portalObra(id);
         case "docs-obra": return this.docsObra(id);
         case "aviso-semanal": return this.avisoSemanal(id);

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.256",
+  "versao": "1.1.257",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.256/OrcaPRO-IA-update-v1.1.256.zip",
-  "notas": "Correcao no reconhecimento do computador pelo aplicativo.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.256/OrcaPRO-IA-Instalador-v1.1.256.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.257/OrcaPRO-IA-update-v1.1.257.zip",
+  "notas": "Manutencao interna, sem mudanca no uso do sistema.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.257/OrcaPRO-IA-Instalador-v1.1.257.exe"
 }
