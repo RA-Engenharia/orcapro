@@ -330,6 +330,14 @@
          ninguém logado, e o Painel é justamente a tela que agrega número de
          financeiro, folha e custo. */
       if (!this._usuario) return false;
+      /* ⚠ O PERFIL DE IMPLANTAÇÃO ENTRA ANTES DO ATALHO DE ADMIN, e é de
+         propósito. O perfil enxuga o sistema para a operação da empresa —
+         uma carpintaria que não usa BIM nem Frota. Se ele viesse depois do
+         `ehAdmin()`, não valeria justamente para o DONO, que é quem mais
+         usa o sistema; a barra dele continuaria com os 34 módulos e o
+         enxugamento só apareceria para o sub-usuário. O núcleo (painel,
+         ajuda, suporte, usuários) nunca é filtrado — ver js/perfis.js. */
+      if (typeof Perfis !== "undefined" && !Perfis.permite(id)) return false;
       if (this.ehAdmin()) return true;                 // dono/demo vê tudo
       /* "relatos" entra aqui junto com a ajuda: quem topa com o defeito é o
          sub-usuário que usa a tela o dia inteiro, não o admin. Trancar o canal
