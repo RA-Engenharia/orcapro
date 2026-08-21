@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.264",
+  "versao": "1.1.265",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.264/OrcaPRO-IA-update-v1.1.264.zip",
-  "notas": "Correcao de contraste nos botoes. Manutencao interna.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.264/OrcaPRO-IA-Instalador-v1.1.264.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.265/OrcaPRO-IA-update-v1.1.265.zip",
+  "notas": "Correcao na sincronizacao das composicoes proprias entre aparelhos. Em Minhas composicoes, um aviso oferece limpar copias repetidas, se houver.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.265/OrcaPRO-IA-Instalador-v1.1.265.exe"
 }

@@ -2199,7 +2199,7 @@
         '<div class="flex" style="gap:8px;margin-bottom:6px"><button class="btn primary" data-acao="escopo-ia">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Estruturar com IA</button>' +
         '<button class="btn" data-acao="escopo-analisar">Analisar linha a linha (sem IA)</button>' +
         '<button class="btn ghost" data-acao="escopo-sugerir" title="Mostra os serviços auxiliares que a boa técnica exige para o que você escreveu">Sugerir complementos</button></div>' +
-        '<div class="watermark-hint">Sem match, o item fica <b>Pendente</b> — nunca inventamos código. (A IA precisa do ERP ligado na porta 3040.)</div>';
+        '<div class="watermark-hint">Sem match, o item fica <b>Pendente</b> — nunca inventamos código. (A IA roda no servidor do OrçaPRO — precisa de internet e da licença ativa.)</div>';
     },
 
     // ---------- Escopo Inteligente: resultado ----------

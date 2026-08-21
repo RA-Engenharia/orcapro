@@ -152,10 +152,39 @@
       };
     },
 
+    /* ===== A PONTE DE IA PARA O PLUGIN =====
+       O plugin do Revit roda em IronPython, fora do navegador: ele nao tem
+       localStorage e portanto NAO TEM COMO SABER a licenca nem o endereco do
+       backend de IA. Sem isso o servidor devolve 403 "Ative sua licenca" e o
+       botao de orcar fica sem a metade que desempata.
+
+       Quem sabe as duas coisas e ESTA tela. Entao, no mesmo clique de
+       "Exportar p/ Revit", mandamos tambem {backend, licenca} para o servidor
+       local gravar em <orcapro>/revit/ia.json, que o plugin le.
+
+       ⚠ E BEST-EFFORT DE PROPOSITO: se falhar, o export da obra NAO pode
+         falhar junto. O plugin continua funcionando com o que a regra resolve;
+         so o desempate por IA fica de fora, e ele diz isso na tela. */
+    exportarIA: function (cb) {
+      cb = cb || function () {};
+      if (typeof fetch !== "function" || location.protocol === "file:") return cb(null, { pulado: true });
+      var backend = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "";
+      var licenca = (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "";
+      if (!backend || !licenca) return cb(null, { pulado: true, motivo: "sem backend ou sem licença" });
+      fetch("/__revit/ia", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formato: 1, backend: backend, licenca: licenca })
+      }).then(function (r) { return r.json(); })
+        .then(function (j) { cb(null, j); })
+        .catch(function () { cb(null, { pulado: true }); });
+    },
+
     // POST no servidor local; fallback: download do arquivo p/ salvar na mão.
     exportar: function (payload, cb) {
       cb = cb || function () {};
       var corpo = JSON.stringify(payload);
+      try { Revit.exportarIA(); } catch (e) {}   // best-effort: nunca derruba o export
       if (typeof fetch !== "function" || location.protocol === "file:") {
         Revit.baixar(corpo); return cb(null, { download: true });
       }

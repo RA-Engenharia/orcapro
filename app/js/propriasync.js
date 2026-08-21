@@ -70,6 +70,19 @@
         try { return JSON.stringify({ d: x.descricao, u: x.unidade, i: x.insumos }); } catch (e) { return "?"; }
       }
 
+      /* Sufixo estável de 4 hex a partir do CONTEÚDO (FNV-1a 32 bits). Precisa
+         ser puro: o mesmo conteúdo tem de dar o mesmo sufixo em qualquer
+         aparelho, hoje e no mês que vem. Nada de contador, data ou aleatório —
+         foi exatamente o contador que vazou 65 clones na base do cliente. */
+      function sufixoDe(x) {
+        var s = assinatura(x), h = 0x811c9dc5, i;
+        for (i = 0; i < s.length; i++) {
+          h ^= s.charCodeAt(i);
+          h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+        }
+        return ("0000000" + h.toString(16)).slice(-4);
+      }
+
       function poe(x, deOndeEspelho) {
         var k = chaveDe(x);
         if (!k) return;
@@ -88,26 +101,54 @@
           if (quando(x) > quando(ja.v)) porId[k] = { v: x, esp: deOndeEspelho };
           return;
         }
-        /* ===== COLISÃO REAL (v1.1.232) — as DUAS sobrevivem. Antes, o merge
-           ficava com a mais nova e a composição do outro usuário sumia em
-           silêncio — dado autoral substituído sem aviso. Agora quem foi criada
-           PRIMEIRO fica com o código; a outra é renomeada para o sufixo livre
-           seguinte, com `renomeadaDe` para rastreio. A regra é determinística
-           (mesmas entradas → mesmo resultado), então os dois aparelhos
-           convergem para o mesmo par. */
+        /* ===== COLISÃO REAL — as DUAS sobrevivem. Antes de existir este ramo,
+           o merge ficava com a mais nova e a composição do outro usuário sumia
+           em silêncio: dado autoral substituído sem aviso. Quem foi criada
+           PRIMEIRO fica com o código; a outra é renomeada, com `renomeadaDe`
+           para rastreio.
+
+           ⚠ O SUFIXO É O HASH DO CONTEÚDO, E NÃO UM CONTADOR. ISTO É UM
+             CONSERTO DE PERDA DE DADO, MEDIDO NA INSTALAÇÃO DO CLIENTE.
+
+             A versão anterior procurava "o próximo sufixo livre" (-2, -3, -4…).
+             O comentário dela afirmava que a regra era determinística e que os
+             aparelhos convergiam. Não convergiam, e a diferença é esta: o clone
+             renomeado entrava na base, mas o registro do ESPELHO continuava com
+             o código original — então, no merge seguinte, ele colidia DE NOVO
+             com o item original da base, e o contador dava mais um passo. O
+             ponto fixo nunca chegava.
+
+             Medido nos backups do cliente: 11 composições próprias em 13/08, 22
+             em 16/08, 30 em 17/08, 64 em 20/08, 79 em 21/08 — das quais 65 eram
+             cópias idênticas de UMA composição ("DEMOLIÇÃO DE ALVENARIA",
+             PROP-00011-2 até PROP-00011-66). Reproduzido em execução: +1 clone
+             por sincronização, indefinidamente. O cliente tinha 14 composições
+             de verdade e 65 de lixo, e a cada dia de uso ganhava mais ~8.
+
+             Com o hash do conteúdo, a MESMA colisão gera SEMPRE o mesmo código.
+             No merge seguinte o clone já está lá, com o mesmo conteúdo, e o
+             ramo abaixo reconhece isso e não cria nada. Converge no primeiro
+             merge e fica parado — que é o que "determinístico" tinha de
+             significar desde o começo. */
         var xPrimeiro = String(x.criadoEm || "") < String(ja.v.criadoEm || "");
         var fica = xPrimeiro ? x : ja.v, ficaEsp = xPrimeiro ? deOndeEspelho : ja.esp;
         var sai = xPrimeiro ? ja.v : x, saiEsp = xPrimeiro ? ja.esp : deOndeEspelho;
         porId[k] = { v: fica, esp: ficaEsp };
-        var baseCod = String(sai.codigo), n = 2, kk;
-        do { kk = (baseCod + "-" + n).toLowerCase(); n++; } while (porId[kk] || mortos[kk]);
+        /* Se a perdedora JÁ é um renomeado, o sufixo sai do código de origem —
+           senão nasceriam códigos aninhados (PROP-1-a3f2-b7c1). */
+        var baseCod = String(sai.renomeadaDe || sai.codigo);
+        var kk = (baseCod + "-" + sufixoDe(sai)).toLowerCase();
+        var ocupante = porId[kk];
+        if (ocupante && assinatura(ocupante.v) === assinatura(sai)) return;  // já convergiu
+        var t2 = mortos[kk];
+        if (t2 && !(quando(sai) > String(t2))) return;    // renomeado foi excluído de propósito
         var clone = {}, kc;
         for (kc in sai) if (Object.prototype.hasOwnProperty.call(sai, kc)) clone[kc] = sai[kc];
-        clone.codigo = baseCod + "-" + (n - 1);
+        clone.codigo = baseCod + "-" + sufixoDe(sai);
         clone.renomeadaDe = baseCod;
         if (clone.id) clone.id = kk;
         porId[kk] = { v: clone, esp: saiEsp };
-        ordem.push(kk);
+        if (!ocupante) ordem.push(kk);
       }
 
       (itensBase || []).forEach(function (it) { poe(it, false); });
@@ -117,6 +158,58 @@
         var e = porId[k];
         return e.esp ? self.paraItem(e.v) : e.v;
       }).filter(Boolean);
+    },
+
+
+    /* ================= REPARO DO VAZAMENTO DE CLONES =================
+     *
+     * ⚠ ISTO LIMPA LIXO QUE O PRODUTO CRIOU, e por isso a definição é a mais
+     *   ESTREITA possível. Só entra na conta um item que atenda às TRÊS
+     *   condições ao mesmo tempo:
+     *
+     *     1. carrega `renomeadaDe` — ou seja, NASCEU do ramo de colisão, não
+     *        da mão de ninguém;
+     *     2. existe outro item, vivo, com a MESMA assinatura (descrição +
+     *        unidade + insumos);
+     *     3. esse outro item veio da mesma origem (mesmo `renomeadaDe`, ou é
+     *        o próprio código de origem).
+     *
+     *   Composição que alguém digitou nunca tem `renomeadaDe`. Duas
+     *   composições parecidas mas com qualquer diferença de insumo têm
+     *   assinaturas diferentes e as duas ficam. Na dúvida, fica.
+     *
+     * ⚠ POR QUE NÃO BASTA CONSERTAR O MERGE. O conserto para de PRODUZIR
+     *   clone; ele não remove os 65 que já estão gravados na máquina do
+     *   cliente. E não dá para pedir que ele limpe na mão: são 65 linhas
+     *   iguais numa lista de 79, e a diferença entre a boa e as ruins é um
+     *   sufixo hexadecimal.
+     *
+     * Devolve { fica, sai } — quem remove é o chamador, porque remover exige
+     * lápide e a permissão estreita do Bases.persistir. */
+    clonesParaLimpar: function (itens) {
+      var self = this, vivos = (itens || []).filter(Boolean);
+      function assin(x) {
+        try { return JSON.stringify({ d: x.descricao, u: x.unidade, i: x.insumos }); }
+        catch (e) { return "?"; }
+      }
+      function origemDe(x) { return String(x.renomeadaDe || x.codigo || "").trim().toLowerCase(); }
+      /* Ordena por criadoEm e, no empate, por código: o sobrevivente tem de ser
+         o mesmo em qualquer aparelho, senão a limpeza vira outra divergência. */
+      var ordenado = vivos.slice().sort(function (a, b) {
+        var ta = String(a.criadoEm || ""), tb = String(b.criadoEm || "");
+        if (ta !== tb) return ta < tb ? -1 : 1;
+        var ca = String(a.codigo || ""), cb = String(b.codigo || "");
+        return ca < cb ? -1 : (ca > cb ? 1 : 0);
+      });
+      var primeiro = {}, sai = [];
+      ordenado.forEach(function (x) {
+        var k = origemDe(x) + "|" + assin(x);
+        if (!primeiro[k]) { primeiro[k] = x; return; }
+        if (x.renomeadaDe) sai.push(x);      // só o que nasceu da colisão sai
+      });
+      var fora = {};
+      sai.forEach(function (x) { fora[chaveDe(x)] = 1; });
+      return { fica: vivos.filter(function (x) { return !fora[chaveDe(x)]; }), sai: sai };
     },
 
     /* Quais itens da base ainda NÃO estão no espelho (ou estão desatualizados).

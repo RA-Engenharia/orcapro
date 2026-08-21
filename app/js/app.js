@@ -1091,6 +1091,7 @@
         case "mc-editar-insumo": this.editarInsumoProprio(t.dataset.cod); break;
         case "mc-duplicar": this.duplicarComposicao(t.dataset.cod); break;
         case "mc-excluir": this.excluirProprio(t.dataset.cod); break;
+        case "mc-limpar-clones": this.limparClonesProprias(); break;
         case "cp-memoria": this.cpMemoria(t.dataset.i); break;
         case "cp-novo-insumo": this._cpNovoInsumoInline(); break;
         case "cp-salvar-insumo": this._cpSalvarInsumoInline(); break;
@@ -2626,7 +2627,7 @@
           UI.toast("🤖 " + n + " etapas refinadas pela IA (" + (j.provider || "") + "). Passe o mouse no " + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " p/ ver o motivo; edite se quiser.", "ok");
           self.render();
         })
-        .catch(function (e) { UI.toast("Sem conexão com a IA — o ERP/servidor (porta 3040) está ligado? " + e.message, "erro"); });
+        .catch(function (e) { UI.toast("Sem conexão com a IA: " + e.message + " — confira a internet e se a licença está ativa.", "erro"); });
     },
 
     /* ⚠ carregarSetop e carregarGoinfra foram REMOVIDOS na v1.1.204.
@@ -4867,6 +4868,62 @@
       this._propriaEspelhoExcluir(codigo);
       return antes - dados.length;
     },
+    /* ============ LIMPAR OS CLONES QUE A SINCRONIZAÇÃO DEIXOU ============
+     *
+     * ⚠ EXISTE PORQUE O PRODUTO ESTRAGOU DADO DE CLIENTE. O ramo de colisão do
+     *   PropriaSync renomeava a perdedora para "o próximo sufixo livre" (-2,
+     *   -3, -4…). O clone entrava na base, mas o registro do ESPELHO continuava
+     *   com o código original — então colidia de novo no merge seguinte e o
+     *   contador andava mais um. Nunca chegava a ponto fixo.
+     *
+     *   Medido nos backups da instalação: 11 composições próprias em 13/08, 22
+     *   em 16/08, 30 em 17/08, 64 em 20/08, 79 em 21/08 — e 65 delas eram
+     *   cópias idênticas de UMA ("DEMOLIÇÃO DE ALVENARIA", PROP-00011-2 até
+     *   PROP-00011-66). Catorze composições de verdade e 65 de lixo, +8 por dia.
+     *
+     *   O conserto do merge (sufixo = hash do conteúdo) para de PRODUZIR clone.
+     *   Não remove o que já está gravado — e não dá para pedir que o usuário
+     *   limpe na mão: são 64 linhas iguais numa lista de 79, distinguidas por
+     *   um sufixo hexadecimal.
+     *
+     * ⚠ NÃO RODA SOZINHO, e isso é deliberado. Encolher a base do usuário sem
+     *   ele mandar é exatamente o que o alarme anti-perda existe para impedir.
+     *   Aqui: pergunta, faz backup ANTES, e passa pelo canal de lápide — senão
+     *   o item volta da nuvem na sincronização seguinte. */
+    limparClonesProprias: function () {
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        try { UI.toast("Seu usuário não tem permissão no módulo Orçamentos.", "erro"); } catch (e) {}
+        return;
+      }
+      if (typeof PropriaSync === "undefined" || !PropriaSync.clonesParaLimpar) return;
+      var self = this, eid = Auth.empresaId();
+      var payload = Store.lerBasesExtras(eid) || [], atual = null;
+      for (var i = 0; i < payload.length; i++) {
+        if (String(payload[i].fonte).toUpperCase() === "PROPRIA") atual = payload[i];
+      }
+      if (!atual) return;
+      var r = PropriaSync.clonesParaLimpar(atual.dados || []);
+      if (!r.sai.length) { UI.toast("Nenhuma cópia para limpar.", "ok"); return; }
+      var exemplos = r.sai.slice(0, 3).map(function (x) { return x.codigo; }).join(", ");
+      if (!window.confirm(
+        "Limpar " + r.sai.length + " cópia(s) repetida(s)?\n\n" +
+        "Elas foram criadas por um defeito da sincronização, não por você: são " +
+        "idênticas (mesma descrição, unidade e insumos) a composições que ficam. " +
+        "Ex.: " + exemplos + (r.sai.length > 3 ? "…" : "") + "\n\n" +
+        "Seu banco vai de " + (atual.dados || []).length + " para " + r.fica.length + " itens.\n" +
+        "Um backup é gravado antes. Itens já lançados em orçamentos não mudam (são cópia).")) return;
+      /* backup ANTES: é a única coisa que torna isto reversível */
+      try { this.backupAuto({ urgente: true }); } catch (e) {}
+      Bases.registrar("PROPRIA", { dados: r.fica, uf: atual.uf, mes: atual.mes });
+      /* permitirRemocao porque a queda é grande e intencional; sem isto o
+         alarme anti-perda recusa a gravação — com razão, ele não sabe que a
+         ordem veio do dono. */
+      Bases.persistir(eid, { permitirRemocao: true });
+      /* lápide em cada uma, senão a nuvem devolve tudo no próximo merge */
+      r.sai.forEach(function (x) { try { self._propriaEspelhoExcluir(x.codigo); } catch (e) {} });
+      UI.toast(r.sai.length + " cópia(s) removida(s). Banco com " + r.fica.length + " itens.", "ok");
+      this.minhasComposicoes(this._mcFiltro || "");
+    },
     excluirProprio: function (codigo) {
       /* Composição própria é acervo de ORÇAMENTO — quem tem o módulo cuida
          dela. Chegava por ⚙ → Tabelas → "ver itens", que a engrenagem mostra
@@ -4947,7 +5004,25 @@
             '<button class="btn sm danger" data-acao="mc-excluir" data-cod="' + Util.esc(d.codigo) + '" title="excluir do banco">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>' +
           '</td></tr>';
       }).join("");
-      var corpo = '<div class="field" style="margin-bottom:8px"><input id="mc-filtro" placeholder="Buscar por código ou descrição…" value="' + Util.esc(this._mcFiltro) + '"></div>' +
+      /* ⚠ O AVISO VEM ANTES DA LISTA porque é ele que explica por que a lista
+         tem 79 linhas iguais. Sem isso o usuário lê a repetição como erro dele
+         e sai excluindo à mão — 64 confirmações, uma a uma. */
+      var clones = [];
+      try {
+        if (typeof PropriaSync !== "undefined" && PropriaSync.clonesParaLimpar) {
+          clones = PropriaSync.clonesParaLimpar(itens).sai || [];
+        }
+      } catch (eCl) { clones = []; }
+      var aviso = clones.length
+        ? '<div class="aviso" style="margin:0 0 10px;padding:8px 10px;border-left:3px solid var(--warn,#c90);font-size:12px">' +
+          '<b>' + clones.length + ' cópia(s) repetida(s) no seu banco.</b> Foram criadas por um defeito ' +
+          'da sincronização entre aparelhos — já corrigido —, não por você. São idênticas a ' +
+          'composições que ficam. ' +
+          '<button class="btn sm" data-acao="mc-limpar-clones" style="margin-left:6px">Limpar ' +
+          clones.length + '</button></div>'
+        : '';
+      var corpo = aviso +
+        '<div class="field" style="margin-bottom:8px"><input id="mc-filtro" placeholder="Buscar por código ou descrição…" value="' + Util.esc(this._mcFiltro) + '"></div>' +
         '<p class="muted" style="font-size:11.5px;margin:0 0 8px">' + itens.length + ' item(ns) no seu banco' +
         (f ? " · " + vis.length + " no filtro" : "") +
         ' · para <b>lançar</b> num orçamento, use a busca da planilha (pílula <span class="pill proprio">Própria</span>).</p>' +
@@ -6094,7 +6169,7 @@
          "Adicionar selecionados" e o escopo inteiro da obra A entrava no
          orçamento B, com preços e etapas criadas lá. Voltando para a LISTA era
          pior de outro jeito: `orcAtual` nulo estourava TypeError e o catch
-         culpava a rede ("veja o Console, ERP na porta 3040?"), com todo o
+         culpava a rede ("veja o Console, ERP na porta 3040?") — e a porta 3040 e do
          trabalho da IA perdido.
          Carimbo duplo: o id do orçamento e um contador de requisição — o
          contador também descarta a resposta velha quando o usuário manda
@@ -6117,7 +6192,7 @@
           UI.toast("✅ " + self._escopo.length + " serviços estruturados (" + ok + " com sugestão). Use " + (typeof Icones !== "undefined" ? Icones.get("alvo", 15) : "") + " Refinar p/ a IA escolher o código exato.", "ok");
           self._mostrarEscopoResultado(0);
         })
-        .catch(function (e) { console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — veja o Console (F12). ERP na porta 3040?", "erro"); });
+        .catch(function (e) { console.error("[Escopo IA] FALHOU:", e); UI.toast("Escopo IA falhou: " + (e && e.message ? e.message : e) + " — confira a internet e a licença. Detalhe no Console (F12).", "erro"); });
     },
 
     // 2º passo (opcional): IA escolhe o código EXATO. Em LOTES, só os ainda NÃO refinados,
@@ -6765,5 +6840,19 @@
   };
 
   global.App = App;
-  document.addEventListener("DOMContentLoaded", function () { App.iniciar(); });
+  document.addEventListener("DOMContentLoaded", function () {
+    App.iniciar();
+    /* ⚠ CONFIGURA O PLUGIN DO REVIT SOZINHO, uma vez por abertura.
+       O plugin roda em IronPython, fora do navegador: nao tem localStorage e
+       portanto nao sabe a licenca nem o endereco do backend de IA. Sem isso o
+       servidor devolve 403 e o desempate do orcamento fica de fora.
+
+       Ficar so no clique de "Exportar p/ Revit" obrigava o usuario a lembrar
+       de um passo que ele nao tem por que conhecer. Abrir o OrcaPRO ja basta.
+
+       Best-effort e adiado: nao pode atrasar a tela nem derrubar o boot. */
+    setTimeout(function () {
+      try { if (typeof Revit !== "undefined" && Revit.exportarIA) Revit.exportarIA(); } catch (e) {}
+    }, 2500);
+  });
 })(window);
