@@ -85,6 +85,18 @@
 
   var Escopo = {
 
+    /* ⚠ O DICIONARIO SAI DAQUI PORQUE OUTRO MODULO PRECISAVA DELE E NAO TINHA.
+       Medido em 23/08/2026 sobre os 140 termos deste mapa: o criador de
+       composicoes recusava a palavra do usuario e aceitava a da base —
+       "azulejo" recusado / "ceramico" aceito, "salpico" / "chapisco",
+       "fiacao" / "cabo", "bloquete" / "intertravado", quatro em quatro. O
+       Escopo Inteligente entendia; o criador, nao, e a mesma pessoa via os
+       dois comportamentos no mesmo app.
+
+       Exposto como leitura, nao como copia: duas listas de sinonimos
+       divergiriam no primeiro termo novo. */
+    SINONIMOS: SINONIMOS,
+
     /* ==================================================================
      * PACOTES DE ATIVIDADE (v1.1.219)
      *

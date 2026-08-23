@@ -160,15 +160,28 @@
     [/(^|[^a-z])(gas|incendio|hidrante|sprinkler|combate a incendio)([^a-z]|$)/, "INSTALAÇÕES HIDROSSANITÁRIAS"],
     [/(agua fria|agua quente|esgoto|aguas pluviais|hidraulic|hidrossanitar|sanitari|loucas e metais|louca|valvula|registro|reservacao|recalque|[^a-z]pex[^a-z]|[^a-z]ppr[^a-z]|[^a-z]cpvc[^a-z]|caixa d.?agua|caixas de agua|ralo|sifao|fossa|sumidouro|hidrometro|sistemas de medicao|ponto de consumo|pontos de consumo)/, "INSTALAÇÕES HIDROSSANITÁRIAS"],
     [/(instalacoes em cobre)/, "INSTALAÇÕES HIDROSSANITÁRIAS"],
-    [/(eletric|eletroduto|eletrocalha|disjuntor|contator|barramento|tomada|interruptor|cabo|quadro|poste|luminar|iluminac|lampada|spda|para.?raio|telefon|logic|cftv|antena|interfone|energia solar|fotovoltaic)/, "INSTALAÇÕES ELÉTRICAS"],
+    [/(eletric|eletroduto|eletrocalha|disjuntor|contator|barramento|tomada|interruptor|cabo|quadro|poste|luminar|iluminac|lampada|spda|para.?raio|telefon|logic|cftv|antena|interfone|energia solar|fotovoltaic|transformador|subestacao|gerador)/, "INSTALAÇÕES ELÉTRICAS"],
 
     /* --- redes enterradas: tubo assentado, nao instalacao predial. HDD e
            Tunnel Liner sao assentamento SEM vala — mesma familia. --- */
     [/(assentamento de tubo|rede de agua|redes de agua|rede de esgoto|redes de esgoto|[^a-z]pead[^a-z]|poco de visita|pocos de visita|boca de lobo|bocas de lobo|bueiro|drenagem|dreno|galeria|perfuracao horizontal|[^a-z]hdd[^a-z]|tunnel liner|caixas enterradas|caixa enterrada|dissipador)/, "ASSENTAMENTO DE TUBOS E PEÇAS"],
 
+    /* --- o que precisa vencer o generico mais abaixo ---
+           "escoramento" sozinho cai em CONCRETO E ARMADURA (forma de peca), e
+           escorar parede de vala e outra coisa: contencao de escavacao. Sao 51
+           composicoes no MA, e nenhuma delas tem concreto.
+           "sinalizacao" sozinho cai em SERVICOS PRELIMINARES (cone, fita,
+           placa de obra); faixa de pedestre e placa de transito sao servico
+           de via — 62 composicoes. */
+    [/(escoramento.{0,12}vala|preparo de fundo de vala|escoramento de vala)/, "MOVIMENTO DE TERRA"],
+    [/(sinalizacao .{0,12}viaria|sinalizacao horizontal|sinalizacao vertical|faixa de pedestre|placa de transito|tachao|tacha refletiva)/, "PAVIMENTAÇÃO"],
+
     /* --- estrutura --- */
     [/(fundac|estaca|sapata|tubul|bloco de coroamento|broca|baldrame|radier|tirante|solo grampeado|grampo para solo)/, "FUNDAÇÕES"],
-    [/(forma|escoramento|cimbrament|concreto|armadura|armacao|aco para|laje|viga|pilar|estrutura de concreto|escada|pre.?moldad|premoldad)/, "CONCRETO E ARMADURA"],
+    /* ⚠ "forma" PRECISA DE BORDA: sem ela casa dentro de transFORMAdor,
+       plataFORMA e conFORME. A ordem das regras ja era a regra; a borda
+       tambem e. */
+    [/((^|[^a-z])(forma|formas)([^a-z]|$)|escoramento|cimbrament|concreto|armadura|armacao|aco para|laje|viga|pilar|estrutura de concreto|escada|pre.?moldad|premoldad)/, "CONCRETO E ARMADURA"],
 
     /* --- vedacao e fechamento --- */
     [/(alvenaria|vedacao|bloco ceramic|bloco de concreto|divisoria|drywall|gesso acartonado|parede|muro|cobogo)/, "ALVENARIA E VEDAÇÃO"],
@@ -192,7 +205,7 @@
     [/(demoli|retirada|remocao|desmontagem)/, "DEMOLIÇÃO E RETIRADA"],
     [/(transporte|carga e descarga|mobilizac|desmobilizac|movimentacao de material)/, "TRANSPORTE E CARGA"],
     [/(canteiro|tapume|barracao|placa de obra|locacao de obra|ligacao provisoria|servicos preliminares|protecao coletiva|[^a-z]epi[^a-z]|[^a-z]epc[^a-z]|sinalizacao|seguranca|grua|cremalheira)/, "SERVIÇOS PRELIMINARES"],
-    [/(limpeza|paisagism|grama|jardim|mobiliario|bancada|rasgo|fixac|solda|estrutura metalica|serralheria|cerca|alambrado|protetor|peneiramento|ensacamento|parquinho|ginastica|quadra|playground)/, "SERVIÇOS COMPLEMENTARES"]
+    [/(limpeza|paisagism|grama|jardim|mobiliario|bancada|rasgo|fixac|solda|estrutura metalica|serralheria|cerca|alambrado|protetor|peneiramento|ensacamento|parquinho|ginastica|quadra|playground|plataforma|elevador|elevatori)/, "SERVIÇOS COMPLEMENTARES"]
 
     /* ⚠ DUAS FAMILIAS FICAM EM OUTROS DE PROPOSITO, e isso e um achado sobre a
        LISTA DOS 18, nao sobre o mapa:
@@ -210,6 +223,37 @@
 
   /* Traduz o grupo publicado pela base para um dos 18 do criador.
    * Entrada vazia, desconhecida ou que não é serviço de obra → "OUTROS". */
+  /* Traduz o vocabulario do canteiro para o da base, palavra por palavra.
+   *
+   * ⚠ O DICIONARIO E O DO ESCOPO, LIDO — nao copiado. Duas listas de sinonimos
+   *   divergem no primeiro termo novo, e a que ninguem lembra de atualizar vira
+   *   a que mente. Sem o Escopo carregado (Node puro, teste isolado), devolve o
+   *   texto como veio: traduzir e melhoria, nao pre-requisito.
+   *
+   * ⚠ PALAVRA INTEIRA, e a regra e a mesma do resto da casa. Substring trocaria
+   *   "massa" dentro de "massame"; e o parente do veto "REPARO" casando dentro
+   *   de "PREPARO" no plugin. */
+  function _traduzirTermos(texto, ctx) {
+    var dic = (ctx && ctx.sinonimos)
+      || (global.Escopo && global.Escopo.SINONIMOS)
+      || (typeof require === "function"
+          ? (function () { try { return require("./escopo.js") && global.Escopo && global.Escopo.SINONIMOS; } catch (e) { return null; } })()
+          : null);
+    if (!dic) return texto;
+    var partes = String(texto).split(/(\s+)/);
+    var mudou = false;
+    var fora = partes.map(function (p) {
+      if (/^\s*$/.test(p)) return p;
+      var k = norm(p).replace(/[^a-z0-9]/g, "");
+      if (k && Object.prototype.hasOwnProperty.call(dic, k) && dic[k] !== k) {
+        mudou = true;
+        return dic[k];
+      }
+      return p;
+    });
+    return mudou ? fora.join("") : texto;
+  }
+
   function grupoDoCriador(grupoDaBase) {
     var g = String(grupoDaBase == null ? "" : grupoDaBase).toUpperCase();
     /* o rótulo já pode ser um dos 18 (composição própria salva, ou o usuário
@@ -486,7 +530,27 @@
       if (!analitico.length) {
         return { ok: false, erro: "A base analítica não está carregada — é dela que saem os insumos e os coeficientes reais." };
       }
-      var det = this.analogasComDetalhe(desc, analitico, 5);
+      /* ⚠ A PALAVRA DO CANTEIRO NAO E A PALAVRA DA BASE, e o criador nao sabia
+         disso. Medido em 23/08/2026 sobre os 140 termos do dicionario do
+         Escopo: quatro em quatro casos, o agente RECUSAVA o termo do usuario e
+         ACEITAVA o da base —
+
+             "azulejo"  recusado   ·  "ceramico"      -> 88788
+             "salpico"  recusado   ·  "chapisco"      -> 87402
+             "fiacao"   recusado   ·  "cabo"          -> 103502
+             "bloquete" recusado   ·  "intertravado"  -> 92402
+
+         O Escopo Inteligente ja traduzia; o criador, nao. A mesma pessoa via
+         os dois comportamentos no mesmo app, e concluia que "a base nao tem" —
+         quando a base tinha, com outro nome. Isso inflava o residuo medido de
+         ~0,7% para 6,4%, e um molde construido sobre esse numero estaria
+         resolvendo um problema de vocabulario com estrutura de dados.
+
+         ⚠ TRADUZ, NAO SUBSTITUI: o texto original continua sendo o que vira
+           descricao da composicao (a referencia e meio, nao fim). So a BUSCA
+           usa a versao traduzida. */
+      var busca = _traduzirTermos(desc, ctx);
+      var det = this.analogasComDetalhe(busca, analitico, 5);
       var cands = det.itens;
       var minimo = ctx.minimo != null ? ctx.minimo : this.LIMIAR.minimo;
       if (!cands.length || cands[0].score < minimo) {
@@ -585,6 +649,13 @@
         avisos.unshift("A composição oficial " + rota.codigo + " já tem preço na base (" +
                        rota.preco.toFixed(2).replace(".", ",") + "/" + (rota.unidade || "un") +
                        ") — usá-la vale mais que copiar: ela se atualiza sozinha a cada competência.");
+      } else if (rota.tipo === "calculada") {
+        /* não abre modal — montar a partir da referência É o caminho certo
+           aqui. Mas o preço não é publicado pela base, e isso tem de estar
+           dito: quem apresenta a peça precisa saber o que defende. */
+        avisos.unshift("A base do estado não publica o preço fechado de " + rota.codigo +
+                       "; o custo abaixo é a soma dos insumos oficiais dela. " +
+                       "Confira antes de usar em peça que vai a julgamento.");
       } else if (rota.tipo === "cotar") {
         avisos.unshift("A base tem esta composição (" + rota.codigo + ") com os coeficientes oficiais; " +
                        "o que falta é preço de " + rota.faltam.length + " insumo(s) neste estado" +
@@ -820,6 +891,30 @@
       if (faltam.length) {
         return { tipo: "cotar", codigo: cod, descricao: (ref && ref.descricao) || "",
                  unidade: un, preco: 0, faltam: faltam };
+      }
+      /* ⚠ TER REFERÊNCIA E NÃO TER PREÇO NÃO É "A BASE NÃO MODELA". Medido com
+         o `ctx` que a PRODUÇÃO passa: 187 composições que estão no analítico,
+         com coeficientes oficiais e todos os insumos precificados, saíam como
+         "propria" — o rótulo cujo significado documentado é o oposto. Causa: o
+         `_cpResolve` do app precifica sub-composição pelo analítico, `faltam`
+         esvazia, e o único teste que restava era "não é oficial".
+
+         E era o pior dos rótulos: "propria" é o único que não gera aviso e o
+         único que pula a tela de rota — o usuário ia direto para o clone
+         PROP-xxxx que esta mudança existe para evitar. Falta invisível.
+
+         "calculada" é o nome honesto: a base modela o serviço e precifica os
+         insumos; o que ela não publica é o preço FECHADO desta composição
+         nesta UF. Montar a partir da referência é legítimo, e o custo é real —
+         só precisa estar dito de onde veio. */
+      /* ⚠ SÓ AFIRMA "a base não publica o preço" QUEM PERGUNTOU À BASE. É a
+         mesma régua que já vale para "oficial": sem o oráculo de preço, o
+         diagnóstico não inventa — desce para "propria", que aqui significa
+         "não sei dizer", e o criador segue o caminho de sempre. */
+      if (cod && ((comp && comp.insumos) || []).length
+          && typeof ctx.precoOficial === "function") {
+        return { tipo: "calculada", codigo: cod, descricao: (ref && ref.descricao) || "",
+                 unidade: un, preco: 0, faltam: [] };
       }
       return { tipo: "propria", codigo: cod, descricao: (ref && ref.descricao) || "",
                unidade: un, preco: 0, faltam: [] };

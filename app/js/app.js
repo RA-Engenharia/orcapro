@@ -5808,16 +5808,27 @@
         /* A linha pendente não precisava de composição própria: a oficial
            existe e tem preço. Aplicar aqui é escolher o candidato — o mesmo
            que o usuário faria no select, sem passar pelo clone.
-           `confianca: 100` + `motivo` seguem a convenção do "código
-           informado" do Escopo: quem escolheu foi uma pessoa, não o ranking. */
-        aoUsarOficial: function (rota) {
+         *
+         * ⚠ CONFIANÇA 100 ERA MENTIRA, E CARA. A primeira versão gravava
+         *   `confianca: 100` com motivo "escolhida por você", copiando a
+         *   convenção do "código informado" — só que ali quem digitou o código
+         *   foi a pessoa, e aqui quem escolheu foi a BUSCA POR SEMELHANÇA. Em
+         *   85% das perguntas em texto livre o código ofertado não era o
+         *   pedido, e o erro chega a 5× no preço. Carimbar isso como escolha
+         *   humana com nota máxima transformava um palpite em fato.
+         *
+         * ⚠ E `refinadoIA = true` SELAVA A LINHA: a IA nunca mais reveria uma
+         *   decisão que ela poderia corrigir. Confirmar num modal não é o mesmo
+         *   que conferir a composição — o aceite mantém a linha revisável. */
+        aoUsarOficial: function (rota, r) {
           var item = self._cpResolve(String(rota.codigo), "SINAPI");
           if (!item) return false;   // sem item não há o que aplicar → abre o detalhe
-          l.candidatos = [{ item: item, fonte: "SINAPI", confianca: 100,
-                            motivo: "composição oficial escolhida por você" }]
+          var conf = { alta: 75, media: 50 }[(r && r.confianca) || ""] || 30;
+          l.candidatos = [{ item: item, fonte: "SINAPI", confianca: conf,
+                            motivo: "sugestão do agente por semelhança, aceita por você"
+                                    + " — confira antes de fechar o orçamento" }]
                          .concat(l.candidatos || []);
           l.escolhido = 0;
-          l.refinadoIA = true;       // não reabrir a IA para uma linha já decidida
           /* reabre a revisão do Escopo já com a linha resolvida — o mesmo
              caminho que a IA usa ao voltar, para não existir um segundo
              jeito de desenhar a mesma tela */
@@ -5842,11 +5853,38 @@
       var titulo, corpo;
       var ic = function (n) { return (typeof Icones !== "undefined" ? Icones.get(n, 15) : ""); };
 
+      /* ⚠ O CÓDIGO OFERECIDO VEIO DE BUSCA POR SEMELHANÇA, E A TELA TEM DE
+         DIZER ISSO. A primeira versão deste modal afirmava "a base do estado já
+         traz 89464" como se fosse A resposta, sem mostrar confiança nem
+         alternativas. Medido: em 47% da própria amostra do commit o código
+         ofertado NÃO era o que foi pedido; com texto livre — que é a população
+         real deste botão — 85%. O erro chega a 5× no preço.
+
+         É a mesma armadilha do caso das 50 paredes de mármore: score alto não
+         sabe que errou de alvo. A confiança e as alternativas passam a aparecer
+         SEMPRE, e quando ela não é alta o aviso vem antes do preço. */
+      var nivel = r.confianca === "alta" ? "alta" : (r.confianca === "media" ? "média" : "baixa");
+      var seguro = r.confianca === "alta";
+      var cabecaAviso = seguro ? "" :
+        '<div style="border-left:3px solid var(--erro,#c0392b);padding:8px 10px;margin:0 0 10px;font-size:13px">' +
+        '<b>Semelhança ' + nivel + '.</b> Este código é o mais parecido que o agente achou com o que você ' +
+        'escreveu — não é uma correspondência confirmada. Confira a descrição antes de aceitar.' +
+        (r.aviso ? '<div class="muted" style="margin-top:5px;font-size:12.5px">' + Util.esc(r.aviso) + '</div>' : '') +
+        '</div>';
+      var listaAlt = (r.alternativas || []).length
+        ? '<p class="muted" style="font-size:12.5px;margin:10px 0 0">O agente também achou: ' +
+          r.alternativas.slice(0, 3).map(function (a) {
+            return '<b>' + Util.esc(a.codigo) + '</b> ' + Util.esc(String(a.descricao).slice(0, 52));
+          }).join(' · ') + '</p>'
+        : '';
+
       if (rota.tipo === "oficial") {
-        titulo = ic("check") + " Esta composição já existe na base, com preço";
-        corpo =
+        titulo = (seguro ? ic("check") : ic("alerta")) +
+                 (seguro ? " Esta composição já existe na base, com preço"
+                         : " O mais parecido que achei já existe na base, com preço");
+        corpo = cabecaAviso +
           '<p style="margin:0 0 10px;font-size:13.5px">Você pediu <b>' + Util.esc(desc) + '</b>. ' +
-          'A base do estado já traz:</p>' +
+          'A base do estado traz, como ' + (seguro ? 'correspondência' : 'candidato mais próximo') + ':</p>' +
           '<div style="border:1px solid var(--borda);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
           '<div style="font-size:13.5px"><b>' + Util.esc(rota.codigo) + '</b> — ' +
           Util.esc(String(rota.descricao).slice(0, 120)) + '</div>' +
@@ -5854,7 +5892,7 @@
           Util.esc(rota.unidade || "un") + '</div></div>' +
           '<p class="muted" style="font-size:12.5px;margin:0">Usar a oficial vale mais que copiá-la: ' +
           'ela se atualiza sozinha na próxima competência, e o código é o que a auditoria reconhece. ' +
-          'A cópia congela o preço de hoje num código próprio.</p>';
+          'A cópia congela o preço de hoje num código próprio.</p>' + listaAlt;
         if (typeof o.aoUsarOficial === "function") {
           botoes.push({ texto: ic("check") + " Usar a " + rota.codigo, classe: "primary", onClick: function () {
             UI.fecharModal();
@@ -5874,7 +5912,7 @@
       } else {
         var n = rota.faltam.length;
         titulo = ic("alerta") + " A base tem esta composição — falta preço de " + n + " insumo" + (n > 1 ? "s" : "");
-        corpo =
+        corpo = cabecaAviso +
           '<p style="margin:0 0 10px;font-size:13.5px">A composição <b>' + Util.esc(rota.codigo) + '</b> — ' +
           Util.esc(String(rota.descricao).slice(0, 110)) + ' — existe na base analítica com os ' +
           '<b>coeficientes oficiais</b>. O que a CAIXA não publica é o custo, porque ' +
@@ -5948,10 +5986,18 @@
 
            Montar a sua continua a um clique — mas deixa de ser o padrão para
            quem não precisa dela. */
-        if (r.rota && r.rota.tipo !== "propria" && !o.rotaJaDecidida) {
-          self._cpOferecerRota(r, desc, o, abrir);
-          return;
-        }
+        /* ⚠ A ROTA NÃO PODE SER OFERECIDA AQUI — e estar aqui matou o desempate.
+           Medido: em 158 dos 208 casos "oficial" da amostra (76%) existe EMPATE
+           TÉCNICO entre as análogas (score − alt0.score < 0,12), que é
+           exatamente a condição criada na v1.1.221 para chamar a IA. Com o
+           `return` antes deste bloco, o desempate nunca rodava e o primeiro
+           colocado do ranking virava o código oferecido em destaque, calado.
+
+           A doutrina é "IA só no resíduo, escolhendo entre códigos que o motor
+           local achou". Decidir o resíduo por rank e não avisar é o oposto.
+
+           A oferta passou para dentro de `abrir()`, que é o ponto por onde
+           TODOS os caminhos passam — com IA, sem IA, com referência trocada. */
         /* REFORÇO DE IA (v1.1.221) — opcional por definição.
            Só entra quando há EMPATE TÉCNICO entre análogas: se a primeira
            ganha folgado, perguntar é gastar rede para confirmar o óbvio.
@@ -6004,6 +6050,19 @@
         return;
       };
       var abrir = function (r) {
+        /* ⚠ A OFERTA DE ROTA MORA AQUI, e não lá em cima. Este é o ponto por
+           onde TODOS os caminhos passam: sem empate, com empate resolvido pela
+           IA, e com a referência trocada pela IA. Oferecendo antes do
+           desempate, o código em destaque era só o primeiro do ranking. */
+        /* so "oficial" e "cotar" abrem tela: nos dois o caminho certo NAO e o
+           criador. "calculada" monta a partir da referencia mesmo — o aviso
+           de elaborar() ja diz que o preco e soma de insumos, e ele aparece
+           no toast. "propria" e o caso do criador, sem desvio. */
+        if (r.rota && (r.rota.tipo === "oficial" || r.rota.tipo === "cotar")
+            && !o.rotaJaDecidida) {
+          self._cpOferecerRota(r, desc, o, abrir);
+          return;
+        }
         /* abre no criador, no passo 2, com a estrutura montada — é lá que o
            usuário confere coeficiente por coeficiente antes de gravar */
         self.criarComposicao(true);
