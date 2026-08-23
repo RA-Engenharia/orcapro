@@ -5231,6 +5231,27 @@
       }
       return item || null;
     },
+    /* Preço OFICIAL do código na base de preços do estado — e só nela.
+     *
+     * ⚠ NÃO É O `_cpResolve`. Aquele cai no analítico de propósito, para o
+     *   insumo sem coleta na UF não ser recusado como inexistente. Aqui a
+     *   pergunta é outra: "a base de preços deste estado precifica isto?".
+     *   Se o analítico respondesse, toda composição do analítico pareceria
+     *   precificada e o diagnóstico "oficial" viraria mentira — exatamente o
+     *   que ele existe para evitar. */
+    _cpPrecoOficial: function (codigo) {
+      var cod = String(codigo || "");
+      if (!cod) return 0;
+      var it = null;
+      try {
+        it = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(cod) : null;
+        if (!it && typeof Bases !== "undefined" && Bases.obterComFonte) {
+          var r = Bases.obterComFonte(cod);
+          if (r && r.item) it = r.item;
+        }
+      } catch (e) { return 0; }
+      return it ? (Util.num(it.custoUnitario) || 0) : 0;
+    },
     /* ==================================================================
      * A DENYLIST DESTE ORÇAMENTO — leitor único.
      *
@@ -5293,7 +5314,7 @@
             var prop = ComposicaoPropria.daReferencia(ref._comp, { resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); } });
             var c = self._cp.comp;
             if (!c.unidade) c.unidade = String(prop.unidade || "").toLowerCase();
-            if (!c.grupo) c.grupo = ComposicaoPropria.GRUPOS.indexOf(String(prop.grupo).toUpperCase()) >= 0 ? String(prop.grupo).toUpperCase() : "OUTROS";
+            if (!c.grupo) c.grupo = ComposicaoPropria.grupoDoCriador(prop.grupo);
             c.maoDeObra = prop.maoDeObra;
             c.insumos = prop.insumos;
             c.observacao = (c.observacao ? c.observacao + " · " : "") + prop.observacao + (prop.grupo && c.grupo === "OUTROS" ? " Grupo oficial: " + prop.grupo + "." : "");
@@ -5783,8 +5804,98 @@
       var self = this;
       this.elaborarComposicao(l.textoOriginal, {
         unidade: l.unidade || "",
-        aoFechar: function () { self.analisarEscopo(); }
+        aoFechar: function () { self.analisarEscopo(); },
+        /* A linha pendente não precisava de composição própria: a oficial
+           existe e tem preço. Aplicar aqui é escolher o candidato — o mesmo
+           que o usuário faria no select, sem passar pelo clone.
+           `confianca: 100` + `motivo` seguem a convenção do "código
+           informado" do Escopo: quem escolheu foi uma pessoa, não o ranking. */
+        aoUsarOficial: function (rota) {
+          var item = self._cpResolve(String(rota.codigo), "SINAPI");
+          if (!item) return false;   // sem item não há o que aplicar → abre o detalhe
+          l.candidatos = [{ item: item, fonte: "SINAPI", confianca: 100,
+                            motivo: "composição oficial escolhida por você" }]
+                         .concat(l.candidatos || []);
+          l.escolhido = 0;
+          l.refinadoIA = true;       // não reabrir a IA para uma linha já decidida
+          /* reabre a revisão do Escopo já com a linha resolvida — o mesmo
+             caminho que a IA usa ao voltar, para não existir um segundo
+             jeito de desenhar a mesma tela */
+          self._mostrarEscopoResultado(0);
+          return true;
+        }
       });
+    },
+
+    /* A tela dos três diagnósticos (ver a intercepção em `rodar`). Ela nunca
+     * bloqueia: "Criar minha versão mesmo assim" está sempre ali, porque há
+     * caso legítimo de querer o próprio coeficiente. O que muda é qual é o
+     * caminho em destaque — e, nos dois casos abaixo, não é o clone. */
+    _cpOferecerRota: function (r, desc, o, abrir) {
+      var self = this, rota = r.rota;
+      var seguir = function () {
+        UI.fecharModal();
+        o.rotaJaDecidida = true;   // a segunda passada não repergunta
+        abrir(r);
+      };
+      var botoes = [{ texto: "Criar minha versão mesmo assim", classe: "ghost", onClick: seguir }];
+      var titulo, corpo;
+      var ic = function (n) { return (typeof Icones !== "undefined" ? Icones.get(n, 15) : ""); };
+
+      if (rota.tipo === "oficial") {
+        titulo = ic("check") + " Esta composição já existe na base, com preço";
+        corpo =
+          '<p style="margin:0 0 10px;font-size:13.5px">Você pediu <b>' + Util.esc(desc) + '</b>. ' +
+          'A base do estado já traz:</p>' +
+          '<div style="border:1px solid var(--borda);border-radius:8px;padding:10px 12px;margin-bottom:10px">' +
+          '<div style="font-size:13.5px"><b>' + Util.esc(rota.codigo) + '</b> — ' +
+          Util.esc(String(rota.descricao).slice(0, 120)) + '</div>' +
+          '<div style="font-size:15px;margin-top:4px"><b>' + Util.fmtMoeda(rota.preco) + '</b> / ' +
+          Util.esc(rota.unidade || "un") + '</div></div>' +
+          '<p class="muted" style="font-size:12.5px;margin:0">Usar a oficial vale mais que copiá-la: ' +
+          'ela se atualiza sozinha na próxima competência, e o código é o que a auditoria reconhece. ' +
+          'A cópia congela o preço de hoje num código próprio.</p>';
+        if (typeof o.aoUsarOficial === "function") {
+          botoes.push({ texto: ic("check") + " Usar a " + rota.codigo, classe: "primary", onClick: function () {
+            UI.fecharModal();
+            var feito = o.aoUsarOficial(rota, r);
+            if (feito === false) { self.verInsumos(String(rota.codigo)); return; }
+            UI.toast("Composição oficial " + rota.codigo + " aplicada (" +
+                     Util.fmtMoeda(rota.preco) + "/" + (rota.unidade || "un") + ").", "ok");
+            /* ⚠ o `aoFechar` do Escopo REANALISA a linha, o que apagaria o
+               candidato recém-aplicado. Quem aplicou é dono do que vem
+               depois — por isso a continuação é do callback, não daqui. */
+          } });
+        } else {
+          botoes.push({ texto: ic("buscar") + " Ver a " + rota.codigo, classe: "primary", onClick: function () {
+            UI.fecharModal(); self.verInsumos(String(rota.codigo));
+          } });
+        }
+      } else {
+        var n = rota.faltam.length;
+        titulo = ic("alerta") + " A base tem esta composição — falta preço de " + n + " insumo" + (n > 1 ? "s" : "");
+        corpo =
+          '<p style="margin:0 0 10px;font-size:13.5px">A composição <b>' + Util.esc(rota.codigo) + '</b> — ' +
+          Util.esc(String(rota.descricao).slice(0, 110)) + ' — existe na base analítica com os ' +
+          '<b>coeficientes oficiais</b>. O que a CAIXA não publica é o custo, porque ' +
+          (n > 1 ? 'estes insumos não têm' : 'este insumo não tem') + ' coleta de preço neste estado:</p>' +
+          '<ul style="margin:0 0 10px;padding-left:18px;font-size:13px;line-height:1.65">' +
+          rota.faltam.slice(0, 6).map(function (i) {
+            return '<li><b>' + Util.esc(i.codigo) + '</b> ' + Util.esc(String(i.descricao).slice(0, 70)) +
+                   (i.coeficiente ? ' <span class="muted">(' + Util.fmtNum(i.coeficiente, 4) + ' ' +
+                                    Util.esc(i.unidade || "") + ' por ' + Util.esc(rota.unidade || "un") + ')</span>' : '') +
+                   '</li>';
+          }).join("") +
+          (n > 6 ? '<li class="muted">…e mais ' + (n - 6) + '</li>' : '') +
+          '</ul>' +
+          '<p class="muted" style="font-size:12.5px;margin:0">Informar a sua cotação devolve a composição ' +
+          '<b>inteira</b>, com a produtividade medida em campo que ninguém reproduz montando à mão — ' +
+          'e o preço passa a valer em toda composição que use o mesmo insumo.</p>';
+        botoes.push({ texto: ic("editar") + " Cotar os insumos", classe: "primary", onClick: function () {
+          UI.fecharModal(); self.verInsumos(String(rota.codigo));
+        } });
+      }
+      UI.modal(titulo, corpo, botoes);
     },
 
     elaborarComposicao: function (descricao, opts) {
@@ -5795,6 +5906,7 @@
         var r = ComposicaoPropria.elaborar(desc, {
           analitico: Analitico.todos(),
           resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); },
+          precoOficial: function (cod) { return self._cpPrecoOficial(cod); },
           codigosExistentes: self._cpCodigosExistentes(),
           unidade: o.unidade || "", grupo: o.grupo || ""
         });
@@ -5817,6 +5929,27 @@
                 self._cpRender();
               } }
             ]);
+          return;
+        }
+        /* ⚠ TRÊS DIAGNÓSTICOS, TRÊS CONSERTOS — e a tela tratava os três como
+           um só, sempre caindo no criador de composição própria.
+
+           Medido em 23/08/2026 sobre 262 descrições reais do SINAPI MA: em
+           208 (79%) a referência copiada JÁ TINHA PREÇO na base do estado. O
+           usuário ganhava um PROP-xxxx congelado na competência de hoje no
+           lugar de um código oficial que se atualiza sozinho — e foi assim
+           que o banco do cliente juntou 65 clones.
+
+           Nos outros casos a composição existe no analítico, com coeficiente
+           oficial, e o que falta é preço de insumo neste estado: 2.050
+           composições, 1.272 delas (62%) esperando UM único insumo. Cotar
+           devolve a composição inteira; remontar joga fora a produtividade
+           medida em campo.
+
+           Montar a sua continua a um clique — mas deixa de ser o padrão para
+           quem não precisa dela. */
+        if (r.rota && r.rota.tipo !== "propria" && !o.rotaJaDecidida) {
+          self._cpOferecerRota(r, desc, o, abrir);
           return;
         }
         /* REFORÇO DE IA (v1.1.221) — opcional por definição.
@@ -5858,6 +5991,7 @@
             var r2 = ComposicaoPropria.elaborar(desc, {
               analitico: Analitico.todos(),
               resolve: function (cod, fonte) { return self._cpResolve(cod, fonte); },
+              precoOficial: function (cod) { return self._cpPrecoOficial(cod); },
               codigosExistentes: self._cpCodigosExistentes(),
               unidade: o.unidade || "", grupo: o.grupo || "",
               forcarReferencia: ref.trocarPara.codigo
@@ -5947,7 +6081,7 @@
       var c = this._cp.comp;
       c.descricao = String(ref.descricao || "");
       c.unidade = String(prop.unidade || "").toLowerCase();
-      c.grupo = ComposicaoPropria.GRUPOS.indexOf(String(prop.grupo).toUpperCase()) >= 0 ? String(prop.grupo).toUpperCase() : "OUTROS";
+      c.grupo = ComposicaoPropria.grupoDoCriador(prop.grupo);
       c.maoDeObra = prop.maoDeObra;
       c.insumos = prop.insumos;
       c.observacao = prop.observacao;

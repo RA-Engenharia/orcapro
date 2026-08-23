@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.266",
+  "versao": "1.1.267",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.266/OrcaPRO-IA-update-v1.1.266.zip",
-  "notas": "Correcao na sugestao de composicao por semelhanca. Se voce ja criou composicoes com o agente, confira a referencia de cada uma antes de usar no orcamento.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.266/OrcaPRO-IA-Instalador-v1.1.266.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.267/OrcaPRO-IA-update-v1.1.267.zip",
+  "notas": "Ao pedir uma composicao ao agente, o sistema agora diz quando ela ja existe na base com preco — usar a oficial mantem o item atualizado a cada competencia, em vez de congelar uma copia. Quando falta apenas o preco de um insumo no seu estado, ele indica a cotacao desse insumo, que devolve a composicao inteira com os coeficientes oficiais. Correcao do grupo e do codigo das composicoes proprias criadas pelo agente.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.267/OrcaPRO-IA-Instalador-v1.1.267.exe"
 }

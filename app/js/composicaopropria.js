@@ -121,6 +121,108 @@
     "SERVIÇOS COMPLEMENTARES", "TRANSPORTE E CARGA", "OUTROS"
   ];
 
+  /* ===================================================================
+   * O GRUPO DA BASE NÃO É O GRUPO DO CRIADOR — e ninguém tinha traduzido
+   *
+   * ⚠ O DEFEITO, MEDIDO: a base publica **171 nomes de grupo** distintos
+   *   ("Instalações Prediais de Água Fria em PVC", "Fôrmas para Estruturas de
+   *   Concreto Armado", "Massa Única Externa"…) e o criador tem 18 rótulos
+   *   fixos. A tradução era `GRUPOS.indexOf(grupo.toUpperCase()) >= 0`, ou
+   *   seja, igualdade exata — e **nenhum** dos 171 é igual a nenhum dos 18.
+   *   Resultado: toda composição elaborada a partir da base real nascia no
+   *   grupo OUTROS, com código PROP-GER-001.
+   *
+   *   O código legível por grupo (PROP-ALV-001) existe desde a v1.1.223 para
+   *   que o item se identifique sozinho numa planilha entregue. Nascendo
+   *   sempre GER, ele identificava só que a tradução não existia.
+   *
+   * ⚠ A ORDEM DAS REGRAS É A REGRA. Primeira que casa vence, e por isso
+   *   "Instalações de Gás e Incêndio" precisa ser decidido ANTES de
+   *   "Instalações Elétricas" — as duas contêm "instalaç". Mexer na ordem sem
+   *   rodar tools/medir-grupos.js troca o grupo de centenas de composições.
+   *
+   * ⚠ OUTROS CONTINUA SENDO RESPOSTA LEGÍTIMA, não fracasso do mapa. Três
+   *   famílias da base não são serviço de obra e não têm grupo honesto entre
+   *   os 18: custo horário de equipamento, depreciação/juros/seguros e o
+   *   "Livro SINAPI: Cálculos e Parâmetros". Somam 1.708 das 10.454. Forçá-las
+   *   num grupo de serviço seria mentir para melhorar uma métrica.
+   * =================================================================== */
+  var REGRAS_GRUPO = [
+    /* --- ANTES DE TUDO: o que NAO e servico de obra ---
+       Sem esta primeira regra, "Custos Horarios ... dos Equipamentos" casava
+       com "equipamento" la embaixo e virava SERVICOS COMPLEMENTARES. Custo
+       horario de escavadeira nao e um servico que alguem orca; e um insumo de
+       calculo. OUTROS aqui e a resposta certa, nao a desistencia. */
+    [/(custos horarios|depreciacao|livro sinapi|juros, impostos)/, "OUTROS"],
+
+    /* --- o que precisa vencer antes do generico --- */
+    [/(deteccao de incendio|alarme de incendio)/, "INSTALAÇÕES ELÉTRICAS"],
+    [/(^|[^a-z])(gas|incendio|hidrante|sprinkler|combate a incendio)([^a-z]|$)/, "INSTALAÇÕES HIDROSSANITÁRIAS"],
+    [/(agua fria|agua quente|esgoto|aguas pluviais|hidraulic|hidrossanitar|sanitari|loucas e metais|louca|valvula|registro|reservacao|recalque|[^a-z]pex[^a-z]|[^a-z]ppr[^a-z]|[^a-z]cpvc[^a-z]|caixa d.?agua|caixas de agua|ralo|sifao|fossa|sumidouro|hidrometro|sistemas de medicao|ponto de consumo|pontos de consumo)/, "INSTALAÇÕES HIDROSSANITÁRIAS"],
+    [/(instalacoes em cobre)/, "INSTALAÇÕES HIDROSSANITÁRIAS"],
+    [/(eletric|eletroduto|eletrocalha|disjuntor|contator|barramento|tomada|interruptor|cabo|quadro|poste|luminar|iluminac|lampada|spda|para.?raio|telefon|logic|cftv|antena|interfone|energia solar|fotovoltaic)/, "INSTALAÇÕES ELÉTRICAS"],
+
+    /* --- redes enterradas: tubo assentado, nao instalacao predial. HDD e
+           Tunnel Liner sao assentamento SEM vala — mesma familia. --- */
+    [/(assentamento de tubo|rede de agua|redes de agua|rede de esgoto|redes de esgoto|[^a-z]pead[^a-z]|poco de visita|pocos de visita|boca de lobo|bocas de lobo|bueiro|drenagem|dreno|galeria|perfuracao horizontal|[^a-z]hdd[^a-z]|tunnel liner|caixas enterradas|caixa enterrada|dissipador)/, "ASSENTAMENTO DE TUBOS E PEÇAS"],
+
+    /* --- estrutura --- */
+    [/(fundac|estaca|sapata|tubul|bloco de coroamento|broca|baldrame|radier|tirante|solo grampeado|grampo para solo)/, "FUNDAÇÕES"],
+    [/(forma|escoramento|cimbrament|concreto|armadura|armacao|aco para|laje|viga|pilar|estrutura de concreto|escada|pre.?moldad|premoldad)/, "CONCRETO E ARMADURA"],
+
+    /* --- vedacao e fechamento --- */
+    [/(alvenaria|vedacao|bloco ceramic|bloco de concreto|divisoria|drywall|gesso acartonado|parede|muro|cobogo)/, "ALVENARIA E VEDAÇÃO"],
+    [/(cobertura|telhado|telha|trama|calha|rufo|cumeeira|domus|policarbonato)/, "COBERTURA E TELHADO"],
+    [/(esquadria|porta|janela|vidro|portao|gradil|corrimao|guarda.?corpo|veneziana|persiana|alcapao|brise)/, "ESQUADRIAS E VIDROS"],
+    [/(impermeabiliz|manta asfaltica|manta liquida)/, "IMPERMEABILIZAÇÃO"],
+
+    /* --- acabamento: revestimento antes de pintura, porque "acabamento em
+           argamassa" e revestimento e nao tinta --- */
+    [/(revestiment|azulejo|ceramic|porcelanato|forro|gesso|massa unica|massa fina|monocapa|chapisco|emboco|reboco|argamassa|rodape|soleira|peitori|chapim|chapins|granito|marmore|pastilha|textura)/, "REVESTIMENTO"],
+    [/(pintura|tinta|verniz|esmalte|grafiato|selador|fundo preparador|caiacao)/, "PINTURA E ACABAMENTO"],
+
+    /* --- terra e piso ---
+           "paviment" e nao "pavimenta": a base publica "Recomposicao de
+           PavimentOS" e "Pavimento Intertravado", e o sufixo -a nao casava. */
+    [/(paviment|calcada|meio.?fio|guia e sarjeta|sarjeta|asfalt|imprimac|[^a-z]cbuq[^a-z]|base e sub.?base|sub.?base|paralelepipedo|usinage|tratamento.{0,2} superficia|dispositivo.{0,4} auxiliar|viario|acessibilidade|podotatil)/, "PAVIMENTAÇÃO"],
+    [/(escavac|aterro|terraplen|movimento de terra|reaterro|compactac|desmonte|corte de solo|regularizacao de terreno|supressao vegetal|dragagem|esgotamento de vala|rebaixamento|lencol freatico)/, "MOVIMENTO DE TERRA"],
+    [/(piso|contrapiso|lastro)/, "PAVIMENTAÇÃO"],
+
+    /* --- os que nao constroem nada --- */
+    [/(demoli|retirada|remocao|desmontagem)/, "DEMOLIÇÃO E RETIRADA"],
+    [/(transporte|carga e descarga|mobilizac|desmobilizac|movimentacao de material)/, "TRANSPORTE E CARGA"],
+    [/(canteiro|tapume|barracao|placa de obra|locacao de obra|ligacao provisoria|servicos preliminares|protecao coletiva|[^a-z]epi[^a-z]|[^a-z]epc[^a-z]|sinalizacao|seguranca|grua|cremalheira)/, "SERVIÇOS PRELIMINARES"],
+    [/(limpeza|paisagism|grama|jardim|mobiliario|bancada|rasgo|fixac|solda|estrutura metalica|serralheria|cerca|alambrado|protetor|peneiramento|ensacamento|parquinho|ginastica|quadra|playground)/, "SERVIÇOS COMPLEMENTARES"]
+
+    /* ⚠ DUAS FAMILIAS FICAM EM OUTROS DE PROPOSITO, e isso e um achado sobre a
+       LISTA DOS 18, nao sobre o mapa:
+
+         "Instalacoes de ar condicionado" + "Dutos" + "em cobre" (132 no MA)
+         "Estruturas de Madeira" (62 no MA — pilar rolico de eucalipto)
+
+       Climatizacao e estrutura de madeira nao tem casa entre os 18 grupos do
+       criador. Empurrar climatizacao para INSTALACOES ELETRICAS ou madeira
+       para CONCRETO E ARMADURA faria o rotulo do item MENTIR numa planilha
+       entregue — que e exatamente o que o codigo legivel por grupo existe para
+       evitar. Ficam em OUTROS ate a lista ganhar os grupos que faltam, e o
+       usuario continua podendo escolher o grupo na mao. */
+  ];
+
+  /* Traduz o grupo publicado pela base para um dos 18 do criador.
+   * Entrada vazia, desconhecida ou que não é serviço de obra → "OUTROS". */
+  function grupoDoCriador(grupoDaBase) {
+    var g = String(grupoDaBase == null ? "" : grupoDaBase).toUpperCase();
+    /* o rótulo já pode ser um dos 18 (composição própria salva, ou o usuário
+       escolhendo na tela) — nesse caso não há o que traduzir */
+    if (GRUPOS.indexOf(g) >= 0) return g;
+    var n = norm(grupoDaBase);
+    if (!n) return "OUTROS";
+    for (var i = 0; i < REGRAS_GRUPO.length; i++) {
+      if (REGRAS_GRUPO[i][0].test(n)) return REGRAS_GRUPO[i][1];
+    }
+    return "OUTROS";
+  }
+
   function norm(s) {
     s = String(s == null ? "" : s).toLowerCase();
     try { s = s.normalize("NFD").replace(/[̀-ͯ]/g, ""); } catch (e) {}
@@ -215,6 +317,7 @@
     UNIDADES: UNIDADES,
     GRUPOS: GRUPOS,
     catDe: catDe,
+    grupoDoCriador: grupoDoCriador,
 
     /* Código sequencial da base própria: PROP-0001, PROP-0002… (nunca repete). */
     gerarCodigo: function (codigosExistentes) {
@@ -417,7 +520,10 @@
       }
       var prop = this.daReferencia(ref._comp, { resolve: ctx.resolve });
       var grupo = ctx.grupo || prop.grupo || "";
-      if (GRUPOS.indexOf(String(grupo).toUpperCase()) < 0) grupo = "OUTROS";
+      /* `prop.grupo` vem da BASE, com um dos 171 nomes que ela publica — a
+         igualdade exata contra os 18 do criador nunca casava e todo mundo
+         nascia OUTROS/PROP-GER-001. Ver o comentário de REGRAS_GRUPO. */
+      grupo = grupoDoCriador(grupo);
       var unidade = ctx.unidade || prop.unidade || ref.unidade || "";
       var conf = ref.score >= this.LIMIAR.alta ? "alta" : (ref.score >= this.LIMIAR.media ? "media" : "baixa");
       /* ⚠ CABEÇA DE OBJETO DIFERENTE NÃO PODE DAR "ALTA". O filtro de
@@ -467,8 +573,26 @@
                     (det.exemplos.length ? " (ex.: " + det.exemplos[0].codigo + " " +
                       String(det.exemplos[0].descricao).slice(0, 46) + "…)" : "") + ".");
       }
+      /* ⚠ ANTES DE CLONAR, PERGUNTE SE PRECISA CLONAR. Medido em 23/08/2026
+         sobre 262 descrições reais do MA: em 208 delas (79%) o agente montava
+         uma composição própria copiando uma referência QUE JÁ TINHA PREÇO na
+         base do estado. Clone de item precificado é perda pura — congela o
+         preço na competência de hoje, nasce com código PROP-xxxx que auditoria
+         questiona, e é o que encheu o banco do cliente de 65 duplicatas.
+         `rota` diz qual é o caminho certo; quem chama decide o que oferecer. */
+      var rota = this.rotaDe(ref, comp, ctx);
+      if (rota.tipo === "oficial") {
+        avisos.unshift("A composição oficial " + rota.codigo + " já tem preço na base (" +
+                       rota.preco.toFixed(2).replace(".", ",") + "/" + (rota.unidade || "un") +
+                       ") — usá-la vale mais que copiar: ela se atualiza sozinha a cada competência.");
+      } else if (rota.tipo === "cotar") {
+        avisos.unshift("A base tem esta composição (" + rota.codigo + ") com os coeficientes oficiais; " +
+                       "o que falta é preço de " + rota.faltam.length + " insumo(s) neste estado" +
+                       (rota.faltam.length ? " (ex.: " + String(rota.faltam[0].descricao).slice(0, 44) + "…)" : "") +
+                       ". Cotar sai mais barato que remontar: a produtividade medida você mantém.");
+      }
       return {
-        ok: true, comp: comp, custo: custo,
+        ok: true, comp: comp, custo: custo, rota: rota,
         referencia: { codigo: ref.codigo, descricao: ref.descricao, unidade: ref.unidade, score: ref.score },
         confianca: conf,
         intencao: det.intencao,
@@ -646,6 +770,81 @@
                    custoUnitario: f.custoUnitario };
         })
       };
+    },
+
+    /* ==================================================================
+     * QUAL É O CONSERTO? — três diagnósticos que a tela tratava como um só
+     *
+     * "A base não tem" era a única frase disponível, e ela cobria três
+     * situações com consertos diferentes e custos muito diferentes. Medido no
+     * SINAPI MA 2026-06 (10.454 composições no analítico, 11.590 itens com
+     * preço):
+     *
+     *   oficial — a composição existe E TEM PREÇO. Não há o que consertar:
+     *             é só usá-la. 208 de 262 descrições reais (79%) caíam aqui e
+     *             mesmo assim ganhavam um clone PROP-xxxx.
+     *
+     *   cotar   — a composição existe no analítico, com coeficiente oficial,
+     *             mas a CAIXA não publica o custo porque falta coleta de preço
+     *             de algum insumo NESTE estado. São 2.050 composições, e em
+     *             1.272 delas (62%) falta UM único insumo. Cotar esse insumo
+     *             devolve a composição inteira, com a produtividade medida em
+     *             campo que ninguém reproduz montando à mão.
+     *
+     *   propria — a base realmente não modela o serviço. Aqui, e só aqui,
+     *             montar composição própria é o caminho certo.
+     *
+     * ⚠ SEM `ctx.precoOficial` NÃO SE AFIRMA "oficial". O resolve comum cai no
+     *   analítico de propósito (v1.1.202), então ele responder NÃO prova que o
+     *   item está na base de preços do estado. Quem sabe disso é a base de
+     *   preços, e ela entra por este parâmetro — na falta dele o diagnóstico
+     *   desce para cotar/propria em vez de chutar.
+     * ================================================================== */
+    rotaDe: function (ref, comp, ctx) {
+      ctx = ctx || {};
+      var cod = String((ref && ref.codigo) || "");
+      var un = (ref && ref.unidade) || (comp && comp.unidade) || "";
+      if (cod && typeof ctx.precoOficial === "function") {
+        var p = Number(ctx.precoOficial(cod)) || 0;
+        if (p > 0) {
+          return { tipo: "oficial", codigo: cod, descricao: (ref && ref.descricao) || "",
+                   unidade: un, preco: p, faltam: [] };
+        }
+      }
+      var faltam = ((comp && comp.insumos) || []).filter(function (i) {
+        return !(Number(i.custoUnitario) > 0);
+      }).map(function (i) {
+        return { codigo: String(i.codigo), descricao: i.descricao || "",
+                 unidade: i.unidade || "", coeficiente: Number(i.coeficiente) || 0 };
+      });
+      if (faltam.length) {
+        return { tipo: "cotar", codigo: cod, descricao: (ref && ref.descricao) || "",
+                 unidade: un, preco: 0, faltam: faltam };
+      }
+      return { tipo: "propria", codigo: cod, descricao: (ref && ref.descricao) || "",
+               unidade: un, preco: 0, faltam: [] };
+    },
+
+    /* O mesmo diagnóstico quando o CÓDIGO já é conhecido (linha pendente do
+     * Escopo, item que a busca recusou, resíduo vindo do Revit) — sem passar
+     * pela busca por semelhança, que aqui não tem o que decidir. */
+    rotaDoCodigo: function (codigo, ctx) {
+      ctx = ctx || {};
+      var cod = String(codigo || "").trim();
+      if (!cod) return { tipo: "propria", codigo: "", descricao: "", unidade: "", preco: 0, faltam: [] };
+      var ref = null, lista = ctx.analitico || [];
+      for (var i = 0; i < lista.length; i++) {
+        if (String(lista[i].codigo) === cod) { ref = lista[i]; break; }
+      }
+      if (!ref) {
+        /* nem no analítico: a base não modela o serviço */
+        if (typeof ctx.precoOficial === "function" && Number(ctx.precoOficial(cod)) > 0) {
+          return { tipo: "oficial", codigo: cod, descricao: "", unidade: "",
+                   preco: Number(ctx.precoOficial(cod)), faltam: [] };
+        }
+        return { tipo: "propria", codigo: cod, descricao: "", unidade: "", preco: 0, faltam: [] };
+      }
+      return this.rotaDe(ref, this.daReferencia(ref, ctx), ctx);
     },
 
     /* Proposta do agente a partir de uma referência REAL: estrutura copiada
