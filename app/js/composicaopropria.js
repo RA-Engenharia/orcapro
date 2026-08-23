@@ -142,6 +142,75 @@
     return "MAT";
   }
 
+  /* ===================================================================
+   * FILTRO DE INTENCAO
+   * ===================================================================
+   * A doutrina da casa protege contra INVENTAR. Ela nao protegia contra
+   * ACERTAR O ALVO ERRADO — e o score abaixo e sobreposicao de tokens, que
+   * nao tem nocao de verbo.
+   *
+   * Medido no analitico real do Maranhao (10.454 composicoes), em cinco
+   * formulacoes de "revestimento de parede em marmore", o 1o colocado era
+   * sempre 99813 LIMPEZA DE REVESTIMENTO ... EM PAREDE, R$ 3,03/m2, contra
+   * R$ 1.335,31 do servico honesto. Erro de 443x, com confianca alta e aviso
+   * vazio: "limpeza de revestimento de marmore em parede" contem TODOS os
+   * tokens do alvo. Nenhum codigo inventado, nenhum preco inventado — e o
+   * numero errado mesmo assim. Em lote, sao 50 erros com selo de qualidade.
+   *
+   * A CABECA DA DESCRICAO E A ANCORA, e isso foi medido, nao suposto:
+   *   - so a cabeca ....... execucao 93,3% | transporte 5,0% | remocao 0,9%
+   *   - marca em qualquer lugar  execucao 82,2% | transporte 11,7% | remocao 3,1%
+   * A segunda forma erra: as 15 composicoes com "limpeza" no meio sao TIL
+   * (Tubo de Inspecao e Limpeza) e caminhao de succao — OBJETOS cujo nome
+   * contem a palavra, nao servicos de limpeza. Ancorar na cabeca e a mesma
+   * escolha do veta_inicio do motor de regras do plugin.
+   *
+   * O PADRAO E EXECUCAO, e essa e a regra que conserta o caso do marmore:
+   * quem escreve "revestimento de parede em marmore" quer EXECUTAR o
+   * revestimento. Quem quer limpar escreve "limpeza". O filtro e simetrico —
+   * pedir limpeza continua achando limpeza.
+   * =================================================================== */
+  var INTENCOES = {
+    limpeza:    ["limpeza", "lavagem", "higienizacao", "varricao", "desinfeccao"],
+    remocao:    ["demolicao", "demolicoes", "remocao", "retirada", "desmontagem", "extracao"],
+    manutencao: ["manutencao", "recuperacao", "reparo", "recomposicao", "reforma", "restauracao", "substituicao"],
+    transporte: ["transporte", "carga", "descarga", "movimentacao"],
+    locacao:    ["locacao", "aluguel"],
+    ensaio:     ["ensaio", "sondagem", "analise"]
+  };
+  var ROTULO_INTENCAO = {
+    execucao: "executar o servico", limpeza: "limpeza", remocao: "demolicao/remocao",
+    manutencao: "manutencao/reparo", transporte: "transporte/carga",
+    locacao: "locacao", ensaio: "ensaio/sondagem"
+  };
+
+  /* A intencao declarada pela CABECA do texto. Sem marca reconhecida, e
+   * "execucao" — que e o que 93,3% da base e, e o que a pessoa quer dizer
+   * quando nao diz verbo nenhum. */
+  function intencaoDe(texto) {
+    var ts = norm(texto).replace(/[^a-z0-9\s]/g, " ").trim().split(/\s+/);
+    var cabeca = ts.length ? ts[0] : "";
+    if (cabeca) {
+      for (var k in INTENCOES) {
+        if (INTENCOES[k].indexOf(cabeca) >= 0) return k;
+      }
+    }
+    return "execucao";
+  }
+
+  /* A cabeca de OBJETO: a primeira palavra util depois de descontada a
+   * marca de intencao. Em "LIMPEZA DE REVESTIMENTO..." e "revestimento";
+   * em "BANCADA DE MARMORE..." e "bancada". */
+  function objetoDe(texto) {
+    var ts = norm(texto).replace(/[^a-z0-9\s]/g, " ").trim().split(/\s+/)
+      .filter(function (t) { return t.length >= 3 && !STOP[t]; });
+    if (!ts.length) return "";
+    for (var k in INTENCOES) {
+      if (INTENCOES[k].indexOf(ts[0]) >= 0) return ts.length > 1 ? ts[1] : "";
+    }
+    return ts[0];
+  }
+
   var ComposicaoPropria = {
     UNIDADES: UNIDADES,
     GRUPOS: GRUPOS,
@@ -314,13 +383,26 @@
       if (!analitico.length) {
         return { ok: false, erro: "A base analítica não está carregada — é dela que saem os insumos e os coeficientes reais." };
       }
-      var cands = this.analogas(desc, analitico, 5);
+      var det = this.analogasComDetalhe(desc, analitico, 5);
+      var cands = det.itens;
       var minimo = ctx.minimo != null ? ctx.minimo : this.LIMIAR.minimo;
       if (!cands.length || cands[0].score < minimo) {
+        /* ⚠ SE O FILTRO DE INTENÇÃO BARROU CANDIDATOS, ISSO TEM DE APARECER.
+           Sem esta frase o usuário lê "não achei" e conclui que a base não
+           tem o serviço — quando na verdade ela tem, com outra intenção, e a
+           pergunta dele é que precisa mudar. */
+        var porQue = det.descartados
+          ? " Descartei " + det.descartados + " candidato(s) porque são de outra intenção (" +
+            det.exemplos.map(function (e) { return (ROTULO_INTENCAO[e.intencao] || e.intencao); })
+              .filter(function (v, i, a) { return a.indexOf(v) === i; }).join(", ") +
+            ") — você pediu " + (ROTULO_INTENCAO[det.intencao] || det.intencao) + "."
+          : "";
         return {
           ok: false,
           erro: "Não achei composição oficial parecida o bastante com \"" + desc + "\". " +
-                "Monte manualmente ou descreva com os termos do serviço (material, espessura, aplicação).",
+                "Monte manualmente ou descreva com os termos do serviço (material, espessura, aplicação)." + porQue,
+          intencao: det.intencao,
+          descartadosPorIntencao: det.descartados,
           alternativas: cands.slice(0, 3)
         };
       }
@@ -338,6 +420,17 @@
       if (GRUPOS.indexOf(String(grupo).toUpperCase()) < 0) grupo = "OUTROS";
       var unidade = ctx.unidade || prop.unidade || ref.unidade || "";
       var conf = ref.score >= this.LIMIAR.alta ? "alta" : (ref.score >= this.LIMIAR.media ? "media" : "baixa");
+      /* ⚠ CABEÇA DE OBJETO DIFERENTE NÃO PODE DAR "ALTA". O filtro de
+         intenção tirou a LIMPEZA da frente, mas o mesmo score de sobreposição
+         ainda põe "BANCADA DE MÁRMORE" (R$ 412) em 1º lugar para "revestimento
+         de parede em mármore" — e dava `confianca: alta`, que é o que faz
+         alguém gravar sem olhar. Objeto diferente não é motivo para DESCARTAR
+         (a base raramente usa a palavra que o engenheiro usa), mas é motivo
+         de sobra para não chamar de alta. */
+      var objAlvo = objetoDe(desc), objRef = objetoDe(ref.descricao);
+      var objBate = !objAlvo || !objRef || objAlvo === objRef ||
+                    tokens(desc).indexOf(objRef) >= 0;
+      if (conf === "alta" && !objBate) conf = "media";
       var comp = {
         codigo: this.gerarCodigoLegivel(grupo, ctx.codigosExistentes || []),
         codigoSec: "",
@@ -353,16 +446,37 @@
         insumos: prop.insumos || []
       };
       var custo = this.custo(comp.insumos, comp.metodo);
+      /* ⚠ AVISO VAZIO COM CONFIANÇA ALTA FOI METADE DO DEFEITO. No caso das
+         50 paredes de mármore o motor devolvia R$ 3,01/m² no lugar de
+         R$ 1.335,31 com `confianca: alta`, aviso vazio e toast verde: nada na
+         tela pedia conferência. O score sozinho não sabe que errou de alvo —
+         então o que ele NÃO sabe passa a ser dito. */
+      var avisos = [];
+      if (conf !== "alta") {
+        avisos.push("Semelhança " + (conf === "media" ? "média" : "baixa") +
+                    " com a referência " + ref.codigo +
+                    " — confira coeficiente por coeficiente antes de gravar.");
+      }
+      if (!objBate && objAlvo && objRef) {
+        avisos.push("Você descreveu \"" + objAlvo + "\" e a referência é \"" + objRef +
+                    "\" — confira se é o mesmo serviço antes de gravar.");
+      }
+      if (det.descartados) {
+        avisos.push("Você pediu " + (ROTULO_INTENCAO[det.intencao] || det.intencao) +
+                    ": deixei de fora " + det.descartados + " composição(ões) de outra intenção" +
+                    (det.exemplos.length ? " (ex.: " + det.exemplos[0].codigo + " " +
+                      String(det.exemplos[0].descricao).slice(0, 46) + "…)" : "") + ".");
+      }
       return {
         ok: true, comp: comp, custo: custo,
         referencia: { codigo: ref.codigo, descricao: ref.descricao, unidade: ref.unidade, score: ref.score },
         confianca: conf,
+        intencao: det.intencao,
+        descartadosPorIntencao: det.descartados,
         /* o usuário pode preferir outra referência — mostrar as demais é o que
            impede o agente de parecer um oráculo de uma resposta só */
         alternativas: cands.slice(1, 4),
-        aviso: conf === "alta" ? "" :
-          "Semelhança " + (conf === "media" ? "média" : "baixa") + " com a referência " + ref.codigo +
-          " — confira coeficiente por coeficiente antes de gravar."
+        aviso: avisos.join(" ")
       };
     },
 
@@ -476,12 +590,28 @@
       return out;
     },
 
-    analogas: function (descricao, dadosAnalitico, n) {
+    /* A intencao declarada pela cabeca do texto — exposta para os testes e
+     * para quem consumir o motor de fora. */
+    intencaoDe: function (texto) { return intencaoDe(texto); },
+    ROTULO_INTENCAO: ROTULO_INTENCAO,
+
+    analogas: function (descricao, dadosAnalitico, n, opts) {
+      return this.analogasComDetalhe(descricao, dadosAnalitico, n, opts).itens;
+    },
+
+    /* Igual a `analogas`, mas devolve TAMBEM o que foi descartado por
+     * intencao e por que. Sem isso o descarte seria invisivel — e foi o
+     * silencio, mais que o score, que transformou o caso do marmore em erro
+     * com selo de qualidade: confianca alta, aviso vazio, toast verde. */
+    analogasComDetalhe: function (descricao, dadosAnalitico, n, opts) {
+      opts = opts || {};
+      var querem = intencaoDe(descricao);
       var alvo = tokens(descricao);
-      if (!alvo.length || !dadosAnalitico || !dadosAnalitico.length) return [];
+      var vazio = { itens: [], intencao: querem, descartados: 0, exemplos: [] };
+      if (!alvo.length || !dadosAnalitico || !dadosAnalitico.length) return vazio;
       var alvoSet = {};
       alvo.forEach(function (t) { alvoSet[t] = 1; });
-      var out = [];
+      var out = [], fora = [];
       for (var i = 0; i < dadosAnalitico.length; i++) {
         var c = dadosAnalitico[i];
         if (!c || !c.insumos || !c.insumos.length) continue;
@@ -493,11 +623,29 @@
           if (alvoSet[t] && !seen[t]) { hit++; seen[t] = 1; }
         }
         if (!hit) continue;
+        /* O descarte vem DEPOIS do `hit`: contar os 10.454 nao diria nada.
+         * O que interessa e quantos candidatos PLAUSIVEIS foram barrados. */
+        var intC = intencaoDe(c.descricao);
+        if (!opts.semFiltro && intC !== querem) {
+          fora.push({ codigo: c.codigo, descricao: c.descricao, intencao: intC,
+                      custoUnitario: c.custoUnitario,
+                      score: hit / Math.max(alvo.length, 3) + (hit / Math.max(ts.length, 3)) * 0.5 });
+          continue;
+        }
         var score = hit / Math.max(alvo.length, 3) + (hit / Math.max(ts.length, 3)) * 0.5;
-        out.push({ codigo: c.codigo, descricao: c.descricao, unidade: c.unidade, grupo: c.grupo || "", custoUnitario: c.custoUnitario, nInsumos: c.insumos.length, score: Math.round(score * 100) / 100, _comp: c });
+        out.push({ codigo: c.codigo, descricao: c.descricao, unidade: c.unidade, grupo: c.grupo || "", custoUnitario: c.custoUnitario, nInsumos: c.insumos.length, score: Math.round(score * 100) / 100, intencao: intC, _comp: c });
       }
       out.sort(function (a, b) { return b.score - a.score; });
-      return out.slice(0, n || 5);
+      fora.sort(function (a, b) { return b.score - a.score; });
+      return {
+        itens: out.slice(0, n || 5),
+        intencao: querem,
+        descartados: fora.length,
+        exemplos: fora.slice(0, 3).map(function (f) {
+          return { codigo: f.codigo, descricao: f.descricao, intencao: f.intencao,
+                   custoUnitario: f.custoUnitario };
+        })
+      };
     },
 
     /* Proposta do agente a partir de uma referência REAL: estrutura copiada
