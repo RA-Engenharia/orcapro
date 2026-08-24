@@ -233,7 +233,24 @@
    * ⚠ PALAVRA INTEIRA, e a regra e a mesma do resto da casa. Substring trocaria
    *   "massa" dentro de "massame"; e o parente do veto "REPARO" casando dentro
    *   de "PREPARO" no plugin. */
-  function _traduzirTermos(texto, ctx) {
+  /* `podeTrocar` decide PALAVRA A PALAVRA. Sem ele a decisão era da frase
+     inteira, e isso era regressão: uma palavra vizinha que a base publica
+     cancelava a tradução da palavra que precisava dela. Medido sobre 114
+     buscas de canteiro, 9 caíam nisso — e são justamente as que motivaram o
+     dicionário existir:
+
+       "salpico em parede"        bloqueado por *parede* (publicada 225x)
+                                  entregava 104726 LÃ DE PET R$ 2,39
+                                  devia dar 104411 CHAPISCO   R$ 5,44
+       "madeiramento de telhado"  bloqueado por *telhado*
+                                  entregava 94449 TELHAMENTO  R$ 67,38
+                                  devia dar 92544 TRAMA DE MADEIRA R$ 25,48
+       "grafiato em parede externa"  saía PAREDE DE COMPENSADO
+                                     PROVISÓRIA R$ 153,66/m2, confiança ALTA
+
+     Ninguém no canteiro digita "azulejo" e dá enter — digita "azulejo de
+     parede". A guarda por frase acertava só a forma que ninguém usa. */
+  function _traduzirTermos(texto, ctx, podeTrocar) {
     var dic = (ctx && ctx.sinonimos)
       || (global.Escopo && global.Escopo.SINONIMOS)
       || (typeof require === "function"
@@ -246,12 +263,39 @@
       if (/^\s*$/.test(p)) return p;
       var k = norm(p).replace(/[^a-z0-9]/g, "");
       if (k && Object.prototype.hasOwnProperty.call(dic, k) && dic[k] !== k) {
+        if (podeTrocar && !podeTrocar(p)) return p;
         trocas.push([p, dic[k]]);
         return dic[k];
       }
       return p;
     });
     return { texto: trocas.length ? fora.join("") : texto, trocas: trocas };
+  }
+
+  /* A base publica esta palavra? Índice montado uma vez por conjunto analítico.
+   *
+   * ⚠ ISTO DECIDE SE VALE TRADUZIR. Medido no analítico do MA: "sifão" aparece
+   *   30 vezes, "calçada" 28, "pia" 20, "broca" 4 — quem escreve essas palavras
+   *   está falando a língua da base, e trocá-las afasta a busca do alvo. Já
+   *   "azulejo", "salpico" e "bloquete" não aparecem NENHUMA vez: são o motivo
+   *   de o dicionário existir.
+   *
+   *   A régua sai do dado, não de um limiar escolhido a dedo. */
+  var _idxPalavras = null, _idxFonte = null;
+  function _basePublica(palavra, analitico) {
+    var k = norm(palavra).replace(/[^a-z0-9]/g, "");
+    if (!k) return false;
+    if (_idxFonte !== analitico) {
+      _idxFonte = analitico;
+      _idxPalavras = {};
+      for (var i = 0; i < (analitico || []).length; i++) {
+        var toks = norm(analitico[i].descricao).split(/[^a-z0-9]+/);
+        for (var j = 0; j < toks.length; j++) {
+          if (toks[j]) _idxPalavras[toks[j]] = 1;
+        }
+      }
+    }
+    return _idxPalavras[k] === 1;
   }
 
   function grupoDoCriador(grupoDaBase) {
@@ -580,13 +624,44 @@
          so age quando tem o que oferecer: "azulejo" continua achando o
          revestimento ceramico, e "armacao de pilar ou viga" para de ser
          reescrito. */
-      var _trad = _traduzirTermos(desc, ctx);
+      var _trad = _traduzirTermos(desc, ctx, function (_p) {
+        return !_basePublica(_p, analitico);
+      });
       var det = this.analogasComDetalhe(desc, analitico, 5);
       var _usouTraducao = false;
       if (_trad.trocas.length) {
         var _detT = this.analogasComDetalhe(_trad.texto, analitico, 5);
         var _s0 = det.itens.length ? det.itens[0].score : -1;
         var _sT = _detT.itens.length ? _detT.itens[0].score : -1;
+        /* ⚠ A PALAVRA QUE A BASE JÁ PUBLICA NÃO SE TRADUZ, e decidir só pelo
+           score deixava isso passar. Medido no analítico do MA:
+
+             "sifao de pvc para pia"   cru 86883 SIFÃO       R$  12,58
+                                       traduzido 86939 LAVATÓRIO R$ 481,53
+             "broca de concreto 20 cm" cru 101173 ESTACA BROCA — acerto literal
+             "calcada de concreto 7cm" cru 95003, e o traduzido venceu por 0,01
+
+           Nos três, o vencedor CRU tem a palavra do usuário na própria
+           descrição: a base publica "sifão" 30 vezes, "calçada" 28, "pia" 20,
+           "broca" 4. Se ela já usa a palavra, traduzir só afasta a busca do
+           alvo — e o score do texto traduzido pode subir mesmo assim, porque
+           ele casa OUTRA composição, maior e mais cara.
+
+           Já "azulejo", "salpico" e "bloquete" não aparecem uma única vez na
+           base: são exatamente os casos que a tradução existe para resolver, e
+           lá o vencedor cru não contém a palavra. A regra separa os dois sem
+           limiar arbitrário. */
+        /* ⚠ A PERGUNTA É SOBRE A BASE, NÃO SOBRE O VENCEDOR. A primeira versão
+           desta guarda olhava se o item cru continha a palavra trocada — e
+           errava justamente o caso que a motivou: em "sifao de pvc para pia" a
+           palavra trocada é *pia*, e o vencedor cru é "SIFÃO FLEXÍVEL EM PVC",
+           que não contém "pia". A guarda não disparava e o motor entregava um
+           lavatório de R$ 481,53 no lugar de um sifão de R$ 12,58.
+
+           O que decide é se a BASE publica aquela palavra. Se publica, o
+           usuário está falando a língua dela e traduzir só afasta a busca. */
+        /* a palavra publicada já ficou de fora lá em cima, uma a uma; aqui só
+           resta manter a tradução como SEGUNDA TENTATIVA, nunca substituição */
         if (_sT > _s0) { det = _detT; _usouTraducao = true; }
       }
       var cands = det.itens;

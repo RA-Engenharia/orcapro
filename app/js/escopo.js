@@ -28,7 +28,15 @@
   var SINONIMOS = {
     // vedações e revestimentos
     "tijolo": "bloco", "parede": "alvenaria", "muro": "alvenaria", "reboco": "emboco",
-    "massa": "emboco", "emboco": "emboco", "chapisco": "chapisco", "salpico": "chapisco",
+    "massa": "emboco", "emboco": "emboco", "chapisco": "chapisco",
+    /* ⚠ "CHAPISCO" SOZINHO CASA A ARGAMASSA, NAO O SERVICO. Medido na base
+       do MA: 87402 ARGAMASSA INDUSTRIALIZADA PARA CHAPISCO COLANTE, M3,
+       R$ 4.306,72 — contra 104411 CHAPISCO APLICADO EM ALVENARIA, M2,
+       R$ 5,44. Alem de 791x no preco, a UNIDADE muda: quem mede a parede em
+       m2 e cola o item de m3 poe R$ 4.306,72 por metro quadrado no orcamento.
+       "chapisco alvenaria" leva a busca ao servico nas duas formas em que a
+       palavra aparece ("salpico" e "salpico em parede"). */
+    "salpico": "chapisco alvenaria",
     "ceramica": "ceramico", "azulejo": "ceramico", "porcelanato": "porcelanato",
     "pastilha": "pastilha", "textura": "textura", "grafiato": "textura",
     "drywall": "acartonado", "divisoria": "divisoria",
@@ -61,7 +69,13 @@
     "esgoto": "esgoto", "agua": "agua", "joelho": "joelho", "conexao": "conexoes",
     "registro": "registro", "torneira": "torneira", "chuveiro": "chuveiro",
     "ducha": "chuveiro", "ralo": "ralo", "sifao": "sifao",
-    "vaso": "sanitario", "privada": "sanitario", "bacia": "bacia", "mictorio": "mictorio",
+    /* ⚠ "SANITARIO" SOZINHO CASA O ASSENTO, NAO A PECA. Medido na base do
+       MA: "sanitario" aparece 143x e o melhor casamento e 100849 ASSENTO
+       SANITARIO, R$ 39,23 — contra 86888 BACIA SANITARIA, R$ 593,33. Quem
+       digita "vaso" ou "privada" esta pedindo a peca inteira: 15,1x de
+       diferenca, para baixo, sem aviso. "bacia" e publicada 29x e e o
+       substantivo que a base usa. */
+    "vaso": "bacia", "privada": "bacia", "bacia": "bacia", "mictorio": "mictorio",
     "pia": "lavatorio", "louca": "sanitario", "tanque": "tanque",
     "reservatorio": "reservatorio", "hidrometro": "hidrometro", "cavalete": "cavalete",
     // esquadrias
@@ -382,7 +396,13 @@
         if (UNID[tk]) continue;
         if (STOP[tk]) continue;
         if (tk.length < 3) continue;
-        termos.push(SINONIMOS[tk] || tk);
+        /* ⚠ O VALOR PODE TER MAIS DE UMA PALAVRA. "salpico" -> "chapisco
+           alvenaria": empurrado inteiro, virava um termo com espaco que nao
+           casa descricao nenhuma. Aqui ele entra como duas palavras. */
+        var _alvo = String(SINONIMOS[tk] || tk).split(/\s+/);
+        for (var _a = 0; _a < _alvo.length; _a++) {
+          if (_alvo[_a]) termos.push(_alvo[_a]);
+        }
       }
 
       /* 4) Código digitado direto? -> match certo (multi-base)

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.270",
+  "versao": "1.1.271",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.270/OrcaPRO-IA-update-v1.1.270.zip",
-  "notas": "O agente de composicoes passou a procurar com a sua palavra E com o termo tecnico da base, ficando com o resultado melhor dos dois — antes ele trocava a palavra antes de procurar, e as vezes trazia um item de outra familia. Quando a troca de palavra e o que resolve, a tela avisa e a linha entra marcada para conferencia. E o codigo sugerido pelo agente deixa de ser gravado como decisao sua: a IA pode revisar, e a tela mostra o nivel de semelhanca e as outras candidatas antes de voce aceitar.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.270/OrcaPRO-IA-Instalador-v1.1.270.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.271/OrcaPRO-IA-update-v1.1.271.zip",
+  "notas": "Correcao de tres erros de preco na busca de composicoes. \"Vaso\" e \"privada\" traziam o assento (R$ 39,23) no lugar da bacia (R$ 593,33). \"Salpico\" trazia argamassa em m3 (R$ 4.306,72) no lugar do chapisco aplicado em m2 (R$ 5,44) — o preco e a unidade estavam trocados. E termo de canteiro dentro de uma frase deixou de ser ignorado: \"grafiato em parede externa\" saia como parede de compensado provisoria (R$ 153,66/m2) em vez de textura acrilica (R$ 16,67/m2). Fica uma limitacao conhecida: \"azulejo\" ainda cai em pastilha externa (R$ 468,99/m2) em vez da placa esmaltada interna (R$ 76,81/m2) — confira essa linha ao usar a palavra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.271/OrcaPRO-IA-Instalador-v1.1.271.exe"
 }
