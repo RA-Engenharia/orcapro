@@ -80,7 +80,11 @@ a{color:var(--aco);text-decoration:none}
    `onerror` esconde a imagem e o desenho de fundo continua de pé — página de
    vendas com imagem quebrada é pior do que página sem imagem. */
 .retrato{position:relative;min-height:250px;display:flex;align-items:flex-end;justify-content:center}
-.retrato img{max-width:100%;max-height:330px;object-fit:contain;filter:drop-shadow(0 18px 40px rgba(0,0,0,.45));position:relative;z-index:2}
+/* ⚠ TETO DE ALTURA MAIOR PORQUE A FOTO E ESTREITA. Ela e um recorte de
+   corpo inteiro, 324x918 — quase 1:3. Com o teto em 330px ela renderizava
+   a 116px de largura: uma tira. O teto manda na altura, e a largura vem
+   junto pela proporcao. */
+.retrato img{max-width:100%;max-height:430px;object-fit:contain;filter:drop-shadow(0 18px 40px rgba(0,0,0,.45));position:relative;z-index:2}
 .retrato .halo{position:absolute;inset:auto 0 0 0;height:230px;background:radial-gradient(ellipse at 50% 90%,rgba(111,208,138,.22),transparent 70%);z-index:1}
 
 /* ------------------------------------------------------------ painel */
@@ -191,8 +195,14 @@ footer{padding:12px 0 44px;text-align:center;font-size:12.5px;color:var(--muted)
        porque página de vendas com imagem quebrada é pior que sem imagem. -->
   <div class="retrato">
     <div class="halo"></div>
-    <img src="/img/pessoa-tablet.png" alt="Engenheira consultando o OrçaPRO no tablet, em obra"
-         loading="lazy" onerror="this.style.display='none'">
+    <!-- ⚠ SEM `loading="lazy"`: esta foto está na PRIMEIRA dobra. Adiar o que
+         já está na tela só atrasa a primeira impressão — e, num contêiner que
+         tira o tamanho da própria imagem, o adiamento vira impasse (foi o que
+         segurou a foto do fundador na home: o contêiner esperava a imagem, a
+         imagem esperava o contêiner ter tamanho). -->
+    <img src="/img/pessoa-tablet.png" width="324" height="569" decoding="async"
+         alt="Engenheira de capacete consultando o painel do OrçaPRO num tablete"
+         onerror="this.style.display='none'">
   </div>
 </div></div>
 
