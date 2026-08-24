@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.268",
+  "versao": "1.1.269",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.268/OrcaPRO-IA-update-v1.1.268.zip",
-  "notas": "O agente de composicoes passa a entender a palavra da obra: \"azulejo\", \"salpico\", \"tijolo\" e \"bloquete\" acham a composicao certa, e nao so o termo tecnico da base. E quando ele sugere uma composicao parecida, a tela agora mostra o nivel de semelhanca e as outras candidatas antes de voce aceitar — o codigo sugerido continua sendo sugestao, e entra no orcamento marcado como tal. Correcao na sugestao por semelhanca, no grupo das composicoes proprias e no diagnostico de composicao sem preco publicado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.268/OrcaPRO-IA-Instalador-v1.1.268.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.269/OrcaPRO-IA-update-v1.1.269.zip",
+  "notas": "Quando o agente encontra na base a composicao que voce pediu, agora da para lancar o item no orcamento direto da propria tela — antes era preciso voltar e procurar de novo. E quando o caso e de cotar um insumo, a tela passa a dizer os dois passos ate o item entrar na planilha, em vez de deixar voce cotar e ficar sem item. Correcao no diagnostico de composicao ja precificada.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.269/OrcaPRO-IA-Instalador-v1.1.269.exe"
 }

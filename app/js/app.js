@@ -5242,13 +5242,19 @@
     _cpPrecoOficial: function (codigo) {
       var cod = String(codigo || "");
       if (!cod) return 0;
+      /* ⚠ SEM FALLBACK AMPLO, e isto é a MESMA regra que `_cpResolve` declara
+         duas telas acima: "fonte EXPLÍCITA e não achou nela → NUNCA cai no
+         fallback amplo (código homônimo de outra base precificaria errado)".
+         Eu tinha escrito o fallback aqui, contradizendo o vizinho.
+
+         A referência que chega neste ponto vem SEMPRE do analítico SINAPI —
+         é assim que `elaborar` monta. Perguntar a SETOP ou à ORSE se elas têm
+         um item com o mesmo NÚMERO é perguntar outra coisa: os códigos não são
+         o mesmo espaço de nomes, e um acerto ali afirmaria "a base já
+         precifica" sobre um serviço que pode não ter nada a ver. */
       var it = null;
       try {
         it = (typeof Sinapi !== "undefined" && Sinapi.obter) ? Sinapi.obter(cod) : null;
-        if (!it && typeof Bases !== "undefined" && Bases.obterComFonte) {
-          var r = Bases.obterComFonte(cod);
-          if (r && r.item) it = r.item;
-        }
       } catch (e) { return 0; }
       return it ? (Util.num(it.custoUnitario) || 0) : 0;
     },
@@ -5905,9 +5911,29 @@
                depois — por isso a continuação é do callback, não daqui. */
           } });
         } else {
-          botoes.push({ texto: ic("buscar") + " Ver a " + rota.codigo, classe: "primary", onClick: function () {
+          /* ⚠ O CAMINHO RECOMENDADO SAÍA SEM ITEM NA PLANILHA — e é assim que se
+             volta a clonar. O botão em destaque levava a `verInsumos()`, que é
+             leitura: ele oferece "Criar minha versão" e "Fechar", e nada mais.
+             Quem seguia o conselho da tela ("use a oficial, não copie") tinha
+             de reabrir a busca e redigitar o serviço; quem não tivesse
+             paciência voltava para o clone que este modal existe para evitar.
+
+             `escolherItemSinapi` é o mesmo caminho da busca de itens: abre a
+             quantidade e lança na etapa de destino, que já está em
+             `_addItemEtapaId` desde que a busca foi aberta. Ver a composição
+             continua a um clique, agora como opção secundária. */
+          var podeLancar = !!(self.orcAtual && self._addItemEtapaId
+                              && typeof self.escolherItemSinapi === "function");
+          botoes.push({ texto: ic("buscar") + " Ver os insumos", classe: "ghost", onClick: function () {
             UI.fecharModal(); self.verInsumos(String(rota.codigo));
           } });
+          if (podeLancar) {
+            botoes.push({ texto: ic("check") + " Lançar a " + rota.codigo + " no orçamento",
+                          classe: "primary", onClick: function () {
+              UI.fecharModal();
+              self.escolherItemSinapi(String(rota.codigo) + "|SINAPI");
+            } });
+          }
         }
       } else {
         var n = rota.faltam.length;
@@ -5928,7 +5954,20 @@
           '</ul>' +
           '<p class="muted" style="font-size:12.5px;margin:0">Informar a sua cotação devolve a composição ' +
           '<b>inteira</b>, com a produtividade medida em campo que ninguém reproduz montando à mão — ' +
-          'e o preço passa a valer em toda composição que use o mesmo insumo.</p>';
+          'e o preço passa a valer em toda composição que use o mesmo insumo.</p>' +
+          /* ⚠ SEM ESTA FRASE O USUÁRIO COTA E FICA SEM ITEM. A composição não
+             está na base de preços do estado — é por isso que ela caiu nesta
+             rota —, então cotar o insumo não a faz aparecer na busca. O preço
+             passa a existir quando o agente remonta a composição com os
+             coeficientes oficiais e os insumos agora precificados, e isso é
+             literalmente o botão "Criar minha versão" ao lado. São dois passos,
+             e omitir o segundo deixa a pessoa no meio do caminho. */
+          '<p style="font-size:12.5px;margin:10px 0 0;border-left:3px solid var(--borda);padding-left:9px">' +
+          '<b>São dois passos:</b> informe o preço na tela que abre e depois volte aqui em ' +
+          '<b>Criar minha versão</b> — é ela que remonta a composição com os coeficientes ' +
+          'oficiais e o preço que você acabou de dar. Cotar sozinho não faz o item aparecer ' +
+          'na busca, porque a base do estado continua sem publicar esta composição.</p>' +
+          listaAlt;
         botoes.push({ texto: ic("editar") + " Cotar os insumos", classe: "primary", onClick: function () {
           UI.fecharModal(); self.verInsumos(String(rota.codigo));
         } });
