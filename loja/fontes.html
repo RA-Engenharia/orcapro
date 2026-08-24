@@ -1,0 +1,419 @@
+<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fontes e tabelas de preço — SINAPI, SICRO, ORSE, SEINFRA, SETOP | OrçaPRO</title>
+<meta name="description" content="As bases oficiais que já vêm dentro do OrçaPRO: SINAPI nos 27 estados com o analítico completo, SICRO, ORSE, SEINFRA-CE, SETOP-MG, SUDECAP, IOPES e GOINFRA. Veja a competência de cada uma.">
+<link rel="canonical" href="https://orcapro.raengenhariaespecial.com.br/fontes">
+<meta property="og:title" content="Fontes e tabelas de preço dentro do OrçaPRO">
+<meta property="og:description" content="SINAPI nos 27 estados com o analítico completo, mais SICRO, ORSE, SEINFRA, SETOP, SUDECAP, IOPES e GOINFRA.">
+<meta property="og:type" content="website">
+
+<!-- ====================================================================
+     ⚠ OS NÚMEROS DESTA PÁGINA SÃO GERADOS, NÃO DIGITADOS.
+     O bloco de cartões, lá embaixo, fica entre dois marcadores FONTES e sai
+     de `node tools/inventario-fontes.js --aplicar loja/fontes.html`, que
+     conta os arquivos em data/. Editar aquele bloco à mão é reabrir a porta
+     que já custou caro: a raiz do site anunciou R$ 1.997 e R$ 2.997 por
+     semanas depois de os preços saírem de linha, porque estavam escritos à
+     mão em dois lugares. Preço e contagem de base envelhecem sozinhos.
+
+     Ao subir uma competência nova, rode a ferramenta e publique de novo.
+
+     ⚠ E ESTE COMENTÁRIO NÃO PODE CITAR OS MARCADORES COM A SINTAXE DELES.
+     Comentário de HTML não aninha: ele termina no PRIMEIRO fecha-comentário
+     que aparecer, mesmo no meio de uma frase. A primeira versão deste texto
+     escrevia os marcadores por extenso, o comentário fechava ali, e todo o
+     resto virava TEXTO VISÍVEL na página — inclusive a linha de comando, que
+     é longa e sem espaço para quebrar. No celular isso dava 345px de rolagem
+     horizontal, medidos. Aviso dentro do arquivo tem de ser inerte.
+     ==================================================================== -->
+
+<style>
+@font-face{font-family:'Inter';font-style:normal;font-weight:400 900;font-display:swap;src:url('/fonts/inter-var-latin.woff2') format('woff2')}
+:root{
+  --navy:#0f2740; --navy2:#16304d; --aco:#2e6f9e; --aco2:#4a8fc0;
+  --verde:#15873f; --verde-tx:#15803d; --ambar:#f59e0b;
+  --bg:#f4f7fb; --card:#fff; --tx:#1e293b; --muted:#64748b; --linha:#dbe4ee;
+  --suave:#eef4fb;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-tema="claro"]){
+    --bg:#0b1622; --card:#11202e; --tx:#ecf2f8; --muted:#9db0c2; --linha:#2e455c;
+    --suave:#13273a; --aco:#6fb3e0; --verde-tx:#4ade80;
+  }
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Inter','Segoe UI',system-ui,Arial,sans-serif;background:var(--bg);color:var(--tx);line-height:1.55;-webkit-font-smoothing:antialiased}
+a{color:var(--aco);text-decoration:none}
+.wrap{max-width:1100px;margin:0 auto;padding:0 18px}
+
+/* ---------------------------------------------------- barra de navegação */
+.topo{background:linear-gradient(150deg,#0f2740,#16304d);color:#fff;padding:12px 0;position:sticky;top:0;z-index:30}
+.topo .lin{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.topo nav{display:flex;gap:15px;align-items:center;flex-wrap:wrap}
+.topo nav a{color:#cdd9e6;font-size:13.5px;font-weight:600;white-space:nowrap}
+.topo nav a:hover{color:#fff}
+.topo nav a.aqui{color:#fff;font-weight:800;border-bottom:2px solid #6fd08a;padding-bottom:2px}
+.btn-mini{background:var(--verde);color:#fff!important;border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:800}
+.btn-mini:hover{background:#12742f}
+
+/* ------------------------------------------------------------ migalha */
+.migalha{background:var(--suave);border-bottom:1px solid var(--linha);padding:10px 0;font-size:13px}
+.migalha .lin{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.migalha a{font-weight:700}
+.migalha .sep{color:var(--muted)}
+.migalha .atual{color:var(--muted)}
+.voltar{display:inline-flex;align-items:center;gap:7px;background:var(--card);border:1.5px solid var(--linha);border-radius:9px;padding:7px 14px;font-weight:700;font-size:13px;color:var(--tx)!important}
+.voltar:hover{border-color:var(--aco);color:var(--aco)!important}
+
+/* -------------------------------------------------------------- hero */
+.hero{background:linear-gradient(150deg,#0f2740,#1d3a5f);color:#fff;padding:40px 0 96px;position:relative;overflow:hidden}
+.hero .grade-h{display:grid;grid-template-columns:1.15fr .85fr;gap:30px;align-items:center}
+@media(max-width:860px){.hero .grade-h{grid-template-columns:1fr}}
+.hero h1{font-size:clamp(24px,3.6vw,36px);font-weight:800;letter-spacing:-.02em;margin-bottom:12px}
+.hero p{color:#c9d6e4;font-size:15.5px;max-width:600px}
+.selo{display:inline-flex;align-items:center;gap:8px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:99px;padding:6px 15px;font-size:12.5px;font-weight:700;color:#dbe8f5;margin-bottom:16px}
+.hero .numeros{display:flex;gap:26px;margin-top:22px;flex-wrap:wrap}
+.hero .numeros b{display:block;font-size:26px;line-height:1.1;color:#6fd08a}
+.hero .numeros span{font-size:12.5px;color:#a9bdd1}
+
+/* ⚠ A FOTO É UM ESPAÇO, NÃO UMA DEPENDÊNCIA. Se o arquivo não existir, o
+   `onerror` esconde a imagem e o desenho de fundo continua de pé — página de
+   vendas com imagem quebrada é pior do que página sem imagem. */
+.retrato{position:relative;min-height:250px;display:flex;align-items:flex-end;justify-content:center}
+.retrato img{max-width:100%;max-height:330px;object-fit:contain;filter:drop-shadow(0 18px 40px rgba(0,0,0,.45));position:relative;z-index:2}
+.retrato .halo{position:absolute;inset:auto 0 0 0;height:230px;background:radial-gradient(ellipse at 50% 90%,rgba(111,208,138,.22),transparent 70%);z-index:1}
+
+/* ------------------------------------------------------------ painel */
+.painel{background:var(--card);border:1px solid var(--linha);border-radius:18px;box-shadow:0 18px 50px rgba(15,39,64,.13);margin-top:-64px;position:relative;z-index:5;overflow:hidden}
+.painel .cab{padding:22px 24px 6px}
+.painel .cab h2{font-size:19px;color:var(--tx)}
+.painel .cab p{color:var(--muted);font-size:14px;margin-top:4px}
+
+.filtros{display:flex;gap:8px;flex-wrap:wrap;padding:16px 24px 18px;border-bottom:1px solid var(--linha)}
+.filtros button{background:var(--bg);border:1.5px solid var(--linha);color:var(--tx);border-radius:99px;padding:8px 16px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.filtros button:hover{border-color:var(--aco)}
+.filtros button.on{background:var(--navy);border-color:var(--navy);color:#fff}
+.filtros .conta{margin-left:auto;align-self:center;font-size:12.5px;color:var(--muted)}
+
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px;padding:22px 24px 26px}
+.fonte{border:1px solid var(--linha);border-radius:14px;padding:17px 18px;background:var(--card);display:flex;flex-direction:column;gap:5px}
+.fonte:hover{border-color:var(--aco);box-shadow:0 8px 24px rgba(15,39,64,.09)}
+.f-topo{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.f-sigla{font-size:17px;font-weight:900;color:var(--tx);letter-spacing:-.01em}
+.f-comp{font-size:11.5px;font-weight:800;color:var(--verde-tx);background:rgba(21,135,63,.1);border:1px solid rgba(21,135,63,.25);border-radius:99px;padding:3px 10px;white-space:nowrap}
+.f-escopo{font-size:12px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.f-num{font-size:14px;color:var(--tx);margin-top:3px}
+.f-num b{font-variant-numeric:tabular-nums}
+.f-num .pt{color:var(--muted)}
+.f-orgao{font-size:12.5px;color:var(--muted);line-height:1.4}
+.f-extra{font-size:12.5px;color:var(--verde-tx);background:rgba(21,135,63,.07);border-left:3px solid rgba(21,135,63,.4);border-radius:0 7px 7px 0;padding:7px 10px;margin-top:6px}
+
+.nota-pe{padding:0 24px 22px;font-size:12.5px;color:var(--muted)}
+
+/* ------------------------------------------------------ blocos de texto */
+section{padding:46px 0}
+section h2{font-size:clamp(20px,2.8vw,27px);font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
+section .sub{color:var(--muted);font-size:15px;max-width:720px;margin-bottom:24px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+@media(max-width:800px){.duo{grid-template-columns:1fr}}
+.cx{background:var(--card);border:1px solid var(--linha);border-radius:15px;padding:22px}
+.cx h3{font-size:16.5px;margin-bottom:7px;color:var(--tx)}
+.cx p{font-size:14px;color:var(--muted)}
+.cx .destaque{color:var(--verde-tx);font-weight:800}
+
+/* ⚠ TABELA ROLA DENTRO DELA MESMA, NUNCA EMPURRA A PÁGINA. Medido: sem isto a
+   página inteira ganhava 345px de rolagem horizontal no celular — a tabela não
+   encolhe abaixo do próprio conteúdo mínimo, e arrasta o body junto. Quem abre
+   no celular e vê o texto "fugindo" para o lado fecha a página. */
+.rolagem{overflow-x:auto;-webkit-overflow-scrolling:touch;border-radius:14px}
+table.comp{width:100%;border-collapse:collapse;font-size:14px;background:var(--card);border:1px solid var(--linha);border-radius:14px;overflow:hidden;min-width:min(520px,100%)}
+table.comp td,table.comp th{overflow-wrap:anywhere}
+table.comp th{background:var(--navy);color:#fff;padding:11px 14px;text-align:left;font-size:12.5px;font-weight:800}
+table.comp td{padding:11px 14px;border-bottom:1px solid var(--linha);vertical-align:top}
+table.comp tr:last-child td{border-bottom:0}
+table.comp td.sim{color:var(--verde-tx);font-weight:700}
+
+/* ------------------------------------------------------------- rodapé */
+.cta{background:linear-gradient(135deg,#123a2a,#102a44);color:#fff;border-radius:18px;padding:30px;text-align:center;margin:10px 0 34px}
+.cta b{font-size:20px;display:block;margin-bottom:8px}
+.cta p{color:#cfe0ee;font-size:14.5px;margin-bottom:18px;max-width:560px;margin-left:auto;margin-right:auto}
+.cta a{display:inline-block;background:var(--verde);color:#fff;border-radius:11px;padding:13px 26px;font-weight:800;margin:0 5px 8px}
+.cta a.outl{background:transparent;border:2px solid rgba(255,255,255,.5)}
+.mapa{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;padding:22px 0 8px;font-size:13.5px}
+.mapa a{font-weight:700}
+footer{padding:12px 0 44px;text-align:center;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<div class="topo"><div class="wrap lin">
+  <div style="display:flex;align-items:center;gap:10px">
+    <a href="/" aria-label="OrçaPRO — página inicial" style="display:inline-flex;align-items:center">
+      <svg viewBox="0 0 322 120" style="height:30px;width:auto;display:block" role="img" aria-label="OrçaPRO"><defs><linearGradient id="op-fnt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1c4b73"/><stop offset="1" stop-color="#3a8bc2"/></linearGradient></defs><rect x="4" y="12" width="96" height="96" rx="24" fill="url(#op-fnt)"/><rect x="26" y="62" width="13" height="22" rx="4" fill="#fff" opacity=".55"/><rect x="46" y="48" width="13" height="36" rx="4" fill="#fff" opacity=".9"/><rect x="66" y="34" width="13" height="50" rx="4" fill="#6fd08a"/><path d="M75 20l2.4 5.1 5.6.7-4.1 3.9 1 5.6-4.9-2.7-4.9 2.7 1-5.6-4.1-3.9 5.6-.7z" fill="#9be7af"/><text x="118" y="78" font-family="'IBM Plex Sans','Segoe UI',Arial,sans-serif" font-size="52" font-weight="700" letter-spacing="-1.8"><tspan fill="#fff">Orça</tspan><tspan fill="#6fd08a">PRO</tspan></text></svg>
+    </a>
+  </div>
+  <nav aria-label="Seções do site">
+    <a href="/">Início</a>
+    <a href="/composicoes">Pesquisar composições</a>
+    <a href="/orcamento">Orçamento</a>
+    <a href="/gestao-de-obras">Gestão de Obras</a>
+    <a href="/bim">BIM 3D</a>
+    <a href="/fontes" class="aqui" aria-current="page">Fontes &amp; Tabelas</a>
+    <a href="/planos">Planos</a>
+    <a class="btn-mini" href="/testar">Testar 7 dias grátis</a>
+  </nav>
+</div></div>
+
+<div class="migalha"><div class="wrap lin">
+  <a class="voltar" href="/">← Voltar ao início</a>
+  <span class="sep">·</span>
+  <a href="/">Início</a>
+  <span class="sep">›</span>
+  <span class="atual">Fontes &amp; Tabelas</span>
+</div></div>
+
+<div class="hero"><div class="wrap grade-h">
+  <div>
+    <span class="selo">◆ As bases já vêm dentro do sistema</span>
+    <h1>Fontes &amp; Tabelas: de onde sai o preço do seu orçamento</h1>
+    <p>Você não precisa baixar planilha da Caixa, converter arquivo nem procurar a
+       competência certa. As tabelas oficiais já estão dentro do OrçaPRO, com o
+       preço da <b>sua praça</b> — e cada uma mostra, aqui embaixo, qual
+       competência está no ar.</p>
+    <div class="numeros">
+      <div><b id="n-fontes">—</b><span>fontes oficiais</span></div>
+      <div><b>27</b><span>estados com SINAPI</span></div>
+      <div><b>27</b><span>analíticos com coeficiente</span></div>
+    </div>
+  </div>
+  <!-- ⚠ ESPAÇO DE FOTO. Trocar o src pela foto definitiva (engenheiro ou
+       engenheira com tablete, em obra, fundo recortado). O onerror existe
+       porque página de vendas com imagem quebrada é pior que sem imagem. -->
+  <div class="retrato">
+    <div class="halo"></div>
+    <img src="/img/pessoa-tablet.png" alt="Engenheira consultando o OrçaPRO no tablet, em obra"
+         loading="lazy" onerror="this.style.display='none'">
+  </div>
+</div></div>
+
+<div class="wrap">
+  <div class="painel">
+    <div class="cab">
+      <h2>O que já está disponível</h2>
+      <p>Contagens tiradas dos arquivos que o sistema entrega — não são número de folheto.</p>
+    </div>
+    <div class="filtros" id="filtros">
+      <button type="button" class="on" data-r="todas">Todas</button>
+      <button type="button" data-r="Nacional">Nacional</button>
+      <button type="button" data-r="Norte">Norte</button>
+      <button type="button" data-r="Nordeste">Nordeste</button>
+      <button type="button" data-r="Centro-Oeste">Centro-Oeste</button>
+      <button type="button" data-r="Sudeste">Sudeste</button>
+      <button type="button" data-r="Sul">Sul</button>
+      <span class="conta" id="conta"></span>
+    </div>
+    <div class="grade" id="grade">
+<!-- FONTES:INICIO — gerado por tools/inventario-fontes.js, não edite à mão -->
+      <article class="fonte" data-regiao="Nacional">
+        <div class="f-topo">
+          <span class="f-sigla">SINAPI</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">jun/2026</span>
+        </div>
+        <p class="f-escopo">27 estados</p>
+        <p class="f-num"><b>8.402 a 8.404</b> composições <span class="pt">·</span> <b>2.679 a 4.876</b> insumos</p>
+        <p class="f-orgao">Caixa Econômica Federal e IBGE</p>
+        <p class="f-extra">Analítico completo — com o coeficiente de cada insumo dentro da composição — nos 27 estados.</p>
+      </article>
+      <article class="fonte" data-regiao="Nordeste">
+        <div class="f-topo">
+          <span class="f-sigla">ORSE</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">mai/2026</span>
+        </div>
+        <p class="f-escopo">Sergipe</p>
+        <p class="f-num"><b>16.944</b> composições</p>
+        <p class="f-orgao">CEHOP — Companhia Estadual de Habitação e Obras Públicas</p>
+      </article>
+      <article class="fonte" data-regiao="Sudeste">
+        <div class="f-topo">
+          <span class="f-sigla">SICRO</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">abr/2026</span>
+        </div>
+        <p class="f-escopo">Espírito Santo</p>
+        <p class="f-num"><b>6.618</b> composições</p>
+        <p class="f-orgao">DNIT — Departamento Nacional de Infraestrutura de Transportes</p>
+      </article>
+      <article class="fonte" data-regiao="Nordeste">
+        <div class="f-topo">
+          <span class="f-sigla">SEINFRA</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">028.1</span>
+        </div>
+        <p class="f-escopo">Ceará</p>
+        <p class="f-num"><b>4.421</b> composições <span class="pt">·</span> <b>10.968</b> insumos</p>
+        <p class="f-orgao">Secretaria da Infraestrutura do Estado do Ceará</p>
+      </article>
+      <article class="fonte" data-regiao="Sudeste">
+        <div class="f-topo">
+          <span class="f-sigla">SETOP</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">ago/2023</span>
+        </div>
+        <p class="f-escopo">Minas Gerais</p>
+        <p class="f-num"><b>3.977</b> composições</p>
+        <p class="f-orgao">Secretaria de Transportes e Obras Públicas de Minas Gerais</p>
+        <p class="f-extra">Onerada e desonerada.</p>
+      </article>
+      <article class="fonte" data-regiao="Sudeste">
+        <div class="f-topo">
+          <span class="f-sigla">SUDECAP</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">abr/2026</span>
+        </div>
+        <p class="f-escopo">Belo Horizonte (MG)</p>
+        <p class="f-num"><b>2.025</b> composições <span class="pt">·</span> <b>1.565</b> insumos</p>
+        <p class="f-orgao">Superintendência de Desenvolvimento da Capital, Belo Horizonte</p>
+      </article>
+      <article class="fonte" data-regiao="Sudeste">
+        <div class="f-topo">
+          <span class="f-sigla">IOPES</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">mai/2026</span>
+        </div>
+        <p class="f-escopo">Espírito Santo</p>
+        <p class="f-num"><b>1.363</b> composições</p>
+        <p class="f-orgao">Instituto de Obras Públicas do Espírito Santo</p>
+      </article>
+      <article class="fonte" data-regiao="Centro-Oeste">
+        <div class="f-topo">
+          <span class="f-sigla">GOINFRA</span>
+          <span class="f-comp" title="competência da tabela que está no sistema">dez/2025</span>
+        </div>
+        <p class="f-escopo">Goiás</p>
+        <p class="f-num"><b>566</b> composições</p>
+        <p class="f-orgao">Agência Goiana de Infraestrutura e Transportes</p>
+        <p class="f-extra">Onerada e desonerada.</p>
+      </article>
+<!-- FONTES:FIM -->
+    </div>
+    <p class="nota-pe">
+      A etiqueta verde de cada cartão é a <b>competência que está no sistema hoje</b>.
+      Quando o órgão publica uma nova, ela entra por atualização — o seu orçamento
+      antigo continua com o preço da data em que foi feito, que é o que a
+      fiscalização cobra.
+    </p>
+  </div>
+</div>
+
+<section><div class="wrap">
+  <h2>O analítico é o que separa orçar de chutar</h2>
+  <p class="sub">Quase todo mundo entrega a tabela <b>sintética</b>: código, descrição, unidade e
+     preço. O OrçaPRO entrega também o <b>analítico</b> — a composição aberta, com
+     cada insumo e o coeficiente dele.</p>
+  <div class="duo">
+    <div class="cx">
+      <h3>Só com o sintético</h3>
+      <p>Você vê que o m² de alvenaria custa um valor e precisa acreditar. Se o
+         fiscal perguntar por que, ou se você quiser trocar o bloco por outro, não
+         há como responder sem sair procurando a composição em outro lugar.</p>
+    </div>
+    <div class="cx">
+      <h3>Com o analítico dentro</h3>
+      <p><span class="destaque">A composição abre.</span> Você vê quantos blocos, quanta
+         argamassa e quantas horas de pedreiro entram naquele metro quadrado — e o
+         sistema consegue recalcular quando você muda o material, criar composição
+         própria a partir de uma existente e justificar cada número na hora da
+         defesa do orçamento.</p>
+    </div>
+  </div>
+</div></section>
+
+<section style="padding-top:0"><div class="wrap">
+  <h2>Perguntas que chegam sempre</h2>
+  <div class="rolagem">
+  <table class="comp">
+    <tr><th style="width:38%">Pergunta</th><th>Resposta</th></tr>
+    <tr>
+      <td>Preciso baixar a tabela da Caixa?</td>
+      <td class="sim">Não. Ela já vem instalada, no estado que você escolher.</td>
+    </tr>
+    <tr>
+      <td>Dá para orçar obra em outro estado?</td>
+      <td class="sim">Dá. Os 27 estados vêm no pacote — é trocar a base ativa.</td>
+    </tr>
+    <tr>
+      <td>Onerada ou desonerada?</td>
+      <td>As duas, nas fontes que publicam as duas versões (indicado no cartão).</td>
+    </tr>
+    <tr>
+      <td>E se o serviço não existir em tabela nenhuma?</td>
+      <td>Você cria a sua composição — e o agente do OrçaPRO monta a partir dos
+          insumos que já existem na base. <a href="/composicoes">Pesquisar composições →</a></td>
+    </tr>
+    <tr>
+      <td>Como sei que o preço não está velho?</td>
+      <td>A competência de cada fonte está escrita no cartão acima, e dentro do
+          sistema também. Nada de "atualizado recentemente".</td>
+    </tr>
+  </table>
+  </div>
+</div></section>
+
+<div class="wrap">
+  <div class="cta">
+    <b>Veja as bases por dentro antes de decidir</b>
+    <p>A pesquisa de composições é aberta: procure um serviço, abra os insumos e
+       confira o coeficiente. Sem cadastro para olhar.</p>
+    <a href="/composicoes">Pesquisar composições agora</a>
+    <a class="outl" href="/testar">Testar o sistema — 7 dias</a>
+  </div>
+
+  <nav class="mapa" aria-label="Mapa do site">
+    <a href="/">Início</a>
+    <a href="/composicoes">Pesquisar composições</a>
+    <a href="/orcamento">Orçamento</a>
+    <a href="/gestao-de-obras">Gestão de Obras</a>
+    <a href="/bim">BIM 3D</a>
+    <a href="/planos">Planos</a>
+    <a href="/sobre">Sobre</a>
+  </nav>
+  <footer>OrçaPRO · RA Engenharia Especial — as marcas e tabelas citadas pertencem aos respectivos órgãos.</footer>
+</div>
+
+<script>
+/* filtro por região — sem framework, sem requisição: os cartões já vieram no HTML
+   (importa para busca e para quem abre com a rede ruim do canteiro) */
+(function () {
+  var grade = document.getElementById('grade');
+  var conta = document.getElementById('conta');
+  var botoes = [].slice.call(document.querySelectorAll('#filtros button'));
+  var cartoes = [].slice.call(grade.querySelectorAll('.fonte'));
+
+  var nf = document.getElementById('n-fontes');
+  if (nf) nf.textContent = cartoes.length;
+
+  function aplicar(r) {
+    var vis = 0;
+    cartoes.forEach(function (c) {
+      var ok = (r === 'todas') || (c.getAttribute('data-regiao') === r);
+      c.style.display = ok ? '' : 'none';
+      if (ok) vis++;
+    });
+    conta.textContent = vis + (vis === 1 ? ' fonte' : ' fontes');
+  }
+  botoes.forEach(function (b) {
+    b.addEventListener('click', function () {
+      botoes.forEach(function (o) { o.classList.remove('on'); });
+      b.classList.add('on');
+      aplicar(b.getAttribute('data-r'));
+    });
+  });
+
+  /* ⚠ BOTÃO DE REGIÃO SEM FONTE NENHUMA SÓ FRUSTRA. Some com quem não tem
+     cartão — a lista de regiões acompanha o que existe, não uma lista fixa. */
+  botoes.forEach(function (b) {
+    var r = b.getAttribute('data-r');
+    if (r === 'todas') return;
+    var tem = cartoes.some(function (c) { return c.getAttribute('data-regiao') === r; });
+    if (!tem) b.style.display = 'none';
+  });
+
+  aplicar('todas');
+})();
+</script>
+</body></html>
