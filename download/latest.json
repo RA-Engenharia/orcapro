@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.269",
+  "versao": "1.1.270",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.269/OrcaPRO-IA-update-v1.1.269.zip",
-  "notas": "Quando o agente encontra na base a composicao que voce pediu, agora da para lancar o item no orcamento direto da propria tela — antes era preciso voltar e procurar de novo. E quando o caso e de cotar um insumo, a tela passa a dizer os dois passos ate o item entrar na planilha, em vez de deixar voce cotar e ficar sem item. Correcao no diagnostico de composicao ja precificada.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.269/OrcaPRO-IA-Instalador-v1.1.269.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.270/OrcaPRO-IA-update-v1.1.270.zip",
+  "notas": "O agente de composicoes passou a procurar com a sua palavra E com o termo tecnico da base, ficando com o resultado melhor dos dois — antes ele trocava a palavra antes de procurar, e as vezes trazia um item de outra familia. Quando a troca de palavra e o que resolve, a tela avisa e a linha entra marcada para conferencia. E o codigo sugerido pelo agente deixa de ser gravado como decisao sua: a IA pode revisar, e a tela mostra o nivel de semelhanca e as outras candidatas antes de voce aceitar.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.270/OrcaPRO-IA-Instalador-v1.1.270.exe"
 }

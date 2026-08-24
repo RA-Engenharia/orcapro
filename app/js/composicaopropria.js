@@ -239,19 +239,19 @@
       || (typeof require === "function"
           ? (function () { try { return require("./escopo.js") && global.Escopo && global.Escopo.SINONIMOS; } catch (e) { return null; } })()
           : null);
-    if (!dic) return texto;
+    if (!dic) return { texto: texto, trocas: [] };
     var partes = String(texto).split(/(\s+)/);
-    var mudou = false;
+    var trocas = [];
     var fora = partes.map(function (p) {
       if (/^\s*$/.test(p)) return p;
       var k = norm(p).replace(/[^a-z0-9]/g, "");
       if (k && Object.prototype.hasOwnProperty.call(dic, k) && dic[k] !== k) {
-        mudou = true;
+        trocas.push([p, dic[k]]);
         return dic[k];
       }
       return p;
     });
-    return mudou ? fora.join("") : texto;
+    return { texto: trocas.length ? fora.join("") : texto, trocas: trocas };
   }
 
   function grupoDoCriador(grupoDaBase) {
@@ -549,8 +549,46 @@
          ⚠ TRADUZ, NAO SUBSTITUI: o texto original continua sendo o que vira
            descricao da composicao (a referencia e meio, nao fim). So a BUSCA
            usa a versao traduzida. */
-      var busca = _traduzirTermos(desc, ctx);
-      var det = this.analogasComDetalhe(busca, analitico, 5);
+      /* ⚠ TRADUZIR E UM PALPITE SOBRE O QUE A PESSOA QUIS DIZER. Medido na
+         base MA, a mesma troca ajuda e atrapalha:
+
+           "parede de tijolo"  sem traduzir -> ISOLAMENTO COM LA DE PET R$ 2,38
+                               traduzindo   -> ALVENARIA DE EMBASAMENTO (melhor)
+           "pia de cozinha"    sem traduzir -> bancada de 1,50 m R$ 820,67
+                               traduzindo   -> bancada de 0,50 m R$ 359,31 (pior)
+
+         Tirar a traducao devolve o primeiro ao absurdo; mante-la com selo
+         "alta" entrega o segundo como certeza. Mantem-se a ajuda E marca-se a
+         deducao — o modal ja mostra a tarja quando a confianca nao e alta. */
+      /* ⚠ A TRADUCAO E UMA SEGUNDA TENTATIVA, NAO UMA SUBSTITUICAO — e por
+         quatro dias ela foi substituicao, com resultado medido:
+
+           "torneira de parede para pia"  86911 R$ 129,32 -> 100854 R$ 2.654,49
+           "tanque de louca 30 litros"    86874           -> CAMINHAO TANQUE
+           "armacao de pilar ou viga"     92762           -> CORTINA DE CONTENCAO
+
+         O ultimo diz tudo: "armacao de pilar ou viga" e LITERALMENTE a
+         descricao da 92762, e a troca de palavra afastou a busca do alvo
+         exato.
+
+         ⚠ DERRUBAR A CONFIANCA NAO RESOLVIA. Marcar como "media" e nomear a
+           troca — o que a rodada passada fez — nao conserta caminhao-tanque no
+           lugar de tanque de louca. Marcar deducao e obrigatorio; nao e
+           substituto de acertar.
+
+         Buscando com os DOIS textos e ficando com o melhor score, o dicionario
+         so age quando tem o que oferecer: "azulejo" continua achando o
+         revestimento ceramico, e "armacao de pilar ou viga" para de ser
+         reescrito. */
+      var _trad = _traduzirTermos(desc, ctx);
+      var det = this.analogasComDetalhe(desc, analitico, 5);
+      var _usouTraducao = false;
+      if (_trad.trocas.length) {
+        var _detT = this.analogasComDetalhe(_trad.texto, analitico, 5);
+        var _s0 = det.itens.length ? det.itens[0].score : -1;
+        var _sT = _detT.itens.length ? _detT.itens[0].score : -1;
+        if (_sT > _s0) { det = _detT; _usouTraducao = true; }
+      }
       var cands = det.itens;
       var minimo = ctx.minimo != null ? ctx.minimo : this.LIMIAR.minimo;
       if (!cands.length || cands[0].score < minimo) {
@@ -622,6 +660,24 @@
          tela pedia conferência. O score sozinho não sabe que errou de alvo —
          então o que ele NÃO sabe passa a ser dito. */
       var avisos = [];
+      /* ⚠ BUSCA COM PALAVRA TROCADA NUNCA E "alta". O que o motor comparou nao
+         foi o que a pessoa escreveu — foi a traducao dele. Isso e deducao, e
+         deducao aparece marcada. */
+      /* so quando a traducao GANHOU a busca — se a original venceu, nao houve
+         deducao nenhuma e nao ha o que marcar */
+      if (_usouTraducao && conf === "alta") conf = "media";
+      if (_usouTraducao) {
+        avisos.push("Procurei por " +
+          _trad.trocas.map(function (t) { return "\u201c" + t[1] + "\u201d"; }).join(" e ") +
+          " no lugar de " +
+          _trad.trocas.map(function (t) { return "\u201c" + t[0] + "\u201d"; }).join(" e ") +
+          /* ⚠ NAO DIZER "e assim que a base publica": falso em 35 de 47
+             termos medidos — a base publica a palavra do usuario tambem (aco
+             aparece 858 vezes, conexao 690, ferro 472, viga 98). A frase
+             honesta e que a busca com a palavra dele nao achou nada melhor. */
+          " porque a busca com a sua palavra não achou nada melhor. " +
+          "Confira se é o mesmo serviço.");
+      }
       if (conf !== "alta") {
         avisos.push("Semelhança " + (conf === "media" ? "média" : "baixa") +
                     " com a referência " + ref.codigo +

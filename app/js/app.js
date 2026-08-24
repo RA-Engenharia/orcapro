@@ -5835,6 +5835,9 @@
                                     + " — confira antes de fechar o orçamento" }]
                          .concat(l.candidatos || []);
           l.escolhido = 0;
+          /* a IA respeita isto; `refinadoIA` continua querendo dizer outra
+             coisa ("a IA ja passou"), e nao se confundem mais */
+          l.decididoPeloUsuario = true;
           /* reabre a revisão do Escopo já com a linha resolvida — o mesmo
              caminho que a IA usa ao voltar, para não existir um segundo
              jeito de desenhar a mesma tela */
@@ -6115,7 +6118,13 @@
         self._cpRender();
         UI.toast("Composição " + c.codigo + " elaborada a partir da " + r.referencia.codigo +
           " (" + Util.fmtMoeda(r.custo.total) + "/" + c.unidade + ") — " +
-          (r.aviso || "confira os coeficientes e grave."), r.confianca === "alta" ? "ok" : "erro");
+          (r.aviso || "confira os coeficientes e grave."),
+          /* ⚠ ROTA "calculada" NUNCA SAI EM VERDE. Ela quer dizer que a base
+             NAO publica o preco fechado desta composicao naquela UF e o custo
+             e a soma dos insumos — informacao que muda como a peca e
+             defendida. Sair com toast de sucesso era enterrar o aviso no
+             lugar onde ninguem para para ler. */
+          (r.confianca === "alta" && !(r.rota && r.rota.tipo === "calculada")) ? "ok" : "erro");
       };
       if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
       var urls = this._analiticoUrls();
@@ -6431,7 +6440,16 @@
     // e PARA ao bater o limite/min da IA grátis (o usuário clica de novo p/ continuar).
     _casarEscopoIA: function (back) {
       var an = this._escopo || [];
-      var pares = an.filter(function (l) { return l.candidatos && l.candidatos.length && !l.refinadoIA; });
+      /* ⚠ A IA NAO PODE DESFAZER O QUE A PESSOA CONFIRMOU. Tirar
+         `refinadoIA = true` do aceite do modal foi conserto certo pelo motivo
+         errado: aquela flag significa "a IA ja passou por aqui", e usa-la para
+         selar uma escolha humana misturava duas coisas. So que sem NENHUMA
+         marca, a linha voltava para o lote e a IA trocava o codigo que o
+         usuario acabara de aprovar num modal. Duas marcas, dois sentidos. */
+      var pares = an.filter(function (l) {
+        return l.candidatos && l.candidatos.length && !l.refinadoIA
+               && !l.decididoPeloUsuario;
+      });
       var res = { refinados: 0, limite: false, restam: 0 };
       if (!pares.length) return Promise.resolve(res);
       var CHUNK = 6, lotes = [];
@@ -6458,7 +6476,7 @@
             }, function () { });
         });
       }, Promise.resolve()).then(function () {
-        res.restam = an.filter(function (l) { return l.candidatos && l.candidatos.length && !l.refinadoIA; }).length;
+        res.restam = an.filter(function (l) { return l.candidatos && l.candidatos.length && !l.refinadoIA && !l.decididoPeloUsuario; }).length;
         return res;
       });
     },
