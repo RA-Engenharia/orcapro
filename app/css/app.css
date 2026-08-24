@@ -391,9 +391,16 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .btn:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; transform: none; }
 
 /* ---------- Cards ---------- */
+/* ⚠ `--raio-lg` NOS CARTÕES, e não um valor novo. O Rogério pediu o Painel com
+   a cara de uma peça de divulgação; comparando as duas, medida a medida, o que
+   diferia era só o arredondamento (10px contra ~16) e o respiro entre cartões.
+   Fundo, sombra em camadas, realce e o hover já estavam certos.
+   O 16px NÃO foi escolhido no olho: é o `--raio-lg` que a folha já define e já
+   usa noutros lugares — inventar um valor aqui criaria um terceiro raio no
+   sistema e a próxima pessoa não saberia qual dos três é o certo. */
 .card {
   background: var(--card-bg); border: 1px solid var(--linha);
-  border-radius: var(--raio); box-shadow: var(--sombra), var(--realce); padding: 24px;
+  border-radius: var(--raio-lg); box-shadow: var(--sombra), var(--realce); padding: 24px;
 }
 .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px; }
 .orc-card { cursor: pointer; transition: .16s cubic-bezier(.4,0,.2,1); position: relative; overflow: hidden; }
@@ -405,8 +412,8 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .orc-card .valor { font-size: var(--t-tit); font-weight: var(--p-forte); color: var(--verde); margin-top: 10px; letter-spacing: -.4px; }
 
 /* ---------- KPIs ---------- */
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 16px; margin-bottom: 24px; }
-.kpi { background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio); padding: 19px 21px; box-shadow: var(--sombra), var(--realce); position: relative; overflow: hidden; transition: .18s cubic-bezier(.4,0,.2,1); }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 18px; margin-bottom: 24px; }
+.kpi { background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); padding: 19px 21px; box-shadow: var(--sombra), var(--realce); position: relative; overflow: hidden; transition: .18s cubic-bezier(.4,0,.2,1); }
 .kpi::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--linha-forte), var(--linha)); }
 .kpi:hover { transform: translateY(-3px); box-shadow: var(--sombra-lg), var(--realce); border-color: var(--linha-forte); }
 .kpi .rotulo { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .8px; color: var(--texto-fraco); font-weight: var(--p-forte); }
