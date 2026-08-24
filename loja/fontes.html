@@ -78,14 +78,21 @@ a{color:var(--aco);text-decoration:none}
 
 /* ⚠ A FOTO É UM ESPAÇO, NÃO UMA DEPENDÊNCIA. Se o arquivo não existir, o
    `onerror` esconde a imagem e o desenho de fundo continua de pé — página de
-   vendas com imagem quebrada é pior do que página sem imagem. */
-.retrato{position:relative;min-height:250px;display:flex;align-items:flex-end;justify-content:center}
-/* ⚠ TETO DE ALTURA MAIOR PORQUE A FOTO E ESTREITA. Ela e um recorte de
-   corpo inteiro, 324x918 — quase 1:3. Com o teto em 330px ela renderizava
-   a 116px de largura: uma tira. O teto manda na altura, e a largura vem
-   junto pela proporcao. */
-.retrato img{max-width:100%;max-height:430px;object-fit:contain;filter:drop-shadow(0 18px 40px rgba(0,0,0,.45));position:relative;z-index:2}
-.retrato .halo{position:absolute;inset:auto 0 0 0;height:230px;background:radial-gradient(ellipse at 50% 90%,rgba(111,208,138,.22),transparent 70%);z-index:1}
+   vendas com imagem quebrada é pior do que página sem imagem.
+
+   ⚠ E ELA É EMOLDURADA, NÃO RECORTADA. A primeira versão esperava figura com
+   fundo transparente, e aí veio a lição: o gerador de imagem entrega o xadrez
+   de transparência PINTADO como pixel, sem canal alfa nenhum. Recortar aquilo
+   por cor era impossível — a camisa e o capacete dela são brancos como os
+   quadrados claros, e as dobras da camisa têm sombra na faixa do cinza; toda
+   tentativa abria buraco na roupa. Foto com fundo de verdade, dentro de uma
+   moldura, não tem nenhum desses problemas — e fica igual às outras duas
+   páginas. */
+.retrato{position:relative;min-height:250px;display:flex;align-items:center;justify-content:center}
+.retrato img{width:100%;max-width:330px;height:auto;border-radius:20px;
+             box-shadow:0 26px 60px -16px rgba(0,0,0,.55);position:relative;z-index:2}
+.retrato .halo{position:absolute;inset:auto 0 -10px 0;height:200px;
+               background:radial-gradient(ellipse at 50% 90%,rgba(111,208,138,.24),transparent 70%);z-index:1}
 
 /* ------------------------------------------------------------ painel */
 .painel{background:var(--card);border:1px solid var(--linha);border-radius:18px;box-shadow:0 18px 50px rgba(15,39,64,.13);margin-top:-64px;position:relative;z-index:5;overflow:hidden}
@@ -200,8 +207,8 @@ footer{padding:12px 0 44px;text-align:center;font-size:12.5px;color:var(--muted)
          tira o tamanho da própria imagem, o adiamento vira impasse (foi o que
          segurou a foto do fundador na home: o contêiner esperava a imagem, a
          imagem esperava o contêiner ter tamanho). -->
-    <img src="/img/pessoa-tablet.png" width="324" height="569" decoding="async"
-         alt="Engenheira de capacete consultando o painel do OrçaPRO num tablete"
+    <img src="/img/pessoa-tablet-obra.jpg" width="820" height="1018" decoding="async"
+         alt="Engenheira de capacete conferindo o painel do OrçaPRO num tablete, no canteiro"
          onerror="this.style.display='none'">
   </div>
 </div></div>
