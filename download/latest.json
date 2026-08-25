@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.274",
+  "versao": "1.1.275",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.274/OrcaPRO-IA-update-v1.1.274.zip",
-  "notas": "Tres correcoes de leitura no Painel. \"Custo por m2\" mostrava dois valores para a mesma obra (o cartao somava toda despesa, a tabela so a paga) e trocava de unidade conforme o valor — acima de mil saia \"R$ 1.975,31\", abaixo saia \"638\" sem moeda. Agora os dois usam o mesmo criterio e sai \"R$ 638,14/m2\" sempre. O grafico de prazo passou a dizer \"dia(s)\". E a Retencao presa aparecia com o rotulo colado no valor. No tema escuro, o texto e o trilho do grafico passaram a seguir as cores do tema.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.274/OrcaPRO-IA-Instalador-v1.1.274.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.275/OrcaPRO-IA-update-v1.1.275.zip",
+  "notas": "Painel de Gestao: o grafico de fluxo passou a mostrar TODOS os meses do periodo escolhido. Com \"Ultimos 6 meses\" e lancamento em 3 deles, ele desenhava so 3 pontos igualmente espacados — um intervalo de 4 meses saia do mesmo tamanho de um de 1 mes, e a linha de saldo subia em rampa num periodo sem movimento nenhum. Mes sem lancamento agora aparece zerado, no lugar certo. O numero embaixo de cada barra do Previsto x Realizado deixou de comparar o gasto com o orcamento inteiro (obra que ainda nao tinha comecado aparecia \"-100%\" em verde) e passou a comparar quanto do orcamento foi consumido com quanto do escopo foi medido. A rosca de categorias saiu e no lugar entrou \"Prazo x avanco por obra\" — quanto do calendario passou contra quanto foi medido, obra por obra, com a que esta mais apertada em cima. Os totais por categoria continuam na tela, dentro de \"Custo por obra\", e categoria pequena, que a rosca apagava, agora aparece. No tema escuro as tres linhas do fluxo de caixa estavam quase invisiveis.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.275/OrcaPRO-IA-Instalador-v1.1.275.exe"
 }
