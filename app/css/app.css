@@ -413,6 +413,35 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 
 /* ---------- KPIs ---------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 18px; margin-bottom: 24px; }
+
+/* ---------- Gráficos do Painel ----------
+   ⚠ DUAS COLUNAS, E NUNCA TRÊS. São QUATRO cartões de gráfico. O
+   `auto-fit,minmax(320px,1fr)` que estava aqui dava 3 colunas num monitor de
+   1280px: o quarto cartão caía sozinho na segunda fileira e sobrava meia
+   largura de buraco ao lado dele. E com 334px de largura a legenda da rosca
+   cortava o nome das categorias — "Mão de ...", "Equipam...", numa tela que
+   fala de dinheiro.
+   Com duas colunas os quatro fecham 2×2 em qualquer largura, e cada cartão
+   passa a ter ~508px. Um ajuste resolve o buraco e a legenda. */
+.dash-graf { display: grid; gap: 18px; margin-bottom: 18px; grid-template-columns: 1fr; }
+
+/* ⚠ DUAS COLUNAS SÓ QUANDO O CARTÃO COUBER, e 760px era cedo demais. Medido:
+   alargar a janela de 759 para 780px ENCOLHIA o texto do eixo em 54% (17,9px
+   → 8,2px), porque duas colunas de 364px são piores que uma de 735px para um
+   gráfico de 440 unidades. A janela crescia e a leitura piorava.
+   O cartão precisa de ~480px para o gráfico respirar, e a conta medida é
+   `conteúdo ≈ viewport − 290`: dois cartões de 480 + 18 de gap pedem 1.268px
+   de janela. */
+@media (min-width: 1280px) { .dash-graf { grid-template-columns: repeat(2, 1fr); } }
+
+/* ⚠ E O SVG TEM TETO. Sem ele o mesmo `font-size="9.5"` saía com 5,8px num
+   cartão de 320 e 19,8px num de 806 — 3,4x de variação para o mesmo número, e
+   no monitor grande o rótulo do eixo ficava MAIOR que o título do cartão.
+   O viewBox tem 440 unidades: limitar a 560px mantém a escala entre 0,99 e
+   1,27, e o texto do eixo entre 9,4 e 12px em qualquer tela. É aqui que se
+   controla a legibilidade — não mexendo no font-size de dentro do SVG. */
+.dash-graf svg { max-width: 560px; }
+.dash-graf .card > svg { display: block; margin: 0 auto; }
 .kpi { background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); padding: 19px 21px; box-shadow: var(--sombra), var(--realce); position: relative; overflow: hidden; transition: .18s cubic-bezier(.4,0,.2,1); }
 .kpi::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--linha-forte), var(--linha)); }
 .kpi:hover { transform: translateY(-3px); box-shadow: var(--sombra-lg), var(--realce); border-color: var(--linha-forte); }

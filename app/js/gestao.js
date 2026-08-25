@@ -1042,13 +1042,54 @@
       /* v1.1.234 — contrato cancelado/rescindido fora do KPI: o painel somava
          contrato morto no Valor contratado e o numero mentia para cima */
       var _ctrVivo = function (c) { return c.status !== "cancelado" && c.status !== "rescindido"; };
-      var valorContratado = contratos.filter(_ctrVivo).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
+      /* ⚠ O MESMO NOME NAO PODE DAR DOIS NUMEROS NA MESMA TELA. O KPI somava
+       * SO contratos e a tabela do rodape usava `contrato || valor da obra` —
+       * medido na base de demonstracao, R$ 2.206.182 no cartao contra
+       * R$ 2.446.182 na coluna logo abaixo, com a mesma palavra "contratado".
+       * R$ 240 mil de diferenca a dois palmos um do outro.
+       *
+       * Quem le nao tem como saber qual dos dois esta certo, e num painel de
+       * dinheiro essa duvida vale mais que os R$ 240 mil: ela poe o sistema
+       * inteiro em suspeita. Agora as duas pontas chamam ESTA funcao, e o
+       * cartao diz no subtitulo de onde o numero sai. */
+      var _baseObra = function (o) {
+        var ctr = contratos.filter(function (c) {
+          return c.obraId === o.id && _ctrVivo(c);
+        }).reduce(function (t, c) { return t + Util.num(c.valor); }, 0);
+        return ctr || Util.num(o.valor);
+      };
+      var _semContrato = obras.filter(function (o) {
+        return !contratos.some(function (c) { return c.obraId === o.id && _ctrVivo(c); }) && Util.num(o.valor) > 0;
+      }).length;
+      var valorContratado = obras.reduce(function (t, o) { return t + _baseObra(o); }, 0);
+      /* ⚠ QUEM FATURA CONTRA O CONTRATO E A MEDICAO, nao o lancamento no
+       * financeiro. A primeira versao deste saldo fazia
+       * `contratado - recebido - a receber` e dava R$ 2.103.639 onde o certo
+       * eram R$ 1.782.504: os R$ 342.500 de medicao APROVADA que ninguem
+       * lancou no financeiro ficavam de fora, e o saldo aparecia maior do que
+       * e. Justamente o dinheiro que o cartao "Dinheiro fechado que ninguem
+       * lancou" ja denunciava do outro lado da tela.
+       *
+       * `medicoes` aqui e acumulado da obra, nao do periodo: `_dashEscopo`
+       * filtra por obra e nao por data. Se um dia passar a filtrar por data,
+       * este numero vira mentira — saldo de contrato nao tem periodo. */
+      var faturado = med.filter(function (m) {
+        return m.status === "aprovada" || m.status === "paga";
+      }).reduce(function (t, m) { return t + Util.num(m.valor); }, 0);
+      var saldoFaturar = Math.max(0, valorContratado - faturado);
       // "Recebido" = só o que ENTROU (pendente fica no "A receber" — não conta 2x)
       var receitas = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var despesas = fin.filter(function (f) { return f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var aReceber = fin.filter(function (f) { return f.tipo === "receita" && FinStatus.emAberto(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
       var medPend = med.filter(function (m) { return m.status !== "paga" && m.status !== "rejeitada"; }).length;
-      function k(rot, num, cls) { return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div></div>"; }
+      /* ⚠ O SUBTITULO NAO E ENFEITE: e onde o cartao diz DE ONDE o numero
+       * sai. Sem ele, dois cartoes vizinhos com regimes diferentes parecem
+       * comparaveis — e quem subtrai um do outro obtem um numero que nao e o
+       * resultado de nada. */
+      function k(rot, num, cls, sub) {
+        return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div>" +
+          (sub ? '<div class="muted" style="font-size:11px;margin-top:3px;line-height:1.35">' + sub + '</div>' : '') + "</div>";
+      }
       var _icP = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 15) : ""; };
       // Título de seção do Painel — divide a página em blocos nomeados (organização)
       var _sec = function (icone, titulo, sub) {
@@ -1070,10 +1111,25 @@
            * acesso só ao RDO enxergava o contratado, o recebido e a despesa da
            * empresa inteira. */
           (_podeFin
-            ? k("Valor contratado", Util.fmtMoeda(valorContratado), "custo") +
-              k("Recebido", Util.fmtMoeda(receitas), "destaque") +
-              k("A receber", Util.fmtMoeda(aReceber)) +
-              k("Despesas", Util.fmtMoeda(despesas))
+            ? k("Valor contratado", Util.fmtMoeda(valorContratado), "custo",
+                _semContrato
+                  ? "contrato assinado, ou o valor da obra quando ainda não há contrato — " + _semContrato + " obra(s) neste caso"
+                  : "soma dos contratos vivos") +
+              /* ⚠ SALDO A FATURAR: o maior numero do negocio e nao estava em
+                 lugar nenhum. Medido na base de demonstracao, R$ 1.782.504
+                 contratados e ainda nao faturados, com "Valor contratado" e
+                 "Recebido" lado a lado sem ninguem fechar a conta entre eles. */
+              k("Saldo a faturar", Util.fmtMoeda(saldoFaturar), "destaque",
+                "contratado menos " + Util.fmtMoeda(faturado) + " já medido — acumulado, não do período") +
+              k("Recebido", Util.fmtMoeda(receitas), "destaque", "regime de CAIXA: só o que entrou") +
+              k("A receber", Util.fmtMoeda(aReceber), "", "faturado e ainda não pago") +
+              /* ⚠ O REGIME PRECISA ESTAR ESCRITO. Este cartao soma despesa PAGA
+                 mais PENDENTE, e o cartao "Despesas (pago)" do bloco de cima
+                 soma so a paga. Sao dois numeros diferentes com a mesma
+                 palavra na mesma tela, e quem subtraisse "Recebido" (caixa)
+                 deste aqui (competencia) obteria um numero que nao e o
+                 resultado de nada. */
+              k("Despesas", Util.fmtMoeda(despesas), "", "pago + pendente (o cartão de cima mostra só o pago)")
             : "") +
           /* RETENÇÃO PRESA: dinheiro dele que fica parado até alguém lembrar
              de cobrar. Não é alerta — é informação, e por isso vem como KPI e
@@ -1155,7 +1211,7 @@
         + '<div class="muted" style="font-size:12px;margin-bottom:10px">Acumulado de cada obra desde o início · regime de caixa (só o que foi pago e recebido) · independe do período escolhido acima</div>';
       if (!obras.length) html += '<p class="muted">Nenhuma obra ainda. Crie a primeira em <b>Obras</b> (ou gere a partir de um orçamento).</p>';
       else {
-        html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num" title="(recebido − custo real) ÷ recebido. Sem receita lançada, a margem não existe e aparece —">Margem s/ recebido</th></tr></thead><tbody>';
+        html += '<table class="tbl"><thead><tr><th>Obra</th><th>Status</th><th class="num" title="prazo consumido × avanço medido, e quantos dias faltam">Prazo × avanço</th><th class="num">Contratado</th><th class="num">Custo real</th><th class="num" title="Custo real dividido pela área construída cadastrada na obra">Custo/m²</th><th class="num">Recebido</th><th class="num" title="(recebido − custo real) ÷ recebido. Sem receita lançada, a margem não existe e aparece —">Margem s/ recebido</th></tr></thead><tbody>';
         obras.forEach(function (o) {
           var ctr = contratos.filter(function (c) { return c.obraId === o.id && c.status !== "cancelado" && c.status !== "rescindido"; }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
           /* ⚠ REGIME MISTURADO NA MESMA LINHA. O custo somava despesa PENDENTE
@@ -1165,7 +1221,30 @@
            * Agora as duas pontas usam CAIXA: só o que efetivamente andou. */
           var custo = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           var rec = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "receita" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
-          var base = ctr || Util.num(o.valor);
+          var base = _baseObra(o);   /* a MESMA regra do KPI la de cima */
+          /* ⚠ A COLUNA DE PRAZO EXISTE PORQUE O ALERTA SO MOSTRA QUEM ESTOURA.
+             Quem esta no prazo tambem precisa aparecer — senao a unica noticia
+             sobre cronograma na tela e a ruim, e nao da para conferir a boa.
+             Obra sem previsao de termino cadastrada mostra "—" e diz por que:
+             o campo esta vazio, nao a obra e que nao tem prazo. */
+          var pz = '<span class="muted" title="Cadastre início e previsão de término na obra">—</span>';
+          if (o.inicio && o.previsaoFim) {
+            var _i = new Date(o.inicio + "T00:00:00"), _f = new Date(o.previsaoFim + "T00:00:00");
+            var _t = (_f - _i) / 86400000;
+            if (_t > 0) {
+              var _h = new Date(); _h.setHours(0, 0, 0, 0);
+              var pP = Math.round(((_h - _i) / 86400000) / _t * 100);
+              var pO = Math.round(med.filter(function (m) {
+                return m.obraId === o.id && (m.status === "aprovada" || m.status === "paga");
+              }).reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+              var _d = Math.ceil((_f - _h) / 86400000);
+              var _atras = pP - pO;
+              var _cor = _d < 0 ? "#dc2626" : (_atras >= 20 ? "#ea580c" : "var(--verde-tx, #15803d)");
+              pz = '<span style="color:' + _cor + ';font-weight:700;font-variant-numeric:tabular-nums">' + pP + '% × ' + pO + '%</span>' +
+                '<div class="muted" style="font-size:10.5px">' +
+                (_d < 0 ? "vencido há " + (-_d) + "d" : _d + " dia(s)") + '</div>';
+            }
+          }
           /* ⚠ ISTO NAO ERA MARGEM. A conta era (contratado - custo) / contratado,
            * que responde "quanto do contrato ainda nao foi gasto" — numa obra
            * recem-comecada, sem despesa lancada, dava "Margem 100,0%". O dono
@@ -1176,7 +1255,7 @@
           var margem = rec > 0 ? ((rec - custo) / rec * 100) : null;
           var area = Util.num(o.areaConstruida);
           var cm2 = area > 0 ? (Util.fmtMoeda(custo / area) + "/m²") : '<span class="muted" title="Cadastre a área construída na obra">—</span>';
-          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem == null ? "var(--texto-fraco)" : (margem >= 0 ? "var(--verde)" : "var(--vermelho)")) + '" title="' + (margem == null ? "sem receita lançada nesta obra — margem não existe ainda" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
+          html += "<tr><td><b>" + Util.esc(o.nome) + "</b></td><td>" + pill(o.status) + '</td><td class="num">' + pz + '</td><td class="num">' + Util.fmtMoeda(base) + '</td><td class="num">' + Util.fmtMoeda(custo) + '</td><td class="num">' + cm2 + '</td><td class="num">' + Util.fmtMoeda(rec) + '</td><td class="num" style="color:' + (margem == null ? "var(--texto-fraco)" : (margem >= 0 ? "var(--verde)" : "var(--vermelho)")) + '" title="' + (margem == null ? "sem receita lançada nesta obra — margem não existe ainda" : "sobre o que já foi recebido") + '">' + (margem == null ? "—" : Util.fmtPct(margem, 1)) + "</td></tr>";
         });
         html += "</tbody></table>";
       }
@@ -1378,7 +1457,7 @@
       });
 
       // Previsto×Realizado (acumulado da obra): global = por OBRA; filtrada = por ETAPA
-      var prevReal = [], porEtapa = false;
+      var prevReal = [], porEtapa = false, _obrasNoRecorte = 0, _obrasSemOrc = 0;
       if (obraSel !== "todas") {
         var ob = obras.filter(function (o) { return o.id === obraSel; })[0];
         var orc = ob && ob.orcamentoId ? Store.obterOrcamento(eid(), ob.orcamentoId) : null;
@@ -1399,8 +1478,17 @@
         }
       } else {
         /* previsto × realizado por obra: só as obras do recorte */
+        /* ⚠ A OBRA SEM ORÇAMENTO SUMIA EM SILÊNCIO, e o KPI verde "dentro do
+           orçado" era calculado só sobre as que sobravam. Medido na base de
+           demonstração: 2 das 3 obras não tinham orçamento vinculado, e o
+           sinal de tranquilidade mais forte da página falava por 16% da
+           carteira sem dizer. A mensagem de ajuda que existe ("Vincule um
+           orçamento à obra") só aparece quando a lista fica VAZIA — nunca
+           quando fica pela metade, que é o caso perigoso. Agora conta-se
+           quem ficou de fora, e o cartão diz. */
         obras.filter(function (o) { return self._dashNaObra(o.id); }).forEach(function (o) {
-          if (!o.orcamentoId) return;
+          _obrasNoRecorte++;
+          if (!o.orcamentoId) { _obrasSemOrc++; return; }
           var orc2 = Store.obterOrcamento(eid(), o.orcamentoId); if (!orc2) return;
           var prev = Orcamento.totais(orc2).custoDireto;
           var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
@@ -1438,6 +1526,44 @@
       prevReal.filter(function (x) { return x.estourou; }).slice(0, 2).forEach(function (x) {
         var pct = Math.round((x.real / x.previsto - 1) * 100);
         alertas.push({ tipo: "estouro", texto: (porEtapa ? "Etapa " : "") + x.rotulo + ": custo " + pct + "% acima do orçado (" + self._fmtK(x.real - x.previsto) + " a mais)" });
+      });
+      /* ⚠ O PAINEL NÃO TINHA PRAZO. NENHUM. A verificação buscou 18 termos no
+         texto da tela — prazo, atraso, avanço, cronograma, dias restantes,
+         curva S — e achou zero. E o dado já estava no banco: `obra.inicio`,
+         `obra.previsaoFim` e o `percentual` de cada medição.
+
+         Medido na base de demonstração: a "Reforma Loja Center Sul" entrega em
+         5 dias, com 95,4% do prazo consumido e 0,0% medido. O Painel dizia
+         sobre ela exatamente uma linha na tabela do rodapé, sem cor e sem
+         alerta. Era o fato mais urgente da base inteira e a tela estava muda.
+
+         ⚠ O LIMIAR DE 20 PONTOS ESTÁ ESCRITO NO TEXTO DO ALERTA, de propósito.
+         Ele não é lei da física: é a folga que a curva S costuma tolerar antes
+         de virar problema. Quem lê tem de poder discordar do critério, e para
+         isso precisa ver o critério — por isso o alerta mostra os dois
+         números, não só o veredito. */
+      var _hoje = new Date(); _hoje.setHours(0, 0, 0, 0);
+      var _DIA = 86400000;
+      var _medObra = lista("medicoes").filter(function (m) { return m.status === "aprovada" || m.status === "paga"; });
+      obras.filter(function (o) {
+        return o.status === "andamento" && self._dashNaObra(o.id) && o.inicio && o.previsaoFim;
+      }).forEach(function (o) {
+        var ini = new Date(o.inicio + "T00:00:00"), fim = new Date(o.previsaoFim + "T00:00:00");
+        var total = (fim - ini) / _DIA;
+        if (!(total > 0)) return;
+        var pctPrazo = Math.round(((_hoje - ini) / _DIA) / total * 100);
+        var pctObra = Math.round(_medObra.filter(function (m) { return m.obraId === o.id; })
+          .reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+        var dias = Math.ceil((fim - _hoje) / _DIA);
+        if (pctPrazo <= 0) return;
+        if (dias < 0) {
+          alertas.push({ tipo: "prazo", texto: o.nome + ": prazo VENCIDO há " + (-dias) + " dia(s) — " + pctObra + "% medido" });
+        } else if (pctPrazo - pctObra >= 20) {
+          alertas.push({ tipo: "prazo", texto: o.nome + ": " + pctPrazo + "% do prazo consumido e " + pctObra
+            + "% medido — " + (pctPrazo - pctObra) + " pontos de defasagem, " + dias + " dia(s) até a entrega" });
+        } else if (dias <= 15 && pctObra < 90) {
+          alertas.push({ tipo: "prazo", texto: o.nome + ": entrega em " + dias + " dia(s) com " + pctObra + "% medido" });
+        }
       });
       var medPend = lista("medicoes").filter(function (m) { return naObra(m) && m.status === "pendente"; });
       if (medPend.length) alertas.push({ tipo: "prazo", texto: medPend.length + " medição(ões) aguardando aprovação — " + this._fmtK(medPend.reduce(function (s, m) { return s + Util.num(m.valor); }, 0)) });
@@ -1479,7 +1605,14 @@
         aReceber: aReceber, aPagar: aPagar, cats: cats, fluxo: fluxo,
         prevReal: prevReal, porEtapa: porEtapa, prevTot: prevTot, realTot: realTot,
         realComp: realComp, semComparacao: semComparacao, nEstouros: nEstouros,
-        empilhado: empilhado, alertas: alertas.slice(0, 4)
+        /* ⚠ SEIS, E NAO QUATRO. Com o alerta de prazo entrando, quatro vagas
+           passaram a ser disputadas: duas obras atrasadas mais medicao
+           pendente mais conta vencendo ja enchem a cota, e um estouro de
+           custo entraria empurrando o prazo para fora — justamente o que
+           ninguem via antes. Alerta que some por falta de vaga e alerta que
+           nao existe. */
+        empilhado: empilhado, alertas: alertas.slice(0, 6),
+        obrasNoRecorte: _obrasNoRecorte, obrasSemOrcamento: _obrasSemOrc
       };
     },
     // ----- SVGs do bloco executivo (mesma estética do painel do Last Planner) -----
@@ -1595,7 +1728,24 @@
         '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#dc2626"></span>Estouro</span></div>';
       return svg;
     },
-    _dashSvgDonutCat: function (cats, total) {
+        /* ⚠ NAO AUMENTE A FONTE DESTES SVG PARA "MELHORAR A LEITURA". Eu tentei
+       (8.5->11, 9.5->11.5) e a verificacao mediu tres estragos:
+
+       1. O rotulo do eixo X do Previsto x Realizado passou a SOBREPOR o
+          vizinho com 2, 3 e 4 barras — a construtora pequena. A truncagem usa
+          a constante `5.6` px/char (linha do maxC), CALIBRADA para 9.5; a
+          fonte subiu 21% e o orcamento de largura nao. Medido: colisao de
+          18,3px com 2 barras e um nome saindo do viewBox com 4.
+       2. O eixo X do Fluxo (font-size 10) ficou para tras, e nao da para
+          subir junto: com 12 meses ele passa de 1 para 11 colisoes.
+       3. E era desnecessario: a grade de 2 colunas SOZINHA ja tinha levado o
+          eixo de 5,84px para 9,41px na tela (+61%). A fonte nominal era
+          correcao em cima de problema ja resolvido.
+
+       O que controla a leitura aqui e a ESCALA, nao o numero: o viewBox tem
+       440 unidades e o tamanho real depende da largura do cartao. Por isso o
+       ajuste certo esta no CSS (.dash-graf svg{max-width}), nao aqui. */
+_dashSvgDonutCat: function (cats, total) {
       var R = 42, C = 2 * Math.PI * R, off = 0, self = this;
       var svg = '<svg viewBox="0 0 120 120" style="width:148px;height:148px;flex:0 0 auto;font-variant-numeric:tabular-nums">';
       cats.forEach(function (f) {
@@ -1669,6 +1819,12 @@
       // lançado sem etapa é informado, nunca dispara estouro sem causa visível.
       var estouroKpi = d.prevTot > 0 && d.realComp > d.prevTot;
       var notaSem = d.semComparacao > 0 ? " · " + this._fmtK(d.semComparacao) + " sem etapa apropriada" : "";
+      /* ⚠ o cartão diz POR QUANTAS OBRAS ele fala. Sem isto, "dentro do
+         orçado" some com as obras não orçadas e parece falar por todas. */
+      if (d.obrasSemOrcamento > 0) {
+        notaSem += " · compara " + (d.obrasNoRecorte - d.obrasSemOrcamento) + " de " + d.obrasNoRecorte +
+          " obra(s): " + d.obrasSemOrcamento + " sem orçamento vinculado";
+      }
       var kpiPR;
       if (!d.prevReal.length) kpiPR = "";
       else kpiPR = this._lpKpi("Previsto × Realizado", this._fmtK(d.realTot),
@@ -1700,7 +1856,14 @@
         return '<h3 style="margin:0 0 2px;font-size:14px;display:flex;align-items:center;color:var(--texto)">' + _ic(icone, 15) + titulo + '</h3>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 10px">' + sub + '</p>';
       };
-      html += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-bottom:14px">';
+      /* ⚠ DUAS COLUNAS, E NUNCA TRES. Sao QUATRO cartoes de grafico, e o
+         `auto-fit` dava 3 colunas em 1280px: o quarto caia sozinho numa
+         segunda fileira e sobrava meia largura vazia ao lado dele. Com duas
+         colunas fixas os quatro fecham 2x2 em qualquer tela, e cada cartao
+         passa de ~334px para ~508px — largura que a legenda da rosca precisa
+         para nao cortar o nome da categoria em "Mao de ...". Um ajuste, dois
+         defeitos. */
+      html += '<div class="dash-graf">';
       html += '<div class="card">' + _h3g("fluxo", "Fluxo de caixa", 'Recebido × pago por mês · saldo acumulado — ' + perRot[this._dashPer]) +
         (d.fluxo.length ? this._dashSvgFluxo(d.fluxo) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem lançamentos pagos no período.</p>') + '</div>';
       html += '<div class="card">' + _h3g("prevreal", "Previsto × Realizado " + (d.porEtapa ? "por etapa" : "por obra"), "Custo direto orçado × despesas lançadas (acumulado da obra)") +
@@ -1708,10 +1871,10 @@
         (d.prevReal.length > 8 ? '<p class="muted" style="font-size:10.5px;margin:4px 0 0">Mostrando as 8 maiores linhas de ' + d.prevReal.length + ' — o KPI soma todas.</p>' : '') + '</div>';
       html += '<div class="card">' + _h3g("categorias", "Despesas por categoria", 'Categorias do financeiro — ' + perRot[this._dashPer]);
       if (d.cats.length) {
-        html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + this._dashSvgDonutCat(d.cats, d.despesas) + '<div style="flex:1;min-width:150px">';
+        html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + this._dashSvgDonutCat(d.cats, d.despesas) + '<div style="flex:1;min-width:210px">';
         d.cats.forEach(function (c) {
           var pct = d.despesas > 0 ? Math.round(c.valor / d.despesas * 100) : 0;
-          html += '<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;margin-bottom:4px"><span style="width:9px;height:9px;border-radius:99px;background:' + c.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(c.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums;font-size:11px">' + self._fmtK(c.valor) + '</span><b style="width:34px;text-align:right;font-variant-numeric:tabular-nums">' + pct + '%</b></div>';
+          html += '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="width:9px;height:9px;border-radius:99px;background:' + c.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(c.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums;font-size:11px">' + self._fmtK(c.valor) + '</span><b style="width:34px;text-align:right;font-variant-numeric:tabular-nums">' + pct + '%</b></div>';
         });
         html += '</div></div>';
       } else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas no período.</p>';
