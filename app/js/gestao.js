@@ -3529,6 +3529,31 @@
     /* Modo de medição do registro. Registro antigo não tem `modo` gravado —
        deduz pelo que ele carrega, e o padrão de quem não tem nada é
        "orcamento" para não mudar o comportamento de quem já usava. */
+    /* ⚠ A NOTA NASCE NO HTML, NAO NO TIMER. Ela informa se o "% executado"
+       e obrigatorio, calculado ou inaplicavel — e `_ligarMedItens`, que a
+       repinta a cada troca de modo, roda 60ms depois E tem um `return` logo no
+       inicio (`if (!selOrc || !box) return`). Dependendo so dele, o campo
+       abriria sem dizer nada em qualquer cenario que caia naquele return.
+       Entao o estado inicial ja sai escrito no proprio formulario. */
+    /* ⚠ A EXPLICACAO VAI SOB O CAMPO, NAO NO ROTULO. Medido no navegador: a
+       coluna do "%" tem ~230px e a frase inteira no <label> quebrava em duas
+       linhas, empurrando SO este input para baixo — a fila de tres campos
+       ("%", "Valor medido", "Retencao") deixava de alinhar. No rotulo fica o
+       asterisco, que e curto; a razao fica embaixo, onde pode ocupar duas
+       linhas sem mexer na altura do rotulo. */
+    _astPct: function (estado) { return estado === "obrigatorio" ? " *" : ""; },
+    _notaPctHtml: function (estado) {
+      var abre = '<div class="muted" style="font-weight:400;font-size:10.5px;margin-top:3px;line-height:1.3">';
+      if (estado === "itens") return abre + 'calculado pelos itens medidos</div>';
+      if (estado === "atividades") return abre + 'não se aplica: sem valor global não há % de contrato</div>';
+      return abre + 'é ele que vira avanço da obra no Painel</div>';
+    },
+    /* traduz o modo escolhido no estado do campo % */
+    _estadoPct: function (modo, temOrcamento) {
+      if (modo === "atividades") return "atividades";
+      if (modo === "orcamento" && temOrcamento) return "itens";
+      return "obrigatorio";
+    },
     _medModo: function (m) {
       m = m || {};
       if (m.modo === "orcamento" || m.modo === "atividades" || m.modo === "valor") return m.modo;
@@ -3651,6 +3676,9 @@
       m = m || {}; var stAntigo = m.status || ""; var obras = lista("obras"), contratos = lista("contratos");
       var orcs = Store.listarOrcamentos(eid());
       var num = m.numero || proxNumero("medicoes", { casas: 2, sufixo: "ª" });
+      /* estado inicial do campo "%": obrigatório, calculado ou inaplicável.
+         Sai já escrito no HTML — ver _notaPctHtml. */
+      var _estPct = self._estadoPct(self._medModo(m), !!m.orcamentoId);
       var corpo =
         '<div class="row">' + campo("Nº da medição", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.medicaoStatus, m.status || "pendente"))) + "</div>" +
         '<div class="row">' + campo("Obra *", sel("g-obra", optsRec(obras, "nome", m.obraId, "— selecionar —"))) + campo("Contrato", sel("g-contrato", optsRec(contratos, "numero", m.contratoId, "— nenhum —"))) + "</div>" +
@@ -3671,7 +3699,8 @@
         '<div class="row" id="med-linha-orc">' + campo("Orçamento", sel("g-orcmed", optsRec(orcs, "nome", m.orcamentoId, "— selecione o orçamento —"))) + "</div>" +
         '<div id="med-itens"></div>' +
         '<div class="row">' + campo("Período (início)", inp("g-pini", m.periodoInicio, "", "date")) + campo("Período (fim)", inp("g-pfim", m.periodoFim, "", "date")) + "</div>" +
-        '<div class="row">' + campo("% executado no período", inp("g-pct", m.percentual)) + campo("Valor medido (R$) *", inp("g-valor", m.valor)) + campo("Retenção (%)", inp("g-ret", m.retencao == null ? 5 : m.retencao)) + "</div>" +
+        '<div class="row">' + campo('% executado no período<span id="med-pct-ast">' + self._astPct(_estPct) + '</span>',
+          inp("g-pct", m.percentual) + '<span id="med-pct-nota">' + self._notaPctHtml(_estPct) + '</span>') + campo("Valor medido (R$) *", inp("g-valor", m.valor)) + campo("Retenção (%)", inp("g-ret", m.retencao == null ? 5 : m.retencao)) + "</div>" +
         campo("Descrição dos serviços medidos", '<textarea id="g-desc" rows="2">' + Util.esc(m.descricao || "") + "</textarea>");
       this._modalForm("medicoes", m, "Medição", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.obraId = v("g-obra");
@@ -3778,7 +3807,51 @@
           // aqui — a guarda do topo já devolveu tudo como estava.)
           obj.orcamentoId = null; obj.itens = null;
           obj.valorContratado = null; obj.bdiValor = null; obj.totalItens = null; obj.bdiNoPU = null;
-          obj.percentual = nv("g-pct"); obj.valor = nv("g-valor");
+          /* ⚠ SEM O %, A MEDICAO NAO VIRA AVANCO. Este e o unico ramo em que o
+             percentual e DIGITADO — no modo "por itens do orcamento" ele nasce
+             calculado (readOnly) e no modo "por atividades" ele e nulo de
+             proposito, porque ali nao existe valor global contra o qual medir.
+             Aqui existia como campo opcional, e o resultado apareceu na base do
+             cliente: duas medicoes aprovadas de R$ 240.000 e R$ 252.000 sem
+             percentual nenhum. O Painel somava zero e dizia "0% medido" sobre
+             R$ 492 mil aprovados; a v1.1.276 fez a tela parar de mentir, mas
+             quem tem de parar de aceitar o buraco e o formulario.
+             Teto de 100 pelo mesmo motivo das metas: percentual acima de 100
+             nao e meta, e engano de digitacao. */
+          /* ⚠ O ROTULO DIZ "Valor medido (R$) *" DESDE SEMPRE E NADA CONFERIA.
+             Com o % ganhando duas validacoes, a assimetria ficaria gritante:
+             um asterisco cobrado e o outro decorativo no mesmo formulario. */
+          var _val = nv("g-valor");
+          if (!(_val > 0)) {
+            UI.toast("Informe o valor medido no período.", "erro");
+            return false;
+          }
+          var _pct = nv("g-pct");
+          if (!(_pct > 0)) {
+            /* ⚠ EXIGIR NUMERO QUE NAO EXISTE E CONVIDAR A INVENTAR. Neste app o
+               `percentual` e participacao EM DINHEIRO no contrato (no modo por
+               itens ele nasce de total / precoVenda * 100). Obra sem valor
+               global, sem orcamento e sem contrato nao tem denominador — e a
+               base real tem uma assim, a mesma que motivou tudo isto. Recusar
+               sem dizer o que fazer deixaria a pessoa presa, e um numero
+               chutado apaga o "— sem percentual informado" que o Painel passou
+               a mostrar com honestidade. Entao a mensagem muda de acordo. */
+            var _ob = obj.obraId ? Store.obter(eid(), "obras", obj.obraId) : null;
+            var _temBase = !!(_ob && (Util.num(_ob.valor) > 0 || _ob.orcamentoId))
+              || lista("contratos").some(function (c) {
+                return c.obraId === obj.obraId && Util.num(c.valor) > 0
+                  && c.status !== "cancelado" && c.status !== "rescindido";
+              });
+            UI.toast(_temBase
+              ? "Informe o % executado no período — é ele que vira avanço da obra no Painel."
+              : "Informe o % executado no período. Esta obra não tem valor de contrato, orçamento nem contrato vinculado — cadastre um deles, ou meda por \"Por atividades da obra\", que não usa percentual.", "erro");
+            return false;
+          }
+          if (_pct > 100) {
+            UI.toast("O % executado no período não pode passar de 100.", "erro");
+            return false;
+          }
+          obj.percentual = _pct; obj.valor = _val;
         }
         return true;
       });
@@ -3847,20 +3920,31 @@
         if (gv) { gv.value = tot.toFixed(2).replace(".", ","); gv.readOnly = true; }
       }
       self._medSomarAtividades = somarAtividades;
+      /* ⚠ O MESMO CAMPO E OBRIGATORIO, CALCULADO OU INAPLICAVEL conforme o
+         modo — e o rotulo tem de dizer qual dos tres, senao o asterisco vira
+         mentira em dois dos casos. Nao e enfeite: sem o %, a medicao nao vira
+         avanco no Painel, e foi assim que duas medicoes de R$ 240 mil e R$ 252
+         mil entraram na base do cliente valendo "0% medido". */
+      function notaPct(estado) {
+        var el = UI.el("med-pct-nota"); if (el) el.innerHTML = self._notaPctHtml(estado);
+        var ast = UI.el("med-pct-ast"); if (ast) ast.innerHTML = self._astPct(estado);
+      }
+      self._medNotaPct = notaPct;
       function pintar() {
         var modo = v("g-medmodo"), gv = UI.el("g-valor"), gp = UI.el("g-pct");
         var linhaOrc = UI.el("med-linha-orc");
         if (linhaOrc) linhaOrc.style.display = (modo === "orcamento") ? "" : "none";
         if (modo === "atividades") {
           box.innerHTML = self._medAtividadesHtml(m, v("g-obra"));
+          notaPct("atividades");
           if (gp) { gp.readOnly = true; gp.value = ""; }
           Array.prototype.forEach.call(document.querySelectorAll("[data-medqtd],[data-medvu]"), function (i2) { i2.oninput = somarAtividades; });
           somarAtividades();
           return;
         }
-        if (modo === "valor") { box.innerHTML = ""; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
+        if (modo === "valor") { box.innerHTML = ""; notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orcId = selOrc.value;
-        if (!orcId) { box.innerHTML = '<div class="muted" style="margin:8px 0">Selecione o orçamento que será medido.</div>'; if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
+        if (!orcId) { box.innerHTML = '<div class="muted" style="margin:8px 0">Selecione o orçamento que será medido.</div>'; notaPct("obrigatorio"); if (gv) gv.readOnly = false; if (gp) gp.readOnly = false; return; }
         var orc = Store.obterOrcamento(eid(), orcId);
         if (!orc) { box.innerHTML = '<div class="muted">Orçamento não encontrado.</div>'; return; }
         // Boletim APROVADO/PAGO: mostra os valores SALVOS, travados — a prévia não
@@ -3879,7 +3963,7 @@
           h2 += '</tbody><tfoot><tr><td colspan="5" style="text-align:right"><b>Total medido neste boletim</b></td><td class="num"><b>' + Util.fmtMoeda(m.valor) + "</b></td></tr></tfoot></table>";
           box.innerHTML = h2;
           if (gv) { gv.value = Util.num(m.valor).toFixed(2).replace(".", ","); gv.readOnly = true; }
-          if (gp) { gp.value = Util.num(m.percentual).toFixed(1).replace(".", ","); gp.readOnly = true; }
+          notaPct("itens"); if (gp) { gp.value = Util.num(m.percentual).toFixed(1).replace(".", ","); gp.readOnly = true; }
           return;
         }
         var ant = self._pctAnterioresPorItem(v("g-obra"), orcId, m.id);
@@ -3933,7 +4017,7 @@
           var bd = box.querySelector("[data-medbdi]"); if (bd) bd.textContent = Util.fmtMoeda(b.bdiValor);
           var t = box.querySelector("[data-medtot]"); if (t) t.textContent = Util.fmtMoeda(b.total);
           if (gv) { gv.value = Util.num(b.total).toFixed(2).replace(".", ","); gv.readOnly = true; }
-          if (gp) { gp.value = Util.num(b.pctDoOrcamento).toFixed(1).replace(".", ","); gp.readOnly = true; }
+          notaPct("itens"); if (gp) { gp.value = Util.num(b.pctDoOrcamento).toFixed(1).replace(".", ","); gp.readOnly = true; }
         }
         Array.prototype.forEach.call(box.querySelectorAll("[data-medpct]"), function (i2) { i2.oninput = recalc; });
         recalc();
@@ -16413,6 +16497,7 @@ renderFolha: function () {
           self._aprovCarimbar(obj, true);
         }
         self._aprovRejPendente = null;   // ver o ramo de rejeição em _gateStatusForm
+        self._lancFinPendente = null; self._lancFinToast = "";   // idem: agendado no gate, gravado só depois do save
         if (coletar(obj) === false) return;
         /* A AUTORIA NASCE ACIMA, e só no documento NOVO.
          * Sem `autorId` a regra "quem preencheu não aprova o próprio" não tem
@@ -16423,6 +16508,17 @@ renderFolha: function () {
          * Fica antes do Store.salvar: `aposSalvar` roda DEPOIS e exigiria uma
          * segunda gravação. */
         Store.salvar(eid(), entidade, obj);
+        /* ⚠ O DINHEIRO SÓ ENTRA DEPOIS DO DOCUMENTO. Este lançamento era feito
+         * lá dentro do `_gateStatusForm`, que é validação e roda ANTES das
+         * outras — então todo `return false` posterior deixava receita órfã no
+         * caixa e o documento por gravar, e cada nova tentativa duplicava.
+         * Aqui só se chega com o save feito. Ver o comentário no gate. */
+        var _lf = self._lancFinPendente; self._lancFinPendente = null;
+        if (_lf) {
+          Store.salvar(eid(), "financeiro", _lf);
+          if (self._lancFinToast) { try { UI.toast(self._lancFinToast, "ok"); } catch (eLF) {} }
+        }
+        self._lancFinToast = "";
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
         else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
@@ -16823,16 +16919,33 @@ renderFolha: function () {
            lançamento abaixo é o MESMO dos botões "pagar-medicao" e
            "receber-compra" da lista; a data já preenchida é o guarda de
            idempotência (pagar de novo não lança duas vezes). */
+        /* ⚠ O GATE DECIDE, O SAVE E QUE EXECUTA. Ate aqui este bloco GRAVAVA a
+           receita na hora — dentro de uma funcao de VALIDACAO, que roda antes
+           das outras validacoes do formulario. Qualquer `return false` depois
+           dela deixava o dinheiro lancado e o documento nao: o `_modalForm`
+           faz `if (coletar(obj) === false) return`, o `obj` (com o dataPgto
+           que serve de guarda de idempotencia) e descartado, e a tentativa
+           seguinte lancava DE NOVO. Medido: tres cliques em Salvar = tres
+           receitas de R$ 228.000 no caixa para uma medicao que nunca foi paga,
+           com a tela ainda dizendo "Receita lancada no Financeiro" em verde
+           antes de recusar em vermelho.
+           Ja existiam tres `return false` depois deste ponto (atividades,
+           orcamento nao encontrado, itens sem %), entao o furo nao nasceu com
+           a exigencia do percentual — ela so o estendeu ao ramo manual, que e
+           justamente onde moram as medicoes aprovadas sem % da base real.
+           O padrao correto ja estava neste arquivo, no `_aprovRejPendente`:
+           agenda aqui, executa depois do save, onde "se o save nao aconteceu,
+           este ponto nao e alcancado". */
         if (entidade === "medicoes" && novo === "paga" && !obj.dataPgto) {
           obj.dataPgto = this._hojeISO();
           var liqF = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
-          Store.salvar(eid(), "financeiro", { data: obj.dataPgto, desc: "Recebimento medição " + (obj.numero || ""), tipo: "receita", categoria: "medicao", valor: liqF, status: "pago", obraId: obj.obraId, contratoId: obj.contratoId });
-          try { UI.toast("Receita da medição lançada no Financeiro.", "ok"); } catch (eT) {}
+          this._lancFinPendente = { data: obj.dataPgto, desc: "Recebimento medição " + (obj.numero || ""), tipo: "receita", categoria: "medicao", valor: liqF, status: "pago", obraId: obj.obraId, contratoId: obj.contratoId };
+          this._lancFinToast = "Receita da medição lançada no Financeiro.";
         }
         if (entidade === "compras" && novo === "recebido" && !obj.dataRecebimento) {
           obj.dataRecebimento = this._hojeISO();
-          Store.salvar(eid(), "financeiro", { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto });
-          try { UI.toast("Despesa da compra lançada no Financeiro (pendente).", "ok"); } catch (eT2) {}
+          this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto };
+          this._lancFinToast = "Despesa da compra lançada no Financeiro (pendente).";
         }
         return true;
       }

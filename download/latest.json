@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.276",
+  "versao": "1.1.277",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.276/OrcaPRO-IA-update-v1.1.276.zip",
-  "notas": "Medicao aprovada em dinheiro deixa de ser lida como 0% de avanco. Quando a obra foi medida por valor — medicao aprovada com o valor, sem itens e sem o percentual preenchido —, o Painel mostrava \"0% medido\" e podia apontar atraso de dezenas de pontos que nao existia. Agora ele mostra \"—\" no lugar do avanco, com o valor aprovado e o aviso de que falta informar o percentual: vale para o cartao \"Prazo x avanco por obra\", o alerta do topo, a coluna do \"Resumo por obra\" e o numero embaixo das barras do Previsto x Realizado. Obra sem medicao nenhuma continua valendo 0%, e havendo qualquer percentual informado e ele que manda.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.276/OrcaPRO-IA-Instalador-v1.1.276.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.277/OrcaPRO-IA-update-v1.1.277.zip",
+  "notas": "Duas coisas na medicao. (1) O \"% executado no periodo\" passou a ser obrigatorio onde ele e digitado — no modo \"Por valor (manual)\" e quando se escolhe \"Por itens do orcamento\" sem selecionar um orcamento. Nos outros dois modos nada muda: por itens o % nasce calculado, e por atividades ele nao existe mesmo (preco unitario x quantidade nao tem valor global contra o qual medir). O rotulo do campo agora diz em qual dos tres casos voce esta, e o \"Valor medido (R$)\", que ja tinha asterisco, passou a ser conferido de verdade. (2) CORRECAO DE CAIXA: ao mudar o status de uma medicao para \"Paga\", o lancamento da receita no Financeiro era feito ANTES de o formulario terminar de validar. Se o salvamento fosse recusado por qualquer motivo, a receita ficava no caixa e a medicao nao era gravada — e cada nova tentativa lancava outra vez, com a tela dizendo \"Receita lancada no Financeiro\" e recusando em seguida. Agora o lancamento so acontece depois de a medicao ser gravada. Vale conferir no Financeiro se ha algum \"Recebimento medicao\" repetido ou sem medicao paga correspondente: esses sao de antes desta versao e precisam ser revistos a mao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.277/OrcaPRO-IA-Instalador-v1.1.277.exe"
 }
