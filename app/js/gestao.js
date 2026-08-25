@@ -1947,7 +1947,15 @@ _dashSvgDonutCat: function (cats, total) {
       for (var k in porCat) if (porCat.hasOwnProperty(k) && porCat[k] > 0) cats.push({ rotulo: rot(P.finCategoria, k), valor: porCat[k], cor: self._CORCAT[k] || "#94a3b8" });
       cats.sort(function (a, b) { return b.valor - a.valor; });
       var custoObra = obras.map(function (o) {
-        var c = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+        /* ⚠ CAIXA, COMO A TABELA "RESUMO POR OBRA". Aqui somava TODA despesa,
+           paga e pendente, enquanto a tabela 200px acima somava só a paga —
+           e a mesma obra aparecia com R$ 638,14/m² num lugar e 698 no outro,
+           9,4% de diferença sem nada explicando.
+           O aviso que existia para justificar a divergência culpava a causa
+           errada ("independe do período escolhido"): os dois números estão no
+           MESMO período; o que diferia era o regime. Alinhar as contas resolve
+           melhor que explicar por que elas não fecham. */
+        var c = fin.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa" && FinStatus.realizado(f); }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
         return { rotulo: o.nome, valor: c, area: Util.num(o.areaConstruida) };
       }).filter(function (x) { return x.valor > 0; }).sort(function (a, b) { return b.valor - a.valor; });
       var custoM2 = custoObra.filter(function (x) { return x.area > 0; }).map(function (x) { return { rotulo: x.rotulo, valor: x.valor / x.area }; });
@@ -1969,7 +1977,7 @@ _dashSvgDonutCat: function (cats, total) {
       var gd = this._dashGraficosDados(this._dashPer || "6m");
       if (!gd.custoM2.length) return "";
       var barH = (typeof UI !== "undefined" && UI._barH) ? UI._barH : function () { return ""; };
-      return '<div class="card mt"><h3 style="margin:0 0 10px" title="Custo real ÷ área construída cadastrada na obra">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Custo por m²</h3>' + barH(gd.custoM2) + '</div>';
+      return '<div class="card mt"><h3 style="margin:0 0 10px" title="Custo real ÷ área construída cadastrada na obra">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Custo por m²</h3>' + barH(gd.custoM2, function (v) { return Util.fmtMoeda(v) + "/m²"; }) + '</div>';
     },
     dashTrocaPeriodo: function (p) {
       if (p == null) return; // clique da delegação (sem value) não re-renderiza

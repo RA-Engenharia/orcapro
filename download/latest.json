@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.273",
+  "versao": "1.1.274",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.273/OrcaPRO-IA-update-v1.1.273.zip",
-  "notas": "O Painel de Gestao passou a mostrar PRAZO: avisa quando o prazo consumido descola do que ja foi medido (\"95% do prazo consumido e 0% medido — 6 dias ate a entrega\") e a tabela por obra ganhou a coluna Prazo x avanco. Entrou tambem o Saldo a faturar — quanto do contrato ainda nao virou medicao. E tres numeros que se contradiziam foram alinhados: \"Valor contratado\" dava um valor no cartao e outro na tabela logo abaixo; os cartoes de dinheiro agora dizem o regime (caixa ou pago+pendente); e o \"dentro do orcado\" declara por quantas obras ele fala, em vez de somir com as que nao tem orcamento vinculado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.273/OrcaPRO-IA-Instalador-v1.1.273.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.274/OrcaPRO-IA-update-v1.1.274.zip",
+  "notas": "Tres correcoes de leitura no Painel. \"Custo por m2\" mostrava dois valores para a mesma obra (o cartao somava toda despesa, a tabela so a paga) e trocava de unidade conforme o valor — acima de mil saia \"R$ 1.975,31\", abaixo saia \"638\" sem moeda. Agora os dois usam o mesmo criterio e sai \"R$ 638,14/m2\" sempre. O grafico de prazo passou a dizer \"dia(s)\". E a Retencao presa aparecia com o rotulo colado no valor. No tema escuro, o texto e o trilho do grafico passaram a seguir as cores do tema.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.274/OrcaPRO-IA-Instalador-v1.1.274.exe"
 }

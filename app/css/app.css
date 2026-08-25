@@ -445,8 +445,20 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .kpi { background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio-lg); padding: 19px 21px; box-shadow: var(--sombra), var(--realce); position: relative; overflow: hidden; transition: .18s cubic-bezier(.4,0,.2,1); }
 .kpi::before { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--linha-forte), var(--linha)); }
 .kpi:hover { transform: translateY(-3px); box-shadow: var(--sombra-lg), var(--realce); border-color: var(--linha-forte); }
-.kpi .rotulo { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .8px; color: var(--texto-fraco); font-weight: var(--p-forte); }
-.kpi .num { font-size: var(--t-tit); font-weight: var(--p-forte); margin-top: 9px; letter-spacing: -.5px; line-height: 1.1; }
+/* ⚠ `.kpi-lbl` E `.kpi-val` SÃO OS MESMOS SELETORES, e não uma cópia. Eram
+   usadas 9 vezes em js/gestao.js e não existiam em CSS nenhum: `grep -rn
+   "kpi-lbl\|kpi-val" --include=*.css` voltava vazio. Sem estilo e sendo
+   <span>, os dois ficavam INLINE e colados — "Retenção presaR$ 3.205,65" —
+   e o valor, que é dinheiro do cliente, saía 25% menor que o de um cartão
+   que só conta diários de obra.
+
+   Elas entram na MESMA regra em vez de ganhar uma cópia: duas listas de
+   declarações iguais divergem na primeira vez que alguém mexer numa só. O
+   `display:block` é o que essas precisam a mais, porque `.rotulo` e `.num`
+   são <div> e estas são <span>. */
+.kpi .rotulo, .kpi .kpi-lbl { font-size: var(--t-micro); text-transform: uppercase; letter-spacing: .8px; color: var(--texto-fraco); font-weight: var(--p-forte); }
+.kpi .num, .kpi .kpi-val { font-size: var(--t-tit); font-weight: var(--p-forte); margin-top: 9px; letter-spacing: -.5px; line-height: 1.1; }
+.kpi .kpi-lbl, .kpi .kpi-val { display: block; }
 .kpi.destaque::before { background: linear-gradient(90deg, var(--verde-claro), var(--verde)); }
 .kpi.destaque .num { color: var(--verde); }
 .kpi.custo::before { background: linear-gradient(90deg, var(--aco-claro), var(--aco)); }

@@ -1729,7 +1729,7 @@
       if (!(orc.etapas || []).length) return '<div class="vazio card">Adicione etapas e itens para ver os gráficos.</div>';
       var sint = Orcamento.sintetico(orc);
       var html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">';
-      html += '<div class="card"><h3 style="margin:0 0 8px">Custo por etapa</h3>' + this._barH(sint.map(function (s) { return { rotulo: s.codigo + " " + s.nome, valor: s.custoDireto }; })) + '</div>';
+      html += '<div class="card"><h3 style="margin:0 0 8px">Custo por etapa</h3>' + this._barH(sint.map(function (s) { return { rotulo: s.codigo + " " + s.nome, valor: s.custoDireto }; }), function (v) { return Util.fmtMoeda(v); }) + '</div>';
       html += '<div class="card"><h3 style="margin:0 0 8px">Curva ABC (Pareto)</h3>' + this._pareto(sint) + '</div>';
       var mme = this._mmeOrc(orc);
       if (mme.total > 0) html += '<div class="card"><h3 style="margin:0 0 8px">Composição (MO/MAT/EQ)</h3>' + this._donut([{ rotulo: "Mão de obra", valor: mme.mo, cor: "#2563eb" }, { rotulo: "Material", valor: mme.mat, cor: "#16a34a" }, { rotulo: "Equipamento", valor: mme.eq, cor: "#f59e0b" }]) + '</div>';
@@ -1737,7 +1737,10 @@
         var r = Cronograma.estimar(orc), porCat = {};
         r.etapas.forEach(function (e) { porCat[e.categoria] = (porCat[e.categoria] || 0) + e.duracao; });
         var dd = Object.keys(porCat).map(function (k) { return { rotulo: Cronograma.cat(k).nome, valor: porCat[k], cor: Cronograma.cat(k).cor }; });
-        html += '<div class="card"><h3 style="margin:0 0 8px">Prazo por categoria (dias)</h3>' + this._barH(dd) + '</div>';
+        /* ⚠ dias, e dito por extenso: sem o formatador este gráfico ganharia
+           "R$" no dia em que uma categoria passasse de mil dias, porque o
+           padrão antigo do `_barH` escolhia a unidade pela magnitude. */
+        html += '<div class="card"><h3 style="margin:0 0 8px">Prazo por categoria (dias)</h3>' + this._barH(dd, function (v) { return Util.fmtNum(v, 0) + ' dia(s)'; }) + '</div>';
       }
       html += '<div class="card" style="grid-column:1/-1"><h3 style="margin:0 0 8px">Curva S — avanço físico-financeiro acumulado</h3>' + this._curvaS(orc) + '</div>';
       return html + '</div>';
@@ -1783,12 +1786,29 @@
       }); });
       return { mo: mo, mat: mat, eq: eq, total: mo + mat + eq };
     },
-    _barH: function (dados) {
+    /* ⚠ QUEM SABE A UNIDADE É QUEM CHAMA, não este desenho. A versão anterior
+       escolhia pela MAGNITUDE — `valor >= 1000 ? fmtMoeda : fmtNum` — e isso
+       dava dois erros de leitura ao mesmo tempo:
+
+         · "Custo por m²" mostrava 698 pelado e R$ 1.975,31 com moeda, no mesmo
+           cartão, só porque um passou de mil e o outro não;
+         · "Prazo por categoria (dias)" ganharia "R$" no dia em que alguma
+           categoria passasse de mil dias.
+
+       Agora o formato vem por parâmetro. O padrão continua o de antes para não
+       quebrar chamador que ainda não passa nada, mas os três que existem
+       passam o seu.
+
+       ⚠ E AS CORES SÃO TOKEN, não hexadecimal cravado. `#475569` sobre o
+       cartão escuro dava contraste de 2,41:1 (a WCAG AA pede 4,5:1) e o trilho
+       `#e2e8f0` era um retângulo quase branco no meio do tema escuro. */
+    _barH: function (dados, fmt) {
       var max = dados.reduce(function (m, d) { return Math.max(m, d.valor); }, 0) || 1;
+      var f = fmt || function (v) { return v >= 1000 ? Util.fmtMoeda(v) : Util.fmtNum(v, 0); };
       return '<div>' + dados.map(function (d) {
         var pct = (d.valor / max) * 100, cor = d.cor || "#2563eb";
-        return '<div style="margin:5px 0"><div style="font-size:11px;color:#475569;display:flex;justify-content:space-between"><span>' + Util.esc(String(d.rotulo).slice(0, 34)) + '</span><span>' + (d.valor >= 1000 ? Util.fmtMoeda(d.valor) : Util.fmtNum(d.valor, 0)) + '</span></div>' +
-          '<div style="background:#e2e8f0;border-radius:4px;height:14px"><div style="width:' + pct.toFixed(1) + '%;background:' + cor + ';height:14px;border-radius:4px"></div></div></div>';
+        return '<div style="margin:5px 0"><div style="font-size:11px;color:var(--texto-fraco);display:flex;justify-content:space-between"><span>' + Util.esc(String(d.rotulo).slice(0, 34)) + '</span><span>' + f(d.valor) + '</span></div>' +
+          '<div style="background:var(--linha);border-radius:4px;height:14px"><div style="width:' + pct.toFixed(1) + '%;background:' + cor + ';height:14px;border-radius:4px"></div></div></div>';
       }).join("") + '</div>';
     },
     _pareto: function (sint) {
