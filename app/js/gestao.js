@@ -1234,7 +1234,10 @@
             var _t = (_f - _i) / 86400000;
             if (_t > 0) {
               var _h = new Date(); _h.setHours(0, 0, 0, 0);
-              var pP = Math.round(((_h - _i) / 86400000) / _t * 100);
+              /* ⚠ obra com inicio no futuro dava prazo NEGATIVO aqui e 0% no
+                 cartao la em cima — mesma obra, dois numeros. O piso e zero
+                 nos dois (ver _dashPrazoAvancoDados). */
+              var pP = Math.max(0, Math.round(((_h - _i) / 86400000) / _t * 100));
               var pO = self._avancoMedido(o.id, med);   /* fonte única — ver _avancoMedido */
               var _d = Math.ceil((_f - _h) / 86400000);
               var _atras = pP - pO;
@@ -1510,7 +1513,7 @@
           var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           if (prev <= 0 && real <= 0) return;
           prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev,
-            avanco: self._avancoMedido(o.id, medsTudo), semMedicao: self._semMedicao(o.id, medsTudo) });
+            avanco: self._avancoMedido(o.id, medsTudo) });
         });
       }
       // KPI honesto: a COMPARAÇÃO usa só linhas com previsto>0 (etapa/obra orçada);
@@ -1865,7 +1868,11 @@
       return attr + '"' + cor + '">' + (pp > 0 ? "+" : (pp < 0 ? "−" : "")) + Math.abs(pp) + "pp"
         + '<title>' + Util.esc(d.rotulo) + ": consumiu " + Math.round(consumo)
         + "% do orçado e entregou " + avanco + "% do escopo"
-        + (d.semMedicao ? " (nenhuma medição aprovada registrada)" : "")
+        /* ⚠ a ressalva era condicionada a NAO EXISTIR registro; obra com
+           medicao so pendente caia fora dela e mostrava 0% sem explicacao.
+           O que precisa ser dito e por que o numero e zero — e isso vale
+           sempre que ele e zero. */
+        + (avanco === 0 ? " (nenhuma medição aprovada)" : "")
         + (pp > 0 ? " — o custo está " + pp + " ponto(s) à frente da obra."
                   : (pp < 0 ? " — a obra está " + Math.abs(pp) + " ponto(s) à frente do custo." : " — em linha."))
         + '</title></text>';
@@ -1884,6 +1891,13 @@
         var atraso = l.prazoPct - av;
         var cor = l.dias < 0 ? "var(--graf-alerta)" : (atraso >= 20 ? "var(--graf-aviso)" : "var(--verde)");
         var fill = Math.max(0, Math.min(100, av));
+        /* ⚠ O CLAMP EMPATAVA "CHEGOU" COM "ESTOUROU". Obra a 137% do prazo e
+           obra a 100% desenhavam o marcador no mesmo left:100%. O numero ao
+           lado sempre disse a verdade, mas o desenho — que e o que se le de
+           relance — dizia a mesma coisa para as duas. Passando de 100 o
+           marcador engorda e assume a cor de alerta: continua na borda,
+           porque nao ha borda depois da borda, mas para de mentir empate. */
+        var estourou = l.prazoPct > 100;
         var marca = Math.max(0, Math.min(100, l.prazoPct));
         var dir = l.dias < 0 ? "vencido há " + (-l.dias) + "d"
           : (l.dias <= 15 ? l.dias + "d restantes" : l.dias + " dias");
@@ -1894,11 +1908,13 @@
           + l.prazoPct + '% × ' + av + '% · ' + dir + '</span></div>'
           + '<div title="' + Util.esc(l.rotulo) + ": prazo consumido " + l.prazoPct + "%, avanço medido "
           + av + "%"
-          + (l.semMedicao ? " (nenhuma medição aprovada registrada)" : "")
+          + (av === 0 ? " (nenhuma medição aprovada)" : "")
           + (atraso > 0 ? " — " + atraso + " ponto(s) atrás do calendário" : "")
           + '" style="position:relative;height:14px;border-radius:4px;background:var(--linha);overflow:hidden">'
           + (fill > 0 ? '<div style="position:absolute;left:0;top:0;bottom:0;width:' + fill + '%;background:' + cor + ';opacity:.85"></div>' : "")
-          + '<div style="position:absolute;top:-2px;bottom:-2px;left:' + marca + '%;width:2px;background:var(--texto);opacity:.75"></div>'
+          + '<div style="position:absolute;top:-3px;bottom:-3px;left:' + marca + '%;margin-left:'
+          + (estourou ? "-4px" : "0") + ';width:' + (estourou ? 4 : 2) + 'px;background:'
+          + (estourou ? "var(--graf-alerta)" : "var(--texto)") + ';opacity:' + (estourou ? ".95" : ".75") + '"></div>'
           + '</div></div>';
       });
       html += '<div style="display:flex;gap:14px;margin-top:8px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">'
@@ -2037,7 +2053,11 @@
       html += '<div class="card">' + _h3g("calendario", "Prazo × avanço por obra", "Quanto do calendário passou × quanto do escopo foi medido — acumulado da obra") +
         (d.prazoAvanco.length
           ? this._prazoAvancoHtml(d.prazoAvanco, d.semPrazo)
-          : '<p class="muted" style="font-size:12.5px;margin:6px 0">Cadastre início e previsão de término nas obras (em <b>Obras → editar</b>) para acompanhar o prazo aqui.</p>') + '</div>';
+          /* ⚠ a contagem existia e morria em _prazoAvancoHtml, que nao e
+             chamado quando NENHUMA obra tem data — justo o caso em que saber
+             quantas estao esperando cadastro e a propria acao. */
+          : '<p class="muted" style="font-size:12.5px;margin:6px 0">' + d.semPrazo
+            + ' obra(s) sem início ou previsão de término cadastrados. Preencha em <b>Obras → editar</b> para acompanhar o prazo aqui.</p>') + '</div>';
 
       html += '<div class="card">' + _h3g("custoobra", "Custo por obra", "Peso de cada obra no período — Material × Mão de obra × Equipamento") +
         (d.empilhado.length ? this._dashEmpilhadoHtml(d.empilhado) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas com obra vinculada no período.</p>');
@@ -2050,7 +2070,7 @@
              demais sumia do desenho e, aqui, aparecia como zero. Arredondar
              para baixo esta certo; escrever "0%" sobre valor que existe, nao. */
           var _p = d.despesas > 0 ? c.valor / d.despesas * 100 : 0;
-          var pct = _p > 0 && _p < 0.5 ? "<1" : Math.round(_p);
+          var pct = _p > 0 && _p < 0.5 ? "&lt;1" : Math.round(_p);   /* "<" cru abre tag no navegador */
           html += '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="width:9px;height:9px;border-radius:99px;background:' + c.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(c.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums;font-size:11px">' + self._fmtK(c.valor) + '</span><b style="width:34px;text-align:right;font-variant-numeric:tabular-nums">' + pct + '%</b></div>';
         });
         html += '</div>';
@@ -2123,7 +2143,6 @@
           rotulo: o.nome,
           prazoPct: Math.max(0, Math.round(((hj - ini) / 86400000) / dur * 100)),
           avancoPct: self._avancoMedido(o.id, meds),
-          semMedicao: self._semMedicao(o.id, meds),      /* muda o tooltip, não o número */
           dias: Math.ceil((fim - hj) / 86400000)
         });
       });
@@ -2135,11 +2154,20 @@
     _dashPrazoCard: function () {
       var _ic2 = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
       var pa = this._dashPrazoAvancoDados();
-      if (!pa.linhas.length) return "";
+      /* ⚠ SIMETRIA COM A GRADE. Dentro do bloco financeiro, prazo sem dado
+         mostra a dica "cadastre inicio e previsao de termino"; aqui devolvia
+         string vazia, entao justamente quem nao tem o Financeiro — o mestre
+         de obras — nao recebia nem a dica. Conta nova (nenhuma obra) segue
+         sem cartao, que ai e poluicao. */
+      if (!pa.linhas.length && !pa.semPrazo) return "";
       return '<div class="card mt"><h3 style="margin:0 0 2px;font-size:14px;display:flex;align-items:center;color:var(--texto)">'
         + _ic2("calendario") + 'Prazo × avanço por obra</h3>'
         + '<p class="muted" style="font-size:11.5px;margin:0 0 10px">Quanto do calendário passou × quanto do escopo foi medido — acumulado da obra</p>'
-        + this._prazoAvancoHtml(pa.linhas, pa.semPrazo) + '</div>';
+        + (pa.linhas.length
+          ? this._prazoAvancoHtml(pa.linhas, pa.semPrazo)
+          : '<p class="muted" style="font-size:12.5px;margin:6px 0">' + pa.semPrazo
+            + ' obra(s) sem início ou previsão de término cadastrados. Preencha em <b>Obras → editar</b> para acompanhar o prazo aqui.</p>')
+        + '</div>';
     },
     /* ⚠ `previsaoFim` ERA UM CAMPO FANTASMA. O formulario de Obras tem
        "Previsao de termino" e grava em `obra.termino` (formObra, g-termino) —
@@ -2157,10 +2185,6 @@
       return Math.round((meds || []).filter(function (m) {
         return m.obraId === obraId && (m.status === "aprovada" || m.status === "paga");
       }).reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
-    },
-    /* so para o tooltip: 0% por falta de registro le diferente de 0% medido */
-    _semMedicao: function (obraId, meds) {
-      return !(meds || []).some(function (m) { return m.obraId === obraId; });
     },
     _rotuloMes: function (mk) {
       if (!mk) return "";
