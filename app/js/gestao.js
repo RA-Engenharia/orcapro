@@ -1100,6 +1100,7 @@
       var html = '<h1 class="mb">Painel de Gestão</h1>' +
         // Bloco executivo/financeiro (filtros globais + KPIs de caixa + gráficos)
         this._dashFinHtml() +
+        (this._dashFinVisivel() ? "" : this._dashPrazoCard()) +   /* prazo não é dinheiro — ver _dashPrazoAvancoDados */
         /* o subtítulo DIZ o recorte: o mesmo bloco significa coisas diferentes
            com "Todas as obras" e com uma obra escolhida */
         _sec("obra", "Operação", "visão geral de obras, suprimentos e campo · <b>" + this._dashEscopoRotulo(esc) + "</b>") +
@@ -1228,15 +1229,13 @@
              Obra sem previsao de termino cadastrada mostra "—" e diz por que:
              o campo esta vazio, nao a obra e que nao tem prazo. */
           var pz = '<span class="muted" title="Cadastre início e previsão de término na obra">—</span>';
-          if (o.inicio && o.previsaoFim) {
-            var _i = new Date(o.inicio + "T00:00:00"), _f = new Date(o.previsaoFim + "T00:00:00");
+          if (o.inicio && self._fimPrevisto(o)) {
+            var _i = new Date(o.inicio + "T00:00:00"), _f = new Date(self._fimPrevisto(o) + "T00:00:00");
             var _t = (_f - _i) / 86400000;
             if (_t > 0) {
               var _h = new Date(); _h.setHours(0, 0, 0, 0);
               var pP = Math.round(((_h - _i) / 86400000) / _t * 100);
-              var pO = Math.round(med.filter(function (m) {
-                return m.obraId === o.id && (m.status === "aprovada" || m.status === "paga");
-              }).reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+              var pO = self._avancoMedido(o.id, med);   /* fonte única — ver _avancoMedido */
               var _d = Math.ceil((_f - _h) / 86400000);
               var _atras = pP - pO;
               var _cor = _d < 0 ? "#dc2626" : (_atras >= 20 ? "#ea580c" : "var(--verde-tx, #15803d)");
@@ -1411,6 +1410,7 @@
        * por etapa e rótulo). Recorte de dado é isto aqui. */
       var naObra = function (x) { return !ids || (x && ids.indexOf(x.obraId) > -1); };
       var finTudo = lista("financeiro");
+      var medsTudo = lista("medicoes");     /* avanço medido por obra — ver _avancoMedido */
       var finPer = this._periodoFin(finTudo, this._dashPer);
       var fin = finPer.filter(naObra);
 
@@ -1443,15 +1443,31 @@
       cats.sort(function (a, b) { return b.valor - a.valor; });
 
       // fluxo mensal (máx 12 meses, ordenados) + saldo acumulado
-      var meses = []; for (var mk in porMes) meses.push(mk); // Object.create(null): for..in já é próprio
-      meses.sort();
-      var cortados = meses.slice(0, Math.max(0, meses.length - 12));
-      meses = meses.slice(-12);
+      var comDado = []; for (var mk in porMes) comDado.push(mk); // Object.create(null): for..in já é próprio
+      comDado.sort();
+      var meses = this._janelaMeses(this._dashPer, comDado);   /* ver _janelaMeses: mês vazio é mês com zero */
+      /* nada sai do desenho em silêncio — ver _janelaMeses */
+      var _pri = meses.length ? meses[0] : null, _ult = meses.length ? meses[meses.length - 1] : null;
+      var foraTras = _pri ? comDado.filter(function (m) { return m < _pri; }) : [];
+      var foraFrente = _ult ? comDado.filter(function (m) { return m > _ult; }) : comDado.slice();
+      /* o acumulado NUNCA esquece o que ficou antes da janela — e agora ele
+         soma os meses COM DADO que sobraram fora, não a janela podada */
+      var cortados = foraTras;
       var NOMES_MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+      var VAZIO = { receita: 0, despesa: 0 };
       // o acumulado NUNCA esquece os meses fora da janela de exibição
-      var acc = cortados.reduce(function (s2, m2) { return s2 + porMes[m2].receita - porMes[m2].despesa; }, 0);
+      var acc = cortados.reduce(function (s2, m2) { var d2 = porMes[m2] || VAZIO; return s2 + d2.receita - d2.despesa; }, 0);
+      /* ⚠ `fluxo.length` DEIXOU DE SIGNIFICAR "TEM DADO". Desde que a janela
+         passou a vir do filtro, um mes sem lancamento nenhum produz um ponto de
+         zeros — entao o vetor nunca mais e vazio, e a tela desenharia uma linha
+         reta no zero em vez de dizer que nao houve movimento. Quem responde
+         isso agora e o dado, nao o tamanho do vetor. */
+      /* ⚠ MOVIMENTO E DENTRO DA JANELA. Com todo o dinheiro fora dela (data
+         digitada errada, ou historico anterior ao recorte), `comDado.length`
+         continuava > 0 e a tela desenhava uma reta no zero se dizendo cheia. */
+      var fluxoTemMovimento = _pri ? comDado.some(function (m) { return m >= _pri && m <= _ult; }) : false;
       var fluxo = meses.map(function (m) {
-        var d = porMes[m]; acc += d.receita - d.despesa;
+        var d = porMes[m] || VAZIO; acc += d.receita - d.despesa;
         var mi = parseInt(m.slice(5, 7), 10) - 1;
         return { rotulo: (NOMES_MES[mi] || m.slice(5)) + "/" + m.slice(2, 4), receita: d.receita, despesa: d.despesa, acumulado: acc };
       });
@@ -1493,7 +1509,8 @@
           var prev = Orcamento.totais(orc2).custoDireto;
           var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           if (prev <= 0 && real <= 0) return;
-          prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev });
+          prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev,
+            avanco: self._avancoMedido(o.id, medsTudo), semMedicao: self._semMedicao(o.id, medsTudo) });
         });
       }
       // KPI honesto: a COMPARAÇÃO usa só linhas com previsto>0 (etapa/obra orçada);
@@ -1521,6 +1538,16 @@
         return { rotulo: o.nome, seg: catsEmp.concat(["outros"]).map(function (c) { return { cat: c, valor: soma[c] || 0 }; }), total: total };
       }).filter(function (l) { return l.total > 0; }).sort(function (a, b) { return b.total - a.total; }).slice(0, 6);
 
+      /* ⚠ PRAZO × AVANCO SAIU DA TABELA E VIROU DESENHO. O dado ja existia
+         na tabela "Resumo por obra", em texto ("62% × 41%") e no fim da pagina
+         — que e onde ninguem procura cronograma. Aqui em cima, ao lado do
+         dinheiro, a barra responde de relance a pergunta que a rosca nao
+         respondia: a obra esta entregando no ritmo do calendario?
+         Obra sem inicio/termino nao entra — e e CONTADA, porque sumir em
+         silencio foi o defeito que ja custou caro no Previsto × Realizado. */
+      var _pa = this._dashPrazoAvancoDados();
+      var prazoAvanco = _pa.linhas, _semPrazo = _pa.semPrazo;
+
       // alertas executivos
       var alertas = [];
       prevReal.filter(function (x) { return x.estourou; }).slice(0, 2).forEach(function (x) {
@@ -1530,7 +1557,7 @@
       /* ⚠ O PAINEL NÃO TINHA PRAZO. NENHUM. A verificação buscou 18 termos no
          texto da tela — prazo, atraso, avanço, cronograma, dias restantes,
          curva S — e achou zero. E o dado já estava no banco: `obra.inicio`,
-         `obra.previsaoFim` e o `percentual` de cada medição.
+         `obra.termino` (a previsao de termino do cadastro) e o `percentual` de cada medição.
 
          Medido na base de demonstração: a "Reforma Loja Center Sul" entrega em
          5 dias, com 95,4% do prazo consumido e 0,0% medido. O Painel dizia
@@ -1544,16 +1571,15 @@
          números, não só o veredito. */
       var _hoje = new Date(); _hoje.setHours(0, 0, 0, 0);
       var _DIA = 86400000;
-      var _medObra = lista("medicoes").filter(function (m) { return m.status === "aprovada" || m.status === "paga"; });
+      var _medObra = lista("medicoes");
       obras.filter(function (o) {
-        return o.status === "andamento" && self._dashNaObra(o.id) && o.inicio && o.previsaoFim;
+        return o.status === "andamento" && self._dashNaObra(o.id) && o.inicio && self._fimPrevisto(o);
       }).forEach(function (o) {
-        var ini = new Date(o.inicio + "T00:00:00"), fim = new Date(o.previsaoFim + "T00:00:00");
+        var ini = new Date(o.inicio + "T00:00:00"), fim = new Date(self._fimPrevisto(o) + "T00:00:00");
         var total = (fim - ini) / _DIA;
         if (!(total > 0)) return;
         var pctPrazo = Math.round(((_hoje - ini) / _DIA) / total * 100);
-        var pctObra = Math.round(_medObra.filter(function (m) { return m.obraId === o.id; })
-          .reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+        var pctObra = self._avancoMedido(o.id, _medObra);   /* fonte única — ver _avancoMedido */
         var dias = Math.ceil((fim - _hoje) / _DIA);
         if (pctPrazo <= 0) return;
         if (dias < 0) {
@@ -1602,7 +1628,10 @@
       return {
         obraSel: obraSel, receitas: receitas, despesas: despesas, resultado: resultado,
         margem: receitas > 0 ? (resultado / receitas) * 100 : null,
-        aReceber: aReceber, aPagar: aPagar, cats: cats, fluxo: fluxo,
+        aReceber: aReceber, aPagar: aPagar, cats: cats, fluxo: fluxo, fluxoTemMovimento: fluxoTemMovimento,
+        prazoAvanco: prazoAvanco, semPrazo: _semPrazo,
+        fluxoForaTras: foraTras.length, fluxoForaFrente: foraFrente.length,
+        fluxoForaFrenteAte: foraFrente.length ? foraFrente[foraFrente.length - 1] : null,
         prevReal: prevReal, porEtapa: porEtapa, prevTot: prevTot, realTot: realTot,
         realComp: realComp, semComparacao: semComparacao, nEstouros: nEstouros,
         /* ⚠ SEIS, E NAO QUATRO. Com o alerta de prazo entrando, quatro vagas
@@ -1645,7 +1674,17 @@
         });
         return s;
       };
-      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
+      /* ⚠ SEM role/aria-label O GRAFICO E SILENCIO NO LEITOR DE TELA. Medido:
+         o fluxo desenha 9 valores e o leitor lia ZERO deles — ouvia so as
+         marcas do eixo e a legenda, que sao a moldura e nao o dado. O resumo
+         aqui e a mesma informacao que o olho tira de relance. */
+      var _ult = fluxo[fluxo.length - 1] || { rotulo: "", receita: 0, despesa: 0, acumulado: 0 };
+      var _resumo = "Fluxo de caixa, " + fluxo.length + " mes(es)"
+        + (fluxo.length ? ", de " + fluxo[0].rotulo + " a " + _ult.rotulo : "")
+        + ". Recebido " + self._fmtK(fluxo.reduce(function (t, f) { return t + f.receita; }, 0))
+        + ", pago " + self._fmtK(fluxo.reduce(function (t, f) { return t + f.despesa; }, 0))
+        + ", saldo acumulado ao final " + self._fmtK(_ult.acumulado) + ".";
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + Util.esc(_resumo) + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
       /* marcas do eixo redondo (js/escala.js); sem ele, o terco antigo */
       var _marcas = eixo ? eixo.marcas : [0,1,2,3].map(function(i){ return min + (max-min)*i/3; });
       for (var g = 0; g < _marcas.length; g++) {
@@ -1654,8 +1693,16 @@
           '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
       if (min < 0) svg += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="var(--texto-fraco)" stroke-width="1.4"/>';
-      svg += linha("receita", "var(--navy)") + linha("despesa", "#b45309") + linha("acumulado", "var(--verde)", true);
+      svg += linha("receita", "var(--graf-a)") + linha("despesa", "var(--graf-b)") + linha("acumulado", "var(--graf-c)", true);
+      /* ⚠ 12 MESES NAO CABEM 12 ROTULOS. Com a janela completa a distancia
+         entre pontos cai para 34,4 unidades do viewBox e "jun/26" a font-size
+         10 ocupa ~33 — encostam. Desbasta para no maximo 6, contando DE TRAS
+         PARA A FRENTE (i % passo === (n-1) % passo) para que o ultimo mes,
+         que e o que a pessoa procura primeiro, esteja sempre escrito. */
+      var passo = Math.max(1, Math.ceil(fluxo.length / 6));
+      var resto = (fluxo.length - 1) % passo;
       fluxo.forEach(function (f, i) {
+        if (i % passo !== resto) return;
         // 1º e último ancoram pra dentro — "jul/26" estourava o viewBox e era clipado ("jul/2")
         var anc = i === 0 ? "start" : (i === fluxo.length - 1 ? "end" : "middle");
         var tx = i === 0 ? Math.max(2, x(i) - 14) : (i === fluxo.length - 1 ? W - 2 : x(i));
@@ -1663,20 +1710,40 @@
       });
       svg += "</svg>";
       svg += '<div style="display:flex;gap:14px;margin-top:6px;font-size:11.5px;font-weight:600;color:var(--texto-fraco);flex-wrap:wrap">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--navy)"></span>Receitas</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:#b45309"></span>Despesas</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--verde)"></span>Saldo acumulado</span></div>';
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--graf-a)"></span>Receitas</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--graf-b)"></span>Despesas</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--graf-c)"></span>Saldo acumulado</span></div>';
       return svg;
     },
     /* Top-8 do Previsto×Realizado por RELEVÂNCIA (maior previsto+real primeiro),
      * com "Sem etapa apropriada" SEMPRE visível no fim (nunca cortada — senão o
      * número do KPI fica irrastreável no gráfico). */
+    /* ⚠ O CORTE ORDENAVA POR TAMANHO E ENGOLIA O ESTOURO. Medido: havia
+       1 estouro real no recorte e 0 desenhados — a linha estourada era pequena
+       em valor, entao caiu fora do top-8, e o grafico cujo unico proposito e
+       comparar orcado com gasto mostrava so quem estava dentro do orcado.
+       Agora o estouro tem passagem garantida: entra no lugar da menor linha
+       comportada. A ordem de desenho continua por tamanho — quem manda na
+       selecao e o estouro, quem manda na leitura e a grandeza. */
     _dashPrevRealTop: function (prevReal) {
+      var mag = function (a, b) { return (b.previsto + b.real) - (a.previsto + a.real); };
       var semEtapa = prevReal.filter(function (x) { return x.previsto <= 0; });
-      var etapas = prevReal.filter(function (x) { return x.previsto > 0; })
-        .sort(function (a, b) { return (b.previsto + b.real) - (a.previsto + a.real); })
-        .slice(0, semEtapa.length ? 7 : 8);
-      return etapas.concat(semEtapa);
+      var porTam = prevReal.filter(function (x) { return x.previsto > 0; }).sort(mag);
+      var lim = semEtapa.length ? 7 : 8;
+      var sel = porTam.slice(0, lim);
+      var forasEstourados = porTam.slice(lim).filter(function (x) { return x.estourou; });
+      for (var i = 0; i < forasEstourados.length; i++) {
+        var alvo = -1;
+        for (var j = sel.length - 1; j >= 0; j--) { if (!sel[j].estourou) { alvo = j; break; } }
+        if (alvo < 0) break;                       /* selecao ja e toda estouro */
+        sel[alvo] = forasEstourados[i];
+      }
+      sel.sort(mag);
+      var saida = sel.concat(semEtapa);
+      /* o rotulo acessivel precisa saber o que NAO esta na tela */
+      saida.totalLinhas = prevReal.length;
+      saida.totalEstouros = prevReal.filter(function (x) { return x.estourou; }).length;
+      return saida;
     },
     _dashSvgPrevReal: function (dados) {
       var self = this, W = 440, H = 190, padL = 52, padR = 8, padT = 12, padB = 30;
@@ -1689,7 +1756,19 @@
       var eixo = (typeof Escala !== "undefined") ? Escala.calcular(0, max, 4) : null;
       if (eixo) max = eixo.max;
       var y = function (v) { return padT + (1 - v / max) * ih; };
-      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
+      var _tp = dados.reduce(function (t, d) { return t + d.previsto; }, 0);
+      var _tr = dados.reduce(function (t, d) { return t + d.real; }, 0);
+      /* ⚠ CONTA O CONJUNTO, NAO O DESENHO. Se dissesse "nenhuma acima do
+         orcado" olhando so para as barras visiveis, mentiria toda vez que um
+         estouro ficasse de fora do corte — que era exatamente o caso medido. */
+      var _tot = dados.totalLinhas || dados.length;
+      var _est = (typeof dados.totalEstouros === "number")
+        ? dados.totalEstouros : dados.filter(function (d) { return d.estourou; }).length;
+      var _res2 = "Previsto contra realizado, " + dados.length + " linha(s) desenhada(s)"
+        + (_tot > dados.length ? " de " + _tot : "") + ". Orcado "
+        + self._fmtK(_tp) + ", gasto " + self._fmtK(_tr) + ". "
+        + (_est ? _est + " linha(s) acima do orcado." : "Nenhuma linha acima do orcado.");
+      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + Util.esc(_res2) + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
       /* idem; barra sempre contra o zero */
       var _marcas = eixo ? eixo.marcas : [0,1,2,3].map(function(i){ return max*i/3; });
       for (var g = 0; g < _marcas.length; g++) {
@@ -1716,15 +1795,17 @@
         var cx = esq + gw * i + gw / 2;
         var nome = String(d.rotulo || ""); if (nome.length > maxC) nome = nome.slice(0, Math.max(3, maxC - 1)) + "…";
         var yNome = zig ? (i % 2 ? H - 15 : H - 25) : H - 15;
-        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="3" fill="var(--aco-claro)" opacity=".8"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
-          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="3" fill="' + (d.estourou ? "#dc2626" : "var(--navy)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " " + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " ESTOURO" : "") + '</title></rect>' +
+        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="3" fill="var(--graf-prev)" opacity=".8"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="3" fill="' + (d.estourou ? "#dc2626" : "var(--graf-a)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " " + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " ESTOURO" : "") + '</title></rect>' +
           '<text x="' + cx + '" y="' + yNome + '" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + Util.esc(nome) + '<title>' + Util.esc(d.rotulo) + '</title></text>' +
-          (d.previsto > 0 ? '<text x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9.5" font-weight="700" fill="' + (d.estourou ? "#dc2626" : "var(--verde)") + '">' + (d.real > d.previsto ? "+" : "") + Math.round((d.real / d.previsto - 1) * 100) + '%</text>' : "");
+          self._selo(d, cx, H);
       });
       svg += "</svg>";
       svg += '<div style="display:flex;gap:14px;margin-top:6px;font-size:11.5px;font-weight:600;color:var(--texto-fraco);flex-wrap:wrap">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--aco-claro)"></span>Previsto (orçamento)</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--navy)"></span>Realizado (lançado)</span>' +
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--graf-prev)"></span>Previsto (orçamento)</span>' +   /* ⚠ mesmo token da barra: a migração trocou a barra e esqueceu o quadradinho */
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--graf-a)"></span>Realizado (lançado)</span>' +
+        /* "pp" nao se explica sozinho, e selo sem legenda vira enfeite */
+        '<span title="Compara a fração do orçamento já consumida com a fração do escopo já medida. Positivo = o dinheiro está correndo na frente da obra.">Sob a barra: custo × avanço, em pontos</span>' +
         '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#dc2626"></span>Estouro</span></div>';
       return svg;
     },
@@ -1745,21 +1826,87 @@
        O que controla a leitura aqui e a ESCALA, nao o numero: o viewBox tem
        440 unidades e o tamanho real depende da largura do cartao. Por isso o
        ajuste certo esta no CSS (.dash-graf svg{max-width}), nao aqui. */
-_dashSvgDonutCat: function (cats, total) {
-      var R = 42, C = 2 * Math.PI * R, off = 0, self = this;
-      var svg = '<svg viewBox="0 0 120 120" style="width:148px;height:148px;flex:0 0 auto;font-variant-numeric:tabular-nums">';
-      cats.forEach(function (f) {
-        /* fatia negativa não existe: além de não desenhar, ela empurraria o
-           `off` para trás e desalinharia as seguintes (ver a nota em
-           _dashGraficosDados sobre estorno). Guarda dupla, de propósito —
-           este SVG é chamado de mais de um lugar. */
-        var frac = (total > 0 && f.valor > 0) ? f.valor / total : 0, arco = Math.max(0, frac * C - 2);
-        svg += '<circle cx="60" cy="60" r="' + R + '" fill="none" stroke="' + f.cor + '" stroke-width="16" stroke-dasharray="' + arco + " " + (C - arco) + '" stroke-dashoffset="' + (-off) + '" transform="rotate(-90 60 60)"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f.valor) + '</title></circle>';
-        off += frac * C;
+    /* ⚠ O SELO SOB A BARRA DIZIA "−55%" EM VERDE PARA QUEM NAO TINHA
+       COMECADO. A conta era (gasto ÷ orçado − 1): o denominador e o orçamento
+       INTEIRO da obra e o numerador e o gasto ate hoje, entao toda obra em
+       andamento nasce "abaixo do orçado" e fica verde ate o ultimo dia. Medido
+       no recorte de demonstracao: 5 das 8 barras exibiam "−100%" em verde — o
+       sinal mais tranquilizador da tela pintado justamente sobre obra que
+       ainda nao gastou nada. E o portfolio tinha consumido 44,8% do custo
+       tendo medido 32% de escopo, que e o contrario de tranquilo.
+       O selo passa a comparar as duas fracoes: quanto do orçamento foi
+       consumido contra quanto do escopo foi entregue. Positivo = dinheiro
+       correndo na frente da obra. E sem medicao nenhuma nao existe veredito:
+       mostra "—" e explica no tooltip, em vez de inventar uma cor. */
+    _selo: function (d, cx, H) {
+      if (!(d.previsto > 0)) return "";
+      var attr = '<text x="' + cx + '" y="' + (H - 4) + '" text-anchor="middle" font-size="9.5" font-weight="700" fill=';
+      var consumo = d.real / d.previsto * 100;
+      /* ⚠ AUSENTE ≠ ZERO — E AQUI A DIFERENCA E A TELA INTEIRA. Com UMA obra
+         escolhida no filtro, este grafico passa a ser por ETAPA (ver porEtapa
+         em _dashFinExec), e etapa nao tem avanco medido: medicao mede a OBRA.
+         A primeira versao caia no default 0 e desenhava pp = consumo, com o
+         tooltip afirmando "entregou 0% do escopo" sobre etapa de obra que
+         tinha 50% aprovado. Medido: a mesma obra saia "+45pp" em vermelho por
+         etapa e "−15pp" em verde no modo carteira — o selo criado para parar
+         de mentir em verde passou a mentir em vermelho.
+         Obra SEM medicao continua valendo 0 (o alerta do topo ja diz "0%
+         medido", e nada entregue e um numero). Etapa sem o campo nao tem
+         veredito, e a tela diz isso. */
+      if (typeof d.avanco !== "number") {
+        return attr + '"var(--texto-fraco)">—<title>' + Util.esc(d.rotulo)
+          + ": consumiu " + Math.round(consumo) + "% do orçado. Não há avanço medido "
+          + "por etapa — a medição é da obra, então não dá para dizer se o custo "
+          + "está na frente ou atrás da entrega.</title></text>";
+      }
+      var avanco = d.avanco;
+      var pp = Math.round(consumo - avanco);
+      var cor = pp >= 15 ? "var(--graf-alerta)" : (pp >= 5 ? "var(--graf-aviso)" : "var(--verde)");
+      return attr + '"' + cor + '">' + (pp > 0 ? "+" : (pp < 0 ? "−" : "")) + Math.abs(pp) + "pp"
+        + '<title>' + Util.esc(d.rotulo) + ": consumiu " + Math.round(consumo)
+        + "% do orçado e entregou " + avanco + "% do escopo"
+        + (d.semMedicao ? " (nenhuma medição aprovada registrada)" : "")
+        + (pp > 0 ? " — o custo está " + pp + " ponto(s) à frente da obra."
+                  : (pp < 0 ? " — a obra está " + Math.abs(pp) + " ponto(s) à frente do custo." : " — em linha."))
+        + '</title></text>';
+    },
+    /* ⚠ UMA TRILHA, DOIS FATOS. O preenchimento e o avanco medido; o
+       tracinho vertical e onde o CALENDARIO ja chegou. Marcador a direita do
+       preenchimento = a obra deve tempo. Nao ha eixo para ler errado, nao ha
+       fatia que some por ser pequena, e funciona em qualquer largura. */
+    _prazoAvancoHtml: function (linhas, semPrazo) {
+      var html = "";
+      linhas.forEach(function (l) {
+        var nome = String(l.rotulo); if (nome.length > 26) nome = nome.slice(0, 25) + "…";
+        /* ⚠ avancoPct e SEMPRE numero (ver _avancoMedido). O teste de tipo
+           aqui e so cinto de seguranca para chamada vinda de fora. */
+        var av = typeof l.avancoPct === "number" ? l.avancoPct : 0;
+        var atraso = l.prazoPct - av;
+        var cor = l.dias < 0 ? "var(--graf-alerta)" : (atraso >= 20 ? "var(--graf-aviso)" : "var(--verde)");
+        var fill = Math.max(0, Math.min(100, av));
+        var marca = Math.max(0, Math.min(100, l.prazoPct));
+        var dir = l.dias < 0 ? "vencido há " + (-l.dias) + "d"
+          : (l.dias <= 15 ? l.dias + "d restantes" : l.dias + " dias");
+        html += '<div style="margin-bottom:10px">'
+          + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;margin-bottom:3px">'
+          + '<span style="color:var(--texto);font-weight:600">' + Util.esc(nome) + '</span>'
+          + '<span style="color:' + cor + ';font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">'
+          + l.prazoPct + '% × ' + av + '% · ' + dir + '</span></div>'
+          + '<div title="' + Util.esc(l.rotulo) + ": prazo consumido " + l.prazoPct + "%, avanço medido "
+          + av + "%"
+          + (l.semMedicao ? " (nenhuma medição aprovada registrada)" : "")
+          + (atraso > 0 ? " — " + atraso + " ponto(s) atrás do calendário" : "")
+          + '" style="position:relative;height:14px;border-radius:4px;background:var(--linha);overflow:hidden">'
+          + (fill > 0 ? '<div style="position:absolute;left:0;top:0;bottom:0;width:' + fill + '%;background:' + cor + ';opacity:.85"></div>' : "")
+          + '<div style="position:absolute;top:-2px;bottom:-2px;left:' + marca + '%;width:2px;background:var(--texto);opacity:.75"></div>'
+          + '</div></div>';
       });
-      svg += '<text x="60" y="57" text-anchor="middle" font-size="13.5" font-weight="800" fill="var(--texto)">' + this._fmtK(total).replace("R$ ", "") + '</text>' +
-        '<text x="60" y="71" text-anchor="middle" font-size="8.5" font-weight="600" fill="var(--texto-fraco)">despesas pagas</text></svg>';
-      return svg;
+      html += '<div style="display:flex;gap:14px;margin-top:8px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">'
+        + '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--verde)"></span>Avanço medido</span>'
+        + '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:2px;height:12px;background:var(--texto)"></span>Onde o prazo já chegou</span></div>';
+      if (semPrazo) html += '<p class="muted" style="font-size:10.5px;margin:6px 0 0">' + semPrazo
+        + ' obra(s) sem início ou previsão de término cadastrados ficaram de fora.</p>';
+      return html;
     },
     _dashEmpilhadoHtml: function (empilhado) {
       var self = this, max = 1;
@@ -1786,6 +1933,8 @@ _dashSvgDonutCat: function (cats, total) {
     _dashFinHtml: function () {
       // RBAC: números financeiros só p/ quem tem o módulo Financeiro (admin sempre tem)
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return "";
+      /* a grade de gráficos (e o cartão de prazo dentro dela) obedece ao mesmo
+         predicado que o Painel usa lá fora — ver _dashFinVisivel */
       var self = this, d = this._dashFinExec(), obras = lista("obras"), _mt = this._metas();
       var perRot = { mes: "Este mês", "6m": "Últimos 6 meses", ano: "Este ano", tudo: "Desde sempre" };
       // sem NENHUM lançamento financeiro: não polui o Painel de conta nova
@@ -1865,28 +2014,209 @@ _dashSvgDonutCat: function (cats, total) {
          defeitos. */
       html += '<div class="dash-graf">';
       html += '<div class="card">' + _h3g("fluxo", "Fluxo de caixa", 'Recebido × pago por mês · saldo acumulado — ' + perRot[this._dashPer]) +
-        (d.fluxo.length ? this._dashSvgFluxo(d.fluxo) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem lançamentos pagos no período.</p>') + '</div>';
+        (d.fluxoTemMovimento ? this._dashSvgFluxo(d.fluxo) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem lançamentos pagos no período.</p>') +
+        /* ⚠ o que não coube no eixo tem de estar escrito — ver _janelaMeses */
+        (d.fluxoForaFrente ? '<p class="muted" style="font-size:10.5px;margin:4px 0 0;color:var(--graf-aviso)">'
+          + d.fluxoForaFrente + ' mês(es) com lançamento pago em data FUTURA (até '
+          + this._rotuloMes(d.fluxoForaFrenteAte) + ') ficam fora do gráfico e fora do saldo. Confira a data em Financeiro.</p>' : "") +
+        (d.fluxoForaTras ? '<p class="muted" style="font-size:10.5px;margin:4px 0 0">' + d.fluxoForaTras
+          + ' mês(es) anteriores ficam fora do desenho; o saldo deles já entra no acumulado.</p>' : "") + '</div>';
       html += '<div class="card">' + _h3g("prevreal", "Previsto × Realizado " + (d.porEtapa ? "por etapa" : "por obra"), "Custo direto orçado × despesas lançadas (acumulado da obra)") +
         (d.prevReal.length ? this._dashSvgPrevReal(this._dashPrevRealTop(d.prevReal)) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Vincule um orçamento à obra (em Obras → editar) pra comparar orçado × realizado.</p>') +
         (d.prevReal.length > 8 ? '<p class="muted" style="font-size:10.5px;margin:4px 0 0">Mostrando as 8 maiores linhas de ' + d.prevReal.length + ' — o KPI soma todas.</p>' : '') + '</div>';
-      html += '<div class="card">' + _h3g("categorias", "Despesas por categoria", 'Categorias do financeiro — ' + perRot[this._dashPer]);
+      /* ⚠ A ROSCA SAIU DAQUI, E O QUE ENTROU FOI PRAZO. Dois motivos medidos.
+         (1) Ela apagava dado real: qualquer categoria abaixo de 0,76% do total
+         virava arco ZERO — "Impostos R$ 890" saia com stroke-dasharray="0" e
+         desaparecia da tela, presente so na legenda; e o vao fixo de -2 que
+         separa as fatias encolhia uma fatia de 1% em 75,8%.
+         (2) Ela nao dizia nada novo: os mesmos totais por categoria ja estao
+         no cartao "Custo por obra", agora somados embaixo dele.
+         O lugar era o mais valioso da tela e estava ocupado por desenho
+         redundante, enquanto cronograma — a pergunta que o dono faz primeiro —
+         so existia em texto no fim da pagina. */
+      html += '<div class="card">' + _h3g("calendario", "Prazo × avanço por obra", "Quanto do calendário passou × quanto do escopo foi medido — acumulado da obra") +
+        (d.prazoAvanco.length
+          ? this._prazoAvancoHtml(d.prazoAvanco, d.semPrazo)
+          : '<p class="muted" style="font-size:12.5px;margin:6px 0">Cadastre início e previsão de término nas obras (em <b>Obras → editar</b>) para acompanhar o prazo aqui.</p>') + '</div>';
+
+      html += '<div class="card">' + _h3g("custoobra", "Custo por obra", "Peso de cada obra no período — Material × Mão de obra × Equipamento") +
+        (d.empilhado.length ? this._dashEmpilhadoHtml(d.empilhado) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas com obra vinculada no período.</p>');
       if (d.cats.length) {
-        html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">' + this._dashSvgDonutCat(d.cats, d.despesas) + '<div style="flex:1;min-width:210px">';
+        html += '<div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--linha)">'
+          + '<div class="muted" style="font-size:11.5px;margin-bottom:6px">Total por categoria no período</div><div>';
         d.cats.forEach(function (c) {
-          var pct = d.despesas > 0 ? Math.round(c.valor / d.despesas * 100) : 0;
+          /* ⚠ "0%" AO LADO DE R$ 890,00 DESMENTE O PROPRIO NUMERO. Era o
+             ultimo residuo do problema que derrubou a rosca: categoria pequena
+             demais sumia do desenho e, aqui, aparecia como zero. Arredondar
+             para baixo esta certo; escrever "0%" sobre valor que existe, nao. */
+          var _p = d.despesas > 0 ? c.valor / d.despesas * 100 : 0;
+          var pct = _p > 0 && _p < 0.5 ? "<1" : Math.round(_p);
           html += '<div style="display:flex;align-items:center;gap:8px;font-size:12.5px;margin-bottom:6px"><span style="width:9px;height:9px;border-radius:99px;background:' + c.cor + ';flex:0 0 auto"></span><span style="color:var(--texto);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + Util.esc(c.rotulo) + '</span><span style="margin-left:auto;color:var(--texto-fraco);font-variant-numeric:tabular-nums;font-size:11px">' + self._fmtK(c.valor) + '</span><b style="width:34px;text-align:right;font-variant-numeric:tabular-nums">' + pct + '%</b></div>';
         });
-        html += '</div></div>';
-      } else html += '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas no período.</p>';
+        html += '</div>';
+        /* ⚠ AS DUAS LEITURAS NAO FECHAM SOZINHAS, E ISSO PRECISA ESTAR
+           ESCRITO. As barras de cima sao as 6 obras de maior gasto; o total por
+           categoria e TUDO que foi pago no periodo, inclusive despesa sem obra
+           vinculada e obra fora das 6. Sem esta linha, dois totais diferentes
+           no mesmo cartao viram "um dos dois esta errado". */
+        var _somaObras = d.empilhado.reduce(function (t, l) { return t + l.total; }, 0);
+        var _fora = Math.round((d.despesas - _somaObras) * 100) / 100;
+        if (_fora > 0.005) html += '<p class="muted" style="font-size:10.5px;margin:6px 0 0">'
+          + this._fmtK(_fora) + ' fora das barras acima — despesa sem obra vinculada ou obra além das 6 maiores.</p>';
+        html += '</div>';
+      }
       html += '</div>';
-      html += '<div class="card">' + _h3g("custoobra", "Custo por obra", "Peso de cada obra no período — Material × Mão de obra × Equipamento") +
-        (d.empilhado.length ? this._dashEmpilhadoHtml(d.empilhado) : '<p class="muted" style="font-size:12.5px;margin:6px 0">Sem despesas pagas com obra vinculada no período.</p>') + '</div>';
       html += '</div>';
       return html;
     },
 
     // ---------- G5: BI vivo no Painel ----------
-    _CORCAT: { obra: "#0f2740", material: "#16a34a", mao_obra: "#2563eb", equipamento: "#f59e0b", administrativo: "#64748b", impostos: "#dc2626", medicao: "#7c3aed", outros: "#94a3b8" },
+    _CORCAT: { obra: "var(--graf-a)", material: "#16a34a", mao_obra: "#2563eb", equipamento: "#f59e0b", administrativo: "#64748b", impostos: "#dc2626", medicao: "#7c3aed", outros: "#94a3b8" },
+    /* ⚠ AVANCO SO TEM UMA FONTE. A tabela "Prazo × avanço" ja somava o
+       percentual das medicoes aprovadas/pagas; o grafico precisava do MESMO
+       numero, e duas contas iguais escritas em dois lugares viram duas contas
+       diferentes na primeira manutencao.
+       ⚠ E SEMPRE UM NUMERO, nunca null. A primeira versao devolvia null para
+       obra sem medicao nenhuma ("nao da para saber"), e isso criou DUAS
+       VERDADES na mesma tela: o alerta no topo dizia "Reforma Loja Center Sul:
+       95% do prazo consumido e 0% medido" enquanto a barra logo abaixo dizia
+       "95% × —". Mesma obra, mesmo dado, dois vereditos.
+       0% e a leitura certa: nada aprovado significa nada entregue aos olhos do
+       sistema — e e justamente a obra com 95% de prazo e 0% de medicao que
+       precisa gritar, nao virar tracinho. A nuance ("pode ser que a obra nem
+       meca por medicao") vive no tooltip, que diz quando nao ha registro. */
+    /* ⚠ PRAZO NAO E DINHEIRO, E NAO PODE MORAR ATRAS DO PORTAO DO DINHEIRO.
+       Este calculo nasceu dentro do `_dashFinExec`, que so roda para quem tem o
+       modulo Financeiro — ou seja, o mestre de obras e o engenheiro de campo,
+       que sao quem olha cronograma o dia inteiro, ficariam sem ele. Mesma
+       doutrina ja escrita no cartao de Atencao: EPI, estoque e diario nao sao
+       dinheiro. Aqui a materia-prima e `obra.inicio`, `obra.termino` e o
+       percentual das medicoes — nenhum real no meio. */
+    /* ⚠ DUAS PORTAS FECHAM A GRADE DE GRAFICOS, NAO UMA. Alem do modulo
+       Financeiro, ela some quando a empresa ainda nao tem NENHUM lancamento
+       ("nao polui o Painel de conta nova"). Empresa com obra, medicao e
+       cronograma mas sem financeiro lancado tem o modulo e mesmo assim perdia
+       o prazo. Quem decide agora e este predicado, usado pelos DOIS lados —
+       senao o cartao aparece zero vez ou duas. */
+    _dashFinVisivel: function () {
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) return false;
+      return lista("financeiro").length > 0;
+    },
+    _dashPrazoAvancoDados: function () {
+      var self = this, meds = lista("medicoes"), linhas = [], semPrazo = 0;
+      var hj = new Date(); hj.setHours(0, 0, 0, 0);
+      /* ⚠ OBRA ENTREGUE NAO TEM PRAZO A CUMPRIR. Sem este filtro o cartao
+         abria com "Obra ENTREGUE 336% × 100% — vencido ha 936d" em vermelho,
+         no topo (a ordenacao poe o menor `dias` primeiro), empurrando a obra
+         viva para baixo. O alerta executivo ja usa `status === "andamento"`;
+         aqui aceito tambem planejamento e pausada, que ainda tem entrega pela
+         frente, e corto concluida. */
+      lista("obras").filter(function (o) {
+        return self._dashNaObra(o.id) && o.status !== "concluida";
+      }).forEach(function (o) {
+        var ini = o.inicio ? new Date(o.inicio + "T00:00:00") : null;
+        var _fp = self._fimPrevisto(o);
+        var fim = _fp ? new Date(_fp + "T00:00:00") : null;
+        var dur = (ini && fim) ? (fim - ini) / 86400000 : 0;
+        if (!dur || dur <= 0 || isNaN(dur)) { semPrazo++; return; }
+        linhas.push({
+          rotulo: o.nome,
+          prazoPct: Math.max(0, Math.round(((hj - ini) / 86400000) / dur * 100)),
+          avancoPct: self._avancoMedido(o.id, meds),
+          semMedicao: self._semMedicao(o.id, meds),      /* muda o tooltip, não o número */
+          dias: Math.ceil((fim - hj) / 86400000)
+        });
+      });
+      linhas.sort(function (a, b) { return a.dias - b.dias; });   /* o mais apertado primeiro */
+      return { linhas: linhas, semPrazo: semPrazo };
+    },
+    /* o cartão inteiro, para quem NÃO tem o Financeiro (quem tem recebe o
+       mesmo card dentro da grade de gráficos, e este não é emitido) */
+    _dashPrazoCard: function () {
+      var _ic2 = function (n) { return (typeof Icones !== "undefined") ? Icones.get(n, 15) : ""; };
+      var pa = this._dashPrazoAvancoDados();
+      if (!pa.linhas.length) return "";
+      return '<div class="card mt"><h3 style="margin:0 0 2px;font-size:14px;display:flex;align-items:center;color:var(--texto)">'
+        + _ic2("calendario") + 'Prazo × avanço por obra</h3>'
+        + '<p class="muted" style="font-size:11.5px;margin:0 0 10px">Quanto do calendário passou × quanto do escopo foi medido — acumulado da obra</p>'
+        + this._prazoAvancoHtml(pa.linhas, pa.semPrazo) + '</div>';
+    },
+    /* ⚠ `previsaoFim` ERA UM CAMPO FANTASMA. O formulario de Obras tem
+       "Previsao de termino" e grava em `obra.termino` (formObra, g-termino) —
+       e o resto do app le `termino`: js/atencao.js, js/fisico.js e a previsao
+       de entrega do 4D. So o Painel lia `previsaoFim`, que NENHUMA tela
+       escreve: existia apenas em js/demo-gestao.js, escrito para casar com o
+       leitor errado. Resultado: o alerta de prazo, a coluna "Prazo x avanco"
+       do Resumo por obra e o cartao novo funcionavam na demonstracao e
+       ficavam eternamente vazios em cliente de verdade — sem erro nenhum,
+       que e a forma mais cara de quebrar.
+       Um nome so, com o fantasma aceito como legado para nao invalidar base
+       antiga que por acaso o tenha. */
+    _fimPrevisto: function (o) { return (o && (o.termino || o.previsaoFim)) || ""; },
+    _avancoMedido: function (obraId, meds) {
+      return Math.round((meds || []).filter(function (m) {
+        return m.obraId === obraId && (m.status === "aprovada" || m.status === "paga");
+      }).reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+    },
+    /* so para o tooltip: 0% por falta de registro le diferente de 0% medido */
+    _semMedicao: function (obraId, meds) {
+      return !(meds || []).some(function (m) { return m.obraId === obraId; });
+    },
+    _rotuloMes: function (mk) {
+      if (!mk) return "";
+      var N = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+      var i = parseInt(String(mk).slice(5, 7), 10) - 1;
+      return (N[i] || String(mk).slice(5)) + "/" + String(mk).slice(2, 4);
+    },
+    _mesChave: function (d) { return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2); },
+    /* ⚠ O EIXO DO TEMPO NASCIA DO DADO, NAO DO FILTRO — e por isso mentia
+       duas vezes. Medido, com "6 meses" escolhido e lancamentos em 3 meses:
+       (1) o eixo entregava 3 pontos igualmente espacados, entao um intervalo de
+       4 meses e um de 1 mes eram desenhados com os MESMOS 189px — erro de 4x na
+       escala horizontal; (2) a linha de acumulado atravessava o vao em reta,
+       sugerindo caixa subindo devagar num periodo em que nao houve movimento
+       nenhum — 50% de erro no meio do trecho.
+       Mes sem lancamento nao e mes inexistente: e mes com zero, e precisa
+       ocupar o seu lugar. A janela sai do periodo escolhido; o dado so pode
+       ESTICA-LA (lancamento com data futura), nunca encolhe-la. */
+    _janelaMeses: function (periodo, comDado) {
+      var hoje = new Date(), ini = null, fim = this._mesChave(hoje);
+      if (periodo === "mes") ini = fim;
+      else if (periodo === "6m") ini = this._mesChave(new Date(hoje.getFullYear(), hoje.getMonth() - 5, 1));
+      else if (periodo === "ano") ini = hoje.getFullYear() + "-01";
+      /* ⚠ O DADO NAO ESTICA O FIM. A versao anterior deixava o ultimo mes
+         COM DADO empurrar o fim da janela, "para nao descartar lancamento
+         futuro". So que `porMes` so recebe lancamento REALIZADO (pago ou
+         recebido) — ninguem paga em 2027 —, e `_periodoFin` nao tem teto
+         superior em "6m" nem em "tudo". Entao bastava um ano digitado errado
+         para o eixo inteiro ir junto: medido com hoje=ago/26, filtro
+         "Ultimos 6 meses" e UMA despesa de R$ 1.000 datada 2027-04, a janela
+         virava mai/26..abr/27, os meses reais saiam do desenho e o proprio
+         aria-label dizia "Recebido R$ 0,00" ao lado de um KPI de R$ 80.000.
+         O fim e sempre o mes de hoje. O que fica de fora e CONTADO e dito na
+         tela — inclusive o corte legitimo de historico longo, que tambem era
+         silencioso. */
+      if (comDado && comDado.length && (!ini || comDado[0] < ini)) ini = comDado[0];
+      if (!ini) return [];
+      if (ini > fim) ini = fim;                      /* dado so no futuro */
+      /* ⚠ A JANELA SE CONSTROI DE TRAS PARA FRENTE, E NUNCA PASSA DE 12.
+         A primeira versao ia do inicio para o fim com um contador de seguranca
+         de 600: bastava UMA data digitada errada ("1901-01-10", que o campo
+         aceita) para o contador estourar antes de chegar em 2026, e os 12
+         meses exibidos virarem 1950 — doze colunas vazias, com o dinheiro
+         todo fora da tela e nenhum aviso. Provado em teste.
+         Ancorar no FIM elimina a classe inteira: o ultimo mes e sempre o de
+         hoje (ou o do lancamento futuro), e o primeiro recua no maximo 11. */
+      var af = parseInt(fim.slice(0, 4), 10), mf = parseInt(fim.slice(5, 7), 10);
+      var out = [];
+      for (var k = 11; k >= 0; k--) {
+        var mm = mf - k, aa = af;
+        while (mm <= 0) { mm += 12; aa--; }
+        var ch = aa + "-" + ("0" + mm).slice(-2);
+        if (ch >= ini) out.push(ch);
+      }
+      return out;
+    },
     _periodoFin: function (fin, periodo, ref) {
       if (!periodo || periodo === "tudo") return fin;
       var hoje = ref ? new Date(ref + "T00:00:00") : new Date();
@@ -16693,10 +17023,10 @@ renderFolha: function () {
       if (pts.length >= 2) {
         var linha = pts.map(function (p) { return p.x + "," + p.y; }).join(" ");
         svg += '<polygon points="' + linha + " " + pts[pts.length - 1].x + "," + y(0) + " " + pts[0].x + "," + y(0) + '" fill="var(--aco)" opacity=".08"/>';
-        svg += '<polyline points="' + linha + '" fill="none" stroke="var(--navy)" stroke-width="2"/>';
+        svg += '<polyline points="' + linha + '" fill="none" stroke="var(--graf-a)" stroke-width="2"/>';
       }
       pts.forEach(function (p) {
-        svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="var(--surface)" stroke="var(--navy)" stroke-width="1.75"><title>PPC ' + p.v + '%</title></circle>';
+        svg += '<circle cx="' + p.x + '" cy="' + p.y + '" r="3" fill="var(--surface)" stroke="var(--graf-a)" stroke-width="1.75"><title>PPC ' + p.v + '%</title></circle>';
       });
       h.forEach(function (s, i) {
         svg += '<text x="' + x(i) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(s.periodo.split("–")[0]) + '</text>';
@@ -16717,15 +17047,15 @@ renderFolha: function () {
       dados.forEach(function (d, i) {
         var cx = padL + gw * i + gw / 2;
         var nome = String(d.nome || ""); if (nome.length > 14) nome = nome.slice(0, 13) + "…";
-        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.prev) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.prev)) + '" rx="2" fill="var(--aco-claro)" opacity=".75"><title>Previsto ' + d.prev + '%</title></rect>' +
-          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="var(--navy)"><title>Realizado (medido) ' + d.real + '%</title></rect>' +
+        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.prev) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.prev)) + '" rx="2" fill="var(--graf-prev)" opacity=".75"><title>Previsto ' + d.prev + '%</title></rect>' +
+          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="2" fill="var(--graf-a)"><title>Realizado (medido) ' + d.real + '%</title></rect>' +
           '<text x="' + cx + '" y="' + (H - 12) + '" text-anchor="middle" font-size="8.5" fill="var(--texto-fraco)">' + Util.esc(nome) + '</text>' +
           '<text x="' + cx + '" y="' + (H - 3) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="' + (d.real >= d.prev ? "var(--verde)" : "#ea580c") + '">' + (d.real >= d.prev ? "+" : "") + (d.real - d.prev) + ' pts</text>';
       });
       svg += "</svg>";
       svg += '<div style="display:flex;gap:14px;margin-top:4px;font-size:11px;color:var(--texto-fraco)">' +
         '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--aco-claro)"></span>Previsto (cronograma)</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--navy)"></span>Realizado (medições)</span></div>';
+        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:var(--graf-a)"></span>Realizado (medições)</span></div>';
       return svg;
     },
     _lpDonutCores: ["#2563eb", "#b45309", "#15803d", "#7c3aed", "#be185d", "#64748b"],

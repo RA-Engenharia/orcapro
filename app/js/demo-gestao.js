@@ -38,13 +38,16 @@
           id: "dg-obra1", nome: nomeObra, clienteId: "dg-cli1",
           tipo: "residencial", fase: "estrutura", status: "andamento",
           local: "Uberlândia / MG", endereco: "Rua das Palmeiras, 450 — B. Jardim Colina",
-          valor: 1850000, inicio: "2026-03-02", previsaoFim: "2026-12-18",
+          /* ⚠ era `previsaoFim`, campo que NENHUM formulário grava — a demonstração
+             escrevia o nome que o Painel lia por engano, e por isso o prazo só
+             funcionava aqui. O formulário de Obras grava `termino`. */
+          valor: 1850000, inicio: "2026-03-02", termino: "2026-12-18",
           responsavel: "Eng. João da Silva"
         });
         Store.salvar(EID, "obras", {
           id: "dg-obra2", nome: "Reforma Loja Center Sul", clienteId: "dg-cli1",
           tipo: "reforma", fase: "acabamento", status: "andamento",
-          local: "Uberlândia / MG", valor: 240000, inicio: "2026-05-11", previsaoFim: "2026-08-30"
+          local: "Uberlândia / MG", valor: 240000, inicio: "2026-05-11", termino: "2026-08-30"
         });
 
         Store.salvar(EID, "contratos", {

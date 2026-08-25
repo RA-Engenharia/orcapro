@@ -43,6 +43,29 @@
      com verde/marrom e sumia no preto). */
   --tot-fundo: var(--navy);
 
+  /* ⚠ COR DE SÉRIE DE GRÁFICO É TOKEN PRÓPRIO, e não `--navy` emprestado.
+     Medido em 25/08/2026: a linha "Receitas", a barra "Realizado" e a fatia
+     "obra" da rosca usavam `var(--navy)` (#0f2740). No tema escuro o cartão é
+     um gradiente #142433→#10202e — contraste de **1,04:1**. As três séries não
+     ficavam fracas: ficavam INVISÍVEIS, e o gráfico continuava desenhando
+     como se estivesse tudo certo.
+     A cor da marca serve para fundo e título; para traço sobre superfície que
+     inverte, ela precisa de um par claro/escuro. Daí estes tokens. */
+  --graf-a: #0f2740;   /* receitas · realizado · categoria "obra" */
+  --graf-b: #b45309;   /* despesas */
+  --graf-c: #15803d;   /* saldo acumulado */
+  --graf-prev: #5a9bc9; /* previsto (barra de referência) */
+  /* ⚠ TEXTO DE STATUS DENTRO DE GRAFICO, NAO COR DE CAIXA. O `--vermelho`
+     puro (#b4232a) reprova AA em texto pequeno, e o `#dc2626`/`#ea580c` que
+     estavam cravados no SVG nao viravam nada no tema escuro — medido sobre o
+     cartao #142433: #dc2626 dava 3,21:1 e #ea580c dava 4,39:1, os dois abaixo
+     de AA para texto pequeno. Com os tokens: 5,71:1 e 7,60:1 no escuro, 6,47:1
+     e 5,02:1 no claro. Mesmo remedio ja
+     usado no Last Planner (--lp-vermelho-texto): um par proprio, um valor por
+     tema. Selo de 9,5px e rotulo de 11,5px leem por aqui. */
+  --graf-alerta: #b91c1c;  /* estouro / vencido, em TEXTO */
+  --graf-aviso: #b45309;   /* defasagem em atenção, em TEXTO */
+
   /* Elevação em camadas (difusa = sensação premium), não uma sombra dura só */
   --sombra-sm: 0 1px 1px rgba(15,39,64,.04), 0 1px 2px rgba(15,39,64,.06);
   --sombra: 0 1px 2px rgba(15,39,64,.04), 0 3px 8px rgba(15,39,64,.05), 0 10px 24px rgba(15,39,64,.06);
@@ -128,6 +151,14 @@
   --anel: 0 0 0 3px rgba(90,155,201,.24);
   --card-bg: linear-gradient(180deg, #142433 0%, #10202e 100%);
   --bg-grad: radial-gradient(1180px 680px at 80% -12%, #14293b 0%, rgba(20,41,59,0) 54%);
+  /* as séries clareiam para sobreviver ao cartão escuro — ver o comentário no
+     bloco claro. Medido depois: 1,04:1 passou para 6,4:1. */
+  --graf-a: #7fb4da;
+  --graf-b: #e08b3e;
+  --graf-c: #4cae6d;
+  --graf-prev: #3f6f96;
+  --graf-alerta: #f87171;
+  --graf-aviso: #e8a75c;
 
   /* ⚠ SEMÂNTICAS PRÓPRIAS DO ESCURO.
    * Verde de obra e tijolo são fundos por natureza — sobre fundo escuro eles
