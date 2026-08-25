@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.275",
+  "versao": "1.1.276",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.275/OrcaPRO-IA-update-v1.1.275.zip",
-  "notas": "Painel de Gestao: o grafico de fluxo passou a mostrar TODOS os meses do periodo escolhido. Com \"Ultimos 6 meses\" e lancamento em 3 deles, ele desenhava so 3 pontos igualmente espacados — um intervalo de 4 meses saia do mesmo tamanho de um de 1 mes, e a linha de saldo subia em rampa num periodo sem movimento nenhum. Mes sem lancamento agora aparece zerado, no lugar certo. O numero embaixo de cada barra do Previsto x Realizado deixou de comparar o gasto com o orcamento inteiro (obra que ainda nao tinha comecado aparecia \"-100%\" em verde) e passou a comparar quanto do orcamento foi consumido com quanto do escopo foi medido. A rosca de categorias saiu e no lugar entrou \"Prazo x avanco por obra\" — quanto do calendario passou contra quanto foi medido, obra por obra, com a que esta mais apertada em cima. Os totais por categoria continuam na tela, dentro de \"Custo por obra\", e categoria pequena, que a rosca apagava, agora aparece. No tema escuro as tres linhas do fluxo de caixa estavam quase invisiveis.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.275/OrcaPRO-IA-Instalador-v1.1.275.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.276/OrcaPRO-IA-update-v1.1.276.zip",
+  "notas": "Medicao aprovada em dinheiro deixa de ser lida como 0% de avanco. Quando a obra foi medida por valor — medicao aprovada com o valor, sem itens e sem o percentual preenchido —, o Painel mostrava \"0% medido\" e podia apontar atraso de dezenas de pontos que nao existia. Agora ele mostra \"—\" no lugar do avanco, com o valor aprovado e o aviso de que falta informar o percentual: vale para o cartao \"Prazo x avanco por obra\", o alerta do topo, a coluna do \"Resumo por obra\" e o numero embaixo das barras do Previsto x Realizado. Obra sem medicao nenhuma continua valendo 0%, e havendo qualquer percentual informado e ele que manda.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.276/OrcaPRO-IA-Instalador-v1.1.276.exe"
 }

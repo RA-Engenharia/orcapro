@@ -1239,10 +1239,13 @@
                  nos dois (ver _dashPrazoAvancoDados). */
               var pP = Math.max(0, Math.round(((_h - _i) / 86400000) / _t * 100));
               var pO = self._avancoMedido(o.id, med);   /* fonte única — ver _avancoMedido */
+              var _semPct = pO === null;   /* medido em R$, sem % — ver _avancoMedido */
               var _d = Math.ceil((_f - _h) / 86400000);
-              var _atras = pP - pO;
-              var _cor = _d < 0 ? "#dc2626" : (_atras >= 20 ? "#ea580c" : "var(--verde-tx, #15803d)");
-              pz = '<span style="color:' + _cor + ';font-weight:700;font-variant-numeric:tabular-nums">' + pP + '% × ' + pO + '%</span>' +
+              var _atras = _semPct ? null : pP - pO;
+              var _cor = _d < 0 ? "#dc2626" : (!_semPct && _atras >= 20 ? "#ea580c" : "var(--verde-tx, #15803d)");
+              pz = '<span style="color:' + _cor + ';font-weight:700;font-variant-numeric:tabular-nums"'
+                + (_semPct ? ' title="medição aprovada em dinheiro, sem percentual informado"' : "")
+                + '>' + pP + '% × ' + (_semPct ? "—" : pO + "%") + '</span>' +
                 '<div class="muted" style="font-size:10.5px">' +
                 (_d < 0 ? "vencido há " + (-_d) + "d" : _d + " dia(s)") + '</div>';
             }
@@ -1513,7 +1516,7 @@
           var real = finTudo.filter(function (f) { return f.obraId === o.id && f.tipo === "despesa"; }).reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
           if (prev <= 0 && real <= 0) return;
           prevReal.push({ rotulo: o.nome, previsto: prev, real: real, estourou: prev > 0 && real > prev,
-            avanco: self._avancoMedido(o.id, medsTudo) });
+            avanco: self._avancoMedido(o.id, medsTudo), semAvanco: "sem-percentual" });
         });
       }
       // KPI honesto: a COMPARAÇÃO usa só linhas com previsto>0 (etapa/obra orçada);
@@ -1583,6 +1586,16 @@
         if (!(total > 0)) return;
         var pctPrazo = Math.round(((_hoje - ini) / _DIA) / total * 100);
         var pctObra = self._avancoMedido(o.id, _medObra);   /* fonte única — ver _avancoMedido */
+        /* ⚠ medicao so em dinheiro devolve null: sem percentual nao existe
+           defasagem para calcular, e "0% medido" seria falso. O alerta muda de
+           frase em vez de sumir — o que falta e um cadastro, e isso e acionavel. */
+        if (pctObra === null) {
+          var _dn = Math.ceil((fim - _hoje) / _DIA);
+          alertas.push({ tipo: "prazo", texto: o.nome + ": " + pctPrazo + "% do prazo consumido e medição sem percentual informado — "
+            + "informe o % nas medições para acompanhar a defasagem"
+            + (_dn < 0 ? " (prazo vencido há " + (-_dn) + " dia(s))" : ", " + _dn + " dia(s) até a entrega") });
+          return;
+        }
         var dias = Math.ceil((fim - _hoje) / _DIA);
         if (pctPrazo <= 0) return;
         if (dias < 0) {
@@ -1857,10 +1870,13 @@
          medido", e nada entregue e um numero). Etapa sem o campo nao tem
          veredito, e a tela diz isso. */
       if (typeof d.avanco !== "number") {
+        /* dois jeitos de nao haver avanco, e a pessoa precisa saber QUAL:
+           por etapa (medicao e da obra) ou medicao so em dinheiro. */
+        var _pq = d.semAvanco === "sem-percentual"
+          ? "A medição aprovada não tem percentual informado, então não há avanço para comparar."
+          : "Não há avanço medido por etapa — a medição é da obra.";
         return attr + '"var(--texto-fraco)">—<title>' + Util.esc(d.rotulo)
-          + ": consumiu " + Math.round(consumo) + "% do orçado. Não há avanço medido "
-          + "por etapa — a medição é da obra, então não dá para dizer se o custo "
-          + "está na frente ou atrás da entrega.</title></text>";
+          + ": consumiu " + Math.round(consumo) + "% do orçado. " + _pq + "</title></text>";
       }
       var avanco = d.avanco;
       var pp = Math.round(consumo - avanco);
@@ -1882,14 +1898,18 @@
        preenchimento = a obra deve tempo. Nao ha eixo para ler errado, nao ha
        fatia que some por ser pequena, e funciona em qualquer largura. */
     _prazoAvancoHtml: function (linhas, semPrazo) {
-      var html = "";
+      var self = this, html = "";
       linhas.forEach(function (l) {
         var nome = String(l.rotulo); if (nome.length > 26) nome = nome.slice(0, 25) + "…";
-        /* ⚠ avancoPct e SEMPRE numero (ver _avancoMedido). O teste de tipo
-           aqui e so cinto de seguranca para chamada vinda de fora. */
-        var av = typeof l.avancoPct === "number" ? l.avancoPct : 0;
-        var atraso = l.prazoPct - av;
-        var cor = l.dias < 0 ? "var(--graf-alerta)" : (atraso >= 20 ? "var(--graf-aviso)" : "var(--verde)");
+        /* ⚠ null = MEDIDO EM R$, SEM PERCENTUAL (ver _avancoMedido). Nao
+           vira 0: sem numero nao ha preenchimento, nao ha defasagem e nao ha
+           veredito de atraso — so o marcador do calendario e a explicacao. */
+        var semPct = typeof l.avancoPct !== "number";
+        var av = semPct ? null : l.avancoPct;
+        var atraso = semPct ? null : l.prazoPct - av;
+        var cor = l.dias < 0 ? "var(--graf-alerta)"
+          : (!semPct && atraso >= 20 ? "var(--graf-aviso)" : "var(--verde)");
+        var fill = semPct ? 0 : Math.max(0, Math.min(100, av));
         var fill = Math.max(0, Math.min(100, av));
         /* ⚠ O CLAMP EMPATAVA "CHEGOU" COM "ESTOUROU". Obra a 137% do prazo e
            obra a 100% desenhavam o marcador no mesmo left:100%. O numero ao
@@ -1905,11 +1925,14 @@
           + '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11.5px;margin-bottom:3px">'
           + '<span style="color:var(--texto);font-weight:600">' + Util.esc(nome) + '</span>'
           + '<span style="color:' + cor + ';font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap">'
-          + l.prazoPct + '% × ' + av + '% · ' + dir + '</span></div>'
-          + '<div title="' + Util.esc(l.rotulo) + ": prazo consumido " + l.prazoPct + "%, avanço medido "
-          + av + "%"
-          + (av === 0 ? " (nenhuma medição aprovada)" : "")
-          + (atraso > 0 ? " — " + atraso + " ponto(s) atrás do calendário" : "")
+          + l.prazoPct + '% × ' + (semPct ? '—' : av + '%') + ' · ' + dir + '</span></div>'
+          + '<div title="' + Util.esc(l.rotulo) + ": prazo consumido " + l.prazoPct + "%, "
+          + (semPct
+            ? "medição aprovada em dinheiro (" + self._fmtK(l.medidoValor || 0) + ") e sem percentual informado — "
+              + "informe o % na medição para acompanhar a defasagem"
+            : "avanço medido " + av + "%"
+              + (av === 0 ? " (nenhuma medição aprovada)" : "")
+              + (atraso > 0 ? " — " + atraso + " ponto(s) atrás do calendário" : ""))
           + '" style="position:relative;height:14px;border-radius:4px;background:var(--linha);overflow:hidden">'
           + (fill > 0 ? '<div style="position:absolute;left:0;top:0;bottom:0;width:' + fill + '%;background:' + cor + ';opacity:.85"></div>' : "")
           + '<div style="position:absolute;top:-3px;bottom:-3px;left:' + marca + '%;margin-left:'
@@ -2143,6 +2166,7 @@
           rotulo: o.nome,
           prazoPct: Math.max(0, Math.round(((hj - ini) / 86400000) / dur * 100)),
           avancoPct: self._avancoMedido(o.id, meds),
+          medidoValor: self._medidoEmValor(o.id, meds),   /* só aparece quando não há % */
           dias: Math.ceil((fim - hj) / 86400000)
         });
       });
@@ -2182,9 +2206,29 @@
        antiga que por acaso o tenha. */
     _fimPrevisto: function (o) { return (o && (o.termino || o.previsaoFim)) || ""; },
     _avancoMedido: function (obraId, meds) {
-      return Math.round((meds || []).filter(function (m) {
+      var minhas = (meds || []).filter(function (m) {
         return m.obraId === obraId && (m.status === "aprovada" || m.status === "paga");
-      }).reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+      });
+      /* ⚠ MEDICAO POR VALOR NAO E MEDICAO DE ZERO. Achado testando o cartao
+         contra a base real do cliente (25/08/2026): a obra "Bossa Home Design"
+         tem DUAS medicoes aprovadas, de R$ 240.000 e R$ 252.000, criadas sem
+         itens e sem `percentual` — medidas em dinheiro, nao em porcentagem. A
+         soma de `percentual` dava 0 e a tela diria "0% medido" sobre R$ 492
+         mil aprovados. E nao da para derivar a porcentagem: aquela obra tem
+         `valor: 0`, nenhum orcamento vinculado e nenhum contrato — nao existe
+         denominador. Entao a resposta certa e "nao sei", nao "zero".
+         Obra sem medicao nenhuma continua valendo 0: ai nada foi entregue, e
+         e isso que o alerta do topo ja diz. */
+      if (!minhas.length) return 0;
+      var temPct = minhas.some(function (m) { return m.percentual != null && m.percentual !== ""; });
+      if (!temPct && minhas.some(function (m) { return Util.num(m.valor) > 0; })) return null;
+      return Math.round(minhas.reduce(function (t, m) { return t + Util.num(m.percentual); }, 0));
+    },
+    /* quanto foi aprovado em dinheiro — o que a tela mostra quando nao ha % */
+    _medidoEmValor: function (obraId, meds) {
+      return (meds || []).filter(function (m) {
+        return m.obraId === obraId && (m.status === "aprovada" || m.status === "paga");
+      }).reduce(function (t, m) { return t + Util.num(m.valor); }, 0);
     },
     _rotuloMes: function (mk) {
       if (!mk) return "";
