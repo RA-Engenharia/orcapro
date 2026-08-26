@@ -118,6 +118,30 @@
   }
   function vazioDe(ent) { return (ent === "prefs" || ent === "conta") ? {} : []; }
 
+  /* ===================================================================
+   * A NUVEM NÃO TOCA EM NAMESPACE DE PRÉVIA
+   *
+   * ⚠ A prévia de versão de cliente (js/previewcli.js) roda trocando o
+   *   `empresaId` em memória para um id com prefixo `prev:`. Quem resolve o
+   *   tenant é o app.js, e ele captura `Auth.empresaId()` — ou seja, com a
+   *   licença ativa da RA, o sync levaria dado de exemplo para a nuvem.
+   *
+   * ⚠ E o pior nem seria o lixo: `Store.excluir` grava uma LÁPIDE cujo id é
+   *   `entidade:<id do registro>`, SEM empresaId dentro, e `_lapides` é uma
+   *   das entidades sincronizadas. Uma exclusão feita na prévia empurraria a
+   *   lápide para o documento do tenant REAL — e o merge apagaria lá o
+   *   registro de mesmo id. Dado de mentira apagando dado de verdade.
+   *
+   * Por isso a guarda mora AQUI, nas três portas, e não em quem chama: quem
+   * chama esquece, e já são três call sites de sincronização em app.js.
+   * ⚠ NÃO usar a marca persistente `orcapro:nuvem:desligada` para isto: ela é
+   *   a escolha de LGPD do usuário e deixaria a conta real sem sincronizar
+   *   depois que a prévia acabasse, sem nada na tela explicando.
+   * =================================================================== */
+  function _ehPrevia(empresaId) {
+    return typeof empresaId === "string" && empresaId.indexOf("prev:") === 0;
+  }
+
   var Nuvem = {
     // exposta p/ o Store saber o que vale a pena lapidar (só o que sincroniza pode ressuscitar)
     ENTIDADES: ENTIDADES,
@@ -294,6 +318,7 @@
 
     // 1ª carga: baixa a nuvem, mescla com o local e grava nos dois (não perde nada).
     sincronizar: function (empresaId) {
+      if (_ehPrevia(empresaId)) return Promise.resolve(false);   // prévia nunca sobe
       var self = this;
       if (!this.ligado) return Promise.resolve(false);
       self._conflitosUltimoMerge = 0;
@@ -360,6 +385,7 @@
 
     // Escuta mudanças vindas de OUTRO aparelho e atualiza o local + re-render.
     escutar: function (empresaId, onChange) {
+      if (_ehPrevia(empresaId)) return;                          // nem escuta
       var self = this;
       if (!this.ligado) return;
 
@@ -508,6 +534,7 @@
     _ultimoEnviado: {},
 
     push: function (empresaId, ent) {
+      if (_ehPrevia(empresaId)) return Promise.resolve(false);   // nem lápide
       var self = this;
       var mandar = function () {
         try {

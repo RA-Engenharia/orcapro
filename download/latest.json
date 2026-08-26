@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.280",
+  "versao": "1.1.281",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.280/OrcaPRO-IA-update-v1.1.280.zip",
-  "notas": "Manutenção interna. Nada muda na sua tela nem nos seus dados.\n\nEsta versão reorganiza por dentro como o sistema guarda a configuração de quais módulos aparecem para cada empresa. Se você usa o OrçaPRO completo, nada muda; se a sua conta foi configurada com um conjunto reduzido de módulos, ele continua exatamente como estava — e agora também fica registrado na própria conta, o que deixa a configuração mais confiável entre os seus aparelhos.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.280/OrcaPRO-IA-Instalador-v1.1.280.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.281/OrcaPRO-IA-update-v1.1.281.zip",
+  "notas": "Manutenção interna. Nada muda na sua tela nem nos seus dados.\n\nEsta versão reforça por dentro o isolamento entre contas — a sincronização na nuvem, o backup automático e a contagem de uso passaram a conferir de qual conta veio cada operação antes de gravar. É uma proteção a mais para que dado de uma conta nunca alcance a de outra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.281/OrcaPRO-IA-Instalador-v1.1.281.exe"
 }

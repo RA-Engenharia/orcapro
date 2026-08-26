@@ -431,7 +431,17 @@
       }
       if (app) app.classList.remove("tela-login");
       topbar.style.display = "flex";
+      /* ⚠ A TARJA DA PRÉVIA VAI DENTRO DA TOPBAR, que é redesenhada a cada
+         render — assim ela não some ao navegar entre módulos. Sem ela o risco
+         não é técnico e sim humano: alguém tira print da prévia e manda ao
+         cliente como se fosse a base dele. */
+      var faixaPrev = (typeof PreviewCli !== "undefined") ? PreviewCli.faixaHtml() : "";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
+      if (faixaPrev) {
+        var wrap = document.createElement("div");
+        wrap.innerHTML = faixaPrev;
+        topbar.parentNode.insertBefore(wrap.firstChild, topbar.nextSibling);
+      }
       // Tour guiado de primeira entrada (1x por sessão; o Tour se auto-guarda via
       // localStorage). Re-valida o login DENTRO do timeout: se o usuário deslogou
       // nos 900ms, não roda sobre a tela de login nem queima a flag (gate v1.1.63).
@@ -1162,6 +1172,9 @@
         case "importar-sinapi": this.abrirImportSinapi(); break;
         case "base-oficial": this.voltarBaseOficial(); break;
         case "atualizar": this.abrirAtualizar(); break;
+        /* prévia de versão de cliente — ver js/previewcli.js */
+        case "previa-sair": if (typeof PreviewCli !== "undefined") PreviewCli.sair(); break;
+        case "previa-abrir": this.abrirPrevia(); break;
         case "processar-import": this.processarImportSinapi(); break;
         case "voltar": this.tela = "lista"; this.orcAtual = null; this.render(); break;
         case "add-etapa": this.addEtapa(); break;
@@ -2260,7 +2273,13 @@
     },
     _backupEnviar: function () {
       var self = this, eid, dump;
-      try { eid = Auth.empresaId(); dump = this._dumpBackup(eid); } catch (e) { return; }
+      try { eid = Auth.empresaId(); } catch (e) { return; }
+      /* ⚠ PRÉVIA NÃO GRAVA BACKUP. A pasta guarda 30 arquivos em rotação e já
+         costuma estar cheia: cada gravação de dado de exemplo mataria um
+         backup REAL, começando pelo mais antigo. E o modal de Backup passaria
+         a mostrar como "última cópia" um arquivo de dado falso. */
+      if (typeof PreviewCli !== "undefined" && PreviewCli.ehPrevia(eid)) return;
+      try { dump = this._dumpBackup(eid); } catch (e) { return; }
       /* ⚠ e a GESTÃO conta como motivo para gravar. Antes, uma conta que só
          usasse obras e diários — sem orçamento e sem base própria — nunca
          gerava backup nenhum: o arquivo simplesmente não nascia. */
@@ -2515,6 +2534,49 @@
       UI.fecharModal();
       UI.toast("Dados da empresa salvos. Aparecem nos documentos.", "ok");
       if (perfilMudou) { UI.toast("Perfil aplicado — a barra de módulos mudou.", "ok"); this.render(); }
+    },
+
+    /* ===================================================================
+     * ABRIR A VERSÃO DE UM CLIENTE (prévia)
+     *
+     * ⚠ SÓ EXISTE ONDE O CATÁLOGO PRIVADO ESTÁ (venda/perfis-clientes.js).
+     *   `PreviewCli.disponiveis()` devolve lista vazia sem ele, e aí nem o
+     *   item de menu nasce. Ver o cabeçalho de js/previewcli.js.
+     * =================================================================== */
+    abrirPrevia: function () {
+      if (typeof PreviewCli === "undefined") return;
+      var disp = PreviewCli.disponiveis();
+      if (!disp.length) { UI.toast("Nenhuma versão de cliente disponível nesta máquina.", "erro"); return; }
+      var self = this;
+      var corpo = "<p>Abre o sistema como o cliente o vê, com <b>dados de exemplo</b>. "
+        + "Nada aqui toca a sua conta, a do cliente ou a nuvem — e sair é recarregar a página.</p>"
+        + '<div style="display:grid;gap:6px;margin-top:10px">'
+        + disp.map(function (p2) {
+          return '<label class="opt-linha" style="font-size:13px"><input type="radio" name="prev-perfil" value="'
+            + Util.esc(p2.id) + '"' + (p2 === disp[0] ? " checked" : "") + "> <span><b>"
+            + Util.esc(p2.nome) + "</b><br><span class=\"muted\" style=\"font-size:11.5px\">"
+            + Util.esc(p2.desc || "") + "</span></span></label>";
+        }).join("") + "</div>"
+        + '<label class="flex" style="gap:8px;align-items:center;margin-top:10px"><input type="checkbox" id="prev-zerar"> '
+        + '<span class="muted">Começar do zero (apaga o que foi mexido na prévia anterior)</span></label>';
+      UI.modal("Ver a versão de um cliente", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Abrir", classe: "primary", onClick: function () {
+          var sel = document.querySelector('input[name="prev-perfil"]:checked');
+          if (!sel) return;
+          var zerar = UI.el("prev-zerar");
+          if (zerar && zerar.checked) PreviewCli.limpar(sel.value);
+          var r = PreviewCli.entrar(sel.value);
+          if (!r.ok) { UI.toast(r.erro || "Não consegui abrir a prévia.", "erro"); return; }
+          UI.fecharModal();
+          /* volta para o Painel: a tela em que estava pode não existir no perfil
+             do cliente, e render numa view oculta dá tela vazia sem explicação */
+          self.view = "dashboard";
+          self.tela = "gestao";
+          self.render();
+          UI.toast("Vendo a versão de " + (r.perfil.nome || "cliente") + ".", "ok");
+        } }
+      ]);
     },
 
     // ---------- Atualizar tabelas (backend sinapi-fetcher) ----------

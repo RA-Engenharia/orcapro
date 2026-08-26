@@ -259,6 +259,15 @@
             '<button class="conta-item" data-acao="minha-foto"><span>' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>Minha foto de perfil</button>' +
             '<button class="conta-item" data-acao="tema"><span>' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + '</span>Tema do aplicativo</button>' +
             '<button class="conta-item" data-acao="atualizar"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</span>Buscar atualização</button>' +
+            /* ⚠ SÓ NA MÁQUINA DE QUEM IMPLANTA. `PreviewCli.disponiveis()` lê o
+               catálogo privado (venda/perfis-clientes.js), que não vai em pacote
+               nenhum — no cliente a lista é vazia e este item não existe. É o
+               mesmo tipo de gate do Painel de Apresentação: o segredo é o
+               arquivo ausente, não uma flag que dê para ligar. */
+            ((typeof PreviewCli !== "undefined" && PreviewCli.disponiveis().length && !PreviewCli.ativo())
+              ? '<div class="conta-sep"></div><button class="conta-item" data-acao="previa-abrir"><span>'
+                + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + '</span>Ver a versão de um cliente</button>'
+              : '') +
             '<div class="conta-sep"></div>' +
             '<button class="conta-item sair" data-acao="logout"><span>' + (typeof Icones !== 'undefined' ? Icones.get('porta', 15) : '') + '</span>Sair</button>' +
             '<div class="conta-sep"></div>' +

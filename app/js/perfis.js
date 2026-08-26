@@ -270,7 +270,24 @@ var Perfis = (function () {
   }
   function _visivel(id) {
     if (!CATALOGO[id] || !CATALOGO[id].privado) return true;
+    /* ⚠ dentro de um namespace de PRÉVIA o perfil privado é visível, e isso não
+       afrouxa nada: só se entra num namespace desses por `PreviewCli.entrar`,
+       que por sua vez exige o catálogo privado presente na máquina. */
+    try {
+      if (typeof PreviewCli !== "undefined" && PreviewCli.ehPrevia(_eid())) return true;
+    } catch (e) {}
     return id === idAtual() || _reveladoNaURL(id);
+  }
+
+  /* Os perfis de CLIENTE que esta máquina conhece. Sem o catálogo privado a
+     lista é vazia — e é esse o gate do botão de prévia: o segredo mora no
+     arquivo ausente, não numa flag que dê para ligar. */
+  function listarPrivados() {
+    return Object.keys(CATALOGO).filter(function (id) {
+      return CATALOGO[id] && CATALOGO[id].privado;
+    }).map(function (id) {
+      return { id: id, nome: CATALOGO[id].nome, desc: CATALOGO[id].desc };
+    });
   }
 
   /* Para telas de escolha: [{id, nome, desc, qtd}] */
@@ -345,6 +362,7 @@ var Perfis = (function () {
     aplicar: aplicar,
     semear: semear,
     listar: listar,
+    listarPrivados: listarPrivados,
     visivel: _visivel,
     conferir: conferir
   };

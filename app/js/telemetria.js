@@ -30,8 +30,19 @@
     _ativo: function () { return this.ehTrial() ? !!this.reg() : this.ehLicenciado(); },
 
     _mods: function () { try { return JSON.parse(localStorage.getItem(KEYMODS) || "{}"); } catch (e) { return {}; } },
+    /* ⚠ PRÉVIA NÃO CONTA COMO USO. `KEYMODS` é chave GLOBAL do navegador — nem
+       por tenant é —, então navegar na prévia de um cliente somaria módulos ao
+       ping do próprio uso da RA. O heartbeat de 5 min já está rodando quando a
+       prévia abre: esconder o botão não resolveria, a guarda tem de estar em
+       quem escreve. */
+    _naPrevia: function () {
+      try {
+        return typeof PreviewCli !== "undefined" && typeof Auth !== "undefined"
+          && PreviewCli.ehPrevia(Auth.empresaId());
+      } catch (e) { return false; }
+    },
     contaModulo: function (v) {
-      if (!v) return;
+      if (!v || this._naPrevia()) return;
       try { var m = this._mods(); m[v] = (m[v] || 0) + 1; localStorage.setItem(KEYMODS, JSON.stringify(m)); } catch (e) {}
     },
 
@@ -52,6 +63,7 @@
     },
 
     enviar: function (evento) {
+      if (this._naPrevia()) return;
       try {
         if (!this._ativo()) return;
         if (!this._sessao) this._sessao = "s" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
