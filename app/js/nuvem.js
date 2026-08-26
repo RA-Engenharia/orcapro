@@ -76,6 +76,29 @@
     "folha", "fs_lancamentos", "fs_pagamentos", "ponto",
     // movimento de frota: a frota já era imune; o movimento dela também é
     "frota_mov",
+    /* ===== MÓDULOS SOB DEMANDA (js/perfis.js) =====
+     * Só aparecem para o perfil que os nomeia, mas a entidade sincroniza do
+     * mesmo jeito: quem tem o módulo tem dois aparelhos como todo mundo, e
+     * entidade fora desta lista fica presa onde nasceu — sem erro nenhum.
+     *
+     * ⚠ `carp_param` e `remun_param` são um registro só, com os NÚMEROS que
+     *   fazem o preço e a folha (corte de metragem, percentual do detalhe,
+     *   R$ por m²). Eles poderiam ter ido para `prefs`, e é exatamente o que
+     *   não podem: o merge de prefs é `Object.assign({}, nuvem, local)`, o
+     *   local vence campo a campo, e foi assim que o preço de produção já
+     *   voltou sozinho ao valor velho depois do sync. Dinheiro passa pelo
+     *   merge por id, com `atualizadoEm` — como `producao_preco` acima. */
+    "carp_param", "carp_madeiras", "carp_mo", "carp_propostas", "carp_parceiros",
+    "remun_param", "remun_apur",
+    /* padrao de privacidade do Portal do Cliente (o que a obra herda quando
+       ainda nao decidiu). Nao e sob demanda — vale para qualquer empresa —
+       e tambem nao pode morar em prefs: e decisao de PRIVACIDADE, e o
+       merge de prefs deixa o aparelho local vencer campo a campo. */
+    "portal_padrao",
+    /* o PERFIL DE IMPLANTACAO da empresa. Morava so em prefs, e o merge de
+       prefs deixa o local vencer: o celular do dono desfazia no sync o
+       enxugamento feito no computador. Ver js/perfis.js. */
+    "perfil_impl",
     // v1.1.126 — lápides das exclusões: sem isso o merge (união por id) ressuscitava
     // no aparelho A o registro que o aparelho B tinha acabado de apagar.
     "_lapides"

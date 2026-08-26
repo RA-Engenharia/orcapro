@@ -483,7 +483,47 @@
         '<div class="field"><label>Logo (PNG/JPG — aparece na capa dos documentos)</label>' +
         '<input type="file" id="emp-logo" accept="image/png,image/jpeg,image/jpg,image/webp">' +
         '<div id="emp-logo-prev" class="mt">' + (logo ? '<img src="' + logo + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">' : '<span class="muted">Nenhum logo carregado.</span>') + '</div></div>' +
-        this._renderEmpresaDocs();
+        this._renderEmpresaDocs() + this._renderEmpresaPerfil();
+    },
+    /* ==================================================================
+     * PERFIL DE IMPLANTAÇÃO — a tela que faltava
+     *
+     * O `js/perfis.js` existe desde a v1.1.24x e nunca teve por onde ser
+     * ligado: `Perfis.aplicar` não tinha um único chamador no repositório, e
+     * a implantação de um cliente era digitar no console. Catálogo que
+     * ninguém alcança é catálogo que não existe.
+     *
+     * ⚠ SÓ O DONO DA CONTA. O perfil decide o que a empresa INTEIRA enxerga;
+     *   sub-usuário mexendo nisso enxuga a barra dos colegas.
+     * ================================================================== */
+    _renderEmpresaPerfil: function () {
+      if (typeof Perfis === "undefined") return "";
+      /* ⚠ A VITRINE NÃO É UMA CONTA. Ela monta `Auth._usuario` sem `papel`
+         (js/app.js), então `ehAdmin()` responde true e este bloco desenharia
+         numa página pública — com o catálogo de perfis e a caixa de semear.
+         `Perfis.listar` já esconde perfil privado, mas quem visita a vitrine
+         não tem empresa para configurar: aqui o bloco simplesmente não existe. */
+      if (typeof App !== "undefined" && App._demo) return "";
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return "";
+      var lista = Perfis.listar();
+      if (lista.length < 2) return "";
+      var atual = Perfis.idAtual();
+      return '' +
+        '<div class="card mt" style="padding:12px 14px">' +
+          '<b>Perfil de implantação</b>' +
+          '<p class="muted" style="font-size:12px;margin:4px 0 8px">Enxuga o sistema para a operação da sua empresa. ' +
+          '<b>Nada é apagado</b>: o módulo oculto continua com os dados dele, e voltar para “Completo” devolve tudo.</p>' +
+          '<div style="display:grid;grid-template-columns:1fr;gap:5px">' +
+          lista.map(function (p) {
+            return '<label class="opt-linha" style="font-size:12.5px">' +
+              '<input type="radio" name="emp-perfil" value="' + Util.esc(p.id) + '"' + (p.id === atual ? " checked" : "") + ">" +
+              "<span><b>" + Util.esc(p.nome) + "</b>" +
+              (p.qtd ? ' <span class="muted">— ' + p.qtd + " módulos</span>" : "") +
+              '<br><span class="muted" style="font-size:11px">' + Util.esc(p.desc) + "</span></span></label>";
+          }).join("") + "</div>" +
+          '<label class="flex" style="gap:8px;align-items:center;margin:8px 0 0"><input type="checkbox" id="emp-perfil-semear"> ' +
+          'Preencher os parâmetros de fábrica deste perfil <span class="muted" style="font-size:11px">(só o que ainda estiver em branco — nada que você já ajustou é sobrescrito)</span></label>' +
+        "</div>";
     },
     /* Seção "Documentos & entregáveis" do ⚙ Empresa — white-label: os docs saem com a
      * marca DO CLIENTE; menção ao produto, marca d'água e QR são opcionais. */

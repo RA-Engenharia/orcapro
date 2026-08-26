@@ -39,10 +39,16 @@
     return 10;
   })();
   var DEPTO_MODULOS = {
-    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "requisicoes", "cotacoes", "insumos", "epi", "relatorios"],
+    /* ⚠ Os presets citam módulos que o perfil da empresa pode esconder — e
+       tudo bem: `_modulosAtribuiveis` filtra na hora de desenhar, e id que
+       não vale simplesmente não aparece. O contrário é que doía: preset
+       nenhum citava `producao`, `carpintaria` nem `remunvar`, então o
+       sub-usuário criado por preset numa carpintaria nascia SEM as três telas
+       do dia a dia dele e ninguém entendia por quê. */
+    engenharia:     ["dashboard", "orcamentos", "obras", "medicoes", "rdo", "producao", "requisicoes", "cotacoes", "insumos", "epi", "relatorios", "carpintaria"],
     compras:        ["dashboard", "compras", "estoque", "requisicoes", "cotacoes", "insumos", "fornecedores"],
     financeiro:     ["dashboard", "financeiro", "folhasemanal", "medicoes", "contratos", "fiscal", "centrocusto", "relatorios"],
-    rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha"],
+    rh:             ["dashboard", "colaboradores", "folhasemanal", "epi", "ponto", "folha", "remunvar"],
     administrativo: ["dashboard", "clientes", "contratos", "fornecedores", "fiscal", "patrimonio", "frota", "epi", "modelos"],
     diretoria:      null   // null = todos os módulos atribuíveis
   };
@@ -205,7 +211,12 @@
   var ENT_POR_OBRA = {
     medicoes: 1, rdo: 1, financeiro: 1, contratos: 1, compras: 1, requisicoes: 1,
     cotacoes: 1, producao_med: 1, epi: 1, ponto: 1, folha: 1, fs_lancamentos: 1,
-    estoque_mov: 1, tarefas: 1, lastplanner: 1, galeria: 1, atividades: 1
+    estoque_mov: 1, tarefas: 1, lastplanner: 1, galeria: 1, atividades: 1,
+    /* modulos sob demanda (js/perfis.js): as duas entidades que carregam
+       obraId. Sem elas aqui, o sub-usuario limitado a uma obra veria a
+       proposta e a folha variavel de obra que nao e dele. Registro SEM
+       obra continua visivel — ver a nota do filtro logo abaixo. */
+    carp_propostas: 1, remun_apur: 1
   };
   /* ⚠ O FILTRO MORA AQUI, NUNCA NO `Store.listar`.
    * `Store.salvar` (js/store.js) LÊ a lista e REGRAVA ela inteira. Se o Store
@@ -301,6 +312,10 @@
     colaboradores: '<path d="M2 18h20"/><path d="M4 18v-2a8 8 0 0 1 16 0v2"/><path d="M10 8V5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v3"/>',
     producao: '<path d="M4 20h16M6 20v-6a6 6 0 0 1 12 0v6M10 8V5a2 2 0 0 1 4 0v3"/><path d="M9 16h6"/>',
     folhasemanal: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M7 14h3M7 17h5M14 15.5h3.5"/>',
+    /* réguas de deck — os dois módulos abaixo são SOB DEMANDA (js/perfis.js):
+       só aparecem para o perfil que os nomeia */
+    carpintaria: '<rect x="3" y="5" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="15" width="18" height="4" rx="1"/><path d="M8 5v14M15 5v14"/>',
+    remunvar: '<circle cx="12" cy="12" r="9"/><path d="M12 6.5v11"/><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 .9-3 2s1.3 2 3 2 3 .9 3 2-1.3 2-3 2a3 3 0 0 1-3-1.5"/>',
     ponto: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     frota: '<path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.5-1.5-1.5H18l-2-4H6L4 11H2.5C1.7 11.5 1 12.1 1 13v3c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><path d="M9 17h6"/><circle cx="17" cy="17" r="2"/>',
     requisicoes: '<path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6"/><path d="M9 16h4"/>',
@@ -331,11 +346,109 @@
     filtrarPorObra: function (ent, arr) { return filtrarPorObra(ent, arr); },
     listaTodas: function (ent) { return listaTodas(ent); },
 
+    /* ==================================================================
+     * KIT DE TELA PARA MÓDULO EM ARQUIVO PRÓPRIO
+     *
+     * A doutrina do js/perfis.js manda a regra de negócio de um cliente
+     * entrar como MÓDULO PRÓPRIO, em arquivo próprio, ligado por
+     * configuração — e não como `if (cliente === ...)` espalhado. Só que
+     * `lista`, `campo`, `inp`, `sel`, `vazioBox` e companhia são funções
+     * privadas desta IIFE: sem elas, "arquivo próprio" significava ou
+     * duplicar os helpers (e a tela sair com outra cara) ou desistir e
+     * escrever mais 800 linhas aqui dentro.
+     *
+     * Este kit é o que torna a doutrina executável. É a MESMA implementação
+     * que as telas daqui usam — não uma cópia —, então o visual não pode
+     * divergir com o tempo.
+     * ⚠ `lista` já vem com o funil de obra aplicado. Módulo externo que
+     *   precise da lista crua usa `listaTodas`, ciente do que está fazendo.
+     * ================================================================== */
+    ui: {
+      lista: function (ent) { return lista(ent); },
+      rot: rot, opts: opts, optsRec: optsRec, pill: pill,
+      campo: campo, inp: inp, sel: sel, vazioBox: vazioBox,
+      v: v, nv: nv, numBR: numBR, svg: svg
+    },
+
+    /* ==================================================================
+     * AÇÕES DE MÓDULO EXTERNO (data-gacao)
+     *
+     * O dispatcher `acao` é um switch fechado neste arquivo. Registrar aqui
+     * evita que cada módulo novo precise de mais um `case` — e, mais
+     * importante, aplica o RBAC EM FUNÇÃO de graça: a ação só roda se o
+     * usuário tiver o módulo dono dela. Esconder o botão nunca protegeu
+     * nada, porque o dispatcher é global e o `data-gacao` chega por
+     * qualquer caminho.
+     * ================================================================== */
+    /* O padrão de privacidade do Portal, para a obra que ainda não decidiu.
+     * ⚠ É ENTIDADE, não prefs: privacidade é decisão, e o merge de prefs deixa
+     *   o aparelho LOCAL vencer campo a campo — um celular desatualizado
+     *   desfaria a escolha do escritório sem erro nenhum. Ver js/nuvem.js. */
+    /* ⚠ O QUE JÁ FOI PAGO VEM DE DUAS FONTES, e ler só uma paga DUAS VEZES.
+     * A tela de Produção paga por medição (`producao_med`); o módulo
+     * Remuneração variável paga por apuração (`remun_apur`). Cada uma sabia
+     * só do que ela mesma pagou: aprovar a apuração do mês e depois abrir a
+     * Produção mostrava a MESMA metragem como "a medir", e o colaborador
+     * recebia duas vezes sem nada acusar.
+     * ⚠ Este helper é a metade simétrica do `_jaPago()` do js/remunvarui.js.
+     *   Mexer num sem mexer no outro reabre o buraco. */
+    _jaPagoProducao: function () {
+      var mapa = {};
+      function junta(m) {
+        Object.keys(m || {}).forEach(function (k) {
+          if (mapa[k] === Infinity || m[k] === Infinity) { mapa[k] = Infinity; return; }
+          mapa[k] = (mapa[k] || 0) + m[k];
+        });
+      }
+      try { junta(Producao.jaMedido(lista("producao_med"))); } catch (e) {}
+      try { if (typeof RemunVar !== "undefined") junta(RemunVar.jaPago(lista("remun_apur"))); } catch (e) {}
+      return mapa;
+    },
+
+    /* nome do colaborador por id, para registro antigo que só guardou o id */
+    _nomeColab: function (id) {
+      if (!id) return "";
+      var c = Store.obter(eid(), "colaboradores", id);
+      return c ? (c.nome || "") : "(colaborador removido)";
+    },
+
+    _portalPadrao: function () {
+      try { return lista("portal_padrao")[0] || {}; } catch (e) { return {}; }
+    },
+
+    _acoesExtras: {},
+    registrarAcoes: function (moduloId, mapa) {
+      var self = this;
+      Object.keys(mapa || {}).forEach(function (k) {
+        self._acoesExtras[k] = { modulo: String(moduloId), fn: mapa[k] };
+      });
+    },
+
+    /* ==================================================================
+     * WIRING PÓS-RENDER DE MÓDULO EXTERNO
+     *
+     * ⚠ `data-gacao` SÓ SERVE PARA BOTÃO E PARA <select>. Em <input> ele é
+     *   armadilha: o dispatcher escuta CLIQUE, então clicar dentro do campo
+     *   dispara a ação, a tela re-renderiza e o input some debaixo do dedo —
+     *   a pessoa nunca consegue digitar. É o mesmo defeito que o comentário
+     *   do `App` (a saída por `select, option`) descreve, e que já tinha
+     *   custado a escolha de obra no celular.
+     *   Campo de digitar se liga AQUI, depois do DOM existir.
+     * ================================================================== */
+    _wiresExtras: {},
+    registrarWire: function (view, fn) { this._wiresExtras[String(view)] = fn; },
+
     modulos: [
       // Ordem = jornada da obra (a MESMA da landing): 1 orçar → 2 BIM → 3 estruturar →
       // 4 canteiro → 5 abastecer → 6 equipe/ativos → 7 dinheiro/comando. g = grupo do menu.
       { id: "dashboard", nome: "Painel", g: 0 },
       { id: "orcamentos", nome: "Orçamentos", g: 1 },
+      /* ⚠ SOB DEMANDA — ver SOB_DEMANDA em js/perfis.js. Estar aqui NÃO faz
+         o módulo aparecer para todo mundo: `Perfis.permite` responde false
+         para quem não o nomeia, inclusive no perfil "completo". Registrar
+         aqui é o que dá a ele barra, busca Ctrl+K, RBAC e "Organizar menu"
+         de graça — a alternativa seria uma segunda lista de módulos. */
+      { id: "carpintaria", nome: "Carpintaria", g: 1 },
       { id: "bim", nome: "BIM 3D ao 7D", g: 2 },
       { id: "clientes", nome: "Clientes", g: 3 },
       { id: "contratos", nome: "Contratos", g: 3 },
@@ -354,6 +467,7 @@
       { id: "estoque", nome: "Estoque", g: 5 },
       { id: "colaboradores", nome: "Colaboradores", g: 6 },
       { id: "folhasemanal", nome: "Folha Semanal", g: 6 },
+      { id: "remunvar", nome: "Remuneração variável", g: 6 },   // sob demanda — ver perfis.js
       { id: "epi", nome: "EPI", g: 6 },
       { id: "ponto", nome: "Ponto / Folha", g: 6 },
       { id: "folha", nome: "Folha / Encargos", g: 6 },
@@ -779,6 +893,14 @@
         case "estoque": return this.renderEstoque();
         case "rdo": return this.renderRdo();
         case "producao": return this.renderProducao();
+        /* ⚠ As duas telas abaixo NÃO moram neste arquivo — são atribuídas de
+           fora, por js/carpintariaui.js e js/remunvarui.js, carregados depois
+           do gestao.js no index.html. Módulo de um cliente só não engorda o
+           arquivo de 19 mil linhas que é de todos. O ternário existe porque
+           `Auth.podeModulo` já barrou quem não tem o perfil: se ainda assim a
+           função faltar, a tela diz o que houve em vez de ficar em branco. */
+        case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
+        case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
         case "galeria": return this.renderGaleria();
         case "bim": return this.renderBim();
         case "colaboradores": return this.renderColaboradores();
@@ -944,6 +1066,47 @@
      * O card não conserta nada: mostra o que ficou pelo caminho, com o valor
      * e o caminho. Quem lança dinheiro é gente.
      * ------------------------------------------------------------------ */
+    /* ==================================================================
+     * PROGRESSO EM m² — o pedido da carpintaria: "a medida alimentada
+     * diariamente somada automaticamente, e o progresso no painel".
+     *
+     * É o mesmo lançamento do diário aparecendo onde a gestão olha todo dia.
+     * Sem isso, quem lança a metragem alimenta o sistema e não vê nada
+     * acontecer — e o que não dá retorno para de ser preenchido.
+     *
+     * ⚠ AS DUAS COLUNAS SÃO NÚMEROS DIFERENTES, e o cartão diz isso em voz
+     *   alta. "Executado" é o que o serviço andou; "atribuído" é o que tem
+     *   dono e pode virar pagamento. A diferença é diário ainda não aprovado
+     *   ou metragem lançada sem dono — as duas coisas que a gestão precisa
+     *   ver antes de fechar o mês, e nenhuma delas é erro.
+     * ================================================================== */
+    _dashM2Html: function (rdos, escRotulo) {
+      if (typeof M2 === "undefined") return "";
+      var m;
+      try { m = M2.daObra(rdos, {}); } catch (e) { return ""; }
+      if (!m.executado.total) return "";                 // sem dado, sem cartão
+      var barras = m.executado.porServico.slice(0, 6).map(function (s) {
+        return { rotulo: s.descricao || s.chave, valor: s.qtd };
+      });
+      var fmt = function (v) { return Util.fmtNum(v, 2) + " m²"; };
+      var html = '<div class="card mt"><div class="flex between"><h3 style="margin:0">'
+        + (typeof Icones !== "undefined" ? Icones.get("grafico", 15) : "") + "Progresso em m²</h3>"
+        + '<span class="muted" style="font-size:12px;align-self:center">' + Util.esc(escRotulo || "") + "</span></div>";
+      html += '<div class="row mt" style="align-items:flex-start">'
+        + '<div style="flex:1;min-width:190px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.6px">Executado</div>'
+        + '<div style="font-size:26px;font-weight:800;line-height:1.1">' + Util.fmtNum(m.executado.total, 2) + ' m²</div>'
+        + '<div class="muted" style="font-size:11.5px">' + Util.esc(M2.EIXOS.executado.explica) + "</div></div>"
+        + '<div style="flex:1;min-width:190px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.6px">Com dono, aprovado</div>'
+        + '<div style="font-size:26px;font-weight:800;line-height:1.1">' + Util.fmtNum(m.atribuido.total, 2) + ' m²</div>'
+        + '<div class="muted" style="font-size:11.5px">' + Util.esc(M2.EIXOS.atribuido.explica) + "</div></div></div>";
+      if (m.aviso) {
+        html += '<p class="muted" style="margin:10px 0 0;font-size:12px">' + Util.esc(m.aviso) + "</p>";
+      }
+      if (barras.length) {
+        html += '<div class="mt">' + (typeof UI !== "undefined" && UI._barH ? UI._barH(barras, fmt) : "") + "</div>";
+      }
+      return html + "</div>";
+    },
     _dashReconciliacaoHtml: function () {
       if (typeof Reconciliacao === "undefined") return "";
       var esc = this._dashEscopo();
@@ -1090,6 +1253,7 @@
         return '<div class="kpi ' + (cls || "") + '"><div class="rotulo">' + rot + '</div><div class="num">' + num + "</div>" +
           (sub ? '<div class="muted" style="font-size:11px;margin-top:3px;line-height:1.35">' + sub + '</div>' : '') + "</div>";
       }
+      var _escRot = this._dashEscopoRotulo(esc);
       var _icP = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 15) : ""; };
       // Título de seção do Painel — divide a página em blocos nomeados (organização)
       var _sec = function (icone, titulo, sub) {
@@ -1147,6 +1311,20 @@
           (_podeMod("medicoes") ? k("Medições pendentes", medPend) : "") +
           (_podeMod("compras") ? k("Compras em aberto", comprasAbertas) : "") +
           (_podeMod("rdo") ? k("Diários (RDO)", rdos.length) : "") +
+          /* ⚠ O CARTÃO DIZ QUAL DOS DOIS m² ELE MOSTRA, e isso não é firula.
+             O diário guarda metragem duas vezes — o que o serviço andou
+             (sem dono) e o que cada pessoa produziu (o que vira dinheiro) —
+             e os dois nunca batem, porque o eixo do dinheiro só conta diário
+             aprovado. Um cartão mudo faria o Painel dizer 120 e a folha
+             pagar 100, sem erro em lugar nenhum. Ver js/m2.js. */
+          (_podeMod("producao") && typeof M2 !== "undefined" ? (function () {
+            /* try/catch como o cartão irmão: diário com forma inesperada não
+               pode derrubar o Painel inteiro por causa de um cartão */
+            var mm; try { mm = M2.daObra(rdos, {}); } catch (eM2) { return ""; }
+            if (!mm.executado.total) return "";
+            return k("Metragem executada", Util.fmtNum(mm.executado.total, 2) + " m²", "destaque",
+              M2.rotulo("executado") + " · " + _escRot);
+          })() : "") +
         "</div>";
       // Sem nenhuma obra ainda: o CTA da obra de demonstração sobe pro TOPO (1ª impressão)
       if (!obras.length) html += this._obraDemoCard();
@@ -1200,6 +1378,10 @@
          deles é justamente quem NÃO tem o módulo Financeiro. O filtro de
          permissão é por ACHADO, dentro do próprio card (js/atencao.js). */
       html += this._dashAtencaoHtml();
+      /* ⚠ FORA do `_dashFinHtml`: m² é o número do encarregado, não do caixa,
+         e aquele bloco devolve "" para quem não tem o módulo Financeiro. O
+         mesmo erro já foi cometido com o prazo e corrigido. */
+      if (_podeMod("producao")) html += this._dashM2Html(rdos, _escRot);
       if (_podeFin) html += this._dashReconciliacaoHtml();
       // resumo por obra (contratado x custo real, ACUMULADO da obra)
       if (_podeFin) {
@@ -2511,7 +2693,15 @@
       ["ponto", "registro(s) de ponto"],
       ["folha", "folha(s) de pagamento"],
       ["fs_lancamentos", "lançamento(s) da folha semanal"],
-      ["frota_mov", "uso(s) de veículo"]
+      ["frota_mov", "uso(s) de veículo"],
+      /* Módulos sob demanda (js/perfis.js). Mesma regra dos quatro acima, e
+         pelo mesmo motivo: a apuração da parte variável é dinheiro de PESSOA
+         (e a prova de que aquele m² já foi pago — sumindo ela, ele pode ser
+         pago de novo), e a proposta fechada é o preço que o cliente assinou.
+         Estavam fora das TRÊS listas: a tela não as apagava, o merge da nuvem
+         apagava — em todos os aparelhos, sem aparecer no modal. */
+      ["remun_apur", "apuração(ões) da remuneração variável"],
+      ["carp_propostas", "proposta(s) da carpintaria"]
     ],
     _vinculosDaObra: function (obraId) {
       var e = eid(), out = [], total = 0;
@@ -4649,7 +4839,14 @@
       var extra = (temAlgum ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
           (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
         '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
-        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>';
+        '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>' +
+        /* ⚠ QUATRO CAMPOS, NÃO QUINZE. O formulário completo pergunta três
+           datas, categoria, status, contrato, etapa, fornecedor e forma de
+           pagamento — necessário para conta a pagar, e burocracia demais para
+           "comprei lixa hoje, R$ 40". Sem um caminho curto, esse gasto não é
+           lançado, e o custo da obra fica errado por baixo justamente nas
+           compras pequenas, que são as mais frequentes. */
+        '<button class="btn sm" data-gacao="fin-rapido" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('raio', 15) : '') + ' Gasto rápido</button>';
 
       var html = this._head(svg("financeiro") + "Financeiro", "novo-lancamento", "Novo lançamento", extra);
       if (!e.todos.length) return html + vazioBox("Nenhum lançamento financeiro", "novo-lancamento", "Registrar lançamento");
@@ -4746,6 +4943,61 @@
       Util.arr(etapas).forEach(function (e) { o += '<option value="' + Util.esc(e.id) + '"' + (e.id === selId ? " selected" : "") + ">" + Util.esc(e.nome) + "</option>"; });
       return o;
     },
+    /* ==================================================================
+     * GASTO RÁPIDO — "comprei lixa hoje, R$ 40"
+     *
+     * ⚠ A OBRA É OBRIGATÓRIA AQUI, e no formulário completo não é. Não é
+     *   descuido: quem pediu o caminho curto pediu junto que todo gasto
+     *   avulso ficasse amarrado a uma obra ("lançamento avulso vinculado a
+     *   uma obra, obrigatório"). Gasto rápido sem obra viraria despesa
+     *   genérica que ninguém apropria depois — e o custo por obra, que é o
+     *   motivo de lançar, ficaria errado.
+     *   O formulário completo continua aceitando lançamento sem obra: lá
+     *   existe despesa de escritório, e barrá-la seria outro defeito.
+     * ================================================================== */
+    finRapido: function () {
+      if (this._bloqueado()) return;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Seu usuário não tem permissão no módulo Financeiro.", "erro"); return;
+      }
+      var obras = lista("obras").filter(function (o) { return o.status !== "encerrada"; });
+      if (!obras.length) obras = lista("obras");
+      if (!obras.length) { UI.toast("Cadastre uma obra antes — o gasto rápido é sempre de uma obra.", "erro"); return; }
+      var hoje = new Date();
+      var hojeISO = hoje.getFullYear() + "-" + ("0" + (hoje.getMonth() + 1)).slice(-2) + "-" + ("0" + hoje.getDate()).slice(-2);
+      var sugerida = this._finEscopo().sel;
+      var corpo =
+        '<p class="muted" style="margin:0 0 12px">Para o gasto do dia a dia. Entra como <b>despesa paga</b> — dá para detalhar depois abrindo o lançamento.</p>' +
+        campo("O que foi *", inp("fr-desc", "", "Ex.: lixa, broca, almoço da equipe, frete")) +
+        '<div class="row">' + campo("Valor (R$) *", inp("fr-valor", "", "0,00"))
+          + campo("Data", inp("fr-data", hojeISO, "", "date")) + "</div>" +
+        campo("Obra *", sel("fr-obra", optsRec(obras, "nome", sugerida && sugerida !== "todas" ? sugerida : "", "— escolha a obra —"))) +
+        campo("Categoria", sel("fr-cat", opts(P.finCategoria, "material")));
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("raio", 15) : "") + " Gasto rápido", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Lançar", classe: "primary", onClick: function () {
+          var desc = v("fr-desc");
+          if (!desc) { UI.toast("Escreva o que foi comprado.", "erro"); return; }
+          var valor = nv("fr-valor");
+          if (!(valor > 0)) { UI.toast("Informe um valor maior que zero.", "erro"); return; }
+          var obraId = v("fr-obra");
+          if (!obraId) { UI.toast("Escolha a obra — o gasto rápido é sempre de uma obra.", "erro"); return; }
+          var data = v("fr-data") || hojeISO;
+          /* pago e com as três datas coerentes: lançado hoje, venceu hoje,
+             pago hoje. É o que "comprei" significa. */
+          var salvo = Store.salvar(eid(), "financeiro", {
+            desc: desc, valor: valor, tipo: "despesa", status: "pago",
+            categoria: v("fr-cat") || "material",
+            data: data, vencimento: data, dataPgto: data,
+            obraId: obraId, origem: "rapido"
+          });
+          UI.fecharModal();
+          App.render();
+          UI.toast(salvo ? "Gasto lançado: " + Util.fmtMoeda(valor) + "." : "Não consegui gravar o lançamento.", salvo ? "ok" : "erro");
+        } }
+      ]);
+    },
+
     formFinanceiro: function (f) {
       f = f || {}; var self = this, obras = lista("obras"), contratos = lista("contratos");
       var hoje = new Date().toISOString().slice(0, 10);
@@ -9406,7 +9658,7 @@
 
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Item</th><th>Movimento</th>'
         + '<th class="num">Qtd</th><th class="num">Custo un.</th><th class="num">Valor</th>'
-        + "<th>Obra</th><th>Origem</th>" + (umItem ? '<th class="num">Saldo</th>' : "") + "</tr></thead><tbody>";
+        + "<th>Obra</th><th>Quem retirou</th><th>Origem</th>" + (umItem ? '<th class="num">Saldo</th>' : "") + "</tr></thead><tbody>";
       d.movs.forEach(function (m) {
         var ob = obras.filter(function (o) { return o.id === m.obraId; })[0];
         var ent = m.tipo === "entrada";
@@ -9423,12 +9675,17 @@
           + '<td class="num">' + Util.fmtMoeda(m.custoUnit) + "</td>"
           + '<td class="num">' + Util.fmtMoeda(q * Util.num(m.custoUnit)) + "</td>"
           + "<td>" + Util.esc(ob ? ob.nome : "Central") + "</td>"
+          + "<td>" + (ent ? '<span class="muted">—</span>'
+            : (m.responsavelNome || m.responsavelId
+              ? Util.esc(m.responsavelNome || self._nomeColab(m.responsavelId))
+              : '<span class="muted">não informado</span>')) + "</td>"
           + "<td>" + origem + "</td>"
           + (umItem ? '<td class="num"><b>' + Util.fmtNum(m._acum, 2) + "</b></td>" : "")
           + "</tr>";
       });
       if (umItem && d.temPeriodo) {
-        html += '<tr><td colspan="8" style="text-align:right" class="muted">saldo anterior a ' + Util.esc(self._brData(f.de)) + "</td>"
+        /* 9 colunas antes do Saldo desde que "Quem retirou" entrou */
+        html += '<tr><td colspan="9" style="text-align:right" class="muted">saldo anterior a ' + Util.esc(self._brData(f.de)) + "</td>"
           + '<td class="num muted"><b>' + Util.fmtNum(d.anterior, 2) + "</b></td></tr>";
       }
       return html + "</tbody></table>";
@@ -9550,7 +9807,13 @@
              que já está lá. Em branco = mantém o custo atual do item. */
           ? '<div class="row">' + campo("Custo unitário desta entrada (R$)", inp("mv-custo", "", "em branco = manter " + Util.fmtMoeda(custoAtual)))
             + campo("Obra", sel("mv-obra", optsRec(obras, "nome", it.obraId, "— Central —"))) + "</div>"
-          : '<div class="row">' + campo("Obra que consumiu", sel("mv-obra", optsRec(obras, "nome", it.obraId, "— Central —"))) + "</div>") +
+          /* ⚠ SAÍDA PERGUNTA QUEM RETIROU. O campo `responsavelId` já existia
+             no registro, mas SÓ a triagem de nota fiscal o preenchia — pela
+             tela, o almoxarifado registrava o que saiu e para qual obra, e
+             nunca com quem foi. Almoxarifado sem responsável de retirada é
+             lista de material sumido, não controle. */
+          : '<div class="row">' + campo("Obra que consumiu", sel("mv-obra", optsRec(obras, "nome", it.obraId, "— Central —")))
+            + campo("Quem retirou", sel("mv-resp", optsRec(lista("colaboradores").filter(function (c) { return c.status !== "inativo"; }), "nome", "", "— não informado —"))) + "</div>") +
         campo("Observação", inp("mv-obs", "", ehEntrada ? "Ex.: compra avulsa, devolução de obra" : "Ex.: aplicado na alvenaria do 2º pavimento"));
 
       UI.modal((ehEntrada ? "+ Entrada" : "− Saída") + " de estoque", corpo, [
@@ -9586,9 +9849,19 @@
             atual.saldo = saldo - qtd;
           }
           if (!Store.salvar(eid(), "estoque", atual)) { UI.toast("Não consegui gravar o saldo.", "erro"); return; }
+          var respId = ehEntrada ? "" : String((UI.el("mv-resp") || {}).value || "");
+          var respNome = "";
+          if (respId) {
+            var cResp = Store.obter(eid(), "colaboradores", respId);
+            respNome = cResp ? (cResp.nome || "") : "";
+          }
           Store.salvar(eid(), "estoque_mov", {
             itemId: atual.id, itemNome: atual.nome, tipo: tipo, qtd: qtd,
             custoUnit: custoMov, data: data, obraId: obraMov,
+            /* o NOME viaja junto do id: colaborador desligado depois some do
+               cadastro, e o extrato do almoxarifado precisa continuar dizendo
+               quem retirou — é o registro de uma retirada que aconteceu */
+            responsavelId: respId, responsavelNome: respNome,
             docTipo: "manual", obs: obs
           });
           UI.fecharModal();
@@ -13228,7 +13501,7 @@ renderRequisicoes: function () {
         + '<button type="button" class="btn" id="bi-novo" style="margin-top:10px">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' Cadastrar insumo próprio (fora das bases oficiais)</button>'
         + '<p class="muted" style="margin-top:14px">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Para montar uma <b>solicitação de compra</b>, vá em <b>Requisições → Nova</b> e use a busca <b>' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' no banco de insumos</b> para adicionar itens já com preço de referência.</p>';
     },
-    afterRender: function (view) { if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
+    afterRender: function (view) { if (this._wiresExtras && this._wiresExtras[view]) { try { this._wiresExtras[view].call(this); } catch (eW) {} } if (view === "producao") this.afterRenderProducao(); else if (view === "fiscal") this._triWire(); else if (view === "insumos") this._wireBancoView(); else if (view === "epi") this.afterRenderEpi(); else if (view === "ponto") this.afterRenderPonto(); else if (view === "galeria") this._galeriaWire(); else if (view === "ajuda") this._ajudaWire(); else if (view === "bim") this._bimWire(); else if (view === "lastplanner") this._lpWire(); },
     _wireBancoView: function () {
       var self = this;
       this._wireInsumoSearch("bi-q", "bi-res", function (ins) { self.novaRequisicaoComItem(ins); }, { status: "bi-status", comAcao: true, comEditar: true });
@@ -13548,7 +13821,19 @@ renderRequisicoes: function () {
       ]);
     },
     // =================== USUÁRIOS / EQUIPE (RBAC por departamento) ===================
-    _modulosAtribuiveis: function () { return this.modulos.filter(function (m) { return m.id !== "usuarios"; }); },
+    /* ⚠ O PERFIL VALE AQUI TAMBÉM. Sem o filtro, a tela de Usuários listava
+     * os 34 módulos: mostrava ao dono de QUALQUER empresa os módulos sob
+     * demanda de outro cliente ("Carpintaria"), e à New Form os módulos que o
+     * perfil dela esconde — deixando ele atribuir permissão para tela que o
+     * sub-usuário nunca vai conseguir abrir. `Auth.podeModulo` já consulta o
+     * perfil antes do atalho de admin, então basta perguntar. */
+    _modulosAtribuiveis: function () {
+      return this.modulos.filter(function (m) {
+        if (m.id === "usuarios") return false;
+        if (typeof Auth === "undefined" || !Auth.podeModulo) return true;
+        return Auth.podeModulo(m.id);
+      });
+    },
     _modulosDoDepto: function (dep) {
       if (dep === "diretoria" || !DEPTO_MODULOS[dep]) return this._modulosAtribuiveis().map(function (m) { return m.id; });
       return DEPTO_MODULOS[dep].slice();
@@ -13560,6 +13845,16 @@ renderRequisicoes: function () {
         + '<div style="font-size:42px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + '</div>'
         + '<p style="font-size:15px">Você não tem permissão para o módulo <b>' + Util.esc(m ? m.nome : view) + "</b>.</p>"
         + '<p class="muted">Fale com o administrador da conta para liberar este módulo ao seu departamento.</p></div>';
+    },
+    /* Tela honesta para o módulo que existe no menu e cujo arquivo não subiu.
+     * ⚠ Sem isto o `switch` de `render` cairia no `return ""` e o App mostraria
+     *   a view vazia — e tela branca o usuário lê como "sistema quebrado", sem
+     *   nenhuma pista de que o que falta é um <script> no index.html. */
+    _moduloNaoCarregado: function (nome, arquivo) {
+      return '<div class="flex between mb"><h1 style="margin:0">' + Util.esc(nome) + '</h1></div>'
+        + '<div class="card" style="text-align:center;padding:34px">'
+        + '<p style="font-size:15px">O módulo <b>' + Util.esc(nome) + '</b> está liberado para esta empresa, mas o arquivo dele não foi carregado.</p>'
+        + '<p class="muted">Falta <code>' + Util.esc(arquivo) + '</code> no <code>index.html</code>. Atualize o sistema ou fale com o suporte.</p></div>';
     },
     renderUsuarios: function () {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return this._semPermissao("usuarios");
@@ -15282,7 +15577,7 @@ renderFolha: function () {
     renderProducao: function () {
       if (typeof Producao === "undefined") return this._head("Produção", "", "") + '<div class="card">Motor de produção não carregado.</div>';
       var self = this, f = this._prodFiltro(), obras = lista("obras");
-      var jaPago = Producao.jaMedido(lista("producao_med"));
+      var jaPago = this._jaPagoProducao();
       /* acumula SEM filtro para migrar: a chave velha pode pertencer a uma obra
          que não está no filtro de agora, e migrar com a lista filtrada julgaria
          "unívoca" uma chave que na verdade é ambígua */
@@ -15506,7 +15801,7 @@ renderFolha: function () {
       if (this._bloqueado()) return;
       var self = this;
       var f = this._prodFiltro();
-      var jaPago = Producao.jaMedido(lista("producao_med"));
+      var jaPago = this._jaPagoProducao();
       var ac = Producao.acumular(lista("rdo"), { obraId: f.obraId, de: f.de, ate: f.ate, jaMedido: jaPago });
       var med = Producao.medir(ac.linhas, this._prodPrecos());
       /* ⚠ A SUGESTÃO É RECALCULADA AQUI, não reaproveitada do render.
@@ -15570,7 +15865,7 @@ renderFolha: function () {
       var self = this, f = this._prodFiltro();
       var mapa = this._prodLerPrecosDaTela();
       this._prodSalvarPrecos(mapa);
-      var jaPago = Producao.jaMedido(lista("producao_med"));
+      var jaPago = this._jaPagoProducao();
       var ac = Producao.acumular(lista("rdo"), { obraId: f.obraId, de: f.de, ate: f.ate, jaMedido: jaPago });
       var med = Producao.medir(ac.linhas, mapa);
       var pessoas = Producao.porPessoa(med.linhas);
@@ -16477,9 +16772,30 @@ renderFolha: function () {
            * não pertence mais a diário nenhum. E a mensagem de cota cheia manda
            * o usuário "apagar diários antigos", o que não resolve.
            * `aoExcluir` roda ANTES do Store.excluir: se falhar, o registro
-           * continua ali e as fotos continuam alcançáveis. */
-          if (typeof G.aoExcluir === "function") { try { G.aoExcluir(registro); } catch (eX) {} }
-          Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok");
+           * continua ali e as fotos continuam alcançáveis.
+           *
+           * ⚠ ISSO SÓ VALIA PARA GANCHO SÍNCRONO, e o comentario prometia mais
+           *   do que o código entregava. Gancho que faz `fetch` devolve na hora
+           *   e o `Store.excluir` da linha seguinte rodava do mesmo jeito — foi
+           *   o caso da revogação do parceiro no portal: a chamada falhava, o
+           *   aviso vermelho dizia "ele ainda entra, tente de novo", e não havia
+           *   mais o que tentar, porque o registro já tinha sumido da tela.
+           *   Agora, gancho que DEVOLVE uma promessa manda: só apaga no ramo de
+           *   sucesso. Gancho que não devolve nada segue como antes — os
+           *   existentes não mudam de comportamento. */
+          var apagar = function () {
+            Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok");
+          };
+          var eco = null;
+          if (typeof G.aoExcluir === "function") { try { eco = G.aoExcluir(registro); } catch (eX) { eco = null; } }
+          if (eco && typeof eco.then === "function") {
+            eco.then(function (ok) {
+              if (ok === false) { UI.toast(nome + " NÃO foi excluído — resolva o aviso acima e tente de novo.", "erro"); return; }
+              apagar();
+            })["catch"](function () {
+              UI.toast(nome + " NÃO foi excluído — resolva o aviso acima e tente de novo.", "erro");
+            });
+          } else { apagar(); }
         }
       } });
       botoes.push({ texto: ehNovo ? "Salvar" : "Salvar alterações", classe: "primary", onClick: function () {
@@ -17614,7 +17930,20 @@ renderFolha: function () {
         if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Produção — ele decide pagamento por serviço executado.", "erro");
         return;
       }
+      /* ⚠ ENGATE DOS MÓDULOS EM ARQUIVO PRÓPRIO — depois do `_bloqueado()` e
+         com guarda de módulo aplicada aqui, para o módulo externo não ter de
+         lembrar de fazê-la (e não ter como esquecer). */
+      var extra = this._acoesExtras && Object.prototype.hasOwnProperty.call(this._acoesExtras, gacao)
+        ? this._acoesExtras[gacao] : null;
+      if (extra) {
+        if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(extra.modulo)) {
+          if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro");
+          return;
+        }
+        return extra.fn.call(this, dataset, app);
+      }
       switch (gacao) {
+        case "fin-rapido": return this.finRapido();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
         case "bim-drawer-fechar": return this._bimFecharDrawer();
@@ -18440,6 +18769,16 @@ case "nova-folha": return this.novoFolha();
         rdos: (podeRel("diario") || podeRel("semanal") || podeRel("mensal") || podeRel("ocorrencias") ||
                podeRel("fotografico") || podeRel("efetivo") || podeRel("clima") || podeRel("galeria")) ? rdos : []
       };
+      /* ⚠ ÚLTIMA COISA ANTES DE PUBLICAR — e tem de continuar sendo a última.
+         Duas empresas já decidiram por escrito que o cliente delas não vê a
+         metragem produzida nem o nome de quem produziu, e o retrato mandava
+         as duas coisas assim mesmo. O filtro age na CAMADA DO DADO: campo
+         desligado não é embarcado, porque esconder só o botão deixa o número
+         legível no JSON para quem tem o link. Ver js/portalpriv.js. */
+      if (typeof PortalPriv !== "undefined") {
+        snapshot = PortalPriv.aplicar(snapshot, PortalPriv.daObra(obra, Gestao._portalPadrao()));
+      }
+
       return { snapshot: snapshot, medicoes: medicoes, rdosPublicaveis: rdosPublicaveis,
                segurados: segurados, fotosPendentes: fotosPendentes, pctExec: pctExec, curvaS: curvaS,
                fisico: fisico, fonteExec: fonteExec, relatorios: relPermitidos, compras: compras,
@@ -18656,6 +18995,17 @@ case "nova-folha": return this.novoFolha();
       });
       Object.keys(porServ).forEach(function (k) { servicos.push(porServ[k]); });
       servicos.sort(function (a, b) { return b.qtd - a.qtd; });
+      /* ⚠ O AVISO SEMANAL É O SEGUNDO CAMINHO ATÉ O CLIENTE, e ele não passa
+         pelo snapshot. Esconder a metragem no Portal e mandá-la por WhatsApp
+         no domingo não esconde nada — é o vazamento clássico de tapar um
+         caminho e deixar o outro. `ResumoCliente` já omite a quantidade
+         quando ela é zero (js/resumocliente.js), então basta não mandá-la:
+         o texto continua listando O QUE foi executado, sem QUANTO. */
+      if (typeof PortalPriv !== "undefined") {
+        if (PortalPriv.daObra(obra, Gestao._portalPadrao()).semMetragem) {
+          servicos = servicos.map(function (s) { return { descricao: s.descricao, unidade: "", qtd: 0 }; });
+        }
+      }
 
       var base = String((typeof CONFIG !== "undefined" && CONFIG.licencaServer) || "").replace(/\/$/, "");
       var r = ResumoCliente.resumo({
@@ -18768,6 +19118,29 @@ case "nova-folha": return this.novoFolha();
             : (prev && prev.ok && prev.foraDeEscala ? "Hoje o ritmo está baixo demais para projetar data — o Portal diria isso, sem inventar data. "
               : (prev && !prev.ok ? "Hoje ainda não há base para projetar (" + Util.esc(prev.explicacao || "") + "). " : ""))) +
           'A tela do cliente sempre chama de <b>projeção</b> e mostra a faixa otimista/provável. Desligue se o contrato desta obra trata prazo só pelo canal formal — projeção lida como promessa vira discussão.</span></span></label>') +
+        /* ---------- O QUE O CLIENTE NÃO PODE VER ----------
+           Fica ANTES da lista de relatórios de propósito: não é escolher um
+           documento, é cortar um CAMPO de todos eles. Empresa que vende por
+           metragem costuma não querer que o cliente saiba quantos m² a equipe
+           faz por dia — é a produtividade dela na mão de quem negocia o preço.
+           Ver js/portalpriv.js. */
+        ((typeof PortalPriv !== "undefined") ? campo('O que <b>não</b> vai neste Portal',
+          '<div style="display:grid;grid-template-columns:1fr;gap:5px;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px">' +
+          (function () {
+            /* ⚠ A CAIXA MOSTRA O QUE ESTÁ VALENDO, não só o que a obra gravou.
+               Era `obra[op.campo] === true`: numa obra que nunca decidiu, a
+               caixa nascia DESMARCADA mesmo com o padrão da empresa dizendo
+               para esconder — e o publicar grava o que está na tela, então a
+               primeira publicação APAGAVA o padrão e expunha metragem e nomes.
+               A caixa tem de refletir o efetivo (obra, senão empresa). */
+            var efetivo = PortalPriv.daObra(obra, Gestao._portalPadrao());
+            return PortalPriv.OPCOES.map(function (op) {
+              return '<label class="opt-linha" style="font-size:12.5px">' +
+                '<input type="checkbox" data-priv="' + op.campo + '"' + (efetivo[op.id] ? " checked" : "") + ">" +
+                "<span><b>" + Util.esc(op.nome) + "</b>" +
+                '<br><span class="muted" style="font-size:11px">' + Util.esc(op.desc) + "</span></span></label>";
+            }).join("");
+          })() + "</div>") : "") +
         /* ---------- O QUE ESTE CLIENTE PODE GERAR ----------
            Não é decoração: o que ficar desmarcado NÃO É EMBARCADO no
            snapshot. Por isso a lista aparece na hora de publicar — é aqui que
@@ -18886,7 +19259,19 @@ case "nova-folha": return this.novoFolha();
            e é o que a auto-recuperação respeita depois. */
         var mudouPrev = querPrev !== (obra.portalPrevisao === true) || obra.portalPrevisao === undefined;
         var mudouRel = novos.slice().sort().join("|") !== (relSel || []).slice().sort().join("|");
-        if (mudouRel || mudouPrev) {
+        /* ⚠ os cortes de campo entram no MESMO remonte do snapshot, pelo mesmo
+           motivo dos relatórios: marcar "esconder a metragem" e reaproveitar o
+           retrato montado antes do modal abrir publicaria os m² assim mesmo. */
+        var mudouPriv = false;
+        if (typeof PortalPriv !== "undefined") {
+          Array.prototype.forEach.call(document.querySelectorAll("[data-priv]"), function (c) {
+            var campoObra = c.getAttribute("data-priv");
+            var quer = !!c.checked;
+            if ((obra[campoObra] === true) !== quer) mudouPriv = true;
+            obra[campoObra] = quer;
+          });
+        }
+        if (mudouRel || mudouPrev || mudouPriv) {
           obra.portalRelatorios = novos;
           obra.portalPrevisao = querPrev;
           Store.salvar(eid(), "obras", obra);

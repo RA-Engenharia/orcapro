@@ -119,6 +119,24 @@
       return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
     } catch (e) { return "—"; }
   };
+  /* DIA sem hora e sem fuso — para o que é DATA, não instante.
+   *
+   * ⚠ `fmtData` é para CARIMBO (`atualizadoEm`, `fechadaEm`): ele faz
+   *   `new Date(iso)` e mostra a hora. Passar a ele um "2026-08-01" vindo de
+   *   um <input type="date"> dá DIA ERRADO: a string sem fuso é lida como
+   *   meia-noite UTC e, em Brasília, isso é 21h do dia anterior — a tela
+   *   escreve "31/07/2026 21:00" onde o usuário digitou 01/08/2026.
+   *   Aqui a data é montada em partes, sem passar por Date, então não há
+   *   fuso para atrapalhar. */
+  Util.fmtDia = function (iso) {
+    var s = String(iso == null ? "" : iso).trim();
+    if (!s) return "—";
+    var m = s.slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return m[3] + "/" + m[2] + "/" + m[1];
+    /* já veio em dd/mm/aaaa ou em outro formato: devolve como está, em vez de
+       inventar uma conversão que pode trocar dia por mês */
+    return s;
+  };
 
   // ---- IDs ----
   Util.uid = function (prefixo) {

@@ -111,10 +111,18 @@
   <script src="js/porobra.js"></script>
   <script src="js/medicaoseguinte.js"></script>
   <script src="js/rdocanal.js"></script>
+  <script src="js/portalpriv.js"></script>
   <script src="js/resumocliente.js"></script>
   <script src="js/portalsync.js"></script>
   <script src="js/producao.js"></script>
   <script src="js/aprovacao.js"></script>
+  <!-- Motores dos modulos SOB DEMANDA (js/perfis.js): puros, sem DOM.
+       m2.js depende de producao.js e fisico.js, ja carregados acima. -->
+  <script src="js/m2.js"></script>
+  <script src="js/carpintaria.js"></script>
+  <script src="js/remunvar.js"></script>
+  <script src="js/parceiro.js"></script>
+  <script src="js/carpproposta.js"></script>
   <script src="js/cotacoes.js"></script>
   <script src="js/bimeap.js"></script>
   <script src="js/bimplanta.js"></script>
@@ -151,6 +159,10 @@
   <script src="js/licenca.js"></script>
   <script src="js/laudo.js"></script>
   <script src="js/gestao.js"></script>
+  <!-- Telas dos modulos sob demanda: dependem de Gestao.ui e
+       Gestao.registrarAcoes, entao vem DEPOIS do gestao.js. -->
+  <script src="js/carpintariaui.js"></script>
+  <script src="js/remunvarui.js"></script>
   <script src="js/autoupdate.js"></script>
   <script src="js/nuvem.js"></script>
   <script src="js/app.js"></script>

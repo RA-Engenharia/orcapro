@@ -233,10 +233,37 @@
         { n: 4, at: diaUtil(1), atv: "Concretagem dos pilares P1–P8 com concreto usinado FCK 30 (Concreteira Forte). Cura iniciada.", oc: "Sem ocorrências.", ed: 9, ei: 2, eq: "Bomba lança, vibradores", lp: PRE + "lp8", fotos: f1 ? [{ d: f1, leg: "Concretagem dos pilares — bloco A" }] : [] },
         { n: 5, at: diaUtil(0), atv: "Início da alvenaria do térreo (panos 1 e 2). Marcação da primeira fiada conferida pelo mestre.", oc: "Sem ocorrências.", ed: 8, ei: 2, eq: "Betoneira 400L, nível a laser", fotos: f3 ? [{ d: f3, leg: "Alvenaria do térreo — pano 2" }] : [] }
       ];
+      /* ---------- SERVIÇOS COM QUANTIDADE, E QUEM PRODUZIU ----------
+       * ⚠ SEM ISTO A OBRA TESTE NASCE MUDA em duas telas: o cartão
+       *   "Progresso em m²" do Painel e a Produção por pessoa. As duas leem
+       *   `atividadesItens` — o diário aqui só tinha o texto do dia, então o
+       *   cliente abria o Painel da obra de teste e via 0 m², concluindo que
+       *   o recurso não funciona.
+       * ⚠ A soma de `producao[]` é MENOR que `qtdExecutada` de propósito, no
+       *   RDO 5: é o caso real de metragem lançada sem dono, e é exatamente
+       *   o que o cartão do Painel explica em voz alta. Uma demonstração em
+       *   que tudo fecha redondo esconde a única coisa que a pessoa precisa
+       *   aprender a ler ali. */
+      var itensRdo = {
+        1: [{ pid: "p1", numero: "1.1", descricao: "Forma de pilar", etapa: "Estrutura", unidade: "m2",
+              qtdPrevista: 320, qtdExecutada: 48,
+              producao: [{ colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", qtd: 28 },
+                         { colaboradorId: PRE + "col3", nome: "Marcos Paulo Lima", qtd: 20 }] }],
+        2: [{ pid: "p1", numero: "1.1", descricao: "Forma de pilar", etapa: "Estrutura", unidade: "m2",
+              qtdPrevista: 320, qtdExecutada: 52,
+              producao: [{ colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", qtd: 30 },
+                         { colaboradorId: PRE + "col3", nome: "Marcos Paulo Lima", qtd: 22 }] }],
+        4: [{ pid: "p2", numero: "1.2", descricao: "Concretagem de pilar", etapa: "Estrutura", unidade: "m3",
+              qtdPrevista: 34, qtdExecutada: 12.5, producao: [] }],
+        5: [{ pid: "p3", numero: "2.1", descricao: "Alvenaria de bloco cerâmico", etapa: "Alvenaria", unidade: "m2",
+              qtdPrevista: 610, qtdExecutada: 36,
+              producao: [{ colaboradorId: PRE + "col2", nome: "Rosivaldo Ferreira", qtd: 21 }] }]
+      };
       rdos.forEach(function (r) {
         salvar("rdo", {
           id: PRE + "rdo" + r.n, numero: "RDO-" + ("0000" + r.n).slice(-4),
           data: iso(r.at), status: "finalizado", obraId: obraId, obraNome: "OBRA TESTE ORÇAPRO",
+          atividadesItens: itensRdo[r.n] || [],
           climaManha: r.n === 3 ? "chuva_forte" : "ensolarado", climaTarde: r.n === 3 ? "nublado" : "ensolarado",
           condicao: r.n === 3 ? "parcial" : "praticavel",
           efetivoDireto: r.ed, efetivoIndireto: r.ei, terceiros: r.n === 4 ? "Equipe da concreteira (3)" : "",

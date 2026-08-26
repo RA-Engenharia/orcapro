@@ -461,8 +461,29 @@
            vencer não pode ABRIR porta que a permissão fecha. Sem módulo nenhum
            acessível, a tela honesta é o login. */
         if (Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
-          try { UI.toast("Seu usuário não tem acesso ao módulo Orçamentos, e a licença atual não dá acesso à Gestão. Fale com o administrador da conta.", "erro"); } catch (eT) {}
-          Auth.logout(); this.tela = "login"; this.orcAtual = null;
+          /* ⚠ O DONO NÃO PODE SER DESLOGADO AQUI — vira porta trancada com ele
+           * do lado de fora. Quando quem esconde o Orçamentos é o PERFIL DE
+           * IMPLANTAÇÃO (uma carpintaria que orça pela tabela própria) e a
+           * licença cai do Plus, este ramo deslogava o DONO da conta com uma
+           * mensagem mandando ele "falar com o administrador" — que é ele
+           * mesmo. E o laço se fecha: ao entrar de novo, o mesmo caminho
+           * desloga outra vez. Ele fica sem sistema E sem como renovar.
+           * Para o sub-usuário a regra antiga continua certa: sem módulo
+           * nenhum acessível, a tela honesta é o login.
+           * ⚠ A condição é estreita de propósito — no perfil "completo"
+           *   `Perfis.permite("orcamentos")` é true, então nada muda para
+           *   quem já usa o sistema hoje. */
+          var perfilEscondeu = typeof Perfis !== "undefined" && Perfis.permite && !Perfis.permite("orcamentos");
+          var ehDono = !Auth.ehAdmin || Auth.ehAdmin();
+          if (perfilEscondeu && ehDono) {
+            try {
+              UI.toast("A licença atual não dá acesso à Gestão, e o perfil desta empresa não usa o módulo Orçamentos. Renove para voltar a usar o sistema.", "erro");
+              if (typeof Gestao !== "undefined" && Gestao._upsell) Gestao._upsell();
+            } catch (eU) {}
+          } else {
+            try { UI.toast("Seu usuário não tem acesso ao módulo Orçamentos, e a licença atual não dá acesso à Gestão. Fale com o administrador da conta.", "erro"); } catch (eT) {}
+            Auth.logout(); this.tela = "login"; this.orcAtual = null;
+          }
         }
       } else if (podeGestao && Auth.podeModulo && !Auth.podeModulo(view)) {
         // Plus: sub-usuário sem permissão p/ a view → vai p/ um módulo permitido (Painel é sempre liberado)
@@ -2459,8 +2480,41 @@
       // White-label dos entregáveis (créditos / marca d'água / QR)
       var elC = UI.el("emp-doc-creditos"), elQ = UI.el("emp-doc-qr"), elW = UI.el("emp-doc-wm");
       if (elC && Empresa.salvarDocsCfg) Empresa.salvarDocsCfg({ creditos: elC.checked, qr: elQ ? elQ.checked : true, marcaDagua: elW ? elW.value : "empresa" });
+
+      /* ---------- PERFIL DE IMPLANTAÇÃO ----------
+       * ⚠ SÓ O DONO. `abrirEmpresa` e o `case "empresa"` do dispatcher não
+       *   checam `ehAdmin()` — a proteção do menu é visual. Guarda em função
+       *   aqui, porque o perfil muda o que a empresa INTEIRA enxerga.
+       * ⚠ `Perfis.aplicar` grava e não redesenha: sem o `render()` abaixo o
+       *   dono trocaria o perfil, veria o toast e a barra continuaria igual. */
+      var perfilMudou = false;
+      if (typeof Perfis !== "undefined" && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) {
+        var escolhido = document.querySelector('input[name="emp-perfil"]:checked');
+        var novoPerfil = escolhido ? escolhido.value : null;
+        if (novoPerfil && novoPerfil !== Perfis.idAtual()) {
+          var rp = Perfis.aplicar(novoPerfil);
+          if (rp.ok) { perfilMudou = true; }
+          else { UI.toast("Não foi possível aplicar o perfil: " + rp.erro, "erro"); }
+        }
+        /* ⚠ SEMEAR GRAVA NÚMERO DE UMA EMPRESA REAL. A semente do perfil de
+           cliente traz preço de mão de obra, política de remuneração e o padrão
+           de privacidade do Portal. Isso pertence à conta daquele cliente e a
+           mais ninguém: na vitrine não se semeia nada, e o que se semeia é
+           sempre o perfil DESTA conta — nunca um id vindo de outro lugar. */
+        var semear = this._demo ? null : UI.el("emp-perfil-semear");
+        if (semear && semear.checked) {
+          var rs = Perfis.semear(Perfis.idAtual());
+          if (rs.ok && rs.semeadas && rs.semeadas.length) {
+            UI.toast("Parâmetros de fábrica preenchidos (" + rs.semeadas.length + ").", "ok");
+          } else if (rs.ok) {
+            UI.toast("Os parâmetros já estavam preenchidos — nada foi sobrescrito.", "ok");
+          }
+        }
+      }
+
       UI.fecharModal();
       UI.toast("Dados da empresa salvos. Aparecem nos documentos.", "ok");
+      if (perfilMudou) { UI.toast("Perfil aplicado — a barra de módulos mudou.", "ok"); this.render(); }
     },
 
     // ---------- Atualizar tabelas (backend sinapi-fetcher) ----------

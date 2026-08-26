@@ -328,8 +328,22 @@
        DE PONTO no outro aparelho. É o mesmo motivo que já mantém `faltas` e
        `horas_extras` fora da cascata: jornada e dinheiro são de PESSOA, não da
        obra — a obra some, o que se deve a alguém não some junto. */
+    /* ⚠ `remun_apur` e `carp_propostas` ENTRARAM AQUI PORQUE SINCRONIZAM E
+       CARREGAM `obraId` — e essa combinação, sem imunidade, apaga sozinha.
+       A exclusão local nem tocava nelas (não estavam na cascata da tela), mas
+       o merge da nuvem via "obraId aponta pra obra morta" e as apagava em
+       TODOS os aparelhos, no sync seguinte, calado.
+       O que sumiria: a apuração da parte variável JÁ PAGA — que é a única
+       fonte que `_jaPagoProducao` consulta para o mesmo m² não ser pago duas
+       vezes — e a proposta FECHADA, que é o preço que o cliente assinou.
+       Mesma doutrina de `folha` e `ponto`: dinheiro é de PESSOA e documento
+       assinado é da EMPRESA; a obra some, eles perdem o vínculo, não a
+       existência. ⚠ Quem está aqui tem de estar em `_ENT_SO_DESVINCULA` e
+       NUNCA em `_ENT_DA_OBRA` — as duas listas ao mesmo tempo foi o defeito
+       que a v1.1.236 consertou. */
     _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1,
-                       folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1 },
+                       folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1,
+                       remun_apur: 1, carp_propostas: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
     /* A lápide só serve para o merge da nuvem: entidade que NÃO sincroniza nunca ressuscita,
      * e gravar lápide dela só gastava o teto — empurrando para fora as que importam. */
