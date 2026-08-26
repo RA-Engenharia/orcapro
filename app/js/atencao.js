@@ -35,12 +35,14 @@
     return Math.round((db - da) / 86400000);
   }
 
-  /* `d`: { obras, contratos, medicoes, estoque, epi, rdo, hoje }
-     `opc.diasEpi`: antecedência do aviso de EPI (padrão 60, igual à tela de EPI) */
+  /* `d`: { obras, contratos, medicoes, estoque, epi, rdo, licenca, hoje }
+     `opc.diasEpi`: antecedência do aviso de EPI (padrão 60, igual à tela de EPI)
+     `opc.diasLicenca`: antecedência do aviso de licença (padrão 15) */
   function achar(d, opc) {
     d = d || {}; var o = opc || {};
     var hoje = texto(d.hoje);
     var diasEpi = typeof o.diasEpi === "number" ? o.diasEpi : 60;
+    var diasLic = typeof o.diasLicenca === "number" ? o.diasLicenca : 15;
     var obras = d.obras || [], contratos = d.contratos || [];
     var nome = {};
     obras.forEach(function (ob) { if (ob && ob.id) nome[ob.id] = ob.nome || ""; });
@@ -159,6 +161,59 @@
         valor: 0, view: "rdo",
         acao: "Abra o Diário e publique no Portal do Cliente."
       });
+    }
+
+    /* ---- 5) A LICENÇA ESTÁ PARA VENCER ----
+     * ⚠ POR QUE ISTO PRECISOU EXISTIR. O sistema não avisava NINGUÉM de
+     *   vencimento: nem o cliente, nem quem vende. O vencimento só aparecia
+     *   DEPOIS de acontecido, na hora em que a pessoa tenta salvar e ouve
+     *   "Sua licença venceu". E o pior é o formato da falha — o app continua
+     *   abrindo e mostrando tudo, então parece funcionando até o lançamento
+     *   do dia não entrar.
+     *
+     * ⚠ E O PLANO NÃO RENOVA SOZINHO. É período fechado, cobrança avulsa. Sem
+     *   um aviso com antecedência, o caminho normal é o cliente descobrir
+     *   trabalhando.
+     *
+     * ⚠ SÓ PARA QUEM PODE RESOLVER. `d.licenca` só é passado quando quem está
+     *   olhando é o dono da conta — ver js/gestao.js. Encarregado vendo
+     *   "sua licença vence" é ruído que ele não tem como tratar, e é conversa
+     *   comercial que não é dele.
+     *
+     * O aviso avisa ANTES (padrão: 15 dias) e sobe de gravidade conforme
+     * aperta. Depois de vencida ele continua, porque aí é o mais urgente que
+     * existe na tela. */
+    var lic = d.licenca;
+    if (lic && (lic.expirada || typeof lic.diasRestantes === "number")) {
+      var restam = lic.expirada ? -1 : num(lic.diasRestantes);
+      var mostrar = lic.expirada || restam <= diasLic;
+      if (mostrar) {
+        var grave = lic.expirada || restam <= 3 ? 3 : (restam <= 7 ? 2 : 1);
+        achados.push({
+          tipo: "licenca-vencendo", gravidade: grave,
+          /* sem módulo: não é assunto de módulo nenhum, e a tela precisa
+             mostrá-lo de qualquer forma */
+          modulo: "",
+          titulo: lic.expirada
+            ? "Sua licença venceu"
+            : (restam <= 0 ? "Sua licença vence hoje"
+              : "Sua licença vence em " + restam + " dia" + (restam === 1 ? "" : "s")),
+          /* ⚠ `expiraTexto` vem PRONTO de quem chama. `Licenca.status().expira`
+             é timestamp em milissegundos, e cortar os 10 primeiros dígitos
+             imprimia "Validade até 1788217835" na cara do cliente — apareceu
+             assim na primeira vez que a tela rodou. Formatar data é trabalho de
+             quem tem o `Util`; este motor é puro e não o tem. */
+          detalhe: texto(lic.expiraTexto) ? "Validade até " + texto(lic.expiraTexto) : "Plano por período fechado",
+          porque: lic.expirada
+            ? "O sistema continua abrindo, mas parou de salvar e exportar — o trabalho do dia não entra."
+            : "Ele não renova sozinho. Vencendo, o sistema continua abrindo mas para de salvar e exportar.",
+          valor: 0, view: "", acao: lic.expirada
+            ? "Renove para voltar a salvar."
+            : "Renovar antes não custa dias: o período novo soma ao que ainda resta.",
+          /* o botão desta linha abre a tela de licença, não um módulo */
+          acaoBotao: "licenca"
+        });
+      }
     }
 
     achados.sort(function (a, b) {

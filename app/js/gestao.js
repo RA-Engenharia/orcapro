@@ -1012,6 +1012,29 @@
      * módulo que exige (js/atencao.js) e some para quem não o tem. O
      * encarregado vê o EPI vencido, que é problema dele, e não vê a multa.
      * ------------------------------------------------------------------ */
+    /* O estado da licença como o motor de atenção o consome — ou `null` quando
+       não é para avisar. ⚠ `trial` fica de fora de propósito: o teste tem
+       aviso próprio, com outro texto e outra conversão, e misturar os dois faria
+       o teste de 7 dias gritar "sua licença vence" desde o primeiro dia. */
+    _licencaParaAviso: function () {
+      try {
+        if (typeof Licenca === "undefined" || !Licenca.status) return null;
+        if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return null;
+        var st = Licenca.status() || {};
+        if (st.trial) return null;
+        if (!st.ativo && !st.expirada) return null;      // sem licença, ou estado que a tela já trata
+        /* ⚠ a data sai daqui JÁ FORMATADA. `st.expira` é timestamp em ms; o
+           motor de atenção é puro e não tem `Util` para formatar. */
+        var quando = "";
+        try {
+          if (st.expira) quando = Util.fmtDia
+            ? Util.fmtDia(new Date(st.expira).toISOString().slice(0, 10))
+            : new Date(st.expira).toLocaleDateString("pt-BR");
+        } catch (eD) {}
+        return { expirada: !!st.expirada, diasRestantes: st.diasRestantes, expiraTexto: quando };
+      } catch (e) { return null; }
+    },
+
     _dashAtencaoHtml: function () {
       if (typeof Atencao === "undefined") return "";
       var esc = this._dashEscopo();
@@ -1021,11 +1044,20 @@
         r = Atencao.achar({
           obras: esc.obras, contratos: esc.contratos, estoque: esc.estoque, rdo: esc.rdo,
           epi: lista("epi").filter(naObra),
+          /* ⚠ SÓ PARA QUEM PODE RESOLVER. A licença é da empresa e quem renova
+             é o dono; sub-usuário vendo "sua licença vence" é ruído que ele não
+             tem como tratar, e é conversa comercial que não é dele. Sem o
+             dado, a regra do motor nem dispara. */
+          licenca: this._licencaParaAviso(),
           hoje: String(this._hojeISO()).slice(0, 10)
         });
       } catch (e) { return ""; }
 
       var pode = function (mod) {
+        /* ⚠ achado SEM módulo aparece para quem chegou até aqui. `podeModulo("")`
+           responderia false e engoliria o aviso de licença em silêncio — quem
+           filtra esse é o `_licencaParaAviso`, que nem passa o dado. */
+        if (!mod) return true;
         return !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(mod));
       };
       var itens = r.itens.filter(function (i) { return pode(i.modulo); });
@@ -1043,7 +1075,10 @@
           + '<div style="font-size:12px;margin-top:3px">' + Util.esc(i.porque) + '</div>'
           + '<div class="muted" style="font-size:11.5px;margin-top:2px">&rarr; ' + Util.esc(i.acao) + '</div>'
           + '</div>'
-          + '<button class="btn sm" data-view="' + Util.esc(i.view) + '">Ver</button></div>';
+          + (i.acaoBotao
+            ? '<button class="btn sm" data-acao="' + Util.esc(i.acaoBotao) + '">Ver</button>'
+            : '<button class="btn sm" data-view="' + Util.esc(i.view) + '">Ver</button>')
+          + "</div>";
       }).join("");
 
       return '<div class="card mt" style="border-left:3px solid #a16207">'

@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.281",
+  "versao": "1.1.282",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.281/OrcaPRO-IA-update-v1.1.281.zip",
-  "notas": "Manutenção interna. Nada muda na sua tela nem nos seus dados.\n\nEsta versão reforça por dentro o isolamento entre contas — a sincronização na nuvem, o backup automático e a contagem de uso passaram a conferir de qual conta veio cada operação antes de gravar. É uma proteção a mais para que dado de uma conta nunca alcance a de outra.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.281/OrcaPRO-IA-Instalador-v1.1.281.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.282/OrcaPRO-IA-update-v1.1.282.zip",
+  "notas": "AVISO DE VENCIMENTO DA LICENÇA.\n\nO sistema passa a avisar no Painel quando a sua licença está perto de vencer — começando 15 dias antes, no quadro \"Precisa de você\", junto dos outros pontos que pedem atenção. Antes disso o vencimento só aparecia depois de acontecido, na hora de salvar.\n\nVale saber por que o aviso importa: o plano é por período fechado e não renova sozinho. Vencendo, o sistema continua abrindo e você continua vendo tudo o que já está lá — mas ele para de salvar e de exportar, então o trabalho do dia não entra.\n\nE renovar antes não custa dias: o período novo é somado ao que ainda resta, nunca no lugar dele.\n\nO aviso aparece só para o administrador da conta — quem pode resolver — e não aparece durante o teste grátis, que já tem o aviso dele.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.282/OrcaPRO-IA-Instalador-v1.1.282.exe"
 }
