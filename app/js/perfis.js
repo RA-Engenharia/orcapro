@@ -12,12 +12,12 @@
  *
  * ⚠ POR QUE NÃO É FEATURE FLAG POR VARIÁVEL DE AMBIENTE. A ideia original
  *   era um `CLIENT_TENANT=new_form` decidindo em tempo de build. Isso daria
- *   um binário por cliente: o pacote da New Form deixaria de receber as
+ *   um binário por cliente: o pacote daquele cliente deixaria de receber as
  *   correções do produto, e cada release viraria N empacotamentos. Aqui o
  *   perfil é DADO — viaja nas prefs, junto do logo e do white-label, e o
  *   mesmo executável serve todo mundo.
  *
- * ⚠ POR QUE NÃO É `if (cliente === "newform")` ESPALHADO. Condicional por
+ * ⚠ POR QUE NÃO É `if (cliente === "fulano")` ESPALHADO. Condicional por
  *   nome de cliente no meio da regra de negócio é o começo do fork
  *   disfarçado: em seis meses ninguém sabe quais telas têm desvio. O perfil
  *   só decide O QUE APARECE. Regra de negócio específica, quando vier, entra
@@ -27,11 +27,11 @@
  * ⚠ ELE VALE PARA O DONO TAMBÉM. `Auth.podeModulo` liberava tudo para quem
  *   é admin antes de olhar qualquer lista. Se o perfil entrasse depois desse
  *   atalho, ele não valeria justamente para a pessoa que mais usa o sistema
- *   na New Form. O gancho fica ANTES — ver o comentário em auth.js.
+ *   no cliente. O gancho fica ANTES — ver o comentário em auth.js.
  *
  * ⚠ ESTE ARQUIVO É O ÚNICO QUE PODE SABER O NOME DE UM CLIENTE. É a
  *   contrapartida da regra acima: como nenhuma regra de negócio pode
- *   perguntar "é a New Form?", alguém precisa carregar essa informação — e
+ *   perguntar "é o cliente X?", alguém precisa carregar essa informação — e
  *   é melhor que seja um lugar só, declarativo, do que trinta espalhados.
  *   Aqui moram: a lista de módulos e a SEMENTE (os números do cliente).
  * =================================================================== */
@@ -62,6 +62,17 @@ var Perfis = (function () {
    * módulo de cliente precisa de convite. */
   var SOB_DEMANDA = ["carpintaria", "remunvar"];
 
+  /* ⚠ AQUI SÓ MORA O PERFIL DO PRODUTO. Perfil de CLIENTE — nome comercial,
+   *   resumo da operação e os números que fazem o preço dele — é material do
+   *   cliente e vive em `venda/perfis-clientes.js`, que NÃO é empacotado nem
+   *   sincronizado para o PWA.
+   *
+   *   Enquanto isso morava aqui, viajava em três lugares ao mesmo tempo: no
+   *   pacote de todo cliente, no PWA público da landing (o `js/perfis.js` de
+   *   lá respondia HTTP 200 com 21 KB de nome e números, sem login nenhum) e
+   *   no console, via `Perfis.CATALOGO`. Marcar `privado: true` e filtrar o
+   *   `listar()` — o que a v1.1.278 fez — fecha a porta da frente e deixa o
+   *   arquivo aberto na rua. */
   var CATALOGO = {
     completo: {
       nome: "Completo",
@@ -69,140 +80,21 @@ var Perfis = (function () {
       modulos: null                       // null = sem restrição (menos o sob demanda)
     },
 
-    /* NEW FORM CARPINTARIA — escopo do PDF "Escopo de Adaptação do Sistema"
-       (18/08/2026) mais as duas rodadas de respostas do cliente. Cada id
-       abaixo responde a um item do escopo; o que não está na lista fica
-       oculto, não apagado.
-
-       ⚠ `orcamentos` FORA DA LISTA É DECISÃO, NÃO ESQUECIMENTO. Uma
-       carpintaria sem módulo de orçamento parece erro de configuração, e a
-       tentação de "consertar" religando é grande. Não religue.
-       A New Form ORÇA — só que do jeito dela: espécie de madeira × aplicação
-       × dimensão (item 1) mais mão de obra por m² por tipo de serviço
-       (item 2). O módulo `orcamentos` do OrçaPRO é a planilha SINAPI de obra
-       pesada, com BDI do TCU, curva ABC e composição analítica; para quem
-       vende deck e forro isso é atrito puro, e foi exatamente o que eles
-       pediram para tirar ("reduzir funcionalidades genéricas do
-       sistema-base", confirmado pelo Rogério em 18/08).
-       O orçamento deles é o módulo `carpintaria`, aqui embaixo — não uma
-       variação do módulo SINAPI.
-       ⚠ Há teste que reprova se `orcamentos` voltar: tools/test-perfis.js. */
-    newform: {
-      /* ⚠ PRIVADO — O NOME DE UM CLIENTE NÃO APARECE NA CONTA DOS OUTROS.
-         `listar()` alimenta um bloco de rádio em ⚙ Empresa que TODO dono de
-         conta enxerga, e a vitrine pública monta um usuário sem `papel` — ou
-         seja, `ehAdmin()` responde true e o bloco desenha numa página aberta na
-         internet. Sem esta marca, "New Form — Carpintaria" e o resumo da
-         operação deles iam para dentro da instalação de todos os clientes e
-         para qualquer visitante. E um clique curioso ainda semearia os
-         NÚMEROS deles (corte de 65 m², +50%, R$ 5,31/m²) na base de quem
-         clicou. Perfil de cliente é material do cliente. */
-      privado: true,
-      nome: "New Form — Carpintaria",
-      desc: "Deck, forro, ripado e caibro: orçamento próprio, diário, remuneração por m², almoxarifado e financeiro.",
-      modulos: [
-        "clientes",       // pré-requisito dos itens 6 e 7 (obra tem dono)
-        "obras",          // item 7 — o Portal do Cliente é publicado a partir da obra
-        "carpintaria",    // itens 1 e 2 — madeiras por fornecedor + mão de obra por m²
-        "rdo",            // item 6 — diário (já grava impedimentos)
-        "producao",       // item 4 — m² por serviço e por pessoa, base da parte variável
-        "remunvar",       // item 4 — a conta da parte variável (R$/m², 50% obra / 50% individual)
-        "colaboradores",  // item 4 — cadastro de quem recebe
-        "folhasemanal",   // ⚠ NÃO ESTAVA NO ESCOPO — ver a nota abaixo
-        "folha",          // item 4 — a parte FIXA: piso da categoria, encargos e recibo
-        "insumos",        // item 1 — cadastro de materiais que não são madeira
-        "fornecedores",   // item 3 — cadastro do parceiro (o portal dele vem na Fase 3)
-        "financeiro",     // item 5 — mantém a estrutura existente
-        /* ⚠ ALMOXARIFADO NÃO ESTAVA NO PDF. Apareceu na resposta de 18/08:
-           "quando for compra de ferramentas seria bom ter um almoxarifado".
-           Não é módulo novo — o `estoque` já faz isso; foi só religar. */
-        "estoque",
-        /* F1 (25/08): "ferramenta que dura fica registrada como PATRIMÔNIO".
-           Estava faltando — o perfil tinha só o `estoque`. */
-        "patrimonio",
-        /* ⚠ GALERIA FICA, E ISSO É RESPOSTA DO CLIENTE. Em G2 oferecemos
-           ocultar três módulos; ele marcou dois (orçamento tradicional e
-           Medições) e deixou a Galeria sem marca. Caixa oferecida e não
-           marcada é "não". O perfil escondia a Galeria por engano desde a
-           Fase 0 — corrigido aqui. */
-        "galeria"
-      ],
-
-      /* ⚠ SÃO DUAS FOLHAS, E ELAS FAZEM COISAS DIFERENTES — deixar uma de fora
-         foi erro meu, corrigido aqui:
-           `folhasemanal`  onde a parte VARIÁVEL vira pagamento. O `remunvar`
-                           grava `fs_lancamentos`, e é ali que sai a lista de
-                           PIX e o fechamento por obra. Sem ela o módulo
-                           calcularia o valor e não teria para onde mandar.
-           `folha`         a parte FIXA, mensal, com competência, encargos e
-                           RECIBO. Os 6 da New Form são CLT com piso da
-                           categoria (item 4); `folhasemanal` é de diarista e
-                           não atende a isso.
-         ⚠ Nenhuma das duas saiu de resposta escrita do cliente — as duas estão
-           anotadas em clientes/newform-implantacao.md para confirmação.
-         ⚠ O VALE DE R$ 480 NÃO TEM CAMPO em nenhuma das duas: o formulário da
-           folha tem salário base, encargos, horas extras e descontos. Como o
-           cliente disse que ele é "valor fixo mensal, fora do cálculo" (C4),
-           hoje ele fica guardado só no parâmetro do `remunvar`, sem virar
-           linha de pagamento. É a lacuna conhecida deste item. */
-
-      /* =================================================================
-       * SEMENTE — os números que a New Form respondeu
-       *
-       * ⚠ ELES MORAM AQUI E EM MAIS NENHUM LUGAR. Os motores (carpintaria.js,
-       *   remunvar.js) nascem VAZIOS de propósito: 65 m² e +50% são a regra
-       *   DESTA carpintaria, e a próxima terá outra. Um default plausível
-       *   dentro do motor viraria proposta errada no cliente seguinte, calada.
-       *
-       * ⚠ A SEMENTE NÃO VAI PARA AS PREFS. Prefs sincronizam com
-       *   `Object.assign({}, nuvem, local)` — o aparelho LOCAL vence campo a
-       *   campo —, e já houve o defeito de preço de produção morando lá e
-       *   voltando ao valor velho depois do sync. Número que vira dinheiro é
-       *   ENTIDADE, com `atualizadoEm`, que é o que o merge compara.
-       *
-       * Fonte de cada valor: clientes/newform-decisoes.md (2ª rodada, 25/08).
-       * ================================================================= */
-      semente: {
-        carp_param: {
-          id: "carp-param",
-          corteM2: 65,                     // 1ª rodada
-          acrescimoAbaixoPct: 50,          // 1ª rodada
-          incideAcrescimo: "mo",           // B1 — "só a mão de obra"
-          incideDetalhe: "mo",             // B3 — "só a mão de obra"
-          composicaoAcrescimos: "somado",  // ⚠ não respondido — ver carpintaria.js, regra 6
-          validadeDias: 30,                // 1ª rodada
-          unidadeMO: "m2",
-          detalhes: [                      // B2
-            { id: "degrau", nome: "Degrau", pct: 8.3 },
-            { id: "curva", nome: "Curva", pct: 50 },
-            { id: "iluminacao", nome: "Iluminação embutida", pct: 6.1 }
-          ]
-        },
-        remun_param: {
-          id: "remun-param",
-          porM2: 5.31,                     // C1
-          rateioEquipePct: 50,             // 1ª rodada — o resto é individual
-          equipe: "obra",                  // C2 — "todos os colaboradores daquela obra"
-          periodicidade: "mensal",         // C6
-          exigeDoisNiveis: true,           // D1 — encarregado e depois a gestão
-          valeAlimentacao: 480,            // C4 — fixo mensal, FORA do cálculo
-          /* ⚠ piso da categoria: C3 escolheu "eu atualizo quando o sindicato
-             muda" e deixou o VALOR em branco. Não se inventa piso. */
-          pisoCategoria: null
-        },
-        /* O cliente decidiu DUAS vezes que o cliente final dele não vê a
-           metragem produzida (1ª rodada) nem nome de colaborador (G1). Isto é
-           o padrão da empresa: a obra que ainda não decidiu herda daqui, e a
-           republicação automática — que não passa por tela nenhuma — respeita.
-           Sem isso, obra criada depois da implantação sairia expondo os dois. */
-        portal_padrao: {
-          id: "portal-padrao",
-          portalSemMetragem: true,
-          portalSemNomes: true
-        }
-      }
-    }
   };
+
+  /* Quem tem o arquivo privado registra os perfis de cliente por aqui. Sem ele,
+     o app roda com o catálogo do produto — que é exatamente o que o cliente
+     precisa, porque o perfil DELE já está resolvido dentro de `perfil_impl`. */
+  function registrarCatalogo(mapa) {
+    if (!mapa || typeof mapa !== "object") return 0;
+    var n = 0;
+    Object.keys(mapa).forEach(function (id) {
+      if (id === "completo" || CATALOGO[id]) return;      // nunca sobrescreve o do produto
+      CATALOGO[id] = mapa[id];
+      n++;
+    });
+    return n;
+  }
 
   var ENT_PERFIL = "perfil_impl";
 
@@ -235,21 +127,37 @@ var Perfis = (function () {
 
   function _sobDemanda(id) { return SOB_DEMANDA.indexOf(String(id)) > -1; }
 
+  /* ⚠ O REGISTRO DA CONTA VALE MESMO SEM CATÁLOGO. Na instalação do cliente o
+     `venda/perfis-clientes.js` não existe — de propósito —, então
+     `CATALOGO[id]` é `undefined` para o perfil dele. Se estas funções
+     dependessem só do catálogo, o perfil cairia em "completo" no primeiro
+     boot depois da atualização e a barra dele voltaria aos 34 módulos, sem
+     erro em lugar nenhum. Por isso `aplicar` grava a lista junto, e a leitura
+     prefere o catálogo (que é a fonte, quando existe) e cai no registro. */
+  function _perfilDe(id) {
+    if (CATALOGO[id]) return CATALOGO[id];
+    var reg = _registro();
+    if (reg.perfil === id && (reg.modulos || reg.nome)) {
+      return { nome: reg.nome || "Perfil da conta", desc: "", modulos: reg.modulos || null };
+    }
+    return null;
+  }
+
   /* id do perfil gravado, ou "completo". */
   function idAtual() {
     var id = _registro().perfil;
-    return (typeof id === "string" && CATALOGO[id]) ? id : "completo";
+    return (typeof id === "string" && _perfilDe(id)) ? id : "completo";
   }
 
   function atual() {
-    var p = CATALOGO[idAtual()];
+    var p = _perfilDe(idAtual()) || CATALOGO.completo;
     return { id: idAtual(), nome: p.nome, desc: p.desc, modulos: p.modulos };
   }
 
   /* Lista efetiva de módulos liberados — núcleo incluído. `null` = todos
      os do produto (o sob demanda continua de fora). */
   function modulosLiberados() {
-    var p = CATALOGO[idAtual()];
+    var p = _perfilDe(idAtual());
     if (!p || !p.modulos) return null;
     var fora = p.modulos.filter(function (id) { return NUCLEO.indexOf(id) < 0; });
     return NUCLEO.concat(fora);
@@ -277,10 +185,26 @@ var Perfis = (function () {
        defeito que chega depois. */
   function aplicar(perfilId) {
     if (!CATALOGO[perfilId]) return { ok: false, erro: "Perfil desconhecido: " + perfilId };
+    /* ⚠ PERFIL PRIVADO NÃO SE APLICA PELO CONSOLE. `_visivel` protegia só o
+       `listar()`; `aplicar` aceitava qualquer id do catálogo. Um cliente com
+       o F12 aberto digitava `Perfis.aplicar("<id>")` e virava o outro cliente
+       — e o `semear` logo depois gravava os NÚMEROS do outro na base dele.
+       O caminho não passava por botão nenhum, então gate de tela não o fechava. */
+    if (!_visivel(perfilId)) return { ok: false, erro: "Perfil não disponível nesta conta." };
     try {
       var eid = _eid();
       if (!eid) return { ok: false, erro: "sem empresa" };
-      Store.salvar(eid, ENT_PERFIL, { id: "perfil-impl", perfil: perfilId });
+      /* ⚠ A LISTA DE MÓDULOS VAI GRAVADA JUNTO, e é isso que deixa o catálogo
+         ficar fora do pacote do cliente. O registro passa a dizer "os meus
+         módulos são estes" — um fato sobre a própria conta — em vez de exigir
+         uma tabela com o nome e a operação de todo mundo dentro de `js/`.
+         `perfil_impl` sincroniza, então os outros aparelhos da conta recebem
+         a lista sem precisar do arquivo também. */
+      var cat = CATALOGO[perfilId];
+      Store.salvar(eid, ENT_PERFIL, {
+        id: "perfil-impl", perfil: perfilId,
+        nome: cat.nome || "", modulos: cat.modulos ? cat.modulos.slice() : null
+      });
       /* espelha nas prefs por enquanto: um aparelho que ainda não recebeu esta
          versão continua lendo de lá, e enxergaria o sistema completo sem isto */
       try {
@@ -351,8 +275,17 @@ var Perfis = (function () {
 
   /* Para telas de escolha: [{id, nome, desc, qtd}] */
   function listar() {
-    return Object.keys(CATALOGO).filter(_visivel).map(function (id) {
-      var p = CATALOGO[id];
+    /* ⚠ O CLIENTE PRECISA VER O PRÓPRIO PERFIL, mesmo sem o catálogo. Sem esta
+       linha, na máquina dele a lista teria só "Completo", o bloco de escolha
+       sumiria (ele desiste com menos de 2 opções) e ele ficaria sem a volta
+       para o sistema completo — uma porta que existia e fecharia calada.
+       O nome que aparece é o DELE, gravado no próprio registro; nome de outro
+       cliente continua sem caminho nenhum até aqui. */
+    var ids = Object.keys(CATALOGO).filter(_visivel);
+    var meu = _registro().perfil;
+    if (meu && meu !== "completo" && ids.indexOf(meu) < 0 && _perfilDe(meu)) ids.push(meu);
+    return ids.map(function (id) {
+      var p = _perfilDe(id) || CATALOGO.completo;
       return {
         id: id, nome: p.nome, desc: p.desc,
         qtd: p.modulos ? NUCLEO.concat(p.modulos.filter(function (m) { return NUCLEO.indexOf(m) < 0; })).length : null,
@@ -395,16 +328,21 @@ var Perfis = (function () {
     return problemas;
   }
 
+  /* ⚠ `CATALOGO` E `semente` NÃO SÃO MAIS EXPORTADOS CRUS. Eram: bastava
+     `Perfis.CATALOGO` no console para ler nome, descrição e os números de
+     todo cliente do catálogo, e `Perfis.semente("<id>")` devolvia a semente
+     inteira sem gate nenhum — ao lado da marca `privado: true` que devia
+     protegê-los. O que sai daqui é o que a tela precisa; quem implanta usa
+     `aplicar` e `semear`, que agora recusam perfil não disponível na conta. */
   return {
     NUCLEO: NUCLEO,
     SOB_DEMANDA: SOB_DEMANDA,
-    CATALOGO: CATALOGO,
+    registrarCatalogo: registrarCatalogo,
     idAtual: idAtual,
     atual: atual,
     modulosLiberados: modulosLiberados,
     permite: permite,
     aplicar: aplicar,
-    semente: semente,
     semear: semear,
     listar: listar,
     visivel: _visivel,

@@ -13,7 +13,7 @@
  *
  *   Foi o ponto mais sensível do escopo, e o cliente foi avisado disso por
  *   escrito antes de responder: *"se o portal mostrar o custo, o parceiro
- *   enxerga a margem de vocês"*. A resposta (E1) foi que **a New Form define
+ *   enxerga a margem de vocês"*. A resposta (E1) foi que **a carpintaria define
  *   o preço do parceiro** — logo o que viaja é PREÇO FINAL, e só ele.
  *
  *   Custo vazado não dá erro, não aparece na tela e não volta atrás: o

@@ -23,7 +23,7 @@
  * Cada "base" acima é decidida por parâmetro (`incideAcrescimo`,
  * `incideDetalhe`): a mão de obra sozinha ou o total da proposta. Não é
  * escolha nossa — foi pergunta feita ao cliente, com resposta gravada em
- * `clientes/newform-decisoes.md`.
+ * no documento de decisões daquele cliente, fora do pacote (`clientes/`).
  *
  * ---------------------------------------------------------------------
  * SEIS REGRAS QUE NÃO PODEM SAIR DAQUI PARA A TELA

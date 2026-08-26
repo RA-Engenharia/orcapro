@@ -13828,7 +13828,7 @@ renderRequisicoes: function () {
     // =================== USUÁRIOS / EQUIPE (RBAC por departamento) ===================
     /* ⚠ O PERFIL VALE AQUI TAMBÉM. Sem o filtro, a tela de Usuários listava
      * os 34 módulos: mostrava ao dono de QUALQUER empresa os módulos sob
-     * demanda de outro cliente ("Carpintaria"), e à New Form os módulos que o
+     * demanda de outro cliente ("Carpintaria"), e a ele os módulos que o
      * perfil dela esconde — deixando ele atribuir permissão para tela que o
      * sub-usuário nunca vai conseguir abrir. `Auth.podeModulo` já consulta o
      * perfil antes do atalho de admin, então basta perguntar. */

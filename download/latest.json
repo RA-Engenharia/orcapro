@@ -1,7 +1,7 @@
 {
-  "versao": "1.1.279",
+  "versao": "1.1.280",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.279/OrcaPRO-IA-update-v1.1.279.zip",
-  "notas": "Três correções e uma novidade.\n\n(1) CORREÇÃO na aprovação do pagamento por produção: um lançamento em unidade diferente da que é paga (ou com a unidade em branco) impedia aprovar a apuração do mês inteiro. Agora ele é apenas informado — e, na hora de aprovar, a tela mostra lado a lado quanto entra na conta e quanto fica de fora, para a decisão ser sua.\n\n(2) CORREÇÃO de permissão: aprovar a apuração, mandá-la para a folha e mudar os parâmetros de pagamento passaram a exigir gestão — ou quem a gestão nomeou como aprovador.\n\n(3) CORREÇÃO no Painel: apuração aprovada que ninguém mandou para a folha agora aparece na lista de coisas a resolver, com o botão para resolver na hora. Antes ela ficava parada sem avisar.\n\n(4) NOVIDADE, para quem usa o orçamento de carpintaria: proposta fechada agora pode virar receita no Financeiro com um clique — entra como a receber, amarrada à obra, e o sistema recusa lançar a mesma proposta duas vezes. Quem fechou e quem reabriu uma proposta também passou a ficar registrado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.279/OrcaPRO-IA-Instalador-v1.1.279.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.280/OrcaPRO-IA-update-v1.1.280.zip",
+  "notas": "Manutenção interna. Nada muda na sua tela nem nos seus dados.\n\nEsta versão reorganiza por dentro como o sistema guarda a configuração de quais módulos aparecem para cada empresa. Se você usa o OrçaPRO completo, nada muda; se a sua conta foi configurada com um conjunto reduzido de módulos, ele continua exatamente como estava — e agora também fica registrado na própria conta, o que deixa a configuração mais confiável entre os seus aparelhos.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.1.280/OrcaPRO-IA-Instalador-v1.1.280.exe"
 }

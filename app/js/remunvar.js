@@ -24,7 +24,7 @@
  * ---------------------------------------------------------------------
  *
  * 1) NENHUM NÚMERO DE NEGÓCIO NASCE AQUI. `PADRAO` tem R$/m² nulo. O 5,31
- *    da New Form mora na semente do perfil (js/perfis.js) e chega como dado.
+ *    do cliente mora na semente do perfil (fora de js/) e chega como dado.
  *    Um default plausível viraria folha errada no cliente seguinte, calada.
  *
  * 2) NÃO SE PAGA DUAS VEZES A MESMA PRODUÇÃO — e este é o defeito assinado
