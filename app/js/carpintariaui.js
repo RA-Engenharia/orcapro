@@ -339,6 +339,7 @@
     var cx = ctx(), par = C.parametros(paramBruto());
     var r = C.calcular(p, cx);
     var fechada = C.estaFechada(p);
+    var recViva = fechada ? _receitaViva(p) : null;
     var val = C.validade(p, hojeISO(), paramBruto());
     var mads = K.lista(ENT_MADEIRA), servs = K.lista(ENT_MO), clientes = K.lista("clientes"), obras = K.lista("obras");
     var forn = {}; K.lista("fornecedores").forEach(function (f) { forn[f.id] = f; });
@@ -347,8 +348,19 @@
       + '<div class="flex"><button class="btn ghost" data-gacao="carp-voltar">← Propostas</button>'
       + '<button class="btn" data-gacao="carp-imprimir-proposta" data-id="' + p.id + '">'
         + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Proposta em PDF</button>"
+      /* ⚠ UMA FONTE DE VERDADE SÓ: o registro no Store, nunca o `financeiroId`
+         cru. O botão decidia por um e o handler por outro — e as duas coisas
+         discordam sempre que o lançamento some, o que acontece por dois
+         caminhos reais: alguém apaga no Financeiro, ou a obra é excluída em
+         cascata (o financeiro morre com ela; a proposta sobrevive). Nesses
+         casos a tela dizia "Receita lançada" para sempre, apontando para nada,
+         e não havia como lançar de novo. */
       + (fechada
-        ? '<button class="btn ghost" data-gacao="carp-reabrir" data-id="' + p.id + '">Reabrir</button>'
+        ? (recViva
+            ? '<span class="muted" style="align-self:center" title="' + esc("Lançada em " + (Util.fmtData(p.financeiroEm) || p.financeiroEm || "—") + (p.financeiroPor ? " por " + p.financeiroPor : "")) + '">Receita de ' + moeda(recViva.valor) + ' lançada</span>'
+            : '<button class="btn" data-gacao="carp-receita" data-id="' + p.id + '">'
+              + (typeof Icones !== "undefined" ? Icones.get("dinheiro", 15) : "") + " Lançar receita no Financeiro</button>")
+          + '<button class="btn ghost" data-gacao="carp-reabrir" data-id="' + p.id + '">Reabrir</button>'
           + '<button class="btn" data-gacao="carp-refazer" data-id="' + p.id + '">Refazer com preços de hoje</button>'
         : '<button class="btn" data-gacao="carp-salvar-proposta" data-id="' + p.id + '">Salvar</button>'
           + '<button class="btn primary" data-gacao="carp-fechar-proposta" data-id="' + p.id + '">Fechar proposta</button>')
@@ -356,7 +368,8 @@
 
     if (fechada) {
       html += '<div class="card mb" style="border-left:4px solid ' + (val.vencida ? "#dc2626" : "#15803d") + '">'
-        + "<b>Proposta fechada em " + esc(Util.fmtData(p.fechadaEm) || p.fechadaEm) + ".</b> "
+        + "<b>Proposta fechada em " + esc(Util.fmtData(p.fechadaEm) || p.fechadaEm)
+        + (p.fechadaPor ? " por " + esc(p.fechadaPor) : "") + ".</b> "
         + "Os preços, o fornecedor escolhido e os dois fatores estão congelados — mudar o cadastro não mexe mais nela. "
         + (val.vencida
           ? "<b>Venceu há " + Math.abs(val.restam) + " dia(s).</b> O reajuste é manual: use <b>Refazer com preços de hoje</b>."
@@ -431,6 +444,32 @@
       html += "</tbody></table>";
     }
     html += "</div>";
+
+    /* ⚠ o rastro da reabertura aparece na TELA. Gravar quem reabriu e não
+       mostrar seria campo morto — e a pergunta que ele responde ("quem mexeu
+       na proposta que eu enviei?") só se faz olhando esta tela. */
+    /* ⚠ e sobrevive ao RE-FECHAMENTO. O fluxo normal é reabrir → corrigir →
+       fechar de novo; com a guarda em `!fechada` o rastro sumia justamente
+       quando a proposta voltava a valer, que é quando a pergunta "quem mexeu
+       nisto?" costuma ser feita. */
+    if (p.reabertaEm) {
+      html += '<div class="card mb" style="border-left:4px solid var(--ambar,#b45309)">'
+        + "<b>Reaberta em " + esc(Util.fmtData(p.reabertaEm) || p.reabertaEm)
+        + (p.reabertaPor ? " por " + esc(p.reabertaPor) : "") + ".</b> "
+        + "Estava fechada desde " + esc(Util.fmtData(p.fechadaAnteriorEm) || p.fechadaAnteriorEm)
+        + " e voltou a seguir o cadastro de hoje.</div>";
+    }
+
+    /* ⚠ receita lançada com valor DIFERENTE do total de hoje: acontece quando a
+       proposta é reaberta, alterada e fechada de novo. O lançamento no caixa
+       não se corrige sozinho — e o silencio aqui deixaria o Financeiro com o
+       preço velho para sempre. */
+    if (recViva && Math.abs(Util.num(recViva.valor) - Util.num(r.total)) >= 0.01) {
+      html += '<div class="card mb" style="border-left:4px solid #dc2626">'
+        + "<b>A receita lançada não bate com esta proposta.</b> "
+        + "No Financeiro está " + moeda(recViva.valor) + " e a proposta hoje soma " + moeda(r.total) + ". "
+        + "Ajuste o lançamento no Financeiro — ele não se corrige sozinho.</div>";
+    }
 
     /* ---- condições comerciais (o que vai no papel) ---- */
     html += _blocoComercial(p, fechada);
@@ -535,12 +574,19 @@
   G.carpRmMadeira = function (ds) { comProposta(ds, function (p) { p.itensMadeira.splice(parseInt(ds.i, 10), 1); }); };
   G.carpRmMO = function (ds) { comProposta(ds, function (p) { p.itensMO.splice(parseInt(ds.i, 10), 1); }); };
 
+  function _quem() {
+    try { return (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""; } catch (e) { return ""; }
+  }
+
   G.carpFechar = function (ds) {
+    /* ⚠ fechar congela preço de venda: passa pelo mesmo gate de licença que o
+       resto do que grava dinheiro. */
+    if (G._bloqueado && G._bloqueado()) return;
     var p = Store.obter(eid(), ENT_PROP, ds.id);
     if (!p) return;
     var cx = ctx();
     coletar(p, C.calcular(p, cx));
-    var chk = C.congelar(p, cx, Util.agoraISO());
+    var chk = C.congelar(p, cx, Util.agoraISO(), _quem());
     if (!chk.ok) {
       /* ⚠ o motor recusou: NADA foi gravado como fechado. A tela diz o
          motivo em vez de fechar e deixar o problema para o cliente achar. */
@@ -556,15 +602,22 @@
   };
 
   G.carpReabrir = function (ds) {
+    if (G._bloqueado && G._bloqueado()) return;
     var p = Store.obter(eid(), ENT_PROP, ds.id);
     if (!p) return;
+    /* ⚠ receita já lançada muda a conversa: reabrir passa a mexer no valor de
+       uma venda que já está no caixa a receber. Não se proíbe — obra muda — mas
+       não se deixa acontecer por engano. */
+    var temReceita = !!_receitaViva(p);
     UI.modal("Reabrir a proposta?", "<p>Ela volta a ser rascunho e passa a seguir o <b>cadastro de hoje</b>: preços, "
       + "fornecedor e a faixa de metragem serão recalculados. O que foi congelado no fechamento é descartado.</p>"
       + "<p class=\"muted\">Se o objetivo é atualizar preços mantendo o histórico, use <b>Refazer com preços de hoje</b> — "
-      + "ela cria uma proposta nova e preserva esta.</p>",
+      + "ela cria uma proposta nova e preserva esta.</p>"
+      + (temReceita ? '<div class="card" style="border-left:4px solid #dc2626"><b>Esta proposta já tem receita lançada no Financeiro.</b> '
+          + "Reabrir não apaga esse lançamento — se o valor mudar, ajuste-o lá também, senão o caixa fica com o preço antigo.</div>" : ""),
       [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
        { texto: "Reabrir", classe: "danger", onClick: function () {
-         C.reabrir(p); Store.salvar(eid(), ENT_PROP, p);
+         C.reabrir(p, _quem(), Util.agoraISO()); Store.salvar(eid(), ENT_PROP, p);
          UI.fecharModal(); UI.toast("Proposta reaberta.", "ok"); App.render();
        } }]);
   };
@@ -963,6 +1016,102 @@
   };
 
   /* ===================================================================
+   * DA PROPOSTA FECHADA PARA O FINANCEIRO
+   *
+   * ⚠ POR QUE ISTO PRECISOU EXISTIR. O OrçaPRO só sabia gerar receita por
+   *   dois caminhos: dar baixa numa MEDIÇÃO e devolver retenção de CONTRATO.
+   *   O perfil da carpintaria esconde os dois (decisão G2 do cliente), então
+   *   a proposta fechada morria aqui: o Financeiro deles recebia só despesa —
+   *   folha, madeira, gasto rápido — e o Painel mostrava TODA obra dando
+   *   prejuízo, porque o custo estava certo e a receita era zero. Sistema que
+   *   erra a conta na cara do dono é sistema que ele para de olhar.
+   *
+   * ⚠ E POR QUE É UM BOTÃO, NÃO UM GATILHO. Fechar a proposta é um ato
+   *   comercial: o cliente ainda pode não aceitar. Lançar receita no fechamento
+   *   encheria o caixa de dinheiro que não existe. Quem sabe que a obra foi
+   *   ganha é gente — então o lançamento nasce de um clique, com confirmação,
+   *   e nasce `pendente` (a receber), nunca `pago`.
+   *
+   * ⚠ E POR QUE GUARDA O ID. Sem o vínculo de volta, clicar duas vezes lança
+   *   a mesma venda duas vezes. Com ele, o segundo clique é recusado — mas se
+   *   alguém APAGAR o lançamento no Financeiro, o caminho reabre, porque
+   *   trancar para sempre é o outro erro (mesma regra do `fsLancamentos` da
+   *   Remuneração variável).
+   * =================================================================== */
+  function _receitaViva(p) {
+    var id = p && p.financeiroId;
+    if (!id) return null;
+    try { return Store.obter(eid(), "financeiro", id) || null; } catch (e) { return null; }
+  }
+
+  G.carpLancarReceita = function (ds) {
+    if (G._bloqueado && G._bloqueado()) return;
+    if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+      UI.toast("Seu usuário não tem permissão no módulo Financeiro.", "erro"); return;
+    }
+    var p = Store.obter(eid(), ENT_PROP, ds.id);
+    if (!p) return;
+
+    if (!C.estaFechada(p)) {
+      UI.toast("Só proposta fechada vira receita — o preço precisa estar congelado.", "erro"); return;
+    }
+    if (!p.obraId) {
+      UI.toast("Escolha a obra na proposta antes: receita sem obra não entra no custo por obra.", "erro"); return;
+    }
+    var r = C.calcular(p, ctx());
+    if (!(Util.num(r.total) > 0)) { UI.toast("Esta proposta não tem valor para lançar.", "erro"); return; }
+
+    var jaTem = _receitaViva(p);
+    if (jaTem) {
+      UI.toast("Esta proposta já foi lançada no Financeiro (" + moeda(jaTem.valor) + ") — lançar de novo contaria a mesma venda duas vezes.", "erro");
+      return;
+    }
+
+    var obra = Store.obter(eid(), "obras", p.obraId);
+    var cliente = p.clienteId ? Store.obter(eid(), "clientes", p.clienteId) : null;
+    var hoje = hojeISO();
+
+    UI.modal("Lançar a receita desta proposta?", ""
+      + "<p>Entra no Financeiro como <b>receita a receber</b> (status <b>Pendente</b>) — não como dinheiro já na conta. "
+      + "Quando o cliente pagar, é lá que se dá a baixa.</p>"
+      + '<div class="card" style="margin:10px 0">'
+      + "<div><b>Valor</b> " + moeda(r.total) + "</div>"
+      + "<div><b>Obra</b> " + esc(obra ? obra.nome : "—") + "</div>"
+      + "<div><b>Cliente</b> " + esc(cliente ? (cliente.nome || cliente.razaoSocial || "—") : "—") + "</div>"
+      + "</div>"
+      + '<p class="muted">Se a obra for parcelada, lance aqui o total e ajuste as parcelas no Financeiro — '
+      + "as condições de pagamento da proposta são texto do documento, não viram parcelas sozinhas.</p>",
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Lançar receita", classe: "primary", onClick: function () {
+         /* ⚠ grava a RECEITA primeiro e o vínculo depois: se a segunda gravação
+            falhar, sobra um lançamento visível no Financeiro (que a pessoa vê e
+            resolve) em vez de uma proposta marcada como lançada sem lançamento
+            nenhum — o buraco caro é o inverso deste. */
+         var lanc = Store.salvar(eid(), "financeiro", {
+           data: hoje,
+           desc: "Proposta " + (p.numero ? p.numero + " — " : "") + (p.titulo || "carpintaria"),
+           tipo: "receita",
+           categoria: "obra",
+           valor: Util.num(r.total),
+           status: "pendente",
+           obraId: p.obraId,
+           clienteId: p.clienteId || "",
+           origem: "carp_proposta",
+           origemId: p.id
+         });
+         if (!lanc || !lanc.id) { UI.toast("Não consegui lançar no Financeiro. Tente de novo.", "erro"); return; }
+         p.financeiroId = lanc.id;
+         p.financeiroEm = hoje;
+         /* simetria com `fechadaPor`: quem move dinheiro fica registrado */
+         p.financeiroPor = _quem();
+         Store.salvar(eid(), ENT_PROP, p);
+         UI.fecharModal();
+         UI.toast("Receita de " + moeda(r.total) + " lançada no Financeiro, a receber.", "ok");
+         App.render();
+       } }]);
+  };
+
+  /* ===================================================================
    * ENGATE
    * =================================================================== */
   G.registrarAcoes("carpintaria", {
@@ -984,6 +1133,7 @@
     "carp-reabrir": function (ds) { G.carpReabrir(ds); },
     "carp-refazer": function (ds) { G.carpRefazer(ds); },
     "carp-imprimir-proposta": function (ds) { G.carpImprimirProposta(ds); },
+    "carp-receita": function (ds) { G.carpLancarReceita(ds); },
     /* ⚠ as ações do parceiro passam por `_temParceiro`: o botão pode existir
        na barra do módulo mesmo quando o motor não carregou, e o dispatcher é
        global — sem a guarda, o clique estouraria "Parceiro is not defined". */
@@ -992,6 +1142,42 @@
     "carp-publicar-parceiro": function (ds) { if (_temParceiro()) G.carpPublicarParceiro(ds); },
     "carp-ler-catalogos": function () { if (_temParceiro()) G.carpLerCatalogos(); },
     "carp-ver-catalogo": function (ds) { G.carpVerCatalogo(ds); }
+  });
+
+  /* ===================================================================
+   * O QUE SÓ DÁ PARA LIGAR DEPOIS QUE O DOM EXISTE
+   *
+   * ⚠ TROCAR A MADEIRA TEM DE REPOPULAR O FORNECEDOR. A lista de fornecedores
+   *   de cada linha é montada a partir da madeira JÁ GRAVADA nela — preco é
+   *   `item × fornecedor`, então linha sem madeira não tem fornecedor nenhum
+   *   para oferecer. Em linha nova isso deixava o campo do fornecedor com
+   *   "— escolha —" e mais nada: quem montava a proposta escolhia a madeira,
+   *   ia no fornecedor e encontrava o campo vazio. Só salvando e voltando a
+   *   lista certa aparecia — e a pendência dizia "falta escolher o
+   *   fornecedor", sem contar como. Item a item, proposta a proposta.
+   *
+   * ⚠ E POR QUE AQUI, e não com `data-gacao` no <select>: o dispatcher entrega
+   *   ao handler apenas `{value}`, sem o `data-i` — ele não teria como saber
+   *   QUAL linha mudou. É exatamente o caso que `registrarWire` existe para
+   *   resolver.
+   *
+   * `change`, não `input`: re-renderizar a cada tecla fecharia o dropdown na
+   * cara de quem está escolhendo. E `coletar` roda antes, senão a quantidade
+   * digitada e ainda não salva se perderia no redesenho.
+   * =================================================================== */
+  G.registrarWire("carpintaria", function () {
+    if (!G._carpProp) return;                       // só no editor de proposta
+    var selects = document.querySelectorAll('[id^="cx-m-mad"]');
+    if (!selects.length) return;
+    Array.prototype.forEach.call(selects, function (el) {
+      el.onchange = function () {
+        var p = Store.obter(eid(), ENT_PROP, G._carpProp);
+        if (!p) return;
+        coletar(p, C.calcular(p, ctx()));           // preserva o que está digitado
+        Store.salvar(eid(), ENT_PROP, p);
+        App.render();
+      };
+    });
   });
 
 })(typeof window !== "undefined" ? window : this);

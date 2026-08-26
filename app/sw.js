@@ -11,7 +11,7 @@
  * lugar nenhum. Passo manual em release é passo que uma hora não acontece:
  * agora o packer REPROVA o pacote se os dois números divergirem
  * (tools/check-versao.js, chamado no empacotar-cliente.ps1). */
-var CACHE = 'orcapro-app-v1.1.278';
+var CACHE = 'orcapro-app-v1.1.279';
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();

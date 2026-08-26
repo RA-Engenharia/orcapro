@@ -456,7 +456,14 @@
 
   /* Grava dentro da proposta tudo o que a conta usou — regra 4.
      `hojeISO` entra por parâmetro para o teste não depender do relógio. */
-  Carpintaria.congelar = function (proposta, ctx, hojeISO) {
+  /* ⚠ QUEM FECHOU E QUEM REABRIU FICAM GRAVADOS. Fechar é o instante em que
+     preço de madeira, fornecedor e os dois fatores viram compromisso com o
+     cliente; reabrir apaga tudo isso e devolve a proposta ao cadastro de hoje.
+     Só a DATA era guardada — com seis pessoas na conta, uma proposta já enviada
+     podia ser reaberta e o sistema não sabia dizer por quem. A apuração da
+     folha, no módulo irmão, guarda `aprovadaPor` desde o primeiro dia; aqui
+     faltava a metade simétrica. */
+  Carpintaria.congelar = function (proposta, ctx, hojeISO, quem) {
     var chk = Carpintaria.podeFechar(proposta, ctx);
     if (!chk.ok) return { ok: false, pendencias: chk.pendencias };
     var r = chk.resultado;
@@ -479,15 +486,23 @@
       moTotal: r.moTotal, metragem: r.metragem, total: r.total
     };
     pr.fechadaEm = txt(hojeISO) || (global.Util && global.Util.agoraISO ? global.Util.agoraISO() : new Date().toISOString());
+    if (txt(quem)) pr.fechadaPor = txt(quem);
     return { ok: true, proposta: pr, resultado: r };
   };
 
   /* Reabrir descongela: some tudo o que `congelar` gravou, e a proposta volta
      a seguir o cadastro. Meio-termo — reabrir mantendo os fatores congelados —
      seria a pior das duas, porque a tela mostraria preço novo com fator velho. */
-  Carpintaria.reabrir = function (proposta) {
+  Carpintaria.reabrir = function (proposta, quem, quandoISO) {
     var pr = proposta || {};
-    delete pr.fechadaEm; delete pr.faixa; delete pr.detalhe;
+    /* o rastro da reabertura NÃO é apagado junto com o resto: é justamente ele
+       que responde "quem mexeu na proposta que eu já tinha enviado?" */
+    if (pr.fechadaEm) {
+      pr.reabertaEm = txt(quandoISO) || (global.Util && global.Util.agoraISO ? global.Util.agoraISO() : new Date().toISOString());
+      if (txt(quem)) pr.reabertaPor = txt(quem);
+      pr.fechadaAnteriorEm = pr.fechadaEm;
+    }
+    delete pr.fechadaEm; delete pr.fechadaPor; delete pr.faixa; delete pr.detalhe;
     delete pr.totais; delete pr.parametros;
     arr(pr.itensMadeira).forEach(function (i) { delete i.custoUnit; delete i.dataPreco; });
     arr(pr.itensMO).forEach(function (i) { delete i.valorUnit; });

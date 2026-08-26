@@ -166,6 +166,13 @@
       html += '<div class="card mb" style="border-left:4px solid var(--ambar,#b45309)"><b>Antes de aprovar</b><ul style="margin:8px 0 0 18px">'
         + r.pendencias.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
     }
+    /* ⚠ CAIXA DIFERENTE, DE PROPÓSITO. "Antes de aprovar" trava; isto aqui não.
+       Metragem que ficou de fora precisa APARECER — sumir calada seria pior que
+       travar. Mesmo padrão da proposta (js/carpintariaui.js). */
+    if (Util.arr(r.avisos).length) {
+      html += '<div class="card mb" style="border-left:4px solid var(--aco,#2e6f9e)"><b>Para você saber</b><ul style="margin:8px 0 0 18px">'
+        + r.avisos.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
+    }
     if (!r.fecha) {
       html += '<div class="card mb" style="border-left:4px solid #dc2626"><b>O rateio não fechou com o pote.</b> '
         + "Isso é centavo criado ou perdido — não aprove. Avise o suporte.</div>";
@@ -226,12 +233,26 @@
     var as = K.lista(ENT_APUR).slice().sort(function (a, b) { return String(b.competencia || "").localeCompare(String(a.competencia || "")); });
     if (!as.length) return K.vazioBox("Nenhuma apuração fechada ainda", null, null);
     var obras = {}; K.lista("obras").forEach(function (o) { obras[o.id] = o.nome; });
-    var html = '<table class="tbl"><thead><tr><th>Competência</th><th>Obra</th><th class="num">Metragem</th><th class="num">Total</th><th>Situação</th><th>Aprovada por</th></tr></thead><tbody>';
+    /* ⚠ O HISTÓRICO NÃO TINHA BOTÃO NENHUM — e o Painel manda gente para cá.
+       A regra nova da reconciliação ("apuração aprovada que não foi para a
+       folha") diz "abra a Remuneração variável, no histórico, e use Mandar
+       para a Folha Semanal". A ação `rv-folha` só existia na tela da apuração
+       fechada da competência corrente: quem chegava pelo alerta não achava o
+       botão e o alerta ficava tocando para sempre. Instrução que aponta para
+       lugar sem saída é pior que nenhuma instrução. */
+    var html = '<table class="tbl"><thead><tr><th>Competência</th><th>Obra</th><th class="num">Metragem</th><th class="num">Total</th><th>Situação</th><th>Aprovada por</th><th></th></tr></thead><tbody>';
     as.forEach(function (a) {
       var tot = Util.arr(a.linhas).reduce(function (s, L) { return s + (L.totalCent || 0); }, 0);
+      var vivos = Util.arr(a.fsLancamentos).filter(function (lid) {
+        return !!Store.obter(eid(), "fs_lancamentos", lid);
+      }).length;
+      var acao = (a.estado === "aprovada" || (a.estado === "paga" && !vivos))
+        ? '<button class="btn sm primary" data-gacao="rv-folha" data-id="' + esc(a.id) + '">Mandar para a Folha Semanal</button>'
+        : (vivos ? '<span class="muted">' + vivos + " lançamento(s) na folha</span>" : "");
       html += "<tr><td><b>" + esc(a.competencia) + "</b></td><td>" + esc(obras[a.obraId] || "— todas —") + '</td>'
         + '<td class="num">' + n2(a.m2) + '</td><td class="num">' + moeda(tot / 100) + "</td>"
-        + "<td>" + esc(RV.ESTADOS[a.estado] || a.estado) + "</td><td>" + esc(a.aprovadaPor || "—") + "</td></tr>";
+        + "<td>" + esc(RV.ESTADOS[a.estado] || a.estado) + "</td><td>" + esc(a.aprovadaPor || "—") + "</td>"
+        + "<td>" + acao + "</td></tr>";
     });
     return html + "</tbody></table>";
   }
@@ -264,6 +285,40 @@
   /* ===================================================================
    * AÇÕES
    * =================================================================== */
+  /* ===================================================================
+   * QUEM PODE MEXER NO DINHEIRO DESTA TELA
+   *
+   * ⚠ O `data-gacao` é despachado GLOBALMENTE: `disabled` no botão não
+   *   protege nada, e esconder a tela também não — a ação chega por qualquer
+   *   caminho que dispare o atributo. Aprovar a apuração é o clique que
+   *   transforma metragem em valor a pagar, e mandá-la à folha é o que grava
+   *   pagamento a pessoa física. As duas exigiam só enxergar o módulo — e o
+   *   preset de departamento "rh" entrega `remunvar` a quem for cadastrado
+   *   como RH. Seis usuários, e qualquer um homologava o mês inteiro.
+   *   Mesmo padrão do resto da casa: guarda EM FUNÇÃO (ver `prod-*` no
+   *   dispatcher de js/gestao.js e `fsFinanceiro`). */
+  function _podeHomologar(acao) {
+    if (G._bloqueado && G._bloqueado()) return false;
+    if (typeof Auth === "undefined") return true;
+    var ehGestor = !Auth.papel || Auth.papel() !== "usuario";
+    /* ⚠ O CAMPO DA SESSÃO CHAMA-SE `aprovador`, sem o traço. `_iniciarSessao`
+       (js/auth.js) transcreve `aprovador: u._aprovador === true` — o `_` existe
+       só no objeto interno do login. Lendo `_aprovador` aqui, o ramo do
+       aprovador nomeado era código morto: o encarregado que a gestão nomeou
+       levava "só a gestão pode" na cara, sem explicação possível. */
+    var u = (Auth.usuario && Auth.usuario()) || null;
+    var nomeado = ehGestor || !!(u && (u.aprovador === true || u._aprovador === true));
+    if (!nomeado) {
+      UI.toast("Só a gestão (ou quem ela nomeou como aprovador) pode " + acao + ".", "erro");
+      return false;
+    }
+    if (Auth.podeModulo && !Auth.podeModulo("remunvar")) {
+      UI.toast("Seu usuário não tem permissão no módulo Remuneração variável.", "erro");
+      return false;
+    }
+    return true;
+  }
+
   G.registrarAcoes("remunvar", {
     "rv-aba": function (ds) { G._rvAba = ds.aba || "apuracao"; App.render(); },
     "rv-obra": function (ds) { G._rvObra = ds && ds.value != null ? String(ds.value) : ""; App.render(); },
@@ -276,6 +331,11 @@
       App.render();
     },
     "rv-salvar-param": function () {
+      /* ⚠ MEXER NO R$/m² É MEXER NO PREÇO DE TODO PAGAMENTO FUTURO — e no
+         passado também, porque apuração em rascunho recalcula. Ficou de fora da
+         primeira leva de guardas: qualquer um dos seis usuários trocava
+         R$ 5,31 por R$ 53,10 e nada perguntava quem era. */
+      if (!_podeHomologar("mudar os parâmetros do pagamento")) return;
       var b = paramBruto();
       b.porM2 = K.v("rp-m2") === "" ? null : Util.num(K.v("rp-m2"));
       b.rateioEquipePct = K.v("rp-rat") === "" ? 50 : Util.num(K.v("rp-rat"));
@@ -288,6 +348,7 @@
       App.render();
     },
     "rv-aprovar": function () {
+      if (!_podeHomologar("aprovar a apuração")) return;
       var st = estado();
       var r = st.res;
       var quem = (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "";
@@ -295,7 +356,20 @@
         "<p>Isto é o <b>2º nível</b>: a homologação da gestão. Depois dela o valor está pronto para pagamento e "
         + "a metragem usada fica marcada como paga — não entra em apuração nenhuma de novo.</p>"
         + "<p><b>" + n2(r.m2) + " " + esc(r.unidade) + "</b> · pote de <b>" + moeda(r.pote) + "</b> · "
-        + Util.arr(r.linhas).length + " pessoa(s).</p>",
+        + Util.arr(r.linhas).length + " pessoa(s).</p>"
+        /* ⚠ O QUE FICA DE FORA APARECE NO PONTO DA DECISÃO, não só numa caixa
+           acima da tabela. A metragem fora da unidade não vira dinheiro em
+           lugar nenhum deste módulo, e a aprovação é de mão única: não existe
+           reabrir apuração. Quem clica precisa ver os dois números lado a lado
+           — medido, dá para aprovar um mês em que 0,5 m² entram e 1.100
+           ficam de fora. */
+        + (Util.num(r.m2Fora) > 0
+          ? '<div class="card" style="border-left:4px solid #dc2626;margin-top:8px">'
+            + "<b>" + n2(r.m2) + " " + esc(r.unidade) + " entram nesta conta · "
+            + n2(r.m2Fora) + " ficam de fora</b>, por estarem em outra unidade (ou sem unidade) no diário.<br>"
+            + "Essa metragem <b>não é paga aqui</b>, e a apuração não pode ser reaberta depois. "
+            + "Se algum lançamento devia entrar, <b>corrija a unidade no diário antes de aprovar</b>.</div>"
+          : ""),
         [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
          { texto: "Aprovar", classe: "primary", onClick: function () {
            var a = apuracaoSalva() || { obraId: G._rvObra, competencia: G._rvComp, estado: "rascunho" };
@@ -308,6 +382,12 @@
          } }]);
     },
     "rv-folha": function (ds) {
+      if (!_podeHomologar("mandar a apuração para a folha")) return;
+      /* mandar para a folha GRAVA pagamento: exige também o módulo de destino,
+         como `fsFinanceiro` faz do outro lado (js/gestao.js). */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("folhasemanal")) {
+        UI.toast("Seu usuário não tem permissão na Folha Semanal — é nela que o pagamento é gravado.", "erro"); return;
+      }
       var a = Store.obter(eid(), ENT_APUR, ds.id);
       if (!a) return;
       /* ⚠ GUARDA EM FUNÇÃO, não só o `disabled` do botão. O dispatcher é

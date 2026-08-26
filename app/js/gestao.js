@@ -1117,6 +1117,11 @@
           fsLancamentos: lista("fs_lancamentos").filter(naObra),
           financeiro: esc.financeiro,
           producaoMed: lista("producao_med").filter(naObra),
+          /* ⚠ a apuração da remuneração variável entra aqui porque é a única
+             ponte de dinheiro de quem usa o perfil da carpintaria — as outras
+             duas nascem de módulos que aquele perfil esconde. Sem esta linha, a
+             4ª regra do Reconciliacao existiria e nunca teria o que olhar. */
+          remunApur: lista("remun_apur").filter(naObra),
           medicoes: esc.medicoes,
           obras: esc.obras,
           hoje: String(this._hojeISO()).slice(0, 10)
@@ -13997,7 +14002,16 @@ renderRequisicoes: function () {
         campo('Módulos liberados <button type="button" class="btn sm" id="us-preset" style="margin-left:8px">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' preset do departamento</button>', checkboxes) +
         campo("Obras que este usuário enxerga", caixasObra) +
         campo("Aprovações",
-          '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> medições, pedidos de compra e requisições</label>'
+          /* ⚠ O RÓTULO CITAVA SÓ TRÊS MÓDULOS — e DIÁRIO não era um deles, embora
+             seja esta a flag que deixa alguém aprovar diário (js/rdo.js:
+             `aprovador = gestor || u.aprovador === true`). Numa conta cujo
+             perfil esconde Medições, Compras e Requisições — o caso da
+             carpintaria — quem cadastra os usuários lê os três nomes, conclui
+             "não se aplica" e deixa desmarcado. Aí o encarregado nunca aprova
+             diário, e o fluxo de três degraus que o cliente pediu cai pela
+             metade — sem mensagem de erro: o botão Aprovar simplesmente não
+             aparece para ele. */
+          '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer"><input type="checkbox" id="g-aprovador"' + (u.aprovador ? " checked" : "") + '> Pode <b>aprovar / rejeitar</b> o que precisa de aprovação — <b>diário de obra</b>, medições, pedidos de compra e requisições</label>'
           /* autoaprovação: por padrão vale quatro olhos (quem preenche não
              aprova o próprio). Marque para este usuário dispensar o segundo
              aprovador na PRÓPRIA criação. Só faz efeito junto com "Pode

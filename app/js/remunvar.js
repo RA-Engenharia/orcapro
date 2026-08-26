@@ -232,9 +232,36 @@
     var linhas = arr(e.producao).filter(function (l) {
       return l && String(txt(l.unidade)).toLowerCase().replace("²", "2") === unidade;
     });
+    /* ⚠ AVISO NÃO É IMPEDIMENTO — e confundir os dois travava a folha do mês
+     * INTEIRO. A carpintaria vende deck em m² E forro/ripado em metro linear:
+     * um único lançamento em "m" (ou com a unidade esquecida em branco) entrava
+     * em `pendencias`, `pendencias` derrubava `completa`, `completa` desabilitava
+     * o botão "Aprovar apuração" — e ninguém recebia até alguém caçar a linha
+     * no diário. O mês normal deles tem as duas unidades.
+     *
+     * ⚠ MAS ISTO NÃO É O MESMO CASO DA PROPOSTA, e eu tinha escrito aqui que
+     *   era. Lá (js/carpintaria.js) a linha fora da unidade CONTINUA COBRADA —
+     *   `moBase` soma todo item de mão de obra, e a unidade só decide o FATOR
+     *   DE FAIXA. Ninguém perde dinheiro; o aviso é inofensivo por construção.
+     *   Aqui a linha fora da unidade é excluída da ÚNICA base de pagamento: ela
+     *   não vira dinheiro em lugar nenhum deste módulo. Copiar "aviso não trava"
+     *   de lá para cá sem mais nada deixaria aprovar um mês em que quase tudo
+     *   ficou de fora — medido: 0,5 m² de deck contra 1.100 m de forro dá um
+     *   pote de R$ 2,66, `completa: true`, e ninguém sendo obrigado a olhar.
+     *   Por isso o motor devolve a metragem excluída como NÚMERO (`m2Fora`): a
+     *   tela usa esse número para exigir DECISÃO EXPLÍCITA na hora de aprovar,
+     *   que é o padrão da casa para aviso que custa caro. */
+    var avisos = [];
+    var m2Fora = 0;
     var foraDaUnidade = arr(e.producao).length - linhas.length;
     if (foraDaUnidade > 0) {
-      pend.push(foraDaUnidade + " lançamento(s) em outra unidade ficaram de fora — a conta é por " + unidade + ".");
+      arr(e.producao).forEach(function (l) {
+        if (l && String(txt(l.unidade)).toLowerCase().replace("²", "2") !== unidade) m2Fora += num(l.qtd);
+      });
+      m2Fora = Math.round(m2Fora * 100) / 100;
+      avisos.push(foraDaUnidade + " lançamento(s) não estão em " + unidade
+        + " (" + m2Fora + " no total) e ficaram de fora desta conta — a remuneração é por "
+        + unidade + ". Eles continuam no diário; se algum devia entrar, corrija a unidade lá.");
     }
 
     /* --- m² por pessoa e origens (regra 2) --- */
@@ -338,6 +365,13 @@
       fecha: fecha,
       exigeDoisNiveis: p.exigeDoisNiveis,
       pendencias: pend,
+      /* ⚠ `avisos` NÃO entra em `completa` — é o que separa "olhe isto" de
+         "não dá para aprovar". Ver a nota da unidade acima. */
+      avisos: avisos,
+      /* quanto ficou de fora, em número — a tela precisa disto para o pedido de
+         decisão explícita. Contagem de lançamentos não serve: 1 lançamento pode
+         ser 1.100 m. */
+      m2Fora: m2Fora,
       completa: pend.length === 0 && poteCent != null && m2Total > 0
     };
   };

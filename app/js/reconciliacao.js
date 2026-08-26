@@ -148,6 +148,45 @@
       });
     });
 
+    /* ---- 4) APURAÇÃO DA REMUNERAÇÃO VARIÁVEL APROVADA E NÃO ENVIADA À FOLHA ----
+       ⚠ ESTA É A PONTE MAIS SILENCIOSA DAS QUATRO. `rv-folha` grava
+       `fsLancamentos` na apuração e muda o estado para "paga". Uma apuração que
+       ficou em "aprovada" é mês homologado pela gestão que ninguém mandou pagar
+       — e a metragem dela JÁ conta como paga (`RemunVar.jaPago` trata
+       "aprovada" como paga, para não pagar duas vezes). Ou seja: não volta na
+       apuração seguinte, não vira dinheiro, e não aparece em lugar nenhum.
+       Trabalho aprovado que some.
+
+       Para quem usa o perfil da carpintaria isto é o principal: das outras
+       três pontes, duas nascem de módulos que o perfil deles esconde. */
+    (d.remunApur || []).forEach(function (a2) {
+      if (!a2) return;
+      if (texto(a2.estado) !== "aprovada") return;         // "paga" já foi; "rascunho" ainda não é hora
+      var vivos = (a2.fsLancamentos || []).length;
+      if (vivos) return;
+      /* ⚠ O VALOR MORA EM `poteCent`, EM CENTAVOS INTEIROS — não existe campo
+         `total` na apuração gravada (ver o que `RemunVar.aprovar` escreve).
+         Ler `total` devolvia 0 em todas, o `v <= 0` descartava todas, e esta
+         regra existiria sem nunca achar nada. Foi o que quase aconteceu aqui:
+         o teste passava porque a FIXTURE inventava o campo. */
+      var v = num(a2.poteCent) / 100;
+      if (v <= 0) return;
+      /* prazo, como o da medição: aprovar hoje e mandar à folha amanhã é o
+         normal. Sem isso o alarme tocaria no dia da aprovação, todo mês — e
+         alarme que toca sempre é alarme que ninguém escuta. */
+      var desdeAp = texto(a2.aprovadaEm).slice(0, 10);
+      if (hoje && desdeAp && diasEntre(desdeAp, hoje) < 3) return;
+      achados.push({
+        tipo: "apuracao-sem-folha", gravidade: 3,
+        titulo: "Apuração aprovada que não foi para a folha",
+        detalhe: "Competência " + (texto(a2.competencia) || "—")
+          + (nomeObra[a2.obraId] ? " · " + nomeObra[a2.obraId] : ""),
+        porque: "A gestão homologou o mês e ninguém mandou pagar. A metragem já conta como paga, então ela não volta sozinha na apuração seguinte.",
+        valor: v, obraId: a2.obraId, view: "remunvar",
+        acao: "Abra Remuneração variável, no histórico, e use “Mandar para a Folha Semanal”."
+      });
+    });
+
     achados.sort(function (a, b) {
       if (b.gravidade !== a.gravidade) return b.gravidade - a.gravidade;
       return b.valor - a.valor;
