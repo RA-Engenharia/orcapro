@@ -33,6 +33,16 @@
       this._normalizar(); // FASE 1.1: corrige categorias de sub-composições vindas erradas do gerador
       this.carregado = true;
       this.carregando = false;
+      /* ⚠ AVISA AQUI, NÃO POR RELÓGIO.
+       * O aviso de "o detalhamento é de outro mês" era agendado com um
+       * `setTimeout(1200)` logo depois de `Analitico.reset()`, e a primeira
+       * coisa que ele fazia era desistir se o analítico ainda não estivesse
+       * carregado. Só que o analítico é preguiçoso: quem o carrega começa
+       * depois de a tela abrir, e são ~1 MB comprimidos e ~18 MB de parse. Em
+       * 1,2 s nunca terminou — e não havia segunda chance. O único aviso que
+       * protege o caso "só existe o analítico de nome antigo" nunca chegava ao
+       * usuário. Chamando daqui, ele roda exatamente quando há o que comparar. */
+      try { if (typeof App !== "undefined" && App._avisarAnaliticoDeOutroMes) App._avisarAnaliticoDeOutroMes(); } catch (eAv) {}
       return dados.length;
     },
 

@@ -1757,7 +1757,13 @@
      * pacote completo tem só o nome velho (o zip de ATUALIZAÇÃO não leva data/). */
     _nomeAnalitico: function (uf, comp) {
       uf = String(uf || "").toUpperCase();
-      comp = String(comp || "").trim();
+      /* ⚠ NORMALIZA. A base própria importada guarda o que a pessoa digitou no
+         campo de competência, sem validação — e "06/2026" viraria
+         `sinapi-MG-06/2026-analitico.json`: uma BARRA no meio do nome do
+         arquivo. Local dá 404 numa pasta que não existe, e o servidor recusa
+         com 400 (ele corta a rota no último `/`). Não perde dado, mas gasta
+         quatro requisições à toa e faz o arquivo local perder a preferência. */
+      comp = this._normComp(comp);
       if (!uf) return null;
       return comp ? ("sinapi-" + uf + "-" + comp + "-analitico.json") : ("sinapi-" + uf + "-analitico.json");
     },
@@ -2008,28 +2014,33 @@
       var self = this;
       try {
         if (typeof Analitico === "undefined" || typeof Sinapi === "undefined") return;
-        /* o análitico carrega sob demanda; espera ele existir para comparar */
-        setTimeout(function () {
-          try {
-            if (!Analitico.carregado || !Analitico.competencia || !Sinapi.competencia) return;
-            var norm = function (c) {
-              c = String(c || "").trim();
-              var m = /^(\d{2})\/(\d{4})$/.exec(c);
-              return m ? (m[2] + "-" + m[1]) : c;
-            };
-            if (norm(Analitico.competencia) === norm(Sinapi.competencia)) return;
-            var chave = norm(Sinapi.competencia) + "|" + norm(Analitico.competencia) + "|" + (self._baseUf || "");
-            if (self._avisoAnaliticoFeito === chave) return;   // uma vez por combinação
-            self._avisoAnaliticoFeito = chave;
-            if (typeof UI === "undefined" || !UI.toast) return;
-            var fmt = function (c) { return (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(c) : c; };
-            UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
-              " Atenção: os PREÇOS são da competência " + fmt(Sinapi.competencia) +
-              ", mas o DETALHAMENTO de insumos instalado é de " + fmt(Analitico.competencia) +
-              ". O que vem do detalhamento (insumo sem preço no sintético, divisão MO/MAT/EQ) sai do mês mais novo.", "aviso");
-          } catch (e2) {}
-        }, 1200);
+        /* ⚠ SEM RELÓGIO. A primeira versão agendava a checagem 1,2 s depois de
+         * `Analitico.reset()` e desistia se o analítico ainda não tivesse
+         * carregado — e ele é preguiçoso (~1 MB comprimido, ~18 MB de parse,
+         * começando depois de a tela abrir). Nunca dava tempo, e não havia
+         * segunda chance: o único aviso que protege o caso "só existe o
+         * analítico de nome antigo" jamais chegava ao usuário.
+         * Agora quem chama é o próprio `Analitico.carregarDe`, no instante em
+         * que há o que comparar. */
+        if (!Analitico.carregado || !Analitico.competencia || !Sinapi.competencia) return;
+        if (this._normComp(Analitico.competencia) === this._normComp(Sinapi.competencia)) return;
+        var chave = this._normComp(Sinapi.competencia) + "|" + this._normComp(Analitico.competencia) + "|" + (self._baseUf || "");
+        if (self._avisoAnaliticoFeito === chave) return;   // uma vez por combinação
+        self._avisoAnaliticoFeito = chave;
+        if (typeof UI === "undefined" || !UI.toast) return;
+        var fmt = function (c) { return (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(c) : c; };
+        UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+          " Atenção: os PREÇOS são da competência " + fmt(Sinapi.competencia) +
+          ", mas o DETALHAMENTO de insumos instalado é de " + fmt(Analitico.competencia) +
+          ". O que vem do detalhamento (insumo sem preço no sintético, divisão MO/MAT/EQ) sai do outro mês.", "aviso");
       } catch (e) {}
+    },
+    /* "06/2026" e "2026-06" são a MESMA competência. O app normaliza isso em
+       três outros lugares; aqui vira um só, usável por quem precisar. */
+    _normComp: function (c) {
+      c = String(c || "").trim();
+      var m = /^(\d{2})\/(\d{4})$/.exec(c);
+      return m ? (m[2] + "-" + m[1]) : c;
     },
     _avisoAnaliticoFeito: null,
 
@@ -2811,8 +2822,10 @@
       return false;
     },
     _avisarAtualizacao: function (d) {
-      var nov = d.novidades ? ("<div class=\"card\" style=\"margin-top:8px\">" + Util.esc(d.novidades) + "</div>") : "";
-      var html = "<p>Uma versão nova do OrçaPRO (<b>" + Util.esc(d.versao) + "</b>) está disponível! 🎉</p>" + nov +
+      /* ⚠ o MOTIVO da atualização não entra aqui — ver a nota em js/autoupdate.js.
+         `d.novidades` continua chegando do servidor (quem acompanha release usa),
+         só não é mostrado a quem está orçando. */
+      var html = "<p>Uma versão nova do OrçaPRO (<b>" + Util.esc(d.versao) + "</b>) está disponível! 🎉</p>" +
         "<p class=\"muted\" style=\"margin-top:10px\">Pode atualizar tranquilo: <b>seus orçamentos e dados continuam salvos</b> (ficam no seu navegador).</p>";
       var botoes = [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
       if (d.downloadUrl) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Baixar atualização", classe: "primary", onClick: function () { window.open(d.downloadUrl, "_blank"); UI.fecharModal(); } });

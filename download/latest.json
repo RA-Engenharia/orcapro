@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.6",
+  "versao": "1.2.7",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.6/OrcaPRO-IA-update-v1.2.6.zip",
-  "notas": "VERSAO 1.2.6 - orcar na competencia de um mes anterior.\n\nAS COMPETENCIAS ANTERIORES VOLTARAM A SER UTEIS. Quando uma competencia nova do SINAPI e instalada, a anterior continua no computador - e tem de continuar mesmo, porque orcamento antigo reabre na base que ele declara; se o preco mudasse sozinho, a medicao sairia errada e o documento ficaria sujeito a impugnacao. So que o sistema nao sabia que esses arquivos existiam: ocupavam espaco e nao serviam para nada. Agora ele enxerga o que esta no disco e deixa voce escolher a competencia ao criar um orcamento.\n\nE A ESCOLHA SO APARECE QUANDO DA PARA HONRAR. Ate agora existia UM detalhamento de insumos por estado, substituido a cada atualizacao - entao usar o preco de um mes com o detalhamento de outro era possivel, e sem aviso nenhum. O detalhamento nao e acessorio: e dele que sai o custo de cerca de 2.000 insumos por estado, a divisao entre mao de obra, material e equipamento, e a base das suas composicoes proprias. Agora cada competencia guarda o detalhamento dela, e uma competencia so e oferecida quando o detalhamento correspondente existe. Melhor nao ter a opcao do que entregar numero errado.\n\nDe 06/2026 em diante cada mes guarda o seu. Para meses anteriores a essa versao o detalhamento nao existe, entao eles nao sao oferecidos - e, se voce reabrir um orcamento daquela epoca, o sistema agora AVISA que o detalhamento instalado e de outro mes, em vez de ficar calado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.6/OrcaPRO-IA-Instalador-v1.2.6.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.7/OrcaPRO-IA-update-v1.2.7.zip",
+  "notas": "Melhorias e correcoes.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.7/OrcaPRO-IA-Instalador-v1.2.7.exe"
 }

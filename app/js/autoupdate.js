@@ -196,8 +196,15 @@
           '<div style="font-size:11px;letter-spacing:.14em;opacity:.85;text-transform:uppercase">Versão nova disponível</div>' +
           '<div style="font-size:20px;font-weight:800;margin-top:4px">' + esc(titulo) + '</div>' +
         '</div>' +
-        '<div style="padding:18px 22px;font-size:14px;line-height:1.55;max-height:44vh;overflow:auto">' +
-          (d.notas ? esc(d.notas) : "Melhorias e novidades nesta versão.") +
+        /* ⚠ SEM O MOTIVO DA ATUALIZAÇÃO NA TELA DO CLIENTE.
+           O texto de novidades era escrito para o dono do produto, não para
+           quem usa: falava de arquivo, competencia, rota e nome de funcao. Para
+           quem está orcando, isso só gera dúvida na hora de decidir se clica em
+           "Atualizar agora". O que ele precisa saber é que há versao nova e que
+           os dados dele não se perdem. O detalhe continua registrado onde tem
+           dono: nas notas do Release e no historico do repositorio. */
+        '<div style="padding:18px 22px;font-size:14px;line-height:1.55">' +
+          'Uma versão nova está pronta para instalar.<br><b>Seus orçamentos e dados continuam salvos.</b>' +
         '</div>' +
         '<div style="padding:14px 22px 20px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">' +
           '<button id="opr-maior-depois" style="border:1px solid #c9d6e4;background:#fff;color:#516375;' +
