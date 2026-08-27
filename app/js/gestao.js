@@ -5702,6 +5702,16 @@
         },
         onNo: function (no) { if (no && no.acao) self._bimCascaAcao(no.acao, no); },
         onTrocarTipo: function (id) { self._alvTrocarTipo(id); },
+        /* ⚠ ESCONDER A LATERAL OU ENTRAR NO FOCO MUDA A LARGURA DO PALCO, e o
+         * canvas do WebGL não redimensiona sozinho — ele ficaria esticado, com
+         * o modelo deformado e o clique caindo alguns pixels fora do que a
+         * pessoa vê (que é exatamente o que já dificulta a trena).
+         * Dois quadros de espera: o CSS precisa aplicar antes de medirmos. */
+        onLayout: function () {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () { try { if (typeof BIM !== "undefined" && BIM.redimensionar) BIM.redimensionar(); } catch (e) {} });
+          });
+        },
         /* a cena 3D acompanha a interface: no claro do Revit a área de desenho
          * é clara, senão fica uma janela navy no meio de uma tela clara */
         onTema: function (t) { self._bimTemaCena(t); }

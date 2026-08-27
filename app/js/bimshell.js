@@ -100,6 +100,9 @@
 
       raiz.appendChild(this._status());
 
+      /* preferência de quem já escondeu a lateral antes — ver `alternarLateralFixa` */
+      try { if (localStorage.getItem("orcapro:bim:lateral-off") === "1") raiz.setAttribute("data-rv-lateral-off", "1"); } catch (e) {}
+
       container.innerHTML = "";
       container.appendChild(raiz);
 
@@ -113,6 +116,16 @@
         var alvo = ev.target || {};
         var digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(alvo.tagName || "") || alvo.isContentEditable;
         if (digitando) return;
+        /* ⚠ o foco sai ANTES de cancelar o comando: quem está no modo foco e
+           aperta Esc quer voltar a ver a tela inteira. Cancelar a ferramenta
+           junto tiraria as duas coisas de uma vez, e a pessoa não saberia
+           qual das duas ela pediu. Um Esc, uma ação. */
+        /* ⚠ `stopPropagation`, não só `return`. O `return` sai DESTE handler; o do
+           viewer está pendurado no `window` (js/bim.js) e o `document` borbulha ANTES
+           dele — os dois rodavam no mesmo Esc. Quem estava no modo foco com a trena
+           no 1º ponto saia do foco E perdia a medição de uma vez. Parar a propagação
+           aqui é o que faz valer o "um Esc, uma ação" que a nota acima promete. */
+        if (ev.key === "Escape" && self.focoAtivo()) { self.alternarFoco(false); ev.preventDefault(); ev.stopPropagation(); return; }
         if (ev.key === "Escape") { var n = CMD() && CMD().cancelar(); if (n) { self.pintarFita(); ev.preventDefault(); } }
         else if (ev.key === "Enter") { var c = CMD(); if (c && c.ultimo()) { c.repetir(); self.pintarFita(); ev.preventDefault(); } }
       };
@@ -146,7 +159,12 @@
 
     desmontar: function () {
       if (this._onKey) { document.removeEventListener("keydown", this._onKey); this._onKey = null; }
-      this._raiz = null; this._palco = null;
+      /* ⚠ `_btnSairFoco` TEM de morrer junto. `Shell` é singleton e o app remonta
+         a casca a cada visita à aba BIM. Se a referência sobrevive, a guarda
+         `if (novo && !this._btnSairFoco)` fica falsa para sempre e o botão de sair
+         do foco aponta para uma raiz já descartada: da 2ª visita em diante o
+         usuário entra em tela cheia e NÃO TEM COMO SAIR pelo botão. */
+      this._raiz = null; this._palco = null; this._btnSairFoco = null;
     },
     palco: function () { return this._palco; },
     raiz: function () { return this._raiz; },
@@ -614,6 +632,39 @@
         };
         d.appendChild(bt);
       });
+
+      /* ⚠ ESTES DOIS NÃO PASSAM PELO `executar`: eles não são comando do
+       * modelo, são estado da TELA. Mandá-los pelo despachante os deixaria
+       * sujeitos ao gate de comando (documento carregado, permissão) — e
+       * "quero ver o modelo maior" não depende de nada disso.
+       *
+       * Por que existem: a coluna de Propriedades + Navegador ocupa 268px
+       * fixos no computador, e a fita ocupa a faixa de cima. Num notebook
+       * sobra pouco para o 3D, e a tela fica cheia demais para trabalhar. */
+      var bLat = el("button", "rv-vb");
+      bLat.type = "button";
+      bLat.title = "Esconder/mostrar Propriedades e Navegador de projeto";
+      bLat.setAttribute("aria-label", bLat.title);
+      bLat.setAttribute("data-rv-vb", "lateral-off");
+      bLat.innerHTML = ico("prancha", 14);
+      bLat.onclick = function () {
+        var off = self.alternarLateralFixa();
+        bLat.setAttribute("aria-pressed", off ? "true" : "false");
+      };
+      d.appendChild(bLat);
+
+      var bFoco = el("button", "rv-vb");
+      bFoco.type = "button";
+      bFoco.title = "Modo foco: só o modelo e a ferramenta (Esc sai)";
+      bFoco.setAttribute("aria-label", bFoco.title);
+      bFoco.setAttribute("data-rv-vb", "foco");
+      bFoco.innerHTML = ico("expandir", 14);
+      bFoco.onclick = function () {
+        var on = self.alternarFoco();
+        bFoco.setAttribute("aria-pressed", on ? "true" : "false");
+      };
+      d.appendChild(bFoco);
+
       return d;
     },
 
@@ -674,7 +725,58 @@
       var on = this._raiz.getAttribute("data-rv-lateral") === "1";
       this._raiz.setAttribute("data-rv-lateral", on ? "0" : "1");
       return !on;
-    }
+    },
+
+    /* ================================================================
+     * ESCONDER A COLUNA LATERAL — em QUALQUER tamanho de tela
+     *
+     * `alternarLateral` acima é a GAVETA do celular: ela só faz efeito
+     * abaixo de 900px, onde a lateral é sobreposta. No computador a coluna
+     * é fixa e come 268px — Propriedades e Navegador ocupando um quinto da
+     * largura útil mesmo de quem só quer olhar o modelo.
+     * A preferência é lembrada: quem escondeu não quer escolher de novo a
+     * cada abertura.
+     * ================================================================ */
+    alternarLateralFixa: function (on) {
+      if (!this._raiz) return false;
+      var atual = this._raiz.getAttribute("data-rv-lateral-off") === "1";
+      var novo = on == null ? !atual : !!on;
+      this._raiz.setAttribute("data-rv-lateral-off", novo ? "1" : "0");
+      try { localStorage.setItem("orcapro:bim:lateral-off", novo ? "1" : "0"); } catch (e) {}
+      if (typeof this._opts.onLayout === "function") this._opts.onLayout();
+      return novo;
+    },
+
+    /* ================================================================
+     * MODO FOCO — só o modelo e a ferramenta
+     *
+     * "Tela cheia" (`data-rv-cheia`) só estica o quadro: a fita, a coluna
+     * lateral, as abas e a barra de status continuam ocupando a tela. O
+     * foco tira tudo isso e deixa o 3D com a barra da vista e o dock de
+     * ferramentas do próprio visualizador — que é onde mora a ferramenta
+     * selecionada.
+     *
+     * ⚠ SEMPRE COM SAÍDA À VISTA. Modo que se entra sem saber como sair é
+     *   armadilha: entra junto um botão fixo no canto, e o Esc também sai.
+     * ================================================================ */
+    alternarFoco: function (on) {
+      if (!this._raiz) return false;
+      var atual = this._raiz.getAttribute("data-rv-foco") === "1";
+      var novo = on == null ? !atual : !!on;
+      this._raiz.setAttribute("data-rv-foco", novo ? "1" : "0");
+      if (novo && !this._btnSairFoco) {
+        var self = this;
+        var b = el("button", "rv-foco-sair");
+        b.type = "button";
+        b.innerHTML = ico("fechar", 13) + "<span>Sair do foco (Esc)</span>";
+        b.onclick = function () { self.alternarFoco(false); };
+        this._raiz.appendChild(b);
+        this._btnSairFoco = b;
+      }
+      if (typeof this._opts.onLayout === "function") this._opts.onLayout();
+      return novo;
+    },
+    focoAtivo: function () { return !!(this._raiz && this._raiz.getAttribute("data-rv-foco") === "1"); }
   };
 
   global.BimShell = Shell;

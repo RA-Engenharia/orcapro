@@ -434,6 +434,41 @@
   border-radius: 0; border: 0;
 }
 
+/* ------------------------------------------------- ESCONDER A COLUNA LATERAL
+ * No celular a lateral já era gaveta. No COMPUTADOR ela era fixa: 268px de
+ * Propriedades e Navegador ocupados o tempo todo, mesmo quando a pessoa só
+ * quer olhar o modelo. Numa tela de notebook isso é um quinto da largura útil
+ * do 3D. Agora fecha e abre pelo mesmo botão, em qualquer tamanho de tela. */
+.bim-revit[data-rv-lateral-off="1"] .rv-lateral { display: none; }
+
+/* ------------------------------------------------------------- MODO FOCO
+ * "Tela cheia" só esticava o quadro — a fita, a lateral e a barra de status
+ * continuavam lá, e a tela seguia poluída. O modo FOCO tira tudo o que não é
+ * o modelo: sobra o 3D e o dock de ferramentas do próprio visualizador, que
+ * é onde mora a ferramenta selecionada.
+ * Sai com Esc ou pelo mesmo botão — e o aviso no rodapé diz isso, porque
+ * modo que se entra sem saber como sair é armadilha. */
+.bim-revit[data-rv-foco="1"] .rv-titulo,
+.bim-revit[data-rv-foco="1"] .rv-abas,
+.bim-revit[data-rv-foco="1"] .rv-fita,
+.bim-revit[data-rv-foco="1"] .rv-lateral,
+.bim-revit[data-rv-foco="1"] .rv-docs,
+.bim-revit[data-rv-foco="1"] .rv-status { display: none !important; }
+/* a `rv-vistabar` FICA: ela é a barra do próprio 3D (perspectiva, sol,
+   enquadrar) — tirar ela seria tirar a ferramenta junto com a poluição. */
+.bim-revit[data-rv-foco="1"] .rv-corpo { padding: 0; }
+
+/* a saída fica sempre à vista, sobre o modelo */
+.rv-foco-sair {
+  position: absolute; right: 12px; top: 12px; z-index: 60;
+  display: none; align-items: center; gap: 7px;
+  padding: 7px 13px; border-radius: 9px; cursor: pointer;
+  background: rgba(15, 39, 64, .92); color: #dbe8f5;
+  border: 1px solid #24435f; font-size: 12.5px; font-weight: 600;
+}
+.bim-revit[data-rv-foco="1"] .rv-foco-sair { display: inline-flex; }
+.rv-foco-sair:hover { background: rgba(15, 39, 64, 1); }
+
 @media (prefers-reduced-motion: reduce) {
   .rv-lateral, .rv-fita { transition: none; }
 }

@@ -58,9 +58,14 @@ function montar(host, opts) {
     host.innerHTML = '';
     host.style.position = 'relative';
     host.style.background = 'radial-gradient(120% 120% at 50% 0%, #16324f 0%, #0b1a2b 70%)';
-    /* sisPanel (legenda de cores por sistema) e blocokPanel estavam fora desta lista:
-     * ficavam presos no host morto e sumiam de vez ao sair e voltar para a aba BIM. */
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
+    /* ⚠ QUEM NASCE PENDURADO NO HOST TEM DE ENTRAR AQUI. Já aconteceu duas vezes:
+     * sisPanel e blocokPanel ficavam presos no host morto e sumiam de vez ao sair
+     * e voltar para a aba BIM. Na v1.2.2 quase aconteceu de novo com as três peças
+     * novas da mira — guiaH, guiaV e a lupa: o recurso funcionava na primeira
+     * visita e sumia calado a partir da segunda, que é o pior jeito de falhar.
+     * Os traços dos notáveis não entram na lista porque nascem sob demanda; eles
+     * se re-penduram sozinhos em `posicionarNotaveis`. */
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
@@ -514,7 +519,7 @@ function montar(host, opts) {
         _definirTema: definirTema,   /* a casca manda o tema da cena (v1.1.127) */
         bar: bar, hud: hud, over: over, loading: loading,
         api: new IfcAPI(), apiReady: false, modelID: -1, meshPorId: {}, elementos: [],
-        modelos: [], meshPorUid: {}, ultra: false, _tickExtra: [],
+        modelos: [], meshPorUid: {}, ultra: false, _tickExtra: [], _tickPos: [],
         fly: { on: false, keys: {}, speed: 14, yaw: 0, pitch: 0 }, selected: null, prevMat: null,
         matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
   var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
@@ -522,7 +527,19 @@ function montar(host, opts) {
   S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; // FAB mobile: desconectados no desmonte (gate v1.1.114)
   S._dockDocClick = dockDocClick; // fechar-leque-no-toque-fora: removido no desmonte (senão acumula por remount)
 
-  function resize() { var w = host.clientWidth, h = host.clientHeight; if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); } }
+  /* ⚠ `S.host`, NÃO o `host` do fecho. Esta função nasce na PRIMEIRA `montar` e
+   * fica presa ao host daquela vez. Quando o app re-renderiza a aba BIM (todo
+   * `App.render()` refaz o HTML), o viewer é re-parentado num host NOVO e
+   * `S.host` é atualizado — mas este fecho continuava medindo o host velho, já
+   * fora do documento, cujo clientWidth é 0. Com o `if (w && h)` isso virava um
+   * no-op SILENCIOSO: da segunda visita em diante, redimensionar a janela (e o
+   * botão novo de esconder a lateral) não mexia mais no canvas, e o modelo
+   * ficava esticado. Defeito antigo que o botão novo só tornou visível. */
+  function resize() {
+    var alvo = (S && S.host) || host;
+    var w = alvo.clientWidth, h = alvo.clientHeight;
+    if (w && h) { renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+  }
   S._resize = resize; window.addEventListener('resize', resize); resize();
 
   // ---- voo ----
@@ -539,7 +556,7 @@ function montar(host, opts) {
   }
   S._setMode = setMode;
   canvasEl.addEventListener('click', function () { if (fly.on && !document.pointerLockElement) canvasEl.requestPointerLock(); });
-  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } /* painel flutuante só é fechado pelo Esc quando NENHUMA ferramenta está em uso —
+  S._onKeyDown = function (e) { fly.keys[e.code] = true; if (e.code === 'Escape') { if (S._lupaFechar && S.lupa && S.lupa.on) { S._lupaFechar(); return; } /* 🔍 a lupa sai PRIMEIRO: ela desliga a órbita, e sair da ferramenta antes deixaria a câmera travada */ if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) { if (S && S.host && S.host.contains(e.target)) e.target.blur(); return; } if (S.ctecModal && S.ctecModal.style.display === 'flex' && S._fecharCtecModal) { S._fecharCtecModal(); return; } if (S.plantaCfg && S.plantaCfg.style.display !== 'none') { S.plantaCfg.style.display = 'none'; return; } /* painel flutuante só é fechado pelo Esc quando NENHUMA ferramenta está em uso —
    senão o Esc de sair da trena/voo era gasto fechando um painel que o usuário nem olhava */
 if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area.on) || (S.ang && S.ang.on) || (S.planta && S.planta.on) || (S.corteL && S.corteL.on) || (S.edit && S.edit.on)) && [S.visPanel, S.pavPanel, S.snapPanel, S.xrPanel].some(function (p) { return p && p.style.display === 'flex'; })) { S._fecharPaineis(null); return; } if (S.xr && S.xr.on && S._sairImersivo) { S._sairImersivo(); return; } if (S._ctecCancelar && S._ctecCancelar(true)) return; if (fly.on) setMode(false); if (S.medir && S.medir.on) S._setMedir(false); if (S.area && S.area.on && S._setArea) S._setArea(false); if (S.ang && S.ang.on && S._setAng) S._setAng(false); if (S.planta && S.planta.on) S._setPlanta(false); if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false); if (S.edit && S.edit.on) { if (S.edit.p1 && S._editFimCadeia) { S._editFimCadeia(); return; } if (S._setEdit) S._setEdit(false); } } };
   S._onKeyUp = function (e) { fly.keys[e.code] = false; };
@@ -564,6 +581,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (fly.on) flyStep(dt); else orbit.update();
     for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](dt); } catch (_) {} }
     renderer.render(scene, camera);
+    /* ⚠ GANCHO DEPOIS DO RENDER, e a ordem é o que faz ele existir.
+     * Quem precisa COPIAR o quadro desenhado (a lupa do toque) tem de rodar
+     * com o buffer ainda válido. O renderer é criado sem `preserveDrawingBuffer`
+     * (ligá-lo custa desempenho em toda a frota), então o conteúdo do canvas só
+     * pode ser lido DENTRO da mesma tarefa do render — é a mesma restrição que
+     * a Foto da vista já contorna. Um `_tickExtra` (que roda ANTES) copiaria o
+     * quadro anterior, e a lupa mostraria a cena com um quadro de atraso: no
+     * arraste do dedo, justamente o que se está mirando sai defasado. */
+    for (var tp = 0; tp < S._tickPos.length; tp++) { try { S._tickPos[tp](dt); } catch (_) {} }
   }
   function tick() { if (!S || !S.alive) return; if (S._xrActive) { S.raf = 0; return; } var dt = Math.min(clock.getDelta(), 0.1); renderFrame(dt); S.raf = requestAnimationFrame(tick); }
   S._renderFrame = renderFrame; S._retomarTick = function () { if (S && S.alive && !S._xrActive && !S.raf) tick(); };
@@ -798,7 +824,56 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   hint.style.cssText = 'position:absolute;left:50%;top:52px;transform:translateX(-50%);z-index:4;display:none;pointer-events:none;background:rgba(34,197,94,.94);color:#04240f;font-weight:600;font-size:12.5px;padding:7px 15px;border-radius:20px;box-shadow:0 6px 16px rgba(0,0,0,.35);max-width:90%;text-align:center';
   host.appendChild(hint);
   S.hint = hint; // guardado p/ re-parentar no re-home (senão some ao revisitar a aba)
-  S._hint = function (msg) { if (msg) { hint.textContent = msg; hint.style.display = 'block'; } else { hint.style.display = 'none'; } };
+  /* ⚠ O BALÃO MOSTRAVA O CÓDIGO DO ÍCONE, NÃO O ÍCONE.
+   * As mensagens são montadas com `Icones.get(...)`, que devolve MARCAÇÃO SVG
+   * como texto. Com `textContent` o navegador escapa tudo, e o usuário lia
+   * `<svg class="ic-svg" data-ic="medir" viewBox="0 0 24 24" ...` na frente da
+   * dica — em toda ferramenta de medição.
+   * O conserto NÃO é trocar por `innerHTML` e pronto: parte do texto que passa
+   * por aqui vem de nome de elemento do IFC, que é conteúdo do ARQUIVO do
+   * cliente. Injetar isso como HTML seria abrir a tela para o que vier no
+   * modelo. Então: o SVG do começo (que é nosso, do `Icones`) entra como
+   * marcação; TODO o resto entra como texto, escapado. */
+  /* O balão de dica recebe texto COM ícone do próprio app no meio (`Icones.get`
+   * devolve um <svg>). Jogar tudo por `innerHTML` seria abrir a tarja para
+   * qualquer coisa que um dia chegue aqui vinda de um modelo; jogar tudo por
+   * `textContent` é o que fazia o cliente ver `<svg viewBox=...>` escrito na
+   * tela — foi o print que abriu esta versão.
+   *
+   * ⚠ E O CONSERTO PRECISA VALER PARA TODOS OS ÍCONES, não só o primeiro. A
+   *   primeira tentativa ancorava em `^` e só desescapava o ícone do começo:
+   *   passou no teste (que usava uma mensagem de um ícone só) e deixou o defeito
+   *   de pé nas dezenas de mensagens reais que têm ícone NO MEIO da frase —
+   *   "Elemento oculto. <svg…> Restaurar tudo…". Meio conserto num defeito
+   *   visível é pior que nenhum: dá o assunto por encerrado.
+   *
+   * A varredura abaixo alterna: texto vira nó de texto, cada <svg>…</svg> vira
+   * marcação, quantos forem, em qualquer posição. */
+  S._hint = function (msg) {
+    if (!msg) { hint.style.display = 'none'; return; }
+    while (hint.firstChild) hint.removeChild(hint.firstChild);
+    var s = String(msg), ini = 0, m;
+    /* ⚠ REGENERA O ÍCONE PELO NOME, NUNCA RECOLA O TRECHO CASADO.
+     * A regex é a mesma de `UI._rotuloHtml` (js/ui.js), de propósito: casar o
+     * ícone e devolver `m[0]` por innerHTML seria o buraco que aquele arquivo
+     * já descreve — basta o nome do pavimento trazer `<svg class="ic-svg">
+     * <animate onbegin="…">` e o script roda na origem do app, com acesso a
+     * todo o `raerp:*`. Aqui o pior que pode acontecer é sair um ícone da
+     * nossa própria biblioteca. */
+    var re = /<svg class="ic-svg" data-ic="([A-Za-z0-9_-]+)"[^>]*width="(\d+)"[^>]*>[\s\S]*?<\/svg>/g;
+    while ((m = re.exec(s))) {
+      if (m.index > ini) hint.appendChild(document.createTextNode(s.slice(ini, m.index)));
+      if (typeof Icones !== 'undefined' && Icones.tem && Icones.tem(m[1])) {
+        var sp = document.createElement('span');
+        sp.style.cssText = 'display:inline-flex;vertical-align:-2px;margin:0 4px 0 0';
+        sp.innerHTML = Icones.get(m[1], Number(m[2]) || 15);   // gerado por nós, agora
+        hint.appendChild(sp);
+      }
+      ini = m.index + m[0].length;
+    }
+    if (ini < s.length) hint.appendChild(document.createTextNode(s.slice(ini)));
+    hint.style.display = 'block';
+  };
 
   // ============================================================
   // TRENA (medição) — clique em 2 pontos do modelo e mede a distância real
@@ -874,9 +949,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     ray.setFromCamera(mouse, camera);
     var hits = ray.intersectObjects(modelRoot.children, true);
     _ultimosHits = [];
-    for (var hh = 0; hh < hits.length && _ultimosHits.length < 2; hh++) {
+    /* ⚠ ATÉ TRÊS, não dois. O ponto que o projetista quer costuma ser onde
+       TRÊS coisas se encontram — tubo entrando na parede junto da laje, viga
+       apoiada no pilar contra a alvenaria. Com o teto em 2, o terceiro
+       elemento ficava fora da varredura e o canto que estava na tela
+       simplesmente não existia como candidato. */
+    for (var hh = 0; hh < hits.length && _ultimosHits.length < 3; hh++) {
       if (!cadeiaVisivel(hits[hh].object) || foraDoClip(hits[hh].point)) continue;
-      if (_ultimosHits.length && _ultimosHits[0].object === hits[hh].object) continue; // 2º OBJETO distinto (canto parede×viga)
+      var repetido = false;
+      for (var uh = 0; uh < _ultimosHits.length; uh++) if (_ultimosHits[uh].object === hits[hh].object) { repetido = true; break; }
+      if (repetido) continue; // OBJETOS distintos (canto parede×viga×laje)
       _ultimosHits.push(hits[hh]);
     }
     return _ultimosHits[0] || null;
@@ -889,12 +971,52 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // Temporal+ESPACIAL (<20px): não pune usuário rápido clicando em outro canto.
   var toolFechou = null, _upAtual = null;
   function marcarFechamento() { toolFechou = _upAtual ? { x: _upAtual.x, y: _upAtual.y, t: performance.now() } : { x: -1e9, y: -1e9, t: performance.now() }; }
-  canvasEl.addEventListener('pointerdown', function (e) { if (!S || !S.alive) return; if (ferramentaClique()) medir.down = (e.button === 0) ? { x: e.clientX, y: e.clientY } : null; });
+  canvasEl.addEventListener('pointerdown', function (e) {
+    if (!S || !S.alive) return;
+    if (ferramentaClique()) medir.down = (e.button === 0) ? { x: e.clientX, y: e.clientY } : null;
+    /* 🔍 toque-e-segure abre a lupa (só no DEDO, só com ferramenta de ponto
+       ativa). No mouse não faz falta: lá o cursor não tapa o alvo e o
+       marcador de snap já segue o `pointermove`. */
+    if (e.pointerType === 'touch' && ferramentaClique() && medir.down && S._lupaAgendar) S._lupaAgendar(e);
+    /* ⚠ SEGUNDO DEDO = "quero navegar", não "quero mirar". Encostar o outro dedo
+       com a lupa aberta é pinça de zoom: fecha a mira e devolve a órbita na
+       hora, em vez de deixar a câmera travada esperando um `pointerup` que pode
+       nunca vir no ponteiro certo. */
+    if (S.lupa && S.lupa.on && S.lupa.id != null && e.pointerId !== S.lupa.id && S._lupaFechar) S._lupaFechar();
+  });
+  /* ⚠ SAÍDA DE EMERGÊNCIA. A lupa desliga a órbita enquanto mira. Se o sistema
+   * cancelar o toque no meio (ligação chegando, notificação, gesto do sistema
+   * na borda), não vem `pointerup` — e a câmera ficaria TRAVADA, com uma lupa
+   * pendurada na tela e nenhum jeito de sair a não ser recarregar. Cancelar
+   * fecha e devolve a órbita. */
+  canvasEl.addEventListener('pointercancel', function (e) {
+    if (!S || !S.alive) return;
+    medir.down = null;
+    if (S._lupaSoltar) S._lupaSoltar(e);
+  });
   canvasEl.addEventListener('pointerup', function (e) {
     if (!S || !S.alive) return;
-    if (!ferramentaClique() || !medir.down || e.button !== 0) return; // só botão esquerdo/toque
-    var dx = e.clientX - medir.down.x, dy = e.clientY - medir.down.y; medir.down = null;
-    if (dx * dx + dy * dy > 100) return; // arrastou (>10px) -> era órbita; tolerância p/ toque (tablet)
+    /* ⚠ A LUPA SOLTA ANTES DA PORTEIRA, e isto não é estilo: é o conserto de uma
+     * TRAVA PERMANENTE. A lupa desliga a órbita enquanto mira. Com a soltura
+     * depois do `return` de cima, bastava um SEGUNDO DEDO na tela: o
+     * `pointerdown` dele sobrescrevia `medir.down`, o dedo dono da lupa
+     * levantava e zerava `medir.down`, e quando o segundo levantava a porteira
+     * `!medir.down` barrava — `_lupaSoltar` nunca rodava. Resultado: lupa
+     * pendurada na tela e câmera 3D travada PARA SEMPRE, sem jeito de sair a
+     * não ser recarregar a página. E `pointercancel` não salva: o OrbitControls
+     * põe `touchAction:'none'` no canvas, então a pinça não é cancelada pelo
+     * navegador — ela chega como dois ponteiros normais. */
+    var alvoLupa = S._lupaSoltar ? S._lupaSoltar(e) : null;
+    if (!ferramentaClique() || e.button !== 0) { medir.down = null; return; } // só botão esquerdo/toque
+    if (!alvoLupa && !medir.down) return;
+    /* 🔍 LUPA: se ela estava aberta, o ponto é o da MIRA, não o do dedo — e o
+       arraste que a mira fez NÃO pode ser lido como órbita (é o teste logo
+       abaixo, que descartaria o ponto justamente de quem mirou com cuidado). */
+    var dx = 0, dy = 0;
+    if (medir.down) { dx = e.clientX - medir.down.x; dy = e.clientY - medir.down.y; }
+    medir.down = null;
+    if (!alvoLupa && dx * dx + dy * dy > 100) return; // arrastou (>10px) -> era órbita; tolerância p/ toque (tablet)
+    if (alvoLupa) { e = { clientX: alvoLupa.x, clientY: alvoLupa.y, button: 0, detail: 1, pointerType: 'touch' }; }
     if (toolFechou && performance.now() - toolFechou.t < 400) {
       var fdx = e.clientX - toolFechou.x, fdy = e.clientY - toolFechou.y;
       // irmão do duplo-clique: o navegador marca com detail>=2 (contagem de cliques); o critério
@@ -930,6 +1052,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var _snapHoverT = 0;
   canvasEl.addEventListener('pointermove', function (e) {
     if (!S || !S.alive) return;
+    /* 🔍 com a lupa aberta o dedo move a MIRA, e mais nada acontece neste
+       handler: nem preview de parede, nem o hover normal do snap. */
+    if (S._lupaMover && S._lupaMover(e)) return;
     // v1.1.82 — preview vivo da parede (rubber-band + cota junto ao cursor, estilo Revit)
     if (S.edit && S.edit.on && S.edit.sub === 'parede' && S.edit.p1 && S._editPreviewMove) {
       S._editPreviewMove(e);
@@ -1267,9 +1392,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // vértice (fim de linha) > meio de aresta > aresta mais próxima > superfície livre.
   // Configurável por tipo, persistido; indicador visual mostra ONDE e O QUE agarrou.
   // ============================================================
-  var snap = { on: true, v: true, m: true, a: true, i: true, raio: 14 };
-  try { var _sv = JSON.parse(localStorage.getItem('orcapro:bim:snap') || 'null'); if (_sv) { snap.on = !!_sv.on; snap.v = !!_sv.v; snap.m = !!_sv.m; snap.a = !!_sv.a; snap.i = _sv.i !== false; } } catch (_) {}
-  function salvarSnap() { try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i })); } catch (_) {} }
+  var snap = { on: true, v: true, m: true, a: true, i: true, c: true, raio: 14 };
+  try { var _sv = JSON.parse(localStorage.getItem('orcapro:bim:snap') || 'null'); if (_sv) { snap.on = !!_sv.on; snap.v = !!_sv.v; snap.m = !!_sv.m; snap.a = !!_sv.a; snap.i = _sv.i !== false; snap.c = _sv.c !== false; }  /* ⚠ `!== false`: quem já usava o sistema tem preferência gravada SEM a chave nova — com `!!` o centro nasceria desligado justamente para quem pediu o recurso */ } catch (_) {}
+  function salvarSnap() { try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i, c: snap.c })); } catch (_) {} }
   S.snap = snap;
   var snapPanel = document.createElement('div');
   snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:210px';
@@ -1279,7 +1404,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-s="v" style="flex:1" title="Agarra no fim de linha (canto/vértice)">▪ Vértice</button>' +
     '<button class="btn sm" data-s="m" style="flex:1" title="Agarra no meio da aresta">● Meio</button>' +
     '<button class="btn sm" data-s="a" style="flex:1" title="Agarra no ponto mais próximo da aresta">◆ Aresta</button>' +
-    '<button class="btn sm" data-s="i" style="flex:1" title="Agarra no CRUZAMENTO real de duas arestas (canto parede×viga)">✚ Interseção</button></div>' +
+    '<button class="btn sm" data-s="i" style="flex:1" title="Agarra no CRUZAMENTO real de duas arestas (canto parede×viga)">✚ Interseção</button>' +
+    '<button class="btn sm" data-s="c" style="flex:1" title="Agarra no EIXO de uma boca redonda: ponta de tubo, furo, pilar circular">⊕ Centro</button></div>' +
     '<div style="font-size:11px;color:#9fb2c8">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
   host.appendChild(snapPanel);
   S.snapPanel = snapPanel;
@@ -1682,8 +1808,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   });
 
   function pintarSnapPanel() {
-    var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i };
-    ['on', 'v', 'm', 'a', 'i'].forEach(function (kk) {
+    var cfg = { on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i, c: snap.c };
+    ['on', 'v', 'm', 'a', 'i', 'c'].forEach(function (kk) {
       var b = snapPanel.querySelector('[data-s="' + kk + '"]'); if (!b) return;
       b.style.background = cfg[kk] ? corAtiva() : ''; b.style.color = cfg[kk] ? '#fff' : '';
       if (kk === 'on') b.textContent = cfg.on ? 'ON' : 'OFF';
@@ -1704,22 +1830,137 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   snapMarca.innerHTML = '<div data-sm="ico" style="width:12px;height:12px;border:2px solid #22c55e;margin:0 auto"></div><div data-sm="rot" style="font-size:10px;font-weight:700;color:#7fe0a3;text-shadow:0 1px 2px rgba(0,0,0,.8);text-align:center;margin-top:2px"></div>';
   host.appendChild(snapMarca);
   S.snapMarca = snapMarca;
-  var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' } };
+  var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' }, centro: { cor: '#facc15', borda: '50%', rot: '⊕ centro' } };
   // o marcador é ANCORADO NO MUNDO e re-projetado a cada frame (achado do usuário: posicionado
   // uma única vez, ficava "pendurado" na tela enquanto o damping da câmera ainda deslizava —
   // o ponto mostrado parecia longe/bugado em relação ao ponto real)
   var snapVivo = null; // { p: Vector3, tipo }
+
+  // ============================================================
+  // ┿ TRAÇOS FINOS nos cantos, começos e meios à volta do cursor
+  //
+  // Traços de 1 px marcando canto, começo, meio e centro dos objetos ao redor
+  // do cursor, enquanto uma ferramenta de ponto está ativa.
+  //
+  // O marcador mostra UM ponto: o que venceu. Isso responde "onde vai agarrar"
+  // mas não responde "o que existe aqui" — e é a segunda pergunta de quem acha
+  // que o snap pegou no lugar errado. Vendo os candidatos, move-se dois pixels
+  // e pega-se o que se queria, em vez de tentar de novo às cegas.
+  //
+  // São 1 px de verdade e no máximo 8: mais que isso vira sujeira sobre o
+  // modelo, e tela limpa é requisito desta mesma tela.
+  // ============================================================
+  var NOTAVEL_MAX = 8;
+  var NOTAVEL_MIN_SEP = 9;   // px entre dois traços: o próprio traço tem 11 px de vao
+  var notavelPool = [], notavelPts = [];
+  function notavelEl(i) {
+    var vivo = (S && S.host) || host;   // nunca o `host` do fecho: ele morre na 2ª visita à aba
+    if (notavelPool[i]) {
+      /* re-pendura sozinho depois de o viewer trocar de host (App.render refaz o
+         HTML da aba). Sem isto os traços ficariam presos no host descartado — o
+         mesmo jeito de sumir calado que já pegou o sisPanel e o blocokPanel. */
+      if (notavelPool[i].parentNode !== vivo) vivo.appendChild(notavelPool[i]);
+      return notavelPool[i];
+    }
+    var d = document.createElement('div');
+    d.setAttribute('data-bim', 'notavel');
+    d.style.cssText = 'position:absolute;z-index:3;display:none;pointer-events:none;width:11px;height:11px;transform:translate(-50%,-50%);opacity:.75';
+    vivo.appendChild(d); notavelPool[i] = d; return d;
+  }
+  function notaveisEsconder() { notavelPts = []; for (var i = 0; i < notavelPool.length; i++) notavelPool[i].style.display = 'none'; }
+  function notaveisDefinir(lista) {
+    notavelPts = [];
+    if (!lista || !lista.length || !snap.on) { notaveisEsconder(); return; }
+    /* mais perto primeiro, e sem repetir o mesmo canto que dezenas de arestas
+       vizinhas devolvem — senão os 8 lugares vão todos para o mesmo ponto.
+       ⚠ A DEDUPLICAÇÃO É POR TELA, não pelo mundo. Deduplicar em 3D deixava
+       passar pontos legitimamente distintos que se PROJETAM no mesmo pixel — as
+       duas faces de uma parede fina vistas de canto, por exemplo. Na primeira
+       versão os 8 traços saíram empilhados em 2 lugares: tecnicamente corretos
+       e visualmente inúteis, que é justamente o oposto do que foi pedido. O que
+       importa aqui é o olho, então a régua tem de ser a do olho. */
+    var rc = canvasEl.getBoundingClientRect();
+    var ord = lista.slice().sort(function (a, b) { return a.d - b.d; }), aceitos = [];
+    for (var i = 0; i < ord.length && notavelPts.length < NOTAVEL_MAX; i++) {
+      var q = _snP.copy(ord[i].v).project(camera);
+      if (q.z > 1 || q.z < -1) continue;
+      var sx = (q.x + 1) / 2 * rc.width, sy = (1 - q.y) / 2 * rc.height;
+      /* ⚠ DISTÂNCIA, não balde de grade. Arredondar para uma grade de 6 px
+         separa 92 e 94 em baldes vizinhos e os dois traços saem colados assim
+         mesmo — foi o que apareceu na tela. Com no máximo 8 aceitos, comparar
+         um a um custa nada e não tem borda de balde. */
+      var colado = false;
+      for (var ai = 0; ai < aceitos.length; ai++) {
+        var ddx = aceitos[ai][0] - sx, ddy = aceitos[ai][1] - sy;
+        if (ddx * ddx + ddy * ddy < NOTAVEL_MIN_SEP * NOTAVEL_MIN_SEP) { colado = true; break; }
+      }
+      if (colado) continue;
+      aceitos.push([sx, sy]); notavelPts.push(ord[i]);
+    }
+    posicionarNotaveis();
+  }
+  function posicionarNotaveis() {
+    /* ⚠ `S.host`: o `host` do fecho MORRE na 2ª visita à aba (ver `resize`). Medir o host descartado devolve zeros e a sobreposição sai deslocada da origem do palco — lupa longe do dedo, guias fora do ponto. */
+    var rc = canvasEl.getBoundingClientRect(), hr = ((S && S.host) || host).getBoundingClientRect(), i;
+    for (i = 0; i < notavelPool.length; i++) if (i >= notavelPts.length) notavelPool[i].style.display = 'none';
+    for (i = 0; i < notavelPts.length; i++) {
+      var el = notavelEl(i), n = notavelPts[i];
+      var q = _snP.copy(n.v).project(camera);
+      if (q.z > 1 || q.z < -1) { el.style.display = 'none'; continue; }
+      el.style.left = ((q.x + 1) / 2 * rc.width + (rc.left - hr.left)) + 'px';
+      el.style.top = ((1 - q.y) / 2 * rc.height + (rc.top - hr.top)) + 'px';
+      /* ⚠ a COR só muda quando o tipo muda, e o tipo não muda entre quadros.
+         Remontar a string do gradiente e reescrever `background` nos 8 traços a
+         cada quadro era trabalho puro, para sempre, mesmo com nada se mexendo. */
+      if (el._corBim !== n.tipo) {
+        var cor = (SNAP_VIS[n.tipo] || { cor: '#22c55e' }).cor;
+        /* cruz de 1 px em duas faixas — sem borda, sem sombra: fino de verdade */
+        el.style.background = 'linear-gradient(' + cor + ',' + cor + ') center/11px 1px no-repeat,'
+          + 'linear-gradient(' + cor + ',' + cor + ') center/1px 11px no-repeat';
+        el._corBim = n.tipo;
+      }
+      el.style.display = 'block';
+    }
+  }
+
   function posicionarSnapMarca() {
+    if (notavelPts.length) posicionarNotaveis();
     if (!snapVivo) return;
-    var rc = canvasEl.getBoundingClientRect(), hr = host.getBoundingClientRect();
+    var rc = canvasEl.getBoundingClientRect(), hr = ((S && S.host) || host).getBoundingClientRect();   // host VIVO (idem)
     var q = snapVivo.p.clone().project(camera);
     if (q.z > 1 || q.z < -1) { snapMarca.style.display = 'none'; return; } // atrás da câmera/fora do frustum
     var x = (q.x + 1) / 2 * rc.width + (rc.left - hr.left), y = (1 - q.y) / 2 * rc.height + (rc.top - hr.top);
     snapMarca.style.left = x + 'px'; snapMarca.style.top = y + 'px'; snapMarca.style.display = 'block';
+    /* as guias seguem o MESMO ponto do mundo, reprojetado a cada quadro — se
+       fossem posicionadas uma vez só, ficariam penduradas na tela enquanto o
+       amortecimento da câmera ainda desliza, que é o defeito que esta função
+       já corrige para o marcador. */
+    var vg = SNAP_VIS[snapVivo.tipo];
+    if (snapVivo.tipo) guiasEm(x, y, vg ? vg.cor : '#22c55e');
+    else guiasEsconder();   /* sem ponto agarrado não há alinhamento a mostrar: guia aí seria promessa falsa */
   }
   S._tickExtra.push(function () { posicionarSnapMarca(); });
   function mostrarSnapMarca(sn) {
-    if (!sn || !sn.tipo) { esconderSnapMarca(); return; }
+    notaveisDefinir(sn && sn.notaveis);
+    if (!sn || !sn.tipo) {
+      snapVivo = null; guiasEsconder();
+      /* ⚠ ELEMENTO PESADO: o snap não é pulado à toa — gerar as arestas de uma
+         malha densa (terreno, mobiliário importado) trava o hover. Mas até aqui
+         ele PULAVA CALADO: nenhuma marca, nenhum aviso, e quem media concluia
+         que "o snap não pega direito". Um limite técnico legítimo virava queixa
+         de imprecião. Agora ele diz o que houve; inventar ponto continua fora. */
+      if (sn && sn.pesado && snap.on) {
+        var icoP = snapMarca.querySelector('[data-sm="ico"]');
+        icoP.style.borderColor = '#94a3b8'; icoP.style.borderRadius = '50%'; icoP.style.transform = '';
+        var rotP = snapMarca.querySelector('[data-sm="rot"]');
+        rotP.textContent = 'sem snap (peça pesada)'; rotP.style.color = '#94a3b8';
+        snapVivo = { p: sn.p.clone(), tipo: null };
+        posicionarSnapMarca();
+        return;
+      }
+      snapMarca.style.display = 'none';
+      return;
+    }
     var vis = SNAP_VIS[sn.tipo], ico = snapMarca.querySelector('[data-sm="ico"]');
     ico.style.borderColor = vis.cor; ico.style.borderRadius = vis.borda;
     ico.style.transform = (sn.tipo === 'aresta' || sn.tipo === 'intersecao') ? 'rotate(45deg)' : '';
@@ -1728,7 +1969,197 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     snapVivo = { p: sn.p.clone(), tipo: sn.tipo };
     posicionarSnapMarca();
   }
-  function esconderSnapMarca() { snapVivo = null; snapMarca.style.display = 'none'; }
+  function esconderSnapMarca() { snapVivo = null; snapMarca.style.display = 'none'; guiasEsconder(); notaveisEsconder(); }
+
+  // ============================================================
+  // ┼ LINHAS-GUIA FINAS — onde o ponto vai cair, atravessando a tela
+  //
+  // O marcador de snap é um quadradinho de 12px. Num modelo cheio ele se
+  // perde no meio da geometria: o ponto agarrado até estava certo, mas não
+  // dava para VER onde tinha caído antes de soltar o clique — e isso se lê
+  // como imprecião.
+  //
+  // Duas linhas de 1px atravessando a tela pelo ponto resolvem porque dão
+  // ALINHAMENTO: a pessoa enxerga que o ponto está na mesma altura do topo
+  // da parede, ou na mesma prumada do eixo do tubo. É o que o CAD faz há
+  // trinta anos, e é barato — duas divs, sem custo de GPU.
+  // ============================================================
+  var guiaH = document.createElement('div'), guiaV = document.createElement('div');
+  guiaH.setAttribute('data-bim', 'guia-h');
+  guiaH.style.cssText = 'position:absolute;left:0;right:0;height:0;border-top:1px dashed rgba(34,197,94,.55);z-index:4;display:none;pointer-events:none';
+  guiaV.setAttribute('data-bim', 'guia-v');
+  guiaV.style.cssText = 'position:absolute;top:0;bottom:0;width:0;border-left:1px dashed rgba(34,197,94,.55);z-index:4;display:none;pointer-events:none';
+  host.appendChild(guiaH); host.appendChild(guiaV);
+  S.guiaH = guiaH; S.guiaV = guiaV;
+  function guiasEsconder() { guiaH.style.display = 'none'; guiaV.style.display = 'none'; }
+  function guiasEm(x, y, cor) {
+    guiaH.style.borderTopColor = cor; guiaV.style.borderLeftColor = cor;
+    guiaH.style.top = y + 'px'; guiaV.style.left = x + 'px';
+    guiaH.style.display = 'block'; guiaV.style.display = 'block';
+  }
+
+  // ============================================================
+  // 🔍 LUPA — mirar no dedo sem o dedo tapar o alvo
+  //
+  // O PROBLEMA, no celular e no tablet: para colocar um ponto você toca — e
+  // o dedo cobre exatamente o pixel que você quer. Pior, o `pointerup` só
+  // aceita o ponto se você NÃO arrastou (>10px vira órbita), então não dá
+  // nem para ajustar a mira: é acertar de primeira, às cegas. E o marcador
+  // de snap, que mostraria onde vai agarrar, só aparecia no `pointermove` —
+  // que no toque não existe antes do toque.
+  //
+  // COMO FUNCIONA: toque e SEGURE (~350 ms). A lupa abre ACIMA do dedo,
+  // ampliando 3× a região sob ele, com a cruz no centro. A partir daí,
+  // arrastar move a MIRA (a câmera fica parada), o snap roda a cada quadro
+  // e o que vai ser agarrado aparece dentro da lupa. Solta: o ponto entra
+  // onde a cruz estava.
+  //
+  // ⚠ POR QUE TOQUE-E-SEGURE, e não "arrastar mira sempre": arrastar com um
+  //   dedo é ORBITAR, e sempre foi. Roubar esse gesto quebraria a navegação
+  //   de quem já usa. O toque simples continua funcionando igual — a lupa é
+  //   para quem precisa de precisão, e ela se anuncia sozinha.
+  // ============================================================
+  var LUPA_Z = 3.0, LUPA_D = 132, LUPA_ESPERA = 350;
+  var lupa = { on: false, x: 0, y: 0, timer: null, id: null, sn: null };
+  S.lupa = lupa;
+  var lupaEl = document.createElement('div');
+  lupaEl.setAttribute('data-bim', 'lupa');   // âncora do teste e do suporte
+  lupaEl.style.cssText = 'position:absolute;z-index:9;display:none;pointer-events:none;width:' + LUPA_D + 'px;height:' + LUPA_D + 'px;' +
+    'border-radius:50%;overflow:hidden;border:3px solid rgba(34,197,94,.95);box-shadow:0 6px 22px rgba(0,0,0,.45);transform:translate(-50%,-50%);background:#0f2740';
+  var lupaCv = document.createElement('canvas');
+  lupaCv.width = LUPA_D; lupaCv.height = LUPA_D;
+  lupaCv.style.cssText = 'width:100%;height:100%;display:block';
+  lupaEl.appendChild(lupaCv);
+  host.appendChild(lupaEl);
+  S.lupaEl = lupaEl;
+  var lupaCtx = lupaCv.getContext('2d');
+
+  function lupaDesenhar() {
+    if (!lupa.on || !lupaCtx) return;
+    var rc = canvasEl.getBoundingClientRect();
+    var dpr = (canvasEl.width / Math.max(1, rc.width)) || 1;   // canvas em pixels do aparelho
+    var cx = (lupa.x - rc.left) * dpr, cy = (lupa.y - rc.top) * dpr;
+    var lado = (LUPA_D / LUPA_Z) * dpr;
+    lupaCtx.clearRect(0, 0, LUPA_D, LUPA_D);
+    try {
+      lupaCtx.drawImage(canvasEl, cx - lado / 2, cy - lado / 2, lado, lado, 0, 0, LUPA_D, LUPA_D);
+    } catch (e) { return; }   // buffer indisponível: melhor lupa vazia que exceção no laço de render
+    var m = LUPA_D / 2;
+    /* a cruz da mira: fina, para não esconder o que se está mirando */
+    lupaCtx.strokeStyle = 'rgba(255,255,255,.85)'; lupaCtx.lineWidth = 1;
+    lupaCtx.beginPath();
+    lupaCtx.moveTo(m - 16, m); lupaCtx.lineTo(m - 4, m);
+    lupaCtx.moveTo(m + 4, m); lupaCtx.lineTo(m + 16, m);
+    lupaCtx.moveTo(m, m - 16); lupaCtx.lineTo(m, m - 4);
+    lupaCtx.moveTo(m, m + 4); lupaCtx.lineTo(m, m + 16);
+    lupaCtx.stroke();
+    /* e ONDE vai agarrar: o mesmo código de cor do marcador, dentro da lupa */
+    if (lupa.sn && lupa.sn.tipo) {
+      var vis = SNAP_VIS[lupa.sn.tipo] || { cor: '#22c55e', rot: '' };
+      var q = lupa.sn.p.clone().project(camera);
+      var sx = (q.x + 1) / 2 * rc.width + rc.left, sy = (1 - q.y) / 2 * rc.height + rc.top;
+      var lx = m + (sx - lupa.x) * LUPA_Z, ly = m + (sy - lupa.y) * LUPA_Z;
+      lupaCtx.strokeStyle = vis.cor; lupaCtx.lineWidth = 2;
+      if (lupa.sn.tipo === 'meio') { lupaCtx.beginPath(); lupaCtx.arc(lx, ly, 7, 0, 6.284); lupaCtx.stroke(); }
+      else { lupaCtx.strokeRect(lx - 6, ly - 6, 12, 12); }
+      lupaCtx.fillStyle = vis.cor; lupaCtx.font = 'bold 11px Arial'; lupaCtx.textAlign = 'center';
+      lupaCtx.fillText(vis.rot, m, LUPA_D - 9);
+    }
+  }
+  S._tickPos.push(function () { lupaDesenhar(); });
+
+  function lupaPosicionar() {
+    var hr = ((S && S.host) || host).getBoundingClientRect();   // host VIVO (idem)
+    /* ACIMA do dedo — e desce para baixo quando não cabe em cima, senão a
+       lupa sairia da tela justamente perto da borda de cima, que é onde mais
+       se mede (topo de parede, laje). */
+    var offset = LUPA_D * 0.78;
+    var y = lupa.y - hr.top - offset;
+    if (y - LUPA_D / 2 < 4) y = lupa.y - hr.top + offset;
+    lupaEl.style.left = (lupa.x - hr.left) + 'px';
+    lupaEl.style.top = y + 'px';
+  }
+  function lupaAtualizarSnap() {
+    var hit = raycastEm(lupa.x, lupa.y);
+    if (!hit) { lupa.sn = null; esconderSnapMarca(); return; }
+    /* ⚠ O MESMO RAIO QUE A SOLTURA VAI USAR. Aqui era 26 e a soltura sintetiza um
+       evento `pointerType:'touch'`, que cai em `raioToque` = 30. Dois raios = a lupa
+       podia MOSTRAR um ponto e a cota GRAVAR outro — exatamente a queixa que esta
+       versão veio consertar, reintroduzida dentro do próprio conserto. */
+    var sn = aplicarSnap(hit, raioToque({ pointerType: 'touch' }));
+    lupa.sn = sn && sn.tipo ? { p: sn.p.clone(), tipo: sn.tipo } : { p: hit.point.clone(), tipo: null };
+    mostrarSnapMarca(sn);   /* mesmo sem tipo: os traços finos dos notáveis continuam úteis, e o aviso de elemento pesado precisa aparecer TAMBÉM dentro da lupa */
+  }
+  function lupaAbrir(x, y, pid) {
+    lupa.on = true; lupa.x = x; lupa.y = y; lupa.id = pid;
+    lupaEl.style.display = 'block';
+    if (orbit) orbit.enabled = false;        // enquanto mira, a câmera fica parada
+    lupaPosicionar(); lupaAtualizarSnap();
+    S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Arraste para ajustar a mira. Solte para marcar o ponto.');
+  }
+  function lupaFechar(semDica) {
+    if (!lupa.on) return;
+    lupa.on = false; lupa.id = null; lupa.sn = null;
+    lupaEl.style.display = 'none';
+    if (orbit) orbit.enabled = true;
+    /* ⚠ e a dica da lupa NÃO pode ficar no ar. "Arraste para ajustar a mira,
+       solte para marcar o ponto" mandando fazer uma coisa que já não é possível
+       é pior que balão nenhum — principalmente quando a lupa fechou sozinha
+       (segundo dedo, cancelamento do sistema). Quem soltou um PONTO passa
+       `semDica`: ali a próxima mensagem já vem do fluxo da medição. */
+    if (!semDica && S._hint) S._hint('');
+  }
+  S._lupaFechar = lupaFechar;
+  S._ferramentaClique = ferramentaClique;   // o hook de estado precisa dizer POR QUE a lupa nao abriu
+  function lupaCancelarEspera() { if (lupa.timer) { clearTimeout(lupa.timer); lupa.timer = null; } }
+
+  /* Os três ganchos que o `pointerdown/move/up` lá de cima chama. Ficam aqui,
+     junto do resto da lupa, porque o handler nasce ANTES deste bloco (o
+     `canvasEl` é criado no começo) e chamá-los por `S._` é o que a casa já faz
+     para o preview da parede. */
+  S._lupaAgendar = function (e) {
+    lupaCancelarEspera();
+    var x = e.clientX, y = e.clientY, pid = e.pointerId;
+    lupa.timer = setTimeout(function () {
+      lupa.timer = null;
+      if (!S || !S.alive || !ferramentaClique()) return;
+      if (!medir.down) return;                    // já soltou: foi toque simples
+      lupaAbrir(x, y, pid);
+    }, LUPA_ESPERA);
+  };
+  var _lupaSnapT = 0;
+  S._lupaMover = function (e) {
+    if (lupa.on) {
+      if (lupa.id != null && e.pointerId !== lupa.id) return;
+      lupa.x = e.clientX; lupa.y = e.clientY;
+      lupaPosicionar();
+      /* ⚠ O MESMO estrangulamento do hover do mouse (60 ms). A mira roda um
+         raycast + varredura completa de snap; sem teto, cada evento de dedo
+         arrastando pagava tudo de novo, e o dedo emite muito mais eventos que
+         o mouse justamente no aparelho mais fraco. A posição da lupa segue o
+         dedo a cada evento (é barato); só o snap espera. */
+      var _tl = performance.now();
+      if (_tl - _lupaSnapT >= 60) { _lupaSnapT = _tl; lupaAtualizarSnap(); }
+      e.preventDefault();                          // não deixa virar rolagem da página
+      return true;                                 // avisa o handler: este movimento é MIRA, não órbita
+    }
+    /* ainda esperando o tempo do toque-e-segure: mexeu muito = quis orbitar */
+    if (lupa.timer && medir.down) {
+      var dx = e.clientX - medir.down.x, dy = e.clientY - medir.down.y;
+      if (dx * dx + dy * dy > 144) lupaCancelarEspera();   // >12px
+    }
+    return false;
+  };
+  /* Devolve o ponto mirado (e fecha a lupa), ou null se a lupa não estava
+     aberta. Quem chama decide o que fazer com o ponto. */
+  S._lupaSoltar = function (e) {
+    lupaCancelarEspera();
+    if (!lupa.on) return null;
+    if (lupa.id != null && e && e.pointerId !== lupa.id) return null;
+    var alvo = { x: lupa.x, y: lupa.y, sn: lupa.sn };
+    lupaFechar(true);   // o fluxo da medição escreve a próxima dica
+    return alvo;
+  };
   // cache de arestas por geometria (espaço LOCAL); WeakMap → some junto com a geometria no GC
   var arestasCache = new WeakMap();
   function arestasDe(geo) {
@@ -1737,15 +2168,242 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return c;
   }
   S._arestasDe = arestasDe; // reusado pelo corte técnico (linhas pretas do desenho)
+
+  // ============================================================
+  // ⊕ CENTRO — "onde começa o tubo"
+  //
+  // Identificar onde COMEÇA um tubo não era possível. Numa parede o vértice
+  // resolve — o canto É um vértice da malha.
+  // Para o TUBO não resolvia, e não era imprecisão: o ponto que o projetista
+  // quer (o eixo do tubo, no topo da ponta) SIMPLESMENTE NÃO EXISTIA na lista
+  // de candidatos. A boca do tubo é um anel de arestas; havia vértice em toda
+  // a volta do anel e nenhum no meio dele. Clicar "no começo do tubo" agarrava
+  // um vértice qualquer da borda — a tal «mostrando em pontos que não é».
+  //
+  // O centro do anel não é invenção: é o baricentro de uma laçada FECHADA e
+  // PLANA de arestas reais da malha. Sem laçada fechada, nenhum centro é
+  // oferecido — a régua da casa vale aqui igual: não existe ponto, não
+  // aparece ponto.
+  //
+  // Custo: calculado UMA vez por geometria e guardado no WeakMap (some junto
+  // com a geometria no GC), como as arestas. Por quadro é só testar N pontos.
+  // ============================================================
+  var centrosCache = new WeakMap();
+  var CENTRO_MIN_VERT = 6;    // 4 seria a face retangular de uma parede: isso é "meio de face", não centro
+  var CENTRO_MAX = 64;        // teto de SAÍDA por geometria
+  /* tetos de TRABALHO — os que de fato impedem o travamento (ver a nota grande
+     em `_acharAneis`). CENTRO_MAX só limita a saída, e no pior caso a saída é
+     vazia: era exatamente onde a busca ficava solta. */
+  var CENTRO_MAX_ARESTAS = 12000;   // segmentos do EdgesGeometry: acima disto nem monta o grafo
+  var CENTRO_MAX_NOS = 6000;       // nós distintos (100 tubos mesclados cabem; terreno nao)
+  var CENTRO_MAX_VOLTA = 160;      // lados de um anel: 160 já é absurdo em modelo de obra
+  var CENTRO_ORCAMENTO = 15000;    // passos totais: com estes tres, o PIOR terreno medido custa 32 ms
+  function centrosDe(geo) {
+    var c = centrosCache.get(geo);
+    if (c) return c;
+    c = [];
+    try {
+      var np = (geo.attributes && geo.attributes.position) ? geo.attributes.position.count : 0;
+      if (np <= SNAP_MAX_VERT) c = _acharAneis(arestasDe(geo));
+    } catch (_) { c = []; }
+    centrosCache.set(geo, c);
+    return c;
+  }
+  /* Valida a laçada e devolve o baricentro, ou null. É a régua que impede o
+     ⊕ centro de virar chute: sem ela, QUALQUER ciclo fechado do modelo viraria
+     um "centro" — inclusive a laçada torta que passa pelas duas bocas do tubo.
+     Plana (4 mm), com raio de verdade, e com nós suficientes para ser boca e
+     não face de parede. Devolve {x,y,z} puro: quem chama embrulha no Vector3. */
+  function _aneiCentro(nos, laco) {
+    if (!laco || laco.length < CENTRO_MIN_VERT) return null;
+    var cx = 0, cy = 0, cz = 0, j;
+    for (j = 0; j < laco.length; j++) { var pj = nos[laco[j]]; cx += pj.x; cy += pj.y; cz += pj.z; }
+    cx /= laco.length; cy /= laco.length; cz /= laco.length;
+    var p0 = nos[laco[0]], p1 = nos[laco[Math.floor(laco.length / 3)]], p2 = nos[laco[Math.floor(2 * laco.length / 3)]];
+    var ax = p1.x - p0.x, ay = p1.y - p0.y, az = p1.z - p0.z;
+    var bx = p2.x - p0.x, by = p2.y - p0.y, bz = p2.z - p0.z;
+    var nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+    var mn = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    if (!mn) return null;
+    nx /= mn; ny /= mn; nz /= mn;
+    var raioMed = 0, raios = [];
+    for (j = 0; j < laco.length; j++) {
+      var q = nos[laco[j]];
+      if (Math.abs((q.x - cx) * nx + (q.y - cy) * ny + (q.z - cz) * nz) > 0.004) return null;  // 4 mm de planeza
+      var r = Math.sqrt((q.x - cx) * (q.x - cx) + (q.y - cy) * (q.y - cy) + (q.z - cz) * (q.z - cz));
+      raios.push(r); raioMed += r;
+    }
+    raioMed /= laco.length;
+    if (raioMed < 0.002) return null;   // anel degenerado (todos os pontos no mesmo lugar)
+    /* ⚠ TEM DE SER REDONDO, não só fechado e plano.
+     *
+     * O contorno da face de uma laje em L (ou em U) também é uma laçada fechada,
+     * plana e com 6+ vértices — e o baricentro dela cai NO VAZIO, fora da laje.
+     * O snap ofereceria, com peso alto, um ponto que não existe em lugar nenhum
+     * do modelo. É exatamente a invenção de ponto que a casa não faz, e seria
+     * pior do que o defeito que este recurso veio consertar: ali o ponto estava
+     * na borda errada, aqui estaria no ar.
+     *
+     * Num círculo todo vértice fica à MESMA distância do centro. Num L, não.
+     * 25% de variação aceita polígono regular, tubo achatado e furo oval leve;
+     * recusa contorno de laje, que varia muito mais. */
+    var desvio = 0;
+    for (j = 0; j < raios.length; j++) desvio = Math.max(desvio, Math.abs(raios[j] - raioMed));
+    if (desvio / raioMed > 0.25) return null;
+    return { x: cx, y: cy, z: cz };
+  }
+  /* Uma tentativa de laçada: sai de `ini` pelo vizinho `primeiro` e segue
+     sempre o vizinho que MELHOR CONTINUA a direção atual (a longitudinal de um
+     tubo sai a ~90° e nunca é a melhor continuação). Devolve a lista de nós se
+     fechou, ou null. */
+  function _andarLaco(nos, ini, primeiro, vistos, orc) {
+    var laco = [ini, primeiro], noLaco = {}, ant = ini, atual = primeiro, fechou = false, k;
+    if (vistos[primeiro]) return null;
+    noLaco[ini] = 1; noLaco[primeiro] = 1;
+    /* ⚠ CENTRO_MAX_VOLTA, não 512. Uma boca de tubo tem dezenas de lados; um anel
+       de 128 lados já é absurdo em modelo de obra. O teto alto só servia para
+       gastar trabalho antes de desistir numa malha que não tem anel nenhum. */
+    for (k = 0; k < CENTRO_MAX_VOLTA; k++) {
+      if (orc && --orc.passos < 0) return null;   // orçamento estourado: desiste sem travar
+      var n = nos[atual], prox = null, melhorCos = -2;
+      for (var vi = 0; vi < n.viz.length; vi++) {
+        var cand = n.viz[vi];
+        if (cand === ant) continue;
+        if (cand === ini && laco.length >= CENTRO_MIN_VERT) { fechou = true; break; }
+        /* ⚠ MAPA, não `laco.indexOf`. O indexOf é O(k) DENTRO do passo, e com ele
+           uma caminhada de k passos custa k². Num terreno era o segundo fator do
+           travamento de dezenas de segundos. */
+        if (vistos[cand] || noLaco[cand]) continue;
+        var a = nos[ant], b = n, cc = nos[cand];
+        var u1 = b.x - a.x, u2 = b.y - a.y, u3 = b.z - a.z;
+        var v1 = cc.x - b.x, v2 = cc.y - b.y, v3 = cc.z - b.z;
+        var mu = Math.sqrt(u1 * u1 + u2 * u2 + u3 * u3), mv = Math.sqrt(v1 * v1 + v2 * v2 + v3 * v3);
+        var cos = (mu && mv) ? (u1 * v1 + u2 * v2 + u3 * v3) / (mu * mv) : -2;
+        if (cos > melhorCos) { melhorCos = cos; prox = cand; }
+      }
+      if (fechou) return laco;
+      if (!prox) return null;
+      laco.push(prox); noLaco[prox] = 1; ant = atual; atual = prox;
+    }
+    return null;
+  }
+  /* Recebe o array plano de arestas (x1,y1,z1,x2,y2,z2, ...) em espaço LOCAL e
+     devolve os baricentros das laçadas fechadas e planas. */
+  function _acharAneis(arr) {
+    if (!arr || arr.length < CENTRO_MIN_VERT * 6) return [];
+    /* ⚠⚠ O TETO QUE FALTAVA, E QUE QUASE FOI PUBLICADO SEM.
+     *
+     * Esta busca roda DENTRO do hover do snap, síncrona. Quando a malha não tem
+     * anel nenhum, nenhum nó entra em `vistos`, o laço externo tenta TODOS os
+     * nós, cada um com todos os vizinhos como primeira saída — e o custo cresce
+     * ~quadrático. Medido no fonte de produção contra um terreno triangulado:
+     *
+     *     441 vértices →  0,3 s        3.721 vértices → 24 s
+     *   1.681 vértices →  3,7 s        6.561 vértices → 59 s
+     *
+     * Isso é a ABA INTEIRA travada — o OrçaPRO é uma página só: Gestão,
+     * Orçamento e Financeiro param junto, sem barra e sem Esc.
+     *
+     * ⚠ E `SNAP_MAX_VERT` (90.000) NÃO PROTEGE: ele conta VÉRTICES da malha, e o
+     *   custo daqui é o número de ARESTAS que sobram do EdgesGeometry num grafo
+     *   CONECTADO. O travamento começa 200× abaixo daquele limite. Guarda que
+     *   mede a grandeza errada é guarda que não existe.
+     *
+     * Os anéis que interessam são PEQUENOS e LOCAIS: uma boca de tubo tem
+     * dezenas de nós, um flange com furos tem centenas. Terreno, telhado
+     * facetado e família de alto poli não têm boca redonda nenhuma — desistir
+     * neles não perde recurso, e é o que estes tetos fazem, barato e cedo. */
+    if (arr.length / 6 > CENTRO_MAX_ARESTAS) return [];
+    var nos = {}, ordem = [], i, k;
+    function chave(x, y, z) { return (Math.round(x * 1e4) / 1e4) + '|' + (Math.round(y * 1e4) / 1e4) + '|' + (Math.round(z * 1e4) / 1e4); }
+    function no(x, y, z) {
+      var ch = chave(x, y, z);
+      if (!nos[ch]) { nos[ch] = { x: x, y: y, z: z, viz: [] }; ordem.push(ch); }
+      return ch;
+    }
+    for (i = 0; i + 5 < arr.length; i += 6) {
+      var ca = no(arr[i], arr[i + 1], arr[i + 2]), cb = no(arr[i + 3], arr[i + 4], arr[i + 5]);
+      if (ca === cb) continue;
+      if (nos[ca].viz.indexOf(cb) < 0) nos[ca].viz.push(cb);
+      if (nos[cb].viz.indexOf(ca) < 0) nos[cb].viz.push(ca);
+    }
+    /* ⚠ SEGUIR A CURVA, não só "grau 2". Num tubo bem facetado o EdgesGeometry
+       descarta as arestas longitudinais (ângulo < 25°) e cada vértice do anel
+       fica com grau 2 — fácil. Num tubo GROSSEIRO (12 lados, 30° entre faces)
+       as longitudinais entram e o mesmo vértice vira grau 3. Exigir grau 2
+       faria o centro funcionar no tubo fino e sumir no grosso, que é o pior
+       dos mundos: o recurso existe mas o usuário não confia nele. Por isso a
+       caminhada escolhe o vizinho que MELHOR CONTINUA a direção atual — a
+       longitudinal sai a ~90° e nunca é a melhor continuação. */
+    /* ⚠ O PRIMEIRO PASSO NÃO PODE SER ARBITRÁRIO — e era, e isso REPROVOU na
+       geometria de verdade depois de passar no teste de bancada. Num tubo de
+       12 lados o vértice do anel tem TRÊS vizinhos: os dois do anel e a
+       longitudinal que desce. Como no primeiro passo ainda não há direção
+       anterior para comparar, a escolha caía no primeiro da lista — se fosse a
+       longitudinal, a caminhada descia para a outra boca e nunca fechava. O
+       tubo de 16 e 32 lados funcionava (lá a longitudinal nem entra no
+       EdgesGeometry), o de 8 e 12 não: o recurso "às vezes". Agora cada
+       vizinho é TENTADO como primeiro passo, e vale o que fechar. */
+    if (ordem.length > CENTRO_MAX_NOS) return [];
+    var vistos = {}, saida = [], orc = { passos: CENTRO_ORCAMENTO };
+    for (var oi = 0; oi < ordem.length && saida.length < CENTRO_MAX; oi++) {
+      if (orc.passos < 0) break;              // orçamento estourado: entrega o que achou
+      var ini = ordem[oi];
+      if (vistos[ini] || nos[ini].viz.length < 2) continue;
+      /* ⚠ E NÃO BASTA "a primeira que fechar". Saindo pela longitudinal, a
+         caminhada desce até a outra boca, dá a volta e VOLTA — fecha uma
+         laçada de 14 nós que passa pelos dois anéis. Ela é fechada e é
+         inválida (não é plana), e aceitá-la fazia o nó inteiro ser descartado
+         com um `continue`, sem nunca tentar as outras saídas: o tubo de 8 e 12
+         lados ficava sem centro. Vale a MAIS CURTA que passa na validação — o
+         anel é sempre o ciclo mais apertado que sai do vértice. */
+      var laco = null;
+      for (var si = 0; si < nos[ini].viz.length; si++) {
+        var tent = _andarLaco(nos, ini, nos[ini].viz[si], vistos, orc);
+        if (!tent || !_aneiCentro(nos, tent)) continue;
+        if (!laco || tent.length < laco.length) laco = tent;
+      }
+      /* ⚠ NÓ QUE FALHOU NÃO SE TENTA DE NOVO — e este era o fator quadrático.
+         Se NENHUMA saída de `ini` fecha um anel válido, `ini` não está em anel
+         que esta caminhada ache; marcá-lo custa uma entrada e poupa tentar de
+         novo a partir de cada vizinho depois. Antes, `vistos` só era preenchido
+         em caso de SUCESSO — ou seja, na malha sem anel nenhum (o pior caso)
+         ele ficava vazio e todo nó era tentado do zero. */
+      if (!laco) { vistos[ini] = 1; continue; }
+      var ctr = _aneiCentro(nos, laco);
+      if (!ctr) continue;
+      for (var j = 0; j < laco.length; j++) vistos[laco[j]] = 1;
+      saida.push(new THREE.Vector3(ctr.x, ctr.y, ctr.z));
+    }
+    return saida;
+  }
+  S._acharAneis = _acharAneis;   // hook de teste: a laçada é a parte que erra sozinha
   // scratches DISTINTOS: _snP é EXCLUSIVO do px() (project() muta in-place) — nunca pode ser o mesmo
   // vetor que carrega um candidato (senão o ponto snapado sai em NDC, não em metros). _snM/_snCl
   // são reusados nos loops (o candidato aceito é clonado dentro de testar()).
-  var _snA = new THREE.Vector3(), _snB = new THREE.Vector3(), _snM = new THREE.Vector3(), _snCl = new THREE.Vector3(), _snP = new THREE.Vector3(), _snL = new THREE.Line3();
+  var _snA = new THREE.Vector3(), _snB = new THREE.Vector3(), _snM = new THREE.Vector3(), _snCl = new THREE.Vector3(), _snP = new THREE.Vector3(), _snCt = new THREE.Vector3(), _snL = new THREE.Line3();
   var SNAP_MAX_VERT = 90000; // malha densa (terreno/mobiliário) trava o hover ao gerar EdgesGeometry -> pula snap
   // PESOS de desempate (achado do usuário: prioridade ABSOLUTA fazia um vértice a 13px "roubar"
   // de uma aresta a 2px do cursor — o snap agarrava LONGE de onde se clicava). Agora ganha o
   // candidato mais PRÓXIMO em distância efetiva; o peso só desempata tipos ~equidistantes.
-  var SNAP_PESO = { intersecao: 1.5, vertice: 1.35, meio: 1.15, aresta: 1.0 };
+  var SNAP_PESO = { intersecao: 1.5, centro: 1.4, vertice: 1.35, meio: 1.15, aresta: 1.0 };
+  /* ⚠ O TETO DO DESEMPATE — e é MENOR do que parece, então segue a conta.
+   *
+   * O peso é uma RAZÃO: um candidato de peso P vence quando `d/P` é o menor,
+   * logo o mais que ele pode ganhar estando ATRÁS é `raio - raio/P`.
+   *   mouse (raio 14): vértice rouba no máximo 3,6 px · interseção 4,7 px
+   *   toque (raio 30): vértice rouba até     7,8 px · interseção 10,0 px
+   *
+   * Ou seja: NO MOUSE o peso já se auto-limita, e esta folga praticamente não
+   * dispara. A conta acima diz que ela NÃO é o conserto do lado do mouse — quem
+   * resolve ali são os outros três: o ⊕ centro que não existia, os 3 objetos do
+   * raio e o aviso de peça pesada. Fica registrado para ninguém "consertar"
+   * de novo por aqui.
+   *
+   * NO TOQUE ela vale: 10 px de roubo com o dedo é exatamente «mostrando em
+   * pontos que não é», e a folga corta isso para 7,5 px. O conserto de fato do
+   * toque, porém, é a lupa — ver antes de soltar. */
+  function snapFolga(raio) { return Math.max(6, raio * 0.25); }
   // pontos mais próximos entre dois segmentos 3D (Ericson) — devolve {d, p} (p = ponto médio do par)
   function segSeg3D(a1, a2, b1, b2) {
     var d1x = a2.x - a1.x, d1y = a2.y - a1.y, d1z = a2.z - a1.z;
@@ -1774,22 +2432,35 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!snap.on || !hit || !hit.object || !hit.object.geometry) return { p: hit.point, tipo: null };
     var raio = raioPx || snap.raio, rc = canvasEl.getBoundingClientRect();
     function px(v) { var q = _snP.copy(v).project(camera); return { x: (q.x + 1) / 2 * rc.width, y: (1 - q.y) / 2 * rc.height }; }
-    var alvoPx = px(hit.point), melhor = null;
+    var alvoPx = px(hit.point), melhor = null, maisPerto = null, notaveis = [];
     function testar(v, tipo) {
       var p2 = px(v), dx = p2.x - alvoPx.x, dy = p2.y - alvoPx.y, d = Math.sqrt(dx * dx + dy * dy);
       if (d > raio) return;
       if (foraDoClip(v)) return; // vértice/aresta do lado CLIPADO (invisível) do corte NÃO pode ser snapado -> cota errada
       var dEff = d / (SNAP_PESO[tipo] || 1);
       if (!melhor || dEff < melhor.dEff) melhor = { p: v.clone(), tipo: tipo, d: d, dEff: dEff };
+      if (!maisPerto || d < maisPerto.d) maisPerto = { p: v.clone(), tipo: tipo, d: d, dEff: dEff };
+      /* pontos notáveis à vista, para os traços finos do item 6 — só canto,
+         começo, meio e centro; aresta é linha inteira, não é um "ponto". */
+      if (tipo !== 'aresta' && notaveis.length < 24) notaveis.push({ v: v.clone(), tipo: tipo, d: d });
     }
     // arestas PRÓXIMAS do cursor (candidatas ao ✚ interseção) — dos até 2 objetos do raio
-    var proximas = [];
+    var proximas = [], pulouPesado = false;
     function varrerObjeto(obj) {
       if (!obj || !obj.geometry) return;
       var g = obj.geometry, np = (g.attributes && g.attributes.position) ? g.attributes.position.count : 0;
-      if (np > SNAP_MAX_VERT) return; // elemento pesado: sem snap nesse objeto
+      /* ⚠ elemento pesado: sem snap nesse objeto — e ANTES isso era um silêncio.
+         O marcador simplesmente não aparecia, e quem estava medindo concluía que
+         o snap "não pega direito" nesse pedaço do modelo. Falhar calado é o que
+         transforma um limite técnico legítimo em queixa de imprecisão. Agora a
+         marca diz por quê; inventar um ponto que não existe continua fora. */
+      if (np > SNAP_MAX_VERT) { if (obj === hit.object) pulouPesado = true; return; }   /* ⚠ só o objeto ATINGIDO. A bandeira era única para a chamada toda: bastava o terreno estar ATRÁS da parede para o marcador dizer "sem snap (peça pesada)" em cima de uma parede leve, que tinha snap perfeito. Aviso errado é pior que aviso nenhum. */
       var arr = arestasDe(g); if (!arr.length) return;
       var mw = obj.matrixWorld;
+      if (snap.c !== false) {
+        var ctr = centrosDe(g);
+        for (var ci = 0; ci < ctr.length; ci++) testar(_snCt.copy(ctr[ci]).applyMatrix4(mw), 'centro');
+      }
       for (var i = 0; i < arr.length; i += 6) {
         _snA.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(mw);
         _snB.set(arr[i + 3], arr[i + 4], arr[i + 5]).applyMatrix4(mw);
@@ -1805,8 +2476,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }
     }
     varrerObjeto(hit.object);
-    // 2º objeto do raio: o canto parede×viga vive na fronteira entre DOIS elementos
-    if (_ultimosHits.length > 1 && _ultimosHits[1].object !== hit.object) varrerObjeto(_ultimosHits[1].object);
+    // demais objetos do raio: o canto parede×viga vive na FRONTEIRA entre elementos
+    for (var oh = 1; oh < _ultimosHits.length; oh++) if (_ultimosHits[oh].object !== hit.object) varrerObjeto(_ultimosHits[oh].object);
     // ✚ INTERSEÇÃO REAL: pares de arestas próximas cujos pontos-mais-próximos em 3D distam < 1 cm
     // (cruzamento genuíno no espaço, não coincidência visual de projeção — nunca inventa ponto)
     if (snap.i !== false) {
@@ -1815,7 +2486,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (r3.d < 0.01) testar(r3.p, 'intersecao');
       }
     }
-    return melhor ? { p: melhor.p, tipo: melhor.tipo } : { p: hit.point, tipo: null };
+    /* A FOLGA: o tipo nobre só ganha se estiver perto. Um vértice a 27 px não
+       leva o clique de uma aresta a 20 px — era exatamente o "ponto que não é". */
+    if (melhor && maisPerto && melhor.tipo !== maisPerto.tipo && melhor.d > maisPerto.d + snapFolga(raio)) melhor = maisPerto;
+    return melhor
+      ? { p: melhor.p, tipo: melhor.tipo, notaveis: notaveis, pesado: pulouPesado }
+      : { p: hit.point, tipo: null, notaveis: notaveis, pesado: pulouPesado };
   }
   function raioToque(e) { return (e && e.pointerType === 'touch') ? 30 : snap.raio; } // dedo tem ~mais incerteza
 
@@ -5224,6 +5900,12 @@ var Voz = {
 
 window.BIM = {
   montar: montar,
+  /* ⚠ o canvas do WebGL NÃO redimensiona sozinho quando o layout muda por CSS
+   * (esconder a lateral, entrar no modo foco): só o evento `resize` da janela
+   * o acorda, e trocar de painel não dispara `resize`. Sem isto o modelo sai
+   * esticado e — pior para a trena — o clique cai alguns pixels fora do que a
+   * pessoa vê, porque a matriz de projeção continua a da largura antiga. */
+  redimensionar: function () { if (S && S._resize) S._resize(); },
   abrirArquivo: function (f) { if (S && S._abrirArquivo) S._abrirArquivo(f); },
   abrirBytes: function (ab, nome) { if (S && S._abrirBytes) S._abrirBytes(ab, nome); }, // v1.1.85 — RA/RV nuvem
   bytesModelos: function () { return (S && S._bytesModelos) ? S._bytesModelos() : []; },
@@ -5319,11 +6001,19 @@ window.BIM = {
   },
   snapConfig: function (cfg) { // {on?, v?, m?, a?} — liga/desliga tipos de snap
     if (!S || !S.snap) return { on: false };
-    ['on', 'v', 'm', 'a', 'i'].forEach(function (k) { if (cfg && cfg[k] != null) S.snap[k] = !!cfg[k]; });
-    try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i })); } catch (_) {}
-    return { on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i };
+    ['on', 'v', 'm', 'a', 'i', 'c'].forEach(function (k) { if (cfg && cfg[k] != null) S.snap[k] = !!cfg[k]; });
+    try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i, c: S.snap.c })); } catch (_) {}
+    return { on: S.snap.on, v: S.snap.v, m: S.snap.m, a: S.snap.a, i: S.snap.i, c: S.snap.c };
   },
   corteTecnico: function (o) { return (S && S._gerarCorteTec) ? S._gerarCorteTec(o || {}) : null; }, // {ax,az,bx,bz,escala,tipo,prof,inv} -> {url,w,h,escala}
+  /* hook de teste do ⊕ centro: o teste de bancada monta o anel à mão, mas quem
+     monta o anel de verdade é o EdgesGeometry do three em cima da malha do IFC.
+     Sem este gancho, a única prova possível seria "achei um centro no modelo",
+     que depende de o modelo ter tubo — e o de exemplo não tem. */
+  _aneisDe: function (arrArestas) { return (S && S._acharAneis) ? S._acharAneis(arrArestas) : null; },
+  /* hook de teste da lupa: sem ele, provar que ela abriu exige adivinhar por
+     pixel, e um falso negativo aí manda procurar defeito no lugar errado. */
+  _lupaEstado: function () { if (!S || !S.lupa) return null; var L = S.lupa; return { on: !!L.on, orbita: !!(S.orbit && S.orbit.enabled), x: L.x, y: L.y, id: L.id, esperando: !!L.timer, tipoSnap: L.sn && L.sn.tipo || null, mediDown: !!(S.medir && S.medir.down), ferramenta: !!(S._ferramentaClique && S._ferramentaClique()) }; },
   _snapAt: function (cx, cy) { if (!S || !S._raycastEm) return null; var h = S._raycastEm(cx, cy); if (!h) return null; var sn = S._aplicarSnapRef(h, S.snap ? S.snap.raio : 14); return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: snap num ponto de tela
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
@@ -5355,7 +6045,7 @@ window.BIM = {
   _xrSimPassos: function (mags) { return (S && S._xrSimPassos) ? S._xrSimPassos(mags) : 0; }, // hook de teste: conta passos numa sequência de |accel|
   _passSens: function (v) { return (S && S._passSensSet) ? S._passSensSet(v) : 1; }, // sensibilidade dos passos (persistida)
   _chaoSet: function () { if (!S || !S.scene) return null; var c = null; S.scene.children.forEach(function (o) { if (o.type === 'Mesh' && o.geometry && o.geometry.type === 'PlaneGeometry' && o.material && o.material.map && o.renderOrder === -1) c = o; }); return c ? { x: c.scale.x, y: c.position.y } : null; }, // sombra de contato
-  _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra — marcador de snap, rescale de cotas, reunião)
+  _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); for (var tp = 0; tp < (S._tickPos || []).length; tp++) { try { S._tickPos[tp](0.016); } catch (_) {} } return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra E _tickPos — sem _tickPos a lupa nunca desenha fora do navegador, e o teste passaria medindo nada — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste
   _ctecModal: function () { return (S && S.ctecModal) ? S.ctecModal : null; }, // hook de teste: elemento do modal do resultado
   get elementos() { return elementosVivos(); },
