@@ -51,11 +51,29 @@
     },
     /* Tenta o arquivo LOCAL e, se falhar (ausente/404/corrompido), cai no AO VIVO (VPS).
      * Garante o detalhamento em TODA região mesmo que o disco do cliente não tenha o analítico. */
+    /* ⚠ ACEITA VÁRIAS ALTERNATIVAS, EM ORDEM.
+     *
+     * Eram duas: local e "ao vivo". Com o analítico passando a levar a
+     * COMPETÊNCIA no nome (`sinapi-<UF>-<AAAA-MM>-analitico.json`), são quatro:
+     * o nome novo local, o nome novo no servidor, e depois os NOMES ANTIGOS —
+     * que instalação sem pacote completo ainda tem (o zip de ATUALIZAÇÃO não
+     * leva `data/`).
+     *
+     * A ordem importa: o arquivo com a competência certa vem SEMPRE antes do
+     * nome antigo, porque o antigo pode ser de outro mês. Quando só ele existe,
+     * quem avisa é o `_avisarAnaliticoDeOutroMes` do app. */
     _fetchJson: function (url, urlLive) {
       var self = this;
-      var p = url ? this._fetchUma(url) : Promise.reject(new Error("sem url local"));
-      if (urlLive && urlLive !== url) {
-        p = p.catch(function () { return self._fetchUma(urlLive); });
+      var alts = [];
+      function juntar(u) { if (u && alts.indexOf(u) < 0) alts.push(u); }
+      if (Array.isArray(url)) url.forEach(juntar); else juntar(url);
+      if (Array.isArray(urlLive)) urlLive.forEach(juntar); else juntar(urlLive);
+      if (!alts.length) return Promise.reject(new Error("sem url"));
+      var p = this._fetchUma(alts[0]);
+      for (var i = 1; i < alts.length; i++) {
+        p = (function (prox, antes) {
+          return antes.catch(function () { return self._fetchUma(prox); });
+        })(alts[i], p);
       }
       return p;
     },

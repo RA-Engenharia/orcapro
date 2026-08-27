@@ -1742,19 +1742,105 @@
     // URLs do analítico da UF ativa: {local} no disco + {live} no VPS (fallback garantido).
     // O analítico de TODA UF fica hospedado em CONFIG.licencaServer/analitico/ — assim o
     // detalhamento nunca some por falta do arquivo local (instalação antiga, disco, competência).
+    /* ===== O ANALÍTICO TEM COMPETÊNCIA — e o nome dele passou a dizer qual =====
+     *
+     * Era UM por UF, `sinapi-<UF>-analitico.json`, sobrescrito a cada
+     * atualização. Como a atualização NÃO apaga o sintético anterior, a
+     * instalação acumulava PREÇO de vários meses e UM analítico só — o do mês
+     * instalado. Reabrir orçamento antigo (que troca a base de preço para a
+     * competência que o documento declara) usava preço de um mês com insumo de
+     * outro, calado. E o analítico é a fonte oficial de custo de ~2.000 insumos
+     * por UF: reparte MO/MAT/EQ e alimenta composição própria.
+     *
+     * Agora o nome carrega a competência. O antigo continua valendo como o
+     * analítico do mês EMBARCADO — e só dele: instalação que ainda não recebeu
+     * pacote completo tem só o nome velho (o zip de ATUALIZAÇÃO não leva data/). */
+    _nomeAnalitico: function (uf, comp) {
+      uf = String(uf || "").toUpperCase();
+      comp = String(comp || "").trim();
+      if (!uf) return null;
+      return comp ? ("sinapi-" + uf + "-" + comp + "-analitico.json") : ("sinapi-" + uf + "-analitico.json");
+    },
     _analiticoUrls: function () {
       var uf = String(this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
-      var local = this._analiticoArquivo || (uf ? "data/sinapi-" + uf + "-analitico.json" : null);
-      var live = (uf && typeof CONFIG !== "undefined" && CONFIG.licencaServer)
-        ? String(CONFIG.licencaServer).replace(/\/$/, "") + "/analitico/sinapi-" + uf + "-analitico.json"
-        : null;
-      return { local: local, live: live };
+      var comp = "";
+      try { comp = String((typeof Sinapi !== "undefined" && Sinapi.competencia) || "").trim(); } catch (e) {}
+      var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+      /* ⚠⚠ A COMPETÊNCIA VEM PRIMEIRO — e `_analiticoArquivo` DEPOIS, não antes.
+       *
+       * Este campo é fixado em CINCO lugares do boot, quase todos com o nome
+       * antigo (`data/sinapi-<UF>-analitico.json`). Como a linha começava com
+       * `this._analiticoArquivo || ...`, ele vencia sempre e o nome por
+       * competência nunca era usado: a mudança toda ficava inerte, do mesmo
+       * jeito que o campo `prefs.empresa` que ninguém gravava.
+       *
+       * Agora ele entra como ALTERNATIVA, depois do nome com competência e
+       * antes do nome antigo — preservando inteiro o que o boot decidiu
+       * (inclusive o desvio para o servidor quando a base é mais nova que a
+       * embarcada), só que como plano B. */
+      var local = uf ? ("data/" + this._nomeAnalitico(uf, comp)) : null;
+      var live = (uf && srv) ? (srv + "/analitico/" + this._nomeAnalitico(uf, comp)) : null;
+      var alt = [];
+      /* ⚠ O ARQUIVO LOCAL DE NOME ANTIGO VEM ANTES DO SERVIDOR — mas só quando
+       * ele é do mês certo.
+       *
+       * Hoje os 38 clientes têm SO o nome antigo em disco (o zip de atualização
+       * não leva `data/`). Sem esta linha, todos eles passariam a buscar o
+       * analítico no VPS a cada carga — 18 MB por UF, de graça, trocando um
+       * arquivo local instantâneo por rede. O nome antigo pertence à competência
+       * EMBARCADA (a do manifesto): quando é dela que se trata, ele é o mesmo
+       * arquivo, com outro nome, e vale primeiro.
+       *
+       * Quando a competência carregada NÃO é a embarcada, ele fica para depois do
+       * servidor — ali o servidor tem o mês certo e o local não. */
+      var embarcada = "";
+      try {
+        var estE = (this._estados || []).filter(function (e) { return String(e.uf).toUpperCase() === uf; })[0];
+        embarcada = String((estE && estE.competencia) || "").trim();
+      } catch (eE) {}
+      var legadoLocal = uf ? ("data/" + this._nomeAnalitico(uf, "")) : null;
+      var mesmoMes = !!(comp && embarcada && comp === embarcada);
+      /* ORDEM FINAL, e ela é a coisa toda:
+       *   1. local com a competência   (certo e rápido)
+       *   2. local de nome ANTIGO, se for do mesmo mês   (o mesmo arquivo, rápido)
+       *   3. o que o boot decidiu       (preserva o desvio para o servidor)
+       *   4. servidor com a competência (certo, mas pela rede)
+       *   5. local de nome antigo, mês diferente  (último recurso; o aviso cobre)
+       *   6. servidor de nome antigo    (último recurso)
+       * `alts` é a lista INTEIRA, na ordem — quem carrega passa ela direto. */
+      if (local) alt.push(local);
+      if (mesmoMes) {
+        /* mês igual ao do pacote: o arquivo local de nome antigo É o certo —
+           mesmo conteúdo, outro nome. Vem antes da rede. */
+        if (legadoLocal) alt.push(legadoLocal);
+        if (this._analiticoArquivo) alt.push(this._analiticoArquivo);
+      }
+      if (live) alt.push(live);
+      if (!mesmoMes) {
+        /* mês diferente: o de nome antigo é de OUTRA competência. Fica depois do
+           servidor, que tem o mês certo — e só vale como último recurso, com o
+           `_avisarAnaliticoDeOutroMes` dizendo ao usuário o que aconteceu.
+           `_analiticoArquivo` desce junto: na maioria dos caminhos do boot ele
+           É o nome antigo, e deixá-lo antes faria o mês errado vencer o certo. */
+        if (this._analiticoArquivo) alt.push(this._analiticoArquivo);
+        if (legadoLocal) alt.push(legadoLocal);
+      }
+      if (uf && srv) alt.push(srv + "/analitico/" + this._nomeAnalitico(uf, ""));
+      /* `local`/`live` continuam existindo porque os chamadores testam
+         `if (!urls.local && !urls.live) return;` antes de carregar. */
+      return { local: local, live: live, alts: alt, localAlt: alt[0] || null, liveAlt: alt[alt.length - 1] || null };
     },
 
     // ---------- Base SINAPI (própria da empresa ou padrão) ----------
     _analiticoArquivo: null,   // caminho do analítico do estado ATIVO (data/sinapi-<UF>-analitico.json)
     _baseUf: null,             // UF da base SINAPI ativa
     _estados: null,            // manifesto data/estados.json: [{uf,arquivo,competencia,analitico}]
+    /* ⚠ MAPA SEPARADO, e não entradas a mais em `_estados`.
+     * `_estados` alimenta o SELETOR DE UF (js/orcwizard.js): uma entrada por
+     * item da lista. Acrescentar uma linha por competência faria "MG" aparecer
+     * duas vezes no seletor de estado — regressão à vista num lugar que não
+     * tem nada a ver com competência. As competências vivem aqui. */
+    _compsPorUf: null,         // { MG: ["2026-06","2026-05"], ... } — mais nova primeiro
     _ufReq: 0,                 // token monotônico: só a troca de estado mais recente comita
     _ufPendente: null,         // UF em carregamento (evita re-disparo do mesmo alvo)
 
@@ -1811,12 +1897,141 @@
     // Manifesto dos estados disponíveis no pacote (para o seletor "Brasil todo").
     _carregarEstados: function () {
       var self = this;
-      if (self._estados) return Promise.resolve(self._estados);
-      return fetch("data/estados.json")
+      /* ⚠ GUARDA A PROMESSA, não só o resultado. São CINCO lugares que chamam
+       * isto, e mais de um pode chamar no mesmo instante (boot + assistente).
+       * Guardando só `_estados`, a segunda chamada saia cedo assim que a
+       * PRIMEIRA gravasse a lista — antes de a descoberta de competências
+       * terminar — e recebia `_compsPorUf` ainda nulo. O seletor abriria com a
+       * competência do pacote e só, sem erro nenhum: exatamente o tipo de falha
+       * calada que este recurso veio consertar. */
+      if (self._promEstados) return self._promEstados;
+      if (self._estados && self._compsPorUf) return Promise.resolve(self._estados);
+      self._promEstados = fetch("data/estados.json")
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (j) { self._estados = (j && Array.isArray(j.estados)) ? j.estados : []; return self._estados; })
-        .catch(function () { self._estados = []; return self._estados; });
+        .then(function (j) { self._estados = (j && Array.isArray(j.estados)) ? j.estados : []; })
+        .catch(function () { self._estados = []; })
+        .then(function () { return self._descobrirCompetencias(); })
+        .then(function () { return self._estados; });
+      return self._promEstados;
     },
+    _promEstados: null,        // ver a nota em `_carregarEstados`
+
+    /* ===== TODAS AS COMPETÊNCIAS QUE ESTÃO NO DISCO =====
+     *
+     * O `estados.json` é escrito no empacotamento e lista UMA competência por
+     * UF: a do pacote. A atualização NÃO apaga a anterior — e não pode apagar,
+     * porque orçamento reabre na base que ele declara (`competenciaSinapi`);
+     * repricificar sozinho é impugnação em licitação e medição errada.
+     *
+     * Só que, sem esta descoberta, os arquivos das competências anteriores
+     * ficavam no disco SEM NINGUÉM SABER: ~79 MB por competência, invisíveis,
+     * e reabrir um orçamento antigo caía em "não deu para carregar a base".
+     * O motor já sabia carregar (`trocarBaseSinapi` deriva o arquivo da
+     * competência pedida) — faltava DESCOBRIR.
+     *
+     * Sem servidor local (PWA) o fetch falha e fica só o manifesto, como
+     * sempre foi. Nunca é erro: é informação a mais quando dá para ter. */
+    _descobrirCompetencias: function () {
+      var self = this;
+      var mapa = {};
+      function juntar(uf, comp) {
+        uf = String(uf || "").toUpperCase(); comp = String(comp || "").trim();
+        if (!uf || !comp) return;
+        if (!mapa[uf]) mapa[uf] = [];
+        if (mapa[uf].indexOf(comp) < 0) mapa[uf].push(comp);
+      }
+      /* a do manifesto é a EMBARCADA: o analítico de nome antigo pertence a ela */
+      var embarcada = {};
+      (self._estados || []).forEach(function (e) {
+        juntar(e.uf, e.competencia);
+        if (e.uf && e.competencia) embarcada[String(e.uf).toUpperCase()] = String(e.competencia).trim();
+      });
+      var temAnalitico = {}, legado = {};
+      function marcar(uf, comp) { temAnalitico[String(uf).toUpperCase() + "|" + String(comp).trim()] = 1; }
+      return fetch("__bases", { cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          if (!j) return;
+          if (Array.isArray(j.bases)) j.bases.forEach(function (b) { juntar(b.uf, b.competencia); });
+          if (Array.isArray(j.analiticos)) j.analiticos.forEach(function (a) { marcar(a.uf, a.competencia); });
+          if (Array.isArray(j.analiticoLegado)) j.analiticoLegado.forEach(function (uf) { legado[String(uf).toUpperCase()] = 1; });
+        })
+        .catch(function () { /* PWA/sem servidor: fica o manifesto */ })
+        .then(function () {
+          /* ⚠⚠ SÓ FICA A COMPETÊNCIA QUE DÁ PARA HONRAR.
+           *
+           * Ter o preço de um mês não basta: o ANALÍTICO daquele mês tem de
+           * existir também. Ele é a fonte oficial de custo de ~2.000 insumos por
+           * UF, reparte MO/MAT/EQ e alimenta composição própria. Oferecer uma
+           * competência sem o analítico dela entregaria PREÇO de um mês com
+           * INSUMO de outro, calado, num documento que vai para licitação.
+           *
+           * O analítico de nome ANTIGO (sem competência) conta — mas só para a
+           * competência EMBARCADA, que é de quem ele é. */
+          Object.keys(mapa).forEach(function (uf) {
+            mapa[uf] = mapa[uf].filter(function (c) {
+              if (temAnalitico[uf + "|" + c]) return true;
+              return !!(legado[uf] && embarcada[uf] === c);
+            });
+            mapa[uf].sort(function (a, b) { return a < b ? 1 : (a > b ? -1 : 0); });   // mais nova primeiro
+            if (!mapa[uf].length) delete mapa[uf];
+          });
+          self._compsPorUf = mapa;
+          return mapa;
+        });
+    },
+
+    /* Competências disponíveis para uma UF (mais nova primeiro). */
+    competenciasDaUf: function (uf) {
+      var m = this._compsPorUf || {};
+      return (m[String(uf || "").toUpperCase()] || []).slice();
+    },
+
+    /* ===== O ANALÍTICO PODE SER DE OUTRO MÊS — E ISSO PRECISA APARECER =====
+     *
+     * Há UM analítico por UF (`sinapi-<UF>-analitico.json`), sem competência no
+     * nome, sobrescrito a cada atualização — e o do VPS também. Quando a base
+     * de PREÇO carregada é de outra competência (reabrir orçamento antigo, que
+     * troca a base para a que o documento declara), o detalhamento continua o
+     * do mês embarcado. Não é detalhe: o analítico é a fonte oficial de custo de
+     * ~2.000 insumos por UF, reparte MO/MAT/EQ e alimenta composição própria.
+     *
+     * Isso JÁ acontecia, calado. O comentário do `aplicar()` sempre nomeou o
+     * risco — "senão o insumo é de um mês e o custo unitário é de outro" — mas a
+     * guarda de lá só cobre um sentido: base MAIS NOVA que o pacote. A base mais
+     * VELHA cai no arquivo local do mês errado.
+     *
+     * Consertar de verdade pede analítico POR COMPETÊNCIA (arquivo e rota com a
+     * competência no nome). Até lá, o mínimo honesto é dizer. Falhar calado num
+     * número que vai para licitação é o pior dos mundos. */
+    _avisarAnaliticoDeOutroMes: function () {
+      var self = this;
+      try {
+        if (typeof Analitico === "undefined" || typeof Sinapi === "undefined") return;
+        /* o análitico carrega sob demanda; espera ele existir para comparar */
+        setTimeout(function () {
+          try {
+            if (!Analitico.carregado || !Analitico.competencia || !Sinapi.competencia) return;
+            var norm = function (c) {
+              c = String(c || "").trim();
+              var m = /^(\d{2})\/(\d{4})$/.exec(c);
+              return m ? (m[2] + "-" + m[1]) : c;
+            };
+            if (norm(Analitico.competencia) === norm(Sinapi.competencia)) return;
+            var chave = norm(Sinapi.competencia) + "|" + norm(Analitico.competencia) + "|" + (self._baseUf || "");
+            if (self._avisoAnaliticoFeito === chave) return;   // uma vez por combinação
+            self._avisoAnaliticoFeito = chave;
+            if (typeof UI === "undefined" || !UI.toast) return;
+            var fmt = function (c) { return (typeof BasesCat !== "undefined" && BasesCat.fmtVersao) ? BasesCat.fmtVersao(c) : c; };
+            UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+              " Atenção: os PREÇOS são da competência " + fmt(Sinapi.competencia) +
+              ", mas o DETALHAMENTO de insumos instalado é de " + fmt(Analitico.competencia) +
+              ". O que vem do detalhamento (insumo sem preço no sintético, divisão MO/MAT/EQ) sai do mês mais novo.", "aviso");
+          } catch (e2) {}
+        }, 1200);
+      } catch (e) {}
+    },
+    _avisoAnaliticoFeito: null,
 
     // Troca a base SINAPI ativa para outra UF (lazy). cb(true|false).
     // v1.1.121 — QUALQUER UF abre: arquivo local primeiro; se faltar/corromper,
@@ -1886,6 +2101,7 @@
           : ((est && est.analitico) || ("data/sinapi-" + uf + "-analitico.json"));
         self._baseUf = uf;
         if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset(); // descarta analítico da UF anterior
+        self._avisarAnaliticoDeOutroMes();
         UI.toast("SINAPI " + uf + " · " + (Sinapi.competencia || "") + " — " + Sinapi.resumo().total.toLocaleString("pt-BR") + " itens.", "ok");
         if (cb) cb(true);
       };
@@ -3401,7 +3617,7 @@
         setTimeout(function () {
           try {
             if (!Analitico.carregado && !Analitico.carregando) {
-              Analitico.carregarArquivo(u.local || u.live, u.live).then(function () {
+              Analitico.carregarArquivo(u.alts).then(function () {
                 // v1.1.123 — com o analítico na mão, os avisos "insumo sem preço"
                 // aparecem já na PRIMEIRA abertura da planilha (antes só apareciam
                 // depois de algum 🔍 Insumos + re-render). Não re-renderiza se o
@@ -4836,7 +5052,7 @@
       if (!ana || (!urlsX.local && !urlsX.live) || (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { gerar(); return; }
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos de " + (ufAtivo || "") + " (1ª vez)…", "ok");
-      ana.carregarArquivo(urlsX.local || urlsX.live, urlsX.live).then(gerar).catch(function () { gerar(); });
+      ana.carregarArquivo(urlsX.alts).then(gerar).catch(function () { gerar(); });
     },
 
     // ---------- FASE 4: reimportar Excel editado (round-trip via aba _meta) ----------
@@ -4996,7 +5212,7 @@
       self._insumosCarregando = codigo;
       // LOTE 5: overlay com spinner — o load frio de 17MB parecia travamento
       UI.loading("Carregando a base analítica de " + (ufAtivo || "") + " (só na 1ª vez)…");
-      Analitico.carregarArquivo(urls.local || urls.live, urls.live).then(function () { self._insumosCarregando = null; UI.loadingFim(); abrir(); }).catch(function (e) {
+      Analitico.carregarArquivo(urls.alts).then(function () { self._insumosCarregando = null; UI.loadingFim(); abrir(); }).catch(function (e) {
         self._insumosCarregando = null; UI.loadingFim();
         if (e && e.message === "cancelado") return; // troca de UF cancelou o carregamento — silencioso
         // Chegou aqui = local E ao vivo falharam (offline sem o arquivo no disco)
@@ -5579,7 +5795,7 @@
       // (padrão da casa: UI.loading(msg) + UI.loadingFim() — UI.loading não retorna nada)
       var urls = this._analiticoUrls();
       UI.loading("Carregando o detalhamento oficial p/ o agente…");
-      Analitico.carregarArquivo(urls.local || urls.live, urls.live).then(function () { UI.loadingFim(); rodar(); })
+      Analitico.carregarArquivo(urls.alts).then(function () { UI.loadingFim(); rodar(); })
         .catch(function () { UI.loadingFim(); UI.toast("Não consegui carregar o detalhamento agora — tente de novo com internet.", "erro"); });
     },
     cpSalvar: function () {
@@ -6396,7 +6612,7 @@
       if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
       var urls = this._analiticoUrls();
       UI.loading("Carregando a base analítica para o agente…");
-      Analitico.carregarArquivo(urls.local || urls.live, urls.live)
+      Analitico.carregarArquivo(urls.alts)
         .then(function () { UI.loadingFim(); rodar(); })
         .catch(function () { UI.loadingFim(); UI.toast("Não consegui carregar o detalhamento — o agente precisa dele para não inventar coeficiente.", "erro"); });
     },
@@ -6822,7 +7038,7 @@
           (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { abrir(); return; }
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos das composições (1ª vez)…", "ok");
-      ana.carregarArquivo(urlsR.local || urlsR.live, urlsR.live).then(abrir).catch(function () { abrir(); });
+      ana.carregarArquivo(urlsR.alts).then(abrir).catch(function () { abrir(); });
     },
 
     // ---------- AGENTE IMPORTADOR: planilha (Excel/CSV) de qualquer formato → etapas+itens ----------

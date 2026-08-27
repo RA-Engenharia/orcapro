@@ -14052,7 +14052,11 @@ renderRequisicoes: function () {
       // reutiliza o resolvedor do App (local + AO VIVO): garante o banco de insumos em toda UF
       var u = (typeof App !== "undefined" && App._analiticoUrls) ? App._analiticoUrls() : { local: null, live: null };
       var uf = (typeof App !== "undefined" && App._baseUf) ? App._baseUf : ((typeof Sinapi !== "undefined") ? Sinapi.uf : null);
-      return { url: u.local || u.live, live: u.live, uf: uf };
+      /* ⚠ leva TAMBÉM os nomes antigos (`localAlt`/`liveAlt`). O analítico passou
+         a ter a competência no nome; instalação que ainda não recebeu pacote
+         completo só tem o nome velho, e sem isto o Banco de Insumos ficaria vazio
+         justamente nela. */
+      return { url: (u.alts || [u.local, u.live]), live: null, uf: uf };
     },
     renderBancoInsumos: function () {
       var r = (typeof Insumos !== "undefined") ? Insumos.resumo() : { carregado: false, total: 0 };

@@ -405,7 +405,7 @@
       var escolha = (st._compEscolhida && ufAlvo === String(st._compEscolhidaUf || "").toUpperCase()) ? st._compEscolhida : "";
       var preferida = escolha || ((ufAlvo && ufAlvo === ufBase && compBase) ? compBase : (compDoEstado || st.competencia || ""));
 
-      var lista = this._competenciasDisponiveis(preferida);
+      var lista = this._competenciasDisponiveis(preferida, ufAlvo);
       var atual = preferida || lista[0] || "";
       var achou = false;
       lista.forEach(function (c) { if (s._normComp(c) === s._normComp(atual)) achou = true; });
@@ -437,7 +437,7 @@
      * instalado, e quem precisa de outra é mandado para a Central de Atualização
      * de Bases. Ao criar, _criar() CARREGA a base da competência escolhida e só
      * grava o rótulo se ela subir: escolha com lastro, não campo decorativo. */
-    _competenciasDisponiveis: function (ufComp) {
+    _competenciasDisponiveis: function (ufComp, uf) {
       var self = this, vistas = {}, out = [];
       function add(c) {
         c = String(c || "").trim(); if (!c) return;
@@ -449,6 +449,20 @@
       try { add(CONFIG.sinapi.competenciaPadrao); } catch (e) {}
       try {
         (Bases.lista() || []).forEach(function (b) { if (String(b.fonte).toUpperCase() === "SINAPI") add(b.competencia); });
+      } catch (e) {}
+      /* ⚠ AS COMPETÊNCIAS DO DISCO — e SÓ AS QUE DÁ PARA HONRAR.
+       *
+       * `App.competenciasDaUf` já devolve filtrado: uma competência só entra
+       * quando o ANALÍTICO dela existe (nome com competência, ou o nome antigo
+       * quando a competência é a embarcada, que é de quem ele é).
+       *
+       * A regra não é capricho: o analítico é a fonte oficial de custo de ~2.000
+       * insumos por UF, reparte MO/MAT/EQ e alimenta composição própria. Ter o
+       * preço de maio e o detalhamento de junho é número errado num papel que
+       * vai para licitação — pior do que não ter a escolha. */
+      try {
+        var app = global.App;
+        if (app && app.competenciasDaUf) app.competenciasDaUf(uf).forEach(add);
       } catch (e) {}
       // mais nova primeiro — comparando a forma NORMALIZADA (AAAA-MM ordena sozinho)
       out.sort(function (a, b) {
