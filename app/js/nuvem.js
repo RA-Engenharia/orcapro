@@ -380,13 +380,35 @@
      * ⚠ Não apaga nem move nada: é um portão de leitura antes do merge.
      * ============================================================ */
     DOC_DONO: "_dono",
+    /* ⚠⚠ ONDE O NOME DA EMPRESA MORA DE VERDADE.
+     *
+     * A primeira versão disto lia `prefs.empresa` / `prefs.nomeEmpresa` — e
+     * NINGUÉM no app inteiro grava esses dois campos. Esta linha era a única
+     * referência a eles no repositório. Consequência: `empresa` saía SEMPRE
+     * vazio, os dois ramos de contradição por nome viravam código morto, e a
+     * trava toda encolhia para "e-mail de conta mestre contra e-mail" — que a
+     * maioria dos clientes solo nem tem. Ou seja: o portão publicado para
+     * separar duas empresas não separava quase ninguém.
+     *
+     * ⚠ E O TESTE NÃO VIA porque a fixture dele inventava `{empresa:'ACME'}`,
+     *   um formato que o disco de nenhum cliente tem. Fixture que não imita a
+     *   produção mede outra coisa — é a segunda vez no mesmo dia.
+     *
+     * O nome e o CNPJ vivem em `prefs.responsavelTecnico` (js/empresa.js). O
+     * CNPJ é a melhor prova que existe aqui: é único por empresa, o cliente
+     * digita uma vez e não muda. Vem primeiro. */
     _idDono: function (empresaId) {
-      var nome = "", email = "";
-      try { var p = Store.lerPrefs(empresaId) || {}; nome = String(p.empresa || p.nomeEmpresa || "").trim(); } catch (e) {}
+      var nome = "", cnpj = "", email = "";
+      try {
+        var p = Store.lerPrefs(empresaId) || {};
+        var rt = p.responsavelTecnico || {};
+        nome = String(rt.nome || "").trim();
+        cnpj = String(rt.cnpj || "").replace(/\D/g, "");
+      } catch (e) {}
       try {
         if (typeof Auth !== "undefined" && Auth.contaMestre) { var c = Auth.contaMestre(empresaId) || {}; email = String(c.email || "").trim().toLowerCase(); }
       } catch (e2) {}
-      return { empresaId: String(empresaId || ""), empresa: nome, email: email };
+      return { empresaId: String(empresaId || ""), empresa: nome, cnpj: cnpj, email: email };
     },
     /* Devolve Promise<{ok:true}> ou Promise<{ok:false, dono:…}> — nunca rejeita:
        falha de rede aqui não pode barrar a sincronização de quem está certo. */
@@ -421,12 +443,31 @@
            * nomes de empresa diferentes) fecha o portão. É o caso do incidente
            * — lá os dois lados tinham e-mail, e eram outros. */
           function norm(s) { return String(s || "").trim().toLowerCase().replace(/\s+/g, " "); }
-          if (dono.empresaId && meu.empresaId && dono.empresaId === meu.empresaId) return { ok: true };
-          if (meu.email && dono.email && norm(meu.email) === norm(dono.email)) return { ok: true };
-          if (meu.empresa && dono.empresa && norm(meu.empresa) === norm(dono.empresa)) return { ok: true };
-          /* contradição explícita: os dois lados se identificaram, e são outros */
-          if (meu.email && dono.email && norm(meu.email) !== norm(dono.email)) return { ok: false, dono: dono, meu: meu };
-          if (meu.empresa && dono.empresa && norm(meu.empresa) !== norm(dono.empresa)) return { ok: false, dono: dono, meu: meu };
+          /* ⚠ A ADOÇÃO SÓ VALE PARA O MESMO APARELHO/LINHAGEM.
+           *
+           * A versão anterior deixava QUALQUER aparelho com identidade gravar
+           * por cima de um dono anônimo. Isso invertia o portão: o intruso que
+           * cai na chave alheia e tem conta mestre vira DONO registrado, e o
+           * cliente legítimo — que ainda não tinha configurado admin — passa a
+           * ser BLOQUEADO do próprio balde, lendo na tela que a licença dele
+           * "já é usada por" o e-mail do intruso. A vítima levava a punição.
+           *
+           * Aqui a régua é: o registro só ganha identidade pelo aparelho que
+           * JÁ CONSTA como dono (mesmo `empresaId`). Ele não está tomando
+           * posse — está completando a própria ficha. */
+          if (dono.empresaId && meu.empresaId && dono.empresaId === meu.empresaId) {
+            var faltaFicha = (!dono.email && meu.email) || (!dono.empresa && meu.empresa) || (!dono.cnpj && meu.cnpj);
+            if (faltaFicha) {
+              return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
+                .set({ v: meu, em: Date.now() }).then(function () { return { ok: true, adotou: true }; })
+                .catch(function (e) { try { self._registrarFalha(self.DOC_DONO, e); } catch (_) {} return { ok: true }; });
+            }
+            return { ok: true };
+          }
+          /* CNPJ primeiro: é único por empresa e o cliente digita uma vez só */
+          if (meu.cnpj && dono.cnpj) return norm(meu.cnpj) === norm(dono.cnpj) ? { ok: true } : { ok: false, dono: dono, meu: meu };
+          if (meu.email && dono.email) return norm(meu.email) === norm(dono.email) ? { ok: true } : { ok: false, dono: dono, meu: meu };
+          if (meu.empresa && dono.empresa) return norm(meu.empresa) === norm(dono.empresa) ? { ok: true } : { ok: false, dono: dono, meu: meu };
           return { ok: true, semProva: true };   // nem a favor nem contra: passa
         })
         .catch(function () { return { ok: true }; });   // sem rede: não bloqueia quem está certo
@@ -441,8 +482,18 @@
       return this._conferirDono(empresaId).then(function (v) {
         if (v && v.ok === false) {
           self.bloqueioDeDono = v;
+          /* ⚠ FECHA O QUE JÁ ESTÁ ABERTO. Barrar `escutar` só impede abrir
+             ouvinte NOVO; os que o boot abriu continuam vivos e seguem
+             despejando a base da outra empresa neste aparelho a cada alteração
+             lá. Meia porta é porta aberta — e era o próprio defeito que este
+             portão veio fechar. */
+          try { self._un.forEach(function (u) { try { u(); } catch (_) {} }); self._un = []; self._escutando = null; } catch (eU) {}
           try {
-            var quem = (v.dono.empresa || v.dono.email || "outra empresa");
+            /* ⚠ NÃO expor dado de terceiro. Antes o aviso mostrava o e-mail do
+               administrador da OUTRA empresa na tela deste cliente — e como o
+               nome vinha sempre vazio, era SEMPRE o e-mail. Para agir, basta ele
+               saber que a chave é de outra empresa. */
+            var quem = v.dono.empresa ? ("“" + v.dono.empresa + "”") : "outra empresa";
             if (typeof UI !== "undefined" && UI.toast) {
               UI.toast("Sincronização BLOQUEADA: esta licença já é usada por " + quem
                 + ". Nada foi misturado. Use uma licença própria neste aparelho.", "erro");
@@ -738,9 +789,16 @@
           });
         } catch (e) {}
       };
-      if (ent === "_lapides") { clearTimeout(this._push[ent]); this._push[ent] = setTimeout(mandar, 150); return; }
+      /* ⚠ RECONFERE NA HORA DE MANDAR. A guarda de cima roda no AGENDAMENTO;
+         o envio acontece 900 ms depois (150 ms para as lápides). Um bloqueio que
+         chega no meio não cancelava o timer, e o que subia era a entidade
+         INTEIRA para o documento da outra empresa. Pior com `_lapides`: os ids
+         determinísticos (código do insumo, código da composição) COLIDEM entre
+         empresas, e uma lápide dessas apaga o registro legítimo do outro lado. */
+      var mandarSeLiberado = function () { if (self.bloqueioDeDono) return; mandar(); };
+      if (ent === "_lapides") { clearTimeout(this._push[ent]); this._push[ent] = setTimeout(mandarSeLiberado, 150); return; }
       clearTimeout(this._push[ent]);
-      this._push[ent] = setTimeout(mandar, 900);
+      this._push[ent] = setTimeout(mandarSeLiberado, 900);
     },
 
     /* DESLIGAMENTO PELO USUÁRIO — é a revogação de consentimento da LGPD.
