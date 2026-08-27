@@ -1550,8 +1550,15 @@
           });
         }
 
-        // já conectado e escutando: nada a fazer (escutar() também é idempotente)
-        if (Nuvem.ligado && Nuvem.auth && Nuvem.auth.currentUser) { this._nuvemTentativa = 0; return; }
+        /* ⚠ "já conectado" SÓ VALE SE A SESSÃO FOR DESTA CHAVE. Depois de um
+           bloqueio (ou de trocar a licença do aparelho), o `currentUser` continua
+           apontando para o tenant ERRADO, e sair aqui pulava a reautenticação: o
+           cliente ativava a licença certa, como o próprio aviso mandava, e seguia
+           bloqueado pelo resto da sessão sem nada dizer que faltava reabrir. */
+        if (Nuvem.ligado && Nuvem.auth && Nuvem.auth.currentUser) {
+          if (Nuvem.sessaoConfereComChave && Nuvem.sessaoConfereComChave(chave)) { this._nuvemTentativa = 0; return; }
+          try { Nuvem.trocouDeLicenca(); } catch (eT) {}   // sessão de outra licença: refaz
+        }
 
         Nuvem.entrarPorLicenca(chave)
           .then(function () { return Nuvem.sincronizar(eid); })
@@ -2106,8 +2113,25 @@
       var _lic = null;
       try { _lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (e) {}
       var porLicenca = !!(_lic && _lic.ativo && !_lic.trial && Licenca.chave && Licenca.chave());
+      /* ⚠ BLOQUEADO NÃO É CONECTADO. O aparelho barrado por ser de outra empresa
+         fica com `currentUser` preenchido, e esta tela dizia, em verde, "Conectado
+         — seus orçamentos sincronizam sozinhos". A única notícia do bloqueio era UM
+         aviso no meio dos outros da abertura: quem piscasse abria este modal, lia
+         que estava tudo certo e ia dormir com os dados parados. Aqui a verdade vem
+         primeiro, e com o que fazer. */
+      var _bloq = null;
+      try { var _st = (Nuvem.estado && Nuvem.estado()) || {}; if (_st.bloqueadoOutraEmpresa) _bloq = _st; } catch (eB) {}
       var body =
-        '<p style="margin-top:0">' + (conectado
+        (_bloq
+          ? '<p style="margin-top:0;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.45);border-radius:8px;padding:10px 12px">'
+            + '<b>' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Sincronização bloqueada</b><br>'
+            + 'Esta licença já está registrada para <b>' + Util.esc(_bloq.donoDoBalde || 'outra empresa') + '</b>. '
+            + 'Para não misturar os dados das duas, o sistema parou de enviar e de receber. '
+            + '<b>Nada foi apagado</b> — tudo que é seu continua neste aparelho.<br>'
+            + 'Para voltar a sincronizar, ative aqui a <b>licença da sua empresa</b> (Configurações › Licença). '
+            + 'Não precisa fechar o sistema.</p>'
+          : '') +
+        '<p style="margin-top:0">' + (_bloq ? '<b>Não está sincronizando</b> — veja o aviso acima.' : '') + (_bloq ? '' : conectado
           ? '' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Conectado como <b>' + Util.esc(emailNuvem) + '</b>. Seus orçamentos sincronizam sozinhos entre os aparelhos conectados com este mesmo e-mail e senha.'
           : (desligada
             ? '⏸ <b>Sincronização desligada por você</b> — os dados ficam só neste aparelho e nada é enviado. Conecte abaixo quando quiser religar.'
@@ -2142,7 +2166,11 @@
               /* MESMO caminho do boot. Entrar por e-mail/senha aqui criaria OUTRA conta
                  Firebase, e os dados do cliente ficariam divididos entre duas contas —
                  na tela dele, "sumiram orçamentos". */
-              p = conectado ? Promise.resolve() : Nuvem.entrarPorLicenca(Licenca.chave());
+              /* mesma régua do boot: conectado NA CHAVE CERTA é que dispensa reautenticar */
+              var chaveAtual = Licenca.chave();
+              var mesmaConta = conectado && Nuvem.sessaoConfereComChave && Nuvem.sessaoConfereComChave(chaveAtual);
+              if (conectado && !mesmaConta) { try { Nuvem.trocouDeLicenca(); } catch (eT) {} }
+              p = mesmaConta ? Promise.resolve() : Nuvem.entrarPorLicenca(chaveAtual);
             } else {
               var email = String((UI.el("nv-email") || {}).value || "").trim().toLowerCase();
               var senha = String((UI.el("nv-senha") || {}).value || "");
@@ -2539,6 +2567,11 @@
       Licenca.ativarOnline(chave, function (r) {
         if (!r.ok) { UI.toast(r.erro || "Chave inválida.", "erro"); return; }
         UI.fecharModal();
+        /* ⚠ licença nova = EMPRESA nova na nuvem (a conta é derivada da chave).
+           Sem largar a sessão antiga, o aparelho continuaria falando com o tenant
+           da licença velha até alguem fechar o app. */
+        try { if (typeof Nuvem !== "undefined" && Nuvem.trocouDeLicenca) Nuvem.trocouDeLicenca(); } catch (eN) {}
+        try { self._nuvemTentativa = 0; self._conectarNuvemLicenca(); } catch (eC) {}
         UI.toast(r.offline ? "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Licença ativada." : "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Licença ativada e vinculada a esta máquina!", "ok");
         self.render();
       });

@@ -237,6 +237,33 @@
       var H = (typeof Util !== "undefined" && Util.sha256hex) ? Util.sha256hex : function (x) { return String(x); };
       return { email: "lic_" + H(c).slice(0, 32) + "@orcapro.app", senha: "L1" + H("orcapro-tenant::" + c).slice(0, 40) };
     },
+    /* ⚠ A SESSÃO ABERTA É DESTA CHAVE?
+     *
+     * Depois de um bloqueio, o aparelho fica com `ligado=true` e um
+     * `currentUser` apontando para o tenant ERRADO. O boot e o botão
+     * "Sincronizar agora" tratavam "já conectado" como "nada a fazer" e
+     * pulavam a reautenticação — então o cliente seguia a instrução do
+     * próprio aviso ("use uma licença própria neste aparelho"), ativava a
+     * licença certa, e continuava bloqueado pelo resto da sessão, sem nada
+     * na tela dizendo que faltava fechar e reabrir.
+     *
+     * A conta é derivada da chave, então basta comparar o e-mail derivado
+     * com o do usuário logado: se não bate, a sessão é de outra licença. */
+    sessaoConfereComChave: function (chave) {
+      try {
+        if (!this.auth || !this.auth.currentUser) return false;
+        if (!chave) return false;
+        return String(this.auth.currentUser.email || "").toLowerCase() === String(this._credLicenca(chave).email || "").toLowerCase();
+      } catch (e) { return false; }
+    },
+    /* Larga a sessão da nuvem SEM marcar desligamento pelo usuário, para a
+       próxima tentativa reautenticar pela chave nova. Usado quando a licença
+       do aparelho muda. */
+    trocouDeLicenca: function () {
+      this.bloqueioDeDono = null;
+      this._ultimoEnviado = {};
+      try { this.sair(false); } catch (e) {}
+    },
     entrarPorLicenca: function (chave) {
       if (!chave) return Promise.reject(new Error("sem licença"));
       var cr = this._credLicenca(chave);
@@ -666,6 +693,12 @@
       var f = this._falhas || [];
       var cota = f.some(function (x) { return /resource-exhausted|RESOURCE_EXHAUSTED|quota/i.test(x.codigo); });
       var permissao = f.some(function (x) { return /permission-denied/i.test(x.codigo); });
+      /* ⚠ O BLOQUEIO TEM DE APARECER AQUI. Ele não passa por `_registrarFalha`,
+         então `falhas` continuava 0 e `ok` continuava true — e a tela dizia
+         "Conectado, sincronizam sozinhos" com o aparelho sem sincronizar nada.
+         É o mesmo modo de falha que "anunciar sucesso só com sucesso" já tinha
+         fechado, reaberto por um caminho novo. */
+      var bloq = this.bloqueioDeDono || null;
       return {
         ligado: !!this.ligado,
         autenticado: !!(this.auth && this.auth.currentUser),
@@ -673,7 +706,9 @@
         falhas: f.length,
         cotaEstourada: cota,
         semPermissao: permissao,
-        ok: !!this.ligado && !!(this._un && this._un.length) && !cota && !permissao
+        bloqueadoOutraEmpresa: !!bloq,
+        donoDoBalde: bloq ? (bloq.dono && (bloq.dono.empresa || "")) : "",
+        ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao
       };
     },
 
