@@ -94,13 +94,15 @@
   function anterior(d, opc) {
     d = d || {}; var o = opc || {};
     var chave = chaveServico(d.item);
-    var vazio = { qtd: 0, diarios: 0, porDiario: [], semChave: !chave };
+    var vazio = { qtd: 0, diarios: 0, porDiario: [], semChave: !chave,
+      refeito: 0, diariosRefeito: 0, porDiarioRefeito: [] };
     if (!chave) return vazio;
 
     var dataAtual = texto(d.data);
     var meuId = texto(d.rdoId);
     var estados = o.estados && o.estados.length ? o.estados : null;
     var soma = 0, quais = [];
+    var refeito = 0, quaisRefeito = [];
 
     (d.rdos || []).forEach(function (r) {
       if (!r) return;
@@ -120,13 +122,30 @@
         if (chaveServico(it) !== chave) return;
         var q = num(it.qtdExecutada);
         if (!q) return;
+        /* ⚠ RETRABALHO NÃO SOMA NO AVANÇO — E SOMAVA.
+         * O encarregado marca "Retrabalho" no serviço quando REFAZ o que já
+         * estava feito. A quantidade refeita não é obra nova: contá-la de
+         * novo infla o físico. Numa parede de 200 m², 100 m² executados mais
+         * 60 m² marcados como retrabalho davam "160 m², 80%" — quando existem
+         * 100 m² em pé, 50%. E esse número inflado ia para o Portal do
+         * cliente e para o boletim impresso.
+         * A palavra `situacao` não aparecia neste arquivo: o campo era lido
+         * para MOSTRAR e nunca para decidir. Fica registrado à parte, porque
+         * quanto se refez é informação que o dono quer — só não é avanço. */
+        if (texto(it.situacao) === "retrabalho") {
+          refeito += q;
+          quaisRefeito.push({ rdoId: r.id, data: dr, numero: r.numero || "", qtd: q });
+          return;
+        }
         soma += q;
         quais.push({ rdoId: r.id, data: dr, numero: r.numero || "", qtd: q, estado: texto(r.estado) });
       });
     });
 
     quais.sort(function (a, b) { return String(a.data).localeCompare(String(b.data)); });
-    return { qtd: r2(soma), diarios: quais.length, porDiario: quais, semChave: false };
+    return { qtd: r2(soma), diarios: quais.length, porDiario: quais, semChave: false,
+      /* o que foi REFEITO: fora do avanço, mas à vista — o dono quer saber */
+      refeito: r2(refeito), diariosRefeito: quaisRefeito.length, porDiarioRefeito: quaisRefeito };
   }
 
   /* -------------------------------------------------------------------
@@ -137,7 +156,15 @@
     var item = d.item || {};
     var ant = anterior(d, opc);
     var prev = num(item.qtdPrevista);
-    var hoje = num(item.qtdExecutada);
+    /* ⚠ O DIA DE HOJE SEGUE A MESMA REGRA DOS ANTERIORES.
+       O laço de `anterior` já tira o retrabalho; se `hoje` não tirasse, a
+       linha mostraria 80% no dia em que a marca é lançada e 50% no dia
+       seguinte, e o impresso daquele dia sairia com o número inflado bem ao
+       lado de "(60 refeitos)". Duas contas para a mesma quantidade, com um
+       dia de distância. */
+    var hojeRefeito = texto(item.situacao) === "retrabalho";
+    var hoje = hojeRefeito ? 0 : num(item.qtdExecutada);
+    var refeitoHoje = hojeRefeito ? num(item.qtdExecutada) : 0;
     var total = r2(ant.qtd + hoje);
     var saldo = prev > 0 ? r2(prev - total) : 0;
 
@@ -162,6 +189,12 @@
       concluido: prev > 0 && total >= prev,
       diarios: ant.diarios,
       porDiario: ant.porDiario,
+      /* refeito NÃO entra em `total` nem em `pctTotal` — ver a nota no laço.
+         Soma o dos dias anteriores com o de hoje, para a linha não mudar de
+         número quando o diário do dia for salvo. */
+      refeito: r2((ant.refeito || 0) + refeitoHoje),
+      refeitoHoje: r2(refeitoHoje),
+      temRetrabalho: ((ant.refeito || 0) + refeitoHoje) > 0,
       semChave: ant.semChave
     };
   }
@@ -221,7 +254,7 @@
         if (!k) return;
         if (!porChave[k]) {
           porChave[k] = { chave: k, descricao: texto(it.descricao), numero: texto(it.numero),
-                          unidade: texto(it.unidade), previsto: 0, executado: 0, lancamentos: 0 };
+                          unidade: texto(it.unidade), previsto: 0, executado: 0, refeito: 0, lancamentos: 0 };
         }
         var linha = porChave[k];
         /* o previsto é o MAIOR já visto, não a soma: ele se repete em todo
@@ -229,6 +262,8 @@
         var prev = num(it.qtdPrevista);
         if (prev > linha.previsto) linha.previsto = prev;
         var q = num(it.qtdExecutada);
+        /* mesmo motivo do laço de `anterior`: refazer não é avançar */
+        if (q && texto(it.situacao) === "retrabalho") { linha.refeito = r2((linha.refeito || 0) + q); return; }
         if (q) { linha.executado = r2(linha.executado + q); linha.lancamentos++; }
       });
     });

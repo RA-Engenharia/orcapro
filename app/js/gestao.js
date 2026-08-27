@@ -191,9 +191,91 @@
      com centavos — valor inteiro passava ileso, que é o pior tipo de defeito.
      O input numérico já aceita ponto decimal e o Util.num lê ponto decimal
      corretamente, então aqui a grafia BR não tem o que resolver. */
-  function inp(id, val, ph, tipo) { if (tipo !== "date" && tipo !== "time" && tipo !== "month" && tipo !== "number") val = numBR(val); return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">'; }
+  /* ===================================================================
+   * O TECLADO QUE ABRE NO CELULAR
+   *
+   * Quem aponta o dia em pé, no canteiro, digita número o tempo todo:
+   * quantidade executada, efetivo direto e indireto, horas, horas extras,
+   * dias parados, R$/unidade. Todos nasciam `type="text"` sem `inputmode`, e
+   * o celular abria o teclado ALFABÉTICO — a pessoa tocava em "123" antes de
+   * cada campo. Num diário com 6 serviços e 5 funções de efetivo são umas 20
+   * trocas de teclado por lançamento. É a diferença entre o encarregado
+   * lançar o dia e ele parar de lançar.
+   *
+   * ⚠ `inputmode` E NÃO `type="number"`. A v1.1.236 já pagou por essa
+   *   confusão: `type="number"` APAGA valor com vírgula — frete R$ 150,50
+   *   virava R$ 0,00 ao salvar. `inputmode` é só uma dica de teclado: não
+   *   valida, não sanitiza, não mexe no valor, e o desktop ignora.
+   *
+   * ⚠ `numeric` (só dígitos) para CONTAGEM, `decimal` para o resto. Em Android
+   *   o teclado decimal pode oferecer "." em vez de ","; `Util.parseNum` lê
+   *   "150.50" certo, mas "2.500" querendo 2,5 vira 2500. Em campo que é
+   *   contagem inteira — efetivo, dias parados — `numeric` fecha essa porta.
+   *
+   * A lista mora aqui, e não num 5º parâmetro em 34 chamadas: uma edição em
+   * vez de 34, sem risco de esquecer campo novo.
+   *
+   * ⚠ ELA NÃO É ESCRITA À MÃO. `nv(id)` é quem lê um campo como número — essa
+   *   é a definição de "campo numérico" nesta base, e a lista abaixo foi
+   *   LEVANTADA de todas as chamadas de `nv()` no arquivo. Minha primeira
+   *   versão foi digitada de memória: 16 ids que não existem e 24 campos reais
+   *   de fora. `tools/test-v12-celular.js` cobra a igualdade das duas listas,
+   *   então campo numérico novo entra aqui ou o gate fica vermelho.
+   * =================================================================== */
+  var TECLADO_NUM = {
+    "ep-vida": "numeric", "ep-vlr": "decimal", "fr-valor": "decimal", "g-areac": "decimal",
+    "g-areat": "decimal", "g-base": "decimal", "g-ckm": "decimal", "g-custo": "decimal",
+    "g-cvalor": "decimal", "g-dep": "decimal", "g-desc": "decimal", "g-dias": "numeric",
+    "g-efd": "numeric", "g-efi": "numeric", "g-enc": "decimal", "g-faltas": "numeric",
+    "g-gserv": "decimal", "g-he": "decimal", "g-km": "decimal", "g-min": "decimal",
+    "g-multa": "decimal", "g-orcado": "decimal", "g-pa-dias": "numeric",
+    "g-pct": "decimal", "g-pvalor": "decimal", "g-rem": "decimal", "g-ret": "decimal",
+    "g-saldo": "decimal", "g-valor": "decimal", "g-vaq": "decimal", "g-vimp": "decimal",
+    "g-vprod": "decimal", "g-vtot": "decimal", "nv-qp": "decimal"
+  };
+  function inp(id, val, ph, tipo) {
+    if (tipo !== "date" && tipo !== "time" && tipo !== "month" && tipo !== "number") val = numBR(val);
+    var modo = (!tipo && TECLADO_NUM[id]) ? ' inputmode="' + TECLADO_NUM[id] + '"' : "";
+    return '<input id="' + id + '"' + (tipo ? ' type="' + tipo + '"' : "") + modo
+      + ' value="' + Util.esc(val == null ? "" : val) + '" placeholder="' + (ph || "") + '">';
+  }
   function sel(id, o) { return '<select id="' + id + '">' + o + "</select>"; }
   function eid() { return Auth.empresaId(); }
+  /* ===================================================================
+   * HOJE, NO FUSO DE QUEM ESTÁ USANDO — e não em UTC.
+   *
+   * ⚠ `new Date().toISOString().slice(0, 10)` devolve UTC. Em Brasília (−3),
+   *   das 21h à meia-noite ele JÁ ESTÁ NO DIA SEGUINTE; em Manaus (−4) a
+   *   partir das 20h; em Rio Branco (−5) a partir das 19h — horário
+   *   normalíssimo para o encarregado fechar o dia da obra.
+   *   O efeito mais caro: o diário de obra nascia com a data de AMANHÃ. O
+   *   campo Data vem preenchido justamente para ninguém digitar, então
+   *   ninguém reparava — e o clima, que é a PROVA de chuva do diário, era
+   *   buscado por essa data: o app pedia a PREVISÃO de um dia que ainda não
+   *   aconteceu e carimbava isso como procedência. Junto iam a sequência de
+   *   nº por obra, o "sem diário há N dias" e a data que o cliente vê no
+   *   Portal.
+   *
+   * ⚠ POR QUE FUNÇÃO DE MÓDULO E NÃO MÉTODO: `_hojeLocal` já existia como
+   *   método do Gestao desde o módulo Tarefas, e a correção nunca chegou aos
+   *   outros 32 pontos porque boa parte deles está dentro de callback, onde
+   *   `this` não é o Gestao. Como função de módulo funciona em qualquer
+   *   escopo — e passa a existir UMA implementação, não duas.
+   * =================================================================== */
+  function hojeLocal() {
+    var d = new Date();
+    return d.getFullYear()
+      + "-" + String(d.getMonth() + 1).padStart(2, "0")
+      + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  /* O MÊS de hoje, no fuso local — pelo mesmo motivo de `hojeLocal()`.
+   * A varredura da v1.2 trocou 33 pontos de dia e parou aí; sobraram seis de
+   * MÊS, e um deles é a competência com que a FOLHA e o registro de PONTO
+   * nascem. Às 21h de 31/08 em Brasília (19h no Acre) o UTC já é 01/09: a
+   * folha nasce na competência 09/2026 e a despesa de mão de obra sai
+   * carimbada no mês seguinte. É o mesmo defeito de "a folha de agosto caía
+   * na competência de outubro", por outra porta. */
+  function mesLocal() { return hojeLocal().slice(0, 7); }
   /* ⚠ ORDEM DE PESSOAS NASCE AQUI, e de propósito.
    * O cliente pediu os funcionários em ordem alfabética e agrupados por
    * hierarquia de função — e pediu que valesse para todo módulo. Havia 27
@@ -211,12 +293,49 @@
   var ENT_POR_OBRA = {
     medicoes: 1, rdo: 1, financeiro: 1, contratos: 1, compras: 1, requisicoes: 1,
     cotacoes: 1, producao_med: 1, epi: 1, ponto: 1, folha: 1, fs_lancamentos: 1,
-    estoque_mov: 1, tarefas: 1, lastplanner: 1, galeria: 1, atividades: 1,
+    estoque_mov: 1, tarefas: 1, atividades: 1,
     /* modulos sob demanda (js/perfis.js): as duas entidades que carregam
        obraId. Sem elas aqui, o sub-usuario limitado a uma obra veria a
        proposta e a folha variavel de obra que nao e dele. Registro SEM
        obra continua visivel — ver a nota do filtro logo abaixo. */
-    carp_propostas: 1, remun_apur: 1
+    carp_propostas: 1, remun_apur: 1,
+    /* ⚠ v1.2 — DUAS CHAVES MORTAS SAÍRAM E SETE ENTIDADES REAIS ENTRARAM.
+     *
+     * `lastplanner` e `galeria` estavam aqui e nunca filtraram nada: são id de
+     * VIEW, não nome de entidade — nenhum `lista(...)` do app pede por esses
+     * nomes. A entidade real do Last Planner é `lp_tarefas`, e ela não estava.
+     *
+     * As outras seis são declaradas portadoras de `obraId` pelo PRÓPRIO
+     * arquivo (em `_ENT_DA_OBRA` e `_ENT_SO_DESVINCULA`) e passavam inteiras
+     * pelo funil. Para um sub-usuário que o admin restringiu à obra A:
+     *   fiscal        → a tela Fiscal listava TODA nota da empresa, com
+     *                   parceiro e valor total — que é preço de fornecedor, e
+     *                   portanto a margem;
+     *   frota_mov     → "Custo total" da frota somava as obras que ele não
+     *                   pode ver (e este é irmão de ponto/folha na mesma nota
+     *                   da v1.1.236, onde os outros três entraram — foi
+     *                   esquecimento, não decisão);
+     *   estoque       → o catálogo inteiro, enquanto `estoque_mov` já filtrava:
+     *                   metade da tela protegida e metade não;
+     *   centrocusto   → além de vazar, calculava ERRADO: o centro não era
+     *                   filtrado e o financeiro era, então centro de obra
+     *                   alheia aparecia com Orçado cheio, Realizado 0 e um
+     *                   Saldo que não existe;
+     *   producao_preco→ o R$/unidade combinado em cada obra, de todo mundo;
+     *   bim_niveis    → hoje é filtrado à mão pela seleção do BIM; entra aqui
+     *                   para não depender de a próxima tela lembrar.
+     *
+     * Não é falha de permissão de módulo: o admin liberou Fiscal e Frota de
+     * propósito E restringiu a obra de propósito. A segunda restrição é que
+     * não pegava — um controle que mente. */
+    lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
+    producao_preco: 1, bim_niveis: 1,
+    /* ⚠ `horas_extras` entrou na v1.2 pelo outro lado (ela sincroniza e grava
+       obraId, e o merge da nuvem a apagava junto com a obra). A invariante de
+       tools/test-v12-escopo.js pegou o segundo efeito na mesma hora: quem
+       carrega obraId e não está aqui é visível para quem não deveria vê-lo —
+       o sub-usuário restrito via a hora extra das obras alheias. */
+    horas_extras: 1
   };
   /* ⚠ O FILTRO MORA AQUI, NUNCA NO `Store.listar`.
    * `Store.salvar` (js/store.js) LÊ a lista e REGRAVA ela inteira. Se o Store
@@ -924,6 +1043,47 @@
     },
 
     // header padrão de cada módulo
+    /* =================================================================
+     * O TETO DE LINHAS DAS TABELAS LONGAS
+     *
+     * `renderFinanceiro` montava uma <tr> para CADA lançamento existente —
+     * o único recorte era por obra, nunca por data. Medido com 6.000
+     * lançamentos e 12 obras: 3,3 MB de HTML, 6.014 linhas, 62 mil tags,
+     * 266 ms só de JS — e o parse desses 3,3 MB pelo navegador vem por
+     * cima. A Folha com 3 anos dá 4,2 MB e 87 mil tags.
+     * Pior: `App.render()` reconstrói o `innerHTML` inteiro e é chamado em
+     * mais de cem lugares, inclusive ao trocar o seletor de obra ou o mês —
+     * ou seja, mexer no filtro remonta as 6.000 linhas.
+     *
+     * ⚠ CORTE DE EXIBIÇÃO, NUNCA DE DADO. As somas, os totais por obra e
+     *   tudo que é conta continuam sobre a lista INTEIRA; o que muda é
+     *   quantas linhas o navegador desenha de uma vez. Um recorte por
+     *   período mudaria o que é somado, e "meu saldo mudou sozinho" é um
+     *   defeito pior que uma tabela lenta.
+     *
+     * ⚠ E O QUE FOI CORTADO PRECISA GRITAR. Tabela que esconde linha em
+     *   silêncio vira "meus lançamentos sumiram" no telefone do suporte. O
+     *   aviso diz quantas ficaram de fora e tem o botão para ver todas, a
+     *   um clique — e as listas já vêm ordenadas da mais recente para a
+     *   mais antiga, então o que fica à vista é o que se procura.
+     * ================================================================= */
+    _TETO_LINHAS: 300,
+    _verTudo: {},
+    _cortar: function (linhas, tabela) {
+      var arr = Util.arr(linhas);
+      if (this._verTudo[tabela] || arr.length <= this._TETO_LINHAS) return { linhas: arr, cortou: 0, total: arr.length };
+      return { linhas: arr.slice(0, this._TETO_LINHAS), cortou: arr.length - this._TETO_LINHAS, total: arr.length };
+    },
+    _avisoCorte: function (c, tabela, oQue) {
+      if (!c.cortou) return "";
+      return '<div class="card" style="padding:8px 12px;margin-bottom:8px;font-size:13px;display:flex;'
+        + 'gap:10px;align-items:center;flex-wrap:wrap;border-left:4px solid var(--azul,#2e6f9e)">'
+        + "<span>Mostrando " + c.linhas.length + " " + (oQue || "registros") + " de <b>" + c.total
+        + "</b> — os mais recentes primeiro.</span>"
+        + '<button class="btn sm" data-gacao="ver-tudo" data-id="' + Util.esc(tabela) + '" style="margin-left:auto">'
+        + "Ver todos os " + c.total + "</button></div>";
+    },
+
     _head: function (titulo, gacao, btn, extra) {
       return '<div class="flex between mb"><h1 style="margin:0">' + titulo + "</h1><div class=\"flex\">" + (extra || "") +
         (gacao ? '<button class="btn primary" data-gacao="' + gacao + '">+ ' + btn + "</button>" : "") + "</div></div>";
@@ -2708,9 +2868,15 @@
          o "copiar de outra obra", que gera cópias próprias — nunca referência. */
       ["atividades", "atividade(s) da tabela de preços"]
     ],
-    /* `horas_extras` NÃO entra na cascata, pelo mesmo motivo de `faltas`: é
-       jornada de PESSOA, não da obra. Apagar uma obra não pode furar o cartão
-       de ponto de quem trabalhou nela. */
+    /* `horas_extras` NÃO entra na cascata: é jornada de PESSOA, não da obra.
+       Apagar uma obra não pode furar o cartão de ponto de quem trabalhou nela.
+       ⚠ ATÉ A v1.2 ESTA NOTA DIZIA "pelo mesmo motivo de `faltas`" — e a
+       analogia era falsa. `faltas` está a salvo porque NÃO grava obraId (o
+       formulário grava só colaboradorId/data/motivo), então o merge da nuvem
+       nunca a olha. `horas_extras` GRAVA obraId (linha 13005) e sincroniza:
+       ficar de fora desta lista não bastava, e ela era apagada em todos os
+       aparelhos pelo merge. Agora está em `_ENT_SO_DESVINCULA` (abaixo) e em
+       `Store._IMUNES_CASCATA` — nunca nas duas regras com esta. */
     /* fs_pagamentos ficou de FORA de propósito: o pagamento é do FAVORECIDO na semana e
      * pode cobrir várias obras (campo `obras: []`, não `obraId`) — levá-lo junto apagaria
      * o comprovante do pagamento das outras obras. Os lançamentos da obra saem; o
@@ -2741,7 +2907,16 @@
          Estavam fora das TRÊS listas: a tela não as apagava, o merge da nuvem
          apagava — em todos os aparelhos, sem aparecer no modal. */
       ["remun_apur", "apuração(ões) da remuneração variável"],
-      ["carp_propostas", "proposta(s) da carpintaria"]
+      ["carp_propostas", "proposta(s) da carpintaria"],
+      /* ⚠ v1.2 — MESMO DEFEITO, ENTIDADE MAIS ANTIGA. `horas_extras` grava
+         `obraId` no formulário, sincroniza, e não estava em NENHUMA das três
+         listas. A tela nunca a apagava (não aparecia no modal, não era
+         contada, não havia toast), mas o merge da nuvem via "obraId aponta pra
+         obra morta" e a apagava em TODOS os aparelhos no sync seguinte.
+         Some a hora extra de quem trabalhou na obra — dinheiro devido a
+         pessoa. O comentário de js/store.js dizia que ela já estava protegida;
+         não estava: quem estava era `faltas`, que não grava obraId. */
+      ["horas_extras", "hora(s) extra(s) lançada(s)"]
     ],
     _vinculosDaObra: function (obraId) {
       var e = eid(), out = [], total = 0;
@@ -3693,7 +3868,7 @@
 
         /* só as obras que TÊM de onde puxar entram na lista: oferecer obra
            sem medição nenhuma é oferecer um caminho que termina em erro */
-        var hoje = new Date().toISOString().slice(0, 10);
+        var hoje = hojeLocal();
         var comBase = obras.filter(function (o) {
           return !!MedicaoSeguinte.ultimaDaObra(meds, o.id, hoje);
         });
@@ -4294,9 +4469,60 @@
       /* v1.1.234 — boletim rejeitado fora da sequência (a própria medição
          impressa fica, mesmo rejeitada: imprimir o boletim recusado é lícito;
          somar o valor dele no acumulado dos OUTROS é que era o erro) */
+      /* ⚠ O DENOMINADOR VINHA DE UM CONTRATO E O NUMERADOR DA OBRA INTEIRA.
+       * O `contratado` acima sai do contrato apontado pelo boletim (é onde o
+       * aditivo mora). A sequência anterior/acumulado, porém, somava TODA
+       * medição da obra. Numa obra com dois contratos — que o próprio Painel
+       * pressupõe — o boletim do contrato B acumulava o que foi medido no A:
+       * contrato de R$ 100.000, acumulado R$ 250.000, 250%, saldo R$ 0. É o
+       * papel que o fiscal assina, e a base do %, do saldo e do
+       * "faturado × contratado".
+       *
+       * ⚠ E O CONSERTO ÓBVIO — "filtre sempre pelo contratoId" — ERRA PARA O
+       *   LADO DO DINHEIRO NO CASO MAIS COMUM. O campo Contrato é OPCIONAL.
+       *   Numa obra de contrato único onde a 1ª medição foi salva sem apontar
+       *   contrato e a 2ª apontou, filtrar derrubaria o `anterior` de
+       *   R$ 200.000 para zero e inflaria o saldo no mesmo tanto — regressão
+       *   de dinheiro em documento assinado, num cenário muito mais frequente
+       *   que a obra de dois contratos.
+       *   Por isso a régua é o número de contratos VIVOS da obra: com um só
+       *   (ou nenhum), nada muda em relação a hoje — byte a byte. Com dois ou
+       *   mais, cada boletim passa a somar a sequência do contrato dele, que é
+       *   o único jeito de o numerador e o denominador falarem da mesma coisa. */
+      /* ⚠ "VIVO" NÃO PODE SER "TUDO QUE NÃO É CANCELADO" — E ERA.
+       * O status padrão do formulário de contrato é `elaboracao`, com valor
+       * R$ 0. Bastava o cliente ter COMEÇADO a cadastrar um segundo contrato,
+       * e abandonado, para o modo por-contrato ligar — e aí toda medição
+       * antiga salva sem apontar contrato (o campo é opcional) saía da soma.
+       * Medido: obra com um contrato ativo de R$ 500.000 mais um rascunho
+       * vazio ia de "acumulado R$ 450.000, 90%, saldo R$ 50.000" para
+       * "acumulado R$ 100.000, 20%, saldo R$ 400.000".
+       * Ou seja: exatamente a regressão de dinheiro em documento assinado que
+       * a nota abaixo diz estar evitando. A régua certa é o contrato que a
+       * obra está EXECUTANDO — `ativo` e `suspenso`. Contrato em elaboração,
+       * aguardando assinatura, concluído, rescindido ou cancelado não define
+       * sequência de medição. */
+      var ctrsDaObra = lista("contratos").filter(function (c) {
+        if (!c || String(c.obraId) !== String(m.obraId)) return false;
+        var st = String(c.status || "");
+        return st === "ativo" || st === "suspenso";
+      });
+      /* e o contrato DESTE boletim conta mesmo que ele próprio já esteja
+         concluído — senão o boletim final de uma obra entregue mudaria de base
+         no dia em que alguém fechasse o contrato. */
+      var porContrato = ctrsDaObra.length > 1 && !!m.contratoId;
       var meds = lista("medicoes").filter(function (x) {
-        return x.obraId === m.obraId && (x.status !== "rejeitada" || String(x.id) === String(m.id));
+        if (x.obraId !== m.obraId) return false;
+        if (x.status === "rejeitada" && String(x.id) !== String(m.id)) return false;
+        /* boletim sem contrato numa obra de vários é ambíguo: não dá para
+           dizer a que sequência ele pertence. Fica de fora da soma e a tela
+           avisa (`medSemContrato`), em vez de ser jogado numa das duas. */
+        if (porContrato && String(x.contratoId || "") !== String(m.contratoId)) return false;
+        return true;
       }).sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
+      var ambiguas = porContrato ? lista("medicoes").filter(function (x) {
+        return x.obraId === m.obraId && !x.contratoId && x.status !== "rejeitada";
+      }).length : 0;
       var anterior = 0, atual = Util.num(m.valor), acumulado = 0, achou = false;
       for (var i = 0; i < meds.length; i++) {
         if (String(meds[i].id) === String(m.id)) { anterior = acumulado; acumulado += atual; achou = true; break; }
@@ -4307,7 +4533,9 @@
       // sem valor de contrato → não exibir % (base inexistente); helper omite a coluna quando null
       var pctAcum = contratado > 0 ? acumulado / contratado * 100 : null;
       var pctAnt = contratado > 0 ? anterior / contratado * 100 : null;
-      return { contratado: contratado, anterior: anterior, atual: atual, acumulado: acumulado, saldo: Math.max(0, contratado - acumulado), retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra };
+      return { contratado: contratado, anterior: anterior, atual: atual, acumulado: acumulado, saldo: Math.max(0, contratado - acumulado), retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra,
+        /* a tela usa estes dois para explicar de onde veio a sequência */
+        porContrato: porContrato, contratosDaObra: ctrsDaObra.length, medSemContrato: ambiguas };
     },
     /* QR de verificação nos impressos: aponta pro Portal do Cliente com o
      * usuário pré-preenchido e a obra do documento (senha continua exigida —
@@ -4350,6 +4578,16 @@
             + lin("Acumulado até esta medição", c.acumulado, c.pctAcum, true)
             + lin("Saldo a executar", c.saldo, c.saldo / c.contratado * 100)
             + "</tbody></table>"
+            /* ⚠ NUMA OBRA COM MAIS DE UM CONTRATO, O PAPEL TEM DE DIZER DE
+               QUAL SEQUÊNCIA ELE ESTÁ FALANDO. Sem esta linha, dois boletins
+               da mesma obra com acumulados diferentes parecem contradição —
+               e quem assina não tem como saber que são contratos distintos. */
+            + (c.porContrato
+              ? "<p style='font-size:10px;color:#555;margin:4px 0 0'>Esta obra tem " + c.contratosDaObra
+                + " contratos. O acumulado, o percentual e o saldo acima referem-se APENAS ao contrato deste boletim."
+                + (c.medSemContrato ? " " + c.medSemContrato + " medição(ões) da obra não apontam contrato e ficaram de fora desta soma — vincule-as ao contrato correspondente." : "")
+                + "</p>"
+              : "")
           : "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:6px;text-align:left'>Descrição</th><th style='border:1px solid #bbb;padding:6px;text-align:right'>Valor (R$)</th></tr></thead><tbody>"
             + lin("Medição anterior (acumulado)", c.anterior, null)
             + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, null)
@@ -4515,8 +4753,18 @@
             rt.getCell(11).numFmt = "R$ #,##0.00"; rt.getCell(11).font = { bold: true, color: { argb: verde } };
           }
           // Aba histórico de medições da obra (rejeitada fora do acumulado — v1.1.234)
+          /* ⚠ MESMO RECORTE DO IMPRESSO. Esta aba somava TODA medição da obra
+             contra o `contratado` de UM contrato — que é o defeito que o
+             impresso acabou de perder. Deixar só um dos dois consertado faz o
+             PDF e o Excel DO MESMO BOLETIM divergirem: 100 mil num, 450 mil no
+             outro. Dois papéis do mesmo documento com contas diferentes é pior
+             que os dois errados juntos. `c.porContrato` vem do `_medicaoCalc`,
+             então a régua é uma só. */
           var meds = lista("medicoes").filter(function (x) {
-            return x.obraId === m.obraId && (x.status !== "rejeitada" || String(x.id) === String(m.id));
+            if (x.obraId !== m.obraId) return false;
+            if (x.status === "rejeitada" && String(x.id) !== String(m.id)) return false;
+            if (c.porContrato && String(x.contratoId || "") !== String(m.contratoId)) return false;
+            return true;
           }).sort(function (a, b) { return self._medKey(a).localeCompare(self._medKey(b)); });
           var wh = wb.addWorksheet("Histórico", { views: [{ state: "frozen", ySplit: 1 }] });
           wh.columns = [{ width: 10 }, { width: 26 }, { width: 16 }, { width: 16 }, { width: 16 }, { width: 12 }];
@@ -4641,7 +4889,7 @@
       });
       var blob = new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8;" });
       var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
-      a.download = nomeArquivo + "_" + new Date().toISOString().slice(0, 10) + ".csv";
+      a.download = nomeArquivo + "_" + hojeLocal() + ".csv";
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
       UI.toast("CSV exportado.", "ok");
@@ -4934,9 +5182,16 @@
         return html + '<div class="vazio card">Nenhum lançamento em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
           '</b>. <button class="btn sm" data-gacao="fin-obra">Ver todas as obras</button></div>';
       }
+      /* ⚠ o corte é SÓ da tabela: os totais por obra acima já foram somados
+         sobre a lista inteira, e continuam certos. */
+      var corteFin = this._cortar(fs, "financeiro");
+      html += this._avisoCorte(corteFin, "financeiro", "lançamentos");
+      /* índice de obras: o `filter` por linha era O(linhas × obras) */
+      var idxObraFin = Object.create(null);
+      obras.forEach(function (o) { if (o && o.id) idxObraFin[o.id] = o; });
       html += '<table class="tbl"><thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Obra</th><th class="num">Valor</th><th>Status</th></tr></thead><tbody>';
-      fs.forEach(function (f) {
-        var ob = obras.filter(function (o) { return String(o.id) === String(f.obraId); })[0];
+      corteFin.linhas.forEach(function (f) {
+        var ob = idxObraFin[f.obraId];
         /* a cor acompanha o SINAL, não o tipo: o espelho de uma despesa
            devolve dinheiro ao caixa e por isso sai verde, não vermelho */
         var cor = (Util.num(f.valor) < 0 ? f.tipo !== "receita" : f.tipo === "receita") ? "var(--verde)" : "var(--vermelho)";
@@ -5040,7 +5295,7 @@
 
     formFinanceiro: function (f) {
       f = f || {}; var self = this, obras = lista("obras"), contratos = lista("contratos");
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
       var etapasIni = this._etapasDaObra(f.obraId);
       var corpo =
         /* ⚠ TRÊS DATAS, TRÊS SENTIDOS — e é por isso que elas existem separadas.
@@ -9194,12 +9449,12 @@
     /* ⚠ data LOCAL, nao UTC. `toISOString()` devolve UTC: no fuso -3, das 21h
        a meia-noite ele ja esta no dia seguinte — a aprovacao feita as 21h30 de
        segunda ficava carimbada como terca. */
-    _hojeISO: function () {
-      var d = new Date(), m = d.getMonth() + 1, dia = d.getDate();
-      return d.getFullYear() + "-" + (m < 10 ? "0" : "") + m + "-" + (dia < 10 ? "0" : "") + dia;
-    },
-    // Data de HOJE no fuso LOCAL (evita off-by-one noturno do toISOString/UTC nas comparações de prazo).
-    _hojeLocal: function () { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); },
+    /* ⚠ os dois delegam para `hojeLocal()` (lá em cima, escopo de módulo).
+       Eram duas implementações iguais do mesmo cálculo, e a correção de fuso
+       tinha chegado a elas e a mais nenhum dos 33 outros pontos do arquivo.
+       Uma implementação só é o que impede a terceira de nascer. */
+    _hojeISO: function () { return hojeLocal(); },
+    _hojeLocal: function () { return hojeLocal(); },
     /* Hoje + N dias, em data local ISO. `setHours(0,0,0,0)` ANTES do `setDate`
        tira a hora do caminho — sem isso o resultado muda conforme a hora em
        que o app foi aberto. E `setDate` cuida de virada de mês, ano e horário
@@ -9520,7 +9775,7 @@
       var self = this;
       c = c || {}; var stAntigo = c.status || ""; var forn = lista("fornecedores"), obras = lista("obras");
       var num = c.numero || proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
       var corpo =
         '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.compraStatus, c.status || "cotacao"))) + "</div>" +
         '<div class="row">' + campo("Fornecedor", sel("g-forn", optsRec(forn, "nome", c.fornecedorId, "— selecionar —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
@@ -9790,7 +10045,7 @@
         }
         Store.salvar(eid(), "estoque_mov", {
           itemId: alvo.id, itemNome: alvo.nome, tipo: "entrada", qtd: qtd, custoUnit: custo,
-          data: pc.dataRecebimento || new Date().toISOString().slice(0, 10),
+          data: pc.dataRecebimento || hojeLocal(),
           obraId: pc.obraId || "", docTipo: "PC", docNumero: pc.numero || "",
           obs: "Recebimento do pedido " + (pc.numero || "")
         });
@@ -9841,7 +10096,7 @@
           + Util.fmtNum(saldoAtual, 2) + " " + Util.esc(un) + '</b>'
           + (custoAtual > 0 ? ' · custo <b>' + Util.fmtMoeda(custoAtual) + "</b>" : "") + "</p>" +
         '<div class="row">' + campo("Quantidade * (" + Util.esc(un) + ")", inp("mv-qtd", "", "0,00"))
-          + campo("Data", inp("mv-data", new Date().toISOString().slice(0, 10), "", "date")) + "</div>" +
+          + campo("Data", inp("mv-data", hojeLocal(), "", "date")) + "</div>" +
         (ehEntrada
           /* o custo só é perguntado na ENTRADA: saída não muda preço, consome o
              que já está lá. Em branco = mantém o custo atual do item. */
@@ -9867,7 +10122,7 @@
             UI.toast("Saída de " + Util.fmtNum(qtd, 2) + " " + un + " maior que o saldo de " + Util.fmtNum(saldo, 2) + " " + un + ".", "erro");
             return;
           }
-          var data = (UI.el("mv-data") || {}).value || new Date().toISOString().slice(0, 10);
+          var data = (UI.el("mv-data") || {}).value || hojeLocal();
           var obraMov = (UI.el("mv-obra") || {}).value || "";
           var obs = String((UI.el("mv-obs") || {}).value || "").trim();
           var custoMov = Util.num(atual.custoUnit);
@@ -9929,6 +10184,185 @@
      * ⚠ Sem feriado: não há calendário de feriados no repositório, e inventar
      *   um erraria calado nos anos seguintes (mesma pendência do vencimento
      *   em feriado, no financeiro). */
+    /* =================================================================
+     * DOSSIÊ DE PRORROGAÇÃO DE PRAZO
+     *
+     * O sistema já tinha TODAS as peças e nunca as somava: a fração DNIT/SICRO
+     * por dia (js/rdo.js), o clima de fonte externa, os impedimentos não
+     * imputáveis, o efetivo presente, o prazo contratual e os buracos na
+     * sequência. `condicaoPorClima` devolvia `fracaoPerdida` em toda chamada e
+     * NENHUM código de produção lia esse campo.
+     *
+     * O que o engenheiro fazia à mão: abrir diário por diário, anotar "choveu
+     * 54,2 mm, 87% do dia", copiar para o Word, juntar o efetivo ocioso,
+     * procurar em que dia a frente não foi liberada. Numa obra de 8 meses são
+     * ~240 diários.
+     *
+     * ⚠ A TELA NÃO CALCULA NADA. Toda a apuração é do `js/pleito.js`, que é
+     *   módulo puro e testado; aqui só se escolhe o período e se desenha o que
+     *   ele devolveu. Cálculo em duas casas vira duas verdades.
+     * ================================================================= */
+    pleitoDossie: function () {
+      if (typeof Pleito === "undefined") { UI.toast("Módulo de pleito não carregado.", "erro"); return; }
+      var self = this, obras = lista("obras"), todos = lista("rdo");
+      if (!obras.length) { UI.toast("Cadastre a obra antes — o dossiê confronta o prazo do contrato dela.", "erro"); return; }
+      /* já vem na obra que a tela está filtrando: é a que a pessoa está olhando */
+      var pre = (this._rdoObraFiltro && this._rdoObraFiltro !== "todas") ? this._rdoObraFiltro : (obras[0] || {}).id;
+      var datas = todos.map(function (r) { return String(r.data || ""); }).filter(Boolean).sort();
+      var corpo = '<div class="row">'
+        + campo("Obra *", sel("pl-obra", obras.map(function (o) {
+            return '<option value="' + Util.esc(o.id) + '"' + (o.id === pre ? " selected" : "") + ">" + Util.esc(o.nome || o.id) + "</option>";
+          }).join("")))
+        + "</div><div class=\"row\">"
+        + campo("De", inp("pl-de", datas[0] || "", "", "date"))
+        + campo("Até", inp("pl-ate", datas[datas.length - 1] || "", "", "date"))
+        + "</div>"
+        + '<p class="muted" style="font-size:12.5px;margin:6px 0 0">Só entram dias com clima de <b>fonte externa</b>. '
+        + 'Chuva digitada à mão não é prova contra a fiscalização, e domingo e feriado não entram em pleito — '
+        + 'o dossiê lista o que ficou de fora e por quê.</p>';
+      UI.modal("Dossiê de prorrogação de prazo", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Montar dossiê", classe: "primary", onClick: function () {
+          var oid = v("pl-obra"), de = v("pl-de"), ate = v("pl-ate");
+          UI.fecharModal();
+          self._pleitoMostrar(oid, de, ate);
+        } }
+      ]);
+    },
+
+    _pleitoMostrar: function (obraId, de, ate) {
+      var obra = Store.obter(eid(), "obras", obraId) || {};
+      var d;
+      try {
+        d = Pleito.consolidar({ rdos: lista("rdo"), obra: obra, obraId: obraId, de: de, ate: ate });
+      } catch (e) {
+        UI.toast("Não consegui montar o dossiê: " + (e.message || e), "erro"); return;
+      }
+      this._pleitoUltimo = { dossie: d, obra: obra };
+      UI.modal("Dossiê — " + (obra.nome || "obra"), this._pleitoHtml(d, obra), [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Imprimir", classe: "primary", onClick: function () { Gestao.imprimirPleito(); } }
+      ]);
+    },
+
+    /* O corpo do documento. Serve à tela E ao impresso — um documento que
+       aparece diferente no papel e na tela é um documento a menos. */
+    _pleitoHtml: function (d, obra, paraImpressao) {
+      var esc = Util.esc, h = "";
+      var box = function (fundo, borda, dentro) {
+        return '<div style="background:' + fundo + ';border-left:4px solid ' + borda
+          + ';border-radius:6px;padding:10px 13px;margin:10px 0;font-size:13px">' + dentro + "</div>";
+      };
+      h += '<div style="font-size:13.5px;line-height:1.55">' + esc(Pleito.resumoTexto(d)) + "</div>";
+
+      h += box("#f0f9ff", "#2e6f9e",
+        '<div style="font-size:22px;font-weight:700">' + esc(d.total.diasPleiteaveisTexto) + " dia(s) pleiteáveis</div>"
+        + '<div style="color:#475569">Por chuva: ' + esc(Pleito.numBR(d.total.porChuva, 5))
+        + " · Por impedimento não imputável: " + esc(Pleito.numBR(d.total.porImpedimento, 5))
+        + (d.total.sobreposicaoRemovida ? " · Sobreposição descontada: " + esc(Pleito.numBR(d.total.sobreposicaoRemovida, 5)) : "")
+        + "</div>"
+        + (d.prazo && d.prazo.temContrato
+          ? '<div style="margin-top:6px">Pedido em dias inteiros: <b>' + esc(d.prazo.diasPleiteaveisArredondado)
+            + "</b> · Novo término proposto: <b>" + esc(Pleito.dataBR(d.prazo.novoTermino)) + "</b>"
+            + '<div style="font-size:11.5px;color:#64748b">' + esc(d.prazo.arredondamento) + "</div></div>"
+          : '<div style="margin-top:6px;color:#b45309">Sem início/término no cadastro da obra — não dá para propor novo término.</div>'));
+
+      /* ---- a memória de cálculo, dia a dia: é ela que sustenta o pedido ---- */
+      if (d.chuva.linhas.length) {
+        h += "<h3 style=\"margin:16px 0 6px;font-size:15px\">Dias de chuva contados</h3>"
+          + '<div style="overflow-x:auto"><table class="tbl" style="font-size:12px"><thead><tr>'
+          + "<th>Data</th><th>Diário</th><th class=\"num\">Chuva</th><th class=\"num\">% do dia</th><th>Memória de cálculo</th></tr></thead><tbody>";
+        d.chuva.linhas.forEach(function (l) {
+          h += "<tr><td>" + esc(l.dataBR) + "</td><td>" + esc(l.numero || "—") + "</td>"
+            + '<td class="num">' + esc(Pleito.numBR(l.chuvaMm, 1)) + " mm</td>"
+            + '<td class="num"><b>' + esc(Pleito.numBR(l.pctDoDia, 1)) + "%</b></td>"
+            + '<td style="font-size:11px;color:#475569">' + esc(l.memoria) + "</td></tr>";
+        });
+        h += "</tbody></table></div>";
+      }
+
+      /* ---- e o que FICOU DE FORA, que é o que segura o documento quando a
+             fiscalização contesta. Omitir o descarte parece esquecimento. ---- */
+      if (d.descartes.total) {
+        var porMot = [];
+        for (var k in d.descartes.porMotivo) {
+          if (Object.prototype.hasOwnProperty.call(d.descartes.porMotivo, k))
+            porMot.push(d.descartes.porMotivo[k] + "× " + (Pleito.MOTIVOS_DESCARTE[k] || k));
+        }
+        h += "<h3 style=\"margin:16px 0 6px;font-size:15px\">Dias descartados, e por quê</h3>"
+          + '<div class="muted" style="font-size:12.5px;margin-bottom:6px">' + esc(porMot.join(" · ")) + "</div>"
+          + '<div style="overflow-x:auto"><table class="tbl" style="font-size:12px"><thead><tr>'
+          + "<th>Data</th><th class=\"num\">Chuva</th><th>Motivo do descarte</th></tr></thead><tbody>";
+        d.descartes.linhas.forEach(function (l) {
+          h += "<tr><td>" + esc(l.dataBR) + "</td>"
+            + '<td class="num">' + esc(Pleito.numBR(l.chuvaMm, 1)) + " mm</td>"
+            + "<td>" + esc(l.motivoTexto) + "</td></tr>";
+        });
+        h += "</tbody></table></div>";
+      }
+
+      if (d.impedimentos && d.impedimentos.linhas && d.impedimentos.linhas.length) {
+        h += "<h3 style=\"margin:16px 0 6px;font-size:15px\">Impedimentos não imputáveis</h3>"
+          + '<div style="overflow-x:auto"><table class="tbl" style="font-size:12px"><thead><tr>'
+          + "<th>Data</th><th>Impedimento</th><th>Contado?</th></tr></thead><tbody>";
+        d.impedimentos.linhas.forEach(function (l) {
+          h += "<tr><td>" + esc(l.dataBR) + "</td><td>" + esc((l.rotulos || []).join(", "))
+            + "</td><td>" + (l.contado ? "sim" : esc(l.porQueNaoContado || "não")) + "</td></tr>";
+        });
+        h += "</tbody></table></div>";
+      }
+
+      if (d.efetivoOcioso && d.efetivoOcioso.pessoasDia) {
+        h += box("var(--surface-2)", "#94a3b8",
+          "<b>Efetivo ocioso nos dias contados:</b> " + esc(Pleito.numBR(d.efetivoOcioso.pessoasDia, 2))
+          + " pessoa-dia · " + esc(Pleito.numBR(d.efetivoOcioso.hhOcioso, 1)) + " Hh");
+      }
+
+      /* ⚠ A DIVERGÊNCIA COM O PORTAL VAI NO DOCUMENTO, não num comentário.
+         O Portal do Cliente já mostra "Clima e dias improdutivos", e ele conta
+         DIA INTEIRO pela condição salva no registro. Os dois números são
+         diferentes de propósito — e é melhor a resposta estar escrita aqui do
+         que ser improvisada na reunião com a fiscalização. */
+      if (d.divergencia && d.divergencia.divergem) {
+        h += box("#fffbeb", "#b45309",
+          "<b>Por que este número difere do relatório do Portal</b><br>"
+          + esc(d.divergencia.explicacao)
+          + '<div style="margin-top:5px;font-size:11.5px;color:#64748b">Portal: ' + esc(d.divergencia.portal.comoConta)
+          + "<br>Dossiê: " + esc(d.divergencia.dossie.comoConta) + "</div>");
+      }
+
+      if (d.avisos && d.avisos.length) {
+        h += box("#fef2f2", "#dc2626", "<b>Antes de protocolar</b><ul style=\"margin:6px 0 0;padding-left:18px\">"
+          + d.avisos.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>");
+      }
+      if (d.pendenciasDoMotor && d.pendenciasDoMotor.length && !paraImpressao) {
+        h += box("var(--surface-2)", "#94a3b8", "<b>O que o sistema ainda não sabe apurar</b><ul style=\"margin:6px 0 0;padding-left:18px\">"
+          + d.pendenciasDoMotor.map(function (a) { return "<li>" + esc(a) + "</li>"; }).join("") + "</ul>");
+      }
+      if (d.usoRestrito) h += '<div class="muted" style="font-size:11.5px;margin-top:10px">' + esc(d.usoRestrito) + "</div>";
+      return h;
+    },
+
+    imprimirPleito: function () {
+      var u = this._pleitoUltimo;
+      if (!u) { UI.toast("Monte o dossiê primeiro.", "erro"); return; }
+      var emp = (Store.lerPrefs(eid()) || {}).empresa || {};
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:900px;margin:0 auto">'
+        + '<h1 style="font-size:19px;margin:0 0 2px">Dossiê de Prorrogação de Prazo</h1>'
+        + '<div style="font-size:12px;color:#555;margin-bottom:14px">'
+        + Util.esc(u.obra.nome || "") + (emp.nome ? " · " + Util.esc(emp.nome) : "")
+        + " · emitido em " + Util.fmtDia(hojeLocal()) + "</div>"
+        + this._pleitoHtml(u.dossie, u.obra, true)
+        + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:40px'>"
+        + "<div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>"
+        + Util.esc(emp.nome || "CONTRATADA") + "</b><br>"
+        + (emp.responsavel ? Util.esc(emp.responsavel) + (emp.crea ? " · CREA " + Util.esc(emp.crea) : "") : "Responsável Técnico")
+        + "</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'><b>FISCALIZAÇÃO</b><br>Recebimento</div></div>"
+        + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML(true) : "") + "</div>";
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Dossiê de Prorrogação — " + (u.obra.nome || ""), html);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
+    },
+
     _buracosRdoHtml: function (todos, obras) {
       if (typeof RDO === "undefined" || !RDO.buracosNaSequencia || !todos.length) return "";
       var porObra = [];
@@ -9961,7 +10395,14 @@
       var self = this;
       var todos = lista("rdo").slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
       var obras = lista("obras");
-      var html = this._head(svg("rdo") + "Diário de Obra (RDO)", "novo-rdo", "Novo diário");
+      /* O DOSSIÊ DE PRORROGAÇÃO nasce aqui, ao lado de "Novo diário": o dado
+         que ele soma é justamente o desta tela. Só aparece com diário na mão
+         e com o motor carregado — botão que abre tela vazia ensina o usuário
+         a não clicar nele. */
+      var btnPleito = (typeof Pleito !== "undefined" && todos.length)
+        ? '<button class="btn" data-gacao="pleito-dossie" title="Somar os dias pleiteáveis por chuva e impedimento, com a memória de cálculo">Dossiê de prorrogação</button> '
+        : "";
+      var html = this._head(svg("rdo") + "Diário de Obra (RDO)", "novo-rdo", "Novo diário", btnPleito);
       html += this._buracosRdoHtml(todos, obras);
 
       /* DIÁRIO QUE CHEGOU PELO WHATSAPP.
@@ -9988,7 +10429,7 @@
       if (!semMotorR && fObra !== "todas" && fObra !== PorObra.SEM_OBRA && fObra !== PorObra.ORFAO &&
         !obras.filter(function (o) { return String(o.id) === String(fObra); }).length) fObra = this._rdoObraFiltro = "todas";
       var rs = semMotorR ? todos : PorObra.filtrar(todos, fObra, obras);
-      var hojeR = new Date().toISOString().slice(0, 10);
+      var hojeR = hojeLocal();
       var aggR = function (x) { return PorObra.totaisRdo(x, hojeR); };
       var tR = semMotorR ? null : PorObra.totaisRdo(rs, hojeR);
       html += '<div class="card" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 12px;margin-bottom:10px">'
@@ -10059,9 +10500,29 @@
       }
 
       if (!rs.length) return html + vazioBox("Nenhum diário nesta obra", "novo-rdo", "Registrar diário desta obra");
+      /* 2.000 diários davam 1,9 MB de HTML e 4.003 botões numa tacada — e a
+         lista já vem da data mais recente para a mais antiga, então o corte
+         mantém à vista justamente o que se procura. */
+      var corteRdo = this._cortar(rs, "rdo");
+      html += this._avisoCorte(corteRdo, "rdo", "diários");
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Clima</th><th class="num">Efetivo</th><th>Atividades</th><th>Status</th><th></th></tr></thead><tbody>';
-      rs.forEach(function (r) {
-        var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
+      /* ⚠ TRÊS COISAS QUE NÃO DEPENDEM DA LINHA, E ESTAVAM DENTRO DELA.
+         `lista("equipe")` e `_exigeOutroAprovador()` (que lê prefs) davam a
+         MESMA resposta em todas as linhas e faziam duas leituras de
+         localStorage + dois JSON.parse por diário: 6.000 leituras numa obra de
+         3.000 diários, só para abrir a tela. O índice de obras troca um
+         `filter` linear por consulta direta.
+         ⚠ protótipo nulo: `idxObra["constructor"]` devolveria a função Object
+         onde o `filter` devolvia undefined. */
+      var euAp = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      var ctxApFixo = {
+        semOutroAprovador: (typeof RDO !== "undefined" && RDO.semOutroAprovador) ? RDO.semOutroAprovador(euAp, lista("equipe")) : false,
+        exigirOutroAprovador: self._exigeOutroAprovador()
+      };
+      var idxObra = Object.create(null);
+      obras.forEach(function (o) { if (o && o.id) idxObra[o.id] = o; });
+      corteRdo.linhas.forEach(function (r) {
+        var ob = idxObra[r.obraId];
         var ef = Util.num(r.efetivoDireto) + Util.num(r.efetivoIndireto);
         var clima = rot(P.rdoClima, r.climaManha) + (r.climaTarde && r.climaTarde !== r.climaManha ? " / " + rot(P.rdoClima, r.climaTarde) : "");
         var resumo = (r.atividades || "").replace(/\s+/g, " ").slice(0, 60) + ((r.atividades || "").length > 60 ? "…" : "");
@@ -10096,12 +10557,11 @@
            então o else era código morto e a tela quebrava dois passos depois.
            Guarda que não cobre o caminho inteiro dá falsa sensação de rede. */
         var est = (typeof RDO !== "undefined" && RDO.estadoDe) ? RDO.estadoDe(r, !!(ob && ob.portalUser)) : (r.estado || "rascunho");
-        var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        var eu = euAp;           /* o mesmo usuário em todas as linhas */
         /* numa conta de UM usuário não existe segundo aprovador — sem este
            contexto o botão Aprovar some e o diário morre em "Aguardando
            aprovação", que foi o que a minha correção anterior provocou */
-        var ctxAp = { semOutroAprovador: RDO.semOutroAprovador ? RDO.semOutroAprovador(eu, lista("equipe")) : false,
-          exigirOutroAprovador: self._exigeOutroAprovador() };
+        var ctxAp = ctxApFixo;   /* montado uma vez, antes do laço — ver a nota lá em cima */
         var acao = "";
         if (typeof RDO !== "undefined") {
           /* `finalizado_legado` entra aqui: é o diário antigo de obra SEM
@@ -10171,7 +10631,22 @@
        * prazo por chuva e comprovação de mão de obra em medição — mentir nele
        * é pior do que não emitir. */
       var clima = r.clima || null;
-      var chuvaForte = !!(clima && Number(clima.chuvaMm) > 0 &&
+      /* ⚠ O IMPRESSO IGNORAVA DOMINGO E FERIADO — e é o impresso que vai para
+         o fiscal. A tela já dizia "dia não trabalhável, não entra em pleito"
+         (RDO.diaNaoTrabalhavel), e o PDF do MESMO dia imprimia "Dia
+         impraticável: 100% · critério DNIT/SICRO". Com a caixinha Feriado era
+         pior: o usuário marcava, a tela obedecia, o papel nunca lia o campo.
+         É exatamente o que js/rdo.js:114-125 descreve como o que "derruba o
+         pleito inteiro" — basta a fiscalização achar um domingo na lista para
+         o dossiê todo perder credibilidade. `RDO.paraPortal` já fazia certo;
+         o impresso, não. */
+      var naoTrabalhavel = !!(typeof RDO !== "undefined" && RDO.diaNaoTrabalhavel && RDO.diaNaoTrabalhavel(r));
+      var chuvaForte = !naoTrabalhavel && !!(clima && Number(clima.chuvaMm) > 0 &&
+        typeof RDO !== "undefined" && RDO.fracaoDiaPerdidoPorChuva &&
+        RDO.fracaoDiaPerdidoPorChuva(clima.chuvaMm) > 0);
+      /* choveu forte, mas o dia não conta: dizer isso no papel vale mais que
+         omitir — mostra que a exclusão foi deliberada, não esquecimento */
+      var choveuEmDiaParado = !chuvaForte && naoTrabalhavel && !!(clima && Number(clima.chuvaMm) > 0 &&
         typeof RDO !== "undefined" && RDO.fracaoDiaPerdidoPorChuva &&
         RDO.fracaoDiaPerdidoPorChuva(clima.chuvaMm) > 0);
 
@@ -10191,6 +10666,11 @@
           h += '<div style="margin-top:5px;color:#b45309;font-weight:700">Dia impraticável: '
             + RDO.numBR(Math.round(nd * 1000) / 10) + "%"
             + '<div style="font-weight:400;font-size:10px;color:#777">critério DNIT/SICRO — nd = (chuva ÷ 3 − 5) ÷ 15</div></div>';
+        }
+        if (choveuEmDiaParado) {
+          h += '<div style="margin-top:5px;color:#555;font-weight:600">'
+            + Util.esc(r.feriado ? "Feriado" : "Domingo") + " — dia não trabalhável"
+            + '<div style="font-weight:400;font-size:10px;color:#777">a chuva foi registrada, mas o dia não entra em pleito de prorrogação</div></div>';
         }
         if (r.climaManha || r.climaTarde) {
           h += '<div style="margin-top:5px;font-size:10px;color:#777">Anotado em obra — manhã: '
@@ -10277,7 +10757,12 @@
           var nb = function (x) { return RDO.numBR(x); };
           var celAcum = "—", celTotal = "—", celFalta = "—";
           if (c) {
-            celAcum = c.anterior ? nb(c.anterior) : "—";
+            /* ⚠ o refeito aparece AO LADO do acumulado, e não somado nele.
+               Se o número simplesmente encolhesse, quem lê o papel acharia
+               que o sistema perdeu lançamento. Dizer "(60 refeitos)" explica
+               a diferença e é, em si, a informação que o dono quer. */
+            celAcum = (c.anterior ? nb(c.anterior) : "—")
+              + (c.refeito ? '<div style="font-size:9px;color:#b45309">' + nb(c.refeito) + " refeito(s)</div>" : "");
             celTotal = c.total ? nb(c.total) + (c.temPrevisto ? '<div style="font-size:9px;color:' +
               (c.excedeu ? "#b91c1c" : "#777") + '">' + nb(c.pctTotal) + "%</div>" : "") : "—";
             celFalta = !c.temPrevisto ? "—"
@@ -10846,7 +11331,7 @@
               (p.colaboradorId && !eleg.some(function (c) { return c.id === p.colaboradorId; })
                 ? '<option value="' + Util.esc(p.colaboradorId) + '" selected>' + Util.esc(p.nome || "(fora da lista)") + " — não está mais elegível</option>" : "") +
             "</select>" +
-            '<input data-prq="' + i + "_" + j + '" value="' + Util.esc(p.qtd == null ? "" : p.qtd) + '" placeholder="qtd" style="width:74px;text-align:right;font-size:11px;padding:2px 4px">' +
+            '<input inputmode="decimal" data-prq="' + i + "_" + j + '" value="' + Util.esc(p.qtd == null ? "" : p.qtd) + '" placeholder="qtd" style="width:74px;text-align:right;font-size:11px;padding:2px 4px">' +
             '<span class="muted" style="font-size:10.5px">' + Util.esc(a.unidade || "") + "</span>" +
             '<button type="button" data-prr="' + i + "_" + j + '" class="btn sm ghost" style="padding:1px 6px">×</button></div>';
         }).join("");
@@ -10988,7 +11473,7 @@
           return;
         }
         el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
-          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Serviço</th><th>Un</th><th>Previsto</th><th>Feito hoje</th><th>Situação</th><th></th></tr>' +
+          '<tr style="color:var(--texto-fraco);font-size:var(--t-micro)"><th style="text-align:left">Serviço</th><th>Un</th><th>Previsto</th><th>Feito hoje</th><th>Situação</th><th></th></tr>' +
           buf.ativ.map(function (a, i) {
             return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
               '<td style="padding:4px 2px">' + (a.numero ? "<b>" + Util.esc(a.numero) + "</b> " : "") + Util.esc(a.descricao) +
@@ -11014,7 +11499,7 @@
               '<td style="text-align:right">' + (a.qtdPrevista ? a.qtdPrevista : "—") + "</td>" +
               '<td style="text-align:right;min-width:230px">' +
                 '<div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">' +
-                  '<input data-atq="' + i + '" value="' + ((a.modoEntrada && a.modoEntrada !== "qtd") ? "" : (a.qtdExecutada || "")) +
+                  '<input inputmode="decimal" data-atq="' + i + '" value="' + ((a.modoEntrada && a.modoEntrada !== "qtd") ? "" : (a.qtdExecutada || "")) +
                     '" placeholder="' + ((a.modoEntrada && a.modoEntrada !== "qtd") ? "%" : Util.esc(a.unidade || "qtd")) +
                     '" style="width:70px;text-align:right;font-size:12px;padding:2px 4px">' +
                   seletorModo(i) +
@@ -11220,13 +11705,13 @@
         }
         el.innerHTML = '<datalist id="g-ef-funcoes">' + RDO.FUNCOES.map(function (f) { return '<option value="' + Util.esc(f) + '">'; }).join("") + "</datalist>" +
           '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
-          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Função</th><th>Qtd</th><th>Horas</th><th>Extras</th><th>Terceiro</th><th></th></tr>' +
+          '<tr style="color:var(--texto-fraco);font-size:var(--t-micro)"><th style="text-align:left">Função</th><th>Qtd</th><th>Horas</th><th>Extras</th><th>Terceiro</th><th></th></tr>' +
           buf.efe.map(function (e, i) {
             return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
               '<td style="padding:3px 2px"><input data-eff="' + i + '" list="g-ef-funcoes" value="' + Util.esc(e.funcao || "") + '" style="width:100%;font-size:12px;padding:2px 4px"></td>' +
-              '<td><input data-efq="' + i + '" value="' + (e.qtd || 1) + '" style="width:48px;text-align:center;font-size:12px;padding:2px"></td>' +
-              '<td><input data-efh="' + i + '" value="' + (e.horas || "") + '" style="width:52px;text-align:center;font-size:12px;padding:2px"></td>' +
-              '<td><input data-efx="' + i + '" value="' + (e.horasExtras || "") + '" style="width:48px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input inputmode="numeric" data-efq="' + i + '" value="' + (e.qtd || 1) + '" style="width:48px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input inputmode="decimal" data-efh="' + i + '" value="' + (e.horas || "") + '" style="width:52px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input inputmode="decimal" data-efx="' + i + '" value="' + (e.horasExtras || "") + '" style="width:48px;text-align:center;font-size:12px;padding:2px"></td>' +
               '<td style="text-align:center"><input type="checkbox" data-eft="' + i + '"' + (e.terceiro ? " checked" : "") + "></td>" +
               '<td><button type="button" data-efr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>';
           }).join("") + "</table>";
@@ -11257,13 +11742,13 @@
           var t0 = document.getElementById("g-eq-tot"); if (t0) t0.textContent = ""; return;
         }
         el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
-          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Equipamento</th><th>Prefixo</th><th>Oper.</th><th>Ocioso</th><th>Manut.</th><th>Alug.</th><th></th></tr>' +
+          '<tr style="color:var(--texto-fraco);font-size:var(--t-micro)"><th style="text-align:left">Equipamento</th><th>Prefixo</th><th>Oper.</th><th>Ocioso</th><th>Manut.</th><th>Alug.</th><th></th></tr>' +
           buf.equip.map(function (e, i) {
             return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
               '<td style="padding:3px 2px"><input data-eqt="' + i + '" value="' + Util.esc(e.tipo || "") + '" style="width:100%;font-size:12px;padding:2px 4px"></td>' +
               '<td><input data-eqp="' + i + '" value="' + Util.esc(e.prefixo || "") + '" style="width:64px;font-size:12px;padding:2px"></td>' +
-              '<td><input data-eqo="' + i + '" value="' + (e.hOperacao || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
-              '<td><input data-eqi="' + i + '" value="' + (e.hOciosa || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input inputmode="decimal" data-eqo="' + i + '" value="' + (e.hOperacao || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
+              '<td><input inputmode="decimal" data-eqi="' + i + '" value="' + (e.hOciosa || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
               '<td><input data-eqm="' + i + '" value="' + (e.hManutencao || "") + '" style="width:44px;text-align:center;font-size:12px;padding:2px"></td>' +
               '<td style="text-align:center"><input type="checkbox" data-eqa="' + i + '"' + (e.alugado ? " checked" : "") + "></td>" +
               '<td><button type="button" data-eqr="' + i + '" class="btn sm ghost" style="padding:1px 6px">×</button></td></tr>';
@@ -11352,7 +11837,7 @@
        importa porque diário quase sempre é lançado com atraso). */
     _buscarClima: function (obra, dataISO, cb) {
       if (typeof RDO === "undefined") { cb(null, "Módulo indisponível."); return; }
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
 
       function comCoord(lat, lon, nomeLocal) {
         var url = RDO.urlClima(lat, lon, dataISO, hoje);
@@ -11584,7 +12069,7 @@
                 RDO.TIPOS_OCORRENCIA.map(function (t) {
                   return '<option value="' + t.id + '"' + (o.tipo === t.id ? " selected" : "") + ">" + t.rotulo + "</option>";
                 }).join("") + "</select>" +
-              '<input data-och="' + i + '" value="' + (o.horasParadas || "") + '" placeholder="h paradas" style="width:88px;font-size:12px;padding:3px">' +
+              '<input inputmode="decimal" data-och="' + i + '" value="' + (o.horasParadas || "") + '" placeholder="h paradas" style="width:88px;font-size:12px;padding:3px">' +
               '<button type="button" data-ocr="' + i + '" class="btn sm ghost" style="padding:1px 6px;margin-left:auto">×</button></div>' +
             '<input data-ocd="' + i + '" value="' + Util.esc(o.descricao || "") + '" placeholder="O que aconteceu e qual a causa" style="width:100%;font-size:12px;padding:4px;margin-bottom:5px">' +
             '<div style="display:flex;gap:6px">' +
@@ -11889,7 +12374,10 @@
         url: srv, licenca: chave,
         buscar: function (u, i) { return fetch(u, i); },
         obras: lista("obras"),
-        hoje: (new Date()).toISOString().slice(0, 10),
+        /* ⚠ escapou da troca em massa por causa dos parênteses extras; é o
+           mesmo "hoje" em UTC, e aqui ele decide a data do diário que entra
+           pela sincronização de campo. */
+        hoje: hojeLocal(),
         idNovo: function () { return Util.uid("rdo"); },
         autorId: String(eu.usuarioId || eu.email || ""),
         /* devolve true SÓ se gravou: é isto que autoriza a baixa lá fora.
@@ -12004,7 +12492,7 @@
       var num = r.numero || (typeof RDO !== "undefined" && RDO.proximoNumero
         ? RDO.proximoNumero(lista("rdo"), r.obraId || "")
         : "RDO-0001");
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
       /* ⚠ CLONE COMPLETO — não `{ d, leg }`. Copiar só esses dois campos jogava
        * fora `id`, `remoto`, `tenant` e `bytes` de TODA foto do formato novo
        * (js/fotos.js:89): abrir um diário salvo para editar e salvar de novo
@@ -12617,7 +13105,7 @@
       if (!o) { UI.toast("Entrega não encontrada.", "erro"); return; }
       var colabs = lista("colaboradores").filter(function (c) { return c.status === "ativo" && c.id !== o.colaboradorId; });
       if (!colabs.length) { UI.toast("Não há outro colaborador ativo para receber a cópia.", "aviso"); return; }
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
       var nI = (o.itens || []).length;
       var corpo = '<p class="muted" style="margin:0 0 10px">Copiando os <b>' + nI + ' EPI' + (nI === 1 ? "" : "s")
         + '</b> da entrega <b>' + Util.esc(o.numero || "—") + "</b> (" + Util.esc(o.colaboradorNome || "—") + "). "
@@ -12656,7 +13144,7 @@
       ]);
     },
     formEntregaEpi: function (e) {
-      e = e || {}; var self = this, colabs = lista("colaboradores"), obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      e = e || {}; var self = this, colabs = lista("colaboradores"), obras = lista("obras"), hoje = hojeLocal();
       var numero = e.numero || this._proxNumeroEpi();
       var itensBuf = this._epiItens(e);
       /* ao ABRIR uma entrega antiga, o que está com CA pendente também
@@ -12902,7 +13390,7 @@
     _pontoMes: null,
     renderPonto: function () {
       var self = this, colabs = lista("colaboradores"), obras = lista("obras");
-      var mes = this._pontoMes || new Date().toISOString().slice(0, 7);
+      var mes = this._pontoMes || mesLocal();
       var mesBR = mes.split("-").reverse().join("/");
       var faltas = lista("faltas").filter(function (f) { return String(f.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
       var ativos = colabs.filter(function (c) { return c.status === "ativo"; }).length;
@@ -12956,9 +13444,17 @@
       var ps = lista("ponto").slice().sort(function (a, b) { return (b.competencia || "").localeCompare(a.competencia || ""); });
       if (ps.length) {
         html += '<h3 style="margin:20px 0 8px;font-size:15px">Registros mensais (valor lançado)</h3>';
+        /* ⚠ ASSIMETRIA QUE JÁ ESTAVA AQUI: faltas e horas extras logo acima
+           são filtradas pelo mês de referência; esta tabela lia `ponto`
+           INTEIRO, de todas as competências. Não mudei o que ela mostra (o
+           histórico completo é útil), só quantas linhas desenha de uma vez. */
+        var cortePt = this._cortar(ps, "ponto");
+        html += this._avisoCorte(cortePt, "ponto", "competências");
+        var idxColP = Object.create(null);
+        colabs.forEach(function (c) { if (c && c.id) idxColP[c.id] = c; });
         html += '<table class="tbl"><thead><tr><th>Competência</th><th>Colaborador</th><th class="num">Dias</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
-        ps.forEach(function (p) {
-          var col = colabs.filter(function (c) { return c.id === p.colaboradorId; })[0];
+        cortePt.linhas.forEach(function (p) {
+          var col = idxColP[p.colaboradorId];
           var acao = p.status !== "lancado" ? '<button class="btn sm success" data-gacao="lancar-ponto" data-id="' + p.id + '">Lançar folha</button>' : "✓";
           html += '<tr><td style="cursor:pointer" data-gopen="ponto:' + p.id + '"><b>' + Util.esc(p.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : (p.colaboradorNome || "—")) + '</td><td class="num">' + Util.fmtNum(p.dias, 0) + '</td><td class="num">' + Util.fmtMoeda(p.valor) + "</td><td>" + pill(p.status) + '</td><td class="num">' + acao + "</td></tr>";
         });
@@ -12985,7 +13481,7 @@
       var self = this; h = h || {};
       var colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
       var obras = lista("obras");
-      var hoje = h.data || new Date().toISOString().slice(0, 10);
+      var hoje = h.data || hojeLocal();
       var corpo = '<div class="row">' + campo("Colaborador *", sel("g-he-colab", optsRec(colabs, "nome", h.colaboradorId, "— selecionar —")))
         + campo("Data *", inp("g-he-data", hoje, "", "date"))
         + campo("Horas *", inp("g-he-horas", h.horas, "Ex.: 2  ou  2:30")) + "</div>"
@@ -13008,7 +13504,7 @@
     },
     registrarFalta: function () {
       var self = this, colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
       var corpo = '<div class="row">' + campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", "", "— selecionar —"))) + campo("Data *", inp("g-data", hoje, "", "date")) + "</div>"
         + campo("Motivo", sel("g-motivo", opts(P.faltaMotivo, "injustificada")));
       UI.modal("Registrar falta", corpo, [
@@ -13026,7 +13522,7 @@
     },
     faltasLote: function () {
       var self = this, colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
-      var hoje = new Date().toISOString().slice(0, 10);
+      var hoje = hojeLocal();
       var checks = colabs.map(function (c) { return '<label style="display:flex;align-items:center;gap:7px;font-size:13px;padding:2px 0;cursor:pointer"><input type="checkbox" data-lote-col="' + c.id + '"> ' + Util.esc(c.nome) + ' <span class="muted">' + Util.esc(c.funcao || "") + "</span></label>"; }).join("");
       var corpo = '<div class="row">' + campo("De *", inp("g-ini", hoje, "", "date")) + campo("Até *", inp("g-fim", hoje, "", "date")) + campo("Motivo", sel("g-motivo", opts(P.faltaMotivo, "injustificada"))) + "</div>"
         + '<label style="display:flex;align-items:center;gap:7px;font-size:13px;margin:4px 0 6px"><input type="checkbox" id="g-pulafds" checked> Pular sábados e domingos</label>'
@@ -13041,14 +13537,30 @@
           if (!ids.length) { UI.toast("Selecione ao menos um colaborador.", "erro"); return; }
           if (!ini || !fim || ini > fim) { UI.toast("Informe um período válido.", "erro"); return; }
           var existentes = lista("faltas"), n = 0, dini = new Date(ini + "T12:00:00"), dfim = new Date(fim + "T12:00:00"), passo = 0;
+          /* ⚠ OS DOIS ÍNDICES SAEM DO LAÇO, E É ISSO QUE DESCONGELA A ABA.
+             O laço é dias × pessoas. Dentro dele havia `lista("colaboradores")`
+             — que relê o localStorage E roda o sort de `Ordem.pessoas` — e um
+             `filter` linear sobre todas as faltas já lançadas. Marcar 30
+             pessoas num mês são 660 voltas: 660 leituras+ordenações da equipe
+             inteira. Medido com 150 colaboradores: 12,5 s de aba parada, sem
+             nada na tela avisando; com 300, 27 s. Com os índices: 20 ms.
+             (O sort era 99% do custo — a regravação das faltas custava 1%.)
+             ⚠ protótipo nulo nos dois: um id que fosse "constructor" devolveria
+             objeto herdado em vez de undefined, e a guarda de duplicata daria
+             falso positivo. */
+          var idxCol = Object.create(null);
+          lista("colaboradores").forEach(function (c) { if (c && c.id) idxCol[c.id] = c; });
+          var jaTem = Object.create(null);
+          existentes.forEach(function (f) { if (f) jaTem[f.colaboradorId + "|" + f.data] = 1; });
           for (var d = new Date(dini); d <= dfim && passo < 400; d.setDate(d.getDate() + 1)) {
             passo++;
             var dow = d.getDay(); if (pulaFds && (dow === 0 || dow === 6)) continue;
             var ds = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
             ids.forEach(function (cid) {
-              if (existentes.filter(function (f) { return f.colaboradorId === cid && f.data === ds; })[0]) return;
-              var col = lista("colaboradores").filter(function (c) { return c.id === cid; })[0] || {};
-              Store.salvar(eid(), "faltas", { colaboradorId: cid, colaboradorNome: col.nome || "", data: ds, motivo: motivo }); n++;
+              if (jaTem[cid + "|" + ds]) return;
+              var col = idxCol[cid] || {};
+              Store.salvar(eid(), "faltas", { colaboradorId: cid, colaboradorNome: col.nome || "", data: ds, motivo: motivo });
+              jaTem[cid + "|" + ds] = 1; n++;
             });
           }
           UI.fecharModal(); self._pontoMes = ini.slice(0, 7); App.render();
@@ -13089,7 +13601,7 @@
     espelhoPonto: function () {
       var self = this, colabs = lista("colaboradores");
       if (!colabs.length) { UI.toast("Cadastre colaboradores primeiro.", "erro"); return; }
-      var mes = this._pontoMes || new Date().toISOString().slice(0, 7);
+      var mes = this._pontoMes || mesLocal();
       var corpo = '<div class="row">' + campo("Mês de referência", inp("g-mes", mes, "", "month")) + campo("Colaborador", sel("g-colab", optsRec(colabs.filter(function (c) { return c.status === "ativo"; }), "nome", "", "— Todos os ativos —"))) + "</div>"
         + '<p class="muted" style="margin:6px 0 0">O espelho usa a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada) e marca as faltas do mês. Documento pronto para impressão e assinatura (NR/CLT).</p>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Demonstrativo de Frequência", corpo, [
@@ -13112,7 +13624,17 @@
       var jor = this._pontoJornada(), diasSem = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
       var ano = Util.num(mes.split("-")[0]), mm = Util.num(mes.split("-")[1]);
       var nDias = new Date(ano, mm, 0).getDate();
-      var todasFaltas = lista("faltas"), todasHE = lista("horas_extras");
+      /* ⚠ `listaTodas` NAS HORAS EXTRAS, E O MOTIVO É O DOCUMENTO.
+       * O espelho de ponto é papel de PESSOA: ele diz o mês inteiro daquele
+       * colaborador. `horas_extras` entrou no escopo por obra na v1.2 (ela
+       * grava obraId e vazava para sub-usuário restrito) — e isso, aqui,
+       * cortaria do cartão as horas que a pessoa fez em OUTRA obra. Pior: o
+       * mesmo papel misturaria duas réguas, porque `faltas` não grava obraId e
+       * continuaria vindo completa. Cartão de ponto com falta inteira e hora
+       * extra pela metade é documento que não fecha com o holerite.
+       * O escopo por obra é filtro de TELA; documento de pessoa lê a empresa
+       * inteira — mesma regra que a numeração e os dedupes já seguem. */
+      var todasFaltas = lista("faltas"), todasHE = listaTodas("horas_extras");
       var paginas = colabsLista.map(function (c) {
         var faltasC = {}; todasFaltas.forEach(function (f) { if (f.colaboradorId === c.id && String(f.data || "").slice(0, 7) === mes) faltasC[f.data] = f.motivo; });
         /* hora extra do dia: soma quando houver mais de um lançamento na mesma data */
@@ -13184,7 +13706,7 @@
     novoPonto: function () { this.formPonto(null); },
     formPonto: function (p) {
       p = p || {}; var colabs = lista("colaboradores"), obras = lista("obras");
-      var comp = p.competencia || new Date().toISOString().slice(0, 7);
+      var comp = p.competencia || mesLocal();
       var corpo =
         '<div class="row">' + campo("Competência (mês)", inp("g-comp", comp, "", "month")) + campo("Colaborador *", sel("g-colab", optsRec(colabs, "nome", p.colaboradorId, "— selecionar —"))) + "</div>" +
         '<div class="row">' + campo("Obra", sel("g-obra", optsRec(obras, "nome", p.obraId, "— nenhuma —"))) + campo("Dias trabalhados", inp("g-dias", p.dias)) + campo("Faltas", inp("g-faltas", p.faltas)) + "</div>" +
@@ -13235,7 +13757,7 @@
     },
     formCustoFrota: function (frotaId) {
       var fr = Store.obter(eid(), "frota", frotaId); if (!fr) return;
-      var obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      var obras = lista("obras"), hoje = hojeLocal();
       var corpo =
         '<p class="muted">Custo de <b>' + Util.esc(fr.nome) + "</b> — vira uma despesa no Financeiro (categoria Equipamento).</p>" +
         '<div class="row">' + campo("Data", inp("g-data", hoje, "", "date")) + campo("Tipo de custo", sel("g-ctipo", opts(P.frotaCusto, "combustivel"))) + "</div>" +
@@ -13318,11 +13840,11 @@ renderRequisicoes: function () {
       var r = Store.obter(eid(), "requisicoes", reqId); if (!r) return;
       var itens = this._reqItens(r).map(function (it) { return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef) }; });
       if (!itens.length) { UI.toast("A requisição não tem itens pra cotar.", "erro"); return; }
-      this.formCotacao({ numero: this._proxNumeroCot(), data: new Date().toISOString().slice(0, 10), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] });
+      this.formCotacao({ numero: this._proxNumeroCot(), data: hojeLocal(), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] });
     },
     // lê a grade do modal -> objeto de cotação (itens + fornecedores + preços)
     _cotDoForm: function (base) {
-      var cot = { id: base && base.id, numero: v("ct-num") || this._proxNumeroCot(), data: v("ct-data") || new Date().toISOString().slice(0, 10), obraId: v("ct-obra"), requisicaoId: (base && base.requisicaoId) || null, descricao: v("ct-desc"), status: (base && base.status) || "rascunho", itens: [], fornecedores: [] };
+      var cot = { id: base && base.id, numero: v("ct-num") || this._proxNumeroCot(), data: v("ct-data") || hojeLocal(), obraId: v("ct-obra"), requisicaoId: (base && base.requisicaoId) || null, descricao: v("ct-desc"), status: (base && base.status) || "rascunho", itens: [], fornecedores: [] };
       var mapaIdx = {}; // índice do DOM -> índice no array (linha em branco no meio NÃO pode deslocar os preços)
       Array.prototype.forEach.call(document.querySelectorAll("[data-ct-item]"), function (tr) {
         var g = function (cl) { var e = tr.querySelector("[data-cti=" + cl + "]"); return e ? e.value.trim() : ""; };
@@ -13362,7 +13884,7 @@ renderRequisicoes: function () {
     },
     formCotacao: function (c) {
       var self = this, ehNova = !c || !c.id;
-      c = c || { numero: this._proxNumeroCot(), data: new Date().toISOString().slice(0, 10), status: "rascunho", itens: [], fornecedores: [] };
+      c = c || { numero: this._proxNumeroCot(), data: hojeLocal(), status: "rascunho", itens: [], fornecedores: [] };
       if (!c.itens) c.itens = []; if (!c.fornecedores) c.fornecedores = [];
       var ehConcluida = c.status === "concluida"; // concluída = somente leitura (pedidos já emitidos!)
       var obras = lista("obras"), forns = lista("fornecedores");
@@ -13674,7 +14196,7 @@ renderRequisicoes: function () {
     },
     _reqValor: function (itens) { return itens.reduce(function (s, i) { return s + Util.num(i.quantidade) * Util.num(i.precoRef); }, 0); },
     formRequisicoes: function (r) {
-      r = r || {}; var self = this, stAntigo = r.status || "", obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      r = r || {}; var self = this, stAntigo = r.status || "", obras = lista("obras"), hoje = hojeLocal();
       var numero = r.numero || this._proxNumeroReq();
       var itensBuf = this._reqItens(r);
       if (this._reqItemSeed) { itensBuf.push(this._reqItemSeed); this._reqItemSeed = null; }
@@ -13841,7 +14363,7 @@ renderRequisicoes: function () {
     _aplicarVariaveis: function (texto, ctx) { return String(texto || "").replace(/\{(\w+)\}/g, function (m, k) { return Object.prototype.hasOwnProperty.call(ctx, k) ? ctx[k] : m; }); },
     gerarModelo: function (id) {
       var self = this, t = Store.obter(eid(), "templates", id); if (!t) return;
-      var colabs = lista("colaboradores"), obras = lista("obras"), mesAtual = new Date().toISOString().slice(0, 7);
+      var colabs = lista("colaboradores"), obras = lista("obras"), mesAtual = mesLocal();
       var corpo = '<p class="muted" style="margin:0 0 10px">Escolha o colaborador (ou <b>todos os ativos</b> — gera uma página por colaborador) e o mês.</p>'
         + '<div class="row">' + campo("Colaborador", sel("g-colab", '<option value="__todos">— TODOS os ativos (1 página cada) —</option>' + optsRec(colabs, "nome", "", "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", "", "— nenhuma —"))) + campo("Mês de referência", inp("g-mes", mesAtual, "", "month")) + "</div>";
       UI.modal("Gerar: " + Util.esc(t.nome || ""), corpo, [
@@ -14530,7 +15052,12 @@ renderRequisicoes: function () {
     _triGravarEstoque: function (l, nf, respNome) {
       var chaveForn = String(nf.cnpjParceiro || nf.parceiro || "");
       var alvo = null;
-      lista("estoque").forEach(function (e) {
+      /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+         a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+         acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+         cópia -- documento fiscal duplicado, item de estoque partido em dois
+         saldos. Mesmo motivo do `proxNumero`. */
+      listaTodas("estoque").forEach(function (e) {
         if (alvo) return;
         /* mesmo produto do mesmo fornecedor é o casamento mais seguro; sem
            código, cai para descrição + unidade normalizadas */
@@ -14564,7 +15091,7 @@ renderRequisicoes: function () {
       }
       Store.salvar(eid(), "estoque_mov", {
         itemId: alvo.id, itemNome: alvo.nome, tipo: "entrada", qtd: qtd, custoUnit: custo,
-        data: nf.dataEmissao || new Date().toISOString().slice(0, 10), obraId: l.obraId || "",
+        data: nf.dataEmissao || hojeLocal(), obraId: l.obraId || "",
         docTipo: "NF", docNumero: nf.numero || "", docChave: nf.chaveAcesso || "", responsavelId: l.responsavelId || ""
       });
     },
@@ -14595,7 +15122,7 @@ renderRequisicoes: function () {
           descricao: l.descricao + (n > 1 ? " (" + (i + 1) + "/" + n + ")" : ""),
           categoria: "equipamento", numeroPatrimonio: "",
           valorAquisicao: Util.num(l.valorUnitario), /* por UNIDADE, não o total da linha */
-          dataAquisicao: nf.dataEmissao || new Date().toISOString().slice(0, 10),
+          dataAquisicao: nf.dataEmissao || hojeLocal(),
           depreciacaoAnual: 0, estado: "novo", obraId: l.obraId || "", localizacao: "",
           responsavelId: l.responsavelId || "", responsavelNome: respNome || "",
           fornecedor: nf.parceiro || "", notaId: nf.id, notaChave: nf.chaveAcesso || "",
@@ -14682,7 +15209,12 @@ renderRequisicoes: function () {
       var self = this, qtd = Util.num(l.quantidade);
       var itemEst = null, bens = [];
       if (l.destino === "estoque" || l.destino === "epi") {
-        lista("estoque").forEach(function (e) {
+        /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+           a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+           acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+           cópia -- documento fiscal duplicado, item de estoque partido em dois
+           saldos. Mesmo motivo do `proxNumero`. */
+        listaTodas("estoque").forEach(function (e) {
           if (itemEst) return;
           if (Util.itemChave(e.nome) && Util.itemChave(e.nome) === Util.itemChave(l.descricao)) itemEst = e;
         });
@@ -14708,7 +15240,7 @@ renderRequisicoes: function () {
            precisa mostrar que entrou e depois saiu, com o motivo. */
         Store.salvar(eid(), "estoque_mov", {
           itemId: itemEst.id, itemNome: itemEst.nome, tipo: "saida", qtd: qtd,
-          custoUnit: Util.num(l.valorUnitario), data: new Date().toISOString().slice(0, 10),
+          custoUnit: Util.num(l.valorUnitario), data: hojeLocal(),
           obraId: l.obraId || "", docTipo: "estorno", docNumero: nf.numero || "", docChave: nf.chaveAcesso || "",
           obs: "Estorno da triagem da NF " + (nf.numero || "")
         });
@@ -14820,7 +15352,7 @@ renderRequisicoes: function () {
           rateadas.forEach(function (r) {
             if (numsPagos[String(r.num)]) { pulou++; return; } /* essa parcela já foi paga */
             var reg = Store.salvar(eid(), "financeiro", {
-              data: r.vencimento || nf.dataEmissao || new Date().toISOString().slice(0, 10),
+              data: r.vencimento || nf.dataEmissao || hojeLocal(),
               desc: "NF " + numTxt + (nP > 1 ? " (" + r.num + "/" + nP + ")" : "") + " — " + (nf.parceiro || ""),
               tipo: tipoFin, categoria: categoria, valor: r.valor, status: "pendente",
               /* NUNCA cair no obraId da nota quando a linha veio de RATEIO: a
@@ -14951,7 +15483,12 @@ renderRequisicoes: function () {
       }
       if (!dados.numero && !dados.chave) return { nota: null, dup: false, atualizada: false, invalido: false, fornecedorNovo: fornecedorNovo };
       var chaveLimpa = String(dados.chave || "").replace(/\D/g, "");
-      var jaTem = lista("fiscal").filter(function (x) {
+      /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+         a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+         acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+         cópia -- documento fiscal duplicado, item de estoque partido em dois
+         saldos. Mesmo motivo do `proxNumero`. */
+      var jaTem = listaTodas("fiscal").filter(function (x) {
         var xc = String(x.chaveAcesso || "").replace(/\D/g, "");
         if (chaveLimpa && xc) return xc === chaveLimpa;
         return dados.numero && String(x.numero) === String(dados.numero) && (x.parceiro || "").toLowerCase() === (parc.nome || "").toLowerCase();
@@ -15028,7 +15565,12 @@ renderRequisicoes: function () {
       var res = UI.el("g-chave-res"); if (!res) return;
       var r = this.decodificarChave(v("g-chave-consulta"));
       if (!r.ok) { res.innerHTML = '<div class="card" style="border-left:4px solid var(--vermelho);padding:10px 12px">✗ ' + Util.esc(r.erro) + "</div>"; return; }
-      var jaTem = lista("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === r.chave; })[0];
+      /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+         a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+         acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+         cópia -- documento fiscal duplicado, item de estoque partido em dois
+         saldos. Mesmo motivo do `proxNumero`. */
+      var jaTem = listaTodas("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === r.chave; })[0];
       // identifica o emitente pelo CNPJ/CPF, se já for parceiro cadastrado
       var parceiro = lista("fornecedores").concat(lista("clientes")).filter(function (x) { return String(x.doc || "").replace(/\D/g, "") === r.doc; })[0];
       var linhas = "<b>" + r.modeloNome + "</b> nº <b>" + Util.esc(r.numero) + "</b> · série " + Util.esc(r.serie) +
@@ -15090,7 +15632,7 @@ renderPatrimonio: function () {
     },
     novoPatrimonio: function () { this.formPatrimonio(null); },
     formPatrimonio: function (p) {
-      p = p || {}; var obras = lista("obras"), hoje = new Date().toISOString().slice(0, 10);
+      p = p || {}; var obras = lista("obras"), hoje = hojeLocal();
       var corpo =
         '<div class="row">' + campo("Descrição *", inp("g-desc", p.descricao)) + campo("Categoria", sel("g-cat", opts(P.patrimonioCategoria, p.categoria || "movel"))) + campo("Nº Patrimônio", inp("g-num", p.numeroPatrimonio)) + "</div>" +
         '<div class="row">' + campo("Valor aquisição (R$)", inp("g-vaq", p.valorAquisicao)) + campo("Data aquisição", inp("g-data", p.dataAquisicao || hoje, "", "date")) + campo("Depreciação anual (%)", inp("g-dep", p.depreciacaoAnual)) + "</div>" +
@@ -15166,10 +15708,19 @@ renderFolha: function () {
       var extra = '<span class="muted" style="margin-right:12px;align-self:center">Abertas: <b>' + abertas + "</b> · Custo total: <b>" + Util.fmtMoeda(totalCusto) + "</b></span>";
       var html = this._head(svg("folha") + "Folha / Encargos", "nova-folha", "Nova folha", extra);
       if (!fls.length) return html + vazioBox("Nenhuma folha lançada", "nova-folha", "Cadastrar primeira");
+      /* a mais recente primeiro — o corte tem de manter o que se procura */
+      fls = fls.slice().sort(function (a, b) { return String(b.competencia || "").localeCompare(String(a.competencia || "")); });
+      var corteFolha = this._cortar(fls, "folha");
+      html += this._avisoCorte(corteFolha, "folha", "folhas");
+      /* dois índices: o `filter` por linha era O(linhas × (colabs + obras)) —
+         com 5.400 folhas e 150 colaboradores isso é quase um milhão de voltas */
+      var idxColF = Object.create(null), idxObraF = Object.create(null);
+      cols.forEach(function (c) { if (c && c.id) idxColF[c.id] = c; });
+      obras.forEach(function (o) { if (o && o.id) idxObraF[o.id] = o; });
       html += '<table class="tbl"><thead><tr><th>Competência</th><th>Colaborador</th><th>Obra</th><th class="num">Base</th><th class="num">Custo total</th><th>Status</th><th></th></tr></thead><tbody>';
-      fls.forEach(function (f) {
-        var col = cols.filter(function (c) { return c.id === f.colaboradorId; })[0];
-        var ob = obras.filter(function (o) { return o.id === f.obraId; })[0];
+      corteFolha.linhas.forEach(function (f) {
+        var col = idxColF[f.colaboradorId];
+        var ob = idxObraF[f.obraId];
         var acao = '<button class="btn sm" data-gacao="recibo-folha" data-id="' + f.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Recibo</button> ' + (f.status === "aberta" ? '<button class="btn sm primary" data-gacao="lancar-folha-enc" data-id="' + f.id + '">Lançar</button>' : "");
         html += '<tr><td style="cursor:pointer" data-gopen="folha:' + f.id + '"><b>' + Util.esc(f.competencia || "—") + "</b></td><td>" + Util.esc(col ? col.nome : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(f.salarioBase)) + '</td><td class="num"><b>' + Util.fmtMoeda(Util.num(f.custoTotal)) + "</b></td><td>" + pill(f.status) + '</td><td class="num">' + acao + "</td></tr>";
       });
@@ -15216,7 +15767,7 @@ renderFolha: function () {
     novoFolha: function () { this.formFolha(null); },
     formFolha: function (f) {
       f = f || {}; var cols = lista("colaboradores"), obras = lista("obras");
-      var mesAtual = new Date().toISOString().slice(0, 7);
+      var mesAtual = mesLocal();
       var corpo =
         '<div class="row">' + campo("Competência *", inp("g-comp", f.competencia || mesAtual, "", "month")) + campo("Colaborador", sel("g-col", optsRec(cols, "nome", f.colaboradorId, "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", f.obraId, "— nenhuma —"))) + "</div>" +
         '<div class="row">' + campo("Salário base (R$)", inp("g-base", f.salarioBase)) + campo("Encargos (%)", inp("g-enc", f.encargosPct || 68)) + "</div>" +
@@ -15250,7 +15801,7 @@ renderFolha: function () {
         { texto: "Lançar no Financeiro", classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
           if (!(custo > 0)) { UI.toast("Custo total inválido.", "erro"); return; }
-          var hoje = new Date().toISOString().slice(0, 10);
+          var hoje = hojeLocal();
           fl.status = "lancada"; fl.custoTotal = custo;
           Store.salvar(eid(), "folha", fl);
           Store.salvar(eid(), "financeiro", { data: hoje, desc: "Folha " + (fl.competencia || "") + " - " + nomeCol, tipo: "despesa", categoria: "mao_obra", valor: custo, status: "pago", obraId: fl.obraId });
@@ -15425,7 +15976,12 @@ renderFolha: function () {
       var resultado = totRec - totDesp;
       var html = this._head(svg("relatorios") + "Relatórios Gerenciais", "", "", "");
       // Relatório executivo mensal em 1 clique (promessa do site)
-      var mesPassado = (function () { var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toISOString().slice(0, 7); })();
+      /* `setDate(1)` já põe no dia 1, então a virada de fuso não muda o mês —
+         mas a conta sai do mesmo helper para não haver duas réguas de mês. */
+      var mesPassado = (function () {
+        var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
+        return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      })();
       html += '<div class="card" style="margin-bottom:16px"><h3 style="margin:0 0 4px">' + (typeof Icones !== 'undefined' ? Icones.get('grafico', 15) : '') + ' Relatório executivo mensal</h3>' +
         '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Avanço físico, custo real × orçado, medições, diários e fotos do mês — o documento de 1 página pra reunião de diretoria ou pro cliente.</p>' +
         '<div class="flex" style="flex-wrap:wrap;gap:10px">' +
@@ -15521,13 +16077,37 @@ renderFolha: function () {
        e é pago no escritório —, então era o pior lugar possível.
        Agora cada preço é um REGISTRO da entidade `producao_preco`, que passa
        pelo merge normal por id, com `atualizadoEm` decidindo. */
+    /* ⚠ E O `id` TEM DE SER A CHAVE, não um uid sorteado.
+       O registro nascia sem `id`, então `Store.salvar` gerava um uid ALEATÓRIO
+       — diferente em cada aparelho. O merge da nuvem une por `id` e nunca olha
+       a `chave`: escritório e celular informando o mesmo preço criavam DOIS
+       registros para a mesma linha, e o merge guardava os dois para sempre.
+       Como a leitura montava `mapa[chave] = valor` varrendo a lista, vencia o
+       ÚLTIMO do array — e a ordem vem de `Object.keys` do merge, que muda a
+       cada sincronização. Medido: o escritório via R$ 38/m² e o encarregado
+       R$ 45/m² para a MESMA linha, e na sincronização seguinte os dois
+       trocavam. O número nunca convergia, e não havia erro em lugar nenhum.
+       Pior: apagar o preço apagava só um dos dois, e o valor voltava com o
+       fantasma. `pesos_bloco` e `composicoes_proprias` já usam id derivado da
+       chave natural — é o padrão da casa, e este ponto tinha ficado de fora. */
+    _prodIdPreco: function (chave) { return "pp:" + String(chave); },
+
     _prodPrecos: function () {
-      var mapa = {};
+      var mapa = {}, quando = {};
       (lista("producao_preco") || []).forEach(function (r) {
-        if (r && r.chave) mapa[r.chave] = r.valor;
+        if (!r || !r.chave) return;
+        /* ⚠ DESEMPATE EXPLÍCITO, não "o último da lista".
+           Os duplicados de id aleatório JÁ ESTÃO na nuvem dos clientes que
+           usaram o módulo — trocar o id daqui para a frente não some com eles.
+           Enquanto os dois existirem, quem vence é o mais recente, sempre o
+           mesmo dos dois lados. */
+        var q = String(r.atualizadoEm || "");
+        if (mapa.hasOwnProperty(r.chave) && q <= quando[r.chave]) return;
+        mapa[r.chave] = r.valor; quando[r.chave] = q;
       });
       return mapa;
     },
+
     /* orçamento de cada obra que aparece nas linhas — carregado UMA vez por
        render, porque `Store.obterOrcamento` lê e desserializa a planilha
        inteira e há linha para cada pessoa × serviço */
@@ -15567,18 +16147,50 @@ renderFolha: function () {
     },
 
     _prodSalvarPrecos: function (mapa) {
-      var E = eid(), atuais = {}, k;
-      (lista("producao_preco") || []).forEach(function (r) { if (r && r.chave) atuais[r.chave] = r; });
+      var E = eid(), atuais = {}, todos = {}, k;
+      /* ⚠ `atuais` é indexado por chave, então com duplicados o segundo
+         sobrescrevia o primeiro e o `Store.excluir(atuais[k].id)` apagava UM
+         só — o fantasma sobrevivia e devolvia o valor antigo na tela. `todos`
+         guarda a lista inteira por chave, que é o que permite apagar todos. */
+      (lista("producao_preco") || []).forEach(function (r) {
+        if (!r || !r.chave) return;
+        (todos[r.chave] = todos[r.chave] || []).push(r);
+        var q = String(r.atualizadoEm || "");
+        if (!atuais[r.chave] || q > String(atuais[r.chave].atualizadoEm || "")) atuais[r.chave] = r;
+      });
+      /* ⚠ `pular` EXISTE PARA NÃO LAPIDAR O ID QUE SERÁ REGRAVADO NA MESMA
+         PASSADA. `Util.agoraISO()` tem resolução de milissegundo: apagar e
+         gravar o mesmo id na mesma volta do laço produz lápide e carimbo com a
+         string IDÊNTICA, e o merge da nuvem tratava empate como morto — o
+         preço recém-informado sumia no sync seguinte. O `>=` no `vivo()` de
+         js/nuvem.js já cobre o empate; não criar a lápide inútil é o conserto
+         da causa, e evita gastar o teto de lápides à toa. */
+      function apagarTodos(chave, pular) {
+        (todos[chave] || []).forEach(function (r) {
+          if (pular && r.id === pular) return;
+          Store.excluir(E, "producao_preco", r.id);
+        });
+      }
       for (k in (mapa || {})) {
         if (!Object.prototype.hasOwnProperty.call(mapa, k)) continue;
         var v = mapa[k], reg = atuais[k];
-        if (v == null || v === "") { if (reg) Store.excluir(E, "producao_preco", reg.id); continue; }
-        if (reg) { if (Producao.num(reg.valor) !== Producao.num(v)) { reg.valor = v; Store.salvar(E, "producao_preco", reg); } }
-        else Store.salvar(E, "producao_preco", { chave: k, valor: v, obraId: String(k).split("|")[1] || "" });
+        if (v == null || v === "") { apagarTodos(k); continue; }
+        if (reg && reg.id === this._prodIdPreco(k)) {
+          if (Producao.num(reg.valor) !== Producao.num(v)) { reg.valor = v; Store.salvar(E, "producao_preco", reg); }
+        } else {
+          /* ou não existia, ou existe com id sorteado (legado). Nos dois casos
+             grava no id determinístico e apaga o que estava fora dele — é aqui
+             que o duplicado que já veio da nuvem some, sem tela nova. */
+          var idNovo = this._prodIdPreco(k);
+          if (reg) apagarTodos(k, idNovo);
+          Store.salvar(E, "producao_preco", {
+            id: idNovo, chave: k, valor: v, obraId: String(k).split("|")[1] || ""
+          });
+        }
       }
       for (k in atuais) {
         if (!Object.prototype.hasOwnProperty.call(atuais, k)) continue;
-        if (!Object.prototype.hasOwnProperty.call(mapa || {}, k)) Store.excluir(E, "producao_preco", atuais[k].id);
+        if (!Object.prototype.hasOwnProperty.call(mapa || {}, k)) apagarTodos(k);
       }
     },
 
@@ -15593,11 +16205,35 @@ renderFolha: function () {
       var E = eid(), pr = Store.lerPrefs(E) || {};
       var antigo = pr.precosProducao;
       if (!antigo || !Object.keys(antigo).length) return null;
+      /* ⚠ A MIGRAÇÃO PODIA RODAR MAIS DE UMA VEZ, e rodava.
+         `delete pr.precosProducao` apaga o campo LOCALMENTE, mas o merge de
+         prefs da nuvem é `Object.assign({}, nuvem, local)`: campo AUSENTE no
+         local não vence — a chave ressuscita da nuvem no sync seguinte e a
+         migração roda de novo, criando outra leva de registros. O
+         `precosProducaoLegado` era gravado e nunca consultado; agora é ele o
+         guarda, porque ele SOBREVIVE ao merge (é campo presente, não ausente). */
+      if (pr.precosProducaoLegado && Object.keys(pr.precosProducaoLegado).length) {
+        delete pr.precosProducao;
+        Store.salvarPrefs(E, pr);
+        return null;
+      }
       var r = Producao.migrarPrecos(antigo, linhas || []);
+      /* e o que JÁ TEM registro não é remigrado: o preço que a pessoa
+         confirmou na tela vale mais que o mapa velho de `prefs`. */
+      var jaTem = {};
+      /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+         a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+         acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+         cópia -- documento fiscal duplicado, item de estoque partido em dois
+         saldos. Mesmo motivo do `proxNumero`. */
+      (listaTodas("producao_preco") || []).forEach(function (x) { if (x && x.chave) jaTem[x.chave] = 1; });
       var k, n = 0;
       for (k in r.precos) {
         if (!Object.prototype.hasOwnProperty.call(r.precos, k)) continue;
-        Store.salvar(E, "producao_preco", { chave: k, valor: r.precos[k], obraId: String(k).split("|")[1] || "" }); n++;
+        if (jaTem[k]) continue;
+        Store.salvar(E, "producao_preco", {
+          id: this._prodIdPreco(k), chave: k, valor: r.precos[k], obraId: String(k).split("|")[1] || ""
+        }); n++;
       }
       pr.precosProducaoLegado = antigo;
       delete pr.precosProducao;
@@ -15698,7 +16334,7 @@ renderFolha: function () {
             "<td>" + (l.codigo ? '<span class="muted">' + Util.esc(l.codigo) + "</span> " : "") + Util.esc(l.servico || "—") + "</td>" +
             "<td>" + Util.esc(self._prodNomeObra(l.obraId)) + "</td>" +
             '<td class="num" data-prodqtd="' + iL + '">' + Util.fmtNum(l.qtd) + "</td><td>" + Util.esc(l.unidade || "") + '</td><td class="num">' + l.dias + "</td>" +
-            '<td class="num"><input data-prodi="' + iL + '" data-prodpu="' + Util.esc(chave) + '" value="' + (l.precoUnit == null ? "" : Util.esc(l.precoUnit)) + '" placeholder="informe" title="Preço por unidade combinado com esta pessoa. Em branco = ainda não definido: a linha fica pendente, não vira zero." style="width:86px;text-align:right;padding:2px 5px;font-size:12px"></td>' +
+            '<td class="num"><input inputmode="decimal" data-prodi="' + iL + '" data-prodpu="' + Util.esc(chave) + '" value="' + (l.precoUnit == null ? "" : Util.esc(l.precoUnit)) + '" placeholder="informe" title="Preço por unidade combinado com esta pessoa. Em branco = ainda não definido: a linha fica pendente, não vira zero." style="width:86px;text-align:right;padding:2px 5px;font-size:12px"></td>' +
             '<td class="num" data-prodtot="' + iL + '">' + (l.pendente ? '<span style="color:#b45309;font-weight:700">sem preço</span>' : "<b>" + Util.fmtMoeda(l.valor) + "</b>") + "</td></tr>" +
             /* a sugestão fica NA LINHA, com o valor à vista: quem negocia
                precisa ver de quanto está falando antes de aceitar */
@@ -16649,7 +17285,17 @@ renderFolha: function () {
       App._lerPlanilha(file, function (matriz, erro, meta) {
         if (erro || (!matriz && !(meta && meta.abas))) { UI.toast("Falha ao ler a planilha: " + (erro || "vazia"), "erro"); return; }
         var abas = (meta && meta.abas && meta.abas.length) ? meta.abas : [{ nome: file.name.replace(/\.[^.]+$/, ""), dados: matriz || [] }];
-        var r = FS.parsePlanilha(abas);
+        /* ⚠ leva o formato de data que a empresa JÁ usou. Sem isso, todo
+           período cujas duas pontas caem nos dias 1–12 vira aviso vermelho —
+           uma semana em cada cinco — mesmo para a cliente cuja planilha sempre
+           foi mês/dia. Aviso que aparece sem problema é aviso que a pessoa
+           aprende a ignorar. */
+        var prefsFS = Store.lerPrefs(eid()) || {};
+        var r = FS.parsePlanilha(abas, { formatoPadrao: prefsFS.folhaFormatoData || "" });
+        if (r.formatoDetectado && r.formatoDetectado !== prefsFS.folhaFormatoData) {
+          prefsFS.folhaFormatoData = r.formatoDetectado;
+          try { Store.salvarPrefs(eid(), prefsFS); } catch (ePF) {}
+        }
         if (!r.lancamentos.length) { UI.toast("Não reconheci lançamentos nessa planilha (o formato esperado tem OPERÁRIO + dias da semana).", "erro"); return; }
         var obras = lista("obras"), porNome = {}; obras.forEach(function (o) { porNome[Util.normalizar ? Util.normalizar(o.nome) : o.nome.toUpperCase()] = o.id; });
         var chaveN = function (s) { return Util.normalizar ? Util.normalizar(s || "") : String(s || "").toUpperCase(); };
@@ -16665,17 +17311,54 @@ renderFolha: function () {
             Store.salvar(eid(), "colaboradores", c); porNomeC[chaveN(l.nome)] = c.id; novosC++;
           }
         });
-        var ckDe = function (l) { return l.semana + "|" + l.obraId + "|" + chaveN(l.nome) + "|" + (l.tipo || "") + "|" + Math.round(FS.totalFinal(l) * 100); };
+        /* ⚠ A CHAVE DE DEDUPE IGNORA A SEMANA ADOTADA.
+         * Lançamento que veio sem período recebe a semana da tela (ver a nota
+         * abaixo). Se a semana adotada entrasse na chave, reimportar a MESMA
+         * planilha com outra semana selecionada geraria a linha duas vezes —
+         * folha de diarista duplicada, que é dinheiro. O `_semanaAdotada`
+         * marca quem foi adotado; para esses a chave usa "?" no lugar da
+         * semana, então eles deduplicam entre importações como antes. */
+        var ckDe = function (l) {
+          var sem = l._semanaAdotada ? "?" : l.semana;
+          return sem + "|" + l.obraId + "|" + chaveN(l.nome) + "|" + (l.tipo || "") + "|" + Math.round(FS.totalFinal(l) * 100);
+        };
         var atuais = self._fsTodos(), jaTem = {}; atuais.forEach(function (l) { jaTem[ckDe(l)] = 1; });
         var novos = 0, semana = null;
+        /* ⚠ LANÇAMENTO SEM SEMANA NÃO ENTRA MAIS CALADO.
+         * Das três portas que gravam `fs_lancamentos`, as outras duas já
+         * caem num fallback quando a semana falta; só a importação gravava
+         * `semana: null`. Um único órfão envenena a tela inteira: o seletor
+         * ordena as semanas e a string "null" fica em ÚLTIMO, `_fsSemana`
+         * vira null, o rótulo do período sai "NaN/NaN a NaN/NaN/NaN" e os
+         * botões de resumo e relatório estouram `null.slice(0,7)` — morrem
+         * mudos, porque não há captura global de erro. E os órfãos ficam
+         * INALCANÇÁVEIS: a opção do <select> nasce com value="null" (string),
+         * que nunca mais casa com o `null` de verdade do registro.
+         * O fallback é a semana que a tela está mostrando — que é a que a
+         * pessoa escolheu antes de importar. */
+        var semanaAtual = self._fsSemana || FS.chaveSemana(new Date());
+        var adotados = 0;
         r.lancamentos.forEach(function (l) {
-          l.obraId = porNome[chaveN(l.obra)] || ""; delete l.obra;
+          if (!l.semana) { l.semana = semanaAtual; l._semanaAdotada = true; adotados++; }
+          l.obraId = porNome[chaveN(l.obra)] || "";
+          /* guarda o nome cru: sem obra casada, `delete l.obra` apagava a
+             única pista de a que obra a linha pertencia na planilha */
+          if (!l.obraId && l.obra) l.obraNomeImportado = String(l.obra);
+          delete l.obra;
           l.colaboradorId = porNomeC[chaveN(l.nome)] || "";
           semana = semana || l.semana;
           var ck = ckDe(l);
           if (jaTem[ck]) return; jaTem[ck] = 1;
           Store.salvar(eid(), "fs_lancamentos", l); novos++;
         });
+        if (adotados) {
+          UI.toast("⚠ " + adotados + " lançamento(s) vieram sem período na planilha e entraram na semana "
+            + FS.periodoDaChave(semanaAtual) + ". Confira antes de fechar.", "erro");
+        }
+        if (r.formatoAmbiguo) {
+          UI.toast("⚠ A data do período (" + (r.datasAmbiguas || []).slice(0, 2).join(", ")
+            + ") serve como dia/mês e como mês/dia. Li como MÊS/DIA — confira a semana antes de fechar a folha.", "erro");
+        }
         if (semana) self._fsSemana = semana;
         self._fsObra = "";
         UI.fecharModal(); if (typeof App !== "undefined") { App.view = "folhasemanal"; App.render(); }
@@ -16755,8 +17438,27 @@ renderFolha: function () {
       if (!lancs.length) { UI.toast("Sem lançamentos nesta semana.", "erro"); return; }
       var fech = FS.fechamento(lancs), periodo = FS.periodoDaChave(this._fsSemana);
       var nObras = Object.keys(fech.porObra).filter(function (o) { return o && o !== "—"; }).length;
+      /* ⚠ O TOTAL MOSTRADO TEM DE SER O QUE VAI SER LANÇADO.
+       * O laço abaixo PULA o balde sem obra (`!ob || ob === "—"`) — e isso é
+       * decisão sã: despesa sem obra não tem onde entrar. Mas o confirm e o
+       * toast mostravam `fech.total`, que INCLUI esse balde. O usuário
+       * confirmava um valor e outro era lançado, sem uma linha dizendo.
+       * E o balde sem obra não é caso raro nem depende de importação: ele
+       * nasce no fluxo normal e documentado — `fs_lancamentos` sobrevive à
+       * exclusão da obra perdendo o vínculo (`obraId = ""`), porque dinheiro
+       * é de PESSOA. Medido: confirm dizia R$ 1.800,00 e o Financeiro recebia
+       * R$ 400,00. */
+      var totalAlancar = 0, foraDeObra = 0;
+      Object.keys(fech.porObra).forEach(function (ob) {
+        var v = Util.num((fech.porObra[ob] || {}).total);
+        if (!ob || ob === "—") foraDeObra += v; else totalAlancar += v;
+      });
       if (!confirm("Lançar a folha desta semana (" + periodo + ") como despesa de Mão de obra no Financeiro?\n\n"
-        + nObras + " obra(s) · total " + Util.fmtMoeda(fech.total)
+        + nObras + " obra(s) · total " + Util.fmtMoeda(totalAlancar)
+        + (foraDeObra > 0
+          ? "\n\n⚠ " + Util.fmtMoeda(foraDeObra) + " de lançamentos SEM OBRA não serão lançados — despesa precisa de obra."
+            + "\nEles continuam na folha; vincule a uma obra e lance de novo."
+          : "")
         + (this._fsObra ? "\n\nA semana INTEIRA entra, não só a obra que está filtrada na tela." : "")
         + "\n\nSe já existir o lançamento da semana, ele é atualizado (não duplica).")) return;
       var fin = lista("financeiro"), n = 0;
@@ -16772,7 +17474,8 @@ renderFolha: function () {
         obj.lancadoPor = self._quemAprova(); obj.lancadoEm = self._hojeISO();
         Store.salvar(eid(), "financeiro", obj); n++;
       });
-      UI.toast("💸 " + n + " despesa(s) de mão de obra lançada(s) — " + Util.fmtMoeda(fech.total) + " na(s) obra(s) certa(s).", "ok");
+      UI.toast("💸 " + n + " despesa(s) de mão de obra lançada(s) — " + Util.fmtMoeda(totalAlancar) + " na(s) obra(s) certa(s)."
+        + (foraDeObra > 0 ? " " + Util.fmtMoeda(foraDeObra) + " sem obra ficaram de fora." : ""), "ok");
     },
 
     // ---------- Modal genérico de formulário (salvar/excluir) ----------
@@ -16863,6 +17566,10 @@ renderFolha: function () {
         }
         self._aprovRejPendente = null;   // ver o ramo de rejeição em _gateStatusForm
         self._lancFinPendente = null; self._lancFinToast = "";   // idem: agendado no gate, gravado só depois do save
+        /* ⚠ zerado junto dos outros dois: um gate que abortou numa tentativa
+           anterior deixaria o agendamento órfão e o formulário SEGUINTE daria
+           entrada no almoxarifado de um pedido que ninguém recebeu. */
+        self._estoquePendente = false;
         if (coletar(obj) === false) return;
         /* A AUTORIA NASCE ACIMA, e só no documento NOVO.
          * Sem `autorId` a regra "quem preencheu não aprova o próprio" não tem
@@ -16878,10 +17585,33 @@ renderFolha: function () {
          * outras — então todo `return false` posterior deixava receita órfã no
          * caixa e o documento por gravar, e cada nova tentativa duplicava.
          * Aqui só se chega com o save feito. Ver o comentário no gate. */
+        /* ⚠ O ALMOXARIFADO ENTRA AQUI, pelo mesmo motivo e na mesma janela do
+           lançamento financeiro. `_estoqueDaCompra` já é idempotente por conta
+           própria (`estoqueLancado`), então uma segunda passagem não duplica
+           material. A segunda gravação da compra é para carimbar esse guarda —
+           é o preço de o estoque só poder entrar depois de o documento existir. */
+        var _ep = self._estoquePendente; self._estoquePendente = false;
+        var _estMsg = "";
+        if (_ep && entidade === "compras") {
+          try {
+            var _est = self._estoqueDaCompra(obj);
+            if (_est && _est.lancados) {
+              obj.estoqueLancado = true;
+              Store.salvar(eid(), entidade, obj);
+              _estMsg = " e " + _est.lancados + " item(ns) no almoxarifado";
+            } else if (_est && _est.semItens) {
+              /* pedido digitado à mão só tem texto livre — dizer isso é melhor
+                 que dar entrada em nada e deixar o usuário procurando. */
+              _estMsg = ". Este pedido não tem itens detalhados, então nada entrou no estoque";
+            }
+          } catch (eEst) {}
+        }
         var _lf = self._lancFinPendente; self._lancFinPendente = null;
         if (_lf) {
           Store.salvar(eid(), "financeiro", _lf);
-          if (self._lancFinToast) { try { UI.toast(self._lancFinToast, "ok"); } catch (eLF) {} }
+          if (self._lancFinToast) {
+            try { UI.toast(self._lancFinToast.replace(/\.$/, "") + _estMsg + ".", "ok"); } catch (eLF) {}
+          }
         }
         self._lancFinToast = "";
         UI.fecharModal(); App.render();
@@ -17234,17 +17964,76 @@ renderFolha: function () {
     _APROV_REABRE: { pendente: 1, rascunho: 1, aberto: 1, aberta: 1 },
     _ehAprovado: function (st) { return !!(this._APROV_OK[st] || this._APROV_TERM[st]); },
     _guardaReabertura: function (obj, statusAntigo, entidade) {
-      if (!this._ehAprovado(statusAntigo) || !this._APROV_REABRE[obj.status]) return true;
+      /* ⚠ v1.2 — A CONDIÇÃO DE ENTRADA DEIXAVA PASSAR `paga → aprovada`.
+       * Ela só olhava se o status NOVO era de reabertura
+       * (pendente/rascunho/aberto), e "aprovada" não está nesse mapa. Sair de
+       * um estado TERMINAL para "aprovada" não encostava em guarda nenhuma:
+       * nem toast, nem trilha, nada. E era isso que rearmava o botão
+       * "Registrar pgto" da lista, que lançava a receita uma segunda vez.
+       *
+       * ⚠ E BARRA SÓ O PAR QUE REARMA O BOTÃO. Uma versão intermediária desta
+       *   guarda barrava QUALQUER saída de estado terminal, e fechou caminhos
+       *   legítimos que ninguém pediu para fechar: `recebido → cancelado`
+       *   (cancelar pedido recebido por engano) e `recebido → cotacao`
+       *   (devolver para cotação). O furo real é estreito — voltar para um
+       *   estado APROVADO é o que faz o botão reaparecer.
+       *
+       * ⚠ `requisicoes` fica de fora: ela também tem estado terminal
+       *   ("comprada"), mas não gera lançamento no Financeiro. Não há o que
+       *   desfazer, e barrar a saída dela seria mexer num fluxo que ninguém
+       *   reclamou a pretexto de consertar outro. */
+      var lancaDinheiro = entidade === "medicoes" || entidade === "compras";
+      var saiuDeTerminal = lancaDinheiro && !!this._APROV_TERM[statusAntigo]
+        && !!this._APROV_OK[obj.status] && obj.status !== statusAntigo;
+      if (!saiuDeTerminal && (!this._ehAprovado(statusAntigo) || !this._APROV_REABRE[obj.status])) return true;
+
+      /* ⚠ PERMISSÃO PRIMEIRO, SEMPRE. Numa versão intermediária o ramo da
+         baixa terminal vinha antes desta checagem e devolvia `true` — quem não
+         é aprovador passava a poder desfazer um pagamento. Regra de permissão
+         que fica depois de um `return` não é regra. */
       if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
         UI.toast("Só um aprovador pode reabrir um documento já aprovado. Peça a um aprovador da equipe.", "erro");
         return false;
       }
-      /* documento já pago não volta por aqui: o dinheiro saiu, e desfazer a
-         aprovação sem estornar deixaria caixa e documento contando histórias
-         diferentes. O caminho é estornar o pagamento primeiro. */
+
       if (this._APROV_TERM[statusAntigo]) {
-        UI.toast("Este documento está " + statusAntigo + " — estorne o pagamento antes de reabrir.", "erro");
-        return false;
+        /* ⚠ TEM DE HAVER SAÍDA, E NÃO HAVIA. A primeira versão só dizia
+         * "estorne no Financeiro antes" — e o estorno NÃO destrava:
+         * `finEstornar` cria um espelho no Financeiro e não encosta no status
+         * nem na data do documento. A pessoa estornava, voltava, e levava a
+         * mesma recusa. O único caminho que passava era marcar como
+         * Rejeitada — que carimba como RECUSADO um boletim que só foi pago
+         * errado, e vai ao Portal do cliente assim. Trava sem porta é trava
+         * que empurra a pessoa para a mentira.
+         *
+         * A saída agora é explícita: confirma na cara, a DATA é limpa (é ela
+         * que serve de guarda de idempotência dos dois botões — sem limpar, o
+         * documento ficaria "aprovado" e sem poder ser pago de novo) e a
+         * trilha registra quem fez.
+         *
+         * ⚠ `estoqueLancado` NÃO é limpo de propósito: o material já entrou no
+         *   almoxarifado e há movimento no kardex. Limpar a marca faria o
+         *   recebimento seguinte dar entrada no MESMO material outra vez —
+         *   trocaria um documento incoerente por estoque inflado. Estorno de
+         *   estoque é movimento próprio, na tela do almoxarifado. */
+        var qual = entidade === "compras" ? "recebimento" : "pagamento";
+        var dataAntiga = entidade === "compras" ? obj.dataRecebimento : obj.dataPgto;
+        var aviso = "Este documento está " + statusAntigo + " e o lançamento já entrou no Financeiro"
+          + (dataAntiga ? " em " + Util.fmtDia(dataAntiga) : "") + ".\n\n"
+          + "Voltar para \"" + obj.status + "\" desfaz o " + qual + " DENTRO DO DOCUMENTO. "
+          + "O lançamento no Financeiro NÃO é estornado por aqui"
+          + (entidade === "compras" ? ", e o material que já entrou no almoxarifado continua lá" : "") + ".\n\n"
+          + "Se o dinheiro entrou ou saiu de verdade, estorne o lançamento no Financeiro também — "
+          + "senão o caixa e o documento vão contar histórias diferentes.\n\nDesfazer o " + qual + "?";
+        var ok = false;
+        try { ok = confirm(aviso); } catch (eC) { ok = false; }
+        if (!ok) return false;
+        if (entidade === "compras") obj.dataRecebimento = "";
+        else obj.dataPgto = "";
+        this._trilhaAprov(obj, "desfazer-baixa", { de: statusAntigo, para: obj.status });
+        obj.reabertoPor = this._quemAprova(); obj.reabertoEm = this._hojeISO();
+        obj.aprovadoPor = ""; obj.aprovadoEm = "";
+        return true;
       }
       this._trilhaAprov(obj, "reabrir", { de: statusAntigo, para: obj.status });
       obj.reabertoPor = this._quemAprova(); obj.reabertoEm = this._hojeISO();
@@ -17311,6 +18100,19 @@ renderFolha: function () {
           obj.dataRecebimento = this._hojeISO();
           this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto };
           this._lancFinToast = "Despesa da compra lançada no Financeiro (pendente).";
+          /* ⚠ v1.2 — A v1.1.232 COPIOU SÓ A METADE DO DINHEIRO. O botão
+             "Receber" da lista faz DUAS coisas: dá entrada no almoxarifado
+             (custo médio, movimento no kardex, `estoqueLancado`) e lança a
+             despesa. Este caminho só replicou a despesa. O material nunca
+             entrava no estoque, o kardex não registrava, o custo unitário
+             ficava congelado no preço da compra anterior — e como o botão
+             "Receber" só é desenhado em pedido "aprovado", depois de salvar
+             pelo formulário ele nunca mais aparecia para consertar.
+             O comentário logo acima diz "FAZ O MESMO QUE O BOTÃO"; agora faz.
+             Agendado aqui e executado depois do save, pelo mesmo motivo do
+             lançamento financeiro: o gate é validação, e um `return false`
+             posterior deixaria o estoque movimentado sem documento gravado. */
+          this._estoquePendente = true;
         }
         return true;
       }
@@ -17954,7 +18756,16 @@ renderFolha: function () {
       "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
-      "bim-drawer-fechar": 1
+      "bim-drawer-fechar": 1,
+      /* ⚠ v1.2 — "ver todos os N" é LEITURA PURA e quase nasceu de fora desta
+         lista. As tabelas longas passaram a desenhar as 300 mais recentes; sem
+         esta linha, o cliente com licença vencida clicaria em "Ver todos os
+         6.000" e levaria o toast vermelho "ative sua licença para salvar" —
+         num botão que não salva nada — e as linhas 301+ ficariam inalcançáveis
+         justamente para quem está tentando conferir o próprio histórico antes
+         de renovar. O aviso de vencimento estreou na versão passada; este
+         estado vai acontecer. */
+      "ver-tudo": 1
     },
     _isentoDoBloqueio: function (gacao) {
       if (this._ISENTO_BLOQUEIO[gacao]) return true;
@@ -18134,6 +18945,22 @@ renderFolha: function () {
              O que precisa ser impedido e PULAR A FILA: ir de pendente direto
              para paga sem passar pela aprovacao. E o que este botao checa. */
           if (!this._guardaBaixa(md, "medicoes")) return;
+          /* ⚠ v1.2 — A DATA JÁ PREENCHIDA É O GUARDA DE IDEMPOTÊNCIA, e ela
+             faltava exatamente AQUI. Os outros três caminhos já a tinham (o
+             formulário nos dois lados, e `_estoqueDaCompra` com
+             `estoqueLancado`); os dois botões da lista, não.
+             O roteiro que sangrava: o financeiro registra o pagamento na
+             medição errada; o aprovador "conserta" voltando o Status de Paga
+             para Aprovada (voltar para Pendente é bloqueado com mensagem
+             clara, então Aprovada é a escolha óbvia); o botão "Registrar pgto"
+             reaparece; um clique e a receita é lançada DE NOVO. Medição de
+             R$ 228.000 com 5% de retenção vira R$ 433.200 no caixa, com UMA
+             medição na lista e nenhum aviso. */
+          if (md.dataPgto) {
+            UI.toast("Esta medição já teve o pagamento registrado em " + Util.fmtDia(md.dataPgto)
+              + ". Estorne a receita no Financeiro antes de registrar de novo.", "erro");
+            return;
+          }
           md.status = "paga"; md.dataPgto = this._hojeISO(); Store.salvar(eid(), "medicoes", md);
           // gera receita no financeiro (líquido de retenção)
           var liq = Util.num(md.valor) * (1 - Util.num(md.retencao) / 100);
@@ -18151,6 +18978,16 @@ renderFolha: function () {
              aprovacao ja foi feita por outro. Em obra pequena quem compra e
              quem recebe. O que se impede e receber sem aprovacao. */
           if (!this._guardaBaixa(pcr, "compras")) return;
+          /* ⚠ v1.2 — o gêmeo do "pagar-medicao" acima, mesmo buraco e mesma
+             correção: recebido → aprovado passa pelo gate de status, o botão
+             "Receber" reaparece e a despesa é lançada uma segunda vez.
+             `_estoqueDaCompra` não duplicava (tem `estoqueLancado`); o
+             Financeiro duplicava. */
+          if (pcr.dataRecebimento) {
+            UI.toast("Esta compra já foi recebida em " + Util.fmtDia(pcr.dataRecebimento)
+              + ". Estorne a despesa no Financeiro antes de receber de novo.", "erro");
+            return;
+          }
           pcr.status = "recebido"; pcr.dataRecebimento = this._hojeISO();
           /* o material entra no almoxarifado ANTES de carimbar, para que uma
              falha de gravação não deixe o pedido "recebido" sem estoque */
@@ -18200,6 +19037,11 @@ renderFolha: function () {
         case "kardex-filtrar": return this.kardexFiltrar();
         case "kardex-limpar": return this.kardexLimpar();
         case "novo-rdo": return this.novoRdo();
+        case "pleito-dossie": return this.pleitoDossie();
+        /* ⚠ o "ver todos" vale só enquanto a tela estiver aberta: é memória,
+           não preferência gravada. Quem pediu uma vez para ver 6.000 linhas
+           não pediu para o app abrir assim para sempre. */
+        case "ver-tudo": this._verTudo[id] = true; App.render(); return;
         case "novo-usuario": return this.novoUsuario();
         case "config-aprovacao": return this.configAprovacao();
         case "config-admin": return this.configurarAdmin();
@@ -18430,7 +19272,7 @@ renderFolha: function () {
             UI.toast("Lançar a folha cria uma despesa no Financeiro — módulo que seu usuário não tem. Peça a quem cuida do Financeiro.", "erro"); return;
           }
           var pt = Store.obter(eid(), "ponto", id); if (!pt) return;
-          pt.status = "lancado"; pt.dataLancamento = new Date().toISOString().slice(0, 10); Store.salvar(eid(), "ponto", pt);
+          pt.status = "lancado"; pt.dataLancamento = hojeLocal(); Store.salvar(eid(), "ponto", pt);
           Store.salvar(eid(), "financeiro", { data: pt.dataLancamento, desc: "Folha " + (pt.competencia || "") + " — " + (pt.colaboradorNome || ""), tipo: "despesa", categoria: "mao_obra", valor: Util.num(pt.valor), status: "pago", obraId: pt.obraId });
           App.render(); UI.toast("Folha lançada no Financeiro (mão de obra).", "ok"); return;
         }
@@ -18708,7 +19550,7 @@ case "nova-folha": return this.novoFolha();
           return f.obraId === id && f.tipo === "receita";
         }).sort(function (a, b) { return String(a.data || "").localeCompare(String(b.data || "")); });
         var pago = 0, aReceber = 0, proxima = null;
-        var hojeISO = new Date().toISOString().slice(0, 10);
+        var hojeISO = hojeLocal();
         var parcelas = recs.map(function (f) {
           var v = Util.num(f.valor), quitada = FinStatus.realizado(f);
           /* o que o cliente precisa ver de uma parcela em aberto é o
@@ -18751,7 +19593,7 @@ case "nova-folha": return this.novoFolha();
        * A validade é calculada aqui para o Portal não precisar saber a regra. */
       var documentos = [];
       if (podeRel("documentos")) {
-        var hoje2 = new Date().toISOString().slice(0, 10);
+        var hoje2 = hojeLocal();
         documentos = (obra.portalDocumentos || []).map(function (d) {
           var venceu = d.validade && String(d.validade) < hoje2;
           return { nome: d.nome || "", tipo: d.tipo || "", numero: d.numero || "",
@@ -18864,9 +19706,9 @@ case "nova-folha": return this.novoFolha();
           el.innerHTML = '<span class="muted" style="font-size:12.5px">Nenhum documento cadastrado. O bloco não aparece no Portal enquanto estiver vazio.</span>';
           return;
         }
-        var hoje = new Date().toISOString().slice(0, 10);
+        var hoje = hojeLocal();
         el.innerHTML = '<table style="width:100%;font-size:12px;border-collapse:collapse">' +
-          '<tr style="color:#64748b;font-size:11px"><th style="text-align:left">Documento</th><th>Número</th><th>Emissão</th><th>Validade</th><th></th></tr>' +
+          '<tr style="color:var(--texto-fraco);font-size:var(--t-micro)"><th style="text-align:left">Documento</th><th>Número</th><th>Emissão</th><th>Validade</th><th></th></tr>' +
           buf.map(function (d, i) {
             var venc = d.validade && String(d.validade) < hoje;
             return '<tr style="border-top:1px solid var(--linha,#e2e8f0)">' +
@@ -19003,7 +19845,7 @@ case "nova-folha": return this.novoFolha();
       var obra = Store.obter(eid(), "obras", id);
       if (!obra) { UI.toast("Obra não encontrada.", "erro"); return; }
 
-      var hojeISO = new Date().toISOString().slice(0, 10);
+      var hojeISO = hojeLocal();
       var seg = ResumoCliente.segundaDe(hojeISO);
       var chave = ResumoCliente.chaveAviso(id, hojeISO);
       var livro = obra.portalAvisos || {};
@@ -19534,11 +20376,18 @@ case "nova-folha": return this.novoFolha();
            mesmo motivo: ele já chegou do servidor, e fechar a janela não pode
            jogar fora um "de acordo" de boletim. */
         var aceites = self._gravarAceites(j.obras || []);
+        /* A PROVA DE CIÊNCIA entra pelo mesmo caminho, e pelo mesmo motivo. */
+        var lidos = self._gravarLeituras(j.obras || []);
         var el = document.getElementById("av-corpo"); if (!el) return;
         el.innerHTML = (aceites.gravados
           ? '<div style="background:#f0fdf4;border:1px solid #16a34a;border-radius:10px;padding:10px 13px;font-size:13px;color:#15803d;margin-bottom:12px">'
             + "<b>✓ " + aceites.gravados + " aceite(s) de medição</b> registrados pelos clientes foram carimbados nos boletins."
             + (aceites.falhas ? ' <span style="color:#b91c1c">' + aceites.falhas + " não couberam no armazenamento.</span>" : "") + "</div>"
+          : "")
+          + (lidos.gravados
+          ? '<div style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:10px 13px;font-size:13px;margin-bottom:12px">'
+            + "<b>" + lidos.gravados + " documento(s)</b> ganharam a data em que o cliente abriu — ela aparece no diário e no boletim, e serve de prova de que ele foi avisado."
+            + "</div>"
           : "") + self._avaliacoesHtml(j.obras || [], gravadas);
       }).catch(function () {
         var el = document.getElementById("av-corpo");
@@ -19673,6 +20522,84 @@ case "nova-folha": return this.novoFolha();
         });
       });
       return { gravados: n, falhas: falhas };
+    },
+
+    /* =================================================================
+     * PROVA DE CIÊNCIA — "o cliente abriu este diário no dia 12"
+     *
+     * Quando a frente não é liberada ou o material do cliente atrasa, o
+     * engenheiro avisa e reza. Na discussão do aditivo o cliente diz "não fui
+     * avisado", e não há o que mostrar.
+     *
+     * O Portal JÁ registrava quem abriu qual diário e qual boletim, com data
+     * de servidor e carimbo de PRIMEIRA vez que nunca muda — feito exatamente
+     * para valer como prova. E o app nunca leu esse campo: o dado nascia,
+     * viajava e morria. (Pior: até a v1.2 ele nem viajava — o merge por obra
+     * do servidor reconstruía o objeto sem `leituras` nem `aceites`.)
+     *
+     * ⚠ A PRIMEIRA VEZ NUNCA É REESCRITA, aqui também. É ela que prova a
+     *   data do aviso; um carimbo que anda sozinho a cada abertura do painel
+     *   não prova nada — mesma doutrina de `_gravarAceites`.
+     * ================================================================= */
+    _gravarLeituras: function (obras) {
+      var E = eid(), n = 0, falhas = 0;
+      var meds = lista("medicoes"), rdos = lista("rdo");
+      function temPropria(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+      (obras || []).forEach(function (o) {
+        var L = o.leituras || {};
+        /* índices por obra: o mesmo número de boletim existe em outra obra */
+        var porIdRdo = {}, porNumRdo = {}, porNumMed = {};
+        rdos.forEach(function (r) {
+          if (!r || String(r.obraId) !== String(o.obraId)) return;
+          if (r.id) porIdRdo[r.id] = r;
+          if (r.numero && !porNumRdo[r.numero]) porNumRdo[r.numero] = r;
+        });
+        meds.forEach(function (m) {
+          if (!m || String(m.obraId) !== String(o.obraId)) return;
+          if (m.numero && !porNumMed[m.numero]) porNumMed[m.numero] = m;
+        });
+        Object.keys(L).forEach(function (chave) {
+          var reg = L[chave];
+          if (!reg || !reg.primeira) return;
+          var i = String(chave).indexOf(":");
+          if (i < 0) return;
+          var tipo = String(chave).slice(0, i), k = String(chave).slice(i + 1);
+          var alvo = null, ent = "";
+          /* ⚠ `porId[k]` sem esta guarda devolve o que o Object tem por
+             HERANÇA: com a chave "constructor" o alvo vira a função Object e o
+             app grava dentro dela, depois manda para o Store como se fosse um
+             diário. A chave vem do servidor, que a recebeu do cliente — é
+             entrada de fora. Mesma armadilha já documentada em js/rdo.js. */
+          if (tipo === "rdo") {
+            alvo = temPropria(porIdRdo, k) ? porIdRdo[k] : (temPropria(porNumRdo, k) ? porNumRdo[k] : null);
+            ent = "rdo";
+          } else if (tipo === "med") {
+            alvo = temPropria(porNumMed, k) ? porNumMed[k] : null;
+            ent = "medicoes";
+          }
+          if (!alvo) return;
+          var atual = alvo.vistoCliente || null;
+          var primeira = (atual && atual.primeira) ? atual.primeira : reg.primeira;
+          var ultima = String(reg.ultima || "") > String((atual && atual.ultima) || "") ? reg.ultima : (atual && atual.ultima);
+          var vezes = Math.max(Number(reg.vezes || 1), Number((atual && atual.vezes) || 0));
+          /* só grava se mudou — senão toda abertura do painel reescreve o
+             registro e a nuvem sincroniza o mesmo dado para sempre */
+          if (atual && atual.primeira === primeira && atual.ultima === ultima && Number(atual.vezes) === vezes) return;
+          alvo.vistoCliente = { primeira: primeira, ultima: ultima || primeira, vezes: vezes };
+          if (Store.salvar(E, ent, alvo)) n++; else falhas++;
+        });
+      });
+      return { gravados: n, falhas: falhas };
+    },
+
+    /* O texto curto que a lista e o impresso mostram. Devolve "" quando o
+       cliente nunca abriu — ausência de prova não vira frase. */
+    vistoClienteTexto: function (reg) {
+      var v = reg && reg.vistoCliente;
+      if (!v || !v.primeira) return "";
+      var t = "Visto pelo cliente em " + Util.fmtDia(String(v.primeira).slice(0, 10));
+      if (Number(v.vezes) > 1) t += " (" + v.vezes + " aberturas)";
+      return t;
     },
 
     // ---------- Lançar de documento (IA lê NF/fatura/boleto) ----------
@@ -19918,7 +20845,12 @@ case "nova-folha": return this.novoFolha();
            usuario pode estar corrigindo), mas com o aviso na cara — senao a
            mesma NF-e entra duas vezes e o total de Entradas dobra. */
         var chaveNv = String(dados.chave || "").replace(/\D/g, "");
-        var jaTemNf = chaveNv ? lista("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === chaveNv; })[0] : null;
+        /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+           a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+           acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+           cópia -- documento fiscal duplicado, item de estoque partido em dois
+           saldos. Mesmo motivo do `proxNumero`. */
+        var jaTemNf = chaveNv ? listaTodas("fiscal").filter(function (x) { return String(x.chaveAcesso || "").replace(/\D/g, "") === chaveNv; })[0] : null;
         UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Li a nota" + (origem ? " (" + origem + ")" : "") + " com confiança de " + Math.round((dados.confianca || 0) * 100) + "%. Confira os campos e salve — nada foi gravado ainda.", "ok");
         if (jaTemNf) UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Já existe uma nota com esta chave de acesso (nº " + Util.esc(jaTemNf.numero || "s/n") + "). Salvar de novo vai duplicar.", "erro");
         /* quem decide compra × venda é o CNPJ do emitente contra o SEU. Sem o
@@ -19939,7 +20871,12 @@ case "nova-folha": return this.novoFolha();
       var nfSalva = null;
       if (dados.numero || dados.chave) {
         var chaveLimpa = String(dados.chave || "").replace(/\D/g, "");
-        var jaTem = lista("fiscal").filter(function (x) {
+        /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
+           a empresa inteira. Com o funil por obra, o sub-usuário restrito não
+           acharia o registro cadastrado em outra obra e criaria uma SEGUNDA
+           cópia -- documento fiscal duplicado, item de estoque partido em dois
+           saldos. Mesmo motivo do `proxNumero`. */
+        var jaTem = listaTodas("fiscal").filter(function (x) {
           var xc = String(x.chaveAcesso || "").replace(/\D/g, "");
           if (chaveLimpa && xc) return xc === chaveLimpa;
           return dados.numero && String(x.numero) === String(dados.numero) && (x.parceiro || "") === (fn.nome || "");
@@ -19956,7 +20893,7 @@ case "nova-folha": return this.novoFolha();
          POR CIMA — despesa em dobro, sem aviso nenhum. */
       this.formFinanceiro({
         tipo: ehReceita ? "receita" : "despesa",
-        data: dados.vencimento || dados.emissao || new Date().toISOString().slice(0, 10),
+        data: dados.vencimento || dados.emissao || hojeLocal(),
         valor: dados.valor || 0, categoria: dados.categoria || "material",
         desc: dados.descricao || ("Documento — " + (fn.nome || "")), fornecedor: fn.nome || "", status: "pendente",
         docTipo: "NF", docId: (nfSalva && nfSalva.id) || "",

@@ -171,7 +171,13 @@
    * dia parado ter chance de se sustentar. */
   RDO.pendenciasDoPleito = function (rdo) {
     var r = rdo || {}, falta = [];
-    var nd = (r.clima) ? RDO.fracaoDiaPerdidoPorChuva(r.clima.chuvaMm) : 0;
+    /* ⚠ DOMINGO E FERIADO NÃO INSTRUEM PLEITO NENHUM. `condicaoPorClima` logo
+       acima já devolve fração 0 nesses dias — mas esta função calculava `nd`
+       direto da chuva e nunca perguntava. Resultado: num domingo com 61 mm a
+       tela dizia "Dia não trabalhável — não entra em pleito" e, na linha
+       seguinte, cobrava três providências para instruir esse mesmo pleito.
+       Proteção pela metade: um lado sabia, o outro não perguntava. */
+    var nd = (r.clima && !RDO.diaNaoTrabalhavel(r)) ? RDO.fracaoDiaPerdidoPorChuva(r.clima.chuvaMm) : 0;
     if (nd <= 0) return falta;                       // não há pleito de chuva a instruir
     if (!r.clima || !r.clima.fonte) falta.push("Buscar o clima do dia de fonte externa (o valor digitado à mão não é prova).");
     if (r.chuvaMediaHistoricaMm == null) falta.push("Comparar com a média histórica do local — chuva dentro da média não gera pleito.");

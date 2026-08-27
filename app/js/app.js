@@ -166,7 +166,18 @@
         var u0 = Auth.usuario();
         if (u0) {
           var sd = Store.saude(u0.empresaId);
-          if (sd.usoPct >= 80) UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " Armazenamento local em " + sd.usoPct + "% — faça " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup e remova bases não usadas em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas.", "erro");
+          /* ⚠ O AVISO DIZIA "remova bases não usadas em Tabelas" — e as bases
+             não ocupam um byte deste limite: elas vivem no IndexedDB. O
+             cliente seguia o conselho, não liberava nada, e concluía que o
+             sistema estava quebrado. Agora o aviso diz QUEM está ocupando. */
+          if (sd.usoPct >= 80) {
+            var maior = (sd.maiores || [])[0];
+            UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "")
+              + " Armazenamento local em " + sd.usoPct + "%"
+              + (maior ? " — o maior é \"" + maior.chave + "\" com " + maior.kb + " KB" : "")
+              + ". Faça " + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "")
+              + " Backup agora. (As bases SINAPI não contam neste limite.)", "erro");
+          }
         }
       } catch (eSd) {}
       // LOTE 5: CTA de upgrade quando o teste grátis está acabando (últimos 2 dias)
@@ -2338,9 +2349,12 @@
       Bases.persistir(eid);
       try { this.backupAuto({ urgente: true }); } catch (e) {}
       /* o que foi restaurado também vai para o espelho: recuperar num aparelho
-         tem de chegar aos outros — senão o próximo merge trata como "não existe" */
-      var self2 = this;
-      dados.forEach(function (it) { self2._propriaEspelhar(it); });
+         tem de chegar aos outros — senão o próximo merge trata como "não existe".
+         ⚠ EM LOTE desde a v1.2: era um-a-um e, como o `dados` aqui é a base
+         PRÓPRIA INTEIRA (não só o que entrou), uma base de 5.000 composições
+         fazia 5.000 leituras + 5.000 regravações do espelho completo — dentro
+         do MESMO importarBackup que já congelava a aba por causa da Gestão. */
+      this._propriaEspelharVarios(dados);
       return { novos: novos, atualizados: atualizados, total: dados.length };
     },
     importarBackup: function (file) {
@@ -2401,23 +2415,65 @@
              que existe no aparelho e não está no arquivo continua onde está.
              O registro do arquivo entra com o próprio atualizadoEm — se o
              aparelho tem versão mais nova, a nuvem resolve no próximo merge. */
+          /* ===== v1.2 — A MESMA MESCLA, EM UMA GRAVAÇÃO POR MÓDULO =====
+             ⚠ ANTES ERA O(N²) E CONGELAVA A ABA NO PIOR MOMENTO. O laço
+             chamava `Store.obter` (getItem + JSON.parse do array inteiro) E
+             `Store.salvar` (outro parse + JSON.stringify + setItem do array
+             inteiro, que cresce a cada volta) para CADA registro do arquivo.
+             Backup de 3 anos (12.000 registros): 24.000 JSON.parse, 12.000
+             JSON.stringify, ~1,28 GB gravados e ~9,5 s de tela parada sem
+             barra de progresso — quem acabou de trocar de máquina conclui que
+             o backup não funcionou e fecha a aba no meio.
+             Agora é 1 leitura para o índice + 1 gravação por módulo, via
+             `Store.salvarVarios` (o espelho do `excluirVarios`, que já fazia
+             isso do lado do excluir).
+             A SEMÂNTICA NÃO MUDA — é a mesma de sempre, só que a comparação
+             usa um índice em memória em vez de reler o disco por registro. */
           var nGest = 0, entsGest = 0;
           if (temGestao) {
             Object.keys(dump.gestao).forEach(function (ent) {
               var lista = Util.arr(dump.gestao[ent]);
               if (!lista.length) return;
               entsGest++;
-              lista.forEach(function (reg) {
-                if (!reg || !reg.id) return;
-                try {
-                  var atualReg = Store.obter(eid, ent, reg.id);
+              try {
+                var idx = Object.create(null);   // { id: atualizadoEm } — UMA leitura da entidade
+                Store.listar(eid, ent).forEach(function (x) {
+                  if (x && x.id != null) idx[String(x.id)] = String(x.atualizadoEm || "");
+                });
+                var entram = [];
+                lista.forEach(function (reg) {
+                  if (!reg || !reg.id) return;
+                  var k = String(reg.id);
                   /* o mais novo vence — restaurar backup velho por cima de
                      trabalho recente seria trocar um dado bom por um velho */
-                  if (atualReg && String(atualReg.atualizadoEm || "") >= String(reg.atualizadoEm || "")) return;
-                  Store.salvar(eid, ent, reg);
-                  nGest++;
-                } catch (eG) {}
-              });
+                  if (idx[k] != null && idx[k] >= String(reg.atualizadoEm || "")) return;
+                  /* o índice é atualizado aqui porque o laço antigo relia o
+                     disco: um arquivo com DOIS registros do mesmo id comparava
+                     o segundo com o primeiro que acabara de entrar. Sem esta
+                     linha o arquivo duplicado mudaria de resultado. */
+                  idx[k] = String(reg.atualizadoEm || Util.agoraISO());
+                  entram.push(reg);
+                });
+                /* ⚠ O 4º argumento é o que faz o comentário lá em cima ser
+                   verdade. Sem ele o registro de 01/08 entrava carimbado com
+                   a hora de AGORA e vencia, no merge seguinte, a versão de
+                   20/08 que estava na nuvem — em todos os aparelhos.
+                   E o retorno é contado, não ignorado: com o armazenamento
+                   cheio `salvarVarios` devolve 0 e avisa UMA vez, em vez de
+                   um toast por registro com o resumo mentindo "N restaurado(s)". */
+                /* ⚠ E A EXCLUSÃO PRECISA SER DESFEITA JUNTO. Restaurar backup
+                   para trazer de volta o que foi apagado por engano é a razão
+                   nº 1 de alguém restaurar backup — e a lápide local sobrevive
+                   à restauração (`_lapides` está fora do backup, de propósito).
+                   Sem esta linha o registro volta ao disco, a tela diz
+                   "1 restaurado(s)", e o PRIMEIRO SYNC o apaga de novo em todos
+                   os aparelhos, porque o carimbo do arquivo é mais antigo que o
+                   da exclusão. Ver `Store.desenterrar`. */
+                try {
+                  Store.desenterrar(eid, ent, entram.map(function (x) { return x.id; }));
+                } catch (eD) {}
+                nGest += Store.salvarVarios(eid, ent, entram, true);
+              } catch (eG) {}
             });
           }
           if (dump.prefs && typeof dump.prefs === "object") {
@@ -3627,7 +3683,13 @@
 
         '<div style="margin-top:12px">' +
           '<label style="font-weight:600;font-size:12px;display:block">Quanto você quer que o orçamento dê?</label>' +
-          '<input id="fx-alvo" class="cell" style="width:100%;font-size:19px;padding:9px;font-weight:700" ' +
+          /* ⚠ o `!important` no INLINE é o único jeito de este campo não
+             ENCOLHER no celular. A trava anti-zoom do iOS (css/app.css)
+             precisou de `!important` para vencer os font-size inline da grade
+             do diário — e, de quebra, passou a rebaixar este campo de 19px
+             para 17px. Ele é grande de propósito: é o "Quanto você quer que o
+             orçamento dê?", o número que a pessoa está olhando. */
+          '<input id="fx-alvo" class="cell" style="width:100%;font-size:19px !important;padding:9px;font-weight:700" ' +
             'inputmode="decimal" placeholder="Ex.: 150.000,00" autocomplete="off">' +
         "</div>" +
 
@@ -5602,6 +5664,30 @@
         var reg = PropriaSync.paraRegistro(item, Util.agoraISO());
         if (reg) Store.salvar(Auth.empresaId(), PropriaSync.ENTIDADE, reg);
       } catch (e) {}
+    },
+    /* O MESMO espelho, em UMA gravação — ver a nota do `Store.salvarVarios`.
+     * ⚠ POR QUE ESTE LAÇO PODE IR EM LOTE E A MAIORIA DOS OUTROS NÃO: aqui
+     *   nada LÊ o que acabou de ser gravado. `PropriaSync.paraRegistro` é
+     *   função pura do item (js/propriasync.js:32) — não toca no Store, e o
+     *   `id` sai de `chaveDe(item)`, que é determinístico, em vez de depender
+     *   de o `salvar` atribuir um. Ninguém usa o retorno. Os laços que NÃO
+     *   podem ser migrados são os que releem dentro da volta: o número da
+     *   ficha de EPI, por exemplo, é lido do que acabou de entrar — em lote
+     *   ingênuo sairiam 5 fichas com o mesmo número.
+     * Carimbo: continua sendo "agora" (3 argumentos, sem `manterCarimbo`),
+     * porque o espelho serve ao merge da nuvem e tem de anunciar a gravação
+     * recente — é o comportamento que já valia. */
+    _propriaEspelharVarios: function (itens) {
+      try {
+        if (typeof PropriaSync === "undefined") return 0;
+        var agora = Util.agoraISO(), regs = [];
+        Util.arr(itens).forEach(function (it) {
+          var reg = PropriaSync.paraRegistro(it, agora);
+          if (reg) regs.push(reg);
+        });
+        if (!regs.length) return 0;
+        return Store.salvarVarios(Auth.empresaId(), PropriaSync.ENTIDADE, regs);
+      } catch (e) { return 0; }
     },
     _propriaEspelhoExcluir: function (codigo) {
       try {

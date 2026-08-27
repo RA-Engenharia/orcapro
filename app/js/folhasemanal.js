@@ -253,8 +253,19 @@
 
   /* ---- parser da PLANILHA SEMANAL dela: {abas:[{nome,dados:[][]}]} (mesma
      estrutura que o app já extrai de .xlsx/.xls/.csv) ---- */
-  function parsePlanilha(abas) {
-    var obras = [], lancs = [], avisos = [];
+  /* ⚠ `opcoes.formatoPadrao` É O FORMATO QUE A EMPRESA JÁ USOU ANTES.
+   * Sem ele, todo período cujas DUAS pontas caem nos dias 1–12 é ambíguo — e
+   * isso é ~1 semana em cada 5. A cliente que sempre manda planilha em mês/dia
+   * levava um aviso vermelho em 20% das importações, mesmo com a leitura
+   * certa. Aviso que aparece quando não há problema é aviso que a pessoa
+   * aprende a ignorar, e aí ele não serve para o dia em que houver problema.
+   * A tela guarda o formato assim que uma importação o revela sem dúvida
+   * (`formatoDetectado`) e o devolve aqui na próxima. */
+  function parsePlanilha(abas, opcoes) {
+    var o = opcoes || {};
+    var formatoPadrao = (o.formatoPadrao === "md" || o.formatoPadrao === "dm") ? o.formatoPadrao : "";
+    var formatoDetectado = "";
+    var obras = [], lancs = [], avisos = [], ambiguas = [], semData = false;
     (abas || []).forEach(function (aba) {
       var m = (aba.dados || aba.matriz || []).map(function (r) { return (r || []).map(bruto); });
       var hi = -1, mapa = null, obraNome = null, chave = null;
@@ -277,12 +288,86 @@
         if (/PER[ÍI]ODO/i.test(row.join(" ")) && !mapa) { // linha-título do bloco
           obraNome = limpo(c0.replace(/^OBRA\s+/i, ""));
           if (obras.indexOf(obraNome) === -1) obras.push(obraNome);
-          // 1ª data da linha vira a semana (M/D/AA ou D/M/AA — planilha dela é M/D/AA)
-          for (var ci = 1; ci < row.length; ci++) {
-            if (row[ci] && typeof row[ci] === "object" && typeof row[ci].getFullYear === "function") { var dU = row[ci]; chave = chaveSemana(new Date(dU.getUTCFullYear(), dU.getUTCMonth(), dU.getUTCDate())); break; }
-            var dv = limpo(row[ci]), md = dv.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
-            if (md) { var a = +md[3] < 100 ? 2000 + (+md[3]) : +md[3]; var mm = +md[1], dd = +md[2]; if (mm > 12) { var tmp = mm; mm = dd; dd = tmp; } chave = chaveSemana(new Date(a, mm - 1, dd)); break; }
+          /* ===== A DATA DO BLOCO "PERÍODO" =====
+           * ⚠ ESTA DESAMBIGUAÇÃO ERA DE MÃO ÚNICA E ERRAVA O MÊS.
+           *   Ela assumia M/D/AA (o formato da planilha da primeira cliente) e
+           *   só corrigia quando M/D era IMPOSSÍVEL (`mm > 12`). Numa planilha
+           *   brasileira, "10/08/26" (10 de agosto) não é impossível: virava
+           *   mês 10, dia 8, e a semana era gravada como 2026-10-05.
+           *   O dinheiro anda em cima dessa chave: o resumo mensal filtra por
+           *   `semana.slice(0,7)`, então a folha de agosto some da competência
+           *   de agosto e aparece em outubro; a despesa de mão de obra nasce
+           *   carimbada na segunda-feira errada; e a tela ainda PULA para a
+           *   semana adivinhada, com o toast comemorando "N lançamentos".
+           *   Acertava só quando o dia era ≥ 13 — falha às vezes e acerta o
+           *   resto, que é o pior padrão para alguém perceber.
+           *
+           * ⚠ E INVERTER O PADRÃO PARA BR NÃO SERVE: quebraria a cliente real
+           *   num período inteiro dentro dos dias 1–12. Por isso a regra é:
+           *   decidir quando dá para decidir, e quando NÃO dá, avisar em vez
+           *   de escolher calado. */
+          /* ⚠ A LINHA TEM DUAS DATAS — "PERÍODO 10/08/26 a 16/08/26" — E A
+             SEGUNDA COSTUMA RESOLVER A PRIMEIRA. Num período de uma semana,
+             quase sempre uma das pontas cai num dia > 12, e isso prova o
+             formato das duas. Olhar só a primeira data era jogar fora a
+             evidência que estava na mesma linha. Com isso "10/08 a 16/08"
+             passa a ser lido como agosto (o 16 denuncia d/m) e "6/22 a 6/28"
+             continua sendo junho (o 22 denuncia m/d). Sobra ambíguo só o
+             período em que as DUAS pontas cabem nos dois papéis. */
+          var fmtDaLinha = "";
+          for (var cf = 1; cf < row.length && !fmtDaLinha; cf++) {
+            var mf = limpo(row[cf]).match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+            if (!mf) continue;
+            if (+mf[1] > 12) fmtDaLinha = "dm";
+            else if (+mf[2] > 12) fmtDaLinha = "md";
           }
+          /* o que esta planilha revelou sem dúvida vira o padrão da empresa */
+          if (fmtDaLinha) formatoDetectado = fmtDaLinha;
+          /* e, não revelando, vale o que a empresa já usou antes */
+          if (!fmtDaLinha && formatoPadrao) fmtDaLinha = formatoPadrao;
+          var achouData = false;
+          for (var ci = 1; ci < row.length; ci++) {
+            if (row[ci] && typeof row[ci] === "object" && typeof row[ci].getFullYear === "function") {
+              var dU = row[ci];
+              chave = chaveSemana(new Date(dU.getUTCFullYear(), dU.getUTCMonth(), dU.getUTCDate()));
+              achouData = true; break;
+            }
+            var dv = limpo(row[ci]);
+            /* ⚠ SERIAL DO EXCEL. O modal aceita .xls, e a leitura do .xls
+               entrega a célula de data como NÚMERO (46194.99 = 10/08/2026),
+               não como Date nem como texto — então nada casava, a semana saía
+               `null`, o lançamento era gravado sem semana e envenenava o
+               seletor da tela inteira. Fechar o formato aqui evita o problema
+               na origem, em vez de tratá-lo cinco telas adiante. */
+            var serial = (typeof row[ci] === "number") ? row[ci] : (/^\d{4,5}(\.\d+)?$/.test(dv) ? +dv : NaN);
+            if (serial > 20000 && serial < 60000) {
+              /* época do Excel: dia 1 = 01/01/1900, com o bug do 29/02/1900 */
+              var ms = Math.round((serial - 25569) * 86400000);
+              var dS = new Date(ms);
+              chave = chaveSemana(new Date(dS.getUTCFullYear(), dS.getUTCMonth(), dS.getUTCDate()));
+              achouData = true; break;
+            }
+            var md = dv.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+            if (!md) continue;
+            var a = +md[3] < 100 ? 2000 + (+md[3]) : +md[3];
+            var p1 = +md[1], p2 = +md[2], mm, dd;
+            if (p1 > 12) { mm = p2; dd = p1; }            // 1º passa de 12 → é DIA (d/m)
+            else if (p2 > 12) { mm = p1; dd = p2; }       // 2º passa de 12 → é DIA (m/d)
+            else if (fmtDaLinha === "dm") { mm = p2; dd = p1; }   // a OUTRA data da linha decidiu
+            else if (fmtDaLinha === "md") { mm = p1; dd = p2; }
+            else {
+              /* as DUAS pontas do período cabem nos dois papéis. Antes o
+                 parser escolhia m/d sem dizer nada; a escolha continua sendo
+                 m/d — inverter para BR quebraria a planilha da cliente que já
+                 funciona, num período todo dentro dos dias 1–12 — mas agora
+                 fica REGISTRADA, e a tela avisa em vez de decidir calada. */
+              mm = p1; dd = p2;
+              ambiguas.push(dv);
+            }
+            chave = chaveSemana(new Date(a, mm - 1, dd));
+            achouData = true; break;
+          }
+          if (!achouData) semData = true;
           hi = -1; mapa = null; continue;
         }
         if (/FECHAMENTO/i.test(U0)) { mapa = null; continue; }
@@ -312,7 +397,33 @@
         }
       }
     });
-    return { obras: obras, lancamentos: lancs, avisos: avisos };
+    /* ⚠ O QUE SAIU SEM SEMANA NÃO PODE SER GRAVADO CALADO.
+     * Lançamento com `semana: null` envenena a tela inteira da Folha: o
+     * seletor de semanas faz `.sort()` e a string "null" fica em ÚLTIMO,
+     * então `_fsSemana` vira null; daí o rótulo do período sai
+     * "NaN/NaN a NaN/NaN/NaN" e os botões de resumo e de relatório estouram
+     * `null.slice(0,7)` — morrem mudos, porque não há captura global de erro.
+     * E pior de explicar ao cliente: a opção do <select> nasce com
+     * `value="null"` (string), então depois de trocar de semana o usuário não
+     * consegue mais VOLTAR para os órfãos.
+     * Das três portas que gravam `fs_lancamentos`, as outras duas já garantem
+     * a semana com um fallback. Só a importação não garantia. */
+    var semSemana = lancs.filter(function (l) { return !l.semana; }).length;
+    if (semSemana) {
+      avisos.push(semSemana + " lançamento(s) vieram sem período reconhecível na planilha. "
+        + "Escolha a semana na tela antes de importar — lançamento sem semana some da Folha e não volta.");
+    }
+    if (ambiguas.length) {
+      avisos.push("Data do período ambígua (" + ambiguas.slice(0, 3).join(", ")
+        + "): li como MÊS/DIA. Se a planilha for dia/mês, a folha vai para a competência errada — confira a semana antes de confirmar.");
+    }
+    return { obras: obras, lancamentos: lancs, avisos: avisos,
+      /* a tela usa estes dois para perguntar em vez de adivinhar */
+      formatoAmbiguo: ambiguas.length > 0, datasAmbiguas: ambiguas,
+      /* e este para PARAR de perguntar: guardado, a próxima importação
+         ambígua da mesma empresa resolve calada */
+      formatoDetectado: formatoDetectado, formatoUsado: formatoPadrao,
+      semSemana: semSemana, semData: semData };
   }
 
   /* Mantido pelo nome porque meia dúzia de telas já chamam assim. O `usarValor`

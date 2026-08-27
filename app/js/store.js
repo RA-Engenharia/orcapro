@@ -36,7 +36,10 @@
         var cota = e && (e.name === "QuotaExceededError" || e.code === 22);
         try {
           if (global.UI && global.UI.toast) global.UI.toast(cota
-            ? "⚠ Armazenamento CHEIO — a última alteração NÃO foi salva. Faça 💾 Backup e remova bases não usadas em 🗂 Tabelas."
+            /* ⚠ NÃO MANDE LIMPAR AS BASES: elas moram no IndexedDB e não ocupam
+               um byte do que está cheio. Ver a nota em `saude()`. O que enche é
+               orçamento e histórico da obra. */
+            ? "⚠ Armazenamento CHEIO — a última alteração NÃO foi salva. Faça 💾 Backup AGORA. Depois abra 🗂 Tabelas › Saúde do armazenamento para ver o que está ocupando o espaço (as bases SINAPI não contam: elas ficam fora deste limite)."
             : "⚠ Falha ao salvar \"" + entidade + "\" — a última alteração não persistiu.", "erro");
         } catch (e2) {}
         return false;
@@ -183,6 +186,62 @@
   var MIGRADORES = { financeiro: migrarFinanceiro };
 
   /* =====================================================================
+   * MIGRAÇÃO DE *FORMA* — de OBJETO para LISTA, também NA LEITURA
+   *
+   * Os MIGRADORES acima consertam CAMPO de registro. Aqui é outra coisa:
+   * a entidade inteira estava guardada com a FORMA errada para sincronizar.
+   *
+   * ⚠ O DEFEITO (achado 25 da v1.2): `precosinsumos` — a cotação que o
+   *   usuário faz com o fornecedor dele quando o SINAPI não coletou o preço
+   *   do insumo na UF — era um MAPA `código → {preco, em}`. Mapa não
+   *   sincroniza: o merge da nuvem trata tudo que não é prefs/conta como
+   *   LISTA, e `Util.arr({})` é `[]`. Por isso a entidade nunca esteve em
+   *   `Nuvem.ENTIDADES` e, como o backup deriva a lista dele, também nunca
+   *   entrou no backup. Trocar de máquina apagava o catálogo de cotações da
+   *   empresa: os avisos "N insumo(s) sem preço" voltavam um por composição
+   *   e tudo tinha de ser recotado à mão. Mesma história das
+   *   `composicoes_proprias` — "um cliente perdeu as dele".
+   *
+   * ⚠ E POR QUE NÃO BASTAVA ACRESCENTAR O NOME NA LISTA DA NUVEM: provado
+   *   rodando o `Nuvem.sincronizar` real sobre o disco de um cliente com as
+   *   3 cotações no formato antigo — 3 cotações ANTES, 0 DEPOIS, disco `[]`
+   *   e `[]` empurrado para a nuvem, ou seja, apagaria também nos outros
+   *   aparelhos. A forma tem de ser convertida ANTES de o merge encostar
+   *   nela, e é isso que esta tabela faz.
+   *
+   * ⚠ CONVERTE NA LEITURA, EM MEMÓRIA, E NÃO GRAVA — a mesma doutrina da
+   *   nota grande lá em cima. Regravar em massa carimbaria `atualizadoEm`
+   *   novo em cotação antiga, e aí a migração venceria o merge e se
+   *   propagaria por cima do que o outro aparelho tinha de mais recente
+   *   (foi assim que a migração de fotos apagou diário editado, v1.1.236).
+   *   Por isso o registro convertido HERDA o `em` original como
+   *   `atualizadoEm`: ele entra no merge com a idade que sempre teve.
+   *   A forma nova só encosta no disco quando algo grava por outro motivo
+   *   — o merge da nuvem, uma cotação nova, uma exclusão.
+   * ===================================================================== */
+  /* Piso de data para cotação SEM `em` no disco (dado corrompido: o
+     `salvarPrecoInsumo` sempre carimbou). Vazio não serve — `atualizadoEm`
+     vazio empata com vazio no merge e faz a restauração do backup comparar
+     `"" >= ""` e pular o registro. Um piso perde para qualquer data real,
+     que é exatamente o que se quer de uma cotação sem idade conhecida. */
+  var PISO_SEM_DATA = "1970-01-01T00:00:00.000Z";
+  function precosInsumoParaLista(bruto) {
+    if (Array.isArray(bruto)) return bruto;              // já está na forma nova
+    if (!bruto || typeof bruto !== "object") return [];
+    var l = [];
+    for (var cod in bruto) {
+      if (!Object.prototype.hasOwnProperty.call(bruto, cod)) continue;
+      var r = bruto[cod];
+      if (!r || typeof r !== "object") continue;
+      var em = String(r.em || "") || PISO_SEM_DATA;
+      l.push({ id: String(cod), codigo: String(cod), preco: Number(r.preco) || 0,
+               em: em, criadoEm: em, atualizadoEm: em });
+    }
+    return l;
+  }
+  var FORMAS = { precosinsumos: precosInsumoParaLista };
+
+  /* =====================================================================
    * NORMALIZAR NA GRAVAÇÃO — o que mantém o espelho honesto.
    *
    * ⚠ SEM ISTO A MIGRAÇÃO PLANTA UMA MINA. `valorCent` é DERIVADO de
@@ -295,18 +354,49 @@
      * O SINAPI publica em branco o que não coletou na região. Quando isso
      * acontece, o usuário cota e informa o preço dele — que fica guardado por
      * EMPRESA (código do insumo → preço) e vale para toda composição que usa o
-     * insumo. É cotação própria: os entregáveis marcam "informado por você". */
+     * insumo. É cotação própria: os entregáveis marcam "informado por você".
+     *
+     * ⚠ v1.2 — ISTO NÃO SINCRONIZAVA E NÃO ENTRAVA NO BACKUP. Guardado como
+     *   MAPA, ficava preso no aparelho onde nasceu (ver a nota de FORMAS lá
+     *   em cima). Agora o disco guarda uma LISTA — `id` = código do insumo,
+     *   determinístico, para o merge por id casar o mesmo insumo nos dois
+     *   aparelhos — e a entidade entrou em `Nuvem.ENTIDADES`, o que também a
+     *   põe no backup (o `App._dumpGestao` deriva a lista de lá).
+     *
+     * ⚠ A SAÍDA CONTINUA SENDO MAPA, DE PROPÓSITO. Três leitores consomem
+     *   `meus[codigo].preco` (js/app.js `_cpResolve`, js/ui.js
+     *   `_insumosSemPrecoDe` e o detalhamento do analítico). Trocar a forma
+     *   de armazenamento é o conserto; arrastar três telas junto seria a
+     *   refatoração ampla que o manual da casa proíbe num defeito de dado. */
     precosInsumos: function (empresaId) {
-      var m = this.adapter.ler(empresaId, "precosinsumos", {});
-      return (m && typeof m === "object" && !Array.isArray(m)) ? m : {};
+      var l = this.listar(empresaId, "precosinsumos"), m = {};
+      for (var i = 0; i < l.length; i++) {
+        var r = l[i];
+        if (!r || r.id == null) continue;
+        if (!(Number(r.preco) > 0)) continue;   // registro zerado não é cotação
+        m[String(r.id)] = { preco: Number(r.preco), em: String(r.em || r.atualizadoEm || "") };
+      }
+      return m;
     },
     salvarPrecoInsumo: function (empresaId, codigo, preco) {
-      var m = this.precosInsumos(empresaId);
       var cod = String(codigo);
-      if (preco == null || !(Number(preco) > 0)) delete m[cod];
-      else m[cod] = { preco: Math.round(Number(preco) * 100) / 100, em: Util.agoraISO() };
-      this.adapter.gravar(empresaId, "precosinsumos", m);
-      return m[cod] || null;
+      /* ⚠ APAGAR TEM DE LAPIDAR. Antes era `delete m[cod]` no mapa. Virando
+         entidade sincronizada, exclusão sem lápide é o defeito da v1.1.126 de
+         volta: o merge une as listas por id e o outro aparelho devolveria a
+         cotação apagada — para sempre, porque ele a reempurra a cada sync.
+         `excluir` grava a lápide que o merge consulta. */
+      if (preco == null || !(Number(preco) > 0)) {
+        this.excluir(empresaId, "precosinsumos", cod);
+        return null;
+      }
+      var reg = this.obter(empresaId, "precosinsumos", cod) || { id: cod };
+      reg.codigo = cod;
+      reg.preco = Math.round(Number(preco) * 100) / 100;
+      reg.em = Util.agoraISO();               // quando o usuário cotou (o que a tela mostra)
+      /* `salvar` é quem carimba `atualizadoEm`/`criadoEm` — os campos que o
+         merge da nuvem e a restauração do backup comparam. `em` sozinho não
+         serve: a restauração compararia `"" >= ""` e não gravaria nada. */
+      return this.salvar(empresaId, "precosinsumos", reg) ? { preco: reg.preco, em: reg.em } : null;
     },
 
     /* LÁPIDES (v1.1.126) — o merge da nuvem une as listas por id, então um registro
@@ -325,9 +415,16 @@
        correção da sincronização. Enquanto não sincronizavam, a cascata não os
        alcançava e o problema não existia; passando a sincronizar, o merge
        leria "obraId aponta pra obra morta" e apagaria PAGAMENTO FEITO e CARTÃO
-       DE PONTO no outro aparelho. É o mesmo motivo que já mantém `faltas` e
-       `horas_extras` fora da cascata: jornada e dinheiro são de PESSOA, não da
-       obra — a obra some, o que se deve a alguém não some junto. */
+       DE PONTO no outro aparelho. É o mesmo motivo que já mantém `faltas`
+       fora da cascata: jornada e dinheiro são de PESSOA, não da obra — a obra
+       some, o que se deve a alguém não some junto.
+       ⚠ ESTA FRASE CITAVA `horas_extras` COMO SE ELA JÁ ESTIVESSE PROTEGIDA, E
+       NÃO ESTAVA. `faltas` está a salvo por acidente — ela não grava `obraId`
+       (js/gestao.js grava só colaboradorId/data/motivo), então o `vivo()` do
+       merge nunca a olha. `horas_extras` GRAVA obraId, sincroniza, e não estava
+       em lista nenhuma: era apagada em todos os aparelhos quando a obra era
+       excluída, calada, sem nem aparecer no modal de vínculos. Entrou na lista
+       abaixo na v1.2. A analogia protegia a entidade errada. */
     /* ⚠ `remun_apur` e `carp_propostas` ENTRARAM AQUI PORQUE SINCRONIZAM E
        CARREGAM `obraId` — e essa combinação, sem imunidade, apaga sozinha.
        A exclusão local nem tocava nelas (não estavam na cascata da tela), mas
@@ -343,7 +440,7 @@
        que a v1.1.236 consertou. */
     _IMUNES_CASCATA: { colaboradores: 1, patrimonio: 1, frota: 1, fiscal: 1,
                        folha: 1, fs_lancamentos: 1, fs_pagamentos: 1, ponto: 1, frota_mov: 1,
-                       remun_apur: 1, carp_propostas: 1 },
+                       remun_apur: 1, carp_propostas: 1, horas_extras: 1 },
     imuneACascata: function (entidade) { return !!this._IMUNES_CASCATA[entidade]; },
     /* A lápide só serve para o merge da nuvem: entidade que NÃO sincroniza nunca ressuscita,
      * e gravar lápide dela só gastava o teto — empurrando para fora as que importam. */
@@ -359,6 +456,38 @@
         this._porLapide(l, { id: entidade + ":" + id, ent: entidade, ref: String(id), em: Util.agoraISO() });
         this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
       } catch (e) {}
+    },
+    /* =====================================================================
+     * DESFAZER A LÁPIDE — restaurar backup tem de desfazer a exclusão
+     *
+     * ⚠ SEM ISTO, RESTAURAR BACKUP PARA DESFAZER UMA EXCLUSÃO NÃO FUNCIONA —
+     *   e desfazer exclusão é A razão pela qual alguém restaura backup.
+     *   O registro volta ao disco, a tela diz "1 restaurado(s)", e no PRIMEIRO
+     *   SYNC ele some de novo: a lápide local sobrevive à restauração
+     *   (`_lapides` está fora do backup, de propósito), e o `vivo()` do merge
+     *   compara o carimbo do registro com o da lápide. Como a restauração
+     *   passou a manter o carimbo DO ARQUIVO — que é mais antigo que a
+     *   exclusão —, o merge conclui "isto foi apagado depois" e remove. Pior:
+     *   grava o resultado e empurra o sumiço para todos os aparelhos.
+     *   "Restaurei o backup e sumiu de novo" é o pior formato possível.
+     *
+     * Antes da v1.2 isso funcionava por ACIDENTE: a restauração carimbava
+     * "agora", o registro ficava mais novo que a lápide e vencia. O carimbo
+     * do arquivo é o comportamento certo (senão o backup velho vence o
+     * trabalho recente dos outros aparelhos) — então a exclusão precisa ser
+     * desfeita explicitamente, que é o que esta função faz.
+     * ===================================================================== */
+    desenterrar: function (empresaId, entidade, ids) {
+      if (!empresaId || !entidade || !ids || !ids.length) return 0;
+      try {
+        var alvo = {};
+        Util.arr(ids).forEach(function (id) { if (id) alvo[entidade + ":" + String(id)] = 1; });
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        var restou = l.filter(function (t) { return !(t && alvo[t.id]); });
+        if (restou.length === l.length) return 0;
+        this.adapter.gravar(empresaId, "_lapides", restou);
+        return l.length - restou.length;
+      } catch (e) { return 0; }
     },
     /* Uma obra apagada em cascata deixa UMA lápide, não uma por registro: a cascata de uma
      * obra de 1 ano passa de 2.000 registros e o teto expulsava justamente as lápides das
@@ -453,8 +582,27 @@
     },
 
     // ----- CRUD genérico de entidades da Gestão (obras, clientes, contratos, medicoes, financeiro) -----
+    /* A ÚNICA porta de leitura em forma de lista — `listar` e a nuvem passam
+       por aqui. Entidade sem conversão de forma sai por um `Util.arr`, que é
+       o que sempre foi; a que tem sai convertida em memória (ver FORMAS). */
+    _lerLista: function (empresaId, entidade) {
+      var bruto = this.adapter.ler(empresaId, entidade, []);
+      var f = FORMAS[entidade];
+      return f ? f(bruto) : Util.arr(bruto);
+    },
+    /* ⚠ A LEITURA QUE A NUVEM TEM DE USAR, E NÃO `adapter.ler` DIRETO.
+       O `sincronizar`, o `escutar` e o `push` liam o disco cru. Com o mapa
+       antigo de `precosinsumos` ainda lá, o merge recebia um objeto, o
+       `Util.arr` o transformava em `[]` e a gravação do merge APAGAVA as
+       cotações do cliente — e empurrava o vazio para os outros aparelhos.
+       Aqui a forma já chega certa. prefs/conta continuam sendo objeto único,
+       que é o que o merge deles espera. */
+    lerParaSync: function (empresaId, entidade) {
+      if (entidade === "prefs" || entidade === "conta") return this.adapter.ler(empresaId, entidade, {});
+      return this._lerLista(empresaId, entidade);
+    },
     listar: function (empresaId, entidade) {
-      var l = Util.arr(this.adapter.ler(empresaId, entidade, []));
+      var l = this._lerLista(empresaId, entidade);
       var m = MIGRADORES[entidade];
       if (m) {                                   // em memória; ver a nota da migração
         var n = 0;
@@ -468,9 +616,18 @@
       for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
       return null;
     },
-    salvar: function (empresaId, entidade, obj) {
+    /* ⚠ `manterCarimbo` (4º argumento) É O MESMO DE `salvarOrcamento` — ver a
+       nota lá em cima. Ele faltava aqui, e por isso a metade da GESTÃO do
+       "restaurar backup" carimbava `agora` num conteúdo de semana passada: o
+       merge da nuvem lia o retrocesso como "a versão mais recente", vencia a
+       versão boa que estava na nuvem e a empurrava para os outros aparelhos.
+       Não precisava nem de perder o localStorage — bastava o registro local
+       estar AUSENTE ou mais antigo que o do arquivo.
+       As ~137 chamadas de 3 argumentos continuam carimbando "agora", que é o
+       comportamento certo em todo o resto do app. */
+    salvar: function (empresaId, entidade, obj, manterCarimbo) {
       if (!obj.id) obj.id = Util.uid(entidade.slice(0, 3));
-      obj.atualizadoEm = Util.agoraISO();
+      if (!(manterCarimbo && obj.atualizadoEm)) obj.atualizadoEm = Util.agoraISO();
       if (!obj.criadoEm) obj.criadoEm = obj.atualizadoEm;
       var nz = NORMALIZADORES[entidade];
       if (nz) nz(obj);                       // campos derivados: ver a nota acima
@@ -478,6 +635,66 @@
       for (var k = 0; k < l.length; k++) if (l[k].id === obj.id) { i = k; break; }
       if (i >= 0) l[i] = obj; else l.push(obj);
       return this.adapter.gravar(empresaId, entidade, l) ? obj : null;
+    },
+    /* =====================================================================
+     * salvarVarios — O ESPELHO QUE FALTAVA DO `excluirVarios`.
+     *
+     * ⚠ A PROTEÇÃO ESTAVA FEITA PELA METADE. `excluirVarios` (aqui em cima)
+     *   existe desde que "a versão um-a-um travava a aba por segundos numa
+     *   obra grande" — o lado do EXCLUIR foi consertado, o da GRAVAÇÃO não.
+     *   `salvar` não é gravação incremental: ele relê a entidade inteira,
+     *   varre pelo id e regrava tudo. Dentro de laço o custo é
+     *   M × (parse + stringify de N), com N crescendo a cada volta.
+     *
+     *   O que isso custava ao cliente: restaurar um backup de 3 anos
+     *   (12.000 registros) fazia 24.000 JSON.parse, 12.000 JSON.stringify e
+     *   ~1,28 GB gravados no localStorage — ~9,5 s de aba congelada, sem
+     *   barra de progresso, no momento em que ele acabou de trocar de
+     *   máquina ou de perder o aparelho. Muita gente conclui, com razão,
+     *   que o backup não funcionou. Aqui é 1 leitura + 1 gravação por
+     *   entidade.
+     *
+     * ⚠ E PASSA PELO MESMO FUNIL DO `salvar`, DE PROPÓSITO. A tentação é
+     *   chamar `adapter.gravar` com a lista crua — seria ainda mais rápido e
+     *   quebraria três coisas de uma vez: o registro entraria sem id, sem
+     *   carimbo, e sem os NORMALIZADORES. Este último é o que dói caro: o
+     *   `financeiro` ficaria com o espelho em centavos MENTINDO (`valorCent`
+     *   antigo com `valor` novo) e o dia em que a cobrança passar a usá-lo o
+     *   boleto sai com o valor velho, sem ninguém saber por quê.
+     *
+     * `manterCarimbo` é o mesmo 4º argumento do `salvar` — ver a nota lá.
+     * Devolve QUANTOS ENTRARAM (e 0 se a gravação falhar), como o
+     * `excluirVarios`: há chamador que conta sucesso/falha pelo retorno, e
+     * um resumo dizendo "N restaurado(s)" depois de a cota estourar é
+     * exatamente a mentira que o `excluirVarios` documenta e evita. A falha
+     * de cota também vira UM aviso por entidade, não um por registro.
+     * ===================================================================== */
+    salvarVarios: function (empresaId, entidade, lista, manterCarimbo) {
+      var itens = Util.arr(lista);
+      if (!itens.length) return 0;
+      var l = this.listar(empresaId, entidade);
+      /* índice { id: posição } — sem ele seria uma varredura linear por registro,
+         que é o mesmo O(N²) por outro caminho.
+         Object.create(null): registro com id "constructor"/"toString" era dado
+         como já existente por herança do protótipo (mesma armadilha das lápides). */
+      var pos = Object.create(null);
+      for (var k = 0; k < l.length; k++) if (l[k] && l[k].id != null) pos[String(l[k].id)] = k;
+      var nz = NORMALIZADORES[entidade], entrou = 0;
+      for (var i = 0; i < itens.length; i++) {
+        var obj = itens[i];
+        if (!obj || typeof obj !== "object") continue;
+        if (!obj.id) obj.id = Util.uid(entidade.slice(0, 3));
+        if (!(manterCarimbo && obj.atualizadoEm)) obj.atualizadoEm = Util.agoraISO();
+        if (!obj.criadoEm) obj.criadoEm = obj.atualizadoEm;
+        if (nz) nz(obj);                     // campos derivados: ver a nota do `salvar`
+        var ch = String(obj.id), p = pos[ch];
+        /* id repetido dentro do próprio lote: o último vence, que é o que o
+           laço de `salvar` fazia ao reler o disco a cada volta */
+        if (p != null) l[p] = obj; else { pos[ch] = l.length; l.push(obj); }
+        entrou++;
+      }
+      if (!entrou) return 0;
+      return this.adapter.gravar(empresaId, entidade, l) ? entrou : 0;
     },
     excluir: function (empresaId, entidade, id) {
       var l = this.listar(empresaId, entidade).filter(function (x) { return x.id !== id; });
@@ -506,22 +723,39 @@
     salvarBasesExtras: function (empresaId, payload) { this._bigSet(empresaId, "bases_extras", payload); return true; },
 
     // ----- Saúde / observabilidade -----
+    /* ⚠ O AVISO DE ARMAZENAMENTO CHEIO MANDAVA LIMPAR O LUGAR ERRADO.
+     * Ele dizia "remova bases não usadas em Tabelas" — e as bases NÃO ocupam
+     * um byte do que está cheio: `_bigSet` as move para o IndexedDB e faz
+     * `localStorage.removeItem` justamente para "nunca deixar cópia grande no
+     * localStorage". Ou seja, o cliente seguia o conselho, não liberava nada,
+     * e concluía que o sistema estava quebrado — no exato momento em que o app
+     * fica somente-leitura para dado novo.
+     * Agora `saude()` diz QUEM está ocupando: a carteira de orçamentos costuma
+     * ser o maior inquilino isolado (um orçamento de 150 itens mede ~54 KB e
+     * todos moram numa chave só), não o histórico da obra. */
     saude: function (empresaId) {
       var orcs = this.listarOrcamentos(empresaId);
-      var bytes = 0;
+      var bytes = 0, porChave = [];
       try {
         for (var k in localStorage) {
           if (localStorage.hasOwnProperty(k) && k.indexOf(NS + ":") === 0) {
-            bytes += (localStorage.getItem(k) || "").length;
+            var b = (localStorage.getItem(k) || "").length;
+            bytes += b;
+            porChave.push({ chave: k.split(":").pop(), kb: Math.round(b / 1024) });
           }
         }
       } catch (e) {}
+      porChave.sort(function (a, b) { return b.kb - a.kb; });
       // usoPct: estimativa sobre a cota típica de ~5M chars do localStorage —
       // base p/ o aviso de boot (>80%) que evita o QuotaExceeded silencioso.
       var usoPct = Math.min(100, Math.round(bytes / (5 * 1024 * 1024) * 100));
       var migr = [];
       try { migr = JSON.parse(localStorage.getItem(NS + ":migracoes") || "[]"); } catch (e) {}
-      return { orcamentos: orcs.length, tamanhoKB: Math.round(bytes / 1024), usoPct: usoPct, migracoes: migr.length, schemaVersao: CONFIG.schemaVersao };
+      return { orcamentos: orcs.length, tamanhoKB: Math.round(bytes / 1024), usoPct: usoPct,
+        migracoes: migr.length, schemaVersao: CONFIG.schemaVersao,
+        /* o que de fato ocupa o espaço, do maior para o menor — é isso que a
+           pessoa precisa saber para decidir o que fazer */
+        maiores: porChave.slice(0, 5) };
     }
   };
 

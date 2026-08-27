@@ -66,8 +66,10 @@
      * ⚠ Sobre a cascata da obra, ver `_IMUNES_CASCATA` em js/store.js: folha,
      *   ponto e movimento de frota entraram lá junto com esta mudança. Apagar
      *   uma obra não pode apagar pagamento feito nem cartão de ponto de
-     *   ninguém — é o mesmo motivo que já mantinha `faltas` e `horas_extras`
-     *   fora da cascata. */
+     *   ninguém — é o mesmo motivo que já mantinha `faltas` fora da cascata.
+     *   ⚠ Esta nota também citava `horas_extras` como protegida, e ela não
+     *   estava: `faltas` não grava obraId e por isso o merge nunca a olha;
+     *   `horas_extras` grava, e era apagada. Corrigido na v1.2. */
     // cadastros da EMPRESA (sem obraId)
     "fornecedores", "familias", "centrocusto",
     // compras e planejamento (têm obraId → entram na cascata da obra)
@@ -95,6 +97,20 @@
        e tambem nao pode morar em prefs: e decisao de PRIVACIDADE, e o
        merge de prefs deixa o aparelho local vencer campo a campo. */
     "portal_padrao",
+    /* COTAÇÃO PRÓPRIA DE INSUMO (v1.2). O SINAPI publica em branco o que não
+     * coletou na UF; o usuário cota com o fornecedor dele e informa o preço.
+     * Esse número precifica composição própria, alimenta a contagem de
+     * "insumo sem preço" da planilha e aparece no detalhamento — é dinheiro
+     * de orçamento, e vivia só no aparelho onde nasceu, fora daqui e fora do
+     * backup. Mesma história das `composicoes_proprias` logo acima.
+     * ⚠ ELA ERA UM MAPA `código → {preco, em}`, E POR ISSO NÃO BASTAVA PÔR O
+     *   NOME AQUI: o `_merge` trata tudo que não é prefs/conta como LISTA, e
+     *   `Util.arr({})` é `[]` — provado rodando, o primeiro sync deixava o
+     *   cliente com 0 cotações e empurrava `[]` para os outros aparelhos.
+     *   O disco passou a guardar LISTA (id = código do insumo) e o formato
+     *   antigo é convertido NA LEITURA por `Store.lerParaSync` — ver a nota
+     *   de FORMAS em js/store.js. */
+    "precosinsumos",
     /* o PERFIL DE IMPLANTACAO da empresa. Morava so em prefs, e o merge de
        prefs deixa o local vencer: o celular do dono desfazia no sync o
        enxugamento feito no computador. Ver js/perfis.js. */
@@ -117,6 +133,20 @@
     });
   }
   function vazioDe(ent) { return (ent === "prefs" || ent === "conta") ? {} : []; }
+
+  /* ⚠ NÃO LER O DISCO CRU AQUI DENTRO. As três portas que mesclam
+   * (sincronizar, escutar e push) faziam `Store.adapter.ler(...)` direto, e
+   * isso pressupõe que o que está no disco JÁ tem a forma que o `_merge`
+   * espera. `precosinsumos` provou que não: guardada como MAPA, o merge a
+   * lia, `Util.arr` a transformava em `[]` e a gravação do merge APAGAVA as
+   * cotações do cliente — e mandava o vazio para os outros aparelhos.
+   * `Store.lerParaSync` devolve a forma certa, convertendo o formato antigo
+   * em memória (ver FORMAS em js/store.js). O `||` cobre um Store antigo
+   * carregado sem a função: aí é o comportamento de sempre. */
+  function lerEnt(empresaId, ent) {
+    return Store.lerParaSync ? Store.lerParaSync(empresaId, ent)
+                             : Store.adapter.ler(empresaId, ent, vazioDe(ent));
+  }
 
   /* ===================================================================
    * A NUVEM NÃO TOCA EM NAMESPACE DE PRÉVIA
@@ -272,7 +302,21 @@
       var obrasMortas = semLapide ? Object.create(null) : Store.cascatasDeObra(empresaId);
       var vivo = function (o) {
         var t = mortos[o.id];
-        if (t) return String(o.atualizadoEm || "") > String(t); // recriado depois de excluir → mantém
+        /* ⚠ `>=`, NÃO `>` — E A DIFERENÇA PASSOU A IMPORTAR NA v1.2.
+         * `Util.agoraISO()` tem resolução de MILISSEGUNDO. Quando um registro é
+         * apagado e regravado na mesma volta do laço — que é o que
+         * `_prodSalvarPrecos` faz ao recolher duplicados para o id
+         * determinístico —, a lápide e o carimbo do registro saem com a MESMA
+         * string, e o `>` estrito conta empate como MORTO. Medido em bancada:
+         * 198 de 200 merges apagavam o preço recém-gravado, e 197 de 200
+         * apagavam a cotação recém-informada.
+         * Antes isso era impossível: um registro recriado ganhava um uid novo e
+         * nunca colidia com a própria lápide. Com id derivado da chave natural,
+         * colide.
+         * O empate agora favorece o REGISTRO, e é a escolha certa: uma exclusão
+         * que não pega é visível (a pessoa apaga de novo); um registro que some
+         * calado, não. */
+        if (t) return String(o.atualizadoEm || "") >= String(t); // recriado depois de excluir → mantém
         if (o.obraId && obrasMortas[o.obraId]) {
           /* cadastro da empresa (equipe, patrimônio, frota): a obra morreu, ele não. Faz aqui o
            * mesmo que a exclusão faz localmente — solta o vínculo — em vez de deixá-lo apontando
@@ -327,7 +371,7 @@
         tentadas++;
         return self._doc(ent).get().then(function (snap) {
           var cloud = snap.exists ? snap.data().v : null;
-          var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
+          var local = lerEnt(empresaId, ent);
           var merged = self._merge(local, cloud, ent, empresaId);
           /* cercado: o gravar está monkey-patched e, sem a cerca, dispararia um
              push por entidade — 27 escritas extras a cada sincronização */
@@ -439,7 +483,7 @@
           if (snap.metadata && snap.metadata.hasPendingWrites) return; // ignora o eco do próprio write
           var cloud = snap.data().v;
           var aplicar = function () {
-            var local = Store.adapter.ler(empresaId, ent, vazioDe(ent));
+            var local = lerEnt(empresaId, ent);
             var merged = self._merge(local, cloud, ent, empresaId);
             /* nada mudou depois do merge? então não grava e não avisa a tela —
                gravar aqui acionaria o patch e reabriria o caminho do laço */
@@ -532,17 +576,59 @@
      * achando que só sumiu), mas não mais SEM espera: 150 ms bastam para vir
      * à frente e já respeitam o limite por documento. */
     _ultimoEnviado: {},
+    /* uma vez por entidade por sessão: aviso que aparece a cada push vira ruído
+       e a pessoa para de ler justamente o que precisa ler */
+    _avisouTamanho: {},
 
     push: function (empresaId, ent) {
       if (_ehPrevia(empresaId)) return Promise.resolve(false);   // nem lápide
       var self = this;
       var mandar = function () {
         try {
-          var v = Store.adapter.ler(empresaId, ent, vazioDe(ent));
+          var v = lerEnt(empresaId, ent);
           var carga = "";
           try { carga = JSON.stringify(v); } catch (e) { carga = ""; }
           var chave = empresaId + "|" + ent;
           if (carga && self._ultimoEnviado[chave] === carga) return;   // nada mudou: não escreve
+          /* ⚠ O DOCUMENTO DO FIRESTORE TEM TETO DE 1 MiB, E A ENTIDADE INTEIRA
+           * VAI NUM DOCUMENTO SÓ. Não havia guarda nenhuma de tamanho aqui: ao
+           * passar do teto a escrita simplesmente falha, e a partir daí o
+           * aparelho para de sincronizar AQUELA entidade — em silêncio, com a
+           * tela continuando a mostrar tudo certo localmente.
+           * A conta é alcançável antes de o localStorage encher: a ~940 bytes
+           * por diário, a lista de RDO passa de 1 MiB por volta de 1.100
+           * diários. Avisar a 900 KB dá margem para o cliente pedir socorro
+           * ANTES de o dado deixar de subir.
+           * Aviso, e não bloqueio: barrar o push aqui seria parar a
+           * sincronização por conta própria — exatamente o que se quer evitar. */
+          /* ⚠ UMA VEZ POR VERSÃO, NÃO POR SESSÃO. A memória de sessão zera
+             todo dia, e o cliente com uma lista grande não tem como resolver
+             isso sozinho ("fale com o suporte") — ele veria o mesmo aviso
+             vermelho toda manhã, para sempre, até parar de ler os avisos. A
+             marca persistente carrega a versão: quando sair uma versão que
+             mexa nisso, ele volta a ser avisado uma vez. */
+          var marcaTam = "orcapro:nuvem:grande:" + ent;
+          /* ⚠ `global.CONFIG` nos TRÊS níveis. A primeira versão desta linha
+             misturava `global.CONFIG &&` com `CONFIG.app` nu: onde a global
+             não existisse, o guard passava e a linha seguinte estourava
+             ReferenceError — derrubando o push inteiro em vez de cair no "?".
+             No navegador funcionaria por acaso, porque lá `CONFIG` é global. */
+          var verAtual = (global.CONFIG && global.CONFIG.app && global.CONFIG.app.versao) || "?";
+          var jaAvisado = self._avisouTamanho[ent];
+          if (!jaAvisado) {
+            try { jaAvisado = global.localStorage.getItem(marcaTam) === verAtual; } catch (eL) {}
+          }
+          if (carga.length > 900 * 1024 && !jaAvisado) {
+            self._avisouTamanho[ent] = 1;
+            try { global.localStorage.setItem(marcaTam, verAtual); } catch (eL2) {}
+            try {
+              if (global.UI && global.UI.toast) global.UI.toast(
+                "⚠ A lista \"" + ent + "\" já tem " + Math.round(carga.length / 1024)
+                + " KB e está perto do limite de 1 MB por lista da nuvem. Perto disso ela PARA de sincronizar, sem aviso."
+                + " Faça backup e fale com o suporte antes que isso aconteça.", "erro");
+            } catch (eT) {}
+            try { console.warn("[nuvem] entidade grande:", ent, Math.round(carga.length / 1024) + " KB"); } catch (eC) {}
+          }
           self._ultimoEnviado[chave] = carga;
           self._doc(ent).set({ v: v, em: Date.now() }).then(function () {
             self._marcarSync(empresaId, ent, v); // o que subiu vira a base comum

@@ -80,16 +80,51 @@
 
   /* Nome canônico da função. Casa por apelido exato e, se não achar, por
      CONTIDO — o cadastro real traz "PEDREIRO/ACABAMENTO", "Ajudante 2". */
+  /* ⚠ AS TRÊS COISAS ABAIXO SÃO O MESMO CONSERTO: TIRAR TRABALHO DE DENTRO DO
+   * SORT. O comparador roda O(n log n) vezes, e cada volta refazia:
+   *   - `Object.keys(APELIDOS)` (90 chaves) + 90 `indexOf`, em `canonica`;
+   *   - `normalize("NFD")` + 2 regex por posição da hierarquia, em `rank`;
+   *   - um colador `Intl` NOVO a cada `localeCompare` com opções, em `cmpNome`.
+   * Medido: ordenar 150 colaboradores custava 13 ms — 145 vezes o custo de ler
+   * os mesmos 150 do localStorage. E `lista("colaboradores")` roda esse sort em
+   * TODA leitura, 30 vezes só no gestao.js, algumas dentro de laço: o
+   * lançamento de faltas em lote (dias × pessoas) chegava a 12,5 s de aba
+   * congelada com 150 na equipe.
+   *
+   * ⚠ `Object.create(null)` NO MEMO, e não `{}`: função cadastrada como
+   *   "constructor" ou "__proto__" devolveria o que o objeto literal tem por
+   *   HERANÇA em vez de undefined, e a pessoa iria parar num rank inventado.
+   *
+   * ⚠ A ORDEM NÃO PODE MUDAR — js/ordem.js é o que garante que o mesmo time
+   *   saia na mesma sequência na folha, no ponto e no EPI, e há documento
+   *   assinado dependendo disso. Conferido em 441 pares (acento, caixa,
+   *   numérico, vazio): zero divergências entre o colador reusado e o
+   *   `localeCompare` com opções. */
+  var _memoCanonica = Object.create(null);
+  var _colador = null;
+  function colador() {
+    if (_colador) return _colador;
+    try { _colador = new Intl.Collator("pt-BR", { sensitivity: "base", numeric: true }); }
+    catch (e) {
+      /* navegador sem Intl (ou sem a locale): cai no caminho de antes, que é
+         correto — só lento. Nunca fica sem ordenação. */
+      _colador = { compare: function (a, b) { return String(a).localeCompare(String(b), "pt-BR", { sensitivity: "base", numeric: true }); } };
+    }
+    return _colador;
+  }
+
   function canonica(funcao) {
     var f = norm(funcao);
     if (!f) return "";
     if (APELIDOS[f]) return APELIDOS[f];
+    if (_memoCanonica[f] !== undefined) return _memoCanonica[f];
     var chaves = Object.keys(APELIDOS), achou = "", tam = 0;
     for (var i = 0; i < chaves.length; i++) {
       /* o mais LONGO vence: "MESTRE DE OBRAS" antes de "MESTRE", senão
          "ajudante geral" cairia em "ajudante" por acaso de ordem */
       if (f.indexOf(chaves[i]) !== -1 && chaves[i].length > tam) { achou = APELIDOS[chaves[i]]; tam = chaves[i].length; }
     }
+    _memoCanonica[f] = achou;
     return achou;
   }
 
@@ -106,7 +141,7 @@
   /* Comparação de nomes em português: sem acento, sem caixa, e "Ana Paula"
      antes de "Anabela". `numeric` para "Bloco 2" não vir depois de "Bloco 10". */
   function cmpNome(a, b) {
-    return String(a == null ? "" : a).localeCompare(String(b == null ? "" : b), "pt-BR", { sensitivity: "base", numeric: true });
+    return colador().compare(String(a == null ? "" : a), String(b == null ? "" : b));
   }
 
   /* Ordena pessoas. `modo`:
@@ -121,19 +156,34 @@
     var modo = o.modo || "hierarquia";
     var cn = o.campoNome || "nome", cf = o.campoFuncao || "funcao";
     var ordem = o.ordem;
-    var copia = (arr || []).slice();
-    copia.sort(function (a, b) {
-      if (modo === "hierarquia") {
-        var ra = rank(a && a[cf], ordem), rb = rank(b && b[cf], ordem);
-        if (ra !== rb) return ra - rb;
-      }
-      var n = cmpNome(a && a[cn], b && b[cn]);
+    /* ⚠ O RANK É CALCULADO UMA VEZ POR PESSOA, não a cada comparação.
+       `rank` chama `canonica` e varre a hierarquia com `norm` (NFD + 2 regex)
+       em cada posição — dentro do comparador isso vira O(n log n) × esse
+       trabalho todo, quando o valor é o mesmo sempre. Ordenar não muda; só o
+       custo. O desempate segue a MESMA ordem de critérios de antes:
+       hierarquia, nome, id. */
+    var deco = (arr || []).map(function (p, i) {
+      return {
+        p: p, i: i,
+        r: (modo === "hierarquia") ? rank(p && p[cf], ordem) : 0,
+        nome: String((p && p[cn]) == null ? "" : p[cn]),
+        id: String((p && p.id) == null ? "" : p.id)
+      };
+    });
+    var cmp = colador().compare;
+    deco.sort(function (a, b) {
+      if (a.r !== b.r) return a.r - b.r;
+      var n = cmp(a.nome, b.nome);
       if (n !== 0) return n;
       /* Desempate final pelo id: dois homônimos sem id estável fariam a
          lista trocar de ordem entre reimpressões do mesmo documento. */
-      return cmpNome(a && a.id, b && b.id);
+      var e = cmp(a.id, b.id);
+      if (e !== 0) return e;
+      /* e, empatando até no id, a ordem de entrada — `sort` só é estável por
+         especificação desde o ES2019, e o app roda em navegador de canteiro. */
+      return a.i - b.i;
     });
-    return copia;
+    return deco.map(function (d) { return d.p; });
   }
 
   /* Agrupa por função na ordem da hierarquia — para tela que quer subtítulo

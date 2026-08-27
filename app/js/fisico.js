@@ -181,7 +181,7 @@
             /* o vínculo com a fonte VIAJA JUNTO: sem ele a linha consolidada
                não consegue mais achar o próprio preço (ver `precoDe`) */
             refId: texto(it.refId), codigo: texto(it.codigo),
-            previsto: 0, executado: 0, lancamentos: []
+            previsto: 0, executado: 0, refeito: 0, lancamentos: []
           };
           ordem.push(k);
         }
@@ -192,6 +192,21 @@
         var prev = num(it.qtdPrevista);
         if (prev > L.previsto) L.previsto = prev;   // regra 5
         var q = num(it.qtdExecutada);
+        /* ⚠ REFAZER NÃO É AVANÇAR — E ESTE ARQUIVO QUASE FICOU DE FORA.
+         * `js/avancoservico.js` passou a excluir o que está marcado como
+         * "Retrabalho" do acumulado (a quantidade refeita não é obra nova, e
+         * contá-la de novo infla o físico). Mas quem monta o pacote do PORTAL
+         * DO CLIENTE, a curva S, a previsão de término e o Painel é ESTE
+         * arquivo — e ele não tinha a regra.
+         * O resultado seria pior que o defeito original: numa parede de
+         * 200 m² com 100 executados e 60 refeitos, o engenheiro veria 50% na
+         * tela dele e o cliente veria 80% no Portal, no mesmo dia, na mesma
+         * obra. Antes os dois diziam 80% — errado, mas IGUAIS.
+         * Conserto pela metade em dois arquivos é duas verdades. */
+        if (q && texto(it.situacao) === "retrabalho") {
+          L.refeito = r2((L.refeito || 0) + q);
+          return;
+        }
         if (q) {
           L.executado = r2(L.executado + q);
           L.lancamentos.push({ data: texto(r.data), rdoId: texto(r.id), numero: texto(r.numero), qtd: q });

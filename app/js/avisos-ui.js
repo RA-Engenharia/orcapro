@@ -59,7 +59,17 @@
 
     _calcular: function () {
       if (typeof Avisos === "undefined" || typeof Auth === "undefined" || !Auth.usuario || !Auth.usuario()) return { total: 0, grupos: [] };
-      try { return Avisos.calcular(this._dados(), new Date().toISOString().slice(0, 10)); }
+      /* ⚠ data LOCAL, não UTC. `toISOString()` no fuso −3 já está no dia
+         seguinte a partir das 21h (−5, no Acre, a partir das 19h) — e é este
+         "hoje" que decide vencimento de EPI, obra atrasada e prazo de tarefa.
+         À noite os avisos passavam a contar um dia a mais do que o calendário
+         de quem estava olhando a tela. */
+      try {
+        var d = new Date();
+        var hoje = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0")
+          + "-" + String(d.getDate()).padStart(2, "0");
+        return Avisos.calcular(this._dados(), hoje);
+      }
       catch (e) { return { total: 0, grupos: [] }; }
     },
 
