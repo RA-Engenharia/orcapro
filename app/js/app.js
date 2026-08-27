@@ -1451,6 +1451,38 @@
         if (!lic || typeof Licenca === "undefined") return;
         var st = Licenca.status();
         if (Licenca.chave() === lic && st && st.ativo && !st.trial) return; // já ativada com esta chave
+        /* ⚠⚠ TROCAR A LICENÇA DE UM APARELHO JÁ LICENCIADO NÃO PODE SER SILENCIOSO.
+         *
+         * Isto causou o incidente de 27/08/2026, e o estrago passou longe de
+         * "ativou errado". A conta da nuvem é derivada da CHAVE (js/nuvem.js,
+         * `_credLicenca`): trocar a chave muda o aparelho de EMPRESA na nuvem.
+         * Como o `empresaId` local não muda junto, o aparelho leva a base que
+         * já tinha para o tenant novo e traz a de lá para cá — as duas empresas
+         * passam a ver obras, usuários, foto do dono e conta uma da outra.
+         *
+         * E o link que faz isso é gerado pelo PRÓPRIO app com a chave de quem
+         * gera: ao cadastrar um usuário (js/gestao.js) e no QR de "usar no
+         * celular". Basta esse link ser aberto no aparelho de outra empresa —
+         * WhatsApp, e-mail, sessão remota — e a troca acontecia sem uma palavra,
+         * com a chave apagada da barra de endereço na linha acima.
+         *
+         * Aparelho SEM licença ativa continua ativando direto: ali não há o que
+         * misturar, e é o caso legítimo do funcionário que acabou de receber o
+         * link. Aparelho JÁ licenciado agora pergunta, dizendo o que está em jogo. */
+        if (st && st.ativo && !st.trial && Licenca.chave() && Licenca.chave() !== lic) {
+          var deQuem = st.email ? " (" + st.email + ")" : "";
+          var texto = "Este aparelho já está licenciado" + deQuem + ".\n\n"
+            + "O link que você abriu pertence a OUTRA licença. Trocar agora muda a empresa deste "
+            + "aparelho na nuvem: os dados daqui passam a se misturar com os da outra empresa — "
+            + "obras, usuários e configurações dos dois lados.\n\n"
+            + "Só continue se este aparelho realmente mudou de empresa.\n\nTrocar a licença?";
+          var segue = false;
+          try { segue = window.confirm(texto); } catch (eC) { segue = false; }
+          if (!segue) {
+            if (typeof UI !== "undefined") UI.toast("Licença deste aparelho mantida. Nada foi alterado.", "ok");
+            return;
+          }
+        }
         this._ativandoPorLink = true; // segura o gate do trial enquanto a ativação roda
         Licenca.ativarOnline(lic, function (r) {
           self._ativandoPorLink = false;

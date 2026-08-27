@@ -361,10 +361,101 @@
     },
 
     // 1ª carga: baixa a nuvem, mescla com o local e grava nos dois (não perde nada).
+    /* ============================================================
+     * ⚠⚠ O DONO DO TENANT — a trava que faltava, e custou um incidente
+     *
+     * A conta da nuvem é derivada SÓ da chave de licença (`_credLicenca`), e o
+     * `empresaId` local NÃO entra no caminho do Firestore. Consequência: duas
+     * empresas com a mesma chave caíam no MESMO documento e o merge misturava
+     * tudo — obras, equipe, conta do dono, foto — nos dois sentidos, sem uma
+     * linha de aviso. Foi o que aconteceu em 27/08/2026 entre duas empresas
+     * reais, depois que um aparelho já licenciado abriu um link `?lic=` de
+     * outra licença e trocou de chave em silêncio.
+     *
+     * A partir daqui o tenant tem DONO gravado. Quem chega primeiro registra a
+     * empresa; quem chega depois com outra identidade NÃO sincroniza — para,
+     * avisa e deixa os dois lados intactos. Recusar a sincronização é sempre
+     * recuperável; misturar as bases de duas empresas não é.
+     *
+     * ⚠ Não apaga nem move nada: é um portão de leitura antes do merge.
+     * ============================================================ */
+    DOC_DONO: "_dono",
+    _idDono: function (empresaId) {
+      var nome = "", email = "";
+      try { var p = Store.lerPrefs(empresaId) || {}; nome = String(p.empresa || p.nomeEmpresa || "").trim(); } catch (e) {}
+      try {
+        if (typeof Auth !== "undefined" && Auth.contaMestre) { var c = Auth.contaMestre(empresaId) || {}; email = String(c.email || "").trim().toLowerCase(); }
+      } catch (e2) {}
+      return { empresaId: String(empresaId || ""), empresa: nome, email: email };
+    },
+    /* Devolve Promise<{ok:true}> ou Promise<{ok:false, dono:…}> — nunca rejeita:
+       falha de rede aqui não pode barrar a sincronização de quem está certo. */
+    _conferirDono: function (empresaId) {
+      var self = this, meu = this._idDono(empresaId);
+      /* ⚠ sem `db`/`uid` não há balde para conferir — e o portão NÃO pode ser o
+         que derruba a sincronização. Guarda que explode é pior que guarda que
+         falta: aqui ela reprovaria quem está certo, com um TypeError. */
+      if (!this.db || !this.uid) return Promise.resolve({ ok: true });
+      return this.db.collection("empresas").doc(this.uid).collection("dados").doc(this.DOC_DONO).get()
+        .then(function (snap) {
+          var dono = snap.exists ? (snap.data() || {}).v : null;
+          if (!dono || !dono.empresaId) {
+            /* tenant novo (ou de antes desta trava): este aparelho o assume */
+            return self.db.collection("empresas").doc(self.uid).collection("dados").doc(self.DOC_DONO)
+              .set({ v: meu, em: Date.now() }).then(function () { return { ok: true, assumiu: true }; })
+              .catch(function () { return { ok: true }; });
+          }
+          /* ⚠⚠ BLOQUEIA POR PROVA, NUNCA POR FALTA DE PROVA.
+           *
+           * A primeira versão desta função reprovava quando não achava
+           * semelhança — e isso teria derrubado a sincronização de CLIENTE
+           * LEGÍTIMO. O `empresaId` nasce local e difere entre aparelhos da
+           * mesma empresa; a conta mestre pode nem existir (uso solo); o nome
+           * da empresa pode estar em branco. Nesses casos não há contradição
+           * nenhuma, só ignorância — e ignorância não pode trancar ninguém
+           * fora dos próprios dados. Seriam 38 empresas sem sincronizar por
+           * causa de uma trava criada para proteger duas.
+           *
+           * Então: qualquer indício de que é a MESMA empresa libera; só uma
+           * contradição EXPLÍCITA (dois e-mails de dono diferentes, ou dois
+           * nomes de empresa diferentes) fecha o portão. É o caso do incidente
+           * — lá os dois lados tinham e-mail, e eram outros. */
+          function norm(s) { return String(s || "").trim().toLowerCase().replace(/\s+/g, " "); }
+          if (dono.empresaId && meu.empresaId && dono.empresaId === meu.empresaId) return { ok: true };
+          if (meu.email && dono.email && norm(meu.email) === norm(dono.email)) return { ok: true };
+          if (meu.empresa && dono.empresa && norm(meu.empresa) === norm(dono.empresa)) return { ok: true };
+          /* contradição explícita: os dois lados se identificaram, e são outros */
+          if (meu.email && dono.email && norm(meu.email) !== norm(dono.email)) return { ok: false, dono: dono, meu: meu };
+          if (meu.empresa && dono.empresa && norm(meu.empresa) !== norm(dono.empresa)) return { ok: false, dono: dono, meu: meu };
+          return { ok: true, semProva: true };   // nem a favor nem contra: passa
+        })
+        .catch(function () { return { ok: true }; });   // sem rede: não bloqueia quem está certo
+    },
+    /* motivo do último bloqueio, para a tela explicar sem adivinhar */
+    bloqueioDeDono: null,
+
     sincronizar: function (empresaId) {
       if (_ehPrevia(empresaId)) return Promise.resolve(false);   // prévia nunca sobe
       var self = this;
       if (!this.ligado) return Promise.resolve(false);
+      return this._conferirDono(empresaId).then(function (v) {
+        if (v && v.ok === false) {
+          self.bloqueioDeDono = v;
+          try {
+            var quem = (v.dono.empresa || v.dono.email || "outra empresa");
+            if (typeof UI !== "undefined" && UI.toast) {
+              UI.toast("Sincronização BLOQUEADA: esta licença já é usada por " + quem
+                + ". Nada foi misturado. Use uma licença própria neste aparelho.", "erro");
+            }
+          } catch (eT) {}
+          return false;
+        }
+        self.bloqueioDeDono = null;
+        return self._sincronizarAgora(empresaId);
+      });
+    },
+    _sincronizarAgora: function (empresaId) {
+      var self = this;
       self._conflitosUltimoMerge = 0;
       var falhou = 0, tentadas = 0;
       var uma = function (ent) {
@@ -432,6 +523,10 @@
       if (_ehPrevia(empresaId)) return;                          // nem escuta
       var self = this;
       if (!this.ligado) return;
+      /* ⚠ tenant de OUTRA empresa: não escuta. Bloquear só o `sincronizar`
+         fecharia meia porta — o ouvinte ao vivo continuaria despejando a base
+         alheia aqui a cada alteração lá. */
+      if (this.bloqueioDeDono) return;
 
       /* IDEMPOTENTE — sem isto, cada chamada empilhava um jogo INTEIRO de
        * listeners nos MESMOS documentos, e nada era cancelado. São três os
@@ -581,6 +676,9 @@
     _avisouTamanho: {},
 
     push: function (empresaId, ent) {
+      /* ⚠ e não SOBE para tenant de outra empresa: a metade de ida do mesmo
+         portao. Sem isto, o bloqueio pararia de trazer e continuaria mandando. */
+      if (this.bloqueioDeDono) return;
       if (_ehPrevia(empresaId)) return Promise.resolve(false);   // nem lápide
       var self = this;
       var mandar = function () {

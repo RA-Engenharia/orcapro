@@ -502,17 +502,60 @@
      *    tomada de conta — quem redefine senha de gente é o administrador.
      *    É a mesma doutrina do `autoEntrar` (v1.1.242): o "é o seu próprio
      *    navegador" só vale quando o navegador é mesmo só seu. */
-    redefinirSenha: function (email, nova) {
-      if (this.contaMestre() || this._temEquipeLocal() || this._temEquipeDeQualquerDono()) {
-        return { ok: false, erro: "Esta conta tem usuários vinculados. Só o administrador redefine senha — fale com ele." };
-      }
-      return this.backend.redefinirSenha(email, nova);
+    /* ⚠ E A GUARDA TINHA UM BURACO DO OUTRO LADO: NÃO SOBRAVA PORTA PARA O DONO.
+     *
+     * Incidente de 27/08/2026: o dono de uma conta de cliente ficou trancado
+     * fora do próprio sistema. Ele pedia "Esqueci a senha" e ouvia "só o
+     * administrador redefine — fale com ele", sendo que o administrador É ELE.
+     * A mensagem mandava a pessoa falar consigo mesma, e não havia caminho
+     * nenhum de volta sem mexer no navegador por fora.
+     *
+     * A trava contra escalada continua de pé, e a régua que a preserva é esta:
+     * quem comprou a licença é o DONO, e o servidor guarda o e-mail dela. Um
+     * sub-usuário digitando o e-mail do chefe não passa — o e-mail dele não é
+     * o da licença. Não é confiança no que a pessoa digita: é comparação com o
+     * que o servidor registrou na ativação.
+     *
+     * Sem licença verificada (trial, offline sem carência) não há como provar
+     * quem é o dono, e aí a porta continua fechada — mas dizendo o que fazer. */
+    _emailDaLicenca: function () {
+      try {
+        if (typeof Licenca === "undefined" || !Licenca.status) return "";
+        var st = Licenca.status() || {};
+        return String(st.email || "").trim().toLowerCase();
+      } catch (e) { return ""; }
     },
-    /* varre as contas registradas: qualquer uma com equipe já é multiusuário */
-    _temEquipeDeQualquerDono: function () {
+    ehDonoDaLicenca: function (email) {
+      var lic = this._emailDaLicenca();
+      if (!lic) return false;
+      return String(email || "").trim().toLowerCase() === lic;
+    },
+    redefinirSenha: function (email, nova) {
+      var alvo = String(email || "").trim().toLowerCase();
+      if (this.ehDonoDaLicenca(alvo)) return this.backend.redefinirSenha(alvo, nova);
+      if (this.contaMestre() || this._temEquipeLocal() || this._temEquipeDeQualquerDono(alvo)) {
+        var lic = this._emailDaLicenca();
+        return { ok: false, erro: lic
+          ? "Só o dono da conta (" + lic + ") redefine senha por aqui. Para os demais, quem troca a senha é o administrador, na tela de Usuários."
+          : "Esta conta tem usuários vinculados. Só o administrador redefine senha, na tela de Usuários. Se você é o dono e perdeu o acesso, ative a licença neste aparelho — aí o e-mail da licença libera a redefinição." };
+      }
+      return this.backend.redefinirSenha(alvo, nova);
+    },
+    /* ⚠ SÓ A CONTA-ALVO, não todas as registradas.
+     *
+     * Antes isto varria TODAS as contas do navegador e bastava UMA ter equipe
+     * para reprovar qualquer redefinição — inclusive a de um dono solo cuja
+     * conta não tem sub-usuário nenhum. Numa máquina que recebeu, por engano,
+     * a equipe de OUTRA empresa (foi o incidente de 27/08), isso trancou o dono
+     * de verdade para fora por causa de gente que nem devia estar ali.
+     * A proteção continua inteira: o sub-usuário que digita o e-mail do chefe
+     * cai na equipe DAQUELE dono e continua barrado. */
+    _temEquipeDeQualquerDono: function (email) {
       var contas = [];
       try { contas = this.backend._lerUsuarios() || []; } catch (e) { return false; }
+      var alvo = String(email || "").trim().toLowerCase();
       for (var i = 0; i < contas.length; i++) {
+        if (alvo && String(contas[i].email || "").trim().toLowerCase() !== alvo) continue;
         var eq = this._equipe(contas[i].empresaId);
         if (eq && eq.length) return true;
       }
