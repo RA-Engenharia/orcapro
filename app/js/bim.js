@@ -47,6 +47,13 @@ var IFC_BUILDINGSTOREY = 3124254112, IFC_RELCONTAINEDINSPATIALSTRUCTURE = 324261
 var IFC_RELDEFINESBYTYPE = 781010003, IFC_PROPERTYSET = 1451395588, IFC_ELEMENTQUANTITY = 1883228015;
 var IFC_RELASSIGNSTOGROUP = 1307041759, IFC_SYSTEM = 2254336722, IFC_DISTRIBUTIONSYSTEM = 3205830791; // v1.1.98 — SISTEMA do IFC (Esgoto/Água…) p/ colorir por sistema
 var IFC_PROP_ENUM = 4166981789, IFC_PROP_LIST = 2752243245, IFC_PROP_BOUNDED = 871118103, IFC_PROP_COMPLEX = 2542286263;
+/* TOPOLOGIA DA REDE — porta a porta. É o que permite dizer qual conexão entra
+ * em cada extremidade de cada tubo, e encadear os trechos na ordem em que a
+ * rede corre. Valores lidos do `var IFC... = <numero>` do vendor.
+ * ⚠ NÃO copiar os números citados na prosa do comentário acima: "RELDEFINESBYTYPE
+ *   10025" é NÚMERO DE LINHA do vendor, não código de tipo. Quem seguir aquilo
+ *   ao pé da letra hardcoda 10025 e o traversal devolve zero, em silêncio. */
+var IFC_DISTRIBUTIONPORT = 3041715199, IFC_RELCONNECTSPORTTOELEMENT = 4201705270, IFC_RELCONNECTSPORTS = 3190031847;
 
 function montar(host, opts) {
   opts = opts || {};
@@ -173,6 +180,8 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="cota" title="Cotar rede: toque num tubo e o comprimento dele aparece em cima da peça — o número vem do IFC, não é medido na tela">' + ico('cotas') + 'Cotar</button>' +
     '<button class="btn sm" data-b="cota-iguais" title="Cotar todos os trechos iguais ao último tocado (mesma família, ou mesmo tipo quando o IFC não trouxer família)">' + ico('camadas') + 'Iguais</button>' +
     '<button class="btn sm" data-b="cota-todas" title="Cotar a rede inteira que estiver à vista">' + ico('sistemas') + 'Toda a rede</button>' +
+    '<button class="btn sm" data-b="cota-numerar" title="Numera os tubos seguindo o encadeamento da rede (R01-T001, R01-T002...) e mostra o numero em cima de cada peca">' + ico('cotas') + 'Numerar</button>' +
+    '<button class="btn sm" data-b="cota-planilha" title="Baixa a relacao dos tubos por ramal: numero, comprimento e a conexao de cada extremidade">' + ico('relatorios') + 'Planilha</button>' +
     '<button class="btn sm" data-b="cota-limpar" title="Apagar as cotas da rede">' + ico('lixo') + 'Limpar cotas</button>' +
     '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">' + ico('planta') + 'Planta</button>' +
     '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">' + ico('corte') + 'Corte</button>' +
@@ -207,7 +216,7 @@ function montar(host, opts) {
     /* grupo PRÓPRIO, não um apêndice de Medição: cotar rede não mede nada —
        lê o que o projeto já traz. Misturar os dois faria o encanador achar
        que o número saiu de um clique dele. */
-    { rot: 'Cotar rede', ic: 'cotas', bs: ['cota', 'cota-iguais', 'cota-todas', 'cota-limpar'] },
+    { rot: 'Cotar rede', ic: 'cotas', bs: ['cota', 'cota-iguais', 'cota-todas', 'cota-numerar', 'cota-planilha', 'cota-limpar'] },
     { rot: 'Cortes & Plantas', ic: 'planta', bs: ['planta', 'corte', 'pav'] },
     { rot: 'Visibilidade', ic: 'ver', bs: ['vis', 'sistema', 'foto'] },
     { rot: 'Edição & 2D→3D', ic: 'editar', bs: ['editar', 'p3d', 'blocok'] },
@@ -903,6 +912,27 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       else setCota(true, 'iguais');
     }
     else if (k === 'cota-todas') { setCota(true, 'todas'); }
+    else if (k === 'cota-numerar') {
+      var pacN = numerarRede();
+      if (pacN) {
+        var r = pacN.resumo;
+        cota.indice = null;                         // o rotulo tem de renascer com o numero
+        setCota(true, 'todas');
+        UI0(r.numerados + ' tubos numerados em ' + r.ramais + ' ramal(is) · ' + fmtDist(r.metrosNumerados) +
+            (r.avulsos ? ' · ' + r.avulsos + ' avulso(s) sem ligacao no IFC' : ''), 'ok');
+      }
+    }
+    else if (k === 'cota-planilha') {
+      var pacP = (S._numeracao && S._numeracao()) || numerarRede();
+      if (pacP) {
+        if (typeof BimTuboXLS === 'undefined') UI0('Gerador de planilha nao carregado.', 'erro');
+        else BimTuboXLS.gerar(pacP, {
+          nome: 'Tubos por ramal',
+          ok: function () { UI0('Planilha gerada: ' + pacP.linhas.length + ' tubos.', 'ok'); },
+          erro: function (e) { UI0('Nao consegui gerar a planilha: ' + (e && e.message || e), 'erro'); }
+        });
+      }
+    }
     else if (k === 'cota-limpar') { cota.fixados = {}; cota.chave = null; cotaLimpar(); setCota(false); }
     else if (k === 'fit') { if (planta.on) enquadrarTopo(); else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5); else enquadrar(); } // na planta re-centra a vista de topo (não sai); no 3D enquadra suave (cinematográfico)
   });
@@ -1247,7 +1277,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var grade = {}, escolhidos = [];
     for (var k = 0; k < vis.length && escolhidos.length < teto; k++) {
       var c = vis[k];
-      var gx = Math.round(c.sx * 9), gy = Math.round(c.sy * 14), gk = gx + '|' + gy;
+      /* ⚠ grade AFROUXADA de 9 para 6 colunas: com o numero na frente o
+         rotulo ficou ~60% mais largo, e a grade antiga deixava dois se
+         encavalarem. O corte maior aparece em cota.cortadas, que o
+         resumo declara. */
+      var gx = Math.round(c.sx * 6), gy = Math.round(c.sy * 14), gk = gx + '|' + gy;
       if (grade[gk] && !c.fixo) continue;
       grade[gk] = 1; escolhidos.push(c);
     }
@@ -1264,9 +1298,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       delete cota.porUid[uid];
     });
     Object.keys(querer).forEach(function (uid) {
-      if (cota.porUid[uid]) return;
+      var jaTem = cota.porUid[uid];
+      if (jaTem) {
+        /* mesmo uid, texto novo (renumerou) -> refaz; senao fica o antigo */
+        var esperado = (numeroDe(uid) ? numeroDe(uid) + ' · ' : '') + fmtDist(querer[uid].L);
+        if (jaTem.userData && jaTem.userData._txt === esperado) return;
+        scene.remove(jaTem);
+        try { if (jaTem.material) { if (jaTem.material.map) jaTem.material.map.dispose(); jaTem.material.dispose(); } } catch (_) {}
+        var ixv = cota.objs.indexOf(jaTem); if (ixv >= 0) cota.objs.splice(ixv, 1);
+        delete cota.porUid[uid];
+      }
       var r2 = querer[uid];
-      var sp = labelSprite(fmtDist(r2.L));
+      /* ⚠ o rotulo guarda o TEXTO que desenhou. O laco decide por uid, e sem
+         isto renumerar a rede deixaria o numero velho na tela: mesmo uid,
+         sprite reaproveitado, texto congelado. */
+      var txt = (numeroDe(uid) ? numeroDe(uid) + ' · ' : '') + fmtDist(r2.L);
+      var sp = labelSprite(txt);
+      sp.userData._txt = txt;
       /* com muitas cotas, `depthTest:false` (o padrão de labelSprite, certo
          para UMA cota da trena) faz todas atravessarem a parede e virarem
          sopa. Só a fixada pelo toque continua sempre visível. */
@@ -1276,6 +1324,70 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       cota.objs.push(sp); cota.porUid[uid] = sp;
     });
   }
+  /* =====================================================================
+   * NUMERAR A REDE — R01-T001, seguindo o encadeamento.
+   *
+   * ⚠ A FONTE É `elementosVivos()`, NUNCA `cota.indice`.
+   *   Aquele índice descarta tubo abaixo de 30 cm porque o rótulo ficaria
+   *   maior que a peça — estética de sprite. Medido no projeto real: 732 dos
+   *   1.725 tubos, 42,4%. Usá-lo aqui entregaria uma folha com 993 tubos e
+   *   1.580,55 m sob um cabeçalho dizendo 1.725 e 1.667,20 m, e quebraria o
+   *   encadeamento: R01-T013 seguido de R01-T015 com uma peça de 17 cm entre
+   *   os dois na parede. Filtro de tela não decide papel de obra.
+   * ===================================================================== */
+  var num = { pacote: null, marca: null, porUid: {} };
+  /* fator de comprimento do arquivo, memoizado: a bitola sai em unidade do
+     projeto, igual as quantidades */
+  var _fLen = {};
+  function fatorLen(mid) {
+    if (_fLen[mid] != null) return _fLen[mid];
+    var b = 1;
+    try { var x = unidadePrefixoBase(mid, 'LENGTHUNIT'); if (x != null) b = x; } catch (_) {}
+    _fLen[mid] = b; return b;
+  }
+  function numerarRede() {
+    if (!S || !S.alive) return null;
+    if (typeof BimTubo === 'undefined') { UI0('Motor de numeração não carregado.', 'erro'); return null; }
+    var pecas = {}, mids = {};
+    elementosVivos().forEach(function (e) {
+      if (!e || !e.uid) return;
+      mids[e.mid] = 1;
+      var Le = cotaComprimento(e);
+      pecas[e.uid] = {
+        id: e.id, uid: e.uid, tipo: e.tipo, nome: e.nome, familia: e.familia,
+        sistema: e.sistema || '', pavimento: e.pavimento || '',
+        L: Le, compFonte: (e.qto && e.qto.compFonte) || '',
+        /* so para TUBO com medida: a bitola custa 4 GetLine por peca, e nao
+           faz falta em conexao — o que vai para a lista de corte e o tubo */
+        dnMm: (Le > 0 && BimTubo.ehTubo(e) && e.mid != null) ? lerBitolaMm(e.mid, e.id, fatorLen(e.mid)) : 0
+      };
+    });
+    /* topologia de TODOS os modelos abertos, unida — a rede pode vir federada */
+    var topo = { portaDe: {}, ligacao: {}, portasDe: {}, dirPorta: {}, nPortas: 0, nLigacoes: 0 };
+    Object.keys(mids).forEach(function (mid) {
+      var t;
+      try { t = lerTopologiaRede(isNaN(+mid) ? mid : +mid); } catch (_) { return; }
+      if (!t) return;
+      Object.keys(t.portaDe).forEach(function (p) { topo.portaDe[p] = t.portaDe[p]; });
+      Object.keys(t.ligacao).forEach(function (p) { topo.ligacao[p] = t.ligacao[p]; });
+      Object.keys(t.portasDe).forEach(function (u) { topo.portasDe[u] = (topo.portasDe[u] || []).concat(t.portasDe[u]); });
+      Object.keys(t.dirPorta).forEach(function (p) { topo.dirPorta[p] = t.dirPorta[p]; });
+      topo.nPortas += t.nPortas; topo.nLigacoes += t.nLigacoes;
+    });
+    if (!topo.nLigacoes) {
+      UI0('Este IFC não publica a ligação entre as peças. Dá para listar os tubos, não para encadeá-los.', 'erro');
+      return null;
+    }
+    var pac = BimTubo.numerar(pecas, topo);
+    pac.topo = { portas: topo.nPortas, ligacoes: topo.nLigacoes };
+    num.pacote = pac; num.marca = cotaMarca(); num.porUid = {};
+    pac.linhas.forEach(function (l) { num.porUid[l.uid] = l.n; });
+    return pac;
+  }
+  function numeroDe(uid) { return (num.marca === cotaMarca()) ? (num.porUid[uid] || '') : ''; }
+  S._numerarRede = numerarRede;
+  S._numeracao = function () { return (num.marca === cotaMarca()) ? num.pacote : null; };
+
   /* aviso curto; cai no toast da Gestão quando existir, senão fica só no viewer */
   function UI0(msg, tipo) {
     try { if (typeof UI !== 'undefined' && UI.toast) { UI.toast(msg, tipo || 'info'); return; } } catch (_) {}
@@ -1308,7 +1420,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         UI0('São ' + ix.length + ' trechos — demais para mostrar de uma vez. Isole um pavimento ou um sistema e tente de novo.', 'erro');
       } else {
         cota.acum = cota.periodo;   // primeira passada no próximo quadro
-        UI0(cotaResumo() + ' · comprimento do trecho modelado, não desconta conexões', 'ok');
+        UI0(cotaResumo() + ' · comprimento do trecho como foi modelado', 'ok');
       }
     }
     var b = bar.querySelector('[data-b="cota"]');
@@ -5317,6 +5429,109 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // seus IfcPropertySingleValue atrás de OrcaPRO_Etapa/OrcaPRO_CodOrc, atribuindo a TODOS os
   // RelatedObjects (um rel pode carimbar vários elementos). Blindado: qualquer falha de leitura
   // devolve o que já achou — NUNCA impede o modelo 3D de abrir (property é bônus sobre a geometria).
+  /* =====================================================================
+   * TOPOLOGIA DA REDE — porta a porta, como o IFC publica.
+   *
+   * Três passadas no molde de `lerCarimbosOrcaPro`:
+   *   IfcRelConnectsPortToElement  porta  → peça
+   *   IfcRelConnectsPorts          porta ↔ porta
+   *   IfcDistributionPort          o sentido do fluxo, quando declarado
+   *
+   * ⚠ PREGUIÇOSA, DE PROPÓSITO. Não entra no bloco síncrono da carga: são
+   *   ~20 mil chamadas que TODO cliente pagaria ao abrir QUALQUER modelo,
+   *   inclusive quem nunca vai numerar rede — e no celular isso é aba
+   *   travada. Roda no primeiro uso e fica no `modelo.topologia`.
+   *
+   * ⚠ E NÃO usar a rota inversa `HasPorts`: medido no arquivo real, 1.120 ms
+   *   contra 131 ms destas três passadas em lote.
+   *
+   * ⚠ O SENTIDO NÃO ORDENA NADA. No arquivo real, 2.246 das 8.430 portas
+   *   (27%) são SOURCEANDSINK — o IFC não diz para onde corre. FlowDirection
+   *   serve só para ESCOLHER a ponta onde o percurso começa; quando não há,
+   *   a origem é declarada arbitrária em vez de deduzida. */
+  function lerTopologiaRede(mid) {
+    var mo = modeloDe(mid);
+    if (mo && mo.topologia) return mo.topologia;
+    var topo = { portaDe: {}, ligacao: {}, portasDe: {}, dirPorta: {}, nPortas: 0, nLigacoes: 0 };
+    try {
+      var re1 = S.api.GetLineIDsWithType(mid, IFC_RELCONNECTSPORTTOELEMENT), n1 = re1.size();
+      for (var i = 0; i < n1; i++) {
+        var r1; try { r1 = S.api.GetLine(mid, re1.get(i), false); } catch (_) { continue; }
+        if (!r1 || !r1.RelatingPort || !r1.RelatedElement) continue;
+        var pid = r1.RelatingPort.value, eid = r1.RelatedElement.value;
+        if (pid == null || eid == null) continue;
+        var uid = mid + ':' + eid;
+        topo.portaDe[pid] = uid;
+        (topo.portasDe[uid] = topo.portasDe[uid] || []).push(pid);
+        topo.nPortas++;
+      }
+      var re2 = S.api.GetLineIDsWithType(mid, IFC_RELCONNECTSPORTS), n2 = re2.size();
+      for (var j = 0; j < n2; j++) {
+        var r2; try { r2 = S.api.GetLine(mid, re2.get(j), false); } catch (_) { continue; }
+        if (!r2 || !r2.RelatingPort || !r2.RelatedPort) continue;
+        var pa = r2.RelatingPort.value, pb = r2.RelatedPort.value;
+        if (pa == null || pb == null) continue;
+        topo.ligacao[pa] = pb; topo.ligacao[pb] = pa;
+        topo.nLigacoes++;
+      }
+      var re3 = S.api.GetLineIDsWithType(mid, IFC_DISTRIBUTIONPORT), n3 = re3.size();
+      for (var k = 0; k < n3; k++) {
+        var id3 = re3.get(k), p3;
+        try { p3 = S.api.GetLine(mid, id3, false); } catch (_) { continue; }
+        /* enum chega embrulhado: { type: 3, value: 'SINK' } — sem os pontos do STEP */
+        if (p3 && p3.FlowDirection && p3.FlowDirection.value) topo.dirPorta[id3] = String(p3.FlowDirection.value);
+      }
+    } catch (e) { /* topologia é bônus: falha devolve o que já achou */ }
+    if (mo) mo.topologia = topo;
+    return topo;
+  }
+
+  /* =====================================================================
+   * BITOLA — o raio que o projetista declarou, não medido por nós.
+   *
+   * O pset do tubo traz só Length/Manufacturer/Reference: a bitola NÃO está
+   * lá. Mas está publicada na geometria, no perfil que foi varrido:
+   *   IfcExtrudedAreaSolid.SweptArea → IfcCircleProfileDef.Radius
+   * Amostra do arquivo real: raio 0,05 m → 100 mm de diâmetro externo, que é
+   * como o PVC é designado comercialmente no Brasil.
+   *
+   * ⚠ É Ø EXTERNO, e o rótulo diz isso. Chamar de "DN" sem ressalva
+   *   atropelaria a norma em bitola onde o DN nominal não é o externo — no
+   *   PVC brasileiro coincide, em outros materiais não.
+   *
+   * ⚠ E É POR ELEMENTO, sob demanda. Varrer todos os IfcCircleProfileDef de
+   *   uma vez sairia mais barato, mas o perfil não sabe a que peça pertence:
+   *   o caminho de volta é justamente pela representação do elemento. Só roda
+   *   para o que vai entrar na lista. */
+  function lerBitolaMm(mid, eid, fLen) {
+    try {
+      var el = S.api.GetLine(mid, eid, false);
+      if (!el || !el.Representation || el.Representation.value == null) return 0;
+      var pds = S.api.GetLine(mid, el.Representation.value, false);
+      var reps = pds && pds.Representations; if (!reps) return 0;
+      reps = Array.isArray(reps) ? reps : [reps];
+      for (var i = 0; i < reps.length; i++) {
+        if (!reps[i] || reps[i].value == null) continue;
+        var sr; try { sr = S.api.GetLine(mid, reps[i].value, false); } catch (_) { continue; }
+        var itens = sr && sr.Items; if (!itens) continue;
+        itens = Array.isArray(itens) ? itens : [itens];
+        for (var j = 0; j < itens.length; j++) {
+          if (!itens[j] || itens[j].value == null) continue;
+          var it; try { it = S.api.GetLine(mid, itens[j].value, false); } catch (_) { continue; }
+          if (!it || !it.SweptArea || it.SweptArea.value == null) continue;
+          var pf; try { pf = S.api.GetLine(mid, it.SweptArea.value, false); } catch (_) { continue; }
+          if (!pf) continue;
+          var r = pf.Radius; if (r && r.value != null) r = r.value;
+          /* perfil OCO (anel de vedação) traz Radius + WallThickness: o
+             externo continua sendo Radius, então serve igual */
+          var v = parseFloat(r);
+          if (!isNaN(v) && v > 0) return Math.round(v * 2 * (fLen || 1) * 1000);
+        }
+      }
+    } catch (_) {}
+    return 0;
+  }
+
   function lerCarimbosOrcaPro(mid) {
     var mapa = {};
     try {
@@ -5528,9 +5743,52 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (!rel || !rel.RelatingPropertyDefinition || !rel.RelatedObjects) continue;
         var qid = rel.RelatingPropertyDefinition.value; if (qid == null) continue;
         var qset; try { qset = S.api.GetLine(mid, qid, false); } catch (_) { continue; }
-        if (!qset || !qset.Quantities) continue; // não é IfcElementQuantity (pset comum cai fora)
-        var qs = Array.isArray(qset.Quantities) ? qset.Quantities : [qset.Quantities];
+        if (!qset) continue;
         var comp = { v: 0, s: -1 }, ar = { v: 0, s: -1 }, vol = { v: 0, s: -1 }, cont = 0;
+        /* ⚠ MUITO IFC NÃO TEM BaseQuantities — E O COMPRIMENTO ESTÁ LÁ MESMO ASSIM.
+         *
+         * Este leitor só olhava `IfcElementQuantity`. Medido num projeto
+         * hidrossanitário real de creche (80 MB, 1.725 IFCFLOWSEGMENT): o
+         * arquivo tem ZERO IfcElementQuantity e ZERO IfcQuantityLength — e
+         * tem 1.725 propriedades `Length`, uma por tubo, em
+         * `Pset_FlowSegmentPipeSegment`. O comprimento estava publicado; o
+         * leitor é que olhava só uma das duas gavetas. A tela dizia "sem
+         * comprimento no IFC" sobre um arquivo que trazia todos.
+         *
+         * ⚠ MAIS ESTRITO QUE NA GAVETA DAS QUANTIDADES, de propósito. Num
+         *   `IfcElementQuantity`, um `LengthValue` já se declara comprimento
+         *   mesmo sem nome. Num pset comum cabe qualquer número: aqui o nome
+         *   TEM de dizer comprimento — anônimo não vira cota. */
+        if (!qset.Quantities && qset.HasProperties) {
+          var props = Array.isArray(qset.HasProperties) ? qset.HasProperties : [qset.HasProperties];
+          for (var pp = 0; pp < props.length; pp++) {
+            var ph = props[pp]; if (!ph || ph.value == null) continue;
+            var pv; try { pv = S.api.GetLine(mid, ph.value, false); } catch (_) { continue; }
+            if (!pv || pv.type !== IFC_PROPERTYSINGLEVALUE || !pv.NominalValue) continue;
+            var pnm = (pv.Name && pv.Name.value) ? String(pv.Name.value).toLowerCase() : '';
+            if (/width|height|thick|depth|perimet|larg|altura|espess|diamet|diâmet|bore|radius|raio/.test(pnm)) continue;
+            var sP = pnm === 'length' ? 3 : /length|comprim/.test(pnm) ? 2 : 0;
+            if (!sP) continue;
+            var Pv = vnum(pv.NominalValue.value);
+            if (isNaN(Pv) || Pv <= 0) continue;
+            if (sP > comp.s) comp = { v: Pv, s: sP };
+          }
+          if (comp.s < 0) continue;
+          /* mesma unidade do projeto que as quantidades usam: IfcPositiveLengthMeasure
+             é expresso no LENGTHUNIT declarado no arquivo */
+          var qtoP = { comprimento: comp.v * fLen, area: 0, volume: 0, contagem: 0,
+            compFonte: comp.s === 3 ? 'exata' : 'nomeada' };
+          var objsP = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
+          for (var op = 0; op < objsP.length; op++) {
+            var ohp = objsP[op]; if (!ohp || ohp.value == null) continue;
+            var eidp = ohp.value;
+            if (!mapa[eidp]) mapa[eidp] = { comprimento: 0, area: 0, volume: 0, contagem: 0, compFonte: '' };
+            if (qtoP.comprimento > mapa[eidp].comprimento) { mapa[eidp].comprimento = qtoP.comprimento; mapa[eidp].compFonte = qtoP.compFonte; }
+          }
+          continue;
+        }
+        if (!qset.Quantities) continue; // nem quantidade nem propriedade útil
+        var qs = Array.isArray(qset.Quantities) ? qset.Quantities : [qset.Quantities];
         for (var q = 0; q < qs.length; q++) {
           var qh = qs[q]; if (!qh || qh.value == null) continue;
           var qv; try { qv = S.api.GetLine(mid, qh.value, false); } catch (_) { continue; }
@@ -6523,6 +6781,9 @@ window.BIM = {
   _cota: function (on, modo) { if (S && S._setCota) S._setCota(on, modo); return this._cotaEstado(); },
   _cotaEstado: function () { return (S && S._cotaEstado) ? S._cotaEstado() : null; },
   _cotaIndice: function () { return (S && S._cotaIndice) ? S._cotaIndice() : null; },
+  // Numerar rede — hook público: dispara o encadeamento e devolve o pacote
+  numerarRede: function () { return (S && S._numerarRede) ? S._numerarRede() : null; },
+  numeracao: function () { return (S && S._numeracao) ? S._numeracao() : null; },
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
   _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; }, // hook de teste: estado da câmera
