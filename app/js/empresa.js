@@ -140,11 +140,97 @@
         if (!m) return false;
         if (dataURI) m.foto = dataURI; else delete m.foto;
         Store.salvar(Auth.empresaId(), "equipe", m);
+        this._avisarPerfil();
         return true;
       }
       var p = this._prefs();
       if (dataURI) p.fotoDono = dataURI; else delete p.fotoDono;
       Store.salvarPrefs(Auth.empresaId(), p);
+      this._avisarPerfil();
+      return true;
+    },
+    _avisarPerfil: function () {
+      try { if (typeof Telemetria !== "undefined" && Telemetria.perfilMudou) Telemetria.perfilMudou(); } catch (e) {}
+    },
+
+    /* =================================================================
+     * O NOME DE QUEM ESTA USANDO — mesma casa da foto, mesma regra.
+     *
+     * ⚠ POR QUE ISTO EXISTE. A conta mestre guarda empresa, e-mail e senha, e
+     * NENHUM campo para a pessoa. Entao o dono da licenca nao tinha onde
+     * escrever o proprio nome, e todo lugar que perguntava "quem esta logado"
+     * recebia a RAZAO SOCIAL: a aprovacao de uma medicao saia assinada
+     * "RA Engenharia Especial Ltda." no lugar do engenheiro que aprovou.
+     *
+     * Fica ao lado da foto (prefs.nomeDono / equipe[].nome) porque e o mesmo
+     * dado — quem voce e — e porque e ali que o usuario ja vai mexer. Guardar
+     * em `conta` faria o nome da pessoa viajar junto com o cadastro fiscal da
+     * empresa, que e outra coisa e tem outro dono.
+     * ================================================================= */
+    nomeUsuario: function () {
+      try {
+        var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        if (u.usuarioId) {
+          var m = (Store.listar(Auth.empresaId(), "equipe") || []).filter(function (x) { return x && x.id === u.usuarioId; })[0];
+          return (m && m.nome) || "";
+        }
+        return String(this._prefs().nomeDono || "").trim();
+      } catch (e) { return ""; }
+    },
+
+    salvarNomeUsuario: function (nome) {
+      var n = String(nome == null ? "" : nome).trim();
+      /* ⚠ o limite e do RENDER, nao do banco: este nome desenha na barra do
+         topo e no carimbo da aprovacao. Cortar aqui evita descobrir o estouro
+         na tela de outra pessoa. */
+      if (n.length > 60) n = n.substring(0, 60);
+      var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      if (u.usuarioId) {
+        /* ⚠ O SUB-USUARIO NAO EDITA O PROPRIO CADASTRO. `equipe[]` e area do
+         * admin: `Auth.podeModulo("usuarios")` devolve false para ele de
+         * propósito. A primeira versao desta funcao gravava ali sem olhar o
+         * papel, e o botao "Meu perfil" e desenhado para todo mundo — o
+         * encarregado abria, digitava "Ana Gerente", e a partir dali TODA
+         * medicao, compra, requisicao e RDO que ele aprovasse saia carimbada
+         * com esse nome, sem registro nenhum da troca. Num commit cujo
+         * objetivo e tornar CONFIAVEL quem assina a aprovacao, deixar o
+         * assinante escolher o proprio nome desfaz o trabalho inteiro.
+         * A foto continua sendo dele (nao identifica ninguem num documento);
+         * o NOME quem define e quem cadastrou a pessoa. */
+        return "somente-admin";
+      }
+      if (u.papel && u.papel !== "admin") return "somente-admin";
+
+      var p = this._prefs();
+      if (n) {
+        p.nomeDono = n;
+        /* ⚠ CARIMBO DE QUANDO, e nao so o texto. `Nuvem._merge` resolve prefs
+         * com `Object.assign({}, nuvem, local)` — campo a campo, o LOCAL
+         * vence, sem desempate. Sem este carimbo o nome corrigido no celular
+         * nunca alcancaria o computador (que reempurraria o velho para a
+         * nuvem, para sempre), e apagar o nome seria impossivel: o outro
+         * aparelho traria de volta no sync seguinte. Este repositorio ja
+         * documentou o mesmo estrago tres vezes no proprio nuvem.js
+         * (carp_param, portal_padrao, perfil_impl). */
+        p.nomeDonoEm = new Date().toISOString();
+      } else {
+        delete p.nomeDono;
+        /* apagar tambem e um ato datado: sem isto o aparelho que ainda tem o
+           nome venceria o merge e o nome VOLTARIA sozinho */
+        p.nomeDonoEm = new Date().toISOString();
+      }
+      Store.salvarPrefs(Auth.empresaId(), p);
+
+      /* a sessao viva tem de sentir na hora — senao o nome so aparece no
+         proximo login, e quem acabou de digitar acha que nao salvou */
+      try {
+        if (typeof Auth !== "undefined") {
+          if (Auth.esquecerNome) Auth.esquecerNome();
+          var s = Auth.usuario && Auth.usuario();
+          if (s) s.nomePessoal = n;
+        }
+      } catch (e2) {}
+      try { if (typeof Telemetria !== "undefined" && Telemetria.perfilMudou) Telemetria.perfilMudou(); } catch (e3) {}
       return true;
     },
 

@@ -134,7 +134,7 @@
         var eq = this._equipe(u.empresaId), atual = null;
         for (var i = 0; i < eq.length; i++) { if (eq[i].id === u.usuarioId) { atual = eq[i]; break; } }
         if (!atual || atual.ativo === false) { this.logout(); return null; } // removido/desativado → desloga
-        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.aprovador = atual.aprovador === true; u.trocarSenha = atual.trocarSenha === true;
+        u.modulos = atual.modulos || []; u.obras = atual.obras || []; u.departamento = atual.departamento || ""; u.nome = atual.nome || u.nome; u.nomePessoal = String(atual.nome || u.nomePessoal || "").trim(); u.aprovador = atual.aprovador === true; u.trocarSenha = atual.trocarSenha === true;
         localStorage.setItem(SESSAO_KEY, JSON.stringify(u));
       }
       return this._usuario;
@@ -323,7 +323,84 @@
     temSessao: function () { return !!this._usuario; },
     ehAdmin: function () { var u = this._usuario; return !!u && u.papel !== "usuario"; },
     papel: function () { return (this._usuario && this._usuario.papel) || (this._usuario ? "admin" : ""); },
-    nome: function () { var u = this._usuario; return u ? (u.nome || u.empresa || u.email || "") : ""; },
+    /* ⚠ O NOME DA PESSOA, NAO O DA EMPRESA.
+     *
+     * Isto devolvia `u.nome || u.empresa`, e o dono da licenca nunca teve
+     * `nome`: a conta mestre guarda empresa, e-mail e senha, e nenhum campo
+     * para a pessoa. Entao TODO lugar que pergunta quem esta logado recebia o
+     * nome da EMPRESA — inclusive `_quemAprova`, que carimba o aprovador no
+     * documento, e a telemetria, onde os "usuarios" da frota inteira eram
+     * razoes sociais e nao dava para saber quem estava usando o sistema.
+     * ⚠ Este comentario JA CITOU o nome de um cliente real como exemplo. Nao
+     * citar: `js/` inteira e copiada para o pacote de cada licenciado E para
+     * o PWA em URL publica — o cliente A abria este arquivo no bloco de notas
+     * e lia o nome do cliente B. Exemplo de razao social, aqui, e generico.
+     *
+     * Uma raiz, muitos sintomas: consertar aqui conserta aprovacao, barra do
+     * topo, trilha de auditoria e painel de vendas de uma vez.
+     * `nomePessoal` e preenchido no inicio da sessao — do cadastro da equipe,
+     * para sub-usuario, e de `prefs.nomeDono` para o dono. A empresa segue como
+     * ultimo recurso: quem nunca preencheu o nome nao pode ficar sem rotulo. */
+    nome: function () {
+      return this.nomePessoal() || (this._usuario && (this._usuario.empresa || this._usuario.email)) || "";
+    },
+    /* nome so da PESSOA — string vazia quando ninguem preencheu. Quem precisa
+       saber se ha nome de verdade (a telemetria, o painel de vendas) pergunta
+       por aqui, em vez de comparar com o nome da empresa e torcer. */
+    nomePessoal: function () {
+      var u = this._usuario; if (!u) return "";
+      if (u.nomePessoal) return u.nomePessoal;
+      var nm = String(u.nome || "").trim();
+      /* ⚠ SESSAO GRAVADA ANTES DESTA VERSAO nao tem `nomePessoal`. Para o
+         sub-usuario, `u.nome` e sempre a pessoa — o login monta
+         `nome: u.nome || u.login`, nunca a empresa —, entao da para cair nele
+         sem risco. Sem esta linha, quem atualizasse com a sessao aberta
+         perderia o proprio nome ate deslogar.
+         ⚠ E o teste e `papel`, nao so `usuarioId`: ha sessao de sub-usuario
+         sem o id (o proprio test-gap3 monta uma). Olhar so o id mandava esse
+         caso para o caminho do dono e apagava o nome do aprovador. */
+      if (u.usuarioId || u.papel === "usuario") return nm;
+      /* ⚠ e so o DONO cai em prefs. Prefs sao POR EMPRESA: se o sub-usuario
+         lesse dali, o encarregado sem nome apareceria como o dono da conta —
+         e assinaria aprovacoes com o nome dele. Mesma regra da foto. */
+      var d = this._nomeDono();
+      if (d) return d;
+      /* ⚠ ULTIMO RECURSO DO DONO. A conta mestre copia a razao social para
+         `nome`; nesse caso ele nao diz quem e a pessoa e nao serve aqui. Mas
+         quando `nome` traz OUTRA coisa, e nome de gente de verdade e nao pode
+         ser jogado fora — foi assim que a primeira versao deste conserto
+         apagou o aprovador em sete asserts do test-gap3. O criterio e o
+         CONTEUDO (diferente da empresa), nao um palpite sobre a origem. */
+      return (nm && nm !== String(u.empresa || "").trim()) ? nm : "";
+    },
+    /* o dono nao tem registro em `equipe`: o nome dele mora ao lado da foto,
+       em prefs (`nomeDono`), seguindo o par que `fotoDono` ja usava.
+       ⚠ MEMOIZADO. `Auth.nome()` roda a cada render da barra do topo e em
+       cada carimbo de aprovacao; ler prefs toda vez seria um JSON.parse por
+       render. Quem grava o nome chama `esquecerNome()`.
+       ⚠ E O CACHE E CHAVEADO PELA EMPRESA, nao global. A previa
+       (`PreviewCli.entrar`) e a vitrine trocam `Auth._usuario` por atribuicao
+       DIRETA, sem logout e sem reload — um cache global seguiria quente com o
+       nome da conta da RA e a previa do cliente abriria assinada com ele,
+       inclusive no print que vai para o cliente. Chave errada e pior que
+       cache nenhum: e ler prefs de uma empresa com outra empresa ativa.
+       ⚠ E O VAZIO NAO E MEMOIZADO. A nuvem e o restaurar-backup gravam prefs
+       por fora do `Empresa` (Store.adapter.gravar direto), sem avisar
+       ninguem. Congelando o "" do boot, o dono que preencheu o nome no
+       celular a noite passava a MANHA INTEIRA assinando com a razao social no
+       computador — o nome ja no disco, e o cache preso. Custa um JSON.parse
+       por render so enquanto nao ha nome; assim que ha, memoiza. */
+    _nomeDonoCache: null,
+    _nomeDono: function () {
+      var id = this.empresaId();
+      var c = this._nomeDonoCache;
+      if (c && c.id === id && c.v) return c.v;
+      var v = "";
+      try { v = String((Store.lerPrefs(id) || {}).nomeDono || "").trim(); } catch (e) { v = ""; }
+      this._nomeDonoCache = { id: id, v: v };
+      return v;
+    },
+    esquecerNome: function () { this._nomeDonoCache = null; },
     podeModulo: function (id) {
       /* ⚠ ANTES do atalho dos módulos "sempre liberados": sem sessão não há
          "sempre liberado". Painel/Ajuda/Relatos devolviam `true` mesmo sem
@@ -604,6 +681,23 @@
         empresaId: u.empresaId, empresa: u.empresa, email: u.email, plano: u.plano,
         papel: u._papel || "admin",
         nome: u.nome || u.empresa || u.email,
+        /* ⚠ SO ENTRA AQUI SE FOR MESMO UMA PESSOA.
+           `loginNuvem` devolve, para a CONTA MESTRE, `nome: conta.empresa`
+           (l.510) — a conta mestre nao tem campo para a pessoa. Copiar cru
+           fazia a RAZAO SOCIAL nascer dentro de `nomePessoal`, e como
+           `nomePessoal()` comeca por ele, o curto-circuito pulava tanto
+           `prefs.nomeDono` quanto a guarda de conteudo la embaixo.
+           Efeito medido: o dono preenchia o nome no computador, abria no
+           tablet (que entra pela nuvem) e a barra, o `_quemAprova` e o ping
+           voltavam para a razao social — o MESMO documento assinado com dois
+           nomes conforme o aparelho, sem conserto possivel pela tela.
+           O criterio e o CONTEUDO: nome igual a razao social nao identifica
+           ninguem. Sub-usuario nao passa por aqui com a empresa — o login
+           dele monta `nome: u.nome || u.login`. */
+        nomePessoal: (function () {
+          var nm = String(u.nome || "").trim();
+          return (nm && nm !== String(u.empresa || "").trim()) ? nm : "";
+        })(),
         usuarioId: u._usuarioId || null,
         departamento: u._departamento || "",
         modulos: u._modulos || null,  // null = admin (todos os módulos)
@@ -623,6 +717,10 @@
 
     logout: function () {
       this._usuario = null;
+      /* ⚠ o cache do nome do dono e por CONTA. Sem isto, trocar de licenca na
+         mesma maquina faria a barra do topo — e as aprovacoes — abrirem com o
+         nome de quem saiu. */
+      this._nomeDonoCache = null;
       localStorage.removeItem(SESSAO_KEY);
     }
   };

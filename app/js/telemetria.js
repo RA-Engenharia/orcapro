@@ -54,10 +54,18 @@
       try { if (typeof Licenca !== "undefined" && Licenca._ler) email = (Licenca._ler() || {}).email || ""; } catch (e) {}
       var dev = "";
       try { if (typeof Licenca !== "undefined" && Licenca.deviceId) dev = Licenca.deviceId(); } catch (e2) {}
+      var foto = "";
+      try { if (typeof Empresa !== "undefined" && Empresa.fotoUsuario) foto = Empresa.fotoUsuario() || ""; } catch (e3) {}
       return {
         empresa: u.empresa || "Minha Empresa",
+        /* ⚠ `Auth.nome()` e a PESSOA desde a v1.2.14. Antes ele caia no nome da
+           empresa quando o dono nao tinha nome cadastrado, e o painel de vendas
+           listava razao social no lugar de gente — nao dava para saber QUEM
+           estava usando o sistema, que e a pergunta que o painel existe para
+           responder. O conserto e na origem (js/auth.js), nao aqui. */
         usuario: (A && A.nome) ? A.nome() : (u.nome || u.email || "Usuário"),
         papel: (A && A.papel) ? A.papel() : "admin",
+        foto: foto,
         licencaEmail: email, deviceId: dev
       };
     },
@@ -80,10 +88,21 @@
         } else {
           var i = this._licInfo();
           body = { tipo: "licenciado", evento: ev, sessaoId: this._sessao, empresa: i.empresa, usuario: i.usuario, papel: i.papel, licencaEmail: i.licencaEmail, deviceId: i.deviceId, versao: ver, modulos: this._mods() };
+          /* ⚠ A FOTO SO VAI NO BOOT (e quando muda). Sao ~10 KB de data URI; o
+             heartbeat e de 5 em 5 minutos e a frota inteira bate no mesmo
+             endpoint. Mandar em todo ping seria multiplicar o trafego por umas
+             cem vezes para reenviar um dado que quase nunca muda — e o servidor
+             so regrava quando ele de fato mudou. */
+          if (ev === "boot") body.foto = i.foto || "";
         }
         fetch(base + "/api/telemetria", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).catch(function () {});
       } catch (e) {}
     },
+
+    /* trocou a foto ou o nome -> reenvia UM ping de boot, para o painel nao
+       ficar com a identidade velha ate o proximo dia. Mesma `sessaoId`: nao
+       cria sessao nova nem infla a contagem de horas. */
+    perfilMudou: function () { try { if (this._sessao) this.enviar("boot"); } catch (e) {} },
 
     iniciar: function () {
       var self = this;

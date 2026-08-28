@@ -19372,7 +19372,10 @@ renderFolha: function () {
             var t = RDO.transicionar(rr, acaoRdo, euR, d);
             if (!t.ok) { UI.toast(t.erro, "erro"); return; }
             var agora = new Date().toISOString();
-            var quem = euR.nome || euR.email || "—";
+            /* mesma raiz dos outros dois gravadores: a sessao crua traz a
+               razao social na conta mestre. Ver Aprovacao.nomeDe. */
+            var quem = (typeof Aprovacao !== "undefined" && Aprovacao.nomeDe)
+              ? Aprovacao.nomeDe(euR) : (euR.nome || euR.email || "—");
             rr.estado = t.estado;
             /* trilha: quem fez o quê e quando. Sem ela, "quem liberou isso?"
                não tem resposta — e é a primeira pergunta quando algo errado

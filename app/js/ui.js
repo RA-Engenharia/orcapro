@@ -227,7 +227,10 @@
                um bonequinho generico, porque a pessoa se reconhece de relance */
             (function () {
               var f = (typeof Empresa !== "undefined" && Empresa.fotoUsuario) ? Empresa.fotoUsuario() : "";
-              var quem = usuario.nome || usuario.empresa || usuario.email || "";
+              /* ⚠ `usuario.nome` cai na EMPRESA quando o dono nao preencheu o
+                 proprio nome — era o circulo do topo mostrando as iniciais da
+                 razao social. `Auth.nome()` ja resolve pessoa antes de empresa. */
+              var quem = (typeof Auth !== "undefined" && Auth.nome && Auth.nome()) || usuario.empresa || usuario.email || "";
               if (f) return '<img class="conta-foto" src="' + f + '" alt="" title="' + Util.esc(quem) + '">';
               var ini = (typeof Empresa !== "undefined" && Empresa.iniciais) ? Empresa.iniciais(quem) : "?";
               return '<span class="conta-foto ini" title="' + Util.esc(quem) + '">' + Util.esc(ini) + '</span>';
@@ -235,7 +238,16 @@
             '<span class="conta-ca">▾</span>' +
           '</button>' +
           '<div class="conta-drop">' +
-            '<div class="conta-cab"><b>' + Util.esc(usuario.empresa) + '</b><span>' + (admin ? Util.esc(usuario.email) : Util.esc(usuario.nome || usuario.email) + ' · ' + Util.esc(deptoLbl)) + '</span></div>' +
+            '<div class="conta-cab"><b>' + Util.esc(usuario.empresa) + '</b><span>' + (function () {
+              /* o cabecalho do menu responde "quem sou eu nesta conta": a
+                 empresa em cima, a PESSOA embaixo. O dono so via o e-mail. */
+              var pes = (typeof Auth !== "undefined" && Auth.nomePessoal) ? Auth.nomePessoal() : "";
+              /* ⚠ o separador só entra quando há os DOIS lados. A conta de
+                 demonstração não tem e-mail, e a primeira versão desta linha
+                 deixava um "Rogério Souza ·" com o ponto pendurado no vazio. */
+              if (admin) return Util.esc([pes, usuario.email].filter(Boolean).join(' · '));
+              return Util.esc(pes || usuario.nome || usuario.email) + ' · ' + Util.esc(deptoLbl);
+            })() + '</span></div>' +
             (function () {
               if (!admin) return "";
               var lic = (typeof Licenca !== "undefined") ? Licenca.status() : null;
@@ -256,7 +268,7 @@
             (admin ? '<button class="conta-item" data-acao="nuvem"><span>' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + '</span>Nuvem — sincronizar aparelhos</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="celular"><span>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + '</span>Usar no celular ou tablet</button>' : '') +
             (admin ? '<button class="conta-item" data-acao="backup"><span>' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + '</span>Backup dos dados</button>' : '') +
-            '<button class="conta-item" data-acao="minha-foto"><span>' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>Minha foto de perfil</button>' +
+            '<button class="conta-item" data-acao="minha-foto"><span>' + (typeof Icones !== 'undefined' ? Icones.get('pessoa', 15) : '') + '</span>Meu perfil — nome e foto</button>' +
             '<button class="conta-item" data-acao="tema"><span>' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + '</span>Tema do aplicativo</button>' +
             '<button class="conta-item" data-acao="atualizar"><span>' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + '</span>Buscar atualização</button>' +
             /* ⚠ SÓ NA MÁQUINA DE QUEM IMPLANTA. `PreviewCli.disponiveis()` lê o

@@ -312,7 +312,28 @@
         // objeto único (prefs, conta mestre): mescla campo a campo; o mais novo (atualizadoEm) vence
         var l = local || {}, c = cloud || {};
         if (ent === "conta" && c.atualizadoEm && (!l.atualizadoEm || String(c.atualizadoEm) > String(l.atualizadoEm))) return Object.assign({}, l, c);
-        return Object.assign({}, c, l);
+        var r = Object.assign({}, c, l);
+        /* ⚠ O NOME DA PESSOA NAO PODE OBEDECER AO "LOCAL VENCE".
+         * `prefs` inteiro se resolve com o local ganhando, e para preferencia
+         * de tela isso esta certo. Para o `nomeDono` nao: e o nome que assina
+         * as aprovacoes, e cada aparelho ficaria com uma resposta diferente
+         * para a MESMA pessoa — o computador assinando um nome e o celular
+         * outro, sem nunca convergirem, porque cada um reempurra o proprio
+         * valor. E apagar seria impossivel: o aparelho que ainda tem o nome
+         * traria de volta no sync seguinte.
+         * Por isso ele viaja com `nomeDonoEm` e vence o mais NOVO — mesma
+         * regra que a `conta` ja usava, aplicada a um campo so. Ausencia de
+         * carimbo dos dois lados mantem o comportamento antigo.
+         * ⚠ E `delete` tem de ser respeitado: o lado mais novo pode ser o que
+         * NAO tem a chave (o dono apagou o proprio nome). Por isso o teste e
+         * na DATA, e a chave e removida quando o vencedor nao a tem. */
+        var lEm = String(l.nomeDonoEm || ""), cEm = String(c.nomeDonoEm || "");
+        if (cEm && cEm > lEm) {
+          if (Object.prototype.hasOwnProperty.call(c, "nomeDono")) r.nomeDono = c.nomeDono;
+          else delete r.nomeDono;
+          r.nomeDonoEm = c.nomeDonoEm;
+        }
+        return r;
       }
       var self = this;
       var byId = {};

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.13",
+  "versao": "1.2.14",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.13/OrcaPRO-IA-update-v1.2.13.zip",
-  "notas": "Melhorias e correcoes.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.13/OrcaPRO-IA-Instalador-v1.2.13.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.14/OrcaPRO-IA-update-v1.2.14.zip",
+  "notas": "Meu perfil: cadastre o seu nome e a sua foto no menu da conta. E esse nome que assina as suas aprovacoes.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.14/OrcaPRO-IA-Instalador-v1.2.14.exe"
 }

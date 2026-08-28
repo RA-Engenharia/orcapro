@@ -3338,42 +3338,93 @@
     },
     // Seletor de tema: Claro (como o site) + 5 tons de escuro (cores do logo RA)
     /* =================================================================
-     * MINHA FOTO DE PERFIL
-     * Fica no menu da conta porque e da PESSOA, nao da empresa: o logo da
-     * empresa ja tem lugar proprio em ⚙ Empresa. Sub-usuario e dono usam a
-     * mesma tela; quem decide onde gravar e o Empresa.salvarFotoUsuario.
+     * MEU PERFIL — quem eu sou, com foto e nome
+     *
+     * Fica no menu da conta porque e da PESSOA, nao da empresa: o logo e a
+     * razao social ja tem lugar proprio em ⚙ Empresa. Sub-usuario e dono usam
+     * a mesma tela; quem decide ONDE gravar e o Empresa.salvarNomeUsuario /
+     * salvarFotoUsuario (equipe[] para sub-usuario, prefs para o dono).
+     *
+     * ⚠ O NOME ENTROU AQUI, JUNTO DA FOTO, e nao no cadastro da empresa. A
+     * conta mestre nunca teve campo para a pessoa: quem assinava as aprovacoes
+     * era a razao social. Botar o nome no ⚙ Empresa resolveria o sintoma e
+     * criaria outro — o nome da pessoa viajaria junto com CNPJ e inscricao
+     * estadual, que sao da empresa e mudam por outro motivo. Foto e nome sao
+     * o mesmo dado ("quem e voce") e agora moram no mesmo lugar.
      * ================================================================= */
     abrirMinhaFoto: function () {
       var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
-      var quem = u.nome || u.empresa || u.email || "";
-      var atual = (typeof Empresa !== "undefined" && Empresa.fotoUsuario) ? Empresa.fotoUsuario() : "";
-      var ini = (typeof Empresa !== "undefined" && Empresa.iniciais) ? Empresa.iniciais(quem) : "?";
-      var escolhida = null, mexeu = false;
-      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("pessoa", 15) : "") + " Minha foto de perfil",
-        '<p class="muted" style="margin-top:0;font-size:13px">Aparece na barra do topo, ao lado do nome da empresa. Só você vê a sua — cada pessoa da equipe tem a dela.</p>' +
-        '<div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">' +
-          '<div id="mf-prev" class="perfil-prev">' + (atual ? '<img src="' + atual + '" alt="">' : '<span class="ini">' + Util.esc(ini) + '</span>') + '</div>' +
-          '<div style="display:flex;flex-direction:column;gap:8px">' +
+      var temEmp = typeof Empresa !== "undefined";
+      var nomeAtual = (temEmp && Empresa.nomeUsuario) ? Empresa.nomeUsuario() : "";
+      /* ⚠ O NOME E DE QUEM CADASTROU A PESSOA, nao da propria pessoa.
+         `equipe[]` e area do admin (`podeModulo("usuarios")` fecha para o
+         sub-usuario). Deixar o campo editavel aqui permitia ao encarregado
+         digitar o nome do gerente e assinar as aprovacoes com ele — o
+         contrario do que esta versao veio fazer. A FOTO segue dele: ela nao
+         identifica ninguem num documento. */
+      var podeNome = !u.usuarioId && (!u.papel || u.papel === "admin");
+      var empresa = u.empresa || "";
+      var atual = (temEmp && Empresa.fotoUsuario) ? Empresa.fotoUsuario() : "";
+      var escolhida = atual, mexeu = false;
+      function iniciaisDe(n) {
+        var base = String(n || "").trim() || empresa || u.email || "";
+        return (temEmp && Empresa.iniciais) ? Empresa.iniciais(base) : "?";
+      }
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("pessoa", 15) : "") + " Meu perfil",
+        '<p class="muted" style="margin-top:0;font-size:13px">Aparecem na barra do topo e em tudo que você aprova. São seus: cada pessoa da equipe tem os dela.</p>' +
+        '<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">' +
+          '<div id="mf-prev" class="perfil-prev">' + (atual ? '<img src="' + atual + '" alt="">' : '<span class="ini">' + Util.esc(iniciaisDe(nomeAtual)) + '</span>') + '</div>' +
+          '<div style="display:flex;flex-direction:column;gap:8px;flex:1;min-width:230px">' +
+            '<label style="font-size:12px;font-weight:600">Seu nome</label>' +
+            '<input type="text" id="mf-nome" maxlength="60" placeholder="Ex.: Rogério Souza" value="' + Util.esc(nomeAtual) + '"' + (podeNome ? '' : ' disabled') + '>' +
+            /* ⚠ dizer PARA QUE serve o campo. Sem esta linha o usuario acha que
+               e apelido de tela e deixa em branco — e a aprovacao continua
+               saindo com a razao social, que foi o problema que trouxe ele aqui. */
+            '<span class="muted" style="font-size:11.5px">' + (podeNome
+              ? 'É este nome que assina suas aprovações. Em branco, aparece <b>' + Util.esc(empresa || "sua empresa") + '</b> no seu lugar.'
+              : 'Este é o nome com que você foi cadastrado e é ele que assina suas aprovações. Para mudar, peça ao administrador da conta.') + '</span>' +
+            '<label style="font-size:12px;font-weight:600;margin-top:6px">Sua foto</label>' +
             '<input type="file" id="mf-in" accept="image/*">' +
             '<button type="button" class="btn sm" id="mf-rm"' + (atual ? '' : ' style="display:none"') + '>Voltar para as iniciais</button>' +
-            '<span class="muted" style="font-size:11.5px">A imagem é reduzida para 128 px — fica leve e não atrapalha a sincronização.</span>' +
+            /* ⚠ O AVISO MORA AQUI, e nao so na politica de privacidade.
+               O .txt viaja no pacote e no site, mas o app nunca o abre: o
+               titular do dado escolhe a foto NESTA tela e em lugar nenhum
+               dela dizia que o rosto dele sai da maquina. Coerencia entre
+               dois documentos que o cliente nao le nao e aviso. */
+            '<span class="muted" style="font-size:11.5px">A imagem é reduzida para 128 px — fica leve e não atrapalha a sincronização.<br>Ela também aparece para o suporte da ' + Util.esc((typeof CONFIG !== "undefined" && CONFIG.marca && CONFIG.marca.fabricante) || "fornecedora") + ', para identificar quem está usando o sistema. Voltando às iniciais, ela é apagada lá também.</span>' +
           '</div>' +
         '</div>',
         [{ texto: "Salvar", classe: "primary", onClick: function () {
-            if (!mexeu) { UI.fecharModal(); return; }
+            var nEl = UI.el("mf-nome");
+            var nv = nEl ? String(nEl.value || "").trim() : nomeAtual;
+            var mudouNome = nv !== nomeAtual;
+            if (!mexeu && !mudouNome) { UI.fecharModal(); return; }
             if (typeof Empresa === "undefined" || !Empresa.salvarFotoUsuario) { UI.toast("Não foi possível salvar.", "erro"); return; }
-            if (Empresa.salvarFotoUsuario(escolhida) === false) { UI.toast("Não achei seu cadastro na equipe para guardar a foto.", "erro"); return; }
+            /* ⚠ o nome PRIMEIRO. Os dois gravam no mesmo registro da equipe;
+               se a foto falhasse por falta de cadastro, sair daqui sem gravar
+               nada e melhor que gravar metade. */
+            if (mudouNome) {
+              var rn = Empresa.salvarNomeUsuario(nv);
+              if (rn === "somente-admin") { UI.toast("Seu nome é definido por quem administra a conta. Peça a ele para alterar.", "erro"); return; }
+              if (rn === false) { UI.toast("Não achei seu cadastro para guardar o nome.", "erro"); return; }
+            }
+            if (mexeu && Empresa.salvarFotoUsuario(escolhida) === false) { UI.toast("Não achei seu cadastro na equipe para guardar a foto.", "erro"); return; }
             UI.fecharModal(); App.render();
-            UI.toast(escolhida ? "Foto atualizada." : "Voltou para as iniciais.", "ok");
+            UI.toast(mudouNome ? (nv ? "Perfil atualizado." : "Nome removido.") : (escolhida ? "Foto atualizada." : "Voltou para as iniciais."), "ok");
           } },
          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
 
-      function pintar(d) {
-        var pv = UI.el("mf-prev"), rm = UI.el("mf-rm");
+      function pintar() {
+        var pv = UI.el("mf-prev"), rm = UI.el("mf-rm"), nEl = UI.el("mf-nome");
         if (!pv) return;
-        pv.innerHTML = d ? '<img src="' + d + '" alt="">' : '<span class="ini">' + Util.esc(ini) + '</span>';
-        if (rm) rm.style.display = d ? "" : "none";
+        pv.innerHTML = escolhida ? '<img src="' + escolhida + '" alt="">'
+          : '<span class="ini">' + Util.esc(iniciaisDe(nEl ? nEl.value : nomeAtual)) + '</span>';
+        if (rm) rm.style.display = escolhida ? "" : "none";
       }
+      var nEl = UI.el("mf-nome");
+      /* as iniciais seguem o que esta sendo digitado: quem nao tem foto ve na
+         hora que o circulo da barra vai virar as letras dele */
+      if (nEl) { nEl.oninput = function () { if (!escolhida) pintar(); }; try { nEl.focus(); } catch (e) {} }
       var inp = UI.el("mf-in");
       if (inp) inp.onchange = function () {
         var f = inp.files && inp.files[0]; if (!f) return;
@@ -3381,11 +3432,11 @@
            isso e peso a toa num dado que viaja na sincronizacao. */
         Gestao._comprimirFoto(f, 128, 0.85, function (d) {
           if (!d) { UI.toast("Arquivo não é uma imagem válida.", "erro"); inp.value = ""; return; }
-          escolhida = d; mexeu = true; pintar(d);
+          escolhida = d; mexeu = true; pintar();
         });
       };
       var rm = UI.el("mf-rm");
-      if (rm) rm.onclick = function () { escolhida = null; mexeu = true; if (inp) inp.value = ""; pintar(""); };
+      if (rm) rm.onclick = function () { escolhida = null; mexeu = true; if (inp) inp.value = ""; pintar(); };
     },
 
     abrirTema: function () {
@@ -5841,7 +5892,35 @@
           observacao: c.observacao, referenciaCodigo: (st.referencia && st.referencia.codigo) || "",
           criadoEm: Util.agoraISO(), insumos: c.insumos
         };
-        item.criadoPor = (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""; // auditoria: quem criou
+        /* ⚠ EDICAO PRESERVA O `criadoPor` ORIGINAL — e nao e detalhe de
+           auditoria, e o que impede o clone. `js/propriasync.js:97` decide
+           "colisao de verdade" por AUTORES DIFERENTES + conteudo diferente;
+           o comentario de la afirma, por escrito, que "a edicao preserva o
+           criadoPor original (app.js)". Regravar aqui com `Auth.nome()`
+           quebrava essa promessa e o estrago apareceu quando o nome do dono
+           deixou de ser a razao social: o mesmo dono passava a ter DOIS
+           nomes ao longo do tempo, o merge lia isso como duas pessoas, e o
+           aparelho que ainda tinha o registro velho VENCIA o desempate (por
+           `criadoEm` mais antigo) — a correcao ia para um codigo exilado e
+           os orcamentos seguiam apontando para o preco velho. E a mesma
+           familia dos 65 clones de DEMOLICAO DE ALVENARIA que o
+           propriasync.js foi escrito para acabar.
+           O irmao em `_insumoProprioSalvar` ja fazia certo; aqui estava o
+           fora-de-padrao. */
+        var _origAutor = "";
+        if (st.editando) {
+          try {
+            var _bx = Store.lerBasesExtras(Auth.empresaId()) || [];
+            for (var _i = 0; _i < _bx.length; _i++) {
+              if (String(_bx[_i].fonte).toUpperCase() !== "PROPRIA") continue;
+              var _dd = _bx[_i].dados || [];
+              for (var _j = 0; _j < _dd.length; _j++) {
+                if (String(_dd[_j].codigo).toLowerCase() === String(st.editando).toLowerCase()) { _origAutor = _dd[_j].criadoPor || ""; break; }
+              }
+            }
+          } catch (_e) {}
+        }
+        item.criadoPor = _origAutor || ((typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""); // auditoria: quem criou
         self._propriaGravar(item, st.editando, c.uf);
         /* EDIÇÃO PROPAGA PARA A PLANILHA — com o usuário no comando.
            Sem isto, o item lançado ficava com o preço velho para sempre

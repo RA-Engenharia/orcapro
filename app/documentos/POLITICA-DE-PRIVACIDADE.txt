@@ -55,6 +55,10 @@ licença. Os registros de 28 módulos são espelhados no Google Cloud Firestore
     compras, estoque, movimentações, RDO (INCLUSIVE AS FOTOS DO DIÁRIO),
     colaboradores (INCLUSIVE CPF E CHAVE PIX), frota, requisições, EPI, faltas,
     documentos, templates, usuários e equipe, notas fiscais e patrimônio.
+  · Também vão as suas preferências do sistema e o SEU PERFIL — o nome e a
+    foto que você escolher em "Meu perfil" —, para que apareçam iguais em
+    todos os seus aparelhos. Como o resto desta lista, isso significa que
+    eles também ficam no Firestore, nos Estados Unidos.
   · O que NÃO vai: as bases de preços e os arquivos grandes (modelos BIM).
   · ATENÇÃO — DADO DE TERCEIRO: ao cadastrar colaboradores, clientes e notas,
     VOCÊ é o controlador desses dados perante a LGPD e precisa ter base legal
@@ -75,6 +79,13 @@ minutos enquanto estiver aberto:
   · a chave de licença e um identificador do dispositivo (gerado no aparelho);
   · a versão instalada e um identificador da sessão de uso;
   · o nome da empresa, o e-mail e o nome do usuário logado e o papel dele;
+  · a FOTO DE PERFIL do usuário logado, quando ele tiver escolhido uma em
+    "Meu perfil" (imagem reduzida a 128 px). Ela vai apenas ao ABRIR o
+    programa e quando você a troca — não nos envios de 5 em 5 minutos —, e
+    serve só para identificar quem está usando o sistema no painel de
+    atendimento da fornecedora. Quem não escolhe foto não envia nenhuma;
+    para removê-la, volte às iniciais em "Meu perfil" ou use o canal do
+    item 7;
   · quais módulos foram abertos e quantas vezes.
   · No período de teste, em vez dos dados de licença, vão o nome, o telefone e
     o e-mail que você informou no cadastro do teste — com aceite explícito.

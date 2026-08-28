@@ -213,9 +213,29 @@
   /* --- A TRILHA --------------------------------------------------------
    * "Quem liberou isso?" é a primeira pergunta quando algo errado chega ao
    * cliente. Sem trilha ela não tem resposta. */
+  /* ⚠ UM SO LUGAR RESPONDE "QUEM E ESSA PESSOA".
+   * Havia TRES gravadores de aprovador: `Gestao._quemAprova`, este
+   * `registrar` e o do RDO. A v1.2.14 consertou so o primeiro, e o resultado
+   * foi pior que o defeito original: em `Gestao._aprovar` os dois rodam em
+   * sequencia, entao o MESMO ato de aprovacao gravava dois nomes no MESMO
+   * documento — o selo (`aprovadoPor`) dizia a pessoa e a trilha
+   * (`historicoAprovacao[].por`) dizia a razao social. Quem fosse auditar
+   * "quem liberou isso?" acharia as duas respostas e nao saberia qual vale.
+   * Isto le a sessao CRUA (`u.nome`), que para a conta mestre e a empresa;
+   * `Auth.nome()` ja resolve pessoa antes de empresa. Todos os chamadores
+   * passam `Auth.usuario()`, entao a raiz e a mesma para os tres. */
+  Aprovacao.nomeDe = function (usuario) {
+    var u = usuario || {};
+    try {
+      var atual = (typeof Auth !== "undefined" && Auth.usuario) ? Auth.usuario() : null;
+      if (atual && atual === u && Auth.nome) return Auth.nome() || u.email || "—";
+    } catch (e) {}
+    return u.nomePessoal || u.nome || u.email || "—";
+  };
+
   Aprovacao.registrar = function (doc, acao, usuario, dados, agoraISO) {
     var d = doc || {}, dd = dados || {};
-    var quem = (usuario || {}).nome || (usuario || {}).email || "—";
+    var quem = Aprovacao.nomeDe(usuario);
     var eu = Aprovacao.idDoUsuario(usuario);
     var proprioAutor = !!(d.autorId && eu && String(d.autorId).toLowerCase() === eu);
 
