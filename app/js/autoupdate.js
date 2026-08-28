@@ -120,6 +120,111 @@
     tentar();
   }
 
+  /* ⚠ O DISCO ANDOU EMBAIXO DESTA PÁGINA.
+   *
+   * `agendarRecarga` só era chamado por quem TINHA acabado de aplicar o update.
+   * Quando os arquivos trocam por fora — outra janela do app que atualizou
+   * primeiro, o instalador, ou alguém chamando /__update/apply direto — esta
+   * página continua executando o código que carregou, para sempre, sem nada na
+   * tela. O `/__update/check` respondia `temAtualizacao: false` (o disco JÁ
+   * está na última) e as duas chamadas desistiam ali, com `d.instalada` na mão
+   * e sem comparar com a versão que a própria página está rodando.
+   *
+   * MEDIDO NA FROTA, 28/08/2026: uma janela aberta havia 13h20 e 161 pings
+   * seguia reportando 1.2.4 com o disco em 1.2.7 — três versões de correção
+   * atrás, incluindo a guarda que impede duas empresas de caírem no mesmo
+   * balde. Quem olhasse a telemetria leria "instalação desatualizada" e iria
+   * procurar defeito no pacote, que estava certo.
+   *
+   * ⚠ TRAVA DE LAÇO: se por algum motivo o recarregamento não trouxer a versão
+   *   nova (service worker preso servindo o js antigo), sem isto a página
+   *   recarregaria em círculo. Marca a versão já tentada na sessão e não
+   *   insiste — melhor ficar velho e visível do que piscar para sempre. */
+  var CHAVE_ALVO = "orcapro:recarga-alvo";
+  var alvosTentados = {};   // rede de segurança quando sessionStorage não existe (aba anônima)
+
+  /* Uma recarga por versão-alvo, e só uma. O `sessionStorage` é o freio que
+     SOBREVIVE ao reload (é a mesma aba); o mapa em memória cobre o navegador
+     que proíbe storage, onde o freio persistente não existe. */
+  function pedirRecarga(alvo) {
+    var v = String(alvo || "").trim();
+    if (!v || alvosTentados[v]) return false;
+    try { if (sessionStorage.getItem(CHAVE_ALVO) === v) { alvosTentados[v] = 1; return false; } } catch (e) {}
+    alvosTentados[v] = 1;
+    try { sessionStorage.setItem(CHAVE_ALVO, v); } catch (e) {}
+    agendarRecarga(v);
+    return true;
+  }
+
+  function conferirDescompasso(d) {
+    var noDisco = String((d && d.instalada) || "").trim();
+    var rodando = String((typeof CONFIG !== "undefined" && CONFIG.versao) || "").trim();
+    if (!noDisco || !rodando || noDisco === rodando) return false;
+    return pedirRecarga(noDisco);
+  }
+
+  /* ===================================================================
+   * ATUALIZAR NO CELULAR E NO TABLETE — onde não existe servidor local.
+   *
+   * `/__update/check` e `/__update/apply` só existem onde roda o
+   * server/static.js: o computador. No celular, no tablete e em qualquer
+   * aparelho que abre o app pela LAN ou pelo endereço público, aquele fetch
+   * dá 404, cai no `.catch` e o app NUNCA soube que saiu versão nova. A
+   * única saída era o cliente achar o botão "Buscar atualização" — ou seja,
+   * justamente depender de ele procurar.
+   *
+   * O que serve nos dois mundos é o próprio `sw.js`: ele fica ao lado do
+   * index.html em toda hospedagem (servidor local, LAN, GitHub Pages, VPS) e
+   * carrega a versão no nome do cache — `orcapro-app-vX.Y.Z`. O packer já
+   * REPROVA o pacote se esse número divergir de js/config.js
+   * (tools/check-versao.js), então ele é uma fonte confiável de "qual versão
+   * este servidor está entregando agora".
+   *
+   * Comparar isso com a versão que a página está EXECUTANDO responde a
+   * pergunta certa — "o que estou rodando é o que existe?" — sem precisar de
+   * endpoint nenhum. E quando difere, `limparCachesERecarregar` apaga os
+   * caches, desregistra o service worker e recarrega: no celular não há zip
+   * para baixar, os arquivos novos vêm do servidor na própria recarga. É o
+   * "já atualizar completo" sem download e sem clique.
+   *
+   * ⚠ NÃO SUBSTITUI o caminho do computador. Lá os arquivos precisam mesmo
+   *   ser trocados no disco (`/__update/apply`), senão a recarga volta a
+   *   servir o mesmo código velho. Os dois convivem: onde há disco, o disco
+   *   anda primeiro; onde não há, a recarga basta. */
+  function urlDoSw() {
+    try { return new URL("sw.js", document.baseURI || location.href).href; }
+    catch (e) { return "sw.js"; }
+  }
+  function versaoDoServidor() {
+    /* no-store E cache-bust no endereço: o próprio service worker intercepta
+       este fetch (mesma origem) e, offline, devolveria a cópia do cache — que
+       é exatamente a versão velha que estamos tentando detectar. */
+    return fetch(urlDoSw() + "?_v=" + Date.now(), { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.text() : ""; })
+      .then(function (t) { var m = /orcapro-app-v([0-9][0-9.]*)/.exec(t || ""); return m ? m[1] : ""; })
+      .catch(function () { return ""; });   // offline: fica quieto e tenta depois
+  }
+  function conferirServidor() {
+    if (aplicando || recarregarPendente) return;
+    var rodando = String((typeof CONFIG !== "undefined" && CONFIG.versao) || "").trim();
+    if (!rodando) return;
+    versaoDoServidor().then(function (noServidor) {
+      if (!noServidor || noServidor === rodando) return;
+      /* pede ao navegador para trocar o service worker ANTES de recarregar: o
+         sw.js novo tem `skipWaiting` + `clients.claim` e o `activate` apaga os
+         caches das versões antigas. Sem isso a recarga poderia ser servida
+         pelo worker velho mais uma vez. */
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+          navigator.serviceWorker.getRegistration()
+            .then(function (reg) { if (reg && reg.update) reg.update(); })
+            .catch(function () {});
+        }
+      } catch (e) {}
+      pedirRecarga(noServidor);
+    });
+  }
+
   /* Baixa e aplica SEM perguntar. Silencioso na falha (tenta de novo depois). */
   function aplicarSilencioso(d) {
     if (aplicando || recarregarPendente) return;
@@ -153,87 +258,22 @@
     return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
 
-  /* ===================================================================
-   * VERSÃO NOVA (tipo "maior") — o único caso em que o app PEDE algo.
+  /* ⚠ NÃO EXISTE MAIS "PERGUNTAR SE ATUALIZA".
    *
-   * A regra do produto é que atualização sobe sozinha e o cliente nunca é
-   * incomodado. A exceção é quando o programador marca a versão como "maior"
-   * no manifesto: aí há novidade que vale contar, e às vezes algo que o
-   * update de arquivos não entrega sozinho (mudança na forma de instalar).
+   * Havia aqui uma tela cheia com "Agora não" / "Atualizar agora", usada
+   * quando o manifesto marcava a versão como "maior", mais um localStorage
+   * que lembrava quem tinha dispensado para não perguntar de novo.
    *
-   * Mostrado UMA VEZ por versão — quem dispensa não é perguntado de novo até
-   * sair outra versão maior. A escolha mora no localStorage (é preferência de
-   * tela, não dado do orçamento).
-   * =================================================================== */
-  var CHAVE_ADIADA = "orcapro:update:adiada:v2"; // :v2 — a sem sufixo é limpa no boot (ver topo)
-
-  function jaDispensou(versao) {
-    try { return localStorage.getItem(CHAVE_ADIADA) === String(versao); } catch (e) { return false; }
-  }
-  function dispensar(versao) {
-    try { localStorage.setItem(CHAVE_ADIADA, String(versao)); } catch (e) {}
-  }
-
-  function avisarVersaoNova(d) {
-    if (aplicando || recarregarPendente) return;
-    if (jaDispensou(d.disponivel)) return;
-    if (document.getElementById("opr-upd-maior")) return;
-    /* MOMENTO SEGURO — o resto do módulo respeita isto para RECARREGAR; a tela que
-       cobre o app inteiro tem ainda mais motivo. Sem isto ela aparecia por cima de
-       um modal aberto ou no meio de uma impressão. Tenta de novo em 30s. */
-    if (!seguroRecarregar()) { setTimeout(function () { avisarVersaoNova(d); }, 30000); return; }
-    injetarEstilos();
-
-    var ov = document.createElement("div");
-    ov.id = "opr-upd-maior";
-    ov.style.cssText = "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
-      "background:rgba(11,26,43,.72);padding:20px;font-family:'Segoe UI',system-ui,Arial,sans-serif";
-    var titulo = d.titulo || ("OrçaPRO " + d.disponivel);
-    ov.innerHTML =
-      '<div style="max-width:520px;width:100%;background:#fff;color:#111d2b;border-radius:14px;overflow:hidden;' +
-        'box-shadow:0 24px 60px rgba(0,0,0,.35)">' +
-        '<div style="background:linear-gradient(135deg,#0f2740,#2e6f9e);color:#fff;padding:18px 22px">' +
-          '<div style="font-size:11px;letter-spacing:.14em;opacity:.85;text-transform:uppercase">Versão nova disponível</div>' +
-          '<div style="font-size:20px;font-weight:800;margin-top:4px">' + esc(titulo) + '</div>' +
-        '</div>' +
-        /* ⚠ SEM O MOTIVO DA ATUALIZAÇÃO NA TELA DO CLIENTE.
-           O texto de novidades era escrito para o dono do produto, não para
-           quem usa: falava de arquivo, competencia, rota e nome de funcao. Para
-           quem está orcando, isso só gera dúvida na hora de decidir se clica em
-           "Atualizar agora". O que ele precisa saber é que há versao nova e que
-           os dados dele não se perdem. O detalhe continua registrado onde tem
-           dono: nas notas do Release e no historico do repositorio. */
-        '<div style="padding:18px 22px;font-size:14px;line-height:1.55">' +
-          'Uma versão nova está pronta para instalar.<br><b>Seus orçamentos e dados continuam salvos.</b>' +
-        '</div>' +
-        '<div style="padding:14px 22px 20px;display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">' +
-          '<button id="opr-maior-depois" style="border:1px solid #c9d6e4;background:#fff;color:#516375;' +
-            'padding:10px 16px;border-radius:9px;font-weight:600;cursor:pointer;font-size:14px">Agora não</button>' +
-          '<button id="opr-maior-agora" style="border:0;background:#16a34a;color:#fff;' +
-            'padding:10px 20px;border-radius:9px;font-weight:700;cursor:pointer;font-size:14px">Atualizar agora</button>' +
-        '</div>' +
-      '</div>';
-    document.body.appendChild(ov);
-
-    var btnDepois = document.getElementById("opr-maior-depois");
-    var btnAgora = document.getElementById("opr-maior-agora");
-    var onKey = function (ev) {
-      if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); dispensar(d.disponivel); fecharOv(); return; }
-      if (ev.key !== "Tab") { ev.stopPropagation(); return; } // Ctrl+K e cia não passam por trás
-      // armadilha de foco: Tab circula só entre os dois botões
-      var ativo = document.activeElement;
-      if (ev.shiftKey && ativo === btnDepois) { ev.preventDefault(); btnAgora.focus(); }
-      else if (!ev.shiftKey && ativo === btnAgora) { ev.preventDefault(); btnDepois.focus(); }
-    };
-    var fecharOv = function () {
-      try { document.removeEventListener("keydown", onKey, true); } catch (e) {}
-      try { ov.parentNode.removeChild(ov); } catch (e) {}
-    };
-    document.addEventListener("keydown", onKey, true);
-    try { btnAgora.focus(); } catch (e) {}
-    btnDepois.onclick = function () { dispensar(d.disponivel); fecharOv(); };
-    btnAgora.onclick = function () { fecharOv(); d.pediuUsuario = true; aplicarSilencioso(d); };
-  }
+   * Saiu inteira, por decisão de produto de 28/08/2026: atualização sobe
+   * sozinha em TODO aparelho, sem o cliente aprovar nem procurar nada. Quem
+   * está orçando não tem como julgar se deve clicar em "Atualizar agora" — a
+   * pergunta transferia para ele um risco que é nosso, e a resposta natural
+   * ("agora não") deixava a máquina parada em versão com defeito já corrigido.
+   * Medido na frota em 28/08: 13 de 14 instalações ativas fora da última.
+   *
+   * O que sobra é `agendarRecarga`, que já espera o momento seguro — sem modal
+   * aberto, sem campo sendo digitado, sem apresentação ou reunião BIM em curso.
+   * O cliente vê a faixa dizendo que atualizou; nunca uma pergunta. */
 
   // Botão manual "🔄 Buscar atualização" (topbar + visor da nuvem): puxa a versão nova SEM baixar ZIP —
   // limpa o cache do navegador + desregistra o service worker e recarrega buscando os arquivos novos do
@@ -258,32 +298,62 @@
     limparCachesERecarregar();
   }
 
+  /* Uma rodada de verificação. Roda os DOIS caminhos, sempre, porque um
+     aparelho só tem um deles:
+       · disco  — /__update/apply troca os arquivos (só onde há servidor local);
+       · página — sw.js diz qual versão o servidor entrega (vale em toda parte).
+     Nenhum dos dois fala se estiver offline ou se já estamos em dia. */
+  function umaRodada() {
+    if (aplicando || recarregarPendente) return;
+    fetch("/__update/check", { method: "GET" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d) return;
+        if (conferirDescompasso(d)) return;   // o disco andou embaixo desta página
+        if (!d.temAtualizacao || !d.disponivel) return;
+        aplicarSilencioso(d);                 // sempre sozinho: ninguém é perguntado
+      })
+      .catch(function () { /* sem endpoint (celular/tablete) ou offline */ });
+    conferirServidor();
+  }
+
+  /* ⚠ 4 HORAS ERA TARDE DEMAIS, e no celular nem isso valia.
+   * O intervalo antigo era de 4h e só existia o caminho do disco. Publicar às
+   * 9h e o cliente seguir na versão velha até as 13h não é "atualização
+   * automática" — e no aparelho sem servidor local não havia intervalo nenhum.
+   * 15 minutos é um GET pequeno; para a frota inteira é ruído.
+   *
+   * ⚠ E O GATILHO QUE MAIS IMPORTA NO CELULAR NÃO É O RELÓGIO. O app fica em
+   *   segundo plano e o navegador congela os timers: um PWA aberto na segunda
+   *   e retomado na sexta não teria disparado nem um `setInterval`. Voltar
+   *   para o app é o momento em que a pessoa está lá e a rede está viva —
+   *   é aí que a verificação tem de acontecer. Com trava de 60s para o
+   *   vai-e-volta de trocar de aba não virar enxurrada de fetch. */
+  var INTERVALO = 15 * 60 * 1000;
+  var ultimaConferencia = 0;
+  function conferirComTrava() {
+    var agora = Date.now();
+    if (agora - ultimaConferencia < 60000) return;
+    ultimaConferencia = agora;
+    umaRodada();
+  }
+
   var AutoUpdate = {
-    forcar: forcarAtualizacao, // botão manual (mobile-friendly)
+    forcar: forcarAtualizacao, // botão manual — continua existindo para quem quiser puxar na hora
     // Verifica e ATUALIZA sozinho. Silencioso se: não há servidor de update, offline, ou já é a última.
     verificar: function () {
-      fetch("/__update/check", { method: "GET" })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (d) {
-          if (!d || !d.temAtualizacao || !d.disponivel) return;
-          // "maior" = o programador marcou como versão nova: avisa e espera a ação.
-          // Qualquer outro valor (inclusive ausente) sobe sozinho, como sempre.
-          if (d.tipo === "maior") avisarVersaoNova(d); else aplicarSilencioso(d);
-        })
-        .catch(function () { /* sem endpoint / offline: não faz nada */ });
-      // App aberto o dia todo também se mantém em dia: re-verifica a cada 4h.
-      if (!AutoUpdate._timer) {
-        AutoUpdate._timer = setInterval(function () {
-          if (aplicando || recarregarPendente) return;
-          fetch("/__update/check", { method: "GET" })
-            .then(function (r) { return r.ok ? r.json() : null; })
-            .then(function (d) {
-              if (!d || !d.temAtualizacao || !d.disponivel) return;
-              if (d.tipo === "maior") avisarVersaoNova(d); else aplicarSilencioso(d);
-            })
-            .catch(function () {});
-        }, 4 * 60 * 60 * 1000);
-      }
+      ultimaConferencia = Date.now();
+      umaRodada();
+      if (AutoUpdate._timer) return;          // já armado: não duplica relógio nem ouvintes
+      AutoUpdate._timer = setInterval(umaRodada, INTERVALO);
+      try {
+        document.addEventListener("visibilitychange", function () {
+          if (!document.hidden) conferirComTrava();
+        });
+        // iOS devolve o PWA por 'pageshow' vindo do cache de retrocesso, sem visibilitychange
+        global.addEventListener("pageshow", function () { conferirComTrava(); });
+        global.addEventListener("online", function () { conferirComTrava(); });
+      } catch (e) {}
     }
   };
 

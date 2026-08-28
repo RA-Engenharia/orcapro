@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.7",
+  "versao": "1.2.8",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.7/OrcaPRO-IA-update-v1.2.7.zip",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.8/OrcaPRO-IA-update-v1.2.8.zip",
   "notas": "Melhorias e correcoes.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.7/OrcaPRO-IA-Instalador-v1.2.7.exe"
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.8/OrcaPRO-IA-Instalador-v1.2.8.exe"
 }
