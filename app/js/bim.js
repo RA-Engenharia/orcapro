@@ -117,6 +117,31 @@ function montar(host, opts) {
     return '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px">' + (P[n] || '') + '</svg>';
   }
 
+  /* ⚠ `accept=".ifc"` IMPEDE ABRIR IFC NO CELULAR — o contrário do que promete.
+   *
+   * O atributo `accept` só sabe filtrar por dois caminhos: tipo MIME registrado
+   * ou extensão. No computador o navegador entende a extensão e o diálogo abre
+   * normal. No Android o Chrome traduz `accept` para tipos MIME antes de chamar
+   * o seletor do sistema — e `.ifc` não tem MIME registrado em lugar nenhum.
+   * Resultado: o seletor abre com TUDO em cinza, ou não abre. No iOS o app
+   * Arquivos faz o mesmo. Para quem está com o celular na mão, isso é
+   * exatamente "toco em + IFC e não acontece nada".
+   *
+   * Mesma história do `.dxf` do 2D→3D — as duas únicas entradas do app cuja
+   * extensão o sistema operacional não conhece. `.xlsx`, `.csv`, `.json` e
+   * `image/*` têm MIME e por isso nunca deram problema.
+   *
+   * Então: no toque, o seletor abre SEM filtro (mostra tudo, e o cliente
+   * encontra o arquivo dele) e a validação passa a ser NOSSA, na hora em que o
+   * arquivo chega — que é onde ela devia estar desde sempre. Ver o `change`
+   * mais abaixo: ele aceitava qualquer arquivo escolhido e mandava direto para
+   * o interpretador de IFC, sem olhar o nome; só o arrastar-e-soltar filtrava. */
+  function ehToque() {
+    try { return !(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches); }
+    catch (e) { return false; }
+  }
+  function aceitaIFC() { return ehToque() ? '' : ' accept=".ifc"'; }
+
   // toolbar compacta
   var bar = document.createElement('div');
   bar.style.cssText = 'position:absolute;left:0;right:0;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))';
@@ -145,7 +170,8 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="foto" title="Salvar foto PNG do modelo com carimbo de data">' + ico('foto') + 'Foto</button>' +
     '<button class="btn sm" data-b="fit">' + ico('fit') + 'Enquadrar</button>' +
     '<button class="btn sm" data-b="tema" title="Cor da interface do BIM: OrçaPRO → Revit → Claro">' + ico('tema') + '</button>' +
-    '<input type="file" data-b="file" accept=".ifc" multiple style="display:none">';
+    /* ⚠ SEM `accept` NO CELULAR — ver aceitaIFC() logo abaixo. */
+    '<input type="file" data-b="file"' + aceitaIFC() + ' multiple style="display:none">';
   host.appendChild(bar);
 
   // v1.1.121 — DOCK LATERAL: as ferramentas saem da fita corrida (lista solta que
@@ -174,6 +200,38 @@ function montar(host, opts) {
   // mouseenter sintético ANTES do click e o leque abria-e-fechava no mesmo toque)
   var dockHover = !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches);
   var flyTimer = null;
+  /* ⚠ "DENTRO DA JANELA" NÃO BASTA — E O CULPADO NÃO É QUEM EU PENSEI.
+   *
+   * O leque é `position:fixed`, o que o faz escapar do `overflow:hidden` do
+   * card. Só que `position:fixed` NÃO tira ninguém do contexto de
+   * empilhamento: o cabeçalho do app tem `z-index:20` num ramo acima, e
+   * quando o leque abre por cima dele é o CABEÇALHO que pinta na frente —
+   * `z-index:60` no leque não vale nada de dentro do card. O toque vai parar
+   * no cabeçalho e o botão do leque não recebe nada.
+   *
+   * Cheguei a escrever esta função procurando um cabeçalho `position:fixed`
+   * para descontar. Não existe: ele é `relative`, no topo do documento. O que
+   * descreve a área utilizável não é a janela nem o cabeçalho — é o PRÓPRIO
+   * VISUALIZADOR, que já nasce abaixo de tudo isso. Prender leque e dock à
+   * interseção do host com a janela resolve os dois casos sem adivinhar quem
+   * está por cima.
+   *
+   * Vale para o dock e para o leque, e por isso é uma conta só. */
+  /* Dois fundos, de propósito:
+   *   `fundoHost` — onde o DOCK tem de parar: ele é filho do card e o
+   *     `overflow:hidden` do card o corta no fim do visualizador.
+   *   `fundo` — até onde o LEQUE pode ir: ele é `position:fixed`, não sofre
+   *     esse corte, e o que existe abaixo do visualizador é conteúdo de página
+   *     sem `z-index`, que não pinta por cima dele. Limitá-lo ao fim do
+   *     visualizador era mais apertado que o necessário e escondia botões
+   *     atrás de rolagem à toa — no celular deitado, 91 px a mais de espaço. */
+  function faixaVisivel() {
+    var alturaJ = window.innerHeight || document.documentElement.clientHeight || 800;
+    var r;
+    try { r = ((S && S.host) || host).getBoundingClientRect(); } catch (_) { r = null; }
+    if (!r || !r.height) return { topo: 0, fundo: alturaJ, fundoHost: alturaJ };
+    return { topo: Math.max(0, r.top), fundo: alturaJ, fundoHost: Math.min(alturaJ, r.bottom) };
+  }
   function fecharFlys() { if (flyTimer) { clearTimeout(flyTimer); flyTimer = null; } dock.querySelectorAll('.bim-fly').forEach(function (f) { f.style.display = 'none'; }); }
   function agendarFechar() { if (flyTimer) clearTimeout(flyTimer); flyTimer = setTimeout(fecharFlys, 320); } // delay cobre o vão head→leque (fix do gate: mouseleave fechava no caminho)
   function abrirFly(head, fly) {
@@ -181,10 +239,26 @@ function montar(host, opts) {
     // position:fixed = escapa do overflow do card/dock; ancorado no head na hora de abrir
     var r = head.getBoundingClientRect();
     fly.style.display = 'flex';
+    var fx = faixaVisivel();
+    var larguraJ = window.innerWidth || 400;
+    /* leque mais alto que a faixa visível ROLA dentro dela — em vez de vazar
+       por cima do cabeçalho ou por baixo da dobra */
+    fly.style.maxHeight = Math.max(120, Math.floor(fx.fundo - fx.topo - 16)) + 'px';
+    var h = Math.min(fly.offsetHeight || 200, fx.fundo - fx.topo - 16);
+    /* ⚠ COM O DOCK DEITADO O LEQUE NÃO PODE ABRIR AO LADO. Ao lado de uma aba
+       da fila fica em cima da aba seguinte, e a última abriria fora da tela.
+       Deitado ele desce (ou sobe, se não houver espaço embaixo) e se alinha
+       pela esquerda da aba, preso dentro da janela. */
+    if (dock.getAttribute('data-dir') === 'row') {
+      var w = fly.offsetWidth || 172;
+      fly.style.left = Math.round(Math.max(8, Math.min(r.left, larguraJ - w - 8))) + 'px';
+      var abaixo = r.bottom + 4;
+      var cabeAbaixo = abaixo + h + 8 <= fx.fundo;
+      fly.style.top = Math.round(cabeAbaixo ? abaixo : Math.max(fx.topo + 8, r.top - h - 4)) + 'px';
+      return;
+    }
     fly.style.left = (r.right + 4) + 'px';
-    var h = fly.offsetHeight || 200;
-    var top = Math.max(8, Math.min(r.top, (window.innerHeight || 800) - h - 8));
-    fly.style.top = top + 'px';
+    fly.style.top = Math.round(Math.max(fx.topo + 8, Math.min(r.top, fx.fundo - h - 8))) + 'px';
   }
   function montarGrupo(g) {
     var wrap = document.createElement('div');
@@ -294,10 +368,91 @@ function montar(host, opts) {
     // Viewport baixa (celular deitado/janela curta): o dock ROLA dentro do canvas em
     // vez de ser clipado pelo overflow:hidden do card (achado do gate — os últimos
     // grupos, incluindo Análise & Orçamento, ficavam inclicáveis).
+    /* ⚠ A CONTA TINHA DE SER SOBRE A PARTE VISÍVEL, NÃO SOBRE O CANVAS INTEIRO.
+     *
+     * Medido no celular deitado (812×375): o visualizador fica com 173 px de
+     * altura e COMEÇA em y = −35, porque a página está rolada; e o cabeçalho
+     * fixo do app ocupa os primeiros ~48 px da tela. A conta antiga usava
+     * `clientHeight` do canvas — 173 px, como se todos eles estivessem à vista
+     * — e ainda tinha um piso de 120 px que ignorava o que sobrava de fato.
+     * Resultado: das seis abas do dock, DUAS ficavam sob o cabeçalho fixo e
+     * três abaixo da dobra. Quem toca onde vê a aba acerta outro elemento —
+     * é o "clico na aba e não abre" relatado no celular.
+     *
+     * Agora a faixa é a interseção do canvas com o que realmente aparece:
+     * abaixo do cabeçalho fixo e acima do fim da janela. O dock é empurrado
+     * para dentro dela e rola ali dentro, com todas as abas alcançáveis. */
     try {
-      var hHost = (S && S.host && S.host.clientHeight) || host.clientHeight || 0;
-      var hBar = bar.offsetHeight || 46;
-      if (hHost > 0) dock.style.maxHeight = Math.max(120, hHost - hBar - 16) + 'px';
+      var rH = ((S && S.host) || host).getBoundingClientRect();
+      var rB = bar.getBoundingClientRect();
+      /* mesma conta do leque — `faixaVisivel` mede o cabeçalho FIXO em vez de
+         cravar 48 px, porque ele muda de altura entre celular, tablete e o
+         modo foco, que o esconde por inteiro */
+      var fxD = faixaVisivel();
+      var visTopo = Math.max(rH.top, fxD.topo);
+      var visFundo = Math.min(rH.bottom, fxD.fundoHost);
+      var abaixoDaBarra = Math.max(visTopo, rB.bottom + 2);
+      var disponivel = Math.floor(visFundo - abaixoDaBarra - 8);
+      /* empurra o dock para dentro da faixa visível (o `top` é relativo à
+         barra, que é o offsetParent) */
+      dock.style.top = Math.round(abaixoDaBarra - rB.top) + 'px';
+      /* SEM piso artificial: 120 px onde só cabem 60 devolve o mesmo defeito
+         que esta correção fecha. Abaixo de 44 px não cabe nem uma aba — aí o
+         dock some, e o cliente usa a fita do topo, que continua inteira. */
+      /* ⚠ COLUNA QUE ROLA NÃO RESOLVE NO CELULAR DEITADO — só troca o defeito.
+       * Com a faixa visível corrigida, o toque passou a acertar o alvo certo;
+       * mas em 812×375 sobram 115 px de altura para SEIS abas de 48 px. Ficavam
+       * duas à vista e quatro atrás de uma rolagem sem barra nem seta: para
+       * quem está com o celular na mão, "não consigo abrir" continua valendo.
+       *
+       * Deitado sobra o que falta em pé: LARGURA. Seis abas em fila dão 288 px
+       * num visualizador de 800 — cabem todas, sem rolagem nenhuma. Então
+       * quando a altura não comporta a coluna e a largura comporta a fila, o
+       * dock deita. O leque acompanha (ver abrirFly). */
+      var nGrupos = dock.children.length || 6;
+      var precisaAltura = nGrupos * 48;
+      var precisaLargura = nGrupos * 48 + 20;
+      /* ⚠ O DOCK NUNCA PODE SUMIR. Escrevi antes um `display:none` para quando
+       * não coubesse, com a nota "o cliente usa a fita do topo". Está errado:
+       * `montarGrupo` MOVE os botões da fita para dentro dos leques
+       * (`fly.appendChild(b)`) — some o dock, somem as 14 ferramentas, sem
+       * outro caminho. Medido numa janela de 1000×439: o dock desaparecia por
+       * inteiro. Um dock apertado é ruim; um dock ausente é a ferramenta
+       * inalcançável, que é justamente o defeito relatado.
+       * Sem piso de altura na decisão: a fila precisa de 46 px, e quando nem
+       * isso cabe ela ainda é a menos ruim das opções. */
+      var deitar = disponivel < precisaAltura && (rH.width || 0) >= precisaLargura;
+      dock.setAttribute('data-dir', deitar ? 'row' : 'col');
+      if (deitar) {
+        dock.style.display = 'flex';
+        dock.style.flexDirection = 'row';
+        dock.style.maxHeight = '';
+        dock.style.height = '46px';
+        dock.style.overflowY = 'hidden';
+        dock.style.overflowX = 'auto';
+        dock.style.right = '10px';   // a fila usa a largura toda; sem isto ela encolhe no conteúdo
+        /* ⚠ A FILA VAI PARA O RODAPÉ, não para logo abaixo da fita.
+         * Em coluna, à esquerda, o dock nunca esbarrava nos avisos do
+         * visualizador. Deitado, ele atravessa a largura e passa por baixo
+         * deles — e perde: esses avisos são IRMÃOS da fita, com o mesmo
+         * `z-index:3`, e o dock vive DENTRO da fita, então o `z-index:6` dele
+         * só vale entre os filhos dela. Empatou no 3, quem vem depois no DOM
+         * pinta por cima, e a última aba parava de receber toque.
+         * Subir o `z-index` da fita resolveria a colisão e criaria outra: ela
+         * passaria por cima da gaveta de análise (z-index 6). O rodapé não
+         * disputa com ninguém — e é onde a barra de ferramentas mora em
+         * aplicativo de celular. */
+        var alturaFila = 46;
+        dock.style.top = Math.round(visFundo - alturaFila - 8 - rB.top) + 'px';
+      } else {
+        dock.style.flexDirection = 'column';
+        dock.style.height = '';
+        dock.style.overflowY = 'auto';
+        dock.style.overflowX = 'hidden';
+        dock.style.right = '';
+        dock.style.display = 'flex';
+        dock.style.maxHeight = Math.max(44, disponivel) + 'px';   // ao menos uma aba, sempre
+      }
     } catch (eD) {}
     barToggle.innerHTML = barraAberta ? (ehTelaPequena ? '' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Fechar ferramentas' : '⤢ Esconder') : '' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ferramentas';
   }
@@ -321,6 +476,20 @@ function montar(host, opts) {
   host.appendChild(barToggle);
   aplicarEstiloToggle();
   window.addEventListener('resize', aplicarEstiloToggle);
+  /* ⚠ E TAMBÉM AO ROLAR. Desde que a faixa do dock passou a ser a parte
+     VISÍVEL do visualizador, ela muda quando a página rola — o cabeçalho fixo
+     cobre mais ou menos do canvas conforme a rolagem. Só no `resize`, o dock
+     ficaria calculado para a posição de antes e as abas voltariam a cair fora.
+     Em rAF porque scroll dispara a cada quadro no toque. */
+  var dockRaf = 0;
+  function aoRolar() {
+    if (dockRaf) return;
+    dockRaf = requestAnimationFrame(function () { dockRaf = 0; aplicarEstiloToggle(); });
+  }
+  /* ⚠ guardado em `S` lá embaixo, junto de `_fabEstilo` — AQUI o `S` ainda é
+     null (só é preenchido depois, na montagem da cena) e `S._dockRolar = …`
+     estourava "Cannot set properties of null", derrubando o viewer inteiro. */
+  window.addEventListener('scroll', aoRolar, true);
   setBarra(barraAberta); // aplica o estado salvo (S._ajustarTop roda depois no setup)
 
   // v1.1.82 — TEMA de cores da interface do BIM (escolha do usuário; 'revit' = o look do Revit)
@@ -524,7 +693,7 @@ function montar(host, opts) {
         matAndamento: matAndamento, selMat: selMat, clashMat: clashMat, _clashSel: [], matCache: {}, raf: 0, alive: true };
   var Sm = S; // instância DESTE mount — guard de identidade p/ closures assíncronas (FileReader/fetch em voo de um viewer morto não podem poluir o viewer novo)
   S.barToggle = barToggle; S._setBarra = setBarra; // recolher/expandir a barra (entra no re-home)
-  S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; // FAB mobile: desconectados no desmonte (gate v1.1.114)
+  S._fabObserver = fabObs; S._fabEstilo = aplicarEstiloToggle; S._dockRolar = aoRolar; // FAB mobile: desconectados no desmonte (gate v1.1.114)
   S._dockDocClick = dockDocClick; // fechar-leque-no-toque-fora: removido no desmonte (senão acumula por remount)
 
   /* ⚠ `S.host`, NÃO o `host` do fecho. Esta função nasce na PRIMEIRA `montar` e
@@ -750,7 +919,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // armado com o voo ligado (clique em pointerlock criaria parede acidental persistida)
   function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); if (S.xr && S.xr.on && S._sairImersivo) S._sairImersivo(); } // fecha o modal do resultado + cobre o estágio "config aberta"
   bar.querySelector('[data-b="file"]').addEventListener('change', function (e) {
-    var fs2 = Array.prototype.slice.call(e.target.files || []); fs2.forEach(function (f) { abrirArquivo(f); }); e.target.value = '';
+    var fs2 = Array.prototype.slice.call(e.target.files || []);
+    /* ⚠ A VALIDAÇÃO VIVE AQUI, não no `accept`. Com o filtro do seletor
+       desligado no celular (ver aceitaIFC), é este teste que impede mandar uma
+       foto para o interpretador de IFC. E ele fazia falta mesmo antes: o
+       arrastar-e-soltar filtrava por `.ifc`, o seletor não filtrava nada —
+       bastava o cliente trocar o filtro para "Todos os arquivos", coisa que
+       todo diálogo do Windows oferece. */
+    var bons = fs2.filter(function (f) { return /\.ifc$/i.test(f.name || ''); });
+    var maus = fs2.filter(function (f) { return !/\.ifc$/i.test(f.name || ''); });
+    bons.forEach(function (f) { abrirArquivo(f); });
+    if (maus.length) {
+      /* diz o nome do arquivo: "não é IFC" sem dizer qual, com vários
+         selecionados, não ajuda ninguém a achar o errado */
+      var nm = maus.map(function (f) { return f.name; }).slice(0, 3).join(', ');
+      var msg = maus.length === 1
+        ? 'O arquivo “' + nm + '” não é um modelo IFC. O BIM abre arquivos terminados em .ifc.'
+        : maus.length + ' arquivos não são IFC (' + nm + (maus.length > 3 ? '…' : '') + '). O BIM abre arquivos terminados em .ifc.';
+      try { if (typeof UI !== 'undefined' && UI.toast) UI.toast(msg, 'erro'); else alert(msg); } catch (_) {}
+    }
+    e.target.value = '';
   });
   function onDragOver(e) { e.preventDefault(); }
   function onDrop(e) { e.preventDefault(); Array.prototype.slice.call(e.dataTransfer.files || []).forEach(function (f) { if (/\.ifc$/i.test(f.name)) abrirArquivo(f); }); }
@@ -4685,7 +4873,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm primary" data-p3="abrir">' + (typeof Icones !== 'undefined' ? Icones.get('abrir', 15) : '') + ' Abrir .DXF</button>' +
     '<label style="display:flex;gap:5px;align-items:center">Pé-direito <input data-p3="pd" class="inp" type="number" value="2.80" step="0.1" min="2" max="6" style="width:64px"> m</label>' +
     '<label style="display:flex;gap:5px;align-items:center">Unidade <select data-p3="un" class="inp" style="width:76px"><option value="">auto</option><option value="0.001">mm</option><option value="0.01">cm</option><option value="1">m</option></select></label>' +
-    '<input type="file" data-p3="file" accept=".dxf" style="display:none"></div>' +
+    '<input type="file" data-p3="file"' + (ehToque() ? '' : ' accept=".dxf"') + ' style="display:none"></div>' +
     '<div data-p3="info" style="font-size:11.5px;color:#9fb2c8">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
     '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid #24435f;border-radius:8px;cursor:pointer;display:none"></canvas>' +
     '<div data-p3="res" style="font-size:12px"></div>' +
@@ -4807,6 +4995,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var t = e.target;
     if (t.getAttribute('data-p3') === 'file' && t.files && t.files[0]) {
       var f = t.files[0], fr = new FileReader();
+      /* mesma razão do IFC: sem `accept` no celular, quem valida somos nós */
+      if (!/\.dxf$/i.test(f.name || '')) {
+        t.value = '';
+        var m3 = 'O arquivo “' + f.name + '” não é um DXF. Exporte a planta do seu CAD em DXF e tente de novo.';
+        try { if (typeof UI !== 'undefined' && UI.toast) UI.toast(m3, 'erro'); else alert(m3); } catch (_) {}
+        return;
+      }
       fr.onload = function () { p3dProcessar(String(fr.result || ''), f.name); };
       fr.readAsText(f); t.value = '';
     } else if (t.getAttribute('data-p3') === 'un' && p3d._texto) { p3dProcessar(p3d._texto, p3d.nome); } // achado do gate: era no-op — agora re-parseia com a unidade nova
@@ -5360,6 +5555,9 @@ function desmontarMorto() {
   try { if (S._ajustarTop) window.removeEventListener('resize', S._ajustarTop); } catch (_) {}
   try { if (S._fabObserver) S._fabObserver.disconnect(); } catch (_) {}
   try { if (S._fabEstilo) window.removeEventListener('resize', S._fabEstilo); } catch (_) {}
+  /* o ouvinte de rolagem sai junto: sem isto cada remontagem do viewer deixa
+     mais um rAF por quadro amarrado a um dock que já não existe */
+  try { if (S._dockRolar) window.removeEventListener('scroll', S._dockRolar, true); } catch (_) {}
   try { if (S._dockDocClick) document.removeEventListener('click', S._dockDocClick, true); } catch (_) {}
   try { S.modelos.slice().forEach(function (mo) { if (typeof mo.mid === 'number') { try { S.api.CloseModel(mo.mid); } catch (_) {} } }); } catch (_) {}
   try { S.renderer.dispose(); } catch (_) {}
