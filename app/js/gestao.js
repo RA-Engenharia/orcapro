@@ -13903,7 +13903,8 @@ renderRequisicoes: function () {
       for (var f = 0; f < nF; f++) {
         var fr = c.fornecedores[f] || {};
         cabF += '<div class="card" data-ct-forn="' + f + '" style="flex:1;min-width:180px;padding:10px">' +
-          '<div style="font-weight:800;font-size:12px;margin-bottom:6px">Fornecedor ' + (f + 1) + "</div>" +
+          '<div style="font-weight:800;font-size:12px;margin-bottom:6px;display:flex;align-items:center">Fornecedor ' + (f + 1) +
+            (ehConcluida ? '' : ' <button type="button" class="btn sm ghost" data-ct-delforn="' + f + '" title="Tirar este fornecedor da cotação" style="margin-left:auto;padding:0 7px;color:#dc2626">×</button>') + "</div>" +
           sel("ctf-id-" + f, '<option value="">— avulso —</option>' + forns.map(function (x) { return '<option value="' + x.id + '"' + (fr.fornecedorId === x.id ? " selected" : "") + ">" + Util.esc(x.nome) + "</option>"; }).join("")) +
           inp("ctf-nome-" + f, fr.nome || "", "ou digite o nome") +
           '<div class="row" style="gap:6px;margin-top:6px">' + inp("ctf-frete-" + f, fr.frete != null ? fr.frete : "", "Frete R$", "number") + inp("ctf-prazo-" + f, fr.prazoDias != null ? fr.prazoDias : "", "Prazo de entrega (dias)", "number") + "</div>" +
@@ -13919,9 +13920,11 @@ renderRequisicoes: function () {
              milhar — cotação de R$ 4,125/un virava R$ 4.125 (v1.1.232) */
           precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(numBR(pv)) + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
         }
-        linhas += '<tr data-ct-item="' + i + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '"></td>' + precosTd + "</tr>";
+        linhas += '<tr data-ct-item="' + i + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '"></td>' + precosTd +
+          (ehConcluida ? '' : '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>') + "</tr>";
       });
       var cabPrecos = ""; for (var f3 = 0; f3 < nF; f3++) cabPrecos += "<th>Forn. " + (f3 + 1) + "</th>";
+      if (!ehConcluida) cabPrecos += "<th></th>";
       var corpo =
         '<div class="row">' + campo("Nº", inp("ct-num", c.numero)) + campo("Data", inp("ct-data", c.data, "", "date")) + campo("Obra", sel("ct-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
         campo("Descrição", inp("ct-desc", c.descricao || "", "ex.: Materiais da alvenaria — Bloco B")) +
@@ -13962,12 +13965,72 @@ renderRequisicoes: function () {
         raiz.addEventListener("input", function (ev) { if (ev.target && (ev.target.hasAttribute("data-ct-preco") || ev.target.hasAttribute("data-cti") || /^ctf-/.test(ev.target.id || ""))) atualiza(); });
         var add = document.getElementById("ct-add-item");
         if (add) add.onclick = function () {
-          var i = box.querySelectorAll("[data-ct-item]").length, tds = "";
+          /* ⚠ MAIOR + 1, não a contagem. Com a exclusão, a contagem volta a
+             colidir com um índice que ainda existe se a re-renderização não
+             tiver acontecido — e aí o preço digitado vai para o material
+             errado, calado. Mesma lição da numeração por `length + 1`. */
+          var i = 0;
+          Array.prototype.forEach.call(box.querySelectorAll("[data-ct-item]"), function (tr0) {
+            var k0 = +tr0.getAttribute("data-ct-item"); if (k0 >= i) i = k0 + 1;
+          });
+          var tds = "";
           for (var f4 = 0; f4 < nF; f4++) tds += '<td><input data-ct-preco="' + f4 + '" data-ct-preco-item="' + i + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
           var tr = document.createElement("tr"); tr.setAttribute("data-ct-item", i);
           tr.innerHTML = '<td><input data-cti="cod" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" placeholder="descrição"></td><td><input data-cti="un" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref"></td>' + tds;
+          tr.innerHTML += '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>';
           box.appendChild(tr);
         };
+        /* ⚠ EXCLUIR ZERANDO O CAMPO-CHAVE, e não arrancando do DOM.
+         *
+         * `_cotDoForm` já ignora item sem descrição e fornecedor sem nome — foi
+         * assim que o cliente descobriu que "deixar zerado" funcionava. Zerar e
+         * refazer a volta reaproveita isso inteiro, e de graça:
+         *   · o `mapaIdx` rechaveia os preços dos itens que sobraram (o preço do
+         *     item 3 não vira do item 2 quando o 2 sai);
+         *   · o `push` compacta os fornecedores e cada coluna leva os preços dela.
+         *
+         * Arrancar a coluna do fornecedor do DOM seria pior de um jeito silencioso:
+         * o leitor percorre `f` de 0 até a CONTAGEM de colunas, então remover uma
+         * do meio faria a última nunca ser lida — some um fornecedor inteiro, com
+         * os preços, sem erro nenhum. */
+        function _ctRefazer() {
+          var atual = self._cotDoForm(c);
+          atual._nF = Math.max(2, atual.fornecedores.length);
+          UI.fecharModal(); self.formCotacao(atual);
+        }
+        raiz.addEventListener("click", function (ev) {
+          var bI = ev.target.closest && ev.target.closest("[data-ct-delitem]");
+          if (bI) {
+            var tr = bI.closest("tr");
+            var d = tr && tr.querySelector('[data-cti="desc"]');
+            var nome = d ? (d.value || "").trim() : "";
+            if (nome && !window.confirm('Tirar "' + nome + '" da cotação?\n\nOs preços deste item, em todos os fornecedores, saem junto.')) return;
+            if (d) d.value = "";
+            _ctRefazer(); return;
+          }
+          var bF = ev.target.closest && ev.target.closest("[data-ct-delforn]");
+          if (bF) {
+            var fi = bF.getAttribute("data-ct-delforn");
+            /* ⚠ o piso de 2 colunas é do próprio formulário (`Math.max(2, …)`):
+               cotação existe para COMPARAR, e com uma coluna não há comparação.
+               Dizer isso é melhor que aceitar o clique e a coluna voltar sozinha. */
+            var vivos = 0;
+            Array.prototype.forEach.call(raiz.querySelectorAll("[data-ct-forn]"), function (cd, k) {
+              var nEl = document.getElementById("ctf-nome-" + k), sEl = document.getElementById("ctf-id-" + k);
+              if ((nEl && nEl.value.trim()) || (sEl && sEl.value)) vivos++;
+            });
+            var nEl2 = document.getElementById("ctf-nome-" + fi), sEl2 = document.getElementById("ctf-id-" + fi);
+            var rot2 = (nEl2 && nEl2.value.trim()) || "este fornecedor";
+            if (vivos <= 2 && ((nEl2 && nEl2.value.trim()) || (sEl2 && sEl2.value))) {
+              UI.toast("A cotação compara pelo menos dois fornecedores — apague o nome se quiser deixar a coluna em branco.", "erro");
+              return;
+            }
+            if (!window.confirm("Tirar " + rot2 + " da cotação?\n\nOs preços que ele deu saem junto.")) return;
+            if (nEl2) nEl2.value = "";
+            if (sEl2) sEl2.value = "";
+            _ctRefazer(); return;
+          }
+        });
         var addF = document.getElementById("ct-add-forn");
         if (addF) addF.onclick = function () {
           // re-renderiza com +1 coluna preservando o que já foi digitado (colunas sem nome se perdem — nomeie antes)
@@ -15159,6 +15222,28 @@ renderRequisicoes: function () {
 
     /* DESFAZER O LANÇAMENTO — o oposto do botão Lançar.
        Parcela já PAGA não se apaga: tem data de pagamento e conciliação. */
+    /* ⚠ AS DUAS PORTAS ANTERIORES. "Desfazer lancamento" e "Excluir nota"
+     * ja existiam e apagam as parcelas da nota filtrando por chave/id DELA.
+     * A despesa do PEDIDO nao tem esses campos: era invisivel para as duas.
+     * Sequencia real: recebe (despesa do pedido) -> vincula a nota (a despesa
+     * do pedido sai, entram as parcelas) -> clica Desfazer, que fica na MESMA
+     * LINHA da pilha "Lancada" -> as parcelas somem e nada devolve a despesa
+     * do pedido. Resultado: compra recebida, material no estoque, ZERO
+     * despesa viva. E sem volta: o botao Receber so nasce em "aprovado".
+     * Por isso a devolucao roda ANTES de apagar, e as duas passam por aqui. */
+    _desvincularCompraDaNota: function (nf) {
+      if (!nf || typeof CompraNota === "undefined") return null;
+      var cid = nf.compraId; if (!cid) return null;
+      var c = Store.obter(eid(), "compras", cid); if (!c) return null;
+      var volta = CompraNota.despesaARestaurar(c);
+      if (volta) Store.salvar(eid(), "financeiro", volta);
+      c.notaId = ""; c.notaNumero = ""; c.valorFaturado = null; c.diferenca = null;
+      c.vinculadoEm = ""; c.despesaSubstituida = null;
+      Store.salvar(eid(), "compras", c);
+      nf.compraId = ""; nf.compraNumero = "";
+      return { numero: c.numero || "", valor: volta ? Util.num(volta.valor) : 0 };
+    },
+
     fiscalDesfazer: function (id) {
       if (this._bloqueado()) return;
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) { UI.toast("Seu usuário não tem permissão no módulo Financeiro.", "erro"); return; }
@@ -15175,10 +15260,16 @@ renderRequisicoes: function () {
       if (!window.confirm("Apagar " + apagar.length + " conta(s) a pagar desta nota (" + Util.fmtMoeda(soma(apagar)) + ")?" +
         (pagas.length ? "\n\n" + pagas.length + " parcela(s) JÁ PAGA(S) (" + Util.fmtMoeda(soma(pagas)) + ") vão continuar como estão." : "") +
         "\n\nOs itens já lançados em Estoque/Patrimônio NÃO são afetados — desfaça item a item na tela de Itens, se precisar.")) return;
+      /* ordem defensiva: devolve ANTES de apagar. Se a gravacao falhar no meio,
+         sobra despesa a mais (visivel) e nao despesa a menos (invisivel). */
+      var _volta = this._desvincularCompraDaNota(nf);
       apagar.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
-      if (!pagas.length) { nf.lancadoEm = ""; Store.salvar(eid(), "fiscal", nf); }
+      if (!pagas.length) { nf.lancadoEm = ""; }
+      Store.salvar(eid(), "fiscal", nf);
       App.render();
-      UI.toast("↩ " + apagar.length + " conta(s) removida(s). A nota volta a poder ser lançada.", "ok");
+      UI.toast("↩ " + apagar.length + " conta(s) removida(s)." +
+        (_volta ? " A despesa do pedido " + _volta.numero + " voltou ao Financeiro." : "") +
+        " A nota volta a poder ser lançada.", "ok");
     },
 
     fiscalEditar: function (id) {
@@ -15201,15 +15292,21 @@ renderRequisicoes: function () {
       var numTxt = (nf.numero || "s/n") + (nf.serie ? "/" + nf.serie : "");
       var msg = "Excluir a nota " + numTxt + " — " + (nf.parceiro || "") + " (" + Util.fmtMoeda(Util.num(nf.valorTotal)) + ")?\n";
       if (pend.length) msg += "\nVai junto: " + pend.length + " conta(s) a pagar ainda não paga(s).";
+      /* a nota vinculada leva junto o vínculo — e a despesa do pedido tem de
+         VOLTAR, senão o material recebido fica sem despesa nenhuma */
+      if (nf.compraId) msg += "\nVOLTA: a despesa do pedido " + (nf.compraNumero || "") + ", que esta nota tinha substituído.";
       if (pagas.length) msg += "\nFICA: " + pagas.length + " parcela(s) já paga(s) — o dinheiro saiu, o registro permanece.";
       if (itensLanc) msg += "\nFICA: " + itensLanc + " item(ns) já lançado(s) em Estoque/Patrimônio/EPI — o material está aí, não some com o documento.";
       msg += "\n\nEsta ação não pode ser desfeita.";
       if (!window.confirm(msg)) return;
+      /* devolve ANTES de apagar, mesma ordem defensiva do Desfazer */
+      var _voltaX = this._desvincularCompraDaNota(nf);
       pend.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
       Store.excluir(eid(), "fiscal", id);
       if (this._triagem && this._triagem.notaId === id) this._triagem = null;
       App.render();
-      UI.toast("Nota excluída" + (pend.length ? " com " + pend.length + " conta(s) a pagar" : "") + ".", "ok");
+      UI.toast("Nota excluída" + (pend.length ? " com " + pend.length + " conta(s) a pagar" : "") +
+        (_voltaX ? ". A despesa do pedido " + _voltaX.numero + " voltou ao Financeiro" : "") + ".", "ok");
     },
 
     /* DESFAZER UM ITEM DA TRIAGEM — para quando o destino foi escolhido errado.
@@ -15306,7 +15403,12 @@ renderRequisicoes: function () {
          e dois cliques significariam o custo em dobro na obra, em silêncio. */
       /* dedupe tambem por docId: nota sem chave de acesso (NFS-e, cupom) nao
          tinha como ser reconhecida e duplicava a cada clique. */
-      var jaLanc = lista("financeiro").filter(function (f) {
+      /* ⚠ `listaTodas`, NUNCA `lista`. `lista` passa por `filtrarPorObra`: com
+         uma obra selecionada no topo, os lançamentos das OUTRAS obras ficam
+         invisíveis para esta conferência — e uma nota rateada tem parcela em
+         várias. O dedupe então não via o que já existia e gravava por cima.
+         A regra já está escrita em outros pontos deste arquivo; aqui faltava. */
+      var jaLanc = listaTodas("financeiro").filter(function (f) {
         if (chave && String(f.docChave || "") === chave) return true;
         return !chave && f.docId && String(f.docId) === String(nf.id);
       });
@@ -15315,7 +15417,17 @@ renderRequisicoes: function () {
          a conta como pendente. */
       var jaPagas = jaLanc.filter(function (f) { return f.status === "pago"; });
       var subst = jaLanc.filter(function (f) { return f.status !== "pago"; });
-      var numsPagos = {}; jaPagas.forEach(function (f) { numsPagos[String(f.parcelaNum || 0)] = 1; });
+      /* ⚠ A CHAVE PRECISA DA OBRA, e a falta dela apagava dinheiro em silêncio.
+       *
+       * Numa nota RATEADA, a parcela 1 existe uma vez por obra. Indexada só
+       * pelo número, bastava a fatia da obra A estar paga para o relançamento:
+       *   1) `subst` apagar as parcelas 1 PENDENTES das obras B e C;
+       *   2) o laço de gravação pular todas as `r.num === 1`, achando que já
+       *      foram pagas.
+       * Resultado: as fatias de B e C somem e não voltam — sem erro, sem aviso.
+       * A chave é a mesma que identifica a linha: parcela + obra. */
+      function chaveParcela(num, obraId) { return String(num || 0) + "|" + String(obraId || ""); }
+      var numsPagos = {}; jaPagas.forEach(function (f) { numsPagos[chaveParcela(f.parcelaNum, f.obraId)] = 1; });
 
       var linhas = (this._triagem && this._triagem.notaId === nf.id) ? this._triagem.linhas
         : Util.arr(nf.itens).map(function (it) { return { valor: Util.num(it.valor), obraId: it.obraId || nf.obraId || "", destino: it.destino || "estoque" }; });
@@ -15332,6 +15444,26 @@ renderRequisicoes: function () {
 
       var corpo = '<p class="muted">NF nº <b>' + Util.esc(numTxt) + "</b> · " + rot(P.fiscalTipo, nf.tipo) +
         " · " + Util.esc(nf.parceiro || "") + " · <b>" + Util.fmtMoeda(valor) + "</b></p>";
+      /* ⚠ VINCULAR AO PEDIDO — o bloco que impede a mesma compra virar duas
+       * despesas. Receber a compra ja lanca uma; lancar a nota lancava outra,
+       * porque nada ligava as duas. Aqui a pessoa diz qual pedido esta nota
+       * cobre, e o lancamento do pedido sai de cena.
+       * NENHUM candidato vem marcado: o sistema sugere e diz por que sugeriu;
+       * casar sozinho por "mesmo fornecedor e valor parecido" e mover dinheiro
+       * por adivinhacao, e o palpite errado apaga a despesa de outra compra. */
+      var _cands = (typeof CompraNota !== "undefined")
+        ? CompraNota.candidatos(nf, listaTodas("compras"), hojeLocal()) : [];
+      if (isEntrada && _cands.length) {
+        corpo += '<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--linha-forte);border-radius:10px">' +
+          '<b>Esta nota cobre algum pedido recebido?</b>' +
+          '<p class="muted" style="margin:4px 0 8px;font-size:12.5px">Vinculando, a despesa do pedido sai do Financeiro e fica so a da nota — sem valor em dobro.</p>' +
+          '<label style="display:block;margin:3px 0"><input type="radio" name="cn-pc" value="" checked> Nenhum — esta nota nao e de pedido</label>' +
+          _cands.slice(0, 3).map(function (c) {
+            return '<label style="display:block;margin:3px 0"><input type="radio" name="cn-pc" value="' + Util.esc(c.compraId) + '"> <b>' +
+              Util.esc(c.numero) + '</b> · ' + Util.fmtMoeda(c.valor) +
+              ' <span class="muted">(' + Util.esc(c.motivo) + ')</span></label>';
+          }).join("") + "</div>";
+      }
       if (jaLanc.length) {
         corpo += '<p style="color:#b45309"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta nota já gerou ' + jaLanc.length + " lançamento(s) no Financeiro" +
           " (" + Util.fmtMoeda(jaLanc.reduce(function (a, f) { return a + Util.num(f.valor); }, 0)) + ").</b>" +
@@ -15359,12 +15491,41 @@ renderRequisicoes: function () {
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: jaLanc.length ? "Substituir os lançamentos" : ("Lançar " + rateadas.length + " conta(s)"), classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
+          /* ⚠ O VINCULO E DECIDIDO ANTES DE QUALQUER GRAVACAO. Se o motor
+             recusar (despesa do pedido ja PAGA, pedido ja vinculado a outra
+             nota), nada acontece — nem o vinculo nem o lancamento. Deixar
+             lancar "so a nota" no caso pago reproduziria a duplicata
+             justamente onde o dinheiro ja saiu. */
+          var _pcSel = document.querySelector('input[name="cn-pc"]:checked');
+          var _pcId = _pcSel ? _pcSel.value : "";
+          var _compra = _pcId ? Store.obter(eid(), "compras", _pcId) : null;
+          var _pl = null;
+          if (_compra) {
+            var _despPC = CompraNota.despesaDaCompra(listaTodas("financeiro"), _compra.id);
+            _pl = CompraNota.plano(_compra, _despPC, valor);
+            if (!_pl.pode) { UI.toast(_pl.motivo, "erro"); return; }
+            /* guarda a linha ANTES de apagar: e o que "Desfazer lancamento" e
+               "Excluir nota" usam para devolver a despesa do pedido. Sem isso a
+               compra recebida ficaria com ZERO despesa viva, sem volta. */
+            if (_pl.apagarId && _despPC) {
+              _compra.despesaSubstituida = Util.clone(_despPC);
+              Store.excluir(eid(), "financeiro", _pl.apagarId);
+            }
+            _compra.notaId = nf.id; _compra.notaNumero = numTxt;
+            _compra.valorFaturado = valor; _compra.diferenca = _pl.dif;
+            _compra.vinculadoEm = new Date().toISOString();
+            Store.salvar(eid(), "compras", _compra);
+            nf.compraId = _compra.id; nf.compraNumero = _compra.numero || "";
+          }
           /* substituir = apagar as PENDENTES desta mesma nota, nunca somar —
              e nunca tocar no que já foi pago */
           if (subst.length) subst.forEach(function (f) { Store.excluir(eid(), "financeiro", f.id); });
           var gravadas = 0, falhou = false, pulou = 0;
           rateadas.forEach(function (r) {
-            if (numsPagos[String(r.num)]) { pulou++; return; } /* essa parcela já foi paga */
+            /* a obra resolvida AQUI é a mesma que vai ser gravada logo abaixo —
+               conferir por uma e gravar por outra é como o dinheiro sumia */
+            var obraLinha = temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || "");
+            if (numsPagos[chaveParcela(r.num, obraLinha)]) { pulou++; return; } /* essa parcela já foi paga */
             var reg = Store.salvar(eid(), "financeiro", {
               data: r.vencimento || nf.dataEmissao || hojeLocal(),
               desc: "NF " + numTxt + (nP > 1 ? " (" + r.num + "/" + nP + ")" : "") + " — " + (nf.parceiro || ""),
@@ -15373,11 +15534,17 @@ renderRequisicoes: function () {
                  fatia "sem obra" tem obraId vazio de proposito, e o fallback
                  jogava esse dinheiro na obra — o modal mostrava uma divisao e
                  a gravacao fazia outra, sem aviso. */
-              obraId: temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || ""),
+              obraId: obraLinha,
               fornecedor: nf.parceiro || "",
               /* rastro da origem: é o que permite reconhecer, deduplicar e
                  refazer o lançamento desta nota sem caçar linha por linha */
               docTipo: "NF", docId: nf.id, docNumero: numTxt, docChave: chave,
+              /* de que pedido esta despesa veio, e quanto ele dizia: e o que
+                 responde o contador seis meses depois, quando a nota vale menos
+                 que o pedido porque deram desconto na hora */
+              compraId: _compra ? _compra.id : undefined,
+              compraNumero: _compra ? (_compra.numero || "") : undefined,
+              valorPedido: _compra ? Util.num(_compra.valor) : undefined,
               parcelaNum: r.num, parcelaTotal: nP
             });
             if (reg) gravadas++; else falhou = true;
@@ -18112,7 +18279,7 @@ renderFolha: function () {
         }
         if (entidade === "compras" && novo === "recebido" && !obj.dataRecebimento) {
           obj.dataRecebimento = this._hojeISO();
-          this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto };
+          this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto, /* mesmo carimbo do caminho do botao — ver a nota la */ docTipo: "PC", docId: obj.id, docNumero: obj.numero || "" };
           this._lancFinToast = "Despesa da compra lançada no Financeiro (pendente).";
           /* ⚠ v1.2 — A v1.1.232 COPIOU SÓ A METADE DO DINHEIRO. O botão
              "Receber" da lista faz DUAS coisas: dá entrada no almoxarifado
@@ -19008,7 +19175,7 @@ renderFolha: function () {
           var est = this._estoqueDaCompra(pcr);
           if (est.lancados) pcr.estoqueLancado = true;
           Store.salvar(eid(), "compras", pcr);
-          Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || ""), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, formaPgto: pcr.formaPgto });
+          Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || ""), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, formaPgto: pcr.formaPgto, /* ⚠ CARIMBO DE ORIGEM — sem ele esta despesa e invisivel. A do NF sempre teve docTipo/docId (o que permite reconhecer, deduplicar e refazer); a da compra nascia cega, e por isso receber a compra E lancar a nota do mesmo material davam DUAS despesas para o mesmo dinheiro, sem nada no sistema capaz de perceber. Tem de existir nos DOIS caminhos de recebimento: ja houve conserto pela metade aqui (v1.1.232 copiou a despesa para o caminho do formulario e esqueceu o estoque). */ docTipo: "PC", docId: pcr.id, docNumero: pcr.numero || "" });
           App.render();
           UI.toast(est.lancados
             ? "Compra recebida. Despesa lançada no Financeiro (pendente) e " + est.lancados + " item(ns) no almoxarifado."
