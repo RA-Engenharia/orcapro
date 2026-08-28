@@ -144,7 +144,17 @@ function montar(host, opts) {
 
   // toolbar compacta
   var bar = document.createElement('div');
-  bar.style.cssText = 'position:absolute;left:0;right:0;top:0;z-index:3;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))';
+  /* ⚠ z-index 4, NÃO 3 — o dock mora aqui dentro e empatava com o HUD.
+   * O HUD ("Elementos · Triângulos", canto inferior direito) também era 3 e é
+   * criado DEPOIS da fita: empate em z-index se resolve por ordem no DOM, e
+   * quem vem depois pinta por cima. Como o dock é filho da fita, o `z-index:6`
+   * dele só vale entre os filhos DELA — perdia junto. Numa janela baixa, onde
+   * a fila do dock alcança a altura do HUD, a última aba parava de receber
+   * toque e o cliente relatava "clico e não abre".
+   * 4 é o mínimo que resolve: tudo o que precisa continuar por cima da fita
+   * (rótulos de medida, controles de planta e corte, botão de recolher) já é
+   * 4 ou 5 e é criado depois, então segue ganhando o empate como sempre. */
+  bar.style.cssText = 'position:absolute;left:0;right:0;top:0;z-index:4;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 10px;background:linear-gradient(180deg,rgba(15,39,64,.9),rgba(15,39,64,0))';
   bar.innerHTML =
     '<button class="btn sm primary" data-b="abrir">' + ico('abrir') + '+ IFC</button>' +
     '<button class="btn sm" data-b="exemplo">Exemplo</button>' +
@@ -430,26 +440,21 @@ function montar(host, opts) {
         dock.style.height = '46px';
         dock.style.overflowY = 'hidden';
         dock.style.overflowX = 'auto';
-        dock.style.right = '10px';   // a fila usa a largura toda; sem isto ela encolhe no conteúdo
-        /* ⚠ A FILA VAI PARA O RODAPÉ, não para logo abaixo da fita.
-         * Em coluna, à esquerda, o dock nunca esbarrava nos avisos do
-         * visualizador. Deitado, ele atravessa a largura e passa por baixo
-         * deles — e perde: esses avisos são IRMÃOS da fita, com o mesmo
-         * `z-index:3`, e o dock vive DENTRO da fita, então o `z-index:6` dele
-         * só vale entre os filhos dela. Empatou no 3, quem vem depois no DOM
-         * pinta por cima, e a última aba parava de receber toque.
-         * Subir o `z-index` da fita resolveria a colisão e criaria outra: ela
-         * passaria por cima da gaveta de análise (z-index 6). O rodapé não
-         * disputa com ninguém — e é onde a barra de ferramentas mora em
-         * aplicativo de celular. */
-        var alturaFila = 46;
-        dock.style.top = Math.round(visFundo - alturaFila - 8 - rB.top) + 'px';
+        /* ⚠ LARGURA POR CONTEÚDO, NÃO ESTICADA ATÉ A DIREITA.
+         * A primeira versão fazia `right:10px` para a fila ocupar a largura
+         * toda, e com isso ela alcançava o HUD do canto inferior direito.
+         * Seis abas ocupam 288 px — num visualizador de 800 não há motivo
+         * para atravessá-lo. O `maxWidth` é o que permite a fila ROLAR de
+         * lado num aparelho estreito, sem esbarrar em quem mora à direita. */
+        dock.style.right = '';
+        dock.style.maxWidth = Math.max(96, Math.floor((rH.width || 0) - 20)) + 'px';
       } else {
         dock.style.flexDirection = 'column';
         dock.style.height = '';
         dock.style.overflowY = 'auto';
         dock.style.overflowX = 'hidden';
         dock.style.right = '';
+        dock.style.maxWidth = '';   // some com o teto da fila ao voltar para a coluna
         dock.style.display = 'flex';
         dock.style.maxHeight = Math.max(44, disponivel) + 'px';   // ao menos uma aba, sempre
       }
