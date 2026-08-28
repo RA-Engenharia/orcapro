@@ -168,6 +168,12 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="angulo" title="Ângulo entre 3 pontos: 1º ponto, vértice, 2º ponto">' + ico('angulo') + 'Ângulo</button>' +
     '<button class="btn sm" data-b="snap" title="Snap das medições: agarrar em vértice, meio de aresta ou aresta">' + ico('snap') + '</button>' +
     '<button class="btn sm" data-b="limpar-medidas" title="Apagar todas as cotas medidas" style="display:none">' + ico('cotas') + 'Cotas</button>' +
+    /* Cotar rede: o comprimento JÁ VEM no IFC (BaseQuantities). Estes quatro
+       botões só mostram o que o projetista publicou — nenhum deles calcula. */
+    '<button class="btn sm" data-b="cota" title="Cotar rede: toque num tubo e o comprimento dele aparece em cima da peça — o número vem do IFC, não é medido na tela">' + ico('cotas') + 'Cotar</button>' +
+    '<button class="btn sm" data-b="cota-iguais" title="Cotar todos os trechos iguais ao último tocado (mesma família, ou mesmo tipo quando o IFC não trouxer família)">' + ico('camadas') + 'Iguais</button>' +
+    '<button class="btn sm" data-b="cota-todas" title="Cotar a rede inteira que estiver à vista">' + ico('sistemas') + 'Toda a rede</button>' +
+    '<button class="btn sm" data-b="cota-limpar" title="Apagar as cotas da rede">' + ico('lixo') + 'Limpar cotas</button>' +
     '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">' + ico('planta') + 'Planta</button>' +
     '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">' + ico('corte') + 'Corte</button>' +
     '<button class="btn sm" data-b="p3d" title="Reconstruir 3D a partir da planta baixa em DXF (assistido: o sistema propõe as paredes, você confirma)">' + ico('p3d') + '2D→3D</button>' +
@@ -198,6 +204,10 @@ function montar(host, opts) {
   dock.style.cssText = 'position:absolute;left:10px;top:calc(100% + 2px);display:flex;flex-direction:column;gap:6px;z-index:6;pointer-events:auto;overflow-y:auto;overflow-x:hidden;padding-right:2px';
   var GRUPOS_DOCK = [
     { rot: 'Medição', ic: 'medir', bs: ['medir', 'area', 'angulo', 'snap', 'limpar-medidas'] },
+    /* grupo PRÓPRIO, não um apêndice de Medição: cotar rede não mede nada —
+       lê o que o projeto já traz. Misturar os dois faria o encanador achar
+       que o número saiu de um clique dele. */
+    { rot: 'Cotar rede', ic: 'cotas', bs: ['cota', 'cota-iguais', 'cota-todas', 'cota-limpar'] },
     { rot: 'Cortes & Plantas', ic: 'planta', bs: ['planta', 'corte', 'pav'] },
     { rot: 'Visibilidade', ic: 'ver', bs: ['vis', 'sistema', 'foto'] },
     { rot: 'Edição & 2D→3D', ic: 'editar', bs: ['editar', 'p3d', 'blocok'] },
@@ -887,6 +897,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'blocok') toggleBlocokPanel();
     else if (k === 'foto') tirarFoto();
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
+    else if (k === 'cota') { setCota(!cota.on, 'clicado'); }
+    else if (k === 'cota-iguais') {
+      if (!cota.chave) { UI0('Toque primeiro num tubo — aí eu cotô todos os iguais a ele.', 'info'); }
+      else setCota(true, 'iguais');
+    }
+    else if (k === 'cota-todas') { setCota(true, 'todas'); }
+    else if (k === 'cota-limpar') { cota.fixados = {}; cota.chave = null; cotaLimpar(); setCota(false); }
     else if (k === 'fit') { if (planta.on) enquadrarTopo(); else if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(new THREE.Box3().setFromObject(modelRoot), 1.5); else enquadrar(); } // na planta re-centra a vista de topo (não sai); no 3D enquadra suave (cinematográfico)
   });
 
@@ -922,7 +939,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // Órbita/Voo SEMPRE encerram o editor INTEIRO (setEdit(false) já limpa a cadeia via editTirarProv);
   // o "Esc encerra só o traço" vive APENAS no handler de Escape — aqui um return deixaria o editor
   // armado com o voo ligado (clique em pointerlock criaria parede acidental persistida)
-  function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); if (S.xr && S.xr.on && S._sairImersivo) S._sairImersivo(); } // fecha o modal do resultado + cobre o estágio "config aberta"
+  function sairFerramentas() { if (S._fecharCtecModal && ctecModal.style.display === 'flex') S._fecharCtecModal(); ctecCancelar(); if (medir.on) setMedir(false); if (area.on) setArea(false); if (ang.on) setAng(false); if (planta.on) setPlanta(false); if (corteL.on) setCorteL(false); if (S.edit && S.edit.on && S._setEdit) S._setEdit(false); if (cota.on) setCota(false); if (S.xr && S.xr.on && S._sairImersivo) S._sairImersivo(); } // fecha o modal do resultado + cobre o estágio "config aberta"
   bar.querySelector('[data-b="file"]').addEventListener('change', function (e) {
     var fs2 = Array.prototype.slice.call(e.target.files || []);
     /* ⚠ A VALIDAÇÃO VIVE AQUI, não no `accept`. Com o filtro do seletor
@@ -1102,6 +1119,230 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (o.userData._ratio) o.scale.set(d * o.userData._ratio, d, 1); else o.scale.setScalar(d);
   }
   S._tickExtra.push(function () { for (var i = 0; i < medir.objs.length; i++) rescaleObj(medir.objs[i]); });
+
+  /* =====================================================================
+   * COTAR REDE — o comprimento que o IFC já traz, em cima da peça.
+   *
+   * PEDIDO: no canteiro, abrir o projeto e saber o comprimento de cada
+   * trecho SEM levantar cota na mão com a trena.
+   *
+   * ⚠ ESTE CÓDIGO NÃO MEDE NADA. Ele lê `qto.comprimento`, que
+   *   `lerQuantitativos` extraiu das BaseQuantities do arquivo e converteu
+   *   para metros pela unidade declarada no próprio IFC. Se o projeto não
+   *   publicou a quantidade, aqui não sai número — sai o aviso de que não
+   *   sai. Um comprimento estimado pela caixa do elemento seria a DIAGONAL
+   *   num ramal com caimento: plausível, errado, e em cima da peça que
+   *   alguém vai serrar.
+   *
+   * ⚠ E RECUSA O COMPRIMENTO ANÔNIMO. `compFonte === 'anonima'` é uma
+   *   quantidade de comprimento que ninguém batizou — serve para somar num
+   *   quantitativo que o engenheiro confere, não para carimbar sobre o tubo,
+   *   onde não há contexto para desconfiar.
+   *
+   * ⚠ SEM `setInterval`. Não existe um único no arquivo, e `desmontarMorto`
+   *   não tem linha para timer: um relógio de 6 Hz com closure sobre `S`
+   *   sobreviveria ao `S = null` e seguraria cena, renderer e geometrias do
+   *   viewer morto para sempre. O ritmo vem do próprio quadro, acumulando
+   *   `dt` — que é como o resto do arquivo já faz.
+   * ===================================================================== */
+  var cota = {
+    on: false, modo: 'clicado',      // clicado | iguais | todas
+    fixados: {},                     // uid -> 1 (modo clicado)
+    chave: null,                     // critério do modo "iguais"
+    objs: [],                        // sprites vivos
+    porUid: {},                      // uid -> sprite
+    indice: null, indiceMarca: -1,
+    acum: 0, ultimoCusto: 0, periodo: 0.18,
+    semQto: 0, cortadas: 0
+  };
+  /* teto: sprite é draw call + textura. 1.500 tubos ingênuos ≈ 87 MB de VRAM.
+     No dedo o teto é menor porque a tela também é. */
+  function cotaTeto() { return ehTelaPequena ? 22 : 48; }
+  var COTA_MAX_INDICE = 1500;
+
+  function cotaEhRede(e) {
+    var t = String(e.tipo || '').toUpperCase();
+    return t === 'IFCFLOWSEGMENT' || t === 'IFCFLOWFITTING' || t === 'IFCFLOWTERMINAL' ||
+      t === 'IFCPIPESEGMENT' || t === 'IFCDUCTSEGMENT';
+  }
+  function cotaComprimento(e) {
+    var q = e && e.qto;
+    if (!q || !(q.comprimento > 0)) return 0;
+    if (q.compFonte === 'anonima') return 0;   // ver o cartão acima
+    return q.comprimento;
+  }
+  /* índice frio: só quem TEM número e âncora. Refeito quando entra/sai modelo. */
+  /* ⚠ A MARCA DO CACHE TEM DE COBRIR O QUE MUDA A LISTA, NAO SO O NUMERO DE
+   * MODELOS. A primeira versao invalidava por `S.modelos.length`: o editor
+   * criando peca, o 4D removendo (`_remEd`) e o proprio carregamento
+   * terminando depois do primeiro calculo NAO mexem nesse numero, e o indice
+   * ficava congelado. Pego no navegador: cinco tubos entraram na lista e o
+   * modo continuou dizendo 'nao achei tubulacao'. */
+  function cotaMarca() {
+    var nEl = (S.elementos && S.elementos.length) || 0;
+    var nRem = S._remEd ? Object.keys(S._remEd).length : 0;
+    return S.modelos.length + ':' + nEl + ':' + nRem;
+  }
+  function cotaIndice() {
+    if (cota.indice && cota.indiceMarca === cotaMarca()) return cota.indice;
+    var lista = [], sem = 0;
+    elementosVivos().forEach(function (e) {
+      if (!cotaEhRede(e)) return;
+      if (!e.aabb) return;
+      var L = cotaComprimento(e);
+      if (!L) { sem++; return; }
+      if (L < 0.3) return;                     // conexão curta: rótulo maior que a peça
+      var a = e.aabb;
+      lista.push({
+        uid: e.uid, L: L,
+        /* âncora pelo aabb JÁ CALCULADO no carregamento (bim.js, load) — refazer
+           a união das malhas por elemento seria varrer o modelo inteiro por
+           elemento, quadrático, no instante do toque. */
+        x: (a.min[0] + a.max[0]) / 2, y: a.max[1], z: (a.min[2] + a.max[2]) / 2,
+        chave: (e.familia && String(e.familia).trim()) || String(e.tipo || ''),
+        temFamilia: !!(e.familia && String(e.familia).trim())
+      });
+    });
+    cota.semQto = sem; cota.indice = lista; cota.indiceMarca = cotaMarca();
+    return lista;
+  }
+  function cotaLimpar() {
+    cota.objs.forEach(function (sp) {
+      scene.remove(sp);
+      /* ⚠ NÃO usar `limparMarca`: ele dá dispose na geometry, e a de Sprite é
+         COMPARTILHADA pelo three — some a de todo mundo. */
+      try { if (sp.material) { if (sp.material.map) sp.material.map.dispose(); sp.material.dispose(); } } catch (_) {}
+    });
+    cota.objs = []; cota.porUid = {}; cota.cortadas = 0;
+  }
+  function cotaAlvos() {
+    var ix = cotaIndice();
+    if (cota.modo === 'todas') return ix;
+    if (cota.modo === 'iguais' && cota.chave != null) {
+      return ix.filter(function (r) { return r.chave === cota.chave; });
+    }
+    return ix.filter(function (r) { return cota.fixados[r.uid]; });
+  }
+  /* uma passada: escolhe QUEM aparece e mantém os sprites em dia. */
+  function cotaPassada() {
+    if (!cota.on || !S || !S.alive) return;
+    var alvos = cotaAlvos(), teto = cotaTeto();
+    var vis = [], v = new THREE.Vector3();
+    for (var i = 0; i < alvos.length; i++) {
+      var r = alvos[i];
+      /* respeita o que está desligado: modelo fora, pavimento isolado, 4D,
+         plano de corte. Sem isto o botão cota tubo que a tela não mostra. */
+      var m = S.meshPorUid && S.meshPorUid[r.uid];
+      if (m && (m.visible === false || !cadeiaVisivel(m))) continue;
+      v.set(r.x, r.y, r.z);
+      if (foraDoClip(v)) continue;
+      v.project(camera);
+      if (v.z > 1 || v.x < -1.15 || v.x > 1.15 || v.y < -1.15 || v.y > 1.15) continue;  // fora da tela
+      vis.push({ r: r, sx: v.x, sy: v.y, d: v.z, fixo: !!cota.fixados[r.uid] });
+    }
+    /* fixado primeiro, depois o mais perto da câmera — se sobrar espaço */
+    vis.sort(function (a, b) { return (b.fixo - a.fixo) || (a.d - b.d); });
+    /* grade: duas cotas nunca ocupam a mesma casa. É o que impede a sopa de
+       números quando a rede inteira está ligada. */
+    var grade = {}, escolhidos = [];
+    for (var k = 0; k < vis.length && escolhidos.length < teto; k++) {
+      var c = vis[k];
+      var gx = Math.round(c.sx * 9), gy = Math.round(c.sy * 14), gk = gx + '|' + gy;
+      if (grade[gk] && !c.fixo) continue;
+      grade[gk] = 1; escolhidos.push(c);
+    }
+    cota.cortadas = alvos.length - escolhidos.length;
+    /* sincroniza os sprites com o conjunto escolhido */
+    var querer = {};
+    escolhidos.forEach(function (c) { querer[c.r.uid] = c.r; });
+    Object.keys(cota.porUid).forEach(function (uid) {
+      if (querer[uid]) return;
+      var sp = cota.porUid[uid];
+      scene.remove(sp);
+      try { if (sp.material) { if (sp.material.map) sp.material.map.dispose(); sp.material.dispose(); } } catch (_) {}
+      var ix2 = cota.objs.indexOf(sp); if (ix2 >= 0) cota.objs.splice(ix2, 1);
+      delete cota.porUid[uid];
+    });
+    Object.keys(querer).forEach(function (uid) {
+      if (cota.porUid[uid]) return;
+      var r2 = querer[uid];
+      var sp = labelSprite(fmtDist(r2.L));
+      /* com muitas cotas, `depthTest:false` (o padrão de labelSprite, certo
+         para UMA cota da trena) faz todas atravessarem a parede e virarem
+         sopa. Só a fixada pelo toque continua sempre visível. */
+      if (!cota.fixados[uid] && sp.material) { sp.material.depthTest = true; sp.renderOrder = 0; }
+      sp.position.set(r2.x, r2.y + 0.06, r2.z);
+      scene.add(sp); rescaleObj(sp);
+      cota.objs.push(sp); cota.porUid[uid] = sp;
+    });
+  }
+  /* aviso curto; cai no toast da Gestão quando existir, senão fica só no viewer */
+  function UI0(msg, tipo) {
+    try { if (typeof UI !== 'undefined' && UI.toast) { UI.toast(msg, tipo || 'info'); return; } } catch (_) {}
+    try { if (S && S._hint) S._hint(msg); } catch (_) {}
+  }
+  function cotaResumo() {
+    var alvos = cotaAlvos(), soma = 0;
+    alvos.forEach(function (r) { soma += r.L; });
+    var t = alvos.length + ' trecho(s) · ' + fmtDist(soma);
+    if (cota.cortadas > 0) t += ' · mostrando as ' + (alvos.length - cota.cortadas) + ' mais legíveis';
+    if (cota.semQto > 0) t += ' · ' + cota.semQto + ' sem comprimento no IFC';
+    return t;
+  }
+  function setCota(on, modo) {
+    if (!S) return;
+    if (on && (fly.on || xr.on)) { UI0('Saia do modo Voo/RA-RV para cotar a rede.', 'erro'); return; }
+    if (on) { sairFerramentasMenosCota(); }
+    cota.on = !!on;
+    if (modo) cota.modo = modo;
+    if (!cota.on) { cotaLimpar(); }
+    else {
+      var ix = cotaIndice();
+      if (!ix.length) {
+        cota.on = false;
+        UI0(cota.semQto > 0
+          ? 'Este IFC não traz o comprimento das peças (' + cota.semQto + ' sem quantidade). Quem exportou precisa marcar "exportar quantidades base".'
+          : 'Não achei tubulação neste modelo.', 'erro');
+      } else if (cota.modo === 'todas' && ix.length > COTA_MAX_INDICE) {
+        cota.on = false;
+        UI0('São ' + ix.length + ' trechos — demais para mostrar de uma vez. Isole um pavimento ou um sistema e tente de novo.', 'erro');
+      } else {
+        cota.acum = cota.periodo;   // primeira passada no próximo quadro
+        UI0(cotaResumo() + ' · comprimento do trecho modelado, não desconta conexões', 'ok');
+      }
+    }
+    var b = bar.querySelector('[data-b="cota"]');
+    if (b) { b.classList.toggle('on', cota.on); b.style.background = cota.on ? '#16a34a' : ''; b.style.color = cota.on ? '#fff' : ''; }
+    if (!cota.on) cotaLimpar();
+    atualizarCursor();
+  }
+  /* desliga as OUTRAS ferramentas sem chamar sairFerramentas (que desligaria a
+     cota que estamos ligando — laço) */
+  function sairFerramentasMenosCota() {
+    if (medir.on) setMedir(false);
+    if (area.on) setArea(false);
+    if (ang.on) setAng(false);
+    if (S.edit && S.edit.on && S._setEdit) S._setEdit(false);
+  }
+  S._setCota = setCota;
+  S._cotaIndice = function () { var ix = cotaIndice(); return { total: ix.length, semQto: cota.semQto, amostra: ix.slice(0, 3) }; };
+  S._cotaEstado = function () { return { on: cota.on, modo: cota.modo, n: cota.objs.length, cortadas: cota.cortadas, semQto: cota.semQto, fixados: Object.keys(cota.fixados).length, chave: cota.chave, periodo: cota.periodo, custo: cota.ultimoCusto }; };
+
+  S._tickExtra.push(function (dt) {
+    if (!cota.on) return;
+    for (var i = 0; i < cota.objs.length; i++) rescaleObj(cota.objs[i]);
+    cota.acum += (dt || 0.016);
+    if (cota.acum < cota.periodo) return;
+    cota.acum = 0;
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+    cotaPassada();
+    if (t0) {
+      cota.ultimoCusto = performance.now() - t0;
+      /* auto-freio: a passada custou caro (modelo grande, aparelho fraco)?
+         espaça em vez de engasgar o quadro — mesma lição do snap. */
+      cota.periodo = cota.ultimoCusto > 8 ? 0.5 : 0.18;
+    }
+  });
   function btnCotas() { var b = bar.querySelector('[data-b="limpar-medidas"]'); if (b) b.style.display = medir.objs.length ? '' : 'none'; if (S && S._ajustarTop) S._ajustarTop(); } // botão entra/sai -> a barra (flex-wrap) pode mudar de altura
   function addMed(o) { scene.add(o); medir.objs.push(o); rescaleObj(o); }
   function desenharMedida(a, b) {
@@ -1157,7 +1398,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return _ultimosHits[0] || null;
   }
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
-  function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo || (S.edit && S.edit.on); } // quem consome clique-sem-arraste (editor SEM sub-ferramenta = clique mostra parâmetros)
+  /* ⚠ `cota.on` PRECISA estar aqui. O `pointerup` sai cedo quando nenhuma
+     ferramenta consome clique (a porteira logo abaixo), e sem esta linha o
+     botao Cotar ficaria MUDO: sem raycast, sem erro, sem log. */
+  function ferramentaClique() { return medir.on || area.on || ang.on || ctec.ativo || cota.on || (S.edit && S.edit.on); } // quem consome clique-sem-arraste (editor SEM sub-ferramenta = clique mostra parâmetros)
   // GUARD ÚNICO anti-ponto-fantasma (gate v1.1.69): quando um clique FECHA uma medição/linha
   // (área, ângulo, trena, corte técnico), o pointerup IRMÃO do duplo-clique chegaria <400ms
   // depois NO MESMO LUGAR e plantaria o 1º ponto da próxima medição — silenciosamente errada.
@@ -1225,6 +1469,35 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         if (opts.onPick) opts.onPick(propsDe(udP.mid !== undefined ? udP.mid : S.modelID, udP.expressID, udP.tipo));
       }
       return;
+    }
+    /* COTAR REDE — antes do snap de propósito: aqui não se marca ponto, se
+       escolhe uma PEÇA. Passar pelo snap acenderia a marca verde de vértice,
+       que promete uma medição que este modo não faz. */
+    if (cota.on) {
+      if (!hit) { S._hint('Toque em cima de um tubo para ver o comprimento dele.'); return; }
+      var udC = hit.object.userData || {};
+      if (udC.expressID == null) { S._hint('Isso não é uma peça do modelo.'); return; }
+      var uidC = (udC.mid != null ? udC.mid : S.modelID) + ':' + udC.expressID;
+      var reg = null, ixC = cotaIndice();
+      for (var ic = 0; ic < ixC.length; ic++) if (ixC[ic].uid === uidC) { reg = ixC[ic]; break; }
+      if (!reg) {
+        /* ⚠ NÃO INVENTAR. Sem quantidade no IFC, o modo diz isso e oferece a
+           trena — nunca estima pela caixa do elemento, que num ramal com
+           caimento devolve a DIAGONAL. */
+        var elC = null;
+        elementosVivos().forEach(function (x) { if (x.uid === uidC) elC = x; });
+        S._hint(elC && !cotaEhRede(elC)
+          ? 'Essa peça não é tubulação — o modo Cotar rede vale para tubo, duto e conexão.'
+          : 'Este tubo não tem comprimento publicado no IFC. Use a trena para medir.');
+        marcarFechamento(); return;
+      }
+      /* segundo toque no mesmo tubo tira a cota — é como o cliente desfaz */
+      if (cota.fixados[uidC]) delete cota.fixados[uidC]; else cota.fixados[uidC] = 1;
+      cota.chave = reg.chave;          // alimenta o modo "Iguais"
+      if (cota.modo !== 'clicado') cota.modo = 'clicado';
+      cota.acum = cota.periodo;        // redesenha no próximo quadro
+      S._hint(fmtDist(reg.L) + ' · ' + (reg.temFamilia ? reg.chave : 'sem família no IFC — “Iguais” usa o tipo'));
+      marcarFechamento(); return;
     }
     if (!hit) { S._hint((ctec.ativo ? '📝' : area.on ? '▱' : ang.on ? '∠' : '📏') + ' Clique em cima de uma superfície do modelo.'); return; }
     var sn = aplicarSnap(hit, raioToque(e)); mostrarSnapMarca(sn, e.clientX, e.clientY);
@@ -4171,6 +4444,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       xrRig.add(camera); // câmera XR dentro do rig → mover o rig te leva pelo modelo
       renderer.xr.setSession(session).then(function () {
         if (!xr.on) return; // sessão já encerrada antes deste callback (Esc/tirou o headset) — não ressuscita o loop
+        /* ⚠ AS COTAS SAEM ANTES DO IMERSIVO. A ancora vem do `aabb`, que e foto
+           do carregamento; no RA/RV o `modelRoot` e transladado e escalado, e
+           `_tickExtra` continua rodando la dentro (o laco do XR o re-executa).
+           Sem isto, as cotas flutuam soltas no meio do ambiente, com
+           `depthTest` desligado, e `sairImersivo` nao as conhece. */
+        if (S._setCota && S._cotaEstado && S._cotaEstado().on) S._setCota(false);
         xr._xrActivePrev = S._xrActive; S._xrActive = true; if (S.raf) { cancelAnimationFrame(S.raf); S.raf = 0; }
         renderer.setAnimationLoop(xrLoop);
       }).catch(function (e) { sairImersivo(); S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Falha ao iniciar a sessão VR: ' + (e && e.message || e)); });
@@ -5259,8 +5538,21 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           var nm = (qv.Name && qv.Name.value) ? String(qv.Name.value).toLowerCase() : '';
           if (qv.LengthValue != null) {
             var Lv = vnum(qv.LengthValue); if (isNaN(Lv)) continue;
-            if (/width|height|thick|depth|perimet|larg|altura|espess/.test(nm)) continue; // não é "o comprimento"
+            /* ⚠ O VETO FOI ESCRITO PARA PAREDE E NÃO CONHECIA O VOCABULÁRIO DA REDE.
+             * Faltavam DIÂMETRO e RAIO. Num qset de tubo ou duto que carimbe
+             * `Diameter`/`NominalDiameter` e NÃO carimbe `Length` — exportador
+             * que só publica a bitola, caso comum —, o diâmetro sobrevivia ao
+             * filtro, ganhava nota 1 por falta de concorrente e virava "o
+             * comprimento": um duto DN 400 saía com 0,40 m. Plausível, errado, e
+             * em cima da peça que alguém vai serrar. */
+            if (/width|height|thick|depth|perimet|larg|altura|espess|diamet|diâmet|bore|radius|raio/.test(nm)) continue;
             var sL = nm === 'length' ? 3 : /length|comprim/.test(nm) ? 2 : 1;
+            /* ⚠ E a nota vira DADO, não só desempate. `s === 1` é uma quantidade
+             * de comprimento SEM nome que diga comprimento — pode ser a peça,
+             * pode ser outra dimensão que ninguém batizou. Serve para somar num
+             * quantitativo que o engenheiro confere; não serve para carimbar um
+             * número sobre o tubo, onde não há contexto para desconfiar. Quem
+             * consome decide, mas agora sabe. */
             if (sL > comp.s) comp = { v: Lv, s: sL };
           } else if (qv.AreaValue != null) {
             var Av = vnum(qv.AreaValue); if (isNaN(Av)) continue;
@@ -5275,14 +5567,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           }
         }
         if (comp.s < 0 && ar.s < 0 && vol.s < 0 && cont === 0) continue;
-        var qto = { comprimento: comp.s >= 0 ? comp.v * fLen : 0, area: ar.s >= 0 ? ar.v * fArea : 0, volume: vol.s >= 0 ? vol.v * fVol : 0, contagem: cont };
+        var qto = { comprimento: comp.s >= 0 ? comp.v * fLen : 0, area: ar.s >= 0 ? ar.v * fArea : 0, volume: vol.s >= 0 ? vol.v * fVol : 0, contagem: cont,
+          /* 'exata' = a quantidade se chama Length; 'nomeada' = o nome cita
+             comprimento; 'anonima' = e de comprimento mas ninguem a batizou. */
+          compFonte: comp.s === 3 ? 'exata' : comp.s === 2 ? 'nomeada' : comp.s === 1 ? 'anonima' : '' };
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
           var eid = oh.value;
           // um elemento pode ter mais de um IfcElementQuantity → fica o MAIOR por dimensão (não soma, p/ não duplicar)
-          if (!mapa[eid]) mapa[eid] = { comprimento: 0, area: 0, volume: 0, contagem: 0 };
-          if (qto.comprimento > mapa[eid].comprimento) mapa[eid].comprimento = qto.comprimento;
+          if (!mapa[eid]) mapa[eid] = { comprimento: 0, area: 0, volume: 0, contagem: 0, compFonte: '' };
+          if (qto.comprimento > mapa[eid].comprimento) { mapa[eid].comprimento = qto.comprimento; mapa[eid].compFonte = qto.compFonte; }
           if (qto.area > mapa[eid].area) mapa[eid].area = qto.area;
           if (qto.volume > mapa[eid].volume) mapa[eid].volume = qto.volume;
           if (qto.contagem > mapa[eid].contagem) mapa[eid].contagem = qto.contagem;
@@ -5403,6 +5698,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function removerModelo(mid) {
     var mo = modeloDe(mid); if (!mo) return;
+    /* o indice de cotas guarda uid e ancora deste modelo: invalida e apaga o
+       que estiver na tela, senao sobra cota pendurada no vazio */
+    if (S._setCota && S._cotaEstado && S._cotaEstado().on) S._setCota(false);
     S.modelos.splice(S.modelos.indexOf(mo), 1);
     mo.grupo.children.slice().forEach(function (m) { if (m.geometry) { try { m.geometry.dispose(); } catch (_) {} } if (m.userData && m.userData._edgeLn && m.userData._edgeLn.geometry) { try { m.userData._edgeLn.geometry.dispose(); } catch (_) {} } });
     Object.keys(mo.matCache).forEach(function (k) { try { mo.matCache[k].dispose(); } catch (_) {} });
@@ -5429,6 +5727,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (S.corteL && S.corteL.on && S._setCorteL) S._setCorteL(false);
     if (S._ctecCancelar) S._ctecCancelar();
     if (S._limparMedidas) S._limparMedidas();
+    /* as cotas da rede vao junto: elas apontam para uid de modelo que esta
+       saindo, e o indice ficaria com anconra de coisa que nao existe mais */
+    if (S._setCota) S._setCota(false);
     S.modelos.slice().forEach(function (mo) { removerModelo(mo.mid); });
     if (S._editReset) S._editReset(); // 🗑 limpa TAMBÉM as edições (anotações/removidos sem modelo 'edit')
     S.carimbos = {}; S.qto = {}; S._fut4d = null; S._remEd = null;
@@ -6218,6 +6519,10 @@ window.BIM = {
      pixel, e um falso negativo aí manda procurar defeito no lugar errado. */
   _lupaEstado: function () { if (!S || !S.lupa) return null; var L = S.lupa; return { on: !!L.on, orbita: !!(S.orbit && S.orbit.enabled), x: L.x, y: L.y, id: L.id, esperando: !!L.timer, tipoSnap: L.sn && L.sn.tipo || null, mediDown: !!(S.medir && S.medir.down), ferramenta: !!(S._ferramentaClique && S._ferramentaClique()) }; },
   _snapAt: function (cx, cy) { if (!S || !S._raycastEm) return null; var h = S._raycastEm(cx, cy); if (!h) return null; var sn = S._aplicarSnapRef(h, S.snap ? S.snap.raio : 14); return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: snap num ponto de tela
+  // Cotar rede — hooks de teste: ligar/desligar por modo e ler o estado real
+  _cota: function (on, modo) { if (S && S._setCota) S._setCota(on, modo); return this._cotaEstado(); },
+  _cotaEstado: function () { return (S && S._cotaEstado) ? S._cotaEstado() : null; },
+  _cotaIndice: function () { return (S && S._cotaIndice) ? S._cotaIndice() : null; },
   _px: function (p) { if (!S) return null; var v = new THREE.Vector3(p[0], p[1], p[2]).project(S.camera); var rc = S.renderer.domElement.getBoundingClientRect(); return { x: rc.left + (v.x + 1) / 2 * rc.width, y: rc.top + (1 - v.y) / 2 * rc.height }; }, // hook de teste: mundo -> px da tela
   _visiveis: function () { if (!S) return null; var v = 0, t = 0; S.modelRoot.children.forEach(function (g) { (g.children || []).forEach(function (m) { t++; if (m.visible) v++; }); }); return { visiveis: v, total: t }; }, // hook de teste: malhas visíveis
   _cam: function () { if (!S) return null; var c = S.camera, t = S.orbit.target; return { p: [c.position.x, c.position.y, c.position.z], t: [t.x, t.y, t.z], near: c.near, far: c.far, rot: S.orbit.enableRotate }; }, // hook de teste: estado da câmera
