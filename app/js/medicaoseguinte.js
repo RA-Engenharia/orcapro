@@ -34,11 +34,32 @@
 (function (global) {
   "use strict";
 
+  /* ⚠ RÉPLICA FIEL DE `Util.parseNum` (js/util.js). Este módulo é puro — o
+     gate o roda em Node, onde `Util` não existe — então a regra vem copiada.
+     ⚠ E CÓPIA APODRECE CALADA: as duas versões curtas que existiam neste
+     projeto erram em direções OPOSTAS, e as duas já moveram dinheiro:
+     `replace(/\./g,"")` lê "1234.56" como 123456 (×100); tratar o ponto só
+     quando há vírgula lê "1.850.000" como 1,85 (÷1.000.000).
+     A paridade com o `Util.parseNum` real é cobrada em tools/test-numbr.js. */
   function num(v) {
     if (typeof v === "number") return isFinite(v) ? v : 0;
-    var s = String(v == null ? "" : v).trim();
+    if (v == null) return 0;
+    var s = String(v).trim();
     if (!s) return 0;
-    if (s.indexOf(",") > -1) s = s.replace(/\./g, "").replace(",", ".");
+    s = s.replace(/[^0-9.,\-]/g, "");
+    if (!s) return 0;
+    var temV = s.indexOf(",") > -1, temP = s.indexOf(".") > -1;
+    if (temV && temP) {
+      if (s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g, "").replace(",", ".");
+      else s = s.replace(/,/g, "");
+    } else if (temV) {
+      s = (s.match(/,/g) || []).length > 1 ? s.replace(/,/g, "") : s.replace(",", ".");
+    } else if (temP && (s.match(/\./g) || []).length > 1) {
+      if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, "");
+      else { var iP = s.lastIndexOf("."); s = s.slice(0, iP).replace(/\./g, "") + "." + s.slice(iP + 1); }
+    } else if (temP && /^-?\d{1,3}(\.\d{3})+$/.test(s) && !/^-?0\./.test(s)) {
+      s = s.replace(/\./g, "");
+    }
     var n = parseFloat(s);
     return isFinite(n) ? n : 0;
   }

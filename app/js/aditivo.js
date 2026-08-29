@@ -349,6 +349,16 @@
     var teto = 0, fonte = "";
     var ctr = p.contrato;
     var soEdicao = ehSoEdicao(b, orig);
+    /* ⚠ O CONTRATO TEM DE SER DA OBRA DO BOLETIM.
+       O `<select>` do boletim lista os contratos da EMPRESA e mostra só o
+       número ("001/2026", "002/2026"): escolher o vizinho de linha fazia o
+       teto virar o de outra obra, e R$ 900.000 caberem num contrato de
+       R$ 100.000. A tela já recusa no salvar, mas a regra tem de morar AQUI —
+       é o motor que cobre todos os caminhos (formulário, botão Aprovar, e o
+       próximo que aparecer) e é ele que entra no gate.
+       Contrato SEM obra continua valendo: é dado legítimo antigo, e o campo
+       Obra do contrato é opcional. */
+    if (ctr && txt(ctr.obraId) && txt(ctr.obraId) !== txt(b.obraId)) ctr = null;
     /* ⚠ O CAMPO CONTRATO DO BOLETIM É OPCIONAL, E NASCE VAZIO ("— nenhum —").
        Sem isto, a trava inteira era desligada pelo valor PADRÃO de um
        dropdown: obra com contrato ativo de R$ 300.000, boletim no modo manual
@@ -369,7 +379,7 @@
       var amb = {
         pode: false, semTeto: false, teto: 0, fonte: "ambiguo",
         anterior: fora.valor, acumulado: fora.valor + num(b.valor),
-        porContrato: fora.porContrato, excedente: 0, faltaAditivo: 0, pctAcum: 0,
+        porContrato: fora.porContrato, ambiguas: fora.ambiguas, excedente: 0, faltaAditivo: 0, pctAcum: 0,
         porque: "esta obra tem " + vivosComValor.length + " contratos vivos e este boletim não aponta nenhum.",
         comoResolver: "Escolha o contrato no campo Contrato — sem ele não há teto para conferir."
       };
@@ -395,7 +405,7 @@
         var zer = {
           pode: false, semTeto: false, teto: 0, fonte: "contrato_zerado",
           anterior: fora.valor, acumulado: fora.valor + num(b.valor),
-          porContrato: fora.porContrato, excedente: 0, faltaAditivo: 0, pctAcum: 0,
+          porContrato: fora.porContrato, ambiguas: fora.ambiguas, excedente: 0, faltaAditivo: 0, pctAcum: 0,
           porque: "o valor vigente deste contrato está em " + fmt(vg.valor) +
             " — as supressões aprovadas zeraram ou inverteram o contrato.",
           comoResolver: "Confira os termos aditivos de supressão: um deles provavelmente foi lançado com o valor do contrato em vez do valor a suprimir."
@@ -410,7 +420,7 @@
     var base = {
       teto: teto, fonte: fonte, semTeto: !!r.semTeto,
       anterior: fora.valor, acumulado: fora.valor + num(b.valor),
-      porContrato: fora.porContrato, excedente: r.excedente || 0,
+      porContrato: fora.porContrato, ambiguas: fora.ambiguas, excedente: r.excedente || 0,
       faltaAditivo: r.faltaAditivo || 0, pctAcum: r.pctAcum || 0
     };
     if (r.cabe) { base.pode = true; base.porque = ""; base.comoResolver = ""; return base; }
@@ -435,13 +445,17 @@
     base.pode = false;
     base.porque = r.porque;
     base.anteriorPendente = fora.pendente;
-    /* ⚠ DIZER O QUE ESTÁ CONSUMINDO O TETO. Culpar o aditivo quando o teto
-       está preso em boletim que ninguém aprovou manda registrar um termo
-       aditivo desnecessário — e o aprovador não tem como descobrir isso pela
-       mensagem. Só entra quando o pendente é parte relevante do problema. */
-    if (fora.pendente > 0 && fora.pendente >= (r.excedente || 0)) {
+    /* ⚠ DIZER O QUE ESTÁ CONSUMINDO O TETO — E SE ISSO RESOLVE.
+       Culpar o aditivo quando o teto está preso em boletim que ninguém aprovou
+       manda registrar um termo aditivo desnecessário. A primeira versão desta
+       frase só aparecia quando o pendente resolvia o problema INTEIRO; quando
+       resolvia metade, o usuário continuava sem saber que havia metade a
+       resolver ali. Agora ela sai sempre que há pendente, e diz o que sobra. */
+    if (fora.pendente > 0) {
+      var restante = Math.max(0, (r.excedente || 0) - fora.pendente);
       base.porque += " Desse acumulado, " + fmt(fora.pendente) + " está em " +
-        fora.nPendentes + " boletim(ns) ainda não aprovado(s) — se algum deles não valer, rejeite antes.";
+        fora.nPendentes + " boletim(ns) ainda não aprovado(s) — rejeitando-os, " +
+        (restante > 0 ? "faltariam " + fmt(restante) + " de aditivo." : "este boletim passa a caber sem aditivo.");
     }
     /* ⚠ A SAÍDA TEM DE EXISTIR. Mandar "registre o termo aditivo" numa obra
        sem contrato manda o usuário para uma tela que responde "o aditivo

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.17",
+  "versao": "1.2.18",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.17/OrcaPRO-IA-update-v1.2.17.zip",
-  "notas": "Correcao interna no catalogo de bases: a lista de arquivos que nao podem virar linha da tabela deixou de barrar por nome de arquivo e passou a barrar por padrao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.17/OrcaPRO-IA-Instalador-v1.2.17.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.18/OrcaPRO-IA-update-v1.2.18.zip",
+  "notas": "Correcoes de leitura de numero em varias telas (custo por obra, tabela de precos, resumo do cliente), e apagar uma obra deixou de poder derrubar o termo aditivo de um contrato de outra obra.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.18/OrcaPRO-IA-Instalador-v1.2.18.exe"
 }

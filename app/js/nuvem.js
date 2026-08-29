@@ -351,6 +351,31 @@
        * o modal promete preservar. Achado do gate de 25/07. */
       var imune = !semLapide && Store.imuneACascata(ent);
       var obrasMortas = semLapide ? Object.create(null) : Store.cascatasDeObra(empresaId);
+      /* ⚠ O ADITIVO É FILHO DO CONTRATO, NÃO DA OBRA — e por isso a cascata da
+       * obra não pode julgá-lo pelo `obraId` que ele carrega.
+       *
+       * Esse `obraId` é uma CÓPIA feita quando o aditivo nasceu, e o campo Obra
+       * do contrato é editável. Contrato que nasce na obra A, recebe o 01º TA
+       * aprovado e depois é movido para a obra B deixa o aditivo com
+       * `obraId: "A"`. Apagar a obra A grava a lápide de cascata dela, e aqui o
+       * merge descartava — em TODOS os aparelhos e de forma definitiva — um
+       * termo aditivo APROVADO de um contrato VIVO da obra B. O teto de
+       * faturamento de B caía, e os boletins já aprovados que só cabiam por
+       * causa dele passavam a exceder o contratado.
+       *
+       * A pergunta certa é sobre o PAI: se o contrato ainda existe, o aditivo
+       * vive. Se o contrato morreu junto com a obra, o aditivo morre com ele —
+       * e a exclusão legítima continua propagando pela lápide própria que a
+       * cascata passou a gravar (js/gestao.js, `_excluirObra`). */
+      var contratosVivos = (!semLapide && ent === "aditivos")
+        ? (function () {
+            var m = Object.create(null);
+            try {
+              Util.arr(Store.listar(empresaId, "contratos")).forEach(function (c) { if (c && c.id) m[c.id] = 1; });
+            } catch (e) {}
+            return m;
+          })()
+        : Object.create(null);
       var vivo = function (o) {
         var t = mortos[o.id];
         /* ⚠ `>=`, NÃO `>` — E A DIFERENÇA PASSOU A IMPORTAR NA v1.2.
@@ -373,6 +398,10 @@
            * mesmo que a exclusão faz localmente — solta o vínculo — em vez de deixá-lo apontando
            * para uma obra que não existe. Antes ele era APAGADO, contra o que o modal promete. */
           if (imune) { o.obraId = ""; o.obraNome = ""; return true; }
+          /* ⚠ o aditivo é julgado pelo CONTRATO pai, não pelo `obraId` que ele
+             copiou ao nascer (ver o índice `contratosVivos` acima). Contrato
+             vivo → o aditivo vive, mesmo que a obra do carimbo tenha morrido. */
+          if (ent === "aditivos" && o.contratoId && contratosVivos[o.contratoId]) return true;
           /* filho de verdade: NÃO há ressalva. Se houvesse, uma edição feita no outro aparelho
            * depois da exclusão devolveria o registro para sempre — órfão, apontando para uma
            * obra que não existe mais e sem tela que o mostre. */

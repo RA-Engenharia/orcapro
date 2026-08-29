@@ -3093,7 +3093,17 @@
         plano.forEach(function (par) {
           try {
             // conta o que SAIU de fato: se a gravação falhar (cota cheia) o resumo não pode mentir
-            apagados += Store.excluirVarios(e, par[0], par[1], true);
+            /* ⚠ O ADITIVO SAI COM LÁPIDE PRÓPRIA — o 4º argumento é `semLapide`.
+               A lápide de CASCATA cobre o lote inteiro com um registro só, mas o
+               merge a aplica por `obrasMortas[o.obraId]`: ela só alcança quem
+               carrega o `obraId` da obra morta. O aditivo é recolhido pelo
+               CONTRATO pai e pode ter `obraId` vazio — contrato cadastrado sem
+               obra, TA registrado, obra vinculada depois — e aí nenhuma lápide o
+               cobre: ele é apagado aqui e VOLTA no primeiro sync, órfão,
+               apontando para um contrato que não existe mais e sem tela que o
+               mostre. São poucos por obra, então o custo que motivou o
+               `semLapide` (milhares de lápides) não se aplica aqui. */
+            apagados += Store.excluirVarios(e, par[0], par[1], par[0] !== "aditivos");
           } catch (er) {}
         });
         // as anotações do BIM são guardadas com o id da obra como chave (não têm obraId)
@@ -3750,7 +3760,14 @@
       var vig = (typeof Aditivo !== "undefined" && Aditivo.vigente)
         ? Aditivo.vigente(c, listaTodas("aditivos"))
         : { original: Util.num(c.valor), valor: Util.num(c.valor), aditivoPendente: 0, nPendentes: 0, pctAditivo: 0 };
-      var num = a.numero || Aditivo.proximoNumero(c, listaTodas("aditivos"));
+      /* ⚠ A GUARDA VALE PARA A LINHA SEGUINTE TAMBÉM. `vig` já era protegido
+         contra o motor ausente e esta linha não: num PWA com pré-cache
+         incompleto o formulário morria aqui, dois passos depois de a tela ter
+         sido salva pela guarda de cima. Sem o motor, o campo Número sai vazio
+         para a pessoa preencher — que é degradar, não quebrar. */
+      var num = a.numero || ((typeof Aditivo !== "undefined" && Aditivo.proximoNumero)
+        ? Aditivo.proximoNumero(c, listaTodas("aditivos")) : "");
+      if (!num && !a.numero) UI.toast("O motor de aditivos não carregou — digite o número do termo à mão.", "aviso");
       var corpo =
         '<p class="muted" style="margin-top:0;font-size:13px">Contrato <b>' + Util.esc(c.numero || "—") + '</b> · ' +
         'assinatura ' + Util.fmtMoeda(vig.original) + ' · <b>vigente ' + Util.fmtMoeda(vig.valor) + '</b></p>' +
@@ -3798,13 +3815,20 @@
            mesma regra porque prazo tambem e clausula. */
         var antesV = Util.num(a.valor), antesP = Util.num(a.prazoDias);
         var antesM = String(a.motivo || ""), antesF = String(a.fundamento || "");
+        /* ⚠ NÚMERO E DATA TAMBÉM. O fiscal devolve um termo aditivo por causa
+           da data errada ou do número trocado tanto quanto por causa do valor;
+           quem corrigia só isso salvava e o aditivo continuava REJEITADO, com
+           o motivo antigo, sem uma palavra na tela e sem botão. O caminho
+           "Corrigir e reenviar" existia e não reenviava. */
+        var antesN = String(a.numero || ""), antesD = String(a.data || "");
         /* ⚠ MOTIVO E FUNDAMENTO SÃO CONTEÚDO MATERIAL, e por isso entram no
            `mudou`. Sem eles, dava para aprovar o aditivo com uma justificativa
            e reescrevê-la depois, mantendo o nome e a data de quem aprovou a
            primeira — o documento passaria a dizer que o aprovador leu algo que
            ele nunca viu. É a mesma régua que o ramo do rejeitado já usava. */
         var mudou = (Util.num(obj.valor) !== antesV) || (Util.num(obj.prazoDias) !== antesP) ||
-                    String(obj.motivo || "") !== antesM || String(obj.fundamento || "") !== antesF;
+                    String(obj.motivo || "") !== antesM || String(obj.fundamento || "") !== antesF ||
+                    String(obj.numero || "") !== antesN || String(obj.data || "") !== antesD;
         var st0 = String(a.status || "").toLowerCase();
         if (st0 === "aprovado" && mudou) {
           obj.status = "pendente";
@@ -3846,8 +3870,20 @@
           if (String(reg && reg.status || "").toLowerCase() !== "aprovado") return "";
           var v2 = (typeof Aditivo !== "undefined" && Aditivo.vigente)
             ? Aditivo.vigente(c, listaTodas("aditivos")) : null;
+          var vv = Util.num(reg.valor);
+          var depois = v2 ? v2.valor - vv : 0;
+          /* ⚠ SUPRESSÃO É ADITIVO NEGATIVO, ENTÃO EXCLUÍ-LA SOBE O TETO.
+             O aviso dizia "derruba o teto" para os dois casos — e no da
+             supressão isso é o contrário do que acontece. Aviso que descreve
+             errado o efeito é pior que aviso nenhum: a pessoa confirma
+             achando que está desfazendo um aumento. */
+          if (vv < 0) {
+            return "ATENÇÃO: este aditivo é uma SUPRESSÃO aprovada. Excluí-lo DEVOLVE o teto do contrato" +
+              (v2 ? " de " + Util.fmtMoeda(v2.valor) + " para " + Util.fmtMoeda(depois) : "") +
+              " — o contrato volta a permitir faturar mais.";
+          }
           return "ATENÇÃO: este aditivo está APROVADO. Excluí-lo derruba o teto do contrato" +
-            (v2 ? " de " + Util.fmtMoeda(v2.valor) + " para " + Util.fmtMoeda(v2.valor - Util.num(reg.valor)) : "") +
+            (v2 ? " de " + Util.fmtMoeda(v2.valor) + " para " + Util.fmtMoeda(depois) : "") +
             " — boletins já aprovados podem passar a exceder o contratado.";
         }
       });
@@ -3885,6 +3921,21 @@
         obj.clienteNome = cli ? cli.nome : "";
         return true;
       }, null, {
+        /* ⚠ A PORTA VIZINHA. A guarda do aditivo aprovado impede quem nao pode
+           aprovar de exclui-lo — mas apagar o CONTRATO leva os aditivos junto,
+           e ai nao havia guarda nenhuma. Um sub-usuario barrado no TA passava
+           por aqui e derrubava o mesmo teto de faturamento. */
+        excluir: function () {
+          if (!c || !c.id) return true;
+          var temAprov = _selfC._aditivosDo(c.id).some(function (a) {
+            return String(a.status || "").toLowerCase() === "aprovado";
+          });
+          if (!temAprov) return true;
+          if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+            return "Este contrato tem termo(s) aditivo(s) APROVADO(S), que sustentam o teto de faturamento. Só quem pode aprovar pode excluí-lo.";
+          }
+          return true;
+        },
         /* ⚠ CONTADO ANTES, PARA ENTRAR NA PERGUNTA. */
         avisoExclusao: function (reg) {
           if (!reg || !reg.id) return "";
@@ -4873,8 +4924,40 @@
      * diferença entre os dois consumidores, escrita aqui para não virar duas
      * regras de novo.
      * ================================================================= */
+    /* contratos VIVOS da obra — `ativo` e `suspenso`. Contrato em elaboração
+       (o padrão do formulário, com valor R$ 0) não define sequência: bastava
+       alguém ter COMEÇADO a cadastrar um segundo contrato para o modo
+       por-contrato ligar e tirar da soma toda medição antiga salva sem apontar
+       contrato. Helper único porque a trava e o impresso PRECISAM usar a mesma
+       régua — quando cada um tinha a sua, eles discordavam sobre a mesma obra. */
+    _contratosVivosDaObra: function (obraId) {
+      return lista("contratos").filter(function (c) {
+        if (!c || String(c.obraId) !== String(obraId)) return false;
+        var st = String(c.status || "");
+        return st === "ativo" || st === "suspenso";
+      });
+    },
+
     _baseDoTeto: function (m, paraTravar) {
       var ctr = m && m.contratoId ? Store.obter(eid(), "contratos", m.contratoId) : null;
+      /* ⚠ CONTRATO DE OUTRA OBRA NÃO SERVE DE BASE. O `<select>` do boletim
+         lista os contratos da empresa e mostra só o NÚMERO ("001/2026"),
+         então escolher o vizinho de linha é fácil. O salvar já recusa; aqui é
+         a segunda borda, para o boletim ANTIGO que já tem o apontamento errado
+         não imprimir contra o teto de outra obra. Contrato SEM obra continua
+         aceito: é dado legítimo antigo, o campo Obra do contrato é opcional. */
+      if (ctr && String(ctr.obraId || "") && String(ctr.obraId) !== String((m && m.obraId) || "")) ctr = null;
+      /* ⚠ E COM UM CONTRATO VIVO SÓ, ELE É A BASE — apontado ou não.
+         O campo Contrato do boletim é opcional e nasce em "— nenhum —". O
+         motor da trava já usava essa régua; aqui não, e por isso o IMPRESSO
+         caía no valor digitado na ficha da obra enquanto a TRAVA media contra
+         o contrato: dois números se contradizendo na mesma obra, que é
+         exatamente a doença que esta versão veio curar. Com dois ou mais
+         contratos vivos nada é escolhido — aí o boletim é ambíguo. */
+      if (!ctr && m && m.obraId) {
+        var _viv = this._contratosVivosDaObra(m.obraId).filter(function (c) { return Util.num(c.valor) > 0; });
+        if (_viv.length === 1) ctr = _viv[0];
+      }
       function doContrato() {
         if (!ctr || !(Util.num(ctr.valor) > 0)) return null;
         /* ⚠ SEM O MOTOR, O CONTRATO AINDA VALE — pelo valor de assinatura.
@@ -4929,16 +5012,12 @@
     _cabeNoTeto: function (obj, mOriginal) {
       if (typeof Aditivo === "undefined" || !Aditivo.podeMedir) return true;
       var ctr = obj.contratoId ? Store.obter(eid(), "contratos", obj.contratoId) : null;
-      /* contratos VIVOS da obra — `ativo` e `suspenso`. Contrato em
-         elaboração (o padrão do formulário, com valor R$ 0) não define
-         sequência: bastava alguém ter COMEÇADO a cadastrar um segundo
-         contrato para o modo por-contrato ligar e tirar da soma toda medição
-         antiga salva sem apontar contrato. */
-      var vivos = lista("contratos").filter(function (c) {
-        if (!c || String(c.obraId) !== String(obj.obraId)) return false;
-        var st = String(c.status || "");
-        return st === "ativo" || st === "suspenso";
-      });
+      /* ⚠ A MESMA BORDA DO IMPRESSO: contrato de outra obra não vira teto.
+         O salvar do formulário já recusa, mas `_aprovar` chama esta função
+         direto com o registro do disco — um boletim antigo com o apontamento
+         errado passaria por ali sem tocar no formulário. */
+      if (ctr && String(ctr.obraId || "") && String(ctr.obraId) !== String(obj.obraId)) ctr = null;
+      var vivos = this._contratosVivosDaObra(obj.obraId);
       /* teto alternativo: o preço de venda do orçamento vinculado. NÃO o
          `valor` da ficha da obra — aquilo é estimativa, não instrumento. */
       /* ⚠ MESMA REGRA DO IMPRESSO, MENOS A ÚLTIMA FONTE. `_baseDoTeto` já
@@ -4965,12 +5044,24 @@
         medicoes: lista("medicoes"), contratosDaObra: vivos,
         tetoOrcamento: tetoOrc
       });
-      if (d.pode) return true;
+      /* ⚠ QUANTAS MEDICOES FICARAM DE FORA DA CONTA. Numa obra com dois
+         contratos vivos, boletim que nao aponta contrato e ambiguo: o motor o
+         tira da soma (nao da para saber a que sequencia pertence) e ate agora
+         isso acontecia em silencio. Quem le "acumulado R$ 200.000" precisa
+         saber que ha R$ X fora dessa conta, senao o numero mente por omissao. */
+      var _amb = Util.num(d.ambiguas);
+      var _ress = _amb > 0
+        ? " ⚠ " + _amb + " medição(ões) desta obra não apontam contrato e ficaram de fora desta conta — vincule-as ao contrato para o número fechar."
+        : "";
+      if (d.pode) {
+        if (_amb > 0) UI.toast(_ress.replace(" ⚠ ", ""), "aviso");
+        return true;
+      }
       var vig = ctr ? Aditivo.vigente(ctr, listaTodas("aditivos")) : null;
       UI.toast(d.porque + " " +
         (vig && vig.aditivoPendente > 0
           ? "(há " + Util.fmtMoeda(vig.aditivoPendente) + " de aditivo aguardando aprovação — aprovado, o boletim passa a caber.)"
-          : d.comoResolver), "erro");
+          : d.comoResolver) + _ress, "erro");
       return false;
     },
 
@@ -5768,7 +5859,21 @@
       var obra = Store.obter(eid(), "obras", obraId); if (!obra || !obra.orcamentoId) return [];
       var orc = Store.obterOrcamento ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
       if (!orc || !orc.etapas) return [];
-      return Util.arr(orc.etapas).map(function (e) { return { id: e.id, nome: (e.codigo ? e.codigo + " " : "") + (e.nome || "") }; });
+      /* ⚠ AS SUBETAPAS ENTRAM AQUI, e por isso a linha delas deixa de mentir.
+         Enquanto este seletor so oferecia nivel 1, NENHUM lancamento podia
+         apontar subetapa — e a tela Previsto x Realizado mostrava, para cada
+         uma, Realizado R$ 0,00 e saldo cheio em verde sobre gasto que ja tinha
+         saido. Esconder a linha era tratar o sintoma; a causa era o dinheiro
+         nao ter por onde chegar nela. O motor (js/custoetapa.js) ja sabia
+         somar subetapa e rolar para a raiz — faltava a porta. */
+      var out = [];
+      Util.arr(orc.etapas).forEach(function (e) {
+        out.push({ id: e.id, nome: (e.codigo ? e.codigo + " " : "") + (e.nome || "") });
+        Util.arr(e.subetapas).forEach(function (sub) {
+          out.push({ id: sub.id, nome: "↳ " + (sub.codigo ? sub.codigo + " " : "") + (sub.nome || "") });
+        });
+      });
+      return out;
     },
     _etapaOptsHtml: function (etapas, selId) {
       var o = '<option value="">— não apropriado —</option>';
@@ -6044,16 +6149,29 @@
         /* subetapa entra indentada, sob a raiz que a contem — o total soma
            so nivel 1, entao ela nao conta duas vezes */
         var recuo = e.nivel === 2 ? 'padding-left:22px;font-weight:400' : '';
+        /* ⚠ A SUBETAPA SÓ AFIRMA O QUE SABE.
+           Até agora o seletor de etapa do lançamento só oferecia NÍVEL 1, então
+           nenhum gasto podia apontar subetapa — e a linha dela saía com
+           Realizado R$ 0,00, barra 0% VERDE e saldo cheio, também em verde,
+           enquanto o dinheiro da etapa-mãe já tinha saído. Numa tela cuja
+           função é dizer se ainda cabe a próxima compra, isso é o número
+           folgado que autoriza a compra errada.
+           O seletor passou a oferecer subetapa (`_etapasDaObra`), então ela PODE
+           ter gasto próprio e aí mostra número como qualquer outra. Enquanto
+           não tiver, mostra travessão em vez de afirmar saldo que não conhece. */
+        var subSemDado = e.nivel === 2 && !(Util.num(e.realizado) > 0.005) && !(Util.num(e.comprometido) > 0.005);
         html += '<tr' + (e.nivel === 2 ? ' style="background:#fbfdff"' : '') + '><td style="' + recuo + '">' +
-          (e.nivel === 2 ? '<span class="muted">↳ </span>' : '') + (e.nivel === 2 ? Util.esc(e.nome) : "<b>" + Util.esc(e.nome) + "</b>") + "</td>" +
+          (e.nivel === 2 ? '<span class="muted">↳ </span>' : '') + (e.nivel === 2 ? Util.esc(e.nome) : "<b>" + Util.esc(e.nome) + "</b>") +
+          (subSemDado ? '<div class="muted" style="font-size:11px">sem gasto apontado nesta subetapa — o lançamento pode escolhê-la agora</div>' : '') + "</td>" +
           '<td class="num">' + Util.fmtMoeda(e.previsto) + '</td>' +
           /* ⚠ UM `class` SÓ. O ramo do else concatenava um SEGUNDO atributo
              `class` no mesmo <td> (`class="num" class="num muted"`); o parser
              mantém a primeira ocorrência e descarta a segunda, então o cinza
              de "sem comprometido" nunca era aplicado. */
           '<td class="num' + (e.comprometido > 0.005 ? '" style="color:#b45309"' : ' muted"') + '>' + (e.comprometido > 0.005 ? Util.fmtMoeda(e.comprometido) : "—") + '</td>' +
-          '<td class="num">' + Util.fmtMoeda(e.realizado) + "</td>" +
-          "<td>" + barra + '</td><td class="num" style="color:' + (e.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + ';font-weight:600">' + Util.fmtMoeda(e.saldo) + "</td></tr>";
+          '<td class="num' + (subSemDado ? ' muted"' : '"') + '>' + (subSemDado ? "—" : Util.fmtMoeda(e.realizado)) + "</td>" +
+          "<td>" + (subSemDado ? '<span class="muted" style="font-size:11px">—</span>' : barra) + '</td>' +
+          '<td class="num' + (subSemDado ? ' muted">—' : '" style="color:' + (e.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + ';font-weight:600">' + Util.fmtMoeda(e.saldo)) + "</td></tr>";
       });
       if (d.naoApropriado > 0.005) {
         /* ⚠ POR QUAL PORTA o dinheiro entrou sem etiqueta. Sem esta quebra,

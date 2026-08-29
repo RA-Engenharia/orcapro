@@ -104,6 +104,16 @@
      em compra (PC) e nota (NF); os outros se reconhecem pela descrição, que é
      o que há — e quando nem isso, entra em `semCarimbo`, que é a resposta
      honesta. */
+  /* ⚠ ROTULO HUMANO AO LADO DE QUEM CRIA A CHAVE. `semCarimbo` e nome de
+     CAMPO, e vazava para a tela dentro do aviso de cobertura: o usuario lia
+     "Entrou principalmente por: compra, semCarimbo". A tela de Previsto x
+     Realizado ja tinha o mapa de rotulos, mas o aviso e montado AQUI, no
+     motor, e nao passava por ele. Nome interno na frase do usuario e
+     vazamento de implementacao — quem le nao sabe o que e "semCarimbo". */
+  var ROT_ORIGEM = { compra: "compra recebida", nota: "nota fiscal", folha: "folha",
+    medicao: "medição", frota: "frota", semCarimbo: "sem origem identificada" };
+  function rotuloOrigem(k) { return ROT_ORIGEM[k] || txt(k); }
+
   function origemDe(f) {
     var d = txt(f.docTipo).toUpperCase();
     if (d === "PC") return "compra";
@@ -227,7 +237,7 @@
         "as etapas abaixo parecem ter mais saldo do que têm.");
       var portas = Object.keys(naoApropriado.porOrigem)
         .sort(function (a, b) { return naoApropriado.porOrigem[b] - naoApropriado.porOrigem[a]; });
-      if (portas.length) avisos.push("Entrou principalmente por: " + portas.slice(0, 3).join(", ") + ".");
+      if (portas.length) avisos.push("Entrou principalmente por: " + portas.slice(0, 3).map(rotuloOrigem).join(", ") + ".");
     }
     if (compSemEtapa.valor > 0) {
       avisos.push(compSemEtapa.n + " pedido(s) de compra aprovado(s) somando " + fmt(compSemEtapa.valor) +
