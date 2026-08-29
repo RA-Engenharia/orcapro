@@ -11,6 +11,9 @@
   // Entidades pequenas de DADOS DO USUÁRIO que sincronizam:
   var ENTIDADES = [
     "orcamentos", "prefs", "obras", "clientes", "contratos", "medicoes",
+    /* o termo aditivo e documento contratual: precisa estar no celular do
+       engenheiro e no computador do escritorio como o contrato esta */
+    "aditivos",
     "financeiro", "compras", "estoque", "rdo", "colaboradores", "frota",
     "requisicoes", "epi", "faltas", "templates", "documentos", "usuarios",
     // modo nuvem multi-aparelho: a EQUIPE (sub-usuários) e a CONTA (admin mestre)

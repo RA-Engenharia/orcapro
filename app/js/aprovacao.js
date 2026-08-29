@@ -87,7 +87,16 @@
        um preço que ninguém conferiu, e não havia como responder "quem
        liberou isso?". Entra na máquina que já existe, sem estado paralelo. */
     orcamentos:     { rotulo: "Orçamento",   valorEmJogo: true,
-                      porque: "É o preço que vai ao cliente e vira contrato: aprovado errado, a obra inteira nasce torta." }
+                      porque: "É o preço que vai ao cliente e vira contrato: aprovado errado, a obra inteira nasce torta." },
+    /* ⚠ O ADITIVO LEVANTA O TETO DO CONTRATO, e sem ele nesta lista o
+       levantamento nao teria autor nem aprovador — que sao exatamente as
+       duas perguntas que um termo aditivo existe para responder. Antes disto
+       "aditivo" era apagar o valor do contrato e digitar outro: sem trilha,
+       sem aprovacao, e destruindo o valor original no caminho.
+       E a consequencia pratica de estar aqui: `carimbarAutor` passa a rodar,
+       entao quem lanca o aditivo nao pode aprovar o proprio. */
+    aditivos:       { rotulo: "Termo aditivo", valorEmJogo: true,
+                      porque: "Aditivo aprovado aumenta o teto do contrato — e o que pode ser faturado do cliente." }
   };
 
   /* --- IDENTIDADE ----------------------------------------------------

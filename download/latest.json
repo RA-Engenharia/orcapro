@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.15",
+  "versao": "1.2.16",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.15/OrcaPRO-IA-update-v1.2.15.zip",
-  "notas": "Requisitar pelo modelo: com um IFC aberto no BIM, o botao Requisitar levanta as pecas e monta a requisicao de material casando com o banco de insumos.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.15/OrcaPRO-IA-Instalador-v1.2.15.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.16/OrcaPRO-IA-update-v1.2.16.zip",
+  "notas": "Termo aditivo: o contrato guarda o valor de assinatura e cada aditivo vira um registro proprio, com motivo, autor e aprovacao. E a medicao nao passa mais do contratado sem aditivo aprovado.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.16/OrcaPRO-IA-Instalador-v1.2.16.exe"
 }

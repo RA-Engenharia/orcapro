@@ -229,6 +229,9 @@
     "g-efd": "numeric", "g-efi": "numeric", "g-enc": "decimal", "g-faltas": "numeric",
     "g-gserv": "decimal", "g-he": "decimal", "g-km": "decimal", "g-min": "decimal",
     "g-multa": "decimal", "g-orcado": "decimal", "g-pa-dias": "numeric",
+    /* termo aditivo: o valor aceita virgula E sinal negativo (supressao e o
+       mesmo instrumento); o prazo e contagem de dias, so digito */
+    "g-prazo": "numeric",
     "g-pct": "decimal", "g-pvalor": "decimal", "g-rem": "decimal", "g-ret": "decimal",
     "g-saldo": "decimal", "g-valor": "decimal", "g-vaq": "decimal", "g-vimp": "decimal",
     "g-vprod": "decimal", "g-vtot": "decimal", "nv-qp": "decimal"
@@ -291,7 +294,7 @@
    * compra quebra o trabalho sem proteger nada.
    * ⚠ "obras" é caso à parte: filtra por `id`, não por `obraId`. */
   var ENT_POR_OBRA = {
-    medicoes: 1, rdo: 1, financeiro: 1, contratos: 1, compras: 1, requisicoes: 1,
+    medicoes: 1, rdo: 1, financeiro: 1, contratos: 1, aditivos: 1, compras: 1, requisicoes: 1,
     cotacoes: 1, producao_med: 1, epi: 1, ponto: 1, folha: 1, fs_lancamentos: 1,
     estoque_mov: 1, tarefas: 1, atividades: 1,
     /* modulos sob demanda (js/perfis.js): as duas entidades que carregam
@@ -2836,7 +2839,14 @@
     /* O que só existe POR CAUSA da obra — some junto na cascata.
      * (as fotos da galeria não são entidade própria: moram dentro do RDO e vão com ele) */
     _ENT_DA_OBRA: [
-      ["contratos", "contrato(s)"], ["medicoes", "medição(ões)"], ["rdo", "diário(s) de obra e suas fotos"],
+      /* ⚠ `aditivos` vai JUNTO com `contratos` e por isso: o aditivo nao existe
+         sem o contrato que ele altera. Apagada a obra, o contrato morre — um
+         termo aditivo orfao seria um documento apontando para um contrato que
+         nao existe mais, e ele levanta TETO DE FATURAMENTO.
+         ⚠ E entra AQUI e em lugar nenhum mais: estar nesta lista E em
+         `_IMUNES_CASCATA` ao mesmo tempo ja custou dado nesta base. */
+      ["contratos", "contrato(s)"], ["aditivos", "termo(s) aditivo(s)"],
+      ["medicoes", "medição(ões)"], ["rdo", "diário(s) de obra e suas fotos"],
       ["lp_tarefas", "tarefa(s) do Last Planner"], ["tarefas", "tarefa(s)"],
       ["requisicoes", "requisição(ões)"], ["cotacoes", "cotação(ões)"], ["compras", "compra(s)"],
       ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
@@ -2918,13 +2928,65 @@
          não estava: quem estava era `faltas`, que não grava obraId. */
       ["horas_extras", "hora(s) extra(s) lançada(s)"]
     ],
+    /* ==================================================================
+     * QUEM PERTENCE À OBRA — e por que `obraId` sozinho não responde.
+     *
+     * ⚠ O ADITIVO PERTENCE AO CONTRATO, e só à obra através dele. O `obraId`
+     * que ele carrega é uma CÓPIA feita no instante em que nasceu, e o campo
+     * Obra do contrato é OPCIONAL: cadastrar o contrato sem obra, registrar o
+     * 01º TA e só depois vincular a obra deixa o aditivo com `obraId: ""` —
+     * apagar a obra leva o contrato e DEIXA o aditivo, órfão, apontando para
+     * um contrato que não existe mais. E aditivo levanta TETO DE FATURAMENTO.
+     * O simétrico é pior: contrato movido de obra deixa os aditivos com a obra
+     * ANTIGA, e apagar aquela obra derruba o teto de um contrato vivo.
+     *
+     * Contar e apagar passam pela MESMA função, de propósito: a pergunta do
+     * diálogo de confirmação e o que a exclusão faz de verdade não podem
+     * divergir — o usuário decide olhando aquele número.
+     * ================================================================= */
+    _idsDaObraPara: function (ent, obraId) {
+      var e = eid(), ids = [];
+      if (ent !== "aditivos") {
+        try {
+          Store.listar(e, ent).forEach(function (r) {
+            if (r && String(r.obraId || "") === String(obraId)) ids.push(r.id);
+          });
+        } catch (er) {}
+        return ids;
+      }
+      /* ⚠ PARA O ADITIVO, O CONTRATO PAI SUBSTITUI — NÃO SOMA.
+       *
+       * A primeira versão disto era uma UNIÃO: recolhia por `obraId` E por
+       * contrato pai. Mas o `obraId` do aditivo é uma CÓPIA feita quando ele
+       * nasceu, e o campo Obra do contrato é editável. Contrato que nasce na
+       * obra A, recebe o 01º TA aprovado e depois é movido para a obra B
+       * deixa o aditivo com `obraId: "A"` — e apagar a obra A levava junto,
+       * em silêncio, um termo aditivo APROVADO de um contrato VIVO da obra B.
+       * O teto de faturamento de B caía, os boletins já aprovados passavam a
+       * exceder o contratado, e a exclusão propagava para todos os aparelhos.
+       *
+       * Quem manda é o contrato: se ele existe, o aditivo segue a obra DELE.
+       * A cópia só decide quando o aditivo está órfão de contrato. */
+      try {
+        var obraDoContrato = {};
+        Store.listar(e, "contratos").forEach(function (c) {
+          if (c && c.id) obraDoContrato[c.id] = String(c.obraId || "");
+        });
+        Store.listar(e, "aditivos").forEach(function (a) {
+          if (!a) return;
+          var pai = a.contratoId ? obraDoContrato[a.contratoId] : undefined;
+          if (pai !== undefined) { if (pai === String(obraId)) ids.push(a.id); return; }
+          /* órfão de contrato: aí sim vale a cópia que ele carrega */
+          if (String(a.obraId || "") === String(obraId)) ids.push(a.id);
+        });
+      } catch (er2) {}
+      return ids;
+    },
     _vinculosDaObra: function (obraId) {
-      var e = eid(), out = [], total = 0;
+      var self = this, out = [], total = 0;
       this._ENT_DA_OBRA.forEach(function (par) {
         var n = 0;
-        try {
-          Store.listar(e, par[0]).forEach(function (r) { if (r && r.obraId === obraId) n++; });
-        } catch (er) {}
+        try { n = self._idsDaObraPara(par[0], obraId).length; } catch (er) {}
         if (n) { out.push({ ent: par[0], rot: par[1], n: n }); total += n; }
       });
       return { itens: out, total: total };
@@ -3010,12 +3072,28 @@
           });
           if (fotosDaObra.length && typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(fotosDaObra);
         } catch (eF) {}
+        /* ⚠ RECOLHE TUDO ANTES DE APAGAR QUALQUER COISA.
+         *
+         * O laço apagava e recolhia ao mesmo tempo, e `contratos` vem ANTES de
+         * `aditivos` na lista: quando chegava a vez do aditivo, o contrato pai
+         * dele já tinha sido apagado, `_idsDaObraPara` não achava mais o
+         * vínculo e devolvia zero. O diálogo prometia "1 termo(s) aditivo(s)"
+         * e a exclusão apagava nenhum — o aditivo ficava órfão, invisível
+         * (o bloco só desenha por contrato existente) e sincronizando.
+         *
+         * O plano é montado sobre o MESMO disco que o diálogo leu. É a única
+         * forma de a pergunta e a resposta falarem do mesmo conjunto. */
+        var plano = [];
         this._ENT_DA_OBRA.forEach(function (par) {
           try {
-            var ids = [];
-            Store.listar(e, par[0]).forEach(function (r) { if (r && r.obraId === id) ids.push(r.id); });
+            var ids = self._idsDaObraPara(par[0], id);
+            if (ids.length) plano.push([par[0], ids]);
+          } catch (er) {}
+        });
+        plano.forEach(function (par) {
+          try {
             // conta o que SAIU de fato: se a gravação falhar (cota cheia) o resumo não pode mentir
-            if (ids.length) apagados += Store.excluirVarios(e, par[0], ids, true);
+            apagados += Store.excluirVarios(e, par[0], par[1], true);
           } catch (er) {}
         });
         // as anotações do BIM são guardadas com o id da obra como chave (não têm obraId)
@@ -3536,6 +3614,7 @@
 
     // =================== CONTRATOS ===================
     renderContratos: function () {
+      var self = this;
       var cs = lista("contratos"), obras = lista("obras"), clientes = lista("clientes");
       var html = this._head(svg("contratos") + "Contratos", "novo-contrato", "Novo contrato");
       if (!cs.length) return html + vazioBox("Nenhum contrato cadastrado", "novo-contrato", "Criar primeiro contrato");
@@ -3544,8 +3623,236 @@
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
         html += '<tr class="lin" style="cursor:pointer" data-gopen="contratos:' + c.id + '"><td><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.clienteNome || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + rot(P.contratoTipo, c.tipo) + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + "</td></tr>";
       });
-      return html + "</tbody></table>";
+      html += "</tbody></table>";
+      /* ⚠ O ADITIVO MORA JUNTO DO CONTRATO, e nao numa tela propria: e um
+         documento QUE ALTERA outro, e separa-los faria alguem ler o valor de
+         assinatura achando que e o vigente — exatamente o que esta mudanca
+         veio corrigir. Um bloco por contrato, com o valor vigente na frente. */
+      cs.forEach(function (c) { html += self._aditivoBloco(c); });
+      return html;
     },
+    /* =================================================================
+     * TERMOS ADITIVOS — o teto do contrato, e quem o levantou
+     *
+     * ⚠ O CONTRATO NÃO É MAIS REESCRITO. `c.valor` é o valor de ASSINATURA e
+     * fica como está; cada aditivo é um registro próprio, com motivo, autor e
+     * aprovação. O valor vigente é uma conta (js/aditivo.js), não um campo.
+     * Antes disto, "aditivo" era apagar o valor e digitar outro — sem trilha,
+     * sem aprovador, e destruindo o original no caminho. Depois não havia
+     * como responder as duas perguntas que o instrumento existe para
+     * responder: quem aumentou o contrato, e com base em quê.
+     * ================================================================= */
+    /* rotulo humano do estado de aprovacao, para o aditivo que nao tem status
+       proprio. Reusa a tabela do Aprovacao para nao existir um segundo
+       vocabulario dizendo a mesma coisa com outras palavras. */
+    /* ⚠ O ADITIVO FALA A LINGUA DO `status`, NAO A DO `estadoAprovacao`.
+     * Existem dois ciclos de aprovacao neste app: o `status` antigo, que
+     * medicao/compra/requisicao usam e que `_aprovar` grava; e o
+     * `estadoAprovacao` de js/aprovacao.js, que esta pronto mas DESLIGADO da
+     * tela de proposito (veja o comentario em `_aprovSelo`). A primeira versao
+     * deste selo lia `estadoAprovacao` — campo que ninguem escreve para
+     * aditivo — e por isso todo aditivo aparecia "Rascunho" e o teto do
+     * contrato nunca subia: uma trava sem chave. */
+    _ADITIVO_ROT: { pendente: "Pendente", aprovado: "Aprovado", rejeitado: "Rejeitado" },
+    _aditivoBadge: function (a) {
+      var st = String((a && a.status) || "pendente").toLowerCase();
+      var CORES = { pendente: "#d97706", aprovado: "#16a34a", rejeitado: "#dc2626" };
+      var cor = CORES[st] || "#64748b";
+      return '<span class="g-pill" style="background:' + cor + '22;color:' + cor + '">' +
+        Util.esc(this._ADITIVO_ROT[st] || st) + '</span>';
+    },
+
+    _aditivosDo: function (contratoId) {
+      return listaTodas("aditivos").filter(function (a) { return String(a.contratoId) === String(contratoId); })
+        .sort(function (a, b) { return String(a.data || "").localeCompare(String(b.data || "")); });
+    },
+
+    _aditivoBloco: function (c) {
+      var self = this, ads = this._aditivosDo(c.id);
+      /* ⚠ COM GUARDA, como os outros seis pontos que chamam o motor. Um PWA
+         cujo pré-cache perdeu js/aditivo.js abre pelo cache no canteiro sem
+         sinal, e sem isto a tela de Contratos inteira morre no primeiro
+         contrato — sem tela e sem mensagem. */
+      var vig = (typeof Aditivo !== "undefined" && Aditivo.vigente)
+        ? Aditivo.vigente(c, listaTodas("aditivos"))
+        : { original: Util.num(c.valor), aditivoAprovado: 0, aditivoPendente: 0,
+            valor: Util.num(c.valor), nPendentes: 0, pctAditivo: 0 };
+      var html = '<div class="card" style="margin-top:12px">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">' +
+        /* ⚠ O CARD PRECISA DIZER DE QUEM É. Numa empresa com 12 contratos
+           vinham 12 cards visualmente idênticos, todos "Termos aditivos" e
+           todos com "01º TA" na primeira linha — e o botão ao lado levanta o
+           teto de faturamento de um contrato específico. */
+        '<b style="flex:1">' + svg("contratos") + ' Termos aditivos — contrato ' +
+          Util.esc(c.numero || "—") + '</b>' +
+        '<button class="btn sm primary" data-gacao="aditivo-novo" data-ctr="' + c.id + '">+ Novo aditivo</button></div>';
+
+      html += '<div class="kpis" style="margin-bottom:10px">' +
+        '<div class="kpi"><div class="rotulo">Valor de assinatura</div><div class="num">' + Util.fmtMoeda(vig.original) + '</div></div>' +
+        '<div class="kpi"><div class="rotulo">Aditivos aprovados</div><div class="num" style="color:' + (vig.aditivoAprovado < 0 ? "var(--vermelho)" : "var(--verde)") + '">' +
+          (vig.aditivoAprovado >= 0 ? "+" : "") + Util.fmtMoeda(vig.aditivoAprovado) +
+          (vig.original > 0 ? ' <span style="font-size:11px;color:#64748b">(' + Util.fmtNum(vig.pctAditivo, 1) + '%)</span>' : "") + '</div></div>' +
+        '<div class="kpi destaque"><div class="rotulo">Valor vigente</div><div class="num">' + Util.fmtMoeda(vig.valor) + '</div></div>' +
+        '</div>';
+
+      /* ⚠ O PENDENTE APARECE E NÃO CONTA. Se ele levantasse o teto, bastaria
+         digitar um aditivo para faturar o que se quisesse — e a aprovação
+         viraria enfeite. Mostrar é informação; somar seria permissão. */
+      if (vig.aditivoPendente !== 0) {
+        html += '<div class="muted" style="color:#b45309;margin-bottom:8px;font-size:13px">' +
+          vig.nPendentes + ' aditivo(s) aguardando aprovação, somando ' + Util.fmtMoeda(vig.aditivoPendente) +
+          ' — <b>não entram no valor vigente</b> até serem aprovados.</div>';
+      }
+
+      if (!ads.length) {
+        return html + '<p class="muted" style="font-size:13px;margin:0">Nenhum termo aditivo. O contrato vale o valor de assinatura.</p></div>';
+      }
+      html += '<table class="tbl" style="font-size:12.5px"><thead><tr><th>Nº</th><th>Data</th><th>Motivo</th>' +
+        '<th class="num">Valor</th><th class="num">Prazo</th><th>Status</th><th></th></tr></thead><tbody>';
+      ads.forEach(function (a) {
+        var vv = Util.num(a.valor);
+        var st = String(a.status || "pendente").toLowerCase();
+        html += '<tr class="lin" style="cursor:pointer" data-gacao="aditivo-abrir" data-adid="' + a.id + '">' +
+          '<td><b>' + Util.esc(a.numero || "—") + '</b></td>' +
+          '<td>' + Util.esc(a.data || "—") + '</td>' +
+          '<td>' + Util.esc(String(a.motivo || "—").slice(0, 60)) + '</td>' +
+          '<td class="num" style="color:' + (vv < 0 ? "var(--vermelho)" : "") + '">' + (vv >= 0 ? "+" : "") + Util.fmtMoeda(vv) + '</td>' +
+          '<td class="num">' + (Util.num(a.prazoDias) ? Util.num(a.prazoDias) + " d" : "—") + '</td>' +
+          '<td>' + self._aditivoBadge(a) + self._aprovLinha(a) + '</td>' +
+          /* ⚠ O BOTAO E A CHAVE DA TRAVA. Enquanto ele nao existia, a medicao
+             recusava mandando "registre o termo aditivo em Contratos" e
+             registrar nao mudava nada — o pior tipo de defeito, o que manda o
+             usuario fazer algo que nao resolve. `_aprovar` ja carrega a regra
+             de quem-propoe-nao-aprova e a trilha; aqui e so a porta. */
+          '<td class="num" style="white-space:nowrap">' + (st === "pendente"
+            ? '<button class="btn sm success" data-gacao="aprovar-aditivo" data-adid="' + a.id + '">Aprovar</button> ' +
+              '<button class="btn sm" data-gacao="rejeitar-aditivo" data-adid="' + a.id + '" style="color:#dc2626">Rejeitar</button>'
+            : (st === "rejeitado"
+              ? '<button class="btn sm" data-gacao="aditivo-abrir" data-adid="' + a.id + '" title="' +
+                Util.esc(a.motivoRejeicao || "") + '">Corrigir e reenviar</button>'
+              : '<span class="muted" style="font-size:11px">' + Util.esc(a.aprovadoPor || "") + '</span>')) + '</td></tr>';
+      });
+      return html + '</tbody></table></div>';
+    },
+
+    novoAditivo: function (contratoId) {
+      var c = Store.obter(eid(), "contratos", contratoId);
+      if (!c) { UI.toast("Contrato não encontrado.", "erro"); return; }
+      this.formAditivo({ contratoId: contratoId, obraId: c.obraId || "" });
+    },
+
+    formAditivo: function (a) {
+      a = a || {};
+      var c = Store.obter(eid(), "contratos", a.contratoId);
+      if (!c) { UI.toast("O aditivo precisa de um contrato.", "erro"); return; }
+      /* mesma guarda do bloco: sem o motor carregado, o formulário abre com o
+         valor de assinatura em vez de quebrar a tela inteira */
+      var vig = (typeof Aditivo !== "undefined" && Aditivo.vigente)
+        ? Aditivo.vigente(c, listaTodas("aditivos"))
+        : { original: Util.num(c.valor), valor: Util.num(c.valor), aditivoPendente: 0, nPendentes: 0, pctAditivo: 0 };
+      var num = a.numero || Aditivo.proximoNumero(c, listaTodas("aditivos"));
+      var corpo =
+        '<p class="muted" style="margin-top:0;font-size:13px">Contrato <b>' + Util.esc(c.numero || "—") + '</b> · ' +
+        'assinatura ' + Util.fmtMoeda(vig.original) + ' · <b>vigente ' + Util.fmtMoeda(vig.valor) + '</b></p>' +
+        '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Data", inp("g-data", a.data || hojeLocal(), "", "date")) + "</div>" +
+        '<div class="row">' +
+          /* ⚠ SUPRESSÃO É O MESMO INSTRUMENTO — mas o sinal de menos NÃO CABE
+             NO CELULAR. `inp` sai com inputmode="decimal", e o teclado decimal
+             do iOS e o numérico do Android trazem dígitos e separador, sem
+             tecla de menos: "informe o valor com sinal negativo" era uma
+             instrução impossível de seguir no aparelho em que o engenheiro de
+             obra usa o sistema. O par tipo + valor positivo funciona nos dois
+             e ainda deixa a supressão explícita, em vez de escondida num sinal
+             que se perde ao reabrir o formulário. */
+          campo("Tipo", sel("g-adtipo",
+            '<option value="acrescimo"' + (Util.num(a.valor) < 0 ? "" : " selected") + ">Acréscimo (+)</option>" +
+            '<option value="supressao"' + (Util.num(a.valor) < 0 ? " selected" : "") + ">Supressão (−)</option>")) +
+          campo("Valor (R$)", inp("g-valor", Math.abs(Util.num(a.valor)) || "")) + "</div>" +
+        '<div class="row">' +
+          campo("Acréscimo de prazo (dias)", inp("g-prazo", a.prazoDias)) + "<div></div></div>" +
+        campo("Motivo / justificativa *", '<textarea id="g-motivo" rows="3" placeholder="O que mudou no escopo, e por quê. É este texto que responde à fiscalização.">' + Util.esc(a.motivo || "") + "</textarea>") +
+        campo("Fundamento (cláusula, ofício, ART)", inp("g-fund", a.fundamento));
+
+      this._modalForm("aditivos", a, "Termo aditivo", corpo, function (obj) {
+        obj.contratoId = a.contratoId; obj.obraId = c.obraId || "";
+        obj.numero = v("g-num"); obj.data = v("g-data");
+        /* ⚠ O SINAL VEM DO SELETOR, e o campo guarda valor positivo: no
+           celular não há tecla de menos no teclado decimal. O registro
+           continua sendo um número negativo — supressão e acréscimo são o
+           mesmo instrumento, e é assim que `Aditivo.vigente` os soma. */
+        obj.valor = Math.abs(nv("g-valor")) * (v("g-adtipo") === "supressao" ? -1 : 1);
+        obj.prazoDias = nv("g-prazo");
+        obj.motivo = v("g-motivo"); obj.fundamento = v("g-fund");
+        /* ⚠ MOTIVO É OBRIGATÓRIO, e não é burocracia: o aditivo existe para
+           responder "com base em quê". Um termo aditivo sem justificativa é
+           exatamente o que a edição do valor do contrato já permitia — e é o
+           que esta tela veio substituir. */
+        if (!obj.motivo) { UI.toast("Descreva o motivo do aditivo — é o que responde à fiscalização depois.", "erro"); return false; }
+        if (!Util.num(obj.valor) && !Util.num(obj.prazoDias)) {
+          UI.toast("Um aditivo tem de mudar valor ou prazo.", "erro"); return false;
+        }
+        /* ⚠ EDITAR O VALOR DE UM ADITIVO APROVADO O DEVOLVE PARA APROVACAO.
+           Sem isto, bastaria aprovar um aditivo de R$ 1 e depois edita-lo para
+           R$ 500.000: o teto do contrato subiria sem ninguem ter aprovado o
+           valor que subiu — a aprovacao pela porta dos fundos. Prazo entra na
+           mesma regra porque prazo tambem e clausula. */
+        var antesV = Util.num(a.valor), antesP = Util.num(a.prazoDias);
+        var antesM = String(a.motivo || ""), antesF = String(a.fundamento || "");
+        /* ⚠ MOTIVO E FUNDAMENTO SÃO CONTEÚDO MATERIAL, e por isso entram no
+           `mudou`. Sem eles, dava para aprovar o aditivo com uma justificativa
+           e reescrevê-la depois, mantendo o nome e a data de quem aprovou a
+           primeira — o documento passaria a dizer que o aprovador leu algo que
+           ele nunca viu. É a mesma régua que o ramo do rejeitado já usava. */
+        var mudou = (Util.num(obj.valor) !== antesV) || (Util.num(obj.prazoDias) !== antesP) ||
+                    String(obj.motivo || "") !== antesM || String(obj.fundamento || "") !== antesF;
+        var st0 = String(a.status || "").toLowerCase();
+        if (st0 === "aprovado" && mudou) {
+          obj.status = "pendente";
+          obj.aprovadoPor = ""; obj.aprovadoEm = "";
+          UI.toast("Valor ou prazo mudou — o aditivo voltou para aprovação.", "aviso");
+        } else if (st0 === "rejeitado" && mudou) {
+          /* ⚠ REJEITADO NÃO É ESTADO TERMINAL. O fiscal devolve por causa de um
+             número ou de uma justificativa incompleta; quem preencheu corrige e
+             tem de poder reenviar. Sem isto a única saída era excluir e
+             recriar — jogando fora a trilha de quem rejeitou e por quê, que é
+             justamente o que um termo aditivo existe para guardar. Aqui basta
+             mexer no que foi criticado (valor, prazo, motivo ou fundamento). */
+          obj.status = "pendente";
+          obj.motivoRejeicao = ""; obj.rejeitadoPor = ""; obj.rejeitadoEm = "";
+          UI.toast("Aditivo corrigido — voltou para aprovação.", "aviso");
+        } else if (!obj.status) {
+          obj.status = a.status || "pendente";
+        }
+        return true;
+      }, null, {
+        /* ⚠ APAGAR UM ADITIVO APROVADO DERRUBA O TETO DE FATURAMENTO, e por
+           isso não é a mesma coisa que apagar um rascunho. Sem esta guarda,
+           quem lançou o aditivo — a mesma pessoa que a regra proíbe de
+           aprová-lo — podia apagá-lo depois de aprovado, num clique, sem
+           aprovador e sem uma palavra. Boletins já aprovados que só cabiam por
+           causa dele passavam a estourar o contrato retroativamente.
+           Rascunho e rejeitado seguem livres: não sustentam teto nenhum. */
+        excluir: function () {
+          if (String(a.status || "").toLowerCase() !== "aprovado") return true;
+          /* checagem direta, sem `_podeAprovarGuard`: ele já emite o próprio
+             toast, e o `barra()` emitiria o segundo — dois avisos para uma
+             recusa só. Aqui a frase volta como retorno e sai uma vez. */
+          if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+            return "Este termo aditivo está APROVADO e sustenta o teto do contrato. Só quem pode aprovar pode excluí-lo.";
+          }
+          return true;
+        },
+        avisoExclusao: function (reg) {
+          if (String(reg && reg.status || "").toLowerCase() !== "aprovado") return "";
+          var v2 = (typeof Aditivo !== "undefined" && Aditivo.vigente)
+            ? Aditivo.vigente(c, listaTodas("aditivos")) : null;
+          return "ATENÇÃO: este aditivo está APROVADO. Excluí-lo derruba o teto do contrato" +
+            (v2 ? " de " + Util.fmtMoeda(v2.valor) + " para " + Util.fmtMoeda(v2.valor - Util.num(reg.valor)) : "") +
+            " — boletins já aprovados podem passar a exceder o contratado.";
+        }
+      });
+    },
+
     novoContrato: function () { this.formContrato(null); },
     formContrato: function (c) {
       c = c || {}; var obras = lista("obras"), clientes = lista("clientes"), orcs = Store.listarOrcamentos(eid());
@@ -3562,6 +3869,12 @@
         '<div class="row">' + campo("Responsável técnico", inp("g-rt", c.rtContratada)) + campo("CREA/CAU", inp("g-crea", c.creaContratada)) + campo("ART/RRT", inp("g-art", c.artContratada)) + "</div>" +
         '<div class="row">' + campo("Garantia dos serviços (meses)", inp("g-gserv", c.garantiaServicos == null ? 60 : c.garantiaServicos)) + campo("Tipo de garantia", sel("g-tgar", opts(P.tipoGarantia, c.tipoGarantia || "nenhuma"))) + campo("Multa por atraso (%/dia)", inp("g-multa", c.multaAtraso == null ? 0.1 : c.multaAtraso)) + "</div>" +
         campo("Cláusulas especiais", '<textarea id="g-clausulas" rows="2">' + Util.esc(c.clausulasEspeciais || "") + "</textarea>");
+      /* ⚠ APAGAR O CONTRATO APAGA OS ADITIVOS DELE. Um termo aditivo é um
+         documento QUE ALTERA outro: sem o contrato ele não é documento nenhum
+         — some da tela (o bloco só desenha por contrato existente), não há por
+         onde excluí-lo, e continua sincronizando de aparelho em aparelho para
+         sempre. */
+      var _selfC = this;
       this._modalForm("contratos", c, "Contrato", corpo, function (obj) {
         obj.numero = v("g-num"); obj.status = v("g-status"); obj.clienteId = v("g-cliente"); obj.obraId = v("g-obra");
         obj.tipo = v("g-tipo"); obj.regime = v("g-regime"); obj.valor = nv("g-valor"); obj.formaPgto = v("g-forma");
@@ -3571,6 +3884,31 @@
         var cli = obras && lista("clientes").filter(function (x) { return x.id === obj.clienteId; })[0];
         obj.clienteNome = cli ? cli.nome : "";
         return true;
+      }, null, {
+        /* ⚠ CONTADO ANTES, PARA ENTRAR NA PERGUNTA. */
+        avisoExclusao: function (reg) {
+          if (!reg || !reg.id) return "";
+          var ads = _selfC._aditivosDo(reg.id);
+          if (!ads.length) return "";
+          var aprov = ads.filter(function (a) { return String(a.status || "").toLowerCase() === "aprovado"; }).length;
+          return "ATENÇÃO: este contrato tem " + ads.length + " termo(s) aditivo(s)" +
+            (aprov ? " — " + aprov + " já aprovado(s)" : "") +
+            ". Eles serão excluídos junto, com motivo, autor e trilha de aprovação.";
+        },
+        /* ⚠ APAGAR O CONTRATO APAGA OS TERMOS ADITIVOS DELE, e roda ANTES do
+           `Store.excluir` (é o contrato do `aoExcluir`). Sem isto o aditivo
+           fica órfão: some da tela — o bloco só desenha por contrato
+           existente —, não há por onde excluí-lo, e ele continua indo e
+           voltando da nuvem de aparelho em aparelho para sempre. Um termo
+           aditivo é um documento QUE ALTERA outro; sem o outro, não é
+           documento nenhum. */
+        aoExcluir: function (reg) {
+          if (!reg || !reg.id) return null;
+          var ads = _selfC._aditivosDo(reg.id);
+          if (!ads.length) return null;
+          ads.forEach(function (a) { try { Store.excluir(eid(), "aditivos", a.id); } catch (e) {} });
+          return ads.length + " termo(s) aditivo(s) deste contrato também foram excluídos.";
+        }
       });
     },
 
@@ -4112,6 +4450,23 @@
         if (!obj.obraId) { UI.toast("Selecione a obra da medição.", "erro"); return false; }
         if (!self._gateStatusForm(obj, stAntigo, "medicoes")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         obj.contratoId = v("g-contrato"); obj.periodoInicio = v("g-pini"); obj.periodoFim = v("g-pfim");
+        /* ⚠ O CONTRATO TEM DE SER DA OBRA DO BOLETIM. O `<select>` lista os
+           contratos da empresa e mostra só o NÚMERO ("001/2026", "002/2026") —
+           escolher o vizinho de linha, por engano, fazia o teto virar o de
+           outra obra e a trava liberar R$ 900.000 num contrato de R$ 100.000.
+           Filtrar o dropdown exigiria repopulá-lo quando a obra muda; barrar
+           aqui resolve o mesmo e tem chave: a mensagem diz qual é a obra do
+           contrato escolhido. Contrato sem obra continua aceito — é dado
+           legítimo antigo, e o campo Obra do contrato é opcional. */
+        if (obj.contratoId) {
+          var _cSel = Store.obter(eid(), "contratos", obj.contratoId);
+          if (_cSel && String(_cSel.obraId || "") && String(_cSel.obraId) !== String(obj.obraId)) {
+            var _ob = Store.obter(eid(), "obras", _cSel.obraId);
+            UI.toast("O contrato " + Util.esc(_cSel.numero || "—") + " é da obra " +
+              Util.esc((_ob && _ob.nome) || "—") + ", não desta. Escolha um contrato desta obra.", "erro");
+            return false;
+          }
+        }
         obj.retencao = nv("g-ret"); obj.descricao = v("g-desc");
         /* mesma trava do botão Aprovar: aprovar pelo formulário também congela
            a base do contrato, senão o caminho de trás continua aberto. */
@@ -4136,6 +4491,12 @@
           obj.bdiValor = m.bdiValor == null ? null : Util.num(m.bdiValor);
           obj.totalItens = m.totalItens == null ? null : Util.num(m.totalItens);
           obj.bdiNoPU = m.bdiNoPU;
+          /* ⚠ E A SEQUÊNCIA TAMBÉM É DOCUMENTO. Congelar itens, valor e base e
+             deixar `obraId`/`contratoId` livres permitia arrastar um boletim
+             JÁ APROVADO de R$ 900.000 do contrato A para o B de R$ 50.000 sem
+             tocar no Status — e este `return true` acontece antes da trava.
+             Um boletim aprovado pertence à sequência em que foi aprovado. */
+          obj.obraId = m.obraId; obj.contratoId = m.contratoId;
           return true;
         }
         var modo = v("g-medmodo") || "orcamento";
@@ -4165,6 +4526,10 @@
           obj.percentual = null;
           obj.orcamentoId = null; obj.valorContratado = null;
           obj.bdiValor = null; obj.totalItens = null; obj.bdiNoPU = null;
+          /* ⚠ A TRAVA VALE AQUI TAMBEM. Este ramo devolvia `true` ~130 linhas
+             antes do bloco do teto, e medir por tabela de precos furava o
+             contrato inteiro sem uma palavra. */
+          if (!self._cabeNoTeto(obj, m)) return false;
           return true;
         }
 
@@ -4195,13 +4560,34 @@
             var ant = self._pctAnterioresPorItem(obj.obraId, orcId, obj.id);
             var res = Orcamento.medirItens(orc, pcts, ant);
             if (!res.itens.length) { UI.toast("Informe o % medido de ao menos 1 item (ou volte para medição manual).", "erro"); return false; }
-            if (res.avisos.length) UI.toast("⚠ " + res.avisos.slice(0, 3).join(" · "), "erro");
+            /* ⚠ ISTO ERA UM AVISO E SEGUIA GRAVANDO.
+               `medirItens` devolve os itens que passam de 100% acumulado, e a
+               unica consequencia era um toast: o boletim gravava igual, o
+               acumulado passava do contratado, e o impresso ainda escondia o
+               excedente. Medir acima do contratado e faturar o cliente por
+               algo que ninguem autorizou — do outro lado, e pagar o
+               empreiteiro alem do combinado. Agora RECUSA, e diz o caminho. */
+            if (res.avisos.length) {
+              UI.toast("Não dá para medir acima de 100% do item: " + res.avisos.slice(0, 2).join(" · ") +
+                ". Para medir mais, o aditivo tem de aumentar a quantidade no orçamento.", "erro");
+              return false;
+            }
             obj.orcamentoId = orcId; obj.itens = res.itens;
             obj.valor = res.total; obj.percentual = Math.round(res.pctDoOrcamento * 10) / 10;
             // CONGELA o valor contratado e o BDI apartado no próprio boletim:
             // reimprimir depois tem que dar o MESMO papel.
             var _tv = Orcamento.totais(orc);
-            obj.valorContratado = Util.num(_tv.precoVenda);
+            /* ⚠ CONGELA O TETO DO CONTRATO QUANDO HÁ CONTRATO. Congelando o
+               preço de venda do ORÇAMENTO, a trava (que mede contra o
+               contrato) e o papel que o fiscal assina (que lê o congelado)
+               passavam a dizer coisas diferentes sobre a mesma obra: a trava
+               recusava "120% do contratado" e o impresso mostrava "Saldo a
+               faturar". Documento já emitido mantém o congelado dele — muda o
+               que se congela daqui para a frente, não como se lê o antigo. */
+            var _ctrC = obj.contratoId ? Store.obter(eid(), "contratos", obj.contratoId) : null;
+            obj.valorContratado = (_ctrC && Util.num(_ctrC.valor) > 0 && typeof Aditivo !== "undefined")
+              ? Util.num(Aditivo.vigente(_ctrC, listaTodas("aditivos")).valor)
+              : Util.num(_tv.precoVenda);
             obj.bdiValor = Util.num(res.bdiValor); obj.totalItens = Util.num(res.totalItens);
             obj.bdiNoPU = res.bdiNoPU !== false;
           }
@@ -4258,6 +4644,8 @@
           }
           obj.percentual = _pct; obj.valor = _val;
         }
+
+        if (!self._cabeNoTeto(obj, m)) return false;
         return true;
       });
       setTimeout(function () { self._ligarMedItens(m); }, 60); // pós-abertura do modal
@@ -4444,6 +4832,148 @@
     // Chave ÚNICA de ordenação da sequência de medições (mesma em _medicaoCalc e no histórico do Excel).
     _medKey: function (x) { return (x.periodoFim || x.periodoInicio || "") + "|" + (x.numero || ""); },
     // Calcula anterior / atual / acumulada / saldo a partir da sequência de medições da obra.
+    /* ==================================================================
+     * A TRAVA DO TETO DO CONTRATO — e por que ela CHAMA `_medicaoCalc`.
+     *
+     * Sao duas travas diferentes e as duas existem: por ITEM (nao medir 120%
+     * de um item) e por VALOR do contrato (a soma dos boletins). Esta e a
+     * segunda: tres boletins de 40% passam um a um, cada um com todos os itens
+     * abaixo de 100%, e estouram JUNTOS.
+     *
+     * ⚠ A CONTA E A MESMA DO PAPEL QUE O FISCAL ASSINA — de proposito. A
+     * primeira versao desta trava somava o acumulado com regra PROPRIA
+     * (filtrar por contratoId sempre que o boletim aponta um). `_medicaoCalc`
+     * usa outra: so separa por contrato quando a obra tem DOIS OU MAIS
+     * contratos vivos, porque o campo Contrato e OPCIONAL e filtrar sempre
+     * zeraria o acumulado de obra de contrato unico cujo 1o boletim foi salvo
+     * sem apontar contrato. O resultado eram dois numeros para a mesma coisa:
+     * a trava liberando o que o impresso acusa como estouro. Uma regra so.
+     *
+     * ⚠ O TETO E O VIGENTE (original + aditivos APROVADOS) porque e isso que
+     * `_medicaoCalc` ja resolve na ordem de autoridade: congelado no boletim >
+     * contrato vigente > preco de venda do orcamento > valor da obra.
+     * ================================================================ */
+    /* =================================================================
+     * A BASE DO TETO — uma regra, um lugar, quatro fontes em ORDEM.
+     *
+     * ⚠ POR QUE O CONTRATO VEM ANTES DO CONGELADO. O congelamento existe para
+     * o papel não mudar quando o ORÇAMENTO for editado depois. Ele nasceu
+     * guardando o preço de venda do orçamento — e, com o aditivo virando
+     * registro próprio, o contrato passou a ser o número imutável de verdade:
+     * o valor dele é a assinatura e não é mais reescrito, e o vigente só sobe
+     * por aditivo APROVADO. Lendo o congelado primeiro, a trava (que mede contra o
+     * contrato) e o boletim impresso (que lia o congelado) diziam coisas
+     * diferentes sobre a mesma obra: recusa de "120% do contratado" ao lado de
+     * um impresso com "Saldo a faturar".
+     *
+     * ⚠ E O VALOR DA FICHA DA OBRA É A ÚLTIMA FONTE, E SÓ PARA O IMPRESSO. É estimativa
+     * digitada, que ninguém aprova; usá-la como teto trancava a obra por
+     * administração e mandava registrar um aditivo que exige um contrato
+     * inexistente. Quem chama para TRAVAR ignora essa fonte — e é a única
+     * diferença entre os dois consumidores, escrita aqui para não virar duas
+     * regras de novo.
+     * ================================================================= */
+    _baseDoTeto: function (m, paraTravar) {
+      var ctr = m && m.contratoId ? Store.obter(eid(), "contratos", m.contratoId) : null;
+      function doContrato() {
+        if (!ctr || !(Util.num(ctr.valor) > 0)) return null;
+        /* ⚠ SEM O MOTOR, O CONTRATO AINDA VALE — pelo valor de assinatura.
+           Devolver `null` aqui faria o boletim ignorar o contrato inteiro e
+           cair no valor da obra quando `js/aditivo.js` não tivesse carregado
+           (PWA com pré-cache incompleto): trocar "sem aditivo" por "sem
+           contrato" é perder mais do que se estava protegendo. */
+        if (typeof Aditivo === "undefined" || !Aditivo.vigente) {
+          return { valor: Util.num(ctr.valor), fonte: "contrato" };
+        }
+        var vg = Aditivo.vigente(ctr, listaTodas("aditivos"));
+        return Util.num(vg.valor) > 0 ? { valor: Util.num(vg.valor), fonte: "contrato" } : null;
+      }
+      /* ⚠ AQUI ESTÁ A ÚNICA DIFERENÇA ENTRE OS DOIS CONSUMIDORES, e ela é
+       * deliberada: eles fazem PERGUNTAS DIFERENTES.
+       *
+       * O IMPRESSO pergunta "contra o que este boletim foi medido". A resposta
+       * é o valor CONGELADO: o boletim documenta um momento, e seus percentuais
+       * foram calculados contra o teto daquele dia. Reimprimir um documento
+       * assinado com o teto de hoje mudaria os números que alguém já conferiu —
+       * é por isso que o congelamento existe, e há teste defendendo essa ordem
+       * desde antes desta versão.
+       *
+       * A TRAVA pergunta "quanto pode ser faturado AGORA". A resposta é o
+       * contrato VIGENTE: um teto congelado ontem não autoriza nada hoje, e um
+       * aditivo aprovado depois do congelamento tem de valer.
+       *
+       * Tentei unificar as duas e quebrei o teste que protege o documento
+       * assinado. A resposta certa não era um número só — era escrever a
+       * diferença num lugar só, que é este. */
+      if (paraTravar) {
+        var c1 = doContrato(); if (c1) return c1;
+      }
+      if (Util.num(m && m.valorContratado) > 0) {
+        return { valor: Util.num(m.valorContratado), fonte: "congelado" };
+      }
+      if (!paraTravar) {
+        var c2 = doContrato(); if (c2) return c2;
+      }
+      if (m && m.orcamentoId && typeof Orcamento !== "undefined" && Store.obterOrcamento) {
+        var orc = Store.obterOrcamento(eid(), m.orcamentoId);
+        if (orc) {
+          var tv = Orcamento.totais(orc);
+          if (Util.num(tv.precoVenda) > 0) return { valor: Util.num(tv.precoVenda), fonte: "orcamento" };
+        }
+      }
+      var obra = m && m.obraId ? Store.obter(eid(), "obras", m.obraId) : null;
+      if (obra && Util.num(obra.valor) > 0) return { valor: Util.num(obra.valor), fonte: "obra" };
+      return { valor: 0, fonte: "" };
+    },
+
+    _cabeNoTeto: function (obj, mOriginal) {
+      if (typeof Aditivo === "undefined" || !Aditivo.podeMedir) return true;
+      var ctr = obj.contratoId ? Store.obter(eid(), "contratos", obj.contratoId) : null;
+      /* contratos VIVOS da obra — `ativo` e `suspenso`. Contrato em
+         elaboração (o padrão do formulário, com valor R$ 0) não define
+         sequência: bastava alguém ter COMEÇADO a cadastrar um segundo
+         contrato para o modo por-contrato ligar e tirar da soma toda medição
+         antiga salva sem apontar contrato. */
+      var vivos = lista("contratos").filter(function (c) {
+        if (!c || String(c.obraId) !== String(obj.obraId)) return false;
+        var st = String(c.status || "");
+        return st === "ativo" || st === "suspenso";
+      });
+      /* teto alternativo: o preço de venda do orçamento vinculado. NÃO o
+         `valor` da ficha da obra — aquilo é estimativa, não instrumento. */
+      /* ⚠ MESMA REGRA DO IMPRESSO, MENOS A ÚLTIMA FONTE. `_baseDoTeto` já
+         resolve contrato > congelado > orçamento > obra; aqui a fonte `obra`
+         é descartada porque estimativa digitada não autoriza faturamento.
+         O ramo do contrato o motor resolve sozinho (é onde o aditivo mora),
+         então só o resto vira `tetoOrcamento`. */
+      var _b = this._baseDoTeto(obj, true);
+      var tetoOrc = (_b.fonte === "congelado" || _b.fonte === "orcamento") ? _b.valor : 0;
+      var d = Aditivo.podeMedir({
+        /* ⚠ O STATUS VAI JUNTO, dos dois lados. A exceção do "não piorou"
+           precisa distinguir EDIÇÃO de MUDANÇA DE ESTADO: quem só troca o
+           select de Status para "Aprovada" tem `obj.valor === m.valor`, a
+           comparação vira `x <= x` e o formulário aprovava exatamente o
+           boletim que o botão Aprovar recusa. O mesmo com o boletim
+           REJEITADO, que está fora da sequência: reabri-lo ACRESCENTA valor. */
+        boletim: { id: obj.id, obraId: obj.obraId, contratoId: obj.contratoId,
+          valor: obj.valor, status: obj.status },
+        original: mOriginal && mOriginal.id ? {
+          id: mOriginal.id, obraId: mOriginal.obraId,
+          contratoId: mOriginal.contratoId, valor: mOriginal.valor, status: mOriginal.status
+        } : null,
+        contrato: ctr, aditivos: listaTodas("aditivos"),
+        medicoes: lista("medicoes"), contratosDaObra: vivos,
+        tetoOrcamento: tetoOrc
+      });
+      if (d.pode) return true;
+      var vig = ctr ? Aditivo.vigente(ctr, listaTodas("aditivos")) : null;
+      UI.toast(d.porque + " " +
+        (vig && vig.aditivoPendente > 0
+          ? "(há " + Util.fmtMoeda(vig.aditivoPendente) + " de aditivo aguardando aprovação — aprovado, o boletim passa a caber.)"
+          : d.comoResolver), "erro");
+      return false;
+    },
+
     _medicaoCalc: function (m) {
       var self = this, obra = m.obraId ? Store.obter(eid(), "obras", m.obraId) : null;
       var contratado = obra ? Util.num(obra.valor) : 0;
@@ -4455,17 +4985,8 @@
          congelado no boletim > CONTRATO apontado (é onde o aditivo mora —
          antes era ignorado e o aditivo de R$ 50 mil não aparecia no papel
          que o fiscal assina) > preço de venda do orçamento > valor da obra. */
-      if (Util.num(m.valorContratado) > 0) {
-        contratado = Util.num(m.valorContratado);
-      } else {
-        var ctrB = m.contratoId ? Store.obter(eid(), "contratos", m.contratoId) : null;
-        if (ctrB && Util.num(ctrB.valor) > 0) {
-          contratado = Util.num(ctrB.valor);
-        } else if (m.orcamentoId && typeof Orcamento !== "undefined") {
-          var orcV = Store.obterOrcamento ? Store.obterOrcamento(eid(), m.orcamentoId) : null;
-          if (orcV) { var tv = Orcamento.totais(orcV); if (Util.num(tv.precoVenda) > 0) contratado = tv.precoVenda; }
-        }
-      }
+      var _bt = this._baseDoTeto(m);
+      if (_bt.fonte) contratado = _bt.valor;
       /* v1.1.234 — boletim rejeitado fora da sequência (a própria medição
          impressa fica, mesmo rejeitada: imprimir o boletim recusado é lícito;
          somar o valor dele no acumulado dos OUTROS é que era o erro) */
@@ -4533,7 +5054,15 @@
       // sem valor de contrato → não exibir % (base inexistente); helper omite a coluna quando null
       var pctAcum = contratado > 0 ? acumulado / contratado * 100 : null;
       var pctAnt = contratado > 0 ? anterior / contratado * 100 : null;
-      return { contratado: contratado, anterior: anterior, atual: atual, acumulado: acumulado, saldo: Math.max(0, contratado - acumulado), retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra,
+      /* ⚠ O IMPRESSO ESCONDIA O ESTOURO. `Math.max(0, contratado - acumulado)`
+         fazia o papel que o fiscal ASSINA mostrar saldo ZERO onde havia
+         excedente — o documento contratual afirmando que está tudo em ordem
+         exatamente quando não está. Saldo negativo é a verdade e aparece. */
+      var _sld = (typeof Aditivo !== "undefined") ? Aditivo.saldo(contratado, acumulado)
+        : { saldo: contratado - acumulado, excedeu: (contratado - acumulado) < -0.005, excedente: 0, rotulo: "Saldo a faturar" };
+      return { contratado: contratado, anterior: anterior, atual: atual, acumulado: acumulado,
+        saldo: _sld.saldo, excedeu: _sld.excedeu, excedente: _sld.excedente, saldoRotulo: _sld.rotulo,
+        retencao: ret, retVal: retVal, liquido: liquido, pctAcum: pctAcum, pctAnt: pctAnt, obra: obra,
         /* a tela usa estes dois para explicar de onde veio a sequência */
         porContrato: porContrato, contratosDaObra: ctrsDaObra.length, medSemContrato: ambiguas };
     },
@@ -4576,7 +5105,10 @@
             + lin("Medição anterior (acumulado)", c.anterior, c.pctAnt)
             + lin("Medição atual (Nº " + Util.esc(m.numero || "") + ")", c.atual, c.atual / c.contratado * 100)
             + lin("Acumulado até esta medição", c.acumulado, c.pctAcum, true)
-            + lin("Saldo a executar", c.saldo, c.saldo / c.contratado * 100)
+            /* ⚠ O RÓTULO EXISTE, É TESTADO, E NÃO CHEGAVA AO PAPEL. "Saldo a
+               executar −R$ 850.000,00" faz quem confere ler "saldo" e um
+               número negativo; EXCEDIDO é o que o documento tem de dizer. */
+            + lin(c.saldoRotulo || "Saldo a executar", c.saldo, c.saldo / c.contratado * 100)
             + "</tbody></table>"
             /* ⚠ NUMA OBRA COM MAIS DE UM CONTRATO, O PAPEL TEM DE DIZER DE
                QUAL SEQUÊNCIA ELE ESTÁ FALANDO. Sem esta linha, dois boletins
@@ -4681,7 +5213,7 @@
             ["Medição anterior (acumulado)", c.anterior, c.contratado ? c.anterior / c.contratado : ""],
             ["Medição atual (Nº " + (m.numero || "") + ")", c.atual, c.contratado ? c.atual / c.contratado : ""],
             ["Acumulado até esta medição", c.acumulado, c.contratado ? c.acumulado / c.contratado : ""],
-            ["Saldo a executar", c.saldo, c.contratado ? c.saldo / c.contratado : ""],
+            [c.saldoRotulo || "Saldo a executar", c.saldo, c.contratado ? c.saldo / c.contratado : ""],
             ["Retenção (" + Util.fmtNum(c.retencao, 1) + "%)", c.retVal, ""],
             ["Líquido a faturar", c.liquido, ""]
           ];
@@ -4772,7 +5304,12 @@
           hh.eachCell(function (cell) { cell.font = { bold: true, color: { argb: "FFFFFFFF" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: verde } }; });
           var acc = 0;
           meds.forEach(function (mm, i) {
-            acc += Util.num(mm.valor); var saldo = Math.max(0, c.contratado - acc);
+            /* ⚠ O EXCEL TAMBÉM. O conserto do saldo negativo parou no PDF e
+               esta aba seguia zerando o estouro, com a coluna % ao lado
+               mostrando 130% — a mesma planilha se contradizendo. */
+            acc += Util.num(mm.valor);
+            var saldo = (typeof Aditivo !== "undefined" && Aditivo.saldo)
+              ? Aditivo.saldo(c.contratado, acc).saldo : (c.contratado - acc);
             var r = wh.getRow(2 + i);
             r.values = [mm.numero || (i + 1), (mm.periodoInicio ? mm.periodoInicio.split("-").reverse().join("/") : "") + (mm.periodoFim ? " a " + mm.periodoFim.split("-").reverse().join("/") : ""), Util.num(mm.valor), acc, saldo, c.contratado ? acc / c.contratado : ""];
             r.getCell(3).numFmt = "R$ #,##0.00"; r.getCell(4).numFmt = "R$ #,##0.00"; r.getCell(5).numFmt = "R$ #,##0.00"; r.getCell(6).numFmt = "0.0%";
@@ -5390,25 +5927,55 @@
         Util.arr(e.itens).forEach(function (it) { prev += Util.num(it.quantidade) * Util.num(it.custoUnitario); });
         return { id: e.id, nome: (e.codigo ? e.codigo + " " : "") + (e.nome || "Etapa"), previsto: prev, realizado: 0 };
       });
-      var idx = {}; etapas.forEach(function (e) { idx[e.id] = e; });
-      var naoApropriado = 0;
-      lista("financeiro").forEach(function (f) {
-        if (f.tipo !== "despesa" || f.obraId !== obraId) return;
-        var val = Util.num(f.valor);
-        if (f.etapaId && idx[f.etapaId]) idx[f.etapaId].realizado += val;
-        else naoApropriado += val;
+      /* ⚠ A CONTA MUDOU DE CASA: agora e `js/custoetapa.js`, motor puro que
+       * entra no gate. A versao que ficava aqui tinha tres buracos, e todos
+       * empurravam o saldo PARA CIMA — ou seja, faziam a tela convidar a
+       * gastar:
+       *   1. somava despesa CANCELADA, que Compras ja descartava (as duas
+       *      telas discordavam sobre a mesma obra);
+       *   2. nao conhecia COMPROMETIDO: "orcado 500k, realizado 300k, saldo
+       *      200k" com 180k em pedidos aprovados esperando entrega;
+       *   3. nao rolava SUBETAPA para a raiz, entao gasto apropriado numa
+       *      subetapa sumia da etapa que o continha.
+       * E, principalmente, ela dizia so QUANTO ficou sem etiqueta — nunca
+       * POR QUAL PORTA entrou, que e o que diz o que consertar. */
+      var pac = CustoEtapa.consolidar({
+        obraId: obraId, orcamento: orc,
+        financeiro: lista("financeiro"),
+        /* ⚠ `lista` e nao `listaTodas`: `compras` respeita escopo por obra do
+           usuario, e trocar isso ja vazou dado de obra alheia antes. */
+        compras: lista("compras")
       });
-      var totPrev = 0, totReal = 0;
-      etapas.forEach(function (e) {
-        e.saldo = e.previsto - e.realizado;
-        e.pct = e.previsto > 0 ? (e.realizado / e.previsto * 100) : (e.realizado > 0 ? 999 : 0);
-        e.estouro = e.realizado > e.previsto + 0.005;
-        totPrev += e.previsto; totReal += e.realizado;
+      /* a tela antiga fala em `etapas` com `realizado`; mantido o nome para
+         nao reescrever o HTML, agora com as colunas novas ao lado */
+      var etapasOut = pac.linhas.map(function (l) {
+        return {
+          id: l.subEtapaId || l.etapaId, nivel: l.nivel, nome: l.nome,
+          previsto: l.previsto, realizado: l.realizadoCompetencia,
+          realizadoCaixa: l.realizadoCaixa, comprometido: l.comprometido,
+          saldo: l.saldo, pct: l.pct, estouro: l.estouro, semPrevisto: l.semPrevisto
+        };
       });
-      totReal += naoApropriado;
       return {
-        obra: obra, orc: orc, etapas: etapas, naoApropriado: naoApropriado,
-        totalPrevisto: totPrev, totalRealizado: totReal, saldoTotal: totPrev - totReal
+        obra: obra, orc: orc, etapas: etapasOut,
+        naoApropriado: pac.naoApropriado.valor,
+        naoApropriadoPorOrigem: pac.naoApropriado.porOrigem,
+        comprometidoSemEtapa: pac.comprometidoSemEtapa,
+        cobertura: pac.cobertura,
+        totalPrevisto: pac.totais.previsto,
+        totalRealizado: pac.totais.realizadoCompetencia + pac.naoApropriado.valor,
+        /* ⚠ INCLUI O COMPROMETIDO SEM ETAPA. `compras` não tem campo
+           `etapaId` — nenhuma, nunca — então o comprometido POR ETAPA é
+           sempre zero e este KPI nascia R$ 0,00 em toda obra, com o Saldo
+           sem descontar pedido algum. Não saber a QUAL etapa o pedido
+           pertence não é motivo para fingir que ele não existe: o dinheiro
+           está empenhado. A tabela por etapa continua mostrando só o que tem
+           etiqueta, e o aviso de cobertura diz quanto ficou de fora. */
+        totalComprometido: pac.totais.comprometido +
+                           ((pac.comprometidoSemEtapa && pac.comprometidoSemEtapa.valor) || 0),
+        saldoTotal: pac.totais.previsto - pac.totais.comprometido -
+                    ((pac.comprometidoSemEtapa && pac.comprometidoSemEtapa.valor) || 0) -
+                    (pac.totais.realizadoCompetencia + pac.naoApropriado.valor)
       };
     },
     renderPrevistoReal: function () {
@@ -5434,9 +6001,39 @@
       html += '<div class="kpis kpis-g" style="margin-bottom:14px">' +
         '<div class="kpi custo"><div class="rotulo">Previsto (custo direto)</div><div class="num">' + Util.fmtMoeda(d.totalPrevisto) + "</div></div>" +
         '<div class="kpi"><div class="rotulo">Realizado (gasto real)</div><div class="num">' + Util.fmtMoeda(d.totalRealizado) + "</div></div>" +
-        '<div class="kpi destaque"><div class="rotulo">Saldo</div><div class="num" style="color:' + corSaldo + '">' + Util.fmtMoeda(d.saldoTotal) + "</div></div>" +
+        /* ⚠ COMPROMETIDO É O NÚMERO QUE FALTAVA NA HORA DE AUTORIZAR.
+           Pedido de compra APROVADO e ainda não recebido não é despesa — e
+           some da tela. Quem lia "orçado 500k · realizado 300k · saldo 200k"
+           autorizava a próxima compra sem ver 180k já empenhados. O
+           agregador existia (`PorObra.totaisCompras`), testado, e aparecia só
+           no KPI da tela de Compras. */
+        '<div class="kpi"><div class="rotulo">Comprometido (pedidos aprovados)</div><div class="num" style="color:#b45309">' + Util.fmtMoeda(d.totalComprometido || 0) + "</div></div>" +
+        '<div class="kpi destaque"><div class="rotulo">Saldo (menos o comprometido)</div><div class="num" style="color:' + corSaldo + '">' + Util.fmtMoeda(d.saldoTotal) + "</div></div>" +
         "</div>";
-      html += '<div class="card"><table class="tbl"><thead><tr><th>Etapa</th><th class="num">Previsto</th><th class="num">Realizado</th><th style="width:34%">Consumo</th><th class="num">Saldo</th></tr></thead><tbody>';
+      /* ⚠ O AVISO QUE IMPEDE A TABELA DE MENTIR. Com a maior parte do gasto
+         sem etiqueta de etapa, as linhas abaixo mostram consumo perto de zero
+         e sugerem folga onde o dinheiro já saiu. Número incompleto sem aviso
+         é pior que número nenhum — e aqui ele decide compra. */
+      if (d.cobertura && d.cobertura.avisos && d.cobertura.avisos.length) {
+        html += '<div class="card" style="border-left:4px solid #b45309;background:#fff7ed;margin-bottom:12px">' +
+          '<div style="font-size:13px;color:#7c2d12">' +
+          d.cobertura.avisos.map(function (a) { return Util.esc(a); }).join('<br>') + '</div></div>';
+      }
+      html += '<div class="card"><table class="tbl"><thead><tr><th>Etapa</th><th class="num">Previsto</th><th class="num">Comprometido</th><th class="num">Realizado</th><th style="width:28%">Consumo</th><th class="num">Saldo</th></tr></thead><tbody>';
+      /* ⚠ A LINHA QUE FAZ O TOTAL FECHAR. `compras` não tem `etapaId`, então o
+         comprometido por etapa é sempre zero e o rodapé (que soma o empenhado
+         de verdade) não batia com nenhuma célula da coluna. Sem esta linha, a
+         diferença não aparece em lugar nenhum — e é uma tabela que decide
+         compra. Mesmo molde da linha "Não apropriado". */
+      if (d.comprometidoSemEtapa && Util.num(d.comprometidoSemEtapa.valor) > 0.005) {
+        html += '<tr style="background:#fffbeb">' +
+          '<td><b>Comprometido sem etapa</b><div class="muted" style="font-size:11px">' +
+          d.comprometidoSemEtapa.n + ' pedido(s) aprovado(s) que ainda não apontam etapa</div></td>' +
+          '<td class="num muted">—</td>' +
+          '<td class="num" style="color:#b45309;font-weight:600">' + Util.fmtMoeda(d.comprometidoSemEtapa.valor) + '</td>' +
+          '<td class="num muted">—</td><td class="muted" style="font-size:11px">já empenhado</td>' +
+          '<td class="num" style="color:var(--vermelho);font-weight:600">' + Util.fmtMoeda(-Util.num(d.comprometidoSemEtapa.valor)) + '</td></tr>';
+      }
       d.etapas.forEach(function (e) {
         var largura = Math.min(100, Math.round(e.pct));
         var cor = e.estouro ? "var(--vermelho)" : (e.pct >= 85 ? "#f59e0b" : "var(--verde)");
@@ -5444,15 +6041,36 @@
         var barra = '<div style="background:#eef2f7;border-radius:99px;height:16px;overflow:hidden;position:relative">' +
           '<div style="height:100%;width:' + largura + '%;background:' + cor + ';border-radius:99px;transition:width .3s"></div>' +
           '<span style="position:absolute;right:8px;top:0;font-size:11px;line-height:16px;color:#334155;font-weight:700">' + pctTxt + (e.estouro ? " ⚠" : "") + "</span></div>";
-        html += "<tr><td><b>" + Util.esc(e.nome) + "</b></td>" +
-          '<td class="num">' + Util.fmtMoeda(e.previsto) + '</td><td class="num">' + Util.fmtMoeda(e.realizado) + "</td>" +
+        /* subetapa entra indentada, sob a raiz que a contem — o total soma
+           so nivel 1, entao ela nao conta duas vezes */
+        var recuo = e.nivel === 2 ? 'padding-left:22px;font-weight:400' : '';
+        html += '<tr' + (e.nivel === 2 ? ' style="background:#fbfdff"' : '') + '><td style="' + recuo + '">' +
+          (e.nivel === 2 ? '<span class="muted">↳ </span>' : '') + (e.nivel === 2 ? Util.esc(e.nome) : "<b>" + Util.esc(e.nome) + "</b>") + "</td>" +
+          '<td class="num">' + Util.fmtMoeda(e.previsto) + '</td>' +
+          /* ⚠ UM `class` SÓ. O ramo do else concatenava um SEGUNDO atributo
+             `class` no mesmo <td> (`class="num" class="num muted"`); o parser
+             mantém a primeira ocorrência e descarta a segunda, então o cinza
+             de "sem comprometido" nunca era aplicado. */
+          '<td class="num' + (e.comprometido > 0.005 ? '" style="color:#b45309"' : ' muted"') + '>' + (e.comprometido > 0.005 ? Util.fmtMoeda(e.comprometido) : "—") + '</td>' +
+          '<td class="num">' + Util.fmtMoeda(e.realizado) + "</td>" +
           "<td>" + barra + '</td><td class="num" style="color:' + (e.saldo >= 0 ? "var(--verde)" : "var(--vermelho)") + ';font-weight:600">' + Util.fmtMoeda(e.saldo) + "</td></tr>";
       });
       if (d.naoApropriado > 0.005) {
+        /* ⚠ POR QUAL PORTA o dinheiro entrou sem etiqueta. Sem esta quebra,
+           "Não apropriado: R$ 84.000" e uma reclamacao; com ela, e uma lista
+           de consertos — e e o numero que prova, depois, que o carimbo novo
+           funcionou. */
+        var portas = d.naoApropriadoPorOrigem || {};
+        var ROT = { compra: "compra recebida", nota: "nota fiscal", folha: "folha", medicao: "medição", frota: "frota", semCarimbo: "sem origem" };
+        var detalhe = Object.keys(portas).sort(function (a, b) { return portas[b] - portas[a]; })
+          .map(function (k) { return (ROT[k] || k) + " " + Util.fmtMoeda(portas[k]); }).join(" · ");
         html += '<tr style="background:#fff7ed"><td><b>Não apropriado</b> <span class="muted" title="Despesas da obra sem etapa escolhida no lançamento">ⓘ</span></td>' +
-          '<td class="num muted">—</td><td class="num">' + Util.fmtMoeda(d.naoApropriado) + '</td><td><span class="muted" style="font-size:12px">escolha a etapa ao lançar no Financeiro para apropriar</span></td><td class="num muted">—</td></tr>';
+          '<td class="num muted">—</td><td class="num muted">—</td><td class="num">' + Util.fmtMoeda(d.naoApropriado) + '</td>' +
+          '<td><span class="muted" style="font-size:12px">' + (detalhe ? "entrou por: " + Util.esc(detalhe) : "escolha a etapa ao lançar no Financeiro") + '</span></td><td class="num muted">—</td></tr>';
       }
-      html += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalRealizado) + '</b></td><td></td><td class="num" style="color:' + corSaldo + '"><b>' + Util.fmtMoeda(d.saldoTotal) + "</b></td></tr></tfoot></table></div>";
+      html += '</tbody><tfoot><tr class="tot"><td><b>TOTAL</b></td><td class="num"><b>' + Util.fmtMoeda(d.totalPrevisto) + '</b></td>' +
+        '<td class="num"><b>' + Util.fmtMoeda(d.totalComprometido || 0) + '</b></td>' +
+        '<td class="num"><b>' + Util.fmtMoeda(d.totalRealizado) + '</b></td><td></td><td class="num" style="color:' + corSaldo + '"><b>' + Util.fmtMoeda(d.saldoTotal) + "</b></td></tr></tfoot></table></div>";
       return html;
     },
     prTrocaObra: function (obraId) { if (obraId == null) return; this._prSel = obraId; App.render(); },
@@ -16152,13 +16770,24 @@ renderFolha: function () {
          primeiro em ordem de inserção: o % de avanço saltava e o Math.min o
          mascarava em 100% — relatório mensal dizendo obra concluída com
          metade do valor medido. */
-      var baseContr = lista("contratos").filter(function (c) {
+      var contrVivos = lista("contratos").filter(function (c) {
         return c.obraId === obraId && c.status !== "cancelado" && c.status !== "rescindido";
-      }).reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
+      });
+      var baseContr = contrVivos.reduce(function (s, c) { return s + Util.num(c.valor); }, 0);
+      /* guarda a resposta ANTES do fallback: depois de cair no orcamento,
+         `baseContr > 0` nao distingue mais uma coisa da outra, e o texto do
+         relatorio precisa dizer sobre QUAL base o avanco foi medido */
+      var temContratoVivo = baseContr > 0;
       if (!(baseContr > 0) && orc && typeof Orcamento !== "undefined" && Orcamento.totais) {
         try { baseContr = Util.num(Orcamento.totais(orc).precoVenda); } catch (eB) { baseContr = 0; }
       }
       var pctAcum = baseContr > 0 ? Math.min(100, medAcum / baseContr * 100) : null;
+      /* ⚠ ESTA LINHA EXISTE PORQUE O TEXTO ABAIXO LIA `contrato`, QUE NUNCA FOI
+         DECLARADO — e o arquivo roda em "use strict". Como ela so e alcancada
+         quando `pctAcum != null` (ou seja, quando a obra TEM contrato vivo ou
+         orcamento vinculado: o caso normal), o Relatorio Executivo quebrava com
+         ReferenceError justamente nas obras que tinham o que relatar. */
+      var sobreContrato = temContratoVivo;
 
       var finO = lista("financeiro").filter(function (f) { return f.obraId === obraId && f.tipo === "despesa"; });
       var despMes = 0, despAcum = 0;
@@ -16192,7 +16821,7 @@ renderFolha: function () {
         kpi("Custo real no mês", Util.fmtMoeda(despMes), "#dc2626") +
         kpi("Custo acum. × orçado", orcado > 0 ? Util.fmtNum(despAcum / orcado * 100, 1) + "%" : "—", despAcum > orcado && orcado > 0 ? "#dc2626" : "#14202e") + "</div>";
       if (pctAcum != null) {
-        corpo += '<div style="margin-bottom:14px"><div style="font-size:10px;color:#5a6b7b;margin-bottom:3px">AVANÇO FÍSICO (medições acumuladas sobre ' + (contrato ? "o contrato" : "o orçamento") + ')</div><div style="background:#eef2f7;border-radius:99px;height:14px;overflow:hidden"><div style="height:100%;width:' + Math.round(pctAcum) + '%;background:linear-gradient(90deg,#5a9bc9,#2e6f9e)"></div></div></div>';
+        corpo += '<div style="margin-bottom:14px"><div style="font-size:10px;color:#5a6b7b;margin-bottom:3px">AVANÇO FÍSICO (medições acumuladas sobre ' + (sobreContrato ? "o contrato" : "o orçamento") + ')</div><div style="background:#eef2f7;border-radius:99px;height:14px;overflow:hidden"><div style="height:100%;width:' + Math.round(pctAcum) + '%;background:linear-gradient(90deg,#5a9bc9,#2e6f9e)"></div></div></div>';
       }
       corpo += "<h3 style='border-bottom:2px solid #0f2740;padding-bottom:4px;font-size:13px'>FINANCEIRO DO PERÍODO</h3>" +
         "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tbody>" +
@@ -17821,7 +18450,16 @@ renderFolha: function () {
       if (!ehNovo) botoes.push({ texto: "" + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "") + " Excluir", classe: "danger", onClick: function () {
         if (self._bloqueado()) return;
         if (barra("excluir")) return;
-        if (confirm("Excluir este registro? Não pode ser desfeito.")) {
+        /* ⚠ O QUE VAI JUNTO ENTRA NA PERGUNTA. Excluir em cascata sem dizer o
+           que a cascata leva é destruir dado que o usuário não sabia estar
+           apostando: o `aoExcluir` do contrato apaga os TERMOS ADITIVOS dele
+           — documentos com valor, motivo, fundamento, autor e trilha. Avisar
+           depois de apagar não é avisar. */
+        var _extraAviso = "";
+        if (typeof G.avisoExclusao === "function") {
+          try { _extraAviso = G.avisoExclusao(registro) || ""; } catch (eA) { _extraAviso = ""; }
+        }
+        if (confirm("Excluir este registro? Não pode ser desfeito." + (_extraAviso ? "\n\n" + _extraAviso : ""))) {
           /* ⚠ O REGISTRO SAI, OS ANEXOS FICAVAM. Excluir um diário apagava a
            * linha e deixava as fotos no servidor para sempre — lixo que come a
            * cota de 2 GB da licença e que ninguém consegue achar depois, porque
@@ -17840,10 +18478,22 @@ renderFolha: function () {
            *   sucesso. Gancho que não devolve nada segue como antes — os
            *   existentes não mudam de comportamento. */
           var apagar = function () {
-            Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render(); UI.toast(nome + " excluído.", "ok");
+            Store.excluir(eid(), entidade, registro.id); UI.fecharModal(); App.render();
+            /* ⚠ E O QUE FOI JUNTO APARECE NO FIM TAMBÉM. A frase que o gancho
+               devolve era montada e descartada: só o ramo de promessa usava o
+               retorno. Cascata silenciosa é dado sumindo sem registro na tela. */
+            UI.toast(nome + " excluído." + (_ecoTxt ? " " + _ecoTxt : ""), "ok");
           };
+          /* ⚠ DECLARADO AQUI DENTRO, e não antes do `apagar`, de propósito:
+             tools/test-varredura-278.js recorta este bloco do fonte a partir
+             de `var apagar = function () {` e o roda numa VM. Declarar fora da
+             fatia deixava o teste vermelho com `_ecoTxt is not defined` — o
+             teste está certo, ele executa o código de produção de verdade em
+             vez de reproduzir "algo equivalente". */
+          var _ecoTxt = "";
           var eco = null;
           if (typeof G.aoExcluir === "function") { try { eco = G.aoExcluir(registro); } catch (eX) { eco = null; } }
+          if (typeof eco === "string") { _ecoTxt = eco; eco = null; }
           if (eco && typeof eco.then === "function") {
             eco.then(function (ok) {
               if (ok === false) { UI.toast(nome + " NÃO foi excluído — resolva o aviso acima e tente de novo.", "erro"); return; }
@@ -18132,7 +18782,14 @@ renderFolha: function () {
       if (!reg.contratoId) return;
       try {
         var c = Store.obter(eid(), "contratos", reg.contratoId);
-        if (c && Util.num(c.valor) > 0) reg.valorContratado = Util.num(c.valor);
+        if (!c) return;
+        /* ⚠ CONGELA O VIGENTE, NAO O DE ASSINATURA. Congelando `c.valor`, um
+           boletim que cabia como rascunho (teto com aditivo) virava EXCEDIDO no
+           instante da aprovacao (teto sem aditivo) — o documento assinado
+           acusando estouro exatamente onde nao havia. */
+        var _tv = (typeof Aditivo !== "undefined" && Aditivo.vigente)
+          ? Util.num(Aditivo.vigente(c, listaTodas("aditivos")).valor) : Util.num(c.valor);
+        if (_tv > 0) reg.valorContratado = _tv;
       } catch (e) {}
     },
 
@@ -18140,6 +18797,19 @@ renderFolha: function () {
       if (!this._podeAprovarGuard()) return;
       var reg = Store.obter(eid(), entidade, id); if (!reg) return;
       if (!this._guardaAutor(reg, entidade)) return;
+      /* ⚠ APROVAR TAMBÉM CONFERE O TETO. A trava vivia só no formulário, e
+         aprovar é o ato que vira fatura: boletim gravado por versão anterior
+         a esta (que não tinha trava nenhuma) passava direto, congelava a base
+         e entrava no faturamento.
+         ⚠ E AQUI NÃO VALE A REGRA DO "NÃO PIOROU" — por isso o segundo
+         argumento é `null`, e não `reg`. Aquela regra existe para não trancar
+         quem EDITA um boletim já estourado (corrigir a data não pode ser
+         impossível). Aprovar não edita nada: o boletim é julgado como está.
+         Passar `reg, reg` fazia a comparação virar `x <= x`, a exceção
+         disparava sempre e a trava não recusava nada — medido, não deduzido.
+         Boletim antigo que estoura fica pendente até o aditivo ser aprovado
+         ou o valor baixar, que é exatamente o que esta versão veio impor. */
+      if (entidade === "medicoes" && !this._cabeNoTeto(reg, null)) return;
       reg.status = statusOk;
       this._congelarBaseContrato(entidade, reg);
       /* tirei o diálogo, mas a informação não pode sumir junto: quando não dá
@@ -19205,6 +19875,54 @@ renderFolha: function () {
         case "nova-obra": return this.novoObra();
         case "nova-cliente": return this.novoCliente();
         case "novo-contrato": return this.novoContrato();
+        /* ⚠ A GUARDA E DO MODULO `contratos`. `aditivos` nao e modulo, e
+           `Gestao.abrir` casa nome de entidade com nome de modulo — passar por
+           la daria "sem permissao" para todo mundo. O aditivo e parte do
+           contrato, entao herda a permissao dele. */
+        case "aditivo-novo": {
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("contratos")) {
+            UI.toast("Você não tem acesso a Contratos.", "erro"); return;
+          }
+          return this.novoAditivo(dataset && dataset.ctr);
+        }
+        case "aprovar-aditivo": {
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("contratos")) {
+            UI.toast("Você não tem acesso a Contratos.", "erro"); return;
+          }
+          /* ⚠ CONFIRMA ANTES, dizendo de qual contrato e para quanto vai. Os
+             cards de aditivo ficam empilhados abaixo da lista de contratos —
+             numa empresa com 12 contratos são 12 blocos parecidos, e este
+             botão levanta o teto de faturamento de UM deles. Um clique errado
+             aqui autoriza cobrar do cliente errado. */
+          var _ad = Store.obter(eid(), "aditivos", dataset && dataset.adid);
+          if (!_ad) return;
+          var _c = Store.obter(eid(), "contratos", _ad.contratoId);
+          var _vg = (_c && typeof Aditivo !== "undefined" && Aditivo.vigente)
+            ? Aditivo.vigente(_c, listaTodas("aditivos")) : null;
+          if (!confirm("Aprovar o " + (_ad.numero || "termo aditivo") +
+              (_c ? " do contrato " + (_c.numero || "—") : "") + "?" +
+              (_vg ? "\n\nO teto do contrato vai de " + Util.fmtMoeda(_vg.valor) +
+                     " para " + Util.fmtMoeda(_vg.valor + Util.num(_ad.valor)) + "." : "") +
+              "\n\nIsso muda quanto pode ser faturado do cliente.")) return;
+          /* ⚠ o texto diz o que MUDA no mundo, nao "ok": aprovar aditivo move
+             o teto do contrato, e quem clica precisa saber disso. */
+          return this._aprovar("aditivos", dataset && dataset.adid, "aprovado",
+            "Termo aditivo aprovado — o valor vigente do contrato subiu.");
+        }
+        case "rejeitar-aditivo": {
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("contratos")) {
+            UI.toast("Você não tem acesso a Contratos.", "erro"); return;
+          }
+          return this._rejeitar("aditivos", dataset && dataset.adid, "rejeitado");
+        }
+        case "aditivo-abrir": {
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("contratos")) {
+            UI.toast("Você não tem acesso a Contratos.", "erro"); return;
+          }
+          var _ad = Store.obter(eid(), "aditivos", dataset && dataset.adid);
+          if (_ad) return this.formAditivo(_ad);
+          return;
+        }
         /* ---- Produção: do diário ao pagamento ---- */
         case "prod-obra": {
           /* ⚠ o clique que ABRE o <select> chega sem value; trocar o filtro
