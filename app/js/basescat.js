@@ -57,14 +57,32 @@
   /* Arquivos de data/ que NÃO são base e nunca podem virar linha da tabela.
      sinapi-sample.json são 30 itens de demonstração que se apresentam como
      SINAPI (sobrescreveria o índice bom); sudecap-BH-2026-01.json é a versão
-     anterior e não tem tipoItem em nenhum dos 2.025 itens; orcamento-leilah
-     é um ORÇAMENTO de cliente real, com dado pessoal, que nem base é.
-     ⚠ O orcamento-leilah SAIU do repositório em 12/08/2026 (foi para
-     Documents\RA_Engenharia\Backups
-ecuperacao-orcamento-cliente-2026-07),
-     mas continua nesta lista de propósito: se alguém devolver o arquivo para
-     data/ durante uma recuperação, ele não pode virar linha de catálogo. */
-  var NUNCA = ["data/sinapi-sample.json", "data/sudecap-BH-2026-01.json", "data/orcamento-leilah.json"];
+     anterior e não tem tipoItem em nenhum dos 2.025 itens.
+
+     ⚠ ORÇAMENTO DE CLIENTE NÃO É BASE — e a guarda é por PADRÃO, não por nome.
+     Em 12/08/2026 um orçamento de cliente real, com dado pessoal, morava em
+     data/ e precisou ser barrado aqui. O arquivo saiu do repositório (foi para
+     Documents\RA_Engenharia\Backups), mas a guarda continua fazendo falta:
+     numa recuperação alguém pode devolver o arquivo para data/, e ele não pode
+     virar linha de catálogo.
+
+     ⚠ SÓ QUE A GUARDA ERA O NOME DO ARQUIVO, E O NOME DO ARQUIVO ERA O NOME DA
+     PESSOA. Este arquivo viaja inteiro para os 38 pacotes e para uma URL
+     pública — nome de cliente não mora em js/. O padrão abaixo não expõe
+     ninguém e ainda protege MAIS: pega qualquer orçamento devolvido a data/,
+     não só aquele um. */
+  var NUNCA = ["data/sinapi-sample.json", "data/sudecap-BH-2026-01.json"];
+  var NUNCA_PADRAO = [/^data\/orcamento[-_]/i];
+
+  /* a pergunta que os consumidores fazem: "posso listar este arquivo?" */
+  function ehProibido(caminho) {
+    var p = String(caminho == null ? "" : caminho).trim();
+    if (!p) return false;
+    var i;
+    for (i = 0; i < NUNCA.length; i++) if (NUNCA[i] === p) return true;
+    for (i = 0; i < NUNCA_PADRAO.length; i++) if (NUNCA_PADRAO[i].test(p)) return true;
+    return false;
+  }
 
   /* ------------------------------------------------------------------
    * O CATÁLOGO.
@@ -266,6 +284,8 @@ ecuperacao-orcamento-cliente-2026-07),
     CATALOGO: CATALOGO,
     AUSENTES: AUSENTES,
     NUNCA: NUNCA,
+    NUNCA_PADRAO: NUNCA_PADRAO,
+    ehProibido: ehProibido,
     AUSENTE: AUSENTE, PACOTE: PACOTE, SERVIDOR: SERVIDOR,
 
     get: function (id) {

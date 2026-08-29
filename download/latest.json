@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.16",
+  "versao": "1.2.17",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.16/OrcaPRO-IA-update-v1.2.16.zip",
-  "notas": "Termo aditivo: o contrato guarda o valor de assinatura e cada aditivo vira um registro proprio, com motivo, autor e aprovacao. E a medicao nao passa mais do contratado sem aditivo aprovado.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.16/OrcaPRO-IA-Instalador-v1.2.16.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.17/OrcaPRO-IA-update-v1.2.17.zip",
+  "notas": "Correcao interna no catalogo de bases: a lista de arquivos que nao podem virar linha da tabela deixou de barrar por nome de arquivo e passou a barrar por padrao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.17/OrcaPRO-IA-Instalador-v1.2.17.exe"
 }
