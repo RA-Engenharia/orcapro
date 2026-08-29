@@ -72,7 +72,7 @@ function montar(host, opts) {
      * visita e sumia calado a partir da segunda, que é o pior jeito de falhar.
      * Os traços dos notáveis não entram na lista porque nascem sob demanda; eles
      * se re-penduram sozinhos em `posicionarNotaveis`. */
-    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud].forEach(function (el) { if (el) host.appendChild(el); });
+    [(S.xr && S.xr.video), S.bar, S.barToggle, S.hud, S.over, S.loading, S.renderer.domElement, S.hint, S.cortePanel, S.corteLPanel, S.snapPanel, S.snapMarca, S.guiaH, S.guiaV, S.lupaEl, S.ctecCfg, S.ctecModal, S.plantaCfg, S.pavPanel, S.visPanel, S.sisPanel, S.blocokPanel, S.p3dPanel, S.editPanel, S.editDist, S.xrPanel, S.xrHud, S.reqPanel].forEach(function (el) { if (el) host.appendChild(el); });
     if (S._onDragOver) { host.addEventListener('dragover', S._onDragOver); host.addEventListener('drop', S._onDrop); } // re-registra drop no host novo
     S.host = host;
     // painel flutuante volta ABERTO com a barra recolhida = caixa presa sem fechador
@@ -182,6 +182,7 @@ function montar(host, opts) {
     '<button class="btn sm" data-b="cota-todas" title="Cotar a rede inteira que estiver à vista">' + ico('sistemas') + 'Toda a rede</button>' +
     '<button class="btn sm" data-b="cota-numerar" title="Numera os tubos seguindo o encadeamento da rede (R01-T001, R01-T002...) e mostra o numero em cima de cada peca">' + ico('cotas') + 'Numerar</button>' +
     '<button class="btn sm" data-b="cota-planilha" title="Baixa a relacao dos tubos por ramal: numero, comprimento e a conexao de cada extremidade">' + ico('relatorios') + 'Planilha</button>' +
+    '<button class="btn sm" data-b="req-bim" title="Levanta as pecas do modelo por familia, casa com o banco de insumos e monta a requisicao de material">' + ico('requisicoes') + 'Requisitar</button>' +
     '<button class="btn sm" data-b="cota-limpar" title="Apagar as cotas da rede">' + ico('lixo') + 'Limpar cotas</button>' +
     '<button class="btn sm" data-b="planta" title="Planta baixa: corta o modelo numa altura e vê de cima">' + ico('planta') + 'Planta</button>' +
     '<button class="btn sm" data-b="corte" title="Corte livre: plano de corte horizontal, vertical ou em qualquer ângulo">' + ico('corte') + 'Corte</button>' +
@@ -217,6 +218,7 @@ function montar(host, opts) {
        lê o que o projeto já traz. Misturar os dois faria o encanador achar
        que o número saiu de um clique dele. */
     { rot: 'Cotar rede', ic: 'cotas', bs: ['cota', 'cota-iguais', 'cota-todas', 'cota-numerar', 'cota-planilha', 'cota-limpar'] },
+    { rot: 'Requisitar', ic: 'requisicoes', bs: ['req-bim'] },
     { rot: 'Cortes & Plantas', ic: 'planta', bs: ['planta', 'corte', 'pav'] },
     { rot: 'Visibilidade', ic: 'ver', bs: ['vis', 'sistema', 'foto'] },
     { rot: 'Edição & 2D→3D', ic: 'editar', bs: ['editar', 'p3d', 'blocok'] },
@@ -906,6 +908,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'blocok') toggleBlocokPanel();
     else if (k === 'foto') tirarFoto();
     else if (k === 'limpar-medidas') { if (S._limparMedidas) S._limparMedidas(); }
+    else if (k === 'req-bim') { if (S._reqAbrir) S._reqAbrir(); }
     else if (k === 'cota') { setCota(!cota.on, 'clicado'); }
     else if (k === 'cota-iguais') {
       if (!cota.chave) { UI0('Toque primeiro num tubo — aí eu cotô todos os iguais a ele.', 'info'); }
@@ -1989,6 +1992,317 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S.snapPanel = snapPanel;
 
   // v1.1.96 — LEGENDA/PERSONALIZAÇÃO das cores por sistema hidrossanitário
+  /* =================================================================
+   * REQUISITAR PELO MODELO — do IFC para o pedido de material
+   *
+   * O modelo já diz, peça a peça, o que o projetista especificou:
+   * "ESG_Serie Normal_Luva Simples", "UT_Bacia com caixa acoplada". Quem está
+   * na obra precisa disso virando pedido de compra, e não de uma busca item a
+   * item no banco de insumos.
+   *
+   * ⚠ O CASAMENTO NÃO ACONTECE AQUI. Ele mora em js/bimpeca.js, que é puro e
+   * entra no gate — um casador que decide o que o cliente COMPRA não pode ser
+   * código sem teste, e js/bim.js é módulo ES que o Node não consegue exigir.
+   * Este bloco só junta as pontas: lê os elementos, pede a bitola à geometria,
+   * mostra o resultado e deixa a PESSOA decidir. Nada é escolhido sozinho.
+   * ================================================================= */
+  var reqPanel = document.createElement('div');
+  reqPanel.style.cssText = 'position:absolute;left:10px;top:56px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:11px;padding:12px 14px;color:#dbe8f5;font-size:12px;width:min(620px,93vw);max-height:78%;overflow:auto';
+  host.appendChild(reqPanel);
+  S.reqPanel = reqPanel;
+  var reqEstado = null;
+
+  function reqLevantar() {
+    if (typeof BimPeca === 'undefined') { UI0('Motor de peças não carregado.', 'erro'); return null; }
+    /* ⚠ FASE. O carimbo do plugin diz o que e OBRA NOVA, o que vai ser
+     * DEMOLIDO e o que ja EXISTE. Requisicao e pedido de material a COMPRAR:
+     * pedir tubo para o que vai ser derrubado, ou para o que ja esta na
+     * parede, e material comprado a toa. Sem fase carimbada, o elemento
+     * conta como novo — que e o comportamento de antes e o unico honesto
+     * quando o modelo nao diz. */
+    var els = (S.elementos || []).filter(function (e) {
+      var f = String((e && e.fase) || '').toLowerCase();
+      return !(f === 'demolir' || f === 'demolicao' || f === 'existente');
+    });
+    if (!els.length) { UI0('Carregue um modelo primeiro.', 'info'); return null; }
+
+    /* ⚠ A BITOLA VEM DA GEOMETRIA, e é ela que decide a compra.
+       Medido no projeto hidrossanitário real: sem ela, 106 de 119 famílias
+       ficam ambíguas — o Revit escreve "Luva Simples série normal" sem dizer
+       o DN, e a base tem a mesma luva em 40/50/75/100/150 mm, com 10x de
+       diferença de preço. Ler custa uma passada; não ler custa a peça errada
+       chegando no canteiro. */
+    var entrada = els.map(function (e) {
+      var q = e.qto || {}, quant = 0, un = '', fq = '';
+      if (q.comprimento > 0) { quant = q.comprimento; un = 'm'; fq = q.compFonte || 'ifc'; }
+      else if (q.area > 0) { quant = q.area; un = 'm2'; fq = 'ifc'; }
+      else if (q.volume > 0) { quant = q.volume; un = 'm3'; fq = 'ifc'; }
+      var bit = 0;
+      try {
+        if (e.mid != null && typeof BimTubo !== 'undefined' && BimTubo.ehTubo && BimTubo.ehTubo(e)) {
+          bit = lerBitolaMm(e.mid, e.id, fatorLen(e.mid)) || 0;
+        }
+      } catch (eB) {}
+      return { tipo: e.tipo, familia: e.familia, sistemaIfc: e.sistemaIfc, nome: e.nome,
+               bitolaMm: bit, quantidade: quant, unidade: un, fonteQtd: fq, uid: e.uid, n: 1 };
+    });
+
+    /* ⚠ E A BITOLA DA CONEXÃO SAI DA REDE, não da geometria dela.
+     * Joelho, luva e tê são exportados como malha facetada, sem perfil
+     * circular: no modelo hidrossanitário real são 4.201 peças sem bitola
+     * contra 1.725 tubos com. Mas TUBO NUNCA É VIZINHO DE TUBO — conferido no
+     * arquivo, 0 pares tubo-tubo em 1.722 tubos com vizinho —, então toda
+     * conexão encosta em tubo de bitola conhecida.
+     * Medido: a propagação leva a cobertura de 1.725 para 3.003 peças.
+     *
+     * ⚠ E ela se recusa a resolver a REDUÇÃO. Bucha, tê de redução e redução
+     * excêntrica ligam bitolas diferentes por definição; dar DN único a elas é
+     * comprar a peça errada. A primeira versão fez isso com 111 peças, porque
+     * decidia com um lado ainda desconhecido. Agora o nome vale como prova e
+     * elas guardam o PAR. */
+    var topos = {};
+    (S.modelos || []).forEach(function (mo) {
+      try { topos[mo.mid] = lerTopologiaRede(mo.mid); } catch (eT) {}
+    });
+    var topoUnida = { portaDe: {}, portasDe: {}, ligacao: {} };
+    Object.keys(topos).forEach(function (mid) {
+      var t = topos[mid] || {};
+      /* ⚠ as portas são numeradas POR MODELO e colidem entre IFCs federados —
+         o mesmo motivo pelo qual o `uid` do elemento carrega o mid. */
+      Object.keys(t.portaDe || {}).forEach(function (p) { topoUnida.portaDe[mid + ':' + p] = t.portaDe[p]; });
+      Object.keys(t.portasDe || {}).forEach(function (u) {
+        topoUnida.portasDe[u] = (t.portasDe[u] || []).map(function (p) { return mid + ':' + p; });
+      });
+      Object.keys(t.ligacao || {}).forEach(function (p) { topoUnida.ligacao[mid + ':' + p] = mid + ':' + t.ligacao[p]; });
+    });
+    try {
+      var mapaBit = BimPeca.bitolasPorTopologia(entrada, topoUnida);
+      BimPeca.aplicarTopologia(entrada, mapaBit);
+    } catch (eP) { /* topologia é bônus: sem ela o levantamento segue pela geometria */ }
+
+    return BimPeca.levantar(entrada);
+  }
+
+  /* Candidatos vindos do banco de insumos do app.
+     ⚠ SÓ INSUMO. Sub-composição vendida como insumo poria "CONCRETO FCK
+     25MPA, M3, R$587" num pedido de COMPRA de material. */
+  var reqPeso = null;
+
+  /* ⚠ A BASE CARREGA SOB DEMANDA, e o painel tem de puxá-la — não mandar a
+   * pessoa abrir outra tela primeiro. `Insumos._idx` nasce VAZIO e só enche
+   * quando alguém chama `Insumos.carregar`; a tela do Banco de Insumos faz
+   * isso, o painel do BIM não fazia. O sintoma era o pior possível: o painel
+   * abria, dizia "0 casadas · 182 sem candidato" e a requisição saía com
+   * R$ 0,00 — parecendo que a base não tem os itens, quando ela nem tinha
+   * sido lida. */
+  function reqCarregarBase() {
+    try {
+      if (typeof Insumos === 'undefined') return Promise.resolve(0);
+      if (Insumos.carregado && (Insumos._idx || []).length) return Promise.resolve(Insumos._idx.length);
+      if (typeof Gestao === 'undefined' || !Gestao._analiticoAtivo) return Promise.resolve(0);
+      var a = Gestao._analiticoAtivo();
+      if (!a || !a.url) return Promise.resolve(0);
+      return Insumos.carregar(a.url, a.uf, a.live).then(function () { return (Insumos._idx || []).length; });
+    } catch (e) { return Promise.resolve(0); }
+  }
+
+  function reqCandidatos(peca) {
+    /* ⚠ O CATALOGO E `Insumos._idx`, NAO `Insumos.todos()`.
+     * A primeira versao chamava `Insumos.todos()`, que NAO EXISTE em lugar
+     * nenhum do repo — o guard `if (Insumos.todos)` engolia o erro e a lista
+     * vinha vazia. Efeito: o painel montava, dizia "182 pecas · 0 casadas ·
+     * 182 sem candidato", e a requisicao saia com 182 linhas pendentes e
+     * R$ 0,00. O recurso inteiro era inerte no navegador, e a medicao que eu
+     * tinha (23 familias casadas) era de codigo rodando em Node contra o
+     * arquivo da base — nunca pelo caminho do app.
+     * Guard que esconde funcao inexistente e pior que erro: nao ha vermelho
+     * em lugar nenhum, so um resultado vazio que parece "a base nao tem". */
+    var todos = [];
+    try {
+      if (typeof Insumos !== 'undefined') {
+        if (!Insumos.carregado && Insumos.carregar) { /* a base carrega sozinha na tela do banco; aqui so avisamos */ }
+        todos = Insumos._idx || [];
+      }
+    } catch (e) { todos = []; }
+    var termos = peca.termos;
+    if (!todos.length || !termos.length) return [];
+    var pont = [];
+    for (var i = 0; i < todos.length; i++) {
+      var it = todos[i];
+      if (String(it.tipo || '').toLowerCase() === 'composicao') continue;
+      var d = String(it.descricao || '').toLowerCase();
+      var c = 0;
+      for (var t = 0; t < termos.length; t++) if (d.indexOf(termos[t]) >= 0) c++;
+      if (c) pont.push({ c: c, item: it });
+    }
+    pont.sort(function (a, b) { return b.c - a.c; });
+    return pont.slice(0, 300).map(function (x) { return { item: x.item, fonte: x.item.fonte || '' }; });
+  }
+
+  function reqPintar() {
+    if (!reqEstado) return;
+    var pecas = reqEstado.pecas;
+    var cont = { ok: 0, escolher: 0, sem: 0 };
+    pecas.forEach(function (x) { cont[x.escolhido ? 'ok' : (x.v.candidatos.length ? 'escolher' : 'sem')]++; });
+
+    var subs = {};
+    pecas.forEach(function (x) { var k = x.p.subsistema || x.p.disciplina || 'sem classificação'; subs[k] = (subs[k] || 0) + x.p.n; });
+    var chips = Object.keys(subs).sort(function (a, b) { return subs[b] - subs[a]; }).map(function (k) {
+      var on = reqEstado.filtro === k;
+      return '<button class="btn sm" data-rq-sub="' + esc(k) + '"' + (on ? ' style="background:#2e6f9e;color:#fff"' : '') + '>' + esc(k) + ' <b>' + subs[k] + '</b></button>';
+    }).join(' ');
+
+    var visiveis = pecas.filter(function (x) {
+      return !reqEstado.filtro || (x.p.subsistema || x.p.disciplina || 'sem classificação') === reqEstado.filtro;
+    });
+
+    var linhas = visiveis.map(function (x) {
+      var p = x.p, v = x.v;
+      var medida = BimPeca.resumoDim(p.dims, p.bitolaPar);
+      var opcoes = v.candidatos.slice(0, 6).map(function (c, j) {
+        var sel = x.escolhido && x.escolhido.codigo === c.item.codigo;
+        /* dentro de <option> não cabe SVG — o navegador desenha texto puro.
+           Então o aviso vai em PALAVRA, e não em glifo: é a mesma razão das
+           duas exceções que o tools/test-sem-emoji.js documenta para
+           placeholder e title, sem precisar abrir uma terceira. */
+        return '<option value="' + j + '"' + (sel ? ' selected' : '') + '>' +
+          (c.dim === 'confere' ? '[medida confere] ' : c.dim === 'diverge' ? '[OUTRA MEDIDA] ' : '') +
+          esc(String(c.item.descricao).slice(0, 70)) + '  ·  R$ ' + (Number(c.item.custoUnitario) || 0).toFixed(2) +
+          '</option>';
+      }).join('');
+      return '<tr>' +
+        '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid #24435f">' +
+          '<div><b>' + esc(String(p.familia || p.rotulo || '(sem nome no modelo)').slice(0, 54)) + '</b></div>' +
+          '<div style="color:#9fb2c8;font-size:11px">' + p.n + ' pç · ' +
+            (p.fonteQtd === 'contagem' ? 'por contagem'
+              : p.fonteQtd === 'parcial'
+                ? ('<span style="color:#e0a458">' + p.quantidade.toFixed(2) + ' ' + p.unidade + ' — INCOMPLETO, ' + p.faltamMedida + ' peça(s) sem medida no IFC</span>')
+                : (p.quantidade.toFixed(2) + ' ' + p.unidade + ' medidos no IFC')) +
+            (medida !== 'sem medida' ? ' · ' + esc(medida) : '') + '</div>' +
+        '</td>' +
+        '<td style="padding:5px 4px;vertical-align:top;min-width:260px;border-top:1px solid #24435f">' +
+          (opcoes
+            ? '<select data-rq-sel="' + x.idx + '" style="width:100%;font-size:11px"><option value="">— deixar pendente —</option>' + opcoes + '</select>'
+            : '<span style="color:#e0a458">sem candidato na base</span>') +
+          '<div style="color:#9fb2c8;font-size:11px;margin-top:3px">' + esc(v.porque) + '</div>' +
+        '</td>' +
+        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid #24435f">' +
+          (x.escolhido
+            ? '<span style="color:#6fd08a">✓</span>'
+            : '<button class="btn sm" data-rq-novo="' + x.idx + '" title="Criar como insumo próprio, com a descrição e a unidade que vieram do modelo">+ insumo</button>') +
+        '</td></tr>';
+    }).join('');
+
+    reqPanel.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px">' +
+        '<b style="flex:1">Requisitar pelo modelo</b>' +
+        '<button class="btn sm" data-rq="fechar" title="Fechar">' + ico('fechar') + '</button></div>' +
+      '<div style="color:#9fb2c8">' + pecas.length + ' peças distintas · ' +
+        '<span style="color:#6fd08a">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
+        '<span style="color:#e0a458">' + cont.sem + ' sem candidato</span></div>' +
+      '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
+        '<button class="btn sm" data-rq-sub=""' + (reqEstado.filtro ? '' : ' style="background:#2e6f9e;color:#fff"') + '>tudo</button>' + chips + '</div>' +
+      '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tbody>' + linhas + '</tbody></table>' +
+      /* ATENÇÃO: o aviso do total parcial nasce aqui e segue para a requisição: ela
+         dispara aprovação POR VALOR, e item sem preço puxa o total para baixo
+         — o pedido pode passar por baixo do limite de quem precisava aprovar */
+      ((cont.sem + cont.escolher)
+        ? '<div style="color:#e0a458">O que ficar sem item entra como <b>linha pendente, sem preço</b> — o total sai parcial e precisa ser completado antes de mandar aprovar.</div>'
+        : '') +
+      '<div style="display:flex;gap:6px">' +
+        '<button class="btn sm primary" data-rq="gerar">Gerar requisição' +
+          (reqEstado.filtro ? ' (' + visiveis.length + ' de ' + pecas.length + ')' : '') + '</button>' +
+        '<button class="btn sm" data-rq="fechar">Cancelar</button></div>';
+  }
+
+  function reqAbrir() {
+    var lev = reqLevantar();
+    if (!lev) return;
+    /* espera a base antes de casar: sem ela todo mundo sai pendente */
+    if (typeof Insumos !== 'undefined' && !(Insumos._idx || []).length) {
+      UI0('Carregando o banco de insumos...', 'info');
+      reqCarregarBase().then(function (n) {
+        if (!n) { UI0('Nao consegui carregar o banco de insumos. Abra o app pelo Iniciar-OrcaPRO e tente de novo.', 'erro'); return; }
+        reqAbrir();
+      });
+      return;
+    }
+    /* ⚠ O PESO DOS TERMOS SAI DA BASE, e e calculado UMA vez.
+       "pvc" esta em 19,3% dos insumos e "joelho" em 1,9%: contando os dois
+       igual, um CAP e um TUBO empatam com um JOELHO por compartilharem
+       "serie" e "normal", e a peca certa some no meio de dez erradas. */
+    try {
+      if (!reqPeso && typeof Insumos !== 'undefined' && Insumos._idx) {
+        reqPeso = BimPeca.pesosDe((Insumos._idx || []).filter(function (it) {
+          return String(it.tipo || '').toLowerCase() !== 'composicao';
+        }).map(function (it) { return { item: it }; }));
+      }
+    } catch (ePz) { reqPeso = null; }
+    var pecas = lev.pecas.map(function (p, i) {
+      var v = BimPeca.casar(p, reqCandidatos(p), { peso: reqPeso });
+      /* ⚠ SÓ PRÉ-SELECIONA QUANDO O MOTOR DISSE "ok". Em ambíguo e pendente a
+         escolha fica em branco: pré-marcar o primeiro candidato de um empate
+         é escolher pelo usuário sem ele saber — e num empate de bitola isso
+         é a peça errada com cara de conferida. */
+      return { idx: i, p: p, v: v, escolhido: (v.status === 'ok' && v.candidatos[0]) ? v.candidatos[0].item : null };
+    });
+    reqEstado = { pecas: pecas, filtro: '' };
+    fecharPaineis(reqPanel);
+    reqPanel.style.display = 'flex';
+    reqPintar();
+  }
+
+  reqPanel.addEventListener('change', function (ev) {
+    var sel = ev.target && ev.target.closest ? ev.target.closest('[data-rq-sel]') : null;
+    if (!sel || !reqEstado) return;
+    var x = reqEstado.pecas[+sel.getAttribute('data-rq-sel')];
+    if (!x) return;
+    var j = sel.value;
+    x.escolhido = (j === '') ? null : ((x.v.candidatos[+j] || {}).item || null);
+    reqPintar();
+  });
+
+  reqPanel.addEventListener('click', function (ev) {
+    var b = ev.target && ev.target.closest ? ev.target.closest('button') : null;
+    if (!b || !reqEstado) return;
+    var sub = b.getAttribute('data-rq-sub');
+    if (sub !== null) { reqEstado.filtro = sub; reqPintar(); return; }
+    var novo = b.getAttribute('data-rq-novo');
+    if (novo !== null) {
+      var xn = reqEstado.pecas[+novo];
+      if (xn) {
+        /* ⚠ o preço NÃO é chutado aqui — quem digita é o usuário, na tela do
+           insumo próprio. Herdar o preço de um item apenas parecido poria o
+           preço de OUTRA peça dentro do acervo autoral do cliente, com cara
+           de dado conferido — e lá ele fica para sempre.
+           (sem aspas duplas nesta prosa: o tools/test-sem-emoji.js tira as
+           strings ANTES dos comentários, e uma aspa aqui parte o bloco ao
+           meio, fazendo o resto passar por código.) */
+        try { window.dispatchEvent(new CustomEvent('orcapro:insumo-do-bim', { detail: BimPeca.paraInsumoProprio(xn.p) })); } catch (e2) {}
+      }
+      return;
+    }
+    var k = b.getAttribute('data-rq');
+    if (k === 'fechar') { reqPanel.style.display = 'none'; reqEstado = null; return; }
+    if (k === 'gerar') {
+      /* ⚠ O BOTAO GERA O QUE ESTA A VISTA. Ele mandava o modelo INTEIRO
+         mesmo com um chip de subsistema ligado: a pessoa clicava em "esgoto",
+         via 40 linhas, clicava em Gerar e recebia uma requisicao com as 182 —
+         incluindo agua fria e pluvial que ela nao pediu. Filtro que filtra so
+         a tela e armadilha, nao filtro. */
+      var visiveis = reqEstado.pecas.filter(function (x) {
+        return !reqEstado.filtro || (x.p.subsistema || x.p.disciplina || 'sem classificação') === reqEstado.filtro;
+      });
+      var escolhas = {};
+      visiveis.forEach(function (x) { escolhas[x.p.chave] = x.escolhido; });
+      var pac = BimPeca.paraRequisicao(visiveis.map(function (x) { return x.p; }), escolhas);
+      try { window.dispatchEvent(new CustomEvent('orcapro:requisicao-do-bim', { detail: pac })); } catch (e3) {}
+      reqPanel.style.display = 'none'; reqEstado = null;
+    }
+  });
+
+  S._reqAbrir = reqAbrir;
+
   var sisPanel = document.createElement('div');
   sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.95);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:238px;max-height:72%;overflow:auto';
   host.appendChild(sisPanel);
@@ -3855,7 +4169,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function fecharPaineis(exceto) {
     // abrir um painel flutuante fecha o editor (senão o painel nasce ATRÁS dele, invisível)
     if (exceto && edit && edit.on && typeof setEdit === 'function') setEdit(false);
-    [snapPanel, pavPanel, visPanel, xrPanel, sisPanel, blocokPanel].forEach(function (pn) { if (pn !== exceto) pn.style.display = 'none'; });
+    /* ⚠ o reqPanel entra aqui TAMBEM: painel que abre por cima de outro e
+       nao fecha vira caixa presa sem fechador — o mesmo defeito que o
+       comentario logo abaixo do re-home descreve. */
+    [snapPanel, pavPanel, visPanel, xrPanel, sisPanel, blocokPanel, reqPanel].forEach(function (pn) { if (pn && pn !== exceto) pn.style.display = 'none'; });
     if (blocokPanel !== exceto) { var bbk = bar.querySelector('[data-b="blocok"]'); if (bbk) { bbk.style.background = ''; bbk.style.color = ''; } }
     pintarSnapPanel();
     var bp4 = bar.querySelector('[data-b="pav"]'); if (bp4 && pavPanel.style.display !== 'flex') bp4.style.outline = '';

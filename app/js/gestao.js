@@ -9285,6 +9285,20 @@
         this._bimEdUnload = true;
         window.addEventListener("pagehide", function () { try { self._bimEdFlush(); } catch (e) {} });
       }
+      /* ⚠ UMA VEZ SÓ, e por isso a trava. `_bimWire` roda a cada render da
+         aba BIM; sem ela, cada volta à aba pendura mais um ouvinte e um
+         clique em "Gerar requisição" abriria N formulários — o mesmo defeito
+         de "Too many active WebGL contexts" que o cabeçalho do js/bim.js
+         descreve, só que em cima de um documento que grava dinheiro. */
+      if (!this._bimPecaLigado) {
+        this._bimPecaLigado = true;
+        window.addEventListener("orcapro:requisicao-do-bim", function (ev) {
+          try { self.requisicaoDoBim(ev.detail); } catch (e) { UI.toast("Não consegui montar a requisição: " + (e && e.message || e), "erro"); }
+        });
+        window.addEventListener("orcapro:insumo-do-bim", function (ev) {
+          try { self.insumoDoBim(ev.detail); } catch (e) { UI.toast("Não consegui abrir o cadastro: " + (e && e.message || e), "erro"); }
+        });
+      }
       // slider + play — a semana só é PINADA por gesto do usuário; arrastar até o fim
       // desafixa (null = "fim da obra"), senão federar um 2º IFC (plano cresce) esconderia
       // as semanas novas como futuro com o slider pinado no máximo antigo
@@ -13806,7 +13820,14 @@ renderRequisicoes: function () {
         else if (r.status === "rejeitada") acoes += '<span class="muted" title="' + Util.esc(r.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitada</span>';
         var corPri = r.prioridade === "urgente" ? "#dc2626" : (r.prioridade === "alta" ? "#ea580c" : "#64748b");
         var nItens = (r.itens && r.itens.length) || 0;
-        var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "");
+        /* ⚠ O TOTAL PARCIAL TEM DE APARECER ONDE SE APROVA, e nao so dentro
+           do formulario. A aprovacao acontece AQUI, na lista, num clique,
+           olhando este numero — e item sem preco (o que veio do modelo e nao
+           casou na base) puxa o valor para baixo. Avisar so no formulario e
+           avisar em lugar nenhum para quem aprova. */
+        var nPendR = (r.itens || []).filter(function (i) { return i && i.pendente; }).length;
+        var reqInfo = (nItens > 1 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e">' + nItens + " itens</span>" : "") + (r.valorEstimado ? ' <span class="muted">· ' + Util.fmtMoeda(r.valorEstimado) + "</span>" : "") +
+          (nPendR ? ' <span class="g-pill" style="background:#b4530922;color:#b45309" title="' + nPendR + ' item(ns) sem preço — o total está incompleto">valor parcial</span>' : "");
         html += '<tr><td style="cursor:pointer" data-gopen="requisicoes:' + r.id + '"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td>' + Util.esc(r.descricao || "—") + reqInfo + '</td><td><b style="color:' + corPri + '">' + rot(P.reqPrioridade, r.prioridade) + "</b></td><td>" + pill(r.status) + self._aprovLinha(r) + '</td><td class="num">' + acoes + "</td></tr>";
       });
       return html + "</tbody></table>";
@@ -14224,6 +14245,91 @@ renderRequisicoes: function () {
       inp.oninput = (typeof Util !== "undefined" && Util.debounce) ? Util.debounce(rodar, 250) : rodar;
       if (!Insumos.carregado && !Insumos.carregando) Insumos.carregar(a.url, a.uf, a.live).then(function () { setStatus(Insumos.resumo().total.toLocaleString("pt-BR") + " insumos disponíveis. Digite para buscar."); }).catch(function () {});
     },
+    /* =================================================================
+     * REQUISIÇÃO VINDA DO MODELO BIM
+     *
+     * O painel do BIM (js/bim.js) levanta as peças, casa com o banco pelo
+     * motor puro js/bimpeca.js e dispara um evento com o lote pronto. Aqui só
+     * se abre o formulário com os itens já dentro — nenhuma escolha é feita
+     * neste caminho: quem decidiu foi a pessoa, peça a peça, na tela do BIM.
+     *
+     * ⚠ POR QUE EVENTO E NÃO CHAMADA DIRETA. js/bim.js é módulo ES e o
+     * js/gestao.js é script clássico; e o BIM roda dentro de um host que o
+     * App.render() re-parenta. Chamada direta amarraria os dois ciclos de
+     * vida. O evento é a mesma fronteira que o resto do módulo já usa.
+     *
+     * ⚠ E O TOTAL PODE SAIR PARCIAL. As peças que não casaram entram como
+     * linha PENDENTE com preço zero — foi a decisão de produto, para o
+     * material não sumir do pedido. Mas requisição dispara aprovação POR
+     * VALOR: um total subestimado passaria por baixo do limite de quem
+     * precisava aprovar. Por isso o formulário avisa, em vermelho, quantos
+     * itens estão sem preço.
+     * ================================================================= */
+    requisicaoDoBim: function (pac) {
+      if (!pac || !pac.itens || !pac.itens.length) { UI.toast("O modelo não devolveu peça nenhuma.", "erro"); return; }
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("requisicoes")) {
+        UI.toast("Você não tem acesso a Requisições.", "erro"); return;
+      }
+      this._reqItensSeed = pac.itens;
+      /* ⚠ A REQUISICAO NASCE NA OBRA DO MODELO. Sem isto ela vinha com
+         "— nenhuma —" mesmo com a obra ja escolhida na aba BIM, e requisicao
+         sem obra nao entra no custo da obra nenhuma: o material e comprado e
+         o gasto fica orfao. */
+      /* `_dashObra` é o filtro global de obra da Gestão: pode ser "todas",
+         um id, ou um array quando o usuário marcou várias. Só herdamos quando
+         há UMA obra escolhida — com duas ou mais, chutar qual é seria pior que
+         deixar em branco e o usuário escolher. */
+      var obraDoBim = "";
+      try {
+        var d = this._dashObra;
+        if (typeof d === "string" && d && d !== "todas") obraDoBim = d;
+        else if (d && d.length === 1) obraDoBim = d[0];
+      } catch (eO) {}
+      /* o formulário abre por cima de onde a pessoa estiver — é o mesmo
+         caminho de `novaRequisicaoComItem`, que também não troca de aba */
+      this.formRequisicoes(obraDoBim ? { obraId: obraDoBim } : null);
+      UI.toast(pac.itens.length + " ite" + (pac.itens.length > 1 ? "ns" : "m") + " do modelo" +
+        (pac.pendentes ? " · " + pac.pendentes + " sem preço, complete antes de aprovar" : ""),
+        pac.pendentes ? "info" : "ok");
+    },
+
+    /* "criar o insumo do modelo com um clique": abre o formulário de insumo
+       próprio já com a descrição e a unidade que vieram do IFC.
+       ⚠ O PREÇO VAI VAZIO. Herdar o preço de um insumo "semelhante" poria o
+       preço de OUTRA peça dentro do acervo autoral do cliente, com cara de
+       dado conferido — é a mesma família do erro de acertar a família e errar
+       a peça, só que gravado para sempre no banco dele. */
+    insumoDoBim: function (semente) {
+      if (!semente) return;
+      /* ⚠ GRAVAR NO ACERVO AUTORAL DO CLIENTE E AREA DE QUEM ORCA.
+         O irmao `requisicaoDoBim` confere `podeModulo("requisicoes")` e o
+         `App.editarInsumoProprio` confere `podeModulo("orcamentos")` — este
+         nascia sem nenhuma checagem, e um clique no painel do BIM gravava
+         insumo PROP no banco do cliente. Guard em FUNCAO, nao so esconder o
+         botao, e a regra da casa. */
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("orcamentos")) {
+        UI.toast("Criar insumo no banco é de quem tem acesso a Orçamentos.", "erro"); return;
+      }
+      var self = this, px = "ibim";
+      UI.modal("Criar insumo a partir do modelo",
+        '<p class="muted" style="margin-top:0;font-size:13px">Veio do modelo: <b>' + Util.esc(semente.descricao) + '</b>. ' +
+        'O preço não vem do IFC — digite o seu, ou deixe em branco e preencha na cotação.</p>' +
+        this._insumoProprioCampos(px, false),
+        [{ texto: "Salvar no meu banco", classe: "primary", onClick: function () {
+            var d = self._insumoProprioColeta(px);
+            if (!d || !d.descricao) { UI.toast("Descreva o insumo.", "erro"); return; }
+            var r = (typeof App !== "undefined" && App.salvarInsumoProprio) ? App.salvarInsumoProprio(d) : null;
+            if (!r) { UI.toast("Não consegui salvar o insumo.", "erro"); return; }
+            UI.fecharModal();
+            UI.toast("Insumo " + (r.codigo || "") + " salvo — já aparece nas buscas.", "ok");
+          } },
+         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      var dsc = UI.el(px + "-desc"), und = UI.el(px + "-und");
+      if (dsc) dsc.value = semente.descricao || "";
+      if (und) und.value = semente.unidade || "un";
+      var cat = UI.el(px + "-cat"); if (cat) cat.value = semente.categoria || "MAT";
+    },
+
     novaRequisicaoComItem: function (ins) {
       this._reqItemSeed = { codigo: ins.codigo, descricao: ins.descricao, unidade: ins.unidade || "un", quantidade: 1, precoRef: ins.custoUnitario || 0, categoria: ins.categoria || "MAT", fonte: ins.fonte || "" };
       this.formRequisicoes(null);
@@ -14262,7 +14368,11 @@ renderRequisicoes: function () {
     },
     // itens de uma requisição (back-compat com o formato antigo de item único)
     _reqItens: function (r) {
-      if (r.itens && r.itens.length) return r.itens.map(function (i) { return { codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "" }; });
+      /* ⚠ ESTE FUNIL NORMALIZAVA PARA 7 CHAVES E DESCARTAVA O RESTO EM
+         SILENCIO. Campo novo que nao estivesse aqui sumia na primeira
+         gravacao, sem erro nenhum — e `pendente` decide se o total exibido e
+         completo ou parcial, o que muda quem precisa aprovar a requisicao. */
+      if (r.itens && r.itens.length) return r.itens.map(function (i) { return { codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "", pendente: i.pendente === true, origemBim: i.origemBim || null }; });
       if (r.descricao) return [{ codigo: "", descricao: r.descricao, unidade: r.unidade || "un", quantidade: Util.num(r.quantidade) || 1, precoRef: 0, categoria: "MAT", fonte: "" }];
       return [];
     },
@@ -14277,6 +14387,13 @@ renderRequisicoes: function () {
       var numero = r.numero || this._proxNumeroReq();
       var itensBuf = this._reqItens(r);
       if (this._reqItemSeed) { itensBuf.push(this._reqItemSeed); this._reqItemSeed = null; }
+      /* semente em LOTE — o caminho do "requisitar pelo modelo BIM". O
+         singular continua para a busca item a item. */
+      if (this._reqItensSeed && this._reqItensSeed.length) {
+        this._reqItensSeed.forEach(function (i) { itensBuf.push(i); });
+        this._reqItensSeed = null;
+      }
+      var nPend = itensBuf.filter(function (i) { return i.pendente; }).length;
       var corpo =
         '<div class="row">' + campo("Número", inp("g-numero", numero)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Obra", sel("g-obra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
         '<div class="row">' + campo("Solicitante", inp("g-solic", r.solicitante)) + campo("Prioridade", sel("g-prioridade", opts(P.reqPrioridade, r.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.reqStatus, r.status || "aberta"))) + "</div>" +
@@ -14318,7 +14435,13 @@ renderRequisicoes: function () {
               + '<td class="num" data-risub="' + i + '">' + (it.precoRef > 0 ? Util.fmtMoeda(Util.num(it.quantidade) * it.precoRef) : "—") + "</td>"
               + '<td class="num"><button type="button" class="btn sm" data-rirm="' + i + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></td></tr>';
           }).join("")
-          + '</tbody><tfoot><tr><td colspan="4" style="text-align:right"><b>Total estimado</b></td><td class="num"><b data-ritot>' + Util.fmtMoeda(self._reqValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>";
+          + '</tbody><tfoot><tr><td colspan="4" style="text-align:right"><b>Total estimado</b></td><td class="num"><b data-ritot>' + Util.fmtMoeda(self._reqValor(itensBuf)) + "</b></td><td></td></tr></tfoot></table>"
+          /* ⚠ O TOTAL PARCIAL TEM DE SE DECLARAR. Requisicao dispara
+             aprovacao POR VALOR: item sem preco (o que veio do modelo e nao
+             casou na base) puxa o total para baixo e pode fazer o pedido
+             passar por baixo do limite de quem precisava aprovar. Numero
+             incompleto sem aviso e pior que numero nenhum. */
+          + (nPend ? '<div class="muted" style="margin-top:6px;color:#b45309"><b>Total parcial</b> — ' + nPend + ' ite' + (nPend > 1 ? 'ns ainda sem preço' : 'm ainda sem preço') + ' (vieram do modelo e não casaram na base). Preencha antes de mandar aprovar.</div>' : "");
         Array.prototype.forEach.call(el.querySelectorAll("[data-riq]"), function (input) {
           input.onchange = function () {
             var i = +input.getAttribute("data-riq"); itensBuf[i].quantidade = Util.num(input.value) || 0;
