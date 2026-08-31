@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.18",
+  "versao": "1.2.19",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.18/OrcaPRO-IA-update-v1.2.18.zip",
-  "notas": "Correcoes de leitura de numero em varias telas (custo por obra, tabela de precos, resumo do cliente), e apagar uma obra deixou de poder derrubar o termo aditivo de um contrato de outra obra.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.18/OrcaPRO-IA-Instalador-v1.2.18.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.19/OrcaPRO-IA-update-v1.2.19.zip",
+  "notas": "Compatibilizacao: quem tem um arquivo IFC so recebia 'Nenhum conflito' sem que as pecas fossem comparadas. O campo de escolha de item e de fornecedor da proposta de carpintaria agora diz o que falta cadastrar e leva ate la. O seletor de obra do Painel voltou a abrir no Mac. E o OrcaPRO passou a instalar no Mac, com atualizacao automatica como no Windows.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.19/OrcaPRO-IA-Instalador-v1.2.19.exe"
 }
