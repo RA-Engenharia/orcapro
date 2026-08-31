@@ -48,6 +48,41 @@
     "composicoes_proprias",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
+    /* ⚠ a federação da obra: de que arquivos ela é feita, com a disciplina, a
+     * transparência e a visibilidade que o usuário escolheu para cada um. É
+     * trabalho dele, não dado derivado — sem estar aqui não entraria no backup
+     * (js/app.js deriva a lista DESTE array) nem deixaria lápide ao excluir, e
+     * trocar de máquina apagaria a montagem da obra inteira. É a mesma
+     * história das composições próprias, algumas linhas acima.
+     * ⚠ O que NÃO sincroniza é a geometria convertida: ela mora no IndexedDB,
+     * é derivada do arquivo e pesa centenas de MB. No aparelho novo o registro
+     * chega, o cache não, e o produto PEDE o arquivo pelo nome. */
+    "bim_modelos",
+    /* conjuntos de seleção e busca: é trabalho do coordenador, não dado
+     * derivado — "Tubos de água fria do Térreo" leva minutos para montar e é o
+     * que o teste de conflito e a tarefa do cronograma passam a apontar. TEM
+     * obraId, então entra na cascata da obra. */
+    "bim_conjuntos",
+    /* pontos de vista: e o que sobrevive de uma reuniao de compatibilizacao.
+     * A MINIATURA nao vem junto — ela e blob e mora no IndexedDB; aqui viaja
+     * so o endereco dela, e no outro aparelho a vista abre sem a foto em vez
+     * de nao abrir. */
+    "bim_vistas",
+    /* compatibilizacao: o TESTE salvo e o RESULTADO com o ciclo de vida.
+     * O resultado carrega responsavel, prazo, comentario e historico — e
+     * e justamente isso que precisa atravessar aparelhos: o engenheiro
+     * marca no computador e o coordenador ve no dele. Sem sincronizar,
+     * cada um teria a sua versao de quais conflitos ja foram tratados. */
+    "bim_clash_testes",
+    "bim_clash_resultados",
+    /* 4D: as tarefas do cronograma DO ENGENHEIRO (o bim4d.js continua
+     * derivando o automatico). Sincroniza porque o apontamento de real vem
+     * da obra — medicao, diario — e quem planeja esta no escritorio: sao
+     * duas pessoas escrevendo na mesma tarefa, em aparelhos diferentes. */
+    "bim_tarefas",
+    /* as cores do 4D. Sao da EMPRESA, nao da obra: o relatorio de todas as
+     * obras tem de sair com a mesma legenda. */
+    "bim_4d_aparencias",
     /* tabela de preços unitários da obra (descrição, unidade, R$/unidade). É o
      * que permite medir obra SEM valor global fechado — obra por administração,
      * série de preços. TEM obraId, então entra na cascata da obra. */
@@ -351,6 +386,12 @@
        * o modal promete preservar. Achado do gate de 25/07. */
       var imune = !semLapide && Store.imuneACascata(ent);
       var obrasMortas = semLapide ? Object.create(null) : Store.cascatasDeObra(empresaId);
+      /* ⚠ E a cascata do TESTE de compatibilização, pelo mesmo motivo: o teste
+         é dono de milhares de resultados, e uma lápide por resultado estourava
+         o teto. Só vale para `bim_clash_resultados` — é a única entidade que
+         carrega `testeId`. */
+      var testesMortos = (semLapide || ent !== "bim_clash_resultados" || !Store.cascatasDeClashTeste)
+        ? Object.create(null) : Store.cascatasDeClashTeste(empresaId);
       /* ⚠ O ADITIVO É FILHO DO CONTRATO, NÃO DA OBRA — e por isso a cascata da
        * obra não pode julgá-lo pelo `obraId` que ele carrega.
        *
@@ -408,6 +449,10 @@
           return false;
         }
         if (ent === "obras" && obrasMortas[o.id]) return String(o.atualizadoEm || "") > String(obrasMortas[o.id]);
+        /* o resultado morre com o teste que o gerou, a menos que ele seja MAIS
+           NOVO que a lápide — o mesmo desempate do `obraId` logo acima, que
+           deixa passar o registro editado depois da exclusão noutro aparelho. */
+        if (o.testeId && testesMortos[o.testeId]) return String(o.atualizadoEm || "") > String(testesMortos[o.testeId]);
         return true;
       };
       Util.arr(cloud).forEach(function (o) { if (o && o.id && vivo(o)) byId[o.id] = o; });
@@ -736,7 +781,10 @@
     _falhas: [],
     _registrarFalha: function (ent, err) {
       var cod = (err && (err.code || err.message)) || "erro";
-      this._falhas.push({ entidade: ent, codigo: String(cod) });
+      /* guarda também a mensagem: o Firestore diz "invalid-argument" no
+         `code` para várias coisas, e só o texto separa documento grande demais
+         de campo mal formado — e são duas conversas diferentes com o usuário */
+      this._falhas.push({ entidade: ent, codigo: String(cod), msg: String((err && err.message) || "") });
       if (this._falhas.length > 40) this._falhas.shift();
       try { console.warn("[nuvem] " + ent + ": " + cod); } catch (e) {}
     },
@@ -746,6 +794,13 @@
       var f = this._falhas || [];
       var cota = f.some(function (x) { return /resource-exhausted|RESOURCE_EXHAUSTED|quota/i.test(x.codigo); });
       var permissao = f.some(function (x) { return /permission-denied/i.test(x.codigo); });
+      /* ⚠ DOCUMENTO GRANDE DEMAIS TAMBÉM É SINCRONIZAÇÃO PARADA. O Firestore
+         recusa documento acima de 1 MiB com `invalid-argument`, e só aquela
+         entidade para — mas para de vez, porque o `_ultimoEnviado` é limpo e
+         toda tentativa seguinte refalha. Sem estar aqui, `ok` continuava true e
+         a tela dizia "Sincronizado" com a lista de conflitos parada no
+         aparelho. Mesmo modo de falha do bloqueio, por um caminho novo. */
+      var grande = f.some(function (x) { return /invalid-argument|too large|exceeds the maximum|maximum size/i.test(x.codigo + " " + (x.msg || "")); });
       /* ⚠ O BLOQUEIO TEM DE APARECER AQUI. Ele não passa por `_registrarFalha`,
          então `falhas` continuava 0 e `ok` continuava true — e a tela dizia
          "Conectado, sincronizam sozinhos" com o aparelho sem sincronizar nada.
@@ -759,9 +814,10 @@
         falhas: f.length,
         cotaEstourada: cota,
         semPermissao: permissao,
+        listaGrandeDemais: grande,
         bloqueadoOutraEmpresa: !!bloq,
         donoDoBalde: bloq ? (bloq.dono && (bloq.dono.empresa || "")) : "",
-        ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao
+        ok: !!this.ligado && !bloq && !!(this._un && this._un.length) && !cota && !permissao && !grande
       };
     },
 

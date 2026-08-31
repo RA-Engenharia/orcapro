@@ -169,9 +169,216 @@
     return votos >= 2;
   }
 
+  /* ===================================================================
+   * DISTANCIA MINIMA ENTRE TRIANGULOS  (B5 — modo "folga" / clearance)
+   *
+   * O triTri acima responde SIM/NAO. O modo folga precisa de outra
+   * pergunta: "quao perto?". Um tubo passando a 4 cm de uma viga nao
+   * intersecta nada — e ainda assim e conflito, porque nao cabe a mao do
+   * montador nem o isolamento. Sem medir distancia esse conflito e
+   * INVISIVEL para o detector, e so aparece na obra.
+   *
+   * POR QUE 9 + 6 CASOS BASTAM (e por que o triTri vem ANTES).
+   * Para dois convexos DISJUNTOS o minimo cai num par aresta-aresta ou
+   * vertice-face. O caso que assusta e o minimo cair no MEIO de uma
+   * aresta contra o MEIO de uma face: se o ponto de B esta no interior da
+   * face, o segmento minimo e perpendicular ao plano de B; se o ponto de
+   * A esta no interior da aresta, ele tambem e perpendicular a aresta.
+   * Logo a aresta e PARALELA ao plano de B — e af todo o trecho esta a
+   * mesma distancia, inclusive a ponta onde ele cruza a borda de B, que o
+   * caso aresta-aresta ja mede. Nao ha caso perdido.
+   *
+   * Mas isso vale so para DISJUNTOS. Se os triangulos se cruzam em X, o
+   * ponto comum fica no MEIO de uma aresta de A e no MEIO da face de B —
+   * um par aresta-FACE, que a enumeracao NAO tem. Por isso a interseccao
+   * e testada primeiro e devolve 0: sem esse teste, dois triangulos que
+   * se atravessam sairiam com distancia POSITIVA, e o modo folga diria
+   * "passa longe" sobre uma peca que atravessa a outra.
+   * =================================================================== */
+
+  function clamp01(x) { return x < 0 ? 0 : (x > 1 ? 1 : x); }
+
+  /* distancia^2 entre os segmentos P1Q1 e P2Q2 (Ericson, RTCD 5.1.9).
+     Trata os DOIS degenerados (segmento que virou ponto): malha real tem
+     triangulo degenerado por arredondamento, e a divisao por zero viraria
+     NaN — que perde toda comparacao de minimo em silencio, porque NaN < m
+     e sempre falso e o minimo ficaria no valor anterior sem aviso. */
+  function distSegSeg2(p1, q1, p2, q2) {
+    var d1 = [q1[0] - p1[0], q1[1] - p1[1], q1[2] - p1[2]];
+    var d2 = [q2[0] - p2[0], q2[1] - p2[1], q2[2] - p2[2]];
+    var r = [p1[0] - p2[0], p1[1] - p2[1], p1[2] - p2[2]];
+    var a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
+    var s, u, c, b, den;
+    if (a <= EPS && e <= EPS) return dot(r, r);
+    if (a <= EPS) { s = 0; u = clamp01(f / e); }
+    else {
+      c = dot(d1, r);
+      if (e <= EPS) { u = 0; s = clamp01(-c / a); }
+      else {
+        b = dot(d1, d2); den = a * e - b * b;
+        s = den !== 0 ? clamp01((b * f - c * e) / den) : 0;
+        u = (b * s + f) / e;
+        if (u < 0) { u = 0; s = clamp01(-c / a); }
+        else if (u > 1) { u = 1; s = clamp01((b - c) / a); }
+      }
+    }
+    var cx = (p1[0] + d1[0] * s) - (p2[0] + d2[0] * u);
+    var cy = (p1[1] + d1[1] * s) - (p2[1] + d2[1] * u);
+    var cz = (p1[2] + d1[2] * s) - (p2[2] + d2[2] * u);
+    return cx * cx + cy * cy + cz * cz;
+  }
+
+  /* distancia^2 do ponto p ao triangulo abc (Ericson, RTCD 5.1.5 —
+     regioes de Voronoi: 3 vertices, 3 arestas, 1 face). */
+  function distPtTri2(p, a, b, c) {
+    var ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    var ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    var ap = [p[0] - a[0], p[1] - a[1], p[2] - a[2]];
+    var d1 = dot(ab, ap), d2 = dot(ac, ap);
+    var qx, qy, qz, v, w, den;
+    if (d1 <= 0 && d2 <= 0) { qx = a[0]; qy = a[1]; qz = a[2]; }
+    else {
+      var bp = [p[0] - b[0], p[1] - b[1], p[2] - b[2]];
+      var d3 = dot(ab, bp), d4 = dot(ac, bp);
+      if (d3 >= 0 && d4 <= d3) { qx = b[0]; qy = b[1]; qz = b[2]; }
+      else {
+        var vc = d1 * d4 - d3 * d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+          v = (d1 - d3) !== 0 ? d1 / (d1 - d3) : 0;
+          qx = a[0] + ab[0] * v; qy = a[1] + ab[1] * v; qz = a[2] + ab[2] * v;
+        } else {
+          var cp = [p[0] - c[0], p[1] - c[1], p[2] - c[2]];
+          var d5 = dot(ab, cp), d6 = dot(ac, cp);
+          if (d6 >= 0 && d5 <= d6) { qx = c[0]; qy = c[1]; qz = c[2]; }
+          else {
+            var vb = d5 * d2 - d1 * d6;
+            if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+              w = (d2 - d6) !== 0 ? d2 / (d2 - d6) : 0;
+              qx = a[0] + ac[0] * w; qy = a[1] + ac[1] * w; qz = a[2] + ac[2] * w;
+            } else {
+              var va = d3 * d6 - d5 * d4;
+              if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
+                den = (d4 - d3) + (d5 - d6);
+                w = den !== 0 ? (d4 - d3) / den : 0;
+                qx = b[0] + (c[0] - b[0]) * w; qy = b[1] + (c[1] - b[1]) * w; qz = b[2] + (c[2] - b[2]) * w;
+              } else {
+                den = va + vb + vc;
+                /* triangulo degenerado (area ~ 0): den ~ 0. Cai no vertice a
+                   em vez de dividir por zero e devolver NaN. */
+                if (den === 0) { qx = a[0]; qy = a[1]; qz = a[2]; }
+                else {
+                  v = vb / den; w = vc / den;
+                  qx = a[0] + ab[0] * v + ac[0] * w;
+                  qy = a[1] + ab[1] * v + ac[1] * w;
+                  qz = a[2] + ab[2] * v + ac[2] * w;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    var ex = p[0] - qx, ey = p[1] - qy, ez = p[2] - qz;
+    return ex * ex + ey * ey + ez * ez;
+  }
+
+  /* Distancia MINIMA entre dois triangulos, na unidade da entrada (metros).
+     0 quando se atravessam. */
+  function distTriTri(V0, V1, V2, U0, U1, U2) {
+    if (triTri(V0, V1, V2, U0, U1, U2)) return 0;
+    var A = [V0, V1, V2], B = [U0, U1, U2], m = Infinity, i, j, d;
+    for (i = 0; i < 3; i++) for (j = 0; j < 3; j++) {
+      d = distSegSeg2(A[i], A[(i + 1) % 3], B[j], B[(j + 1) % 3]);
+      if (d < m) m = d;
+    }
+    for (i = 0; i < 3; i++) {
+      d = distPtTri2(A[i], U0, U1, U2); if (d < m) m = d;
+      d = distPtTri2(B[i], V0, V1, V2); if (d < m) m = d;
+    }
+    return m <= 0 ? 0 : Math.sqrt(m);
+  }
+
+  /* Malha x malha: EXISTE algum par de triangulos a distancia <= limite?
+   *
+   * ⚠ `distancia` SO VALE QUANDO `abaixo` E TRUE. Nao ficando nada abaixo
+   * do limite ela volta NULL, de proposito: o pre-filtro por caixa descarta
+   * todo par cuja caixa esta a mais de `limite`, entao o "mais perto
+   * examinado" pode nao ser o mais perto que existe. Devolver esse numero
+   * como "a menor" seria numero inventado.
+   *
+   * ⚠ E QUANDO `abaixo` E TRUE, A DISTANCIA E A MINIMA DE VERDADE — a
+   * primeira versao parava no PRIMEIRO par abaixo do limite, e o numero
+   * saia na tela e no relatorio como se fosse a folga da peca. Era a folga
+   * do primeiro par que o laco encontrou: dava para ler "22,9 cm" onde o
+   * ponto critico tinha 4. Numero plausivel e errado e pior que numero
+   * nenhum, porque ninguem desconfia dele.
+   * O unico curto-circuito que sobrou e a distancia ZERO: abaixo dela nao
+   * ha o que refinar.
+   *
+   * `exato: false` diz que o teto foi batido DEPOIS de ja ter achado algo —
+   * o valor e um limite superior. Quem mostra escreve "ate X", nao "X".
+   *
+   * A poda usa a caixa do triangulo EXPANDIDA por `limite`, nunca a caixa
+   * crua: duas caixas que nao se tocam ainda podem estar a 2 cm uma da
+   * outra, que e exatamente o conflito que o modo folga procura.
+   *
+   * `estourou` distingue "varri tudo e nao achei" de "desisti no teto".
+   * Nao-verificavel nao e o mesmo que sem conflito: o painel mostra os
+   * dois separados, para o coordenador conferir no 3D em vez de confiar. */
+  function distMalhas(trisA, trisB, opts) {
+    opts = opts || {};
+    var limite = opts.limite != null ? +opts.limite : 0;
+    var cap = opts.maxTestes != null ? opts.maxTestes : 2000000;
+    var CAP_ITER = opts.maxIter != null ? opts.maxIter : 4000000;
+    var nA = Math.floor(trisA.length / 9), nB = Math.floor(trisB.length / 9);
+    var testes = 0, iter = 0, melhor = Infinity;
+    var boxB = new Array(nB), j;
+    for (j = 0; j < nB; j++) boxB[j] = triBox(trisB, j * 9);
+    var A0 = [0, 0, 0], A1 = [0, 0, 0], A2 = [0, 0, 0], B0 = [0, 0, 0], B1 = [0, 0, 0], B2 = [0, 0, 0];
+    for (var i = 0; i < nA; i++) {
+      var oa = i * 9, ba = triBox(trisA, oa);
+      A0[0] = trisA[oa]; A0[1] = trisA[oa + 1]; A0[2] = trisA[oa + 2];
+      A1[0] = trisA[oa + 3]; A1[1] = trisA[oa + 4]; A1[2] = trisA[oa + 5];
+      A2[0] = trisA[oa + 6]; A2[1] = trisA[oa + 7]; A2[2] = trisA[oa + 8];
+      for (var k = 0; k < nB; k++) {
+        if (++iter > CAP_ITER) return { distancia: melhor <= limite ? melhor : null, abaixo: melhor <= limite, exato: false, testes: testes, estourou: true };
+        var bb = boxB[k];
+        /* folga na caixa dos DOIS lados: a distancia entre as caixas ja e um
+           limite inferior da distancia entre os triangulos. */
+        /* raio de poda CONSTANTE = limite. Apertar com o melhor ja achado
+           pareceu otimizacao e e defeito: descartaria pares mais perto que
+           o melhor, e como o resultado nao promete o minimo, nao ha o que
+           ganhar em troca. */
+        if (ba[3] + limite < bb[0] || bb[3] + limite < ba[0] || ba[4] + limite < bb[1] || bb[4] + limite < ba[1] || ba[5] + limite < bb[2] || bb[5] + limite < ba[2]) continue;
+        if (++testes > cap) return { distancia: melhor <= limite ? melhor : null, abaixo: melhor <= limite, exato: false, testes: testes - 1, estourou: true };
+        var ob = k * 9;
+        B0[0] = trisB[ob]; B0[1] = trisB[ob + 1]; B0[2] = trisB[ob + 2];
+        B1[0] = trisB[ob + 3]; B1[1] = trisB[ob + 4]; B1[2] = trisB[ob + 5];
+        B2[0] = trisB[ob + 6]; B2[1] = trisB[ob + 7]; B2[2] = trisB[ob + 8];
+        var d = distTriTri(A0, A1, A2, B0, B1, B2);
+        if (d < melhor) melhor = d;
+        /* ⚠ NAO PARA NO PRIMEIRO PAR ABAIXO DO LIMITE — e a primeira versao
+           parava. O numero saia na tela, na planilha e no relatorio como se
+           fosse a folga real da peca, e era so a folga do PRIMEIRO par que
+           o laco encontrou: o coordenador lia "22,9 cm" onde o ponto mais
+           critico tinha 4. Numero plausivel e errado e pior que numero
+           nenhum, porque ninguem desconfia dele.
+           Varrer ate o fim custa mais, e os tetos abaixo continuam valendo:
+           estourando o teto DEPOIS de ja ter achado algo, o resultado sai
+           com `exato: false`, e quem mostra diz "ate X" em vez de "X". */
+        if (d === 0) return { distancia: 0, abaixo: true, exato: true, testes: testes, estourou: false };
+      }
+    }
+    return { distancia: melhor <= limite ? melhor : null, abaixo: melhor <= limite, exato: true, testes: testes, estourou: false };
+  }
+
   var BIMTri = {
     EPS: EPS,
     triTri: triTri,
+    distTriTri: distTriTri,
+    distSegSeg2: distSegSeg2,
+    distPtTri2: distPtTri2,
+    distMalhas: distMalhas,
     dentroVoto: dentroVoto, // p [x,y,z] dentro do sólido (tris N*9)? — paridade de raio, voto 3 eixos
     // trisA/trisB: Float32Array|Array com N*9 floats (x,y,z × 3 vértices por triângulo).
     // Devolve { confirmado, testes } — para no PRIMEIRO par que intersecta.

@@ -501,6 +501,32 @@
         this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
       } catch (e) {}
     },
+    /* ⚠ MESMO PROBLEMA DA OBRA, NOUTRA ESCALA. Um teste de compatibilização
+     * guarda MILHARES de conflitos (1.372 numa rodada real de um modelo só).
+     * Excluí-lo gravava uma lápide por conflito, estourava o `_LAPIDES_MAX` e
+     * expulsava as lápides das OUTRAS entidades — que voltavam da nuvem,
+     * ressuscitando exclusões que nada tinham a ver com compatibilização.
+     * Uma lápide de cascata cobre o lote e é imune à poda (`_podarLapides`
+     * nunca descarta o que tem `.cascata`). */
+    lapidarClashTesteEmCascata: function (empresaId, testeId) {
+      if (!empresaId || !testeId) return;
+      try {
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        this._porLapide(l, { id: "cascata:clashteste:" + testeId, cascata: "clashteste", ref: String(testeId), em: Util.agoraISO() });
+        this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
+      } catch (e) {}
+    },
+    /* testes de compatibilização apagados: { testeId: quando } — o merge da
+       nuvem descarta os resultados pelo `testeId`, como faz com o `obraId`. */
+    cascatasDeClashTeste: function (empresaId) {
+      var m = Object.create(null);
+      try {
+        Util.arr(this.adapter.ler(empresaId, "_lapides", [])).forEach(function (t) {
+          if (t && t.cascata === "clashteste" && t.ref) m[t.ref] = t.em || "";
+        });
+      } catch (e) {}
+      return m;
+    },
     /* v1.1.232 — lápide ganha `atualizadoEm = em`. O merge da nuvem decide por
        atualizadoEm; a lápide só tinha `em`, então duas lápides do mesmo id
        empatavam ("" === "") e o LOCAL vencia sempre — a re-exclusão nunca

@@ -365,4 +365,14 @@
   };
 
   global.Util = Util;
-})(window);
+  /* ⚠ ALCANCAVEL PELO GATE, E ESTA E A RAZAO.
+   * Este arquivo se chama "nucleo unico de helpers" e fechava em `})(window)`,
+   * sem `module.exports`. Resultado: nenhum motor puro conseguia usa-lo em
+   * Node — e por isso o produto acumulou 33 copias de `Util.parseNum`
+   * espalhadas, que ja renderam dois erros opostos, os dois movendo dinheiro.
+   * Com esta linha, motor novo usa o helper de verdade em vez de replicar.
+   * Nada muda no navegador: `window` continua sendo o alvo quando existe.
+   * (O unico trecho que depende de DOM aqui e o helper de download, que so
+   * roda quando alguem o chama.) */
+  if (typeof module !== "undefined" && module.exports) module.exports = Util;
+})(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));

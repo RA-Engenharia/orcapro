@@ -404,16 +404,38 @@
     /* ---- madeira ---- */
     html += '<div class="card mb"><div class="flex between"><h3 style="margin:0">Madeira</h3>'
       + (fechada ? "" : '<button class="btn sm" data-gacao="carp-add-madeira" data-id="' + p.id + '">+ Item</button>') + "</div>";
+    /* ⚠ CATALOGO VAZIO NAO PODE VIRAR UM DROPDOWN VAZIO.
+       O item da proposta e ESCOLHIDO do catalogo de madeiras; sem catalogo, o
+       `<select>` sai com "— escolha —" e mais nada. Quem esta montando a
+       proposta clica, nao abre lista nenhuma, e conclui — com razao — que o
+       sistema esta quebrado. Foi assim que chegou o relato: "nao esta abrindo
+       a aba de escolha nem fornecedor".
+       A tela nao pode oferecer uma escolha que nao existe. Ela diz o que
+       falta e leva ate la. */
+    if (!mads.length) {
+      html += '<div class="mt" style="padding:12px;border-left:3px solid #b45309;background:#b4530911;border-radius:0 8px 8px 0">'
+        + '<b>Nenhuma madeira cadastrada ainda.</b>'
+        + '<p class="muted" style="margin:6px 0 8px;font-size:12.5px">O item da proposta é escolhido do seu catálogo de madeiras — e o preço vem de lá, por fornecedor. Enquanto o catálogo estiver vazio, o campo <b>Item</b> não tem o que oferecer.</p>'
+        + '<button class="btn sm primary" data-gacao="carp-aba" data-aba="madeiras">Cadastrar madeira</button></div>';
+    }
     if (!r.linhasMadeira.length) html += '<p class="muted mt">Nenhum item de madeira.</p>';
     else {
       html += '<table class="tbl mt"><thead><tr><th>Item</th><th>Fornecedor</th><th class="num">Qtd</th><th class="num">Custo unit.</th><th class="num">Subtotal</th>' + (fechada ? "" : "<th></th>") + "</tr></thead><tbody>";
       r.linhasMadeira.forEach(function (L, i) {
         var selMad = fechada ? esc(L.descricao)
-          : '<select id="cx-m-mad' + i + '">' + K.optsRec(mads.map(function (m) { return { id: m.id, nome: C.descricaoMadeira(m) }; }), "nome", L.madeiraId, "— escolha —") + "</select>";
+          : '<select id="cx-m-mad' + i + '"' + (mads.length ? "" : ' class="aviso-vazio"') + '>' + K.optsRec(mads.map(function (m) { return { id: m.id, nome: C.descricaoMadeira(m) }; }), "nome", L.madeiraId, mads.length ? "— escolha —" : "— cadastre uma madeira primeiro —") + "</select>";
         var listaForn = (mads.filter(function (m) { return m.id === L.madeiraId; })[0] || null);
         var opForn = listaForn ? C.fornecedoresDe(listaForn).map(function (fid) { return { id: fid, nome: (forn[fid] && (forn[fid].nome || forn[fid].razaoSocial)) || "(removido)" }; }) : [];
+        /* ⚠ O MOTIVO VAI DENTRO DO CAMPO, e nao numa nota que ninguem le.
+           O preco e `madeira x fornecedor`: linha sem madeira nao tem
+           fornecedor nenhum para oferecer, e linha com madeira sem preco
+           cadastrado tambem nao. Nos dois casos o campo saia com "— escolha —"
+           e mais nada, e o usuario ficava clicando num dropdown vazio.
+           O texto do proprio placeholder e o unico lugar onde ele vai olhar. */
+        var vazioForn = !L.madeiraId ? "— escolha a madeira primeiro —"
+          : (!opForn.length ? "— esta madeira não tem preço de fornecedor —" : "— escolha —");
         var selForn = fechada ? esc((forn[L.fornecedorId] && (forn[L.fornecedorId].nome || forn[L.fornecedorId].razaoSocial)) || "—")
-          : '<select id="cx-m-forn' + i + '">' + K.optsRec(opForn, "nome", L.fornecedorId, "— escolha —") + "</select>";
+          : '<select id="cx-m-forn' + i + '"' + (opForn.length ? "" : ' class="aviso-vazio"') + '>' + K.optsRec(opForn, "nome", L.fornecedorId, vazioForn) + "</select>";
         html += "<tr><td>" + selMad + "</td><td>" + selForn + '</td><td class="num">'
           + (fechada ? n2(L.qtd) : '<input id="cx-m-qtd' + i + '" value="' + esc(K.numBR(L.qtd)) + '" style="width:90px;text-align:right">')
           + '</td><td class="num">' + (L.semPreco ? '<span class="muted">sem preço</span>' : moeda(L.custoUnit))
@@ -428,12 +450,18 @@
     /* ---- mão de obra ---- */
     html += '<div class="card mb"><div class="flex between"><h3 style="margin:0">Mão de obra</h3>'
       + (fechada ? "" : '<button class="btn sm" data-gacao="carp-add-mo" data-id="' + p.id + '">+ Serviço</button>') + "</div>";
+    if (!servs.length) {
+      html += '<div class="mt" style="padding:12px;border-left:3px solid #b45309;background:#b4530911;border-radius:0 8px 8px 0">'
+        + '<b>Nenhum serviço de mão de obra cadastrado ainda.</b>'
+        + '<p class="muted" style="margin:6px 0 8px;font-size:12.5px">O serviço da proposta é escolhido da sua tabela de mão de obra, com o valor por m². Enquanto ela estiver vazia, o campo <b>Serviço</b> não tem o que oferecer.</p>'
+        + '<button class="btn sm primary" data-gacao="carp-aba" data-aba="mo">Cadastrar serviço</button></div>';
+    }
     if (!r.linhasMO.length) html += '<p class="muted mt">Nenhum serviço lançado.</p>';
     else {
       html += '<table class="tbl mt"><thead><tr><th>Serviço</th><th class="num">Metragem</th><th class="num">R$ / un.</th><th class="num">Subtotal</th>' + (fechada ? "" : "<th></th>") + "</tr></thead><tbody>";
       r.linhasMO.forEach(function (L, i) {
         var selS = fechada ? esc(L.servico)
-          : '<select id="cx-s-srv' + i + '">' + K.optsRec(servs.map(function (s) { return { id: s.id, nome: s.servico }; }), "nome", L.servicoId, "— escolha —") + "</select>";
+          : '<select id="cx-s-srv' + i + '"' + (servs.length ? "" : ' class="aviso-vazio"') + '>' + K.optsRec(servs.map(function (s) { return { id: s.id, nome: s.servico }; }), "nome", L.servicoId, servs.length ? "— escolha —" : "— cadastre um serviço primeiro —") + "</select>";
         html += "<tr><td>" + selS + '</td><td class="num">'
           + (fechada ? n2(L.qtd) : '<input id="cx-s-qtd' + i + '" value="' + esc(K.numBR(L.qtd)) + '" style="width:90px;text-align:right">')
           + " " + esc(L.unidade) + '</td><td class="num">' + (L.semPreco ? '<span class="muted">sem preço</span>' : moeda(L.valorUnit))
@@ -1115,7 +1143,17 @@
    * ENGATE
    * =================================================================== */
   G.registrarAcoes("carpintaria", {
-    "carp-aba": function (ds) { G._carpAba = ds.aba || "propostas"; App.render(); },
+    /* ⚠ O AVISO DE CATÁLOGO VAZIO MORA DENTRO DO EDITOR, e um botão que
+       promete "leva até lá" tem de LEVAR. `renderCarpintaria` começa com
+       `if (this._carpProp) return this._carpEditor()`, então trocar só a aba
+       redesenhava a mesma proposta — e o redesenho ainda jogava fora o
+       título e a margem digitados, porque vinha do Store. `carpVoltar` é o
+       caminho que coleta o que está na tela antes de sair; a ordem importa,
+       porque ele chama App.render() no fim. */
+    "carp-aba": function (ds) {
+      G._carpAba = ds.aba || "propostas";
+      if (G._carpProp) G.carpVoltar(); else App.render();
+    },
     "carp-nova-madeira": function () { G.carpFormMadeira(null); },
     "carp-editar-madeira": function (ds) { G.carpFormMadeira(Store.obter(eid(), ENT_MADEIRA, ds.id)); },
     "carp-novo-mo": function () { G.carpFormMO(null); },

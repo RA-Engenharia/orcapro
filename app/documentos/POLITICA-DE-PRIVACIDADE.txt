@@ -59,7 +59,14 @@ licença. Os registros de 28 módulos são espelhados no Google Cloud Firestore
     foto que você escolher em "Meu perfil" —, para que apareçam iguais em
     todos os seus aparelhos. Como o resto desta lista, isso significa que
     eles também ficam no Firestore, nos Estados Unidos.
-  · O que NÃO vai: as bases de preços e os arquivos grandes (modelos BIM).
+  · O que NÃO vai: as bases de preços, os arquivos de modelo BIM (.ifc) e a
+    geometria convertida deles. O modelo em si nunca sai do seu computador.
+  · MAS VAI a LISTA de arquivos que compõem cada obra no módulo BIM: o NOME do
+    arquivo (por exemplo "RESIDENCIAL-VILA-MARIA-EST-R03.ifc"), a disciplina, a
+    versão e as datas. É o que permite abrir a mesma obra montada no celular e
+    no computador do escritório. Nome de arquivo de projeto costuma trazer o
+    nome do empreendimento — se isso for sensível no seu caso, renomeie os
+    arquivos antes de abri-los, ou mantenha a sincronização desligada.
   · ATENÇÃO — DADO DE TERCEIRO: ao cadastrar colaboradores, clientes e notas,
     VOCÊ é o controlador desses dados perante a LGPD e precisa ter base legal
     para tratá-los; a fornecedora atua como operadora.

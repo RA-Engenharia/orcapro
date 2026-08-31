@@ -65,12 +65,25 @@
 
     // Detecta clashes entre disciplinas diferentes.
     // opts: { tolerancia (m, default .005 = 5mm), mesmaDisciplina (bool, default false),
-    //         limiarMedia (m, .05), limiarGrave (m, .20), pares (["Estrutura × Instalações", ...]) }
+    //         limiarMedia (m, .05), limiarGrave (m, .20), pares (["Estrutura × Instalações", ...]),
+    //         dilatar (m, B5 modo FOLGA) }
+    //
+    // ⚠ dilatar — o modo FOLGA (B5). Sem ele, este detector so enxerga peca
+    // ENTRANDO em peca. O tubo que passa a 4 cm da viga nao intersecta nada e
+    // e conflito do mesmo jeito: nao cabe a mao do montador nem o isolamento.
+    // Cada caixa cresce dilatar/2 para cada lado, entao duas caixas que se
+    // encostam depois de crescer estavam a menos de `dilatar` uma da outra —
+    // e o par vira candidato. Quem MEDE a distancia de verdade e o refino por
+    // triangulo (BIMTri.distMalhas); aqui e so a peneira grossa, e ela precisa
+    // errar para MAIS, nunca para menos.
     // Retorna { clashes:[{aId,bId,discA,discB,par,penetracao,volume,severidade,centro}],
     //           total, porPar:{par->qtd}, severidade:{grave,media,leve}, elementos }.
     detectar: function (elementos, opts) {
       opts = opts || {};
-      var tol = opts.tolerancia != null ? opts.tolerancia : 0.005;
+      var dilatar = Math.max(0, +opts.dilatar || 0);
+      // no modo folga a tolerancia e ZERO: encostar depois de crescido ja e o
+      // candidato. Manter 5 mm ali descartaria justamente a folga de 5 mm.
+      var tol = dilatar > 0 ? 0 : (opts.tolerancia != null ? opts.tolerancia : 0.005);
       var incluirMesma = !!opts.mesmaDisciplina;
       var lMed = opts.limiarMedia != null ? opts.limiarMedia : 0.05;
       var lGrave = opts.limiarGrave != null ? opts.limiarGrave : 0.20;
@@ -90,9 +103,10 @@
       (elementos || []).forEach(function (el) {
         var bb = el && el.aabb;
         if (!bb || !bb.min || !bb.max || bb.min.length < 3 || bb.max.length < 3) return;
+        var g = dilatar / 2;
         els.push({ id: el.id, disc: (usarPainel && el.disciplina && DISC_PAINEL[el.disciplina]) || BIMClash.disciplinaDe(el.cat || el.tipo), cat: catDe(el),
-          min: [num(bb.min[0]), num(bb.min[1]), num(bb.min[2])],
-          max: [num(bb.max[0]), num(bb.max[1]), num(bb.max[2])] });
+          min: [num(bb.min[0]) - g, num(bb.min[1]) - g, num(bb.min[2]) - g],
+          max: [num(bb.max[0]) + g, num(bb.max[1]) + g, num(bb.max[2]) + g] });
       });
 
       // broad-phase: sweep-and-prune no eixo X (ordena por min.x; mantém janela de ativos)
@@ -111,9 +125,13 @@
           var ov = BIMClash.overlap(o, e, tol);
           if (!ov) continue;
           var pen = Math.min(ov.dim[0], ov.dim[1], ov.dim[2]);
-          var sev = pen >= lGrave ? "grave" : (pen >= lMed ? "media" : "leve");
+          // com dilatacao, `pen` e a sobreposicao das caixas CRESCIDAS — nao e
+          // penetracao e nao pode virar severidade. Quem decide a gravidade no
+          // modo folga e a distancia medida pelo refino; aqui sai provisorio.
+          var sev = dilatar > 0 ? "leve" : (pen >= lGrave ? "grave" : (pen >= lMed ? "media" : "leve"));
           clashes.push({ aId: o.id, bId: e.id, discA: o.disc, discB: e.disc, par: par,
-            penetracao: pen, volume: ov.dim[0] * ov.dim[1] * ov.dim[2], severidade: sev,
+            penetracao: dilatar > 0 ? 0 : pen, dilatado: dilatar > 0, distancia: null,
+            volume: ov.dim[0] * ov.dim[1] * ov.dim[2], severidade: sev,
             centro: [(ov.min[0] + ov.max[0]) / 2, (ov.min[1] + ov.max[1]) / 2, (ov.min[2] + ov.max[2]) / 2],
             inter: { min: ov.min.slice(), max: ov.max.slice() } }); // caixa da interseção — o refino tri-a-tri filtra triângulos por ela
           porPar[par] = (porPar[par] || 0) + 1;

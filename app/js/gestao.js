@@ -332,7 +332,8 @@
      * propósito E restringiu a obra de propósito. A segunda restrição é que
      * não pegava — um controle que mente. */
     lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
-    producao_preco: 1, bim_niveis: 1,
+    producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
+    bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
     /* ⚠ `horas_extras` entrou na v1.2 pelo outro lado (ela sincroniza e grava
        obraId, e o merge da nuvem a apagava junto com a obra). A invariante de
        tools/test-v12-escopo.js pegou o segundo efeito na mesma hora: quem
@@ -2373,8 +2374,36 @@
         }).join("");
       var optP = ["mes", "6m", "ano", "tudo"].map(function (p) { return '<option value="' + p + '"' + (self._dashPer === p ? " selected" : "") + '>' + perRot[p] + '</option>'; }).join("");
       var _ic = function (n, s) { return (typeof Icones !== "undefined") ? Icones.get(n, s || 14) : ""; };
+      /* a tecla de marcar varios e Command no Mac e Ctrl no resto — dizer a
+         errada e pior que nao dizer nada, porque a pessoa tenta e nao funciona */
+      var _ehMac = function () {
+        try { return /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent || ""); } catch (e) { return false; }
+      };
       var html = '<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 16px">' +
-        '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("obra") + 'Obra <select data-gacao="dash-obra" multiple size="1" title="Segure Ctrl (ou toque) para escolher mais de uma obra" style="max-width:250px">' + optO + '</select></label>' +
+        /* ⚠ CAMPO DE ESCOLHA MÚLTIPLA DE UMA LINHA SÓ NÃO ABRE NO MAC.
+           No Chrome do Windows esse truque ainda cai num menu suspenso; no
+           macOS um campo de escolha múltipla é SEMPRE uma lista, nunca um
+           menu — e com uma linha só ele vira uma caixinha sem seta que não
+           abre coisa nenhuma. O cliente via o nome da obra atual e não
+           conseguia trocar de obra. Relato de 30/08/2026, com print.
+
+           O caso comum — uma obra, ou todas — passa a ser um campo de
+           escolha simples, que todo navegador de todo sistema desenha igual.
+           Somar várias vira um botão explícito, e só então o campo vira uma
+           LISTA de verdade (mais de uma linha), que é o que o macOS sabe
+           mostrar. O contrato do `dashTrocaObra` não muda: ele lê as opções
+           marcadas, e isso vale nos dois modos.
+
+           ⚠ Este defeito NÃO aparece para quem desenvolve: tudo aqui é feito
+           no Windows. Quem o pega é tools/test-select-no-mac.js. */
+        (function () {
+          var multi = !!self._dashMulti || !!(selIds && selIds.length > 1);
+          var campo = multi
+            ? '<select data-gacao="dash-obra" multiple size="5" title="Segure ' + (_ehMac() ? 'Command' : 'Ctrl') + ' para marcar mais de uma obra" style="max-width:250px;min-width:200px">' + optO + '</select>'
+            : '<select data-gacao="dash-obra" style="max-width:250px">' + optO + '</select>';
+          return '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("obra") + 'Obra ' + campo + '</label>' +
+            '<button class="btn sm ghost" data-gacao="dash-obra-multi" title="' + (multi ? 'Voltar a escolher uma obra por vez' : 'Somar mais de uma obra no mesmo recorte') + '" style="font-size:11px">' + (multi ? 'uma obra' : '+ somar obras') + '</button>';
+        })() +
         (selIds && selIds.length > 1 ? '<span style="font-size:11px;font-weight:700;color:var(--verde)">' + selIds.length + ' obras somadas</span>' : "") +
         '<label style="display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' + _ic("periodo") + 'Período <select data-gacao="dash-periodo" style="max-width:170px">' + optP + '</select></label>' +
         '<button class="btn sm" data-gacao="dash-metas" style="margin-left:auto" title="Definir a margem saudavel, a meta de PPC e o aviso de contas a vencer">&#9881; Metas</button>' +
@@ -2873,6 +2902,18 @@
       ["centrocusto", "registro(s) de centro de custo"],
       /* níveis são do PROJETO daquela obra: o Térreo da obra A não é o da B */
       ["bim_niveis", "nível(is) do projeto"],
+      /* a federação é a montagem DAQUELA obra: apagada a obra, a lista de quais
+         arquivos a compunham não tem mais dono. A geometria convertida no
+         IndexedDB não sai junto de propósito — ela é do ARQUIVO, pode estar em
+         outra obra, e a política de espaço a descarta quando fizer falta. */
+      ["bim_modelos", "modelo(s) BIM da obra"],
+      /* o conjunto é montado sobre as peças DAQUELA obra: apagada a obra, ele
+         aponta para chaves que não existem mais */
+      ["bim_conjuntos", "conjunto(s) de seleção"],
+      ["bim_vistas", "ponto(s) de vista salvo(s)"],
+      ["bim_clash_testes", "teste(s) de compatibilização"],
+      ["bim_clash_resultados", "conflito(s) com histórico"],
+      ["bim_tarefas", "tarefa(s) do cronograma 4D"],
       /* a tabela de preços unitários é combinada POR OBRA (o m² de reboco da
          obra A não é o da B). Sai junto; para reaproveitar em outra obra existe
          o "copiar de outra obra", que gera cópias próprias — nunca referência. */
@@ -6501,7 +6542,15 @@
 
       /* painéis de análise que moram na gaveta */
       [["modelos", "modelos"], ["quatro-d", "4d"], ["clash", "clash"], ["qto", "qto"], ["seis-d", "6d"]].forEach(function (p) {
-        reg[p[0]] = function () { self._bimAbrirPainel(p[1]); return true; };
+        reg[p[0]] = function () {
+          self._bimAbrirPainel(p[1]);
+          /* o painel de compatibilização precisa da lista de testes salvos já
+             preenchida ao abrir: a fiação dos botões roda uma vez, e a obra
+             pode ter sido escolhida depois. Sem isto o seletor abre vazio e o
+             coordenador acha que perdeu os testes que criou ontem. */
+          if (p[1] === "clash" && self._bimClashRenderTestes) self._bimClashRenderTestes();
+          return true;
+        };
       });
 
       /* ações que já têm botão na barra antiga */
@@ -6530,6 +6579,9 @@
        * chamava, e o botão respondia "ainda não está disponível". */
       reg["estilo"] = function (e) { var b = B(); if (b && b.estiloDesenho) { b.estiloDesenho(e.ligado); return true; } return false; };
       reg["sistemas"] = function (e) { var b = B(); if (b && b.sistema) { b.sistema(e.ligado); return true; } return false; };
+      reg["conjuntos"] = function () { self._bimAbrirPainel("conjuntos"); self._bimConjRender(); return true; };
+      reg["vistas"] = function () { self._bimAbrirPainel("vistas"); self._bimVistaRender(); return true; };
+      reg["tarefas4d"] = function () { self._bimAbrirPainel("tarefas4d"); self._bimTarRender(); return true; };
       /* "snap" é comando de MENU, não de alternar: e.ligado chegava null e o
          snapConfig({on:null}) não mudava nada — o botão dizia sucesso e o
          snap continuava como estava. Lê o estado e inverte. */
@@ -6562,9 +6614,42 @@
       /* chamava self.acao("bim-salvar-edicoes"), case que NÃO existe no switch:
          o switch caía fora em silêncio, o comando devolvia sucesso e nada era
          salvo. O usuário clicava em Salvar e perdia o trabalho. */
+      /* ⚠ ATÉ O B1 ESTE BOTÃO MENTIA. A dica dele diz "Guarda o modelo e as
+         edições dentro da obra" e o aviso dizia "Modelo e edições salvos nesta
+         obra" — e o que rodava era só o flush de `bim_edicoes`. O modelo não
+         era guardado em lugar nenhum, e o usuário ia embora achando que sim. */
       reg["salvar-modelo"] = function () {
         try { self._bimEdFlush(); } catch (e) { UI.toast("Não consegui salvar as edições.", "erro"); return true; }
-        UI.toast("Modelo e edições salvos nesta obra.", "ok");
+        if (!self._bimSel) { UI.toast("Escolha a obra no alto da tela — o modelo pertence a ela. As edições foram salvas.", "aviso"); return true; }
+        var abertos = [];
+        try { abertos = (BIM.modelos || []).filter(function (m) { return !m.sintetico; }); } catch (e2) {}
+        if (!abertos.length) { UI.toast("Edições salvas. Não há modelo de arquivo aberto para guardar.", "ok"); return true; }
+        /* ⚠ CONTA SÓ O QUE FOI MESMO GUARDADO. A primeira versão incrementava
+           o contador dentro do `try`, sem olhar o retorno: quando a gravação
+           era recusada (ambiguidade, sem sessão, sem espaço) a tela mostrava o
+           aviso verdadeiro E, ao lado, "1 modelo guardado" — a mesma família de
+           mentira que este botão existia para consertar. */
+        var naObra = 0, self2 = self, pend = [];
+        abertos.forEach(function (m) {
+          try {
+            if (self2._bimFedGravar({ mid: m.mid, nome: m.nome, arquivoId: m.arquivoId, disciplina: m.disciplina, doCache: m.doCache, exemplo: m.exemplo })) naObra++;
+            else if (m.doCache) naObra++;   /* restaurado: a vaga dele já está gravada */
+            /* ⚠ e o braço do cache REPETE de verdade: quando a gravação falhou
+               por falta de espaço, a geometria continua em memória de propósito,
+               e é este clique que dá a segunda chance. */
+            if (m.temColeta) pend.push(self2._bimCacheGravar({ mid: m.mid, nome: m.nome, temColeta: true, doCache: false, semCache: m.semCache, exemplo: m.exemplo }));
+          } catch (e3) {}
+        });
+        if (!naObra) { UI.toast("Edições salvas. O modelo não ficou guardado nesta obra — veja o aviso acima.", "aviso"); return true; }
+        if (!pend.length) { UI.toast(naObra + (naObra > 1 ? " modelos" : " modelo") + " e as edições guardados nesta obra.", "ok"); return true; }
+        /* ⚠ o aviso sai quando a gravação TERMINA. Falar antes é o defeito que
+           este botão tinha: ele dizia "salvo" e o disco decidia depois. */
+        Promise.all(pend).then(function (rs) {
+          var okN = rs.filter(function (x) { return x && x.ok; }).length;
+          var ruins = rs.filter(function (x) { return x && !x.ok && x.motivo; });
+          if (ruins.length) UI.toast(naObra + " na obra; " + okN + " de " + pend.length + " guardados para reabrir rápido — " + ruins[0].motivo + ".", "aviso");
+          else UI.toast(naObra + (naObra > 1 ? " modelos" : " modelo") + " e as edições guardados nesta obra.", "ok");
+        });
         return true;
       };
       reg["abrir-ifc"] = function () {
@@ -8925,8 +9010,13 @@
 
         '<div id="bim-clash" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("alerta") + 'Compatibilização</h3>' +
-          '<button class="btn sm primary" id="bim-clash-run">' + _icB("buscar") + 'Rodar compatibilização</button></div>' +
-          '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> — e no federado (2+ modelos) <b>Hidráulica, Elétrica e Mecânica contam separadas</b> (ex.: tubo × eletroduto, tubo atravessando viga). Clique em <b>Rodar</b>.</p></div>' +
+          '<span class="flex" style="gap:6px;flex-wrap:wrap;align-items:center">' +
+            '<select id="bim-clash-teste" class="sel sm" style="min-width:190px" title="Teste salvo: guarda os lados, o modo e — o que importa — o histórico de cada conflito"></select>' +
+            '<button class="btn sm" id="bim-clash-novo" title="Criar um teste salvo">+ Teste</button>' +
+            '<button class="btn sm" id="bim-clash-edit" title="Editar o teste selecionado">Editar</button>' +
+            '<button class="btn sm primary" id="bim-clash-run">' + _icB("buscar") + 'Rodar</button></span></div>' +
+          '<div id="bim-clash-editor" style="display:none;margin-bottom:10px"></div>' +
+          '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências entre disciplinas — e no modo <b>folga</b> também as peças que passam <b>perto demais</b> sem se tocar. Um <b>teste salvo</b> guarda responsável, prazo, comentário e histórico: ao rodar de novo depois do modelo corrigido, os mesmos conflitos são reconhecidos e nada do que a equipe escreveu se perde.</p></div>' +
         "</div>" +
 
         '<div id="bim-qto" style="display:none">' +
@@ -8939,6 +9029,32 @@
           '<div class="flex between" style="align-items:center;margin-bottom:8px"><h3 style="margin:0;display:flex;align-items:center">' + _icB("tabela") + 'Banco de famílias</h3></div>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Salve famílias do modelo e reuse em qualquer projeto.</p>' +
           '<div id="bim-familias-lista"></div>' +
+        "</div>" +
+
+        '<div id="bim-tarefas" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("calendario") + 'Cronograma 4D</h3>' +
+          '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-tar-import">Importar</button><button class="btn sm" id="bim-tar-cores">Cores</button><button class="btn sm primary" id="bim-tar-nova">+ Tarefa</button></span></div>' +
+          '<p class="muted" style="font-size:11.5px;margin:0 0 8px">A obra sobe com o <b>seu</b> cronograma. Cada tarefa tem as quatro datas — previsto e real — e o atraso aparece com <b>contorno fixo</b>, que sai bem numa foto de relatório. Sem tarefa nenhuma, vale o 4D automático da aba anterior.</p>' +
+          '<input type="file" id="bim-tar-arq" accept=".csv,.xml,.txt" style="display:none">' +
+          '<div id="bim-tar-editor" style="display:none;margin-bottom:10px"></div>' +
+          '<div id="bim-tar-regua" style="display:none;margin-bottom:10px"></div>' +
+          '<div id="bim-tar-lista"></div>' +
+        "</div>" +
+
+        '<div id="bim-vistas" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("camera") + 'Pontos de vista</h3>' +
+          '<span class="flex" style="gap:6px"><button class="btn sm" id="bim-vista-bcf-in">Importar BCF</button><button class="btn sm" id="bim-vista-bcf-out">Exportar BCF</button><button class="btn sm primary" id="bim-vista-nova">+ Salvar esta vista</button></span></div>' +
+          '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Guarda o ângulo da câmera, o que está visível e o comentário. O <b>BCF</b> é o formato que o Revit, o Navisworks e o Solibri leem — é como o apontamento volta para quem projeta. <b>O BCF ainda não foi aberto noutra ferramenta a partir daqui: trate como experimental.</b></p>' +
+          '<input type="file" id="bim-vista-arq" accept=".bcfzip,.zip" style="display:none">' +
+          '<div id="bim-vistas-lista"></div>' +
+        "</div>" +
+
+        '<div id="bim-conjuntos" style="display:none">' +
+          '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("alvo") + 'Conjuntos de seleção</h3>' +
+          '<button class="btn sm primary" id="bim-conj-novo">+ Novo por regra</button></div>' +
+          '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Um conjunto responde \u201Cquais peças\u201D sem clicar em nenhuma. O de <b>busca</b> é reavaliado a cada abertura — quando o projetista manda a versão nova, as peças novas já entram.</p>' +
+          '<div id="bim-conj-editor" style="display:none"></div>' +
+          '<div id="bim-conj-lista"></div>' +
         "</div>" +
 
         '<div id="bim-6d" style="display:none">' +
@@ -8956,7 +9072,7 @@
     /* v1.1.121 — abre a gaveta de análise do viewer no painel pedido (chamado pelo
      * dock do BIM via opts.onPainel; um painel por vez pra leitura limpa). */
     _bimAbrirPainel: function (chave) {
-      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"] };
+      var mapa = { modelos: ["bim-modelos", "Modelos carregados"], "4d": ["bim-4d", "Simulação 4D"], clash: ["bim-clash", "Compatibilização"], qto: ["bim-qto", "Quantitativos"], familias: ["bim-familias", "Banco de famílias"], "6d": ["bim-6d", "6D/7D · Ciclo de vida"], conjuntos: ["bim-conjuntos", "Conjuntos de seleção"], vistas: ["bim-vistas", "Pontos de vista"], tarefas4d: ["bim-tarefas", "Cronograma 4D"] };
       var alvo = mapa[chave]; if (!alvo) return;
       var drawer = document.getElementById("bim-drawer"); if (!drawer) return;
       Object.keys(mapa).forEach(function (k) {
@@ -8965,6 +9081,18 @@
       });
       var tit = document.getElementById("bim-drawer-tit"); if (tit) tit.textContent = alvo[1];
       drawer.style.display = "flex";
+      /* ⚠ SAIU DO CRONOGRAMA 4D, DESFAZ O 4D. Os painéis são seções da MESMA
+         gaveta do MESMO visualizador: a cena não é remontada ao trocar. Sem
+         isto, o coordenador ia inspecionar conflitos com o modelo pintado pelo
+         cronograma, o 4D automático saía com as cores do outro, e o contorno
+         laranja do atraso continuava desenhado por cima de peças que a própria
+         imagem afirma não existirem — inclusive na foto que vai ao relatório.
+         `limpar4DTarefas` existia e não era chamada por ninguém. */
+      if (chave !== "tarefas4d" && this._bimTarSim) {
+        if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
+        this._bimTarPend = null; this._bimTarSim = null;
+        try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e4) {}
+      }
       // famílias são populadas sob demanda (antes era um card sempre visível)
       if (chave === "familias" && this._bimRenderFamilias) { try { this._bimRenderFamilias(); } catch (eF) {} }
     },
@@ -8975,6 +9103,26 @@
     bimTrocaObra: function (obraId) {
       if (obraId == null) return; // clique da delegação (sem value): não zera a obra do 4D
       this._bimSel = obraId;
+      /* B0: a âncora do vínculo BIM leva a obra, e o registro salvo TAMBÉM é
+         por obra. Trocar aqui sem avisar o viewer deixaria a chave apontando
+         para a obra anterior dentro do registro da nova — órfão silencioso. */
+      try { if (window.BIM && BIM.setObra) BIM.setObra(obraId); } catch (eB0) {}
+      /* B1: a obra nova tem OUTRA federação. Sem trocar o mapa, o viewer
+         resolveria o modeloId pelas vagas da obra anterior — vínculo da obra A
+         aparecendo dentro do registro da obra B. */
+      try { this._bimFedCarregar(); } catch (eB1) {}
+      /* ⚠ B5: os testes de compatibilização também são POR OBRA, e o seletor
+         não era repovoado. A tela seguia mostrando o teste da obra anterior,
+         SELECIONADO — e como o `value` não existe mais entre as opções da obra
+         nova, o `select` cai para a primeira, que é "Rodada rápida". O
+         coordenador via o nome do teste dele na tela, apertava Rodar, e o
+         sistema fazia uma rodada que não guarda nada. O resultado da obra
+         anterior também tinha de sair da tela: os nomes de peça seriam os da
+         obra nova sobre os conflitos da velha. */
+      this._bimClashRec = null; this._bimClashTeste = null; this._bimClashes = null;
+      this._bimClashTesteSel = ""; this._bimClashDescartados = 0; this._bimClashNaoGravou = 0; this._bimClashMotivo = "";
+      this._bimClashObra = null; this._bimClashLadoA = null;
+      try { this._bimClashRenderTestes(); this._bimClashRender(); } catch (eB5) {}
       // edições são POR OBRA: descarrega o save pendente NA OBRA ANTIGA (flush — descartar
       // perderia a edição) e carrega as da obra nova (replay)
       try {
@@ -8983,9 +9131,1769 @@
         var edN = Store.obter(eid(), "bim_edicoes", obraId || "geral");
         if (window.BIM && BIM.editarAplicar) BIM.editarAplicar((edN && edN.ops) || []);
       } catch (eEd2) {}
+      /* ⚠ O CRONOGRAMA 4D TAMBÉM É POR OBRA — a data da régua, a lista e o
+         passeio ficavam na obra anterior. Pior que ficar velho: os handlers da
+         régua guardam a JANELA da obra antiga no closure, então arrastar depois
+         de trocar aplicava datas de um cronograma às tarefas de outro. O
+         `_bimSemana` acima já diz a doutrina; a data faltou.
+         ⚠ E NÃO redesenhar à solta: `#bim-tar-lista` existe no HTML mesmo com a
+         gaveta fechada, e _bimTarRender → _bimTarRegua → aplicar4DTarefas
+         esconderia peças para quem nem abriu o Cronograma 4D. */
+      try {
+        if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
+        this._bimTarPend = null;
+        var tinhaSim4d = !!this._bimTarSim;
+        this._bimTarData = null; this._bimTarSim = null; this._bimTarEditando = "";
+        var _ed4 = document.getElementById("bim-tar-editor");
+        if (_ed4) { _ed4.style.display = "none"; _ed4.innerHTML = ""; }
+        var _pn4 = document.getElementById("bim-tarefas"), _dw4 = document.getElementById("bim-drawer");
+        var visivel4 = _pn4 && _dw4 && _dw4.style.display !== "none" && _pn4.style.display !== "none";
+        if (visivel4) { this._bimTarRender(); }
+        else {
+          var _rg4 = document.getElementById("bim-tar-regua");
+          if (_rg4) { _rg4.style.display = "none"; _rg4.innerHTML = ""; }   /* mata os closures presos à obra antiga */
+          if (tinhaSim4d && window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas();
+        }
+      } catch (eB6) {}
       if (this._bimElementos && this._bimElementos.length) this._bimReplanejar();
       try { this._nivArvore(); } catch (e) {}   /* a árvore é da OBRA: sem isto continuava mostrando os níveis da anterior */
     },
+    /* =====================================================================
+     * B1 — CACHE DO MODELO E FEDERAÇÃO DA OBRA
+     *
+     * A casca é quem fala com o Store e com o IndexedDB; o viewer só entrega e
+     * consome dado simples (fronteira do produto, seção 6.1 da especificação).
+     *
+     * ⚠ E ISTO É O QUE FAZ O BOTÃO "Salvar no projeto" PARAR DE MENTIR. Ele
+     * existe desde antes, com a dica "Guarda o modelo e as edições dentro da
+     * obra" e o aviso "Modelo e edições salvos nesta obra" — e só descarregava
+     * `bim_edicoes`. O modelo não era guardado em lugar nenhum.
+     * ===================================================================== */
+
+    /* =====================================================================
+     * B4 — PONTOS DE VISTA, COMENTÁRIO E BCF
+     *
+     * Numa reunião de compatibilização alguém acha o problema, todo mundo olha,
+     * e a reunião acaba. Sem ponto de vista salvo, nada disso sobrevive.
+     *
+     * ⚠ A MINIATURA É BLOB E MORA NO IndexedDB. Guardá-la no registro faria o
+     * localStorage estourar em dez vistas (o Store avisa "armazenamento CHEIO")
+     * e ainda subiria a imagem para a nuvem a cada sincronização. No registro
+     * viaja só o endereço; no aparelho onde a imagem não existe, a vista abre
+     * sem ela — e não deixa de abrir.
+     * ===================================================================== */
+    _bimVistaLer: function () {
+      try { return Store.listar(eid(), "bim_vistas") || []; } catch (e) { return []; }
+    },
+    _bimVistaDaObra: function () {
+      var o = String(this._bimSel || "");
+      return this._bimVistaLer().filter(function (v) { return String(v.obraId || "") === o; });
+    },
+
+    _bimVistaRender: function () {
+      var box = document.getElementById("bim-vistas-lista"); if (!box) return;
+      var self = this, lista = this._bimVistaDaObra();
+      if (!lista.length) {
+        box.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Nenhum ponto de vista nesta obra. Enquadre o problema, clique em <b>+ Salvar esta vista</b> e escreva o que está errado.</p>';
+        return;
+      }
+      box.innerHTML = "";
+      lista.forEach(function (v) {
+        var linha = document.createElement("div");
+        linha.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 4px;border-bottom:1px dashed var(--linha)";
+        var com = (v.comentarios && v.comentarios[0]) ? v.comentarios[0].texto : "";
+        linha.innerHTML =
+          '<div style="min-width:180px;max-width:300px"><b>' + Util.esc(v.nome) + '</b>' +
+          (com ? '<div class="muted" style="font-size:11px">' + Util.esc(com) + '</div>' : "") +
+          '<div class="muted" style="font-size:10.5px">' + Util.esc(v.autor || "") + (v.criadoEm ? " · " + Util.esc(String(v.criadoEm).slice(0, 10)) : "") + '</div></div>' +
+          '<span style="flex:1"></span>' +
+          '<button data-vt="ir" class="btn sm" title="Volta a câmera e a visibilidade desta vista">Ir para</button>' +
+          '<button data-vt="del" class="btn sm danger" title="Apagar">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + '</button>';
+        linha.querySelector('[data-vt="ir"]').onclick = function () { self._bimVistaIr(v.id); };
+        linha.querySelector('[data-vt="del"]').onclick = function () { self._bimVistaExcluir(v.id, v.nome); };
+        box.appendChild(linha);
+      });
+    },
+
+    _bimVistaSalvar: function () {
+      if (!window.BimVista || !window.BIM) return;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar o ponto de vista.", "aviso"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o ponto de vista pertence a ela.", "aviso"); return; }
+      var cam = BIM.cameraAtual();
+      if (!cam) { UI.toast("Abra um modelo antes de salvar a vista.", "erro"); return; }
+      var nome = prompt("Nome do ponto de vista (o que está errado aqui?)", "");
+      if (nome == null) return;
+      var texto = prompt("Comentário para quem projeta (pode deixar em branco)", "") || "";
+      var quem = "";
+      try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) {}
+      /* o que está OCULTO agora entra na vista: é metade do que faz um ponto
+         de vista significar alguma coisa ("olhe ISTO, sem o resto na frente") */
+      var ocultos = [];
+      try {
+        (BIM.elementos || []).forEach(function (el) { if (el.chave && el.oculto) ocultos.push(el.chave); });
+      } catch (e2) {}
+      var v = BimVista.vista({
+        obraId: this._bimSel, nome: nome, autor: quem, criadoEm: new Date().toISOString(),
+        camera: cam, visibilidade: { ocultos: ocultos },
+        comentarios: texto ? [{ autor: quem, em: new Date().toISOString(), texto: texto }] : []
+      });
+      if (!v) { UI.toast("Dê um nome ao ponto de vista.", "erro"); return; }
+      if (!Store.salvar(eid(), "bim_vistas", v)) { UI.toast("Não consegui salvar (armazenamento cheio?).", "erro"); return; }
+      /* a miniatura vai para o IndexedDB, e a falta dela não impede a vista */
+      try {
+        var png = BIM.foto && BIM.foto();
+        if (png && window.Idb) Idb.set("bimthumb:" + v.id, png)["catch"](function () {});
+      } catch (e3) {}
+      UI.toast('Ponto de vista \u201C' + v.nome + '\u201D salvo.', "ok");
+      this._bimVistaRender();
+    },
+
+    _bimVistaDe: function (id) { return this._bimVistaDaObra().filter(function (v) { return v.id === id; })[0] || null; },
+    _bimVistaIr: function (id) {
+      var v = this._bimVistaDe(id); if (!v || !window.BIM) return;
+      var r = BIM.aplicarVista(v);
+      if (!r.ok) { UI.toast("Não consegui aplicar esta vista: " + (r.erro || ""), "erro"); return; }
+      /* ⚠ peça que sumiu do modelo é DITA, não engolida: a vista de três meses
+         atrás sobre a versão nova mostraria menos e ninguém saberia por quê */
+      if (r.naoLocalizadas && r.naoLocalizadas.length) {
+        UI.toast(r.naoLocalizadas.length + " peça(s) desta vista não estão no modelo aberto — o resto foi aplicado.", "aviso");
+      }
+    },
+    _bimVistaExcluir: function (id, nome) {
+      if (!confirm('Apagar o ponto de vista "' + nome + '"?')) return;
+      try { Store.excluir(eid(), "bim_vistas", id); } catch (e) {}
+      try { if (window.Idb) Idb.del("bimthumb:" + id)["catch"](function () {}); } catch (e2) {}
+      this._bimVistaRender();
+    },
+
+    /* ⚠ O AVISO DE EXPERIMENTAL NÃO É ENFEITE. A especificação proíbe afirmar
+       conformidade com a BCF 2.1 sem ter aberto o arquivo gerado noutra
+       ferramenta, e isso ainda não foi feito. O motor declara a pendência
+       (`BimBcf.VALIDADO_EM_OUTRA_FERRAMENTA`) e a tela repete, para o usuário
+       não mandar ao projetista achando que está garantido. */
+    _bimVistaExportarBcf: function () {
+      if (!window.BimBcf) { UI.toast("Motor de BCF não carregado.", "erro"); return; }
+      var lista = this._bimVistaDaObra();
+      if (!lista.length) { UI.toast("Salve ao menos um ponto de vista antes de exportar.", "aviso"); return; }
+      var ex = BimBcf.exportar(lista, null);
+      if (!ex.ok) { UI.toast(ex.erro || "Não consegui montar o BCF.", "erro"); return; }
+      var obra = "";
+      try { var o = Store.obter(eid(), "obras", this._bimSel); obra = (o && o.nome) || ""; } catch (e) {}
+      var nome = (obra ? obra.replace(/[^\wÀ-ÿ .-]+/g, "").trim() : "obra") + ".bcfzip";
+      try {
+        var blob = new Blob([ex.bytes], { type: "application/octet-stream" });
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(blob); a.download = nome;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+      } catch (e2) { UI.toast("Não consegui baixar o arquivo: " + e2.message, "erro"); return; }
+      UI.toast(ex.topicos + " tópico(s) no " + nome + ". \u26A0 O BCF ainda não foi conferido abrindo noutra ferramenta — avise o projetista.", "aviso");
+    },
+
+    _bimVistaImportarBcf: function (arquivo) {
+      var self = this;
+      if (!arquivo || !window.BimBcf || !window.BimVista) return;
+      if (this._semSessao() || !this._bimSel) { UI.toast("Escolha a obra e entre com a sua conta antes de importar.", "aviso"); return; }
+      var fr = new FileReader();
+      fr.onload = function () {
+        var bytes = new Uint8Array(fr.result);
+        /* ⚠ o inflate vem do navegador: arquivo de terceiro vem comprimido, e
+           sem isto o motor recusaria dizendo que não sabe descomprimir */
+        function inflar(b) {
+          if (typeof DecompressionStream === "undefined") return Promise.reject(new Error("este navegador não sabe descomprimir"));
+          var ds = new DecompressionStream("deflate-raw");
+          var w = ds.writable.getWriter(); w.write(b); w.close();
+          return new Response(ds.readable).arrayBuffer().then(function (ab) { return new Uint8Array(ab); });
+        }
+        BimBcf.zipLer(bytes, { inflar: inflar }).then(function (arqs) {
+          var r = BimBcf.importar(arqs, { elementos: (window.BIM && BIM.elementos) || [] });
+          if (!r.ok) { UI.toast("Não achei tópico nenhum neste arquivo.", "erro"); return; }
+          var n = 0, semVista = 0, naoLoc = 0;
+          r.topicos.forEach(function (t) {
+            var v = BimVista.vista({
+              obraId: self._bimSel, nome: t.nome, autor: t.autor, criadoEm: t.criadoEm,
+              camera: t.camera || {}, visibilidade: { isolados: t.isolados, ocultos: t.ocultos },
+              comentarios: t.comentarios
+            });
+            if (!v) return;
+            if (Store.salvar(eid(), "bim_vistas", v)) n++;
+            if (t.semVista) semVista++;
+            naoLoc += (t.naoLocalizadas || []).length;
+          });
+          self._bimVistaRender();
+          var msg = n + " tópico(s) importado(s)";
+          if (semVista) msg += " · " + semVista + " sem ponto de vista (só comentário)";
+          /* ⚠ peça não localizada é CONTADA: pode ser o modelo errado aberto */
+          if (naoLoc) msg += " · " + naoLoc + " peça(s) não estão no modelo aberto";
+          UI.toast(msg, naoLoc ? "aviso" : "ok");
+        })["catch"](function (e) { UI.toast("Não consegui ler o arquivo: " + e.message, "erro"); });
+      };
+      fr.readAsArrayBuffer(arquivo);
+    },
+
+    /* =====================================================================
+     * B3 — CONJUNTOS DE SELEÇÃO E BUSCA
+     *
+     * O motor (js/bimset.js) decide QUAIS peças; aqui ficam a persistência, a
+     * tela e as ações. A regra é dado — vai para o Store e sincroniza — então
+     * nada aqui a executa: quem a avalia é o motor, sobre a lista de elementos.
+     * ===================================================================== */
+    /* =====================================================================
+     * B5 — COMPATIBILIZAÇÃO COM CICLO DE VIDA
+     *
+     * O detector já existia. O que entra aqui é o que acontece ENTRE as
+     * rodadas: o teste salvo, e o conflito que sobrevive à reexportação do
+     * IFC carregando responsável, prazo, comentário e histórico.
+     *
+     * ⚠ UM CAMINHO SÓ DE DETECÇÃO. A "rodada rápida" (sem teste salvo) usa
+     * exatamente o mesmo `_bimClashRodar`, com um teste implícito. Dois
+     * caminhos divergiriam — foi assim que o engenheiro passou a ver 50% e
+     * o cliente 80% na mesma medição. O que a rodada rápida NÃO faz é
+     * gravar: sem teste salvo não há onde pendurar o histórico, e a tela
+     * diz isso em vez de fingir que guardou.
+     * ===================================================================== */
+    _bimClashTestes: function () {
+      try { return Store.listar(eid(), "bim_clash_testes") || []; } catch (e) { return []; }
+    },
+    _bimClashTestesDaObra: function () {
+      var o = String(this._bimSel || "");
+      return this._bimClashTestes().filter(function (t) { return String(t.obraId || "") === o; });
+    },
+    _bimClashResDoTeste: function (testeId) {
+      try {
+        return (Store.listar(eid(), "bim_clash_resultados") || []).filter(function (r) { return String(r.testeId || "") === String(testeId); });
+      } catch (e) { return []; }
+    },
+
+    _bimClashRenderTestes: function () {
+      var sel = document.getElementById("bim-clash-teste"); if (!sel) return;
+      var lista = this._bimClashTestesDaObra(), atual = this._bimClashTesteSel || "";
+      var h = '<option value="">Rodada rápida (não guarda histórico)</option>';
+      lista.forEach(function (t) {
+        h += '<option value="' + Util.esc(t.id) + '"' + (t.id === atual ? " selected" : "") + ">" + Util.esc(t.nome) +
+          (t.ultimaExecucao ? " · " + Util.esc(String(t.ultimaExecucao).slice(0, 10)) : "") + "</option>";
+      });
+      sel.innerHTML = h;
+    },
+
+    /* ---- editor do teste (5.1) ---- */
+    _bimClashEditor: function (id) {
+      var cx = document.getElementById("bim-clash-editor"); if (!cx) return;
+      var self = this;
+      var t = id ? (this._bimClashTestesDaObra().filter(function (x) { return x.id === id; })[0] || null) : null;
+      t = BimClashX.teste(t || { obraId: this._bimSel, nome: "" });
+      var conj = (typeof this._bimConjDaObra === "function") ? this._bimConjDaObra() : [];
+      var discs = ["Estrutura", "Arquitetura", "Hidráulica", "Elétrica", "Mecânica", "Instalações", "Outros"];
+      var arqs = [];
+      try { (BIM.elementos || []).forEach(function (e2) { var a = String(e2.chave || "").split("::")[0]; if (a && arqs.indexOf(a) < 0) arqs.push(a); }); } catch (e) {}
+
+      function opcoesLado(l, pref) {
+        var h = "";
+        h += '<option value="todos|"' + (l.tipo === "todos" ? " selected" : "") + ">Tudo que está aberto</option>";
+        discs.forEach(function (d) { h += '<option value="disciplina|' + Util.esc(d) + '"' + (l.tipo === "disciplina" && l.ref === d ? " selected" : "") + ">Disciplina: " + Util.esc(d) + "</option>"; });
+        conj.forEach(function (c) { h += '<option value="conjunto|' + Util.esc(c.id) + '"' + (l.tipo === "conjunto" && l.ref === c.id ? " selected" : "") + ">Conjunto: " + Util.esc(c.nome) + "</option>"; });
+        arqs.forEach(function (a) { h += '<option value="arquivo|' + Util.esc(a) + '"' + (l.tipo === "arquivo" && l.ref === a ? " selected" : "") + ">Modelo: " + Util.esc(a) + "</option>"; });
+        return h;
+      }
+      var modos = Object.keys(BimClashX.MODOS).map(function (m) {
+        return '<option value="' + m + '"' + (t.modo === m ? " selected" : "") + ">" + Util.esc(BimClashX.MODOS[m].rotulo) + "</option>";
+      }).join("");
+
+      cx.style.display = "";
+      cx.innerHTML =
+        '<div class="card" style="padding:10px">' +
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:flex-end">' +
+          '<label style="flex:1;min-width:180px"><span class="muted" style="font-size:11px">Nome do teste</span><input id="cx-nome" class="inp sm" value="' + Util.esc(t.nome === "Teste sem nome" ? "" : t.nome) + '" placeholder="Estrutura × Hidráulica"></label>' +
+          '<label style="min-width:170px"><span class="muted" style="font-size:11px">Lado A</span><select id="cx-a" class="sel sm">' + opcoesLado(t.a) + "</select></label>" +
+          '<label style="min-width:170px"><span class="muted" style="font-size:11px">Lado B</span><select id="cx-b" class="sel sm">' + opcoesLado(t.b) + "</select></label>" +
+          '<label style="min-width:150px"><span class="muted" style="font-size:11px">Modo</span><select id="cx-modo" class="sel sm">' + modos + "</select></label>" +
+          '<label style="width:110px"><span class="muted" style="font-size:11px">Folga (m)</span><input id="cx-folga" class="inp sm" value="' + Util.fmtNum(t.folga, 2) + '"></label>' +
+          '<label style="min-width:140px"><span class="muted" style="font-size:11px">Agrupar por</span><select id="cx-agr" class="sel sm">' +
+            '<option value="elemento"' + (t.agrupar === "elemento" ? " selected" : "") + ">Elemento</option>" +
+            '<option value="pavimento"' + (t.agrupar === "pavimento" ? " selected" : "") + ">Pavimento</option>" +
+            '<option value="nenhum"' + (t.agrupar === "nenhum" ? " selected" : "") + ">Não agrupar</option></select></label>" +
+        "</div>" +
+        '<div class="flex" style="gap:14px;flex-wrap:wrap;margin-top:8px;font-size:12px">' +
+          '<label><input type="checkbox" id="cx-mesmoarq"' + (t.regras.mesmoArquivo ? " checked" : "") + '> Aceitar conflito dentro do mesmo modelo</label>' +
+          '<label><input type="checkbox" id="cx-fase"' + (t.regras.ignorarFase.indexOf("existente") > -1 ? " checked" : "") + '> Ignorar peças de fase "existente"</label>' +
+        "</div>" +
+        '<p class="muted" id="cx-dica" style="font-size:11.5px;margin:8px 0 0"></p>' +
+        '<div class="flex" style="gap:6px;margin-top:8px"><button class="btn sm primary" id="cx-salvar">Salvar teste</button>' +
+          '<button class="btn sm" id="cx-cancelar">Cancelar</button><span style="flex:1"></span>' +
+          (t.id ? '<button class="btn sm danger" id="cx-excluir">Excluir teste</button>' : "") + "</div></div>";
+
+      this._bimClashEditando = t.id || "";
+      function dica() {
+        var m = cx.querySelector("#cx-modo").value;
+        var d = (BimClashX.MODOS[m] || {}).dica || "";
+        cx.querySelector("#cx-dica").innerHTML = Util.esc(d);
+        cx.querySelector("#cx-folga").parentNode.style.opacity = m === "folga" ? "1" : ".45";
+      }
+      cx.querySelector("#cx-modo").onchange = dica; dica();
+      cx.querySelector("#cx-cancelar").onclick = function () { cx.style.display = "none"; cx.innerHTML = ""; };
+      cx.querySelector("#cx-salvar").onclick = function () { self._bimClashSalvarTeste(); };
+      var bx = cx.querySelector("#cx-excluir");
+      if (bx) bx.onclick = function () { self._bimClashExcluirTeste(t.id, t.nome); };
+    },
+
+    _bimClashSalvarTeste: function () {
+      var cx = document.getElementById("bim-clash-editor"); if (!cx) return;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar o teste.", "aviso"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o teste pertence a ela.", "aviso"); return; }
+      function lado(v) { var p = String(v || "todos|").split("|"); return { tipo: p[0], ref: p[1] || "" }; }
+      var fase = cx.querySelector("#cx-fase").checked ? ["existente"] : [];
+      var t = {
+        id: this._bimClashEditando || "", obraId: this._bimSel,
+        nome: cx.querySelector("#cx-nome").value,
+        a: lado(cx.querySelector("#cx-a").value), b: lado(cx.querySelector("#cx-b").value),
+        modo: cx.querySelector("#cx-modo").value,
+        folga: Util.parseNum(cx.querySelector("#cx-folga").value),
+        agrupar: cx.querySelector("#cx-agr").value,
+        regras: { mesmoArquivo: cx.querySelector("#cx-mesmoarq").checked, ignorarFase: fase }
+      };
+      var v = BimClashX.validarTeste(t);
+      if (!v.ok) { UI.toast(v.erros[0], "erro"); return; }
+      var norm = BimClashX.teste(t);
+      if (!norm.id) delete norm.id;
+      var salvo = Store.salvar(eid(), "bim_clash_testes", norm);
+      if (!salvo) { UI.toast("Não consegui salvar o teste.", "erro"); return; }
+      this._bimClashTesteSel = salvo.id;
+      cx.style.display = "none"; cx.innerHTML = "";
+      this._bimClashRenderTestes();
+      UI.toast('Teste \u201C' + salvo.nome + '\u201D salvo.', "ok");
+    },
+
+    _bimClashExcluirTeste: function (id, nome) {
+      if (!id) return;
+      var n = this._bimClashResDoTeste(id).length;
+      /* ⚠ o teste carrega os RESULTADOS. Apagar sem dizer quantos conflitos
+         com histórico vão junto é apagar o trabalho da equipe em silêncio. */
+      if (!confirm('Excluir o teste "' + nome + '"?' + (n ? "\n\nOs " + n + " conflito(s) dele — com responsável, prazo, comentários e histórico — vão junto. Isso não volta." : ""))) return;
+      var ids = this._bimClashResDoTeste(id).map(function (r) { return r.id; });
+      /* ⚠ UMA LÁPIDE, NÃO MIL. Excluir 1.372 conflitos gravava 1.372 lápides,
+         estourava o teto e expulsava as lápides das OUTRAS entidades — que
+         voltavam da nuvem, ressuscitando exclusões que nada tinham a ver com
+         compatibilização. A lápide de cascata do teste cobre o lote e é imune
+         à poda; o merge da nuvem a honra pelo `testeId`. */
+      if (Store.lapidarClashTesteEmCascata) Store.lapidarClashTesteEmCascata(eid(), id);
+      if (ids.length && Store.excluirVarios) Store.excluirVarios(eid(), "bim_clash_resultados", ids, !!Store.lapidarClashTesteEmCascata);
+      Store.excluir(eid(), "bim_clash_testes", id);
+      /* ⚠ E A LISTA NA TELA MORRE JUNTO. Sem isto ela seguia viva: o botão
+         "tratar" gravava de volta um conflito de um teste que já não existe —
+         e ele SINCRONIZAVA, ressuscitando o registro em todos os aparelhos.
+         O relatório, a planilha e o BCF também saíam de dado inexistente. */
+      if (this._bimClashTeste && this._bimClashTeste.id === id) {
+        this._bimClashRec = null; this._bimClashTeste = null; this._bimClashes = null;
+        this._bimClashDescartados = 0; this._bimClashNaoGravou = 0; this._bimClashMotivo = "";
+      }
+      if (this._bimClashTesteSel === id) this._bimClashTesteSel = "";
+      var cx = document.getElementById("bim-clash-editor"); if (cx) { cx.style.display = "none"; cx.innerHTML = ""; }
+      this._bimClashRenderTestes(); this._bimClashRender();
+      UI.toast("Teste excluído.", "ok");
+    },
+
+    /* ---- A RODADA. Caminho ÚNICO de detecção (ver a nota do bloco). ---- */
+    _bimClashRodar: function () {
+      var res = document.getElementById("bim-clash-res"); if (!res) return;
+      var self = this;
+      if (typeof BIMClash === "undefined" || typeof BimClashX === "undefined") { res.innerHTML = '<p class="muted">Motor de compatibilização não carregado.</p>'; return; }
+      var sel = document.getElementById("bim-clash-teste");
+      var testeId = sel ? sel.value : "";
+      this._bimClashTesteSel = testeId;
+      var salvo = testeId ? (this._bimClashTestesDaObra().filter(function (x) { return x.id === testeId; })[0] || null) : null;
+      /* teste implícito da rodada rápida: tudo × tudo, rígido. MESMO caminho. */
+      var t = BimClashX.teste(salvo || { id: "", obraId: this._bimSel, nome: "Rodada rápida", a: { tipo: "todos" }, b: { tipo: "todos" }, modo: "rigido" });
+
+      var els = (this._bimElementos || []).filter(function (e) { return e && e.aabb; });
+      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
+      res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Analisando…</p>';
+
+      var brutos = [], porId = {};
+      /* ⚠ ZERA ANTES DE RODAR. `_bimClashDescartados` só é escrito no ramo
+         geométrico; no modo Duplicados ele não é tocado, e a tela imprimia o
+         número da RODADA ANTERIOR — "193 alarmes descartados pela geometria"
+         numa rodada que não olhou geometria nenhuma. */
+      this._bimClashDescartados = 0;
+      els.forEach(function (e) { porId[e.id] = e; });
+      try {
+        if (t.modo === "duplicados") {
+          brutos = BimClashX.acharDuplicados(els);
+        } else {
+          /* ⚠ mesmaDisciplina LIGADO de propósito: quem decide quais peças
+             entram é o LADO do teste, não a disciplina inferida. Deixar o
+             detector cortar antes descartaria pares que o teste pede — por
+             exemplo "Conjunto Térreo × Conjunto Térreo". O filtro dos lados
+             vem logo abaixo e é o que manda. */
+          var r = BIMClash.detectar(els, {
+            tolerancia: t.tolerancia, mesmaDisciplina: true,
+            dilatar: t.modo === "folga" ? t.folga : 0
+          });
+          try {
+            /* ⚠ ORÇAMENTO MAIOR QUE O PADRÃO, DE PROPÓSITO. O refino nasceu
+               com 2,5 s porque rodava sozinho junto da lista. Aqui é uma ação
+               explícita do coordenador, com "Analisando…" na tela — e no modo
+               folga o refino não é enfeite: ele É a medida. Com 2,5 s, 501 de
+               604 pares saíam sem medição no modelo real. */
+            if (window.BIM && BIM.refinarClash) BIM.refinarClash(r.clashes, {
+              modo: t.modo, folgaAlvo: t.folga,
+              deadlineMs: t.modo === "folga" ? 20000 : 8000,
+              maxClashes: 4000
+            });
+          } catch (e2) {}
+          /* ⚠ o DESCARTADO pela geometria NÃO entra no ciclo de vida. Ele é
+             falso alarme do envelope; gravá-lo com id e histórico obrigaria o
+             coordenador a trabalhar a lista de ruído. O NÃO-VERIFICÁVEL entra:
+             ele é uma dúvida, e dúvida não é o mesmo que ausência. */
+          var descartados = 0;
+          r.clashes.forEach(function (c) {
+            if (c.geo === "descartado") { descartados++; return; }
+            var ea = porId[c.aId], eb = porId[c.bId];
+            if (!ea || !eb || !ea.chave || !eb.chave) return;
+            c.chaveA = ea.chave; c.chaveB = eb.chave;
+            brutos.push(c);
+          });
+          this._bimClashDescartados = descartados;
+        }
+      } catch (e3) { res.innerHTML = '<p class="muted">Falha ao analisar: ' + Util.esc(String(e3)) + "</p>"; return; }
+
+      var conjs = (typeof this._bimConjDaObra === "function") ? this._bimConjDaObra() : [];
+      var f = BimClashX.filtrar(brutos, t, els, { conjuntos: conjs });
+
+      /* ⚠ LADO VAZIO NÃO É AUSÊNCIA, É FALTA DE MEDIÇÃO — e este era o pior
+         dos 21 achados da revisão. Com um dos lados sem nenhuma peça (o
+         conjunto foi apagado, ou a regra dele deixou de casar depois que o
+         projetista republicou o IFC), o filtro reprova TODOS os pares e a
+         reconciliação fechava a obra INTEIRA como "sumiu do modelo", com data
+         e a nota dizendo que foi corrigido. E essa afirmação saía no
+         relatório, na planilha e no BCF que vai para quem projeta.
+         O `naoMedido` faz o motor devolver os anteriores intactos. */
+      var ladoVazio = (f.ladoA.total === 0 || f.ladoB.total === 0);
+      var quem = "";
+      try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e4) {}
+      var anteriores = salvo ? this._bimClashResDoTeste(salvo.id) : [];
+      var rec = BimClashX.reconciliar(t, f.brutos, anteriores, { quando: new Date().toISOString(), autor: quem, naoMedido: ladoVazio });
+
+      this._bimClashNaoGravou = 0; this._bimClashMotivo = "";
+      if (salvo) {
+        /* salvarVarios: uma leitura e uma gravação. O laço de `salvar` relê a
+           entidade a cada volta — com 300 conflitos isso trava a aba. */
+        /* ⚠ O RETORNO É LIDO, E ISSO NÃO É ZELO — É O DEFEITO INTEIRO.
+           MEDIDO: cada conflito ocupa ~706 bytes no localStorage; 1.372
+           conflitos de uma rodada real deram 946 KB, e 10 mil dariam 6,7 MB
+           num armazenamento de ~5 MB que o BIM divide com orçamento, folha e
+           financeiro. Quando a cota estoura, `salvarVarios` devolve 0 e a
+           gravação inteira falha — mas a lista continua bonita na tela. O
+           coordenador trabalharia 40 conflitos, escreveria responsável e
+           prazo em cada um, e na rodada seguinte todos voltariam como NOVOS,
+           sem nada do que ele escreveu. Silêncio aqui é perda de trabalho. */
+        /* ⚠ O QUE A RODADA NÃO TOCOU VAI COM `manterCarimbo`. Regravar um
+           registro intocado renova o `atualizadoEm`, e o merge da nuvem decide
+           por ele: esta máquina passaria a VENCER a edição feita noutro
+           aparelho enquanto isto rodava. O coordenador escreve o responsável
+           no celular e ele some porque alguém apertou "Rodar" no computador.
+           Os novos e os mantidos mudaram de verdade (geometria, vistoEm) e
+           precisam do carimbo novo — por isso dois lotes, e não um só. */
+        /* ⚠ TETO POR TESTE, CONFERIDO ANTES DE GRAVAR. Medido: 706 bytes por
+           conflito (1.372 conflitos de uma rodada real deram 946 KB). O
+           documento do Firestore tem limite de 1 MiB, e a sincronização para
+           de subir a entidade inteira — com a tela dizendo "Sincronizado!".
+           1.200 registros ficam com folga confortável abaixo disso.
+           ⚠ E A ORDEM É O DEFEITO INTEIRO: a conferência vinha DEPOIS do
+           `salvarVarios`, então a tela dizia "NÃO foi guardada" com 879 KB já
+           no disco. Afirmar na tela um estado que não foi medido é exatamente
+           o que a casa não faz. Barrar aqui, e não no push: parar a
+           sincronização por conta própria é o que a nota do js/nuvem.js diz
+           para não fazer.
+           ⚠ O TETO OLHA A EMPRESA, NÃO A RODADA. O documento do Firestore é um
+           por ENTIDADE: dois testes de 900 conflitos passam cada um no teto e
+           somam 1.800, que estoura 1 MiB e para de sincronizar calado. Por
+           isso a conta inclui o que os OUTROS testes já ocupam.
+           1.500 e não 1.700: a ruptura foi medida em ~1.750 registros somando a
+           empresa, e teto colado na ruptura não é teto — é o próprio defeito
+           com outro nome. Fica ~14% de folga. */
+        var TETO = 1200, TETO_EMP = 1500;
+        var deOutros = 0;
+        try {
+          deOutros = (Store.listar(eid(), "bim_clash_resultados") || []).filter(function (x) {
+            return x && x.testeId !== t.id;
+          }).length;
+        } catch (eT) { deOutros = 0; }
+        var totalEmp = deOutros + rec.registros.length;
+
+        if (rec.registros.length > TETO) {
+          this._bimClashNaoGravou = rec.registros.length;
+          this._bimClashMotivo = "teto";
+          UI.toast("Este teste achou " + rec.registros.length + " conflitos — acima do que cabe num teste salvo (" + TETO + "). A lista está na tela, mas NÃO foi guardada. Crie um teste NOVO com os lados mais estreitos.", "erro");
+        } else if (totalEmp > TETO_EMP) {
+          this._bimClashNaoGravou = rec.registros.length;
+          this._bimClashMotivo = "empresa";
+          UI.toast("Os testes salvos desta empresa já somam " + deOutros + " conflitos; com estes " + rec.registros.length + " passariam de " + TETO_EMP + ", que é o limite com que a sincronização ainda sobe a lista. A lista está na tela, mas NÃO foi guardada. Apague um teste antigo antes de guardar este.", "erro");
+        } else {
+          /* ⚠ O QUE A RODADA NÃO TOCOU VAI COM `manterCarimbo`. Regravar um
+             registro intocado renova o `atualizadoEm`, e o merge da nuvem
+             decide por ele: esta máquina passaria a VENCER a edição feita
+             noutro aparelho enquanto isto rodava. O coordenador escreve o
+             responsável no celular e ele some porque alguém apertou "Rodar"
+             no computador. Os novos e os mantidos mudaram de verdade
+             (geometria, vistoEm) e precisam do carimbo novo — por isso dois
+             lotes, e não um só. */
+          var mexidos = [], parados = [];
+          rec.registros.forEach(function (x) {
+            ((rec.intocados && rec.intocados[x.id]) ? parados : mexidos).push(x);
+          });
+          var gravou = 0;
+          if (Store.salvarVarios) {
+            if (mexidos.length) gravou += Store.salvarVarios(eid(), "bim_clash_resultados", mexidos);
+            if (parados.length) gravou += Store.salvarVarios(eid(), "bim_clash_resultados", parados, true);
+          } else {
+            gravou = rec.registros.filter(function (x) { return Store.salvar(eid(), "bim_clash_resultados", x); }).length;
+          }
+          if (rec.registros.length && !gravou) {
+            this._bimClashNaoGravou = rec.registros.length;
+            this._bimClashMotivo = "cota";
+            UI.toast("Os " + rec.registros.length + " conflitos NÃO couberam no armazenamento — a lista está na tela, mas não foi guardada. Estreite os lados do teste ou agrupe por pavimento.", "erro");
+          } else {
+            salvo.ultimaExecucao = new Date().toISOString();
+            Store.salvar(eid(), "bim_clash_testes", salvo);
+          }
+        }
+        this._bimClashRenderTestes();
+      }
+      this._bimClashTeste = t;
+      this._bimClashRec = rec;
+      /* ⚠ O RELATÓRIO PRECISA DO CONTEXTO DA RODADA, NÃO DO DE AGORA. Ele
+         nomeava a obra SELECIONADA no momento de imprimir: rodar em uma obra,
+         trocar de obra na barra e clicar em Relatório saía com o nome errado
+         no cabeçalho — um documento que vai para fora da empresa. E o lado A
+         era re-resolvido sem os conjuntos, agrupando diferente da tela. */
+      this._bimClashObra = this._bimSel ? (Store.obter(eid(), "obras", this._bimSel) || {}) : {};
+      this._bimClashLadoA = f.ladoA;
+      this._bimClashConjs = conjs;
+      this._bimClashAvisos = f.avisos;
+      this._bimClashDesc = f.descartados;
+      this._bimClashSalvo = !!salvo;
+      this._bimClashRender();
+    },
+
+    /* ---- a lista, agrupada, com o ciclo de vida ---- */
+    _bimClashRender: function () {
+      var res = document.getElementById("bim-clash-res"); if (!res) return;
+      var self = this, rec = this._bimClashRec, t = this._bimClashTeste;
+      if (!rec || !t) {
+        res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Detecta interferências entre disciplinas — e no modo <b>folga</b> também as peças que passam <b>perto demais</b> sem se tocar. Escolha um teste salvo (que guarda responsável, prazo e histórico) ou clique em <b>Rodar</b> para uma rodada rápida.</p>';
+        return;
+      }
+      var els = this._bimElementos || [];
+      var ladoA = BimClashX.resolverLado(t.a, els, { conjuntos: (typeof this._bimConjDaObra === "function") ? this._bimConjDaObra() : [] });
+      var grupos = BimClashX.agrupar(rec.registros, t.agrupar, els, ladoA);
+      this._bimClashes = rec.registros;   /* o "ver" indexa esta lista */
+      var idx = {}; rec.registros.forEach(function (r, i) { idx[r.id] = i; });
+      var porChave = {}; els.forEach(function (e) { if (e.chave) porChave[e.chave] = e; });
+      var s = rec.resumo;
+
+      function nomeDe(k) { var e = porChave[k]; return (e && (e.nome || e.tipo)) || k; }
+      function pill(st) {
+        var d = BimClashX.STATUS[st] || BimClashX.STATUS.novo;
+        return '<span class="g-pill" style="background:' + d.cor + '22;color:' + d.cor + ';font-weight:700;font-size:11px">' + Util.esc(d.rotulo) + "</span>";
+      }
+      var corSev = { grave: "#dc2626", media: "#f59e0b", leve: "#64748b" };
+
+      var cab = '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+        '<b style="font-size:15px">' + s.abertos + " em aberto</b>" +
+        (rec.novos ? ' <span class="g-pill" style="background:#2563eb22;color:#2563eb;font-weight:700">' + rec.novos + " novo(s)</span>" : "") +
+        /* ⚠ plural escrito por extenso, como no BimClashX.frase: colar sufixo
+           em verbo irregular deu "97 sumiuram" e "97 voltou" na tela do modelo
+           real. É o chip que o coordenador lê primeiro em toda rodada. */
+        (function () {
+          /* separa quem SUMIU DEPOIS DE CONFIRMADO (correção de verdade) de quem
+             saiu sem nunca ter sido confirmado — este último pode ter saído só
+             porque desta vez o refino alcançou o par e mediu folga de sobra. */
+          var semConf = rec.sumiramSemConfirmar || 0, conf = rec.resolvidosAuto - semConf, h = "";
+          if (conf > 0) h += ' <span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + conf + (conf > 1 ? " sumiram" : " sumiu") + " do modelo</span>";
+          if (semConf > 0) h += ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700" title="Saíram da lista, mas nunca chegaram a ser confirmados pela geometria — pode ter sido só a verificação que alcançou o par desta vez.">' + semConf + " sem confirmação</span>";
+          return h;
+        })() +
+        (rec.reincidentes ? ' <span class="g-pill" style="background:#dc262622;color:#dc2626;font-weight:700">' + rec.reincidentes + (rec.reincidentes > 1 ? " voltaram" : " voltou") + "</span>" : "") +
+        (rec.migrados ? ' <span class="g-pill" style="background:#8b5cf622;color:#8b5cf6;font-weight:700" title="O modo do teste mudou; são as mesmas peças, e o histórico veio junto.">' + rec.migrados + (rec.migrados > 1 ? " migrados" : " migrado") + "</span>" : "") +
+        /* ⚠ separado do "sumiu do modelo": aqui nada foi corrigido, mudou a
+           pergunta. Misturar os dois faria o coordenador comemorar uma
+           correção que ninguém fez. */
+        (rec.fechadosPorTroca ? ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700" title="Eram conflitos do modo anterior. A peça continua onde estava — nada foi corrigido.">' + rec.fechadosPorTroca + (rec.fechadosPorTroca > 1 ? " saíram" : " saiu") + " por troca de modo</span>" : "") +
+        /* ⚠ o não-confirmado sai CONTADO e separado. Misturá-lo com o
+           confirmado faz a lista parecer maior e mais certa do que é — e no
+           modo folga ele chegou a ser 83% do total numa rodada real. */
+        (function () {
+          var nv = rec.registros.filter(function (x) { return x.geo === "nao-verificavel"; }).length;
+          return nv ? ' <span class="g-pill" style="background:#f59e0b22;color:#b45309;font-weight:700" title="O refino por geometria não alcançou estes pares dentro do orçamento de tempo. Não são conflitos confirmados — nem descartados.">~ ' + nv + " não confirmados</span>" : "";
+        })() +
+        '<span style="flex:1"></span>' +
+        '<button class="btn sm" id="cxr-rel">Relatório</button>' +
+        '<button class="btn sm" id="cxr-csv">Planilha</button>' +
+        '<button class="btn sm" id="cxr-bcf">BCF</button>' +
+        '<button class="btn sm ghost" id="cxr-limpar">limpar destaque</button></div>';
+
+      var aviso = "";
+      if (!this._bimClashSalvo) aviso += '<p class="muted" style="font-size:11.5px;margin:0 0 8px">Esta foi uma <b>rodada rápida</b>: nada foi guardado. Para escrever responsável, prazo e comentário — e para a próxima rodada reconhecer os mesmos conflitos — crie um <b>teste salvo</b> em <b>+ Teste</b>.</p>';
+      /* ⚠ o toast some em quatro segundos; a perda de trabalho, não. Enquanto
+         a lista não estiver guardada, o aviso fica em cima dela. */
+      /* ⚠ CADA MOTIVO TEM A SUA SAÍDA, E DIZER A ERRADA É PIOR QUE NÃO DIZER.
+         O banner acusava "armazenamento cheio" também quando o caso era o teto
+         — e mandava estreitar ESTE teste, que nunca resolve: a reconciliação
+         mantém os anteriores, então o total nunca encolhe (medido: 1372 → 1372
+         → 1372). Para sair do teto, o caminho é um teste NOVO. */
+      if (this._bimClashNaoGravou) {
+        var _saida = this._bimClashMotivo === "teto"
+          ? 'este teste passou do teto de 1.200 conflitos por teste salvo. Crie um teste <b>novo</b> com os lados mais estreitos — estreitar este não baixa o total, porque os conflitos das rodadas anteriores continuam contando.'
+          : (this._bimClashMotivo === "empresa"
+            ? 'os testes salvos desta empresa somados passariam do que a sincronização consegue subir. Apague um teste antigo e rode de novo.'
+            : 'o armazenamento do navegador está cheio. Estreite os lados do teste, agrupe por pavimento, ou libere espaço.');
+        aviso += '<p style="font-size:12px;margin:0 0 8px;padding:8px;border-left:3px solid #dc2626;background:#dc262611"><b>Estes ' + this._bimClashNaoGravou + ' conflitos NÃO foram guardados</b> — ' + _saida + ' O que você escrever aqui (responsável, prazo, comentário) se perde ao sair.</p>';
+      }
+      if (rec.naoMedido) aviso += '<p style="font-size:12.5px;margin:0 0 8px;padding:10px;border-left:3px solid #b45309;background:#b4530911"><b>Nada foi medido nesta rodada.</b> Um dos lados do teste não casou nenhuma peça do modelo aberto, então nenhum par foi avaliado — e <b>nenhum conflito foi fechado</b>. Corrija o lado do teste e rode de novo.</p>';
+      (this._bimClashAvisos || []).forEach(function (a) { aviso += '<p class="muted" style="font-size:11.5px;margin:0 0 6px">⚠️ ' + Util.esc(a) + "</p>"; });
+      /* o descarte por REGRA também é informação: sem ele, o coordenador lê
+         "nenhum conflito" sem saber que a regra do teste é que os cortou. */
+      var _d = this._bimClashDesc || {};
+      var _dTot = (_d.mesmoArquivo || 0) + (_d.fase || 0) + (_d.mesmoGrupo || 0);
+      if (_dTot) aviso += '<p class="muted" style="font-size:11.5px;margin:0 0 6px">' + _dTot + ' par(es) foram descartados pelas <b>regras do teste</b>' +
+        (_d.mesmoArquivo ? ' · ' + _d.mesmoArquivo + ' do mesmo modelo' : '') +
+        (_d.fase ? ' · ' + _d.fase + ' de fase ignorada' : '') +
+        (_d.mesmoGrupo ? ' · ' + _d.mesmoGrupo + ' do mesmo grupo' : '') + '.</p>';
+      if (!rec.registros.length) {
+        res.innerHTML = cab + aviso + '<div style="padding:6px 0"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">Nenhum conflito</span> <span class="muted" style="font-size:12.5px">— ' + els.length + " elementos analisados no modo <b>" + Util.esc(BimClashX.MODOS[t.modo].rotulo) + "</b>.</span></div>";
+        this._bimClashLigarBotoes(); return;
+      }
+
+      var LIM = 200, mostrados = 0, h = "";
+      grupos.forEach(function (g) {
+        if (mostrados >= LIM) return;
+        h += '<div style="margin:10px 0 4px;font-weight:700;font-size:12.5px">' + Util.esc(g.rotulo) +
+          ' <span class="muted" style="font-weight:400">(' + g.itens.length + ")</span></div>";
+        h += '<table class="tbl"><tbody>';
+        g.itens.forEach(function (r) {
+          if (mostrados++ >= LIM) return;
+          /* ⚠ SEM MEDIDA, NÃO AFIRMA. No modelo real 169 linhas diziam "folga
+             insuficiente" sobre pares que o refino nunca chegou a medir (o
+             orçamento de tempo estourou). Dizer a conclusão sem a medição é
+             pior que não dizer nada: o coordenador leva para a reunião um
+             número que ninguém calculou. */
+          var med = t.modo === "folga"
+            ? (r.distancia != null ? (r.distancia * 100).toFixed(1) + " cm de folga"
+                                   : '<span title="O refino não alcançou este par dentro do orçamento de tempo — confira no 3D" style="color:#f59e0b">não medido</span>')
+            : (r.penetracao ? (r.penetracao * 100).toFixed(1) + " cm" : "—");
+          h += '<tr class="lin"' + (BimClashX.STATUS[r.status] && !BimClashX.STATUS[r.status].aberto ? ' style="opacity:.55"' : "") + ">" +
+            '<td style="width:14px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (corSev[r.severidade] || "#64748b") + '"></span></td>' +
+            '<td style="font-size:12px">' + Util.esc(nomeDe(r.chaveA)) + " ✕ " + Util.esc(nomeDe(r.chaveB)) +
+              (r.reincidente ? ' <span class="g-pill" style="background:#dc262622;color:#dc2626;font-weight:700;font-size:10px">voltou</span>' : "") +
+              (r.geo === "nao-verificavel" ? ' <span title="Não confirmado pela geometria — confira no 3D" style="color:#f59e0b">~</span>' : "") +
+              (r.responsavel ? '<div class="muted" style="font-size:10.5px">' + Util.esc(r.responsavel) + (r.prazo ? " · até " + Util.esc(r.prazo) : "") + "</div>" : "") +
+              (r.comentarios && r.comentarios.length ? '<div class="muted" style="font-size:10.5px">' + Util.esc(r.comentarios[r.comentarios.length - 1].texto) + "</div>" : "") +
+            "</td>" +
+            '<td class="num" style="font-size:11.5px;white-space:nowrap">' + med + "</td>" +
+            "<td>" + pill(r.status) + "</td>" +
+            '<td style="white-space:nowrap"><button class="btn sm" data-cxv="' + idx[r.id] + '">ver</button>' +
+            (self._bimClashSalvo ? ' <button class="btn sm" data-cxe="' + Util.esc(r.id) + '" title="Status, responsável, prazo e comentário">tratar</button>' : "") + "</td></tr>";
+        });
+        h += "</tbody></table>";
+      });
+
+      var pares = Object.keys(s.porPar).sort(function (a, b) { return s.porPar[b] - s.porPar[a]; }).map(function (p) {
+        return '<span class="muted" style="font-size:12px">' + Util.esc(p) + ": <b>" + s.porPar[p] + "</b></span>";
+      }).join(" · ");
+
+      res.innerHTML = cab + aviso + (pares ? '<div style="margin-bottom:6px">' + pares + "</div>" : "") +
+        '<div style="max-height:340px;overflow:auto">' + h + "</div>" +
+        (rec.registros.length > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando ' + LIM + " de " + rec.registros.length + " — o relatório traz todos.</p>" : "") +
+        (this._bimClashDescartados ? '<p class="muted" style="font-size:11px;margin:6px 0 0">' + this._bimClashDescartados + " alarme(s) do envelope foram <b>descartados pela geometria real</b> (as caixas se tocam, as peças não) e não entraram na lista.</p>" : "") +
+        '<p class="muted" style="font-size:11px;margin:6px 0 0">Modo <b>' + Util.esc(BimClashX.MODOS[t.modo].rotulo) + "</b> — " + Util.esc(BimClashX.MODOS[t.modo].dica) + "</p>";
+      this._bimClashLigarBotoes();
+    },
+
+    _bimClashLigarBotoes: function () {
+      var res = document.getElementById("bim-clash-res"); if (!res) return;
+      var self = this;
+      res.onclick = function (e) {
+        var v = e.target.closest("[data-cxv]"); if (v) { self._bimVerClash(+v.getAttribute("data-cxv")); return; }
+        var tr = e.target.closest("[data-cxe]"); if (tr) { self._bimClashTratar(tr.getAttribute("data-cxe")); return; }
+        if (e.target.closest("#cxr-limpar")) { self._bimLimparClash(); return; }
+        if (e.target.closest("#cxr-rel")) { self._bimClashRelatorio(); return; }
+        if (e.target.closest("#cxr-csv")) { self._bimClashPlanilha(); return; }
+        if (e.target.closest("#cxr-bcf")) { self._bimClashBcf(); return; }
+      };
+    },
+
+    /* ---- tratar um conflito (5.4) ---- */
+    _bimClashTratar: function (regId) {
+      var rec = this._bimClashRec; if (!rec) return;
+      var reg = null; rec.registros.forEach(function (r) { if (r.id === regId) reg = r; });
+      if (!reg) return;
+      var opcoes = Object.keys(BimClashX.STATUS).filter(function (s) { return !BimClashX.STATUS[s].soMotor; });
+      var lista = opcoes.map(function (s, i) { return (i + 1) + ") " + BimClashX.STATUS[s].rotulo; }).join("\n");
+      var esc = prompt("Status do conflito (hoje: " + (BimClashX.STATUS[reg.status] || {}).rotulo + ")\n\n" + lista + "\n\nDigite o número:", "");
+      if (esc == null) return;
+      var novo = opcoes[parseInt(esc, 10) - 1];
+      if (!novo) { UI.toast("Opção inválida.", "erro"); return; }
+      var motivo = "";
+      if (novo === "ignorado") {
+        motivo = prompt("Por que ignorar este conflito? (obrigatório — daqui a três meses ninguém lembra)", "") || "";
+      }
+      var resp = prompt("Responsável (deixe em branco para não mudar)", reg.responsavel || "");
+      var prazo = prompt("Prazo (AAAA-MM-DD, em branco para não mudar)", reg.prazo || "");
+      var quem = "";
+      try { quem = (Auth.usuario && Auth.usuario() && (Auth.usuario().nome || Auth.usuario().email)) || ""; } catch (e) {}
+      var m = BimClashX.mudarStatus(reg, novo, {
+        motivo: motivo, autor: quem, quando: new Date().toISOString(),
+        responsavel: resp == null ? null : resp, prazo: prazo == null ? null : prazo
+      });
+      if (!m.ok) { UI.toast(m.erro, "erro"); return; }
+      var texto = prompt("Comentário (opcional)", "");
+      var final = m.registro;
+      if (texto) { var c = BimClashX.comentar(final, texto, { autor: quem, quando: new Date().toISOString() }); if (c.ok) final = c.registro; }
+      /* mesma razão de cima: se não gravou, a tela não pode mostrar o status
+         novo como se estivesse guardado. */
+      if (!Store.salvar(eid(), "bim_clash_resultados", final)) { UI.toast("Não consegui salvar este conflito — o armazenamento do navegador está cheio. Nada do que você escreveu foi guardado.", "erro"); return; }
+      for (var i = 0; i < rec.registros.length; i++) if (rec.registros[i].id === final.id) rec.registros[i] = final;
+      rec.resumo = BimClashX.resumo(rec.registros);
+      this._bimClashRender();
+      UI.toast("Conflito atualizado.", "ok");
+    },
+
+    /* ---- relatório (5.6) — mesmo caminho de impressão dos outros documentos ---- */
+    _bimClashRelatorio: function () {
+      var rec = this._bimClashRec, t = this._bimClashTeste;
+      if (!rec || !rec.registros.length) { UI.toast("Rode a compatibilização primeiro.", "erro"); return; }
+      var els = this._bimElementos || [], porChave = {};
+      els.forEach(function (e) { if (e.chave) porChave[e.chave] = e; });
+      var ladoA = this._bimClashLadoA || BimClashX.resolverLado(t.a, els, { conjuntos: this._bimClashConjs || [] });
+      var grupos = BimClashX.agrupar(rec.registros, t.agrupar, els, ladoA);
+      var s = rec.resumo;
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(46) : "";
+      /* ⚠ a obra e o lado A vêm DA RODADA, não do estado de agora — ver a nota
+         em _bimClashRodar. Sem isto o documento saía com o nome da obra que
+         estivesse selecionada na hora de imprimir, e agrupado por outra peça
+         que a tela (o lado A era re-resolvido sem os conjuntos). */
+      var obra = this._bimClashObra || {};
+      function nomeDe(k) { var e = porChave[k]; return (e && (e.nome || e.tipo)) || k; }
+      function barras(mapa, cores) {
+        var tot = 0; Object.keys(mapa).forEach(function (k) { tot += mapa[k]; });
+        if (!tot) return "";
+        return Object.keys(mapa).filter(function (k) { return mapa[k]; }).map(function (k) {
+          var pc = Math.round(mapa[k] * 100 / tot);
+          return '<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px">' +
+            '<span style="width:130px">' + Util.esc((BimClashX.STATUS[k] && BimClashX.STATUS[k].rotulo) || k) + "</span>" +
+            '<span style="flex:1;background:#e8eef5;height:12px;border-radius:6px;overflow:hidden"><span style="display:block;height:12px;width:' + pc + "%;background:" + ((cores && cores[k]) || (BimClashX.STATUS[k] && BimClashX.STATUS[k].cor) || "#64748b") + '"></span></span>' +
+            '<b style="width:44px;text-align:right">' + mapa[k] + "</b></div>";
+        }).join("");
+      }
+      var corSev = { grave: "#dc2626", media: "#f59e0b", leve: "#64748b" };
+      var secoes = grupos.map(function (g) {
+        var linhas = g.itens.map(function (r) {
+          var med = t.modo === "folga" ? (r.distancia != null ? Util.fmtNum(r.distancia * 100, 1) + " cm" : "não medido") : (r.penetracao ? Util.fmtNum(r.penetracao * 100, 1) + " cm" : "—");
+          return "<tr><td style=\"border:1px solid #ddd;padding:4px;font-size:10.5px\">" + Util.esc(nomeDe(r.chaveA)) + " ✕ " + Util.esc(nomeDe(r.chaveB)) + (r.reincidente ? " <b style=\"color:#dc2626\">(voltou)</b>" : "") + (r.geo === "nao-verificavel" ? " <b style=\"color:#b45309\">~</b>" : "") + "</td>" +
+            "<td style=\"border:1px solid #ddd;padding:4px;font-size:10.5px\">" + Util.esc(r.par) + "</td>" +
+            "<td style=\"border:1px solid #ddd;padding:4px;text-align:right;font-size:10.5px\">" + med + "</td>" +
+            "<td style=\"border:1px solid #ddd;padding:4px;font-size:10.5px\">" + Util.esc((BimClashX.STATUS[r.status] || {}).rotulo || r.status) + "</td>" +
+            "<td style=\"border:1px solid #ddd;padding:4px;font-size:10.5px\">" + Util.esc(r.responsavel || "—") + "</td>" +
+            "<td style=\"border:1px solid #ddd;padding:4px;font-size:10.5px\">" + Util.esc(r.prazo || "—") + "</td></tr>";
+        }).join("");
+        var coment = g.itens.filter(function (r) { return r.comentarios && r.comentarios.length; }).map(function (r) {
+          var c = r.comentarios[r.comentarios.length - 1];
+          return '<p style="font-size:10.5px;margin:2px 0;color:#444">• <b>' + Util.esc(nomeDe(r.chaveA)) + "</b>: " + Util.esc(c.texto) + (c.quem ? " <i>(" + Util.esc(c.quem) + ")</i>" : "") + "</p>";
+        }).join("");
+        return '<div style="page-break-inside:avoid;margin-top:14px"><h3 style="font-size:13px;margin:0 0 4px;border-bottom:1px solid #0f2740;padding-bottom:3px">' + Util.esc(g.rotulo) + ' <span style="font-weight:400;font-size:11px;color:#667">(' + g.itens.length + " conflito(s))</span></h3>" +
+          '<table style="width:100%;border-collapse:collapse"><thead><tr style="background:#0f2740;color:#fff">' +
+          '<th style="border:1px solid #ddd;padding:4px;font-size:10px">Peças</th><th style="border:1px solid #ddd;padding:4px;font-size:10px">Disciplinas</th>' +
+          '<th style="border:1px solid #ddd;padding:4px;font-size:10px">Medida</th><th style="border:1px solid #ddd;padding:4px;font-size:10px">Status</th>' +
+          '<th style="border:1px solid #ddd;padding:4px;font-size:10px">Responsável</th><th style="border:1px solid #ddd;padding:4px;font-size:10px">Prazo</th></tr></thead><tbody>' + linhas + "</tbody></table>" + coment + "</div>";
+      }).join("");
+
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:900px;margin:0 auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:10px">' +
+          "<div>" + logo + "</div>" +
+          '<div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b></div>" +
+          '<div style="text-align:right"><b>RELATÓRIO DE COMPATIBILIZAÇÃO</b><br><span style="font-size:10px">' + Util.esc(hojeLocal()) + "</span></div></div>" +
+        '<table style="width:100%;font-size:11.5px;margin-bottom:10px"><tr>' +
+          "<td><b>Obra:</b> " + Util.esc(obra.nome || "—") + "</td>" +
+          "<td><b>Teste:</b> " + Util.esc(t.nome) + "</td>" +
+          "<td><b>Modo:</b> " + Util.esc(BimClashX.MODOS[t.modo].rotulo) + (t.modo === "folga" ? " (" + Util.fmtNum(t.folga * 100, 0) + " cm)" : "") + "</td></tr></table>" +
+        '<div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:10px">' +
+          '<div style="flex:1;min-width:250px"><b style="font-size:11.5px">Por situação</b>' + barras(s.porStatus) + "</div>" +
+          /* ⚠ O GRÁFICO SÓ CONTA O QUE FOI MEDIDO. A severidade nasce "leve"
+             como provisória e só é recalculada quando o refino confirma; o
+             não-verificável ficava no balde "leve" e o coordenador lia um
+             gráfico dizendo que a obra tem pouca coisa grave. */
+          '<div style="flex:1;min-width:250px"><b style="font-size:11.5px">Por gravidade</b>' +
+            barras((function () {
+              var g = { grave: 0, media: 0, leve: 0 }, nv = 0;
+              rec.registros.forEach(function (r) {
+                if (r.geo === "nao-verificavel") { nv++; return; }
+                g[r.severidade] = (g[r.severidade] || 0) + 1;
+              });
+              if (nv) g["não confirmados"] = nv;
+              return g;
+            })(), corSev) + "</div>" +
+          '<div style="flex:1;min-width:200px"><b style="font-size:11.5px">Por par de disciplinas</b>' +
+            Object.keys(s.porPar).sort(function (a, b) { return s.porPar[b] - s.porPar[a]; }).map(function (p) {
+              return '<div style="font-size:11px;margin:3px 0">' + Util.esc(p) + ": <b>" + s.porPar[p] + "</b></div>";
+            }).join("") + "</div></div>" +
+        '<div style="background:#f4f7fb;border-left:3px solid #0f2740;padding:8px;font-size:11.5px;margin-bottom:6px">' +
+          "<b>" + Util.esc(BimClashX.frase(rec)) + "</b>" +
+          (rec.reincidentes ? ' — <span style="color:#dc2626"><b>' + rec.reincidentes + " conflito(s) voltaram a aparecer</b>: alguém desfez a correção.</span>" : "") + "</div>" +
+        secoes +
+        '<p style="font-size:9.5px;color:#667;margin-top:14px;border-top:1px solid #ddd;padding-top:5px">' +
+          "Detecção por envelope (AABB) com confirmação triângulo a triângulo. " +
+          (t.modo === "folga" ? "No modo folga a medida é a <b>distância mínima real</b> entre as geometrias. " : "") +
+          "Conflitos marcados <b>~</b> não puderam ser confirmados pela geometria (peça sem malha própria, ou o refino não os alcançou dentro do orçamento de tempo) — confira no 3D antes de corrigir. Eles ficam FORA do gráfico por gravidade, porque a gravidade deles não foi medida.</p>" +
+        (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + "</div>";
+
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Compatibilização — " + t.nome, html);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
+    },
+
+    /* ---- planilha: MESMO exportador CSV do resto do ERP (5.6) ---- */
+    _bimClashPlanilha: function () {
+      var rec = this._bimClashRec, t = this._bimClashTeste;
+      if (!rec || !rec.registros.length) { UI.toast("Rode a compatibilização primeiro.", "erro"); return; }
+      var els = this._bimElementos || [], porChave = {};
+      els.forEach(function (e) { if (e.chave) porChave[e.chave] = e; });
+      function nomeDe(k) { var e = porChave[k]; return (e && (e.nome || e.tipo)) || k; }
+      this._exportarCSV(rec.registros, "compatibilizacao", [
+        { label: "Peça A", get: function (r) { return nomeDe(r.chaveA); } },
+        { label: "Peça B", get: function (r) { return nomeDe(r.chaveB); } },
+        { label: "Disciplinas", get: function (r) { return r.par; } },
+        { label: "Modo", get: function (r) { return (BimClashX.MODOS[r.modo] || {}).rotulo || r.modo; } },
+        /* ⚠ célula VAZIA no Excel lê-se como zero numa soma e some numa média.
+           "não medido" escrito por extenso não some em conta nenhuma. */
+        /* uma casa decimal = 1 mm. O número cru saía com 14 dígitos
+           ("67,27184481099346") — precisão que a medição não tem e que só
+           atrapalha quem lê a planilha. */
+        { label: t.modo === "folga" ? "Folga (cm)" : "Penetração (cm)", get: function (r) { return t.modo === "folga" ? (r.distancia == null ? "não medido" : +(r.distancia * 100).toFixed(1)) : +(r.penetracao * 100).toFixed(1); } },
+        { label: "Confirmado pela geometria", get: function (r) { return r.geo === "confirmado" ? "sim" : (r.geo === "nao-verificavel" ? "não confirmado" : r.geo || ""); } },
+        { label: "Gravidade", get: function (r) { return r.severidade; } },
+        { label: "Situação", get: function (r) { return (BimClashX.STATUS[r.status] || {}).rotulo || r.status; } },
+        { label: "Voltou", get: function (r) { return r.reincidente ? "sim" : ""; } },
+        { label: "Responsável", get: function (r) { return r.responsavel || ""; } },
+        { label: "Prazo", get: function (r) { return r.prazo || ""; } },
+        { label: "Motivo (se ignorado)", get: function (r) { return r.motivo || ""; } },
+        { label: "Último comentário", get: function (r) { return (r.comentarios && r.comentarios.length) ? r.comentarios[r.comentarios.length - 1].texto : ""; } },
+        { label: "Chave do conflito", get: function (r) { return r.chave; } }
+      ]);
+    },
+
+    /* ---- BCF: o conflito volta para quem projeta (5.6 + B4) ---- */
+    _bimClashBcf: function () {
+      var rec = this._bimClashRec, t = this._bimClashTeste;
+      if (!rec || !rec.registros.length) { UI.toast("Rode a compatibilização primeiro.", "erro"); return; }
+      if (typeof BimBcf === "undefined" || typeof BimVista === "undefined") { UI.toast("Motor BCF não carregado.", "erro"); return; }
+      var els = this._bimElementos || [], porChave = {};
+      els.forEach(function (e) { if (e.chave) porChave[e.chave] = e; });
+      function nomeDe(k) { var e = porChave[k]; return (e && (e.nome || e.tipo)) || k; }
+      /* ⚠ só o que está EM ABERTO vai. Mandar o resolvido junto faz o
+         projetista reabrir problema que já foi fechado — e ele não tem como
+         saber, porque o BCF não carrega o nosso status. */
+      var abertos = rec.registros.filter(function (r) { return BimClashX.STATUS[r.status] && BimClashX.STATUS[r.status].aberto; });
+      if (!abertos.length) { UI.toast("Não há conflito em aberto para exportar.", "aviso"); return; }
+      var vistas = abertos.map(function (r) {
+        var c = r.centro || [0, 0, 0], d = 3;
+        var com = [];
+        (r.comentarios || []).forEach(function (x) { com.push({ autor: x.quem, em: x.em, texto: x.texto }); });
+        /* ⚠ O BCF PRECISA DIZER O QUE FOI MEDIDO. Sem isto, um apontamento do
+           modo FOLGA (as peças não se tocam, passam perto) chega ao projetista
+           idêntico a uma interpenetração — e ele move a peça achando que há
+           choque, ou ignora achando que é o mesmo caso de sempre. O BCF não
+           carrega o nosso modo nem a nossa medida: se não for escrito no
+           comentário, a informação não existe do outro lado. */
+        var med = t.modo === "folga"
+          ? (r.distancia != null ? "folga medida de " + Util.fmtNum(r.distancia * 100, 1) + " cm (o teste exige " + Util.fmtNum(t.folga * 100, 0) + " cm)" : "folga abaixo do exigido, não medida com precisão")
+          : (r.penetracao ? "interpenetração de " + Util.fmtNum(r.penetracao * 100, 1) + " cm" : "");
+        com.unshift({ autor: "", em: r.vistoEm, texto: "[" + (BimClashX.MODOS[t.modo] || {}).rotulo + "] " + (med || "sem medida") + " · gravidade: " + (r.severidade || "—") });
+        if (r.responsavel || r.prazo) com.unshift({ autor: "", em: r.vistoEm, texto: "Responsável: " + (r.responsavel || "a definir") + (r.prazo ? " · prazo " + r.prazo : "") });
+        /* ⚠ o que não foi confirmado pela geometria vai com o aviso JUNTO. O
+           projetista abre o BCF noutra ferramenta e não tem como saber que
+           aquele apontamento é uma suspeita, não uma medição. */
+        if (r.geo === "nao-verificavel") com.unshift({ autor: "", em: r.vistoEm, texto: "ATENÇÃO: apontamento NÃO confirmado pela geometria — as caixas envolventes se aproximam, mas a verificação triângulo a triângulo não foi concluída. Confira no modelo antes de corrigir." });
+        return BimVista.vista({
+          id: r.id,
+          nome: nomeDe(r.chaveA) + " ✕ " + nomeDe(r.chaveB) + " (" + r.par + ")",
+          autor: r.responsavel || "",
+          criadoEm: r.criadoEm || r.vistoEm,
+          camera: { pos: [c[0] + d, c[1] + d, c[2] + d], alvo: c, up: [0, 1, 0], fov: 60 },
+          visibilidade: { isolados: [r.chaveA, r.chaveB] },
+          comentarios: com
+        });
+      }).filter(Boolean);
+      var ex = BimBcf.exportar(vistas, null);
+      if (!ex.ok) { UI.toast("Não deu para gerar o BCF: " + ex.erro, "erro"); return; }
+      try {
+        var blob = new Blob([ex.bytes], { type: "application/octet-stream" });
+        var a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+        a.download = "compatibilizacao_" + hojeLocal() + ".bcfzip";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+        UI.toast(ex.topicos + " conflito(s) em aberto exportados em BCF.", "ok");
+      } catch (e) { UI.toast("Falha ao baixar o BCF.", "erro"); }
+    },
+
+    /* =====================================================================
+     * B6 — CRONOGRAMA 4D COM AS DATAS DO ENGENHEIRO
+     *
+     * O `bim4d.js` continua derivando o automatico a partir do tipo IFC — e e
+     * o que faz a aba funcionar sem cadastro nenhum. Aqui entra a CORRECAO:
+     * tarefas com nome, alvo e as quatro datas.
+     *
+     * ⚠ A REGUA E DE DATA, NAO DE SEMANA. O 4D antigo conta semanas desde o
+     * inicio da obra; medicao, diario e Last Planner falam em data. Sem a
+     * conversao, previsto e real nunca se encontram.
+     * ===================================================================== */
+    _bimTarLer: function () {
+      try { return Store.listar(eid(), "bim_tarefas") || []; } catch (e) { return []; }
+    },
+    _bimTarDaObra: function () {
+      var o = String(this._bimSel || "");
+      var l = this._bimTarLer().filter(function (x) { return String(x.obraId || "") === o; });
+      /* ordem do cronograma: quem comeca antes vem antes; empate pelo WBS.
+         ⚠ isso NAO e cosmetico — a simulacao resolve "ultima tarefa vence"
+         quando uma peca esta em duas, e a ordem da lista E a regra. */
+      l.sort(function (a, b) {
+        var ai = String(a.previstoInicio || ""), bi = String(b.previstoInicio || "");
+        if (ai !== bi) return ai < bi ? -1 : 1;
+        return String(a.wbs || "") < String(b.wbs || "") ? -1 : 1;
+      });
+      return l;
+    },
+    _bimTarAparencias: function () {
+      try {
+        var r = (Store.listar(eid(), "bim_4d_aparencias") || [])[0];
+        return (r && r.mapa) || {};
+      } catch (e) { return {}; }
+    },
+
+    /* ---- a simulacao numa data ---- */
+    _bimTarAplicar: function (data) {
+      if (typeof BimTarefa === "undefined" || !window.BIM || !BIM.aplicar4DTarefas) return null;
+      var tarefas = this._bimTarDaObra();
+      if (!tarefas.length) return null;
+      var hoje = hojeLocal();
+      var sim = BimTarefa.simular(tarefas, this._bimElementos || [], data, {
+        hoje: hoje,
+        aparencias: this._bimTarAparencias(),
+        conjuntos: (typeof this._bimConjDaObra === "function") ? this._bimConjDaObra() : []
+      });
+      this._bimTarSim = sim;
+      try { BIM.aplicar4DTarefas(sim); } catch (e) {}
+      return sim;
+    },
+
+    /* ---- a regua ---- */
+    _bimTarRegua: function () {
+      var cx = document.getElementById("bim-tar-regua"); if (!cx) return;
+      var self = this, tarefas = this._bimTarDaObra();
+      if (!tarefas.length) {
+        /* ⚠ QUEM ESCONDEU TEM DE DESESCONDER. Apagando a última tarefa com a
+           régua parada antes do início, as peças ficavam invisíveis na cena — e
+           o ↺ Restaurar tudo NÃO as devolvia, porque `restaurarVisibilidade`
+           compõe com o `_fut4d` que ficou para trás. Sobrava o F5.
+           Só limpa se ESTA aba aplicou algo: `limpar4DTarefas` torna tudo
+           visível, e apagaria o isolamento de pavimento de quem só abriu o
+           painel numa obra que nunca teve tarefa. */
+        if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
+        this._bimTarPend = null;
+        if (this._bimTarSim) {
+          this._bimTarSim = null; this._bimTarData = null;
+          try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (eL4) {}
+        }
+        cx.style.display = "none"; cx.innerHTML = ""; return;
+      }
+      var j = BimTarefa.janela(tarefas);
+      if (!j.inicio || !j.fim) { cx.style.display = "none"; return; }
+      var hoje = hojeLocal();
+      /* comeca em HOJE quando hoje esta dentro da obra — e a data que o
+         engenheiro quer ver ao abrir, nao o primeiro dia do cronograma */
+      var dAtual = this._bimTarData;
+      if (!dAtual) dAtual = (hoje >= j.inicio && hoje <= j.fim) ? hoje : j.inicio;
+      this._bimTarData = dAtual;
+      var pos = BimTarefa.diasEntre(j.inicio, dAtual);
+      cx.style.display = "";
+      cx.innerHTML =
+        '<div class="card" style="padding:10px">' +
+        '<div class="flex" style="gap:10px;align-items:center;flex-wrap:wrap">' +
+          '<button class="btn sm" id="bt-play" title="Correr a obra no tempo">' + (typeof Icones !== "undefined" ? Icones.get("avancar", 15) : "&gt;") + "</button>" +
+          '<input type="range" id="bt-regua" min="0" max="' + j.dias + '" value="' + pos + '" style="flex:1;min-width:160px">' +
+          '<input type="date" id="bt-data" value="' + Util.esc(dAtual) + '" class="inp sm" style="width:150px">' +
+          '<button class="btn sm ghost" id="bt-hoje">hoje</button>' +
+        "</div>" +
+        '<div id="bt-legenda" style="margin-top:8px"></div></div>';
+      /* ⚠ UM QUADRO, UM CÁLCULO. Cada pixel de arrasto refazia a simulação
+         inteira e reconstruía o contorno de centenas de peças — medido em ~100
+         a 400 ms por evento, com a régua arrastando atrás do dedo. Guardar a
+         data pendente e aplicar uma vez por quadro é o mesmo padrão que o
+         redimensionamento do viewer já usa. O `true` evita de quebra reescrever
+         no range o valor que o usuário acabou de pôr nele. */
+      cx.querySelector("#bt-regua").oninput = function () {
+        self._bimTarPend = BimTarefa.somaDias(j.inicio, +this.value);
+        if (self._bimTarRaf) return;
+        var pedir = (typeof requestAnimationFrame === "function") ? requestAnimationFrame : function (f) { return setTimeout(f, 16); };
+        self._bimTarRaf = pedir(function () {
+          self._bimTarRaf = 0;
+          /* a régua pode ter sido desmontada entre o arrasto e o quadro —
+             trocando de obra, por exemplo. A data pendente é da obra ANTIGA. */
+          if (!self._bimTarPend) return;
+          self._bimTarIrPara(self._bimTarPend, true);
+        });
+      };
+      cx.querySelector("#bt-data").onchange = function () { self._bimTarIrPara(this.value); };
+      cx.querySelector("#bt-hoje").onclick = function () { self._bimTarIrPara(hoje); };
+      cx.querySelector("#bt-play").onclick = function () { self._bimTarTocar(j); };
+      this._bimTarIrPara(dAtual, true);
+    },
+
+    _bimTarIrPara: function (data, semMexerNaRegua) {
+      var d = BimTarefa.dia(data); if (!d) return;
+      this._bimTarData = d;
+      var sim = this._bimTarAplicar(d);
+      var cx = document.getElementById("bim-tar-regua"); if (!cx) return;
+      var inp = cx.querySelector("#bt-data"); if (inp && inp.value !== d) inp.value = d;
+      if (!semMexerNaRegua) {
+        var j = BimTarefa.janela(this._bimTarDaObra());
+        var r = cx.querySelector("#bt-regua");
+        if (r && j.inicio) { var p = BimTarefa.diasEntre(j.inicio, d); if (+r.value !== p) r.value = p; }
+      }
+      var leg = cx.querySelector("#bt-legenda");
+      if (leg && sim) {
+        var pe = sim.porEstado || {};
+        var COR = { "em-execucao": "#f59e0b", atrasado: "#ea580c", concluido: "#16a34a", futuro: "#94a3b8", removido: "#64748b" };
+        var ROT = { "em-execucao": "em execução", atrasado: "atrasado", concluido: "concluído", futuro: "não iniciado", removido: "removido" };
+        var partes = Object.keys(ROT).filter(function (k) { return pe[k]; }).map(function (k) {
+          return '<span class="g-pill" style="background:' + COR[k] + '22;color:' + COR[k] + ';font-weight:700;font-size:11px">' + pe[k] + " " + ROT[k] + "</span>";
+        }).join(" ");
+        var av = (sim.avisos || []).length ? '<div class="muted" style="font-size:11px;margin-top:5px">⚠️ ' + Util.esc(sim.avisos[0]) + ((sim.avisos.length > 1) ? " (e mais " + (sim.avisos.length - 1) + ")" : "") + "</div>" : "";
+        leg.innerHTML = '<b style="font-size:12.5px">' + Util.esc(d) + "</b> " + partes + av;
+      }
+    },
+
+    /* ⚠ o "play" e um passeio pela regua, e ele PARA no fim. Deixar em laco
+       faria o navegador redesenhar a cena para sempre com a aba aberta. */
+    _bimTarTocar: function (j) {
+      var self = this;
+      if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; return; }
+      var passo = Math.max(1, Math.round(j.dias / 60));
+      var d = j.inicio;
+      this._bimTarTimer = setInterval(function () {
+        d = BimTarefa.somaDias(d, passo);
+        if (d >= j.fim) { d = j.fim; clearInterval(self._bimTarTimer); self._bimTarTimer = null; }
+        /* ⚠ move a régua à MÃO e diz `semMexerNaRegua`: a janela já está aqui
+           no `j`, e deixar o _bimTarIrPara recalculá-la fazia cada tique
+           reler a lista de tarefas do disco só para chegar no mesmo número. */
+        var cxT = document.getElementById("bim-tar-regua");
+        var rT = cxT && cxT.querySelector("#bt-regua");
+        if (rT && j.inicio) { var pT = BimTarefa.diasEntre(j.inicio, d); if (+rT.value !== pT) rT.value = pT; }
+        self._bimTarIrPara(d, true);
+      }, 120);
+    },
+
+    /* ---- a lista ---- */
+    _bimTarRender: function () {
+      var box = document.getElementById("bim-tar-lista"); if (!box) return;
+      var self = this, lista = this._bimTarDaObra();
+      this._bimTarRegua();
+      if (!lista.length) {
+        box.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Nenhuma tarefa nesta obra — a aba <b>4D</b> segue mostrando o cronograma automático, derivado do tipo de cada peça.<br>Crie a primeira em <b>+ Tarefa</b>, ou traga o cronograma pronto em <b>Importar</b> (CSV ou MS Project).</p>';
+        return;
+      }
+      var hoje = hojeLocal();
+      var res = BimTarefa.resumo(lista, hoje);
+      var COR = { "em-execucao": "#f59e0b", atrasado: "#ea580c", concluido: "#16a34a", futuro: "#94a3b8", removido: "#64748b" };
+      var linhas = lista.map(function (x) {
+        var tt = BimTarefa.tarefa(x);
+        var est = BimTarefa.estadoEm(tt, hoje, hoje);
+        var alvoTxt = tt.alvo.tipo === "auto" ? '<span style="color:#b45309">sem alvo</span>' :
+          (tt.alvo.tipo === "elementos" ? (tt.alvo.chaves.length + " peça(s)") : (tt.alvo.tipo + ": " + Util.esc(tt.alvo.ref)));
+        return '<tr class="lin"><td style="width:10px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (COR[est] || "#94a3b8") + '"></span></td>' +
+          "<td><b>" + Util.esc(tt.nome) + "</b>" + (tt.wbs ? ' <span class="muted" style="font-size:11px">' + Util.esc(tt.wbs) + "</span>" : "") +
+            '<div class="muted" style="font-size:10.5px">' + Util.esc(BimTarefa.TIPOS[tt.tipoTarefa].rotulo) + " · " + alvoTxt + "</div></td>" +
+          '<td style="font-size:11.5px;white-space:nowrap">' + Util.esc(tt.previstoInicio) + "<br>" + Util.esc(tt.previstoFim) + "</td>" +
+          '<td style="font-size:11.5px;white-space:nowrap">' + (tt.realInicio ? Util.esc(tt.realInicio) : "—") + "<br>" + (tt.realFim ? Util.esc(tt.realFim) : "—") + "</td>" +
+          '<td style="white-space:nowrap"><button class="btn sm" data-bted="' + Util.esc(x.id) + '">editar</button> ' +
+          '<button class="btn sm danger" data-btdel="' + Util.esc(x.id) + '">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + "</button></td></tr>";
+      }).join("");
+      box.innerHTML =
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
+          '<b style="font-size:14px">' + res.total + " tarefa(s)</b>" +
+          (res.concluidas ? ' <span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + res.concluidas + " concluída(s)</span>" : "") +
+          (res.emExecucao ? ' <span class="g-pill" style="background:#f59e0b22;color:#b45309;font-weight:700">' + res.emExecucao + " em execução</span>" : "") +
+          (res.atrasadas ? ' <span class="g-pill" style="background:#ea580c22;color:#ea580c;font-weight:700">' + res.atrasadas + " atrasada(s)" + (res.diasDeAtraso ? " · até " + res.diasDeAtraso + " dias" : "") + "</span>" : "") +
+          (res.semAlvo ? ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700" title="Tarefa sem alvo não pinta peça nenhuma — escolha um conjunto, uma etapa do orçamento ou peças.">' + res.semAlvo + " sem alvo</span>" : "") +
+        "</div>" +
+        '<div style="max-height:280px;overflow:auto"><table class="tbl"><thead><tr><th></th><th>Tarefa</th><th>Previsto</th><th>Real</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table></div>";
+      box.onclick = function (e) {
+        var ed = e.target.closest("[data-bted]"); if (ed) { self._bimTarEditor(ed.getAttribute("data-bted")); return; }
+        var dl = e.target.closest("[data-btdel]"); if (dl) { self._bimTarExcluir(dl.getAttribute("data-btdel")); return; }
+      };
+    },
+
+    /* ---- editor ---- */
+    _bimTarEditor: function (id) {
+      var cx = document.getElementById("bim-tar-editor"); if (!cx) return;
+      var self = this;
+      var x = id ? (this._bimTarDaObra().filter(function (y) { return y.id === id; })[0] || null) : null;
+      var tt = BimTarefa.tarefa(x || { obraId: this._bimSel, nome: "" });
+      var conj = (typeof this._bimConjDaObra === "function") ? this._bimConjDaObra() : [];
+      var etapas = [];
+      try { (this._bimElementos || []).forEach(function (e2) { var s = String(e2.etapa || ""); if (s && etapas.indexOf(s) < 0) etapas.push(s); }); } catch (e) {}
+      var opAlvo = '<option value="auto|">Sem alvo (deixa o automático)</option>';
+      conj.forEach(function (c) { opAlvo += '<option value="conjunto|' + Util.esc(c.id) + '"' + (tt.alvo.tipo === "conjunto" && tt.alvo.ref === c.id ? " selected" : "") + ">Conjunto: " + Util.esc(c.nome) + "</option>"; });
+      etapas.forEach(function (s) { opAlvo += '<option value="etapaOrcamento|' + Util.esc(s) + '"' + (tt.alvo.tipo === "etapaOrcamento" && tt.alvo.ref === s ? " selected" : "") + ">Etapa: " + Util.esc(s) + "</option>"; });
+      var opTipo = Object.keys(BimTarefa.TIPOS).map(function (k) {
+        return '<option value="' + k + '"' + (tt.tipoTarefa === k ? " selected" : "") + ">" + Util.esc(BimTarefa.TIPOS[k].rotulo) + "</option>";
+      }).join("");
+      cx.style.display = "";
+      cx.innerHTML =
+        '<div class="card" style="padding:10px">' +
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:flex-end">' +
+          '<label style="flex:1;min-width:170px"><span class="muted" style="font-size:11px">Tarefa</span><input id="bt-nome" class="inp sm" value="' + Util.esc(tt.nome === "Tarefa sem nome" ? "" : tt.nome) + '" placeholder="Alvenaria do Térreo"></label>' +
+          '<label style="width:90px"><span class="muted" style="font-size:11px">WBS</span><input id="bt-wbs" class="inp sm" value="' + Util.esc(tt.wbs) + '" placeholder="3.2.1"></label>' +
+          '<label style="min-width:150px"><span class="muted" style="font-size:11px">Tipo</span><select id="bt-tipo" class="sel sm">' + opTipo + "</select></label>" +
+          '<label style="min-width:190px"><span class="muted" style="font-size:11px">Alvo (que peças)</span><select id="bt-alvo" class="sel sm">' + opAlvo + "</select></label>" +
+        "</div>" +
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:8px">' +
+          '<label><span class="muted" style="font-size:11px">Previsto início</span><input type="date" id="bt-pi" class="inp sm" value="' + Util.esc(tt.previstoInicio) + '"></label>' +
+          '<label><span class="muted" style="font-size:11px">Previsto fim</span><input type="date" id="bt-pf" class="inp sm" value="' + Util.esc(tt.previstoFim) + '"></label>' +
+          '<label><span class="muted" style="font-size:11px">Real início</span><input type="date" id="bt-ri" class="inp sm" value="' + Util.esc(tt.realInicio) + '"></label>' +
+          '<label><span class="muted" style="font-size:11px">Real fim</span><input type="date" id="bt-rf" class="inp sm" value="' + Util.esc(tt.realFim) + '"></label>' +
+        "</div>" +
+        '<p class="muted" id="bt-dica" style="font-size:11.5px;margin:8px 0 0"></p>' +
+        '<div class="flex" style="gap:6px;margin-top:8px"><button class="btn sm primary" id="bt-salvar">Salvar</button>' +
+          '<button class="btn sm" id="bt-cancelar">Cancelar</button></div></div>';
+      this._bimTarEditando = (x && x.id) || "";
+      function dica() {
+        var k = cx.querySelector("#bt-tipo").value;
+        cx.querySelector("#bt-dica").textContent = (BimTarefa.TIPOS[k] || {}).dica || "";
+      }
+      cx.querySelector("#bt-tipo").onchange = dica; dica();
+      cx.querySelector("#bt-cancelar").onclick = function () { cx.style.display = "none"; cx.innerHTML = ""; };
+      cx.querySelector("#bt-salvar").onclick = function () { self._bimTarSalvar(); };
+    },
+
+    _bimTarSalvar: function () {
+      var cx = document.getElementById("bim-tar-editor"); if (!cx) return;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar a tarefa.", "aviso"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — a tarefa pertence a ela.", "aviso"); return; }
+      var p = String(cx.querySelector("#bt-alvo").value || "auto|").split("|");
+      var t = {
+        id: this._bimTarEditando || "", obraId: this._bimSel,
+        nome: cx.querySelector("#bt-nome").value, wbs: cx.querySelector("#bt-wbs").value,
+        tipoTarefa: cx.querySelector("#bt-tipo").value,
+        alvo: { tipo: p[0], ref: p[1] || "" },
+        previstoInicio: cx.querySelector("#bt-pi").value, previstoFim: cx.querySelector("#bt-pf").value,
+        realInicio: cx.querySelector("#bt-ri").value, realFim: cx.querySelector("#bt-rf").value
+      };
+      var v = BimTarefa.validar(t);
+      if (!v.ok) { UI.toast(v.erros[0], "erro"); return; }
+      var norm = BimTarefa.tarefa(t);
+      if (!norm.id) delete norm.id;
+      if (!Store.salvar(eid(), "bim_tarefas", norm)) { UI.toast("Não consegui salvar a tarefa.", "erro"); return; }
+      cx.style.display = "none"; cx.innerHTML = "";
+      this._bimTarRender();
+      UI.toast("Tarefa salva.", "ok");
+    },
+
+    _bimTarExcluir: function (id) {
+      var t = this._bimTarDaObra().filter(function (x) { return x.id === id; })[0];
+      if (!t) return;
+      if (!confirm('Excluir a tarefa "' + (t.nome || "") + '"?')) return;
+      Store.excluir(eid(), "bim_tarefas", id);
+      this._bimTarRender();
+    },
+
+    /* ---- importar CSV / MS Project ---- */
+    _bimTarImportar: function (file) {
+      if (!file) return;
+      var self = this;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para importar.", "aviso"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra antes de importar.", "aviso"); return; }
+      var fr = new FileReader();
+      fr.onload = function () {
+        var txt = String(fr.result || "");
+        var ehXml = /\.xml$/i.test(file.name) || /<Project[\s>]/i.test(txt.slice(0, 4000));
+        var r = ehXml ? BimTarefa.importarMspdi(txt, { obraId: self._bimSel })
+                      : BimTarefa.importarCsv(txt, { obraId: self._bimSel });
+        if (!r.ok) { UI.toast("Não consegui importar: " + (r.erro || "nenhuma tarefa válida no arquivo."), "erro"); return; }
+        var n = 0;
+        if (Store.salvarVarios) n = Store.salvarVarios(eid(), "bim_tarefas", r.tarefas);
+        else r.tarefas.forEach(function (x) { if (Store.salvar(eid(), "bim_tarefas", x)) n++; });
+        self._bimTarData = null;
+        self._bimTarRender();
+        /* ⚠ O QUE FOI RECUSADO SAI NA TELA, com a linha. Um cronograma de 300
+           linhas com duas datas invertidas tem 298 boas; importar calado as 298
+           faria o engenheiro procurar no Excel por que faltam duas — e ele
+           provavelmente nem notaria a falta. */
+        var msg = n + " tarefa(s) importada(s).";
+        if ((r.recusadas || []).length) {
+          msg += " " + r.recusadas.length + " recusada(s): " + r.recusadas.slice(0, 3).map(function (x) { return "linha " + x.linha + " (" + (x.motivos[0] || "") + ")"; }).join("; ");
+          if (r.recusadas.length > 3) msg += " …";
+        }
+        if ((r.naoLido || []).length) msg += " Não li do arquivo: " + r.naoLido.join(", ") + ".";
+        /* ⚠ A SUPOSIÇÃO TEM DE APARECER. Num arquivo em que todo campo de data
+           é 12 ou menos, "03/05/2026" tanto é 3 de maio quanto 5 de março, e o
+           importador escolhe o formato do produto. Escolher é certo; escolher
+           calado não é — o erro só apareceria na obra, dois meses depois. */
+        /* ⚠ SEM TAG AQUI: UI.toast escreve por `textContent` (js/ui.js), então
+           um <b> sai literal na tela do usuário. O negrito vive no banner e no
+           modal, que são innerHTML; o toast é texto puro. */
+        if (r.formatoAmbiguo) msg += " As datas do arquivo não dizem o formato; li como dia/mês/ano. Se o cronograma veio em inglês, confira as datas.";
+        else if (r.formato === "mm/dd/aaaa") msg += " As datas vieram em mês/dia/ano e foram convertidas.";
+        UI.toast(msg, ((r.recusadas || []).length || r.formatoAmbiguo) ? "aviso" : "ok");
+      };
+      fr.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
+      fr.readAsText(file, "utf-8");
+    },
+
+    /* ---- cores do 4D (da EMPRESA, valem para todas as obras) ---- */
+    _bimTarCores: function () {
+      var cx = document.getElementById("bim-tar-editor"); if (!cx) return;
+      var self = this, mapa = this._bimTarAparencias();
+      var linhas = BimTarefa.ESTADOS.map(function (s) {
+        var ap = BimTarefa.aparenciaDe(s, "construir", mapa);
+        return '<div class="flex" style="gap:8px;align-items:center;padding:6px 0;border-bottom:1px dashed var(--linha)">' +
+          '<span style="min-width:130px;font-size:12.5px">' + Util.esc(ap.rotulo) + "</span>" +
+          '<input type="color" data-btc="' + s + '" value="' + (ap.cor || "#cccccc") + '" style="width:44px;height:26px;padding:0;border:0;background:none"' + (ap.cor ? "" : " disabled title=\"usa o material original da peça\"") + ">" +
+          '<label style="font-size:11.5px"><input type="checkbox" data-bto="' + s + '"' + (ap.oculto ? " checked" : "") + "> oculto</label>" +
+          '<input type="range" data-bta="' + s + '" min="10" max="100" value="' + Math.round(ap.opacidade * 100) + '" style="width:90px">' +
+          "</div>";
+      }).join("");
+      cx.style.display = "";
+      cx.innerHTML = '<div class="card" style="padding:10px"><b style="font-size:13px">Cores do 4D</b>' +
+        '<p class="muted" style="font-size:11.5px;margin:4px 0 8px">Valem para <b>todas as obras</b> — o relatório tem de sair com a mesma legenda sempre. O <b>atraso</b> ganha contorno fixo por cima da cor: ele precisa aparecer numa foto, e cor que pisca não sai bem em foto. A cor daqui é a de <b>construção</b>; demolição e escoramento têm cor própria, que não muda.</p>' +
+        linhas +
+        '<div class="flex" style="gap:6px;margin-top:10px"><button class="btn sm primary" id="btc-salvar">Salvar</button><button class="btn sm" id="btc-padrao">Voltar ao padrão</button><button class="btn sm ghost" id="btc-fechar">Fechar</button></div></div>';
+      cx.querySelector("#btc-fechar").onclick = function () { cx.style.display = "none"; cx.innerHTML = ""; };
+      cx.querySelector("#btc-padrao").onclick = function () {
+        Store.salvar(eid(), "bim_4d_aparencias", { id: "aparencias", mapa: {} });
+        UI.toast("Cores de volta ao padrão.", "ok");
+        self._bimTarCores(); self._bimTarIrPara(self._bimTarData || BimTarefa.janela(self._bimTarDaObra()).inicio);
+      };
+      cx.querySelector("#btc-salvar").onclick = function () {
+        /* ⚠ GRAVA SOB A CHAVE POR TIPO, E SÓ O QUE DIFERE DO PADRÃO.
+           As linhas acima foram montadas com `aparenciaDe(s, "construir")`, e
+           é só sobre CONSTRUIR que elas podem falar. Gravando a chave genérica
+           `novo[s]`, o mapa passava por cima das regras por tipo do motor:
+           a demolição sumia da cena (futuro+demolir volta a `oculto`) e
+           demolir/temporário perdiam a cor própria — sem ninguém ter mexido
+           em nada, porque o Salvar carimbava os cinco estados de uma vez.
+           Guardar só o que o usuário mudou é o que faz "abrir e salvar" ser
+           inócuo, e uma edição de um estado não arrastar os outros quatro. */
+        var novo = {};
+        BimTarefa.ESTADOS.forEach(function (s) {
+          var c = cx.querySelector('[data-btc="' + s + '"]');
+          var o = cx.querySelector('[data-bto="' + s + '"]');
+          var a = cx.querySelector('[data-bta="' + s + '"]');
+          var pad = BimTarefa.aparenciaDe(s, "construir", {});
+          var e = {}, mexeu = false;
+          if (c && !c.disabled && c.value !== pad.cor) { e.cor = c.value; mexeu = true; }
+          if (o && !!o.checked !== !!pad.oculto) { e.oculto = o.checked; mexeu = true; }
+          if (a) {
+            var op = (+a.value || 100) / 100;
+            if (Math.abs(op - pad.opacidade) > 0.005) { e.opacidade = op; mexeu = true; }
+          }
+          if (mexeu) novo[s + ":construir"] = e;
+        });
+        Store.salvar(eid(), "bim_4d_aparencias", { id: "aparencias", mapa: novo });
+        cx.style.display = "none"; cx.innerHTML = "";
+        UI.toast("Cores salvas.", "ok");
+        self._bimTarIrPara(self._bimTarData || BimTarefa.janela(self._bimTarDaObra()).inicio);
+      };
+    },
+
+    _bimConjLer: function () {
+      try { return Store.listar(eid(), "bim_conjuntos") || []; } catch (e) { return []; }
+    },
+    _bimConjDaObra: function () {
+      var o = String(this._bimSel || "");
+      return this._bimConjLer().filter(function (c) { return String(c.obraId || "") === o; });
+    },
+
+    /* desenha a lista, com a contagem VIVA: o conjunto de busca é reavaliado
+       contra o modelo que está na tela agora, então o número muda quando chega
+       versão nova — e é isso que ele promete. */
+    _bimConjRender: function () {
+      var box = document.getElementById("bim-conj-lista"); if (!box) return;
+      var self = this, els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      var lista = this._bimConjDaObra();
+      if (!lista.length) {
+        box.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Nenhum conjunto nesta obra ainda. Clique em <b>+ Novo por regra</b> e monte, por exemplo, <i>Tipo IFC é IFCFLOWSEGMENT</i> e <i>Pavimento é Térreo</i>.</p>';
+        return;
+      }
+      box.innerHTML = "";
+      lista.forEach(function (c) {
+        var r = window.BimSet ? BimSet.resolver(c, els) : { ok: false, chaves: [], erros: ["motor não carregado"] };
+        var linha = document.createElement("div");
+        linha.style.cssText = "display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:9px 4px;border-bottom:1px dashed var(--linha)";
+        /* ⚠ o que a tela DIZ tem de bater com o que o conjunto FAZ: o de busca
+           mostra a frase da regra; o estático mostra quantas peças sumiram. */
+        var sub = c.tipo === "busca"
+          ? (window.BimSet ? BimSet.descrever(c.regra) : "")
+          : ("lista fixa" + (r.faltando ? " · " + r.faltando + " peça(s) não estão mais no modelo" : ""));
+        var cont = r.ok ? (r.chaves.length + " peça(s)") : "regra com problema";
+        var aviso = (!r.ok && r.erros && r.erros[0]) ? r.erros[0] : (r.instaveis ? r.instaveis + " peça(s) sem identidade durável ficaram de fora" : "");
+        linha.innerHTML =
+          '<span style="width:12px;height:12px;border-radius:3px;flex:0 0 auto;background:' + (c.cor || "#8aa0b6") + '"></span>' +
+          '<div style="min-width:170px;max-width:280px"><b>' + Util.esc(c.nome) + '</b>' +
+          '<div class="muted" style="font-size:11px">' + Util.esc(sub) + '</div>' +
+          (aviso ? '<div style="font-size:11px;color:var(--aviso,#b45309)">' + Util.esc(aviso) + '</div>' : "") + '</div>' +
+          '<span class="muted" style="font-size:11.5px">' + cont + '</span>' +
+          '<span style="flex:1"></span>' +
+          '<button data-cj="isolar" class="btn sm" title="Deixa visível só este conjunto">Isolar</button>' +
+          '<button data-cj="pintar" class="btn sm" title="Pinta este conjunto na cena">Pintar</button>' +
+          '<button data-cj="del" class="btn sm danger" title="Apagar este conjunto">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + '</button>';
+        linha.querySelector('[data-cj="isolar"]').onclick = function () { self._bimConjIsolar(c.id); };
+        linha.querySelector('[data-cj="pintar"]').onclick = function () { self._bimConjPintar(c.id); };
+        linha.querySelector('[data-cj="del"]').onclick = function () { self._bimConjExcluir(c.id, c.nome); };
+        box.appendChild(linha);
+      });
+    },
+
+    /* o editor: campo, comparação, valor. Os VALORES vêm do modelo aberto — o
+       usuário escolhe "BALDRAME" numa lista em vez de adivinhar a grafia que o
+       projetista usou. */
+    _bimConjEditor: function () {
+      var cx = document.getElementById("bim-conj-editor"); if (!cx || !window.BimSet) return;
+      var self = this;
+      if (cx.style.display !== "none") { cx.style.display = "none"; cx.innerHTML = ""; return; }
+      cx.style.display = "";
+      var ops = BimSet.CAMPOS.map(function (c) { return '<option value="' + c.chave + '">' + Util.esc(c.rotulo) + "</option>"; }).join("");
+      cx.innerHTML =
+        '<div style="border:1px solid var(--linha);border-radius:10px;padding:10px;margin-bottom:10px">' +
+        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center">' +
+          '<input id="cj-nome" class="btn sm" placeholder="Nome do conjunto" style="min-width:170px;text-align:left">' +
+          '<input id="cj-cor" type="color" value="#2563eb" class="btn sm" style="width:44px;padding:2px">' +
+        '</div>' +
+        '<div id="cj-conds" style="margin-top:8px"></div>' +
+        '<div class="flex" style="gap:8px;margin-top:8px;flex-wrap:wrap">' +
+          '<button class="btn sm" id="cj-mais">+ condição</button>' +
+          '<span style="flex:1"></span>' +
+          '<span class="muted" id="cj-previa" style="font-size:11.5px"></span>' +
+          '<button class="btn sm primary" id="cj-salvar">Salvar conjunto</button>' +
+        '</div></div>';
+      function linhaCond() {
+        var d = document.createElement("div");
+        d.style.cssText = "display:flex;gap:6px;align-items:center;margin-bottom:6px;flex-wrap:wrap";
+        d.innerHTML =
+          '<select data-c="campo" class="btn sm" style="padding:4px 8px">' + ops + "</select>" +
+          '<select data-c="oper" class="btn sm" style="padding:4px 8px"></select>' +
+          '<input data-c="valor" class="btn sm" list="cj-vals" placeholder="valor" style="min-width:130px;text-align:left">' +
+          '<button data-c="menos" class="btn sm danger" title="tirar">−</button>';
+        function pintarOps() {
+          var campo = d.querySelector('[data-c="campo"]').value;
+          var meta = BimSet.CAMPOS.filter(function (c) { return c.chave === campo; })[0];
+          var sel = d.querySelector('[data-c="oper"]');
+          sel.innerHTML = BimSet.OPERADORES.filter(function (o) { return o.tipos.indexOf(meta.tipo) >= 0; })
+            .map(function (o) { return '<option value="' + o.chave + '">' + Util.esc(o.rotulo) + "</option>"; }).join("");
+          self._bimConjPrevia();
+        }
+        d.querySelector('[data-c="campo"]').onchange = function () { pintarOps(); self._bimConjValores(this.value); };
+        d.querySelector('[data-c="oper"]').onchange = function () { self._bimConjPrevia(); };
+        d.querySelector('[data-c="valor"]').oninput = function () { self._bimConjPrevia(); };
+        d.querySelector('[data-c="valor"]').onfocus = function () { self._bimConjValores(d.querySelector('[data-c="campo"]').value); };
+        d.querySelector('[data-c="menos"]').onclick = function () { d.remove(); self._bimConjPrevia(); };
+        pintarOps();
+        return d;
+      }
+      var conds = cx.querySelector("#cj-conds");
+      conds.appendChild(linhaCond());
+      cx.querySelector("#cj-mais").onclick = function () { conds.appendChild(linhaCond()); };
+      cx.querySelector("#cj-salvar").onclick = function () { self._bimConjSalvar(); };
+      if (!document.getElementById("cj-vals")) { var dl = document.createElement("datalist"); dl.id = "cj-vals"; document.body.appendChild(dl); }
+      this._bimConjValores(BimSet.CAMPOS[0].chave);
+      this._bimConjPrevia();
+    },
+
+    /* os valores que EXISTEM no modelo, para o campo escolhido */
+    _bimConjValores: function (campo) {
+      var dl = document.getElementById("cj-vals"); if (!dl) return;
+      var vals = [];
+      try { vals = (window.BIM && BIM.valoresDe) ? BIM.valoresDe(campo) : []; } catch (e) {}
+      dl.innerHTML = vals.slice(0, 300).map(function (v) { return '<option value="' + Util.esc(v.valor) + '">' + v.n + " peça(s)</option>"; }).join("");
+    },
+
+    _bimConjRegraDaTela: function () {
+      var cx = document.getElementById("bim-conj-editor"); if (!cx) return null;
+      var cond = [];
+      Array.prototype.forEach.call(cx.querySelectorAll("#cj-conds > div"), function (d) {
+        var campo = d.querySelector('[data-c="campo"]').value;
+        var oper = d.querySelector('[data-c="oper"]').value;
+        var valor = d.querySelector('[data-c="valor"]').value;
+        cond.push({ campo: campo, oper: oper, valor: valor });
+      });
+      return { op: "e", cond: cond };
+    },
+
+    /* ⚠ PRÉVIA VIVA, e ela é o que impede o conjunto vazio virar surpresa: o
+       usuário vê a contagem enquanto escreve a regra, e vê o MOTIVO quando a
+       regra está quebrada — em vez de salvar e descobrir depois que dá zero. */
+    _bimConjPrevia: function () {
+      var el = document.getElementById("cj-previa"); if (!el || !window.BimSet) return;
+      var regra = this._bimConjRegraDaTela();
+      var v = BimSet.validar(regra);
+      if (!v.ok) { el.style.color = "var(--aviso,#b45309)"; el.textContent = v.erros[0]; return; }
+      var els = [];
+      try { els = (window.BIM && BIM.elementos) || []; } catch (e) {}
+      var r = BimSet.avaliar(els, regra);
+      el.style.color = "";
+      el.textContent = r.chaves.length + " peça(s)" + (r.instaveis ? " · " + r.instaveis + " sem identidade durável" : "");
+    },
+
+    _bimConjSalvar: function () {
+      if (!window.BimSet) return;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para guardar o conjunto.", "aviso"); return; }
+      if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — o conjunto pertence a ela.", "aviso"); return; }
+      var cx = document.getElementById("bim-conj-editor"); if (!cx) return;
+      var nome = (cx.querySelector("#cj-nome") || {}).value || "";
+      var regra = this._bimConjRegraDaTela();
+      var v = BimSet.validar(regra);
+      /* ⚠ recusa ANTES de gravar, com o motivo: conjunto quebrado guardado
+         voltaria como "0 peças" toda vez, sem explicar. */
+      if (!v.ok) { UI.toast(v.erros[0], "erro"); return; }
+      var c = BimSet.conjunto({ obraId: this._bimSel, nome: nome, tipo: "busca", regra: regra,
+                               cor: (cx.querySelector("#cj-cor") || {}).value, em: new Date().toISOString() });
+      if (!c) { UI.toast("Dê um nome ao conjunto.", "erro"); return; }
+      c.criadoEm = new Date().toISOString();
+      if (!Store.salvar(eid(), "bim_conjuntos", c)) { UI.toast("Não consegui guardar o conjunto (armazenamento cheio?).", "erro"); return; }
+      cx.style.display = "none"; cx.innerHTML = "";
+      UI.toast('Conjunto \u201C' + c.nome + '\u201D guardado nesta obra.', "ok");
+      this._bimConjRender();
+    },
+
+    _bimConjDe: function (id) {
+      return this._bimConjDaObra().filter(function (c) { return c.id === id; })[0] || null;
+    },
+    _bimConjIsolar: function (id) {
+      var c = this._bimConjDe(id); if (!c || !window.BimSet || !window.BIM) return;
+      var r = BimSet.resolver(c, BIM.elementos || []);
+      if (!r.ok) { UI.toast(r.erros[0] || "A regra deste conjunto tem problema.", "erro"); return; }
+      if (!r.chaves.length) { UI.toast('\u201C' + c.nome + '\u201D não casa com nenhuma peça do modelo aberto.', "aviso"); return; }
+      var n = BIM.isolarChaves(r.chaves);
+      UI.toast(n + " peça(s) isoladas. Restaurar tudo volta o modelo.", "ok");
+    },
+    _bimConjPintar: function (id) {
+      var c = this._bimConjDe(id); if (!c || !window.BimSet || !window.BIM) return;
+      var r = BimSet.resolver(c, BIM.elementos || []);
+      if (!r.ok) { UI.toast(r.erros[0] || "A regra deste conjunto tem problema.", "erro"); return; }
+      var cor = c.cor || "#2563eb", mapa = {};
+      r.chaves.forEach(function (k) { mapa[k] = cor; });
+      var n = BIM.pintarChaves(mapa);
+      UI.toast(n ? n + " peça(s) pintadas. Clique de novo em Pintar para trocar; o botão de estilo limpa." : "Nenhuma peça deste conjunto está no modelo aberto.", n ? "ok" : "aviso");
+    },
+    _bimConjExcluir: function (id, nome) {
+      if (!confirm('Apagar o conjunto "' + nome + '" desta obra?')) return;
+      try { Store.excluir(eid(), "bim_conjuntos", id); } catch (e) {}
+      this._bimConjRender();
+    },
+
+    /* lê bim_modelos e entrega ao viewer o mapa da obra (arquivo → modelo) */
+    _bimFedCarregar: function () {
+      var regs = [];
+      try { regs = Store.listar(eid(), "bim_modelos") || []; } catch (e) {}
+      this._bimFedRegs = regs;
+      try {
+        if (window.BIM && BIM.setFederacao && window.BimFed) {
+          BIM.setFederacao(BimFed.mapaParaViewer(regs, this._bimSel || ""));
+        }
+      } catch (e2) {}
+      return regs;
+    },
+
+    /* ⚠ UMA FILA SÓ PARA O QUE ESCREVE NO INDEXEDDB. O índice do cache é um
+       registro único, lido-alterado-gravado. O input de arquivo é `multiple` e
+       o arrastar-e-soltar aceita vários: três modelos abrindo juntos liam o
+       índice no MESMO estado e gravavam por cima uns dos outros. O resultado
+       era pior que perder a entrada — o blob ficava no banco sem dono, virava
+       órfão, e o órfão é o primeiro da fila do descarte. */
+    _bimFila: function (fn) {
+      var self = this;
+      this._bimFilaP = (this._bimFilaP || Promise.resolve()).then(function () { return fn(); },
+        function () { return fn(); });
+      return this._bimFilaP["catch"](function () { return null; });
+    },
+    /* devolve o quadro ao navegador antes do trabalho pesado */
+    _bimAdiar: function (fn) {
+      return new Promise(function (res) {
+        var ric = window.requestIdleCallback;
+        if (ric) ric(function () { res(fn()); }, { timeout: 3000 });
+        else setTimeout(function () { res(fn()); }, 0);
+      });
+    },
+
+    /* acha o registro da federação DESTE modelo, conferindo de quem é a vaga.
+       ⚠ Não basta o modeloId: o viewer re-carimba os modelos abertos quando a
+       obra muda, então um modelo carregado na obra A passa a exibir a âncora
+       da obra B assim que o seletor muda. Agir pelo modeloId cru fazia a
+       lixeira de um modelo apagar o registro de OUTRA obra. */
+    _bimRegDe: function (mid) {
+      var alvo = null;
+      try { (BIM.modelos || []).forEach(function (m) { if (m.mid === mid) alvo = m; }); } catch (e) { return null; }
+      if (!alvo || !this._bimSel || this._semSessao()) return null;
+      var reg = null;
+      try { reg = Store.obter(eid(), "bim_modelos", alvo.modeloId); } catch (e2) {}
+      if (!reg) return null;
+      if (String(reg.obraId || "") !== String(this._bimSel)) return null;     /* é de outra obra */
+      if (alvo.arquivoId && String(reg.arquivoId || "") !== String(alvo.arquivoId)) return null;  /* é de outro arquivo */
+      return reg;
+    },
+
+    /* grava a vaga do arquivo na obra. Sem obra escolhida não há federação —
+       e sem sessão não se grava nada (senão vai para o tenant "default", que
+       some no login) */
+    _bimFedGravar: function (info) {
+      if (!info || info.doCache) return null;      /* restaurado: a vaga já existe */
+      /* ⚠ o modelo de DEMONSTRAÇÃO não entra na obra do cliente. Ele é o IFC
+         de outra obra, e entrando aqui voltaria na cena a cada abertura, seria
+         contado por "Gerar orçamento do modelo" e subiria para a nuvem. */
+      if (info.exemplo) return null;
+      if (!window.BimFed) return null;
+      if (this._semSessao()) { UI.toast("Entre com a sua conta para guardar o modelo na obra.", "aviso"); return null; }
+      var obraId = this._bimSel || "";
+      if (!obraId) {
+        /* ⚠ sair calado aqui fazia o usuário trabalhar a sessão inteira e
+           perder tudo ao fechar a aba, sem nunca ter sido avisado */
+        if (!this._bimAvisouSemObra) { this._bimAvisouSemObra = 1; UI.toast("Escolha a obra no alto da tela para o modelo ficar guardado nela.", "aviso"); }
+        return null;
+      }
+      var regs = this._bimFedRegs || this._bimFedCarregar();
+      var abertos = {};
+      try { (BIM.modelos || []).forEach(function (m) { if (m.mid !== info.mid && m.modeloId) abertos[m.modeloId] = m.arquivoId || ""; }); } catch (eA) {}
+      var r = BimFed.aoAbrir(regs, {
+        obraId: obraId, nome: info.nome, arquivoId: info.arquivoId,
+        disciplina: info.disciplina, abertos: abertos, em: new Date().toISOString()
+      });
+      /* ⚠ ambiguidade não é resolvida no chute: o mesmo arquivo já está na obra
+         em mais de um modelo, e escolher um moveria os vínculos do outro */
+      if (!r.ok) { UI.toast("Não consegui encaixar \u201C" + info.nome + "\u201D: " + r.motivo + ". O modelo abriu, mas não ficou guardado na obra.", "aviso"); return null; }
+      var salvou = false;
+      try { salvou = !!Store.salvar(eid(), "bim_modelos", r.reg); } catch (e) { salvou = false; }
+      if (!salvou) { UI.toast("Não consegui guardar \u201C" + info.nome + "\u201D nesta obra (armazenamento cheio?).", "erro"); return null; }
+      this._bimFedCarregar();                      /* re-entrega o mapa ao viewer */
+      if (r.renomeou) UI.toast("\u201C" + info.nome + "\u201D é o mesmo arquivo de antes, com outro nome — mantive os vínculos.", "ok");
+      else if (r.versaoNova) UI.toast("Versão " + r.reg.versao + " de \u201C" + info.nome + "\u201D.", "ok");
+      /* ⚠ a versão ANTERIOR não pode ficar ocupando o banco para sempre: ela é
+         da obra aberta, então o descarte por falta de espaço nunca a alcança. */
+      if (r.versaoNova && r.reg.arquivoIdAnterior) this._bimCacheEsquecer(r.reg.arquivoIdAnterior);
+      return r;
+    },
+
+    /* o ajuste que o usuário fez neste modelo, NESTA obra (disciplina,
+       transparência, visibilidade). Sem isto o painel mexe na cena e esquece:
+       fechar a aba desfaria o trabalho dele. */
+    _bimFedAtualizar: function (mid, mudanca) {
+      var reg = this._bimRegDe(mid);
+      if (!reg) return;
+      for (var k in (mudanca || {})) { if (Object.prototype.hasOwnProperty.call(mudanca, k)) reg[k] = mudanca[k]; }
+      try { Store.salvar(eid(), "bim_modelos", reg); } catch (e3) {}
+      this._bimFedRegs = null;
+    },
+
+    /* tira o modelo da obra: sem isto, "remover" some da tela e volta na
+       próxima abertura, porque a federação continuaria mandando abri-lo */
+    _bimFedRemover: function (mid) {
+      var reg = this._bimRegDe(mid);
+      if (!reg) return;
+      try { Store.excluir(eid(), "bim_modelos", reg.id); } catch (e2) {}
+      this._bimFedCarregar();
+    },
+    /* o 🗑 da barra (limpar tudo) manda a lista de uma vez */
+    _bimFedRemoverVarios: function (lista) {
+      var self = this;
+      (lista || []).forEach(function (m) { if (!m.sintetico) self._bimFedRemover(m.mid); });
+    },
+
+    /* apaga do banco uma geometria convertida que ninguém mais aponta */
+    _bimCacheEsquecer: function (arquivoId) {
+      var self = this, a = String(arquivoId || "");
+      if (!a || !window.BimCache || !window.Idb) return;
+      /* ainda em uso por outra obra? então não é lixo */
+      var regs = [];
+      try { regs = Store.listar(eid(), "bim_modelos") || []; } catch (e) {}
+      for (var i = 0; i < regs.length; i++) if (String(regs[i].arquivoId || "") === a) return;
+      var emp = eid();
+      this._bimFila(function () {
+        return Idb.del(BimCache.chave(emp, a)).then(function () {
+          return Idb.get(BimCache.chaveIndice(emp)).then(function (bruto) {
+            return Idb.set(BimCache.chaveIndice(emp), BimCache.remover(bruto, [a]));
+          });
+        });
+      });
+    },
+
+    /* grava a geometria convertida no IndexedDB. Devolve promessa com o que
+       REALMENTE aconteceu — quem avisa o usuário precisa disso. */
+    _bimCacheGravar: function (info) {
+      var self = this;
+      if (!info || info.doCache) return Promise.resolve({ ok: false, motivo: "" });
+      if (info.exemplo) return Promise.resolve({ ok: false, motivo: "" });
+      if (!info.temColeta) {
+        /* ⚠ DIZER POR QUE NÃO COUBE. Sem isto o modelo entrava na obra, nunca
+           era guardado, e toda reabertura pedia o arquivo de novo — a mesma
+           frase, para sempre, sem o usuário saber o motivo. */
+        if (info.semCache && !self._bimAvisouSemCache) { self._bimAvisouSemCache = 1; UI.toast("\u201C" + info.nome + "\u201D: " + info.semCache + ".", "aviso"); }
+        return Promise.resolve({ ok: false, motivo: info.semCache || "" });
+      }
+      if (!window.BimCache || !window.Idb || !window.BIM || !BIM.dadosParaCache) {
+        try { BIM.soltarColeta(info.mid); } catch (e0) {}
+        return Promise.resolve({ ok: false, motivo: "motor de cache indisponível" });
+      }
+      var emp = eid(), obraId = this._bimSel || "";
+      return this._bimFila(function () {
+        /* ⚠ A DECISÃO VEM ANTES DO TRABALHO PESADO. `dadosParaCache` roda duas
+           varreduras completas do WASM (topologia e bitola peça a peça); fazer
+           isso e só então descobrir que o navegador não deixa gravar congelava
+           a aba à toa em toda abertura. */
+        return Idb.pronto().then(function (pronto) {
+          if (!pronto) { try { BIM.soltarColeta(info.mid); } catch (e1) {} return { ok: false, motivo: "o navegador não deixou guardar nada neste perfil" }; }
+          return self._bimAdiar(function () {
+            var dados = null;
+            try { dados = BIM.dadosParaCache(info.mid); } catch (e2) {}
+            return dados ? BimCache.montar(dados) : { ok: false, erro: "a geometria já não estava em memória" };
+          }).then(function (m) {
+            if (!m.ok) { try { BIM.soltarColeta(info.mid); } catch (e3) {} return { ok: false, motivo: m.erro || "" }; }
+            return self._bimCacheEscrever(emp, obraId, m.reg, info);
+          });
+        });
+      });
+    },
+
+    _bimCacheEscrever: function (emp, obraId, reg, info) {
+      var self = this, bytes = BimCache.tamanho(reg), ix = null, jaTinha = 0;
+      return Idb.get(BimCache.chaveIndice(emp)).then(function (bruto) {
+        return Idb.chaves(BimCache.PREFIXO).then(function (ks) {
+          /* limpeza única do que ficou da versão sem tenant: invisível para
+             tudo, e ocupando a cota para sempre */
+          var legado = (ks || []).filter(function (k) { return BimCache.ehChaveLegado(k); });
+          if (legado.length) legado.forEach(function (k) { try { Idb.del(k); } catch (eL) {} });
+          var rep = BimCache.reparar(BimCache.indiceNormal(bruto), ks || [], emp);
+          ix = rep.indice;
+          jaTinha = (ix.entradas[reg.arquivoId] && ix.entradas[reg.arquivoId].bytes) || 0;
+          return Idb.espaco();
+        });
+      }).then(function (esp) {
+        /* ⚠ REGRAVAR O MESMO ARQUIVO NÃO OCUPA ESPAÇO NOVO: o `put` substitui.
+           Sem descontar o que já está lá, abrir de novo o mesmo IFC descartava
+           o cache de OUTRAS obras para caber uma coisa que ia ocupar o mesmo
+           lugar — e a tela anunciava a limpeza. */
+        var liquido = Math.max(0, bytes - jaTinha);
+        var falta = (esp && esp.livre != null) ? (liquido * 1.2 - esp.livre) : 0;
+        if (falta <= 0) return { cabe: true, apagados: [] };
+        /* protege TODOS os modelos abertos, não só este: o descarte não pode
+           levar o cache de algo que está na cena agora */
+        var protegidos = [reg.arquivoId];
+        try { (BIM.modelos || []).forEach(function (m) { if (m.arquivoId) protegidos.push(m.arquivoId); }); } catch (eP) {}
+        var plano = BimCache.lru(ix, { precisa: falta, obraId: obraId, protegidos: protegidos });
+        if (!plano.suficiente) return { cabe: false, apagados: [] };
+        var seq = Promise.resolve();
+        plano.descartar.forEach(function (a) { seq = seq.then(function () { return Idb.del(BimCache.chave(emp, a)); }); });
+        ix = BimCache.remover(ix, plano.descartar);
+        return seq.then(function () { return { cabe: true, apagados: plano.nomes }; });
+      }).then(function (r) {
+        if (!r.cabe) {
+          /* ⚠ NÃO SOLTA A COLETA AQUI. Falta de espaço é o único motivo que o
+             usuário consegue resolver — ele apaga coisa do navegador e clica em
+             "Salvar no projeto" de novo. Se a geometria já tiver saído da
+             memória, o botão não tem como cumprir o que promete, e a única
+             saída seria reabrir o arquivo sem nunca saber disso. */
+          return { ok: false, retentavel: true, motivo: "não há espaço no navegador para guardar este modelo" };
+        }
+        /* ⚠ o aviso sai DEPOIS do descarte, com o que foi realmente apagado */
+        if (r.apagados.length) UI.toast("Espaço cheio: liberei o modelo guardado de " + r.apagados.join(", ") + " para guardar este.", "aviso");
+        return Idb.set(BimCache.chave(emp, reg.arquivoId), reg).then(function () {
+          ix = BimCache.registrar(ix, { arquivoId: reg.arquivoId, nome: reg.nome, bytes: bytes, em: Date.now(), obraId: obraId });
+          return Idb.set(BimCache.chaveIndice(emp), ix);
+        }).then(function () {
+          try { BIM.soltarColeta(info.mid); } catch (e5) {}   /* só agora: gravou */
+          return { ok: true, motivo: "" };
+        }, function () {
+          /* ⚠ NÃO APAGAR O QUE JÁ ESTAVA LÁ. Um `put` que falha aborta a
+             transação e deixa o valor antigo intacto — apagar aqui destruía o
+             cache BOM de um arquivo que outra obra usava todo dia. */
+          return { ok: false, retentavel: true, motivo: "não consegui gravar (armazenamento cheio?)" };
+        });
+      });
+    },
+
+    /* reabre a obra a partir do que está guardado — sem pedir arquivo nenhum */
+    _bimRestaurar: function () {
+      var self = this, obraId = this._bimSel || "";
+      if (!obraId || !window.BimFed || !window.BimCache || !window.Idb || !window.BIM) return;
+      if (!BIM.abrirDoCache) return;
+      /* só restaura em cena vazia: reentrar na aba com modelo aberto não pode
+         duplicar o que já está lá */
+      try { if ((BIM.modelos || []).length) return; } catch (e) { return; }
+      if (this._bimRestaurando) return;
+      var regs = this._bimFedCarregar();
+      var meus = BimFed.daObra(regs, obraId);
+      if (!meus.length) return;
+      this._bimRestaurando = true;
+      var emp = eid();
+
+      this._bimFila(function () {
+        return Idb.pronto().then(function (pronto) {
+          if (!pronto) return null;
+          return Idb.chaves(BimCache.PREFIXO).then(function (ks) {
+            var ids = (ks || []).map(function (k) { return BimCache.arquivoIdDaChave(k, emp); }).filter(Boolean);
+            var plano = BimFed.reconciliar(regs, ids, obraId);
+            var abertos = 0, semArquivo = plano.faltando.slice(), naoDeu = [];
+            var ix = null;
+            var seq = Idb.get(BimCache.chaveIndice(emp)).then(function (b) { ix = BimCache.indiceNormal(b); });
+            plano.abrir.forEach(function (r) {
+              seq = seq.then(function () {
+                return Idb.get(BimCache.chave(emp, r.arquivoId)).then(function (reg) {
+                  var c = BimCache.conferir(reg, r.arquivoId);
+                  /* ⚠ na dúvida NÃO monta: cena a partir de registro estranho é
+                     o modo silencioso de mostrar o modelo errado */
+                  if (!c.ok) { naoDeu.push({ nome: r.nome, motivo: c.motivo }); return; }
+                  var mm = BIM.abrirDoCache(reg, BimFed.paraViewer(r));
+                  if (mm && mm.ok) {
+                    abertos++;
+                    /* ⚠ marcar uso é o que faz o LRU ser LRU. Sem isto o
+                       `usadoEm` só era escrito na conversão, e o descarte
+                       escolhia primeiro o modelo que o usuário abre todo dia. */
+                    ix = BimCache.marcarUso(ix, r.arquivoId, Date.now(), obraId);
+                  } else naoDeu.push({ nome: r.nome, motivo: (mm && mm.erro) || "" });
+                })["catch"](function () { naoDeu.push({ nome: r.nome, motivo: "" }); });
+              });
+            });
+            return seq.then(function () {
+              /* uma gravação só no fim, para não repetir a corrida do índice */
+              return Idb.set(BimCache.chaveIndice(emp), ix)["catch"](function () {})
+                .then(function () { return { abertos: abertos, semArquivo: semArquivo, naoDeu: naoDeu, total: plano.total, semRegistro: plano.semArquivo }; });
+            });
+          });
+        }).then(function (res) {
+          self._bimRestaurando = false;
+          if (!res) return;
+          if (res.abertos) {
+            var msg = res.abertos + (res.abertos > 1 ? " modelos restaurados" : " modelo restaurado") + " do que estava guardado — não precisei dos arquivos.";
+            UI.toast(msg, "ok");
+            try { if (window.BimShell && BimShell.status) BimShell.status(msg); } catch (e) {}
+          }
+          /* ⚠ O QUE FALTA SAI COM NOME. "Não consegui restaurar 1 modelo" manda
+             o usuário procurar no escuro; o nome do arquivo ele resolve em dez
+             segundos. */
+          if (res.semArquivo.length) {
+            UI.toast("Falta o arquivo de: " + res.semArquivo.map(function (f) { return f.nome; }).join(", ") + ". Abra de novo pelo botão + IFC.", "aviso");
+          }
+          /* ⚠ e o que falhou por OUTRO motivo sai com o motivo. Dizer "falta o
+             arquivo" quando o problema é o teto de 8 modelos manda a pessoa
+             procurar um arquivo que está bem ali. */
+          if (res.naoDeu.length) {
+            UI.toast("Não consegui remontar " + res.naoDeu.map(function (f) { return f.nome + (f.motivo ? " (" + f.motivo + ")" : ""); }).join("; ") + ".", "aviso");
+          }
+          if (res.semRegistro && res.semRegistro.length) {
+            UI.toast(res.semRegistro.length + " modelo(s) desta obra estão registrados sem arquivo: " + res.semRegistro.map(function (f) { return f.nome; }).join(", ") + ".", "aviso");
+          }
+        })["catch"](function () { self._bimRestaurando = false; });
+      });
+    },
+
     // grava JÁ o save pendente do editor BIM (agendado pelo debounce do onEdicao) —
     // usado na troca de obra; sem pendência é no-op
     _bimEdFlush: function () {
@@ -9267,11 +11175,19 @@
           '<button data-m="vis" class="btn sm" title="Mostrar/ocultar este modelo">' + (mo.visivel ? "👁" : "🚫") + "</button>" +
           '<button data-m="del" class="btn sm danger" title="Remover este modelo">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
         // wiring direto (painel dinâmico — sem passar pelo dispatcher global)
-        linha.querySelector('[data-m="disc"]').onchange = function () { BIM.setDisciplina(mo.mid, this.value); };
+        /* B1: cada ajuste destes é trabalho do usuário NAQUELA obra, e passa a
+           sobreviver ao fechar a aba — é o que a federação guarda. O ajuste
+           continua imediato na cena; a gravação vem atrás. */
+        linha.querySelector('[data-m="disc"]').onchange = function () { BIM.setDisciplina(mo.mid, this.value); self._bimFedAtualizar(mo.mid, { disciplina: this.value }); };
         var rng = linha.querySelector('[data-m="alpha"]'), pct = linha.querySelector('[data-m="alphapct"]');
+        /* a barra dispara a cada pixel arrastado: a cena acompanha, o disco não
+           — senão seriam dezenas de gravações por arrasto */
         rng.oninput = function () { pct.textContent = this.value + "%"; BIM.setTransparencia(mo.mid, (+this.value) / 100); };
-        linha.querySelector('[data-m="vis"]').onclick = function () { BIM.setVisivel(mo.mid, !(mo.visivel)); };
-        linha.querySelector('[data-m="del"]').onclick = function () { if (confirm("Remover o modelo \"" + mo.nome + "\" do visualizador?")) BIM.removerModelo(mo.mid); };
+        rng.onchange = function () { self._bimFedAtualizar(mo.mid, { alpha: (+this.value) / 100 }); };
+        linha.querySelector('[data-m="vis"]').onclick = function () { var novo = !(mo.visivel); BIM.setVisivel(mo.mid, novo); self._bimFedAtualizar(mo.mid, { visivel: novo }); };
+        /* ⚠ remover tem de tirar da OBRA também: só tirando da cena, a próxima
+           abertura restauraria o modelo que a pessoa acabou de remover. */
+        linha.querySelector('[data-m="del"]').onclick = function () { if (confirm("Remover o modelo \"" + mo.nome + "\" desta obra?")) { self._bimFedRemover(mo.mid); BIM.removerModelo(mo.mid); } };
         box.appendChild(linha);
       });
     },
@@ -9363,8 +11279,11 @@
       if (!this._bimElementos || !this._bimElementos.length) {
         // último modelo removido: sem isto, timeline/clash/QTO/6D ficavam mostrando o modelo que JÁ FOI
         this._bimPlano = null; this._bimCurva = null; this._bimQto = null; this._bimClashes = null;
+        /* ⚠ o resultado do B5 zera junto: sem isso a tela seguiria mostrando os
+           conflitos da obra anterior, com os nomes de peça da nova. */
+        this._bimClashRec = null; this._bimClashTeste = null; this._bimClashDescartados = 0;
         ["bim-4d", "bim-clash", "bim-qto", "bim-6d"].forEach(function (id) { var el = document.getElementById(id); if (el) el.style.display = "none"; });
-        var cres = document.getElementById("bim-clash-res"); if (cres) cres.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Detecta interferências geométricas entre <b>Estrutura</b>, <b>Arquitetura</b> e <b>Instalações</b> — e no federado (2+ modelos) <b>Hidráulica, Elétrica e Mecânica contam separadas</b> (ex.: tubo × eletroduto, tubo atravessando viga). Clique em <b>Rodar</b>.</p>';
+        var cres = document.getElementById("bim-clash-res"); if (cres) cres.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Detecta interferências entre disciplinas — e no modo <b>folga</b> também as peças que passam <b>perto demais</b> sem se tocar. Um <b>teste salvo</b> guarda responsável, prazo, comentário e histórico: ao rodar de novo depois do modelo corrigido, os mesmos conflitos são reconhecidos e nada do que a equipe escreveu se perde.</p>';
         var qres = document.getElementById("bim-qto-res"); if (qres) qres.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Conta e mede cada disciplina do modelo (paredes m², vigas m, portas un…) e monta um orçamento pra você casar no SINAPI. Clique em <b>Levantar</b>.</p>';
         var binfo = document.getElementById("bim-info"); if (binfo) binfo.style.display = "none"; // balão de propriedades/conflito do modelo que JÁ FOI
         var r6 = document.getElementById("bim-6d-res"); if (r6) r6.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0"><b>6D</b> = plano de manutenção preventiva por categoria (vida útil de projeto da NBR 15575). <b>7D</b> = quanto a edificação custa DEPOIS de pronta, ano a ano. Com orçamento vinculado à obra, os valores saem em R$; sem, sai o cronograma físico. Clique em <b>Gerar</b>.</p>';
@@ -9435,6 +11354,9 @@
       // _bimSemana NÃO é gravada aqui: só gesto do usuário (slider/play) pina a semana —
       // gravar na chamada programática pinava o 1º render no fim e o plano crescido escondia elementos
       var est = BIM4D.estadoEm(p, sem);
+      /* o 4D automático e o cronograma pintam a MESMA cena; quem chega desfaz
+         o outro, senão as duas legendas valem ao mesmo tempo e nenhuma é lida */
+      if (this._bimTarSim) { this._bimTarSim = null; this._bimTarPend = null; try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e6) {} }
       if (window.BIM && BIM.aplicarEstado) { try { BIM.aplicarEstado(est); } catch (e) {} }
       var av = document.getElementById("bim-avanco"); if (av) av.textContent = BIM4D.avancoEm(p, sem) + "%";
       // 5D-lite: custo acumulado no tempo (só quando há orçamento vinculado com custo)
@@ -9505,77 +11427,6 @@
       res.innerHTML = h;
     },
 
-    // Compatibilização: roda o motor BIMClash sobre os elementos (com AABB) e lista os conflitos.
-    _bimCompatibilizar: function () {
-      var res = document.getElementById("bim-clash-res"); if (!res) return;
-      if (typeof BIMClash === "undefined") { res.innerHTML = '<p class="muted">Motor de compatibilização não carregado.</p>'; return; }
-      var els = (this._bimElementos || []).filter(function (e) { return e && e.aabb; });
-      if (!els.length) { res.innerHTML = '<p class="muted" style="font-size:12.5px;margin:0">Carregue um modelo <b>.IFC</b> no visualizador acima primeiro.</p>'; return; }
-      var r; try { r = BIMClash.detectar(els); } catch (e) { res.innerHTML = '<p class="muted">Falha ao analisar: ' + Util.esc(String(e)) + "</p>"; return; }
-      this._bimClashes = r.clashes;
-      // REFINO por geometria real (tri-a-tri no viewer): cada clash ganha geo=confirmado/descartado/nao-verificavel
-      var refinou = false, nGeo = { confirmado: 0, descartado: 0, "nao-verificavel": 0 };
-      try {
-        if (typeof BIM !== "undefined" && BIM.refinarClash) {
-          BIM.refinarClash(r.clashes);
-          refinou = r.clashes.length > 0 && !!r.clashes[0].geo;
-        }
-      } catch (e) { refinou = false; }
-      if (refinou) {
-        r.clashes.forEach(function (c) { if (nGeo[c.geo] != null) nGeo[c.geo]++; else nGeo["nao-verificavel"]++; });
-        var ordG = { confirmado: 0, "nao-verificavel": 1, descartado: 2 };
-        this._bimClashes.sort(function (a, b) { return (ordG[a.geo] - ordG[b.geo]) || (b.penetracao - a.penetracao); }); // confirmados primeiro (mesma array do r.clashes)
-      }
-      var byId = {}; els.forEach(function (e) { byId[e.id] = e; });
-      if (!r.total) { res.innerHTML = '<div style="padding:6px 0"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Nenhum conflito entre disciplinas</span> <span class="muted" style="font-size:12.5px">— ' + els.length + " elementos analisados (folga 5 mm).</span></div>"; return; }
-      var cor = { grave: "#dc2626", media: "#f59e0b", leve: "#64748b" }, nome = { grave: "graves", media: "médios", leve: "leves" };
-      // pós-refino, chips e contagem por par contam SÓ o que ficou de pé (confirmado + não-verificável) —
-      // senão o banner diz "0 confirmados" com a pill "20 graves" do envelope do lado (contraditório)
-      var sevFonte = r.severidade, parFonte = r.porPar;
-      if (refinou) {
-        sevFonte = { grave: 0, media: 0, leve: 0 }; parFonte = {};
-        this._bimClashes.forEach(function (c) {
-          if (c.geo === "descartado") return;
-          sevFonte[c.severidade] = (sevFonte[c.severidade] || 0) + 1;
-          parFonte[c.par] = (parFonte[c.par] || 0) + 1;
-        });
-      }
-      var chips = ["grave", "media", "leve"].filter(function (s) { return sevFonte[s]; }).map(function (s) {
-        return '<span class="g-pill" style="background:' + cor[s] + '22;color:' + cor[s] + ';font-weight:700">' + sevFonte[s] + " " + nome[s] + "</span>";
-      }).join(" ");
-      var pares = Object.keys(parFonte).sort(function (a, b) { return parFonte[b] - parFonte[a]; }).map(function (p) {
-        return '<span class="muted" style="font-size:12px">' + Util.esc(p) + ": <b>" + parFonte[p] + "</b></span>";
-      }).join(" · ");
-      var SELO = {
-        confirmado: '<span title="CONFIRMADO pela geometria: um triângulo real de um elemento atravessa o outro" style="color:#16a34a;font-weight:800">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + '</span>',
-        descartado: '<span title="As caixas se tocam, mas a geometria real não se cruza — provável falso alarme do envelope" style="color:#94a3b8">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</span>',
-        "nao-verificavel": '<span title="Não-verificável (elemento sem malha própria ou acima do limite de triângulos) — confira no 3D" style="color:#f59e0b">~</span>'
-      };
-      var LIM = 80, linhas = this._bimClashes.slice(0, LIM).map(function (c, i) {
-        var a = byId[c.aId] || {}, b = byId[c.bId] || {}, descA = a.nome || a.tipo || c.aId, descB = b.nome || b.tipo || c.bId;
-        return '<tr class="lin"' + (c.geo === "descartado" ? ' style="opacity:.55"' : "") + '><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + cor[c.severidade] + '"></span>' + (c.geo ? " " + SELO[c.geo] : "") + "</td>" +
-          "<td>" + Util.esc(c.par) + '</td><td style="font-size:12px">' + Util.esc(String(descA)) + " ✕ " + Util.esc(String(descB)) + "</td>" +
-          '<td class="num">' + (c.penetracao * 100).toFixed(1) + " cm</td>" +
-          '<td><button class="btn sm" data-clash="' + i + '">' + (typeof Icones !== 'undefined' ? Icones.get('olho', 15) : '') + ' ver</button></td></tr>';
-      }).join("");
-      var cab = refinou
-        ? ('<b style="font-size:15px">' + nGeo.confirmado + " conflito(s) confirmados</b>" +
-          (nGeo["nao-verificavel"] ? ' <span class="g-pill" style="background:#f59e0b22;color:#b45309;font-weight:700">~ ' + nGeo["nao-verificavel"] + " não-verificáveis</span>" : "") +
-          (nGeo.descartado ? ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700">✕ ' + nGeo.descartado + " descartados pela geometria</span>" : ""))
-        : ('<b style="font-size:15px">' + r.total + " conflito(s)</b>");
-      var bannerLimpo = (refinou && nGeo.confirmado === 0 && nGeo["nao-verificavel"] === 0)
-        ? '<div style="padding:4px 0 8px"><span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Nenhum conflito CONFIRMADO pela geometria</span> <span class="muted" style="font-size:12px">— os ' + nGeo.descartado + " alarmes do envelope eram caixas se tocando sem cruzamento real (lista abaixo, pra auditoria).</span></div>"
-        : "";
-      res.innerHTML =
-        bannerLimpo +
-        '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' + cab + " " + chips + '<span style="flex:1"></span><button class="btn sm ghost" data-clash-limpar="1">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' limpar destaque</button></div>' +
-        (pares ? '<div style="margin-bottom:8px">' + pares + "</div>" : "") +
-        '<div style="max-height:280px;overflow:auto"><table class="tbl"><thead><tr><th></th><th>Disciplinas</th><th>Elementos</th><th class="num">Penetração</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
-        (r.total > LIM ? '<p class="muted" style="font-size:11.5px;margin:6px 0 0">Mostrando os ' + LIM + " piores de " + r.total + (refinou ? " (confirmados primeiro)" : " (ordenados por penetração)") + ".</p>" : "") +
-        (refinou
-          ? '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Envelope (AABB) + <b>confirmação por geometria real</b> (triângulo a triângulo na zona da interseção): ' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' confirmado · ' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' descartado (caixas se tocam, geometria não) · ~ não-verificável (sem malha própria/limite de triângulos — confira no 3D). Folga de 5 mm entre disciplinas.</p>'
-          : '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Clash por envelope (AABB) — 1º nível, rápido; interferências <b>prováveis</b>, confira no 3D. Entre disciplinas diferentes, folga de 5 mm.</p>');
-    },
     // Quantitativos: roda o motor BIMQto sobre os elementos (com AABB) e lista o levantamento por disciplina.
     _bimQuantificar: function () {
       var res = document.getElementById("bim-qto-res"); if (!res) return;
@@ -9616,18 +11467,40 @@
     },
     _bimVerClash: function (i) {
       var c = this._bimClashes && this._bimClashes[i]; if (!c) return;
-      if (window.BIM && BIM.focarClash) { try { BIM.focarClash([c.aId, c.bId]); } catch (e) {} }
+      /* depois do B5 a lista guarda CHAVES do B0, não os uids da sessão: o
+         mesmo conflito precisa ser reencontrável depois de recarregar o
+         modelo. O uid é traduzido na hora de focar. */
+      var alvo = (c.aId != null && c.bId != null) ? [c.aId, c.bId]
+        : ((window.BIM && BIM.uidsDeChaves) ? BIM.uidsDeChaves([c.chaveA, c.chaveB]) : []);
+      if (window.BIM && BIM.focarClash && alvo.length) { try { BIM.focarClash(alvo); } catch (e) {} }
       var box = document.getElementById("bim-info");
       if (box) {
         box.style.maxWidth = "260px"; // o painel de propriedades (420px) pode ter ficado aberto
-        var geoTxt = c.geo === "confirmado" ? " · <span style='color:#16a34a;font-weight:700'>" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " confirmado pela geometria</span>"
-          : c.geo === "descartado" ? " · <span style='color:#94a3b8;font-weight:700'>" + (typeof Icones !== "undefined" ? Icones.get("fechar", 15) : "") + " descartado pela geometria (provável falso alarme)</span>"
-          : c.geo ? " · <span style='color:#f59e0b;font-weight:700'>~ não-verificável — confira no 3D</span>" : "";
-        box.style.display = ""; box.innerHTML = "<b>" + (typeof Icones !== "undefined" ? Icones.get("quebracabeca", 15) : "") + " Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>Penetração " + (c.penetracao * 100).toFixed(1) + " cm · " + Util.esc(c.severidade) + geoTxt + "</span>";
+        /* ⚠ O BALÃO FALAVA SEMPRE EM PENETRAÇÃO, EM TODOS OS MODOS. No modo
+           folga a penetração é zero por definição (as peças não se tocam), e
+           ele anunciava "Penetração 0,0 cm" bem em cima de um conflito real —
+           o coordenador clica em "ver", lê zero, e conclui que não há nada.
+           E chamava a duplicata de "não-verificável", porque `geo` vale
+           "duplicado" ali e nenhum ramo cobria esse valor. */
+        var _md = (this._bimClashTeste && this._bimClashTeste.modo) || c.modo || "rigido";
+        var medTxt = _md === "duplicados"
+          ? "mesma peça modelada duas vezes"
+          : (_md === "folga"
+            ? (c.distancia != null ? "Folga de " + (c.distancia * 100).toFixed(1) + " cm" : "Folga abaixo do exigido (não medida)")
+            : (c.penetracao ? "Penetração " + (c.penetracao * 100).toFixed(1) + " cm" : "Sem medida"));
+        var geoTxt = c.geo === "duplicado" ? ""
+          : c.geo === "confirmado" ? " · <span style='color:#16a34a;font-weight:700'>" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " confirmado pela geometria</span>"
+          : c.geo === "descartado" ? " · <span style='color:#94a3b8;font-weight:700'>" + (typeof Icones !== "undefined" ? Icones.get("fechar", 15) : "") + (_md === "folga" ? " medi, e a distância passa do exigido" : " descartado pela geometria (provável falso alarme)") + "</span>"
+          : c.geo ? " · <span style='color:#f59e0b;font-weight:700'>~ não confirmado — confira no 3D</span>" : "";
+        box.style.display = ""; box.innerHTML = "<b>" + (typeof Icones !== "undefined" ? Icones.get("quebracabeca", 15) : "") + " Conflito · " + Util.esc(c.par) + "</b><br><span style='opacity:.85'>" + medTxt + " · " + Util.esc(c.severidade) + geoTxt + "</span>";
       }
     },
     _bimLimparClash: function () {
       if (window.BIM && BIM.limparClash) { try { BIM.limparClash(); } catch (e) {} }
+      /* "limpar destaque" tem de limpar TUDO que está por cima do modelo. O
+         `mostrarTudo` devolve a visibilidade mas não toca na pintura nem no
+         contorno do cronograma — o modelo voltava colorido pelo 4D. */
+      if (this._bimTarSim) { this._bimTarSim = null; this._bimTarPend = null; try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e6) {} }
       if (window.BIM && BIM.mostrarTudo) { try { BIM.mostrarTudo(); } catch (e) {} }
       var box = document.getElementById("bim-info"); if (box) box.style.display = "none";
     },
@@ -9870,7 +11743,19 @@
       if (!base) { UI.toast("Servidor de compartilhamento não configurado.", "erro"); return; }
       if (!chave) { UI.toast("Compartilhar na nuvem é da versão ativada (🔑). No teste grátis, use o QR da rede local.", "erro"); return; }
       var modelos = (typeof BIM !== "undefined" && BIM.bytesModelos) ? BIM.bytesModelos() : [];
-      if (!modelos.length) { UI.toast("Carregue um modelo .IFC no visualizador antes de compartilhar.", "erro"); return; }
+      /* ⚠ MODELO RESTAURADO DO CACHE NÃO TEM O ARQUIVO. O cache guarda a
+         geometria convertida, nunca o .ifc (é o que impede o inchaço de
+         memória do D6) — então ele aparece na cena e some daqui. Sem este
+         aviso, o engenheiro mandava o link ao cliente e chegava meio prédio,
+         sem nada na tela dizendo que faltou. */
+      var semArq = (typeof BIM !== "undefined" && BIM.modelosSemArquivo) ? BIM.modelosSemArquivo() : [];
+      if (!modelos.length) {
+        UI.toast(semArq.length
+          ? "Estes modelos vieram do que estava guardado, e o arquivo .ifc não está em memória: " + semArq.map(function (m) { return m.nome; }).join(", ") + ". Abra pelo + IFC para compartilhar."
+          : "Carregue um modelo .IFC no visualizador antes de compartilhar.", "erro");
+        return;
+      }
+      if (semArq.length && !confirm("Vou enviar " + modelos.length + " de " + (modelos.length + semArq.length) + " modelos.\n\nNão tenho o arquivo de: " + semArq.map(function (m) { return m.nome; }).join(", ") + " — eles vieram do modelo guardado. Para incluí-los, abra cada um pelo + IFC.\n\nEnviar assim mesmo?")) return;
       // overlay de progresso
       var ov = document.getElementById("rv-qr-ov"); if (ov) ov.remove();
       ov = document.createElement("div"); ov.id = "rv-qr-ov";
@@ -10015,6 +11900,23 @@
       this._abrirDoc("Quantitativo Ilustrado — " + (obra ? obra.nome : "modelo BIM"), this._docShell("QUANTITATIVO ILUSTRADO · FAMÍLIAS DO MODELO", "#0e7490", corpo));
     },
     _bimWire: function () {
+      var _self = this;
+      var _cjNovo = document.getElementById("bim-conj-novo");
+      if (_cjNovo) _cjNovo.onclick = function () { _self._bimConjEditor(); };   /* B3 */
+      var _btNova = document.getElementById("bim-tar-nova");                    /* B6 */
+      if (_btNova) _btNova.onclick = function () { _self._bimTarEditor(null); };
+      var _btCores = document.getElementById("bim-tar-cores");
+      if (_btCores) _btCores.onclick = function () { _self._bimTarCores(); };
+      var _btImp = document.getElementById("bim-tar-import");
+      var _btArq = document.getElementById("bim-tar-arq");
+      if (_btImp && _btArq) { _btImp.onclick = function () { _btArq.click(); }; _btArq.onchange = function () { _self._bimTarImportar(this.files && this.files[0]); this.value = ""; }; }
+      var _vtNova = document.getElementById("bim-vista-nova");                  /* B4 */
+      if (_vtNova) _vtNova.onclick = function () { _self._bimVistaSalvar(); };
+      var _vtOut = document.getElementById("bim-vista-bcf-out");
+      if (_vtOut) _vtOut.onclick = function () { _self._bimVistaExportarBcf(); };
+      var _vtIn = document.getElementById("bim-vista-bcf-in");
+      var _vtArq = document.getElementById("bim-vista-arq");
+      if (_vtIn && _vtArq) { _vtIn.onclick = function () { _vtArq.click(); }; _vtArq.onchange = function () { _self._bimVistaImportarBcf(this.files && this.files[0]); this.value = ""; }; }
       var self = this, canvas = document.getElementById("bim-canvas"); if (!canvas) return;
       // F5/fechar aba dentro da janela de 400ms do debounce não pode perder a edição
       if (!this._bimEdUnload) {
@@ -10051,13 +11953,21 @@
         }, 700);
       };
       // compatibilização (clash): botão rodar + delegação dos cliques "ver"/"limpar"
-      var crun = document.getElementById("bim-clash-run");
-      if (crun) crun.onclick = function () { self._bimCompatibilizar(); };
-      var cres = document.getElementById("bim-clash-res");
-      if (cres) cres.onclick = function (e) {
-        var b = e.target.closest("[data-clash]"); if (b) { self._bimVerClash(+b.getAttribute("data-clash")); return; }
-        if (e.target.closest("[data-clash-limpar]")) self._bimLimparClash();
+      this._bimClashRenderTestes();
+      var cnovo = document.getElementById("bim-clash-novo");
+      if (cnovo) cnovo.onclick = function () { self._bimClashEditor(null); };
+      var cedit = document.getElementById("bim-clash-edit");
+      if (cedit) cedit.onclick = function () {
+        var s = document.getElementById("bim-clash-teste");
+        if (!s || !s.value) { UI.toast("Escolha um teste salvo para editar — a rodada rápida não tem o que editar.", "aviso"); return; }
+        self._bimClashEditor(s.value);
       };
+      var csel = document.getElementById("bim-clash-teste");
+      if (csel) csel.onchange = function () { self._bimClashTesteSel = this.value; };
+      var crun = document.getElementById("bim-clash-run");
+      if (crun) crun.onclick = function () { self._bimClashRodar(); };
+      /* a delegação de cliques da lista é montada pelo _bimClashLigarBotoes a
+         cada render — os botões nascem junto com as linhas. */
       // quantitativos: botão levantar + delegação do "lançar no orçamento"
       var qrun = document.getElementById("bim-qto-run");
       if (qrun) qrun.onclick = function () { self._bimQuantificar(); };
@@ -10106,6 +12016,16 @@
             // v1.1.121 — grupo "Análise & Orçamento" do dock abre a gaveta do viewer
             onPainel: function (chave) { self._bimAbrirPainel(chave); },
             onModelos: function (lista) { self._bimRenderModelos(lista); },
+            /* B1: modelo chegou (do arquivo ou do cache) — a casca grava a vaga
+               dele na obra e a geometria convertida. É aqui que "Salvar no
+               projeto" deixa de ser uma frase e vira um arquivo no disco. */
+            onModeloCarregado: function (info) {
+              try { self._bimFedGravar(info); } catch (e) {}
+              try { self._bimCacheGravar(info); } catch (e2) {}
+            },
+            /* B1: o 🗑 da barra do viewer tira os modelos da OBRA também —
+               senão a próxima entrada na aba devolve o que foi removido */
+            onModelosRemovidos: function (lista) { try { self._bimFedRemoverVarios(lista); } catch (e3) {} },
             // v1.1.121: innerHTML com Icones (textContent apagaria o ícone SVG do botão)
             onReuniao: function (n) { var b = document.getElementById("bim-btn-reuniao"); if (b) { var icR = (typeof Icones !== "undefined") ? Icones.get("obra", 14) : ""; b.innerHTML = icR + (n > 0 ? "Reunião · " + n + " online" : (BIM.reuniao && BIM.reuniao.ativa ? "Na sala…" : "Reunião")); b.style.background = n > 0 ? "#16a34a" : ""; b.style.color = n > 0 ? "#fff" : ""; } },
             onReuniaoFalha: function () { var b = document.getElementById("bim-btn-reuniao"); if (b) { b.innerHTML = ((typeof Icones !== "undefined") ? Icones.get("obra", 14) : "") + "Reunião"; b.style.background = ""; b.style.color = ""; } UI.toast("Não consegui manter a reunião conectada (sem internet?). Você saiu da sala; o modelo segue normal.", "erro"); },
@@ -10172,6 +12092,9 @@
           // FLUSH antes de ler (re-render em <400ms leria ops velhas e REVERTERIA a última
           // edição); replay pulado se o viewer re-homed JÁ tem as mesmas ops (senão a
           // câmera pularia pro enquadramento a cada reentrada na aba)
+          try { if (BIM.setObra) BIM.setObra(self._bimSel || ""); } catch (eB0m) {}   /* B0: a obra ANTES do replay */
+          try { self._bimFedCarregar(); } catch (eB1m) {}                               /* B1: a federação da obra */
+          try { self._bimRestaurar(); } catch (eB1r) {}                                 /* B1: reabre do que está guardado */
           try {
             self._bimEdFlush();
             var edSalva = Store.obter(eid(), "bim_edicoes", self._bimSel || "geral");
@@ -19844,7 +21767,7 @@ renderFolha: function () {
      *     cadastro nem abria (contradizendo o próprio contrato). */
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
-      "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
+      "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-obra-multi": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
       "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
@@ -19923,6 +21846,17 @@ renderFolha: function () {
         case "compras-obra": return this.comprasTrocaObra(dataset);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
+        case "dash-obra-multi":
+          this._dashMulti = !this._dashMulti;
+          /* saindo do modo somar com varias marcadas, fica a primeira: um
+             `<select>` simples nao tem como representar tres obras, e deixar
+             o recorte antigo valendo com a tela mostrando so uma seria a
+             mentira de sempre — numero na tela que nao e o do filtro. */
+          if (!this._dashMulti) {
+            var _ids = this._dashObras();
+            if (_ids && _ids.length > 1) this._dashObra = _ids[0];
+          }
+          App.render(); return;
         case "nova-tarefa": return this.novoTarefa();
         case "tar-filtro": return this.tarTrocaFiltro(dataset.val);
         case "tar-obra": return this.tarTrocaObra(dataset.value);

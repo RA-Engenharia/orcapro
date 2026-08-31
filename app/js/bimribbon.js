@@ -176,11 +176,14 @@
           { id: "visibilidade", rotulo: "Visibilidade", icone: "olho", grande: true, requer: "modelo", dica: "Isola, oculta e usa raio-X na seleção." },
           { id: "pavimentos", rotulo: "Pavimentos", icone: "niveis", grande: true, requer: "modelo", dica: "Isola um pavimento do modelo importado." },
           { id: "sistemas", rotulo: "Cores por\nsistema", icone: "paleta", requer: "modelo", dica: "Pinta por sistema hidrossanitário ou disciplina." },
+          { id: "conjuntos", rotulo: "Conjuntos\nde seleção", icone: "alvo", requer: "modelo", dica: "Monta \u201Ctubos de água fria do térreo\u201D por regra e usa isso no lugar de clicar peça por peça." },
           { id: "estilo", rotulo: "Estilo de\nexibição", icone: "pincel", tipo: "menu", dica: "Sombreado, linhas, desenho técnico." }
         ] },
         { nome: "Colaborar", comandos: [
           { id: "reuniao", rotulo: "Reunião no\nmodelo", icone: "obra", grande: true, requer: "modelo", pro: true, dica: "Várias pessoas dentro do mesmo modelo, com voz." },
-          { id: "compartilhar", rotulo: "Compartilhar\nlink", icone: "link", requer: "modelo", dica: "Manda o modelo por link ou QR para abrir no celular." }
+          { id: "compartilhar", rotulo: "Compartilhar\nlink", icone: "link", requer: "modelo", dica: "Manda o modelo por link ou QR para abrir no celular." },
+          { id: "vistas", rotulo: "Pontos de\nvista", icone: "camera", requer: "modelo", dica: "Salva o ângulo, o que está visível e o comentário — e exporta em BCF para o projetista abrir no Revit." },
+          { id: "tarefas4d", rotulo: "Cronograma\n4D", icone: "calendario", requer: "modelo", dica: "A obra sobe com o SEU cronograma, não com o automático: datas previstas e reais, atraso sem piscar, e importação de CSV ou MS Project." }
         ] }
       ]
     }

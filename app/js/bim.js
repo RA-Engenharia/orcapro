@@ -16,10 +16,172 @@ import { IfcAPI } from 'web-ifc';
 
 var S = null; // estado do viewer montado
 
+/* =====================================================================
+ * B0 — IDENTIDADE DURAVEL DO ELEMENTO (motor em js/bimid.js)
+ *
+ * `uid` (mid + ':' + expressID) NAO sobrevive: `mid` e a ordem de abertura
+ * naquela sessao, e `expressID` e o numero da linha no IFC, que muda em toda
+ * reexportacao. Quem GRAVA vinculo passa a gravar `chave`.
+ *
+ * A obra corrente vive AQUI, fora do `S`: o viewer e remontado ao trocar de
+ * aba e ao perder o contexto WebGL, e a obra nao muda por causa disso.
+ *
+ * ⚠ E a obra entra na ancora porque o vinculo e GRAVADO por obra
+ * (`Store.obter(eid(), 'bim_edicoes', obraId)`). Ancora dizendo obra A dentro
+ * do registro da obra B nao casa na proxima abertura: vinculo orfao, calado.
+ * ===================================================================== */
+var OBRA_ID = '';
+
+/* =====================================================================
+ * B1 — CACHE DO MODELO (js/bimcache.js) E FEDERACAO DA OBRA (js/bimfed.js)
+ *
+ * FED e o mapa que a casca entrega: "nesta obra, o arquivo de conteudo X (ou
+ * de nome Y) e o modelo Z". Ele existe para o viewer NAO precisar do Store —
+ * a fronteira do produto diz que quem fala com o Store e a casca.
+ *
+ * ⚠ E e ele que fecha o buraco declarado no B0: sem federacao, o modeloId era
+ * derivado do nome, e renomear o arquivo orfanava todo vinculo salvo. Com o
+ * mapa, o casamento e por CONTEUDO primeiro.
+ * ===================================================================== */
+var FED = null;
+
+/* ⚠ TETO DA COLETA PARA O CACHE. Guardar a geometria crua custa memoria
+ * DURANTE a abertura, alem do que a cena ja ocupa. Num modelo em que quase
+ * nada se repete isso quase dobra o pico — e o produto ja carrega o IFC
+ * inteiro na memoria (D6). Passando do teto, o modelo abre normalmente e
+ * simplesmente NAO e guardado: perder o cache e lentidao na proxima abertura,
+ * estourar a memoria e o Revit do usuario travando junto com a aba. */
+var TETO_COLETA = 200 * 1024 * 1024;
+var cacheSeq = 0;
+
+/* ⚠ A GUARDA UNICA. Um modelo restaurado do cache NAO existe no WASM, e o
+ * `mid` dele e string. Se qualquer caminho de leitura IFC escapar desta
+ * guarda, `GetLine(mid, …)` recebe uma string que o embind converte para 0 —
+ * e le a linha do PRIMEIRO IFC de verdade que estiver aberto. O usuario
+ * clicaria numa peca e veria, sem erro nenhum, as propriedades de outra peca,
+ * de outro arquivo. E o mesmo motivo pelo qual `removerModelo` so chama
+ * `CloseModel` quando o mid e numero. */
+function semWasm(mo) { return !!(mo && (mo.sintetico || mo.doCache)); }
+
+function idModelo(nome, arquivoId, abertos) {
+  if (typeof window === 'undefined') return '';
+  /* a federacao manda; o derivado do B0 e o ultimo recurso (obra sem registro
+     ainda, ou arquivo que a obra nunca viu) */
+  if (FED && window.BimFed) return window.BimFed.resolver(FED, nome, arquivoId, abertos);
+  return window.BimId ? window.BimId.modeloId(OBRA_ID, nome) : '';
+}
+
+/* ⚠ O NOME QUE SERVE DE IDENTIDADE NAO E SEMPRE O NOME QUE APARECE. O modelo
+ * do editor se chama "Criados no OrcaPRO (3)" — a contagem esta DENTRO do
+ * nome, entao criar a quarta parede mudava o nome, mudava o modeloId e mudava
+ * a chave de todas as pecas que ja existiam. Identidade que muda quando o
+ * usuario trabalha e o oposto do que o B0 existe para dar. */
+function nomeDeIdentidade(mo) {
+  if (mo && mo.editor) return 'Criados no OrcaPRO';
+  return mo ? mo.nome : '';
+}
+
+/* as vagas que os OUTROS modelos abertos ocupam, com o conteudo de cada uma —
+ * e o que impede o segundo "ESTRUTURA.ifc" de herdar a ancora do primeiro */
+function vagasOcupadas(exceto) {
+  var out = {};
+  if (!S || !S.modelos) return out;
+  for (var i = 0; i < S.modelos.length; i++) {
+    var m = S.modelos[i];
+    if (m === exceto || !m.modeloId) continue;
+    out[m.modeloId] = m.versaoId || '';
+  }
+  return out;
+}
+function idElemento(modeloId, el) {
+  if (typeof window === 'undefined' || !window.BimId) return { chave: '', globalId: '', instavel: true };
+  return window.BimId.doElemento(modeloId, el);
+}
+/* GlobalId, nome e tag da linha IFC, numa leitura so. flatten=false de
+   proposito: sao atributos diretos de IfcRoot/IfcElement, e resolver
+   referencias recursivamente aqui — uma vez por elemento, dentro do stream —
+   custaria o carregamento inteiro.
+
+   ⚠ O `Name` entra porque e o nome do Revit ("Parede basica:ALV 14
+   CHAPISCO:987654"), aquele pelo qual o engenheiro acha a peca e conversa com
+   o projetista. Sem guarda-lo, o modelo restaurado do cache passava a chamar
+   TODAS as paredes de "Parede" — a peca continuava certa e o unico jeito de
+   identifica-la sumia. E a leitura ja estava paga. */
+function lerIdentidadeIfc(api, mid, expressID) {
+  try {
+    var ln = api.GetLine(mid, expressID, false);
+    return {
+      globalId: (ln && ln.GlobalId && ln.GlobalId.value) || '',
+      nomeIfc: (ln && ln.Name && ln.Name.value) || '',
+      tag: (ln && ln.Tag && ln.Tag.value) || ''
+    };
+  } catch (_) { return { globalId: '', nomeIfc: '', tag: '' }; }
+}
+/* ⚠ UMA funcao carimba, e os tres caminhos de carga a chamam. Se cada um
+   carimbasse do seu jeito, o vinculo do IFC e o do editor divergiriam — e o
+   caminho menos usado seria o que ninguem veria quebrar. E ela tambem roda na
+   troca de obra: recarimbar e re-derivar do zero, nao remendar. */
+function recarimbarIdentidade() {
+  if (!S || !S.modelos) return;
+  var B = (typeof window !== 'undefined') ? window.BimId : null;
+  /* ⚠ DOIS PASSOS, DE PROPOSITO. Calcular e atribuir no mesmo laco faria o
+     segundo modelo enxergar a vaga do primeiro JA trocada, e a resolucao
+     dependeria da ordem da lista — a mesma cena daria ancoras diferentes
+     conforme a ordem de abertura. */
+  var novos = S.modelos.map(function (mo) { return idModelo(nomeDeIdentidade(mo), mo.versaoId, vagasOcupadas(mo)); });
+  S.modelos.forEach(function (mo, i) {
+    mo.modeloId = novos[i];
+    if (mo.sintetico && !mo.versaoId) mo.versaoId = 'sintetico';
+    (mo.elementos || []).forEach(function (e) {
+      /* o que nasce no OrcaPRO nao veio de IFC: GlobalId proprio, com prefixo,
+         para nunca herdar o vinculo de uma peca do projetista */
+      if (!e.globalId && mo.sintetico && B) e.globalId = B.sintetico((mo.editor ? 'edit' : 'p3d') + '_' + e.id);
+      var r = idElemento(mo.modeloId, e);
+      e.chave = r.chave; e.chaveInstavel = r.instavel;
+    });
+  });
+}
+
 // 🧱 Blocok — allowlist de e-mails com acesso (feito p/ a Argecon primeiro; fácil de estender).
 // No escopo do MÓDULO (não dentro de montar) p/ já estar definido quando a toolbar é construída.
 // rogeriosouza... = o dono (RA Engenharia) — sempre liberado pra testar.
-var BLOCOK_EMAILS = ['argeconengenharia@gmail.com', 'rogeriosouza.engenharia@gmail.com'];
+/* ⚠ AQUI HAVIA DOIS E-MAILS EM TEXTO PURO — UM DELES DE CLIENTE.
+ *
+ * `js/` é copiado INTEIRO para os 38 pacotes e para a página pública: o
+ * endereço do cliente estava legível em
+ * https://ra-engenharia.github.io/orcapro/app/js/bim.js, para qualquer um com
+ * o link, em toda release desde que a lista existe.
+ *
+ * A guarda é legítima — é portão de recurso de cliente pagante, e removê-la
+ * trancaria o acesso dele. O que não pode é a guarda SER o endereço da pessoa.
+ * Agora são hashes salgados do mesmo endereço: exatamente as mesmas pessoas
+ * passam, e ninguém fica publicado.
+ *
+ * ⚠ Isto NÃO é proteção de segredo — hash de e-mail conhecido é quebrável por
+ * tentativa. É proteção de DADO PESSOAL: o endereço deixa de ser legível e de
+ * ser indexável. Para quem tenta burlar o portão, a barreira continua sendo a
+ * mesma de antes (o login), nem mais nem menos.
+ *
+ * Mesma família de `orcamento-leilah` em js/basescat.js (v1.2.17): guarda que
+ * protege pelo NOME de alguém publica esse alguém.
+ *
+ * Para liberar mais um e-mail: `node -e` com o `Util.sha256hex` de js/util.js
+ * sobre BLOCOK_SAL + e-mail em minúsculas, e acrescentar o hash aqui. */
+var BLOCOK_SAL = 'orcapro:blocok:v1:';
+var BLOCOK_HASHES = [
+  '0414090e312090f655c6feac87873e7addd3767dd8cb37c87134a54a3b3059ef',
+  '606cee692085607e07856ca12ec08f9525167d82a21fc48e1f67366ba5607e7e'
+];
+function blocokEmailLiberado(email) {
+  var e = String(email || '').trim().toLowerCase();
+  if (!e) return false;
+  var U = (typeof window !== 'undefined' && window.Util) ? window.Util : (typeof Util !== 'undefined' ? Util : null);
+  /* sem o hasher não dá para decidir — e decidir errado aqui tranca cliente
+     pagante fora do que ele comprou. Recusa e deixa a trava da máquina
+     (`orcapro:blocok:owner`) responder, que é o caminho do instalador. */
+  if (!U || !U.sha256hex) return false;
+  try { return BLOCOK_HASHES.indexOf(U.sha256hex(BLOCOK_SAL + e)) >= 0; } catch (_) { return false; }
+}
 
 function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
 
@@ -628,6 +790,54 @@ function montar(host, opts) {
       var m = S.meshPorUid[e.uid]; if (m) m.userData._sisK = k;
     });
   }
+  /* =====================================================================
+   * B3 — OS DOIS CAMPOS QUE A REGRA PRECISA E QUE NAO EXISTIAM
+   *
+   * ⚠ `pavimento` NUNCA foi campo de elemento. O dado mora no MODELO
+   * (`mo.pavimentos[].eids`), e o unico resolvedor era privado, com um
+   * consumidor so. Uma regra "do Terreo" devolveria zero — falso vazio, sem
+   * erro, e o coordenador concluiria que a obra nao tem nada naquele andar.
+   *
+   * ⚠ E `sistema` so nascia quando o usuario ligava "Cores por sistema" uma
+   * vez: a classificacao rodava dentro de `construirSisIdx`, que so roda
+   * naquele modo. Mesmo falso vazio.
+   *
+   * Aqui os dois sao carimbados na carga, de uma vez. `sistema` continua sendo
+   * a CHAVE (e o que `matBase` e a paleta usam); `sistemaNome` e o rotulo
+   * legivel, que e o que uma regra escrita por gente compara.
+   * ===================================================================== */
+  function carimbarConsulta() {
+    if (!S || !S.modelos) return 0;
+    var porUid = {}, n = 0;
+    try {
+      pavLista().forEach(function (p) {
+        for (var u in p.uids) { if (Object.prototype.hasOwnProperty.call(p.uids, u)) porUid[u] = p.nome; }
+      });
+    } catch (_) {}
+    S.modelos.forEach(function (mo) {
+      (mo.elementos || []).forEach(function (e) {
+        e.pavimento = porUid[e.uid] || '';
+        var k = classificaEl(e);
+        e.sistema = k;
+        e.sistemaNome = (SIS_PADRAO[k] && SIS_PADRAO[k].nome) || '';
+        n++;
+      });
+    });
+    return n;
+  }
+  /* os valores que EXISTEM no modelo para um campo — o editor de regra oferece
+     em vez de exigir que o usuario adivinhe a grafia do projetista */
+  function valoresDe(campo) {
+    var c = String(campo || ''), cnt = {};
+    (S.elementos || []).forEach(function (e) {
+      var v = c.indexOf('.') < 0 ? e[c] : ((e[c.split('.')[0]] || {})[c.split('.')[1]]);
+      if (v == null || String(v).trim() === '') return;
+      var s = String(v);
+      cnt[s] = (cnt[s] || 0) + 1;
+    });
+    return Object.keys(cnt).sort().map(function (v) { return { valor: v, n: cnt[v] }; });
+  }
+
   function sistemasPresentes() {
     var cnt = {};
     (S.elementos || []).forEach(function (e) { var k = e.sistema || classificaEl(e); cnt[k] = (cnt[k] || 0) + 1; });
@@ -1011,6 +1221,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   function propsDe(mid, expressID, tipoCache) {
     var moS = modeloDe(mid);
+    /* ⚠ B1: modelo restaurado do cache tambem nao existe no wasm. Ele NAO cai
+       no ramo sintetico (nao foi criado aqui: veio de IFC e tem GlobalId de
+       verdade), e nao pode cair no ramo do wasm. Tudo que a tela mostra ja
+       esta no cache — o unico que falta e a lista completa de propriedades,
+       que o `propsCompletas` trata a parte e declara. */
+    if (moS && moS.doCache) {
+      var elC = null;
+      for (var q4 = 0; q4 < moS.elementos.length; q4++) if (moS.elementos[q4].id === expressID) { elC = moS.elementos[q4]; break; }
+      var cbC = (moS.carimbos && moS.carimbos[expressID]) || {};
+      var qC = (moS.qto && moS.qto[expressID]) || null;
+      var famC = (moS.familias && moS.familias[expressID]) || null;
+      return { id: expressID, mid: mid, uid: mid + ':' + expressID,
+        /* o nome do Revit primeiro; o rotulo da disciplina so se ele faltar */
+        nome: (elC && (elC.nomeIfc || elC.nome)) || '—', tipo: (elC && elC.tipo) || tipoCache || '',
+        globalId: (elC && elC.globalId) || '', tag: (elC && elC.tag) || '',
+        familia: famC ? famC.familia : ((elC && elC.familia) || ''),
+        etapa: cbC.etapa || (elC && elC.etapa) || '', codOrc: cbC.codOrc || (elC && elC.codOrc) || '',
+        fase: cbC.fase || (elC && elC.fase) || '', qto: qC,
+        area: qC && qC.area, comprimento: qC && qC.comprimento };
+    }
     if (moS && moS.sintetico) { // sintético não existe no wasm (GetLine com mid string sondaria o modelo 0 REAL)
       var elS = null; for (var q3 = 0; q3 < moS.elementos.length; q3++) if (moS.elementos[q3].id === expressID) { elS = moS.elementos[q3]; break; }
       var qS = (moS.qto && moS.qto[expressID]) || {};
@@ -1344,6 +1574,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var _fLen = {};
   function fatorLen(mid) {
     if (_fLen[mid] != null) return _fLen[mid];
+    /* ⚠ B1: o fator de unidade do arquivo vem do cache; sondar o WASM com mid
+       string devolveria a unidade de outro arquivo, e a bitola sairia em
+       milimetro onde era metro */
+    var moF = modeloDe(mid);
+    if (semWasm(moF)) { _fLen[mid] = +(moF.fatorLenCache) || 1; return _fLen[mid]; }
     var b = 1;
     try { var x = unidadePrefixoBase(mid, 'LENGTHUNIT'); if (x != null) b = x; } catch (_) {}
     _fLen[mid] = b; return b;
@@ -1513,6 +1748,281 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return _ultimosHits[0] || null;
   }
   S._raycastEm = raycastEm; S._aplicarSnapRef = function (h, r) { return aplicarSnap(h, r); }; S._foraDoClipRef = foraDoClip; // hooks p/ E2E
+
+  /* =====================================================================
+   * B2 — AGREGACAO DE GEOMETRIA (motor puro em js/bimagreg.js)
+   *
+   * MEDIDO no modelo real da RA antes de existir esta funcao: 950 draw calls
+   * para 452 pecas, com mediana de 12 triangulos por chamada. A placa de video
+   * nao faz nada; e tudo custo de chamada.
+   *
+   * ⚠ E O DESENHO QUE EVITA REESCREVER O PRODUTO INTEIRO. Uma malha por peca e
+   * invariante da qual dependem ~140 pontos deste arquivo: clique, trena,
+   * encaixe, isolar, raio-X, cor por disciplina e por sistema, 4D, conflito.
+   * Reescrever os 140 e o caminho que a tabela de riscos marca com
+   * probabilidade ALTA de quebrar justamente a trena e o corte tecnico.
+   *
+   * Em vez disso, as malhas por peca CONTINUAM existindo e continuam sendo a
+   * verdade — elas so param de ser DESENHADAS. Isso e feito por CAMADA, nao por
+   * `visible`, e a diferenca importa:
+   *
+   *   peca (proxy) ....... layers.set(1)  -> a camera (layer 0) nao desenha
+   *   malha mesclada ..... layers.set(0)  -> e o que aparece na tela
+   *   raycaster .......... layers.set(1)  -> o clique so ve as pecas
+   *
+   * Conferido no three r150 vendorizado, nao suposto: a camera ignora a camada
+   * 1; `Box3.setFromObject` NAO olha camada (entao enquadrar, corte e planta
+   * seguem iguais); e o `.visible` de cada peca continua sendo do produto, o
+   * que mantem `cadeiaVisivel` funcionando sem uma linha de mudanca.
+   *
+   * Sobra espelhar duas coisas na malha mesclada: quem esta oculto e de que cor
+   * cada peca esta. Isso e feito uma vez por quadro, por ASSINATURA — e nao
+   * tocando nos 48 pontos que escrevem `.visible` e nos 19 que trocam
+   * `.material`. Um ponto esquecido ali seria uma peca que some da tela sem
+   * motivo, e o esquecimento nao teria como ser notado.
+   * ===================================================================== */
+  /* ⚠ LIGADA POR PADRAO, E DESLIGAVEL DE UM JEITO QUE SOBREVIVE AO RELOAD.
+   * A tabela de riscos manda manter o caminho antigo alcancavel, e uma bandeira
+   * so em memoria nao serve de rollback: se a agregacao estragasse a cena, o
+   * primeiro reflexo do usuario e recarregar a pagina — e ela voltaria ligada.
+   * Gravada em preferencia, `BIM.agregacao(false)` resolve de vez, e a linha
+   * cabe num recado de suporte. */
+  var AGREG = { on: true };
+  try { AGREG.on = localStorage.getItem('orcapro:bim:agregar') !== '0'; } catch (_) {}
+  /* o clique passa a olhar so a camada das pecas desde a montagem — sem isto,
+     abrir um modelo com a bandeira ja ligada deixaria o raio sem alvo */
+  if (AGREG.on) ray.layers.set(1);
+
+  function _corDoMaterial(mat) {
+    if (!mat) return [1, 1, 1, 1];
+    var c = mat.color || { r: 1, g: 1, b: 1 };
+    var a = (mat.transparent && typeof mat.opacity === 'number') ? mat.opacity : 1;
+    return [c.r, c.g, c.b, a];
+  }
+
+  function agregarModelo(mo) {
+    if (!AGREG.on || !mo || mo._agreg || typeof window === 'undefined' || !window.BimAgreg) return false;
+    var geos = {}, insts = [];
+    for (var i = 0; i < mo.grupo.children.length; i++) {
+      var m = mo.grupo.children[i];
+      if (!m.isMesh || m.userData.expressID == null || !m.geometry || !m.geometry.index) continue;
+      var pa = m.geometry.attributes.position, na = m.geometry.attributes.normal;
+      if (!pa || !na) continue;
+      var k = m.uuid;
+      geos[k] = { pos: pa.array, nor: na.array, idx: m.geometry.index.array };
+      /* a matriz do OBJETO (o grupo do modelo e identidade): a mesma que a
+         abertura aplicou com applyMatrix4 */
+      insts.push({ e: m.userData.expressID, g: k, m: m.matrix.elements, cor: _corDoMaterial(m.userData.matOrig || m.material), ref: m });
+    }
+    if (!insts.length) return false;
+
+    var plano = BimAgreg.planejar({ instancias: insts, geometrias: geos });
+    /* ⚠ TODOS OS MODELOS DA OBRA USAM A MESMA ORIGEM. Origens diferentes por
+       modelo desalinhariam a federacao — que e o D7 acontecendo por dentro. */
+    if (!S._origemAgreg) S._origemAgreg = BimAgreg.origemDe(plano);
+    var origem = S._origemAgreg;
+
+    var grupo = new THREE.Group();
+    grupo.userData.agregadoDe = mo.mid;
+    var partes = [];
+    for (var b = 0; b < plano.buckets.length; b++) {
+      var bucket = plano.buckets[b];
+      var built = BimAgreg.construir(bucket, geos, origem);
+      var bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.BufferAttribute(built.pos, 3));
+      bg.setAttribute('normal', new THREE.BufferAttribute(built.nor, 3));
+      /* RGBA: o alfa por vertice e o que deixa raio-X e transparencia por peca
+         continuarem funcionando sem material por peca */
+      var cores = new Float32Array(built.pos.length / 3 * 4);
+      bg.setAttribute('color', new THREE.BufferAttribute(cores, 4));
+      bg.setIndex(new THREE.BufferAttribute(built.idx, 1));
+      var mat = new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, metalness: .05, roughness: .85, side: THREE.DoubleSide, depthWrite: true });
+      var malha = new THREE.Mesh(bg, mat);
+      malha.position.set(origem[0], origem[1], origem[2]);
+      malha.layers.set(0);
+      malha.userData.agregado = true;
+      malha.frustumCulled = false;   /* a caixa cobre o modelo inteiro; culling aqui so custa */
+      grupo.add(malha);
+      partes.push({ malha: malha, faixas: built.faixas, idxCheio: built.idx, cores: cores, bucket: bucket });
+    }
+    /* ⚠ FORA DO modelRoot, DE PROPOSITO — e isto foi aprendido quebrando.
+       Onze lugares deste arquivo varrem `modelRoot.children` e tratam os filhos
+       de cada grupo como PECAS: isolar pavimento, contar visiveis, raio-X. Com
+       o grupo mesclado ali dentro, `todasMalhas` apagava as malhas mescladas
+       junto (elas nao tem expressID, entao a conta dava "nao pertence") e
+       isolar um pavimento escondia o modelo inteiro. Medido: 2 triangulos na
+       tela onde o caminho antigo mostrava 394.
+       Pendurar no `scene` e espelhar a transformacao do modelRoot resolve os
+       onze de uma vez, e o proximo varredor que alguem escrever ja nasce
+       imune. */
+    scene.add(grupo);
+    mo._agreg = { grupo: grupo, partes: partes, origem: origem, assinatura: null };
+
+    /* as pecas saem da camera, mas continuam no raio e no bbox */
+    for (var q = 0; q < mo.grupo.children.length; q++) if (mo.grupo.children[q].isMesh) mo.grupo.children[q].layers.set(1);
+    _reaplicarAparencia(mo._agreg);   /* pinta ja: chamar o sync daqui recursaria */
+    return true;
+  }
+
+  function desagregarModelo(mo) {
+    if (!mo || !mo._agreg) return;
+    try {
+      mo._agreg.partes.forEach(function (p) {
+        if (p.malha.geometry) p.malha.geometry.dispose();
+        if (p.malha.material) p.malha.material.dispose();
+      });
+      scene.remove(mo._agreg.grupo);
+    } catch (_) {}
+    mo._agreg = null;
+    for (var q = 0; q < mo.grupo.children.length; q++) if (mo.grupo.children[q].isMesh) mo.grupo.children[q].layers.set(0);
+  }
+
+  /* ⚠ ESPELHAMENTO POR ASSINATURA, uma vez por quadro. A alternativa era marcar
+     "sujo" nos 48 + 19 pontos que mexem em visibilidade e material — e o ponto
+     esquecido seria uma peca que some ou fica da cor errada, sem erro nenhum.
+     A assinatura le dois campos por peca; num modelo de 40 mil pecas isso e
+     algumas decimas de milissegundo, pago uma vez por quadro. */
+  /* ⚠ MISTURA DE OPACO COM TRANSPARENTE NO MESMO MATERIAL — o limite honesto
+   * da agregacao, e ele foi MEDIDO, nao previsto. O raio-X deixa a peca alvo
+   * OPACA e o resto FANTASMA. Numa malha mesclada ha um material so: ligar
+   * `transparent` nele tira o depth-write de todo o conjunto, inclusive da peca
+   * em destaque, e o resultado sai diferente — 4,18% dos pixels, medido no
+   * modelo real da RA contra o caminho antigo.
+   *
+   * Transparencia UNIFORME (o controle do painel de modelos) nao tem esse
+   * problema: todo mundo transparente ordena igual. O que quebra e a MISTURA.
+   *
+   * Entao, enquanto ela existir, aquele modelo volta a desenhar peca a peca —
+   * que e o rollback que a tabela de riscos prescreve, aplicado sozinho e so
+   * onde faz falta. O raio-X e modo de inspecao: paga as chamadas enquanto
+   * esta ligado e devolve o ganho ao sair. */
+  function _lerEstadoDoModelo(mo) {
+    var filhos = mo.grupo.children, sig = 0, porMat = {}, misto = false;
+    for (var k = 0; k < filhos.length; k++) {
+      var m = filhos[k];
+      if (!m.isMesh) continue;
+      sig = (sig * 33 + (m.visible === false ? 1 : 2)) | 0;
+      sig = (sig * 33 + (m.material ? m.material.id : 0)) | 0;
+      if (m.visible === false || misto) continue;
+      /* ⚠ A MISTURA QUE IMPORTA E DENTRO DE UM MESMO MATERIAL, nao no modelo.
+         Quase todo IFC tem vidro junto com concreto — isso e NORMAL e cada um
+         vira um bucket proprio, uniforme. O que a malha mesclada nao consegue
+         representar e o mesmo material com umas pecas opacas e outras
+         fantasma, que e exatamente o que o raio-X faz. A primeira versao desta
+         regra olhava o modelo inteiro e suspendia a agregacao em qualquer
+         arquivo com vidro — quer dizer, quase sempre. */
+      var base = m.userData.matOrig ? m.userData.matOrig.id : 0;
+      var op = (m.material && m.material.transparent) ? m.material.opacity : 1;
+      if (porMat[base] === undefined) porMat[base] = op;
+      else if (Math.abs(porMat[base] - op) > 0.001) misto = true;
+    }
+    return { sig: sig, misto: misto };
+  }
+
+  function sincronizarAgregado() {
+    if (!AGREG.on || !S || !S.modelos) return;
+    for (var i = 0; i < S.modelos.length; i++) {
+      var mo = S.modelos[i];
+      var est = _lerEstadoDoModelo(mo);
+
+      if (est.misto) {
+        /* suspende: enquanto durar a mistura, este modelo desenha peca a peca */
+        if (mo._agreg) { desagregarModelo(mo); mo._agregSuspenso = 1; }
+        continue;
+      }
+      if (mo._agregSuspenso) { mo._agregSuspenso = 0; agregarModelo(mo); }
+
+      var ag = mo._agreg;
+      if (!ag) continue;
+      /* segue o modelRoot: o imersivo o move e escala, e o corte tecnico
+         depende de a malha estar onde a peca esta */
+      ag.grupo.position.copy(modelRoot.position);
+      ag.grupo.quaternion.copy(modelRoot.quaternion);
+      ag.grupo.scale.copy(modelRoot.scale);
+      ag.grupo.visible = modelRoot.visible !== false && mo.grupo.visible !== false;
+      if (est.sig === ag.assinatura) continue;
+      ag.assinatura = est.sig;
+      _reaplicarAparencia(ag);
+    }
+  }
+
+  /* ⚠ A PECA EM DESTAQUE E DESENHADA POR ELA MESMA. Os materiais de realce do
+   * produto (selecao, 4D em andamento, conflito) tem `emissive` — eles BRILHAM.
+   * Cor por vertice nao expressa emissao, e aproximar somando a cor deixaria o
+   * destaque mais apagado do que o usuario conhece: medido, 0,74% dos pixels de
+   * diferenca, todos em cima da peca selecionada.
+   * Em vez de aproximar, a peca volta para a camada da camera e desenha com o
+   * material de verdade, e o mesclado a omite. Custa uma chamada por peca em
+   * destaque — normalmente uma — e o realce sai exato. */
+  function _ehRealce(mat) {
+    return !!(mat && mat.emissive && (mat.emissive.r > 0.002 || mat.emissive.g > 0.002 || mat.emissive.b > 0.002));
+  }
+
+  function _reaplicarAparencia(ag) {
+    for (var p = 0; p < ag.partes.length; p++) {
+      var parte = ag.partes[p], fx = parte.faixas, ocultos = {};
+      var algumTransp = false;
+      for (var f = 0; f < fx.length; f++) {
+        var faixa = fx[f], ref = faixa.ref;
+        if (!ref) continue;
+        if (_ehRealce(ref.material)) {
+          /* sai do mesclado e volta a ser desenhada por si */
+          ocultos[faixa.e] = 1;
+          if (ref.visible !== false) ref.layers.set(0); else ref.layers.set(1);
+          continue;
+        }
+        ref.layers.set(1);
+        if (ref.visible === false) { ocultos[faixa.e] = 1; continue; }
+        var c = _corDoMaterial(ref.material);
+        if (c[3] < 1) algumTransp = true;
+        var ini = faixa.iniVert * 4, fim = ini + faixa.nVert * 4;
+        for (var v = ini; v < fim; v += 4) { parte.cores[v] = c[0]; parte.cores[v + 1] = c[1]; parte.cores[v + 2] = c[2]; parte.cores[v + 3] = c[3]; }
+      }
+      parte.malha.geometry.attributes.color.needsUpdate = true;
+      /* ⚠ so transparente quando ha o que ser transparente: material com
+         transparent ligado sempre paga ordenacao e perde depth-write */
+      if (parte.malha.material.transparent !== algumTransp) {
+        parte.malha.material.transparent = algumTransp;
+        parte.malha.material.depthWrite = !algumTransp;
+        parte.malha.material.needsUpdate = true;
+      }
+      var r = BimAgreg.indicesVisiveis(fx, parte.idxCheio, ocultos, parte.idxVis);
+      parte.idxVis = r.idx;
+      var attr = parte.malha.geometry.index;
+      if (attr.array !== r.idx) parte.malha.geometry.setIndex(new THREE.BufferAttribute(r.idx, 1));
+      parte.malha.geometry.index.needsUpdate = true;
+      parte.malha.geometry.setDrawRange(0, r.nIdx);
+    }
+  }
+
+  function ligarAgregacao(on) {
+    var novo = !!on;
+    if (novo === AGREG.on) return AGREG.on;
+    AGREG.on = novo;
+    try { localStorage.setItem('orcapro:bim:agregar', novo ? '1' : '0'); } catch (_) {}
+    if (novo) {
+      /* o clique passa a olhar SO a camada das pecas */
+      ray.layers.set(1);
+      S.modelos.forEach(function (mo) { agregarModelo(mo); });
+    } else {
+      ray.layers.set(0); ray.layers.enable(1);
+      S._origemAgreg = null;
+      S.modelos.forEach(function (mo) { desagregarModelo(mo); });
+    }
+    return AGREG.on;
+  }
+  S._agregar = agregarModelo; S._desagregar = desagregarModelo; S._ligarAgregacao = ligarAgregacao;
+  S._agregEstado = function () {
+    if (!AGREG.on) return { on: false };
+    var malhas = 0, tri = 0;
+    S.modelos.forEach(function (mo) {
+      if (!mo._agreg) return;
+      mo._agreg.partes.forEach(function (p) { malhas++; tri += p.idxCheio.length / 3; });
+    });
+    return { on: true, malhasMescladas: malhas, triangulos: tri, origem: S._origemAgreg };
+  };
+  /* o espelhamento anda com o quadro — e o mesmo gancho que a lupa e as cotas usam */
+  S._tickExtra.push(function () { sincronizarAgregado(); });
   /* ⚠ `cota.on` PRECISA estar aqui. O `pointerup` sai cedo quando nenhuma
      ferramenta consome clique (a porteira logo abaixo), e sem esta linha o
      botao Cotar ficaria MUDO: sem raycast, sem erro, sem log. */
@@ -2397,7 +2907,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       var emLocal = (A && A.usuario && A.usuario()) ? norm(A.usuario().email) : '';           // login local
       var N = (typeof window !== 'undefined' && window.Nuvem) ? window.Nuvem : null;
       var emNuvem = (N && N.auth && N.auth.currentUser) ? norm(N.auth.currentUser.email) : '';  // login da nuvem
-      return BLOCOK_EMAILS.indexOf(emLocal) >= 0 || (emNuvem && BLOCOK_EMAILS.indexOf(emNuvem) >= 0);
+      return blocokEmailLiberado(emLocal) || (!!emNuvem && blocokEmailLiberado(emNuvem));
     } catch (_) { return false; }
   }
   var blocokCfg = { espForcada: 'auto', pesoPorEsp: { 10: 46, 13: 46, 15: 46, 20: 46 }, insCfg: null, moCfg: null, logCfg: null, descontarVaos: true };
@@ -5081,6 +5591,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       modelo.nEl++;
     });
     S.modelos.push(modelo);
+    recarimbarIdentidade();   /* B0: 2D->3D e sintetico, GlobalId proprio */
+    agregarModelo(modelo);    /* B2 */
+    carimbarConsulta();     /* B3 */
     // AABB mundo por elemento (clash/QTO)
     try {
       modelRoot.updateMatrixWorld(true);
@@ -5369,6 +5882,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         });
       } catch (_) {}
       S.modelos.push(mo);
+      recarimbarIdentidade();   /* B0: criados no editor, GlobalId proprio */
+      agregarModelo(mo);        /* B2 */
+      carimbarConsulta();     /* B3 */
       edit.modelo = mo;
     }
     st.anotacoes.forEach(function (a) {
@@ -5769,6 +6285,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function lerTopologiaRede(mid) {
     var mo = modeloDe(mid);
     if (mo && mo.topologia) return mo.topologia;
+    /* ⚠ B1: sem isto um modelo restaurado varreria o WASM com mid string e
+       leria a rede de OUTRO arquivo. Topologia vazia e a resposta honesta. */
+    if (semWasm(mo)) return { portaDe: {}, ligacao: {}, portasDe: {}, dirPorta: {}, nPortas: 0, nLigacoes: 0 };
     var topo = { portaDe: {}, ligacao: {}, portasDe: {}, dirPorta: {}, nPortas: 0, nLigacoes: 0 };
     try {
       var re1 = S.api.GetLineIDsWithType(mid, IFC_RELCONNECTSPORTTOELEMENT), n1 = re1.size();
@@ -5821,6 +6340,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    *   o caminho de volta é justamente pela representação do elemento. Só roda
    *   para o que vai entrar na lista. */
   function lerBitolaMm(mid, eid, fLen) {
+    /* ⚠ B1: o cache traz a bitola pronta; o modelo sintetico nao tem nenhuma.
+       Os dois precisam sair antes do GetLine (ver `semWasm`). */
+    var moB = modeloDe(mid);
+    if (semWasm(moB)) return (moB.bitolas && moB.bitolas[eid]) || 0;
     try {
       var el = S.api.GetLine(mid, eid, false);
       if (!el || !el.Representation || el.Representation.value == null) return 0;
@@ -5989,6 +6512,30 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function propsCompletas(mid, expressID) {
     var grupos = [];
     var mo = modeloDe(mid);
+    /* ⚠ B1: o cache guarda o que os paineis do produto consomem (etapa,
+       quantitativo, familia, sistema, pavimento) e NAO guarda o despejo
+       completo de psets do arquivo — sao dezenas de propriedades por peca,
+       vezes dezenas de milhares de pecas. Aqui isso e DITO, em vez de a lista
+       aparecer curta e o usuario achar que o projetista nao preencheu. */
+    if (mo && mo.doCache) {
+      var elK = (mo.elementos || []).filter(function (e) { return e.id === expressID; })[0];
+      var qK = (mo.qto && mo.qto[expressID]) || null;
+      var pr = [];
+      if (elK && elK.tipo) pr.push({ n: 'Tipo IFC', v: String(elK.tipo) });
+      if (elK && elK.globalId) pr.push({ n: 'GlobalId', v: String(elK.globalId) });
+      if (elK && elK.familia) pr.push({ n: 'Família/tipo', v: String(elK.familia) });
+      if (elK && elK.tag) pr.push({ n: 'Tag', v: String(elK.tag) });
+      if (elK && elK.etapa) pr.push({ n: 'Etapa (OrçaPRO)', v: String(elK.etapa) });
+      if (elK && elK.codOrc) pr.push({ n: 'Código do orçamento', v: String(elK.codOrc) });
+      if (pr.length) grupos.push({ pset: 'Do modelo guardado', origem: 'instância', props: pr });
+      if (qK) grupos.push({ pset: 'Quantitativos', origem: 'instância', props: [
+        { n: 'Comprimento', v: String(qK.comprimento == null ? '—' : qK.comprimento) },
+        { n: 'Área', v: String(qK.area == null ? '—' : qK.area) },
+        { n: 'Volume', v: String(qK.volume == null ? '—' : qK.volume) }] });
+      grupos.push({ pset: 'Lista completa de propriedades', origem: 'instância', props: [
+        { n: 'Não está guardada', v: 'Abra o arquivo .ifc de novo para ver todas as propriedades desta peça.' }] });
+      return grupos;
+    }
     if (mo && mo.sintetico) { // criado no OrçaPRO: propriedades do editor
       var elS = (mo.elementos || []).filter(function (e) { return e.id === expressID; })[0];
       if (elS && elS.qto) grupos.push({ pset: "Dimensões (criado no OrçaPRO)", origem: "instância", props: [
@@ -6210,12 +6757,262 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return max === hid ? 'hidraulica' : (max === est ? 'estrutural' : 'arquitetura');
   }
   function modeloDe(mid) { for (var i = 0; i < S.modelos.length; i++) if (S.modelos[i].mid === mid) return S.modelos[i]; return null; }
-  function publicos() { return S.modelos.map(function (mo) { return { mid: mo.mid, nome: mo.nome, disciplina: mo.disciplina, alpha: mo.alpha, visivel: mo.visivel, n: mo.elementos.length }; }); }
+  function publicos() { return S.modelos.map(function (mo) { return { mid: mo.mid, nome: mo.nome, disciplina: mo.disciplina, alpha: mo.alpha, visivel: mo.visivel, n: mo.elementos.length, modeloId: mo.modeloId || '', arquivoId: mo.versaoId || '', doCache: !!mo.doCache, sintetico: !!mo.sintetico, temColeta: !!mo._coleta, semCache: mo._semCache || '', exemplo: !!mo.exemplo }; }); }
   function notifyModelos() { if (S._reaplicarEstilo) S._reaplicarEstilo(); if (S._reaplicarSistema) S._reaplicarSistema(); if (S.opts && S.opts.onModelos) { try { S.opts.onModelos(publicos()); } catch (_) {} } } // estilo desenho E cor-por-sistema pegam modelo que entrar depois
   S._publicos = publicos;
 
+  /* =====================================================================
+   * B3 — ISOLAR E PINTAR UM CONJUNTO
+   *
+   * O motor (js/bimset.js) devolve CHAVES do B0; a cena entende `uid`. Estas
+   * três funções são a ponte, e ficam aqui porque dependem da cena — a regra
+   * em si não depende de nada disto e por isso mora no motor puro.
+   * ===================================================================== */
+  var _corMatCache = {};
+  function corMat(hex, alpha) {
+    var a = (alpha == null ? 1 : alpha);
+    var k = hex + '_' + a.toFixed(2);
+    if (!_corMatCache[k]) {
+      _corMatCache[k] = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(hex), metalness: .05, roughness: .85, side: THREE.DoubleSide,
+        transparent: a < 1, opacity: a, depthWrite: a >= 1
+      });
+    }
+    return _corMatCache[k];
+  }
+
+  function uidsDeChaves(chaves) {
+    var alvo = {}, out = [];
+    (chaves || []).forEach(function (c) { alvo[c] = 1; });
+    (S.elementos || []).forEach(function (e) { if (e.chave && alvo[e.chave]) out.push(e.uid); });
+    return out;
+  }
+
+  /* deixa visível só o que está no conjunto. Usa o mesmo caminho do isolar por
+     seleção, então o botão ↺ Restaurar tudo desfaz como o usuário já espera. */
+  function isolarChaves(chaves) {
+    var alvo = {}, n = 0;
+    uidsDeChaves(chaves).forEach(function (u) { alvo[u] = 1; });
+    todasMalhas(function (m) {
+      if (m.userData.expressID == null) return;
+      var vis = !!alvo[m.userData.mid + ':' + m.userData.expressID] && !ehFuturo4d(m) && !ehRemovidoEd(m);
+      m.visible = vis; if (vis) n++;
+    });
+    pav.isolado = null; pav.manual = true; pavRender();
+    return n;
+  }
+
+  /* pinta o conjunto. `mapa` é { chave: '#rrggbb' } — vem do perfil de cores do
+     motor, onde a PRIMEIRA regra que casa manda. */
+  function pintarChaves(mapa) {
+    var porUid = {}, n = 0;
+    var alvo = mapa || {};
+    (S.elementos || []).forEach(function (e) {
+      if (e.chave && alvo[e.chave]) { porUid[e.uid] = alvo[e.chave]; n++; }
+    });
+    S._pintura = n ? porUid : null;
+    S.modelos.forEach(function (mo) { refreshModelo(mo); });
+    return n;
+  }
+  function limparPintura() { S._pintura = null; S.modelos.forEach(function (mo) { refreshModelo(mo); }); }
+  S._isolarChaves = isolarChaves; S._pintarChaves = pintarChaves; S._limparPintura = limparPintura;
+  S._uidsDeChaves = uidsDeChaves;
+
+  /* =====================================================================
+   * B6 — APLICAR A SIMULACAO 4D DIRIGIDA POR TAREFAS
+   *
+   * O motor (js/bimtarefa.js) decide QUEM esta em que estado numa data; aqui
+   * fica so o que a cena sabe fazer: esconder, pintar com opacidade e
+   * contornar.
+   *
+   * ⚠ O CONTORNO DO ATRASO VAI NUMA MALHA SO. A tentacao e criar um
+   * LineSegments por peca atrasada — e foi exatamente isso que o B2 mediu
+   * custando 1.793 draw calls no caminho da planta. Aqui as arestas de todas
+   * as pecas atrasadas sao mescladas num unico BufferGeometry: um objeto,
+   * uma chamada de desenho, independente de haver 3 ou 300 atrasos.
+   *
+   * ⚠ E ELE NAO PISCA. O atraso precisa aparecer numa FOTO que vai para o
+   * relatorio; cor que pisca sai ora de um jeito ora de outro e o engenheiro
+   * nao consegue mandar a imagem para o cliente.
+   * ===================================================================== */
+  var _lnAtraso = null, _lnAtrasoMat = null;
+  var MAX_CONTORNO = 4000;   /* pecas; acima disso so a cor, e a tela avisa */
+
+  function limparContorno4D() {
+    if (_lnAtraso && _lnAtraso.parent) _lnAtraso.parent.remove(_lnAtraso);
+    if (_lnAtraso && _lnAtraso.geometry) { try { _lnAtraso.geometry.dispose(); } catch (e) {} }
+    _lnAtraso = null;
+  }
+
+  function aplicar4DTarefas(sim) {
+    if (!S || !sim) return { ok: false, erro: 'simulação vazia' };
+    /* o 4D manda na visibilidade inteira: o isolamento por pavimento deixa de
+       valer, como ja acontece no aplicarEstado do 4D automatico */
+    if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
+
+    var fora = {};
+    uidsDeChaves(sim.ocultos || []).forEach(function (u) { fora[u] = 1; });
+
+    var porChave = {}, n = 0;
+    Object.keys(sim.pinturas || {}).forEach(function (k) { porChave[k] = sim.pinturas[k]; n++; });
+    var porUid = {};
+    (S.elementos || []).forEach(function (e) { if (e.chave && porChave[e.chave]) porUid[e.uid] = porChave[e.chave]; });
+    S._pintura = n ? porUid : null;
+    S._fut4d = fora;   /* o 🏢/👁 compoe com isto e nao ressuscita o que ainda nao existe */
+
+    cadaMalha(function (m) {
+      var id = m.userData.expressID; if (id == null) return;
+      var uid = m.userData.mid + ':' + id;
+      if (fora[uid] || ehRemovidoEd(m)) { m.visible = false; return; }
+      m.visible = true;
+      if (m === S.selected) return;
+      m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material);
+    });
+
+    /* ---- o contorno do atraso, numa malha so ---- */
+    limparContorno4D();
+    var alvos = uidsDeChaves(Object.keys(sim.contornos || {}));
+    var res = { ok: true, ocultos: Object.keys(fora).length, pintados: n, contornados: 0, contornoCortado: false };
+    if (!alvos.length) return res;
+    var mapaUid = {};
+    alvos.forEach(function (u) { mapaUid[u] = 1; });
+    var pos = [], usados = 0, cortou = false;
+    var _v = new THREE.Vector3();
+    cadaMalha(function (m) {
+      if (m.userData.expressID == null) return;
+      if (!mapaUid[m.userData.mid + ':' + m.userData.expressID]) return;
+      if (usados >= MAX_CONTORNO) { cortou = true; return; }
+      var g = m.geometry;
+      if (!g || !g.attributes || !g.attributes.position) return;
+      /* malha densa fica sem contorno: o EdgesGeometry dela sozinho trava a aba
+         (mesma guarda que o contorno da selecao ja usa desde a v1.1.89) */
+      if (g.attributes.position.count > 60000) return;
+      /* ⚠ O CACHE DE ARESTAS JÁ EXISTE — use-o. Construir um EdgesGeometry por
+         peça a cada quadro custava ~0,29 ms cada; num arrasto com 350 peças
+         atrasadas são 100 ms por evento, e a régua arrastava atrás do dedo.
+         A geometria não muda enquanto o modelo está aberto, e `arestasDe`
+         guarda por geometria num WeakMap, em espaço LOCAL — que é o que este
+         laço consome, porque aplica a `matrixWorld` logo em seguida. */
+      var arr;
+      try { arr = arestasDe(g); } catch (e) { return; }
+      if (!arr || !arr.length) return;
+      var mw = m.matrixWorld;
+      for (var i = 0; i < arr.length; i += 3) {
+        _v.set(arr[i], arr[i + 1], arr[i + 2]).applyMatrix4(mw);
+        pos.push(_v.x, _v.y, _v.z);
+      }
+      usados++;
+    });
+    if (pos.length) {
+      var bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      var cor = sim.contornos[Object.keys(sim.contornos)[0]] || '#ea580c';
+      if (!_lnAtrasoMat) _lnAtrasoMat = new THREE.LineBasicMaterial({ color: new THREE.Color(cor), depthTest: true, transparent: false });
+      else _lnAtrasoMat.color = new THREE.Color(cor);
+      _lnAtraso = new THREE.LineSegments(bg, _lnAtrasoMat);
+      _lnAtraso.renderOrder = 998;
+      scene.add(_lnAtraso);
+    }
+    res.contornados = usados;
+    res.contornoCortado = cortou;
+    return res;
+  }
+
+  function limpar4DTarefas() {
+    limparContorno4D();
+    S._pintura = null; S._fut4d = null; S._and4d = null;
+    cadaMalha(function (m) { m.visible = !ehRemovidoEd(m); if (m !== S.selected) m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); });
+  }
+  S._aplicar4DTarefas = aplicar4DTarefas; S._limpar4DTarefas = limpar4DTarefas;
+
+  /* =====================================================================
+   * B4 — LER E APLICAR UM PONTO DE VISTA
+   *
+   * O motor (js/bimvista.js) decide o que a vista E; aqui ficam as duas pontas
+   * que so a cena sabe fazer: onde a camera esta agora, e como voltar para la.
+   * ===================================================================== */
+  function cameraAtual() {
+    var alvo = (orbit && orbit.target) ? orbit.target : { x: 0, y: 0, z: 0 };
+    return {
+      pos: [camera.position.x, camera.position.y, camera.position.z],
+      alvo: [alvo.x, alvo.y, alvo.z],
+      up: [camera.up.x, camera.up.y, camera.up.z],
+      fov: camera.fov, orto: false
+    };
+  }
+
+  /* ⚠ APLICAR NA ORDEM CERTA: camera, depois visibilidade, depois cor. Aplicar
+   * a visibilidade antes da camera faria o `enquadrar` interno de alguns
+   * caminhos re-mirar o que sobrou, e a vista salva abriria noutro angulo — o
+   * oposto do que um ponto de vista promete. */
+  function aplicarVista(v, opts) {
+    if (!v) return { ok: false, erro: 'ponto de vista vazio' };
+    opts = opts || {};
+    var res = { ok: true, naoLocalizadas: [] };
+    try {
+      var c = v.camera;
+      if (c && c.pos) {
+        camera.position.set(c.pos[0], c.pos[1], c.pos[2]);
+        if (c.up) camera.up.set(c.up[0], c.up[1], c.up[2]);
+        if (c.fov) { camera.fov = c.fov; camera.updateProjectionMatrix(); }
+        if (orbit && orbit.target && c.alvo) { orbit.target.set(c.alvo[0], c.alvo[1], c.alvo[2]); orbit.update(); }
+        camera.lookAt(c.alvo[0], c.alvo[1], c.alvo[2]);
+      }
+      var r = (typeof window !== 'undefined' && window.BimVista) ? window.BimVista.resolver(v, S.elementos || []) : null;
+      if (r) {
+        res.naoLocalizadas = r.naoLocalizadas;
+        if (r.isolados.length) isolarChaves(r.isolados);
+        else if (r.ocultos.length) {
+          var fora = {};
+          uidsDeChaves(r.ocultos).forEach(function (u) { fora[u] = 1; });
+          todasMalhas(function (m) {
+            if (m.userData.expressID == null) return;
+            if (fora[m.userData.mid + ':' + m.userData.expressID]) m.visible = false;
+          });
+          pav.isolado = null; pav.manual = true; pavRender();
+        }
+        if (r.aparencias.length) {
+          var mapa = {};
+          r.aparencias.forEach(function (a) {
+            function h(x) { var t = Math.round(Math.max(0, Math.min(1, x)) * 255).toString(16); return t.length < 2 ? '0' + t : t; }
+            mapa[a.chave] = '#' + h(a.cor[0]) + h(a.cor[1]) + h(a.cor[2]);
+          });
+          pintarChaves(mapa);
+        }
+      }
+    } catch (e) { return { ok: false, erro: String(e && e.message || e) }; }
+    return res;
+  }
+  S._cameraAtual = cameraAtual; S._aplicarVista = aplicarVista;
+
   // material corrente de um mesh respeitando a TRANSPARÊNCIA do modelo dele
   function matBase(m) {
+    /* ⚠ B3 — A COR DO CONJUNTO ENTRA AQUI, e não num `m.material = …` solto.
+     * `refreshModelo` reescreve o material de toda malha do modelo a cada troca
+     * de transparência, disciplina ou estilo. Pintura aplicada por fora seria
+     * apagada pelo primeiro ajuste que o usuário fizesse, sem nada na tela
+     * explicando por quê. Entrando na aparência-base, ela sobrevive — e vale de
+     * uma vez no 3D, na Planta e no imersivo, como a cor por sistema.
+     * ⚠ E o material NÃO tem `emissive`: com o B2 ligado, peça com emissão sai
+     * do desenho mesclado e vira chamada própria — pintar um conjunto de 600
+     * peças custaria 600 chamadas. */
+    if (S._pintura) {
+      var _cp = S._pintura[m.userData.mid + ':' + m.userData.expressID];
+      if (_cp) {
+        var _moP = modeloDe(m.userData.mid);
+        /* ⚠ A PINTURA PASSOU A TER DOIS FORMATOS, e o antigo continua valendo.
+           O B3 (conjuntos) grava uma string de cor; o B6 (4D) precisa de cor E
+           opacidade — "em execucao" e translucido de proposito, para o
+           engenheiro ver o que esta atras. Trocar o formato quebraria o B3,
+           que ja esta no ar; aceitar os dois nao quebra nada. */
+        if (typeof _cp === 'object' && _cp) {
+          var _aM = (_moP ? _moP.alpha : 1);
+          var _aP = (_cp.opacidade == null ? 1 : _cp.opacidade);
+          return corMat(_cp.cor, Math.min(_aM, _aP));
+        }
+        return corMat(_cp, _moP ? _moP.alpha : 1);
+      }
+    }
     // v1.1.96 — modo "colorir por sistema" ligado: a aparência-base vira a COR DO SISTEMA
     // hidrossanitário (isto faz a cor valer no 3D, na Planta e no imersivo de uma vez).
     if (sisColor.on) { var _moS = modeloDe(m.userData.mid); return sisMat(m.userData._sisK || 'outros', _moS ? _moS.alpha : 1); }
@@ -6273,6 +7070,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function removerModelo(mid) {
     var mo = modeloDe(mid); if (!mo) return;
+    desagregarModelo(mo);     /* B2: as malhas mescladas saem junto */
     /* o indice de cotas guarda uid e ancora deste modelo: invalida e apaga o
        que estiver na tela, senao sobra cota pendurada no vazio */
     if (S._setCota && S._cotaEstado && S._cotaEstado().on) S._setCota(false);
@@ -6305,15 +7103,31 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     /* as cotas da rede vao junto: elas apontam para uid de modelo que esta
        saindo, e o indice ficaria com anconra de coisa que nao existe mais */
     if (S._setCota) S._setCota(false);
+    /* ⚠ o 🗑 tem de tirar os modelos da OBRA, nao so da cena. Sem este aviso,
+       o usuario limpava tudo para comecar do zero, saia da aba, voltava — e a
+       restauracao devolvia exatamente os modelos que ele acabou de remover. */
+    var indoEmbora = S.modelos.map(function (mo) { return { mid: mo.mid, modeloId: mo.modeloId || '', arquivoId: mo.versaoId || '', sintetico: !!mo.sintetico }; });
     S.modelos.slice().forEach(function (mo) { removerModelo(mo.mid); });
+    if (S.opts && S.opts.onModelosRemovidos) { try { S.opts.onModelosRemovidos(indoEmbora); } catch (_) {} }
     if (S._editReset) S._editReset(); // 🗑 limpa TAMBÉM as edições (anotações/removidos sem modelo 'edit')
     S.carimbos = {}; S.qto = {}; S._fut4d = null; S._remEd = null;
+    /* ⚠ O CONTORNO DO ATRASO MORA EM `scene`, NÃO EM `modelRoot` — tirar os
+       modelos deixava um esqueleto laranja pairando numa cena vazia. E a
+       pintura do 4D fica no `_pintura`, que o `matBase` consulta antes de tudo:
+       sem zerar, o próximo modelo carregado nasceria com a cor do cronograma
+       do modelo anterior. */
+    try { limparContorno4D(); } catch (_c4) {}
+    S._pintura = null; S._and4d = null;
     pav.isolado = null; pav.manual = false; pavRender();
   }
   S._setTransparencia = setTransparencia; S._setVisivel = setVisivel; S._setDisciplina = setDisciplina;
+  /* ⚠ AQUI, e nao onde as funcoes sao declaradas: `S` so passa a existir
+     algumas centenas de linhas depois delas, e atribuir antes estoura o
+     `montar` inteiro — a aba BIM nao abre. */
+  S._carimbarConsulta = carimbarConsulta; S._valoresDe = valoresDe;   /* B3 */
   S._removerModelo = removerModelo; S._limparTudo = limparTudo;
 
-  async function carregarIFC(arrayBuffer, nome, disc) {
+  async function carregarIFC(arrayBuffer, nome, disc, ehExemplo) {
     // identidade + vida: um FileReader em voo de um viewer MORTO não pode nem apagar o overlay
     // nem despejar meshes/índices no viewer NOVO (S global pode já ser outra instância)
     if (S !== Sm || !S.alive) return;
@@ -6329,6 +7143,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       S.modelID = mid; // compat: "modelo corrente" = último carregado
       var modelo = { mid: mid, nome: nome || ('Modelo ' + (S.modelos.length + 1)), disciplina: disc || '', alpha: 1, visivel: true, grupo: new THREE.Group(), matCache: {}, transCache: {}, elementos: [], tipos: {}, nEl: 0, nTri: 0 };
       modelo._bytes = data; // v1.1.85: guarda os bytes do IFC p/ o ☁️ Compartilhar na nuvem (RA/RV)
+      /* B0: o LUGAR do arquivo na obra (sobrevive a versao nova) e o hash do
+         CONTEUDO (muda a cada reexportacao, de proposito — invalida cache e
+         alimenta a comparacao entre versoes; NUNCA entra na chave) */
+      /* ⚠ a ORDEM importa desde o B1: o conteudo identifica o arquivo, e e
+         por ele que a federacao acha a vaga do modelo. Derivar o modeloId
+         antes de conhecer o versaoId cairia sempre no nome. */
+      modelo.versaoId = (typeof window !== 'undefined' && window.BimId) ? window.BimId.versaoId(data, data.length) : '';
+      modelo.modeloId = idModelo(modelo.nome, modelo.versaoId);
       modelo.grupo.userData.mid = mid;
       modelRoot.add(modelo.grupo);
       // carimbos do exportador pyRevit + BaseQuantities — merge nos mapas compartilhados (4D/5D)
@@ -6338,7 +7160,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       modelo.sistemas = lerSistemas(mid); // v1.1.98: SISTEMA por elemento (IfcSystem) → cor por sistema hidrossanitário
       modelo.pavimentos = lerPavimentos(mid); // 🏢 (y0 real preenchido depois, pelo AABB dos membros)
       var tmpMat = new THREE.Matrix4();
-      function getMat(r, g, b, a) { var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2); if (!modelo.matCache[k]) modelo.matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide }); return modelo.matCache[k]; }
+      var getMat = criarGetMat(modelo);
+      /* B1: a coleta para o cache anda junto com a montagem — os dados so
+         existem aqui, `geo.delete()` os devolve ao WASM logo abaixo.
+         ⚠ E ela guarda a REFERENCIA, sem copiar: `GetVertexArray`/
+         `GetIndexArray` do web-ifc terminam em `.slice(0)`, entao ja sao
+         copias proprias, e `m.applyMatrix4` age no OBJETO (a matriz do mesh),
+         nao na geometria — ninguem mexe nesses vetores depois. Copiar aqui
+         dobraria a memoria sem motivo. */
+      var colG = [], colI = [], colVistos = {}, colBytes = 0, colOk = !!(typeof window !== 'undefined' && window.BimCache);
       S.api.StreamAllMeshes(mid, function (mesh) {
         var geos = mesh.geometries, n = geos.size(), tipoNum = 0;
         try { tipoNum = S.api.GetLineType(mid, mesh.expressID); } catch (_) {}
@@ -6359,16 +7189,54 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           m.userData.expressID = mesh.expressID; m.userData.tipo = tipoNome; m.userData.mid = mid; m.userData.matOrig = m.material;
           modelo.grupo.add(m);
           S.meshPorId[mesh.expressID] = m; S.meshPorUid[mid + ':' + mesh.expressID] = m;
+          if (colOk) {
+            var gK = String(pg.geometryExpressID);
+            if (!colVistos[gK]) {
+              colBytes += pos.byteLength + nor.byteLength + idx.byteLength;
+              if (colBytes > TETO_COLETA) { colOk = false; colG = []; colI = []; colVistos = {}; }
+              else { colVistos[gK] = 1; colG.push({ gid: gK, pos: pos, nor: nor, idx: idx }); }
+            }
+            /* ⚠ a MATRIZ em dupla precisao: `flatTransformation` vem em double do
+               web-ifc e e ela que carrega a POSICAO da peca no mundo. Estreitar
+               aqui perdia precisao ANTES de o motor do cache ver o numero — foi
+               medido no navegador (3,9 µm num modelo de ~100 m; num IFC
+               georreferenciado isso vira metro). A cor pode ser float32: e 0..1. */
+            if (colOk) colI.push({ e: mesh.expressID, gid: gK, m: new Float64Array(pg.flatTransformation), cor: new Float32Array([c.x, c.y, c.z, c.w]) });
+          }
           modelo.nTri += idx.length / 3; geo.delete();
         }
         var cb = carimbos[mesh.expressID] || {};
         var famEl = (modelo.familias && modelo.familias[mesh.expressID]) || null;
-        modelo.elementos.push({ id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
+        /* B0: a identidade que sobrevive a reexportacao. O `uid` fica ao lado
+           porque toda a maquina de malhas e indices e feita nele; o que muda e
+           que o que se GRAVA passa a ser a `chave`. */
+        var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
+        var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);
       modelo.elementos.forEach(function (e) { e.disciplina = modelo.disciplina; });
+      /* B1: fica pendurado no modelo ate a casca gravar (ou desistir). Nao e
+         o viewer quem escreve no disco — a fronteira do produto diz que quem
+         persiste e a casca. */
+      modelo._coleta = colOk ? { geometrias: colG, instancias: colI, bytes: colBytes } : null;
+      /* ⚠ POR QUE ELE NAO COUBE, para a casca poder DIZER. Sem isto o modelo
+         entrava na obra, nunca era guardado, e toda reabertura pedia o arquivo
+         de novo — a mesma frase, para sempre, sem o usuario jamais saber o
+         motivo nem ter como consertar. */
+      /* ⚠ O MODELO DE DEMONSTRAÇÃO NÃO É DA OBRA DO CLIENTE. Ele é o IFC de
+         outra obra (Murumbir, da RA). Sem esta marca ele entrava em
+         `bim_modelos`, voltava na cena a cada abertura, era contado por
+         "Gerar orçamento do modelo" e subia para a nuvem junto com o resto. */
+      modelo.exemplo = !!ehExemplo;
+      modelo._semCache = colOk ? '' : (colBytes > TETO_COLETA
+        ? 'a geometria deste modelo passa de ' + Math.round(TETO_COLETA / (1024 * 1024)) + ' MB — ele abre normalmente, mas não fica guardado para reabrir rápido'
+        : 'o motor de cache não carregou nesta sessão');
       S.modelos.push(modelo);
+      recarimbarIdentidade();   /* B0 */
+      agregarModelo(modelo);    /* B2 */
+      carimbarConsulta();     /* B3 */
       atualizarHud();
       if (planta.on) setPlanta(false); // carregar modelo com a planta ativa: sai da planta (senão vista fica incoerente)
       if (corteL.on) setCorteL(false); // idem corte livre (o bbox mudou; o usuário re-corta no modelo federado)
@@ -6395,6 +7263,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
       if (S._editReaplicarRem) S._editReaplicarRem(); // "removidos na edição" persistidos valem pro IFC que acabou de chegar
       notifyModelos();
+      avisarModeloCarregado(modelo);   /* B1: a casca grava o cache e a federacao */
       if (opts.onLoaded) opts.onLoaded(elementosVivos());
     } catch (err) {
       try { if (mid != null && mid !== -1) S.api.CloseModel(mid); } catch (_) {}
@@ -6406,6 +7275,172 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   function rotuloDisciplina(ifcName) { var u = String(ifcName).toUpperCase(); return TIPOS[u] || String(ifcName).replace(/^IFC/, ''); }
 
+  /* =====================================================================
+   * B1 — MONTAR O MODELO A PARTIR DO CACHE, SEM WASM
+   *
+   * Espelha `carregarIFC` do ponto em que ela ja tem os dados. O molde e o
+   * `carregarSintetico` (2D->3D), que ja monta cena sem web-ifc desde a fase C.
+   *
+   * ⚠ A CENA TEM DE SAIR IDENTICA a de uma abertura normal — mesma malha por
+   * peca, mesma matriz no OBJETO (nao assada na geometria), mesmos indices
+   * `meshPorId`/`meshPorUid`. Cache que monta "quase igual" e pior que cache
+   * nenhum: trena, encaixe e corte tecnico passariam a responder diferente
+   * conforme a obra tivesse sido aberta antes ou nao.
+   * ===================================================================== */
+  function criarGetMat(modelo) {
+    return function (r, g, b, a) {
+      var k = (r * 255 | 0) + '_' + (g * 255 | 0) + '_' + (b * 255 | 0) + '_' + a.toFixed(2);
+      if (!modelo.matCache[k]) modelo.matCache[k] = new THREE.MeshStandardMaterial({ color: new THREE.Color(r, g, b), transparent: a < 1, opacity: a, metalness: .05, roughness: .85, side: THREE.DoubleSide });
+      return modelo.matCache[k];
+    };
+  }
+
+  function montarDoCache(reg, estado) {
+    estado = estado || {};
+    if (!S || !S.alive) return { ok: false, erro: 'visualizador não está montado' };
+    if (typeof window === 'undefined' || !window.BimCache) return { ok: false, erro: 'motor de cache não carregado' };
+    if (S.modelos.length >= 8) return { ok: false, erro: 'Limite de 8 modelos abertos ao mesmo tempo.' };
+
+    /* ⚠ o mid e STRING, e isso e requisito, nao estilo: `removerModelo` so
+       chama `CloseModel` quando o mid e numero, e uma string no embind vira 0,
+       que FECHARIA o primeiro IFC de verdade. */
+    var mid = 'cache' + (++cacheSeq);
+    var r = BimCache.paraCena(reg, mid);
+    if (!r.ok) return { ok: false, erro: r.erro };
+    var c = r.modelo;
+
+    /* ⚠ o nome vem do registro da OBRA, nao do cache. O cache e chaveado por
+       conteudo e o mesmo arquivo pode estar em duas obras com nomes
+       diferentes — a ultima importacao sobrescrevia o campo `nome` do
+       registro compartilhado, e a outra obra passava a exibir o rotulo da
+       vizinha. */
+    var nomeDaObra = String(estado.nome || '') || c.nome;
+    var modelo = {
+      mid: mid, doCache: true, nome: nomeDaObra,
+      disciplina: '', alpha: 1, visivel: true,
+      grupo: new THREE.Group(), matCache: {}, transCache: {},
+      elementos: c.elementos, tipos: c.tipos, nEl: c.nEl, nTri: 0,
+      versaoId: c.arquivoId, modeloId: '',
+      /* os mapas que so o WASM sabia produzir — e por eles que o modelo
+         restaurado continua tendo etapa, quantitativo, familia e pavimento */
+      carimbos: c.carimbos, qto: c.qto, familias: c.familias, sistemas: c.sistemas,
+      pavimentos: c.pavimentos, topologia: c.topologia, bitolas: c.bitolas,
+      fatorLenCache: c.fatorLen, bytesArquivo: c.bytesArquivo, convertidoEm: c.criadoEm
+    };
+    modelo.grupo.userData.mid = mid;
+    modelRoot.add(modelo.grupo);
+
+    var getMat = criarGetMat(modelo);
+    var tmpM = new THREE.Matrix4();
+    var tipoPorId = {};
+    for (var t = 0; t < c.elementos.length; t++) { tipoPorId[c.elementos[t].id] = c.elementos[t].tipo; c.elementos[t].arquivo = nomeDaObra; }
+
+    for (var i = 0; i < c.instancias.length; i++) {
+      var it = c.instancias[i];
+      var g = c.geometrias[it.g]; if (!g) continue;
+      var bg = new THREE.BufferGeometry();
+      /* copia por instancia, igual a abertura normal: geometria compartilhada
+         entre malhas e o B2, e mexe em raycast, trena e descarte */
+      bg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(g.pos), 3));
+      bg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(g.nor), 3));
+      bg.setIndex(new THREE.BufferAttribute(new Uint32Array(g.idx), 1));
+      var cor = it.cor || [1, 1, 1, 1];
+      var m = new THREE.Mesh(bg, getMat(cor[0], cor[1], cor[2], cor[3]));
+      tmpM.fromArray(it.m); m.applyMatrix4(tmpM);
+      m.userData.expressID = it.e; m.userData.tipo = tipoPorId[it.e] || ''; m.userData.mid = mid; m.userData.matOrig = m.material;
+      modelo.grupo.add(m);
+      S.meshPorId[it.e] = m; S.meshPorUid[mid + ':' + it.e] = m;
+      modelo.nTri += g.idx.length / 3;
+    }
+
+    /* a disciplina escolhida pelo usuario NAQUELA obra manda; sem escolha,
+       detecta como na abertura normal */
+    modelo.disciplina = String(estado.disciplina || '') || detectarDisciplina(modelo.nome, modelo.tipos);
+    modelo.elementos.forEach(function (e) { e.disciplina = modelo.disciplina; });
+
+    S.modelos.push(modelo);
+    recarimbarIdentidade();   /* B0 */
+    agregarModelo(modelo);    /* B2 */
+    carimbarConsulta();     /* B3 */
+    atualizarHud();
+    if (planta.on) setPlanta(false);
+    if (corteL.on) setCorteL(false);
+    enquadrar(); over.style.display = 'none'; loading.style.display = 'none';
+
+    /* caixa envolvente por peca e altura real do pavimento: THREE puro, sao
+       recalculados de proposito (guardar criaria uma segunda verdade) */
+    try {
+      modelRoot.updateMatrixWorld(true);
+      var caixas = {};
+      modelo.grupo.children.forEach(function (mm) {
+        var id = mm.userData && mm.userData.expressID; if (id == null) return;
+        var bb = new THREE.Box3().setFromObject(mm); if (bb.isEmpty()) return;
+        if (!caixas[id]) caixas[id] = bb; else caixas[id].union(bb);
+      });
+      modelo.elementos.forEach(function (elx) { var bb = caixas[elx.id]; if (bb) elx.aabb = { min: [bb.min.x, bb.min.y, bb.min.z], max: [bb.max.x, bb.max.y, bb.max.z] }; });
+      (modelo.pavimentos || []).forEach(function (pv) {
+        var y0 = Infinity;
+        (pv.eids || []).forEach(function (eid2) { var bb2 = caixas[eid2]; if (bb2 && bb2.min.y < y0) y0 = bb2.min.y; });
+        if (isFinite(y0)) pv.y0 = y0;
+      });
+    } catch (_) {}
+
+    S.elementos = []; S.modelos.forEach(function (mo) { S.elementos = S.elementos.concat(mo.elementos); });
+    if (pav.isolado || pav.manual) restaurarVisibilidade(); else pavRender();
+    if (S._editReaplicarRem) S._editReaplicarRem();
+
+    /* o que o usuario tinha ajustado nesta obra volta pelos caminhos normais */
+    if (estado.visivel === false && S._setVisivel) S._setVisivel(mid, false);
+    var al = +estado.alpha;
+    if (isFinite(al) && al > 0 && al < 1 && S._setTransparencia) S._setTransparencia(mid, al);
+
+    notifyModelos();
+    avisarModeloCarregado(modelo);
+    if (S._xrReSnap) S._xrReSnap();
+    if (opts && opts.onLoaded) opts.onLoaded(elementosVivos());
+    return { ok: true, mid: mid, nome: modelo.nome, nEl: modelo.elementos.length };
+  }
+  S._montarDoCache = montarDoCache; S._dadosParaCache = dadosParaCache; S._soltarColeta = soltarColeta;
+
+  function avisarModeloCarregado(mo) {
+    if (!mo || !S.opts || !S.opts.onModeloCarregado) return;
+    try {
+      S.opts.onModeloCarregado({
+        mid: mo.mid, nome: mo.nome, arquivoId: mo.versaoId || '', modeloId: mo.modeloId || '',
+        disciplina: mo.disciplina || '', doCache: !!mo.doCache, exemplo: !!mo.exemplo,
+        temColeta: !!mo._coleta, semCache: mo._semCache || '', nEl: (mo.elementos || []).length
+      });
+    } catch (_) {}
+  }
+
+  /* o pacote que a casca entrega ao BimCache.montar — o viewer nao escreve no
+     disco, so entrega dado simples */
+  function dadosParaCache(mid) {
+    var mo = modeloDe(mid);
+    if (!mo || !mo._coleta || mo.doCache || mo.sintetico) return null;
+    return {
+      arquivoId: mo.versaoId, nome: mo.nome, bytesArquivo: (mo._bytes && mo._bytes.length) || 0,
+      criadoEm: new Date().toISOString(), webIfc: '0.0.44', three: THREE.REVISION ? ('r' + THREE.REVISION) : '',
+      geometrias: mo._coleta.geometrias, instancias: mo._coleta.instancias,
+      elementos: mo.elementos, tipos: mo.tipos, carimbos: mo.carimbos, qto: mo.qto,
+      familias: mo.familias, sistemas: mo.sistemas, pavimentos: mo.pavimentos,
+      topologia: mo.topologia || lerTopologiaRede(mo.mid), bitolas: bitolasDoModelo(mo),
+      fatorLen: fatorLen(mo.mid), nEl: mo.elementos.length, nTri: mo.nTri
+    };
+  }
+  /* bitola por peca: so existe via WASM, e sem ela o modelo restaurado perde a
+     cota de rede e a relacao de tubos — recursos que o produto ja vende */
+  function bitolasDoModelo(mo) {
+    var out = {}, f = fatorLen(mo.mid);
+    (mo.elementos || []).forEach(function (e) {
+      if (!/IFCPIPE|IFCDUCT|IFCFLOWSEGMENT/i.test(String(e.tipo || ''))) return;
+      try { var b = lerBitolaMm(mo.mid, e.id, f); if (b) out[e.id] = b; } catch (_) {}
+    });
+    return out;
+  }
+  /* a coleta e grande: uma vez gravada (ou recusada), sai da memoria */
+  function soltarColeta(mid) { var mo = modeloDe(mid); if (mo) mo._coleta = null; }
+
   function abrirArquivo(file) { var fr = new FileReader(); fr.onload = function () { enfileirar(function () { return carregarIFC(fr.result, file.name); }); }; fr.readAsArrayBuffer(file); }
   // v1.1.85 — carrega IFC a partir de bytes (compartilhamento em nuvem: o celular baixa o modelo do VPS)
   S._abrirBytes = function (ab, nome, disc) { enfileirar(function () { return carregarIFC(ab, nome || 'modelo.ifc', disc); }); };
@@ -6415,8 +7450,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     // v1.1.97 — exemplo = modelo REAL de obra (Murumbir, RA Engenharia) da nuvem; atualizável sem
     // release e sem inchar o pacote. Offline/sem nuvem cai no exemplo embutido (bim/samples/exemplo.ifc).
     var CLOUD = 'https://orcapro.raengenhariaespecial.com.br/samples/murumbir-demolicao.ifc';
-    function embutido() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc'); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
-    fetch(CLOUD).then(function (r) { if (!r.ok) throw new Error('http'); return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'Murumbir — Demolição (exemplo)'); }); }).catch(embutido);
+    function embutido() { fetch('bim/samples/exemplo.ifc').then(function (r) { return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'exemplo.ifc', '', true); }); }).catch(function () { over.querySelector('div').innerHTML = '<div style="font-size:30px">' + (typeof Icones !== 'undefined' ? Icones.get('tabela', 15) : '') + '</div><p style="color:#a9c1d8">Abra um arquivo .ifc seu — o exemplo não foi encontrado.</p>'; }); }
+    fetch(CLOUD).then(function (r) { if (!r.ok) throw new Error('http'); return r.arrayBuffer(); }).then(function (ab) { enfileirar(function () { return carregarIFC(ab, 'Murumbir — Demolição (exemplo)', '', true); }); }).catch(embutido);
   }
   S._abrirArquivo = abrirArquivo; S._carregarExemplo = carregarExemplo;
 }
@@ -6542,6 +7577,8 @@ function refinarClash(clashes, opts) {
   var MAX_TESTES = opts.maxTestes || 400000;     // pares tri×tri por clash
   var MAX_CLASHES = opts.maxClashes || 800;      // refina os N piores (a lista já vem ordenada)
   var DEADLINE_MS = opts.deadlineMs || 2500;     // orçamento GLOBAL: estourou -> resto vira não-verificável (UI explica)
+  var MODO_FOLGA = opts.modo === "folga";        // B5: mede distância em vez de cruzamento
+  var FOLGA_ALVO = opts.folgaAlvo != null ? opts.folgaAlvo : 0.30;
   try { S.modelRoot.updateMatrixWorld(true); } catch (_) {} // RAF pode estar congelado (aba em background)
   var t0 = performance.now();
   // índice uid/eid -> malhas (um elemento pode ter VÁRIAS malhas)
@@ -6593,9 +7630,10 @@ function refinarClash(clashes, opts) {
     return (cache[id] = { tris: arr.subarray(0, w), aabb: [bx0, by0, bz0, bx1, by1, bz1] });
   }
   // recorte da malha em cache pela zona da interseção (+folga)
-  function filtrar(ce, caixa) {
-    var x0 = caixa.min[0] - FOLGA, y0 = caixa.min[1] - FOLGA, z0 = caixa.min[2] - FOLGA;
-    var x1 = caixa.max[0] + FOLGA, y1 = caixa.max[1] + FOLGA, z1 = caixa.max[2] + FOLGA;
+  function filtrar(ce, caixa, exp) {
+    var E = FOLGA + (exp || 0);
+    var x0 = caixa.min[0] - E, y0 = caixa.min[1] - E, z0 = caixa.min[2] - E;
+    var x1 = caixa.max[0] + E, y1 = caixa.max[1] + E, z1 = caixa.max[2] + E;
     var tris = ce.tris, out = [];
     for (var b = 0; b < tris.length; b += 9) {
       var tx0 = Math.min(tris[b], tris[b + 3], tris[b + 6]), tx1 = Math.max(tris[b], tris[b + 3], tris[b + 6]);
@@ -6618,24 +7656,68 @@ function refinarClash(clashes, opts) {
     if (!c.inter || !c.inter.min || !c.inter.max) { c.geo = 'nao-verificavel'; continue; }
     var A = cacheDe(c.aId), B = cacheDe(c.bId);
     if (A === null || A === 'cap' || B === null || B === 'cap') { c.geo = 'nao-verificavel'; continue; }
-    var ta = filtrar(A, c.inter), tb = filtrar(B, c.inter);
+    /* ⚠ NO MODO FOLGA A CAIXA `inter` NAO CONTEM SUPERFICIE NENHUMA.
+       Ela e a intersecao das AABB DILATADAS: com as pecas separadas por um
+       vao `g`, ela e uma FATIA DENTRO DO VAO, de espessura folga - g,
+       centrada entre as duas. A superficie de A fica em `g - folga/2` de
+       distancia da borda da fatia — ou seja, FORA dela sempre que o vao
+       passar de metade da folga pedida.
+       Recortar por ela zerava os dois lados, o par saia como "descartado",
+       e o modo folga perdia CALADO metade da faixa que o usuario pediu:
+       com folga de 30 cm, nada entre 15 e 30 cm era achado.
+       Reabrir por folga/2 e exatamente o necessario e suficiente:
+       inter.min - folga/2 = B.min - folga <= A.max sempre que o vao real
+       for <= folga; e simetrico do outro lado. Menos perde face, mais so
+       custa triangulo. No modo rigido a expansao e zero e nada muda. */
+    var EXP = MODO_FOLGA ? FOLGA_ALVO / 2 : 0;
+    var ta = filtrar(A, c.inter, EXP), tb = filtrar(B, c.inter, EXP);
     var conf = false, naoVer = false;
     if (ta.length && tb.length) {
-      var r = window.BIMTri.algumIntersecta(ta, tb, MAX_TESTES);
-      if (r.estourou) naoVer = true; else conf = r.confirmado;
+      if (MODO_FOLGA) {
+        /* ⚠ B5 modo FOLGA: a pergunta nao e "cruza?" e sim "quao perto?".
+           distMalhas para no primeiro par abaixo do limite — o modo so
+           precisa do SIM, e varrer o resto custaria o detector inteiro.
+           A distancia so e anotada quando ELE ACHOU: quando nao acha, o
+           motor devolve null de proposito, porque o menor par examinado
+           nao e o minimo verdadeiro (o pre-filtro por caixa descarta
+           pares que podem estar mais perto). Numero inventado aqui vira
+           decisao de obra. */
+        var rf = window.BIMTri.distMalhas(ta, tb, { limite: FOLGA_ALVO, maxTestes: MAX_TESTES });
+        if (rf.estourou) naoVer = true;
+        else if (rf.abaixo) { conf = true; c.distancia = rf.distancia; }
+      } else {
+        var r = window.BIMTri.algumIntersecta(ta, tb, MAX_TESTES);
+        if (r.estourou) naoVer = true; else conf = r.confirmado;
+      }
     }
     // CONTENÇÃO TOTAL (achado bloqueador do gate): tubo INTEIRO dentro da viga não tem
     // cruzamento de superfície — teste ponto-dentro-do-sólido (paridade de raio, voto 3 eixos)
     // com um vértice do elemento menor contra a malha COMPLETA do maior.
+    /* ⚠ A CONTENCAO VALE NOS DOIS MODOS, e tirar o modo folga daqui foi erro
+       meu. O raciocinio era "se um esta dentro do outro, a distancia e zero e
+       o distMalhas ja pega" — e e falso: as SUPERFICIES nao se cruzam, e a
+       distancia minima entre elas e o vao entre a peca de dentro e a parede
+       da de fora. Um tubo inteiro dentro de uma viga larga da distancia
+       MAIOR que a folga pedida e sai como "sem conflito" — justamente o
+       conflito mais grave que existe. */
     if (!conf && !naoVer) {
       var menor = null, maior = null;
       if (contido(A.aabb, B.aabb)) { menor = A; maior = B; }
       else if (contido(B.aabb, A.aabb)) { menor = B; maior = A; }
       if (menor && menor.tris.length >= 3) {
         conf = window.BIMTri.dentroVoto([menor.tris[0], menor.tris[1], menor.tris[2]], maior.tris);
+        /* contido = atravessa de fato: a distancia entre os solidos e ZERO,
+           e nao a que o distMalhas mediu entre as superficies. */
+        if (conf && MODO_FOLGA) c.distancia = 0;
       }
     }
     c.geo = naoVer ? 'nao-verificavel' : (conf ? 'confirmado' : 'descartado');
+    /* no modo folga a gravidade e o quanto FALTA de espaco, nao a penetracao:
+       10 cm faltando numa folga exigida de 30 e outra conversa que 1 cm. */
+    if (MODO_FOLGA && conf && c.distancia != null && FOLGA_ALVO > 0) {
+      var frac = c.distancia / FOLGA_ALVO;
+      c.severidade = frac <= 0.34 ? 'grave' : (frac <= 0.67 ? 'media' : 'leve');
+    }
   }
   return clashes;
 }
@@ -6979,6 +8061,73 @@ var Voz = {
 
 window.BIM = {
   montar: montar,
+  /* ---- B0: identidade duravel ----
+     `setObra` e chamado pela casca (js/gestao.js) na montagem e em toda troca
+     de obra. `chaveDe` e a porta unica para quem GRAVA vinculo: montar
+     'modelo::gid' na mao daria dois donos ao formato. */
+  setObra: function (obraId) {
+    var novo = String(obraId == null ? '' : obraId);
+    if (novo === OBRA_ID) return OBRA_ID;
+    OBRA_ID = novo; recarimbarIdentidade(); return OBRA_ID;
+  },
+  obraAtual: function () { return OBRA_ID; },
+  /* ---- B1: cache do modelo e federacao da obra ----
+     A casca entrega o mapa da federacao e pede/entrega o cache; o viewer nao
+     encosta em Store nem em IndexedDB. */
+  setFederacao: function (mapa) {
+    FED = mapa || null;
+    if (mapa && mapa.obraId) OBRA_ID = String(mapa.obraId);
+    recarimbarIdentidade();
+    return true;
+  },
+  federacao: function () { return FED; },
+  dadosParaCache: function (mid) { return (S && S._dadosParaCache) ? S._dadosParaCache(mid) : null; },
+  soltarColeta: function (mid) { if (S && S._soltarColeta) S._soltarColeta(mid); },
+  /* ⚠ os modelos que estao na cena mas cujo ARQUIVO nao esta em memoria — o
+     caso do modelo restaurado do cache, que por projeto nao guarda o .ifc. Sem
+     isto, o "Compartilhar na nuvem" subia so parte da obra e dizia que estava
+     tudo la; o cliente abria no celular e faltava metade do predio. */
+  /* ---- B2: agregacao de geometria ----
+     Liga/desliga o desenho mesclado. A bandeira existe porque a tabela de
+     riscos manda manter o caminho antigo alcancavel: qualquer coisa estranha
+     na trena, no encaixe ou no corte tecnico, desliga e volta ao de antes. */
+  agregacao: function (on) { return (S && S._ligarAgregacao) ? S._ligarAgregacao(on) : false; },
+  agregacaoEstado: function () { return (S && S._agregEstado) ? S._agregEstado() : { on: false }; },
+  /* ---- B3: conjuntos de selecao e busca ----
+     O motor (js/bimset.js) avalia a regra sobre `BIM.elementos`; aqui ficam so
+     as pontas que dependem da cena. */
+  carimbarConsulta: function () { return (S && S._carimbarConsulta) ? S._carimbarConsulta() : 0; },
+  /* os valores que EXISTEM no modelo para um campo — o editor de regra oferece
+     em vez de exigir que o usuario adivinhe a grafia do projetista */
+  valoresDe: function (campo) { return (S && S._valoresDe) ? S._valoresDe(campo) : []; },
+  /* de chave (B0) para o uid da sessao — a ponte entre o que fica gravado e o
+     que a cena entende */
+  uidsDeChaves: function (chaves) { return (S && S._uidsDeChaves) ? S._uidsDeChaves(chaves) : []; },
+  /* deixa visível só o conjunto; o ↺ Restaurar tudo desfaz */
+  isolarChaves: function (chaves) { return (S && S._isolarChaves) ? S._isolarChaves(chaves) : 0; },
+  /* { chave: '#rrggbb' } — a cor por regra do B3 */
+  pintarChaves: function (mapa) { return (S && S._pintarChaves) ? S._pintarChaves(mapa) : 0; },
+  limparPintura: function () { if (S && S._limparPintura) S._limparPintura(); },
+  /* ---- B4: pontos de vista ----
+     `cameraAtual` e o que a vista GUARDA; `aplicarVista` e como se volta para
+     ela. A miniatura sai do `foto()`, que ja existia. */
+  /* ---- B6: simulação 4D dirigida pelo cronograma do engenheiro ---- */
+  aplicar4DTarefas: function (sim) { return (S && S._aplicar4DTarefas) ? S._aplicar4DTarefas(sim) : { ok: false, erro: 'visualizador não montado' }; },
+  limpar4DTarefas: function () { if (S && S._limpar4DTarefas) S._limpar4DTarefas(); },
+  cameraAtual: function () { return (S && S._cameraAtual) ? S._cameraAtual() : null; },
+  aplicarVista: function (v, opts) { return (S && S._aplicarVista) ? S._aplicarVista(v, opts) : { ok: false, erro: 'visualizador não montado' }; },
+  modelosSemArquivo: function () {
+    return ((S && S.modelos) || []).filter(function (m) { return !m.sintetico && !(m._bytes && m._bytes.length); })
+      .map(function (m) { return { mid: m.mid, nome: m.nome, doCache: !!m.doCache }; });
+  },
+  abrirDoCache: function (reg, estado) { return (S && S._montarDoCache) ? S._montarDoCache(reg, estado) : { ok: false, erro: 'visualizador não montado' }; },
+  chaveDe: function (el) {
+    if (typeof el === 'string') el = ((S && S.elementos) || []).filter(function (x) { return x.uid === el; })[0];
+    return (el && el.chave) || '';
+  },
+  modelosIdentidade: function () {
+    return ((S && S.modelos) || []).map(function (m) { return { mid: m.mid, nome: m.nome, modeloId: m.modeloId, versaoId: m.versaoId }; });
+  },
   /* ⚠ o canvas do WebGL NÃO redimensiona sozinho quando o layout muda por CSS
    * (esconder a lateral, entrar no modo foco): só o evento `resize` da janela
    * o acorda, e trocar de painel não dispara `resize`. Sem isto o modelo sai
@@ -7093,7 +8242,98 @@ window.BIM = {
   /* hook de teste da lupa: sem ele, provar que ela abriu exige adivinhar por
      pixel, e um falso negativo aí manda procurar defeito no lugar errado. */
   _lupaEstado: function () { if (!S || !S.lupa) return null; var L = S.lupa; return { on: !!L.on, orbita: !!(S.orbit && S.orbit.enabled), x: L.x, y: L.y, id: L.id, esperando: !!L.timer, tipoSnap: L.sn && L.sn.tipo || null, mediDown: !!(S.medir && S.medir.down), ferramenta: !!(S._ferramentaClique && S._ferramentaClique()) }; },
+  /* =====================================================================
+   * _coordMatriz — a matriz que o web-ifc aplicou ao abrir o arquivo
+   *
+   * O IFC e Z-up; a cena e Y-up. Quem converte e o web-ifc, e ele guarda a
+   * conta. Sem esta janela, exportar camera para BCF (que fala IFC) seria
+   * deduzir a permutacao de cabeca — e o criterio do B4 e justamente o
+   * projetista abrir o arquivo no Revit NA MESMA CAMERA. Deduzir errado poe
+   * a camera dele em outro lugar, sem erro nenhum.
+   * ===================================================================== */
+  _coordMatriz: function (mid) {
+    if (!S || !S.api || !S.api.GetCoordinationMatrix) return null;
+    var alvo = (mid != null) ? mid : (S.modelos.filter(function (m) { return typeof m.mid === 'number'; })[0] || {}).mid;
+    if (alvo == null) return null;
+    try { var m = S.api.GetCoordinationMatrix(alvo); return Array.prototype.slice.call(m); } catch (e) { return String(e && e.message || e); }
+  },
   _snapAt: function (cx, cy) { if (!S || !S._raycastEm) return null; var h = S._raycastEm(cx, cy); if (!h) return null; var sn = S._aplicarSnapRef(h, S.snap ? S.snap.raio : 14); return { tipo: sn.tipo, p: [sn.p.x, sn.p.y, sn.p.z] }; }, // hook de teste: snap num ponto de tela
+  /* =====================================================================
+   * _perf — a régua do B2, e a razão de ela existir
+   *
+   * A especificação proíbe declarar ganho de desempenho sem medir: "nenhum
+   * número desses vai para nota de versão, apresentação ou proposta antes de
+   * ser medido no aparelho e no modelo reais". Sem um gancho, medir `draw
+   * calls` exigiria expor o renderer — e aí qualquer código passaria a poder
+   * mexer nele.
+   *
+   * ⚠ `renderer.info.render` só tem número DEPOIS de um quadro desenhado, e a
+   * aba do painel fica com `document.hidden === true`, onde o
+   * `requestAnimationFrame` não dispara. Por isso ele desenha um quadro
+   * síncrono antes de ler: sem isso o número volta zero e a medição mente para
+   * o lado bom.
+   * ===================================================================== */
+  _perf: function () {
+    if (!S || !S.alive || !S.renderer) return null;
+    try { S.renderer.info.reset(); } catch (_) {}
+    var t0 = (typeof performance !== 'undefined' ? performance.now() : 0);
+    try { S.renderer.render(S.scene, S.camera); } catch (_) { return null; }
+    var msQuadro = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+    var i = S.renderer.info;
+    var malhas = 0, geos = 0, vistos = {};
+    try {
+      S.modelRoot.traverse(function (o) {
+        if (!o.isMesh) return;
+        malhas++;
+        var g = o.geometry; if (g && !vistos[g.uuid]) { vistos[g.uuid] = 1; geos++; }
+      });
+    } catch (_) {}
+    /* ⚠ a cena INTEIRA, por camada — sem isto nao da para saber QUEM esta
+       sendo desenhado quando a conta de draw calls sobe. O modelRoot sozinho
+       nao conta: as malhas mescladas do B2 vivem fora dele. */
+    var porCamada = { visiveisNaCamera: 0, ocultasDaCamera: 0, invisiveis: 0, foraDoModelo: 0, linhasNaCamera: 0 };
+    try {
+      S.scene.traverse(function (o) {
+        /* ⚠ NAO SO isMesh: linha e ponto tambem gastam chamada de desenho, e o
+           produto desenha ARESTAS por peca no estilo desenho. Contar so malha
+           fazia a conta nao fechar com o renderer — e a diferenca parecia
+           defeito da agregacao quando era outra fonte inteira. */
+        if (!(o.isMesh || o.isLine || o.isLineSegments || o.isPoints)) return;
+        if (o.isLine || o.isLineSegments || o.isPoints) {
+          var vl = true; for (var pl = o; pl; pl = pl.parent) if (pl.visible === false) { vl = false; break; }
+          if (vl && S.camera.layers.test(o.layers)) porCamada.linhasNaCamera++;
+          return;
+        }
+        var vis = true;
+        for (var p = o; p; p = p.parent) if (p.visible === false) { vis = false; break; }
+        if (!vis) { porCamada.invisiveis++; return; }
+        if (S.camera.layers.test(o.layers)) porCamada.visiveisNaCamera++; else porCamada.ocultasDaCamera++;
+        var dentro = false; for (var q = o; q; q = q.parent) if (q === S.modelRoot) { dentro = true; break; }
+        if (!dentro) porCamada.foraDoModelo++;
+      });
+    } catch (_) {}
+    return {
+      drawCalls: i.render.calls, triangulos: i.render.triangles,
+      geometriasNaGpu: i.memory.geometries, texturas: i.memory.textures,
+      malhasNaCena: malhas, geometriasDistintas: geos, cena: porCamada,
+      msQuadro: +msQuadro.toFixed(2),
+      /* diagnostico: mascara de camada da camera e do renderer — sem isto nao
+         da para saber por que a conta de chamadas nao bate com o que a camera
+         enxerga */
+      mascaraCamera: S.camera.layers.mask, autoReset: S.renderer.info.autoReset,
+      sombras: !!(S.renderer.shadowMap && S.renderer.shadowMap.enabled),
+      elementos: (S.elementos || []).length,
+      modelos: (S.modelos || []).length
+    };
+  },
+  /* mede o clique de verdade: o raycast que o duplo-clique usa */
+  _perfClique: function (cx, cy, n) {
+    if (!S || !S._raycastEm) return null;
+    n = n || 20;
+    var t0 = performance.now(), acertos = 0;
+    for (var k = 0; k < n; k++) { if (S._raycastEm(cx, cy)) acertos++; }
+    return { ms: +((performance.now() - t0) / n).toFixed(3), amostras: n, acertos: acertos };
+  },
   // Cotar rede — hooks de teste: ligar/desligar por modo e ler o estado real
   _cota: function (on, modo) { if (S && S._setCota) S._setCota(on, modo); return this._cotaEstado(); },
   _cotaEstado: function () { return (S && S._cotaEstado) ? S._cotaEstado() : null; },
