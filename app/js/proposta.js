@@ -175,5 +175,143 @@
       (rod ? '<div class="pg-rod">' + Util.esc(rod) + '</div>' : '') + '</section>';
   }
 
+
+  /* =====================================================================
+   * O ORÇAMENTO ALIMENTANDO O MODELO DE PROPOSTA
+   *
+   * "Modelos de Proposta" nasceu para a carpintaria e só era lido por ela:
+   * quem monta orçamento SINAPI desenhava o modelo, dava um nome, e ele nunca
+   * aparecia na hora de gerar. Aqui o orçamento passa a montar o MESMO
+   * contrato de dados que `carpintariaui.js` monta — o motor não muda.
+   *
+   * ⚠ O QUE VAI PARA O PAPEL É PREÇO DE VENDA, NUNCA CUSTO. Cada linha
+   *   calculada carrega `precoTotal` (com BDI, é o que o cliente paga) ao
+   *   lado de `custoTotal` (a conta interna). Trocar um pelo outro entrega a
+   *   margem da empresa dentro do documento comercial dela. Aqui só
+   *   `precoUnit`/`precoTotal` atravessam, e `auditar` abaixo é a segunda
+   *   trava — a primeira é esta função nunca ler o campo errado.
+   *
+   * ⚠ E O MOTOR NÃO SOMA. `total` vem de `Orcamento.totais().precoVenda`, a
+   *   mesma conta da tela, do Excel e do laudo. Somar de novo aqui criaria um
+   *   quarto número para a mesma pergunta — e é o do papel que o cliente
+   *   confere.
+   *
+   * ⚠ OS GRUPOS SÃO AS ETAPAS. É a estrutura que o orçamento realmente tem;
+   *   o par "Material / Mão de obra" da carpintaria não descreve uma obra por
+   *   etapas. Item solto (sem etapa) cai num grupo sem nome, que o motor
+   *   desenha sem cabeçalho.
+   * =================================================================== */
+  Proposta.blocosParaModelo = function (orc) {
+    var linhas = Orcamento.linhas(orc) || [];
+    var t = Orcamento.totais(orc);
+    var ordem = [], porEtapa = {};
+    linhas.forEach(function (L) {
+      var nome = String(L.etapaNome || "").trim();
+      var chave = String(L.etapaId || nome || "");
+      if (!porEtapa[chave]) { porEtapa[chave] = { nome: nome, linhas: [] }; ordem.push(chave); }
+      porEtapa[chave].linhas.push({
+        descricao: L.descricao || L.codigo || "",
+        unidade: L.unidade || "",
+        qtd: Util.num(L.quantidade),
+        /* o motor escreve `l.total`; o unitário viaja para quem quiser conferir */
+        unitario: Util.num(L.precoUnit),
+        total: Util.num(L.precoTotal)
+      });
+    });
+    return {
+      grupos: ordem.map(function (k) { return porEtapa[k]; }),
+      total: Util.num(t.precoVenda)
+    };
+  };
+
+  /* as condições comerciais que o modelo escreve, com os nomes que ele espera */
+  Proposta.comercialParaModelo = function (orc) {
+    var c = (orc && orc.comercial) || {};
+    return {
+      condicoesPagamento: c.condicoesPagamento || "",
+      prazoExecucao: c.prazoExecucao || "",
+      garantia: c.garantia || ""
+    };
+  };
+
+  /* =====================================================================
+   * A AUDITORIA — a última chance antes de o papel abrir
+   *
+   * Mesma régua da carpintaria: palavra proibida, e o NÚMERO do custo escrito
+   * no formato em que o documento escreveria dinheiro. Um custo pode coincidir
+   * com um preço legítimo (o custo de um item batendo com a venda de outro),
+   * então só acusa quando o número aparece E não é nenhum dos valores que o
+   * documento DEVE mostrar.
+   * =================================================================== */
+  Proposta.PALAVRAS_PROIBIDAS = [
+    "custo direto", "custo unit", "margem de", "lucro", "bdi de", "preço de compra"
+  ];
+
+  function _achatar(s) {
+    /* ⚠ o espaço do "R$" é DURO (U+00A0) em `Util.fmtMoeda`: comparar texto
+       cru deixaria passar o mesmo valor escrito com espaço comum */
+    return String(s == null ? "" : s).replace(/\u00a0/g, " ").replace(/\s+/g, " ");
+  }
+
+  Proposta.auditar = function (html, orc) {
+    var achados = [];
+    var h = _achatar(html), baixo = h.toLowerCase();
+    Proposta.PALAVRAS_PROIBIDAS.forEach(function (w) {
+      if (baixo.indexOf(w) > -1) achados.push({ tipo: "palavra", achado: w });
+    });
+
+    var t = Orcamento.totais(orc);
+    var b = Proposta.blocosParaModelo(orc);
+    var legitimos = {};
+    legitimos[_achatar(Util.fmtMoeda(b.total))] = 1;
+    b.grupos.forEach(function (g) {
+      g.linhas.forEach(function (l) {
+        legitimos[_achatar(Util.fmtMoeda(l.total))] = 1;
+        legitimos[_achatar(Util.fmtMoeda(l.unitario))] = 1;
+      });
+    });
+
+    var suspeitos = [];
+    if (t.custoDireto > 0) suspeitos.push({ v: t.custoDireto, o: "o custo direto da obra" });
+    if (t.bdiValor > 0) suspeitos.push({ v: t.bdiValor, o: "o valor do BDI" });
+    (Orcamento.linhas(orc) || []).forEach(function (L) {
+      if (Util.num(L.custoTotal) > 0) suspeitos.push({ v: Util.num(L.custoTotal), o: "o custo de " + (L.descricao || "um item") });
+    });
+
+    suspeitos.forEach(function (s) {
+      var fmt = _achatar(Util.fmtMoeda(s.v));
+      if (h.indexOf(fmt) < 0) return;
+      if (legitimos[fmt]) return;          /* coincide com um valor que o papel deve mostrar */
+      achados.push({ tipo: "numero", achado: Util.fmtMoeda(s.v), motivo: s.o });
+    });
+    return achados;
+  };
+
+  /* =====================================================================
+   * O CLIENTE DO ORÇAMENTO NÃO TEM ID — e por isso o casamento é EXATO
+   *
+   * ⚠ `orc.cliente` é objeto embutido (`{nome, doc, contato}`), sem vínculo
+   *   com a entidade `clientes`. O modelo, por outro lado, guarda `paraCliente`
+   *   com o ID. Para o "modelo deste cliente" funcionar aqui, alguém tem de
+   *   ligar os dois — e o único jeito honesto é NOME IGUAL, normalizado.
+   *
+   * ⚠ SEMELHANÇA NÃO ENTRA, e ambiguidade também não: dois cadastros com o
+   *   mesmo nome devolvem vazio, e a tela cai no modelo padrão. Sugerir o
+   *   desenho do cliente errado é o tipo de erro que aparece na frente dele.
+   * =================================================================== */
+  Proposta.clienteIdDoOrcamento = function (orc) {
+    var nome = String(((orc && orc.cliente) || {}).nome || "").trim().toLowerCase();
+    if (!nome) return "";
+    var achados = [];
+    try {
+      var eid = Auth.empresaId();
+      (Store.listar(eid, "clientes") || []).forEach(function (c) {
+        var n = String((c && (c.nome || c.razaoSocial)) || "").trim().toLowerCase();
+        if (n && n === nome) achados.push(c.id);
+      });
+    } catch (e) { return ""; }
+    return achados.length === 1 ? achados[0] : "";
+  };
+
   global.Proposta = Proposta;
 })(window);

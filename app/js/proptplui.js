@@ -88,7 +88,10 @@
     var html = this._head(
       (typeof Icones !== "undefined" ? Icones.get("tabela", 18) : "") + "Modelos de Proposta",
       "propmod-novo", "Novo modelo",
-      '<button class="btn sm" data-gacao="propmod-fabrica" style="margin-right:10px;align-self:center">'
+      '<button class="btn sm" data-gacao="propmod-importar" style="margin-right:10px;align-self:center" '
+      + 'title="Abrir um modelo que veio de outra conta (arquivo .json)">'
+      + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Trazer de um arquivo</button>"
+      + '<button class="btn sm" data-gacao="propmod-fabrica" style="margin-right:10px;align-self:center">'
       + (typeof Icones !== "undefined" ? Icones.get("baixar", 15) : "") + " Trazer os modelos de fábrica</button>"
     );
 
@@ -153,6 +156,8 @@
       + '<div class="flex" style="gap:6px">'
       + '<button class="btn sm" data-gacao="propmod-renomear">Renomear</button>'
       + '<button class="btn sm" data-gacao="propmod-padrao">' + (m.padrao ? "Deixar de ser o padrão" : "Usar como padrão") + "</button>"
+      + '<button class="btn sm" data-gacao="propmod-exportar" title="Salvar este modelo num arquivo, com as fotos dentro, para usar em outra conta">'
+      + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Levar para outra conta</button>"
       + '<button class="btn sm ghost" data-gacao="propmod-excluir">Excluir</button>'
       + '<button class="btn sm ghost" data-gacao="propmod-fechar">Fechar</button>'
       + "</div></div>";
@@ -482,6 +487,86 @@
    * AÇÕES
    * =================================================================== */
   G.registrarAcoes("propmodelos", {
+    /* =================================================================
+     * LEVAR — o modelo vira arquivo, com as fotos dentro
+     *
+     * ⚠ AS FOTOS SÃO RESOLVIDAS ANTES. No registro elas são referência para
+     *   o guardador de fotos DESTA conta; do outro lado essa referência não
+     *   aponta para nada. `_propModImagens` já sabe transformá-las em data
+     *   URI — é a mesma função que a impressão usa.
+     *
+     * ⚠ E O QUE NÃO RESOLVEU É DITO. Foto que ficou só no servidor e não
+     *   voltou vira slot vazio na outra ponta; avisar depois de baixar o
+     *   arquivo não é avisar.
+     * =============================================================== */
+    "propmod-exportar": function () {
+      var self = G;
+      var raw = obter(self._propModId);
+      if (!raw) { UI.toast("Abra um modelo primeiro.", "erro"); return; }
+      var m = T.modelo(raw);
+      var faltas = T.validar(m);
+      if (faltas.length) { UI.toast(faltas[0], "erro"); return; }
+
+      UI.toast("Preparando o arquivo…", "ok");
+      self._propModImagens(m, function (imgs) {
+        var resolvidas = {};
+        Object.keys(imgs || {}).forEach(function (k) {
+          if (imgs[k] && imgs[k].dataURI) resolvidas[k] = imgs[k].dataURI;
+        });
+        var arq = T.paraArquivo(m, resolvidas);
+        arq.exportadoEm = Util.agoraISO();
+
+        var sl = T.slots(m) || [];
+        var comRef = sl.filter(function (s) { return !!s.ref; }).length;
+        var foram = Object.keys(arq.imagens).length;
+
+        var texto = JSON.stringify(arq, null, 2);
+        var blob = new Blob([texto], { type: "application/json" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = "modelo-de-proposta-" + String(m.nome).replace(/[^\w\-]+/g, "-").toLowerCase() + ".json";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+
+        var tam = Math.round(texto.length / 1024);
+        if (foram < comRef) {
+          UI.toast("Arquivo salvo (" + tam + " KB), mas " + (comRef - foram) + " de " + comRef
+            + " foto(s) não pôde(ram) ser lida(s) — elas vão faltar na outra conta.", "aviso");
+        } else {
+          UI.toast("Modelo salvo em arquivo (" + tam + " KB, " + foram + " foto(s) dentro).", "ok");
+        }
+      });
+    },
+
+    /* =================================================================
+     * TRAZER — o arquivo vira um modelo NOVO desta conta
+     *
+     * ⚠ NUNCA SOBRESCREVE. O modelo importado nasce com id próprio e nome
+     *   livre: trazer o desenho de alguém não pode apagar o que a empresa já
+     *   montou, e um "id igual" é justamente o caso em que isso aconteceria
+     *   sem ninguém ver.
+     * =============================================================== */
+    "propmod-importar": function () {
+      var inp = document.createElement("input");
+      inp.type = "file"; inp.accept = ".json,application/json";
+      inp.onchange = function () {
+        var f = inp.files && inp.files[0]; if (!f) return;
+        var fr = new FileReader();
+        fr.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
+        fr.onload = function () {
+          var obj;
+          try { obj = JSON.parse(String(fr.result)); }
+          catch (e) { UI.toast("Esse arquivo não é um .json válido.", "erro"); return; }
+          var r = T.doArquivo(obj);
+          if (!r.ok) { UI.toast(r.erro, "erro"); return; }
+          G._propModConfirmarImport(r);
+        };
+        fr.readAsText(f);
+      };
+      inp.click();
+    },
+
     "propmod-novo": function () {
       UI.modal("Novo modelo de proposta",
         '<p class="muted">Comece de um dos modelos prontos e ajuste o que quiser.</p>'
@@ -690,6 +775,72 @@
     };
     fr.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
     fr.readAsDataURL(file);
+  };
+
+  /* mostra o que veio no arquivo e só grava depois do "Trazer" */
+  G._propModConfirmarImport = function (r) {
+    var usados = lista().map(function (x) { return T.modelo(x).nome; });
+    var nome = T.nomeLivre(r.modelo.nome, usados);
+    var semFoto = r.nSlots - r.nFotos;
+
+    UI.modal("Trazer este modelo?",
+      '<div class="card" style="padding:10px 12px"><b>' + esc(nome) + "</b>"
+      + (r.modelo.descricao ? '<div class="muted" style="font-size:12.5px">' + esc(r.modelo.descricao) + "</div>" : "")
+      + '<div class="muted" style="font-size:12.5px;margin-top:4px">' + r.modelo.paginas.length + " página(s) · "
+      + r.nFotos + " de " + r.nSlots + " foto(s)</div></div>"
+      + (nome !== r.modelo.nome
+          ? '<p class="muted" style="font-size:12.5px;margin-top:8px">Já existe um modelo chamado "'
+            + esc(r.modelo.nome) + '", então este entra como "' + esc(nome) + '". Nada do que você tem é alterado.</p>'
+          : '<p class="muted" style="font-size:12.5px;margin-top:8px">Ele entra como um modelo novo — nada do que você tem é alterado.</p>')
+      + (semFoto > 0
+          ? '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;margin-top:8px;font-size:12.5px">'
+            + semFoto + " slot(s) de foto vêm vazios neste arquivo. Você escolhe as imagens depois, na aba Fotos.</div>"
+          : ""),
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Trazer modelo", classe: "primary", onClick: function () {
+           UI.fecharModal();
+           G._propModGravarImport(r, nome);
+       } }]);
+  };
+
+  /* grava o modelo e RECOLOCA as fotos no guardador desta conta */
+  G._propModGravarImport = function (r, nome) {
+    var novo = T.modelo({
+      nome: nome, descricao: r.modelo.descricao,
+      estilo: r.modelo.estilo, paginas: r.modelo.paginas
+      /* sem paraCliente e sem padrao, de propósito — ver PropTpl.paraArquivo */
+    });
+    novo.id = "";                    /* o Store cunha o id — nunca reaproveita o da origem */
+
+    var chaves = Object.keys(r.imagens || {});
+    if (!chaves.length || typeof Fotos === "undefined") {
+      var g0 = gravar(novo);
+      if (!g0) { UI.toast("Não consegui gravar (armazenamento cheio?).", "erro"); return; }
+      UI.toast('Modelo "' + nome + '" trazido.', "ok");
+      /* ⚠ `App.render()`, não `_propModRender`: a importação parte da LISTA,
+         onde não há modelo aberto — repintar o editor de um modelo que não
+         existe é tela em branco. */
+      App.render();
+      return;
+    }
+
+    UI.toast("Guardando as fotos do modelo…", "ok");
+    var imagens = {}, n = 0, falhas = 0;
+    chaves.forEach(function (k) {
+      Fotos.guardar(r.imagens[k], "Modelo de proposta", { larguraMax: IMG_LARGURA, qualidade: IMG_QUALIDADE })
+        .then(function (ref) { imagens[k] = ref; })
+        ["catch"](function () { falhas++; })
+        .then(function () {
+          if (++n < chaves.length) return;
+          novo.imagens = imagens;
+          if (!gravar(novo)) { UI.toast("Não consegui gravar (armazenamento cheio?).", "erro"); return; }
+          /* ⚠ o aviso conta o que REALMENTE entrou: dizer "trazido" com metade
+             das fotos perdidas é a mentira educada que este projeto persegue. */
+          if (falhas) UI.toast('Modelo "' + nome + '" trazido, mas ' + falhas + " foto(s) não couberam.", "aviso");
+          else UI.toast('Modelo "' + nome + '" trazido, com ' + chaves.length + " foto(s).", "ok");
+          App.render();
+        });
+    });
   };
 
   /* ===================================================================

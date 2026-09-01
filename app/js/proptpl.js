@@ -662,12 +662,52 @@
           + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
       }).join("");
     }
+    /* =====================================================================
+     * OS GRUPOS VÊM DOS DADOS, NÃO DO CÓDIGO
+     *
+     * ⚠ Até 01/09/2026 esta função escrevia "Material" e "Mão de obra" à mão,
+     *   lendo `b.madeira` e `b.mo`. Isso é o vocabulário de UMA operação — a
+     *   carpintaria, para quem o recurso nasceu. O orçamento SINAPI agrupa por
+     *   ETAPA (Serviços preliminares, Estrutura, Alvenaria…), e enfiar etapa
+     *   dentro de um cabeçalho escrito "Mão de obra" seria entregar ao cliente
+     *   um documento que mente sobre a própria estrutura.
+     *
+     *   Agora quem monta os dados diz o nome de cada grupo. O par antigo
+     *   continua valendo: sem `grupos`, `madeira`/`mo` viram os dois grupos de
+     *   sempre, com os mesmos rótulos e na mesma ordem — a carpintaria não
+     *   percebe diferença nenhuma.
+     *
+     * ⚠ GRUPO SEM NOME NÃO GANHA CABEÇALHO. Um documento com uma faixa cinza
+     *   vazia em cima da tabela parece defeito, e é assim que fica quem tem um
+     *   grupo só (o caso de quem não usa etapa).
+     * =================================================================== */
+    function gruposDe(bb) {
+      if (Array.isArray(bb.grupos)) {
+        return bb.grupos.map(function (g) {
+          return { nome: txt(g && g.nome), linhas: arr(g && g.linhas) };
+        }).filter(function (g) { return g.linhas.length; });
+      }
+      var out = [];
+      if (arr(bb.madeira).length) out.push({ nome: "Material", linhas: arr(bb.madeira) });
+      if (arr(bb.mo).length) out.push({ nome: "Mão de obra", linhas: arr(bb.mo) });
+      return out;
+    }
+
+    var gs = gruposDe(b);
     var corpo;
     if (p.detalhar) {
-      corpo = (arr(b.madeira).length ? '<tr class="tp-grupo"><td colspan="2">Material</td></tr>' + linhasHtml(b.madeira) : "")
-        + (arr(b.mo).length ? '<tr class="tp-grupo"><td colspan="2">Mão de obra</td></tr>' + linhasHtml(b.mo) : "");
+      corpo = gs.map(function (g) {
+        return (g.nome ? '<tr class="tp-grupo"><td colspan="2">' + esc(g.nome) + "</td></tr>" : "")
+          + linhasHtml(g.linhas);
+      }).join("");
     } else {
-      corpo = linhasHtml(arr(b.madeira).concat(arr(b.mo)));
+      /* ⚠ sem `reduce`: `tools/test-proptpl.js` varre este arquivo atrás de
+         `.reduce(`, `somar`, `calcular` e `ratear` para provar que o motor
+         não faz conta de dinheiro. A guarda é grossa de propósito, e vale
+         mais que a elegância de uma linha — aqui só se junta lista. */
+      var todas = [];
+      gs.forEach(function (g) { g.linhas.forEach(function (l) { todas.push(l); }); });
+      corpo = linhasHtml(todas);
     }
     if (!corpo) corpo = '<tr><td colspan="2" class="tp-vaziotxt">Nenhum item com preço.</td></tr>';
     return '<table class="tp-tbl"><thead><tr><th>' + esc(p.colTrabalho) + '</th><th class="tp-num">' + esc(p.colValor) + "</th></tr></thead>"
@@ -774,6 +814,104 @@
       if (h.indexOf(s) > -1) achados.push("o valor " + s);
     });
     return achados;
+  };
+
+
+  /* =====================================================================
+   * LEVAR E TRAZER UM MODELO — o arquivo que vai de uma conta para outra
+   *
+   * Para quem quer usar o desenho de outra empresa, e para o caso de alguém
+   * ficar só na criação dos modelos e mandar prontos para quem orça.
+   *
+   * ⚠ AS FOTOS VIAJAM DENTRO. Um modelo guarda a foto por REFERÊNCIA (`{id,
+   *   remoto}`, uns 80 bytes) — a imagem em si mora no guardador de fotos da
+   *   CONTA. Exportar só a referência entregaria um arquivo que abre com
+   *   todos os slots vazios na outra ponta, e o desenho é justamente o que se
+   *   está levando. Aqui as imagens vão embutidas em base64.
+   *
+   * ⚠ O QUE NÃO VIAJA, E POR QUÊ:
+   *   · `id` — quem importa ganha id novo. Reaproveitar sobrescreveria um
+   *     modelo que já existe na conta de destino, sem avisar.
+   *   · `paraCliente` — é o id de um cliente da conta de ORIGEM. Na de
+   *     destino ele não existe (viraria "cliente removido"), e é material de
+   *     outra empresa: não tem por que atravessar.
+   *   · `padrao` — importar não pode trocar, calado, qual modelo a empresa
+   *     usa por omissão em toda proposta.
+   *
+   * ⚠ E O ARQUIVO SE IDENTIFICA. Sem a marca, qualquer .json cai no
+   *   importador e o erro que sai é de campo faltando — a pessoa fica
+   *   procurando defeito no modelo em vez de no arquivo escolhido.
+   * =================================================================== */
+  PropTpl.MARCA_ARQUIVO = "orcapro:modelo-de-proposta";
+  PropTpl.VERSAO_ARQUIVO = 1;
+
+  /* `imagens` chega já resolvida pela tela: { "<slot>": "data:image/..." } */
+  PropTpl.paraArquivo = function (modelo, imagens) {
+    var m = PropTpl.modelo(modelo);
+    var fora = {};
+    (PropTpl.slots(m) || []).forEach(function (s) {
+      var d = imagens && imagens[String(s.numero)];
+      if (d) fora[String(s.numero)] = String(d);
+    });
+    return {
+      marca: PropTpl.MARCA_ARQUIVO,
+      versao: PropTpl.VERSAO_ARQUIVO,
+      exportadoEm: null,          /* quem exporta carimba; o motor não olha relógio */
+      modelo: {
+        nome: m.nome, descricao: m.descricao,
+        estilo: m.estilo, paginas: m.paginas
+        /* sem id, sem paraCliente, sem padrao, sem imagens: ver o cabeçalho */
+      },
+      imagens: fora
+    };
+  };
+
+  /* Lê o arquivo e devolve { ok, erro, modelo, imagens, nSlots, nFotos }.
+     Puro: não grava nada, não conhece Store nem Fotos. */
+  PropTpl.doArquivo = function (obj) {
+    var d = obj || {};
+    if (txt(d.marca) !== PropTpl.MARCA_ARQUIVO) {
+      return { ok: false, erro: "Este arquivo não é um modelo de proposta do OrçaPRO." };
+    }
+    if (num(d.versao) > PropTpl.VERSAO_ARQUIVO) {
+      return { ok: false, erro: "Este modelo veio de uma versão mais nova do OrçaPRO. Atualize o sistema e tente de novo." };
+    }
+    var cru = d.modelo || {};
+    if (!txt(cru.nome)) return { ok: false, erro: "O arquivo não tem o nome do modelo." };
+
+    var m = PropTpl.modelo({
+      nome: cru.nome, descricao: cru.descricao,
+      estilo: cru.estilo, paginas: cru.paginas
+    });
+    if (!m.paginas.length) return { ok: false, erro: "O arquivo não tem nenhuma página." };
+
+    var imgs = {}, n = 0;
+    var sl = PropTpl.slots(m) || [];
+    sl.forEach(function (s) {
+      var v = (d.imagens || {})[String(s.numero)];
+      /* ⚠ só data URI de imagem entra: o campo vem de arquivo de fora, e um
+         `javascript:` ou um `http://` aqui viraria conteúdo de terceiro
+         dentro do documento que a empresa manda para o cliente dela. */
+      if (typeof v === "string" && /^data:image\/(png|jpe?g|webp|gif);base64,/i.test(v)) {
+        imgs[String(s.numero)] = v; n++;
+      }
+    });
+    return { ok: true, modelo: m, imagens: imgs, nSlots: sl.length, nFotos: n };
+  };
+
+  /* nome que não colide com o que já existe na conta de destino */
+  PropTpl.nomeLivre = function (nome, usados) {
+    var base = txt(nome) || "Modelo importado";
+    var tem = {};
+    (usados || []).forEach(function (x) { tem[txt(x).toLowerCase()] = 1; });
+    if (!tem[base.toLowerCase()]) return base;
+    var tentativa = base + " (importado)";
+    if (!tem[tentativa.toLowerCase()]) return tentativa;
+    for (var i = 2; i < 200; i++) {
+      var c = base + " (importado " + i + ")";
+      if (!tem[c.toLowerCase()]) return c;
+    }
+    return base + " (importado)";
   };
 
   global.PropTpl = PropTpl;

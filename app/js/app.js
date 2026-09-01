@@ -7228,7 +7228,96 @@
         var _c = this.orcAtual.comercial || {};
         if (!Util.naoVazio(_c.apresentacao)) UI.toast("Apresentação em " + (typeof Icones !== "undefined" ? Icones.get("ajustes", 15) : "") + " Dados vazia — saiu o texto padrão. Personalize p/ este cliente.", "erro");
       } catch (eAv) {}
+      /* =====================================================================
+       * COM QUAL DESENHO? — os Modelos de Proposta chegam ao orçamento
+       *
+       * ⚠ O MODELO NÃO SE IMPÕE, e a regra é a mesma da carpintaria: quem
+       *   nunca abriu "Modelos de Proposta" não tem modelo nenhum e continua
+       *   recebendo o documento de sempre. Trocar o desenho da proposta de
+       *   alguém sem que a pessoa tenha pedido é surpresa que ela descobre
+       *   com o cliente na frente.
+       *
+       * ⚠ E O CAMINHO ANTIGO CONTINUA SENDO O PRIMEIRO DA LISTA: "Documento
+       *   padrão do sistema" vem antes dos modelos, marcado quando não há
+       *   sugestão. Um recurso novo que empurra o antigo para o rodapé é o
+       *   jeito de quebrar quem já estava satisfeito.
+       * =================================================================== */
+      var self = this;
+      var modelos = [];
+      try {
+        if (typeof PropTpl !== "undefined" && typeof Store !== "undefined") {
+          modelos = Store.listar(Auth.empresaId(), "prop_modelos") || [];
+        }
+      } catch (eMd) { modelos = []; }
+      if (!modelos.length) { this._propostaClassica(); return; }
+
+      var cliId = "";
+      try { cliId = Proposta.clienteIdDoOrcamento(this.orcAtual); } catch (eC) {}
+      var sug = null;
+      try { sug = (typeof Gestao !== "undefined" && Gestao.propModeloPara) ? Gestao.propModeloPara(cliId) : null; } catch (eS) {}
+      var sugId = sug ? sug.id : "";
+
+      UI.modal("Com qual desenho?",
+        '<p class="muted">O conteúdo e os preços são os mesmos; muda o layout do papel.</p>'
+        + '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
+        + '<input type="radio" name="opl" value=""' + (sugId ? "" : " checked") + ' style="margin-top:3px">'
+        + "<span><b>Documento padrão do sistema</b><br><span class=\"muted\" style=\"font-size:12.5px\">Capa, apresentação, escopo, metodologia, condições e assinatura.</span></span></label>"
+        + modelos.map(function (mm) {
+            var m2 = PropTpl.modelo(mm);
+            return '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
+              + '<input type="radio" name="opl" value="' + Util.esc(mm.id) + '"' + (mm.id === sugId ? " checked" : "") + ' style="margin-top:3px">'
+              + "<span><b>" + Util.esc(m2.nome) + "</b>"
+              + (mm.id === sugId ? ' <span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700;font-size:10.5px">sugerido</span>' : "")
+              + '<br><span class="muted" style="font-size:12.5px">' + Util.esc(m2.descricao || (m2.paginas.length + " páginas")) + "</span></span></label>";
+          }).join(""),
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Gerar", classe: "primary", onClick: function () {
+              var sel = document.querySelector('input[name="opl"]:checked');
+              var escolhido = sel ? sel.value : "";
+              UI.fecharModal();
+              if (!escolhido) { self._propostaClassica(); return; }
+              self._propostaPorModelo(escolhido);
+          } }
+        ]);
+    },
+
+    /* o documento de sempre — o caminho que existia antes dos modelos */
+    _propostaClassica: function () {
       this._abrirPrint("Proposta — " + this.orcAtual.numero, Proposta.gerarHTML(this.orcAtual, Auth.usuario()), "nota");
+    },
+
+    /* o documento desenhado pelo modelo que o usuário montou */
+    _propostaPorModelo: function (modeloId) {
+      var orc = this.orcAtual;
+      var raw = null;
+      try { raw = Store.obter(Auth.empresaId(), "prop_modelos", modeloId); } catch (e) {}
+      if (!raw) { UI.toast("Modelo não encontrado.", "erro"); return; }
+      var m = PropTpl.modelo(raw);
+      var temEmp = typeof Empresa !== "undefined";
+      var c = orc.comercial || {};
+      var hoje = Util.agoraISO().slice(0, 10);
+
+      Gestao._propModImagens(m, function (imgs) {
+        var dados = {
+          empresa: temEmp && Empresa.dados ? Empresa.dados() : {},
+          logoHTML: temEmp && Empresa.logoHTML ? Empresa.logoHTML(120) : "",
+          cliente: (orc.cliente && orc.cliente.nome) || "",
+          obra: orc.nome || "",
+          numero: orc.numero || "",
+          data: hoje,
+          /* o motor só escreve `validade.texto`; quem tem a frase é o orçamento */
+          validade: { texto: Util.naoVazio(c.validadeProposta) ? ("Validade desta proposta: " + c.validadeProposta + ".") : "" },
+          blocos: Proposta.blocosParaModelo(orc),
+          comercial: Proposta.comercialParaModelo(orc),
+          imagens: imgs,
+          tituloDoc: "Proposta — " + (orc.numero || orc.nome || "")
+        };
+        /* ⚠ o auditor é o DO ORÇAMENTO: ele sabe quais números são custo e
+           quais são os preços que o papel deve mostrar. Sem ele, o motor cai
+           na varredura grossa de palavras e um custo passa como número. */
+        Gestao.propModImprimir(m, dados, function (html) { return Proposta.auditar(html, orc); });
+      });
     },
 
     // Anexo Técnico de Orçamento p/ LAUDO pericial (não comercial)
