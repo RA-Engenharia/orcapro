@@ -17654,11 +17654,12 @@
       var inj = faltas.filter(function (f) { return f.motivo === "injustificada"; }).length;
       var hes = lista("horas_extras").filter(function (h) { return String(h.data || "").slice(0, 7) === mes; }).sort(function (a, b) { return String(b.data).localeCompare(String(a.data)); });
       var minHE = hes.reduce(function (s, h) { return s + (typeof Ponto !== "undefined" ? Ponto.horasParaMin(h.horas) : 0); }, 0);
-      var extra = '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
+      var extra = '<button class="btn sm" data-gacao="nova-falta" style="margin-right:8px;align-self:center">Registrar falta</button>'
+        + '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
         + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lançar em lote</button>'
         + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Demonstrativo de frequência</button>'
         + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada</button>';
-      var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "nova-falta", "Registrar falta", extra);
+      var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "batidas-mes", "Registrar batidas", extra);
       html += '<div class="row" style="align-items:center;gap:14px;margin:-4px 0 12px">'
         + '<div class="field" style="max-width:170px"><label>Mês de referência</label><input type="month" id="pt-mes" value="' + mes + '"></div>'
         + '<span class="muted" style="align-self:center">Ativos: <b>' + ativos + "</b> · Faltas em " + mesBR + ": <b style=\"color:#dc2626\">" + inj + "</b> injustificada(s) de <b>" + faltas.length + "</b></span></div>";
@@ -17825,6 +17826,263 @@
         } }
       ]);
     },
+    /* ==================================================================
+     * REGISTRAR BATIDAS DO MÊS — transcrever o cartão de papel
+     *
+     * ⚠ POR QUE ESTA TELA EXISTE (01/09/2026). O impresso preenchia os
+     *   horários com a JORNADA CONTRATUAL, igual todo dia. Pediram para o
+     *   sistema "variar os minutos" para o papel não sair com hora cravada —
+     *   que é exatamente o recurso desligado em 17/08/2026 por fabricar
+     *   marcação de jornada que ninguém bateu (o histórico está no topo de
+     *   js/ponto.js). A saída honesta para o mesmo problema é esta: alguém
+     *   DIGITA o que a pessoa marcou, e o horário varia porque é verdadeiro.
+     *
+     * ⚠ ESTA TELA NÃO MOVE DINHEIRO. Ela grava na entidade `batidas` e em
+     *   mais nenhuma. Quem paga hora extra continua sendo o lançamento
+     *   DECLARADO em `horas_extras`, com data e motivo, digitado por uma
+     *   pessoa. A diferença entre a batida e a jornada aparece aqui como
+     *   SUGESTÃO e nunca vira lançamento sozinha: ligar dinheiro por
+     *   semelhança de data é a regra §2 da skill `dinheiro`, e um lançamento
+     *   criado aqui nasceria sem carimbo — logo, inencontrável.
+     * ================================================================== */
+    formBatidas: function () {
+      var self = this;
+      var colabs = lista("colaboradores").filter(function (c) { return c.status !== "desligado"; });
+      if (!colabs.length) { UI.toast("Cadastre colaboradores primeiro.", "erro"); return; }
+      var mes = this._pontoMes || mesLocal();
+      var corpo = '<div class="row">'
+        + campo("Colaborador *", sel("g-bat-col", optsRec(colabs, "nome", "", "— selecionar —")))
+        + campo("Mês *", inp("g-bat-mes", mes, "", "month")) + "</div>"
+        + '<p class="muted" style="margin:2px 0 8px;font-size:12px">Digite o que a pessoa marcou no controle de jornada. Dia em branco sai no impresso com a <b>jornada contratual</b>, como hoje.</p>'
+        + '<div id="g-bat-aviso"></div>'
+        + '<div id="g-bat-grade" style="max-height:46vh;overflow:auto"></div>';
+      UI.modal("Registrar batidas do mês", corpo, [
+        { texto: "Fechar", classe: "ghost", onClick: function () {
+          if (self._batPendentes() && !window.confirm("Há batidas digitadas que ainda não foram salvas. Fechar e descartar?")) return;
+          UI.fecharModal();
+        } },
+        { texto: "Preencher dias úteis", classe: "ghost", onClick: function () { self._batPreencher(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () { self._batSalvar(); } }
+      ]);
+      /* ⚠ MODAL NOVO COMEÇA SEM CONTEXTO. Sem isto, reabrir a tela herdaria o
+         `_batCtx` da vez anterior e faria a pergunta de descarte sobre um mês
+         que já foi gravado e fechado. */
+      this._batCtx = null;
+      /* ⚠ TROCAR DE PESSOA OU DE MÊS REMONTA A GRADE A PARTIR DO QUE ESTÁ
+         GRAVADO — e o que foi digitado mora SÓ no DOM. Sem esta guarda, o
+         encarregado que transcreveu 22 dias do cartão de papel e esbarra na
+         seta do campo Mês perde tudo, sem toast, sem desfazer. Esta base já
+         pagou esse preço uma vez com o preço de produção, que "voltava vazio,
+         sem aviso — o cliente redigitava tudo achando que tinha errado".
+         ⚠ E DEVOLVER O CAMPO não é cosmético: `_batSalvar` grava usando o
+           contexto da GRADE. Select apontando para a Maria com a grade do João
+           na tela carimbaria as horas do João no id e no nome da Maria — dois
+           documentos trabalhistas errados de uma vez. */
+      var redesenha = function () {
+        var novoCid = v("g-bat-col"), novoMes = v("g-bat-mes"), ctx = self._batCtx;
+        if (ctx && (ctx.cid !== novoCid || ctx.mes !== novoMes) && self._batPendentes()) {
+          if (!window.confirm("Há batidas digitadas que ainda não foram salvas. Trocar agora apaga o que você preencheu. Continuar sem salvar?")) {
+            var sc2 = document.getElementById("g-bat-col"), sm2 = document.getElementById("g-bat-mes");
+            if (sc2) sc2.value = ctx.cid;
+            if (sm2) sm2.value = ctx.mes;
+            return;
+          }
+        }
+        self._batGrade(novoCid, novoMes);
+      };
+      var sc = document.getElementById("g-bat-col"), sm = document.getElementById("g-bat-mes");
+      if (sc) sc.onchange = redesenha;
+      if (sm) sm.onchange = redesenha;
+      redesenha();
+    },
+
+    /* Quantos dias da grade divergem do que está gravado. Compara com o
+       GRAVADO, não com "tem algo preenchido": senão reabrir a tela e trocar de
+       mês perguntaria sobre dados que já estão salvos, e pergunta falsa treina
+       a pessoa a clicar OK no reflexo — que é como uma pergunta de verdade
+       passa despercebida depois. */
+    _batPendentes: function () {
+      var ctx = this._batCtx;
+      if (!ctx || typeof Ponto === "undefined") return 0;
+      var naTela = this._batLerCampos();
+      var grav = Ponto.indexarBatidas(listaTodas("batidas"), ctx.cid, ctx.mes);
+      var pend = 0;
+      Object.keys(naTela).forEach(function (ds) {
+        var b = naTela[ds], g = grav[ds] || {};
+        if (!b.entrada && !b.almoco && !b.retorno && !b.saida && !b.obs) {
+          /* linha esvaziada em cima de registro que existe TAMBÉM é mudança */
+          if (g.entrada || g.almoco || g.retorno || g.saida || g.obs) pend++;
+          return;
+        }
+        if (b.entrada !== (g.entrada || "") || b.almoco !== (g.almoco || "")
+          || b.retorno !== (g.retorno || "") || b.saida !== (g.saida || "")
+          || b.obs !== (g.obs || "")) pend++;
+      });
+      return pend;
+    },
+
+    _batGrade: function (cid, mes) {
+      var box = document.getElementById("g-bat-grade"), self = this;
+      if (!box) return;
+      if (!cid || !mes) { box.innerHTML = "<p class=\"muted\">Escolha o colaborador e o mês.</p>"; this._batCtx = null; this._batAviso(); return; }
+      var ano = Util.num(mes.split("-")[0]), mm = Util.num(mes.split("-")[1]);
+      if (!ano || !mm) { box.innerHTML = '<p class="muted">Mês inválido.</p>'; return; }
+      var nDias = new Date(ano, mm, 0).getDate();
+      var ix = (typeof Ponto !== "undefined") ? Ponto.indexarBatidas(listaTodas("batidas"), cid, mes) : {};
+      /* índice fora do laço — a lição de faltasLote logo acima */
+      var faltasIx = Object.create(null);
+      lista("faltas").forEach(function (f) { if (f && f.colaboradorId === cid) faltasIx[f.data] = f.motivo; });
+      var diasSem = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+      var cel = function (ds, campoNome, valor) {
+        /* ⚠ ancorado pela DATA, nunca pela posição na tabela: linha em branco
+           no meio deslocaria os valores e a batida de um dia iria para outro. */
+        return '<td style="padding:2px"><input type="time" data-bat="' + ds + "|" + campoNome
+          + '" value="' + Util.esc(valor || "") + '" style="width:100%;min-width:78px"></td>';
+      };
+      var h = '<table class="tbl" style="width:100%;font-size:12px"><thead><tr>'
+        + "<th>Dia</th><th>Entrada</th><th>Almoço</th><th>Retorno</th><th>Saída</th><th>Observação</th>"
+        + "</tr></thead><tbody>";
+      for (var d = 1; d <= nDias; d++) {
+        var ds = ano + "-" + String(mm).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+        var dow = new Date(ds + "T12:00:00").getDay(), fds = (dow === 0 || dow === 6);
+        var b = ix[ds] || {}, falta = faltasIx[ds];
+        var fundo = falta ? "background:#fee2e2" : (fds ? "background:#f3f4f6" : "");
+        h += '<tr style="' + fundo + '"><td style="white-space:nowrap;padding:2px 6px"><b>' + String(d).padStart(2, "0")
+          + "</b> " + diasSem[dow] + (falta ? ' <span style="color:#b91c1c">·</span>' : "") + "</td>"
+          + cel(ds, "entrada", b.entrada) + cel(ds, "almoco", b.almoco)
+          + cel(ds, "retorno", b.retorno) + cel(ds, "saida", b.saida)
+          + '<td style="padding:2px"><input type="text" data-bat="' + ds + '|obs" value="' + Util.esc(b.obs || "")
+          + '" placeholder="' + (falta ? Util.esc(rot(P.faltaMotivo, falta)) : "") + '" style="width:100%"></td></tr>';
+      }
+      h += "</tbody></table>";
+      box.innerHTML = h;
+      /* ⚠ o contexto e do que a GRADE mostra, e e ele que _batSalvar usa. */
+      this._batCtx = { cid: cid, mes: mes };
+      var campos = box.querySelectorAll("[data-bat]");
+      for (var i = 0; i < campos.length; i++) campos[i].onchange = function () { self._batAviso(); };
+      this._batAviso();
+    },
+
+    /* Aviso ao vivo. ⚠ O aviso do horário uniforme não é zelo: cartão com
+       entrada e saída iguais todo dia é o "horário britânico" que a Súmula 338
+       do TST considera INVÁLIDO como prova, invertendo o ônus contra a
+       empresa. Preencher os 22 dias com a jornada e salvar produz exatamente
+       isso — com o agravante de o papel passar a afirmar que é marcação real.
+       Quem decide é a pessoa; o sistema tem obrigação de dizer. */
+    _batAviso: function () {
+      var box = document.getElementById("g-bat-aviso");
+      if (!box) return;
+      var dados = this._batLerCampos(), jor = this._pontoJornada();
+      var dias = Object.keys(dados), n = 0, iguais = 0, probl = 0, extraMin = 0;
+      dias.forEach(function (ds) {
+        var b = dados[ds];
+        if (typeof Ponto === "undefined") return;
+        var c = Ponto.conferirBatida(b);
+        if (c.vazia) return;
+        n++;
+        if (c.bloqueia || c.codigos.length) probl++;
+        if (b.entrada === jor.entrada && b.almoco === jor.almoco && b.retorno === jor.retorno && b.saida === jor.saida) iguais++;
+        var ex = Ponto.extraDaBatida(b, jor);
+        if (ex && ex > 0) extraMin += ex;
+      });
+      var msg = "";
+      if (!n) { box.innerHTML = ""; return; }
+      msg += '<div class="muted" style="font-size:12px;margin:2px 0 6px"><b>' + n + "</b> dia(s) preenchido(s)"
+        + (probl ? ' · <span style="color:#b45309">' + probl + " com aviso</span>" : "")
+        + (extraMin ? " · " + Ponto.minParaHhmmExtenso(extraMin) + " além da jornada" : "") + "</div>";
+      if (iguais >= 5) {
+        msg += '<div style="border:1px solid #fbbf24;background:#fffbeb;border-radius:8px;padding:7px 9px;font-size:12px;margin-bottom:6px">'
+          + "<b>" + iguais + " dia(s) com horário idêntico à jornada.</b> Cartão com horário uniforme é o que a Súmula 338 do TST "
+          + "trata como inválido como prova. Se foi isso mesmo, tudo bem — mas confira antes de imprimir.</div>";
+      }
+      if (extraMin) {
+        msg += '<div class="muted" style="font-size:11.5px;margin-bottom:6px">O tempo além da jornada aparece aqui só como conferência. '
+          + "Hora extra a pagar continua sendo o que você lança em <b>Lançar hora extra</b>.</div>";
+      }
+      box.innerHTML = msg;
+    },
+
+    /* Lê a grade inteira para { "AAAA-MM-DD": {entrada,almoco,retorno,saida,obs} } */
+    _batLerCampos: function () {
+      var out = Object.create(null);
+      var campos = document.querySelectorAll("[data-bat]");
+      for (var i = 0; i < campos.length; i++) {
+        var p = String(campos[i].getAttribute("data-bat") || "").split("|");
+        if (p.length !== 2) continue;
+        if (!out[p[0]]) out[p[0]] = { entrada: "", almoco: "", retorno: "", saida: "", obs: "" };
+        out[p[0]][p[1]] = String(campos[i].value == null ? "" : campos[i].value).trim();
+      }
+      return out;
+    },
+
+    /* Preenche os dias ÚTEIS ainda vazios com a jornada — só na tela, nada é
+       gravado até a pessoa apertar Salvar e ler o aviso do horário uniforme. */
+    _batPreencher: function () {
+      var jor = this._pontoJornada(), n = 0;
+      var dados = this._batLerCampos();
+      var campos = document.querySelectorAll("[data-bat]");
+      var faltasIx = Object.create(null), cid = v("g-bat-col");
+      lista("faltas").forEach(function (f) { if (f && f.colaboradorId === cid) faltasIx[f.data] = 1; });
+      for (var i = 0; i < campos.length; i++) {
+        var p = String(campos[i].getAttribute("data-bat") || "").split("|");
+        if (p.length !== 2 || p[1] === "obs") continue;
+        var ds = p[0], b = dados[ds] || {};
+        if (b.entrada || b.almoco || b.retorno || b.saida) continue;   /* não sobrescreve o digitado */
+        var dow = new Date(ds + "T12:00:00").getDay();
+        if (dow === 0 || dow === 6 || faltasIx[ds]) continue;
+        campos[i].value = jor[p[1]] || "";
+        if (p[1] === "entrada") n++;
+      }
+      this._batAviso();
+      UI.toast(n + " dia(s) útil(eis) preenchido(s) com a jornada. Ajuste o que for diferente antes de salvar.", "ok");
+    },
+
+    _batSalvar: function () {
+      if (this._bloqueado()) return;
+      /* ⚠ GRAVA PELO CONTEXTO DA GRADE, nunca pelo valor atual do select.
+         Os campos [data-bat] na tela sao os do colaborador/mes que a grade
+         desenhou. Ler v("g-bat-col") aqui significa que qualquer caminho em
+         que o select mude sem a grade redesenhar carimba as horas de uma
+         pessoa no id e no nome de OUTRA — dois documentos trabalhistas
+         errados de uma vez, e nenhum dos dois com jeito de erro. */
+      var ctx = this._batCtx || {};
+      var cid = ctx.cid || "", mes = ctx.mes || "";
+      if (!cid || !mes) { UI.toast("Escolha o colaborador e o mês.", "erro"); return; }
+      var col = null;
+      lista("colaboradores").forEach(function (c) { if (c && c.id === cid) col = c; });
+      if (!col) { UI.toast("Colaborador não encontrado.", "erro"); return; }
+      var dados = this._batLerCampos();
+      var ix = (typeof Ponto !== "undefined") ? Ponto.indexarBatidas(listaTodas("batidas"), cid, mes) : {};
+      var regs = [], apagar = [], recusados = [], avisados = 0;
+      Object.keys(dados).forEach(function (ds) {
+        var b = dados[ds], c = Ponto.conferirBatida(b);
+        if (c.vazia) { if (ix[ds] && ix[ds].id) apagar.push(ix[ds].id); return; }
+        if (c.bloqueia) { recusados.push(ds.slice(8) + "/" + ds.slice(5, 7)); return; }
+        if (c.codigos.length) avisados++;
+        regs.push({
+          id: Ponto.idBatida(cid, ds), colaboradorId: cid,
+          /* ⚠ snapshot do nome: excluir colaborador não cascateia, e sem ele o
+             impresso de um mês antigo ficaria sem saber de quem é. */
+          colaboradorNome: col.nome || "",
+          data: ds, entrada: b.entrada, almoco: b.almoco, retorno: b.retorno, saida: b.saida, obs: b.obs || ""
+        });
+      });
+      /* ⚠ UMA gravação, nunca laço de Store.salvar: `salvar` relê e regrava a
+         entidade inteira a cada chamada, e 31 dias vezes isso é a aba parada
+         que o ⚠ de js/store.js mede em segundos. */
+      var n = regs.length ? Store.salvarVarios(eid(), "batidas", regs) : 0;
+      for (var i = 0; i < apagar.length; i++) Store.excluir(eid(), "batidas", apagar[i]);
+      this._pontoMes = mes;
+      UI.fecharModal(); App.render();
+      /* o resumo diz o que ACONTECEU, não o que foi pedido: salvarVarios
+         devolve 0 quando a cota estoura, e um toast otimista aí seria mentira */
+      var t = n + " dia(s) gravado(s)";
+      if (apagar.length) t += " · " + apagar.length + " apagado(s)";
+      if (avisados) t += " · " + avisados + " com aviso";
+      if (recusados.length) t += " · não gravei " + recusados.join(", ") + ": horário fora de HH:MM";
+      UI.toast(t + ".", recusados.length ? "erro" : "ok");
+    },
+
     excluirFalta: function (id) {
       if (this._bloqueado()) return;
       Store.excluir(eid(), "faltas", id); App.render(); UI.toast("Falta removida.", "ok");
@@ -17860,7 +18118,7 @@
       if (!colabs.length) { UI.toast("Cadastre colaboradores primeiro.", "erro"); return; }
       var mes = this._pontoMes || mesLocal();
       var corpo = '<div class="row">' + campo("Mês de referência", inp("g-mes", mes, "", "month")) + campo("Colaborador", sel("g-colab", optsRec(colabs.filter(function (c) { return c.status === "ativo"; }), "nome", "", "— Todos os ativos —"))) + "</div>"
-        + '<p class="muted" style="margin:6px 0 0">O espelho usa a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada) e marca as faltas do mês. Documento pronto para impressão e assinatura (NR/CLT).</p>';
+        + '<p class="muted" style="margin:6px 0 0">Dias sem batida registrada saem com a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada); dias com batida saem com o horário digitado em <b>Registrar batidas</b>, marcados com *. Documento pronto para impressão e assinatura.</p>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Demonstrativo de Frequência", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Gerar", classe: "primary", onClick: function () {
@@ -17892,6 +18150,10 @@
        * O escopo por obra é filtro de TELA; documento de pessoa lê a empresa
        * inteira — mesma regra que a numeração e os dedupes já seguem. */
       var todasFaltas = lista("faltas"), todasHE = listaTodas("horas_extras");
+      /* mesmo motivo do listaTodas acima: documento de PESSOA le a empresa inteira.
+         `batidas` nao grava obraId hoje, entao lista e listaTodas coincidem — mas
+         no dia em que alguem acrescentar obraId, esta linha ja esta certa. */
+      var todasBat = listaTodas("batidas");
       var paginas = colabsLista.map(function (c) {
         var faltasC = {}; todasFaltas.forEach(function (f) { if (f.colaboradorId === c.id && String(f.data || "").slice(0, 7) === mes) faltasC[f.data] = f.motivo; });
         /* hora extra do dia: soma quando houver mais de um lançamento na mesma data */
@@ -17903,13 +18165,36 @@
           heC[h.data] = (heC[h.data] || 0) + min;
           if (h.motivo) heObs[h.data] = (heObs[h.data] ? heObs[h.data] + " · " : "") + String(h.motivo);
         });
+        var batC = (typeof Ponto !== "undefined") ? Ponto.indexarBatidas(todasBat, c.id, mes) : {};
+        var temReal = false;
         var linhas = "", nFaltas = 0, nInj = 0, nTrab = 0, minExtraMes = 0, nDiasExtra = 0;
         for (var d = 1; d <= nDias; d++) {
           var ds = ano + "-" + String(mm).padStart(2, "0") + "-" + String(d).padStart(2, "0");
           var dt = new Date(ds + "T12:00:00"), dow = dt.getDay(), fimDeSemana = (dow === 0 || dow === 6);
           var falta = faltasC[ds], extraMin = heC[ds] || 0;
-          var bg = "", obsCol = "", e = "", a = "", r = "", s = "", heCol = "";
-          if (falta && !extraMin) { bg = "#fee2e2"; obsCol = rot(P.faltaMotivo, falta); nFaltas++; if (falta === "injustificada") nInj++; }
+          var bReal = (typeof Ponto !== "undefined") ? Ponto.batidaParaLinha(batC[ds]) : null;
+          var bg = "", obsCol = "", e = "", a = "", r = "", s = "", heCol = "", marca = "";
+          if (bReal) {
+            /* ⚠ HÁ BATIDA DIGITADA — E ELA MANDA. O horário é o que a pessoa
+               marcou; nada aqui deriva nada. `Ponto.batidas` não é chamado, e
+               `extraMin` NÃO estica a saída: a saída digitada JÁ contém a hora
+               extra que houve. Esticar aqui contaria o mesmo tempo duas vezes
+               no mesmo papel — uma no horário, outra na coluna "H. extra" —,
+               e é dessa coluna que sai o número que alguém digita em R$ na
+               folha. A coluna e o rodapé continuam vindo SÓ de `horas_extras`:
+               o horário é fato, a hora extra paga é declaração, e são donos
+               diferentes de propósito (skill `dinheiro` §2). */
+            e = bReal.entrada; a = bReal.almoco; r = bReal.retorno; s = bReal.saida;
+            marca = "*"; temReal = true;
+            var partes = [];
+            if (falta) { bg = "#fee2e2"; nFaltas++; if (falta === "injustificada") nInj++; partes.push(rot(P.faltaMotivo, falta)); }
+            else { if (!fimDeSemana) nTrab++; if (fimDeSemana || extraMin) bg = "#fef9c3"; }
+            if (fimDeSemana) partes.push(dow === 0 ? "DSR trabalhado" : "Sábado trabalhado");
+            if (bReal.obs) partes.push(bReal.obs);
+            if (heObs[ds]) partes.push(heObs[ds]);
+            obsCol = partes.join(" · ");
+          }
+          else if (falta && !extraMin) { bg = "#fee2e2"; obsCol = rot(P.faltaMotivo, falta); nFaltas++; if (falta === "injustificada") nInj++; }
           else if ((fimDeSemana || falta) && extraMin) {
             /* trabalhou em dia sem jornada (sábado, domingo, feriado) ou voltou
                num dia marcado como falta: o cartão mostra as horas de quem foi.
@@ -17942,23 +18227,83 @@
             heCol = (typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(extraMin) : "";
             minExtraMes += extraMin; nDiasExtra++;
           }
-          linhas += '<tr style="background:' + bg + '"><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + String(d).padStart(2, "0") + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + diasSem[dow] + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + e + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + a + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + r + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + s + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + heCol + '</td><td style="border:1px solid #999;padding:2px 4px;font-size:8.5px">' + obsCol + "</td></tr>";
+          /* ⚠ TUDO PASSA POR Util.esc AQUI, NA MONTAGEM FINAL — e nao peca por
+             peca. Escapar nas partes causaria escape duplo, e um "&" digitado
+             sairia "&amp;" no papel do colaborador.
+
+             POR QUE OS HORARIOS TAMBEM. `e/a/r/s` parecem seguros porque a tela
+             so aceita <input type="time"> e `conferirBatida` recusa o que nao e
+             HH:MM. Mas essa guarda esta do lado da ESCRITA PELA TELA, e a
+             entidade `batidas` tem outros dois escritores que nao passam por
+             ela: o merge da nuvem (uniao por id, sem olhar campo) e
+             App.importarBackup, que chama Store.salvarVarios direto — e
+             NORMALIZADORES so tem entrada para `financeiro`. Um registro com
+             entrada:"<img src=x onerror=...>" vindo por qualquer um dos dois
+             chegaria aqui inteiro.
+
+             E ESTE HTML EXECUTA. App._abrirPrint faz `overlay.innerHTML = ...`,
+             na origem do app — com a licenca, o tenant e a base inteira. Nao ha
+             CSP. Medido em navegador em 01/09/2026, antes do conserto: o texto
+             do campo de motivo virava elemento no DOM, nao texto.
+
+             Na TELA de edicao a mesma string e inerte, porque _batGrade escapa.
+             So o papel executava. */
+          linhas += '<tr style="page-break-inside:avoid;background:' + bg + '"><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + String(d).padStart(2, "0") + marca + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + diasSem[dow] + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + Util.esc(e) + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + Util.esc(a) + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + Util.esc(r) + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center">' + Util.esc(s) + '</td><td style="border:1px solid #999;padding:2px 4px;text-align:center;font-weight:bold">' + Util.esc(heCol) + '</td><td style="border:1px solid #999;padding:2px 4px;font-size:8.5px">' + Util.esc(obsCol) + "</td></tr>";
         }
         var heMes = (typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(minExtraMes) : "00:00";
+        /* ==============================================================
+         * O PAPEL DIZ A VERDADE SOBRE SI MESMO
+         *
+         * Duas naturezas, decididas pelo DADO e não por uma preferência:
+         *
+         *  · CASO A — nenhum dia do mês tem batida digitada. O horário é a
+         *    jornada contratual, igual todo dia, e o documento continua sendo
+         *    DEMONSTRATIVO DE FREQUÊNCIA, com o mesmo aviso de 17/08/2026.
+         *    ⚠ Não afrouxar este texto. Ele é o que impede o papel de voltar
+         *      a se anunciar como registro de ponto sem ter marcação nenhuma.
+         *
+         *  · CASO B — há ao menos um dia com batida digitada (marcado com *).
+         *    Aí existe marcação de verdade, transcrita do controle de jornada,
+         *    e o papel é um CONTROLE MANUAL na forma que o art. 74, §2º da CLT
+         *    admite (manual, mecânico ou eletrônico).
+         *
+         * ⚠ O texto NÃO afirma que a empresa cumpriu a obrigação legal dela.
+         *   Isso depende da assinatura e da fidedignidade do que foi digitado,
+         *   e não é o OrçaPRO quem garante. Ele também diz, em voz alta, que
+         *   NÃO é REP (Portaria MTP 671/2021) — porque não é, e recado que
+         *   mente é pior que recado nenhum.
+         * ============================================================== */
+        /* ⚠ A legenda enumera o que o empregado esta atestando, e por isso e
+           CONDICIONAL. No caso A a mesma folha nega, em caixa amarela, que os
+           horarios sejam marcacao — fazer assinar ciencia deles logo abaixo
+           seria a folha se contradizendo. O commit de 17/08/2026 ja tinha
+           tirado "horarios" daqui exatamente por isso; so o caso B o devolve. */
+        var legAssin = temReal
+          ? "Ciente dos horários, dias, faltas e horas extras acima"
+          : "Ciente dos dias, faltas e horas extras acima";
+        var titDoc = temReal ? "REGISTRO DE PONTO — CONTROLE MANUAL" : "DEMONSTRATIVO DE FREQUÊNCIA";
+        var hj = hojeLocal();
+        var hjBR = hj.slice(8, 10) + "/" + hj.slice(5, 7) + "/" + hj.slice(0, 4);
+        var blocoLegal = temReal
+          ? '<b>Os dias marcados com * trazem as batidas informadas por esta empresa</b>, transcritas do controle de jornada mantido por ela. '
+            + 'Os demais dias trazem a <b>jornada contratual</b>, e não marcação de ponto. Este documento é um <b>controle manual de jornada, '
+            + 'na forma admitida pelo art. 74, §2º, da CLT</b> — ele <b>não é</b> sistema de registro eletrônico de ponto (REP) e não substitui '
+            + 'o registro adotado pelo empregador nos termos da Portaria MTP nº 671/2021. Emitido em ' + hjBR + "."
+          : '<b>Os horários abaixo são a JORNADA CONTRATUAL, não marcação de ponto.</b> Este documento demonstra os dias trabalhados, faltas e horas extras lançadas no sistema. '
+            + 'Ele <b>não substitui</b> o registro de ponto exigido pelo art. 74 da CLT. Emitido em ' + hjBR + ".";
         return '<div style="page-break-after:always;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;max-width:760px;margin:0 auto">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:8px">'
-          + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">DEMONSTRATIVO DE FREQUÊNCIA</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
+          + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">' + titDoc + '</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
           + '<div style="display:flex;border:1px solid #999;margin-bottom:6px"><div style="flex:2;padding:4px;border-right:1px solid #999"><b>Colaborador:</b> ' + Util.esc(c.nome || "") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>Função:</b> ' + Util.esc(c.funcao || "—") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>CPF:</b> ' + Util.esc(c.cpf || "—") + '</div><div style="flex:1;padding:4px"><b>Admissão:</b> ' + (c.admissao ? c.admissao.split("-").reverse().join("/") : "—") + "</div></div>"
           + '<div style="border:1px solid #999;border-left:3px solid #b45309;background:#fffbeb;padding:5px 7px;margin-bottom:6px;font-size:9px;line-height:1.45">'
-          + '<b>Os horários abaixo são a JORNADA CONTRATUAL, não marcação de ponto.</b> Este documento demonstra os dias trabalhados, faltas e horas extras lançadas no sistema. '
-          + 'Ele <b>não substitui</b> o registro de ponto exigido pelo art. 74 da CLT.</div>'
-          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:7%">Dia</th><th style="border:1px solid #999;padding:3px;width:7%">Sem</th><th style="border:1px solid #999;padding:3px;width:12%">Entrada</th><th style="border:1px solid #999;padding:3px;width:12%">Almoço</th><th style="border:1px solid #999;padding:3px;width:12%">Retorno</th><th style="border:1px solid #999;padding:3px;width:12%">Saída</th><th style="border:1px solid #999;padding:3px;width:9%">H. extra</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
+          + blocoLegal + "</div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead style="display:table-header-group"><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:7%">Dia</th><th style="border:1px solid #999;padding:3px;width:7%">Sem</th><th style="border:1px solid #999;padding:3px;width:12%">Entrada</th><th style="border:1px solid #999;padding:3px;width:12%">Almoço</th><th style="border:1px solid #999;padding:3px;width:12%">Retorno</th><th style="border:1px solid #999;padding:3px;width:12%">Saída</th><th style="border:1px solid #999;padding:3px;width:9%">H. extra</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
           + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + '</div></div><div style="flex:1;padding:5px"><div style="color:#b45309;font-weight:bold">Horas extras</div><div style="font-size:15px;font-weight:bold">' + heMes + '</div><div style="font-size:8px;color:#555">' + (nDiasExtra ? "em " + nDiasExtra + " dia(s)" : "nenhum dia") + "</div></div></div>"
-          + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador<br><span style="font-size:8px;color:#555">Ciênte dos dias, faltas e horas extras acima</span></div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
+          + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador<br><span style="font-size:8px;color:#555">' + legAssin + '</span></div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
           + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + '</div>';
       }).join("");
-      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Demonstrativo de Frequência — " + this._mesExtenso(mes), paginas);
-      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Demonstrativo de Frequência</title></head><body>" + paginas + "</body></html>"); w.document.close(); } }
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Ponto — " + this._mesExtenso(mes), paginas);
+      else { var w = window.open("", "_blank"); if (w) { w.document.write("<html><head><title>Ponto</title></head><body>" + paginas + "</body></html>"); w.document.close(); } }
     },
     novoPonto: function () { this.formPonto(null); },
     formPonto: function (p) {
@@ -22552,6 +22897,77 @@ renderFolha: function () {
      * ================================================================== */
     _APROV_REABRE: { pendente: 1, rascunho: 1, aberto: 1, aberta: 1 },
     _ehAprovado: function (st) { return !!(this._APROV_OK[st] || this._APROV_TERM[st]); },
+    /* =====================================================================
+     * A RECEITA QUE ESTA MEDIÇÃO JÁ LANÇOU
+     *
+     * ⚠ O QUE ESTAVA ABERTO. Registrar o pagamento de uma medição lançava uma
+     *   receita no Financeiro. A única proteção contra lançar de novo era o
+     *   campo `dataPgto` do próprio documento — e a reabertura de um documento
+     *   pago APAGA esse campo de propósito (senão o documento ficaria aprovado
+     *   e sem poder ser pago nunca mais). Ou seja: a porta de saída da
+     *   reabertura era também a porta de entrada da duplicidade.
+     *
+     *   O roteiro completo, sem nenhum passo estranho: o financeiro registra o
+     *   pagamento; alguém percebe o erro e volta o status; `dataPgto` some; o
+     *   botão "Registrar pgto" reaparece; um clique e o caixa tem DUAS receitas
+     *   para UMA medição. O aviso da reabertura mandava estornar antes, mas
+     *   nada verificava — e o sistema sequer TINHA COMO verificar.
+     *
+     * ⚠ POR QUE ELE NÃO TINHA COMO. A despesa da compra carrega
+     *   `docTipo:"PC"` + `docId`, e a da nota carrega `docTipo:"NF"`. A nota ao
+     *   lado do carimbo da compra (`case "receber-compra"`) explica que sem ele
+     *   o lançamento é INVISÍVEL: dá para pagar duas vezes o mesmo dinheiro sem
+     *   nada no sistema capaz de perceber. A receita da medição nascia cega —
+     *   nos DOIS caminhos que a criam. Agora ela leva `docTipo:"MED"` +
+     *   `docId` + `docNumero`, igual às outras.
+     *
+     * ⚠ LANÇAMENTO ANTIGO NÃO TEM CARIMBO e por isso não é achado aqui — o
+     *   mesmo limite que `compranota.js` documenta no `despesaDaCompra`. E NÃO
+     *   se casa por descrição e valor: dinheiro não se liga por semelhança, e
+     *   um palpite errado aqui ou trava um pagamento legítimo ou libera um
+     *   duplicado. Para o dado antigo quem protege continua sendo `dataPgto`.
+     * =================================================================== */
+    /* ⚠ OS DOIS DOCUMENTOS QUE LANÇAM DINHEIRO, NO MESMO GUARDA. A compra tem
+       o buraco IDÊNTICO: `dataRecebimento` é a única defesa dela, e a
+       reabertura de um pedido recebido apaga esse campo do mesmo jeito. A
+       despesa dela já nascia carimbada com `docTipo:"PC"` — faltava alguém
+       perguntar por ela. Consertar só a medição deixaria as duas portas
+       dando respostas diferentes para a mesma pergunta, que é o jeito mais
+       caro de consertar: quem usa aprende que a regra é aleatória. */
+    _DOC_CARIMBO: { medicoes: "MED", compras: "PC" },
+    _lancVivoDoDoc: function (entidade, docId, fin) {
+      var tipo = this._DOC_CARIMBO[entidade];
+      var id = String(docId == null ? "" : docId);
+      if (!tipo || !id) return null;
+      var l = fin || lista("financeiro");
+      for (var i = 0; i < l.length; i++) {
+        var f = l[i];
+        if (!f) continue;
+        if (String(f.docTipo || "") !== tipo) continue;
+        if (String(f.docId || "") !== id) continue;
+        /* ⚠ o espelho do estorno copia obra e categoria mas é OUTRO lançamento
+           (um crédito). Tratá-lo como o original faria o estorno TRAVAR o
+           pagamento que ele acabou de liberar. */
+        if (f.estornoDe) continue;
+        /* estornado = anulado: não trava mais nada, e é essa a porta */
+        if (this._finEstornado(f, l)) continue;
+        return f;
+      }
+      return null;
+    },
+    /* a frase que o usuário lê, com o número na cara. Devolve null quando não
+       há nada de pé — e aí a baixa segue. */
+    _travaLancDoDoc: function (doc, entidade) {
+      var r = this._lancVivoDoDoc(entidade, doc && doc.id);
+      if (!r) return null;
+      var ehCompra = entidade === "compras";
+      return "Esta " + (ehCompra ? "compra" : "medição") + " já tem uma "
+        + (ehCompra ? "despesa" : "receita") + " de " + Util.fmtMoeda(Math.abs(Util.num(r.valor)))
+        + (r.data ? " lançada em " + Util.fmtDia(r.data) : "") + " no Financeiro, e ela continua de pé. "
+        + "Estorne esse lançamento por lá antes de " + (ehCompra ? "receber" : "registrar o pagamento")
+        + " de novo — senão o caixa fica com o dobro do que a obra "
+        + (ehCompra ? "gastou" : "recebeu") + ".";
+    },
     _guardaReabertura: function (obj, statusAntigo, entidade) {
       /* ⚠ v1.2 — A CONDIÇÃO DE ENTRADA DEIXAVA PASSAR `paga → aprovada`.
        * Ela só olhava se o status NOVO era de reabertura
@@ -22607,13 +23023,41 @@ renderFolha: function () {
          *   estoque é movimento próprio, na tela do almoxarifado. */
         var qual = entidade === "compras" ? "recebimento" : "pagamento";
         var dataAntiga = entidade === "compras" ? obj.dataRecebimento : obj.dataPgto;
+        /* ⚠ O AVISO MANDAVA ESTORNAR SEM NUNCA TER PROCURADO O LANÇAMENTO.
+           Aviso genérico a pessoa lê como formalidade e clica em seguir; número
+           ela confere. Agora que a receita da medição tem carimbo, dá para dizer
+           QUANTO e QUANDO — e avisar que registrar o pagamento de novo vai ser
+           recusado enquanto ela estiver de pé, que é a parte capaz de mudar a
+           decisão de quem está lendo. */
+        var recViva = this._lancVivoDoDoc(entidade, obj.id);
+        var linhaRec = "";
+        if (recViva) {
+          linhaRec = "\n\nNo Financeiro há uma receita de "
+            + Util.fmtMoeda(Math.abs(Util.num(recViva.valor)))
+            + (recViva.data ? " de " + Util.fmtDia(recViva.data) : "")
+            + " que continua de pé. Enquanto ela estiver lá, "
+            + (entidade === "compras" ? "receber este pedido" : "registrar o pagamento desta medição")
+            + " de novo vai ser RECUSADO — estorne por lá primeiro.";
+        } else if (this._DOC_CARIMBO[entidade]) {
+          /* ⚠ e SO para quem lança dinheiro. A requisição também tem estado
+             terminal ("comprada") e cai neste mesmo ramo, mas ela nunca criou
+             lançamento nenhum: mandar conferir no Financeiro o que não existe
+             manda a pessoa procurar por horas e ensina a ignorar o aviso.
+             ⚠ não achar NÃO quer dizer que não existe: pagamento registrado em
+             versão antiga não tem carimbo. Dizer "não há lançamento" seria mentir
+             com confiança — o pior tipo de mensagem num módulo de dinheiro. */
+          linhaRec = "\n\nNão encontrei o lançamento deste documento pelo carimbo "
+            + "(baixas registradas em versões antigas não têm). Confira no "
+            + "Financeiro antes de seguir.";
+        }
         var aviso = "Este documento está " + statusAntigo + " e o lançamento já entrou no Financeiro"
           + (dataAntiga ? " em " + Util.fmtDia(dataAntiga) : "") + ".\n\n"
           + "Voltar para \"" + obj.status + "\" desfaz o " + qual + " DENTRO DO DOCUMENTO. "
           + "O lançamento no Financeiro NÃO é estornado por aqui"
           + (entidade === "compras" ? ", e o material que já entrou no almoxarifado continua lá" : "") + ".\n\n"
           + "Se o dinheiro entrou ou saiu de verdade, estorne o lançamento no Financeiro também — "
-          + "senão o caixa e o documento vão contar histórias diferentes.\n\nDesfazer o " + qual + "?";
+          + "senão o caixa e o documento vão contar histórias diferentes."
+          + linhaRec + "\n\nDesfazer o " + qual + "?";
         var ok = false;
         try { ok = confirm(aviso); } catch (eC) { ok = false; }
         if (!ok) return false;
@@ -22680,12 +23124,26 @@ renderFolha: function () {
            agenda aqui, executa depois do save, onde "se o save nao aconteceu,
            este ponto nao e alcancado". */
         if (entidade === "medicoes" && novo === "paga" && !obj.dataPgto) {
+          /* ⚠ A TRAVA QUE SOBREVIVE À REABERTURA. `!obj.dataPgto` logo acima
+             não protege nada depois que alguém reabriu o documento: reabrir
+             APAGA `dataPgto` (é o que devolve a possibilidade de pagar), e a
+             receita da primeira vez continua inteira no Financeiro. O que não
+             se apaga daqui é o lançamento — então é ele que responde.
+             Recusa ANTES de mexer em `obj`: o gate decide, o save executa. */
+          var travaG = this._travaLancDoDoc(obj, "medicoes");
+          if (travaG) { UI.toast(travaG, "erro"); return false; }
           obj.dataPgto = this._hojeISO();
           var liqF = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
-          this._lancFinPendente = { data: obj.dataPgto, desc: "Recebimento medição " + (obj.numero || ""), tipo: "receita", categoria: "medicao", valor: liqF, status: "pago", obraId: obj.obraId, contratoId: obj.contratoId };
+          this._lancFinPendente = { data: obj.dataPgto, desc: "Recebimento medição " + (obj.numero || ""), tipo: "receita", categoria: "medicao", valor: liqF, status: "pago", obraId: obj.obraId, contratoId: obj.contratoId, /* ⚠ MESMO CARIMBO DO CAMINHO DO BOTÃO — e tem de existir nos dois, senão a trava vale numa porta e não vale na outra, que é a forma mais cara de consertar pela metade (já aconteceu aqui: a v1.1.232 copiou a despesa da compra para o formulário e esqueceu o estoque). */ docTipo: this._DOC_CARIMBO.medicoes, docId: obj.id, docNumero: obj.numero || "" };
           this._lancFinToast = "Receita da medição lançada no Financeiro.";
         }
         if (entidade === "compras" && novo === "recebido" && !obj.dataRecebimento) {
+          /* ⚠ o gêmeo da medição, e pelo mesmo motivo: `!obj.dataRecebimento`
+             acima não protege nada depois que alguém reabriu o pedido, porque
+             reabrir apaga esse campo de propósito. Quem responde de verdade é
+             a despesa que já está no Financeiro. */
+          var travaC = this._travaLancDoDoc(obj, "compras");
+          if (travaC) { UI.toast(travaC, "erro"); return false; }
           obj.dataRecebimento = this._hojeISO();
           this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto, /* mesmo carimbo do caminho do botao — ver a nota la */ docTipo: "PC", docId: obj.id, docNumero: obj.numero || "" };
           this._lancFinToast = "Despesa da compra lançada no Financeiro (pendente).";
@@ -23609,10 +24067,20 @@ renderFolha: function () {
               + ". Estorne a receita no Financeiro antes de registrar de novo.", "erro");
             return;
           }
+          /* ⚠ E A DATA NÃO BASTA. O parágrafo acima descreve o roteiro que
+             sangrava e conclui que a data resolve — mas ela é apagada pela
+             própria reabertura que o roteiro usa, de propósito, para o
+             documento não ficar impossível de pagar. Com `dataPgto` limpo o
+             botão volta e a receita antiga continua no Financeiro: mesma
+             duplicidade, mesmo valor, agora sem nem o aviso.
+             A pergunta certa não é "este documento já foi pago?" e sim "o
+             dinheiro já está lançado?" — e essa só o Financeiro responde. */
+          var travaB = this._travaLancDoDoc(md, "medicoes");
+          if (travaB) { UI.toast(travaB, "erro"); return; }
           md.status = "paga"; md.dataPgto = this._hojeISO(); Store.salvar(eid(), "medicoes", md);
           // gera receita no financeiro (líquido de retenção)
           var liq = Util.num(md.valor) * (1 - Util.num(md.retencao) / 100);
-          Store.salvar(eid(), "financeiro", { data: md.dataPgto, desc: "Recebimento medição " + (md.numero || ""), tipo: "receita", categoria: "medicao", valor: liq, status: "pago", obraId: md.obraId, contratoId: md.contratoId });
+          Store.salvar(eid(), "financeiro", { data: md.dataPgto, desc: "Recebimento medição " + (md.numero || ""), tipo: "receita", categoria: "medicao", valor: liq, status: "pago", obraId: md.obraId, contratoId: md.contratoId, /* ⚠ CARIMBO DE ORIGEM: é ele que torna esta receita ENCONTRÁVEL. Sem ele não há como saber que o dinheiro desta medição já entrou, e a única defesa volta a ser um campo do documento que a reabertura apaga. Igual ao `docTipo:"PC"` da compra e ao `"NF"` da nota. */ docTipo: this._DOC_CARIMBO.medicoes, docId: md.id, docNumero: md.numero || "" });
           App.render(); UI.toast("Medição paga e receita lançada no Financeiro.", "ok"); return;
         }
         case "novo-fornecedor": return this.novoFornecedor();
@@ -23636,6 +24104,13 @@ renderFolha: function () {
               + ". Estorne a despesa no Financeiro antes de receber de novo.", "erro");
             return;
           }
+          /* ⚠ E A DATA NÃO BASTA — igual à medição: a reabertura de um pedido
+             recebido limpa `dataRecebimento` (de propósito, senão o pedido
+             ficaria impossível de receber), o botão volta e a despesa antiga
+             continua no Financeiro. A pergunta certa não é "este pedido já
+             foi recebido?" e sim "o dinheiro já está lançado?". */
+          var travaC2 = this._travaLancDoDoc(pcr, "compras");
+          if (travaC2) { UI.toast(travaC2, "erro"); return; }
           pcr.status = "recebido"; pcr.dataRecebimento = this._hojeISO();
           /* o material entra no almoxarifado ANTES de carimbar, para que uma
              falha de gravação não deixe o pedido "recebido" sem estoque */
@@ -23709,6 +24184,7 @@ renderFolha: function () {
         case "relato-melhoria": return this.relatoNovo("melhoria");
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
+        case "batidas-mes": return this.formBatidas();
         case "falta-lote": return this.faltasLote();
         case "espelho-ponto": return this.espelhoPonto();
         case "config-jornada": return this.configJornada();

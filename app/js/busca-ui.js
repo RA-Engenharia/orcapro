@@ -42,7 +42,7 @@
         financeiro: "contas pagar receber caixa",
         fiscal: "nota nf-e xml imposto",
         galeria: "fotos imagens obra",
-        ponto: "cartão de ponto folha espelho faltas",
+        ponto: "cartão de ponto folha espelho faltas batida batidas marcação horário jornada",
         epi: "equipamento proteção ficha ca",
         insumos: "banco de insumos materiais preços"
       };

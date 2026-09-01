@@ -388,6 +388,129 @@
     return Math.max(min, Math.min(max, n));
   }
 
+  /* =====================================================================
+   * LINHAS E SÍMBOLOS — o acabamento que hoje é cravado no código
+   *
+   * ⚠ A RÉGUA JÁ EXISTIA E NINGUÉM PODIA MEXER. `.tp-rule` é um traço de
+   *   1,4 px sob o título, em sete páginas do documento. Para uma empresa que
+   *   quer um documento mais leve ela é grossa demais; para outra, que quer
+   *   marca forte, é invisível. Era o tipo de detalhe que fazia a pessoa
+   *   exportar o PDF e "arrumar" em outro programa.
+   *
+   * ⚠ E O MARCADOR DA LISTA SAÍA SEMPRE COMO BOLINHA. Numa proposta de
+   *   escopo, o "✓" diz outra coisa: cada linha é algo que ESTÁ INCLUÍDO. A
+   *   bolinha é neutra; o símbolo é argumento de venda.
+   * =================================================================== */
+  PropTpl.REGUAS = [
+    { id: "", nome: "Como o modelo desenha" },
+    { id: "fina", nome: "Traço fino" },
+    { id: "grossa", nome: "Traço grosso" },
+    { id: "dupla", nome: "Linha dupla" },
+    { id: "tracejada", nome: "Tracejada" },
+    { id: "pontilhada", nome: "Pontilhada" },
+    { id: "nenhuma", nome: "Sem linha" }
+  ];
+  PropTpl.LARGURAS_REGUA = [
+    { id: "", nome: "Como o modelo desenha", css: "" },
+    { id: "curta", nome: "Curta", css: "24mm" },
+    { id: "media", nome: "Média", css: "60mm" },
+    { id: "inteira", nome: "Largura inteira", css: "100%" }
+  ];
+  PropTpl.CORES_ELEMENTO = [
+    { id: "", nome: "Como o modelo desenha", css: "" },
+    { id: "titulo", nome: "Cor do título", css: "var(--tp-titulo)" },
+    { id: "destaque", nome: "Cor de destaque", css: "var(--tp-destaque)" },
+    { id: "texto", nome: "Cor do texto", css: "var(--tp-texto)" }
+  ];
+  /* ⚠ SÍMBOLO É TEXTO, NÃO IMAGEM: entra no PDF sem depender de arquivo, de
+     fonte de ícone nem de internet, e o navegador imprime igual. */
+  PropTpl.MARCADORES = [
+    { id: "", nome: "Como o modelo desenha", css: "" },
+    { id: "ponto", nome: "• Bolinha", css: "'\\2022  '" },
+    { id: "traco", nome: "– Travessão", css: "'\\2013  '" },
+    { id: "quadrado", nome: "▪ Quadradinho", css: "'\\25AA  '" },
+    { id: "check", nome: "✓ Confere", css: "'\\2713  '" },
+    { id: "seta", nome: "→ Seta", css: "'\\2192  '" },
+    { id: "losango", nome: "◆ Losango", css: "'\\25C6  '" },
+    { id: "numero", nome: "1. Numerado", css: "decimal" },
+    { id: "nenhum", nome: "Sem marcador", css: "none" }
+  ];
+
+  /* =====================================================================
+   * QUAL PAGINA SABE DESENHAR O QUE — medido, nao suposto
+   *
+   * ⚠ SO 5 DAS 9 PAGINAS TEM REGUA, e a lista com marcador existe numa
+   *   unica: a de Texto. Oferecer "marcador dos itens" na capa e um controle
+   *   que a pessoa mexe e nada acontece — e um controle assim ensina a
+   *   desconfiar de todos os outros da tela. Pior: ela conclui que o recurso
+   *   nao funciona e para de usar o que funciona.
+   *
+   * ⚠ ESTA TABELA E CONFERIDA CONTRA O HTML DE VERDADE em
+   *   `tools/test-proptpl.js`: cada pagina e renderizada e o teste compara o
+   *   que ela declara aqui com o que ela realmente desenha. Mudou o desenho
+   *   de um bloco e ninguem lembrou desta tabela, o teste reprova aqui —
+   *   em vez de o cliente descobrir mexendo num controle morto.
+   * =================================================================== */
+  PropTpl.FORMAS_DO_BLOCO = {
+    capa:         { regua: false, marcador: false },
+    sobre:        { regua: false, marcador: false },
+    imagens:      { regua: true,  marcador: false },
+    texto:        { regua: true,  marcador: true },
+    investimento: { regua: false, marcador: false },
+    condicoes:    { regua: true,  marcador: false },
+    encerramento: { regua: false, marcador: false },
+    contato:      { regua: true,  marcador: false },
+    assinatura:   { regua: true,  marcador: false }
+  };
+  PropTpl.formasDoBloco = function (tipo) {
+    var d = PropTpl.FORMAS_DO_BLOCO[txt(tipo)];
+    return d ? { regua: d.regua, marcador: d.marcador }
+             : { regua: false, marcador: false };
+  };
+
+  function _acha(lista, id) {
+    for (var i = 0; i < lista.length; i++) if (lista[i].id === txt(id)) return lista[i];
+    return null;
+  }
+
+  var FORMAS_PADRAO = { regua: "", reguaLargura: "", reguaCor: "", marcador: "" };
+
+  function formas(f) {
+    var d = f || {};
+    function so(lista, v) { return _acha(lista, v) ? txt(v) : ""; }
+    return {
+      regua: so(PropTpl.REGUAS, d.regua),
+      reguaLargura: so(PropTpl.LARGURAS_REGUA, d.reguaLargura),
+      reguaCor: so(PropTpl.CORES_ELEMENTO, d.reguaCor),
+      marcador: so(PropTpl.MARCADORES, d.marcador)
+    };
+  }
+  PropTpl.formas = formas;
+
+  /* ⚠ AS ASPAS DE NOVO. O style= da <section> e delimitado por aspas DUPLAS:
+     um simbolo escrito como "¹3  " fecharia o atributo no meio e o resto
+     do estilo viraria lixo no HTML. Foi exatamente o que apagou o seletor de
+     fonte antes de aspaSimples() existir — e a lista voltava com bolinha sem
+     ninguem entender por que. Aqui a tabela ja usa aspas simples; esta linha e
+     a rede embaixo, para o dia em que alguem acrescentar um simbolo novo. */
+  function estiloFormas(f) {
+    var s = [];
+    if (f.regua === "nenhuma") s.push("--tp-rg-disp:none");
+    else if (f.regua === "fina") { s.push("--tp-rg-h:1px"); s.push("--tp-rg-borda:none"); }
+    else if (f.regua === "grossa") { s.push("--tp-rg-h:4px"); s.push("--tp-rg-borda:none"); }
+    else if (f.regua === "dupla") { s.push("--tp-rg-h:0"); s.push("--tp-rg-borda:double"); s.push("--tp-rg-bw:4px"); }
+    else if (f.regua === "tracejada") { s.push("--tp-rg-h:0"); s.push("--tp-rg-borda:dashed"); s.push("--tp-rg-bw:2px"); }
+    else if (f.regua === "pontilhada") { s.push("--tp-rg-h:0"); s.push("--tp-rg-borda:dotted"); s.push("--tp-rg-bw:2px"); }
+
+    var lg = _acha(PropTpl.LARGURAS_REGUA, f.reguaLargura);
+    if (lg && lg.css) s.push("--tp-rg-w:" + lg.css);
+    var cor = _acha(PropTpl.CORES_ELEMENTO, f.reguaCor);
+    if (cor && cor.css) s.push("--tp-rg-cor:" + cor.css);
+    var mk = _acha(PropTpl.MARCADORES, f.marcador);
+    if (mk && mk.css) s.push("--tp-mk:" + mk.css);
+    return aspaSimples(s.join(";"));
+  }
+
   function tipografia(tp) {
     var d = tp || {};
     return {
@@ -450,6 +573,7 @@
         else out[c.id] = (v === undefined || v === null || txt(v) === "") ? txt(c.padrao) : txt(v);
       });
       out.tipografia = tipografia(p.tipografia);
+      out.formas = formas(p.formas);
       return out;
     }).filter(Boolean);
 
@@ -461,6 +585,10 @@
       padrao: !!m.padrao,
       base: txt(m.base),
       estilo: estilo,
+      /* ⚠ as ORIGINAIS ficam ao lado das cortadas: sem isso, "cortar de novo"
+         partiria da imagem ja cortada e cada ajuste comeria mais um pedaco da
+         foto, sem volta. */
+      imagensOrig: (m.imagensOrig && typeof m.imagensOrig === "object") ? m.imagensOrig : {},
       paginas: paginas,
       imagens: (m.imagens && typeof m.imagens === "object") ? m.imagens : {}
     };
@@ -476,6 +604,45 @@
    *   foto da capa aparecer no encerramento de todas as propostas já
    *   enviadas, e ninguém entenderia por quê.
    * ===================================================================== */
+  /* =====================================================================
+   * A PROPORCAO DE CADA SLOT — medida do CSS, nao chutada
+   *
+   * O documento desenha toda imagem com `object-fit:cover`: o navegador corta
+   * o que sobra, sempre pelo CENTRO, e o usuario nao tem voz nenhuma sobre o
+   * que fica de fora. Uma foto de fachada com o predio a esquerda entra na
+   * capa com o predio cortado pela metade.
+   *
+   * Para a ferramenta de corte saber QUAL retangulo pedir, cada bloco declara
+   * aqui a proporcao (largura ÷ altura) da caixa onde a imagem sera desenhada.
+   * Os numeros saem das medidas reais do CSS deste arquivo:
+   *
+   *   pagina inteira (capa, quem somos, encerramento)
+   *       A4        210 ÷ 297                    = 0,707
+   *       vertical  120 ÷ 213                    = 0,563
+   *   galeria (a faixa da pagina, ja sem a margem)
+   *       A4        (210-32) ÷ 52                = 3,423
+   *       vertical  (120-24) ÷ 44                = 2,182
+   *   contato, dentro da moldura de celular
+   *       (56 - 2×2,4) ÷ 96                      = 0,533
+   *
+   * ⚠ MUDOU O CSS, MUDA AQUI. `tools/test-proptpl.js` cruza estes numeros com
+   *   as medidas escritas nas regras: proporcao que mente faz a ferramenta
+   *   entregar um corte que o documento corta de novo.
+   * =================================================================== */
+  PropTpl.PROPORCOES = {
+    capa:         { a4: 210 / 297, vertical: 120 / 213 },
+    sobre:        { a4: 210 / 297, vertical: 120 / 213 },
+    encerramento: { a4: 210 / 297, vertical: 120 / 213 },
+    imagens:      { a4: 178 / 52, vertical: 96 / 44 },
+    contato:      { a4: 51.2 / 96, vertical: 51.2 / 96 }
+  };
+
+  PropTpl.proporcaoDo = function (tipo, formato) {
+    var p = PropTpl.PROPORCOES[txt(tipo)];
+    if (!p) return 0;                       /* 0 = sem proporcao declarada */
+    return (formato === "vertical") ? p.vertical : p.a4;
+  };
+
   PropTpl.slots = function (t) {
     var m = PropTpl.modelo(t);
     var out = [], n = 0;
@@ -492,7 +659,12 @@
           ordemNaPagina: i + 1,
           rotulo: "Imagem " + n,
           onde: b.nome + (b.imagens > 1 ? " · " + (i + 1) + "ª" : ""),
-          ref: m.imagens[String(n)] || null
+          /* a caixa onde esta imagem vai ser desenhada, para a ferramenta de
+             corte pedir o retangulo certo */
+          proporcao: PropTpl.proporcaoDo(p.tipo, m.estilo.formato),
+          ref: m.imagens[String(n)] || null,
+          /* a original, quando existe: e dela que um novo corte parte */
+          original: (m.imagensOrig || {})[String(n)] || null
         });
       }
     });
@@ -775,7 +947,8 @@
       var fundo = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento")
         ? "" : fundoDe(m, escuro);
       var tipo = estiloTipografia(p.tipografia || tipografia(null));
-      var junto = [fundo, tipo].filter(Boolean).join(";");
+      var form = estiloFormas(p.formas || formas(null));
+      var junto = [fundo, tipo, form].filter(Boolean).join(";");
       var estilo = junto ? (' style="' + junto + '"') : "";
       return '<section class="' + cls + '"' + estilo + ">" + corpo + "</section>";
     }).join("");
@@ -977,6 +1150,25 @@
       /* ⚠ o valor da tabela continua à direita: número alinhado com o texto
          vira coluna torta, e isso não é preferência, é leitura de dinheiro */
       ".tp-pg td.tp-num{text-align:right}",
+
+      /* =================================================================
+       * A RÉGUA E O MARCADOR, quando o usuário mexeu
+       *
+       * ⚠ Cada propriedade cai no desenho original pelo segundo argumento do
+       *   `var()`: quem nunca abriu "Linhas e símbolos" recebe exatamente o
+       *   documento de antes, byte a byte.
+       * =============================================================== */
+      ".tp-pg .tp-rule{display:var(--tp-rg-disp,block);"
+        + "height:var(--tp-rg-h,1.4px);"
+        + "width:var(--tp-rg-w,100%);"
+        + "background:var(--tp-rg-cor,var(--tp-titulo));"
+        + "border-top-style:var(--tp-rg-borda,none);"
+        + "border-top-width:var(--tp-rg-bw,0);"
+        + "border-top-color:var(--tp-rg-cor,var(--tp-titulo))}",
+      /* ⚠ na régua de borda (dupla/tracejada/pontilhada) a altura vai a ZERO:
+         o fundo continua declarado mas nao pinta nada, e quem desenha e a
+         borda. Sem isso sairia um bloco cheio com a borda por cima. */
+      ".tp-pg ul{list-style-type:var(--tp-mk,disc)}",
     ].join("\n");
   };
 

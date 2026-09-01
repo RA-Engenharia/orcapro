@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.22",
+  "versao": "1.2.23",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.22/OrcaPRO-IA-update-v1.2.22.zip",
-  "notas": "Modelos de Proposta com fontes profissionais: eram 4 combinacoes, agora sao 9, com familias de apresentacao embutidas no programa (funcionam sem internet e no PDF). E cada pagina do modelo ganhou os ajustes de tipografia: alinhamento do titulo e do texto -- incluindo justificado --, tamanho, espaco entre linhas, espaco entre letras e titulo em maiusculas. Correcao: a fonte escolhida no modelo nao estava chegando ao documento, e o PDF saia sempre na mesma fonte.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.22/OrcaPRO-IA-Instalador-v1.2.22.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.23/OrcaPRO-IA-update-v1.2.23.zip",
+  "notas": "Ponto: agora da para registrar as batidas reais de cada dia, em Ponto > Registrar batidas. Os dias digitados saem no impresso com o horario que a pessoa marcou e vem sinalizados com asterisco; os dias sem batida continuam saindo com a jornada contratual, como antes. Quando ha batidas registradas, o documento passa a se declarar controle manual de jornada na forma do art. 74, paragrafo 2, da CLT. Correcao de seguranca: o texto digitado no campo de motivo da hora extra era interpretado como codigo na hora de imprimir o documento. Correcao: o nome do arquivo PDF divergia do titulo impresso no documento.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.23/OrcaPRO-IA-Instalador-v1.2.23.exe"
 }

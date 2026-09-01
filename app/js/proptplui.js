@@ -88,7 +88,10 @@
     var html = this._head(
       (typeof Icones !== "undefined" ? Icones.get("tabela", 18) : "") + "Modelos de Proposta",
       "propmod-novo", "Novo modelo",
-      '<button class="btn sm" data-gacao="propmod-importar" style="margin-right:10px;align-self:center" '
+      '<button class="btn sm primary" data-gacao="propmod-agente" style="margin-right:10px;align-self:center" '
+      + 'title="Responder um roteiro e deixar a IA montar a estrutura do seu modelo">'
+      + (typeof Icones !== "undefined" ? Icones.get("ia", 15) : "") + " Montar com a IA</button>"
+      + '<button class="btn sm" data-gacao="propmod-importar" style="margin-right:10px;align-self:center" '
       + 'title="Abrir um modelo que veio de outra conta (arquivo .json)">'
       + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Trazer de um arquivo</button>"
       + '<button class="btn sm" data-gacao="propmod-fabrica" style="margin-right:10px;align-self:center">'
@@ -225,6 +228,7 @@
           }
         });
         html += G._propModTipografia(p);
+        html += G._propModFormas(p);
         html += "</div>";
       }
       html += "</div>";
@@ -264,8 +268,18 @@
         + '<div class="flex" style="gap:5px">'
         + '<button class="btn sm primary" data-gacao="propmod-foto-por" data-slot="' + s.numero + '" style="flex:1">'
         + (temFoto ? "Trocar" : "Escolher") + "</button>"
+        /* ⚠ CORTAR só aparece com foto: botão que não faz nada ensina a
+           desconfiar dos outros. E o "voltar ao original" só quando há corte
+           para desfazer — senão promete desfazer o que não foi feito. */
+        + (temFoto ? '<button class="btn sm" data-gacao="propmod-cortar" data-n="' + s.numero
+             + '" title="Escolher o que aparece da foto neste lugar">Cortar</button>' : "")
+        + (s.original ? '<button class="btn sm ghost" data-gacao="propmod-corte-desfazer" data-n="' + s.numero
+             + '" title="Voltar para a foto como ela veio">↺</button>' : "")
         + (temFoto ? '<button class="btn sm ghost" data-gacao="propmod-foto-tira" data-slot="' + s.numero + '" title="Tirar a foto">×</button>' : "")
-        + "</div></div>";
+        + "</div>"
+        + (s.proporcao ? '<div class="muted" style="font-size:11px;margin-top:6px">Esta imagem é desenhada em '
+             + (s.proporcao >= 1 ? "faixa larga" : "retrato") + " (" + s.proporcao.toFixed(2) + ":1)</div>" : "")
+        + "</div>";
     });
     html += "</div>";
     html += '<input type="file" id="pm-arquivo" accept="image/*" style="display:none">';
@@ -446,6 +460,415 @@
       + "</details>";
   };
 
+  /* =====================================================================
+   * O ROTEIRO — as perguntas que impedem de esquecer
+   *
+   * ⚠ POR QUE ROTEIRO E NÃO UMA CAIXA DE TEXTO. "Descreva o que você quer"
+   *   devolve um parágrafo que esquece metade: quem escreve não lembra de
+   *   dizer o tom, o formato, quantas fotos tem, o que não pode faltar. O
+   *   roteiro pergunta o que MUDA A ESTRUTURA do documento — e nada além
+   *   disso, porque formulário longo é formulário abandonado.
+   *
+   * ⚠ E ELE NÃO PERGUNTA PREÇO, PRAZO NEM PAGAMENTO. Esses três já existem
+   *   no orçamento e entram prontos na hora de gerar a proposta. Perguntar de
+   *   novo aqui criaria uma segunda verdade sobre o mesmo dado — e a que o
+   *   cliente lê seria a errada.
+   * =================================================================== */
+  G.PROPMOD_ROTEIRO = [
+    { id: "ramo", nome: "O que a sua empresa faz", obrigatorio: true, multi: false,
+      dica: "Ex.: carpintaria de deck e forro em madeira" },
+    { id: "oQueVende", nome: "O que esta proposta costuma vender", obrigatorio: true, multi: true,
+      dica: "Ex.: deck de cumaru instalado, forro ripado, caibro aparente — com a instalação" },
+    { id: "paraQuem", nome: "Para quem você manda a proposta", multi: false,
+      dica: "Ex.: arquitetos, construtoras, cliente final de alto padrão" },
+    { id: "tom", nome: "Que cara o documento deve ter", multi: false, tipo: "opcoes",
+      opcoes: ["Sóbrio e técnico", "Marcante e visual", "Equilibrado"] },
+    { id: "naoPodeFaltar", nome: "O que NÃO pode faltar no documento", multi: true,
+      dica: "Ex.: as fotos de obras prontas, a explicação de como escolhemos a madeira, a garantia" },
+    { id: "diferenciais", nome: "Por que o cliente escolhe vocês", multi: true,
+      dica: "Escreva só o que é verdade — o que você escrever aqui vai para o papel" },
+    { id: "quantasFotos", nome: "Quantas fotos boas você tem para usar", multi: false, tipo: "opcoes",
+      opcoes: ["Nenhuma por enquanto", "1 ou 2", "3 a 5", "Mais de 5"] },
+    { id: "formato", nome: "Onde o cliente vai ler", multi: false, tipo: "opcoes",
+      opcoes: ["Impresso / PDF em A4", "No celular (vertical)"] }
+  ];
+
+  G._propModAgente = function () {
+    var campos = G.PROPMOD_ROTEIRO.map(function (q) {
+      var id = "pmr-" + q.id;
+      var ctrl;
+      if (q.tipo === "opcoes") {
+        ctrl = '<select id="' + id + '">' + q.opcoes.map(function (o) {
+          return '<option value="' + esc(o) + '">' + esc(o) + "</option>";
+        }).join("") + "</select>";
+      } else if (q.multi) {
+        ctrl = '<textarea id="' + id + '" rows="3" placeholder="' + esc(q.dica || "") + '"></textarea>';
+      } else {
+        ctrl = '<input id="' + id + '" placeholder="' + esc(q.dica || "") + '">';
+      }
+      return K.campo(q.nome + (q.obrigatorio ? " *" : ""), ctrl);
+    }).join("");
+
+    UI.modal("Montar o modelo com a IA",
+      '<p class="muted" style="margin:0 0 10px">Responda o que souber. A IA monta a <b>estrutura</b> do documento — '
+      + "quais páginas, em que ordem, com que textos — e depois te entrega a lista do que anexar em cada lugar.</p>"
+      + '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;margin-bottom:10px;font-size:12.5px">'
+      + "A IA <b>não inventa fato sobre a sua empresa</b>. O que você não escrever aqui aparece no documento como "
+      + "<b>[preencher: …]</b>, para você completar — em vez de virar uma afirmação que ninguém fez."
+      + "</div>"
+      + campos
+      + '<p class="muted" style="font-size:12px;margin:8px 0 0">Preço, prazo e forma de pagamento não são perguntados: '
+      + "eles vêm do orçamento, prontos, na hora de gerar a proposta.</p>",
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Montar estrutura", classe: "primary", onClick: function () { G._propModAgenteEnviar(); } }]);
+  };
+
+  G._propModAgenteEnviar = function () {
+    var roteiro = {}, faltam = [];
+    G.PROPMOD_ROTEIRO.forEach(function (q) {
+      var el = document.getElementById("pmr-" + q.id);
+      var v = el ? String(el.value || "").trim() : "";
+      if (q.obrigatorio && !v) faltam.push(q.nome);
+      if (v) roteiro[q.id] = v;
+    });
+    if (faltam.length) { UI.toast("Falta responder: " + faltam.join(" · "), "erro"); return; }
+
+    var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
+    /* ⚠ CARIMBO DE TURNO, como no Escopo IA: a chamada leva dezenas de
+       segundos e o app continua navegável. Sem isto, a resposta de um pedido
+       antigo criaria um modelo depois que o usuário já pediu outro. */
+    var meuTurno = (G._pmAgReq = (G._pmAgReq || 0) + 1);
+    UI.fecharModal();
+    UI.toast("Montando a estrutura do seu modelo…", "ok");
+
+    fetch(back + "/ia/modelo-proposta", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") },
+      body: JSON.stringify({ roteiro: roteiro })
+    }).then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (meuTurno !== G._pmAgReq) { UI.toast("A estrutura montada foi descartada: você pediu outra depois.", "erro"); return; }
+        if (!j.ok || !j.resultado) { UI.toast("A IA não montou a estrutura: " + (j.error || "sem resposta"), "erro"); return; }
+        G._propModAgenteAplicar(j.resultado, roteiro);
+      })
+      .catch(function (e) {
+        UI.toast("Não consegui falar com a IA: " + (e && e.message ? e.message : e)
+          + " — confira a internet e a licença.", "erro");
+      });
+  };
+
+  /* grava o modelo e abre a LISTA DO QUE ANEXAR */
+  G._propModAgenteAplicar = function (r, roteiro) {
+    var usados = lista().map(function (x) { return T.modelo(x).nome; });
+    var m = T.modelo({
+      nome: T.nomeLivre(r.nome || "Modelo da minha empresa", usados),
+      descricao: r.descricao || "",
+      estilo: r.estilo || {},
+      paginas: r.paginas || []
+    });
+    m.id = "";
+    var faltas = T.validar(m);
+    if (faltas.length) { UI.toast(faltas[0], "erro"); return; }
+    var salvo = gravar(m);
+    if (!salvo) { UI.toast("Não consegui gravar o modelo (armazenamento cheio?).", "erro"); return; }
+
+    G._propModId = salvo.id;
+    App.render();
+    G._propModAnexos(salvo.id, r.pendencias || []);
+  };
+
+  /* =====================================================================
+   * "ANEXE CADA COISA NO SEU LUGAR"
+   *
+   * ⚠ A LISTA É MONTADA DO MODELO, NÃO DA RESPOSTA DA IA. `T.slots` sabe
+   *   exatamente quantas fotos cada página pede e quais ainda estão vazias —
+   *   a IA pode esquecer de listar uma. Contar o que o documento REALMENTE
+   *   precisa é a única fonte que não mente.
+   * =================================================================== */
+  G._propModAnexos = function (id, pendenciasIA) {
+    var raw = obter(id); if (!raw) return;
+    var m = T.modelo(raw);
+    var sl = T.slots(m) || [];
+    var vazios = sl.filter(function (s) { return !s.ref; });
+
+    /* os marcadores [preencher: ...] que sobraram nos textos */
+    var marcadores = [];
+    m.paginas.forEach(function (p) {
+      Object.keys(p).forEach(function (k) {
+        var v = p[k];
+        if (typeof v !== "string") return;
+        var re = /\[preencher:([^\]]*)\]/g, mm;
+        while ((mm = re.exec(v))) marcadores.push({ pagina: p.tipo, oque: String(mm[1] || "").trim() });
+      });
+    });
+
+    var linhas = "";
+    vazios.forEach(function (s) {
+      linhas += '<li><b>Foto</b> — ' + esc(s.onde || ("imagem " + s.numero)) + "</li>";
+    });
+    marcadores.forEach(function (x) {
+      linhas += "<li><b>Texto</b> — " + esc(x.oque || "completar") + ' <span class="muted">(página ' + esc(x.pagina) + ")</span></li>";
+    });
+    (pendenciasIA || []).forEach(function (x) {
+      var o = String((x && x.oque) || "").trim();
+      if (!o) return;
+      if (/foto|imagem|logo/i.test(o) || marcadores.length) return;   /* já contados acima */
+      linhas += "<li>" + esc(o) + (x.onde ? ' <span class="muted">(' + esc(x.onde) + ")</span>" : "") + "</li>";
+    });
+
+    var temLogo = false;
+    try { temLogo = !!(typeof Empresa !== "undefined" && Empresa.logo && Empresa.logo()); } catch (e) {}
+    if (!temLogo) linhas += '<li><b>Logo da empresa</b> — em ⚙ Empresa; sem ele a capa sai com [LOGO]</li>';
+
+    UI.modal("Estrutura pronta — agora anexe cada coisa",
+      '<p>O modelo <b>' + esc(m.nome) + "</b> foi criado com <b>" + m.paginas.length + "</b> páginas.</p>"
+      + (linhas
+          ? '<p class="muted" style="margin:8px 0 4px">Falta isto para ele ficar completo:</p>'
+            + '<ul style="margin:0 0 0 18px;font-size:13px;line-height:1.7">' + linhas + "</ul>"
+          : '<p class="muted">Não falta nada: todas as fotos já estão no lugar e nenhum texto ficou pendente.</p>')
+      + '<p class="muted" style="font-size:12.5px;margin-top:10px">As fotos ficam na aba <b>Fotos</b> do modelo; '
+      + "os textos, na aba <b>Páginas</b>. A <b>Prévia</b> mostra como está ficando.</p>",
+      [{ texto: "Ver o modelo", classe: "primary", onClick: function () { UI.fecharModal(); G._propModAbrir(id); } }]);
+  };
+
+  /* =====================================================================
+   * CORTAR A IMAGEM — escolher o que fica, em vez de aceitar o centro
+   *
+   * ⚠ O PROBLEMA QUE ISTO RESOLVE. O documento desenha toda foto com
+   *   `object-fit:cover`: o navegador corta o que sobra, sempre pelo CENTRO.
+   *   Uma fachada com o prédio à esquerda entra na capa com o prédio pela
+   *   metade, e não havia nada que o usuário pudesse fazer além de abrir a
+   *   foto em outro programa — que é exatamente o que este módulo existe para
+   *   evitar.
+   *
+   * ⚠ MOLDURA FIXA, IMAGEM QUE SE MOVE. O contrário (retângulo livre que o
+   *   usuário arrasta) parece mais liberdade e entrega corte na proporção
+   *   errada: o documento corta DE NOVO por cima, e o enquadramento escolhido
+   *   se perde. Aqui a moldura já tem a proporção da caixa onde a foto vai
+   *   ser desenhada — o que se vê é o que sai.
+   *
+   * ⚠ E A ORIGINAL É GUARDADA. Cortar de novo parte SEMPRE da original; sem
+   *   isso, cada ajuste comeria mais um pedaço da foto, sem volta.
+   * =================================================================== */
+  var CORTE_LADO = 2400;          /* o maior lado do resultado, como o upload */
+
+  G._propModCortar = function (numero) {
+    var raw = obter(this._propModId); if (!raw) return;
+    var m = T.modelo(raw);
+    var sl = (T.slots(m) || []).filter(function (s) { return String(s.numero) === String(numero); })[0];
+    if (!sl) { UI.toast("Slot não encontrado.", "erro"); return; }
+    var fonte = sl.original || sl.ref;
+    if (!fonte) { UI.toast("Escolha uma imagem para este lugar antes de cortar.", "erro"); return; }
+    if (typeof Fotos === "undefined") { UI.toast("O guardador de fotos não carregou.", "erro"); return; }
+
+    var prop = Number(sl.proporcao) || 1;
+    UI.toast("Abrindo a imagem…", "ok");
+    Promise.resolve(Fotos.dataURI(fonte)).then(function (d) {
+      if (!d) { UI.toast("Não consegui ler a imagem original.", "erro"); return; }
+      G._propModCorteAbrir(numero, d, prop, sl.onde);
+    })["catch"](function () { UI.toast("Não consegui ler a imagem original.", "erro"); });
+  };
+
+  G._propModCorteAbrir = function (numero, dataURI, prop, onde) {
+    var LARG = 520;                       /* largura da moldura na tela */
+    var alt = Math.round(LARG / prop);
+    /* moldura muito alta não cabe no modal: reduz mantendo a proporção */
+    if (alt > 420) { alt = 420; LARG = Math.round(alt * prop); }
+
+    UI.modal("Cortar a imagem — " + esc(onde || ""),
+      '<p class="muted" style="margin:0 0 8px">Arraste a foto para escolher o que aparece, e use o controle para aproximar. '
+      + "<b>O que estiver dentro da moldura é o que sai no documento.</b></p>"
+      + '<div id="pmc-palco" style="position:relative;width:' + LARG + "px;height:" + alt + "px;margin:0 auto;"
+      + 'overflow:hidden;background:#111;border-radius:6px;cursor:grab;touch-action:none">'
+      + '<img id="pmc-img" src="' + esc(dataURI) + '" style="position:absolute;transform-origin:0 0;user-select:none;pointer-events:none">'
+      + "</div>"
+      + '<div class="flex" style="gap:10px;align-items:center;margin-top:10px">'
+      + '<span class="muted" style="font-size:12px">Aproximar</span>'
+      + '<input type="range" id="pmc-zoom" min="100" max="400" step="1" value="100" style="flex:1">'
+      + '<button class="btn sm ghost" id="pmc-centro">Centralizar</button></div>'
+      + '<p class="muted" style="font-size:12px;margin:8px 0 0">A imagem original fica guardada: você pode cortar de novo quando quiser, '
+      + "sem perder qualidade.</p>",
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Cortar e usar", classe: "primary", onClick: function () { G._propModCorteAplicar(numero); } }]);
+
+    var palco = document.getElementById("pmc-palco");
+    var img = document.getElementById("pmc-img");
+    var zoom = document.getElementById("pmc-zoom");
+    var st = G._pmCorte = { x: 0, y: 0, z: 1, base: 1, natW: 0, natH: 0, palcoW: LARG, palcoH: alt, numero: numero };
+
+    function limitar() {
+      var w = st.natW * st.base * st.z, h = st.natH * st.base * st.z;
+      /* ⚠ a moldura NUNCA pode ficar com faixa vazia: a foto sempre a cobre */
+      if (st.x > 0) st.x = 0;
+      if (st.y > 0) st.y = 0;
+      if (st.x < st.palcoW - w) st.x = st.palcoW - w;
+      if (st.y < st.palcoH - h) st.y = st.palcoH - h;
+    }
+    function pintar() {
+      limitar();
+      img.style.transform = "translate(" + st.x + "px," + st.y + "px) scale(" + (st.base * st.z) + ")";
+    }
+    function centralizar() {
+      var w = st.natW * st.base * st.z, h = st.natH * st.base * st.z;
+      st.x = (st.palcoW - w) / 2; st.y = (st.palcoH - h) / 2;
+      pintar();
+    }
+    img.onload = function () {
+      st.natW = img.naturalWidth; st.natH = img.naturalHeight;
+      /* base = a menor escala que ainda COBRE a moldura (o mesmo que o cover) */
+      st.base = Math.max(st.palcoW / st.natW, st.palcoH / st.natH);
+      img.style.width = st.natW + "px"; img.style.height = st.natH + "px";
+      centralizar();
+    };
+    if (img.complete && img.naturalWidth) img.onload();
+
+    var arrastando = false, px = 0, py = 0;
+    palco.addEventListener("pointerdown", function (e) {
+      arrastando = true; px = e.clientX; py = e.clientY;
+      palco.style.cursor = "grabbing";
+      try { palco.setPointerCapture(e.pointerId); } catch (x) {}
+    });
+    palco.addEventListener("pointermove", function (e) {
+      if (!arrastando) return;
+      st.x += e.clientX - px; st.y += e.clientY - py;
+      px = e.clientX; py = e.clientY;
+      pintar();
+    });
+    function soltar() { arrastando = false; palco.style.cursor = "grab"; }
+    palco.addEventListener("pointerup", soltar);
+    palco.addEventListener("pointercancel", soltar);
+
+    zoom.addEventListener("input", function () {
+      var antes = st.z;
+      st.z = Number(zoom.value) / 100;
+      /* aproxima pelo CENTRO da moldura, não pelo canto: aproximar e ver a
+         foto fugir para o canto é o gesto que ninguém entende */
+      var cx = st.palcoW / 2, cy = st.palcoH / 2;
+      st.x = cx - (cx - st.x) * (st.z / antes);
+      st.y = cy - (cy - st.y) * (st.z / antes);
+      pintar();
+    });
+    document.getElementById("pmc-centro").onclick = function () { centralizar(); };
+  };
+
+  G._propModCorteAplicar = function (numero) {
+    var st = G._pmCorte;
+    var img = document.getElementById("pmc-img");
+    if (!st || !img || !st.natW) { UI.toast("A imagem ainda não carregou.", "erro"); return; }
+
+    /* do que está na tela para pixels da ORIGINAL */
+    var escala = st.base * st.z;
+    var sx = -st.x / escala, sy = -st.y / escala;
+    var sw = st.palcoW / escala, sh = st.palcoH / escala;
+    sx = Math.max(0, Math.min(st.natW - 1, sx));
+    sy = Math.max(0, Math.min(st.natH - 1, sy));
+    sw = Math.max(1, Math.min(st.natW - sx, sw));
+    sh = Math.max(1, Math.min(st.natH - sy, sh));
+
+    /* o resultado sai na proporção da moldura, no maior lado que valha a pena */
+    var razao = sw / sh;
+    var dw = sw, dh = sh;
+    if (Math.max(dw, dh) > CORTE_LADO) {
+      if (dw >= dh) { dw = CORTE_LADO; dh = Math.round(CORTE_LADO / razao); }
+      else { dh = CORTE_LADO; dw = Math.round(CORTE_LADO * razao); }
+    }
+    var cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(dw)); cv.height = Math.max(1, Math.round(dh));
+    var ctx = cv.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, cv.width, cv.height);
+    var saida;
+    try { saida = cv.toDataURL("image/jpeg", 0.92); }
+    catch (e) { UI.toast("Não consegui cortar esta imagem.", "erro"); return; }
+
+    var self = G, id = self._propModId;
+    UI.fecharModal();
+    UI.toast("Guardando o corte…", "ok");
+    Fotos.guardar(saida, "Modelo de proposta (cortada)", { larguraMax: CORTE_LADO, qualidade: 0.92 })
+      .then(function (ref) {
+        var r = obter(id); if (!r) return;
+        var m = T.modelo(r);
+        /* ⚠ a ORIGINAL só é gravada na PRIMEIRA vez: da segunda em diante ela
+           já está lá, e sobrescrever com a cortada faria o próximo corte
+           partir do corte anterior. */
+        var orig = r.imagensOrig || {};
+        if (!orig[String(numero)]) orig[String(numero)] = m.imagens[String(numero)] || null;
+        var imgs = r.imagens || {};
+        imgs[String(numero)] = ref;
+        r.imagens = imgs; r.imagensOrig = orig;
+        if (!gravar(r)) { UI.toast("Não consegui gravar (armazenamento cheio?).", "erro"); return; }
+        self._propModRender();
+        UI.toast("Imagem " + numero + " cortada.", "ok");
+      })["catch"](function () { UI.toast("Não consegui guardar a imagem cortada.", "erro"); });
+  };
+
+  /* volta para a foto como ela veio, sem precisar subir de novo */
+  G._propModCorteDesfazer = function (numero) {
+    var r = obter(this._propModId); if (!r) return;
+    var orig = (r.imagensOrig || {})[String(numero)];
+    if (!orig) { UI.toast("Esta imagem não foi cortada.", "erro"); return; }
+    var imgs = r.imagens || {};
+    imgs[String(numero)] = orig;
+    var oo = r.imagensOrig || {};
+    delete oo[String(numero)];
+    r.imagens = imgs; r.imagensOrig = oo;
+    if (!gravar(r)) { UI.toast("Não consegui gravar.", "erro"); return; }
+    this._propModRender();
+    UI.toast("Imagem " + numero + " voltou ao original.", "ok");
+  };
+
+  /* =====================================================================
+   * LINHAS E SÍMBOLOS DA PÁGINA
+   *
+   * ⚠ FECHADO, e ao lado da tipografia: são os dois painéis de acabamento, e
+   *   quem procura um procura o outro. Abertos por padrão, empurrariam para
+   *   baixo os campos de texto que todo mundo usa.
+   * =================================================================== */
+  /* ⚠ O PAINEL SE APAGA NA PAGINA QUE NAO SABE DESENHAR AQUILO. Regua so
+     existe em 5 das 9 paginas, e lista com marcador em uma so. Mostrar os
+     quatro controles em toda pagina seria mexer e nao acontecer nada — e uma
+     tela que faz isso ensina a pessoa a desconfiar do resto dela. Quem manda
+     e `PropTpl.FORMAS_DO_BLOCO`, que o teste confere contra o HTML de verdade. */
+  G._propModFormas = function (p) {
+    var pode = T.formasDoBloco(p.tipo);
+    if (!pode.regua && !pode.marcador) return "";
+
+    var f = T.formas(p.formas);
+    var pid = esc(p.id);
+    function sel(campo, atual, lista) {
+      return '<select data-pmf="' + pid + '" data-fcampo="' + campo + '">'
+        + lista.map(function (o) {
+            return '<option value="' + esc(o.id) + '"' + (o.id === atual ? " selected" : "") + ">"
+              + esc(o.nome) + "</option>";
+          }).join("") + "</select>";
+    }
+
+    var corpo = "";
+    if (pode.regua) {
+      corpo += '<div class="row" style="margin-top:8px">'
+        + K.campo("Linha sob o título", sel("regua", f.regua, T.REGUAS))
+        + K.campo("Largura da linha", sel("reguaLargura", f.reguaLargura, T.LARGURAS_REGUA))
+        + "</div>"
+        + '<div class="row">'
+        + K.campo("Cor da linha", sel("reguaCor", f.reguaCor, T.CORES_ELEMENTO))
+        + (pode.marcador ? K.campo("Marcador dos itens da lista", sel("marcador", f.marcador, T.MARCADORES)) : "")
+        + "</div>";
+    } else if (pode.marcador) {
+      corpo += '<div class="row" style="margin-top:8px">'
+        + K.campo("Marcador dos itens da lista", sel("marcador", f.marcador, T.MARCADORES))
+        + "</div>";
+    }
+    if (pode.marcador) {
+      corpo += '<p class="muted" style="font-size:11.5px;margin:6px 0 0">O marcador vale para a lista do escopo. '
+        + "Numa proposta, <b>✓</b> diz que aquilo está incluído — a bolinha não diz nada.</p>";
+    }
+
+    return '<details style="margin-top:6px">'
+      + '<summary class="muted" style="cursor:pointer;font-size:12.5px">'
+      + (pode.marcador ? "Linhas e símbolos desta página" : "Linha do título desta página")
+      + "</summary>" + corpo + "</details>";
+  };
+
   G._propModWire = function () {
     var self = this;
     var cx = document.getElementById("propmod-editor"); if (!cx) return;
@@ -477,6 +900,26 @@
           if (self._propModAba === "previa") self._propModRender();
         });
       })(tcs[q]);
+    }
+
+    /* linhas e símbolos: gravam na hora, e a prévia acompanha */
+    var fcs = cx.querySelectorAll("[data-pmf]");
+    for (var w = 0; w < fcs.length; w++) {
+      (function (el) {
+        el.addEventListener("change", function () {
+          var pg = el.getAttribute("data-pmf"), campo = el.getAttribute("data-fcampo");
+          var r = obter(self._propModId); if (!r) return;
+          var mm = T.modelo(r);
+          mm.paginas.forEach(function (pp) {
+            if (pp.id !== pg) return;
+            pp.formas = pp.formas || {};
+            pp.formas[campo] = el.value;
+          });
+          r.paginas = mm.paginas;
+          if (!gravar(r)) { UI.toast("Não consegui gravar.", "erro"); return; }
+          if (self._propModAba === "previa") self._propModRender();
+        });
+      })(fcs[w]);
     }
 
     /* campos de página: gravam ao sair do campo */
@@ -665,6 +1108,11 @@
      *   montou, e um "id igual" é justamente o caso em que isso aconteceria
      *   sem ninguém ver.
      * =============================================================== */
+    "propmod-cortar": function (ds) { G._propModCortar(ds.n); },
+    "propmod-corte-desfazer": function (ds) { G._propModCorteDesfazer(ds.n); },
+
+    "propmod-agente": function () { G._propModAgente(); },
+
     "propmod-importar": function () {
       var inp = document.createElement("input");
       inp.type = "file"; inp.accept = ".json,application/json";

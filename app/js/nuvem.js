@@ -103,6 +103,16 @@
      * mesmo motivo das faltas: é jornada de PESSOA. Apagar uma obra não pode
      * apagar o cartão de ponto de ninguém. */
     "horas_extras",
+    /* batida de ponto de um DIA: o horário que a pessoa marcou, transcrito do
+     * controle de jornada em papel. Fora da cascata da obra pelo mesmo motivo
+     * das faltas e da hora extra — é jornada de PESSOA, e apagar uma obra não
+     * pode apagar cartão de ponto de ninguém. Por isso NÃO grava obraId.
+     * ⚠ Esta linha não é formalidade. É ela que faz a batida sair do aparelho
+     *   onde nasceu: sem ela o dado não sincroniza, NÃO ENTRA NO BACKUP
+     *   (App._dumpGestao itera exatamente esta lista) e a exclusão não deixa
+     *   lápide — o registro apagado ressuscita no primeiro merge. É o defeito
+     *   da v1.1.231 logo abaixo, e aqui o dado é prova trabalhista. */
+    "batidas",
     /* ===== v1.1.231 — DOZE ENTIDADES QUE NUNCA SINCRONIZARAM =====
      * Um cliente reportou que fornecedor e cotação cadastrados no computador
      * não apareciam no celular. Ao cruzar TODAS as entidades que o Store grava

@@ -118,6 +118,11 @@
     var d = txt(f.docTipo).toUpperCase();
     if (d === "PC") return "compra";
     if (d === "NF") return "nota";
+    /* ⚠ a receita da medição passou a ter carimbo próprio. Hoje o resultado
+       é o mesmo que a descrição já dava — mas descrição é texto, e texto alguém
+       edita: no dia em que “Recebimento medição 01ª” virar outra coisa, o
+       dinheiro deixaria de ser atribuído à medição sem ninguém notar. */
+    if (d === "MED") return "medicao";
     var s = txt(f.desc).toLowerCase();
     if (/^folha /.test(s)) return "folha";
     if (/^compra /.test(s)) return "compra";
