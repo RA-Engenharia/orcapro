@@ -211,33 +211,90 @@
    *   Android já têm instalado.
    * ===================================================================== */
   PropTpl.FONTES = [
+    /* =====================================================================
+     * OS PARES DE FONTE — título e texto, escolhidos juntos
+     *
+     * ⚠ NÃO É UMA LISTA DE FONTES, É UMA LISTA DE PARES. Deixar o usuário
+     *   escolher título e texto separadamente parece mais liberdade e produz,
+     *   na prática, proposta com Bebas Neue no título e Bebas Neue no corpo —
+     *   ilegível em parágrafo. Cada linha aqui é uma combinação que funciona.
+     *
+     * ⚠ AS FAMÍLIAS SÃO EMBUTIDAS (css/fontes.css, base64, SIL OFL 1.1). O
+     *   fallback do sistema fica depois na pilha para a máquina que, por
+     *   algum motivo, não carregar a folha — melhor uma fonte parecida que
+     *   um quadrado vazio.
+     * =================================================================== */
+    {
+      id: "montserrat",
+      nome: "Montserrat — geométrica, a mais usada em apresentação",
+      exemplo: "Proposta",
+      titulo: '"Montserrat", "Century Gothic", "Trebuchet MS", sans-serif',
+      texto: '"Montserrat", "Century Gothic", "Trebuchet MS", sans-serif',
+      pesoTitulo: 700
+    },
+    {
+      id: "editorial",
+      nome: "Editorial — serifada elegante no título, seca no texto",
+      exemplo: "Proposta",
+      titulo: '"Playfair Display", Georgia, "Times New Roman", serif',
+      texto: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      pesoTitulo: 700
+    },
+    {
+      id: "impacto",
+      nome: "Impacto — condensada alta, para capa que grita",
+      exemplo: "PROPOSTA",
+      titulo: '"Bebas Neue", "Oswald", "Arial Narrow", Impact, sans-serif',
+      texto: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      pesoTitulo: 400
+    },
     {
       id: "condensada",
       nome: "Condensada — títulos pesados",
       exemplo: "PROPOSTA",
-      titulo: '"Arial Narrow", "Haettenschweiler", Impact, "Franklin Gothic Medium", sans-serif',
-      texto: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+      titulo: '"Oswald", "Arial Narrow", "Franklin Gothic Medium", sans-serif',
+      texto: '"Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      pesoTitulo: 500
+    },
+    {
+      id: "bloco",
+      nome: "Bloco — título maciço, para marca forte",
+      exemplo: "PROPOSTA",
+      titulo: '"Archivo Black", "Arial Black", Impact, sans-serif',
+      texto: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      pesoTitulo: 400
+    },
+    {
+      id: "classica",
+      nome: "Clássica — serifada dos dois lados, sóbria",
+      exemplo: "Proposta",
+      titulo: '"Playfair Display", Georgia, "Times New Roman", serif',
+      texto: '"Lora", Georgia, "Times New Roman", serif',
+      pesoTitulo: 700
+    },
+    {
+      id: "tecnica",
+      nome: "Técnica — neutra, para documento de engenharia",
+      exemplo: "Proposta",
+      titulo: '"IBM Plex Sans", "Segoe UI", Arial, sans-serif',
+      texto: '"IBM Plex Sans", "Segoe UI", Arial, sans-serif',
+      pesoTitulo: 600
     },
     {
       id: "geometrica",
       nome: "Geométrica — moderna e redonda",
       exemplo: "Proposta",
-      titulo: '"Century Gothic", "Futura", "Trebuchet MS", "Segoe UI", sans-serif',
-      texto: '"Century Gothic", "Futura", "Trebuchet MS", "Segoe UI", sans-serif'
-    },
-    {
-      id: "classica",
-      nome: "Clássica — serifada, sóbria",
-      exemplo: "Proposta",
-      titulo: 'Georgia, "Times New Roman", "Palatino Linotype", serif',
-      texto: 'Georgia, "Times New Roman", "Palatino Linotype", serif'
+      titulo: '"Montserrat", "Century Gothic", "Futura", "Trebuchet MS", sans-serif',
+      texto: '"Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      pesoTitulo: 600
     },
     {
       id: "mista",
       nome: "Mista — título serifado, texto seco",
       exemplo: "Proposta",
-      titulo: 'Georgia, "Palatino Linotype", "Book Antiqua", serif',
-      texto: '"Segoe UI", "Helvetica Neue", Arial, sans-serif'
+      titulo: '"Lora", Georgia, "Times New Roman", serif',
+      texto: '"Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif',
+      pesoTitulo: 400
     }
   ];
 
@@ -281,6 +338,85 @@
    * entra com campo faltando; a normalização decide UMA vez o que é o
    * padrão, em vez de cada bloco decidir por conta.
    * ===================================================================== */
+  /* =====================================================================
+   * TIPOGRAFIA POR PÁGINA — o que o usuário ajusta sem sair do sistema
+   *
+   * ⚠ POR PÁGINA, NÃO POR MODELO. Uma capa quer título centralizado e enorme;
+   *   a página de escopo quer texto justificado e corrido. Um único ajuste
+   *   para o documento inteiro obriga a escolher qual das duas fica errada —
+   *   e é aí que a pessoa exporta para outro programa para "arrumar".
+   *
+   * ⚠ TUDO EM PORCENTAGEM DO PADRÃO, não em pixel. O documento é impresso em
+   *   A4 e também aberto na vertical do celular: um "18px" que fica bom numa
+   *   folha fica minúsculo na outra. A escala preserva a proporção que o
+   *   desenho do bloco já tem.
+   *
+   * ⚠ E O JUSTIFICADO SÓ VALE PARA TEXTO CORRIDO. Justificar um título de
+   *   duas palavras abre um vão enorme entre elas; por isso o alinhamento do
+   *   título não oferece essa opção.
+   * =================================================================== */
+  PropTpl.ALINHAMENTOS = [
+    { id: "esquerda", nome: "À esquerda", css: "left" },
+    { id: "centro", nome: "Centralizado", css: "center" },
+    { id: "direita", nome: "À direita", css: "right" },
+    { id: "justificado", nome: "Justificado", css: "justify", soTexto: true }
+  ];
+
+  var TIPO_PADRAO = {
+    alinhaTitulo: "",      /* "" = como o modelo do bloco desenha */
+    alinhaTexto: "",
+    escalaTitulo: 100,     /* % do tamanho que o bloco já usa */
+    escalaTexto: 100,
+    entrelinha: 100,       /* % da altura de linha */
+    espacoLetra: 0,        /* centésimos de em: 5 = 0.05em */
+    caixaAltaTitulo: false
+  };
+
+  function alinhamento(id, permitirJustificado) {
+    var a = null;
+    for (var i = 0; i < PropTpl.ALINHAMENTOS.length; i++) {
+      if (PropTpl.ALINHAMENTOS[i].id === txt(id)) { a = PropTpl.ALINHAMENTOS[i]; break; }
+    }
+    if (!a) return "";
+    if (a.soTexto && !permitirJustificado) return "";
+    return a.css;
+  }
+
+  function pct(v, padrao, min, max) {
+    var n = num(v);
+    if (!n) return padrao;
+    return Math.max(min, Math.min(max, n));
+  }
+
+  function tipografia(tp) {
+    var d = tp || {};
+    return {
+      alinhaTitulo: txt(d.alinhaTitulo),
+      alinhaTexto: txt(d.alinhaTexto),
+      escalaTitulo: pct(d.escalaTitulo, 100, 60, 180),
+      escalaTexto: pct(d.escalaTexto, 100, 70, 160),
+      entrelinha: pct(d.entrelinha, 100, 80, 200),
+      espacoLetra: Math.max(-5, Math.min(40, num(d.espacoLetra))),
+      caixaAltaTitulo: !!d.caixaAltaTitulo
+    };
+  }
+  PropTpl.tipografia = tipografia;
+
+  /* as variáveis CSS que a página recebe; vazio quando nada foi mudado */
+  function estiloTipografia(tp) {
+    var s = [];
+    var at = alinhamento(tp.alinhaTitulo, false);
+    var ax = alinhamento(tp.alinhaTexto, true);
+    if (at) s.push("--tp-al-tit:" + at);
+    if (ax) s.push("--tp-al-txt:" + ax);
+    if (tp.escalaTitulo !== 100) s.push("--tp-esc-tit:" + (tp.escalaTitulo / 100));
+    if (tp.escalaTexto !== 100) s.push("--tp-esc-txt:" + (tp.escalaTexto / 100));
+    if (tp.entrelinha !== 100) s.push("--tp-lh:" + (tp.entrelinha / 100));
+    if (tp.espacoLetra) s.push("--tp-ls:" + (tp.espacoLetra / 100) + "em");
+    if (tp.caixaAltaTitulo) s.push("--tp-cx-tit:uppercase");
+    return s.join(";");
+  }
+
   var ESTILO_PADRAO = {
     corTitulo: "#1B2A5B",
     corTexto: "#2A2A2A",
@@ -313,6 +449,7 @@
         if (c.tipo === "sim_nao") out[c.id] = (v === undefined || v === null) ? !!c.padrao : !!v;
         else out[c.id] = (v === undefined || v === null || txt(v) === "") ? txt(c.padrao) : txt(v);
       });
+      out.tipografia = tipografia(p.tipografia);
       return out;
     }).filter(Boolean);
 
@@ -635,21 +772,45 @@
       var cls = "tp-pg" + (vertical ? " tp-vert" : "")
         + (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" ? " tp-cheia" : "")
         + (escuro ? " tp-escura" : "");
-      var estilo = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento")
-        ? "" : ' style="' + fundoDe(m, escuro) + '"';
+      var fundo = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento")
+        ? "" : fundoDe(m, escuro);
+      var tipo = estiloTipografia(p.tipografia || tipografia(null));
+      var junto = [fundo, tipo].filter(Boolean).join(";");
+      var estilo = junto ? (' style="' + junto + '"') : "";
       return '<section class="' + cls + '"' + estilo + ">" + corpo + "</section>";
     }).join("");
 
     return '<div class="tp-doc" style="' + estiloRaiz(m, f) + '">' + partes + "</div>";
   };
 
+  /* =====================================================================
+   * ⚠ ASPA DUPLA DENTRO DE `style="..."` FECHA O ATRIBUTO
+   *
+   *   A pilha de fontes é escrita com aspas duplas ('"Playfair Display",
+   *   Georgia, ...'), e ela ia inteira para dentro de um atributo delimitado
+   *   por aspas duplas. O navegador lia
+   *
+   *       style="--tp-titulo:#1B2A5B;...;--tp-f-tit:"
+   *
+   *   e o resto virava atributo solto. Resultado: `--tp-f-tit` e `--tp-f-txt`
+   *   NUNCA chegavam ao documento, e `font-family:var(--tp-f-tit)` caía em
+   *   herança. O seletor de fonte existia, salvava a escolha, mostrava o
+   *   exemplo na tela — e o papel saía sempre na mesma fonte. Defeito antigo,
+   *   achado em 01/09/2026 ao perguntar ao navegador qual fonte ele resolveu,
+   *   em vez de conferir que a variável estava no HTML.
+   *
+   *   CSS aceita aspa simples para nome de família: a troca resolve sem
+   *   escapar nada e sem mexer na tabela de fontes.
+   * =================================================================== */
+  function aspaSimples(s) { return String(s == null ? "" : s).replace(/"/g, "'"); }
+
   function estiloRaiz(m, f) {
     return "--tp-titulo:" + m.estilo.corTitulo
       + ";--tp-texto:" + m.estilo.corTexto
       + ";--tp-destaque:" + m.estilo.corDestaque
       + ";--tp-escuro:" + m.estilo.corFundoEscuro
-      + ";--tp-f-tit:" + f.titulo
-      + ";--tp-f-txt:" + f.texto;
+      + ";--tp-f-tit:" + aspaSimples(f.titulo)
+      + ";--tp-f-txt:" + aspaSimples(f.texto);
   }
 
   /* a tabela de preços — o único lugar deste arquivo que toca em número, e
@@ -726,6 +887,8 @@
     return [
       "@page{margin:0}",
       ".tp-doc{color:var(--tp-texto);font-family:var(--tp-f-txt);line-height:1.5}",
+
+
       ".tp-pg{position:relative;width:210mm;min-height:297mm;padding:18mm 16mm;box-sizing:border-box;overflow:hidden;page-break-after:always;background-color:#fff}",
       ".tp-pg.tp-vert{width:120mm;min-height:213mm;padding:14mm 12mm}",
       ".tp-pg:last-child{page-break-after:auto}",
@@ -787,7 +950,33 @@
       ".tp-local{margin-top:14mm}",
       ".tp-assin{display:flex;gap:12mm;margin-top:20mm;font-size:10.5pt;text-align:center}",
       ".tp-assin>div{flex:1}",
-      ".tp-linha{border-top:1px solid var(--tp-texto);margin-bottom:2mm}"
+      ".tp-linha{border-top:1px solid var(--tp-texto);margin-bottom:2mm}",
+
+      /* =================================================================
+       * OS AJUSTES DE TIPOGRAFIA DA PÁGINA
+       *
+       * ⚠ CADA REGRA CAI NO DESENHO ORIGINAL QUANDO A VARIÁVEL NÃO EXISTE.
+       *   `var(--tp-al-txt, left)` mantém, byte a byte, o que o bloco já
+       *   fazia para quem nunca mexeu em nada — e é o que permite ligar isto
+       *   sem reabrir os modelos que os clientes já montaram.
+       *
+       * ⚠ E VEM DEPOIS das regras dos blocos, de propósito: o ajuste do
+       *   usuário é o último a falar. Um `text-align` escrito antes seria
+       *   vencido pela regra específica do bloco e o botão não faria nada —
+       *   o pior desfecho, porque a tela diria que mudou.
+       * =============================================================== */
+      ".tp-pg{letter-spacing:var(--tp-ls,normal)}",
+      ".tp-pg h1,.tp-pg h2,.tp-pg .tp-h1,.tp-pg .tp-h1c,.tp-pg .tp-h2,.tp-pg .tp-vazado{"
+        + "text-align:var(--tp-al-tit,inherit);"
+        + "font-size:calc(var(--tp-esc-tit,1) * 1em);"
+        + "text-transform:var(--tp-cx-tit,inherit)}",
+      ".tp-pg .tp-p,.tp-pg p,.tp-pg li,.tp-pg td{"
+        + "text-align:var(--tp-al-txt,inherit);"
+        + "font-size:calc(var(--tp-esc-txt,1) * 1em);"
+        + "line-height:calc(var(--tp-lh,1) * 1.5)}",
+      /* ⚠ o valor da tabela continua à direita: número alinhado com o texto
+         vira coluna torta, e isso não é preferência, é leitura de dinheiro */
+      ".tp-pg td.tp-num{text-align:right}",
     ].join("\n");
   };
 

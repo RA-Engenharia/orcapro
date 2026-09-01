@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.21",
+  "versao": "1.2.22",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.21/OrcaPRO-IA-update-v1.2.21.zip",
-  "notas": "Modelos de Proposta agora valem tambem para a proposta do Orcamento: ao gerar, o sistema pergunta com qual desenho -- o documento padrao de sempre ou um dos seus modelos --, e a tabela sai agrupada pelas etapas do seu orcamento. E os modelos passam a poder ser levados e trazidos entre contas, com as fotos dentro do arquivo: util para usar o desenho de outra empresa, ou para alguem ficar so na criacao dos modelos. O modelo importado entra como novo, sem alterar nada do que voce ja montou.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.21/OrcaPRO-IA-Instalador-v1.2.21.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.22/OrcaPRO-IA-update-v1.2.22.zip",
+  "notas": "Modelos de Proposta com fontes profissionais: eram 4 combinacoes, agora sao 9, com familias de apresentacao embutidas no programa (funcionam sem internet e no PDF). E cada pagina do modelo ganhou os ajustes de tipografia: alinhamento do titulo e do texto -- incluindo justificado --, tamanho, espaco entre linhas, espaco entre letras e titulo em maiusculas. Correcao: a fonte escolhida no modelo nao estava chegando ao documento, e o PDF saia sempre na mesma fonte.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.22/OrcaPRO-IA-Instalador-v1.2.22.exe"
 }

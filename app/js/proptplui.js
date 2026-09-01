@@ -224,6 +224,7 @@
               + '" value="' + esc(v) + '" placeholder="' + esc(c.dica || "") + '">');
           }
         });
+        html += G._propModTipografia(p);
         html += "</div>";
       }
       html += "</div>";
@@ -387,11 +388,96 @@
   /* ===================================================================
    * FIAÇÃO
    * =================================================================== */
+  /* =====================================================================
+   * TIPOGRAFIA DA PÁGINA — o que evita exportar para outro programa
+   *
+   * ⚠ FICA DENTRO DA PÁGINA, não numa aba separada. Quem quer justificar o
+   *   escopo está olhando para o escopo; mandar a pessoa a outra aba, achar a
+   *   página de novo numa lista e voltar é o atrito que faz ela desistir e
+   *   abrir o documento no Word.
+   *
+   * ⚠ E VEM FECHADO. São sete controles que a maioria nunca vai tocar: abertos
+   *   por padrão, empurram para baixo os campos que todo mundo usa.
+   * =================================================================== */
+  G._propModTipografia = function (p) {
+    var tp = T.tipografia(p.tipografia);
+    var pid = esc(p.id);
+    function sel(campo, atual, opcoes) {
+      return '<select data-pmt="' + pid + '" data-tcampo="' + campo + '">'
+        + opcoes.map(function (o) {
+            return '<option value="' + esc(o[0]) + '"' + (String(atual) === String(o[0]) ? " selected" : "") + ">"
+              + esc(o[1]) + "</option>";
+          }).join("") + "</select>";
+    }
+    function faixa(campo, atual, min, max, passo, sufixo) {
+      return '<div class="flex" style="gap:8px;align-items:center">'
+        + '<input type="range" data-pmt="' + pid + '" data-tcampo="' + campo + '" min="' + min + '" max="' + max
+        + '" step="' + passo + '" value="' + atual + '" style="flex:1">'
+        + '<span class="muted" style="font-size:12px;min-width:52px;text-align:right" data-tval="' + pid + ":" + campo + '">'
+        + atual + esc(sufixo) + "</span></div>";
+    }
+
+    var alinTit = [["", "como o modelo desenha"]];
+    var alinTxt = [["", "como o modelo desenha"]];
+    T.ALINHAMENTOS.forEach(function (a) {
+      alinTxt.push([a.id, a.nome]);
+      if (!a.soTexto) alinTit.push([a.id, a.nome]);
+    });
+
+    return '<details style="margin-top:10px">'
+      + '<summary class="muted" style="cursor:pointer;font-size:12.5px">Tipografia desta página</summary>'
+      + '<div class="row" style="margin-top:8px">'
+      + K.campo("Alinhamento do título", sel("alinhaTitulo", tp.alinhaTitulo, alinTit))
+      + K.campo("Alinhamento do texto", sel("alinhaTexto", tp.alinhaTexto, alinTxt))
+      + "</div>"
+      + '<div class="row">'
+      + K.campo("Tamanho do título", faixa("escalaTitulo", tp.escalaTitulo, 60, 180, 5, "%"))
+      + K.campo("Tamanho do texto", faixa("escalaTexto", tp.escalaTexto, 70, 160, 5, "%"))
+      + "</div>"
+      + '<div class="row">'
+      + K.campo("Espaço entre linhas", faixa("entrelinha", tp.entrelinha, 80, 200, 5, "%"))
+      + K.campo("Espaço entre letras", faixa("espacoLetra", tp.espacoLetra, -5, 40, 1, ""))
+      + "</div>"
+      + '<label class="flex" style="gap:8px;align-items:center;margin-top:4px;font-size:13px">'
+      + '<input type="checkbox" data-pmt="' + pid + '" data-tcampo="caixaAltaTitulo"'
+      + (tp.caixaAltaTitulo ? " checked" : "") + "> Título em MAIÚSCULAS</label>"
+      + '<p class="muted" style="font-size:11.5px;margin:6px 0 0">"Justificado" vale só para o texto: '
+      + "justificar um título de duas palavras abre um vão enorme entre elas.</p>"
+      + "</details>";
+  };
+
   G._propModWire = function () {
     var self = this;
     var cx = document.getElementById("propmod-editor"); if (!cx) return;
     var raw = obter(this._propModId); if (!raw) return;
     var m = T.modelo(raw);
+
+    /* tipografia da página: grava na hora, e o número ao lado acompanha */
+    var tcs = cx.querySelectorAll("[data-pmt]");
+    for (var q = 0; q < tcs.length; q++) {
+      (function (el) {
+        var evento = (el.type === "range") ? "input" : "change";
+        el.addEventListener(evento, function () {
+          var pg = el.getAttribute("data-pmt"), campo = el.getAttribute("data-tcampo");
+          var valor = (el.type === "checkbox") ? el.checked
+            : (el.type === "range" ? Number(el.value) : el.value);
+          var eco = cx.querySelector('[data-tval="' + pg + ":" + campo + '"]');
+          if (eco) eco.textContent = valor + (campo === "espacoLetra" ? "" : "%");
+          var r = obter(self._propModId); if (!r) return;
+          var mm = T.modelo(r);
+          mm.paginas.forEach(function (pp) {
+            if (pp.id !== pg) return;
+            pp.tipografia = pp.tipografia || {};
+            pp.tipografia[campo] = valor;
+          });
+          r.paginas = mm.paginas;
+          /* ⚠ SEM `_propModRender()` aqui: o slider perde o foco no meio do
+             arrasto e o gesto morre na primeira mexida. Só a prévia repinta. */
+          if (!gravar(r)) { UI.toast("Não consegui gravar.", "erro"); return; }
+          if (self._propModAba === "previa") self._propModRender();
+        });
+      })(tcs[q]);
+    }
 
     /* campos de página: gravam ao sair do campo */
     var campos = cx.querySelectorAll("[data-pmc]");
@@ -475,11 +561,43 @@
     }
     var w = window.open("", "_blank");
     if (!w) { UI.toast("O navegador bloqueou a janela. Libere a abertura de janelas para este endereço.", "erro"); return false; }
+    /* =================================================================
+     * AS FONTES TEM DE VIAJAR PARA A JANELA DO DOCUMENTO
+     *
+     * ⚠ A janela nova nasce vazia: ela recebia SO o `T.css()`. Enquanto as
+     *   famílias eram font-stack do sistema ("Georgia, Times New Roman…")
+     *   isso funcionava por acidente — o sistema operacional já tinha as
+     *   fontes. Com família embutida (`css/fontes.css`, base64), a folha não
+     *   chega na janela e o documento cai numa fonte genérica: o seletor de
+     *   fonte passaria a MENTIR, e o usuário só descobriria com a proposta
+     *   impressa na mão.
+     *
+     * ⚠ URL ABSOLUTA, montada a partir da página. `window.open("")` herda a
+     *   origem, mas o caminho relativo de um documento `about:blank` é frágil
+     *   quando o app é servido de uma subpasta.
+     * =============================================================== */
+    var urlFontes = "";
+    try { urlFontes = new URL("css/fontes.css", location.href).href; } catch (eU) { urlFontes = "css/fontes.css"; }
+
     w.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
       + "<title>" + esc(txt(dados && dados.tituloDoc) || "Proposta") + "</title>"
+      + '<link rel="stylesheet" href="' + urlFontes + '">'
       + "<style>body{margin:0}" + T.css() + "</style></head><body>" + html + "</body></html>");
     w.document.close();
-    setTimeout(function () { try { w.focus(); w.print(); } catch (e) {} }, 400);
+
+    /* ⚠ IMPRIMIR ANTES DA FONTE CARREGAR SAI NA FONTE ERRADA, e o usuário não
+       tem como saber por quê. `document.fonts.ready` resolve quando as faces
+       usadas estão prontas; o tempo fixo continua como rede de segurança para
+       navegador que não tenha a API. */
+    var mandarImprimir = function () { try { w.focus(); w.print(); } catch (e) {} };
+    var jaFoi = false;
+    var uma = function () { if (jaFoi) return; jaFoi = true; mandarImprimir(); };
+    try {
+      if (w.document.fonts && w.document.fonts.ready && w.document.fonts.ready.then) {
+        w.document.fonts.ready.then(function () { setTimeout(uma, 120); });
+      }
+    } catch (eF) {}
+    setTimeout(uma, 1200);
     return true;
   };
 
