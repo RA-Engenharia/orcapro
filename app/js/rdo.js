@@ -1042,6 +1042,12 @@
    *   rotCondicao(id)       → rótulo da condição do schema antigo
    *   incluirAcidente       → publica o TEXTO do acidente (padrão: não)
    *   maxFotos              → teto de fotos por diário (padrão RDO.MAX_FOTOS) */
+  /* ⚠ EXPOSTO para quem mais publica imagem no Portal (a vista do modelo,
+     B18): a regra de "subiu vira {i,t}; nao subiu vira base64; na fila some"
+     e uma so na casa. Replica-la seria repetir o defeito que este arquivo
+     ja documenta em outros lugares. */
+  RDO.fotoDoPortal = fotoDoPortal;
+
   RDO.paraPortal = function (r, opts) {
     if (!r) return null;
     var o = opts || {};

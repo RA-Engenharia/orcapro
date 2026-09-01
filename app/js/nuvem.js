@@ -31,6 +31,13 @@
     // tampouco. Com itens e parcelas dentro do registro fiscal, isso deixou
     // de ser detalhe — é o documento que prova a compra.
     "fiscal", "patrimonio", "estoque_mov",
+    /* ⚠ O MODELO DE PROPOSTA É DA EMPRESA, e por isso sincroniza: quem
+       desenha a proposta é o escritório e quem a gera costuma ser outra
+       pessoa, noutro aparelho. Sem estar aqui, o vendedor abriria a lista de
+       modelos vazia e cairia no documento genérico sem entender por quê.
+       ⚠ E cabe no documento: o registro guarda a REFERÊNCIA da foto (~80
+       bytes), nunca os bytes — ver js/proptplui.js. */
+    "prop_modelos",
     // medição de produção: nasce do diário no celular do encarregado e é paga
     // no computador do escritório — sem sincronizar, o pagamento não chega lá.
     "producao_med",
@@ -75,6 +82,11 @@
      * cada um teria a sua versao de quais conflitos ja foram tratados. */
     "bim_clash_testes",
     "bim_clash_resultados",
+    /* o elo entre o item do orcamento e a categoria medida no modelo. E
+       cadastro feito a mao — o engenheiro confirma item a item — e sem ele a
+       conferencia "o orcado bate com o desenhado?" nasce vazia no aparelho
+       novo, com a tela dizendo, tranquila, que nao ha nada ligado. */
+    "bim_orc_vinculos",
     /* 4D: as tarefas do cronograma DO ENGENHEIRO (o bim4d.js continua
      * derivando o automatico). Sincroniza porque o apontamento de real vem
      * da obra — medicao, diario — e quem planeja esta no escritorio: sao
@@ -392,6 +404,15 @@
          carrega `testeId`. */
       var testesMortos = (semLapide || ent !== "bim_clash_resultados" || !Store.cascatasDeClashTeste)
         ? Object.create(null) : Store.cascatasDeClashTeste(empresaId);
+      /* ⚠ A PODA APAGA UM SUBCONJUNTO do teste, e o teste continua vivo —
+         então ela precisa da própria consulta. Sem esta linha, o conflito
+         podado num aparelho voltava do outro no primeiro sync e a limpeza se
+         desfazia sozinha: o coordenador limpava 800 registros, via o número
+         cair, e no dia seguinte estava tudo lá de novo — sem erro em lugar
+         nenhum. Pior que não ter limpado, porque ele conta com a limpeza
+         para sair do teto. */
+      var podados = (semLapide || ent !== "bim_clash_resultados" || !Store.cascatasDeClashPoda)
+        ? Object.create(null) : Store.cascatasDeClashPoda(empresaId);
       /* ⚠ O ADITIVO É FILHO DO CONTRATO, NÃO DA OBRA — e por isso a cascata da
        * obra não pode julgá-lo pelo `obraId` que ele carrega.
        *
@@ -453,6 +474,10 @@
            NOVO que a lápide — o mesmo desempate do `obraId` logo acima, que
            deixa passar o registro editado depois da exclusão noutro aparelho. */
         if (o.testeId && testesMortos[o.testeId]) return String(o.atualizadoEm || "") > String(testesMortos[o.testeId]);
+        /* mesmo desempate: o registro EDITADO depois da poda noutro aparelho
+           volta — quem escreveu responsavel num conflito que aqui era só um
+           `resolvido_auto` sem dono tem razão, e a poda aqui não sabia disso. */
+        if (podados[o.id]) return String(o.atualizadoEm || "") > String(podados[o.id]);
         return true;
       };
       Util.arr(cloud).forEach(function (o) { if (o && o.id && vivo(o)) byId[o.id] = o; });

@@ -516,6 +516,49 @@
         this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
       } catch (e) {}
     },
+    /* ⚠ A PODA APAGA UM SUBCONJUNTO, e por isso não pode usar a lápide do
+     * teste — ela cobriria TODOS os conflitos dele, inclusive os que ficaram.
+     * E não pode gravar uma lápide por registro: podar 1.372 comeria metade
+     * do `_LAPIDES_MAX` e expulsaria as lápides das outras entidades, que é
+     * exatamente o defeito que a cascata do teste veio consertar.
+     *
+     * Então: UMA lápide para o lote, com a lista de ids dentro. Ela é imune à
+     * poda (tem `.cascata`), e o merge da nuvem consulta o conjunto de ids —
+     * sem isso o registro podado voltaria do outro aparelho no próximo sync e
+     * a limpeza se desfaria sozinha, que é pior que não ter limpado. */
+    lapidarClashPodaEmCascata: function (empresaId, testeId, ids) {
+      if (!empresaId || !Util.arr(ids).length) return;
+      try {
+        var l = Util.arr(this.adapter.ler(empresaId, "_lapides", []));
+        var agora = Util.agoraISO();
+        /* uma lápide por PODA, não por teste: podar duas vezes o mesmo teste
+           tem de somar, não substituir.
+           ⚠ O CARIMBO NÃO BASTAVA COMO IDENTIDADE. O id era
+           "cascata:clashpoda:<teste>:<agoraISO>", e `agoraISO` tem resolução
+           de milissegundo: duas podas no mesmo milissegundo geram o MESMO id,
+           `_porLapide` sobrescreve, e os conflitos da primeira poda voltam da
+           nuvem no sync seguinte. Não é hipótese — foi assim que a suíte da
+           cascata ficou vermelha, com duas chamadas seguidas caindo no mesmo
+           milissegundo nesta máquina. */
+        var idL = Util.uid("cascata:clashpoda:" + String(testeId));
+        this._porLapide(l, {
+          id: idL, cascata: "clashpoda", ref: String(testeId),
+          ids: Util.arr(ids).map(String), em: agora
+        });
+        this.adapter.gravar(empresaId, "_lapides", this._podarLapides(l));
+      } catch (e) {}
+    },
+    /* conflitos podados: { idDoRegistro: quando } */
+    cascatasDeClashPoda: function (empresaId) {
+      var m = Object.create(null);
+      try {
+        Util.arr(this.adapter.ler(empresaId, "_lapides", [])).forEach(function (t) {
+          if (!t || t.cascata !== "clashpoda") return;
+          Util.arr(t.ids).forEach(function (id) { if (id) m[id] = t.em || ""; });
+        });
+      } catch (e) {}
+      return m;
+    },
     /* testes de compatibilização apagados: { testeId: quando } — o merge da
        nuvem descarta os resultados pelo `testeId`, como faz com o `obraId`. */
     cascatasDeClashTeste: function (empresaId) {

@@ -334,6 +334,9 @@
     lp_tarefas: 1, fiscal: 1, frota_mov: 1, estoque: 1, centrocusto: 1,
     producao_preco: 1, bim_niveis: 1, bim_modelos: 1, bim_conjuntos: 1, bim_vistas: 1,
     bim_clash_testes: 1, bim_clash_resultados: 1, bim_tarefas: 1,
+    /* o elo modelo<->orcamento carrega obraId: sem estar aqui, o sub-usuario
+       restrito a duas obras veria os elos das outras oito. */
+    bim_orc_vinculos: 1,
     /* ⚠ `horas_extras` entrou na v1.2 pelo outro lado (ela sincroniza e grava
        obraId, e o merge da nuvem a apagava junto com a obra). A invariante de
        tools/test-v12-escopo.js pegou o segundo efeito na mesma hora: quem
@@ -572,6 +575,10 @@
          aqui é o que dá a ele barra, busca Ctrl+K, RBAC e "Organizar menu"
          de graça — a alternativa seria uma segunda lista de módulos. */
       { id: "carpintaria", nome: "Carpintaria", g: 1 },
+      /* o desenho da proposta virou cadastro: paginas, fotos numeradas, cor e
+         letra. Vale para todo mundo — quem nao mexer continua com o documento
+         de sempre, porque a proposta so usa modelo se houver um. */
+      { id: "propmodelos", nome: "Modelos de Proposta", g: 1 },
       { id: "bim", nome: "BIM 3D ao 7D", g: 2 },
       { id: "clientes", nome: "Clientes", g: 3 },
       { id: "contratos", nome: "Contratos", g: 3 },
@@ -1023,6 +1030,7 @@
            `Auth.podeModulo` já barrou quem não tem o perfil: se ainda assim a
            função faltar, a tela diz o que houve em vez de ficar em branco. */
         case "carpintaria": return this.renderCarpintaria ? this.renderCarpintaria() : this._moduloNaoCarregado("Carpintaria", "js/carpintariaui.js");
+        case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
         case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
         case "galeria": return this.renderGaleria();
         case "bim": return this.renderBim();
@@ -2914,6 +2922,11 @@
       ["bim_clash_testes", "teste(s) de compatibilização"],
       ["bim_clash_resultados", "conflito(s) com histórico"],
       ["bim_tarefas", "tarefa(s) do cronograma 4D"],
+      /* o elo modelo<->orcamento so faz sentido entre AQUELE modelo e AQUELE
+         orcamento da obra: apagada a obra, ele aponta para uma conferencia
+         que nao existe mais. Nao e documento — e a coordenacao entre dois
+         registros que ja sairam. */
+      ["bim_orc_vinculos", "elo(s) entre o modelo e o orçamento"],
       /* a tabela de preços unitários é combinada POR OBRA (o m² de reboco da
          obra A não é o da B). Sai junto; para reaproveitar em outra obra existe
          o "copiar de outra obra", que gera cópias próprias — nunca referência. */
@@ -9014,6 +9027,12 @@
             '<select id="bim-clash-teste" class="sel sm" style="min-width:190px" title="Teste salvo: guarda os lados, o modo e — o que importa — o histórico de cada conflito"></select>' +
             '<button class="btn sm" id="bim-clash-novo" title="Criar um teste salvo">+ Teste</button>' +
             '<button class="btn sm" id="bim-clash-edit" title="Editar o teste selecionado">Editar</button>' +
+            /* ⚠ A SAÍDA DO TETO. A reconciliação guarda para sempre o conflito
+               que sumiu, e a lista só cresce: medido, um teste com 1.372
+               conflitos estreitado para 5 pares continuava com 1.372. Ao bater
+               no teto, a tela mandava "crie um teste NOVO" e o teste antigo
+               ficava travado sem nenhum botão que o destravasse. É este. */
+            '<button class="btn sm" id="bim-clash-podar" title="Limpar os conflitos que sumiram do modelo há tempos e ninguém chegou a tratar">' + _icB("lixeira") + 'Limpar sumidos</button>' +
             '<button class="btn sm primary" id="bim-clash-run">' + _icB("buscar") + 'Rodar</button></span></div>' +
           '<div id="bim-clash-editor" style="display:none;margin-bottom:10px"></div>' +
           '<div id="bim-clash-res"><p class="muted" style="font-size:12.5px;margin:0">Detecta interferências entre disciplinas — e no modo <b>folga</b> também as peças que passam <b>perto demais</b> sem se tocar. Um <b>teste salvo</b> guarda responsável, prazo, comentário e histórico: ao rodar de novo depois do modelo corrigido, os mesmos conflitos são reconhecidos e nada do que a equipe escreveu se perde.</p></div>' +
@@ -9033,7 +9052,14 @@
 
         '<div id="bim-tarefas" style="display:none">' +
           '<div class="flex between" style="align-items:center;margin-bottom:8px;flex-wrap:wrap"><h3 style="margin:0;display:flex;align-items:center">' + _icB("calendario") + 'Cronograma 4D</h3>' +
-          '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-tar-import">Importar</button><button class="btn sm" id="bim-tar-cores">Cores</button><button class="btn sm primary" id="bim-tar-nova">+ Tarefa</button></span></div>' +
+          '<span class="flex" style="gap:6px;flex-wrap:wrap"><button class="btn sm" id="bim-tar-import">Importar</button><button class="btn sm" id="bim-tar-cores">Cores</button>' +
+          /* o que vai para a reunião é um ARQUIVO. Até aqui a única saída era
+             o engenheiro filmar a tela com o celular. */
+          '<button class="btn sm" id="bim-tar-video" title="Gravar a obra subindo, com a data em cima — vira arquivo para mandar">' + _icB("camera") + 'Vídeo</button>' +
+          /* B9: a regua andava so por data, e as datas reais so existem se
+             alguem as digitar. Aqui ela passa a poder andar pela MEDICAO. */
+          '<button class="btn sm" id="bim-tar-real" title="Andar pelo que foi MEDIDO em boletim, no lugar do que foi planejado">' + _icB("prevreal") + 'Plano</button>' +
+          '<button class="btn sm primary" id="bim-tar-nova">+ Tarefa</button></span></div>' +
           '<p class="muted" style="font-size:11.5px;margin:0 0 8px">A obra sobe com o <b>seu</b> cronograma. Cada tarefa tem as quatro datas — previsto e real — e o atraso aparece com <b>contorno fixo</b>, que sai bem numa foto de relatório. Sem tarefa nenhuma, vale o 4D automático da aba anterior.</p>' +
           '<input type="file" id="bim-tar-arq" accept=".csv,.xml,.txt" style="display:none">' +
           '<div id="bim-tar-editor" style="display:none;margin-bottom:10px"></div>' +
@@ -9088,6 +9114,10 @@
          laranja do atraso continuava desenhado por cima de peças que a própria
          imagem afirma não existirem — inclusive na foto que vai ao relatório.
          `limpar4DTarefas` existia e não era chamada por ninguém. */
+      /* \u26a0 B10: sair do quantitativo tira as cores do avanco. Sem isto o
+         modelo fica pintado com a legenda fora da tela, e o engenheiro nao
+         tem mais de onde desfazer — as cores viram estado preso. */
+      if (chave !== "qto" && this._bimOrcPintado) { this._bimOrcDespintar(true); }
       if (chave !== "tarefas4d" && this._bimTarSim) {
         if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
         this._bimTarPend = null; this._bimTarSim = null;
@@ -9111,6 +9141,13 @@
          resolveria o modeloId pelas vagas da obra anterior — vínculo da obra A
          aparecendo dentro do registro da obra B. */
       try { this._bimFedCarregar(); } catch (eB1) {}
+      /* B19: a obra nova tem OUTROS arquivos registrados — e pode nao ter
+         nenhum aberto. O painel precisa ser redesenhado aqui, senao ele
+         continua mostrando os ausentes da obra anterior. */
+      try {
+        var _mods = (window.BIM && BIM.modelos && BIM.modelos.length) ? BIM.modelos : [];
+        this._bimRenderModelos(_mods);
+      } catch (eB19) {}
       /* ⚠ B5: os testes de compatibilização também são POR OBRA, e o seletor
          não era repovoado. A tela seguia mostrando o teste da obra anterior,
          SELECIONADO — e como o `value` não existe mais entre as opções da obra
@@ -9142,6 +9179,14 @@
       try {
         if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
         this._bimTarPend = null;
+        /* ⚠ B9: o modo REAL sai junto com a obra. O cache tem a obra na chave e
+           nao devolveria o avanco errado, mas o BOTAO continuaria escrito
+           "Real" numa obra sem orcamento vinculado — dizendo que mostra
+           medicao enquanto mostra o plano, que e a pior das duas telas. */
+        this._bimTarModoReal = false; this._bimAvCache = null;
+        /* B10: a pintura e da obra anterior; ficar na cena mostraria o avanco
+           de uma obra dentro do modelo de outra. */
+        if (this._bimOrcPintado) { this._bimOrcPintado = null; try { if (window.BIM && BIM.limparPintura) BIM.limparPintura(); } catch (eP) {} }
         var tinhaSim4d = !!this._bimTarSim;
         this._bimTarData = null; this._bimTarSim = null; this._bimTarEditando = "";
         var _ed4 = document.getElementById("bim-tar-editor");
@@ -9461,6 +9506,74 @@
       cx.style.display = "none"; cx.innerHTML = "";
       this._bimClashRenderTestes();
       UI.toast('Teste \u201C' + salvo.nome + '\u201D salvo.', "ok");
+    },
+
+    /* =====================================================================
+     * LIMPAR OS QUE SUMIRAM — a saída do teto
+     *
+     * ⚠ A CONTA E A DECISÃO SÃO DE QUEM APERTA. A tela mostra o que vai, o
+     *   que fica e por quê, e só apaga depois do "sim". Poda automática por
+     *   idade rodaria justamente no dia em que o projetista está corrigindo o
+     *   modelo, e levaria o histórico que ele ia consultar.
+     * =================================================================== */
+    _bimClashPodar: function () {
+      if (typeof BimClashX === "undefined" || !BimClashX.podaveis) {
+        UI.toast("O motor de compatibilização não carregou.", "erro"); return;
+      }
+      var self = this;
+      var sel = document.getElementById("bim-clash-teste");
+      var testeId = sel ? sel.value : "";
+      if (!testeId) {
+        UI.toast("Escolha um teste salvo. A rodada rápida não guarda conflito nenhum — não há o que limpar.", "aviso");
+        return;
+      }
+      var salvo = this._bimClashTestesDaObra().filter(function (x) { return x.id === testeId; })[0];
+      var regs = this._bimClashResDoTeste(testeId);
+      if (!regs.length) { UI.toast("Este teste ainda não tem conflitos guardados.", "aviso"); return; }
+
+      var p = BimClashX.podaveis(regs, { quando: new Date().toISOString() });
+      var fica = BimClashX.frasePoda(p);
+
+      if (!p.podar.length) {
+        UI.modal("Nada a limpar",
+          "<p>" + Util.esc(p.resumo) + "</p>"
+          + (fica ? '<p class="muted">' + Util.esc(fica) + "</p>" : ""),
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+
+      UI.modal("Limpar conflitos que sumiram",
+        "<p>" + Util.esc(p.resumo) + "</p>"
+        + '<p class="muted" style="margin-top:2px">Teste: <b>' + Util.esc((salvo && salvo.nome) || "") + "</b> · "
+        + regs.length + " conflito(s) guardados hoje.</p>"
+        + (fica ? '<div class="card" style="padding:9px;background:var(--fundo-2);font-size:12.5px;margin:10px 0">'
+            + "<b>O que NÃO vai:</b><br>" + Util.esc(fica) + "</div>" : "")
+        + '<p style="font-size:12.5px">Isto apaga registro de conflito que <b>sumiu do modelo</b> e que ninguém marcou, comentou nem atribuiu. '
+        + "Se um deles voltar a aparecer numa rodada futura, ele entra como <b>novo</b> — sem o histórico antigo, porque ele não existe mais.</p>"
+        + '<p class="muted" style="font-size:12px">Isso não volta.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Limpar " + p.podar.length, classe: "primary", onClick: function () {
+            if (Gestao._bloqueado && Gestao._bloqueado()) return;
+            var ids = p.podar.map(function (r) { return r.id; });
+            /* ⚠ A LÁPIDE PRIMEIRO. Se a exclusão passar e a lápide falhar, o
+               registro volta da nuvem no próximo sync e a limpeza se desfaz
+               sozinha — o coordenador vê o número cair e voltar no dia
+               seguinte, sem erro em lugar nenhum. */
+            if (Store.lapidarClashPodaEmCascata) Store.lapidarClashPodaEmCascata(eid(), testeId, ids);
+            var n = 0;
+            if (Store.excluirVarios) {
+              n = Store.excluirVarios(eid(), "bim_clash_resultados", ids, !!Store.lapidarClashPodaEmCascata);
+            } else {
+              ids.forEach(function (x) { if (Store.excluir(eid(), "bim_clash_resultados", x)) n++; });
+            }
+            UI.fecharModal();
+            /* a lista na tela é da última rodada; recarrega o que sobrou */
+            self._bimClashRenderTestes();
+            if (self._bimClashRec) self._bimClashRodar();
+            UI.toast(n + " conflito(s) limpo(s). Sobraram " + (regs.length - n) + " neste teste.", "ok");
+          } }
+        ]);
     },
 
     _bimClashExcluirTeste: function (id, nome) {
@@ -10077,6 +10190,7 @@
       var hoje = hojeLocal();
       var sim = BimTarefa.simular(tarefas, this._bimElementos || [], data, {
         hoje: hoje,
+        real: this._bimTarOpcoesReal(),
         aparencias: this._bimTarAparencias(),
         conjuntos: (typeof this._bimConjDaObra === "function") ? this._bimConjDaObra() : []
       });
@@ -10193,8 +10307,21 @@
     },
 
     /* ---- a lista ---- */
+    /* o cabecalho do painel e desenhado UMA vez; o rotulo do botao tem de ser
+       sincronizado na mao, senao ele diz "Plano" com a regua no real. */
+    _bimTarBotaoReal: function () {
+      var b = document.getElementById("bim-tar-real"); if (!b) return;
+      var ic = (typeof Icones !== "undefined") ? Icones.get("prevreal", 15) : "";
+      b.innerHTML = ic + (this._bimTarModoReal ? "Real (medição)" : "Plano");
+      b.className = "btn sm" + (this._bimTarModoReal ? " primary" : "");
+      b.title = this._bimTarModoReal
+        ? "A régua anda pelo que foi MEDIDO até hoje; depois de hoje, pelo plano. Clique para voltar ao plano."
+        : "Andar pelo que foi MEDIDO em boletim, no lugar do que foi planejado";
+    },
+
     _bimTarRender: function () {
       var box = document.getElementById("bim-tar-lista"); if (!box) return;
+      this._bimTarBotaoReal();
       var self = this, lista = this._bimTarDaObra();
       this._bimTarRegua();
       if (!lista.length) {
@@ -10202,20 +10329,44 @@
         return;
       }
       var hoje = hojeLocal();
-      var res = BimTarefa.resumo(lista, hoje);
+      var res = BimTarefa.resumo(lista, hoje, this._bimTarOpcoesReal());
+      /* uma leitura so do avanco para a lista inteira */
+      var avHoje = (typeof BimAvanco !== "undefined") ? this._bimTarAvanco(hoje) : null;
       var COR = { "em-execucao": "#f59e0b", atrasado: "#ea580c", concluido: "#16a34a", futuro: "#94a3b8", removido: "#64748b" };
+      /* ⚠ CARTAO EMPILHADO, NAO TABELA. A gaveta do BIM da 395 px uteis e
+         esta lista tinha cinco colunas: media 548 px e cortava 153 — a
+         coluna "Real" e os botoes de editar/excluir ficavam fora da tela,
+         alcancaveis so rolando de lado dentro do painel. O B9 piorou o
+         quadro ao por a linha do avanco dentro da celula do nome, que e o
+         que obrigou a arrumar. */
       var linhas = lista.map(function (x) {
         var tt = BimTarefa.tarefa(x);
-        var est = BimTarefa.estadoEm(tt, hoje, hoje);
+        /* B9: a bolinha da lista mostra o MESMO estado que a cena mostra —
+           se a regua esta no real, a lista tambem esta. Deixar a lista no
+           plano com a cena no real e a receita para ninguem confiar em
+           nenhum dos dois. */
+        var pm = avHoje ? BimAvanco.pctDaTarefa(tt, avHoje) : null;
+        var est = BimTarefa.estadoEm(tt, hoje, hoje, (self._bimTarModoReal && pm && pm.pct != null) ? { pct: pm.pct, folga: 10 } : null);
         var alvoTxt = tt.alvo.tipo === "auto" ? '<span style="color:#b45309">sem alvo</span>' :
-          (tt.alvo.tipo === "elementos" ? (tt.alvo.chaves.length + " peça(s)") : (tt.alvo.tipo + ": " + Util.esc(tt.alvo.ref)));
-        return '<tr class="lin"><td style="width:10px"><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:' + (COR[est] || "#94a3b8") + '"></span></td>' +
-          "<td><b>" + Util.esc(tt.nome) + "</b>" + (tt.wbs ? ' <span class="muted" style="font-size:11px">' + Util.esc(tt.wbs) + "</span>" : "") +
-            '<div class="muted" style="font-size:10.5px">' + Util.esc(BimTarefa.TIPOS[tt.tipoTarefa].rotulo) + " · " + alvoTxt + "</div></td>" +
-          '<td style="font-size:11.5px;white-space:nowrap">' + Util.esc(tt.previstoInicio) + "<br>" + Util.esc(tt.previstoFim) + "</td>" +
-          '<td style="font-size:11.5px;white-space:nowrap">' + (tt.realInicio ? Util.esc(tt.realInicio) : "—") + "<br>" + (tt.realFim ? Util.esc(tt.realFim) : "—") + "</td>" +
-          '<td style="white-space:nowrap"><button class="btn sm" data-bted="' + Util.esc(x.id) + '">editar</button> ' +
-          '<button class="btn sm danger" data-btdel="' + Util.esc(x.id) + '">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 15) : "×") + "</button></td></tr>";
+          (tt.alvo.tipo === "elementos" ? (tt.alvo.chaves.length + " pe\u00e7a(s)") : (tt.alvo.tipo + ": " + Util.esc(tt.alvo.ref)));
+        var rotEst = (BimTarefa.APARENCIA_PADRAO[est] || {}).rotulo || est;
+        return '<div class="card" style="padding:8px 9px;margin-bottom:6px">'
+          + '<div class="flex" style="gap:6px;align-items:flex-start">'
+          +   '<span title="' + Util.esc(rotEst) + '" style="display:inline-block;width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-top:4px;background:' + (COR[est] || "#94a3b8") + '"></span>'
+          +   '<div style="flex:1;min-width:0">'
+          +     '<div style="font-size:12.5px;line-height:1.25"><b>' + Util.esc(tt.nome) + "</b>"
+          +       (tt.wbs ? ' <span class="muted" style="font-size:11px">' + Util.esc(tt.wbs) + "</span>" : "") + "</div>"
+          +     '<div class="muted" style="font-size:10.5px">' + Util.esc(BimTarefa.TIPOS[tt.tipoTarefa].rotulo) + " \u00b7 " + alvoTxt + "</div>"
+          +   "</div>"
+          +   '<button class="btn xs" data-bted="' + Util.esc(x.id) + '">editar</button>'
+          +   '<button class="btn xs danger" data-btdel="' + Util.esc(x.id) + '">' + (typeof Icones !== "undefined" ? Icones.get("lixeira", 13) : "\u00d7") + "</button>"
+          + "</div>"
+          + '<div class="muted" style="font-size:10.5px;margin-top:4px">previsto <b style="color:var(--texto)">' + Util.esc(tt.previstoInicio || "\u2014") + "</b> \u2192 <b style=\"color:var(--texto)\">" + Util.esc(tt.previstoFim || "\u2014") + "</b>"
+          +   (tt.realInicio || tt.realFim ? " \u00b7 real " + Util.esc(tt.realInicio || "\u2014") + " \u2192 " + Util.esc(tt.realFim || "\u2014") : "") + "</div>"
+          + (pm && pm.pct != null
+              ? '<div style="font-size:10.5px;color:var(--muted)">medido <b style="color:var(--texto)">' + Util.fmtNum(pm.pct, 0) + "%</b> \u00b7 previsto " + Util.fmtNum(BimAvanco.planejadoEm(tt, hoje), 0) + "% \u00b7 por " + (pm.fonte === "item" ? "item" : "etapa") + "</div>"
+              : '<div class="muted" style="font-size:10.5px" title="' + Util.esc((pm && pm.motivo) || "Ligue esta tarefa a um item ou etapa do or\u00e7amento no editor.") + '">sem medi\u00e7\u00e3o ligada</div>')
+          + "</div>";
       }).join("");
       box.innerHTML =
         '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">' +
@@ -10225,7 +10376,11 @@
           (res.atrasadas ? ' <span class="g-pill" style="background:#ea580c22;color:#ea580c;font-weight:700">' + res.atrasadas + " atrasada(s)" + (res.diasDeAtraso ? " · até " + res.diasDeAtraso + " dias" : "") + "</span>" : "") +
           (res.semAlvo ? ' <span class="g-pill" style="background:#94a3b822;color:#64748b;font-weight:700" title="Tarefa sem alvo não pinta peça nenhuma — escolha um conjunto, uma etapa do orçamento ou peças.">' + res.semAlvo + " sem alvo</span>" : "") +
         "</div>" +
-        '<div style="max-height:280px;overflow:auto"><table class="tbl"><thead><tr><th></th><th>Tarefa</th><th>Previsto</th><th>Real</th><th></th></tr></thead><tbody>' + linhas + "</tbody></table></div>";
+        (this._bimTarModoReal && avHoje
+          ? '<p class="muted" style="font-size:11px;margin:-4px 0 8px">' + Util.esc(BimAvanco.fraseAvanco(avHoje))
+            + " Até hoje manda o medido; depois de hoje, o plano.</p>"
+          : "") +
+        '<div style="max-height:300px;overflow:auto">' + linhas + "</div>";
       box.onclick = function (e) {
         var ed = e.target.closest("[data-bted]"); if (ed) { self._bimTarEditor(ed.getAttribute("data-bted")); return; }
         var dl = e.target.closest("[data-btdel]"); if (dl) { self._bimTarExcluir(dl.getAttribute("data-btdel")); return; }
@@ -10242,8 +10397,38 @@
       var etapas = [];
       try { (this._bimElementos || []).forEach(function (e2) { var s = String(e2.etapa || ""); if (s && etapas.indexOf(s) < 0) etapas.push(s); }); } catch (e) {}
       var opAlvo = '<option value="auto|">Sem alvo (deixa o automático)</option>';
+      /* ⚠ ALVO POR PEÇAS SUMIA AO EDITAR, e em silêncio. O seletor só oferecia
+         conjunto, etapa e automático; uma tarefa gravada com
+         `alvo.tipo === "elementos"` não casava com opção nenhuma, o `select`
+         caía na primeira ("auto") e o `_bimTarSalvar` regravava o alvo a
+         partir dele. Resultado: bastava abrir a tarefa para corrigir uma
+         vírgula no nome e a lista de peças ia embora — a tarefa parava de
+         pintar qualquer coisa na cena, sem aviso, e a culpa parecia ser do
+         modelo. A escolha nasceu de fora do editor (botão "criar tarefa da
+         seleção"), e por isso só pode ser PRESERVADA aqui, nunca montada. */
+      if (tt.alvo.tipo === "elementos" && tt.alvo.chaves.length) {
+        opAlvo = '<option value="elementos|" selected>Peças escolhidas no modelo (' + tt.alvo.chaves.length + ')</option>' + opAlvo;
+      }
       conj.forEach(function (c) { opAlvo += '<option value="conjunto|' + Util.esc(c.id) + '"' + (tt.alvo.tipo === "conjunto" && tt.alvo.ref === c.id ? " selected" : "") + ">Conjunto: " + Util.esc(c.nome) + "</option>"; });
       etapas.forEach(function (s) { opAlvo += '<option value="etapaOrcamento|' + Util.esc(s) + '"' + (tt.alvo.tipo === "etapaOrcamento" && tt.alvo.ref === s ? " selected" : "") + ">Etapa: " + Util.esc(s) + "</option>"; });
+      /* B9: as opções de fonte de avanço saem do orçamento VINCULADO À OBRA —
+         o mesmo que a medição mede. Sem orçamento vinculado, o seletor diz
+         isso em vez de vir vazio. */
+      var opFonte = '<option value="|">— sem medição (só o calendário) —</option>';
+      try {
+        var fB9 = this._bimTarFonte();
+        if (fB9.erro) {
+          opFonte += '<option value="|" disabled>' + Util.esc(String(fB9.erro).replace(/<[^>]*>/g, "")) + "</option>";
+        } else {
+          Util.arr(fB9.orc.etapas).forEach(function (et) {
+            opFonte += '<option value="etapa|' + Util.esc(et.id) + '"' + (tt.etapaOrc === et.id ? " selected" : "") + ">Etapa: " + Util.esc(et.nome) + "</option>";
+            Util.arr(et.itens).forEach(function (it) {
+              opFonte += '<option value="item|' + Util.esc(it.id) + '"' + (tt.itemOrcId === it.id ? " selected" : "") +
+                ">     item: " + Util.esc(String(it.descricao).slice(0, 70)) + "</option>";
+            });
+          });
+        }
+      } catch (eB9) {}
       var opTipo = Object.keys(BimTarefa.TIPOS).map(function (k) {
         return '<option value="' + k + '"' + (tt.tipoTarefa === k ? " selected" : "") + ">" + Util.esc(BimTarefa.TIPOS[k].rotulo) + "</option>";
       }).join("");
@@ -10262,6 +10447,12 @@
           '<label><span class="muted" style="font-size:11px">Real início</span><input type="date" id="bt-ri" class="inp sm" value="' + Util.esc(tt.realInicio) + '"></label>' +
           '<label><span class="muted" style="font-size:11px">Real fim</span><input type="date" id="bt-rf" class="inp sm" value="' + Util.esc(tt.realFim) + '"></label>' +
         "</div>" +
+        /* B9: de onde sai o avanco desta tarefa. Escreve `itemOrcId` ou
+           `etapaOrc` — os dois campos que existiam desde o B6 sem nenhuma
+           tela que os preenchesse. */
+        '<div style="margin-top:8px"><label style="display:block"><span class="muted" style="font-size:11px">Avanço real vem de (medição)</span>' +
+          '<select id="bt-fonte" class="sel sm" style="width:100%">' + opFonte + "</select></label>" +
+          '<p class="muted" style="font-size:10.5px;margin:3px 0 0">Sem isto a tarefa anda só pelo calendário, mesmo com a régua no modo real.</p></div>' +
         '<p class="muted" id="bt-dica" style="font-size:11.5px;margin:8px 0 0"></p>' +
         '<div class="flex" style="gap:6px;margin-top:8px"><button class="btn sm primary" id="bt-salvar">Salvar</button>' +
           '<button class="btn sm" id="bt-cancelar">Cancelar</button></div></div>';
@@ -10275,18 +10466,125 @@
       cx.querySelector("#bt-salvar").onclick = function () { self._bimTarSalvar(); };
     },
 
+    /* =================================================================
+     * B9 — O AVANÇO REAL CHEGA AO 4D
+     *
+     * Até aqui a régua 4D andava por DATA: `realInicio || previstoInicio`.
+     * Como as duas datas reais só existem se alguém as digitar — quatro
+     * campos por tarefa, à mão —, na prática o 4D mostrava o plano e o
+     * chamava de realidade. Agora o número pode vir da MEDIÇÃO, que é
+     * documento auditado e já está no app.
+     * ================================================================= */
+
+    /* ⚠ "13.229" NUMA CENA VAZIA. A barra de status contava o que foi
+       CARREGADO; escondem peça a simulação 4D, o isolamento por pavimento, o
+       isolamento manual, o conjunto de seleção, a fase "existente" da reforma,
+       as remoções do editor e o corte. Medido no modelo real: com o 4D na
+       semana 1 nenhuma peça aparecia e a barra dizia 13.229. */
+    _bimRotuloVis: function () {
+      var tot = (this._bimElementos || []).length;
+      try {
+        if (window.BIM && BIM.contarVisiveis) {
+          var nv = BIM.contarVisiveis();
+          if (nv < tot) return nv + " de " + tot;
+        }
+      } catch (e) {}
+      return tot;
+    },
+
+    /* o orçamento da obra e os boletins dela — o mesmo caminho do B8 */
+    _bimTarFonte: function () {
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (!obra) return { erro: "Escolha a obra no alto do painel BIM." };
+      if (!obra.orcamentoId) return { erro: 'A obra "' + obra.nome + '" não está vinculada a nenhum orçamento. O avanço real vem da medição, e a medição mede itens de um orçamento — vincule em <b>Obras → editar</b>.' };
+      var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
+      if (!orc) return { erro: "O orçamento vinculado a esta obra não existe mais." };
+      var meds = lista("medicoes").filter(function (m) {
+        return m && String(m.obraId) === String(obra.id) &&
+          (!m.orcamentoId || String(m.orcamentoId) === String(orc.id));
+      });
+      return { obra: obra, orc: orc, medicoes: meds, erro: "" };
+    },
+
+    /* ⚠ CACHE POR DATA, E ELE IMPORTA. O vídeo do 4D grava 144 quadros; sem
+       isto, cada quadro remontaria o mapa do orçamento e reprocessaria todos
+       os boletins, por tarefa. A chave inclui a obra: trocar de obra sem
+       limpar devolveria o avanço da anterior, que é pior que ser lento. */
+    _bimTarAvanco: function (dataISO) {
+      var f = this._bimTarFonte();
+      if (f.erro) return null;
+      var ch = String(this._bimSel) + "|" + String(dataISO || "");
+      if (this._bimAvCache && this._bimAvCache.ch === ch) return this._bimAvCache.av;
+      var av = BimAvanco.avancoEm(f.medicoes, f.orc, dataISO);
+      this._bimAvCache = { ch: ch, av: av };
+      return av;
+    },
+    _bimTarAvancoLimpar: function () { this._bimAvCache = null; },
+
+    /* o objeto que o `simular` consome; null quando o modo está desligado */
+    _bimTarOpcoesReal: function () {
+      if (!this._bimTarModoReal) return null;
+      if (typeof BimAvanco === "undefined") return null;
+      var self = this;
+      return {
+        folga: 10,
+        pctDe: function (t, d) {
+          var av = self._bimTarAvanco(d);
+          if (!av) return null;
+          return BimAvanco.pctDaTarefa(t, av).pct;
+        }
+      };
+    },
+
+    _bimTarAlternarReal: function () {
+      if (!this._bimTarModoReal) {
+        var f = this._bimTarFonte();
+        if (f.erro) { UI.modal("Avanço real", "<p>" + f.erro + "</p>", [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]); return; }
+        var av = BimAvanco.avancoEm(f.medicoes, f.orc, "");
+        /* ⚠ LIGAR O MODO SEM BOLETIM APROVEITÁVEL APAGARIA O MODELO. Todo item
+           ficaria a 0%, todas as peças em "não iniciado" — e a tela pareceria
+           quebrada em vez de dizer que não há o que mostrar. */
+        if (!av.temFonte) {
+          UI.modal("Ainda não dá para mostrar o avanço real",
+            "<p>" + Util.esc(BimAvanco.fraseAvanco(av)) + "</p>"
+            + '<p class="muted" style="font-size:12.5px">O avanço real sai do <b>boletim de medição por itens do orçamento</b>. Emita uma medição em <b>Medições</b> escolhendo o orçamento e marcando o % de cada item; ela aparece aqui na data em que o período fechar.</p>',
+            [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
+      }
+      this._bimTarModoReal = !this._bimTarModoReal;
+      this._bimTarAvancoLimpar();
+      this._bimTarRender();
+      if (this._bimTarData) this._bimTarAplicar(this._bimTarData);
+      UI.toast(this._bimTarModoReal ? "Régua no avanço REAL (medição) até hoje; depois de hoje, o plano." : "Régua no PLANO.", "ok");
+    },
+
     _bimTarSalvar: function () {
       var cx = document.getElementById("bim-tar-editor"); if (!cx) return;
       if (this._semSessao()) { UI.toast("Entre com a sua conta para salvar a tarefa.", "aviso"); return; }
       if (!this._bimSel) { UI.toast("Escolha a obra no alto da tela — a tarefa pertence a ela.", "aviso"); return; }
       var p = String(cx.querySelector("#bt-alvo").value || "auto|").split("|");
+      /* as chaves não cabem num `<option>`: quando a escolha continua sendo
+         "peças", elas vêm do registro que está sendo editado */
+      var chavesAtuais = [];
+      if (p[0] === "elementos") {
+        var _idEd = this._bimTarEditando;
+        var _ant = _idEd ? (this._bimTarDaObra().filter(function (y) { return y.id === _idEd; })[0] || null) : null;
+        chavesAtuais = (_ant && _ant.alvo && Util.arr(_ant.alvo.chaves)) || [];
+      }
+      /* B9: de onde vem o avanço desta tarefa. Dois campos que existiam em
+         `bim_tarefas` desde o B6 e que nenhuma tela escrevia. */
+      var fEl = cx.querySelector("#bt-fonte");
+      var fp = String((fEl && fEl.value) || "|").split("|");
       var t = {
         id: this._bimTarEditando || "", obraId: this._bimSel,
         nome: cx.querySelector("#bt-nome").value, wbs: cx.querySelector("#bt-wbs").value,
         tipoTarefa: cx.querySelector("#bt-tipo").value,
-        alvo: { tipo: p[0], ref: p[1] || "" },
+        alvo: { tipo: p[0], ref: p[1] || "", chaves: chavesAtuais },
         previstoInicio: cx.querySelector("#bt-pi").value, previstoFim: cx.querySelector("#bt-pf").value,
-        realInicio: cx.querySelector("#bt-ri").value, realFim: cx.querySelector("#bt-rf").value
+        realInicio: cx.querySelector("#bt-ri").value, realFim: cx.querySelector("#bt-rf").value,
+        itemOrcId: fp[0] === "item" ? (fp[1] || "") : "",
+        etapaOrc: fp[0] === "etapa" ? (fp[1] || "") : ""
       };
       var v = BimTarefa.validar(t);
       if (!v.ok) { UI.toast(v.erros[0], "erro"); return; }
@@ -10294,6 +10592,7 @@
       if (!norm.id) delete norm.id;
       if (!Store.salvar(eid(), "bim_tarefas", norm)) { UI.toast("Não consegui salvar a tarefa.", "erro"); return; }
       cx.style.display = "none"; cx.innerHTML = "";
+      this._bimTarAvancoLimpar();
       this._bimTarRender();
       UI.toast("Tarefa salva.", "ok");
     },
@@ -10347,6 +10646,137 @@
       };
       fr.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
       fr.readAsText(file, "utf-8");
+    },
+
+    /* =====================================================================
+     * O VÍDEO DA SIMULAÇÃO
+     *
+     * ⚠ A CENA TEM DE VOLTAR COMO ESTAVA. A gravação percorre o cronograma
+     *   inteiro mexendo na visibilidade e na cor de tudo. Se ela terminar (ou
+     *   falhar, ou for cancelada) sem devolver a régua ao dia em que o
+     *   engenheiro estava, ele volta para o computador e encontra o modelo
+     *   noutro dia — e conclui que o vídeo estragou o projeto. Por isso o
+     *   `finally` restaura em TODOS os caminhos.
+     * =================================================================== */
+    _bimTarVideo: function () {
+      var self = this;
+      if (typeof BimVideo === "undefined") { UI.toast("O gravador de vídeo não carregou (js/bimvideo.js).", "erro"); return; }
+      if (!window.BIM || !BIM.desenharQuadro) { UI.toast("O visualizador não está aberto.", "erro"); return; }
+
+      var sup = BimVideo.suportado();
+      if (!sup.ok) {
+        UI.modal("Não dá para gravar aqui",
+          "<p>" + Util.esc(sup.motivo) + "</p>"
+          + '<p class="muted">O cronograma continua funcionando na tela — o que falta é só a gravação em arquivo.</p>',
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+
+      var tarefas = this._bimTarDaObra();
+      if (!tarefas.length) { UI.toast("Cadastre ao menos uma tarefa — sem cronograma não há o que animar.", "aviso"); return; }
+      var j = BimTarefa.janela(tarefas);
+      if (!j.inicio || !j.fim) { UI.toast("As tarefas não têm datas previstas suficientes para montar a linha do tempo.", "aviso"); return; }
+
+      UI.modal("Gravar o vídeo do cronograma",
+        '<p class="muted">A obra sobe do primeiro ao último dia, com a data em cima. No fim vira um arquivo para você mandar.</p>'
+        + '<div class="row">'
+        + K.campo("Duração", K.sel("bv-seg", K.opts([["8", "8 segundos"], ["12", "12 segundos"], ["20", "20 segundos"], ["30", "30 segundos"]], "12")))
+        + K.campo("Qualidade", K.sel("bv-tam", K.opts([["720", "720p — leve, bom para WhatsApp"], ["1080", "1080p — para projetar"]], "720")))
+        + "</div>"
+        + '<p class="muted" style="font-size:12px;margin-top:2px">Formato: <b>' + Util.esc(sup.nome) + "</b> · "
+        + Util.esc(BimTarefa.dia(j.inicio)) + " a " + Util.esc(BimTarefa.dia(j.fim)) + " (" + j.dias + " dias)</p>"
+        + '<p class="muted" style="font-size:12px">Deixe esta janela aberta enquanto grava. Pode trocar de aba — a gravação continua.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Gravar", classe: "primary", onClick: function () {
+            var seg = Util.num(K.v("bv-seg")) || 12;
+            var alt = Util.num(K.v("bv-tam")) === 1080 ? 1080 : 720;
+            UI.fecharModal();
+            self._bimTarGravar(j, seg, alt);
+          } }
+        ]);
+    },
+
+    _bimTarGravar: function (j, segundos, altura) {
+      var self = this;
+      var plano = BimVideo.plano(j, { fps: 12, segundos: segundos, pausaFinal: 1.5, somaDias: BimTarefa.somaDias });
+      if (!plano.ok) { UI.toast(plano.motivo, "erro"); return; }
+
+      /* o dia em que o engenheiro estava — é para cá que a cena volta */
+      var dataAntes = this._bimTarData;
+      var cancelado = false;
+
+      var cx = document.getElementById("bim-tar-regua");
+      var barra = document.createElement("div");
+      barra.id = "bv-progresso";
+      barra.style.cssText = "margin:8px 0;padding:10px;border:1px solid var(--linha);border-radius:6px;background:var(--fundo-2)";
+      barra.innerHTML = '<div class="flex between" style="align-items:center;gap:10px">'
+        + '<span id="bv-txt" style="font-size:13px">Gravando… 0%</span>'
+        + '<button class="btn sm ghost" id="bv-cancelar">Cancelar</button></div>'
+        + '<div style="height:6px;background:var(--linha);border-radius:3px;margin-top:8px;overflow:hidden">'
+        + '<div id="bv-barra" style="height:100%;width:0%;background:var(--acento);transition:width .12s"></div></div>';
+      if (cx && cx.parentNode) cx.parentNode.insertBefore(barra, cx);
+      var btCancel = document.getElementById("bv-cancelar");
+      if (btCancel) btCancel.onclick = function () { cancelado = true; if (BimVideo.cancelar) BimVideo.cancelar(); };
+
+      function restaurar() {
+        var b = document.getElementById("bv-progresso");
+        if (b && b.parentNode) b.parentNode.removeChild(b);
+        /* ⚠ devolve a régua ao dia de antes — ver a nota do _bimTarVideo */
+        try { if (dataAntes) self._bimTarIrPara(dataAntes); } catch (e) {}
+      }
+
+      /* o rótulo honesto é o MESMO da foto: quantos elementos a cena mostra */
+      var rodape = "";
+      try { rodape = BIM.rotuloElementos ? BIM.rotuloElementos() : ""; } catch (e) {}
+      var emp = "";
+      try { emp = (typeof Empresa !== "undefined" && Empresa.nomeDoc) ? Empresa.nomeDoc() : ""; } catch (e) {}
+      if (emp) rodape = emp + (rodape ? " · " + rodape : "");
+
+      BimVideo.gravar(plano, {
+        largura: Math.round(altura * 16 / 9),
+        altura: altura,
+        rodape: rodape,
+        desenhar: function (data) {
+          /* aplica a data na cena e devolve o canvas recém-desenhado.
+             ⚠ `true` = não mexer na régua: mover o range a cada quadro
+             dispararia o oninput e o rAF, e a gravação brigaria com a tela. */
+          var sim = self._bimTarAplicar(data);
+          var cnv = BIM.desenharQuadro ? BIM.desenharQuadro() : null;
+          return { canvas: cnv, sim: sim };
+        },
+        aoAndar: function (i, n) {
+          var pct = Math.round((i / n) * 100);
+          var t = document.getElementById("bv-txt");
+          var b = document.getElementById("bv-barra");
+          if (t) t.textContent = cancelado ? "Encerrando…" : ("Gravando… " + pct + "%  (" + i + " de " + n + " quadros)");
+          if (b) b.style.width = pct + "%";
+        }
+      }).then(function (r) {
+        restaurar();
+        if (cancelado && r.quadros === 0) { UI.toast("Gravação cancelada.", "aviso"); return; }
+        /* ⚠ "0 MB" LÊ-SE COMO ARQUIVO VAZIO. Um vídeo de 280 KB arredondava
+           para zero, e o engenheiro concluiria que a gravação falhou — logo
+           depois de ela ter dado certo. Abaixo de 1 MB, o tamanho sai em KB. */
+        var bytes = r.blob.size;
+        var tam = bytes >= 1048576
+          ? (Math.round((bytes / 1048576) * 10) / 10) + " MB"
+          : Math.max(1, Math.round(bytes / 1024)) + " KB";
+        var nome = "cronograma-4d-" + hojeLocal() + "." + r.ext;
+        try {
+          var a = document.createElement("a");
+          a.href = URL.createObjectURL(r.blob);
+          a.download = nome;
+          document.body.appendChild(a); a.click(); document.body.removeChild(a);
+          setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (e) {} }, 8000);
+          UI.toast("Vídeo salvo: " + nome + " · " + r.duracaoSeg + "s · " + tam + (cancelado ? " (parcial)" : ""), "ok");
+        } catch (e) {
+          UI.toast("Gravei o vídeo mas não consegui baixar o arquivo.", "erro");
+        }
+      })["catch"](function (e) {
+        restaurar();
+        UI.toast("Não consegui gravar: " + (e && e.message ? e.message : "erro desconhecido"), "erro");
+      });
     },
 
     /* ---- cores do 4D (da EMPRESA, valem para todas as obras) ---- */
@@ -10582,7 +11012,7 @@
       if (!r.ok) { UI.toast(r.erros[0] || "A regra deste conjunto tem problema.", "erro"); return; }
       var cor = c.cor || "#2563eb", mapa = {};
       r.chaves.forEach(function (k) { mapa[k] = cor; });
-      var n = BIM.pintarChaves(mapa);
+      var n = BIM.pintarChaves(mapa, "conjunto");
       UI.toast(n ? n + " peça(s) pintadas. Clique de novo em Pintar para trocar; o botão de estilo limpa." : "Nenhuma peça deste conjunto está no modelo aberto.", n ? "ok" : "aviso");
     },
     _bimConjExcluir: function (id, nome) {
@@ -10675,11 +11105,188 @@
       if (!salvou) { UI.toast("Não consegui guardar \u201C" + info.nome + "\u201D nesta obra (armazenamento cheio?).", "erro"); return null; }
       this._bimFedCarregar();                      /* re-entrega o mapa ao viewer */
       if (r.renomeou) UI.toast("\u201C" + info.nome + "\u201D é o mesmo arquivo de antes, com outro nome — mantive os vínculos.", "ok");
-      else if (r.versaoNova) UI.toast("Versão " + r.reg.versao + " de \u201C" + info.nome + "\u201D.", "ok");
+      else if (r.versaoNova) {
+        UI.toast("Versão " + r.reg.versao + " de \u201C" + info.nome + "\u201D — comparando com a anterior…", "ok");
+        /* ⚠ A COMPARAÇÃO FICA PENDENTE ATÉ AS PEÇAS CHEGAREM. O
+           `onModeloCarregado` roda ANTES do `onLoaded`: aqui ainda não existe
+           a lista da versão nova. Comparar agora seria comparar a versão
+           anterior com ela mesma e concluir "nada mudou" — a pior resposta
+           possível, porque encerra o assunto com a pergunta errada. */
+        this._bimFedPendente = { modeloId: r.reg.modeloId, mid: info.mid, nome: info.nome, versao: r.reg.versao };
+      }
       /* ⚠ a versão ANTERIOR não pode ficar ocupando o banco para sempre: ela é
          da obra aberta, então o descarte por falta de espaço nunca a alcança. */
       if (r.versaoNova && r.reg.arquivoIdAnterior) this._bimCacheEsquecer(r.reg.arquivoIdAnterior);
       return r;
+    },
+
+    /* =====================================================================
+     * A FOTOGRAFIA DE UMA VERSÃO — para a próxima poder ser comparada
+     *
+     * ⚠ NO IndexedDB, NÃO NO REGISTRO. A foto de um modelo de 5.000 peças
+     *   pesa ~200 KB; `bim_modelos` guarda TODOS os modelos da empresa num
+     *   único documento de 1 MiB na nuvem. Três modelos e a sincronização da
+     *   empresa parava — é o mesmo defeito que a foto do diário já causou.
+     *
+     * ⚠ E POR ISSO ELA NÃO SINCRONIZA, o que é uma limitação de verdade e
+     *   está dita na tela: quem abre a versão nova noutro aparelho não tem a
+     *   foto da anterior e não recebe a comparação. Comparar é ato de
+     *   coordenação, feito por quem abre o arquivo — e é melhor não comparar
+     *   do que comparar contra uma versão que este aparelho nunca viu.
+     * =================================================================== */
+    _bimFedChaveFoto: function (modeloId) { return "orcapro:fedfoto:" + String(modeloId || ""); },
+
+    _bimFedGuardarFoto: function (modeloId, elementos) {
+      if (!modeloId || typeof Idb === "undefined" || !Idb.disponivel() || !window.BimFed) return;
+      try {
+        var foto = BimFed.fotografar(elementos || []);
+        if (!foto.length) return;
+        Idb.set(this._bimFedChaveFoto(modeloId), { em: new Date().toISOString(), pecas: foto })
+          ["catch"](function () { /* sem espaço: a próxima comparação não sai, e a tela dirá */ });
+      } catch (e) {}
+    },
+
+    /* roda quando as peças da versão nova chegam (onLoaded) */
+    _bimFedCompararPendente: function (elementos) {
+      var pend = this._bimFedPendente;
+      if (!pend) return;
+      this._bimFedPendente = null;
+      var self = this;
+      if (typeof Idb === "undefined" || !Idb.disponivel() || !window.BimFed) return;
+
+      /* só as peças DESTE modelo: a cena pode ter outros arquivos abertos, e
+         compará-los junto diria que a estrutura inteira "entrou" */
+      var daVersao = (elementos || []).filter(function (e) { return e && e.mid === pend.mid; });
+
+      Idb.get(this._bimFedChaveFoto(pend.modeloId)).then(function (ant) {
+        /* grava a foto nova de qualquer jeito — mesmo sem ter com que comparar */
+        self._bimFedGuardarFoto(pend.modeloId, daVersao);
+        if (!ant || !ant.pecas || !ant.pecas.length) {
+          UI.toast("Versão " + pend.versao + " de “" + pend.nome + "”. Não tenho a versão anterior guardada neste aparelho para comparar.", "aviso");
+          return;
+        }
+        var c = BimFed.comparar(ant.pecas, BimFed.fotografar(daVersao));
+        self._bimFedMostrarComparacao(pend, c, ant.em);
+      })["catch"](function () { self._bimFedGuardarFoto(pend.modeloId, daVersao); });
+    },
+
+
+    /* =====================================================================
+     * O ACERVO QUE APONTA PARA PEÇA — o que a versão nova pode ter esvaziado
+     *
+     * ⚠ SÓ O QUE É DESTA OBRA. Os conjuntos e as vistas moram na empresa e
+     *   carregam `obraId`; passar a lista inteira faria a comparação de um
+     *   prédio acusar perda no cronograma de outro.
+     *
+     * ⚠ E OS CONFLITOS VÊM PELOS TESTES DA OBRA, não pela tabela toda:
+     *   `bim_clash_resultados` é por teste, e um resultado sem o teste do
+     *   lado não tem obra nenhuma para ser filtrado.
+     * =================================================================== */
+    _bimAcervoDaObra: function () {
+      var self = this, conflitos = [];
+      try {
+        this._bimClashTestesDaObra().forEach(function (te) {
+          (self._bimClashResDoTeste(te.id) || []).forEach(function (r) {
+            if (r && (r.chaveA || r.chaveB)) conflitos.push(r);
+          });
+        });
+      } catch (e) {}
+      return {
+        conjuntos: this._bimConjDaObra(),
+        tarefas: this._bimTarDaObra(),
+        vistas: this._bimVistaDaObra(),
+        conflitos: conflitos
+      };
+    },
+
+    /* o bloco do impacto dentro do modal "O que mudou nesta versão" */
+    _bimImpactoHtml: function (imp) {
+      if (!imp) return "";
+      var f = Util.esc(BimFed.fraseImpacto(imp));
+
+      /* ⚠ REEXPORTAÇÃO NÃO É PERDA, e o aviso tem de mudar de cor junto com o
+         assunto: pintar de vermelho "o arquivo saiu com identidades novas"
+         faria o usuário procurar um estrago que não existe. */
+      if (imp.reidentificacao) {
+        return '<div class="card" style="background:#eff6ff;border-color:#bfdbfe;color:#1e3a8a;padding:10px;margin:10px 0;font-size:12.5px">'
+             + "<b>Identidades novas neste arquivo</b><br>" + f + "</div>";
+      }
+      if (!imp.total) {
+        return '<p class="muted" style="font-size:12px;margin:8px 0">' + f + "</p>";
+      }
+
+      var LABEL = { conjunto: "Conjunto", tarefa: "Tarefa 4D", vista: "Ponto de vista", conflito: "Conflito" };
+      var linhas = imp.itens.slice(0, 10).map(function (i) {
+        var selo = i.orfao
+          ? '<span style="background:#fee2e2;color:#991b1b;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700">ficou sem peças</span>'
+          : (i.atencao ? '<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-size:10.5px;font-weight:700">confira</span>' : "");
+        return '<div style="padding:6px 0;border-top:1px solid #00000012">'
+          + '<div><span class="muted" style="font-size:11px">' + Util.esc(LABEL[i.tipo] || i.tipo) + "</span> "
+          + "<b>" + Util.esc(i.nome) + "</b> " + selo + "</div>"
+          + '<div class="muted" style="font-size:11.5px">' + Util.esc(i.nota) + "</div></div>";
+      }).join("");
+
+      var rodape = [];
+      if (imp.itens.length > 10) rodape.push("e mais " + (imp.itens.length - 10));
+      /* ⚠ o que foi DEIXADO DE FORA é dito: número que aparece sem explicação
+         ensina a desconfiar do número. */
+      if (imp.ignorados.conjuntosPorBusca) rodape.push(imp.ignorados.conjuntosPorBusca + " conjunto(s) por busca não entram: eles reavaliam a regra e não perdem peça");
+      if (imp.ignorados.vistasSoOcultavam) rodape.push(imp.ignorados.vistasSoOcultavam + " vista(s) perderam só peça que já estava escondida — mostram o mesmo de antes");
+
+      return '<div class="card" style="background:#fff7ed;border-color:#fed7aa;padding:10px;margin:10px 0">'
+        + '<p style="margin:0 0 4px"><b>O que essas peças estavam carregando</b></p>'
+        + '<p style="margin:0 0 2px;font-size:12.5px">' + f + "</p>"
+        + linhas
+        + (rodape.length ? '<p class="muted" style="font-size:11px;margin:8px 0 0">' + Util.esc(rodape.join(" · ")) + "</p>" : "")
+        + "</div>";
+    },
+
+    _bimFedMostrarComparacao: function (pend, c, quandoAntes) {
+      var self = this;
+      function lista(titulo, itens, sufixo) {
+        if (!itens.length) return "";
+        var mostra = itens.slice(0, 8).map(function (x) {
+          return "<li>" + Util.esc(x.nome || x.tipo || x.chave)
+            + (sufixo && x[sufixo] ? ' <span class="muted">' + Util.fmtNum(x[sufixo], 2) + " m</span>" : "") + "</li>";
+        }).join("");
+        return "<p style=\"margin:10px 0 3px\"><b>" + Util.esc(titulo) + "</b> (" + itens.length + ")</p>"
+          + '<ul style="margin:0 0 0 18px;font-size:12.5px">' + mostra
+          + (itens.length > 8 ? '<li class="muted">e mais ' + (itens.length - 8) + "</li>" : "") + "</ul>";
+      }
+
+      var corpo = '<p><b>' + Util.esc(pend.nome) + "</b> — versão " + pend.versao + "</p>"
+        + '<p style="font-size:14px">' + Util.esc(BimFed.fraseComparacao(c)) + "</p>"
+        + (quandoAntes ? '<p class="muted" style="font-size:12px;margin-top:-6px">Comparado com a versão que este aparelho abriu em ' + Util.esc(this._brData ? this._brData(String(quandoAntes).slice(0, 10)) : String(quandoAntes).slice(0, 10)) + ".</p>" : "")
+        + (!c.confiavel ? '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;margin:8px 0;font-size:12.5px">'
+            + "Este IFC tem peças sem identidade estável (sem GlobalId publicado). O que está abaixo é parcial — peça ao projetista para exportar com GlobalId.</div>" : "")
+        + lista("Peças novas", c.entraram)
+        + lista("Peças removidas", c.sairam)
+        /* ⚠ O IMPACTO VEM LOGO DEPOIS DAS REMOVIDAS, e não no fim: "14
+           removidas" é um número; "3 delas são as peças que o cliente
+           comentou" é a informação. Enterrar isso abaixo de "mudaram de
+           tamanho" é o mesmo que não ter. */
+        + (window.BimFed && BimFed.impacto
+            ? this._bimImpactoHtml(BimFed.impacto(c, this._bimAcervoDaObra())) : "")
+        + lista("Moveram", c.moveram, "distancia")
+        + lista("Mudaram de tamanho", c.redimensionaram, "delta")
+        + '<p class="muted" style="font-size:12px;margin-top:10px">Tolerância de ' + (c.tolerancia * 1000) + " mm: abaixo disso é ruído de reexportação, não movimento.</p>";
+
+      var botoes = [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }];
+      var mexidas = c.entraram.concat(c.moveram, c.redimensionaram)
+        .map(function (x) { return x.chave; }).filter(Boolean);
+      if (mexidas.length && window.BIM && BIM.isolarChaves) {
+        botoes.push({ texto: "Ver no modelo (" + mexidas.length + ")", classe: "primary", onClick: function () {
+          UI.fecharModal();
+          var n = 0;
+          try { n = BIM.isolarChaves(mexidas); } catch (e) {}
+          /* ⚠ as REMOVIDAS não entram: elas não existem mais na cena, e pedir
+             para isolar uma peça que saiu não isolaria nada — a tela pareceria
+             ter ignorado o clique. */
+          UI.toast(n ? ("Isolei " + n + " peça(s) que mudaram. Use ↺ Restaurar tudo para voltar." + (c.sairam.length ? " As removidas não aparecem: elas não estão mais no modelo." : ""))
+                     : "Não consegui isolar — as peças podem estar num modelo que não está visível.", n ? "ok" : "aviso");
+        } });
+      }
+      UI.modal("O que mudou nesta versão", corpo, botoes);
     },
 
     /* o ajuste que o usuário fez neste modelo, NESTA obra (disciplina,
@@ -10924,9 +11531,19 @@
           UI.toast("Baixei o obra-ativa.json — salve na pasta revit\\ da instalação do OrçaPRO para o Revit ler.", "ok");
         } else {
           var nCrono = payload.cronograma.length;
+          var av = payload.avanco;
+          /* ⚠ O QUE FICOU DE FORA SAI NO AVISO. O arquivo que vai para o Revit
+             agora descarta boletim rejeitado (como o resto do app sempre fez)
+             — e um número que muda sem explicação é o que faz alguém achar
+             que o sistema errou. */
+          var extra = "";
+          if (av && av.fonte === "medicao") {
+            if (av.boletinsIgnorados) extra += " " + av.boletinsIgnorados + " boletim(ns) rejeitado(s) ficaram de fora da conta.";
+            if (av.semCodigo) extra += " " + av.semCodigo + " item(ns) sem código entraram no total da etapa (o Revit indexa por código e não os lista um a um).";
+          }
           UI.toast("Exportado! O plugin no Revit já vê esta obra: BDI " + payload.bdi + "%, " +
             payload.etapas.length + " etapas" + (nCrono ? ", cronograma de " + nCrono + " etapas" : "") +
-            (payload.avanco ? ", avanço real (" + (payload.avanco.fonte === "medicao" ? "medições" : "Last Planner") + ")" : "") + ".", "ok");
+            (av ? ", avanço real (" + (av.fonte === "medicao" ? "medições" : "Last Planner") + ")" : "") + "." + extra, "ok");
         }
       });
     },
@@ -11153,13 +11770,89 @@
 
     // painel "Modelos carregados": disciplina + transparência + olhinho + remover, por IFC
     _BIM_DISCS: [["estrutural", "" + (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + " Estrutural"], ["arquitetura", "🏠 Arquitetura"], ["hidraulica", "🚿 Hidráulica"], ["eletrica", "⚡ Elétrica"], ["mecanica", "❄ Mecânica/AVAC"], ["outra", "" + (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + " Outra"]],
+    /* =================================================================
+     * B19 — A OBRA SABE QUAIS ARQUIVOS A COMPÕEM, E PRECISA DIZER
+     *
+     * ⚠ MEDIDO no navegador, simulando a máquina nova (registros da nuvem
+     *   presentes, cache de geometria apagado): a obra tinha QUATRO modelos
+     *   registrados — ARQUITETURA_CRECHE.ifc, HID_…, ELE_… e Modelo 3D.IFC —
+     *   e a tela mostrava um visualizador vazio, o painel "Modelos
+     *   carregados" ESCONDIDO, a lista vazia e nenhuma palavra sobre isso.
+     *
+     *   O engenheiro abre a obra no computador novo e conclui que perdeu o
+     *   trabalho. Não perdeu: a geometria convertida não sincroniza de
+     *   propósito (são centenas de MB, e é derivada do arquivo), mas o app
+     *   SABE o nome de cada arquivo, a disciplina, a transparência e a
+     *   posição — e continua sabendo dos conjuntos de seleção, dos conflitos
+     *   com histórico, das tarefas 4D e dos elos com o orçamento, todos
+     *   apontando para peças desses arquivos.
+     *
+     *   Ter a informação e não mostrá-la é o pior dos dois mundos: parece
+     *   perda de dado, e é só um arquivo que falta arrastar.
+     * ================================================================= */
+
+    /* os modelos que a obra tem registrados e que NÃO estão abertos agora */
+    _bimModelosAusentes: function (carregados) {
+      var self = this;
+      if (!this._bimSel) return [];
+      var regs = [];
+      try { regs = Store.listar(eid(), "bim_modelos") || []; } catch (e) { return []; }
+      var abertos = {};
+      Util.arr(carregados).forEach(function (mo) {
+        if (mo && mo.mid) abertos[String(mo.mid)] = 1;
+        if (mo && mo.nome) abertos["nome:" + String(mo.nome)] = 1;
+      });
+      return regs.filter(function (r) {
+        if (!r || String(r.obraId) !== String(self._bimSel)) return false;
+        return !abertos[String(r.modeloId)] && !abertos["nome:" + String(r.nome)];
+      });
+    },
+
+    _bimAusentesHtml: function (ausentes) {
+      if (!ausentes.length) return "";
+      /* ⚠ O RÓTULO DA DISCIPLINA CARREGA MARCAÇÃO. Duas das seis entradas de
+         `_BIM_DISCS` trazem um `<svg>` inteiro (`Icones.get`), porque elas
+         nasceram para ir dentro de `<option>`. Passando isso por `Util.esc`,
+         a tela imprimia a source do SVG como texto — foi o que apareceu no
+         primeiro teste desta lista, com "Estrutural" precedido de 400
+         caracteres de path. Aqui é texto puro: a marcação sai fora. */
+      var DISC = {};
+      (this._BIM_DISCS || []).forEach(function (d) {
+        DISC[d[0]] = String(d[1]).replace(/<[^>]*>/g, "").trim();
+      });
+      var linhas = ausentes.map(function (r) {
+        return '<div class="flex" style="gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px dashed var(--linha)">'
+          + '<b style="font-size:12.5px">' + Util.esc(r.nome || r.arquivoId || "(sem nome)") + "</b>"
+          + '<span class="muted" style="font-size:11px">' + Util.esc(DISC[r.disciplina] || r.disciplina || "") + "</span>"
+          + '<span style="flex:1"></span>'
+          + '<span class="muted" style="font-size:11px">' + (r.importadoEm ? "aberto pela 1ª vez em " + Util.esc(String(r.importadoEm).slice(0, 10)) : "") + "</span></div>";
+      }).join("");
+      return '<div class="card" style="padding:9px;margin-bottom:8px;border-left:3px solid #b45309">'
+        + '<b style="font-size:12.5px">' + ausentes.length + " arquivo(s) desta obra não estão abertos neste aparelho</b>"
+        + '<p class="muted" style="font-size:11.5px;margin:4px 0 6px">Arraste-os no visualizador para reabrir. '
+        + "O desenho convertido não viaja na sincronização — são centenas de MB e ele é derivado do arquivo —, "
+        + "mas <b>tudo o que a equipe montou em cima continua guardado</b>: conjuntos de seleção, conflitos com histórico e responsável, tarefas do cronograma 4D e os elos com o orçamento. "
+        + "Eles voltam a apontar para as peças assim que o arquivo abrir.</p>"
+        + linhas + "</div>";
+    },
+
     _bimRenderModelos: function (lista) {
       var card = document.getElementById("bim-modelos"), box = document.getElementById("bim-modelos-lista");
       if (!card || !box) return;
       // v1.1.121: o painel mora na gaveta do viewer — só ATUALIZA o conteúdo aqui;
       // exibição é da gaveta (_bimAbrirPainel). Sem modelo, esconde E fecha a gaveta
       // (senão sobrava uma gaveta aberta e vazia — achado do gate).
-      if (!lista || !lista.length) { card.style.display = "none"; box.innerHTML = ""; this._bimFecharDrawer(); return; }
+      /* ⚠ CENA VAZIA NÃO É OBRA SEM MODELO. Com os registros vindos da nuvem e
+         o cache de geometria ausente (aparelho novo), a lista chega vazia — e
+         esconder o painel fazia a obra parecer sem modelo nenhum, quando ela
+         tem quatro arquivos registrados com nome, disciplina e posição. */
+      var ausentes = this._bimModelosAusentes(lista);
+      if (!lista || !lista.length) {
+        if (!ausentes.length) { card.style.display = "none"; box.innerHTML = ""; this._bimFecharDrawer(); return; }
+        card.style.display = "";
+        box.innerHTML = this._bimAusentesHtml(ausentes);
+        return;
+      }
       var self = this;
       box.innerHTML = "";
       lista.forEach(function (mo) {
@@ -11190,6 +11883,9 @@
         linha.querySelector('[data-m="del"]').onclick = function () { if (confirm("Remover o modelo \"" + mo.nome + "\" desta obra?")) { self._bimFedRemover(mo.mid); BIM.removerModelo(mo.mid); } };
         box.appendChild(linha);
       });
+      /* federação PARCIAL: dois arquivos abertos de quatro registrados é o
+         caso comum de quem trocou de máquina e reabriu só o que tinha à mão */
+      if (ausentes.length) box.insertAdjacentHTML("afterbegin", this._bimAusentesHtml(ausentes));
     },
 
     // Reunião no modelo: avatar nomeado + sala (compatibilização ao vivo com a equipe)
@@ -11346,7 +12042,7 @@
       return '<div class="muted" style="font-size:12px;margin-bottom:4px">Curva S — avanço no tempo</div>' +
         '<svg viewBox="0 0 ' + W + " " + H + '" style="width:100%;max-width:520px;height:auto;background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:8px">' +
         g + poly(cv.financeiro, "#2e6f9e") + poly(cv.fisico, "#16a34a") + marca + "</svg>" +
-        '<div style="display:flex;gap:14px;margin-top:5px;font-size:11px;color:#475569"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:2px;background:#16a34a;display:inline-block"></span>Físico (execução)</span>' + legFin + "</div>";
+        '<div style="display:flex;gap:14px;margin-top:5px;font-size:11px;color:#475569"><span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:2px;background:#16a34a;display:inline-block"></span><span title="Fração das PEÇAS do plano simulado concluídas até cada semana. Peça conta uma, seja conexão ou parede — por isso ela sobe rápido em modelo com hidráulica.">Peças do plano</span></span>' + legFin + "</div>";
     },
     _bimAplicarSemana: function (sem) {
       var p = this._bimPlano; if (!p) return;
@@ -11358,7 +12054,21 @@
          o outro, senão as duas legendas valem ao mesmo tempo e nenhuma é lida */
       if (this._bimTarSim) { this._bimTarSim = null; this._bimTarPend = null; try { if (window.BIM && BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e6) {} }
       if (window.BIM && BIM.aplicarEstado) { try { BIM.aplicarEstado(est); } catch (e) {} }
-      var av = document.getElementById("bim-avanco"); if (av) av.textContent = BIM4D.avancoEm(p, sem) + "%";
+      /* ⚠ A PÍLULA ERA UM NÚMERO VERDE SEM RÓTULO. "88%" ao lado de uma régua
+         de datas se lê como "88% da obra" — e era a fração de PEÇAS do plano
+         simulado, dominada pelas 10.648 conexões do modelo real. Agora ela
+         diz de onde vem, e sem orçamento nem se apresenta como percentual. */
+      var av = document.getElementById("bim-avanco");
+      if (av) {
+        var ap = BIM4D.avancoPonderado(p, sem);
+        if (ap.base === "custo") {
+          av.textContent = "simulado " + Util.fmtNum(ap.pct, ap.pct % 1 ? 1 : 0) + "% (por custo)";
+          av.title = "Percentual do CUSTO do orçamento que o cronograma simulado já executou nesta semana da régua. É o plano, não o avanço medido — o medido sai das medições, na aba Cronograma 4D.";
+        } else {
+          av.textContent = Util.fmtNum(ap.nFeitas, 0) + " de " + Util.fmtNum(ap.nTotal, 0) + " peças";
+          av.title = "Quantas peças o cronograma simulado já construiu nesta semana da régua. Não vira percentual de obra porque não há orçamento vinculado: sem custo, uma conexão e uma parede pesariam igual, e num modelo com hidráulica as conexões são a maioria esmagadora das peças.";
+        }
+      }
       // 5D-lite: custo acumulado no tempo (só quando há orçamento vinculado com custo)
       var cst = document.getElementById("bim-custo");
       if (cst) {
@@ -11455,6 +12165,7 @@
       var avisos = (r.avisos || []).map(function (a) { return '<p class="muted" style="font-size:11.5px;margin:4px 0 0">⚠️ ' + Util.esc(a) + "</p>"; }).join("");
       res.innerHTML =
         '<div class="flex" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px"><b style="font-size:15px">' + r.linhas.length + " serviços · " + r.resumo.nElementos + ' elementos</b><span style="flex:1"></span>' +
+        '<button class="btn sm" id="bim-qto-orc" title="Comparar estas quantidades com as do orçamento vinculado a esta obra">' + (typeof Icones !== 'undefined' ? Icones.get('prevreal', 15) : '') + ' Conferir com o orçamento</button>' +
         '<button class="btn sm success" id="bim-qto-lancar">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Lançar no orçamento</button></div>' +
         '<div style="max-height:300px;overflow:auto"><table class="tbl"><thead><tr><th>Disciplina / serviço</th><th class="num">Qtd</th><th>Un</th><th class="num">Elem.</th><th>Fonte</th></tr></thead><tbody>' + linhas + "</tbody></table></div>" +
         avisos +
@@ -11465,6 +12176,816 @@
         (nExist || nDemol ? '<p class="muted" style="font-size:11.5px;margin:4px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('reciclar', 15) : '') + ' Reforma (OrcaPRO_Fase): ' + nExist + ' elemento(s) "existente" fora do levantamento (não se constrói o que já existe)' + (nDemol ? ' · ' + nDemol + ' "demolir" fora — use o <b>' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Agente EAP</b> para demolição/entulho' : "") + ".</p>" : "") +
         '<p class="muted" style="font-size:11px;margin:6px 0 0">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Levantamento automático — o custo entra zerado; case no SINAPI ou informe o preço no editor. <b>"estimado"</b> = medido pela caixa do elemento (revise).</p>';
     },
+    /* =================================================================
+     * O ELO MODELO ↔ ORÇAMENTO (B8)
+     *
+     * O quantitativo já sabia medir e já sabia LANÇAR — mas lançava num
+     * orçamento NOVO, e ali os dois se separavam para sempre. Ninguém
+     * guardava que o item "ALVENARIA TIJOLO FURADO" daquele orçamento é a
+     * categoria "Paredes / Alvenaria" daquele modelo. Sem esse elo, a
+     * pergunta que o engenheiro realmente faz — "o que eu orcei bate com o
+     * que está desenhado?" — não tinha como ser respondida, e a versão nova
+     * do IFC morria no visualizador.
+     * ================================================================= */
+
+    /* O contexto da conferência: obra selecionada no painel BIM, o orçamento
+       que ELA aponta, os itens dele e os elos já confirmados.
+       Devolve `erro` em vez de lançar: a tela precisa DIZER o que falta. */
+    _bimOrcCtx: function () {
+      if (typeof BimOrc === "undefined") return { erro: "O motor do elo modelo↔orçamento não carregou." };
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (!obra) return { erro: "Escolha a obra no alto do painel BIM." };
+      if (!obra.orcamentoId) {
+        return { erro: 'A obra "' + obra.nome + '" não está vinculada a nenhum orçamento. Abra <b>Obras → editar</b> e preencha <b>Vincular a um orçamento</b> — é esse orçamento que a conferência usa.' };
+      }
+      var orc = Store.obterOrcamento(eid(), obra.orcamentoId);
+      if (!orc) return { erro: "O orçamento vinculado a esta obra não existe mais. Revincule em <b>Obras → editar</b>." };
+      /* itens de todas as etapas, com a etapa junto: o elo guarda etapaId
+         porque `Orcamento.atualizarItem` precisa dela para achar o item. */
+      var itens = [];
+      Util.arr(orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          if (it) itens.push({ id: it.id, etapaId: e.id, etapaNome: e.nome, descricao: it.descricao, unidade: it.unidade, quantidade: it.quantidade, custoUnitario: it.custoUnitario });
+        });
+      });
+      var vinculos = lista("bim_orc_vinculos").filter(function (v) {
+        return v && String(v.obraId) === String(obra.id) && String(v.orcamentoId) === String(orc.id);
+      });
+      return { obra: obra, orc: orc, itens: itens, vinculos: vinculos, erro: "" };
+    },
+
+    /* ⚠ QUEM NÃO PODE RECEBER QUANTIDADE NOVA. Conferir é sempre permitido —
+       é justamente no orçamento fechado que saber "o modelo mudou" vale mais.
+       Mas APLICAR é outra coisa: mexe na quantidade contratada.
+         · orçamento aprovado é contrato (Orcamento.travadoPorAprovacao);
+         · item já medido tem boletim emitido em cima da quantidade ANTIGA —
+           medição fatura % da quantidade contratada, então trocá-la depois
+           reprecifica, para trás, um período que já foi aprovado.
+       Nos dois casos a tela recusa com o motivo, em vez de aplicar e deixar o
+       estrago aparecer no fechamento do mês. */
+    _bimOrcTrava: function (ctx, itemId) {
+      if (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(ctx.orc)) {
+        return "Este orçamento está APROVADO — o preço já foi ao cliente e virou contrato. Para mexer na quantidade, crie uma REVISÃO do orçamento; a conferência abaixo continua valendo como diagnóstico.";
+      }
+      var acc = {};
+      try { acc = this._pctAnterioresPorItem(ctx.obra.id, ctx.orc.id, null) || {}; } catch (e) {}
+      var pct = Util.num(acc[itemId]);
+      if (pct > 0) {
+        return "Este item já foi medido (" + Util.fmtNum(pct, 1) + "% acumulado em boletim não rejeitado). A medição fatura um percentual da quantidade contratada — trocar a quantidade agora mudaria, para trás, o valor de um período já fechado.";
+      }
+      return "";
+    },
+
+    _bimOrcConferir: function () {
+      var res = document.getElementById("bim-qto-res"); if (!res) return;
+      if (!this._bimQto || !Util.arr(this._bimQto.linhas).length) {
+        UI.toast("Levante os quantitativos primeiro — não há o que conferir.", "aviso"); return;
+      }
+      this._bimOrcAberto = true;
+      this._bimOrcRender();
+    },
+
+    _bimOrcRender: function () {
+      var res = document.getElementById("bim-qto-res"); if (!res) return;
+      var voltar = '<button class="btn sm" id="bim-orc-voltar">← Voltar ao levantamento</button>';
+      var ctx = this._bimOrcCtx();
+      if (ctx.erro) {
+        res.innerHTML = '<div class="flex" style="gap:8px;align-items:center;margin-bottom:8px">' + voltar + "</div>"
+          + '<p class="muted" style="font-size:12.5px;margin:0">' + ctx.erro + "</p>";
+        return;
+      }
+      /* ⚠ SEM LEVANTAMENTO, A CONFERÊNCIA MENTE. `_bimQto` é zerado ao trocar
+         de aba, de obra ou quando o modelo muda — e aí `conferir` recebe
+         `null`, não acha categoria nenhuma e joga TODOS os elos em "sem
+         medida", com a frase "o modelo aberto não tem mais a categoria X".
+         O modelo está aberto; quem sumiu foi a conta. MEDIDO no navegador:
+         quatro elos legítimos acusados de categoria inexistente, e o botão de
+         pintar sumindo justamente quando o recurso funcionaria. Mandar o
+         engenheiro procurar defeito no IFC por causa disto é o pior tipo de
+         mensagem — a que está errada e soa técnica. */
+      if (!this._bimQto || !Util.arr(this._bimQto.linhas).length) {
+        res.innerHTML = '<div class="flex" style="gap:8px;align-items:center;margin-bottom:8px">' + voltar + "</div>"
+          + '<p class="muted" style="font-size:12.5px;margin:0">O levantamento do modelo não está mais em memória (a aba foi trocada, a obra mudou, ou o modelo foi recarregado). Clique em <b>Voltar ao levantamento</b> e depois em <b>Levantar quantitativos</b> — a conferência compara com as quantidades do modelo que está aberto agora.</p>';
+        return;
+      }
+      var c = BimOrc.conferir(ctx.vinculos, this._bimQto, ctx.itens);
+      var sug = BimOrc.sugerir(this._bimQto, ctx.itens, { jaVinculados: ctx.vinculos });
+      var travaGeral = (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(ctx.orc));
+
+      var h = '<div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px">' + voltar
+        + '<span style="flex:1"></span><span class="muted" style="font-size:12px">Orçamento: <b>' + Util.esc(ctx.orc.nome) + "</b></span></div>";
+
+      h += '<p style="font-size:13px;margin:0 0 8px"><b>' + Util.esc(BimOrc.fraseConferencia(c)) + "</b></p>";
+      /* B10: a mesma conferencia, desenhada em cima da geometria. So aparece
+         quando ha elo — sem elo o botao ligaria e nao pintaria nada. */
+      if (c.linhas.length) {
+        h += this._bimOrcPerdeuACena();
+        h += this._bimVistaHtml();
+        h += '<button class="btn sm" id="bim-orc-relatorio" style="margin:0 6px 8px 0" title="Documento com a conferência, o avanço medido e o que ficou de fora">'
+          + (typeof Icones !== "undefined" ? Icones.get("relatorio", 15) : "") + ' Relatório</button>';
+        if (!this._bimOrcPintado) {
+          h += '<button class="btn sm" id="bim-orc-div" style="margin:0 6px 8px 0" title="Pinta cada categoria pela diferença entre o que foi orçado e o que o modelo mede">'
+            + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + ' Ver as divergências no modelo</button>';
+        }
+        h += this._bimOrcPintado
+          ? this._bimOrcLegendaHtml()
+          : '<button class="btn sm" id="bim-orc-pintar" style="margin:0 0 8px" title="Pinta cada categoria do modelo pelo percentual medido em boletim">'
+            + (typeof Icones !== "undefined" ? Icones.get("prevreal", 15) : "") + ' Ver o avan\u00e7o no modelo</button>';
+      }
+      if (travaGeral) {
+        h += '<p class="muted" style="font-size:11.5px;margin:0 0 8px">' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 14) : '') + ' Orçamento aprovado: a conferência vale como diagnóstico, mas nenhuma quantidade pode ser trocada por aqui.</p>';
+      }
+
+      /* --- o que já está ligado ---
+         ⚠ LISTA EMPILHADA, NÃO TABELA. Os painéis do BIM moram numa GAVETA
+         de 440 px (`#bim-drawer`), e o conteúdo útil sobra em 405. A primeira
+         versão disto era uma tabela de seis colunas que media 653 px: as
+         colunas do orçado, do modelo, do desvio e o botão de aplicar ficavam
+         FORA da tela, e a conferencia inteira virava uma lista de descrições
+         sem número nenhum. Não apareceu em teste de motor nem no gate — só
+         medindo a gaveta no navegador. */
+      if (c.linhas.length) {
+        h += '<div style="max-height:320px;overflow:auto">';
+        c.linhas.forEach(function (l) {
+          var cor = l.diverge ? "var(--erro)" : "var(--ok, var(--muted))";
+          h += '<div class="card" style="padding:8px 9px;margin-bottom:6px">'
+            + '<div style="font-size:12.5px;line-height:1.3">' + Util.esc(String(l.descricao).slice(0, 110))
+            + (l.confiavel ? "" : ' <span class="pill proprio" title="Quantidade estimada pela caixa envolvente das pe\u00e7as, n\u00e3o medida no IFC">estimado</span>')
+            + "</div>"
+            + '<div class="muted" style="font-size:11px;margin-top:2px">' + Util.esc(l.categoria) + " \u00b7 " + l.nElementos + " pe\u00e7a(s)</div>"
+            + '<div class="flex" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:5px;font-size:12.5px">'
+            +   "<span>" + Util.fmtNum(l.qtdOrcada, 2) + " " + Util.esc(l.unidade) + '</span><span class="muted">\u2192</span>'
+            +   "<b>" + Util.fmtNum(l.qtdModelo, 2) + "</b>"
+            +   '<b style="color:' + cor + '">' + (l.percentual > 0 ? "+" : "") + Util.fmtNum(l.percentual, 1) + "%</b>"
+            +   '<span style="flex:1"></span>'
+            +   (l.diverge ? '<button class="btn xs primary" data-orc-aplicar="' + Util.esc(l.itemId) + '">Usar ' + Util.fmtNum(l.qtdModelo, 2) + "</button>" : "")
+            +   '<button class="btn xs ghost" data-orc-desligar="' + Util.esc(l.itemId) + '" title="Desfazer o elo (n\u00e3o mexe no or\u00e7amento)">' + (typeof Icones !== "undefined" ? Icones.get("fechar", 13) : "x") + "</button>"
+            + "</div></div>";
+        });
+        h += "</div>";
+      }
+
+      /* --- o que o modelo mede e ainda não tem elo --- */
+      /* ⚠ O QUE JÁ TEM ELO SAI DA LISTA DE SUGESTÕES. O motor devolve o
+         candidato marcado `jaVinculado`, e a tela mostrava assim mesmo: a
+         mesma dupla aparecia DUAS VEZES na tela — uma na conferência, com o
+         desvio, e outra logo abaixo com um botão "Ligar" que só regravava o
+         elo que já existia. Clicar nele parecia não fazer nada.
+         A CATEGORIA continua na lista quando ainda há OUTRO item para ligar:
+         orcar chapisco e alvenaria sobre a mesma área de parede é legítimo. */
+      sug.forEach(function (s) {
+        s.candidatos = s.candidatos.filter(function (cd) { return !cd.jaVinculado; });
+      });
+      /* ⚠ e "sem candidato" é medido ANTES do filtro e DESCONTANDO quem já
+         tem elo: senão a categoria recém-ligada cairia no rodapé como "o
+         modelo mede isto e ninguém orcou", que é o oposto do que aconteceu. */
+      var comElo = {};
+      c.linhas.forEach(function (x) { comElo[x.categoria] = 1; });
+      var pend = sug.filter(function (s) { return s.candidatos.length; });
+      var mudos = sug.filter(function (s) { return !s.candidatos.length && !comElo[s.categoria]; });
+      if (pend.length) {
+        h += '<h4 style="margin:14px 0 6px;font-size:13px">Ligar ao or\u00e7amento <span class="muted" style="font-weight:400">\u2014 o app sugere, quem confirma \u00e9 voc\u00ea</span></h4>';
+        h += '<div style="max-height:300px;overflow:auto">';
+        pend.forEach(function (s) {
+          h += '<div style="margin-bottom:9px">'
+            + '<div style="font-size:12.5px"><b>' + Util.esc(s.categoria) + "</b> "
+            + '<span class="muted">' + Util.fmtNum(s.qtdModelo, 2) + " " + Util.esc(s.unidade) + " \u00b7 " + s.nElementos + " pe\u00e7a(s)</span></div>";
+          s.candidatos.forEach(function (cd) {
+            h += '<div class="card" style="padding:7px 8px;margin-top:4px">'
+              + '<div style="font-size:12px;line-height:1.3">' + Util.esc(String(cd.descricao).slice(0, 130)) + "</div>"
+              + '<div class="flex" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:4px">'
+              +   '<span class="muted" style="font-size:11px">' + Util.fmtNum(cd.quantidade, 2) + " " + Util.esc(cd.unidade)
+              +     " \u00b7 casou " + cd.comum + "/" + cd.deCategoria + ": <b>" + Util.esc(cd.palavras.join(", ")) + "</b>"
+              +     " \u00b7 " + Math.round(cd.confianca * 100) + "%</span>"
+              +   '<span style="flex:1"></span>'
+              +   '<button class="btn xs" data-orc-ligar="' + Util.esc(cd.itemId) + '" data-orc-cat="' + Util.esc(s.categoria) + '">Ligar</button>'
+              + "</div></div>";
+          });
+          h += "</div>";
+        });
+        h += "</div>";
+      }
+
+      /* --- o que precisa de gente, e não de sugestão --- */
+      if (c.orfaos.length) {
+        h += '<h4 style="margin:14px 0 6px;font-size:13px">Elos órfãos</h4><ul style="margin:0;padding-left:18px;font-size:12px">';
+        c.orfaos.forEach(function (o) {
+          h += "<li>" + Util.esc(o.motivo) + ' <button class="btn xs ghost" data-orc-desligar="' + Util.esc(o.vinculo.itemId) + '">remover elo</button></li>';
+        });
+        h += "</ul>";
+      }
+      if (c.semMedida.length) {
+        h += '<h4 style="margin:14px 0 6px;font-size:13px">Ligados, mas sem medida agora</h4><ul style="margin:0;padding-left:18px;font-size:12px">';
+        c.semMedida.forEach(function (o) { h += "<li>" + Util.esc(o.motivo) + "</li>"; });
+        h += "</ul>";
+      }
+      if (mudos.length) {
+        h += '<p class="muted" style="font-size:11.5px;margin:10px 0 0">' + mudos.length
+          + " categoria(s) do modelo sem candidato no orçamento: "
+          + Util.esc(mudos.slice(0, 4).map(function (m) { return m.categoria; }).join(", "))
+          + (mudos.length > 4 ? "…" : "") + ". Ligue pelo editor do orçamento se o serviço existir com outro nome.</p>";
+      }
+      h += '<p class="muted" style="font-size:11px;margin:8px 0 0">O elo não muda o orçamento sozinho: cada quantidade é aplicada uma a uma, e as marcadas <b>estimado</b> vêm da caixa envolvente da peça, não do IFC.</p>';
+      res.innerHTML = h;
+    },
+
+    /* =================================================================
+     * B10 — O AVANÇO MEDIDO EM CIMA DA GEOMETRIA
+     *
+     * O B9 pinta a cena pelas TAREFAS do 4D, e cronograma 4D é trabalho que
+     * a maioria das obras não fez. Aqui a mesma pergunta é respondida com o
+     * que toda obra tem: orçamento, medição e os elos do B8.
+     * ================================================================= */
+
+    /* ⚠ O LEVANTAMENTO É REFEITO PEDINDO AS CHAVES. O `_bimQto` guardado pela
+       tela nasce sem elas de propósito (uma string por peça, em modelo de
+       dezenas de milhares, para um dado que a tabela de quantitativos não
+       usa). Quem vai pintar paga o custo, e só na hora de pintar. */
+    _bimOrcLevantamentoComChaves: function () {
+      var els = Util.arr(this._bimElementos).filter(function (e) {
+        var f = String(e && e.fase || "").toLowerCase();
+        return f !== "existente" && f !== "demolir" && f !== "demolicao";
+      });
+      if (!els.length) return null;
+      try { return BIMQto.levantar(els, { comChaves: true }); } catch (e) { return null; }
+    },
+
+    /* =================================================================
+     * B21 — A DIVERGÊNCIA EM CIMA DA GEOMETRIA
+     *
+     * O B10 pinta pelo que foi MEDIDO. Esta pinta pelo que o orçamento e o
+     * desenho DISCORDAM — a pergunta que fez o B8 existir, e que vivia numa
+     * tabela. Tabela de vinte linhas não mostra que a discordância está toda
+     * na cobertura; o modelo mostra.
+     * ================================================================= */
+    _bimOrcPintarDiv: function () {
+      if (typeof BimOrc === "undefined" || !BimOrc.pinturaDeDivergencia || !window.BIM || !BIM.pintarChaves) {
+        UI.toast("O visualizador não está pronto para pintar.", "erro"); return;
+      }
+      var ctx = this._bimOrcCtx();
+      if (ctx.erro) { UI.toast(String(ctx.erro).replace(/<[^>]*>/g, ""), "erro"); return; }
+      if (!ctx.vinculos.length) { UI.toast("Nenhuma categoria está ligada ao orçamento ainda.", "aviso"); return; }
+      if (!this._bimQto || !Util.arr(this._bimQto.linhas).length) {
+        UI.toast("Levante os quantitativos primeiro.", "aviso"); return;
+      }
+      var lev = this._bimOrcLevantamentoComChaves();
+      if (!lev) { UI.toast("Carregue um modelo IFC no visualizador antes.", "aviso"); return; }
+
+      var c = BimOrc.conferir(ctx.vinculos, lev, ctx.itens);
+      var pin = BimOrc.pinturaDeDivergencia(lev.linhas, c);
+      if (!pin.nPintadas) {
+        UI.modal("Nada para pintar", "<p>" + Util.esc(BimOrc.fraseDivergencia(pin)) + "</p>",
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+      /* mesma guarda do B10: as duas pinturas disputam a cor da cena */
+      var tinha4d = !!this._bimTarSim;
+      if (tinha4d) {
+        this._bimTarSim = null; this._bimTarData = null;
+        if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
+        try { if (BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e) {}
+      }
+      try { BIM.pintarChaves(pin.pinturas, "divergencia"); }
+      catch (e2) { UI.toast("Não consegui pintar a cena.", "erro"); return; }
+      this._bimOrcPintado = { modo: "divergencia", div: pin, em: new Date().toISOString() };
+      this._bimOrcRender();
+      UI.toast(tinha4d ? "Modelo pintado pela divergência. A simulação 4D foi desligada."
+                       : "Modelo pintado pela divergência com o orçamento.", "ok");
+    },
+
+    /* o quadro da legenda da divergência */
+    _bimOrcLegendaDivHtml: function (p) {
+      var h = '<div class="card" style="padding:9px;margin:0 0 8px">'
+        + '<div class="flex" style="gap:6px;align-items:center;margin-bottom:5px">'
+        +   '<b style="font-size:12.5px">Divergência no modelo</b><span style="flex:1"></span>'
+        +   '<button class="btn xs ghost" id="bim-orc-despintar">Tirar as cores</button></div>';
+      p.div.legenda.forEach(function (f) {
+        h += '<div class="flex" style="gap:6px;align-items:flex-start;margin-top:4px">'
+          + '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;flex:0 0 auto;margin-top:3px;background:' + f.cor + '"></span>'
+          + '<div style="flex:1;min-width:0;font-size:11px"><b>' + Util.esc(f.rotulo) + "</b> · " + f.nPecas + " peça(s)"
+          + '<div class="muted">' + Util.esc(f.categorias.map(function (c) {
+              return c.categoria + " " + (c.percentual > 0 ? "+" : "") + Util.fmtNum(c.percentual, 1) + "%";
+            }).join(" · ")) + "</div></div></div>";
+      });
+      if (p.div.semElo.length) {
+        h += '<div class="muted" style="font-size:10.5px;margin-top:6px">Com a cor original (sem elo): '
+          + Util.esc(p.div.semElo.map(function (s) { return s.categoria; }).join(", ")) + "</div>";
+      }
+      /* ⚠ o que a cor NÃO diz, dito na tela — a mesma disciplina do B10 */
+      h += '<p class="muted" style="font-size:10.5px;margin:6px 0 0">A diferença é entre a quantidade ORÇADA e a que o modelo mede. '
+        + "Ela não diz qual dos dois está errado: o orçamento pode estar certo e o desenho desatualizado, ou o contrário. "
+        + "E o roxo não é divergência — é quantidade que o IFC não trouxe medida, onde não dá para concluir nada.</p>";
+      return h + "</div>";
+    },
+
+    _bimOrcPintar: function () {
+      if (typeof BimAvanco === "undefined" || !window.BIM || !BIM.pintarChaves) {
+        UI.toast("O visualizador não está pronto para pintar.", "erro"); return;
+      }
+      var ctx = this._bimOrcCtx();
+      if (ctx.erro) { UI.toast(String(ctx.erro).replace(/<[^>]*>/g, ""), "erro"); return; }
+      if (!ctx.vinculos.length) {
+        UI.toast('Nenhuma categoria está ligada ao orçamento ainda — ligue pelo menos uma abaixo.', "aviso"); return;
+      }
+      var lev = this._bimOrcLevantamentoComChaves();
+      if (!lev) { UI.toast("Carregue um modelo IFC no visualizador antes.", "aviso"); return; }
+
+      var av = BimAvanco.avancoEm(this._bimOrcMedicoes(ctx), ctx.orc, "");
+      var pc = BimAvanco.pctPorCategoria(ctx.vinculos, av);
+      var pin = BimAvanco.pinturaDeAvanco(lev.linhas, pc.porCategoria);
+      var din = BimAvanco.dinheiroLigado(ctx.vinculos, av, ctx.orc);
+
+      if (!pin.nPintadas) {
+        UI.modal("Nada para pintar",
+          "<p>" + Util.esc(BimAvanco.frasePintura(pin, din)) + "</p>",
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+
+      /* ⚠ A SIMULAÇÃO 4D USA A MESMA PINTURA DA CENA (`S._pintura`). Deixar as
+         duas ligadas faria uma sobrescrever a outra conforme a ordem dos
+         cliques, e o engenheiro veria cores trocando sem entender por quê.
+         O 4D sai, e a tela diz que saiu. */
+      var tinha4d = !!this._bimTarSim;
+      if (tinha4d) {
+        this._bimTarSim = null; this._bimTarData = null;
+        if (this._bimTarTimer) { clearInterval(this._bimTarTimer); this._bimTarTimer = null; }
+        try { if (BIM.limpar4DTarefas) BIM.limpar4DTarefas(); } catch (e) {}
+      }
+
+      try { BIM.pintarChaves(pin.pinturas, "avanco"); } catch (e2) { UI.toast("Não consegui pintar a cena.", "erro"); return; }
+      this._bimOrcPintado = { modo: "avanco", pin: pin, din: din, pendentes: av.pendentes, em: new Date().toISOString() };
+      this._bimOrcRender();
+      UI.toast(tinha4d ? "Modelo pintado pelo medido. A simulação 4D foi desligada — as duas usam a mesma cor da cena."
+                       : "Modelo pintado pelo que foi medido.", "ok");
+    },
+
+    _bimOrcDespintar: function (semRender) {
+      if (!this._bimOrcPintado) return;
+      this._bimOrcPintado = null;
+      try { if (window.BIM && BIM.limparPintura) BIM.limparPintura(); } catch (e) {}
+      if (!semRender) this._bimOrcRender();
+    },
+
+    /* as medições desta obra, pelo mesmo caminho do B9 */
+    _bimOrcMedicoes: function (ctx) {
+      return lista("medicoes").filter(function (m) {
+        return m && String(m.obraId) === String(ctx.obra.id) &&
+          (!m.orcamentoId || String(m.orcamentoId) === String(ctx.orc.id));
+      });
+    },
+
+    /* ⚠ PERDEU A CENA PARA OUTRO PAINEL? Cinco lugares pintam o mesmo modelo
+       (conjuntos, comparação de versões, 4D automático, Cronograma 4D e o
+       avanço medido). Medido: pintar pelo avanço, mexer no 4D e voltar aqui
+       mostrava a legenda inteira do avanço sobre uma cena pintada pelo 4D —
+       as cores de um recurso lidas pela legenda de outro, e as duas parecendo
+       concordar. Devolve a frase quando perdeu, "" quando ainda é o dono.
+       ⚠ E limpa o estado ANTES do render decidir o que mostrar: na primeira
+       versão a checagem morava dentro da legenda, o ternário do render já
+       tinha escolhido o ramo dela, e a frase mandava clicar num botão que não
+       estava na tela. */
+    _bimOrcPerdeuACena: function () {
+      if (!this._bimOrcPintado) return "";
+      var meu = this._bimOrcPintado.modo === "divergencia" ? "divergencia" : "avanco";
+      var dono = (window.BIM && BIM.donoDaPintura) ? BIM.donoDaPintura() : meu;
+      /* ⚠ os DOIS modos desta tela sao donos legitimos: trocar de um para o
+         outro nao pode disparar o aviso de "outro painel repintou". */
+      if (dono === meu) return "";
+      this._bimOrcPintado = null;
+      /* ⚠ "ninguém" e "outro painel" são respostas diferentes: o dono some
+         quando alguém limpa as cores, e aí dizer "agora são de outro painel"
+         manda o engenheiro procurar um painel que não existe. */
+      var quem = dono === "4d-tarefas" || dono === "4d-auto" ? " (a simulação 4D)"
+        : (dono === "conjunto" ? " (um conjunto de seleção)" : "");
+      return '<p class="muted" style="font-size:11.5px;margin:0 0 6px">'
+        + (dono ? "As cores do modelo agora são de outro painel" + quem + "." : "As cores do avanço foram tiradas do modelo.")
+        + " Para voltar a pintar pelo medido, clique abaixo.</p>";
+    },
+
+    /* o quadro da legenda, desenhado dentro da conferência */
+    _bimOrcLegendaHtml: function () {
+      var p = this._bimOrcPintado;
+      if (!p) return "";
+      if (p.modo === "divergencia") return this._bimOrcLegendaDivHtml(p);
+
+      var h = '<div class="card" style="padding:9px;margin:0 0 8px">'
+        + '<div class="flex" style="gap:6px;align-items:center;margin-bottom:5px">'
+        +   '<b style="font-size:12.5px">Avanço no modelo</b><span style="flex:1"></span>'
+        +   '<button class="btn xs ghost" id="bim-orc-despintar">Tirar as cores</button></div>';
+      p.pin.legenda.forEach(function (f) {
+        h += '<div class="flex" style="gap:6px;align-items:flex-start;margin-top:4px">'
+          + '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;flex:0 0 auto;margin-top:3px;background:' + f.cor + '"></span>'
+          + '<div style="flex:1;min-width:0;font-size:11px"><b>' + Util.esc(f.rotulo) + "</b> · " + f.nPecas + " peça(s)"
+          + '<div class="muted">' + Util.esc(f.categorias.map(function (c) { return c.categoria + " " + Util.fmtNum(c.pct, 0) + "%"; }).join(" · ")) + "</div></div></div>";
+      });
+      if (p.pin.semElo.length) {
+        h += '<div class="muted" style="font-size:10.5px;margin-top:6px">Com a cor original (o app não sabe o avanço): '
+          + Util.esc(p.pin.semElo.map(function (s) { return s.categoria; }).join(", ")) + "</div>";
+      }
+      /* ⚠ o que a cor NAO diz — dito na tela, nao so no comentario do motor */
+      h += '<p class="muted" style="font-size:10.5px;margin:6px 0 0">A cor é do SERVIÇO, não da peça: "Paredes 40%" quer dizer que 40% do serviço de alvenaria foi medido, não que 40% das paredes estão prontas — quais estão, ninguém mediu.</p>';
+      if (p.pendentes && p.pendentes.length) {
+        h += '<p class="muted" style="font-size:10.5px;margin:6px 0 0;color:#b45309">' + p.pendentes.length
+          + " boletim(ns) aguardando aprovação do fiscal não estão pintados aqui — quando forem aprovados, as cores mudam.</p>";
+      }
+      if (p.din && p.din.nItens) {
+        h += '<p style="font-size:11.5px;margin:6px 0 0">Do que está ligado ao modelo (<b>' + Util.fmtNum(p.din.coberturaDoModelo, 1) + "%</b> do orçamento), já foi medido <b>"
+          + Util.fmtMoeda(p.din.medido) + "</b> de " + Util.fmtMoeda(p.din.total) + " (" + Util.fmtNum(p.din.pct, 1) + "%).</p>";
+      }
+      return h + "</div>";
+    },
+
+    /* =================================================================
+     * B11 — O RELATÓRIO DE ACOMPANHAMENTO DO MODELO
+     *
+     * B8 ligou o modelo ao orçamento, B9 trouxe o avanço da medição, B10
+     * pôs isso em cima da geometria. Tudo isso morria na tela do
+     * engenheiro: para levar à reunião, ele tirava print.
+     *
+     * ⚠ O QUE ESTE RELATÓRIO NÃO PODE DEIXAR DE DIZER. Ele mistura três
+     *   coisas de confiabilidade diferente — quantidade medida do IFC,
+     *   quantidade ESTIMADA por caixa envolvente, e percentual de boletim
+     *   de medição — e sai impresso, assinado, para o cliente. Um relatório
+     *   que apresenta os três com a mesma cara é pior que nenhum: ele
+     *   transforma estimativa em compromisso. Por isso, e sem exceção:
+     *     · linha estimada sai MARCADA;
+     *     · boletim que ficou de fora sai LISTADO com o motivo (rejeitado,
+     *       sem data, ou sem percentual por item) — um relatório que some
+     *       com R$ 40.000 medidos em silêncio é indefensável;
+     *     · categoria do modelo sem elo sai LISTADA, para ninguém ler o
+     *       documento como se o modelo inteiro estivesse coberto;
+     *     · o dinheiro é sempre "do que está ligado ao modelo", com a
+     *       fatia do orçamento que isso representa;
+     *     · a data de corte é a do ÚLTIMO BOLETIM, não "hoje".
+     * ================================================================= */
+    _bimOrcRelatorio: function () {
+      if (typeof BimOrc === "undefined" || typeof BimAvanco === "undefined") {
+        UI.toast("Os motores do elo e do avanço não carregaram.", "erro"); return;
+      }
+      var ctx = this._bimOrcCtx();
+      if (ctx.erro) { UI.toast(String(ctx.erro).replace(/<[^>]*>/g, ""), "erro"); return; }
+      if (!this._bimQto || !Util.arr(this._bimQto.linhas).length) {
+        UI.toast("Levante os quantitativos antes — o relatório compara com o modelo aberto.", "aviso"); return;
+      }
+      if (!ctx.vinculos.length) {
+        UI.toast("Nenhuma categoria está ligada ao orçamento — não há o que relatar ainda.", "aviso"); return;
+      }
+
+      var c = BimOrc.conferir(ctx.vinculos, this._bimQto, ctx.itens);
+      var meds = this._bimOrcMedicoes(ctx);
+      var av = BimAvanco.avancoEm(meds, ctx.orc, "");
+      var pc = BimAvanco.pctPorCategoria(ctx.vinculos, av);
+      /* ⚠ o dinheiro conta o que a TABELA mostra. Um elo pode apontar para
+         categoria de outro IFC da federação, que não está carregado agora —
+         somá-lo aqui deixava o relatório sem fechar: três linhas na tabela e
+         quatro itens no total, sem nada explicando a diferença. */
+      var catsAbertas = {};
+      Util.arr(this._bimQto.linhas).forEach(function (l) { catsAbertas[l.categoria] = 1; });
+      var din = BimAvanco.dinheiroLigado(ctx.vinculos, av, ctx.orc, { categoriasNoModelo: catsAbertas });
+      var obra = ctx.obra, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(46) : "";
+      var esc = Util.esc, fN = Util.fmtNum, fM = Util.fmtMoeda;
+
+      /* ---- a foto do modelo, quando há modelo aberto ---- */
+      var img = "";
+      try {
+        /* ⚠ ENQUADRA ANTES DE FOTOGRAFAR. A captura usa a camera de onde ela
+           estiver, e a primeira versao deste relatorio saiu com o predio do
+           tamanho de uma unha no canto de uma grade vazia — porque o
+           engenheiro tinha dado zoom num detalhe antes de gerar. Documento
+           impresso nao tem como o leitor "dar zoom". */
+        if (window.BIM && BIM.enquadrarAgora) { try { BIM.enquadrarAgora(); } catch (eEnq) {} }
+        var cnv = (window.BIM && BIM.desenharQuadro) ? BIM.desenharQuadro("#ffffff") : null;
+        if (cnv && cnv.width) {
+          /* reduz para caber no documento: a tela pode ser 4K e o PNG cru
+             deixaria a janela de impressão pesada sem ganhar nitidez nenhuma
+             no papel */
+          var LARG = 1200;
+          var esc2 = Math.min(1, LARG / cnv.width);
+          var off = document.createElement("canvas");
+          off.width = Math.round(cnv.width * esc2); off.height = Math.round(cnv.height * esc2);
+          off.getContext("2d").drawImage(cnv, 0, 0, off.width, off.height);
+          var url = off.toDataURL("image/png");
+          if (url && url.length > 100) {
+            img = '<div style="margin:10px 0"><img src="' + url + '" style="width:100%;border:1px solid #ddd;border-radius:4px">' +
+              '<p style="font-size:9.5px;color:#667;margin:3px 0 0">' +
+              (this._bimOrcPintado
+                ? "Modelo com as cores do <b>avanço medido</b> — cinza: nada medido · âmbar: até 50% · verde-claro: mais da metade · verde: medido por inteiro. A cor é do <b>serviço</b>, não da peça (ver a ressalva ao final)."
+                : "Modelo com as cores originais — as cores do avanço não estavam ligadas quando este relatório foi gerado.") +
+              "</p></div>";
+          }
+        }
+      } catch (eImg) { img = ""; }
+
+      /* ---- a conferência: orçado × modelo ---- */
+      var td = 'style="border:1px solid #ddd;padding:4px 6px;font-size:10.5px"';
+      var tdN = 'style="border:1px solid #ddd;padding:4px 6px;font-size:10.5px;text-align:right"';
+      var linhasConf = c.linhas.map(function (l) {
+        var p = pc.porCategoria[l.categoria];
+        return "<tr>" +
+          "<td " + td + ">" + esc(String(l.descricao).slice(0, 80)) +
+            (l.confiavel ? "" : ' <b style="color:#b45309">(estimado)</b>') + "</td>" +
+          "<td " + td + ">" + esc(l.categoria) + "</td>" +
+          "<td " + tdN + ">" + fN(l.qtdOrcada, 2) + " " + esc(l.unidade) + "</td>" +
+          "<td " + tdN + ">" + fN(l.qtdModelo, 2) + "</td>" +
+          '<td ' + tdN + (l.diverge ? ' bgcolor="#fff1f2"' : "") + "><b>" + (l.percentual > 0 ? "+" : "") + fN(l.percentual, 1) + "%</b></td>" +
+          "<td " + tdN + ">" + (p ? fN(p.pct, 1) + "%" : "—") + "</td></tr>";
+      }).join("");
+
+      /* ---- o que ficou de fora, e por quê ---- */
+      function bloco(titulo, itens, cor) {
+        if (!itens.length) return "";
+        return '<div style="margin-top:8px"><b style="font-size:11px;color:' + (cor || "#7c2d12") + '">' + titulo + "</b>" +
+          '<ul style="margin:3px 0 0;padding-left:16px;font-size:10.5px;color:#333">' +
+          itens.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>";
+      }
+      var fora = "";
+      /* ⚠ O PENDENTE VAI PARA O DOCUMENTO, E ANTES DOS OUTROS. Ele é a única
+         linha aqui que ainda vai mudar: some quando o fiscal aprovar (e aí o
+         avanço sobe) ou quando rejeitar. Um relatório que cala sobre uma
+         medição de 55% já reclamada deixa o leitor com um número que vai
+         mudar sem aviso — e ele descobre na reunião seguinte. */
+      fora += bloco("Aguardando aprovação do fiscal (não contam como obra feita)",
+        av.pendentes.map(function (x) { return x.rotulo + (x.quando ? " — período até " + x.quando : "") + (x.pct ? " — " + fN(x.pct, 1) + "% reclamado" : ""); }), "#b45309");
+      fora += bloco("Boletins fora da conta", av.ignorados.map(function (x) { return x.rotulo + " — " + x.motivo; }));
+      fora += bloco("Boletins sem percentual por item (valor aberto ou por atividades)",
+        av.semDetalhe.map(function (x) { return x.rotulo + (x.valor ? " — " + fM(x.valor) : "") + " — não diz QUAIS serviços andaram, então não entra no avanço por categoria."; }));
+      fora += bloco("Percentual medido de item que não está mais no orçamento",
+        av.orfaos.map(function (x) { return x.itemId + " — " + fN(x.pct, 1) + "%"; }));
+      fora += bloco("Elos apontando para item que saiu do orçamento", c.orfaos.map(function (o) { return o.motivo; }));
+      fora += bloco("Ligados, mas sem medida no modelo aberto", c.semMedida.map(function (o) { return o.motivo; }));
+      fora += bloco("Categorias do modelo sem elo com o orçamento",
+        c.semOrcamento.map(function (s) { return s.categoria + " — " + fN(s.quantidade, 2) + " " + s.unidade; }), "#475569");
+
+      var travado = (typeof Orcamento !== "undefined" && Orcamento.travadoPorAprovacao && Orcamento.travadoPorAprovacao(ctx.orc));
+
+      var html = '<div style="font-family:Arial,Helvetica,sans-serif;color:#111;max-width:900px;margin:0 auto">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:10px">' +
+          "<div>" + logo + "</div>" +
+          '<div style="text-align:center;flex:1"><b style="font-size:13px">' + esc(emp.nome || "") + "</b></div>" +
+          '<div style="text-align:right"><b>ACOMPANHAMENTO DO MODELO</b><br><span style="font-size:10px">' + esc(hojeLocal()) + "</span></div></div>" +
+        '<table style="width:100%;font-size:11.5px;margin-bottom:8px"><tr>' +
+          "<td><b>Obra:</b> " + esc(obra.nome || "—") + "</td>" +
+          "<td><b>Orçamento:</b> " + esc(ctx.orc.nome || "—") + (travado ? " <b>(aprovado)</b>" : "") + "</td>" +
+          /* ⚠ A DATA DE CORTE É A DO ÚLTIMO BOLETIM, não "hoje". O documento
+             sai com a data de emissão no cabeçalho, e alguém leria os
+             percentuais como sendo dessa data — quando o último boletim pode
+             ser de dois meses atrás. */
+          "<td><b>Avanço apurado até:</b> " + esc(av.ultimo ? av.ultimo.quando : "— (nenhum boletim)") + "</td></tr></table>" +
+        '<div style="background:#f4f7fb;border-left:3px solid #0f2740;padding:8px;font-size:11.5px;margin-bottom:8px">' +
+          "<b>" + esc(BimOrc.fraseConferencia(c)) + "</b><br>" +
+          '<span style="font-size:11px">' + esc(BimAvanco.fraseAvanco(av)) + "</span></div>" +
+        img +
+        '<table style="width:100%;border-collapse:collapse;margin-bottom:6px"><thead><tr bgcolor="#eef2f7">' +
+          "<th " + td + ">Item do orçamento</th><th " + td + ">Categoria no modelo</th>" +
+          "<th " + tdN + ">Orçado</th><th " + tdN + ">Modelo mede</th><th " + tdN + ">Desvio</th><th " + tdN + ">Medido</th>" +
+          "</tr></thead><tbody>" + linhasConf + "</tbody></table>" +
+        /* ---- a linha do dinheiro, com a ressalva colada nela ---- */
+        (din.nItens
+          ? '<div style="background:#f0fdf4;border-left:3px solid #16a34a;padding:8px;font-size:11.5px;margin-bottom:6px">' +
+            "Do que está ligado ao modelo — <b>" + fM(din.total) + "</b>, que é <b>" + fN(din.coberturaDoModelo, 1) +
+            "%</b> do orçamento (" + fM(din.totalOrcamento) + ") — já foi medido <b>" + fM(din.medido) + "</b> (" + fN(din.pct, 1) + "%)." +
+            '<br><span style="font-size:10px;color:#475569">O restante do orçamento é serviço sem peça no modelo (mobilização, projeto, administração local, limpeza final). Este documento não fala dele.</span>' +
+            (din.foraDoModelo && din.foraDoModelo.nItens
+              ? '<br><span style="font-size:10px;color:#7c2d12">Mais ' + din.foraDoModelo.nItens + ' item(ns) ligado(s) — ' + fM(din.foraDoModelo.total) +
+                " — estão em categorias que <b>não estão no arquivo aberto agora</b> (" + esc(din.foraDoModelo.categorias.join(", ")) +
+                "). Eles não entram nos números acima nem na tabela; abra o arquivo dessa disciplina para incluí-los.</span>"
+              : "") + "</div>"
+          : "") +
+        fora +
+        '<p style="font-size:9.5px;color:#667;margin-top:14px;border-top:1px solid #ddd;padding-top:5px">' +
+          "<b>Como ler.</b> A coluna <b>Modelo mede</b> vem do quantitativo do IFC; onde está marcado <b>(estimado)</b>, a quantidade foi calculada pela caixa envolvente da peça porque o arquivo não trazia o quantitativo — trate como ordem de grandeza, não como medição. " +
+          "A coluna <b>Medido</b> é o percentual acumulado dos boletins de medição aprovados até a data de corte acima, e refere-se ao <b>serviço</b>: “Alvenaria 40%” significa que 40% do serviço de alvenaria foi medido, <b>não</b> que 40% das paredes estão prontas — quais estão, não foi medido. " +
+          "O elo entre item do orçamento e categoria do modelo é confirmado a mão pelo engenheiro; nada aqui é casado automaticamente por semelhança de nome.</p>" +
+        (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + "</div>";
+
+      if (typeof App !== "undefined" && App._abrirPrint) App._abrirPrint("Acompanhamento do modelo — " + (obra.nome || ""), html, "relatorio");
+      else { var w = window.open("", "_blank"); if (w) { w.document.write(html); w.document.close(); } }
+    },
+
+    /* =================================================================
+     * B18 — O CLIENTE VÊ O MODELO
+     *
+     * Tudo o que o BIM produz — o quantitativo, o elo com o orçamento, o
+     * avanço medido em cima da geometria, o relatório — parava na tela do
+     * engenheiro. O Portal do Cliente, que já leva medições, diários, fotos
+     * e curva S, nunca mostrou o prédio.
+     *
+     * ⚠ NÃO É O MODELO 3D QUE VAI: é uma IMAGEM dele. A geometria convertida
+     *   mora no IndexedDB, pesa centenas de MB e é derivada do arquivo —
+     *   mandá-la ao Portal seria outro produto. O que vai é o mesmo PNG que
+     *   o relatório do B11 já sabe capturar, pelos mesmos trilhos das fotos
+     *   de diário: IndexedDB, fila de subida, e no retrato só a referência
+     *   de ~80 bytes.
+     *
+     * ⚠ E É OPT-IN POR CONSTRUÇÃO. Nada é publicado sem alguém abrir o
+     *   modelo, enquadrar e clicar. Mas uma vez anexada, a imagem viaja em
+     *   TODA republicação automática (portalsync) — então tirar precisa ser
+     *   tão fácil quanto pôr, e está ao lado.
+     * ================================================================= */
+
+    /* a legenda diz de onde vieram as cores. Sem isso o cliente olha uma
+       parede verde e conclui que aquela parede está pronta — que é
+       exatamente o que a cor NÃO diz (ver B10). */
+    _bimVistaLegenda: function (cores, quando) {
+      var d = String(quando || "").slice(0, 10);
+      if (cores === "avanco") {
+        return "Modelo da obra em " + d + ", colorido pelo AVANÇO MEDIDO em boletim: "
+          + "cinza = nada medido · âmbar = até 50% · verde-claro = mais da metade · verde = medido por inteiro. "
+          + "A cor é do SERVIÇO, não da peça: “alvenaria 40%” quer dizer que 40% do serviço de alvenaria foi medido, "
+          + "não que 40% das paredes estão prontas.";
+      }
+      return "Modelo da obra em " + d + ", com as cores originais do projeto.";
+    },
+
+    _bimVistaCapturar: function () {
+      if (!window.BIM || !BIM.desenharQuadro) return "";
+      try {
+        if (BIM.enquadrarAgora) BIM.enquadrarAgora();
+        var cnv = BIM.desenharQuadro("#ffffff");
+        if (!cnv || !cnv.width) return "";
+        var LARG = 1600;
+        var f = Math.min(1, LARG / cnv.width);
+        var off = document.createElement("canvas");
+        off.width = Math.round(cnv.width * f); off.height = Math.round(cnv.height * f);
+        off.getContext("2d").drawImage(cnv, 0, 0, off.width, off.height);
+        return off.toDataURL("image/png");
+      } catch (e) { return ""; }
+    },
+
+    _bimVistaPublicar: function () {
+      if (Gestao._bloqueado && Gestao._bloqueado()) return;
+      var self = this;
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (!obra) { UI.toast("Escolha a obra no alto do painel BIM.", "aviso"); return; }
+      if (!obra.portalUser) {
+        UI.modal("Esta obra ainda não tem Portal do Cliente",
+          '<p>A imagem do modelo entra no <b>Portal do Cliente</b> desta obra, e ele ainda não foi criado.</p>'
+          + '<p class="muted" style="font-size:12.5px">Abra <b>Obras → Portal do cliente</b> para criar o acesso; depois volte aqui.</p>',
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+      if (!Util.arr(this._bimElementos).length) { UI.toast("Carregue um modelo IFC no visualizador antes.", "aviso"); return; }
+
+      var cores = (window.BIM && BIM.donoDaPintura && BIM.donoDaPintura() === "avanco") ? "avanco" : "originais";
+      var quando = new Date().toISOString();
+      var leg = this._bimVistaLegenda(cores, quando);
+
+      UI.modal("Enviar a imagem do modelo ao Portal",
+        '<p style="font-size:13px">O cliente <b>' + Util.esc(obra.portalUser) + "</b> vai ver esta imagem na tela de acompanhamento da obra <b>"
+        + Util.esc(obra.nome || "") + "</b>.</p>"
+        + '<p class="muted" style="font-size:12px">' + Util.esc(leg) + "</p>"
+        + (cores === "avanco" ? "" : '<p class="muted" style="font-size:12px">Se quiser mandar o modelo <b>colorido pelo avanço medido</b>, feche isto, clique em <b>Ver o avanço no modelo</b> e envie de novo.</p>')
+        + '<p class="muted" style="font-size:12px">A imagem vai como está no visualizador agora, enquadrada automaticamente. Ela é republicada junto com a obra até você tirá-la.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Enviar ao Portal", classe: "primary", onClick: function () {
+            var png = self._bimVistaCapturar();
+            if (!png) { UI.toast("Não consegui capturar a imagem do modelo.", "erro"); UI.fecharModal(); return; }
+            if (typeof Fotos === "undefined" || !Fotos.guardar) { UI.toast("O módulo de fotos não carregou.", "erro"); UI.fecharModal(); return; }
+            UI.fecharModal();
+            Fotos.guardar(png, leg, { larguraMax: 1600, qualidade: 0.85 }).then(function (ref) {
+              var o2 = Store.obter(eid(), "obras", self._bimSel); if (!o2) return;
+              o2.bimVista = { ref: ref, em: quando, cores: cores };
+              Store.salvar(eid(), "obras", o2);
+              self._bimOrcRender();
+              UI.toast("Imagem anexada. Ela aparece no Portal na próxima publicação da obra.", "ok");
+            })["catch"](function () { UI.toast("Não consegui guardar a imagem.", "erro"); });
+          } }
+        ]);
+    },
+
+    _bimVistaTirar: function () {
+      if (Gestao._bloqueado && Gestao._bloqueado()) return;
+      var self = this;
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (!obra || !obra.bimVista) return;
+      UI.modal("Tirar a imagem do Portal",
+        "<p>A imagem do modelo deixa de aparecer para o cliente na próxima publicação desta obra.</p>"
+        + '<p class="muted" style="font-size:12px">O arquivo continua guardado; você pode enviar de novo quando quiser.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Tirar do Portal", classe: "primary", onClick: function () {
+            var o2 = Store.obter(eid(), "obras", self._bimSel); if (!o2) { UI.fecharModal(); return; }
+            delete o2.bimVista;
+            Store.salvar(eid(), "obras", o2);
+            UI.fecharModal();
+            self._bimOrcRender();
+            UI.toast("Imagem retirada. Publique a obra para o cliente deixar de vê-la.", "ok");
+          } }
+        ]);
+    },
+
+    /* o bloco da vista dentro da conferência */
+    _bimVistaHtml: function () {
+      var obra = this._bimSel ? Store.obter(eid(), "obras", this._bimSel) : null;
+      if (!obra) return "";
+      var v = obra.bimVista;
+      if (!v || !v.ref) {
+        return '<button class="btn sm" id="bim-vista-portal" style="margin:0 6px 8px 0" title="Manda uma imagem do modelo, como está agora, para a tela do cliente">'
+          + (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "") + " Enviar modelo ao Portal</button>";
+      }
+      var subiu = !!(v.ref.remoto && v.ref.tenant);
+      return '<div class="card" style="padding:8px 9px;margin:0 0 8px">'
+        + '<div class="flex" style="gap:6px;align-items:center"><b style="font-size:12.5px">Imagem no Portal do Cliente</b>'
+        + '<span style="flex:1"></span><button class="btn xs ghost" id="bim-vista-tirar">Tirar</button>'
+        + '<button class="btn xs" id="bim-vista-portal">Atualizar</button></div>'
+        + '<div class="muted" style="font-size:11px;margin-top:3px">Capturada em ' + Util.esc(String(v.em).slice(0, 10))
+        + " · cores " + (v.cores === "avanco" ? "do avanço medido" : "originais do projeto") + "</div>"
+        /* ⚠ enquanto não subiu, ela NÃO aparece para o cliente — dizer isso é
+           melhor que o engenheiro descobrir abrindo o Portal e achando vazio */
+        + (subiu ? "" : '<div class="muted" style="font-size:11px;color:#b45309;margin-top:3px">Ainda não subiu para o servidor — ela só aparece no Portal depois que a fila de fotos terminar.</div>')
+        + "</div>";
+    },
+
+    _bimOrcLigar: function (itemId, categoria) {
+      if (Gestao._bloqueado && Gestao._bloqueado()) return;
+      var ctx = this._bimOrcCtx(); if (ctx.erro) { UI.toast(ctx.erro.replace(/<[^>]*>/g, ""), "erro"); return; }
+      var it = ctx.itens.filter(function (x) { return String(x.id) === String(itemId); })[0];
+      var l = Util.arr(this._bimQto && this._bimQto.linhas).filter(function (x) { return x.categoria === categoria; })[0];
+      if (!it || !l) { UI.toast("Item ou categoria não encontrados — levante os quantitativos de novo.", "erro"); return; }
+      var v = BimOrc.vinculo({
+        obraId: ctx.obra.id, orcamentoId: ctx.orc.id, itemId: it.id, etapaId: it.etapaId,
+        itemDescricao: it.descricao, itemUnidade: it.unidade,
+        categoria: l.categoria, unidade: l.unidade,
+        qtdModelo: l.quantidade, qtdOrcada: it.quantidade, fonte: l.fonte,
+        conferidoEm: new Date().toISOString(),
+        criadoPor: (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) ? (Auth.usuario().nome || Auth.usuario().email || "") : ""
+      });
+      if (!v) { UI.toast("Não deu para montar o elo (faltou obra, orçamento, item ou categoria).", "erro"); return; }
+      Store.salvar(eid(), "bim_orc_vinculos", v);
+      UI.toast('Ligado: "' + String(l.categoria) + '" ↔ item do orçamento. Nada foi alterado no orçamento.', "ok");
+      this._bimOrcRender();
+    },
+
+    _bimOrcDesligar: function (itemId) {
+      if (Gestao._bloqueado && Gestao._bloqueado()) return;
+      var ctx = this._bimOrcCtx(); if (ctx.erro) return;
+      var v = ctx.vinculos.filter(function (x) { return String(x.itemId) === String(itemId); })[0];
+      if (!v) return;
+      Store.excluir(eid(), "bim_orc_vinculos", v.id);
+      UI.toast("Elo desfeito. O orçamento não mudou.", "ok");
+      this._bimOrcRender();
+    },
+
+    /* ⚠ UM ITEM POR VEZ, COM O ANTES E O DEPOIS NA TELA. Não existe "aplicar
+       tudo" de propósito: cada linha destas multiplica por um preço unitário,
+       e um botão que reescreve quarenta quantidades de uma vez é o tipo de
+       coisa que alguém clica sem ler e descobre no fechamento do mês. */
+    _bimOrcAplicar: function (itemId) {
+      if (Gestao._bloqueado && Gestao._bloqueado()) return;
+      var self = this;
+      var ctx = this._bimOrcCtx(); if (ctx.erro) { UI.toast(ctx.erro.replace(/<[^>]*>/g, ""), "erro"); return; }
+      var c = BimOrc.conferir(ctx.vinculos, this._bimQto, ctx.itens);
+      var linha = c.linhas.filter(function (x) { return String(x.itemId) === String(itemId); })[0];
+      if (!linha) { UI.toast("Essa linha não está mais na conferência.", "erro"); return; }
+
+      var trava = this._bimOrcTrava(ctx, itemId);
+      if (trava) {
+        UI.modal("Não dá para trocar a quantidade deste item",
+          "<p>" + Util.esc(trava) + "</p>"
+          + '<p class="muted" style="font-size:12px">O modelo mede <b>' + Util.fmtNum(linha.qtdModelo, 2) + " " + Util.esc(linha.unidade)
+          + "</b> e o orçamento tem <b>" + Util.fmtNum(linha.qtdOrcada, 2) + "</b>. A diferença continua registrada aqui.</p>",
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+
+      var inst = BimOrc.instrucaoAplicar(linha);
+      var it = ctx.itens.filter(function (x) { return String(x.id) === String(itemId); })[0];
+      var cu = Util.num(it && it.custoUnitario);
+      var antes = Util.num(linha.qtdOrcada) * cu, depois = Util.num(inst.quantidade) * cu;
+
+      UI.modal("Trocar a quantidade pelo que o modelo mede",
+        '<p style="font-size:13px">' + Util.esc(String(linha.descricao).slice(0, 120)) + "</p>"
+        + '<table class="tbl" style="margin:8px 0"><tbody>'
+        + "<tr><td>Quantidade hoje</td><td class=\"num\"><b>" + Util.fmtNum(linha.qtdOrcada, 2) + " " + Util.esc(linha.unidade) + "</b></td></tr>"
+        + "<tr><td>O modelo mede</td><td class=\"num\"><b>" + Util.fmtNum(inst.quantidade, 2) + " " + Util.esc(linha.unidade) + "</b></td></tr>"
+        + (cu > 0 ? "<tr><td>Custo direto do item</td><td class=\"num\">" + Util.fmtMoeda(antes) + " → <b>" + Util.fmtMoeda(depois) + "</b></td></tr>"
+                  : '<tr><td colspan="2" class="muted">Este item ainda está com custo unitário zerado — só a quantidade muda.</td></tr>')
+        + "</tbody></table>"
+        + (inst.aviso ? '<p class="muted" style="font-size:12.5px">⚠️ ' + Util.esc(inst.aviso) + "</p>" : "")
+        + '<p class="muted" style="font-size:12px">Muda só este item. O BDI e os totais são recalculados pelo caminho normal do orçamento.</p>',
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Trocar a quantidade", classe: "primary", onClick: function () {
+            var orc = Store.obterOrcamento(eid(), ctx.orc.id);
+            if (!orc) { UI.toast("O orçamento sumiu no meio do caminho.", "erro"); UI.fecharModal(); return; }
+            var vin = ctx.vinculos.filter(function (x) { return String(x.itemId) === String(itemId); })[0];
+            Orcamento.atualizarItem(orc, vin.etapaId, itemId, { quantidade: inst.quantidade });
+            Store.salvarOrcamento(eid(), orc);
+            /* o elo guarda o que foi conferido: da próxima vez a tela sabe
+               dizer se a diferença é nova ou é a mesma de sempre */
+            vin.qtdModelo = inst.quantidade; vin.qtdOrcada = inst.quantidade;
+            vin.fonte = linha.fonte; vin.conferidoEm = new Date().toISOString();
+            Store.salvar(eid(), "bim_orc_vinculos", vin);
+            UI.fecharModal();
+            UI.toast("Quantidade trocada para " + Util.fmtNum(inst.quantidade, 2) + " " + linha.unidade + ".", "ok");
+            self._bimOrcRender();
+          } }
+        ]);
+    },
+
     _bimVerClash: function (i) {
       var c = this._bimClashes && this._bimClashes[i]; if (!c) return;
       /* depois do B5 a lista guarda CHAVES do B0, não os uids da sessão: o
@@ -11903,10 +13424,14 @@
       var _self = this;
       var _cjNovo = document.getElementById("bim-conj-novo");
       if (_cjNovo) _cjNovo.onclick = function () { _self._bimConjEditor(); };   /* B3 */
+      var btReal = document.getElementById("bim-tar-real");
+      if (btReal) btReal.onclick = function () { self._bimTarAlternarReal(); };
       var _btNova = document.getElementById("bim-tar-nova");                    /* B6 */
       if (_btNova) _btNova.onclick = function () { _self._bimTarEditor(null); };
       var _btCores = document.getElementById("bim-tar-cores");
       if (_btCores) _btCores.onclick = function () { _self._bimTarCores(); };
+      var _btVid = document.getElementById("bim-tar-video");
+      if (_btVid) _btVid.onclick = function () { _self._bimTarVideo(); };
       var _btImp = document.getElementById("bim-tar-import");
       var _btArq = document.getElementById("bim-tar-arq");
       if (_btImp && _btArq) { _btImp.onclick = function () { _btArq.click(); }; _btArq.onchange = function () { _self._bimTarImportar(this.files && this.files[0]); this.value = ""; }; }
@@ -11966,6 +13491,8 @@
       if (csel) csel.onchange = function () { self._bimClashTesteSel = this.value; };
       var crun = document.getElementById("bim-clash-run");
       if (crun) crun.onclick = function () { self._bimClashRodar(); };
+      var cpod = document.getElementById("bim-clash-podar");
+      if (cpod) cpod.onclick = function () { self._bimClashPodar(); };
       /* a delegação de cliques da lista é montada pelo _bimClashLigarBotoes a
          cada render — os botões nascem junto com as linhas. */
       // quantitativos: botão levantar + delegação do "lançar no orçamento"
@@ -11973,6 +13500,20 @@
       if (qrun) qrun.onclick = function () { self._bimQuantificar(); };
       var qres = document.getElementById("bim-qto-res");
       if (qres) qres.onclick = function (e) {
+        if (e.target.closest("#bim-vista-portal")) { self._bimVistaPublicar(); return; }
+        if (e.target.closest("#bim-vista-tirar")) { self._bimVistaTirar(); return; }
+        if (e.target.closest("#bim-orc-relatorio")) { self._bimOrcRelatorio(); return; }
+        if (e.target.closest("#bim-orc-div")) { self._bimOrcPintarDiv(); return; }
+        if (e.target.closest("#bim-orc-pintar")) { self._bimOrcPintar(); return; }
+        if (e.target.closest("#bim-orc-despintar")) { self._bimOrcDespintar(); return; }
+        var bL = e.target.closest("[data-orc-ligar]");
+        if (bL) { self._bimOrcLigar(bL.getAttribute("data-orc-ligar"), bL.getAttribute("data-orc-cat")); return; }
+        var bD = e.target.closest("[data-orc-desligar]");
+        if (bD) { self._bimOrcDesligar(bD.getAttribute("data-orc-desligar")); return; }
+        var bA = e.target.closest("[data-orc-aplicar]");
+        if (bA) { self._bimOrcAplicar(bA.getAttribute("data-orc-aplicar")); return; }
+        if (e.target.closest("#bim-orc-voltar")) { self._bimOrcAberto = false; self._bimOrcDespintar(true); self._bimQuantificar(); return; }
+        if (e.target.closest("#bim-qto-orc")) { self._bimOrcConferir(); return; }
         if (e.target.closest("#bim-qto-lancar")) {
           var obra = self._bimSel ? Store.obter(eid(), "obras", self._bimSel) : null;
           if (window.App && App.criarOrcamentoDoBIM) App.criarOrcamentoDoBIM(self._bimQto, obra && obra.nome);
@@ -12015,6 +13556,15 @@
           BIM.montar(canvas, {
             // v1.1.121 — grupo "Análise & Orçamento" do dock abre a gaveta do viewer
             onPainel: function (chave) { self._bimAbrirPainel(chave); },
+            /* ⚠ a visibilidade muda SEM clique nosso: o play do 4D anda
+               sozinho, e o corte esconde pela GPU. Sem este gancho a barra de
+               status só se atualizaria quando alguém clicasse numa peça. */
+            onVisibilidade: function (nv, tot) {
+              try {
+                if (window.BimShell) BimShell.contadores(nv < tot ? (nv + " de " + tot) : tot,
+                  self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null);
+              } catch (e) {}
+            },
             onModelos: function (lista) { self._bimRenderModelos(lista); },
             /* B1: modelo chegou (do arquivo ou do cache) — a casca grava a vaga
                dele na obra e a geometria convertida. É aqui que "Salvar no
@@ -12039,6 +13589,22 @@
                cinza respondendo "Abra ou gere um modelo primeiro". */
             onLoaded: function (elementos) {
               self._bimElementos = (elementos || []).filter(function (e) { return e && e.tipo; }).map(function (e) { return Object.assign({}, e, { id: e.uid || e.id }); });
+              /* B7: as peças chegaram — é AQUI que a comparação entre versões
+                 pode acontecer, e não no `onModeloCarregado`, que roda antes.
+                 Guarda a fotografia de cada modelo aberto para a próxima
+                 versão ter com o que se comparar. */
+              try { self._bimFedCompararPendente(self._bimElementos); } catch (eF7) {}
+              try {
+                var porModelo = {};
+                self._bimElementos.forEach(function (e) {
+                  if (!e || !e.mid) return;
+                  (porModelo[e.mid] = porModelo[e.mid] || []).push(e);
+                });
+                (BIM.modelos || []).forEach(function (m) {
+                  if (!m || m.sintetico || m.exemplo || !m.modeloId) return;
+                  if (porModelo[m.mid]) self._bimFedGuardarFoto(m.modeloId, porModelo[m.mid]);
+                });
+              } catch (eF8) {}
               /* SELEÇÃO FANTASMA: ao remover ou trocar o modelo, _bimSelecao
                  ficava apontando para um elemento que não existe mais — a
                  barra mostrava o nome dele e a fita liberava "Editar tipo" e
@@ -12050,7 +13616,7 @@
               }
               self._bimReplanejar();
               try { self._bimCascaContexto(); } catch (e) {}
-              try { if (window.BimShell) BimShell.contadores(self._bimElementos.length, self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null); } catch (e2) {}
+              try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null); } catch (e2) {}
             },
             onPick: function (info) {
               /* SELEÇÃO É ESTADO DA CASCA, não só um balão na tela.
@@ -12059,7 +13625,7 @@
                  elemento certo destacado no 3D. */
               self._bimSelecao = info || null;
               try { self._bimCascaContexto(); } catch (e) {}
-              try { if (window.BimShell) BimShell.contadores((self._bimElementos || []).length, info ? (info.nome || info.tipo) : null); } catch (e2) {}
+              try { if (window.BimShell) BimShell.contadores(self._bimRotuloVis(), info ? (info.nome || info.tipo) : null); } catch (e2) {}
               var box = document.getElementById("bim-info"); if (!box) return;
               if (!info) { box.style.display = "none"; return; }
               box.style.display = ""; box.style.maxWidth = "260px"; // volta do painel de propriedades expandido (420px)
@@ -12116,10 +13682,18 @@
                "Elementos: 0" e a fita a achar que não havia modelo, com o
                modelo inteiro na tela. */
             self._bimCascaContexto();
-            if (window.BimShell) BimShell.contadores(self._bimElementos.length,
+            if (window.BimShell) BimShell.contadores(self._bimRotuloVis(),
               self._bimSelecao ? (self._bimSelecao.nome || self._bimSelecao.tipo) : null);
           } catch (e) {}
-          try { if (BIM.modelos && BIM.modelos.length) self._bimRenderModelos(BIM.modelos); } catch (e2) {}
+          /* ⚠ SEM O `else` A OBRA PARECIA VAZIA. A condicao exigia modelo
+             CARREGADO para desenhar o painel — e o caso que importa e
+             justamente o contrario: aparelho novo, registros vindos da nuvem
+             e nenhum arquivo aberto. Ai o painel nunca era chamado e a tela
+             ficava muda sobre os quatro arquivos que a obra tem. */
+          try {
+            if (BIM.modelos && BIM.modelos.length) self._bimRenderModelos(BIM.modelos);
+            else self._bimRenderModelos([]);
+          } catch (e2) {}
           return;
         }
         if (tentativas++ < 60) setTimeout(montarViewer, 200);
@@ -22390,9 +23964,29 @@ case "nova-folha": return this.novoFolha();
        * há medição em análise), mas com o status carimbado. */
       var meds = lista("medicoes").filter(function (m) { return m.obraId === id && m.status !== "rejeitada"; })
         .sort(function (a, b) { return String(a.numero || "").localeCompare(String(b.numero || "")); });
-      var acum = 0, medidoAcum = 0;
+      /* ⚠ O QUE ESTA EM ANALISE NAO SOMA NO ACUMULADO — nem em % nem em R$.
+       * A linha da medicao PENDENTE continua indo (o cliente tem direito de
+       * saber que ha medicao em analise), mas o acumulado e o KPI "Medido
+       * acumulado" passam a contar so o que o fiscal aprovou.
+       *
+       * MEDIDO no caminho real, com uma aprovada de 30% e uma pendente de 55%:
+       * o engenheiro via 30% no Painel e o CLIENTE via 85% no Portal. E pior
+       * que um numero errado: a propria tela do cliente EXPLICA o numero como
+       * "o acumulado das medicoes APROVADAS" (loja/portal.html, fonteTexto) —
+       * entao ela afirmava, com confianca, uma coisa que nao estava fazendo.
+       *
+       * O que esta em analise sai em campo proprio, para o Portal poder dizer
+       * "30% aprovado · +55% em analise" em vez de escolher entre esconder e
+       * mentir. */
+      /* ⚠ `self` NAO existe nesta funcao — e `node --check` nao pega isso.
+         Foi o mesmo tropeco de `self0` mais cedo nesta sessao: sintaxe valida,
+         ReferenceError no clique. */
+      var _snap = this;
+      var acum = 0, medidoAcum = 0, pctEmAnalise = 0, valorEmAnalise = 0;
       var medicoes = meds.map(function (m) {
-        acum += Util.num(m.percentual); medidoAcum += Util.num(m.valor);
+        var _aprov = _snap._ehAprovado(m.status);
+        if (_aprov) { acum += Util.num(m.percentual); medidoAcum += Util.num(m.valor); }
+        else { pctEmAnalise += Util.num(m.percentual); valorEmAnalise += Util.num(m.valor); }
         /* ⚠ RETENÇÃO VAI EM DINHEIRO, não em percentual. O Portal renderiza
            esta coluna com brMoney() e a soma no total da tabela
            (loja/portal.html:1767 e :2146, cabeçalho "Retenção" ao lado de
@@ -22402,7 +23996,10 @@ case "nova-folha": return this.novoFolha();
            posição financeira (logo abaixo) sempre esteve certo: é só aqui,
            na linha por medição, que o número saía com a unidade errada. */
         var _retVal = Math.round(Util.num(m.valor) * Util.num(m.retencao) / 100 * 100) / 100;
-        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: _retVal, retencaoPct: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10), situacao: rot(P.medicaoStatus, m.status) || "" };
+        return { numero: m.numero || "", data: m.data || m.periodoFim || "", percentual: Util.num(m.percentual), valor: Util.num(m.valor), retencao: _retVal, retencaoPct: Util.num(m.retencao), acumuladoPct: Math.min(100, Math.round(acum * 10) / 10), situacao: rot(P.medicaoStatus, m.status) || "",
+          /* aditivo: o Portal antigo ignora o que nao conhece, e o novo usa
+             isto para nao apresentar a linha em analise como reconhecida */
+          emAnalise: !_aprov };
       });
       /* SÓ VAI O QUE FOI APROVADO E PUBLICADO.
        * Antes o filtro era "tudo que não é rascunho" — ou seja, o diário
@@ -22490,6 +24087,8 @@ case "nova-folha": return this.novoFolha();
       } catch (e) { fisico = null; }
 
       var pctMedicoes = Math.min(100, Math.round(acum * 10) / 10);
+      pctEmAnalise = Math.round(pctEmAnalise * 10) / 10;
+      valorEmAnalise = Math.round(valorEmAnalise * 100) / 100;
       var pctExec, fonteExec;
       if (obra.pctExecutado != null) { pctExec = Util.num(obra.pctExecutado); fonteExec = "manual"; }
       else if (fisico && fisico.pct !== null) { pctExec = fisico.pct; fonteExec = "diario"; }
@@ -22717,6 +24316,21 @@ case "nova-folha": return this.novoFolha();
         inicio: obra.inicio || "", termino: obra.termino || "",
         areaConstruida: Util.num(obra.areaConstruida), areaTerreno: Util.num(obra.areaTerreno),
         contratado: contratado, pctExecutado: pctExec, medidoAcum: medidoAcum, aFaturar: Math.max(0, contratado - medidoAcum),
+        /* o que foi reclamado e o fiscal ainda nao aprovou. Campo ADITIVO: o
+           Portal ja publicado ignora o que nao conhece, e o novo usa para
+           dizer "30% aprovado · +55% em analise" em vez de escolher entre
+           esconder a medicao em curso e apresenta-la como reconhecida. */
+        pctEmAnalise: pctEmAnalise, valorEmAnalise: valorEmAnalise,
+        /* B18: a imagem do modelo, quando o engenheiro anexou uma. Vai pelos
+           MESMOS trilhos da foto de diario — `RDO.fotoDoPortal` decide entre
+           {i,t} (ja subiu), base64 (nao subiu) ou nada (ainda na fila) — para
+           nao haver duas regras de publicacao de imagem nesta casa. */
+        bimVista: (function () {
+          var v = obra.bimVista;
+          if (!v || !v.ref || typeof RDO === "undefined" || !RDO.fotoDoPortal) return null;
+          var f2 = RDO.fotoDoPortal(v.ref);
+          return f2 ? { foto: f2, em: v.em || "", cores: v.cores || "originais" } : null;
+        })(),
         /* de onde saiu o percentual do cabeçalho — o Portal escreve isso
            embaixo do número, porque "42%" sem dizer de onde veio é um número
            que o cliente não tem como conferir */
@@ -24070,12 +25684,46 @@ case "nova-folha": return this.novoFolha();
       }
       return { ok: bytes() <= SNAP_MAX_BYTES, cortou: cortou };
     },
+    /* =====================================================================
+     * A ENTIDADE NEM SEMPRE SE CHAMA COMO O MÓDULO — e o `abrir` presumia que sim
+     *
+     * ⚠ ISTO DERRUBOU UM CLIENTE, e o comentário que estava aqui afirmava
+     *   exatamente a premissa errada: "Ids de entidade coincidem com os de
+     *   módulo". Coincidem em 20 das 22 que o `abrir` despacha. As duas que
+     *   não coincidem são estas — e nas duas o módulo existe, aparece na
+     *   barra e a lista desenha; o que não funciona é ABRIR a linha.
+     *
+     *   O defeito só aparece em conta com PERFIL DE IMPLANTAÇÃO. Na conta
+     *   "Completo" `Perfis.modulosLiberados()` devolve null e `permite`
+     *   libera por omissão, então `podeModulo("equipe")` responde true por
+     *   acidente e ninguém percebe. Com perfil, a lista branca é consultada
+     *   de verdade: "equipe" não está nela — porque não é um módulo, é uma
+     *   entidade —, o clique cai no toast "Seu usuário não tem permissão
+     *   neste módulo" e o formulário não abre.
+     *
+     *   Consequência medida em 31/08/2026: o dono da conta com perfil não
+     *   conseguia editar NEM EXCLUIR um sub-usuário. O botão de excluir mora
+     *   dentro desse formulário; sem abrir o formulário, não existe caminho
+     *   nenhum para tirar alguém da equipe — e o aviso de limite de usuários
+     *   manda "desative ou exclua um para criar outro".
+     *
+     * ⚠ MAPA DECLARADO, não `if` no meio do guard: `tools/test-perfis.js`
+     *   cruza esta tabela com a lista de módulos e com o que o `abrir`
+     *   despacha, então uma terceira entidade fora do padrão reprova o gate
+     *   em vez de virar outro módulo mudo.
+     * =================================================================== */
+    MOD_DA_ENTIDADE: {
+      equipe: "usuarios",      /* módulo "Usuários & Permissões" */
+      templates: "modelos"     /* módulo "Modelos de Documento" */
+    },
+
     abrir: function (entidade, id) {
       // Guard em FUNÇÃO (achado do gate v1.1.63): abrir registro exige o plano de
       // gestão E a permissão RBAC do módulo — não importa por onde o clique veio
-      // (sidebar, busca Ctrl+K, sino…). Ids de entidade coincidem com os de módulo.
+      // (sidebar, busca Ctrl+K, sino…).
       if (!this.podeGestao()) { if (typeof UI !== "undefined") UI.toast("Gestão de Obras é recurso do plano Plus.", "erro"); return; }
-      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(entidade)) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro"); return; }
+      var _mod = this.MOD_DA_ENTIDADE[entidade] || entidade;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo(_mod)) { if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão neste módulo.", "erro"); return; }
       var r = Store.obter(eid(), entidade, id); if (!r) return;
       /* ⚠ ESCOPO POR OBRA: `Store.obter` busca por id e NÃO passa pelo funil.
          Sem esta linha, o registro sumia da lista mas continuava abrindo por

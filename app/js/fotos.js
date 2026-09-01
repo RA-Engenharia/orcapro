@@ -65,8 +65,17 @@
    * o diário é lido na tela e impresso em A4. 1600 px já é mais do que o
    * impresso usa.
    * --------------------------------------------------------------- */
-  Fotos.reduzir = function (dataURI, cb) {
+  Fotos.reduzir = function (dataURI, cb, opts) {
     try {
+      /* ⚠ O DIÁRIO E A PROPOSTA QUEREM COISAS DIFERENTES. 1600 px e 0,72 são
+         a régua da foto de OBRA, que é prova e vai para a tela. A capa de uma
+         proposta impressa em A4 a 1600 px sai com ~135 dpi, e a diferença
+         aparece no papel que o cliente segura. Quem precisa de mais pede; o
+         padrão continua o do diário, para nenhum caminho existente mudar de
+         peso sem querer. */
+      var lMax = (opts && opts.larguraMax > 0) ? opts.larguraMax : LARGURA_MAX;
+      var qual = (opts && opts.qualidade > 0) ? opts.qualidade : QUALIDADE;
+
       var img = new Image();
       img.onload = function () {
         try {
@@ -77,14 +86,14 @@
            * de graça, na imagem que serve de PROVA, e sem ganho de tamanho —
            * recomprimir um JPEG já comprimido costuma até aumentá-lo.
            * Se já cabe na largura e já é JPEG, devolve como veio. */
-          if (w <= LARGURA_MAX && /^data:image\/jpe?g[;,]/i.test(String(dataURI))) {
+          if (w <= lMax && /^data:image\/jpe?g[;,]/i.test(String(dataURI))) {
             cb(dataURI, w, h); return;
           }
-          if (w > LARGURA_MAX) { h = Math.round(h * (LARGURA_MAX / w)); w = LARGURA_MAX; }
+          if (w > lMax) { h = Math.round(h * (lMax / w)); w = lMax; }
           var c = document.createElement("canvas");
           c.width = w; c.height = h;
           c.getContext("2d").drawImage(img, 0, 0, w, h);
-          cb(c.toDataURL("image/jpeg", QUALIDADE), w, h);
+          cb(c.toDataURL("image/jpeg", qual), w, h);
         } catch (e) { cb(dataURI, 0, 0); }   // falhou reduzir: guarda como veio
       };
       img.onerror = function () { cb(dataURI, 0, 0); };
@@ -101,7 +110,7 @@
   /* ---------------------------------------------------------------
    * GUARDAR — devolve a referência que vai para o registro do diário
    * --------------------------------------------------------------- */
-  Fotos.guardar = function (dataURI, legenda) {
+  Fotos.guardar = function (dataURI, legenda, opts) {
     return new Promise(function (res) {
       Fotos.reduzir(dataURI, function (reduzida, w, h) {
         var ref = { id: novoId(), leg: String(legenda || ""), bytes: bytesDe(reduzida), remoto: "", w: w, h: h };
@@ -133,7 +142,7 @@
           }
           res({ id: "", leg: String(legenda || ""), bytes: bytesDe(reduzida), remoto: "", d: reduzida, semIDB: true });
         });
-      });
+      }, opts);
     });
   };
 

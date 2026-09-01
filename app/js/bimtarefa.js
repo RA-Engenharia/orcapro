@@ -163,7 +163,18 @@
    *   `hoje` é INJETADO. O motor é puro e não lê relógio: assim o teste
    *   controla o dia, e a simulação não muda de resultado à meia-noite.
    * ------------------------------------------------------------------- */
-  function estadoEm(t, data, hoje) {
+  /* `real` (4º argumento, opcional) é o que a MEDIÇÃO informa naquela data:
+     `{ pct: 0..100, folga: pontos percentuais }`. Sem ele — e são três
+     argumentos em todo o app até o B9 — nada muda: manda o calendário.
+
+     ⚠ ATÉ HOJE MANDA O MEDIDO; DEPOIS DE HOJE, O PLANO. O acumulado da
+     medição numa data futura é igual ao de hoje (não existe boletim do mês
+     que vem), então deixar o medido mandar no futuro congelaria a obra no
+     percentual de hoje e nada chegaria a "concluído" na régua — o vídeo do
+     4D terminaria com o prédio pela metade para sempre. A leitura certa é a
+     que o engenheiro faz: até hoje, a obra que aconteceu; daí em diante, a
+     que está planejada. */
+  function estadoEm(t, data, hoje, real) {
     t = tarefa(t);
     var d = dia(data);
     if (!d) return "futuro";
@@ -171,6 +182,33 @@
 
     var ini = t.realInicio || t.previstoInicio;
     var fim = t.realFim || t.previstoFim;
+
+    if (real && real.pct != null && d <= hoje) {
+      var pc = Math.max(0, Math.min(100, num(real.pct, 0)));
+      if (pc >= 100) return t.tipoTarefa === "construir" ? "concluido" : "removido";
+      /* o que o plano prometia neste dia, para acusar defasagem */
+      var prev = 0;
+      if (t.previstoInicio && t.previstoFim) {
+        if (d >= t.previstoFim) prev = 100;
+        else if (d > t.previstoInicio) {
+          var tot = diasEntre(t.previstoInicio, t.previstoFim);
+          prev = tot > 0 ? (diasEntre(t.previstoInicio, d) / tot) * 100 : 100;
+        }
+      }
+      var folga = real.folga == null ? 10 : num(real.folga, 10);
+      /* ⚠ UMA REGRA SÓ PARA OS DOIS ATRASOS. "Não começou e já devia" e
+         "começou mas está atrás" são o mesmo fato — medido abaixo do
+         prometido — e separá-los em dois ramos deixava um deles de fora
+         conforme a ordem dos ifs. A folga em pontos percentuais existe
+         porque a comparação é contra interpolação LINEAR, e obra tem curva
+         S: sem ela, toda tarefa nasceria atrasada no primeiro dia. */
+      if (prev - pc > folga) return "atrasado";
+      if (pc > 0) return "em-execucao";
+      /* nada medido e o plano ainda não cobrava: a peça não existe na cena.
+         O modo plano mostraria "em execução" aqui — amarelo por calendário,
+         sem nada construído. */
+      return "futuro";
+    }
 
     /* ainda não começou nesta data */
     if (ini && d < ini) return "futuro";
@@ -280,6 +318,7 @@
     var d = dia(data), hoje = dia(opts.hoje) || d;
     var editadas = opts.aparencias || {};
     var ocultos = {}, pinturas = {}, contornos = {}, avisos = [], semAlvo = [];
+    var comMedicao = 0, semMedicao = 0;
     var porEstado = {};
     ESTADOS.forEach(function (s) { porEstado[s] = 0; });
 
@@ -289,7 +328,17 @@
       r.avisos.forEach(function (a) { avisos.push(a); });
       if (!r.total) { semAlvo.push({ id: t.id, nome: t.nome, alvo: t.alvo }); return; }
 
-      var estado = estadoEm(t, d, hoje);
+      /* B9: quando a tela liga o modo "real", `opts.real.pctDe` devolve o que
+         a medição informa para ESTA tarefa NESTA data (ou null, quando a
+         tarefa não está ligada a item nem etapa do orçamento — e aí o plano
+         continua mandando nela, sozinha, sem contaminar as outras). */
+      var med = null;
+      if (opts.real && typeof opts.real.pctDe === "function") {
+        var pv = opts.real.pctDe(t, d);
+        if (pv != null) med = { pct: pv, folga: opts.real.folga };
+      }
+      var estado = estadoEm(t, d, hoje, med);
+      if (med) comMedicao++; else semMedicao++;
       var ap = aparenciaDe(estado, t.tipoTarefa, editadas);
       porEstado[estado] = (porEstado[estado] || 0) + r.total;
 
@@ -307,7 +356,11 @@
 
     return {
       data: d, ocultos: Object.keys(ocultos), pinturas: pinturas, contornos: contornos,
-      semAlvo: semAlvo, avisos: avisos, porEstado: porEstado
+      semAlvo: semAlvo, avisos: avisos, porEstado: porEstado,
+      /* ⚠ quantas tarefas a medição alcançou. Sem este número a tela ligaria
+         o modo "real" e mostraria o plano, sem nada dizendo que ninguém
+         estava ligado ao orçamento — o modo pareceria quebrado. */
+      comMedicao: comMedicao, semMedicao: semMedicao
     };
   }
 
@@ -482,14 +535,25 @@
   /* ---------------------------------------------------------------------
    * Resumo previsto × real, que é o número que vai para o relatório
    * ------------------------------------------------------------------- */
-  function resumo(tarefas, hoje) {
+  /* ⚠ O RESUMO TEM DE FALAR A MESMA LÍNGUA DA LISTA. Ele ficou de fora do
+     B9 na primeira passada, e o resultado apareceu na tela em dez segundos:
+     as bolinhas mostravam a alvenaria CONCLUÍDA (100% medidos) e a pílula
+     acima dizia "4 atrasada(s)" — duas sentenças opostas sobre as mesmas
+     quatro tarefas, na mesma tela. O `real` daqui é o mesmo que o `simular`
+     recebe; sem ele, nada muda. */
+  function resumo(tarefas, hoje, real) {
     var h = dia(hoje);
-    var r = { total: 0, concluidas: 0, emExecucao: 0, atrasadas: 0, naoIniciadas: 0, semAlvo: 0, diasDeAtraso: 0 };
+    var r = { total: 0, concluidas: 0, emExecucao: 0, atrasadas: 0, naoIniciadas: 0, semAlvo: 0, diasDeAtraso: 0, comMedicao: 0 };
     (tarefas || []).forEach(function (bruta) {
       var t = tarefa(bruta);
       r.total++;
       if (txt(t.alvo.tipo) === "auto") r.semAlvo++;
-      var e = h ? estadoEm(t, h, h) : "futuro";
+      var md = null;
+      if (real && typeof real.pctDe === "function" && h) {
+        var pv = real.pctDe(t, h);
+        if (pv != null) { md = { pct: pv, folga: real.folga }; r.comMedicao++; }
+      }
+      var e = h ? estadoEm(t, h, h, md) : "futuro";
       if (e === "concluido" || e === "removido") r.concluidas++;
       else if (e === "atrasado") {
         r.atrasadas++;

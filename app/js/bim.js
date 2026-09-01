@@ -142,7 +142,7 @@ function recarimbarIdentidade() {
   });
 }
 
-// 🧱 Blocok — allowlist de e-mails com acesso (feito p/ a Argecon primeiro; fácil de estender).
+// 🧱 Blocok — allowlist de e-mails com acesso (feito p/ um cliente primeiro; fácil de estender).
 // No escopo do MÓDULO (não dentro de montar) p/ já estar definido quando a toolbar é construída.
 // rogeriosouza... = o dono (RA Engenharia) — sempre liberado pra testar.
 /* ⚠ AQUI HAVIA DOIS E-MAILS EM TEXTO PURO — UM DELES DE CLIENTE.
@@ -162,8 +162,14 @@ function recarimbarIdentidade() {
  * ser indexável. Para quem tenta burlar o portão, a barreira continua sendo a
  * mesma de antes (o login), nem mais nem menos.
  *
- * Mesma família de `orcamento-leilah` em js/basescat.js (v1.2.17): guarda que
- * protege pelo NOME de alguém publica esse alguém.
+ * Mesma família do id de base que carregava o nome de uma pessoa (v1.2.17):
+ * guarda que protege pelo NOME de alguém publica esse alguém.
+ *
+ * ⚠ E O NOME DO CLIENTE TAMBÉM É DADO DELE. Até 31/08/2026 este bloco dizia
+ * "feito p/ a <nome da empresa>" em três lugares de `js/`, que viaja para os
+ * 38 pacotes e para a página pública: o e-mail virou hash e a razão social
+ * ficou legivel do lado. Quem escreve a guarda é quem mais lembra do cliente
+ * — e é exatamente aí que o nome escapa.
  *
  * Para liberar mais um e-mail: `node -e` com o `Util.sha256hex` de js/util.js
  * sobre BLOCOK_SAL + e-mail em minúsculas, e acrescentar o hash aqui. */
@@ -2894,7 +2900,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // vãos) e gera: prancha executiva SVG de CADA parede + mapa de localização + tabela
   // de material (placas por espessura) + INSUMOS calculados (produção das placas +
   // assentamento pela junta escolhida) + carga própria na fundação (peso líquido).
-  // ⚠️ EXCLUSIVO do cliente Argecon (feito p/ ele primeiro) — gate por e-mail logado.
+  // ⚠️ EXCLUSIVO de um cliente (feito p/ ele primeiro) — gate por e-mail logado.
   // ============================================================
   function getBK() { return (typeof Blocok !== 'undefined' && Blocok) || (typeof window !== 'undefined' && window.Blocok) || null; }
   function blocokLiberado() {
@@ -4815,6 +4821,111 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     } catch (e) { return []; }
   };
 
+  /* =====================================================================
+   * O CARIMBO HONESTO — quantos elementos a imagem está REALMENTE mostrando
+   *
+   * ⚠ Isto era código dentro do `tirarFoto`. Virou função porque o vídeo do
+   *   4D precisa do MESMO carimbo: um quadro de vídeo é tão entregável quanto
+   *   um PNG, e nele a vista é filtrada por definição — o 4D esconde o que
+   *   ainda não começou. Uma segunda contagem escrita à mão daria dois
+   *   números diferentes para a mesma cena, e o do vídeo seria o errado
+   *   justamente porque ninguém confere vídeo.
+   * ===================================================================== */
+  /* =====================================================================
+   * QUANTOS ELEMENTOS A CENA ESTÁ REALMENTE MOSTRANDO
+   *
+   * ⚠ TRÊS VERSÕES ERRADAS ANTES DESTA, e as três só caíram porque foram
+   *   MEDIDAS no modelo real (13.229 peças) em vez de raciocinadas:
+   *
+   *   1. contar montando `visSet[mid + ':' + expressID]` a cada 500 ms —
+   *      correto, mas 7,25 ms por chamada contra um quadro de 17,16 ms. Não é
+   *      1,45% diluído: é um PICO dentro de UM quadro, que vai de 17 para
+   *      24 ms — engasgo visível duas vezes por segundo ao orbitar. O
+   *      comentário que eu tinha escrito aqui dizia que "custa nada perto do
+   *      render"; a medição disse o contrário.
+   *
+   *   2. contar as malhas visíveis direto, supondo uma malha por elemento.
+   *      NÃO HÁ UMA: geometria multi-material vira várias malhas com o MESMO
+   *      expressID. Deu 30.526 num modelo de 13.229 — 2,5× o certo.
+   *
+   *   3. montar um vetor de "uma malha por elemento" em `rebuildIndices`.
+   *      Rápido e ERRADO por outro motivo: a agregação (B2) TROCA as malhas
+   *      depois, e o vetor fica apontando para objetos que saíram da cena —
+   *      a conta passou a dar 0 com o modelo inteiro na tela.
+   *
+   * O que sobra é separar as duas perguntas. Contar malha visível é barato
+   * (0,15 ms) e não serve como resposta, mas serve como SINAL: se esse número
+   * mudou, alguma coisa apareceu ou sumiu, e só então vale pagar a contagem
+   * exata. Em repouso o laço custa 0,15 ms a cada 500 ms; a conta cara só
+   * acontece no quadro seguinte a uma mudança de verdade.
+   * =================================================================== */
+  function contarMalhasVisiveis() {
+    var n = 0, filhos = modelRoot.children;
+    for (var i = 0; i < filhos.length; i++) {
+      var g = filhos[i];
+      if (g.visible === false) continue;
+      var ms = g.children;
+      for (var j = 0; j < ms.length; j++) if (ms[j].visible) n++;
+    }
+    return n;
+  }
+  function contarVisiveis() {
+    var visSet = {};
+    modelRoot.children.forEach(function (g) {
+      if (g.visible === false) return;
+      (g.children || []).forEach(function (m) {
+        if (m.visible && m.userData.expressID != null) visSet[m.userData.mid + ':' + m.userData.expressID] = 1;
+      });
+    });
+    return Object.keys(visSet).length;
+  }
+  function totalElementos() { var t2 = 0; S.modelos.forEach(function (mo) { t2 += mo.nEl || 0; }); return t2; }
+  S._contarVisiveis = contarVisiveis;
+  S._contarMalhasVisiveis = contarMalhasVisiveis;
+  function totalElementos() { var t2 = 0; S.modelos.forEach(function (mo) { t2 += mo.nEl || 0; }); return t2; }
+  S._contarVisiveis = contarVisiveis;
+
+  function rotuloElementos() {
+    var tot = totalElementos();
+    var nv = contarVisiveis();
+    /* planta/corte escondem via clippingPlanes (GPU) sem tocar mesh.visible →
+       também é vista parcial, e o carimbo tem de dizer */
+    var cortado = (renderer.clippingPlanes || []).length > 0;
+    return nv < tot ? (nv + ' de ' + tot + ' elementos (vista filtrada)')
+      : (cortado ? (tot + ' elementos (vista cortada)') : (tot + ' elementos'));
+  }
+  S._rotuloElementos = rotuloElementos;
+
+  /* =====================================================================
+   * UM QUADRO, DESENHADO NA HORA
+   *
+   * ⚠ O `preserveDrawingBuffer` é FALSE (bim.js:869), então o conteúdo do
+   *   canvas WebGL só é legível no mesmo instante do `render`. É por isso que
+   *   o `tirarFoto` faz render e `toDataURL` grudados, e é por isso que o
+   *   vídeo não pode usar `captureStream` automático: o compositor do
+   *   navegador captura quando quer, e pega quadro em branco.
+   *
+   * ⚠ E O `requestAnimationFrame` NÃO DISPARA COM A ABA OCULTA. Gravar um
+   *   vídeo de 15 s com o usuário olhando outra aba renderizaria zero quadros
+   *   e devolveria um arquivo preto — sem erro nenhum. Este gancho desenha
+   *   SÍNCRONO, então a gravação anda com a aba escondida.
+   *
+   * Devolve o canvas do renderer, recém-desenhado, para quem quiser copiar.
+   * ===================================================================== */
+  function desenharQuadro(fundo) {
+    if (!S || !S.alive || !renderer) return null;
+    var prevBg = scene.background;
+    var vLn = _selLn ? _selLn.visible : null;   /* o contorno de seleção é UI, não entrega */
+    try {
+      if (fundo) scene.background = new THREE.Color(fundo);
+      if (_selLn) _selLn.visible = false;
+      renderer.render(scene, camera);
+    } catch (e) { return null; }
+    finally { scene.background = prevBg; if (_selLn && vLn !== null) _selLn.visible = vLn; }
+    return renderer.domElement;
+  }
+  S._desenharQuadro = desenharQuadro;
+
   function tirarFoto() {
     if (!S.modelos.length) { S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Carregue um modelo primeiro.'); return null; }
     var prevBg = scene.background, url;
@@ -4834,15 +4945,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var g2 = cnv.getContext('2d');
         g2.drawImage(img, 0, 0);
         g2.fillStyle = '#0b1a2b'; g2.fillRect(0, img.height, cnv.width, faixa);
-        // carimbo HONESTO: conta ELEMENTOS efetivamente visíveis (isolamento/4D/modelo desligado
-        // reduzem) e declara "vista filtrada" quando não é o modelo inteiro
-        var tot = 0; S.modelos.forEach(function (mo) { tot += mo.nEl || 0; });
-        var visSet = {};
-        modelRoot.children.forEach(function (g) { if (g.visible === false) return; (g.children || []).forEach(function (m) { if (m.visible && m.userData.expressID != null) visSet[m.userData.mid + ':' + m.userData.expressID] = 1; }); });
-        var nv = Object.keys(visSet).length;
-        // planta/corte escondem via clippingPlanes (GPU) sem tocar mesh.visible -> também é vista parcial
-        var cortado = (renderer.clippingPlanes || []).length > 0;
-        var rotEl = nv < tot ? (nv + ' de ' + tot + ' elementos (vista filtrada)') : (cortado ? (tot + ' elementos (vista cortada)') : (tot + ' elementos'));
+        /* o carimbo honesto virou função: o vídeo do 4D usa o MESMO, e duas
+           contagens escritas à mão dariam dois números para a mesma cena */
+        var rotEl = rotuloElementos();
         g2.fillStyle = '#7fe0a3'; g2.font = 'bold 16px Segoe UI, Arial';
         g2.fillText((((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') ? ((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') + ' · ' : '') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'OrçaPRO BIM · ':'') + new Date().toLocaleString('pt-BR') + ' · ' + rotEl + (pav.isolado ? ' · pavimento: ' + pav.isolado : ''), 12, img.height + 28);
         var a2 = document.createElement('a'); a2.href = cnv.toDataURL('image/png'); a2.download = 'bim-foto.png'; a2.click();
@@ -6804,17 +6909,37 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   /* pinta o conjunto. `mapa` é { chave: '#rrggbb' } — vem do perfil de cores do
      motor, onde a PRIMEIRA regra que casa manda. */
-  function pintarChaves(mapa) {
+  /* =====================================================================
+   * ⚠ A CENA TEM UM DONO DE CADA VEZ
+   *
+   * Cinco lugares pintam ou isolam esta cena: os conjuntos de seleção (B3),
+   * a comparação de versões (B7), o 4D automático, o Cronograma 4D (B6) e o
+   * avanço medido (B10). Todos escrevem no MESMO `S._pintura`, e quem chega
+   * por último ganha — o que é o comportamento certo.
+   *
+   * O que estava errado é o painel não SABER que perdeu. Medido: pintar pelo
+   * avanço, mexer no 4D automático e voltar ao quantitativo mostrava a
+   * legenda inteira do avanço — "Nada medido · 816 peças", com as cores e o
+   * botão "Tirar as cores" — sobre uma cena que estava pintada pelo 4D.
+   * Quem olhasse o 3D leria as cores de um recurso através da legenda de
+   * outro, e as duas pareceriam concordar.
+   *
+   * O dono é uma etiqueta, não um dono de verdade: ninguém é impedido de
+   * pintar. Ela existe para que cada painel saiba se a legenda dele ainda
+   * descreve o que está na tela.
+   * =================================================================== */
+  function pintarChaves(mapa, dono) {
     var porUid = {}, n = 0;
     var alvo = mapa || {};
     (S.elementos || []).forEach(function (e) {
       if (e.chave && alvo[e.chave]) { porUid[e.uid] = alvo[e.chave]; n++; }
     });
     S._pintura = n ? porUid : null;
+    S._pinturaDono = n ? (dono || "?") : null;
     S.modelos.forEach(function (mo) { refreshModelo(mo); });
     return n;
   }
-  function limparPintura() { S._pintura = null; S.modelos.forEach(function (mo) { refreshModelo(mo); }); }
+  function limparPintura() { S._pintura = null; S._pinturaDono = null; S.modelos.forEach(function (mo) { refreshModelo(mo); }); }
   S._isolarChaves = isolarChaves; S._pintarChaves = pintarChaves; S._limparPintura = limparPintura;
   S._uidsDeChaves = uidsDeChaves;
 
@@ -6858,6 +6983,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var porUid = {};
     (S.elementos || []).forEach(function (e) { if (e.chave && porChave[e.chave]) porUid[e.uid] = porChave[e.chave]; });
     S._pintura = n ? porUid : null;
+    S._pinturaDono = "4d-tarefas";
     S._fut4d = fora;   /* o 🏢/👁 compoe com isto e nao ressuscita o que ainda nao existe */
 
     cadaMalha(function (m) {
@@ -7052,12 +7178,66 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     notifyModelos();
     if (opts.onLoaded) opts.onLoaded(elementosVivos()); // 4D/QTO/clash replanejam com a disciplina nova
   }
+  /* =====================================================================
+   * ⚠ O CONTADOR CONTAVA O QUE CARREGOU, NÃO O QUE SE VÊ
+   *
+   * `Elementos: 13.229` ficava na tela mesmo com a cena VAZIA. Medido no
+   * modelo real: com o 4D na semana 1, `rotuloElementos()` (o carimbo que já
+   * era honesto, e que só era usado em foto e vídeo) dizia "0 de 13.229
+   * elementos (vista filtrada)" enquanto o HUD e a barra de status diziam
+   * 13.229. O engenheiro olha um visualizador vazio e o app afirma que há
+   * treze mil peças ali.
+   *
+   * E não é só o 4D: escondem peça o isolamento por pavimento, o isolamento
+   * manual, o conjunto de seleção, a comparação de versões, a fase
+   * "existente" da reforma, as remoções do editor e o corte (que some pela
+   * GPU, sem tocar em `visible`). Sete caminhos, um contador que ignorava
+   * todos.
+   *
+   * ⚠ A CONTA É POR TEMPO, NÃO POR EVENTO. Ligar em cada um dos sete deixaria
+   *   o oitavo de fora no dia em que ele nascer — e o corte nem passa por
+   *   `visible`. Uma passada a cada 500 ms pega qualquer caminho, inclusive os
+   *   que ainda não existem. O custo dela foi MEDIDO e teve de ser reduzido:
+   *   ver a nota em `contarVisiveis`.
+   * =================================================================== */
+  var _hudUltimo = 0, _hudVis = -1;
   function atualizarHud() {
     var el = 0, tri = 0;
     S.modelos.forEach(function (mo) { el += mo.nEl || 0; tri += mo.nTri || 0; });
-    hud.querySelector('[data-h="el"]').textContent = el.toLocaleString('pt-BR');
+    var nv = el ? contarVisiveis() : 0;
+    _hudVis = nv;
+    var cortado = (renderer.clippingPlanes || []).length > 0;
+    var elBox = hud.querySelector('[data-h="el"]');
+    elBox.textContent = (nv < el ? nv.toLocaleString('pt-BR') + ' de ' + el.toLocaleString('pt-BR') : el.toLocaleString('pt-BR'));
+    elBox.title = nv < el
+      ? 'A cena está mostrando ' + nv.toLocaleString('pt-BR') + ' de ' + el.toLocaleString('pt-BR') +
+        ' elementos. Escondem peça: a simulação 4D, o isolamento por pavimento, o isolamento manual, um conjunto de seleção, a fase "existente" de reforma e as remoções do editor. O botão ↺ restaura.'
+      : (cortado ? 'Todos os elementos estão na cena, mas há um corte ativo: parte da geometria não aparece.' : 'Todos os elementos do modelo estão na cena.');
     hud.querySelector('[data-h="tri"]').textContent = Math.round(tri).toLocaleString('pt-BR');
+    var _cb = S._onContadores || (S.opts && S.opts.onVisibilidade);
+    if (_cb) { try { _cb(nv, el); } catch (e) {} }
   }
+  /* releitura por tempo — ver a nota de `contarVisiveis`: o sinal é barato,
+     a conta é cara, e a cara só roda quando o sinal muda */
+  var _hudMalhas = -1, _hudConferido = 0;
+  S._tickExtra.push(function () {
+    var ag = Date.now();
+    if (ag - _hudUltimo < 500) return;
+    _hudUltimo = ag;
+    if (!S.modelos.length) return;
+    var mv = contarMalhasVisiveis();
+    if (mv !== _hudMalhas) { _hudMalhas = mv; _hudConferido = ag; atualizarHud(); return; }
+    /* ⚠ O SINAL BARATO NÃO PEGA TUDO, e isso foi MEDIDO: ao abrir o modelo o
+       HUD acertava 12.103 aos 2,7 s e REGREDIA para 13.229 aos 3,6 s, ficando
+       errado para sempre. A agregação (B2) refaz a cena trocando malhas, e o
+       número de malhas visíveis pode cair no mesmo valor de antes enquanto o
+       de ELEMENTOS mudou. Então, além do sinal, uma conferência exata a cada
+       2 s: 7,8 ms nesse intervalo é 0,4% do tempo, e é o preço de o número na
+       tela não poder ficar mentindo indefinidamente. */
+    if (ag - _hudConferido < 2000) return;
+    _hudConferido = ag;
+    if (contarVisiveis() !== _hudVis) atualizarHud();
+  });
   function rebuildIndices() {
     S.elementos = []; S.meshPorId = {}; S.meshPorUid = {};
     S.modelos.forEach(function (mo) {
@@ -7505,6 +7685,13 @@ function aplicarEstado(est) {
   (est && est.emAndamento || []).forEach(function (id) { and[id] = 1; });
   S._fut4d = fut; // isolamento 🏢/👁 compõe com isto (não ressuscita futuros)
   S._and4d = and; // "em andamento" (âmbar): o restore do raio-X consulta isto p/ NÃO apagar o âmbar do 4D
+  /* ⚠ O 4D AUTOMÁTICO TOMA A CENA — e antes ele a tomava PELA METADE. Ele não
+     escreve `_pintura`, mas `_matBase` consulta: com uma pintura de outro
+     painel ainda ativa (conjunto de seleção, ou o avanço medido do B10), as
+     peças "construídas" saíam com a cor DAQUELE outro recurso e as "em
+     andamento" com o âmbar do 4D. A cena virava uma mistura de duas legendas,
+     e cada painel achava que a sua estava valendo. Quem chega, limpa. */
+  S._pintura = null; S._pinturaDono = "4d-auto";
   cadaMalha(function (m) {
     var id = m.userData.expressID; if (id == null) return;
     var uid = m.userData.mid + ':' + id;
@@ -7519,6 +7706,7 @@ function mostrarTudo() {
   if (!S) return;
   if (S.pav && (S.pav.isolado || S.pav.manual)) { S.pav.isolado = null; S.pav.manual = false; if (S._pavRender) S._pavRender(); }
   S._fut4d = null; S._and4d = null; // sair do 4D: nada mais é "futuro" nem "em andamento"
+  if (S._pinturaDono === "4d-auto") { S._pintura = null; S._pinturaDono = null; }
   cadaMalha(function (m) { m.visible = !ehRemovidoEd(m); if (m !== S.selected) m.material = S._matBase ? S._matBase(m) : (m.userData.matOrig || m.material); });
 }
 
@@ -8106,7 +8294,12 @@ window.BIM = {
   /* deixa visível só o conjunto; o ↺ Restaurar tudo desfaz */
   isolarChaves: function (chaves) { return (S && S._isolarChaves) ? S._isolarChaves(chaves) : 0; },
   /* { chave: '#rrggbb' } — a cor por regra do B3 */
-  pintarChaves: function (mapa) { return (S && S._pintarChaves) ? S._pintarChaves(mapa) : 0; },
+  /* `dono` é a etiqueta de quem está pintando — ver a nota em `pintarChaves`.
+     ⚠ A primeira versão desta linha esquecia de repassá-lo, e a etiqueta
+     chegava sempre como "?": todo painel concluía que tinha perdido a cena
+     para outro, inclusive logo depois de pintar. Argumento novo em função
+     interna precisa atravessar a porta de entrada também. */
+  pintarChaves: function (mapa, dono) { return (S && S._pintarChaves) ? S._pintarChaves(mapa, dono) : 0; },
   limparPintura: function () { if (S && S._limparPintura) S._limparPintura(); },
   /* ---- B4: pontos de vista ----
      `cameraAtual` e o que a vista GUARDA; `aplicarVista` e como se volta para
@@ -8167,6 +8360,32 @@ window.BIM = {
   imersivoAtivo: function () { return !!(S && S.xr && S.xr.on); },
   sairImersivo: function () { if (S && S._sairImersivo) S._sairImersivo(); },
   foto: function () { return (S && S._tirarFoto) ? S._tirarFoto() : null; }, // dataURL do render (também baixa o PNG carimbado)
+  /* ⚠ OS DOIS GANCHOS DO VÍDEO DO 4D. `desenharQuadro` renderiza SÍNCRONO e
+     devolve o canvas — é o que faz a gravação andar com a aba escondida, onde
+     o requestAnimationFrame não dispara e um vídeo de 15 s sairia preto sem
+     erro nenhum. `rotuloElementos` é o mesmo carimbo honesto da foto: quantos
+     elementos a cena está REALMENTE mostrando, que num vídeo de 4D é sempre
+     menos que o total. */
+  /* quem pintou a cena por último — "conjunto", "4d-tarefas", "4d-auto",
+     "avanco"… ou null se ninguém pintou. É como cada painel confere se a
+     legenda dele ainda descreve o que está na tela. */
+  donoDaPintura: function () { return (S && S._pinturaDono) || null; },
+  /* quantos elementos a cena está REALMENTE mostrando — ver a nota em
+     `atualizarHud`. É o número que a barra de status e o carimbo da foto usam. */
+  contarVisiveis: function () { return (S && S._contarVisiveis) ? S._contarVisiveis() : 0; },
+  /* o sinal barato de mudança de visibilidade — exposto só para o teste
+     provar que ele reage a tudo que a contagem exata reage */
+  _contarMalhasVisiveis: function () { return (S && S._contarMalhasVisiveis) ? S._contarMalhasVisiveis() : 0; },
+  /* o app registra aqui para saber quando a visibilidade mudou sozinha
+     (o 4D, um corte, um isolamento) e repintar a própria barra de status */
+  aoMudarVisibilidade: function (fn) { if (S) S._onContadores = fn; },
+  desenharQuadro: function (fundo) { return (S && S._desenharQuadro) ? S._desenharQuadro(fundo) : null; },
+  /* enquadramento INSTANTANEO (sem tween). O `fit` da fita usa o tween
+     cinematografico, que leva ~0,55 s — bonito na tela e inutil para quem vai
+     capturar a imagem no mesmo instante: a foto sairia no meio do movimento,
+     ou com a camera onde estava. Quem gera documento chama este. */
+  enquadrarAgora: function () { if (S && S._enquadrar) { try { S._enquadrar(); return true; } catch (e) {} } return false; },
+  rotuloElementos: function () { return (S && S._rotuloElementos) ? S._rotuloElementos() : ""; },
   // v1.1.83 — planta baixa técnica 2D (corte na altura do slider da Planta, hachura + cotas automáticas)
   plantaBaixa: function (o) {
     o = o || {};

@@ -134,11 +134,51 @@ var Perfis = (function () {
      boot depois da atualização e a barra dele voltaria aos 34 módulos, sem
      erro em lugar nenhum. Por isso `aplicar` grava a lista junto, e a leitura
      prefere o catálogo (que é a fonte, quando existe) e cai no registro. */
+  /* =====================================================================
+   * OS PERFIS QUE ESTA CONTA JÁ TEVE — a volta que era destruída ao ir
+   *
+   * ⚠ ISTO NÃO É REFINAMENTO: era uma PORTA DE MÃO ÚNICA, e um cliente caiu
+   *   nela. Medido em 31/08/2026, reproduzindo a máquina do cliente (sem
+   *   `venda/perfis-clientes.js`, que é o normal — o catálogo não vai no
+   *   pacote de propósito):
+   *
+   *     antes do clique : 2 opções — "Completo" | o perfil do cliente
+   *     ele clica em "Completo" e Salvar
+   *     depois do clique: 1 opção — o bloco INTEIRO some da tela
+   *
+   *   Porque `aplicar` gravava por cima do MESMO registro (`perfil-impl`), e
+   *   esse registro era o único lugar da máquina que sabia o nome e a lista
+   *   de módulos do cliente. Ao ir para "Completo", a conta esquecia quem
+   *   era. `listar()` voltava a ter um item só, `_renderEmpresaPerfil`
+   *   desiste com menos de dois, e `Perfis.aplicar("<id>")` — até pelo
+   *   console — respondia "Perfil desconhecido".
+   *
+   *   E a tela PROMETE o contrário, com estas palavras: "Nada é apagado: o
+   *   módulo oculto continua com os dados dele, e voltar para 'Completo'
+   *   devolve tudo." Devolvia os módulos e levava embora a volta.
+   *
+   * ⚠ NÃO AFROUXA A TRAVA DO F12. `conhecidos` guarda só o que ESTA conta já
+   *   teve — não é o catálogo de ninguém. Um cliente com o console aberto
+   *   continua sem caminho para virar outro cliente, e `semear` continua
+   *   dependendo do catálogo (que ele não tem), então nenhum NÚMERO de outra
+   *   empresa fica alcançável por aqui.
+   * =================================================================== */
+  function _conhecidos(reg) {
+    var c = (reg || _registro()).conhecidos;
+    return (c && typeof c === "object") ? c : {};
+  }
+
   function _perfilDe(id) {
     if (CATALOGO[id]) return CATALOGO[id];
     var reg = _registro();
     if (reg.perfil === id && (reg.modulos || reg.nome)) {
       return { nome: reg.nome || "Perfil da conta", desc: "", modulos: reg.modulos || null };
+    }
+    /* o perfil que a conta JÁ TEVE continua sendo dela: é por aqui que a
+       volta existe depois de uma passagem por "Completo" */
+    var k = _conhecidos(reg)[id];
+    if (k && (k.modulos || k.nome)) {
+      return { nome: k.nome || "Perfil da conta", desc: k.desc || "", modulos: k.modulos || null };
     }
     return null;
   }
@@ -156,10 +196,62 @@ var Perfis = (function () {
 
   /* Lista efetiva de módulos liberados — núcleo incluído. `null` = todos
      os do produto (o sob demanda continua de fora). */
+  /* =====================================================================
+   * MÓDULO QUE OUTRO PRECISA NÃO PODE FICAR DE FORA
+   *
+   * ⚠ A LISTA DO PERFIL CONGELA NA IMPLANTAÇÃO, e é isso que dá o problema.
+   *   `aplicar` grava os módulos DENTRO do registro da conta — de propósito,
+   *   porque na máquina do cliente o catálogo não existe. Mas então, quando o
+   *   catálogo do cliente ganha um módulo depois, o registro dele não fica
+   *   sabendo, e a atualização entrega o CÓDIGO sem entregar o ACESSO.
+   *
+   *   Aconteceu em 31/08/2026: "Modelos de Proposta" entrou no catálogo de um
+   *   cliente no dia 30; o registro dele era de antes, com um módulo a menos.
+   *   O sistema atualizou, o arquivo do módulo foi junto, e a tela dele
+   *   continuou sem o item — sem erro em lugar nenhum.
+   *
+   * ⚠ E AQUI A DEPENDÊNCIA É REAL, não conveniência: `js/carpintariaui.js`
+   *   oferece a escolha do desenho da proposta lendo `prop_modelos`, e o
+   *   único lugar onde um `prop_modelos` nasce é o módulo `propmodelos`. Sem
+   *   ele, aquele `if (modelos.length)` é código morto para sempre: o cliente
+   *   gera proposta e nunca vê a opção de usar o desenho da empresa dele —
+   *   que foi exatamente o motivo de o recurso existir.
+   *
+   * ⚠ REBOQUE NUNCA PUXA MÓDULO SOB DEMANDA. Se um dia uma dependência
+   *   apontasse para o módulo escrito para OUTRO cliente, o reboque o
+   *   entregaria calado — e "o perfil enxuga" viraria "o perfil vaza".
+   * =================================================================== */
+  var REQUER = {
+    carpintaria: ["propmodelos"]
+  };
+
+  function _comRequeridos(mods) {
+    if (!mods) return null;
+    var out = [], visto = {};
+    mods.forEach(function (m) { if (!visto[m]) { visto[m] = 1; out.push(m); } });
+    mods.forEach(function (m) {
+      (REQUER[m] || []).forEach(function (dep) {
+        if (visto[dep] || _sobDemanda(dep)) return;
+        visto[dep] = 1; out.push(dep);
+      });
+    });
+    return out;
+  }
+
+  /* ⚠ UMA CONTA SÓ, PARA OS DOIS QUE PERGUNTAM. A tela de perfil e o modal de
+     recuperação mostravam "N módulos" cada um com a sua conta: um aplicava o
+     reboque e o outro não, e o cliente lia 10 num lugar e 9 no outro sobre o
+     MESMO perfil. Número que discorda de si mesmo apaga a confiança nos dois. */
+  function contar(mods) {
+    if (!mods || !mods.length) return 0;
+    return NUCLEO.concat(_comRequeridos(mods).filter(function (m) { return NUCLEO.indexOf(m) < 0; })).length;
+  }
+
   function modulosLiberados() {
     var p = _perfilDe(idAtual());
     if (!p || !p.modulos) return null;
-    var fora = p.modulos.filter(function (id) { return NUCLEO.indexOf(id) < 0; });
+    var lista = _comRequeridos(p.modulos);
+    var fora = lista.filter(function (id) { return NUCLEO.indexOf(id) < 0; });
     return NUCLEO.concat(fora);
   }
 
@@ -184,7 +276,12 @@ var Perfis = (function () {
        trocar o perfil, ver o toast e a barra continuar igual é o relato de
        defeito que chega depois. */
   function aplicar(perfilId) {
-    if (!CATALOGO[perfilId]) return { ok: false, erro: "Perfil desconhecido: " + perfilId };
+    /* ⚠ o id que ESTA conta já teve vale mesmo sem catálogo — é o caminho de
+       volta depois de uma passagem por "Completo" numa máquina de cliente,
+       onde `venda/perfis-clientes.js` não existe (e não deve existir) */
+    var _reg = _registro();
+    var _meu = _conhecidos(_reg)[perfilId];
+    if (!CATALOGO[perfilId] && !_meu) return { ok: false, erro: "Perfil desconhecido: " + perfilId };
     /* ⚠ PERFIL PRIVADO NÃO SE APLICA PELO CONSOLE. `_visivel` protegia só o
        `listar()`; `aplicar` aceitava qualquer id do catálogo. Um cliente com
        o F12 aberto digitava `Perfis.aplicar("<id>")` e virava o outro cliente
@@ -200,10 +297,41 @@ var Perfis = (function () {
          uma tabela com o nome e a operação de todo mundo dentro de `js/`.
          `perfil_impl` sincroniza, então os outros aparelhos da conta recebem
          a lista sem precisar do arquivo também. */
-      var cat = CATALOGO[perfilId];
+      var cat = CATALOGO[perfilId] || { nome: _meu.nome || "", desc: _meu.desc || "", modulos: _meu.modulos || null };
+      /* ⚠ A VOLTA VAI JUNTO. Antes esta gravação apagava o único lugar da
+         máquina que sabia qual era o perfil do cliente — e "Completo" virava
+         mão única. Aqui o perfil que SAI (e o que entra, quando é de cliente)
+         fica guardado em `conhecidos`, que nunca é limpo. */
+      var conhecidos = {};
+      var antes = _conhecidos(_reg);
+      Object.keys(antes).forEach(function (k) { conhecidos[k] = antes[k]; });
+      /* ⚠ A CONTA ANTIGA GUARDAVA SÓ O ID, NAS PREFS. `_registro` cai nas prefs
+         quando a entidade ainda não existe, e prefs carregam `perfil` e mais
+         nada — sem a lista de módulos não há o que lembrar, e `conhecidos`
+         nasceria com um item que `_perfilDe` recusa: a volta apareceria como
+         existente e não funcionaria. Quando o catálogo está presente (máquina
+         de quem implanta) ele completa; quando não está, o caminho honesto é
+         o backup, e é por isso que a recuperação por arquivo existe. */
+      var saindo = _reg.perfil;
+      if (saindo && saindo !== "completo") {
+        var fonte = (_reg.modulos || _reg.nome) ? _reg : (CATALOGO[saindo] || null);
+        if (fonte) {
+          conhecidos[saindo] = {
+            nome: fonte.nome || "", desc: fonte.desc || (antes[saindo] || {}).desc || "",
+            modulos: fonte.modulos ? fonte.modulos.slice() : null
+          };
+        }
+      }
+      if (perfilId !== "completo") {
+        conhecidos[perfilId] = {
+          nome: cat.nome || "", desc: cat.desc || "",
+          modulos: cat.modulos ? cat.modulos.slice() : null
+        };
+      }
       Store.salvar(eid, ENT_PERFIL, {
         id: "perfil-impl", perfil: perfilId,
-        nome: cat.nome || "", modulos: cat.modulos ? cat.modulos.slice() : null
+        nome: cat.nome || "", modulos: cat.modulos ? cat.modulos.slice() : null,
+        conhecidos: conhecidos
       });
       /* espelha nas prefs por enquanto: um aparelho que ainda não recebeu esta
          versão continua lendo de lá, e enxergaria o sistema completo sem isto */
@@ -216,6 +344,102 @@ var Perfis = (function () {
     } catch (e) {
       return { ok: false, erro: e.message || String(e) };
     }
+  }
+
+  /* =====================================================================
+   * restaurar — devolver o perfil a uma conta que já o perdeu
+   *
+   * ⚠ PARA QUEM A CORREÇÃO ACIMA CHEGA TARDE. `conhecidos` fecha a porta de
+   *   agora em diante; quem já passou por ela tem o registro destruído, e
+   *   nenhuma linha nova consegue adivinhar o que estava escrito lá.
+   *
+   *   O que ainda sabe é o BACKUP AUTOMÁTICO da máquina do cliente: o
+   *   `_dumpBackup` grava todas as entidades de `Nuvem.ENTIDADES`, e
+   *   `perfil_impl` é uma delas. O arquivo de antes do clique tem o nome e a
+   *   lista de módulos dele.
+   *
+   * ⚠ E O `importarBackup` NÃO RESOLVE, o que é a parte traiçoeira: ele
+   *   mescla com "o mais novo vence", e o registro atual (o "completo" que
+   *   acabou de ser gravado) é mais novo que o do arquivo. O cliente importa
+   *   o próprio backup, o perfil é descartado em silêncio, e ele conclui que
+   *   o backup não presta. Por isso a recuperação é EXPLÍCITA e ignora o
+   *   carimbo de propósito.
+   *
+   * ⚠ ISTO NÃO ABRE PORTA PARA A CONTA DOS OUTROS. O que entra aqui é uma
+   *   lista de módulos e um nome vindos do backup da PRÓPRIA conta; não há
+   *   semente, então nenhum NÚMERO de outra empresa é alcançável. E restringir
+   *   os próprios módulos não é privilégio: é o contrário dele.
+   * =================================================================== */
+  function restaurar(desc) {
+    var d = desc || {};
+    var id = typeof d.perfil === "string" ? d.perfil.trim() : "";
+    if (!id) return { ok: false, erro: "O arquivo não tem perfil de implantação gravado." };
+    if (id === "completo") return { ok: false, erro: "Esse backup já estava com o sistema completo — não há perfil a recuperar." };
+    var mods = Array.isArray(d.modulos) ? d.modulos.filter(function (m) { return typeof m === "string" && m; }) : null;
+    if ((!mods || !mods.length) && !CATALOGO[id]) {
+      return { ok: false, erro: "O arquivo diz que o perfil era “" + id + "”, mas não traz a lista de módulos dele." };
+    }
+    /* ⚠ GUARDA NA FUNÇÃO, não só na tela: o perfil decide o que a empresa
+       INTEIRA enxerga, e a ação é alcançável sem passar por botão nenhum. */
+    try {
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) {
+        return { ok: false, erro: "Só o administrador da conta pode recuperar o perfil." };
+      }
+    } catch (eA) {}
+    try {
+      var eid = _eid();
+      if (!eid) return { ok: false, erro: "sem empresa" };
+      var reg = _registro();
+      var conhecidos = {}, antes = _conhecidos(reg);
+      Object.keys(antes).forEach(function (k) { conhecidos[k] = antes[k]; });
+      var cat = CATALOGO[id];
+      var nome = txtNome(d.nome) || (cat && cat.nome) || "Perfil da conta";
+      var lista = mods && mods.length ? mods.slice() : (cat && cat.modulos ? cat.modulos.slice() : null);
+      conhecidos[id] = { nome: nome, desc: (cat && cat.desc) || "", modulos: lista ? lista.slice() : null };
+      /* o "completo" de onde ele está saindo também vira conhecido: a volta
+         vale nos dois sentidos a partir daqui */
+      Store.salvar(eid, ENT_PERFIL, {
+        id: "perfil-impl", perfil: id, nome: nome,
+        modulos: lista ? lista.slice() : null, conhecidos: conhecidos
+      });
+      try {
+        var pr = Store.lerPrefs(eid) || {};
+        pr.perfil = id;
+        Store.salvarPrefs(eid, pr);
+      } catch (eP) {}
+      return { ok: true, perfil: atual() };
+    } catch (e) {
+      return { ok: false, erro: e.message || String(e) };
+    }
+  }
+  function txtNome(s) { return typeof s === "string" ? s.trim() : ""; }
+
+  /* Lê de um dump de backup o perfil que a conta tinha quando ele foi gerado.
+     Puro: não toca em Store nem em Auth — dá para conferir antes de aplicar. */
+  function doBackup(dump) {
+    var d = dump || {};
+    var lista = (d.gestao && Array.isArray(d.gestao[ENT_PERFIL])) ? d.gestao[ENT_PERFIL] : [];
+    var reg = null;
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i] && String(lista[i].id || "") === "perfil-impl") { reg = lista[i]; break; }
+    }
+    if (!reg && lista.length) reg = lista[0];
+    if (reg && typeof reg.perfil === "string" && reg.perfil) {
+      return {
+        perfil: reg.perfil, nome: txtNome(reg.nome),
+        modulos: Array.isArray(reg.modulos) ? reg.modulos.slice() : null,
+        em: txtNome(d.exportadoEm)
+      };
+    }
+    /* ⚠ AS PREFS SOZINHAS NÃO SERVEM, e dizer isso é melhor que aplicar meio.
+       O espelho nas prefs guarda só o id — sem a lista de módulos, restaurar
+       por ele deixaria a conta apontando para um perfil que a máquina não sabe
+       expandir, e a barra continuaria com tudo. */
+    var pid = d.prefs && typeof d.prefs.perfil === "string" ? d.prefs.perfil : "";
+    if (pid && pid !== "completo") {
+      return { perfil: pid, nome: "", modulos: null, em: txtNome(d.exportadoEm), soPrefs: true };
+    }
+    return null;
   }
 
   /* A semente declarada pelo perfil, ou null. Cópia — para ninguém editar o
@@ -238,6 +462,15 @@ var Perfis = (function () {
    * `deps` existe para o teste rodar sem app: { store, empresaId }.
    * =================================================================== */
   function semear(perfilId, deps) {
+    /* ⚠ O COMENTÁRIO DOS EXPORTS JÁ PROMETIA ISTO e o código não cumpria:
+       "aplicar e semear recusam perfil não disponível na conta" — mas `semear`
+       ia direto ao catálogo, sem gate nenhum. Na instalação do cliente o
+       catálogo não existe e a promessa se cumpria por acidente; numa máquina
+       que o tem, `semear("<outro-id>")` gravava os NÚMEROS do outro cliente.
+       O único chamador passa `Perfis.idAtual()`, que é sempre visível. */
+    if (perfilId && !_visivel(perfilId)) {
+      return { ok: false, erro: "Perfil não disponível nesta conta.", semeadas: [], puladas: [] };
+    }
     var sem = semente(perfilId);
     if (!sem) return { ok: true, semeadas: [], puladas: [], motivo: "perfil sem semente" };
     var store = (deps && deps.store) || (typeof Store !== "undefined" ? Store : null);
@@ -276,6 +509,9 @@ var Perfis = (function () {
     try {
       if (typeof PreviewCli !== "undefined" && PreviewCli.ehPrevia(_eid())) return true;
     } catch (e) {}
+    /* ⚠ e o perfil que ESTA conta já teve continua visível para ela mesma —
+       senão a volta some da tela no instante em que ela é usada */
+    if (_conhecidos()[id]) return true;
     return id === idAtual() || _reveladoNaURL(id);
   }
 
@@ -299,13 +535,22 @@ var Perfis = (function () {
        O nome que aparece é o DELE, gravado no próprio registro; nome de outro
        cliente continua sem caminho nenhum até aqui. */
     var ids = Object.keys(CATALOGO).filter(_visivel);
-    var meu = _registro().perfil;
+    var reg = _registro();
+    var meu = reg.perfil;
     if (meu && meu !== "completo" && ids.indexOf(meu) < 0 && _perfilDe(meu)) ids.push(meu);
+    /* ⚠ E OS QUE ELA JÁ TEVE. Sem esta linha, ir para "Completo" tirava da
+       tela a única opção de voltar — o defeito que deixou um cliente com os
+       34 módulos e sem caminho de retorno em 30/08/2026. */
+    Object.keys(_conhecidos(reg)).forEach(function (id) {
+      if (id !== "completo" && ids.indexOf(id) < 0 && _perfilDe(id)) ids.push(id);
+    });
     return ids.map(function (id) {
       var p = _perfilDe(id) || CATALOGO.completo;
       return {
         id: id, nome: p.nome, desc: p.desc,
-        qtd: p.modulos ? NUCLEO.concat(p.modulos.filter(function (m) { return NUCLEO.indexOf(m) < 0; })).length : null,
+        /* o número na tela conta o mesmo que a barra mostra — inclusive o
+           que veio a reboque, senão o rótulo diz 19 e o cliente vê 20 */
+        qtd: p.modulos ? contar(p.modulos) : null,
         semente: !!p.semente,
         atual: id === idAtual()
       };
@@ -354,12 +599,19 @@ var Perfis = (function () {
   return {
     NUCLEO: NUCLEO,
     SOB_DEMANDA: SOB_DEMANDA,
+    /* a tabela de dependencia, para o gate conferir que ela e verdade */
+    REQUER: REQUER,
+    /* a conta de "N modulos", uma so para tela e modal */
+    contar: contar,
     registrarCatalogo: registrarCatalogo,
     idAtual: idAtual,
     atual: atual,
     modulosLiberados: modulosLiberados,
     permite: permite,
     aplicar: aplicar,
+    /* recuperação de conta que perdeu o perfil antes de `conhecidos` existir */
+    restaurar: restaurar,
+    doBackup: doBackup,
     semear: semear,
     listar: listar,
     listarPrivados: listarPrivados,

@@ -442,17 +442,33 @@
       }
       if (app) app.classList.remove("tela-login");
       topbar.style.display = "flex";
-      /* ⚠ A TARJA DA PRÉVIA VAI DENTRO DA TOPBAR, que é redesenhada a cada
-         render — assim ela não some ao navegar entre módulos. Sem ela o risco
-         não é técnico e sim humano: alguém tira print da prévia e manda ao
-         cliente como se fosse a base dele. */
+      /* ⚠ A TARJA DA PRÉVIA acompanha o render, para não sumir ao navegar
+         entre módulos. Sem ela o risco não é técnico e sim humano: alguém tira
+         print da prévia e manda ao cliente como se fosse a base dele.
+
+         ⚠ E ELA É IRMÃ DA TOPBAR, NÃO FILHA — o comentário antigo dizia
+         "dentro da topbar", mas o `insertBefore` sempre a pendurou ao LADO
+         (`topbar.nextSibling`). Como `topbar.innerHTML = …` só limpa o que
+         está dentro, cada render empilhava mais uma tarja: abrir três telas
+         deixava três faixas cobrindo o sistema, e quem estava conferindo a
+         versão do cliente não conseguia mais ver a tela. Comentário e código
+         discordavam, e quem manda é o código — então: tira as que existem
+         antes de pôr a nova, sempre, inclusive ao SAIR da prévia (senão a
+         última faixa fica órfã na tela até o F5). */
       var faixaPrev = (typeof PreviewCli !== "undefined") ? PreviewCli.faixaHtml() : "";
       topbar.innerHTML = UI.renderTopbar(Auth.usuario());
+      var velhas = document.querySelectorAll(".previa-faixa");
+      for (var iF = 0; iF < velhas.length; iF++) {
+        if (velhas[iF].parentNode) velhas[iF].parentNode.removeChild(velhas[iF]);
+      }
       if (faixaPrev) {
         var wrap = document.createElement("div");
         wrap.innerHTML = faixaPrev;
         topbar.parentNode.insertBefore(wrap.firstChild, topbar.nextSibling);
       }
+      /* a tarja é fixa no rodapé: sem esta folga ela cobre a última linha da
+         tabela, e conferir a versão do cliente é justamente ler as tabelas */
+      if (main) main.style.paddingBottom = faixaPrev ? "56px" : "";
       // Tour guiado de primeira entrada (1x por sessão; o Tour se auto-guarda via
       // localStorage). Re-valida o login DENTRO do timeout: se o usuário deslogou
       // nos 900ms, não roda sobre a tela de login nem queima a flag (gate v1.1.63).
@@ -1311,6 +1327,7 @@
       }
       // restaurar backup de orçamentos
       if (e.target.id === "bkp-file") { var bf = e.target.files && e.target.files[0]; if (bf) this.importarBackup(bf); return; }
+      if (e.target.id === "bkp-perfil") { var pf = e.target.files && e.target.files[0]; if (pf) this.recuperarPerfilDeBackup(pf); return; }
       // folha semanal de diaristas (planilha da semana, uma obra por aba)
       if (e.target.id === "fs-file") { var ff = e.target.files && e.target.files[0]; if (ff && typeof Gestao !== "undefined") Gestao.fsImportarArquivo(ff); return; }
       // ligar/desligar base de preço
@@ -2465,7 +2482,20 @@
            no dia em que precisa. */
         '<div id="bkp-auto" class="muted" style="margin:10px 0;padding:9px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25)">⏳ verificando o backup automático…</div>' +
         '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Exportar backup</button></div>' +
-        '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>';
+        '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>' +
+        /* ⚠ PORTA SEPARADA PARA O PERFIL, e ela precisa existir por um motivo
+           exato: o "Restaurar" acima mescla com "o mais novo vence", e o
+           registro do perfil que está na conta AGORA é sempre mais novo que o
+           do arquivo. Quem perdeu o perfil importa o próprio backup, o perfil
+           é descartado em silêncio, e a conclusão é que o backup não presta.
+           Aqui a recuperação é explícita, mexe só no perfil, e ignora o
+           carimbo de propósito. */
+        '<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:12.5px">Perdeu a versão enxugada do seu sistema?</summary>' +
+          '<p class="muted" style="font-size:12px;margin:8px 0 6px">Se o seu OrçaPRO voltou a mostrar <b>todos</b> os módulos e a opção de voltar sumiu, ' +
+          'escolha aqui um backup de <b>antes</b> disso ter acontecido. Isto mexe <b>somente</b> no perfil de implantação — ' +
+          'nenhum orçamento, diário ou lançamento é tocado.</p>' +
+          '<input type="file" id="bkp-perfil" accept=".json,application/json">' +
+        '</details>';
       UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "") + " Backup dos Orçamentos", html, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
       try {
         fetch("/__backup/status").then(function (r) {
@@ -2644,6 +2674,88 @@
       this._propriaEspelharVarios(dados);
       return { novos: novos, atualizados: atualizados, total: dados.length };
     },
+    /* ==================================================================
+     * RECUPERAR O PERFIL DE IMPLANTAÇÃO DE UM BACKUP
+     *
+     * ⚠ POR QUE ISTO EXISTE. Até 31/08/2026, ir para "Completo" gravava por
+     *   cima do único registro que sabia qual era o perfil do cliente — e na
+     *   máquina dele o catálogo dos perfis não existe (fica fora do pacote de
+     *   propósito). O resultado, medido: a lista caía para uma opção, o bloco
+     *   inteiro sumia de ⚙ Empresa, e nem pelo console dava para desfazer.
+     *   A porta foi fechada em `js/perfis.js`; esta função é para quem já
+     *   passou por ela antes do conserto e ficou sem caminho de volta.
+     *
+     * ⚠ SÓ O PERFIL. Nada de orçamento, diário ou lançamento é tocado — é o
+     *   que a tela promete, e é o que faz esta porta ser segura de oferecer a
+     *   alguém já assustado com o sistema mudado.
+     * ================================================================== */
+    recuperarPerfilDeBackup: function (file) {
+      if (typeof Perfis === "undefined" || !Perfis.doBackup) {
+        UI.toast("Esta versão do OrçaPRO ainda não sabe recuperar perfil. Feche e abra o programa para concluir a atualização.", "erro");
+        return;
+      }
+      if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) {
+        UI.toast("Só o administrador da conta pode recuperar o perfil de implantação.", "erro");
+        return;
+      }
+      var self = this, rd = new FileReader();
+      rd.onerror = function () { UI.toast("Não consegui ler o arquivo.", "erro"); };
+      rd.onload = function () {
+        var dump;
+        try { dump = JSON.parse(rd.result); }
+        catch (e) { UI.toast("Esse arquivo não é um backup do OrçaPRO (não é .json válido).", "erro"); return; }
+        var achado = null;
+        try { achado = Perfis.doBackup(dump); } catch (e2) { achado = null; }
+        if (!achado) {
+          UI.toast("Esse backup não tem perfil de implantação gravado — ele foi feito com o sistema completo.", "aviso");
+          return;
+        }
+        /* ⚠ O ID SOZINHO NÃO SERVE, e meio conserto é pior que nenhum: sem a
+           lista de módulos a conta apontaria para um perfil que a máquina não
+           sabe expandir, e a barra continuaria mostrando tudo — com a tela
+           dizendo que deu certo. */
+        if (achado.soPrefs) {
+          UI.modal("Backup antigo demais", '<p>Este backup sabe que o perfil era <b>' + Util.esc(achado.perfil) +
+            "</b>, mas foi gerado por uma versão que não guardava a lista de módulos junto.</p>" +
+            '<p class="muted">Escolha um backup mais recente, de antes de o sistema ter voltado ao completo. ' +
+            "Se não houver nenhum, fale com o suporte: a lista pode ser reenviada.</p>",
+            [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
+        var atualId = "";
+        try { atualId = Perfis.idAtual(); } catch (e3) {}
+        if (atualId === achado.perfil) {
+          UI.toast("Esta conta já está com esse perfil (" + (achado.nome || achado.perfil) + ").", "ok");
+          return;
+        }
+        /* ⚠ A MESMA CONTA DA TELA DE PERFIL. Este bloco recalculava por fora e
+           ignorava o reboque de dependências: dizia "9 módulos" onde a barra
+           mostrava 10, sobre o mesmo perfil. */
+        var qtd = achado.modulos ? Perfis.contar(achado.modulos) : 0;
+        var quando = "";
+        try { quando = achado.em ? new Date(achado.em).toLocaleString("pt-BR") : ""; } catch (e4) {}
+        UI.modal("Recuperar o perfil do sistema",
+          "<p>Este backup" + (quando ? " (de <b>" + Util.esc(quando) + "</b>)" : "") + " guarda o perfil:</p>" +
+          '<div class="card" style="padding:10px 12px"><b>' + Util.esc(achado.nome || achado.perfil) + "</b>" +
+          (qtd ? ' <span class="muted">— ' + qtd + " módulos</span>" : "") + "</div>" +
+          '<p class="muted" style="margin-top:10px">Aplicar isto mexe <b>somente</b> no que aparece na barra lateral. ' +
+          "Nenhum orçamento, diário ou lançamento é alterado, e voltar para “Completo” continua disponível depois.</p>",
+          [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+           { texto: "Recuperar este perfil", classe: "primary", onClick: function () {
+              var r = Perfis.restaurar(achado);
+              UI.fecharModal();
+              if (!r.ok) { UI.toast(r.erro || "Não consegui recuperar o perfil.", "erro"); return; }
+              /* ⚠ o registro sobe com carimbo NOVO: é o que faz o conserto
+                 chegar aos outros aparelhos da conta em vez de ser desfeito
+                 pelo merge na próxima sincronização */
+              try { if (typeof Nuvem !== "undefined" && Nuvem.sincronizar) Nuvem.sincronizar(); } catch (e5) {}
+              UI.toast("Perfil “" + (r.perfil && r.perfil.nome || achado.perfil) + "” recuperado. A barra volta ao normal agora.", "ok");
+              try { self.render(); } catch (e6) {}
+           } }]);
+      };
+      rd.readAsText(file);
+    },
+
     importarBackup: function (file) {
       /* ⚠ O PAR ESTAVA ASSIMÉTRICO. `abrirBackup` e `exportarBackup` ganharam a
          guarda de administrador na auditoria de 15/08 (js/app.js:2101 e :2244),
@@ -2772,6 +2884,22 @@
             + (orcMantidos ? " (" + orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s))" : "")
             + (rProp ? " · composições próprias: " + rProp.novos + " nova(s), " + rProp.atualizados + " atualizada(s), " + rProp.total + " no total" : "")
             + (temGestao ? " · Gestão: " + nGest + " registro(s) em " + entsGest + " módulo(s)" : "") + ".", "ok");
+          /* ⚠ O PERFIL DO ARQUIVO FOI DESCARTADO E NINGUÉM DIZIA. A regra do
+             "mais novo vence" acima é certa para dado de obra, mas o registro
+             do perfil que está na conta AGORA é sempre mais novo que o do
+             backup — então quem importa o próprio backup justamente para
+             recuperar o sistema enxugado recebe "restaurado(s)" e continua
+             com os 34 módulos. Ficava parecendo backup que não presta.
+             Aqui o descarte é DITO, com o caminho que resolve. */
+          try {
+            var doArq = (typeof Perfis !== "undefined" && Perfis.doBackup) ? Perfis.doBackup(dump) : null;
+            if (doArq && doArq.perfil && doArq.perfil !== "completo" && doArq.perfil !== Perfis.idAtual()) {
+              setTimeout(function () {
+                UI.toast("Este backup guarda o perfil “" + (doArq.nome || doArq.perfil) + "”, que NÃO foi aplicado — "
+                  + "restaurar mantém o mais recente. Para trazê-lo de volta, use “Perdeu a versão enxugada do seu sistema?” no Backup.", "aviso");
+              }, 2600);
+            }
+          } catch (ePf) {}
           UI.fecharModal(); self.tela = "lista"; self.render();
         } catch (e) { UI.toast("Arquivo inválido: " + e.message, "erro"); }
       };

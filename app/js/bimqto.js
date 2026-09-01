@@ -49,6 +49,15 @@
   // chaves ordenadas do mais específico (longo) pro mais curto — casa por prefixo
   var ORDEM = Object.keys(MAPA).sort(function (a, b) { return b.length - a.length; });
 
+  /* a chave DURAVEL da peca (B0) — a mesma regua do bimtarefa.js: e ela que
+     sobrevive a reexportacao do IFC, e e por ela que a cena pinta. */
+  function chaveDe(el) {
+    if (!el) return "";
+    if (el.chave) return String(el.chave);
+    if (global.BimId && global.BimId.doElemento) { try { return String(global.BimId.doElemento(el)); } catch (e) {} }
+    return "";
+  }
+
   function classificarTipo(tipo) {
     var t = String(tipo || "").toUpperCase().replace(/[^A-Z]/g, "");
     for (var i = 0; i < ORDEM.length; i++) { if (t.indexOf(ORDEM[i]) === 0) return MAPA[ORDEM[i]]; }
@@ -121,7 +130,15 @@
     lista.forEach(function (el) {
       var map = classificarTipo(el.tipo) || { cat: nomeCatDesconhecida(el), un: "un", medida: "contagem" };
       var g = grupos[map.cat];
-      if (!g) { g = grupos[map.cat] = { categoria: map.cat, unidade: map.un, medida: map.medida, quantidade: 0, nElementos: 0, fontes: {}, tipos: {}, alt: {} }; }
+      if (!g) { g = grupos[map.cat] = { categoria: map.cat, unidade: map.un, medida: map.medida, quantidade: 0, nElementos: 0, fontes: {}, tipos: {}, alt: {}, chaves: null }; }
+      /* ⚠ SO QUANDO PEDIDO. Guardar a chave de cada peca em todo levantamento
+         custaria uma string por elemento — no arquivo real do Rogerio sao
+         dezenas de milhares — para um dado que a tela do quantitativo nao usa.
+         Quem pede e quem vai PINTAR a cena (B10). */
+      if (opts.comChaves) {
+        var kEl = chaveDe(el);
+        if (kEl) { if (!g.chaves) g.chaves = []; g.chaves.push(kEl); }
+      }
       var m = medir(el, map.medida);
       g.quantidade += m.valor;
       g.nElementos += 1;
@@ -145,7 +162,10 @@
         categoria: g.categoria, unidade: g.unidade, medida: g.medida,
         quantidade: g.medida === "contagem" ? g.nElementos : arred2(g.quantidade),
         nElementos: g.nElementos, fonte: fonteDe(g.fontes, g.medida), tiposIFC: Object.keys(g.tipos),
-        alternativas: alternativas
+        alternativas: alternativas,
+        /* ausente quando nao foi pedido — e `[]` NAO e a mesma coisa que
+           ausente: vazio diria "esta categoria nao tem peca", que e falso. */
+        chaves: g.chaves || undefined
       };
     }).filter(function (l) { return l.quantidade >= (opts.min || 0); });
 
@@ -179,7 +199,7 @@
 
   var BIMQto = {
     levantar: levantar, paraOrcamento: paraOrcamento,
-    _classificarTipo: classificarTipo, _ehExcluivel: ehExcluivel, _medir: medir, _bboxMedida: bboxMedida, MAPA: MAPA
+    _classificarTipo: classificarTipo, _chaveDe: chaveDe, _ehExcluivel: ehExcluivel, _medir: medir, _bboxMedida: bboxMedida, MAPA: MAPA
   };
   global.BIMQto = BIMQto;
   if (typeof module !== "undefined" && module.exports) module.exports = BIMQto;

@@ -209,6 +209,47 @@
       els.forEach(function (e) { if (semana >= e.semFim) done++; });
       return Math.round(done / tot * 1000) / 10;
     },
+    /* =====================================================================
+     * ⚠ CONTAR PEÇA NÃO É MEDIR OBRA
+     *
+     * `avancoEm` devolve a fração de ELEMENTOS cuja semana de fim já passou —
+     * sem peso nenhum. Num modelo com hidráulica, isso não é um percentual de
+     * obra: é um percentual de conexões. MEDIDO no arquivo real aberto no
+     * visualizador (12.103 peças):
+     *
+     *     instalações  10.648 peças  =  88,0% do "avanço"
+     *     outros          879        =   7,3%
+     *     alvenaria       183        =   1,5%
+     *     esquadrias      168        =   1,4%
+     *     estrutura       165        =   1,4%
+     *
+     * Ou seja: simular a hidráulica pronta levava o número a 88% com a
+     * estrutura e a alvenaria mal começadas. E ele aparecia numa pílula VERDE
+     * sem rótulo nenhum, ao lado de uma régua de datas — que é exatamente
+     * como se lê "88% da obra".
+     *
+     * Aqui a conta ganha PESO quando há de onde: com orçamento vinculado, o
+     * peso é o CUSTO, que é como obra se mede. Sem orçamento não existe
+     * ponderação defensável entre uma conexão e uma parede — e inventar uma
+     * seria pior — então o número deixa de ser "%" e passa a ser o que ele
+     * sempre foi: uma CONTAGEM, apresentada como contagem.
+     *
+     * `avancoEm` fica como está: a curva S usa a série dele, e mudar a
+     * semântica no meio mudaria a linha desenhada sem ninguém pedir.
+     * =================================================================== */
+    avancoPonderado: function (plano, semana) {
+      var els = ((plano && plano.elementos) || []).filter(function (e) { return e.fase !== "existente"; });
+      var nTotal = els.length;
+      var nFeitas = 0;
+      els.forEach(function (e) { if (semana >= e.semFim) nFeitas++; });
+      if (plano && plano.custoTotal > 0) {
+        return { pct: Math.round(BIM4D.custoEm(plano, semana) / plano.custoTotal * 1000) / 10,
+                 base: "custo", nFeitas: nFeitas, nTotal: nTotal };
+      }
+      return { pct: nTotal ? Math.round(nFeitas / nTotal * 1000) / 10 : 0,
+               base: "pecas", nFeitas: nFeitas, nTotal: nTotal };
+    },
+
     // Curva S: avanço FÍSICO (% elementos) e FINANCEIRO (% custo) semana a semana. financeiro=null sem custo.
     curva: function (plano) {
       var n = Math.max(1, (plano && plano.semanas) || 1), fis = [], fin = [], temCusto = plano && plano.custoTotal > 0;

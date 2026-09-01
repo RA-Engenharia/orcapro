@@ -6,7 +6,7 @@
  *
  * ⚠️ HONESTIDADE: os coeficientes de insumo por m² e o peso por espessura são
  * DEFAULTS EDITÁVEIS marcados como "a confirmar" — os números reais vêm do
- * fabricante/franqueado (Blocok/Argecon). O motor nunca chuta como se fosse oficial.
+ * fabricante/franqueado do sistema construtivo. O motor nunca chuta como se fosse oficial.
  * ===================================================================== */
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory();

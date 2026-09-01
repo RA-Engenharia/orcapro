@@ -90,23 +90,59 @@
        ponderado por qtdContratada×precoUnit na etapa). Fallback: Last Planner
        (tarefas por etapa: % feitas). Sem dado -> null (plugin instrui).
        Puro/testável: recebe as listas cruas, não toca em Store. */
+    /* =====================================================================
+     * ⚠ UMA SÓ REGRA DE AVANÇO, DUAS APRESENTAÇÕES
+     *
+     * Este arquivo monta o `obra-ativa.json` que o plugin do Revit lê — outro
+     * programa, fora do navegador. O FORMATO da saída é contrato e não muda
+     * aqui; o que estava errado era o NÚMERO.
+     *
+     * Dois defeitos, medidos lado a lado com o `bimavanco.js` (o motor que o
+     * 4D, a pintura do modelo e o relatório usam):
+     *
+     * 1. ⚠ BOLETIM REJEITADO ENTRAVA NA CONTA. Numa obra com um boletim
+     *    aprovado de 30% e outro REJEITADO de +60%, o engenheiro via 30% no
+     *    4D e o projetista via 90% dentro do Revit. Sessenta pontos de
+     *    diferença sobre a mesma obra, e o número do Revit é o que o
+     *    projetista usa para decidir o que desenhar. O financeiro já
+     *    aplicava esta regra desde a v1.1.234 (medição recusada pelo fiscal
+     *    não é obra feita); só este caminho não aplicava.
+     *
+     * 2. ⚠ ITEM SEM CÓDIGO ERA DESCARTADO — e é exatamente assim que o
+     *    quantitativo do BIM lança (`codigo: ""`). Resultado: a obra orçada
+     *    a partir do modelo, que é o caminho principal do produto,
+     *    exportava avanço NENHUM para o Revit e caía calada no fallback do
+     *    Last Planner. A chave passa a ser o `itemId` (que todo boletim por
+     *    itens carrega); `porCodigo` continua saindo só para quem TEM
+     *    código, porque quem lê aquilo indexa por código.
+     * =================================================================== */
     montarAvanco: function (medicoes, lpTarefas) {
       function num(v) { var n = Number(v); return isFinite(n) ? n : 0; }
       function statusDe(pct) {
         return pct >= 99.5 ? "concluida" : (pct > 0 ? "andamento" : "pendente");
       }
-      // 1) medições por itens — acumulado mais alto por (etapa|código)
-      var porChave = {}, temMed = false;
+      /* a lista de status que não contam é a do bimavanco — uma só na casa.
+         Réplica local só para o caso de este arquivo rodar sem ele. */
+      var NAO_CONTA = (global.BimAvanco && global.BimAvanco.NAO_CONTA) ||
+        (function () { try { return require("./bimavanco.js").NAO_CONTA; } catch (e) { return { rejeitada: 1 }; } })();
+
+      // 1) medições por itens — acumulado mais alto por (etapa|item)
+      var porChave = {}, temMed = false, semCodigo = 0, ignorados = 0;
       (medicoes || []).forEach(function (m) {
+        if (!m) return;
+        if (NAO_CONTA[String(m.status || "").toLowerCase()]) { ignorados++; return; }
         ((m && m.itens) || []).forEach(function (it) {
-          if (!it || !it.codigo) return;
+          /* ⚠ a chave é o ITEM, não o código: item sem código é item do
+             quantitativo do BIM, e sumir com ele é sumir com a obra inteira */
+          var kid = it && (it.itemId || it.codigo);
+          if (!it || !kid) return;
           temMed = true;
           var etapa = String(it.etapa || "").trim();
-          var ch = etapa + "|" + it.codigo;
+          var ch = etapa + "|" + kid;
           var acum = Math.min(100, num(it.pctAnterior) + num(it.pctPeriodo));
           var atual = porChave[ch];
           if (!atual || acum > atual.pctAcum) {
-            porChave[ch] = { etapa: etapa, codigo: String(it.codigo),
+            porChave[ch] = { etapa: etapa, codigo: String(it.codigo || ""),
                              pctAcum: acum,
                              peso: num(it.qtdContratada) * num(it.precoUnit) };
           }
@@ -116,7 +152,10 @@
         var porCodigo = [], etapas = {};
         Object.keys(porChave).sort().forEach(function (ch) {
           var x = porChave[ch];
-          porCodigo.push({ etapa: x.etapa, codigo: x.codigo, pctAcum: x.pctAcum });
+          /* `porCodigo` é indexado por código por quem lê: entrada sem código
+             não vai para lá — mas CONTA na etapa, que é o número que aparece */
+          if (x.codigo) porCodigo.push({ etapa: x.etapa, codigo: x.codigo, pctAcum: x.pctAcum });
+          else semCodigo++;
           var e = etapas[x.etapa] || (etapas[x.etapa] = { soma: 0, peso: 0, n: 0, media: 0 });
           e.soma += x.pctAcum * x.peso; e.peso += x.peso;
           e.media += x.pctAcum; e.n += 1;   // fallback: média simples se peso 0
@@ -127,7 +166,10 @@
           pct = Math.round(pct * 10) / 10;
           return { etapa: nome, pct: pct, status: statusDe(pct) };
         });
-        return { fonte: "medicao", porEtapa: porEtapa, porCodigo: porCodigo };
+        /* campos ADITIVOS: o plugin antigo ignora o que nao conhece, e a tela
+           daqui passa a poder dizer o que ficou de fora em vez de calar */
+        return { fonte: "medicao", porEtapa: porEtapa, porCodigo: porCodigo,
+                 semCodigo: semCodigo, boletinsIgnorados: ignorados };
       }
       // 2) Last Planner — % de tarefas feitas por etapa (título da tarefa)
       var lp = {};

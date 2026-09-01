@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.19",
+  "versao": "1.2.20",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.19/OrcaPRO-IA-update-v1.2.19.zip",
-  "notas": "Compatibilizacao: quem tem um arquivo IFC so recebia 'Nenhum conflito' sem que as pecas fossem comparadas. O campo de escolha de item e de fornecedor da proposta de carpintaria agora diz o que falta cadastrar e leva ate la. O seletor de obra do Painel voltou a abrir no Mac. E o OrcaPRO passou a instalar no Mac, com atualizacao automatica como no Windows.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.19/OrcaPRO-IA-Instalador-v1.2.19.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.20/OrcaPRO-IA-update-v1.2.20.zip",
+  "notas": "Modelos de Proposta: o desenho do seu documento virou cadastro -- monte o layout uma vez, de um nome, e use em toda proposta (da para ter um por cliente). No BIM: o quantitativo do modelo liga direto ao orcamento, o avanco das medicoes aprovadas pinta o cronograma 4D e a propria geometria, o relatorio de acompanhamento sai com a imagem do modelo e o cliente ve o modelo no Portal. Ao abrir uma versao nova do IFC, o sistema diz o que mudou e o que aquelas pecas estavam carregando. Correcoes no perfil de implantacao, no modulo de Usuarios, no cronograma 4D e na compatibilizacao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.20/OrcaPRO-IA-Instalador-v1.2.20.exe"
 }

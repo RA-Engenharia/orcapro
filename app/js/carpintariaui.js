@@ -1014,6 +1014,74 @@
     var cliente = p.clienteId ? Store.obter(eid(), "clientes", p.clienteId) : null;
     var obra = p.obraId ? Store.obter(eid(), "obras", p.obraId) : null;
     var temEmp = typeof Empresa !== "undefined";
+
+    /* ⚠ O MODELO NÃO SE IMPÕE. Quem nunca abriu "Modelos de Proposta" não tem
+       modelo nenhum e continua recebendo o documento de sempre — trocar o
+       desenho da proposta de alguém sem que a pessoa tenha pedido é o tipo de
+       surpresa que ela descobre com o cliente na frente. Havendo modelos, a
+       escolha aparece, com o do cliente (ou o padrão) já marcado. */
+    var modelos = [];
+    try { if (typeof PropTpl !== "undefined") modelos = K.lista("prop_modelos"); } catch (eM) { modelos = []; }
+    if (modelos.length) {
+      var sugerido = G.propModeloPara ? G.propModeloPara(p.clienteId) : null;
+      var sugId = sugerido ? sugerido.id : "";
+      UI.modal("Com qual desenho?",
+        '<p class="muted">O conteúdo e os preços são os mesmos; muda o layout do papel.</p>'
+        + '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
+        + '<input type="radio" name="cpl" value=""' + (sugId ? "" : " checked") + ' style="margin-top:3px">'
+        + "<span><b>Documento padrão do sistema</b><br><span class=\"muted\" style=\"font-size:12.5px\">Capa, escopo, incluso/excluso e condições.</span></span></label>"
+        + modelos.map(function (mm) {
+          var m2 = PropTpl.modelo(mm);
+          return '<label style="display:flex;gap:9px;align-items:flex-start;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
+            + '<input type="radio" name="cpl" value="' + esc(mm.id) + '"' + (mm.id === sugId ? " checked" : "") + ' style="margin-top:3px">'
+            + "<span><b>" + esc(m2.nome) + "</b>"
+            + (mm.id === sugId ? ' <span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700;font-size:10.5px">sugerido</span>' : "")
+            + "<br><span class=\"muted\" style=\"font-size:12.5px\">" + esc(m2.descricao || (m2.paginas.length + " páginas")) + "</span></span></label>";
+        }).join(""),
+        [
+          { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+          { texto: "Gerar", classe: "primary", onClick: function () {
+            var sel = document.querySelector('input[name="cpl"]:checked');
+            var escolhido = sel ? sel.value : "";
+            UI.fecharModal();
+            if (!escolhido) { G._carpDocClassico(p, r, cliente, obra); return; }
+            G._carpDocModelo(escolhido, p, r, cliente, obra);
+          } }
+        ]);
+      return;
+    }
+    G._carpDocClassico(p, r, cliente, obra);
+  };
+
+  /* ---- o documento pelo MODELO ----
+     ⚠ Os números vêm de `CarpProposta.blocos(r)`, que é onde a conta fecha.
+       Este caminho não soma nem rateia nada: ele desenha. */
+  G._carpDocModelo = function (modeloId, p, r, cliente, obra) {
+    var raw = Store.obter(eid(), "prop_modelos", modeloId);
+    if (!raw) { UI.toast("Modelo não encontrado.", "erro"); return; }
+    var temEmp = typeof Empresa !== "undefined";
+    var m = PropTpl.modelo(raw);
+    G._propModImagens(m, function (imgs) {
+      var dados = {
+        empresa: temEmp && Empresa.dados ? Empresa.dados() : {},
+        logoHTML: temEmp && Empresa.logoHTML ? Empresa.logoHTML(120) : "",
+        cliente: cliente ? (cliente.nome || cliente.razaoSocial || "") : "",
+        obra: obra ? (obra.nome || "") : "",
+        numero: p.numero || "",
+        data: hojeISO(),
+        validade: C.validade(p, hojeISO(), paramBruto()),
+        blocos: CarpProposta.blocos(r),
+        comercial: CarpProposta.comercial(p, _comercialPadrao()),
+        imagens: imgs,
+        tituloDoc: "Proposta — " + (p.titulo || "")
+      };
+      G.propModImprimir(m, dados, function (html) { return CarpProposta.auditar(html, r); });
+    });
+  };
+
+  /* ---- o documento de sempre ---- */
+  G._carpDocClassico = function (p, r, cliente, obra) {
+    var temEmp = typeof Empresa !== "undefined";
     var doc = CarpProposta.gerar(p, {
       resultado: r,
       empresa: temEmp && Empresa.dados ? Empresa.dados() : {},

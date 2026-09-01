@@ -694,6 +694,95 @@
     acharDuplicados: acharDuplicados
   };
 
+  /* =====================================================================
+   * PODA — a saída que faltava para o teto
+   *
+   * ⚠ POR QUE ISTO PRECISOU EXISTIR. `reconciliar` guarda para sempre o
+   *   conflito que sumiu do modelo (`resolvido_auto`), e essa é a regra
+   *   certa: sumir hoje e voltar amanhã é comum, e quem volta traz de volta
+   *   o responsável, o prazo e a discussão.
+   *
+   *   O efeito colateral é que a lista SÓ CRESCE. Medido no B5: um teste com
+   *   1.372 conflitos, estreitado para 80 pares e depois para 5, continuava
+   *   com 1.372 registros. Quando ele passa do teto por teste, a tela manda
+   *   "crie um teste NOVO" — e o coordenador fica com o teste antigo travado
+   *   para sempre, sem nenhum botão que o destrave. Era um beco sem saída
+   *   que eu mesmo documentei com honestidade e deixei aberto.
+   *
+   * ⚠ E A PODA NÃO PODE JOGAR FORA TRABALHO HUMANO. Um `resolvido_auto` pode
+   *   carregar responsável, prazo, motivo e uma discussão inteira de quando
+   *   ele estava aberto. Apagar isso junto é perder a memória de POR QUE
+   *   aquela interferência existiu — que é metade do valor de compatibilizar.
+   *   Então a poda separa em dois montes e só mexe num deles.
+   *
+   * ⚠ E ELA NÃO DECIDE SOZINHA. Devolve os dois montes e quem aperta o botão
+   *   é gente, vendo o número. Uma poda automática por idade rodaria no dia
+   *   em que o projetista está corrigindo o modelo — e limparia justamente o
+   *   histórico que ele ia consultar.
+   * ===================================================================== */
+  /* este arquivo não tem um `arr` — os outros motores têm, este não. */
+  function lst(v) { return Array.isArray(v) ? v : []; }
+
+  function temTrabalhoHumano(r) {
+    if (!r) return false;
+    if (txt(r.responsavel) || txt(r.prazo) || txt(r.motivo) || txt(r.vistaId)) return true;
+    if (lst(r.comentarios).length) return true;
+    /* histórico com autor é gente; sem autor é o motor anotando sozinho */
+    return lst(r.historico).some(function (h) { return h && txt(h.quem); });
+  }
+
+  /* dias entre duas datas ISO, sem objeto Date na conta (fuso não entra) */
+  function diasDesde(iso, agoraISO) {
+    var a = Date.parse(String(iso || "")), b = Date.parse(String(agoraISO || ""));
+    if (!isFinite(a) || !isFinite(b)) return -1;
+    return Math.floor((b - a) / 86400000);
+  }
+
+  /* Separa o que dá para podar. NÃO apaga nada — devolve as listas. */
+  BimClashX.podaveis = function (registros, opts) {
+    var o = opts || {};
+    var dias = o.diasMin == null ? 60 : Math.max(0, num(o.diasMin, 60));
+    var agora = txt(o.quando) || new Date().toISOString();
+
+    /* ⚠ `outros` e não `ativos`: aqui caem os em aberto E os `ignorado`, que
+       não estão abertos. Chamar o monte de "em aberto" na frase da tela seria
+       contar ignorado como pendência — número errado num lugar onde o
+       coordenador decide o que apagar. */
+    var podar = [], comHistorico = [], recentes = [], outros = 0;
+    lst(registros).forEach(function (r) {
+      if (!r) return;
+      if (txt(r.status) !== "resolvido_auto") { outros++; return; }
+      if (temTrabalhoHumano(r)) { comHistorico.push(r); return; }
+      var d = diasDesde(r.resolvidoAutoEm, agora);
+      /* ⚠ sem data de quando sumiu, PODA. É registro de antes de o campo
+         existir; mantê-lo para sempre por falta de carimbo faria a poda nunca
+         alcançar exatamente os mais velhos, que são os que pesam. */
+      if (d >= 0 && d < dias) { recentes.push(r); return; }
+      podar.push(r);
+    });
+
+    return {
+      podar: podar,
+      comHistorico: comHistorico,
+      recentes: recentes,
+      outros: outros,
+      diasMin: dias,
+      /* a frase que a tela mostra, montada aqui para não haver duas versões */
+      resumo: podar.length
+        ? ("Dá para limpar " + podar.length + " conflito(s) que sumiram do modelo há mais de " + dias + " dias e ninguém chegou a tratar.")
+        : "Nada a limpar: todo conflito que sumiu ou é recente, ou tem trabalho registrado."
+    };
+  };
+
+  /* A frase do que FICA — a tela precisa dizer o que está protegendo. */
+  BimClashX.frasePoda = function (p) {
+    var partes = [];
+    if (p.comHistorico.length) partes.push(p.comHistorico.length + " ficam por terem responsável, prazo, comentário ou ponto de vista");
+    if (p.recentes.length) partes.push(p.recentes.length + " ficam por terem sumido há menos de " + p.diasMin + " dias");
+    if (p.outros) partes.push(p.outros + " não sumiram do modelo e não entram nesta conta");
+    return partes.join(" · ");
+  };
+
   global.BimClashX = BimClashX;
   if (typeof module !== "undefined" && module.exports) module.exports = BimClashX;
 })(typeof window !== "undefined" ? window : (typeof global !== "undefined" ? global : this));
