@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.23",
+  "versao": "1.2.24",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.23/OrcaPRO-IA-update-v1.2.23.zip",
-  "notas": "Ponto: agora da para registrar as batidas reais de cada dia, em Ponto > Registrar batidas. Os dias digitados saem no impresso com o horario que a pessoa marcou e vem sinalizados com asterisco; os dias sem batida continuam saindo com a jornada contratual, como antes. Quando ha batidas registradas, o documento passa a se declarar controle manual de jornada na forma do art. 74, paragrafo 2, da CLT. Correcao de seguranca: o texto digitado no campo de motivo da hora extra era interpretado como codigo na hora de imprimir o documento. Correcao: o nome do arquivo PDF divergia do titulo impresso no documento.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.23/OrcaPRO-IA-Instalador-v1.2.23.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.24/OrcaPRO-IA-update-v1.2.24.zip",
+  "notas": "Ponto: o cartao agora pode ser impresso EM BRANCO, para o colaborador preencher a mao. Marque a caixa \"Imprimir em branco\" em Ponto > Imprimir: o papel sai sem horario nenhum, com uma coluna de rubrica por dia, e vale como cartao de ponto de preenchimento manual na forma do art. 74, paragrafo 2, da CLT. Folgas, descansos e faltas ja lancadas continuam anotados, para a pessoa saber onde nao escrever, e os totais que dependem do que sera escrito saem em branco. Quem nao marcar a caixa continua recebendo o mesmo documento de antes.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.24/OrcaPRO-IA-Instalador-v1.2.24.exe"
 }

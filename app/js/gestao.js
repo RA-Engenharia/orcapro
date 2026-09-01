@@ -18118,14 +18118,19 @@
       if (!colabs.length) { UI.toast("Cadastre colaboradores primeiro.", "erro"); return; }
       var mes = this._pontoMes || mesLocal();
       var corpo = '<div class="row">' + campo("Mês de referência", inp("g-mes", mes, "", "month")) + campo("Colaborador", sel("g-colab", optsRec(colabs.filter(function (c) { return c.status === "ativo"; }), "nome", "", "— Todos os ativos —"))) + "</div>"
-        + '<p class="muted" style="margin:6px 0 0">Dias sem batida registrada saem com a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada); dias com batida saem com o horário digitado em <b>Registrar batidas</b>, marcados com *. Documento pronto para impressão e assinatura.</p>';
-      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Demonstrativo de Frequência", corpo, [
+        + '<p class="muted" style="margin:6px 0 0">Dias sem batida registrada saem com a jornada padrão (' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada); dias com batida saem com o horário digitado em <b>Registrar batidas</b>, marcados com *. Documento pronto para impressão e assinatura.</p>'
+        + '<label style="display:flex;align-items:center;gap:7px;font-size:13px;margin:10px 0 2px;cursor:pointer">'
+        + '<input type="checkbox" id="g-branco"> <b>Imprimir em branco, para o colaborador preencher à mão</b></label>'
+        + '<p class="muted" style="margin:0 0 6px;font-size:12px">Sai sem horário nenhum, com uma coluna de rubrica por dia. '
+        + 'É a forma de o cartão ter horário que varia sem o sistema inventar nada — quem escreve é quem bateu.</p>';
+      UI.modal("" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Imprimir cartão / demonstrativo", corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Gerar", classe: "primary", onClick: function () {
           var m = v("g-mes") || mes, cid = v("g-colab");
+          var branco = !!(document.getElementById("g-branco") || {}).checked;
           var lista2 = cid ? colabs.filter(function (c) { return c.id === cid; }) : colabs.filter(function (c) { return c.status === "ativo"; });
           if (!lista2.length) { UI.toast("Nenhum colaborador para gerar.", "erro"); return; }
-          UI.fecharModal(); self._gerarEspelho(m, lista2);
+          UI.fecharModal(); self._gerarEspelho(m, lista2, { emBranco: branco });
         } }
       ]);
     },
@@ -18133,7 +18138,17 @@
       var M = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
       var p = String(mes).split("-"); return (M[(Util.num(p[1]) || 1) - 1] || "") + " de " + (p[0] || "");
     },
-    _gerarEspelho: function (mes, colabsLista) {
+    _gerarEspelho: function (mes, colabsLista, opcoes) {
+      /* ⚠ MODO EM BRANCO: o papel sai SEM horario nenhum, para o colaborador
+         preencher a mao. Nao e enfeite — e a unica forma honesta de o cartao
+         ter horario que VARIA sem o sistema inventar nada: quem escreve e quem
+         bateu, e a variacao aparece porque e verdade. Cartao com horario
+         uniforme e o que a Sumula 338 do TST trata como invalido como prova;
+         horario sorteado seria a mesma invalidade disfarcada, e foi por isso
+         que a variacao automatica saiu em 17/08/2026.
+         Este modo atende o pedido original, que a leitura apressada tinha
+         perdido: "vai ser impresso e preenchido pelos colaboradores". */
+      var emBranco = !!(opcoes && opcoes.emBranco);
       var self = this, emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
       var logo = (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(46) : "";
       var jor = this._pontoJornada(), diasSem = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
@@ -18184,8 +18199,14 @@
                folha. A coluna e o rodapé continuam vindo SÓ de `horas_extras`:
                o horário é fato, a hora extra paga é declaração, e são donos
                diferentes de propósito (skill `dinheiro` §2). */
-            e = bReal.entrada; a = bReal.almoco; r = bReal.retorno; s = bReal.saida;
-            marca = "*"; temReal = true;
+            /* ⚠ EM BRANCO GUARDA O HORARIO, NUNCA O FATO. Anular `bReal` inteiro fazia o
+               dia DESCER para o ramo de fim de semana: sabado com batida gravada e sem
+               hora extra saia "Folga", sombreado — num papel cujo texto legal manda nao
+               preencher dia sombreado. Dois papeis da mesma base discordando sobre se o
+               sabado foi trabalhado, e o que o empregado assina e o que diz Folga. */
+            if (!emBranco) { e = bReal.entrada; a = bReal.almoco; r = bReal.retorno; s = bReal.saida; }
+            marca = emBranco ? "" : "*";  /* sem asterisco: no papel em branco nao ha o que marcar */
+            if (!emBranco) temReal = true;
             var partes = [];
             if (falta) { bg = "#fee2e2"; nFaltas++; if (falta === "injustificada") nInj++; partes.push(rot(P.faltaMotivo, falta)); }
             else { if (!fimDeSemana) nTrab++; if (fimDeSemana || extraMin) bg = "#fef9c3"; }
@@ -18200,7 +18221,7 @@
                num dia marcado como falta: o cartão mostra as horas de quem foi.
                Deixar a linha vazia e só somar no rodapé é cartão que se contradiz. */
             var bx = (typeof Ponto !== "undefined") ? Ponto.batidasExtraAvulsa(jor, c.id, ds, extraMin, { variar: false }) : null;
-            if (bx) { e = bx.entrada; a = bx.almoco; r = bx.retorno; s = bx.saida; }
+            if (bx && !emBranco) { e = bx.entrada; a = bx.almoco; r = bx.retorno; s = bx.saida; }
             bg = "#fef9c3";
             obsCol = (falta ? rot(P.faltaMotivo, falta) + " · " : "") + (fimDeSemana ? (dow === 0 ? "DSR trabalhado" : "Sábado trabalhado") : "") + (heObs[ds] ? " · " + heObs[ds] : "");
             if (falta) { nFaltas++; if (falta === "injustificada") nInj++; }
@@ -18220,11 +18241,11 @@
             var bat = (typeof Ponto !== "undefined")
               ? Ponto.batidas(jor, c.id, ds, { variar: false, extraMin: extraMin })
               : { entrada: jor.entrada, almoco: jor.almoco, retorno: jor.retorno, saida: jor.saida };
-            e = bat.entrada; a = bat.almoco; r = bat.retorno; s = bat.saida; nTrab++;
+            if (!emBranco) { e = bat.entrada; a = bat.almoco; r = bat.retorno; s = bat.saida; } nTrab++;
             if (extraMin) { bg = "#fef9c3"; obsCol = heObs[ds] || "Hora extra"; }
           }
           if (extraMin) {
-            heCol = (typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(extraMin) : "";
+            heCol = emBranco ? "" : ((typeof Ponto !== "undefined") ? Ponto.minParaHhmmExtenso(extraMin) : "");
             minExtraMes += extraMin; nDiasExtra++;
           }
           /* ⚠ TUDO PASSA POR Util.esc AQUI, NA MONTAGEM FINAL — e nao peca por
@@ -18278,27 +18299,57 @@
            horarios sejam marcacao — fazer assinar ciencia deles logo abaixo
            seria a folha se contradizendo. O commit de 17/08/2026 ja tinha
            tirado "horarios" daqui exatamente por isso; so o caso B o devolve. */
-        var legAssin = temReal
-          ? "Ciente dos horários, dias, faltas e horas extras acima"
-          : "Ciente dos dias, faltas e horas extras acima";
-        var titDoc = temReal ? "REGISTRO DE PONTO — CONTROLE MANUAL" : "DEMONSTRATIVO DE FREQUÊNCIA";
+        /* ==============================================================
+         * TRES NATUREZAS, decididas pelo DADO e pelo pedido — nunca por uma
+         * preferencia escondida:
+         *
+         *  · EM BRANCO — o papel sai sem horario nenhum, para o colaborador
+         *    escrever o que cumpriu e rubricar. E um cartao de ponto manual
+         *    (CLT art. 74, §2), e a variacao de horario aparece sozinha
+         *    porque quem escreve e quem bateu.
+         *  · COM BATIDA (temReal) — alguem transcreveu o controle de jornada;
+         *    os dias marcados com * trazem horario informado pela empresa.
+         *  · SEM NADA — o horario e a jornada CONTRATUAL, igual todo dia, e o
+         *    papel continua sendo Demonstrativo de Frequencia com o aviso de
+         *    17/08/2026 intacto. ⚠ Nao afrouxar este ultimo: e ele que impede
+         *    o documento de se anunciar como registro de ponto sem ter
+         *    marcacao nenhuma.
+         *
+         * ⚠ Nenhum dos tres afirma que a empresa cumpriu a obrigacao legal
+         *   dela — isso depende da assinatura e da veracidade do que for
+         *   escrito, e nao e o OrcaPRO quem garante.
+         * ============================================================== */
+        var legAssin = emBranco
+          ? "Declaro que os horários acima, por mim preenchidos, são os efetivamente cumpridos"
+          : (temReal
+            ? "Ciente dos horários, dias, faltas e horas extras acima"
+            : "Ciente dos dias, faltas e horas extras acima");
+        var titDoc = emBranco
+          ? "CARTÃO DE PONTO"
+          : (temReal ? "REGISTRO DE PONTO — CONTROLE MANUAL" : "DEMONSTRATIVO DE FREQUÊNCIA");
         var hj = hojeLocal();
         var hjBR = hj.slice(8, 10) + "/" + hj.slice(5, 7) + "/" + hj.slice(0, 4);
-        var blocoLegal = temReal
-          ? '<b>Os dias marcados com * trazem as batidas informadas por esta empresa</b>, transcritas do controle de jornada mantido por ela. '
-            + 'Os demais dias trazem a <b>jornada contratual</b>, e não marcação de ponto. Este documento é um <b>controle manual de jornada, '
-            + 'na forma admitida pelo art. 74, §2º, da CLT</b> — ele <b>não é</b> sistema de registro eletrônico de ponto (REP) e não substitui '
-            + 'o registro adotado pelo empregador nos termos da Portaria MTP nº 671/2021. Emitido em ' + hjBR + "."
-          : '<b>Os horários abaixo são a JORNADA CONTRATUAL, não marcação de ponto.</b> Este documento demonstra os dias trabalhados, faltas e horas extras lançadas no sistema. '
-            + 'Ele <b>não substitui</b> o registro de ponto exigido pelo art. 74 da CLT. Emitido em ' + hjBR + ".";
+        var blocoLegal = emBranco
+          ? '<b>Preencha os horários de entrada, saída para o intervalo, retorno e saída, e rubrique cada dia.</b> '
+            + 'Não preencha os dias cuja Observação indique descanso, folga ou falta já registrada — os demais, sim, inclusive os destacados por hora extra. '
+            + 'Este é um <b>cartão de ponto de preenchimento manual, na forma admitida pelo art. 74, §2º, da CLT</b> — '
+            + 'ele <b>não é</b> sistema de registro eletrônico de ponto (REP) nos termos da Portaria MTP nº 671/2021. '
+            + 'O intervalo mínimo para jornada acima de 6 horas é de 1 hora (art. 71 da CLT). Emitido em ' + hjBR + "."
+          : (temReal
+            ? '<b>Os dias marcados com * trazem as batidas informadas por esta empresa</b>, transcritas do controle de jornada mantido por ela. '
+              + 'Os demais dias trazem a <b>jornada contratual</b>, e não marcação de ponto. Este documento é um <b>controle manual de jornada, '
+              + 'na forma admitida pelo art. 74, §2º, da CLT</b> — ele <b>não é</b> sistema de registro eletrônico de ponto (REP) e não substitui '
+              + 'o registro adotado pelo empregador nos termos da Portaria MTP nº 671/2021. Emitido em ' + hjBR + "."
+            : '<b>Os horários abaixo são a JORNADA CONTRATUAL, não marcação de ponto.</b> Este documento demonstra os dias trabalhados, faltas e horas extras lançadas no sistema. '
+              + 'Ele <b>não substitui</b> o registro de ponto exigido pelo art. 74 da CLT. Emitido em ' + hjBR + ".");
         return '<div style="page-break-after:always;font-family:Arial,Helvetica,sans-serif;color:#111;font-size:10px;max-width:760px;margin:0 auto">'
           + '<div style="display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #0f2740;padding-bottom:8px;margin-bottom:8px">'
           + "<div>" + logo + '</div><div style="text-align:center;flex:1"><b style="font-size:13px">' + Util.esc(emp.nome || "") + "</b><br><span style=\"font-size:9px\">" + (emp.cnpj ? "CNPJ " + Util.esc(emp.cnpj) : "") + (emp.cidade ? " · " + Util.esc(emp.cidade) : "") + '</span></div><div style="text-align:right"><b style="font-size:12px">' + titDoc + '</b><br><span style="font-size:10px">' + self._mesExtenso(mes) + "</span></div></div>"
           + '<div style="display:flex;border:1px solid #999;margin-bottom:6px"><div style="flex:2;padding:4px;border-right:1px solid #999"><b>Colaborador:</b> ' + Util.esc(c.nome || "") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>Função:</b> ' + Util.esc(c.funcao || "—") + '</div><div style="flex:1;padding:4px;border-right:1px solid #999"><b>CPF:</b> ' + Util.esc(c.cpf || "—") + '</div><div style="flex:1;padding:4px"><b>Admissão:</b> ' + (c.admissao ? c.admissao.split("-").reverse().join("/") : "—") + "</div></div>"
           + '<div style="border:1px solid #999;border-left:3px solid #b45309;background:#fffbeb;padding:5px 7px;margin-bottom:6px;font-size:9px;line-height:1.45">'
           + blocoLegal + "</div>"
-          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead style="display:table-header-group"><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:7%">Dia</th><th style="border:1px solid #999;padding:3px;width:7%">Sem</th><th style="border:1px solid #999;padding:3px;width:12%">Entrada</th><th style="border:1px solid #999;padding:3px;width:12%">Almoço</th><th style="border:1px solid #999;padding:3px;width:12%">Retorno</th><th style="border:1px solid #999;padding:3px;width:12%">Saída</th><th style="border:1px solid #999;padding:3px;width:9%">H. extra</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
-          + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + nTrab + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + '</div></div><div style="flex:1;padding:5px"><div style="color:#b45309;font-weight:bold">Horas extras</div><div style="font-size:15px;font-weight:bold">' + heMes + '</div><div style="font-size:8px;color:#555">' + (nDiasExtra ? "em " + nDiasExtra + " dia(s)" : "nenhum dia") + "</div></div></div>"
+          + '<table style="width:100%;border-collapse:collapse;font-size:9px"><thead style="display:table-header-group"><tr style="background:#0f2740;color:#fff"><th style="border:1px solid #999;padding:3px;width:7%">Dia</th><th style="border:1px solid #999;padding:3px;width:7%">Sem</th><th style="border:1px solid #999;padding:3px;width:12%">Entrada</th><th style="border:1px solid #999;padding:3px;width:12%">Almoço</th><th style="border:1px solid #999;padding:3px;width:12%">Retorno</th><th style="border:1px solid #999;padding:3px;width:12%">Saída</th><th style="border:1px solid #999;padding:3px;width:9%">' + (emBranco ? "Rubrica" : "H. extra") + '</th><th style="border:1px solid #999;padding:3px">Observação</th></tr></thead><tbody>' + linhas + "</tbody></table>"
+          + '<div style="display:flex;border:1px solid #999;margin-top:8px;text-align:center;font-size:10px"><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#16a34a;font-weight:bold">Dias trabalhados</div><div style="font-size:15px;font-weight:bold">' + (emBranco ? "____" : nTrab) + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Faltas</div><div style="font-size:15px;font-weight:bold">' + nFaltas + '</div></div><div style="flex:1;padding:5px;border-right:1px solid #999"><div style="color:#dc2626;font-weight:bold">Injustificadas</div><div style="font-size:15px;font-weight:bold">' + nInj + '</div></div><div style="flex:1;padding:5px"><div style="color:#b45309;font-weight:bold">Horas extras</div><div style="font-size:15px;font-weight:bold">' + (emBranco ? "__:__" : heMes) + '</div><div style="font-size:8px;color:#555">' + (emBranco ? "preencher" : (nDiasExtra ? "em " + nDiasExtra + " dia(s)" : "nenhum dia")) + "</div></div></div>"
           + '<div style="display:flex;justify-content:space-between;margin-top:34px;gap:40px"><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Assinatura do Colaborador<br><span style="font-size:8px;color:#555">' + legAssin + '</span></div><div style="flex:1;text-align:center;border-top:1px solid #333;padding-top:4px">Responsável pela Empresa</div></div>'
           + (typeof Empresa !== "undefined" && Empresa.creditoHTML ? Empresa.creditoHTML() : "") + '</div>';
       }).join("");
