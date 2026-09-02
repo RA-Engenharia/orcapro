@@ -1950,7 +1950,7 @@
         if (f.tipo === "receita") aReceber += v; else if (f.tipo === "despesa") aPagar += v;
       });
       var cats = [];
-      for (var k in porCat) { var vc = Math.max(0, porCat[k]); if (vc > 0) cats.push({ cat: k, rotulo: rot(P.finCategoria, k), valor: vc, cor: this._CORCAT[k] || "#94a3b8" }); }
+      for (var k in porCat) { var vc = Math.max(0, porCat[k]); if (vc > 0) cats.push({ cat: k, rotulo: rot(P.finCategoria, k), valor: vc, cor: this._CORCAT[k] || "var(--cat-outros)" }); }
       cats.sort(function (a, b) { return b.valor - a.valor; });
 
       // fluxo mensal (máx 12 meses, ordenados) + saldo acumulado
@@ -2166,9 +2166,36 @@
       };
     },
     // ----- SVGs do bloco executivo (mesma estética do painel do Last Planner) -----
+    /* =================================================================
+     * FLUXO DE CAIXA
+     *
+     * Reescrito em 02/09/2026 contra a regua de dataviz. O que estava errado
+     * nao era "feio", era medivel:
+     *
+     *  · a grade usava `--linha-forte` — a moldura pesava igual ao dado;
+     *  · havia um marcador em TODOS os pontos de TODAS as series (3 x n
+     *    circulos): ponto em tudo e enfase em nada, e com raio 3,1 nenhum
+     *    deles era alvo de mouse de verdade;
+     *  · a unica leitura de valor era o `<title>` nativo — aquele balao que
+     *    demora um segundo, aparece fora de lugar e nao existe no toque;
+     *  · e a paleta reprovava em quatro dos seis testes (ver `--graf-a` no
+     *    css).
+     *
+     * Agora: marca de 2px, grade recuada, marcador SO no ultimo ponto de
+     * cada serie (que e onde a leitura ancora — "como estamos hoje"), e uma
+     * camada de leitura por mes.
+     *
+     * ⚠ O HOVER E CSS PURO, SEM UM LISTENER SEQUER. A barra e redesenhada a
+     * cada render do painel; qualquer listener aqui teria de ser reatado
+     * junto, e o que nao e reatado vira recurso morto silencioso. Cada mes e
+     * um <g> com uma faixa transparente: `:hover` acende a linha-guia, os
+     * tres pontos daquele mes e o texto de leitura.
+     * ⚠ E o texto de leitura fica SEMPRE no mesmo canto, nao ao lado do
+     * cursor: assim ele nunca estoura o viewBox na ultima coluna e o olho
+     * sabe onde procurar sem cacar.
+     * ================================================================= */
     _dashSvgFluxo: function (fluxo) {
-      // Tipografia dos eixos maior + grid mais forte (legibilidade em tela grande e mobile)
-      var W = 440, H = 190, padL = 52, padR = 10, padT = 12, padB = 26;
+      var W = 440, H = 190, padL = 52, padR = 12, padT = 14, padB = 26;
       var iw = W - padL - padR, ih = H - padT - padB;
       var vals = [];
       fluxo.forEach(function (f) { vals.push(f.receita, f.despesa, f.acumulado, 0); });
@@ -2187,34 +2214,78 @@
       var y = function (v) { return padT + (1 - (v - min) / (max - min)) * ih; };
       var x = function (i) { return padL + (fluxo.length > 1 ? i / (fluxo.length - 1) : .5) * iw; };
       var self = this;
-      var linha = function (chave, cor, dash) {
-        var pts = fluxo.map(function (f, i) { return x(i) + "," + y(f[chave]); }).join(" ");
-        var s = '<polyline points="' + pts + '" fill="none" stroke="' + cor + '" stroke-width="2.5"' + (dash ? ' stroke-dasharray="7 4"' : "") + '/>';
-        fluxo.forEach(function (f, i) {
-          s += '<circle cx="' + x(i) + '" cy="' + y(f[chave]) + '" r="3.1" fill="var(--surface)" stroke="' + cor + '" stroke-width="2"><title>' + Util.esc(f.rotulo) + ": " + self._fmtK(f[chave]) + '</title></circle>';
-        });
-        return s;
-      };
+      /* ⚠ `resumo` NAO E O MESMO NUMERO PARA AS TRES. Recebido e pago sao
+         FLUXO — o que entrou e saiu naquele mes; saldo acumulado e ESTOQUE —
+         onde o caixa chegou. Pondo "o ultimo valor" nas tres, a legenda
+         dizia "Recebido R$ 0,00" num periodo de R$ 339 mil recebidos, so
+         porque o ultimo mes fechou sem entrada. Numero que engana quem le de
+         longe e pior que numero nenhum: aqui fluxo soma o periodo, estoque
+         mostra o fim, e o rotulo diz qual dos dois e. */
+      var SERIES = [
+        { chave: "receita", cor: "var(--graf-a)", nome: "Recebido no período", dash: false, soma: true },
+        { chave: "despesa", cor: "var(--graf-b)", nome: "Pago no período", dash: false, soma: true },
+        { chave: "acumulado", cor: "var(--graf-c)", nome: "Saldo ao final", dash: true, soma: false }
+      ];
+
+      var _ult = fluxo[fluxo.length - 1] || { rotulo: "", receita: 0, despesa: 0, acumulado: 0 };
       /* ⚠ SEM role/aria-label O GRAFICO E SILENCIO NO LEITOR DE TELA. Medido:
          o fluxo desenha 9 valores e o leitor lia ZERO deles — ouvia so as
          marcas do eixo e a legenda, que sao a moldura e nao o dado. O resumo
          aqui e a mesma informacao que o olho tira de relance. */
-      var _ult = fluxo[fluxo.length - 1] || { rotulo: "", receita: 0, despesa: 0, acumulado: 0 };
       var _resumo = "Fluxo de caixa, " + fluxo.length + " mes(es)"
         + (fluxo.length ? ", de " + fluxo[0].rotulo + " a " + _ult.rotulo : "")
         + ". Recebido " + self._fmtK(fluxo.reduce(function (t, f) { return t + f.receita; }, 0))
         + ", pago " + self._fmtK(fluxo.reduce(function (t, f) { return t + f.despesa; }, 0))
         + ", saldo acumulado ao final " + self._fmtK(_ult.acumulado) + ".";
-      var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + Util.esc(_resumo) + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
-      /* marcas do eixo redondo (js/escala.js); sem ele, o terco antigo */
+      var svg = '<svg class="g-fluxo" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + Util.esc(_resumo) + '" style="width:100%;height:auto;display:block;font-variant-numeric:tabular-nums">';
+
+      /* grade recuada: a moldura nao pode competir com o dado */
       var _marcas = eixo ? eixo.marcas : [0,1,2,3].map(function(i){ return min + (max-min)*i/3; });
       for (var g = 0; g < _marcas.length; g++) {
         var gv = _marcas[g];
-        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha-forte)" stroke-width="1"/>' +
-          '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
+        svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '"/>' +
+          '<text class="g-eixo" x="' + (padL - 7) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
-      if (min < 0) svg += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="var(--texto-fraco)" stroke-width="1.4"/>';
-      svg += linha("receita", "var(--graf-a)") + linha("despesa", "var(--graf-b)") + linha("acumulado", "var(--graf-c)", true);
+      /* a linha do zero e a unica da moldura que merece peso: e ela que diz
+         se o mes fechou no positivo */
+      if (min < 0 && max > 0) svg += '<line class="g-zero" x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '"/>';
+
+      SERIES.forEach(function (s) {
+        var pts = fluxo.map(function (f, i) { return x(i) + "," + y(f[s.chave]); }).join(" ");
+        svg += '<polyline class="g-linha' + (s.dash ? " tracejada" : "") + '" points="' + pts + '" stroke="' + s.cor + '"/>';
+      });
+      /* ⚠ MARCADOR SO NO ULTIMO PONTO. Com um em cada ponto o grafico virava
+         um colar de contas e nenhum deles chamava atencao; aqui o ultimo mes
+         e o que a pessoa procura primeiro, e e o unico marcado. O anel da cor
+         da superficie separa o ponto da linha que passa por baixo. */
+      if (fluxo.length) {
+        SERIES.forEach(function (s) {
+          svg += '<circle class="g-fim" cx="' + x(fluxo.length - 1) + '" cy="' + y(_ult[s.chave]) + '" r="4" fill="' + s.cor + '"/>';
+        });
+      }
+
+      /* ---- camada de leitura: um <g> por mes, acionado por :hover ---- */
+      var meia = fluxo.length > 1 ? (iw / (fluxo.length - 1)) / 2 : iw / 2;
+      fluxo.forEach(function (f, i) {
+        var cx = x(i);
+        var x0 = Math.max(padL, cx - meia), x1 = Math.min(W - padR, cx + meia);
+        svg += '<g class="g-col">'
+          + '<rect class="g-hit" x="' + x0 + '" y="' + padT + '" width="' + (x1 - x0) + '" height="' + ih + '"/>'
+          + '<line class="g-guia" x1="' + cx + '" y1="' + padT + '" x2="' + cx + '" y2="' + (padT + ih) + '"/>';
+        SERIES.forEach(function (s) {
+          svg += '<circle class="g-pt" cx="' + cx + '" cy="' + y(f[s.chave]) + '" r="4" fill="' + s.cor + '"/>';
+        });
+        /* leitura ancorada no canto, sempre no mesmo lugar */
+        svg += '<g class="g-ler">'
+          + '<rect class="g-ler-fundo" x="' + (padL - 2) + '" y="' + (padT - 12) + '" width="' + (iw + 4) + '" height="14" rx="3"/>'
+          + '<text class="g-ler-txt" x="' + (padL + 2) + '" y="' + (padT - 2) + '">'
+          + '<tspan class="g-ler-mes">' + Util.esc(f.rotulo) + '</tspan>'
+          + '<tspan class="g-ler-a"> · recebido ' + self._fmtK(f.receita) + '</tspan>'
+          + '<tspan class="g-ler-b"> · pago ' + self._fmtK(f.despesa) + '</tspan>'
+          + '<tspan class="g-ler-c"> · saldo ' + self._fmtK(f.acumulado) + '</tspan>'
+          + '</text></g></g>';
+      });
+
       /* ⚠ 12 MESES NAO CABEM 12 ROTULOS. Com a janela completa a distancia
          entre pontos cai para 34,4 unidades do viewBox e "jun/26" a font-size
          10 ocupa ~33 — encostam. Desbasta para no maximo 6, contando DE TRAS
@@ -2227,13 +2298,18 @@
         // 1º e último ancoram pra dentro — "jul/26" estourava o viewBox e era clipado ("jul/2")
         var anc = i === 0 ? "start" : (i === fluxo.length - 1 ? "end" : "middle");
         var tx = i === 0 ? Math.max(2, x(i) - 14) : (i === fluxo.length - 1 ? W - 2 : x(i));
-        svg += '<text x="' + tx + '" y="' + (H - 6) + '" text-anchor="' + anc + '" font-size="10" font-weight="600" fill="var(--texto-fraco)">' + Util.esc(f.rotulo) + '</text>';
+        svg += '<text class="g-mes' + (i === fluxo.length - 1 ? " atual" : "") + '" x="' + tx + '" y="' + (H - 6) + '" text-anchor="' + anc + '">' + Util.esc(f.rotulo) + '</text>';
       });
       svg += "</svg>";
-      svg += '<div style="display:flex;gap:14px;margin-top:6px;font-size:11.5px;font-weight:600;color:var(--texto-fraco);flex-wrap:wrap">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--graf-a)"></span>Receitas</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--graf-b)"></span>Despesas</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:13px;height:3.5px;border-radius:2px;background:var(--graf-c)"></span>Saldo acumulado</span></div>';
+      /* a legenda continua (a regra e: 2+ series sempre tem legenda), mas
+         agora carrega o VALOR DE HOJE de cada serie — quem olha de longe le
+         o numero sem precisar mirar o grafico */
+      svg += '<div class="g-legenda">'
+        + SERIES.map(function (s) {
+          var v = s.soma ? fluxo.reduce(function (tt, f) { return tt + f[s.chave]; }, 0) : _ult[s.chave];
+          return '<span class="g-leg"><span class="g-leg-cor' + (s.dash ? " tracejada" : "") + '" style="background:' + s.cor + '"></span>'
+            + s.nome + '<b>' + self._fmtK(v) + '</b></span>';
+        }).join("") + "</div>";
       return svg;
     },
     /* Top-8 do Previsto×Realizado por RELEVÂNCIA (maior previsto+real primeiro),
@@ -2266,6 +2342,21 @@
       saida.totalEstouros = prevReal.filter(function (x) { return x.estourou; }).length;
       return saida;
     },
+    /* Barra com o topo arredondado e a base reta, ancorada no eixo.
+       Guarda para barra baixa: se a altura nao chega ao raio, o arco vira um
+       retangulo — senao o path se dobra sobre si e desenha uma gota. */
+    _barraTopo: function (x, y, w, h, r) {
+      r = Math.min(r === undefined ? 4 : r, w / 2, h);
+      var y0 = y + h;
+      if (r <= 0.5) return "M" + x + "," + y + "h" + w + "v" + h + "h" + (-w) + "Z";
+      return "M" + x + "," + y0
+        + "V" + (y + r)
+        + "a" + r + "," + r + " 0 0 1 " + r + "," + (-r)
+        + "h" + (w - 2 * r)
+        + "a" + r + "," + r + " 0 0 1 " + r + "," + r
+        + "V" + y0 + "Z";
+    },
+
     _dashSvgPrevReal: function (dados) {
       var self = this, W = 440, H = 190, padL = 52, padR = 8, padT = 12, padB = 30;
       var iw = W - padL - padR, ih = H - padT - padB;
@@ -2294,8 +2385,8 @@
       var _marcas = eixo ? eixo.marcas : [0,1,2,3].map(function(i){ return max*i/3; });
       for (var g = 0; g < _marcas.length; g++) {
         var gv = _marcas[g];
-        svg += '<line x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '" stroke="var(--linha-forte)" stroke-width="1"/>' +
-          '<text x="' + (padL - 6) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
+        svg += '<line class="g-grade" x1="' + padL + '" y1="' + y(gv) + '" x2="' + (W - padR) + '" y2="' + y(gv) + '"/>' +
+          '<text class="g-eixo" x="' + (padL - 7) + '" y="' + (y(gv) + 3.5) + '" text-anchor="end">' + this._fmtK(gv).replace("R$ ", "") + '</text>';
       }
       /* ⚠ A BARRA SOZINHA PERDIDA NO VAZIO.
        * O slot era `iw / dados.length`: com UMA obra ele virava a largura
@@ -2316,18 +2407,43 @@
         var cx = esq + gw * i + gw / 2;
         var nome = String(d.rotulo || ""); if (nome.length > maxC) nome = nome.slice(0, Math.max(3, maxC - 1)) + "…";
         var yNome = zig ? (i % 2 ? H - 15 : H - 25) : H - 15;
-        svg += '<rect x="' + (cx - bw - 1.5) + '" y="' + y(d.previsto) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.previsto)) + '" rx="3" fill="var(--graf-prev)" opacity=".8"><title>' + Util.esc(d.rotulo) + ' · Previsto: ' + self._fmtK(d.previsto) + '</title></rect>' +
-          '<rect x="' + (cx + 1.5) + '" y="' + y(d.real) + '" width="' + bw + '" height="' + Math.max(1, y(0) - y(d.real)) + '" rx="3" fill="' + (d.estourou ? "#dc2626" : "var(--graf-a)") + '"><title>' + Util.esc(d.rotulo) + ' · Realizado: ' + self._fmtK(d.real) + (d.estourou ? " " + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " ESTOURO" : "") + '</title></rect>' +
-          '<text x="' + cx + '" y="' + yNome + '" text-anchor="middle" font-size="9.5" font-weight="600" fill="var(--texto-fraco)">' + Util.esc(nome) + '<title>' + Util.esc(d.rotulo) + '</title></text>' +
-          self._selo(d, cx, H);
+        /* ⚠ O TOPO ARREDONDA, A BASE NAO. Com `rx` no <rect> os QUATRO
+           cantos arredondam, e a barra descola do eixo: sobra uma meia-lua de
+           fundo entre o dado e o zero, que e justamente a linha contra a qual
+           a barra esta sendo lida. Aqui a base fica reta e ancorada. */
+        var hP = Math.max(1, y(0) - y(d.previsto)), hR = Math.max(1, y(0) - y(d.real));
+        /* ⚠ O PREVISTO PERDEU A `opacity: .8`. Transparencia como diferenca
+           entre series pinta a barra com um tom que nao existe na paleta e
+           muda conforme o fundo; agora a diferenca e a COR (o previsto e uma
+           referencia neutra, ver --graf-prev) e a barra e solida. */
+        svg += '<g class="g-bar">'
+          + '<path class="g-b-prev" d="' + self._barraTopo(cx - bw - 1.5, y(d.previsto), bw, hP) + '"/>'
+          + '<path class="g-b-real' + (d.estourou ? " estourou" : "") + '" d="' + self._barraTopo(cx + 1.5, y(d.real), bw, hR) + '"/>'
+          + '<text class="g-eixo g-bar-nome" x="' + cx + '" y="' + yNome + '" text-anchor="middle">' + Util.esc(nome) + '</text>'
+          + self._selo(d, cx, H)
+          /* a leitura completa, no mesmo canto fixo do fluxo de caixa */
+          + '<rect class="g-hit" x="' + (cx - gw / 2) + '" y="' + padT + '" width="' + gw + '" height="' + ih + '"/>'
+          + '<g class="g-ler">'
+          + '<rect class="g-ler-fundo" x="' + (padL - 2) + '" y="' + (padT - 12) + '" width="' + (iw + 4) + '" height="14" rx="3"/>'
+          + '<text class="g-ler-txt" x="' + (padL + 2) + '" y="' + (padT - 2) + '">'
+          + '<tspan class="g-ler-mes">' + Util.esc(d.rotulo) + '</tspan>'
+          + '<tspan class="g-ler-a"> · orçado ' + self._fmtK(d.previsto) + '</tspan>'
+          + '<tspan class="g-ler-b"> · gasto ' + self._fmtK(d.real) + '</tspan>'
+          + (d.estourou ? '<tspan class="g-ler-est"> · acima do orçado</tspan>' : "")
+          + '</text></g></g>';
       });
       svg += "</svg>";
-      svg += '<div style="display:flex;gap:14px;margin-top:6px;font-size:11.5px;font-weight:600;color:var(--texto-fraco);flex-wrap:wrap">' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--graf-prev)"></span>Previsto (orçamento)</span>' +   /* ⚠ mesmo token da barra: a migração trocou a barra e esqueceu o quadradinho */
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:var(--graf-a)"></span>Realizado (lançado)</span>' +
-        /* "pp" nao se explica sozinho, e selo sem legenda vira enfeite */
-        '<span title="Compara a fração do orçamento já consumida com a fração do escopo já medida. Positivo = o dinheiro está correndo na frente da obra.">Sob a barra: custo × avanço, em pontos</span>' +
-        '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:11px;height:11px;border-radius:3px;background:#dc2626"></span>Estouro</span></div>';
+      /* ⚠ LEGENDA NOMEIA SERIE. NOTA EXPLICA. Eram quatro itens em linha e um
+         deles — "Sob a barra: custo × avanço, em pontos" — nao e serie
+         nenhuma, e uma explicacao do selo. Misturado com os quadradinhos ele
+         se lia como uma quarta cor que ninguem achava no grafico. Agora as
+         series ficam na legenda e a explicacao vira nota, embaixo. */
+      svg += '<div class="g-legenda">'
+        + '<span class="g-leg"><span class="g-leg-cx" style="background:var(--graf-prev)"></span>Previsto (orçamento)<b>' + self._fmtK(_tp) + '</b></span>'
+        + '<span class="g-leg"><span class="g-leg-cx" style="background:var(--graf-a)"></span>Realizado (lançado)<b>' + self._fmtK(_tr) + '</b></span>'
+        + (_est ? '<span class="g-leg"><span class="g-leg-cx" style="background:var(--graf-alerta)"></span>Acima do orçado<b>' + _est + '</b></span>' : "")
+        + '</div>'
+        + '<p class="g-nota">Sob cada barra: quanto do orçamento já foi consumido menos quanto do escopo já foi medido, em pontos. Positivo = o dinheiro está correndo na frente da obra.</p>';
       return svg;
     },
         /* ⚠ NAO AUMENTE A FONTE DESTES SVG PARA "MELHORAR A LEITURA". Eu tentei
@@ -2464,13 +2580,13 @@
         l.seg.forEach(function (s) {
           if (s.valor <= 0) return;
           var pct = l.total > 0 ? (s.valor / l.total * 100) : 0;
-          html += '<div title="' + Util.esc(ROT[s.cat] || s.cat) + ': ' + self._fmtK(s.valor) + '" style="width:' + pct + '%;background:' + (self._CORCAT[s.cat] || "#94a3b8") + '"></div>';
+          html += '<div title="' + Util.esc(ROT[s.cat] || s.cat) + ': ' + self._fmtK(s.valor) + '" style="width:' + pct + '%;background:' + (self._CORCAT[s.cat] || "var(--cat-outros)") + '"></div>';
         });
         html += '</div></div>';
       });
       html += '<div style="display:flex;gap:12px;margin-top:6px;font-size:11px;color:var(--texto-fraco);flex-wrap:wrap">' +
         ["material", "mao_obra", "equipamento", "outros"].map(function (c) {
-          return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:' + (self._CORCAT[c] || "#94a3b8") + '"></span>' + ROT[c] + '</span>';
+          return '<span style="display:inline-flex;align-items:center;gap:5px"><span style="width:10px;height:10px;border-radius:2px;background:' + (self._CORCAT[c] || "var(--cat-outros)") + '"></span>' + ROT[c] + '</span>';
         }).join("") + '</div>';
       return html;
     },
@@ -2647,7 +2763,13 @@
     },
 
     // ---------- G5: BI vivo no Painel ----------
-    _CORCAT: { obra: "var(--graf-a)", material: "#16a34a", mao_obra: "#2563eb", equipamento: "#f59e0b", administrativo: "#64748b", impostos: "#dc2626", medicao: "#7c3aed", outros: "#94a3b8" },
+    /* ⚠ TOKEN, NAO HEX. Estes valores eram sete hex crus aqui dentro, e dois
+       deles roubavam cor de ESTADO: material em verde e impostos em
+       vermelho — as mesmas tintas que, no cartao ao lado, significam
+       "saudavel" e "estouro". Agora apontam para a paleta validada do css
+       (ver --cat-obra), que tem degrau proprio no tema escuro; hex cru aqui
+       ficava igual nos dois temas e sumia no escuro. */
+    _CORCAT: { obra: "var(--cat-obra)", material: "var(--cat-material)", mao_obra: "var(--cat-mao)", equipamento: "var(--cat-equip)", administrativo: "var(--cat-admin)", impostos: "var(--cat-impostos)", medicao: "var(--cat-medicao)", outros: "var(--cat-outros)" },
     /* ⚠ AVANCO SO TEM UMA FONTE. A tabela "Prazo × avanço" ja somava o
        percentual das medicoes aprovadas/pagas; o grafico precisava do MESMO
        numero, e duas contas iguais escritas em dois lugares viram duas contas

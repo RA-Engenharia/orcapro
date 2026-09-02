@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.26",
+  "versao": "1.2.27",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.26/OrcaPRO-IA-update-v1.2.26.zip",
-  "notas": "Menu agrupado: os modulos agora ficam dentro de Orcamentos, Obras, Canteiro, Suprimentos, Equipe, Ativos, Financeiro e Configuracoes — a barra deixou de ser uma lista de 37 itens. Nada saiu do sistema: o grupo abre com um clique, o que voce esta usando ja abre sozinho, e a busca (Ctrl+K) acha tudo como antes. Quem tinha organizado o menu a mao continua com o seu. As telas tambem ficaram no mesmo padrao de cabecalho, indicador e acao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.26/OrcaPRO-IA-Instalador-v1.2.26.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.27/OrcaPRO-IA-update-v1.2.27.zip",
+  "notas": "Painel de Gestao: os graficos ficaram mais faceis de ler. Passe o mouse sobre o fluxo de caixa e ele mostra recebido, pago e saldo daquele mes. As cores foram refeitas e conferidas para quem nao distingue verde de vermelho e para o tema escuro, e o verde voltou a significar uma coisa so: dentro do previsto. A legenda do fluxo agora traz o total do periodo, que e o mesmo numero dos cartoes de cima.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.27/OrcaPRO-IA-Instalador-v1.2.27.exe"
 }
