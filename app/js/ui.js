@@ -893,6 +893,11 @@
       var abas = [
         ["planilha", "Planilha", "planilha"],
         ["sintetico", "Sintético", "sintetico"],
+        /* ⚠ A LISTA DE COMPRAS FICA COLADA NO RESUMO, e nao no fim.
+           A planilha responde por SERVICO (alvenaria, reboco); esta aba
+           responde a mesma obra por MATERIAL, que e como se compra. Sao as
+           duas leituras do mesmo orcamento, e andam juntas. */
+        ["insumos", "Insumos & ABC", "insumo"],
         ["cronograma", "Cronograma", "cronograma"],
         ["execucao", "Execução", "execucao"],
         ["paredecebola", "Parede-Cebola", "paredecebola"],
@@ -908,6 +913,7 @@
 
       html += '<div id="aba-conteudo">';
       if (abaAtiva === "sintetico") html += this.renderSintetico(orc);
+      else if (abaAtiva === "insumos") html += this.renderInsumosOrc(orc);
       else if (abaAtiva === "cronograma") html += this.renderCronograma(orc);
       else if (abaAtiva === "execucao") html += this.renderExecucao(orc);
       else if (abaAtiva === "paredecebola") html += this.renderParedeCebola(orc);
@@ -920,6 +926,63 @@
     },
 
     // ----- Aba Planilha (analítico editável) -----
+    /* =================================================================
+     * ÍNDICE DE ETAPAS — o "mestre" do mestre-detalhe
+     *
+     * Com 22 etapas e 220 itens (o tamanho que uma obra de verdade tem), a
+     * planilha vira uma fita: chegar na última etapa custa rolar o
+     * orçamento inteiro, e não existe nenhum lugar onde se veja a
+     * ESTRUTURA — quantas etapas há e quanto pesa cada uma.
+     *
+     * O concorrente resolve isso com um painel de fases à esquerda e o
+     * detalhe à direita. Reescrever a planilha nesse molde seria mexer na
+     * tela mais sensível do sistema (edição na célula, mover item, sub
+     * etapa, arredondamento vindo do motor). Aqui o mesmo ganho vem por
+     * FILTRO: o índice mostra a estrutura e escolhe qual etapa a tabela
+     * desenha. A tabela não mudou.
+     *
+     * ⚠ O FILTRO É DE EXIBIÇÃO, NUNCA DE CONTA. Os totais do topo, o
+     * subtotal de cada etapa e tudo que sai em documento continuam vindo de
+     * `Orcamento.calcular(orc)` INTEIRO. Filtrar a tabela e deixar o total
+     * seguir o recorte faria a tela dizer que o orçamento encolheu — e
+     * alguém mandaria proposta com o preço de uma etapa só.
+     *
+     * ⚠ E SÓ APARECE A PARTIR DE 5 ETAPAS. Num orçamento de três, o painel
+     * ocuparia um quarto da largura para listar o que já está inteiro na
+     * tela ao lado.
+     * ================================================================= */
+    _indiceEtapas: function (orc, calc) {
+      var etapas = orc.etapas || [];
+      if (etapas.length < 5) return "";
+      var foco = (typeof App !== "undefined") ? App._etapaFoco : "";
+      var porEtapa = [];
+      Util.arr(calc.linhas).forEach(function (L) {
+        var s = porEtapa[L.etapaIdx] || (porEtapa[L.etapaIdx] = { custo: 0 });
+        s.custo += L.custoTotal;
+      });
+      var total = 0;
+      etapas.forEach(function (e, i) { total += (porEtapa[i] || { custo: 0 }).custo; });
+
+      var h = '<aside class="idx-etapas" aria-label="Etapas do orçamento">'
+        + '<button class="idx-item' + (!foco ? " on" : "") + '" data-etapa-foco="">'
+        + '<span class="idx-nome">Todas as etapas</span>'
+        + '<span class="idx-val">' + Util.fmtMoeda(total) + '</span></button>';
+      etapas.forEach(function (e, i) {
+        var c = (porEtapa[i] || { custo: 0 }).custo;
+        /* a barrinha e a leitura de RELEVANCIA: qual etapa leva o dinheiro.
+           E o mesmo que a curva ABC faz por insumo, aqui por etapa. */
+        var pct = total > 0 ? Math.round(c / total * 100) : 0;
+        h += '<button class="idx-item' + (foco === e.id ? " on" : "") + '" data-etapa-foco="' + Util.esc(e.id) + '"'
+          + ' title="' + Util.esc(e.nome) + ' — ' + pct + '% do custo direto">'
+          + '<span class="idx-num">' + (i + 1) + '</span>'
+          + '<span class="idx-nome">' + Util.esc(e.nome) + '</span>'
+          + '<span class="idx-val">' + Util.fmtMoeda(c) + '</span>'
+          + '<span class="idx-barra"><i style="width:' + pct + '%"></i></span>'
+          + '</button>';
+      });
+      return h + '</aside>';
+    },
+
     renderPlanilha: function (orc) {
       var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas.length)
         ? !orc.etapas.some(function (e) { return !App.etapaRecolhida(orc.id, e.id); }) : false;
@@ -932,6 +995,20 @@
         return html;
       }
       html += this._faixaAjustes(orc);
+      var _calcIdx = Orcamento.calcular(orc);
+      var _idx = this._indiceEtapas(orc, _calcIdx);
+      if (_idx) html += '<div class="pl-com-indice">' + _idx + '<div class="pl-tabela">';
+      var _foco = (typeof App !== "undefined") ? App._etapaFoco : "";
+      if (_foco) {
+        var _nomeFoco = "";
+        (orc.etapas || []).forEach(function (e) { if (e.id === _foco) _nomeFoco = e.nome; });
+        /* ⚠ QUEM FILTROU TEM DE VER QUE FILTROU. Tabela curta sem aviso se le
+           como orçamento pequeno — e o total do topo continua sendo o do
+           orçamento inteiro, o que faria os dois números parecerem brigar. */
+        html += '<div class="pl-foco">Mostrando só <b>' + Util.esc(_nomeFoco) + '</b>'
+          + ' <span class="muted">— os totais acima continuam sendo do orçamento inteiro</span>'
+          + ' <button class="btn sm ghost" data-etapa-foco="">Ver todas</button></div>';
+      }
       html += '<table class="tbl"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
@@ -951,6 +1028,11 @@
       Util.arr(_c.grupos).forEach(function (g) { _porSub[g.subEtapaId] = g; });
       var nEtapas = orc.etapas.length;
       orc.etapas.forEach(function (e, ei) {
+        /* ⚠ O FILTRO SAI AQUI DENTRO, e `ei` continua sendo o indice REAL do
+           array. Filtrar antes (com um `.filter()`) renumeraria as etapas e,
+           pior, faria "mover item" e "+ Item" apontarem para a posicao
+           errada — as acoes carregam etapaIdx. */
+        if (_foco && e.id !== _foco) return;
         // Subtotal da etapa = SOMA DAS LINHAS IMPRESSAS abaixo dela. Com o BDI
         // apartado ("no preço final") o preço do item é de custo, então usar o
         // sintético aqui (que já rateia o BDI) faria a etapa não bater com os
@@ -1126,6 +1208,8 @@
         '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' +
         '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
         '</tfoot></table>';
+      /* fecha o par que o indice abriu (.pl-tabela e .pl-com-indice) */
+      if (_idx) html += '</div></div>';
       return html;
     },
 
@@ -1544,6 +1628,115 @@
     },
 
     // ----- Aba Sintético -----
+    /* =================================================================
+     * INSUMOS DESTE ORÇAMENTO — a lista de compras, e a curva ABC
+     *
+     * O motor esta em js/insumosorc.js (puro, testavel). Aqui so a tela.
+     *
+     * ⚠ ESTA TELA MOSTRA A COBERTURA NA CARA, E ISSO NAO E DETALHE. Item
+     * digitado a mao, composicao propria sem analitico ou codigo de outra
+     * base nao explodem em insumo. Sem o aviso, a lista sai curta com cara
+     * de completa — e alguem compra material a menos numa obra inteira por
+     * causa de uma tela que parecia certa.
+     *
+     * ⚠ E DIZ QUE E CUSTO DIRETO, SEM BDI. O total daqui nao bate com o do
+     * orcamento de proposito; quem comparar tem de achar a explicacao
+     * escrita, senao procura um erro que nao existe.
+     * ================================================================= */
+    renderInsumosOrc: function (orc) {
+      if (typeof InsumosOrc === "undefined") return '<div class="vazio card">Módulo de insumos indisponível.</div>';
+      if (!(orc.etapas || []).length) return '<div class="vazio card"><h3>Sem itens para abrir em insumos</h3><span class="muted">Monte a planilha primeiro: cada serviço lançado vira material, mão de obra e equipamento aqui.</span></div>';
+
+      var temBase = (typeof Analitico !== "undefined" && Analitico.carregado);
+      if (!temBase) {
+        /* ⚠ NAO CARREGA SOZINHO AO ABRIR A ABA. O analitico tem ~17 MB; puxar
+           isso porque alguem passou pela aba gasta a franquia de quem esta no
+           celular do canteiro. O botao deixa a escolha com quem le. */
+        return '<div class="card"><h3 style="margin:0 0 8px">Abrir o orçamento em insumos</h3>'
+          + '<p class="muted" style="margin:0 0 12px;font-size:13px">Para listar o material da obra e montar a curva ABC, é preciso carregar a base analítica do estado — são cerca de 17 MB, e só na primeira vez.</p>'
+          + '<button class="btn primary" data-acao="insumos-carregar-base">Carregar a base e abrir</button></div>';
+      }
+
+      var linhas = (typeof Orcamento !== "undefined") ? Orcamento.linhas(orc) : [];
+      var res = InsumosOrc.consolidar(linhas, function (c) { return Analitico.obter(c); });
+      var abc = InsumosOrc.resumoABC(res);
+      var f = App._insumosOrcFiltro || { busca: "", cat: "TODAS" };
+      var lista = InsumosOrc.filtrar(res.insumos, f.busca, f.cat);
+      var self = this;
+
+      /* o cabecalho diz de quanto do orcamento esta lista da conta */
+      var corCob = res.cobertura >= 90 ? "var(--verde)" : (res.cobertura >= 60 ? "var(--amarelo)" : "var(--vermelho)");
+      var html = '<div class="card" style="margin-bottom:14px">'
+        + '<div class="kpis" style="margin-bottom:0">'
+        + '<div class="kpi kpi-compacto"><div class="rotulo">Insumos diferentes</div><div class="num">' + res.nInsumos + '</div>'
+        + '<div class="kpi-sub">de ' + res.nLinhas + ' serviço(s) na planilha</div></div>'
+        + '<div class="kpi kpi-compacto"><div class="rotulo">Custo direto aberto</div><div class="num">' + Util.fmtMoeda(res.somaInsumos) + '</div>'
+        + '<div class="kpi-sub">material, mão de obra e equipamento</div></div>'
+        + '<div class="kpi kpi-compacto"><div class="rotulo">Cobertura</div><div class="num" style="color:' + corCob + '">' + Util.fmtNum(res.cobertura, 1) + '%</div>'
+        + '<div class="kpi-sub">' + (res.naoDetalhado.length ? res.naoDetalhado.length + ' item(ns) sem composição — ver abaixo' : 'todo o orçamento abriu em insumo') + '</div></div>'
+        + '<div class="kpi kpi-compacto"><div class="rotulo">Classe A</div><div class="num">' + abc.A.n + '</div>'
+        + '<div class="kpi-sub">' + Util.fmtMoeda(abc.A.valor) + ' — os que levam 80% do dinheiro</div></div>'
+        + '</div></div>';
+
+      html += '<div class="card" style="margin-bottom:12px;padding:12px 14px">'
+        + '<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">'
+        + '<input type="search" id="ins-busca" placeholder="Buscar insumo ou código…" value="' + Util.esc(f.busca) + '" style="flex:1;min-width:200px">'
+        + '<select id="ins-cat"><option value="TODAS">Todas as categorias</option>'
+        + '<option value="MAT"' + (f.cat === "MAT" ? " selected" : "") + '>Só material</option>'
+        + '<option value="MO"' + (f.cat === "MO" ? " selected" : "") + '>Só mão de obra</option>'
+        + '<option value="EQ"' + (f.cat === "EQ" ? " selected" : "") + '>Só equipamento</option></select>'
+        + '<button class="btn sm" data-acao="insumos-csv">Exportar CSV</button>'
+        + '</div>'
+        + '<p class="muted" style="font-size:12px;margin:8px 0 0">Quantidade e custo somam o mesmo insumo em todos os serviços. Valores em <b>custo direto, sem BDI</b> — é o que se paga ao fornecedor, não o que vai na proposta.</p>'
+        + '</div>';
+
+      if (!lista.length) {
+        html += '<div class="vazio card"><h3>Nenhum insumo neste recorte</h3><span class="muted">Tire o filtro para ver a lista inteira.</span></div>';
+      } else {
+        html += '<div class="card" style="padding:0;overflow:auto"><table class="tbl"><thead><tr>'
+          + '<th style="width:44px">ABC</th><th>Insumo</th><th>Un</th>'
+          + '<th class="num">Quantidade</th><th class="num">Custo unit.</th><th class="num">Custo total</th>'
+          + '<th class="num">% do custo</th></tr></thead><tbody>';
+        lista.forEach(function (x) {
+          html += '<tr><td><span class="ins-abc ins-' + x.classe + '">' + x.classe + '</span></td>'
+            + '<td><b>' + Util.esc(x.descricao || "(sem descrição)") + '</b>'
+            + '<div class="muted" style="font-size:11.5px">' + (x.codigo ? Util.esc(x.codigo) + " · " : "")
+            + self._catRotulo(x.categoria) + (x.emServicos > 1 ? " · em " + x.emServicos + " serviços" : "") + '</div></td>'
+            + '<td>' + Util.esc(x.unidade || "") + '</td>'
+            + '<td class="num">' + Util.fmtNum(x.quantidade, 2) + '</td>'
+            + '<td class="num">' + Util.fmtMoeda(x.custoUnitario) + '</td>'
+            + '<td class="num"><b>' + Util.fmtMoeda(x.custoTotal) + '</b></td>'
+            + '<td class="num">' + Util.fmtNum(x.pct, 1) + '%</td></tr>';
+        });
+        html += '</tbody></table></div>';
+      }
+
+      /* ⚠ O BALDE DO QUE NAO ABRIU FICA VISIVEL, com o motivo de cada um.
+         E aqui que a pessoa descobre por que a lista de compras esta
+         incompleta — e o que fazer para completa-la. */
+      if (res.naoDetalhado.length) {
+        html += '<div class="card" style="margin-top:14px">'
+          + '<h3 style="margin:0 0 6px">' + res.naoDetalhado.length + ' item(ns) fora da lista de compras</h3>'
+          + '<p class="muted" style="font-size:12.5px;margin:0 0 10px">Somam <b>' + Util.fmtMoeda(res.custoFechado)
+          + '</b> do custo direto e não viraram material porque não têm composição na base analítica. O valor está no orçamento; o que falta é o detalhamento.</p>'
+          + '<table class="tbl"><thead><tr><th>Código</th><th>Serviço</th><th class="num">Custo</th><th>Por quê</th></tr></thead><tbody>';
+        res.naoDetalhado.slice(0, 40).forEach(function (x) {
+          html += '<tr><td>' + Util.esc(x.codigo || "—") + '</td><td>' + Util.esc(x.descricao || "—") + '</td>'
+            + '<td class="num">' + Util.fmtMoeda(x.custoTotal) + '</td>'
+            + '<td class="muted">' + Util.esc(x.motivo) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        if (res.naoDetalhado.length > 40) html += '<p class="muted" style="font-size:11.5px;margin:8px 0 0">Mostrando os 40 maiores de ' + res.naoDetalhado.length + '.</p>';
+        html += '</div>';
+      }
+      return html;
+    },
+
+    _catRotulo: function (c) {
+      var m = { MAT: "Material", MO: "Mão de obra", EQ: "Equipamento" };
+      return m[String(c || "").toUpperCase()] || "Material";
+    },
+
     renderSintetico: function (orc) {
       var lin = Orcamento.sintetico(orc);
       if (!lin.length) return '<div class="vazio card">Sem etapas para resumir.</div>';

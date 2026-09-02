@@ -552,6 +552,10 @@
       // view = Orçamentos (fluxo original)
       if (this.tela === "editor" && this.orcAtual) {
         main.innerHTML = UI.renderEditor(this.orcAtual, this.aba);
+        /* ⚠ RELIGADO A CADA RENDER, como o filtro da lista. A aba reescreve o
+           HTML inteiro; o listener do render anterior morreu junto com o
+           elemento, e o que nao e religado vira campo que nao responde. */
+        if (this.aba === "insumos") this._ligarFiltroInsumos();
       } else {
         this.tela = "lista";
         var r = Sinapi.resumo();
@@ -738,6 +742,97 @@
       });
     },
     _filtroOrc: null,
+    /* Busca e recorte da aba Insumos & ABC. Mesmo desenho do filtro da lista:
+       debounce curto e o foco DEVOLVIDO ao campo depois do redesenho — sem
+       isso a pessoa digita a segunda letra em lugar nenhum. */
+    _ligarFiltroInsumos: function () {
+      var self = this;
+      var b = UI.el("ins-busca");
+      if (b) {
+        var timer = null;
+        b.addEventListener("input", function () {
+          if (timer) clearTimeout(timer);
+          var v = b.value;
+          timer = setTimeout(function () {
+            self._insumosOrcFiltro = self._insumosOrcFiltro || { busca: "", cat: "TODAS" };
+            self._insumosOrcFiltro.busca = v;
+            self.render();
+            var novo = UI.el("ins-busca");
+            if (novo) { novo.focus(); try { novo.setSelectionRange(novo.value.length, novo.value.length); } catch (e) {} }
+          }, 250);
+        });
+      }
+      var c = UI.el("ins-cat");
+      /* ⚠ <select> fala por CHANGE, nunca por click — a base inteira ja
+         tropecou nisso: o clique que ABRE a lista era tratado como acao, a
+         tela redesenhava e o seletor sumia debaixo do dedo. */
+      if (c) c.addEventListener("change", function () {
+        self._insumosOrcFiltro = self._insumosOrcFiltro || { busca: "", cat: "TODAS" };
+        self._insumosOrcFiltro.cat = c.value;
+        self.render();
+      });
+    },
+
+    /* A base analitica so e baixada quando a pessoa PEDE (sao ~17 MB): quem
+       esta no celular do canteiro nao paga a franquia por ter passado pela
+       aba. Reusa o mesmo caminho do detalhamento de composicao, que ja sabe
+       resolver arquivo local, servidor ao vivo e troca de UF. */
+    _insumosCarregarBase: function () {
+      var self = this;
+      if (typeof Analitico === "undefined") { UI.toast("Base analítica indisponível nesta instalação.", "erro"); return; }
+      var ufAtivo = String((typeof Sinapi !== "undefined" && Sinapi.uf) || "").toUpperCase();
+      var urls = this._analiticoUrls();
+      if (!urls.local && !urls.live) {
+        UI.toast("Sem UF ativa. Escolha um estado em Tabelas de Preço e volte aqui.", "erro");
+        return;
+      }
+      if (Analitico.reset && Analitico.uf && ufAtivo && Analitico.uf !== ufAtivo) Analitico.reset();
+      UI.loading("Carregando a base analítica de " + (ufAtivo || "") + " (só na 1ª vez)…");
+      Analitico.carregarArquivo(urls.alts).then(function () {
+        UI.loadingFim(); self.render();
+      }).catch(function (e) {
+        UI.loadingFim();
+        if (e && e.message === "cancelado") return;
+        /* ⚠ mensagem com o que fazer, nao so o que falhou */
+        UI.toast("Não consegui carregar a base analítica. Confira a internet ou baixe a base do estado em Tabelas de Preço.", "erro");
+      });
+    },
+
+    /* O CSV sai do RECORTE que esta na tela, e o nome do arquivo diz qual —
+       exportar filtrado e receber tudo (ou o contrario) e a pior forma de
+       errar: o arquivo tem a cara de um recorte e o conteudo de outro. */
+    _insumosCsv: function () {
+      if (typeof InsumosOrc === "undefined" || !this.orcAtual) return;
+      if (typeof Analitico === "undefined" || !Analitico.carregado) { UI.toast("Carregue a base analítica primeiro.", "erro"); return; }
+      var linhas = Orcamento.linhas(this.orcAtual);
+      var res = InsumosOrc.consolidar(linhas, function (c) { return Analitico.obter(c); });
+      var f = this._insumosOrcFiltro || { busca: "", cat: "TODAS" };
+      var lista = InsumosOrc.filtrar(res.insumos, f.busca, f.cat);
+      var sep = ";";
+      var out = ["Classe ABC", "Codigo", "Insumo", "Unidade", "Quantidade", "Custo unitario", "Custo total", "% do custo", "Categoria"].join(sep) + "\n";
+      lista.forEach(function (x) {
+        out += [x.classe, x.codigo, '"' + String(x.descricao).replace(/"/g, '""') + '"', x.unidade,
+          Util.fmtNum(x.quantidade, 4), Util.fmtNum(x.custoUnitario, 2), Util.fmtNum(x.custoTotal, 2),
+          Util.fmtNum(x.pct, 2), x.categoria].join(sep) + "\n";
+      });
+      /* ⚠ o que NAO abriu vai no mesmo arquivo, embaixo: quem levar este CSV
+         para a cotacao precisa saber que parte da obra nao esta nele. */
+      if (res.naoDetalhado.length) {
+        out += "\n" + ["SEM COMPOSICAO — nao entram na lista de compras"].join(sep) + "\n";
+        out += ["", "Codigo", "Servico", "", "", "", "Custo total", "", "Motivo"].join(sep) + "\n";
+        res.naoDetalhado.forEach(function (x) {
+          out += ["", x.codigo, '"' + String(x.descricao).replace(/"/g, '""') + '"', "", "", "",
+            Util.fmtNum(x.custoTotal, 2), "", x.motivo].join(sep) + "\n";
+        });
+        out += "\nCobertura" + sep + Util.fmtNum(res.cobertura, 1) + "%\n";
+      }
+      var nome = "insumos-" + String(this.orcAtual.numero || this.orcAtual.id || "orcamento")
+        + (f.cat && f.cat !== "TODAS" ? "-" + f.cat.toLowerCase() : "")
+        + (f.busca ? "-filtrado" : "") + ".csv";
+      Util.baixar(nome, "\ufeff" + out, "text/csv;charset=utf-8");
+      UI.toast(lista.length + " insumo(s) exportado(s).", "ok");
+    },
+
     _ligarFiltroLista: function () {
       var self = this;
       var liga = function (id, campo, evento) {
@@ -899,7 +994,7 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -1047,6 +1142,11 @@
 
       // navegação por aba
       if (t.dataset.aba) { this.aba = t.dataset.aba; this.render(); return; }
+      /* ⚠ `!== undefined`, e nao truthy: o botao "Todas as etapas" carrega
+         data-etapa-foco="" de proposito, e string vazia e falsy — com um
+         `if (t.dataset.etapaFoco)` o proprio botao de limpar o filtro nao
+         funcionaria. */
+      if (t.dataset.etapaFoco !== undefined) { this._etapaFoco = t.dataset.etapaFoco || ""; this.render(); return; }
       // abrir orçamento
       // excluir orçamento (ANTES do abrir: o botão fica dentro do card clicável)
       if (t.dataset.delOrc) { this.confirmarExcluirOrcamento(t.dataset.delOrc); return; }
@@ -1215,6 +1315,8 @@
         case "cp-salvar": this.cpSalvar(); break;
         case "aplicar-cenario": this.aplicarCenario(t.dataset.bdi); break;
         case "exportar-excel": this.exportarExcel(); break;
+        case "insumos-carregar-base": this._insumosCarregarBase(); break;
+        case "insumos-csv": this._insumosCsv(); break;
         case "reimportar-excel": this.reimportarExcel(); break;
         case "importar-planilha": this.importarPlanilha(); break;
         case "recuperar-planilha": this.recuperarPlanilha(); break;

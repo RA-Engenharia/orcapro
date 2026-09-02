@@ -1916,6 +1916,62 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 .g-bar-nome { pointer-events: none; }
 .g-ler-est { fill: var(--graf-alerta); }
 .g-leg-cx { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+/* =====================================================================
+ * ÍNDICE DE ETAPAS — a estrutura do orçamento sempre à vista
+ * O painel e a tabela dividem a largura; abaixo de 1100px o indice vira uma
+ * FITA HORIZONTAL em vez de sumir: em tablet a lista de etapas continua
+ * valendo, so nao cabe em coluna.
+ * ===================================================================== */
+.pl-com-indice { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 14px; align-items: start; }
+.pl-tabela { min-width: 0; overflow-x: auto; }
+.idx-etapas { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px;
+  max-height: calc(100vh - 120px); overflow-y: auto;
+  background: var(--card-bg); border: 1px solid var(--linha); border-radius: var(--raio); padding: 6px; }
+/* ⚠ O NOME GANHA A LINHA INTEIRA. Com numero, nome e valor lado a lado em
+   232px, "3 - TERRAPLANAGEM" virava "3 - TERRAPL..." — e etapa truncada num
+   indice cujo trabalho e justamente dizer o que ha no orcamento nao serve
+   para nada. O valor desce para a segunda linha, ao lado da barra. */
+.idx-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 3px 8px; align-items: baseline;
+  width: 100%; text-align: left; background: none; border: 0; border-radius: var(--raio-sm);
+  padding: 7px 8px; cursor: pointer; color: var(--texto); font: inherit;
+  transition: background .12s var(--ease); }
+.idx-item:hover { background: var(--surface-2); }
+.idx-item.on { background: var(--surface-2); box-shadow: inset 2px 0 0 var(--aco); }
+.idx-num { font-size: var(--t-micro); font-weight: var(--p-forte); color: var(--texto-fraco); min-width: 14px; }
+/* ⚠ QUEBRA EM ATE DUAS LINHAS EM VEZ DE CORTAR. Com `nowrap`, 22 dos 23
+   nomes saiam com reticencias em 232px — e um indice que existe para dizer
+   o que ha no orcamento nao pode esconder o nome das etapas. Duas linhas
+   ainda deixam ~14 etapas visiveis sem rolar; a terceira linha e que
+   comecaria a custar caro. */
+.idx-nome { font-size: var(--t-peq); line-height: 1.25; overflow: hidden;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.idx-item.on .idx-nome { font-weight: var(--p-forte); }
+.idx-val { grid-column: 2; font-size: var(--t-micro); color: var(--texto-fraco); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* a barrinha diz qual etapa leva o dinheiro — a mesma leitura da curva ABC,
+   por etapa em vez de por insumo */
+.idx-barra { grid-column: 2; height: 3px; margin-top: 1px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.idx-barra i { display: block; height: 100%; background: var(--aco); }
+.pl-foco { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  background: var(--surface-2); border: 1px solid var(--linha); border-radius: var(--raio-sm);
+  padding: 7px 10px; margin-bottom: 10px; font-size: var(--t-peq); }
+
+@media (max-width: 1100px) {
+  .pl-com-indice { grid-template-columns: minmax(0, 1fr); }
+  .idx-etapas { position: static; max-height: none; flex-direction: row; overflow-x: auto; padding: 6px; }
+  .idx-item { width: auto; flex: none; grid-template-columns: auto auto; }
+  .idx-barra, .idx-val { display: none; }
+}
+
+/* selo da curva ABC: A = os poucos que levam 80% do dinheiro.
+   ⚠ a LETRA carrega o significado, a cor so reforca — quem nao separa as
+   tintas continua lendo "A", "B", "C". */
+.ins-abc { display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: var(--raio-sm);
+  font-size: var(--t-micro); font-weight: var(--p-forte); color: #fff; }
+.ins-A { background: var(--graf-a); }
+.ins-B { background: var(--graf-prev); }
+.ins-C { background: var(--surface-3); color: var(--texto-fraco); }
+
 .g-nota { font-size: var(--t-micro); color: var(--texto-fraco); margin: 6px 0 0; line-height: 1.4; }
 
 .g-legenda { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; font-size: var(--t-peq); color: var(--texto-fraco); }

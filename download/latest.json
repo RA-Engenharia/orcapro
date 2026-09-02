@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.28",
+  "versao": "1.2.29",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.28/OrcaPRO-IA-update-v1.2.28.zip",
-  "notas": "A tela ficou com mais cor: o azul do sistema estava tao lavado que o olho lia quase cinza, e agora ele aparece. O botao principal ficou solido, sem o brilho antigo. E os campos de escolher obra e periodo deixaram de ter a cara do Windows e ganharam a forma do proprio sistema. O amarelo dos avisos e o verde continuam iguais de proposito: mais vivos, eles ficariam dificeis de ler, e sao justamente os que avisam.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.28/OrcaPRO-IA-Instalador-v1.2.28.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.29/OrcaPRO-IA-update-v1.2.29.zip",
+  "notas": "Duas novidades dentro do orcamento. A aba Insumos & ABC abre a obra em material: quanto de cimento, areia e mao de obra o orcamento inteiro pede, somando o mesmo insumo de todos os servicos — e a curva ABC aponta os poucos itens que levam 80% do dinheiro. A tela diz quanto do orcamento ela conseguiu abrir e lista o que ficou de fora, com o motivo; item digitado a mao nao tem composicao para explodir. E na Planilha, orcamento com 5 etapas ou mais ganha um indice lateral: da para ver o peso de cada etapa e olhar uma de cada vez, sem perder o total do orcamento inteiro.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.29/OrcaPRO-IA-Instalador-v1.2.29.exe"
 }
