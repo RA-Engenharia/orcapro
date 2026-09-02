@@ -565,58 +565,78 @@
     registrarWire: function (view, fn) { this._wiresExtras[String(view)] = fn; },
 
     modulos: [
-      // Ordem = jornada da obra (a MESMA da landing): 1 orçar → 2 BIM → 3 estruturar →
-      // 4 canteiro → 5 abastecer → 6 equipe/ativos → 7 dinheiro/comando. g = grupo do menu.
-      { id: "dashboard", nome: "Painel", g: 0 },
-      { id: "orcamentos", nome: "Orçamentos", g: 1 },
+      /* Ordem = jornada da obra (a MESMA da landing): orcar -> BIM -> estruturar ->
+         canteiro -> abastecer -> equipe/ativos -> dinheiro -> comando.
+
+         `g` = GRUPO do menu de dois niveis (js/menuarvore.js). Antes eram
+         numeros (1..8) e a barra desenhava 37 itens em lista plana, 2.169 px
+         de altura numa tela de 1.000. Agora o grupo recolhe.
+
+         `curto` = o rotulo DENTRO do grupo. Com "Equipe" na frente,
+         "Ponto / Folha" vira "Ponto" e para de quebrar em duas linhas.
+         ⚠ `nome` continua sendo a verdade para a busca (Ctrl+K), onde nao ha
+         grupo nenhum dando contexto: la "Ponto" sozinho nao diz o que e. */
+      { id: "dashboard", nome: "Painel" },
       /* ⚠ SOB DEMANDA — ver SOB_DEMANDA em js/perfis.js. Estar aqui NÃO faz
          o módulo aparecer para todo mundo: `Perfis.permite` responde false
          para quem não o nomeia, inclusive no perfil "completo". Registrar
          aqui é o que dá a ele barra, busca Ctrl+K, RBAC e "Organizar menu"
          de graça — a alternativa seria uma segunda lista de módulos. */
-      { id: "carpintaria", nome: "Carpintaria", g: 1 },
+      { id: "orcamentos", nome: "Orçamentos", g: "orcar" },
+      { id: "carpintaria", nome: "Carpintaria", g: "orcar" },
       /* o desenho da proposta virou cadastro: paginas, fotos numeradas, cor e
          letra. Vale para todo mundo — quem nao mexer continua com o documento
          de sempre, porque a proposta so usa modelo se houver um. */
-      { id: "propmodelos", nome: "Modelos de Proposta", g: 1 },
-      { id: "bim", nome: "BIM 3D ao 7D", g: 2 },
-      { id: "clientes", nome: "Clientes", g: 3 },
-      { id: "contratos", nome: "Contratos", g: 3 },
-      { id: "obras", nome: "Obras", g: 3 },
-      { id: "tarefas", nome: "Tarefas", g: 3 },
-      { id: "lastplanner", nome: "Last Planner (PPC)", g: 4 },
-      { id: "rdo", nome: "Diário (RDO)", g: 4 },
-      { id: "producao", nome: "Produção (por serviço)", g: 4 },
-      { id: "galeria", nome: "Galeria de Fotos", g: 4 },
-      { id: "medicoes", nome: "Medições", g: 4 },
-      { id: "insumos", nome: "Banco de Insumos", g: 5 },
-      { id: "requisicoes", nome: "Requisições", g: 5 },
-      { id: "cotacoes", nome: "Cotações", g: 5 },
-      { id: "compras", nome: "Compras", g: 5 },
-      { id: "fornecedores", nome: "Fornecedores", g: 5 },
-      { id: "estoque", nome: "Estoque", g: 5 },
-      { id: "colaboradores", nome: "Colaboradores", g: 6 },
-      { id: "folhasemanal", nome: "Folha Semanal", g: 6 },
-      { id: "remunvar", nome: "Remuneração variável", g: 6 },   // sob demanda — ver perfis.js
-      { id: "epi", nome: "EPI", g: 6 },
-      { id: "ponto", nome: "Ponto / Folha", g: 6 },
-      { id: "folha", nome: "Folha / Encargos", g: 6 },
-      { id: "frota", nome: "Frota", g: 6 },
-      { id: "patrimonio", nome: "Patrimônio", g: 6 },
-      { id: "modelos", nome: "Modelos de Doc.", g: 6 },
-      { id: "financeiro", nome: "Financeiro", g: 7 },
-      { id: "previstoreal", nome: "Previsto × Real", g: 7 },
-      { id: "fiscal", nome: "Fiscal / NF-e", g: 7 },
-      { id: "centrocusto", nome: "Centro de Custo", g: 7 },
-      { id: "relatorios", nome: "Relatórios", g: 7 },
-      { id: "usuarios", nome: "Usuários", g: 7 },
-      { id: "ajuda", nome: "Ajuda", g: 8 },
+      { id: "propmodelos", nome: "Modelos de Proposta", curto: "Modelos de proposta", g: "orcar" },
+      { id: "bim", nome: "BIM 3D ao 7D" },
+      { id: "clientes", nome: "Clientes", g: "obra" },
+      { id: "contratos", nome: "Contratos", g: "obra" },
+      { id: "obras", nome: "Obras", g: "obra" },
+      { id: "tarefas", nome: "Tarefas", g: "obra" },
+      { id: "rdo", nome: "Diário (RDO)", g: "canteiro" },
+      { id: "lastplanner", nome: "Last Planner (PPC)", curto: "Last Planner", g: "canteiro" },
+      { id: "producao", nome: "Produção (por serviço)", curto: "Produção", g: "canteiro" },
+      { id: "medicoes", nome: "Medições", g: "canteiro" },
+      { id: "galeria", nome: "Galeria de Fotos", curto: "Fotos", g: "canteiro" },
+      { id: "insumos", nome: "Banco de Insumos", curto: "Insumos", g: "suprimentos" },
+      { id: "requisicoes", nome: "Requisições", g: "suprimentos" },
+      { id: "cotacoes", nome: "Cotações", g: "suprimentos" },
+      { id: "compras", nome: "Compras", g: "suprimentos" },
+      { id: "fornecedores", nome: "Fornecedores", g: "suprimentos" },
+      { id: "estoque", nome: "Estoque", g: "suprimentos" },
+      /* ⚠ TRES MODULOS SE CHAMAVAM "FOLHA" no menu plano — "Folha Semanal",
+         "Ponto / Folha" e "Folha / Encargos" —, um embaixo do outro, e
+         ninguem acertava qual era qual de primeira. O grupo "Equipe" da o
+         contexto e cada um fica com UM nome. */
+      { id: "colaboradores", nome: "Colaboradores", g: "equipe" },
+      { id: "ponto", nome: "Ponto / Folha", curto: "Ponto", g: "equipe" },
+      { id: "folhasemanal", nome: "Folha Semanal", curto: "Folha semanal", g: "equipe" },
+      { id: "folha", nome: "Folha / Encargos", curto: "Encargos", g: "equipe" },
+      { id: "epi", nome: "EPI", g: "equipe" },
+      { id: "remunvar", nome: "Remuneração variável", curto: "Remun. variável", g: "equipe" },   // sob demanda — ver perfis.js
+      { id: "frota", nome: "Frota", g: "ativos" },
+      { id: "patrimonio", nome: "Patrimônio", g: "ativos" },
+      { id: "financeiro", nome: "Financeiro", curto: "Lançamentos", g: "dinheiro" },
+      { id: "previstoreal", nome: "Previsto × Real", g: "dinheiro" },
+      { id: "centrocusto", nome: "Centro de Custo", curto: "Centro de custo", g: "dinheiro" },
+      { id: "fiscal", nome: "Fiscal / NF-e", g: "dinheiro" },
+      { id: "relatorios", nome: "Relatórios" },
+      { id: "usuarios", nome: "Usuários", g: "config" },
+      { id: "modelos", nome: "Modelos de Doc.", curto: "Modelos de documento", g: "config" },
+      { id: "ajuda", nome: "Ajuda", g: "config" },
       /* fica ao lado da Ajuda porque é para lá que a pessoa vai quando algo dá
          errado — e como a Ajuda é liberada para TODO usuário (Auth.podeModulo),
          quem encontra o problema é quem consegue relatar, não só o admin */
-      { id: "relatos", nome: "Falar com o suporte", g: 8 }
+      { id: "relatos", nome: "Falar com o suporte", curto: "Suporte", g: "config" }
     ],
-    GRUPOS_MENU: { 1: "1 · Orçar & vender", 2: "2 · Modelo 3D (BIM)", 3: "3 · Fechar & estruturar", 4: "4 · Canteiro", 5: "5 · Abastecer a obra", 6: "6 · Equipe & ativos", 7: "7 · Dinheiro & comando" },
+    /* ⚠ SEM NUMERO NO ROTULO. Os grupos eram "1 · Orçar & vender" ... "7 ·
+       Dinheiro & comando": a numeracao ensinava a jornada da obra na primeira
+       semana e virava ruido em todas as outras. A ordem ja conta a jornada. */
+    /* ⚠ O ICONE DO GRUPO E ESCOLHIDO, nao herdado do primeiro filho.
+       Herdar fazia "Suprimentos" usar o icone de "Insumos" — o desenho do
+       primeiro da lista, que muda sozinho se alguem reordenar os modulos. */
+    ICONE_GRUPO: { orcar: "orcamentos", obra: "obras", canteiro: "rdo", suprimentos: "compras", equipe: "colaboradores", ativos: "frota", dinheiro: "financeiro", config: "usuarios" },
+    GRUPOS_MENU: { orcar: "Orçamentos", obra: "Obras", canteiro: "Canteiro", suprimentos: "Suprimentos", equipe: "Equipe", ativos: "Ativos", dinheiro: "Financeiro", config: "Configurações" },
 
     // ---------- Sidebar (nav de módulos) ----------
     /* ==================================================================
@@ -870,6 +890,30 @@
       catch (e) { if (typeof UI !== "undefined") UI.toast("Não consegui abrir o painel de vendas.", "erro"); }
     },
 
+    /* Um item da barra. Dentro de um grupo usa o rótulo curto: com "Equipe"
+       na frente, "Ponto / Folha" vira "Ponto" e para de quebrar em duas
+       linhas — quatro itens quebravam assim. */
+    _sbItem: function (m, viewAtiva, dentroDeGrupo) {
+      var nome = dentroDeGrupo && typeof MenuArvore !== "undefined" ? MenuArvore.rotulo(m) : m.nome;
+      return '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + (dentroDeGrupo ? " sb-filho" : "")
+        + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>"
+        + Util.esc(nome) + "</span></button>";
+    },
+
+    /* Quais grupos o cliente deixou abertos. Preferência de TELA e de
+       APARELHO — a mesma regra do menu enxuto: cada um organiza o seu sem
+       reescrever o do colega pela nuvem. */
+    _abertosChave: function () { return this._menuChave() + ":grp"; },
+    _menuAbertos: function () {
+      try { return JSON.parse(localStorage.getItem(this._abertosChave()) || "{}") || {}; } catch (e) { return {}; }
+    },
+    menuGrupoToggle: function (id) {
+      if (!id || typeof MenuArvore === "undefined") return;
+      var novo = MenuArvore.alternar(this._menuAbertos(), id);
+      try { localStorage.setItem(this._abertosChave(), JSON.stringify(novo)); } catch (e) {}
+      App.render();
+    },
+
     renderSidebar: function (viewAtiva) {
       // Vitrine (?demo=1): Gestão sempre liberada, mesmo que a licença do navegador
       // diga outra coisa (cliente já licenciado explorando a demo) — espelha App.render().
@@ -877,30 +921,66 @@
       var mods;
       if (!pode) mods = this.modulos.filter(function (m) { return m.id === "orcamentos"; });
       else mods = this.modulos.filter(function (m) { return (typeof Auth === "undefined" || !Auth.podeModulo) ? true : Auth.podeModulo(m.id); }); // RBAC: sub-usuário só vê seus módulos
-      // Cabeçalhos de grupo seguem a jornada da obra (só quando há 2+ grupos visíveis — FREE fica limpo)
-      var grupos = {}; mods.forEach(function (m) { if (m.g) grupos[m.g] = 1; });
-      var comLabels = Object.keys(grupos).length > 1;
-      /* separa o que fica à vista do que desce para "Mais módulos".
-         O módulo ABERTO entra à força na parte visível. */
       /* registrar aqui pega TODO caminho de navegação — clique na barra,
          busca Ctrl+K, link interno — porque a barra é redesenhada em todos. */
       this.menuMarcarUso(viewAtiva);
       var fix = this._menuFixados();
-      var visivel = function (m) { return !fix || fix.indexOf(m.id) > -1 || m.id === viewAtiva; };
-      var escondidos = fix ? mods.filter(function (m) { return !visivel(m); }) : [];
-      if (fix) mods = mods.filter(visivel);
+      var self = this;
 
-      var self = this, ultimoG = null;
-      var itens = mods.map(function (m) {
-        var pre = "";
-        if (comLabels && m.g !== ultimoG) {
-          ultimoG = m.g;
-          var lbl = self.GRUPOS_MENU[m.g];
-          if (lbl) pre = '<div class="sb-grp">' + lbl + "</div>";
-          else if (m.g === 8) pre = '<div class="sb-sep"></div>';
-        }
-        return pre + '<button class="sb-item' + (m.id === viewAtiva ? " on" : "") + '" data-view="' + m.id + '"><span class="sb-ic">' + svg(m.id, 19) + "</span><span>" + m.nome + "</span></button>";
-      }).join("");
+      /* ==============================================================
+       * A ÁRVORE DE DOIS NÍVEIS (motor em js/menuarvore.js)
+       *
+       * A barra tinha 37 itens no mesmo nível e 2.169 px de altura numa
+       * tela de 1.000 — rolava duas telas e meia, e em módulo de pouco
+       * conteúdo era o objeto mais pesado da página. Seis desses itens
+       * (Insumos → Requisição → Cotação → Compra → Fornecedor → Estoque)
+       * são um fluxo só.
+       *
+       * ⚠ RECOLHER NÃO É ESCONDER, e a diferença importa: o grupo fechado
+       * está a um clique e continua na busca; o grupo do módulo ABERTO
+       * nasce expandido, senão a pessoa perde a referência de onde está.
+       * Sem o motor a barra ainda desenha — lista plana, como antes.
+       * ============================================================== */
+      /* ⚠ DOIS CAMINHOS, E ISSO E PROPOSITAL.
+         Quem JA organizou o menu a mao (menu enxuto) segue no caminho de
+         sempre: os fixados a vista e o resto em "Mais modulos" — recurso com
+         suite propria (e2e-menu-enxuto) que protege seis comportamentos,
+         inclusive abrir no toque em tablet. Trocar isso por baixo dele
+         desfaria uma escolha que ele fez a mao.
+         A arvore atende quem NAO organizou nada — que era exatamente o menu
+         de 37 itens e 2.169 px. */
+      var itens = "", escondidos = [];
+      if (fix) {
+        var visivel = function (m) { return fix.indexOf(m.id) > -1 || m.id === viewAtiva; };
+        escondidos = mods.filter(function (m) { return !visivel(m); });
+        var visiveis = mods.filter(visivel);
+        itens = visiveis.map(function (m) { return self._sbItem(m, viewAtiva); }).join("");
+      } else if (typeof MenuArvore !== "undefined") {
+        var arvore = MenuArvore.montar(mods, this.GRUPOS_MENU, {
+          ativo: viewAtiva, abertos: this._menuAbertos()
+        });
+        itens = arvore.map(function (no) {
+          if (no.tipo === "sep") return '<div class="sb-sep"></div>';
+          if (no.tipo === "item") return self._sbItem(no.mod, viewAtiva);
+          var cab = '<button class="sb-item sb-grp-bt' + (no.aberto ? " aberto" : "")
+            + (no.temAtivo ? " tem-ativo" : "") + '" data-gacao="menu-grupo" data-id="' + Util.esc(no.id) + '"'
+            + ' aria-expanded="' + (no.aberto ? "true" : "false") + '">'
+            + '<span class="sb-ic">' + svg(self.ICONE_GRUPO[no.id] || no.filhos[0].id, 19) + "</span>"
+            + "<span>" + Util.esc(no.nome) + "</span>"
+            /* sem contador: a seta ja diz que ha mais coisa dentro, e um
+               numero ao lado de cada grupo virava uma coluna de digitos
+               competindo com os nomes. Um acessorio a menos. */
+            + '<span class="sb-grp-seta">' + (no.aberto ? "\u2303" : "\u2304") + "</span></button>";
+          if (!no.aberto) return cab;
+          /* role/aria-label: para o leitor de tela os filhos sao um grupo com
+             nome, e nao mais quatro botoes soltos depois de um botao */
+          return cab + '<div class="sb-grp-filhos" role="group" aria-label="' + Util.esc(no.nome) + '">'
+            + no.filhos.map(function (m) { return self._sbItem(m, viewAtiva, true); }).join("")
+            + "</div>";
+        }).join("");
+      } else {
+        itens = mods.map(function (m) { return self._sbItem(m, viewAtiva); }).join("");
+      }
       if (!pode && (typeof Auth === "undefined" || !Auth.ehAdmin || Auth.ehAdmin())) itens += '<button class="sb-item sb-upsell" data-gacao="upsell-plus"><span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + '</span><span>Desbloquear Gestão</span></button>'; // upsell só p/ o dono (não p/ sub-usuário)
 
       /* ===== APRESENTAÇÃO COMERCIAL — só na máquina de quem vende =====
@@ -920,7 +1000,7 @@
         itens += '<div class="sb-sep"></div>'
           + '<button class="sb-item sb-venda" data-gacao="abrir-apresentacao" title="Gerar o link do cliente e apresentar">'
           + '<span class="sb-ic">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 19) : '') + '</span>'
-          + '<span>Apresentação comercial</span></button>'
+          + '<span>Apresentação</span></button>'
           /* O painel de vendas mora no MESMO portão: presença do arquivo +
              dono da conta. Fica colado na apresentação porque é a mesma
              cabeça — vender e acompanhar o que foi vendido. */
@@ -959,6 +1039,21 @@
          do service worker por duas versões, e um menu meio pintado é pior
          que menu nenhum. */
       var est = '<style id="sb-menu-css">'
+        /* --- o grupo: cabeçalho, contagem e filhos --- */
+        + ".sb-grp-bt{width:100%}"
+        + ".sb-grp-seta{margin-left:auto;font-size:13px;opacity:.5;line-height:1}"
+        + ".sb-grp-bt:hover .sb-grp-seta{opacity:.9}"
+        /* ⚠ o traço à esquerda dos filhos é o que diz "isto está DENTRO":
+           sem ele, grupo aberto vira a mesma lista plana de antes, só que
+           com um título no meio. */
+        + ".sb-grp-filhos{margin:1px 0 5px 19px;padding-left:9px;border-left:1px solid rgba(255,255,255,.13)}"
+        + ".sb-item.sb-filho{font-size:13.5px;padding-top:5px;padding-bottom:5px;opacity:.86}"
+        + ".sb-item.sb-filho:hover,.sb-item.sb-filho.on{opacity:1}"
+        + ".sb-item.sb-filho .sb-ic{opacity:.8}"
+        /* o grupo que contém a tela aberta fica marcado mesmo recolhido —
+           é o rastro de onde a pessoa está */
+        + ".sb-grp-bt.tem-ativo{color:#fff}"
+        + ".sb-grp-bt.tem-ativo .sb-ic{opacity:1}"
         + ".sb-mais{position:relative}"
         + ".sb-mais-lista{display:none;padding-left:6px;border-left:2px solid var(--linha);margin:2px 0 6px 10px}"
         + ".sb-mais:hover .sb-mais-lista,.sb-mais.aberto .sb-mais-lista{display:block}"
@@ -986,6 +1081,12 @@
         /* com a barra recolhida, abrir a sanfona de "Mais módulos" dentro de
            54px daria uma coluna de ícones sem nome nenhum — pior que fechada */
         + ".app.foco > .sidebar:not(.aberta) .sb-mais-lista{display:none!important}"
+        /* ⚠ e os filhos do grupo aberto pelo MESMO motivo: com 54px, a
+           indentação de 19px + o traço deixariam meio ícone visível. A barra
+           recolhida mostra só os primeiros níveis; o grupo volta a abrir
+           assim que ela expande. */
+        + ".app.foco > .sidebar:not(.aberta) .sb-grp-filhos{display:none!important}"
+        + ".app.foco > .sidebar:not(.aberta) .sb-grp-seta{display:none}"
         + ".app.foco > .sidebar:not(.aberta) .sb-lbl,"
         + ".app.foco > .sidebar:not(.aberta) .sb-grp,"
         + ".app.foco > .sidebar:not(.aberta) .sb-mais-n{display:none}"
@@ -1096,8 +1197,18 @@
         + "Ver todos os " + c.total + "</button></div>";
     },
 
+    /* ⚠ `tela-head` E `tela-acoes` NAO SAO ENFEITE: sao o gancho que da UMA
+       hierarquia de botao as 37 telas de uma vez.
+       O cabecalho e sempre titulo + acoes, e a acao principal e a que este
+       helper desenha (`.primary`). O que chega por `extra` e secundario POR
+       DEFINICAO — so que cada tela pintava o seu do seu jeito, e o
+       "Lancar de documento (IA)" do Financeiro tinha fundo navy solido
+       inline: peso de botao principal sem ser o principal. Numa tela com
+       quatro botoes de peso parecido, nenhum e o proximo passo.
+       Com a classe, a regra mora no css (`.tela-acoes .btn:not(.primary)`)
+       e vale para toda tela nova sem ninguem lembrar de nada. */
     _head: function (titulo, gacao, btn, extra) {
-      return '<div class="flex between mb"><h1 style="margin:0">' + titulo + "</h1><div class=\"flex\">" + (extra || "") +
+      return '<div class="flex between mb tela-head"><h1 style="margin:0">' + titulo + "</h1><div class=\"flex tela-acoes\">" + (extra || "") +
         (gacao ? '<button class="btn primary" data-gacao="' + gacao + '">+ ' + btn + "</button>" : "") + "</div></div>";
     },
 
@@ -5808,7 +5919,7 @@
 
       var extra = (temAlgum ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
           (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
-        '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
+        '<button class="btn sm" data-gacao="doc-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Lançar de documento (IA)</button>' +
         '<button class="btn sm" data-gacao="export-financeiro" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>' +
         /* ⚠ QUATRO CAMPOS, NÃO QUINZE. O formulário completo pergunta três
            datas, categoria, status, contrato, etapa, fornecedor e forma de
@@ -16958,7 +17069,7 @@
         '<div class="row">' + campo("Elaborado por (autor)", inp("g-autor", autorDef, "Quem registrou o diário")) + "</div>" +
         campo('Fotos do dia <span class="muted" style="font-weight:400">(aparecem no Portal do Cliente · máx ' + RDO_MAX_FOTOS + ")</span>",
           '<input type="file" id="g-fotos" accept="image/*" multiple style="display:none">' +
-          '<button type="button" class="btn sm" id="g-fotos-btn" style="background:#0f2740;color:#fff">📷 Adicionar fotos</button>' +
+          '<button type="button" class="btn sm" id="g-fotos-btn">📷 Adicionar fotos</button>' +
           '<div id="g-fotos-gal" style="display:flex;flex-wrap:wrap;gap:10px;margin-top:10px"></div>');
       this._modalForm("rdo", r, "Diário de obra", corpo, function (obj) {
         obj.numero = v("g-num"); obj.data = v("g-data"); obj.status = v("g-status"); obj.obraId = v("g-obra");
@@ -17321,7 +17432,7 @@
     renderColaboradores: function () {
       var cs = lista("colaboradores"), obras = lista("obras");
       var ativos = cs.filter(function (c) { return c.status === "ativo"; }).length;
-      var extra = '<button class="btn sm" data-gacao="colab-doc" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Cadastrar de documento (IA)</button><span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
+      var extra = '<button class="btn sm" data-gacao="colab-doc" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Cadastrar de documento (IA)</button><span class="muted" style="margin-right:12px;align-self:center">Ativos: <b>' + ativos + "</b> / " + cs.length + "</span>";
       var html = this._head(svg("colaboradores") + "Colaboradores", "novo-colaborador", "Novo colaborador", extra);
       if (!cs.length) return html + vazioBox("Nenhum colaborador cadastrado", "novo-colaborador", "Cadastrar primeiro colaborador");
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Função</th><th>Contrato</th><th>Obra</th><th class="num">Remuneração</th><th>Status</th></tr></thead><tbody>';
@@ -17457,7 +17568,7 @@
         + card(aVencer, "CA vencido/a vencer", aVencer ? "#dc2626" : "#64748b")
         + card(caPend, "CA pendente", caPend ? "#b45309" : "#64748b")
         + card(catN != null ? catN : "…", "no catálogo" + (catProp > 0 ? " (" + catProp + " seu" + (catProp > 1 ? "s" : "") + ")" : ""), "#2e6f9e") + "</div>";
-      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('livro', 15) : '') + ' Catálogo de EPI</button>' +
+      var extra = '<button class="btn sm" data-gacao="catalogo-epi" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('livro', 15) : '') + ' Catálogo de EPI</button>' +
         '<button class="btn sm ghost" data-gacao="novo-epi-proprio" style="margin-right:10px;align-self:center" title="Cadastre um EPI que não está na lista — ele passa a aparecer na busca das suas entregas">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '') + ' EPI próprio</button>';
       var html = this._head(svg("epi") + "EPI — Entregas &amp; Fichas", "nova-entrega-epi", "Nova entrega", extra) + kpis;
       html += '<p class="muted" style="margin:-4px 0 14px">Registre a entrega de EPI ao colaborador (com CA e validade), gere a <b>ficha de controle (NR-6)</b> para assinatura e acompanhe o gasto. O catálogo traz os EPIs de obra com valor de referência; o <b>CA é do modelo comprado</b> — use <b>' + (typeof Icones !== 'undefined' ? Icones.get('buscar', 15) : '') + ' Consultar CA</b> para conferir online.</p>';
@@ -17801,7 +17912,7 @@
       var extra = '<button class="btn sm" data-gacao="nova-falta" style="margin-right:8px;align-self:center">Registrar falta</button>'
         + '<button class="btn sm" data-gacao="nova-he" style="margin-right:8px;align-self:center">⏱ Lançar hora extra</button>'
         + '<button class="btn sm" data-gacao="falta-lote" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Lançar em lote</button>'
-        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center;background:#0f2740;color:#fff">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Demonstrativo de frequência</button>'
+        + '<button class="btn sm" data-gacao="espelho-ponto" style="margin-right:8px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Demonstrativo de frequência</button>'
         + '<button class="btn sm" data-gacao="config-jornada" style="margin-right:12px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Jornada</button>';
       var html = this._head(svg("ponto") + "Ponto / Cartão de Ponto", "batidas-mes", "Registrar batidas", extra);
       html += '<div class="row" style="align-items:center;gap:14px;margin:-4px 0 12px">'
@@ -23495,7 +23606,17 @@ renderFolha: function () {
     },
     _lpObter: function (id) { return Store.obter(eid(), "lp_tarefas", id); },
     _lpSalvar: function (t, msg) { Store.salvar(eid(), "lp_tarefas", t); App.render(); if (msg) UI.toast(msg, "ok"); },
-    _lpKpi: function (t, val, sub, cor) { return '<div class="card" style="padding:12px 14px"><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.4px">' + t + '</div><div style="font-size:26px;font-weight:800;color:' + cor + ';line-height:1.1;margin:2px 0">' + val + '</div><div class="muted" style="font-size:11.5px">' + sub + '</div></div>'; },
+    /* ⚠ ERA O QUARTO DIALETO DE INDICADOR, e o mais usado — e dele que sao
+       os cartoes do Painel. Desenhava tudo inline: rotulo 11px, numero 26px
+       peso 800, sub 11.5px, sem tocar na classe `.kpi` que ja existia no
+       css. Agora usa o componente; a densidade compacta e escolhida, porque
+       aqui o indicador encima um grafico ou uma tabela e nao pode roubar a
+       leitura deles. */
+    _lpKpi: function (t, val, sub, cor) {
+      return '<div class="card kpi kpi-compacto"><div class="rotulo">' + t + '</div>'
+        + '<div class="num"' + (cor ? ' style="color:' + cor + '"' : "") + '>' + val + '</div>'
+        + '<div class="kpi-sub">' + sub + '</div></div>';
+    },
     renderLastPlanner: function () {
       var self = this, LP = window.LastPlanner, obras = lista("obras");
       if (typeof LP === "undefined") return this._head("Last Planner · PPC", "", "") + vazioBox("Módulo Last Planner não carregado.", "", "");
@@ -24369,6 +24490,7 @@ renderFolha: function () {
         case "catalogo-epi": return this.abrirCatalogoEpi();
         case "epi-editar": return this.epiEditar(dataset.id);
         case "epi-duplicar": return this.epiDuplicar(dataset.id);
+        case "menu-grupo": return this.menuGrupoToggle(dataset.id);
         case "menu-foco": return this.menuFocoToggle();
         case "menu-organizar": return this.menuOrganizar();
         case "menu-mais": return this.menuMaisToggle();

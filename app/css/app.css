@@ -1660,6 +1660,113 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
   .fin-faixa .fin-rec, .fin-faixa .fin-kpi { border-right: 0; min-width: 46%; }
 }
 
+/* =====================================================================
+ * UMA LINGUAGEM SO PARA CABECALHO, INDICADOR E ACAO DE LINHA
+ *
+ * Tres inconsistencias medidas em 02/09/2026, olhando as telas lado a lado:
+ *
+ * 1) HIERARQUIA DE BOTAO. O cabecalho do Financeiro tinha quatro botoes de
+ *    peso parecido — "Lancar de documento (IA)" (com fundo navy solido
+ *    inline), "CSV", "Gasto rapido" e "+ Novo lancamento". Quando tudo pesa
+ *    igual, nada e o proximo passo. So o `.primary` que o `_head` desenha e
+ *    a acao principal; o resto e secundario POR DEFINICAO.
+ *
+ * 2) INDICADOR EM DOIS DIALETOS. O Painel usa cartoes brancos com sombra
+ *    (.kpi); Financeiro e Compras usam uma faixa cinza chapada
+ *    (.fin-faixa). Mesma informacao, dois pesos visuais. A faixa passa a
+ *    falar a lingua do cartao — mesma superficie, mesma borda, mesma sombra
+ *    — e a diferenca fica sendo so a DENSIDADE, que e deliberada: cartao na
+ *    tela de analise, faixa no topo de uma lista.
+ *
+ * 3) ACAO DE LINHA COMPETINDO COM O DADO. "Estornar" repetido em toda linha
+ *    paga formava uma coluna de botoes que puxava o olho mais que os
+ *    valores — e valor e o que a pessoa foi ali ler.
+ *
+ * ⚠ DISCRETO NAO E ESCONDIDO. A cor do texto continua `--texto-fraco`
+ * (5,9:1 sobre a superficie, acima do AA), a borda continua visivel e o
+ * hover/foco devolve o contraste inteiro. Botao de dinheiro que some e
+ * trava sem porta: quem nao acha o "Estornar" resolve marcando o documento
+ * de outro jeito, e isso vai parar no Portal do cliente.
+ * ===================================================================== */
+
+/* --- 1) o cabecalho de tela: um principal, o resto secundario --- */
+.tela-acoes { gap: 8px; align-items: center; flex-wrap: wrap; }
+/* ⚠ `!important` aqui e deliberado, e e o unico jeito honesto: as 37 telas
+   carregam `margin-right` INLINE nos botoes de acao ("margin-right:10px;
+   align-self:center", repetido tela a tela), e inline so perde para
+   important. Com o `gap` do flex fazendo o espacamento, a margem antiga
+   soma e abre um vao de 18px entre botoes. A alternativa era editar 37
+   trechos a mao e torcer para a proxima tela lembrar do padrao. */
+.tela-acoes .btn { margin-right: 0 !important; align-self: center !important; }
+.tela-acoes .btn:not(.primary):not(.success):not(.danger) {
+  background: var(--surface);
+  border-color: var(--linha);
+  color: var(--texto-fraco);
+  box-shadow: none;
+  font-weight: var(--p-medio);
+}
+.tela-acoes .btn:not(.primary):not(.success):not(.danger):hover {
+  color: var(--texto);
+  border-color: var(--linha-forte);
+  box-shadow: var(--sombra-sm);
+}
+/* o principal ganha o unico destaque da area */
+.tela-acoes .btn.primary { font-weight: var(--p-forte); }
+
+/* --- 1b) o indicador: UM componente, duas densidades ---
+   Havia QUATRO jeitos de desenhar um indicador nesta base:
+     .kpi (css), `_lpKpi` (tudo inline, e o que o Painel usa de verdade),
+     a .fin-faixa, e um helper proprio dentro de js/ui.js que punha o numero
+     em cima e centralizado.
+   Quatro leituras diferentes da mesma coisa, e a pessoa reaprendendo a ler
+   a cada tela. Agora todos usam `.kpi` com rotulo / numero / explicacao; o
+   que muda e so a DENSIDADE, e ela e escolhida: `kpi-compacto` onde o
+   indicador encima uma tabela, o normal na tela de analise. */
+.kpi .kpi-sub { font-size: var(--t-micro); color: var(--texto-fraco); margin-top: 3px; line-height: 1.35; }
+.kpi.kpi-compacto { padding: 12px 14px; }
+/* a faixa colorida do topo e o destaque da tela de analise; na versao
+   compacta ela vira listra decorativa em cima de uma tabela */
+.kpi.kpi-compacto::before { display: none; }
+/* ⚠ era `26px` cru no `_lpKpi` inline — um tamanho que nao existe na
+   regua da casa (12 / 13,5 / 15 / 17 / 20 / 32). O gate reprova valor solto
+   no css justamente para a escala nao virar sugestao, e reprovou este. */
+.kpi.kpi-compacto .num { font-size: var(--t-tit); margin-top: 2px; }
+.kpi.kpi-compacto:hover { transform: none; }
+
+/* --- 2) a faixa de indicadores falando a lingua do cartao --- */
+.fin-faixa {
+  background: var(--card-bg);
+  box-shadow: var(--sombra-sm);
+  padding: 12px 14px;
+}
+.fin-faixa .fin-lbl { letter-spacing: .8px; font-weight: var(--p-forte); }
+/* o numero da faixa e menor que o do cartao DE PROPOSITO: ali ele encima
+   uma tabela e nao pode roubar a leitura dela. Mesma familia, densidade
+   diferente. */
+.fin-faixa b { letter-spacing: -.3px; }
+
+/* --- 3) acao dentro de tabela: o dado primeiro --- */
+table.tbl .btn:not(.primary):not(.success):not(.danger) {
+  background: transparent;
+  border-color: var(--linha);
+  color: var(--texto-fraco);
+  box-shadow: none;
+}
+table.tbl .btn:not(.primary):not(.success):not(.danger):hover,
+table.tbl .btn:not(.primary):not(.success):not(.danger):focus-visible {
+  background: var(--surface);
+  border-color: var(--linha-forte);
+  color: var(--texto);
+  box-shadow: var(--sombra-sm);
+}
+/* ⚠ a linha inteira acende junto: sem isto, o alvo so aparece quando o
+   ponteiro encosta exatamente no botao, e em tabela longa isso e cacada */
+table.tbl tbody tr:hover .btn:not(.primary):not(.success):not(.danger) {
+  border-color: var(--linha-forte);
+  color: var(--texto);
+}
+
+
 /* ⚠ Base declarada do orçamento (⚙ Dados) — era campo de texto livre e virou
    leitura quando há item lançado: o documento tem de declarar a base dos
    preços que ele imprime. Ver App._edBaseCampos. */

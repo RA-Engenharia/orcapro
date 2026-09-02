@@ -650,27 +650,44 @@
          um recorte não é conversão, é amostra escolhida a dedo. */
       var ind = Orcamento.indicadoresCarteira(orcamentos, Util.agoraISO());
 
-      var kpi = function (v, rot, cor) {
-        return '<div class="card" style="flex:1;min-width:120px;text-align:center;padding:10px 8px">' +
-          '<div style="font-size:20px;font-weight:800;color:' + (cor || "var(--tinta)") + '">' + v + '</div>' +
-          '<div class="muted" style="font-size:11.5px">' + rot + '</div></div>';
+      /* ⚠ O TERCEIRO DIALETO DE INDICADOR, ate 02/09/2026.
+         Este helper desenhava o numero EM CIMA, centralizado e em 800, com o
+         rotulo pequeno embaixo — enquanto o Painel usa `.kpi` (rotulo em
+         cima, numero embaixo, alinhado a esquerda) e o Financeiro usa a
+         `.fin-faixa`. Tres jeitos de dizer a mesma coisa, e a pessoa
+         reaprendendo a ler a cada tela.
+         Agora usa a MESMA classe do Painel: o CSS ja existia, so nao estava
+         sendo aproveitado aqui. A cor semantica continua vindo por
+         parametro, porque verde/laranja no numero e informacao (prazo
+         vencido, conversao boa), nao decoracao. */
+      /* ⚠ `sub` NAO E ENFEITE: sem ele, frases como "prazo: ligue em
+         Parametros" viravam ROTULO — em caixa alta, quebrando em duas linhas
+         e pesando como titulo. Rotulo nomeia, explicacao explica; cada um
+         faz um trabalho so. */
+      var kpi = function (v, rot, cor, sub) {
+        return '<div class="kpi kpi-compacto" style="min-width:120px">' +
+          '<div class="rotulo">' + rot + '</div>' +
+          '<div class="num"' + (cor ? ' style="color:' + cor + '"' : "") + '>' + v + '</div>' +
+          (sub ? '<div class="kpi-sub">' + sub + '</div>' : "") + '</div>';
       };
-      html += '<div class="row" style="gap:10px;margin-bottom:12px;flex-wrap:wrap">' +
+      html += '<div class="kpis" style="margin-bottom:14px">' +
         kpi(k.qtd + (temFiltro ? '<span style="font-size:12px;font-weight:600;color:var(--cinza)"> / ' + r.total + '</span>' : ""), temFiltro ? "no filtro" : "orçamentos") +
         kpi(Util.fmtMoeda(k.carteira), "carteira" + (temFiltro ? " (filtrada)" : "")) +
         kpi(Util.fmtMoeda(k.medio), "valor médio") +
         (k.comControle
           ? kpi(k.aVencer + (k.vencidos ? ' <span style="color:#dc2626">+' + k.vencidos + '</span>' : ""),
-                k.vencidos ? "a vencer · vencidos" : "prazos a vencer", k.vencidos ? "#ea580c" : "#16a34a")
+                "prazos", k.vencidos ? "#ea580c" : "#16a34a",
+                k.vencidos ? "a vencer · vencidos" : "a vencer")
           /* sem nenhum prazo controlado, o KPI vira convite — e explica onde
              se liga isso, senão o usuário não descobre que existe */
-          : kpi("—", "prazo: ligue em Parâmetros")) +
+          : kpi("—", "prazos", null, "ligue em Parâmetros")) +
         /* FASE 5 — o número que o dono olha. « — » quando nada foi enviado
            ainda: 0% ali seria mentira sobre um funil que nem começou. */
         (ind.enviados
-          ? kpi(Util.fmtNum(ind.conversao, 1) + "%", "conversão (" + ind.aprovados + " de " + ind.enviados + ")",
-                ind.conversao >= 50 ? "#16a34a" : "#0f2740")
-          : kpi("—", "conversão: nada enviado ainda")) +
+          ? kpi(Util.fmtNum(ind.conversao, 1) + "%", "conversão",
+                ind.conversao >= 50 ? "#16a34a" : "#0f2740",
+                ind.aprovados + " de " + ind.enviados + " enviados")
+          : kpi("—", "conversão", null, "nada enviado ainda")) +
       '</div>' +
       /* orçamento parado: quem preencheu esqueceu, e ninguém cobra o que não
          aparece. Só conta o que AINDA NÃO FOI ENVIADO — esperar decisão de

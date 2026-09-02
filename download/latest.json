@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.25",
+  "versao": "1.2.26",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.25/OrcaPRO-IA-update-v1.2.25.zip",
-  "notas": "Falar com o suporte: o que voce relata agora e lido e respondido por dentro do sistema. A resposta aparece na mesma tela, em Seus relatos, junto com a situacao do seu pedido.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.25/OrcaPRO-IA-Instalador-v1.2.25.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.26/OrcaPRO-IA-update-v1.2.26.zip",
+  "notas": "Menu agrupado: os modulos agora ficam dentro de Orcamentos, Obras, Canteiro, Suprimentos, Equipe, Ativos, Financeiro e Configuracoes — a barra deixou de ser uma lista de 37 itens. Nada saiu do sistema: o grupo abre com um clique, o que voce esta usando ja abre sozinho, e a busca (Ctrl+K) acha tudo como antes. Quem tinha organizado o menu a mao continua com o seu. As telas tambem ficaram no mesmo padrao de cabecalho, indicador e acao.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.26/OrcaPRO-IA-Instalador-v1.2.26.exe"
 }
