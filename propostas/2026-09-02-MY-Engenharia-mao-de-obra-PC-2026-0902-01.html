@@ -1,0 +1,170 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposta PC-2026-0902-01 — MY Engenharia — RA Engenharia</title><style>
+:root{--p-navy:#0f2740;--p-aco:#2e6f9e;--p-verde:#15803d;--p-linha:#d8e0ea;--raio:10px}
+*{box-sizing:border-box}
+body{margin:0;background:#2b3a4a;font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif;color:#1a2632;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.toolbar{position:fixed;top:0;left:0;right:0;height:52px;z-index:10;background:var(--p-navy);color:#fff;display:flex;align-items:center;gap:12px;padding:0 18px;font-size:14px}
+.toolbar .ttl{flex:1;font-weight:700}
+.toolbar button{background:#16a34a;color:#fff;border:0;border-radius:8px;padding:8px 16px;font-weight:700;cursor:pointer}
+.doc{padding:70px 0 40px}
+.pg{width:210mm;min-height:297mm;background:#fff;margin:0 auto 18px;box-shadow:0 6px 24px rgba(0,0,0,.3);padding:22mm 20mm 24mm;position:relative;font-size:11pt;line-height:1.5;overflow:hidden}
+.pg .wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:64pt;font-weight:800;color:rgba(15,39,64,.045);transform:rotate(-30deg);pointer-events:none;letter-spacing:6px;z-index:0}
+.pg>*:not(.wm){position:relative;z-index:1}
+.pg-head{display:flex;justify-content:space-between;font-size:8.5pt;letter-spacing:2px;color:var(--p-aco);font-weight:700;margin-bottom:10px}
+.pg-head .pg-num{color:#7a8a99;letter-spacing:.3px;font-weight:600}
+.pg h2.pg-tit{font-size:17pt;color:var(--p-navy);border-bottom:3px solid var(--p-aco);padding-bottom:8px;margin:0 0 14px;position:relative}
+.pg h2.pg-tit::after{content:"";position:absolute;left:0;bottom:-3px;width:58px;height:3px;background:#16a34a}
+.pg h3{font-size:12pt;color:var(--p-aco);margin:14px 0 6px}
+.pg p{margin:6px 0}
+.pg ul,.pg ol{margin:6px 0 6px 18px;padding:0}.pg li{margin:3px 0}
+.pg .cols{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.pg .nota{font-size:9.5pt;color:#6b7b8a}
+.pg .pg-rod{position:absolute;bottom:12mm;left:20mm;right:20mm;border-top:1px solid var(--p-linha);padding-top:6px;font-size:8.5pt;color:#7a8a99;display:flex;justify-content:space-between}
+.est{color:#b45309;font-weight:700}
+.pg.capa{background:linear-gradient(155deg,#0b1d31 0%,#143454 58%,#1c4b73 128%);color:#fff;display:flex;flex-direction:column;padding:24mm 20mm}
+.pg.capa::before{content:"";position:absolute;inset:0;z-index:0;background-image:linear-gradient(rgba(255,255,255,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.05) 1px,transparent 1px);background-size:42px 42px;-webkit-mask-image:radial-gradient(560px 460px at 82% 16%,#000,transparent 74%);mask-image:radial-gradient(560px 460px at 82% 16%,#000,transparent 74%)}
+.pg.capa::after{content:"";position:absolute;right:-120px;top:-100px;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(111,208,138,.16),transparent 70%);z-index:0}
+.pg.capa>*{position:relative;z-index:1}
+.logo{display:inline-flex;align-items:baseline;gap:8px;border-left:5px solid #6fd08a;padding-left:14px;line-height:1}
+.logo .ra{font-size:34pt;font-weight:800;letter-spacing:-1px}.logo .eng{font-size:16pt;font-weight:700;letter-spacing:4px;color:#cfe0ef}.logo small{font-size:8pt;letter-spacing:3px;color:#9fb6cc}
+.capa-top{margin-bottom:auto}
+.capa-mid .kicker{letter-spacing:6px;font-size:11pt;color:#9be7af;font-weight:700}
+.capa-mid .kicker::after{content:"";display:block;width:58px;height:4px;background:#16a34a;border-radius:3px;margin-top:14px}
+.capa-mid h1{color:#fff;font-size:26pt;font-weight:800;line-height:1.15;letter-spacing:-.5px;margin:18px 0 10px}
+.capa-obra{font-size:12.5pt;color:#cfe0ef}
+.capa-info{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.13);border-radius:var(--raio);padding:16px 22px;margin:28px 0}
+.ci-row{display:flex;justify-content:space-between;align-items:baseline;gap:20px;padding:7px 0;border-bottom:1px solid rgba(255,255,255,.1);font-size:11pt}
+.ci-row:last-child{border-bottom:none;padding-bottom:0}.ci-row:last-child b{font-size:16pt}
+.ci-row span{color:#a9c4dc;white-space:nowrap}.ci-row b{text-align:right;font-variant-numeric:tabular-nums}.verde{color:#6fd08a}
+.capa-rod{margin-top:auto;font-size:9pt;color:rgba(255,255,255,.65);border-top:1px solid rgba(255,255,255,.1);padding-top:14px;line-height:1.6}
+table.prop-tbl{width:100%;border-collapse:collapse;font-size:9.4pt;margin:6px 0;line-height:1.38}
+table.prop-tbl th,table.prop-tbl td{padding:5px 7px;border-bottom:1px solid var(--p-linha);text-align:left;vertical-align:top}
+table.prop-tbl th{background:var(--p-navy);color:#fff;font-weight:700;letter-spacing:.3px}
+table.prop-tbl tbody tr:nth-child(even) td{background:#f7fafd}
+table.prop-tbl td.r,table.prop-tbl th.r{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.prop-tbl td.c,table.prop-tbl th.c{text-align:center}
+table.prop-tbl .base{font-size:8pt;color:#7a8a99;margin-top:2px}
+table.prop-tbl tfoot td{background:#eef4fa;font-weight:700;border-top:2px solid var(--p-navy);color:var(--p-navy)}
+table.prop-tbl tfoot tr.sub td{background:#fff;border-top:2px solid var(--p-navy);font-weight:600;color:#1a2632}
+table.prop-tbl tfoot tr.desc td{background:#fff;border-top:0;font-weight:600;color:#b45309}
+.assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:56px;text-align:center}
+.assin{font-weight:600;line-height:1.5}.assin span{color:#6b7b8a;font-weight:400;font-size:9.5pt}
+.linha-assin{border-top:1.5px solid #1a2632;margin-bottom:8px}
+@page{size:A4;margin:0}
+@media print{body{background:#fff}.toolbar{display:none}.doc{padding:0}.pg{margin:0;box-shadow:none;page-break-after:always;min-height:297mm;height:297mm}.pg:last-child{page-break-after:auto}}
+</style></head><body>
+<div class="toolbar"><span class="ttl">Proposta Comercial PC-2026-0902-01 · MY Engenharia · RA Engenharia</span><button onclick="window.print()">Imprimir / Salvar PDF</button></div>
+<div class="doc"><section class="pg capa">
+  <div class="capa-top"><div class="logo"><span class="ra">RA</span><span class="eng">ENGENHARIA</span><small>ESPECIAL</small></div></div>
+  <div class="capa-mid"><div class="kicker">PROPOSTA COMERCIAL</div>
+    <h1>Prestação de mão de obra especializada de pedreiro e ajudante</h1>
+    <div class="capa-obra">Alvenaria em bloco de concreto frisado com canaleta e graute, escavação manual, remoção de entulho, recomposição de base cimentada e de calçada</div></div>
+  <div class="capa-info">
+    <div class="ci-row"><span>Cliente</span><b>MY Engenharia</b></div>
+    <div class="ci-row"><span>Local da obra</span><b>[ENDEREÇO DA OBRA — a informar]</b></div>
+    <div class="ci-row"><span>Proposta nº</span><b>PC-2026-0902-01</b></div>
+    <div class="ci-row"><span>Data</span><b>02/09/2026</b></div>
+    <div class="ci-row"><span>Validade</span><b>15 dias (até 17/09/2026)</b></div>
+    <div class="ci-row"><span>Valor global (mão de obra)</span><b class="verde">R$ 4.000,00</b></div>
+  </div>
+  <div class="capa-rod">RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64<br>Rua Ovídio Bradamante de Toledo, 100, Apto 101 Bl. B — Tubalina — Uberlândia/MG<br>Eng. Rogério Alves de Souza — CREA-MG 323736 · WhatsApp (34) 9286-9383 · contato@raengenhariaespecial.com.br</div>
+</section><section class="pg interna"><div class="wm">RA ENGENHARIA</div><div class="pg-head"><span class="pg-emp">RA ENGENHARIA</span><span class="pg-num">Proposta PC-2026-0902-01</span></div><h2 class="pg-tit">1. Apresentação</h2>
+<p>A <b>RA Engenharia Especial</b> atua na execução e gestão de obras civis, com responsabilidade técnica de engenheiro registrado no CREA-MG, equipe própria e foco em qualidade de execução, segurança e cumprimento de prazo.</p>
+<p>Apresentamos à <b>MY Engenharia</b> nossa proposta para <b>prestação de mão de obra especializada de pedreiro e ajudante</b>, em regime de empreitada por preço unitário, para os serviços relacionados a seguir. Todo o material de consumo e aplicação (blocos, cimento, areia, brita, concreto, caçambas) é de fornecimento da contratante, conforme a solicitação recebida.</p>
+<h3>2. Entendimento do escopo</h3>
+<p>Os serviços solicitados foram interpretados da seguinte forma:</p>
+<ul>
+<li><b>Alvenaria — 35 m² em bloco de concreto frisado 14×19×39 cm:</b> 4 fiadas, sendo a última em bloco canaleta, ao longo de 32 m. Inclui assentamento com argamassa, prumo, nível, amarração, juntas frisadas, <b>grauteamento vertical a cada 3 m</b> e <b>concretagem da última fiada (canaleta)</b>. Blocos, canaletas, argamassa, graute, concreto e armação são fornecidos pela contratante; a frente inicia quando o material estiver completo na obra.</li>
+<li><b>Escavação manual — aprox. 30 m lineares:</b> abertura de vala manual com o material escavado depositado ao lado. Como a seção não foi informada, adotamos 0,40 × 0,60 m (7,20 m³) como referência; a medição final será pelo volume efetivamente escavado.</li>
+<li><b>Entulho — 2 caçambas:</b> carga manual do entulho existente em duas caçambas estacionárias de 5 m³ (10 m³), fornecidas pela contratante.</li>
+<li><b>Recondicionamento de areia e brita na parte cimentada:</b> regularização da base com lastro de areia e brita e recomposição do piso cimentado na área indicada.</li>
+<li><b>Retirada de montes de terra e grama sobre o campo:</b> remoção manual dos montes depositados sobre o gramado, com carga em caçamba ou transporte até local indicado no próprio terreno.</li>
+<li><b>Recomposição de calçada — aprox. 10 m²:</b> demolição do trecho danificado e execução de novo passeio em concreto moldado no local.</li>
+</ul>
+<p class="nota">Os itens marcados com <span class="est">◆</span> na planilha têm quantidade <b>estimada</b>, a confirmar em visita técnica. Os preços unitários são firmes; o valor final será apurado por medição.</p><div class="pg-rod"><span>RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64 · (34) 9286-9383</span><span class="np"></span></div></section><section class="pg interna"><div class="wm">RA ENGENHARIA</div><div class="pg-head"><span class="pg-emp">RA ENGENHARIA</span><span class="pg-num">Proposta PC-2026-0902-01</span></div><h2 class="pg-tit">3. Planilha de serviços — mão de obra</h2>
+<table class="prop-tbl"><thead><tr><th class="c">Item</th><th>Serviço</th><th class="c">Un.</th><th class="r">Qtd.</th><th class="r">Preço unit.</th><th class="r">Total</th></tr></thead>
+<tbody><tr><td class="c">1</td><td>Execução de alvenaria em bloco de concreto frisado (aparente) 14×19×39 cm, 4 fiadas sendo a última em canaleta, blocos fornecidos pela contratante: assentamento com argamassa, prumo, nível, amarração e juntas frisadas<div class="base">Valor negociado (ref. SINAPI 103339)</div></td><td class="c">m²</td><td class="r">35,00</td><td class="r">R$ 45,00</td><td class="r">R$ 1.575,00</td></tr><tr><td class="c">2</td><td>Enchimento de graute nas canaletas da última fiada (32 m) e nos pilares/células verticais a cada 3 m, com armação simples, limpeza das células e adensamento (graute e aço pela contratante)<div class="base">Valor negociado (ref. SINAPI 105033 + 105792)</div></td><td class="c">m²</td><td class="r">35,00</td><td class="r">R$ 20,00</td><td class="r">R$ 700,00</td></tr><tr><td class="c">3</td><td>Escavação manual de vala (aprox. 30 m lineares, seção adotada 0,40 × 0,60 m = 7,20 m³), com material depositado ao lado<div class="base">SINAPI 93358</div></td><td class="c">m³</td><td class="r">7,20 <span class="est" title="quantidade estimada — a confirmar em visita técnica">◆</span></td><td class="r">R$ 125,98</td><td class="r">R$ 907,06</td></tr><tr><td class="c">4</td><td>Carga manual de entulho nas 2 caçambas estacionárias (5 m³ cada): 1 diária de equipe com 3 ajudantes<div class="base">Valor negociado (diária de ajudante)</div></td><td class="c">diária de ajudante</td><td class="r">3,00</td><td class="r">R$ 200,00</td><td class="r">R$ 600,00</td></tr><tr><td class="c">5</td><td>Recondicionamento da base com areia e brita (lastro granular, e ≈ 10 cm) e recomposição do piso cimentado (traço 1:5, e = 2 cm) na área hoje cimentada<div class="base">SINAPI 100324 + 98679</div></td><td class="c">m²</td><td class="r">20,00 <span class="est" title="quantidade estimada — a confirmar em visita técnica">◆</span></td><td class="r">R$ 36,81</td><td class="r">R$ 736,20</td></tr><tr><td class="c">6</td><td>Retirada dos montes de terra e grama depositados sobre o gramado do campo, com carga manual e acondicionamento em caçamba/local indicado<div class="base">SINAPI 106122 (por analogia)</div></td><td class="c">m³</td><td class="r">6,00 <span class="est" title="quantidade estimada — a confirmar em visita técnica">◆</span></td><td class="r">R$ 108,83</td><td class="r">R$ 652,98</td></tr><tr><td class="c">7</td><td>Recomposição de calçada em concreto moldado in loco (≈ 10 m², e = 6 cm, acabamento convencional), incluindo demolição manual do trecho danificado<div class="base">SINAPI 104789 + 94992</div></td><td class="c">m²</td><td class="r">10,00</td><td class="r">R$ 47,14</td><td class="r">R$ 471,40</td></tr></tbody>
+<tfoot><tr class="sub"><td colspan="5">Subtotal — mão de obra</td><td class="r">R$ 5.642,64</td></tr>
+<tr class="desc"><td colspan="5">Desconto comercial — abatimento do BDI (29,1%)</td><td class="r">− R$ 1.642,64</td></tr>
+<tr><td colspan="5">VALOR GLOBAL — MÃO DE OBRA (materiais e caçambas pela contratante)</td><td class="r">R$ 4.000,00</td></tr></tfoot></table>
+<p class="nota"><span class="est">◆</span> Quantidade estimada, a confirmar em visita técnica. Os itens 1, 2 e 4 têm preço negociado; os demais são referenciados no SINAPI-MG 06/2026 com BDI de 28%, sobre o qual incide o desconto comercial do fechamento. Preços incluem encargos sociais e complementares (EPI, alimentação e transporte da equipe) e ferramentas manuais.</p>
+<div class="pg-rod"><span>RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64 · (34) 9286-9383</span><span class="np"></span></div></section><section class="pg interna"><div class="wm">RA ENGENHARIA</div><div class="pg-head"><span class="pg-emp">RA ENGENHARIA</span><span class="pg-num">Proposta PC-2026-0902-01</span></div><h2 class="pg-tit">4. Está incluso / Não está incluso</h2>
+<div class="cols"><div><h3>✔ Incluso</h3><ul>
+<li>Mão de obra de pedreiro e ajudante, com encargos sociais e complementares.</li>
+<li>Ferramentas manuais e equipamentos leves da equipe (colher, prumo, nível, carrinho, pá, enxada, picareta, régua, desempenadeira).</li>
+<li>EPIs da equipe (capacete, luvas, botas, óculos), alimentação e transporte.</li>
+<li>Preparo de argamassa e concreto em obra (manual ou em betoneira fornecida pela contratante).</li>
+<li>Acompanhamento técnico de engenheiro responsável (CREA-MG) e medição dos serviços.</li>
+<li>Limpeza da área de trabalho ao final de cada frente.</li>
+</ul></div><div><h3>✖ Não incluso</h3><ul>
+<li>Materiais: blocos, cimento, cal, areia, brita, concreto, aço, madeira e demais insumos.</li>
+<li>Locação, entrega e retirada das caçambas de entulho e destinação final (CTR).</li>
+<li>Água e energia elétrica no local.</li>
+<li>Equipamentos pesados (retroescavadeira, compactador, martelete), betoneira e andaimes.</li>
+<li>Projetos, ART de projeto, taxas e licenças municipais.</li>
+<li>Serviços não relacionados na planilha (chapisco, reboco, pintura, instalações), que podem ser orçados à parte ou executados por diária.</li>
+</ul></div></div>
+<h3>5. Premissas</h3>
+<ul>
+<li>Acesso livre à obra em horário comercial (segunda a sexta, 7h às 17h) e local para guarda de ferramentas.</li>
+<li>Materiais entregues na obra antes do início de cada frente; paralisação por falta de material superior a 2 dias poderá gerar remobilização ou cobrança por diária, mediante acordo prévio.</li>
+<li>Quantidades marcadas com ◆ e a seção da vala serão confirmadas em visita técnica antes do início, sem alteração dos preços unitários.</li>
+<li>Escavação em solo comum, sem rocha, sem lençol freático e sem interferências (tubulações, cabos) não sinalizadas pela contratante.</li>
+<li>Serviços em conformidade com as normas ABNT aplicáveis (NBR 8545 — alvenaria, NBR 9061 — escavações, NBR 9050 — calçadas) e NR-18.</li>
+</ul><h3>Opção complementar — equipe por diária</h3>
+<p>Para serviços extras ou não previstos na planilha, oferecemos a equipe (1 pedreiro + 1 ajudante, 8 h/dia) ao valor de <b>R$ 599,04 por dia</b>, medido por dia efetivamente trabalhado e autorizado por escrito pela contratante.</p>
+<div class="pg-rod"><span>RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64 · (34) 9286-9383</span><span class="np"></span></div></section><section class="pg interna"><div class="wm">RA ENGENHARIA</div><div class="pg-head"><span class="pg-emp">RA ENGENHARIA</span><span class="pg-num">Proposta PC-2026-0902-01</span></div><h2 class="pg-tit">6. Metodologia e cronograma</h2>
+<p>Execução por frentes de serviço, na ordem que melhor aproveita a equipe e as caçambas disponíveis:</p>
+<ol>
+<li><b>Mobilização e visita técnica</b> — conferência das quantidades ◆, marcação da vala e da calçada, definição do local de descarte dos montes de terra.</li>
+<li><b>Limpezas e cargas</b> — retirada dos montes de terra e grama do campo e carga do entulho nas 2 caçambas (aproveitando as mesmas caçambas para o entulho da calçada).</li>
+<li><b>Escavação manual</b> — abertura da vala nos 30 m, com material depositado ao lado para reaterro pela contratante ou reaproveitamento.</li>
+<li><b>Base cimentada</b> — recondicionamento da base com areia e brita, apiloamento e recomposição do piso cimentado.</li>
+<li><b>Calçada</b> — demolição do trecho danificado, regularização, formas simples e concretagem com acabamento desempenado.</li>
+<li><b>Alvenaria</b> — assim que os blocos estiverem completos: marcação e 1ª fiada, elevação das fiadas com juntas frisadas, grauteamento vertical a cada 3 m, assentamento da canaleta, armação e concretagem da última fiada (32 m).</li>
+<li><b>Medição final e entrega</b> — conferência conjunta com a contratante e limpeza da área.</li>
+</ol>
+<h3>Prazo estimado</h3>
+<p>Com uma equipe de 1 pedreiro e 1 ajudante, estimamos <b>17 dias úteis</b> de execução para o conjunto dos serviços; com 1 pedreiro e 2 ajudantes o prazo cai para cerca de <b>10 dias úteis</b>. Ambos condicionados à disponibilidade dos materiais e das caçambas na obra. O cronograma detalhado será alinhado na reunião de início.</p>
+<h3>7. Condições comerciais</h3>
+<table class="prop-tbl"><tbody>
+<tr><td><b>Regime</b></td><td>Empreitada por valor global de <b>R$ 4.000,00</b> para o escopo da planilha. Quantidades marcadas com ◆ serão conferidas em visita técnica; variação superior a 20% em qualquer item será tratada por aditivo ou por diária.</td></tr>
+<tr><td><b>Pagamento</b></td><td>50% (R$ 2.000,00) na mobilização e 50% (R$ 2.000,00) na conclusão, contra vistoria final aprovada. Serviços por diária: fechamento semanal.</td></tr>
+<tr><td><b>Forma</b></td><td>PIX ou transferência bancária, com emissão de nota fiscal de serviço.</td></tr>
+<tr><td><b>Reajuste</b></td><td>Preços fixos pelo prazo de validade; após 15 dias, sujeitos a revisão pela tabela SINAPI-MG vigente.</td></tr>
+<tr><td><b>Validade</b></td><td>15 dias a contar de 02/09/2026.</td></tr>
+<tr><td><b>Início</b></td><td>Até 5 dias úteis após o aceite e a confirmação da entrega dos materiais.</td></tr>
+</tbody></table><div class="pg-rod"><span>RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64 · (34) 9286-9383</span><span class="np"></span></div></section><section class="pg interna"><div class="wm">RA ENGENHARIA</div><div class="pg-head"><span class="pg-emp">RA ENGENHARIA</span><span class="pg-num">Proposta PC-2026-0902-01</span></div><h2 class="pg-tit">8. Responsabilidades, garantias e aceite</h2>
+<div class="cols"><div><h3>Da RA Engenharia</h3><ul>
+<li>Executar os serviços com qualidade técnica, dentro das normas e do prazo acordado.</li>
+<li>Manter a equipe com EPIs e cumprir a NR-18.</li>
+<li>Designar engenheiro responsável para acompanhamento e medição.</li>
+<li>Comunicar imediatamente qualquer interferência ou impedimento encontrado.</li>
+</ul></div><div><h3>Da MY Engenharia</h3><ul>
+<li>Fornecer materiais, caçambas, água e energia nos prazos combinados.</li>
+<li>Informar o local exato dos serviços e eventuais interferências enterradas.</li>
+<li>Aprovar as medições e efetuar os pagamentos nas datas previstas.</li>
+<li>Indicar um responsável para as definições em campo.</li>
+</ul></div></div>
+<h3>9. Garantias</h3>
+<p>Garantia de execução de <b>90 dias</b> para os serviços de mão de obra (prumo, nível, aderência do cimentado e da calçada), contados da medição final, cobrindo defeitos de execução. Não cobre falhas decorrentes de material fornecido pela contratante, uso inadequado ou intervenção de terceiros.</p>
+<h3>10. Aceite</h3>
+<p>Estando de acordo, solicitamos a devolução desta proposta assinada, ou a confirmação por e-mail/WhatsApp, para agendamento da visita técnica e início dos serviços.</p>
+<div class="assinaturas">
+<div><div class="linha-assin"></div><div class="assin">RA Engenharia Especial LTDA<br><span>Eng. Rogério Alves de Souza — CREA-MG 323736</span><br><span>(34) 9286-9383 · contato@raengenhariaespecial.com.br</span></div></div>
+<div><div class="linha-assin"></div><div class="assin">MY Engenharia<br><span>[NOME DO RESPONSÁVEL]</span><br><span>Data: ____/____/______</span></div></div>
+</div><div class="pg-rod"><span>RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64 · (34) 9286-9383</span><span class="np"></span></div></section><section class="pg interna"><div class="wm">RA ENGENHARIA</div><div class="pg-head"><span class="pg-emp">RA ENGENHARIA</span><span class="pg-num">Proposta PC-2026-0902-01</span></div><h2 class="pg-tit">Anexo — Memória de cálculo dos preços unitários</h2>
+<p class="nota">Referência: <b>SINAPI-MG, competência 06/2026</b>, regime desonerado, parcela de mão de obra das composições indicadas (materiais e equipamentos excluídos). Salários-hora com encargos complementares: pedreiro (88309) <b>R$ 33,62/h</b> · servente (88316) <b>R$ 24,88/h</b>. Preço unitário = custo MO × (1 + BDI 28%).</p>
+<table class="prop-tbl"><thead><tr><th class="c">Item</th><th>Composição de referência</th><th class="c">Un.</th><th class="r">h pedreiro</th><th class="r">h ajudante</th><th class="r">Custo MO</th><th class="r">Preço unit.</th></tr></thead>
+<tbody><tr><td class="c">1</td><td>Valor negociado (ref. SINAPI 103339)</td><td class="c">m²</td><td class="r">1,300</td><td class="r">0,650</td><td class="r">R$ 62,69</td><td class="r">R$ 45,00</td></tr><tr><td class="c">2</td><td>Valor negociado (ref. SINAPI 105033 + 105792)</td><td class="c">m²</td><td class="r">0,247</td><td class="r">0,131</td><td class="r">R$ 35,25</td><td class="r">R$ 20,00</td></tr><tr><td class="c">3</td><td>SINAPI 93358</td><td class="c">m³</td><td class="r">0,000</td><td class="r">3,956</td><td class="r">R$ 98,42</td><td class="r">R$ 125,98</td></tr><tr><td class="c">4</td><td>Valor negociado (diária de ajudante)</td><td class="c">diária de ajudante</td><td class="r">0,000</td><td class="r">8,000</td><td class="r">—</td><td class="r">R$ 200,00</td></tr><tr><td class="c">5</td><td>SINAPI 100324 + 98679</td><td class="c">m²</td><td class="r">0,537</td><td class="r">0,253</td><td class="r">R$ 28,76</td><td class="r">R$ 36,81</td></tr><tr><td class="c">6</td><td>SINAPI 106122 (por analogia)</td><td class="c">m³</td><td class="r">0,000</td><td class="r">3,417</td><td class="r">R$ 85,02</td><td class="r">R$ 108,83</td></tr><tr><td class="c">7</td><td>SINAPI 104789 + 94992</td><td class="c">m²</td><td class="r">0,223</td><td class="r">0,709</td><td class="r">R$ 36,83</td><td class="r">R$ 47,14</td></tr></tbody></table>
+<ul class="nota">
+<li>Itens 1 e 2: <b>preço negociado</b> — R$ 45,00/m² para a execução da alvenaria e R$ 20,00/m² para o enchimento de graute nas canaletas (32 m) e nos pilares a cada 3 m. Referências SINAPI 103339 (alvenaria aparente 14×19×39), 105033 (cinta em canaleta) e 105792 (graute vertical) usadas apenas para estimar as horas.</li>
+<li>Item 3: <b>93358</b> — Escavação manual de vala (m³); seção adotada 0,40 × 0,60 m.</li>
+<li>Item 4: <b>preço negociado</b> — 1 diária de 3 ajudantes a R$ 200,00 cada para encher as 2 caçambas.</li>
+<li>Item 5: <b>100324</b> — lastro de brita (m³, convertido para m² com e = 10 cm) + <b>98679</b> — piso cimentado 1:5, e = 2 cm, liso.</li>
+<li>Item 6: <b>106122</b> — remoção de entulho classe A com acondicionamento em caçamba, adotada <b>por analogia</b> para a carga manual (3,42 h de servente por m³).</li>
+<li>Item 7: <b>104789</b> — demolição manual de piso de concreto (m³, convertido para m² com e = 6 cm) + <b>94992</b> — passeio em concreto moldado in loco, e = 6 cm.</li>
+<li>Fechamento: subtotal R$ 5.642,64 − desconto comercial de R$ 1.642,64 (abatimento do BDI) = <b>valor global R$ 4.000,00</b>.</li>
+<li>Diária da equipe: (R$ 33,62 + R$ 24,88) × 8 h × 1,28 = <b>R$ 599,04</b>.</li>
+<li>Horas totais estimadas: pedreiro 67,1 h · ajudante 112,5 h → 17 dias úteis com folga de 15%.</li>
+</ul><div class="pg-rod"><span>RA Engenharia Especial LTDA · CNPJ 59.507.116/0001-64 · (34) 9286-9383</span><span class="np"></span></div></section></div></body></html>

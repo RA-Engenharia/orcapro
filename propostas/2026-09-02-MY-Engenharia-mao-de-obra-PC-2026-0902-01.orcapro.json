@@ -1,0 +1,247 @@
+{
+  "app": "OrçaPRO",
+  "tipo": "pacote-orcamento",
+  "versao": "1.2.28",
+  "exportadoEm": "2026-09-02T20:47:26.000Z",
+  "geradoPor": "propostas/gerar-proposta-my-engenharia.py — proposta PC-2026-0902-01",
+  "orcamentos": [
+    {
+      "id": "orc_b630d22554455d",
+      "schemaVersao": 3,
+      "numero": "PC-2026-0902-01",
+      "nome": "Mão de obra pedreiro e ajudante — MY Engenharia",
+      "cliente": {
+        "nome": "MY Engenharia",
+        "doc": "",
+        "contato": ""
+      },
+      "obra": {
+        "nome": "MY Engenharia — mão de obra (alvenaria, escavação, entulho e calçada)",
+        "local": "[ENDEREÇO DA OBRA — a informar]",
+        "regime": "Empreitada"
+      },
+      "clienteId": "cli_0622fbc556cf13",
+      "obraId": "obr_e4a6794bebe920",
+      "competenciaSinapi": "2026-06",
+      "uf": "MG",
+      "desonerado": true,
+      "bdi": {
+        "modeloId": "custom",
+        "params": {
+          "AC": 0,
+          "S": 0,
+          "R": 0,
+          "G": 0,
+          "DF": 0,
+          "L": 0,
+          "I": 0
+        },
+        "percentual": 0
+      },
+      "config": {
+        "categoria": "Mão de obra",
+        "prazoEntrega": "17 dias úteis",
+        "arredondamento": "arred2",
+        "bdiIncidencia": "unitario",
+        "encargos": {
+          "tipo": "desonerado",
+          "horista": 0,
+          "mensalista": 0
+        },
+        "permitirZerado": false,
+        "licitacao": {
+          "ativo": false,
+          "tipo": "",
+          "abertura": "",
+          "processo": ""
+        }
+      },
+      "comercial": {
+        "apresentacao": "Prestação de mão de obra especializada de pedreiro e ajudante, em regime de empreitada por valor global de R$ 4.000,00. Materiais, caçambas, água e energia por conta da contratante. Preços unitários já com o desconto comercial de fechamento (subtotal R$ 5.642,64 − R$ 1.642,64).",
+        "condicoesPagamento": "50% (R$ 2.000,00) na mobilização e 50% (R$ 2.000,00) na conclusão, contra vistoria final aprovada. Serviços extras por diária (1 pedreiro + 1 ajudante): R$ 599,04/dia, fechamento semanal. PIX ou transferência, com NF de serviço.",
+        "prazoExecucao": "17 dias úteis com 1 pedreiro + 1 ajudante (cerca de 10 com 2 ajudantes), condicionado à entrega dos materiais.",
+        "validadeProposta": "15 dias corridos a contar de 02/09/2026.",
+        "garantia": "Garantia de execução de 90 dias para os serviços de mão de obra, contados da vistoria final; não cobre falhas de material fornecido pela contratante.",
+        "incluso": "Mão de obra de pedreiro e ajudante com encargos sociais e complementares;\nFerramentas manuais e equipamentos leves;\nEPIs, alimentação e transporte da equipe;\nPreparo de argamassa e concreto em obra;\nAcompanhamento técnico (CREA-MG) e medição;\nLimpeza da área ao final de cada frente.",
+        "excluso": "Materiais (blocos, cimento, areia, brita, concreto, aço, graute);\nLocação, retirada e destinação das caçambas;\nÁgua e energia no local;\nEquipamentos pesados, betoneira e andaimes;\nProjetos, ART de projeto, taxas e licenças;\nServiços não relacionados na planilha."
+      },
+      "cronogramaMeses": 1,
+      "etapas": [
+        {
+          "id": "eta_668013baa88e23",
+          "codigo": "1.0",
+          "nome": "Alvenaria e graute",
+          "itens": [
+            {
+              "id": "itm_f696f1a90bbbec",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-01",
+              "descricao": "Execução de alvenaria em bloco de concreto frisado (aparente) 14×19×39 cm, 4 fiadas sendo a última em canaleta, blocos fornecidos pela contratante: assentamento com argamassa, prumo, nível, amarração e juntas frisadas (ref. Valor negociado (ref. SINAPI 103339))",
+              "unidade": "m²",
+              "quantidade": 35.0,
+              "custoUnitario": 31.89,
+              "custoMO": 31.89,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 31.89,
+              "memoriaCalculo": "Referência: Valor negociado (ref. SINAPI 103339). Unitário da proposta antes do desconto: R$ 45,00 → com desconto comercial de 29,1%: R$ 31,89."
+            },
+            {
+              "id": "itm_f78981b3a59953",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-02",
+              "descricao": "Enchimento de graute nas canaletas da última fiada (32 m) e nos pilares/células verticais a cada 3 m, com armação simples, limpeza das células e adensamento (graute e aço pela contratante) (ref. Valor negociado (ref. SINAPI 105033 + 105792))",
+              "unidade": "m²",
+              "quantidade": 35.0,
+              "custoUnitario": 14.19,
+              "custoMO": 14.19,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 14.19,
+              "memoriaCalculo": "Referência: Valor negociado (ref. SINAPI 105033 + 105792). Unitário da proposta antes do desconto: R$ 20,00 → com desconto comercial de 29,1%: R$ 14,19."
+            }
+          ]
+        },
+        {
+          "id": "eta_f7798f87afd5bf",
+          "codigo": "2.0",
+          "nome": "Escavação e limpeza",
+          "itens": [
+            {
+              "id": "itm_b27ac9b77c8b6b",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-03",
+              "descricao": "Escavação manual de vala (aprox. 30 m lineares, seção adotada 0,40 × 0,60 m = 7,20 m³), com material depositado ao lado (ref. SINAPI 93358)",
+              "unidade": "m³",
+              "quantidade": 7.2,
+              "custoUnitario": 89.3,
+              "custoMO": 89.3,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 89.3,
+              "memoriaCalculo": "Referência: SINAPI 93358. Unitário da proposta antes do desconto: R$ 125,98 → com desconto comercial de 29,1%: R$ 89,30. Quantidade ESTIMADA, a confirmar em visita técnica."
+            },
+            {
+              "id": "itm_4e2d02068929ea",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-04",
+              "descricao": "Carga manual de entulho nas 2 caçambas estacionárias (5 m³ cada): 1 diária de equipe com 3 ajudantes (ref. Valor negociado (diária de ajudante))",
+              "unidade": "diária de ajudante",
+              "quantidade": 3.0,
+              "custoUnitario": 141.78,
+              "custoMO": 141.78,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 141.78,
+              "memoriaCalculo": "Referência: Valor negociado (diária de ajudante). Unitário da proposta antes do desconto: R$ 200,00 → com desconto comercial de 29,1%: R$ 141,78."
+            },
+            {
+              "id": "itm_fc77c8066d1451",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-06",
+              "descricao": "Retirada dos montes de terra e grama depositados sobre o gramado do campo, com carga manual e acondicionamento em caçamba/local indicado (ref. SINAPI 106122 (por analogia))",
+              "unidade": "m³",
+              "quantidade": 6.0,
+              "custoUnitario": 77.15,
+              "custoMO": 77.15,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 77.15,
+              "memoriaCalculo": "Referência: SINAPI 106122 (por analogia). Unitário da proposta antes do desconto: R$ 108,83 → com desconto comercial de 29,1%: R$ 77,15. Quantidade ESTIMADA, a confirmar em visita técnica."
+            }
+          ]
+        },
+        {
+          "id": "eta_94c2881c3b2312",
+          "codigo": "3.0",
+          "nome": "Pisos e calçada",
+          "itens": [
+            {
+              "id": "itm_98faa94754acca",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-05",
+              "descricao": "Recondicionamento da base com areia e brita (lastro granular, e ≈ 10 cm) e recomposição do piso cimentado (traço 1:5, e = 2 cm) na área hoje cimentada (ref. SINAPI 100324 + 98679)",
+              "unidade": "m²",
+              "quantidade": 20.0,
+              "custoUnitario": 26.09,
+              "custoMO": 26.09,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 26.09,
+              "memoriaCalculo": "Referência: SINAPI 100324 + 98679. Unitário da proposta antes do desconto: R$ 36,81 → com desconto comercial de 29,1%: R$ 26,09. Quantidade ESTIMADA, a confirmar em visita técnica."
+            },
+            {
+              "id": "itm_9c2d9e630db11b",
+              "origem": "PROPRIO",
+              "baseFonte": null,
+              "codigo": "MO-07",
+              "descricao": "Recomposição de calçada em concreto moldado in loco (≈ 10 m², e = 6 cm, acabamento convencional), incluindo demolição manual do trecho danificado (ref. SINAPI 104789 + 94992)",
+              "unidade": "m²",
+              "quantidade": 10.0,
+              "custoUnitario": 33.42,
+              "custoMO": 33.42,
+              "custoMAT": 0.0,
+              "custoEQ": 0.0,
+              "modoCusto": "mo",
+              "custoBase": 33.42,
+              "memoriaCalculo": "Referência: SINAPI 104789 + 94992. Unitário da proposta antes do desconto: R$ 47,14 → com desconto comercial de 29,1%: R$ 33,42."
+            }
+          ]
+        }
+      ],
+      "criadoEm": "2026-09-02T20:47:26.000Z",
+      "atualizadoEm": "2026-09-02T20:47:26.000Z"
+    }
+  ],
+  "gestao": {
+    "clientes": [
+      {
+        "id": "cli_0622fbc556cf13",
+        "nome": "MY Engenharia",
+        "tipo": "PJ",
+        "doc": "",
+        "telefone": "",
+        "email": "",
+        "endereco": "",
+        "cidade": "",
+        "uf": "MG",
+        "status": "ativo",
+        "origem": "indicacao",
+        "obs": "Cadastro criado pela proposta PC-2026-0902-01. Complete CNPJ, telefone e e-mail.",
+        "criadoEm": "2026-09-02T20:47:26.000Z",
+        "atualizadoEm": "2026-09-02T20:47:26.000Z"
+      }
+    ],
+    "obras": [
+      {
+        "id": "obr_e4a6794bebe920",
+        "nome": "MY Engenharia — mão de obra (alvenaria, escavação, entulho e calçada)",
+        "clienteId": "cli_0622fbc556cf13",
+        "tipo": "reforma",
+        "fase": "",
+        "status": "planejamento",
+        "local": "[ENDEREÇO DA OBRA — a informar]",
+        "valor": 4000.0,
+        "inicio": "",
+        "termino": "",
+        "responsavel": "",
+        "orcamentoId": "orc_b630d22554455d",
+        "obs": "Escopo: 35 m² alvenaria bloco 14x19x39 frisado com canaleta e graute, ~30 m escavação manual, 2 caçambas de entulho, base cimentada, retirada de terra/grama, calçada 10 m².",
+        "criadoEm": "2026-09-02T20:47:26.000Z",
+        "atualizadoEm": "2026-09-02T20:47:26.000Z"
+      }
+    ]
+  }
+}

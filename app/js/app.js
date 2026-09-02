@@ -190,6 +190,10 @@
         }
       } catch (eTr) {}
       this.render();
+      /* PACOTE DE ORÇAMENTO por link (app/?importar=<url>): o app baixa, mostra o que
+         vem e pede confirmação — depois do render para o toast/modal terem tela.
+         Espera a sessão sozinho se a pessoa ainda estiver no login (js/pacote.js). */
+      try { if (typeof Pacote !== "undefined" && Pacote.processarParam) Pacote.processarParam(); } catch (ePk) {}
       // Rota #rv (QR da RA/RV no celular): abre o BIM e entra no imersivo Caminhar assim que
       // o modelo estiver carregado. Honesto: precisa do módulo Gestão e de um modelo carregado
       // NESTE aparelho (o compartilhamento em nuvem p/ qualquer lugar é a próxima fase).
@@ -2601,7 +2605,8 @@
            no dia em que precisa. */
         '<div id="bkp-auto" class="muted" style="margin:10px 0;padding:9px 12px;border-radius:8px;background:rgba(59,130,246,.08);border:1px solid rgba(59,130,246,.25)">⏳ verificando o backup automático…</div>' +
         '<div class="flex" style="gap:10px;margin-top:10px"><button class="btn primary" data-acao="backup-export">' + (typeof Icones !== 'undefined' ? Icones.get('salvar', 15) : '') + ' Exportar backup</button></div>' +
-        '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json"></div>' +
+        '<div class="field" style="margin-top:14px"><label>Restaurar de um backup (.json)</label><input type="file" id="bkp-file" accept=".json,application/json">' +
+        '<div class="muted" style="font-size:12px;margin-top:4px">Aceita também um <b>pacote de orçamento</b> (<span class="mono">.orcapro.json</span>) gerado fora do sistema: ele entra já cadastrado, com cliente e obra.</div></div>' +
         /* ⚠ PORTA SEPARADA PARA O PERFIL, e ela precisa existir por um motivo
            exato: o "Restaurar" acima mescla com "o mais novo vence", e o
            registro do perfil que está na conta AGORA é sempre mais novo que o
@@ -2876,6 +2881,28 @@
     },
 
     importarBackup: function (file) {
+      /* PACOTE DE ORÇAMENTO (tipo "pacote-orcamento"): lido primeiro, porque
+         ele NÃO precisa da guarda de admin abaixo — só traz orçamento, cliente e
+         obra, e o leitor reprova qualquer outra entidade (js/pacote.js). O backup
+         completo continua exigindo administrador, como sempre. */
+      if (typeof Pacote !== "undefined" && file) {
+        var selfP = this, rdP = new FileReader();
+        rdP.onload = function () {
+          var dumpP = null;
+          try { dumpP = JSON.parse(rdP.result); } catch (eP) { dumpP = null; }
+          if (dumpP && Pacote.ehPacote(dumpP)) {
+            if (!(Auth.usuario() && Auth.podeModulo && Auth.podeModulo("orcamentos"))) { UI.toast("Você não tem acesso a Orçamentos.", "erro"); return; }
+            Pacote.confirmarEAplicar(dumpP, "arquivo: " + (file.name || ""));
+            return;
+          }
+          selfP._importarBackupCompleto(file);
+        };
+        rdP.readAsText(file);
+        return;
+      }
+      this._importarBackupCompleto(file);
+    },
+    _importarBackupCompleto: function (file) {
       /* ⚠ O PAR ESTAVA ASSIMÉTRICO. `abrirBackup` e `exportarBackup` ganharam a
          guarda de administrador na auditoria de 15/08 (js/app.js:2101 e :2244),
          mas a IMPORTAÇÃO ficou de fora — e ela é o lado que ESCREVE. Um arquivo
