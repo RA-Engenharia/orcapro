@@ -26,34 +26,40 @@ def linha(c, fator=1.0):
 
 # Itens: (n, descricao, unidade, qtd, estimado?, base, obs)
 L = []
-b = linha(alv); L.append(('1', 'Execução de alvenaria em bloco de concreto frisado (aparente) 14×19×39 cm, 4 fiadas, blocos fornecidos pela contratante: assentamento com argamassa, prumo, nível, amarração e juntas frisadas', 'm²', 35.0, False, b, 'SINAPI ' + alv['codigo'] + ' (parcela MO)'))
-b = linha(cinta); L.append(('2', 'Última fiada em bloco canaleta 14 cm: assentamento, armação simples e concretagem/grauteamento da canaleta em 32 m (materiais pela contratante)', 'm', 32.0, False, b, 'SINAPI ' + cinta['codigo'] + ' (parcela MO)'))
+# (n, descricao, unidade, qtd, estimado?, base_horas, referencia, preco_unit_negociado ou None)
+b = linha(alv); L.append(('1', 'Execução de alvenaria em bloco de concreto frisado (aparente) 14×19×39 cm, 4 fiadas sendo a última em canaleta, blocos fornecidos pela contratante: assentamento com argamassa, prumo, nível, amarração e juntas frisadas', 'm²', 35.0, False, b, 'Valor negociado (ref. SINAPI ' + alv['codigo'] + ')', 45.00))
 GR_M3_POR_M = 0.015  # m³ de graute por metro de célula vertical (bloco 14 cm)
-b = linha(graute, GR_M3_POR_M); L.append(('3', 'Grauteamento vertical a cada 3 m (≈ 11 pontos × 0,76 m de altura = 8,4 m de célula preenchida), com limpeza das células e adensamento', 'm', 8.4, False, b, 'SINAPI ' + graute['codigo'] + ' (0,015 m³/m)'))
-b = linha(esc); L.append(('4', 'Escavação manual de vala (aprox. 30 m lineares, seção adotada 0,40 × 0,60 m = 7,20 m³), com material depositado ao lado', 'm³', 7.2, True, b, 'SINAPI ' + esc['codigo']))
-b = linha(ent); L.append(('5', 'Carga manual de entulho e acondicionamento em caçamba estacionária (2 caçambas de 5 m³ = 10 m³)', 'm³', 10.0, False, b, 'SINAPI ' + ent['codigo'] + ' (por analogia)'))
+b1 = linha(cinta, 32.0 / 35.0); b2 = linha(graute, GR_M3_POR_M * 8.4 / 35.0)
+b = {'mo': round(b1['mo'] + b2['mo'], 2), 'ped': b1['ped'] + b2['ped'], 'ser': b1['ser'] + b2['ser']}
+L.append(('2', 'Enchimento de graute nas canaletas da última fiada (32 m) e nos pilares/células verticais a cada 3 m, com armação simples, limpeza das células e adensamento (graute e aço pela contratante)', 'm²', 35.0, False, b, 'Valor negociado (ref. SINAPI ' + cinta['codigo'] + ' + ' + graute['codigo'] + ')', 20.00))
+b = linha(esc); L.append(('3', 'Escavação manual de vala (aprox. 30 m lineares, seção adotada 0,40 × 0,60 m = 7,20 m³), com material depositado ao lado', 'm³', 7.2, True, b, 'SINAPI ' + esc['codigo'], None))
+b = {'mo': 0.0, 'ped': 0.0, 'ser': 8.0}
+L.append(('4', 'Carga manual de entulho nas 2 caçambas estacionárias (5 m³ cada): 1 diária de equipe com 3 ajudantes', 'diária de ajudante', 3.0, False, b, 'Valor negociado (diária de ajudante)', 200.00))
 b1 = linha(lastro, 0.10); b2 = linha(cim)
 b = {'mo': round(b1['mo'] + b2['mo'], 2), 'ped': b1['ped'] + b2['ped'], 'ser': b1['ser'] + b2['ser']}
-L.append(('6', 'Recondicionamento da base com areia e brita (lastro granular, e ≈ 10 cm) e recomposição do piso cimentado (traço 1:5, e = 2 cm) na área hoje cimentada', 'm²', 20.0, True, b, 'SINAPI ' + lastro['codigo'] + ' + ' + cim['codigo']))
-b = linha(ent); L.append(('7', 'Retirada dos montes de terra e grama depositados sobre o gramado do campo, com carga manual e acondicionamento em caçamba/local indicado', 'm³', 6.0, True, b, 'SINAPI ' + ent['codigo'] + ' (por analogia)'))
+L.append(('5', 'Recondicionamento da base com areia e brita (lastro granular, e ≈ 10 cm) e recomposição do piso cimentado (traço 1:5, e = 2 cm) na área hoje cimentada', 'm²', 20.0, True, b, 'SINAPI ' + lastro['codigo'] + ' + ' + cim['codigo'], None))
+b = linha(ent); L.append(('6', 'Retirada dos montes de terra e grama depositados sobre o gramado do campo, com carga manual e acondicionamento em caçamba/local indicado', 'm³', 6.0, True, b, 'SINAPI ' + ent['codigo'] + ' (por analogia)', None))
 b1 = linha(dem, 0.06); b2 = linha(calc)
 b = {'mo': round(b1['mo'] + b2['mo'], 2), 'ped': b1['ped'] + b2['ped'], 'ser': b1['ser'] + b2['ser']}
-L.append(('8', 'Recomposição de calçada em concreto moldado in loco (≈ 10 m², e = 6 cm, acabamento convencional), incluindo demolição manual do trecho danificado', 'm²', 10.0, False, b, 'SINAPI ' + dem['codigo'] + ' + ' + calc['codigo']))
+L.append(('7', 'Recomposição de calçada em concreto moldado in loco (≈ 10 m², e = 6 cm, acabamento convencional), incluindo demolição manual do trecho danificado', 'm²', 10.0, False, b, 'SINAPI ' + dem['codigo'] + ' + ' + calc['codigo'], None))
+
+VALOR_GLOBAL = 4000.00  # valor fechado com o cliente; a diferença vira desconto comercial abatido do BDI
 
 def moeda(v): return 'R$ ' + ('{:,.2f}'.format(v)).replace(',', 'X').replace('.', ',').replace('X', '.')
 def num(v, c=2): return ('{:,.%df}' % c).format(v).replace(',', 'X').replace('.', ',').replace('X', '.')
 def esc_(s): return html.escape(s)
 
-rows = []; total = 0; firme = 0; hp = 0; hs = 0
-for n, desc, un, q, est, b, base in L:
-    pu = round(b['mo'] * (1 + BDI), 2); tot = round(pu * q, 2); total += tot
-    if not est: firme += tot
+rows = []; subtotal = 0; hp = 0; hs = 0
+for n, desc, un, q, est, b, base, pneg in L:
+    pu = pneg if pneg is not None else round(b['mo'] * (1 + BDI), 2)
+    tot = round(pu * q, 2); subtotal += tot
     hp += b['ped'] * q; hs += b['ser'] * q
     rows.append((n, desc, un, q, est, pu, tot, base, b))
 diaria = round((PED + SER) * 8 * (1 + BDI), 2)
 dias = math.ceil(max(hp, hs) / 8 * 1.15)  # 1 pedreiro + 1 ajudante, 15% folga
 dias2 = math.ceil(max(hp / 8, hs / 16) * 1.15)  # 1 pedreiro + 2 ajudantes
-print('total', total, 'firme', firme, 'hp', hp, 'hs', hs, 'dias', dias, 'diaria', diaria)
+desconto = round(subtotal - VALOR_GLOBAL, 2); total = VALOR_GLOBAL
+print('subtotal', subtotal, 'desconto', desconto, 'total', total, 'hp', hp, 'hs', hs, 'dias', dias, 'diaria', diaria)
 
 hoje = datetime.date(2026, 9, 2); validade = hoje + datetime.timedelta(days=15)
 fmt = lambda dt: dt.strftime('%d/%m/%Y')
@@ -72,7 +78,7 @@ def tab_rows():
 def mem_rows():
     out = []
     for n, desc, un, q, est, pu, tot, base, b in rows:
-        out.append('<tr><td class="c">%s</td><td>%s</td><td class="c">%s</td><td class="r">%s</td><td class="r">%s</td><td class="r">%s</td><td class="r">%s</td></tr>' % (n, esc_(base), un, num(b['ped'], 3), num(b['ser'], 3), moeda(b['mo']), moeda(pu)))
+        out.append('<tr><td class="c">%s</td><td>%s</td><td class="c">%s</td><td class="r">%s</td><td class="r">%s</td><td class="r">%s</td><td class="r">%s</td></tr>' % (n, esc_(base), un, num(b['ped'], 3), num(b['ser'], 3), (moeda(b['mo']) if b['mo'] else '—'), moeda(pu)))
     return ''.join(out)
 
 WM = '<div class="wm">RA ENGENHARIA</div>'
@@ -91,7 +97,7 @@ P.append('''<section class="pg capa">
     <div class="ci-row"><span>Proposta nº</span><b>%s</b></div>
     <div class="ci-row"><span>Data</span><b>%s</b></div>
     <div class="ci-row"><span>Validade</span><b>15 dias (até %s)</b></div>
-    <div class="ci-row"><span>Valor estimado (mão de obra)</span><b class="verde">%s</b></div>
+    <div class="ci-row"><span>Valor global (mão de obra)</span><b class="verde">%s</b></div>
   </div>
   <div class="capa-rod">%s · CNPJ %s<br>%s<br>%s · WhatsApp %s · %s</div>
 </section>''' % (NUM, fmt(hoje), fmt(validade), moeda(total), EMP, CNPJ, END, RT, ZAP, MAIL))
@@ -114,9 +120,11 @@ P.append(pg('1. Apresentação', '''
 P.append(pg('3. Planilha de serviços — mão de obra', '''
 <table class="prop-tbl"><thead><tr><th class="c">Item</th><th>Serviço</th><th class="c">Un.</th><th class="r">Qtd.</th><th class="r">Preço unit.</th><th class="r">Total</th></tr></thead>
 <tbody>%s</tbody>
-<tfoot><tr><td colspan="5">TOTAL ESTIMADO — MÃO DE OBRA (materiais e caçambas pela contratante)</td><td class="r">%s</td></tr></tfoot></table>
-<p class="nota"><span class="est">◆</span> Quantidade estimada, a confirmar em visita técnica. Parcela firme (itens 1, 2, 3, 5 e 8): <b>%s</b>. Preços incluem encargos sociais e complementares (EPI, alimentação e transporte da equipe), ferramentas manuais e BDI de %s%%.</p>
-''' % (tab_rows(), moeda(total), moeda(firme), int(BDI * 100))))
+<tfoot><tr class="sub"><td colspan="5">Subtotal — mão de obra</td><td class="r">%s</td></tr>
+<tr class="desc"><td colspan="5">Desconto comercial — abatimento do BDI (%s%%)</td><td class="r">− %s</td></tr>
+<tr><td colspan="5">VALOR GLOBAL — MÃO DE OBRA (materiais e caçambas pela contratante)</td><td class="r">%s</td></tr></tfoot></table>
+<p class="nota"><span class="est">◆</span> Quantidade estimada, a confirmar em visita técnica. Os itens 1, 2 e 4 têm preço negociado; os demais são referenciados no SINAPI-MG 06/2026 com BDI de %s%%, sobre o qual incide o desconto comercial do fechamento. Preços incluem encargos sociais e complementares (EPI, alimentação e transporte da equipe) e ferramentas manuais.</p>
+''' % (tab_rows(), moeda(subtotal), num(desconto / subtotal * 100, 1), moeda(desconto), moeda(total), int(BDI * 100))))
 
 P.append(pg('4. Está incluso / Não está incluso', '''
 <div class="cols"><div><h3>✔ Incluso</h3><ul>
@@ -160,8 +168,8 @@ P.append(pg('6. Metodologia e cronograma', '''
 <p>Com uma equipe de 1 pedreiro e 1 ajudante, estimamos <b>%d dias úteis</b> de execução para o conjunto dos serviços; com 1 pedreiro e 2 ajudantes o prazo cai para cerca de <b>%d dias úteis</b>. Ambos condicionados à disponibilidade dos materiais e das caçambas na obra. O cronograma detalhado será alinhado na reunião de início.</p>
 <h3>7. Condições comerciais</h3>
 <table class="prop-tbl"><tbody>
-<tr><td><b>Regime</b></td><td>Empreitada por preço unitário, medição pelas quantidades efetivamente executadas.</td></tr>
-<tr><td><b>Pagamento</b></td><td>50%% na mobilização (início dos serviços) e 50%% na conclusão, contra medição final aprovada. Serviços por diária: fechamento semanal.</td></tr>
+<tr><td><b>Regime</b></td><td>Empreitada por valor global de <b>R$ 4.000,00</b> para o escopo da planilha. Quantidades marcadas com ◆ serão conferidas em visita técnica; variação superior a 20%% em qualquer item será tratada por aditivo ou por diária.</td></tr>
+<tr><td><b>Pagamento</b></td><td>50%% (R$ 2.000,00) na mobilização e 50%% (R$ 2.000,00) na conclusão, contra vistoria final aprovada. Serviços por diária: fechamento semanal.</td></tr>
 <tr><td><b>Forma</b></td><td>PIX ou transferência bancária, com emissão de nota fiscal de serviço.</td></tr>
 <tr><td><b>Reajuste</b></td><td>Preços fixos pelo prazo de validade; após 15 dias, sujeitos a revisão pela tabela SINAPI-MG vigente.</td></tr>
 <tr><td><b>Validade</b></td><td>15 dias a contar de %s.</td></tr>
@@ -194,16 +202,16 @@ P.append(pg('Anexo — Memória de cálculo dos preços unitários', '''
 <table class="prop-tbl"><thead><tr><th class="c">Item</th><th>Composição de referência</th><th class="c">Un.</th><th class="r">h pedreiro</th><th class="r">h ajudante</th><th class="r">Custo MO</th><th class="r">Preço unit.</th></tr></thead>
 <tbody>%s</tbody></table>
 <ul class="nota">
-<li>Item 1: <b>%s</b> — %s.</li>
-<li>Item 2: <b>105033</b> — Cinta de amarração moldada in loco com blocos canaleta, e = 15 cm (m); a parcela MO já inclui o grauteamento da canaleta.</li>
-<li>Item 3: <b>105792</b> — Grauteamento vertical em alvenaria estrutural (m³), convertido para metro de célula com 0,015 m³/m; 32 m ÷ 3 m ≈ 11 pontos × 0,76 m (4 fiadas).</li>
-<li>Item 4: <b>93358</b> — Escavação manual de vala (m³); seção adotada 0,40 × 0,60 m.</li>
-<li>Itens 5 e 7: <b>106122</b> — remoção de entulho classe A com acondicionamento em caçamba, adotada <b>por analogia</b> para a carga manual (3,42 h de servente por m³).</li>
-<li>Item 6: <b>100324</b> — lastro de brita (m³, convertido para m² com e = 10 cm) + <b>98679</b> — piso cimentado 1:5, e = 2 cm, liso.</li>
-<li>Item 8: <b>104789</b> — demolição manual de piso de concreto (m³, convertido para m² com e = 6 cm) + <b>94992</b> — passeio em concreto moldado in loco, e = 6 cm.</li>
+<li>Itens 1 e 2: <b>preço negociado</b> — R$ 45,00/m² para a execução da alvenaria e R$ 20,00/m² para o enchimento de graute nas canaletas (32 m) e nos pilares a cada 3 m. Referências SINAPI %s (alvenaria aparente 14×19×39), 105033 (cinta em canaleta) e 105792 (graute vertical) usadas apenas para estimar as horas.</li>
+<li>Item 3: <b>93358</b> — Escavação manual de vala (m³); seção adotada 0,40 × 0,60 m.</li>
+<li>Item 4: <b>preço negociado</b> — 1 diária de 3 ajudantes a R$ 200,00 cada para encher as 2 caçambas.</li>
+<li>Item 5: <b>100324</b> — lastro de brita (m³, convertido para m² com e = 10 cm) + <b>98679</b> — piso cimentado 1:5, e = 2 cm, liso.</li>
+<li>Item 6: <b>106122</b> — remoção de entulho classe A com acondicionamento em caçamba, adotada <b>por analogia</b> para a carga manual (3,42 h de servente por m³).</li>
+<li>Item 7: <b>104789</b> — demolição manual de piso de concreto (m³, convertido para m² com e = 6 cm) + <b>94992</b> — passeio em concreto moldado in loco, e = 6 cm.</li>
+<li>Fechamento: subtotal %s − desconto comercial de %s (abatimento do BDI) = <b>valor global %s</b>.</li>
 <li>Diária da equipe: (%s + %s) × 8 h × 1,%d = <b>%s</b>.</li>
 <li>Horas totais estimadas: pedreiro %s h · ajudante %s h → %d dias úteis com folga de 15%%.</li>
-</ul>''' % (moeda(PED), moeda(SER), int(BDI * 100), mem_rows(), alv['codigo'], esc_(alv['descricao']), moeda(PED), moeda(SER), int(BDI * 100), moeda(diaria), num(hp, 1), num(hs, 1), dias)))
+</ul>''' % (moeda(PED), moeda(SER), int(BDI * 100), mem_rows(), alv['codigo'], moeda(subtotal), moeda(desconto), moeda(total), moeda(PED), moeda(SER), int(BDI * 100), moeda(diaria), num(hp, 1), num(hs, 1), dias)))
 
 CSS = '''
 :root{--p-navy:#0f2740;--p-aco:#2e6f9e;--p-verde:#15803d;--p-linha:#d8e0ea;--raio:10px}
@@ -251,6 +259,8 @@ table.prop-tbl td.r,table.prop-tbl th.r{text-align:right;font-variant-numeric:ta
 table.prop-tbl td.c,table.prop-tbl th.c{text-align:center}
 table.prop-tbl .base{font-size:8pt;color:#7a8a99;margin-top:2px}
 table.prop-tbl tfoot td{background:#eef4fa;font-weight:700;border-top:2px solid var(--p-navy);color:var(--p-navy)}
+table.prop-tbl tfoot tr.sub td{background:#fff;border-top:2px solid var(--p-navy);font-weight:600;color:#1a2632}
+table.prop-tbl tfoot tr.desc td{background:#fff;border-top:0;font-weight:600;color:#b45309}
 .assinaturas{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:56px;text-align:center}
 .assin{font-weight:600;line-height:1.5}.assin span{color:#6b7b8a;font-weight:400;font-size:9.5pt}
 .linha-assin{border-top:1.5px solid #1a2632;margin-bottom:8px}
