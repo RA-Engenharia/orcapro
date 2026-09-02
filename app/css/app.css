@@ -10,8 +10,17 @@
   color-scheme: light;
   --navy: #0f2740;
   --navy-2: #15324f;
-  --aco: #2e6f9e;
-  --aco-claro: #5a9bc9;
+  /* ⚠ ESTE AZUL ESTAVA QUASE CINZA, E ISSO E MEDIVEL: o #2e6f9e anterior
+     tinha croma 0,099 em OKLab — ABAIXO do piso 0,1 a partir do qual uma cor
+     deixa de ser lida como cor. E ele e a tinta mais presente do sistema
+     (botao principal, link, icone, foco, serie de grafico): o app inteiro
+     puxava para o cinza-azulado por causa de um unico token.
+     O de agora tem croma 0,147 (+48%) e contraste 5,27:1 contra o branco —
+     mais vivo E mais legivel que o anterior (5,41 -> 5,27 na mesma faixa,
+     ambos bem acima do minimo 4,5). Continua da familia azul-aco da marca:
+     o que mudou foi a saturacao, nao o matiz. */
+  --aco: #0d6ebd;
+  --aco-claro: #3d92cb;
   /* ---------------------------------------------------------------
    * CORES SEMÂNTICAS — saíram dos defaults de fábrica.
    * Eram #16a34a, #dc2626 e #f59e0b: green-600, red-600 e amber-500 do
@@ -23,7 +32,14 @@
    * --------------------------------------------------------------- */
   --verde: #15803d;
   --verde-claro: #1a9c4b;
-  --vermelho: #b4232a;
+  /* ⚠ MAIS VIVO ATE ONDE A LEGIBILIDADE PERMITE, e nao alem.
+     De #b4232a para ca o croma sobe 19% (0,180 -> 0,214) e o contraste
+     contra o branco continua em 5,14:1, acima do minimo 4,5.
+     ⚠ E O AMBAR E O VERDE FICARAM COMO ESTAVAM, de proposito: medi os dois.
+     Ambar #aa6200 esta em 4,71:1 — qualquer passo mais vivo (#b56800 = 4,25)
+     cai abaixo do minimo. Verde #15803d idem (#0f8a3e = 4,44). Cor de alerta
+     que ninguem le nao alerta ninguem; nem toda tinta tem folga para vida. */
+  --vermelho: #d61f26;
   --amarelo: #aa6200;
 
   --bg: #f4f7fb; /* mesmo branco-azulado do site — claro puxado pro branco */
@@ -209,6 +225,9 @@
   --graf-c: #12a594;
   --graf-d: #8b6ce8;
   --graf-prev: #55697e;
+  /* a seta do select desenhada para o fundo escuro (o SVG carrega a cor
+     dentro dele; sem este degrau ela some contra o navy) */
+  --seta-select: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%239db0c2' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   /* degraus proprios do escuro, validados contra a superficie escura */
   --cat-obra: #3d8fd0;
   --cat-material: #d9622a;
@@ -285,6 +304,61 @@ button, input, select, textarea { font-family: inherit; font-size: inherit; colo
  * e a marca de seleção no tom certo — sem ele, alguns navegadores ignoram o
  * fundo do `<option>` e voltam a pintar de branco. */
 select, option, optgroup { background-color: var(--surface); color: var(--texto); }
+
+/* =====================================================================
+ * CONTROLE FORA DO FORMULARIO — a mistura que mais datava a tela
+ *
+ * Os campos so ganhavam forma dentro de `.field`, que e o formulario dos
+ * modais. Todo <select> de BARRA DE FILTRO — "Todas as Obras (Visao
+ * Global)", "Ultimos 6 meses", "Todas as obras (18)" — ficava com a
+ * aparencia NATIVA do sistema: canto reto, borda cinza do Windows e a seta
+ * do sistema operacional, encostado em botoes e cartoes de canto redondo.
+ * Nao e questao de gosto: controle nativo ao lado de controle desenhado e a
+ * assinatura de pagina remendada, e estava no lugar mais visivel do Painel.
+ *
+ * ⚠ ESTA REGRA VEM ANTES DE `.field` DE PROPOSITO. As duas tem a mesma
+ * especificidade (0,1,1), entao quem vem depois vence: `.field select`
+ * (linha ~860) continua mandando dentro dos modais, e isto so alcanca o que
+ * estava sem dono. Mover este bloco para baixo troca o dono dos dois.
+ *
+ * ⚠ E `.cell` FICA DE FORA. A grade do orcamento tem celula editavel com
+ * estilo proprio, medida em pixel para a coluna fechar; dar a ela padding de
+ * formulario desalinha a planilha inteira.
+ * ===================================================================== */
+select:not(.cell), input[type="search"]:not(.cell), input[type="date"]:not(.cell) {
+  appearance: none; -webkit-appearance: none; -moz-appearance: none;
+  background-color: var(--surface);
+  border: 1px solid var(--linha);
+  border-radius: var(--raio-sm);
+  padding: 6px 10px;
+  color: var(--texto);
+  line-height: 1.4;
+  transition: border-color .14s var(--ease), box-shadow .14s var(--ease);
+}
+/* a seta e desenhada, e tem um degrau por tema: `background-image` nao
+   aceita `currentColor`, entao a cor vai no proprio SVG */
+select:not(.cell) {
+  padding-right: 28px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' fill='none' stroke='%23516375' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+select:not(.cell):hover, input[type="search"]:not(.cell):hover, input[type="date"]:not(.cell):hover {
+  border-color: var(--linha-forte);
+}
+select:not(.cell):focus-visible, input[type="search"]:not(.cell):focus-visible, input[type="date"]:not(.cell):focus-visible {
+  border-color: var(--aco); outline: none; box-shadow: var(--anel);
+}
+select:not(.cell):disabled { color: var(--texto-fraco); background-color: var(--surface-2); }
+:root[data-tema="dark"] select:not(.cell) { background-image: var(--seta-select); }
+
+/* ⚠ TAMANHO DO ALVO NO TOQUE. Abaixo de 820px a barra de filtro e usada com
+   o dedo, e 44px e o minimo para acertar sem errar o vizinho — o mesmo
+   motivo pelo qual a base ja forca 16px de fonte aqui (evita o zoom
+   automatico do iOS ao focar o campo). */
+@media (max-width: 820px) {
+  select:not(.cell), input[type="search"]:not(.cell), input[type="date"]:not(.cell) { min-height: 44px; }
+}
 select:disabled, option:disabled { color: var(--texto-fraco); }
 /* a dica do campo continua mais fraca que o valor digitado — mas legível */
 input::placeholder, textarea::placeholder { color: var(--texto-fraco); }
@@ -489,8 +563,18 @@ table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 }
 .btn:hover { border-color: var(--aco); box-shadow: var(--sombra); transform: translateY(-1px); }
 .btn:active { transform: translateY(0); box-shadow: var(--sombra-sm); }
-.btn.primary { background: linear-gradient(180deg, #3d92cb, var(--aco)); border-color: #2a6493; color: #fff; box-shadow: 0 2px 8px rgba(46,111,158,.34), inset 0 1px 0 rgba(255,255,255,.28); }
-.btn.primary:hover { background: linear-gradient(180deg, #4aa0d6, var(--aco-claro)); box-shadow: 0 5px 16px rgba(46,111,158,.44), inset 0 1px 0 rgba(255,255,255,.32); }
+/* ⚠ SOLIDO, NAO GRADIENTE — e por dois motivos, nao por gosto.
+   1) O gradiente vertical com brilho interno (`inset 0 1px 0 branco`) e a
+      gramatica de botao de 2010: imita um plastico iluminado de cima. Nada
+      mais na tela finge volume, so ele.
+   2) Ele COMIA A COR. O topo era `#3d92cb` cru — um azul mais claro e mais
+      lavado —, entao metade do botao nunca mostrava a tinta da marca. Ao
+      deixar o token mais vivo, o ganho ficava escondido atras do degrade.
+   A sombra tambem carregava o rgb do azul ANTIGO (46,111,158) escrito a
+   mao: sombra colorida que nao acompanha o token e um descolamento que
+   ninguem ve acontecer. */
+.btn.primary { background: var(--aco); border-color: var(--aco); color: #fff; box-shadow: 0 1px 2px rgba(13,110,189,.24), 0 2px 8px rgba(13,110,189,.20); }
+.btn.primary:hover { background: var(--aco-claro); border-color: var(--aco-claro); box-shadow: 0 2px 6px rgba(13,110,189,.28), 0 6px 16px rgba(13,110,189,.24); }
 /* ⚠ CHAPADO, NÃO GRADIENTE — e é por contraste, não por gosto.
    Era `linear-gradient(180deg, #22b95d, var(--verde))`. O texto branco cruza o
    gradiente inteiro, então quem manda é o ponto MAIS CLARO: #22b95d dá
@@ -1371,7 +1455,10 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
 .orc-card, .kpi { transition: transform .28s var(--ease), box-shadow .28s var(--ease), border-color .28s var(--ease); will-change: transform; }
 .orc-card:hover, .kpi:hover { box-shadow: var(--sombra-hover), var(--realce); }
 .btn { transition: transform .18s var(--ease), box-shadow .18s var(--ease), background .18s, border-color .18s, filter .18s; }
-.btn.primary:hover, .btn.success:hover { filter: saturate(1.03) brightness(1.02); }
+/* o realce de hover ja e a troca de tinta; filtro por cima disso mexe na
+   cor sem que ela mude no token, e o valor que aparece na tela deixa de ser
+   o valor que esta escrito no css */
+.btn.success:hover { filter: saturate(1.03) brightness(1.02); }
 
 /* — Brilho que varre os botões-âncora no hover (premium, discreto) — */
 .btn.primary, .btn.success { position: relative; overflow: hidden; }

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.27",
+  "versao": "1.2.28",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.27/OrcaPRO-IA-update-v1.2.27.zip",
-  "notas": "Painel de Gestao: os graficos ficaram mais faceis de ler. Passe o mouse sobre o fluxo de caixa e ele mostra recebido, pago e saldo daquele mes. As cores foram refeitas e conferidas para quem nao distingue verde de vermelho e para o tema escuro, e o verde voltou a significar uma coisa so: dentro do previsto. A legenda do fluxo agora traz o total do periodo, que e o mesmo numero dos cartoes de cima.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.27/OrcaPRO-IA-Instalador-v1.2.27.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.28/OrcaPRO-IA-update-v1.2.28.zip",
+  "notas": "A tela ficou com mais cor: o azul do sistema estava tao lavado que o olho lia quase cinza, e agora ele aparece. O botao principal ficou solido, sem o brilho antigo. E os campos de escolher obra e periodo deixaram de ter a cara do Windows e ganharam a forma do proprio sistema. O amarelo dos avisos e o verde continuam iguais de proposito: mais vivos, eles ficariam dificeis de ler, e sao justamente os que avisam.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.28/OrcaPRO-IA-Instalador-v1.2.28.exe"
 }
