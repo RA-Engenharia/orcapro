@@ -272,4 +272,66 @@ HTML = '''<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta na
 <div class="toolbar"><span class="ttl">Proposta Comercial %s · MY Engenharia · RA Engenharia</span><button onclick="window.print()">Imprimir / Salvar PDF</button></div>
 <div class="doc">%s</div></body></html>''' % (NUM, CSS, NUM, ''.join(P))
 open('propostas/2026-09-02-MY-Engenharia-mao-de-obra-PC-2026-0902-01.html', 'w').write(HTML)
-print('ok')
+print('ok html')
+
+# =====================================================================
+# PACOTE DE ORÇAMENTO — o mesmo orçamento pronto para subir no OrçaPRO
+# (app/?importar=<url> ou 💾 Backup › Restaurar). Ver propostas/LEIA-ME.md.
+#
+# O app não tem "desconto" no fechamento, e zero/negativo não é preço. Então
+# o pacote leva os PREÇOS FINAIS: cada unitário recebe o mesmo fator do
+# desconto (4.000 / 5.642,64) e uma busca de centavos garante que a soma
+# feche exatamente em R$ 4.000,00 com 2 casas. BDI 0 % (o preço já é venda).
+# A memória de cada item registra o unitário antes do desconto.
+# =====================================================================
+import sys, os, itertools
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from orcapro_pacote import Pacote, bdi_zero
+
+fator = VALOR_GLOBAL / subtotal
+qs = [r[3] for r in rows]                       # quantidades
+base_c = [int(round(r[5] * fator * 100)) for r in rows]   # unitários em centavos, arredondados
+base_c = [int(5 * round(c / 5.0)) if q == 7.2 else c for c, q in zip(base_c, qs)]  # 7,2 m³ × múltiplo de 5 centavos = centavos inteiros
+def soma_c(cs): return sum(int(round(c * q)) for c, q in zip(cs, qs))
+alvo_c = int(round(VALOR_GLOBAL * 100)); melhor = None
+# passos que mantêm o total em centavos exatos: escavação (q=7,2) só anda de 5 em 5 centavos
+passos = [range(-4, 5) if q != 7.2 else range(-20, 25, 5) for q in qs]
+for delta in itertools.product(*passos):
+    cs = [b + d for b, d in zip(base_c, delta)]
+    if soma_c(cs) != alvo_c: continue
+    custo = sum(abs(d) for d in delta)
+    if melhor is None or custo < melhor[0]: melhor = (custo, cs)
+    if custo <= 2: break
+assert melhor, 'não achei combinação de centavos que feche em ' + str(VALOR_GLOBAL)
+pu_final = [c / 100.0 for c in melhor[1]]
+
+P = Pacote(gerado_por='propostas/gerar-proposta-my-engenharia.py — proposta ' + NUM)
+cli = P.cliente('MY Engenharia', uf='MG', origem='indicacao', obs='Cadastro criado pela proposta ' + NUM + '. Complete CNPJ, telefone e e-mail.')
+obra = P.obra('MY Engenharia — mão de obra (alvenaria, escavação, entulho e calçada)', cliente=cli,
+              local='[ENDEREÇO DA OBRA — a informar]', tipo='reforma', status='planejamento', valor=VALOR_GLOBAL,
+              obs='Escopo: 35 m² alvenaria bloco 14x19x39 frisado com canaleta e graute, ~30 m escavação manual, 2 caçambas de entulho, base cimentada, retirada de terra/grama, calçada 10 m².')
+orc = P.orcamento(NUM, 'Mão de obra pedreiro e ajudante — MY Engenharia', cliente=cli, obra=obra, uf='MG',
+                  competencia='2026-06', bdi=bdi_zero(), categoria='Mão de obra', prazo_entrega=str(dias) + ' dias úteis',
+                  comercial={
+                      'apresentacao': 'Prestação de mão de obra especializada de pedreiro e ajudante, em regime de empreitada por valor global de ' + moeda(VALOR_GLOBAL) + '. Materiais, caçambas, água e energia por conta da contratante. Preços unitários já com o desconto comercial de fechamento (subtotal ' + moeda(subtotal) + ' − ' + moeda(desconto) + ').',
+                      'condicoesPagamento': '50% (R$ 2.000,00) na mobilização e 50% (R$ 2.000,00) na conclusão, contra vistoria final aprovada. Serviços extras por diária (1 pedreiro + 1 ajudante): ' + moeda(diaria) + '/dia, fechamento semanal. PIX ou transferência, com NF de serviço.',
+                      'prazoExecucao': str(dias) + ' dias úteis com 1 pedreiro + 1 ajudante (cerca de ' + str(dias2) + ' com 2 ajudantes), condicionado à entrega dos materiais.',
+                      'validadeProposta': '15 dias corridos a contar de ' + fmt(hoje) + '.',
+                      'garantia': 'Garantia de execução de 90 dias para os serviços de mão de obra, contados da vistoria final; não cobre falhas de material fornecido pela contratante.',
+                      'incluso': 'Mão de obra de pedreiro e ajudante com encargos sociais e complementares;\nFerramentas manuais e equipamentos leves;\nEPIs, alimentação e transporte da equipe;\nPreparo de argamassa e concreto em obra;\nAcompanhamento técnico (CREA-MG) e medição;\nLimpeza da área ao final de cada frente.',
+                      'excluso': 'Materiais (blocos, cimento, areia, brita, concreto, aço, graute);\nLocação, retirada e destinação das caçambas;\nÁgua e energia no local;\nEquipamentos pesados, betoneira e andaimes;\nProjetos, ART de projeto, taxas e licenças;\nServiços não relacionados na planilha.'
+                  })
+grupos = [('Alvenaria e graute', ['1', '2']), ('Escavação e limpeza', ['3', '4', '6']), ('Pisos e calçada', ['5', '7'])]
+por_n = {r[0]: (r, pu) for r, pu in zip(rows, pu_final)}
+for nome_et, ns in grupos:
+    et = P.etapa(orc, nome_et)
+    for n in ns:
+        r, pu = por_n[n]
+        desc = r[1].split(' (SINAPI')[0]
+        memoria = ('Referência: ' + r[7] + '. Unitário da proposta antes do desconto: ' + moeda(r[5]) +
+                   ' → com desconto comercial de ' + num(desconto / subtotal * 100, 1) + '%: ' + moeda(pu) + '.' +
+                   (' Quantidade ESTIMADA, a confirmar em visita técnica.' if r[4] else ''))
+        P.item(orc, et, 'MO-0' + n, desc + ' (ref. ' + r[7] + ')', r[2], r[3], pu, memoria=memoria)
+assert abs(P.total(orc) - VALOR_GLOBAL) < 0.005, P.total(orc)
+arq = P.salvar('propostas/2026-09-02-MY-Engenharia-mao-de-obra-PC-2026-0902-01.orcapro.json')
+print('ok pacote', arq, 'total', P.total(orc), 'unitarios', pu_final)
