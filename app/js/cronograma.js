@@ -95,6 +95,29 @@
       return { equipeDias: ed, categoria: cat ? cat.id : "outros" };
     },
 
+    /* "1,3" digitado na coluna "Depende de" -> ids de etapa. Vive no MOTOR
+       (e não no app.js) para o parse ter teste puro — fiação fina.
+         ""        -> preds null  (padrão: depende da etapa anterior)
+         "0" / "-" -> preds []    (sem predecessora: começa no dia 0)
+         "1,3"     -> [id da 1ª, id da 3ª etapa da lista]
+       Token inválido (nº fora da lista, auto-referência, texto) sai em
+       `invalidos` e NUNCA vira []: gravar "sem predecessora" no lugar de um
+       erro de digitação mudaria o cronograma em silêncio. */
+    parsePreds: function (txt, ordemIds, selfId) {
+      var s = String(txt == null ? "" : txt).trim();
+      if (!s) return { preds: null, invalidos: [] };
+      if (s === "0" || s === "-") return { preds: [], invalidos: [] };
+      var preds = [], invalidos = [];
+      s.split(/[,;\s]+/).forEach(function (tk) {
+        if (!tk) return;
+        var n = /^\d+$/.test(tk) ? parseInt(tk, 10) : 0;
+        var id = (n >= 1 && n <= ordemIds.length) ? ordemIds[n - 1] : null;
+        if (!id || id === selfId) invalidos.push(tk);
+        else if (preds.indexOf(id) < 0) preds.push(id);
+      });
+      return { preds: preds.length ? preds : null, invalidos: invalidos };
+    },
+
     _params: function (orc, p) {
       var d = {}, k;
       for (k in this.DEFAULTS) d[k] = this.DEFAULTS[k];
@@ -129,19 +152,75 @@
         var dur = temOverride ? num(manual[e.id]) : Math.max(1, Math.ceil(ed / (params.equipes || 1)));
         return { id: e.id, codigo: e.codigo, nome: e.nome, categoria: catPred, categoriaNome: catO.nome, cor: catO.cor, custo: custo, equipeDias: Math.round(ed * 10) / 10, duracao: dur, editado: temOverride };
       });
-      // sequenciamento em cascata com sobreposição (paralelismo)
+      // ---- rede de precedência (CPM: ida, volta, folga e caminho crítico) ----
+      // O padrão continua a cascata de sempre: cada etapa depois da ANTERIOR,
+      // começando floor(paralelismo × duração da anterior) dias antes do fim
+      // dela — com rede vazia, início/fim saem IDÊNTICOS ao modelo antigo (a
+      // Curva S, o Excel, o 4D e o Last Planner leem esses dois campos).
+      // `orc.cronograma.predecessoras[id]` muda a rede: [] = começa no dia 0;
+      // [ids] = depende dessas etapas. Elo para etapa apagada ou para si mesma
+      // morre em silêncio — dependência podre não pode travar o Gantt.
+      var predsCfg = (orc.cronograma && orc.cronograma.predecessoras) || {};
+      var porId = {};
+      etapas.forEach(function (et) { porId[et.id] = et; });
       etapas.forEach(function (et, i) {
-        if (i === 0) et.inicio = 0;
-        else { var prev = etapas[i - 1]; var ov = Math.floor((params.paralelismo || 0) * prev.duracao); et.inicio = Math.max(0, prev.inicio + prev.duracao - ov); }
-        et.fim = et.inicio + et.duracao;
+        var cfg = predsCfg[et.id], out = [], k;
+        if (Object.prototype.toString.call(cfg) === "[object Array]") {
+          for (k = 0; k < cfg.length; k++) if (cfg[k] !== et.id && porId[cfg[k]] && out.indexOf(cfg[k]) < 0) out.push(cfg[k]);
+        } else if (i > 0) out.push(etapas[i - 1].id);
+        et.preds = out;
+      });
+      function sobre(p) { return Math.floor((params.paralelismo || 0) * p.duracao); }
+      // ida (Kahn). ⚠ Ciclo NÃO pode travar o app: quem sobrar entra em ordem
+      // de lista ignorando o elo não resolvido, e sai marcado (temCiclo) para
+      // a tela avisar — em vez de um laço infinito na aba do orçamento.
+      var indeg = {}, succ = {}, ordem = [], fila = [];
+      etapas.forEach(function (et) { indeg[et.id] = et.preds.length; succ[et.id] = []; });
+      etapas.forEach(function (et) { et.preds.forEach(function (p) { succ[p].push(et.id); }); });
+      etapas.forEach(function (et) { if (!indeg[et.id]) fila.push(et.id); });
+      while (fila.length) {
+        var atual = fila.shift(); ordem.push(atual);
+        succ[atual].forEach(function (s) { if (--indeg[s] === 0) fila.push(s); });
+      }
+      var temCiclo = ordem.length < etapas.length;
+      if (temCiclo) etapas.forEach(function (et) { if (ordem.indexOf(et.id) < 0) { et.cicloDep = true; ordem.push(et.id); } });
+      var resolvido = {};
+      ordem.forEach(function (id) {
+        var et = porId[id], ini0 = 0;
+        et.preds.forEach(function (pid) {
+          if (!resolvido[pid]) return; // só dentro de ciclo: o elo de volta é ignorado
+          var p = porId[pid]; ini0 = Math.max(ini0, p.fim - sobre(p));
+        });
+        et.inicio = Math.max(0, ini0); et.fim = et.inicio + et.duracao; resolvido[id] = true;
       });
       var totalDias = etapas.reduce(function (m, e) { return Math.max(m, e.fim); }, 0);
+      // volta: um sucessor exige que eu termine até (início tardio dele + a
+      // minha sobreposição); folga = quanto posso atrasar sem mudar o fim da
+      // obra. Folga zero = caminho crítico. Isso vale também na cascata
+      // clássica: uma etapa curta que cabe dentro da sobreposição da anterior
+      // termina antes do fim da obra e ganha folga de verdade.
+      for (var vi = ordem.length - 1; vi >= 0; vi--) {
+        var etv = porId[ordem[vi]], lf = totalDias;
+        succ[etv.id].forEach(function (sid) {
+          var sv = porId[sid];
+          if (sv.folga == null) return; // sucessor dentro de ciclo: não aperta
+          lf = Math.min(lf, sv.inicio + sv.folga + sobre(etv));
+        });
+        etv.folga = Math.max(0, lf - etv.fim);
+        etv.critico = etv.folga === 0;
+      }
       var ini = params.dataInicio ? new Date(params.dataInicio + (String(params.dataInicio).length <= 10 ? "T00:00:00" : "")) : new Date();
-      etapas.forEach(function (et) { et.dataInicio = self.addDiasUteis(ini, et.inicio, params.diasUteisSemana); et.dataFim = self.addDiasUteis(ini, et.fim, params.diasUteisSemana); });
+      etapas.forEach(function (et) {
+        et.dataInicio = self.addDiasUteis(ini, et.inicio, params.diasUteisSemana);
+        et.dataFim = self.addDiasUteis(ini, et.fim, params.diasUteisSemana);
+        et.dataLimite = et.folga ? self.addDiasUteis(ini, et.fim + et.folga, params.diasUteisSemana) : et.dataFim;
+      });
       return {
         etapas: etapas, totalDias: totalDias,
         totalSemanas: Math.max(1, Math.ceil(totalDias / (params.diasUteisSemana || 5))),
-        dataInicio: ini, dataFim: self.addDiasUteis(ini, totalDias, params.diasUteisSemana), params: params
+        dataInicio: ini, dataFim: self.addDiasUteis(ini, totalDias, params.diasUteisSemana), params: params,
+        caminhoCritico: etapas.filter(function (e) { return e.critico; }).map(function (e) { return e.id; }),
+        temCiclo: temCiclo
       };
     }
   };

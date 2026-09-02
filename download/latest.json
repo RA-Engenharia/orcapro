@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.29",
+  "versao": "1.2.30",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.29/OrcaPRO-IA-update-v1.2.29.zip",
-  "notas": "Duas novidades dentro do orcamento. A aba Insumos & ABC abre a obra em material: quanto de cimento, areia e mao de obra o orcamento inteiro pede, somando o mesmo insumo de todos os servicos — e a curva ABC aponta os poucos itens que levam 80% do dinheiro. A tela diz quanto do orcamento ela conseguiu abrir e lista o que ficou de fora, com o motivo; item digitado a mao nao tem composicao para explodir. E na Planilha, orcamento com 5 etapas ou mais ganha um indice lateral: da para ver o peso de cada etapa e olhar uma de cada vez, sem perder o total do orcamento inteiro.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.29/OrcaPRO-IA-Instalador-v1.2.29.exe"
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.30/OrcaPRO-IA-update-v1.2.30.zip",
+  "notas": "O cronograma do orcamento virou um Gantt. Cada etapa ganhou a coluna Depende de: escreva o numero da linha das etapas que precisam terminar antes (1,2 por exemplo) e o grafico redesenha as barras com setas entre elas. As etapas que nao podem atrasar sem atrasar a obra inteira aparecem em destaque como caminho critico, e as outras mostram quantos dias de folga tem. Sem preencher nada, o cronograma fica exatamente como era; Curva S, Excel e 4D nao mudam.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.30/OrcaPRO-IA-Instalador-v1.2.30.exe"
 }

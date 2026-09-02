@@ -1774,20 +1774,36 @@
         '<button class="btn sm" data-acao="cron-reset">Limpar edições</button>' +
         '<button class="btn sm" data-acao="cron-ia" title="Refina as durações com a IA do ERP (planejador)">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' Refinar com IA</button>' +
         '</div></div>';
-      html += '<div class="flex" style="gap:18px;margin-bottom:8px;align-items:baseline"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
+      var nCrit = (r.caminhoCritico || []).length;
+      html += '<div class="flex" style="gap:18px;margin-bottom:8px;align-items:baseline;flex-wrap:wrap"><b style="font-size:16px">⏱ ' + r.totalDias + ' dias úteis (~' + r.totalSemanas + ' semanas)</b>' +
         '<span class="muted">' + r.dataInicio.toLocaleDateString("pt-BR") + ' → ' + r.dataFim.toLocaleDateString("pt-BR") + '</span>' +
-        '<span class="muted" style="font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' estimado pelo agente · edite a duração na tabela</span></div>';
+        '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:600" title="Etapas sem folga: atrasar qualquer uma delas atrasa a entrega da obra.">caminho crítico: ' + nCrit + ' de ' + r.etapas.length + ' etapa' + (r.etapas.length === 1 ? '' : 's') + '</span>' +
+        (r.temCiclo ? '<span class="pill" style="background:#f59e0b22;color:#b45309;font-weight:700" title="Uma etapa depende de outra que, por sua vez, depende dela. O elo que fecha o laço foi ignorado no cálculo.">dependência circular — elo ignorado; revise a coluna “Depende de”</span>' : '') +
+        '<span class="muted" style="font-size:12px">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + ' estimado pelo agente · edite duração e dependências na tabela</span></div>';
       html += this._gantt(r);
-      html += '<table class="tbl" style="margin-top:12px"><thead><tr><th>Etapa</th><th>Categoria (agente)</th><th class="num">Eq-dias</th><th class="num">Duração (d)</th><th>Início</th><th>Fim</th></tr></thead><tbody>';
-      r.etapas.forEach(function (e) {
+      /* "Depende de" fala em Nº DA LINHA (1, 2, 3…), como o MS Project — o
+         código da etapa pode ser "01.02" ou vazio, e ninguém digita id. O
+         placeholder mostra o padrão em vigor (a linha anterior). */
+      var predsCfg = (orc.cronograma && orc.cronograma.predecessoras) || {};
+      var numPorId = {}; r.etapas.forEach(function (e, i) { numPorId[e.id] = i + 1; });
+      html += '<table class="tbl" style="margin-top:12px"><thead><tr><th>Etapa</th><th>Categoria (agente)</th><th class="num">Eq-dias</th><th class="num">Duração (d)</th>' +
+        '<th class="num" title="Nº das etapas que precisam terminar antes desta (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra.">Depende de</th>' +
+        '<th class="num" title="Quanto a etapa pode atrasar sem mudar a entrega. Folga zero = caminho crítico.">Folga</th><th>Início</th><th>Fim</th></tr></thead><tbody>';
+      r.etapas.forEach(function (e, i) {
         var c = Cronograma.cat(e.categoria);
+        var explicito = Object.prototype.toString.call(predsCfg[e.id]) === "[object Array]";
+        // mostra a rede EFETIVA (elo para etapa apagada já caiu no motor), não o que foi digitado
+        var valPred = explicito ? (e.preds.length ? e.preds.map(function (p) { return numPorId[p]; }).join(",") : "0") : "";
         html += '<tr><td>' + Util.esc(e.codigo) + ' ' + Util.esc(e.nome) + '</td>' +
           '<td><span class="pill" style="background:' + c.cor + '22;color:' + c.cor + '">' + Util.esc(c.nome) + '</span></td>' +
           '<td class="num">' + e.equipeDias + '</td>' +
           '<td class="num"><input class="cell" type="number" min="1" data-cron-dur="' + e.id + '" value="' + e.duracao + '" style="width:60px;text-align:right' + (e.editado ? ';border-color:var(--azul,#2563eb)' : '') + '">' + (iaM[e.id] ? ' <span title="🤖 IA: ' + Util.esc(iaM[e.id]) + '" style="cursor:help">' + (typeof Icones !== 'undefined' ? Icones.get('ia', 15) : '') + '</span>' : '') + '</td>' +
+          '<td class="num"><input class="cell" type="text" data-cron-pred="' + e.id + '" value="' + valPred + '" placeholder="' + (i > 0 ? i : '—') + '" title="Nº das etapas que precisam terminar antes (ex.: 1,3). Vazio = a anterior; 0 = começa no início da obra." style="width:64px;text-align:right' + (explicito ? ';border-color:var(--aco,#0d6ebd)' : '') + '"></td>' +
+          '<td class="num">' + (e.critico ? '<span class="pill" style="background:#b91c1c14;color:var(--graf-alerta,#b91c1c);font-weight:700" title="Sem folga: atrasar esta etapa atrasa a obra inteira.">crítica</span>' : '+' + e.folga + ' d') + '</td>' +
           '<td>' + e.dataInicio.toLocaleDateString("pt-BR") + '</td><td>' + e.dataFim.toLocaleDateString("pt-BR") + '</td></tr>';
       });
       html += '</tbody></table>';
+      html += '<div class="muted" style="font-size:11px;margin-top:6px"><b>Depende de:</b> nº das etapas que precisam terminar antes (ex.: <code>1,3</code>). Vazio = a etapa anterior · <code>0</code> = começa no início da obra · a sobreposição do paralelismo vale em cada elo. <b>Folga:</b> quanto a etapa pode atrasar sem mudar a entrega — folga zero é o caminho crítico.</div>';
       return html;
     },
 
@@ -1976,23 +1992,99 @@
       return html;
     },
 
+    /* Gantt em SVG: barras por etapa, folga tracejada, setas de dependência,
+       caminho crítico em vermelho e a linha de hoje.
+       ⚠ É PAPEL BRANCO de propósito (fundo #fff cravado, como os outros
+       gráficos deste arquivo): as cores das categorias (Cronograma.CATS) foram
+       calibradas para fundo claro, e token de tema aqui trocaria a tinta do
+       texto para a do tema escuro SOBRE o papel branco — ilegível. O antigo
+       `var(--card,#fff)` já caía sempre no #fff, porque --card não existe. */
     _gantt: function (r) {
       var dias = r.totalDias || 1, W = 880, labelW = 184, rowH = 30, top = 22;
       var plotW = W - labelW - 14, h = top + r.etapas.length * rowH + 12, dpw = r.params.diasUteisSemana || 5;
-      var svg = '<svg viewBox="0 0 ' + W + ' ' + h + '" style="width:100%;max-width:100%;background:var(--card,#fff);border:1px solid var(--linha,#e2e8f0);border-radius:8px;font-family:inherit">';
+      var CRIT = "#b91c1c", CINZA = "#94a3b8", HOJE = "#b45309";
+      var X = function (d) { return labelW + Math.min(1, d / dias) * plotW; };
+      var yBar = function (i) { return top + i * rowH + 5; };
+      var yc = function (i) { return yBar(i) + 9; };
+      var idx = {}; r.etapas.forEach(function (e, i) { idx[e.id] = i; });
+      var svg = '<svg class="gantt" viewBox="0 0 ' + W + ' ' + h + '" style="width:100%;max-width:100%;background:#fff;border:1px solid var(--linha,#e2e8f0);border-radius:8px;font-family:inherit">';
+      // grade semanal
       for (var s = 0; s <= r.totalSemanas; s++) {
-        var gx = labelW + Math.min(1, (s * dpw) / dias) * plotW;
+        var gx = X(s * dpw);
         svg += '<line x1="' + gx.toFixed(1) + '" y1="' + top + '" x2="' + gx.toFixed(1) + '" y2="' + (h - 8) + '" stroke="#e2e8f0" stroke-width="1"/>';
         if (s < r.totalSemanas) svg += '<text x="' + (gx + 3).toFixed(1) + '" y="' + (top - 7) + '" font-size="9" fill="#94a3b8">S' + (s + 1) + '</text>';
       }
+      // linha de HOJE — conta dias úteis com a MESMA régua do addDiasUteis
+      // (avança o calendário e só conta o dia que a semana de trabalho tem)
+      var hojeX = null;
+      (function () {
+        if (!r.dataInicio || typeof r.dataInicio.getFullYear !== "function") return;
+        var d0 = new Date(r.dataInicio.getFullYear(), r.dataInicio.getMonth(), r.dataInicio.getDate());
+        var hj = new Date(); hj = new Date(hj.getFullYear(), hj.getMonth(), hj.getDate());
+        if (hj < d0) return;
+        var cur = new Date(d0.getTime()), wd = 0;
+        while (cur < hj && wd <= dias) {
+          cur.setDate(cur.getDate() + 1);
+          var dw = cur.getDay();
+          if (dpw >= 7 || (dpw === 6 ? dw !== 0 : (dw !== 0 && dw !== 6))) wd++;
+        }
+        if (wd > dias) return; // obra já passou do fim previsto: sem marcador
+        hojeX = X(wd);
+      })();
+      if (hojeX != null) svg += '<line x1="' + hojeX.toFixed(1) + '" y1="' + (top - 2) + '" x2="' + hojeX.toFixed(1) + '" y2="' + (h - 8) + '" stroke="' + HOJE + '" stroke-width="1.2" stroke-dasharray="4,3"><title>hoje</title></line>';
+      // barras (+ folga tracejada depois da barra)
       r.etapas.forEach(function (e, i) {
-        var y = top + i * rowH + 5, x = labelW + (e.inicio / dias) * plotW, w = Math.max(4, ((e.fim - e.inicio) / dias) * plotW);
-        var cor = Cronograma.cat(e.categoria).cor;
-        svg += '<text x="6" y="' + (y + 13) + '" font-size="10" fill="#475569">' + Util.esc((e.codigo + " " + e.nome).slice(0, 30)) + '</text>';
-        svg += '<rect x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="18" rx="3" fill="' + cor + '" opacity="0.92"><title>' + Util.esc(e.nome) + ' — ' + e.duracao + ' dias</title></rect>';
-        svg += '<text x="' + (x + w + 4).toFixed(1) + '" y="' + (y + 13) + '" font-size="9" fill="#64748b">' + e.duracao + 'd</text>';
+        var y = yBar(i), x = X(e.inicio), w = Math.max(4, ((e.fim - e.inicio) / dias) * plotW);
+        var cor = Cronograma.cat(e.categoria).cor, folga = e.folga || 0;
+        var depTxt = (e.preds && e.preds.length) ? e.preds.map(function (p) { return idx[p] + 1; }).join(",") : "início da obra";
+        var tip = Util.esc(e.nome) + ' — ' + e.duracao + ' dia(s) · ' + e.dataInicio.toLocaleDateString("pt-BR") + ' → ' + e.dataFim.toLocaleDateString("pt-BR") +
+          (e.critico ? ' · CRÍTICA (sem folga)' : ' · folga de ' + folga + ' dia(s), até ' + e.dataLimite.toLocaleDateString("pt-BR")) +
+          ' · depende de: ' + depTxt;
+        // etapa sem `codigo` (importada, BIM) saía "undefined 1 FUNDACAO" no rótulo — a tabela protege, o SVG não protegia
+        svg += '<text x="6" y="' + (y + 13) + '" font-size="10" fill="#475569"' + (e.critico ? ' font-weight="600"' : '') + '>' + Util.esc(((e.codigo ? e.codigo + " " : "") + (e.nome || "")).slice(0, 30)) + '</text>';
+        if (folga > 0) {
+          var wF = Math.max(2, (folga / dias) * plotW);
+          svg += '<rect class="gantt-folga" x="' + (x + w).toFixed(1) + '" y="' + y + '" width="' + wF.toFixed(1) + '" height="18" rx="3" fill="' + cor + '" fill-opacity="0.13" stroke="' + cor + '" stroke-opacity="0.55" stroke-dasharray="3,3"><title>folga: pode ir até ' + e.dataLimite.toLocaleDateString("pt-BR") + ' sem atrasar a obra</title></rect>';
+        }
+        svg += '<rect class="gantt-barra' + (e.critico ? ' gantt-critica' : '') + '" x="' + x.toFixed(1) + '" y="' + y + '" width="' + w.toFixed(1) + '" height="18" rx="3" fill="' + cor + '" opacity="0.92"' + (e.critico ? ' stroke="' + CRIT + '" stroke-width="1.6"' : '') + '><title>' + tip + '</title></rect>';
+        // duração DENTRO da barra: do lado de fora ela caía em cima da seta que sai do fim da barra
+        // (visto na foto do e2e). pointer-events none para o <title> da barra continuar respondendo.
+        if (w >= 30) svg += '<text x="' + (x + w - 4).toFixed(1) + '" y="' + (y + 13) + '" font-size="9" font-weight="600" fill="#fff" text-anchor="end" pointer-events="none">' + e.duracao + 'd</text>';
+        else svg += '<text x="' + Math.min(W - 24, x + w + 3).toFixed(1) + '" y="' + (y + 13) + '" font-size="9" fill="#64748b" pointer-events="none">' + e.duracao + 'd</text>';
+        if (folga > 0) svg += '<text x="' + Math.min(W - 24, X(e.fim + folga) + 3).toFixed(1) + '" y="' + (y + 13) + '" font-size="9" fill="#64748b" pointer-events="none">+' + folga + '</text>';
       });
-      return svg + '</svg>';
+      // setas de dependência, por cima das barras (como no MS Project). Fica
+      // vermelho só o elo que APERTA duas etapas críticas — entre duas críticas
+      // pode haver elo com sobra, e pintá-lo de vermelho mentiria o caminho.
+      r.etapas.forEach(function (e, si) {
+        (e.preds || []).forEach(function (pid) {
+          var pi = idx[pid]; if (pi == null) return;
+          var p = r.etapas[pi], ovP = Math.floor((r.params.paralelismo || 0) * p.duracao);
+          var aperta = e.inicio === Math.max(0, p.fim - ovP);
+          var verm = aperta && e.critico && p.critico;
+          var px = X(p.fim), py = yc(pi), sx = X(e.inicio), sy = yc(si);
+          var corD = verm ? CRIT : CINZA, d;
+          if (sx >= px + 12) {
+            d = "M" + px.toFixed(1) + "," + py + " H" + (sx - 5).toFixed(1) + " V" + sy + " H" + (sx - 1).toFixed(1);
+          } else {
+            // sucessora começa antes do fim da predecessora (sobreposição):
+            // sai pela direita, corre pelo corredor entre as linhas e entra pela esquerda
+            var faixa = py + (sy > py ? 15 : -15), volta = Math.max(labelW + 2, sx - 6);
+            d = "M" + px.toFixed(1) + "," + py + " H" + (px + 5).toFixed(1) + " V" + faixa + " H" + volta.toFixed(1) + " V" + sy + " H" + (sx - 1).toFixed(1);
+          }
+          svg += '<path class="gantt-dep' + (verm ? ' gantt-dep-critica' : '') + '" d="' + d + '" fill="none" stroke="' + corD + '" stroke-width="' + (verm ? 1.8 : 1.1) + '" opacity="0.9"/>';
+          svg += '<polygon points="' + sx.toFixed(1) + ',' + sy + ' ' + (sx - 5).toFixed(1) + ',' + (sy - 3) + ' ' + (sx - 5).toFixed(1) + ',' + (sy + 3) + '" fill="' + corD + '"/>';
+        });
+      });
+      svg += '</svg>';
+      // legenda em HTML (herda o tema do card; as amostras repetem a tinta do papel)
+      var amostra = function (css) { return '<span style="display:inline-block;width:16px;' + css + ';vertical-align:middle;margin-right:5px"></span>'; };
+      return svg + '<div class="muted" style="font-size:11px;margin-top:4px;display:flex;gap:16px;flex-wrap:wrap;align-items:center">' +
+        '<span>' + amostra('height:0;border-top:2px solid ' + CRIT) + 'caminho crítico (sem folga)</span>' +
+        '<span>' + amostra('height:0;border-top:2px solid ' + CINZA) + 'dependência</span>' +
+        '<span>' + amostra('width:12px;height:10px;border:1px dashed ' + CINZA + ';border-radius:2px') + 'folga</span>' +
+        (hojeX != null ? '<span>' + amostra('height:0;border-top:2px dashed ' + HOJE) + 'hoje</span>' : '') +
+        '</div>';
     },
 
     // ----- Aba Gráficos -----

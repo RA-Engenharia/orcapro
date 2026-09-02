@@ -1443,6 +1443,23 @@
         if (o.cronograma.iaMotivos) delete o.cronograma.iaMotivos[e.target.dataset.cronDur]; // remove justificativa IA órfã
         this.persistir(); this.render(); return;
       }
+      // editar "Depende de" no cronograma (rede de precedência do Gantt / caminho crítico)
+      if (e.target.matches("[data-cron-pred]")) {
+        var oc = this.orcAtual; if (!oc || typeof Cronograma === "undefined") return;
+        var idPred = e.target.dataset.cronPred;
+        var ordemIds = (oc.etapas || []).map(function (et) { return et.id; });
+        var pr = Cronograma.parsePreds(e.target.value, ordemIds, idPred);
+        if (pr.invalidos.length) UI.toast("“" + pr.invalidos.join(", ") + "” não é etapa válida em “Depende de” — use o nº da linha (1 a " + ordemIds.length + "), sem apontar para a própria etapa.", "erro");
+        oc.cronograma = oc.cronograma || {};
+        if (pr.preds !== null) {
+          oc.cronograma.predecessoras = oc.cronograma.predecessoras || {};
+          oc.cronograma.predecessoras[idPred] = pr.preds;
+        } else if (!pr.invalidos.length && oc.cronograma.predecessoras) {
+          delete oc.cronograma.predecessoras[idPred]; // vazio = volta ao padrão (depende da anterior)
+        }
+        // ⚠ só inválidos: não grava nada — erro de digitação não muda o cronograma em silêncio; o render devolve o valor anterior
+        this.persistir(); this.render(); return;
+      }
       // preço de insumo NÃO COLETADO informado pelo usuário (detalhamento) —
       // salva por empresa e re-renderiza o modal para a soma/aviso atualizarem
       // v1.1.123 — coeficiente/preço editados no criador: atualiza a prévia
@@ -3198,10 +3215,10 @@
       this.persistir(); this.render();
     },
     cronReset: function () {
-      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = {}; }
+      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = {}; o.cronograma.predecessoras = {}; }
       // FASE 1.4: destrava também o nº de meses (false explícito ≠ undefined: não re-dispara a migração)
       if (o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
-      this.persistir(); UI.toast("Durações e prazo voltaram à estimativa do agente.", "ok"); this.render();
+      this.persistir(); UI.toast("Durações, dependências e prazo voltaram à estimativa do agente.", "ok"); this.render();
     },
 
     // lê os inputs do form da aba Execução e grava em o.execucao.params (sem render)
