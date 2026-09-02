@@ -16475,6 +16475,11 @@
         + '<div class="muted" style="font-size:12px;margin-top:10px">Vai apenas o que você escrever, mais a tela em que estava e a versão. '
         + '<b>Nenhum dado de orçamento, obra, cliente ou colaborador é enviado</b> — e você vê tudo antes de mandar.</div></div>';
 
+      /* A fila de TODOS os clientes, para quem responde por eles. Vem antes
+         de "Seus relatos" de proposito: e trabalho pendente, e trabalho
+         pendente nao fica embaixo do historico proprio. */
+      html += this._filaClientesHtml();
+
       var r = this._relatosMeus;
       if (!r) { this._carregarRelatos(); return html + '<div class="card muted" style="font-size:13px">Carregando seus relatos…</div>'; }
       if (r.erro) return html + '<div class="card" style="font-size:13px">Não consegui buscar seus relatos agora. O envio continua funcionando.</div>';
@@ -16514,6 +16519,145 @@
         licenca: (typeof Licenca !== "undefined" && Licenca.chave) ? Licenca.chave() : "",
         buscar: function (u, i) { return fetch(u, i); }
       };
+    },
+
+    /* --------------------------------------------------------------------
+     * A FILA DE TODOS OS CLIENTES (so para quem responde por eles)
+     *
+     * ⚠ ESTA SECAO NAO E ESCONDIDA POR `Auth.ehAdmin()`. Todo dono de
+     * licenca e admin da propria instalacao — `ehAdmin` diria "sim" nas 38.
+     * Quem decide e o SERVIDOR, comparando o e-mail da licenca com a lista
+     * de donos que so existe no config dele. O app pergunta, leva 401 e nao
+     * desenha nada. Sem essa inversao, ou a senha viajava no js/ (que vai
+     * para o PWA publico) ou o cliente veria o chamado do outro.
+     * ------------------------------------------------------------------ */
+    _filaClientesHtml: function () {
+      var f = this._relatosFila;
+      if (!f) { this._carregarFilaClientes(); return ""; }
+      /* nao e dono: silencio total. Erro de rede tambem nao vira alarme aqui
+         — a tela do cliente nao pode falar de uma fila que nao e dele. */
+      if (!f.ok) return "";
+
+      var itens = f.itens || [];
+      var res = Relatos.resumo(itens);
+
+      var cab = '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 10px">'
+        + '<h3 style="margin:0">Relatos dos clientes</h3>'
+        + '<div style="display:flex;gap:6px">'
+        + '<button class="btn sm ghost" data-gacao="relato-fila-hist">' + (this._relatosFilaHist ? "Ver só o que está aberto" : "Ver o histórico") + "</button>"
+        + '<button class="btn sm ghost" data-gacao="relato-fila-atualizar">Atualizar</button>'
+        + "</div></div>";
+
+      /* O placar. Numero que a pessoa confere vale mais que "tudo em dia":
+         se um relato esta parado ha 15 dias, isso tem de estar escrito. */
+      var placar = '<div id="rf-placar" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px;margin-bottom:12px">'
+        + '<span><b>' + res.abertos + "</b> esperando</span>"
+        + '<span class="muted">' + res.problemas + " problema" + (res.problemas === 1 ? "" : "s")
+        + " · " + res.melhorias + " melhoria" + (res.melhorias === 1 ? "" : "s") + "</span>"
+        + (res.naoLidos ? '<span style="color:#c2410c;font-weight:600">' + res.naoLidos + " ainda sem resposta sua</span>" : "")
+        + (res.maisAntigoDias >= 3 ? '<span style="color:#c2410c">o mais antigo espera há ' + res.maisAntigoDias + " dias</span>" : "")
+        + "</div>";
+
+      if (!itens.length) {
+        return '<div class="card" style="margin-bottom:12px">' + cab
+          + '<div class="muted" style="font-size:13px">Nenhum cliente escreveu ainda.</div></div>';
+      }
+
+      var linhas = itens.map(function (i) {
+        var e = Relatos.estadoDe(i.estado);
+        var d = new Date(i.criadoEm || 0);
+        var quando = isNaN(d.getTime()) ? "—"
+          : ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear()
+            + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+        var esp = Relatos.esperaDias(i);
+        var fech = Relatos.fechado(i);
+        return '<div class="card rf-item" data-rf-id="' + Util.esc(i.id) + '" style="padding:12px;margin-bottom:10px;border-left:4px solid ' + e.cor + (fech ? ";opacity:.65" : "") + '">'
+          + '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px">'
+          + '<b style="font-size:14px">' + (i.tipo === "melhoria" ? "Melhoria" : "Problema") + "</b>"
+          + '<span style="color:' + e.cor + ';font-weight:600;font-size:12px">' + e.rotulo + "</span>"
+          + (esp >= 3 ? '<span style="color:#c2410c;font-size:12px;font-weight:600">esperando há ' + esp + " dias</span>" : "")
+          + '<span class="muted" style="font-size:12px;margin-left:auto">' + quando + "</span>"
+          + "</div>"
+          + '<div style="font-size:14px;font-weight:600;margin-bottom:4px">' + Util.esc(i.titulo || "(sem título)") + "</div>"
+          + '<div style="font-size:13px;white-space:pre-wrap;margin-bottom:8px">' + Util.esc(i.texto || "") + "</div>"
+          + '<div class="muted" style="font-size:12px;margin-bottom:8px">'
+          + (i.empresa ? "<b>" + Util.esc(i.empresa) + "</b> · " : "")
+          + Util.esc(i.conta || "—") + " · tela: " + Util.esc(i.tela || "—") + " · v" + Util.esc(i.versao || "?") + "</div>"
+          + (i.resposta ? '<div class="rf-resp" style="font-size:13px;background:var(--fundo2,#f1f5f9);padding:8px;border-radius:6px;margin-bottom:8px">'
+              + '<span class="muted" style="font-size:11px">O cliente está lendo isto:</span><br>' + Util.esc(i.resposta) + "</div>" : "")
+          + '<button class="btn sm primary" data-gacao="relato-responder" data-id="' + Util.esc(i.id) + '">'
+          + (i.resposta ? "Mudar a resposta" : "Responder") + "</button>"
+          + "</div>";
+      }).join("");
+
+      return '<div class="card" id="rf-fila" style="margin-bottom:12px">' + cab + placar + linhas + "</div>";
+    },
+
+    _carregarFilaClientes: function () {
+      var self = this;
+      if (this._relatosFilaBuscando) return;
+      this._relatosFilaBuscando = true;
+      Relatos.fila(this._relatoDeps(), this._relatosFilaHist ? { estado: "todos" } : {}).then(function (r) {
+        self._relatosFilaBuscando = false;
+        self._relatosFila = r;
+        /* so redesenha se ha o que mostrar: numa instalacao de cliente esta
+           resposta chega 401 e um App.render() aqui seria redesenho a toa */
+        if (r && r.ok) App.render();
+      });
+    },
+
+    relatoFilaHist: function () {
+      this._relatosFilaHist = !this._relatosFilaHist;
+      this._relatosFila = null;
+      App.render();
+    },
+
+    relatoFilaAtualizar: function () {
+      this._relatosFila = null;
+      App.render();
+    },
+
+    /* A resposta que ele escreve aqui APARECE NA TELA DO CLIENTE, na conta
+       de quem relatou. Por isso o aviso e literal no modal: recado que a
+       pessoa acha que e nota interna, e nao e, e o jeito de mandar para o
+       cliente algo que era para mim. */
+    relatoResponder: function (idRel) {
+      var self = this;
+      var f = this._relatosFila;
+      if (!f || !f.ok) return;
+      var item = null;
+      (f.itens || []).forEach(function (i) { if (i.id === idRel) item = i; });
+      if (!item) { UI.toast("Relato não encontrado. Atualize a lista.", "erro"); return; }
+
+      var opc = Relatos.ACOES.map(function (a) {
+        return '<option value="' + a.estado + '"' + (a.estado === item.estado ? " selected" : "") + ">" + a.rotulo + "</option>";
+      }).join("");
+
+      var corpo = '<div class="card" style="padding:10px;margin-bottom:12px">'
+        + '<div class="muted" style="font-size:12px">' + (item.empresa ? Util.esc(item.empresa) + " · " : "") + Util.esc(item.conta || "") + " · " + (item.tipo === "melhoria" ? "melhoria" : "problema") + "</div>"
+        + '<div style="font-weight:600;font-size:14px;margin:4px 0">' + Util.esc(item.titulo || "") + "</div>"
+        + '<div style="font-size:13px;white-space:pre-wrap">' + Util.esc(item.texto || "") + "</div></div>"
+        + campo("Situação", '<select id="rf-estado">' + opc + "</select>")
+        + campo("Resposta para o cliente",
+            '<textarea id="rf-resposta" rows="5" placeholder="Ex.: já está corrigido na versão 1.2.25 — é só atualizar.">' + Util.esc(item.resposta || "") + "</textarea>")
+        + '<div class="muted" style="font-size:12px">O cliente vai ler <b>exatamente este texto</b> na tela "Falar com o suporte" dele. Deixe em branco para só mudar a situação.</div>';
+
+      UI.modal("Responder o cliente", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gravar", classe: "primary", onClick: function () {
+          var est = UI.el("rf-estado") ? UI.el("rf-estado").value : "";
+          var txt = UI.el("rf-resposta") ? UI.el("rf-resposta").value : "";
+          UI.fecharModal();
+          Relatos.responder(self._relatoDeps(), { ids: [item.id], estado: est, resposta: txt }).then(function (r) {
+            if (r.ok) {
+              UI.toast("Gravado. O cliente já vê na tela dele.", "ok");
+              self._relatosFila = null; App.render();
+            } else {
+              UI.toast(r.erro || "Não consegui gravar.", "erro");
+            }
+          });
+        } }
+      ]);
     },
 
     /* O formulário. A PRÉVIA do que vai é obrigatória: a política promete que
@@ -24233,6 +24377,9 @@ renderFolha: function () {
         case "rdo-entrada": return this.rdoBuscarEntrada(true);
         case "relato-problema": return this.relatoNovo("problema");
         case "relato-melhoria": return this.relatoNovo("melhoria");
+        case "relato-responder": return this.relatoResponder(dataset.id);
+        case "relato-fila-hist": return this.relatoFilaHist();
+        case "relato-fila-atualizar": return this.relatoFilaAtualizar();
         case "ficha-epi": return this.fichaEpi(id);
         case "nova-falta": return this.registrarFalta();
         case "batidas-mes": return this.formBatidas();

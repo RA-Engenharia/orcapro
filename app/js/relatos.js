@@ -117,9 +117,129 @@
       .catch(function () { return { itens: [], erro: true }; });
   }
 
+  /* --------------------------------------------------------------------
+   * O LADO DE CA: A FILA DE TODOS OS CLIENTES
+   *
+   * `meus` acima devolve o que a PROPRIA conta escreveu — e por meses foi so
+   * isso que existiu. O resultado pratico: o cliente escrevia, o texto ficava
+   * guardado no servidor, e nao havia caminho nenhum ate quem conserta. Um
+   * cliente perguntou se o relato dele tinha sido visto e a resposta honesta
+   * era "nao sei" — porque a unica forma de ler a fila era uma ferramenta de
+   * linha de comando feita para o agente, nao para uma pessoa.
+   *
+   * ⚠ NENHUMA SENHA MORA AQUI. Quem manda e a licenca que a instalacao ja
+   * tem; o servidor compara o e-mail dela com a lista de donos (que vive so
+   * no config dele) e responde 401 para todo o resto. Isto e proposital: js/
+   * inteira e copiada para o pacote de cada licenciado e para o PWA em URL
+   * publica — segredo posto aqui vira segredo publicado.
+   * ------------------------------------------------------------------ */
+
+  /* estados que o dono pode aplicar, na ordem em que a decisao acontece */
+  var ACOES = [
+    { estado: "triado", rotulo: "Em análise" },
+    { estado: "para-corrigir", rotulo: "Vou corrigir" },
+    { estado: "aguardando-decisao", rotulo: "Em avaliação" },
+    { estado: "aprovado", rotulo: "Vou fazer" },
+    { estado: "resolvido", rotulo: "Pronto" },
+    { estado: "recusado", rotulo: "Não vou fazer" }
+  ];
+
+  function fechado(i) { return i && (i.estado === "resolvido" || i.estado === "recusado"); }
+
+  /* Ordem da tela: quem ESPERA HA MAIS TEMPO em cima.
+     O instinto e por o mais recente primeiro, mas o relato que envelhece e
+     justamente o que some — foi um de 16/08 que passou quinze dias parado
+     enquanto o de ontem estava na cara. Fechado desce, e la embaixo o mais
+     recente primeiro (historico se le de tras para frente). */
+  function ordenar(itens) {
+    return (itens || []).slice().sort(function (a, b) {
+      var fa = fechado(a) ? 1 : 0, fb = fechado(b) ? 1 : 0;
+      if (fa !== fb) return fa - fb;
+      if (fa === 1) return (b.criadoEm || 0) - (a.criadoEm || 0);
+      return (a.criadoEm || 0) - (b.criadoEm || 0);
+    });
+  }
+
+  /* Dias de espera de um relato ABERTO. Fechado nao espera nada. */
+  function esperaDias(i, agora) {
+    if (!i || fechado(i)) return 0;
+    var ms = (agora || Date.now()) - (i.criadoEm || 0);
+    if (!(ms > 0)) return 0;
+    return Math.floor(ms / 86400000);
+  }
+
+  /* O cartao de cima. `naoLidos` = ainda em "novo": chegou e ninguem tocou. */
+  function resumo(itens, agora) {
+    var r = { total: 0, abertos: 0, problemas: 0, melhorias: 0, naoLidos: 0, maisAntigoDias: 0 };
+    (itens || []).forEach(function (i) {
+      r.total++;
+      if (fechado(i)) return;
+      r.abertos++;
+      if (i.tipo === "melhoria") r.melhorias++; else r.problemas++;
+      if (i.estado === "novo") r.naoLidos++;
+      var d = esperaDias(i, agora);
+      if (d > r.maisAntigoDias) r.maisAntigoDias = d;
+    });
+    return r;
+  }
+
+  function fila(d, opc) {
+    d = d || {}; opc = opc || {};
+    var base = _base(d), lic = String(d.licenca || "");
+    if (!base || !lic || typeof d.buscar !== "function") {
+      return Promise.resolve({ ok: false, dono: false });
+    }
+    var qs = "?licenca=" + encodeURIComponent(lic);
+    if (opc.estado) qs += "&estado=" + encodeURIComponent(opc.estado);
+    return d.buscar(base + "/api/relato/fila" + qs)
+      .then(function (r) {
+        /* ⚠ 401 aqui NAO e erro para mostrar: e a resposta normal para quem
+           nao e dono, ou seja, para 38 das 39 instalacoes. Tratar como falha
+           faria a tela do cliente exibir "senha invalida" sem ele ter pedido
+           nada. */
+        if (r && r.status === 401) return { ok: false, dono: false };
+        return r.json().then(function (j) {
+          if (j && j.erro) return { ok: false, dono: false, erro: String(j.erro) };
+          return { ok: true, dono: true, itens: ordenar((j && j.itens) || []) };
+        });
+      })
+      .catch(function () { return { ok: false, dono: true, erro: "rede" }; });
+  }
+
+  function responder(d, dados) {
+    d = d || {}; dados = dados || {};
+    var base = _base(d), lic = String(d.licenca || "");
+    if (!base || !lic || typeof d.buscar !== "function") {
+      return Promise.resolve({ ok: false, erro: "Isto precisa de licença ativa e internet." });
+    }
+    var ids = (dados.ids || []).map(function (x) { return String(x); }).filter(function (x) { return !!x; });
+    if (!ids.length) return Promise.resolve({ ok: false, erro: "Escolha o relato." });
+    var corpo = { licenca: lic, ids: ids };
+    if (dados.estado) corpo.estado = String(dados.estado);
+    /* resposta vazia NAO viaja: mandar "" apagaria a que ja estava escrita,
+       porque o servidor grava tudo que vier em `resposta`. Quem quiser
+       limpar tem de mandar um espaco de proposito. */
+    if (dados.resposta != null && String(dados.resposta) !== "") corpo.resposta = String(dados.resposta).slice(0, 1000);
+    if (!corpo.estado && corpo.resposta == null) return Promise.resolve({ ok: false, erro: "Nada para mudar." });
+    return d.buscar(base + "/api/relato/estado", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-licenca": lic },
+      body: JSON.stringify(corpo)
+    }).then(function (r) {
+      if (r && r.status === 401) return { ok: false, erro: "Esta conta não responde relatos." };
+      return r.json();
+    }).then(function (j) {
+      if (j && j.ok) return { ok: true, alterados: j.alterados || 0 };
+      if (j && j.ok === false) return j;
+      return { ok: false, erro: (j && j.erro) || "Não consegui gravar agora." };
+    }).catch(function () { return { ok: false, erro: "Sem conexão com o servidor. Tente de novo daqui a pouco." }; });
+  }
+
   var Relatos = {
-    TIPOS: TIPOS, ESTADOS: ESTADOS, estadoDe: estadoDe,
-    montar: montar, validar: validar, previa: previa, enviar: enviar, meus: meus
+    TIPOS: TIPOS, ESTADOS: ESTADOS, ACOES: ACOES, estadoDe: estadoDe,
+    montar: montar, validar: validar, previa: previa, enviar: enviar, meus: meus,
+    fila: fila, responder: responder, ordenar: ordenar, resumo: resumo,
+    esperaDias: esperaDias, fechado: fechado
   };
   global.Relatos = Relatos;
   if (typeof module !== "undefined" && module.exports) module.exports = Relatos;
