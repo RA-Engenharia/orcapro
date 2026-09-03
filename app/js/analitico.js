@@ -13,6 +13,22 @@
     carregando: false,
     competencia: null,
     uf: null,
+    /* ===================================================================
+     * O ANALÍTICO TEM REGIME — e até a v1.2.33 ele não dizia qual.
+     *
+     * Existe UM analítico por UF e ele é o NÃO DESONERADO (o gerador lia as
+     * abas CSD/ISD cravadas). Com a base "SINAPI desonerada" instalável, o
+     * app passou a ter preço de um regime e detalhamento do outro: no PA, a
+     * composição 104658 vale 187,05 desonerada e 189,69 onerada. O modal de
+     * insumos mostrava a segunda em cima da primeira, calado — memória de
+     * cálculo com encargo trocado, que é o que vai para a licitação.
+     *
+     * `desonerado` é o regime do que ESTÁ carregado; `regimeAlvo` é o que
+     * quem mandou carregar exige. Arquivo que se declara de outro regime é
+     * RECUSADO na carga: melhor ficar sem detalhamento do que ter o errado.
+     * ================================================================= */
+    desonerado: null,          // regime carregado (null = arquivo não declara)
+    regimeAlvo: null,          // regime exigido por quem chamou (null = não exige)
     _porCodigo: {},
     _total: 0,
     _promise: null,
@@ -21,6 +37,20 @@
     /* Carrega de um pacote já parseado { mes, uf, dados:[...] } */
     carregarDe: function (pacote) {
       var dados = (pacote && pacote.dados) ? pacote.dados : (Array.isArray(pacote) ? pacote : []);
+      /* ⚠ TRAVA DE REGIME, antes de qualquer coisa. Os analíticos publicados
+         até 2026-06 não trazem o campo `desonerado` (o gerador não escrevia),
+         então `reg` fica null e não há o que recusar — a inferência abaixo usa
+         o regime pedido, que é honesto porque não existe fallback entre
+         regimes na lista de URLs. Arquivo que SE DECLARA do regime oposto é
+         recusado: aconteceu com o flag invertido da v1.1.204 e o app engoliu
+         324 mil itens errados sem uma linha de aviso. */
+      var reg = (pacote && typeof pacote.desonerado === "boolean") ? pacote.desonerado : null;
+      if (this.regimeAlvo !== null && reg !== null && reg !== this.regimeAlvo) {
+        throw new Error("analítico de regime errado: pedi " +
+          (this.regimeAlvo ? "desonerado" : "não desonerado") + " e veio " +
+          (reg ? "desonerado" : "não desonerado"));
+      }
+      this.desonerado = (reg !== null) ? reg : this.regimeAlvo;
       this._porCodigo = {};
       for (var i = 0; i < dados.length; i++) {
         var it = dados[i];
@@ -109,6 +139,9 @@
       this._epoca++; // invalida qualquer fetch em voo (o .then vê época obsoleta e descarta)
       this.carregado = false; this.carregando = false; this._promise = null;
       this._porCodigo = {}; this._total = 0; this._idxInsumos = null; this.competencia = null; this.uf = null;
+      /* o REGIME CARREGADO some junto (nada carregado, nenhum regime); o
+         `regimeAlvo` fica, porque trocar de UF não troca de regime */
+      this.desonerado = null;
     },
 
     /* FASE 1.1 — Normaliza categorias: o gerador classificava SUB-COMPOSIÇÕES por
