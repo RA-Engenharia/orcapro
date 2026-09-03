@@ -158,6 +158,26 @@
       ]
     },
     {
+      tipo: "cronograma",
+      nome: "Cronograma",
+      resumo: "As etapas distribuídas nos meses, com barras — o prazo que o cliente sempre pergunta.",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "CRONOGRAMA" },
+        { id: "abertura", nome: "Frase de abertura", tipo: "multi",
+          dica: "Ex.: A distribuição abaixo é uma previsão; o cronograma detalhado é fechado na reunião de início." },
+        { id: "mostrarValores", nome: "Mostrar o valor previsto em cada mês", tipo: "sim_nao", padrao: false },
+        /* ⚠ OBRA DE 20 DIAS NÃO TEM CRONOGRAMA MENSAL: o orçamento vem com 1
+           mês e a tabela sai com uma coluna só, que não informa nada. Aqui a
+           proposta escolhe a régua dela — 6 semanas, 3 quinzenas — sem mexer
+           no cronograma do orçamento, que serve a outra finalidade. */
+        { id: "periodos", nome: "Quantos períodos mostrar (0 = como está no orçamento)", padrao: "0" },
+        { id: "rotuloMes", nome: "Como chamar cada coluna", padrao: "Mês",
+          dica: 'Escreva "Semana" para obra curta — a primeira letra vira o cabeçalho (S1, S2…).' },
+        { id: "legenda", nome: "Observação abaixo da tabela", tipo: "multi" }
+      ]
+    },
+    {
       tipo: "condicoes",
       nome: "Condições da entrega",
       resumo: "Parágrafos espaçados: garantia, compromisso, prazo, cronograma.",
@@ -477,6 +497,7 @@
     capa:         { regua: false, marcador: false },
     sobre:        { regua: false, marcador: false },
     servicos:     { regua: true,  marcador: false },
+    cronograma:   { regua: true,  marcador: false },
     imagens:      { regua: true,  marcador: false },
     texto:        { regua: true,  marcador: true },
     investimento: { regua: false, marcador: false },
@@ -879,9 +900,10 @@
           fechamento: "" },
         { id: "p4", tipo: "texto", titulo: "Escopo dos serviços", rotuloLista: "Está incluso:", obsTitulo: "Não está incluso:", usarComercial: true },
         { id: "p5", tipo: "investimento", titulo: "INVESTIMENTO", colTrabalho: "Serviço", colValor: "Valor", tituloPagamento: "CONDIÇÕES DE PAGAMENTO", detalhar: true, tipografia: { escalaTitulo: 90, escalaTexto: 90 } },
-        { id: "p6", tipo: "condicoes", titulo: "Condições gerais", usarPrazo: true, usarGarantia: true },
-        { id: "p7", tipo: "assinatura", titulo: "ACEITE DA PROPOSTA", texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.", mostrarValidade: true },
-        { id: "p8", tipo: "contato", titulo: "FALE CONOSCO", usarEmpresa: true, botaoPlanilha: true, mostrarFoto: false, molduraCelular: false }
+        { id: "p6", tipo: "cronograma", titulo: "CRONOGRAMA", abertura: "Previsão de execução por etapa. O cronograma detalhado é fechado na reunião de início da obra.", mostrarValores: false },
+        { id: "p7", tipo: "condicoes", titulo: "Condições gerais", usarPrazo: true, usarGarantia: true },
+        { id: "p8", tipo: "assinatura", titulo: "ACEITE DA PROPOSTA", texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.", mostrarValidade: true },
+        { id: "p9", tipo: "contato", titulo: "FALE CONOSCO", usarEmpresa: true, botaoPlanilha: true, mostrarFoto: false, molduraCelular: false }
       ]
     },
     {
@@ -1059,6 +1081,12 @@
           corpo += '<h3 class="tp-h1c tp-h3pag">' + esc(p.tituloPagamento) + "</h3>"
             + '<p class="tp-pag">' + escML(pag) + "</p>";
         }
+      }
+      else if (p.tipo === "cronograma") {
+        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+          + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
+          + tabelaCronograma(p, d.cronograma)
+          + (txt(p.legenda) ? '<p class="tp-leg">' + escML(p.legenda) + "</p>" : "");
       }
       else if (p.tipo === "condicoes") {
         var ps = linhasDe(p.paragrafos);
@@ -1324,6 +1352,56 @@
      ⚠ SEM `size` o navegador usa o papel padrão da máquina — em máquina
        configurada para Carta (279 mm) cada página A4 vazava 18 mm para uma
        folha em branco: 8 páginas viravam 16. */
+  /* =====================================================================
+   * A TABELA DO CRONOGRAMA
+   *
+   * ⚠ NÃO CALCULA NADA. Recebe pronto de `Proposta.cronogramaParaModelo`, que
+   *   usa `Orcamento.cronograma` — a MESMA conta da aba Cronograma e do Excel.
+   *   Refazer a distribuição aqui daria um segundo cronograma para a mesma
+   *   obra, e o do papel é o que o cliente cobra.
+   * ⚠ A BARRA É DESENHO, O NÚMERO É DADO: a barra usa `pcts` (participação do
+   *   mês DENTRO da etapa) só para mostrar QUANDO cada etapa acontece; o valor
+   *   por mês, quando pedido, sai por extenso.
+   * ===================================================================== */
+  function tabelaCronograma(p, cr) {
+    if (!cr || !arr(cr.etapas).length) {
+      return '<p class="tp-vaziotxt">Cronograma indisponível: o orçamento ainda não tem etapas com preço.</p>';
+    }
+    var n = num(cr.meses) || arr(cr.totaisMes).length || 1;
+    var rot = txt(p.rotuloMes) || "Mês";
+    var mostrar = !!p.mostrarValores;
+    var cab = "";
+    for (var i = 0; i < n; i++) cab += '<th class="tp-cr-m">' + esc(rot.slice(0, 1).toUpperCase()) + (i + 1) + "</th>";
+
+    var linhas = arr(cr.etapas).map(function (e) {
+      var tds = "";
+      for (var i2 = 0; i2 < n; i2++) {
+        var pc = num(arr(e.pcts)[i2]);
+        var val = num(arr(e.meses)[i2]);
+        var barra = pc > 0.5
+          ? '<span class="tp-cr-b" style="width:' + Math.max(12, Math.min(100, Math.round(pc))) + '%"></span>'
+          : "";
+        tds += '<td class="tp-cr-c">' + barra
+          + (mostrar && val > 0 ? '<span class="tp-cr-v">' + esc(moeda(val)) + "</span>" : "") + "</td>";
+      }
+      return "<tr><td>" + (txt(e.codigo) ? "<b>" + esc(e.codigo) + "</b> " : "") + esc(e.nome)
+        + '</td><td class="tp-num">' + esc(moeda(e.total)) + "</td>" + tds + "</tr>";
+    }).join("");
+
+    var rodape = "";
+    if (mostrar) {
+      var tds2 = "";
+      for (var j = 0; j < n; j++) tds2 += '<td class="tp-cr-c tp-num">' + esc(moeda(num(arr(cr.totaisMes)[j]))) + "</td>";
+      rodape += "<tr><td>Previsto no mês</td>" + '<td class="tp-num">' + esc(moeda(cr.total)) + "</td>" + tds2 + "</tr>";
+    }
+    var tds3 = "";
+    for (var k = 0; k < n; k++) tds3 += '<td class="tp-cr-c tp-num">' + n2(num(arr(cr.acumPct)[k])) + "%</td>";
+    rodape += "<tr><td>Acumulado</td>" + '<td class="tp-num">100,00%</td>' + tds3 + "</tr>";
+
+    return '<table class="tp-tbl tp-cr"><thead><tr><th>Etapa</th><th class="tp-num">Valor</th>' + cab + "</tr></thead>"
+      + "<tbody>" + linhas + "</tbody><tfoot>" + rodape + "</tfoot></table>";
+  }
+
   PropTpl.css = function (formato) {
     var papel = (txt(formato) === "vertical") ? "120mm 213mm" : "210mm 297mm";
     return [
@@ -1423,6 +1501,16 @@
       ".tp-escura .tp-serv-card b{color:#fff}",
       ".tp-serv-card span{font-size:10.5pt;line-height:1.45;display:block}",
       ".tp-end{font-size:10.5pt;opacity:.85;margin-top:2mm}",
+      /* ---- cronograma ---- */
+      ".tp-cr{font-size:calc(9pt * var(--tp-esc-txt,1))}",
+      ".tp-cr th,.tp-cr td{padding:2mm 2.4mm}",
+      ".tp-cr th.tp-cr-m{text-align:center;width:11mm;padding:2mm 1mm}",
+      ".tp-cr td.tp-cr-c{text-align:center;padding:1.6mm 1mm;vertical-align:middle;white-space:nowrap}",
+      ".tp-cr .tp-cr-b{display:block;height:2.6mm;border-radius:1.3mm;background:var(--tp-destaque2);min-width:3mm;margin:0 auto}",
+      ".tp-cr .tp-cr-v{display:block;font-size:calc(7.2pt * var(--tp-esc-txt,1));margin-top:.8mm;opacity:.85}",
+      ".tp-cr tfoot td{background:#eef4fa;font-weight:700}",
+      ".tp-escura .tp-cr tfoot td{background:rgba(255,255,255,.1)}",
+      ".tp-vert .tp-cr{font-size:calc(7.6pt * var(--tp-esc-txt,1))}",
       ".tp-botoes{display:flex;justify-content:center;gap:5mm;margin-top:9mm;flex-wrap:wrap}",
       ".tp-btn{display:inline-block;padding:3.6mm 7mm;border-radius:2.2mm;background:var(--tp-titulo);color:#fff!important;text-decoration:none!important;font-family:var(--tp-f-tit);font-weight:600;font-size:11pt;letter-spacing:.02em}",
       ".tp-btn-2{background:var(--tp-destaque2)}",
@@ -1641,6 +1729,11 @@
     pg({ tipo: "investimento", titulo: "INVESTIMENTO", colTrabalho: "Serviço", colValor: "Valor",
       tituloPagamento: "CONDIÇÕES DE PAGAMENTO", detalhar: true,
       tipografia: { escalaTitulo: 90, escalaTexto: 90 } });
+
+    /* 7b. CRONOGRAMA — o prazo por etapa, calculado pelo orçamento */
+    pg({ tipo: "cronograma", titulo: "CRONOGRAMA",
+      abertura: "Previsão de execução por etapa. O cronograma detalhado é fechado na reunião de início.",
+      mostrarValores: false });
 
     /* 8. CONDIÇÕES — prazo e garantia vêm do orçamento, prontos */
     pg({ tipo: "condicoes", titulo: "Condições gerais", paragrafos: "", usarPrazo: true, usarGarantia: true });

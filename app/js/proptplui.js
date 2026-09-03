@@ -416,6 +416,14 @@
         e2.nome = e2.nome || "Sua Empresa"; return e2;
       })(),
       links: { planilha: "https://exemplo.invalido/proposta.xlsx" },
+      /* cronograma de exemplo: números redondos, como o resto da prévia */
+      cronograma: {
+        meses: 4, total: 22300, totaisMes: [5575, 5575, 5575, 5575], acumPct: [25, 50, 75, 100],
+        etapas: [
+          { codigo: "1.0", nome: "Etapa de exemplo A", total: 13600, meses: [5575, 5575, 2450, 0], pcts: [41, 41, 18, 0] },
+          { codigo: "2.0", nome: "Etapa de exemplo B", total: 8700, meses: [0, 0, 3125, 5575], pcts: [0, 0, 36, 64] }
+        ]
+      },
       logoHTML: (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(120) : "",
       cliente: "Cliente Exemplo",
       data: (function () { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); })(),
