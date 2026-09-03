@@ -950,7 +950,7 @@
       var self = this;
       if (typeof Analitico === "undefined") { UI.toast("Base analítica indisponível nesta instalação.", "erro"); return; }
       var ufAtivo = String((typeof Sinapi !== "undefined" && Sinapi.uf) || "").toUpperCase();
-      var urls = this._analiticoUrls();
+      var urls = this._prepararAnalitico();
       if (!urls.local && !urls.live) {
         UI.toast("Sem UF ativa. Escolha um estado em Tabelas de Preço e volte aqui.", "erro");
         return;
@@ -2077,7 +2077,14 @@
      * Agora o nome carrega a competência. O antigo continua valendo como o
      * analítico do mês EMBARCADO — e só dele: instalação que ainda não recebeu
      * pacote completo tem só o nome velho (o zip de ATUALIZAÇÃO não leva data/). */
-    _nomeAnalitico: function (uf, comp) {
+    /* ===== REGIME NO NOME, espelhando o sintético =====
+     * O irmão sintético já grava `sinapi-<UF>-<COMP>-desonerada.json` (sufixo
+     * só no regime NÃO padrão, para o arquivo sem sufixo continuar sendo o
+     * onerado que o pacote distribui). O analítico segue a mesma regra:
+     *   onerado    sinapi-PA-2026-06-analitico.json
+     *   desonerado sinapi-PA-2026-06-desonerada-analitico.json
+     * `deso` ausente/false = o de sempre — nenhum caminho antigo muda. */
+    _nomeAnalitico: function (uf, comp, deso) {
       uf = String(uf || "").toUpperCase();
       /* ⚠ NORMALIZA. A base própria importada guarda o que a pessoa digitou no
          campo de competência, sem validação — e "06/2026" viraria
@@ -2087,7 +2094,52 @@
          quatro requisições à toa e faz o arquivo local perder a preferência. */
       comp = this._normComp(comp);
       if (!uf) return null;
-      return comp ? ("sinapi-" + uf + "-" + comp + "-analitico.json") : ("sinapi-" + uf + "-analitico.json");
+      var reg = deso ? "-desonerada" : "";
+      return comp ? ("sinapi-" + uf + "-" + comp + reg + "-analitico.json")
+        : ("sinapi-" + uf + reg + "-analitico.json");
+    },
+
+    /* ===== QUAL REGIME O DETALHAMENTO DEVE TER =====
+     *
+     * O do ORÇAMENTO ABERTO, quando há um: é o documento que declara em que
+     * regime os preços foram tomados (Lei 14.133 exige dizer). Sem orçamento
+     * aberto, o da base SINAPI principal — que é sempre a não desonerada.
+     *
+     * ⚠ ORÇAMENTO MISTO fica no regime da base principal DE PROPÓSITO: não
+     *   existe UM analítico certo para ele, e escolher um faria metade dos
+     *   itens abrirem com encargo trocado. Quem protege esse caso é a guarda
+     *   item a item do `verInsumos`, que recusa o que não bate. */
+    _regimeAnalitico: function () {
+      try {
+        if (this.orcAtual && typeof Orcamento !== "undefined" && Orcamento.regimeDosItens) {
+          var r = Orcamento.regimeDosItens(this.orcAtual);
+          if (r === true) return true;
+          if (r === false) return false;
+          /* "misto" e null caem no padrão: é a base que todo mundo tem */
+        }
+      } catch (e) {}
+      return false;
+    },
+    /* ===== TROCOU O REGIME? DESCARTA O ANALÍTICO ANTES DE PEDIR O PRÓXIMO =====
+     *
+     * Duas telas (composição própria e o detalhamento em lote) só carregam
+     * quando `!carregado`, e conferem apenas a UF. Abrir um orçamento
+     * desonerado depois de um onerado deixaria `carregado: true` e a mesma UF
+     * — elas pulariam a carga e serviriam o analítico do regime anterior, que
+     * é o defeito exato que esta versão conserta.
+     *
+     * Quem VAI CARREGAR chama isto; `_analiticoUrls` continua pura, para quem
+     * só quer ler os caminhos (o Portal, por exemplo) não jogar fora 18 MB já
+     * carregados de graça. */
+    _prepararAnalitico: function () {
+      try {
+        var deso = this._regimeAnalitico();
+        if (typeof Analitico !== "undefined" && Analitico.regimeAlvo !== deso) {
+          if (Analitico.carregado || Analitico.carregando) Analitico.reset();
+          Analitico.regimeAlvo = deso;
+        }
+      } catch (e) {}
+      return this._analiticoUrls();
     },
     _analiticoUrls: function () {
       var uf = String(this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
@@ -2106,6 +2158,30 @@
        * antes do nome antigo — preservando inteiro o que o boot decidiu
        * (inclusive o desvio para o servidor quando a base é mais nova que a
        * embarcada), só que como plano B. */
+      /* ===== REGIME: LISTA SEPARADA, SEM PONTE ENTRE OS DOIS =====
+       *
+       * ⚠ A LISTA DE ALTERNATIVAS NÃO PODE ATRAVESSAR REGIME. Toda a engenharia
+       *   abaixo existe para nunca ficar sem detalhamento — e é exatamente ela
+       *   que, no desonerado, entregaria o analítico ONERADO como "plano B".
+       *   Ficar sem o desdobramento é um aborrecimento; mostrar o do regime
+       *   errado é um número errado na memória de cálculo, e ninguém vê.
+       *
+       * Por isso o desonerado sai por aqui, com a sua própria lista curta:
+       * competência primeiro, nome sem competência depois, local antes da rede.
+       * `_analiticoArquivo` NÃO entra — ele é o caminho que o boot escolheu
+       * para a base principal, que é sempre a não desonerada. */
+      var deso = this._regimeAnalitico();
+      if (deso) {
+        var dLocal = uf ? ("data/" + this._nomeAnalitico(uf, comp, true)) : null;
+        var dLive = (uf && srv) ? (srv + "/analitico/" + this._nomeAnalitico(uf, comp, true)) : null;
+        var dAlt = [];
+        if (dLocal) dAlt.push(dLocal);
+        if (uf) dAlt.push("data/" + this._nomeAnalitico(uf, "", true));
+        if (dLive) dAlt.push(dLive);
+        if (uf && srv) dAlt.push(srv + "/analitico/" + this._nomeAnalitico(uf, "", true));
+        return { local: dLocal, live: dLive, alts: dAlt, desonerado: true,
+          localAlt: dAlt[0] || null, liveAlt: dAlt[dAlt.length - 1] || null };
+      }
       var local = uf ? ("data/" + this._nomeAnalitico(uf, comp)) : null;
       var live = (uf && srv) ? (srv + "/analitico/" + this._nomeAnalitico(uf, comp)) : null;
       var alt = [];
@@ -2156,7 +2232,7 @@
       if (uf && srv) alt.push(srv + "/analitico/" + this._nomeAnalitico(uf, ""));
       /* `local`/`live` continuam existindo porque os chamadores testam
          `if (!urls.local && !urls.live) return;` antes de carregar. */
-      return { local: local, live: live, alts: alt, localAlt: alt[0] || null, liveAlt: alt[alt.length - 1] || null };
+      return { local: local, live: live, alts: alt, desonerado: false, localAlt: alt[0] || null, liveAlt: alt[alt.length - 1] || null };
     },
 
     // ---------- Base SINAPI (própria da empresa ou padrão) ----------
@@ -4131,7 +4207,7 @@
       try {
         if (typeof Analitico === "undefined") return;
         if (Analitico.carregado || Analitico.carregando) return;
-        var u = this._analiticoUrls();
+        var u = this._prepararAnalitico();
         if (!u.local && !u.live) return;
         // pré-carrega já com o fallback AO VIVO embutido — se um clique em 🔍 pegar esta
         // promise compartilhada no meio do caminho, ela já sabe cair no VPS.
@@ -5284,11 +5360,17 @@
                planilha declara SEM DESONERAÇÃO: filtrar "Desonerada" não
                devolve SINAPI porque nós não distribuímos esse regime, e a tela
                tem de dizer isso em vez de deixar o usuário procurando. */
-            var dica = "";
+            var dica = "", temDesonerada = false;
             if (f.tipo === "insumo") {
               dica = " — esta base pode não ter insumos (carregue uma base de insumos em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas)";
             } else if (f.desonerado === true) {
-              dica = " — a SINAPI que vem no app é a NÃO DESONERADA (encargos sociais sem desoneração, como a CAIXA publica nas abas CSD/ISD). Tire o filtro de oneração para vê-la";
+              /* ⚠ ANTES ISTO MANDAVA "tire o filtro de oneração". Era o pior
+                 conselho possível: quem precisa de desonerado e tira o filtro
+                 orça no regime errado sem perceber — e a tela sabia que a base
+                 desonerada existe no servidor, sabia a UF pedida e sabe
+                 instalá-la em um clique. Agora ela oferece o caminho certo. */
+              dica = " — a SINAPI que vem no pacote é a NÃO DESONERADA (abas CSD/ISD da CAIXA). A desonerada (CCD/ICD) existe, mas é baixada à parte, por estado";
+              temDesonerada = true;
             } else if (f.desonerado === false) {
               dica = " — nenhuma base carregada declara o regime não desonerado para este termo";
             }
@@ -5297,7 +5379,19 @@
             // senão → cria composição própria (descrição aproveitada nos dois).
             var ehIns0 = f.tipo === "insumo";
             box.innerHTML = '<div class="vazio">Nenhum resultado para "' + Util.esc(q) + '"' + dica + ".</div>" +
+              (temDesonerada ? '<button type="button" class="btn primary" id="bs-instalar-des" style="width:100%;margin-top:8px">' +
+                (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + ' Instalar a SINAPI desonerada deste estado (3 MB)</button>' : "") +
               '<button type="button" class="btn primary" id="bs-criar-cp" style="width:100%;margin-top:8px">' + (ehIns0 ? "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Cadastrar insumo próprio com esta descrição" : "" + (typeof Icones !== "undefined" ? Icones.get("mais", 15) : "") + " Criar composição própria com esta descrição") + '</button>';
+            var _bIns = box.querySelector("#bs-instalar-des");
+            if (_bIns) {
+              _bIns.onclick = function () {
+                /* a instalação mora em Tabelas, com o seletor de estado: mandar
+                   para lá é honesto — a base é por UF e quem escolhe é o usuário */
+                UI.fecharModal();
+                self.abrirTabelas();
+                UI.toast("Procure a linha “SINAPI desonerada”, escolha o estado e clique em Instalar.", "ok");
+              };
+            }
             var _ehIns0 = (typeof ehIns0 !== "undefined") ? ehIns0 : false;
             if (!_ehIns0) {
               /* o agente e a resposta melhor quando a base nao tem o servico:
@@ -5581,7 +5675,7 @@
       // (com fallback AO VIVO: mesmo sem o arquivo local, a aba Insumos sai preenchida).
       var ana = (typeof Analitico !== "undefined") ? Analitico : null;
       var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
-      var urlsX = self._analiticoUrls();
+      var urlsX = self._prepararAnalitico();
       if (!ana || (!urlsX.local && !urlsX.live) || (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { gerar(); return; }
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
       UI.toast("Carregando insumos de " + (ufAtivo || "") + " (1ª vez)…", "ok");
@@ -5711,8 +5805,50 @@
         var mP = bgP.querySelector(".modal"); if (mP) mP.style.maxWidth = "900px";
         return;
       }
+      /* ===== O REGIME DESTE ITEM =====
+       * Primeiro o que o próprio item gravou ao ser lançado; sem marca, o do
+       * orçamento aberto. `null` = ninguém declarou, e aí não há o que
+       * conferir — não se recusa por suspeita. */
+      var _regItem = null;
+      try {
+        var _itvR = UI._ajusteCtx && UI._ajusteCtx.item;
+        if (_itvR && typeof _itvR.desonerado === "boolean") _regItem = _itvR.desonerado;
+        else if (self.orcAtual && typeof Orcamento !== "undefined" && Orcamento.regimeDosItens) {
+          var _rr = Orcamento.regimeDosItens(self.orcAtual);
+          if (_rr === true || _rr === false) _regItem = _rr;
+          /* "misto" ou nenhum item marcado: não dá para afirmar o regime DESTE
+             item, e recusar por suspeita esconderia um detalhamento correto */
+        }
+      } catch (eR) {}
+      function nomeReg(b) { return b ? "desonerado" : "não desonerado"; }
       function abrir() {
         var a = Analitico.obter(codigo);
+        /* ===== NÃO ABRE COM O REGIME TROCADO =====
+         *
+         * O analítico é de UM regime. Mostrar o desdobramento onerado de um
+         * item desonerado troca o encargo social no meio da memória de
+         * cálculo: no PA a composição 104658 sai 189,69 num regime e 187,05
+         * no outro, e o que o cliente vê na planilha é o segundo. A tela
+         * some com o número certo e mostra o errado, sem um aviso.
+         *
+         * Preferimos ficar sem o desdobramento e dizer por quê. */
+        if (a && _regItem !== null && Analitico.desonerado !== null && Analitico.desonerado !== _regItem) {
+          UI.modal("Detalhamento de outro regime", '<p style="margin:0 0 8px">Este item é <b>' + nomeReg(_regItem) +
+            '</b>, e o detalhamento carregado para ' + Util.esc(String(ufAtivo || "esta UF")) + ' é <b>' + nomeReg(Analitico.desonerado) + '</b>.</p>' +
+            '<p style="margin:0 0 8px">Não vou abrir a composição com os encargos do outro regime: os preços de mão de obra mudam, e o total dos insumos não fecharia com o valor da sua planilha.</p>' +
+            '<p class="muted" style="font-size:12.5px;margin:0">O <b>preço do item continua correto</b> — é só o desdobramento em insumos que não está disponível neste regime.</p>',
+            [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
+        /* mesma conversa quando o analítico do regime pedido nem chegou:
+           dizer "não existe composição" seria culpar o item por um arquivo
+           que ainda não foi publicado. */
+        if (!a && _regItem === true && !Analitico.carregado) {
+          UI.modal("Detalhamento desonerado indisponível", '<p style="margin:0 0 8px">Este orçamento está no regime <b>desonerado</b>, e o detalhamento (composição &rarr; insumos) desse regime ainda não foi publicado para ' + Util.esc(String(ufAtivo || "esta UF")) + '.</p>' +
+            '<p class="muted" style="font-size:12.5px;margin:0">O preço do item vem da base desonerada e está correto. Abrir o detalhamento do regime não desonerado mostraria encargos diferentes dos que estão na sua planilha, então ele não é oferecido aqui.</p>',
+            [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+          return;
+        }
         if (!a) {
           UI.modal("ℹ️ Sem composição detalhada", '<p style="margin:0 0 8px">O item <b>' + Util.esc(String(codigo)) + '</b> não tem composição de insumos para abrir. Isso acontece quando:</p>' +
             '<ul style="margin:0;padding-left:18px;font-size:13.5px;line-height:1.7">' +
@@ -5734,7 +5870,7 @@
       if (Analitico.carregado && (!ufAtivo || !Analitico.uf || Analitico.uf === ufAtivo)) { abrir(); return; }
       // URLs local + AO VIVO (VPS). O analítico da região SEMPRE existe no servidor, então
       // mesmo que o disco do cliente não tenha o arquivo, o detalhamento carrega ao vivo.
-      var urls = self._analiticoUrls();
+      var urls = self._prepararAnalitico();
       if (!urls.local && !urls.live) { // só quando não há UF de forma alguma
         UI.toast("Sem UF ativa para o detalhamento. Escolha um estado em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas.", "erro");
         return;
@@ -6326,7 +6462,7 @@
       if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
       // detalhamento ainda não carregado: mesmo lazy-load do verInsumos
       // (padrão da casa: UI.loading(msg) + UI.loadingFim() — UI.loading não retorna nada)
-      var urls = this._analiticoUrls();
+      var urls = this._prepararAnalitico();
       UI.loading("Carregando o detalhamento oficial p/ o agente…");
       Analitico.carregarArquivo(urls.alts).then(function () { UI.loadingFim(); rodar(); })
         .catch(function () { UI.loadingFim(); UI.toast("Não consegui carregar o detalhamento agora — tente de novo com internet.", "erro"); });
@@ -7171,7 +7307,7 @@
           (r.confianca === "alta" && !(r.rota && r.rota.tipo === "calculada")) ? "ok" : "erro");
       };
       if (typeof Analitico !== "undefined" && Analitico.carregado) { rodar(); return; }
-      var urls = this._analiticoUrls();
+      var urls = this._prepararAnalitico();
       UI.loading("Carregando a base analítica para o agente…");
       Analitico.carregarArquivo(urls.alts)
         .then(function () { UI.loadingFim(); rodar(); })
@@ -7694,7 +7830,7 @@
       // Carrega o analítico da UF (1ª vez) p/ incluir a seção de composições e insumos; degrada sem travar.
       var ana = (typeof Analitico !== "undefined") ? Analitico : null;
       var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
-      var urlsR = self._analiticoUrls();
+      var urlsR = self._prepararAnalitico();
       if (!ana || (!urlsR.local && !urlsR.live) ||
           (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { abrir(); return; }
       if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();

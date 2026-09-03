@@ -618,6 +618,21 @@
       };
       /* o modo escolhido e o custo cheio VIAJAM com o item — sem isto a
          escolha se perde no lançamento e o item volta a somar tudo */
+      /* ===== O REGIME VIAJA COM O ITEM =====
+       *
+       * `regimeDe()` sempre soube ler `it.desonerado` — mas NINGUÉM gravava:
+       * esta função monta o item com lista branca de campos e o flag ficava
+       * de fora, então o ramo "por item" era código morto e o regime saía
+       * sempre do flag do orçamento inteiro.
+       *
+       * Passou a importar de verdade quando a base "SINAPI desonerada" virou
+       * instalável: um orçamento pode misturar os dois regimes sem que nada
+       * no documento diga isso — e a Lei 14.133 manda declarar o regime. É
+       * também o que deixa o detalhamento recusar abrir com encargo trocado.
+       *
+       * Só grava o que a BASE declarou: item sem marca continua sem marca,
+       * porque inventar regime é pior que não saber. */
+      if (typeof sinapiItem.desonerado === "boolean") it.desonerado = sinapiItem.desonerado;
       if (sinapiItem.modoCusto && sinapiItem.modoCusto !== "total") it.modoCusto = sinapiItem.modoCusto;
       if (sinapiItem.custoBase != null) it.custoBase = Util.num(sinapiItem.custoBase);
       /* a memória de cálculo nasce COM o item quando veio da calculadora —
@@ -1080,6 +1095,34 @@
         pctDoOrcamento: c.precoVenda > 0 ? (total / c.precoVenda * 100) : 0,
         avisos: avisos
       };
+    },
+
+    /* ===== O REGIME DOS ITENS, sem a declaração do orçamento =====
+     *
+     * ⚠ `orc.desonerado` NÃO SERVE para escolher o analítico. Ele é a INTENÇÃO
+     *   de quem montou (o wizard grava `orc.desonerado = true` sempre que os
+     *   encargos ficam no padrão, e o padrão é "desonerado"), enquanto os
+     *   preços vêm da base que a pessoa realmente usou — a SINAPI do pacote,
+     *   que é NÃO desonerada. Confiar na declaração faria a maioria dos
+     *   orçamentos pedir um analítico desonerado que não existe e ficar sem
+     *   detalhamento nenhum.
+     *
+     * Aqui só valem os FATOS: o que cada item gravou da base de onde veio.
+     * Devolve true, false, "misto" ou null (nenhum item declara — orçamento
+     * antigo, ou tudo lançado à mão).
+     * =================================================================== */
+    regimeDosItens: function (orc) {
+      var des = false, one = false;
+      Util.arr(orc && orc.etapas).forEach(function (e) {
+        Util.arr(e.itens).forEach(function (it) {
+          if (it.desonerado === true) des = true;
+          else if (it.desonerado === false) one = true;
+        });
+      });
+      if (des && one) return "misto";
+      if (des) return true;
+      if (one) return false;
+      return null;
     },
 
     // LOTE 4: regime de composição declarado (Lei 14.133 exige) — olha os itens;
