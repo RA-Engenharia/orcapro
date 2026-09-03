@@ -146,10 +146,21 @@ Os 27 estados estão em `app/data/sinapi-<UF>-desonerada-analitico.json.gz`
 (~0,9 MB cada, 26 MB no total). O app tenta o `.json.gz` antes do `.json`, e é
 esse o arquivo que ele busca.
 
-⚠ **Isso atende o app do GitHub Pages.** O OrçaPRO **instalado** não recebe
-`data/` pelo pacote de atualização (é o que preserva a base do cliente), então
-para a frota é preciso publicar os mesmos arquivos em `/analitico/` no
-servidor — ou deixá-los entrar no próximo pacote completo.
+O OrçaPRO **instalado** não recebe `data/` pelo pacote de atualização — é o que
+preserva a base do cliente. Por isso a 1.2.35 deu ao app um **espelho público**:
+
+    local (data/)  →  servidor (/analitico/)  →  espelho (CONFIG.appWebUrl + /data/)
+
+O espelho entra **sempre por último**, então não troca nada que já funciona: só
+cobre o buraco de quando o servidor ainda não recebeu uma competência — ou um
+regime inteiro, como foi o caso do desonerado, que nunca existiu lá. Ele também
+**não atravessa regime**: o nome é montado com o mesmo `deso` do resto da lista.
+
+O analítico é dado oficial e estático, e é só o desdobramento em insumos —
+preço continua vindo da base que a pessoa instalou. Subir os arquivos para
+`/analitico/` no servidor continua valendo (é mais rápido para o cliente e
+funciona sem internet aberta), mas deixou de ser condição para o recurso
+existir.
 
 ### O lado do app (já publicado, 1.2.33)
 
