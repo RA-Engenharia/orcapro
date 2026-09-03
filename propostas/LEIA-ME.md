@@ -114,6 +114,45 @@ Quem responde "nenhuma foto por enquanto" recebe um modelo que já sai completo:
 as páginas cheias usam o fundo da marca com os traços, em vez do retângulo
 listrado de "falta foto".
 
+## Cronograma, validade e o funil comercial
+
+### Cronograma na proposta
+
+Novo bloco **Cronograma**: as etapas distribuídas em períodos, com barras. A
+conta é `Orcamento.cronograma()` — a mesma da aba Cronograma e do Excel, para
+não existir um segundo cronograma da mesma obra.
+
+- *Mostrar o valor previsto em cada mês* liga os valores por período.
+- *Quantos períodos mostrar* permite à proposta usar outra régua sem mexer no
+  orçamento: `6` com o rótulo `Semana` vira S1…S6, útil em obra de poucas
+  semanas (o orçamento traz 1 mês e a tabela sairia com uma coluna só).
+
+### Validade com data
+
+O campo **Validade (dias)** (Dados do orçamento) é o que permite calcular a
+data. A frase antiga continua, para condições fora do comum, e é usada quando
+os dias forem zero.
+
+- A contagem parte do **dia do envio** quando ele existe; antes disso, de hoje.
+  Reimprimir em outubro uma proposta enviada em setembro não renova o prazo.
+- O documento imprime "Válida até 23/09/2026", com "vence em X dias" nos
+  últimos três dias e "VENCIDA" depois.
+
+### Enviada, aceita, recusada
+
+Na barra do editor, ao lado de *Gerar Proposta*:
+
+- **Marcar como enviada** — data e canal (WhatsApp, e-mail, em mãos, reunião).
+- **Resposta do cliente** — aceita, recusada ou ainda sem resposta, com motivo.
+  O histórico é append-only: reenviar registra o novo envio e limpa a resposta
+  anterior, porque o que está com o cliente passou a ser a versão nova.
+
+Isso conserta o painel: a **conversão** passa a ser *aceitas ÷ enviadas ao
+cliente*. Antes ela media a aprovação interna do gestor — quem não usa
+aprovação interna via 0% para sempre, e quem usa via 100% sem nenhuma venda.
+A carteira também passa a avisar **propostas enviadas sem resposta** há mais
+de 15 dias, que é onde costuma estar o dinheiro na mesa.
+
 ## 2. Como subir um orçamento para o OrçaPRO
 
 Três caminhos, todos caem na mesma rotina do app (`app/js/pacote.js`):

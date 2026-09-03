@@ -579,6 +579,85 @@
      * ESTA pessoa, e o motor é o mesmo de medição/requisição/compras.
      * Wiring próprio (e não o `_aprovar` da Gestão) porque orçamento não é
      * entidade genérica do Store: mora em salvarOrcamento/obterOrcamento. */
+    /* =====================================================================
+     * O CICLO COMERCIAL NA BARRA DO EDITOR
+     *
+     * ⚠ ISTO NÃO É A APROVAÇÃO INTERNA. `_aprovBotoesOrc` (logo abaixo) é o
+     *   aval do gestor sobre o preço; aqui é o que aconteceu com o CLIENTE.
+     *   Enquanto só existia o primeiro, o painel media conversão pelo aval do
+     *   chefe — ver a nota em `Orcamento.indicadoresCarteira`.
+     * ===================================================================== */
+    _propComercialBotoes: function (orc) {
+      if (typeof Proposta === "undefined" || !Proposta.estadoComercial || !orc || !orc.id) return "";
+      var est = Proposta.estadoComercial(orc);
+      var v = Proposta.validade(orc, Util.agoraISO());
+      var selo = "";
+      if (est === "aceita") selo = '<span class="g-pill" style="background:#16a34a22;color:#16a34a;font-weight:700">Cliente aceitou</span>';
+      else if (est === "recusada") selo = '<span class="g-pill" style="background:#dc262622;color:#dc2626;font-weight:700">Cliente recusou</span>';
+      else if (est === "enviada") {
+        selo = '<span class="g-pill" style="background:' + (v.vencida ? "#dc262622;color:#dc2626" : "#0f274022;color:#0f2740") + ';font-weight:700">'
+          + "Enviada " + Util.esc(Proposta.dataBR(orc.propostaEm))
+          + (v.temData ? (v.vencida ? " · vencida" : (v.faltam != null && v.faltam <= 3 ? " · vence em " + v.faltam + "d" : "")) : "") + "</span>";
+      }
+      var btn = (est === "rascunho")
+        ? '<button class="btn sm" data-acao="proposta-enviada" title="Registra que a proposta foi ao cliente. É esta data que vale a validade e o funil de conversão.">'
+          + (typeof Icones !== "undefined" ? Icones.get("enviar", 15) : "") + "Marcar como enviada</button>"
+        : '<button class="btn sm" data-acao="proposta-resposta" title="O que o cliente respondeu">'
+          + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + (est === "enviada" ? "Resposta do cliente" : "Alterar resposta") + "</button>";
+      return selo + btn;
+    },
+
+    /* registra o ENVIO ao cliente */
+    abrirPropostaEnviada: function () {
+      var o = this.orcAtual; if (!o) return;
+      var self = this;
+      var hoje = Util.agoraISO().slice(0, 10);
+      UI.modal("Proposta enviada ao cliente",
+        '<p class="muted" style="margin:0 0 10px">A data de envio é a âncora de duas coisas: a <b>validade</b> impressa no documento '
+        + "e a <b>conversão</b> do painel. Sem ela, o sistema não sabe o que está com o cliente.</p>"
+        + '<div class="row"><div class="field"><label>Quando</label><input type="date" id="pe-data" value="' + hoje + '"></div>'
+        + '<div class="field"><label>Por onde</label><select id="pe-canal">'
+        + Proposta.CANAIS.map(function (c) { return '<option value="' + Util.esc(c.id) + '">' + Util.esc(c.nome) + "</option>"; }).join("")
+        + "</select></div></div>",
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Registrar envio", classe: "primary", onClick: function () {
+             var d = (UI.el("pe-data") || {}).value || hoje;
+             Proposta.registrarEnvio(o, { canal: (UI.el("pe-canal") || {}).value || "outro",
+               quando: d + "T12:00:00.000Z", por: (Empresa && Empresa.nomeUsuario && Empresa.nomeUsuario()) || "" });
+             self.persistir(); UI.fecharModal(); self.render();
+             var v = Proposta.validade(o, Util.agoraISO());
+             UI.toast("Envio registrado." + (v.temData ? " Esta proposta vale até " + v.ateBR + "." : ""), "ok");
+         } }]);
+    },
+
+    /* registra a RESPOSTA do cliente */
+    abrirPropostaResposta: function () {
+      var o = this.orcAtual; if (!o) return;
+      if (!Proposta.enviada(o)) { UI.toast("Registre primeiro o envio ao cliente.", "erro"); return; }
+      var self = this;
+      var atual = (o.propostaResposta || {}).estado || "sem_resposta";
+      var hoje = Util.agoraISO().slice(0, 10);
+      UI.modal("O que o cliente respondeu?",
+        Proposta.RESPOSTAS.map(function (r) {
+          return '<label style="display:flex;gap:9px;align-items:center;padding:9px;border:1px solid var(--linha);border-radius:5px;margin-bottom:7px;cursor:pointer">'
+            + '<input type="radio" name="prr" value="' + Util.esc(r.id) + '"' + (r.id === atual ? " checked" : "") + ">"
+            + "<b style=\"color:" + r.cor + '">' + Util.esc(r.nome) + "</b></label>";
+        }).join("")
+        + '<div class="row"><div class="field"><label>Quando</label><input type="date" id="pr-data" value="' + hoje + '"></div></div>'
+        + '<div class="field"><label>Motivo / observação (o "por que não" é o que ensina a próxima proposta)</label>'
+        + '<textarea id="pr-motivo" rows="2">' + Util.esc((o.propostaResposta || {}).motivo || "") + "</textarea></div>",
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Salvar", classe: "primary", onClick: function () {
+             var sel = document.querySelector('input[name="prr"]:checked');
+             var d = (UI.el("pr-data") || {}).value || hoje;
+             var r = Proposta.registrarResposta(o, { estado: sel ? sel.value : "",
+               quando: d + "T12:00:00.000Z", motivo: (UI.el("pr-motivo") || {}).value || "",
+               por: (Empresa && Empresa.nomeUsuario && Empresa.nomeUsuario()) || "" });
+             if (!r) { UI.toast("Escolha uma resposta.", "erro"); return; }
+             self.persistir(); UI.fecharModal(); self.render(); UI.toast("Resposta registrada.", "ok");
+         } }]);
+    },
+
     _aprovBotoesOrc: function (orc) {
       if (typeof Aprovacao === "undefined" || !orc || !orc.id) return "";
       var eu = (Auth.usuario && Auth.usuario()) || {};
@@ -1361,6 +1440,8 @@
         case "escopo-analisar": this.analisarEscopo(); break;
         case "escopo-confirmar": this.confirmarEscopo(); break;
         case "proposta": this.gerarProposta(); break;
+        case "proposta-enviada": this.abrirPropostaEnviada(); break;
+        case "proposta-resposta": this.abrirPropostaResposta(); break;
         case "apresentar": {
           if (!this.orcAtual || typeof Apresentacao === "undefined") { UI.toast("Abra um orçamento primeiro.", "erro"); break; }
           // apresentação é cara ao cliente: não projeta orçamento com item zerado
@@ -4067,7 +4148,8 @@
         '<h3 style="margin:8px 0;border-top:1px solid var(--linha);padding-top:14px">Dados para a Proposta Comercial</h3>' +
         '<div class="field"><label>Condições de pagamento</label><textarea id="ed-pag" rows="2">' + Util.esc(c.condicoesPagamento) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Prazo de execução</label><input id="ed-prazo" value="' + Util.esc(c.prazoExecucao) + '"></div>' +
-        '<div class="field"><label>Validade da proposta</label><input id="ed-val" value="' + Util.esc(c.validadeProposta) + '"></div></div>' +
+        '<div class="field"><label>Validade (dias)</label><input id="ed-valdias" type="number" min="0" step="1" value="' + Util.esc(c.validadeDias == null ? 15 : c.validadeDias) + '" title="O número é o que permite calcular e imprimir a data de vencimento. Zero = sem data (só a frase abaixo)."></div></div>' +
+        '<div class="field"><label>Frase da validade (impressa quando não houver dias)</label><input id="ed-val" value="' + Util.esc(c.validadeProposta) + '"></div>' +
         '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
         '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>' +
@@ -4083,6 +4165,7 @@
             c.condicoesPagamento = (UI.el("ed-pag") || {}).value || "";
             c.prazoExecucao = (UI.el("ed-prazo") || {}).value || "";
             c.validadeProposta = (UI.el("ed-val") || {}).value || "";
+            c.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
             c.garantia = (UI.el("ed-gar") || {}).value || "";
             c.incluso = (UI.el("ed-inc") || {}).value || "";
             c.excluso = (UI.el("ed-exc") || {}).value || "";
@@ -7455,8 +7538,17 @@
           obra: orc.nome || "",
           numero: orc.numero || "",
           data: hoje,
-          /* o motor só escreve `validade.texto`; quem tem a frase é o orçamento */
-          validade: { texto: Util.naoVazio(c.validadeProposta) ? ("Validade desta proposta: " + String(c.validadeProposta).trim().replace(/\.$/, "") + ".") : "" },
+          /* a validade agora tem DATA (js/proposta.js): o texto sai pronto,
+             ancorado no envio quando ele existe */
+          validade: (function () { var v = Proposta.validade(orc, Util.agoraISO()); return { texto: v.texto, ate: v.ateBR || "", vencida: !!v.vencida }; })(),
+          /* calculado por Orcamento.cronograma; o motor só desenha.
+             A página de cronograma pode pedir outra régua (6 semanas em vez
+             de 1 mês) — quem calcula é aqui, porque o motor não faz conta. */
+          cronograma: Proposta.cronogramaParaModelo(orc, (function () {
+            var pg = (m.paginas || []).filter(function (x) { return x.tipo === "cronograma"; })[0];
+            var n = pg ? Util.num(pg.periodos) : 0;
+            return n > 0 ? n : null;
+          })()),
           blocos: Proposta.blocosParaModelo(orc),
           comercial: Proposta.comercialParaModelo(orc),
           /* links que o modelo pode transformar em botão (ver bloco Contato) */

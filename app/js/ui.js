@@ -686,16 +686,33 @@
              se liga isso, senão o usuário não descobre que existe */
           : kpi("—", "prazos", null, "ligue em Parâmetros")) +
         /* FASE 5 — o número que o dono olha. « — » quando nada foi enviado
-           ainda: 0% ali seria mentira sobre um funil que nem começou. */
-        (ind.enviados
+           ainda: 0% ali seria mentira sobre um funil que nem começou.
+           ⚠ ATÉ 03/09/2026 ESTE NÚMERO MEDIA A APROVAÇÃO INTERNA (quanto do
+           que o orçamentista fez o gestor aprovou) e era lido como venda.
+           Agora é o funil comercial: aceitas ÷ enviadas ao cliente. Sem
+           nenhum envio registrado ele não inventa: diz onde se registra. */
+        (ind.enviadas
           ? kpi(Util.fmtNum(ind.conversao, 1) + "%", "conversão",
                 ind.conversao >= 50 ? "#16a34a" : "#0f2740",
-                ind.aprovados + " de " + ind.enviados + " enviados")
-          : kpi("—", "conversão", null, "nada enviado ainda")) +
+                ind.aceitas + " de " + ind.enviadas + " enviadas ao cliente")
+          : kpi("—", "conversão", null, "registre o envio no orçamento")) +
       '</div>' +
       /* orçamento parado: quem preencheu esqueceu, e ninguém cobra o que não
          aparece. Só conta o que AINDA NÃO FOI ENVIADO — esperar decisão de
          outra pessoa não é atraso de quem orçou. */
+      /* ⚠ ESTE É O DINHEIRO NA MESA. Proposta enviada e sem resposta há dias
+         não aparece em lugar nenhum do sistema — e é exatamente a que fecha
+         com um telefonema. Vem antes dos "parados" porque já custou trabalho
+         inteiro: foi orçada, virou documento e foi ao cliente. */
+      (ind.semResposta && ind.semResposta.length
+        ? '<div class="card" style="padding:9px 12px;margin-bottom:12px;background:rgba(15,39,64,.06);border-color:rgba(15,39,64,.25);font-size:12.5px">'
+          + "<b>" + ind.semResposta.length + " proposta(s) enviada(s) sem resposta</b> há mais de " + ind.limiteParado + " dias: "
+          + ind.semResposta.slice(0, 4).map(function (x) {
+              return '<a href="#" data-abrir="' + Util.esc(x.orc.id) + '">' + Util.esc(x.orc.nome || x.orc.numero) + "</a> (" + x.dias + "d)";
+            }).join(" · ")
+          + (ind.semResposta.length > 4 ? " e mais " + (ind.semResposta.length - 4) : "")
+          + '<div class="muted" style="margin-top:3px">Um telefonema resolve mais que uma proposta nova. Registre a resposta no orçamento quando souber.</div></div>'
+        : "") +
       (ind.parados.length
         ? '<div class="card" style="padding:9px 12px;margin-bottom:12px;background:rgba(234,88,12,.08);border-color:rgba(234,88,12,.3);font-size:12.5px">' +
           (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "⚠") + ' <b>' + ind.parados.length +
@@ -818,6 +835,8 @@
              nada para esta pessoa — a tela não inventa botão. */
           ((typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "") +
           '<button class="btn sm success" data-acao="proposta">' + Icones.get("proposta") + 'Gerar Proposta</button>' +
+          /* depois de gerar vem o que aconteceu com ela: enviada, aceita, recusada */
+          ((typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "") +
           '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
           '<button class="btn sm" data-acao="laudo">' + Icones.get("laudo") + 'Anexo p/ Laudo</button>' +
           '<button class="btn sm" data-acao="config-orc">' + Icones.get("dados") + 'Dados</button>' +

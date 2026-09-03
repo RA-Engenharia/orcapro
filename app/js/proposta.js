@@ -57,6 +57,7 @@
       var empresa = (emp && emp.nome) || (usuario && usuario.empresa) || "Sua Empresa";
       var logoHTML = (typeof Empresa !== "undefined") ? Empresa.logoHTML(80) : '<div class="logo-ph">[LOGO ' + Util.esc(empresa) + ']</div>';
       var hoje = new Date().toLocaleDateString("pt-BR");
+      function hoje2ISO() { return Util.agoraISO(); }
 
       var linhasSint = sint.map(function (s) {
         return '<tr><td>' + Util.esc(s.codigo) + '</td><td>' + Util.esc(s.nome) + '</td>' +
@@ -85,7 +86,9 @@
             row("Cliente", orc.cliente.nome) +
             row("Proposta nº", orc.numero) +
             row("Data", hoje) +
-            row("Validade", c.validadeProposta) +
+            /* a data vence a frase: "15 dias corridos" não diz ao cliente
+               até quando ele pode aceitar (ver Proposta.validade) */
+            row("Validade", (function () { var v = Proposta.validade(orc, hoje2ISO()); return v.temData ? v.texto.replace(/^Válida até /, "") : v.frase; })()) +
             rowRaw("Valor total", '<b style="color:var(--p-verde)">' + Util.fmtMoeda(t.precoVenda) + '</b>') +
           '</div>' +
           '<div class="capa-rod">' + Util.esc(empresa) +
@@ -201,6 +204,154 @@
    *   etapas. Item solto (sem etapa) cai num grupo sem nome, que o motor
    *   desenha sem cabeçalho.
    * =================================================================== */
+  /* =====================================================================
+   * O CICLO COMERCIAL DA PROPOSTA — enviada, aceita, recusada
+   *
+   * POR QUE EXISTE. O app sabia dizer se o GESTOR aprovou o orçamento, e não
+   * sabia dizer se ele foi ao CLIENTE. `propostaEm` estava no schema desde o
+   * começo — é até apagado ao copiar e ao revisar, para a cópia não nascer
+   * "já enviada" — mas nenhuma linha do sistema gravava. O painel, sem esse
+   * dado, media conversão pela aprovação interna (ver `indicadoresCarteira`).
+   *
+   * ⚠ FUNÇÕES PURAS: recebem `quando` por parâmetro e devolvem o orçamento
+   *   alterado, sem gravar. Quem grava é a tela — do contrário não dá para
+   *   testar fora do navegador.
+   * ⚠ O HISTÓRICO É APPEND-ONLY. "Reenviei dia 20 porque o cliente pediu
+   *   outra versão" é informação de venda; sobrescrever a data anterior
+   *   apagaria o tempo de resposta real do cliente.
+   * ===================================================================== */
+  Proposta.CANAIS = [
+    { id: "whatsapp", nome: "WhatsApp" },
+    { id: "email", nome: "E-mail" },
+    { id: "impresso", nome: "Impressa / em mãos" },
+    { id: "reuniao", nome: "Apresentada em reunião" },
+    { id: "outro", nome: "Outro" }
+  ];
+  Proposta.RESPOSTAS = [
+    { id: "aceita", nome: "Aceita — fechamos", cor: "#16a34a" },
+    { id: "recusada", nome: "Recusada", cor: "#dc2626" },
+    { id: "sem_resposta", nome: "Ainda sem resposta", cor: "#ea580c" }
+  ];
+
+  Proposta.enviada = function (orc) { return Util.naoVazio(orc && orc.propostaEm); };
+
+  /* rascunho → enviada → aceita | recusada */
+  Proposta.estadoComercial = function (orc) {
+    if (!Proposta.enviada(orc)) return "rascunho";
+    var r = String(((orc && orc.propostaResposta) || {}).estado || "");
+    return (r === "aceita" || r === "recusada") ? r : "enviada";
+  };
+
+  Proposta.registrarEnvio = function (orc, dados) {
+    if (!orc) return null;
+    var d = dados || {};
+    var quando = String(d.quando || Util.agoraISO());
+    orc.propostaEm = quando;
+    orc.propostaCanal = String(d.canal || "outro");
+    orc.propostaPor = String(d.por || "");
+    /* reenviar zera a resposta anterior: a proposta que está com o cliente é
+       a nova, e manter "recusada" ali faria o funil contar uma venda perdida
+       que já voltou para a mesa */
+    if (orc.propostaResposta) delete orc.propostaResposta;
+    orc.propostaHistorico = Util.arr(orc.propostaHistorico);
+    orc.propostaHistorico.push({ acao: "enviada", em: quando, canal: orc.propostaCanal, por: orc.propostaPor });
+    return orc;
+  };
+
+  Proposta.registrarResposta = function (orc, dados) {
+    if (!orc) return null;
+    var d = dados || {};
+    var est = String(d.estado || "");
+    if (!Proposta.RESPOSTAS.filter(function (r) { return r.id === est; }).length) return null;
+    if (!Proposta.enviada(orc)) return null;      /* resposta sem envio não existe */
+    var quando = String(d.quando || Util.agoraISO());
+    if (est === "sem_resposta") delete orc.propostaResposta;
+    else orc.propostaResposta = { estado: est, em: quando, motivo: String(d.motivo || ""), por: String(d.por || "") };
+    orc.propostaHistorico = Util.arr(orc.propostaHistorico);
+    orc.propostaHistorico.push({ acao: est, em: quando, motivo: String(d.motivo || ""), por: String(d.por || "") });
+    return orc;
+  };
+
+  /* =====================================================================
+   * VALIDADE COM DATA — e não só a frase
+   *
+   * A base de contagem é o dia do ENVIO quando ele existe; antes disso, hoje.
+   * É o que faz a data impressa continuar verdadeira depois: uma proposta
+   * enviada em 03/09 com 15 dias vence em 18/09, e reimprimi-la em outubro
+   * não pode "renovar" o prazo sozinha.
+   * ===================================================================== */
+  function _somaDias(iso, n) {
+    var d = new Date(String(iso).slice(0, 10) + "T12:00:00");
+    if (isNaN(d.getTime())) return "";
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function _difDias(aISO, bISO) {
+    var a = new Date(String(aISO).slice(0, 10) + "T12:00:00");
+    var b = new Date(String(bISO).slice(0, 10) + "T12:00:00");
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+    return Math.round((b - a) / 86400000);
+  }
+  function _br(iso) {
+    var s = String(iso || "").slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.slice(8, 10) + "/" + s.slice(5, 7) + "/" + s.slice(0, 4) : "";
+  }
+  Proposta.dataBR = _br;
+
+  Proposta.validade = function (orc, hojeISO) {
+    var c = (orc && orc.comercial) || {};
+    var hoje = String(hojeISO || Util.agoraISO()).slice(0, 10);
+    var dias = Util.num(c.validadeDias);
+    var frase = Util.naoVazio(c.validadeProposta) ? String(c.validadeProposta).trim().replace(/\.$/, "") : "";
+    if (!(dias > 0)) {
+      /* sem o número não há data: devolve a frase e diz que não há data */
+      return { temData: false, dias: 0, frase: frase, vencida: false,
+        texto: frase ? "Validade desta proposta: " + frase + "." : "" };
+    }
+    var base = Proposta.enviada(orc) ? String(orc.propostaEm).slice(0, 10) : hoje;
+    var ate = _somaDias(base, dias);
+    var faltam = _difDias(hoje, ate);
+    var vencida = faltam !== null && faltam < 0;
+    var texto = "Válida até " + _br(ate)
+      + (vencida ? " — VENCIDA"
+        : (faltam === 0 ? " — vence hoje"
+          : (faltam !== null && faltam <= 3 ? " (vence em " + faltam + " dia" + (faltam === 1 ? "" : "s") + ")" : "")));
+    return { temData: true, dias: dias, baseISO: base, ateISO: ate, ateBR: _br(ate),
+      faltam: faltam, vencida: vencida, frase: frase, texto: texto };
+  };
+
+  /* =====================================================================
+   * O CRONOGRAMA QUE VAI PARA O PAPEL
+   *
+   * ⚠ CALCULADO AQUI, DESENHADO LÁ. `Orcamento.cronograma` é a mesma conta da
+   *   aba Cronograma e do Excel; o motor do modelo (js/proptpl.js) tem regra
+   *   escrita de não fazer conta de dinheiro. Refazer a distribuição no
+   *   desenho criaria um segundo cronograma para a mesma obra — e seria o do
+   *   papel que o cliente cobraria.
+   * ⚠ SÓ PREÇO DE VENDA: `Orcamento.cronograma` distribui `precoVenda`.
+   * ===================================================================== */
+  Proposta.cronogramaParaModelo = function (orc, meses) {
+    var c;
+    try { c = Orcamento.cronograma(orc, meses || (orc && orc.cronogramaMeses) || 6); }
+    catch (e) { return null; }
+    if (!c || !Util.arr(c.etapas).length) return null;
+    return {
+      meses: c.meses,
+      total: Util.num(c.total),
+      totaisMes: Util.arr(c.totaisMes).map(function (v) { return Util.num(v); }),
+      acumPct: Util.arr(c.acumPct).map(function (v) { return Util.num(v); }),
+      etapas: Util.arr(c.etapas).map(function (e) {
+        var tot = Util.num(e.total);
+        return {
+          codigo: e.codigo || "", nome: e.nome || "", total: tot,
+          meses: Util.arr(e.meses).map(function (v) { return Util.num(v); }),
+          /* a barra do papel é o percentual DA ETAPA em cada mês */
+          pcts: Util.arr(e.meses).map(function (v) { return tot ? (Util.num(v) / tot) * 100 : 0; })
+        };
+      })
+    };
+  };
+
   Proposta.blocosParaModelo = function (orc) {
     var linhas = Orcamento.linhas(orc) || [];
     var t = Orcamento.totais(orc);

@@ -72,6 +72,16 @@
       },
       {
         "id": "p6",
+        "tipo": "cronograma",
+        "titulo": "CRONOGRAMA",
+        "abertura": "Previsão de execução por etapa, calculada a partir das quantidades desta proposta. O cronograma detalhado é fechado na reunião de início da obra.",
+        "mostrarValores": false,
+        "rotuloMes": "Mês",
+        "periodos": "0",
+        "legenda": "As barras indicam em que período cada etapa acontece. Atrasos causados por falta de material, chuva ou liberação de acesso deslocam as etapas seguintes."
+      },
+      {
+        "id": "p7",
         "tipo": "condicoes",
         "titulo": "Condições gerais",
         "paragrafos": "Os serviços seguem as normas técnicas ABNT aplicáveis e a NR-18, com acompanhamento de engenheiro responsável.\nQuantidades marcadas como estimadas são conferidas em visita técnica; variações relevantes são tratadas por aditivo ou por diária, sempre com aprovação prévia.\nSalvo indicação em contrário nesta proposta, materiais, água e energia no local são de responsabilidade da contratante.\nEsta proposta é válida pelo prazo indicado no aceite; após esse prazo os valores podem ser revisados.",
@@ -79,14 +89,14 @@
         "usarGarantia": true
       },
       {
-        "id": "p7",
+        "id": "p8",
         "tipo": "assinatura",
         "titulo": "ACEITE DA PROPOSTA",
         "texto": "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta. O aceite também pode ser confirmado por e-mail ou WhatsApp.",
         "mostrarValidade": true
       },
       {
-        "id": "p8",
+        "id": "p9",
         "tipo": "contato",
         "titulo": "FALE CONOSCO",
         "pessoas": "Eng. Rogério Alves de Souza — CREA-MG 323736",

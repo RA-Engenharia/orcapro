@@ -113,7 +113,8 @@
          preços de um snapshot tirado no orçamento de origem. */
       ["aprovado", "aprovadoEm", "aprovadoPor", "aprovacao", "assinatura",
        "boletimAprovado", "travado", "status", "estado", "propostaGerada",
-       "propostaEm", "obraId", "contratoId", "medicoes",
+       "propostaEm", "propostaCanal", "propostaPor", "propostaResposta",
+       "propostaHistorico", "obraId", "contratoId", "medicoes",
        "estadoAprovacao", "historicoAprovacao", "revisaoMotivo", "revisaoPor",
        "revisaoEm", "aprovadoPeloProprioAutor", "revisaoDe", "revisaoNumero",
        "fechamento"].forEach(function (k) {
@@ -199,6 +200,12 @@
         condicoesPagamento: "Pagamento por medição mensal dos serviços executados, com vencimento em 5 dias úteis após a aprovação da medição.",
         prazoExecucao: "A combinar conforme cronograma físico-financeiro.",
         validadeProposta: "15 dias corridos a contar da data de emissão.",
+        /* ⚠ A FRASE ACIMA NÃO É UMA DATA. Enquanto a validade foi só texto, o
+           sistema não sabia dizer se a proposta ainda valia: não avisava o
+           vendedor véspera do vencimento e imprimia como válida uma proposta
+           de dois meses atrás. `validadeDias` é o número que permite calcular
+           a data — a frase segue para quem tem condição fora do comum. */
+        validadeDias: 15,
         garantia: "Garantia legal de 5 (cinco) anos para a solidez e segurança da obra, nos termos do art. 618 do Código Civil.",
         incluso: "Fornecimento de materiais e mão de obra dos serviços orçados;\nLeis sociais e encargos trabalhistas;\nFerramentas e equipamentos de execução;\nLimpeza periódica e final da obra.",
         excluso: "Projetos complementares e taxas de aprovação;\nLigações definitivas de água, energia e esgoto;\nMobiliário, paisagismo e itens de decoração;\nServiços não descritos expressamente nesta proposta.",
@@ -1657,17 +1664,42 @@
       var lim = Number(diasParado) > 0 ? Number(diasParado) : 15;
       var d0 = new Date(String(hoje || "").slice(0, 10) + "T12:00:00");
       if (isNaN(d0.getTime())) d0 = new Date();
-      var enviados = 0, aprovados = 0, parados = [];
+      /* ⚠ AQUI HAVIA UM NÚMERO QUE MEDIA OUTRA COISA. "Enviados" contava o
+         orçamento mandado para APROVAÇÃO INTERNA (`historicoAprovacao` com
+         ação "enviar") e "aprovados" contava o aval do gestor — então a
+         "conversão" dizia quanto do que o orçamentista fez o chefe aprovou,
+         e não quanto do que foi ao CLIENTE virou obra. Numa empresa que não
+         usa aprovação interna (a maioria), o painel mostrava conversão zero
+         para sempre; numa que usa, mostrava 100% sem nenhuma venda.
+         Agora o funil é o comercial: enviada ao cliente → aceita/recusada
+         (js/proposta.js registra). Os números da aprovação interna continuam
+         saindo, com o nome do que são. */
+      var enviadas = 0, aceitas = 0, recusadas = 0, aprovados = 0, enviadosAprov = 0;
+      var parados = [], semResposta = [];
       arr.forEach(function (o) {
         var hist = Util.arr(o && o.historicoAprovacao);
-        var jaEnviou = hist.some(function (h) { return h && h.acao === "enviar"; });
-        if (jaEnviou) enviados++;
+        if (hist.some(function (h) { return h && h.acao === "enviar"; })) enviadosAprov++;
         var est = "rascunho";
         try { if (typeof Aprovacao !== "undefined") est = Aprovacao.estadoDe(o); } catch (e) {}
         if (est === "aprovado") aprovados++;
-        /* parado = ninguém mexeu há N dias E ainda não foi enviado. Orçamento
-           aguardando decisão de OUTRA pessoa não é culpa de quem preencheu. */
-        if (!jaEnviou && est !== "aprovado") {
+
+        var envio = String((o && o.propostaEm) || "").slice(0, 10);
+        var resp = (o && o.propostaResposta) || {};
+        var rEst = String(resp.estado || "");
+        if (envio) {
+          enviadas++;
+          if (rEst === "aceita") aceitas++;
+          else if (rEst === "recusada") recusadas++;
+          else {
+            /* enviada e calada: é ESTE o orçamento que precisa de telefonema */
+            var de = new Date(envio + "T12:00:00");
+            if (!isNaN(de.getTime())) {
+              var dEnv = Math.floor((d0 - de) / 86400000);
+              if (dEnv >= lim) semResposta.push({ orc: o, dias: dEnv });
+            }
+          }
+        } else if (est !== "aprovado") {
+          /* parado = ninguém mexeu há N dias E ainda não foi ao cliente */
           var ult = new Date(String((o && o.atualizadoEm) || ""));
           if (!isNaN(ult.getTime())) {
             var dias = Math.floor((d0 - ult) / 86400000);
@@ -1676,9 +1708,13 @@
         }
       });
       parados.sort(function (a, b) { return b.dias - a.dias; });
+      semResposta.sort(function (a, b) { return b.dias - a.dias; });
       return {
-        enviados: enviados, aprovados: aprovados,
-        conversao: enviados ? (aprovados / enviados) * 100 : null,   // null ≠ 0%: nada enviado ainda
+        enviadas: enviadas, aceitas: aceitas, recusadas: recusadas,
+        conversao: enviadas ? (aceitas / enviadas) * 100 : null,   // null ≠ 0%: funil que não começou
+        semResposta: semResposta,
+        /* aprovação INTERNA — mesmo nome de antes, para quem já lia */
+        enviados: enviadosAprov, aprovados: aprovados,
         parados: parados, limiteParado: lim
       };
     },
