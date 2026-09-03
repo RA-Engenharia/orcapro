@@ -88,6 +88,8 @@ MODELO = {
              "rotuloLista": "Está incluso:", "obsTitulo": "Não está incluso:", "observacao": "", "usarComercial": True},
             {"id": "p5", "tipo": "investimento", "titulo": "INVESTIMENTO", "colTrabalho": "Serviço",
              "colValor": "Valor", "tituloPagamento": "CONDIÇÕES DE PAGAMENTO", "detalhar": True,
+             "tituloOpcionais": "ADICIONAIS OPCIONAIS",
+             "textoOpcionais": "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início da obra.",
              "tipografia": {"escalaTitulo": 85, "escalaTexto": 85}},
             {"id": "p6", "tipo": "cronograma", "titulo": "CRONOGRAMA",
              "abertura": "Previsão de execução por etapa, calculada a partir das quantidades desta proposta. O cronograma detalhado é fechado na reunião de início da obra.",
@@ -103,7 +105,10 @@ MODELO = {
              "usarPrazo": True, "usarGarantia": True},
             {"id": "p8", "tipo": "assinatura", "titulo": "ACEITE DA PROPOSTA",
              "texto": "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta. O aceite também pode ser confirmado por e-mail ou WhatsApp.",
-             "mostrarValidade": True},
+             "mostrarValidade": True,
+             # o aceite pelo canal em que o cliente já está — não substitui a
+             # assinatura, fica ao lado dela
+             "botaoAceite": True, "textoAceite": "Aceitar esta proposta pelo WhatsApp"},
             {"id": "p9", "tipo": "contato", "titulo": "FALE CONOSCO",
              "pessoas": "Eng. Rogério Alves de Souza — CREA-MG 323736",
              "redes": "", "telefone": "(34) 9286-9383", "whatsapp": "3492869383",

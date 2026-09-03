@@ -361,6 +361,22 @@
       return orc;
     },
     // Renomeia uma etapa sem recriá-la (mantém itens e código).
+    /* =====================================================================
+     * ETAPA OPCIONAL — o "adicional" que o cliente pode incluir
+     *
+     * ⚠ NÃO É UMA ETAPA DESLIGADA. Ela continua no orçamento, no Excel, na
+     *   curva ABC e no total do sistema: se o cliente aceitar, o serviço já
+     *   está orçado com o mesmo critério do resto. O que a marca muda é o
+     *   PAPEL — na proposta ela sai fora do total, num bloco de adicionais,
+     *   com o preço à vista para quem quiser incluir.
+     * ===================================================================== */
+    marcarEtapaOpcional: function (orc, etapaId, valor) {
+      var e = this._etapa(orc, etapaId);
+      if (!e) return orc;
+      if (valor) e.opcional = true; else delete e.opcional;
+      return orc;
+    },
+
     renomearEtapa: function (orc, etapaId, nome) {
       var e = this._etapa(orc, etapaId);
       if (e && Util.naoVazio(nome)) e.nome = String(nome).trim();
@@ -845,6 +861,13 @@
       var pct = (orc && orc.bdi) ? Util.num(orc.bdi.percentual) : 0;
       var bdiNoPU = (inc !== "final");
       var linhas = [], grupos = [], custoDireto = 0, somaVenda = 0, mo = 0, mat = 0, eq = 0, nSub = 0;
+      /* ⚠ ETAPA OPCIONAL É SEPARAÇÃO DE PAPEL, NÃO DE CONTA. `precoVenda`
+         continua somando TUDO — é ele que o Excel, o laudo, a medição, o
+         contrato e a curva ABC leem, e mudar o seu significado aqui trocaria
+         o total de doze telas para resolver um problema de uma. O que nasce
+         aqui são DOIS acumuladores a mais, que só quem quiser usa: a proposta
+         imprime o obrigatório no total e os opcionais como "adicionais". */
+      var vendaOpc = 0, custoOpc = 0;
       var self = this;
       Util.arr(orc && orc.etapas).forEach(function (e, ei) {
         /* NUMERAÇÃO DO 2º NÍVEL — um contador só, compartilhado: os itens SOLTOS
@@ -890,6 +913,7 @@
           var pu = bdiNoPU ? A0.unitario(Util.num(it.custoUnitario) * (1 + pct / 100), modo) : cu;
           var pt = A0.valor(q * pu, modo);
           custoDireto += ct; somaVenda += pt;
+          if (e.opcional) { vendaOpc += pt; custoOpc += ct; }
           /* v1.1.233 — MO/MAT/EQ do orçamento respeitam o modo de custo do
              item: "só MO" não soma o material que o cliente fornece. É este
              agregado que alimenta o Resumo, a pizza do xlsx e o laudo — somar
@@ -907,12 +931,16 @@
             codigo: it.codigo || "", descricao: it.descricao || "", unidade: it.unidade || "un",
             origem: it.origem, baseFonte: it.baseFonte,
             quantidade: q, custoUnitario: cu, custoTotal: ct,
-            precoUnit: pu, precoTotal: pt
+            precoUnit: pu, precoTotal: pt,
+            /* a linha carrega a marca da etapa: quem desenha não precisa
+               voltar ao orçamento para saber se aquilo é um adicional */
+            opcional: !!e.opcional
           });
         });
       });
       // subtotal do grupo no MESMO critério de arredondamento das linhas
       grupos.forEach(function (g) { g.custoTotal = A0.valor(g.custoTotal, modo); g.precoTotal = A0.valor(g.precoTotal, modo); });
+      vendaOpc = A0.valor(vendaOpc, modo); custoOpc = A0.valor(custoOpc, modo);
       custoDireto = A0.valor(custoDireto, modo);
       somaVenda = A0.valor(somaVenda, modo);
       var precoVenda = bdiNoPU ? somaVenda : A0.valor(Bdi.aplicar(custoDireto, pct), modo);
@@ -926,6 +954,12 @@
         // custo + BDI ≠ venda não fechava (o Excel, que subtrai exato, divergia).
         bdiValor: Math.round((precoVenda - custoDireto) * 100) / 100,
         precoVenda: precoVenda,
+        /* separação para a PROPOSTA (ver a nota dos acumuladores lá em cima).
+           Sem nenhuma etapa opcional, `precoObrigatorio === precoVenda` e
+           `precoOpcional` é zero — tudo continua exatamente como era. */
+        precoOpcional: vendaOpc,
+        precoObrigatorio: Math.round((precoVenda - vendaOpc) * 100) / 100,
+        custoOpcional: custoOpc,
         mo: A0.valor(mo, modo), mat: A0.valor(mat, modo), eq: A0.valor(eq, modo),
         // cabeçalho de sub etapa NÃO entra em `linhas` (senão qtdItens mentiria e a
         // curva ABC ganharia linha fantasma): vai aqui, com o subtotal do bloco.
@@ -942,6 +976,8 @@
         bdiPercentual: c.pct,
         bdiValor: c.bdiValor,
         precoVenda: c.precoVenda,
+        precoOpcional: c.precoOpcional,
+        precoObrigatorio: c.precoObrigatorio,
         qtdItens: c.qtdItens,
         qtdEtapas: c.qtdEtapas, qtdSubEtapas: c.qtdSubEtapas,
         arredondamento: c.modo, bdiIncidencia: c.incidencia, bdiNoPU: c.bdiNoPU
@@ -1067,7 +1103,7 @@
       var c = this.calcular(orc), A0 = A(), modo = c.modo;
       var totalGeral = c.precoVenda || 1;
       var rows = Util.arr(orc && orc.etapas).map(function (e) {
-        return { codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length, custoDireto: 0, precoVenda: 0, peso: 0 };
+        return { codigo: e.codigo, nome: e.nome, qtdItens: Util.arr(e.itens).length, custoDireto: 0, precoVenda: 0, peso: 0, opcional: !!e.opcional };
       });
       c.linhas.forEach(function (L) {
         var r = rows[L.etapaIdx]; if (!r) return;

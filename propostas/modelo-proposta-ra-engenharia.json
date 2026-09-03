@@ -66,6 +66,8 @@
         "colValor": "Valor",
         "tituloPagamento": "CONDIÇÕES DE PAGAMENTO",
         "detalhar": true,
+        "tituloOpcionais": "ADICIONAIS OPCIONAIS",
+        "textoOpcionais": "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início da obra.",
         "tipografia": {
           "escalaTitulo": 85,
           "escalaTexto": 85
@@ -94,7 +96,9 @@
         "tipo": "assinatura",
         "titulo": "ACEITE DA PROPOSTA",
         "texto": "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta. O aceite também pode ser confirmado por e-mail ou WhatsApp.",
-        "mostrarValidade": true
+        "mostrarValidade": true,
+        "botaoAceite": true,
+        "textoAceite": "Aceitar esta proposta pelo WhatsApp"
       },
       {
         "id": "p9",

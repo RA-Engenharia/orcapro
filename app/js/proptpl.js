@@ -160,7 +160,10 @@
         { id: "colTrabalho", nome: "Nome da 1ª coluna", padrao: "Trabalho a executar" },
         { id: "colValor", nome: "Nome da 2ª coluna", padrao: "Investimento" },
         { id: "tituloPagamento", nome: "Título da forma de pagamento", padrao: "FORMA DE PAGAMENTO" },
-        { id: "detalhar", nome: "Separar madeira e mão de obra em blocos", tipo: "sim_nao", padrao: false }
+        { id: "detalhar", nome: "Separar madeira e mão de obra em blocos", tipo: "sim_nao", padrao: false },
+        { id: "tituloOpcionais", nome: "Título do bloco de adicionais", padrao: "ADICIONAIS OPCIONAIS" },
+        { id: "textoOpcionais", nome: "Frase acima dos adicionais", tipo: "multi",
+          padrao: "Serviços que não estão no valor acima. Se quiser incluir algum, é só avisar antes do início." }
       ]
     },
     {
@@ -237,7 +240,14 @@
         { id: "titulo", nome: "Título", padrao: "ACEITE DA PROPOSTA" },
         { id: "texto", nome: "Texto do aceite", tipo: "multi",
           dica: "Ex.: A assinatura abaixo formaliza a aprovação do escopo e das condições acima." },
-        { id: "mostrarValidade", nome: "Escrever a validade da proposta", tipo: "sim_nao", padrao: true }
+        { id: "mostrarValidade", nome: "Escrever a validade da proposta", tipo: "sim_nao", padrao: true },
+        /* ⚠ O ACEITE POR PAPEL EXIGE IMPRIMIR, ASSINAR E DEVOLVER — três
+           passos em que a venda esfria. O botão manda a resposta pelo canal em
+           que o cliente já está: abre o WhatsApp da empresa com o número da
+           proposta escrito. Não substitui a assinatura quando ela é exigida;
+           fica ao lado dela. */
+        { id: "botaoAceite", nome: "Botão “Aceitar pelo WhatsApp” (usa o WhatsApp de ⚙ Empresa)", tipo: "sim_nao", padrao: false },
+        { id: "textoAceite", nome: "Texto do botão de aceite", padrao: "Aceitar esta proposta pelo WhatsApp" }
       ]
     }
   ];
@@ -914,7 +924,7 @@
         { id: "p5", tipo: "investimento", titulo: "INVESTIMENTO", colTrabalho: "Serviço", colValor: "Valor", tituloPagamento: "CONDIÇÕES DE PAGAMENTO", detalhar: true, tipografia: { escalaTitulo: 90, escalaTexto: 90 } },
         { id: "p6", tipo: "cronograma", titulo: "CRONOGRAMA", abertura: "Previsão de execução por etapa. O cronograma detalhado é fechado na reunião de início da obra.", mostrarValores: false },
         { id: "p7", tipo: "condicoes", titulo: "Condições gerais", usarPrazo: true, usarGarantia: true },
-        { id: "p8", tipo: "assinatura", titulo: "ACEITE DA PROPOSTA", texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.", mostrarValidade: true },
+        { id: "p8", tipo: "assinatura", titulo: "ACEITE DA PROPOSTA", texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.", mostrarValidade: true, botaoAceite: true },
         { id: "p9", tipo: "contato", titulo: "FALE CONOSCO", usarEmpresa: true, botaoPlanilha: true, mostrarFoto: false, molduraCelular: false }
       ]
     },
@@ -1093,7 +1103,7 @@
           + (txt(p.observacao) ? '<p class="tp-obs"><b>' + esc(p.obsTitulo) + "</b> " + escML(p.observacao) + "</p>" : "");
       }
       else if (p.tipo === "investimento") {
-        corpo = '<h2 class="tp-h1c">' + esc(p.titulo) + "</h2>" + tabela(p, b, m);
+        corpo = '<h2 class="tp-h1c">' + esc(p.titulo) + "</h2>" + tabela(p, b, m) + tabelaOpcionais(p, b);
         var pag = txt(com.condicoesPagamento);
         if (pag) {
           corpo += '<h3 class="tp-h1c tp-h3pag">' + esc(p.tituloPagamento) + "</h3>"
@@ -1137,7 +1147,8 @@
           + (p.mostrarValidade && txt(val.texto) ? '<p class="tp-p">' + esc(val.texto) + "</p>" : "")
           + '<p class="tp-p tp-local">' + esc(txt(emp.cidade) || "____________________") + ", " + esc(dia(d.data)) + ".</p>"
           + '<div class="tp-assin"><div><div class="tp-linha"></div>' + esc(txt(emp.nome) || "Contratada") + "</div>"
-          + '<div><div class="tp-linha"></div>' + esc(txt(d.cliente) || "Contratante") + "</div></div>";
+          + '<div><div class="tp-linha"></div>' + esc(txt(d.cliente) || "Contratante") + "</div></div>"
+          + botaoAceite(p, emp, d);
       }
 
       var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento");
@@ -1271,6 +1282,36 @@
     if (pl) out += '<a class="tp-btn" href="' + esc(pl) + '" target="_blank" rel="noopener">' + esc(txt(p.textoBotao) || "Abrir a planilha desta proposta") + "</a>";
     return out ? '<div class="tp-botoes">' + out + "</div>" : "";
   }
+  /* o aceite pelo canal em que o cliente já está */
+  function botaoAceite(p, emp, d) {
+    if (!p.botaoAceite) return "";
+    var zap = linkZap(emp.whatsapp || emp.telefone,
+      "Aceito a proposta" + (txt(d.numero) ? " " + txt(d.numero) : "") + (txt(emp.nome) ? " da " + txt(emp.nome) : "") + ". Podemos seguir?");
+    if (!zap) return "";
+    return '<div class="tp-botoes"><a class="tp-btn tp-btn-2" href="' + esc(zap) + '" target="_blank" rel="noopener">'
+      + esc(txt(p.textoAceite) || "Aceitar esta proposta pelo WhatsApp") + "</a></div>";
+  }
+
+  /* a tabela dos ADICIONAIS — fora do total, com o subtotal próprio */
+  function tabelaOpcionais(p, b) {
+    var gs = arr(b && b.opcionais).filter(function (g) { return arr(g.linhas).length; });
+    if (!gs.length) return "";
+    var linhas = "";
+    gs.forEach(function (g) {
+      if (txt(g.nome)) linhas += '<tr class="tp-grupo"><td colspan="2">' + esc(g.nome) + "</td></tr>";
+      arr(g.linhas).forEach(function (l) {
+        var q = num(l.qtd) > 0 ? (n2(l.qtd) + (txt(l.unidade) ? " " + esc(l.unidade) : "")) : "";
+        linhas += "<tr><td>" + esc(l.descricao) + (q ? ' <span class="tp-qtd">' + q + "</span>" : "")
+          + '</td><td class="tp-num">' + esc(moeda(l.total)) + "</td></tr>";
+      });
+    });
+    return '<h3 class="tp-h1c tp-h3pag">' + esc(txt(p.tituloOpcionais) || "ADICIONAIS OPCIONAIS") + "</h3>"
+      + (txt(p.textoOpcionais) ? '<p class="tp-p tp-opc-txt">' + escML(p.textoOpcionais) + "</p>" : "")
+      + '<table class="tp-tbl tp-opc"><tbody>' + linhas + "</tbody></table>"
+      + '<p class="tp-total tp-opc-tot">Adicionais: <b>' + esc(moeda(b.totalOpcional)) + "</b>"
+      + '<span class="tp-opc-nota"> — não incluídos no valor total acima</span></p>';
+  }
+
   /* rodapé das páginas internas: empresa · CNPJ · canais (clicáveis) */
   function rodapeContatos(emp) {
     var partes = [];
@@ -1475,6 +1516,10 @@
       ".tp-gal{width:100%;height:52mm;object-fit:cover;display:block}",
       ".tp-fig{margin:0}",
       ".tp-fig figcaption{font-size:calc(9.5pt * var(--tp-esc-txt,1));margin-top:1.5mm;opacity:.9}",
+      ".tp-opc-txt{text-align:center;font-size:calc(10.5pt * var(--tp-esc-txt,1));margin-bottom:3mm}",
+      ".tp-opc th,.tp-opc td{border-color:var(--tp-destaque)}",
+      ".tp-opc-tot{font-size:calc(12.5pt * var(--tp-esc-txt,1));margin-top:4mm}",
+      ".tp-opc-nota{font-size:calc(9.5pt * var(--tp-esc-txt,1));opacity:.8;font-weight:400}",
       ".tp-vert .tp-gal{height:44mm}",
       ".tp-tbl{width:100%;border-collapse:collapse;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
       ".tp-tbl th{background:var(--tp-titulo);color:#fff;text-align:left;padding:4mm 4mm;font-weight:600}",
@@ -1768,7 +1813,7 @@
     /* 9. ACEITE */
     pg({ tipo: "assinatura", titulo: "ACEITE DA PROPOSTA",
       texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.",
-      mostrarValidade: true });
+      mostrarValidade: true, botaoAceite: true });
 
     /* 10. ENCERRAMENTO — página de foto inteira; só quando há foto de sobra */
     if (nFotos >= 9) pg({ tipo: "encerramento", frase: "Obrigado pela oportunidade. Estamos à disposição para começar.", mostrarLogo: true });

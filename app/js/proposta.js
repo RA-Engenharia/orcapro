@@ -423,7 +423,7 @@
     linhas.forEach(function (L) {
       var nome = String(L.etapaNome || "").trim();
       var chave = String(L.etapaId || nome || "");
-      if (!porEtapa[chave]) { porEtapa[chave] = { nome: nome, linhas: [] }; ordem.push(chave); }
+      if (!porEtapa[chave]) { porEtapa[chave] = { nome: nome, linhas: [], opcional: !!L.opcional }; ordem.push(chave); }
       porEtapa[chave].linhas.push({
         descricao: L.descricao || L.codigo || "",
         unidade: L.unidade || "",
@@ -433,9 +433,18 @@
         total: Util.num(L.precoTotal)
       });
     });
+    /* ⚠ O TOTAL DA PROPOSTA É O OBRIGATÓRIO. As etapas marcadas como
+       opcionais saem em `opcionais`, num bloco à parte com o próprio subtotal
+       — somá-las no total faria o cliente ler como preço fechado um serviço
+       que ele ainda vai decidir se quer. Sem nenhuma etapa opcional,
+       `precoObrigatorio === precoVenda` e nada muda (ver Orcamento.calcular). */
+    var todos = ordem.map(function (k) { return porEtapa[k]; });
     return {
-      grupos: ordem.map(function (k) { return porEtapa[k]; }),
-      total: Util.num(t.precoVenda)
+      grupos: todos.filter(function (g) { return !g.opcional; }),
+      opcionais: todos.filter(function (g) { return g.opcional; }),
+      total: Util.num(t.precoObrigatorio != null ? t.precoObrigatorio : t.precoVenda),
+      totalOpcional: Util.num(t.precoOpcional),
+      totalComOpcionais: Util.num(t.precoVenda)
     };
   };
 
@@ -482,12 +491,17 @@
     var b = Proposta.blocosParaModelo(orc);
     var legitimos = {};
     legitimos[_achatar(Util.fmtMoeda(b.total))] = 1;
-    b.grupos.forEach(function (g) {
+    /* ⚠ OS ADICIONAIS TAMBÉM SÃO LEGÍTIMOS. Etapa marcada como opcional sai de
+       `grupos` e entra em `opcionais`; esquecer o segundo bloco aqui faria a
+       auditoria acusar de "custo vazado" justamente o preço que o documento
+       precisa mostrar — e travaria a proposta por um defeito do auditor. */
+    b.grupos.concat(b.opcionais || []).forEach(function (g) {
       g.linhas.forEach(function (l) {
         legitimos[_achatar(Util.fmtMoeda(l.total))] = 1;
         legitimos[_achatar(Util.fmtMoeda(l.unitario))] = 1;
       });
     });
+    if (Util.num(b.totalOpcional) > 0) legitimos[_achatar(Util.fmtMoeda(b.totalOpcional))] = 1;
 
     var suspeitos = [];
     if (t.custoDireto > 0) suspeitos.push({ v: t.custoDireto, o: "o custo direto da obra" });

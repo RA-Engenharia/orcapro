@@ -1163,7 +1163,7 @@
        * escolher a obra, e no computador "às vezes" (dependia da tela). Valia para
        * lp-obra, tar-obra, pr-troca-obra, fs-semana e galeria-troca-obra. */
       if (e.target.closest && e.target.closest("select, option")) return;
-      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
+      var t = e.target.closest("[data-acao],[data-abrir],[data-del-orc],[data-aba],[data-add-item],[data-del-etapa],[data-edit-etapa],[data-del-item],[data-mover-etapa],[data-mover-item],[data-add-sub],[data-edit-sub],[data-del-sub],[data-mover-sub],[data-memoria],[data-ver-insumos],[data-base-remover],[data-atz-carregar],[data-atz-baixar],[data-conta],[data-instalar],[data-atu-base],[data-cp-add],[data-cp-del],[data-toggle-etapa],[data-opc-etapa],[data-etapa-foco],[data-view],[data-gacao],[data-gopen],[data-busca-abrir],[data-avisos-abrir],[data-ajuste],[data-ajustes-lista],[data-ajuste-restaurar],[data-coef-restaurar]");
       if (!t) return;
       // topbar: busca universal e central de avisos
       if (t.hasAttribute && t.hasAttribute("data-busca-abrir")) { if (typeof BuscaUI !== "undefined") BuscaUI.abrir(); return; }
@@ -1319,6 +1319,18 @@
       // abrir orçamento
       // excluir orçamento (ANTES do abrir: o botão fica dentro do card clicável)
       if (t.dataset.delOrc) { this.confirmarExcluirOrcamento(t.dataset.delOrc); return; }
+      if (t.dataset.opcEtapa) {
+        var _oe = this.orcAtual; if (!_oe) return;
+        var _et = (_oe.etapas || []).filter(function (x) { return x.id === t.dataset.opcEtapa; })[0];
+        if (!_et) return;
+        var virou = !_et.opcional;
+        Orcamento.marcarEtapaOpcional(_oe, t.dataset.opcEtapa, virou);
+        this.persistir(); this.render();
+        UI.toast(virou
+          ? '"' + (_et.nome || "Etapa") + '" vira ADICIONAL na proposta: sai fora do valor total, num bloco de opcionais. Na planilha e no Excel ela continua somando.'
+          : '"' + (_et.nome || "Etapa") + '" voltou para o valor fechado da proposta.', "ok");
+        return;
+      }
       if (t.dataset.abrir) { this.abrirOrcamento(t.dataset.abrir); return; }
       // adicionar item -> abre busca SINAPI. "etapaId" ou "etapaId|subEtapaId"
       if (t.dataset.addItem) {
