@@ -273,6 +273,70 @@
   };
 
   /* =====================================================================
+   * MANDAR PELO WHATSAPP — o canal em que a proposta realmente vai
+   *
+   * ⚠ O PDF NÃO VAI NO LINK. `wa.me` abre a conversa com um texto; o arquivo
+   *   quem anexa é a pessoa, no aparelho dela. Prometer "envio automático com
+   *   anexo" seria mentira — aqui o trabalho que se poupa é achar o contato,
+   *   escrever o texto e não errar o valor nem a validade.
+   * ⚠ E O NÚMERO É O DO CLIENTE, não o da empresa: sai do cadastro
+   *   (`clientes.telefone`) ou do contato digitado no orçamento.
+   * ===================================================================== */
+  function _soDigitos(v) { return String(v == null ? "" : v).replace(/\D/g, ""); }
+  Proposta.telefoneCliente = function (orc, cadastro) {
+    var n = _soDigitos((cadastro && (cadastro.telefone || cadastro.celular)) || "");
+    if (!n) n = _soDigitos((orc && orc.cliente && orc.cliente.contato) || "");
+    if (n.length < 10) return "";
+    return n.length <= 11 ? "55" + n : n;
+  };
+
+  /* o texto que abre a conversa: quem, o quê, quanto e até quando */
+  Proposta.textoWhatsApp = function (orc, empresa, hojeISO) {
+    var t = {};
+    try { t = Orcamento.totais(orc); } catch (e) {}
+    var v = Proposta.validade(orc, hojeISO);
+    var quem = Util.naoVazio(orc && orc.cliente && orc.cliente.nome) ? String(orc.cliente.nome).split(/\s+/)[0] : "";
+    var linhas = [];
+    linhas.push((quem ? "Olá, " + quem + "! " : "Olá! ") + "Segue a nossa proposta"
+      + (Util.naoVazio(orc && orc.nome) ? " para " + orc.nome : "") + ".");
+    if (Util.naoVazio(orc && orc.numero)) linhas.push("Proposta " + orc.numero + ".");
+    if (t.precoVenda) linhas.push("Valor: " + Util.fmtMoeda(t.precoVenda) + ".");
+    if (v.temData) linhas.push(v.texto.replace(/ —.*$/, "") + ".");
+    var c = (orc && orc.comercial) || {};
+    if (Util.naoVazio(c.prazoExecucao)) linhas.push("Prazo: " + String(c.prazoExecucao).trim().replace(/\.$/, "") + ".");
+    linhas.push("O PDF vai anexado aqui. Qualquer dúvida é só chamar.");
+    if (empresa && Util.naoVazio(empresa.nome)) linhas.push(String(empresa.nome));
+    return linhas.join("\n");
+  };
+
+  Proposta.linkWhatsApp = function (numero, texto) {
+    var n = _soDigitos(numero);
+    if (!n) return "";
+    return "https://wa.me/" + n + (texto ? "?text=" + encodeURIComponent(texto) : "");
+  };
+
+  /* a cobrança de quem sumiu: mesma conversa, outro assunto */
+  Proposta.textoFollowUp = function (orc, hojeISO) {
+    var v = Proposta.validade(orc, hojeISO);
+    var quem = Util.naoVazio(orc && orc.cliente && orc.cliente.nome) ? String(orc.cliente.nome).split(/\s+/)[0] : "";
+    var l = [(quem ? "Olá, " + quem + "! " : "Olá! ") + "Passando para saber se conseguiu ver a proposta"
+      + (Util.naoVazio(orc && orc.numero) ? " " + orc.numero : "") + "."];
+    if (v.temData && !v.vencida) l.push("Ela vale até " + v.ateBR + ".");
+    else if (v.temData && v.vencida) l.push("A validade dela venceu em " + v.ateBR + ", mas consigo revalidar os preços se ainda tiver interesse.");
+    l.push("Posso ajustar alguma coisa para facilitar?");
+    return l.join("\n");
+  };
+
+  /* dias desde o envio, para a tela cobrar quem sumiu */
+  Proposta.diasDesdeEnvio = function (orc, hojeISO) {
+    if (!Proposta.enviada(orc)) return null;
+    var a = new Date(String(orc.propostaEm).slice(0, 10) + "T12:00:00");
+    var b = new Date(String(hojeISO || Util.agoraISO()).slice(0, 10) + "T12:00:00");
+    if (isNaN(a.getTime()) || isNaN(b.getTime())) return null;
+    return Math.round((b - a) / 86400000);
+  };
+
+  /* =====================================================================
    * VALIDADE COM DATA — e não só a frase
    *
    * A base de contagem é o dia do ENVIO quando ele existe; antes disso, hoje.

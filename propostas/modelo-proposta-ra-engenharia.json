@@ -19,7 +19,8 @@
       "ornamento": "curvas",
       "rodape": "contatos",
       "fundoInternas": "claro",
-      "logoEscuro": "clarear"
+      "logoEscuro": "clarear",
+      "marcaDagua": "auto"
     },
     "paginas": [
       {
