@@ -311,6 +311,9 @@
       + K.campo("Traços da marca", K.sel("pme-ornamento", K.opts([["", "Sem ornamento"], ["curvas", "Curvas — traços nas capas e nos cantos das páginas"]], e.ornamento)))
       + K.campo("Rodapé das páginas", K.sel("pme-rodape", K.opts([["", "Sem rodapé"], ["contatos", "Contatos da empresa (links clicáveis no PDF)"]], e.rodape)))
       + K.campo("Páginas internas", K.sel("pme-fundoInternas", K.opts([["", "Escopo e condições em página escura"], ["claro", "Todas as páginas internas claras"]], e.fundoInternas)))
+      + K.campo("Carimbo de vencida", K.sel("pme-marcaDagua", K.opts([
+          ["", "Nunca carimbar"],
+          ["auto", "Carimbar VENCIDA quando a validade passar"]], e.marcaDagua)))
       + K.campo("Logo nas páginas escuras", K.sel("pme-logoEscuro", K.opts([
           ["", "Como ele é (logo claro)"],
           ["clarear", "Deixar branco (logo escuro — o mais comum)"],
@@ -1542,7 +1545,7 @@
       });
       var fm = K.v("pme-formato"); if (fm) e.formato = fm;
       var tx = document.getElementById("pme-textura"); e.textura = tx ? tx.value : e.textura;
-      ["ornamento", "rodape", "fundoInternas", "logoEscuro"].forEach(function (k) {
+      ["ornamento", "rodape", "fundoInternas", "logoEscuro", "marcaDagua"].forEach(function (k) {
         var sel = document.getElementById("pme-" + k);
         if (sel) e[k] = sel.value;
       });

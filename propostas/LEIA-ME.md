@@ -153,6 +153,40 @@ aprovação interna via 0% para sempre, e quem usa via 100% sem nenhuma venda.
 A carteira também passa a avisar **propostas enviadas sem resposta** há mais
 de 15 dias, que é onde costuma estar o dinheiro na mesa.
 
+## Mandar pelo WhatsApp, cobrar e padronizar
+
+- **WhatsApp em um clique** (barra do editor): abre a conversa com o cliente e
+  o texto pronto — nome, número da proposta, valor, validade e prazo. O número
+  sai do cadastro do cliente ou do contato do orçamento. *O PDF você anexa na
+  conversa*: `wa.me` não aceita anexo por link, e prometer isso seria mentira.
+  Ao abrir, o app oferece marcar a proposta como enviada hoje.
+- **Cobrar quem sumiu**: passados 5 dias do envio sem resposta, o mesmo botão
+  vira *Cobrar (Nd)* e o texto muda para uma cobrança educada, que menciona a
+  validade (ou se oferece para revalidar, quando já venceu).
+- **Padrão comercial da empresa** (Dados do orçamento): *Salvar como padrão*
+  guarda pagamento, prazo, validade, garantia, incluso e não incluso; *Usar o
+  padrão* preenche o formulário de qualquer outro orçamento. Ele **preenche e
+  não grava** — quem confere e salva é você, para não apagar em silêncio um
+  texto ajustado para aquele cliente.
+- **Legenda por foto** na galeria: "Residência em Uberlândia — 320 m² — 2025"
+  vende; três fotos mudas o cliente folheia sem parar.
+- **Carimbo VENCIDA**: o PDF sai do computador e vive por conta própria. Com
+  *Carimbar VENCIDA quando a validade passar* (Cor e letra), quem recebe o
+  arquivo velho vê na hora que aquele preço expirou.
+
+## O "Montar com a IA" e o servidor
+
+O botão sempre chamou `POST {iaBackend}/ia/modelo-proposta`, e **o servidor
+responde 404: essa rota nunca foi implementada no VPS**. Por isso ele nunca
+funcionou de verdade — no app publicado ele funciona hoje porque monta a
+estrutura no próprio navegador quando a IA não responde.
+
+Para ganhar os textos escritos pela IA, falta subir a rota no servidor.
+`propostas/servidor-ia-modelo-proposta.js` traz ela pronta: o contrato que o
+app espera, o prompt com as regras (não inventar fato, não escrever preço nem
+prazo), a limpeza da resposta e o cuidado de nunca devolver 500 — um 500 vira
+"erro de rede" na tela e manda o usuário procurar defeito na internet dele.
+
 ## 2. Como subir um orçamento para o OrçaPRO
 
 Três caminhos, todos caem na mesma rotina do app (`app/js/pacote.js`):

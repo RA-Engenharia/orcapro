@@ -60,6 +60,8 @@ MODELO = {
             # o logo da RA é azul-marinho: em página escura ele sai na versão
             # negativa (branco), senão desapareceria na capa
             "logoEscuro": "clarear",
+            # proposta vencida circulando é preço velho sendo cobrado
+            "marcaDagua": "auto",
         },
         "paginas": [
             {"id": "p1", "tipo": "capa", "titulo": "PROPOSTA", "subtitulo": "COMERCIAL",

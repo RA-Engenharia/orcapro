@@ -599,12 +599,98 @@
           + "Enviada " + Util.esc(Proposta.dataBR(orc.propostaEm))
           + (v.temData ? (v.vencida ? " · vencida" : (v.faltam != null && v.faltam <= 3 ? " · vence em " + v.faltam + "d" : "")) : "") + "</span>";
       }
+      /* o canal em que a proposta realmente vai: abre a conversa com o texto
+         pronto (valor, validade, prazo). O PDF quem anexa é a pessoa. */
+      var zap = "";
+      var cli = null;
+      try { cli = orc.clienteId ? Store.obter(Auth.empresaId(), "clientes", orc.clienteId) : null; } catch (eC) {}
+      var fone = Proposta.telefoneCliente(orc, cli);
+      if (fone) {
+        var dias = Proposta.diasDesdeEnvio(orc, Util.agoraISO());
+        var cobrar = (est === "enviada" && dias != null && dias >= 5);
+        zap = '<button class="btn sm" data-acao="proposta-whatsapp" title="'
+          + (cobrar ? "Enviada há " + dias + " dias sem resposta — abre a conversa com uma cobrança educada"
+                    : "Abre a conversa no WhatsApp com o texto pronto (o PDF você anexa)") + '">'
+          + (typeof Icones !== "undefined" ? Icones.get("celular", 15) : "")
+          + (cobrar ? "Cobrar (" + dias + "d)" : "WhatsApp") + "</button>";
+      }
       var btn = (est === "rascunho")
         ? '<button class="btn sm" data-acao="proposta-enviada" title="Registra que a proposta foi ao cliente. É esta data que vale a validade e o funil de conversão.">'
           + (typeof Icones !== "undefined" ? Icones.get("enviar", 15) : "") + "Marcar como enviada</button>"
         : '<button class="btn sm" data-acao="proposta-resposta" title="O que o cliente respondeu">'
           + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + (est === "enviada" ? "Resposta do cliente" : "Alterar resposta") + "</button>";
-      return selo + btn;
+      return selo + zap + btn;
+    },
+
+    /* abre a conversa com o cliente — texto de envio ou de cobrança */
+    abrirPropostaWhatsApp: function () {
+      var o = this.orcAtual; if (!o) return;
+      var cli = null;
+      try { cli = o.clienteId ? Store.obter(Auth.empresaId(), "clientes", o.clienteId) : null; } catch (e) {}
+      var fone = Proposta.telefoneCliente(o, cli);
+      if (!fone) { UI.toast("Este cliente não tem telefone: preencha em Gestão › Clientes ou no contato do orçamento.", "erro"); return; }
+      var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
+      var enviada = Proposta.enviada(o);
+      var dias = Proposta.diasDesdeEnvio(o, Util.agoraISO());
+      var cobrar = enviada && dias != null && dias >= 5 && Proposta.estadoComercial(o) === "enviada";
+      var texto = cobrar ? Proposta.textoFollowUp(o, Util.agoraISO()) : Proposta.textoWhatsApp(o, emp, Util.agoraISO());
+      var self = this;
+      UI.modal(cobrar ? "Cobrar a resposta no WhatsApp" : "Enviar pelo WhatsApp",
+        '<p class="muted" style="margin:0 0 8px">Abre a conversa com este texto. <b>O PDF você anexa na conversa</b> — '
+        + "o WhatsApp não aceita anexo por link.</p>"
+        + '<div class="field"><label>Para</label><input value="+' + Util.esc(fone) + '" readonly></div>'
+        + '<div class="field"><label>Mensagem (dá para editar antes de abrir)</label><textarea id="pw-txt" rows="8">' + Util.esc(texto) + "</textarea></div>"
+        + (!enviada ? '<label style="display:flex;gap:8px;align-items:center;font-size:12.5px;cursor:pointer">'
+            + '<input type="checkbox" id="pw-marcar" checked> Marcar a proposta como <b>enviada hoje</b> (é o que faz a validade e o funil contarem)</label>' : ""),
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Abrir WhatsApp", classe: "primary", onClick: function () {
+             var msg = (UI.el("pw-txt") || {}).value || texto;
+             var marcar = !enviada && !!(UI.el("pw-marcar") || {}).checked;
+             var url = Proposta.linkWhatsApp(fone, msg);
+             UI.fecharModal();
+             if (marcar) {
+               Proposta.registrarEnvio(o, { canal: "whatsapp", quando: Util.agoraISO(), por: (Empresa.nomeUsuario && Empresa.nomeUsuario()) || "" });
+               self.persistir(); self.render();
+               UI.toast("Proposta marcada como enviada hoje.", "ok");
+             }
+             try { window.open(url, "_blank", "noopener"); } catch (e2) { location.href = url; }
+         } }]);
+    },
+
+    /* ---- o padrão comercial da empresa (js prefs), aplicado a qualquer orçamento ---- */
+    _COMERCIAL_PADRAO: ["condicoesPagamento", "prazoExecucao", "validadeProposta", "validadeDias", "garantia", "incluso", "excluso"],
+    _comercialPadrao: function () {
+      try { return (Store.lerPrefs(Auth.empresaId()) || {}).comercialPadrao || null; } catch (e) { return null; }
+    },
+    salvarComercialPadrao: function () {
+      var d = {};
+      var campos = { condicoesPagamento: "ed-pag", prazoExecucao: "ed-prazo", validadeProposta: "ed-val",
+        garantia: "ed-gar", incluso: "ed-inc", excluso: "ed-exc" };
+      for (var k in campos) if (Object.prototype.hasOwnProperty.call(campos, k)) d[k] = (UI.el(campos[k]) || {}).value || "";
+      d.validadeDias = Util.num((UI.el("ed-valdias") || {}).value);
+      try {
+        var p = Store.lerPrefs(Auth.empresaId()) || {};
+        p.comercialPadrao = d; p.comercialPadraoEm = Util.agoraISO();
+        Store.salvarPrefs(Auth.empresaId(), p);
+      } catch (e) { UI.toast("Não consegui guardar: " + (e.message || e), "erro"); return; }
+      UI.toast("Padrão da empresa guardado. Ele aparece como opção nos próximos orçamentos.", "ok");
+    },
+    usarComercialPadrao: function () {
+      var d = this._comercialPadrao();
+      if (!d) { UI.toast("Nenhum padrão guardado ainda.", "erro"); return; }
+      var campos = { condicoesPagamento: "ed-pag", prazoExecucao: "ed-prazo", validadeProposta: "ed-val",
+        garantia: "ed-gar", incluso: "ed-inc", excluso: "ed-exc" };
+      for (var k in campos) {
+        if (!Object.prototype.hasOwnProperty.call(campos, k)) continue;
+        var el = UI.el(campos[k]);
+        if (el && d[k] != null) el.value = d[k];
+      }
+      var dv = UI.el("ed-valdias");
+      if (dv && d.validadeDias != null) dv.value = d.validadeDias;
+      /* ⚠ NÃO GRAVA: preenche o formulário e deixa a pessoa conferir e salvar.
+         Escrever direto no orçamento faria "usar o padrão" apagar em silêncio
+         um texto que alguém ajustou para ESTE cliente. */
+      UI.toast("Campos preenchidos com o padrão. Confira e clique em Salvar.", "ok");
     },
 
     /* registra o ENVIO ao cliente */
@@ -1442,6 +1528,9 @@
         case "proposta": this.gerarProposta(); break;
         case "proposta-enviada": this.abrirPropostaEnviada(); break;
         case "proposta-resposta": this.abrirPropostaResposta(); break;
+        case "proposta-whatsapp": this.abrirPropostaWhatsApp(); break;
+        case "comercial-salvar-padrao": this.salvarComercialPadrao(); break;
+        case "comercial-usar-padrao": this.usarComercialPadrao(); break;
         case "apresentar": {
           if (!this.orcAtual || typeof Apresentacao === "undefined") { UI.toast("Abra um orçamento primeiro.", "erro"); break; }
           // apresentação é cara ao cliente: não projeta orçamento com item zerado
@@ -4153,7 +4242,15 @@
         '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
         '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>' +
-        '<div class="field"><label>Link da planilha desta proposta (URL do Excel — vira o botão "Abrir planilha" no PDF)</label><input id="ed-planilha" value="' + Util.esc(c.linkPlanilha || "") + '" placeholder="https://…/proposta.xlsx"></div>',
+        '<div class="field"><label>Link da planilha desta proposta (URL do Excel — vira o botão "Abrir planilha" no PDF)</label><input id="ed-planilha" value="' + Util.esc(c.linkPlanilha || "") + '" placeholder="https://…/proposta.xlsx"></div>' +
+        /* ⚠ ISTO NÃO É ENFEITE: pagamento, garantia, incluso e não incluso são
+           os MESMOS textos em toda proposta da empresa, e eram reescritos (ou
+           esquecidos) a cada orçamento. Guardar uma vez e aplicar é o que faz
+           a cláusula ser igual no documento de todo mundo. */
+        '<div class="flex" style="gap:8px;margin-top:4px">'
+        + '<button class="btn sm ghost" data-acao="comercial-salvar-padrao" type="button" title="Guarda pagamento, prazo, validade, garantia, incluso e não incluso como o padrão da sua empresa">Salvar como padrão da empresa</button>'
+        + (App._comercialPadrao() ? '<button class="btn sm ghost" data-acao="comercial-usar-padrao" type="button" title="Preenche os campos acima com o padrão guardado">Usar o padrão da empresa</button>' : "")
+        + "</div>",
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Salvar", classe: "primary", onClick: function () {

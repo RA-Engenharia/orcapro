@@ -126,6 +126,12 @@
       imagens: 3,
       campos: [
         { id: "titulo", nome: "Título", padrao: "O que inclui no projeto" },
+        /* ⚠ FOTO SEM LEGENDA NÃO É PROVA. "Obra em Uberlândia, 320 m², 2025"
+           vende; três fotos mudas o cliente folheia sem parar. A legenda geral
+           continua embaixo, para quando o conjunto é que precisa de contexto. */
+        { id: "cap1", nome: "Legenda da 1ª imagem", dica: "Ex.: Residência em Uberlândia — 320 m² — 2025" },
+        { id: "cap2", nome: "Legenda da 2ª imagem" },
+        { id: "cap3", nome: "Legenda da 3ª imagem" },
         { id: "legenda", nome: "Legenda abaixo das imagens", tipo: "multi" }
       ]
     },
@@ -609,7 +615,12 @@
          ""         — desenha como veio (o que sempre foi; não mexe em modelo pronto)
          "clarear"  — versão negativa: o logo vira branco só nas páginas cheias
          "pastilha" — o logo colorido sobre uma pastilha branca */
-    logoEscuro: ""
+    logoEscuro: "",
+    /* ⚠ PROPOSTA VENCIDA CIRCULANDO É PREÇO VELHO SENDO COBRADO. O PDF sai do
+       computador e vive por conta própria: sem uma marca no papel, ninguém que
+       o recebe sabe que ele expirou. "auto" carimba VENCIDA quando a validade
+       passou — e não carimba nada enquanto ela vale. */
+    marcaDagua: ""
   };
 
   PropTpl.modelo = function (t) {
@@ -627,6 +638,7 @@
     if (estilo.rodape !== "contatos") estilo.rodape = "";
     if (estilo.fundoInternas !== "claro") estilo.fundoInternas = "";
     if (estilo.logoEscuro !== "clarear" && estilo.logoEscuro !== "pastilha") estilo.logoEscuro = "";
+    if (estilo.marcaDagua !== "auto") estilo.marcaDagua = "";
     if (!/^#[0-9a-fA-F]{6}$/.test(estilo.corDestaque2)) estilo.corDestaque2 = "";
 
     var paginas = arr(m.paginas).map(function (p, i) {
@@ -890,7 +902,7 @@
         corDestaque: "#7A6B4E", corDestaque2: "#3F7D22", corFundoEscuro: "#0F2F4A",
         textura: "", fonte: "montserrat", formato: "a4",
         ornamento: "curvas", rodape: "contatos", fundoInternas: "claro",
-        logoEscuro: "clarear"
+        logoEscuro: "clarear", marcaDagua: "auto"
       },
       paginas: [
         { id: "p1", tipo: "capa", titulo: "PROPOSTA", subtitulo: "COMERCIAL", chamada: "Engenharia com precisão, do orçamento à entrega", mostrarCliente: true, mostrarNumero: true, mostrarLogo: true },
@@ -998,6 +1010,8 @@
     var emp = d.empresa || {};
     var links = d.links || {};
     var logoHTML = logoDoc(m, d);
+    /* a tarja só existe quando há motivo: validade vencida (ver Proposta.validade) */
+    var carimbo = (m.estilo.marcaDagua === "auto" && d.validade && d.validade.vencida) ? "VENCIDA" : "";
     var vertical = m.estilo.formato === "vertical";
     var orn = m.estilo.ornamento === "curvas";
     var comRodape = m.estilo.rodape === "contatos";
@@ -1052,9 +1066,13 @@
           + (txt(p.fechamento) ? '<p class="tp-p tp-solto">' + escML(p.fechamento) + "</p>" : "");
       }
       else if (p.tipo === "imagens") {
+        function figura(alt, cap) {
+          var img = proxImg(alt, "tp-gal");
+          return txt(cap) ? '<figure class="tp-fig">' + img + "<figcaption>" + esc(cap) + "</figcaption></figure>" : img;
+        }
         corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
           + '<div class="tp-galeria">'
-          + proxImg("imagem 1 do projeto", "tp-gal") + proxImg("imagem 2 do projeto", "tp-gal") + proxImg("imagem 3 do projeto", "tp-gal")
+          + figura("imagem 1 do projeto", p.cap1) + figura("imagem 2 do projeto", p.cap2) + figura("imagem 3 do projeto", p.cap3)
           + "</div>"
           + (txt(p.legenda) ? '<p class="tp-leg">' + escML(p.legenda) + "</p>" : "");
       }
@@ -1125,6 +1143,7 @@
       var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento");
       var escuro = !internasClaras && (p.tipo === "texto" || p.tipo === "condicoes" || p.tipo === "imagens");
       if (!cheia) corpo = ornCanto + corpo + rodape;
+      if (carimbo) corpo = '<div class="tp-wm">' + esc(carimbo) + "</div>" + corpo;
       var cls = "tp-pg" + (vertical ? " tp-vert" : "")
         + (cheia ? " tp-cheia" : "")
         + (cheia && m.estilo.logoEscuro ? " tp-logo-" + m.estilo.logoEscuro : "")
@@ -1454,6 +1473,8 @@
       ".tp-leg{font-size:calc(10.5pt * var(--tp-esc-txt,1));margin:4mm 0 0;opacity:.9}",
       ".tp-galeria{display:flex;flex-direction:column;gap:5mm}",
       ".tp-gal{width:100%;height:52mm;object-fit:cover;display:block}",
+      ".tp-fig{margin:0}",
+      ".tp-fig figcaption{font-size:calc(9.5pt * var(--tp-esc-txt,1));margin-top:1.5mm;opacity:.9}",
       ".tp-vert .tp-gal{height:44mm}",
       ".tp-tbl{width:100%;border-collapse:collapse;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
       ".tp-tbl th{background:var(--tp-titulo);color:#fff;text-align:left;padding:4mm 4mm;font-weight:600}",
@@ -1501,6 +1522,10 @@
       ".tp-escura .tp-serv-card b{color:#fff}",
       ".tp-serv-card span{font-size:10.5pt;line-height:1.45;display:block}",
       ".tp-end{font-size:10.5pt;opacity:.85;margin-top:2mm}",
+      /* marca d'água: atrás do conteúdo, sem roubar o clique nem o texto */
+      ".tp-wm{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:2;"
+        + "font-family:var(--tp-f-tit);font-size:64pt;font-weight:800;letter-spacing:8px;color:rgba(220,38,38,.16);transform:rotate(-28deg)}",
+      ".tp-cheia .tp-wm{color:rgba(255,255,255,.22)}",
       /* ---- cronograma ---- */
       ".tp-cr{font-size:calc(9pt * var(--tp-esc-txt,1))}",
       ".tp-cr th,.tp-cr td{padding:2mm 2.4mm}",
@@ -1682,6 +1707,8 @@
     estilo.fundoInternas = tom.fundoInternas;
     /* o logo da empresa costuma ser escuro, e toda capa aqui é escura */
     estilo.logoEscuro = "clarear";
+    /* proposta vencida circulando é preço velho sendo cobrado */
+    estilo.marcaDagua = "auto";
 
     var paginas = [], n = 0;
     function pg(o) { o.id = "p" + (++n); paginas.push(o); return o; }
