@@ -1,50 +1,84 @@
-# Propostas e pacotes de orçamento
+# Propostas, pacotes de orçamento e o modelo RA Engenharia
 
-Esta pasta guarda propostas comerciais montadas fora do app (HTML + PDF) e o
-**pacote de orçamento** (`*.orcapro.json`) que sobe o mesmo orçamento para o
-OrçaPRO já cadastrado: etapas, itens, BDI, condições comerciais, cliente e obra.
+Esta pasta guarda propostas comerciais montadas fora do app (HTML + PDF + Excel),
+o **pacote de orçamento** (`*.orcapro.json`) que sobe o mesmo orçamento para o
+OrçaPRO já cadastrado, e o **modelo de proposta** padrão da RA Engenharia
+(`modelo-proposta-ra-engenharia.json`).
 
-## Como subir um orçamento para o OrçaPRO
+## 1. Modelo de proposta RA Engenharia (o template)
+
+Arquivo: `modelo-proposta-ra-engenharia.json` (gerado por `gerar-modelo-ra.py`).
+É um modelo do motor "Modelos de proposta" do app, com:
+
+- capa com as curvas da marca, logo, cliente, número e data da proposta;
+- "Quem somos" e "O que fazemos" (cartões);
+- escopo lido do orçamento (Incluso / Não incluso dos Dados do orçamento);
+- investimento por etapa, condições de pagamento, condições gerais, aceite;
+- página de contato com **links clicáveis no PDF**: telefone, WhatsApp, e-mail,
+  site, Instagram, e os botões "Falar no WhatsApp" e "Abrir a planilha desta
+  proposta (Excel)";
+- rodapé com os contatos da empresa em todas as páginas internas, também clicável.
+
+### Como trazer o modelo para o app
+
+- **Link:** `https://ra-engenharia.github.io/orcapro/app/?importar=../propostas/modelo-proposta-ra-engenharia.json`
+- **Arquivo:** Orçamentos › Modelos de proposta › "Trazer de um arquivo", ou
+  `💾 Backup › Restaurar` (o mesmo campo reconhece o modelo).
+
+Depois ele aparece em `Gerar Proposta › Com qual desenho?`. Para outro usuário
+do sistema usar, basta enviar o `.json` ou o link acima; ele edita textos, cores e
+páginas em Modelos de proposta.
+
+### O que preencher uma vez em ⚙ Empresa
+
+Razão social, CNPJ, responsável técnico, endereço, **telefone, WhatsApp
+(só números, com DDD), e-mail, site e Instagram** e o **logo** (PNG). O modelo
+completa os contatos da página "Fale conosco" e do rodapé a partir daí.
+
+### O botão da planilha
+
+Em `Dados do orçamento › Link da planilha desta proposta` cole a URL do Excel.
+Sem URL, o botão não aparece. Para propostas geradas por esta pasta, o gerador
+publica o `.xlsx` no GitHub Pages e já grava o link no pacote.
+
+### Onde o motor ganhou recursos (app/js/proptpl.js)
+
+- estilo: `corDestaque2` (2ª cor), `ornamento: "curvas"`, `rodape: "contatos"`,
+  `fundoInternas: "claro"`;
+- blocos: novo `servicos` (O que fazemos); `capa.mostrarNumero`;
+  `texto.usarComercial`; `contato` com whatsapp, e-mail, endereço, botões e
+  `mostrarFoto`;
+- links viram `<a href>` no HTML, e o navegador os guarda no PDF;
+- `PropTpl.css(formato)` fixa o tamanho do papel (A4 ou vertical). Antes, uma
+  máquina com papel padrão Carta imprimia cada página A4 em duas;
+- a escala de título/texto do editor agora multiplica o tamanho de cada bloco
+  (antes igualava todos os títulos ao tamanho do texto).
+
+Também há o modelo de fábrica neutro "Engenharia moderno" com o mesmo desenho,
+sem os textos da RA.
+
+## 2. Como subir um orçamento para o OrçaPRO
 
 Três caminhos, todos caem na mesma rotina do app (`app/js/pacote.js`):
 
-1. **Link (subir direto).** Abra o app com o parâmetro `?importar=` apontando
-   para o JSON publicado. Exemplo com o pacote da MY Engenharia:
+1. **Link.** `https://ra-engenharia.github.io/orcapro/app/?importar=../propostas/<arquivo>.orcapro.json`
+   No OrçaPRO instalado no computador use a URL completa do GitHub Pages.
+2. **Arquivo.** `💾 Backup › Restaurar de um backup (.json)`.
+3. **Console.** `Pacote.aplicar(dump)`.
 
-   ```
-   https://ra-engenharia.github.io/orcapro/app/?importar=../propostas/2026-09-02-MY-Engenharia-mao-de-obra-PC-2026-0902-01.orcapro.json
-   ```
+Regras: mescla por `id`, o mais novo vence, nada é apagado, reimportar não
+duplica, só `clientes` e `obras` entram além do orçamento, item sem preço ou
+quantidade reprova.
 
-   No OrçaPRO instalado no computador (localhost) use a URL completa do GitHub
-   Pages no lugar do caminho relativo. O app baixa o pacote, mostra o que vem
-   (orçamento, total, cliente, obra) e pede confirmação antes de gravar.
-   Se você ainda não estiver logado, ele espera o login e continua.
+## 3. Gerar proposta, pacote e Excel
 
-2. **Arquivo.** No app, `💾 Backup › Restaurar de um backup (.json)` e escolha
-   o `*.orcapro.json`. O app reconhece o pacote e abre a mesma confirmação.
-
-3. **Console.** `Pacote.aplicar(dump)` com o JSON já carregado.
-
-### Regras de mesclagem
-
-- Mescla por `id`; o registro mais novo (`atualizadoEm`) vence. Nada é apagado.
-- Reimportar o mesmo arquivo não duplica nada (os ids são determinísticos).
-- Gerar o pacote de novo produz um carimbo mais novo: ao reimportar, ele
-  **substitui** o que estiver no app com o mesmo id, inclusive edições feitas
-  lá. Edite no gerador ou no app, não nos dois.
-- Um pacote só pode trazer `clientes` e `obras` além do orçamento. Qualquer
-  outra entidade reprova o arquivo.
-- Item sem preço ou sem quantidade reprova o arquivo (zero não é preço).
-
-## Gerar um pacote
-
-`orcapro_pacote.py` é a biblioteca; `gerar-proposta-my-engenharia.py` é o
-exemplo completo (gera HTML da proposta + pacote). Na raiz do repositório:
+`orcapro_pacote.py` é a biblioteca; `gerar-proposta-my-engenharia.py` é o exemplo
+completo (HTML da proposta + pacote + `.xlsx`). Na raiz do repositório:
 
 ```
 python3 propostas/gerar-proposta-my-engenharia.py
+python3 propostas/gerar-modelo-ra.py
 ```
 
-Para um orçamento novo, copie o exemplo e troque cliente, obra, itens e preços.
-Os preços de referência saem de `app/data/sinapi-<UF>-analitico.json`
-(parcela `custoMO` de cada composição), nunca de números inventados.
+Preços de referência saem de `app/data/sinapi-<UF>-analitico.json` (parcela
+`custoMO`), nunca de números inventados.

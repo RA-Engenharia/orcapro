@@ -92,6 +92,7 @@
         { id: "subtitulo", nome: "Segunda linha do título", dica: "PROJETO", padrao: "PROJETO" },
         { id: "chamada", nome: "Linha de apoio", dica: "Exclusivo em madeira | Sua Empresa" },
         { id: "mostrarCliente", nome: "Escrever o nome do cliente na capa", tipo: "sim_nao", padrao: true },
+        { id: "mostrarNumero", nome: "Escrever o número e a data da proposta na capa", tipo: "sim_nao", padrao: false },
         { id: "mostrarLogo", nome: "Logo da empresa na capa", tipo: "sim_nao", padrao: true }
       ]
     },
@@ -104,6 +105,18 @@
         { id: "titulo", nome: "Título", padrao: "QUEM SOMOS" },
         { id: "texto", nome: "Texto", tipo: "multi", dica: "Duas a quatro linhas. Quem é a empresa e o que ela entrega." },
         { id: "mostrarLogo", nome: "Logo no topo", tipo: "sim_nao", padrao: true }
+      ]
+    },
+    {
+      tipo: "servicos",
+      nome: "O que fazemos",
+      resumo: "Título, uma frase de abertura e os serviços em cartões (título | descrição).",
+      imagens: 0,
+      campos: [
+        { id: "titulo", nome: "Título", padrao: "O QUE FAZEMOS" },
+        { id: "abertura", nome: "Frase de abertura", tipo: "multi", dica: "Uma ou duas linhas sobre como a empresa trabalha." },
+        { id: "itens", nome: "Serviços", tipo: "multi", dica: "Uma linha por serviço: Título | descrição curta" },
+        { id: "fechamento", nome: "Frase de fechamento", tipo: "multi" }
       ]
     },
     {
@@ -127,7 +140,8 @@
         { id: "rotuloLista", nome: "Frase antes da lista", padrao: "O escopo contempla:" },
         { id: "itens", nome: "Itens do escopo", tipo: "multi", dica: "Uma linha por item." },
         { id: "obsTitulo", nome: "Rótulo da observação", padrao: "Observação:" },
-        { id: "observacao", nome: "Observação", tipo: "multi", dica: "O que NÃO está incluso costuma ir aqui — é o que evita discussão depois." }
+        { id: "observacao", nome: "Observação", tipo: "multi", dica: "O que NÃO está incluso costuma ir aqui — é o que evita discussão depois." },
+        { id: "usarComercial", nome: "Com os campos acima vazios, usar o Incluso / Não incluso do orçamento", tipo: "sim_nao", padrao: false }
       ]
     },
     {
@@ -177,6 +191,14 @@
         { id: "redes", nome: "Rede social", dica: "@suaempresa" },
         { id: "telefone", nome: "Telefone", dica: "47 90000-0000" },
         { id: "site", nome: "Site ou link", dica: "www.suaempresa.com.br" },
+        { id: "whatsapp", nome: "WhatsApp (só números, com DDD)", dica: "34999990000" },
+        { id: "email", nome: "E-mail", dica: "contato@suaempresa.com.br" },
+        { id: "endereco", nome: "Endereço", dica: "Rua, nº — Bairro — Cidade/UF" },
+        { id: "usarEmpresa", nome: "Completar com os canais cadastrados em ⚙ Empresa", tipo: "sim_nao", padrao: true },
+        { id: "textoZap", nome: "Texto do botão do WhatsApp", padrao: "Falar no WhatsApp" },
+        { id: "botaoPlanilha", nome: "Botão para abrir a planilha da proposta (quando o orçamento tiver o link)", tipo: "sim_nao", padrao: true },
+        { id: "mostrarFoto", nome: "Mostrar a foto da equipe", tipo: "sim_nao", padrao: true },
+        { id: "textoBotao", nome: "Texto do botão da planilha", padrao: "Abrir a planilha desta proposta (Excel)" },
         { id: "molduraCelular", nome: "Mostrar a foto dentro de um celular", tipo: "sim_nao", padrao: true }
       ]
     },
@@ -454,6 +476,7 @@
   PropTpl.FORMAS_DO_BLOCO = {
     capa:         { regua: false, marcador: false },
     sobre:        { regua: false, marcador: false },
+    servicos:     { regua: true,  marcador: false },
     imagens:      { regua: true,  marcador: false },
     texto:        { regua: true,  marcador: true },
     investimento: { regua: false, marcador: false },
@@ -548,7 +571,16 @@
     corFundoEscuro: "#5C3A1E",
     textura: "",
     fonte: "condensada",
-    formato: "a4"
+    formato: "a4",
+    /* ---- acrescentados com o modelo "Engenharia moderno" ----
+       corDestaque2: segunda cor de destaque (curvas, botões). Vazio = corDestaque.
+       ornamento:    "" | "curvas" — traços curvos da marca nas capas e nos cantos.
+       rodape:       "" | "contatos" — rodapé com os canais da empresa, clicáveis no PDF.
+       fundoInternas:"" | "claro" — "claro" tira o fundo escuro de escopo/condições. */
+    corDestaque2: "",
+    ornamento: "",
+    rodape: "",
+    fundoInternas: ""
   };
 
   PropTpl.modelo = function (t) {
@@ -562,6 +594,10 @@
     }
     /* formato só aceita os dois que o CSS de impressão conhece */
     if (estilo.formato !== "vertical") estilo.formato = "a4";
+    if (estilo.ornamento !== "curvas") estilo.ornamento = "";
+    if (estilo.rodape !== "contatos") estilo.rodape = "";
+    if (estilo.fundoInternas !== "claro") estilo.fundoInternas = "";
+    if (!/^#[0-9a-fA-F]{6}$/.test(estilo.corDestaque2)) estilo.corDestaque2 = "";
 
     var paginas = arr(m.paginas).map(function (p, i) {
       var b = PropTpl.bloco(p && p.tipo);
@@ -794,6 +830,29 @@
       ]
     },
     {
+      id: "tpl-engenharia-moderno",
+      nome: "Engenharia moderno",
+      descricao: "A4 com traços curvos da marca, quem somos, o que fazemos, escopo, investimento e contatos clicáveis no PDF. Sem foto obrigatória.",
+      estilo: {
+        corTitulo: "#12395A", corTexto: "#26303A", corFundo: "#FFFFFF",
+        corDestaque: "#7A6B4E", corDestaque2: "#3F7D22", corFundoEscuro: "#0F2F4A",
+        textura: "", fonte: "montserrat", formato: "a4",
+        ornamento: "curvas", rodape: "contatos", fundoInternas: "claro"
+      },
+      paginas: [
+        { id: "p1", tipo: "capa", titulo: "PROPOSTA", subtitulo: "COMERCIAL", chamada: "Engenharia com precisão, do orçamento à entrega", mostrarCliente: true, mostrarNumero: true, mostrarLogo: true },
+        { id: "p2", tipo: "sobre", titulo: "QUEM SOMOS", texto: "Somos uma empresa de engenharia que une planejamento, orçamento e execução. Trabalhamos com responsabilidade técnica, transparência de custos e prazo cumprido.", mostrarLogo: true },
+        { id: "p3", tipo: "servicos", titulo: "O QUE FAZEMOS", abertura: "Atendemos do estudo inicial à entrega da obra, com o mesmo time do início ao fim.",
+          itens: "Orçamentos e planejamento | Planilhas com bases oficiais, BDI e cronograma físico-financeiro.\nExecução de obras | Equipe própria, acompanhamento técnico e medições periódicas.\nProjetos e compatibilização | Projetos executivos e modelagem BIM para evitar retrabalho.\nLaudos e consultoria | Vistorias, laudos técnicos e apoio em licitações.",
+          fechamento: "" },
+        { id: "p4", tipo: "texto", titulo: "Escopo dos serviços", rotuloLista: "Está incluso:", obsTitulo: "Não está incluso:", usarComercial: true },
+        { id: "p5", tipo: "investimento", titulo: "INVESTIMENTO", colTrabalho: "Serviço", colValor: "Valor", tituloPagamento: "CONDIÇÕES DE PAGAMENTO", detalhar: true, tipografia: { escalaTitulo: 90, escalaTexto: 90 } },
+        { id: "p6", tipo: "condicoes", titulo: "Condições gerais", usarPrazo: true, usarGarantia: true },
+        { id: "p7", tipo: "assinatura", titulo: "ACEITE DA PROPOSTA", texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.", mostrarValidade: true },
+        { id: "p8", tipo: "contato", titulo: "FALE CONOSCO", usarEmpresa: true, botaoPlanilha: true, mostrarFoto: false, molduraCelular: false }
+      ]
+    },
+    {
       id: "tpl-uma-pagina",
       nome: "Uma página",
       descricao: "Tudo numa folha só: escopo curto, preço e condições. Para orçamento pequeno e resposta rápida.",
@@ -857,7 +916,24 @@
     var b = d.blocos || {};
     var com = d.comercial || {};
     var emp = d.empresa || {};
+    var links = d.links || {};
     var vertical = m.estilo.formato === "vertical";
+    var orn = m.estilo.ornamento === "curvas";
+    var comRodape = m.estilo.rodape === "contatos";
+    var internasClaras = m.estilo.fundoInternas === "claro";
+
+    /* página inteira SEM foto: com o ornamento ligado, o fundo é a cor escura
+       com as curvas — sem ele, o quadro listrado de sempre pedindo a foto */
+    function proxImgCheia(alt) {
+      var n = nSlot + 1;
+      var ref = imgs[String(n)] || (sl[n - 1] && sl[n - 1].ref) || null;
+      var temFoto = !!txt(ref && (ref.dataURI || ref.d));
+      if (!temFoto && orn) { nSlot++; return '<div class="tp-bg tp-bg-cor"></div>'; }
+      return proxImg(alt, "tp-bg");
+    }
+    var ornCheia = orn ? curvas("cheia") : "";
+    var ornCanto = orn ? (curvas("canto") + curvas("pe")) : "";
+    var rodape = comRodape ? rodapeContatos(emp) : "";
 
     var partes = m.paginas.map(function (p) {
       var bl = PropTpl.bloco(p.tipo);
@@ -865,21 +941,34 @@
       var corpo = "";
 
       if (p.tipo === "capa") {
-        corpo = '<div class="tp-full">' + proxImg("foto de capa", "tp-bg") + '<div class="tp-sombra"></div>'
+        corpo = '<div class="tp-full">' + proxImgCheia("foto de capa") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-capa-txt">'
           + (p.mostrarLogo && d.logoHTML ? '<div class="tp-logo">' + d.logoHTML + "</div>" : "")
           + '<h1 class="tp-h1">' + esc(p.titulo) + (p.subtitulo ? '<br><span>' + esc(p.subtitulo) + "</span>" : "") + "</h1>"
           + (p.chamada ? '<p class="tp-chamada">' + esc(p.chamada) + "</p>" : "")
           + (p.mostrarCliente && d.cliente ? '<p class="tp-cli">' + esc(d.cliente) + "</p>" : "")
+          + (p.mostrarNumero && (txt(d.numero) || txt(d.data)) ? '<p class="tp-cli tp-num-capa">'
+              + (txt(d.numero) ? "Proposta " + esc(d.numero) : "") + (txt(d.numero) && txt(d.data) ? " · " : "") + (txt(d.data) ? esc(dia(d.data)) : "") + "</p>" : "")
           + "</div></div>";
       }
       else if (p.tipo === "sobre") {
-        corpo = '<div class="tp-full">' + proxImg("foto de apresentação", "tp-bg") + '<div class="tp-sombra"></div>'
+        corpo = '<div class="tp-full">' + proxImgCheia("foto de apresentação") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-sobre-txt">'
           + (p.mostrarLogo && d.logoHTML ? '<div class="tp-logo tp-logo-c">' + d.logoHTML + "</div>" : "")
           + '<h2 class="tp-vazado">' + esc(p.titulo) + "</h2>"
           + '<p class="tp-sobre-p">' + escML(p.texto) + "</p>"
           + "</div></div>";
+      }
+      else if (p.tipo === "servicos") {
+        var cards = linhasDe(p.itens).map(function (x) {
+          var k = x.indexOf("|");
+          var tt = k > -1 ? x.slice(0, k).trim() : x, ds = k > -1 ? x.slice(k + 1).trim() : "";
+          return '<div class="tp-serv-card"><b>' + esc(tt) + "</b>" + (ds ? "<span>" + esc(ds) + "</span>" : "") + "</div>";
+        }).join("");
+        corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
+          + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
+          + (cards ? '<div class="tp-serv">' + cards + "</div>" : "")
+          + (txt(p.fechamento) ? '<p class="tp-p tp-solto">' + escML(p.fechamento) + "</p>" : "");
       }
       else if (p.tipo === "imagens") {
         corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
@@ -890,10 +979,18 @@
       }
       else if (p.tipo === "texto") {
         var its = linhasDe(p.itens);
+        /* o escopo do ORÇAMENTO (Dados › Incluso / Não incluso) entra quando a
+           página não tem texto próprio — é o que faz o modelo servir a qualquer
+           orçamento sem ninguém reescrever a lista a cada proposta */
+        var doOrc = !its.length && p.usarComercial;
+        if (doOrc) its = linhasDe(com.incluso);
+        var exc = (doOrc && !txt(p.observacao)) ? linhasDe(com.excluso) : [];
         corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
           + (txt(p.abertura) ? '<p class="tp-p">' + escML(p.abertura) + "</p>" : "")
           + (its.length ? '<p class="tp-p tp-rot">' + esc(p.rotuloLista) + "</p><ul class=\"tp-ul\">"
-              + its.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : "")
+              + its.map(function (x) { return "<li>" + esc(x.replace(/;$/, "")) + "</li>"; }).join("") + "</ul>" : "")
+          + (exc.length ? '<p class="tp-p tp-rot tp-obs"><b>' + esc(p.obsTitulo) + "</b></p><ul class=\"tp-ul\">"
+              + exc.map(function (x) { return "<li>" + esc(x.replace(/;$/, "")) + "</li>"; }).join("") + "</ul>" : "")
           + (txt(p.observacao) ? '<p class="tp-obs"><b>' + esc(p.obsTitulo) + "</b> " + escML(p.observacao) + "</p>" : "");
       }
       else if (p.tipo === "investimento") {
@@ -906,29 +1003,27 @@
       }
       else if (p.tipo === "condicoes") {
         var ps = linhasDe(p.paragrafos);
-        if (p.usarPrazo && txt(com.prazoExecucao)) ps.push("Prazo de execução: " + txt(com.prazoExecucao) + ".");
-        if (p.usarGarantia && txt(com.garantia)) ps.push("Garantia: " + txt(com.garantia) + ".");
+        if (p.usarPrazo && txt(com.prazoExecucao)) ps.push("Prazo de execução: " + txt(com.prazoExecucao).replace(/\.$/, "") + ".");
+        if (p.usarGarantia && txt(com.garantia)) ps.push("Garantia: " + txt(com.garantia).replace(/\.$/, "") + ".");
         corpo = '<h2 class="tp-h2">' + esc(p.titulo) + '</h2><div class="tp-rule"></div>'
           + ps.map(function (x) { return '<p class="tp-p tp-solto">' + esc(x) + "</p>"; }).join("");
       }
       else if (p.tipo === "encerramento") {
-        corpo = '<div class="tp-full">' + proxImg("foto de encerramento", "tp-bg") + '<div class="tp-sombra"></div>'
+        corpo = '<div class="tp-full">' + proxImgCheia("foto de encerramento") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-fim-txt">'
           + (p.mostrarLogo && d.logoHTML ? '<div class="tp-logo tp-logo-g">' + d.logoHTML + "</div>" : "")
           + '<p class="tp-fim-p">' + escML(p.frase) + "</p>"
           + "</div></div>";
       }
       else if (p.tipo === "contato") {
-        var foto = proxImg("foto da equipe", "tp-contato-img");
+        var foto = "";
+        if (p.mostrarFoto) foto = proxImg("foto da equipe", "tp-contato-img");
+        else nSlot++;                      /* o slot continua contado: a numeração das fotos não muda */
         corpo = '<p class="tp-marca">' + esc(txt(emp.nome)) + '</p><div class="tp-rule"></div>'
-          + (p.molduraCelular ? '<div class="tp-cel"><div class="tp-cel-tela">' + foto + "</div></div>" : '<div class="tp-contato-livre">' + foto + "</div>")
+          + (!foto ? "" : (p.molduraCelular ? '<div class="tp-cel"><div class="tp-cel-tela">' + foto + "</div></div>" : '<div class="tp-contato-livre">' + foto + "</div>"))
           + '<h2 class="tp-h1c tp-h1e">' + esc(p.titulo) + "</h2>"
-          + '<div class="tp-contatos">'
-          + (txt(p.pessoas) ? "<div>" + esc(p.pessoas) + "</div>" : "")
-          + (txt(p.redes) ? "<div>" + esc(p.redes) + "</div>" : "")
-          + (txt(p.telefone) ? "<div>" + esc(p.telefone) + "</div>" : "")
-          + (txt(p.site) ? "<div>" + esc(p.site) + "</div>" : "")
-          + "</div>";
+          + '<div class="tp-contatos">' + contatosHtml(p, emp) + "</div>"
+          + botoesHtml(p, emp, links);
       }
       else if (p.tipo === "assinatura") {
         var val = d.validade || {};
@@ -940,10 +1035,13 @@
           + '<div><div class="tp-linha"></div>' + esc(txt(d.cliente) || "Contratante") + "</div></div>";
       }
 
-      var escuro = (p.tipo === "texto" || p.tipo === "condicoes" || p.tipo === "imagens");
+      var cheia = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento");
+      var escuro = !internasClaras && (p.tipo === "texto" || p.tipo === "condicoes" || p.tipo === "imagens");
+      if (!cheia) corpo = ornCanto + corpo + rodape;
       var cls = "tp-pg" + (vertical ? " tp-vert" : "")
-        + (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento" ? " tp-cheia" : "")
-        + (escuro ? " tp-escura" : "");
+        + (cheia ? " tp-cheia" : "")
+        + (escuro ? " tp-escura" : "")
+        + (!cheia && comRodape ? " tp-com-rodape" : "");
       var fundo = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento")
         ? "" : fundoDe(m, escuro);
       var tipo = estiloTipografia(p.tipografia || tipografia(null));
@@ -977,10 +1075,116 @@
    * =================================================================== */
   function aspaSimples(s) { return String(s == null ? "" : s).replace(/"/g, "'"); }
 
+  /* =====================================================================
+   * ORNAMENTO "CURVAS" — os traços da marca, desenhados em SVG
+   *
+   * Três arcos que varrem a página (título, destaque e 2º destaque), com a
+   * grossura caindo do primeiro para o terceiro. Nas capas cobrem a folha; nas
+   * internas ficam num canto e no pé, discretos. É SVG inline com as cores
+   * vindas das variáveis do modelo: muda a cor no editor, muda o traço.
+   * ⚠ pointer-events:none e z-index 0 — nunca fica na frente do texto. */
+  function curvas(onde) {
+    var c1 = "var(--tp-titulo)", c2 = "var(--tp-destaque)", c3 = "var(--tp-destaque2)";
+    if (onde === "cheia") {
+      return '<svg class="tp-orn tp-orn-cheia" viewBox="0 0 210 297" preserveAspectRatio="none" aria-hidden="true">'
+        + '<g fill="none" stroke-linecap="round">'
+        + '<path d="M-10 322 C 60 245, 140 262, 240 175" stroke="' + c1 + '" stroke-width="16" opacity=".32"/>'
+        + '<path d="M-20 300 C 50 220, 125 238, 235 135" stroke="' + c2 + '" stroke-width="7" opacity=".75"/>'
+        + '<path d="M-30 280 C 55 195, 130 215, 240 95" stroke="' + c3 + '" stroke-width="3.2" opacity=".9"/>'
+        + '<path d="M125 -15 C 150 55, 200 75, 245 45" stroke="' + c2 + '" stroke-width="4" opacity=".55"/>'
+        + '<path d="M150 -15 C 170 45, 215 62, 250 30" stroke="' + c3 + '" stroke-width="2" opacity=".6"/>'
+        + "</g></svg>";
+    }
+    if (onde === "canto") {
+      return '<svg class="tp-orn tp-orn-canto" viewBox="0 0 100 100" aria-hidden="true"><g fill="none" stroke-linecap="round">'
+        + '<path d="M-5 90 C 30 40, 60 45, 105 5" stroke="' + c1 + '" stroke-width="9" opacity=".18"/>'
+        + '<path d="M10 100 C 45 55, 70 60, 110 25" stroke="' + c2 + '" stroke-width="5" opacity=".45"/>'
+        + '<path d="M25 105 C 55 70, 80 72, 112 45" stroke="' + c3 + '" stroke-width="2.5" opacity=".7"/>'
+        + "</g></svg>";
+    }
+    return '<svg class="tp-orn tp-orn-pe" viewBox="0 0 100 60" aria-hidden="true"><g fill="none" stroke-linecap="round">'
+      + '<path d="M-5 65 C 25 20, 55 25, 105 -5" stroke="' + c3 + '" stroke-width="2.5" opacity=".55"/>'
+      + '<path d="M-5 75 C 30 35, 60 40, 108 8" stroke="' + c2 + '" stroke-width="4" opacity=".35"/>'
+      + "</g></svg>";
+  }
+
+  /* ---- canais de contato viram LINK (o navegador guarda o link no PDF) ---- */
+  function soDigitos(v) { return txt(v).replace(/\D/g, ""); }
+  function linkZap(numero, texto) {
+    var n = soDigitos(numero);
+    if (!n) return "";
+    if (n.length <= 11) n = "55" + n;               /* sem o país: assume Brasil */
+    var msg = txt(texto) ? "?text=" + encodeURIComponent(txt(texto)) : "";
+    return "https://wa.me/" + n + msg;
+  }
+  function linkTel(numero) { var n = soDigitos(numero); return n ? "tel:+" + (n.length <= 11 ? "55" + n : n) : ""; }
+  function linkMail(e) { var v = txt(e); return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? "mailto:" + v : ""; }
+  function linkSite(u) {
+    var v = txt(u); if (!v) return "";
+    if (/^https?:\/\//i.test(v)) return v;
+    if (/^[\w.-]+\.[a-z]{2,}(\/|$)/i.test(v)) return "https://" + v;
+    return "";
+  }
+  function linkInsta(h) { var v = txt(h).replace(/^@/, ""); return /^[\w.]+$/.test(v) ? "https://instagram.com/" + v : ""; }
+  function linkHttp(u) { var v = txt(u); return /^https?:\/\//i.test(v) ? v : ""; }
+  function a(href, texto, classe) {
+    return href ? '<a href="' + esc(href) + '" target="_blank" rel="noopener"' + (classe ? ' class="' + classe + '"' : "") + ">" + esc(texto) + "</a>" : esc(texto);
+  }
+
+  /* o bloco Contato: o que a página tem, completado (se pedido) por ⚙ Empresa */
+  function canais(p, emp) {
+    var usar = !!p.usarEmpresa;
+    function ou(a1, a2) { return txt(a1) || (usar ? txt(a2) : ""); }
+    return {
+      pessoas: txt(p.pessoas),
+      redes: ou(p.redes, emp.instagram),
+      telefone: ou(p.telefone, emp.telefone),
+      whatsapp: ou(p.whatsapp, emp.whatsapp),
+      email: ou(p.email, emp.email),
+      site: ou(p.site, emp.site),
+      endereco: ou(p.endereco, emp.endereco)
+    };
+  }
+  function contatosHtml(p, emp) {
+    var c = canais(p, emp);
+    return (c.pessoas ? "<div>" + esc(c.pessoas) + "</div>" : "")
+      + (c.telefone ? "<div>" + a(linkTel(c.telefone), c.telefone) + "</div>" : "")
+      + (c.whatsapp && c.whatsapp !== c.telefone ? "<div>WhatsApp " + a(linkZap(c.whatsapp, ""), c.whatsapp) + "</div>" : "")
+      + (c.email ? "<div>" + a(linkMail(c.email), c.email) + "</div>" : "")
+      + (c.site ? "<div>" + a(linkSite(c.site), c.site) + "</div>" : "")
+      + (c.redes ? "<div>" + a(linkInsta(c.redes), c.redes) + "</div>" : "")
+      + (c.endereco ? '<div class="tp-end">' + esc(c.endereco) + "</div>" : "");
+  }
+  function botoesHtml(p, emp, links) {
+    var c = canais(p, emp);
+    var zap = c.whatsapp ? linkZap(c.whatsapp, "Olá! Recebi a proposta de " + txt(emp.nome) + " e gostaria de conversar.") : "";
+    var pl = p.botaoPlanilha ? linkHttp(links && links.planilha) : "";
+    var out = "";
+    if (zap) out += '<a class="tp-btn tp-btn-2" href="' + esc(zap) + '" target="_blank" rel="noopener">' + esc(txt(p.textoZap) || "Falar no WhatsApp") + "</a>";
+    if (pl) out += '<a class="tp-btn" href="' + esc(pl) + '" target="_blank" rel="noopener">' + esc(txt(p.textoBotao) || "Abrir a planilha desta proposta") + "</a>";
+    return out ? '<div class="tp-botoes">' + out + "</div>" : "";
+  }
+  /* rodapé das páginas internas: empresa · CNPJ · canais (clicáveis) */
+  function rodapeContatos(emp) {
+    var partes = [];
+    if (txt(emp.nome)) partes.push("<b>" + esc(emp.nome) + "</b>");
+    if (txt(emp.cnpj)) partes.push("CNPJ " + esc(emp.cnpj));
+    if (txt(emp.telefone)) partes.push(a(linkTel(emp.telefone), emp.telefone));
+    if (txt(emp.whatsapp) && txt(emp.whatsapp) !== txt(emp.telefone)) partes.push(a(linkZap(emp.whatsapp, ""), "WhatsApp " + emp.whatsapp));
+    if (txt(emp.email)) partes.push(a(linkMail(emp.email), emp.email));
+    if (txt(emp.site)) partes.push(a(linkSite(emp.site), emp.site));
+    if (txt(emp.instagram)) partes.push(a(linkInsta(emp.instagram), emp.instagram));
+    if (!partes.length && txt(emp.contato)) partes.push(esc(emp.contato));
+    if (txt(emp.endereco)) partes.push(esc(emp.endereco) + (txt(emp.cidade) ? " — " + esc(emp.cidade) : ""));
+    if (!partes.length) return "";
+    return '<div class="tp-rodape">' + partes.map(function (x) { return "<span>" + x + "</span>"; }).join("") + "</div>";
+  }
+
   function estiloRaiz(m, f) {
     return "--tp-titulo:" + m.estilo.corTitulo
       + ";--tp-texto:" + m.estilo.corTexto
       + ";--tp-destaque:" + m.estilo.corDestaque
+      + ";--tp-destaque2:" + (m.estilo.corDestaque2 || m.estilo.corDestaque)
       + ";--tp-escuro:" + m.estilo.corFundoEscuro
       + ";--tp-f-tit:" + aspaSimples(f.titulo)
       + ";--tp-f-txt:" + aspaSimples(f.texto);
@@ -1056,9 +1260,14 @@
    * css/app.css: o documento é aberto numa janela nova, e depender da folha
    * do app faria a proposta sair sem desenho quando o arquivo não carregasse.
    * ===================================================================== */
-  PropTpl.css = function () {
+  /* `formato` é opcional: "vertical" imprime no papel 120×213 mm; o resto é A4.
+     ⚠ SEM `size` o navegador usa o papel padrão da máquina — em máquina
+       configurada para Carta (279 mm) cada página A4 vazava 18 mm para uma
+       folha em branco: 8 páginas viravam 16. */
+  PropTpl.css = function (formato) {
+    var papel = (txt(formato) === "vertical") ? "120mm 213mm" : "210mm 297mm";
     return [
-      "@page{margin:0}",
+      "@page{margin:0;size:" + papel + "}",
       ".tp-doc{color:var(--tp-texto);font-family:var(--tp-f-txt);line-height:1.5}",
 
 
@@ -1074,42 +1283,44 @@
       ".tp-vazio{display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(45deg,#e9e7e1,#e9e7e1 12px,#dedbd3 12px,#dedbd3 24px);color:#8b8474;font-size:11pt;letter-spacing:.06em;text-transform:uppercase}",
       ".tp-vazio.tp-bg{position:absolute;inset:0}",
       ".tp-capa-txt{position:absolute;left:0;right:0;top:26%;padding:0 12mm}",
-      ".tp-logo{max-width:34mm;margin-bottom:8mm}",
+      ".tp-logo{max-width:46mm;margin-bottom:8mm}",
+      ".tp-vert .tp-logo{max-width:34mm}",
       ".tp-logo img,.tp-logo svg{max-width:100%;height:auto;display:block}",
       ".tp-logo-c{margin:0 auto 6mm;max-width:44mm}",
       ".tp-logo-g{margin:0 auto 8mm;max-width:62mm}",
-      ".tp-h1{font-family:var(--tp-f-tit);font-weight:700;font-size:44pt;line-height:.94;letter-spacing:-.01em;text-transform:uppercase;margin:0 0 6mm;color:#fff}",
-      ".tp-vert .tp-h1{font-size:34pt}",
-      ".tp-chamada{font-family:var(--tp-f-tit);font-size:13pt;text-transform:uppercase;letter-spacing:.02em;margin:0 0 4mm;color:#fff}",
-      ".tp-cli{font-size:12pt;letter-spacing:.12em;text-transform:uppercase;margin:0;color:rgba(255,255,255,.92)}",
+      ".tp-h1{font-family:var(--tp-f-tit);font-weight:700;font-size:calc(44pt * var(--tp-esc-tit,1));line-height:.94;letter-spacing:-.01em;text-transform:uppercase;margin:0 0 6mm;color:#fff}",
+      ".tp-vert .tp-h1{font-size:calc(34pt * var(--tp-esc-tit,1))}",
+      ".tp-chamada{font-family:var(--tp-f-tit);font-size:calc(13pt * var(--tp-esc-tit,1));text-transform:uppercase;letter-spacing:.02em;margin:0 0 4mm;color:#fff}",
+      ".tp-num-capa{margin-top:3mm;opacity:.8;letter-spacing:.06em}",
+      ".tp-cli{font-size:calc(12pt * var(--tp-esc-txt,1));letter-spacing:.12em;text-transform:uppercase;margin:0;color:rgba(255,255,255,.92)}",
       ".tp-sobre-txt{position:absolute;left:0;right:0;top:16%;padding:0 12mm}",
-      ".tp-vazado{font-family:var(--tp-f-tit);font-size:30pt;text-transform:uppercase;letter-spacing:.02em;margin:0 0 5mm;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.92);text-align:center}",
-      ".tp-sobre-p{font-size:12.5pt;line-height:1.55;margin:0;color:#fff}",
-      ".tp-h2{font-family:var(--tp-f-tit);font-size:17pt;font-weight:700;margin:0 0 4mm;letter-spacing:.01em}",
-      ".tp-h1c{font-family:var(--tp-f-tit);font-size:26pt;font-weight:700;text-transform:uppercase;text-align:center;color:var(--tp-titulo);margin:0 0 8mm;letter-spacing:.01em}",
+      ".tp-vazado{font-family:var(--tp-f-tit);font-size:calc(30pt * var(--tp-esc-tit,1));text-transform:uppercase;letter-spacing:.02em;margin:0 0 5mm;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.92);text-align:center}",
+      ".tp-sobre-p{font-size:calc(12.5pt * var(--tp-esc-txt,1));line-height:1.55;margin:0;color:#fff}",
+      ".tp-h2{font-family:var(--tp-f-tit);font-size:calc(17pt * var(--tp-esc-tit,1));font-weight:700;margin:0 0 4mm;letter-spacing:.01em}",
+      ".tp-h1c{font-family:var(--tp-f-tit);font-size:calc(26pt * var(--tp-esc-tit,1));font-weight:700;text-transform:uppercase;text-align:center;color:var(--tp-titulo);margin:0 0 8mm;letter-spacing:.01em}",
       ".tp-h1e{margin-top:8mm}",
-      ".tp-h3pag{font-size:18pt;margin-top:12mm}",
+      ".tp-h3pag{font-size:calc(16pt * var(--tp-esc-tit,1));margin-top:9mm;margin-bottom:5mm}",
       ".tp-rule{height:1.4px;background:var(--tp-titulo);margin:0 0 7mm}",
-      ".tp-p{font-size:11.5pt;margin:0 0 4mm}",
+      ".tp-p{font-size:calc(11.5pt * var(--tp-esc-txt,1));margin:0 0 4mm}",
       ".tp-solto{margin-bottom:6mm}",
       ".tp-rot{margin-bottom:2mm}",
-      ".tp-ul{margin:0 0 5mm;padding-left:6mm;font-size:11.5pt}",
+      ".tp-ul{margin:0 0 5mm;padding-left:6mm;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
       ".tp-ul li{margin-bottom:2mm}",
-      ".tp-obs{font-size:11pt;margin:6mm 0 0}",
-      ".tp-leg{font-size:10.5pt;margin:4mm 0 0;opacity:.9}",
+      ".tp-obs{font-size:calc(11pt * var(--tp-esc-txt,1));margin:6mm 0 0}",
+      ".tp-leg{font-size:calc(10.5pt * var(--tp-esc-txt,1));margin:4mm 0 0;opacity:.9}",
       ".tp-galeria{display:flex;flex-direction:column;gap:5mm}",
       ".tp-gal{width:100%;height:52mm;object-fit:cover;display:block}",
       ".tp-vert .tp-gal{height:44mm}",
-      ".tp-tbl{width:100%;border-collapse:collapse;font-size:11.5pt}",
+      ".tp-tbl{width:100%;border-collapse:collapse;font-size:calc(11.5pt * var(--tp-esc-txt,1))}",
       ".tp-tbl th{background:var(--tp-titulo);color:#fff;text-align:left;padding:4mm 4mm;font-weight:600}",
-      ".tp-tbl td{border:1px solid var(--tp-titulo);padding:3.4mm 4mm;vertical-align:top}",
+      ".tp-tbl td{border:1px solid var(--tp-titulo);padding:2.8mm 3.6mm;vertical-align:top}",
       ".tp-tbl .tp-num{text-align:right;white-space:nowrap}",
       ".tp-tbl th.tp-num{text-align:right}",
       ".tp-grupo td{background:rgba(0,0,0,.05);font-weight:600;text-transform:uppercase;font-size:9.5pt;letter-spacing:.06em}",
       ".tp-qtd{opacity:.7;font-size:10pt}",
       ".tp-vaziotxt{text-align:center;opacity:.6}",
-      ".tp-total{text-align:center;font-size:14pt;margin:7mm 0 0;color:var(--tp-titulo)}",
-      ".tp-pag{text-align:center;font-size:12.5pt;margin:0;color:var(--tp-titulo)}",
+      ".tp-total{text-align:center;font-size:calc(14pt * var(--tp-esc-txt,1));margin:7mm 0 0;color:var(--tp-titulo)}",
+      ".tp-pag{text-align:center;font-size:calc(11.5pt * var(--tp-esc-txt,1));margin:0;color:var(--tp-titulo)}",
       ".tp-marca{font-size:11pt;letter-spacing:.08em;text-transform:uppercase;margin:0 0 3mm;color:var(--tp-titulo)}",
       ".tp-cel{width:56mm;margin:10mm auto;border:2.4mm solid #1b1b1f;border-radius:7mm;background:#1b1b1f;padding:0;overflow:hidden}",
       ".tp-cel-tela{position:relative;width:100%;height:96mm;overflow:hidden;border-radius:3mm}",
@@ -1117,13 +1328,38 @@
       ".tp-contato-livre{width:100%;height:80mm;overflow:hidden;margin:8mm 0}",
       ".tp-contato-livre .tp-vazio{height:100%}",
       ".tp-cel-tela .tp-vazio{height:100%}",
-      ".tp-contatos{text-align:center;font-size:12pt;line-height:1.7;color:var(--tp-titulo)}",
+      ".tp-contatos{text-align:center;font-size:calc(12pt * var(--tp-esc-txt,1));line-height:1.7;color:var(--tp-titulo)}",
       ".tp-fim-txt{position:absolute;left:0;right:0;top:38%;padding:0 14mm;text-align:center}",
-      ".tp-fim-p{font-size:14pt;line-height:1.5;margin:0;color:#fff}",
+      ".tp-fim-p{font-size:calc(14pt * var(--tp-esc-txt,1));line-height:1.5;margin:0;color:#fff}",
       ".tp-local{margin-top:14mm}",
-      ".tp-assin{display:flex;gap:12mm;margin-top:20mm;font-size:10.5pt;text-align:center}",
+      ".tp-assin{display:flex;gap:12mm;margin-top:20mm;font-size:calc(10.5pt * var(--tp-esc-txt,1));text-align:center}",
       ".tp-assin>div{flex:1}",
       ".tp-linha{border-top:1px solid var(--tp-texto);margin-bottom:2mm}",
+
+      /* ---- ornamento de curvas, rodapé, serviços, links e botões ---- */
+      ".tp-orn{position:absolute;pointer-events:none;z-index:0}",
+      ".tp-orn-cheia{inset:0;width:100%;height:100%}",
+      ".tp-orn-canto{right:-12mm;top:-14mm;width:92mm;height:92mm}",
+      ".tp-orn-pe{left:-8mm;bottom:-6mm;width:84mm;height:50mm}",
+      ".tp-pg.tp-com-rodape .tp-orn-pe{bottom:12mm}",
+      ".tp-bg-cor{background:var(--tp-escuro);background-image:linear-gradient(160deg,rgba(255,255,255,.08) 0%,rgba(0,0,0,0) 45%,rgba(0,0,0,.28) 100%)}",
+      ".tp-pg>*:not(.tp-orn):not(.tp-full):not(.tp-rodape){position:relative;z-index:1}",
+      ".tp-com-rodape{padding-bottom:26mm}",
+      ".tp-rodape{position:absolute;left:16mm;right:16mm;bottom:9mm;z-index:1;border-top:1px solid var(--tp-destaque);padding-top:2.5mm;font-size:8.5pt;line-height:1.5;display:flex;flex-wrap:wrap;gap:1mm 5mm;opacity:.92}",
+      ".tp-vert .tp-rodape{left:12mm;right:12mm;bottom:7mm;font-size:8pt}",
+      ".tp-rodape a,.tp-contatos a{color:inherit;text-decoration:none}",
+      ".tp-escura .tp-rodape{border-color:rgba(255,255,255,.5)}",
+      ".tp-serv{display:grid;grid-template-columns:1fr 1fr;gap:5mm;margin:2mm 0 6mm}",
+      ".tp-vert .tp-serv{grid-template-columns:1fr}",
+      ".tp-serv-card{border:1px solid rgba(0,0,0,.12);border-left:3px solid var(--tp-destaque2);padding:4mm 5mm;border-radius:2mm;background:rgba(0,0,0,.02)}",
+      ".tp-escura .tp-serv-card{border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.06)}",
+      ".tp-serv-card b{display:block;font-family:var(--tp-f-tit);font-size:12pt;margin-bottom:1.5mm;color:var(--tp-titulo)}",
+      ".tp-escura .tp-serv-card b{color:#fff}",
+      ".tp-serv-card span{font-size:10.5pt;line-height:1.45;display:block}",
+      ".tp-end{font-size:10.5pt;opacity:.85;margin-top:2mm}",
+      ".tp-botoes{display:flex;justify-content:center;gap:5mm;margin-top:9mm;flex-wrap:wrap}",
+      ".tp-btn{display:inline-block;padding:3.6mm 7mm;border-radius:2.2mm;background:var(--tp-titulo);color:#fff!important;text-decoration:none!important;font-family:var(--tp-f-tit);font-weight:600;font-size:11pt;letter-spacing:.02em}",
+      ".tp-btn-2{background:var(--tp-destaque2)}",
 
       /* =================================================================
        * OS AJUSTES DE TIPOGRAFIA DA PÁGINA
@@ -1141,11 +1377,9 @@
       ".tp-pg{letter-spacing:var(--tp-ls,normal)}",
       ".tp-pg h1,.tp-pg h2,.tp-pg .tp-h1,.tp-pg .tp-h1c,.tp-pg .tp-h2,.tp-pg .tp-vazado{"
         + "text-align:var(--tp-al-tit,inherit);"
-        + "font-size:calc(var(--tp-esc-tit,1) * 1em);"
         + "text-transform:var(--tp-cx-tit,inherit)}",
       ".tp-pg .tp-p,.tp-pg p,.tp-pg li,.tp-pg td{"
         + "text-align:var(--tp-al-txt,inherit);"
-        + "font-size:calc(var(--tp-esc-txt,1) * 1em);"
         + "line-height:calc(var(--tp-lh,1) * 1.5)}",
       /* ⚠ o valor da tabela continua à direita: número alinhado com o texto
          vira coluna torta, e isso não é preferência, é leitura de dinheiro */

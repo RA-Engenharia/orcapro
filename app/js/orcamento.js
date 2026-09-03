@@ -201,7 +201,10 @@
         validadeProposta: "15 dias corridos a contar da data de emissão.",
         garantia: "Garantia legal de 5 (cinco) anos para a solidez e segurança da obra, nos termos do art. 618 do Código Civil.",
         incluso: "Fornecimento de materiais e mão de obra dos serviços orçados;\nLeis sociais e encargos trabalhistas;\nFerramentas e equipamentos de execução;\nLimpeza periódica e final da obra.",
-        excluso: "Projetos complementares e taxas de aprovação;\nLigações definitivas de água, energia e esgoto;\nMobiliário, paisagismo e itens de decoração;\nServiços não descritos expressamente nesta proposta."
+        excluso: "Projetos complementares e taxas de aprovação;\nLigações definitivas de água, energia e esgoto;\nMobiliário, paisagismo e itens de decoração;\nServiços não descritos expressamente nesta proposta.",
+        /* endereço (URL) da planilha desta proposta — vira o botão "Abrir planilha"
+           no PDF quando o modelo de proposta pede. Vazio = sem botão. */
+        linkPlanilha: ""
       };
     },
 
