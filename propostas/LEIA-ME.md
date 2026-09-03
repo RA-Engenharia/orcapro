@@ -74,6 +74,22 @@ montado na conta de quem recebe, em vez de imprimir `[LOGO]` na capa.
   *Deixar branco* (versão negativa). Há também *pastilha branca*, que preserva
   as cores.
 
+### O mesmo logo em ⚙ Empresa
+
+O logo do modelo vale só para a proposta feita com ele. **Laudo, relatórios,
+Excel e a proposta padrão leem o de ⚙ Empresa** — sem ele, metade dos
+documentos sai marcada e a outra metade com `[LOGO]`.
+
+Três caminhos:
+
+1. **Ao trazer o modelo**, se a conta ainda não tem logo, a tela de importação
+   oferece usar o do modelo também em ⚙ Empresa (marcado por padrão, porque não
+   há nada para sobrescrever). Se já houver um logo, nada é trocado em silêncio.
+2. **Modelos de proposta › Cor e letra › "Usar também em ⚙ Empresa"**. Com um
+   logo diferente já cadastrado, o app mostra o antes/depois e pede confirmação:
+   trocar ali muda todos os documentos da conta.
+3. **À mão:** ⚙ Empresa › Logo › escolher `propostas/logo-ra-engenharia.png`.
+
 ## Montar o modelo com a IA
 
 Em Modelos de proposta, o botão **Montar com a IA** faz oito perguntas sobre a

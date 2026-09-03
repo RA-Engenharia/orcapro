@@ -362,6 +362,15 @@
       + '<div style="flex:1;min-width:220px">'
       + '<button class="btn sm" data-gacao="propmod-logo">' + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Enviar um logo para este modelo</button>"
       + (m.logo ? ' <button class="btn sm ghost" data-gacao="propmod-logo-remover">Voltar a usar o do ⚙ Empresa</button>' : "")
+      /* ⚠ O LOGO DO MODELO NÃO VALE PARA O RESTO DO SISTEMA. Laudo, relatório,
+         Excel e a proposta clássica leem o de ⚙ Empresa — quem recebe um modelo
+         com a marca dentro fica com metade dos documentos marcada e a outra
+         metade com [LOGO], sem entender por quê. Este botão fecha o buraco em
+         um clique, e só existe quando há o que copiar. */
+      + (m.logo && m.logo !== logoEmp
+          ? ' <button class="btn sm ghost" data-gacao="propmod-logo-empresa">' + (typeof Icones !== "undefined" ? Icones.get("salvar", 15) : "")
+            + " Usar também em ⚙ Empresa</button>"
+          : "")
       + '<p class="muted" style="margin:6px 0 0;font-size:12px">'
       + (m.logo
           ? "Este modelo usa um <b>logo próprio</b> — o de ⚙ Empresa é ignorado aqui. Ele viaja dentro do arquivo quando você levar o modelo para outra conta."
@@ -1306,6 +1315,39 @@
      *   sem ninguém ver.
      * =============================================================== */
     "propmod-logo": function () { G._propModLogoEnviar(); },
+    /* copia o logo DESTE modelo para ⚙ Empresa, onde os outros documentos leem */
+    "propmod-logo-empresa": function () {
+      var r = obter(G._propModId); if (!r) return;
+      var novo = T.modelo(r).logo;
+      if (!novo) { UI.toast("Este modelo não tem logo próprio.", "erro"); return; }
+      if (typeof Empresa === "undefined" || !Empresa.salvarLogo) { UI.toast("Não consegui abrir os dados da empresa.", "erro"); return; }
+      var atual = "";
+      try { atual = Empresa.logo() || ""; } catch (e) {}
+      if (atual === novo) { UI.toast("O ⚙ Empresa já usa este mesmo logo.", "ok"); return; }
+
+      function aplicar() {
+        try { Empresa.salvarLogo(novo); } catch (e2) { UI.toast("Não consegui gravar: " + (e2.message || e2), "erro"); return; }
+        G._propModRender();
+        UI.toast("Logo copiado para ⚙ Empresa — agora vale também no laudo, nos relatórios e na proposta padrão.", "ok");
+      }
+      /* ⚠ TROCAR A MARCA DA EMPRESA NÃO PODE SER UM CLIQUE DISTRAÍDO: o logo
+         de ⚙ Empresa sai em TODO documento da conta, inclusive nos que já
+         foram enviados e serão reimpressos. Com um logo já lá, pergunta. */
+      if (!atual) { aplicar(); return; }
+      UI.modal("Trocar o logo da empresa?",
+        '<p>O ⚙ Empresa já tem um logo, e ele aparece em <b>todos</b> os documentos da conta '
+        + "(laudo, relatórios, Excel e a proposta padrão).</p>"
+        + '<div class="flex" style="gap:14px;align-items:center;margin:10px 0">'
+        + '<div style="text-align:center"><div class="muted" style="font-size:11px;margin-bottom:4px">HOJE</div>'
+        + '<img src="' + esc(atual) + '" style="max-height:52px;max-width:150px;object-fit:contain;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff"></div>'
+        + '<div style="font-size:20px;color:var(--texto-fraco)">→</div>'
+        + '<div style="text-align:center"><div class="muted" style="font-size:11px;margin-bottom:4px">DESTE MODELO</div>'
+        + '<img src="' + esc(novo) + '" style="max-height:52px;max-width:150px;object-fit:contain;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff"></div>'
+        + "</div>",
+        [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+         { texto: "Trocar", classe: "primary", onClick: function () { UI.fecharModal(); aplicar(); } }]);
+    },
+
     "propmod-logo-remover": function () {
       var r = obter(G._propModId); if (!r) return;
       delete r.logo;
@@ -1565,6 +1607,18 @@
       + '<div class="muted" style="font-size:12.5px;margin-top:4px">' + r.modelo.paginas.length + " página(s) · "
       + r.nFotos + " de " + r.nSlots + " foto(s)"
       + (r.temLogo ? " · com o <b>logo</b> dentro" : "") + "</div></div>"
+      + (function () {
+          /* a conta que ainda não tem logo ganha os outros documentos marcados
+             de graça — e sem risco, porque não há nada para sobrescrever */
+          if (!r.temLogo) return "";
+          var temEmp = false;
+          try { temEmp = !!(typeof Empresa !== "undefined" && Empresa.logo && Empresa.logo()); } catch (e) { }
+          if (temEmp) return "";
+          return '<label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:12.5px;cursor:pointer">'
+            + '<input type="checkbox" id="propmod-imp-logo" checked style="margin-top:3px">'
+            + "<span>Usar este logo também em <b>⚙ Empresa</b> — sua conta ainda não tem um, e é ele que sai no laudo, "
+            + "nos relatórios e na proposta padrão.</span></label>";
+        })()
       + (nome !== r.modelo.nome
           ? '<p class="muted" style="font-size:12.5px;margin-top:8px">Já existe um modelo chamado "'
             + esc(r.modelo.nome) + '", então este entra como "' + esc(nome) + '". Nada do que você tem é alterado.</p>'
@@ -1575,7 +1629,13 @@
           : ""),
       [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
        { texto: "Trazer modelo", classe: "primary", onClick: function () {
+           var cx = document.getElementById("propmod-imp-logo");
+           var levarLogo = !!(cx && cx.checked);
            UI.fecharModal();
+           /* antes de fechar a tela: o checkbox some com o modal */
+           if (levarLogo && r.modelo && r.modelo.logo) {
+             try { if (typeof Empresa !== "undefined" && Empresa.salvarLogo) Empresa.salvarLogo(r.modelo.logo); } catch (e) {}
+           }
            G._propModGravarImport(r, nome);
        } }]);
   };
