@@ -18,11 +18,19 @@
     registroNacional: "",
     cidade: "",
     endereco: "",
-    contato: ""
+    contato: "",
+    /* canais que viram LINK nos documentos (WhatsApp, e-mail, site, Instagram).
+       `contato` continua sendo o texto livre de sempre; estes são os campos
+       separados que o modelo de proposta transforma em link clicável no PDF. */
+    telefone: "",
+    whatsapp: "",
+    email: "",
+    site: "",
+    instagram: ""
   };
 
   var Empresa = {
-    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato"],
+    campos: ["nome", "cnpj", "responsavel", "titulo", "crea", "registroNacional", "cidade", "endereco", "contato", "telefone", "whatsapp", "email", "site", "instagram"],
 
     _prefs: function () {
       try { return (typeof Store !== "undefined" && typeof Auth !== "undefined") ? (Store.lerPrefs(Auth.empresaId()) || {}) : {}; }

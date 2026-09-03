@@ -299,12 +299,18 @@
       + cor("pme-corTitulo", "Títulos e tabela", e.corTitulo)
       + cor("pme-corTexto", "Texto", e.corTexto)
       + cor("pme-corDestaque", "Destaque", e.corDestaque)
+      + cor("pme-corDestaque2", "2º destaque (curvas e botões)", e.corDestaque2 || e.corDestaque)
       + cor("pme-corFundoEscuro", "Fundo das páginas escuras", e.corFundoEscuro)
       + "</div>";
 
     html += '<div class="row">'
       + K.campo("Formato do papel", K.sel("pme-formato", K.opts([["a4", "A4 — para imprimir e assinar"], ["vertical", "Vertical — formato de celular, para mandar no WhatsApp"]], e.formato)))
       + K.campo("Textura de fundo", K.sel("pme-textura", K.opts(T.TEXTURAS.map(function (t) { return [t.id, t.nome]; }), e.textura)))
+      + "</div>"
+      + '<div class="row">'
+      + K.campo("Traços da marca", K.sel("pme-ornamento", K.opts([["", "Sem ornamento"], ["curvas", "Curvas — traços nas capas e nos cantos das páginas"]], e.ornamento)))
+      + K.campo("Rodapé das páginas", K.sel("pme-rodape", K.opts([["", "Sem rodapé"], ["contatos", "Contatos da empresa (links clicáveis no PDF)"]], e.rodape)))
+      + K.campo("Páginas internas", K.sel("pme-fundoInternas", K.opts([["", "Escopo e condições em página escura"], ["claro", "Todas as páginas internas claras"]], e.fundoInternas)))
       + "</div>";
 
     html += '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">Letra</label>'
@@ -357,7 +363,11 @@
   G._propModDadosDemo = function () {
     var emp = (typeof Empresa !== "undefined" && Empresa.dados) ? Empresa.dados() : {};
     return {
-      empresa: { nome: txt(emp.nome) || "Sua Empresa", cidade: txt(emp.cidade) },
+      empresa: (function () {
+        var e2 = {}; Object.keys(emp).forEach(function (k) { e2[k] = txt(emp[k]); });
+        e2.nome = e2.nome || "Sua Empresa"; return e2;
+      })(),
+      links: { planilha: "https://exemplo.invalido/proposta.xlsx" },
       logoHTML: (typeof Empresa !== "undefined" && Empresa.logoHTML) ? Empresa.logoHTML(120) : "",
       cliente: "Cliente Exemplo",
       data: (function () { var d = new Date(); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); })(),
@@ -1025,7 +1035,7 @@
     w.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">'
       + "<title>" + esc(txt(dados && dados.tituloDoc) || "Proposta") + "</title>"
       + '<link rel="stylesheet" href="' + urlFontes + '">'
-      + "<style>body{margin:0}" + T.css() + "</style></head><body>" + html + "</body></html>");
+      + "<style>body{margin:0}" + T.css(m.estilo.formato) + "</style></head><body>" + html + "</body></html>");
     w.document.close();
 
     /* ⚠ IMPRIMIR ANTES DA FONTE CARREGAR SAI NA FONTE ERRADA, e o usuário não
@@ -1280,12 +1290,16 @@
     "propmod-estilo-salvar": function () {
       var r = obter(G._propModId); if (!r) return;
       var e = T.modelo(r).estilo;
-      ["corTitulo", "corTexto", "corDestaque", "corFundoEscuro"].forEach(function (k) {
+      ["corTitulo", "corTexto", "corDestaque", "corDestaque2", "corFundoEscuro"].forEach(function (k) {
         var el = document.getElementById("pme-" + k);
         if (el && el.value) e[k] = el.value;
       });
       var fm = K.v("pme-formato"); if (fm) e.formato = fm;
       var tx = document.getElementById("pme-textura"); e.textura = tx ? tx.value : e.textura;
+      ["ornamento", "rodape", "fundoInternas"].forEach(function (k) {
+        var sel = document.getElementById("pme-" + k);
+        if (sel) e[k] = sel.value;
+      });
       r.estilo = e;
       r.paraCliente = K.v("pme-cliente") || "";
       gravar(r); G._propModRender(); App.render();

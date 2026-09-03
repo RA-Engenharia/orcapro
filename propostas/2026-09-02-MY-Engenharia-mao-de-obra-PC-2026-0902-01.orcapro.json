@@ -2,7 +2,7 @@
   "app": "OrçaPRO",
   "tipo": "pacote-orcamento",
   "versao": "1.2.28",
-  "exportadoEm": "2026-09-02T20:47:26.000Z",
+  "exportadoEm": "2026-09-03T02:04:47.000Z",
   "geradoPor": "propostas/gerar-proposta-my-engenharia.py — proposta PC-2026-0902-01",
   "orcamentos": [
     {
@@ -63,7 +63,8 @@
         "validadeProposta": "15 dias corridos a contar de 02/09/2026.",
         "garantia": "Garantia de execução de 90 dias para os serviços de mão de obra, contados da vistoria final; não cobre falhas de material fornecido pela contratante.",
         "incluso": "Mão de obra de pedreiro e ajudante com encargos sociais e complementares;\nFerramentas manuais e equipamentos leves;\nEPIs, alimentação e transporte da equipe;\nPreparo de argamassa e concreto em obra;\nAcompanhamento técnico (CREA-MG) e medição;\nLimpeza da área ao final de cada frente.",
-        "excluso": "Materiais (blocos, cimento, areia, brita, concreto, aço, graute);\nLocação, retirada e destinação das caçambas;\nÁgua e energia no local;\nEquipamentos pesados, betoneira e andaimes;\nProjetos, ART de projeto, taxas e licenças;\nServiços não relacionados na planilha."
+        "excluso": "Materiais (blocos, cimento, areia, brita, concreto, aço, graute);\nLocação, retirada e destinação das caçambas;\nÁgua e energia no local;\nEquipamentos pesados, betoneira e andaimes;\nProjetos, ART de projeto, taxas e licenças;\nServiços não relacionados na planilha.",
+        "linkPlanilha": "https://ra-engenharia.github.io/orcapro/propostas/2026-09-02-MY-Engenharia-mao-de-obra-PC-2026-0902-01.xlsx"
       },
       "cronogramaMeses": 1,
       "etapas": [
@@ -77,7 +78,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-01",
-              "descricao": "Execução de alvenaria em bloco de concreto frisado (aparente) 14×19×39 cm, 4 fiadas sendo a última em canaleta, blocos fornecidos pela contratante: assentamento com argamassa, prumo, nível, amarração e juntas frisadas (ref. Valor negociado (ref. SINAPI 103339))",
+              "descricao": "Execução de alvenaria em bloco de concreto frisado (aparente) 14×19×39 cm, 4 fiadas sendo a última em canaleta, blocos fornecidos pela contratante: assentamento com argamassa, prumo, nível, amarração e juntas frisadas",
               "unidade": "m²",
               "quantidade": 35.0,
               "custoUnitario": 31.89,
@@ -93,7 +94,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-02",
-              "descricao": "Enchimento de graute nas canaletas da última fiada (32 m) e nos pilares/células verticais a cada 3 m, com armação simples, limpeza das células e adensamento (graute e aço pela contratante) (ref. Valor negociado (ref. SINAPI 105033 + 105792))",
+              "descricao": "Enchimento de graute nas canaletas da última fiada (32 m) e nos pilares/células verticais a cada 3 m, com armação simples, limpeza das células e adensamento (graute e aço pela contratante)",
               "unidade": "m²",
               "quantidade": 35.0,
               "custoUnitario": 14.19,
@@ -116,7 +117,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-03",
-              "descricao": "Escavação manual de vala (aprox. 30 m lineares, seção adotada 0,40 × 0,60 m = 7,20 m³), com material depositado ao lado (ref. SINAPI 93358)",
+              "descricao": "Escavação manual de vala (aprox. 30 m lineares, seção adotada 0,40 × 0,60 m = 7,20 m³), com material depositado ao lado",
               "unidade": "m³",
               "quantidade": 7.2,
               "custoUnitario": 89.3,
@@ -132,7 +133,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-04",
-              "descricao": "Carga manual de entulho nas 2 caçambas estacionárias (5 m³ cada): 1 diária de equipe com 3 ajudantes (ref. Valor negociado (diária de ajudante))",
+              "descricao": "Carga manual de entulho nas 2 caçambas estacionárias (5 m³ cada): 1 diária de equipe com 3 ajudantes",
               "unidade": "diária de ajudante",
               "quantidade": 3.0,
               "custoUnitario": 141.78,
@@ -148,7 +149,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-06",
-              "descricao": "Retirada dos montes de terra e grama depositados sobre o gramado do campo, com carga manual e acondicionamento em caçamba/local indicado (ref. SINAPI 106122 (por analogia))",
+              "descricao": "Retirada dos montes de terra e grama depositados sobre o gramado do campo, com carga manual e acondicionamento em caçamba/local indicado",
               "unidade": "m³",
               "quantidade": 6.0,
               "custoUnitario": 77.15,
@@ -171,7 +172,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-05",
-              "descricao": "Recondicionamento da base com areia e brita (lastro granular, e ≈ 10 cm) e recomposição do piso cimentado (traço 1:5, e = 2 cm) na área hoje cimentada (ref. SINAPI 100324 + 98679)",
+              "descricao": "Recondicionamento da base com areia e brita (lastro granular, e ≈ 10 cm) e recomposição do piso cimentado (traço 1:5, e = 2 cm) na área hoje cimentada",
               "unidade": "m²",
               "quantidade": 20.0,
               "custoUnitario": 26.09,
@@ -187,7 +188,7 @@
               "origem": "PROPRIO",
               "baseFonte": null,
               "codigo": "MO-07",
-              "descricao": "Recomposição de calçada em concreto moldado in loco (≈ 10 m², e = 6 cm, acabamento convencional), incluindo demolição manual do trecho danificado (ref. SINAPI 104789 + 94992)",
+              "descricao": "Recomposição de calçada em concreto moldado in loco (≈ 10 m², e = 6 cm, acabamento convencional), incluindo demolição manual do trecho danificado",
               "unidade": "m²",
               "quantidade": 10.0,
               "custoUnitario": 33.42,
@@ -201,8 +202,8 @@
           ]
         }
       ],
-      "criadoEm": "2026-09-02T20:47:26.000Z",
-      "atualizadoEm": "2026-09-02T20:47:26.000Z"
+      "criadoEm": "2026-09-03T02:04:47.000Z",
+      "atualizadoEm": "2026-09-03T02:04:47.000Z"
     }
   ],
   "gestao": {
@@ -220,8 +221,8 @@
         "status": "ativo",
         "origem": "indicacao",
         "obs": "Cadastro criado pela proposta PC-2026-0902-01. Complete CNPJ, telefone e e-mail.",
-        "criadoEm": "2026-09-02T20:47:26.000Z",
-        "atualizadoEm": "2026-09-02T20:47:26.000Z"
+        "criadoEm": "2026-09-03T02:04:47.000Z",
+        "atualizadoEm": "2026-09-03T02:04:47.000Z"
       }
     ],
     "obras": [
@@ -239,8 +240,8 @@
         "responsavel": "",
         "orcamentoId": "orc_b630d22554455d",
         "obs": "Escopo: 35 m² alvenaria bloco 14x19x39 frisado com canaleta e graute, ~30 m escavação manual, 2 caçambas de entulho, base cimentada, retirada de terra/grama, calçada 10 m².",
-        "criadoEm": "2026-09-02T20:47:26.000Z",
-        "atualizadoEm": "2026-09-02T20:47:26.000Z"
+        "criadoEm": "2026-09-03T02:04:47.000Z",
+        "atualizadoEm": "2026-09-03T02:04:47.000Z"
       }
     ]
   }

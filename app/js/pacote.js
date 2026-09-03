@@ -54,6 +54,26 @@
 
     ehPacote: function (dump) { return !!(dump && typeof dump === "object" && dump.tipo === TIPO); },
 
+    /* MODELO DE PROPOSTA exportado pelo app (js/proptpl.js, `paraArquivo`):
+       entra pela mesma porta do link/arquivo, mas vai para o fluxo dos modelos
+       (confirmação, fotos no IndexedDB, nome livre). Assim o escritório publica
+       o modelo da empresa e cada usuário traz com um clique. */
+    ehModelo: function (obj) {
+      return !!(obj && typeof obj === "object" && typeof PropTpl !== "undefined" && obj.marca === PropTpl.MARCA_ARQUIVO);
+    },
+    importarModelo: function (obj) {
+      if (typeof PropTpl === "undefined" || typeof Gestao === "undefined" || !Gestao._propModConfirmarImport) {
+        UI.toast("Modelos de proposta não estão disponíveis nesta conta.", "erro"); return false;
+      }
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("modelos")) {
+        UI.toast("Você não tem acesso a Modelos de proposta.", "erro"); return false;
+      }
+      var r = PropTpl.doArquivo(obj);
+      if (!r.ok) { UI.toast(r.erro, "erro"); return false; }
+      Gestao._propModConfirmarImport(r);
+      return true;
+    },
+
     /* Reprova cedo e diz o motivo: arquivo pela metade não entra pela metade. */
     validar: function (dump) {
       var erros = [];
@@ -253,6 +273,7 @@
         self.importarDeUrl(pend, function (err, dump) {
           if (err) { UI.toast("Não consegui baixar o pacote (" + err.message + "). O link continua válido: abra-o de novo com internet.", "erro"); return; }
           try { sessionStorage.removeItem(CHAVE_PENDENTE); } catch (e5) {}
+          if (self.ehModelo(dump)) { self.importarModelo(dump); return; }
           self.confirmarEAplicar(dump, pend);
         });
       });

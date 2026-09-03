@@ -230,7 +230,10 @@
     return {
       condicoesPagamento: c.condicoesPagamento || "",
       prazoExecucao: c.prazoExecucao || "",
-      garantia: c.garantia || ""
+      garantia: c.garantia || "",
+      /* o bloco "Escopo em texto" pode ler a lista daqui (usarComercial) */
+      incluso: c.incluso || "",
+      excluso: c.excluso || ""
     };
   };
 

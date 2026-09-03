@@ -2890,6 +2890,7 @@
         rdP.onload = function () {
           var dumpP = null;
           try { dumpP = JSON.parse(rdP.result); } catch (eP) { dumpP = null; }
+          if (dumpP && Pacote.ehModelo && Pacote.ehModelo(dumpP)) { Pacote.importarModelo(dumpP); return; }
           if (dumpP && Pacote.ehPacote(dumpP)) {
             if (!(Auth.usuario() && Auth.podeModulo && Auth.podeModulo("orcamentos"))) { UI.toast("Você não tem acesso a Orçamentos.", "erro"); return; }
             Pacote.confirmarEAplicar(dumpP, "arquivo: " + (file.name || ""));
@@ -4069,7 +4070,8 @@
         '<div class="field"><label>Validade da proposta</label><input id="ed-val" value="' + Util.esc(c.validadeProposta) + '"></div></div>' +
         '<div class="field"><label>Garantia</label><textarea id="ed-gar" rows="2">' + Util.esc(c.garantia) + '</textarea></div>' +
         '<div class="row"><div class="field"><label>Incluso (1 por linha)</label><textarea id="ed-inc" rows="4">' + Util.esc(c.incluso) + '</textarea></div>' +
-        '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>',
+        '<div class="field"><label>Não incluso (1 por linha)</label><textarea id="ed-exc" rows="4">' + Util.esc(c.excluso) + '</textarea></div></div>' +
+        '<div class="field"><label>Link da planilha desta proposta (URL do Excel — vira o botão "Abrir planilha" no PDF)</label><input id="ed-planilha" value="' + Util.esc(c.linkPlanilha || "") + '" placeholder="https://…/proposta.xlsx"></div>',
         [
           { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
           { texto: "Salvar", classe: "primary", onClick: function () {
@@ -4084,6 +4086,7 @@
             c.garantia = (UI.el("ed-gar") || {}).value || "";
             c.incluso = (UI.el("ed-inc") || {}).value || "";
             c.excluso = (UI.el("ed-exc") || {}).value || "";
+            c.linkPlanilha = String((UI.el("ed-planilha") || {}).value || "").trim();
             self._edSalvarBase(o, function () {
               self.persistir(); UI.fecharModal(); self.render(); UI.toast("Dados salvos.", "ok");
             });
@@ -7453,9 +7456,11 @@
           numero: orc.numero || "",
           data: hoje,
           /* o motor só escreve `validade.texto`; quem tem a frase é o orçamento */
-          validade: { texto: Util.naoVazio(c.validadeProposta) ? ("Validade desta proposta: " + c.validadeProposta + ".") : "" },
+          validade: { texto: Util.naoVazio(c.validadeProposta) ? ("Validade desta proposta: " + String(c.validadeProposta).trim().replace(/\.$/, "") + ".") : "" },
           blocos: Proposta.blocosParaModelo(orc),
           comercial: Proposta.comercialParaModelo(orc),
+          /* links que o modelo pode transformar em botão (ver bloco Contato) */
+          links: { planilha: String(c.linkPlanilha || "").trim() },
           imagens: imgs,
           tituloDoc: "Proposta — " + (orc.numero || orc.nome || "")
         };

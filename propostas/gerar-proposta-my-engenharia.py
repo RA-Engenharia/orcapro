@@ -331,7 +331,46 @@ for nome_et, ns in grupos:
         memoria = ('Referência: ' + r[7] + '. Unitário da proposta antes do desconto: ' + moeda(r[5]) +
                    ' → com desconto comercial de ' + num(desconto / subtotal * 100, 1) + '%: ' + moeda(pu) + '.' +
                    (' Quantidade ESTIMADA, a confirmar em visita técnica.' if r[4] else ''))
-        P.item(orc, et, 'MO-0' + n, desc + ' (ref. ' + r[7] + ')', r[2], r[3], pu, memoria=memoria)
+        P.item(orc, et, 'MO-0' + n, desc, r[2], r[3], pu, memoria=memoria)
 assert abs(P.total(orc) - VALOR_GLOBAL) < 0.005, P.total(orc)
+# ---- Planilha Excel da proposta (o botão "Abrir a planilha" do PDF aponta para ela) ----
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+XLSX = 'propostas/2026-09-02-MY-Engenharia-mao-de-obra-PC-2026-0902-01.xlsx'
+URL_XLSX = 'https://ra-engenharia.github.io/orcapro/' + XLSX
+wb = Workbook(); ws = wb.active; ws.title = 'Proposta'
+navy = PatternFill('solid', fgColor='0F3B5E'); branco = Font(bold=True, color='FFFFFF'); neg = Font(bold=True)
+fino = Side(style='thin', color='CBD5E1'); borda = Border(top=fino, left=fino, right=fino, bottom=fino)
+ws['A1'] = 'RA Engenharia Especial LTDA — Proposta ' + NUM; ws['A1'].font = Font(bold=True, size=14, color='0F3B5E')
+ws['A2'] = 'Cliente: MY Engenharia'; ws['A3'] = 'Objeto: prestação de mão de obra de pedreiro e ajudante'
+ws['A4'] = 'Data: ' + fmt(hoje) + ' · validade 15 dias · referência SINAPI-MG 06/2026'
+cab = ['Item', 'Serviço', 'Un.', 'Qtd.', 'Preço unit. (R$)', 'Total (R$)', 'Referência']
+ws.append([]); ws.append(cab)
+for c in ws[6]: c.fill = navy; c.font = branco; c.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True); c.border = borda
+lin = 7
+for n, desc, un, q, est, pu, tot, base, b in rows:
+    ws.append([n, desc + (' (quantidade estimada)' if est else ''), un, q, pu, None, base])
+    ws.cell(row=lin, column=6).value = '=D%d*E%d' % (lin, lin)
+    for col in range(1, 8): ws.cell(row=lin, column=col).border = borda
+    ws.cell(row=lin, column=2).alignment = Alignment(wrap_text=True, vertical='top')
+    for col in (5, 6): ws.cell(row=lin, column=col).number_format = '#,##0.00'
+    lin += 1
+fim = lin - 1
+ws.append(['', 'Subtotal', '', '', '', '=SUM(F7:F%d)' % fim]); ws.cell(row=lin, column=6).number_format = '#,##0.00'; ws.cell(row=lin, column=2).font = neg; lin += 1
+ws.append(['', 'Desconto comercial (abatimento do BDI)', '', '', '', -desconto]); ws.cell(row=lin, column=6).number_format = '#,##0.00'; lin += 1
+ws.append(['', 'VALOR GLOBAL', '', '', '', '=F%d+F%d' % (lin - 2, lin - 1)]); ws.cell(row=lin, column=6).number_format = '#,##0.00'
+for col in range(1, 8): ws.cell(row=lin, column=col).font = neg; ws.cell(row=lin, column=col).fill = PatternFill('solid', fgColor='EEF4FA')
+for col, w in zip('ABCDEFG', (6, 70, 8, 9, 16, 16, 34)): ws.column_dimensions[col].width = w
+ws.freeze_panes = 'A7'
+m = wb.create_sheet('Memória de cálculo')
+m.append(['Item', 'Composição de referência', 'Un.', 'h pedreiro', 'h ajudante', 'Custo MO SINAPI (R$)', 'Preço unit. proposta (R$)'])
+for c in m[1]: c.fill = navy; c.font = branco
+for n, desc, un, q, est, pu, tot, base, b in rows:
+    m.append([n, base, un, round(b['ped'], 3), round(b['ser'], 3), b['mo'] or None, pu])
+m.append([]); m.append(['Salário-hora com encargos: pedreiro (88309) R$ %.2f · servente (88316) R$ %.2f · BDI %d%% · SINAPI-MG 06/2026 desonerado' % (PED, SER, int(BDI * 100))])
+for col, w in zip('ABCDEFG', (6, 46, 8, 12, 12, 20, 22)): m.column_dimensions[col].width = w
+wb.save(XLSX); print('ok xlsx', XLSX)
+orc['comercial']['linkPlanilha'] = URL_XLSX
+
 arq = P.salvar('propostas/2026-09-02-MY-Engenharia-mao-de-obra-PC-2026-0902-01.orcapro.json')
 print('ok pacote', arq, 'total', P.total(orc), 'unitarios', pu_final)

@@ -501,6 +501,10 @@
         '<div class="row">' + f("crea", "Registro CREA/CAU", emp.crea) + f("registroNacional", "Reg. Nacional", emp.registroNacional) + '</div>' +
         '<div class="row">' + f("cidade", "Cidade / UF", emp.cidade) + f("contato", "Contato (tel/e-mail)", emp.contato) + '</div>' +
         '<div class="field"><label>Endereço (rua, nº, bairro — usado nos documentos)</label><input id="emp-endereco" value="' + Util.esc(emp.endereco || "") + '"></div>' +
+        '<h3 style="margin:10px 0 4px;border-top:1px solid var(--linha);padding-top:12px;font-size:13px">Canais de contato (viram links clicáveis na proposta em PDF)</h3>' +
+        '<div class="row">' + f("telefone", "Telefone (com DDD)", emp.telefone) + f("whatsapp", "WhatsApp (só números, com DDD)", emp.whatsapp) + '</div>' +
+        '<div class="row">' + f("email", "E-mail", emp.email) + f("site", "Site (https://…)", emp.site) + '</div>' +
+        f("instagram", "Instagram (@usuario)", emp.instagram) +
         '<div class="field"><label>Logo (PNG/JPG — aparece na capa dos documentos)</label>' +
         '<input type="file" id="emp-logo" accept="image/png,image/jpeg,image/jpg,image/webp">' +
         '<div id="emp-logo-prev" class="mt">' + (logo ? '<img src="' + logo + '" style="max-height:72px;border:1px solid var(--linha);border-radius:6px;padding:4px;background:#fff">' : '<span class="muted">Nenhum logo carregado.</span>') + '</div></div>' +
