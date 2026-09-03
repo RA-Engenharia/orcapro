@@ -3630,10 +3630,30 @@
       var r = Cronograma.estimar(o);
       var xml = MSProject.gerarXML(o, r);
       if (!xml) { UI.toast("Nada a exportar: o cronograma está vazio.", "erro"); return; }
-      Util.baixar(MSProject.nomeArquivo(o), xml, "application/xml;charset=utf-8");
-      /* A mensagem diz o que o arquivo é e como abrir: ".xml baixado" sozinho
-         faz o usuário tentar dar duplo clique e cair no navegador. */
-      UI.toast("Cronograma exportado (" + r.etapas.length + " etapas). Abra pelo MS Project em Arquivo → Abrir, ou pelo ProjectLibre.", "ok");
+      var nomeArq = MSProject.nomeArquivo(o);
+      Util.baixar(nomeArq, xml, "application/xml;charset=utf-8");
+      /* ⚠ TOAST NÃO SERVE AQUI, e isso foi medido no uso real: o Windows não
+         associa `.xml` ao Project (o MSPDI é XML puro, e a associação padrão é
+         o navegador ou o bloco de notas). Quem dá duplo clique — que é o que
+         qualquer pessoa faz — vê o código cru e conclui que a exportação
+         quebrou. O aviso de 2,6 s some antes de a pessoa achar o arquivo, e o
+         passo que mais falta nem é óbvio: no seletor do Project o filtro vem em
+         "Projetos", e o .xml simplesmente NÃO APARECE na lista até trocar para
+         "Todos os arquivos". Por isso o passo a passo fica na tela até fechar. */
+      UI.modal("Cronograma exportado para o MS Project",
+        '<p style="margin:0 0 10px"><b>' + Util.esc(nomeArq) + '</b> — ' + r.etapas.length + ' etapas, com as dependências, os lags e os feriados.</p>' +
+        '<div style="background:var(--surface-2,#eef2f7);border-left:4px solid var(--aco,#0d6ebd);border-radius:6px;padding:10px 14px;margin-bottom:10px">' +
+        '<b>Duplo clique não abre no Project</b> — o Windows manda arquivo <code>.xml</code> para o navegador. O caminho é:</div>' +
+        '<ol style="margin:0 0 10px 18px;line-height:1.9">' +
+        '<li>Abra o <b>MS Project</b> (vazio)</li>' +
+        '<li><b>Arquivo → Abrir → Procurar</b></li>' +
+        '<li>No seletor, troque o tipo para <b>“Todos os arquivos (*.*)”</b> — sem isso o arquivo não aparece na lista</li>' +
+        '<li>Escolha <b>' + Util.esc(nomeArq) + '</b></li>' +
+        '<li>No assistente que abre: <b>“Como novo projeto”</b> → <b>Concluir</b></li>' +
+        '</ol>' +
+        '<p class="muted" style="font-size:12px;margin:0">Funciona igual no <b>ProjectLibre</b> e no <b>GanttProject</b>, que são gratuitos. ' +
+        'Para ver o cronograma sem instalar nada, use o botão <b>Imprimir / PDF</b> ao lado.</p>',
+        [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
     },
 
     // lê os inputs do form da aba Execução e grava em o.execucao.params (sem render)
