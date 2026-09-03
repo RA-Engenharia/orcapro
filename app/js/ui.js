@@ -1070,7 +1070,12 @@
         var nItensEt = e.itens.length;
         html += '<tr class="etapa-row"><td data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa"><span data-chevron-etapa="' + e.id + '">' + (rec ? "▸" : "▾") + '</span> <b>' + numEtapa + '</b></td>' +
           '<td colspan="5" data-toggle-etapa="' + e.id + '" style="cursor:pointer" title="' + (rec ? "Expandir" : "Recolher") + ' esta etapa">' + Util.esc(e.nome) +
-            ' <span class="muted" style="font-weight:400;font-size:11px">(' + nItensEt + (nItensEt === 1 ? " item" : " itens") + ')</span></td>' +
+            ' <span class="muted" style="font-weight:400;font-size:11px">(' + nItensEt + (nItensEt === 1 ? " item" : " itens") + ')</span>' +
+            /* ⚠ A ETAPA OPCIONAL CONTINUA NO TOTAL DA TELA (e do Excel, e da
+               medição): o que muda é a PROPOSTA, onde ela sai fora do valor
+               fechado. Sem este selo, o usuário veria o papel com um total
+               menor que o da planilha e pensaria em erro de conta. */
+            (e.opcional ? ' <span class="g-pill" style="background:#7a6b4e22;color:#7a6b4e;font-weight:700;font-size:10.5px" title="Na proposta esta etapa sai como adicional, fora do valor total">adicional</span>' : "") + '</td>' +
           '<td class="num">' + Util.fmtMoeda(se.custoDireto) + '</td>' +
           '<td class="num">' + Util.fmtMoeda(se.precoVenda) + '</td>' +
           '<td class="right"><div class="acoes">' +
@@ -1079,6 +1084,9 @@
           '<button class="btn sm" data-add-item="' + e.id + '">+ Item</button>' +
           '<button class="btn sm" data-add-sub="' + e.id + '" title="Dividir esta etapa em sub etapas (ex.: 1.1 Canteiro de Obras)">+ Sub etapa</button>' +
           '<button class="btn sm ico" data-edit-etapa="' + e.id + '" title="Renomear etapa">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
+          '<button class="btn sm ico' + (e.opcional ? ' primary' : '') + '" data-opc-etapa="' + e.id + '" title="' + (e.opcional
+            ? "Voltar a ser parte do valor fechado da proposta"
+            : "Marcar como ADICIONAL: na proposta esta etapa sai fora do total, como um opcional que o cliente pode incluir") + '">' + (typeof Icones !== 'undefined' ? Icones.get('mais', 15) : '+') + '</button>' +
           '<button class="btn sm ico danger" data-del-etapa="' + e.id + '" title="Remover etapa">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div></td></tr>';
 
         /* CORPO DA ETAPA — soltos primeiro, depois um bloco por sub etapa (a mesma

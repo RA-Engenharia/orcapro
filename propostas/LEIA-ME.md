@@ -174,6 +174,33 @@ de 15 dias, que é onde costuma estar o dinheiro na mesa.
   *Carimbar VENCIDA quando a validade passar* (Cor e letra), quem recebe o
   arquivo velho vê na hora que aquele preço expirou.
 
+## Adicionais opcionais e o aceite pelo WhatsApp
+
+### Etapa como "adicional"
+
+Na planilha, cada etapa tem um botão que a marca como **adicional opcional**.
+A etapa marcada ganha o selo *adicional* e sai do valor fechado da proposta:
+
+- o **total do orçamento não muda** — Excel, medição, cronograma e curva ABC
+  continuam vendo a obra inteira. Quem separa é só o papel que vai ao cliente;
+- na proposta, os adicionais saem num bloco à parte, com subtotal próprio e o
+  aviso de que **não estão incluídos no valor total**;
+- desmarcar devolve a etapa ao valor fechado, sem perder nada.
+
+Serve para o "e se eu quiser também…": o cliente vê o preço do extra sem que
+ele infle o valor que ele está comparando com o concorrente.
+
+### Aceite pelo WhatsApp
+
+O bloco de assinatura pode trazer o botão **Aceitar esta proposta pelo
+WhatsApp** (Modelos de proposta › a página de aceite). No PDF ele é um link
+`wa.me` para o número da empresa, com o texto já escrito ("Aceito a proposta
+PC-…"). Não substitui a assinatura — fica ao lado dela, para o cliente que
+responde do celular e não vai imprimir nada.
+
+⚠ O aceite online com registro no sistema (portal do cliente, link rastreado)
+depende de servidor, que não vive neste repositório.
+
 ## O "Montar com a IA" e o servidor
 
 O botão sempre chamou `POST {iaBackend}/ia/modelo-proposta`, e **o servidor
