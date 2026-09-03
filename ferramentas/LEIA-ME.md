@@ -90,6 +90,67 @@ Por fim, publicar os `.json` (e `.json.gz`) em `/analitico/` no servidor.
 3. o pacote passa a **declarar** `desonerado: true|false`;
 4. `--regime` na linha de comando e o sufixo no nome do arquivo.
 
+## derivar-analitico-desonerado.py — o analítico desonerado, sem o .xlsx
+
+O caminho oficial acima roda no Windows e depende da Referência baixada. Este
+script produz **o mesmo arquivo** a partir de dados que já circulam:
+
+| o que | de onde |
+|---|---|
+| estrutura + coeficientes | `app/data/sinapi-<UF>-analitico.json` (o onerado) |
+| preços unitários | `sinapi-<UF>-2026-06-desonerada.json` (o sintético do servidor) |
+
+Ele repete as duas regras do gerador oficial: a **atribuição São Paulo**
+(insumo sem coleta na UF usa o preço de SP, com `precoAtribuidoSP`) e a
+**repartição MO/MAT/EQ recursiva** (sub-composição é quebrada nas razões dela
+própria; hora-homem é 100 % MO e não é recursada).
+
+### Por que dá para confiar
+
+```
+python3 ferramentas/derivar-analitico-desonerado.py --conferir PA
+```
+
+Roda a mesma derivação com os preços **onerados** e compara com o analítico
+onerado publicado, que veio do `.xlsx`. Em PA, SP, BA e RS:
+
+```
+custoUnitario  10454/10454  (100,00%)   pior R$ 0,00
+custoMO        10454/10454  (100,00%)   pior R$ 0,00
+custoMAT / custoEQ                      100,00%
+```
+
+MG dá 99,98 % (duas composições com 1 centavo de arredondamento). Ou seja: a
+derivação **reproduz o gerador oficial**, não aproxima.
+
+E o efeito do regime confere com o oficial: comparando o delta do arquivo
+derivado com o delta `CCD − CSD` dos dois sintéticos da CAIXA, **97,5 % (MG) e
+98,2 % (PA)** das composições ficam dentro de 2 centavos, com mediana de
+diferença **0,0000**.
+
+### A divergência que NÃO é defeito
+
+Conferido contra o custo oficial da CCD, o arquivo derivado bate em ~60 % das
+composições dentro de 2 centavos. Parece pouco — até medir o **arquivo oficial
+onerado contra a CSD oficial**: 61,2 % (MG) e 60,0 % (PA), pior caso R$ 0,15.
+É a mesma faixa.
+
+O motivo está escrito no próprio gerador: o `custoUnitario` da composição é a
+**soma dos insumos**, não o custo arredondado da CSD/CCD — de propósito, porque
+o custo oficial diverge quando algum insumo está sem preço. O derivado herda
+essa característica porque usa o mesmo método.
+
+### Onde os arquivos ficam
+
+Os 27 estados estão em `app/data/sinapi-<UF>-desonerada-analitico.json.gz`
+(~0,9 MB cada, 26 MB no total). O app tenta o `.json.gz` antes do `.json`, e é
+esse o arquivo que ele busca.
+
+⚠ **Isso atende o app do GitHub Pages.** O OrçaPRO **instalado** não recebe
+`data/` pelo pacote de atualização (é o que preserva a base do cliente), então
+para a frota é preciso publicar os mesmos arquivos em `/analitico/` no
+servidor — ou deixá-los entrar no próximo pacote completo.
+
 ### O lado do app (já publicado, 1.2.33)
 
 - procura `sinapi-<UF>-<COMP>-desonerada-analitico.json` quando os **itens**
