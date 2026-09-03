@@ -311,7 +311,13 @@
       + K.campo("Traços da marca", K.sel("pme-ornamento", K.opts([["", "Sem ornamento"], ["curvas", "Curvas — traços nas capas e nos cantos das páginas"]], e.ornamento)))
       + K.campo("Rodapé das páginas", K.sel("pme-rodape", K.opts([["", "Sem rodapé"], ["contatos", "Contatos da empresa (links clicáveis no PDF)"]], e.rodape)))
       + K.campo("Páginas internas", K.sel("pme-fundoInternas", K.opts([["", "Escopo e condições em página escura"], ["claro", "Todas as páginas internas claras"]], e.fundoInternas)))
-      + "</div>";
+      + K.campo("Logo nas páginas escuras", K.sel("pme-logoEscuro", K.opts([
+          ["", "Como ele é (logo claro)"],
+          ["clarear", "Deixar branco (logo escuro — o mais comum)"],
+          ["pastilha", "Sobre uma pastilha branca (mantém as cores)"]], e.logoEscuro)))
+      + "</div>"
+      + '<p class="muted" style="margin:-4px 0 0;font-size:12px">Capa, "quem somos" e encerramento têm fundo escuro: '
+      + "um logo azul-marinho desaparece neles sem dar erro nenhum.</p>";
 
     html += '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">Letra</label>'
       + '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-top:6px">';
@@ -330,6 +336,39 @@
       + " As letras são as que já existem no computador e no celular. É de propósito: a proposta costuma "
       + "ser impressa na frente do cliente, e uma fonte baixada da internet que não carrega troca o "
       + "desenho inteiro sem avisar.</p>";
+
+    /* =================================================================
+     * O LOGO DO MODELO
+     *
+     * ⚠ O PADRÃO CONTINUA SENDO O ⚙ EMPRESA — é o que mantém o sistema
+     *   white-label: cada conta imprime a marca dela. Aqui é a exceção
+     *   explícita: um modelo que carrega o próprio logo, para atravessar a
+     *   exportação e chegar montado na conta de quem recebe. A tela diz qual
+     *   dos dois está valendo, porque um logo que "não muda quando eu troco
+     *   em ⚙ Empresa" é o tipo de coisa que ninguém descobre sozinho.
+     * ================================================================= */
+    var logoEmp = "";
+    try { logoEmp = (typeof Empresa !== "undefined" && Empresa.logo && Empresa.logo()) || ""; } catch (eL) {}
+    html += '<div style="margin-top:16px;border-top:1px solid var(--linha);padding-top:12px">'
+      + '<label style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">Logo</label>'
+      + '<div class="flex" style="gap:12px;align-items:center;margin-top:6px;flex-wrap:wrap">'
+      + '<div style="min-width:150px;min-height:56px;display:flex;align-items:center;justify-content:center;border:1px solid var(--linha);border-radius:6px;padding:6px;background:#fff">'
+      + (m.logo
+          ? '<img src="' + esc(m.logo) + '" alt="logo do modelo" style="max-height:44px;max-width:180px;object-fit:contain">'
+          : (logoEmp
+              ? '<img src="' + esc(logoEmp) + '" alt="logo da empresa" style="max-height:44px;max-width:180px;object-fit:contain">'
+              : '<span class="muted" style="font-size:12px">sem logo</span>'))
+      + "</div>"
+      + '<div style="flex:1;min-width:220px">'
+      + '<button class="btn sm" data-gacao="propmod-logo">' + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Enviar um logo para este modelo</button>"
+      + (m.logo ? ' <button class="btn sm ghost" data-gacao="propmod-logo-remover">Voltar a usar o do ⚙ Empresa</button>' : "")
+      + '<p class="muted" style="margin:6px 0 0;font-size:12px">'
+      + (m.logo
+          ? "Este modelo usa um <b>logo próprio</b> — o de ⚙ Empresa é ignorado aqui. Ele viaja dentro do arquivo quando você levar o modelo para outra conta."
+          : (logoEmp
+              ? "Usando o logo de <b>⚙ Empresa</b>. Envie um aqui só se este modelo tiver de sair com outra marca, ou se você for mandá-lo para outra conta."
+              : "Nenhum logo cadastrado: a capa sai com <b>[LOGO]</b>. Envie o logo em ⚙ Empresa (vale para todos os documentos) ou aqui, só para este modelo."))
+      + "</p></div></div></div>";
 
     /* a quem este modelo serve */
     var clientes = K.lista("clientes");
@@ -525,6 +564,8 @@
       + '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;margin-bottom:10px;font-size:12.5px">'
       + "A IA <b>não inventa fato sobre a sua empresa</b>. O que você não escrever aqui aparece no documento como "
       + "<b>[preencher: …]</b>, para você completar — em vez de virar uma afirmação que ninguém fez."
+      + "<br>Sem internet ou sem licença da IA, o modelo é montado <b>aqui mesmo</b>, pelas suas respostas: "
+      + "você vê a estrutura e confirma antes de qualquer coisa ser criada."
       + "</div>"
       + campos
       + '<p class="muted" style="font-size:12px;margin:8px 0 0">Preço, prazo e forma de pagamento não são perguntados: '
@@ -532,6 +573,24 @@
       [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
        { texto: "Montar estrutura", classe: "primary", onClick: function () { G._propModAgenteEnviar(); } }]);
   };
+
+  /* =====================================================================
+   * MONTAR A ESTRUTURA — a IA quando dá, a regra quando não dá
+   *
+   * ⚠ O BOTÃO NÃO PODE TERMINAR EM TOAST VERMELHO. Antes, tudo dependia do
+   *   servidor de IA: sem licença ativa, sem internet, ou com a rota fora do
+   *   ar, o usuário respondia oito perguntas e recebia "não consegui falar
+   *   com a IA" — sem modelo nenhum. Agora o roteiro SEMPRE vira um modelo:
+   *   `PropTpl.montarDoRoteiro` monta a mesma estrutura por regra, aqui
+   *   dentro, com as palavras que a pessoa acabou de escrever. A IA, quando
+   *   responde, entra por cima — ela costuma escrever textos melhores.
+   *
+   * ⚠ E NADA É GRAVADO SEM O USUÁRIO VER. A tela de confirmação diz de onde
+   *   veio a estrutura (IA ou roteiro), quantas páginas tem e o que a IA
+   *   devolveu que este sistema não sabe desenhar. Modelo que aparece pronto
+   *   na lista, sem ninguém aprovar, é modelo que ninguém confere.
+   * =================================================================== */
+  var AG_TIMEOUT = 60000;
 
   G._propModAgenteEnviar = function () {
     var roteiro = {}, faltam = [];
@@ -543,6 +602,11 @@
     });
     if (faltam.length) { UI.toast("Falta responder: " + faltam.join(" · "), "erro"); return; }
 
+    /* a base garantida sai ANTES da rede: se a IA não vier, já está pronta */
+    var local;
+    try { local = T.montarDoRoteiro(roteiro); }
+    catch (e) { UI.toast("Não consegui montar a estrutura: " + (e && e.message ? e.message : e), "erro"); return; }
+
     var back = (typeof CONFIG !== "undefined" && CONFIG.iaBackend) ? CONFIG.iaBackend : "http://localhost:3041";
     /* ⚠ CARIMBO DE TURNO, como no Escopo IA: a chamada leva dezenas de
        segundos e o app continua navegável. Sem isto, a resposta de um pedido
@@ -551,40 +615,93 @@
     UI.fecharModal();
     UI.toast("Montando a estrutura do seu modelo…", "ok");
 
+    var ctrl = (typeof AbortController !== "undefined") ? new AbortController() : null;
+    var expirou = setTimeout(function () { try { if (ctrl) ctrl.abort(); } catch (e) {} }, AG_TIMEOUT);
+
     fetch(back + "/ia/modelo-proposta", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-licenca": (typeof Licenca !== "undefined" ? Licenca.chave() : "") },
-      body: JSON.stringify({ roteiro: roteiro })
-    }).then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (meuTurno !== G._pmAgReq) { UI.toast("A estrutura montada foi descartada: você pediu outra depois.", "erro"); return; }
-        if (!j.ok || !j.resultado) { UI.toast("A IA não montou a estrutura: " + (j.error || "sem resposta"), "erro"); return; }
-        G._propModAgenteAplicar(j.resultado, roteiro);
+      body: JSON.stringify({ roteiro: roteiro }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) {
+        /* 403 é a resposta do servidor para quem não ativou a licença — dizer
+           "erro de rede" mandaria a pessoa procurar defeito na internet dela */
+        if (r.status === 403 || r.status === 401) return { __motivo: "a IA é do plano licenciado" };
+        if (!r.ok) return { __motivo: "o servidor da IA respondeu " + r.status };
+        return r.json()["catch"](function () { return { __motivo: "a resposta da IA não era JSON" }; });
       })
-      .catch(function (e) {
-        UI.toast("Não consegui falar com a IA: " + (e && e.message ? e.message : e)
-          + " — confira a internet e a licença.", "erro");
+      .then(function (j) {
+        clearTimeout(expirou);
+        if (meuTurno !== G._pmAgReq) return;             /* pedido velho: some calado */
+        if (j && j.__motivo) { G._propModAgenteConfirmar(local, "roteiro", { motivo: j.__motivo }); return; }
+        if (!j || !j.ok || !j.resultado) {
+          G._propModAgenteConfirmar(local, "roteiro", { motivo: j && j.error ? j.error : "a IA não devolveu uma estrutura" });
+          return;
+        }
+        var v = T.doAgente(j.resultado);
+        if (!v.ok) { G._propModAgenteConfirmar(local, "roteiro", { motivo: "a estrutura da IA não passou na conferência (" + v.erro + ")" }); return; }
+        G._propModAgenteConfirmar(v.modelo, "ia", { descartadas: v.descartadas, costurou: v.investimentoCosturado });
+      })
+      ["catch"](function (e) {
+        clearTimeout(expirou);
+        if (meuTurno !== G._pmAgReq) return;
+        var m = (e && e.name === "AbortError") ? "a IA passou de " + Math.round(AG_TIMEOUT / 1000) + " segundos sem responder"
+              : "não consegui falar com a IA" + (e && e.message ? " (" + e.message + ")" : "");
+        G._propModAgenteConfirmar(local, "roteiro", { motivo: m });
       });
   };
 
+  /* a conferência antes de gravar: o que vai ser criado e de onde veio */
+  G._propModAgenteConfirmar = function (m, origem, info) {
+    info = info || {};
+    var linhas = m.paginas.map(function (p, i) {
+      var b = T.bloco(p.tipo);
+      var tit = txt(p.titulo) || txt(p.frase) || (b ? b.nome : p.tipo);
+      return "<li><b>" + esc(tit) + '</b> <span class="muted">· ' + esc(b ? b.nome : p.tipo) + "</span></li>";
+    }).join("");
+
+    var cabeca = (origem === "ia")
+      ? '<div class="card" style="background:#ecfdf5;border-color:#a7f3d0;color:#065f46;padding:9px;font-size:12.5px">A <b>IA</b> montou esta estrutura a partir das suas respostas.</div>'
+      : '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;padding:9px;font-size:12.5px">'
+        + "Montei a estrutura <b>aqui no seu computador</b>, pelas suas respostas — "
+        + (info.motivo ? esc(info.motivo) : "a IA não respondeu") + ". "
+        + "O documento sai completo do mesmo jeito; os textos ficam mais secos que os da IA, e você ajusta na aba Páginas.</div>";
+
+    var extras = "";
+    if (info.descartadas && info.descartadas.length) {
+      extras += '<p class="muted" style="font-size:12px;margin:8px 0 0">A IA propôs ' + info.descartadas.length
+        + " página(s) que este sistema não sabe desenhar (" + esc(info.descartadas.join(", ")) + "). Foram deixadas de fora.</p>";
+    }
+    if (info.costurou) {
+      extras += '<p class="muted" style="font-size:12px;margin:6px 0 0">A página de <b>Investimento</b> foi acrescentada: é ela que leva os preços do orçamento.</p>';
+    }
+
+    UI.modal("Confere a estrutura antes de criar",
+      cabeca
+      + '<p style="margin:10px 0 4px"><b>' + esc(m.nome) + "</b> · " + m.paginas.length + " páginas · "
+      + (m.estilo.formato === "vertical" ? "vertical (celular)" : "A4") + "</p>"
+      + '<ol style="margin:0 0 0 18px;font-size:13px;line-height:1.7">' + linhas + "</ol>"
+      + extras
+      + '<p class="muted" style="font-size:12px;margin-top:10px">Nada é gravado até você criar. Depois, tudo é editável: '
+      + "textos na aba <b>Páginas</b>, fotos na aba <b>Fotos</b>, cores e logo em <b>Cor e letra</b>.</p>",
+      [{ texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+       { texto: "Criar modelo", classe: "primary", onClick: function () { UI.fecharModal(); G._propModAgenteAplicar(m); } }]);
+  };
+
   /* grava o modelo e abre a LISTA DO QUE ANEXAR */
-  G._propModAgenteAplicar = function (r, roteiro) {
+  G._propModAgenteAplicar = function (m) {
     var usados = lista().map(function (x) { return T.modelo(x).nome; });
-    var m = T.modelo({
-      nome: T.nomeLivre(r.nome || "Modelo da minha empresa", usados),
-      descricao: r.descricao || "",
-      estilo: r.estilo || {},
-      paginas: r.paginas || []
-    });
-    m.id = "";
-    var faltas = T.validar(m);
+    var novo = T.modelo(m);
+    novo.nome = T.nomeLivre(novo.nome, usados);
+    novo.id = "";
+    var faltas = T.validar(novo);
     if (faltas.length) { UI.toast(faltas[0], "erro"); return; }
-    var salvo = gravar(m);
+    var salvo = gravar(novo);
     if (!salvo) { UI.toast("Não consegui gravar o modelo (armazenamento cheio?).", "erro"); return; }
 
     G._propModId = salvo.id;
     App.render();
-    G._propModAnexos(salvo.id, r.pendencias || []);
+    G._propModAnexos(salvo.id, []);
   };
 
   /* =====================================================================
@@ -599,7 +716,12 @@
     var raw = obter(id); if (!raw) return;
     var m = T.modelo(raw);
     var sl = T.slots(m) || [];
-    var vazios = sl.filter(function (s) { return !s.ref; });
+    /* mesma régua do `PropTpl.avisos`: slot que a página não desenha (a foto da
+       equipe desligada no Contato) não é pendência, e página cheia com o
+       ornamento ligado sai com o fundo da marca em vez de buraco */
+    var CHEIA = { capa: 1, sobre: 1, encerramento: 1 };
+    var comFundo = m.estilo.ornamento === "curvas";
+    var vazios = sl.filter(function (s) { return !s.ref && s.desenha && !(comFundo && CHEIA[s.paginaTipo]); });
 
     /* os marcadores [preencher: ...] que sobraram nos textos */
     var marcadores = [];
@@ -639,6 +761,71 @@
       + '<p class="muted" style="font-size:12.5px;margin-top:10px">As fotos ficam na aba <b>Fotos</b> do modelo; '
       + "os textos, na aba <b>Páginas</b>. A <b>Prévia</b> mostra como está ficando.</p>",
       [{ texto: "Ver o modelo", classe: "primary", onClick: function () { UI.fecharModal(); G._propModAbrir(id); } }]);
+  };
+
+  /* =====================================================================
+   * ENVIAR O LOGO DO MODELO
+   *
+   * ⚠ ELE MORA NO REGISTRO, e o registro mora no localStorage: um PNG de
+   *   3 MB arrastado para cá derrubaria a gravação da conta inteira com a
+   *   cota estourada. Por isso a imagem é REDESENHADA num canvas com largura
+   *   máxima antes de virar data URI, e há um teto duro no fim.
+   * ⚠ SVG entra pelo seletor e sai PNG: o motor não aceita SVG em data URI
+   *   (é documento, pode trazer script) — mas o navegador sabe rasterizá-lo,
+   *   e recusar o formato em que metade das marcas está seria empurrar o
+   *   usuário para o "[LOGO]" da capa.
+   * =================================================================== */
+  var LOGO_LARGURA = 900;      /* ~46 mm impressos a 300 dpi, com folga */
+  var LOGO_TETO = 260 * 1024;  /* data URI final; acima disso a conta sofre */
+
+  G._propModLogoEnviar = function () {
+    var id = G._propModId;
+    if (!obter(id)) { UI.toast("Abra um modelo primeiro.", "erro"); return; }
+    var inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = "image/png,image/jpeg,image/webp,image/svg+xml";
+    inp.onchange = function () {
+      var f = inp.files && inp.files[0]; if (!f) return;
+      var fr = new FileReader();
+      fr.onerror = function () { UI.toast("Não consegui ler a imagem.", "erro"); };
+      fr.onload = function () { G._propModLogoAplicar(id, String(fr.result)); };
+      fr.readAsDataURL(f);
+    };
+    inp.click();
+  };
+
+  G._propModLogoAplicar = function (id, dataURL) {
+    var img = new Image();
+    img.onerror = function () { UI.toast("Este arquivo não abriu como imagem.", "erro"); };
+    img.onload = function () {
+      /* SVG sem width/height chega com dimensão 0: o canvas sairia vazio */
+      var lw = img.naturalWidth || img.width || LOGO_LARGURA;
+      var lh = img.naturalHeight || img.height || Math.round(LOGO_LARGURA / 3);
+      function render(maxW) {
+        var esc2 = Math.min(1, maxW / lw);
+        var cv = document.createElement("canvas");
+        cv.width = Math.max(1, Math.round(lw * esc2));
+        cv.height = Math.max(1, Math.round(lh * esc2));
+        var ctx = cv.getContext("2d");
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        return cv.toDataURL("image/png");
+      }
+      var out = "";
+      try { out = render(LOGO_LARGURA); } catch (e) { UI.toast("Não consegui converter a imagem: " + (e.message || e), "erro"); return; }
+      if (out.length > LOGO_TETO) { try { out = render(500); } catch (e2) {} }
+      if (!T.logoValido(out)) { UI.toast("A conversão do logo falhou neste navegador.", "erro"); return; }
+      if (out.length > LOGO_TETO) {
+        UI.toast("Este logo ficou grande demais (" + Math.round(out.length / 1024) + " KB) mesmo reduzido. "
+          + "Use uma imagem com menos detalhe ou fundo transparente.", "erro");
+        return;
+      }
+      var r = obter(id); if (!r) return;
+      r.logo = out;
+      if (!gravar(r)) { UI.toast("Não consegui gravar (armazenamento cheio?).", "erro"); return; }
+      G._propModRender();
+      UI.toast("Logo deste modelo atualizado (" + Math.round(out.length / 1024) + " KB).", "ok");
+    };
+    img.src = dataURL;
   };
 
   /* =====================================================================
@@ -1118,6 +1305,15 @@
      *   montou, e um "id igual" é justamente o caso em que isso aconteceria
      *   sem ninguém ver.
      * =============================================================== */
+    "propmod-logo": function () { G._propModLogoEnviar(); },
+    "propmod-logo-remover": function () {
+      var r = obter(G._propModId); if (!r) return;
+      delete r.logo;
+      if (!gravar(r)) { UI.toast("Não consegui gravar.", "erro"); return; }
+      G._propModRender();
+      UI.toast("Este modelo voltou a usar o logo de ⚙ Empresa.", "ok");
+    },
+
     "propmod-cortar": function (ds) { G._propModCortar(ds.n); },
     "propmod-corte-desfazer": function (ds) { G._propModCorteDesfazer(ds.n); },
 
@@ -1296,7 +1492,7 @@
       });
       var fm = K.v("pme-formato"); if (fm) e.formato = fm;
       var tx = document.getElementById("pme-textura"); e.textura = tx ? tx.value : e.textura;
-      ["ornamento", "rodape", "fundoInternas"].forEach(function (k) {
+      ["ornamento", "rodape", "fundoInternas", "logoEscuro"].forEach(function (k) {
         var sel = document.getElementById("pme-" + k);
         if (sel) e[k] = sel.value;
       });
@@ -1367,7 +1563,8 @@
       '<div class="card" style="padding:10px 12px"><b>' + esc(nome) + "</b>"
       + (r.modelo.descricao ? '<div class="muted" style="font-size:12.5px">' + esc(r.modelo.descricao) + "</div>" : "")
       + '<div class="muted" style="font-size:12.5px;margin-top:4px">' + r.modelo.paginas.length + " página(s) · "
-      + r.nFotos + " de " + r.nSlots + " foto(s)</div></div>"
+      + r.nFotos + " de " + r.nSlots + " foto(s)"
+      + (r.temLogo ? " · com o <b>logo</b> dentro" : "") + "</div></div>"
       + (nome !== r.modelo.nome
           ? '<p class="muted" style="font-size:12.5px;margin-top:8px">Já existe um modelo chamado "'
             + esc(r.modelo.nome) + '", então este entra como "' + esc(nome) + '". Nada do que você tem é alterado.</p>'
@@ -1387,7 +1584,13 @@
   G._propModGravarImport = function (r, nome) {
     var novo = T.modelo({
       nome: nome, descricao: r.modelo.descricao,
-      estilo: r.modelo.estilo, paginas: r.modelo.paginas
+      estilo: r.modelo.estilo, paginas: r.modelo.paginas,
+      /* ⚠ O LOGO ENTRA JUNTO. Ele é o único conteúdo visual que viaja DENTRO
+         do arquivo (as fotos vão à parte, para o IndexedDB): esquecê-lo aqui
+         faz o modelo importado desenhar [LOGO] na capa mesmo com o arquivo
+         trazendo a marca — e o dono da conta que recebeu não tem como saber
+         que o logo veio e foi descartado na porta. */
+      logo: r.modelo.logo
       /* sem paraCliente e sem padrao, de propósito — ver PropTpl.paraArquivo */
     });
     novo.id = "";                    /* o Store cunha o id — nunca reaproveita o da origem */
