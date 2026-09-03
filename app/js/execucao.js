@@ -327,7 +327,17 @@
 
       // datas
       var ini = params.dataInicio ? new Date(params.dataInicio + "T00:00:00") : new Date();
-      if (C && C.addDiasUteis) etapas.forEach(function (et) { et.dataInicio = C.addDiasUteis(ini, et._ini, params.diasUteisSemana); et.dataFim = C.addDiasUteis(ini, et._fim, params.diasUteisSemana); });
+      /* ⚠ OS MESMOS FERIADOS DO CRONOGRAMA. Duas telas do mesmo app dando
+         datas diferentes para a mesma obra e pior que as duas errarem igual:
+         quem compara acha que uma delas esta com defeito e nao sabe qual. Os
+         parametros de feriado moram no cronograma do orcamento — a Execucao
+         nao tem interruptor proprio, ela segue o que foi decidido la. */
+      var ferE = (C && C._feriadosDe) ? C._feriadosDe(self._paramsFeriado(orc), ini, prazoFinal) : { mapa: {} };
+      if (C && C.addDiasUteis) {
+        var giroE = 0;
+        while (C.diaUtil && !C.diaUtil(ini, params.diasUteisSemana, ferE.mapa) && giroE++ < 40) ini.setDate(ini.getDate() + 1);
+        etapas.forEach(function (et) { et.dataInicio = C.addDiasUteis(ini, et._ini, params.diasUteisSemana, ferE.mapa); et.dataFim = C.addDiasUteis(ini, et._fim, params.diasUteisSemana, ferE.mapa); });
+      }
 
       // 5) equipe de PICO + custos. Separa: EXATO (profissões SINAPI), REAL (só profissões com
       //    diária cadastrada — base da reconciliação) e SEM-BASE (itens estaduais sem custoMO).
@@ -394,7 +404,7 @@
         etapas: etapas, params: params, modo: modo, metaAtingida: metaAtingida, entregaInvalida: entregaInvalida,
         prazoNatural: prazoNatural, prazoAlvo: prazoAlvo, prazoDias: prazoFinal,
         prazoSemanas: Math.max(1, Math.ceil(prazoFinal / (num(params.diasUteisSemana) || 5))),
-        dataInicio: ini, dataFim: (C && C.addDiasUteis) ? C.addDiasUteis(ini, prazoFinal, params.diasUteisSemana) : null,
+        dataInicio: ini, dataFim: (C && C.addDiasUteis) ? C.addDiasUteis(ini, prazoFinal, params.diasUteisSemana, ferE.mapa) : null,
         equipePico: equipePico,
         custoMOSimulado: custoMOTotal, orcadoMO: orcadoMOTotal,
         custoMOExato: custoMOExato, orcadoMOExato: orcadoMOExato,
@@ -430,6 +440,18 @@
         }
       });
       return { enviadas: nEnv, puladas: lista.length - nEnv };
+    },
+
+    /* os parametros de feriado vivem no cronograma do orcamento; a Execucao
+       so os le. Sem cronograma gravado, valem os DEFAULTS (desconto ligado). */
+    _paramsFeriado: function (orc) {
+      var cp = (orc && orc.cronograma && orc.cronograma.params) || {};
+      return {
+        diasUteisSemana: cp.diasUteisSemana || 5,
+        descontarFeriados: cp.descontarFeriados !== false,
+        feriadosFacultativos: cp.feriadosFacultativos !== false,
+        feriadosExtras: cp.feriadosExtras || null
+      };
     },
 
     _diasUteisEntre: function (ini, fim, diasSemana, C) {

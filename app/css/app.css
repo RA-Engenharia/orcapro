@@ -1297,6 +1297,18 @@ table.prop-tbl tbody tr.grp-lau.subetapa td {
   box-shadow: inset 3px 0 0 var(--p-aco); font-size: var(--t-micro);
 }
 .rel-rod { margin-top: 20px; border-top: 1px solid var(--p-linha); padding-top: 8px; font-size: 8.5pt; color: #7a8a99; }
+/* ⚠ MARCA D'ÁGUA NO DOCUMENTO QUE FLUI. Só existia `.pg .wm` (a página fixa da
+   proposta/laudo). No relatório e no cronograma, que usam `.rel-doc`, o mesmo
+   <div class="wm"> caía no FLUXO: o nome da empresa saía como uma linha solta
+   de texto no alto da primeira página — vista na foto do PDF do cronograma, e
+   impressa assim em todo relatório desde que a marca d'água entrou. */
+.rel-doc { position: relative; }
+.rel-doc > .wm {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 64pt; font-weight: var(--p-forte); color: rgba(15,39,64,.04); transform: rotate(-30deg);
+  pointer-events: none; letter-spacing: 4px; z-index: 0;
+}
+.rel-doc > *:not(.wm) { position: relative; z-index: 1; }
 
 @media print {
   /* ⚠⚠ O PAPEL É BRANCO — E ISTO AQUI FAZIA O PDF SAIR PRETO.

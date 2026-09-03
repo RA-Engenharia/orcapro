@@ -20,6 +20,49 @@
   function thin() { var s = { style: 'thin', color: { argb: 'FFCBD5E1' } }; return { top: s, left: s, bottom: s, right: s }; }
   function hStyle(c) { c.font = { bold: true, color: { argb: branco }, size: 10 }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } }; c.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; c.border = thin(); }
 
+  /* ---- Quebra MO / MAT / EQ de UM item (custo total `ct`), na ordem de confiança:
+   *  1. parcelas do PRÓPRIO item (Orcamento.repartirCusto) — é o único lugar
+   *     onde o modo de custo aparece ("só mão de obra" fatura só MO);
+   *  2. razão da composição na base analítica, normalizada pela SOMA das três
+   *     parcelas. ⚠ Nunca dividir por `custoUnitario`: no analítico da CAIXA
+   *     MO+MAT+EQ difere do custo unitário por centavos (cada parcela é
+   *     arredondada por fora), e dividindo pelo unitário 0,6% do custo direto
+   *     ficava sem categoria — o Resumo do arquivo entregue acusava
+   *     "⚠ verificar" contra si mesmo, em orçamento correto. É a mesma régua de
+   *     Analitico.razoes();
+   *  3. sem nada disso: material, e `fonte` diz que caiu aqui — o Resumo conta
+   *     quantos itens vieram de cada fonte em vez de fingir precisão.
+   * Usada pelo Resumo E pela pizza da aba Gráficos: eram duas contas, e a pizza
+   * simplesmente não saía quando os itens não traziam parcelas. */
+  function _repartirItem(it, ct, ana, num) {
+    var rep = (global.Orcamento && Orcamento.repartirCusto) ? Orcamento.repartirCusto(it, ct) : null;
+    if (rep) return { mo: num(rep.mo), mat: num(rep.mat), eq: num(rep.eq), fonte: 'item' };
+    if (ana) {
+      var soma = num(ana.custoMO) + num(ana.custoMAT) + num(ana.custoEQ);
+      if (soma > 0) return { mo: ct * num(ana.custoMO) / soma, mat: ct * num(ana.custoMAT) / soma, eq: ct * num(ana.custoEQ) / soma, fonte: 'analitico' };
+    }
+    return { mo: 0, mat: ct, eq: 0, fonte: 'material' };
+  }
+  // Soma da quebra no orçamento inteiro. `ct` de cada item vem da FONTE ÚNICA
+  // (Orcamento.calcular) — a mesma coluna H da Analítica — para MO+MAT+EQ fechar
+  // com o Custo Direto por construção, e não por coincidência.
+  function _quebraMoMatEq(orc, deps) {
+    var num = deps.num, insMap = deps.insumosMap || null;
+    var calc = (global.Orcamento && Orcamento.calcular) ? Orcamento.calcular(orc) : null, linhaDe = {};
+    if (calc) calc.linhas.forEach(function (L) { linhaDe[L.etapaIdx + "|" + L.itemIdx] = L; });
+    var out = { mo: 0, mat: 0, eq: 0, total: 0, nItem: 0, nAna: 0, nMat: 0, n: 0 };
+    (orc.etapas || []).forEach(function (et, ei) {
+      (et.itens || []).forEach(function (it, ii) {
+        var L = linhaDe[ei + "|" + ii];
+        var ct = L ? num(L.custoTotal) : num(it.quantidade) * num(it.custoUnitario);
+        var q = _repartirItem(it, ct, insMap && insMap[String(it.codigo)], num);
+        out.mo += q.mo; out.mat += q.mat; out.eq += q.eq; out.total += ct; out.n++;
+        if (q.fonte === 'item') out.nItem++; else if (q.fonte === 'analitico') out.nAna++; else out.nMat++;
+      });
+    });
+    return out;
+  }
+
   // Cores da identidade (para os gráficos em canvas)
   var COR = { navy: '#0f2740', aco: '#2e6f9e', verde: '#16a34a', amarelo: '#f59e0b', vermelho: '#dc2626', cinza: '#e2e8f0', muted: '#64748b', texto: '#1e293b' };
 
@@ -213,24 +256,18 @@
       }
       if (pts && pts.length) g.curvaS = _pngCurvaS(pts, totalTxt);
 
-      /* MO/MAT/EQ — os MESMOS números do donut da tela (UI._mmeOrc) e do motor.
-         Somar as três parcelas cruas ignorava o modo de custo do item: a pizza
-         do arquivo entregue mostrava Material como fatia relevante num
-         orçamento de empreitada de mão de obra, contradizendo a tela e o
-         Custo Direto da aba Resumo do próprio arquivo. */
-      var mo = 0, mat = 0, eq = 0;
-      (orc.etapas || []).forEach(function (e) {
-        (e.itens || []).forEach(function (it) {
-          var q = num(it.quantidade), m = it.modoCusto;
-          if (m !== "matEq") mo += num(it.custoMO) * q;
-          if (m !== "mo") { mat += num(it.custoMAT) * q; eq += num(it.custoEQ) * q; }
-        });
-      });
-      if (mo + mat + eq > 0) {
+      /* MO/MAT/EQ — os MESMOS números do bloco "Composição de custo" do Resumo
+         (helper único _quebraMoMatEq). Somar as três parcelas cruas do item
+         ignorava o modo de custo E deixava a pizza de fora sempre que os itens
+         não traziam parcelas — no arquivo entregue ao cliente a aba Gráficos
+         saía com dois gráficos em vez de três, sem aviso, enquanto o Resumo
+         do mesmo arquivo mostrava a quebra pela base analítica. */
+      var qb = _quebraMoMatEq(orc, deps);
+      if (qb.mo + qb.mat + qb.eq > 0) {
         g.moMatEq = _pngPizza([
-          { rotulo: 'Mão de obra', valor: mo, cor: '#2563eb' },
-          { rotulo: 'Material', valor: mat, cor: COR.verde },
-          { rotulo: 'Equipamento', valor: eq, cor: COR.amarelo }
+          { rotulo: 'Mão de obra', valor: qb.mo, cor: '#2563eb' },
+          { rotulo: 'Material', valor: qb.mat, cor: COR.verde },
+          { rotulo: 'Equipamento', valor: qb.eq, cor: COR.amarelo }
         ], fmtNum);
       }
     } catch (e) { if (global.console) console.warn('[excel graficos]', e); }
@@ -360,7 +397,10 @@
       wa.getColumn(12).width = 60;
     }
 
-    var r = hr + 1, n = 0, subCustoCells = [], subVendaCells = [], etInfo = [], grandCusto = 0, grandVenda = 0, grandMO = 0, grandMAT = 0, grandEQ = 0;
+    var r = hr + 1, n = 0, subCustoCells = [], subVendaCells = [], etInfo = [], grandCusto = 0, grandVenda = 0;
+    // quebra MO/MAT/EQ do orçamento inteiro (Resumo + nota de procedência)
+    var _qb = _quebraMoMatEq(orc, { num: num, insumosMap: insMap });
+    var grandMO = _qb.mo, grandMAT = _qb.mat, grandEQ = _qb.eq;
     var itensFlat = []; // FASE 4 (AI-ready): 1 registro por item p/ a Table tblItens da aba "Dados IA"
     etapas.forEach(function (et, etIdx) {
       // Chave da etapa para os SUMIFS: precisa ser UNICA. Duas etapas com o mesmo
@@ -406,22 +446,8 @@
         var pu = _L ? _L.precoUnit : (bdiNoPU ? aUni(cu * (1 + bdiPct / 100)) : aUni(cu));
         var pt = _L ? _L.precoTotal : aVal(qt * pu);
         etCusto += ct; etVenda += pt;
-        /* quebra MO/MAT/EQ do item. As parcelas do PRÓPRIO item mandam — é o
-           único lugar onde o modo de custo aparece. Item lançado como "só mão
-           de obra" (o cliente fornece o material) saía daqui com 60% de
-           material no arquivo entregue, enquanto a tela mostrava 100% MO: a
-           razão da composição CHEIA era aplicada sem olhar o que o item
-           realmente fatura. Sem parcelas, cai na razão do analítico como antes
-           e, na falta dele, tudo em material. */
-        var _rep = (global.Orcamento && Orcamento.repartirCusto) ? Orcamento.repartirCusto(it, ct) : null;
-        var ana = insMap && insMap[String(it.codigo)];
-        if (_rep) {
-          grandMO += _rep.mo; grandMAT += _rep.mat; grandEQ += _rep.eq;
-        } else if (ana && ana.custoUnitario > 0) {
-          grandMO += ct * ((ana.custoMO || 0) / ana.custoUnitario);
-          grandMAT += ct * ((ana.custoMAT || 0) / ana.custoUnitario);
-          grandEQ += ct * ((ana.custoEQ || 0) / ana.custoUnitario);
-        } else { grandMAT += ct; }
+        // (a quebra MO/MAT/EQ do orçamento sai de _quebraMoMatEq, depois do loop —
+        // helper único com a pizza da aba Gráficos; ver o comentário lá em cima)
         // número da FONTE ÚNICA (1.1 ou 1.1.1 quando há sub etapa). Reimplementar
         // aqui era o ponto onde a tela e o xlsx entregue divergiam calados.
         row.getCell(1).value = (_L && _L.numero) ? _L.numero : ((etIdx + 1) + '.' + (itIdx + 1));
@@ -452,6 +478,10 @@
         [6, 7].forEach(function (k2) {
           row.getCell(k2).protection = { locked: false };
           row.getCell(k2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9E0' } };
+          // validação: número ≥ 0. Texto numa amarela vira #VALUE! em cascata
+          // (Custo Total → Sintética → Resumo → ABC) e o cliente vê a planilha
+          // inteira "quebrada" sem saber que foi uma vírgula no lugar errado.
+          row.getCell(k2).dataValidation = { type: 'decimal', operator: 'greaterThanOrEqual', formulae: [0], showErrorMessage: true, errorTitle: k2 === 6 ? 'Quantidade' : 'Custo unitário', error: 'Informe um número maior ou igual a zero (use vírgula como decimal).' };
         });
         /* PREÇO ALTERADO PELO USUÁRIO: âmbar na célula do Custo Unit + observação
            com o valor da base. Marca NA CÉLULA e não em coluna nova de propósito —
@@ -590,17 +620,32 @@
       cell.value = { formula: 'F' + rr + '/$F$' + sintTot, result: totVenda ? (etInfo[i].venda / totVenda) : 0 };
       cell.numFmt = '0.0%';
     }
+    // barra de dados no Peso %: o leitor vê de relance qual etapa pesa —
+    // segue o valor vivo (recalcula com Qtd/Custo/BDI), ao contrário da pizza
+    // da aba Gráficos, que é foto da emissão.
+    if (etInfo.length) wsi.addConditionalFormatting({ ref: 'G' + s0 + ':G' + (sintTot - 1), rules: [
+      { type: 'dataBar', priority: 1, cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: aco }, gradient: true, showValue: true, minLength: 0, maxLength: 100 }
+    ] });
 
     // ===================== RESUMO (B6 = BDI parâmetro) =====================
-    wr.columns = [{ width: 26 }, { width: 34 }];
+    /* Coluna B larga + quebra de linha: "Bases de preços" e "Licitação" são
+       frases inteiras e saíam cortadas na largura 34 — o leitor via "SINAPI
+       06/2026 MG · SETOP 0" e tinha que clicar na célula para ler o resto. */
+    wr.columns = [{ width: 30 }, { width: 58 }];
     wr.mergeCells('A1:B1'); wr.getCell('A1').value = empresa; wr.getCell('A1').font = { bold: true, size: 16, color: { argb: navy } };
-    wr.mergeCells('A2:B2'); wr.getCell('A2').value = 'RESUMO DO ORÇAMENTO — ' + (orc.numero || ''); wr.getCell('A2').font = { bold: true, size: 11, color: { argb: muted } };
+    wr.mergeCells('A2:B2'); wr.getCell('A2').value = 'RESUMO DO ORÇAMENTO — ' + (orc.numero || '') + (orc.nome ? ' · ' + orc.nome : ''); wr.getCell('A2').font = { bold: true, size: 11, color: { argb: muted } };
+    var _dtEmis = orc.atualizadoEm ? new Date(orc.atualizadoEm) : new Date();
+    wr.mergeCells('A3:B3');
+    wr.getCell('A3').value = 'Emissão ' + _dtEmis.toLocaleDateString('pt-BR') + (orc.competenciaSinapi ? '   ·   Competência SINAPI ' + String(orc.competenciaSinapi).replace(/^(\d{4})-(\d{2})$/, '$2/$1') : '') + (orc.uf ? ' · ' + orc.uf : '') + '   ·   ' + (orc.desonerado ? 'Desonerado' : 'Não desonerado');
+    wr.getCell('A3').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
     function lin(rw, lab, val, fmt, opt) {
       opt = opt || {};
       var a = wr.getCell('A' + rw), b = wr.getCell('B' + rw);
       a.value = lab; a.font = { bold: true, color: { argb: opt.head ? branco : navy } };
+      a.alignment = { vertical: 'top' };
       b.value = val; if (fmt) b.numFmt = fmt;
       b.font = { bold: !!opt.bold || !!opt.head, size: opt.size || 11, color: { argb: opt.head ? branco : 'FF1E293B' } };
+      b.alignment = { wrapText: typeof val === 'string', vertical: 'top' };
       if (opt.head) { a.fill = b.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: navy } }; }
       a.border = b.border = thin();
     }
@@ -609,6 +654,7 @@
     lin(6, 'BDI (%)  ⟵ edite aqui', bdiPct, '0.00');
     wr.getCell('B6').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: amarelo } }; wr.getCell('B6').font = { bold: true };
     wr.getCell('B6').protection = { locked: false }; // FASE 2: input liberado sob proteção
+    wr.getCell('B6').dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 100], showErrorMessage: true, errorTitle: 'BDI (%)', error: 'BDI em porcentagem, entre 0 e 100 (ex.: 24,5).' };
     lin(7, 'Bases de preços', Orcamento.basesUsadasTexto(orc));
     lin(8, 'Nº de etapas / itens', etapas.length + ' / ' + n);
     // Parametrização (assistente): categoria/prazo e, quando for o caso, o bloco de licitação
@@ -622,9 +668,15 @@
         _lic.processo ? 'Processo ' + _lic.processo : '',
         _dtBr(_lic.abertura) ? 'Abertura ' + _dtBr(_lic.abertura) : '',
         cfgArr.categoria ? 'Categoria: ' + cfgArr.categoria : ''].filter(Boolean).join('  ·  '));
-    } else if (cfgArr.categoria || cfgArr.prazoEntrega) {
-      lin(9, 'Categoria / prazo', [cfgArr.categoria || '—',
-        _dtBr(cfgArr.prazoEntrega) ? 'entrega ' + _dtBr(cfgArr.prazoEntrega) : ''].filter(Boolean).join('  ·  '));
+    } else {
+      /* Prazo: a data de entrega parametrizada manda; sem ela, o prazo ESTIMADO
+         pelo cronograma (mesmo motor da aba Gantt). Antes a linha 9 ficava
+         vazia em todo orçamento sem parametrização — e o prazo é a segunda
+         pergunta do cliente, depois do preço. */
+      var _cAg = deps.cronoAgente, _fD = function (d) { return (d && d.toLocaleDateString) ? d.toLocaleDateString('pt-BR') : ''; };
+      var _prazoTxt = _dtBr(cfgArr.prazoEntrega) ? 'entrega ' + _dtBr(cfgArr.prazoEntrega)
+        : ((_cAg && _cAg.etapas && _cAg.etapas.length) ? 'prazo estimado ' + _cAg.totalDias + ' dias úteis (~' + _cAg.totalSemanas + ' semanas) · ' + _fD(_cAg.dataInicio) + ' → ' + _fD(_cAg.dataFim) + ' (aba Gantt)' : '');
+      if (cfgArr.categoria || _prazoTxt) lin(9, 'Categoria / prazo', [cfgArr.categoria || '—', _prazoTxt].filter(Boolean).join('  ·  '));
     }
     lin(10, 'Custo Direto (sem BDI)', { formula: ref(SH_SINT, 'C' + sintTot), result: grandCusto }, MOEDA, { bold: true });
     // BDI em R$ = venda − custo (com truncamento, "custo × BDI%" não fecha com a soma dos itens)
@@ -632,17 +684,28 @@
     lin(12, 'PREÇO DE VENDA', { formula: ref(SH_SINT, 'F' + sintTot), result: totVenda }, MOEDA, { head: true, bold: true, size: 13 });
     lin(13, 'Critério de arredondamento', (_A ? _A.rotulo(modoArr) : modoArr) + (_A && _A.ehPadraoTcu(modoArr) ? '  (Padrão do TCU)' : '')
       + ' · BDI ' + (bdiNoPU ? 'no preço unitário' : 'no preço final'));
-    wr.getCell('A14').value = 'Dica: as células AMARELAS são editáveis (BDI aqui, Qtd/Custo na Analítica) — tudo recalcula sozinho. A planilha é protegida só contra edição acidental (senha: raeng).';
+    wr.getCell('A14').value = 'Dica: as células AMARELAS são editáveis (BDI aqui · Qtd e Custo na Analítica · % em Parâmetros · Dias, Início e regime na aba Gantt) — tudo recalcula sozinho. A planilha é protegida só contra edição acidental (senha: raeng). Detalhes na aba Leia-me.';
     wr.mergeCells('A14:B15'); wr.getCell('A14').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } }; wr.getCell('A14').alignment = { wrapText: true, vertical: 'top' };
 
-    // Composição de custo MO/MAT/EQ (derivada da base analítica)
+    // Composição de custo MO/MAT/EQ (parcelas do item ou base analítica — _quebraMoMatEq)
     if (insMap) {
       var gCat = (grandMO + grandMAT + grandEQ) || 1;
       wr.mergeCells('A17:B17'); wr.getCell('A17').value = 'COMPOSIÇÃO DE CUSTO (MO / MAT / EQ)'; wr.getCell('A17').font = { bold: true, color: { argb: navy } };
       lin(18, 'Mão de obra — ' + fmtNum(grandMO / gCat * 100, 1) + '%', grandMO, MOEDA);
       lin(19, 'Material — ' + fmtNum(grandMAT / gCat * 100, 1) + '%', grandMAT, MOEDA);
       lin(20, 'Equipamento — ' + fmtNum(grandEQ / gCat * 100, 1) + '%', grandEQ, MOEDA);
-      wr.getCell('A21').value = 'Itens sem código SINAPI entram como material.'; wr.mergeCells('A21:B21'); wr.getCell('A21').font = { italic: true, size: 8, color: { argb: '#94A3B8'.replace('#', 'FF') } };
+      /* Procedência HONESTA da quebra, em números: quantos itens vieram das
+         parcelas do próprio item, quantos da razão da base analítica e
+         quantos não têm composição nenhuma (entram como material). O texto
+         fixo "itens sem código SINAPI entram como material" não dizia QUANTOS —
+         e num orçamento em que metade dos itens caísse aí, o gráfico de pizza
+         estaria contando uma história que ninguém tinha como conferir. */
+      var _proc = [];
+      if (_qb.nItem) _proc.push(_qb.nItem + ' pelas parcelas do item');
+      if (_qb.nAna) _proc.push(_qb.nAna + ' pela base analítica' + (deps.analiticoComp ? ' (' + deps.analiticoComp + ')' : ''));
+      if (_qb.nMat) _proc.push(_qb.nMat + ' sem composição (→ material)');
+      wr.getCell('A21').value = 'Procedência da quebra (' + _qb.n + ' itens): ' + (_proc.join(' · ') || '—') + '. Valores da emissão.';
+      wr.mergeCells('A21:B21'); wr.getCell('A21').font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } }; wr.getCell('A21').alignment = { wrapText: true, vertical: 'top' };
     }
 
     // ===================== QUADRO BDI — Acórdão TCU 2.622/2013 (FASE 2) =====================
@@ -736,8 +799,17 @@
         for (var k = 1; k <= 8; k++) { row.getCell(k).border = thin(); if (idx % 2 === 1) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
         ar++;
       });
+      if (abcLinhas.length) {
+        // filtro no header + barra de dados no % de cada item: a lista ABC é a
+        // que o cliente mais ordena/filtra ("só a classe A", "só esta etapa").
+        // protOpts libera autoFilter/sort mesmo com a aba protegida.
+        wabc.autoFilter = 'A' + hh + ':H' + abcLast;
+        wabc.addConditionalFormatting({ ref: 'G' + (hh + 1) + ':G' + abcLast, rules: [
+          { type: 'dataBar', priority: 1, cfvo: [{ type: 'min' }, { type: 'max' }], color: { argb: 'FFF59E0B' }, gradient: true, showValue: true, minLength: 0, maxLength: 100 }
+        ] });
+      }
       var abcNota = wabc.getCell('A' + (abcLast + 2));
-      abcNota.value = 'Ordem das linhas = emissão. Valores, %, classes e o resumo acima recalculam ao editar Qtd/Custo na Analítica.';
+      abcNota.value = 'Ordem das linhas = emissão. Valores, %, classes e o resumo acima recalculam ao editar Qtd/Custo na Analítica. Use o filtro do cabeçalho para ver só uma classe.';
       wabc.mergeCells('A' + (abcLast + 2) + ':H' + (abcLast + 2));
       abcNota.font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
     }
@@ -754,7 +826,11 @@
       wpar.mergeCells(1, 1, 1, Mp + 3); wpar.getCell('A1').value = empresa; wpar.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
       wpar.mergeCells(2, 1, 2, Mp + 3); wpar.getCell('A2').value = 'PARÂMETROS — MATRIZ DE DESEMBOLSO (' + Mp + ' meses) — ' + (orc.numero || ''); wpar.getCell('A2').font = { bold: true, size: 11 };
       wpar.mergeCells(3, 1, 3, Mp + 3); wpar.getCell('A3').value = 'Edite os % (células amarelas): o Cronograma e a Curva S recalculam sozinhos. Cada linha deve somar 100% — a coluna Check avisa.'; wpar.getCell('A3').font = { italic: true, size: 9, color: { argb: 'FF94A3B8' } };
-      var hp = ['Etapa']; for (var mp2 = 0; mp2 < Mp; mp2++) hp.push('Mês ' + (mp2 + 1)); hp.push('Soma', 'Check');
+      /* rótulo de mês/ano de verdade quando a distribuição segue o Gantt: a
+         coluna É um mês do calendário, e "Mês 1" obrigava o cliente a contar
+         nos dedos a partir do início da obra. */
+      var rotM = crono.rotulos || null;
+      var hp = ['Etapa']; for (var mp2 = 0; mp2 < Mp; mp2++) hp.push(rotM && rotM[mp2] ? rotM[mp2] : 'Mês ' + (mp2 + 1)); hp.push('Soma', 'Check');
       hp.forEach(function (h, i) { hStyle(wpar.getRow(5).getCell(i + 1)); wpar.getRow(5).getCell(i + 1).value = h; });
       etsP.forEach(function (et, i) {
         var pr = 6 + i, rowP = wpar.getRow(pr), tot = num(et.total);
@@ -767,6 +843,9 @@
           cP.value = frac; cP.numFmt = '0.0%'; cP.border = thin();
           cP.protection = { locked: false };
           cP.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF9E0' } };
+          // 0..1 (a célula mostra %): "30" no lugar de "30%" faria a etapa
+          // desembolsar 3.000% num mês e o Check acusaria sem dizer o motivo.
+          cP.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 1], showErrorMessage: true, errorTitle: 'Percentual do mês', error: 'Digite a fração do mês em % (ex.: 30%) — entre 0% e 100%.' };
         }
         var colSoma = wpar.getColumn(Mp + 2).letter, colFirstP = wpar.getColumn(2).letter, colLastP = wpar.getColumn(Mp + 1).letter;
         rowP.getCell(Mp + 2).value = { formula: 'SUM(' + colFirstP + pr + ':' + colLastP + pr + ')', result: somaFrac };
@@ -785,7 +864,8 @@
       var colFirst = wcr.getColumn(2).letter, colLast = wcr.getColumn(M + 1).letter;
       wcr.mergeCells(1, 1, 1, totalIdx); wcr.getCell('A1').value = empresa; wcr.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
       wcr.mergeCells(2, 1, 2, totalIdx); wcr.getCell('A2').value = 'CRONOGRAMA FÍSICO-FINANCEIRO (' + M + ' meses, com BDI) — ' + (orc.numero || ''); wcr.getCell('A2').font = { bold: true, size: 11 };
-      var ch = 4, chdr = ['Etapa']; for (var m = 0; m < M; m++) chdr.push('Mês ' + (m + 1)); chdr.push('Total');
+      var rotC = crono.rotulos || null;
+      var ch = 4, chdr = ['Etapa']; for (var m = 0; m < M; m++) chdr.push(rotC && rotC[m] ? rotC[m] : 'Mês ' + (m + 1)); chdr.push('Total');
       chdr.forEach(function (h, i) { hStyle(wcr.getRow(ch).getCell(i + 1)); wcr.getRow(ch).getCell(i + 1).value = h; });
       var cr = ch + 1, firstData = cr;
       // FASE 2 lote 6: mês = preço da etapa (Sintética) × % da matriz de Parâmetros.
@@ -877,39 +957,220 @@
           ir++;
         });
       });
+      // filtro no header: "só Material" vira a lista de compras da obra; "só a
+      // composição 89464" isola um serviço. As faixas mescladas (título de cada
+      // composição) somem ao filtrar por categoria — é o esperado, não defeito.
+      if (ir > 6) wins.autoFilter = 'A5:I' + (ir - 1);
     }
 
     // ===================== GANTT (agente de cronograma) =====================
-    var cronoAg = deps.cronoAgente;
+    /* GANTT VIVO. Até a 1.2.30 a aba era uma FOTO: barras pintadas na emissão,
+     * datas em texto. O cliente mudava "Dias" e nada acompanhava — pior que
+     * não ter a coluna, porque parecia editável. Agora é o CPM do app
+     * (Cronograma.estimar) reescrito em fórmula, célula a célula:
+     *   E início  = MAX(0, fim de cada predecessora + deslocamento do elo)
+     *   F fim     = E + C (dias)
+     *   G folga   = MAX(0, MIN(prazo total, início tardio de cada sucessora) − F)
+     *   H/I datas = WORKDAY (5 dias/semana) · WORKDAY.INTL(…,11) (6) · soma
+     *               simples (7) — os mesmos três regimes de addDiasUteis()
+     *   J crítico = folga zero
+     *   barras    = formatação condicional por expressão sobre E/F — nada de
+     *               preenchimento estático; a barra anda quando o número anda.
+     * Os `result` gravados em cada fórmula são os do motor, então o arquivo
+     * abre idêntico ao app e a suíte confere fórmula × motor um a um.
+     * ⚠ Rede com CICLO não vira fórmula: referência circular trava o Excel
+     * inteiro em aviso. Nesse caso (raro; a tela já avisa) saem os valores
+     * fixos da emissão, e a linha 3 diz isso. */
+    var cronoAg = deps.cronoAgente, wg = null, wfer = null;
     if (cronoAg && cronoAg.etapas && cronoAg.etapas.length) {
       var fmtData = function (d) { return (d && d.toLocaleDateString) ? d.toLocaleDateString('pt-BR') : ''; };
+      // data "pura" em UTC: o ExcelJS grava serial pela hora UTC; meia-noite
+      // local (UTC−3) viraria 0,125 de fração e WORKDAY trunca — o dia fica
+      // certo, mas B4+E (regime de 7 dias) arrastaria a fração para as datas.
+      var dUTC = function (d) { return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); };
       var nSem = cronoAg.totalSemanas || 1, dpw = (cronoAg.params && cronoAg.params.diasUteisSemana) || 5;
-      var wg = wb.addWorksheet("Gantt", { properties: { tabColor: { argb: 'FF0EA5E9' } }, views: [{ state: 'frozen', xSplit: 5, ySplit: 5 }] });
-      var gcols = [{ width: 30 }, { width: 18 }, { width: 7 }, { width: 11 }, { width: 11 }];
-      for (var gs = 0; gs < nSem; gs++) gcols.push({ width: 3.4 });
-      wg.columns = gcols;
-      wg.mergeCells(1, 1, 1, 5 + nSem); wg.getCell('A1').value = empresa; wg.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
-      wg.mergeCells(2, 1, 2, 5 + nSem); wg.getCell('A2').value = 'CRONOGRAMA / GANTT — ' + (orc.numero || ''); wg.getCell('A2').font = { bold: true, size: 11 };
-      wg.mergeCells(3, 1, 3, 5 + nSem); wg.getCell('A3').value = 'Estimado pelo agente: ' + cronoAg.totalDias + ' dias úteis (~' + nSem + ' semanas) · Início ' + fmtData(cronoAg.dataInicio) + ' → Fim ' + fmtData(cronoAg.dataFim) + '. Edite no app (aba Cronograma).'; wg.getCell('A3').font = { italic: true, size: 9, color: { argb: muted } };
-      ['Etapa', 'Categoria', 'Dias', 'Início', 'Fim'].forEach(function (h, i) { hStyle(wg.getRow(5).getCell(i + 1)); wg.getRow(5).getCell(i + 1).value = h; });
-      for (var gh = 0; gh < nSem; gh++) { var hc = wg.getRow(5).getCell(6 + gh); hStyle(hc); hc.value = 'S' + (gh + 1); hc.alignment = { horizontal: 'center' }; }
-      var grow = 6;
-      cronoAg.etapas.forEach(function (e) {
-        var row = wg.getRow(grow);
-        row.getCell(1).value = (e.codigo ? e.codigo + ' ' : '') + e.nome;
-        row.getCell(2).value = e.categoriaNome || e.categoria;
-        row.getCell(3).value = e.duracao;
-        row.getCell(4).value = fmtData(e.dataInicio);
-        row.getCell(5).value = fmtData(e.dataFim);
-        var argbCor = 'FF' + String(e.cor || '#0EA5E9').replace('#', '').toUpperCase();
-        var s0 = Math.floor(e.inicio / dpw), s1 = Math.max(s0 + 1, Math.ceil(e.fim / dpw));
-        for (var k = 1; k <= 5; k++) row.getCell(k).border = thin();
-        for (var gw = 0; gw < nSem; gw++) {
-          var cc = row.getCell(6 + gw); cc.border = thin();
-          if (gw >= s0 && gw < s1) cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argbCor } };
+      var parAg = (cronoAg.params && cronoAg.params.paralelismo != null) ? num(cronoAg.params.paralelismo) : 0.15;
+      var vivo = !cronoAg.temCiclo;
+      // 4 semanas de folga nas colunas: o cliente alonga uma etapa no Excel e a
+      // barra ainda tem onde aparecer (a suíte confere que o total cabe).
+      var nSemCols = nSem + 4, C0 = 11, gLast = 6 + cronoAg.etapas.length; // K = 1ª semana; linha 6 = header
+      /* ⚠ FERIADO TAMBÉM NO EXCEL. A aba abre com as mesmas datas do app; se as
+       * fórmulas não conhecessem os feriados, bastava o cliente encostar num
+       * "Dias" para o Excel recalcular TUDO sem eles e devolver uma entrega
+       * mais cedo que a do PDF — duas datas para a mesma obra, e a otimista na
+       * mão de quem cobra. O range aponta para a aba Feriados (editável: quem
+       * tem feriado municipal acrescenta lá e o Gantt inteiro acompanha).
+       * O regime de 7 dias usa a máscara "0000000" (nenhum dia de descanso
+       * semanal), que é o WORKDAY.INTL parando SÓ em feriado — a soma simples
+       * `$B$4+dias` de antes não tinha como descontar nada. */
+      var ferLista = ((cronoAg.feriados && cronoAg.feriados.lista) || []);
+      var FERR = ferLista.length ? ",Feriados!$A$3:$A$" + (2 + Math.max(60, ferLista.length + 20)) : "";
+      var fData = ferLista.length
+        ? function (refDias) {
+          return 'IF($D$4>=7,_xlfn.WORKDAY.INTL($B$4,' + refDias + ',"0000000"' + FERR + '),' +
+            'IF($D$4=6,_xlfn.WORKDAY.INTL($B$4,' + refDias + ',11' + FERR + '),WORKDAY($B$4,' + refDias + FERR + ')))';
         }
-        grow++;
+        : function (refDias) { return 'IF($D$4>=7,$B$4+' + refDias + ',IF($D$4=6,_xlfn.WORKDAY.INTL($B$4,' + refDias + ',11),WORKDAY($B$4,' + refDias + ')))'; };
+      var _amar = function (c) { c.protection = { locked: false }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: amarelo } }; c.font = { bold: true }; c.border = thin(); };
+      wg = wb.addWorksheet("Gantt", { properties: { tabColor: { argb: 'FF0EA5E9' } }, views: [{ state: 'frozen', xSplit: 3, ySplit: 6, showGridLines: false }] });
+      /* aba FERIADOS: o range que as fórmulas de data consultam. Fica editável
+         (linhas desbloqueadas) porque feriado municipal o app não adivinha —
+         quem sabe onde a obra fica escreve a data aqui e o Gantt inteiro anda. */
+      if (ferLista.length) {
+        wfer = wb.addWorksheet("Feriados", { properties: { tabColor: { argb: 'FF94A3B8' } }, views: [{ state: 'frozen', ySplit: 2, showGridLines: false }] });
+        wfer.columns = [{ width: 14 }, { width: 42 }, { width: 20 }];
+        wfer.mergeCells('A1:C1');
+        wfer.getCell('A1').value = 'FERIADOS DESCONTADOS DO PRAZO — acrescente aqui os feriados da sua cidade (o Gantt recalcula sozinho)';
+        wfer.getCell('A1').font = { bold: true, size: 10, color: { argb: navy } };
+        ['Data', 'Feriado', 'Tipo'].forEach(function (h, i) { hStyle(wfer.getRow(2).getCell(i + 1)); wfer.getRow(2).getCell(i + 1).value = h; });
+        var ferLim = 2 + Math.max(60, ferLista.length + 20);
+        for (var fi = 3; fi <= ferLim; fi++) {
+          var f = ferLista[fi - 3], rf = wfer.getRow(fi);
+          if (f) {
+            rf.getCell(1).value = new Date(Date.UTC(+f.data.slice(0, 4), +f.data.slice(5, 7) - 1, +f.data.slice(8, 10)));
+            rf.getCell(2).value = f.nome;
+            rf.getCell(3).value = f.tipo === 'facultativo' ? 'ponto facultativo' : (f.tipo === 'local' ? 'local (informado)' : 'nacional');
+          }
+          rf.getCell(1).numFmt = 'dd/mm/yyyy';
+          // toda a área é editável: as linhas vazias são o espaço para acrescentar
+          [1, 2, 3].forEach(function (cn) { rf.getCell(cn).protection = { locked: false }; rf.getCell(cn).border = thin(); });
+          if (!f) rf.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: amarelo } };
+        }
+        wfer.getCell('A' + (ferLim + 2)).value = 'Carnaval e Corpus Christi são ponto facultativo, não feriado nacional — entram porque a obra para. Apague a linha se a sua equipe trabalha nesses dias.';
+        wfer.getCell('A' + (ferLim + 2)).font = { italic: true, size: 8, color: { argb: muted } };
+        wfer.mergeCells('A' + (ferLim + 2) + ':C' + (ferLim + 2));
+      }
+      // C e E com 10: os rótulos dos parâmetros (linha 4/5) moram nelas — a 7/8
+      // a foto do Excel real mostrou "s/semana" e "m previsto" cortados.
+      var gcols = [{ width: 34 }, { width: 15 }, { width: 10 }, { width: 14 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 11 }, { width: 11 }, { width: 8 }];
+      for (var gs = 0; gs < nSemCols; gs++) gcols.push({ width: 3.4 });
+      wg.columns = gcols;
+      var gLastCol = C0 + nSemCols - 1, gLastL = wg.getColumn(gLastCol).letter, kL = wg.getColumn(C0).letter;
+      wg.mergeCells(1, 1, 1, gLastCol); wg.getCell('A1').value = empresa; wg.getCell('A1').font = { bold: true, size: 14, color: { argb: navy } };
+      wg.mergeCells(2, 1, 2, gLastCol); wg.getCell('A2').value = 'CRONOGRAMA FÍSICO / GANTT (CPM) — ' + (orc.numero || '') + (orc.nome ? ' · ' + orc.nome : ''); wg.getCell('A2').font = { bold: true, size: 11 };
+      wg.mergeCells(3, 1, 3, gLastCol);
+      wg.getCell('A3').value = vivo
+        ? 'Cronograma VIVO: edite Dias (coluna C, amarela), a data de início (B4), os dias úteis por semana (D4) e o paralelismo (F4) — início, fim, folga, datas, caminho crítico e barras recalculam. "Depende de" (#nº da etapa, +/−dias de defasagem) é a rede de precedência definida no app (informativa aqui). Emissão: ' + cronoAg.totalDias + ' dias úteis (~' + nSem + ' semanas), ' + fmtData(cronoAg.dataInicio) + ' → ' + fmtData(cronoAg.dataFim) + '.'
+        : '⚠ A rede de precedência deste orçamento tem dependência CIRCULAR — os valores abaixo são os da emissão (fixos). Corrija a rede no app (aba Cronograma) e exporte de novo para obter o Gantt recalculável.';
+      wg.getCell('A3').font = { italic: true, size: 9, color: { argb: vivo ? muted : 'FFB45309' } }; wg.getCell('A3').alignment = { wrapText: true, vertical: 'top' };
+      wg.getRow(3).height = 30;
+      // ---- linha 4: PARÂMETROS (amarelos) · linha 5: TOTAIS (fórmula) ----
+      var lab = function (addr, txt) { var c = wg.getCell(addr); c.value = txt; c.font = { bold: true, size: 9, color: { argb: navy } }; c.alignment = { horizontal: 'right', vertical: 'middle', wrapText: true }; };
+      lab('A4', 'Início da obra'); lab('C4', 'Dias úteis por semana'); lab('E4', 'Paralelismo');
+      wg.getRow(4).height = 28;
+      var cB4 = wg.getCell('B4'); cB4.value = dUTC(cronoAg.dataInicio); cB4.numFmt = 'dd/mm/yyyy'; _amar(cB4);
+      cB4.dataValidation = { type: 'date', operator: 'greaterThan', formulae: [new Date(Date.UTC(2000, 0, 1))], showErrorMessage: true, errorTitle: 'Data de início', error: 'Informe uma data (dd/mm/aaaa).' };
+      var cD4 = wg.getCell('D4'); cD4.value = dpw; _amar(cD4); cD4.alignment = { horizontal: 'center' };
+      cD4.dataValidation = { type: 'list', allowBlank: false, formulae: ['"5,6,7"'], showErrorMessage: true, errorTitle: 'Dias úteis por semana', error: 'Use 5 (seg–sex), 6 (seg–sáb) ou 7 (corrido).' };
+      var cF4 = wg.getCell('F4'); cF4.value = parAg; cF4.numFmt = '0%'; _amar(cF4); cF4.alignment = { horizontal: 'center' };
+      cF4.dataValidation = { type: 'decimal', operator: 'between', formulae: [0, 0.9], showErrorMessage: true, errorTitle: 'Paralelismo', error: 'Fração da etapa anterior que a seguinte já começa sobreposta: entre 0% e 90%.' };
+      wg.mergeCells('G4:J4'); wg.getCell('G4').value = 'Amarelo = editável. 5 = seg–sex · 6 = seg–sáb · 7 = corrido.'; wg.getCell('G4').font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } }; wg.getCell('G4').alignment = { vertical: 'middle' };
+      lab('A5', 'Prazo total (dias úteis)'); lab('C5', 'Semanas'); lab('E5', 'Fim previsto'); lab('H5', 'Etapas críticas');
+      var tot5 = function (addr, formula, result, fmt) { var c = wg.getCell(addr); c.value = vivo ? { formula: formula, result: result } : result; if (fmt) c.numFmt = fmt; c.font = { bold: true, color: { argb: navy } }; c.alignment = { horizontal: 'center', vertical: 'middle' }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; c.border = thin(); };
+      tot5('B5', 'MAX(F7:F' + gLast + ')', cronoAg.totalDias, '0');
+      tot5('D5', 'ROUNDUP(B5/$D$4,0)', nSem, '0');
+      tot5('F5', fData('B5'), dUTC(cronoAg.dataFim), 'dd/mm/yyyy');
+      wg.mergeCells('F5:G5');
+      tot5('I5', 'COUNTIF(J7:J' + gLast + ',"SIM")', (cronoAg.caminhoCritico || []).length, '0');
+      wg.getRow(5).height = 40;
+      // ---- header (linha 6) + calendário das semanas (linha 5, girado) ----
+      ['Etapa', 'Categoria', 'Dias', 'Depende de', 'Início (d)', 'Fim (d)', 'Folga (d)', 'Data início', 'Data fim', 'Crítico'].forEach(function (h, i) { hStyle(wg.getRow(6).getCell(i + 1)); wg.getRow(6).getCell(i + 1).value = h; });
+      wg.getRow(6).height = 30;
+      for (var gh = 0; gh < nSemCols; gh++) {
+        var hc = wg.getRow(6).getCell(C0 + gh); hStyle(hc);
+        // número da semana como NÚMERO (formato "S"0): é a âncora da formatação condicional
+        hc.value = gh + 1; hc.numFmt = '"S"0'; hc.alignment = { horizontal: 'center', vertical: 'middle' };
+        hc.font = { bold: true, color: { argb: branco }, size: 7 };
+        var dc = wg.getRow(5).getCell(C0 + gh), hcL = wg.getColumn(C0 + gh).letter;
+        dc.value = vivo ? { formula: '$B$4+7*(' + hcL + '$6-1)', result: new Date(dUTC(cronoAg.dataInicio).getTime() + gh * 7 * 86400000) } : new Date(dUTC(cronoAg.dataInicio).getTime() + gh * 7 * 86400000);
+        dc.numFmt = 'dd/mm'; dc.font = { size: 7, color: { argb: muted } }; dc.alignment = { textRotation: 90, horizontal: 'center', vertical: 'bottom' };
+      }
+      // ---- linhas das etapas ----
+      var rowDe = {}, porIdAg = {}, succAg = {};
+      cronoAg.etapas.forEach(function (e, i) { rowDe[e.id] = 7 + i; porIdAg[e.id] = e; succAg[e.id] = []; });
+      cronoAg.etapas.forEach(function (e) { (e.preds || []).forEach(function (pid) { if (succAg[pid]) succAg[pid].push(e.id); }); });
+      var catsVistas = [], catPorNome = {};
+      cronoAg.etapas.forEach(function (e, i) {
+        var rr = 7 + i, row = wg.getRow(rr);
+        var argbCor = 'FF' + String(e.cor || '#0EA5E9').replace('#', '').toUpperCase();
+        var catNomeG = e.marco ? '◆ Marco' : (e.categoriaNome || e.categoria || '');
+        if (!e.marco && !catPorNome[catNomeG]) { catPorNome[catNomeG] = argbCor; catsVistas.push(catNomeG); }
+        row.getCell(1).value = (e.codigo ? e.codigo + ' ' : '') + e.nome;
+        row.getCell(2).value = catNomeG;
+        var cDias = row.getCell(3); cDias.value = num(e.duracao); cDias.numFmt = '0';
+        _amar(cDias); cDias.alignment = { horizontal: 'center' };
+        cDias.dataValidation = { type: 'whole', operator: 'greaterThanOrEqual', formulae: [0], showErrorMessage: true, errorTitle: 'Duração', error: 'Dias úteis, inteiro ≥ 0 (0 = marco).' };
+        // "Depende de": nº da etapa predecessora + lag explícito (+7 / −3 dias).
+        // O "#" não é enfeite: "2" sozinho é texto que parece número, e o Excel
+        // marca a célula com o triângulo verde de "número armazenado como texto".
+        row.getCell(4).value = (e.preds || []).map(function (pid) {
+          var l = e.predLag && e.predLag[pid];
+          return '#' + String(rowDe[pid] - 6) + (l != null ? (l >= 0 ? '+' : '') + l + 'd' : '');
+        }).join(', ') || (e.preds && e.preds.length === 0 && e.predsExplicito ? '— (dia 0)' : '');
+        row.getCell(4).font = { size: 9, color: { argb: muted } }; row.getCell(4).alignment = { horizontal: 'center' };
+        // E início
+        var fIni = null;
+        if (vivo && e.preds && e.preds.length) {
+          fIni = 'MAX(0,' + e.preds.map(function (pid) {
+            var pr = rowDe[pid], d = e.predDesloc ? e.predDesloc[pid] : 0, lagExp = e.predLag && e.predLag[pid] != null;
+            return lagExp ? ('F' + pr + (d >= 0 ? '+' : '-') + Math.abs(d)) : ('F' + pr + '-INT($F$4*C' + pr + ')');
+          }).join(',') + ')';
+        }
+        row.getCell(5).value = fIni ? { formula: fIni, result: e.inicio } : e.inicio;
+        // F fim
+        row.getCell(6).value = vivo ? { formula: 'E' + rr + '+C' + rr, result: e.fim } : e.fim;
+        // G folga: MIN(prazo total, início tardio de cada sucessora − deslocamento do elo) − fim
+        var fFolga = null;
+        if (vivo) {
+          var partesS = succAg[e.id].map(function (sid) {
+            var s = porIdAg[sid], sr2 = rowDe[sid], d = s.predDesloc ? s.predDesloc[e.id] : 0, lagExp = s.predLag && s.predLag[e.id] != null;
+            return 'E' + sr2 + '+G' + sr2 + (lagExp ? ((d >= 0 ? '-' : '+') + Math.abs(d)) : ('+INT($F$4*C' + rr + ')'));
+          });
+          fFolga = 'MAX(0,MIN($B$5' + (partesS.length ? ',' + partesS.join(',') : '') + ')-F' + rr + ')';
+        }
+        row.getCell(7).value = fFolga ? { formula: fFolga, result: num(e.folga) } : num(e.folga);
+        // H/I datas · J crítico
+        row.getCell(8).value = vivo ? { formula: fData('E' + rr), result: dUTC(e.dataInicio) } : dUTC(e.dataInicio);
+        row.getCell(9).value = vivo ? { formula: fData('F' + rr), result: dUTC(e.dataFim) } : dUTC(e.dataFim);
+        row.getCell(8).numFmt = row.getCell(9).numFmt = 'dd/mm/yyyy';
+        row.getCell(10).value = vivo ? { formula: 'IF(G' + rr + '=0,"SIM","")', result: e.critico ? 'SIM' : '' } : (e.critico ? 'SIM' : '');
+        row.getCell(10).font = { bold: true, color: { argb: 'FFDC2626' } };
+        [5, 6, 7, 10].forEach(function (k) { row.getCell(k).alignment = { horizontal: 'center' }; row.getCell(k).numFmt = row.getCell(k).numFmt || '0'; });
+        for (var k = 1; k <= 10; k++) { row.getCell(k).border = thin(); if (i % 2 === 1 && k !== 3) row.getCell(k).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: cinza } }; }
+        // semanas: célula vazia com borda fina; a barra é FORMATAÇÃO CONDICIONAL
+        var s0 = Math.floor(e.inicio / dpw), s1 = Math.max(s0 + 1, Math.ceil(e.fim / dpw));
+        for (var gw = 0; gw < nSemCols; gw++) {
+          var cc = row.getCell(C0 + gw); cc.border = thin();
+          // sem fórmula (ciclo) a barra da emissão vai pintada, como sempre foi
+          if (!vivo && gw >= s0 && gw < s1) cc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: argbCor } };
+        }
+        if (vivo) {
+          /* semana w (1-based, no header K$6) está na barra se
+             w > INT(início/dpw) e w <= MAX(INT(início/dpw)+1, ROUNDUP(fim/dpw,0))
+             — exatamente a régua do preenchimento estático antigo e do _gantt da
+             tela. Crítico (J="SIM") ganha prioridade e sai em vermelho. */
+          var refSem = kL + rr + ':' + gLastL + rr;
+          var naBarra = 'AND(' + kL + '$6>INT($E' + rr + '/$D$4),' + kL + '$6<=MAX(INT($E' + rr + '/$D$4)+1,ROUNDUP($F' + rr + '/$D$4,0)))';
+          wg.addConditionalFormatting({ ref: refSem, rules: [
+            { type: 'expression', priority: 2 * i + 1, formulae: ['AND(' + naBarra + ',$J' + rr + '="SIM")'], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFDC2626' } } } },
+            { type: 'expression', priority: 2 * i + 2, formulae: [naBarra], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: argbCor } } } }
+          ] });
+        }
       });
+      // ---- legenda + notas ----
+      var lg = gLast + 2;
+      wg.getCell('A' + lg).value = 'LEGENDA'; wg.getCell('A' + lg).font = { bold: true, color: { argb: navy } };
+      catsVistas.forEach(function (nm) {
+        lg++; var c = wg.getCell('A' + lg); c.value = nm; c.font = { bold: true, color: { argb: branco }, size: 9 };
+        c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: catPorNome[nm] } }; c.alignment = { indent: 1 };
+      });
+      lg++; var cCrit = wg.getCell('A' + lg); cCrit.value = 'Caminho crítico (folga zero)'; cCrit.font = { bold: true, color: { argb: branco }, size: 9 };
+      cCrit.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDC2626' } }; cCrit.alignment = { indent: 1 };
+      lg++; wg.getCell('A' + lg).value = '◆ Marco = etapa de duração zero (entrega, vistoria, liberação): ocupa uma célula na semana em que cai.'; wg.getCell('A' + lg).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } };
+      lg++; wg.mergeCells('A' + lg + ':' + gLastL + lg);
+      wg.getCell('A' + lg).value = 'Início/Fim/Folga em dias úteis contados a partir de B4 (dia 0). Folga = quanto a etapa pode atrasar sem mudar o fim da obra. As barras têm ' + nSemCols + ' semanas de largura (' + nSem + ' da emissão + 4 de reserva); se o prazo passar disso, aumente a área ou reexporte do app. A curva S da aba Gráficos e a matriz de desembolso (Parâmetros/Cronograma) são da emissão e não seguem esta aba.';
+      wg.getCell('A' + lg).font = { italic: true, size: 8, color: { argb: 'FF94A3B8' } }; wg.getCell('A' + lg).alignment = { wrapText: true, vertical: 'top' };
+      wg.getRow(lg).height = 36;
     }
 
     // ===================== GRÁFICOS (imagens PNG geradas no browser) =====================
@@ -1152,14 +1413,19 @@
       ['     • Analítica, colunas Qtd e Custo Unit — simule quantidades e preços negociados.'],
       ['     • Resumo, parcelas do quadro BDI — a linha "BDI pela fórmula TCU" confere na hora.'],
       ['     • Parâmetros — matriz de desembolso (% de cada etapa por mês): o Cronograma e a Curva S seguem.'],
+      wg ? ['     • Gantt — Dias de cada etapa (coluna C), data de início (B4), dias úteis/semana (D4) e paralelismo (F4):'] : null,
+      wg ? ['       início, fim, folga, datas, caminho crítico e as barras recalculam (CPM por fórmula). "Depende de" é informativo.'] : null,
+      wfer ? ['     • Feriados — a lista que as datas do Gantt consultam. Acrescente o feriado da sua cidade e o cronograma inteiro anda.'] : null,
       [''],
       ['🔒  PROTEÇÃO: as demais células têm fórmula e estão travadas só contra edição acidental.'],
       ['     Senha para desproteger (Revisão → Desproteger Planilha): raeng'],
+      ['     Filtrar e ordenar continuam liberados (cabeçalhos da Curva ABC, Insumos e Dados IA).'],
       [''],
       ['✅  VERIFICAÇÕES AUTOMÁTICAS: o fim da aba Resumo confere se os totais seguem consistentes'],
       ['     após suas edições ("OK" verde · "⚠ verificar" vermelho).'],
       [''],
-      ['📷  A aba Gráficos contém IMAGENS da emissão (não recalculam). Os dados vivos estão nas abas.'],
+      ['📷  A aba Gráficos contém IMAGENS da emissão (não recalculam). Os dados vivos estão nas abas —'],
+      ['     as barras do Gantt e do Peso % (Sintética, Curva ABC) são formatação condicional e seguem os números.'],
       [''],
       ['🤖  DICA (Excel 365/Copilot): a aba "Dados IA" tem a tabela tblItens pronta para análise.'],
       ['     Experimente perguntar: "quais os 5 itens de maior impacto no custo?" ou'],
@@ -1173,6 +1439,7 @@
       if (rt.responsavel) leiaLinhas.push(['     ' + (rt.titulo ? rt.titulo + ' ' : '') + rt.responsavel + (rt.crea ? ' · ' + rt.crea : '') + (rt.contato ? ' · ' + rt.contato : '')]);
     }
     if (credito) leiaLinhas.push(['     ' + credito + ' — orçamento de obras com bases oficiais e IA.']);
+    leiaLinhas = leiaLinhas.filter(function (ln) { return ln !== null; }); // bullets condicionais (Gantt) sem deixar linha vazia
     leiaLinhas.forEach(function (ln, i) {
       var c = wleia.getCell('A' + (i + 1));
       c.value = ln[0];
@@ -1269,14 +1536,14 @@
     // Sanidade viva: se o usuário editar algo e um total desalinhar, o Resumo
     // acusa na hora — nada de número silenciosamente errado.
     var rc = resumoChecksRow || 23, checks = [];
-    if (insMap) {
-      // MO/MAT/EQ são valores da EMISSÃO (a base analítica não vem no arquivo, então
-      // não dá para recalcular a quebra ao vivo). O check tem que ser da emissão
-      // também — comparar valor estático com célula viva acusava "⚠ verificar" em
-      // toda edição legítima do cliente, e um alerta que grita sozinho vira ruído.
-      var difCat = Math.abs((grandMO + grandMAT + grandEQ) - grandCusto);
-      checks.push(['Soma MO+MAT+EQ = Custo Direto (na emissão)', null, difCat <= 1 ? 'OK' : '⚠ verificar']);
-    }
+    /* O check "Soma MO+MAT+EQ = Custo Direto" saiu daqui. Com a quebra vindo de
+       _quebraMoMatEq (razão normalizada pela soma das parcelas), MO+MAT+EQ fecha
+       com o Custo Direto POR CONSTRUÇÃO — um check que não pode reprovar é
+       decoração. E a versão anterior reprovava por motivo errado: dividia pela
+       razão do custo unitário do analítico, que difere da soma das parcelas em
+       centavos, e o arquivo entregue ao cliente saía com "⚠ verificar" num
+       orçamento correto. A procedência da quebra está na nota sob o bloco
+       COMPOSIÇÃO DE CUSTO, em números. */
     if (cronoTotRef) {
       checks.push(['Cronograma fecha com o Preço de Venda', 'IF(ABS(' + cronoTotRef + '-B12)<=0.05,"OK","⚠ verificar")',
         Math.abs(num(crono && crono.total) - totVenda) <= 0.05 ? 'OK' : '⚠ verificar']);
@@ -1338,13 +1605,26 @@
     pset(wa, 'landscape', '1:6', _memNoExcel ? ('A1:K' + (r > 7 ? r : 7)) : null);
     pset(wins, 'landscape', '1:5'); pset(wabc, 'portrait', '1:8'); pset(wcr, 'landscape', '1:4');
     pset(wdad, 'landscape', '2:2'); pset(wleia, 'portrait'); pset(wmem, 'landscape', '1:5'); pset(wpar, 'landscape', '1:5');
+    // Gantt, Gráficos e Justificativa saíam sem pageSetup: imprimir dava retrato
+    // com o Gantt cortado na semana 12 e sem rodapé de nº/página.
+    pset(wg, 'landscape', '1:6'); pset(wg2, 'portrait'); pset(wajs, 'landscape', '1:5');
+
+    // Sem linhas de grade em NENHUMA aba: as tabelas já têm borda própria e a
+    // grade cinza por trás de faixa colorida é o que separa "planilha comum" de
+    // documento. Abas que já tinham views (congelamento) recebem só o flag.
+    wb.eachSheet(function (ws) {
+      if (ws.state === 'veryHidden') return;
+      if (!ws.views || !ws.views.length) ws.views = [{ showGridLines: false }];
+      else ws.views.forEach(function (v) { v.showGridLines = false; });
+    });
 
     // Proteção anti-edição acidental: só as células amarelas editam (B6, parcelas
-    // do BDI, Qtd/Custo da Analítica). Senha documentada no Resumo: 'raeng'.
+    // do BDI, Qtd/Custo da Analítica, parâmetros e Dias do Gantt). Senha
+    // documentada no Resumo: 'raeng'.
     // ws.protect é assíncrono no ExcelJS -> construir passa a devolver Promise<wb>.
     // Dados IA fica SEM proteção: Table protegida bloqueia ordenar/filtrar no Excel.
     var protOpts = { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true, sort: true };
-    return Promise.all([wr, wsi, wa, wins, wabc, wcr, wleia, wmem, wpar].filter(Boolean).map(function (ws) {
+    return Promise.all([wr, wsi, wa, wins, wabc, wcr, wleia, wmem, wpar, wg, wfer].filter(Boolean).map(function (ws) {
       return ws.protect('raeng', protOpts);
     })).then(function () { return wb; });
   }
@@ -1458,8 +1738,21 @@
           return m;
         };
         if (typeof Analitico === "undefined") { finalizar(null); return; }
-        // O App (exportarExcel) já carrega o analítico do ESTADO ATIVO antes de gerar.
-        // Se estiver carregado, usa; se não (raro/offline), gera SEM a aba — nunca com o MG errado.
+        // O App (exportarExcel) carrega o analítico DO ORÇAMENTO (orc.uf /
+        // orc.competenciaSinapi) antes de gerar. Se estiver carregado, usa; se
+        // não (raro/offline), gera SEM a aba — nunca com o MG errado.
+        /* ⚠ Guarda de UF (v1.2.31). Um ORC de MG saiu com "06/2026/PA" na aba
+           Insumos: o app estava com o ambiente em PA e a exportação usava o
+           analítico que estivesse na memória, sem conferir de quem era. Os
+           insumos e a quebra MO/MAT/EQ eram de outro estado — número errado
+           entregue ao cliente com cara de certo. A aba Insumos só sai se a base
+           carregada for a do orçamento; senão sai a planilha sem ela e o toast
+           diz o motivo. */
+        var ufOrc = String(orc.uf || "").toUpperCase(), ufAna = String(Analitico.uf || "").toUpperCase();
+        if (Analitico.carregado && ufOrc && ufAna && ufAna !== ufOrc) {
+          if (global.UI) UI.toast("Aba Insumos omitida: a base analítica carregada é de " + ufAna + " e o orçamento é de " + ufOrc + ". Abra o orçamento de novo e exporte outra vez.", "aviso");
+          finalizar(null); return;
+        }
         finalizar(Analitico.carregado ? montarMapa() : null);
       });
     }

@@ -1249,29 +1249,98 @@
     // proporcional ao peso da etapa (modelo de "tempo-custo" exato: a soma
     // mensal fecha com o total). Usa preço de venda (com BDI).
     cronograma: function (orc, meses) {
+      var mesesPedido = meses != null && meses !== "";
       meses = parseInt(meses || orc.cronogramaMeses || 6, 10);
       if (meses < 1) meses = 1;
       var sint = this.sintetico(orc);
       var total = sint.reduce(function (s, e) { return s + e.precoVenda; }, 0) || 1;
 
-      var etapas = [], cum = 0;
-      sint.forEach(function (e) {
-        var c0 = cum / total, c1 = (cum + e.precoVenda) / total; cum += e.precoVenda;
-        var linha = { codigo: e.codigo, nome: e.nome, total: e.precoVenda, meses: [] };
-        for (var m = 0; m < meses; m++) {
-          var ms = m / meses, me = (m + 1) / meses;
-          var overlap = Math.max(0, Math.min(c1, me) - Math.max(c0, ms));
-          linha.meses.push(overlap * total);
+      var etapas = [], cum = 0, base = "proporcional", rotulos = null, estouro = 0;
+
+      /* ⚠ O DESEMBOLSO SEGUE O GANTT quando existe um. A régua abaixo (a
+       * antiga, que continua de reserva) fatia o valor pela ORDEM e pelo PESO
+       * das etapas, ignorando quanto cada uma dura: uma estrutura de 350 dias e
+       * uma limpeza de 6 recebiam fatia do mesmo tamanho. O resultado punha
+       * dinheiro em mês sem serviço e deslocava o mês de pico — e é justamente
+       * este número que o cliente usa para planejar o caixa dele.
+       * O fallback fica porque orçamento sem etapas datadas (rede circular,
+       * módulo ausente) ainda precisa de uma linha do tempo; `base` diz qual
+       * régua respondeu, para a tela não afirmar o que não sabe. */
+      var porGantt = null, rG = null;
+      try {
+        if (typeof Cronograma !== "undefined" && Cronograma.estimar && Cronograma.periodos && Util.arr(orc && orc.etapas).length) {
+          rG = Cronograma.estimar(orc);
+          if (rG && rG.totalDias > 0 && !rG.temCiclo && rG.etapas.length === sint.length) {
+            var vals = {};
+            rG.etapas.forEach(function (e, i) { vals[e.id] = sint[i].precoVenda; });
+            porGantt = Cronograma.periodos(rG, { valores: vals });
+          }
         }
-        etapas.push(linha);
-      });
+      } catch (e) { porGantt = null; }
+
+      if (porGantt && porGantt.lista.length) {
+        base = "gantt";
+        var nG = porGantt.lista.length;
+        /* ⚠ O PRAZO PEDIDO CONTINUA MANDANDO NO Nº DE COLUNAS. Numa 1ª versão
+         * o número de meses passou a vir só do Gantt, e o campo "Prazo (meses)"
+         * da tela virou enfeite: a pessoa digitava 6, via 23 colunas e não
+         * tinha como saber por quê. Controle que não controla é pior que
+         * controle nenhum. Aqui, quando o prazo foi TRAVADO (ou pedido por
+         * quem chamou), o eixo continua sendo o dele: o que passa do último
+         * mês se acumula nele — e `estouro` conta quantos meses foram
+         * dobrados, para a tela poder dizer isso em vez de esconder. */
+        var pedido = (mesesPedido || orc.cronogramaMesesManual) ? meses : nG;
+        meses = Math.max(1, pedido);
+        estouro = Math.max(0, nG - meses);
+        /* rótulo de mês/ano de verdade ("set/26"), e não "Mês 1": a coluna É
+           um mês do calendário desde que a distribuição passou a seguir o
+           Gantt. Pedido MAIOR que a obra continua a contagem em vez de
+           imprimir travessão — coluna sem nome faz o leitor achar que faltou dado. */
+        var MESR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+        var p0 = porGantt.lista[0];
+        rotulos = [];
+        for (var mr = 0; mr < meses; mr++) {
+          var pr = porGantt.lista[mr], rot;
+          if (pr) rot = pr.rotulo;
+          else { var dRef = new Date(p0.ano, p0.mes + mr, 1); rot = MESR[dRef.getMonth()] + "/" + String(dRef.getFullYear()).slice(2); }
+          rotulos.push(mr === meses - 1 && estouro ? rot + "+" : rot);
+        }
+        /* uma linha por etapa: a distribuição por etapa sai da MESMA passada
+           (`porEtapa`). Chamar `periodos` uma vez por etapa custava N+2
+           estimativas de CPM numa obra de 30 etapas — a aba do orçamento
+           travava por segundos a cada render. */
+        sint.forEach(function (e, i) {
+          var col = (porGantt.porEtapa[rG.etapas[i].id] || []).slice();
+          while (col.length < meses) col.push(0);
+          if (col.length > meses) {   // o excedente se acumula no último mês visível
+            var resto = 0;
+            for (var q = meses; q < col.length; q++) resto += col[q];
+            col = col.slice(0, meses);
+            col[meses - 1] += resto;
+          }
+          etapas.push({ codigo: e.codigo, nome: e.nome, total: e.precoVenda, meses: col });
+        });
+      } else {
+        sint.forEach(function (e) {
+          var c0 = cum / total, c1 = (cum + e.precoVenda) / total; cum += e.precoVenda;
+          var linha = { codigo: e.codigo, nome: e.nome, total: e.precoVenda, meses: [] };
+          for (var m = 0; m < meses; m++) {
+            var ms = m / meses, me = (m + 1) / meses;
+            var overlap = Math.max(0, Math.min(c1, me) - Math.max(c0, ms));
+            linha.meses.push(overlap * total);
+          }
+          etapas.push(linha);
+        });
+      }
 
       var totaisMes = [], acum = [], soma = 0;
-      for (var m = 0; m < meses; m++) {
-        var tm = etapas.reduce(function (s, e) { return s + e.meses[m]; }, 0);
+      for (var m2 = 0; m2 < meses; m2++) {
+        var tm = etapas.reduce(function (s, e) { return s + (e.meses[m2] || 0); }, 0);
         soma += tm; totaisMes.push(tm); acum.push((soma / total) * 100);
       }
-      return { meses: meses, etapas: etapas, totaisMes: totaisMes, acumPct: acum, total: total };
+      return { meses: meses, etapas: etapas, totaisMes: totaisMes, acumPct: acum, total: total,
+        base: base, rotulos: rotulos, estouro: estouro,
+        frentes: porGantt ? porGantt.lista.slice(0, meses).map(function (p) { return p.frentes; }) : null };
     },
 
     /* ==================================================================

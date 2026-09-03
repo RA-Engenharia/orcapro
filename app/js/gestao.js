@@ -25018,7 +25018,15 @@ case "nova-folha": return this.novoFolha();
         var orc = obra.orcamentoId ? Store.obterOrcamento(eid(), obra.orcamentoId) : null;
         if (orc && orc.etapas && orc.etapas.length && typeof Orcamento !== "undefined" && Orcamento.cronograma) {
           var cr = Orcamento.cronograma(orc), nM = cr.meses || 6, i;
-          var labels = []; for (i = 0; i < nM; i++) labels.push("Mês " + (i + 1));
+          /* ⚠ O EIXO ERA A ARMADILHA DESTE GRÁFICO. O planejado vinha em colunas
+           * "Mês 1..N" (fatias do orçamento) e o realizado era jogado em blocos de
+           * 30,44 DIAS contados de `obra.inicio`. Duas réguas de tempo no mesmo
+           * desenho: bastava a obra começar num mês diferente do previsto para as
+           * curvas saírem deslocadas, e a leitura "estamos atrasados" ser artefato
+           * do eixo, não medição. Agora as duas se casam por "AAAA-MM", que é a
+           * única chave que as duas fontes têm em comum, e os rótulos são os meses
+           * de calendário que o cronograma devolve. */
+          var labels = []; for (i = 0; i < nM; i++) labels.push((cr.rotulos && cr.rotulos[i]) || ("Mês " + (i + 1)));
           var realizado = []; for (i = 0; i < nM; i++) realizado.push(0);
           var iniMs = obra.inicio ? new Date(obra.inicio + "T00:00:00").getTime() : Date.now();
           /* ⚠ A CURVA S DESENHAVA UMA LINHA RASTEIRA NO ZERO.
@@ -25030,14 +25038,43 @@ case "nova-folha": return this.novoFolha();
            * cabeçalho) e só cai nas medições quando não há avanço físico —
            * exatamente a ordem de autoridade do `fonteExec`. */
           var fezPorFisico = false;
+          /* casamento por mês de calendário: `Cronograma.confronto` é o mesmo
+             motor que o cronograma impresso usa, para as duas telas não darem
+             leituras diferentes do mesmo atraso. Sem ele, cai no bloco de 30,44
+             dias de antes. */
+          var conf = null;
           if (fonteExec === "diario" && fisico && fisico.serieMes && fisico.serieMes.periodos.length) {
-            fisico.serieMes.periodos.forEach(function (p) {
-              if (p.pctAcumulado === null) return;
-              var mi = 0;
-              var d = new Date(p.chave + "-01T00:00:00").getTime();
-              mi = Math.max(0, Math.min(nM - 1, Math.floor((d - iniMs) / (30.44 * 86400000))));
-              for (var k = mi; k < nM; k++) realizado[k] = p.pctAcumulado;
-            });
+            if (typeof Cronograma !== "undefined" && Cronograma.confronto && Cronograma.periodos && cr.base === "gantt") {
+              try {
+                var rObra = Cronograma.estimar(orc);
+                var vObra = {}, sObra = Orcamento.sintetico(orc);
+                rObra.etapas.forEach(function (e, ie) { vObra[e.id] = (sObra[ie] || {}).precoVenda || 0; });
+                conf = Cronograma.confronto(Cronograma.periodos(rObra, { valores: vObra }), fisico.serieMes);
+              } catch (eC) { conf = null; }
+            }
+            if (conf && conf.temReal) {
+              /* ⚠ A LINHA DO REALIZADO É TRUNCADA, NUNCA PREENCHIDA COM null.
+                 O `confronto` devolve null depois do último mês medido, e o
+                 desenho do Portal (loja/portal.html, `pathFor` + `clampPct`)
+                 percorre o array inteiro tratando null como ZERO: a curva do
+                 cliente despencaria a pique no primeiro mês sem lançamento.
+                 Array mais curto o Portal já desenha certo — a linha
+                 simplesmente termina no mês em que a medição termina. */
+              realizado = [];
+              for (i = 0; i < nM; i++) {
+                var lc = conf.linhas[i];
+                if (!lc || lc.realizado == null) break;
+                realizado.push(lc.realizado);
+              }
+            } else {
+              fisico.serieMes.periodos.forEach(function (p) {
+                if (p.pctAcumulado === null) return;
+                var mi = 0;
+                var d = new Date(p.chave + "-01T00:00:00").getTime();
+                mi = Math.max(0, Math.min(nM - 1, Math.floor((d - iniMs) / (30.44 * 86400000))));
+                for (var k = mi; k < nM; k++) realizado[k] = p.pctAcumulado;
+              });
+            }
             fezPorFisico = true;
           }
           if (!fezPorFisico) {
@@ -25047,7 +25084,13 @@ case "nova-folha": return this.novoFolha();
             });
           }
           curvaS = { labels: labels, planejado: (cr.acumPct || []).slice(), realizado: realizado,
-                     fonte: fezPorFisico ? "diario" : "medicao" };
+                     fonte: fezPorFisico ? "diario" : "medicao",
+                     /* `eixo` diz por qual régua as duas curvas foram alinhadas: quem
+                        compara dois meses do mesmo painel precisa saber se a régua
+                        mudou no meio. */
+                     eixo: (conf && conf.temReal) ? "mes-calendario" : "blocos-30d",
+                     situacao: (conf && conf.temReal) ? conf.situacao : null,
+                     desvio: (conf && conf.temReal) ? conf.desvio : null };
           if (typeof Cronograma !== "undefined" && Cronograma.estimar) {
             var est = Cronograma.estimar(orc), totC = 0, accW = 0;
             (est.etapas || []).forEach(function (e) { totC += Util.num(e.custo); }); totC = totC || 1;

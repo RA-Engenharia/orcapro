@@ -46,6 +46,89 @@
         .map(function (l) { return "<li>" + Util.esc(l.trim().replace(/;$/, "")) + "</li>"; }).join("");
     },
 
+    /* Cronograma para a PROPOSTA: o Gantt em versão de cliente (UI._gantt com
+       `limpo`) mais um quadro de etapa/prazo/entrega.
+
+       ⚠ NÃO É O MESMO GRÁFICO DA ABA. Aqui somem folga, setas de precedência e
+       caminho crítico: "folga de 3 dias" impressa numa proposta é um convite a
+       negociar prazo em cima da reserva que absorve chuva e atraso de material.
+       O que o cliente precisa saber é quando cada frente começa e termina.
+
+       ⚠ E NÃO INVENTA CRONOGRAMA. Sem o módulo, sem etapas ou sem UI (o
+       documento também é montado fora da tela), devolve vazio e a proposta sai
+       como antes — com uma seção a menos, não com um gráfico falso. */
+    _cronograma: function (orc) {
+      if (typeof Cronograma === "undefined" || !Cronograma.estimar) return "";
+      if (typeof UI === "undefined" || !UI._gantt) return "";
+      if (!(orc.etapas || []).length) return "";
+      var r;
+      try { r = Cronograma.estimar(orc); } catch (e) { return ""; }
+      if (!r || !r.etapas.length || !r.totalDias) return "";
+      var linhas = r.etapas.map(function (e) {
+        return '<tr><td>' + Util.esc(((e.codigo ? e.codigo + " " : "") + (e.nome || "")).trim()) + '</td>' +
+          '<td>' + Util.esc(e.categoriaNome || "") + '</td>' +
+          '<td class="r">' + (e.marco ? "marco" : e.duracao + " d") + '</td>' +
+          '<td class="r">' + e.dataInicio.toLocaleDateString("pt-BR") + '</td>' +
+          '<td class="r">' + e.dataFim.toLocaleDateString("pt-BR") + '</td></tr>';
+      }).join("");
+      var nFer = ((r.feriados || {}).noPeriodo || []).length;
+      var cats = {}, leg = "";
+      r.etapas.forEach(function (e) {
+        if (cats[e.categoria]) return; cats[e.categoria] = 1;
+        leg += '<span style="margin-right:14px;white-space:nowrap"><i style="display:inline-block;width:11px;height:11px;border-radius:3px;background:' +
+          Util.esc(e.cor || "#94a3b8") + ';margin-right:5px;vertical-align:-1px"></i>' + Util.esc(e.categoriaNome || e.categoria) + '</span>';
+      });
+      return '<p>A execução está prevista em <b>' + r.totalDias + ' dias úteis</b> (aproximadamente <b>' +
+          r.totalSemanas + ' semanas</b>), com início em <b>' + r.dataInicio.toLocaleDateString("pt-BR") +
+          '</b> e conclusão prevista para <b>' + r.dataFim.toLocaleDateString("pt-BR") + '</b>.</p>' +
+        UI._gantt(r, { limpo: true }) +
+        '<div class="nota" style="margin:6px 0 10px">' + leg + '</div>' +
+        '<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Frente</th><th class="r">Prazo</th>' +
+        '<th class="r">Início</th><th class="r">Término</th></tr></thead><tbody>' + linhas + '</tbody></table>' +
+        this._desembolso(orc, r) +
+        /* ⚠ Esta é a data que o cliente lê como PROMESSA. A frase acompanha o
+           que o cálculo fez de verdade: com o desconto ligado diz quantos
+           feriados saíram; desligado, avisa que a data ainda vai se deslocar. */
+        '<p class="nota">Prazos em dias úteis (' + (r.params.diasUteisSemana || 5) + ' dias por semana), contados a partir da ' +
+        'liberação da obra' +
+        (r.params.descontarFeriados === false
+          ? ' e <b>sem desconto de feriados</b>'
+          : (nFer ? ', já descontados <b>' + nFer + ' feriado' + (nFer === 1 ? '' : 's') + '</b> do período' : ', com os feriados nacionais descontados')) +
+        '. O cronograma pode ser reajustado em função de ' +
+        'condições climáticas, liberação de frentes de serviço e fornecimento de materiais.</p>';
+    },
+
+    /* Cronograma físico-financeiro: quanto sai por mês, seguindo o Gantt.
+       ⚠ Este é o número que o cliente leva para o financeiro dele. Ele SÓ pode
+       sair da duração real de cada etapa — a régua antiga do app fatiava o
+       valor pela ordem das etapas e punha dinheiro em mês sem serviço. Sem
+       Gantt calculável, a seção some: melhor não ter do que ter errado. */
+    _desembolso: function (orc, r) {
+      if (typeof Cronograma === "undefined" || !Cronograma.periodos) return "";
+      var sint, per;
+      try {
+        sint = Orcamento.sintetico(orc);
+        if (!sint || sint.length !== r.etapas.length) return "";
+        var vmap = {};
+        r.etapas.forEach(function (e, i) { vmap[e.id] = sint[i].precoVenda || 0; });
+        per = Cronograma.periodos(r, { valores: vmap });
+      } catch (e) { return ""; }
+      if (!per || !per.lista.length || !per.total) return "";
+      var linhas = per.lista.map(function (p) {
+        return '<tr><td>' + Util.esc(p.rotulo) + '</td>' +
+          '<td class="r">' + Util.fmtMoeda(p.valor) + '</td>' +
+          '<td class="r">' + Util.fmtPct(p.pct, 1) + '</td>' +
+          '<td class="r">' + Util.fmtPct(p.acumPct, 1) + '</td></tr>';
+      }).join("");
+      return '<h3 style="margin-top:16px">Cronograma físico-financeiro</h3>' +
+        '<table class="prop-tbl"><thead><tr><th>Mês</th><th class="r">Previsão de desembolso</th>' +
+        '<th class="r">% do mês</th><th class="r">% acumulado</th></tr></thead><tbody>' + linhas + '</tbody>' +
+        '<tfoot><tr><td>TOTAL</td><td class="r">' + Util.fmtMoeda(per.total) + '</td>' +
+        '<td class="r">100,0%</td><td class="r"></td></tr></tfoot></table>' +
+        '<p class="nota">Distribuição estimada a partir da duração de cada etapa no cronograma acima. ' +
+        'A medição e o faturamento seguem as condições comerciais desta proposta.</p>';
+    },
+
     /* Gera o documento completo (innerHTML do container de impressão). */
     gerarHTML: function (orc, usuario) {
       var c = Orcamento.garantirComercial(orc);
@@ -72,6 +155,11 @@
 
       // ---- Páginas ----
       var P = [];
+      /* Numeração das seções por CONTADOR, não por número escrito à mão: o
+         Cronograma só entra quando há cronograma para mostrar, e com número
+         fixo a proposta pularia do "4." para o "6." na cara do cliente. */
+      var nSec = 0;
+      function sc(titulo) { nSec++; return nSec + ". " + titulo; }
 
       // 1) CAPA
       P.push(
@@ -98,23 +186,23 @@
         '</section>');
 
       // 2) APRESENTAÇÃO
-      P.push(pg("1. Apresentação", '<p>' + apresentacao + '</p>' +
+      P.push(pg(sc("Apresentação"), '<p>' + apresentacao + '</p>' +
         '<p>Esta proposta foi elaborada com base nas informações disponibilizadas e em composições de ' +
         'custos referenciadas ' + (Orcamento.basesUsadas(orc).length > 1 ? 'nas bases de preços' : 'na base de preços') + ' <b>' + Util.esc(Orcamento.basesUsadasTexto(orc)) + '</b>, ' +
         'acrescidas de BDI de <b>' + Util.fmtPct(t.bdiPercentual) + '</b>.</p>'));
 
       // 3) ENTENDIMENTO DO ESCOPO
       var escopoLi = sint.map(function (s) { return '<li><b>' + Util.esc(s.codigo) + '</b> — ' + Util.esc(s.nome) + ' (' + s.qtdItens + ' itens)</li>'; }).join("");
-      P.push(pg("2. Entendimento do Escopo",
+      P.push(pg(sc("Entendimento do Escopo"),
         '<p>O escopo dos serviços contempla as seguintes etapas:</p><ul>' + (escopoLi || '<li>—</li>') + '</ul>'));
 
       // 4) INCLUSO / EXCLUSO
-      P.push(pg("3. Está Incluso / Não Está Incluso",
+      P.push(pg(sc("Está Incluso / Não Está Incluso"),
         '<div class="cols"><div><h3>' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Incluso</h3><ul>' + this._lista(c.incluso) + '</ul></div>' +
         '<div><h3>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' Não incluso</h3><ul>' + this._lista(c.excluso) + '</ul></div></div>'));
 
       // 5) PREMISSAS E METODOLOGIA
-      P.push(pg("4. Premissas e Metodologia",
+      P.push(pg(sc("Premissas e Metodologia"),
         '<p><b>Premissas:</b> condições normais de trabalho e acesso à obra; fornecimento de água e energia ' +
         'pelo contratante durante a execução; quantitativos sujeitos a confirmação em projeto executivo.</p>' +
         '<p><b>Metodologia:</b> execução por etapas com medição mensal, controle de qualidade e ' +
@@ -123,21 +211,25 @@
         ', regime <b>' + Util.esc(Orcamento.regimeDe ? Orcamento.regimeDe(orc) : (orc.desonerado ? 'desonerado' : 'onerado')) + '</b>, ' +
         'BDI conforme metodologia do Acórdão TCU nº 2.622/2013.</p>'));
 
+      // 5b) CRONOGRAMA DE EXECUÇÃO (só quando há como calcular)
+      var cronoHTML = this._cronograma(orc);
+      if (cronoHTML) P.push(pg(sc("Cronograma de Execução"), cronoHTML));
+
       // 6) RESUMO FINANCEIRO
-      P.push(pg("5. Resumo Financeiro",
+      P.push(pg(sc("Resumo Financeiro"),
         '<table class="prop-tbl"><thead><tr><th>Etapa</th><th>Descrição</th><th class="r">Valor</th><th class="r">Peso</th></tr></thead>' +
         '<tbody>' + (linhasSint || '<tr><td colspan="4">—</td></tr>') + '</tbody>' +
         '<tfoot><tr><td colspan="2">VALOR TOTAL DA PROPOSTA</td><td class="r">' + Util.fmtMoeda(t.precoVenda) + '</td><td class="r">100%</td></tr></tfoot></table>' +
         '<p class="nota">Valores com BDI de ' + Util.fmtPct(t.bdiPercentual) + ' incluso. Custo direto de referência: ' + Util.fmtMoeda(t.custoDireto) + '.</p>'));
 
       // 7) CONDIÇÕES COMERCIAIS
-      P.push(pg("6. Condições Comerciais",
+      P.push(pg(sc("Condições Comerciais"),
         bloco("Forma de pagamento", c.condicoesPagamento) +
         bloco("Prazo de execução", c.prazoExecucao) +
         bloco("Validade da proposta", c.validadeProposta)));
 
       // 8) RESPONSABILIDADES
-      P.push(pg("7. Responsabilidades",
+      P.push(pg(sc("Responsabilidades"),
         '<div class="cols"><div><h3>Contratada</h3><ul>' +
           '<li>Execução dos serviços conforme escopo e normas técnicas;</li>' +
           '<li>Fornecimento de mão de obra e EPIs da equipe;</li>' +
@@ -148,10 +240,10 @@
           '<li>Aprovação de projetos e licenças.</li></ul></div></div>'));
 
       // 9) GARANTIAS
-      P.push(pg("8. Garantias", '<p>' + Util.esc(c.garantia) + '</p>'));
+      P.push(pg(sc("Garantias"), '<p>' + Util.esc(c.garantia) + '</p>'));
 
       // 10) ASSINATURA
-      P.push(pg("9. Aceite e Assinatura",
+      P.push(pg(sc("Aceite e Assinatura"),
         '<p>Declaramos estar de acordo com os termos, valores e condições desta proposta comercial.</p>' +
         '<div class="assinaturas">' +
           '<div class="assin"><div class="linha-assin"></div>' + Util.esc(empresa) + '<br><span>Contratada</span></div>' +

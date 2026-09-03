@@ -1471,6 +1471,8 @@
         case "cron-recalc": this.cronRecalc(); break;
         case "cron-reset": this.cronReset(); break;
         case "cron-ia": this.cronRefinarIA(); break;
+        case "cron-pdf": this.cronPDF(); break;
+        case "cron-msproject": this.cronMSProject(); break;
         case "exec-recalc": this.execRecalc(); break;
         case "exec-cronograma": this.execEnviarCronograma(); break;
         case "parede-explodir": this.paredeExplodir(); break;
@@ -1624,9 +1626,14 @@
       if (e.target.matches("[data-cron-dur]")) {
         var o = this.orcAtual; if (!o) return;
         o.cronograma = o.cronograma || {}; o.cronograma.duracoes = o.cronograma.duracoes || {};
-        o.cronograma.duracoes[e.target.dataset.cronDur] = Math.max(1, parseInt(Util.num(e.target.value), 10) || 1);
-        if (o.cronograma.duracoesAgente) delete o.cronograma.duracoesAgente[e.target.dataset.cronDur]; // virou edição do USUÁRIO
-        if (o.cronograma.iaMotivos) delete o.cronograma.iaMotivos[e.target.dataset.cronDur]; // remove justificativa IA órfã
+        var idDur = e.target.dataset.cronDur, durDig = parseInt(Util.num(e.target.value), 10);
+        // "0" digitado pela PESSOA = marco (entrega, vistoria). Vai para `marcos`,
+        // nunca para `duracoes`: lá o 0 já significa "não estimável" e o motor o ignora.
+        o.cronograma.marcos = o.cronograma.marcos || {};
+        if (String(e.target.value).trim() === "0") { o.cronograma.marcos[idDur] = true; delete o.cronograma.duracoes[idDur]; }
+        else { delete o.cronograma.marcos[idDur]; o.cronograma.duracoes[idDur] = Math.max(1, durDig || 1); }
+        if (o.cronograma.duracoesAgente) delete o.cronograma.duracoesAgente[idDur]; // virou edição do USUÁRIO
+        if (o.cronograma.iaMotivos) delete o.cronograma.iaMotivos[idDur]; // remove justificativa IA órfã
         this.persistir(); this.render(); return;
       }
       // editar "Depende de" no cronograma (rede de precedência do Gantt / caminho crítico)
@@ -1635,13 +1642,17 @@
         var idPred = e.target.dataset.cronPred;
         var ordemIds = (oc.etapas || []).map(function (et) { return et.id; });
         var pr = Cronograma.parsePreds(e.target.value, ordemIds, idPred);
-        if (pr.invalidos.length) UI.toast("“" + pr.invalidos.join(", ") + "” não é etapa válida em “Depende de” — use o nº da linha (1 a " + ordemIds.length + "), sem apontar para a própria etapa.", "erro");
+        if (pr.invalidos.length) UI.toast("“" + pr.invalidos.join(", ") + "” não é etapa válida em “Depende de” — use o nº da linha (1 a " + ordemIds.length + "), sem apontar para a própria etapa. Espera: 1+7 · avanço: 1-3.", "erro");
         oc.cronograma = oc.cronograma || {};
         if (pr.preds !== null) {
           oc.cronograma.predecessoras = oc.cronograma.predecessoras || {};
           oc.cronograma.predecessoras[idPred] = pr.preds;
+          // lag por elo vive em mapa próprio (a lista de ids fica legível para a versão anterior do app)
+          oc.cronograma.lags = oc.cronograma.lags || {};
+          if (Object.keys(pr.lags).length) oc.cronograma.lags[idPred] = pr.lags; else delete oc.cronograma.lags[idPred];
         } else if (!pr.invalidos.length && oc.cronograma.predecessoras) {
           delete oc.cronograma.predecessoras[idPred]; // vazio = volta ao padrão (depende da anterior)
+          if (oc.cronograma.lags) delete oc.cronograma.lags[idPred];
         }
         // ⚠ só inválidos: não grava nada — erro de digitação não muda o cronograma em silêncio; o render devolve o valor anterior
         this.persistir(); this.render(); return;
@@ -2131,7 +2142,11 @@
      * Quem VAI CARREGAR chama isto; `_analiticoUrls` continua pura, para quem
      * só quer ler os caminhos (o Portal, por exemplo) não jogar fora 18 MB já
      * carregados de graça. */
-    _prepararAnalitico: function () {
+    /* ⚠ `ufOpt`/`compOpt` REPASSADOS: sem eles este helper zerava o regime
+       certo mas pedia o analítico do AMBIENTE, e voltava o defeito de exportar
+       um orçamento de MG com os insumos de PA. Regime e UF são duas perguntas
+       diferentes, e as duas têm de valer. */
+    _prepararAnalitico: function (ufOpt, compOpt) {
       try {
         var deso = this._regimeAnalitico();
         if (typeof Analitico !== "undefined" && Analitico.regimeAlvo !== deso) {
@@ -2139,12 +2154,22 @@
           Analitico.regimeAlvo = deso;
         }
       } catch (e) {}
-      return this._analiticoUrls();
+      return this._analiticoUrls(ufOpt, compOpt);
     },
-    _analiticoUrls: function () {
-      var uf = String(this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
+    /* `ufOpt`/`compOpt` (v1.2.31): pedir o analítico de OUTRA base que não a do
+     * ambiente. Quem exporta o Excel de um orçamento de MG com o ambiente em PA
+     * precisa do analítico de MG — o ambiente pode divergir de propósito ("troquei
+     * de estado para consultar outro preço", diz a própria tela do editor).
+     * Sem argumento, é o de sempre: a base ativa. */
+    _analiticoUrls: function (ufOpt, compOpt) {
+      var ufAmb = String(this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
+      var uf = String(ufOpt || ufAmb || "").toUpperCase();
       var comp = "";
-      try { comp = String((typeof Sinapi !== "undefined" && Sinapi.competencia) || "").trim(); } catch (e) {}
+      if (compOpt) comp = String(compOpt).trim();
+      else if (uf === ufAmb) { try { comp = String((typeof Sinapi !== "undefined" && Sinapi.competencia) || "").trim(); } catch (e) {} }
+      /* o arquivo que o boot escolheu é da UF do AMBIENTE; para outra UF ele
+         seria o estado errado com nome de plano B */
+      var arqBoot = (uf === ufAmb) ? this._analiticoArquivo : null;
       var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
       /* ⚠⚠ A COMPETÊNCIA VEM PRIMEIRO — e `_analiticoArquivo` DEPOIS, não antes.
        *
@@ -2217,7 +2242,7 @@
         /* mês igual ao do pacote: o arquivo local de nome antigo É o certo —
            mesmo conteúdo, outro nome. Vem antes da rede. */
         if (legadoLocal) alt.push(legadoLocal);
-        if (this._analiticoArquivo) alt.push(this._analiticoArquivo);
+        if (arqBoot) alt.push(arqBoot);
       }
       if (live) alt.push(live);
       if (!mesmoMes) {
@@ -2226,7 +2251,7 @@
            `_avisarAnaliticoDeOutroMes` dizendo ao usuário o que aconteceu.
            `_analiticoArquivo` desce junto: na maioria dos caminhos do boot ele
            É o nome antigo, e deixá-lo antes faria o mês errado vencer o certo. */
-        if (this._analiticoArquivo) alt.push(this._analiticoArquivo);
+        if (arqBoot) alt.push(arqBoot);
         if (legadoLocal) alt.push(legadoLocal);
       }
       if (uf && srv) alt.push(srv + "/analitico/" + this._nomeAnalitico(uf, ""));
@@ -3496,15 +3521,91 @@
         equipes: Math.max(1, parseInt(Util.num((UI.el("cron-equipes") || {}).value), 10) || 1),
         diasUteisSemana: Math.min(7, Math.max(1, parseInt(Util.num((UI.el("cron-dias") || {}).value), 10) || 5)),
         paralelismo: Util.num((UI.el("cron-paral") || {}).value),
-        custoDiaEquipe: Math.max(1, Util.num((UI.el("cron-custodia") || {}).value) || 700)
+        custoDiaEquipe: Math.max(1, Util.num((UI.el("cron-custodia") || {}).value) || 700),
+        descontarFeriados: UI.el("cron-feriados") ? !!UI.el("cron-feriados").checked : true,
+        /* ⚠ o que não é AAAA-MM-DD NÃO é gravado como feriado: o motor devolve
+           o texto em `invalidos` e a tela mostra em vermelho. Aceitar um
+           "24/06" silenciosamente deslocaria a entrega da obra por causa de um
+           formato de data — e ninguém procuraria o erro aí. */
+        feriadosExtras: String((UI.el("cron-feriados-extras") || {}).value || "")
+          .split(/[;,\n]+/).map(function (s) { return s.trim(); }).filter(function (s) { return s; })
+          .map(function (s) { return { data: s, nome: "Feriado local" }; })
       };
       this.persistir(); this.render();
     },
     cronReset: function () {
-      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = {}; o.cronograma.predecessoras = {}; }
+      var o = this.orcAtual; if (o && o.cronograma) { o.cronograma.duracoes = {}; o.cronograma.iaMotivos = {}; o.cronograma.duracoesAgente = {}; o.cronograma.predecessoras = {}; o.cronograma.lags = {}; o.cronograma.marcos = {}; }
       // FASE 1.4: destrava também o nº de meses (false explícito ≠ undefined: não re-dispara a migração)
       if (o) { o.cronogramaMesesManual = false; try { Orcamento.sincronizarPrazo(o); } catch (e) {} }
       this.persistir(); UI.toast("Durações, dependências e prazo voltaram à estimativa do agente.", "ok"); this.render();
+    },
+
+    /* Cronograma em papel (A4 paisagem) e em MS Project. Os dois saem do MESMO
+       `Cronograma.estimar` que desenha a aba — nada é recalculado aqui, senão
+       o PDF do cliente e a tela do engenheiro divergiriam sem ninguém ver. */
+    cronPDF: function () {
+      var o = this.orcAtual; if (!o) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (typeof Cronograma === "undefined" || typeof CronoPDF === "undefined") { UI.toast("Módulo de cronograma indisponível.", "erro"); return; }
+      if (!(o.etapas || []).length) { UI.toast("Adicione etapas para gerar o cronograma.", "erro"); return; }
+      var r = Cronograma.estimar(o);
+      // o Gantt do documento é o MESMO SVG da tela (UI._gantt) — um desenho só
+      this._abrirPrint("Cronograma da Obra — " + o.numero,
+        CronoPDF.gerarHTML(o, r, { ganttSVG: UI._gantt(r, { semLegenda: true }), usuario: Auth.usuario(), realizado: this._avancoRealDe(o) }),
+        "cronograma");
+    },
+
+    /* Avanço FÍSICO da obra vinculada a este orçamento, para o cronograma
+       impresso poder confrontar previsto × realizado.
+       ⚠ A FONTE É A MESMA DO PAINEL (`Fisico.pacote` sobre os diários
+       publicáveis). Somar rascunho e diário parado na aprovação daria ao
+       cliente um percentual maior do que o que está diante dele na tela — e
+       duas respostas para "quanto andou" na mesma empresa é pior que uma
+       resposta faltando. Sem obra vinculada ou sem diário, devolve null e a
+       seção simplesmente não aparece. */
+    _avancoRealDe: function (orc) {
+      if (!orc || typeof Fisico === "undefined" || !Fisico.pacote) return null;
+      try {
+        var E = Auth.empresaId();
+        var obras = Store.listar(E, "obras") || [];
+        var obra = null;
+        for (var i = 0; i < obras.length; i++) if (obras[i].orcamentoId === orc.id) { obra = obras[i]; break; }
+        if (!obra) return null;
+        /* ⚠ O FILTRO É O `RDO.podeIrAoPortal`, e não uma comparação de status
+           escrita aqui: essa regra já mudou uma vez (diário segurado na
+           aprovação) e uma cópia dela apodreceria calada, deixando entrar no
+           percentual do cliente um diário que o Portal não mostra. */
+        var podeIr = (typeof RDO !== "undefined" && RDO.podeIrAoPortal) ? RDO.podeIrAoPortal : null;
+        if (!podeIr) return null;
+        var rdos = (Store.listar(E, "rdo") || []).filter(function (d) {
+          return d.obraId === obra.id && podeIr(d);
+        });
+        if (!rdos.length) return null;
+        var precos = [];
+        (orc.etapas || []).forEach(function (et) {
+          (et.itens || []).forEach(function (it) {
+            precos.push({ origem: "orcamento", refId: it.id || "", codigo: it.codigo || "",
+              descricao: it.descricao || "", unidade: it.unidade || "",
+              valorUnitario: Util.num(it.precoUnitario != null ? it.precoUnitario : it.custoUnitario) });
+          });
+        });
+        var pk = Fisico.pacote(rdos, obra.id, { precos: precos });
+        return (pk && pk.serieMes) ? pk.serieMes : null;
+      } catch (e) { return null; }
+    },
+
+    cronMSProject: function () {
+      var o = this.orcAtual; if (!o) return;
+      if (this._trialBloqueado()) { this._avisoTrial(); return; }
+      if (typeof Cronograma === "undefined" || typeof MSProject === "undefined") { UI.toast("Módulo de cronograma indisponível.", "erro"); return; }
+      if (!(o.etapas || []).length) { UI.toast("Adicione etapas para exportar o cronograma.", "erro"); return; }
+      var r = Cronograma.estimar(o);
+      var xml = MSProject.gerarXML(o, r);
+      if (!xml) { UI.toast("Nada a exportar: o cronograma está vazio.", "erro"); return; }
+      Util.baixar(MSProject.nomeArquivo(o), xml, "application/xml;charset=utf-8");
+      /* A mensagem diz o que o arquivo é e como abrir: ".xml baixado" sozinho
+         faz o usuário tentar dar duplo clique e cair no navegador. */
+      UI.toast("Cronograma exportado (" + r.etapas.length + " etapas). Abra pelo MS Project em Arquivo → Abrir, ou pelo ProjectLibre.", "ok");
     },
 
     // lê os inputs do form da aba Execução e grava em o.execucao.params (sem render)
@@ -4203,11 +4304,17 @@
     // pra "ver composição detalhada" abrir instantâneo (sem o load frio no 1º clique).
     // Silencioso, sem spinner, offline-first (se falhar, o clique recarrega normalmente).
     _preloadAnalitico: function () {
-      var self = this;
+      var self = this, orc = this.orcAtual;
       try {
         if (typeof Analitico === "undefined") return;
+        /* pré-carrega a base DO ORÇAMENTO: os itens dele estão em orc.uf, e é
+           deles que o 🔍 e a aba Insumos do Excel precisam. Se já há um analítico
+           de OUTRA UF na memória (ambiente trocado para consultar preço), ele
+           sai — senão o detalhamento mostraria insumo de outro estado. */
+        var ufOrcP = String((orc && orc.uf) || "").toUpperCase(), ufAnaP = String(Analitico.uf || "").toUpperCase();
+        if (Analitico.carregado && ufOrcP && ufAnaP && ufAnaP !== ufOrcP && Analitico.reset) Analitico.reset();
         if (Analitico.carregado || Analitico.carregando) return;
-        var u = this._prepararAnalitico();
+        var u = ufOrcP ? this._prepararAnalitico(ufOrcP, this._normComp((orc && orc.competenciaSinapi) || "")) : this._prepararAnalitico();
         if (!u.local && !u.live) return;
         // pré-carrega já com o fallback AO VIVO embutido — se um clique em 🔍 pegar esta
         // promise compartilhada no meio do caminho, ela já sabe cair no VPS.
@@ -5669,17 +5776,38 @@
       if (this._trialBloqueado()) { this._avisoTrial(); return; }
       if (!Auth.podeUsar("exportar")) { UI.toast("Exportar é recurso PRO. Faça upgrade.", "erro"); return; }
       if (Orcamento.totais(this.orcAtual).qtdItens < 1) { UI.toast("Adicione itens antes de exportar.", "erro"); return; }
+      var orc = this.orcAtual;
+      this._analiticoDoOrc(orc, function () { UI.toast("Gerando Excel (com aba de Insumos)…", "ok"); ExcelOrc.gerar(orc); });
+    },
+
+    /* ⚠ O analítico é o DO ORÇAMENTO (orc.uf / orc.competenciaSinapi), não o
+     * do ambiente. Até a 1.2.30 o Excel e o Relatório comparavam com `_baseUf`:
+     * um ORC de MG saiu com a aba Insumos "06/2026/PA" — o app estava em PA
+     * para consultar preço, e a exportação usou o analítico que estava na
+     * memória. Insumos e quebra MO/MAT/EQ de outro estado, entregues ao
+     * cliente com cara de certo. Chama `pronto()` SEMPRE (com ou sem a base —
+     * quem gera degrada sem a aba); fallback AO VIVO continua pelo VPS. */
+    _analiticoDoOrc: function (orc, pronto) {
       var self = this;
-      function gerar() { UI.toast("Gerando Excel (com aba de Insumos)…", "ok"); ExcelOrc.gerar(self.orcAtual); }
-      // Garante o analítico do ESTADO ATIVO carregado — para a aba Insumos sair certa em QUALQUER UF
-      // (com fallback AO VIVO: mesmo sem o arquivo local, a aba Insumos sai preenchida).
       var ana = (typeof Analitico !== "undefined") ? Analitico : null;
-      var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
-      var urlsX = self._prepararAnalitico();
-      if (!ana || (!urlsX.local && !urlsX.live) || (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { gerar(); return; }
-      if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
-      UI.toast("Carregando insumos de " + (ufAtivo || "") + " (1ª vez)…", "ok");
-      ana.carregarArquivo(urlsX.alts).then(gerar).catch(function () { gerar(); });
+      var ufAmb = String(self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
+      var ufOrc = String((orc && orc.uf) || ufAmb || "").toUpperCase();
+      var compOrc = self._normComp((orc && orc.competenciaSinapi) || (ufOrc === ufAmb && typeof Sinapi !== "undefined" ? Sinapi.competencia : ""));
+      var urlsX = self._prepararAnalitico(ufOrc, compOrc);
+      if (!ana || !ufOrc || (!urlsX.local && !urlsX.live)) { pronto(); return; }
+      var ufAna = String(ana.uf || "").toUpperCase(), compAna = self._normComp(ana.competencia);
+      var chaveTent = ufOrc + "|" + compOrc;
+      /* competência diferente com a MESMA UF: tenta uma vez o arquivo do mês do
+         orçamento; se só existir o de nome antigo (caso comum nas instalações
+         atualizadas por zip), não fica recarregando 18 MB a cada exportação —
+         o `_avisarAnaliticoDeOutroMes` já contou ao usuário o que saiu. */
+      var mesmaUf = ana.carregado && ufAna === ufOrc;
+      var mesmoMes = !compOrc || !compAna || compAna === compOrc;
+      if (mesmaUf && (mesmoMes || self._anaTentouComp === chaveTent)) { pronto(); return; }
+      self._anaTentouComp = chaveTent;
+      if (ana.reset && (ana.carregado || ana.carregando)) ana.reset();
+      UI.toast("Carregando insumos de " + ufOrc + (compOrc ? " · " + (typeof BasesCat !== "undefined" && BasesCat.fmtVersao ? BasesCat.fmtVersao(compOrc) : compOrc) : "") + "…", "ok");
+      ana.carregarArquivo(urlsX.alts).then(pronto).catch(function () { pronto(); });
     },
 
     // ---------- FASE 4: reimportar Excel editado (round-trip via aba _meta) ----------
@@ -7827,15 +7955,11 @@
         self._abrirPrint("Relatório de Orçamento — " + self.orcAtual.numero,
           UI.renderRelatorioCompleto(self.orcAtual, Auth.usuario()), "relatorio");
       }
-      // Carrega o analítico da UF (1ª vez) p/ incluir a seção de composições e insumos; degrada sem travar.
-      var ana = (typeof Analitico !== "undefined") ? Analitico : null;
-      var ufAtivo = self._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : null) || null;
-      var urlsR = self._prepararAnalitico();
-      if (!ana || (!urlsR.local && !urlsR.live) ||
-          (ana.carregado && (!ufAtivo || !ana.uf || ana.uf === ufAtivo))) { abrir(); return; }
-      if (ana.reset && ana.uf && ufAtivo && ana.uf !== ufAtivo) ana.reset();
-      UI.toast("Carregando insumos das composições (1ª vez)…", "ok");
-      ana.carregarArquivo(urlsR.alts).then(abrir).catch(function () { abrir(); });
+      /* Carrega o analítico DO ORÇAMENTO (1ª vez) p/ incluir a seção de
+         composições e insumos; degrada sem travar. Até a 1.2.30 usava a UF do
+         ambiente — mesmo defeito do Excel: relatório de MG com insumos de PA
+         porque o app estava consultando outro estado. */
+      this._analiticoDoOrc(this.orcAtual, abrir);
     },
 
     // ---------- AGENTE IMPORTADOR: planilha (Excel/CSV) de qualquer formato → etapas+itens ----------

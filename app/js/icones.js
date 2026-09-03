@@ -108,6 +108,7 @@
     abrir: '<path d="M3 6a1 1 0 0 1 1-1h5l2 2.5h9a1 1 0 0 1 1 1V19a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M3 10h18"/>',
     salvar: '<path d="M4 4h12l4 4v12H4z"/><path d="M8 4v5h6V4M8 20v-6h8v6"/>',
     exportar: '<path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/><path d="M12 3v12"/><path d="m8 7 4-4 4 4"/>',
+    enviar: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4Z"/>',
     importar: '<path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/><path d="M12 15V3"/><path d="m8 11 4 4 4-4"/>',
     revit: '<path d="m12 2 9 5v10l-9 5-9-5V7z"/><path d="M12 12v10M3 7l9 5 9-5"/><path d="M7.5 9.5 12 12l4.5-2.5"/>',
     quadrado: '<rect x="4" y="4" width="16" height="16" rx="2"/>',

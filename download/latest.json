@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.30",
+  "versao": "1.2.34",
   "tipo": "silenciosa",
-  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.30/OrcaPRO-IA-update-v1.2.30.zip",
+  "zip": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.34/OrcaPRO-IA-update-v1.2.34.zip",
   "notas": "O cronograma do orcamento virou um Gantt. Cada etapa ganhou a coluna Depende de: escreva o numero da linha das etapas que precisam terminar antes (1,2 por exemplo) e o grafico redesenha as barras com setas entre elas. As etapas que nao podem atrasar sem atrasar a obra inteira aparecem em destaque como caminho critico, e as outras mostram quantos dias de folga tem. Sem preencher nada, o cronograma fica exatamente como era; Curva S, Excel e 4D nao mudam.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.30/OrcaPRO-IA-Instalador-v1.2.30.exe"
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.34/OrcaPRO-IA-Instalador-v1.2.34.exe"
 }
