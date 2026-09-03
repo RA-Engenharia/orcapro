@@ -580,7 +580,15 @@
     corDestaque2: "",
     ornamento: "",
     rodape: "",
-    fundoInternas: ""
+    fundoInternas: "",
+    /* ⚠ LOGO ESCURO EM PÁGINA ESCURA SOME — e some sem erro nenhum: a capa
+       imprime, o arquivo abre, e a marca simplesmente não está lá. O logo da
+       maioria das construtoras é azul-marinho, e a capa cheia é escura por
+       definição (foto com sombra, ou o fundo da marca).
+         ""         — desenha como veio (o que sempre foi; não mexe em modelo pronto)
+         "clarear"  — versão negativa: o logo vira branco só nas páginas cheias
+         "pastilha" — o logo colorido sobre uma pastilha branca */
+    logoEscuro: ""
   };
 
   PropTpl.modelo = function (t) {
@@ -597,6 +605,7 @@
     if (estilo.ornamento !== "curvas") estilo.ornamento = "";
     if (estilo.rodape !== "contatos") estilo.rodape = "";
     if (estilo.fundoInternas !== "claro") estilo.fundoInternas = "";
+    if (estilo.logoEscuro !== "clarear" && estilo.logoEscuro !== "pastilha") estilo.logoEscuro = "";
     if (!/^#[0-9a-fA-F]{6}$/.test(estilo.corDestaque2)) estilo.corDestaque2 = "";
 
     var paginas = arr(m.paginas).map(function (p, i) {
@@ -624,6 +633,8 @@
       /* ⚠ as ORIGINAIS ficam ao lado das cortadas: sem isso, "cortar de novo"
          partiria da imagem ja cortada e cada ajuste comeria mais um pedaco da
          foto, sem volta. */
+      /* logo próprio do modelo (opcional) — ver a nota de `logoDoc` */
+      logo: PropTpl.logoValido(m.logo) ? txt(m.logo) : "",
       imagensOrig: (m.imagensOrig && typeof m.imagensOrig === "object") ? m.imagensOrig : {},
       paginas: paginas,
       imagens: (m.imagens && typeof m.imagens === "object") ? m.imagens : {}
@@ -691,7 +702,14 @@
           numero: n,
           paginaId: p.id,
           paginaIndice: iPg,
+          paginaTipo: p.tipo,
           paginaNome: b.nome,
+          /* ⚠ O SLOT CONTINUA EXISTINDO mesmo quando a página decide não
+             desenhar a foto (Contato › "Mostrar a foto da equipe" desligado):
+             sumir com ele renumeraria as fotos seguintes e embaralharia as
+             imagens de modelos já montados. Quem não é desenhado só não conta
+             como pendência — ver `avisos`. */
+          desenha: !(p.tipo === "contato" && p.mostrarFoto === false),
           ordemNaPagina: i + 1,
           rotulo: "Imagem " + n,
           onde: b.nome + (b.imagens > 1 ? " · " + (i + 1) + "ª" : ""),
@@ -743,11 +761,24 @@
   PropTpl.avisos = function (t) {
     var m = PropTpl.modelo(t);
     var av = [];
+    /* ⚠ O AVISO SEPARA DOIS CASOS, porque o estrago é diferente. Numa página
+       CHEIA (capa, quem somos, encerramento) com o ornamento ligado, a falta de
+       foto não deixa buraco: entra o fundo da marca com os traços. Já numa
+       galeria ou no contato, a falta aparece como um retângulo listrado no meio
+       do documento. Dizer "sai com o espaço em branco" nos dois casos fazia o
+       usuário caçar um defeito que não existia na capa. */
+    var CHEIA = { capa: 1, sobre: 1, encerramento: 1 };
     var vazios = PropTpl.slots(m).filter(function (s) { return !s.ref; });
-    if (vazios.length) {
-      av.push(vazios.length + " imagem(ns) sem foto: " +
-        vazios.slice(0, 4).map(function (s) { return s.rotulo + " (" + s.onde + ")"; }).join(", ") +
-        (vazios.length > 4 ? "…" : "") + ". A proposta sai com o espaço em branco.");
+    var comFundo = m.estilo.ornamento === "curvas";
+    var buraco = vazios.filter(function (s) { return s.desenha && !(comFundo && CHEIA[s.paginaTipo]); });
+    var cobertos = vazios.length - buraco.length;
+    if (buraco.length) {
+      av.push(buraco.length + " imagem(ns) sem foto: " +
+        buraco.slice(0, 4).map(function (s) { return s.rotulo + " (" + s.onde + ")"; }).join(", ") +
+        (buraco.length > 4 ? "…" : "") + ". A proposta sai com o espaço em branco.");
+    }
+    if (cobertos) {
+      av.push(cobertos + " página(s) de foto inteira estão sem imagem, mas saem com o fundo da marca e os traços — dá para enviar assim.");
     }
     m.paginas.forEach(function (p) {
       if (p.tipo === "texto" && !linhasDe(p.itens).length && !txt(p.abertura)) {
@@ -837,7 +868,8 @@
         corTitulo: "#12395A", corTexto: "#26303A", corFundo: "#FFFFFF",
         corDestaque: "#7A6B4E", corDestaque2: "#3F7D22", corFundoEscuro: "#0F2F4A",
         textura: "", fonte: "montserrat", formato: "a4",
-        ornamento: "curvas", rodape: "contatos", fundoInternas: "claro"
+        ornamento: "curvas", rodape: "contatos", fundoInternas: "claro",
+        logoEscuro: "clarear"
       },
       paginas: [
         { id: "p1", tipo: "capa", titulo: "PROPOSTA", subtitulo: "COMERCIAL", chamada: "Engenharia com precisão, do orçamento à entrega", mostrarCliente: true, mostrarNumero: true, mostrarLogo: true },
@@ -894,6 +926,32 @@
     return "background-color:" + cor + (tex ? ";" + tex : "");
   }
 
+  /* =====================================================================
+   * O LOGO DO MODELO
+   *
+   * Por padrão o logo vem de ⚙ Empresa — é o que mantém o documento
+   * white-label: cada conta imprime a marca dela. O modelo pode, porém,
+   * guardar um logo PRÓPRIO, e aí ele vence. Isso existe por um motivo
+   * prático: o modelo é exportado e enviado a outra pessoa, e sem o logo
+   * dentro dele a proposta chega ao destino com [LOGO] na capa.
+   *
+   * ⚠ SÓ BITMAP EM data: URI (png/jpg/webp/gif) — a mesma régua das fotos do
+   *   arquivo de modelo. SVG fica de fora de propósito: é documento, pode
+   *   trazer script, e o modelo vem de fora da conta.
+   * ⚠ E ELE VIAJA NO REGISTRO, não no IndexedDB como as fotos: é imagem
+   *   pequena, presente em quase toda página, e que precisa estar lá no
+   *   PRIMEIRO render — inclusive na prévia e no PDF, que saem antes de
+   *   qualquer carregamento assíncrono terminar.
+   * ===================================================================== */
+  PropTpl.LOGO_RE = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i;
+  PropTpl.logoValido = function (v) { return PropTpl.LOGO_RE.test(txt(v)); };
+
+  /* o que a página desenha: logo do modelo > logo da empresa > nada */
+  function logoDoc(m, d) {
+    if (txt(m.logo)) return '<img src="' + esc(m.logo) + '" alt="logo">';
+    return txt(d.logoHTML) ? d.logoHTML : "";
+  }
+
   function imgTag(ref, classe, alt) {
     var d = txt(ref && (ref.dataURI || ref.d));
     if (!d) return '<div class="tp-vazio ' + classe + '"><span>' + esc(alt || "imagem") + "</span></div>";
@@ -917,6 +975,7 @@
     var com = d.comercial || {};
     var emp = d.empresa || {};
     var links = d.links || {};
+    var logoHTML = logoDoc(m, d);
     var vertical = m.estilo.formato === "vertical";
     var orn = m.estilo.ornamento === "curvas";
     var comRodape = m.estilo.rodape === "contatos";
@@ -943,7 +1002,7 @@
       if (p.tipo === "capa") {
         corpo = '<div class="tp-full">' + proxImgCheia("foto de capa") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-capa-txt">'
-          + (p.mostrarLogo && d.logoHTML ? '<div class="tp-logo">' + d.logoHTML + "</div>" : "")
+          + (p.mostrarLogo && logoHTML ? '<div class="tp-logo">' + logoHTML + "</div>" : "")
           + '<h1 class="tp-h1">' + esc(p.titulo) + (p.subtitulo ? '<br><span>' + esc(p.subtitulo) + "</span>" : "") + "</h1>"
           + (p.chamada ? '<p class="tp-chamada">' + esc(p.chamada) + "</p>" : "")
           + (p.mostrarCliente && d.cliente ? '<p class="tp-cli">' + esc(d.cliente) + "</p>" : "")
@@ -954,7 +1013,7 @@
       else if (p.tipo === "sobre") {
         corpo = '<div class="tp-full">' + proxImgCheia("foto de apresentação") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-sobre-txt">'
-          + (p.mostrarLogo && d.logoHTML ? '<div class="tp-logo tp-logo-c">' + d.logoHTML + "</div>" : "")
+          + (p.mostrarLogo && logoHTML ? '<div class="tp-logo tp-logo-c">' + logoHTML + "</div>" : "")
           + '<h2 class="tp-vazado">' + esc(p.titulo) + "</h2>"
           + '<p class="tp-sobre-p">' + escML(p.texto) + "</p>"
           + "</div></div>";
@@ -1011,7 +1070,7 @@
       else if (p.tipo === "encerramento") {
         corpo = '<div class="tp-full">' + proxImgCheia("foto de encerramento") + '<div class="tp-sombra"></div>' + ornCheia
           + '<div class="tp-fim-txt">'
-          + (p.mostrarLogo && d.logoHTML ? '<div class="tp-logo tp-logo-g">' + d.logoHTML + "</div>" : "")
+          + (p.mostrarLogo && logoHTML ? '<div class="tp-logo tp-logo-g">' + logoHTML + "</div>" : "")
           + '<p class="tp-fim-p">' + escML(p.frase) + "</p>"
           + "</div></div>";
       }
@@ -1040,6 +1099,7 @@
       if (!cheia) corpo = ornCanto + corpo + rodape;
       var cls = "tp-pg" + (vertical ? " tp-vert" : "")
         + (cheia ? " tp-cheia" : "")
+        + (cheia && m.estilo.logoEscuro ? " tp-logo-" + m.estilo.logoEscuro : "")
         + (escuro ? " tp-escura" : "")
         + (!cheia && comRodape ? " tp-com-rodape" : "");
       var fundo = (p.tipo === "capa" || p.tipo === "sobre" || p.tipo === "encerramento")
@@ -1285,7 +1345,13 @@
       ".tp-capa-txt{position:absolute;left:0;right:0;top:26%;padding:0 12mm}",
       ".tp-logo{max-width:46mm;margin-bottom:8mm}",
       ".tp-vert .tp-logo{max-width:34mm}",
-      ".tp-logo img,.tp-logo svg{max-width:100%;height:auto;display:block}",
+      ".tp-logo img,.tp-logo svg{max-width:100%;max-height:32mm;height:auto;width:auto;display:block;object-fit:contain}",
+      /* versão negativa: serve ao logo escuro (a maioria) sobre página cheia */
+      ".tp-logo-clarear .tp-logo img{filter:brightness(0) invert(1)}",
+      ".tp-logo-pastilha .tp-logo{background:#fff;border-radius:2.5mm;padding:3mm 4mm;display:inline-block;max-width:56mm}",
+      ".tp-logo-pastilha .tp-logo-c,.tp-logo-pastilha .tp-logo-g{display:block;width:-moz-fit-content;width:fit-content;margin-left:auto;margin-right:auto}",
+      ".tp-logo-c img,.tp-logo-c svg{margin:0 auto}",
+      ".tp-logo-g img,.tp-logo-g svg{margin:0 auto;max-height:46mm}",
       ".tp-logo-c{margin:0 auto 6mm;max-width:44mm}",
       ".tp-logo-g{margin:0 auto 8mm;max-width:62mm}",
       ".tp-h1{font-family:var(--tp-f-tit);font-weight:700;font-size:calc(44pt * var(--tp-esc-tit,1));line-height:.94;letter-spacing:-.01em;text-transform:uppercase;margin:0 0 6mm;color:#fff}",
@@ -1457,6 +1523,186 @@
    *   importador e o erro que sai é de campo faltando — a pessoa fica
    *   procurando defeito no modelo em vez de no arquivo escolhido.
    * =================================================================== */
+  /* =====================================================================
+   * MONTAR O MODELO A PARTIR DO ROTEIRO — sem servidor, sem inventar fato
+   *
+   * POR QUE ISTO EXISTE. "Montar com a IA" mandava o roteiro para o servidor
+   * e, quando ele não respondia — sem licença, sem internet, rota fora do ar —
+   * o botão terminava num toast vermelho e o usuário voltava à estaca zero.
+   * Esta função monta a MESMA estrutura por regra, aqui dentro: escolhe as
+   * páginas pelo que a pessoa respondeu, na ordem que uma proposta pede, e
+   * escreve nos campos SÓ o que ela mesma digitou.
+   *
+   * ⚠ NÃO INVENTA FATO SOBRE A EMPRESA. Cada frase montada aqui é feita das
+   *   palavras do roteiro. O que ninguém respondeu vira `[preencher: …]`, que
+   *   a tela de anexos lista depois — em vez de virar uma afirmação que a
+   *   empresa nunca fez e que o cliente lê como promessa.
+   *
+   * ⚠ E É PURA: não lê Store, não lê tela, não olha relógio. É o que permite
+   *   testá-la fora do navegador e usá-la tanto como resposta principal
+   *   quanto como rede embaixo da IA.
+   * ===================================================================== */
+  var AG_FOTOS = {
+    "Nenhuma por enquanto": 0,
+    "1 ou 2": 2,
+    "3 a 5": 5,
+    "Mais de 5": 9
+  };
+  var AG_TOM = {
+    "Sóbrio e técnico": { fonte: "tecnica", ornamento: "", fundoInternas: "claro",
+      estilo: { corTitulo: "#14304F", corTexto: "#26262A", corDestaque: "#14304F", corDestaque2: "#2E6F9E", corFundoEscuro: "#14304F" } },
+    "Marcante e visual": { fonte: "impacto", ornamento: "curvas", fundoInternas: "",
+      estilo: { corTitulo: "#1B2A5B", corTexto: "#2A2A2A", corDestaque: "#B3202E", corDestaque2: "#E08A1E", corFundoEscuro: "#1B2A5B" } },
+    "Equilibrado": { fonte: "montserrat", ornamento: "curvas", fundoInternas: "claro",
+      estilo: { corTitulo: "#12395A", corTexto: "#26303A", corDestaque: "#7A6B4E", corDestaque2: "#3F7D22", corFundoEscuro: "#0F2F4A" } }
+  };
+  function preencher(oque) { return "[preencher: " + oque + "]"; }
+
+  /* uma linha "Título | descrição" para a página de serviços, a partir de
+     uma linha crua do roteiro (que pode já vir com a barra ou não) */
+  function servicoLinha(linha) {
+    var x = txt(linha);
+    if (!x) return "";
+    if (x.indexOf("|") > -1) return x;
+    /* "deck de cumaru instalado — com a instalação": o travessão vira a barra,
+       porque é assim que a pessoa costuma separar o nome da explicação */
+    var m = x.match(/^(.{3,60}?)\s+[—–-]\s+(.+)$/);
+    if (m) return m[1].trim() + " | " + m[2].trim();
+    return x;
+  }
+
+  PropTpl.montarDoRoteiro = function (roteiro) {
+    var r = roteiro || {};
+    var ramo = txt(r.ramo), vende = txt(r.oQueVende), paraQuem = txt(r.paraQuem);
+    var tom = AG_TOM[txt(r.tom)] || AG_TOM["Equilibrado"];
+    var nFotos = AG_FOTOS[txt(r.quantasFotos)];
+    if (nFotos == null) nFotos = 2;
+    var vertical = /celular/i.test(txt(r.formato));
+    var itensVende = linhasDe(vende), difs = linhasDe(r.diferenciais), naoFalta = linhasDe(r.naoPodeFaltar);
+
+    var estilo = {};
+    for (var k in tom.estilo) if (Object.prototype.hasOwnProperty.call(tom.estilo, k)) estilo[k] = tom.estilo[k];
+    estilo.corFundo = "#FFFFFF";
+    estilo.textura = "";
+    estilo.fonte = tom.fonte;
+    estilo.formato = vertical ? "vertical" : "a4";
+    /* ⚠ SEM FOTO, O ORNAMENTO NÃO É ENFEITE: é o que a capa tem para mostrar.
+       Sem ele, quem respondeu "nenhuma por enquanto" recebe a capa com o
+       quadro listrado de "falta foto" — e manda isso ao cliente. */
+    estilo.ornamento = nFotos === 0 ? "curvas" : tom.ornamento;
+    estilo.rodape = "contatos";
+    estilo.fundoInternas = tom.fundoInternas;
+    /* o logo da empresa costuma ser escuro, e toda capa aqui é escura */
+    estilo.logoEscuro = "clarear";
+
+    var paginas = [], n = 0;
+    function pg(o) { o.id = "p" + (++n); paginas.push(o); return o; }
+
+    /* 1. CAPA — sempre. Sem foto ela não fica vazia: o ornamento cobre. */
+    pg({ tipo: "capa", titulo: "PROPOSTA", subtitulo: vertical ? "" : "COMERCIAL",
+      chamada: ramo ? ramo.charAt(0).toUpperCase() + ramo.slice(1) : preencher("uma linha sobre o que a empresa faz"),
+      mostrarCliente: true, mostrarNumero: true, mostrarLogo: true });
+
+    /* 2. QUEM SOMOS — só com o que a pessoa escreveu */
+    var quem = [];
+    if (ramo) quem.push("Trabalhamos com " + ramo + ".");
+    else quem.push(preencher("o que a empresa faz, em uma frase"));
+    if (paraQuem) quem.push("Atendemos " + paraQuem + ".");
+    if (difs.length) quem.push(difs.join(" "));
+    else quem.push(preencher("por que o cliente escolhe vocês"));
+    pg({ tipo: "sobre", titulo: "QUEM SOMOS", texto: quem.join("\n"), mostrarLogo: true });
+
+    /* 3. O QUE FAZEMOS — os itens que a pessoa listou viram cartões */
+    if (itensVende.length) {
+      pg({ tipo: "servicos", titulo: "O QUE FAZEMOS",
+        abertura: paraQuem ? "Atendemos " + paraQuem + ", do primeiro contato à entrega." : "",
+        itens: itensVende.map(servicoLinha).filter(Boolean).join("\n"),
+        fechamento: difs.length ? difs[0] : "" });
+    }
+
+    /* 4. GALERIA — só quando há foto para ela. Página de foto sem foto é
+       espaço listrado no meio da proposta. */
+    if (nFotos >= 5) pg({ tipo: "imagens", titulo: "Alguns trabalhos nossos", legenda: "" });
+
+    /* 5. ESCOPO — a lista sai do orçamento na hora de gerar (usarComercial);
+       o que a pessoa disse que não pode faltar entra como observação. */
+    pg({ tipo: "texto", titulo: "Escopo dos serviços",
+      abertura: "Os serviços abaixo foram dimensionados a partir das informações fornecidas pelo cliente.",
+      rotuloLista: "Está incluso:", obsTitulo: "Não está incluso:",
+      observacao: "", usarComercial: true });
+
+    /* 6. o que NÃO pode faltar vira uma página própria, com as palavras dela */
+    if (naoFalta.length) {
+      pg({ tipo: "condicoes", titulo: "O que você recebe", paragrafos: naoFalta.join("\n"),
+        usarPrazo: false, usarGarantia: false });
+    }
+
+    /* 7. INVESTIMENTO — obrigatória: é ela que leva os preços */
+    pg({ tipo: "investimento", titulo: "INVESTIMENTO", colTrabalho: "Serviço", colValor: "Valor",
+      tituloPagamento: "CONDIÇÕES DE PAGAMENTO", detalhar: true,
+      tipografia: { escalaTitulo: 90, escalaTexto: 90 } });
+
+    /* 8. CONDIÇÕES — prazo e garantia vêm do orçamento, prontos */
+    pg({ tipo: "condicoes", titulo: "Condições gerais", paragrafos: "", usarPrazo: true, usarGarantia: true });
+
+    /* 9. ACEITE */
+    pg({ tipo: "assinatura", titulo: "ACEITE DA PROPOSTA",
+      texto: "A assinatura abaixo formaliza a aprovação do escopo, dos valores e das condições desta proposta.",
+      mostrarValidade: true });
+
+    /* 10. ENCERRAMENTO — página de foto inteira; só quando há foto de sobra */
+    if (nFotos >= 9) pg({ tipo: "encerramento", frase: "Obrigado pela oportunidade. Estamos à disposição para começar.", mostrarLogo: true });
+
+    /* 11. CONTATO — sempre; a foto da equipe só quando ela existe */
+    pg({ tipo: "contato", titulo: "FALE CONOSCO", usarEmpresa: true,
+      botaoPlanilha: true, mostrarFoto: nFotos >= 2, molduraCelular: vertical });
+
+    var nome = ramo ? ("Proposta — " + ramo.charAt(0).toUpperCase() + ramo.slice(1)) : "Modelo da minha empresa";
+    return PropTpl.modelo({
+      nome: nome.length > 60 ? nome.slice(0, 60) : nome,
+      descricao: (vertical ? "Vertical (celular)" : "A4") + " · " + paginas.length + " páginas · montado pelo roteiro",
+      estilo: estilo, paginas: paginas
+    });
+  };
+
+  /* =====================================================================
+   * A RESPOSTA DA IA, CONFERIDA ANTES DE VIRAR MODELO
+   *
+   * ⚠ `PropTpl.modelo` DESCARTA EM SILÊNCIO o que não reconhece: uma página
+   *   com `tipo: "portfolio"` (que a IA pode inventar) simplesmente some, e o
+   *   usuário recebe um modelo com menos páginas sem nenhuma explicação —
+   *   ou, se sobrar pouca coisa, uma recusa seca de "falta a página de
+   *   Investimento". Aqui o descarte é CONTADO e devolvido, para a tela poder
+   *   dizer o que veio, o que não veio e por quê.
+   *
+   * ⚠ E A PÁGINA DE INVESTIMENTO É COSTURADA SE FALTAR: é ela que leva o
+   *   preço. Um modelo sem ela não é um modelo de proposta.
+   * ===================================================================== */
+  PropTpl.doAgente = function (resposta) {
+    var r = resposta || {};
+    var descartadas = [];
+    var brutas = arr(r.paginas);
+    var boas = brutas.filter(function (p) {
+      var t = txt(p && p.tipo);
+      if (PropTpl.bloco(t)) return true;
+      descartadas.push(t || "(sem tipo)");
+      return false;
+    });
+    if (!boas.length) return { ok: false, erro: "A estrutura devolvida não tem nenhuma página que este sistema saiba desenhar." };
+
+    var costurado = false;
+    if (!boas.filter(function (p) { return txt(p.tipo) === "investimento"; }).length) {
+      boas.push({ tipo: "investimento", titulo: "INVESTIMENTO", detalhar: true });
+      costurado = true;
+    }
+    boas.forEach(function (p, i) { if (!txt(p.id)) p.id = "p" + (i + 1); });
+
+    var m = PropTpl.modelo({ nome: r.nome, descricao: r.descricao, estilo: r.estilo, paginas: boas });
+    var faltas = PropTpl.validar(m);
+    if (faltas.length) return { ok: false, erro: faltas[0] };
+    return { ok: true, modelo: m, descartadas: descartadas, investimentoCosturado: costurado };
+  };
+
   PropTpl.MARCA_ARQUIVO = "orcapro:modelo-de-proposta";
   PropTpl.VERSAO_ARQUIVO = 1;
 
@@ -1474,7 +1720,10 @@
       exportadoEm: null,          /* quem exporta carimba; o motor não olha relógio */
       modelo: {
         nome: m.nome, descricao: m.descricao,
-        estilo: m.estilo, paginas: m.paginas
+        estilo: m.estilo, paginas: m.paginas,
+        /* o logo VAI junto: `modelo()` já o validou, e sem ele o modelo chega
+           na outra conta com [LOGO] na capa — o defeito que este campo evita */
+        logo: m.logo
         /* sem id, sem paraCliente, sem padrao, sem imagens: ver o cabeçalho */
       },
       imagens: fora
@@ -1496,7 +1745,7 @@
 
     var m = PropTpl.modelo({
       nome: cru.nome, descricao: cru.descricao,
-      estilo: cru.estilo, paginas: cru.paginas
+      estilo: cru.estilo, paginas: cru.paginas, logo: cru.logo
     });
     if (!m.paginas.length) return { ok: false, erro: "O arquivo não tem nenhuma página." };
 
@@ -1511,7 +1760,7 @@
         imgs[String(s.numero)] = v; n++;
       }
     });
-    return { ok: true, modelo: m, imagens: imgs, nSlots: sl.length, nFotos: n };
+    return { ok: true, modelo: m, imagens: imgs, nSlots: sl.length, nFotos: n, temLogo: !!m.logo };
   };
 
   /* nome que não colide com o que já existe na conta de destino */

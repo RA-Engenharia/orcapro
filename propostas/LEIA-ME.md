@@ -57,6 +57,47 @@ publica o `.xlsx` no GitHub Pages e já grava o link no pacote.
 Também há o modelo de fábrica neutro "Engenharia moderno" com o mesmo desenho,
 sem os textos da RA.
 
+### O logo dentro do modelo
+
+O logo padrão vem de ⚙ Empresa (vale para todos os documentos). O modelo pode
+carregar um **logo próprio**, e aí ele vence — é o que faz o modelo chegar
+montado na conta de quem recebe, em vez de imprimir `[LOGO]` na capa.
+
+- O modelo da RA já vem com o logo dentro (`propostas/logo-ra-engenharia.png`,
+  30 KB em base64).
+- Para trocar: Modelos de proposta › o modelo › **Cor e letra** › *Enviar um
+  logo para este modelo*. O botão ao lado devolve o modelo ao logo do ⚙ Empresa.
+- A imagem é reduzida para 900 px de largura antes de ser gravada (o registro
+  mora no `localStorage`), e SVG entra pelo seletor e sai PNG.
+- **Logo nas páginas escuras**: capa, "quem somos" e encerramento têm fundo
+  escuro, e um logo azul-marinho some neles sem dar erro. O modelo da RA usa
+  *Deixar branco* (versão negativa). Há também *pastilha branca*, que preserva
+  as cores.
+
+## Montar o modelo com a IA
+
+Em Modelos de proposta, o botão **Montar com a IA** faz oito perguntas sobre a
+empresa (o que faz, o que vende, para quem, tom, o que não pode faltar,
+diferenciais, quantas fotos, onde o cliente lê) e monta a estrutura do
+documento.
+
+- **Com IA disponível** (licença ativa e internet), o servidor escreve os
+  textos. A resposta passa por conferência: página de tipo desconhecido é
+  descartada com aviso, e a página de Investimento é acrescentada se faltar —
+  é ela que leva os preços.
+- **Sem IA** (sem licença, sem internet, servidor fora), o modelo é montado
+  **no próprio computador** a partir das respostas, com as palavras que você
+  escreveu. O botão nunca termina sem entregar um modelo.
+- **Nada é gravado sem você ver**: a tela de conferência mostra as páginas na
+  ordem, diz de onde veio a estrutura e o que foi descartado.
+- A IA não inventa fato sobre a empresa: o que ninguém respondeu vira
+  `[preencher: …]`, listado depois na tela "agora anexe cada coisa".
+- Preço, prazo, pagamento e garantia não são perguntados: vêm do orçamento.
+
+Quem responde "nenhuma foto por enquanto" recebe um modelo que já sai completo:
+as páginas cheias usam o fundo da marca com os traços, em vez do retângulo
+listrado de "falta foto".
+
 ## 2. Como subir um orçamento para o OrçaPRO
 
 Três caminhos, todos caem na mesma rotina do app (`app/js/pacote.js`):

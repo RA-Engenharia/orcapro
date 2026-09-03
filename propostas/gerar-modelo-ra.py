@@ -16,8 +16,24 @@ Para mandar a outro usuário do sistema: envie este .json (ou o link acima).
 Cores tiradas do logo RA Engenharia Especial: azul-marinho, taupe/dourado e verde.
 Textos são o ponto de partida — edite no app (Modelos de proposta) ou aqui.
 """
+import base64
 import json
 import os
+
+PASTA = os.path.dirname(os.path.abspath(__file__))
+LOGO_PNG = os.path.join(PASTA, "logo-ra-engenharia.png")
+
+
+def logo_data_uri():
+    """O logo VIAJA DENTRO do modelo (campo `logo`, data URI).
+
+    Sem isso, o modelo exportado chega na outra conta com [LOGO] na capa: o
+    logo do app mora em prefs (⚙ Empresa), que o arquivo de modelo não leva —
+    e não deve levar, porque prefs é da conta de quem recebe, não de quem
+    manda. O logo do modelo é a exceção explícita: é a marca do documento.
+    """
+    with open(LOGO_PNG, "rb") as f:
+        return "data:image/png;base64," + base64.b64encode(f.read()).decode()
 
 MODELO = {
     "marca": "orcapro:modelo-de-proposta",
@@ -26,19 +42,24 @@ MODELO = {
     "modelo": {
         "nome": "RA Engenharia — padrão",
         "descricao": "Modelo oficial da RA Engenharia Especial: curvas da marca, quem somos, o que fazemos, escopo, investimento, condições, aceite e contatos clicáveis (WhatsApp, e-mail, site, planilha).",
+        "logo": logo_data_uri(),
         "estilo": {
-            "corTitulo": "#0F3B5E",        # azul-marinho do logo
+            # cores MEDIDAS no PNG do logo (pixels dominantes), não escolhidas de olho
+            "corTitulo": "#0B4269",        # azul-marinho do "A" e do arco externo
             "corTexto": "#26303A",
             "corFundo": "#FFFFFF",
-            "corDestaque": "#7D6E4F",      # taupe/dourado do logo
-            "corDestaque2": "#3F7D22",     # verde do logo
-            "corFundoEscuro": "#0B2E4A",
+            "corDestaque": "#72664A",      # taupe do "R"
+            "corDestaque2": "#417B1F",     # verde da folha
+            "corFundoEscuro": "#072E48",   # navy escurecido, para as páginas cheias
             "textura": "",
             "fonte": "montserrat",
             "formato": "a4",
             "ornamento": "curvas",
             "rodape": "contatos",
             "fundoInternas": "claro",
+            # o logo da RA é azul-marinho: em página escura ele sai na versão
+            # negativa (branco), senão desapareceria na capa
+            "logoEscuro": "clarear",
         },
         "paginas": [
             {"id": "p1", "tipo": "capa", "titulo": "PROPOSTA", "subtitulo": "COMERCIAL",
