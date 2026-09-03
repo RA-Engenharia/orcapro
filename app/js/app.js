@@ -2110,6 +2110,30 @@
         : ("sinapi-" + uf + reg + "-analitico.json");
     },
 
+    /* ===== O ESPELHO PÚBLICO — a última alternativa, nos dois regimes =====
+     *
+     * O analítico é dado OFICIAL e ESTÁTICO: os mesmos arquivos que o app web
+     * serve em `data/` servem a instalação. Quando o VPS ainda não recebeu uma
+     * competência (ou um regime inteiro, como aconteceu com o desonerado, que
+     * nunca existiu lá), a instalação ficava sem detalhamento nenhum, esperando
+     * alguém lembrar de subir arquivo — o mesmo tipo de passo manual que já
+     * congelou o `latest.json` por 14 versões.
+     *
+     * Entra SEMPRE POR ÚLTIMO: local primeiro (instantâneo), servidor depois
+     * (é ele que tem a competência nova), e só então o espelho. Ou seja, não
+     * troca nada que já funciona — só cobre o buraco.
+     *
+     * ⚠ NÃO ATRAVESSA REGIME: o nome é montado com o mesmo `deso` do resto da
+     *   lista. Um espelho que servisse o outro regime desfaria a trava inteira.
+     * ⚠ NÃO é fonte de PREÇO. Só do desdobramento em insumos: preço continua
+     *   vindo da base que a pessoa instalou. */
+    _espelhoAnalitico: function (uf, comp, deso) {
+      var base = "";
+      try { base = String((typeof CONFIG !== "undefined" && CONFIG.appWebUrl) || "").replace(/\/$/, ""); } catch (e) {}
+      if (!base || !uf) return null;
+      return base + "/data/" + this._nomeAnalitico(uf, comp, deso);
+    },
+
     /* ===== QUAL REGIME O DETALHAMENTO DEVE TER =====
      *
      * O do ORÇAMENTO ABERTO, quando há um: é o documento que declara em que
@@ -2204,6 +2228,8 @@
         if (uf) dAlt.push("data/" + this._nomeAnalitico(uf, "", true));
         if (dLive) dAlt.push(dLive);
         if (uf && srv) dAlt.push(srv + "/analitico/" + this._nomeAnalitico(uf, "", true));
+        var dEsp = this._espelhoAnalitico(uf, "", true);
+        if (dEsp) dAlt.push(dEsp);
         return { local: dLocal, live: dLive, alts: dAlt, desonerado: true,
           localAlt: dAlt[0] || null, liveAlt: dAlt[dAlt.length - 1] || null };
       }
@@ -2255,6 +2281,8 @@
         if (legadoLocal) alt.push(legadoLocal);
       }
       if (uf && srv) alt.push(srv + "/analitico/" + this._nomeAnalitico(uf, ""));
+      var esp = this._espelhoAnalitico(uf, "", false);
+      if (esp) alt.push(esp);
       /* `local`/`live` continuam existindo porque os chamadores testam
          `if (!urls.local && !urls.live) return;` antes de carregar. */
       return { local: local, live: live, alts: alt, desonerado: false, localAlt: alt[0] || null, liveAlt: alt[alt.length - 1] || null };
