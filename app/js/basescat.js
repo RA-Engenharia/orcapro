@@ -147,7 +147,7 @@
       /* as UFs saem do servidor, como no SICRO. Sem resposta, nao ha opcao —
          e a linha, sem `local`, nem se oferece para instalar. */
       eixos: [{ id: "uf", rotulo: "Local", de: "sinapiDesUfs", padrao: "MG", opcoes: [] }],
-      nota: "O par desonerado da SINAPI. Em Minas, 7.740 dos 12.815 preços diferem do regime não desonerado (−2,4% em média). Baixa do servidor: 3 MB do estado escolhido. O detalhamento (composição → insumos) deste regime é um arquivo à parte: enquanto ele não estiver publicado para a UF, o app avisa — nunca abre o desdobramento do outro regime."
+      nota: "O par desonerado da SINAPI. Em Minas, 7.740 dos 12.815 preços diferem do regime não desonerado (−2,4% em média). Baixa do servidor: 3 MB do estado escolhido. O detalhamento (composição → insumos) deste regime é um arquivo à parte, um por estado. Onde ele não estiver disponível, o app avisa — nunca abre o desdobramento do outro regime."
     },
     {
       id: "SICRO", nome: "SICRO", orgao: "Sistema de Custos Referenciais de Obras — DNIT",
