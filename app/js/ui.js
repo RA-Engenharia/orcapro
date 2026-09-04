@@ -1024,7 +1024,14 @@
     renderPlanilha: function (orc) {
       var recTudo = (typeof App !== "undefined" && App._etapasRecolhidas && orc.etapas.length)
         ? !orc.etapas.some(function (e) { return !App.etapaRecolhida(orc.id, e.id); }) : false;
+      /* o índice de etapas (barra lateral) ROUBA largura da planilha, então
+         nasce OCULTO e só aparece quando o usuário pede — a escolha fica salva.
+         Botão só quando há índice para mostrar (>= 5 etapas, ver _indiceEtapas). */
+      var _idxOn = (typeof App !== "undefined") ? !!App._idxAberto : false;
+      var _temIdx = orc.etapas.length >= 5;
       var html = '<div class="flex between mb"><div></div><div style="display:flex;gap:6px">' +
+        (_temIdx ? '<button class="btn sm ghost' + (_idxOn ? ' primary' : '') + '" data-acao="idx-toggle" title="Mostrar/ocultar o índice de etapas na lateral (some para dar mais largura à planilha)">' +
+          (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + ' Etapas</button>' : "") +
         (orc.etapas.length > 1 ? '<button class="btn sm ghost" data-acao="etapas-recolher-todas" title="Orçamento grande: recolha as etapas para enxergar o todo">' +
           (recTudo ? "\u25BE Expandir todas" : "\u25B8 Recolher todas") + '</button>' : "") +
         '<button class="btn sm" data-acao="add-etapa">+ Etapa</button></div></div>';
@@ -1034,7 +1041,9 @@
       }
       html += this._faixaAjustes(orc);
       var _calcIdx = Orcamento.calcular(orc);
-      var _idx = this._indiceEtapas(orc, _calcIdx);
+      /* só monta o índice quando o usuário ligou — oculto por padrão, para a
+         planilha usar a largura toda (era a queixa do espaço roubado). */
+      var _idx = _idxOn ? this._indiceEtapas(orc, _calcIdx) : "";
       /* a tabela SEMPRE mora num container que rola de lado (.pl-tabela):
          sem isso, no caminho sem índice, dar min-width à Descrição empurraria
          a página inteira em vez de rolar só a planilha. */
@@ -1153,7 +1162,12 @@
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
             '<td>' + (temCod
-              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(rotuloFonte) + '</span>' : '')
+              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>'
+              /* regime como BADGE colorido (não texto cinza): desonerado salta
+                 aos olhos, que é o item que muda o encargo. Onerado é o padrão
+                 e não recebe selo, para não virar ruído em toda linha. */
+              + (it.desonerado === true ? '<br><span class="pill regime-des" title="SINAPI — encargos COM desoneração">desonerado</span>'
+                 : (fonte !== "SINAPI" && fonte !== "PROPRIO" && fonte !== "SINAPI_DES" ? '<br><span class="pill ' + pillCls + '" style="font-size:9px;padding:1px 6px">' + Util.esc(rotuloFonte) + '</span>' : ''))
               : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             /* ⚠ ITEM PARCIAL NÃO PODE PARECER IGUAL AOS OUTROS. Um serviço
                lançado só com a mão de obra soma ~40% do preço de tabela — sem

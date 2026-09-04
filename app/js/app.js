@@ -17,6 +17,9 @@
        máquinas por causa de um clique de tela. O estado é escrito na string do
        HTML no render, então sobrevive ao re-render sem passe posterior. */
     _etapasRecolhidas: {},
+    /* índice de etapas na lateral: OCULTO por padrão (rouba largura da planilha),
+       ligado por botão. A escolha é de TELA, então mora no localStorage. */
+    _idxAberto: (function () { try { return localStorage.getItem("orcapro:idxEtapas") === "1"; } catch (e) { return false; } })(),
     etapaRecolhida: function (orcId, etapaId) {
       var m = this._etapasRecolhidas[orcId];
       return !!(m && m[etapaId]);
@@ -1337,6 +1340,11 @@
          `if (t.dataset.etapaFoco)` o proprio botao de limpar o filtro nao
          funcionaria. */
       if (t.dataset.etapaFoco !== undefined) { this._etapaFoco = t.dataset.etapaFoco || ""; this.render(); return; }
+      if (t.dataset.acao === "idx-toggle") {
+        this._idxAberto = !this._idxAberto;
+        try { localStorage.setItem("orcapro:idxEtapas", this._idxAberto ? "1" : "0"); } catch (e) {}
+        this.render(); return;
+      }
       // abrir orçamento
       // excluir orçamento (ANTES do abrir: o botão fica dentro do card clicável)
       if (t.dataset.delOrc) { this.confirmarExcluirOrcamento(t.dataset.delOrc); return; }
