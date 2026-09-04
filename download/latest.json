@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.41",
+  "versao": "1.2.42",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.41.zip",
-  "notas": "Leitura da planilha do orcamento melhorada: a coluna Descricao tinha largura de menos e o texto quebrava palavra por palavra, empilhado na vertical (PISO / PODOTATIL / DE / ALERTA). Agora a descricao tem largura minima e quebra por palavras inteiras, numa linha confortavel; o excedente rola de lado dentro da propria planilha, sem empurrar a pagina. Codigo e unidade nao quebram mais. Continua tudo das versoes anteriores.",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.42.zip",
+  "notas": "Dois ajustes na planilha do orcamento. (1) Regime desonerado agora e um selo verde sob o codigo do item, em vez de texto cinza — o item desonerado salta aos olhos; o onerado, por ser o padrao, nao recebe selo. (2) O indice de etapas da lateral nasce OCULTO e so aparece ao clicar no botao Etapas: antes ele roubava largura da planilha; a escolha fica salva. Continua tudo das versoes anteriores.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.37/OrcaPRO-IA-Instalador-v1.2.37.exe"
 }
