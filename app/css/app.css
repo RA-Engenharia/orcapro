@@ -728,6 +728,24 @@ table.tbl-plan { min-width: 760px; }
 /* código e unidade não quebram; a UF/competência e os botões ficam inteiros */
 table.tbl-plan td:nth-child(2), table.tbl-plan td:nth-child(4) { white-space: nowrap; }
 
+/* ===== MODO COMPACTO DA PLANILHA ==================================
+ * Obra grande tem dezenas de itens e a linha alta obriga a rolar sem parar.
+ * O compacto corta o respiro vertical e desce um degrau na fonte — sem mexer
+ * na largura da Descrição (que foi o conserto anterior) e sem esconder nada.
+ * ⚠ Os alvos de clique dos botões da linha NÃO encolhem junto: continuam
+ *   confortáveis para o dedo, senão o compacto viraria uma armadilha em tablet
+ *   no canteiro. */
+table.tbl-compacta th, table.tbl-compacta td { padding: 5px 10px; }
+table.tbl-compacta { font-size: var(--t-peq); }
+table.tbl-compacta td:nth-child(3), table.tbl-compacta th:nth-child(3) { min-width: 240px; }
+/* a descrição em 2 linhas no máximo; o resto fica no title/tooltip da célula */
+table.tbl-compacta tr.lin td:nth-child(3) {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+table.tbl-compacta .pill { padding: 1px 6px; }
+table.tbl-compacta tr.etapa-row td { padding-top: 7px; padding-bottom: 7px; }
+table.tbl-compacta .btn.sm { padding: 3px 7px; }
+
 /* Tabela larga no celular (triagem da nota tem 11 colunas): a coluna da
    DESCRIÇÃO fica fixa ao rolar para o lado — sem ela o usuário chega no
    seletor de obra sem saber de qual produto se trata. */

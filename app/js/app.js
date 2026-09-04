@@ -20,6 +20,9 @@
     /* índice de etapas na lateral: OCULTO por padrão (rouba largura da planilha),
        ligado por botão. A escolha é de TELA, então mora no localStorage. */
     _idxAberto: (function () { try { return localStorage.getItem("orcapro:idxEtapas") === "1"; } catch (e) { return false; } })(),
+    /* modo compacto da planilha: linha mais baixa p/ caber mais item na tela.
+       Preferência de TELA, igual ao índice — localStorage, não o orçamento. */
+    _plCompacta: (function () { try { return localStorage.getItem("orcapro:plCompacta") === "1"; } catch (e) { return false; } })(),
     etapaRecolhida: function (orcId, etapaId) {
       var m = this._etapasRecolhidas[orcId];
       return !!(m && m[etapaId]);
@@ -1343,6 +1346,11 @@
       if (t.dataset.acao === "idx-toggle") {
         this._idxAberto = !this._idxAberto;
         try { localStorage.setItem("orcapro:idxEtapas", this._idxAberto ? "1" : "0"); } catch (e) {}
+        this.render(); return;
+      }
+      if (t.dataset.acao === "pl-compacta") {
+        this._plCompacta = !this._plCompacta;
+        try { localStorage.setItem("orcapro:plCompacta", this._plCompacta ? "1" : "0"); } catch (e) {}
         this.render(); return;
       }
       // abrir orçamento
