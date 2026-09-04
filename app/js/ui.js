@@ -613,9 +613,24 @@
       var html = "";
       // Banner da base SINAPI ativa
       if (baseInfo) {
-        var origem = baseInfo.personalizada ? "base própria importada" : "base padrão";
+        var origem = baseInfo.personalizada ? "base própria importada" : "base para novos orçamentos";
+        var ufs = baseInfo.ufs || [];
+        /* A UF é um SELETOR quando há mais de um estado instalado — trocar aqui
+           chama App.trocarEstadoSinapi e recarrega a base. Com um só estado, é
+           texto (nada a escolher) e o caminho de instalar mais fica em Tabelas.
+           ⚠ Isto é a base dos PRÓXIMOS orçamentos, não dos que já existem: cada
+           orçamento guarda a própria UF/competência (aparece no documento). */
+        var ufCtrl;
+        if (ufs.length > 1) {
+          ufCtrl = '<select id="lst-uf" class="btn sm" style="padding:4px 6px" title="Estado da base de preços para novos orçamentos">' +
+            ufs.map(function (u) {
+              return '<option value="' + Util.esc(u) + '"' + (u === String(baseInfo.uf).toUpperCase() ? ' selected' : '') + '>' + Util.esc(u) + '</option>';
+            }).join("") + '</select>';
+        } else {
+          ufCtrl = '<b>' + Util.esc(baseInfo.uf) + '</b>';
+        }
         html += '<div class="card flex between mb" style="padding:12px 16px">' +
-          '<div><span class="pill sinapi">SINAPI</span> <b>' + Util.esc(baseInfo.competencia) + ' / ' + Util.esc(baseInfo.uf) + '</b> · ' +
+          '<div><span class="pill sinapi">SINAPI</span> <b>' + Util.esc(baseInfo.competencia) + '</b> · ' + ufCtrl + ' · ' +
           baseInfo.total.toLocaleString("pt-BR") + ' itens <span class="muted">(' + origem + ')</span></div>' +
           '<div class="flex"><button class="btn sm" data-acao="atualizar">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Atualizar</button> ' +
           '<button class="btn sm" data-acao="importar-sinapi">' + (typeof Icones !== 'undefined' ? Icones.get('importar', 15) : '') + ' Importar base SINAPI</button></div></div>';

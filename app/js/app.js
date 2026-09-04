@@ -563,8 +563,20 @@
       } else {
         this.tela = "lista";
         var r = Sinapi.resumo();
+        /* ⚠ AS UFs QUE DÁ PARA ESCOLHER na barra: saem do manifesto de estados
+           (data/estados.json), o mesmo do assistente. Sem isso a barra fixava
+           uma UF e o usuário tinha de ir a Tabelas só para trocar — e, pior,
+           a barra dava a impressão de que TODO orçamento era daquela UF. Cada
+           orçamento guarda a sua; esta barra é só a base para os PRÓXIMOS. */
+        var _ufs = (this._estados || []).map(function (e) { return String(e.uf).toUpperCase(); })
+          .filter(function (u, i, a) { return u && a.indexOf(u) === i; }).sort();
+        if (!this._estados && !this._carregandoEstadosLista && this._carregarEstados) {
+          this._carregandoEstadosLista = true;
+          var selfL = this;
+          this._carregarEstados().then(function () { selfL.render(); }, function () {});
+        }
         var baseInfo = { competencia: r.competencia, uf: r.uf, total: r.total,
-          personalizada: Store.temBaseSinapi(Auth.empresaId()) };
+          personalizada: Store.temBaseSinapi(Auth.empresaId()), ufs: _ufs };
         main.innerHTML = UI.renderLista(Store.listarOrcamentos(Auth.empresaId()), baseInfo);
         this._ligarFiltroLista();
       }
@@ -1031,6 +1043,15 @@
             var novo = UI.el("fo-busca");
             if (novo) { novo.focus(); try { novo.setSelectionRange(novo.value.length, novo.value.length); } catch (e) {} }
           }, 250);
+        });
+      }
+      /* seletor de UF da barra da base: troca a base ativa (dos PRÓXIMOS
+         orçamentos) e recarrega. Reusa a rotina que o assistente já usa. */
+      var selUf = UI.el("lst-uf");
+      if (selUf) {
+        selUf.addEventListener("change", function () {
+          var uf = selUf.value;
+          if (self.trocarEstadoSinapi) self.trocarEstadoSinapi(uf, function () { self.render(); });
         });
       }
       liga("fo-cliente", "cliente");
