@@ -373,6 +373,76 @@
     },
 
     // ---------- Tabelas de Preço (multi-base) ----------
+    /* ===================================================================
+     * O RASTRO DA VARREDURA DIÁRIA
+     *
+     * A varredura sempre existiu (1×/dia, 9s após o boot), mas era MUDA: sem
+     * novidade ela não dizia nada, e "não avisou" é indistinguível de "não
+     * rodou". A pergunta que chegou — "dá pra fazer o sistema varrer sozinho?"
+     * — era, na verdade, esta: não dava pra VER que ele já varria.
+     *
+     * Aqui a tela mostra o que cada fonte respondeu na última passada. Sem
+     * inventar: quando não há registro, diz que ainda não rodou nesta máquina.
+     * =================================================================== */
+    _linhaVarredura: function () {
+      if (typeof Atualizacao === "undefined" || !Atualizacao.ultimaVarredura) return "";
+      var v = Atualizacao.ultimaVarredura();
+      var box = function (txt, cor) {
+        return '<div style="font-size:11.5px;padding:7px 10px;border-radius:8px;margin:0 0 10px;' +
+          'background:var(--surface-2);border-left:3px solid ' + (cor || "var(--linha-forte)") + '">' + txt + '</div>';
+      };
+      if (!v) {
+        return box('<b>Varredura automática:</b> ainda não rodou nesta máquina. Ela dispara sozinha ' +
+          '9 segundos depois de abrir o app, <b>uma vez por dia</b> — reabrir no mesmo dia não repete.');
+      }
+      var quando = Atualizacao.fmtData(v.dia);
+      try {
+        var hoje = new Date().toISOString().slice(0, 10);
+        if (v.dia === hoje) quando = "hoje";
+      } catch (e) {}
+      var p = ['<b>Última varredura:</b> ' + Util.esc(quando) +
+               ' · base instalada ' + Util.esc(Atualizacao.fmtComp(v.instalada)) +
+               (v.uf ? " / " + Util.esc(v.uf) : "")];
+
+      if (v.servidor && v.servidor.competencia) {
+        p.push('servidor OrçaPRO: <b>' + Util.esc(Atualizacao.fmtComp(v.servidor.competencia)) + '</b>' +
+          (v.servidor.publicadoEm ? " (no ar desde " + Util.esc(Atualizacao.fmtData(v.servidor.publicadoEm)) + ")" : ""));
+      } else {
+        p.push('servidor OrçaPRO: <span style="color:#b45309">não respondeu</span>');
+      }
+
+      if (v.fetcher && v.fetcher.online) {
+        var mn = v.fetcher.ultimaOficial || v.fetcher.ultimaCache;
+        p.push('fetcher local: <b>' + Util.esc(mn ? Atualizacao.fmtComp(mn) : "—") + '</b>');
+      } else if (v.fetcher) {
+        p.push('fetcher local: fora do ar');
+      }
+
+      var cor = "var(--linha-forte)";
+      if (v.basePropria) {
+        p.push('<span style="color:#b45309">você usa uma base PRÓPRIA importada — a atualização oficial não mexe nela</span>');
+        cor = "#b45309";
+      } else if (v.aplicou) {
+        p.push('<b style="color:var(--verde)">aplicou ' + Util.esc(Atualizacao.fmtComp(v.aplicou.de)) + ' → ' +
+          Util.esc(Atualizacao.fmtComp(v.aplicou.para)) + '</b> (' + (v.aplicou.itens || 0).toLocaleString("pt-BR") + ' itens, via ' +
+          (v.aplicou.fonte === "fetcher" ? "fetcher local" : "servidor") + ')');
+        cor = "var(--verde)";
+        /* o descasamento preço × insumo aparece AQUI, não só no toast que
+           passou: é a tela onde a pessoa vem conferir de onde vem o número. */
+        if (v.aplicou.insumosEm) {
+          p.push('<span style="color:#b45309">atenção: o detalhamento de insumos continua na ' +
+            Util.esc(Atualizacao.fmtComp(v.aplicou.insumosEm)) + ' — o unitário da linha e a soma dos insumos não vão fechar até o analítico alcançar</span>');
+          cor = "#b45309";
+        }
+      } else if (v.erro) {
+        p.push('<span style="color:#b45309">' + Util.esc(v.erro) + '</span>');
+        cor = "#b45309";
+      } else {
+        p.push("nada novo — você já está na mais recente que as duas fontes conhecem");
+      }
+      return box(p.join(" · "), cor);
+    },
+
     renderTabelas: function (lista) {
       var rows = (lista || []).map(function (b) {
         /* v1.1.203 — a VARIANTE carregada aparece aqui. Sem isto, uma SETOP
@@ -433,7 +503,8 @@
           '<span class="muted" id="atu-st-' + Util.esc(e.id) + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
       });
       return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
-        '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere no servidor OrçaPRO se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b> (1× por dia, silencioso).</p>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b>, <b>1× por dia</b>, em duas fontes: o servidor OrçaPRO e o <b>fetcher local</b> do ERP (que fala com a CAIXA). Reabrir o app no mesmo dia não repete a varredura.</p>' +
+        this._linhaVarredura() +
         '<div style="margin-bottom:16px">' + atuLinhas + '</div>' +
         '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +
         '<table class="tbl"><thead><tr><th>Base</th><th>Competência/UF</th><th class="num">Itens</th><th>Status</th><th></th></tr></thead><tbody>' +
@@ -1209,7 +1280,16 @@
           var cadeia = subId ? (subId + " " + e.id) : e.id;
           var recSub = subId && typeof App !== "undefined" && App.etapaRecolhida ? App.etapaRecolhida(orc.id, subId) : false;
           var recLinha = rec || recSub;
-          var out = '<tr data-etapa-linhas="' + cadeia + '"' + (recLinha ? ' class="oculta"' : "") + '>' +
+          /* ⚠ A CLASSE `lin` MARCA "ESTA LINHA TEM AS 9 COLUNAS". Sem ela as
+             regras de coluna (largura da Descrição, nowrap do Código) eram
+             escritas por `td:nth-child(N)` solto e VAZAVAM para a linha de
+             etapa, que tem um `<td colspan="5">`: ali o nth-child(3) não é a
+             Descrição, é o Custo Total — e a min-width de 280px da Descrição
+             inflava a coluna do dinheiro, que foi o vão vazio reclamado no
+             print. `table.tbl tr.lin:hover` (css/app.css:537) e o clamp de 2
+             linhas do modo compacto já esperavam esta classe; ela nunca foi
+             emitida, então as duas regras nasceram mortas. */
+          var out = '<tr class="lin' + (recLinha ? ' oculta' : '') + '" data-etapa-linhas="' + cadeia + '">' +
             // COLUNA "Item" = número hierárquico (2.1). Código SINAPI vai na coluna ao lado (separado).
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)

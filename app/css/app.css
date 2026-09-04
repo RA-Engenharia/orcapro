@@ -719,14 +719,51 @@ table.tbl tr.oculta { display: none; }
  * largura mínima devolve a leitura numa linha; o excedente rola de lado
  * dentro do .pl-tabela, sem empurrar a página. word-break NORMAL: quebra
  * entre palavras, nunca no meio delas. */
-table.tbl-plan td:nth-child(3), table.tbl-plan th:nth-child(3) {
+table.tbl-plan th:nth-child(3), table.tbl-plan tr.lin td:nth-child(3) {
   min-width: 280px; white-space: normal; overflow-wrap: break-word; word-break: normal;
 }
 /* a tabela não encolhe abaixo do somatório das colunas — garante o scroll
    horizontal do .pl-tabela em vez de espremer tudo */
 table.tbl-plan { min-width: 760px; }
 /* código e unidade não quebram; a UF/competência e os botões ficam inteiros */
-table.tbl-plan td:nth-child(2), table.tbl-plan td:nth-child(4) { white-space: nowrap; }
+table.tbl-plan tr.lin td:nth-child(2), table.tbl-plan tr.lin td:nth-child(4) { white-space: nowrap; }
+
+/* ===== PARA ONDE VAI A LARGURA QUE SOBRA ==============================
+ * A tabela ocupa 100% da área e, em `table-layout: auto`, o navegador
+ * reparte a sobra ENTRE TODAS as colunas. Numa tela larga isso dava ~250px
+ * para "Custo Total" e "Preço Venda" — colunas cujo conteúdo mede ~90px — e
+ * o número, alinhado à direita, ficava a um palmo do próprio rótulo. Ler
+ * "qual número é de qual coluna" virava trabalho justamente nas duas
+ * colunas que decidem o orçamento.
+ *
+ * `width:1%` é o pedido "encolha até o seu conteúdo": o navegador não
+ * consegue honrar 1% (o conteúdo não cabe), cai na largura mínima do
+ * conteúdo, e joga TODA a sobra na única coluna sem `width` — a Descrição,
+ * que é exatamente quem se beneficia de espaço.
+ *
+ * ⚠ `tr.lin` NÃO É ENFEITE — É A CAUSA do vão reclamado. A linha de etapa
+ *   tem um `<td colspan="5">`, então ali o nth-child(3) não é a Descrição:
+ *   é o Custo Total. A min-width de 280px escrita para a Descrição caía
+ *   sobre a coluna do dinheiro e a inflava para 280px na tabela inteira —
+ *   número alinhado à direita com 180px de vazio à esquerda. Só a linha de
+ *   ITEM tem as 9 colunas; regra de coluna pertence a `tr.lin` e ao
+ *   `thead`, nunca a um `td:nth-child(N)` solto.
+ *
+ * ⚠ Qtd (5) e Custo Unit (6) levam `width` mas NÃO `nowrap`: são
+ *   `input.cell` com `width:100%` e `min-width:88px` (regra lá em cima), e
+ *   o selo de ajuste mora dentro da célula de custo. A largura mínima do
+ *   conteúdo já reserva o campo; travar a quebra espremeria o selo.
+ * ===================================================================== */
+table.tbl-plan th:nth-child(1), table.tbl-plan tr.lin td:nth-child(1),
+table.tbl-plan th:nth-child(2), table.tbl-plan tr.lin td:nth-child(2),
+table.tbl-plan th:nth-child(4), table.tbl-plan tr.lin td:nth-child(4),
+table.tbl-plan th:nth-child(7), table.tbl-plan tr.lin td:nth-child(7),
+table.tbl-plan th:nth-child(8), table.tbl-plan tr.lin td:nth-child(8),
+table.tbl-plan th:nth-child(9), table.tbl-plan tr.lin td:nth-child(9) {
+  width: 1%; white-space: nowrap;
+}
+table.tbl-plan th:nth-child(5), table.tbl-plan tr.lin td:nth-child(5),
+table.tbl-plan th:nth-child(6), table.tbl-plan tr.lin td:nth-child(6) { width: 1%; }
 
 /* ===== MODO COMPACTO DA PLANILHA ==================================
  * Obra grande tem dezenas de itens e a linha alta obriga a rolar sem parar.
@@ -737,7 +774,7 @@ table.tbl-plan td:nth-child(2), table.tbl-plan td:nth-child(4) { white-space: no
  *   no canteiro. */
 table.tbl-compacta th, table.tbl-compacta td { padding: 5px 10px; }
 table.tbl-compacta { font-size: var(--t-peq); }
-table.tbl-compacta td:nth-child(3), table.tbl-compacta th:nth-child(3) { min-width: 240px; }
+table.tbl-compacta th:nth-child(3), table.tbl-compacta tr.lin td:nth-child(3) { min-width: 240px; }
 /* a descrição em 2 linhas no máximo; o resto fica no title/tooltip da célula */
 table.tbl-compacta tr.lin td:nth-child(3) {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
