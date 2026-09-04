@@ -711,6 +711,23 @@ table.tbl tr.etapa-row:hover td { background: var(--surface-3); }
    nunca a .etapa-row, que também é usada no sintético, no cronograma e no
    preview do importador. */
 table.tbl tr.oculta { display: none; }
+
+/* ===== PLANILHA DO ORÇAMENTO: a Descrição precisa de largura ==========
+ * Em table-layout auto, a coluna de ações (vários botões) e as numéricas
+ * espremiam a Descrição a ponto de o texto quebrar palavra a palavra
+ * ("PISO / PODOTÁTIL / DE / ALERTA"), empilhado na vertical. Fixar uma
+ * largura mínima devolve a leitura numa linha; o excedente rola de lado
+ * dentro do .pl-tabela, sem empurrar a página. word-break NORMAL: quebra
+ * entre palavras, nunca no meio delas. */
+table.tbl-plan td:nth-child(3), table.tbl-plan th:nth-child(3) {
+  min-width: 280px; white-space: normal; overflow-wrap: break-word; word-break: normal;
+}
+/* a tabela não encolhe abaixo do somatório das colunas — garante o scroll
+   horizontal do .pl-tabela em vez de espremer tudo */
+table.tbl-plan { min-width: 760px; }
+/* código e unidade não quebram; a UF/competência e os botões ficam inteiros */
+table.tbl-plan td:nth-child(2), table.tbl-plan td:nth-child(4) { white-space: nowrap; }
+
 /* Tabela larga no celular (triagem da nota tem 11 colunas): a coluna da
    DESCRIÇÃO fica fixa ao rolar para o lado — sem ela o usuário chega no
    seletor de obra sem saber de qual produto se trata. */

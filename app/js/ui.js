@@ -1035,7 +1035,11 @@
       html += this._faixaAjustes(orc);
       var _calcIdx = Orcamento.calcular(orc);
       var _idx = this._indiceEtapas(orc, _calcIdx);
+      /* a tabela SEMPRE mora num container que rola de lado (.pl-tabela):
+         sem isso, no caminho sem índice, dar min-width à Descrição empurraria
+         a página inteira em vez de rolar só a planilha. */
       if (_idx) html += '<div class="pl-com-indice">' + _idx + '<div class="pl-tabela">';
+      else html += '<div class="pl-tabela">';
       var _foco = (typeof App !== "undefined") ? App._etapaFoco : "";
       if (_foco) {
         var _nomeFoco = "";
@@ -1047,7 +1051,7 @@
           + ' <span class="muted">— os totais acima continuam sendo do orçamento inteiro</span>'
           + ' <button class="btn sm ghost" data-etapa-foco="">Ver todas</button></div>';
       }
-      html += '<table class="tbl"><thead><tr>' +
+      html += '<table class="tbl tbl-plan"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
         '<th class="num">Preço Venda</th><th></th></tr></thead><tbody>';
@@ -1256,8 +1260,8 @@
         '<td class="num">' + Util.fmtMoeda(_tt.custoDireto) + '</td>' +
         '<td class="num">' + Util.fmtMoeda(_tt.precoVenda) + '</td><td></td></tr>' +
         '</tfoot></table>';
-      /* fecha o par que o indice abriu (.pl-tabela e .pl-com-indice) */
-      if (_idx) html += '</div></div>';
+      /* fecha o container: com índice foram dois divs (.pl-tabela + .pl-com-indice), sem índice foi só o .pl-tabela */
+      html += _idx ? '</div></div>' : '</div>';
       return html;
     },
 
