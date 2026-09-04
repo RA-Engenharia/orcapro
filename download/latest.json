@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.39",
+  "versao": "1.2.40",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.39.zip",
-  "notas": "Insumos por regime, item a item. Ao clicar em Insumos, o app carrega o detalhamento do regime DAQUELE item, e nao o do regime da maioria do orcamento. Antes, num orcamento que misturava itens onerados e desonerados, clicar num item desonerado mostrava o aviso Detalhamento de outro regime; agora abre o desdobramento correto (com os encargos do proprio item). Continua tudo da 1.2.38 (insumos da SINAPI nos dois regimes), da 1.2.37 (cotacao online) e da 1.2.35 (analitico desonerado dos 27 estados e o espelho publico).",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.40.zip",
+  "notas": "A barra da base SINAPI em Meus Orcamentos virou um seletor de estado: da para trocar a UF ali mesmo, sem ir a Tabelas, e a base recarrega na hora. O texto passou a dizer base para novos orcamentos (nao base padrao): cada orcamento guarda a propria UF e competencia, so os proximos herdam a da barra. Continua tudo das versoes anteriores (insumos SINAPI nos dois regimes por item, cotacao online, analitico desonerado dos 27 estados).",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.37/OrcaPRO-IA-Instalador-v1.2.37.exe"
 }
