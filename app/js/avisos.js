@@ -209,8 +209,33 @@
       itCon.sort(porChave("_fim")); // vencidos primeiro, depois quem vence mais cedo
       itCon.forEach(function (x) { delete x._fim; });
 
+      /* COMPRAS — atrasadas, sem confirmação do fornecedor, paradas. Tudo
+         derivado por js/compraslinha.js (nunca gravado): sem o motor, não se
+         afirma atraso de pedido nenhum. Prioridade: atraso (1), fornecedor sem
+         resposta (2), parado (3) — o primeiro é obra sem material. */
+      var itCompAtr = [], itCompForn = [], itCompPar = [];
+      var CL = (typeof ComprasLinha !== "undefined") ? ComprasLinha : null;
+      if (CL) (dados.compras || []).forEach(function (c) {
+        if (!c || c.id == null) return;
+        var s = CL.situacao(c, hoje);
+        var nome = nomeObra(obras, c.obraId);
+        var quem = c.fornecedorNome ? String(c.fornecedorNome) : "fornecedor";
+        var base = "Pedido " + (c.numero || c.id) + " — " + quem;
+        if (s.atrasado) itCompAtr.push({ id: c.id, _d: s.diasAtraso, titulo: base + " atrasado " + plural(s.diasAtraso),
+          detalhe: (nome ? "Obra " + nome + " · " : "") + "previsto " + s.dataVigente.slice(8, 10) + "/" + s.dataVigente.slice(5, 7), view: "compras", prioridade: 1 });
+        else if (s.status === "enviado" && s.parado) itCompForn.push({ id: c.id, _d: s.diasParado, titulo: base + " sem confirmação",
+          detalhe: (nome ? "Obra " + nome + " · " : "") + s.motivoParado, view: "compras", prioridade: 2 });
+        else if (s.parado) itCompPar.push({ id: c.id, _d: s.diasParado, titulo: base + " parado",
+          detalhe: (nome ? "Obra " + nome + " · " : "") + s.motivoParado, view: "compras", prioridade: 3 });
+      });
+      [itCompAtr, itCompForn, itCompPar].forEach(function (arr) {
+        arr.sort(function (a, b) { return b._d - a._d; });   /* o mais atrasado primeiro */
+        arr.forEach(function (x) { delete x._d; });
+      });
+
       // monta grupos (vazios ficam FORA), já em ordem de prioridade
       var grupos = [];
+      if (itCompAtr.length) grupos.push({ tipo: "compra-atrasada", rotulo: "Compras atrasadas", prioridade: 1, itens: itCompAtr });
       /* a devolução vem PRIMEIRO: é a única em que alguém está parado
          esperando uma ação de quem está lendo o alerta */
       if (itRdoRev.length) grupos.push({ tipo: "rdo-revisao", rotulo: "Diários devolvidos para você", prioridade: 1, itens: itRdoRev });
@@ -218,6 +243,8 @@
       if (itMed.length) grupos.push({ tipo: "medicao-aprovar", rotulo: "Medições a aprovar", prioridade: 1, itens: itMed });
       if (itTar.length) grupos.push({ tipo: "tarefa-atrasada", rotulo: "Tarefas atrasadas", prioridade: 1, itens: itTar });
       if (itRes.length) grupos.push({ tipo: "restricao-aberta", rotulo: "Restrições abertas", prioridade: 2, itens: itRes });
+      if (itCompForn.length) grupos.push({ tipo: "compra-sem-confirmacao", rotulo: "Pedidos sem confirmação do fornecedor", prioridade: 2, itens: itCompForn });
+      if (itCompPar.length) grupos.push({ tipo: "compra-parada", rotulo: "Pedidos parados", prioridade: 3, itens: itCompPar });
       if (itCon.length) grupos.push({ tipo: "contrato-vencendo", rotulo: "Contratos vencendo", prioridade: 3, itens: itCon });
       var total = 0;
       grupos.forEach(function (g) { total += g.itens.length; });

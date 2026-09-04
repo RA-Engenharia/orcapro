@@ -202,13 +202,22 @@
       naoApropriado.porOrigem[o] = (naoApropriado.porOrigem[o] || 0) + v;
     });
 
-    /* ⚠ COMPROMETIDO É PEDIDO APROVADO E AINDA NÃO RECEBIDO.
-       Recebido já virou despesa e seria contado duas vezes — a mesma regra
-       que `PorObra.totaisCompras` usa (`comprometido = aprovado`). */
+    /* ⚠ COMPROMETIDO É PEDIDO COMPROMETIDO E AINDA NÃO RECEBIDO.
+       Recebido já virou despesa e seria contado duas vezes.
+       ⚠ A LISTA DE STATUS NÃO SE ESCREVE AQUI. Ela era `=== "aprovado"`, e
+       quando a Fase 0b criou `enviado` e `confirmado` esta tela passou a
+       ZERAR o comprometido no clique de um botão que promete não mover
+       dinheiro — o Saldo da etapa subia sozinho e o alarme de estouro se
+       apagava, enquanto a tela de Compras, corrigida no mesmo lote, seguia
+       mostrando o valor certo. Duas telas, a mesma palavra, dois números.
+       A regra mora em ComprasLinha.ehCompromisso; aqui só se pergunta. */
+    var ehComp = (typeof ComprasLinha !== "undefined" && ComprasLinha.ehCompromisso)
+      ? function (st) { return ComprasLinha.ehCompromisso(st); }
+      : function (st) { return st === "aprovado" || st === "enviado" || st === "confirmado"; };
     arr(entrada.compras).forEach(function (c) {
       if (!c) return;
       if (obraId && txt(c.obraId) !== obraId) return;
-      if (txt(c.status).toLowerCase() !== "aprovado") return;
+      if (!ehComp(txt(c.status).toLowerCase())) return;
       var v = num(c.valor);
       if (creditar(porId, c.etapaId, "comprometido", v)) return;
       compSemEtapa.valor += v; compSemEtapa.n++;

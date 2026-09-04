@@ -1294,7 +1294,10 @@
               if (e.ok && e.atualizou) { _fimSinapi(e, "espelho do app"); return; }
               var atraso = Atualizacao.mesesAtras(Sinapi.competencia);
               var rabo = (atraso != null && atraso >= 2)
-                ? " ⚠ Ela é de " + atraso + " meses atrás e a SINAPI sai todo mês: a coleta parou em algum lugar, não é você que está em dia."
+                /* ⚠ sem glifo no texto: esta base troca emoji de interface por
+                   ícone (tools/test-sem-emoji.js), e aqui a frase é a segunda
+                   metade de outra — o aviso está nas palavras, não no símbolo. */
+                ? " Ela é de " + atraso + " meses atrás e a SINAPI sai todo mês: a coleta parou em algum lugar, não é você que está em dia."
                 : "";
               if (e.ok && e.semUf) {
                 pinta("O espelho está na competência " + Atualizacao.fmtComp(e.para) + " mas ainda não tem o seu estado. A sua continua a " + Atualizacao.fmtComp(e.de) + "." + rabo);

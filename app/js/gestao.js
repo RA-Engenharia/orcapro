@@ -115,7 +115,18 @@
       : [["pago", "Pago / Recebido"], ["pendente", "Pendente"]],
     fornCategoria: [["material", "Material"], ["servico", "Serviço"], ["equipamento", "Equipamento"], ["mao_obra", "Mão de obra"], ["transporte", "Transporte"], ["locacao", "Locação"], ["outros", "Outros"]],
     fornStatus: [["ativo", "Ativo"], ["homologado", "Homologado"], ["inativo", "Inativo"]],
-    compraStatus: [["cotacao", "Em cotação"], ["aprovado", "Aprovado"], ["rejeitado", "Rejeitado"], ["recebido", "Recebido"], ["cancelado", "Cancelado"]],
+    /* ⚠ a CHAVE `cotacao` fica: são 38 instalações com pedidos gravados assim,
+       e o merge da nuvem devolveria a chave antiga de qualquer jeito. Só o
+       rótulo muda — "Em cotação" dizia o passo anterior (a cotação já
+       acabou quando o pedido nasce); o que o pedido espera aqui é a
+       aprovação interna, e é isso que a lista, o Portal e o relatório dizem. */
+    /* ⚠ `enviado` e `confirmado` são ESPELHO de carimbo (`pc.envio`,
+       `pc.confirmacao`): nascem pelos botões "Marcar como enviado" e
+       "Fornecedor confirmou", nunca pelo select do formulário (ver formCompra).
+       "atrasado", "parado" e "pago" NÃO são status — são derivados por
+       js/compraslinha.js a cada render, senão o merge da nuvem ressuscita um
+       atraso resolvido. */
+    compraStatus: [["cotacao", "Aguardando aprovação"], ["aprovado", "Aprovado"], ["enviado", "Enviado — aguardando fornecedor"], ["confirmado", "Confirmado pelo fornecedor"], ["rejeitado", "Rejeitado"], ["recebido", "Recebido"], ["cancelado", "Cancelado"]],
     estoqueCategoria: [["cimento", "Cimento/Argamassa"], ["aco", "Aço/Ferragem"], ["agregados", "Agregados"], ["hidraulica", "Hidráulica"], ["eletrica", "Elétrica"], ["madeira", "Madeira/Forma"], ["acabamento", "Acabamento"], ["epi", "EPI/Ferramentas"], ["outros", "Outros"]],
     movTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
     rdoClima: [["ensolarado", "Ensolarado"], ["nublado", "Nublado"], ["chuvoso", "Chuvoso"], ["chuva_forte", "Chuva forte"]],
@@ -149,6 +160,17 @@
     ativo: "#16a34a", prospecto: "#2e6f9e", inativo: "#94a3b8",
     elaboracao: "#64748b", aguardando: "#f59e0b", suspenso: "#f59e0b", concluido: "#16a34a", rescindido: "#dc2626", cancelado: "#94a3b8",
     pendente: "#f59e0b", aprovada: "#2e6f9e", paga: "#16a34a", pago: "#16a34a", receita: "#16a34a", despesa: "#dc2626",
+    /* ⚠ Os dois status que a Fase 0b criou (o pedido entre "aprovado" e
+       "recebido") não tinham cor aqui, e `pill()` cai no cinza #64748b — o
+       mesmo cinza de `cancelado` e `inativo`. Ou seja: um pedido a caminho
+       aparecia com a cara de um pedido morto. Âmbar = esperando o outro lado;
+       ciano = confirmado, a caminho. Medidos contra o fundo que o próprio
+       `pill` monta (cor + 22 de alfa): 4,18/3,75 e 4,44/3,99.
+       ⚠ E fica o registro do problema maior, que NÃO é destes dois: quase toda
+       esta paleta está abaixo de 4,5 no claro (`aguardando` dá 1,94 e `pago`
+       2,85) e NENHUMA suíte cobre o `g-pill` — test-contraste-selos só mede
+       `.pill`, outro componente. Calibrar isto é trabalho próprio. */
+    enviado: "#b45309", confirmado: "#0e7490",
     /* ciclo de vida do lançamento financeiro (js/finstatus.js). `cancelado`
        já existia acima, na mesma cor. Sem estes, a pílula do estado novo sai
        cinza-padrão e o usuário não distingue agendado de previsto. */
@@ -163,13 +185,68 @@
     novo: "#16a34a", regular: "#f59e0b", ruim: "#dc2626", baixado: "#94a3b8",
     lancada: "#16a34a",
     afazer: "#f59e0b", fazendo: "#2e6f9e", feita: "#16a34a",
+    /* ⚠ a cotação enviada ao fornecedor não tinha cor: caía no cinza de
+       `cancelado`, ou seja, uma cotação VIVA com cara de morta — o mesmo
+       defeito que `enviado`/`confirmado` tinham. Âmbar porque é espera, o
+       mesmo de `aguardando`; o rótulo é literalmente "Aguardando
+       fornecedores" (P.cotStatus). */
+    enviada: "#f59e0b",
+  };
+
+  /* =====================================================================
+   * TEXTO E FUNDO NÃO PODEM SER A MESMA COR
+   *
+   * O `pill()` escrevia `background:X22; color:X` — a cor cheia sobre 13%
+   * dela mesma. Nessa fórmula NENHUMA cor de saturação média alcança os
+   * 4,5:1 da WCAG: `aguardando` dava 1,94:1 e `pago` 2,85:1 — num selo cujo
+   * trabalho é dizer se o dinheiro saiu. Não era escolha de paleta: era a
+   * fórmula. Dos 58 status, 16 reprovavam já no tema claro e TODOS reprovavam
+   * em alguma superfície quando se mede também o escuro.
+   *
+   * ⚠ E ESTILO INLINE NÃO SABE QUAL É O TEMA. Por isso o par não fica aqui
+   * resolvido: quem tentou consertar à mão calibrou só o claro e afundou no
+   * escuro (`#f59e0b`→`#b45309` dá 4,08 no claro e 2,36 no escuro; há 17
+   * pares assim espalhados pela base). O `pill()` passa os DOIS textos como
+   * custom property e o CSS escolhe — que é como o `.pill` irmão sempre fez,
+   * com `[data-tema="dark"] .pill.*`.
+   *
+   * O mapa é por COR, não por status: 58 status usam 10 cores. Assim status
+   * novo que reuse uma cor nasce legível de graça, e sobra 1/6 para manter.
+   * Derivados por luminância em HSL (o matiz não muda), medidos contra as
+   * superfícies dos dois temas — todos entre 4,60 e 4,81 no pior fundo.
+   * `tools/test-contraste-status.js` refaz essa conta e reprova quem faltar.
+   * ===================================================================== */
+  var TXTStatus = {
+    "#64748b": ["#556376", "#9da8b8"], "#2e6f9e": ["#29648e", "#71abd6"],
+    "#f59e0b": ["#8f5c06", "#f59e0b"], "#16a34a": ["#0f7234", "#1ac258"],
+    "#94a3b8": ["#54657e", "#a0aec0"], "#dc2626": ["#bb1e1e", "#ea7e7e"],
+    "#b45309": ["#9c4808", "#f5842e"], "#0e7490": ["#0d6982", "#16b4df"],
+    "#2563eb": ["#1453dd", "#7ea3f3"], "#ea580c": ["#a63e09", "#f6874d"],
   };
 
   function rot(lista, v) { for (var i = 0; i < lista.length; i++) if (lista[i][0] === v) return lista[i][1]; return v || "—"; }
-  function opts(lista, sel) { return lista.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? " selected" : "") + '>' + o[1] + "</option>"; }).join(""); }
+  /* ⚠ SELECT SEM OPÇÃO APAGA O VALOR — e o Salvar grava o apagão.
+     `opts()` só emitia as opções da lista. Quando o registro trazia um valor
+     que a lista não conhece — status novo vindo da NUVEM de um app mais
+     recente, ou texto livre do fornecedor gravado em `formaPgto` pelo Mapa
+     ("30 dias após a entrega") — o navegador selecionava o PRIMEIRO option,
+     e o Salvar regravava o registro com ele. Roteiro concreto: o aparelho A
+     (atualizado) põe o pedido em "enviado"; o aparelho B (versão antiga) abre
+     o mesmo pedido pela nuvem, o select mostra "Aguardando aprovação" porque
+     é a primeira opção, a pessoa corrige só a obra e salva — o status foi
+     REBAIXADO sem ninguém ter escolhido isso, e o merge leva o rebaixamento
+     de volta ao A. Foi por esse mecanismo que "select sem opção" já custou a
+     lista de peças de um cadastro (memória da casa).
+     Agora o valor desconhecido vira um option extra, selecionado e rotulado
+     como não reconhecido: quem não mexe não perde nada; quem quer trocar vê
+     o que estava lá. `sel` vazio segue sem option extra (o "—" de quem chama
+     continua sendo a única forma de "nenhum").
+     ⚠ UMA LINHA SÓ, de propósito: tools/test-compras-fase0a.js recorta esta
+     função do fonte por regex de linha única. */
+  function opts(lista, sel) { var h = lista.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? " selected" : "") + '>' + o[1] + "</option>"; }).join(""); if (sel && !lista.some(function (o) { return o[0] === sel; })) h += '<option value="' + Util.esc(sel) + '" selected>' + Util.esc(sel) + " (valor não reconhecido)</option>"; return h; }
   function optsUf(sel) { return '<option value="">—</option>' + P.uf.map(function (u) { return "<option" + (u === sel ? " selected" : "") + ">" + u + "</option>"; }).join(""); }
   function optsRec(lista, campo, sel, vazio) { return '<option value="">' + (vazio || "—") + "</option>" + Util.arr(lista).map(function (r) { return '<option value="' + r.id + '"' + (r.id === sel ? " selected" : "") + ">" + Util.esc(r[campo] || r.nome || r.numero || r.id) + "</option>"; }).join(""); }
-  function pill(status) { var c = CORStatus[status] || "#64748b"; return '<span class="g-pill" style="background:' + c + '22;color:' + c + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.cotStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus, P.tarefaStatus), status)) + "</span>"; }
+  function pill(status) { var c = CORStatus[status] || "#64748b"; var tx = TXTStatus[c] || TXTStatus["#64748b"]; return '<span class="g-pill" style="background:' + c + '22;--gp-t:' + tx[0] + ';--gp-td:' + tx[1] + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.cotStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus, P.tarefaStatus), status)) + "</span>"; }
   function v(id) { var e = UI.el(id); return e ? e.value.trim() : ""; }
   function nv(id) { return Util.num(v(id)); }
   function campo(label, inner) { return '<div class="field"><label>' + label + "</label>" + inner + "</div>"; }
@@ -279,6 +356,21 @@
    * carimbada no mês seguinte. É o mesmo defeito de "a folha de agosto caía
    * na competência de outubro", por outra porta. */
   function mesLocal() { return hojeLocal().slice(0, 7); }
+  /* ⚠ SOMA DIAS EM DATA LOCAL, NUNCA POR `Date.parse` DE STRING ISO.
+     `new Date("2026-12-31")` é interpretado em UTC; somar dias nele e ler
+     `.toISOString()` (ou `.getDate()` no fuso −3) devolve um dia a menos na
+     virada de mês e no horário de verão — já mordeu esta base. Montar a data
+     por (ano, mês−1, dia + n) deixa o próprio motor do JS carregar o mês e o
+     ano em calendário local, sem fuso no meio. Dias CORRIDOS, de propósito:
+     é assim que o fornecedor conta o prazo (plano de compras, §7.1).
+     Devolve "" quando a base não é AAAA-MM-DD — previsão inventada é pior que
+     previsão vazia. */
+  function somarDiasISO(iso, n) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+    if (!m) return "";
+    var d = new Date(+m[1], +m[2] - 1, +m[3] + Math.round(Number(n) || 0));
+    return d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate();
+  }
   /* ⚠ ORDEM DE PESSOAS NASCE AQUI, e de propósito.
    * O cliente pediu os funcionários em ordem alfabética e agrupados por
    * hierarquia de função — e pediu que valesse para todo módulo. Havia 27
@@ -1521,7 +1613,13 @@
        * empresa) e o resultado não era usado em lugar nenhum deste método. */
       var obras = esc.obras, contratos = esc.contratos, med = esc.medicoes, fin = esc.financeiro;
       var compras = esc.compras, rdos = esc.rdo;
-      var comprasAbertas = compras.filter(function (c) { return c.status === "cotacao" || c.status === "aprovado"; }).length;
+      /* "em aberto" é tudo que ainda anda — inclusive o pedido que o fornecedor
+         já confirmou. Filtrar por dois status fazia o pedido `enviado` SUMIR
+         das compras abertas do Painel no dia em que ganhou esse status. */
+      var comprasAbertas = compras.filter(function (c) {
+        return typeof ComprasLinha !== "undefined" ? !ComprasLinha.ehTerminal(c.status)
+          : (c.status === "cotacao" || c.status === "aprovado" || c.status === "enviado" || c.status === "confirmado");
+      }).length;
       /* soma a retenção das medições aprovadas e pagas (js/atencao.js) */
       var _retido = (typeof Atencao !== "undefined") ? Atencao.retencaoPresa(med) : 0;
       var emAndamento = obras.filter(function (o) { return o.status === "andamento"; }).length;
@@ -5767,10 +5865,17 @@
         forn.conta ? "C/" + (forn.tipoConta === "poupanca" ? "P" : "C") + " " + Util.esc(forn.conta) : "",
         forn.titular ? "Titular: " + Util.esc(forn.titular) + (forn.titularDoc ? " (" + Util.esc(forn.titularDoc) + ")" : "") : ""
       ].filter(Boolean).join(" · ") : "";
+      var pagTxt = c.condPgtoTexto ? Util.esc(c.condPgtoTexto) : (c.formaPgto ? Util.esc(rot(P.formaPgto, c.formaPgto)) : "");
 
       var corpo = "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:18%'><b>Pedido Nº</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.numero || "—") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc;width:16%'><b>Data</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.data) + "</td></tr><tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Fornecedor</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(forn ? forn.nome : (c.fornecedorNome || "—")) + (forn && forn.doc ? "<br><span style='font-size:10px;color:#555'>" + Util.esc(forn.tipo === "PF" ? "CPF " : "CNPJ ") + Util.esc(forn.doc) + "</span>" : "") + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Obra/Destino</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(obra ? obra.nome : "—") + "</td></tr>"
         + linhaSe("Contato do fornecedor", fornContato, "Endereço do fornecedor", fornEnd)
-        + (c.previsaoEntrega ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Prev. entrega</b></td><td style='border:1px solid #bbb;padding:6px'>" + brd(c.previsaoEntrega) + "</td><td style='border:1px solid #bbb;padding:6px;background:#f8fafc'><b>Pagamento</b></td><td style='border:1px solid #bbb;padding:6px'>" + Util.esc(rot(P.formaPgto, c.formaPgto) || "—") + "</td></tr>" : "") + "</table>"
+        /* ⚠ o pagamento sai como o FORNECEDOR escreveu (`condPgtoTexto`),
+           senão como o rótulo da chave. E a linha aparece quando houver
+           QUALQUER um dos dois dados: antes ela inteira dependia de
+           `previsaoEntrega`, e pedido sem previsão saía sem condição de
+           pagamento no papel. Pedido antigo com texto dentro de `formaPgto`
+           imprime o texto (o `rot` devolve o valor cru quando não é chave). */
+        + linhaSe("Prev. entrega", c.previsaoEntrega ? brd(c.previsaoEntrega) : "", "Pagamento", pagTxt) + "</table>"
         + (entregaEnd || confere || banco
           ? "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'>"
             + (entregaEnd ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#eef4fa;width:18%'><b>Entregar em</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + Util.esc(entregaEnd)
@@ -14163,6 +14268,108 @@
        contagem, totais do recorte e quadro por obra. O motor é o mesmo
        `PorObra`; muda só o agregador, porque compra tem status próprio. */
     _comprasObra: "todas",
+    /* ==================================================================
+     * MARCAÇÕES MANUAIS DO PEDIDO — enviado / confirmado / cobrar
+     *
+     * POR QUE EXISTEM: entre "aprovado" e "recebido" o pedido sumia. Ninguém
+     * sabia se o fornecedor tinha visto o pedido, "atrasado" não existia, e a
+     * obra descobria o atraso quando o caminhão não chegava. Estas três
+     * portas valem para 100 % dos pedidos — inclusive o fornecedor que nunca
+     * vai abrir link e o cliente no plano base — e são o que o link do
+     * fornecedor (Fase 1b) vai preencher sozinho depois.
+     *
+     * ⚠ O STATUS É ESPELHO DO CARIMBO. `pc.envio` e `pc.confirmacao` levam
+     *   data, autor e canal; o `status` só acompanha. O select do formulário
+     *   NÃO oferece "enviado"/"confirmado" (ver formCompra): status sem
+     *   carimbo seria uma confirmação que ninguém deu.
+     * ⚠ NADA AQUI MOVE DINHEIRO OU ESTOQUE. A única porta de dinheiro continua
+     *   sendo Receber (quatro portas, skill `dinheiro`).
+     * ⚠ COBRAR NÃO AVISA NINGUÉM SOZINHO: abre a mensagem no WhatsApp e a tela
+     *   diz isso — não existe API de WhatsApp aqui, e prometer aviso que não
+     *   sai é recado que mente.
+     * ================================================================== */
+    _comprasGuardaMod: function () {
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("compras")) {
+        UI.toast("Seu usuário não tem o módulo Compras — peça a quem compra para registrar.", "erro");
+        return false;
+      }
+      return true;
+    },
+    comprasMarcarEnviado: function (id) {
+      var self = this;
+      if (!this._comprasGuardaMod()) return;
+      var reg = Store.obter(eid(), "compras", id); if (!reg) return;
+      if (reg.status !== "aprovado") {
+        UI.toast(reg.status === "cotacao" ? "Este pedido ainda não foi aprovado — aprove antes de enviar ao fornecedor." :
+          "Este pedido está \"" + (rot(P.compraStatus, reg.status) || reg.status) + "\" — só pedido aprovado é enviado.", "erro");
+        return;
+      }
+      var forn = reg.fornecedorNome || "o fornecedor";
+      UI.modal("Marcar como enviado ao fornecedor",
+        '<p style="margin-top:0;font-size:13px">Registre por onde o pedido <b>' + Util.esc(reg.numero || "") + '</b> foi para <b>' + Util.esc(forn) + '</b>. ' +
+        'O app não envia nada sozinho: mande o PDF (botão de imprimir na lista) por WhatsApp ou e-mail e marque aqui.</p>' +
+        campo("Por onde", sel("env-canal", '<option value="WhatsApp">WhatsApp</option><option value="E-mail">E-mail</option><option value="Telefone">Telefone</option><option value="Pessoalmente">Pessoalmente</option>')) +
+        campo("Observação (opcional)", inp("env-obs", "", "Ex.: falei com o Carlos, pediu o PDF por e-mail")),
+        [{ texto: "Marcar como enviado", classe: "primary", onClick: function () {
+          var vivo = Store.obter(eid(), "compras", id); if (!vivo) { UI.fecharModal(); return; }
+          if (vivo.status !== "aprovado") { UI.fecharModal(); UI.toast("O pedido mudou de estado em outro aparelho — feche e abra de novo.", "erro"); return; }
+          vivo.envio = { em: self._hojeISO(), por: self._quemAprova(), canal: v("env-canal") || "", obs: String(v("env-obs") || "").slice(0, 200), origem: "manual" };
+          vivo.status = "enviado";
+          if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("Não consegui gravar: o armazenamento do navegador recusou. Nada mudou.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          UI.toast("Pedido " + (vivo.numero || "") + " marcado como enviado por " + vivo.envio.canal + ". Quando " + forn + " confirmar, registre em \"Fornecedor confirmou\".", "ok");
+        } },
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    comprasMarcarConfirmado: function (id) {
+      var self = this;
+      if (!this._comprasGuardaMod()) return;
+      var reg = Store.obter(eid(), "compras", id); if (!reg) return;
+      if (reg.status !== "enviado" && reg.status !== "aprovado") {
+        UI.toast("Só pedido aprovado ou enviado recebe confirmação do fornecedor (este está \"" + (rot(P.compraStatus, reg.status) || reg.status) + "\").", "erro");
+        return;
+      }
+      var prev = reg.previsaoEntrega || "";
+      UI.modal("Fornecedor confirmou o pedido",
+        '<p style="margin-top:0;font-size:13px">Registre a confirmação de <b>' + Util.esc(reg.fornecedorNome || "fornecedor") + '</b> para o pedido <b>' + Util.esc(reg.numero || "") + '</b>. ' +
+        (prev ? 'A obra pediu para <b>' + Util.esc(Util.fmtDia(prev)) + '</b>.' : 'Este pedido está <b>sem previsão de entrega</b> — a data que ele prometeu passa a valer.') + '</p>' +
+        '<div class="row">' + campo("Entrega prometida *", inp("conf-data", prev, "", "date")) + campo("Quem confirmou", inp("conf-nome", "", "Ex.: Carlos, do balcão")) + "</div>" +
+        campo("Por onde", sel("conf-canal", '<option value="WhatsApp">WhatsApp</option><option value="Telefone">Telefone</option><option value="E-mail">E-mail</option><option value="Pessoalmente">Pessoalmente</option>')),
+        [{ texto: "Registrar confirmação", classe: "success", onClick: function () {
+          var data = v("conf-data");
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Informe a data que o fornecedor prometeu.", "erro"); return; }
+          var vivo = Store.obter(eid(), "compras", id); if (!vivo) { UI.fecharModal(); return; }
+          if (vivo.status !== "enviado" && vivo.status !== "aprovado") { UI.fecharModal(); UI.toast("O pedido mudou de estado em outro aparelho — feche e abra de novo.", "erro"); return; }
+          /* confirmar sem ter marcado o envio: o envio aconteceu (senão o
+             fornecedor não confirmaria) — fica registrado como "informado na
+             confirmação", com a data de hoje, para a linha do tempo não mentir
+             por omissão */
+          if (!vivo.envio || !vivo.envio.em) vivo.envio = { em: self._hojeISO(), por: self._quemAprova(), canal: v("conf-canal") || "", obs: "envio registrado junto com a confirmação", origem: "manual" };
+          vivo.confirmacao = { em: self._hojeISO(), por: self._quemAprova(), dataEntrega: data, nome: String(v("conf-nome") || "").slice(0, 80), canal: v("conf-canal") || "", origem: "manual" };
+          vivo.status = "confirmado";
+          if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("Não consegui gravar: o armazenamento do navegador recusou. Nada mudou.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          var aviso = "Confirmação registrada — entrega prometida para " + Util.fmtDia(data) + ".";
+          if (prev && data > prev) aviso += " A obra pedia " + Util.fmtDia(prev) + ": a data do fornecedor passa a valer para o alerta de atraso.";
+          UI.toast(aviso, prev && data > prev ? "aviso" : "ok");
+        } },
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    comprasCobrar: function (id) {
+      var reg = Store.obter(eid(), "compras", id); if (!reg) return;
+      if (typeof ComprasLinha === "undefined") { UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return; }
+      var forn = lista("fornecedores").filter(function (f) { return f.id === reg.fornecedorId; })[0] || {};
+      var tel = String(forn.whatsapp || forn.telefone || "").replace(/\D/g, "");
+      var empresa = ""; try { empresa = (Auth.usuario() || {}).empresa || ""; } catch (e) {}
+      var texto = ComprasLinha.textoCobranca(reg, empresa, this._hojeISO());
+      if (!tel) {
+        UI.toast("Este fornecedor não tem WhatsApp nem telefone no cadastro. Mensagem pronta para copiar: " + texto, "aviso");
+        return;
+      }
+      var url = "https://wa.me/" + (tel.length <= 11 ? "55" + tel : tel) + "?text=" + encodeURIComponent(texto);
+      try { window.open(url, "_blank"); } catch (e) {}
+      UI.toast("Abri a mensagem no WhatsApp — o fornecedor NÃO foi avisado automaticamente; envie por lá.", "aviso");
+    },
     comprasTrocaObra: function (d) {
       var v = (d && d.value != null && d.value !== "") ? d.value
         : (d && d.id != null && d.id !== "") ? d.id : "todas";
@@ -14185,7 +14392,13 @@
     renderCompras: function () {
       var self = this;
       var e = this._comprasEscopo(), obras = e.obras;
+      var filtro = this._comprasFiltro || "todos";
       var cs = e.lista.slice().sort(function (a, b) { return (b.data || "").localeCompare(a.data || ""); });
+      var totalAntesDoFiltro = cs.length;
+      if (typeof ComprasLinha !== "undefined" && filtro !== "todos") {
+        var hojeF = hojeLocal();
+        cs = cs.filter(function (c) { return ComprasLinha.passaFiltro(c, filtro, hojeF); });
+      }
       var t = e.semMotor ? null : PorObra.totaisCompras(cs);   /* ⚠ totais do recorte */
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
 
@@ -14197,6 +14410,12 @@
 
       var extra = (e.todos.length && !e.semMotor ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
           (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + "Obra " + selHtml + "</label>" : "") +
+        /* filtro por SITUAÇÃO (derivada) — "atrasados" e "chegam em 7 dias"
+           não existem como status, só o motor sabe responder */
+        (typeof ComprasLinha !== "undefined" ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">Situação ' +
+          '<select data-gacao="compras-filtro" title="Filtrar pedidos pela situação" style="max-width:220px">' +
+          ComprasLinha.FILTROS.map(function (f) { return '<option value="' + f[0] + '"' + (f[0] === filtro ? " selected" : "") + ">" + Util.esc(f[1]) + "</option>"; }).join("") +
+          "</select></label>" : "") +
         '<button class="btn sm" data-gacao="export-compras" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' CSV</button>';
 
       var html = this._head(svg("compras") + "Compras", "nova-compra", "Novo pedido", extra);
@@ -14215,7 +14434,7 @@
           '<span class="fin-sub">' + t.nRecebido + ' pedido(s)</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">Comprometido</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.aprovado) + '</b>' +
           '<span class="fin-sub">' + t.nAprovado + ' aprovado(s), a entregar</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Em cotação</span><b>' + Util.fmtMoeda(t.cotacao) + '</b>' +
+        '<div class="fin-kpi"><span class="fin-lbl">Aguardando aprovação</span><b>' + Util.fmtMoeda(t.cotacao) + '</b>' +
           '<span class="fin-sub">' + t.nCotacao + ' aguardando decisão</span></div>' +
         (t.nDescartado ? '<div class="fin-kpi"><span class="fin-lbl">Fora da conta</span><b class="muted">' + Util.fmtMoeda(t.descartado) + '</b>' +
           '<span class="fin-sub">' + t.nDescartado + ' rejeitado(s)/cancelado(s)</span></div>' : "") +
@@ -14226,7 +14445,7 @@
         var grupos = PorObra.porObra(e.todos, obras, PorObra.totaisCompras);
         if (grupos.length > 1) {
           html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Pedidos</th>' +
-            '<th class="num">Recebido</th><th class="num">Comprometido</th><th class="num">Em cotação</th><th class="num">Total válido</th></tr></thead><tbody>';
+            '<th class="num">Recebido</th><th class="num">Comprometido</th><th class="num">Aguardando aprovação</th><th class="num">Total válido</th></tr></thead><tbody>';
           grupos.forEach(function (g) {
             html += '<tr class="lin" style="cursor:pointer" data-gacao="compras-obra" data-id="' + Util.esc(g.chave) + '">' +
               "<td><b>" + Util.esc(g.nome) + "</b>" +
@@ -14247,16 +14466,34 @@
         return html + '<div class="vazio card">Nenhum pedido em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
           '</b>. <button class="btn sm" data-gacao="compras-obra">Ver todas as obras</button></div>';
       }
-      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th></th></tr></thead><tbody>';
+      html += '<table class="tbl"><thead><tr><th>Nº</th><th>Fornecedor</th><th>Obra</th><th>Descrição</th><th class="num">Valor</th><th>Status</th><th style="min-width:140px">Entrega</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return String(o.id) === String(c.obraId); })[0];
-        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ' + (c.status === "cotacao" ? '<button class="btn sm primary" data-gacao="aprovar-compra" data-id="' + c.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
-          : (c.status === "aprovado" ? '<button class="btn sm success" data-gacao="receber-compra" data-id="' + c.id + '">Receber</button>' : (c.status === "recebido" ? "✓" : (c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitado</span>' : ""))));
+        /* A AÇÃO MORA NA LINHA, POR ESTADO. Cada status tem os botões que
+           cabem nele — e só eles. "Receber" continua disponível de aprovado
+           em diante: o material chega sem ninguém ter clicado. "Cobrar" só
+           aparece quando há o que cobrar (atrasado, ou enviado sem resposta). */
+        var sit = (typeof ComprasLinha !== "undefined") ? ComprasLinha.situacao(c, hojeLocal()) : null;
+        var bt = function (gacao, rotulo, classe, title) {
+          return '<button class="btn sm ' + (classe || "") + '" data-gacao="' + gacao + '" data-id="' + c.id + '"' + (title ? ' title="' + Util.esc(title) + '"' : "") + '>' + rotulo + '</button> ';
+        };
+        var cobrar = (sit && (sit.atrasado || (c.status === "enviado" && sit.parado))) ? bt("cobrar-compra", "Cobrar", "", "Abre a mensagem no WhatsApp — o fornecedor não é avisado sozinho") : "";
+        var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ' +
+          (c.status === "cotacao" ? bt("aprovar-compra", "Aprovar", "primary") + '<button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
+          /* rótulos curtos: "Enviar ao fornecedor" empurrava a coluna de ações
+             para fora da tela em 1400 px (medido na foto da lista) */
+          : c.status === "aprovado" ? bt("enviar-compra", "Enviar", "primary", "Marcar que o pedido foi mandado ao fornecedor (o app não envia sozinho)") + bt("receber-compra", "Receber", "success") + cobrar
+          : c.status === "enviado" ? bt("confirmar-compra", "Confirmou", "primary", "Fornecedor confirmou: registrar a data que ele prometeu") + bt("receber-compra", "Receber", "success") + cobrar
+          : c.status === "confirmado" ? bt("receber-compra", "Receber", "success") + cobrar
+          : c.status === "recebido" ? "✓"
+          : c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitado</span>' : "");
+        var pillEnt = sit ? ComprasLinha.pillEntrega(c, hojeLocal()) : { texto: c.previsaoEntrega ? Util.fmtData(c.previsaoEntrega) : "", cor: "" };
+        var celEntrega = pillEnt.texto ? '<span style="font-size:11.5px;font-weight:700;color:' + (pillEnt.cor || "inherit") + '">' + Util.esc(pillEnt.texto) + '</span>' : '<span class="muted">—</span>';
         /* vínculo quebrado grita aqui também: "—" faria o pedido de uma obra
            excluída passar por compra do escritório, que é outra coisa */
         var celObraC = ob ? Util.esc(ob.nome)
           : (String(c.obraId || "").trim() ? '<span style="color:var(--amarelo)">obra excluída</span>' : "—");
-        html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + celObraC + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td class="num">' + acao + "</td></tr>";
+        html += '<tr><td style="cursor:pointer" data-gopen="compras:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.fornecedorNome || "—") + "</td><td>" + celObraC + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + Util.fmtMoeda(c.valor) + "</td><td>" + pill(c.status) + self._aprovLinha(c) + '</td><td data-ct-entrega="' + c.id + '" style="min-width:140px">' + celEntrega + '</td><td class="num">' + acao + "</td></tr>";
       });
       return html + "</tbody></table>";
     },
@@ -14266,22 +14503,77 @@
       c = c || {}; var stAntigo = c.status || ""; var forn = lista("fornecedores"), obras = lista("obras");
       var num = c.numero || proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
       var hoje = hojeLocal();
+      /* ⚠ MIGRAÇÃO NA LEITURA, SEM GRAVAR. Pedido gerado antes da Fase 0a tem
+         o texto do fornecedor dentro de `formaPgto` (ver `_formaPgtoChave`).
+         Aqui ele abre com o select VAZIO e o texto no campo de condição;
+         nada é gravado até o Salvar — e se a pessoa não mexer, o `opts()`
+         com option de valor desconhecido garante que nada se perde. Quando
+         `condPgtoTexto` já existe, o select mostra o que `formaPgto` tiver. */
+      var formaChave = self._formaPgtoChave(c.formaPgto);
+      var migraCond = !!(c.formaPgto && !formaChave && !c.condPgtoTexto);
+      var condTxt = migraCond ? c.formaPgto : (c.condPgtoTexto || "");
+      var formaSel = migraCond ? "" : (c.formaPgto || "");
       var corpo =
-        '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.compraStatus, c.status || "cotacao"))) + "</div>" +
+        '<div class="row">' + campo("Número", inp("g-num", num)) + campo("Status", sel("g-status", opts(P.compraStatus.filter(function (o) {
+          /* ⚠ "enviado" e "confirmado" NÃO se escolhem no select: são espelho
+             dos carimbos `envio`/`confirmacao`, que só os botões da lista gravam
+             (com data, autor e canal). Pelo select, seria uma confirmação que
+             ninguém deu. O status ATUAL continua aparecendo, senão o `opts()`
+             mostraria "valor não reconhecido" para um estado legítimo. */
+          return (o[0] !== "enviado" && o[0] !== "confirmado") || o[0] === c.status;
+        }), c.status || "cotacao"))) + "</div>" +
         '<div class="row">' + campo("Fornecedor", sel("g-forn", optsRec(forn, "nome", c.fornecedorId, "— selecionar —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
         campo("Descrição do que será comprado *", inp("g-desc", c.descricao, "Ex.: 200 sacos de cimento CP-II 50kg")) +
-        '<div class="row">' + campo("Valor total (R$) *", inp("g-valor", c.valor)) + campo("Categoria", sel("g-cat", opts(P.fornCategoria, c.categoria || "material"))) + campo("Forma de pagamento", sel("g-forma", '<option value="">—</option>' + opts(P.formaPgto, c.formaPgto))) + "</div>" +
+        '<div class="row">' + campo("Valor total (R$) *", inp("g-valor", c.valor)) + campo("Categoria", sel("g-cat", opts(P.fornCategoria, c.categoria || "material"))) + "</div>" +
+        '<div class="row">' + campo("Forma de pagamento", sel("g-forma", '<option value="">—</option>' + opts(P.formaPgto, formaSel))) + campo("Condição de pagamento (como o fornecedor escreveu)", inp("g-condtxt", condTxt, "Ex.: 30 dias após a entrega")) + "</div>" +
         '<div class="row">' + campo("Data do pedido", inp("g-data", c.data || hoje, "", "date")) + campo("Previsão de entrega", inp("g-entrega", c.previsaoEntrega, "", "date")) + "</div>" +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(c.obs || "") + "</textarea>") +
-        (c.status === "recebido" ? '<p class="muted">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Recebida — já lançou uma despesa no Financeiro.</p>' : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>');
+        (c.status === "recebido" ? '<p class="muted">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Recebida — já lançou uma despesa no Financeiro.</p>'
+          : c.status === "enviado" ? '<p class="muted">Enviado ao fornecedor' + (c.envio && c.envio.em ? ' em ' + Util.esc(Util.fmtDia(c.envio.em)) + (c.envio.canal ? ' por ' + Util.esc(c.envio.canal) : '') : '') + '. Quando ele confirmar, registre em <b>Fornecedor confirmou</b> na lista. Ao <b>Receber</b>, o valor vira uma despesa no Financeiro.</p>'
+          : c.status === "confirmado" ? '<p class="muted">Confirmado pelo fornecedor' + (c.confirmacao && c.confirmacao.dataEntrega ? ' — entrega prometida para <b>' + Util.esc(Util.fmtDia(c.confirmacao.dataEntrega)) + '</b>' : '') + '. Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro.</p>'
+          : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>') +
+        /* ANDAMENTO — a linha do tempo do pedido, derivada dos carimbos (js/compraslinha.js).
+           "pago" é lido do Financeiro pelo carimbo docTipo PC + docId; sem carimbo a
+           linha diz que NÃO ENCONTROU, nunca "não pago". Passo não feito diz "ainda não". */
+        (c.id && typeof ComprasLinha !== "undefined" ? (function () {
+          var lanc = null; try { lanc = self._lancVivoDoDoc("compras", c.id); } catch (eL) {}
+          var sitF = ComprasLinha.situacao(c, hojeLocal());
+          var faixa = sitF.atrasado ? '<div style="font-size:12.5px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 10px;margin:8px 0;color:#991b1b"><b>Atrasado ' + sitF.diasAtraso + ' dia(s)</b> — a data que vale é ' + Util.esc(Util.fmtDia(sitF.dataVigente)) + (c.confirmacao && c.confirmacao.dataEntrega ? ' (prometida pelo fornecedor)' : ' (previsão do pedido)') + '.</div>'
+            : sitF.parado ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:6px 10px;margin:8px 0;color:#92400e">Parado: ' + Util.esc(sitF.motivoParado) + '.</div>'
+            : sitF.semData ? '<div style="font-size:12.5px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:6px 10px;margin:8px 0;color:#475569">Sem previsão de entrega — sem data não há alerta de atraso. Preencha acima ou registre a confirmação do fornecedor.</div>' : '';
+          var itens = ComprasLinha.linhaDoTempo(c, lanc).map(function (ev) {
+            return '<li style="display:flex;gap:8px;align-items:baseline;padding:3px 0;' + (ev.feito ? '' : 'color:#94a3b8') + '">' +
+              '<span style="width:9px;height:9px;border-radius:50%;flex:none;background:' + (ev.feito ? '#15803d' : '#cbd5e1') + '"></span>' +
+              '<span style="min-width:78px;font-size:11.5px;color:#64748b">' + (ev.quando ? Util.esc(Util.fmtDia(ev.quando)) : '—') + '</span>' +
+              '<span style="font-size:12.5px"><b>' + Util.esc(ev.titulo) + '</b>' + (ev.detalhe ? ' <span class="muted">· ' + Util.esc(ev.detalhe) + '</span>' : '') + '</span></li>';
+          }).join('');
+          return '<div class="card" style="margin-top:10px;padding:10px"><div style="font-weight:800;font-size:13px;margin-bottom:4px">Andamento</div>' + faixa + '<ul style="list-style:none;margin:0;padding:0" id="g-andamento">' + itens + '</ul></div>';
+        })() : '');
       this._modalForm("compras", c, "Pedido de compra", corpo, function (obj) {
-        obj.numero = v("g-num"); obj.status = v("g-status"); obj.fornecedorId = v("g-forn"); obj.obraId = v("g-obra");
-        if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
+        /* ⚠ COLETE ANTES DE CHAMAR O GATE — ELE AGENDA A DESPESA COM O QUE
+           ESTIVER NO `obj` NAQUELE INSTANTE. A ordem era: gate primeiro,
+           campos depois. Como `obj` chega com os valores GRAVADOS, marcar
+           "Recebido" no formulário depois de corrigir o valor lançava a
+           despesa com o número ANTIGO: pedido aprovado por R$ 10.000, nota do
+           fornecedor de R$ 12.500, pedido gravado com 12.500 e o Financeiro
+           com 10.000 — e o toast dizia "lançada", sem sinal de divergência.
+           Ninguém reconfere um lançamento que o sistema criou sozinho, então o
+           custo da obra ficava R$ 2.500 abaixo do real para sempre.
+           O valor já vinha errado antes da Fase 0a; ela ampliou o mesmo buraco
+           para `formaPgto` e `condPgtoTexto`, que o lançamento passou a usar.
+           ⚠ O MESMO DEFEITO EXISTE NO FORMULÁRIO DE MEDIÇÕES (o gate lê
+           `obj.valor` e `obj.retencao` antes de eles serem coletados, e ali é
+           RECEITA). Não foi consertado junto porque aquele coletor é longo e
+           cheio de ramos — está registrado para uma passagem própria. */
+        obj.numero = v("g-num"); obj.fornecedorId = v("g-forn"); obj.obraId = v("g-obra");
         obj.descricao = v("g-desc"); if (!obj.descricao) { UI.toast("Descreva o que será comprado.", "erro"); return false; }
         obj.valor = nv("g-valor"); obj.categoria = v("g-cat"); obj.formaPgto = v("g-forma");
+        obj.condPgtoTexto = v("g-condtxt").slice(0, 120);
         obj.data = v("g-data"); obj.previsaoEntrega = v("g-entrega"); obj.obs = v("g-obs");
         var fo = lista("fornecedores").filter(function (x) { return x.id === obj.fornecedorId; })[0];
         obj.fornecedorNome = fo ? fo.nome : "";
+        obj.status = v("g-status");
+        if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         return true;
       });
     },
@@ -14536,7 +14828,12 @@
         Store.salvar(eid(), "estoque_mov", {
           itemId: alvo.id, itemNome: alvo.nome, tipo: "entrada", qtd: qtd, custoUnit: custo,
           data: pc.dataRecebimento || hojeLocal(),
-          obraId: pc.obraId || "", docTipo: "PC", docNumero: pc.numero || "",
+          /* ⚠ `docId` além do `docNumero`: o número é EDITÁVEL no formulário
+             (campo g-num) — quem renumera o pedido deixaria o movimento do
+             kardex apontando para um número que não existe mais, e o carimbo
+             por semelhança é o que a skill `dinheiro` proíbe. Mesmo padrão do
+             movimento da nota fiscal (`docTipo: "NF", docId: nf.id`). */
+          obraId: pc.obraId || "", docTipo: "PC", docId: pc.id || "", docNumero: pc.numero || "",
           obs: "Recebimento do pedido " + (pc.numero || "")
         });
         n++;
@@ -19602,6 +19899,9 @@ renderRequisicoes: function () {
              desfazer funcionou: `Store.excluir` não devolve resultado, e
              prometer um desfazer que não aconteceu seria a mesma mentira. */
           var gravados = [], naoEntraram = 0;
+          /* a data do pedido é a de HOJE, no fuso de quem clica (ver
+             `hojeLocal`): é dela que a previsão de entrega é contada */
+          var hojePed = hojeLocal();
           peds.forEach(function (p, k) {
             /* ⚠ SEQUENCIAL, como todo documento da casa. O número saía dos 4
                últimos dígitos do epoch em ms (`getTime().slice(-4)`), que dá
@@ -19617,7 +19917,26 @@ renderRequisicoes: function () {
             /* a autoria vai junto: sem ela quem gerou o pedido aprova o proprio
                pedido, e o texto do modal promete que "quem aprova e outra
                pessoa". O carimbo so acontecia no formulario. */
-            var rec = Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null, formaPgto: p.condPgto || "", obs: (p.prazoDias != null && p.prazoDias > 0 ? "Prazo de entrega: " + p.prazoDias + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
+            /* ⚠ PRAZO E PREVISÃO ESTRUTURADOS, não só no texto de `obs`. O
+               pedido levava o prazo como frase ("Prazo de entrega: 5 dia(s).")
+               e `previsaoEntrega` ficava vazio — o formulário tem o campo
+               (g-entrega), o Portal do Cliente exporta, e o contratante via
+               "—" sem nenhum alerta de atraso possível. Dias CORRIDOS a partir
+               da data do pedido (o fornecedor conta corrido), somados em data
+               local (`somarDiasISO`). Sem prazo: `null` e "", nunca chute. */
+            var prazo = (p.prazoDias != null && Number(p.prazoDias) > 0) ? Number(p.prazoDias) : null;
+            var rec = Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null,
+              /* ⚠ `formaPgto` só recebe CHAVE de P.formaPgto; o texto livre do
+                 fornecedor vai em `condPgtoTexto` — ver `_formaPgtoChave`.
+                 Gravar o texto em `formaPgto` era o que o select do
+                 formulário apagava no primeiro Salvar. */
+              formaPgto: self._formaPgtoChave(p.condPgto), condPgtoTexto: String(p.condPgto || "").slice(0, 120),
+              prazoDias: prazo, previsaoEntrega: prazo ? somarDiasISO(hojePed, prazo) : "",
+              /* base da economia, CONGELADA na geração: é contra isto que a
+                 negociação (Fase 1a) vai comparar o valor fechado. Sem
+                 congelar agora, o pedido gerado hoje não tem base amanhã. */
+              valorCotado: p.total, precoOrigem: "mapa",
+              obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
             if (rec) gravados.push(rec); else naoEntraram++;
           });
           if (naoEntraram) {
@@ -20075,7 +20394,7 @@ renderRequisicoes: function () {
         '<div class="row">' + campo("Descrição", inp("g-pdesc", r.descricao)) + campo("Valor (R$)", inp("g-pvalor", r.valorEstimado || "", "", "number")) + "</div>" +
         '<div class="row">' + campo("Obra", sel("g-pobra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
         (nI ? '<p class="muted">Leva <b>' + nI + "</b> ite" + (nI > 1 ? "ns" : "m") + " para o pedido" + (r.valorEstimado ? " (valor de referência do banco: <b>" + Util.fmtMoeda(r.valorEstimado) + "</b>, ajuste com a cotação real)." : ".") + "</p>" : "") +
-        '<p class="muted">Cria um pedido em Compras (status Cotação) e marca a requisição como comprada.</p>';
+        '<p class="muted">Cria um pedido em Compras (status Aguardando aprovação) e marca a requisição como comprada.</p>';
       UI.modal("Gerar pedido — " + Util.esc(r.numero || ""), corpo, [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Criar pedido", classe: "primary", onClick: function () {
@@ -23823,7 +24142,12 @@ renderFolha: function () {
           UI.toast("Nada mudou — o registro continua como estava. A rejeição só vale com o motivo escrito.", "ok");
         } }]);
     },
-    _APROV_OK: { aprovada: 1, aprovado: 1 },
+    /* ⚠ `enviado` e `confirmado` são "aprovado e mais alguma coisa": Receber
+       tem de continuar funcionando neles (o material chega sem ninguém ter
+       clicado). Sem esta linha, `_guardaBaixa` diria "ainda não foi aprovado"
+       a um pedido que o fornecedor já confirmou — trava que empurra a pessoa a
+       voltar o status para "aprovado" só para conseguir receber. */
+    _APROV_OK: { aprovada: 1, aprovado: 1, enviado: 1, confirmado: 1 },
     _APROV_REJ: { rejeitada: 1, rejeitado: 1 },
 
     /* A trilha só vale se der para LER. O motivo da rejeição morava apenas no
@@ -23937,6 +24261,33 @@ renderFolha: function () {
        dando respostas diferentes para a mesma pergunta, que é o jeito mais
        caro de consertar: quem usa aprende que a regra é aleatória. */
     _DOC_CARIMBO: { medicoes: "MED", compras: "PC" },
+    /* ⚠ A CONDIÇÃO DE PAGAMENTO DO FORNECEDOR NÃO CABE NUM SELECT — e era
+       engolida em DOIS saltos. O Mapa de Cotação gravava `formaPgto:
+       p.condPgto`, texto livre do fornecedor ("30 dias após a entrega"), num
+       campo que o formulário do pedido desenha como select fixo de
+       `P.formaPgto`; abrir e salvar sem mexer apagava a condição negociada.
+       Segundo salto: os dois caminhos que lançam a despesa da compra copiavam
+       `formaPgto` cru para o lançamento, cujo formulário tem OUTRO select — o
+       texto viajava e sumia lá também.
+       Daqui em diante `formaPgto` só carrega CHAVE de `P.formaPgto` (senão
+       ""), e o texto do fornecedor mora em `condPgtoTexto` (≤ 120), que vai
+       ao pedido impresso e à descrição do lançamento. Nunca se deduz
+       vencimento desse texto (plano de compras, §10): "30 dias após a
+       entrega" virando data é chute entrando no fluxo de caixa. */
+    _formaPgtoChave: function (val) {
+      var s = String(val == null ? "" : val);
+      for (var i = 0; i < P.formaPgto.length; i++) if (P.formaPgto[i][0] === s) return s;
+      return "";
+    },
+    /* O que vai atrás da descrição da despesa: " · <condição>". Pedido antigo
+       (gerado antes deste conserto) ainda tem o texto do fornecedor dentro
+       de `formaPgto`; ele também segue para a descrição, senão a única cópia
+       da condição negociada some no lançamento. */
+    _condPgtoSufixo: function (pc) {
+      var d = pc || {};
+      var txt = d.condPgtoTexto || (d.formaPgto && !this._formaPgtoChave(d.formaPgto) ? d.formaPgto : "");
+      return txt ? " · " + String(txt).slice(0, 120) : "";
+    },
     _lancVivoDoDoc: function (entidade, docId, fin) {
       var tipo = this._DOC_CARIMBO[entidade];
       var id = String(docId == null ? "" : docId);
@@ -24147,7 +24498,7 @@ renderFolha: function () {
           var travaC = this._travaLancDoDoc(obj, "compras");
           if (travaC) { UI.toast(travaC, "erro"); return false; }
           obj.dataRecebimento = this._hojeISO();
-          this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || ""), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, formaPgto: obj.formaPgto, /* mesmo carimbo do caminho do botao — ver a nota la */ docTipo: "PC", docId: obj.id, docNumero: obj.numero || "" };
+          this._lancFinPendente = { data: obj.dataRecebimento, desc: "Compra " + (obj.numero || "") + " — " + (obj.descricao || "") + this._condPgtoSufixo(obj), tipo: "despesa", categoria: obj.categoria || "material", valor: Util.num(obj.valor), status: "pendente", obraId: obj.obraId, fornecedor: obj.fornecedorNome, /* ⚠ só CHAVE em formaPgto; a condição do fornecedor vai na descrição (ver _formaPgtoChave) — e nos DOIS caminhos, como o carimbo */ formaPgto: this._formaPgtoChave(obj.formaPgto), /* mesmo carimbo do caminho do botao — ver a nota la */ docTipo: "PC", docId: obj.id, docNumero: obj.numero || "" };
           this._lancFinToast = "Despesa da compra lançada no Financeiro (pendente).";
           /* ⚠ v1.2 — A v1.1.232 COPIOU SÓ A METADE DO DINHEIRO. O botão
              "Receber" da lista faz DUAS coisas: dá entrada no almoxarifado
@@ -24888,6 +25239,10 @@ renderFolha: function () {
         case "fin-obra": return this.finTrocaObra(dataset);
         case "fin-estornar": return this.finEstornar(id);
         case "compras-obra": return this.comprasTrocaObra(dataset);
+        case "compras-filtro": this._comprasFiltro = (dataset && dataset.value) || "todos"; App.render(); return;
+        case "enviar-compra": return this.comprasMarcarEnviado(id);
+        case "confirmar-compra": return this.comprasMarcarConfirmado(id);
+        case "cobrar-compra": return this.comprasCobrar(id);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
         case "dash-obra-multi":
@@ -25129,7 +25484,7 @@ renderFolha: function () {
           var est = this._estoqueDaCompra(pcr);
           if (est.lancados) pcr.estoqueLancado = true;
           Store.salvar(eid(), "compras", pcr);
-          Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || ""), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, formaPgto: pcr.formaPgto, /* ⚠ CARIMBO DE ORIGEM — sem ele esta despesa e invisivel. A do NF sempre teve docTipo/docId (o que permite reconhecer, deduplicar e refazer); a da compra nascia cega, e por isso receber a compra E lancar a nota do mesmo material davam DUAS despesas para o mesmo dinheiro, sem nada no sistema capaz de perceber. Tem de existir nos DOIS caminhos de recebimento: ja houve conserto pela metade aqui (v1.1.232 copiou a despesa para o caminho do formulario e esqueceu o estoque). */ docTipo: "PC", docId: pcr.id, docNumero: pcr.numero || "" });
+          Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || "") + this._condPgtoSufixo(pcr), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, /* ⚠ só CHAVE em formaPgto; a condição do fornecedor vai na descrição (ver _formaPgtoChave) — e nos DOIS caminhos, como o carimbo */ formaPgto: this._formaPgtoChave(pcr.formaPgto), /* ⚠ CARIMBO DE ORIGEM — sem ele esta despesa e invisivel. A do NF sempre teve docTipo/docId (o que permite reconhecer, deduplicar e refazer); a da compra nascia cega, e por isso receber a compra E lancar a nota do mesmo material davam DUAS despesas para o mesmo dinheiro, sem nada no sistema capaz de perceber. Tem de existir nos DOIS caminhos de recebimento: ja houve conserto pela metade aqui (v1.1.232 copiou a despesa para o caminho do formulario e esqueceu o estoque). */ docTipo: "PC", docId: pcr.id, docNumero: pcr.numero || "" });
           App.render();
           UI.toast(est.lancados
             ? "Compra recebida. Despesa lançada no Financeiro (pendente) e " + est.lancados + " item(ns) no almoxarifado."
@@ -25838,10 +26193,19 @@ case "nova-folha": return this.novoFolha();
         compras = lista("compras").filter(function (c) { return c.obraId === id; })
           .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); })
           .map(function (c) {
+            /* o Portal mostra a data que VALE (a do fornecedor, quando ele
+               confirmou), o atraso derivado e as datas dos dois carimbos. Tudo
+               aditivo: o portal.html publicado ignora o que não conhece, e
+               string vazia (nunca null) vira "—" lá — o Portal lê null como zero.
+               Recusa do fornecedor e negociação NÃO vão ao contratante. */
+            var sit = (typeof ComprasLinha !== "undefined") ? ComprasLinha.situacao(c, hojeLocal()) : null;
             return { numero: c.numero || "", data: c.data || "", descricao: c.descricao || "",
                      categoria: rot(P.fornCategoria, c.categoria) || "", fornecedor: c.fornecedorNome || "",
                      valor: Util.num(c.valor), situacao: rot(P.compraStatus, c.status) || "",
-                     previsaoEntrega: c.previsaoEntrega || "" };
+                     previsaoEntrega: (sit ? sit.dataVigente : c.previsaoEntrega) || "",
+                     entregaAtrasada: !!(sit && sit.atrasado),
+                     confirmadaEm: (c.confirmacao && c.confirmacao.em) || "",
+                     recebidoEm: c.dataRecebimento || "" };
           });
       }
 

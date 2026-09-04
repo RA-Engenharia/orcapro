@@ -207,7 +207,14 @@
       r.n++;
       if (st === "rejeitado" || st === "cancelado") { r.descartado += v; r.nDescartado++; return; }
       if (st === "recebido") { r.recebido += v; r.nRecebido++; }
-      else if (st === "aprovado") { r.aprovado += v; r.nAprovado++; }
+      /* ⚠ enviado e confirmado (Fase 0b) SÃO compromisso assumido — o pedido
+         aprovado que foi ao fornecedor não deixou de estar comprometido; ele
+         só andou. Sem esta linha o KPI "Comprometido" perdia o pedido no dia
+         em que ele ganhava o status (medido na foto da lista: R$ 1.900 de
+         comprometido com R$ 13.800 enviados/confirmados fora da conta). */
+      else if ((typeof ComprasLinha !== "undefined" && ComprasLinha.ehCompromisso)
+        ? ComprasLinha.ehCompromisso(st)
+        : (st === "aprovado" || st === "enviado" || st === "confirmado")) { r.aprovado += v; r.nAprovado++; }
       else { r.cotacao += v; r.nCotacao++; }      /* cotação e qualquer status novo */
       r.total += v;
     });

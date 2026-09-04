@@ -12,7 +12,7 @@
      * usuário tem o MÓDULO dela; sem plano de gestão o sino não lê nada de gestão. */
     _pode: function (mod) { return !(typeof Auth !== "undefined" && Auth.podeModulo) || Auth.podeModulo(mod); },
     _dados: function () {
-      var vazio = { medicoes: [], tarefas: [], restricoes: [], contratos: [], obras: [] };
+      var vazio = { medicoes: [], tarefas: [], restricoes: [], contratos: [], obras: [], compras: [] };
       if (!(typeof Gestao !== "undefined" && Gestao.podeGestao && Gestao.podeGestao())) return vazio;
       var eid = Auth.empresaId(), self = this;
       /* ⚠ mesmo motivo da busca: le o Store direto, fora do funil. O sino
@@ -51,6 +51,9 @@
         medicoes: l("medicoes"), tarefas: tarefas, restricoes: restricoes,
         contratos: contratos, obras: l("obras", "obras"),
         rdos: l("rdo"),
+        /* compras: o sino avisa atraso e fornecedor sem resposta — só quem tem
+           o módulo Compras vê (mesma régua da lista) */
+        compras: l("compras"),
         eu: eu,
         /* mesma régua de RDO.podeAcao: admin/gestor, ou aprovador nomeado */
         souAprovador: (u.papel !== "usuario") || u.aprovador === true

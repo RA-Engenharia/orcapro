@@ -534,6 +534,14 @@ table.tbl, .kpi .num, .g-pill, .cell, input[type="number"] { font-variant-numeri
 .g-ic { flex: none; }
 h1 .g-ic { margin-right: 9px; vertical-align: -.14em; color: var(--aco); }
 .g-pill { font-size: var(--t-micro); font-weight: var(--p-forte); padding: 2px 9px; border-radius: 999px; white-space: nowrap; }
+/* ⚠ A COR DO TEXTO DO SELO VEM DAQUI, NÃO DO INLINE — ver TXTStatus em
+   js/gestao.js. O `pill()` só sabe a cor de identidade do status; qual das
+   duas leituras usar depende do TEMA, que estilo inline não enxerga. Sem
+   estas duas linhas o par vira enfeite: o JS escreve as variáveis e ninguém
+   as lê. O fallback `inherit` preserva os poucos g-pill que nunca tiveram
+   cor própria. */
+.g-pill { color: var(--gp-t, inherit); }
+[data-tema="dark"] .g-pill { color: var(--gp-td, var(--gp-t, inherit)); }
 table.tbl tr.lin:hover td { background: rgba(46,111,158,.06); }
 .kpis.kpis-g { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .kpis.kpis-g .num { font-size: var(--t-tit); }
@@ -930,7 +938,14 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 .pill.outra { background: rgba(148,163,184,.18); color: #556376; } /* FASE 1.2: código de fonte desconhecida */
 /* REGIME desonerado: badge verde sob o código, para o item saltar aos olhos
    (encargo social diferente). Onerado é o padrão e não recebe selo. */
-.pill.regime-des { background: rgba(22,163,74,.15); color: #15803d; font-size: 9px; padding: 1px 6px; margin-top: 2px; }
+/* ⚠ Este selo nasceu (1.2.42, pela linha da landing) com `font-size: 9px` e
+   `color: #15803d`, e as duas coisas eram defeito: 9px fica abaixo do piso de
+   12px que esta base adota para tela de canteiro, e o verde dava 4,24:1 sobre
+   --surface e 3,82:1 sobre --surface-2, contra o mínimo de 4,5. O tamanho volta
+   a herdar --t-micro do `.pill` (o padding apertado é que mantém o selo
+   discreto sob o código), e o verde desce um degrau para #166534 — medido em
+   6,03:1 e 5,43:1. O escuro já passava (7,74 e 6,96) e não muda. */
+.pill.regime-des { background: rgba(22,163,74,.15); color: #166534; padding: 1px 6px; margin-top: 2px; }
 [data-tema="dark"] .pill.regime-des { color: #4ade80; }
 /* Dark: texto claro para não sumir sobre superfície escura */
 /* ⚠ `.propria` (com A) faltava aqui, e o par claro sempre teve as duas

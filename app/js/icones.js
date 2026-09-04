@@ -78,6 +78,12 @@
     prancha: '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 16h18"/><path d="M14 16v4M7 8h6M7 11h4"/>',
     estrutura: '<path d="M4 20V6l8-3 8 3v14"/><path d="M4 12h16"/><path d="m4 6 8 6 8-6M4 20l8-8 8 8"/>',
     checklist: '<path d="M9 5h11M9 12h11M9 19h11"/><path d="m3 5 1.4 1.4L7 4M3 12l1.4 1.4L7 11M3 19l1.4 1.4L7 18"/>',
+    /* ⚠ `lista` faltava e DOIS botões da planilha já a pediam (Compacto e
+       Etapas, 1.2.43/1.2.41 pela linha da landing). `Icones.get` devolve ""
+       calado para nome desconhecido, então os dois saíam sem ícone e ninguém
+       via — o mesmo defeito que `enviar` produziu na fusão do dia anterior.
+       É por isso que test-sem-emoji confere nome usado contra nome existente. */
+    lista: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
     balanca: '<path d="M12 3v18M7 21h10"/><path d="M12 6 4 9l3 5 3-5zM12 6l8 3-3 5-3-5z"/>',
     cebola: '<path d="M3 5h18v14H3z"/><path d="M3 9.7h18M3 14.3h18"/><path d="M9 5v4.7M15 9.7v4.6M9 14.3V19"/>',
     estrela: '<path d="m12 3 2.6 5.6 6 .8-4.4 4.2 1.1 6.1L12 16.8 6.7 19.7l1.1-6.1L3.4 9.4l6-.8z"/>',
