@@ -1711,7 +1711,7 @@
           var m = {};
           (orc.etapas || []).forEach(function (et) {
             (et.itens || []).forEach(function (it) {
-              if (it.origem === "SINAPI") { var a = Analitico.obter(it.codigo); if (a) m[String(it.codigo)] = a; }
+              if (Orcamento.ehSinapi(it.origem)) { var a = Analitico.obter(it.codigo); if (a) m[String(it.codigo)] = a; }
               // v1.1.123 — composição PRÓPRIA: a estrutura salva na base do
               // cliente sai na aba de insumos igual à SINAPI (entregável coerente
               // com o detalhamento da tela)

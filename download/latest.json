@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.37",
+  "versao": "1.2.38",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.37.zip",
-  "notas": "Cotacao online: publique a cotacao e mande um link para cada fornecedor. Ele preenche o preco dele numa pagina, no celular ou no computador, sem ver a proposta dos outros, e pode corrigir ate o prazo (a ultima enviada vale). As respostas entram no Mapa de Cotacao pelo botao Puxar respostas; os itens ficam travados enquanto a cotacao estiver publicada, e a conclusao gera os pedidos de compra como antes. Validade padrao de 7 dias (de 1 a 30). Disponivel nos planos Plus e BIM.",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.38.zip",
+  "notas": "Insumos das composicoes SINAPI nos DOIS regimes. O botao de insumos da planilha, a aba Insumos do Excel, o MO/MAT/EQ do laudo e o relatorio de composicoes passaram a reconhecer o item da SINAPI desonerada como SINAPI (antes so o onerado abria o desdobramento; o desonerado ficava com o preco certo e sem jeito de ver os insumos). Sob o codigo aparece a etiqueta desonerado, e as bases usadas do documento escrevem SINAPI mes/UF (desonerado). Tambem foi corrigida a troca de regime ao abrir um orcamento onerado logo depois de um desonerado. Continua tudo da 1.2.37 (cotacao online) e da 1.2.35 (analitico desonerado dos 27 estados e o espelho publico).",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.37/OrcaPRO-IA-Instalador-v1.2.37.exe"
 }

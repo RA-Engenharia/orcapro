@@ -33,7 +33,7 @@
       Util.arr(orc.etapas).forEach(function (e) {
         Util.arr(e.itens).forEach(function (it) {
           var ct = Util.num(it.quantidade) * Util.num(it.custoUnitario);
-          var a = it.origem === "SINAPI" ? Analitico.obter(it.codigo) : null;
+          var a = Orcamento.ehSinapi(it.origem) ? Analitico.obter(it.codigo) : null;
           /* v1.1.232 — o ITEM tem prioridade: composição própria (e qualquer
              item lançado com as parcelas) guarda custoMO/MAT/EQ no próprio
              registro. O else antigo jogava a própria inteira em Material — o
