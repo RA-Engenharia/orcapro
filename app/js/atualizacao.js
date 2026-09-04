@@ -121,24 +121,133 @@
       });
     },
 
-    /* Checagem automática silenciosa 1×/dia (regra da casa: nunca pedir pra
-     * atualizar — atualiza sozinho e só informa o que fez).
-     * Achados do gate: (a) só marca o dia APÓS uma resposta ok — falha de rede
-     * no boot re-tenta na próxima abertura; (b) não roda sem sessão (tenant
-     * "default") nem na vitrine demo. */
+    /* =================================================================
+     * A VARREDURA DIÁRIA DAS BASES
+     *
+     * Roda 9s depois do boot, UMA VEZ POR DIA: abrir o app de novo no mesmo
+     * dia não repete; no dia seguinte roda de novo. A trava é a data em
+     * `orcapro:bases:check`, e ela só é carimbada APÓS uma resposta ok —
+     * queda de rede no boot re-tenta na próxima abertura em vez de queimar
+     * o dia. Não roda sem sessão nem na vitrine demo.
+     *
+     * ⚠ A VARREDURA PERGUNTA A DUAS FONTES, E ISSO NÃO É REDUNDÂNCIA.
+     *   1) o servidor OrçaPRO (VPS) — cobre a frota inteira e traz junto o
+     *      ANALÍTICO da competência, então preço e insumo andam casados;
+     *   2) o fetcher local do ERP (localhost:3040) — fala com a CAIXA
+     *      direto da máquina do cliente.
+     *   Enquanto só existia (1), uma competência já publicada pela CAIXA
+     *   ficava invisível para o app se o VPS parasse de ser alimentado: a
+     *   varredura rodava todo dia, concluía "você já está na mais recente" e
+     *   a base envelhecia em silêncio. O fetcher é a segunda opinião — e é
+     *   ele quem alcança a CAIXA.
+     *
+     * ⚠ A ORDEM IMPORTA: o VPS vem primeiro porque só ele traz o analítico
+     *   casado. O fetcher só é consultado quando o VPS não tinha novidade
+     *   (ou não respondeu). Atualizar por (2) com (1) à frente seria trocar
+     *   uma base completa por uma base sem detalhamento.
+     *
+     * ⚠ TUDO FICA REGISTRADO em `orcapro:bases:varredura` e aparece na tela
+     *   🗂 Tabelas. Varredura que não deixa rastro é indistinguível de
+     *   varredura que não aconteceu — foi exatamente essa dúvida que fez
+     *   parecer que o app não checava nada.
+     * ================================================================= */
+    CHAVE_DIA: "orcapro:bases:check",
+    CHAVE_VARR: "orcapro:bases:varredura",
+
+    ultimaVarredura: function () {
+      try { return JSON.parse(localStorage.getItem(this.CHAVE_VARR) || "null"); } catch (e) { return null; }
+    },
+    _gravarVarredura: function (v) {
+      try { localStorage.setItem(this.CHAVE_VARR, JSON.stringify(v)); } catch (e) {}
+      return v;
+    },
+    _carimbarDia: function (dia) {
+      try { localStorage.setItem(this.CHAVE_DIA, dia); } catch (e) {}
+    },
+
     checarAuto: function () {
-      var self = this;
+      var self = this, hoje;
       try {
         if (typeof Auth === "undefined" || !Auth.usuario()) return;
         if (global.App && global.App._demo) return;
-        var hoje = new Date().toISOString().slice(0, 10);
-        if (localStorage.getItem("orcapro:bases:check") === hoje) return;
+        hoje = new Date().toISOString().slice(0, 10);
+        if (localStorage.getItem(self.CHAVE_DIA) === hoje) return;
       } catch (eL) { return; }
+
+      var uf = "";
+      try { uf = String((global.App && global.App._baseUf) || Sinapi.uf || CONFIG.sinapi.ufPadrao).toUpperCase(); } catch (eU) {}
+      var v = {
+        dia: hoje, uf: uf,
+        instalada: self._normComp(typeof Sinapi !== "undefined" ? Sinapi.competencia : ""),
+        servidor: null, fetcher: null, aplicou: null, erro: ""
+      };
+
       self.atualizarSinapi(function (r) {
-        if (r && r.ok) { try { localStorage.setItem("orcapro:bases:check", new Date().toISOString().slice(0, 10)); } catch (eM) {} }
-        if (r && r.ok && r.atualizou && typeof UI !== "undefined") {
-          UI.toast("Base SINAPI atualizada sozinha: competência " + self.fmtComp(r.de) + " → " + self.fmtComp(r.para) + " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
+        if (r && r.ok) {
+          self._carimbarDia(hoje);
+          v.servidor = { competencia: r.para || null, publicadoEm: r.publicadoEm || "", tinhaNova: !!r.atualizou };
+          /* base PRÓPRIA do cliente: a varredura registra e PARA. Nenhuma das
+             duas fontes pode passar por cima de preço negociado. */
+          if (r.basePropria) { v.basePropria = true; self._gravarVarredura(v); return; }
+          if (r.atualizou) {
+            v.aplicou = { fonte: "servidor", de: r.de, para: r.para, itens: r.itens || 0 };
+            self._gravarVarredura(v);
+            if (typeof UI !== "undefined") {
+              UI.toast("Base SINAPI atualizada sozinha: competência " + self.fmtComp(r.de) + " → " + self.fmtComp(r.para) + " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
+            }
+            return;   // já trocou a base hoje; o fetcher fica para a próxima varredura
+          }
+        } else {
+          v.erro = (r && r.erro) || "o servidor não respondeu";
         }
+        self._varrerFetcher(v, hoje);
+      });
+    },
+
+    /* Segunda fonte: o fetcher local do ERP, que fala com a CAIXA.
+     * Só usa endpoints que o app JÁ usava (`/health`, `/sinapi/listar`,
+     * `/sinapi/listar-oficial`, `POST /sinapi/baixar`, `/sinapi/dados`) e a
+     * função `baixar()`, que já traz o guard de pacote vazio. Fetcher fora do
+     * ar não é erro: é o caso normal de quem não roda o ERP local. */
+    _varrerFetcher: function (v, hoje) {
+      var self = this;
+      var fim = function () { self._gravarVarredura(v); };
+      if (self._basePropriaDoCliente()) { v.basePropria = true; fim(); return; }
+      var uf = v.uf || "MG";
+      self.verificar(uf).then(function (info) {
+        if (!info || !info.online) { v.fetcher = { online: false }; fim(); return; }
+        v.fetcher = { online: true, ultimaOficial: info.ultimaOficial || null, ultimaCache: info.ultimaCache || null };
+        var maisNova = info.ultimaOficial || info.ultimaCache || null;
+        var local = self._normComp(typeof Sinapi !== "undefined" ? Sinapi.competencia : "");
+        if (!maisNova || String(maisNova) <= String(local)) { fim(); return; }
+        var jaCache = (info.cacheMeses || []).indexOf(maisNova) >= 0;
+        self.baixar(maisNova, uf, jaCache).then(function (rb) {
+          v.aplicou = { fonte: "fetcher", de: local, para: maisNova, itens: (rb && rb.total) || 0 };
+          /* ⚠ O DETALHAMENTO NÃO VEM JUNTO, E ISSO PRECISA SER DITO.
+           *   O analítico (insumos e coeficientes) é servido pelo VPS ou vem
+           *   embarcado; o fetcher entrega o sintético. Quando ele passa o
+           *   VPS, o preço unitário fica numa competência e os insumos em
+           *   outra — abrir "Insumos" mostra uma soma que não fecha com o
+           *   unitário da linha. O orçamento usa o unitário (por isso vale a
+           *   pena atualizar), mas quem confere precisa saber de onde vem a
+           *   diferença. Silenciar isso já custou um gate. */
+          var compAna = (v.servidor && v.servidor.competencia) ? v.servidor.competencia : "";
+          try { if (!compAna) compAna = self._normComp(CONFIG.sinapi.competenciaPadrao || ""); } catch (eC) {}
+          if (compAna && String(maisNova) > String(compAna)) v.aplicou.insumosEm = compAna;
+          fim();
+          self._carimbarDia(hoje);
+          if (typeof UI !== "undefined") {
+            UI.toast("Base SINAPI atualizada pelo fetcher local: competência " + self.fmtComp(local) + " → " + self.fmtComp(maisNova) +
+              " (" + ((rb && rb.total) || 0).toLocaleString("pt-BR") + " itens)." +
+              (v.aplicou.insumosEm ? " Atenção: o detalhamento de insumos continua na " + self.fmtComp(v.aplicou.insumosEm) + "." : ""), "ok");
+          }
+        }).catch(function (e) {
+          v.erro = "o fetcher não entregou a " + self.fmtComp(maisNova) + " (" + ((e && e.message) || "falha") + ") — a base atual foi mantida";
+          fim();
+        });
+      }).catch(function () {
+        v.fetcher = { online: false };
+        fim();
       });
     },
 
