@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.38",
+  "versao": "1.2.39",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.38.zip",
-  "notas": "Insumos das composicoes SINAPI nos DOIS regimes. O botao de insumos da planilha, a aba Insumos do Excel, o MO/MAT/EQ do laudo e o relatorio de composicoes passaram a reconhecer o item da SINAPI desonerada como SINAPI (antes so o onerado abria o desdobramento; o desonerado ficava com o preco certo e sem jeito de ver os insumos). Sob o codigo aparece a etiqueta desonerado, e as bases usadas do documento escrevem SINAPI mes/UF (desonerado). Tambem foi corrigida a troca de regime ao abrir um orcamento onerado logo depois de um desonerado. Continua tudo da 1.2.37 (cotacao online) e da 1.2.35 (analitico desonerado dos 27 estados e o espelho publico).",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.39.zip",
+  "notas": "Insumos por regime, item a item. Ao clicar em Insumos, o app carrega o detalhamento do regime DAQUELE item, e nao o do regime da maioria do orcamento. Antes, num orcamento que misturava itens onerados e desonerados, clicar num item desonerado mostrava o aviso Detalhamento de outro regime; agora abre o desdobramento correto (com os encargos do proprio item). Continua tudo da 1.2.38 (insumos da SINAPI nos dois regimes), da 1.2.37 (cotacao online) e da 1.2.35 (analitico desonerado dos 27 estados e o espelho publico).",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.37/OrcaPRO-IA-Instalador-v1.2.37.exe"
 }

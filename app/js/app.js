@@ -2170,22 +2170,27 @@
        certo mas pedia o analítico do AMBIENTE, e voltava o defeito de exportar
        um orçamento de MG com os insumos de PA. Regime e UF são duas perguntas
        diferentes, e as duas têm de valer. */
-    _prepararAnalitico: function (ufOpt, compOpt) {
+    _prepararAnalitico: function (ufOpt, compOpt, regimeForcado) {
       try {
-        var deso = this._regimeAnalitico();
+        /* regimeForcado (boolean) = o regime do ITEM que o usuário clicou, que
+           vence o regime dominante do orçamento. É o que faz o detalhamento
+           abrir nos DOIS regimes num orçamento misto: cada clique carrega o
+           analítico daquele item, não o do regime da maioria. */
+        var deso = (regimeForcado === true || regimeForcado === false)
+          ? regimeForcado : this._regimeAnalitico();
         if (typeof Analitico !== "undefined" && Analitico.regimeAlvo !== deso) {
           if (Analitico.carregado || Analitico.carregando) Analitico.reset();
           Analitico.regimeAlvo = deso;
         }
       } catch (e) {}
-      return this._analiticoUrls(ufOpt, compOpt);
+      return this._analiticoUrls(ufOpt, compOpt, regimeForcado);
     },
     /* `ufOpt`/`compOpt` (v1.2.31): pedir o analítico de OUTRA base que não a do
      * ambiente. Quem exporta o Excel de um orçamento de MG com o ambiente em PA
      * precisa do analítico de MG — o ambiente pode divergir de propósito ("troquei
      * de estado para consultar outro preço", diz a própria tela do editor).
      * Sem argumento, é o de sempre: a base ativa. */
-    _analiticoUrls: function (ufOpt, compOpt) {
+    _analiticoUrls: function (ufOpt, compOpt, regimeForcado) {
       var ufAmb = String(this._baseUf || (typeof Sinapi !== "undefined" ? Sinapi.uf : "") || "").toUpperCase();
       var uf = String(ufOpt || ufAmb || "").toUpperCase();
       var comp = "";
@@ -2219,7 +2224,7 @@
        * competência primeiro, nome sem competência depois, local antes da rede.
        * `_analiticoArquivo` NÃO entra — ele é o caminho que o boot escolheu
        * para a base principal, que é sempre a não desonerada. */
-      var deso = this._regimeAnalitico();
+      var deso = (regimeForcado === true || regimeForcado === false) ? regimeForcado : this._regimeAnalitico();
       if (deso) {
         var dLocal = uf ? ("data/" + this._nomeAnalitico(uf, comp, true)) : null;
         var dLive = (uf && srv) ? (srv + "/analitico/" + this._nomeAnalitico(uf, comp, true)) : null;
@@ -6044,10 +6049,13 @@
         ]);
         var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
       }
-      /* ⚠ O REGIME É CONFERIDO ANTES DO ATALHO "já carregado": abrir um
-         orçamento onerado logo depois de um desonerado deixava o analítico
-         anterior na memória e a guarda recusava o item certo. */
-      var urls = self._prepararAnalitico();
+      /* ⚠ O REGIME É CONFERIDO ANTES DO ATALHO "já carregado", e é o do ITEM
+         CLICADO (_regItem), não o do orçamento. Num orçamento MISTO cada linha
+         abre no seu regime: clicar um item desonerado carrega o analítico
+         desonerado mesmo que a maioria seja onerada. Quando o regime do item
+         difere do que está na memória, `_prepararAnalitico` faz o reset, e o
+         atalho abaixo (que checa `carregado`) não dispara — recarrega o certo. */
+      var urls = self._prepararAnalitico(null, null, _regItem);
       // Já carregado E é do estado ativo? abre direto.
       if (Analitico.carregado && (!ufAtivo || !Analitico.uf || Analitico.uf === ufAtivo)) { abrir(); return; }
       // URLs local + AO VIVO (VPS). O analítico da região SEMPRE existe no servidor, então
