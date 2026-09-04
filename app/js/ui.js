@@ -411,6 +411,13 @@
         p.push('servidor OrçaPRO: <span style="color:#b45309">não respondeu</span>');
       }
 
+      if (v.espelho && v.espelho.competencia) {
+        p.push('espelho do app: <b>' + Util.esc(Atualizacao.fmtComp(v.espelho.competencia)) + '</b>' +
+          (v.espelho.temUf === false ? ' <span style="color:#b45309">(sem esta UF)</span>' : ""));
+      } else if (v.espelho) {
+        p.push('espelho do app: <span style="color:#b45309">não respondeu</span>');
+      }
+
       if (v.fetcher && v.fetcher.online) {
         var mn = v.fetcher.ultimaOficial || v.fetcher.ultimaCache;
         p.push('fetcher local: <b>' + Util.esc(mn ? Atualizacao.fmtComp(mn) : "—") + '</b>');
@@ -438,9 +445,45 @@
         p.push('<span style="color:#b45309">' + Util.esc(v.erro) + '</span>');
         cor = "#b45309";
       } else {
-        p.push("nada novo — você já está na mais recente que as duas fontes conhecem");
+        p.push("nada novo — você já está na mais recente que as três fontes conhecem");
       }
-      return box(p.join(" · "), cor);
+      return box(p.join(" · "), cor) + this._avisoAtraso();
+    },
+
+    /* ===================================================================
+     * "NADA NOVO" NÃO É A MESMA COISA QUE "ESTÁ EM DIA"
+     *
+     * A SINAPI sai TODO MÊS. Quando as três fontes concordam que não há
+     * novidade e a competência instalada é de meses atrás, a conclusão certa
+     * não é "você está atualizado": é "a coleta parou em algum lugar". Sem
+     * este aviso a varredura fica dando um verde tranquilizador para uma
+     * falha de infraestrutura — foi exatamente o que aconteceu entre julho e
+     * setembro, e ninguém tinha como perceber pela tela.
+     *
+     * O termômetro é a distância em MESES entre a competência e o mês
+     * corrente, não `publicadoEm`: a data de publicação só quem coletou
+     * sabe, e é justamente a coleta que pode ter parado.
+     *
+     * Um mês de distância é normal (a competência do mês corrente só sai lá
+     * pelo dia 20). Dois já é atraso; três é coleta parada.
+     * =================================================================== */
+    _avisoAtraso: function () {
+      if (typeof Atualizacao === "undefined" || !Atualizacao.mesesAtras) return "";
+      var comp = (typeof Sinapi !== "undefined") ? Sinapi.competencia : "";
+      var n = Atualizacao.mesesAtras(comp);
+      if (n == null || n < 2) return "";
+      var grave = n >= 3;
+      return '<div style="font-size:11.5px;padding:8px 10px;border-radius:8px;margin:0 0 10px;' +
+        'background:' + (grave ? "rgba(220,38,38,.09)" : "rgba(234,88,12,.09)") + ';' +
+        'border-left:3px solid ' + (grave ? "#dc2626" : "#b45309") + '">' +
+        '<b>' + (grave ? "A coleta da SINAPI parou em algum lugar." : "Base atrasada.") + '</b> ' +
+        'A competência instalada é a <b>' + Util.esc(Atualizacao.fmtComp(comp)) + '</b> — <b>' + n +
+        ' meses</b> atrás do mês corrente, e a SINAPI é publicada mensalmente. ' +
+        (grave
+          ? 'As três fontes concordam que não há nada mais novo, o que significa que ninguém está buscando na CAIXA — não que você esteja em dia. '
+          : '') +
+        'Orçamento fechado com preço desta idade fica defasado; ' +
+        'quem cuida do servidor precisa retomar a coleta.</div>';
     },
 
     renderTabelas: function (lista) {
@@ -503,7 +546,7 @@
           '<span class="muted" id="atu-st-' + Util.esc(e.id) + '" style="flex-basis:100%;font-size:11.5px"></span></div>';
       });
       return '<h3 style="margin:0 0 6px;display:flex;align-items:center">' + _icT("reimportar") + 'Atualização dos bancos de preço</h3>' +
-        '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b>, <b>1× por dia</b>, em duas fontes: o servidor OrçaPRO e o <b>fetcher local</b> do ERP (que fala com a CAIXA). Reabrir o app no mesmo dia não repete a varredura.</p>' +
+        '<p class="muted" style="font-size:12px;margin:0 0 8px">O sistema confere se há competência nova e aplica na hora. A SINAPI também se atualiza <b>sozinha</b>, <b>1× por dia</b>, em três fontes: o servidor OrçaPRO, o <b>espelho do app</b> (que a RA publica junto com o código) e o <b>fetcher local</b> do ERP (que fala com a CAIXA). Reabrir o app no mesmo dia não repete a varredura.</p>' +
         this._linhaVarredura() +
         '<div style="margin-bottom:16px">' + atuLinhas + '</div>' +
         '<p class="muted mb">Habilite/priorize bancos de preço. A busca de itens varre todas as bases <b>ativas</b> (badge mostra a origem). A SINAPI continua padrão.</p>' +

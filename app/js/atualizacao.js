@@ -200,11 +200,165 @@
         } else {
           v.erro = (r && r.erro) || "o servidor não respondeu";
         }
-        self._varrerFetcher(v, hoje);
+        self._varrerEspelho(v, hoje);
       });
     },
 
-    /* Segunda fonte: o fetcher local do ERP, que fala com a CAIXA.
+    /* =================================================================
+     * O ESPELHO — A TERCEIRA FONTE, E A ÚNICA QUE A RA CONTROLA INTEIRA
+     *
+     * O repositório do app já é um espelho completo: `app/data/` carrega a
+     * SINAPI das 27 UFs e os analíticos, e o GitHub Pages serve tudo com
+     * CORS aberto. O app lia essa pasta como LOCAL (a base que veio no
+     * instalador) e, para ATUALIZAR, só sabia perguntar ao servidor.
+     *
+     * ⚠ ISSO DEIXAVA QUEM USA O APP INSTALADO SEM ROTA NENHUMA. O pacote de
+     *   atualização da frota exclui `data/` de propósito — `robocopy /E`
+     *   copiaria por cima da base do cliente, inclusive de uma base própria
+     *   ou de uma competência mais nova que ele já tivesse. Então uma
+     *   competência nova nunca chegava por ali. Sobravam o VPS e o fetcher
+     *   local; quando o VPS parou de ser alimentado, a frota inteira ficou
+     *   sem caminho para a base nova, e a varredura diária dizia todo dia
+     *   que estava tudo em ordem.
+     *
+     * Com o espelho como fonte, publicar uma competência no repositório
+     * basta: a varredura do dia seguinte entrega para todo mundo — app
+     * instalado, app no Pages, qualquer UF — sem depender do VPS nem de o
+     * cliente rodar o ERP local.
+     *
+     * ⚠ A ORDEM É VPS → ESPELHO → FETCHER. Os dois primeiros trazem o
+     *   ANALÍTICO casado com a competência; o fetcher entrega só o
+     *   sintético. Por isso ele é o último e o único que precisa avisar
+     *   sobre descasamento de insumos.
+     * ================================================================= */
+    espelhoBase: function () {
+      try {
+        return String((typeof CONFIG !== "undefined" && CONFIG.appWebUrl) || "").replace(/\/$/, "");
+      } catch (e) { return ""; }
+    },
+
+    _ultimoEspelho: null,
+    statusEspelho: function () {
+      var b = this.espelhoBase(), self = this;
+      if (!b) return Promise.reject(new Error("CONFIG.appWebUrl vazio"));
+      return fetch(b + "/data/bases-status.json", { cache: "no-store" })
+        .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+        .then(function (j) { self._ultimoEspelho = j; return j; });
+    },
+
+    /* Quantos MESES a competência está atrás do mês corrente. A SINAPI sai
+       mensalmente, então este número é o termômetro honesto de "a coleta
+       parou" — e não depende de `publicadoEm`, que só quem coletou sabe. */
+    mesesAtras: function (comp) {
+      var m = String(this._normComp(comp)).match(/^(\d{4})-(\d{2})$/);
+      if (!m) return null;
+      var d = new Date();
+      return (d.getFullYear() - parseInt(m[1], 10)) * 12 + ((d.getMonth() + 1) - parseInt(m[2], 10));
+    },
+
+    _varrerEspelho: function (v, hoje) {
+      var self = this;
+      var seguir = function () { self._varrerFetcher(v, hoje); };
+      if (self._basePropriaDoCliente()) { v.basePropria = true; self._gravarVarredura(v); return; }
+      var uf = v.uf || "MG";
+      self.statusEspelho().then(function (st) {
+        var comp = st && st.sinapi && st.sinapi.competencia;
+        var ufs = (st && st.sinapi && st.sinapi.ufs) || [];
+        v.espelho = { competencia: comp || null, temUf: ufs.indexOf(uf) >= 0 };
+        var local = self._normComp(typeof Sinapi !== "undefined" ? Sinapi.competencia : "");
+        if (!comp || String(comp) <= String(local)) { seguir(); return; }
+        /* o espelho não tem esta UF: registra e passa a vez, em vez de
+           tentar baixar um arquivo que sabidamente não existe */
+        if (!v.espelho.temUf) { seguir(); return; }
+        self._aplicarEspelho(uf, comp, v, hoje, seguir);
+      }).catch(function (e) {
+        v.espelho = { online: false };
+        seguir();
+      });
+    },
+
+    /* O NÚCLEO — baixa, valida e comita. A varredura diária e o botão
+       "Verificar atualização" chamam ESTE código, e não duas cópias: enquanto
+       o botão só sabia perguntar ao VPS, ele respondia "sem atualização" na
+       mesma tela em que a varredura já teria trazido a competência nova pelo
+       espelho. Duas respostas diferentes para a mesma pergunta, na mesma
+       janela. Resolve `{de, para, itens}` ou rejeita com motivo legível. */
+    _baixarEspelho: function (uf, comp) {
+      var self = this, b = self.espelhoBase();
+      // mesmo token anti-corrida do atualizarSinapi: trocar de estado no meio
+      // do download não pode comitar a base da UF antiga por cima da nova
+      var reqA = (global.App && global.App._ufReq != null) ? global.App._ufReq : null;
+      var ufMudou = function () { return global.App && reqA !== null && global.App._ufReq !== reqA; };
+      var local = self._normComp(typeof Sinapi !== "undefined" ? Sinapi.competencia : "");
+      return fetch(b + "/data/sinapi-" + uf + "-" + comp + ".json", { cache: "no-store" }).then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      }).then(function (j) {
+        if (ufMudou()) throw new Error("você trocou de estado durante o download");
+        /* mesma régua das outras fontes: só pacote VÁLIDO toca a base viva */
+        if (!(j && j.dados && j.dados.length > 0 && String(j.uf || "").toUpperCase() === uf)) throw new Error("pacote do espelho inválido");
+        j._origem = "atualizacao-oficial";
+        Sinapi.carregarDe(j);
+        try { if (typeof Store !== "undefined" && Store.salvarBaseSinapi) Store.salvarBaseSinapi(Auth.empresaId(), j); } catch (eP) {}
+        if (global.App) {
+          global.App._baseUf = uf;
+          /* ⚠ O ANALÍTICO PASSA A VIR DO ESPELHO TAMBÉM, e por URL ABSOLUTA.
+             Num app instalado, `data/sinapi-<UF>-analitico.json` é a pasta
+             LOCAL — ainda a competência velha. Apontar para o relativo daria
+             preço novo com insumo velho, que é justamente o que o espelho
+             existe para não fazer: no repositório os dois andam no mesmo
+             commit. */
+          global.App._analiticoArquivo = b + "/data/sinapi-" + uf + "-analitico.json";
+          if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset();
+        }
+        return { de: local, para: comp, itens: (j.count || j.dados.length) };
+      });
+    },
+
+    _aplicarEspelho: function (uf, comp, v, hoje, seguir) {
+      var self = this;
+      self._baixarEspelho(uf, comp).then(function (r) {
+        v.aplicou = { fonte: "espelho", de: r.de, para: r.para, itens: r.itens };
+        self._gravarVarredura(v);
+        self._carimbarDia(hoje);
+        if (typeof UI !== "undefined") {
+          UI.toast("Base SINAPI atualizada pelo espelho do app: competência " + self.fmtComp(r.de) + " → " + self.fmtComp(r.para) +
+            " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
+        }
+      }).catch(function (e) {
+        v.erro = "o espelho não entregou a " + self.fmtComp(comp) + " (" + ((e && e.message) || "falha") + ") — a base atual foi mantida";
+        seguir();
+      });
+    },
+
+    /* O MESMO caminho do espelho, para o botão "Verificar atualização".
+       cb({ok, atualizou, de, para, itens, erro, basePropria, semUf}) */
+    atualizarPeloEspelho: function (cb) {
+      var self = this;
+      if (self._basePropriaDoCliente()) {
+        cb({ ok: true, atualizou: false, basePropria: true, de: self._normComp(Sinapi.competencia) });
+        return;
+      }
+      var uf = "";
+      try { uf = String((global.App && global.App._baseUf) || Sinapi.uf || CONFIG.sinapi.ufPadrao).toUpperCase(); } catch (eU) { uf = "MG"; }
+      self.statusEspelho().then(function (st) {
+        var comp = st && st.sinapi && st.sinapi.competencia;
+        var ufs = (st && st.sinapi && st.sinapi.ufs) || [];
+        var local = self._normComp(typeof Sinapi !== "undefined" ? Sinapi.competencia : "");
+        if (!comp) { cb({ ok: false, erro: "o espelho não informou a SINAPI" }); return; }
+        if (String(comp) <= String(local)) { cb({ ok: true, atualizou: false, de: local, para: comp }); return; }
+        if (ufs.indexOf(uf) < 0) { cb({ ok: true, atualizou: false, semUf: true, de: local, para: comp }); return; }
+        self._baixarEspelho(uf, comp).then(function (r) {
+          cb({ ok: true, atualizou: true, de: r.de, para: r.para, itens: r.itens });
+        }).catch(function (e) {
+          cb({ ok: false, erro: "o espelho não entregou a " + self.fmtComp(comp) + " (" + ((e && e.message) || "falha") + ") — a base atual foi mantida" });
+        });
+      }).catch(function (e) {
+        cb({ ok: false, erro: "não consegui falar com o espelho do app (" + ((e && e.message) || "") + ")" });
+      });
+    },
+
+    /* ÚLTIMA fonte: o fetcher local do ERP, que fala com a CAIXA.
      * Só usa endpoints que o app JÁ usava (`/health`, `/sinapi/listar`,
      * `/sinapi/listar-oficial`, `POST /sinapi/baixar`, `/sinapi/dados`) e a
      * função `baixar()`, que já traz o guard de pacote vazio. Fetcher fora do
