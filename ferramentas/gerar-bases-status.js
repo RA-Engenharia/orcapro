@@ -41,19 +41,29 @@ function ler() {
 /* Uma UF só entra na lista se o arquivo REALMENTE existe e tem tamanho de
    pacote de verdade. Um JSON truncado a 200 bytes passaria num `existsSync`
    e quebraria só na máquina do cliente. */
-function valido(nome) {
-  try { return fs.statSync(path.join(DIR, nome)).size > 100000; } catch (e) { return false; }
+/* ⚠ DOIS PISOS, e não um. Um sintético cru tem ~3 MB; comprimido tem ~250
+   KB. Com piso único, ou o cru passaria truncado (100 KB de JSON cortado é
+   "válido" para um piso de 100 KB) ou o comprimido inteiro seria recusado.
+   O piso do comprimido é baixo de propósito: ali o que se quer barrar é o
+   arquivo de zero byte que sobra de um download interrompido. */
+function valido(nome, comprimido) {
+  try { return fs.statSync(path.join(DIR, nome)).size > (comprimido ? 20000 : 100000); } catch (e) { return false; }
 }
 
 function main() {
   var arquivos = ler();
 
-  /* competências presentes: sinapi-<UF>-<AAAA-MM>.json */
-  var porComp = {};
+  /* Competências presentes, comprimidas ou não. O acervo histórico é gravado
+     em `.json.gz` (o sintético cai de 3,1 MB para 264 KB e o analítico de 18
+     MB para 1 MB) — sem isso, cinco competências não caberiam no
+     repositório. A competência embarcada continua também em `.json` puro,
+     que é o que a instalação antiga tem no disco. */
+  var porComp = {}, anaPorComp = {};
   arquivos.forEach(function (f) {
-    var m = f.match(/^sinapi-([A-Z]{2})-(\d{4}-\d{2})\.json$/);
-    if (!m || !valido(f)) return;
-    (porComp[m[2]] = porComp[m[2]] || []).push(m[1]);
+    var m = f.match(/^sinapi-([A-Z]{2})-(\d{4}-\d{2})\.json(\.gz)?$/);
+    if (m && valido(f, !!m[3])) { (porComp[m[2]] = porComp[m[2]] || {})[m[1]] = 1; return; }
+    var a = f.match(/^sinapi-([A-Z]{2})-(\d{4}-\d{2})-analitico\.json(\.gz)?$/);
+    if (a && valido(f, !!a[3])) (anaPorComp[a[2]] = anaPorComp[a[2]] || {})[a[1]] = 1;
   });
   var comps = Object.keys(porComp).sort();
   var maisNova = comps[comps.length - 1] || "";
@@ -74,8 +84,19 @@ function main() {
        publicou, e isso quem sabe é quem coletou, não quem espelha. */
     sinapi: {
       competencia: maisNova,
-      ufs: uniq(porComp[maisNova] || [])
+      ufs: uniq(Object.keys(porComp[maisNova] || {}))
     },
+    /* ⚠ O ACERVO, e não só a mais nova. Orçamento de licitação é preso à
+       data-base do edital: quem abriu o processo em março continua orçando em
+       março. O app já sabia trocar de competência e já recusava oferecer uma
+       que não possui — faltava o acervo existir e ser anunciado.
+       Cada competência declara as UFs com PREÇO e as UFs com ANALÍTICO
+       separadas: oferecer uma competência sem o analítico dela entregaria
+       preço de um mês com insumo de outro, calado, num documento de
+       licitação. Quem decide o que aparece é a interseção. */
+    acervo: comps.slice().reverse().map(function (c) {
+      return { competencia: c, ufs: uniq(Object.keys(porComp[c] || {})), analitico: uniq(Object.keys(anaPorComp[c] || {})) };
+    }),
     sinapiDesoneradaUfs: uniq(desonUfs),
     analiticoUfs: uniq(analiticoUfs),
     /* histórico: serve para o app não pedir uma competência que o espelho
@@ -101,6 +122,11 @@ function main() {
   console.log("gravado " + path.relative(RAIZ, SAIDA));
   console.log("  competencia mais nova: " + (maisNova || "(nenhuma)"));
   console.log("  UFs com sintetico:     " + manifesto.sinapi.ufs.length);
+  console.log("  acervo publicado:");
+  manifesto.acervo.forEach(function (a) {
+    console.log("    " + a.competencia + "  precos em " + a.ufs.length + " UFs  ·  analitico em " + a.analitico.length + " UFs" +
+      (a.ufs.length === 27 && a.analitico.length === 27 ? "  ✓" : "   (incompleta)"));
+  });
   console.log("  UFs com analitico:     " + manifesto.analiticoUfs.length);
   console.log("  UFs com desonerada:    " + manifesto.sinapiDesoneradaUfs.length);
   console.log("  competencias no ar:    " + comps.join(", "));

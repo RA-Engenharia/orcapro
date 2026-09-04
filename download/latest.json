@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.47",
+  "versao": "1.2.48",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.47.zip",
-  "notas": "O pedido de compra passa a mostrar em que pe esta. Depois de aprovado, ele tem os estados Enviado ao fornecedor e Confirmado por ele, cada um com a data e quem registrou, ate o recebimento. A data prevista de entrega aparece na lista de compras e no Painel, e o pedido que passa do prazo fica marcado como atrasado. A forma e a condicao de pagamento vem da cotacao escolhida e seguem para o documento do pedido e para o Financeiro, em vez de serem digitadas de novo. Os selos de status ficaram legiveis nos dois temas, claro e escuro. Corrigidos: dois botoes da planilha do orcamento que apareciam sem icone, e o selo de regime desonerado, cujo texto ficava quase apagado sobre o fundo. Continua tudo das versoes anteriores.",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.48.zip",
+  "notas": "Agora voce escolhe a competencia da SINAPI, e o acervo esta no ar: 2026-03, 2026-04, 2026-05, 2026-06 e 2026-07, cada uma com preco E detalhamento de insumos do MESMO mes, nos 27 estados. Isso e para licitacao: orcamento e preso a data-base do edital, entao quem abriu processo em marco continua orcando em marco. O app ja sabia escolher competencia e ja recusava escolher uma que nao possui — faltava o acervo existir. A competencia 07/2026, publicada pela CAIXA em 11/08, entra junto: a frota nunca a recebeu porque a coleta do servidor parou em julho. Dai em diante o sistema se abastece sozinho: uma rotina mensal consulta a lista oficial da CAIXA, baixa, gera os 27 estados, confere e publica — sem depender do servidor nem do ERP local. Nada e publicado sem passar na conferencia (UF certa, competencia certa, 27 estados e analitico do mesmo mes do preco). Sua base propria importada continua intocada. Continua tudo da 1.2.47, inclusive a linha do tempo do pedido de compra.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.47/OrcaPRO-IA-Instalador-v1.2.47.exe"
 }
