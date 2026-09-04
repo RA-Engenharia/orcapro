@@ -1,0 +1,114 @@
+name: Coletar SINAPI
+
+# =====================================================================
+# A COLETA MENSAL DA SINAPI — sem ERP e sem VPS.
+#
+# Por que aqui e não num servidor: o navegador não pode baixar da CAIXA
+# (ela não manda `Access-Control-Allow-Origin`, então nenhum app web
+# alcança o arquivo). Alguém do lado servidor tem de buscar. O servidor
+# OrçaPRO fazia isso e parou de ser alimentado em julho/2026 — a frota
+# ficou três meses com base velha sem ninguém perceber. Este runner é o
+# substituto que não depende de máquina de ninguém.
+#
+# O que ele entrega: publicada a competência no repositório, o espelho
+# (`app/data/`, servido pelo GitHub Pages com CORS aberto) atende a frota
+# inteira na varredura diária do dia seguinte — app instalado, PWA,
+# qualquer UF, sem ninguém clicar em nada.
+#
+# ⚠ A JANELA É DE 5 COMPETÊNCIAS, e isso é requisito de licitação, não
+#   economia de espaço: orçamento é preso à data-base do edital, e quem
+#   abriu processo em março continua orçando em março. `--podar` remove o
+#   que sai da janela para o repositório não crescer sem fim (cada
+#   competência pesa ~31 MB comprimida).
+#
+# ⚠ SE A COLETA FALHAR, O JOB FALHA. Não existe "seguiu em frente": o
+#   coletor recusa publicar pacote que não passe na conferência (UF certa,
+#   competência certa, 27 estados, analítico do mesmo mês), e é melhor um
+#   e-mail de falha do que base torta num documento que vai para licitação.
+# =====================================================================
+
+on:
+  schedule:
+    # A CAIXA publica entre o dia 10 e o 12. Roda dia 13 e 20 (a segunda
+    # cobre atraso e retificação, que ela publica com alguma frequência).
+    - cron: "0 9 13 * *"
+    - cron: "0 9 20 * *"
+  workflow_dispatch:
+    inputs:
+      competencia:
+        description: "Competência específica (AAAA-MM). Vazio = a janela inteira."
+        required: false
+        type: string
+      janela:
+        description: "Quantas competências manter"
+        required: false
+        default: "5"
+        type: string
+      podar:
+        description: "Apagar as competências fora da janela"
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  # duas coletas ao mesmo tempo escreveriam nos mesmos arquivos
+  group: coletar-sinapi
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalar o leitor de planilha
+        # o gerador oficial da casa lê o .xlsx da CAIXA com esta biblioteca
+        run: npm install --no-save xlsx@0.18.5
+
+      - name: O que a CAIXA tem publicado
+        run: node ferramentas/coletar-sinapi.js --listar
+
+      - name: Coletar
+        run: |
+          set -euo pipefail
+          COMP="${{ inputs.competencia }}"
+          JAN="${{ inputs.janela || '5' }}"
+          PODAR=""
+          if [ "${{ inputs.podar }}" != "false" ]; then PODAR="--podar"; fi
+          if [ -n "$COMP" ]; then
+            node ferramentas/coletar-sinapi.js --comp "$COMP"
+          else
+            node ferramentas/coletar-sinapi.js --janela "$JAN" $PODAR
+          fi
+
+      - name: Conferir o manifesto contra a pasta
+        # o manifesto promete arquivos ao app; prometer o que não existe faria
+        # o app tentar baixar, falhar, e reportar "servidor fora do ar" para um
+        # problema que é de conteúdo
+        run: node ferramentas/gerar-bases-status.js --conferir
+
+      - name: Publicar no espelho
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- app/data; then
+            echo "nada novo — a CAIXA não publicou competência que já não estivesse no espelho"
+            exit 0
+          fi
+          NOVA=$(node -e "console.log(require('./app/data/bases-status.json').sinapi.competencia)")
+          ACERVO=$(node -e "console.log(require('./app/data/bases-status.json').acervo.map(a=>a.competencia).join(', '))")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/data
+          git commit -m "SINAPI: acervo em ${ACERVO}" \
+            -m "Coleta automática a partir da lista oficial da CAIXA (categoria 888 da lista Downloads). Competência mais nova: ${NOVA}." \
+            -m "Cada competência traz preço e analítico nas 27 UFs, comprimidos. O espelho entrega para a frota na varredura diária do dia seguinte, sem VPS e sem ERP local."
+          git push
+          echo "publicado: acervo agora é ${ACERVO}"

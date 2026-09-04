@@ -2495,6 +2495,32 @@
       });
       var temAnalitico = {}, legado = {};
       function marcar(uf, comp) { temAnalitico[String(uf).toUpperCase() + "|" + String(comp).trim()] = 1; }
+      /* ⚠ O ESPELHO TAMBÉM CONTA, E É ELE QUE ATENDE QUEM NÃO TEM SERVIDOR.
+       *   `__bases` é a listagem do servidor LOCAL: só existe no app
+       *   instalado, e só enxerga o que está no disco daquela máquina. Quem
+       *   usa o PWA nunca teve competência nenhuma para escolher, e o app
+       *   instalado só oferecia o que o instalador deixou.
+       *
+       *   O espelho publica o ACERVO no `bases-status.json` — cada
+       *   competência com as UFs que têm PREÇO e as que têm ANALÍTICO,
+       *   separadas de propósito. As duas listas entram pelas mesmas portas
+       *   (`juntar` e `marcar`), então a regra de baixo continua valendo sem
+       *   exceção: competência sem o analítico dela não é oferecida. */
+      var doEspelho = function () {
+        var b = "";
+        try { b = String((CONFIG && CONFIG.appWebUrl) || "").replace(/\/$/, ""); } catch (e) {}
+        if (!b) return Promise.resolve();
+        return fetch(b + "/data/bases-status.json", { cache: "no-store" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j || !Array.isArray(j.acervo)) return;
+            j.acervo.forEach(function (a) {
+              (a.ufs || []).forEach(function (uf) { juntar(uf, a.competencia); });
+              (a.analitico || []).forEach(function (uf) { marcar(uf, a.competencia); });
+            });
+          })
+          .catch(function () { /* sem rede: fica o que o disco tem */ });
+      };
       return fetch("__bases", { cache: "no-store" })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (j) {
@@ -2504,6 +2530,7 @@
           if (Array.isArray(j.analiticoLegado)) j.analiticoLegado.forEach(function (uf) { legado[String(uf).toUpperCase()] = 1; });
         })
         .catch(function () { /* PWA/sem servidor: fica o manifesto */ })
+        .then(doEspelho)
         .then(function () {
           /* ⚠⚠ SÓ FICA A COMPETÊNCIA QUE DÁ PARA HONRAR.
            *
@@ -2590,6 +2617,29 @@
     // busca AO VIVO no servidor (mesma rota dos analíticos, .json.gz descomprimido
     // pelo VPS). Pacote de estado único ou instalação antiga deixam de ser beco
     // sem saída — só falha de verdade sem internet E sem arquivo local.
+    /* ⚠ O ACERVO É GRAVADO COMPRIMIDO, ENTÃO LER TEM DE SABER DESCOMPRIMIR.
+     *   Um sintético cru tem 3,1 MB; em `.gz` tem 264 KB. Cinco competências
+     *   ×27 UFs só cabem no espelho comprimidas — e o navegador descomprime
+     *   sozinho com `DecompressionStream`, sem biblioteca.
+     *   Mesmo padrão que o analítico já usava (`Analitico._fetchUma`): tenta
+     *   o `.gz`, cai no `.json` puro se o navegador não souber ou o arquivo
+     *   não existir. A instalação antiga, que tem o `.json` cru no disco,
+     *   continua funcionando sem saber que isto existe. */
+    _fetchBase: function (url) {
+      var temDS = (typeof DecompressionStream !== "undefined") && (typeof Response !== "undefined");
+      var puro = function () {
+        return fetch(url, { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        });
+      };
+      if (!temDS || /\.gz$/.test(url)) return puro();
+      return fetch(url + ".gz", { cache: "no-store" }).then(function (r) {
+        if (!r.ok || !r.body) throw new Error("sem .gz");
+        return new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
+      }).catch(puro);
+    },
+
     trocarEstadoSinapi: function (uf, cb) { return this.trocarBaseSinapi(uf, "", cb); },
 
     /* TROCA DE BASE POR UF **E** COMPETÊNCIA.
@@ -2659,10 +2709,7 @@
       };
       // Caminho LOCAL com o mesmo rigor do live: fetch manual → valida token e pacote
       // ANTES do carregarDe (a corrida de cliques rápidos comitava a UF errada — gate).
-      fetch(arqLocal).then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      }).then(function (j) {
+      self._fetchBase(arqLocal).then(function (j) {
         if (req !== self._ufReq) return;
         if (!pacoteValido(j)) throw new Error("pacote local inválido");
         Sinapi.carregarDe(j);
@@ -2682,11 +2729,23 @@
             UI.toast("Falha ao carregar " + uf + ": sem arquivo local e o servidor não tem essa base agora. A base atual foi mantida.", "erro");
             if (cb) cb(false); return;
           }
-          var urlLive = CONFIG.licencaServer + "/analitico/sinapi-" + uf + "-" + comps[idx] + ".json";
-          fetch(urlLive, { cache: "no-store" }).then(function (r) {
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            return r.json();
-          }).then(function (j) {
+          /* ⚠ DUAS FONTES POR COMPETÊNCIA: o servidor e o ESPELHO do app.
+           *   Enquanto era só o servidor, reabrir um orçamento numa
+           *   competência que a máquina não tinha dependia de o VPS ainda
+           *   servi-la — e ele guarda só a corrente. O espelho publica o
+           *   acervo inteiro junto com o código, então é ele quem atende
+           *   orçamento de licitação preso a data-base antiga. Fica em
+           *   segundo lugar porque o servidor, quando responde, é mais perto
+           *   de quem instalou. */
+          var _esp = "";
+          try { _esp = String((CONFIG && CONFIG.appWebUrl) || "").replace(/\/$/, ""); } catch (eE) {}
+          var fontes = [CONFIG.licencaServer + "/analitico/sinapi-" + uf + "-" + comps[idx] + ".json"];
+          if (_esp) fontes.push(_esp + "/data/sinapi-" + uf + "-" + comps[idx] + ".json");
+          var tentarFonte = function (k) {
+            if (k >= fontes.length) return Promise.reject(new Error("HTTP 404"));
+            return self._fetchBase(fontes[k]).catch(function () { return tentarFonte(k + 1); });
+          };
+          tentarFonte(0).then(function (j) {
             if (req !== self._ufReq) return;
             if (!pacoteValido(j)) throw new Error("pacote do servidor inválido");
             Sinapi.carregarDe(j);
