@@ -132,7 +132,7 @@
     frotaCusto: [["combustivel", "Combustível"], ["manutencao", "Manutenção"], ["seguro", "Seguro"], ["locacao", "Locação"], ["pneus", "Pneus"], ["outros", "Outros"]],
     reqPrioridade: [["baixa","Baixa"],["normal","Normal"],["alta","Alta"],["urgente","Urgente"]],
       reqStatus: [["aberta","Aberta"],["cotando","Cotando"],["aprovada","Aprovada"],["rejeitada","Rejeitada"],["comprada","Comprada"],["cancelada","Cancelada"]],
-      cotStatus: [["rascunho","Em cotação"],["concluida","Concluída"]],
+      cotStatus: [["rascunho","Em cotação"],["enviada","Aguardando fornecedores"],["concluida","Concluída"]],
       reqUnidade: [["un","un"],["m","m"],["m2","m²"],["m3","m³"],["kg","kg"],["sc","saco"],["cx","caixa"],["pc","peça"],["l","litro"]],
     departamento: [["engenharia","Engenharia / Obras"],["compras","Compras / Suprimentos"],["financeiro","Financeiro"],["rh","RH / Departamento Pessoal"],["administrativo","Administrativo"],["diretoria","Diretoria"]],
     fiscalTipo: [["entrada", "Entrada"], ["saida", "Saída"]],
@@ -18861,9 +18861,20 @@ renderRequisicoes: function () {
         var d = (typeof Cotacoes !== "undefined") ? Cotacoes.decisao(c) : { totalMisto: null, totalUnico: null };
         var melhor = d.totalMisto != null ? d.totalMisto : d.totalUnico;
         var acoes = '<button class="btn sm" data-gacao="doc-cotacao" data-id="' + c.id + '" title="Imprimir o Mapa de Cotação">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-cotacao" data-id="' + c.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button>';
-        var st = c.status || "rascunho", corSt = st === "concluida" ? "#16a34a" : "#0e7490"; // pill próprio: no genérico, "rascunho" do RDO roubaria o rótulo
+        var st = c.status || "rascunho";
+        /* "enviada" = publicação online ATIVA. Vencida sem ninguém encerrar, o
+           registro ainda diz "enviada" — na lista isso leria "Aguardando
+           fornecedores" para sempre. Só a exibição volta a "Em cotação"; o
+           dado fica como está (o formulário oferece publicar de novo). */
+        if (st === "enviada" && typeof Cotacoes !== "undefined" && Cotacoes.onlineAtiva && !Cotacoes.onlineAtiva(c)) st = "rascunho";
+        var corSt = st === "concluida" ? "#16a34a" : (st === "enviada" ? "#d97706" : "#0e7490"); // pill próprio: no genérico, "rascunho" do RDO roubaria o rótulo
         var pillCot = '<span class="g-pill" style="background:' + corSt + '22;color:' + corSt + '">' + Util.esc(rot(P.cotStatus, st)) + "</span>";
-        html += '<tr><td style="cursor:pointer" data-gopen="cotacoes:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + ((c.itens || []).length) + '</td><td class="num">' + ((c.fornecedores || []).length) + '</td><td class="num">' + (melhor != null ? "<b>" + Util.fmtMoeda(melhor) + "</b>" : "—") + "</td><td>" + pillCot + '</td><td class="num">' + acoes + "</td></tr>";
+        var online = "";
+        if (c.online && c.online.convites && c.online.convites.length) {
+          var nResp = c.online.convites.filter(function (cv) { return cv && cv.respondidoEm; }).length;
+          online = ' <span class="muted" style="font-size:11px" title="respostas online puxadas">· ' + nResp + "/" + c.online.convites.length + " online</span>";
+        }
+        html += '<tr><td style="cursor:pointer" data-gopen="cotacoes:' + c.id + '"><b>' + Util.esc(c.numero || "—") + "</b></td><td>" + Util.esc(c.data || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(c.descricao || "—") + '</td><td class="num">' + ((c.itens || []).length) + '</td><td class="num">' + ((c.fornecedores || []).length) + online + '</td><td class="num">' + (melhor != null ? "<b>" + Util.fmtMoeda(melhor) + "</b>" : "—") + "</td><td>" + pillCot + '</td><td class="num">' + acoes + "</td></tr>";
       });
       return html + "</tbody></table><p class=\"muted\" style=\"margin-top:10px\">" + (typeof Icones !== "undefined" ? Icones.get("lampada", 15) : "") + " Crie a cotação a partir de uma <b>Requisição aprovada</b> (botão 🆚 Cotar) — os itens já vêm preenchidos. Ao concluir, os <b>pedidos de compra</b> nascem sozinhos, um por fornecedor vencedor.</p>";
     },
@@ -18880,21 +18891,108 @@ renderRequisicoes: function () {
       this.formCotacao({ numero: this._proxNumeroCot(), data: hojeLocal(), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] });
     },
     // lê a grade do modal -> objeto de cotação (itens + fornecedores + preços)
-    _cotDoForm: function (base) {
-      var cot = { id: base && base.id, numero: v("ct-num") || this._proxNumeroCot(), data: v("ct-data") || hojeLocal(), obraId: v("ct-obra"), requisicaoId: (base && base.requisicaoId) || null, descricao: v("ct-desc"), status: (base && base.status) || "rascunho", itens: [], fornecedores: [] };
+    _cotDoForm: function (base, soGrade) {
+      /* ⚠ O QUE NÃO TEM CAMPO NA GRADE VEM DO REGISTRO VIVO, NÃO DO `base`.
+         `base` é o objeto congelado no closure do modal, do instante em que a
+         tela abriu. Roteiro do defeito (reproduzido com dois localStorage e o
+         merge real da nuvem): o modal fica aberto, o outro aparelho publica a
+         cotação online, a nuvem funde o registro INTEIRO (o `atualizadoEm`
+         mais novo vence) — e o Salvar daqui regravava `online`/`historico`/
+         `status` do jeito que estavam antes, apagando a publicação. Resultado:
+         links vivos no servidor por até 30 dias, itens destravados na tela e
+         nenhum id local para puxar as respostas ou encerrar; a vaga do
+         fornecedor fica ocupada no servidor até vencer sozinha. Também é a
+         origem do "409 já publicada" que o app não sabia explicar.
+         O que a grade EDITA (itens, fornecedores, preços, nº, data, obra,
+         descrição) continua vindo do formulário; `online`, `historico` e
+         `status` é que passam a vir do registro vivo.
+
+         `soGrade`: só o painel de decisão, que recalcula a CADA TECLA, passa
+         `true`. Ele lê apenas itens/fornecedores/preços, e sem a saída cada
+         tecla digitada custava um `Store.obter` → `JSON.parse` da coleção
+         INTEIRA de cotações (medido: 1,3 ms em 50 cotações, 11 ms em 500 —
+         no WebView do instalador isso vira digitação travando). Quem GRAVA
+         nunca passa `soGrade`. */
+      var vivo = (!soGrade && base && base.id) ? Store.obter(eid(), "cotacoes", base.id) : null;
+      var fonte = vivo || base;
+      var cot = { id: base && base.id, numero: v("ct-num") || this._proxNumeroCot(), data: v("ct-data") || hojeLocal(), obraId: v("ct-obra"), requisicaoId: (base && base.requisicaoId) || null, descricao: v("ct-desc"), status: (fonte && fonte.status) || "rascunho", itens: [], fornecedores: [] };
+      /* ⚠ HERANÇA, NÃO TROCA. Ler `online` de `vivo || base` como objeto
+         inteiro apagava a publicação pelo lado OPOSTO ao de cima: registro
+         vivo que existe mas NÃO tem `online` (aparelho numa versão antiga
+         gravando a cotação, ou merge da nuvem trazendo um registro que nunca
+         viu a publicação — os dois roteiros que originam o estado órfão)
+         fazia o Salvar daqui zerar `cot.online`, e de novo sobravam links
+         vivos no servidor sem id local para puxar ou encerrar. Ninguém grava
+         `online: null` de propósito: o único ponto do produto que zera
+         (js/cotonlineui.js) roda sobre objeto em memória cujo save FALHOU e
+         nunca chega ao disco. */
+      cot.online = (vivo && vivo.online) || (base && base.online) || null;
+      /* ⚠ A LISTA VAZIA NÃO PODE APAGAR A CHEIA. `[]` é truthy: sem o
+         `.length`, o registro vivo de um aparelho em versão antiga (que grava
+         a cotação sem log nenhum) copiava a lista vazia por cima e o histórico
+         do outro aparelho ia embora pela nuvem. */
+      cot.historico = (vivo && vivo.historico && vivo.historico.length) ? vivo.historico : ((base && base.historico) || []);
+      /* ⚠ E O QUE A OUTRA PONTA TEM ENTRA TAMBÉM: HISTÓRICO É LOG
+         APPEND-ONLY. A linha de cima sozinha SUBSTITUÍA uma lista pela outra,
+         e a troca perde rastro dos dois lados: com histórico no vivo sumia o
+         que ESTE modal registrou (a publicação que nasceu no clique anterior,
+         por exemplo), e o que o OUTRO aparelho registrou só sobrevivia porque
+         a linha de cima escolhe a lista dele. A perda sai daqui pela nuvem
+         para todos os aparelhos, e log que apaga entrada deixa de servir
+         justamente para o que existe: reconstruir o que aconteceu quando dois
+         aparelhos discordam sobre a mesma cotação.
+         ⚠ REGRA ÚNICA COM O IRMÃO EM js/cotonlineui.js (`_sincronizarVivo` →
+         `_unirHistorico`): duas telas do mesmo módulo mexem neste log e tinham
+         réguas diferentes — o que ficava gravado dependia de por qual tela a
+         pessoa passou por último. Mesma chave (`em`+`acao`+`detalhe`), mesma
+         ordenação. Mudou uma, mude a outra.
+         Só une quando as DUAS listas têm entrada: com uma delas vazia a linha
+         de cima já devolveu a resposta certa, e unir ali seria reordenar o log
+         à toa a cada Salvar. */
+      if (vivo && vivo.historico && vivo.historico.length && base && base.historico && base.historico.length) cot.historico = this._cotUnirHistorico(base.historico, vivo.historico);
+      /* Se a publicação veio do `base`, o `status` do vivo também não sabe
+         dela e diria "rascunho": registro contraditório — publicação viva com
+         o status de quem nunca publicou, e a lista escondendo isso.
+         ⚠ Só SOBE de rascunho para enviada. "concluida" nunca é rebaixada
+         aqui — é a guarda de dinheiro que impede o pedido de compra em dobro. */
+      if (cot.online && cot.online.id && !(vivo && vivo.online) && cot.status === "rascunho" && base && base.status === "enviada") cot.status = "enviada";
+      /* ⚠ `respondidoEm` é o carimbo que impede reaplicar a mesma resposta
+         online (js/cotacoes.js: `novaEm <= antigaEm` → "já aplicada"). Ele só
+         existe no registro, então volta por `cid` — e volta do MAIS NOVO
+         entre o `base` congelado e o registro vivo, nunca só do `base`.
+         Roteiro do defeito: o outro aparelho puxa as respostas, a nuvem traz
+         o registro por baixo deste modal, o Salvar daqui grava a coluna SEM
+         carimbo — e o próximo "Puxar" reaplica a proposta antiga inteira
+         (js/cotacoes.js reconstrói `precos`, frete, prazo e condição do zero)
+         por cima do preço que o engenheiro renegociou por telefone. Calado,
+         porque o crachá da tela continua dizendo "respondeu": esse vem do
+         convite, que veio do vivo e sobreviveu. */
+      var carimbos = ((base && base.fornecedores) || []).concat((vivo && vivo.fornecedores) || []);
       var mapaIdx = {}; // índice do DOM -> índice no array (linha em branco no meio NÃO pode deslocar os preços)
       Array.prototype.forEach.call(document.querySelectorAll("[data-ct-item]"), function (tr) {
         var g = function (cl) { var e = tr.querySelector("[data-cti=" + cl + "]"); return e ? e.value.trim() : ""; };
         var desc = g("desc"); if (!desc) return;
         mapaIdx[+tr.getAttribute("data-ct-item")] = cot.itens.length;
-        cot.itens.push({ codigo: g("cod"), descricao: desc, unidade: g("un"), quantidade: Util.num(g("qtd")), precoRef: Util.num(g("ref")) });
+        /* ⚠ `id` estável por linha (data-ct-iid): é a ponte entre o servidor,
+           que fala por itemId, e o índice local dos preços. Reatribuir aqui
+           faria a resposta do fornecedor cair no item errado. */
+        cot.itens.push({ id: tr.getAttribute("data-ct-iid") || Util.uid("cti"), codigo: g("cod"), descricao: desc, unidade: g("un"), quantidade: Util.num(g("qtd")), precoRef: Util.num(g("ref")) });
       });
       var nF = document.querySelectorAll("[data-ct-forn]").length;
       for (var f = 0; f < nF; f++) {
         var nome = v("ctf-nome-" + f); var fid = v("ctf-id-" + f);
         if (!nome && fid) { var fr0 = Store.obter(eid(), "fornecedores", fid); nome = fr0 ? fr0.nome : ""; }
         if (!nome) continue;
-        var fr = { fornecedorId: fid || null, nome: nome, frete: nv("ctf-frete-" + f), prazoDias: nv("ctf-prazo-" + f), condPgto: v("ctf-cond-" + f), precos: {} };
+        var fr = { cid: v("ctf-cid-" + f) || Util.uid("ctf"), fornecedorId: fid || null, nome: nome, frete: nv("ctf-frete-" + f), prazoDias: nv("ctf-prazo-" + f), condPgto: v("ctf-cond-" + f), precos: {} };
+        carimbos.forEach(function (fb) {
+          if (!fb || !fb.cid || fb.cid !== fr.cid || !fb.respondidoEm) return;
+          /* ⚠ o carimbo NUNCA anda para trás: com um já no lugar, só um
+             estritamente mais novo o substitui (mesma régua do
+             `novaEm <= antigaEm` do motor). Data ilegível não derruba data boa. */
+          var atual = Date.parse(fr.respondidoEm), novo = Date.parse(fb.respondidoEm);
+          if (isFinite(atual) && !(isFinite(novo) && novo > atual)) return;
+          fr.respondidoEm = fb.respondidoEm;
+        });
         Array.prototype.forEach.call(document.querySelectorAll("[data-ct-preco=\"" + f + "\"]"), function (inp2) {
           var iDom = +inp2.getAttribute("data-ct-preco-item");
           if (mapaIdx[iDom] == null) return; // linha sem descrição: o preço dela não entra
@@ -18904,6 +19002,279 @@ renderRequisicoes: function () {
         cot.fornecedores.push(fr);
       }
       return cot;
+    },
+    /* ⚠ CÓPIA DELIBERADA de `_unirHistorico` (js/cotonlineui.js), o arquivo
+       irmão que trata do MESMO log. Duplicar é feio; ter duas réguas para o
+       mesmo log é pior, e era o que existia — ver a nota no `_cotDoForm`.
+       O array devolvido é OUTRO de propósito: `Store.obter` devolve registro
+       recém-parseado em produção, mas qualquer cache de leitura devolve o
+       objeto VIVO — apontando para ele, o que se escrevesse aqui já estaria
+       DENTRO do registro guardado, e "o save falhou, então nada mudou"
+       viraria mentira sem ninguém ver. */
+    _cotUnirHistorico: function (daqui, dela) {
+      var a = Array.isArray(daqui) ? daqui : [], b = Array.isArray(dela) ? dela : [];
+      var saida = [], vistos = {};
+      var juntar = function (l) {
+        l.forEach(function (h) {
+          if (!h) return;
+          /* prefixo "k": chave crua bateria com "constructor" e amigos do
+             Object.prototype, e a entrada sumiria do log sem aviso */
+          var k = "k" + String(h.em || "") + "|" + String(h.acao || "") + "|" + String(h.detalhe || "");
+          if (Object.prototype.hasOwnProperty.call(vistos, k)) return;
+          vistos[k] = 1; saida.push(h);
+        });
+      };
+      juntar(b); juntar(a);
+      /* ISO 8601 ordena como texto. Entrada sem data legível vai para o fim,
+         na ordem em que apareceu: perder o rastro por causa de uma data
+         ilegível seria trocar um defeito por outro. */
+      saida.sort(function (x, y) {
+        var ex = String((x && x.em) || ""), ey = String((y && y.em) || "");
+        if (!ex && !ey) return 0;
+        if (!ex) return 1;
+        if (!ey) return -1;
+        return ex < ey ? -1 : (ex > ey ? 1 : 0);
+      });
+      return saida;
+    },
+    /* ⚠ "Esta cotação já foi concluída?" se pergunta ao REGISTRO VIVO, nunca ao
+       objeto do modal. Entre abrir a tela e clicar em Salvar/Concluir, o outro
+       aparelho pode ter concluído e emitido os pedidos, e a nuvem funde o
+       registro inteiro por trás do modal aberto. Devolve o registro concluído
+       (quem chama pode citar o número) ou null. */
+    _cotConcluidaViva: function (id) {
+      if (!id) return null;
+      var vivo = Store.obter(eid(), "cotacoes", id);
+      return (vivo && vivo.status === "concluida") ? vivo : null;
+    },
+    /* ⚠ REGRA 5 DA SKILL `dinheiro`: a pergunta certa não é "este documento já
+       foi concluído?" — `status` é campo editável e o merge da nuvem o desfaz —
+       e sim "os pedidos já existem?", que só o módulo Compras responde e
+       ninguém apaga daqui.
+       Roteiro do defeito, reproduzido no Chrome com dois localStorage e o
+       merge real: os dois aparelhos concluíram a mesma cotação, o merge
+       devolveu o registro mais novo (que ainda dizia "rascunho") e a obra
+       ficou com DOIS pedidos de compra do mesmo material — dois PC- com o
+       mesmo `cotacaoId`, que era gravado desde sempre e nunca lido.
+       `Store.listar` direto, e NÃO o `lista()` do módulo: `lista()` filtra por
+       obra permitida, e para o usuário sem aquela obra no perfil os pedidos
+       ficariam invisíveis — a trava abriria justamente para quem enxerga
+       menos. */
+    _cotPedidosGerados: function (id) {
+      if (!id) return [];
+      return Store.listar(eid(), "compras").filter(function (p) { return p && p.cotacaoId === id; });
+    },
+    /* ⚠ RECADO QUE MENTE É PIOR QUE RECADO NENHUM. As três portas diziam "os
+       pedidos já foram gerados" só porque o `status` do registro dizia
+       "concluida" — e registro que chegou concluído pelo merge (ou de uma
+       versão antiga) sem nenhuma compra carimbada mandava a pessoa procurar
+       em Compras um pedido que não existe ali. Quem sabe é o módulo Compras,
+       e ele é consultado aqui.
+       Regra 2 da skill `dinheiro`: quando não acha, o recado diz que NÃO
+       ENCONTROU — nunca que não existe (pedido de aparelho que ainda não
+       sincronizou existe e não está nesta máquina).
+       `perdeuDigitado`: a recusa do Salvar/Concluir descarta o que está na
+       grade; a pessoa precisa saber o custo antes de fechar o modal. */
+    _cotMsgConcluida: function (id, perdeuDigitado) {
+      var peds = this._cotPedidosGerados(id);
+      var perda = perdeuDigitado ? " O que você digitou agora não foi gravado." : "";
+      if (peds.length) {
+        var nums = peds.map(function (p) { return p.numero || p.id; }).join(", ");
+        return "Esta cotação foi concluída (talvez em outro aparelho) e já gerou " + peds.length + " pedido(s) de compra (" + nums + "). Confira em Compras." + perda;
+      }
+      return "Esta cotação foi concluída (talvez em outro aparelho). Não encontrei pedido de compra dela nesta máquina — pode ser que os pedidos ainda não tenham sincronizado. Feche e abra de novo para ver como ela ficou." + perda;
+    },
+    /* ⚠ A QUINTA PORTA — a única que não perguntava ao módulo Compras.
+       As quatro portas de guarda desta cotação ("Gerar pedidos", o Concluir do
+       Mapa, a entrada do `concluirCotacao` e o clique de emissão) já consultam
+       `_cotPedidosGerados`. O Salvar do Mapa consultava só `_cotConcluidaViva`,
+       que lê `status` — exatamente o campo editável que o merge da nuvem desfaz
+       (skill `dinheiro`, regra 5: a pergunta certa é "o dinheiro já saiu?", que
+       só o outro módulo responde).
+       Roteiro do defeito, que é o estado deixado TANTO por uma conclusão
+       recusada pelo disco QUANTO pelo merge: pedido de compra já emitido e
+       carimbado (`cotacaoId`) e o registro de volta em "rascunho". O Salvar
+       regravava itens, preços e descrição por cima do documento que originou
+       aquele dinheiro — e com toast VERDE de "Cotação salva.". O pedido que
+       está em Compras passava a divergir do mapa que o gerou, calado, e o
+       merge levava a divergência para toda a frota.
+       Meia correção em dinheiro é pior que nenhuma (regra 3): as cinco portas
+       agora contam a mesma história.
+       AS DUAS SAÍDAS SÃO DITAS, e as duas existem: "Concluir e gerar pedidos"
+       está neste mesmo modal (e `_cotTerminarConclusao` termina a conclusão
+       sem emitir nada de novo); e excluir os pedidos em Compras zera o carimbo
+       que esta guarda lê, devolvendo o mapa à edição. */
+    _cotMsgSalvarComPedidos: function (peds) {
+      var nums = peds.map(function (p) { return p.numero || p.id; }).join(", ");
+      return "Esta cotação já gerou " + peds.length + " pedido(s) de compra (" + nums + ") — não posso regravar o mapa por cima do documento que originou esses pedidos, senão o que está em Compras passa a divergir da cotação que o gerou. O que você digitou agora não foi gravado. Duas saídas: clique em \"Concluir e gerar pedidos\" aqui mesmo para terminar a conclusão que ficou pela metade (nada é emitido de novo); ou, se esses pedidos não valem, exclua-os em Compras — aí o mapa volta a aceitar edição.";
+    },
+    /* trava COM porta: diz quais pedidos existem (para conferir) e por onde
+       sair. Trava sem saída empurra a pessoa a inventar um caminho torto —
+       skill `dinheiro`, regra 6.
+       ⚠ E A PORTA PRECISA EXISTIR DE VERDADE. Este recado prometia "exclua-os
+       em Compras e conclua outra vez" — e "concluir outra vez" não existe em
+       NENHUM dos dois estados que chegam aqui (os únicos em que
+       `_cotTerminarConclusao` devolve `false`):
+         · a cotação está CONCLUÍDA — e cotação concluída abre somente leitura,
+           sem botão de concluir (ver `ehConcluida` em `formCotacao`);
+         · a cotação não está mais nesta máquina — foi excluída aqui, e os
+           pedidos ficam em Compras de propósito.
+       Quem seguisse o recado excluiria pedido de compra legítimo e ficaria sem
+       o caminho prometido: dinheiro de obra saindo da lista à toa, para
+       destravar uma tela que não ia destravar. `id` é o carimbo, nunca
+       semelhança (regra 2). */
+    _cotMsgPedidosJaGerados: function (peds, id) {
+      var nums = peds.map(function (p) { return p.numero || p.id; }).join(", ");
+      var vivo = id ? Store.obter(eid(), "cotacoes", id) : null;
+      var base = "Já existem " + peds.length + " pedido(s) de compra desta cotação (" + nums + "). Não vou gerar de novo — ";
+      if (!vivo) return base + "e a cotação não está mais nesta máquina: ela foi excluída, e os pedidos ficam em Compras de propósito. Confira esses números em Compras; é lá que eles se editam ou se excluem.";
+      return base + "esta cotação já está concluída, e cotação concluída abre somente para leitura: não há como concluí-la outra vez. Confira esses números em Compras — se algum não valer, é lá que ele se corrige ou se exclui, e uma compra nova se abre em Compras por \"Novo pedido\".";
+    },
+    /* ⚠ QUANTOS PEDIDOS O CENÁRIO MANDAVA EMITIR — medido pelo PRÓPRIO motor
+       de emissão (`Cotacoes.pedidos`, o mesmo que o laço do "Gerar pedidos"
+       usa), nunca por semelhança entre o que está em Compras e o que está na
+       cotação: casar por fornecedor, valor ou descrição ou trava um pedido
+       legítimo ou libera um duplicado, e ninguém descobre qual dos dois
+       aconteceu (skill `dinheiro`, regra 2).
+       Devolve `{ n: <quantos>, certo: <dá para afirmar?> }`.
+       ⚠ O `certo` É O CONSERTO DE UMA REGRESSÃO, e sair dele volta a mandar a
+       pessoa excluir pedido legítimo. Roteiro: esta função devolvia só o TETO
+       (`max(misto, unico)`). Quem escolhe "Fornecedor único" — 1 pedido — e tem
+       o `Store.salvar` da cotação recusado logo depois (a coleção `cotacoes` é
+       a maior e a última a ser gravada, então é ela que estoura a cota do
+       navegador depois de a compra já ter cabido) voltava, clicava de novo, e
+       o app comparava 1 pedido achado contra o teto 2 do cenário MISTO, que a
+       pessoa nunca escolheu: acusava emissão pela metade e oferecia "exclua
+       esses pedidos em Compras" — dinheiro de obra saindo da lista por causa
+       de uma emissão que estava COMPLETA. Recado que mente é pior que recado
+       nenhum.
+       O número só é `certo` quando não sobra escolha para errar:
+         · o cenário está gravado (`cot.cenario`, escrito quando a conclusão
+           terminou) — então é o número daquele cenário;
+         · ou os cenários VIÁVEIS emitiriam o mesmo número (inclusive quando só
+           um é viável: `Cotacoes.pedidos` devolve [] no cenário que não fecha,
+           e cenário que emite 0 pedidos nunca foi emitido — o laço barra em
+           "Cenário sem pedidos").
+       `n: 0` quando não há como medir (motor não carregado, cotação sem preço
+       que feche cenário nenhum) — e aí quem chama não afirma nada, em vez de
+       inventar um número. */
+    _cotPedidosEsperados: function (cot) {
+      var vazio = { n: 0, certo: false };
+      if (!cot || typeof Cotacoes === "undefined" || !Cotacoes.pedidos) return vazio;
+      var conta = function (modo) {
+        var lst;
+        try { lst = Cotacoes.pedidos(cot, modo) || []; } catch (e) { lst = []; }
+        return lst.length;
+      };
+      if (cot.cenario === "misto" || cot.cenario === "unico") {
+        var nEsc = conta(cot.cenario);
+        return { n: nEsc, certo: nEsc > 0 };
+      }
+      var nM = conta("misto"), nU = conta("unico");
+      var viaveis = [];
+      if (nM > 0) viaveis.push(nM);
+      if (nU > 0) viaveis.push(nU);
+      if (!viaveis.length) return vazio;
+      var maior = viaveis[0];
+      if (viaveis.length > 1 && viaveis[1] > maior) maior = viaveis[1];
+      return { n: maior, certo: viaveis.length === 1 || nM === nU };
+    },
+    /* ⚠ A PORTA QUE FALTAVA À TRAVA — skill `dinheiro`, regra 6.
+       Roteiro do defeito, reproduzido: os pedidos de compra ENTRAM e o
+       `Store.salvar(eid(), "cotacoes", cot)` logo depois é RECUSADO — a
+       coleção `cotacoes` é a maior e a última a ser gravada, então é
+       justamente ela que estoura a cota do localStorage depois de a compra já
+       ter cabido. O toast prometia "Ela vai continuar aparecendo como aberta
+       até você concluir de novo". Só que concluir de novo NÃO funcionava: no
+       clique seguinte a guarda `_cotPedidosGerados` achava o PC recém-gravado
+       e recusava, mandando a pessoa EXCLUIR EM COMPRAS pedidos legítimos —
+       dinheiro de obra saindo da lista por causa de um erro de disco. Trava
+       sem saída empurra para a mentira.
+       Os dois mundos que a guarda confundia, e que aqui se separam:
+         - pedidos existem E o registro vivo está `concluida` → duplicata de
+           verdade: esta função devolve `false` e quem chama recusa (é o que
+           as guardas de cima já fazem, com o mesmo recado);
+         - pedidos existem E o registro vivo NÃO está concluído → é a
+           retentativa depois da gravação recusada (ou o merge que desfez o
+           status): nada é emitido de novo, só a conclusão que ficou pela
+           metade é TERMINADA.
+       ⚠ Grava o REGISTRO VIVO, nunca a grade do modal: os pedidos já foram
+       emitidos com os preços de antes, e regravar a tela por cima faria o
+       documento divergir do dinheiro que ele gerou (é o mesmo motivo pelo
+       qual as portas irmãs recusam sem regravar). O carimbo `cotacaoId`
+       continua sendo a única ponte com Compras (regra 1: nunca casar por
+       semelhança). Devolve `true` quando tratou o clique (concluiu ou contou
+       que a gravação falhou de novo). */
+    _cotTerminarConclusao: function (id, peds, perdeuDigitado) {
+      if (!id || !peds || !peds.length) return false;
+      var vivo = Store.obter(eid(), "cotacoes", id);
+      /* sem registro vivo não há o que terminar (cotação excluída aqui, com os
+         pedidos preservados em Compras de propósito) — quem chama recusa */
+      if (!vivo || vivo.status === "concluida") return false;
+      /* ⚠ EMISSÃO COMPLETA E EMISSÃO PELA METADE NÃO SÃO A MESMA COISA, e esta
+         função só perguntava "existe pedido carimbado?" — nunca "existem TODOS
+         os que o cenário mandava emitir?".
+         Roteiro do defeito, reproduzido: o laço de emissão grava 1 de 2 pedidos
+         (cota do navegador estourando no meio) e o desfazer do que entrou
+         TAMBÉM falha; o produto avisa, com razão, "confira esses números em
+         Compras antes de concluir de novo". No clique seguinte esta função
+         achava o único PC que ficou, marcava `concluida` e afirmava que estava
+         tudo certo — a obra fechava a cotação com metade do material sem
+         pedido nenhum, e cotação concluída abre somente leitura: não sobrava
+         caminho para emitir o que faltou.
+         O app NÃO consegue afirmar QUAL metade falta (o cenário escolhido só é
+         gravado quando a conclusão termina, e casar pedido com fornecedor por
+         semelhança é justamente o que a regra 2 da skill `dinheiro` proíbe).
+         Então ele diz o que sabe — quantos achou, quantos o cenário emitiria —
+         mostra os números e deixa a pessoa decidir, que é a porta que a trava
+         precisa ter (regra 6). Confirmar termina a conclusão sem emitir nada;
+         recusar deixa a cotação aberta, e excluir esses pedidos em Compras faz
+         o próximo clique emitir a rodada inteira do zero. */
+      var esp = this._cotPedidosEsperados(vivo);
+      /* ⚠ SÓ ACUSA QUANDO O NÚMERO É CERTO. Com o teto de dois cenários
+         diferentes aqui, "Fornecedor único" emitido inteiro (1 pedido) era
+         acusado de parcial contra o misto (2) e o recado mandava excluir em
+         Compras pedido CERTO — ver `_cotPedidosEsperados`. Quando não dá para
+         saber, o app não chuta nem acusa: diz o que sabe (quantos achou, que o
+         cenário do clique anterior não chegou ao disco) e conclui, deixando a
+         conferência em Compras com a pessoa. */
+      var incerto = "";
+      if (esp.n > peds.length) {
+        var numsP = peds.map(function (p) { return p.numero || p.id; }).join(", ");
+        var perdaP = perdeuDigitado ? " O que você digitou agora não foi gravado." : "";
+        if (esp.certo) {
+          if (!window.confirm("Encontrei " + peds.length + " pedido(s) de compra desta cotação (" + numsP + "), mas o cenário desta cotação emitiria até " + esp.n + " — pode ter faltado " + (esp.n - peds.length) + ", de uma emissão que parou no meio.\n\nOK = são esses mesmos: concluo a cotação assim, sem emitir nada de novo.\nCancelar = não concluo agora; a cotação continua aberta e você resolve em Compras." + perdaP)) {
+            UI.toast("Cotação NÃO concluída: ela continua aberta. Confira em Compras " + numsP + " — se faltou pedido, exclua esses por lá e clique em Concluir de novo, que a emissão sai inteira; se estiverem certos, conclua e confirme." + perdaP, "aviso");
+            return true;
+          }
+        } else {
+          incerto = " Não dá para dizer daqui se faltou algum pedido: o cenário escolhido no clique anterior não chegou a ser gravado, e os dois cenários desta cotação emitiriam números diferentes de pedido (o maior deles emitiria " + esp.n + ") — é a conferência desses números em Compras que responde.";
+        }
+      }
+      vivo.status = "concluida";
+      /* mesma ordem do caminho normal: encerra a publicação online ANTES de
+         salvar, para o `encerradaEm` local viajar no mesmo registro */
+      if (typeof CotOnlineUI !== "undefined" && CotOnlineUI.encerrarSilencioso) CotOnlineUI.encerrarSilencioso(vivo);
+      Store.salvar(eid(), "cotacoes", vivo);
+      var nums = peds.map(function (p) { return p.numero || p.id; }).join(", ");
+      var quantos = peds.length + " pedido(s) de compra desta cotação já estavam em Compras (" + nums + ") — não emiti nada de novo";
+      var perda = perdeuDigitado ? " O que você digitou agora não foi gravado." : "";
+      /* ⚠ MEDIDO NO DISCO, não deduzido do retorno do `salvar`: se o
+         armazenamento recusou outra vez, o recado NÃO pode dizer que concluiu
+         (recado que mente é pior que recado nenhum) e a porta continua aberta
+         — o próximo clique cai aqui de novo e termina. */
+      var conferido = Store.obter(eid(), "cotacoes", id);
+      if (!conferido || conferido.status !== "concluida") {
+        /* modal aberto de propósito, como na guarda irmã do laço de emissão:
+           nada mudou no disco, a saída é liberar espaço e clicar de novo, e o
+           botão precisa estar debaixo do dedo da pessoa */
+        UI.toast(quantos + ", e de novo não consegui gravar a conclusão: o armazenamento do navegador recusou (normalmente falta de espaço). A cotação continua aparecendo como aberta — libere espaço e conclua outra vez; os pedidos não saem em dobro, a guarda lê o número deles em Compras." + perda, "erro");
+        return true;
+      }
+      if (vivo.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", vivo.requisicaoId); if (rq && (rq.status === "cotando" || rq.status === "aprovada")) { rq.status = "comprada"; Store.salvar(eid(), "requisicoes", rq); } }
+      UI.fecharModal(); App.render();
+      UI.toast(quantos + ": terminei a conclusão que tinha ficado pela metade. Confira esses números em Compras." + perda + incerto, "aviso");
+      return true;
     },
     _cotPainelDecisao: function (cot) {
       if (typeof Cotacoes === "undefined" || !cot.itens.length || !cot.fornecedores.length) return '<div class="muted" style="font-size:12.5px">Preencha itens, fornecedores e preços — a decisão aparece aqui ao vivo.</div>';
@@ -18924,14 +19295,39 @@ renderRequisicoes: function () {
       c = c || { numero: this._proxNumeroCot(), data: hojeLocal(), status: "rascunho", itens: [], fornecedores: [] };
       if (!c.itens) c.itens = []; if (!c.fornecedores) c.fornecedores = [];
       var ehConcluida = c.status === "concluida"; // concluída = somente leitura (pedidos já emitidos!)
+      /* ⚠ TRAVADA = publicação online ATIVA (js/cotonlineui.js). O fornecedor
+         está respondendo sobre a lista que foi publicada; mudar item aqui
+         faria a resposta dele cair em outro material. Itens e fornecedores
+         convidados ficam somente leitura; preços/frete/prazo continuam livres
+         (o engenheiro anota o que ouviu por telefone — o puxar sobrescreve a
+         coluna se a resposta online for mais nova). Para mudar: encerrar e
+         publicar de novo. */
+      var ehTravada = !ehConcluida && typeof Cotacoes !== "undefined" && !!Cotacoes.onlineAtiva && Cotacoes.onlineAtiva(c);
+      var convidado = function (cid) {
+        if (!cid || !c.online || !c.online.convites) return null;
+        var cv = null;
+        c.online.convites.forEach(function (x) { if (!cv && x && x.cid === cid) cv = x; });
+        return cv;
+      };
       var obras = lista("obras"), forns = lista("fornecedores");
       var maxF = 4, nF = Math.max(2, Math.min(maxF, Math.max(c.fornecedores.length, c._nF || 0) || 2));
-      var cabF = "";
+      var cabF = "", travados = []; // índices dos fornecedores convidados (disabled no wire)
       for (var f = 0; f < nF; f++) {
         var fr = c.fornecedores[f] || {};
+        var cid = fr.cid || Util.uid("ctf");
+        var cv = ehTravada ? convidado(cid) : null;
+        if (cv) travados.push(f);
+        /* ⚠ SÓ `cv.respondidoEm` — o convite DESTA publicação. O `fr.respondidoEm`
+           do fornecedor é o carimbo da última resposta já aplicada, de qualquer
+           rodada: com o OR, republicar uma cotação que 0 de N responderam
+           mostrava "online · respondeu <data da rodada passada>", e o engenheiro
+           parava de cobrar quem nunca abriu o link novo. */
+        var cvResp = cv && cv.respondidoEm;
+        var badge = cv ? '<span style="margin-left:auto;font-weight:600;font-size:10.5px;color:' + (cvResp ? "#15803d" : "#b45309") + '" title="convidado pela cotação online">online · ' + (cvResp ? "respondeu " + Util.fmtData(cvResp) : "aguardando") + "</span>" : "";
         cabF += '<div class="card" data-ct-forn="' + f + '" style="flex:1;min-width:180px;padding:10px">' +
-          '<div style="font-weight:800;font-size:12px;margin-bottom:6px;display:flex;align-items:center">Fornecedor ' + (f + 1) +
-            (ehConcluida ? '' : ' <button type="button" class="btn sm ghost" data-ct-delforn="' + f + '" title="Tirar este fornecedor da cotação" style="margin-left:auto;padding:0 7px;color:#dc2626">×</button>') + "</div>" +
+          '<div style="font-weight:800;font-size:12px;margin-bottom:6px;display:flex;align-items:center">Fornecedor ' + (f + 1) + badge +
+            (ehConcluida || cv ? '' : ' <button type="button" class="btn sm ghost" data-ct-delforn="' + f + '" title="Tirar este fornecedor da cotação" style="margin-left:auto;padding:0 7px;color:#dc2626">×</button>') + "</div>" +
+          '<input type="hidden" id="ctf-cid-' + f + '" value="' + Util.esc(cid) + '">' +
           sel("ctf-id-" + f, '<option value="">— avulso —</option>' + forns.map(function (x) { return '<option value="' + x.id + '"' + (fr.fornecedorId === x.id ? " selected" : "") + ">" + Util.esc(x.nome) + "</option>"; }).join("")) +
           inp("ctf-nome-" + f, fr.nome || "", "ou digite o nome") +
           '<div class="row" style="gap:6px;margin-top:6px">' + inp("ctf-frete-" + f, fr.frete != null ? fr.frete : "", "Frete R$", "number") + inp("ctf-prazo-" + f, fr.prazoDias != null ? fr.prazoDias : "", "Prazo de entrega (dias)", "number") + "</div>" +
@@ -18947,18 +19343,22 @@ renderRequisicoes: function () {
              milhar — cotação de R$ 4,125/un virava R$ 4.125 (v1.1.232) */
           precosTd += '<td><input data-ct-preco="' + f2 + '" data-ct-preco-item="' + i + '" value="' + Util.esc(numBR(pv)) + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
         }
-        linhas += '<tr data-ct-item="' + i + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '"></td>' + precosTd +
-          (ehConcluida ? '' : '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>') + "</tr>";
+        /* data-ct-iid: id estável do item (ver _cotDoForm) — nasce aqui e
+           sobrevive à re-renderização porque _cotDoForm o lê de volta */
+        linhas += '<tr data-ct-item="' + i + '" data-ct-iid="' + Util.esc(it.id || Util.uid("cti")) + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '"></td>' + precosTd +
+          (ehConcluida || ehTravada ? '' : '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>') + "</tr>";
       });
       var cabPrecos = ""; for (var f3 = 0; f3 < nF; f3++) cabPrecos += "<th>Forn. " + (f3 + 1) + "</th>";
-      if (!ehConcluida) cabPrecos += "<th></th>";
+      if (!ehConcluida && !ehTravada) cabPrecos += "<th></th>";
+      var faixaTrava = ehTravada ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;margin:6px 0;color:#92400e">' + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + ' Itens travados enquanto a cotação online estiver aberta (válida até ' + Util.fmtData(c.online.expiraEm) + '). Para mudar os itens, encerre e publique de novo.</div>' : "";
       var corpo =
         '<div class="row">' + campo("Nº", inp("ct-num", c.numero)) + campo("Data", inp("ct-data", c.data, "", "date")) + campo("Obra", sel("ct-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
         campo("Descrição", inp("ct-desc", c.descricao || "", "ex.: Materiais da alvenaria — Bloco B")) +
         (c.requisicaoId ? '<p class="muted" style="font-size:12px">Vinculada à requisição ' + Util.esc((Store.obter(eid(), "requisicoes", c.requisicaoId) || {}).numero || "") + "</p>" : "") +
-        '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0">' + cabF + "</div>" +
+        '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0">' + cabF + "</div>" + faixaTrava +
         '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Cód.</th><th>Item</th><th>Un</th><th>Qtd</th><th style="display:none"></th>' + cabPrecos + "</tr></thead><tbody id=\"ct-linhas\">" + linhas + "</tbody></table></div>" +
-        (ehConcluida ? "" : '<button type="button" class="btn sm" id="ct-add-item" style="margin-top:6px">+ item</button>' + (nF < maxF ? ' <button type="button" class="btn sm" id="ct-add-forn" style="margin-top:6px;margin-left:6px">+ fornecedor</button>' : "")) +
+        (ehConcluida ? "" : (ehTravada ? "" : '<button type="button" class="btn sm" id="ct-add-item" style="margin-top:6px">+ item</button>') + (nF < maxF ? ' <button type="button" class="btn sm" id="ct-add-forn" style="margin-top:6px;margin-left:6px">+ fornecedor</button>' : "")) +
+        (ehConcluida ? "" : '<div id="ct-online" style="margin-top:10px"></div>') +
         '<div class="card" style="margin-top:12px;padding:12px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('balanca', 15) : '') + ' Decisão (recalcula enquanto você digita)</div><div id="ct-decisao"></div></div>';
       var botoes = ehConcluida ? [
         { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
@@ -18967,6 +19367,18 @@ renderRequisicoes: function () {
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "", onClick: function () {
           if (Gestao._bloqueado()) return;
+          /* ⚠ salvar por cima de uma cotação concluída ressuscita o "rascunho":
+             o merge leva o registro mais novo aos outros aparelhos, o botão
+             Concluir volta a aparecer lá e os pedidos de compra saem em dobro */
+          if (self._cotConcluidaViva(c && c.id)) { UI.toast(self._cotMsgConcluida(c && c.id, true), "erro"); return; }
+          /* ⚠ E A MESMA PERGUNTA AO MÓDULO COMPRAS — ver `_cotMsgSalvarComPedidos`.
+             A guarda de cima lê `status`, que o merge desfaz; esta lê o carimbo
+             `cotacaoId` em Compras, que ninguém apaga daqui. Sem ela, a cotação
+             que já virou pedido era regravada por cima, calada e com toast de
+             sucesso. O modal continua ABERTO de propósito: a saída que o recado
+             aponta ("Concluir e gerar pedidos") é o botão ao lado deste. */
+          var jaTemS = self._cotPedidosGerados(c && c.id);
+          if (jaTemS.length) { UI.toast(self._cotMsgSalvarComPedidos(jaTemS), "erro"); return; }
           var cot = self._cotDoForm(c);
           var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : [];
           if (erros.length) { UI.toast(erros[0], "erro"); return; }
@@ -18976,6 +19388,28 @@ renderRequisicoes: function () {
         } },
         { texto: "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " Concluir e gerar pedidos", classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
+          /* mesma porta do Salvar: as duas gravam o registro, e as duas
+             precisam concordar com o que o outro aparelho já fez */
+          if (self._cotConcluidaViva(c && c.id)) { UI.toast(self._cotMsgConcluida(c && c.id, true), "erro"); return; }
+          /* ⚠ AS GUARDAS DECIDEM ANTES; O SAVE EXECUTA (skill `dinheiro`,
+             regra 4). Este `Store.salvar` acontecia antes de a segunda porta
+             ("o módulo Compras já tem pedido desta cotação?") ser consultada
+             lá no modal seguinte — então numa cotação que JÁ tem pedidos, mas
+             cujo `status` o merge desfez para "rascunho", cada tentativa
+             recusada ainda regravava o registro com `atualizadoEm` novo. Essa
+             versão "rascunho" passava a vencer o merge em toda a frota, por
+             cima de um "concluida" legítimo. Dinheiro não se movia (a guarda
+             do clique segura), mas a cotação virava zumbi "Em cotação". */
+          var jaTem0 = self._cotPedidosGerados(c && c.id);
+          if (jaTem0.length) {
+            /* ⚠ ESTA É A PRIMEIRA PORTA QUE A RETENTATIVA ENCONTRA — o único
+               caminho para concluir passa por aqui, então recusar aqui é
+               trancar a saída que o recado da gravação recusada promete.
+               `_cotTerminarConclusao` separa duplicata de retentativa; só o
+               que ele não trata é que continua sendo recusa. */
+            if (self._cotTerminarConclusao(c && c.id, jaTem0, true)) return;
+            UI.toast(self._cotMsgPedidosJaGerados(jaTem0, c && c.id), "erro"); UI.fecharModal(); App.render(); return;
+          }
           var cot = self._cotDoForm(c);
           var erros = (typeof Cotacoes !== "undefined") ? Cotacoes.validar(cot) : ["Motor de cotações não carregado."];
           if (erros.length) { UI.toast(erros[0], "erro"); return; }
@@ -18985,10 +19419,24 @@ renderRequisicoes: function () {
       ];
       UI.modal((ehNova ? "Nova cotação" : "Cotação " + Util.esc(c.numero || "")) + (ehConcluida ? " (concluída — somente leitura)" : " — Mapa de Cotação"), corpo, botoes);
       var wire = function () {
-        var atualiza = function () { var el = document.getElementById("ct-decisao"); if (el) el.innerHTML = self._cotPainelDecisao(ehConcluida ? c : self._cotDoForm(c)); };
+        /* `true` = só a grade: este recalcula a cada tecla e não precisa do
+           registro vivo — ver `soGrade` em _cotDoForm (custo por tecla) */
+        var atualiza = function () { var el = document.getElementById("ct-decisao"); if (el) el.innerHTML = self._cotPainelDecisao(ehConcluida ? c : self._cotDoForm(c, true)); };
         var box = document.getElementById("ct-linhas"); if (!box) return;
         var raiz = box.closest(".modal") || document;
+        /* bloco "Cotar online" (#ct-online) — só em cotação aberta */
+        if (!ehConcluida && typeof CotOnlineUI !== "undefined" && CotOnlineUI.wireForm) { try { CotOnlineUI.wireForm(c, raiz); } catch (eCo) { console.warn("cotonline", eCo); } }
         if (ehConcluida) { Array.prototype.forEach.call(raiz.querySelectorAll("input,select"), function (el2) { el2.disabled = true; }); atualiza(); return; }
+        if (ehTravada) {
+          /* somente leitura pelo DOM, como a concluída faz: `v()`/`_cotDoForm`
+             leem `.value` de input disabled normalmente, então o salvar
+             continua enxergando os itens travados */
+          Array.prototype.forEach.call(box.querySelectorAll("[data-ct-item] [data-cti]"), function (el3) { el3.disabled = true; });
+          travados.forEach(function (fi) {
+            var s0 = document.getElementById("ctf-id-" + fi), n0 = document.getElementById("ctf-nome-" + fi);
+            if (s0) s0.disabled = true; if (n0) n0.disabled = true;
+          });
+        }
         raiz.addEventListener("input", function (ev) { if (ev.target && (ev.target.hasAttribute("data-ct-preco") || ev.target.hasAttribute("data-cti") || /^ctf-/.test(ev.target.id || ""))) atualiza(); });
         var add = document.getElementById("ct-add-item");
         if (add) add.onclick = function () {
@@ -19003,6 +19451,7 @@ renderRequisicoes: function () {
           var tds = "";
           for (var f4 = 0; f4 < nF; f4++) tds += '<td><input data-ct-preco="' + f4 + '" data-ct-preco-item="' + i + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
           var tr = document.createElement("tr"); tr.setAttribute("data-ct-item", i);
+          tr.setAttribute("data-ct-iid", Util.uid("cti")); // id estável do item (cotação online — ver _cotDoForm)
           tr.innerHTML = '<td><input data-cti="cod" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" placeholder="descrição"></td><td><input data-cti="un" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref"></td>' + tds;
           tr.innerHTML += '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>';
           box.appendChild(tr);
@@ -19071,26 +19520,148 @@ renderRequisicoes: function () {
     },
     concluirCotacao: function (cot) {
       var self = this;
-      if (cot && cot.status === "concluida") { UI.toast("Esta cotação já foi concluída — os pedidos já foram gerados.", "erro"); return; }
+      /* ⚠ QUARTA PORTA DA MESMA GUARDA — E ELA TEM DE CONTAR A MESMA HISTÓRIA.
+         Este toast afirmava "os pedidos já foram gerados" só porque o campo
+         `status` dizia "concluida". Registro que chegou concluído pelo merge
+         da nuvem (ou de uma versão antiga) sem NENHUMA compra carimbada
+         mandava a pessoa procurar em Compras um pedido que não está naquela
+         máquina — e as outras três portas (Salvar, Concluir e o clique em
+         "Gerar pedidos") já perguntavam ao módulo Compras pelo
+         `_cotMsgConcluida`. Duas portas do mesmo arquivo dizendo coisas
+         diferentes sobre o mesmo fato ensinam que a regra é aleatória: meia
+         correção em dinheiro é pior que nenhuma (skill `dinheiro`, regra 3).
+         Sem `perdeuDigitado`: quem chega aqui pelo formulário já teve a grade
+         gravada uma linha antes (nada do que foi digitado se perde). */
+      if (cot && cot.status === "concluida") { UI.toast(self._cotMsgConcluida(cot && cot.id), "erro"); return; }
       var d = Cotacoes.decisao(cot);
       if (d.vencedorUnico == null && !d.mistoCompleto) { UI.toast("Nenhum cenário fecha a compra — preencha os preços (todo item precisa de ao menos 1 preço).", "erro"); return; }
       var opcoes = "";
       if (d.mistoCompleto) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="misto" checked style="width:auto"> <span><b>Misto</b> — cada item do mais barato: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' <span style="color:var(--verde);font-weight:700">(economiza ' + Util.fmtMoeda(d.economiaMisto) + ")</span>" : "") + "</span></label>";
       if (d.vencedorUnico != null) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="unico"' + (d.mistoCompleto ? "" : " checked") + ' style="width:auto"> <span><b>Fornecedor único</b> — ' + Util.esc(d.totais[d.vencedorUnico].nome) + " entrega tudo: <b>" + Util.fmtMoeda(d.totalUnico) + "</b> (menos entregas pra receber)</span></label>";
-      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor <b>aguardando aprovação</b> (quem aprova é outra pessoa, em Compras), marca a requisição como comprada e conclui a cotação.</p>', [
+      /* ⚠ O AVISO PRECISA COBRIR O QUE A AÇÃO FAZ. Quem encerra aqui é
+         `CotOnlineUI.encerrarSilencioso`, cuja única condição é "existe
+         publicação sem `encerradaEm`" — e ele NÃO puxa antes de encerrar.
+         Com o aviso só em `onlineAtiva`, a publicação VENCIDA e não encerrada
+         (que ainda tem respostas puxáveis no servidor por 30 dias, e é o
+         estado mais comum: ninguém encerra quando o prazo passa) caía no
+         ramo calado: a proposta que o fornecedor mandou na última tarde da
+         validade era descartada sem ninguém ver, e o pedido de compra saía
+         com o preço velho, possivelmente do fornecedor errado. */
+      var pubViva = typeof Cotacoes !== "undefined" && ((Cotacoes.onlineAtiva && Cotacoes.onlineAtiva(cot)) || (Cotacoes.onlineVencida && Cotacoes.onlineVencida(cot)));
+      var vencida = pubViva && typeof Cotacoes !== "undefined" && Cotacoes.onlineVencida && Cotacoes.onlineVencida(cot);
+      var avisoOnline = pubViva ? '<p style="font-size:12px;margin-top:6px;color:#92400e"><b>A cotação online será encerrada.</b> Respostas ainda não puxadas NÃO entram — puxe antes, se quiser.' + (vencida ? ' A publicação venceu, mas o que o fornecedor enviou até o vencimento ainda pode ser puxado; encerrar aqui fecha essa porta.' : '') + '</p>' : "";
+      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor <b>aguardando aprovação</b> (quem aprova é outra pessoa, em Compras), marca a requisição como comprada e conclui a cotação.</p>' + avisoOnline, [
         { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.formCotacao(cot); } },
         { texto: "Gerar pedidos", classe: "primary", onClick: function () {
+          /* ⚠ ÚLTIMA PORTA ANTES DE EMITIR PEDIDO DE COMPRA — as duas perguntas,
+             nesta ordem. A primeira ("o registro vivo já está concluído?") pega
+             o caso comum; a segunda ("o módulo Compras já tem pedido desta
+             cotação?") pega o caso que a primeira NÃO pega, porque `status` é
+             campo editável que o merge da nuvem desfaz. Foi assim que a mesma
+             cotação virou dois pedidos de compra do mesmo material. */
+          if (self._cotConcluidaViva(cot && cot.id)) {
+            UI.toast(self._cotMsgConcluida(cot && cot.id), "erro");
+            UI.fecharModal(); App.render(); return;
+          }
+          var jaTem = self._cotPedidosGerados(cot && cot.id);
+          if (jaTem.length) {
+            /* ⚠ pedido já existe NÃO quer dizer duplicata: quando o registro
+               vivo não está concluído, este clique é a retentativa depois de
+               o disco ter recusado a conclusão — nada é emitido de novo, a
+               conclusão é terminada. Ver `_cotTerminarConclusao`. */
+            if (self._cotTerminarConclusao(cot && cot.id, jaTem)) return;
+            /* fecha e atualiza como a guarda irmã: a saída que a mensagem
+               aponta (excluir em Compras) exige sair deste modal, e a lista
+               atrás ainda pode estar mostrando a cotação como aberta */
+            UI.toast(self._cotMsgPedidosJaGerados(jaTem, cot && cot.id), "erro");
+            UI.fecharModal(); App.render(); return;
+          }
           var modo = (document.querySelector("input[name=ct-modo]:checked") || {}).value || (d.mistoCompleto ? "misto" : "unico");
           var peds = Cotacoes.pedidos(cot, modo);
           if (!peds.length) { UI.toast("Cenário sem pedidos — confira os preços.", "erro"); return; }
+          /* ⚠ O RETORNO DO `Store.salvar` É A RESPOSTA DO DISCO, NÃO ENFEITE.
+             js/store.js devolve `null` quando o localStorage recusa a gravação
+             — cota estourada é o caso comum numa base com anos de obra, e é
+             justo aí que a pessoa mais precisa do pedido. Este laço descartava
+             o retorno: os pedidos NÃO entravam, a cotação era marcada
+             "concluida" do mesmo jeito e o toast afirmava "N pedido(s) de
+             compra criado(s)" — a tela dizendo que existe dinheiro que não
+             existe, que é o pior recado possível (o comprador vai cobrar
+             entrega de um pedido que nenhum aprovador vai encontrar).
+             E o que sobrava era trava SEM PORTA: com a cotação "concluida" no
+             disco, toda nova tentativa caía nas guardas de cima culpando um
+             outro aparelho ("talvez em outro aparelho") que nunca existiu, e a
+             saída que o recado apontava era excluir em Compras pedidos que
+             nunca chegaram lá.
+             Agora cada gravação é conferida. Falhou alguma → os que entraram
+             são desfeitos (ninguém os viu: nasceram neste clique) e a cotação
+             NÃO é concluída, para o próximo clique encontrar exatamente o
+             estado de antes e não duplicar nada. O carimbo que sustenta isso é
+             o `cotacaoId` (regra 1 da skill `dinheiro`), lido pelo
+             `_cotPedidosGerados` — que é também quem confere NO DISCO se o
+             desfazer funcionou: `Store.excluir` não devolve resultado, e
+             prometer um desfazer que não aconteceu seria a mesma mentira. */
+          var gravados = [], naoEntraram = 0;
           peds.forEach(function (p, k) {
-            var pc = "PC-" + new Date().getFullYear() + "-" + ("" + (new Date().getTime() + k)).slice(-4);
+            /* ⚠ SEQUENCIAL, como todo documento da casa. O número saía dos 4
+               últimos dígitos do epoch em ms (`getTime().slice(-4)`), que dá
+               a volta a cada 10 segundos: dois pedidos separados por qualquer
+               múltiplo de 10 s nasciam com o MESMO número, e todo pedido
+               emitido num segundo redondo virava PC-<ano>-0000. Isso encosta
+               na trava acima, que manda a pessoa CONFERIR o pedido pelo
+               número — com número repetido, a conferência aponta para o
+               pedido errado. `proxNumero` lê o maior gravado a cada volta do
+               laço, e o `Store.salvar` de baixo já entrou quando a próxima
+               volta pergunta. */
+            var pc = proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
             /* a autoria vai junto: sem ela quem gerou o pedido aprova o proprio
                pedido, e o texto do modal promete que "quem aprova e outra
                pessoa". O carimbo so acontecia no formulario. */
-            Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null, formaPgto: p.condPgto || "", obs: (p.prazoDias != null && p.prazoDias > 0 ? "Prazo de entrega: " + p.prazoDias + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
+            var rec = Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null, formaPgto: p.condPgto || "", obs: (p.prazoDias != null && p.prazoDias > 0 ? "Prazo de entrega: " + p.prazoDias + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
+            if (rec) gravados.push(rec); else naoEntraram++;
           });
-          cot.status = "concluida"; cot.cenario = modo; Store.salvar(eid(), "cotacoes", cot);
+          if (naoEntraram) {
+            gravados.forEach(function (r) { Store.excluir(eid(), "compras", r.id); });
+            /* o que sobrou é MEDIDO no disco, não deduzido: a guarda logo
+               acima garantiu que esta cotação não tinha pedido nenhum antes
+               deste clique, então tudo que aparecer aqui nasceu agora */
+            var sobrou = self._cotPedidosGerados(cot && cot.id);
+            var quanto = naoEntraram + " de " + peds.length + " pedido(s) de compra";
+            if (sobrou.length) {
+              /* o desfazer também não passou: aqui o recado NÃO promete
+                 limpeza nenhuma — diz os números que ficaram e manda conferir,
+                 porque a próxima tentativa vai esbarrar neles */
+              UI.toast("Não consegui gravar " + quanto + " e também não consegui desfazer o que já tinha entrado: " + sobrou.map(function (x) { return x.numero || x.id; }).join(", ") + ". A cotação continua ABERTA e nada foi confirmado — confira esses números em Compras antes de concluir de novo.", "erro");
+              UI.fecharModal(); App.render(); return;
+            }
+            /* modal aberto de propósito: a saída é liberar espaço e clicar de
+               novo, e o botão precisa estar debaixo do dedo da pessoa */
+            UI.toast("Não consegui gravar " + quanto + ": o armazenamento do navegador recusou (normalmente falta de espaço). Nada foi emitido e a cotação continua aberta — libere espaço e clique em Gerar pedidos de novo.", "erro");
+            return;
+          }
+          cot.status = "concluida"; cot.cenario = modo;
+          /* encerra a publicação online ANTES de salvar: o `encerradaEm` local
+             vai no mesmo registro (links param no servidor, best-effort) */
+          if (typeof CotOnlineUI !== "undefined" && CotOnlineUI.encerrarSilencioso) CotOnlineUI.encerrarSilencioso(cot);
+          Store.salvar(eid(), "cotacoes", cot);
+          /* ⚠ MESMA RÉGUA DO LAÇO, MEDIDA NO DISCO. Os pedidos já estão
+             gravados, então aqui não se desfaz nada — mas o recado não pode
+             dizer "concluída" se a conclusão não entrou. A pergunta é feita ao
+             disco (e não ao retorno do `salvar`) porque a linha acima tem de
+             continuar sendo exatamente `Store.salvar(eid(), "cotacoes", cot);`
+             logo depois do `encerrarSilencioso`: a ORDEM das duas é o que
+             garante que o `encerradaEm` local viaje no mesmo registro, e há
+             teste de fiação que confere essa vizinhança no fonte.
+             Se a conclusão não entrou, a cotação volta a aparecer aberta — e
+             quem impede o pedido em dobro na próxima tentativa é o carimbo
+             `cotacaoId` lido em Compras, não este campo. */
+          var nums = gravados.map(function (r) { return r.numero || r.id; }).join(", ");
+          var conferido = Store.obter(eid(), "cotacoes", cot.id);
+          if (!conferido || conferido.status !== "concluida") {
+            UI.fecharModal(); App.render();
+            UI.toast(gravados.length + " pedido(s) de compra criado(s) (" + nums + "), mas não consegui gravar a conclusão da cotação: o armazenamento recusou. Ela vai continuar aparecendo como aberta até você concluir de novo — os pedidos não saem em dobro, a guarda lê o número deles em Compras.", "erro");
+            return;
+          }
           if (cot.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId); if (rq && (rq.status === "cotando" || rq.status === "aprovada")) { rq.status = "comprada"; Store.salvar(eid(), "requisicoes", rq); } }
           UI.fecharModal(); App.render(); UI.toast(peds.length + " pedido(s) de compra criado(s) a partir da cotação.", "ok");
         } }
@@ -19104,6 +19675,9 @@ renderRequisicoes: function () {
           // destrava a requisição presa em 'cotando' (senão ela fica sem saída pra sempre)
           var c0 = Store.obter(eid(), "cotacoes", id);
           if (c0 && c0.requisicaoId && c0.status !== "concluida") { var rq0 = Store.obter(eid(), "requisicoes", c0.requisicaoId); if (rq0 && rq0.status === "cotando") { rq0.status = "aprovada"; Store.salvar(eid(), "requisicoes", rq0); } }
+          /* publicação online: os links no servidor não podem sobreviver à
+             cotação que os gerou (fornecedor responderia para ninguém) */
+          if (c0 && typeof CotOnlineUI !== "undefined" && CotOnlineUI.encerrarSilencioso) CotOnlineUI.encerrarSilencioso(c0);
           Store.excluir(eid(), "cotacoes", id); UI.fecharModal(); App.render(); UI.toast("Cotação excluída.", "ok");
         } }
       ]);
