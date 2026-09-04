@@ -774,14 +774,33 @@
       } catch (e) {}
       var acoes = Aprovacao.acoesDisponiveis(orc, eu, ctx) || [];
       if (!acoes.length) return "";
-      var classe = { aprovar: "success", rejeitar: "danger", revisar: "", enviar: "primary", reabrir: "ghost" };
+      /* ⚠ O VERDE SAIU DAQUI, E NAO FOI ENFEITE. Estes botoes dividem a
+       *   segunda linha da barra do editor com "Gerar Proposta", que e
+       *   `.btn.success` — verde. Com "Aprovar" tambem verde, a linha tinha
+       *   DOIS botoes gritando a mesma cor para duas coisas diferentes: um e
+       *   o aval interno sobre o preco, o outro entrega o documento ao
+       *   cliente. Cor repetida nao hierarquiza, confunde.
+       *   O destaque desta familia passou a ser PESO (`acao-forte`), e so o
+       *   primeiro da fila o recebe. "Rejeitar" fica em `danger` porque e
+       *   destrutivo — vermelho aqui e aviso, nao hierarquia.
+       *
+       * ⚠ A ORDEM DE `acoes` VEM DE `for..in` sobre TRANSICOES: e ordem de
+       *   insercao do objeto, nao prioridade. Por isso o forte e escolhido
+       *   por uma preferencia EXPLICITA e nao por `acoes[0]` — trocar a ordem
+       *   das chaves no motor nao pode mudar qual botao a tela destaca. */
+      var classe = { aprovar: "", rejeitar: "danger", revisar: "", enviar: "", reabrir: "" };
+      var PREF_FORTE = ["aprovar", "enviar", "reabrir", "revisar", "rejeitar"];
+      var forte = "";
+      for (var iF = 0; iF < PREF_FORTE.length; iF++) {
+        if (acoes.indexOf(PREF_FORTE[iF]) >= 0) { forte = PREF_FORTE[iF]; break; }
+      }
       var est = Aprovacao.estadoDe(orc), info = Aprovacao.ESTADOS[est] || {};
       var CORES = { cinza: "#64748b", ambar: "#ea580c", verde: "#16a34a", vermelho: "#dc2626" };
       var cor = CORES[info.cor] || "#64748b";
       return '<span class="g-pill" style="background:' + cor + '22;color:' + cor + ';font-weight:700;margin-right:6px">' +
         Util.esc(info.rotulo || est) + '</span>' +
         acoes.map(function (a) {
-          return '<button class="btn sm ' + (classe[a] || "") + '" data-acao="orc-aprov" data-aprov="' + Util.esc(a) + '">' +
+          return '<button class="btn sm ' + (classe[a] || "") + (a === forte ? " acao-forte" : "") + '" data-acao="orc-aprov" data-aprov="' + Util.esc(a) + '">' +
             Util.esc((Aprovacao.ROTULO_ACAO && Aprovacao.ROTULO_ACAO[a]) || a) + '</button> ';
         }).join("");
     },

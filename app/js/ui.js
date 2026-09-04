@@ -835,31 +835,76 @@
     },
 
     // ---------- Tela: Editor de orçamento ----------
+    /* =====================================================================
+     * A BARRA DO EDITOR EM DUAS LINHAS COM SIGNIFICADO — E NENHUM MENU
+     *
+     * Eram treze botoes do mesmo peso numa fila unica. Com treze pesos iguais
+     * nao existe barra: existe uma lista, e achar "Reimportar" custa o mesmo
+     * que achar "Gerar Proposta". A pessoa nao le a barra, varre.
+     *
+     * A divisao NAO e por frequencia de uso nem por tamanho de tela: e por
+     * PERGUNTA. A primeira linha responde "como esta o orcamento?" (montar,
+     * ajustar, exportar a planilha, conferir); a segunda responde "onde ele
+     * esta com o cliente?" (aprovar, entregar, acompanhar). Sao os dois
+     * assuntos que de fato existem nesta tela, e cada botao pertence a um
+     * deles sem ambiguidade.
+     *
+     * ⚠ NADA FOI ESCONDIDO. Nenhum menu "…", nenhum botao a menos: os treze
+     *   continuam clicaveis com UM clique e no mesmo lugar em todo orcamento.
+     *   Esconder um botao de uso diario atras de um menu troca a varredura por
+     *   um clique extra TODA vez, e faz o endereco do botao depender do estado
+     *   da tela. Quem trabalha na obra decora posicao; posicao que muda e pior
+     *   que fila comprida. O que muda aqui e so o PESO e a VIZINHANCA.
+     *
+     * ⚠ O SEPARADOR E DECORATIVO (`.acoes-sep`, sem texto). Grupo se le pela
+     *   proximidade; o traco so confirma. Em tela estreita ele some e os
+     *   grupos continuam de pe pela quebra de linha — por isso `.acoes-grp`
+     *   nao quebra por dentro: quem quebra e a LINHA, entre grupos.
+     * ===================================================================== */
     renderEditor: function (orc, abaAtiva) {
       var t = Orcamento.totais(orc);
-      var html = '<div class="flex between mb">' +
+      var _grp = function (dentro) { return dentro ? ('<div class="acoes-grp">' + dentro + '</div>') : ''; };
+      /* Escopo Inteligente e o unico caminho para o orcamento VAZIO — ali ele e
+         o primario da tela. Com itens dentro, virar item a item ja e o normal e
+         ele desce a secundario: destaque permanente em botao que ja cumpriu o
+         papel e ruido. `t.qtdItens` (do motor) e nao `orc.itens` — os itens
+         moram em orc.etapas[].itens[], a lista de primeiro nivel nao existe. */
+      var _bEscopo = '<button class="btn sm' + (t.qtdItens ? '' : ' primary') + '" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>';
+      var _aprov = (typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "";
+      var _comercial = (typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "";
+      var _sep = '<span class="acoes-sep" aria-hidden="true"></span>';
+
+      var html = '<div class="flex between tela-titulo">' +
         '<div><button class="btn ghost sm" data-acao="voltar">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Voltar</button> ' +
         '<span style="font-size:20px;font-weight:800;margin-left:8px">' + Util.esc(orc.nome) + '</span> ' +
         '<span class="muted">' + Util.esc(orc.numero) + '</span></div>' +
-        '<div class="flex">' +
-          '<button class="btn sm primary" data-acao="escopo">' + Icones.get("escopo") + 'Escopo Inteligente</button>' +
-          '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>' +
-          /* FASE 4 — o ciclo de aprovação começa ANTES da proposta: é o preço
-             conferido que vai ao cliente, não o contrário. Por isso a pílula
-             e as ações abrem a barra. Sai vazio quando o motor não autoriza
-             nada para esta pessoa — a tela não inventa botão. */
-          ((typeof App !== "undefined" && App._aprovBotoesOrc) ? App._aprovBotoesOrc(orc) : "") +
-          '<button class="btn sm success" data-acao="proposta">' + Icones.get("proposta") + 'Gerar Proposta</button>' +
+        '</div>';
+
+      html += '<div class="barra-acoes mb">' +
+        /* LINHA 1 — O ORCAMENTO: montar → ajustar → planilha → conferir */
+        '<div class="acoes-linha" aria-label="O orcamento">' +
+          _grp(_bEscopo) + _sep +
+          _grp('<button class="btn sm" data-acao="config-orc">' + Icones.get("dados") + 'Dados</button>' +
+               '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">' + Icones.get("parametros") + 'Parâmetros</button>') + _sep +
+          _grp('<button class="btn sm" data-acao="exportar-excel">' + Icones.get("excel") + 'Excel (3 abas)</button>' +
+               '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>') + _sep +
+          _grp('<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
+               '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>') +
+        '</div>' +
+        /* LINHA 2 — O CLIENTE: aprovar → entregar → acompanhar.
+           FASE 4 — o ciclo de aprovacao vem ANTES da proposta: e o preco
+           conferido que vai ao cliente, nao o contrario. Sai vazio quando o
+           motor nao autoriza nada para esta pessoa — a tela nao inventa botao,
+           e por isso o separador so aparece quando o grupo aparece. */
+        '<div class="acoes-linha" aria-label="O cliente">' +
+          (_aprov ? (_grp(_aprov) + _sep) : '') +
+          _grp('<button class="btn sm success" data-acao="proposta">' + Icones.get("proposta") + 'Gerar Proposta</button>') +
           /* depois de gerar vem o que aconteceu com ela: enviada, aceita, recusada */
-          ((typeof App !== "undefined" && App._propComercialBotoes) ? App._propComercialBotoes(orc) : "") +
-          '<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
-          '<button class="btn sm" data-acao="laudo">' + Icones.get("laudo") + 'Anexo p/ Laudo</button>' +
-          '<button class="btn sm" data-acao="config-orc">' + Icones.get("dados") + 'Dados</button>' +
-          '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">' + Icones.get("parametros") + 'Parâmetros</button>' +
-          '<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
-          '<button class="btn sm" data-acao="exportar-excel">' + Icones.get("excel") + 'Excel (3 abas)</button>' +
-          '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>' +
-        '</div></div>';
+          (_comercial ? (_sep + _grp(_comercial)) : '') + _sep +
+          _grp('<button class="btn sm" data-acao="apresentar" title="Modo apresentação: tela cheia pra reunião com o cliente (setas navegam, Esc sai)">' + Icones.get("apresentar") + 'Apresentar</button>' +
+               '<button class="btn sm" data-acao="laudo">' + Icones.get("laudo") + 'Anexo p/ Laudo</button>') +
+        '</div>' +
+      '</div>';
 
       // KPIs
       html += '<div class="kpis">' +

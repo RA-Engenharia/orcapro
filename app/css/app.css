@@ -1913,6 +1913,61 @@ input.coef-edit.mexido { border-color: var(--amarelo); background: rgba(170, 98,
 .tela-acoes .btn.primary { font-weight: var(--p-forte); }
 
 /* =====================================================================
+ * A BARRA DO EDITOR DE ORCAMENTO — DUAS LINHAS, GRUPOS POR PROXIMIDADE
+ *
+ * Mesmo principio do `.tela-acoes` acima (um forte, o resto discreto), so
+ * que aplicado a uma barra de treze botoes que nao cabe em uma frase. O que
+ * carrega o significado e a PROXIMIDADE: 6px dentro do grupo, 10px entre
+ * grupos, 8px entre as duas linhas. O `.acoes-sep` so confirma o que o
+ * espaco ja disse.
+ *
+ * ⚠ NAO USA `.btn.ghost` PARA O SECUNDARIO. Neste app `ghost` ja significa
+ *   voltar/desfazer (ver `.btn.ghost` la em cima e o botao Voltar no topo
+ *   desta mesma tela). Pintar "Parametros" de ghost daria a nove botoes de
+ *   acao a roupa de um botao de saida. O secundario aqui e uma superficie
+ *   propria, sem sombra, com o rotulo em `--texto-fraco`.
+ *
+ * ⚠ `!important` na margem: as 37 telas carregam `margin-right` INLINE nos
+ *   botoes, e `_aprovBotoesOrc` monta a pilula com `margin-right:6px` inline.
+ *   Com o `gap` fazendo o espacamento, a margem antiga soma e abre um vao que
+ *   quebra justamente a leitura de grupo. Mesma decisao do `.tela-acoes`.
+ * ===================================================================== */
+.tela-titulo { margin-bottom: 12px; }
+.barra-acoes { display: flex; flex-direction: column; gap: 8px; }
+.acoes-linha { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+/* o grupo NAO quebra por dentro: quem quebra e a linha, entre grupos */
+.acoes-grp { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; }
+.acoes-grp > * { margin-right: 0 !important; align-self: center !important; }
+.acoes-sep { width: 1px; align-self: stretch; min-height: 18px; background: var(--linha); flex: 0 0 auto; }
+.barra-acoes .btn:not(.primary):not(.success):not(.danger):not(.acao-forte) {
+  background: var(--surface);
+  border-color: var(--linha);
+  color: var(--texto-fraco);
+  box-shadow: none;
+  font-weight: var(--p-medio);
+}
+.barra-acoes .btn:not(.primary):not(.success):not(.danger):not(.acao-forte):hover {
+  color: var(--texto);
+  border-color: var(--linha-forte);
+  box-shadow: var(--sombra-sm);
+}
+/* o forte de cada linha: um so, e sem cor propria — a cor ja esta ocupada
+   por "Gerar Proposta" (verde) na mesma linha. Aqui o destaque e PESO. */
+.barra-acoes .btn.acao-forte {
+  color: var(--texto);
+  border-color: var(--linha-forte);
+  font-weight: var(--p-forte);
+  box-shadow: var(--sombra-sm);
+}
+.barra-acoes .btn.primary, .barra-acoes .btn.success { font-weight: var(--p-forte); }
+/* no celular o traco sai e sobra a quebra de linha; o grupo passa a poder
+   quebrar por dentro para nenhum botao vazar da tela. */
+@media (max-width: 640px) {
+  .acoes-sep { display: none; }
+  .acoes-grp { flex-wrap: wrap; }
+}
+
+/* =====================================================================
  * GRAFICOS — MARCAS FINAS, MOLDURA RECUADA, LEITURA NO HOVER
  *
  * A regra que organiza tudo aqui: a moldura (grade, eixo, rotulo) NAO pode
