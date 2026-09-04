@@ -1029,7 +1029,14 @@
          Botão só quando há índice para mostrar (>= 5 etapas, ver _indiceEtapas). */
       var _idxOn = (typeof App !== "undefined") ? !!App._idxAberto : false;
       var _temIdx = orc.etapas.length >= 5;
+      /* MODO COMPACTO: linha mais baixa e fonte menor, para caber mais item na
+         tela em obra grande. É preferência de TELA (não do orçamento), então
+         mora no localStorage e vale para qualquer planilha que o usuário abrir. */
+      var _cmpOn = (typeof App !== "undefined") ? !!App._plCompacta : false;
       var html = '<div class="flex between mb"><div></div><div style="display:flex;gap:6px">' +
+        '<button class="btn sm ghost' + (_cmpOn ? ' primary' : '') + '" data-acao="pl-compacta" title="' +
+          (_cmpOn ? 'Voltar ao tamanho normal das linhas' : 'Modo compacto: linhas mais baixas, cabe mais item na tela') + '">' +
+          (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + (_cmpOn ? ' Normal' : ' Compacto') + '</button>' +
         (_temIdx ? '<button class="btn sm ghost' + (_idxOn ? ' primary' : '') + '" data-acao="idx-toggle" title="Mostrar/ocultar o índice de etapas na lateral (some para dar mais largura à planilha)">' +
           (typeof Icones !== 'undefined' ? Icones.get('lista', 15) : '') + ' Etapas</button>' : "") +
         (orc.etapas.length > 1 ? '<button class="btn sm ghost" data-acao="etapas-recolher-todas" title="Orçamento grande: recolha as etapas para enxergar o todo">' +
@@ -1060,7 +1067,7 @@
           + ' <span class="muted">— os totais acima continuam sendo do orçamento inteiro</span>'
           + ' <button class="btn sm ghost" data-etapa-foco="">Ver todas</button></div>';
       }
-      html += '<table class="tbl tbl-plan"><thead><tr>' +
+      html += '<table class="tbl tbl-plan' + (_cmpOn ? ' tbl-compacta' : '') + '"><thead><tr>' +
         '<th>Item</th><th>Código</th><th>Descrição</th><th>Unid</th>' +
         '<th class="num">Qtd</th><th class="num">Custo Unit</th><th class="num">Custo Total</th>' +
         '<th class="num">Preço Venda</th><th></th></tr></thead><tbody>';
@@ -1173,7 +1180,9 @@
                lançado só com a mão de obra soma ~40% do preço de tabela — sem
                a etiqueta, a planilha entregue não explica a diferença e quem
                confere pensa em erro de preço. */
-            '<td>' + Util.esc(it.descricao) +
+            /* title com a descrição inteira: no modo compacto a célula corta em
+               2 linhas, e sem isto o resto do texto ficaria inalcançável */
+            '<td title="' + Util.esc(it.descricao) + '">' + Util.esc(it.descricao) +
               (it.modoCusto && it.modoCusto !== "total" && Orcamento.MODOS_CUSTO[it.modoCusto]
                 ? ' <span class="g-pill" style="background:#2e6f9e22;color:#2e6f9e;font-weight:700;font-size:10px" title="' +
                   Util.esc(Orcamento.MODOS_CUSTO[it.modoCusto].ajuda) + '">' +
