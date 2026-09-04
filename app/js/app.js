@@ -1269,18 +1269,44 @@
         var pinta = function (msg, ok) { var el = stEl(); if (el) { el.textContent = msg; el.style.color = ok ? "var(--verde)" : ""; } if (msg.indexOf("…") < 0) btnAtu.disabled = false; };
         pinta("Consultando o servidor…");
         if (fonteAtu === "SINAPI") {
+          /* ⚠ O BOTÃO PERGUNTA ÀS MESMAS FONTES QUE A VARREDURA DIÁRIA, na
+           *   mesma ordem (servidor → espelho). Enquanto ele só sabia
+           *   perguntar ao VPS, respondia "sem atualização, você já está na
+           *   mais recente" na mesma janela em que a varredura da madrugada
+           *   já teria trazido a competência nova pelo espelho — duas
+           *   respostas diferentes para a mesma pergunta, e a errada era a
+           *   que a pessoa via ao clicar. */
+          var _fimSinapi = function (r, fonte) {
+            UI.toast("SINAPI atualizada" + (fonte ? " pelo " + fonte : "") + ": competência " + Atualizacao.fmtComp(r.de) + " → " + Atualizacao.fmtComp(r.para) + " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
+            selfA.abrirTabelas(); // re-abre com a competência nova na tela
+          };
           Atualizacao.atualizarSinapi(function (r) {
-            if (!r.ok) { pinta("⚠ " + r.erro); UI.toast(r.erro, "erro"); return; }
-            if (r.basePropria) {
+            if (r.ok && r.basePropria) {
               pinta("Você usa uma base PRÓPRIA importada (competência " + Atualizacao.fmtComp(r.de) + ") — a atualização oficial não mexe nela. Para voltar à SINAPI oficial, remova a base própria em " + (typeof Icones !== "undefined" ? Icones.get("importar", 15) : "") + " Importar.", true);
               return;
             }
-            if (r.atualizou) {
-              UI.toast("SINAPI atualizada: competência " + Atualizacao.fmtComp(r.de) + " → " + Atualizacao.fmtComp(r.para) + " (" + (r.itens || 0).toLocaleString("pt-BR") + " itens).", "ok");
-              selfA.abrirTabelas(); // re-abre com a competência nova na tela
-            } else {
-              pinta("Sem atualização — a mais recente é a competência " + Atualizacao.fmtComp(r.para) + ", no ar desde " + Atualizacao.fmtData(r.publicadoEm) + ". Você já está nela.", true);
-            }
+            if (r.ok && r.atualizou) { _fimSinapi(r, "servidor"); return; }
+            /* servidor sem novidade OU fora do ar → o espelho do app, que é o
+               canal que a RA publica junto com o código */
+            var doServidor = r.ok ? r : null;
+            pinta("Servidor " + (r.ok ? "sem novidade" : "fora do ar") + " — conferindo o espelho do app…");
+            Atualizacao.atualizarPeloEspelho(function (e) {
+              if (e.ok && e.atualizou) { _fimSinapi(e, "espelho do app"); return; }
+              var atraso = Atualizacao.mesesAtras(Sinapi.competencia);
+              var rabo = (atraso != null && atraso >= 2)
+                ? " ⚠ Ela é de " + atraso + " meses atrás e a SINAPI sai todo mês: a coleta parou em algum lugar, não é você que está em dia."
+                : "";
+              if (e.ok && e.semUf) {
+                pinta("O espelho está na competência " + Atualizacao.fmtComp(e.para) + " mas ainda não tem o seu estado. A sua continua a " + Atualizacao.fmtComp(e.de) + "." + rabo);
+                return;
+              }
+              if (!e.ok && !doServidor) { pinta("⚠ " + e.erro); UI.toast(e.erro, "erro"); return; }
+              if (!e.ok) { pinta("⚠ " + e.erro); return; }
+              pinta("Sem atualização — a mais recente que o servidor e o espelho conhecem é a competência "
+                + Atualizacao.fmtComp((doServidor && doServidor.para) || e.para)
+                + ((doServidor && doServidor.publicadoEm) ? ", no ar desde " + Atualizacao.fmtData(doServidor.publicadoEm) : "")
+                + ". Você já está nela." + rabo, !rabo);
+            });
           });
           return;
         }
@@ -3452,14 +3478,48 @@
     },
 
     // ---------- Atualização do sistema (auto-update: avisa e o cliente baixa, sem perder dados) ----------
+    /* ⚠ DUAS FONTES, VALE A MAIOR — e isso não é excesso de zelo.
+     *   Esta checagem perguntava só ao VPS (`/api/versao`), que é alimentado
+     *   à mão. Ele ficou parado na 1.2.37 enquanto a frota já ia na 1.2.45:
+     *   quem estivesse numa versão anterior à 37 recebia o convite para
+     *   baixar um pacote OITO versões atrasado, com link para um Release
+     *   velho. O manifesto da frota (`CONFIG.manifestoUrl`) é a mesma
+     *   verdade que o servidor local usa para se atualizar sozinho, e é
+     *   publicado junto com o código — não tem como ficar para trás.
+     *
+     *   As duas respostas são comparadas e vence a MAIOR versão; falha de
+     *   uma não derruba a outra (`Promise.all` com catch por fonte). Se as
+     *   duas falharem, fica quieto, como já ficava. */
     checarAtualizacao: function () {
       try {
         if (this._demo) return;
-        var srv = (typeof CONFIG !== "undefined" && CONFIG.licencaServer) ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
-        if (!srv || typeof fetch === "undefined") return;
-        var atual = (CONFIG.versao || "1.0.0"), self = this;
-        fetch(srv + "/api/versao").then(function (r) { return r.json(); }).then(function (d) {
-          if (d && d.versao && self._versaoMaior(d.versao, atual)) self._avisarAtualizacao(d);
+        if (typeof fetch === "undefined" || typeof CONFIG === "undefined") return;
+        var self = this, atual = (CONFIG.versao || "1.0.0");
+        var srv = CONFIG.licencaServer ? String(CONFIG.licencaServer).replace(/\/$/, "") : "";
+        var man = CONFIG.manifestoUrl || "";
+        var pega = function (url, mapear) {
+          if (!url) return Promise.resolve(null);
+          return fetch(url, { cache: "no-store" })
+            .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+            .then(mapear).catch(function () { return null; });
+        };
+        Promise.all([
+          pega(srv ? (srv + "/api/versao") : "", function (d) {
+            return (d && d.versao) ? { versao: d.versao, downloadUrl: d.downloadUrl || "", novidades: d.novidades || "" } : null;
+          }),
+          /* o manifesto da frota fala "versao"/"zip"/"notas" — o mesmo dado,
+             outro vocabulário, porque quem o consome de verdade é o servidor
+             local, não esta tela */
+          pega(man, function (d) {
+            return (d && d.versao) ? { versao: d.versao, downloadUrl: d.instalador || d.zip || "", novidades: d.notas || "" } : null;
+          })
+        ]).then(function (rs) {
+          var melhor = null;
+          rs.forEach(function (d) {
+            if (!d || !d.versao) return;
+            if (!melhor || self._versaoMaior(d.versao, melhor.versao)) melhor = d;
+          });
+          if (melhor && self._versaoMaior(melhor.versao, atual)) self._avisarAtualizacao(melhor);
         }).catch(function () {});
       } catch (e) {}
     },

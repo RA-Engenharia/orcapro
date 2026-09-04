@@ -29,7 +29,15 @@
     // Usado no link de acesso que o admin envia ao usuário (?lic=<chave>&u=<login>).
     appWebUrl: "https://ra-engenharia.github.io/orcapro/app/",
 
-    versao: "1.2.45",
+    /* MANIFESTO DA FROTA — a mesma verdade que o servidor local consulta para
+       se atualizar sozinho (`server/static.js` → MANIFEST_URL). Está aqui
+       porque o app TAMBÉM pergunta "existe versão nova?", e perguntava só ao
+       VPS (`/api/versao`), que é alimentado à mão e ficou 8 versões atrás —
+       oferecendo download de um pacote velho para quem já tinha algo mais
+       novo. Com as duas fontes, vale sempre a MAIOR. */
+    manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
+
+    versao: "1.2.46",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
