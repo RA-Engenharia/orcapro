@@ -283,6 +283,46 @@
        mesma tela em que a varredura já teria trazido a competência nova pelo
        espelho. Duas respostas diferentes para a mesma pergunta, na mesma
        janela. Resolve `{de, para, itens}` ou rejeita com motivo legível. */
+    /* ⚠ O ACERVO DO ESPELHO É SÓ `.gz`, E ISSO QUEBROU O BOTÃO NA MÃO DO
+     *   USUÁRIO. O `_baixarEspelho` pedia `.json` puro e levava 404 em toda
+     *   competência do acervo — "o espelho não entregou a 07/2026 (HTTP
+     *   404)". O `app.js` já tinha aprendido a ler comprimido; aqui não, e
+     *   aqui é justamente o caminho do botão "Verificar atualização" e da
+     *   varredura diária. Comprimido não é opcional: um sintético cru tem
+     *   3,1 MB e cinco competências ×27 UFs não caberiam no repositório.
+     *
+     *   Usa o helper do App quando ele existe (é o mesmo código, um lugar
+     *   só) e tem um caminho próprio para quando não existe — este módulo
+     *   também roda em teste, sem App. */
+    _pegarPacote: function (url) {
+      if (global.App && global.App._fetchBase) return global.App._fetchBase(url);
+      var temDS = (typeof DecompressionStream !== "undefined") && (typeof Response !== "undefined");
+      var puro = function () {
+        return fetch(url, { cache: "no-store" }).then(function (r) {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.json();
+        });
+      };
+      if (!temDS || /\.gz$/.test(url)) return puro();
+      return fetch(url + ".gz", { cache: "no-store" }).then(function (r) {
+        if (!r.ok || !r.body) throw new Error("sem .gz");
+        return new Response(r.body.pipeThrough(new DecompressionStream("gzip"))).json();
+      }).catch(puro);
+    },
+
+    /* o nome do analítico DAQUELA competência — `App._nomeAnalitico` quando
+       há App, senão a mesma regra aqui */
+    _nomeAnaliticoEspelho: function (uf, comp) {
+      try {
+        if (global.App && global.App._nomeAnalitico) {
+          var n = global.App._nomeAnalitico(uf, comp);
+          if (n) return n;
+        }
+      } catch (e) {}
+      var c = this._normComp(comp);
+      return c ? ("sinapi-" + uf + "-" + c + "-analitico.json") : ("sinapi-" + uf + "-analitico.json");
+    },
+
     _baixarEspelho: function (uf, comp) {
       var self = this, b = self.espelhoBase();
       // mesmo token anti-corrida do atualizarSinapi: trocar de estado no meio
@@ -290,10 +330,7 @@
       var reqA = (global.App && global.App._ufReq != null) ? global.App._ufReq : null;
       var ufMudou = function () { return global.App && reqA !== null && global.App._ufReq !== reqA; };
       var local = self._normComp(typeof Sinapi !== "undefined" ? Sinapi.competencia : "");
-      return fetch(b + "/data/sinapi-" + uf + "-" + comp + ".json", { cache: "no-store" }).then(function (r) {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.json();
-      }).then(function (j) {
+      return self._pegarPacote(b + "/data/sinapi-" + uf + "-" + comp + ".json").then(function (j) {
         if (ufMudou()) throw new Error("você trocou de estado durante o download");
         /* mesma régua das outras fontes: só pacote VÁLIDO toca a base viva */
         if (!(j && j.dados && j.dados.length > 0 && String(j.uf || "").toUpperCase() === uf)) throw new Error("pacote do espelho inválido");
@@ -302,13 +339,17 @@
         try { if (typeof Store !== "undefined" && Store.salvarBaseSinapi) Store.salvarBaseSinapi(Auth.empresaId(), j); } catch (eP) {}
         if (global.App) {
           global.App._baseUf = uf;
-          /* ⚠ O ANALÍTICO PASSA A VIR DO ESPELHO TAMBÉM, e por URL ABSOLUTA.
-             Num app instalado, `data/sinapi-<UF>-analitico.json` é a pasta
-             LOCAL — ainda a competência velha. Apontar para o relativo daria
-             preço novo com insumo velho, que é justamente o que o espelho
-             existe para não fazer: no repositório os dois andam no mesmo
-             commit. */
-          global.App._analiticoArquivo = b + "/data/sinapi-" + uf + "-analitico.json";
+          /* ⚠ O ANALÍTICO VEM DO ESPELHO, POR URL ABSOLUTA E COM A
+             COMPETÊNCIA NO NOME. Duas armadilhas de uma vez:
+             · relativo (`data/...`) num app instalado é a pasta LOCAL, que
+               ainda tem a competência velha;
+             · o nome SEM competência (`sinapi-<UF>-analitico.json`) no
+               espelho é o da competência embarcada — atualizar para 07/2026
+               e apontar para ele daria preço de julho com insumo de junho,
+               calado, que é exatamente o que este espelho existe para não
+               fazer. O acervo publica um analítico por competência; é esse
+               que tem de ser pedido. */
+          global.App._analiticoArquivo = b + "/data/" + self._nomeAnaliticoEspelho(uf, comp);
           if (typeof Analitico !== "undefined" && Analitico.reset) Analitico.reset();
         }
         return { de: local, para: comp, itens: (j.count || j.dados.length) };
