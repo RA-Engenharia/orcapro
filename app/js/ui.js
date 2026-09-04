@@ -1111,14 +1111,16 @@
         function linhaItem(it, posNoGrupo, tamGrupo, subId) {
           var ii = _idxDe[it.id];
           var L = _porItem[ei + "|" + ii] || { custoTotal: 0, precoTotal: 0, numero: "" };
-          var fonte = it.baseFonte || (it.origem === "SINAPI" ? "SINAPI" : "PROPRIO");
-          var ehSinapi = it.origem === "SINAPI" && (!it.baseFonte || it.baseFonte === "SINAPI");
+          var fonte = it.baseFonte || (Orcamento.ehSinapi(it.origem) ? "SINAPI" : "PROPRIO");
+          /* SINAPI ou SINAPI desonerada: as duas têm analítico oficial e botão de insumos */
+          var ehSinapi = Orcamento.ehSinapi(it.origem) && (!it.baseFonte || Orcamento.ehSinapi(it.baseFonte));
           // v1.1.123: composição PRÓPRIA criada no app tem estrutura de insumos → detalhável
           var ehPropriaDet = fonte === "PROPRIA" && (typeof Bases !== "undefined") && (function () {
             var bp = Bases.obter("PROPRIA", it.codigo);
             return !!(bp && bp.insumos && bp.insumos.length);
           })();
-          var pillCls = fonte === "SINAPI" ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
+          var pillCls = Orcamento.ehSinapi(fonte) ? "sinapi" : (fonte === "PROPRIO" ? "proprio" : String(fonte).toLowerCase());
+          var rotuloFonte = fonte === "SINAPI_DES" ? "desonerado" : fonte;
           // número vem da FONTE ÚNICA (1.2 solto, 1.1.1 dentro de sub etapa)
           var numItem = L.numero || Orcamento.itemNumero(ei, ii);
           var temCod = it.codigo && it.codigo !== "—";
@@ -1132,7 +1134,7 @@
             '<td class="num-item"><b>' + numItem + '</b></td>' +
             // código CLICÁVEL: abre a composição analítica (mesma ação do 🔍 Insumos)
             '<td>' + (temCod
-              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(fonte) + '</span>' : '')
+              ? '<span class="pill ' + pillCls + (ehSinapi || ehPropriaDet ? ' cod-click" data-ver-insumos="' + Util.esc(it.codigo) + '" data-vi-item="' + e.id + '|' + it.id + '" title="Clique para abrir a composição analítica (insumos e coeficientes)"' : '"') + '>' + Util.esc(it.codigo) + '</span>' + (fonte !== "SINAPI" && fonte !== "PROPRIO" ? '<br><span class="muted" style="font-size:9px">' + Util.esc(rotuloFonte) + '</span>' : '')
               : '<span class="muted" style="font-size:11px">—</span>') + '</td>' +
             /* ⚠ ITEM PARCIAL NÃO PODE PARECER IGUAL AOS OUTROS. Um serviço
                lançado só com a mão de obra soma ~40% do preço de tabela — sem
@@ -2509,7 +2511,7 @@
         var vistos = {}, comps = [];
         Util.arr(orc.etapas).forEach(function (e) {
           Util.arr(e.itens).forEach(function (it) {
-            if (it.origem === "SINAPI" && it.codigo && it.codigo !== "—" && !vistos[it.codigo]) {
+            if (Orcamento.ehSinapi(it.origem) && it.codigo && it.codigo !== "—" && !vistos[it.codigo]) {
               var a = Analitico.obter(it.codigo);
               if (a && Util.arr(a.insumos).length) { vistos[it.codigo] = 1; comps.push({ it: it, a: a }); }
             }

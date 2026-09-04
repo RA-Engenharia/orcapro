@@ -4361,8 +4361,10 @@
            sai — senão o detalhamento mostraria insumo de outro estado. */
         var ufOrcP = String((orc && orc.uf) || "").toUpperCase(), ufAnaP = String(Analitico.uf || "").toUpperCase();
         if (Analitico.carregado && ufOrcP && ufAnaP && ufAnaP !== ufOrcP && Analitico.reset) Analitico.reset();
-        if (Analitico.carregado || Analitico.carregando) return;
+        /* preparar antes do atalho: o regime do orçamento que abriu decide o
+           analítico, senão o do orçamento anterior fica na memória */
         var u = ufOrcP ? this._prepararAnalitico(ufOrcP, this._normComp((orc && orc.competenciaSinapi) || "")) : this._prepararAnalitico();
+        if (Analitico.carregado || Analitico.carregando) return;
         if (!u.local && !u.live) return;
         // pré-carrega já com o fallback AO VIVO embutido — se um clique em 🔍 pegar esta
         // promise compartilhada no meio do caminho, ela já sabe cair no VPS.
@@ -6042,11 +6044,14 @@
         ]);
         var m = bg && bg.querySelector(".modal"); if (m) m.style.maxWidth = "900px";
       }
+      /* ⚠ O REGIME É CONFERIDO ANTES DO ATALHO "já carregado": abrir um
+         orçamento onerado logo depois de um desonerado deixava o analítico
+         anterior na memória e a guarda recusava o item certo. */
+      var urls = self._prepararAnalitico();
       // Já carregado E é do estado ativo? abre direto.
       if (Analitico.carregado && (!ufAtivo || !Analitico.uf || Analitico.uf === ufAtivo)) { abrir(); return; }
       // URLs local + AO VIVO (VPS). O analítico da região SEMPRE existe no servidor, então
       // mesmo que o disco do cliente não tenha o arquivo, o detalhamento carrega ao vivo.
-      var urls = self._prepararAnalitico();
       if (!urls.local && !urls.live) { // só quando não há UF de forma alguma
         UI.toast("Sem UF ativa para o detalhamento. Escolha um estado em " + (typeof Icones !== "undefined" ? Icones.get("tabela", 15) : "") + " Tabelas.", "erro");
         return;
@@ -6515,7 +6520,7 @@
       // ~2.000 códigos por UF (20%–49% das composições) recusados como
       // "código não existe nas bases ativas" — ex.: 40547/39443/39435 na 96114
       // do DF. Aqui o analítico responde: o código existe e o preço é o oficial.
-      if (!item && (!fonte || fonte === "SINAPI") && typeof Analitico !== "undefined" && Analitico.carregado) {
+      if (!item && (!fonte || Orcamento.ehSinapi(fonte)) && typeof Analitico !== "undefined" && Analitico.carregado) {
         item = Analitico.insumo ? Analitico.insumo(String(codigo)) : null;
         if (!item) { // sub-composição oficial fora do CSD da UF (mesma causa)
           var sub = Analitico.obter(String(codigo));

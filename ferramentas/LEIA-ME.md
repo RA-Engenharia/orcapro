@@ -162,6 +162,17 @@ preço continua vindo da base que a pessoa instalou. Subir os arquivos para
 funciona sem internet aberta), mas deixou de ser condição para o recurso
 existir.
 
+### A porta de entrada (1.2.38)
+
+O regime estava certo no modal, mas o **botão** não aparecia: `SINAPI_DES` entrou
+no multi-base como fonte separada, e sete lugares perguntavam `=== "SINAPI"` para
+decidir "este item tem analítico oficial?" — planilha, Excel, laudo, relatório,
+reparo de fontes e a composição própria. Todos diziam *não* ao desonerado. Agora
+a pergunta é uma só, `Orcamento.ehSinapi(fonte)`, verdadeira para os dois regimes;
+`baseFonte` continua guardando `SINAPI_DES`, que põe a etiqueta **desonerado** sob
+o código e escreve "SINAPI 06/2026/PA (desonerado)" nas bases usadas. Também caiu
+um atalho `if (Analitico.carregado) abrir()` que rodava antes da troca de regime.
+
 ### O lado do app (já publicado, 1.2.33)
 
 - procura `sinapi-<UF>-<COMP>-desonerada-analitico.json` quando os **itens**

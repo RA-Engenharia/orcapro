@@ -411,6 +411,16 @@
       } catch (e) { }
       return false;
     },
+    /* ===== "SINAPI" SÃO DUAS FONTES, UMA BASE =====
+     * `SINAPI_DES` é a MESMA SINAPI no regime desonerado — mesmos códigos e
+     * estrutura, só o encargo social muda. Entrou no multi-base como fonte
+     * separada, e todo lugar que perguntava `=== "SINAPI"` para decidir "tem
+     * analítico oficial?" dizia NÃO para o desonerado. Esta é a pergunta certa,
+     * num lugar só; `baseFonte` continua guardando o regime para a etiqueta. */
+    ehSinapi: function (fonte) {
+      var f = String(fonte || "").toUpperCase();
+      return f === "SINAPI" || f === "SINAPI_DES";
+    },
     _origemDe: function (codigo, baseFonte) {
       if (!codigo) return "PROPRIO";
       if (baseFonte && baseFonte !== "SINAPI") return baseFonte; // veio de outra base: badge real
@@ -426,8 +436,8 @@
       var baseOk = (typeof Sinapi !== "undefined" && Sinapi.carregado) || (typeof Analitico !== "undefined" && Analitico.carregado);
       Util.arr(orc.etapas).forEach(function (e) {
         Util.arr(e.itens).forEach(function (it) {
-          if (it.origem !== "SINAPI") return;
-          var fonteReal = (it.baseFonte && it.baseFonte !== "SINAPI") ? it.baseFonte : null;
+          if (!self.ehSinapi(it.origem)) return;
+          var fonteReal = (it.baseFonte && !self.ehSinapi(it.baseFonte)) ? it.baseFonte : null;
           if (!self._codigoSinapi(it.codigo)) {              // não-numérico: nunca é SINAPI
             it.origem = fonteReal || "OUTRA"; if (!fonteReal) it.baseFonte = "OUTRA"; n++;
           } else if (fonteReal) {                             // rotulado SINAPI mas a fonte real é outra
@@ -498,6 +508,11 @@
         var label = (f === "PROPRIO") ? "Composição própria" : (f === "OUTRA" ? "Outra base" : ((META[f] && META[f].label) || f));
         var texto = label;
         if (f === "SINAPI") texto = "SINAPI " + (orc.competenciaSinapi || "") + (orc.uf ? "/" + orc.uf : "");
+        else if (f === "SINAPI_DES") {
+          var regD = registroDe(f) || {};
+          texto = "SINAPI " + comp(regD.competencia || orc.competenciaSinapi || "") +
+            ((regD.uf || orc.uf) ? "/" + (regD.uf || orc.uf) : "") + " (desonerado)";
+        }
         else if (f !== "PROPRIO" && f !== "OUTRA") {
           var reg = registroDe(f), vr = varianteDe(f);
           if (reg && reg.competencia) texto += " " + comp(reg.competencia);
@@ -515,6 +530,7 @@
       });
       out.sort(function (a, b) {
         if (a.fonte === "SINAPI") return -1; if (b.fonte === "SINAPI") return 1;
+        if (a.fonte === "SINAPI_DES") return -1; if (b.fonte === "SINAPI_DES") return 1;
         if (a.fonte === "PROPRIO") return 1; if (b.fonte === "PROPRIO") return -1;
         return String(a.label).localeCompare(String(b.label));
       });
