@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.40",
+  "versao": "1.2.41",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.40.zip",
-  "notas": "A barra da base SINAPI em Meus Orcamentos virou um seletor de estado: da para trocar a UF ali mesmo, sem ir a Tabelas, e a base recarrega na hora. O texto passou a dizer base para novos orcamentos (nao base padrao): cada orcamento guarda a propria UF e competencia, so os proximos herdam a da barra. Continua tudo das versoes anteriores (insumos SINAPI nos dois regimes por item, cotacao online, analitico desonerado dos 27 estados).",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.41.zip",
+  "notas": "Leitura da planilha do orcamento melhorada: a coluna Descricao tinha largura de menos e o texto quebrava palavra por palavra, empilhado na vertical (PISO / PODOTATIL / DE / ALERTA). Agora a descricao tem largura minima e quebra por palavras inteiras, numa linha confortavel; o excedente rola de lado dentro da propria planilha, sem empurrar a pagina. Codigo e unidade nao quebram mais. Continua tudo das versoes anteriores.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.37/OrcaPRO-IA-Instalador-v1.2.37.exe"
 }
