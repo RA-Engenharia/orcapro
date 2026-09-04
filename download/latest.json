@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.43",
+  "versao": "1.2.44",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.43.zip",
-  "notas": "Modo compacto da planilha. O botao Compacto, na barra acima da tabela, baixa a altura das linhas e desce um degrau na fonte — cabe bem mais item na tela em obra grande (a linha sai de 72 para 53 pixels). A descricao fica em duas linhas no maximo, com o texto inteiro no tooltip; o selo de regime e os botoes de cada linha continuam do mesmo tamanho, para nao virar armadilha de clique no tablet. A escolha fica salva e vale para qualquer orcamento que voce abrir. Continua tudo das versoes anteriores.",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.44.zip",
+  "notas": "A barra de botoes do editor foi reorganizada em duas linhas com significado. A de cima responde 'como esta o orcamento?' (Escopo Inteligente · Dados, Parametros · Excel, Reimportar · Comparar cenarios, Relatorio completo); a de baixo responde 'onde ele esta com o cliente?' (aprovacao · Gerar Proposta · resposta do cliente · Apresentar, Anexo p/ Laudo). Nenhum botao foi escondido atras de menu: os treze continuam a um clique e no mesmo lugar em todo orcamento — o que mudou foi o peso e a vizinhanca. Escopo Inteligente so fica em destaque no orcamento vazio, onde e o unico caminho. Aprovar deixou de ser verde para nao disputar a cor com Gerar Proposta na mesma linha; o destaque agora e o peso do botao. No celular os grupos empilham dois a dois em vez de virar uma fila de treze. Continua tudo das versoes anteriores.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.37/OrcaPRO-IA-Instalador-v1.2.37.exe"
 }
