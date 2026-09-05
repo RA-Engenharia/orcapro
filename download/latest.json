@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.49",
+  "versao": "1.2.50",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.49.zip",
-  "notas": "Correcao: o botao Verificar atualizacao dizia 'o espelho nao entregou a 07/2026 (HTTP 404)' e mantinha a base velha. O acervo de competencias e publicado comprimido, e essa parte do app ainda pedia o arquivo sem compressao — entao toda competencia nova dava erro. Agora entrega. Junto ia um problema pior e calado: depois de atualizar, o detalhamento de insumos continuava apontando para a competencia anterior, o que daria preco de um mes com insumo de outro num documento de licitacao; agora o detalhamento acompanha a competencia. Se voce clicou em Verificar atualizacao e recebeu o 404, clique de novo depois desta versao. Continua tudo das versoes anteriores.",
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.50.zip",
+  "notas": "Correcao dos avisos da tela de bancos de preco. Depois de atualizar para a 07/2026 — que e a competencia mais nova que a CAIXA publicou — o app ainda dizia 'Base atrasada' e 'a coleta parou em algum lugar'. O termometro olhava so o calendario, e a CAIXA publica cada competencia por volta do dia 11 do mes seguinte ao seguinte: a distancia normal fica entre 1 e 2 meses o ano inteiro, entao o aviso acusava falha em metade dos dias. Agora ele compara com a competencia mais nova que as fontes conhecem: se existe algo mais novo, o aviso diz qual e e que basta clicar em Verificar atualizacao; se voce ja esta na mais nova, fica em silencio; e so acusa coleta parada quando nem as fontes tem novidade ha tres meses. Tambem corrigidos: a atualizacao vinda do espelho aparecia como 'via servidor' na linha que existe justamente para dizer de onde o preco veio, e o botao anunciava a competencia do servidor mesmo com o espelho conhecendo uma mais nova. Continua tudo das versoes anteriores.",
   "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.47/OrcaPRO-IA-Instalador-v1.2.47.exe"
 }
