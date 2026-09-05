@@ -432,7 +432,13 @@
       } else if (v.aplicou) {
         p.push('<b style="color:var(--verde)">aplicou ' + Util.esc(Atualizacao.fmtComp(v.aplicou.de)) + ' → ' +
           Util.esc(Atualizacao.fmtComp(v.aplicou.para)) + '</b> (' + (v.aplicou.itens || 0).toLocaleString("pt-BR") + ' itens, via ' +
-          (v.aplicou.fonte === "fetcher" ? "fetcher local" : "servidor") + ')');
+          /* ⚠ MAPA, e não um ternário. A versão anterior perguntava só "é
+             fetcher?" e mandava todo o resto para "servidor" — então a
+             atualização que veio do ESPELHO aparecia na tela como "via
+             servidor", justamente na linha que existe para dizer de onde o
+             preço veio. Fonte nova entra no mapa; o que não estiver nele
+             aparece cru, e não disfarçado de outra coisa. */
+          ({ fetcher: "fetcher local", espelho: "espelho do app", servidor: "servidor OrçaPRO" }[v.aplicou.fonte] || v.aplicou.fonte) + ')');
         cor = "var(--verde)";
         /* o descasamento preço × insumo aparece AQUI, não só no toast que
            passou: é a tela onde a pessoa vem conferir de onde vem o número. */
@@ -451,39 +457,84 @@
     },
 
     /* ===================================================================
-     * "NADA NOVO" NÃO É A MESMA COISA QUE "ESTÁ EM DIA"
+     * "ESTAR ATRÁS DO CALENDÁRIO" NÃO É "ESTAR ATRASADO"
      *
-     * A SINAPI sai TODO MÊS. Quando as três fontes concordam que não há
-     * novidade e a competência instalada é de meses atrás, a conclusão certa
-     * não é "você está atualizado": é "a coleta parou em algum lugar". Sem
-     * este aviso a varredura fica dando um verde tranquilizador para uma
-     * falha de infraestrutura — foi exatamente o que aconteceu entre julho e
-     * setembro, e ninguém tinha como perceber pela tela.
+     * A primeira versão media só a distância em meses até o mês corrente e
+     * gritava "a coleta parou" a partir de dois. Errado, e provado na tela do
+     * usuário: em 05/09/2026, com a 07/2026 instalada — que é a MAIS NOVA QUE
+     * A CAIXA PUBLICOU —, o app acusava "2 meses atrás, a coleta parou".
      *
-     * O termômetro é a distância em MESES entre a competência e o mês
-     * corrente, não `publicadoEm`: a data de publicação só quem coletou
-     * sabe, e é justamente a coleta que pode ter parado.
+     * O calendário não serve sozinho porque a CAIXA publica a competência M
+     * por volta do dia 11 do mês M+2:
+     *     07/2026 → publicada em 11/08/2026
+     *     06/2026 → publicada em 10/07/2026
+     * Ou seja, a distância NORMAL oscila entre 1 e 2 todo mês. Um limiar de
+     * dois acusa falha em metade dos dias do ano.
      *
-     * Um mês de distância é normal (a competência do mês corrente só sai lá
-     * pelo dia 20). Dois já é atraso; três é coleta parada.
+     * O sinal honesto é outro: comparar a competência instalada com a MAIS
+     * NOVA QUE QUALQUER FONTE CONHECE, que a varredura já registrou.
+     *   · alguma fonte tem coisa mais nova  → isso é acionável, e o aviso diz
+     *     o que fazer (clicar em Verificar atualização);
+     *   · você está na mais nova que existe → não é atraso seu, e calar é o
+     *     certo. Só volta a avisar se ATÉ as fontes estiverem velhas demais,
+     *     porque aí quem parou foi a coleta lá atrás;
+     *   · nunca varreu nesta máquina → sobra o calendário, com folga de três
+     *     meses (um ciclo inteiro perdido), nunca dois.
      * =================================================================== */
     _avisoAtraso: function () {
       if (typeof Atualizacao === "undefined" || !Atualizacao.mesesAtras) return "";
       var comp = (typeof Sinapi !== "undefined") ? Sinapi.competencia : "";
       var n = Atualizacao.mesesAtras(comp);
-      if (n == null || n < 2) return "";
-      var grave = n >= 3;
-      return '<div style="font-size:11.5px;padding:8px 10px;border-radius:8px;margin:0 0 10px;' +
-        'background:' + (grave ? "rgba(220,38,38,.09)" : "rgba(234,88,12,.09)") + ';' +
-        'border-left:3px solid ' + (grave ? "#dc2626" : "#b45309") + '">' +
-        '<b>' + (grave ? "A coleta da SINAPI parou em algum lugar." : "Base atrasada.") + '</b> ' +
-        'A competência instalada é a <b>' + Util.esc(Atualizacao.fmtComp(comp)) + '</b> — <b>' + n +
-        ' meses</b> atrás do mês corrente, e a SINAPI é publicada mensalmente. ' +
-        (grave
-          ? 'As três fontes concordam que não há nada mais novo, o que significa que ninguém está buscando na CAIXA — não que você esteja em dia. '
-          : '') +
-        'Orçamento fechado com preço desta idade fica defasado; ' +
-        'quem cuida do servidor precisa retomar a coleta.</div>';
+      if (n == null) return "";
+      var inst = Atualizacao._normComp(comp);
+
+      /* a mais nova que qualquer fonte anunciou na última varredura */
+      var maisNova = "";
+      var v = Atualizacao.ultimaVarredura ? Atualizacao.ultimaVarredura() : null;
+      if (v) {
+        [v.servidor && v.servidor.competencia,
+         v.espelho && v.espelho.competencia,
+         v.fetcher && (v.fetcher.ultimaOficial || v.fetcher.ultimaCache)]
+          .forEach(function (c) {
+            c = Atualizacao._normComp(c || "");
+            if (c && c > maisNova) maisNova = c;
+          });
+      }
+
+      var caixa = function (txt, cor, fundo) {
+        return '<div style="font-size:11.5px;padding:8px 10px;border-radius:8px;margin:0 0 10px;' +
+          'background:' + fundo + ';border-left:3px solid ' + cor + '">' + txt + '</div>';
+      };
+
+      /* 1) EXISTE COISA MAIS NOVA — o único caso em que a pessoa pode agir */
+      if (maisNova && maisNova > inst) {
+        return caixa('<b>Existe competência mais nova.</b> Você está na <b>' +
+          Util.esc(Atualizacao.fmtComp(inst)) + '</b> e já saiu a <b>' + Util.esc(Atualizacao.fmtComp(maisNova)) +
+          '</b>. Clique em <b>Verificar atualização</b> aqui em cima — ou espere a varredura de amanhã, que aplica sozinha.',
+          "#b45309", "rgba(234,88,12,.09)");
+      }
+
+      /* 2) VOCÊ ESTÁ NA MAIS NOVA QUE EXISTE — calar é o certo.
+            Só reclama quando até as fontes estão velhas: aí a coleta parou
+            mesmo, e o silêncio é que seria o erro. */
+      if (maisNova && maisNova === inst) {
+        if (n < 3) return "";
+        return caixa('<b>A coleta da SINAPI parou em algum lugar.</b> A competência instalada é a <b>' +
+          Util.esc(Atualizacao.fmtComp(inst)) + '</b>, e <b>nenhuma das fontes conhece nada mais novo</b> — ' +
+          'mas ela é de ' + n + ' meses atrás e a SINAPI é publicada mensalmente. ' +
+          'Isso não significa que você está em dia: significa que ninguém está buscando na CAIXA. ' +
+          'Orçamento fechado com preço desta idade fica defasado.',
+          "#dc2626", "rgba(220,38,38,.09)");
+      }
+
+      /* 3) AINDA NÃO VARREU nesta máquina — sobra o calendário, e com folga:
+            a distância normal oscila entre 1 e 2, então só três acusa. */
+      if (n < 3) return "";
+      return caixa('<b>Base possivelmente atrasada.</b> A competência instalada é a <b>' +
+        Util.esc(Atualizacao.fmtComp(inst)) + '</b> — ' + n + ' meses atrás do mês corrente, e a SINAPI é ' +
+        'publicada mensalmente. A varredura ainda não rodou nesta máquina para dizer se existe algo mais novo; ' +
+        'clique em <b>Verificar atualização</b> para conferir agora.',
+        "#b45309", "rgba(234,88,12,.09)");
     },
 
     renderTabelas: function (lista) {
