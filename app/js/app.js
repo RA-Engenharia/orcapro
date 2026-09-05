@@ -1293,7 +1293,14 @@
             Atualizacao.atualizarPeloEspelho(function (e) {
               if (e.ok && e.atualizou) { _fimSinapi(e, "espelho do app"); return; }
               var atraso = Atualizacao.mesesAtras(Sinapi.competencia);
-              var rabo = (atraso != null && atraso >= 2)
+              /* ⚠ MESMA RÉGUA DO `UI._avisoAtraso`, e pelo mesmo motivo: a CAIXA
+                 publica a competência M lá pelo dia 11 do mês M+2, então a
+                 distância NORMAL até o mês corrente oscila entre 1 e 2. Com o
+                 limiar em dois, o botão dizia "a coleta parou em algum lugar"
+                 para quem estava na competência mais nova que existe — foi o
+                 que apareceu na tela do usuário. Três meses é um ciclo inteiro
+                 perdido; aí a frase se sustenta. */
+              var rabo = (atraso != null && atraso >= 3)
                 /* ⚠ sem glifo no texto: esta base troca emoji de interface por
                    ícone (tools/test-sem-emoji.js), e aqui a frase é a segunda
                    metade de outra — o aviso está nas palavras, não no símbolo. */
@@ -1305,9 +1312,20 @@
               }
               if (!e.ok && !doServidor) { pinta("⚠ " + e.erro); UI.toast(e.erro, "erro"); return; }
               if (!e.ok) { pinta("⚠ " + e.erro); return; }
+              /* ⚠ A MAIOR DAS DUAS, não a do servidor. Enquanto a linha usava
+                 `doServidor.para` na frente, o botão anunciava a competência do
+                 VPS (06/2026) mesmo com o espelho conhecendo a 07/2026 — e com
+                 a 07/2026 já carregada na tela logo acima. A pessoa lia dois
+                 números diferentes para a mesma pergunta na mesma janela. */
+              var _sv = Atualizacao._normComp((doServidor && doServidor.para) || "");
+              var _es = Atualizacao._normComp(e.para || "");
               pinta("Sem atualização — a mais recente que o servidor e o espelho conhecem é a competência "
-                + Atualizacao.fmtComp((doServidor && doServidor.para) || e.para)
-                + ((doServidor && doServidor.publicadoEm) ? ", no ar desde " + Atualizacao.fmtData(doServidor.publicadoEm) : "")
+                + Atualizacao.fmtComp(_es > _sv ? _es : (_sv || _es))
+                /* ⚠ a data de publicação é DO SERVIDOR, e só vale se a
+                   competência anunciada for a dele: colar "no ar desde
+                   24/07/2026" (que é da 06/2026) numa frase sobre a 07/2026
+                   inventa uma data para um mês que não é o dela. */
+                + ((doServidor && doServidor.publicadoEm && _sv && _sv >= _es) ? ", no ar desde " + Atualizacao.fmtData(doServidor.publicadoEm) : "")
                 + ". Você já está nela." + rabo, !rabo);
             });
           });

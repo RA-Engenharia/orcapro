@@ -37,7 +37,7 @@
        novo. Com as duas fontes, vale sempre a MAIOR. */
     manifestoUrl: "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/latest.json",
 
-    versao: "1.2.49",
+    versao: "1.2.50",
     schemaVersao: 3, // usado nas migrações de persistência
 
     // Oferta de lançamento do Plus — data/hora que a condição termina (após isso, a urgência some sozinha)
