@@ -245,7 +245,20 @@
      função do fonte por regex de linha única. */
   function opts(lista, sel) { var h = lista.map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === sel ? " selected" : "") + '>' + o[1] + "</option>"; }).join(""); if (sel && !lista.some(function (o) { return o[0] === sel; })) h += '<option value="' + Util.esc(sel) + '" selected>' + Util.esc(sel) + " (valor não reconhecido)</option>"; return h; }
   function optsUf(sel) { return '<option value="">—</option>' + P.uf.map(function (u) { return "<option" + (u === sel ? " selected" : "") + ">" + u + "</option>"; }).join(""); }
-  function optsRec(lista, campo, sel, vazio) { return '<option value="">' + (vazio || "—") + "</option>" + Util.arr(lista).map(function (r) { return '<option value="' + r.id + '"' + (r.id === sel ? " selected" : "") + ">" + Util.esc(r[campo] || r.nome || r.numero || r.id) + "</option>"; }).join(""); }
+  /* ⚠ SELECT QUE NÃO SABE REPRESENTAR O VALOR ATUAL O APAGA AO SALVAR.
+     Se o registro apontado sumiu (fornecedor excluído, obra arquivada, contrato
+     de outra empresa), nenhuma option casava, o navegador marcava a primeira —
+     que é o "—" de valor vazio — e SALVAR regravava o vínculo como "". O
+     documento perdia a obra ou o fornecedor sem aviso, sem confirmação e sem
+     lixeira, só por alguém ter aberto e salvo. Vale para TODOS os formulários
+     que usam este helper (obra, contrato, medição, compra, requisição…).
+     O `opts()` logo acima já tinha esta guarda; ela parou nele e não chegou
+     aqui — o mesmo "conserto que para no primeiro consumidor" que hoje
+     apareceu no Comprometido. Mantém o id e diz que o vínculo não foi achado:
+     o certo é mostrar o problema, não esconder o dado.
+     ⚠ UMA LINHA SÓ, de propósito: tools/test-compras-fase0a.js recorta esta
+     função do fonte por regex de linha única. */
+  function optsRec(lista, campo, sel, vazio) { var h = '<option value="">' + (vazio || "—") + "</option>" + Util.arr(lista).map(function (r) { return '<option value="' + r.id + '"' + (r.id === sel ? " selected" : "") + ">" + Util.esc(r[campo] || r.nome || r.numero || r.id) + "</option>"; }).join(""); if (sel && !Util.arr(lista).some(function (r) { return r.id === sel; })) h += '<option value="' + Util.esc(sel) + '" selected>(vínculo não encontrado — não foi apagado)</option>'; return h; }
   function pill(status) { var c = CORStatus[status] || "#64748b"; var tx = TXTStatus[c] || TXTStatus["#64748b"]; return '<span class="g-pill" style="background:' + c + '22;--gp-t:' + tx[0] + ';--gp-td:' + tx[1] + '">' + Util.esc(rot(P.obraStatus.concat(P.clienteStatus, P.contratoStatus, P.medicaoStatus, P.finStatus, P.fornStatus, P.compraStatus, P.rdoStatus, P.colabStatus, P.pontoStatus, P.frotaStatus, P.reqStatus, P.cotStatus, P.fiscalStatus, P.patrimonioEstado, P.folhaStatus, P.tarefaStatus), status)) + "</span>"; }
   function v(id) { var e = UI.el(id); return e ? e.value.trim() : ""; }
   function nv(id) { return Util.num(v(id)); }
@@ -23801,6 +23814,7 @@ renderFolha: function () {
         }
         self._aprovRejPendente = null;   // ver o ramo de rejeição em _gateStatusForm
         self._lancFinPendente = null; self._lancFinToast = "";   // idem: agendado no gate, gravado só depois do save
+        self._lancFinRecalc = "";
         /* ⚠ zerado junto dos outros dois: um gate que abortou numa tentativa
            anterior deixaria o agendamento órfão e o formulário SEGUINTE daria
            entrada no almoxarifado de um pedido que ninguém recebeu. */
@@ -23843,12 +23857,19 @@ renderFolha: function () {
         }
         var _lf = self._lancFinPendente; self._lancFinPendente = null;
         if (_lf) {
+          /* ⚠ O VALOR E REFEITO AQUI, com o `obj` que o coletor terminou de
+             preencher — ver a nota no gate. Este ponto so e alcancado se o
+             save aconteceu, entao refazer aqui nao cria lancamento novo:
+             corrige o numero do que ja estava agendado. */
+          if (self._lancFinRecalc === "medicaoLiquido") {
+            _lf.valor = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
+          }
           Store.salvar(eid(), "financeiro", _lf);
           if (self._lancFinToast) {
             try { UI.toast(self._lancFinToast.replace(/\.$/, "") + _estMsg + ".", "ok"); } catch (eLF) {}
           }
         }
-        self._lancFinToast = "";
+        self._lancFinToast = ""; self._lancFinRecalc = "";
         UI.fecharModal(); App.render();
         if (typeof aposSalvar === "function") aposSalvar(obj, ehNovo);
         else UI.toast(nome + (ehNovo ? " criado." : " salvo."), "ok");
@@ -24486,7 +24507,26 @@ renderFolha: function () {
           var travaG = this._travaLancDoDoc(obj, "medicoes");
           if (travaG) { UI.toast(travaG, "erro"); return false; }
           obj.dataPgto = this._hojeISO();
+          /* ⚠ ESTE `liqF` E PROVISORIO, E TEM DE SER.
+             O gate roda no COMECO do coletor de medicoes, e `obj.valor` e
+             `obj.retencao` so sao escritos depois — a retencao ~20 linhas
+             abaixo, e o valor mais adiante ainda, em cada ramo (atividades,
+             orcamento, manual). Entao aqui `obj` ainda carrega os valores
+             GRAVADOS: um boletim aprovado de R$ 100.000 com 5% que a pessoa
+             corrige para R$ 120.000 e marca "Paga" no mesmo salvamento
+             gravava 120.000 no documento e lancava 95.000 de RECEITA, com o
+             toast dizendo "lancada" e nenhum sinal de divergencia. R$ 19.000
+             que a obra nunca ve, e ninguem reconfere um lancamento que o
+             sistema criou sozinho. E o gemeo do defeito que a Fase 0b achou
+             no formulario de compras — la despesa, aqui receita.
+             Mover a coleta para antes do gate seria o conserto simetrico, mas
+             este coletor tem `return true` no meio (boletim aprovado, modo
+             atividades): mudar a ordem tiraria ramos inteiros de baixo do
+             gate. Entao o gate segue decidindo aqui e o VALOR e refeito na
+             hora de gravar, onde `obj` ja passou pelo coletor inteiro.
+             `e2e-medicoes-trava.js` bloco [7] mede isto no navegador. */
           var liqF = Util.num(obj.valor) * (1 - Util.num(obj.retencao) / 100);
+          this._lancFinRecalc = "medicaoLiquido";
           this._lancFinPendente = { data: obj.dataPgto, desc: "Recebimento medição " + (obj.numero || ""), tipo: "receita", categoria: "medicao", valor: liqF, status: "pago", obraId: obj.obraId, contratoId: obj.contratoId, /* ⚠ MESMO CARIMBO DO CAMINHO DO BOTÃO — e tem de existir nos dois, senão a trava vale numa porta e não vale na outra, que é a forma mais cara de consertar pela metade (já aconteceu aqui: a v1.1.232 copiou a despesa da compra para o formulário e esqueceu o estoque). */ docTipo: this._DOC_CARIMBO.medicoes, docId: obj.id, docNumero: obj.numero || "" };
           this._lancFinToast = "Receita da medição lançada no Financeiro.";
         }

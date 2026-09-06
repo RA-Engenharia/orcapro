@@ -1055,6 +1055,10 @@
         /* vencido não tem link para mandar: o fornecedor recebe 410 */
         (vencida ? "" : '<button type="button" class="btn sm" id="cto-links">' + _ico("link") + " Links</button> ") +
         '<button type="button" class="btn sm" id="cto-puxar">' + _ico("ciclo") + ' Puxar respostas</button> ' +
+        /* ⚠ SÓ APARECE COM RESPOSTA NA MÃO. Pedir desconto sem proposta é
+           pedir desconto sobre nada — e o servidor recusa, mas um botão que
+           só serve para levar a um erro é pior que botão nenhum. */
+        (N0 > 0 && !vencida ? '<button type="button" class="btn sm" id="cto-desconto">' + _ico("dinheiro") + ' Pedir desconto</button> ' : '') +
         '<button type="button" class="btn sm ghost" id="cto-encerrar" style="color:#dc2626">Encerrar</button>' +
         (vencida ? ' <button type="button" class="btn sm primary" id="cto-publicar">' + _ico("link") + " Publicar de novo</button>" : "") +
         "</div>" +
@@ -1063,6 +1067,8 @@
       var bL = el.querySelector("#cto-links"), bP = el.querySelector("#cto-puxar"), bE = el.querySelector("#cto-encerrar"), bR = el.querySelector("#cto-publicar");
       if (bL) bL.onclick = function () { CotOnlineUI.links(c); };
       if (bP) bP.onclick = function () { CotOnlineUI.puxar(c); };
+      var bD = el.querySelector("#cto-desconto");
+      if (bD) bD.onclick = function () { CotOnlineUI.pedirDesconto(c); };
       if (bE) bE.onclick = function () { CotOnlineUI.encerrar(c); };
       if (bR) bR.onclick = function () { CotOnlineUI.publicar(c); };
       if (!on || !on.id) return;
@@ -1801,6 +1807,116 @@
         catch (e) { _toast("Copie manualmente do quadro.", "erro"); }
       };
     });
+  };
+
+  /* =====================================================================
+   * PEDIR DESCONTO — uma rodada de negociação no link que o fornecedor já tem
+   *
+   * ⚠ A NEGOCIAÇÃO ACONTECE NA COTAÇÃO, ANTES DE GERAR O PEDIDO. É a decisão
+   *   de 04/09/2026, e ela é o que mantém isto simples: como não existe PC
+   *   ainda, não há despesa lançada, estoque dado como entrado nem aprovação
+   *   para reabrir. O pedido nasce com o preço final e nunca muda de valor.
+   *   Pedindo desconto DEPOIS do pedido, cada rodada exigiria máquina de
+   *   revisão, teto aprovado e reaprovação — e um desconto aplicado depois da
+   *   despesa não é preço menor, é nota de crédito.
+   *
+   * ⚠ E REAPROVEITA O MESMO LINK. Token novo obrigaria a mandar outro
+   *   endereço, e o fornecedor guardaria dois — o velho respondendo para uma
+   *   rodada que já passou.
+   * ===================================================================== */
+  CotOnlineUI.pedirDesconto = function (c) {
+    if (!_pode()) return;
+    var G = _G();
+    if (!G || !G._cotDoForm) { _toast("Motor de cotacoes nao carregado.", "erro"); return; }
+    if (!_chave()) { _toast("Ative a licenca para falar com os fornecedores.", "erro"); return; }
+    if (!_plus()) { _toast("Cotacao online e do plano Plus.", "erro"); if (G._upsell) G._upsell(); return; }
+    var cot = G._cotDoForm(c);
+    if (!cot) return;
+    var on = cot.online || {};
+    if (!on.id) { _toast("Esta cotação não está publicada.", "erro"); return; }
+    var bg0 = UI.modal("Pedir desconto", '<p class="muted">Consultando quem já respondeu…</p>', [
+      { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+    ]);
+    _post("/api/cotacao/estado", { id: on.id }).then(function (x) {
+      if (!x || !x.j || !x.j.ok || !x.j.online) { UI.fecharModal(); _toast(_erroDe(x), "erro"); return; }
+      var est = x.j.online, convites = est.convites || [];
+      /* só quem respondeu, e só quem ainda tem rodada */
+      var elegiveis = [], semRodada = [], semResposta = [];
+      convites.forEach(function (cv) {
+        var nome = cv.nome || cv.cid;
+        if (!cv.respondidoEm) { semResposta.push(nome); return; }
+        var r = (cv.negociacao && cv.negociacao.rodada) || 0;
+        if (r >= 3) { semRodada.push(nome); return; }
+        elegiveis.push({ cid: cv.cid, nome: nome, rodada: r });
+      });
+      UI.fecharModal();
+      if (!elegiveis.length) {
+        /* ⚠ RECADO COM MOTIVO, não "não dá". Quem não respondeu e quem já
+           esgotou as rodadas são casos diferentes e pedem coisas diferentes. */
+        var pq = semResposta.length
+          ? "Ninguém respondeu ainda — sem proposta na mesa não há sobre o que pedir desconto."
+          : "Já foram 3 rodadas com " + semRodada.join(", ") + ". Feche com o preço que está na mesa.";
+        UI.modal("Pedir desconto", '<p style="margin:0">' + _esc(pq) + "</p>",
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+      var linhas = elegiveis.map(function (f, i) {
+        return '<label style="display:flex;gap:8px;align-items:center;margin:4px 0">' +
+          '<input type="checkbox" class="cto-neg-cid" value="' + _esc(f.cid) + '" checked> ' +
+          "<span>" + _esc(f.nome) + (f.rodada ? ' <span class="muted" style="font-size:12px">· ' + f.rodada + "ª rodada já feita</span>" : "") + "</span></label>";
+      }).join("");
+      var corpo =
+        '<p style="margin:0 0 8px">Quem recebe o pedido de desconto — <b>no mesmo link</b> que já tem:</p>' +
+        linhas +
+        (semResposta.length ? '<p class="muted" style="font-size:12.5px;margin-top:6px">Fora da lista por ainda não terem respondido: ' + _esc(semResposta.join(", ")) + ".</p>" : "") +
+        (semRodada.length ? '<p class="muted" style="font-size:12.5px;margin-top:6px">Sem rodada disponível (já foram 3): ' + _esc(semRodada.join(", ")) + ".</p>" : "") +
+        '<div class="field" style="margin-top:10px"><label>Mensagem para o fornecedor</label>' +
+        '<textarea id="cto-neg-msg" maxlength="300" rows="3" style="width:100%">Fechamos com você para este pedido. Consegue melhorar o preço ou o frete?</textarea></div>' +
+        '<div class="field"><label>Prazo para responder (dias)</label><input id="cto-neg-dias" type="number" min="1" max="7" step="1" value="3" style="width:90px"></div>' +
+        '<p class="muted" style="font-size:12.5px;margin-top:8px">O fornecedor responde com <b>preço por item</b>; itens e quantidades não mudam. ' +
+        "<b>O Mapa é refeito com os preços novos</b> — o vencedor de um item pode trocar. " +
+        "Se o prazo da rodada passar do prazo da publicação, o link é estendido.</p>";
+      var enviando = false;
+      var bg = UI.modal("Pedir desconto", corpo, [
+        { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Pedir desconto", classe: "primary", onClick: function () {
+          if (enviando) return;
+          var marcados = [];
+          var caixas = (bg || document).querySelectorAll(".cto-neg-cid");
+          for (var i = 0; i < caixas.length; i++) if (caixas[i].checked) marcados.push(caixas[i].value);
+          if (!marcados.length) { _toast("Escolha ao menos um fornecedor.", "erro"); return; }
+          var elD = document.getElementById("cto-neg-dias");
+          var dias = parseInt(elD ? elD.value : "3", 10);
+          if (!isFinite(dias) || dias < 1 || dias > 7) { _toast("Prazo da rodada: de 1 a 7 dias.", "erro"); return; }
+          var elM = document.getElementById("cto-neg-msg");
+          var msg = String((elM && elM.value) || "").slice(0, 300);
+          /* mesma releitura do publicar: entre abrir a caixa e clicar, a nuvem
+             pode ter trazido esta cotação já concluída em outro aparelho */
+          if (!_sincronizarVivo(cot)) return;
+          enviando = true;
+          _post("/api/cotacao/negociar", { id: on.id, cids: marcados, mensagem: msg, validadeDias: dias }).then(function (y) {
+            enviando = false;
+            if (!y || !y.j || !y.j.ok) {
+              if (y && y.s === 403 && y.j && y.j.upgrade) { _toast(_erroDe(y), "erro"); if (G._upsell) G._upsell(); return; }
+              _toast(_erroDe(y), "erro");
+              return;
+            }
+            UI.fecharModal();
+            var n = (y.j.pedidos || []).length;
+            var ult = (y.j.pedidos || []).filter(function (p) { return p.ultima; }).length;
+            _toast("Desconto pedido a " + n + (n === 1 ? " fornecedor" : " fornecedores") +
+              (ult ? " · " + ult + (ult === 1 ? " está na última rodada" : " estão na última rodada") : "") +
+              ". Mande o link de novo para eles verem o pedido.", "ok");
+            /* ⚠ O LINK NÃO É REMANDADO SOZINHO. O app não manda WhatsApp nem
+               e-mail por conta própria em lugar nenhum, e prometer que mandou
+               é o pior recado possível: o engenheiro fica esperando resposta
+               de quem nunca soube que foi perguntado. Por isso o modal de
+               links abre logo em seguida. */
+            CotOnlineUI.links(cot);
+          }, function () { enviando = false; });
+        } }
+      ]);
+    }, function () { UI.fecharModal(); });
   };
 
   CotOnlineUI.links = function (c) {
