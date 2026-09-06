@@ -1834,11 +1834,19 @@
     if (!cot) return;
     var on = cot.online || {};
     if (!on.id) { _toast("Esta cotação não está publicada.", "erro"); return; }
-    var bg0 = UI.modal("Pedir desconto", '<p class="muted">Consultando quem já respondeu…</p>', [
-      { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+    /* ⚠ O MAPA E UM MODAL — ABRIR ESTA CAIXA FECHA ELE. `UI.modal` chama
+       `fecharModal` na primeira linha, entao toda porta daqui tem de REABRIR o
+       Mapa com `G.formCotacao(cot)`, como fazem o publicar, o puxar e o links.
+       Sem isso, quem pedia desconto via a cotacao "sumir" da tela e ficava numa
+       tela sem saida: o Mapa nao estava atras da caixa, ele tinha sido fechado.
+       Foi o defeito relatado na 1.2.51, e ele valia para TODAS as saidas —
+       Voltar, erro, sem elegiveis e sucesso. */
+    var voltarAoMapa = function () { UI.fecharModal(); if (G.formCotacao) G.formCotacao(cot); };
+    UI.modal("Pedir desconto", '<p class="muted">Consultando quem já respondeu…</p>', [
+      { texto: "Fechar", classe: "ghost", onClick: voltarAoMapa }
     ]);
     _post("/api/cotacao/estado", { id: on.id }).then(function (x) {
-      if (!x || !x.j || !x.j.ok || !x.j.online) { UI.fecharModal(); _toast(_erroDe(x), "erro"); return; }
+      if (!x || !x.j || !x.j.ok || !x.j.online) { _toast(_erroDe(x), "erro"); voltarAoMapa(); return; }
       var est = x.j.online, convites = est.convites || [];
       /* só quem respondeu, e só quem ainda tem rodada */
       var elegiveis = [], semRodada = [], semResposta = [];
@@ -1849,7 +1857,6 @@
         if (r >= 3) { semRodada.push(nome); return; }
         elegiveis.push({ cid: cv.cid, nome: nome, rodada: r });
       });
-      UI.fecharModal();
       if (!elegiveis.length) {
         /* ⚠ RECADO COM MOTIVO, não "não dá". Quem não respondeu e quem já
            esgotou as rodadas são casos diferentes e pedem coisas diferentes. */
@@ -1857,7 +1864,7 @@
           ? "Ninguém respondeu ainda — sem proposta na mesa não há sobre o que pedir desconto."
           : "Já foram 3 rodadas com " + semRodada.join(", ") + ". Feche com o preço que está na mesa.";
         UI.modal("Pedir desconto", '<p style="margin:0">' + _esc(pq) + "</p>",
-          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+          [{ texto: "Entendi", classe: "primary", onClick: voltarAoMapa }]);
         return;
       }
       var linhas = elegiveis.map(function (f, i) {
@@ -1878,7 +1885,7 @@
         "Se o prazo da rodada passar do prazo da publicação, o link é estendido.</p>";
       var enviando = false;
       var bg = UI.modal("Pedir desconto", corpo, [
-        { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Voltar", classe: "ghost", onClick: voltarAoMapa },
         { texto: "Pedir desconto", classe: "primary", onClick: function () {
           if (enviando) return;
           var marcados = [];
@@ -1897,11 +1904,11 @@
           _post("/api/cotacao/negociar", { id: on.id, cids: marcados, mensagem: msg, validadeDias: dias }).then(function (y) {
             enviando = false;
             if (!y || !y.j || !y.j.ok) {
-              if (y && y.s === 403 && y.j && y.j.upgrade) { _toast(_erroDe(y), "erro"); if (G._upsell) G._upsell(); return; }
               _toast(_erroDe(y), "erro");
+              if (y && y.s === 403 && y.j && y.j.upgrade && G._upsell) { G._upsell(); return; }
+              voltarAoMapa();
               return;
             }
-            UI.fecharModal();
             var n = (y.j.pedidos || []).length;
             var ult = (y.j.pedidos || []).filter(function (p) { return p.ultima; }).length;
             _toast("Desconto pedido a " + n + (n === 1 ? " fornecedor" : " fornecedores") +
@@ -1911,12 +1918,16 @@
                e-mail por conta própria em lugar nenhum, e prometer que mandou
                é o pior recado possível: o engenheiro fica esperando resposta
                de quem nunca soube que foi perguntado. Por isso o modal de
-               links abre logo em seguida. */
-            CotOnlineUI.links(cot);
-          }, function () { enviando = false; });
+               links abre logo em seguida — e ele recebe o `aoFechar` que
+               devolve o Mapa, como em todas as outras portas deste arquivo.
+               ⚠ `_modalLinks` e NÃO `CotOnlineUI.links`: o público espera o
+               registro da tela e regrava o Mapa; aqui os convites já vieram na
+               mesma consulta e o Mapa não pode ser regravado de novo. */
+            CotOnlineUI._modalLinks(cot, convites, function () { if (G.formCotacao) G.formCotacao(cot); });
+          }, function () { enviando = false; voltarAoMapa(); });
         } }
       ]);
-    }, function () { UI.fecharModal(); });
+    }, function () { _toast("Não consegui falar com o servidor.", "erro"); voltarAoMapa(); });
   };
 
   CotOnlineUI.links = function (c) {

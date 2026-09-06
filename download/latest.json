@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.51",
+  "versao": "1.2.52",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.51.zip",
-  "notas": "Na cotacao online voce passa a poder pedir desconto. Depois de puxar as respostas e antes de gerar os pedidos, o botao Pedir desconto abre uma rodada com os fornecedores que voce escolher: eles recebem a pergunta no MESMO link que ja tem, com os precos deles ja preenchidos, e respondem com preco novo por item ou com Manter meu preco. As respostas entram pelo Puxar respostas de sempre e o Mapa se refaz com os precos novos, entao o vencedor de um item pode trocar. Sao no maximo tres rodadas, de ate sete dias cada, e a terceira ja avisa que e a ultima; se o prazo da rodada passar do prazo da publicacao, o link e estendido sozinho. O pedido de compra nasce com o preco negociado e nao muda de valor depois. Nesta versao tambem: a base de precos passa a ter um acervo de cinco competencias com coleta automatica, o espelho que respondia 404 foi corrigido, e o aviso de base desatualizada parou de acusar quem ja esta na competencia mais nova que existe. Continua tudo das versoes anteriores.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.51/OrcaPRO-IA-Instalador-v1.2.51.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.52.zip",
+  "notas": "Conserto: ao pedir desconto numa cotacao online, o Mapa de Cotacao fechava e nao voltava — a cotacao parecia ter sumido e nao havia botao para voltar. Nenhum dado foi perdido: a cotacao continuava inteira, o que sumia era a tela. Agora todas as saidas da caixa de desconto (Voltar, erro, sem fornecedor elegivel e sucesso) devolvem o Mapa, como ja faziam Publicar, Puxar respostas e Links.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.52/OrcaPRO-IA-Instalador-v1.2.52.exe"
 }
