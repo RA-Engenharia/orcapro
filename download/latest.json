@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.55",
+  "versao": "1.2.56",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.55.zip",
-  "notas": "Tour virtual 360: agora da para ANDAR pela obra. Toque na seta dentro da foto e voce cai na estacao vizinha, olhando para o mesmo lado. Minimapa: anexe a planta baixa da visita e marque onde cada estacao fica; o pino leva ate ela (e o cliente ve o mesmo no Portal). Tela cheia, teclado (setas giram, + e - aproximam) e, no celular, zoom com dois dedos tambem no Portal do cliente. Medir AREA de piso: marque os cantos e receba metro quadrado e perimetro, com a margem de erro ao lado. Importar panorama: botao separado do de tirar foto, porque em varios celulares o botao da camera escondia a galeria e a foto do modo Panorama nao entrava. A data da foto passa a ser a do aparelho (quando ela existe no arquivo), e nao mais a do momento em que voce anexou. O video do tour sai em MP4 quando o navegador deixa, para abrir tambem no iPhone. No relatorio fotografico, cada apontamento sai com um recorte enquadrado nele, carimbado com obra, estacao e data.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.55/OrcaPRO-IA-Instalador-v1.2.55.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.56.zip",
+  "notas": "Compras e notas fiscais: quinze consertos de dinheiro. Entrega parcial deixou de virar despesa em dobro (chegando 150 dos 200 sacos, a nota desses 150 acha o pedido). O Comprometido e o Saldo da etapa pararam de contar o mesmo dinheiro duas vezes. Desfazer um item na triagem nao estorna mais o material que o pedido tinha posto no almoxarifado. Reabrir ou rejeitar um pedido antigo nao da mais entrada do material de novo. Nova porta: Desfazer a ultima entrega. Compra que ficou sem despesa porque a nota foi desfeita numa versao antiga aparece no Painel, com o valor e o botao de devolver. Substituir os lancamentos nao apaga mais conta a pagar sem substituto.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.56/OrcaPRO-IA-Instalador-v1.2.56.exe"
 }

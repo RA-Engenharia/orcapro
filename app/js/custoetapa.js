@@ -188,6 +188,46 @@
 
     var naoApropriado = { valor: 0, n: 0, porOrigem: {} };
     var compSemEtapa = { valor: 0, n: 0 };
+    /* ⚠ O ÍNDICE VEM DO MESMO `financeiro` QUE ESTE MOTOR ACABOU DE SOMAR EM
+       "realizado". É isso que faz comprometido e realizado nunca contarem o
+       mesmo dinheiro, e é por isso que ele é montado AQUI e não recebido de
+       fora: consumidor que depende de o chamador lembrar de passar um campo
+       derivado é consumidor que nasce vazio no dia em que alguém esquece. */
+    var jaDespIdx = entrada.jaEDespesa
+      || ((typeof CompraNota !== "undefined" && CompraNota.jaEDespesaPorPedido)
+        ? CompraNota.jaEDespesaPorPedido(entrada.financeiro, entrada.compras) : null);
+    /* entrega gravada no pedido que NÃO tem despesa viva correspondente */
+    var entregaSemDespesa = { valor: 0, n: 0 };
+    var semDescontoN = 0;
+
+    /* =================================================================
+     * ⚠ A DESPESA NASCIDA DO PEDIDO HERDA A ETAPA DELE — PELO CARIMBO.
+     *
+     * ⚠ MEDIDO EM 07/09/2026, e só apareceu quando o comprometido passou a
+     * descontar a entrega já lançada: a despesa que `_lancDespesaDaEntrega`
+     * cria NÃO carrega `etapaId` (nenhum dos caminhos automáticos carrega), mas
+     * o PEDIDO carrega. Descontar R$ 7.500 do comprometido da etapa sem
+     * creditar esses R$ 7.500 no realizado DELA tirava o dinheiro da vista da
+     * etapa: o Saldo subia de R$ 10.000 para R$ 17.500 e a tela passava a
+     * convidar a gastar o que já está gasto — trocaríamos um defeito por outro,
+     * na pior direção.
+     *
+     * ⚠ LIGA POR CARIMBO, NUNCA POR SEMELHANÇA: `docTipo:"PC"` + `docId` para a
+     * despesa do pedido, e `compraId` para a parcela da nota que substituiu essa
+     * despesa. Nada casa por valor, data ou descrição (regra 2 da skill
+     * `dinheiro`). E só vale quando a linha do Financeiro NÃO tem etapa
+     * própria: quem foi apropriado à mão (ou pela triagem da nota) manda.
+     * ================================================================= */
+    var etapaDoPedido = {};
+    arr(entrada.compras).forEach(function (c) {
+      if (c && txt(c.id) && txt(c.etapaId)) etapaDoPedido[txt(c.id)] = txt(c.etapaId);
+    });
+    function etapaHerdada(f) {
+      if (txt(f.etapaId)) return f.etapaId;
+      if (txt(f.docTipo) === "PC" && etapaDoPedido[txt(f.docId)]) return etapaDoPedido[txt(f.docId)];
+      if (txt(f.compraId) && etapaDoPedido[txt(f.compraId)]) return etapaDoPedido[txt(f.compraId)];
+      return f.etapaId;
+    }
 
     arr(entrada.financeiro).forEach(function (f) {
       if (!f || txt(f.tipo) !== "despesa") return;
@@ -195,8 +235,8 @@
       if (ehMorto(f)) return;
       var v = num(f.valor);
       var quitado = ehQuitado(f);
-      var caiu = creditar(porId, f.etapaId, "realizadoCompetencia", v);
-      if (caiu) { if (quitado) creditar(porId, f.etapaId, "realizadoCaixa", v); return; }
+      var caiu = creditar(porId, etapaHerdada(f), "realizadoCompetencia", v);
+      if (caiu) { if (quitado) creditar(porId, etapaHerdada(f), "realizadoCaixa", v); return; }
       naoApropriado.valor += v; naoApropriado.n++;
       var o = origemDe(f);
       naoApropriado.porOrigem[o] = (naoApropriado.porOrigem[o] || 0) + v;
@@ -218,7 +258,31 @@
       if (!c) return;
       if (obraId && txt(c.obraId) !== obraId) return;
       if (!ehComp(txt(c.status).toLowerCase())) return;
-      var v = num(c.valor);
+      /* ⚠ O PEDIDO EM ENTREGA PARCIAL NÃO ESTÁ INTEIRO COMPROMETIDO. O status só
+         vira "recebido" na última viagem; até lá, o que já chegou virou despesa
+         (está em realizado/naoApropriado) e contar o pedido cheio aqui reservava
+         o mesmo dinheiro duas vezes — medido: R$ 17.500 de exposição num pedido
+         de R$ 10.000, com o Saldo da etapa R$ 7.500 abaixo do real. A fonte do
+         desconto é `CompraNota.jaEDespesa` (despesa VIVA + faturado por nota),
+         nunca o histórico das viagens — ver o ⚠ de lá. */
+      var ja = jaDespIdx ? num(jaDespIdx[txt(c.id)]) : 0;
+      var registrado = (typeof ComprasLinha !== "undefined" && ComprasLinha.registradoNasEntregas)
+        ? num(ComprasLinha.registradoNasEntregas(c)) : 0;
+      if (!jaDespIdx && registrado > 0.005) semDescontoN++;
+      /* ⚠ O RECADO QUE IMPEDE O DINHEIRO DE SUMIR CALADO. Se a entrega está
+         gravada no pedido mas a despesa dela não está mais viva (cancelada,
+         estornada ou apagada), o valor VOLTA para o comprometido — o número
+         fecha com o pedido. Mas a pessoa precisa saber, porque o material está
+         na obra e a conta não existe. As duas pontas se comparam PELO CARIMBO,
+         nunca por valor ou descrição. O app não conserta sozinho — não sabe qual
+         ponta está certa —, ele DIZ. */
+      if (registrado - ja > 0.005) { entregaSemDespesa.valor += (registrado - ja); entregaSemDespesa.n++; }
+      var v = (typeof ComprasLinha !== "undefined" && ComprasLinha.valorComprometido)
+        ? num(ComprasLinha.valorComprometido(c, ja, num(c.valor)))
+        : Math.max(0, Math.round((num(c.valor) - ja) * 100) / 100);
+      /* pedido todo entregue e ainda "aprovado" não empenha nada — e somar zero
+         inflaria a CONTAGEM do aviso ("2 pedidos somando R$ 2.500") */
+      if (!(v > 0.005)) return;
       if (creditar(porId, c.etapaId, "comprometido", v)) return;
       compSemEtapa.valor += v; compSemEtapa.n++;
     });
@@ -253,6 +317,14 @@
         .sort(function (a, b) { return naoApropriado.porOrigem[b] - naoApropriado.porOrigem[a]; });
       if (portas.length) avisos.push("Entrou principalmente por: " + portas.slice(0, 3).map(rotuloOrigem).join(", ") + ".");
     }
+    if (semDescontoN > 0) {
+      avisos.push("O motor da nota fiscal (compranota.js) não carregou, então o Comprometido está SEM o desconto do que já virou despesa em " +
+        semDescontoN + " pedido(s) com entrega registrada — o número está para cima. Recarregue o app.");
+    }
+    if (entregaSemDespesa.valor > 0.005) {
+      avisos.push(entregaSemDespesa.n + " pedido(s) registraram entrega somando " + fmt(entregaSemDespesa.valor) +
+        " que não tem despesa viva no Financeiro (cancelada, estornada ou apagada). Esse valor voltou para o Comprometido — se foi cancelamento por engano, relance a despesa por lá.");
+    }
     if (compSemEtapa.valor > 0) {
       avisos.push(compSemEtapa.n + " pedido(s) de compra aprovado(s) somando " + fmt(compSemEtapa.valor) +
         " sem etapa — o dinheiro já está empenhado, mas não baixa o saldo de etapa nenhuma.");
@@ -262,6 +334,10 @@
       linhas: linhas,
       naoApropriado: naoApropriado,
       comprometidoSemEtapa: compSemEtapa,
+      /* ⚠ campo NOVO, nunca dentro de `comprometidoSemEtapa`: tools/test-custoetapa.js
+         compara aquele objeto INTEIRO, e um campo a mais ali reprovaria por
+         motivo bobo. */
+      entregaSemDespesa: entregaSemDespesa,
       totais: tot,
       cobertura: { pctApropriado: pctApropriado, avisos: avisos }
     };

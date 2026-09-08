@@ -240,6 +240,95 @@
       }
     }
 
+    /* ---- 6) VÍNCULO DE COMPRA APONTANDO PARA NOTA QUE NÃO RESPONDE ----
+     * ⚠ O RECADO NÃO PODE AFIRMAR A CAUSA. O estado nasce de quatro portas
+     * (versão anterior desfazendo o vínculo, nota excluída, nota que deixou
+     * de citar o pedido, parcela apagada no Financeiro) e o app não tem como
+     * saber por qual delas passou. Ele diz o que MEDIU — qual nota, e o que
+     * há de errado com ela — e o que vai fazer. Culpar "a versão antiga" é
+     * um palpite com cara de diagnóstico.
+     * ⚠ E OS NÚMEROS CHEGAM PRONTOS DE QUEM CHAMA (`valorTexto`), como o
+     * `expiraTexto` da licença: este motor é puro, o gate o roda em Node sem
+     * `Util`, e imprimir o número cru num card de dinheiro já pôs "Validade
+     * até 1788217835" na cara do cliente. */
+    var _vc = d.vinculosCompra || {};
+    var _diagTxt = function (m) {
+      if (!m) return "";
+      var qual = "a nota " + (m.numero || m.id);
+      if (m.diag === "sumiu") return qual + " não existe mais";
+      if (m.diag === "nao-cita") return qual + " não lista mais este pedido";
+      return qual + " não tem lançamento no Financeiro";
+    };
+    var _linhaVc = function (x) {
+      return (x.numero || x.compraId) + (x.fornecedor ? " · " + x.fornecedor : "")
+        + " · " + _diagTxt(x.mortas && x.mortas[0]);
+    };
+    var _resumoVc = function (arr) {
+      return arr.slice(0, 3).map(_linhaVc).join(" · ") + (arr.length > 3 ? " · +" + (arr.length - 3) : "");
+    };
+    if ((_vc.itens || []).length) {
+      achados.push({
+        tipo: "compra-sem-despesa", gravidade: 3, modulo: "financeiro",
+        titulo: _vc.itens.length + " compra(s) recebida(s) sem despesa no Financeiro",
+        detalhe: _resumoVc(_vc.itens),
+        porque: "A despesa desses pedidos foi apagada quando a nota foi vinculada — é assim que o vínculo evita a despesa em dobro. A nota que devia ter tomado o lugar dela não está mais lançada, então este custo não está em obra nenhuma. Guardei a cópia da despesa original.",
+        valor: _vc.itens.reduce(function (a, x) { return a + num(x.valor); }, 0),
+        obraId: _vc.itens[0].obraId, view: "financeiro",
+        acao: "Devolver a despesa ao Financeiro — o vínculo com a nota é desfeito junto.",
+        gacao: "vinculo-morto"
+      });
+    }
+    if ((_vc.semCopia || []).length) {
+      /* ⚠ ACHADO SEPARADO, e não uma linha triste no de cima: aqui não há o
+         que devolver, então prometer devolução seria promessa que o app não
+         cumpre. E `valor` fica ZERO de propósito — pôr `pc.valor` no lugar do
+         valor da despesa é inventar dinheiro num card que soma dinheiro; o
+         valor do pedido vai no detalhe, nomeado como o que é. */
+      achados.push({
+        tipo: "compra-sem-despesa-sem-copia", gravidade: 3, modulo: "compras",
+        titulo: _vc.semCopia.length + " compra(s) sem despesa e sem cópia para devolver",
+        detalhe: _vc.semCopia.map(function (x) {
+          return (x.numero || x.compraId) + " · pedido de " + texto(x.valorPedidoTexto)
+            + " · " + _diagTxt(x.mortas && x.mortas[0]);
+        }).slice(0, 3).join(" · ") + (_vc.semCopia.length > 3 ? " · +" + (_vc.semCopia.length - 3) : ""),
+        porque: "O pedido está marcado como faturado por uma nota que não responde, e não guardei cópia da despesa que foi apagada. Não sei quanto devolver, e não vou chutar.",
+        valor: 0, obraId: _vc.semCopia[0].obraId, view: "financeiro",
+        acao: "Solto o vínculo para o pedido voltar às listas. A despesa, confira no Financeiro e lance à mão se faltar.",
+        gacao: "vinculo-morto"
+      });
+    }
+    if ((_vc.presos || []).length) {
+      achados.push({
+        tipo: "compra-presa-a-nota-morta", gravidade: 2, modulo: "compras",
+        titulo: _vc.presos.length + " pedido(s) preso(s) a uma nota que não existe mais",
+        detalhe: _resumoVc(_vc.presos),
+        porque: "A despesa deles está no Financeiro — o dinheiro está certo. O que trava é o vínculo: enquanto o pedido constar faturado por essa nota, ele não aparece na lista para receber a nota certa quando ela chegar.",
+        valor: 0, obraId: _vc.presos[0].obraId, view: "compras",
+        acao: "Soltar o vínculo para o pedido voltar a poder receber nota.",
+        gacao: "vinculo-morto"
+      });
+    }
+    if ((_vc.revisar || []).length) {
+      /* ⚠ O ACHADO QUE ADMITE NÃO SABER. Estes pedidos têm despesa viva E
+         ainda guardam a cópia do que a nota levou. Ou a cópia falta de
+         verdade (entrega parcial: a viagem 2 lançou depois), ou ela já voltou
+         por uma versão anterior. O app não tem como decidir, e decidir errado
+         é ou dinheiro apagado ou dinheiro em dobro. Então ele conta o caso,
+         diz o valor da cópia, solta o vínculo e arquiva a cópia sem devolvê-la. */
+      achados.push({
+        tipo: "compra-copia-em-duvida", gravidade: 3, modulo: "financeiro",
+        titulo: _vc.revisar.length + " pedido(s) com uma cópia de despesa que eu não sei se já voltou",
+        detalhe: _vc.revisar.map(function (x) {
+          return (x.numero || x.compraId) + " · cópia de " + texto(x.copiaTexto)
+            + " · " + _diagTxt(x.mortas && x.mortas[0]);
+        }).slice(0, 3).join(" · ") + (_vc.revisar.length > 3 ? " · +" + (_vc.revisar.length - 3) : ""),
+        porque: "Esses pedidos têm despesa viva no Financeiro E ainda guardam a cópia da despesa que a nota tinha substituído. Ou essa cópia faz falta (entrega parcelada, em que só parte voltou), ou ela já foi devolvida por outro aparelho. Devolver por conta própria seria lançar em dobro; apagar seria destruir a única prova.",
+        valor: 0, obraId: _vc.revisar[0].obraId, view: "financeiro",
+        acao: "Confira a despesa do pedido no Financeiro. Posso soltar o vínculo e guardar a cópia sem devolvê-la.",
+        gacao: "vinculo-morto"
+      });
+    }
+
     achados.sort(function (a, b) {
       if (b.gravidade !== a.gravidade) return b.gravidade - a.gravidade;
       return (b.valor || 0) - (a.valor || 0);

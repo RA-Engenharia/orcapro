@@ -1444,6 +1444,29 @@
       } catch (e) { return null; }
     },
 
+    /* Os vínculos de compra que apontam para nota que não responde mais — ver
+       o bloco em js/compranota.js. Devolve `null` quando o motor não está ali
+       ou quando qualquer coisa estoura: o card inteiro não pode morrer por
+       causa deste aviso. */
+    _vinculosMortos: function (compras) {
+      try {
+        if (typeof CompraNota === "undefined" || !CompraNota.vinculosMortos) return null;
+        var r = CompraNota.vinculosMortos(compras, listaTodas("fiscal"), listaTodas("financeiro"));
+        if (!r) return null;
+        /* ⚠ O DINHEIRO SAI DAQUI JÁ FORMATADO — mesmo motivo do `expiraTexto`
+           da licença: `Atencao` é motor puro e não tem `Util`. Concatenar o
+           número cru imprime "pedido de 4000" num card de dinheiro. */
+        var fmt = function (x) {
+          x.valorTexto = Util.fmtMoeda(Util.num(x.valor));
+          x.valorPedidoTexto = Util.fmtMoeda(Util.num(x.valorPedido));
+          x.copiaTexto = Util.fmtMoeda(Util.num(x.valorCopia));
+        };
+        Util.arr(r.itens).forEach(fmt); Util.arr(r.semCopia).forEach(fmt);
+        Util.arr(r.presos).forEach(fmt); Util.arr(r.revisar).forEach(fmt);
+        return r;
+      } catch (e) { return null; }
+    },
+
     _dashAtencaoHtml: function () {
       if (typeof Atencao === "undefined") return "";
       var esc = this._dashEscopo();
@@ -1458,6 +1481,17 @@
              tem como tratar, e é conversa comercial que não é dele. Sem o
              dado, a regra do motor nem dispara. */
           licenca: this._licencaParaAviso(),
+          /* ⚠ QUEM JULGA É A EMPRESA INTEIRA, QUEM APARECE É O QUE A PESSOA VÊ.
+             `esc.compras` é filtrado por obra (a lista de achados só pode
+             mostrar obra dela), mas Fiscal e Financeiro entram por
+             `listaTodas`. Medido em 07/09/2026: com a parcela da nota rateada
+             para outra obra e o Painel filtrado na obra do pedido, a régua
+             sobre a lista filtrada acusa R$ 4.000 sumidos que estão lá — um
+             alarme mentindo sobre dinheiro. É o mesmo ⚠ do dedupe em
+             `_triGravarEstoque`: dedupe (e conferência) enxerga a empresa toda.
+             ⚠ try/catch PRÓPRIO dentro do método: o `catch` de fora devolve ""
+             e apagaria o card inteiro — EPI, estoque e licença junto. */
+          vinculosCompra: this._vinculosMortos(esc.compras),
           hoje: String(this._hojeISO()).slice(0, 10)
         });
       } catch (e) { return ""; }
@@ -1484,7 +1518,15 @@
           + '<div style="font-size:12px;margin-top:3px">' + Util.esc(i.porque) + '</div>'
           + '<div class="muted" style="font-size:11.5px;margin-top:2px">&rarr; ' + Util.esc(i.acao) + '</div>'
           + '</div>'
-          + (i.acaoBotao
+          /* ⚠ TERCEIRA SAÍDA: achado que RESOLVE, e não só navega. `data-view`
+             levaria a pessoa ao Financeiro para procurar uma despesa que não
+             está lá — mandar por uma porta que não existe já aconteceu quatro
+             vezes nesta base. `data-gacao` cai no dispatcher do Gestao
+             (js/app.js já o tem no seletor delegado), que aplica o
+             `_bloqueado()` e o RBAC em função. */
+          + (i.gacao
+            ? '<button class="btn sm primary" data-gacao="' + Util.esc(i.gacao) + '">Resolver</button>'
+            : i.acaoBotao
             ? '<button class="btn sm" data-acao="' + Util.esc(i.acaoBotao) + '">Ver</button>'
             : '<button class="btn sm" data-view="' + Util.esc(i.view) + '">Ver</button>')
           + "</div>";
@@ -14727,12 +14769,49 @@
       if (typeof ComprasLinha === "undefined" || !ComprasLinha.recebimento) {
         UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return;
       }
+      /* ⚠ CURA O PEDIDO QUE JÁ FOI REABERTO ANTES DESTA VERSÃO. A guarda nas
+         duas portas só alcança quem for reaberto de hoje em diante; quem já foi
+         (e quem perdeu a lista num merge da nuvem) chega aqui com
+         `estoqueLancado` de pé e viagem nenhuma — e sem isto o [Receber] daria
+         entrada do pedido inteiro outra vez. Escreve no clique da pessoa,
+         nunca no render. */
+      if (this._transcreveEntregaLegada(pc)) Store.salvar(eid(), "compras", pc);
       var rec = ComprasLinha.recebimento(pc);
+      /* =================================================================
+       * ⚠ QUEM BARRA AQUI É A CONTA POR ITEM, NÃO O LANÇAMENTO — E O RECADO
+       * MANDAVA PARA UMA PORTA QUE NÃO ABRE ESTA TRAVA.
+       *
+       * ⚠ MEDIDO EM 08/09/2026, três estados do mesmo lançamento e a MESMA
+       * frase caractere por caractere: despesa pendente; despesa CANCELADA (que
+       * é a saída que a própria frase mandava usar); e nenhum lançamento na
+       * base. O `|| { status: "pendente" }` do argumento fabricava um lançamento
+       * fictício só para escolher a frase, mandando procurar no Financeiro o que
+       * não existe. Cancelar a despesa nunca destravou nada: quem barra é
+       * `rec.completo` — as viagens já cobrem tudo o que foi pedido.
+       *
+       * O que abre esta trava é tirar a entrega do pedido: Devolver (o material
+       * chegou e voltou) ou Desf. entrega (a entrega foi registrada errada). Os
+       * dois passam a ser desenhados na linha sempre que houver viagem
+       * registrada — ver `btDev`/`btDesfEnt` em `renderCompras`. Trava sem porta
+       * empurra a pessoa a marcar o pedido como rejeitado só para se livrar
+       * dela, e isso vai ao Portal do cliente.
+       *
+       * ⚠ SEM TAG HTML: `UI.toast` escreve por textContent — um `<b>` sairia
+       * literal para o cliente.
+       * ⚠ SEM PROMETER "e reabre o pedido": `comprasDesfazerEntrega` só mexe no
+       * status quando ele é "recebido", e nesta recusa ele nunca é (o [Receber]
+       * não se desenha em "recebido"). Prometer isso seria recado que mente.
+       * ================================================================= */
       if (rec.iniciado && rec.completo) {
-        UI.toast("Este pedido já foi recebido por inteiro"
-          + (pc.dataRecebimento ? " em " + Util.fmtDia(pc.dataRecebimento) : "") + ". "
-          + this._portaDoLanc(this._lancVivoDoDoc("compras", pc.id) || { status: "pendente" })
-          + " antes de receber de novo.", "erro");
+        var quando = Util.arr(pc.recebimentos).map(function (r) { return Util.fmtDia(r && r.em); })
+          .filter(function (d) { return d && d !== "—"; }).join(", ");
+        if (!quando && pc.dataRecebimento) quando = Util.fmtDia(pc.dataRecebimento);
+        UI.toast("Já entrou tudo o que este pedido pediu"
+          + (rec.viagens ? " — " + rec.viagens + " entrega(s)" : "")
+          + (quando ? " em " + quando : "")
+          + ", por isso não há o que receber. Se o material voltou para o fornecedor, use Devolver. "
+          + "Se a entrega foi registrada errada, use Desf. entrega: ele tira o material do almoxarifado "
+          + "e ajusta a despesa.", "erro");
         return;
       }
       /* ⚠ A TRAVA DO DINHEIRO SÓ NA PRIMEIRA VIAGEM. Da segunda em diante há
@@ -14750,7 +14829,30 @@
       var podeRatear = temItens && rec.linhas.every(function (l) {
         return !(l.pedida > 0) || precoDe(Util.arr(pc.itens)[l.itemIdx]) > 0;
       });
-      var jaLancado = Util.arr(pc.recebimentos).reduce(function (s, v) { return s + Util.num(v && v.valor); }, 0);
+      /* =================================================================
+       * ⚠ O QUE JÁ FOI LANÇADO É O QUE ESTÁ DE PÉ NO FINANCEIRO — não o que
+       * as viagens registraram.
+       *
+       * ⚠ MEDIDO EM 07/09/2026: a viagem 1 lançou R$ 6.000; a pessoa viu que
+       * errou a data e CANCELOU aquele lançamento no Financeiro — que é a porta
+       * que o próprio app ensina (ver `_portaDoLanc`). Quando o resto chegou, a
+       * conta era 9.500 − 6.000 = 3.500, e a compra de R$ 9.500 ficava com
+       * R$ 3.500 de despesa viva na obra. O Previsto × Realizado, o custo por
+       * etapa e o relatório da obra perdiam a diferença, sem sinal em tela
+       * nenhuma. Somar `recebimentos[].valor` era somar um histórico do que
+       * ACONTECEU, e a pergunta aqui é quanto EXISTE.
+       * ================================================================= */
+      var temMotorNota = !!(typeof CompraNota !== "undefined" && CompraNota.despesasDaCompra);
+      /* o que as viagens dizem ter lançado — histórico, não saldo */
+      var jaRegistrado = Util.arr(pc.recebimentos).reduce(function (s, v) { return s + Util.num(v && v.valor); }, 0);
+      var vivasPC = temMotorNota ? CompraNota.despesasDaCompra(listaTodas("financeiro"), pc.id) : [];
+      /* ⚠ SEM O MOTOR DA NOTA CARREGADO, O DEGRAU É O HISTÓRICO, NUNCA ZERO:
+         com zero, a entrega que fecha lançaria o pedido INTEIRO por cima do
+         que já existe — trocaríamos um defeito por outro maior. */
+      var jaLancado = temMotorNota
+        ? vivasPC.reduce(function (s, f) { return s + Util.num(f.valor); }, 0)
+        : jaRegistrado;
+      var sumiuDoFin = temMotorNota ? Math.round((jaRegistrado - jaLancado) * 100) / 100 : 0;
       var linhasHtml = rec.linhas.map(function (l) {
         return "<tr><td>" + Util.esc(l.descricao || ("item " + (l.itemIdx + 1))) + "</td>"
           + '<td class="num">' + Util.fmtNum(l.pedida, 2) + " " + Util.esc(Util.unidadeExibir(l.unidade || "")) + "</td>"
@@ -14829,6 +14931,13 @@
           /* o material entra ANTES do carimbo: falha de gravação não pode
              deixar o pedido "recebido" sem estoque (mesma ordem de antes) */
           var est = temItens ? self._estoqueDaCompra(vivo, qtdPorIdx, data) : { lancados: 0, semItens: true };
+          /* ⚠ ver o ramo `orfao` em `_estoqueDaCompra` */
+          if (est.orfao) {
+            UI.fecharModal();
+            UI.toast("Este pedido já tinha dado entrada no almoxarifado e está sem o registro de qual entrega foi — nada entrou de novo, para o material não dobrar. "
+              + "Confira o Extrato do Estoque pelo número do pedido; se faltar material, registre a entrada pela tela do Estoque.", "erro");
+            App.render(); return;
+          }
           if (est.lancados) vivo.estoqueLancado = true;
           if (!Array.isArray(vivo.recebimentos)) vivo.recebimentos = [];
           vivo.recebimentos.push({ em: data, por: self._quemAprova(), itens: itensViagem, valor: valorViagem });
@@ -14837,6 +14946,12 @@
 
           var msgDin = "";
           if (valorViagem > 0) msgDin = self._lancDespesaDaEntrega(vivo, valorViagem, data, fechou);
+          /* ⚠ RECADO QUE NÃO MENTE: se uma despesa de viagem anterior não está
+             mais no Financeiro (cancelada ou estornada), o valor desta entrega
+             mudou por causa disso — e calar faria o número parecer arbitrário. */
+          if (sumiuDoFin >= 0.01) {
+            msgDin += " " + Util.fmtMoeda(sumiuDoFin) + " lançado(s) em entrega(s) anterior(es) não estão mais no Financeiro (cancelado ou estornado), então o valor desta entrega foi recalculado para cobrir o pedido inteiro.";
+          }
           UI.fecharModal(); App.render();
           var faltamAgora = ComprasLinha.recebimento(vivo).comFalta;
           UI.toast((fechou ? "Entrega registrada e pedido fechado." : "Entrega parcial registrada.")
@@ -15167,14 +15282,23 @@
             var mapa = {};
             pcs.forEach(function (c) { mapa[String(c.id)] = c; });
             pl.itens.forEach(function (it) {
-              if (!it.apagarId) return;
               var pc = mapa[String(it.compraId)]; if (!pc) return;
-              var desp = CompraNota.despesaDaCompra(fin, it.compraId);
-              if (!desp) return;
-              /* guarda a linha ANTES de apagar — é o que o Desfazer usa para
-                 devolver a despesa do pedido (ver `_desvincularCompraDaNota`) */
-              pc.despesaSubstituida = Util.clone(desp);
-              Store.excluir(eid(), "financeiro", it.apagarId);
+            /* ⚠ TODAS as despesas vivas do pedido, não a primeira: com entrega
+               parcial ele pode ter uma por viagem, e apagar só uma deixaria a
+               outra somando com as parcelas da nota — a duplicata de volta.
+               Guardadas ANTES de apagar: é o que o Desfazer usa para devolver. */
+            var guardadas = [];
+            Util.arr(it.apagarIds).forEach(function (fid) {
+              var d = null;
+              fin.forEach(function (f) { if (f && String(f.id) === String(fid)) d = f; });
+              if (!d) return;
+              guardadas.push(Util.clone(d));
+              Store.excluir(eid(), "financeiro", fid);
+            });
+            if (guardadas.length) {
+              pc.despesasSubstituidas = guardadas;
+              pc.despesaSubstituida = guardadas[0];   /* compat: a versão antiga lê esta */
+            }
             });
           }
           CompraNota.aplicarVinculo(vivoNf, pcs, pl, new Date().toISOString());
@@ -15254,7 +15378,7 @@
              nota para o estoque, trocar a lista por baixo faria a triagem
              apontar para outro item — e o que entrou no almoxarifado não volta
              sozinho. Nesse caso a porta recusa, dizendo onde desfazer. */
-          var jaTriado = Util.arr(vivo.itens).filter(function (x) { return x && (x.st === "lancado" || x.st === "ignorado"); }).length;
+          var jaTriado = Util.arr(vivo.itens).filter(function (x) { return x && self._triResolvida(x.st); }).length;
           if (jaTriado) {
             UI.fecharModal();
             UI.toast(jaTriado + " item(ns) desta nota já foram triados — não dá para trocar a lista por baixo deles. "
@@ -15413,6 +15537,324 @@
       ]);
     },
 
+    /* =================================================================
+     * DESFAZER A ÚLTIMA ENTREGA — a porta que a recusa do [Receber] promete
+     *
+     * ⚠ MEDIDO EM 08/09/2026: registrar entrega era irreversível. Quem digitou
+     * 2.000 em vez de 200, ou clicou [Receber] na linha de baixo, tinha três
+     * saídas e nenhuma honesta: (1) reabrir o pedido pelo formulário — que apaga
+     * `dataRecebimento` e, em pedido legado, fazia o material entrar EM DOBRO
+     * (ver o ⚠ de `_transcreveEntregaLegada`); (2) registrar uma "devolução ao
+     * fornecedor" de material que nunca chegou — mentira gravada no kardex, com
+     * a despesa inteira de pé; (3) deixar errado. A recusa do [Receber] ainda
+     * mandava cancelar a despesa no Financeiro, que não destrava nada (ver o
+     * ⚠ de `comprasReceber`).
+     *
+     * ⚠ ESTA PORTA NÃO É O [DEVOLVER], e a diferença é o que fica escrito.
+     * Devolver = o material chegou e voltou (saída carimbada, despesa intacta,
+     * nota de crédito do fornecedor depois). Desfazer = a entrega NÃO aconteceu:
+     * o registro sai, o estoque volta ao que era e a despesa encolhe pelo valor
+     * DAQUELA viagem — que está gravado em `recebimentos[].valor`, nunca
+     * recalculado por proporção, que seria número de dinheiro tirado do nada.
+     *
+     * ⚠ LANÇAMENTO JÁ PAGO NÃO É TOCADO. Reescrever pagamento conciliado é o
+     * que a regra 3 da skill `dinheiro` proíbe: a caixa mostra o valor pago na
+     * cara, aponta o estorno, e segue com o documento e o estoque. Dizer
+     * "ajustei a despesa" ali seria recado que mente.
+     *
+     * ⚠ O QUE JÁ VOLTOU AO FORNECEDOR NÃO SAI DE NOVO — ver `sairia`.
+     * ⚠ COM NOTA FISCAL VINCULADA, o dinheiro não sumiu — ver `notasDe`.
+     *
+     * ⚠ O CUSTO MÉDIO NÃO VOLTA SOZINHO e a caixa diz isso: ele foi calculado
+     * com esta entrada e o saldo/custo anteriores não ficam gravados em lugar
+     * nenhum. Reconstruir seria inventar. O app avisa e aponta o almoxarifado.
+     * ================================================================= */
+    comprasDesfazerEntrega: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      if (!this._comprasGuardaMod()) return;
+      if (typeof ComprasLinha === "undefined" || !ComprasLinha.recebimento) {
+        UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return;
+      }
+      var pc = Store.obter(eid(), "compras", id); if (!pc) return;
+      var viagens = Util.arr(pc.recebimentos);
+      if (!viagens.length) {
+        UI.toast("Não há entrega registrada neste pedido — não há o que desfazer.", "erro"); return;
+      }
+      /* ⚠ MESMA REGRA DA REABERTURA: desfazer uma baixa é decisão de aprovador.
+         Sem isto a regra valeria no formulário e não valeria no botão — a forma
+         mais cara de consertar pela metade, que esta base já pagou duas vezes. */
+      if (typeof Auth !== "undefined" && Auth.podeAprovar && !Auth.podeAprovar()) {
+        UI.toast("Só um aprovador pode desfazer uma entrega já registrada. Peça a um aprovador da equipe.", "erro");
+        return;
+      }
+      var ult = viagens[viagens.length - 1] || {};
+      var itensUlt = Util.arr(ult.itens);
+      var valorUlt = Util.num(ult.valor);
+      var ehLegado = String(ult.origem || "") === "legado";
+
+      /* =================================================================
+       * ⚠ O QUE JÁ VOLTOU AO FORNECEDOR NÃO SAI DE NOVO.
+       *
+       * Roteiro: 200 SC entram; 50 voltam por [Devolver] (saldo 150, gravado em
+       * `pc.devolucoes`); desfazer a entrega tirando 200 deixaria o saldo em
+       * −50 — desconto em dobro do próprio app, não material que foi para a
+       * obra. Sai o que ainda está lá: o MÍNIMO entre a quantidade DESTA viagem
+       * e o que o pedido inteiro ainda tem no almoxarifado (tudo o que entrou
+       * por ele, menos tudo o que já voltou).
+       *
+       * ⚠ O MÍNIMO, e não "a viagem menos as devoluções": com duas viagens de
+       * 100 e 50 já devolvidos, essa outra conta tiraria só 50 e deixaria 50
+       * sacos a mais no almoxarifado — trocaríamos o saldo negativo por saldo
+       * inflado, que ninguém confere. O mínimo acerta os dois casos e cai
+       * exatamente na conta simples quando a viagem é uma só.
+       *
+       * ⚠ A DEVOLUÇÃO CONTINUA REGISTRADA, e o recado diz isso: ela passa a se
+       * referir a material que, pelo pedido, nunca chegou — quem registrou
+       * precisa saber para acertar com o fornecedor.
+       * ================================================================= */
+      var sairia = function (reg) {
+        var recTot = {}, dev = {};
+        Util.arr(reg && reg.recebimentos).forEach(function (v) {
+          Util.arr(v && v.itens).forEach(function (x) {
+            if (!x || x.itemIdx == null) return;
+            recTot[String(x.itemIdx)] = Util.num(recTot[String(x.itemIdx)]) + Util.num(x.qtd);
+          });
+        });
+        Util.arr(reg && reg.devolucoes).forEach(function (d) {
+          Util.arr(d && d.itens).forEach(function (x) {
+            if (!x || x.itemIdx == null) return;
+            dev[String(x.itemIdx)] = Util.num(dev[String(x.itemIdx)]) + Util.num(x.qtd);
+          });
+        });
+        return itensUlt.map(function (r) {
+          var k = String(r && r.itemIdx);
+          var idx = Number(r && r.itemIdx);
+          var it = Util.arr(reg && reg.itens)[idx] || {};
+          var qViagem = Util.num(r && r.qtd);
+          var noEstoque = Math.max(0, Math.round((Util.num(recTot[k]) - Util.num(dev[k])) * 1000) / 1000);
+          var q = Math.max(0, Math.round(Math.min(qViagem, noEstoque) * 1000) / 1000);
+          return { itemIdx: idx, descricao: it.descricao || ("item " + (idx + 1)),
+            unidade: it.unidade || "", qViagem: qViagem, qtd: q, devolvido: Util.num(dev[k]),
+            reduzido: Math.round((qViagem - q) * 1000) / 1000 };
+        });
+      };
+      var fraseVoltou = function (linhas) {
+        var nomes = linhas.filter(function (l) { return l.reduzido > 0.0001; })
+          .map(function (l) { return l.descricao + " (" + Util.fmtNum(l.reduzido, 2) + ")"; });
+        return nomes.length
+          ? ("Já tinha voltado ao fornecedor por devolução: " + nomes.join(", ")
+             + " — essa quantidade não sai de novo, e a devolução continua registrada no pedido.")
+          : "";
+      };
+      var prev = sairia(pc);
+
+      /* =================================================================
+       * ⚠ NÃO ACHAR NÃO É "NÃO EXISTE" — E AQUI HÁ UM CASO EM QUE O DINHEIRO
+       * ESTÁ VIVO EM OUTRO LUGAR. Vincular nota ao pedido APAGA a despesa dele
+       * de propósito (senão a mesma compra vira duas) e deixa as parcelas da NF
+       * no lugar; `_lancVivoDoDoc` procura pelo carimbo do PEDIDO e não acha
+       * nada. Dizer "nada será alterado no Financeiro" a quem tem NF viva é o
+       * recado que mente.
+       * ⚠ QUEM RESPONDE É O MOTOR DA NOTA, não uma leitura de `pc.notas` aqui:
+       * o vínculo tem dois formatos (lista nova e `notaId` antigo) e uma cópia
+       * desta regra divergiria na primeira manutenção. Sem o motor carregado a
+       * resposta é `null` — "não sei" —, e o recado diz isso em vez de afirmar
+       * que não há nota.
+       * ================================================================= */
+      var notasDe = function (reg) {
+        if (typeof CompraNota === "undefined" || !CompraNota.notasDoPedido) return null;
+        return CompraNota.notasDoPedido(reg)
+          .map(function (x) { return String((x && (x.numero || x.id)) || ""); })
+          .filter(function (t) { return t; });
+      };
+
+      /* o dinheiro: o que existe HOJE, pelo carimbo — nunca por semelhança */
+      var vivoLanc = this._lancVivoDoDoc("compras", pc.id);
+      var pago = vivoLanc && ((typeof FinStatus !== "undefined" && FinStatus.realizado)
+        ? FinStatus.realizado(vivoLanc) : vivoLanc.status === "pago");
+      var nfPrev = notasDe(pc);
+      var linhaDin;
+      if (!vivoLanc && nfPrev && nfPrev.length) {
+        linhaDin = "<b>Financeiro:</b> o dinheiro deste pedido está na nota fiscal <b>" + Util.esc(nfPrev.join(", "))
+          + "</b> (a despesa do pedido saiu quando a nota foi vinculada), e ela <b>NÃO é mexida aqui</b> — "
+          + "desfaça o vínculo da nota se ela não deve ficar de pé.";
+      } else if (!vivoLanc && !nfPrev) {
+        linhaDin = "<b>Financeiro:</b> não encontrei despesa deste pedido de pé pelo carimbo, e não consegui conferir "
+          + "se há nota fiscal vinculada (o motor da nota não carregou) — confira no Financeiro antes de seguir.";
+      } else if (!vivoLanc) {
+        linhaDin = "<b>Financeiro:</b> não encontrei despesa deste pedido de pé pelo carimbo "
+          + "(a de versões antigas não tem, e a cancelada/estornada não conta). Nada será alterado lá — confira por lá.";
+      } else if (pago) {
+        linhaDin = "<b>Financeiro: a despesa de " + Util.fmtMoeda(Math.abs(Util.num(vivoLanc.valor)))
+          + " já foi PAGA e NÃO será alterada</b> — pagamento conciliado não se reescreve. "
+          + this._portaDoLanc(vivoLanc) + ", se o pagamento não deve ficar de pé.";
+      } else if (valorUlt > 0) {
+        var restara = Math.round((Util.num(vivoLanc.valor) - valorUlt) * 100) / 100;
+        linhaDin = restara > 0.005
+          ? ("<b>Financeiro:</b> a despesa deste pedido cai de " + Util.fmtMoeda(Util.num(vivoLanc.valor))
+             + " para " + Util.fmtMoeda(restara) + ".")
+          : ("<b>Financeiro:</b> a despesa de " + Util.fmtMoeda(Util.num(vivoLanc.valor))
+             + " era só desta entrega e será marcada como <b>Cancelada</b> — ela não é apagada, fica no histórico.");
+      } else {
+        linhaDin = "<b>Financeiro:</b> esta entrega não lançou valor nenhum (pedido sem preço por item), "
+          + "então a despesa de " + Util.fmtMoeda(Util.num(vivoLanc.valor)) + " fica como está.";
+      }
+
+      /* ⚠ o estado anterior sai do PRÓPRIO registro, nunca de um palpite: quem
+         tem confirmação volta para "confirmado", quem só tem envio para
+         "enviado", o resto para "aprovado". Aqui é só a PRÉVIA da caixa — o que
+         vale na gravação sai do registro RELIDO. */
+      var destinoPrev = pc.status === "recebido"
+        ? (pc.confirmacao ? "confirmado" : (pc.envio ? "enviado" : "aprovado"))
+        : pc.status;
+
+      var linhasHtml = prev.map(function (l) {
+        return "<tr><td>" + Util.esc(l.descricao) + "</td>"
+          + '<td class="num">' + Util.fmtNum(l.qtd, 2) + " " + Util.esc(Util.unidadeExibir(l.unidade || "")) + "</td></tr>";
+      }).join("");
+
+      var corpo = '<p style="margin-top:0;font-size:13px">Desfazer a <b>última entrega</b> do pedido <b>'
+        + Util.esc(pc.numero || "") + "</b>"
+        + (ult.em ? ", registrada em <b>" + Util.fmtDia(ult.em) + "</b>" : "")
+        + (ehLegado ? " (entrega de versão antiga do app, transcrita quando o pedido foi reaberto)" : "")
+        + ". Isto <b>não é uma devolução ao fornecedor</b>: use esta porta quando a entrega foi registrada errada, "
+        + "e o [Devolver] quando o material chegou e voltou.</p>"
+        + (linhasHtml
+          ? '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Sai do almoxarifado</th><th class="num">Quantidade</th></tr></thead><tbody>' + linhasHtml + "</tbody></table></div>"
+          : '<p class="muted" style="font-size:13px">Esta entrega não moveu material (pedido sem itens detalhados) — só o registro e a despesa mudam.</p>')
+        /* ⚠ a devolução já registrada é dita ANTES de a pessoa decidir, não só
+           no recado do fim: é ela que explica por que a quantidade da tabela
+           acima é menor que a da entrega. */
+        + (fraseVoltou(prev) ? '<p style="font-size:12.5px;margin:8px 0 0">' + Util.esc(fraseVoltou(prev)) + "</p>" : "")
+        + '<p style="font-size:12.5px;margin:10px 0 0">' + linhaDin + "</p>"
+        + '<p style="font-size:12.5px;margin:8px 0 0">O pedido volta para <b>'
+        + Util.esc(rot(P.compraStatus, destinoPrev) || destinoPrev) + "</b>"
+        + (viagens.length > 1 ? " e continua com as " + (viagens.length - 1) + " entrega(s) anteriores." : ".") + "</p>"
+        /* ⚠ o que NÃO acontece é a parte que evita o telefonema seguinte */
+        + '<p class="muted" style="font-size:12.5px">O <b>custo médio</b> do item no almoxarifado não volta sozinho: '
+        + "ele foi calculado com esta entrada, e o saldo anterior não fica gravado. Se esta entrega era a maior do item, "
+        + "confira o custo unitário na tela de Estoque. O fornecedor <b>não é avisado</b> por aqui.</p>";
+
+      UI.modal("Desfazer entrega — pedido " + Util.esc(pc.numero || ""), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Desfazer a entrega", classe: "danger", onClick: function () {
+          /* ⚠ RELÊ ANTES DE GRAVAR, como as outras portas: a caixa ficou aberta e
+             o merge da nuvem roda em segundo plano — outro aparelho pode ter
+             registrado ou desfeito entrega nesses segundos, e o estoque sairia
+             duas vezes. */
+          var vivo = Store.obter(eid(), "compras", id);
+          if (!vivo) { UI.fecharModal(); UI.toast("O pedido não existe mais.", "erro"); App.render(); return; }
+          if (Util.arr(vivo.recebimentos).length !== viagens.length) {
+            UI.fecharModal();
+            UI.toast("Este pedido mudou de entregas em outro aparelho enquanto a caixa estava aberta — nada foi alterado. Abra de novo para ver como ele está.", "erro");
+            App.render(); return;
+          }
+          /* ⚠ STATUS E DEVOLUÇÕES SAEM DO REGISTRO RELIDO, nunca do `pc` que a
+             caixa capturou: entre abrir e confirmar, outro aparelho pode ter
+             mexido nos dois — e a trilha ficaria dizendo que o pedido saiu de um
+             estado em que ele já não estava. */
+          var statusAntes = vivo.status;
+          var destino = vivo.status === "recebido"
+            ? (vivo.confirmacao ? "confirmado" : (vivo.envio ? "enviado" : "aprovado"))
+            : vivo.status;
+          var saem = sairia(vivo);
+          var catalogo = listaTodas("estoque"), saiu = 0, semItem = [], negativos = [];
+          saem.forEach(function (l) {
+            var it = Util.arr(vivo.itens)[l.itemIdx] || {};
+            if (!(l.qtd > 0)) return;
+            var k = Util.itemChave(String(it.descricao || ""));
+            var alvo = k ? catalogo.filter(function (e) { return Util.itemChave(String(e.nome || "")) === k; })[0] : null;
+            if (!alvo) { semItem.push(l.descricao); return; }
+            var novoSaldo = Math.round((Util.num(alvo.saldo) - l.qtd) * 1000) / 1000;
+            /* ⚠ NÃO SE RECUSA POR SALDO NEGATIVO — o material pode já ter ido
+               para a obra, e recusar aqui devolveria a pessoa ao beco. Sai, e o
+               que ficou negativo é NOMEADO no recado: saldo negativo em silêncio
+               é o almoxarifado mentindo. */
+            if (novoSaldo < 0) negativos.push(alvo.nome);
+            alvo.saldo = novoSaldo;
+            if (!Store.salvar(eid(), "estoque", alvo)) return;
+            Store.salvar(eid(), "estoque_mov", {
+              itemId: alvo.id, itemNome: alvo.nome, tipo: "saida", qtd: l.qtd,
+              custoUnit: Util.num(alvo.custoUnit), data: (ult.em || self._hojeISO()),
+              obraId: vivo.obraId || "",
+              /* ⚠ carimbo do pedido, igual à entrada e à devolução: é ele que faz
+                 o Extrato ligar a saída à entrada que ela desfaz. */
+              docTipo: "PC", docId: vivo.id || "", docNumero: vivo.numero || "",
+              obs: "Entrega desfeita — pedido " + (vivo.numero || "") + (ult.em ? " (entrega de " + Util.fmtDia(ult.em) + ")" : "")
+            });
+            saiu++;
+          });
+
+          vivo.recebimentos = Util.arr(vivo.recebimentos).slice(0, viagens.length - 1);
+          if (vivo.status === "recebido") { vivo.status = destino; vivo.dataRecebimento = ""; }
+          /* ⚠ AQUI O `estoqueLancado` É LIMPO, AO CONTRÁRIO DA REABERTURA — e a
+             diferença é o que aconteceu de fato. Na reabertura o material continua
+             no almoxarifado, então limpar a marca faria a entrada seguinte
+             duplicar. Aqui o material SAIU: manter a marca faria o caminho do
+             formulário (`_estoqueDaCompra(obj)` sem quantidades) recusar para
+             sempre a entrada que agora falta. Só limpa quando não sobrou viagem
+             nenhuma E nada ficou sem baixa — item que não foi achado no
+             almoxarifado continua lá dentro até alguém dar a saída à mão. */
+          if (!vivo.recebimentos.length && !semItem.length) vivo.estoqueLancado = false;
+          self._trilhaAprov(vivo, "desfazer-entrega", { de: statusAntes, para: vivo.status, em: ult.em || "", valor: valorUlt });
+          if (!Store.salvar(eid(), "compras", vivo)) {
+            UI.toast("O material saiu do almoxarifado, mas NÃO consegui gravar o pedido — o armazenamento recusou. Confira o Extrato antes de repetir.", "erro");
+            return;
+          }
+
+          var msgDin = "";
+          var lanc = self._lancVivoDoDoc("compras", vivo.id);
+          var ehPago = lanc && ((typeof FinStatus !== "undefined" && FinStatus.realizado)
+            ? FinStatus.realizado(lanc) : lanc.status === "pago");
+          var nfs = notasDe(vivo);
+          if (!lanc && nfs && nfs.length) {
+            /* ⚠ ver `notasDe`: com nota vinculada, a despesa do pedido foi
+               apagada de propósito e o dinheiro virou parcela da NF. */
+            msgDin = " O dinheiro deste pedido está na nota fiscal " + nfs.join(", ")
+              + " (a despesa do pedido saiu quando a nota foi vinculada), e ela NÃO foi mexida aqui — desfaça o vínculo da nota se ela não deve ficar de pé.";
+          } else if (!lanc && !nfs) {
+            msgDin = " Nenhuma despesa deste pedido foi alterada: não achei nenhuma de pé pelo carimbo, e não consegui conferir se há nota fiscal vinculada (o motor da nota não carregou) — confira no Financeiro.";
+          } else if (!lanc) {
+            msgDin = " Nenhuma despesa deste pedido foi alterada: não achei nenhuma de pé pelo carimbo (as de versões antigas não têm) — confira no Financeiro.";
+          } else if (ehPago) {
+            msgDin = " A despesa de " + Util.fmtMoeda(Math.abs(Util.num(lanc.valor))) + " NÃO foi alterada porque já está paga — estorne-a no Financeiro se o pagamento não deve ficar de pé.";
+          } else if (valorUlt > 0) {
+            var antes = Util.num(lanc.valor);
+            var resta = Math.round((antes - valorUlt) * 100) / 100;
+            if (resta > 0.005) {
+              lanc.valor = resta;
+              lanc.desc = "Compra " + (vivo.numero || "") + " — " + (vivo.descricao || "") + self._condPgtoSufixo(vivo)
+                + " · " + Util.arr(vivo.recebimentos).length + " entrega(s)";
+              msgDin = Store.salvar(eid(), "financeiro", lanc)
+                ? (" A despesa no Financeiro passou de " + Util.fmtMoeda(antes) + " para " + Util.fmtMoeda(resta) + ".")
+                : " NÃO consegui atualizar a despesa no Financeiro — confira por lá.";
+            } else {
+              /* ⚠ CANCELA, NUNCA APAGA: lançamento apagado some do histórico e do
+                 que a nuvem já sincronizou; cancelado é registro morto que continua
+                 contando o que houve (ver `_finAnulado`). */
+              lanc.status = "cancelado";
+              msgDin = Store.salvar(eid(), "financeiro", lanc)
+                ? (" A despesa de " + Util.fmtMoeda(antes) + " era só desta entrega e foi marcada como Cancelada no Financeiro.")
+                : " NÃO consegui cancelar a despesa no Financeiro — confira por lá.";
+            }
+          } else {
+            msgDin = " Esta entrega não tinha valor lançado, então a despesa ficou como estava.";
+          }
+
+          var voltou = fraseVoltou(saem);
+          UI.fecharModal(); App.render();
+          UI.toast("Entrega desfeita: " + saiu + " item(ns) saíram do almoxarifado com o carimbo do pedido "
+            + (vivo.numero || "") + ", e o pedido voltou para " + (rot(P.compraStatus, vivo.status) || vivo.status) + "."
+            + msgDin
+            + (voltou ? " " + voltou : "")
+            + (semItem.length ? " NÃO achei no almoxarifado: " + semItem.join(", ") + " — dê a saída à mão por lá." : "")
+            + (negativos.length ? " ATENÇÃO: o saldo ficou NEGATIVO em " + negativos.join(", ") + " — o material já tinha saído para a obra; acerte no Estoque." : ""),
+            (semItem.length || negativos.length || !lanc || ehPago) ? "aviso" : "ok");
+        } }
+      ]);
+    },
+
     comprasCobrar: function (id) {
       var reg = Store.obter(eid(), "compras", id); if (!reg) return;
       if (typeof ComprasLinha === "undefined") { UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return; }
@@ -15454,7 +15896,15 @@
         var hojeF = hojeLocal();
         cs = cs.filter(function (c) { return ComprasLinha.passaFiltro(c, filtro, hojeF); });
       }
-      var t = e.semMotor ? null : PorObra.totaisCompras(cs);   /* ⚠ totais do recorte */
+      /* ⚠ ÍNDICE MONTADO UMA VEZ SÓ. `PorObra.porObra` chama o agregador uma
+         vez POR OBRA; sem o índice pronto, cada grupo varreria o Financeiro
+         inteiro de novo.
+         ⚠ `lista` e não `listaTodas`: o Financeiro também respeita o escopo por
+         obra do usuário. Nada do Financeiro chega ao HTML — o índice é só
+         { pedidoId: número }, e só de pedidos já visíveis nesta tela. */
+      var idxD = (typeof CompraNota !== "undefined" && CompraNota.jaEDespesaPorPedido)
+        ? CompraNota.jaEDespesaPorPedido(lista("financeiro"), e.todos) : null;
+      var t = e.semMotor ? null : PorObra.totaisCompras(cs, idxD);   /* ⚠ totais do recorte */
       var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
 
       var selHtml = '<select data-gacao="compras-obra" title="Separar os pedidos por obra" style="max-width:230px">' +
@@ -15487,8 +15937,17 @@
           '<span class="fin-sub">cotação + aprovado + recebido</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">Recebido</span><b style="color:var(--verde)">' + Util.fmtMoeda(t.recebido) + '</b>' +
           '<span class="fin-sub">' + t.nRecebido + ' pedido(s)</span></div>' +
-        '<div class="fin-kpi"><span class="fin-lbl">Comprometido</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.aprovado) + '</b>' +
-          '<span class="fin-sub">' + t.nAprovado + ' aprovado(s), a entregar</span></div>' +
+        /* ⚠ `t.comprometido`, NÃO `t.aprovado`: com entrega parcial o pedido
+           continua no balde "aprovado" pelo valor cheio, mas parte dele já virou
+           conta a pagar no Financeiro. Somar os dois mostrava R$ 17.500 de
+           exposição para uma compra de R$ 10.000. O sufixo existe porque, sem
+           ele, Comprometido + Recebido não fecha com o Total válido e quem soma
+           as colunas acha que o app perdeu dinheiro. */
+        '<div class="fin-kpi"><span class="fin-lbl">Comprometido</span><b style="color:var(--amarelo)">' + Util.fmtMoeda(t.comprometido) + '</b>' +
+          '<span class="fin-sub">' + t.nAprovado + ' aprovado(s), a entregar' +
+          (t.jaNoFinanceiro > 0.005 ? ' · ' + Util.fmtMoeda(t.jaNoFinanceiro) + ' já virou conta no Financeiro' : "") +
+          (t.semDesconto ? ' · sem o desconto das entregas: recarregue o app' : "") +
+          '</span></div>' +
         '<div class="fin-kpi"><span class="fin-lbl">Aguardando aprovação</span><b>' + Util.fmtMoeda(t.cotacao) + '</b>' +
           '<span class="fin-sub">' + t.nCotacao + ' aguardando decisão</span></div>' +
         (t.nDescartado ? '<div class="fin-kpi"><span class="fin-lbl">Fora da conta</span><b class="muted">' + Util.fmtMoeda(t.descartado) + '</b>' +
@@ -15497,7 +15956,10 @@
         "</div>";
 
       if (!e.semMotor && e.sel === "todas" && obras.length) {
-        var grupos = PorObra.porObra(e.todos, obras, PorObra.totaisCompras);
+        /* ⚠ CLOSURE, e não `PorObra.totaisCompras` solto: `porObra` chama o
+           agregador com UM argumento, então o índice não chegaria — e a tabela
+           mostraria 10.000 embaixo do KPI que mostra 2.500, com a mesma palavra. */
+        var grupos = PorObra.porObra(e.todos, obras, function (lst) { return PorObra.totaisCompras(lst, idxD); });
         if (grupos.length > 1) {
           html += '<table class="tbl" style="margin-bottom:14px"><thead><tr><th>Obra</th><th class="num">Pedidos</th>' +
             '<th class="num">Recebido</th><th class="num">Comprometido</th><th class="num">Aguardando aprovação</th><th class="num">Total válido</th></tr></thead><tbody>';
@@ -15505,10 +15967,11 @@
             html += '<tr class="lin" style="cursor:pointer" data-gacao="compras-obra" data-id="' + Util.esc(g.chave) + '">' +
               "<td><b>" + Util.esc(g.nome) + "</b>" +
               (g.orfao ? ' <span class="pill" style="color:var(--amarelo)">obra excluída — reveja o vínculo</span>' : "") +
-              (g.nDescartado ? ' <span class="muted" style="font-size:11px">· ' + g.nDescartado + " fora da conta</span>" : "") + "</td>" +
+              (g.nDescartado ? ' <span class="muted" style="font-size:11px">· ' + g.nDescartado + " fora da conta</span>" : "") +
+              (g.nComEntrega ? ' <span class="muted" style="font-size:11px">· ' + Util.fmtMoeda(g.jaNoFinanceiro) + " já no Financeiro</span>" : "") + "</td>" +
               '<td class="num">' + g.n + "</td>" +
               '<td class="num" style="color:var(--verde)">' + Util.fmtMoeda(g.recebido) + "</td>" +
-              '<td class="num" style="color:var(--amarelo)">' + Util.fmtMoeda(g.aprovado) + "</td>" +
+              '<td class="num" style="color:var(--amarelo)">' + Util.fmtMoeda(g.comprometido) + "</td>" +
               '<td class="num muted">' + Util.fmtMoeda(g.cotacao) + "</td>" +
               '<td class="num"><b>' + Util.fmtMoeda(g.total) + "</b></td></tr>";
           });
@@ -15533,6 +15996,36 @@
           return '<button class="btn sm ' + (classe || "") + '" data-gacao="' + gacao + '" data-id="' + c.id + '"' + (title ? ' title="' + Util.esc(title) + '"' : "") + '>' + rotulo + '</button> ';
         };
         var cobrar = (sit && (sit.atrasado || (c.status === "enviado" && sit.parado))) ? bt("cobrar-compra", "Cobrar", "", "Abre a mensagem no WhatsApp — o fornecedor não é avisado sozinho") : "";
+        /* =================================================================
+         * ⚠ PORTA PROMETIDA PRECISA EXISTIR — E EM TODO STATUS.
+         *
+         * A recusa do [Receber] ("já entrou tudo o que este pedido pediu") manda
+         * usar Devolver ou Desf. entrega. Num pedido reaberto o status volta
+         * para "aprovado"; rejeitando, vai para "rejeitado"; e
+         * `recebido → cancelado` e `recebido → cotacao` são dois caminhos que
+         * `_guardaReabertura` deixa passar de propósito (com assert em
+         * test-v12). Em nenhum desses a linha desenhava Devolver ou Desf.
+         * entrega: o material ficava no almoxarifado sem saída nenhuma, e o
+         * recado apontava para botões fora da tela.
+         *
+         * ⚠ ANEXADOS DEPOIS da cadeia de status, não enfiados em quatro ramos
+         * dela: assim nenhum status — nem um novo — nasce sem porta, e as
+         * frases de cada ramo ficam byte a byte como estavam.
+         * ================================================================= */
+        var recL = (typeof ComprasLinha !== "undefined" && ComprasLinha.recebimento) ? ComprasLinha.recebimento(c) : null;
+        var temViagem = !!(recL && recL.viagens > 0);
+        var btDesfEnt = temViagem ? bt("desfazer-entrega-compra", "Desf. entrega", "", "A última entrega foi registrada errada: tira o material do almoxarifado e ajusta a despesa") : "";
+        /* em "recebido" a cadeia já desenha o Devolver; não repetir */
+        var btDev = (temViagem && c.status !== "recebido") ? bt("devolver-compra", "Devolver", "", "Material errado, quebrado ou a mais voltou para o fornecedor") : "";
+        /* ⚠ COM VIAGEM REGISTRADA, "Desfazer" DEIXA DE SER A ETAPA: desfazer o
+           envio de um pedido que já recebeu material não desfaz entrega nenhuma
+           — e `comprasDesfazerEtapa` promete no confirm "Nada muda no Financeiro
+           nem no almoxarifado", que vira mentira nesse pedido. Dois botões
+           "Desf…" lado a lado ainda ensinam a clicar no errado, e a coluna de
+           ações já sai da tela em 1400 px (ver os ⚠ dos rótulos curtos abaixo):
+           o da entrega toma o LUGAR do da etapa, não se soma a ele. O título de
+           cada ramo é preservado no argumento. */
+        var btEtapa = function (tit) { return temViagem ? "" : bt("desfazer-etapa-compra", "Desfazer", "", tit); };
         var acao = '<button class="btn sm" data-gacao="doc-compra" data-id="' + c.id + '" title="Gerar Pedido de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ' +
           (c.status === "cotacao" ? bt("aprovar-compra", "Aprovar", "primary") + '<button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
           /* rótulos curtos: "Enviar ao fornecedor" empurrava a coluna de ações
@@ -15541,8 +16034,8 @@
           /* ⚠ RÓTULOS CURTOS, pelo mesmo motivo do comentário acima: a coluna
              de ações sai da tela em 1400 px. "Data" e "Desfazer" carregam o
              resto no `title`. */
-          : c.status === "enviado" ? bt("confirmar-compra", "Confirmou", "primary", "Fornecedor confirmou: registrar a data que ele prometeu") + bt("receber-compra", "Receber", "success") + bt("desfazer-etapa-compra", "Desfazer", "", "Marquei como enviado por engano: volta para aprovado e apaga o registro de envio") + bt("recusou-compra", "Recusou", "", "O fornecedor avisou que não vai atender: registra o motivo e cancela o pedido") + cobrar
-          : c.status === "confirmado" ? bt("receber-compra", "Receber", "success") + bt("confirmar-compra", "Data", "", "Corrigir a data que o fornecedor prometeu (o atraso é medido por ela)") + bt("desfazer-etapa-compra", "Desfazer", "", "Desfazer a confirmação do fornecedor") + bt("recusou-compra", "Recusou", "", "O fornecedor voltou atrás: registra o motivo e cancela o pedido") + cobrar
+          : c.status === "enviado" ? bt("confirmar-compra", "Confirmou", "primary", "Fornecedor confirmou: registrar a data que ele prometeu") + bt("receber-compra", "Receber", "success") + btEtapa("Marquei como enviado por engano: volta para aprovado e apaga o registro de envio") + bt("recusou-compra", "Recusou", "", "O fornecedor avisou que não vai atender: registra o motivo e cancela o pedido") + cobrar
+          : c.status === "confirmado" ? bt("receber-compra", "Receber", "success") + bt("confirmar-compra", "Data", "", "Corrigir a data que o fornecedor prometeu (o atraso é medido por ela)") + btEtapa("Desfazer a confirmação do fornecedor") + bt("recusou-compra", "Recusou", "", "O fornecedor voltou atrás: registra o motivo e cancela o pedido") + cobrar
           /* ⚠ a volta do material precisa de porta: sem ela, a única saída era
              uma "saída manual" no almoxarifado, que não liga nada ao pedido —
              o kardex mostrava material saindo sem dizer para onde. */
@@ -15551,7 +16044,7 @@
           /* ⚠ CANCELADO POR RECUSA NÃO É CANCELADO QUALQUER. A pílula diz só
              "Cancelado" nos dois casos, e o motivo é o que evita chamar o mesmo
              fornecedor de novo pelo mesmo problema. */
-          : (c.status === "cancelado" && c.recusa) ? '<span class="muted" title="' + Util.esc(c.recusa.motivo || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' fornecedor recusou</span>' : "");
+          : (c.status === "cancelado" && c.recusa) ? '<span class="muted" title="' + Util.esc(c.recusa.motivo || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' fornecedor recusou</span>' : "") + btDev + btDesfEnt;
         var pillEnt = sit ? ComprasLinha.pillEntrega(c, hojeLocal()) : { texto: c.previsaoEntrega ? Util.fmtData(c.previsaoEntrega) : "", cor: "" };
         var celEntrega = pillEnt.texto ? '<span style="font-size:11.5px;font-weight:700;color:' + (pillEnt.cor || "inherit") + '">' + Util.esc(pillEnt.texto) + '</span>' : '<span class="muted">—</span>';
         /* vínculo quebrado grita aqui também: "—" faria o pedido de uma obra
@@ -15689,6 +16182,32 @@
         if (obj && obj.requisicaoId && (obj.status === "cancelado" || obj.status === "rejeitado")) {
           var rqF = self._liberaRequisicaoSemPedido(obj.requisicaoId);
           if (rqF) UI.toast("A requisição " + (rqF.numero || rqF.id) + " voltou para a fila de compras: nenhum pedido vivo a atende.", "aviso");
+        }
+      }, {
+        /* ⚠ A CÓPIA DA DESPESA MORA DENTRO DO PEDIDO, então excluir o pedido
+           a leva junto — e a nota continua citando um id que não existe mais.
+           `_desvincularCompraDaNota` pula esse pedido em silêncio
+           (`if (c) pcs.push(c)`), e não sobra função pura nenhuma que alcance
+           o estrago: são R$ do material recebido sem cópia para devolver. O
+           formulário do pedido era o único `_modalForm` de dinheiro sem
+           `avisoExclusao`. Aviso depois de apagar não é aviso. */
+        avisoExclusao: function (reg) {
+          if (!reg || !reg.id || typeof CompraNota === "undefined") return "";
+          var nts = CompraNota.notasDoPedido(reg);
+          var cop = CompraNota.despesasARestaurar(reg);
+          if (!nts.length && !cop.length) return "";
+          var t = "";
+          if (nts.length) {
+            t += "Este pedido está faturado pela(s) nota(s) " +
+              nts.map(function (n) { return n.numero || n.id; }).join(", ") +
+              ". Elas vão continuar citando um pedido que não existe mais.";
+          }
+          if (cop.length) {
+            var v = cop.reduce(function (a, d) { return a + Util.num(d && d.valor); }, 0);
+            t += (t ? "\n" : "") + "VAI JUNTO: a cópia da despesa de " + Util.fmtMoeda(v) +
+              " que a nota tinha substituído. Sem ela ninguém consegue devolver esse custo ao Financeiro depois — nem eu.";
+          }
+          return t;
         }
       });
       _fiar();
@@ -15952,6 +16471,17 @@
     _estoqueDaCompra: function (pc, qtdPorIdx, dataEntrega) {
       var porIdx = qtdPorIdx || null;
       if (!pc || (!porIdx && pc.estoqueLancado)) return { lancados: 0, jaFeito: !!(pc && pc.estoqueLancado) };
+      /* ⚠ SEGUNDO CINTO, E ELE NÃO FECHA A ENTREGA PARCIAL. O guarda de cima
+         some de propósito quando vem `qtdPorIdx`: a 2ª viagem é entrada legítima,
+         não repetição. Mas 2ª viagem SEMPRE tem `recebimentos` — a 1ª gravou uma.
+         Um pedido com `estoqueLancado` de pé e NENHUMA viagem registrada não é
+         2ª viagem: é o pedido legado que perdeu a data (ver
+         `_transcreveEntregaLegada`), e dar entrada aqui dobra o almoxarifado
+         (medido: 200 → 400 sacos, R$ 9.500 → R$ 19.000).
+         ⚠ Não recusa calado: devolve `orfao` para quem chama dizer o que houve. */
+      if (porIdx && pc.estoqueLancado && !Util.arr(pc.recebimentos).length) {
+        return { lancados: 0, jaFeito: true, orfao: true };
+      }
       var itens = Util.arr(pc.itens).map(function (i, idx) {
         /* o índice viaja junto: o filtro abaixo tira linhas, e sem ele a
            quantidade da viagem cairia no item errado */
@@ -22369,6 +22899,7 @@ renderRequisicoes: function () {
       /* A triagem é uma SUB-TELA do Fiscal, não uma view nova: assim herda o
          RBAC do módulo e o roteador de views continua com a lista fixa. */
       if (this._triagem && this._triagem.notaId) return this._renderTriagem();
+      var self = this;
       var nfs = lista("fiscal"), obras = lista("obras");
       var totEnt = nfs.filter(function (n) { return n.tipo === "entrada" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
       var totSai = nfs.filter(function (n) { return n.tipo === "saida" && n.status === "emitida"; }).reduce(function (s, n) { return s + Util.num(n.valorTotal); }, 0);
@@ -22402,7 +22933,10 @@ renderRequisicoes: function () {
         var numTxt = n.numero ? n.numero : "—";
         if (n.serie) numTxt += "/" + n.serie;
         var nItens = Util.arr(n.itens).length;
-        var pend = Util.arr(n.itens).filter(function (x) { return x.st !== "lancado" && x.st !== "ignorado"; }).length;
+        /* ⚠ `_triResolvida`, e não a comparação na mão: a linha "pedido" está
+           resolvida (o material já está no almoxarifado). Sem isto a nota
+           dizia "1 a triar" para sempre, e o botão verde não tinha o que fazer. */
+        var pend = Util.arr(n.itens).filter(function (x) { return !self._triResolvida(x.st); }).length;
         /* nota antiga (importada antes desta versão) não tem itens gravados —
            o botão não aparece em vez de abrir uma tela vazia sem explicação */
         var btnTri = nItens
@@ -22455,6 +22989,45 @@ renderRequisicoes: function () {
        (ou de uma vez), para onde cada coisa vai. O app SUGERE; quem grava é o
        clique dele. */
     _triagem: null,
+
+    /* ⚠ QUEM DECIDE SE A LINHA ESTÁ TRAVADA É O MOTOR (`NFItens.travado`), e
+       não dez comparações espalhadas. Foi um `st === "lancado"` solto em cada
+       canto que deixou o estado novo escapar por um deles — e cada escape é
+       material sumindo ou entrando duas vezes. O fallback existe só para o
+       caso de `nfitens.js` não ter carregado: aí a triagem nem abre, mas a
+       lista de notas ainda desenha e não pode quebrar. */
+    _triTravada: function (st) {
+      return (typeof NFItens !== "undefined" && NFItens.travado) ? NFItens.travado(st) : (st === "lancado" || st === "pedido");
+    },
+    _triResolvida: function (st) {
+      return (typeof NFItens !== "undefined" && NFItens.resolvido) ? NFItens.resolvido(st) : (st === "lancado" || st === "pedido" || st === "ignorado");
+    },
+
+    /* A ENTRADA QUE ESTA TRIAGEM FEZ — SE FEZ. Carimbo, não semelhança.
+       ⚠ É a prova que salva o DADO ANTIGO: nota triada antes desta correção
+       guardou `st:"lancado"` mesmo quando a guarda do pedido tinha barrado o
+       lançamento, e essa linha mentirosa já está no disco das instalações. Aqui
+       não dá para perguntar ao estado; pergunta-se ao kardex, que
+       `_triGravarEstoque` carimba com `docTipo:"NF"` + chave (ou número).
+       ⚠ `listaTodas`, NÃO `lista`: o movimento pode estar em obra que este
+       usuário não enxerga, e o funil por obra viraria recusa falsa.
+       (Backup real de 04/09/2026: 59 de 61 movimentos têm `docTipo`; os 2 sem
+       são da obra demo.) */
+    _triLancouEsteItem: function (l, nf, itemEst) {
+      if (!itemEst || !nf) return false;
+      var chave = String(nf.chaveAcesso || ""), numero = String(nf.numero || ""), achou = false;
+      Util.arr(listaTodas("estoque_mov")).forEach(function (m) {
+        if (achou || !m) return;
+        if (String(m.itemId || "") !== String(itemEst.id)) return;
+        if (String(m.tipo || "") !== "entrada" || String(m.docTipo || "") !== "NF") return;
+        /* mesmo critério do `_lancamentosDaNota`: com chave vale a chave; sem
+           chave (NFS-e, recibo, nota digitada) vale o número do documento */
+        if (chave) { if (String(m.docChave || "") === chave) achou = true; return; }
+        if (numero && String(m.docNumero || "") === numero) achou = true;
+      });
+      return achou;
+    },
+
     triAbrir: function (notaId) {
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("fiscal")) { UI.toast("Seu usuário não tem permissão no módulo Fiscal.", "erro"); return; }
       var nf = Store.obter(eid(), "fiscal", notaId);
@@ -22479,6 +23052,13 @@ renderRequisicoes: function () {
         if (it.st) linhas[i].st = it.st;
         if (it.ca) linhas[i].ca = it.ca;
         if (it.categoria) linhas[i].categoria = it.categoria;
+        /* ⚠ O CARIMBO DO PEDIDO VOLTA DO DISCO. Sem esta linha o número era
+           gravado e nunca lido: a pílula dizia "veio do pedido" sem dizer
+           QUAL, e recado que a pessoa não consegue conferir ela lê como
+           formalidade. É também o que faz a guarda funcionar depois do
+           desvínculo (ver `_itemJaEntrouPeloPedido`). */
+        if (it.pcNumero) linhas[i].pcNumero = it.pcNumero;
+        if (it.pcId) linhas[i].pcId = it.pcId;
       });
       this._triagem = { notaId: notaId, linhas: linhas, marcadas: {}, lote: { obra: "", resp: "", dest: "" } };
       App.view = "fiscal"; App.render();
@@ -22495,7 +23075,7 @@ renderRequisicoes: function () {
          toda nota com imposto por fora. */
       var baseConf = Util.num(nf.valorProdutos) > 0 ? Util.num(nf.valorProdutos) : Util.num(nf.valorTotal);
       var lote = t.lote || (t.lote = { obra: "", resp: "", dest: "" });
-      var R = (typeof NFItens !== "undefined") ? NFItens.resumo(t.linhas, baseConf) : { porDestino: {}, bate: true, somaItens: 0, pendentes: 0, lancados: 0 };
+      var R = (typeof NFItens !== "undefined") ? NFItens.resumo(t.linhas, baseConf) : { porDestino: {}, bate: true, somaItens: 0, pendentes: 0, lancados: 0, doPedido: 0 };
       var brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
 
       var DEST = [["estoque", "" + (typeof Icones !== "undefined" ? Icones.get("estoque", 15) : "") + " Estoque"], ["patrimonio", "🏷 Patrimônio"], ["consumo", "🚧 Consumo na obra"], ["epi", "🦺 EPI"], ["ignorar", "— Ignorar"]];
@@ -22558,10 +23138,13 @@ renderRequisicoes: function () {
         "<th>Sugestão</th><th>Destino</th><th>Obra</th><th>Responsável</th><th>Situação</th></tr></thead><tbody>";
 
       t.linhas.forEach(function (l, i) {
-        var lanc = l.st === "lancado", ign = l.st === "ignorado";
+        var lanc = l.st === "lancado", ign = l.st === "ignorado", doPC = l.st === "pedido";
+        /* ⚠ a linha do PEDIDO trava igual à lançada (ninguém mexe no destino
+           dela), mas o botão dela LIBERA — não estorna. */
+        var trav = self._triTravada(l.st);
         var corConf = l.sugestao.confianca === "alta" ? "" : "proprio";
-        html += "<tr" + (lanc ? ' style="opacity:.6"' : "") + ">" +
-          '<td><input type="checkbox" data-tri-mark="' + i + '"' + (t.marcadas[i] ? " checked" : "") + (lanc ? " disabled" : "") + "></td>" +
+        html += "<tr" + (trav ? ' style="opacity:.6"' : "") + ">" +
+          '<td><input type="checkbox" data-tri-mark="' + i + '"' + (t.marcadas[i] ? " checked" : "") + (trav ? " disabled" : "") + "></td>" +
           "<td>" + l.numero + "</td>" +
           "<td><b>" + Util.esc(l.descricao) + "</b>" +
             /* o número quase sempre JÁ está escrito na descrição ("OCULOS ... CA
@@ -22580,12 +23163,19 @@ renderRequisicoes: function () {
              olhar, e o title traz o porquê do palpite. */
           '<td><span class="pill ' + corConf + '" title="' + Util.esc(l.sugestao.motivo) + '">' +
             (l.sugestao.confianca === "alta" ? "" + (typeof Icones !== "undefined" ? Icones.get("check", 15) : "") + " alta" : (l.sugestao.confianca === "media" ? "~ confira" : "" + (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") + " confira")) + "</span></td>" +
-          '<td><select data-tri-dest="' + i + '"' + (lanc ? " disabled" : "") + ">" + optDest(l.destino) + "</select></td>" +
-          '<td><select data-tri-obra="' + i + '"' + (lanc ? " disabled" : "") + ">" + optObra(l.obraId) + "</select></td>" +
-          '<td><select data-tri-resp="' + i + '"' + (lanc ? " disabled" : "") + ">" + optResp(l.responsavelId) + "</select></td>" +
+          '<td><select data-tri-dest="' + i + '"' + (trav ? " disabled" : "") + ">" + optDest(l.destino) + "</select></td>" +
+          '<td><select data-tri-obra="' + i + '"' + (trav ? " disabled" : "") + ">" + optObra(l.obraId) + "</select></td>" +
+          '<td><select data-tri-resp="' + i + '"' + (trav ? " disabled" : "") + ">" + optResp(l.responsavelId) + "</select></td>" +
           "<td>" + (lanc ? '<span class="pill" style="background:rgba(22,163,74,.18);color:#15803d">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' lançado</span> ' +
               '<button class="btn sm ico" data-gacao="tri-desfazer" data-id="' + i + '" title="Errou o destino? Desfaz este item e devolve para a triagem">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + '</button>'
-            : (ign ? '<span class="muted">ignorado</span>' : '<span class="pill proprio">a lançar</span>')) + "</td></tr>";
+            /* ⚠ DIZ DE ONDE VEIO, E O BOTÃO NÃO É "DESFAZER LANÇAMENTO": este
+               material já estava no almoxarifado, posto lá pelo pedido. O
+               botão só devolve a linha para "a lançar" — o estorno é recusado
+               em `triDesfazerItem`. O `title` carrega a porta real, porque a
+               explicação não pode viver só num toast que some. */
+            : (doPC ? '<span class="pill proprio" title="' + Util.esc("Este item NÃO foi lançado pela triagem: ele já estava no almoxarifado, posto lá pelo recebimento do pedido " + (l.pcNumero || "") + ". O botão ao lado só devolve a linha para a lançar — nada sai do almoxarifado.") + '">' + (typeof Icones !== 'undefined' ? Icones.get('caminhao', 15) : '') + ' veio do pedido' + (l.pcNumero ? " " + Util.esc(l.pcNumero) : "") + '</span> ' +
+              '<button class="btn sm ico" data-gacao="tri-desfazer" data-id="' + i + '" title="' + Util.esc("Devolve esta linha para a lançar — NADA sai do almoxarifado (o material entrou pelo pedido " + (l.pcNumero || "") + ")") + '">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + '</button>'
+              : (ign ? '<span class="muted">ignorado</span>' : '<span class="pill proprio">a lançar</span>'))) + "</td></tr>";
       });
       html += "</tbody></table></div>";
 
@@ -22593,7 +23183,8 @@ renderRequisicoes: function () {
       for (var k in R.porDestino) if (Object.prototype.hasOwnProperty.call(R.porDestino, k)) resumoTxt.push(R.porDestino[k] + " " + k);
       html += '<div class="card" style="margin-top:12px;padding:12px">' +
         '<div class="muted" style="font-size:12.5px;margin-bottom:8px">' + resumoTxt.join(" · ") +
-        " · <b>" + R.pendentes + "</b> a lançar · <b>" + R.lancados + "</b> já lançado(s)</div>" +
+        " · <b>" + R.pendentes + "</b> a lançar · <b>" + R.lancados + "</b> já lançado(s)" +
+        (R.doPedido ? " · <b>" + R.doPedido + "</b> já no almoxarifado pelo pedido" : "") + "</div>" +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
         '<button class="btn success" data-gacao="tri-lancar">Lançar ' + R.pendentes + " item(ns) no sistema</button>" +
         '<button class="btn" data-gacao="lancar-fiscal" data-id="' + nf.id + '">' + (typeof Icones !== 'undefined' ? Icones.get('dinheiro', 15) : '') + ' Lançar ' +
@@ -22629,7 +23220,7 @@ renderRequisicoes: function () {
     },
 
     triAplicarLote: function () {
-      var t = this._triagem; if (!t) return;
+      var self = this, t = this._triagem; if (!t) return;
       /* le do DOM quando existe (escolha mais recente) e cai no estado, que
          sobrevive ao re-render de "marcar todos" */
       var lote = t.lote || {};
@@ -22643,7 +23234,7 @@ renderRequisicoes: function () {
       var n = 0;
       alvos.forEach(function (k) {
         var l = t.linhas[parseInt(k, 10)];
-        if (!l || l.st === "lancado") return;
+        if (!l || self._triTravada(l.st)) return;
         if (obra) l.obraId = obra;
         if (resp) l.responsavelId = resp;
         if (dest) l.destino = dest;
@@ -22653,17 +23244,17 @@ renderRequisicoes: function () {
       UI.toast(n + " item(ns) atualizado(s). Confira e clique em Lançar.", "ok");
     },
     triMarcarTodas: function () {
-      var t = this._triagem; if (!t) return;
-      var todas = Object.keys(t.marcadas).length >= t.linhas.filter(function (l) { return l.st !== "lancado"; }).length;
+      var self = this, t = this._triagem; if (!t) return;
+      var todas = Object.keys(t.marcadas).length >= t.linhas.filter(function (l) { return !self._triTravada(l.st); }).length;
       t.marcadas = {};
-      if (!todas) t.linhas.forEach(function (l, i) { if (l.st !== "lancado") t.marcadas[i] = 1; });
+      if (!todas) t.linhas.forEach(function (l, i) { if (!self._triTravada(l.st)) t.marcadas[i] = 1; });
       App.render();
     },
     triAceitarSugestoes: function () {
-      var t = this._triagem; if (!t) return;
+      var self = this, t = this._triagem; if (!t) return;
       var n = 0;
       t.linhas.forEach(function (l) {
-        if (l.st === "lancado") return;
+        if (self._triTravada(l.st)) return;
         l.destino = l.sugestao.destino; l.categoria = l.sugestao.categoria; l.ca = l.sugestao.ca || l.ca; n++;
       });
       App.render();
@@ -22676,10 +23267,9 @@ renderRequisicoes: function () {
        uma segunda despesa. */
     triLancar: function () {
       if (this._bloqueado()) return;
-      var t = this._triagem, nf = this._triNota();
+      var self = this, t = this._triagem, nf = this._triNota();
       if (!t || !nf) return;
-      var self = this;
-      var pend = t.linhas.filter(function (l) { return l.st !== "lancado" && l.destino !== "ignorar"; });
+      var pend = t.linhas.filter(function (l) { return !self._triTravada(l.st) && l.destino !== "ignorar"; });
       if (!pend.length) { UI.toast("Nada a lançar: todos os itens já foram lançados ou marcados como ignorar.", "erro"); return; }
       var semObra = pend.filter(function (l) { return !l.obraId; }).length;
       var msg = "Lançar " + pend.length + " item(ns) no sistema?\n\n" +
@@ -22704,7 +23294,7 @@ renderRequisicoes: function () {
       var jaEstoque = [];
 
       t.linhas.forEach(function (l) {
-        if (l.st === "lancado") return;
+        if (self._triTravada(l.st)) return;
         /* "ignorar" e uma DECISAO, nao um limbo: sem virar estado a nota ficava
            "2 a triar" para sempre e o botao verde morria sem explicacao. */
         if (l.destino === "ignorar") { l.st = "ignorado"; return; }
@@ -22717,9 +23307,11 @@ renderRequisicoes: function () {
                com o número do pedido, em vez de sumir sem explicação. */
             var jaPC = self._itemJaEntrouPeloPedido(l, nf);
             if (jaPC) {
-              l.st = "lancado";
-              l.obs = "Já havia entrado no almoxarifado pelo recebimento do pedido " + (jaPC.pedido.numero || jaPC.pedido.id) + ".";
-              jaEstoque.push(String(l.descricao || "").slice(0, 40) + " (pedido " + (jaPC.pedido.numero || "") + ")");
+              /* ⚠ "pedido", NÃO "lancado" — ver `NFItens.travado`. */
+              l.st = "pedido";
+              l.pcNumero = String(jaPC.pedido.numero || jaPC.pedido.id || "");
+              l.pcId = String(jaPC.pedido.id || "");
+              jaEstoque.push(String(l.descricao || "").slice(0, 40) + " (pedido " + l.pcNumero + ")");
               return;
             }
             self._triGravarEstoque(l, nf, nomeResp(l.responsavelId));
@@ -22739,6 +23331,12 @@ renderRequisicoes: function () {
         var l = t.linhas[i]; if (!l) return it;
         it.destino = l.destino; it.obraId = l.obraId; it.responsavelId = l.responsavelId;
         it.ca = l.ca; it.categoria = l.categoria; it.st = l.st;
+        /* ⚠ O NÚMERO DO PEDIDO VAI PARA O DISCO JUNTO COM O ESTADO — e sem
+           condicionar ao `st`, porque a linha liberada pelo Desfazer volta a
+           "pendente" e PRECISA continuar carregando o carimbo (é ele que
+           impede a segunda entrada, ver `_itemJaEntrouPeloPedido`). Vai o
+           FATO (qual pedido), não a frase: a explicação se monta na tela. */
+        if (l.pcId || l.pcNumero) { it.pcNumero = l.pcNumero || ""; it.pcId = l.pcId || ""; }
         return it;
       });
       /* a obra da NOTA é a dos itens quando todos foram para a mesma — é o que
@@ -22797,9 +23395,19 @@ renderRequisicoes: function () {
       /* ⚠ TODOS os pedidos da nota, não o primeiro: a nota que cobre duas
          entregas dava entrada em dobro do material do segundo pedido, porque
          a guarda só olhava para `nf.compraId`. */
-      var ids = CompraNota.pedidosDaNota(nf); if (!ids.length) return null;
       var k = Util.itemChave(String((l && l.descricao) || ""));
       if (!k) return null;
+      var ids = CompraNota.pedidosDaNota(nf);
+      /* ⚠ O CARIMBO DO PEDIDO SOBREVIVE AO DESVÍNCULO, e é ele que impede o
+         material de entrar duas vezes. "Desfazer" o lançamento no Financeiro
+         chama `_desvincularCompraDaNota` e LIMPA `nf.compras`: a partir daí a
+         nota não bate com pedido nenhum, e um Lançar seguinte daria entrada
+         dos mesmos 200 sacos que o pedido já tinha posto no almoxarifado
+         (medido: saldo 400). `l.pcId` foi gravado por esta mesma guarda, é
+         carimbo e não semelhança, e o pedido ainda é conferido abaixo
+         (`estoqueLancado` + item com a mesma chave). */
+      if (!ids.length && l && l.pcId) ids = [{ id: String(l.pcId) }];
+      if (!ids.length) return null;
       var achado = null;
       ids.forEach(function (x) {
         if (achado) return;
@@ -22941,6 +23549,169 @@ renderRequisicoes: function () {
      * do pedido. Resultado: compra recebida, material no estoque, ZERO
      * despesa viva. E sem volta: o botao Receber so nasce em "aprovado".
      * Por isso a devolucao roda ANTES de apagar, e as duas passam por aqui. */
+    /* ================================================================
+     * DEVOLVER A DESPESA DE UM PEDIDO CUJO VÍNCULO MORREU
+     * ⚠ ver o bloco em js/compranota.js: uma nota que cobre dois pedidos,
+     * desfeita por versão anterior, devolve só a do primeiro. Esta é a porta
+     * — sem ela a trava não tem saída, e trava sem saída é o que empurra a
+     * pessoa a mentir no registro (skill `dinheiro`, item 6).
+     * ================================================================ */
+    vinculoMortoModal: function () {
+      var podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+      var podeCom = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("compras"));
+      /* ⚠ RBAC POR METADE, e não um portão só. Devolver GRAVA no Financeiro e
+         exige aquele módulo; soltar o vínculo é assunto de Compras e não
+         encosta em dinheiro. Um portão único de "financeiro" deixava o card
+         de pedidos presos — que é `modulo:"compras"` — com um botão Resolver
+         que só sabia dizer não justamente para quem ele endereça. */
+      if (!podeFin && !podeCom) {
+        UI.toast("Isto mexe em Compras e no Financeiro, e seu usuário não tem nenhum dos dois módulos.", "erro"); return;
+      }
+      var self = this;
+      /* ⚠ RELÊ DO DISCO, e no MESMO escopo do card. O card foi desenhado num
+         render anterior e outro aparelho pode ter consertado no meio; agir
+         sobre o que a tela calculou é gravar por cima de um estado que já não
+         existe (mesmo motivo do "RELÊ ANTES DE GRAVAR" do
+         `fiscalVincularPedido`).
+         ⚠ E É `_dashEscopo().compras`, NUNCA `listaTodas("compras")`:
+         `listaTodas` pula o `filtrarPorObra`, e o modal passaria a listar
+         pedido, fornecedor e valor de obra que este usuário não pode ver —
+         o vazamento por obra que o cabeçalho do js/atencao.js documenta. É
+         também o que faz o botão resolver exatamente o que o card contou. */
+      var r = this._vinculosMortos(this._dashEscopo().compras);
+      if (!r || (!r.itens.length && !r.soltaveis)) {
+        UI.toast("Nada a fazer: nenhum pedido está preso a nota morta agora.", "ok"); App.render(); return;
+      }
+      var linha = function (x, tipo) {
+        var pq = Util.arr(x.mortas).map(function (m) {
+          var qual = "a nota " + Util.esc(m.numero || m.id);
+          return m.diag === "sumiu" ? qual + " não existe mais"
+            : m.diag === "nao-cita" ? qual + " não lista mais este pedido"
+            : qual + " não tem lançamento no Financeiro";
+        }).join(" · ");
+        return '<label style="display:flex;gap:8px;align-items:flex-start;padding:7px 0;border-top:1px solid var(--linha,#e5e7eb)">'
+          + '<input type="checkbox" name="vm-pc" value="' + Util.esc(x.compraId) + '" checked>'
+          + '<span style="flex:1"><b>' + Util.esc(x.numero || x.compraId) + '</b>'
+          + (x.fornecedor ? ' · ' + Util.esc(x.fornecedor) : '')
+          + (tipo === "orfao" ? ' — volta <b>' + Util.esc(x.valorTexto) + '</b>' : '')
+          + (tipo === "preso" ? ' — a despesa já está no Financeiro; sai só o vínculo' : '')
+          + (tipo === "sem" ? ' — pedido de ' + Util.esc(x.valorPedidoTexto) + '; <b>não tenho cópia da despesa</b> e não vou chutar o valor' : '')
+          + (tipo === "duvida" ? ' — cópia de <b>' + Util.esc(x.copiaTexto) + '</b> que eu <b>não sei</b> se já voltou; guardo sem devolver' : '')
+          + '<br><span class="muted" style="font-size:11.5px">' + pq + '</span></span></label>';
+      };
+      var bloco = function (tit, arr, tipo) {
+        return arr.length ? '<h4 style="margin:12px 0 0">' + tit + '</h4>'
+          + arr.map(function (x) { return linha(x, tipo); }).join("") : "";
+      };
+      var corpo = '<p style="font-size:13px;margin-top:0">A despesa destes pedidos foi apagada quando a nota foi vinculada. A nota não responde mais, então o custo ficou sem lugar nenhum. Devolver recria a despesa <b>como ela era</b> e solta o vínculo, para o pedido poder receber a nota certa depois.</p>';
+      if (r.itens.length && !podeFin) {
+        /* recado que não mente: existe devolução a fazer, e não é ele quem faz */
+        corpo += '<p class="muted" style="font-size:12.5px">' + r.itens.length
+          + ' pedido(s) precisam de devolução no Financeiro, e seu usuário não tem esse módulo. Eles não aparecem aqui — peça ao Financeiro.</p>';
+      }
+      if (podeFin) {
+        corpo += bloco("Devolver ao Financeiro — " + Util.esc(Util.fmtMoeda(
+          r.itens.reduce(function (a, x) { return a + Util.num(x.valor); }, 0))), r.itens, "orfao");
+      }
+      corpo += bloco("Só soltar o vínculo (dinheiro já está certo)", r.presos, "preso")
+        + bloco("Soltar o vínculo — sem cópia, não devolvo nada", r.semCopia, "sem")
+        + (r.semCopia.length ? '<p class="muted" style="font-size:11.5px">Depois de soltar, abra o Financeiro e confira se a despesa deles existe. Se faltar, lance à mão pelo valor da nota do fornecedor.</p>' : "")
+        + bloco("Cópia em dúvida — solto o vínculo e guardo a cópia", r.revisar, "duvida")
+        + (r.revisar.length ? '<p class="muted" style="font-size:11.5px">Estes têm despesa viva E cópia guardada: ou a cópia faz falta, ou ela já voltou por outro aparelho. Não devolvo nem apago — arquivo no pedido e digo o valor aqui.</p>' : "");
+      UI.modal("Compras presas a uma nota que não responde", corpo, [
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Aplicar", classe: "primary", onClick: function () {
+          var ids = [];
+          var marcadas = (typeof document !== "undefined" && document.querySelectorAll)
+            ? document.querySelectorAll('input[name="vm-pc"]:checked') : [];
+          Array.prototype.forEach.call(marcadas, function (el) { if (el && el.value) ids.push(el.value); });
+          if (!ids.length) { UI.toast("Marque o que quer resolver.", "erro"); return; }
+          self._vinculoMortoAplicar(ids);
+        } }
+      ]);
+    },
+
+    _vinculoMortoAplicar: function (ids) {
+      var alvo = {}, self = this;
+      Util.arr(ids).forEach(function (x) { alvo[String(x)] = 1; });
+      var podeFin = !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro"));
+      /* relê de novo, no mesmo escopo: entre desenhar a caixa e clicar cabe
+         uma sincronização */
+      var r = this._vinculosMortos(this._dashEscopo().compras);
+      if (!r) { UI.toast("Não consegui reler o estado das compras. Nada foi alterado.", "erro"); return; }
+      var todos = r.itens.concat(r.presos, r.semCopia, r.revisar);
+      var em = new Date().toISOString();
+      var voltou = 0, valor = 0, soltos = 0, arquivadas = 0, valorArq = 0;
+      var semGravar = [], desfeitos = [], sujos = [];
+      todos.forEach(function (it) {
+        if (!alvo[it.compraId]) return;
+        /* ⚠ RBAC EM FUNÇÃO, não só na hora de desenhar: o dispatcher é global
+           e a marcação vem do DOM. Quem não tem Financeiro não devolve nada. */
+        if (it.podeDevolver && !podeFin) { semGravar.push(it.numero || it.compraId); return; }
+        var pc = Store.obter(eid(), "compras", it.compraId);
+        if (!pc) { semGravar.push(it.numero || it.compraId); return; }
+        /* ⚠ ORDEM DEFENSIVA, a mesma do `_desvincularCompraDaNota`: devolve o
+           dinheiro ANTES de soltar o vínculo. Falhando no meio sobra despesa a
+           mais (visível na tela) e nunca despesa a menos (invisível).
+           ⚠ E É ESTA ORDEM QUE DÁ A IDEMPOTÊNCIA: gravada a despesa, o pedido
+           deixa de ter despesa viva ZERO, sai do balde `itens` e um segundo
+           clique não devolve de novo. */
+        var novos = [], falhou = false, i;
+        for (i = 0; i < Util.arr(it.restaurar).length; i++) {
+          var reg = Store.salvar(eid(), "financeiro", it.restaurar[i]);
+          if (reg && reg.id) novos.push(reg.id); else { falhou = true; break; }
+        }
+        /* ⚠ ROLLBACK, E NÃO "SEGUE O BAILE". Se a despesa entrar e a gravação
+           do pedido falhar, o pedido fica com despesa viva e diagnóstico
+           `sem-lancamento` — que é INDISTINGUÍVEL do "vinculado sem lançar"
+           legítimo. Ele sumiria do card, `podeReceberNota` continuaria false, e
+           o recado mandaria "tente de novo" sem existir onde clicar: a trava
+           sem porta de volta, criada pelo próprio conserto. Desfazer põe o
+           disco no estado exato de antes do clique, que o card ainda enxerga. */
+        var voltarAtras = function (porque) {
+          var limpo = true;
+          novos.forEach(function (fid) { try { Store.excluir(eid(), "financeiro", fid); } catch (eR) { limpo = false; } });
+          if (limpo) desfeitos.push(it.numero || it.compraId);
+          else sujos.push((it.numero || it.compraId) + " (" + porque + ")");
+        };
+        if (falhou) { voltarAtras("despesa"); return; }
+        /* ⚠ OS DOIS LADOS DO VÍNCULO, SEMPRE. A nota viva que ainda cita o
+           pedido tem de parar de citar — senão `planoVinculo` soma esse pedido
+           em `jaAlocado` e a nota passa a responder para sempre "já está
+           inteira no(s) pedido(s) X". Gravada ANTES do pedido: se o pedido
+           falhar depois, o diagnóstico vira `nao-cita`, que o detector
+           continua vendo — a porta fica aberta. */
+        var erroNota = false;
+        Util.arr(it.mortas).forEach(function (m) {
+          if (erroNota) return;
+          var nf = Store.obter(eid(), "fiscal", m.id); if (!nf) return;
+          if (!CompraNota.soltarPedidoDaNota(nf, it.compraId)) return;
+          if (!Store.salvar(eid(), "fiscal", nf)) erroNota = true;
+        });
+        if (erroNota) { voltarAtras("nota"); return; }
+        CompraNota.soltarVinculoMorto(pc, it.mortas, novos.length > 0, em);
+        if (!Store.salvar(eid(), "compras", pc)) { voltarAtras("pedido"); return; }
+        soltos++;
+        if (novos.length) { voltou++; valor += Util.num(it.valor); }
+        if (it.temCopia && !novos.length) { arquivadas++; valorArq += Util.num(it.valorCopia); }
+      });
+      UI.fecharModal(); App.render();
+      /* ⚠ RECADO QUE NÃO PROMETE O QUE NÃO ACONTECEU, e que conta cada metade
+         separado porque elas falham separado. Aviso genérico a pessoa lê como
+         formalidade; número ela confere. */
+      var msg = "";
+      if (voltou) msg += voltou + " despesa(s) devolvida(s) ao Financeiro (" + Util.fmtMoeda(valor) + "). ";
+      if (soltos) msg += soltos + " pedido(s) voltou(aram) a poder receber nota. ";
+      if (arquivadas) msg += arquivadas + " cópia(s) de despesa (" + Util.fmtMoeda(valorArq) + ") ficaram ARQUIVADAS no pedido, sem serem devolvidas — confira no Financeiro se esse valor faz falta. ";
+      /* ⚠ O QUE FOI PULADO TAMBÉM SE DIZ. Contar só os sucessos faz o recado
+         mentir por omissão quando parte da marcação não passou — sem o módulo
+         Financeiro, ou pedido que sumiu do disco entre desenhar e clicar. */
+      if (semGravar.length) msg += semGravar.length + " pedido(s) ficaram como estavam (" + semGravar.join(", ") + "): ou seu usuário não tem o módulo Financeiro para devolver a despesa, ou o pedido não está mais lá. ";
+      if (desfeitos.length) msg += "Em " + desfeitos.join(", ") + " o armazenamento recusou a gravação: desfiz o que já tinha entrado, então NADA mudou nesses — eles continuam no card, tente de novo. ";
+      if (sujos.length) msg += "ATENÇÃO em " + sujos.join(", ") + ": a gravação falhou e não consegui desfazer por inteiro. Confira o Financeiro desses pedidos ANTES de clicar de novo. ";
+      UI.toast(msg || "Nada mudou.", (desfeitos.length || sujos.length || semGravar.length) ? "erro" : "ok");
+    },
+
     _desvincularCompraDaNota: function (nf) {
       if (!nf || typeof CompraNota === "undefined") return null;
       var ids = CompraNota.pedidosDaNota(nf); if (!ids.length) return null;
@@ -22951,7 +23722,17 @@ renderRequisicoes: function () {
       var valor = 0, nums = [], presos = [];
       res.forEach(function (r) {
         nums.push(r.numero || r.compraId);
-        if (r.restaurar) { Store.salvar(eid(), "financeiro", r.restaurar); valor += Util.num(r.restaurar.valor); }
+        /* ⚠ TODAS voltam: um pedido com entrega parcial pode ter tido mais de
+           uma despesa substituída pela nota, e devolver só a primeira deixaria o
+           resto do material recebido sem despesa nenhuma, sem sinal em tela. */
+        var voltas = Util.arr(r.restaurarTodas);
+        if (!voltas.length && r.restaurar) voltas = [r.restaurar];
+        if (voltas.length) {
+          voltas.forEach(function (d) {
+            if (!Store.salvar(eid(), "financeiro", d)) return;
+            valor += Util.num(d.valor);
+          });
+        }
         /* ⚠ PEDIDO QUE AINDA TEM OUTRA NOTA NÃO RECUPERA A DESPESA: ela
            continua substituída pelas parcelas daquela outra nota, e devolvê-la
            aqui recriaria a duplicata. Quem chamou precisa DIZER isso — senão a
@@ -23011,11 +23792,35 @@ renderRequisicoes: function () {
     fiscalExcluir: function (id) {
       if (this._bloqueado()) return;
       if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("fiscal")) { UI.toast("Seu usuário não tem permissão no módulo Fiscal.", "erro"); return; }
+      var self = this;
       var nf = Store.obter(eid(), "fiscal", id); if (!nf) return;
       var lanc = this._lancamentosDaNota(nf);
       var pagas = lanc.filter(function (f) { return f.status === "pago"; });
       var pend = lanc.filter(function (f) { return f.status !== "pago"; });
-      var itensLanc = Util.arr(nf.itens).filter(function (it) { return it.st === "lancado"; }).length;
+      /* =================================================================
+       * ⚠ EXCLUIR A NOTA APAGA CONTAS A PAGAR — ENTÃO PEDE O MÓDULO DELAS.
+       *
+       * ⚠ MEDIDO EM 07/09/2026: a permissão exigida aqui era só `fiscal`, e o
+       * botão apagava as contas a pagar da nota — inclusive as de obra que o
+       * usuário NÃO VÊ no Financeiro, porque `_lancamentosDaNota` lê a nota
+       * inteira de propósito (deixar parcela para trás criava conta viva sem
+       * nota). Quem só lança nota mexia em dinheiro que nem consegue abrir, e
+       * o `fiscalDesfazer` ao lado — que faz menos — já exigia `financeiro`.
+       * Duas portas para o mesmo dinheiro com réguas diferentes é o que ensina
+       * que a regra é aleatória.
+       *
+       * ⚠ A EXIGÊNCIA É CONDICIONAL, e por isso não vira trava: nota sem conta a
+       * pagar nenhuma continua sendo excluída só com o Fiscal — não há dinheiro
+       * em jogo. E a recusa diz o que fazer, em vez de só fechar a porta.
+       * ================================================================= */
+      if (pend.length && typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) {
+        UI.toast("Esta nota tem " + pend.length + " conta(s) a pagar, e excluí-la apagaria essas contas — seu usuário não tem o módulo Financeiro. "
+          + "Peça a quem tem para desfazer o lançamento primeiro; depois a nota sai por aqui.", "erro");
+        return;
+      }
+      /* ⚠ `_triTravada`: a linha "pedido" também deixa material no
+         almoxarifado (posto lá pelo pedido) — e o recado promete que ele FICA. */
+      var itensLanc = Util.arr(nf.itens).filter(function (it) { return self._triTravada(it.st); }).length;
       var numTxt = (nf.numero || "s/n") + (nf.serie ? "/" + nf.serie : "");
       var msg = "Excluir a nota " + numTxt + " — " + (nf.parceiro || "") + " (" + Util.fmtMoeda(Util.num(nf.valorTotal)) + ")?\n";
       if (pend.length) msg += "\nVai junto: " + pend.length + " conta(s) a pagar ainda não paga(s).";
@@ -23050,8 +23855,15 @@ renderRequisicoes: function () {
     triDesfazerItem: function (idx) {
       if (this._bloqueado()) return;
       var t = this._triagem, nf = this._triNota(); if (!t || !nf) return;
-      var l = t.linhas[parseInt(idx, 10)]; if (!l || l.st !== "lancado") return;
-      var self = this, qtd = Util.num(l.quantidade);
+      var self = this, l = t.linhas[parseInt(idx, 10)];
+      /* ⚠ A LINHA QUE VEIO DO PEDIDO TAMBÉM ENTRA AQUI, de propósito: ela
+         precisa de saída. `fiscalDesfazer` limpa o vínculo nota↔pedido e a
+         caixa dele manda "desfazer item a item na tela de Itens" — recusar
+         aqui fecharia a porta que o próprio app aponta, e a linha ficaria
+         travada para sempre (sem Desfazer, sem select, fora do marcar-todos).
+         O que ela NÃO faz é estornar: ver o bloco do `naoLancouAqui`. */
+      if (!l || !self._triTravada(l.st)) return;
+      var qtd = Util.num(l.quantidade);
       var itemEst = null, bens = [];
       if (l.destino === "estoque" || l.destino === "epi") {
         /* ⚠ `listaTodas`, NÃO `lista`: isto é DEDUPE, e dedupe tem de enxergar
@@ -23069,9 +23881,45 @@ renderRequisicoes: function () {
           return String(b.notaId || "") === String(nf.id) && String(b.descricao || "").indexOf(String(l.descricao || "")) === 0;
         });
       }
-      var msg = "Desfazer o lançamento de \"" + String(l.descricao).slice(0, 40) + "\"?\n\nO item volta para 'a lançar' e você pode escolher outro destino.";
+      /* ⚠ A TRIAGEM SÓ ESTORNA O QUE ELA LANÇOU.
+         São DUAS portas de entrada para o mesmo material: o recebimento do
+         PEDIDO (`_estoqueDaCompra`) e a triagem da NOTA (`_triGravarEstoque`).
+         Quando o pedido já tinha posto o material lá, a triagem não escreve
+         nada — e este Desfazer, encontrando o saldo do PEDIDO no almoxarifado,
+         SUBTRAÍA o que ele nunca somou, gravando um "Estorno da triagem da NF"
+         mentiroso. Medido em 07/09/2026: saldo 200 → 0, e clicar Lançar de
+         novo não devolvia.
+         DUAS provas, nesta ordem: o ESTADO da linha ("pedido", dado novo — e é
+         a única prova que sobra quando o pedido foi excluído), e o KARDEX
+         (dado antigo gravado como "lancado" antes desta correção: sem entrada
+         `docTipo:"NF"` desta nota, esta triagem não lançou).
+         ⚠ A recusa do estorno é NARROW: só quando o item também bate num
+         pedido que já deu entrada. Fora disso o Desfazer estorna como sempre.
+         ⚠ E ela não vira trava: a linha É liberada, e a caixa nomeia onde o
+         material sai de verdade. Trava sem porta é o que empurra a pessoa a
+         mentir no registro. */
+      var naoLancouAqui = (l.st === "pedido"), pcDono = null;
+      if (naoLancouAqui) pcDono = self._itemJaEntrouPeloPedido(l, nf);
+      else if (itemEst && !self._triLancouEsteItem(l, nf, itemEst)) {
+        pcDono = self._itemJaEntrouPeloPedido(l, nf);
+        naoLancouAqui = !!pcDono;
+      }
+      var pcNum = (pcDono && (pcDono.pedido.numero || pcDono.pedido.id)) || l.pcNumero || "";
+      /* ⚠ A PORTA CITADA TEM DE EXISTIR NA TELA: "Devolver ao fornecedor" só é
+         desenhado com o pedido em `recebido` (renderCompras), e `estoqueLancado`
+         NÃO é limpo quando o recebimento é desfeito/rejeitado — existe pedido
+         marcado com material no almoxarifado e sem esse botão. A Saída do
+         Estoque existe sempre. */
+      var porta = (pcDono && String(pcDono.pedido.status || "") === "recebido")
+        ? "Para tirar do estoque: Compras > pedido " + pcNum + " > Devolver ao fornecedor (sai com o carimbo do pedido), ou o botao - Saida na linha do item, na tela do Estoque."
+        : "Para tirar do estoque: o botao - Saida na linha do item, na tela do Estoque.";
+      var msg = naoLancouAqui
+        ? "Este item NAO foi lancado pela triagem: ele ja estava no almoxarifado, posto la pelo recebimento do pedido "
+          + (pcNum || "vinculado a esta nota") + ".\n\nLiberar a linha para 'a lancar'? NADA sai do almoxarifado"
+          + (itemEst ? " (o saldo de \"" + itemEst.nome + "\" continua " + Util.fmtNum(Util.num(itemEst.saldo), 2) + ")" : "") + ".\n\n" + porta
+        : "Desfazer o lançamento de \"" + String(l.descricao).slice(0, 40) + "\"?\n\nO item volta para 'a lançar' e você pode escolher outro destino.";
       var estorna = false, tiraBens = false;
-      if (itemEst) {
+      if (itemEst && !naoLancouAqui) {
         var saldo = Util.num(itemEst.saldo);
         if (saldo >= qtd) { estorna = true; msg += "\n\nVou estornar " + Util.fmtNum(qtd, 2) + " " + (itemEst.unidade || "") + " do estoque (saldo " + Util.fmtNum(saldo, 2) + " → " + Util.fmtNum(saldo - qtd, 2) + ")."; }
         else msg += "\n\n⚠ O estoque de \"" + itemEst.nome + "\" já está em " + Util.fmtNum(saldo, 2) + " (menos que os " + Util.fmtNum(qtd, 2) + " desta nota) — parte já foi usada, então NÃO vou mexer no saldo. Ajuste manualmente se precisar.";
@@ -23096,7 +23944,9 @@ renderRequisicoes: function () {
       Store.salvar(eid(), "fiscal", nf);
       if (typeof Epi !== "undefined") this._epiSyncProprios();
       App.render();
-      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Item liberado para novo destino" + (estorna ? " · estoque estornado" : "") + (tiraBens ? " · " + bens.length + " bem(ns) removido(s)" : "") + ".", "ok");
+      UI.toast("" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Item liberado para novo destino"
+        + (naoLancouAqui ? " · NADA saiu do almoxarifado (o material entrou pelo pedido " + (pcNum || "vinculado à nota") + ")" : (estorna ? " · estoque estornado" : ""))
+        + (tiraBens ? " · " + bens.length + " bem(ns) removido(s)" : "") + ".", "ok");
     },
 
     novoFiscal: function () { this.formFiscal(null); },
@@ -23275,6 +24125,32 @@ renderRequisicoes: function () {
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: jaLanc.length ? "Substituir os lançamentos" : ("Lançar " + rateadas.length + " conta(s)"), classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
+          /* =================================================================
+           * ⚠ NÃO APAGAR O QUE NÃO VAI SER REFEITO — e a recusa vem ANTES de
+           * qualquer exclusão, não depois.
+           *
+           * ⚠ ROTEIRO MEDIDO (07/09/2026): a nota já tinha 4 parcelas pendentes
+           * (R$ 5.226,50 em boletos). Alguém lançou a MESMA nota pela porta
+           * "Lançar de documento" do Financeiro, que grava UMA linha do valor
+           * cheio SEM `parcelaNum`, e pagou. Voltando aqui e clicando em
+           * "Substituir os lançamentos", o app: apagava as 4 pendentes; pulava
+           * TODAS as novas por causa do `pagoNotaInteira`; e dizia
+           * "✔ 0 conta(s) refeita(s); 4 já paga(s) mantida(s) como estavam" —
+           * quando UMA estava paga e QUATRO acabaram de sumir. O contas a pagar
+           * da empresa perdia quatro vencimentos sem nada em tela dizer isso, e
+           * o Desfazer não devolve: ele só apaga.
+           *
+           * ⚠ A trava tem porta, e ela nomeia as duas saídas reais: se o
+           * lançamento pago é que está errado, estorne-o; se as pendentes é que
+           * sobram, apague-as no Financeiro. O app não escolhe por ninguém —
+           * ele não sabe qual das duas pontas está certa.
+           * ================================================================= */
+          if (pagoNotaInteira && subst.length) {
+            UI.toast("Esta nota já tem um lançamento PAGO que cobre ela inteira (sem número de parcela), então nenhuma parcela nova seria gravada — e as "
+              + subst.length + " conta(s) pendente(s) dela seriam apagadas sem substituto. Nada foi mexido. "
+              + "Se o lançamento pago está errado, estorne-o no Financeiro; se as pendentes é que sobram, apague-as por lá.", "erro");
+            return;
+          }
           /* ⚠ O VINCULO E DECIDIDO ANTES DE QUALQUER GRAVACAO. Se o motor
              recusar (despesa do pedido ja PAGA, pedido ja vinculado a outra
              nota), nada acontece — nem o vinculo nem o lancamento. Deixar
@@ -23336,7 +24212,10 @@ renderRequisicoes: function () {
           /* daqui para baixo, grava */
           _pend.forEach(function (x) {
             var pc = Store.obter(eid(), "compras", x.compraId); if (!pc) return;
-            pc.despesaSubstituida = Util.clone(x.despesa);
+            /* vínculo feito sem lançar: guarda no plural, como os outros dois
+               caminhos, para o Desfazer devolver tudo */
+            pc.despesasSubstituidas = Util.arr(pc.despesasSubstituidas).concat([Util.clone(x.despesa)]);
+            pc.despesaSubstituida = pc.despesasSubstituidas[0];
             Store.excluir(eid(), "financeiro", x.apagarId);
             Store.salvar(eid(), "compras", pc);
           });
@@ -23344,14 +24223,20 @@ renderRequisicoes: function () {
             var _mapa = {};
             _compras.forEach(function (c) { _mapa[String(c.id)] = c; });
             _pl.itens.forEach(function (it) {
-              if (!it.apagarId) return;
               var pc = _mapa[String(it.compraId)]; if (!pc) return;
-              var _d = CompraNota.despesaDaCompra(_fin, it.compraId); if (!_d) return;
-              /* guarda a linha ANTES de apagar: é o que "Desfazer lançamento" e
-                 "Excluir nota" usam para devolver a despesa do pedido. Sem isso
-                 a compra recebida ficaria com ZERO despesa viva, sem volta. */
-              pc.despesaSubstituida = Util.clone(_d);
-              Store.excluir(eid(), "financeiro", it.apagarId);
+              /* ⚠ TODAS as vivas (uma por viagem, na entrega parcial), guardadas
+                 ANTES de apagar: é o que "Desfazer lançamento" e "Excluir nota"
+                 usam para devolver. Sem isso a compra recebida fica com ZERO
+                 despesa viva, sem volta. */
+              var _guard = [];
+              Util.arr(it.apagarIds).forEach(function (fid) {
+                var d = null;
+                _fin.forEach(function (f) { if (f && String(f.id) === String(fid)) d = f; });
+                if (!d) return;
+                _guard.push(Util.clone(d));
+                Store.excluir(eid(), "financeiro", fid);
+              });
+              if (_guard.length) { pc.despesasSubstituidas = _guard; pc.despesaSubstituida = _guard[0]; }
             });
             CompraNota.aplicarVinculo(nf, _compras, _pl, new Date().toISOString());
             _compras.forEach(function (c) { Store.salvar(eid(), "compras", c); });
@@ -26036,8 +26921,15 @@ renderFolha: function () {
                ⚠ `estoqueLancado` NÃO é limpo: o material está no almoxarifado
                e há movimento no kardex — limpar faria o recebimento seguinte
                dar entrada no MESMO material outra vez (skill `dinheiro`, 8). */
-            if (entidade === "compras") reg.dataRecebimento = "";
-            else reg.dataPgto = "";
+            if (entidade === "compras") {
+              /* ⚠ A OUTRA PORTA QUE APAGA A DATA. Medido em 07/09/2026: rejeitar
+                 um pedido legado recebido deixava o motor em iniciado=false /
+                 completo=false / falta=[200,12]; como `rejeitado → cotacao →
+                 aprovado` é caminho aberto no motor, o [Receber] seguinte dobrava
+                 o saldo (200→400, 12→24) e o Financeiro (9.500 + 9.500). */
+              self._transcreveEntregaLegada(reg);
+              reg.dataRecebimento = "";
+            } else reg.dataPgto = "";
             self._trilhaAprov(reg, "desfazer-baixa", { de: statusAntesRej, para: statusRej, por: "rejeicao" });
           }
           reg.rejeitadoPor = self._quemAprova();
@@ -26409,8 +27301,13 @@ renderFolha: function () {
         var ok = false;
         try { ok = confirm(aviso); } catch (eC) { ok = false; }
         if (!ok) return false;
-        if (entidade === "compras") obj.dataRecebimento = "";
-        else obj.dataPgto = "";
+        if (entidade === "compras") {
+          /* ⚠ ANTES de apagar a data — ver `_transcreveEntregaLegada`.
+             ⚠ E DEPOIS do `if (!ok) return false;`: quem desiste da reabertura não
+             pode sair com o registro mutado. */
+          this._transcreveEntregaLegada(obj);
+          obj.dataRecebimento = "";
+        } else obj.dataPgto = "";
         this._trilhaAprov(obj, "desfazer-baixa", { de: statusAntigo, para: obj.status });
         obj.reabertoPor = this._quemAprova(); obj.reabertoEm = this._hojeISO();
         obj.aprovadoPor = ""; obj.aprovadoEm = "";
@@ -26419,6 +27316,60 @@ renderFolha: function () {
       this._trilhaAprov(obj, "reabrir", { de: statusAntigo, para: obj.status });
       obj.reabertoPor = this._quemAprova(); obj.reabertoEm = this._hojeISO();
       obj.aprovadoPor = ""; obj.aprovadoEm = "";   // a aprovação anterior deixou de valer
+      return true;
+    },
+
+    /* =================================================================
+     * A ENTREGA LEGADA VIRA REGISTRO ANTES DE A DATA SUMIR
+     *
+     * ⚠ ROTEIRO MEDIDO (07/09/2026): pedido recebido por versão anterior à
+     * entrega parcial tem só `dataRecebimento` + `estoqueLancado`, sem lista de
+     * `recebimentos` — e é essa data que faz `ComprasLinha.recebimento` responder
+     * "chegou tudo" (o ramo `legado`). Apagá-la fazia o motor passar a responder
+     * "nada chegou", e aí o [Receber] chamava `_estoqueDaCompra(vivo, qtdPorIdx, data)` —
+     * que NÃO consulta `estoqueLancado`, de propósito, porque a 2ª viagem é
+     * entrada legítima — e dava entrada do pedido INTEIRO outra vez:
+     *     saldo 200 SC -> 400 · 12 M3 -> 24 · 2 movimentos novos no kardex
+     *     Financeiro R$ 9.500 + R$ 9.500 = R$ 19.000 para uma compra de 9.500
+     * De quebra o [Devolver] passava a recusar ("Nada foi recebido deste pedido
+     * ainda") e o material que ESTAVA no almoxarifado ficava sem porta nenhuma.
+     *
+     * ⚠ TRÊS PORTAS APAGAM ESSA DATA, E O CONSERTO TEM DE ESTAR NAS TRÊS:
+     *   · `_guardaReabertura` (recebido → aprovado/enviado/cancelado/cotacao);
+     *   · `_rejeitar` (recebido → rejeitado) — medido: o mesmo dobro de saldo e
+     *     de despesa, e é a porta que este repositório documenta como aquela
+     *     para onde uma trava sem saída empurra a pessoa;
+     *   · `comprasReceber`, para quem JÁ foi reaberto antes desta versão.
+     * Consertar só a primeira era consertar pela metade — o padrão que esta base
+     * já pagou caro ("conserto que para no segundo consumidor").
+     *
+     * ⚠ `estoqueLancado` SEM `dataRecebimento` TAMBÉM CONTA: é o pedido já reaberto
+     * (data apagada, lista nunca existiu) e o que perdeu a lista num merge da
+     * nuvem. `estoqueLancado` só é gravado pelo caminho SEM `qtdPorIdx`, que dá
+     * entrada na quantidade PEDIDA inteira: a leitura é a mesma.
+     *
+     * Transcrever não inventa nada: é a MESMA leitura que o motor já fazia da
+     * própria data, escrita onde as duas telas enxergam. `origem: "legado"`
+     * marca que ninguém digitou isto.
+     *
+     * ⚠ A CONDIÇÃO É CALCULADA AQUI, sem depender do compraslinha.js: um pedido
+     * não pode ficar sem esta transcrição porque um arquivo não carregou.
+     *
+     * Devolve true quando escreveu — quem chama decide se precisa gravar.
+     * ================================================================= */
+    _transcreveEntregaLegada: function (pc) {
+      if (!pc || Util.arr(pc.recebimentos).length) return false;
+      if (!pc.dataRecebimento && !pc.estoqueLancado) return false;
+      var itensLeg = [];
+      Util.arr(pc.itens).forEach(function (it, i) {
+        var q = Util.num(it && it.quantidade);
+        if (q > 0) itensLeg.push({ itemIdx: i, qtd: q });
+      });
+      /* ⚠ `valor` não é chute: o pedido estava FECHADO, então a viagem legada
+         lançou o pedido inteiro. É o número que `jaRegistrado` (comprasReceber) e
+         `CompraNota.recebidoEmDinheiro` leem. */
+      pc.recebimentos = [{ em: String(pc.dataRecebimento || ""), por: "", origem: "legado",
+        valor: Util.num(pc.valor), itens: itensLeg }];
       return true;
     },
 
@@ -27228,6 +28179,7 @@ renderFolha: function () {
       }
       switch (gacao) {
         case "fin-rapido": return this.finRapido();
+        case "vinculo-morto": return this.vinculoMortoModal();
         case "pr-troca-obra": return this.prTrocaObra(dataset.value);
         case "bim-troca-obra": return this.bimTrocaObra(dataset.value);
         case "bim-drawer-fechar": return this._bimFecharDrawer();
@@ -27259,6 +28211,7 @@ renderFolha: function () {
         case "desfazer-etapa-compra": return this.comprasDesfazerEtapa(id);
         case "recusou-compra": return this.comprasFornecedorRecusou(id);
         case "devolver-compra": return this.comprasDevolver(id);
+        case "desfazer-entrega-compra": return this.comprasDesfazerEntrega(id);
         case "cobrar-compra": return this.comprasCobrar(id);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();

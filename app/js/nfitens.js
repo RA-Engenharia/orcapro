@@ -247,12 +247,38 @@
     /* Resumo para o cabeçalho da triagem: quantos por destino e se a soma
        dos itens bate com o total da nota (divergência aqui é sinal de item
        truncado ou de frete/desconto não distribuído). */
+    /* ⚠ OS ESTADOS DA LINHA DA TRIAGEM MORAM AQUI — UM LUGAR SÓ.
+       "pendente" = ainda vai ser lançada
+       "lancado"  = a TRIAGEM escreveu no módulo de destino
+       "pedido"   = o material já estava no almoxarifado, posto lá pelo
+                    recebimento do PEDIDO; a triagem não escreveu nada
+       "ignorado" = decisão de não fazer nada
+
+       ⚠ "pedido" NÃO É "lancado", e o motivo custou material de obra.
+       Roteiro medido em 07/09/2026: pedido de 200 sacos recebido
+       (`_estoqueDaCompra` dá entrada de 200 e carimba `estoqueLancado`);
+       chega o XML, a nota é vinculada ao pedido e `_itemJaEntrouPeloPedido`
+       faz a triagem NÃO lançar — certo. Mas a linha ficava com `st:"lancado"`:
+       pílula verde e botão Desfazer, igual a qualquer outra. Dias depois a
+       pessoa clicava em Desfazer, `triDesfazerItem` achava saldo suficiente e
+       SUBTRAÍA os 200 do PEDIDO, gravando "Estorno da triagem da NF" — estorno
+       de um lançamento que nunca existiu. Saldo 200 → 0.
+       Quem espalhar `st === "lancado"` pela tela de novo reabre esse buraco:
+       pergunte a `travado` / `resolvido`. */
+    travado: function (st) { return st === "lancado" || st === "pedido"; },
+    resolvido: function (st) { return st === "lancado" || st === "pedido" || st === "ignorado"; },
+
     resumo: function (linhas, valorNota) {
-      var porDestino = {}, soma = 0, pendentes = 0, lancados = 0;
+      var porDestino = {}, soma = 0, pendentes = 0, lancados = 0, doPedido = 0;
       (linhas || []).forEach(function (l) {
         porDestino[l.destino] = (porDestino[l.destino] || 0) + 1;
         soma += num(l.valor);
-        if (l.st === "lancado") lancados++; else if (l.st !== "ignorado") pendentes++;
+        /* ⚠ conta SEPARADO: somar com `lancados` faria o resumo dizer que a
+           triagem lançou material que ela não lançou — e é esse recado que
+           convencia a pessoa a clicar em Desfazer. */
+        if (l.st === "pedido") doPedido++;
+        else if (l.st === "lancado") lancados++;
+        else if (l.st !== "ignorado") pendentes++;
       });
       soma = cent(soma);
       var alvo = cent(valorNota);
@@ -264,7 +290,8 @@
         diferenca: cent(soma - alvo),
         bate: Math.abs(soma - alvo) < 0.01,
         pendentes: pendentes,
-        lancados: lancados
+        lancados: lancados,
+        doPedido: doPedido
       };
     },
 

@@ -198,9 +198,18 @@
    * vale (cotação + aprovado + recebido) e o descartado vai à parte, visível,
    * para ninguém achar que sumiu.
    * ------------------------------------------------------------- */
-  function totaisCompras(compras) {
+  /* ⚠ `jaEDespesa` É UM ÍNDICE { pedidoId: quanto já virou despesa }, montado
+     por `CompraNota.jaEDespesaPorPedido`. Vem PRONTO de fora porque este motor
+     é puro e porque `porObra` chama o agregador uma vez POR OBRA — montar aqui
+     varreria o Financeiro N vezes.
+     ⚠ SEM ÍNDICE NÃO SE ADIVINHA: quem não passa recebe o número de ANTES (pedido
+     cheio, exposição superestimada) e `semDesconto` avisa a tela. Descontar pelo
+     histórico das viagens seria a fonte errada — ver o ⚠ de `jaEDespesa`. */
+  function totaisCompras(compras, jaEDespesa) {
+    var idx = (jaEDespesa && typeof jaEDespesa === "object" && !Array.isArray(jaEDespesa)) ? jaEDespesa : null;
     var r = { n: 0, total: 0, cotacao: 0, aprovado: 0, recebido: 0, descartado: 0,
-      nCotacao: 0, nAprovado: 0, nRecebido: 0, nDescartado: 0, comprometido: 0, movimento: 0 };
+      nCotacao: 0, nAprovado: 0, nRecebido: 0, nDescartado: 0, comprometido: 0,
+      jaNoFinanceiro: 0, nComEntrega: 0, semDesconto: false, movimento: 0 };
     arr(compras).forEach(function (c) {
       if (!c) return;
       var v = num(c.valor), st = texto(c.status);
@@ -214,12 +223,26 @@
          comprometido com R$ 13.800 enviados/confirmados fora da conta). */
       else if ((typeof ComprasLinha !== "undefined" && ComprasLinha.ehCompromisso)
         ? ComprasLinha.ehCompromisso(st)
-        : (st === "aprovado" || st === "enviado" || st === "confirmado")) { r.aprovado += v; r.nAprovado++; }
+        : (st === "aprovado" || st === "enviado" || st === "confirmado")) {
+        r.aprovado += v; r.nAprovado++;
+        /* ⚠ DUAS PERGUNTAS DIFERENTES, AGORA COM NOMES DIFERENTES. `aprovado` é o
+           BALDE DO STATUS — é dele que sai o "Total válido", e a obra comprou
+           R$ 10.000 mesmo. `comprometido` é DINHEIRO QUE AINDA VAI SAIR, e o que
+           já chegou virou conta a pagar no Financeiro. Eram o MESMO campo
+           (`r.comprometido = r.aprovado`), e por isso a viagem parcial deixava o
+           mesmo dinheiro comprometido E realizado ao mesmo tempo. */
+        var ja = idx ? num(idx[texto(c.id)]) : 0;
+        if (ja > 0.005) { r.jaNoFinanceiro += ja; r.nComEntrega++; }
+        if (!idx && (Array.isArray(c.recebimentos) ? c.recebimentos.length : 0)) r.semDesconto = true;
+        /* a regra mora em ComprasLinha; aqui só se pergunta — e o valor vai JÁ
+           PARSEADO por este módulo, para não haver dois parsers no mesmo número */
+        r.comprometido += (typeof ComprasLinha !== "undefined" && ComprasLinha.valorComprometido)
+          ? ComprasLinha.valorComprometido(c, ja, v)
+          : Math.max(0, Math.round((v - ja) * 100) / 100);
+      }
       else { r.cotacao += v; r.nCotacao++; }      /* cotação e qualquer status novo */
       r.total += v;
     });
-    /* o que já foi decidido e ainda vai sair do caixa */
-    r.comprometido = r.aprovado;
     r.movimento = r.total;
     return r;
   }

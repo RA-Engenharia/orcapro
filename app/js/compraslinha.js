@@ -125,6 +125,44 @@
        e o tools/test-compras-fase0b.js reprova quem esquecer. */
     COMPROMISSO: COMPROMISSO,
     ehCompromisso: function (status) { return !!COMPROMISSO[String(status || "")]; },
+
+    /* ⚠ O DINHEIRO DESTE PEDIDO QUE AINDA VAI SAIR DO CAIXA.
+       MEDIDO EM 07/09/2026: pedido de R$ 10.000 com 150 dos 200 sacos entregues
+       ficava R$ 10.000 em "Comprometido" (na tela de Compras e no Previsto ×
+       Realizado) enquanto o Financeiro já mostrava R$ 7.500 a pagar pela MESMA
+       entrega — R$ 17.500 de exposição para uma compra de R$ 10.000, e o Saldo
+       da etapa (o número que decide se dá para comprar) R$ 7.500 menor que a
+       realidade. A causa: o status só vira "recebido" quando a ÚLTIMA viagem
+       chega, então entre a primeira e a última o pedido inteiro continuava
+       contado como compromisso.
+
+       ⚠ `jaEDespesa` CHEGA PRONTO, e a fonte é `CompraNota.jaEDespesa` — nunca
+       `recebimentos[].valor`. Ver o ⚠ de lá: histórico não é saldo.
+
+       ⚠ `valorPedido` OPCIONAL, E É POR ISSO QUE ELE EXISTE: quem chama já
+       parseou o valor com o SEU parser. Reparsear aqui poria dois parsers sobre
+       o mesmo número — e nesta base duas cópias de parser já divergiram em
+       sentidos opostos, as duas movendo dinheiro.
+
+       ⚠ NÃO PODE SER NEGATIVO: viagem que chega A MAIS que o pedido existe (a
+       caixa fechada do fornecedor) e viraria crédito falso no saldo da etapa. */
+    valorComprometido: function (pc, jaEDespesa, valorPedido) {
+      if (!COMPROMISSO[String((pc && pc.status) || "")]) return 0;
+      var total = (valorPedido == null) ? qtd(pc && pc.valor) : qtd(valorPedido);
+      var resto = Math.round((total - qtd(jaEDespesa)) * 100) / 100;
+      return resto > 0 ? resto : 0;
+    },
+
+    /* HISTÓRICO do que as viagens registraram — NÃO é dinheiro vivo. Serve para
+       uma coisa só: dizer quando as duas pontas discordam (entrega gravada no
+       pedido sem despesa viva no Financeiro). Quem decide dinheiro usa
+       `CompraNota.jaEDespesa`. */
+    registradoNasEntregas: function (pc) {
+      var vg = (pc && Array.isArray(pc.recebimentos)) ? pc.recebimentos : [];
+      var s = 0, i;
+      for (i = 0; i < vg.length; i++) { s += qtd(vg[i] && vg[i].valor); }
+      return Math.round(s * 100) / 100;
+    },
     podeIr: function (de, para) { var t = TRANSICOES[String(de || "")]; return !!(t && t[String(para || "")]); },
 
     /* A DATA QUE VALE: quem sabe mais recente vence. O fornecedor que
