@@ -400,6 +400,107 @@
     };
   };
 
+  /* ÁREA E PERÍMETRO DE UM PEDAÇO DE CHÃO. A pergunta que a obra faz é
+     "quanto de contrapiso tem essa sala", e ela vira linha de orçamento e de
+     boletim. Medindo dois pontos por vez a pessoa soma de cabeça — e é aí que
+     nasce o número errado.
+
+     Cada vértice é um clique no piso: o pitch dá a distância (d = h/tan|θ|) e
+     o yaw dá o rumo, então o ponto vira coordenada no plano do chão. A área
+     sai pela fórmula do agrimensor (shoelace) e o perímetro pela soma dos
+     lados.
+
+     ⚠ ÁREA ELEVA O ERRO AO QUADRADO, e é isso que separa este número de uma
+     medida de fita. Um lado com ±10% vira uma área com cerca de ±21%: o
+     `erroEstimadoPct` daqui é medido na ÁREA, por perturbação de todos os
+     ângulos, e não copiado do erro linear. Quem lança quantidade contratual a
+     partir daqui precisa ver esse número do lado do metro quadrado. */
+  Tour360.medirArea = function (cliques, alturaCam) {
+    var h = num(alturaCam, 0);
+    var pts = cliques || [];
+    if (pts.length < 3) {
+      return { ok: false, codigo: "poucos-pontos", motivo: "Marque pelo menos três cantos do piso para fechar uma área." };
+    }
+    if (pts.length > 24) {
+      return { ok: false, codigo: "muitos-pontos", motivo: "Área com mais de 24 cantos — meça por partes, fica mais confiável e mais fácil de conferir." };
+    }
+
+    var i, d;
+    /* toda recusa de vértice é a recusa do motor, com a porta dela: o usuário
+       precisa saber QUAL canto está no horizonte, não que "a área falhou" */
+    for (i = 0; i < pts.length; i++) {
+      d = Tour360.distanciaNoChao(num(pts[i] && pts[i].pitch, 0), h);
+      if (!d.ok) return { ok: false, codigo: d.codigo, vertice: i + 1, motivo: "Canto " + (i + 1) + ": " + d.motivo };
+    }
+
+    function calc(ang) {
+      /* ang = [pitch1..pitchN, yaw1..yawN] — a perturbação mexe nos dois eixos */
+      var n = pts.length, xs = [], ys = [], k;
+      for (k = 0; k < n; k++) {
+        var dk = h / Math.tan(Math.abs(ang[k]) * RAD);
+        var yk = ang[n + k] * RAD;
+        xs.push(dk * Math.sin(yk));
+        ys.push(dk * Math.cos(yk));
+      }
+      var s = 0;
+      for (k = 0; k < n; k++) {
+        var j = (k + 1) % n;
+        s += xs[k] * ys[j] - xs[j] * ys[k];
+      }
+      return Math.abs(s) / 2;
+    }
+
+    var angulos = [], yaws = [];
+    for (i = 0; i < pts.length; i++) angulos.push(num(pts[i].pitch, 0));
+    for (i = 0; i < pts.length; i++) yaws.push(num(pts[i].yaw, 0));
+    var todos = angulos.concat(yaws);
+
+    var area = calc(todos);
+    if (!(area > 0)) {
+      return { ok: false, codigo: "area-nula", motivo: "Os cantos marcados não fecham uma área — eles estão em linha reta." };
+    }
+
+    /* perímetro e lados, com a mesma conta de `medirChao` para cada aresta */
+    var lados = [], perim = 0;
+    for (i = 0; i < pts.length; i++) {
+      var b = pts[(i + 1) % pts.length];
+      var m = Tour360.medirChao(pts[i], b, h);
+      if (!m.ok) return m;
+      lados.push(m.metros);
+      perim += m.metros;
+    }
+
+    /* ⚠ 2^n cantos ficaria proibitivo com 24 vértices (16 milhões). Aqui a
+       perturbação é por DIREÇÃO: todos para fora e todos para dentro, que é o
+       pior caso real de uma área (o polígono inteiro incha ou encolhe). */
+    var d0 = Tour360.MIRA_GRAUS, pior = 0;
+    [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (s) {
+      var pert = [], k;
+      for (k = 0; k < pts.length; k++) pert.push(angulos[k] + s[0] * d0);
+      for (k = 0; k < pts.length; k++) pert.push(yaws[k] + s[1] * d0);
+      var v = calc(pert);
+      if (v > 0 && isFinite(v)) {
+        var e = Math.abs(v - area) / area;
+        if (e > pior) pior = e;
+      }
+    });
+    var pct = Math.round(pior * 1000) / 10;
+
+    return {
+      ok: true,
+      area: r2(area),
+      perimetro: r2(perim),
+      lados: lados,
+      cantos: pts.length,
+      alturaCam: h,
+      erroEstimadoPct: pct,
+      aproximada: pct > Tour360.ERRO_AVISO_PCT,
+      nota: pct > Tour360.ERRO_AVISO_PCT
+        ? "Área aproximada (±" + r1(pct) + "%). Área acumula o erro dos dois eixos, então ela é sempre menos confiável que uma distância — serve para ordem de grandeza e para conferir quantidade, não para fechar contrato."
+        : "Estimativa a partir da altura da câmera (±" + r1(pct) + "%). Área acumula mais erro que distância: confira um lado com trena antes de usar em medição."
+    };
+  };
+
   /* CALIBRAÇÃO: o usuário não sabe a que altura estava o celular, mas sabe
      que aquele vão tem 3,00 m. Como toda distância é proporcional a `h`, a
      razão entre a medida real e a medida com h=1 devolve o h verdadeiro —
@@ -464,6 +565,16 @@
       autor: txt(o.autor),
       baseadoEm: txt(o.baseadoEm),
       comparaCom: txt(o.comparaCom),
+      /* a planta baixa do minimapa: uma por visita, referência de foto como
+         qualquer imagem desta casa. Fica no TOUR e não na obra porque o
+         pavimento fotografado muda de uma visita para outra — e a estação
+         posicionada numa planta antiga apontaria para a sala errada. */
+      planta: o.planta || null,
+      /* quanto o "para cima" da planta esta girado em relacao ao rumo em
+         que as fotos foram tiradas. 0 = planta desenhada no mesmo rumo, que
+         e o caso de quem posiciona os pinos olhando o desenho. So e usado
+         para a seta cujo rumo SAI da planta (ver setasDe). */
+      plantaNorte: num(o.plantaNorte, 0),
       pontos: [],
       historico: []
     };
@@ -485,7 +596,11 @@
       vizinhos: [],
       hotspots: [],
       medidas: [],
-      capturadoEm: txt(o.capturadoEm)
+      capturadoEm: txt(o.capturadoEm),
+      /* "exif" = data informada pelo aparelho; "anexo" = quando o arquivo
+         chegou aqui; vazio = ponto antigo, nao se sabe. A procedencia viaja
+         junto com a data porque uma prova sem origem nao e prova. */
+      capturadoFonte: txt(o.capturadoFonte)
     };
   };
 
@@ -628,7 +743,12 @@
       titulo: o.titulo || ("Visita " + (novaData || hojeLocal())),
       autorId: o.autorId, autor: o.autor,
       baseadoEm: txt(a.id),
-      comparaCom: txt(a.id)
+      comparaCom: txt(a.id),
+      /* ⚠ a planta VAI JUNTO, e as posições das estações também (abaixo): sem
+         isso o engenheiro remarcaria os 12 pinos a cada visita, e na terceira
+         ele desiste do minimapa. É o mesmo princípio do `pid`. */
+      planta: a.planta || null,
+      plantaNorte: num(a.plantaNorte, 0)
     });
     var ps = a.pontos || [];
     for (var i = 0; i < ps.length; i++) {
@@ -671,6 +791,147 @@
       comparaveis: pares.length,
       aviso: pares.length ? "" : "Nenhum ponto em comum: estas duas visitas não foram feitas dos mesmos lugares. Para comparar, crie a próxima visita a partir desta (botão \"Repetir visita\")."
     };
+  };
+
+  /* =====================================================================
+   * 4b. ANDAR PELA OBRA — as setas entre estações
+   *
+   * É o que separa "álbum de fotos redondas" de TOUR: a pessoa toca na seta
+   * que está no chão do corredor e cai na estação seguinte, olhando para o
+   * mesmo lado. Sem isso, trocar de ponto é voltar a uma lista e procurar o
+   * nome que o engenheiro deu à sala — e é aí que o cliente fecha a aba.
+   *
+   * ⚠ O CAMPO `vizinhos` JÁ EXISTIA e nunca foi lido por tela nenhuma: ele
+   *   nascia em `novoPonto`, era copiado por `basearEm` e ATRAVESSAVA a
+   *   allowlist até o Portal do cliente, sem servir a ninguém. Era o "motor
+   *   sem fiação" que o CLAUDE.md descreve, publicado.
+   *
+   * FORMATO: `[{pid, yaw}]` — o yaw é a direção, NA FOTO, em que a passagem
+   * aparece. O formato antigo (`["p2","p3"]`, só o pid) continua sendo lido:
+   * registro de cliente não se abandona, e sem yaw a seta cai no rumo
+   * calculado pela planta, ou some. Migração por leitura, nunca por script.
+   * ================================================================== */
+
+  Tour360.vizinhosDe = function (ponto) {
+    var v = (ponto && ponto.vizinhos) || [], fora = [], i, x;
+    for (i = 0; i < v.length; i++) {
+      x = v[i];
+      if (!x) continue;
+      if (typeof x === "string") { fora.push({ pid: x, yaw: null }); continue; }   /* formato antigo */
+      if (x.pid) fora.push({ pid: txt(x.pid), yaw: (x.yaw === null || x.yaw === undefined) ? null : Tour360.normalizarYaw(x.yaw) });
+    }
+    return fora;
+  };
+
+  /* A ligação é SEMPRE nos dois sentidos. Corredor que só anda para um lado é
+     beco: a pessoa entra na sala e não acha como voltar — e a saída dela vira
+     recarregar a página. O yaw de volta é o oposto, e é só um palpite decente
+     até alguém corrigir na tela ou a planta responder melhor. */
+  Tour360.ligarVizinhos = function (a, b, yawDeAparaB) {
+    if (!a || !b || a.pid === b.pid) return { ok: false, motivo: "Ligue duas estações diferentes." };
+    var ida = Tour360.vizinhosDe(a), volta = Tour360.vizinhosDe(b), i;
+    var y = (yawDeAparaB === null || yawDeAparaB === undefined) ? null : Tour360.normalizarYaw(yawDeAparaB);
+
+    for (i = 0; i < ida.length; i++) if (ida[i].pid === b.pid) ida.splice(i--, 1);
+    for (i = 0; i < volta.length; i++) if (volta[i].pid === a.pid) volta.splice(i--, 1);
+    ida.push({ pid: b.pid, yaw: y });
+    volta.push({ pid: a.pid, yaw: y === null ? null : Tour360.normalizarYaw(y + 180) });
+
+    a.vizinhos = ida;
+    b.vizinhos = volta;
+    return { ok: true, ligacoes: ida.length };
+  };
+
+  Tour360.desligarVizinhos = function (a, b) {
+    if (!a || !b) return { ok: false };
+    function tira(p, alvo) {
+      var l = Tour360.vizinhosDe(p), i;
+      for (i = 0; i < l.length; i++) if (l[i].pid === alvo) l.splice(i--, 1);
+      p.vizinhos = l;
+    }
+    tira(a, b.pid); tira(b, a.pid);
+    return { ok: true };
+  };
+
+  /* As setas prontas para desenhar. `yaw` é onde ela fica na foto; quando a
+     ligação não tem yaw gravado mas as duas estações estão posicionadas na
+     planta, o rumo sai da geometria — que é melhor que um palpite e é o que
+     faz o minimapa pagar por si.
+     ⚠ Vizinho SEM FOTO não vira seta: clicar levaria a um palco preto. Ele
+     sai na lista como `semFoto` para a tela do engenheiro poder avisar. */
+  Tour360.setasDe = function (tour, ponto, opts) {
+    var o = opts || {};
+    var lista = Tour360.vizinhosDe(ponto), fora = [], i;
+    for (i = 0; i < lista.length; i++) {
+      var alvo = Tour360.pontoDe(tour, lista[i].pid);
+      if (!alvo) continue;                       /* estação apagada: a ligação morre calada */
+      /* ⚠ OS DOIS RUMOS VÊM DE REFERENCIAIS DIFERENTES, E MISTURÁ-LOS GIRA A
+         SETA PARA A PAREDE ERRADA:
+
+         · o rumo FIXADO é um yaw BRUTO da foto — a pessoa girou o panorama até
+           a passagem aparecer e mandou gravar, e o que se grava é `pose()`.
+           Para virar rumo corrigido ele precisa perder o `nortear` da estação;
+
+         · o rumo da PLANTA é um azimute do DESENHO (o "para cima" da imagem),
+           que não tem relação nenhuma com o quanto aquela foto foi norteada.
+           Subtrair o `nortear` dele era uma correção a mais: a seta saía
+           girada pelo tanto que a estação tivesse sido norteada, e só voltava
+           ao lugar quando alguém fixasse o rumo na foto.
+           A relação que ele precisa é OUTRA — entre o norte da planta e o
+           rumo combinado das fotos — e mora em `tour.plantaNorte` (0 quando a
+           planta está desenhada no mesmo rumo em que as fotos foram tiradas,
+           que é o caso comum de quem posiciona os pinos olhando a planta).
+
+         Achado por dois revisores independentes, cada um do seu lado da
+         fiação, antes de isto chegar a uma obra. `origem` sai junto para a
+         tela poder dizer de onde veio o rumo — e para quem for depurar não
+         precisar adivinhar. */
+      var yaw = lista[i].yaw, origem = "fixado";
+      if (yaw === null) {
+        yaw = Tour360.rumoPelaPlanta(ponto, alvo);
+        origem = yaw === null ? "nenhum" : "planta";
+      }
+      if (yaw === null && o.exigirRumo) continue;
+      var corrigido = null;
+      if (yaw !== null) {
+        corrigido = (origem === "planta")
+          ? Tour360.normalizarYaw(yaw + num((tour && tour.plantaNorte) || 0, 0))
+          : Tour360.normalizarYaw(yaw - num(ponto.nortear, 0));
+      }
+      fora.push({
+        pid: alvo.pid,
+        nome: txt(alvo.nome),
+        nivel: txt(alvo.nivel),
+        yaw: corrigido,
+        origem: origem,
+        distancia: Tour360.distanciaPelaPlanta(ponto, alvo),
+        semFoto: !alvo.foto
+      });
+    }
+    return fora;
+  };
+
+  /* Rumo de A para B pela posição na planta. `planta` é {x,y} em fração da
+     imagem (0..1), com y crescendo para BAIXO como todo pixel — por isso o
+     seno leva o sinal invertido. Devolve null quando falta posição: sem os
+     dois pontos marcados não há rumo, e inventar um coloca a seta na parede
+     errada, que é pior que não ter seta. */
+  Tour360.rumoPelaPlanta = function (a, b) {
+    if (!a || !b || !a.planta || !b.planta) return null;
+    var dx = num(b.planta.x, 0) - num(a.planta.x, 0);
+    var dy = num(b.planta.y, 0) - num(a.planta.y, 0);
+    if (!dx && !dy) return null;
+    return Tour360.normalizarYaw(Math.atan2(dx, -dy) * GRAU);
+  };
+
+  /* Distância aproximada entre duas estações, em FRAÇÃO da planta. Só serve
+     para ordenar ("a mais perto primeiro"); vira metro se a planta tiver
+     escala, e por isso não é chamada de metro em lugar nenhum. */
+  Tour360.distanciaPelaPlanta = function (a, b) {
+    if (!a || !b || !a.planta || !b.planta) return null;
+    var dx = num(b.planta.x, 0) - num(a.planta.x, 0);
+    var dy = num(b.planta.y, 0) - num(a.planta.y, 0);
+    return r3(Math.sqrt(dx * dx + dy * dy));
   };
 
   /* Só faz sentido comparar par com foto dos DOIS lados. */
@@ -950,6 +1211,12 @@
         nortear: num(p.nortear, 0),
         horizonte: num(p.horizonte, 0),
         vizinhos: (p.vizinhos || []).slice(),
+        /* ⚠ a POSIÇÃO na planta sai (é o pino do minimapa do cliente), a
+           planta em si sai uma vez só, no nível do tour. Sem a posição, o
+           cliente recebe um mapa sem pinos — pior que mapa nenhum. */
+        planta: p.planta || null,
+        capturadoEm: txt(p.capturadoEm),
+        capturadoFonte: txt(p.capturadoFonte),
         comentarios: (p.hotspots || []).filter(function (h) { return h && h.paraCliente; }).map(function (h) {
           return { tipo: txt(h.tipo), texto: txt(h.texto), em: txt(h.em), yaw: num(h.yaw, 0), pitch: num(h.pitch, 0) };
         }),
@@ -973,6 +1240,11 @@
       data: txt(t.data),
       publicadoEm: txt(t.publicadoEm),
       comparaCom: txt(t.comparaCom),
+      planta: (function () {
+        var f = t.planta && t.planta.foto ? fotoRef(t.planta.foto) : null;
+        if (!f || (f.d && !f.i)) return null;      /* mesma regra da foto 360 */
+        return { foto: f, nome: txt(t.planta.nome) };
+      })(),
       pontos: pontos
     };
   };
@@ -980,8 +1252,8 @@
   /* ⚠ O cadeado do gate: varre o bloco publicado e devolve todo campo que
      não está na lista do que foi DECIDIDO mandar. Campo novo no ponto nasce
      reprovado até alguém escrever aqui que ele pode sair da máquina. */
-  Tour360.PORTAL_TOUR = ["id", "titulo", "data", "publicadoEm", "comparaCom", "pontos"];
-  Tour360.PORTAL_PONTO = ["pid", "nome", "nivel", "foto", "tipo", "alturaCam", "nortear", "horizonte", "vizinhos", "comentarios", "medidas"];
+  Tour360.PORTAL_TOUR = ["id", "titulo", "data", "publicadoEm", "comparaCom", "planta", "pontos"];
+  Tour360.PORTAL_PONTO = ["pid", "nome", "nivel", "foto", "tipo", "alturaCam", "nortear", "horizonte", "vizinhos", "planta", "capturadoEm", "capturadoFonte", "comentarios", "medidas"];
   /* ⚠ E AS LISTAS DOS NÍVEIS DE BAIXO. Sem elas o cadeado só olhava `tour.*` e
      `ponto.*`: um campo acrescentado DENTRO de um comentário (o autor, o
      telefone de quem reclamou) ou dentro de uma medida passava limpo, e é

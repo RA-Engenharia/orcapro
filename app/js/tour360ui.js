@@ -40,6 +40,35 @@
  *    padrão — num equiretangular isso vira 800 px de altura, e a obra fica
  *    ilegível ao dar zoom. Aqui vai `larguraMax: 4096`, que é o teto seguro
  *    de textura na maioria dos celulares. Ver `_guardarFoto`.
+ *
+ * 5) UM SELETOR DE FOTO SÓ, COM `capture`, DEIXA O PANORAMA INALCANÇÁVEL.
+ *    `capture="environment"` abre a câmera direto e, em vários Androids,
+ *    TIRA A GALERIA DA JOGADA (está documentado no cabeçalho do
+ *    js/tour360cap.js). Enquanto este era o único seletor da tela, a foto
+ *    tirada no modo Panorama do celular não tinha por onde entrar — e o
+ *    módulo de captura ainda mandava, num toast, "toque em Importar
+ *    panorama aqui", apontando para um botão que não existia. Agora são
+ *    dois caminhos lado a lado: "Tirar foto" (com `capture`) e "Importar
+ *    panorama" (`Tour360Cap.abrirSeletor({captura:false})`). Os dois caem
+ *    no mesmo `_receberFoto` — dois seletores, uma régua de compressão só.
+ *
+ * 6) A NAVEGAÇÃO É DO MOTOR; AQUI SÓ HÁ FIAÇÃO. As setas saem de
+ *    `Tour360.setasDe`, a ligação de `Tour360.ligarVizinhos`, o rumo pela
+ *    planta de `Tour360.rumoPelaPlanta`. Esta tela não soma nem subtrai
+ *    ângulo nenhum: se ela "ajeitasse" o yaw para desenhar, nasceria um
+ *    segundo número — e o segundo número aparece sempre na hora errada
+ *    (aqui seria a seta na parede errada, no app OU no Portal do cliente).
+ *
+ * 7) O PINO DA PLANTA É FRAÇÃO (0..1), NUNCA PIXEL. A mesma planta é
+ *    desenhada em três tamanhos diferentes — o cartão do editor, o minimapa
+ *    dentro do palco e a tela do cliente no Portal. Gravado em pixel, o pino
+ *    andaria em dois desses três lugares, e ninguém saberia qual é o certo.
+ *    Gravado em fração, o `left:%`/`top:%` do CSS acerta em todos.
+ *
+ * ⚠ 8) O VIEWER É ESCRITO EM PARALELO A ESTA TELA. Toda função nova dele
+ *    (`setas`, `aoSeta`, `telaCheia`, `girarPara`, `teclado`) é chamada
+ *    atrás de `typeof`: um TypeError aqui não derruba só a seta — ele
+ *    estoura dentro do wire e o palco inteiro fica preto e mudo.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -76,6 +105,16 @@
   G._t360Cortina = 0.5;
   G._t360Opacidade = 0.5;    // quanto do projeto aparece por cima da foto
   G._t360FotoPid = "";       // de qual estação é a foto que está sendo escolhida
+  G._t360AreaCliques = [];   // cantos do piso da área em curso
+  G._t360Area = null;        // último retorno de Tour360.medirArea (parcial ou fechada)
+  G._t360AreaFechada = false;
+  G._t360PosPid = "";        // estação escolhida para posicionar na planta
+  G._t360Mini = true;        // minimapa aberto dentro do palco
+  /* rumo a restaurar depois de trocar de estação. É o que faz a seta parecer
+     ANDAR: quem passa pela porta continua olhando para o mesmo lado, em vez
+     de ser jogado no norte da foto nova. */
+  G._t360Rumo = null;
+  G._t360RenderAoSair = false;   // trocou de estação em tela cheia: re-render ao sair
   /* chave do que está DENTRO da esfera agora. Sem ela, cada re-render (e todo
      clique re-renderiza) recarregaria a foto e jogaria a câmera de volta ao
      norte — a pessoa perderia o enquadramento a cada comentário. */
@@ -146,6 +185,12 @@
           if (p.foto) refs.push(p.foto);
           if (p.projecao && p.projecao.foto) refs.push(p.projecao.foto);
         });
+        /* ⚠ E A PLANTA BAIXA, que não está dentro de ponto nenhum. Sem o
+           carimbo, a imagem da planta fica só neste aparelho: o computador do
+           escritório abre a visita sem minimapa, e `Tour360.paraPortal`
+           descarta a planta (ela cai na regra "foto que não subiu não sai"),
+           então o cliente recebe um tour com pinos que não existem. */
+        if (t.planta && t.planta.foto) refs.push(t.planta.foto);
         Fotos.carimbarRemotos(refs);
       }
     } catch (e) {}
@@ -356,7 +401,14 @@
           + '<td class="num">' + Util.arr(p.medidas).length + "</td>"
           + '<td class="t360-acoes" style="white-space:nowrap">'
           + (temFoto ? '<button class="btn sm primary" data-gacao="t360-ver" data-pid="' + esc(p.pid) + '">Abrir 360</button> ' : "")
-          + '<button class="btn sm" data-gacao="t360-foto" data-pid="' + esc(p.pid) + '">' + (temFoto ? "Trocar foto" : "Tirar/escolher foto") + "</button> "
+          /* ⚠ SÃO DOIS BOTÕES DE PROPÓSITO — ver a armadilha 5 do cabeçalho.
+             "Tirar foto" leva `capture` e abre a câmera; "Importar panorama"
+             NÃO leva, e é o único caminho até a galeria em vários Androids —
+             que é justamente onde mora a foto tirada no modo Panorama. */
+          + '<button class="btn sm" data-gacao="t360-foto" data-pid="' + esc(p.pid) + '" '
+          + 'title="Abre a câmera do aparelho">' + (temFoto ? "Trocar: tirar foto" : "Tirar foto") + "</button> "
+          + '<button class="btn sm" data-gacao="t360-importar" data-pid="' + esc(p.pid) + '" '
+          + 'title="Abre a galeria: é por aqui que entra a foto tirada no modo Panorama do celular">Importar panorama</button> '
           /* ⚠ o botao de girar no app so nasce quando o aparelho e o endereco
              permitem: no celular, pela rede da obra (http), getUserMedia nao
              existe. Botao que aparece e falha depois e pior que botao ausente. */
@@ -368,6 +420,8 @@
       html += "</tbody></table>";
     }
 
+    html += _cartaoPlanta(t);
+
     html += '<div class="flex mt t360-rodape">'
       + '<button class="btn primary" data-gacao="t360-add-ponto"' + (cabe.cabe ? "" : " disabled") + ">+ Adicionar estação</button>"
       + '<span class="muted" style="align-self:center;margin-left:12px">'
@@ -377,11 +431,117 @@
       + '<button class="btn danger" data-gacao="t360-excluir-tour">Excluir esta visita</button>'
       + "</div>";
 
-    /* ⚠ O input de arquivo NÃO leva `data-gacao`: o dispatcher escuta clique e
-       a tela re-renderizaria com o seletor de arquivo aberto. Ele é ligado por
-       `registrarWire`, depois de o DOM existir. */
-    html += '<input type="file" id="t360-foto-in" accept="image/*" capture="environment" style="display:none">';
+    /* ⚠ Os inputs de arquivo NÃO levam `data-gacao`: o dispatcher escuta clique
+       e a tela re-renderizaria com o seletor de arquivo aberto. Eles são
+       ligados por `registrarWire`, depois de o DOM existir.
+       ⚠ E SÃO TRÊS, com atributos diferentes de propósito: o primeiro leva
+       `capture="environment"` (abre a câmera), o segundo NÃO leva (é o único
+       que enxerga a galeria em vários Androids, onde mora o panorama), e o
+       terceiro é a planta baixa, que não é foto de obra nenhuma. Trocar o
+       atributo de um input só, na hora do clique, não é confiável: o
+       navegador já resolveu o comportamento do seletor quando ele nasceu.
+       Estes são a REDE: o caminho normal é `Tour360Cap.abrirSeletor`. */
+    html += '<input type="file" id="t360-foto-in" accept="image/*" capture="environment" style="display:none">'
+      + '<input type="file" id="t360-foto-imp" accept="image/*" style="display:none">'
+      + '<input type="file" id="t360-planta-in" accept="image/*" style="display:none">';
     return html;
+  }
+
+  /* ---------- o cartão da planta baixa (minimapa e posicionamento) ----------
+   *
+   * A planta mora no TOUR (`t.planta = {foto, nome}`) e a posição de cada
+   * estação mora no PONTO (`p.planta = {x, y}`, em FRAÇÃO da imagem). O motor
+   * herda os dois em `basearEm`, então quem posicionou os 12 pinos uma vez não
+   * remarca nada na visita seguinte — é o mesmo princípio do `pid`.
+   *
+   * ⚠ FRAÇÃO, NUNCA PIXEL: ver a armadilha 7 do cabeçalho. */
+  function _cartaoPlanta(t) {
+    var ps = Util.arr(t.pontos);
+    var comPino = ps.filter(function (x) { return x && x.planta; });
+
+    var html = '<div class="card mb t360-planta"><b>Planta baixa desta visita</b>';
+
+    if (!t.planta || !t.planta.foto) {
+      html += '<p class="muted" style="margin:6px 0 10px">Com uma planta anexada, o visualizador ganha um <b>minimapa</b> no canto — um pino por estação, e o pino leva para lá. '
+        + "O cliente vê o mesmo mapa no Portal. E quando ninguém fixou o rumo de uma seta na foto, ele sai da posição das duas estações na planta.</p>"
+        + '<button class="btn" data-gacao="t360-planta-anexar">Anexar imagem da planta</button> '
+        + (temPlantaBIM() ? '<button class="btn" data-gacao="t360-planta-bim">Usar a planta baixa do BIM</button> ' : "")
+        + '<span class="muted">Serve qualquer imagem: a prancha exportada como PNG, uma foto do papel, ou o corte do modelo. '
+        + "PDF não entra direto — exporte como imagem antes.</span>";
+      return html + "</div>";
+    }
+
+    html += '<p class="muted" style="margin:6px 0 10px">Escolha a estação abaixo e <b>clique na planta</b> no lugar onde ela fica. '
+      + comPino.length + " de " + ps.length + " estação(ões) posicionada(s).</p>";
+
+    html += '<div class="row">' + K.campo("Estação a posicionar",
+      '<select id="t360-pos-sel" data-gacao="t360-posicionar-sel">'
+      + '<option value="">— escolha a estação —</option>'
+      + ps.map(function (x) {
+        return '<option value="' + esc(x.pid) + '"' + (x.pid === G._t360PosPid ? " selected" : "") + ">"
+          + esc(x.nome) + (x.planta ? " (já posicionada)" : "") + "</option>";
+      }).join("") + "</select>") + "</div>";
+
+    /* ⚠ os pinos daqui são MARCADORES, não botões: `pointer-events:none`. Com
+       eles clicáveis, tentar reposicionar uma estação em cima da outra
+       acertava o pino e o clique nunca chegava à planta — e a pessoa concluía
+       que "não dá para mover". */
+    html += '<div id="t360-planta-quadro" style="position:relative;display:inline-block;max-width:100%;line-height:0;cursor:crosshair">'
+      + '<img id="t360-planta-img" alt="Planta baixa da visita" style="display:block;max-width:100%;height:auto;border-radius:8px;border:1px solid var(--linha,#e2e8f0)">'
+      + _pinosHtml(ps, G._t360PosPid) + "</div>";
+
+    html += '<div class="flex mt" style="gap:8px;flex-wrap:wrap">'
+      + '<button class="btn sm" data-gacao="t360-planta-anexar">Trocar a imagem</button> '
+      + (temPlantaBIM() ? '<button class="btn sm" data-gacao="t360-planta-bim">Trocar pela planta do BIM</button> ' : "")
+      + '<button class="btn sm danger" data-gacao="t360-planta-remover">Remover a planta</button>'
+      + "</div>";
+
+    if (comPino.length) {
+      html += '<table class="tbl mt t360-pinos"><thead><tr><th>#</th><th>Estação</th><th class="num">Posição na planta</th><th></th></tr></thead><tbody>';
+      comPino.forEach(function (x, i) {
+        html += "<tr><td>" + (i + 1) + "</td><td>" + esc(x.nome) + "</td>"
+          /* a posição sai em % da imagem porque é isso que está gravado —
+             mostrar "metro" aqui seria inventar uma escala que a planta não
+             tem, e alguém acabaria orçando por ela */
+          + '<td class="num">' + pct(x.planta.x) + "% × " + pct(x.planta.y) + "%</td>"
+          + '<td><button class="btn sm" data-gacao="t360-tirar-pino" data-pid="' + esc(x.pid) + '">Tirar o pino</button></td></tr>';
+      });
+      html += "</tbody></table>";
+    }
+
+    return html + "</div>";
+  }
+
+  /* Os pinos por cima da planta, em porcentagem da imagem. `destaque` é o pid
+     que fica em outra cor (a estação escolhida no editor, ou a estação aberta
+     no minimapa). */
+  function _pinosHtml(pontos, destaque) {
+    var out = "", k = 0;
+    Util.arr(pontos).forEach(function (x) {
+      if (!x || !x.planta) return;
+      k++;
+      var ehEle = (x.pid === destaque);
+      out += '<span title="' + esc(x.nome || "") + (x.foto ? "" : " (sem foto)") + '" style="position:absolute;'
+        + "left:" + pct(x.planta.x) + "%;top:" + pct(x.planta.y) + "%;transform:translate(-50%,-50%);pointer-events:none;"
+        + "min-width:22px;height:22px;border-radius:999px;text-align:center;"
+        + "background:" + (ehEle ? "var(--verde,#15803d)" : "var(--aco,#2e6f9e)") + ";color:#fff;"
+        + "font:700 11px/22px var(--fonte,system-ui,sans-serif);"
+        /* dois anéis, claro e escuro: a planta pode ser branca (prancha) ou
+           escura (render), e um anel só some em metade dos casos */
+        + 'box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.45)">' + k + "</span>";
+    });
+    return out;
+  }
+
+  function pct(v) { return Math.round(Util.num(v) * 1000) / 10; }
+
+  /* O botão da planta do BIM só nasce quando o BIM foi montado nesta sessão —
+     `cameraAtual()` é o mesmo sinal que a âncora usa. Botão que aparece e
+     falha depois é pior que botão ausente. */
+  function temPlantaBIM() {
+    var B = global.BIM;
+    if (!B || typeof B.plantaBaixa !== "function" || typeof B.cameraAtual !== "function") return false;
+    try { return !!B.cameraAtual(); } catch (e) { return false; }
   }
 
   /* ===================================================================
@@ -426,13 +586,25 @@
     var modos = [
       ["girar", "Girar"],
       ["medir", "Medir"],
+      ["area", "Medir área"],
       ["comentar", "Comentar"],
       ["comparar", "Comparar"],
       ["projetado", "Projetado × Executado"]
     ];
     html += '<div class="flex mb t360-barra" style="gap:6px;flex-wrap:wrap">' + modos.map(function (m) {
       return '<button class="btn sm ' + (m[0] === G._t360Modo ? "primary" : "") + '" data-gacao="t360-modo" data-modo="' + m[0] + '">' + esc(m[1]) + "</button>";
-    }).join("") + "</div>";
+    }).join("")
+      + '<span class="t360-barra-sep"></span>'
+      /* ⚠ TELA CHEIA É O BÁSICO QUE FAZ O PRODUTO PARECER FÁCIL: numa foto 360
+         dentro de um retângulo de 620 px, girar não convence ninguém. O botão
+         chama `Tour360View.telaCheia`; enquanto o viewer não publicar essa
+         função, a própria tela põe o palco em tela cheia (ver a ação). */
+      + '<button class="btn sm" data-gacao="t360-telacheia" '
+      + 'title="Tela cheia. Com o palco em foco, as setas do teclado giram e + / − aproximam.">Tela cheia</button> '
+      + ((t.planta && t.planta.foto)
+          ? '<button class="btn sm" data-gacao="t360-minimapa">' + (G._t360Mini ? "Esconder o minimapa" : "Mostrar o minimapa") + "</button>"
+          : "")
+      + "</div>";
 
     /* ⚠ O PALCO PRECISA DE ALTURA PRÓPRIA. Um host com `height:auto` mede 0 e
        o `redimensionar` do viewer desiste (`if (!w || !alt) return`) — o
@@ -442,6 +614,7 @@
 
     html += '<div class="t360-painel mt">';
     if (G._t360Modo === "medir") html += _painelMedir(t, p);
+    else if (G._t360Modo === "area") html += _painelArea(t, p);
     else if (G._t360Modo === "comentar") html += _painelComentar(t, p);
     else if (G._t360Modo === "comparar") html += _painelComparar(t, p);
     else if (G._t360Modo === "projetado") html += _painelProjetado(t, p);
@@ -458,6 +631,95 @@
       + "Altura da câmera nesta estação: <b>" + n2(p.alturaCam) + " m</b> — é ela que transforma ângulo em metro, "
       + "e por isso ela aparece junto de toda medida em vez de ficar escondida.</p>";
     html += _listaComentarios(p) + _listaMedidas(p);
+    return html + "</div>" + _painelPassagens(t, p);
+  }
+
+  /* ---------- painel: as passagens (as setas entre estações) ----------
+   *
+   * ⚠ ESTE É O EDITOR QUE FALTAVA. O campo `vizinhos` existia no registro
+   *   desde o começo, era copiado de visita em visita por `basearEm` e
+   *   atravessava a allowlist até o Portal do cliente — sem uma única tela
+   *   que o escrevesse. Motor publicado sem fiação: o cliente recebia um
+   *   "tour" em que a única forma de trocar de estação era achar o nome que o
+   *   engenheiro deu à sala numa lista.
+   *
+   * O rumo da seta se define girando a foto até a passagem aparecer no centro
+   * e clicando em "Fixar a seta aqui": o yaw vem de `Tour360View.pose()` e vai
+   * cru para `Tour360.ligarVizinhos`, que grava a volta como o oposto. Nenhuma
+   * conta de ângulo mora nesta tela — ver a armadilha 6 do cabeçalho. */
+  function _painelPassagens(t, p) {
+    var M = motor();
+    var setas = (M && M.setasDe) ? M.setasDe(t, p) : [];
+    var ligado = {}, i;
+    for (i = 0; i < setas.length; i++) ligado[setas[i].pid] = true;
+
+    var outros = Util.arr(t.pontos).filter(function (x) { return x && x.pid !== p.pid; });
+
+    var html = '<div class="card mt t360-passagens"><b>Daqui se vai para:</b>';
+    if (!outros.length) {
+      return html + '<p class="muted" style="margin:6px 0 0">Esta visita só tem esta estação — não há para onde andar. '
+        + "Volte às estações e acrescente a próxima.</p></div>";
+    }
+
+    html += '<p class="muted" style="margin:6px 0 10px">A seta na foto é o que transforma um álbum de fotos redondas em passeio. '
+      + "A ligação vale nos <b>dois sentidos</b>: lá também nasce a seta de volta.</p>";
+
+    if (!setas.length) {
+      html += '<p class="muted">Nenhuma passagem ligada ainda.</p>';
+    } else {
+      /* o rumo GRAVADO é diferente do rumo VINDO DA PLANTA, e a diferença
+         importa: o da planta muda sozinho quando alguém arrasta o pino, o
+         gravado não. Dizer de onde ele veio é o que evita "eu não mexi nisso". */
+      var vz = M.vizinhosDe ? M.vizinhosDe(p) : [];
+      var temRumo = {};
+      for (i = 0; i < vz.length; i++) if (vz[i].yaw !== null && vz[i].yaw !== undefined) temRumo[vz[i].pid] = true;
+
+      /* ⚠ NÃO chame esta tabela de `t360-setas`: esse nome é da CAMADA de
+         setas que o viewer cria dentro do palco (js/tour360view.js), e ele já
+         escreve `.t360-setas{z-index:1}` na folha dele. Duas coisas com o
+         mesmo nome de classe é a regra de um pegando o outro no dia em que
+         alguém acrescentar `position:absolute` lá — e aí esta tabela some da
+         tela sem ninguém entender por quê. */
+      html += '<table class="tbl t360-tab-passagens"><thead><tr><th>Estação</th><th>Rumo da seta</th><th></th></tr></thead><tbody>';
+      setas.forEach(function (s) {
+        var semRumo = (s.yaw === null || s.yaw === undefined);
+        html += "<tr><td><b>" + esc(s.nome) + "</b>"
+          + (s.nivel ? ' <span class="muted">· ' + esc(s.nivel) + "</span>" : "")
+          /* ⚠ vizinho sem foto NÃO vira seta no 360 (clicar levaria a um palco
+             preto). Ele continua aqui, dito por extenso, senão o engenheiro
+             liga a passagem e jura que o produto não a desenhou. */
+          + (s.semFoto ? ' <span style="color:var(--ambar,#b45309)">sem foto — a seta só aparece no 360 quando esta estação tiver uma</span>' : "")
+          + "</td><td>"
+          + (semRumo
+              ? '<span class="muted">sem rumo — gire até a passagem ficar no centro e clique em "Fixar a seta aqui"</span>'
+              : n1(s.yaw) + "°" + (temRumo[s.pid] ? "" : ' <span class="muted">(veio da posição na planta)</span>'))
+          + '</td><td style="white-space:nowrap">'
+          + '<button class="btn sm" data-gacao="t360-fixar-seta" data-pid="' + esc(s.pid) + '" '
+          + 'title="Grava, como rumo desta seta, a direção que você está vendo agora">Fixar a seta aqui</button> '
+          + (s.semFoto ? "" : '<button class="btn sm primary" data-gacao="t360-ir-ponto" data-pid="' + esc(s.pid) + '">Ir</button> ')
+          + '<button class="btn sm danger" data-gacao="t360-desligar" data-pid="' + esc(s.pid) + '">Desligar</button>'
+          + "</td></tr>";
+      });
+      html += "</tbody></table>";
+    }
+
+    var livres = outros.filter(function (x) { return !ligado[x.pid]; });
+    if (livres.length) {
+      /* ⚠ o <select> aqui NÃO leva `data-gacao`: com ele, o clique para abrir
+         a lista já dispararia a ação e a tela re-renderizaria com o dropdown
+         aberto. Quem lê o valor é o botão, no clique. */
+      html += '<div class="flex mt" style="gap:8px;align-items:center;flex-wrap:wrap">'
+        + '<select id="t360-ligar-sel">' + livres.map(function (x) {
+          return '<option value="' + esc(x.pid) + '">' + esc(x.nome) + (x.foto ? "" : " (sem foto)") + "</option>";
+        }).join("") + "</select>"
+        + '<button class="btn" data-gacao="t360-ligar">Ligar a esta estação</button>'
+        + '<span class="muted">A seta nasce <b>sem rumo</b>: fixe-a depois, olhando para a passagem.</span></div>';
+    }
+
+    if (!t.planta || !t.planta.foto) {
+      html += '<p class="muted" style="margin:10px 0 0">Esta visita não tem <b>planta baixa</b>: sem ela não há minimapa, '
+        + 'e a seta sem rumo fixado não tem de onde sair. Anexe uma em "Voltar às estações".</p>';
+    }
     return html + "</div>";
   }
 
@@ -553,6 +815,79 @@
     }
 
     return html + _listaMedidas(p) + "</div>";
+  }
+
+  /* ---------- painel: medir ÁREA ----------
+   *
+   * A pergunta da obra é "quanto de contrapiso tem essa sala", e ela vira
+   * linha de orçamento e de boletim. Medindo dois pontos por vez a pessoa soma
+   * de cabeça — e é aí que nasce o número errado.
+   *
+   * ⚠ A ÁREA NÃO É GRAVADA COMO MEDIDA, e isso é decisão, não esquecimento.
+   *   `Tour360.recalcular` só conhece "chao" e "altura": uma medida gravada
+   *   com tipo "area" seria relida como distância entre dois pontos que não
+   *   existem, e a lista de medidas mostraria a recusa do motor no lugar do
+   *   metro quadrado — número que mente, que é pior que número nenhum. E
+   *   `Tour360.PORTAL_MEDIDA` não tem campo de área, então ela também não
+   *   chegaria ao cliente. A porta é guardar o resultado como COMENTÁRIO
+   *   fixado no primeiro canto: ele atravessa para o Portal se a pessoa
+   *   marcar, e o texto carrega o ± junto do número. */
+  function _painelArea(t, p) {
+    var cl = G._t360AreaCliques;
+    var res = G._t360Area;
+
+    var html = '<div class="card"><div class="row">'
+      + K.campo("Altura da câmera", '<div style="padding-top:9px"><b>' + n2(p.alturaCam) + " m</b></div>")
+      + K.campo("Cantos marcados", '<div style="padding-top:9px">' + cl.length + " <span class=\"muted\">(de 3 a 24)</span></div>")
+      + "</div>";
+
+    html += '<p class="muted" style="margin:0 0 10px">Clique nos <b>cantos do piso</b>, em volta da área, na ordem em que eles aparecem — '
+      + "como quem contorna a sala com o dedo. A cada canto novo a área parcial aparece aqui. "
+      + "Canto perto da linha do horizonte não mede: meio grau de erro no dedo vira dezenas de metros.</p>";
+
+    if (res && res.ok === false) {
+      /* ⚠ A RECUSA DIZ QUAL CANTO. O motor devolve `vertice` justamente para
+         a pessoa saber onde ela errou — "não foi possível medir" faz remarcar
+         os quatro cantos às cegas, e na terceira tentativa ela desiste e chuta
+         a área. E a porta está do lado: apagar só o último canto. */
+      html += caixaErro(res.vertice ? "O canto " + res.vertice + " não serve" : "Não dá para fechar a área assim",
+        "<p>" + esc(res.motivo) + "</p>"
+        + '<button class="btn" data-gacao="t360-area-desfazer">Apagar o último canto</button> '
+        + '<button class="btn" data-gacao="t360-area-limpar">Recomeçar a área</button>');
+    } else if (res && res.ok) {
+      var corpo = '<p style="font-size:20px;margin:6px 0"><b>' + n2(res.area) + " m²</b> "
+        /* ⚠ O ± SAI COLADO NO NÚMERO, como nas outras medidas: área eleva o
+           erro ao quadrado (um lado com ±10% vira área com ~±21%), e quem
+           lança quantidade contratual daqui precisa ver isso na mesma linha. */
+        + '<span class="muted">(±' + n1(res.erroEstimadoPct) + "%)</span>"
+        + (res.aproximada ? ' <span class="muted">— aproximada</span>' : "") + "</p>"
+        + '<p class="muted">Perímetro <b>' + n2(res.perimetro) + " m</b> · " + res.cantos + " cantos · altura da câmera " + n2(res.alturaCam) + " m</p>"
+        + '<p class="muted">' + esc(res.nota) + "</p>";
+
+      if (G._t360AreaFechada) {
+        corpo += '<div class="row">' + K.campo("Rótulo (o que é esta área)", K.inp("t360-area-rotulo", "", "Ex.: contrapiso da sala 2"))
+          + K.campo("Mostrar para o cliente", '<label style="display:inline-flex;align-items:center;gap:6px;padding-top:9px"><input type="checkbox" id="t360-area-cli"> no Portal</label>')
+          + "</div>"
+          + '<div class="flex"><button class="btn primary" data-gacao="t360-area-comentar">Guardar como comentário nesta estação</button> '
+          + '<button class="btn" data-gacao="t360-area-limpar">Medir outra área</button></div>'
+          + '<p class="muted" style="margin:8px 0 0">A área não entra na lista de medidas: o registro de medida só sabe guardar distância e altura, '
+          + "e um número relido errado ali seria pior que não guardar. Como comentário ele fica fixado no primeiro canto, com o ± junto.</p>";
+      } else {
+        corpo += '<div class="flex"><button class="btn primary" data-gacao="t360-area-fechar">Fechar área</button> '
+          + '<button class="btn" data-gacao="t360-area-desfazer">Apagar o último canto</button> '
+          + '<button class="btn" data-gacao="t360-area-limpar">Recomeçar</button></div>'
+          + '<p class="muted" style="margin:8px 0 0">Parcial: o polígono fecha do último canto de volta ao primeiro. Continue clicando para acrescentar cantos.</p>';
+      }
+
+      if (res.aproximada) html += caixaAviso("Área aproximada", corpo);
+      else html += '<div class="card mb t360-medida" style="border-left:4px solid var(--verde)">' + corpo + "</div>";
+    } else if (cl.length) {
+      html += '<div class="flex"><span class="muted" style="align-self:center;margin-right:10px">Faltam ' + (3 - cl.length) + " canto(s) para fechar a menor área possível.</span>"
+        + '<button class="btn" data-gacao="t360-area-desfazer">Apagar o último canto</button> '
+        + '<button class="btn" data-gacao="t360-area-limpar">Recomeçar</button></div>';
+    }
+
+    return html + "</div>";
   }
 
   /* ---------- painel: comentar ---------- */
@@ -707,23 +1042,91 @@
     try { return !!Cap.podeCapturar().ok; } catch (e) { return false; }
   }
 
-  function pedirFoto() {
-    var el = document.getElementById("t360-foto-in");
+  /* ⚠ DOIS CAMINHOS, E A "DUPLICAÇÃO" É O CONSERTO — ver a armadilha 5 do
+     cabeçalho e o cabeçalho do js/tour360cap.js. `capture="environment"` abre
+     a câmera direto e, em vários Androids, ESCONDE A GALERIA: a foto que a
+     pessoa acabou de tirar no modo Panorama fica inalcançável justamente por
+     causa do atributo que deveria ajudar. Enquanto o único seletor da tela
+     tinha o atributo, o toast do módulo de captura mandava "toque em Importar
+     panorama aqui" — apontando para um botão que não existia.
+     `Tour360Cap.abrirSeletor({captura:false})` existe exatamente para isto. */
+  function pedirFoto(comCaptura) {
+    var Cap = global.Tour360Cap;
+    if (Cap && typeof Cap.abrirSeletor === "function") {
+      var r = Cap.abrirSeletor({ captura: !!comCaptura }, function (arq) {
+        if (!arq) return;             /* cancelou o seletor: não há o que dizer */
+        lerArquivo(arq, _receberFoto);
+      });
+      if (r && r.ok) return;
+      /* o módulo recusou (tela sem navegador de verdade): cai na rede abaixo,
+         que é o <input> da própria tela */
+    }
+    var el = document.getElementById(comCaptura ? "t360-foto-in" : "t360-foto-imp");
     if (!el) { UI.toast("Não achei o seletor de foto nesta tela.", "erro"); return; }
     el.value = "";
     el.click();
+  }
+
+  /* ⚠ A PLANTA NÃO PASSA PELO `lerArquivo` DAS FOTOS DO TOUR. Aquele caminho
+     CLASSIFICA a imagem como panorama e devolve, para tudo que não é 2:1,
+     "esta é uma foto comum: aparece, mas não gira em 360 e não permite medir
+     por ângulo". Uma planta baixa NUNCA é 2:1 — o aviso sairia sempre,
+     dizendo à pessoa que ela escolheu o arquivo errado quando ela acertou. */
+  function lerImagemSimples(file, cb) {
+    if (!file || !/^image\//.test(file.type || "")) {
+      UI.toast("Escolha um arquivo de imagem (PNG ou JPG). PDF não entra direto: exporte a prancha como imagem antes.", "erro");
+      cb(null); return;
+    }
+    var fr = new FileReader();
+    fr.onload = function () { cb(fr.result); };
+    fr.onerror = function () { UI.toast("Não consegui ler este arquivo.", "erro"); cb(null); };
+    fr.readAsDataURL(file);
+  }
+
+  /* Guarda a imagem da planta pelo mesmo trilho de qualquer foto desta casa. */
+  function _guardarPlanta(t, dataURI, nome) {
+    if (typeof Fotos === "undefined" || !Fotos.guardar) {
+      UI.toast("O módulo de fotos não carregou — não dá para anexar a planta agora.", "erro");
+      return;
+    }
+    var titulo = String(nome || "").replace(/\.[A-Za-z0-9]{2,5}$/, "") || "Planta baixa";
+    /* 2048 px basta para ler uma planta no minimapa e no Portal; 4096 é teto
+       de textura de panorama, e aqui não há textura nenhuma. */
+    Fotos.guardar(dataURI, titulo, { larguraMax: 2048, qualidade: 0.9 }).then(function (ref) {
+      /* ⚠ MESMA GUARDA DA FOTO 360, PELO MESMO MOTIVO: sem IndexedDB a
+         referência volta com os BYTES dentro (`semIDB`), e gravada assim no
+         registro ela estoura o documento de 1 MiB do Firestore — a
+         sincronização daquela empresa para, com o app dizendo "Sincronizado". */
+      if (ref && (ref.semIDB || (ref.d && !ref.id))) {
+        try { if (Fotos.apagar) Fotos.apagar([ref]); } catch (e) {}
+        UI.toast("Este navegador não está guardando imagens fora do registro (IndexedDB indisponível), e a planta é grande demais para entrar no cadastro — ela travaria a sincronização desta empresa. Abra o OrçaPRO pelo aplicativo instalado, ou saia da janela anônima, e anexe de novo.", "erro");
+        return;
+      }
+      var atual = Store.obter(eid(), ENT, t.id) || t;
+      var antiga = atual.planta && atual.planta.foto;
+      atual.planta = { foto: ref, nome: titulo };
+      if (!salvarTour(atual)) return;
+      /* a planta substituída sai do aparelho e do servidor: sem isto ela vira
+         lixo que come a cota da licença e que ninguém acha depois */
+      if (antiga) { try { if (Fotos.apagar) Fotos.apagar([antiga]); } catch (e) {} }
+      _plantaRef = ""; _plantaSrc = "";
+      UI.toast("Planta anexada. Agora escolha a estação e clique na planta para pôr o pino.", "ok");
+      App.render();
+    })["catch"](function (e) {
+      UI.toast("Não consegui guardar a planta: " + ((e && e.message) || e), "erro");
+    });
   }
 
   /* ⚠ PONTO ÚNICO DE CHEGADA DA IMAGEM, venha ela do módulo de captura ou do
      seletor de arquivo. Dois caminhos até `Fotos.guardar` seria o começo de
      duas réguas de compressão — e a régua errada aqui é a que devolve a obra
      ilegível ao dar zoom. */
-  function _receberFoto(dataURI) {
+  function _receberFoto(dataURI, leitura) {
     if (!dataURI) { UI.toast("Não consegui ler a imagem.", "erro"); return; }
     var t = tourAberto();
     var p = t ? motor().pontoDe(t, G._t360FotoPid) : null;
     if (!p) { UI.toast("Escolha antes em qual estação a foto entra.", "erro"); return; }
-    _guardarFoto(t, p, dataURI);
+    _guardarFoto(t, p, dataURI, leitura);
   }
 
   /* ⚠ QUEM RECUSA UM ARQUIVO PRECISA DIZER O QUE HOUVE. js/tour360cap.js já
@@ -745,7 +1148,10 @@
           return;
         }
         if (res.aviso) UI.toast(res.aviso, "erro");
-        cb(res.dataURI);
+        /* ⚠ A LEITURA INTEIRA VAI JUNTO, e não só o data URI: é dela que sai
+           a data em que a foto foi TIRADA (EXIF). Jogar o resto fora era o
+           que fazia a estação nascer com a data do ANEXO. */
+        cb(res.dataURI, res);
       })["catch"](function () { cb(null); });
       return;
     }
@@ -769,7 +1175,7 @@
     } catch (e) { cb(0, 0); }
   }
 
-  function _guardarFoto(t, p, dataURI) {
+  function _guardarFoto(t, p, dataURI, leitura) {
     if (typeof Fotos === "undefined" || !Fotos.guardar) {
       UI.toast("O módulo de fotos não carregou — não dá para anexar agora.", "erro");
       return;
@@ -803,7 +1209,20 @@
         var antiga = alvo.foto;
         alvo.foto = ref;
         alvo.tipo = equi ? "equirect" : "plana";
-        alvo.capturadoEm = Util.agoraISO();
+        /* ⚠ A DATA DA FOTO ERA A DO ANEXO, E ELA VAI PARA UM DOCUMENTO QUE
+           FISCAL E PERITO LEEM COMO PROVA. Foto tirada na segunda e anexada na
+           quinta saía datada de quinta. Agora vale, nesta ordem: a data do
+           aparelho (EXIF DateTimeOriginal), e só então o momento do anexo —
+           com `capturadoFonte` dizendo qual das duas é, porque uma é informada
+           pelo aparelho e a outra é só quando o arquivo chegou aqui.
+           ⚠ E a hora do anexo sai LOCAL, não `Util.agoraISO()`: aquele é
+           `toISOString()`, ou seja UTC, e foto anexada às 22h em Brasília
+           nascia carimbada com o dia SEGUINTE. */
+        var dOrig = leitura && leitura.dataOriginal;
+        var agoraLocal = (global.Tour360Cap && Tour360Cap.agoraLocal)
+          ? Tour360Cap.agoraLocal() : Util.agoraISO();
+        alvo.capturadoEm = dOrig || agoraLocal;
+        alvo.capturadoFonte = dOrig ? "exif" : "anexo";
         salvarTour(atual);
         /* a foto substituída sai do aparelho e do servidor: sem isto ela vira
            lixo que come a cota de 2 GB da licença e que ninguém acha depois,
@@ -837,6 +1256,11 @@
 
   function _largarPalco() {
     var V = vista();
+    /* ⚠ o teclado sai ANTES da guarda do `montado()`: ele é ouvinte de
+       `document`, não do palco. Preso depois de a esfera morrer, a seta do
+       teclado continuaria tentando girar uma cena que não existe — e, pior,
+       roubaria a seta de quem está navegando outra tela do app. */
+    _tecladoDaTela(false);
     if (!V || !V.montado || !V.montado()) return;
     try { V.desmontar(); } catch (e) {}
     G._t360Carregado = "";
@@ -894,6 +1318,18 @@
          alvo de 44px e estado de foco, e botao que nao responde a pessoa le
          como travamento — ela toca tres vezes e desiste do recurso. */
       if (V.aoMarcador) V.aoMarcador(_abrirMarcador);
+      /* ⚠ O CLIQUE DA SETA. Sem ele o viewer desenha a passagem e nada
+         acontece ao tocá-la — que é exatamente a promessa de interface que
+         não cumpre nada descrita no `aoMarcador`. `typeof` porque o viewer é
+         escrito em paralelo (armadilha 8 do cabeçalho). */
+      if (typeof V.aoSeta === "function") V.aoSeta(_aoSeta);
+      /* ⚠ TECLADO: quem publicar primeiro manda. Se o viewer expõe o dele, a
+         tela não põe o seu por cima — dois ouvintes girariam a foto em dobro
+         a cada tecla, e o defeito se lê como "a seta está acelerada". */
+      if (typeof V.teclado === "function") { try { V.teclado(true); } catch (e) {} }
+      else if (typeof V.ligarTeclado === "function") { try { V.ligarTeclado(true); } catch (e2) {} }
+      else _tecladoDaTela(true);
+      _ligarSaidaDaTelaCheia();
       _sincronizar(t, p);
     })["catch"](function (e) {
       _mostrarMotivo(host, "Falha ao abrir o visualizador 360: " + ((e && e.message) || e));
@@ -907,18 +1343,25 @@
     var chave = t.id + "|" + p.pid + "|" + (comparando ? "cmp:" + G._t360Comparar + ":" + G._t360ParPid : "un");
 
     _marcadores(p);
+    _setas(t, p);
 
     if (typeof Fotos === "undefined" || !Fotos.dataURI) {
       _mostrarMotivo(document.getElementById("t360-host"), "O módulo de fotos não carregou (falta js/fotos.js) — não há como buscar a imagem desta estação.");
       return;
     }
 
-    if (G._t360Carregado === chave || G._t360Carregando === chave) return;
+    if (G._t360Carregado === chave || G._t360Carregando === chave) {
+      /* nada a carregar: a esfera já é esta. O rumo guardado não tem mais
+         para onde ir — mantê-lo pendente giraria a próxima estação com o
+         enquadramento de uma troca que já aconteceu. */
+      G._t360Rumo = null;
+      return;
+    }
     G._t360Carregando = chave;
 
     function pronto(ok) {
       G._t360Carregando = "";
-      if (ok) G._t360Carregado = chave;
+      if (ok) { G._t360Carregado = chave; _aplicarRumo(); }
     }
 
     if (comparando) {
@@ -970,6 +1413,406 @@
     })["catch"](function () { pronto(false); });
   }
 
+  /* ===================================================================
+   * ANDAR PELA OBRA — setas, rumo, tela cheia e teclado
+   *
+   * Tudo aqui é fiação: quem calcula é `Tour360.setasDe` e quem desenha é o
+   * viewer. Esta tela não converte ângulo (armadilha 6 do cabeçalho).
+   * =================================================================== */
+
+  /* Entrega as setas ao viewer. Fica ao lado de `_marcadores` e é chamada no
+     mesmo lugar: a cada sincronização, porque ligar uma passagem, fixar um
+     rumo ou anexar a foto do vizinho muda o que tem de aparecer. */
+  function _setas(t, p) {
+    var V = vista(), M = motor();
+    if (!V || !M || !M.setasDe) return [];
+    var lista = M.setasDe(t, p) || [];
+    /* ⚠ A LISTA VAI INTEIRA, SEM PODA. O viewer é quem decide o que fazer com
+       cada caso, e ele decide melhor do que esta tela decidiria:
+       · `yaw` nulo (sem rumo gravado e sem posição na planta) ele descarta —
+         não há lugar honesto para pôr a seta, e chutar o centro da foto
+         mandaria a pessoa andar para dentro da parede;
+       · `semFoto` ele DESENHA apagada, com "(sem foto)" escrito na pastilha e
+         o clique bloqueado. Filtrar aqui apagaria esse recado: o engenheiro
+         ligaria a passagem, não veria seta nenhuma e concluiria que a ligação
+         não pegou — quando o que falta é a foto da estação de destino. */
+    if (typeof V.setas === "function") {
+      try { V.setas(lista); } catch (e) {}
+    }
+    return lista;
+  }
+
+  /* O viewer devolve o pid (ou um objeto com ele, conforme o que publicar). */
+  function _aoSeta(x) {
+    var pid = (x && x.pid) ? x.pid : x;
+    if (!pid) return;
+    _irParaPonto(String(pid));
+  }
+
+  /* ⚠ QUEM SABE SE ESTÁ EM TELA CHEIA É O VIEWER, e não o `document`. Ele tem
+     DUAS implementações: a real (`requestFullscreen`) e a falsa
+     (`position:fixed` cobrindo a viewport), que existe porque o Safari do
+     iPhone não põe <div> em tela cheia. Na falsa, `document.fullscreenElement`
+     é nulo — perguntar só ao documento diria "não está" com o palco ocupando
+     a tela inteira, e a troca de estação re-renderizaria por baixo. */
+  function _emTelaCheia() {
+    var V = vista();
+    if (V && typeof V.emTelaCheia === "function") {
+      try { if (V.emTelaCheia()) return true; } catch (e) {}
+    }
+    var d = global.document;
+    if (!d) return false;
+    var el = d.fullscreenElement || d.webkitFullscreenElement || d.msFullscreenElement || null;
+    if (!el) return false;
+    var host = d.getElementById("t360-host");
+    if (!host) return false;
+    return el === host || (host.contains && host.contains(el)) || (el.contains && el.contains(host));
+  }
+
+  /* Troca de estação SEM sair da tela cheia e mantendo o rumo. */
+  function _irParaPonto(pid) {
+    var M = motor();
+    var t = tourAberto();
+    if (!t || !pid || !M) return;
+    var alvo = M.pontoDe(t, pid);
+    if (!alvo) { UI.toast("Esta estação não existe mais nesta visita.", "erro"); return; }
+    if (!alvo.foto) {
+      /* recusa com porta: diz o que fazer, e onde */
+      UI.toast("A estação \"" + (alvo.nome || "") + "\" ainda não tem foto — o 360 dela abriria preto. Volte às estações e use \"Tirar foto\" ou \"Importar panorama\".", "erro");
+      return;
+    }
+
+    var V = vista();
+    /* ⚠ MANTER O RUMO É O QUE FAZ ISTO PARECER ANDAR, e não trocar de slide.
+       E o rumo que atravessa duas estações é o CORRIGIDO, nunca o bruto: o
+       bruto é o ângulo daquela foto, e duas estações fotografadas com o
+       celular apontado para lados diferentes têm `nortear` diferente. Levando
+       o bruto, a estação seguinte abriria virada do tamanho exato dessa
+       diferença — e é ela que o `nortear` existe para anular.
+       O par certo está escrito no cabeçalho do viewer: ler `poseCorrigida()`
+       ANTES e chamar `girarParaCorrigido(...)` DEPOIS. Nenhuma conta mora
+       aqui; o par bruto continua sendo a rede para um viewer que ainda não
+       publique o corrigido. */
+    var pc = (V && typeof V.poseCorrigida === "function") ? V.poseCorrigida() : null;
+    if (pc && pc.corrigido && typeof V.girarParaCorrigido === "function") {
+      G._t360Rumo = { yaw: Util.num(pc.corrigido.yaw), corrigido: true };
+    } else if (V && typeof V.pose === "function") {
+      G._t360Rumo = { yaw: Util.num(V.pose().yaw), corrigido: false };
+    } else {
+      G._t360Rumo = null;
+    }
+
+    G._t360Pid = String(pid);
+    G._t360Cliques = []; G._t360Medida = null;
+    G._t360AreaCliques = []; G._t360Area = null; G._t360AreaFechada = false;
+    G._t360ParPid = "";
+
+    /* ⚠ EM TELA CHEIA, `App.render()` TIRA O HOST DO DOCUMENTO — e o navegador
+       encerra a tela cheia junto. Quem estava andando pela obra é cuspido de
+       volta para a tela do escritório a cada seta, que é o oposto do recurso.
+       Então aqui a troca acontece DENTRO do palco, e o re-render fica para o
+       momento em que a pessoa sair (ver `_ligarSaidaDaTelaCheia`). */
+    if (_emTelaCheia()) {
+      var novo = M.pontoDe(t, G._t360Pid);
+      if (!novo) return;
+      _sincronizar(t, novo);
+      _montarMinimapa();
+      G._t360RenderAoSair = true;
+      return;
+    }
+    App.render();
+  }
+  G._t360IrParaPonto = _irParaPonto;
+
+  /* ⚠ SÓ DEPOIS DE `abrir` RESOLVER. `Tour360View.abrir` repõe a pose no norte
+     da estação (`aplicarGiroDoPonto`): girar antes disso é escrever num
+     valor que a carga da foto vai sobrescrever, e o efeito na tela é a seta
+     "não funcionar de vez em quando" — o pior tipo de defeito, porque some
+     quando alguém vai olhar. Por isso a chamada mora no `pronto(true)` do
+     `_sincronizar`. */
+  function _aplicarRumo() {
+    var V = vista();
+    var r = G._t360Rumo;
+    G._t360Rumo = null;
+    if (!r || !V) return;
+    if (r.corrigido && typeof V.girarParaCorrigido === "function") {
+      try { V.girarParaCorrigido(r.yaw); } catch (e) {}
+      return;
+    }
+    if (typeof V.girarPara === "function") { try { V.girarPara(r.yaw); } catch (e2) {} return; }
+    /* rede para um viewer sem giro animado: pôr a câmera no rumo guardado,
+       sem mexer no resto da pose */
+    if (typeof V.olharPara === "function") {
+      var p = (typeof V.pose === "function") ? V.pose() : { pitch: 0, fov: undefined };
+      try { V.olharPara(r.yaw, p.pitch, p.fov); } catch (e3) {}
+    }
+  }
+
+  /* ⚠ SAIR DA TELA CHEIA PRECISA RE-RENDERIZAR quando a estação mudou lá
+     dentro: o painel de baixo continuaria mostrando os comentários e as
+     medidas da estação em que a pessoa ENTROU — foto de uma sala, lista de
+     outra. É o tipo de divergência que ninguém percebe até assinar embaixo. */
+  /* ⚠ A PORTA DA TELA CHEIA, e ela é obrigatória porque a trava é nossa.
+     Dentro da tela cheia a barra do visualizador some da vista: na de verdade
+     o host É a tela inteira; na falsa (`position:fixed`, z-index 9999) ele
+     cobre a página. Ou seja, o botão que abriu não serve para fechar.
+     O viewer trata o Esc — mas Esc é TECLA, e a tela cheia falsa existe
+     justamente para o Safari do iPhone, onde não há teclado nenhum. Sem este
+     botão, a saída no aparelho em que a falsa mais aparece seria recarregar a
+     página, perdendo a medida em curso e o comentário não salvo. */
+  function _botaoTelaCheia() {
+    var doc = global.document;
+    if (!doc) return;
+    var velho = doc.getElementById("t360-sair-tc");
+    if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
+    var host = doc.getElementById("t360-host");
+    if (!host || !_emTelaCheia()) return;
+    var b = doc.createElement("button");
+    b.type = "button";
+    b.id = "t360-sair-tc";
+    b.className = "btn sm";
+    /* o mesmo `data-gacao` do botão da barra: `telaCheia()` sem argumento
+       ALTERNA, então um handler só serve para entrar e para sair */
+    b.setAttribute("data-gacao", "t360-telacheia");
+    b.textContent = "Sair da tela cheia";
+    b.style.cssText = "position:absolute;right:10px;top:10px;z-index:5";
+    host.appendChild(b);
+  }
+
+  function _aoSairDaTelaCheia() {
+    _botaoTelaCheia();
+    if (_emTelaCheia()) return;
+    if (!G._t360RenderAoSair) return;
+    G._t360RenderAoSair = false;
+    try { if (typeof App !== "undefined" && App.render) App.render(); } catch (e) {}
+  }
+
+  function _ligarSaidaDaTelaCheia() {
+    var V = vista();
+    /* ⚠ O AVISO TEM DE VIR DO VIEWER quando ele o publica: na tela cheia
+       FALSA (position:fixed, a saída do iPhone) o navegador não dispara
+       `fullscreenchange` nenhum — só o viewer sabe que entrou e que saiu.
+       `aoTelaCheia` é estado do mount, então registrar a cada montagem é o
+       certo, e é idempotente. */
+    if (V && typeof V.aoTelaCheia === "function") {
+      try {
+        /* `_aoSairDaTelaCheia` também repõe (ou tira) o botão de sair, então
+           ele é chamado nos DOIS sentidos: entrar sem o botão é a trava. */
+        V.aoTelaCheia(function () { _aoSairDaTelaCheia(); });
+      } catch (e) {}
+    }
+    /* e o do documento continua, uma vez só, para a tela cheia real aberta
+       por fora (a tecla F11, ou o Esc que o viewer não viu) */
+    if (G._t360FsLigada || !global.document) return;
+    G._t360FsLigada = true;
+    var d = global.document;
+    function aoTrocar() {
+      var V2 = vista();
+      /* o palco mudou de tamanho nos dois sentidos (entrando e saindo), e
+         medir cedo demais devolve a altura antiga — o viewer já reagenda */
+      if (V2 && V2.redimensionar) { global.setTimeout(function () { try { V2.redimensionar(); } catch (e) {} }, 60); }
+      _aoSairDaTelaCheia();
+    }
+    d.addEventListener("fullscreenchange", aoTrocar);
+    d.addEventListener("webkitfullscreenchange", aoTrocar);
+  }
+
+  /* ---------- teclado: a rede, enquanto o viewer não publica o dele ----------
+   *
+   * Girar com o dedo funciona no celular; no computador, quem está com o
+   * mouse na mesa espera a seta do teclado. É o "básico do visualizador" que
+   * faz o produto parecer fácil. */
+  var _tecladoLigado = false;
+
+  function _aoTeclar(ev) {
+    var V = vista();
+    if (!V || !V.montado || !V.montado() || !V.pose || !V.olharPara) return;
+    /* ⚠ NUNCA SEQUESTRAR A TECLA DE QUEM ESTÁ DIGITANDO. Com o modal do
+       comentário aberto, a seta andaria a foto em vez de mover o cursor
+       dentro do texto — e a pessoa perde o que escreveu tentando corrigir
+       uma palavra. */
+    var a = global.document && global.document.activeElement;
+    var tag = (a && a.tagName) ? String(a.tagName).toLowerCase() : "";
+    if (tag === "input" || tag === "textarea" || tag === "select" || (a && a.isContentEditable)) return;
+    if (global.document && global.document.getElementById("modal-bg")) return;
+    if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+
+    var k = ev.key || "";
+    var p = V.pose();
+    /* o passo acompanha o zoom: com o campo de visão fechado, o mesmo passo
+       jogaria a imagem para fora da tela a cada toque */
+    var passo = Math.max(1.5, Util.num(p.fov, 75) / 12);
+    var mexeu = true;
+    if (k === "ArrowLeft") V.olharPara(p.yaw - passo, p.pitch, p.fov);
+    else if (k === "ArrowRight") V.olharPara(p.yaw + passo, p.pitch, p.fov);
+    else if (k === "ArrowUp") V.olharPara(p.yaw, p.pitch + passo, p.fov);
+    else if (k === "ArrowDown") V.olharPara(p.yaw, p.pitch - passo, p.fov);
+    else if ((k === "+" || k === "=") && V.zoom) V.zoom(-4);
+    else if ((k === "-" || k === "_") && V.zoom) V.zoom(4);
+    else mexeu = false;
+    if (mexeu && ev.preventDefault) ev.preventDefault();
+  }
+
+  function _tecladoDaTela(ligar) {
+    if (!global.document) return;
+    if (ligar && !_tecladoLigado) {
+      global.document.addEventListener("keydown", _aoTeclar);
+      _tecladoLigado = true;
+      return;
+    }
+    if (!ligar && _tecladoLigado) {
+      global.document.removeEventListener("keydown", _aoTeclar);
+      _tecladoLigado = false;
+    }
+  }
+
+  /* ===================================================================
+   * O MINIMAPA — a planta baixa dentro do palco
+   *
+   * Ele é DESTA TELA, não do viewer: é HTML por cima do canvas, dentro do
+   * mesmo host. Fica acima da camada de marcadores (z-index 2) e da
+   * sobreposição do projeto (3), senão o pino nasce atrás da foto e não
+   * recebe clique nenhum.
+   * =================================================================== */
+  var _plantaSrc = "", _plantaRef = "";
+
+  function refFoto(f) { return f ? String(f.id || f.remoto || "") : ""; }
+
+  /* A imagem da planta vem por `Fotos.dataURI` — nunca por `Fotos.url` num
+     <img src>: o servidor exige o header x-licenca e a imagem simplesmente
+     não carrega, sem erro visível. O cache evita rebaixar a imagem a cada
+     re-render (e todo clique re-renderiza). */
+  function _pedirPlanta(t, aoPronto) {
+    var f = t && t.planta && t.planta.foto;
+    if (!f) { aoPronto(""); return; }
+    if (_plantaRef === refFoto(f) && _plantaSrc) { aoPronto(_plantaSrc); return; }
+    if (typeof Fotos === "undefined" || !Fotos.dataURI) { aoPronto(""); return; }
+    Fotos.dataURI(f).then(function (d) {
+      if (!d) { aoPronto(""); return; }
+      _plantaRef = refFoto(f); _plantaSrc = d;
+      aoPronto(d);
+    })["catch"](function () { aoPronto(""); });
+  }
+
+  function _montarMinimapa() {
+    var doc = global.document;
+    if (!doc) return;
+    var velho = doc.getElementById("t360-mini");
+    if (velho && velho.parentNode) velho.parentNode.removeChild(velho);
+
+    var host = doc.getElementById("t360-host");
+    if (!host) return;
+    var t = tourAberto(), p = pontoAberto(t);
+    if (!t || !p || !t.planta || !t.planta.foto) return;
+
+    if (!G._t360Mini) {
+      /* ⚠ ESCONDER NÃO PODE SER SÓ DE IDA. O botão "Esconder" mora DENTRO do
+         mapa, e o de mostrar mora na barra do visualizador — que fica fora da
+         vista em tela cheia. Sem este botãozinho, quem escondeu o mapa lá
+         dentro só o traz de volta saindo da tela cheia, e a pessoa conclui
+         que perdeu o minimapa. */
+      if (!_emTelaCheia()) return;
+      var vb = doc.createElement("button");
+      vb.type = "button";
+      vb.id = "t360-mini";            /* mesmo id: a limpeza lá em cima o alcança */
+      vb.className = "btn sm";
+      vb.setAttribute("data-gacao", "t360-minimapa");
+      vb.textContent = "Mapa";
+      vb.style.cssText = "position:absolute;right:10px;bottom:10px;z-index:4";
+      host.appendChild(vb);
+      return;
+    }
+
+    _pedirPlanta(t, function (src) {
+      var host2 = doc.getElementById("t360-host");
+      /* entre o pedido e a resposta a pessoa pode ter saído da tela, trocado
+         de estação ou escondido o mapa: sem estas três guardas, o minimapa
+         reaparece sozinho por cima de outra coisa */
+      if (!host2 || !G._t360Mini || doc.getElementById("t360-mini")) return;
+      var tAgora = tourAberto(), pAgora = pontoAberto(tAgora);
+      if (!tAgora || !pAgora) return;
+
+      var cx = doc.createElement("div");
+      cx.id = "t360-mini";
+      cx.style.cssText = "position:absolute;right:10px;bottom:10px;z-index:4;width:min(46%,260px);"
+        + "background:rgba(9,20,33,.78);border-radius:10px;padding:6px;box-shadow:0 4px 16px rgba(0,0,0,.4)";
+
+      var topo = doc.createElement("div");
+      topo.style.cssText = "display:flex;align-items:center;gap:6px;margin-bottom:4px";
+      var nm = doc.createElement("span");
+      nm.style.cssText = "flex:1;color:#e8f0f8;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+      nm.textContent = tAgora.planta.nome || "Planta baixa";
+      var bt = doc.createElement("button");
+      bt.type = "button";
+      bt.className = "btn sm";
+      bt.setAttribute("data-gacao", "t360-minimapa");
+      bt.textContent = "Esconder";
+      topo.appendChild(nm); topo.appendChild(bt);
+      cx.appendChild(topo);
+
+      /* ⚠ MAPA QUE NÃO ABRE TEM DE DIZER POR QUÊ. A imagem da planta é uma
+         referência de foto: no computador do escritório ela pode ainda não ter
+         chegado. Sumindo em silêncio, o botão da barra continuaria oferecendo
+         "Esconder o minimapa" sem mapa nenhum na tela — e a pessoa concluiria
+         que o recurso não funciona, quando o que falta é a sincronização. */
+      if (!src) {
+        var semImg = doc.createElement("div");
+        semImg.style.cssText = "color:#e8f0f8;font-size:11px;line-height:1.35";
+        semImg.textContent = "A imagem desta planta ainda não está neste aparelho. Se ela foi anexada em outro computador, espere a sincronização terminar.";
+        cx.appendChild(semImg);
+        host2.appendChild(cx);
+        return;
+      }
+
+      var quadro = doc.createElement("div");
+      quadro.style.cssText = "position:relative;line-height:0";
+      var img = doc.createElement("img");
+      img.src = src;
+      img.alt = "Planta baixa da visita";
+      img.style.cssText = "display:block;width:100%;height:auto;border-radius:6px";
+      quadro.appendChild(img);
+
+      var ps = Util.arr(tAgora.pontos), i, n = 0;
+      for (i = 0; i < ps.length; i++) {
+        if (!ps[i] || !ps[i].planta) continue;
+        n++;
+        quadro.appendChild(_pinoDoMapa(doc, ps[i], n, ps[i].pid === pAgora.pid));
+      }
+      cx.appendChild(quadro);
+
+      if (!n) {
+        /* mapa sem pino é pior que mapa nenhum: ele parece quebrado. Aqui ele
+           diz o que falta e onde se faz. */
+        var av = doc.createElement("div");
+        av.style.cssText = "color:#e8f0f8;font-size:11px;margin-top:5px;line-height:1.35";
+        av.textContent = "Nenhuma estação posicionada nesta planta. Volte às estações para pôr os pinos.";
+        cx.appendChild(av);
+      }
+      host2.appendChild(cx);
+    });
+  }
+
+  /* ⚠ O PINO É POSICIONADO EM PORCENTAGEM porque o que está gravado é FRAÇÃO
+     da imagem. O minimapa tem 260 px e o cartão do editor tem a largura da
+     tela: em pixel, o mesmo pino cairia em dois lugares diferentes. */
+  function _pinoDoMapa(doc, ponto, ordem, ehAtual) {
+    var b = doc.createElement("button");
+    b.type = "button";
+    b.className = "t360-mini-pino";
+    b.setAttribute("data-gacao", "t360-ir-ponto");
+    b.setAttribute("data-pid", ponto.pid);
+    if (ehAtual) b.setAttribute("aria-current", "true");
+    b.title = (ponto.nome || "") + (ponto.foto ? "" : " (sem foto)") + (ehAtual ? " — você está aqui" : "");
+    b.textContent = String(ordem);
+    b.style.cssText = "position:absolute;left:" + pct(ponto.planta.x) + "%;top:" + pct(ponto.planta.y) + "%;"
+      + "transform:translate(-50%,-50%);min-width:" + (ehAtual ? "26px" : "22px") + ";height:" + (ehAtual ? "26px" : "22px") + ";"
+      + "padding:0;border:0;border-radius:999px;cursor:pointer;text-align:center;"
+      + "background:" + (ehAtual ? "var(--verde,#15803d)" : (ponto.foto ? "var(--aco,#2e6f9e)" : "#6b7280")) + ";color:#fff;"
+      + "font:700 " + (ehAtual ? "12px/26px" : "11px/22px") + " var(--fonte,system-ui,sans-serif);"
+      + "box-shadow:0 0 0 2px #fff,0 0 0 4px rgba(0,0,0,.45)";
+    return b;
+  }
+
   /* Marcadores: o viewer desenha `texto` DENTRO do botão e `rotulo` no title.
      Por isso o texto é só o número da ordem — o comentário inteiro num botão
      de 24 px viraria um parágrafo flutuando na foto. */
@@ -1011,6 +1854,11 @@
     G._t360Cliques.forEach(function (c, i) {
       lista.push({ id: "med" + i, yaw: c.yaw, pitch: c.pitch, tipo: "medida", texto: String(i + 1), rotulo: "Ponta da medida" });
     });
+    /* os cantos da área em curso, pelo mesmo motivo: sem eles a pessoa clica
+       o terceiro canto e não sabe mais quais já marcou — e remarca em cima */
+    G._t360AreaCliques.forEach(function (c, i) {
+      lista.push({ id: "area" + i, yaw: c.yaw, pitch: c.pitch, tipo: "medida", texto: String(i + 1), rotulo: "Canto " + (i + 1) + " da área" });
+    });
     V.marcadores(lista);
   }
 
@@ -1020,6 +1868,7 @@
   function _clique(ang) {
     if (!ang) return;
     if (G._t360Modo === "medir") return _cliqueMedir(ang);
+    if (G._t360Modo === "area") return _cliqueArea(ang);
     if (G._t360Modo === "comentar") return _cliqueComentar(ang);
     /* girar/comparar/projetado: o clique não marca nada, de propósito —
        marcar sem o usuário pedir enche a foto de pontas fantasmas */
@@ -1047,6 +1896,42 @@
     G._t360Medida = (G._t360TipoMedida === "altura")
       ? M.medirAltura(a, b, Util.num(p.alturaCam))
       : M.medirChao(a, b, Util.num(p.alturaCam));
+  }
+
+  /* ---------- os cantos da área ----------
+     Guarda o BRUTO e o CORRIGIDO pela mesma razão de `_cliqueMedir`: o bruto é
+     o pixel da foto (é ele que desenha o marcador na tela) e o corrigido é o
+     nivelado, que é o que entra na conta. */
+  function _cliqueArea(ang) {
+    var M = motor();
+    var t = tourAberto(), p = pontoAberto(t);
+    if (!p || !M) return;
+    if (G._t360AreaFechada) return;      /* já fechou: recomeçar é botão */
+    if (G._t360AreaCliques.length >= 24) {
+      UI.toast("Vinte e quatro cantos é o limite — meça por partes: fica mais confiável e mais fácil de conferir.", "erro");
+      return;
+    }
+    G._t360AreaCliques.push({
+      yaw: Util.num(ang.yaw), pitch: Util.num(ang.pitch),
+      corr: { yaw: Util.num(ang.corrigido && ang.corrigido.yaw), pitch: Util.num(ang.corrigido && ang.corrigido.pitch) }
+    });
+    _calcularArea();
+    App.render();
+  }
+
+  function _zerarArea() {
+    G._t360AreaCliques = []; G._t360Area = null; G._t360AreaFechada = false;
+  }
+
+  function _calcularArea() {
+    var M = motor();
+    var t = tourAberto(), p = pontoAberto(t);
+    if (!p || !M || !M.medirArea) return;
+    var cl = G._t360AreaCliques;
+    if (cl.length < 3) { G._t360Area = null; return; }
+    var pts = [], i;
+    for (i = 0; i < cl.length; i++) pts.push(cl[i].corr);
+    G._t360Area = M.medirArea(pts, Util.num(p.alturaCam));
   }
 
   function _cliqueComentar(ang) {
@@ -1144,6 +2029,8 @@
     "t360-abrir": function (ds) {
       G._t360Tour = ds.id || ""; G._t360Pid = ""; G._t360Modo = "girar";
       G._t360Cliques = []; G._t360Medida = null; G._t360ParPid = ""; G._t360Comparar = "";
+      _zerarArea();
+      G._t360PosPid = "";
       App.render();
     },
 
@@ -1296,6 +2183,12 @@
 
       UI.modal("Gerar vídeo do tour", "<p>O visualizador vai girar sozinho em cada estação e gravar o percurso. "
         + "Não mexa na tela durante a gravação.</p><p class=\"muted\">Formato: " + esc(pg.formato || "WebM") + ".</p>"
+        /* ⚠ O AVISO DO FORMATO PRECISA VIR ANTES DA GRAVAÇÃO. O vídeo do tour
+           é o material que vai para o grupo da obra, e em WebM ele não abre
+           no iPhone: metade dos clientes recebe um arquivo morto. O motor já
+           sabe disso e devolve o aviso — deixá-lo no retorno e não na tela
+           é o mesmo que não saber. */
+        + (pg.aviso ? '<div class="card" style="border-left:4px solid #b45309;margin:8px 0">' + esc(pg.aviso) + "</div>" : "")
         + '<p id="t360-vprog" class="muted"></p>', [
         { texto: "Cancelar", classe: "ghost", onClick: function () { try { Rel.cancelar(); } catch (e) {} UI.fecharModal(); } },
         { texto: "Gravar", classe: "primary", onClick: function () {
@@ -1309,6 +2202,10 @@
             /* quadro perdido é troca de textura que não chegou a tempo: dizer
                isso é o que impede alguém de mandar ao cliente um vídeo com
                estação faltando achando que está inteiro */
+            /* e o aviso também DEPOIS, porque quem clicou em Gravar pode não
+               ter lido o modal — e é na hora de mandar o arquivo que a
+               pessoa precisa saber que ele não abre no iPhone */
+            if (res.avisoFormato) UI.toast(res.avisoFormato, "erro");
             if (res.quadrosPerdidos) UI.toast("Vídeo salvo, mas " + res.quadrosPerdidos + " quadro(s) não entraram.", "erro");
             else UI.toast("Vídeo salvo: " + res.nome + " (" + res.duracaoSeg + "s).", "ok");
           })["catch"](function (e) {
@@ -1366,9 +2263,19 @@
       App.render();
     },
 
+    /* ⚠ OS DOIS CAMINHOS DA FOTO. "t360-foto" abre a CÂMERA (com `capture`);
+       "t360-importar" abre a GALERIA (sem `capture`) — e é o único que
+       alcança a foto tirada no modo Panorama em vários Androids. Os dois
+       caem no mesmo `_receberFoto`: um caminho de imagem só, uma régua de
+       compressão só. Ver a armadilha 5 do cabeçalho. */
     "t360-foto": function (ds) {
       G._t360FotoPid = ds.pid || "";
-      pedirFoto();
+      pedirFoto(true);
+    },
+
+    "t360-importar": function (ds) {
+      G._t360FotoPid = ds.pid || "";
+      pedirFoto(false);
     },
 
     /* ⚠ CAPTURA GIRANDO DENTRO DO APP. Existe porque nem todo celular tem
@@ -1445,6 +2352,10 @@
         if (p.foto) refs.push(p.foto);
         if (p.projecao && p.projecao.foto) refs.push(p.projecao.foto);   /* o retrato do projeto tambem */
       });
+      /* ⚠ e a planta baixa, que não pertence a ponto nenhum: esquecida aqui,
+         ela fica no servidor sem dono, comendo a cota da licença, e nenhuma
+         tela consegue achá-la depois para apagar */
+      if (t.planta && t.planta.foto) refs.push(t.planta.foto);
       Store.excluir(eid(), ENT, t.id);
       if (refs.length) { try { if (typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(refs); } catch (e) {} }
       G._t360Tour = ""; G._t360Pid = "";
@@ -1457,6 +2368,68 @@
       G._t360Pid = ds.pid || "";
       G._t360Modo = "girar";
       G._t360Cliques = []; G._t360Medida = null; G._t360ParPid = "";
+      _zerarArea();
+      App.render();
+    },
+
+    /* trocar de estação pela SETA na foto ou pelo PINO do minimapa: mantém o
+       rumo e, em tela cheia, não sai dela */
+    "t360-ir-ponto": function (ds) {
+      _irParaPonto(ds && ds.pid);
+    },
+
+    "t360-telacheia": function () {
+      var V = vista();
+      var host = document.getElementById("t360-host");
+      /* ⚠ quando o viewer publicar `telaCheia`, é dele a decisão: ele sabe
+         qual elemento leva o canvas, a camada de marcadores e a sobreposição
+         juntos. A tela só chama. */
+      if (V && typeof V.telaCheia === "function") {
+        /* ⚠ `telaCheia` DEVOLVE PROMESSA: o navegador só responde ao pedido
+           depois, e o viewer ainda tenta a tela cheia falsa quando a real é
+           negada. Ler o retorno como objeto síncrono faria a tela julgar o
+           resultado antes de ele existir — e o `ok:false` de verdade (palco
+           não montado) passaria calado. Sem argumento ele ALTERNA, que é o
+           que o mesmo botão precisa fazer para trazer a pessoa de volta. */
+        var pr = null;
+        try { pr = V.telaCheia(); } catch (e) { pr = null; }
+        if (pr && typeof pr.then === "function") {
+          pr.then(function (r) {
+            if (r && r.ok === false) { UI.toast(r.motivo || "Não consegui abrir a tela cheia.", "erro"); return; }
+            /* a porta entra junto com a trava, no mesmo passo — e `aoTelaCheia`
+               já teria posto, mas só quando o viewer publica esse aviso */
+            _botaoTelaCheia();
+          });
+        }
+        return;
+      }
+      /* porta enquanto ele não publica: o próprio palco vai a tela cheia. É o
+         mesmo elemento que já contém tudo (canvas, marcadores, minimapa). */
+      if (!host) { UI.toast("Abra uma estação antes: a tela cheia é do visualizador.", "erro"); return; }
+      var pedir = host.requestFullscreen || host.webkitRequestFullscreen || host.msRequestFullscreen;
+      if (!pedir) {
+        /* recado honesto: no iPhone o Safari não põe <div> em tela cheia, e
+           dizer "não foi possível" sem dizer o que fazer não ajuda ninguém */
+        UI.toast("Este navegador não abre a tela cheia por botão (é o caso do Safari no iPhone). Gire o aparelho para deitado: o palco ocupa a tela toda.", "erro");
+        return;
+      }
+      try {
+        var pr = pedir.call(host);
+        if (pr && pr.then) pr.then(function () { _botaoTelaCheia(); });
+        if (pr && pr["catch"]) pr["catch"](function (e) {
+          UI.toast("Não consegui abrir em tela cheia: " + ((e && e.message) || e), "erro");
+        });
+      } catch (e2) {
+        UI.toast("Não consegui abrir em tela cheia: " + ((e2 && e2.message) || e2), "erro");
+      }
+    },
+
+    "t360-minimapa": function () {
+      G._t360Mini = !G._t360Mini;
+      /* ⚠ sem re-render aqui o rótulo do botão da barra continuaria dizendo
+         "Esconder" com o mapa escondido — recado que mente. Em tela cheia o
+         botão da barra nem está à vista, então basta refazer o mapa. */
+      if (_emTelaCheia()) { _montarMinimapa(); return; }
       App.render();
     },
 
@@ -1466,18 +2439,25 @@
       _largarPalco();
       G._t360Pid = ""; G._t360ParPid = "";
       G._t360Cliques = []; G._t360Medida = null;
+      _zerarArea();
       App.render();
     },
 
     "t360-ponto-sel": function (ds) {
-      G._t360Pid = (ds && ds.value) ? String(ds.value) : G._t360Pid;
+      /* ⚠ o clique no <select> chega aqui ANTES do change, com `value`
+         indefinido; sem esta saída o re-render fecharia o dropdown na cara
+         de quem acabou de abri-lo. */
+      if (!ds || ds.value === undefined) return;
+      G._t360Pid = ds.value ? String(ds.value) : G._t360Pid;
       G._t360Cliques = []; G._t360Medida = null; G._t360ParPid = "";
+      _zerarArea();
       App.render();
     },
 
     "t360-modo": function (ds) {
       G._t360Modo = ds.modo || "girar";
       G._t360Cliques = []; G._t360Medida = null;
+      _zerarArea();
       if (G._t360Modo !== "comparar") G._t360ParPid = "";
       App.render();
     },
@@ -1579,6 +2559,207 @@
       if (!alvo) return;
       alvo.hotspots = Util.arr(alvo.hotspots).filter(function (h) { return h.hid !== ds.hid; });
       salvarTour(atual);
+      App.render();
+    },
+
+    /* ---------- medir área ---------- */
+    "t360-area-fechar": function () {
+      var cl = G._t360AreaCliques;
+      if (cl.length < 3) { UI.toast("Marque pelo menos três cantos do piso para fechar uma área.", "erro"); return; }
+      _calcularArea();
+      /* ⚠ só fecha quando o motor ACEITOU. Fechar sobre uma recusa deixaria a
+         tela com o formulário de guardar por cima de um erro — e alguém
+         guardaria o comentário com "undefined m²" dentro. */
+      G._t360AreaFechada = !!(G._t360Area && G._t360Area.ok);
+      App.render();
+    },
+
+    /* a porta da recusa por vértice: o motor diz QUAL canto está ruim, e
+       apagar só ele é o que evita remarcar a sala inteira */
+    "t360-area-desfazer": function () {
+      G._t360AreaCliques = Util.arr(G._t360AreaCliques).slice(0, -1);
+      G._t360AreaFechada = false;
+      _calcularArea();
+      App.render();
+    },
+
+    "t360-area-limpar": function () {
+      _zerarArea();
+      App.render();
+    },
+
+    /* ⚠ A ÁREA VIRA COMENTÁRIO, NÃO MEDIDA — o porquê está no cabeçalho do
+       `_painelArea`: o registro de medida só sabe reler distância e altura. */
+    "t360-area-comentar": function () {
+      var M = motor();
+      var t = tourAberto(), p = pontoAberto(t);
+      var res = G._t360Area;
+      if (!p || !res || !res.ok || !G._t360AreaCliques.length) return;
+      if (Util.arr(p.hotspots).length >= M.MAX_HOTSPOTS) {
+        UI.toast("Esta estação já tem " + M.MAX_HOTSPOTS + " comentários — o limite do módulo. Apague um antes.", "erro");
+        return;
+      }
+      var atual = Store.obter(eid(), ENT, t.id);
+      var alvo = atual ? M.pontoDe(atual, p.pid) : null;
+      if (!alvo) { UI.toast("Esta estação não existe mais.", "erro"); return; }
+      var rot = K.v("t360-area-rotulo");
+      var cli = document.getElementById("t360-area-cli");
+      var canto = G._t360AreaCliques[0];
+      alvo.hotspots = Util.arr(alvo.hotspots);
+      alvo.hotspots.push({
+        hid: "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        tipo: "comentario",
+        /* o ± vai DENTRO do texto: o comentário viaja para o Portal e para o
+           relatório sem o painel que explicava a margem */
+        texto: (rot ? rot + ": " : "Área medida na foto: ")
+          + n2(res.area) + " m² (±" + n1(res.erroEstimadoPct) + "%) · perímetro " + n2(res.perimetro) + " m · "
+          + res.cantos + " cantos · altura da câmera " + n2(res.alturaCam) + " m",
+        autor: quemSou().autor,
+        em: Util.agoraISO(),
+        yaw: Util.num(canto.yaw), pitch: Util.num(canto.pitch),
+        paraCliente: !!(cli && cli.checked)
+      });
+      salvarTour(atual);
+      _zerarArea();
+      UI.toast("Área guardada como comentário no primeiro canto.", "ok");
+      App.render();
+    },
+
+    /* ---------- passagens (as setas) ---------- */
+    "t360-ligar": function () {
+      var M = motor();
+      var t = tourAberto(), p = pontoAberto(t);
+      if (!p) return;
+      var outro = K.v("t360-ligar-sel");
+      if (!outro) { UI.toast("Escolha a estação para onde esta passagem leva.", "erro"); return; }
+      var atual = Store.obter(eid(), ENT, t.id);
+      var a = atual ? M.pontoDe(atual, p.pid) : null;
+      var b = atual ? M.pontoDe(atual, outro) : null;
+      if (!a || !b) { UI.toast("Uma das estações não existe mais.", "erro"); return; }
+      /* ⚠ SEM RUMO DE PROPÓSITO. O rumo é a direção em que a passagem aparece
+         NA FOTO, e ninguém sabe isso na hora de ligar: gravar o que a câmera
+         está vendo agora poria a seta na parede errada com ar de certeza. A
+         porta é o botão "Fixar a seta aqui", com a passagem no centro. */
+      var r = M.ligarVizinhos(a, b, null);
+      if (!r.ok) { UI.toast(r.motivo || "Não consegui ligar estas duas estações.", "erro"); return; }
+      salvarTour(atual);
+      UI.toast("Ligadas nos dois sentidos. Agora gire até ver a passagem e clique em \"Fixar a seta aqui\".", "ok");
+      App.render();
+    },
+
+    "t360-desligar": function (ds) {
+      var M = motor();
+      var t = tourAberto(), p = pontoAberto(t);
+      if (!p || !ds || !ds.pid) return;
+      var atual = Store.obter(eid(), ENT, t.id);
+      var a = atual ? M.pontoDe(atual, p.pid) : null;
+      var b = atual ? M.pontoDe(atual, ds.pid) : null;
+      if (!a || !b) return;
+      M.desligarVizinhos(a, b);
+      salvarTour(atual);
+      UI.toast("Passagem desligada — nos dois sentidos.", "ok");
+      App.render();
+    },
+
+    /* ⚠ O RUMO VEM DE `Tour360View.pose()`, CRU. A pessoa gira até a passagem
+       ficar no centro e clica: é a única forma de acertar o rumo sem pedir que
+       ela digite graus. O motor grava a volta como o oposto — palpite decente
+       até alguém fixar a seta de lá também. */
+    "t360-fixar-seta": function (ds) {
+      var M = motor();
+      var V = vista();
+      var t = tourAberto(), p = pontoAberto(t);
+      if (!p || !ds || !ds.pid) return;
+      if (!V || !V.montado || !V.montado() || !V.pose) {
+        UI.toast("O visualizador não está aberto — o rumo da seta é a direção que você está vendo na foto.", "erro");
+        return;
+      }
+      var pose = V.pose();
+      var atual = Store.obter(eid(), ENT, t.id);
+      var a = atual ? M.pontoDe(atual, p.pid) : null;
+      var b = atual ? M.pontoDe(atual, ds.pid) : null;
+      if (!a || !b) { UI.toast("Uma das estações não existe mais.", "erro"); return; }
+      var r = M.ligarVizinhos(a, b, pose.yaw);
+      if (!r.ok) { UI.toast(r.motivo || "Não consegui fixar a seta.", "erro"); return; }
+      salvarTour(atual);
+      UI.toast("Seta fixada nesta direção. Na estação de lá, a de volta nasceu no rumo oposto — confira e ajuste por lá.", "ok");
+      App.render();
+    },
+
+    /* ---------- planta baixa e minimapa ---------- */
+    "t360-planta-anexar": function () {
+      var t = tourAberto();
+      if (!t) return;
+      var Cap = global.Tour360Cap;
+      /* sem `capture`: planta se escolhe no arquivo, nunca na câmera */
+      if (Cap && typeof Cap.abrirSeletor === "function") {
+        var r = Cap.abrirSeletor({ captura: false }, function (arq) {
+          if (!arq) return;
+          lerImagemSimples(arq, function (d) { if (d) _guardarPlanta(t, d, arq.name || ""); });
+        });
+        if (r && r.ok) return;
+      }
+      var el = document.getElementById("t360-planta-in");
+      if (!el) { UI.toast("Não achei o seletor de imagem nesta tela.", "erro"); return; }
+      el.value = "";
+      el.click();
+    },
+
+    /* ⚠ A PLANTA DO BIM É UMA IMAGEM COMO OUTRA QUALQUER daqui para a frente:
+       ela entra pelo mesmo `Fotos.guardar`. Guardar o `url` do BIM dentro do
+       registro repetiria o defeito do panorama embutido — dataURL de PNG
+       dentro da entidade estoura o documento de 1 MiB da nuvem. */
+    "t360-planta-bim": function () {
+      var t = tourAberto();
+      if (!t) return;
+      var B = global.BIM;
+      if (!B || typeof B.plantaBaixa !== "function") {
+        UI.toast("O visualizador BIM não está disponível nesta instalação.", "erro"); return;
+      }
+      var r = null;
+      try { r = B.plantaBaixa(); } catch (e) { r = null; }
+      if (!r || !r.url) {
+        UI.toast("O BIM não devolveu planta agora. Abra o módulo BIM, carregue o modelo desta obra, ligue a ferramenta Planta e escolha a altura do corte — depois volte aqui.", "erro");
+        return;
+      }
+      _guardarPlanta(t, r.url, "Planta do modelo" + (r.escala ? " 1:" + r.escala : ""));
+    },
+
+    "t360-planta-remover": function () {
+      var t = tourAberto();
+      if (!t || !t.planta || !t.planta.foto) return;
+      if (!window.confirm("Remover a planta baixa desta visita?\n\n"
+        + "O minimapa some do visualizador e do Portal do cliente.\n"
+        + "Os pinos das estações continuam gravados: anexando outra imagem COM O MESMO ENQUADRAMENTO, eles voltam ao lugar. "
+        + "Com outro enquadramento, é preciso reposicionar.")) return;
+      var atual = Store.obter(eid(), ENT, t.id) || t;
+      var antiga = atual.planta && atual.planta.foto;
+      atual.planta = null;
+      if (!salvarTour(atual)) return;
+      if (antiga) { try { if (typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar([antiga]); } catch (e) {} }
+      _plantaRef = ""; _plantaSrc = "";
+      UI.toast("Planta removida.", "ok");
+      App.render();
+    },
+
+    "t360-posicionar-sel": function (ds) {
+      if (!ds || ds.value === undefined) return;   /* o clique chega antes do change */
+      G._t360PosPid = ds.value ? String(ds.value) : "";
+      App.render();
+    },
+
+    "t360-tirar-pino": function (ds) {
+      var M = motor();
+      var t = tourAberto();
+      if (!t || !ds || !ds.pid) return;
+      var atual = Store.obter(eid(), ENT, t.id);
+      var alvo = atual ? M.pontoDe(atual, ds.pid) : null;
+      if (!alvo) return;
+      alvo.planta = null;
+      salvarTour(atual);
+      /* ⚠ dito por extenso porque a consequência não é óbvia: sem posição na
+         planta, a seta que não tem rumo gravado deixa de ter de onde sair. */
+      UI.toast("Pino retirado. As setas desta estação que não tinham rumo fixado deixam de aparecer.", "ok");
       App.render();
     },
 
@@ -1782,14 +2963,92 @@
    *   some debaixo do dedo. `data-gacao` só em <button> e <select>.
    * =================================================================== */
   G.registrarWire("tour360", function () {
-    /* 1) o input de arquivo do editor */
-    var inpF = document.getElementById("t360-foto-in");
-    if (inpF) {
-      inpF.onchange = function () {
-        var f = (inpF.files || [])[0];
-        inpF.value = "";
+    /* 1) os inputs de arquivo do editor — a rede de `Tour360Cap.abrirSeletor`.
+       São dois para a foto (com e sem `capture`) porque o navegador resolve o
+       comportamento do seletor quando o elemento NASCE: trocar o atributo na
+       hora do clique não é confiável, e o que se perde nessa aposta é
+       justamente a galeria — onde mora o panorama. */
+    ["t360-foto-in", "t360-foto-imp"].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.onchange = function () {
+        var f = (el.files || [])[0];
+        el.value = "";
         if (!f) return;
         lerArquivo(f, _receberFoto);
+      };
+    });
+
+    /* 1b) o input da planta baixa — leitura simples, sem a classificação de
+       panorama (ver `lerImagemSimples`) */
+    var inpP = document.getElementById("t360-planta-in");
+    if (inpP) {
+      inpP.onchange = function () {
+        var f = (inpP.files || [])[0];
+        inpP.value = "";
+        if (!f) return;
+        var t0 = tourAberto();
+        if (!t0) return;
+        lerImagemSimples(f, function (d) { if (d) _guardarPlanta(t0, d, f.name || ""); });
+      };
+    }
+
+    /* 1c) A PLANTA DO EDITOR: a imagem e o clique que põe o pino.
+       ⚠ O clique NÃO pode virar `data-gacao` (o dispatcher escuta clique em
+       botão, e aqui o alvo é uma imagem) e a posição TEM de ser gravada em
+       FRAÇÃO do quadro: a mesma planta é desenhada com larguras diferentes no
+       editor, no minimapa e no Portal — em pixel, o pino andaria em dois
+       desses três lugares. */
+    var quadro = document.getElementById("t360-planta-quadro");
+    if (quadro) {
+      var imgPl = document.getElementById("t360-planta-img");
+      var tPl = tourAberto();
+      if (imgPl && tPl) {
+        _pedirPlanta(tPl, function (src) {
+          var alvoImg = document.getElementById("t360-planta-img");
+          var q2 = document.getElementById("t360-planta-quadro");
+          if (!alvoImg || !q2) return;
+          if (src) { alvoImg.src = src; return; }
+          /* ⚠ SEM A IMAGEM, O QUADRO VIRA UMA MENTIRA: os pinos ficariam
+             flutuando sobre o nada, com o cursor de mira convidando a clicar —
+             e cada clique gravaria uma posição medida num quadro vazio. Aqui
+             ele diz o que houve e para de aceitar clique. */
+          q2.style.cursor = "default";
+          q2.innerHTML = "";
+          var d = document.createElement("div");
+          d.className = "muted";
+          d.style.cssText = "line-height:1.45;padding:10px 2px";
+          d.textContent = "A imagem desta planta não está neste aparelho. Se ela foi anexada em outro computador, espere a sincronização; se não vier, anexe a imagem de novo por aqui.";
+          q2.appendChild(d);
+        });
+      }
+      quadro.onclick = function (ev) {
+        /* ⚠ sem imagem carregada não há de onde medir a fração: o quadro
+           mede a área do TEXTO de aviso, e o pino sairia num lugar que não
+           corresponde a nada da planta */
+        var im = document.getElementById("t360-planta-img");
+        if (!im || !im.getAttribute("src")) {
+          UI.toast("A imagem da planta não está neste aparelho — sem ela não dá para marcar posição nenhuma.", "erro");
+          return;
+        }
+        var r = this.getBoundingClientRect();
+        if (!r.width || !r.height) return;
+        var fx = (ev.clientX - r.left) / r.width;
+        var fy = (ev.clientY - r.top) / r.height;
+        if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+        if (!G._t360PosPid) {
+          UI.toast("Escolha antes, na lista acima, qual estação você está posicionando.", "erro");
+          return;
+        }
+        var t2 = tourAberto();
+        if (!t2) return;
+        var atual = Store.obter(eid(), ENT, t2.id) || t2;
+        var alvo = motor().pontoDe(atual, G._t360PosPid);
+        if (!alvo) { UI.toast("Esta estação não existe mais.", "erro"); return; }
+        alvo.planta = { x: Math.round(fx * 1000) / 1000, y: Math.round(fy * 1000) / 1000 };
+        if (!salvarTour(atual)) return;
+        UI.toast("\"" + (alvo.nome || "") + "\" posicionada na planta.", "ok");
+        App.render();
       };
     }
 
@@ -1848,6 +3107,14 @@
 
     /* 4) o palco 3D */
     _montarPalco();
+
+    /* 5) o minimapa por cima do palco. Vem DEPOIS de `_montarPalco` porque o
+       viewer, ao re-hospedar a cena, pendura o canvas e as camadas dele no
+       host — e o mapa tem de ficar por cima de todos eles. */
+    _montarMinimapa();
+    /* e o botão de sair da tela cheia, se a tela foi redesenhada com ela
+       ligada (o host é recriado a cada render: o botão vai junto) */
+    _botaoTelaCheia();
   });
 
   /* ⚠ SAIR DA TELA TEM QUE LARGAR O CONTEXTO WEBGL, E TEM QUE SER SÍNCRONO.

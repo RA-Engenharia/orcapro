@@ -56,7 +56,9 @@
  * A MATEMÁTICA da costura não toca canvas nem DOM e roda em Node:
  *   plano · faixaDe · cobertura · aceitaQuadro · classificar ·
  *   colunasDaProjecao · retanguloDaColuna · rumoDoSensor · yawRelativo ·
- *   pitchDoSensor · aceitaArquivo · aplicarNoPonto · podeCapturar(amb)
+ *   pitchDoSensor · aceitaArquivo · aplicarNoPonto · podeCapturar(amb) ·
+ *   lerExif · dataExif · dataDoExif   (a data que o aparelho gravou na foto —
+ *   binário puro, sem navegador nenhum; ver a seção 5.1)
  * O que precisa de navegador (câmera, canvas, FileReader, seletor de
  * arquivo) mora na seção 6 e chama a seção 3.
  *
@@ -622,6 +624,264 @@
     };
   };
 
+  /* =====================================================================
+   * 5.1 A DATA DE VERDADE DA FOTO — leitor de EXIF (puro)
+   *
+   * O DEFEITO QUE ISTO CONSERTA. Até aqui a data da estação era o momento do
+   * ANEXO (`agoraLocal`). Foto tirada na segunda e anexada na quinta saía
+   * datada de quinta — dentro de um relatório fotográfico que fiscal, perito
+   * e advogado leem como PROVA. Três dias de diferença numa fissura mudam de
+   * quem é a responsabilidade.
+   *
+   * ⚠ HONESTIDADE, E ELA MANDA NO RESTO DO ARQUIVO: a data do EXIF é a que o
+   *   APARELHO gravou. Ninguém a verifica — relógio errado, fuso errado ou
+   *   foto editada gravam o que quiserem. Por isso ela nunca sai sozinha no
+   *   documento: sai com `NOTA_DATA_APARELHO` colada. E quando o arquivo NÃO
+   *   traz EXIF (print de tela, foto que passou por aplicativo de mensagem,
+   *   panorama montado pelo caminho B), a resposta é `null` — jamais a data
+   *   de hoje disfarçada de data da foto. Quem escreve na tela decide o que
+   *   dizer; este módulo não inventa.
+   *
+   * ⚠ EXIF É BINÁRIO E CHEIO DE ARMADILHA. As quatro que derrubam leitor
+   *   escrito de cabeça, e que tools/test-tour360-exif.js exercita uma a uma:
+   *     1. ORDEM DE BYTES. O bloco TIFF diz de si mesmo se é "II"
+   *        (little-endian, quase todo celular) ou "MM" (big-endian, câmeras
+   *        Canon e Nikon). Ler tudo como little devolve deslocamento
+   *        astronômico e a busca sai do arquivo.
+   *     2. OS DESLOCAMENTOS SÃO RELATIVOS AO INÍCIO DO TIFF, não ao início do
+   *        arquivo nem ao do segmento. Somar a origem errada aponta para o
+   *        meio da imagem e lê lixo como se fosse texto.
+   *     3. O APP1 NÃO É O PRIMEIRO SEGMENTO. Quase todo JPEG começa com APP0
+   *        (JFIF); há ainda ICC (APP2) e XMP, que também é APP1 e NÃO começa
+   *        com "Exif\0\0". Ler o primeiro APP1 que aparecer pega o XMP e
+   *        volta vazio num arquivo que tinha data.
+   *     4. ARQUIVO TRUNCADO. Foto que parou de subir no meio, ou o pedaço que
+   *        `lerArquivo` fatia. Todo acesso passa por `u8`, que devolve −1 fora
+   *        do vetor: leitura incompleta vira "não achei", nunca exceção e
+   *        nunca data inventada.
+   * ================================================================== */
+
+  /* Quantos bytes do começo do arquivo são lidos atrás do EXIF. O bloco vive
+     nos primeiros segmentos; ler o arquivo inteiro só para achá-lo dobraria a
+     memória de um panorama de 25 MB dentro do celular, ao lado do data URI
+     que já está sendo montado. Se por algum motivo o EXIF estiver além disso,
+     o resultado é `null` — falta de data, nunca data errada. */
+  Cap.EXIF_MAX_BYTES = 512 * 1024;
+
+  Cap.NOTA_DATA_APARELHO =
+    "data informada pelo aparelho que fotografou (não é verificada: relógio ou fuso errados gravam o que estiver no aparelho)";
+
+  /* Aceita ArrayBuffer, Uint8Array, Buffer do Node e array comum de números —
+     o último é o que a suíte monta à mão, e é de propósito que ela exercite o
+     MESMO código da produção em vez de uma cópia. */
+  function paraBytes(entrada) {
+    if (!entrada) return null;
+    var U = global.Uint8Array;
+    if (U && entrada instanceof U) return entrada;
+    /* DataView e outros vetores tipados: mesma memoria, outra janela. Vem
+       ANTES do ArrayBuffer porque tambem tem `byteLength` e nao tem `length` —
+       invertido, `new Uint8Array(dataView)` devolveria um vetor VAZIO e a foto
+       ficaria sem data sem ninguem entender por que. */
+    if (U && entrada.buffer && typeof entrada.byteOffset === "number") {
+      try { return new U(entrada.buffer, entrada.byteOffset, entrada.byteLength); } catch (e) { return null; }
+    }
+    if (U && typeof entrada.byteLength === "number" && typeof entrada.length !== "number") {
+      try { return new U(entrada); } catch (e) { return null; }          /* ArrayBuffer */
+    }
+    if (typeof entrada.length === "number") {
+      if (U) { try { return new U(entrada); } catch (e) {} }
+      return entrada;
+    }
+    return null;
+  }
+
+  /* ⚠ −1 FORA DO VETOR é o que sustenta a promessa de não estourar em arquivo
+     truncado: quem chama testa `< 0` e desiste, em vez de receber `undefined`
+     e fazer conta com NaN (que vira deslocamento NaN e laço sem fim). */
+  function u8(b, i) { return (i >= 0 && i < b.length) ? b[i] : -1; }
+
+  function u16(b, i, le) {
+    var a = u8(b, i), c = u8(b, i + 1);
+    if (a < 0 || c < 0) return -1;
+    return le ? ((c << 8) | a) : ((a << 8) | c);
+  }
+
+  /* ⚠ O BYTE ALTO ENTRA POR MULTIPLICAÇÃO, não por deslocamento de 24. Em
+     JavaScript o deslocamento trabalha em 32 bits COM SINAL: um valor acima
+     de 2 GB — que aparece em arquivo corrompido — voltaria NEGATIVO, passaria
+     pela guarda de limite e leria de trás para frente. */
+  function u32(b, i, le) {
+    var a = u8(b, i), c = u8(b, i + 1), d = u8(b, i + 2), e = u8(b, i + 3);
+    if (a < 0 || c < 0 || d < 0 || e < 0) return -1;
+    return le
+      ? (e * 16777216) + (d * 65536) + (c * 256) + a
+      : (a * 16777216) + (c * 65536) + (d * 256) + e;
+  }
+
+  function recusaExif(codigo, motivo) {
+    return { ok: false, codigo: codigo, motivo: motivo, data: null };
+  }
+
+  /* Texto ASCII de dentro do EXIF. Vem com NUL no fim e, em muitos aparelhos,
+     preenchido com espaços — os dois saem aqui. */
+  function asciiExif(b, ini, tam) {
+    var s = "", i, c;
+    for (i = 0; i < tam; i++) {
+      c = u8(b, ini + i);
+      if (c <= 0) break;                      /* NUL termina; −1 é fim do arquivo */
+      s += String.fromCharCode(c);
+    }
+    return s.replace(/^\s+|\s+$/g, "");
+  }
+
+  var TAG_EXIF_IFD = 0x8769;     /* ponteiro para o sub-IFD onde mora a data  */
+  var TAG_ORIGINAL = 0x9003;     /* DateTimeOriginal — o instante do disparo  */
+  var TAG_DIGITALIZADA = 0x9004; /* DateTimeDigitized — igual em câmera digital */
+
+  /* Lê UM diretório (IFD) e devolve o que interessa das etiquetas pedidas.
+     `t` é o início do bloco TIFF; todo deslocamento do EXIF conta a partir
+     dele (armadilha 2 do cabeçalho desta seção). */
+  function lerIFD(b, t, desloc, le, querer) {
+    var p = t + desloc;
+    var n = u16(b, p, le);
+    /* IFD com contagem absurda é arquivo corrompido, não foto com 900 campos:
+       percorrê-lo varreria o arquivo inteiro atrás de etiqueta que não existe,
+       e num celular isso é o aplicativo travando na hora de anexar. */
+    if (n < 0 || n > 512) return null;
+    var achados = {}, k, e, tag, tipo, cnt, tam, pos;
+    for (k = 0; k < n; k++) {
+      e = p + 2 + k * 12;
+      if (e + 12 > b.length) break;           /* tabela truncada: para e devolve o que já leu */
+      tag = u16(b, e, le);
+      tipo = u16(b, e + 2, le);
+      cnt = u32(b, e + 4, le);
+      if (tag < 0 || tipo < 0 || cnt < 0) break;
+      if (!querer[tag]) continue;
+
+      if (tipo === 2) {                       /* ASCII */
+        tam = cnt;
+        if (tam < 1 || tam > 1024) continue;
+        /* ⚠ ATÉ 4 BYTES O VALOR MORA NO PRÓPRIO CAMPO, e não num endereço.
+           Tratar sempre como endereço faz um texto de 4 letras virar
+           deslocamento de centenas de megabytes e a leitura sair do arquivo. */
+        pos = (tam <= 4) ? (e + 8) : (t + u32(b, e + 8, le));
+        if (pos < 0) continue;
+        achados[tag] = asciiExif(b, pos, tam);
+      } else if (tipo === 4) {                /* LONG — é assim que vem o ponteiro do sub-IFD */
+        achados[tag] = u32(b, e + 8, le);
+      }
+    }
+    return achados;
+  }
+
+  /* "AAAA:MM:DD HH:MM:SS" (o formato do EXIF) vira "AAAA-MM-DD HH:MM", que é
+     o mesmo carimbo local do resto da casa e o que o `dataBR` do relatório
+     sabe ler. Devolve null quando o texto não é uma data possível.
+
+     ⚠ RELÓGIO NÃO ACERTADO GRAVA "0000:00:00 00:00:00" — e câmera com bateria
+       descarregada volta para 1980. Deixar isso passar poria "00/00/0000" ou
+       "12/01/1980" embaixo de uma foto de obra de hoje, o que é pior que não
+       ter data: parece dado, e ninguém confere o que parece dado. */
+  Cap.dataDoExif = function (bruta) {
+    var s = txt(bruta).replace(/\u0000/g, "").replace(/^\s+|\s+$/g, "");
+    var m = /^(\d{4})[:\-](\d{1,2})[:\-](\d{1,2})[ T](\d{1,2}):(\d{2})/.exec(s);
+    if (!m) return null;
+    var ano = +m[1], mes = +m[2], dia = +m[3], hor = +m[4], min = +m[5];
+    if (ano < 1990 || ano > 2100) return null;
+    if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+    if (hor > 23 || min > 59) return null;
+    function d2(v) { return (v < 10 ? "0" : "") + v; }
+    return ano + "-" + d2(mes) + "-" + d2(dia) + " " + d2(hor) + ":" + d2(min);
+  };
+
+  function lerTiff(b, t) {
+    var b0 = u8(b, t), b1 = u8(b, t + 1), le;
+    if (b0 === 0x49 && b1 === 0x49) le = true;         /* "II" — little-endian */
+    else if (b0 === 0x4D && b1 === 0x4D) le = false;   /* "MM" — big-endian */
+    else return recusaExif("tiff-invalido", "O bloco de dados desta foto está corrompido.");
+
+    if (u16(b, t + 2, le) !== 42) return recusaExif("tiff-invalido", "O bloco de dados desta foto está corrompido.");
+
+    var off0 = u32(b, t + 4, le);
+    if (off0 < 8 || t + off0 >= b.length) return recusaExif("truncado", "A leitura desta foto terminou antes da data (arquivo incompleto).");
+
+    var querIFD0 = {}; querIFD0[TAG_EXIF_IFD] = 1;
+    var ifd0 = lerIFD(b, t, off0, le, querIFD0);
+    if (!ifd0) return recusaExif("truncado", "A leitura desta foto terminou antes da data (arquivo incompleto).");
+
+    var pExif = ifd0[TAG_EXIF_IFD];
+    if (!pExif || pExif < 8 || t + pExif >= b.length) {
+      return recusaExif("sem-data", "Esta foto tem EXIF, mas sem a data do disparo.");
+    }
+
+    var quer = {}; quer[TAG_ORIGINAL] = 1; quer[TAG_DIGITALIZADA] = 1;
+    var sub = lerIFD(b, t, pExif, le, quer);
+    if (!sub) return recusaExif("truncado", "A leitura desta foto terminou antes da data (arquivo incompleto).");
+
+    /* ⚠ DateTimeOriginal PRIMEIRO, e NUNCA a etiqueta 0x0132 (DateTime) como
+       socorro: aquela é a data de ALTERAÇÃO do arquivo, que qualquer editor
+       reescreve — usá-la traria de volta, por outra porta, exatamente a
+       mentira que esta seção existe para acabar. DateTimeDigitized é o mesmo
+       instante do disparo numa câmera digital, e por isso é o único suplente. */
+    var bruta = sub[TAG_ORIGINAL], etiqueta = "DateTimeOriginal";
+    if (!bruta) { bruta = sub[TAG_DIGITALIZADA]; etiqueta = "DateTimeDigitized"; }
+    if (!bruta) return recusaExif("sem-data", "Esta foto tem EXIF, mas sem a data do disparo.");
+
+    var data = Cap.dataDoExif(bruta);
+    if (!data) {
+      return recusaExif("data-invalida", "O aparelho gravou uma data impossível nesta foto (" + txt(bruta).slice(0, 24) + ") — provavelmente estava sem o relógio acertado.");
+    }
+    return {
+      ok: true, data: data, bruta: txt(bruta), etiqueta: etiqueta,
+      ordem: le ? "II" : "MM", nota: Cap.NOTA_DATA_APARELHO
+    };
+  }
+
+  /* O leitor completo, com diagnóstico. `Cap.dataExif` é o atalho que devolve
+     só a data — é ele que a fiação usa. */
+  Cap.lerExif = function (entrada) {
+    var b = paraBytes(entrada);
+    if (!b || b.length < 4) return recusaExif("vazio", "Arquivo vazio ou pequeno demais para ter EXIF.");
+    if (u8(b, 0) !== 0xFF || u8(b, 1) !== 0xD8) {
+      /* PNG e WebP não trazem EXIF de câmera; o recado existe para a tela
+         poder explicar por que aquela foto ficou sem data. */
+      return recusaExif("nao-jpeg", "Este arquivo não é JPEG — só o JPEG de câmera traz a data do disparo.");
+    }
+
+    var i = 2, voltas = 0, m, len;
+    while (i + 1 < b.length && voltas < 512) {
+      voltas++;
+      if (u8(b, i) !== 0xFF) break;           /* fora de sincronia: não é estrutura de JPEG */
+      m = u8(b, i + 1);
+      while (m === 0xFF) { i++; m = u8(b, i + 1); }   /* preenchimento antes do marcador */
+      if (m < 0) break;                                /* truncado no marcador */
+      if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { i += 2; continue; }  /* sem carga */
+      /* ⚠ SOS (0xDA) é onde começam os bytes comprimidos da imagem: dali para
+         a frente 0xFF não é mais marcador, e continuar andando lê ruído como
+         se fosse cabeçalho. EOI (0xD9) é o fim. */
+      if (m === 0xDA || m === 0xD9) break;
+
+      len = u16(b, i + 2, false);             /* o comprimento do segmento é SEMPRE big-endian */
+      if (len < 2) break;                     /* comprimento impossível: arquivo corrompido */
+
+      /* armadilha 3: APP1 pode ser XMP. Só serve o que começa com "Exif" + NUL. */
+      if (m === 0xE1 &&
+          u8(b, i + 4) === 0x45 && u8(b, i + 5) === 0x78 &&
+          u8(b, i + 6) === 0x69 && u8(b, i + 7) === 0x66 &&
+          u8(b, i + 8) === 0x00) {
+        return lerTiff(b, i + 10);
+      }
+      i += 2 + len;
+    }
+    return recusaExif("sem-exif", "Esta foto não traz a data do aparelho (EXIF). Print de tela e foto reenviada por aplicativo de mensagem costumam perder esse dado.");
+  };
+
+  /* O atalho: a data ou null. É esta a assinatura que a fiação consome. */
+  Cap.dataExif = function (entrada) {
+    var r = Cap.lerExif(entrada);
+    return r.ok ? r.data : null;
+  };
+
   /* Grava o resultado da leitura no ponto do tour. `opts.foto` existe para a
      tela poder passar a REFERÊNCIA já guardada (Fotos.guardar) em vez do
      data URI inteiro — o registro do tour não deve carregar megabytes. */
@@ -638,9 +898,42 @@
        não for "equirect", e um terceiro rótulo inventado aqui viraria aviso
        silencioso lá. */
     ponto.tipo = res.tipo === "equirect" ? "equirect" : "plana";
-    ponto.capturadoEm = txt(o.capturadoEm) || agoraLocal(o.quando);
 
-    return { ok: true, tipo: ponto.tipo, aviso: txt(res.aviso), proporcao: res.proporcao };
+    /* ⚠ A DATA DA FOTO É A DO DISPARO, NÃO A DO ANEXO — e o campo ao lado diz
+       de onde ela veio. Roteiro do defeito: foto tirada na segunda, anexada na
+       quinta, saía "foto de quinta" no relatório fotográfico, que é peça de
+       prova. Agora `capturadoEm` prefere o EXIF (`res.dataOriginal`), e
+       `capturadoFonte` guarda "exif" ou "anexo" para o documento poder
+       QUALIFICAR a data em vez de afirmá-la.
+       Precedência: o que a tela mandar (`o.capturadoEm`) ganha de tudo — é a
+       correção manual de quem estava lá. Depois o aparelho. Por último o
+       relógio de agora, que é só o que sobra.
+       ⚠ Ponto antigo NÃO TEM `capturadoFonte`, e ausência ali quer dizer "não
+       se sabe": quem lê é obrigado a tratar os três casos, porque afirmar
+       "data do aparelho" numa estação de antes desta versão seria trocar uma
+       mentira por outra. */
+    if (txt(o.capturadoEm)) {
+      ponto.capturadoEm = txt(o.capturadoEm);
+      ponto.capturadoFonte = txt(o.capturadoFonte) || "manual";
+    } else if (txt(res.dataOriginal)) {
+      ponto.capturadoEm = txt(res.dataOriginal);
+      ponto.capturadoFonte = "exif";
+    } else {
+      ponto.capturadoEm = agoraLocal(o.quando);
+      ponto.capturadoFonte = "anexo";
+    }
+
+    return {
+      ok: true, tipo: ponto.tipo, aviso: txt(res.aviso), proporcao: res.proporcao,
+      capturadoEm: ponto.capturadoEm, capturadoFonte: ponto.capturadoFonte,
+      /* o que a tela mostra ao lado da data, para ela não ter de montar o
+         texto e acabar montando diferente do relatório */
+      notaData: ponto.capturadoFonte === "exif"
+        ? Cap.NOTA_DATA_APARELHO
+        : (ponto.capturadoFonte === "anexo"
+          ? ("esta é a data do ANEXO, não a do disparo — " + (txt(res.dataOriginalMotivo) || "a foto não trouxe a data do aparelho"))
+          : "")
+    };
   };
 
   /* Cria o ponto já com a foto. Usa Tour360.novoPonto para não duplicar o
@@ -705,7 +998,14 @@
     return { ok: true, input: inp };
   };
 
-  /* Lê o arquivo escolhido: data URI + dimensões + classificação. */
+  /* Lê o arquivo escolhido: data URI + dimensões + classificação + a data
+     que o APARELHO gravou na foto (`dataOriginal`, ver a seção 5.1).
+
+     ⚠ A DATA NUNCA DERRUBA O ANEXO. `lerDataOriginal` resolve com `null` em
+       qualquer tropeço — arquivo sem EXIF, navegador sem `readAsArrayBuffer`,
+       leitura que falhou. A foto entrar no tour vale mais que a data; o que
+       não pode é a data SAIR ERRADA, e por isso `null` é resposta legítima e
+       a tela é quem decide o que escrever no lugar. */
   Cap.lerArquivo = function (arq, opts) {
     var o = opts || {};
     var w = o.janela || global;
@@ -715,7 +1015,7 @@
       return Promise.resolve({ ok: false, codigo: "sem-navegador", motivo: "Este navegador não consegue ler arquivos de imagem." });
     }
 
-    return new Promise(function (res) {
+    var lendo = new Promise(function (res) {
       var fr = new w.FileReader();
       fr.onerror = function () {
         res({ ok: false, codigo: "leitura", motivo: "Não consegui ler \"" + txt(arq.name) + "\". Tente escolher a foto de novo." });
@@ -748,7 +1048,58 @@
       };
       fr.readAsDataURL(arq);
     });
+
+    return lendo.then(function (r) {
+      if (!r || !r.ok) return r;
+      return lerDataOriginal(arq, w).then(function (d) {
+        /* campos ACRESCENTADOS: quem já lia `dataURI`/`tipo`/`aviso` continua
+           lendo a mesma coisa. `dataOriginal` é null quando não deu para saber
+           — e null aqui quer dizer "não sei", nunca "hoje". */
+        r.dataOriginal = d || null;
+        r.dataOriginalNota = d ? Cap.NOTA_DATA_APARELHO : "";
+        r.dataOriginalMotivo = d ? "" : Cap.motivoSemData(arq, w);
+        return r;
+      });
+    });
   };
+
+  /* Por que esta foto ficou sem data — texto para a tela, não para o log.
+     Recado vago ("não achei a data") faz a pessoa tentar o mesmo arquivo de
+     novo; dizer QUAL é o caso ensina o que fazer da próxima vez. */
+  Cap.motivoSemData = function (arq, janela) {
+    var w = janela || global;
+    var nome = txt(arq && arq.name).toLowerCase();
+    var tipo = txt(arq && arq.type).toLowerCase();
+    if (typeof w.FileReader !== "function") return "Este navegador não lê o conteúdo do arquivo para achar a data.";
+    if (tipo.indexOf("png") >= 0 || /\.png$/.test(nome)) {
+      return "Arquivo PNG não guarda a data do disparo — print de tela e imagem exportada nascem assim.";
+    }
+    return "Esta foto não trouxe a data do aparelho. Fotos reenviadas por aplicativo de mensagem costumam perder esse dado; envie o arquivo original.";
+  };
+
+  /* Lê SÓ o começo do arquivo atrás do EXIF (ver `Cap.EXIF_MAX_BYTES`).
+
+     ⚠ NUNCA REJEITA. Um `reject` aqui derrubaria o `.then` do anexo inteiro e
+       a foto não entraria — trocar a mentira da data pela perda da foto seria
+       um defeito pior que o consertado. */
+  function lerDataOriginal(arq, janela) {
+    var w = janela || global;
+    return new Promise(function (res) {
+      try {
+        if (typeof w.FileReader !== "function") { res(null); return; }
+        var fr = new w.FileReader();
+        if (typeof fr.readAsArrayBuffer !== "function") { res(null); return; }
+        var pedaco = (arq && typeof arq.slice === "function") ? arq.slice(0, Cap.EXIF_MAX_BYTES) : arq;
+        fr.onerror = function () { res(null); };
+        fr.onload = function () {
+          var d = null;
+          try { d = Cap.dataExif(fr.result); } catch (e) { d = null; }
+          res(d);
+        };
+        fr.readAsArrayBuffer(pedaco);
+      } catch (e) { res(null); }
+    });
+  }
 
   /* --------------------------------------------------------------------
    * 6.1 Sensor de direção

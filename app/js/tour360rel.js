@@ -26,7 +26,7 @@
  *     HTML, e por isso `abrir` é assíncrono.
  *
  * ---------------------------------------------------------------------
- * ⚠ QUATRO COISAS QUE NÃO PODEM SER "SIMPLIFICADAS"
+ * ⚠ SETE COISAS QUE NÃO PODEM SER "SIMPLIFICADAS"
  * ---------------------------------------------------------------------
  *
  * 1. MEDIDA APROXIMADA NUNCA SAI SÓ COMO NÚMERO. Toda medida com
@@ -51,7 +51,28 @@
  *    gravar é obrigatório (a troca no meio da gravação não pode esperar
  *    rede); DECODIFICAR os 40 panoramas de uma vez, não — 4096×2048 em RGBA
  *    são ~33 MB por foto, e 40 delas passam de 1 GB. O navegador mata a aba
- *    e o usuário perde a gravação inteira sem entender por quê.
+ *    e o usuário perde a gravação inteira sem entender por quê. Vale para o
+ *    vídeo E para os recortes.
+ *
+ * 5. O VÍDEO DO TOUR PREFERE MP4. O `js/bimvideo.js` tenta WebM primeiro e
+ *    está certo para o BIM, que é visto no computador. O vídeo do tour vai
+ *    para o grupo da obra, e WebM costuma não abrir no iPhone: o arquivo
+ *    chega e não toca, sem ninguém do lado de cá ficar sabendo. A ordem daqui
+ *    é MP4 → WebM, e quando sai WebM o retorno de `gravar` traz o aviso —
+ *    baseado no `ext` do arquivo que existe, não na intenção. Ver a PARTE 2.
+ *
+ * 6. CADA APONTAMENTO SAI COM A FOTO DELE. O panorama inteiro no papel é uma
+ *    faixa 2:1 esticada; a trinca apontada vira três milímetros de borrão num
+ *    canto, e quem lê conclui que ela não foi registrada. A PARTE 1A recorta
+ *    a vista na direção do apontamento — e o recorte NÃO substitui o
+ *    panorama, que é o que dá o contexto.
+ *
+ * 7. A DATA DA FOTO SAI QUALIFICADA. "Foto de" só quando ela veio do aparelho
+ *    (`capturadoFonte === "exif"`, gravado por js/tour360cap.js); "anexada
+ *    em" quando o arquivo não trouxe data; e "registro de", neutro, para as
+ *    estações de antes desta versão, em que não dá para saber qual dos dois
+ *    é. Num documento que fiscal e perito leem como prova, data sem
+ *    procedência é afirmação que ninguém pode conferir.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -166,6 +187,467 @@
     };
   };
 
+  /* =====================================================================
+   * PARTE 1A — O RECORTE ENQUADRADO DO APONTAMENTO
+   *
+   * O DEFEITO QUE ISTO CONSERTA. O relatório imprimia o panorama INTEIRO com
+   * uma legenda dizendo que a imagem está achatada. Quem recebe vê uma faixa
+   * 2:1 esticada e, num canto dela, três milímetros de borrão — e conclui que
+   * a fissura NÃO FOI REGISTRADA. O apontamento existia, a foto existia, e o
+   * documento conseguia esconder os dois ao mesmo tempo.
+   *
+   * A conta é a mesma que já roda em dois lugares desta casa, e é copiada de
+   * lá de propósito para não nascer uma terceira convenção de ângulo:
+   * `Tour360.anguloParaPixel` (js/tour360.js) e o desenho retilíneo do Portal
+   * (loja/portal.html, `t360Desenhar`). Uma equiretangular tem 360° na
+   * largura e 180° na altura — então recortar é regra de três, e é a MESMA
+   * regra de três que traduz o clique em ângulo. O que a pessoa vê no papel e
+   * o que ela mediu na tela não podem divergir.
+   *
+   * ⚠ O RECORTE É EQUIRETANGULAR, NÃO É REPROJEÇÃO. Linha reta continua
+   *   curvando um pouco — menos que no panorama aberto, mas curva. É o que o
+   *   Portal já faz e é suficiente para enxergar o apontamento; prometer
+   *   "foto retificada" seria mentira, e por isso a legenda do documento diz
+   *   o que a imagem é.
+   *
+   * ⚠ E O RECORTE SAI CARIMBADO. Foto de obra perde a identidade em duas
+   *   horas dentro de um grupo de mensagem: sem obra, estação e data gravadas
+   *   NA IMAGEM, aquela trinca vira "uma trinca qualquer" — e reaparece meses
+   *   depois atribuída a outro prédio. O carimbo é pixel, não legenda: ele
+   *   sobrevive ao recorte de tela e ao encaminhamento.
+   * ================================================================== */
+
+  Rel.RECORTE_FOV = 60;          /* abertura horizontal do recorte, em graus */
+  Rel.RECORTE_LARGURA = 720;     /* ~1:1 com a fonte de 4096 px num FOV de 60° */
+  Rel.RECORTE_ALTURA = 480;
+  Rel.RECORTE_FAIXA = 46;        /* altura do carimbo, em pixels */
+  Rel.RECORTE_QUALIDADE = 0.85;
+  Rel.RECORTE_FOV_MAX = 110;     /* além disso a distorção come o que se quer ver */
+
+  /* ⚠ TETO DE RECORTES POR DOCUMENTO. Cada recorte é um JPEG de ~60 KB dentro
+     do HTML da impressão; um tour com 40 estações e 6 apontamentos em cada
+     passaria de 14 MB no DOM e a janela de impressão engasga (ou o navegador
+     mata a aba, e o usuário perde o documento inteiro sem saber por quê). */
+  Rel.MAX_RECORTES = 48;
+
+  /* ⚠ PRAZO. Decodificar panorama de 4096 px custa tempo, e o documento tem
+     de abrir mesmo assim. Estourou o prazo, os recortes que faltaram
+     simplesmente não aparecem — o texto do apontamento continua lá, e nada é
+     afirmado a menos. Travar o botão de relatório para ganhar miniatura seria
+     trocar o documento pelo enfeite dele. */
+  Rel.PRAZO_RECORTES_MS = 20000;
+  Rel.TIMEOUT_IMAGEM_MS = 6000;
+
+  function limitar(v, min, max) { return v < min ? min : (v > max ? max : v); }
+
+  /* Onde apontar a câmera do recorte, e com que abertura.
+     Puro, para o gate exercitar sem canvas: entra um ponto (ou dois, no caso
+     da medida) e sai { yaw, pitch, fov, coube }.
+
+     ⚠ A MEDIDA PRECISA CABER INTEIRA. Um recorte fixo de 60° centrado no meio
+       de uma distância de 12 m corta as duas pontas: sai uma linha que entra
+       por uma borda e sai pela outra, sem começo nem fim, e o valor impresso
+       ao lado passa a não ter a que se referir. Então a abertura ABRE até
+       caber — e, quando nem no máximo cabe, `coube` volta false para o
+       documento poder dizer isso em vez de fingir. */
+  Rel.enquadramento = function (a, b, opts) {
+    var o = opts || {};
+    var fovBase = num(o.fov, Rel.RECORTE_FOV);
+    var larg = num(o.largura, Rel.RECORTE_LARGURA);
+    var alt = num(o.altura, Rel.RECORTE_ALTURA);
+    var prop = (larg > 0 && alt > 0) ? (alt / larg) : 0.667;
+
+    var ya = num(a && a.yaw, 0), pa = num(a && a.pitch, 0);
+    if (!b) {
+      return { yaw: (M() ? M().normalizarYaw(ya) : ya), pitch: pa, fov: limitar(fovBase, 20, Rel.RECORTE_FOV_MAX), coube: true };
+    }
+    var yb = num(b.yaw, 0), pb = num(b.pitch, 0);
+    var d = M() ? M().difYaw(ya, yb) : (yb - ya);
+    var yaw = M() ? M().normalizarYaw(ya + d / 2) : (ya + d / 2);
+    var pitch = (pa + pb) / 2;
+
+    /* 1,45 de folga: a marca de cada ponta tem raio próprio e o rótulo do
+       valor ocupa espaço; sem folga as pontas nascem coladas na borda. */
+    var precisaH = Math.abs(d) * 1.45;
+    var precisaV = Math.abs(pa - pb) * 1.45;
+    /* a exigência vertical vira exigência horizontal pela proporção do
+       quadro — é o mesmo fovV = fovH × (altura/largura) do desenho */
+    var porV = prop > 0 ? (precisaV / prop) : precisaV;
+
+    var querido = Math.max(fovBase, precisaH, porV);
+    var fov = limitar(querido, 20, Rel.RECORTE_FOV_MAX);
+    return { yaw: yaw, pitch: pitch, fov: fov, coube: querido <= Rel.RECORTE_FOV_MAX };
+  };
+
+  /* A janela de recorte dentro da foto, em pixels da FONTE. Pura e testável:
+     é aqui que mora a regra de três, e é ela que tem de bater com
+     `Tour360.anguloParaPixel`. */
+  Rel.janelaDoRecorte = function (yaw, pitch, fov, larguraFonte, alturaFonte, larguraAlvo, alturaAlvo) {
+    var iw = num(larguraFonte, 0), ih = num(alturaFonte, 0);
+    var W = num(larguraAlvo, Rel.RECORTE_LARGURA), H = num(alturaAlvo, Rel.RECORTE_ALTURA);
+    if (!(iw > 0) || !(ih > 0) || !(W > 0) || !(H > 0)) return { ok: false, motivo: "Imagem sem dimensão." };
+    var fovH = limitar(num(fov, Rel.RECORTE_FOV), 1, 360);
+    var fovV = fovH * (H / W);
+    var y = M() ? M().normalizarYaw(yaw) : num(yaw, 0);
+    var p = limitar(num(pitch, 0), -90, 90);
+    return {
+      ok: true,
+      fovH: fovH, fovV: fovV, yaw: y, pitch: p,
+      sw: (fovH / 360) * iw,
+      sh: (fovV / 180) * ih,
+      /* pode sair negativo de propósito: quem desenha dá a volta pela emenda */
+      sx: ((y - fovH / 2 + 180) / 360) * iw,
+      sy: ((90 - (p + fovV / 2)) / 180) * ih
+    };
+  };
+
+  /* Ângulo → pixel DENTRO do recorte, ou null quando está fora dele. Mesma
+     conta do Portal (`t360Tela`): null em vez de grudar o marcador na borda,
+     porque marcador na borda aponta para algo que não está à vista. */
+  function noRecorte(j, W, H, yaw, pitch) {
+    var d = M() ? M().difYaw(j.yaw, num(yaw, 0)) : (num(yaw, 0) - j.yaw);
+    if (Math.abs(d) > j.fovH / 2) return null;
+    var dy = num(pitch, 0) - j.pitch;
+    if (Math.abs(dy) > j.fovV / 2) return null;
+    return { x: (d / j.fovH + 0.5) * W, y: (0.5 - dy / j.fovV) * H };
+  }
+
+  /* Corta o texto pela largura REAL medida no contexto, não por contagem de
+     caracteres: "Bloco A — cobertura" e "IIIIIIIIIIIIIIIIIII" têm o mesmo
+     tamanho em letras e larguras muito diferentes, e o carimbo estourado sai
+     por cima do outro campo. */
+  function cortarTexto(g, s, largMax) {
+    var t = txt(s);
+    if (!t) return "";
+    if (g.measureText(t).width <= largMax) return t;
+    while (t.length > 1 && g.measureText(t + "…").width > largMax) t = t.slice(0, -1);
+    return t + "…";
+  }
+
+  /* O carimbo. Duas linhas: obra em cima, estação e data embaixo, e à direita
+     o rótulo do apontamento. */
+  Rel.carimbar = function (g, W, H, faixa, info) {
+    var i = info || {};
+    g.fillStyle = "rgba(11,26,43,.92)";
+    g.fillRect(0, H - faixa, W, faixa);
+    g.fillStyle = "rgba(255,255,255,.18)";
+    g.fillRect(0, H - faixa, W, 1);
+
+    g.textBaseline = "middle";
+    g.textAlign = "left";
+
+    var dir = txt(i.rotulo);
+    var largDir = 0;
+    if (dir) {
+      g.font = "600 12px Segoe UI, Arial, sans-serif";
+      dir = cortarTexto(g, dir, W * 0.34);
+      largDir = g.measureText(dir).width + 18;
+      g.fillStyle = "rgba(255,255,255,.72)";
+      g.textAlign = "right";
+      g.fillText(dir, W - 12, H - faixa * 0.5);
+      g.textAlign = "left";
+    }
+
+    g.font = "bold 15px Segoe UI, Arial, sans-serif";
+    g.fillStyle = "#ffffff";
+    g.fillText(cortarTexto(g, txt(i.obra) || "Obra não informada", W - 24 - largDir), 12, H - faixa * 0.66);
+
+    g.font = "12px Segoe UI, Arial, sans-serif";
+    g.fillStyle = "rgba(255,255,255,.80)";
+    g.fillText(cortarTexto(g, txt(i.linha2), W - 24 - largDir), 12, H - faixa * 0.24);
+
+    g.textBaseline = "alphabetic";
+  };
+
+  /* Recorta a vista na direção do apontamento e devolve um data URI.
+   *
+   * opts: { yaw, pitch, b:{yaw,pitch}, fov, cor, valor, obra, estacao,
+   *         linha2, rotulo, largura, altura }
+   *
+   * Precisa de canvas: em Node devolve { ok:false, codigo:"sem-navegador" } —
+   * e quem chama trata isso como "não há recorte", nunca como erro do
+   * documento.
+   */
+  Rel.recorte = function (img, opts) {
+    var o = opts || {};
+    if (!M()) return { ok: false, codigo: "sem-motor", motivo: "O motor do tour não carregou nesta página." };
+    var doc = global.document;
+    if (!doc || typeof doc.createElement !== "function") {
+      return { ok: false, codigo: "sem-navegador", motivo: "Sem navegador para montar o recorte." };
+    }
+    var iw = num(img && (img.naturalWidth || img.width), 0);
+    var ih = num(img && (img.naturalHeight || img.height), 0);
+    if (!(iw > 0) || !(ih > 0)) return { ok: false, codigo: "sem-dimensao", motivo: "A foto não abriu." };
+    /* ⚠ SÓ EQUIRETANGULAR. Numa foto comum o yaw do apontamento não quer
+       dizer pixel nenhum: o recorte sairia num lugar qualquer da imagem, com
+       cara de precisão. Sem geometria, sem recorte. */
+    if (!M().ehEquiretangular(iw, ih)) {
+      return { ok: false, codigo: "nao-equirect", motivo: "Esta foto não é 360 — não há como recortar por ângulo." };
+    }
+
+    var W = Math.round(num(o.largura, Rel.RECORTE_LARGURA));
+    var Himg = Math.round(num(o.altura, Rel.RECORTE_ALTURA));
+    var faixa = Math.round(num(o.faixa, Rel.RECORTE_FAIXA));
+    var H = Himg + faixa;
+
+    var enq = Rel.enquadramento({ yaw: o.yaw, pitch: o.pitch }, o.b || null, { fov: o.fov, largura: W, altura: Himg });
+    var j = Rel.janelaDoRecorte(enq.yaw, enq.pitch, enq.fov, iw, ih, W, Himg);
+    if (!j.ok) return { ok: false, codigo: "sem-dimensao", motivo: j.motivo };
+
+    var cv = doc.createElement("canvas");
+    cv.width = W; cv.height = H;
+    var g = cv.getContext ? cv.getContext("2d") : null;
+    if (!g) return { ok: false, codigo: "sem-canvas", motivo: "Este navegador não montou a tela do recorte." };
+
+    /* fundo escuro: o que ficar fora da foto (acima do zênite, abaixo do
+       nadir) aparece como ausência, não como sombra do ambiente */
+    g.fillStyle = "#0b1a2b";
+    g.fillRect(0, 0, W, H);
+
+    /* --- a imagem, com volta pela emenda e corte no topo/base --- */
+    var escY = j.sh > 0 ? (Himg / j.sh) : 0;
+    var sy0 = Math.max(0, j.sy), sy1 = Math.min(ih, j.sy + j.sh);
+    if (sy1 > sy0 && escY > 0) {
+      var dy = (sy0 - j.sy) * escY;
+      var dh = (sy1 - sy0) * escY;
+      var escX = W / j.sw;
+      var sx = j.sx;
+      while (sx < 0) sx += iw;
+      sx = sx % iw;
+      /* ⚠ A FOTO DÁ A VOLTA. Quando o recorte cruza a emenda ele vira dois
+         desenhos; sem isto, o apontamento que está atrás do fotógrafo sai com
+         uma tarja preta do lado — e quem lê acha que a foto está furada. */
+      var parte1 = Math.min(j.sw, iw - sx);
+      try {
+        g.drawImage(img, sx, sy0, parte1, sy1 - sy0, 0, dy, parte1 * escX, dh);
+        if (parte1 < j.sw) {
+          g.drawImage(img, 0, sy0, j.sw - parte1, sy1 - sy0, parte1 * escX, dy, (j.sw - parte1) * escX, dh);
+        }
+      } catch (e) {
+        return { ok: false, codigo: "desenho", motivo: "Não consegui recortar esta foto." };
+      }
+    }
+
+    /* --- a marca do apontamento --- */
+    var cor = txt(o.cor) || "#38bdf8";
+    var pa = noRecorte(j, W, Himg, o.yaw, o.pitch);
+    var pb = o.b ? noRecorte(j, W, Himg, o.b.yaw, o.b.pitch) : null;
+
+    if (pa && pb) {
+      g.beginPath();
+      g.moveTo(pa.x, pa.y); g.lineTo(pb.x, pb.y);
+      g.lineWidth = 3; g.strokeStyle = cor; g.stroke();
+      anel(g, pa.x, pa.y, 7, cor);
+      anel(g, pb.x, pb.y, 7, cor);
+      if (txt(o.valor)) {
+        etiqueta(g, (pa.x + pb.x) / 2, (pa.y + pb.y) / 2 - 16, txt(o.valor), cor);
+      }
+    } else if (pa || pb) {
+      var p = pa || pb;
+      /* ⚠ ANEL VAZADO, NÃO BOLINHA CHEIA. O apontamento costuma ser uma
+         trinca de milímetros bem no centro: marcador preenchido tapa
+         exatamente o que o documento existe para mostrar. */
+      anel(g, p.x, p.y, 26, cor);
+    }
+
+    Rel.carimbar(g, W, H, faixa, {
+      obra: o.obra,
+      linha2: o.linha2 || (txt(o.estacao) + (txt(o.data) ? " · " + txt(o.data) : "")),
+      rotulo: o.rotulo
+    });
+
+    var uri = "";
+    try { uri = cv.toDataURL("image/jpeg", Rel.RECORTE_QUALIDADE); } catch (e) { uri = ""; }
+    if (!uri) return { ok: false, codigo: "exportar", motivo: "Não consegui exportar o recorte." };
+    return { ok: true, dataURI: uri, fov: Math.round(enq.fov), coube: enq.coube, largura: W, altura: H };
+  };
+
+  function anel(g, x, y, r, cor) {
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+    g.lineWidth = 4; g.strokeStyle = "rgba(0,0,0,.55)"; g.stroke();
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+    g.lineWidth = 2.2; g.strokeStyle = cor; g.stroke();
+  }
+
+  function etiqueta(g, x, y, texto, cor) {
+    g.font = "bold 14px Segoe UI, Arial, sans-serif";
+    var larg = g.measureText(texto).width + 14;
+    g.fillStyle = "rgba(0,0,0,.66)";
+    g.fillRect(x - larg / 2, y - 11, larg, 22);
+    g.fillStyle = cor;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(texto, x, y);
+    g.textAlign = "left"; g.textBaseline = "alphabetic";
+  }
+
+  /* Carrega um data URI e devolve a imagem (ou null). Sempre resolve: imagem
+     que não abre não pode segurar o relatório. */
+  function carregarImagem(dataURI) {
+    return new Promise(function (res) {
+      try {
+        if (!dataURI || typeof global.Image !== "function") { res(null); return; }
+        var img = new global.Image();
+        var pronto = false;
+        var t = global.setTimeout(function () { if (!pronto) { pronto = true; res(null); } }, Rel.TIMEOUT_IMAGEM_MS);
+        img.onload = function () { if (!pronto) { pronto = true; global.clearTimeout(t); res(img); } };
+        img.onerror = function () { if (!pronto) { pronto = true; global.clearTimeout(t); res(null); } };
+        img.src = dataURI;
+      } catch (e) { res(null); }
+    });
+  }
+
+  /* Recorta a partir do data URI (assíncrono porque a imagem precisa abrir). */
+  Rel.recortarFoto = function (dataURI, opts) {
+    return carregarImagem(dataURI).then(function (img) {
+      if (!img) return { ok: false, codigo: "nao-abre", motivo: "A foto não abriu para recortar." };
+      return Rel.recorte(img, opts);
+    });
+  };
+
+  /* Chave do recorte no mapa. Prefixada de propósito: um pid chamado
+     "constructor" cairia no protótipo do objeto e devolveria uma função no
+     lugar de uma imagem. */
+  Rel.chaveRecorte = function (pid, tipo, i) {
+    return "r:" + txt(pid) + "|" + txt(tipo) + i;
+  };
+
+  /* Monta TODOS os recortes de um tour, um panorama por vez.
+   *
+   * ⚠ UM DE CADA VEZ, e a imagem é solta antes da próxima. Um equiretangular
+   *   de 4096×2048 ocupa ~33 MB decodificado; abrir os 40 de uma vez passa de
+   *   1 GB e o navegador mata a aba — é o mesmo item 4 do cabeçalho deste
+   *   arquivo, que já valia para o vídeo.
+   *
+   * Devolve { recortes, feitos, pulados, estourouPrazo, cortadoPeloTeto }.
+   */
+  Rel.recortesDoTour = function (tour, fotos, opts) {
+    var o = opts || {};
+    var vazio = { recortes: {}, feitos: 0, pulados: 0, estourouPrazo: false, cortadoPeloTeto: 0 };
+    if (!M()) return Promise.resolve(vazio);
+    if (!global.document || typeof global.document.createElement !== "function") return Promise.resolve(vazio);
+
+    var t = tour || {};
+    var mapaFotos = fotos || {};
+    var pgs = M().paginasRelatorio(t, { soComFoto: !!o.soComFoto, soAtencao: !!o.soAtencao });
+    var limite = Math.max(0, Math.round(num(o.maxRecortes, Rel.MAX_RECORTES)));
+    var prazo = (global.Date && global.Date.now ? global.Date.now() : new Date().getTime()) + num(o.prazoMs, Rel.PRAZO_RECORTES_MS);
+
+    var saida = { recortes: {}, feitos: 0, pulados: 0, estourouPrazo: false, cortadoPeloTeto: 0 };
+    var i = 0;
+
+    function agora() { return (global.Date && global.Date.now) ? global.Date.now() : new Date().getTime(); }
+
+    function proximo() {
+      if (i >= pgs.length) return Promise.resolve(saida);
+      var pg = pgs[i++];
+      var dataURI = Object.prototype.hasOwnProperty.call(mapaFotos, pg.pid) ? mapaFotos[pg.pid] : "";
+      var pedidos = Rel.apontamentosDe(t, pg, o);
+      if (!dataURI || txt(pg.tipo) !== "equirect" || !pedidos.length) return proximo();
+
+      if (agora() > prazo) { saida.estourouPrazo = true; saida.pulados += pedidos.length; return proximo(); }
+
+      return carregarImagem(dataURI).then(function (img) {
+        if (!img) { saida.pulados += pedidos.length; return null; }
+        for (var k = 0; k < pedidos.length; k++) {
+          if (saida.feitos >= limite) { saida.cortadoPeloTeto++; continue; }
+          var r = Rel.recorte(img, pedidos[k].opts);
+          if (r && r.ok) {
+            saida.recortes[pedidos[k].chave] = r.dataURI;
+            saida.feitos++;
+          } else {
+            saida.pulados++;
+          }
+        }
+        /* ⚠ soltar a referência aqui é o que impede a soma dos panoramas
+           ficar viva até o fim do laço */
+        img = null;
+        return null;
+      })["catch"](function () { saida.pulados += pedidos.length; return null; }).then(proximo);
+    }
+
+    return proximo()["catch"](function () { return saida; });
+  };
+
+  /* O que merece recorte numa página, já com a chave e as opções de desenho.
+     Separado para o gate exercitar a LISTA sem canvas nenhum. */
+  Rel.apontamentosDe = function (tour, pg, opts) {
+    var o = opts || {};
+    var lista = [];
+    if (!M() || !pg) return lista;
+    var ponto = M().pontoDe(tour, pg.pid) || {};
+    var obra = txt(o.obraNome) || txt(tour && tour.obraNome);
+    var estacao = txt(pg.nome) || "Ponto";
+    var quando = Rel.legendaData(pg, ponto, tour && tour.data);
+    var linha2 = estacao + (quando ? " · " + quando : "");
+
+    var cs = pg.comentarios || [], i;
+    for (i = 0; i < cs.length; i++) {
+      var tp = tipoDe(cs[i].tipo);
+      lista.push({
+        chave: Rel.chaveRecorte(pg.pid, "c", i),
+        opts: {
+          yaw: num(cs[i].yaw, 0), pitch: num(cs[i].pitch, 0),
+          cor: tp.borda, obra: obra, linha2: linha2, rotulo: tp.rotulo
+        }
+      });
+    }
+
+    /* ⚠ OS ÂNGULOS DA MEDIDA SÓ EXISTEM NO PONTO CRU. `paginasRelatorio`
+       devolve o valor em metros e a faixa de erro, não as duas pontas — e é
+       delas que sai o enquadramento. Por isso a medida é lida daqui, do
+       registro, e não da página. */
+    var ms = ponto.medidas || [];
+    var pgm = pg.medidas || [];
+    for (i = 0; i < ms.length; i++) {
+      var m = ms[i];
+      if (!m || !m.a || !m.b) continue;
+      var d = pgm[i] ? Rel.textoMedida(pgm[i]) : null;
+      lista.push({
+        chave: Rel.chaveRecorte(pg.pid, "m", i),
+        opts: {
+          yaw: num(m.a.yaw, 0), pitch: num(m.a.pitch, 0),
+          b: { yaw: num(m.b.yaw, 0), pitch: num(m.b.pitch, 0) },
+          cor: (d && d.aproximada) ? "#f59e0b" : "#22c55e",
+          valor: d ? d.valor : "",
+          obra: obra, linha2: linha2,
+          rotulo: (d ? d.tipo : "Medida") + (txt(m.rotulo) ? " — " + txt(m.rotulo) : "")
+        }
+      });
+    }
+    return lista;
+  };
+
+  /* Como a data desta estação se escreve — e é AQUI que a honestidade da data
+     mora, para o carimbo da imagem e o cabeçalho da página dizerem a mesma
+     coisa.
+
+     ⚠ TRÊS CASOS, TRÊS FRASES, e um deles é "não sei":
+       · "exif"  → a data veio do aparelho que fotografou (informada, não
+                   verificada — a nota do rodapé explica);
+       · "anexo" → o arquivo não trouxe data; o que existe é o momento em que
+                   a foto entrou no aplicativo, e o texto DIZ isso;
+       · sem `capturadoFonte` → estação de antes desta versão. Não dá para
+                   saber qual dos dois é, então o texto fica neutro
+                   ("registro de"). Escrever "foto de" ali seria repetir, com
+                   dado velho, exatamente a afirmação que este conserto tirou. */
+  Rel.legendaData = function (pg, ponto, dataVisita) {
+    var quando = txt(pg && pg.capturadoEm);
+    var fonte = txt(ponto && ponto.capturadoFonte);
+    if (!quando) return txt(dataVisita) ? "visita de " + dataBR(dataVisita) : "";
+    if (fonte === "exif") return "foto de " + dataBR(quando);
+    if (fonte === "anexo") return "anexada em " + dataBR(quando);
+    if (fonte === "manual") return "foto de " + dataBR(quando);
+    return "registro de " + dataBR(quando);
+  };
+
+  Rel.notaDataDe = function (ponto) {
+    var f = txt(ponto && ponto.capturadoFonte);
+    if (f === "exif") return "data informada pelo aparelho que fotografou; ela não é verificada.";
+    if (f === "anexo") return "esta foto não trouxe a data do aparelho — a data é a do momento em que ela entrou no aplicativo.";
+    if (f === "manual") return "data informada por quem anexou a foto.";
+    return "";
+  };
+
   function caixaAviso(htmlInterno) {
     return '<div style="border:1px solid #f59e0b;border-radius:6px;padding:7px 10px;font-size:10.5px;color:#7c2d12;background:#fffbeb;margin-bottom:8px">'
       + htmlInterno + "</div>";
@@ -176,13 +658,31 @@
       + "<b>" + esc(valor) + "</b> " + esc(rot) + "</span>";
   }
 
-  function blocoComentarios(lista) {
+  /* A miniatura enquadrada, ao lado do texto do apontamento.
+
+     ⚠ ELA NÃO SUBSTITUI O PANORAMA, ela o completa. O panorama mostra o
+       CONTEXTO (de onde a foto foi tirada, o que há em volta); o recorte
+       mostra O QUE está sendo apontado. Trocar um pelo outro reabre o defeito
+       por outro lado: sem contexto, quem lê não sabe em que parede aquilo
+       está. */
+  function figuraRecorte(uri) {
+    if (!uri) return "";
+    return '<img src="' + esc(uri) + '" alt="" style="width:46%;max-width:300px;border:1px solid #cbd5e1;border-radius:4px;display:block;flex:none">';
+  }
+
+  function linhaApontamento(uri, htmlTexto) {
+    if (!uri) return htmlTexto;
+    return '<div style="display:flex;gap:9px;align-items:flex-start">'
+      + figuraRecorte(uri)
+      + '<div style="flex:1;min-width:0">' + htmlTexto + "</div></div>";
+  }
+
+  function blocoComentarios(lista, recortes, pid) {
     if (!lista || !lista.length) return "";
     var h = '<div style="font-weight:800;font-size:10.5px;letter-spacing:.4px;margin:10px 0 5px">COMENTÁRIOS DESTE PONTO (' + lista.length + ")</div>";
     for (var i = 0; i < lista.length; i++) {
       var c = lista[i], t = tipoDe(c.tipo);
-      h += '<div style="border:1px solid ' + t.borda + ';border-left-width:4px;border-radius:5px;background:' + t.fundo + ';padding:6px 9px;margin-bottom:6px;page-break-inside:avoid">'
-        + '<span style="font-size:9px;font-weight:800;letter-spacing:.5px;color:' + t.cor + '">' + t.rotulo + "</span>"
+      var miolo = '<span style="font-size:9px;font-weight:800;letter-spacing:.5px;color:' + t.cor + '">' + t.rotulo + "</span>"
         + '<div style="font-size:11.5px;color:#111;margin-top:2px">' + esc(txt(c.texto) || "(sem texto)") + "</div>"
         + '<div style="font-size:9.5px;color:#64748b;margin-top:3px">'
         + (txt(c.autor) ? esc(c.autor) : "")
@@ -191,12 +691,15 @@
         /* onde no panorama o comentário está: é isso que deixa quem lê o papel
            reencontrar o ponto exato dentro do tour, no aplicativo */
         + " · giro " + numBR(c.yaw, 0) + "°, inclinação " + numBR(c.pitch, 0) + "°"
-        + "</div></div>";
+        + "</div>";
+      h += '<div style="border:1px solid ' + t.borda + ';border-left-width:4px;border-radius:5px;background:' + t.fundo + ';padding:6px 9px;margin-bottom:6px;page-break-inside:avoid">'
+        + linhaApontamento(pegar(recortes || {}, Rel.chaveRecorte(pid, "c", i)), miolo)
+        + "</div>";
     }
     return h;
   }
 
-  function blocoMedidas(lista) {
+  function blocoMedidas(lista, recortes, pid) {
     if (!lista || !lista.length) return "";
     var h = '<div style="font-weight:800;font-size:10.5px;letter-spacing:.4px;margin:10px 0 5px">MEDIDAS TIRADAS NESTE PONTO (' + lista.length + ")</div>"
       + '<table style="width:100%;border-collapse:collapse;font-size:11px">'
@@ -205,7 +708,8 @@
       + '<th style="border:1px solid #bbb;padding:4px 6px;width:24%">Valor</th>'
       + '<th style="border:1px solid #bbb;padding:4px 6px;width:38%">Precisão</th>'
       + "</tr></thead><tbody>";
-    for (var i = 0; i < lista.length; i++) {
+    var i, comRecorte = [];
+    for (i = 0; i < lista.length; i++) {
       var d = Rel.textoMedida(lista[i]);
       var fundo = d.aproximada ? "#fffbeb" : "#fff";
       h += '<tr style="background:' + fundo + '">'
@@ -213,8 +717,24 @@
         + '<td style="border:1px solid #bbb;padding:4px 6px;text-align:center;font-weight:700' + (d.aproximada ? ";color:#7c2d12" : "") + '">' + esc(d.valor) + "</td>"
         + '<td style="border:1px solid #bbb;padding:4px 6px;font-size:10px;color:#475569">' + esc(d.problema || d.precisao) + "</td>"
         + "</tr>";
+      var uri = pegar(recortes || {}, Rel.chaveRecorte(pid, "m", i));
+      if (uri) comRecorte.push({ uri: uri, rotulo: esc(d.tipo) + (d.rotulo ? " — " + esc(d.rotulo) : "") + ": " + esc(d.valor) });
     }
-    return h + "</tbody></table>";
+    h += "</tbody></table>";
+
+    /* ⚠ O RECORTE DA MEDIDA VEM DEPOIS DA TABELA, não dentro dela. Imagem em
+       célula de tabela quebra a paginação da janela de impressão: a linha vai
+       para a folha seguinte e a foto fica sozinha na anterior. */
+    if (comRecorte.length) {
+      h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:7px">';
+      for (i = 0; i < comRecorte.length; i++) {
+        h += '<figure style="margin:0;width:47%;page-break-inside:avoid">'
+          + '<img src="' + esc(comRecorte[i].uri) + '" alt="" style="width:100%;border:1px solid #cbd5e1;border-radius:4px;display:block">'
+          + '<figcaption style="font-size:9px;color:#64748b;padding-top:2px">' + comRecorte[i].rotulo + "</figcaption></figure>";
+      }
+      h += "</div>";
+    }
+    return h;
   }
 
   function molduraFoto(dataURI, pg) {
@@ -238,7 +758,7 @@
     return caixaAviso("<b>A foto deste ponto não entrou no documento.</b> Os arquivos não estão neste aparelho e ainda não chegaram à nuvem. Abra o tour com internet, espere as fotos subirem e gere o relatório de novo.");
   }
 
-  function paginaHTML(pg, fotos, dataVisita, ultima) {
+  function paginaHTML(pg, fotos, dataVisita, ultima, recortes, ponto) {
     var dataURI = (fotos && Object.prototype.hasOwnProperty.call(fotos, pg.pid)) ? fotos[pg.pid] : "";
     /* a classe existe para css/tour360.css poder mandar na paginacao junto;
        o page-break inline continua porque o documento tambem e aberto por
@@ -246,13 +766,17 @@
     var h = '<div class="t360-estacao" style="page-break-inside:avoid' + (ultima ? "" : ";page-break-after:always") + ';padding-top:6px">'
       + '<div style="display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid ' + ACCENT + ';padding-bottom:4px;margin-bottom:8px">'
       + '<b style="font-size:13px;color:' + ACCENT + '">' + esc(txt(pg.nome) || "Ponto") + "</b>"
+      /* ⚠ A DATA SAI QUALIFICADA. "foto de" só quando se sabe que a data é a
+         do disparo; "anexada em" quando a foto não trouxe data; e "registro
+         de", neutro, para estação de antes desta versão, em que não dá para
+         saber. Ver `Rel.legendaData` e o rodapé sobre datas. */
       + '<span style="font-size:10px;color:#64748b">'
       + (txt(pg.nivel) ? esc(pg.nivel) + " · " : "")
-      + (txt(pg.capturadoEm) ? "foto de " + esc(dataBR(pg.capturadoEm)) : "visita de " + esc(dataBR(dataVisita)))
+      + esc(Rel.legendaData(pg, ponto, dataVisita))
       + "</span></div>"
       + molduraFoto(dataURI, pg)
-      + blocoComentarios(pg.comentarios)
-      + blocoMedidas(pg.medidas);
+      + blocoComentarios(pg.comentarios, recortes, pg.pid)
+      + blocoMedidas(pg.medidas, recortes, pg.pid);
     if (!(pg.comentarios || []).length && !(pg.medidas || []).length) {
       h += '<div style="font-size:10.5px;color:#64748b;margin-top:8px">Sem comentários e sem medidas neste ponto.</div>';
     }
@@ -263,7 +787,7 @@
      fotos (`Rel.resolverFotos`) e entrega o mapa pronto em `opts.fotos` — é
      assim que o mesmo HTML serve para a impressão e para um teste que não
      tem IndexedDB nenhum.
-     opts: { fotos, soComFoto, soAtencao, obraNome, local, autor } */
+     opts: { fotos, recortes, soComFoto, soAtencao, obraNome, local, autor } */
   Rel.html = function (tour, opts) {
     var o = opts || {};
     if (!M()) {
@@ -271,6 +795,11 @@
     }
     var t = tour || {};
     var fotos = o.fotos || {};
+    /* os recortes vêm PRONTOS (Rel.recortesDoTour), pelo mesmo motivo das
+       fotos: este HTML é síncrono para servir à impressão e ao gate. Mapa
+       vazio é caso normal — em Node não há canvas, e o documento sai sem
+       miniatura sem afirmar nada a menos. */
+    var recortes = o.recortes || {};
     var pgs = M().paginasRelatorio(t, { soComFoto: !!o.soComFoto, soAtencao: !!o.soAtencao });
     var res = M().resumo(t);
 
@@ -327,13 +856,57 @@
       if (temAprox) break;
     }
 
+    /* quais rodapés de honestidade este documento precisa: eles só aparecem
+       quando há motivo, porque nota que sai sempre vira moldura e a pessoa
+       para de ler */
+    var temExif = false, temAnexo = false, temNeutro = false, temRecorte = false;
+    for (i = 0; i < pgs.length; i++) {
+      var pt = M().pontoDe(t, pgs[i].pid) || {};
+      var fonte = txt(pt.capturadoFonte);
+      if (fonte === "exif" || fonte === "manual") temExif = true;
+      else if (fonte === "anexo") temAnexo = true;
+      /* ⚠ ESTAÇÃO DE ANTES DESTA VERSÃO conta também, e é o caso mais comum
+         hoje: ela tem data e não tem procedência, e por isso sai como
+         "registro de". Sem esta linha, o documento inteiro de um tour antigo
+         usaria uma palavra que ninguém explica em lugar nenhum — e palavra
+         nova sem explicação é lida como erro do sistema. */
+      else if (txt(pgs[i].capturadoEm)) temNeutro = true;
+    }
+    for (var ch in recortes) { if (Object.prototype.hasOwnProperty.call(recortes, ch)) { temRecorte = true; break; } }
+    var temNotaData = temExif || temAnexo || temNeutro;
+    var temRodape = temAprox || temNotaData || temRecorte;
+
     h += '<div style="border-top:1px solid #ddd;margin:12px 0 0"></div>';
     for (i = 0; i < pgs.length; i++) {
-      h += paginaHTML(pgs[i], fotos, t.data, i === pgs.length - 1 && !temAprox);
+      h += paginaHTML(pgs[i], fotos, t.data, i === pgs.length - 1 && !temRodape, recortes, M().pontoDe(t, pgs[i].pid));
+    }
+
+    if (temRecorte) {
+      h += '<div style="page-break-inside:avoid;margin-top:12px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;padding:8px 10px;font-size:10.5px;color:#334155">'
+        + "<b>Sobre as fotos menores, ao lado de cada apontamento</b><br>"
+        + "Cada uma é um recorte de cerca de " + numBR(Rel.RECORTE_FOV, 0) + "° da própria foto 360 da estação, na direção do que está sendo apontado — "
+        + "não é outra fotografia, e nada foi acrescentado a ela. Por sair de uma imagem 360, linhas retas ainda curvam um pouco. "
+        + "Obra, estação e data vão gravadas dentro da imagem para que ela continue identificada depois de encaminhada."
+        + "</div>";
+    }
+
+    if (temNotaData) {
+      h += '<div style="page-break-inside:avoid;margin-top:8px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;padding:8px 10px;font-size:10.5px;color:#334155">'
+        + "<b>Sobre as datas das fotos</b><br>"
+        + (temExif
+          ? '"Foto de" é a data que o APARELHO gravou no arquivo no momento do disparo. Ela é informada pelo aparelho e não é verificada: relógio ou fuso desacertados gravam o que estiver no aparelho. '
+          : "")
+        + (temAnexo
+          ? '"Anexada em" quer dizer que o arquivo NÃO trouxe a data do disparo (é o que acontece com print de tela e com foto reenviada por aplicativo de mensagem); a data mostrada é a do momento em que a foto entrou no aplicativo, e pode ser posterior à visita. '
+          : "")
+        + (temNeutro
+          ? '"Registro de" é a data guardada na estação sem que se saiba se ela veio do aparelho ou do momento do anexo — é o caso das estações fotografadas antes desta versão. Para essas, confira a data com quem esteve na obra antes de usá-la como referência.'
+          : "")
+        + "</div>";
     }
 
     if (temAprox) {
-      h += '<div style="page-break-inside:avoid;margin-top:12px;border:1px solid #f59e0b;border-radius:6px;background:#fffbeb;padding:8px 10px;font-size:10.5px;color:#7c2d12">'
+      h += '<div style="page-break-inside:avoid;margin-top:8px;border:1px solid #f59e0b;border-radius:6px;background:#fffbeb;padding:8px 10px;font-size:10.5px;color:#7c2d12">'
         + "<b>Sobre as medidas marcadas com ~</b><br>"
         + "As medidas deste relatório saem do ângulo dentro da foto panorâmica e da altura em que a câmera estava — não de trena. "
         + "As marcadas com <b>~</b> passaram de ±" + numBR(M().ERRO_AVISO_PCT, 0) + "% de erro estimado: para elas o documento mostra a FAIXA em metros, "
@@ -408,8 +981,19 @@
     }
 
     return Rel.resolverFotos(t, o).then(function (r) {
+      /* ⚠ OS RECORTES NÃO PODEM SEGURAR O DOCUMENTO. `recortesDoTour` tem
+         prazo próprio e sempre resolve; e se ainda assim algo estourar, o
+         `catch` devolve mapa vazio e o relatório sai como saía antes — com o
+         panorama e o texto. Trocar o documento pela miniatura dele seria pior
+         que não ter miniatura. */
+      return Rel.recortesDoTour(t, r.fotos, o)["catch"](function () {
+        return { recortes: {}, feitos: 0, pulados: 0, estourouPrazo: false, cortadoPeloTeto: 0 };
+      }).then(function (rc) { return { r: r, rc: rc }; });
+    }).then(function (par) {
+      var r = par.r, rc = par.rc;
       var op = {
         fotos: r.fotos,
+        recortes: rc.recortes,
         soComFoto: !!o.soComFoto,
         soAtencao: !!o.soAtencao,
         obraNome: o.obraNome,
@@ -434,25 +1018,123 @@
         ok: true,
         paginas: M().paginasRelatorio(t, { soComFoto: !!o.soComFoto, soAtencao: !!o.soAtencao }).length,
         faltando: r.faltando,
-        pendentes: res.fotosPendentes
+        pendentes: res.fotosPendentes,
+        /* o que a tela pode dizer sobre as miniaturas — sem inventar: são os
+           números do que realmente foi montado */
+        recortes: rc.feitos,
+        recortesPulados: rc.pulados,
+        recortesCortados: rc.cortadoPeloTeto,
+        recortesNoPrazo: !rc.estourouPrazo
       };
     });
   };
 
   /* =====================================================================
    * PARTE 2 — O VÍDEO
+   *
+   * ---------------------------------------------------------------------
+   * ⚠ AQUI O MP4 VEM PRIMEIRO — E ISSO NÃO É PREFERÊNCIA, É DESTINO
+   * ---------------------------------------------------------------------
+   * `js/bimvideo.js` tenta WebM (VP9, VP8, genérico) e só então MP4. Para o
+   * vídeo do BIM está certo: ele é aberto no computador, e o VP9 tem metade
+   * do tamanho na mesma qualidade.
+   *
+   * O vídeo do TOUR tem outro destino: o grupo da obra. Ele sai daqui e cai
+   * no telefone do cliente, do fiscal e do mestre — e uma parte deles usa
+   * iPhone, onde o WebM não abre no aplicativo de Fotos. O arquivo chega,
+   * ocupa espaço e não toca. O engenheiro não fica sabendo: para ele o vídeo
+   * abriu normalmente no computador dele.
+   *
+   * Por isso a ordem AQUI é MP4 → WebM. O `js/bimvideo.js` não muda: quem
+   * decide o formato é o uso, e são dois usos diferentes no mesmo aplicativo.
+   *
+   * ⚠ COMO A ESCOLHA CHEGA AO GRAVADOR. `BimVideo.gravar` chama
+   *   `BimVideo.suportado()` sozinho, sem aceitar formato por parâmetro — e
+   *   este arquivo NÃO pode alterá-lo. A saída é trocar `suportado` pela
+   *   escolha deste uso durante a chamada e devolvê-lo em seguida. A troca é
+   *   SÍNCRONA e dura o tempo de `vid.gravar(...)` retornar, porque o
+   *   `suportado()` de lá é lido dentro do executor da Promise, antes de
+   *   qualquer espera. O `finally` devolve a função original mesmo se a
+   *   gravação estourar.
+   *   E — o que sustenta a honestidade — o que a tela recebe NÃO é a intenção:
+   *   é o `ext` que o arquivo gravado realmente tem. Se um dia o BimVideo
+   *   passar a ler o formato depois (fora da janela da troca), o vídeo sai em
+   *   WebM e o aviso sai junto, em vez de sair um MP4 mentiroso.
    * ================================================================== */
 
-  /* Antes de oferecer o botão: dá para gravar aqui? Devolve o motivo do
-     próprio BimVideo quando não dá — ele sabe distinguir "não tem gravador"
-     de "tem gravador e não aceita formato nenhum", e um recado meu, genérico,
-     jogaria os dois no mesmo balde. */
+  /* ⚠ A ORDEM É O CONTEÚDO DESTA LISTA. Mexer nela é mexer no que chega ao
+     telefone do cliente. O avc1 com perfil explícito vem antes do genérico
+     porque alguns navegadores só respondem "sim" à forma completa. */
+  Rel.FORMATOS_TOUR = [
+    { mime: "video/mp4;codecs=avc1.42E01E", ext: "mp4", nome: "MP4 (H.264)", universal: true },
+    { mime: "video/mp4;codecs=avc1", ext: "mp4", nome: "MP4 (H.264)", universal: true },
+    { mime: "video/mp4", ext: "mp4", nome: "MP4", universal: true },
+    { mime: "video/webm;codecs=vp9", ext: "webm", nome: "WebM (VP9)", universal: false },
+    { mime: "video/webm;codecs=vp8", ext: "webm", nome: "WebM (VP8)", universal: false },
+    { mime: "video/webm", ext: "webm", nome: "WebM", universal: false }
+  ];
+
+  /* ⚠ O aviso tem PORTA. Recusar a gravação porque só há WebM deixaria o
+     engenheiro sem vídeo nenhum — e ele voltaria a filmar a tela com o
+     celular, que é o que este recurso existe para acabar. Então grava, avisa,
+     e diz o que fazer. */
+  Rel.AVISO_WEBM =
+    "Este vídeo saiu em WebM porque este navegador não grava MP4. WebM costuma NÃO abrir no iPhone e no iPad — quem receber por mensagem pode não conseguir assistir. " +
+    "Saídas: gravar de um Chrome ou Edge atualizado (as versões novas gravam MP4), ou mandar o relatório fotográfico, que abre em qualquer aparelho.";
+
+  /* Puro: recebe um MediaRecorder (ou usa o da página) e devolve o formato
+     escolhido PARA ESTE USO. Separado de `gravar` para o gate exercitar a
+     ordem sem navegador nenhum. */
+  Rel.formatoPreferido = function (MR) {
+    var R = MR || (typeof global.MediaRecorder !== "undefined" ? global.MediaRecorder : null);
+    if (!R) {
+      var vid = VID();
+      /* o motivo do BimVideo é melhor que um meu: ele distingue "não tem
+         gravador" de "tem e não aceita formato", e um recado genérico daqui
+         jogaria os dois no mesmo balde */
+      if (vid && typeof vid.suportado === "function") return vid.suportado(R);
+      return { ok: false, motivo: "Este navegador não sabe gravar vídeo (falta o MediaRecorder)." };
+    }
+    if (typeof R.isTypeSupported !== "function") {
+      /* Navegador que grava mas não diz o que aceita. Recusar seria negar por
+         precaução um caminho que provavelmente funciona; afirmar que sai MP4
+         seria mentir. Então grava no padrão dele e avisa que não dá para
+         saber — que é a verdade. */
+      return {
+        ok: true, mime: "", ext: "webm", nome: "padrão do navegador",
+        universal: false, incerto: true,
+        aviso: "Este navegador não informa em que formato ele grava; o arquivo sai no padrão dele, que costuma ser WebM. " + Rel.AVISO_WEBM
+      };
+    }
+    for (var i = 0; i < Rel.FORMATOS_TOUR.length; i++) {
+      var f = Rel.FORMATOS_TOUR[i];
+      if (R.isTypeSupported(f.mime)) {
+        return {
+          ok: true, mime: f.mime, ext: f.ext, nome: f.nome,
+          universal: !!f.universal, incerto: false,
+          aviso: f.universal ? "" : Rel.AVISO_WEBM
+        };
+      }
+    }
+    return { ok: false, motivo: "Este navegador tem o gravador, mas não aceita nenhum formato de vídeo que eu saiba montar (tentei MP4 e WebM)." };
+  };
+
+  /* O aviso a partir do que o arquivo REALMENTE é. `ext` vem do resultado da
+     gravação, não da intenção — ver a nota do cabeçalho desta parte. */
+  Rel.avisoDoFormato = function (ext) {
+    return txt(ext).toLowerCase() === "mp4" ? "" : Rel.AVISO_WEBM;
+  };
+
+  /* Antes de oferecer o botão: dá para gravar aqui, e em que formato?
+     Devolve também `aviso`, para a tela poder dizer ANTES da gravação que o
+     arquivo pode não abrir no iPhone — descobrir isso depois de esperar o
+     passeio inteiro é o mesmo defeito de outra forma. */
   Rel.podeGravar = function (viewer) {
     var vid = VID();
     if (!vid || typeof vid.suportado !== "function") {
       return { ok: false, motivo: "O gravador de vídeo (js/bimvideo.js) não carregou nesta página." };
     }
-    var sup = vid.suportado();
+    var sup = Rel.formatoPreferido();
     if (!sup.ok) return { ok: false, motivo: sup.motivo };
     var vw = viewer || V();
     if (!vw || typeof vw.quadro !== "function") {
@@ -461,7 +1143,10 @@
     if (typeof vw.montado === "function" && !vw.montado()) {
       return { ok: false, motivo: "Abra o tour na tela antes de gravar — o vídeo é gravado do que o visualizador desenha." };
     }
-    return { ok: true, formato: sup.nome, ext: sup.ext };
+    return {
+      ok: true, formato: sup.nome, ext: sup.ext,
+      universal: !!sup.universal, aviso: txt(sup.aviso)
+    };
   };
 
   function chaveFoto(lado, pid) { return lado + ":" + txt(pid); }
@@ -531,8 +1216,9 @@
 
     /* ⚠ PERGUNTA ANTES DE COMEÇAR, E DEVOLVE O MOTIVO DELE. Descobrir no meio
        da gravação que o navegador não grava significa o usuário esperar o
-       passeio inteiro correr na tela para receber um erro no fim. */
-    var sup = vid.suportado();
+       passeio inteiro correr na tela para receber um erro no fim.
+       A pergunta é a DESTE uso (MP4 primeiro), não a do BIM. */
+    var sup = Rel.formatoPreferido();
     if (!sup.ok) return Promise.reject(new Error(sup.motivo));
 
     var tourB = o.comparativo || null;
@@ -648,12 +1334,37 @@
         }
       };
 
-      return vid.gravar(plano, ctxDes).then(function (res) {
+      /* ⚠ A JANELA DA TROCA. `BimVideo.gravar` lê `BimVideo.suportado()` de
+         dentro do executor da Promise — ou seja, ANTES de a chamada abaixo
+         retornar. Por isso a troca cobre só esta linha, e o `finally` devolve
+         a função original mesmo se `gravar` estourar de forma síncrona.
+         Deixar a troca pendurada estragaria o vídeo do BIM, que é de outro
+         módulo e tem outro destino. */
+      var suportadoOriginal = vid.suportado;
+      var gravando;
+      try {
+        vid.suportado = function () { return sup; };
+        gravando = vid.gravar(plano, ctxDes);
+      } finally {
+        vid.suportado = suportadoOriginal;
+      }
+
+      return gravando.then(function (res) {
+        /* ⚠ O AVISO SAI DO ARQUIVO, NÃO DA INTENÇÃO. `res.ext` é o que o
+           gravador de fato produziu; se por qualquer motivo a preferência não
+           tiver valido, o vídeo é WebM e o aviso vai junto. Recado que afirma
+           MP4 sobre um arquivo WebM é pior que recado nenhum — o engenheiro
+           manda para o cliente confiando nele. */
+        var aviso = Rel.avisoDoFormato(res.ext);
         return {
           blob: res.blob,
           ext: res.ext,
           nome: nomeArquivo(tour, tourB, res.ext),
           formato: res.nome,
+          /* os três campos que a tela lê para decidir se avisa */
+          mp4: txt(res.ext).toLowerCase() === "mp4",
+          universal: txt(res.ext).toLowerCase() === "mp4",
+          avisoFormato: aviso,
           quadros: res.quadros,
           duracaoSeg: res.duracaoSeg,
           quadrosPerdidos: perdidos,
