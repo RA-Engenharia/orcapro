@@ -31,6 +31,7 @@
   <link rel="stylesheet" href="css/fontes.css">
   <link rel="stylesheet" href="css/app.css">
   <link rel="stylesheet" href="css/bim-revit.css">
+  <link rel="stylesheet" href="css/tour360.css">
 </head>
 <body>
   <div class="app">
@@ -210,6 +211,16 @@
        _urlLoja e _upsell, entao DEPOIS do gestao.js. -->
   <script src="js/cotonlineui.js"></script>
   <script src="js/remunvarui.js"></script>
+  <!-- Tour virtual 360. Ordem obrigatoria e' esta: o motor (tour360.js) nao
+       depende de ninguem; o viewer usa o motor; o relatorio usa os dois mais
+       o BimVideo (carregado la em cima); e a tela usa todos, entao vem por
+       ultimo e DEPOIS do gestao.js, de quem ela pendura renderTour360.
+       Nao ha bundler: aqui a ordem do arquivo E a dependencia. -->
+  <script src="js/tour360.js"></script>
+  <script src="js/tour360view.js"></script>
+  <script src="js/tour360cap.js"></script>
+  <script src="js/tour360rel.js"></script>
+  <script src="js/tour360ui.js"></script>
   <script src="js/autoupdate.js"></script>
   <script src="js/nuvem.js"></script>
   <script src="js/pacote.js"></script>

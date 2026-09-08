@@ -82,6 +82,12 @@
     { id: "clima", nome: "Clima e dias improdutivos", desc: "Condição do dia e o que parou — base de pleito de prazo" },
     { id: "marcos", nome: "Marcos da obra", desc: "As etapas em linguagem de leigo: o que terminou, o que está em andamento" },
     { id: "galeria", nome: "Galeria de fotos", desc: "As fotos da obra reunidas e filtráveis por etapa e período" },
+    /* ⚠ NÃO é `sensivel`: o tour não revela custo, preço de fornecedor nem
+       margem — é a obra por dentro, que o cliente veria indo até lá. O que o
+       cliente NÃO vê é o comentário interno da equipe: só sai o que foi
+       marcado "mostrar para o cliente", e isso é decidido comentário a
+       comentário, não por este interruptor. */
+    { id: "tour360", nome: "Tour virtual 360", desc: "As visitas em foto 360 navegável: o cliente gira, compara duas datas e mede distância dentro da foto" },
     { id: "documentos", nome: "Documentos da obra", desc: "ART/RRT, alvará, apólice, contrato — número, emissão e validade" },
     { id: "financeiro", nome: "Posição financeira do cliente", sensivel: true,
       desc: "O que ELE já pagou, o que falta e a próxima parcela. Não leva custo nem despesa da obra — mas expõe o cronograma de desembolso" },
@@ -407,6 +413,12 @@
        proposta e a folha variavel de obra que nao e dele. Registro SEM
        obra continua visivel — ver a nota do filtro logo abaixo. */
     carp_propostas: 1, remun_apur: 1,
+    /* ⚠ o tour carrega obraId e mostra a obra POR DENTRO — é o registro mais
+       revelador que existe aqui. Sem esta linha, o sub-usuário restrito à obra
+       A abriria o passeio 360 da obra B, com os comentários internos da equipe
+       sobre ela. O funil é por entidade; registro sem obra continua visível,
+       como nas demais. */
+    tour360: 1,
     /* ⚠ v1.2 — DUAS CHAVES MORTAS SAÍRAM E SETE ENTIDADES REAIS ENTRARAM.
      *
      * `lastplanner` e `galeria` estavam aqui e nunca filtraram nada: são id de
@@ -703,6 +715,11 @@
       { id: "producao", nome: "Produção (por serviço)", curto: "Produção", g: "canteiro" },
       { id: "medicoes", nome: "Medições", g: "canteiro" },
       { id: "galeria", nome: "Galeria de Fotos", curto: "Fotos", g: "canteiro" },
+      /* ⚠ Vizinho da Galeria de propósito: as duas respondem "como está a
+         obra por dentro", e quem procura foto procura no mesmo lugar. O tour
+         é a foto que gira — e é ele que sustenta o comparativo entre visitas,
+         que a galeria não faz porque foto solta não tem ponto fixo. */
+      { id: "tour360", nome: "Tour Virtual 360", curto: "Tour 360", g: "canteiro" },
       { id: "insumos", nome: "Banco de Insumos", curto: "Insumos", g: "suprimentos" },
       { id: "requisicoes", nome: "Requisições", g: "suprimentos" },
       { id: "cotacoes", nome: "Cotações", g: "suprimentos" },
@@ -1239,6 +1256,10 @@
         case "propmodelos": return this.renderPropModelos ? this.renderPropModelos() : this._moduloNaoCarregado("Modelos de Proposta", "js/proptplui.js");
         case "remunvar": return this.renderRemunVar ? this.renderRemunVar() : this._moduloNaoCarregado("Remuneração variável", "js/remunvarui.js");
         case "galeria": return this.renderGaleria();
+        /* mesma regra das duas de cima: a tela mora em js/tour360ui.js, que o
+           index.html carrega depois deste arquivo. Se faltar, a tela diz qual
+           arquivo não carregou em vez de abrir em branco. */
+        case "tour360": return this.renderTour360 ? this.renderTour360() : this._moduloNaoCarregado("Tour Virtual 360", "js/tour360ui.js");
         case "bim": return this.renderBim();
         case "colaboradores": return this.renderColaboradores();
         case "epi": return this.renderEpi();
@@ -3228,6 +3249,12 @@
          `_IMUNES_CASCATA` ao mesmo tempo ja custou dado nesta base. */
       ["contratos", "contrato(s)"], ["aditivos", "termo(s) aditivo(s)"],
       ["medicoes", "medição(ões)"], ["rdo", "diário(s) de obra e suas fotos"],
+      /* ⚠ O TOUR MORRE COM A OBRA, e entra AQUI e em lugar nenhum mais (estar
+         nesta lista e em `_IMUNES_CASCATA` ao mesmo tempo já custou dado
+         aqui). O passeio 360 é a obra vista por dentro: sem a obra ele não é
+         nada — só um monte de foto de parede sem endereço, ocupando a cota de
+         imagens da licença. Mesmo destino do diário, e pela mesma razão. */
+      ["tour360", "tour(s) virtual(is) 360 e suas fotos"],
       ["lp_tarefas", "tarefa(s) do Last Planner"], ["tarefas", "tarefa(s)"],
       ["requisicoes", "requisição(ões)"], ["cotacoes", "cotação(ões)"], ["compras", "compra(s)"],
       ["estoque", "item(ns) de estoque"], ["estoque_mov", "movimento(s) de estoque"],
@@ -3467,6 +3494,26 @@
           var fotosDaObra = [];
           Store.listar(e, "rdo").forEach(function (r) {
             if (r && r.obraId === id) (r.fotos || []).forEach(function (f) { if (f) fotosDaObra.push(f); });
+          });
+          /* ⚠ AS DO TOUR 360 MORAM EM OUTRO LUGAR DO REGISTRO: uma por ESTAÇÃO
+             (`pontos[].foto`), não numa lista `fotos[]` como no diário. Quem
+             copiasse a linha de cima e trocasse o nome da entidade não acharia
+             nenhuma. E aqui o desperdício é maior: um panorama é guardado com
+             4096 px de largura (o diário usa 1024), então cada estação pesa
+             alguns MB. Uma obra com dez visitas de dez estações deixaria
+             centenas de MB órfãos na cota de 2 GB da licença — sem pertencer a
+             nada e sem ninguém conseguir achar depois. */
+          Store.listar(e, "tour360").forEach(function (t) {
+            if (t && t.obraId === id) (t.pontos || []).forEach(function (p) {
+              if (!p) return;
+              if (p.foto) fotosDaObra.push(p.foto);
+              /* ⚠ SÃO DUAS IMAGENS POR ESTAÇÃO: a foto 360 e o "retrato do
+                 projeto" (o render do BIM guardado na pose da âncora, para a
+                 comparação projetado × executado). A segunda é fácil de
+                 esquecer justamente porque não parece foto — e fica órfã
+                 exatamente igual. */
+              if (p.projecao && p.projecao.foto) fotosDaObra.push(p.projecao.foto);
+            });
           });
           if (fotosDaObra.length && typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(fotosDaObra);
         } catch (eF) {}
@@ -5843,7 +5890,14 @@
       var forn = c.fornecedorId ? Store.obter(eid(), "fornecedores", c.fornecedorId) : null, obra = c.obraId ? Store.obter(eid(), "obras", c.obraId) : null;
       var itens = c.itens || [], brd = function (d) { return d ? String(d).split("-").reverse().join("/") : "—"; };
       var somaItens = itens.reduce(function (s, it) { return s + Util.num(it.quantidade) * Util.num(it.precoRef != null ? it.precoRef : it.valorUnit); }, 0);
-      var totalDoc = (itens.length && somaItens > 0) ? somaItens : Util.num(c.valor); // soma dos subtotais quando há preços (documento fecha)
+      /* ⚠ O FRETE ENTRA NO TOTAL DO PAPEL, E APARECE COMO LINHA. Sem isto o
+         documento que o fornecedor recebe fecha por menos do que o pedido vale
+         — ele entrega, fatura o valor cheio, e a nota não bate com o pedido.
+         `somaItens` não pode incluir frete (ele não é item e não tem qtd nem
+         unidade), então ele entra depois, com linha própria para o fornecedor
+         ver de onde vem a diferença. */
+      var freteDoc = Util.num(c.frete);
+      var totalDoc = ((itens.length && somaItens > 0) ? somaItens : Util.num(c.valor)) + freteDoc;
       var rows = itens.length
         ? itens.map(function (it, i) { var vu = Util.num(it.precoRef != null ? it.precoRef : it.valorUnit), sub = Util.num(it.quantidade) * vu; return "<tr><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + (it.codigo || i + 1) + "</td><td style='border:1px solid #bbb;padding:5px'>" + Util.esc(it.descricao) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.fmtNum(it.quantidade, 2) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:center'>" + Util.esc(Util.unidadeExibir(it.unidade)) + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + (vu > 0 ? Util.fmtMoeda(vu) : "—") + "</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + (vu > 0 ? Util.fmtMoeda(sub) : "—") + "</td></tr>"; }).join("")
         : "<tr><td style='border:1px solid #bbb;padding:6px;text-align:center'>1</td><td colspan='4' style='border:1px solid #bbb;padding:6px'>" + Util.esc(c.descricao || "—") + "</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(c.valor) + "</td></tr>";
@@ -5888,7 +5942,22 @@
            `previsaoEntrega`, e pedido sem previsão saía sem condição de
            pagamento no papel. Pedido antigo com texto dentro de `formaPgto`
            imprime o texto (o `rot` devolve o valor cru quando não é chave). */
-        + linhaSe("Prev. entrega", c.previsaoEntrega ? brd(c.previsaoEntrega) : "", "Pagamento", pagTxt) + "</table>"
+        /* ⚠ A DATA QUE VALE, NÃO A QUE A OBRA PEDIU. Medido em 07/09/2026: o
+           fornecedor confirma para outro dia, `confirmacao.dataEntrega` passa a
+           ser a régua do atraso em toda a tela (`ComprasLinha.dataVigente`) — e
+           o papel continuava imprimindo `previsaoEntrega`, a data ORIGINAL. O
+           documento que vai ao fornecedor divergia da data que a obra cobra;
+           reimprimir o pedido para conferir a entrega mostrava a data errada.
+           E quando a data vem da confirmação, o papel DIZ isso: senão o
+           fornecedor lê como exigência nova da obra, e não como o que ele mesmo
+           prometeu. */
+        + (function () {
+          var dv = (typeof ComprasLinha !== "undefined" && ComprasLinha.dataVigente) ? ComprasLinha.dataVigente(c) : (c.previsaoEntrega || "");
+          var daConf = !!(c.confirmacao && c.confirmacao.dataEntrega && c.confirmacao.dataEntrega === dv);
+          var txt = dv ? brd(dv) + (daConf ? " <span style='font-size:10px;color:#555'>(confirmada pelo fornecedor"
+            + (c.confirmacao.em ? " em " + brd(c.confirmacao.em) : "") + ")</span>" : "") : "";
+          return linhaSe("Prev. entrega", txt, "Pagamento", pagTxt);
+        })() + "</table>"
         + (entregaEnd || confere || banco
           ? "<table style='width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px'>"
             + (entregaEnd ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#eef4fa;width:18%'><b>Entregar em</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + Util.esc(entregaEnd)
@@ -5897,7 +5966,7 @@
             + (banco ? "<tr><td style='border:1px solid #bbb;padding:6px;background:#eef4fa'><b>Pagamento ao fornecedor</b></td><td colspan='3' style='border:1px solid #bbb;padding:6px'>" + banco + "</td></tr>" : "")
             + "</table>"
           : "")
-        + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;width:10%'>Cód.</th><th style='border:1px solid #bbb;padding:5px'>Descrição</th><th style='border:1px solid #bbb;padding:5px;width:10%'>Qtd</th><th style='border:1px solid #bbb;padding:5px;width:8%'>Un</th><th style='border:1px solid #bbb;padding:5px;width:14%'>V. unit</th><th style='border:1px solid #bbb;padding:5px;width:14%'>Subtotal</th></tr></thead><tbody>" + rows + "<tr style='background:#eef4fa;font-weight:bold'><td colspan='5' style='border:1px solid #bbb;padding:6px;text-align:right'>TOTAL GERAL</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(totalDoc) + "</td></tr></tbody></table>"
+        + "<table style='width:100%;border-collapse:collapse;font-size:12px'><thead><tr style='background:#0f2740;color:#fff'><th style='border:1px solid #bbb;padding:5px;width:10%'>Cód.</th><th style='border:1px solid #bbb;padding:5px'>Descrição</th><th style='border:1px solid #bbb;padding:5px;width:10%'>Qtd</th><th style='border:1px solid #bbb;padding:5px;width:8%'>Un</th><th style='border:1px solid #bbb;padding:5px;width:14%'>V. unit</th><th style='border:1px solid #bbb;padding:5px;width:14%'>Subtotal</th></tr></thead><tbody>" + rows + (freteDoc > 0 ? "<tr><td colspan='5' style='border:1px solid #bbb;padding:5px;text-align:right'>Frete</td><td style='border:1px solid #bbb;padding:5px;text-align:right'>" + Util.fmtMoeda(freteDoc) + "</td></tr>" : "") + "<tr style='background:#eef4fa;font-weight:bold'><td colspan='5' style='border:1px solid #bbb;padding:6px;text-align:right'>TOTAL GERAL</td><td style='border:1px solid #bbb;padding:6px;text-align:right'>" + Util.fmtMoeda(totalDoc) + "</td></tr></tbody></table>"
         + (c.obs ? "<p style='margin-top:10px;font-size:11px'><b>Obs.:</b> " + Util.esc(c.obs) + "</p>" : "")
         + "<div style='display:flex;justify-content:space-between;margin-top:44px;gap:30px'><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Solicitante</div><div style='flex:1;text-align:center;border-top:1px solid #333;padding-top:4px;font-size:11px'>Aprovação</div></div>";
       this._abrirDoc("Pedido de Compra Nº " + (c.numero || ""), this._docShell("PEDIDO DE COMPRA", "#7c3aed", corpo));
@@ -14320,7 +14389,16 @@
       var forn = reg.fornecedorNome || "o fornecedor";
       UI.modal("Marcar como enviado ao fornecedor",
         '<p style="margin-top:0;font-size:13px">Registre por onde o pedido <b>' + Util.esc(reg.numero || "") + '</b> foi para <b>' + Util.esc(forn) + '</b>. ' +
-        'O app não envia nada sozinho: mande o PDF (botão de imprimir na lista) por WhatsApp ou e-mail e marque aqui.</p>' +
+        'O app não envia nada sozinho — mas as duas metades estão aqui: abra o papel, abra a conversa, e marque depois.</p>' +
+        /* ⚠ O PASSO SEM BOTÃO. Mandar o pedido ao fornecedor é o único ponto do
+           fluxo em que o app dizia "vire-se": o PDF ficava atrás de outro botão,
+           em outra tela, e a conversa do fornecedor não era oferecida em lugar
+           nenhum deste modal. Os dois códigos JÁ EXISTIAM (`documentoCompra` e o
+           `wa.me` do Cobrar) — só não estavam onde a pessoa precisa deles. */
+        '<div style="display:flex;gap:8px;margin:8px 0 12px;flex-wrap:wrap">'
+        + '<button type="button" class="btn sm" id="env-pdf">' + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + ' Abrir o PDF do pedido</button>'
+        + '<button type="button" class="btn sm" id="env-zap">' + (typeof Icones !== "undefined" ? Icones.get("enviar", 15) : "") + ' Abrir conversa do fornecedor</button>'
+        + "</div>" +
         campo("Por onde", sel("env-canal", '<option value="WhatsApp">WhatsApp</option><option value="E-mail">E-mail</option><option value="Telefone">Telefone</option><option value="Pessoalmente">Pessoalmente</option>')) +
         campo("Observação (opcional)", inp("env-obs", "", "Ex.: falei com o Carlos, pediu o PDF por e-mail")),
         [{ texto: "Marcar como enviado", classe: "primary", onClick: function () {
@@ -14333,54 +14411,1018 @@
           UI.toast("Pedido " + (vivo.numero || "") + " marcado como enviado por " + vivo.envio.canal + ". Quando " + forn + " confirmar, registre em \"Fornecedor confirmou\".", "ok");
         } },
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      /* ⚠ A FIAÇÃO DEPOIS DO `UI.modal`: os botões só existem no DOM depois que
+         ele desenha. Motor sem fiação é recurso inerte — já aconteceu nesta base
+         de um recurso inteiro passar no gate e não existir no navegador. */
+      var bPdf = document.getElementById("env-pdf");
+      /* ⚠ o PDF abre em OUTRA janela e este modal continua aberto de propósito:
+         a pessoa volta e marca o envio sem refazer o caminho. */
+      if (bPdf) bPdf.onclick = function () { self.documentoCompra(id); };
+      var bZap = document.getElementById("env-zap");
+      if (bZap) bZap.onclick = function () {
+        var empresa = ""; try { empresa = (Auth.usuario() || {}).empresa || ""; } catch (eE) {}
+        var txtE = (typeof ComprasLinha !== "undefined" && ComprasLinha.textoEnvio)
+          ? ComprasLinha.textoEnvio(reg, empresa)
+          : ("Olá! Segue nosso pedido de compra " + (reg.numero || "") + ".");
+        var semTelE = self._abrirWhatsFornecedor(reg.fornecedorId, txtE);
+        /* ⚠ sem telefone o recado ENTREGA o texto em vez de só recusar — a
+           pessoa copia e manda por onde tiver. Recusa sem saída é o defeito. */
+        UI.toast(semTelE
+          ? ("Este fornecedor não tem WhatsApp nem telefone no cadastro. Mensagem pronta para copiar: " + semTelE)
+          : "Abri a conversa no WhatsApp — anexe o PDF por lá; o app não manda arquivo sozinho.", "aviso");
+      };
     },
     comprasMarcarConfirmado: function (id) {
       var self = this;
       if (!this._comprasGuardaMod()) return;
       var reg = Store.obter(eid(), "compras", id); if (!reg) return;
-      if (reg.status !== "enviado" && reg.status !== "aprovado") {
-        UI.toast("Só pedido aprovado ou enviado recebe confirmação do fornecedor (este está \"" + (rot(P.compraStatus, reg.status) || reg.status) + "\").", "erro");
+      /* ⚠ CORRIGIR A DATA CONFIRMADA NÃO TINHA PORTA — e a data é a régua do
+         atraso. Medido em 07/09/2026: o fornecedor liga dizendo que atrasou
+         para o dia 20; o pedido está "confirmado" e esta porta recusava
+         ("só pedido aprovado ou enviado recebe confirmação"). Não havia outro
+         caminho: `confirmacao.dataEntrega` é o campo que `ComprasLinha.
+         dataVigente` usa para decidir atraso, e o formulário não o edita —
+         ele só tem `previsaoEntrega`, que a confirmação passa a sobrepor. A
+         obra ficava com um "atrasado 5 dias" que o fornecedor já tinha
+         renegociado, e a única saída visível era voltar o status no formulário
+         — o que apaga a confirmação inteira e a trilha de quem prometeu. */
+      var ehCorrecao = reg.status === "confirmado";
+      if (!ehCorrecao && reg.status !== "enviado" && reg.status !== "aprovado") {
+        UI.toast("Só pedido aprovado, enviado ou já confirmado recebe (ou corrige) a confirmação do fornecedor (este está \"" + (rot(P.compraStatus, reg.status) || reg.status) + "\").", "erro");
         return;
       }
+      var confAnt = (ehCorrecao && reg.confirmacao) ? reg.confirmacao : null;
       var prev = reg.previsaoEntrega || "";
-      UI.modal("Fornecedor confirmou o pedido",
-        '<p style="margin-top:0;font-size:13px">Registre a confirmação de <b>' + Util.esc(reg.fornecedorNome || "fornecedor") + '</b> para o pedido <b>' + Util.esc(reg.numero || "") + '</b>. ' +
-        (prev ? 'A obra pediu para <b>' + Util.esc(Util.fmtDia(prev)) + '</b>.' : 'Este pedido está <b>sem previsão de entrega</b> — a data que ele prometeu passa a valer.') + '</p>' +
-        '<div class="row">' + campo("Entrega prometida *", inp("conf-data", prev, "", "date")) + campo("Quem confirmou", inp("conf-nome", "", "Ex.: Carlos, do balcão")) + "</div>" +
+      UI.modal(ehCorrecao ? "Corrigir a data que o fornecedor prometeu" : "Fornecedor confirmou o pedido",
+        '<p style="margin-top:0;font-size:13px">' +
+        (ehCorrecao
+          ? 'Este pedido já estava confirmado para <b>' + Util.esc(Util.fmtDia((confAnt && confAnt.dataEntrega) || "")) + '</b>'
+            + ((confAnt && confAnt.nome) ? ' por <b>' + Util.esc(confAnt.nome) + '</b>' : "")
+            + '. A data nova passa a valer para o alerta de atraso; a anterior fica na trilha do pedido.'
+          : 'Registre a confirmação de <b>' + Util.esc(reg.fornecedorNome || "fornecedor") + '</b> para o pedido <b>' + Util.esc(reg.numero || "") + '</b>. ' +
+            (prev ? 'A obra pediu para <b>' + Util.esc(Util.fmtDia(prev)) + '</b>.' : 'Este pedido está <b>sem previsão de entrega</b> — a data que ele prometeu passa a valer.')) + '</p>' +
+        '<div class="row">' + campo("Entrega prometida *", inp("conf-data", (confAnt && confAnt.dataEntrega) || prev, "", "date")) + campo("Quem confirmou", inp("conf-nome", (confAnt && confAnt.nome) || "", "Ex.: Carlos, do balcão")) + "</div>" +
         campo("Por onde", sel("conf-canal", '<option value="WhatsApp">WhatsApp</option><option value="Telefone">Telefone</option><option value="E-mail">E-mail</option><option value="Pessoalmente">Pessoalmente</option>')),
-        [{ texto: "Registrar confirmação", classe: "success", onClick: function () {
+        [{ texto: ehCorrecao ? "Gravar a data nova" : "Registrar confirmação", classe: "success", onClick: function () {
           var data = v("conf-data");
           if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Informe a data que o fornecedor prometeu.", "erro"); return; }
           var vivo = Store.obter(eid(), "compras", id); if (!vivo) { UI.fecharModal(); return; }
-          if (vivo.status !== "enviado" && vivo.status !== "aprovado") { UI.fecharModal(); UI.toast("O pedido mudou de estado em outro aparelho — feche e abra de novo.", "erro"); return; }
+          if (vivo.status !== "enviado" && vivo.status !== "aprovado" && vivo.status !== "confirmado") { UI.fecharModal(); UI.toast("O pedido mudou de estado em outro aparelho — feche e abra de novo.", "erro"); return; }
+          /* ⚠ a data ANTERIOR fica na trilha, não some. É ela que explica por
+             que o alerta de atraso mudou de dia — e sem o registro, quem
+             conferir semanas depois não consegue reconstituir a renegociação. */
+          var dataAnt = (vivo.confirmacao && vivo.confirmacao.dataEntrega) || "";
+          if (ehCorrecao && dataAnt && dataAnt !== data) {
+            self._trilhaAprov(vivo, "corrige-data-confirmada", { de: dataAnt, para: data });
+          }
           /* confirmar sem ter marcado o envio: o envio aconteceu (senão o
              fornecedor não confirmaria) — fica registrado como "informado na
              confirmação", com a data de hoje, para a linha do tempo não mentir
              por omissão */
-          if (!vivo.envio || !vivo.envio.em) vivo.envio = { em: self._hojeISO(), por: self._quemAprova(), canal: v("conf-canal") || "", obs: "envio registrado junto com a confirmação", origem: "manual" };
+          /* ⚠ `origem: "confirmacao"` é MARCA, não enfeite: é por ela que o
+             `comprasDesfazerEtapa` sabe que este envio não foi ninguém que
+             marcou, e por isso volta o pedido para "aprovado" em vez de
+             deixá-lo em "enviado" com um envio que nunca houve. Comparar o
+             texto do `obs` amarraria essa decisão a uma frase — e a primeira
+             revisão de redação quebraria o fluxo em silêncio. */
+          if (!vivo.envio || !vivo.envio.em) vivo.envio = { em: self._hojeISO(), por: self._quemAprova(), canal: v("conf-canal") || "", obs: "envio registrado junto com a confirmação", origem: "confirmacao" };
           vivo.confirmacao = { em: self._hojeISO(), por: self._quemAprova(), dataEntrega: data, nome: String(v("conf-nome") || "").slice(0, 80), canal: v("conf-canal") || "", origem: "manual" };
           vivo.status = "confirmado";
           if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("Não consegui gravar: o armazenamento do navegador recusou. Nada mudou.", "erro"); return; }
           UI.fecharModal(); App.render();
-          var aviso = "Confirmação registrada — entrega prometida para " + Util.fmtDia(data) + ".";
+          var aviso = ehCorrecao
+            ? ("Data corrigida — a entrega prometida passou de " + Util.fmtDia(dataAnt || prev) + " para " + Util.fmtDia(data) + ".")
+            : ("Confirmação registrada — entrega prometida para " + Util.fmtDia(data) + ".");
           if (prev && data > prev) aviso += " A obra pedia " + Util.fmtDia(prev) + ": a data do fornecedor passa a valer para o alerta de atraso.";
           UI.toast(aviso, prev && data > prev ? "aviso" : "ok");
         } },
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
     },
+    /* =================================================================
+     * DESFAZER "ENVIADO" / "FORNECEDOR CONFIRMOU"
+     *
+     * ⚠ MEDIDO EM 07/09/2026: os dois botões ficam na linha, um ao lado do
+     * outro, e marcar o pedido errado é um clique. Depois disso não havia
+     * desfazer: o único caminho era abrir o formulário e voltar o `status` na
+     * mão — o que deixa `envio` e `confirmacao` gravados, com data e nome de
+     * quem prometeu, num pedido que voltou a "aprovado". A linha do tempo
+     * passava a contar uma história que não aconteceu, e o alerta de atraso
+     * continuava usando a data prometida (`ComprasLinha.dataVigente`) de uma
+     * confirmação desfeita.
+     *
+     * ⚠ AQUI NÃO HÁ DINHEIRO PARA DESFAZER, e é por isso que esta porta pode
+     * ser simples: `enviado` e `confirmado` não lançam nada no Financeiro nem
+     * no almoxarifado (quem lança é `recebido`, e essa saída passa pelo
+     * `_guardaReabertura`, que pergunta com o valor na cara). Voltar um passo
+     * aqui apaga registro de comunicação, não baixa.
+     * ================================================================= */
+    comprasDesfazerEtapa: function (id) {
+      var self = this;
+      if (!this._comprasGuardaMod()) return;
+      var reg = Store.obter(eid(), "compras", id); if (!reg) return;
+      if (reg.status !== "enviado" && reg.status !== "confirmado") {
+        UI.toast("Só dá para desfazer \"enviado\" ou \"fornecedor confirmou\" — este pedido está \"" + (rot(P.compraStatus, reg.status) || reg.status) + "\".", "erro");
+        return;
+      }
+      var ehConf = reg.status === "confirmado";
+      /* ⚠ confirmar SEM ter marcado o envio grava um `envio` de propósito
+         ("envio registrado junto com a confirmação", ver `comprasMarcarConfirmado`).
+         Desfazer a confirmação nesse caso tem de voltar para APROVADO e levar
+         esse envio junto — deixar o pedido em "enviado" com um registro de
+         envio que ninguém fez seria trocar uma história errada por outra. */
+      /* ⚠ pela MARCA, nunca pelo texto — ver `origem: "confirmacao"` em
+         `comprasMarcarConfirmado`. O `obs` continua valendo para registro
+         anterior a esta versão, que não tem a marca: sem ele, desfazer uma
+         confirmação antiga deixaria o pedido em "enviado" com um envio que
+         ninguém fez. */
+      var envioNasceuNaConfirmacao = !!(reg.envio && (reg.envio.origem === "confirmacao"
+        || reg.envio.obs === "envio registrado junto com a confirmação"));
+      var destino = ehConf ? (envioNasceuNaConfirmacao ? "aprovado" : "enviado") : "aprovado";
+      var oQueSai = [];
+      if (ehConf) {
+        oQueSai.push("a confirmação"
+          + ((reg.confirmacao && reg.confirmacao.dataEntrega) ? " (entrega prometida para " + Util.fmtDia(reg.confirmacao.dataEntrega) + ")" : "")
+          + ((reg.confirmacao && reg.confirmacao.nome) ? ", registrada por " + reg.confirmacao.nome : ""));
+      }
+      if (!ehConf || envioNasceuNaConfirmacao) {
+        oQueSai.push("o registro de envio"
+          + ((reg.envio && reg.envio.canal) ? " por " + reg.envio.canal : "")
+          + ((reg.envio && reg.envio.em) ? " de " + Util.fmtDia(reg.envio.em) : ""));
+      }
+      var pergunta = "Desfazer " + (ehConf ? "a confirmação do fornecedor" : "o envio ao fornecedor")
+        + " no pedido " + (reg.numero || "") + "?\n\n"
+        + "Sai: " + oQueSai.join("; ") + ".\n"
+        + "O pedido volta para \"" + (rot(P.compraStatus, destino) || destino) + "\".\n\n"
+        /* ⚠ o que NÃO acontece também é informação: aqui não se mexe em
+           dinheiro nem em estoque, e dizer isso evita a pergunta seguinte */
+        + "Nada muda no Financeiro nem no almoxarifado — estes estados não lançam nada. "
+        + "O fornecedor NÃO é avisado por aqui.";
+      var ok = false;
+      try { ok = window.confirm(pergunta); } catch (eC) { ok = false; }
+      if (!ok) return;
+      var vivo = Store.obter(eid(), "compras", id); if (!vivo) { UI.toast("O pedido não existe mais.", "erro"); App.render(); return; }
+      if (vivo.status !== reg.status) { UI.toast("O pedido mudou de estado em outro aparelho enquanto a pergunta estava aberta — nada foi alterado.", "erro"); App.render(); return; }
+      if (ehConf) vivo.confirmacao = null;
+      if (!ehConf || envioNasceuNaConfirmacao) vivo.envio = null;
+      vivo.status = destino;
+      self._trilhaAprov(vivo, "desfazer-etapa", { de: reg.status, para: destino });
+      if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("Não consegui gravar: o armazenamento do navegador recusou. Nada mudou.", "erro"); return; }
+      App.render();
+      UI.toast("Pedido " + (vivo.numero || "") + " voltou para \"" + (rot(P.compraStatus, destino) || destino) + "\". "
+        + (ehConf ? "A data prometida deixou de valer para o alerta de atraso." : "O registro de envio saiu da linha do tempo."), "ok");
+    },
+
+    /* =================================================================
+     * A REQUISIÇÃO QUE FICAVA PRESA EM "COMPRADA"
+     *
+     * ⚠ MEDIDO EM 07/09/2026: aprovar a requisição → cotar → gerar o pedido
+     * carimba a requisição como "Comprada". Se o pedido morre depois
+     * (rejeitado pelo aprovador, cancelado, fornecedor recusou), a requisição
+     * CONTINUA comprada: ela some da fila de quem compra, e o material que a
+     * obra pediu nunca mais é comprado por ninguém — sem erro em lugar nenhum.
+     * Quem pediu só descobre quando o material falta.
+     *
+     * ⚠ E SÓ VOLTA QUANDO NADA A ATENDEU. Outro pedido — de outra cotação, ou
+     * emitido direto — pode ter comprado o mesmo material. Devolvê-la para a
+     * fila ali faria a obra comprar duas vezes, que é o defeito oposto e mais
+     * caro. Quem responde é o módulo Compras, pelo carimbo `requisicaoId`,
+     * nunca o `status` da requisição (que o merge da nuvem desfaz).
+     *
+     * Devolve o registro da requisição quando ela voltou (para quem chama
+     * poder NOMEAR no recado), ou null quando nada mudou.
+     * ================================================================= */
+    _liberaRequisicaoSemPedido: function (reqId) {
+      if (!reqId) return null;
+      var rq = null;
+      try { rq = Store.obter(eid(), "requisicoes", reqId); } catch (e) { rq = null; }
+      if (!rq || rq.status !== "comprada") return null;
+      var vivos = Store.listar(eid(), "compras").filter(function (p) {
+        return p && p.requisicaoId === reqId && p.status !== "cancelado" && p.status !== "rejeitado";
+      });
+      if (vivos.length) return null;
+      rq.status = "aprovada";
+      if (!Store.salvar(eid(), "requisicoes", rq)) return null;
+      return rq;
+    },
+
+    /* ⚠ UMA CÓPIA SÓ DE "ABRIR A CONVERSA DO FORNECEDOR". O `comprasCobrar`
+       já fazia isto in-line; o botão de mandar o pedido faria a segunda cópia
+       — e a normalização do telefone (DDI 55 quando vem sem ele) divergiria na
+       primeira vez que uma das duas mudasse.
+       Devolve "" quando abriu, ou a mensagem pronta quando NÃO há telefone —
+       assim quem chama copia o texto para a pessoa em vez de só dizer "não dá". */
+    _abrirWhatsFornecedor: function (fornecedorId, texto) {
+      var forn = fornecedorId ? (lista("fornecedores").filter(function (f) { return f.id === fornecedorId; })[0] || {}) : {};
+      var tel = String(forn.whatsapp || forn.telefone || "").replace(/\D/g, "");
+      if (!tel) return texto;
+      try { window.open("https://wa.me/" + (tel.length <= 11 ? "55" + tel : tel) + "?text=" + encodeURIComponent(texto), "_blank"); } catch (e) {}
+      return "";
+    },
+    /* =================================================================
+     * FORNECEDOR RECUSOU — o estado que não existia
+     *
+     * ⚠ MEDIDO EM 07/09/2026: o fornecedor liga dizendo que não vai atender
+     * (sem estoque, o preço venceu, a obra é longe demais). O pedido está
+     * "enviado" ou "confirmado" e o app não tinha onde registrar isso. As
+     * saídas que sobravam eram todas erradas de um jeito diferente:
+     *   · marcar como REJEITADO — que neste módulo significa "o aprovador da
+     *     casa recusou o pedido", com `motivoRejeicao` indo para a trilha de
+     *     aprovação. Carimba de recusa interna algo que foi recusa do outro
+     *     lado, e a fila de aprovação passa a contar uma história falsa;
+     *   · mudar o status para "cancelado" pelo formulário — some sem motivo,
+     *     sem quem informou e sem data: três meses depois ninguém sabe por que
+     *     aquele pedido morreu, e o mesmo fornecedor é chamado de novo;
+     *   · deixar como está — o pedido fica em "aguardando fornecedor" para
+     *     sempre, cobrando um atraso que não vai chegar.
+     *
+     * ⚠ O ESTADO É `cancelado`, E ISSO É ESCOLHA. Ele já significa "este
+     * pedido não vai acontecer" no resto do app: solta a requisição
+     * (`_liberaRequisicaoSemPedido`), devolve os itens para o "Gerar pedido p/
+     * outro fornecedor" (`cotPedidoOutroFornecedor`) e sai do comprometido da
+     * obra. Inventar um sexto status obrigaria a ensinar as três coisas de
+     * novo, cada uma um lugar para esquecer. O que a recusa acrescenta é o
+     * PORQUÊ, guardado em `recusa`.
+     * ================================================================= */
+    comprasFornecedorRecusou: function (id) {
+      var self = this;
+      if (!this._comprasGuardaMod()) return;
+      var reg = Store.obter(eid(), "compras", id); if (!reg) return;
+      if (reg.status !== "aprovado" && reg.status !== "enviado" && reg.status !== "confirmado") {
+        UI.toast("Só pedido aprovado, enviado ou confirmado pode ser recusado pelo fornecedor (este está \"" + (rot(P.compraStatus, reg.status) || reg.status) + "\").", "erro");
+        return;
+      }
+      var temCot = !!reg.cotacaoId;
+      UI.modal("O fornecedor recusou o pedido",
+        '<p style="margin-top:0;font-size:13px">Registre por que <b>' + Util.esc(reg.fornecedorNome || "o fornecedor") + '</b> não vai atender o pedido <b>'
+        + Util.esc(reg.numero || "") + '</b>. O pedido passa a <b>Cancelado</b> — sai do comprometido da obra e os itens dele voltam a ficar disponíveis.</p>'
+        + campo("Motivo *", '<textarea id="rec-motivo" rows="2" maxlength="300" placeholder="Ex.: sem estoque do bloco até o fim do mês"></textarea>')
+        + '<div class="row">' + campo("Quem informou", inp("rec-quem", "", "Ex.: Carlos, do balcão"))
+        + campo("Por onde", sel("rec-canal", '<option value="Telefone">Telefone</option><option value="WhatsApp">WhatsApp</option><option value="E-mail">E-mail</option><option value="Pessoalmente">Pessoalmente</option>')) + "</div>"
+        + '<p class="muted" style="font-size:12.5px;margin-top:8px">'
+        /* ⚠ a porta que a recusa abre fica escrita AQUI, onde a pessoa está —
+           não num toast que some em 2,6 s. Sem cotação de origem o caminho é
+           outro, e o texto diz qual. */
+        + (temCot
+          ? "Depois disto, abra a cotação de origem e use <b>Gerar pedido p/ outro fornecedor</b>: os itens deste pedido voltam para a lista, com o preço que os outros cotaram."
+          : "Este pedido não veio de uma cotação, então não há outra proposta guardada: para comprar de outro fornecedor, abra uma cotação ou um pedido novo.")
+        + " O fornecedor <b>não é avisado</b> por aqui.</p>",
+        [{ texto: "Registrar a recusa", classe: "danger", onClick: function () {
+          var motivo = String(v("rec-motivo") || "").trim();
+          /* ⚠ MOTIVO OBRIGATÓRIO: recusa sem motivo é exatamente o buraco que
+             este botão existe para fechar — três meses depois ninguém sabe por
+             que o pedido morreu, e o mesmo fornecedor é chamado de novo. */
+          if (!motivo) { UI.toast("Escreva o motivo da recusa — é ele que evita chamar o mesmo fornecedor de novo pelo mesmo problema.", "erro"); return; }
+          var vivo = Store.obter(eid(), "compras", id);
+          if (!vivo) { UI.fecharModal(); UI.toast("O pedido não existe mais.", "erro"); App.render(); return; }
+          if (vivo.status !== reg.status) { UI.fecharModal(); UI.toast("O pedido mudou de estado em outro aparelho — feche e abra de novo.", "erro"); return; }
+          vivo.recusa = { em: self._hojeISO(), por: self._quemAprova(), motivo: motivo.slice(0, 300),
+            quem: String(v("rec-quem") || "").slice(0, 80), canal: v("rec-canal") || "" };
+          vivo.status = "cancelado";
+          self._trilhaAprov(vivo, "recusa-fornecedor", { de: reg.status, motivo: motivo.slice(0, 120) });
+          if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("Não consegui gravar: o armazenamento do navegador recusou. Nada mudou.", "erro"); return; }
+          /* pedido morto solta a requisição — depois do save, como nas outras portas */
+          var rqR = self._liberaRequisicaoSemPedido(vivo.requisicaoId);
+          UI.fecharModal(); App.render();
+          UI.toast("Recusa registrada — o pedido " + (vivo.numero || "") + " foi cancelado."
+            + (temCot ? " Os itens dele voltaram para a cotação: use “Gerar pedido p/ outro fornecedor” lá." : "")
+            + (rqR ? " A requisição " + (rqR.numero || rqR.id) + " voltou para a fila de compras." : ""), "aviso");
+        } },
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+
+    /* =================================================================
+     * RECEBER — com o que de fato chegou, e na data em que chegou
+     *
+     * ⚠ MEDIDO EM 07/09/2026: [Receber] era um clique seco. Chegando 150 dos
+     * 200 sacos, o app dava entrada de 200 no almoxarifado, lançava a despesa
+     * CHEIA e marcava o pedido como recebido — a obra ficava com 50 sacos que
+     * só existem no sistema, o custo médio recalculado sobre quantidade que
+     * não chegou, e o pedido fora de qualquer fila: ninguém mais ia atrás do
+     * que faltou. Entrega parcial é o caso NORMAL em obra.
+     * A data também era sempre a do clique, sem onde corrigir: material que
+     * chegou sexta e foi lançado segunda mudava o mês do custo.
+     *
+     * ⚠ O DINHEIRO DE CADA VIAGEM. O rateio só acontece quando TODOS os itens
+     * têm preço unitário: sem isso não dá para dizer quanto vale o que chegou,
+     * e inventar proporção seria um número de dinheiro tirado do nada. Nesse
+     * caso a despesa entra INTEIRA quando a entrega fecha, e a tela diz isso.
+     * Na viagem que FECHA, o valor é sempre `pc.valor − já lançado`: assim a
+     * soma das viagens bate exatamente com o pedido, com frete e arredondamento
+     * dentro, sem precisar ratear frete por viagem (o que seria outro palpite).
+     *
+     * ⚠ UM DOCUMENTO, UM LANÇAMENTO VIVO. A segunda viagem CRESCE o lançamento
+     * que já existe em vez de criar outro — é o que mantém `_lancVivoDoDoc` e
+     * as quatro portas de baixa dizendo a mesma coisa. A exceção é lançamento
+     * já PAGO: mexer nele é reescrever um pagamento conciliado (regra 3 da
+     * skill `dinheiro`), então aí nasce um lançamento novo — que é o certo: o
+     * primeiro foi pago, o segundo é outra conta a pagar.
+     * ================================================================= */
+    comprasReceber: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      var pc = Store.obter(eid(), "compras", id); if (!pc) return;
+      /* receber material não é aprovar (a aprovação já foi de outro); o que se
+         impede é receber sem aprovação — ver `_guardaBaixa` */
+      if (!this._guardaBaixa(pc, "compras")) return;
+      if (typeof ComprasLinha === "undefined" || !ComprasLinha.recebimento) {
+        UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return;
+      }
+      var rec = ComprasLinha.recebimento(pc);
+      if (rec.iniciado && rec.completo) {
+        UI.toast("Este pedido já foi recebido por inteiro"
+          + (pc.dataRecebimento ? " em " + Util.fmtDia(pc.dataRecebimento) : "") + ". "
+          + this._portaDoLanc(this._lancVivoDoDoc("compras", pc.id) || { status: "pendente" })
+          + " antes de receber de novo.", "erro");
+        return;
+      }
+      /* ⚠ A TRAVA DO DINHEIRO SÓ NA PRIMEIRA VIAGEM. Da segunda em diante há
+         um lançamento vivo deste pedido de propósito — é o da primeira —, e
+         barrar ali fecharia a entrega parcial no meio. Quem responde "já recebi
+         isto?" a partir daqui é a conta por item, não a existência da despesa. */
+      if (!rec.iniciado) {
+        var trava = this._travaLancDoDoc(pc, "compras");
+        if (trava) { UI.toast(trava, "erro"); return; }
+      }
+      var precoDe = function (it) {
+        return Util.num(it && (it.precoUnit != null ? it.precoUnit : (it.valorUnitario != null ? it.valorUnitario : (it.valorUnit != null ? it.valorUnit : it.precoRef))));
+      };
+      var temItens = rec.linhas.length > 0;
+      var podeRatear = temItens && rec.linhas.every(function (l) {
+        return !(l.pedida > 0) || precoDe(Util.arr(pc.itens)[l.itemIdx]) > 0;
+      });
+      var jaLancado = Util.arr(pc.recebimentos).reduce(function (s, v) { return s + Util.num(v && v.valor); }, 0);
+      var linhasHtml = rec.linhas.map(function (l) {
+        return "<tr><td>" + Util.esc(l.descricao || ("item " + (l.itemIdx + 1))) + "</td>"
+          + '<td class="num">' + Util.fmtNum(l.pedida, 2) + " " + Util.esc(Util.unidadeExibir(l.unidade || "")) + "</td>"
+          + '<td class="num">' + (l.recebida > 0 ? Util.fmtNum(l.recebida, 2) : '<span class="muted">—</span>') + "</td>"
+          + '<td class="num"><input data-rec-idx="' + l.itemIdx + '" value="' + Util.esc(numBR(l.falta)) + '" style="width:88px;text-align:right" inputmode="decimal"></td></tr>';
+      }).join("");
+      var corpo =
+        '<p style="margin-top:0;font-size:13px">O que chegou do pedido <b>' + Util.esc(pc.numero || "") + "</b>"
+        + (pc.fornecedorNome ? " — <b>" + Util.esc(pc.fornecedorNome) + "</b>" : "") + ". "
+        + (rec.viagens ? "Já houve " + rec.viagens + " entrega(s) deste pedido; a coluna do meio mostra o que já entrou." : "Corrija as quantidades se veio menos — <b>entrega parcial é normal</b>, e o que faltar continua cobrável.")
+        + "</p>"
+        + (temItens
+          ? '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Item</th><th class="num">Pedido</th><th class="num">Já entrou</th><th class="num">Chegou agora</th></tr></thead><tbody>' + linhasHtml + "</tbody></table></div>"
+          /* ⚠ pedido digitado à mão não tem itens: dizer isso é melhor que
+             mostrar uma tabela vazia e deixar a pessoa procurando o defeito */
+          : '<p class="muted" style="font-size:13px">Este pedido não tem itens detalhados (foi digitado à mão), então nada entra no almoxarifado — só a despesa no Financeiro.</p>')
+        + '<div class="row" style="margin-top:10px">' + campo("Data da entrega *", inp("rec-data", this._hojeISO(), "", "date")) + "</div>"
+        /* ⚠ PREÇO DE REFERÊNCIA NÃO É PREÇO PAGO, e o almoxarifado não sabe a
+           diferença. Medido em 07/09/2026: pedido gerado direto da requisição
+           carrega o `precoRef` do banco (SINAPI), ninguém cotou nada, e o
+           recebimento usa esse número como custo unitário no kardex — o custo
+           médio do item passa a misturar preço de tabela com preço real, e
+           quem olhar o valor do almoxarifado depois não tem como saber.
+           O app NÃO corrige sozinho (ratear o total pelos itens seria inventar
+           número); ele diz, e aponta a porta que existe — os itens são
+           editáveis no formulário até a primeira entrega. */
+        + (String((pc && pc.precoOrigem) || "") === "banco" && temItens
+          ? '<p style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;margin:8px 0;color:#92400e">'
+            + "O preço destes itens é o de <b>referência do banco</b>, não o que foi pago — este pedido nasceu direto da requisição, sem cotação. "
+            + "Ele vai para o almoxarifado como custo unitário e entra no custo médio do item. "
+            + "Se já souber o preço de verdade, feche esta caixa, corrija no <b>formulário do pedido</b> (bloco Itens) e receba depois.</p>"
+          : "")
+        + '<p class="muted" style="font-size:12.5px">'
+        + (podeRatear
+          ? "A despesa lançada nesta entrega é a soma do que chegou, pelo preço do pedido. Quando a entrega fechar, o total lançado bate exatamente com " + Util.fmtMoeda(Util.num(pc.valor)) + " (frete incluso)."
+          /* ⚠ sem preço por item não dá para dizer quanto vale o que chegou — e
+             inventar proporção seria número de dinheiro tirado do nada */
+          : "Este pedido não tem preço por item, então não dá para dizer quanto vale só o que chegou: a despesa de " + Util.fmtMoeda(Util.num(pc.valor)) + " entra no Financeiro <b>quando a entrega fechar</b>.")
+        + " O material entra no almoxarifado pela quantidade desta entrega.</p>";
+      UI.modal("Receber — pedido " + Util.esc(pc.numero || ""), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Registrar entrega", classe: "success", onClick: function () {
+          var data = v("rec-data");
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Informe a data em que o material chegou.", "erro"); return; }
+          var qtdPorIdx = {}, algum = 0, valorAgora = 0, itensViagem = [], aMais = [];
+          Array.prototype.forEach.call((document.querySelectorAll ? document.querySelectorAll("[data-rec-idx]") : []), function (el) {
+            var idx = String(el.getAttribute("data-rec-idx"));
+            var q = Util.parseNum ? Util.parseNum(el.value) : Util.num(el.value);
+            if (!(q > 0)) return;
+            qtdPorIdx[idx] = q; algum++;
+            itensViagem.push({ itemIdx: Number(idx), qtd: q });
+            var it = Util.arr(pc.itens)[Number(idx)] || {};
+            valorAgora += q * precoDe(it);
+            var linha = rec.linhas[Number(idx)];
+            if (linha && q > linha.falta + 0.0001) aMais.push(linha.descricao || ("item " + (Number(idx) + 1)));
+          });
+          if (temItens && !algum) { UI.toast("Informe a quantidade de pelo menos um item — se não chegou nada, não há entrega a registrar.", "erro"); return; }
+          /* ⚠ RELÊ ANTES DE GRAVAR: a caixa ficou aberta e o merge da nuvem
+             roda em segundo plano — outro aparelho pode ter recebido este
+             pedido nesses segundos, e aí o material entraria duas vezes. */
+          var vivo = Store.obter(eid(), "compras", id);
+          if (!vivo) { UI.fecharModal(); UI.toast("O pedido não existe mais.", "erro"); App.render(); return; }
+          var recVivo = ComprasLinha.recebimento(vivo);
+          if (recVivo.viagens !== rec.viagens || (recVivo.iniciado && recVivo.completo)) {
+            UI.fecharModal();
+            UI.toast("Este pedido recebeu entrega em outro aparelho enquanto a caixa estava aberta — nada foi gravado. Abra de novo para ver o que ainda falta.", "erro");
+            App.render(); return;
+          }
+          /* fecha? a conta é refeita com esta viagem somada às anteriores */
+          var simulado = { itens: vivo.itens, recebimentos: Util.arr(vivo.recebimentos).concat([{ itens: itensViagem }]) };
+          var fechou = !temItens || ComprasLinha.recebimento(simulado).completo;
+          var valorViagem = fechou
+            ? Math.round((Util.num(vivo.valor) - jaLancado) * 100) / 100
+            : (podeRatear ? Math.round(valorAgora * 100) / 100 : 0);
+
+          /* o material entra ANTES do carimbo: falha de gravação não pode
+             deixar o pedido "recebido" sem estoque (mesma ordem de antes) */
+          var est = temItens ? self._estoqueDaCompra(vivo, qtdPorIdx, data) : { lancados: 0, semItens: true };
+          if (est.lancados) vivo.estoqueLancado = true;
+          if (!Array.isArray(vivo.recebimentos)) vivo.recebimentos = [];
+          vivo.recebimentos.push({ em: data, por: self._quemAprova(), itens: itensViagem, valor: valorViagem });
+          if (fechou) { vivo.status = "recebido"; vivo.dataRecebimento = data; }
+          if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("Não consegui gravar a entrega: o armazenamento do navegador recusou.", "erro"); return; }
+
+          var msgDin = "";
+          if (valorViagem > 0) msgDin = self._lancDespesaDaEntrega(vivo, valorViagem, data, fechou);
+          UI.fecharModal(); App.render();
+          var faltamAgora = ComprasLinha.recebimento(vivo).comFalta;
+          UI.toast((fechou ? "Entrega registrada e pedido fechado." : "Entrega parcial registrada.")
+            + (est.lancados ? " " + est.lancados + " item(ns) entraram no almoxarifado." : "")
+            + (msgDin ? " " + msgDin : "")
+            /* ⚠ o que FALTA é dito com item e quantidade — "parcial" sozinho não
+               diz atrás de que ir */
+            + (faltamAgora.length ? " Ainda falta: " + faltamAgora.slice(0, 3).map(function (l) { return Util.fmtNum(l.falta, 2) + " " + Util.unidadeExibir(l.unidade || "") + " de " + l.descricao; }).join("; ") + (faltamAgora.length > 3 ? " e mais " + (faltamAgora.length - 3) : "") + "." : "")
+            + (aMais.length ? " Chegou MAIS que o pedido em: " + aMais.join(", ") + " — confira a nota do fornecedor." : ""),
+            (faltamAgora.length || aMais.length) ? "aviso" : "ok");
+        } }
+      ]);
+    },
+
+    /* ⚠ UM DOCUMENTO, UM LANÇAMENTO VIVO — ver o ⚠ de `comprasReceber`.
+       A viagem seguinte CRESCE o lançamento que existe; só nasce outro quando o
+       que existe já foi PAGO (mexer num pagamento conciliado é o que a regra 3
+       da skill `dinheiro` proíbe — e ali um lançamento novo é o certo: o
+       primeiro foi pago, o segundo é outra conta a pagar).
+       Devolve a frase que o toast usa — com o número, sempre. */
+    _lancDespesaDaEntrega: function (pc, valor, data, fechou) {
+      var vivoLanc = this._lancVivoDoDoc("compras", pc.id);
+      var pago = vivoLanc && ((typeof FinStatus !== "undefined" && FinStatus.realizado) ? FinStatus.realizado(vivoLanc) : vivoLanc.status === "pago");
+      if (vivoLanc && !pago) {
+        var antes = Util.num(vivoLanc.valor);
+        vivoLanc.valor = Math.round((antes + valor) * 100) / 100;
+        vivoLanc.desc = "Compra " + (pc.numero || "") + " — " + (pc.descricao || "") + this._condPgtoSufixo(pc)
+          + " · " + Util.arr(pc.recebimentos).length + " entrega(s)";
+        if (!Store.salvar(eid(), "financeiro", vivoLanc)) return "NÃO consegui atualizar a despesa no Financeiro — confira por lá.";
+        return "A despesa deste pedido no Financeiro passou de " + Util.fmtMoeda(antes) + " para " + Util.fmtMoeda(vivoLanc.valor) + ".";
+      }
+      var novo = Store.salvar(eid(), "financeiro", {
+        data: data, desc: "Compra " + (pc.numero || "") + " — " + (pc.descricao || "") + this._condPgtoSufixo(pc)
+          + (fechou && Util.arr(pc.recebimentos).length > 1 ? " · entrega final" : (fechou ? "" : " · entrega parcial")),
+        tipo: "despesa", categoria: pc.categoria || "material", valor: valor, status: "pendente",
+        obraId: pc.obraId, fornecedor: pc.fornecedorNome, formaPgto: this._formaPgtoChave(pc.formaPgto),
+        /* mesmo carimbo dos outros dois caminhos — sem ele esta despesa é
+           invisível para o dedupe da nota e para as quatro portas de baixa */
+        docTipo: "PC", docId: pc.id, docNumero: pc.numero || ""
+      });
+      if (!novo) return "NÃO consegui lançar a despesa no Financeiro — lance por lá.";
+      return (pago ? "Como a despesa anterior já estava paga, lancei " : "Despesa de ")
+        + Util.fmtMoeda(valor) + " no Financeiro (pendente).";
+    },
+
+    /* =================================================================
+     * OS ITENS DO PEDIDO — invisíveis e sem edição até 07/09/2026
+     *
+     * ⚠ MEDIDO: o pedido nascido do Mapa ou da requisição carrega descrição,
+     * unidade, quantidade e preço de cada item — e NENHUMA tela mostrava isso.
+     * O formulário tinha "Descrição" (uma frase) e "Valor total" (um número).
+     * Consequências medidas, todas na mesma raiz:
+     *   · quem recebe não vê o que está recebendo: os itens só aparecem no PDF,
+     *     que é outra tela e não é editável;
+     *   · quantidade ou preço errado no Mapa vira erro permanente — e é esse
+     *     número que dá entrada no almoxarifado e forma o custo médio;
+     *   · a soma dos itens podia divergir do "Valor total" sem ninguém notar: o
+     *     papel que vai ao fornecedor fecha por um valor e a despesa por outro.
+     *
+     * ⚠ EDITÁVEL SÓ ANTES DA PRIMEIRA ENTREGA. Depois que uma viagem chegou,
+     * `recebimentos` guarda o que entrou POR ÍNDICE do item; mexer na lista
+     * moveria o que já chegou para a linha errada. Ali a tabela vira leitura e
+     * a tela diz por quê — em vez de um campo cinza sem explicação.
+     *
+     * ⚠ DOIS `itemIdx` COM O MESMO NOME, E ELES NÃO SÃO O MESMO ÍNDICE:
+     *   · `pc.itens[i].itemIdx` é o índice do item na COTAÇÃO que gerou o pedido
+     *     (usado por `cotPedidoOutroFornecedor` para saber o que já foi comprado);
+     *   · `pc.recebimentos[].itens[].itemIdx` é o índice no PRÓPRIO pedido.
+     *   Os dois nunca se cruzam, e é por isso que apagar item aqui só é
+     *   permitido antes de existir recebimento. */
+    _itensPedidoBloco: function (c, editavel) {
+      var itens = Util.arr(c && c.itens);
+      var pu = function (it) { return Util.num(it && (it.precoUnit != null ? it.precoUnit : (it.valorUnitario != null ? it.valorUnitario : (it.valorUnit != null ? it.valorUnit : it.precoRef)))); };
+      var soma = 0;
+      var linhas = itens.map(function (it, i) {
+        var sub = Util.num(it.quantidade) * pu(it);
+        soma += sub;
+        if (!editavel) {
+          return "<tr><td>" + Util.esc(it.descricao || "") + "</td>"
+            + '<td class="num">' + Util.fmtNum(Util.num(it.quantidade), 2) + " " + Util.esc(Util.unidadeExibir(it.unidade || "")) + "</td>"
+            + '<td class="num">' + (pu(it) > 0 ? Util.fmtMoeda(pu(it)) : '<span class="muted">—</span>') + "</td>"
+            + '<td class="num">' + (sub > 0 ? Util.fmtMoeda(sub) : '<span class="muted">—</span>') + "</td></tr>";
+        }
+        return '<tr data-pci="' + i + '">'
+          + '<td><input data-pcit="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material"></td>'
+          + '<td><input data-pcit="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:74px;text-align:right" inputmode="decimal"></td>'
+          + '<td><input data-pcit="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td>'
+          + '<td><input data-pcit="preco" value="' + Util.esc(numBR(pu(it)) || "") + '" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
+          + '<td style="width:34px"><button type="button" class="btn sm ghost" data-pcdel="' + i + '" title="Tirar este item do pedido" style="padding:0 7px;color:#dc2626">×</button></td></tr>';
+      }).join("");
+      soma = Math.round(soma * 100) / 100;
+      var frete = Util.num(c && c.frete);
+      var totalItens = Math.round((soma + frete) * 100) / 100;
+      var valorPedido = Util.num(c && c.valor);
+      /* ⚠ A DIVERGÊNCIA É DITA, NÃO CORRIGIDA SOZINHA. O "Valor total" é o que
+         vale com o fornecedor (e é dele que sai a despesa); a soma dos itens pode
+         estar incompleta de propósito (item sem preço, serviço embutido). Trocar
+         um pelo outro por conta própria mexeria em dinheiro sem ninguém pedir. */
+      var difere = soma > 0 && Math.abs(totalItens - valorPedido) >= 0.01;
+      var rodape = itens.length
+        ? '<div style="font-size:12.5px;margin-top:6px">Soma dos itens: <b>' + Util.fmtMoeda(soma) + "</b>"
+          + (frete > 0 ? " + frete " + Util.fmtMoeda(frete) + " = <b>" + Util.fmtMoeda(totalItens) + "</b>" : "")
+          + (difere
+            ? '<span style="color:#b45309"> — o Valor total do pedido diz ' + Util.fmtMoeda(valorPedido)
+              + ". Quem vale com o fornecedor é o Valor total; confira qual dos dois está certo antes de enviar o pedido.</span>"
+            : "") + "</div>"
+        : '<p class="muted" style="font-size:12.5px;margin:6px 0 0">Este pedido não tem itens detalhados. Sem eles, nada entra no almoxarifado ao receber — só a despesa no Financeiro.</p>';
+      var cab = editavel
+        ? "<tr><th>Item</th><th>Qtd</th><th>Un</th><th>R$/un</th><th></th></tr>"
+        : '<tr><th>Item</th><th class="num">Qtd</th><th class="num">R$/un</th><th class="num">Subtotal</th></tr>';
+      return '<div class="card" style="margin-top:10px;padding:10px">'
+        + '<div style="font-weight:800;font-size:13px;margin-bottom:4px">Itens do pedido</div>'
+        + (itens.length ? '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead>' + cab + "</thead><tbody id=\"g-pcitens\">" + linhas + "</tbody></table></div>" : '<tbody id="g-pcitens" style="display:none"></tbody>')
+        + (editavel ? '<button type="button" class="btn sm" id="g-pcadd" style="margin-top:6px">+ item</button>' : "")
+        + rodape
+        + (editavel ? "" : '<p class="muted" style="font-size:12px;margin:6px 0 0">' + (typeof Icones !== "undefined" ? Icones.get("cadeado", 13) : "")
+            + " Em leitura porque este pedido já recebeu entrega: o que chegou está anotado por linha, e mexer na lista moveria isso para o item errado.</p>")
+        + "</div>";
+    },
+    /* lê de volta o que a pessoa digitou. Linha sem descrição é descartada —
+       item sem nome não casa com nada no almoxarifado (ver `Util.itemChave`). */
+    _lerItensPedido: function (base) {
+      if (typeof document === "undefined" || !document.querySelectorAll) return null;
+      var trs = document.querySelectorAll("[data-pci]");
+      if (!trs || !trs.length) return null;
+      var out = [];
+      Array.prototype.forEach.call(trs, function (tr) {
+        var leia = function (k) {
+          var el = tr.querySelector ? tr.querySelector('[data-pcit="' + k + '"]') : null;
+          return el ? String(el.value || "") : "";
+        };
+        var desc = leia("desc").trim();
+        if (!desc) return;
+        var i = Number(tr.getAttribute("data-pci"));
+        var orig = Util.arr(base)[i] || {};
+        /* ⚠ o que a tela NÃO mostra tem de sobreviver ao Salvar: `itemIdx` (o
+           índice na cotação de origem) e `codigo` não têm campo aqui, e
+           reconstruir o item do zero os apagaria — e com eles o caminho do
+           "gerar pedido para outro fornecedor". */
+        var novo = {};
+        for (var k in orig) { if (Object.prototype.hasOwnProperty.call(orig, k)) novo[k] = orig[k]; }
+        novo.descricao = desc;
+        novo.quantidade = Util.parseNum(leia("qtd"));
+        novo.unidade = leia("un").trim();
+        var preco = Util.parseNum(leia("preco"));
+        novo.precoUnit = preco;
+        /* mantém os apelidos que os outros caminhos leem, para o preço corrigido
+           aqui valer no recebimento e no papel do fornecedor */
+        if (orig.valorUnit != null) novo.valorUnit = preco;
+        if (orig.precoRef != null) novo.precoRef = preco;
+        out.push(novo);
+      });
+      return out;
+    },
+
+    /* =================================================================
+     * O BLOCO "QUAL PEDIDO ESTA NOTA COBRE" — uma cópia só, duas portas
+     *
+     * ⚠ MEDIDO EM 07/09/2026, dois defeitos na mesma tela:
+     *   1. SÓ TRÊS PEDIDOS ERAM OFERECIDOS, sem busca e sem "outro". A lista
+     *      vinha de `CompraNota.candidatos`, que exige força (xPed citado, ou
+     *      mesmo fornecedor dentro da janela de dias) — e ainda era cortada em
+     *      três. Pedido com o nome do fornecedor escrito diferente na nota,
+     *      entrega do mês passado ou quarto da lista simplesmente não existia:
+     *      sobrava "Nenhum — esta nota não é de pedido", que é mentira e deixa
+     *      a mesma compra virar despesa em dobro.
+     *   2. ESTE BLOCO SÓ EXISTIA DENTRO DO MODAL "LANÇAR". Quem lançou a nota
+     *      sem vincular na hora não tinha, em tela nenhuma, como vincular
+     *      depois. O vínculo é o que impede a despesa dupla, e a única porta
+     *      dele fechava junto com aquele modal.
+     *
+     * ⚠ NADA VEM MARCADO, e nunca virá: casar por "mesmo fornecedor e valor
+     * parecido" é mover dinheiro por adivinhação (regra 2 da skill `dinheiro`),
+     * e o palpite errado apaga a despesa de OUTRA compra. O sistema sugere,
+     * diz por que sugeriu, e mostra o resto para a pessoa procurar.
+     * ================================================================= */
+    _blocoVincularPedido: function (nf) {
+      if (typeof CompraNota === "undefined" || !CompraNota.elegiveis) return "";
+      var el = CompraNota.elegiveis(nf, listaTodas("compras"), hojeLocal());
+      /* o que esta nota JÁ cobre vai dito em cima: a lista abaixo não mostra
+         esses pedidos (eles já estão nela), e sem o recado a pessoa acha que
+         o vínculo se perdeu */
+      var jaNesta = CompraNota.pedidosDaNota(nf);
+      var cab = jaNesta.length
+        ? '<p style="font-size:12.5px;margin:0 0 6px"><b>Esta nota já cobre:</b> '
+          + jaNesta.map(function (c) { return Util.esc(c.numero || c.id) + " (" + Util.fmtMoeda(c.valor) + ")"; }).join(", ") + "</p>"
+        : "";
+      if (!el.total) {
+        return cab + '<p class="muted" style="font-size:12.5px;margin:8px 0">Não há pedido de compra recebido com saldo a faturar para vincular. '
+          + "Um pedido só aparece aqui depois de <b>Recebido</b> em Compras, e sai da lista quando já foi faturado por inteiro.</p>";
+      }
+      var linha = function (c, sugerido) {
+        /* ⚠ os dados da busca viajam num atributo, não são relidos do Store a
+           cada tecla: o filtro roda no `keyup` e uma varredura da coleção por
+           tecla trava a digitação em base grande (medido no Mapa de Cotação). */
+        var busca = (c.numero + " " + c.fornecedor + " " + Util.fmtMoeda(c.valor) + " " + Util.fmtDia(c.dataRecebimento)).toLowerCase();
+        return '<label class="cn-pc-linha" data-cn-busca="' + Util.esc(busca) + '" style="display:block;margin:3px 0">'
+          /* ⚠ CAIXA, NÃO RÁDIO: uma nota do fornecedor junta duas entregas com
+             frequência, e o rádio obrigava a escolher UM — a despesa do outro
+             pedido ficava viva e o material contava duas vezes. */
+          + '<input type="checkbox" name="cn-pc" value="' + Util.esc(c.compraId) + '"> <b>' + Util.esc(c.numero || "sem número") + "</b> · "
+          + Util.fmtMoeda(c.valor)
+          /* pedido faturado pela metade diz o quanto já foi: sem isso a pessoa
+             marca de novo o que já está pago em outra nota */
+          + (Util.num(c.jaFaturado) > 0
+            ? ' <span style="color:#b45309">· já faturado ' + Util.fmtMoeda(c.jaFaturado) + ", falta " + Util.fmtMoeda(c.saldo) + "</span>"
+            : "")
+          + (c.fornecedor ? ' <span class="muted">· ' + Util.esc(c.fornecedor) + "</span>" : "")
+          + (c.dataRecebimento ? ' <span class="muted">· recebido ' + Util.esc(Util.fmtDia(c.dataRecebimento)) + "</span>" : "")
+          + (sugerido && c.motivo ? ' <span class="muted">(' + Util.esc(c.motivo) + ")</span>" : "")
+          + "</label>";
+      };
+      var htmlSug = el.sugeridos.map(function (c) { return linha(c, true); }).join("");
+      var htmlOut = el.outros.map(function (c) { return linha(c, false); }).join("");
+      return '<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--linha-forte);border-radius:10px">'
+        + cab
+        + "<b>Esta nota cobre algum pedido recebido?</b>"
+        /* ⚠ O RECADO DIZ QUE DÁ PARA MARCAR MAIS DE UM. Com rádio, quem
+           recebeu uma nota que junta duas entregas escolhia uma e ia embora,
+           e nada na tela dizia que a outra tinha ficado para trás — com a
+           despesa dela viva no Financeiro. */
+        + '<p class="muted" style="margin:4px 0 8px;font-size:12.5px">Marque <b>todos</b> os pedidos que esta nota cobre — uma nota só costuma juntar mais de uma entrega. A despesa de cada um sai do Financeiro e ficam só as contas da nota, rateadas pelo que falta faturar em cada pedido. Se a nota não é de pedido nenhum, deixe tudo desmarcado e feche a caixa.</p>'
+        + (htmlSug ? '<div style="margin-top:6px;font-size:12px;font-weight:700;color:#475569">Sugeridos</div>' + htmlSug : "")
+        /* ⚠ a busca só aparece quando há o que procurar: campo de busca numa
+           lista de dois itens é ruído, e ruído ensina a não olhar */
+        + (el.outros.length
+          ? '<div style="margin-top:8px;font-size:12px;font-weight:700;color:#475569">Outros pedidos recebidos sem nota (' + el.outros.length + ")</div>"
+            + '<input id="cn-pc-busca" placeholder="procurar por número, fornecedor ou valor" style="width:100%;margin:4px 0">'
+            + '<div id="cn-pc-outros" style="max-height:180px;overflow-y:auto">' + htmlOut + "</div>"
+          : "")
+        + "</div>";
+    },
+    /* liga o filtro da busca. Sem isto o campo aparece e não filtra nada —
+       campo morto é pior que campo ausente, porque a pessoa confia nele. */
+    _fiarBuscaPedido: function () {
+      if (typeof document === "undefined" || !document.getElementById) return;
+      var cx = document.getElementById("cn-pc-busca");
+      var cxOut = document.getElementById("cn-pc-outros");
+      if (!cx || !cxOut || !cxOut.querySelectorAll) return;
+      cx.onkeyup = function () {
+        var q = String(cx.value || "").trim().toLowerCase();
+        Array.prototype.forEach.call(cxOut.querySelectorAll("[data-cn-busca]"), function (l) {
+          var casa = !q || String(l.getAttribute("data-cn-busca") || "").indexOf(q) > -1;
+          l.style.display = casa ? "" : "none";
+        });
+      };
+    },
+
+    /* =================================================================
+     * VINCULAR AO PEDIDO — a porta que existia só dentro do "Lançar"
+     *
+     * ⚠ O que ela faz depende de a nota JÁ ter lançamento:
+     *   · SEM lançamento, ela só ANOTA o vínculo e não encosta em dinheiro. O
+     *     custo continua vindo da despesa do pedido, que é o certo — apagar a
+     *     despesa do pedido aqui deixaria a obra com ZERO despesa para material
+     *     que já entrou.
+     *   · COM lançamento, ela faz a troca: a despesa do pedido sai (guardada em
+     *     `despesaSubstituida`, que é o que o Desfazer usa para devolvê-la) e
+     *     ficam as parcelas da nota. É a mesma operação do modal "Lançar", pelo
+     *     mesmo motor (`CompraNota.plano`).
+     * ================================================================= */
+    fiscalVincularPedido: function (id) {
+      if (this._bloqueado()) return;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("financeiro")) { UI.toast("Vincular mexe na despesa do pedido, e seu usuário não tem o módulo Financeiro.", "erro"); return; }
+      if (typeof CompraNota === "undefined") { UI.toast("O motor do vínculo (compranota.js) não carregou — recarregue o app.", "erro"); return; }
+      var self = this;
+      var nf = Store.obter(eid(), "fiscal", id); if (!nf) { UI.toast("Nota não encontrada.", "erro"); return; }
+      /* ⚠ NOTA JÁ INTEIRA EM OUTROS PEDIDOS é a única recusa que sobrou aqui
+         (a regra mora em `CompraNota.planoVinculo`): acrescentar mais um
+         obrigaria a refazer o rateio do que já está gravado, mexendo em
+         vínculo que a pessoa não está vendo. A recusa acontece ANTES de abrir
+         a caixa para não oferecer uma tela que só sabe dizer não. */
+      var jaNesta = CompraNota.pedidosDaNota(nf);
+      var alocado = jaNesta.reduce(function (a, c) { return a + Util.num(c.valor); }, 0);
+      if (jaNesta.length && Util.num(nf.valorTotal) - alocado < 0.01) {
+        UI.toast("Esta nota já está inteira no(s) pedido(s) " + jaNesta.map(function (c) { return c.numero || c.id; }).join(", ")
+          + ". Para trocar o vínculo, desfaça o lançamento dela primeiro — assim a despesa do pedido volta antes de sair de novo.", "aviso");
+        return;
+      }
+      var lanc = this._lancamentosDaNota(nf);
+      var corpo = '<p class="muted" style="margin-top:0">NF nº <b>' + Util.esc((nf.numero || "s/n") + (nf.serie ? "/" + nf.serie : ""))
+        + "</b> · " + Util.esc(nf.parceiro || "") + " · <b>" + Util.fmtMoeda(Util.num(nf.valorTotal)) + "</b></p>"
+        + this._blocoVincularPedido(nf)
+        + '<p class="muted" style="font-size:12.5px">'
+        + (lanc.length
+          ? "Esta nota já tem " + lanc.length + " lançamento(s) no Financeiro. Ao vincular, a despesa de CADA pedido marcado sai de cena e ficam as contas da nota — é assim que a mesma compra deixa de contar duas vezes."
+          /* ⚠ sem lançamento, vincular NÃO pode apagar a despesa do pedido: a
+             obra ficaria com material recebido e despesa nenhuma */
+          : "Esta nota ainda não foi lançada. Vincular agora só <b>anota</b> a ligação: o custo continua vindo da despesa do pedido, e a troca acontece quando você clicar em <b>Lançar</b>.")
+        + "</p>";
+      var bg = UI.modal("Vincular a nota a pedidos de compra", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Vincular", classe: "primary", onClick: function () {
+          var ids = [];
+          Array.prototype.forEach.call((document.querySelectorAll ? document.querySelectorAll('input[name="cn-pc"]:checked') : []), function (el) {
+            if (el && el.value) ids.push(el.value);
+          });
+          if (!ids.length) { UI.toast("Marque o(s) pedido(s) que esta nota cobre — ou feche a caixa, se ela não é de pedido nenhum.", "erro"); return; }
+          /* ⚠ RELÊ ANTES DE GRAVAR: entre abrir a caixa e clicar, outro
+             aparelho pode ter vinculado um desses pedidos. O plano roda sobre o
+             que está gravado AGORA e recusa, em vez de gravar por cima. */
+          var vivoNf = Store.obter(eid(), "fiscal", id);
+          if (!vivoNf) { UI.fecharModal(); UI.toast("A nota não existe mais.", "erro"); App.render(); return; }
+          var pcs = [], sumiu = [];
+          ids.forEach(function (x) { var c = Store.obter(eid(), "compras", x); if (c) pcs.push(c); else sumiu.push(x); });
+          if (sumiu.length) {
+            UI.fecharModal();
+            UI.toast(sumiu.length + " dos pedidos marcados não existe(m) mais — nada foi alterado. Abra de novo para ver como está.", "erro");
+            App.render(); return;
+          }
+          var lancAgora = self._lancamentosDaNota(vivoNf);
+          var fin = listaTodas("financeiro");
+          var pl = CompraNota.planoVinculo(vivoNf, pcs, fin, Util.num(vivoNf.valorTotal));
+          if (!pl.pode) { UI.toast(pl.motivo, "erro"); return; }
+          var msg = "";
+          if (pl.avisos && pl.avisos.length) {
+            /* mesma régua do modal "Lançar": a diferença é dita sempre, e a
+               partir de 10% (com piso em reais) ela pára a tela — mas só
+               quando há dinheiro lançado para trocar de lugar */
+            var pct = Math.abs(Util.num(pl.difPct)), abs = Math.abs(Util.num(pl.dif));
+            if (lancAgora.length && pct >= 10 && abs >= 50) {
+              if (!window.confirm("Confira antes de vincular:\n\n" + pl.avisos.join("\n")
+                + "\n\nAo vincular, a despesa dos pedidos sai e ficam as contas da NOTA — é o valor dela que vai para o custo da obra.\n\nVincular assim mesmo?")) return;
+            }
+            msg = " " + pl.avisos.join(" ");
+          }
+          if (lancAgora.length) {
+            var mapa = {};
+            pcs.forEach(function (c) { mapa[String(c.id)] = c; });
+            pl.itens.forEach(function (it) {
+              if (!it.apagarId) return;
+              var pc = mapa[String(it.compraId)]; if (!pc) return;
+              var desp = CompraNota.despesaDaCompra(fin, it.compraId);
+              if (!desp) return;
+              /* guarda a linha ANTES de apagar — é o que o Desfazer usa para
+                 devolver a despesa do pedido (ver `_desvincularCompraDaNota`) */
+              pc.despesaSubstituida = Util.clone(desp);
+              Store.excluir(eid(), "financeiro", it.apagarId);
+            });
+          }
+          CompraNota.aplicarVinculo(vivoNf, pcs, pl, new Date().toISOString());
+          var falhou = false;
+          pcs.forEach(function (c) { if (!Store.salvar(eid(), "compras", c)) falhou = true; });
+          if (!Store.salvar(eid(), "fiscal", vivoNf)) falhou = true;
+          if (falhou) {
+            UI.toast("Não consegui gravar o vínculo: o armazenamento do navegador recusou. Confira em Compras e no Fiscal antes de tentar de novo.", "erro");
+            return;
+          }
+          UI.fecharModal(); App.render();
+          UI.toast("Nota vinculada a " + pl.itens.length + " pedido(s): "
+            + pl.itens.map(function (it) { return (it.numero || it.compraId) + " " + Util.fmtMoeda(it.fatia); }).join(", ") + "."
+            + (lancAgora.length ? " A despesa desses pedidos saiu do Financeiro; ficaram as contas da nota." : " Nada mudou no Financeiro — o custo continua vindo da despesa do pedido até você lançar a nota.")
+            + msg, msg ? "aviso" : "ok");
+        } }
+      ]);
+      this._fiarBuscaPedido();
+      return bg;
+    },
+
+    /* =================================================================
+     * ITENS NUMA NOTA DIGITADA À MÃO — a porta que não existia
+     *
+     * ⚠ MEDIDO EM 07/09/2026: a triagem (dizer o que fazer com cada item:
+     * estoque, patrimônio, EPI, consumo na obra) só existe para nota que veio de
+     * XML, porque é de lá que os itens vinham. Nota digitada à mão — o caso do
+     * fornecedor pequeno, do recibo, da NFS-e — nascia sem `itens`, e o botão
+     * simplesmente NÃO era desenhado: o material daquela nota nunca entrava no
+     * almoxarifado por caminho nenhum, e ninguém via que faltava.
+     * O recado antigo ("importe o XML de novo para triar") também não servia:
+     * nota digitada à mão não tem XML para reimportar.
+     *
+     * ⚠ NÃO MEXE EM DINHEIRO. Os itens daqui alimentam a triagem (estoque,
+     * patrimônio, EPI) — o valor da nota continua sendo o `valorTotal`, que é o
+     * que as contas a pagar usam. Preencher item aqui não relança nada.
+     * ================================================================= */
+    fiscalItensManuais: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      var nf = Store.obter(eid(), "fiscal", id); if (!nf) { UI.toast("Nota não encontrada.", "erro"); return; }
+      var itens = Util.arr(nf.itens);
+      var linha = function (it, i) {
+        return '<tr data-nfi="' + i + '">'
+          + '<td><input data-nfit="desc" value="' + Util.esc((it && it.descricao) || "") + '" placeholder="descrição do material"></td>'
+          + '<td><input data-nfit="qtd" value="' + Util.esc(numBR(it && it.quantidade) || "") + '" style="width:74px;text-align:right" inputmode="decimal"></td>'
+          + '<td><input data-nfit="un" value="' + Util.esc((it && it.unidade) || "") + '" style="width:52px" placeholder="un"></td>'
+          + '<td><input data-nfit="vunit" value="' + Util.esc(numBR(it && (it.valorUnit != null ? it.valorUnit : it.precoUnit)) || "") + '" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
+          + '<td style="width:34px"><button type="button" class="btn sm ghost" data-nfdel="' + i + '" style="padding:0 7px;color:#dc2626">×</button></td></tr>';
+      };
+      var corpo = '<p class="muted" style="margin-top:0;font-size:13px">Nota <b>' + Util.esc((nf.numero || "s/n") + (nf.serie ? "/" + nf.serie : ""))
+        + "</b> — " + Util.esc(nf.parceiro || "") + ". Liste o que veio nela para poder <b>triar</b> depois (estoque, patrimônio, EPI ou consumo na obra).</p>"
+        + '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Item</th><th>Qtd</th><th>Un</th><th>R$/un</th><th></th></tr></thead>'
+        + '<tbody id="nf-itens">' + (itens.length ? itens.map(linha).join("") : linha({}, 0)) + "</tbody></table></div>"
+        + '<button type="button" class="btn sm" id="nf-additem" style="margin-top:6px">+ item</button>'
+        /* ⚠ o que isto NÃO faz também é informação: quem preenche aqui pode
+           achar que está corrigindo o valor da nota, e não está. */
+        + '<p class="muted" style="font-size:12.5px;margin-top:8px">Isto <b>não mexe no valor da nota</b> nem nas contas a pagar — serve para o material poder entrar no almoxarifado pela triagem. O valor continua sendo o do campo <b>Valor total</b>.</p>';
+      UI.modal("Itens da nota — " + Util.esc(nf.numero || "s/n"), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gravar itens", classe: "primary", onClick: function () {
+          var novos = [];
+          Array.prototype.forEach.call((document.querySelectorAll ? document.querySelectorAll("[data-nfi]") : []), function (tr) {
+            var leia = function (k) { var el = tr.querySelector ? tr.querySelector('[data-nfit="' + k + '"]') : null; return el ? String(el.value || "") : ""; };
+            var d = leia("desc").trim();
+            /* item sem nome não casa com nada no almoxarifado (Util.itemChave) */
+            if (!d) return;
+            var q = Util.parseNum(leia("qtd"));
+            var vu = Util.parseNum(leia("vunit"));
+            novos.push({ descricao: d, quantidade: q, unidade: leia("un").trim() || "un",
+              valorUnit: vu, valorTotal: Math.round(q * vu * 100) / 100, origem: "manual" });
+          });
+          if (!novos.length) { UI.toast("Descreva pelo menos um item — linha sem descrição não entra no almoxarifado.", "erro"); return; }
+          var vivo = Store.obter(eid(), "fiscal", id);
+          if (!vivo) { UI.fecharModal(); UI.toast("A nota não existe mais.", "erro"); App.render(); return; }
+          /* ⚠ ITEM JÁ TRIADO NÃO SE REESCREVE. Se alguém já mandou material desta
+             nota para o estoque, trocar a lista por baixo faria a triagem
+             apontar para outro item — e o que entrou no almoxarifado não volta
+             sozinho. Nesse caso a porta recusa, dizendo onde desfazer. */
+          var jaTriado = Util.arr(vivo.itens).filter(function (x) { return x && (x.st === "lancado" || x.st === "ignorado"); }).length;
+          if (jaTriado) {
+            UI.fecharModal();
+            UI.toast(jaTriado + " item(ns) desta nota já foram triados — não dá para trocar a lista por baixo deles. "
+              + "Desfaça esses itens na tela de Itens da nota e volte aqui.", "erro");
+            return;
+          }
+          vivo.itens = novos;
+          if (!Store.salvar(eid(), "fiscal", vivo)) { UI.toast("Não consegui gravar: o armazenamento do navegador recusou.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          /* ⚠ sem tag HTML: o toast escreve por textContent (js/ui.js), e o
+             "<b>" sairia literal para o cliente */
+          UI.toast(novos.length + " item(ns) gravado(s) na nota. Agora o botão Itens abre a triagem — o valor da nota não mudou.", "ok");
+        } }
+      ]);
+      /* ⚠ fiação depois do desenho: botão sem onclick é botão morto */
+      var ligaDel = function () {
+        if (typeof document.querySelectorAll !== "function") return;
+        Array.prototype.forEach.call(document.querySelectorAll("[data-nfdel]"), function (b) {
+          b.onclick = function () { var tr = b.parentNode && b.parentNode.parentNode; if (tr && tr.parentNode) tr.parentNode.removeChild(tr); };
+        });
+      };
+      ligaDel();
+      var add = document.getElementById("nf-additem");
+      var corpoTab = document.getElementById("nf-itens");
+      if (add && corpoTab) add.onclick = function () {
+        var n = corpoTab.querySelectorAll ? corpoTab.querySelectorAll("[data-nfi]").length : 0;
+        var tr = document.createElement ? document.createElement("tr") : null;
+        if (!tr) return;
+        tr.setAttribute("data-nfi", String(1000 + n));
+        tr.innerHTML = '<td><input data-nfit="desc" value="" placeholder="descrição do material"></td>'
+          + '<td><input data-nfit="qtd" value="" style="width:74px;text-align:right" inputmode="decimal"></td>'
+          + '<td><input data-nfit="un" value="" style="width:52px" placeholder="un"></td>'
+          + '<td><input data-nfit="vunit" value="" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
+          + '<td style="width:34px"><button type="button" class="btn sm ghost" data-nfdel="novo" style="padding:0 7px;color:#dc2626">×</button></td>';
+        corpoTab.appendChild(tr);
+        ligaDel();
+      };
+    },
+
+    /* =================================================================
+     * DEVOLVER MATERIAL AO FORNECEDOR — o caminho de volta que faltava
+     *
+     * ⚠ MEDIDO EM 07/09/2026: material errado, quebrado ou a mais chega junto
+     * com o resto, entra no almoxarifado pelo recebimento, e volta para o
+     * fornecedor no caminhão seguinte. No app, nada ligava essa volta ao
+     * pedido: a única saída era uma "saída manual" no almoxarifado, com
+     * `docTipo: "manual"` — o kardex mostrava material saindo sem dizer para
+     * onde, o pedido continuava dizendo que recebeu tudo, e o saldo ficava
+     * certo por acidente (alguém lembrou de dar baixa) ou errado em silêncio
+     * (ninguém lembrou).
+     *
+     * ⚠ O DINHEIRO NÃO É MEXIDO AQUI, e a caixa diz isso. Devolução vira nota
+     * de crédito do fornecedor, que é documento dele e chega depois; abater a
+     * despesa por conta própria seria decidir sozinho um acerto que ainda não
+     * existe. O que o app faz é registrar a saída carimbada e apontar onde o
+     * acerto acontece.
+     * ================================================================= */
+    comprasDevolver: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      if (typeof ComprasLinha === "undefined" || !ComprasLinha.recebimento) {
+        UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return;
+      }
+      var pc = Store.obter(eid(), "compras", id); if (!pc) return;
+      var rec = ComprasLinha.recebimento(pc);
+      if (!rec.iniciado) {
+        UI.toast("Nada foi recebido deste pedido ainda — não há o que devolver.", "erro"); return;
+      }
+      /* só o que de fato entrou pode voltar */
+      var recebidas = rec.linhas.filter(function (l) { return l.recebida > 0; });
+      if (!recebidas.length) {
+        UI.toast("Este pedido não tem itens detalhados, então nada entrou no almoxarifado por ele — a devolução se registra como saída manual, na tela do Estoque.", "aviso"); return;
+      }
+      var jaDev = {};
+      Util.arr(pc.devolucoes).forEach(function (d) {
+        Util.arr(d && d.itens).forEach(function (x) {
+          if (!x || x.itemIdx == null) return;
+          jaDev[String(x.itemIdx)] = Util.num(jaDev[String(x.itemIdx)]) + Util.num(x.qtd);
+        });
+      });
+      var linhas = recebidas.map(function (l) {
+        var devolvida = Util.num(jaDev[String(l.itemIdx)]);
+        var podeVoltar = Math.max(0, Math.round((l.recebida - devolvida) * 1000) / 1000);
+        return "<tr><td>" + Util.esc(l.descricao || ("item " + (l.itemIdx + 1))) + "</td>"
+          + '<td class="num">' + Util.fmtNum(l.recebida, 2) + " " + Util.esc(Util.unidadeExibir(l.unidade || "")) + "</td>"
+          + '<td class="num">' + (devolvida > 0 ? Util.fmtNum(devolvida, 2) : '<span class="muted">—</span>') + "</td>"
+          + '<td class="num"><input data-dev-idx="' + l.itemIdx + '" data-dev-max="' + podeVoltar + '" value="" placeholder="0" style="width:88px;text-align:right" inputmode="decimal"></td></tr>';
+      }).join("");
+      var corpo = '<p style="margin-top:0;font-size:13px">O que volta para <b>' + Util.esc(pc.fornecedorNome || "o fornecedor")
+        + "</b> do pedido <b>" + Util.esc(pc.numero || "") + "</b>. Deixe em branco o que fica.</p>"
+        + '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Item</th><th class="num">Entrou</th><th class="num">Já voltou</th><th class="num">Volta agora</th></tr></thead><tbody>'
+        + linhas + "</tbody></table></div>"
+        + '<div class="row" style="margin-top:10px">' + campo("Data da devolução *", inp("dev-data", this._hojeISO(), "", "date"))
+        + campo("Motivo", inp("dev-motivo", "", "Ex.: veio quebrado / material errado")) + "</div>"
+        /* ⚠ o que NÃO acontece é a parte que evita a pergunta seguinte */
+        + '<p class="muted" style="font-size:12.5px">O material sai do almoxarifado com o carimbo deste pedido — dá para ver no Extrato de onde veio. '
+        + "<b>O dinheiro não é mexido aqui:</b> devolução vira nota de crédito do fornecedor, que é documento dele e chega depois. "
+        + "Quando ela chegar, acerte a despesa no Financeiro. O fornecedor <b>não é avisado</b> por aqui.</p>";
+      UI.modal("Devolver ao fornecedor — pedido " + Util.esc(pc.numero || ""), corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Registrar devolução", classe: "danger", onClick: function () {
+          var data = v("dev-data");
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Informe a data em que o material voltou.", "erro"); return; }
+          var devItens = [], demais = [];
+          Array.prototype.forEach.call((document.querySelectorAll ? document.querySelectorAll("[data-dev-idx]") : []), function (el) {
+            var q = Util.parseNum(el.value);
+            if (!(q > 0)) return;
+            var idx = Number(el.getAttribute("data-dev-idx"));
+            var max = Util.num(el.getAttribute("data-dev-max"));
+            /* ⚠ NÃO SE DEVOLVE MAIS DO QUE ENTROU. Sem esta conta o saldo do
+               almoxarifado ficaria negativo e o custo médio sem sentido — e o
+               pedido passaria a dizer que devolveu material que nunca chegou. */
+            if (q > max + 0.0001) { demais.push((rec.linhas[idx] || {}).descricao || ("item " + (idx + 1))); return; }
+            devItens.push({ itemIdx: idx, qtd: q });
+          });
+          if (demais.length) { UI.toast("Não dá para devolver mais do que entrou em: " + demais.join(", ") + ". Confira as quantidades.", "erro"); return; }
+          if (!devItens.length) { UI.toast("Informe a quantidade de pelo menos um item — se nada volta, não há devolução a registrar.", "erro"); return; }
+          var vivo = Store.obter(eid(), "compras", id);
+          if (!vivo) { UI.fecharModal(); UI.toast("O pedido não existe mais.", "erro"); App.render(); return; }
+          /* ⚠ relê antes de gravar, como as outras portas: outro aparelho pode
+             ter registrado devolução nesses segundos, e o saldo sairia duas vezes */
+          if (Util.arr(vivo.devolucoes).length !== Util.arr(pc.devolucoes).length) {
+            UI.fecharModal();
+            UI.toast("Este pedido registrou devolução em outro aparelho enquanto a caixa estava aberta — nada foi gravado. Abra de novo para ver o que já voltou.", "erro");
+            App.render(); return;
+          }
+          var catalogo = listaTodas("estoque"), saiu = 0, semItem = [];
+          devItens.forEach(function (d) {
+            var it = Util.arr(vivo.itens)[d.itemIdx] || {};
+            var k = Util.itemChave(String(it.descricao || ""));
+            var alvo = k ? catalogo.filter(function (e) { return Util.itemChave(String(e.nome || "")) === k; })[0] : null;
+            if (!alvo) { semItem.push(it.descricao || ("item " + (d.itemIdx + 1))); return; }
+            alvo.saldo = Math.round((Util.num(alvo.saldo) - d.qtd) * 1000) / 1000;
+            if (!Store.salvar(eid(), "estoque", alvo)) return;
+            Store.salvar(eid(), "estoque_mov", {
+              itemId: alvo.id, itemNome: alvo.nome, tipo: "saida", qtd: d.qtd,
+              custoUnit: Util.num(alvo.custoUnit), data: data, obraId: vivo.obraId || "",
+              /* ⚠ CARIMBO DO PEDIDO, não "manual": é ele que faz o Extrato dizer
+                 para ONDE o material foi, e liga a volta à compra que a trouxe. */
+              docTipo: "PC", docId: vivo.id || "", docNumero: vivo.numero || "",
+              obs: "Devolução ao fornecedor — pedido " + (vivo.numero || "") + (v("dev-motivo") ? " · " + String(v("dev-motivo")).slice(0, 120) : "")
+            });
+            saiu++;
+          });
+          if (!Array.isArray(vivo.devolucoes)) vivo.devolucoes = [];
+          vivo.devolucoes.push({ em: data, por: self._quemAprova(), itens: devItens, motivo: String(v("dev-motivo") || "").slice(0, 200) });
+          if (!Store.salvar(eid(), "compras", vivo)) { UI.toast("A saída do almoxarifado foi gravada, mas não consegui gravar a devolução no pedido — confira o Extrato.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          UI.toast("Devolução registrada: " + saiu + " item(ns) saíram do almoxarifado com o carimbo do pedido " + (vivo.numero || "") + "."
+            /* ⚠ nomear o que NÃO saiu: item que nunca teve linha no catálogo
+               (pedido sem itens detalhados na época) não pode sumir calado */
+            + (semItem.length ? " NÃO achei no almoxarifado: " + semItem.join(", ") + " — dê a saída à mão por lá." : "")
+            + " O dinheiro não foi mexido: quando a nota de crédito do fornecedor chegar, acerte a despesa no Financeiro.",
+            semItem.length ? "aviso" : "ok");
+        } }
+      ]);
+    },
+
     comprasCobrar: function (id) {
       var reg = Store.obter(eid(), "compras", id); if (!reg) return;
       if (typeof ComprasLinha === "undefined") { UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return; }
-      var forn = lista("fornecedores").filter(function (f) { return f.id === reg.fornecedorId; })[0] || {};
-      var tel = String(forn.whatsapp || forn.telefone || "").replace(/\D/g, "");
       var empresa = ""; try { empresa = (Auth.usuario() || {}).empresa || ""; } catch (e) {}
       var texto = ComprasLinha.textoCobranca(reg, empresa, this._hojeISO());
-      if (!tel) {
-        UI.toast("Este fornecedor não tem WhatsApp nem telefone no cadastro. Mensagem pronta para copiar: " + texto, "aviso");
+      var semTel = this._abrirWhatsFornecedor(reg.fornecedorId, texto);
+      if (semTel) {
+        UI.toast("Este fornecedor não tem WhatsApp nem telefone no cadastro. Mensagem pronta para copiar: " + semTel, "aviso");
         return;
       }
-      var url = "https://wa.me/" + (tel.length <= 11 ? "55" + tel : tel) + "?text=" + encodeURIComponent(texto);
-      try { window.open(url, "_blank"); } catch (e) {}
       UI.toast("Abri a mensagem no WhatsApp — o fornecedor NÃO foi avisado automaticamente; envie por lá.", "aviso");
     },
     comprasTrocaObra: function (d) {
@@ -14495,11 +15537,21 @@
           (c.status === "cotacao" ? bt("aprovar-compra", "Aprovar", "primary") + '<button class="btn sm" data-gacao="rejeitar-compra" data-id="' + c.id + '" style="color:#dc2626">Rejeitar</button>'
           /* rótulos curtos: "Enviar ao fornecedor" empurrava a coluna de ações
              para fora da tela em 1400 px (medido na foto da lista) */
-          : c.status === "aprovado" ? bt("enviar-compra", "Enviar", "primary", "Marcar que o pedido foi mandado ao fornecedor (o app não envia sozinho)") + bt("receber-compra", "Receber", "success") + cobrar
-          : c.status === "enviado" ? bt("confirmar-compra", "Confirmou", "primary", "Fornecedor confirmou: registrar a data que ele prometeu") + bt("receber-compra", "Receber", "success") + cobrar
-          : c.status === "confirmado" ? bt("receber-compra", "Receber", "success") + cobrar
-          : c.status === "recebido" ? "✓"
-          : c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitado</span>' : "");
+          : c.status === "aprovado" ? bt("enviar-compra", "Enviar", "primary", "Marcar que o pedido foi mandado ao fornecedor (o app não envia sozinho)") + bt("receber-compra", "Receber", "success") + bt("recusou-compra", "Recusou", "", "O fornecedor avisou que não vai atender: registra o motivo e cancela o pedido") + cobrar
+          /* ⚠ RÓTULOS CURTOS, pelo mesmo motivo do comentário acima: a coluna
+             de ações sai da tela em 1400 px. "Data" e "Desfazer" carregam o
+             resto no `title`. */
+          : c.status === "enviado" ? bt("confirmar-compra", "Confirmou", "primary", "Fornecedor confirmou: registrar a data que ele prometeu") + bt("receber-compra", "Receber", "success") + bt("desfazer-etapa-compra", "Desfazer", "", "Marquei como enviado por engano: volta para aprovado e apaga o registro de envio") + bt("recusou-compra", "Recusou", "", "O fornecedor avisou que não vai atender: registra o motivo e cancela o pedido") + cobrar
+          : c.status === "confirmado" ? bt("receber-compra", "Receber", "success") + bt("confirmar-compra", "Data", "", "Corrigir a data que o fornecedor prometeu (o atraso é medido por ela)") + bt("desfazer-etapa-compra", "Desfazer", "", "Desfazer a confirmação do fornecedor") + bt("recusou-compra", "Recusou", "", "O fornecedor voltou atrás: registra o motivo e cancela o pedido") + cobrar
+          /* ⚠ a volta do material precisa de porta: sem ela, a única saída era
+             uma "saída manual" no almoxarifado, que não liga nada ao pedido —
+             o kardex mostrava material saindo sem dizer para onde. */
+          : c.status === "recebido" ? "✓ " + bt("devolver-compra", "Devolver", "", "Material errado, quebrado ou a mais voltou para o fornecedor")
+          : c.status === "rejeitado" ? '<span class="muted" title="' + Util.esc(c.motivoRejeicao || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' rejeitado</span>'
+          /* ⚠ CANCELADO POR RECUSA NÃO É CANCELADO QUALQUER. A pílula diz só
+             "Cancelado" nos dois casos, e o motivo é o que evita chamar o mesmo
+             fornecedor de novo pelo mesmo problema. */
+          : (c.status === "cancelado" && c.recusa) ? '<span class="muted" title="' + Util.esc(c.recusa.motivo || "") + '">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + ' fornecedor recusou</span>' : "");
         var pillEnt = sit ? ComprasLinha.pillEntrega(c, hojeLocal()) : { texto: c.previsaoEntrega ? Util.fmtData(c.previsaoEntrega) : "", cor: "" };
         var celEntrega = pillEnt.texto ? '<span style="font-size:11.5px;font-weight:700;color:' + (pillEnt.cor || "inherit") + '">' + Util.esc(pillEnt.texto) + '</span>' : '<span class="muted">—</span>';
         /* vínculo quebrado grita aqui também: "—" faria o pedido de uma obra
@@ -14545,6 +15597,30 @@
           : c.status === "enviado" ? '<p class="muted">Enviado ao fornecedor' + (c.envio && c.envio.em ? ' em ' + Util.esc(Util.fmtDia(c.envio.em)) + (c.envio.canal ? ' por ' + Util.esc(c.envio.canal) : '') : '') + '. Quando ele confirmar, registre em <b>Fornecedor confirmou</b> na lista. Ao <b>Receber</b>, o valor vira uma despesa no Financeiro.</p>'
           : c.status === "confirmado" ? '<p class="muted">Confirmado pelo fornecedor' + (c.confirmacao && c.confirmacao.dataEntrega ? ' — entrega prometida para <b>' + Util.esc(Util.fmtDia(c.confirmacao.dataEntrega)) + '</b>' : '') + '. Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro.</p>'
           : '<p class="muted">Ao <b>Receber</b> na lista, o valor vira uma despesa no Financeiro (vinculada à obra).</p>') +
+        /* ⚠ A ECONOMIA NEGOCIADA ERA GRAVADA E NINGUÉM LIA. `valorCotado`,
+           `precoOrigem` e `descontoObtido` nascem na geração do pedido (ver
+           `_pcDaCotacao`) e nenhuma tela os desenhava — o trabalho de negociar
+           não aparecia em lugar nenhum, e quem aprova o pedido não via que ele
+           já tinha baixado. Campo gravado que nenhuma tela lê é campo que a
+           próxima limpeza apaga por parecer morto.
+           ⚠ SÓ QUANDO HÁ O QUE MOSTRAR: sem rodada de desconto o desconto é zero
+           e a linha não aparece — "economizou R$ 0,00" é ruído. E `precoOrigem`
+           decide a frase: sem a base de antes da negociação, o app NÃO afirma
+           economia nenhuma. */
+        (function () {
+          var desc = Util.num(c.descontoObtido);
+          if (!(desc > 0) || String(c.precoOrigem || "") !== "mapa-antes-da-negociacao") return "";
+          var base = Util.num(c.valorCotado);
+          var pct = base > 0 ? Math.round((desc / base) * 1000) / 10 : 0;
+          return '<p style="font-size:12.5px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:7px 10px;margin:8px 0;color:#166534">'
+            + "A negociação baixou <b>" + Util.fmtMoeda(desc) + "</b>"
+            + (pct > 0 ? " (" + String(pct).replace(".", ",") + "%)" : "")
+            + ": a proposta do fornecedor era " + Util.fmtMoeda(base) + " e o pedido saiu por " + Util.fmtMoeda(Util.num(c.valor)) + ".</p>";
+        })() +
+        /* ITENS — ver `_itensPedidoBloco`. Editável só antes da primeira
+           entrega: depois dela o que chegou está anotado por índice. */
+        this._itensPedidoBloco(c, !(typeof ComprasLinha !== "undefined" && ComprasLinha.recebimento
+          && ComprasLinha.recebimento(c).iniciado)) +
         /* ANDAMENTO — a linha do tempo do pedido, derivada dos carimbos (js/compraslinha.js).
            "pago" é lido do Financeiro pelo carimbo docTipo PC + docId; sem carimbo a
            linha diz que NÃO ENCONTROU, nunca "não pago". Passo não feito diz "ainda não". */
@@ -14562,6 +15638,11 @@
           }).join('');
           return '<div class="card" style="margin-top:10px;padding:10px"><div style="font-weight:800;font-size:13px;margin-bottom:4px">Andamento</div>' + faixa + '<ul style="list-style:none;margin:0;padding:0" id="g-andamento">' + itens + '</ul></div>';
         })() : '');
+      /* ⚠ A FIAÇÃO DOS ITENS — depois do `_modalForm`, que é quem desenha.
+         Botão desenhado e não fiado é botão morto, sem erro nenhum na tela: já
+         aconteceu nesta base de um recurso inteiro passar no gate e não existir
+         no navegador. `_fiarItensPedido` roda após o modal abrir. */
+      var _fiar = function () { self._fiarItensPedido(c); };
       this._modalForm("compras", c, "Pedido de compra", corpo, function (obj) {
         /* ⚠ COLETE ANTES DE CHAMAR O GATE — ELE AGENDA A DESPESA COM O QUE
            ESTIVER NO `obj` NAQUELE INSTANTE. A ordem era: gate primeiro,
@@ -14583,12 +15664,72 @@
         obj.valor = nv("g-valor"); obj.categoria = v("g-cat"); obj.formaPgto = v("g-forma");
         obj.condPgtoTexto = v("g-condtxt").slice(0, 120);
         obj.data = v("g-data"); obj.previsaoEntrega = v("g-entrega"); obj.obs = v("g-obs");
+        /* ⚠ O NOME DO FORNECEDOR AVULSO MORRIA NO PRIMEIRO SALVAR. Pedido de
+           fornecedor que não está no cadastro nasce com `fornecedorId` vazio e
+           `fornecedorNome` preenchido (é assim que o Mapa o gera). O select
+           "— selecionar —" devolve "", o `filter` não acha ninguém e a linha
+           abaixo gravava `fornecedorNome = ""`: o pedido perdia o nome de quem
+           vai entregar, e com ele a mensagem do WhatsApp, o papel do fornecedor
+           e a coluna da lista. Sem ID, o nome que já estava lá continua valendo. */
         var fo = lista("fornecedores").filter(function (x) { return x.id === obj.fornecedorId; })[0];
-        obj.fornecedorNome = fo ? fo.nome : "";
+        obj.fornecedorNome = fo ? fo.nome : (obj.fornecedorId ? "" : (c.fornecedorNome || obj.fornecedorNome || ""));
+        /* ⚠ os itens só são regravados quando a tabela ESTÁ na tela e editável
+           (`_lerItensPedido` devolve null quando não há linhas): em pedido que já
+           recebeu entrega a tabela é leitura, e ler de lá apagaria os itens. */
+        var itensForm = self._lerItensPedido(c.itens);
+        if (itensForm) obj.itens = itensForm;
         obj.status = v("g-status");
         if (!self._gateStatusForm(obj, stAntigo, "compras")) return false; // G3 fix: aprovar/rejeitar pelo form exige permissão + auditoria
         return true;
+      }, function (obj) {
+        /* ⚠ DEPOIS DO SAVE, e só aqui. O coletor roda ANTES de gravar: soltar a
+           requisição lá a devolveria para a fila mesmo quando uma validação
+           seguinte recusasse o save — e o pedido continuaria vivo. Ver
+           `_liberaRequisicaoSemPedido`. */
+        if (obj && obj.requisicaoId && (obj.status === "cancelado" || obj.status === "rejeitado")) {
+          var rqF = self._liberaRequisicaoSemPedido(obj.requisicaoId);
+          if (rqF) UI.toast("A requisição " + (rqF.numero || rqF.id) + " voltou para a fila de compras: nenhum pedido vivo a atende.", "aviso");
+        }
       });
+      _fiar();
+    },
+    /* liga o "+ item" e o × da tabela de itens do pedido. Trabalha no DOM que
+       o `_itensPedidoBloco` acabou de desenhar — sem re-renderizar o modal
+       inteiro, que perderia o que a pessoa já digitou nos outros campos. */
+    _fiarItensPedido: function (c) {
+      if (typeof document === "undefined" || !document.getElementById) return;
+      var self = this;
+      var corpoTab = document.getElementById("g-pcitens");
+      var add = document.getElementById("g-pcadd");
+      var liga = function () {
+        if (typeof document.querySelectorAll !== "function") return;
+        Array.prototype.forEach.call(document.querySelectorAll("[data-pcdel]"), function (b) {
+          b.onclick = function () {
+            var tr = b.parentNode && b.parentNode.parentNode;
+            /* ⚠ remove a LINHA do DOM, não o item do registro: nada some do
+               disco antes de a pessoa clicar em Salvar — fechar a caixa sem
+               salvar tem de deixar o pedido como estava. */
+            if (tr && tr.parentNode) tr.parentNode.removeChild(tr);
+          };
+        });
+      };
+      liga();
+      if (add) add.onclick = function () {
+        if (!corpoTab) return;
+        var n = corpoTab.querySelectorAll ? corpoTab.querySelectorAll("[data-pci]").length : 0;
+        /* índice novo = fim da lista; só acontece antes da primeira entrega
+           (ver `_itensPedidoBloco`), então não há recebimento apontando para cá */
+        var tr = document.createElement ? document.createElement("tr") : null;
+        if (!tr) return;
+        tr.setAttribute("data-pci", String(1000 + n));
+        tr.innerHTML = '<td><input data-pcit="desc" value="" placeholder="descrição do material"></td>'
+          + '<td><input data-pcit="qtd" value="" style="width:74px;text-align:right" inputmode="decimal"></td>'
+          + '<td><input data-pcit="un" value="" style="width:52px" placeholder="un"></td>'
+          + '<td><input data-pcit="preco" value="" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
+          + '<td style="width:34px"><button type="button" class="btn sm ghost" data-pcdel="novo" title="Tirar este item do pedido" style="padding:0 7px;color:#dc2626">×</button></td>';
+        corpoTab.appendChild(tr);
+        liga();
+      };
     },
 
     // =================== ESTOQUE / ALMOXARIFADO ===================
@@ -14798,10 +15939,35 @@
      * ⚠ Procura o item com `listaTodas`, NÃO com `lista`: o escopo por obra
      *   filtraria o catálogo e o comprador criaria um item duplicado só porque
      *   o existente é de uma obra que ele não enxerga. */
-    _estoqueDaCompra: function (pc) {
-      if (!pc || pc.estoqueLancado) return { lancados: 0, jaFeito: !!(pc && pc.estoqueLancado) };
-      var itens = Util.arr(pc.itens).filter(function (i) {
-        return i && String(i.descricao || "").trim() && Util.num(i.quantidade) > 0;
+    /* ⚠ `qtdPorIdx` É A ENTREGA QUE DE FATO CHEGOU (entrega parcial).
+       Sem ele, o comportamento antigo continua palavra por palavra: dá entrada
+       na quantidade PEDIDA e só uma vez por pedido (`estoqueLancado`). Com ele,
+       cada viagem entra com o que veio naquela viagem — e aí o `estoqueLancado`
+       NÃO pode barrar, porque a segunda viagem é entrada legítima, não
+       repetição. Quem impede a repetição ali é a conta de `ComprasLinha.
+       recebimento`, que sabe quanto já chegou de cada item.
+       Chave por ÍNDICE do item, nunca por descrição: duas linhas parecidas no
+       mesmo pedido fariam o saldo do item errado andar (regra 2 da skill
+       `dinheiro`). */
+    _estoqueDaCompra: function (pc, qtdPorIdx, dataEntrega) {
+      var porIdx = qtdPorIdx || null;
+      if (!pc || (!porIdx && pc.estoqueLancado)) return { lancados: 0, jaFeito: !!(pc && pc.estoqueLancado) };
+      var itens = Util.arr(pc.itens).map(function (i, idx) {
+        /* o índice viaja junto: o filtro abaixo tira linhas, e sem ele a
+           quantidade da viagem cairia no item errado */
+        return { it: i, idx: idx };
+      }).filter(function (x) {
+        var i = x.it;
+        if (!i || !String(i.descricao || "").trim()) return false;
+        var q = porIdx ? Util.num(porIdx[String(x.idx)]) : Util.num(i.quantidade);
+        return q > 0;
+      }).map(function (x) {
+        if (!porIdx) return x.it;
+        /* cópia rasa com a quantidade DA VIAGEM — o registro do pedido não
+           pode ser alterado por uma entrada de estoque */
+        var c = {}; for (var k in x.it) { if (Object.prototype.hasOwnProperty.call(x.it, k)) c[k] = x.it[k]; }
+        c.quantidade = Util.num(porIdx[String(x.idx)]);
+        return c;
       });
       if (!itens.length) return { lancados: 0, semItens: true };
 
@@ -14840,7 +16006,12 @@
         }
         Store.salvar(eid(), "estoque_mov", {
           itemId: alvo.id, itemNome: alvo.nome, tipo: "entrada", qtd: qtd, custoUnit: custo,
-          data: pc.dataRecebimento || hojeLocal(),
+          /* ⚠ A DATA DO MOVIMENTO É A DA ENTREGA, NÃO A DE HOJE.
+             Com entrega parcial, `pc.dataRecebimento` só existe quando o
+             pedido FECHA — nas viagens do meio ele está vazio, e o kardex
+             caía em `hojeLocal()`: material que chegou sexta e foi lançado
+             segunda entrava com a data errada, no mês errado. */
+          data: dataEntrega || pc.dataRecebimento || hojeLocal(),
           /* ⚠ `docId` além do `docNumero`: o número é EDITÁVEL no formulário
              (campo g-num) — quem renumera o pedido deixaria o movimento do
              kardex apontando para um número que não existe mais, e o carimbo
@@ -15833,8 +17004,54 @@
               return;
             }
           }
+
+          /* ⚠ O TOUR 360 PRECISA DO MESMO RETORNO, E POR UM MOTIVO PIOR.
+           * A foto de diário tem 1024 px e sobe rápido; um panorama tem 4096 px
+           * e demora, então a chance de o gestor publicar antes de a fila
+           * terminar é MAIOR, não menor. Sem carimbar aqui, a referência da
+           * estação fica sem `remoto` para sempre: ela não vai ao Portal (o
+           * `paraPortal` a descarta, e o servidor não a autorizaria), não
+           * aparece no outro aparelho, e nada na tela indica isso — o
+           * engenheiro leu "Visita no ar para o cliente".
+           * São DUAS imagens por estação: a foto 360 e o retrato do projeto
+           * (o render do BIM guardado para o comparativo projetado × executado).
+           * O laço de cima faz `return` ao achar no diário; aqui embaixo só se
+           * chega quando o id NÃO era de diário nenhum. */
+          var ts = Store.listar(eid(), "tour360") || [];
+          for (var k = 0; k < ts.length; k++) {
+            var ps = ts[k].pontos || [], mudouT = false;
+            for (var q = 0; q < ps.length; q++) {
+              var p = ps[q];
+              if (!p) continue;
+              if (p.foto && p.foto.id === idLocal && !p.foto.remoto) {
+                p.foto.remoto = idRemoto; p.foto.tenant = tenant; mudouT = true;
+              }
+              if (p.projecao && p.projecao.foto && p.projecao.foto.id === idLocal && !p.projecao.foto.remoto) {
+                p.projecao.foto.remoto = idRemoto; p.projecao.foto.tenant = tenant; mudouT = true;
+              }
+            }
+            if (mudouT) {
+              Store.salvar(eid(), "tour360", ts[k]);
+              self._republicarTourSeNoAr(ts[k]);
+              return;
+            }
+          }
         } catch (e) {}
       };
+    },
+
+    /* Gêmeo de `_republicarSeNoAr` para a visita 360: a foto que termina de
+       subir depois da publicação só alcança o cliente se a obra for reenviada.
+       `_republicarPortal` já serializa por obra, então oito panoramas
+       terminando em sequência viram um envio e um reenvio com o estado final. */
+    _republicarTourSeNoAr: function (tour) {
+      try {
+        if (!tour || typeof Tour360 === "undefined") return;
+        if (Tour360.estadoDe(tour) !== "publicado") return;   // não está no ar
+        var ob = Store.obter(eid(), "obras", tour.obraId);
+        if (!ob || !ob.portalUser) return;                    // obra sem Portal
+        this._republicarPortal(ob, function () {});
+      } catch (e) {}
     },
 
     /* Reenvia a obra ao Portal quando um diário JÁ PUBLICADO muda de conteúdo.
@@ -19558,6 +20775,20 @@ renderRequisicoes: function () {
             return true;
           }
         } else {
+          /* ⚠ AQUI O APP CONCLUI SEM PERGUNTAR, E ISSO É DESENHO.
+             Tentei fazer este ramo perguntar como o de cima, e o teste
+             [8] reprovou com razão: no caso INCERTO o app não tem nada de
+             útil a oferecer numa pergunta — ele não sabe qual cenário foi
+             escolhido, então "cancelar" só deixaria a cotação aberta com
+             pedidos já em Compras, e o único caminho que o recado poderia
+             apontar seria "exclua esses pedidos" — mandando apagar pedido
+             de compra LEGÍTIMO, dinheiro de obra saindo da lista para
+             destravar uma tela. Pergunta sem resposta útil treina a pessoa
+             a clicar OK no reflexo.
+             O que falta aqui não é pergunta: é a conferência ficar
+             ACIONÁVEL depois — um caminho, no Mapa concluído, para emitir
+             o pedido que faltou sem apagar os que existem. Enquanto ele
+             não existe, o honesto é concluir e dizer o que NÃO se sabe. */
           incerto = " Não dá para dizer daqui se faltou algum pedido: o cenário escolhido no clique anterior não chegou a ser gravado, e os dois cenários desta cotação emitiriam números diferentes de pedido (o maior deles emitiria " + esp.n + ") — é a conferência desses números em Compras que responde.";
         }
       }
@@ -19586,6 +20817,312 @@ renderRequisicoes: function () {
       UI.toast(quantos + ": terminei a conclusão que tinha ficado pela metade. Confira esses números em Compras." + perda + incerto, "aviso");
       return true;
     },
+    /* =================================================================
+     * REABRIR UMA COTAÇÃO CONCLUÍDA — a saída que não existia
+     *
+     * ⚠ MEDIDO EM 07/09/2026: concluir abre o Mapa em SOMENTE LEITURA e nunca
+     * mais fecha. Concluir por engano (botão ao lado do Salvar), concluir a
+     * cotação errada, ou concluir e o fornecedor recusar — nos três casos a
+     * cotação inteira, com itens, fornecedores e preços, virava papel de
+     * parede. A única saída era refazer tudo numa cotação nova, digitando de
+     * novo o que já estava ali.
+     *
+     * ⚠ E A PORTA SÓ ABRE ONDE NÃO HÁ DINHEIRO ATRÁS DELA. Com pedido de
+     * compra emitido, reabrir deixaria a cotação editável POR CIMA do
+     * documento que originou aquela despesa — é a mesma regra que barra o
+     * Salvar (`_cotMsgSalvarComPedidos`) e o puxar do online
+     * (`_podeRegravarMapa`). Quem decide é o carimbo `cotacaoId` em Compras,
+     * nunca o `status` do registro, que o merge da nuvem desfaz.
+     *
+     * ⚠ O QUE NÃO VOLTA É DITO NA PERGUNTA. Concluir chamou
+     * `encerrarSilencioso`: os links do fornecedor foram encerrados no
+     * servidor e reabrir aqui NÃO os ressuscita — para receber proposta de
+     * novo é preciso publicar outra rodada. Prometer o que não acontece é o
+     * defeito que este módulo mais pagou.
+     * ================================================================= */
+    reabrirCotacao: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      var cot = Store.obter(eid(), "cotacoes", id);
+      if (!cot) { UI.toast("Cotação não encontrada.", "erro"); return; }
+      if (cot.status !== "concluida") { UI.toast("Esta cotação não está concluída.", "erro"); return; }
+      /* ⚠ a pergunta ao módulo Compras é a última coisa antes de decidir, e ela
+         é refeita AQUI (não herdada do desenho do botão): entre desenhar a tela
+         e clicar, outro aparelho pode ter emitido o pedido. */
+      var peds = this._cotPedidosGerados(id);
+      if (peds.length) {
+        var nums = peds.map(function (p) { return p.numero || p.id; }).join(", ");
+        /* trava COM porta: o caminho de volta existe e está escrito */
+        UI.toast("Esta cotação já gerou " + peds.length + " pedido(s) de compra (" + nums
+          + "). Reabrir agora deixaria o Mapa editável por cima do documento que originou essa despesa. "
+          + "Se os pedidos foram um engano, cancele ou exclua eles em Compras primeiro — aí esta cotação volta a reabrir.", "erro");
+        return;
+      }
+      var temOnline = !!(cot.online && cot.online.id);
+      var rq = cot.requisicaoId ? Store.obter(eid(), "requisicoes", cot.requisicaoId) : null;
+      /* ⚠ a mesma regra de `_liberaRequisicaoSemPedido`, perguntada aqui SEM
+         gravar: a resposta entra na pergunta que a pessoa lê, e a gravação só
+         acontece depois do "sim". Duas cópias da regra divergiriam na primeira
+         vez que uma delas mudasse — por isso a lista de status vem de lá. */
+      var outrosPC = rq ? Store.listar(eid(), "compras").filter(function (p) {
+        return p && p.requisicaoId === rq.id && p.status !== "cancelado" && p.status !== "rejeitado";
+      }) : [];
+      var voltaReq = !!(rq && rq.status === "comprada" && !outrosPC.length);
+      var pergunta = "Reabrir a cotação " + (cot.numero || "") + "?\n\n"
+        + "Ela volta a ser editável e o botão “Concluir e gerar pedidos” reaparece. "
+        + "Nenhum pedido de compra foi emitido por ela, então não há dinheiro para desfazer.";
+      if (temOnline) {
+        pergunta += "\n\n⚠ Os links do fornecedor NÃO voltam a funcionar: concluir encerrou a publicação no servidor. "
+          + "Para receber proposta de novo é preciso publicar uma rodada nova (o Mapa oferece o botão depois de reabrir).";
+      }
+      if (voltaReq) pergunta += "\n\nA requisição " + (rq.numero || rq.id) + " volta de “Comprada” para “Aprovada”, porque nenhum pedido vivo a atendeu.";
+      var ok = false;
+      try { ok = window.confirm(pergunta); } catch (eC) { ok = false; }
+      if (!ok) return;
+      /* ⚠ RELÊ ANTES DE GRAVAR. A caixa ficou aberta; o merge da nuvem roda em
+         segundo plano e o outro aparelho pode ter emitido o pedido nesses
+         segundos — a mesma releitura que o puxar e o encerrar fazem depois da
+         viagem de rede. */
+      var vivo = Store.obter(eid(), "cotacoes", id);
+      if (!vivo || vivo.status !== "concluida") { UI.toast("A cotação mudou em outro aparelho enquanto a pergunta estava aberta — nada foi alterado.", "erro"); App.render(); return; }
+      var pedsAgora = this._cotPedidosGerados(id);
+      if (pedsAgora.length) { UI.toast("Um pedido de compra foi emitido nesta cotação enquanto a pergunta estava aberta — nada foi alterado.", "erro"); App.render(); return; }
+      vivo.status = "rascunho";
+      if (!Array.isArray(vivo.historico)) vivo.historico = [];
+      vivo.historico.push({ em: new Date().toISOString(), acao: "reaberta",
+        quem: this._quemAprova(), detalhe: "reaberta sem pedido de compra emitido" + (temOnline ? " · publicação online segue encerrada" : "") });
+      Store.salvar(eid(), "cotacoes", vivo);
+      /* ⚠ MEDIDO NO DISCO, não deduzido do retorno do salvar: dizer "reabri"
+         sem ter gravado deixaria a pessoa editando um Mapa que o próximo render
+         fecha — e o que ela digitasse iria embora junto. */
+      var conferido = Store.obter(eid(), "cotacoes", id);
+      if (!conferido || conferido.status !== "rascunho") {
+        UI.toast("Não consegui gravar a reabertura: o armazenamento do navegador recusou (normalmente falta de espaço). A cotação continua concluída — libere espaço e tente de novo.", "erro");
+        return;
+      }
+      if (voltaReq) { rq.status = "aprovada"; Store.salvar(eid(), "requisicoes", rq); }
+      UI.fecharModal(); App.render();
+      self.formCotacao(conferido);
+      UI.toast("Cotação " + (conferido.numero || "") + " reaberta — dá para editar e concluir de novo."
+        + (temOnline ? " Os links antigos continuam encerrados; publique uma rodada nova para receber proposta." : "")
+        + (voltaReq ? " A requisição " + (rq.numero || rq.id) + " voltou para “Aprovada”." : ""), "ok");
+    },
+
+    /* =================================================================
+     * MONTA E GRAVA UM PEDIDO DE COMPRA A PARTIR DE UMA LINHA DE
+     * `Cotacoes.pedidos` — a ÚNICA cópia desta lista de campos.
+     *
+     * ⚠ Ela era in-line no laço de "Concluir e gerar pedidos". Quando
+     * nasceu o segundo caminho (gerar pedido para outro fornecedor, no Mapa
+     * já concluído), copiar a lista faria os dois divergirem na primeira vez
+     * que um campo mudasse — e este arquivo já pagou exatamente isso: o
+     * frete ficou de fora de um dos dois papéis da mesma compra, e a v1.1.232
+     * copiou a despesa da compra para o formulário e esqueceu o estoque.
+     * Um lugar só, dois chamadores.
+     *
+     * `obsExtra` é o que distingue os dois: o laço diz o cenário, o caminho
+     * do segundo colocado diz por que aquele pedido nasceu depois.
+     * Devolve o registro gravado, ou null quando o disco recusou.
+     * ================================================================= */
+    _pcDaCotacao: function (cot, p, hojePed, modo, obsExtra) {
+      var self = this;
+      var pc = proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
+      /* a autoria vai junto: sem ela quem gerou o pedido aprova o proprio
+         pedido, e o texto do modal promete que "quem aprova e outra
+         pessoa". O carimbo so acontecia no formulario. */
+      /* ⚠ PRAZO E PREVISÃO ESTRUTURADOS, não só no texto de `obs`. O
+         pedido levava o prazo como frase ("Prazo de entrega: 5 dia(s).")
+         e `previsaoEntrega` ficava vazio — o formulário tem o campo
+         (g-entrega), o Portal do Cliente exporta, e o contratante via
+         "—" sem nenhum alerta de atraso possível. Dias CORRIDOS a partir
+         da data do pedido (o fornecedor conta corrido), somados em data
+         local (`somarDiasISO`). Sem prazo: `null` e "", nunca chute. */
+      var prazo = (p.prazoDias != null && Number(p.prazoDias) > 0) ? Number(p.prazoDias) : null;
+      /* ⚠ A BASE DA ECONOMIA ERA O PREÇO JÁ NEGOCIADO — ou seja, zero.
+         `valorCotado` foi criado para responder "quanto custaria sem a
+         negociação?", e recebia `p.total`, que é o total do Mapa DEPOIS
+         das rodadas de desconto. O campo dizia ser a base e era o
+         resultado: qualquer relatório feito sobre ele mostraria desconto
+         de R$ 0,00 para uma negociação que baixou R$ 900. Campo que mente
+         é pior que campo vazio — ninguém reconfere um número que o sistema
+         calculou sozinho.
+         A base de verdade é a coluna congelada no primeiro "Pedir
+         desconto" (`precosAntesNegociacao`, js/cotonlineui.js).
+         ⚠ E só vale INTEIRA: se qualquer item do pedido não tiver preço
+         na coluna congelada (item acrescentado depois, fornecedor que
+         não cotava aquele item), a base cai para `p.total` e a origem
+         diz "mapa". Base pela metade inventaria uma economia que não
+         houve — e inventar economia é o mesmo defeito, do outro lado. */
+      var colFr = (cot.fornecedores || [])[p.fornecedorIdx] || {};
+      var baseAntes = colFr.precosAntesNegociacao;
+      var valorBase = Util.num(p.total), origemBase = "mapa";
+      if (baseAntes && typeof baseAntes === "object") {
+        var somaBase = 0, completa = true;
+        Util.arr(p.itens).forEach(function (x) {
+          var pu = Util.num(baseAntes[x.itemIdx]);
+          if (!(pu > 0)) { completa = false; return; }
+          somaBase += Util.num(x.quantidade) * pu;
+        });
+        if (completa) {
+          var freteBase = (colFr.freteAntesNegociacao != null) ? Util.num(colFr.freteAntesNegociacao) : Util.num(colFr.frete);
+          valorBase = Math.round((somaBase + freteBase) * 100) / 100;
+          origemBase = "mapa-antes-da-negociacao";
+        }
+      }
+      var rec = Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null,
+        /* ⚠ `formaPgto` só recebe CHAVE de P.formaPgto; o texto livre do
+           fornecedor vai em `condPgtoTexto` — ver `_formaPgtoChave`.
+           Gravar o texto em `formaPgto` era o que o select do
+           formulário apagava no primeiro Salvar. */
+        formaPgto: self._formaPgtoChave(p.condPgto), condPgtoTexto: String(p.condPgto || "").slice(0, 120),
+        prazoDias: prazo, previsaoEntrega: prazo ? somarDiasISO(hojePed, prazo) : "",
+        /* base da economia, CONGELADA na geração: é contra isto que a
+           negociação (Fase 1a) vai comparar o valor fechado. Sem
+           congelar agora, o pedido gerado hoje não tem base amanhã.
+           ⚠ Ver `valorBase` acima: quando houve rodada de desconto, a base
+           é a coluna ANTES dela, e `precoOrigem` diz qual das duas foi
+           usada — sem esse rótulo, um desconto de R$ 0 pareceria "não
+           negociou" quando na verdade é "não dá para saber". */
+        valorCotado: valorBase, precoOrigem: origemBase,
+        descontoObtido: Math.round((valorBase - Util.num(p.total)) * 100) / 100,
+        /* ⚠ O FRETE VINHA NO `p.total` E NÃO ERA GRAVADO EM CAMPO NENHUM.
+           `Cotacoes.pedidos` devolve `{ total, frete, itens }` — o total
+           já soma o frete, mas o registro só copiava `valor: p.total` e
+           `itens`. Consequência medida: o pedido valia R$ 9.500 na lista
+           e o PDF que ia ao FORNECEDOR fechava em R$ 9.000 (o impresso
+           soma qtd × preço dos itens, e frete não é item). Dois papéis da
+           mesma compra com R$ 500 de diferença: o do Mapa dizia
+           "TOTAL (subtotal + frete)" e fechava 9.500, o do Pedido fechava
+           9.000. Quem "arrumasse" baixando o valor do pedido para 9.000
+           tirava R$ 500 do custo da obra, porque a despesa do Receber sai
+           de `pcr.valor`. */
+        frete: Util.num(p.frete),
+        /* ⚠ SEM ISTO A REQUISIÇÃO NÃO TEM VOLTA. O outro caminho de geração
+           de pedido (o botão "Gerar pedido" da requisição) sempre gravou
+           `requisicaoId`; o do Mapa, não. A conclusão carimba a
+           requisição como "Comprada" pelo `cot.requisicaoId` — mas se o
+           pedido depois morre, nada liga o pedido morto de volta à
+           requisição, e ela fica presa em "Comprada" para sempre
+           (ver `_liberaRequisicaoSemPedido`). */
+        requisicaoId: cot.requisicaoId || null,
+        obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
+      if (rec && obsExtra) { rec.obs = (rec.obs || "") + " " + obsExtra; Store.salvar(eid(), "compras", rec); }
+      return rec || null;
+    },
+    /* =================================================================
+     * GERAR PEDIDO PARA OUTRO FORNECEDOR — o caminho do 2º colocado
+     *
+     * ⚠ MEDIDO EM 07/09/2026: a cotação fecha, o pedido sai, e uma semana
+     * depois o fornecedor recusa (ou some, ou o preço dele não vale mais). A
+     * proposta do segundo colocado está ali, na mesma cotação, com preço por
+     * item — e não havia caminho nenhum até ela. A cotação concluída abre em
+     * somente leitura; "Reabrir" recusa (com razão) quando já há pedido
+     * emitido. A saída que restava era refazer a cotação inteira, redigitando
+     * preço que já estava gravado — ou apagar o pedido morto em Compras para
+     * destravar a tela, que é dinheiro de obra saindo da lista por causa de
+     * uma trava.
+     *
+     * ⚠ O QUE JÁ ESTÁ COMPRADO NÃO É OFERECIDO DE NOVO, e a conta é por
+     * CARIMBO: cada item do pedido carrega `itemIdx`, o índice do item na
+     * cotação. Casar por descrição seria ligar dinheiro por semelhança (regra
+     * 2 da skill `dinheiro`) — e com duas linhas parecidas na mesma cotação o
+     * palpite errado ou compra em dobro ou deixa material sem pedido.
+     * Pedido morto (cancelado/rejeitado) NÃO cobre nada: é exatamente o caso
+     * que traz a pessoa aqui.
+     * ================================================================= */
+    cotPedidoOutroFornecedor: function (id) {
+      if (this._bloqueado()) return;
+      var self = this;
+      if (typeof Cotacoes === "undefined") { UI.toast("O motor de cotações não carregou — recarregue o app.", "erro"); return; }
+      var cot = Store.obter(eid(), "cotacoes", id);
+      if (!cot) { UI.toast("Cotação não encontrada.", "erro"); return; }
+      var vivos = this._cotPedidosGerados(id).filter(function (x) { return x && x.status !== "cancelado" && x.status !== "rejeitado"; });
+      var cobertos = {};
+      vivos.forEach(function (x) {
+        Util.arr(x.itens).forEach(function (it) {
+          if (it && it.itemIdx != null) cobertos[String(it.itemIdx)] = x.numero || x.id;
+        });
+      });
+      var opcoes = [];
+      Util.arr(cot.fornecedores).forEach(function (fr, fIdx) {
+        var its = [], soma = 0;
+        Util.arr(cot.itens).forEach(function (it, i) {
+          if (cobertos[String(i)] != null) return;
+          var pu = Cotacoes.preco(cot, i, fIdx);
+          if (!(Util.num(pu) > 0)) return;
+          var sub = Math.round(Util.num(it.quantidade) * Util.num(pu) * 100) / 100;
+          its.push({ codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade,
+            quantidade: Util.num(it.quantidade), valorUnit: Util.num(pu), precoRef: Util.num(pu), itemIdx: i, subtotal: sub });
+          soma += sub;
+        });
+        if (its.length) opcoes.push({ fIdx: fIdx, nome: fr.nome || "sem nome", fornecedorId: fr.fornecedorId || null,
+          condPgto: fr.condPgto || "", prazoDias: (fr.prazoDias != null ? Util.num(fr.prazoDias) : null),
+          frete: Util.num(fr.frete), itens: its, soma: Math.round(soma * 100) / 100 });
+      });
+      var faltam = Util.arr(cot.itens).filter(function (it, i) { return cobertos[String(i)] == null; }).length;
+      if (!faltam) {
+        /* ⚠ recado com o MOTIVO, e com os números: "não dá" sem dizer por que
+           faz a pessoa procurar defeito onde não há. */
+        UI.toast("Todos os itens desta cotação já estão em pedido vivo (" + vivos.map(function (x) { return x.numero || x.id; }).join(", ")
+          + "). Se um deles morreu, cancele ou rejeite o pedido em Compras — aí os itens dele voltam a ficar disponíveis aqui.", "aviso");
+        return;
+      }
+      if (!opcoes.length) {
+        UI.toast(faltam + " item(ns) desta cotação estão sem pedido, mas nenhum outro fornecedor da grade cotou algum deles. "
+          + "Sem preço na mesa não dá para emitir daqui: faça uma cotação nova para esses itens.", "aviso");
+        return;
+      }
+      var linhas = opcoes.map(function (o, k) {
+        return '<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0;padding:6px;border:1px solid var(--borda);border-radius:8px">'
+          + '<input type="radio" name="pc-outro" value="' + k + '"' + (k === 0 ? " checked" : "") + '>'
+          + '<span><b>' + Util.esc(o.nome) + "</b> · " + o.itens.length + " item(ns) · <b>" + Util.fmtMoeda(o.soma + o.frete) + "</b>"
+          + (o.frete > 0 ? ' <span class="muted" style="font-size:12px">(inclui frete ' + Util.fmtMoeda(o.frete) + ")</span>" : "")
+          + (o.prazoDias ? ' <span class="muted" style="font-size:12px">· ' + o.prazoDias + " dia(s)</span>" : "")
+          + '<br><span class="muted" style="font-size:12px">' + Util.esc(o.itens.map(function (x) { return x.descricao; }).slice(0, 3).join(", "))
+          + (o.itens.length > 3 ? " e mais " + (o.itens.length - 3) : "") + "</span></span></label>";
+      }).join("");
+      var corpo = '<p style="margin-top:0;font-size:13px">' + faltam + " item(ns) desta cotação estão <b>sem pedido vivo</b>. "
+        + "Escolha de quem emitir — o preço é o que ele cotou nesta cotação.</p>"
+        + linhas
+        + '<p class="muted" style="font-size:12.5px;margin-top:10px">Os pedidos que já existem <b>não são tocados</b>, e os itens deles não entram aqui. '
+        /* ⚠ o frete é o da proposta CHEIA e está sendo cobrado numa entrega
+           menor — o app não tem como saber se ele muda, e fingir que sabe seria
+           inventar número. Diz e deixa a pessoa conferir. */
+        + "O frete é o que ele cotou para a proposta inteira; numa entrega menor ele pode ser outro — confirme com o fornecedor e corrija no pedido, se precisar. "
+        + "O pedido nasce em <b>Aguardando aprovação</b>, como qualquer outro.</p>";
+      UI.modal("Gerar pedido para outro fornecedor", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gerar pedido", classe: "primary", onClick: function () {
+          var el = document.querySelector('input[name="pc-outro"]:checked');
+          var o = opcoes[el ? Number(el.value) : -1];
+          if (!o) { UI.toast("Escolha um fornecedor.", "erro"); return; }
+          /* ⚠ RELÊ ANTES DE GRAVAR: entre abrir a caixa e clicar, outro
+             aparelho pode ter emitido pedido para os mesmos itens. Repetir a
+             conta aqui é mais barato que descobrir a compra em dobro depois. */
+          var agoraVivos = self._cotPedidosGerados(id).filter(function (x) { return x && x.status !== "cancelado" && x.status !== "rejeitado"; });
+          var agoraCob = {};
+          agoraVivos.forEach(function (x) { Util.arr(x.itens).forEach(function (it) { if (it && it.itemIdx != null) agoraCob[String(it.itemIdx)] = x.numero || x.id; }); });
+          var conflito = o.itens.filter(function (x) { return agoraCob[String(x.itemIdx)] != null; });
+          if (conflito.length) {
+            UI.fecharModal();
+            UI.toast(conflito.length + " dos itens escolhidos já entraram num pedido enquanto esta caixa estava aberta ("
+              + conflito.map(function (x) { return agoraCob[String(x.itemIdx)]; }).join(", ") + "). Nada foi emitido — abra de novo para ver o que ficou faltando.", "erro");
+            return;
+          }
+          var pReg = { fornecedorIdx: o.fIdx, fornecedorId: o.fornecedorId, fornecedorNome: o.nome,
+            condPgto: o.condPgto, prazoDias: o.prazoDias, itens: o.itens, frete: o.frete,
+            total: Math.round((o.soma + o.frete) * 100) / 100 };
+          /* MESMO montador do "Concluir e gerar pedidos" — ver `_pcDaCotacao` */
+          var rec = self._pcDaCotacao(cot, pReg, hojeLocal(), "unico",
+            "Emitido depois da conclusão, para os itens que ficaram sem pedido vivo.");
+          if (!rec) { UI.toast("Não consegui gravar o pedido: o armazenamento do navegador recusou. Nada foi emitido.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          UI.toast("Pedido " + (rec.numero || "") + " emitido para " + o.nome + " (" + o.itens.length + " item(ns), "
+            + Util.fmtMoeda(rec.valor) + "). Ele nasce em \"Aguardando aprovação\" — aprove em Compras para poder enviar ao fornecedor.", "ok");
+        } }
+      ]);
+    },
+
     _cotPainelDecisao: function (cot) {
       if (typeof Cotacoes === "undefined" || !cot.itens.length || !cot.fornecedores.length) return '<div class="muted" style="font-size:12.5px">Preencha itens, fornecedores e preços — a decisão aparece aqui ao vivo.</div>';
       var d = Cotacoes.decisao(cot);
@@ -19670,10 +21207,25 @@ renderRequisicoes: function () {
         (ehConcluida ? "" : (ehTravada ? "" : '<button type="button" class="btn sm" id="ct-add-item" style="margin-top:6px">+ item</button>') + (nF < maxF ? ' <button type="button" class="btn sm" id="ct-add-forn" style="margin-top:6px;margin-left:6px">+ fornecedor</button>' : "")) +
         (ehConcluida ? "" : '<div id="ct-online" style="margin-top:10px"></div>') +
         '<div class="card" style="margin-top:12px;padding:12px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('balanca', 15) : '') + ' Decisão (recalcula enquanto você digita)</div><div id="ct-decisao"></div></div>';
+      /* ⚠ A PORTA SÓ É DESENHADA ONDE ELA PODE ABRIR — e o `reabrirCotacao`
+         pergunta de novo antes de gravar. Botão que promete e recusa no clique
+         ensina a pessoa a não confiar no que está na tela; e sem botão nenhum,
+         concluir por engano custava redigitar a cotação inteira. */
+      var podeReabrir = ehConcluida && !ehNova && !self._cotPedidosGerados(c && c.id).length;
       var botoes = ehConcluida ? [
-        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }
+      ].concat(podeReabrir ? [
+        { texto: "" + (typeof Icones !== "undefined" ? Icones.get("voltar", 15) : "") + " Reabrir cotação", classe: "ghost", onClick: function () { self.reabrirCotacao(c.id); } }
+      ] : []).concat(ehConcluida && !ehNova ? [
+        /* ⚠ este NÃO depende de "não haver pedido": ele existe justamente para
+           quando HÁ pedido e um deles morreu. Quem responde é o próprio método,
+           que conta os itens sem pedido vivo e diz o motivo quando não há o que
+           emitir — aqui um botão sempre presente é o certo, porque a resposta
+           depende do estado dos pedidos, que muda em Compras e não nesta tela. */
+        { texto: "Gerar pedido p/ outro fornecedor", classe: "ghost", onClick: function () { self.cotPedidoOutroFornecedor(c.id); } }
+      ] : []).concat([
         { texto: "" + (typeof Icones !== "undefined" ? Icones.get("imprimir", 15) : "") + " Imprimir mapa", classe: "primary", onClick: function () { UI.fecharModal(); self.documentoCotacao(c.id); } }
-      ] : [
+      ]) : [
         { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
         { texto: "Salvar", classe: "", onClick: function () {
           if (Gestao._bloqueado()) return;
@@ -19860,7 +21412,32 @@ renderRequisicoes: function () {
       var pubViva = typeof Cotacoes !== "undefined" && ((Cotacoes.onlineAtiva && Cotacoes.onlineAtiva(cot)) || (Cotacoes.onlineVencida && Cotacoes.onlineVencida(cot)));
       var vencida = pubViva && typeof Cotacoes !== "undefined" && Cotacoes.onlineVencida && Cotacoes.onlineVencida(cot);
       var avisoOnline = pubViva ? '<p style="font-size:12px;margin-top:6px;color:#92400e"><b>A cotação online será encerrada.</b> Respostas ainda não puxadas NÃO entram — puxe antes, se quiser.' + (vencida ? ' A publicação venceu, mas o que o fornecedor enviou até o vencimento ainda pode ser puxado; encerrar aqui fecha essa porta.' : '') + '</p>' : "";
-      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor <b>aguardando aprovação</b> (quem aprova é outra pessoa, em Compras), marca a requisição como comprada e conclui a cotação.</p>' + avisoOnline, [
+      /* ⚠ A RODADA DE DESCONTO ABERTA NÃO ERA MENCIONADA EM LUGAR NENHUM AQUI.
+         Medido em 07/09/2026: o engenheiro pede desconto, o fornecedor tem 3
+         dias para responder, e no meio disso alguém clica em "Concluir e gerar
+         pedidos". O pedido sai no PREÇO VELHO e o link morre com a resposta
+         pela metade — o desconto que estava a caminho é perdido sem uma linha
+         na tela. É o mesmo fato do aviso acima (a publicação vai ser encerrada),
+         mas com um custo que a pessoa consegue medir: nome e prazo.
+         ⚠ Ele NÃO barra: concluir com rodada aberta é decisão legítima (o
+         fornecedor sumiu, a obra não pode esperar). Trava sem porta é o defeito
+         que esta base já pagou; o que faltava era o número na cara. */
+      var negAbertas = [];
+      Util.arr(cot && cot.fornecedores).forEach(function (fr) {
+        var ng = fr && fr.negociacao;
+        if (!ng || !ng.pedidoEm) return;
+        /* respondeu DEPOIS do pedido de desconto? então a rodada já se fechou
+           para ele — e cobrar de quem já respondeu é ruído */
+        if (fr.respondidoEm && String(fr.respondidoEm) >= String(ng.pedidoEm)) return;
+        negAbertas.push({ nome: fr.nome || "sem nome", ate: ng.validadeEm || "" });
+      });
+      var avisoRodada = negAbertas.length
+        ? '<p style="font-size:12px;margin-top:6px;color:#92400e"><b>Há rodada de desconto aberta</b> com '
+          + Util.esc(negAbertas.map(function (x) { return x.nome; }).join(", "))
+          + (negAbertas[0].ate ? " até " + Util.esc(Util.fmtDia(negAbertas[0].ate)) : "")
+          + ". Concluir agora fecha o link: o pedido sai pelo preço que está na grade <b>hoje</b>, e o desconto que estiver a caminho se perde.</p>"
+        : "";
+      UI.modal("Concluir cotação — escolha o cenário", opcoes + '<p class="muted" style="font-size:12px;margin-top:8px">Cria 1 pedido de compra por fornecedor vencedor <b>aguardando aprovação</b> (quem aprova é outra pessoa, em Compras), marca a requisição como comprada e conclui a cotação.</p>' + avisoOnline + avisoRodada, [
         { texto: "Voltar", classe: "ghost", onClick: function () { UI.fecharModal(); self.formCotacao(cot); } },
         { texto: "Gerar pedidos", classe: "primary", onClick: function () {
           /* ⚠ ÚLTIMA PORTA ANTES DE EMITIR PEDIDO DE COMPRA — as duas perguntas,
@@ -19926,30 +21503,7 @@ renderRequisicoes: function () {
                pedido errado. `proxNumero` lê o maior gravado a cada volta do
                laço, e o `Store.salvar` de baixo já entrou quando a próxima
                volta pergunta. */
-            var pc = proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
-            /* a autoria vai junto: sem ela quem gerou o pedido aprova o proprio
-               pedido, e o texto do modal promete que "quem aprova e outra
-               pessoa". O carimbo so acontecia no formulario. */
-            /* ⚠ PRAZO E PREVISÃO ESTRUTURADOS, não só no texto de `obs`. O
-               pedido levava o prazo como frase ("Prazo de entrega: 5 dia(s).")
-               e `previsaoEntrega` ficava vazio — o formulário tem o campo
-               (g-entrega), o Portal do Cliente exporta, e o contratante via
-               "—" sem nenhum alerta de atraso possível. Dias CORRIDOS a partir
-               da data do pedido (o fornecedor conta corrido), somados em data
-               local (`somarDiasISO`). Sem prazo: `null` e "", nunca chute. */
-            var prazo = (p.prazoDias != null && Number(p.prazoDias) > 0) ? Number(p.prazoDias) : null;
-            var rec = Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, data: hojePed, descricao: (cot.descricao || "Cotação " + cot.numero) + " — " + p.fornecedorNome, obraId: cot.obraId, fornecedorId: p.fornecedorId, fornecedorNome: p.fornecedorNome, valor: p.total, status: "cotacao", categoria: "material", itens: p.itens, cotacaoId: cot.id || null,
-              /* ⚠ `formaPgto` só recebe CHAVE de P.formaPgto; o texto livre do
-                 fornecedor vai em `condPgtoTexto` — ver `_formaPgtoChave`.
-                 Gravar o texto em `formaPgto` era o que o select do
-                 formulário apagava no primeiro Salvar. */
-              formaPgto: self._formaPgtoChave(p.condPgto), condPgtoTexto: String(p.condPgto || "").slice(0, 120),
-              prazoDias: prazo, previsaoEntrega: prazo ? somarDiasISO(hojePed, prazo) : "",
-              /* base da economia, CONGELADA na geração: é contra isto que a
-                 negociação (Fase 1a) vai comparar o valor fechado. Sem
-                 congelar agora, o pedido gerado hoje não tem base amanhã. */
-              valorCotado: p.total, precoOrigem: "mapa",
-              obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
+            var rec = self._pcDaCotacao(cot, p, hojePed, modo);
             if (rec) gravados.push(rec); else naoEntraram++;
           });
           if (naoEntraram) {
@@ -20413,8 +21967,23 @@ renderRequisicoes: function () {
         { texto: "Criar pedido", classe: "primary", onClick: function () {
           if (Gestao._bloqueado()) return;
           var desc = v("g-pdesc"); if (!desc) { UI.toast("Informe a descrição.", "erro"); return; }
-          var pc = "PC-" + new Date().getFullYear() + "-" + ("" + (new Date().getTime())).slice(-4);
-          Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id }, true));
+          /* ⚠ SEQUENCIAL, COMO TODO DOCUMENTO DA CASA — e este caminho tinha
+             ficado para trás. O número saía dos 4 últimos dígitos do epoch em ms
+             (`getTime().slice(-4)`), que dá a volta a cada 10 segundos: dois
+             pedidos separados por qualquer múltiplo de 10 s nasciam com o MESMO
+             número, e todo pedido emitido num segundo redondo virava
+             PC-<ano>-0000. O laço do Mapa já tinha sido consertado com o mesmo
+             comentário; aqui não. Número repetido faz a conferência em Compras
+             apontar para o pedido errado — e as travas de dinheiro mandam
+             conferir POR NÚMERO. */
+          var pc = proxNumero("compras", { prefixo: "PC-" + new Date().getFullYear() + "-", casas: 3 });
+          /* ⚠ O PREÇO DESTES ITENS É O DO BANCO, NÃO O QUE VAI SER PAGO.
+             A requisição traz `precoRef` (referência SINAPI/banco) e o pedido
+             nasce sem cotação — ninguém negociou nada ainda. `precoOrigem`
+             carimba isso para o recebimento poder AVISAR: sem o carimbo, o
+             preço do banco entra calado no kardex e vira custo médio do
+             almoxarifado como se fosse o preço pago. */
+          Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id, precoOrigem: "banco" }, true));
           r.status = "comprada"; Store.salvar(eid(), "requisicoes", r);
           UI.fecharModal(); App.render(); UI.toast("Pedido " + pc + " criado.", "ok");
         } }
@@ -20839,7 +22408,14 @@ renderRequisicoes: function () {
         var btnTri = nItens
           ? '<button class="btn sm" data-gacao="tri-abrir" data-id="' + n.id + '" title="Diga o que fazer com cada item: estoque, patrimônio, EPI ou consumo na obra">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Itens (' + nItens + ')' +
             (pend ? ' <span class="pill proprio">' + pend + " a triar</span>" : " ✔") + "</button> "
-          : "";
+          /* ⚠ NOTA SEM ITENS NÃO PODE FICAR SEM PORTA. A triagem só existia para
+             nota vinda de XML; a digitada à mão (fornecedor pequeno, recibo,
+             NFS-e) nascia sem `itens` e o botão nem aparecia — o material dela
+             nunca entrava no almoxarifado por caminho nenhum, e ninguém via que
+             faltava. Nota de SAÍDA fica de fora: ali não entra material. */
+          : (String(n.tipo || "") !== "saida"
+            ? '<button class="btn sm ghost" data-gacao="nf-itens-manuais" data-id="' + n.id + '" title="Esta nota não tem itens (foi digitada à mão ou veio sem XML). Liste o que veio nela para poder triar.">' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Listar itens</button> '
+            : "");
         /* mesmo critério de _lancamentosDaNota: com chave, vale a chave; sem
            chave, vale o id do documento */
         var jaLanc = n.chaveAcesso ? !!_idxChave[String(n.chaveAcesso)] : !!_idxDoc[String(n.id)];
@@ -20853,6 +22429,20 @@ renderRequisicoes: function () {
            linha, como no resto do app. E quando a nota já virou dinheiro, o
            que se oferece é DESFAZER o lançamento — não relançar por cima. */
         if (jaLanc) btn += ' <button class="btn sm ghost" data-gacao="fiscal-desfazer" data-id="' + n.id + '" title="Apagar as contas a pagar que esta nota gerou (as já pagas ficam)">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button>';
+        /* ⚠ A PORTA DO VÍNCULO EXISTIA SÓ DENTRO DO MODAL "LANÇAR": quem lançou
+           sem vincular na hora não tinha, em tela nenhuma, como vincular depois —
+           e o vínculo é justamente o que impede a mesma compra virar despesa em
+           dobro. Aparece só em nota de ENTRADA e ainda sem vínculo; quando já há
+           pedido, a linha DIZ qual (em vez de oferecer um botão que recusa). */
+        /* ⚠ O CRACHÃ CONTA QUANTOS. Com um campo só ele dizia um número de
+           pedido; a nota que cobre dois mostrava só o primeiro, e a linha
+           parecia dizer que o outro não estava ali. */
+        var _pedN = (typeof CompraNota !== "undefined" && CompraNota.pedidosDaNota) ? CompraNota.pedidosDaNota(n) : [];
+        var _sobraN = Util.num(n.valorTotal) - _pedN.reduce(function (a, c) { return a + Util.num(c.valor); }, 0);
+        if (_pedN.length) btn += ' <span class="muted" style="font-size:11.5px" title="Pedido(s) de compra vinculado(s) a esta nota: ' + Util.esc(_pedN.map(function (c) { return c.numero || c.id; }).join(", ")) + '">' + (typeof Icones !== 'undefined' ? Icones.get('link', 13) : '') + ' ' + Util.esc(_pedN[0].numero || _pedN[0].id) + (_pedN.length > 1 ? " +" + (_pedN.length - 1) : "") + '</span>';
+        /* ⚠ e o botão CONTINUA quando sobra valor da nota: era por aqui que a
+           segunda entrega coberta pela mesma nota ficava sem onde encostar. */
+        if (String(n.tipo || "") !== "saida" && (!_pedN.length || _sobraN >= 0.01)) btn += ' <button class="btn sm ghost" data-gacao="fiscal-vincular" data-id="' + n.id + '" title="Dizer de qual(is) pedido(s) de compra esta nota é — sem isso a mesma compra pode virar despesa em dobro">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Vincular</button>';
         btn += ' <button class="btn sm ico" data-gacao="fiscal-editar" data-id="' + n.id + '" title="Editar os dados desta nota">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button>' +
           ' <button class="btn sm ico danger" data-gacao="fiscal-excluir" data-id="' + n.id + '" title="Excluir esta nota">' + (typeof Icones !== 'undefined' ? Icones.get('lixeira', 15) : '') + '</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="fiscal:' + n.id + '"><b>' + Util.esc(numTxt) + "</b></td><td>" + rot(P.fiscalTipo, n.tipo) + "</td><td>" + Util.esc(n.parceiro || "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + '</td><td class="num">' + Util.fmtMoeda(Util.num(n.valorTotal)) + "</td><td>" + pill(n.status) + '</td><td class="num">' + btn + "</td></tr>";
@@ -20870,7 +22460,15 @@ renderRequisicoes: function () {
       var nf = Store.obter(eid(), "fiscal", notaId);
       if (!nf) { UI.toast("Nota não encontrada.", "erro"); return; }
       var itens = Util.arr(nf.itens);
-      if (!itens.length) { UI.toast("Esta nota foi importada antes desta versão e não tem os itens guardados. Importe o XML de novo para triar.", "erro"); return; }
+      /* ⚠ O RECADO MANDAVA REIMPORTAR UM XML QUE PODE NÃO EXISTIR. Nota
+         digitada à mão nunca teve XML — e para ela a saída é outra: listar os
+         itens na mão (`fiscalItensManuais`), que é o botão ao lado na lista. */
+      if (!itens.length) {
+        UI.toast(nf.chaveAcesso
+          ? "Esta nota veio de XML mas está sem os itens guardados (importada antes desta versão). Importe o XML de novo para triar."
+          : "Esta nota não tem itens — ela foi digitada à mão, então não há XML para reimportar. Use “Listar itens” na linha dela para dizer o que veio.", "erro");
+        return;
+      }
       /* já triado antes? recupera as escolhas; senão parte das sugestões */
       var linhas = (typeof NFItens !== "undefined") ? NFItens.sugerirNota(itens) : [];
       itens.forEach(function (it, i) {
@@ -21102,6 +22700,8 @@ renderRequisicoes: function () {
       var MOD_DO_DESTINO = { estoque: "estoque", epi: "epi", patrimonio: "patrimonio" };
       var barrados = {};
       var conta = { estoque: 0, patrimonio: 0, epi: 0, consumo: 0 }, erros = [];
+      /* itens que o recebimento do pedido ja tinha posto no almoxarifado — ver _itemJaEntrouPeloPedido */
+      var jaEstoque = [];
 
       t.linhas.forEach(function (l) {
         if (l.st === "lancado") return;
@@ -21111,7 +22711,19 @@ renderRequisicoes: function () {
         var modAlvo = MOD_DO_DESTINO[l.destino];
         if (modAlvo && !podeGravarEm(modAlvo)) { barrados[modAlvo] = (barrados[modAlvo] || 0) + 1; return; }
         try {
-          if (l.destino === "estoque" || l.destino === "epi") self._triGravarEstoque(l, nf, nomeResp(l.responsavelId));
+          if (l.destino === "estoque" || l.destino === "epi") {
+            /* ⚠ ver `_itemJaEntrouPeloPedido`: entrar de novo dobraria o saldo
+               e estragaria o custo médio. O item fica marcado como já lançado,
+               com o número do pedido, em vez de sumir sem explicação. */
+            var jaPC = self._itemJaEntrouPeloPedido(l, nf);
+            if (jaPC) {
+              l.st = "lancado";
+              l.obs = "Já havia entrado no almoxarifado pelo recebimento do pedido " + (jaPC.pedido.numero || jaPC.pedido.id) + ".";
+              jaEstoque.push(String(l.descricao || "").slice(0, 40) + " (pedido " + (jaPC.pedido.numero || "") + ")");
+              return;
+            }
+            self._triGravarEstoque(l, nf, nomeResp(l.responsavelId));
+          }
           if (l.destino === "epi") self._triGravarEpiCatalogo(l);
           if (l.destino === "patrimonio") self._triGravarPatrimonio(l, nf, nomeResp(l.responsavelId));
           /* consumo direto não cria registro nenhum: o custo já vem pela nota.
@@ -21153,6 +22765,11 @@ renderRequisicoes: function () {
       if (conta.consumo) resumo.push(conta.consumo + " como consumo na obra");
       if (resumo.length) UI.toast("✔ " + resumo.join(" · ") + ". O dinheiro entra pelo lançamento financeiro da nota.", "ok");
       if (erros.length) UI.toast("⚠ " + erros.length + " item(ns) não entraram: " + erros[0], "erro");
+      /* ⚠ O QUE NÃO ENTROU DE NOVO PRECISA SER DITO. Item pulado em silêncio a
+         pessoa lê como falha da triagem e clica outra vez — que é exatamente o
+         clique que dobrava o saldo. O recado nomeia o pedido para ela poder
+         conferir no almoxarifado. */
+      if (jaEstoque.length) UI.toast("ℹ " + jaEstoque.length + " item(ns) já haviam entrado no almoxarifado pelo recebimento do pedido e NÃO foram lançados de novo: " + jaEstoque.slice(0, 2).join(" · ") + (jaEstoque.length > 2 ? " …" : ""), "ok");
       var listaBarr = [];
       for (var mB in barrados) if (Object.prototype.hasOwnProperty.call(barrados, mB)) listaBarr.push(barrados[mB] + " para " + mB);
       if (listaBarr.length) UI.toast("🔒 " + listaBarr.join(" · ") + ": seu usuário não tem permissão nesse(s) módulo(s). Os itens continuam pendentes para quem tiver.", "erro");
@@ -21161,6 +22778,42 @@ renderRequisicoes: function () {
     /* Entrada de estoque com CUSTO MÉDIO PONDERADO: comprar 10 sacos a R$ 30
        quando havia 5 a R$ 26 não pode simplesmente sobrescrever o custo — o
        valor do estoque ficaria errado no balanço. */
+    /* ⚠ O MATERIAL NÃO PODE ENTRAR DUAS VEZES NO ALMOXARIFADO.
+       Caminho medido em 06/09/2026: pedido de 200 sacos gerado pelo Mapa; a
+       pessoa clica [Receber] e `_estoqueDaCompra` dá entrada de 200 com
+       carimbo `docTipo:"PC"` no kardex. Depois chega o XML, ela abre a triagem
+       da nota e manda o mesmo item para Estoque: `_triGravarEstoque` acha o
+       MESMO registro pela chave do nome + unidade e soma outros 200 — saldo
+       400 para 200 sacos que chegaram, e o custo médio recalculado sobre uma
+       quantidade que não existe. Com item de patrimônio é pior: o equipamento
+       vira saldo de estoque pelo pedido E bem tombado pela nota.
+       O dinheiro já era deduplicado pelo vínculo nota↔pedido; o ESTOQUE ficou
+       de fora da mesma correção.
+       ⚠ A guarda é POR ITEM, não pela nota inteira: a nota pode trazer
+       material que o pedido não tinha (item avulso, brinde, troca), e barrar
+       tudo faria a pessoa não conseguir dar entrada no que de fato falta. */
+    _itemJaEntrouPeloPedido: function (l, nf) {
+      if (!nf || typeof CompraNota === "undefined") return null;
+      /* ⚠ TODOS os pedidos da nota, não o primeiro: a nota que cobre duas
+         entregas dava entrada em dobro do material do segundo pedido, porque
+         a guarda só olhava para `nf.compraId`. */
+      var ids = CompraNota.pedidosDaNota(nf); if (!ids.length) return null;
+      var k = Util.itemChave(String((l && l.descricao) || ""));
+      if (!k) return null;
+      var achado = null;
+      ids.forEach(function (x) {
+        if (achado) return;
+        var pc = null;
+        try { pc = Store.obter(eid(), "compras", x.id); } catch (e) { pc = null; }
+        if (!pc || !pc.estoqueLancado) return;
+        Util.arr(pc.itens).forEach(function (it) {
+          if (achado || !it) return;
+          if (Util.itemChave(String(it.descricao || "")) === k) achado = { pedido: pc, item: it };
+        });
+      });
+      return achado;
+    },
+
     _triGravarEstoque: function (l, nf, respNome) {
       var chaveForn = String(nf.cnpjParceiro || nf.parceiro || "");
       var alvo = null;
@@ -21247,12 +22900,34 @@ renderRequisicoes: function () {
 
     /* Lançamentos que ESTA nota gerou no Financeiro (por chave, ou pelo id
        quando a nota não tem chave de acesso — NFS-e, cupom, recibo). */
+    /* ⚠ LEITURA CRUA (`listaTodas`), NÃO A FILTRADA POR OBRA.
+       Uma nota rateia parcelas entre obras. Com `lista("financeiro")`, quem só
+       enxerga a obra A via 1 das 4 parcelas: "Desfazer lançamento" apagava só
+       essa, deixava três vivas sem nota, e a nota voltava a dizer "não
+       lançada" — o clique seguinte lançava as quatro de novo, agora seis para
+       uma nota só. E a assimetria era o pior: o dedupe do `lancarFiscal` (linha
+       ~21513) JÁ lia `listaTodas`. O que a desfeita não alcançava, o
+       relançamento enxergava como "já lançado" — as duas pontas contando
+       coisas diferentes sobre o mesmo documento.
+       Nota é documento, não tela: quem pergunta "o que esta nota lançou?"
+       precisa da resposta inteira.
+       ⚠ E quem chama DIZ quantas dessas contas estão fora do alcance de quem
+       está clicando (`_foraDoMeuAlcance`). Apagar dinheiro de obra que a
+       pessoa não enxerga pode ser o certo — caladamente, nunca. */
     _lancamentosDaNota: function (nf) {
       var chave = String(nf.chaveAcesso || "");
-      return lista("financeiro").filter(function (f) {
+      return listaTodas("financeiro").filter(function (f) {
         if (chave && String(f.docChave || "") === chave) return true;
         return !chave && f.docId && String(f.docId) === String(nf.id);
       });
+    },
+    /* Quantas destas contas a pessoa NÃO vê na tela do Financeiro. Compara por
+       id contra a lista filtrada por obra — nunca por obraId na mão, que
+       repetiria aqui a regra de escopo que mora no `filtrarPorObra`. */
+    _foraDoMeuAlcance: function (arr) {
+      var meus = {};
+      Util.arr(lista("financeiro")).forEach(function (f) { if (f && f.id) meus[f.id] = 1; });
+      return Util.arr(arr).filter(function (f) { return f && !meus[f.id]; }).length;
     },
 
     /* DESFAZER O LANÇAMENTO — o oposto do botão Lançar.
@@ -21268,15 +22943,24 @@ renderRequisicoes: function () {
      * Por isso a devolucao roda ANTES de apagar, e as duas passam por aqui. */
     _desvincularCompraDaNota: function (nf) {
       if (!nf || typeof CompraNota === "undefined") return null;
-      var cid = nf.compraId; if (!cid) return null;
-      var c = Store.obter(eid(), "compras", cid); if (!c) return null;
-      var volta = CompraNota.despesaARestaurar(c);
-      if (volta) Store.salvar(eid(), "financeiro", volta);
-      c.notaId = ""; c.notaNumero = ""; c.valorFaturado = null; c.diferenca = null;
-      c.vinculadoEm = ""; c.despesaSubstituida = null;
-      Store.salvar(eid(), "compras", c);
-      nf.compraId = ""; nf.compraNumero = "";
-      return { numero: c.numero || "", valor: volta ? Util.num(volta.valor) : 0 };
+      var ids = CompraNota.pedidosDaNota(nf); if (!ids.length) return null;
+      var pcs = [];
+      ids.forEach(function (x) { var c = Store.obter(eid(), "compras", x.id); if (c) pcs.push(c); });
+      if (!pcs.length) { nf.compras = []; nf.compraId = ""; nf.compraNumero = ""; return null; }
+      var res = CompraNota.desfazerVinculo(nf, pcs);
+      var valor = 0, nums = [], presos = [];
+      res.forEach(function (r) {
+        nums.push(r.numero || r.compraId);
+        if (r.restaurar) { Store.salvar(eid(), "financeiro", r.restaurar); valor += Util.num(r.restaurar.valor); }
+        /* ⚠ PEDIDO QUE AINDA TEM OUTRA NOTA NÃO RECUPERA A DESPESA: ela
+           continua substituída pelas parcelas daquela outra nota, e devolvê-la
+           aqui recriaria a duplicata. Quem chamou precisa DIZER isso — senão a
+           pessoa procura no Financeiro uma despesa que não vai voltar. */
+        else if (r.aindaTem) presos.push(r.numero || r.compraId);
+      });
+      var falhou = false;
+      pcs.forEach(function (c) { if (!Store.salvar(eid(), "compras", c)) falhou = true; });
+      return { numero: nums.join(", "), valor: valor, pedidos: res.length, presos: presos, falhou: falhou };
     },
 
     fiscalDesfazer: function (id) {
@@ -21292,7 +22976,12 @@ renderRequisicoes: function () {
         UI.toast("Todas as " + pagas.length + " parcela(s) desta nota já estão pagas — não dá para desfazer. Edite ou estorne no Financeiro.", "erro");
         return;
       }
+      /* ⚠ ver `_lancamentosDaNota`: a nota é lida inteira, então pode haver
+         parcela de obra que este usuário não enxerga. Ela vai junto — deixar
+         para trás é que criava conta viva sem nota —, mas ele fica sabendo. */
+      var foraD = this._foraDoMeuAlcance(apagar);
       if (!window.confirm("Apagar " + apagar.length + " conta(s) a pagar desta nota (" + Util.fmtMoeda(soma(apagar)) + ")?" +
+        (foraD ? "\n\n⚠ " + foraD + " dela(s) está(ão) em obra que seu usuário não vê no Financeiro. Fazem parte desta nota e vão junto." : "") +
         (pagas.length ? "\n\n" + pagas.length + " parcela(s) JÁ PAGA(S) (" + Util.fmtMoeda(soma(pagas)) + ") vão continuar como estão." : "") +
         "\n\nOs itens já lançados em Estoque/Patrimônio NÃO são afetados — desfaça item a item na tela de Itens, se precisar.")) return;
       /* ordem defensiva: devolve ANTES de apagar. Se a gravacao falhar no meio,
@@ -21303,7 +22992,10 @@ renderRequisicoes: function () {
       Store.salvar(eid(), "fiscal", nf);
       App.render();
       UI.toast("↩ " + apagar.length + " conta(s) removida(s)." +
-        (_volta ? " A despesa do pedido " + _volta.numero + " voltou ao Financeiro." : "") +
+        (_volta && _volta.valor > 0 ? " A despesa de " + _volta.numero + " voltou ao Financeiro (" + Util.fmtMoeda(_volta.valor) + ")." : "") +
+        /* o que NÃO voltou é a parte que a pessoa precisa ouvir: pedido
+           faturado também por outra nota fica com a despesa substituída por ela */
+        (_volta && _volta.presos.length ? " " + _volta.presos.join(", ") + " continua(m) faturado(s) por outra nota, então a despesa dele(s) NÃO voltou." : "") +
         " A nota volta a poder ser lançada.", "ok");
     },
 
@@ -21327,9 +23019,15 @@ renderRequisicoes: function () {
       var numTxt = (nf.numero || "s/n") + (nf.serie ? "/" + nf.serie : "");
       var msg = "Excluir a nota " + numTxt + " — " + (nf.parceiro || "") + " (" + Util.fmtMoeda(Util.num(nf.valorTotal)) + ")?\n";
       if (pend.length) msg += "\nVai junto: " + pend.length + " conta(s) a pagar ainda não paga(s).";
+      /* ⚠ mesma razão do `fiscalDesfazer`: a nota é lida inteira. */
+      var foraX = this._foraDoMeuAlcance(pend);
+      if (foraX) msg += "\n⚠ " + foraX + " dela(s) está(ão) em obra que seu usuário não vê no Financeiro.";
       /* a nota vinculada leva junto o vínculo — e a despesa do pedido tem de
          VOLTAR, senão o material recebido fica sem despesa nenhuma */
-      if (nf.compraId) msg += "\nVOLTA: a despesa do pedido " + (nf.compraNumero || "") + ", que esta nota tinha substituído.";
+      /* ⚠ a nota pode cobrir mais de um pedido: nomear só o primeiro faria a
+         confirmação mentir sobre o que vai voltar */
+      var _pedX = CompraNota.pedidosDaNota(nf);
+      if (_pedX.length) msg += "\nVOLTA: a despesa de " + _pedX.map(function (c) { return c.numero || c.id; }).join(", ") + ", que esta nota tinha substituído (o pedido que ainda tiver outra nota fica como está).";
       if (pagas.length) msg += "\nFICA: " + pagas.length + " parcela(s) já paga(s) — o dinheiro saiu, o registro permanece.";
       if (itensLanc) msg += "\nFICA: " + itensLanc + " item(ns) já lançado(s) em Estoque/Patrimônio/EPI — o material está aí, não some com o documento.";
       msg += "\n\nEsta ação não pode ser desfeita.";
@@ -21341,7 +23039,8 @@ renderRequisicoes: function () {
       if (this._triagem && this._triagem.notaId === id) this._triagem = null;
       App.render();
       UI.toast("Nota excluída" + (pend.length ? " com " + pend.length + " conta(s) a pagar" : "") +
-        (_voltaX ? ". A despesa do pedido " + _voltaX.numero + " voltou ao Financeiro" : "") + ".", "ok");
+        (_voltaX && _voltaX.valor > 0 ? ". A despesa de " + _voltaX.numero + " voltou ao Financeiro" : "") +
+        (_voltaX && _voltaX.presos.length ? ". " + _voltaX.presos.join(", ") + " continua(m) faturado(s) por outra nota, e a despesa dele(s) NÃO voltou" : "") + ".", "ok");
     },
 
     /* DESFAZER UM ITEM DA TRIAGEM — para quando o destino foi escolhido errado.
@@ -21402,6 +23101,7 @@ renderRequisicoes: function () {
 
     novoFiscal: function () { this.formFiscal(null); },
     formFiscal: function (n) {
+      var self = this;
       n = n || {}; var obras = lista("obras");
       var corpo =
         '<div class="row">' + campo("Número", inp("g-numero", n.numero)) + campo("Série", inp("g-serie", n.serie)) + campo("Tipo", sel("g-tipo", opts(P.fiscalTipo, n.tipo || "entrada"))) + campo("Status", sel("g-status", opts(P.fiscalStatus, n.status || "emitida"))) + "</div>" +
@@ -21414,7 +23114,43 @@ renderRequisicoes: function () {
         obj.naturezaOp = v("g-natop"); obj.parceiro = v("g-parceiro"); obj.obraId = v("g-obra"); obj.dataEmissao = v("g-data");
         obj.valorProdutos = nv("g-vprod"); obj.valorImpostos = nv("g-vimp"); obj.valorTotal = nv("g-vtot"); obj.chaveAcesso = v("g-chave");
         if (!(obj.valorTotal > 0) && obj.status !== "aguardando_xml") { UI.toast("Informe o valor total (ou marque como Aguardando XML).", "erro"); return false; }
+        /* ⚠ CORRIGIR O VALOR DE UMA NOTA JÁ LANÇADA NÃO MEXIA NO FINANCEIRO —
+           E NINGUÉM AVISAVA. Medido em 07/09/2026: a nota entra por R$ 11.200, a
+           pessoa lança as parcelas, depois percebe que digitou errado e corrige
+           para R$ 9.400 no formulário. O registro fiscal passa a dizer 9.400 e
+           as contas a pagar continuam somando 11.200: o Fiscal e o Financeiro
+           contam histórias diferentes sobre a mesma nota, e quem paga segue o
+           Financeiro. O relatório da obra fica R$ 1.800 acima do que a nota diz.
+           ⚠ O app NÃO refaz sozinho: parcela já PAGA não se reescreve (regra 3
+           da skill `dinheiro`), e mexer em conta a pagar sem a pessoa pedir é o
+           tipo de coisa que ninguém reconfere. Ele mostra os DOIS números e
+           aponta a porta que existe: Desfazer o lançamento e lançar de novo. */
+        var lancAtual = self._lancamentosDaNota(obj);
+        if (lancAtual.length) {
+          var somaLanc = lancAtual.reduce(function (s, f) { return s + Util.num(f.valor); }, 0);
+          somaLanc = Math.round(somaLanc * 100) / 100;
+          var novoTot = Math.round(Util.num(obj.valorTotal) * 100) / 100;
+          if (Math.abs(somaLanc - novoTot) >= 0.01) {
+            var pagasL = lancAtual.filter(function (f) {
+              return (typeof FinStatus !== "undefined" && FinStatus.realizado) ? FinStatus.realizado(f) : f.status === "pago";
+            }).length;
+            self._avisoNotaDivergente = "O valor desta nota agora diz " + Util.fmtMoeda(novoTot)
+              + ", mas as " + lancAtual.length + " conta(s) que ela lançou somam " + Util.fmtMoeda(somaLanc)
+              + ". O Financeiro NÃO foi mexido — quem paga segue as contas, não a nota. "
+              + (pagasL
+                ? ("⚠ " + pagasL + " dela(s) já está(ão) PAGA(S) e não se refaz: ajuste a diferença por lá, no Financeiro.")
+                : "Para acertar: Desfazer o lançamento na lista de notas e lançar de novo com o valor certo.");
+          }
+        }
         return true;
+      }, function () {
+        /* ⚠ DEPOIS DO SAVE, senão o recado sairia mesmo quando uma validação
+           seguinte recusasse a gravação — e a pessoa iria conferir uma
+           divergência que não existe. */
+        if (self._avisoNotaDivergente) {
+          UI.toast(self._avisoNotaDivergente, "aviso");
+          self._avisoNotaDivergente = "";
+        }
       });
     },
     /* A NOTA VIRA CONTAS A PAGAR — uma linha POR VENCIMENTO.
@@ -21463,6 +23199,22 @@ renderRequisicoes: function () {
        * A chave é a mesma que identifica a linha: parcela + obra. */
       function chaveParcela(num, obraId) { return String(num || 0) + "|" + String(obraId || ""); }
       var numsPagos = {}; jaPagas.forEach(function (f) { numsPagos[chaveParcela(f.parcelaNum, f.obraId)] = 1; });
+      /* ⚠ LANÇAMENTO SEM `parcelaNum` COBRE A NOTA INTEIRA — E ELE EXISTE.
+         Roteiro medido em 06/09/2026: a pessoa usa "Lançar de documento (IA)"
+         no Financeiro; o app cria UMA despesa do valor cheio, sem `parcelaNum`
+         (a porta do Financeiro não parcela). Ela marca como paga. Semana
+         seguinte abre a triagem da nota e clica em "Lançar 4 parcelas". O
+         modal avisa "1 já está paga e não será mexida — só as pendentes são
+         refeitas", ela confirma tranquila, e nenhuma parcela é pulada: a chave
+         do lançamento pago é "0|obra" e as novas são "1|obra".."4|obra".
+         Resultado: R$ 5.226,50 pagos + 4 × R$ 1.306 = R$ 10.453 de despesa
+         para uma nota de R$ 5.226,50. E o Desfazer não conserta, porque ele só
+         apaga as NÃO pagas.
+         Um pago sem número de parcela não é "a parcela zero": é a nota inteira
+         já lançada. Então ele barra TODAS. */
+      var pagoNotaInteira = jaPagas.some(function (f) {
+        return !f.parcelaNum || Util.num(f.parcelaNum) === 0;
+      });
 
       var linhas = (this._triagem && this._triagem.notaId === nf.id) ? this._triagem.linhas
         : Util.arr(nf.itens).map(function (it) { return { valor: Util.num(it.valor), obraId: it.obraId || nf.obraId || "", destino: it.destino || "estoque" }; });
@@ -21486,19 +23238,16 @@ renderRequisicoes: function () {
        * NENHUM candidato vem marcado: o sistema sugere e diz por que sugeriu;
        * casar sozinho por "mesmo fornecedor e valor parecido" e mover dinheiro
        * por adivinhacao, e o palpite errado apaga a despesa de outra compra. */
-      var _cands = (typeof CompraNota !== "undefined")
-        ? CompraNota.candidatos(nf, listaTodas("compras"), hojeLocal()) : [];
-      if (isEntrada && _cands.length) {
-        corpo += '<div style="margin:10px 0;padding:10px 12px;border:1px solid var(--linha-forte);border-radius:10px">' +
-          '<b>Esta nota cobre algum pedido recebido?</b>' +
-          '<p class="muted" style="margin:4px 0 8px;font-size:12.5px">Vinculando, a despesa do pedido sai do Financeiro e fica so a da nota — sem valor em dobro.</p>' +
-          '<label style="display:block;margin:3px 0"><input type="radio" name="cn-pc" value="" checked> Nenhum — esta nota nao e de pedido</label>' +
-          _cands.slice(0, 3).map(function (c) {
-            return '<label style="display:block;margin:3px 0"><input type="radio" name="cn-pc" value="' + Util.esc(c.compraId) + '"> <b>' +
-              Util.esc(c.numero) + '</b> · ' + Util.fmtMoeda(c.valor) +
-              ' <span class="muted">(' + Util.esc(c.motivo) + ')</span></label>';
-          }).join("") + "</div>";
-      }
+      /* ⚠ UMA CÓPIA SÓ DO BLOCO, DUAS PORTAS — ver `_blocoVincularPedido`.
+         Aqui ele mostrava só os TRÊS primeiros sugeridos, sem busca: pedido com
+         o nome do fornecedor escrito diferente na nota, ou entrega do mês
+         passado, simplesmente não existia, e sobrava "Nenhum", que é mentira. */
+      /* ⚠ O BLOCO APARECE MESMO COM A NOTA JÁ VINCULADA enquanto sobrar valor
+         dela: era por aqui que a segunda entrega coberta pela mesma nota
+         ficava sem onde encostar, e a despesa daquele pedido continuava viva. */
+      var _jaNf = CompraNota.pedidosDaNota(nf);
+      var _sobraNf = Util.num(nf.valorTotal) - _jaNf.reduce(function (a, c) { return a + Util.num(c.valor); }, 0);
+      if (isEntrada && (!_jaNf.length || _sobraNf >= 0.01)) corpo += this._blocoVincularPedido(nf);
       if (jaLanc.length) {
         corpo += '<p style="color:#b45309"><b>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Esta nota já gerou ' + jaLanc.length + " lançamento(s) no Financeiro" +
           " (" + Util.fmtMoeda(jaLanc.reduce(function (a, f) { return a + Util.num(f.valor); }, 0)) + ").</b>" +
@@ -21531,26 +23280,98 @@ renderRequisicoes: function () {
              nota), nada acontece — nem o vinculo nem o lancamento. Deixar
              lancar "so a nota" no caso pago reproduziria a duplicata
              justamente onde o dinheiro ja saiu. */
-          var _pcSel = document.querySelector('input[name="cn-pc"]:checked');
-          var _pcId = _pcSel ? _pcSel.value : "";
-          var _compra = _pcId ? Store.obter(eid(), "compras", _pcId) : null;
-          var _pl = null;
-          if (_compra) {
-            var _despPC = CompraNota.despesaDaCompra(listaTodas("financeiro"), _compra.id);
-            _pl = CompraNota.plano(_compra, _despPC, valor);
+          /* ⚠ TODOS OS PEDIDOS MARCADOS, não um. Uma nota do fornecedor junta
+             duas entregas com frequência; com rádio, a despesa do pedido não
+             escolhido continuava viva e o material contava duas vezes. */
+          var _ids = [];
+          Array.prototype.forEach.call((document.querySelectorAll ? document.querySelectorAll('input[name="cn-pc"]:checked') : []), function (el) {
+            if (el && el.value) _ids.push(el.value);
+          });
+          var _compras = [], _fin = listaTodas("financeiro");
+          _ids.forEach(function (x) { var c = Store.obter(eid(), "compras", x); if (c) _compras.push(c); });
+          /* ⚠ PEDIDO JÁ VINCULADO A ESTA NOTA COM DESPESA VIVA — o caso de quem
+             clicou em "Vincular" antes de lançar. Vincular sem lançar NÃO apaga
+             despesa (e não deve: a obra ficaria sem custo nenhum do material
+             recebido), e o Lançar olhava só para o que estivesse marcado na
+             tela — que nesse caso nem aparece, porque a nota já tem pedido.
+             Resultado medido: parcelas da nota SOMADAS à despesa do pedido. */
+          var _pend = CompraNota.pendentesDeSubstituir(nf, listaTodas("compras"), _fin);
+          var _pl = null, _avisoDif = "";
+          /* ⚠ TUDO SE DECIDE ANTES DE QUALQUER GRAVAÇÃO. Se o motor recusar
+             (despesa do pedido já PAGA, pedido sem saldo a faturar), nada
+             acontece — nem o vínculo nem o lançamento. Deixar lançar "só a
+             nota" no caso pago reproduziria a duplicata onde o dinheiro já
+             saiu. */
+          var _pgs = _pend.filter(function (x) { return x.pago; });
+          if (_pgs.length) {
+            UI.toast("A despesa do pedido " + (_pgs[0].numero || _pgs[0].compraId) + " já foi PAGA (" + Util.fmtMoeda(_pgs[0].valor)
+              + "). Não mexo em pagamento: estorne antes de lançar esta nota, ou lance só a diferença.", "erro");
+            return;
+          }
+          if (_compras.length) {
+            _pl = CompraNota.planoVinculo(nf, _compras, _fin, valor);
             if (!_pl.pode) { UI.toast(_pl.motivo, "erro"); return; }
-            /* guarda a linha ANTES de apagar: e o que "Desfazer lancamento" e
-               "Excluir nota" usam para devolver a despesa do pedido. Sem isso a
-               compra recebida ficaria com ZERO despesa viva, sem volta. */
-            if (_pl.apagarId && _despPC) {
-              _compra.despesaSubstituida = Util.clone(_despPC);
-              Store.excluir(eid(), "financeiro", _pl.apagarId);
+            /* ⚠ A DIFERENÇA ENTRE O PEDIDO E A NOTA ERA CALCULADA, TESTADA E
+               NUNCA MOSTRADA. Medido em 07/09/2026: pedido de R$ 9.500, nota de
+               R$ 11.200, e o app vinculava, apagava a despesa do pedido e
+               lançava R$ 11.200 sem uma palavra. A obra pagava R$ 1.700 a mais
+               do que aprovou, e o único lugar onde isso aparecia era o campo
+               `diferenca`, que nenhuma tela desenha.
+               ⚠ A PARTIR DE 10% ELE PÁRA E PERGUNTA; abaixo disso ele DIZ, no
+               recado do fim. Perguntar por dois centavos de arredondamento
+               ensinaria a clicar OK sem ler — e aí a pergunta que importa
+               também passa batida. O limite é do percentual E do valor: 10% de
+               um pedido de R$ 80 é R$ 8, e parar a tela por isso é ruído. */
+            if (_pl.avisos && _pl.avisos.length) {
+              _avisoDif = _pl.avisos.join(" ");
+              var _pctDif = Math.abs(Util.num(_pl.difPct)), _absDif = Math.abs(Util.num(_pl.dif));
+              if (_pctDif >= 10 && _absDif >= 50) {
+                if (!window.confirm("Confira antes de lançar:\n\n" + _pl.avisos.join("\n")
+                  + "\n\nA nota está " + (Util.num(_pl.dif) > 0 ? "ACIMA" : "ABAIXO") + " do que os pedidos somam em mais de 10%. "
+                  + "Ao lançar, a despesa dos pedidos é substituída pelo valor da NOTA — é ele que vai para o custo da obra.\n\n"
+                  + "Lançar assim mesmo?")) return;
+              }
             }
-            _compra.notaId = nf.id; _compra.notaNumero = numTxt;
-            _compra.valorFaturado = valor; _compra.diferenca = _pl.dif;
-            _compra.vinculadoEm = new Date().toISOString();
-            Store.salvar(eid(), "compras", _compra);
-            nf.compraId = _compra.id; nf.compraNumero = _compra.numero || "";
+          }
+          /* daqui para baixo, grava */
+          _pend.forEach(function (x) {
+            var pc = Store.obter(eid(), "compras", x.compraId); if (!pc) return;
+            pc.despesaSubstituida = Util.clone(x.despesa);
+            Store.excluir(eid(), "financeiro", x.apagarId);
+            Store.salvar(eid(), "compras", pc);
+          });
+          if (_pl && _compras.length) {
+            var _mapa = {};
+            _compras.forEach(function (c) { _mapa[String(c.id)] = c; });
+            _pl.itens.forEach(function (it) {
+              if (!it.apagarId) return;
+              var pc = _mapa[String(it.compraId)]; if (!pc) return;
+              var _d = CompraNota.despesaDaCompra(_fin, it.compraId); if (!_d) return;
+              /* guarda a linha ANTES de apagar: é o que "Desfazer lançamento" e
+                 "Excluir nota" usam para devolver a despesa do pedido. Sem isso
+                 a compra recebida ficaria com ZERO despesa viva, sem volta. */
+              pc.despesaSubstituida = Util.clone(_d);
+              Store.excluir(eid(), "financeiro", it.apagarId);
+            });
+            CompraNota.aplicarVinculo(nf, _compras, _pl, new Date().toISOString());
+            _compras.forEach(function (c) { Store.salvar(eid(), "compras", c); });
+          }
+          /* o rastro do pedido na parcela sai da lista da nota, que é a verdade
+             do vínculo depois do `aplicarVinculo` */
+          var _vinc = CompraNota.pedidosDaNota(nf), _pcs = [];
+          _vinc.forEach(function (c) { var o = Store.obter(eid(), "compras", c.id); if (o) _pcs.push(o); });
+          var _compra = _pcs[0] || null;
+          var _numPed = _pcs.map(function (c) { return c.numero || c.id; }).join(" + ");
+          var _valPed = _pcs.reduce(function (a, c) { return a + Util.num(c.valor); }, 0);
+          /* ⚠ PEDIDOS DE OBRAS DIFERENTES NÃO ELEGEM UMA: cair na obra do
+             primeiro jogaria o dinheiro do outro no custo dela. Sem rateio por
+             item, a parcela fica sem obra e o recado manda ratear na triagem. */
+          var _obrasPC = {};
+          _pcs.forEach(function (c) { if (String(c.obraId || "").trim()) _obrasPC[String(c.obraId)] = 1; });
+          var _kObras = Object.keys(_obrasPC);
+          var _obraPC = _kObras.length === 1 ? _kObras[0] : "";
+          if (_kObras.length > 1 && !temRateio) {
+            _avisoDif += (_avisoDif ? " " : "") + "Os pedidos desta nota são de obras diferentes, então as contas ficaram SEM obra — use a triagem da nota para ratear por item.";
           }
           /* substituir = apagar as PENDENTES desta mesma nota, nunca somar —
              e nunca tocar no que já foi pago */
@@ -21559,8 +23380,21 @@ renderRequisicoes: function () {
           rateadas.forEach(function (r) {
             /* a obra resolvida AQUI é a mesma que vai ser gravada logo abaixo —
                conferir por uma e gravar por outra é como o dinheiro sumia */
-            var obraLinha = temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || "");
-            if (numsPagos[chaveParcela(r.num, obraLinha)]) { pulou++; return; } /* essa parcela já foi paga */
+            /* ⚠ SEM RATEIO, A OBRA DO PEDIDO VALE MAIS QUE O VAZIO DA NOTA.
+               Roteiro medido: pedido da obra, R$ 5.226,50, recebido — a despesa
+               nasce com o `obraId` da obra. Chega o XML e a pessoa vincula sem
+               passar pela triagem (que é onde os itens ganham obra). As
+               parcelas voltam do `NFItens.ratear` com `obraId` vazio e
+               `temRateio` false; a nota importada de XML tem `obraId` vazio; e
+               a obra do PEDIDO, que está ali na mão (hoje `_obraPC`), nunca era consultada.
+               Resultado: R$ 5.226,50 de material saem do custo da obra e viram
+               despesa geral do escritório — o Previsto × Realizado, o custo por
+               etapa e o relatório da obra perdem a compra.
+               ⚠ COM rateio o vazio continua valendo: a fatia "sem obra" tem
+               `obraId` vazio de propósito, e cair para a obra ali faria a
+               gravação divergir da divisão que o modal mostrou. */
+            var obraLinha = temRateio ? (r.obraId || "") : (r.obraId || nf.obraId || _obraPC || "");
+            if (pagoNotaInteira || numsPagos[chaveParcela(r.num, obraLinha)]) { pulou++; return; } /* essa parcela já foi paga — ou a nota inteira já foi, sem parcelas (ver `pagoNotaInteira`) */
             var reg = Store.salvar(eid(), "financeiro", {
               data: r.vencimento || nf.dataEmissao || hojeLocal(),
               desc: "NF " + numTxt + (nP > 1 ? " (" + r.num + "/" + nP + ")" : "") + " — " + (nf.parceiro || ""),
@@ -21577,9 +23411,13 @@ renderRequisicoes: function () {
               /* de que pedido esta despesa veio, e quanto ele dizia: e o que
                  responde o contador seis meses depois, quando a nota vale menos
                  que o pedido porque deram desconto na hora */
+              /* com mais de um pedido: o primeiro no campo que as telas leem,
+                 TODOS no texto, e `valorPedido` somando o que eles valiam —
+                 gravar só o primeiro faria a conferência do contador achar que
+                 a nota está muito acima do pedido que ela cobre. */
               compraId: _compra ? _compra.id : undefined,
-              compraNumero: _compra ? (_compra.numero || "") : undefined,
-              valorPedido: _compra ? Util.num(_compra.valor) : undefined,
+              compraNumero: _pcs.length ? _numPed : undefined,
+              valorPedido: _pcs.length ? _valPed : undefined,
               parcelaNum: r.num, parcelaTotal: nP
             });
             if (reg) gravadas++; else falhou = true;
@@ -21587,11 +23425,19 @@ renderRequisicoes: function () {
           nf.lancadoEm = new Date().toISOString();
           Store.salvar(eid(), "fiscal", nf);
           UI.fecharModal(); App.render();
-          if (falhou) UI.toast("Só " + gravadas + " de " + rateadas.length + " conta(s) foram gravadas (armazenamento cheio). Confira o Financeiro.", "erro");
-          else if (pulou) UI.toast("✔ " + gravadas + " conta(s) refeita(s); " + pulou + " já paga(s) mantida(s) como estavam.", "ok");
-          else UI.toast("✔ " + gravadas + " conta(s) a pagar lançada(s)" + (nP > 1 ? " — vencimentos de " + brd(rateadas[0].vencimento) + " a " + brd(rateadas[rateadas.length - 1].vencimento) : "") + ".", "ok");
+          /* ⚠ a diferença pedido × nota vai no recado mesmo quando não parou a
+             tela (ver o ⚠ do `_avisoDif`): o valor que foi para o custo da obra
+             é o da NOTA, e quem aprovou o pedido precisa saber que mudou. */
+          var _sufDif = _avisoDif ? " " + _avisoDif : "";
+          if (falhou) UI.toast("Só " + gravadas + " de " + rateadas.length + " conta(s) foram gravadas (armazenamento cheio). Confira o Financeiro." + _sufDif, "erro");
+          else if (pulou) UI.toast("✔ " + gravadas + " conta(s) refeita(s); " + pulou + " já paga(s) mantida(s) como estavam." + _sufDif, _avisoDif ? "aviso" : "ok");
+          else UI.toast("✔ " + gravadas + " conta(s) a pagar lançada(s)" + (nP > 1 ? " — vencimentos de " + brd(rateadas[0].vencimento) + " a " + brd(rateadas[rateadas.length - 1].vencimento) : "") + "." + _sufDif, _avisoDif ? "aviso" : "ok");
         } }
       ]);
+      /* ⚠ a busca da lista de pedidos só existe depois que o modal desenha —
+         campo que aparece e não filtra é pior que campo ausente, porque a pessoa
+         confia nele e conclui que o pedido não existe. */
+      this._fiarBuscaPedido();
     },
 
     // ---------- Fiscal: XML em lote + consulta por chave de acesso (offline, sem IA) ----------
@@ -24134,15 +25980,66 @@ renderFolha: function () {
        * Fora isso o prompt é uma linha só para escrever um motivo que fica
        * registrado. O resto do app pede texto por `UI.modal`. */
       var self = this;
+      /* ⚠ REJEITAR UM DOCUMENTO JÁ PAGO É DESFAZER A BAIXA — E ERA MUDO.
+         Medido em 06/09/2026: pedido recebido, despesa de R$ 12.500 viva no
+         Financeiro com carimbo `docTipo:"PC"`. A pessoa rejeita (pelo botão da
+         lista ou pelo select do formulário, os dois chegam aqui). O status vai
+         para "rejeitado", `dataRecebimento` fica intacta, a despesa continua
+         inteira no Financeiro e o pedido sai do total de compras da obra —
+         Compras diz R$ 0 e o Financeiro R$ 12.500 para a mesma compra. Em
+         medição é pior: o documento vai ao Portal do cliente carimbado de
+         RECUSADO com a receita lançada.
+         E este é justamente o caminho que uma trava sem porta empurra a pessoa
+         a usar (skill `dinheiro`, item 6) — então ele é o que menos podia
+         passar calado.
+         ⚠ PORTA, NÃO TRAVA: mostra o número e a data na cara e deixa rejeitar.
+         O que muda é que a baixa é desfeita junto e fica na trilha. */
+      var ehTermRej = !!this._APROV_TERM[reg.status] && !!this._DOC_CARIMBO[entidade];
+      var avisoBaixa = "";
+      if (ehTermRej) {
+        var qualR = entidade === "compras" ? "recebimento" : "pagamento";
+        var dtR = entidade === "compras" ? reg.dataRecebimento : reg.dataPgto;
+        var lancR = this._lancVivoDoDoc(entidade, reg.id);
+        avisoBaixa = '<p style="margin:0 0 10px;font-size:13px;line-height:1.4;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;color:#7f1d1d">'
+          + "<b>Este documento está " + Util.esc(reg.status) + "</b>"
+          + (dtR ? ", com " + qualR + " registrado em " + Util.fmtDia(dtR) : "") + ". "
+          + "Rejeitar desfaz o " + qualR + " DENTRO DO DOCUMENTO"
+          + (entidade === "compras" ? ", e o material que já entrou no almoxarifado continua lá" : "") + ".<br>"
+          + (lancR
+            ? "No Financeiro há " + (entidade === "compras" ? "uma despesa" : "uma receita") + " de "
+              + Util.fmtMoeda(Math.abs(Util.num(lancR.valor)))
+              + (lancR.data ? " de " + Util.fmtDia(lancR.data) : "")
+              + " que continua de pé, e ela NÃO é estornada por aqui — estorne no Financeiro também, "
+              + "senão o caixa e o documento vão contar histórias diferentes."
+            /* ⚠ não achar NÃO quer dizer que não existe: baixa registrada em
+               versão antiga não tem carimbo. Dizer "não há lançamento" seria
+               mentir com confiança num módulo de dinheiro. */
+            : "Não encontrei o lançamento deste documento pelo carimbo (baixas registradas em versões antigas não têm). Confira no Financeiro antes de seguir.")
+          + "</p>";
+      }
       UI.modal("Rejeitar — motivo obrigatório",
+        avisoBaixa +
         '<p style="margin-top:0;font-size:13px">Escreva o motivo. Esta mensagem fica registrada e aparece para quem preencheu.</p>' +
         campo("Motivo *", '<textarea id="rej-motivo" rows="3" placeholder="Ex.: o quantitativo do item 3.2 não bate com a medição anterior"></textarea>'),
         [{ texto: "Rejeitar", classe: "danger", onClick: function () {
           var motivo = v("rej-motivo");
           if (!motivo) { UI.toast("Escreva o motivo da rejeição.", "erro"); return; }
           UI.fecharModal();
+          var statusAntesRej = reg.status;
           reg.status = statusRej;
           self._trilhaAprov(reg, "rejeitar", { motivo: motivo });
+          if (ehTermRej) {
+            /* ⚠ a data da baixa é o guarda de idempotência dos DOIS botões
+               (lista e formulário). Deixá-la num documento rejeitado manteria
+               o pedido marcado como recebido e fora da conta de compras ao
+               mesmo tempo.
+               ⚠ `estoqueLancado` NÃO é limpo: o material está no almoxarifado
+               e há movimento no kardex — limpar faria o recebimento seguinte
+               dar entrada no MESMO material outra vez (skill `dinheiro`, 8). */
+            if (entidade === "compras") reg.dataRecebimento = "";
+            else reg.dataPgto = "";
+            self._trilhaAprov(reg, "desfazer-baixa", { de: statusAntesRej, para: statusRej, por: "rejeicao" });
+          }
           reg.rejeitadoPor = self._quemAprova();
           reg.rejeitadoEm = self._hojeISO();
           reg.motivoRejeicao = motivo;
@@ -24153,7 +26050,12 @@ renderFolha: function () {
              rejeição passou a acontecer aqui. */
           reg.aprovadoPor = ""; reg.aprovadoEm = "";
           Store.salvar(eid(), entidade, reg);
-          App.render(); UI.toast("Registro rejeitado — quem preencheu vê o motivo na lista.", "erro");
+          /* ⚠ pedido morto solta a requisição — ver `_liberaRequisicaoSemPedido`.
+             Depois do save, nunca antes: se a gravação falhar, a requisição
+             não pode ter voltado para a fila por um pedido que continua vivo. */
+          var rqL = (entidade === "compras") ? self._liberaRequisicaoSemPedido(reg.requisicaoId) : null;
+          App.render(); UI.toast("Registro rejeitado — quem preencheu vê o motivo na lista."
+            + (rqL ? " A requisição " + (rqL.numero || rqL.id) + " voltou para a fila de compras: nenhum pedido vivo a atende." : ""), "erro");
         } },
         /* sem esta saída, fechar a caixa deixava o usuário sem entender o que
            aconteceu com o registro — ainda mais quando ela abre logo depois de
@@ -24309,6 +26211,26 @@ renderFolha: function () {
       var txt = d.condPgtoTexto || (d.formaPgto && !this._formaPgtoChave(d.formaPgto) ? d.formaPgto : "");
       return txt ? " · " + String(txt).slice(0, 120) : "";
     },
+    /* cancelado = registro morto (ver o ⚠ em `_lancVivoDoDoc`) */
+    _finAnulado: function (f) {
+      var st = String((f && f.status) || "");
+      if (typeof FinStatus !== "undefined" && FinStatus.norm) return FinStatus.norm(st) === "cancelado";
+      return st.toLowerCase() === "cancelado";
+    },
+    /* ⚠ A SAÍDA DEPENDE DO ESTADO DO LANÇAMENTO, E DIZER A ERRADA É O BECO.
+       Despesa de compra nasce `pendente` e receita de medição nasce `paga`:
+       para a primeira a porta é Cancelar (o Estornar recusa em aberto), para a
+       segunda é Estornar (o `pago` é terminal e não volta por edição). Um texto
+       só para os dois mandava metade das pessoas para uma porta que se recusa a
+       abrir — e trava sem porta empurra a pessoa a marcar o documento como
+       rejeitado para se livrar dela. */
+    _portaDoLanc: function (f) {
+      var pago = (typeof FinStatus !== "undefined" && FinStatus.realizado)
+        ? FinStatus.realizado(f) : String((f && f.status) || "") === "pago";
+      return pago
+        ? "Estorne esse lançamento no Financeiro (ele já foi baixado; o estorno cria o lançamento de volta e os dois somam zero)"
+        : "Abra esse lançamento no Financeiro e marque o Status como “Cancelado” (ele ainda está em aberto, e o Estornar só vale para o que já foi pago)";
+    },
     _lancVivoDoDoc: function (entidade, docId, fin) {
       var tipo = this._DOC_CARIMBO[entidade];
       var id = String(docId == null ? "" : docId);
@@ -24325,6 +26247,24 @@ renderFolha: function () {
         if (f.estornoDe) continue;
         /* estornado = anulado: não trava mais nada, e é essa a porta */
         if (this._finEstornado(f, l)) continue;
+        /* ⚠ CANCELADO TAMBÉM É ANULADO — E ERA O BECO SEM SAÍDA DESTE MÓDULO.
+           Roteiro medido em 07/09/2026: a pessoa recebe o pedido (nasce uma
+           despesa `pendente` no Financeiro, ver `_lancFinPendente`), percebe o
+           engano e tenta desfazer o recebimento. A trava manda "estorne esse
+           lançamento por lá antes". Ela vai ao Financeiro, clica em Estornar e
+           leva: "Só se estorna o que já foi pago ou recebido. Em aberto, use
+           Cancelar." Ela cancela — e a trava CONTINUA, porque aqui só se
+           pulava estorno. Duas portas, e nenhuma das duas abre.
+           A pergunta que esta função responde é "o dinheiro deste documento
+           ainda está de pé?"; lançamento cancelado não é dívida nem crédito —
+           `FinStatus` o classifica como fechado, junto com `pago`, e o
+           `emAberto` dele já dizia isso: "Cancelado e estornado NÃO entram: não
+           são dívida nem crédito, são registro morto."
+           ⚠ Pergunta ao `FinStatus` em vez de comparar a string na mão: a
+           lista de estados mora lá, e uma cópia aqui divergiria na primeira
+           vez que ela crescer. Com o módulo velho em cache, cai na comparação
+           direta — nunca em "não sei, então está vivo", que reabriria o beco. */
+        if (this._finAnulado(f)) continue;
         return f;
       }
       return null;
@@ -24338,7 +26278,8 @@ renderFolha: function () {
       return "Esta " + (ehCompra ? "compra" : "medição") + " já tem uma "
         + (ehCompra ? "despesa" : "receita") + " de " + Util.fmtMoeda(Math.abs(Util.num(r.valor)))
         + (r.data ? " lançada em " + Util.fmtDia(r.data) : "") + " no Financeiro, e ela continua de pé. "
-        + "Estorne esse lançamento por lá antes de " + (ehCompra ? "receber" : "registrar o pagamento")
+        /* ⚠ a porta sai do ESTADO do lançamento — ver `_portaDoLanc` */
+        + this._portaDoLanc(r) + " antes de " + (ehCompra ? "receber" : "registrar o pagamento")
         + " de novo — senão o caixa fica com o dobro do que a obra "
         + (ehCompra ? "gastou" : "recebeu") + ".";
     },
@@ -24362,8 +26303,37 @@ renderFolha: function () {
        *   desfazer, e barrar a saída dela seria mexer num fluxo que ninguém
        *   reclamou a pretexto de consertar outro. */
       var lancaDinheiro = entidade === "medicoes" || entidade === "compras";
+      /* ⚠ SAIR DE UM ESTADO TERMINAL É SAIR, PARA QUALQUER LADO.
+         A condição exigia que o status NOVO estivesse em `_APROV_OK` — então
+         `recebido → aprovado` perguntava na cara e gravava trilha, mas
+         `recebido → cancelado` e `recebido → rejeitado` passavam MUDOS: sem
+         pergunta, sem trilha, sem toast, com `dataRecebimento` intacto.
+         Medido em 06/09/2026 rodando o gate real com uma despesa viva de
+         R$ 12.500 carimbada `docTipo:"PC"`: o pedido saía do total de compras
+         da obra (vai para "Fora da conta" em `PorObra.totaisCompras`) enquanto
+         a despesa continuava inteira no Financeiro e o material no
+         almoxarifado. Compras dizia R$ 0 e o Financeiro R$ 12.500 para a mesma
+         compra, e nada na tela registrava que isso tinha acontecido.
+         O próprio motor já documentava que essa transição "passa por
+         `_travaLancDoDoc`" (js/compraslinha.js) — não passava.
+         ⚠ CONTINUA SENDO PORTA, NÃO TRAVA: o ramo abaixo pergunta com o valor
+         e a data do lançamento na cara e deixa seguir; ele não recusa. */
+      /* ⚠ MENOS A REJEIÇÃO, QUE TEM DONO PRÓPRIO E OUTRA PORTA.
+         `paga → rejeitada` não passa por aqui de propósito: o
+         `_gateStatusForm` devolve o status ao que era e a rejeição só
+         acontece DEPOIS do save, em `_rejeitar`, com o motivo escrito. Se
+         este guarda perguntasse antes, ele limparia `dataPgto` e gravaria
+         trilha de "desfazer-baixa" num documento que o `_gateStatusForm`
+         acabaria salvando como "paga" — e que ainda pode voltar inteiro,
+         porque o modal do motivo tem "Deixar como está". Sobraria documento
+         pago, sem data de pagamento, sem rejeição, com trilha dizendo que a
+         baixa foi desfeita. Duas perguntas seguidas pela mesma decisão também
+         ensinam a clicar sem ler.
+         O aviso da rejeição mora em `_rejeitar`, que é a porta ÚNICA dos dois
+         caminhos (botão da lista e select do formulário) — a regra das quatro
+         portas vale aqui também. */
       var saiuDeTerminal = lancaDinheiro && !!this._APROV_TERM[statusAntigo]
-        && !!this._APROV_OK[obj.status] && obj.status !== statusAntigo;
+        && obj.status !== statusAntigo && !this._APROV_REJ[obj.status];
       if (!saiuDeTerminal && (!this._ehAprovado(statusAntigo) || !this._APROV_REABRE[obj.status])) return true;
 
       /* ⚠ PERMISSÃO PRIMEIRO, SEMPRE. Numa versão intermediária o ramo da
@@ -24406,12 +26376,16 @@ renderFolha: function () {
         var recViva = this._lancVivoDoDoc(entidade, obj.id);
         var linhaRec = "";
         if (recViva) {
-          linhaRec = "\n\nNo Financeiro há uma receita de "
+          /* ⚠ "receita" ERA A PALAVRA ERRADA METADE DAS VEZES: este mesmo
+             ramo atende compra (despesa) e medição (receita), e chamar de
+             receita o dinheiro que SAIU faz a pessoa procurar no lado errado
+             do Financeiro. A frase seguinte já distinguia os dois; esta não. */
+          linhaRec = "\n\nNo Financeiro há uma " + (entidade === "compras" ? "despesa" : "receita") + " de "
             + Util.fmtMoeda(Math.abs(Util.num(recViva.valor)))
             + (recViva.data ? " de " + Util.fmtDia(recViva.data) : "")
             + " que continua de pé. Enquanto ela estiver lá, "
             + (entidade === "compras" ? "receber este pedido" : "registrar o pagamento desta medição")
-            + " de novo vai ser RECUSADO — estorne por lá primeiro.";
+            + " de novo vai ser RECUSADO. A saída: " + this._portaDoLanc(recViva) + ".";
         } else if (this._DOC_CARIMBO[entidade]) {
           /* ⚠ e SO para quem lança dinheiro. A requisição também tem estado
              terminal ("comprada") e cai neste mesmo ramo, mas ela nunca criou
@@ -25282,6 +27256,9 @@ renderFolha: function () {
         case "compras-filtro": this._comprasFiltro = (dataset && dataset.value) || "todos"; App.render(); return;
         case "enviar-compra": return this.comprasMarcarEnviado(id);
         case "confirmar-compra": return this.comprasMarcarConfirmado(id);
+        case "desfazer-etapa-compra": return this.comprasDesfazerEtapa(id);
+        case "recusou-compra": return this.comprasFornecedorRecusou(id);
+        case "devolver-compra": return this.comprasDevolver(id);
         case "cobrar-compra": return this.comprasCobrar(id);
         case "med-obra": return this.medTrocaObra(dataset);
         case "dash-metas": return this.metasForm();
@@ -25351,6 +27328,8 @@ renderFolha: function () {
         case "tri-abrir": return this.triAbrir(id);
         case "tri-desfazer": return this.triDesfazerItem(id);
         case "fiscal-desfazer": return this.fiscalDesfazer(id);
+        case "fiscal-vincular": return this.fiscalVincularPedido(id);
+        case "nf-itens-manuais": return this.fiscalItensManuais(id);
         case "fiscal-editar": return this.fiscalEditar(id);
         case "fiscal-excluir": return this.fiscalExcluir(id);
         case "tri-fechar": return this.triFechar();
@@ -25495,44 +27474,15 @@ renderFolha: function () {
         case "novo-item-estoque": return this.novoItemEstoque();
         case "aprovar-compra": return this._aprovar("compras", id, "aprovado", "Pedido de compra aprovado.");
         case "rejeitar-compra": return this._rejeitar("compras", id, "rejeitado");
-        case "receber-compra": {
-          var pcr = Store.obter(eid(), "compras", id); if (!pcr) return;
-          /* mesmo caso do "pagar-medicao": receber material nao e aprovar — a
-             aprovacao ja foi feita por outro. Em obra pequena quem compra e
-             quem recebe. O que se impede e receber sem aprovacao. */
-          if (!this._guardaBaixa(pcr, "compras")) return;
-          /* ⚠ v1.2 — o gêmeo do "pagar-medicao" acima, mesmo buraco e mesma
-             correção: recebido → aprovado passa pelo gate de status, o botão
-             "Receber" reaparece e a despesa é lançada uma segunda vez.
-             `_estoqueDaCompra` não duplicava (tem `estoqueLancado`); o
-             Financeiro duplicava. */
-          if (pcr.dataRecebimento) {
-            UI.toast("Esta compra já foi recebida em " + Util.fmtDia(pcr.dataRecebimento)
-              + ". Estorne a despesa no Financeiro antes de receber de novo.", "erro");
-            return;
-          }
-          /* ⚠ E A DATA NÃO BASTA — igual à medição: a reabertura de um pedido
-             recebido limpa `dataRecebimento` (de propósito, senão o pedido
-             ficaria impossível de receber), o botão volta e a despesa antiga
-             continua no Financeiro. A pergunta certa não é "este pedido já
-             foi recebido?" e sim "o dinheiro já está lançado?". */
-          var travaC2 = this._travaLancDoDoc(pcr, "compras");
-          if (travaC2) { UI.toast(travaC2, "erro"); return; }
-          pcr.status = "recebido"; pcr.dataRecebimento = this._hojeISO();
-          /* o material entra no almoxarifado ANTES de carimbar, para que uma
-             falha de gravação não deixe o pedido "recebido" sem estoque */
-          var est = this._estoqueDaCompra(pcr);
-          if (est.lancados) pcr.estoqueLancado = true;
-          Store.salvar(eid(), "compras", pcr);
-          Store.salvar(eid(), "financeiro", { data: pcr.dataRecebimento, desc: "Compra " + (pcr.numero || "") + " — " + (pcr.descricao || "") + this._condPgtoSufixo(pcr), tipo: "despesa", categoria: pcr.categoria || "material", valor: Util.num(pcr.valor), status: "pendente", obraId: pcr.obraId, fornecedor: pcr.fornecedorNome, /* ⚠ só CHAVE em formaPgto; a condição do fornecedor vai na descrição (ver _formaPgtoChave) — e nos DOIS caminhos, como o carimbo */ formaPgto: this._formaPgtoChave(pcr.formaPgto), /* ⚠ CARIMBO DE ORIGEM — sem ele esta despesa e invisivel. A do NF sempre teve docTipo/docId (o que permite reconhecer, deduplicar e refazer); a da compra nascia cega, e por isso receber a compra E lancar a nota do mesmo material davam DUAS despesas para o mesmo dinheiro, sem nada no sistema capaz de perceber. Tem de existir nos DOIS caminhos de recebimento: ja houve conserto pela metade aqui (v1.1.232 copiou a despesa para o caminho do formulario e esqueceu o estoque). */ docTipo: "PC", docId: pcr.id, docNumero: pcr.numero || "" });
-          App.render();
-          UI.toast(est.lancados
-            ? "Compra recebida. Despesa lançada no Financeiro (pendente) e " + est.lancados + " item(ns) no almoxarifado."
-            /* pedido digitado à mão só tem texto livre — dizer isso é melhor
-               que dar entrada em nada e deixar o usuário procurando. */
-            : "Compra recebida e despesa lançada no Financeiro (pendente). Este pedido não tem itens detalhados, então nada entrou no estoque.", "ok");
-          return;
-        }
+        /* ⚠ O CLIQUE SECO VIROU CAIXA — ver `comprasReceber`. O que estava aqui
+           dava entrada na quantidade PEDIDA, lançava a despesa cheia e marcava
+           "recebido" sem perguntar nada: entrega parcial (o caso normal em
+           obra) virava 50 sacos que só existem no sistema, e a data era sempre
+           a do clique, sem onde corrigir.
+           As guardas de dinheiro NÃO saíram: `_guardaBaixa` e o
+           `_travaLancDoDoc` agora moram no `comprasReceber`, que é quem decide
+           antes de qualquer gravação. */
+        case "receber-compra": return this.comprasReceber(id);
         case "entrada-estoque": return this._movEstoque(id, "entrada");
         case "saida-estoque": return this._movEstoque(id, "saida");
         case "abrir-retencao": this._medAba = "retencao"; App.render(); return;
@@ -26249,8 +28199,31 @@ case "nova-folha": return this.novoFolha();
           });
       }
 
+      /* ---------- TOUR VIRTUAL 360 ----------
+       * Só o que o engenheiro PUBLICOU (Tour360.paraPortal devolve null para
+       * rascunho) e só a estação cuja foto já subiu ao servidor. O motor monta
+       * o bloco campo a campo — nem o comentário interno da equipe nem o autor
+       * dele saem daqui.
+       *
+       * ⚠ A imagem passa por `RDO.fotoDoPortal`, o mesmo trilho da foto de
+       *   diário e da vista do modelo, para não existir uma terceira regra de
+       *   publicação de imagem nesta casa. A diferença é que o tour RECUSA o
+       *   ramo do base64: um equiretangular de 4096 px embutido passa de 1 MB
+       *   e três deles estouram o teto de 8 MiB do retrato — aí o
+       *   `_caberSnapshot` começa a cortar as fotos dos diários antigos, e o
+       *   tour derrubaria conteúdo que não é dele. Ver js/tour360.js. */
+      var tours = [];
+      if (podeRel("tour360") && typeof Tour360 !== "undefined" && typeof RDO !== "undefined" && RDO.fotoDoPortal) {
+        tours = lista("tour360")
+          .filter(function (t) { return String(t.obraId || "") === id; })
+          .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); })
+          .map(function (t) { return Tour360.paraPortal(t, { fotoDoPortal: RDO.fotoDoPortal }); })
+          .filter(Boolean);
+      }
+
       var snapshot = {
         obraId: id, nome: obra.nome || "", cliente: obra.clienteNome || "", local: obra.local || "",
+        tours: tours,
         tipo: rot(P.obraTipo, obra.tipo) || "", fase: rot(P.obraFase, obra.fase) || "", status: obra.status || "",
         inicio: obra.inicio || "", termino: obra.termino || "",
         areaConstruida: Util.num(obra.areaConstruida), areaTerreno: Util.num(obra.areaTerreno),

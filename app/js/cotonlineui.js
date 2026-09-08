@@ -39,6 +39,14 @@
   function _ico(nome) { return (typeof Icones !== "undefined" && Icones.get) ? Icones.get(nome, 15) : ""; }
   function _agora() { return new Date().toISOString(); }
   function _uid(p) { return (typeof Util !== "undefined" && Util.uid) ? Util.uid(p) : (p + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8)); }
+  /* mesma defesa do `_esc`: este arquivo pode subir com um js/util.js antigo em
+     cache, e um preço impresso como "undefined" num aviso de dinheiro é pior
+     que o aviso não existir */
+  function _moeda(v) {
+    var n = _numPreco(v);
+    if (typeof Util !== "undefined" && Util.fmtMoeda) return Util.fmtMoeda(n);
+    return "R$ " + n.toFixed(2).replace(".", ",");
+  }
   function _fmt(iso, comAno) {
     /* dd/mm hh:mm (ou dd/mm/aaaa hh:mm). Sem Util.fmtData: ela é "—" para
        vazio e mostra ano sempre — na linha de status o ano só ocupa espaço */
@@ -835,7 +843,7 @@
        `barrado` e sai sem gravar, com o recado que ele mesmo usa na pergunta
        de depois da viagem de rede. */
     if (rel.perguntou && !_podeRegravarMapa(res.cot, msgSeBarrado || "Nada foi gravado aqui.")) {
-      return { barrado: true, cot: res.cot, aplicadas: res.aplicadas, ignoradas: res.ignoradas, substituidos: res.substituidos, perdas: res.perdas || [] };
+      return { barrado: true, cot: res.cot, aplicadas: res.aplicadas, ignoradas: res.ignoradas, substituidos: res.substituidos, perdas: res.perdas || [], mudancas: res.mudancas || [] };
     }
     if (!rel.criadas) return res;
     var r2 = _aplicarEstado(res.cot, online);
@@ -844,7 +852,11 @@
       aplicadas: res.aplicadas + r2.aplicadas,
       ignoradas: r2.ignoradas,
       substituidos: res.substituidos + r2.substituidos,
-      perdas: (res.perdas || []).concat(r2.perdas || [])
+      perdas: (res.perdas || []).concat(r2.perdas || []),
+      /* ⚠ a religação aplica a resposta DE NOVO sobre a coluna recém-criada:
+         as duas leituras têm de chegar juntas, senão o preço que subiu na
+         segunda passada some do aviso */
+      mudancas: (res.mudancas || []).concat(r2.mudancas || [])
     };
   }
   /* ⚠ ESTE NÚMERO NÃO É "TROCADO POR OUTRO" — É "FICOU SEM PREÇO".
@@ -875,6 +887,80 @@
     return n + " preço(s) que estavam na grade ficaram SEM valor" +
       (onde ? ": " + onde : "") + " — a proposta que entrou não trouxe valor para esse(s) item(ns) (o fornecedor pode não ter cotado, ou o item pode ter mudado no Mapa depois da publicação); confira a coluna antes de decidir a compra.";
   }
+  /* ⚠ O QUE SUBIU VEM PRIMEIRO, E COM O NÚMERO NA CARA.
+     "3 preços mudaram" não muda decisão nenhuma; "Alfa: Cimento de R$ 100,00
+     para R$ 130,00" muda. E o que CAIU vai junto porque é a mesma pergunta:
+     posso decidir a compra com o que estou vendo? */
+  function _fraseMudancas(mud) {
+    var qs = _contaSubiu(mud), qc = _contaCaiu(mud);
+    if (!qs && !qc) return "";
+    var f = "";
+    if (qs) {
+      var partes = [], sobra = 0;
+      (mud || []).forEach(function (m) {
+        if (!m.subiu.length) return;
+        if (partes.length >= 2) { sobra++; return; }
+        var x = m.subiu[0];
+        partes.push(m.nome + " (" + x.item + " de " + _moeda(x.de) + " para " + _moeda(x.para)
+          + (m.subiu.length > 1 ? " e mais " + (m.subiu.length - 1) : "") + ")");
+      });
+      f += "\u26a0 " + qs + " preço(s) SUBIRAM"
+        + (partes.length ? ": " + partes.join("; ") + (sobra ? " e mais " + sobra + " fornecedor(es)" : "") : "")
+        + ". Confira quem venceu antes de gerar os pedidos.";
+    }
+    /* ⚠ A QUEDA NÃO ENTRA NO RECADO, DE PROPÓSITO. Ela é o resultado
+       ESPERADO de um pedido de desconto: anunciá-la com o mesmo peso do que
+       subiu faria a pessoa ler os dois como rotina e parar de olhar justamente
+       o que muda a compra. O antes/depois da queda está no quadro, ao lado do
+       que subiu, que é onde a comparação fecha. */
+    return f;
+  }
+  /* ⚠ PREÇO QUE SUBIU NÃO CABE NUM TOAST DE 2,6 SEGUNDOS.
+     O toast é texto puro e some sozinho; um item que encareceu depois de um
+     PEDIDO DE DESCONTO é exatamente o fato capaz de mudar a compra, e a pessoa
+     precisa poder LER item a item. Por isso vira quadro.
+     ⚠ E o quadro devolve o Mapa ao fechar (`_reabrirAoFechar`): `UI.modal`
+     fecha o modal anterior, e sair pelo ✕ sem isto deixa a mesma tela vazia
+     que fez a cotação "sumir" na 1.2.52. */
+  function _quadroSubiu(mud, voltar) {
+    if (!_contaSubiu(mud)) return false;
+    var linhas = "";
+    (mud || []).forEach(function (m) {
+      (m.subiu || []).forEach(function (x) {
+        linhas += "<tr><td style=\"padding:4px 6px;border-bottom:1px solid #eee\">" + _esc(m.nome) + "</td>"
+          + "<td style=\"padding:4px 6px;border-bottom:1px solid #eee\">" + _esc(x.item) + "</td>"
+          + "<td style=\"padding:4px 6px;border-bottom:1px solid #eee;text-align:right\">" + _esc(_moeda(x.de)) + "</td>"
+          + "<td style=\"padding:4px 6px;border-bottom:1px solid #eee;text-align:right;color:#b91c1c;font-weight:600\">" + _esc(_moeda(x.para)) + "</td></tr>";
+      });
+      (m.caiu || []).forEach(function (x) {
+        linhas += "<tr><td style=\"padding:4px 6px;border-bottom:1px solid #eee\">" + _esc(m.nome) + "</td>"
+          + "<td style=\"padding:4px 6px;border-bottom:1px solid #eee\">" + _esc(x.item) + "</td>"
+          + "<td style=\"padding:4px 6px;border-bottom:1px solid #eee;text-align:right\">" + _esc(_moeda(x.de)) + "</td>"
+          + "<td style=\"padding:4px 6px;border-bottom:1px solid #eee;text-align:right;color:#15803d\">" + _esc(_moeda(x.para)) + "</td></tr>";
+      });
+    });
+    var bg = UI.modal("Preços que mudaram nesta resposta",
+      '<p style="margin:0 0 8px;font-size:13px">A resposta que acabou de entrar mudou preços que já estavam na grade. '
+      + 'O que subiu está em vermelho — numa rodada de desconto isso pode trocar o vencedor.</p>'
+      + '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+      + '<thead><tr style="text-align:left"><th style="padding:4px 6px">Fornecedor</th><th style="padding:4px 6px">Item</th>'
+      + '<th style="padding:4px 6px;text-align:right">Antes</th><th style="padding:4px 6px;text-align:right">Depois</th></tr></thead>'
+      + "<tbody>" + linhas + "</tbody></table></div>",
+      [{ texto: "Voltar ao Mapa", classe: "primary", onClick: function () { UI.fecharModal(); if (voltar) voltar(); } }]);
+    /* ⚠ O PARÂMETRO SE CHAMA `voltar`, E NÃO `aoFechar`, DE PROPÓSITO.
+       O controle negativo A7 (test-cotacao-fiacao.js) sabota o fonte trocando
+       a PRIMEIRA ocorrência da linha que devolve o Mapa ao fechar. Se esta
+       função repetisse a mesma assinatura, aquele controle passaria a desligar
+       ESTA caixa em vez da que ele quer medir: ficaria verde provando outra
+       coisa. Um nome diferente mantém a linha dele única.
+       ⚠ E por isso o texto exato dela nao pode ser escrito aqui nem como
+       exemplo: a sabotagem casa com comentario tambem, e uma abertura de
+       comentario injetada dentro de outro comentario quebra a copia inteira
+       antes de qualquer assert rodar (foi o que aconteceu ao escrever este
+       comentario da primeira vez). */
+    _reabrirAoFechar(bg, voltar);
+    return true;
+  }
   /* "Fornecedor Alfa: Cimento CP-II" — a língua da obra. Teto de 3 colunas e 3
      itens por coluna: recado que vira parágrafo a pessoa não lê, e o resto
      está no Mapa, que é onde a decisão acontece de verdade. */
@@ -897,11 +983,25 @@
    * sumia e a proposta recusada morria junto com os links. Duas telas do mesmo
    * módulo contando histórias diferentes sobre o mesmo dinheiro é o defeito;
    * um detalhe só, montado aqui, é a trava. */
-  function _detalheAplicacao(aplicadas, substituidos, perdas, recusadas) {
+  function _detalheAplicacao(aplicadas, substituidos, perdas, recusadas, mudancas) {
     var det = aplicadas + " resposta(s) puxada(s)";
     if (substituidos > 0) {
       var onde = _ondePerdeu(perdas);
       det += " · " + substituidos + " preço(s) da grade ficaram sem valor" + (onde ? " (" + onde + ")" : "");
+    }
+    /* ⚠ O TOAST SOME EM 2,6 s; O HISTÓRICO É O QUE SOBRA. Preço que subiu
+       depois de um pedido de desconto é exatamente o que alguém vai querer
+       reconstituir semanas depois, quando a nota chegar mais cara. */
+    /* ⚠ mesma régua do toast: o log registra o que SUBIU. A queda é o
+       resultado esperado, e a coluna nova está no Mapa para quem quiser
+       conferir; encher o histórico com ela afogaria a linha que importa. */
+    var qs = _contaSubiu(mudancas);
+    if (qs) {
+      var det2 = [];
+      (mudancas || []).forEach(function (m) {
+        (m.subiu || []).forEach(function (x) { if (det2.length < 6) det2.push(m.nome + ": " + x.item + " " + _moeda(x.de) + " → " + _moeda(x.para)); });
+      });
+      det += " · " + qs + " preço(s) subiram" + (det2.length ? " (" + det2.join("; ") + ")" : "");
     }
     if (recusadas && recusadas.length) det += " · " + recusadas.length + " proposta(s) não coube(ram) na grade: " + _motivos(recusadas);
     return det;
@@ -961,6 +1061,58 @@
     });
     return perdas;
   }
+  /* ⚠ O PREÇO QUE MUDOU — E, PRINCIPALMENTE, O QUE SUBIU.
+   * Roteiro medido em 06/09/2026, com a rodada de desconto no ar: o engenheiro
+   * clica "Pedir desconto"; o fornecedor responde pela MESMA página, e a
+   * resposta regrava a coluna inteira. Nada obriga a contraproposta a ser
+   * MENOR — ele pode subir o preço de um item (ou de todos) e o app aplicava
+   * em silêncio: `substituidos` conta só o preço que ficou SEM valor
+   * (`_perdasDaColuna`), e um preço que foi de R$ 100 para R$ 130 não aparecia
+   * em lugar nenhum — nem no toast, nem no histórico.
+   * Numa rodada de desconto isso TROCA O VENCEDOR: quem pediu desconto lê
+   * "3 resposta(s) puxada(s)" em verde e fecha a compra mais cara achando que
+   * negociou. É o único caminho da base em que o app aplica dinheiro novo por
+   * cima do velho sem uma palavra sobre a diferença.
+   * ⚠ Sumir não entra aqui (é `_perdasDaColuna`) e igual não é mudança:
+   *   contar as duas coisas junto faria o número perder o sentido. */
+  function _mudancasDaColuna(antes, depois) {
+    var mud = [];
+    var itens = (depois && Array.isArray(depois.itens)) ? depois.itens : [];
+    ((depois && depois.fornecedores) || []).forEach(function (fr) {
+      if (!fr || !fr.cid) return;
+      var ant = antes[fr.cid];
+      if (!ant) return;
+      var subiu = [], caiu = [], somaAntes = 0, somaDepois = 0;
+      for (var k in ant.precos) {
+        if (!Object.prototype.hasOwnProperty.call(ant.precos, k)) continue;
+        var va = _numPreco(ant.precos[k]);
+        if (!(va > 0)) continue;
+        var vb = (fr.precos && Object.prototype.hasOwnProperty.call(fr.precos, k)) ? _numPreco(fr.precos[k]) : 0;
+        if (!(vb > 0) || vb === va) continue;
+        var it = itens[Number(k)];
+        (vb > va ? subiu : caiu).push({
+          item: (it && it.descricao) ? String(it.descricao) : ("item " + (Number(k) + 1)),
+          de: va, para: vb
+        });
+        somaAntes += va; somaDepois += vb;
+      }
+      if (subiu.length || caiu.length) {
+        mud.push({ cid: fr.cid, nome: fr.nome || "sem nome", subiu: subiu, caiu: caiu,
+          somaAntes: somaAntes, somaDepois: somaDepois });
+      }
+    });
+    return mud;
+  }
+  function _contaSubiu(mud) {
+    var n = 0;
+    (mud || []).forEach(function (m) { n += (m.subiu || []).length; });
+    return n;
+  }
+  function _contaCaiu(mud) {
+    var n = 0;
+    (mud || []).forEach(function (m) { n += (m.caiu || []).length; });
+    return n;
+  }
   function _aplicarEstado(atual, online) {
     var M = _motor();
     var convites = (online && Array.isArray(online.convites)) ? online.convites : [];
@@ -993,7 +1145,7 @@
     /* `|| 0` porque uma instalação pode subir este arquivo com um
        js/cotacoes.js antigo em cache, que não devolve `substituidos` — e aí
        "undefined valor(es)" seria pior que não avisar */
-    return { cot: cot, aplicadas: res.aplicadas, ignoradas: res.ignoradas, substituidos: res.substituidos || 0, perdas: _perdasDaColuna(antesDaColuna, cot) };
+    return { cot: cot, aplicadas: res.aplicadas, ignoradas: res.ignoradas, substituidos: res.substituidos || 0, perdas: _perdasDaColuna(antesDaColuna, cot), mudancas: _mudancasDaColuna(antesDaColuna, cot) };
   }
 
   /* ------------------------------------------------------------------
@@ -1577,7 +1729,7 @@
          desistir). Antes ele gravava "vencida · 0 resposta(s) puxada(s)" e a
          proposta que o motor recusou sumia sem deixar rastro: nem no Mapa, nem
          no log, nem na tela. */
-      _hist(cot, "online-encerrada", "vencida · " + _detalheAplicacao(res.aplicadas, res.substituidos, res.perdas, recusadas));
+      _hist(cot, "online-encerrada", "vencida · " + _detalheAplicacao(res.aplicadas, res.substituidos, res.perdas, recusadas, res.mudancas));
       /* ⚠ ENCERRADA SEM PUBLICAÇÃO NOVA NÃO PODE FICAR "ENVIADA".
          Daqui para baixo há dois caminhos em que a publicação nova NÃO nasce
          (a pessoa cancela o confirm; o POST /publicar falha). Sem mexer no
@@ -1616,7 +1768,13 @@
          histórico — que ninguém abre ao publicar. A coluna do fornecedor
          deixava de estar completa, ele caía fora do `vencedorUnico`, e o único
          recado da tela era o verde "Cotação publicada". */
-      if (res.substituidos > 0) _toast("Rodada vencida encerrada e respostas trazidas. " + _fraseSubstituidos(res.substituidos, res.perdas), "aviso");
+      /* ⚠ o preço que MUDOU chega junto do que sumiu — são a mesma pergunta.
+         Aqui não abre quadro: este caminho dispara sozinho ao ABRIR uma
+         cotação vencida, e um modal por cima de quem só quis olhar a tela é
+         justamente o que ensina a fechar sem ler. */
+      var mudVenc = _fraseMudancas(res.mudancas);
+      if (res.substituidos > 0) _toast("Rodada vencida encerrada e respostas trazidas. " + _fraseSubstituidos(res.substituidos, res.perdas) + (mudVenc ? " " + mudVenc : ""), "aviso");
+      else if (mudVenc) _toast("Rodada vencida encerrada e respostas trazidas. " + mudVenc, "aviso");
       /* ⚠ E QUANDO A RESPOSTA SÓ TROCA UM PREÇO, A TELA TAMBÉM TEM DE FALAR.
          O motor não conta como "substituído" o preço trocado por outro (só o
          PERDIDO), então uma proposta que entra e muda o valor que o engenheiro
@@ -1842,20 +2000,36 @@
        Foi o defeito relatado na 1.2.51, e ele valia para TODAS as saidas —
        Voltar, erro, sem elegiveis e sucesso. */
     var voltarAoMapa = function () { UI.fecharModal(); if (G.formCotacao) G.formCotacao(cot); };
-    UI.modal("Pedir desconto", '<p class="muted">Consultando quem já respondeu…</p>', [
+    /* ⚠ O ✕ E O CLIQUE NO VEU TAMBEM FECHAM O MAPA. `UI.modal` desenha um
+       botao `data-fechar` e fecha no clique fora — os dois chamam
+       `UI.fecharModal()` direto, sem passar pelos botoes do rodape. Sem o
+       `_reabrirAoFechar`, sair pelo ✕ deixa a mesma tela vazia que o defeito
+       da 1.2.51: consertar so os botoes conserta metade. */
+    _reabrirAoFechar(UI.modal("Pedir desconto", '<p class="muted">Consultando quem já respondeu…</p>', [
       { texto: "Fechar", classe: "ghost", onClick: voltarAoMapa }
-    ]);
+    ]), voltarAoMapa);
     _post("/api/cotacao/estado", { id: on.id }).then(function (x) {
       if (!x || !x.j || !x.j.ok || !x.j.online) { _toast(_erroDe(x), "erro"); voltarAoMapa(); return; }
       var est = x.j.online, convites = est.convites || [];
       /* só quem respondeu, e só quem ainda tem rodada */
       var elegiveis = [], semRodada = [], semResposta = [];
+      var jaNaRodada = [];
       convites.forEach(function (cv) {
         var nome = cv.nome || cv.cid;
         if (!cv.respondidoEm) { semResposta.push(nome); return; }
         var r = (cv.negociacao && cv.negociacao.rodada) || 0;
         if (r >= 3) { semRodada.push(nome); return; }
-        elegiveis.push({ cid: cv.cid, nome: nome, rodada: r });
+        /* ⚠ JÁ RESPONDEU A ESTA RODADA? Medido em 07/09/2026: pedir desconto a
+           três, um responde no dia seguinte, e a pessoa volta aqui para
+           LEMBRAR os outros dois. Todos vinham marcados — e reenviar assim
+           QUEIMA UMA RODADA de quem já tinha respondido, com teto de três: na
+           terceira o servidor tranca, e o fornecedor que estava negociando
+           direito perde a vez. A conta é por DATA: respondeu depois do pedido
+           de desconto = a rodada dele já se fechou. */
+        var pedidoEm = (cv.negociacao && cv.negociacao.pedidoEm) || "";
+        var respondeu = !!(pedidoEm && String(cv.respondidoEm) >= String(pedidoEm));
+        if (respondeu) jaNaRodada.push(nome);
+        elegiveis.push({ cid: cv.cid, nome: nome, rodada: r, respondeuNaRodada: respondeu, esperando: !!pedidoEm && !respondeu });
       });
       if (!elegiveis.length) {
         /* ⚠ RECADO COM MOTIVO, não "não dá". Quem não respondeu e quem já
@@ -1863,18 +2037,37 @@
         var pq = semResposta.length
           ? "Ninguém respondeu ainda — sem proposta na mesa não há sobre o que pedir desconto."
           : "Já foram 3 rodadas com " + semRodada.join(", ") + ". Feche com o preço que está na mesa.";
-        UI.modal("Pedir desconto", '<p style="margin:0">' + _esc(pq) + "</p>",
-          [{ texto: "Entendi", classe: "primary", onClick: voltarAoMapa }]);
+        _reabrirAoFechar(UI.modal("Pedir desconto", '<p style="margin:0">' + _esc(pq) + "</p>",
+          [{ texto: "Entendi", classe: "primary", onClick: voltarAoMapa }]), voltarAoMapa);
         return;
       }
+      /* ⚠ QUEM JÁ RESPONDEU A RODADA ABERTA VEM DESMARCADO, NÃO DE FORA.
+         Tirar da lista esconderia a escolha (pedir de novo a quem já respondeu
+         é legítimo: a contraproposta dele pode ter vindo pior). Marcar por
+         padrão é que queima a rodada dele sem ninguém pedir. */
       var linhas = elegiveis.map(function (f, i) {
+        var marca = f.respondeuNaRodada ? "" : " checked";
+        var nota = f.respondeuNaRodada
+          ? ' <span class="muted" style="font-size:12px">· já respondeu a esta rodada — marcar gasta outra</span>'
+          : (f.esperando ? ' <span class="muted" style="font-size:12px">· ainda não respondeu a rodada aberta</span>'
+            : (f.rodada ? ' <span class="muted" style="font-size:12px">· ' + f.rodada + "ª rodada já feita</span>" : ""));
         return '<label style="display:flex;gap:8px;align-items:center;margin:4px 0">' +
-          '<input type="checkbox" class="cto-neg-cid" value="' + _esc(f.cid) + '" checked> ' +
-          "<span>" + _esc(f.nome) + (f.rodada ? ' <span class="muted" style="font-size:12px">· ' + f.rodada + "ª rodada já feita</span>" : "") + "</span></label>";
+          '<input type="checkbox" class="cto-neg-cid" value="' + _esc(f.cid) + '"' + marca + "> " +
+          "<span>" + _esc(f.nome) + nota + "</span></label>";
       }).join("");
       var corpo =
         '<p style="margin:0 0 8px">Quem recebe o pedido de desconto — <b>no mesmo link</b> que já tem:</p>' +
         linhas +
+        /* ⚠ LEMBRAR NÃO PRECISA DE RODADA NOVA. Quem só quer cobrar quem ainda
+           não respondeu deve reenviar o LINK, que continua valendo — e a caixa
+           diz isso, com o botão ao lado. Sem essa frase, a única saída visível
+           era marcar todo mundo e mandar de novo, gastando a rodada de quem já
+           tinha respondido (teto de três). */
+        (jaNaRodada.length
+          ? '<p class="muted" style="font-size:12.5px;margin-top:6px">' + _esc(jaNaRodada.join(", "))
+            + (jaNaRodada.length > 1 ? " já responderam" : " já respondeu")
+            + ' a esta rodada e está(ão) desmarcado(s). Para só <b>lembrar</b> quem falta, feche esta caixa e use <b>Links</b>: o link continua valendo e não gasta rodada.</p>'
+          : "") +
         (semResposta.length ? '<p class="muted" style="font-size:12.5px;margin-top:6px">Fora da lista por ainda não terem respondido: ' + _esc(semResposta.join(", ")) + ".</p>" : "") +
         (semRodada.length ? '<p class="muted" style="font-size:12.5px;margin-top:6px">Sem rodada disponível (já foram 3): ' + _esc(semRodada.join(", ")) + ".</p>" : "") +
         '<div class="field" style="margin-top:10px"><label>Mensagem para o fornecedor</label>' +
@@ -1884,8 +2077,62 @@
         "<b>O Mapa é refeito com os preços novos</b> — o vencedor de um item pode trocar. " +
         "Se o prazo da rodada passar do prazo da publicação, o link é estendido.</p>";
       var enviando = false;
+      /* ⚠ CANCELAR A RODADA — a saída que não existia (07/09/2026). Aberta a
+         rodada, a única forma de fechá-la era ENCERRAR A PUBLICAÇÃO INTEIRA:
+         mata os links de todos os fornecedores, inclusive os que nem foram
+         chamados para a negociação, e deixa a cotação sem como receber
+         proposta nenhuma. Pedir desconto ao fornecedor errado custava a rodada
+         inteira.
+         ⚠ Ele só aparece quando HÁ rodada aberta — botão que promete e recusa
+         ensina a não confiar na tela. */
+      var abertas = elegiveis.filter(function (f) { return f.esperando; });
       var bg = UI.modal("Pedir desconto", corpo, [
-        { texto: "Voltar", classe: "ghost", onClick: voltarAoMapa },
+        { texto: "Voltar", classe: "ghost", onClick: voltarAoMapa } ].concat(abertas.length ? [
+        { texto: "Encerrar a rodada aberta", classe: "ghost", onClick: function () {
+          if (enviando) return;
+          var nomes = abertas.map(function (f) { return f.nome; }).join(", ");
+          /* ⚠ A PERGUNTA DIZ O QUE NÃO VOLTA. A rodada gasta continua contando
+             para o teto de três: se cancelar zerasse o contador, bastaria
+             abrir-e-cancelar para pedir desconto para sempre. E a validade
+             esticada não encolhe — o fornecedor pode estar contando com o prazo
+             que a própria obra deu. */
+          if (!window.confirm("Encerrar a rodada de desconto aberta com " + nomes + "?\n\n"
+            + "O link volta a ser a página normal de cotação, sem o pedido de desconto — e continua valendo.\n\n"
+            + "⚠ A rodada já gasta NÃO volta: o teto de 3 por fornecedor continua contando. "
+            + "E o prazo da publicação, se foi esticado para caber a rodada, NÃO encolhe.")) return;
+          if (!_sincronizarVivo(cot)) return;
+          if (!_podeRegravarMapa(cot, "Nenhuma rodada foi encerrada e nada foi gravado.")) return;
+          enviando = true;
+          _post("/api/cotacao/negociar", { id: on.id, cids: abertas.map(function (f) { return f.cid; }), cancelar: true }).then(function (z) {
+            enviando = false;
+            if (!z || !z.j || !z.j.ok) {
+              /* ⚠ servidor ANTIGO não conhece `cancelar` e recusa por falta de
+                 validade — dizer "não consegui" seria verdade, mas inútil: o
+                 recado nomeia a causa que a pessoa pode resolver. */
+              _toast(_erroDe(z, "Não consegui encerrar a rodada. Se o servidor da loja ainda não foi atualizado, esta saída só passa a funcionar depois da próxima publicação."), "erro");
+              voltarAoMapa();
+              return;
+            }
+            var apagados = z.j.cancelados || [];
+            ((cot.fornecedores) || []).forEach(function (fr) {
+              if (!fr || !fr.negociacao) return;
+              if (abertas.filter(function (f) { return f.cid === fr.cid; }).length) {
+                /* a rodada gasta FICA registrada aqui também, com a marca de
+                   cancelada — o histórico e o teto dependem disso */
+                fr.negociacao = { rodada: fr.negociacao.rodada || 0, ultima: !!fr.negociacao.ultima,
+                  pedidoEm: fr.negociacao.pedidoEm || "", cancelada: true, canceladaEm: _agora() };
+              }
+            });
+            _hist(cot, "online-desconto", "rodada encerrada com " + apagados.join(", ") + " (a rodada gasta continua contando para o teto)");
+            var gravou2 = _salvar(cot);
+            UI.fecharModal(); _render();
+            if (G.formCotacao) G.formCotacao(cot);
+            _toast((gravou2 ? "" : "⚠ A rodada FOI encerrada no servidor, mas não consegui gravar isso aqui. ")
+              + "Rodada encerrada com " + apagados.join(", ") + ". O link deles volta a ser a página normal de cotação.",
+              gravou2 ? "ok" : "aviso");
+          }, function () { enviando = false; _toast("Não consegui falar com o servidor.", "erro"); voltarAoMapa(); });
+        } }
+      ] : []).concat([
         { texto: "Pedir desconto", classe: "primary", onClick: function () {
           if (enviando) return;
           var marcados = [];
@@ -1900,6 +2147,12 @@
           /* mesma releitura do publicar: entre abrir a caixa e clicar, a nuvem
              pode ter trazido esta cotação já concluída em outro aparelho */
           if (!_sincronizarVivo(cot)) return;
+          /* ⚠ A PARTIR DO MOMENTO EM QUE A RODADA GRAVA O MAPA, ELA CAI NA
+             MESMA RÉGUA DO PUXAR E DO ENCERRAR (skill `dinheiro`, regra 5): se
+             esta cotação já emitiu pedido de compra, regravar a grade mexe no
+             documento que originou aquela despesa. A régua é o carimbo
+             `cotacaoId` em Compras, nunca o `status`. */
+          if (!_podeRegravarMapa(cot, "Nenhuma rodada foi aberta e nada foi gravado.")) return;
           enviando = true;
           _post("/api/cotacao/negociar", { id: on.id, cids: marcados, mensagem: msg, validadeDias: dias }).then(function (y) {
             enviando = false;
@@ -1909,11 +2162,78 @@
               voltarAoMapa();
               return;
             }
-            var n = (y.j.pedidos || []).length;
-            var ult = (y.j.pedidos || []).filter(function (p) { return p.ultima; }).length;
-            _toast("Desconto pedido a " + n + (n === 1 ? " fornecedor" : " fornecedores") +
+            var pedidos = y.j.pedidos || [];
+            var n = pedidos.length;
+            var ult = pedidos.filter(function (p) { return p.ultima; }).length;
+            /* =============================================================
+               ⚠ A RODADA ABERTA NÃO DEIXAVA RASTRO NENHUM DO LADO DE CÁ.
+               Medido em 06/09/2026: o pedido de desconto ia para o servidor,
+               o fornecedor via a rodada no link — e no app não havia NADA:
+               nem no Mapa, nem no histórico, nem no card. Quem abrisse a
+               cotação no dia seguinte não tinha como saber que havia uma
+               negociação de pé, e "Concluir e gerar pedidos" fechava a compra
+               no preço velho matando o link com a resposta pela metade.
+               Três coisas passam a ser gravadas aqui, e as três são do mesmo
+               fato — existe uma rodada aberta:
+                 1. a BASE da economia (a coluna ANTES da primeira rodada);
+                 2. a rodada de cada fornecedor (número e se é a última);
+                 3. a validade nova da publicação — o servidor a ESTICA para
+                    cobrir a rodada, e sem isto o card daqui continuaria
+                    dizendo "vencida" com o link vivo do outro lado.
+               ============================================================= */
+            var porCid = {};
+            pedidos.forEach(function (pd) { if (pd && pd.cid) porCid[pd.cid] = pd; });
+            var negSrv = {};
+            (((y.j.online || {}).convites) || []).forEach(function (cv) {
+              if (cv && cv.cid && cv.negociacao) negSrv[cv.cid] = cv.negociacao;
+            });
+            var congelou = 0;
+            ((cot.fornecedores) || []).forEach(function (fr) {
+              var pd = (fr && fr.cid) ? porCid[fr.cid] : null;
+              if (!pd) return;
+              /* ⚠ A BASE É A PRIMEIRA, E SÓ A PRIMEIRA. Rodada 2 e 3 não podem
+                 reescrever a coluna congelada: a economia medida viraria só a
+                 da última volta, e o desconto das anteriores sumiria do papel.
+                 ⚠ E só congela coluna que TEM preço: congelar vazio criaria uma
+                 base de R$ 0 e o pedido nasceria alegando desconto negativo. */
+              if (!fr.precosAntesNegociacao && fr.precos && typeof fr.precos === "object") {
+                var temAlgum = false;
+                for (var kP in fr.precos) {
+                  if (!Object.prototype.hasOwnProperty.call(fr.precos, kP)) continue;
+                  if (_numPreco(fr.precos[kP]) > 0) { temAlgum = true; break; }
+                }
+                if (temAlgum) {
+                  fr.precosAntesNegociacao = JSON.parse(JSON.stringify(fr.precos));
+                  fr.freteAntesNegociacao = _numPreco(fr.frete);
+                  congelou++;
+                }
+              }
+              var ns = negSrv[fr.cid] || {};
+              fr.negociacao = {
+                rodada: pd.rodada, ultima: !!pd.ultima,
+                pedidoEm: ns.pedidoEm || _agora(),
+                validadeEm: ns.validadeEm || ""
+              };
+            });
+            if (cot.online && y.j.online && y.j.online.expiraEm) cot.online.expiraEm = y.j.online.expiraEm;
+            var fora = (y.j.semRodada || []);
+            _hist(cot, "online-desconto", n + " fornecedor(es) na rodada "
+              + (pedidos[0] ? pedidos[0].rodada : "?") + (ult ? " · " + ult + " na última" : "")
+              + (congelou ? " · base congelada em " + congelou + " coluna(s)" : "")
+              + (fora.length ? " · fora (teto de rodadas): " + fora.join(", ") : ""));
+            /* ⚠ O QUE NÃO CHEGOU AO DISCO NÃO ACONTECEU — MAS NO SERVIDOR
+               ACONTECEU. A rodada já está aberta lá e o fornecedor vai ver;
+               dizer "pronto" aqui seria afirmar um estado local que não
+               existe, e a próxima abertura do Mapa desmentiria. */
+            var gravou = _salvar(cot);
+            _toast((gravou ? "" : "⚠ A rodada FOI aberta no servidor, mas não consegui gravar isso aqui — o Mapa não vai mostrar a negociação. Libere espaço no navegador. ")
+              + "Desconto pedido a " + n + (n === 1 ? " fornecedor" : " fornecedores") +
               (ult ? " · " + ult + (ult === 1 ? " está na última rodada" : " estão na última rodada") : "") +
-              ". Mande o link de novo para eles verem o pedido.", "ok");
+              /* ⚠ quem FICOU DE FORA tem de ser dito: o servidor manda a lista
+                 e a tela jogava fora. Sem isso a pessoa fica esperando resposta
+                 de quem nunca foi perguntado. */
+              (fora.length ? " · fora: " + fora.join(", ") + " (teto de rodadas)" : "") +
+              ". Mande o link de novo para eles verem o pedido.", gravou ? "ok" : "aviso");
             /* ⚠ O LINK NÃO É REMANDADO SOZINHO. O app não manda WhatsApp nem
                e-mail por conta própria em lugar nenhum, e prometer que mandou
                é o pior recado possível: o engenheiro fica esperando resposta
@@ -1926,7 +2246,8 @@
             CotOnlineUI._modalLinks(cot, convites, function () { if (G.formCotacao) G.formCotacao(cot); });
           }, function () { enviando = false; voltarAoMapa(); });
         } }
-      ]);
+      ]));
+      _reabrirAoFechar(bg, voltarAoMapa);
     }, function () { _toast("Não consegui falar com o servidor.", "erro"); voltarAoMapa(); });
   };
 
@@ -2109,7 +2430,7 @@
          o `_detalheAplicacao`, inclusive com 0 aplicadas — os três caminhos
          contam a mesma história (ver o ⚠ de `_detalheAplicacao`). */
       if (res.aplicadas || recusadas.length) {
-        _hist(cot, "online-puxada", _detalheAplicacao(res.aplicadas, res.substituidos, res.perdas, recusadas));
+        _hist(cot, "online-puxada", _detalheAplicacao(res.aplicadas, res.substituidos, res.perdas, recusadas, res.mudancas));
       }
       if (encerrouLa) {
         if (!cot.online) cot.online = {};
@@ -2129,13 +2450,24 @@
          grade de 8 colunas, "1 proposta(s) não puderam ser aplicadas" não diz
          quem corrigir. Mesmo fato, mesma frase, nos três caminhos. */
       var aviso = "";
+      /* ⚠ ver `_mudancasDaColuna`: preço que subiu depois de um PEDIDO DE
+         DESCONTO é o fato capaz de trocar o vencedor, e era o único que não
+         tinha recado nenhum. Vem primeiro porque é o que decide a compra. */
+      var fraseMud = _fraseMudancas(res.mudancas);
+      if (fraseMud) aviso += " " + fraseMud;
       if (res.substituidos > 0) aviso += " " + _fraseSubstituidos(res.substituidos, res.perdas);
       if (recusadas.length) aviso += " " + _fraseRecusaComPorta(recusadas, cot, convitesSrv);
       if (encerrouLa && jaEstavaEncerrada) _toast("Respostas da rodada encerrada puxadas." + (aviso || " Nada mais mudou aqui."), aviso ? "aviso" : "ok");
       else if (encerrouLa) _toast("Esta publicação já foi encerrada (em outro aparelho). Respostas puxadas e itens liberados." + aviso, "aviso");
-      else if (res.substituidos > 0) _toast(res.aplicadas + " resposta(s) puxada(s) — " + _fraseSubstituidos(res.substituidos, res.perdas) + (recusadas.length ? " " + _fraseRecusaComPorta(recusadas, cot, convitesSrv) : ""), "aviso");
+      else if (res.substituidos > 0) _toast(res.aplicadas + " resposta(s) puxada(s) — " + _fraseSubstituidos(res.substituidos, res.perdas) + (fraseMud ? " " + fraseMud : "") + (recusadas.length ? " " + _fraseRecusaComPorta(recusadas, cot, convitesSrv) : ""), "aviso");
+      else if (fraseMud) _toast(res.aplicadas + " resposta(s) puxada(s). " + fraseMud + (recusadas.length ? " " + _fraseRecusaComPorta(recusadas, cot, convitesSrv) : ""), "aviso");
       else if (recusadas.length) _toast(res.aplicadas + " resposta(s) puxada(s). " + _fraseRecusaComPorta(recusadas, cot, convitesSrv), "aviso");
       else _toast(res.aplicadas + " resposta(s) puxada(s).", "ok");
+      /* ⚠ E O QUE SUBIU VIRA QUADRO, NÃO SÓ TOAST. O toast some em 2,6 s e é
+         texto puro; o antes/depois item a item precisa poder ser LIDO, e este
+         é o caminho mais comum de trazer contraproposta para o Mapa. O quadro
+         devolve o Mapa ao fechar — inclusive pelo ✕ e pelo véu. */
+      _quadroSubiu(res.mudancas, function () { if (G && G.formCotacao) G.formCotacao(cot); });
     }, function () {});
   };
 
@@ -2204,7 +2536,7 @@
       if (!_podeRegravarMapa(atual, encerrouNoSrv
         ? "Os links FORAM encerrados no servidor; aqui nada foi gravado."
         : "Nada foi gravado aqui.")) return;
-      var cot = atual, aplicadas = 0, substituidos = 0, perdas = [], recusadas = [], convitesSrv = [];
+      var cot = atual, aplicadas = 0, substituidos = 0, perdas = [], recusadas = [], convitesSrv = [], mudancas = [];
       /* ⚠ a régua do "concluída" é o `_sincronizarVivo` lá em cima (registro
          vivo), não este `atual.status`: o status do objeto do formulário é a
          foto de quando o Mapa abriu e o merge da nuvem já o desmentiu antes.
@@ -2231,6 +2563,7 @@
         if (res.barrado) return;
         cot = res.cot; aplicadas = res.aplicadas; substituidos = res.substituidos; perdas = res.perdas;
         recusadas = _recusas(res.ignoradas);
+        mudancas = res.mudancas || [];
       }
       if (!cot.online) cot.online = {};
       cot.online.encerradaEm = (!sumiu && x.j.online.encerradaEm) || _agora();
@@ -2242,7 +2575,7 @@
       if (cot.status !== "concluida") cot.status = "rascunho";
       var detalhe = deOutraLicenca
         ? ("encerrada só aqui · a publicação é da licença " + donoPub)
-        : (_detalheAplicacao(aplicadas, substituidos, perdas, recusadas) + (sumiu ? " · publicação não existia mais no servidor" : ""));
+        : (_detalheAplicacao(aplicadas, substituidos, perdas, recusadas, mudancas) + (sumiu ? " · publicação não existia mais no servidor" : ""));
       _hist(cot, "online-encerrada", detalhe);
       if (!_salvar(cot)) { _toast("Encerrada no servidor, mas não consegui gravar aqui.", "erro"); return; }
       UI.fecharModal();
@@ -2252,6 +2585,10 @@
          no MESMO estilo do puxar: é a mesma pergunta ("posso decidir a compra
          com o que estou vendo?"), e a resposta não pode mudar conforme o botão */
       var aviso = "";
+      /* mesma régua do puxar: quem encerra também puxa, e o preço que subiu
+         não pode depender de qual botão a pessoa apertou */
+      var fraseMudE = _fraseMudancas(mudancas);
+      if (fraseMudE) aviso += " " + fraseMudE;
       if (substituidos > 0) aviso += " " + _fraseSubstituidos(substituidos, perdas);
       if (recusadas.length) aviso += " " + _fraseRecusaComPorta(recusadas, cot, convitesSrv);
       /* ⚠ UMA RÉGUA SÓ PARA O 404 ANTI-ORÁCULO — E ELA É "NÃO AFIRMAR".
@@ -2276,6 +2613,9 @@
       }
       else if (aviso) _toast("Cotação online encerrada — " + aplicadas + " resposta(s) puxada(s)." + aviso, "aviso");
       else _toast("Cotação online encerrada" + (aplicadas ? " — " + aplicadas + " resposta(s) puxada(s)." : "."), "ok");
+      /* ⚠ mesmo quadro do puxar, pelo mesmo motivo: encerrar também traz
+         contraproposta para o Mapa, e a decisão de compra vem logo depois. */
+      _quadroSubiu(mudancas, function () { if (G && G.formCotacao) G.formCotacao(cot); });
     }, function () { /* toast já dado por _post; nada muda localmente */ });
   };
 

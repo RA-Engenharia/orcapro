@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.52",
+  "versao": "1.2.54",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.52.zip",
-  "notas": "Conserto: ao pedir desconto numa cotacao online, o Mapa de Cotacao fechava e nao voltava — a cotacao parecia ter sumido e nao havia botao para voltar. Nenhum dado foi perdido: a cotacao continuava inteira, o que sumia era a tela. Agora todas as saidas da caixa de desconto (Voltar, erro, sem fornecedor elegivel e sucesso) devolvem o Mapa, como ja faziam Publicar, Puxar respostas e Links.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.52/OrcaPRO-IA-Instalador-v1.2.52.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.54.zip",
+  "notas": "Tour virtual 360 da obra: tire uma foto 360 em cada ponto fixo e monte um passeio navegavel. Na visita seguinte, repita a visita pelo botao e fotografe os mesmos pontos: a tela mostra as duas datas lado a lado, com uma cortina para arrastar. Da para medir distancia e altura dentro da foto (informe a altura da camera na estacao), deixar comentarios fixados na parede, gerar relatorio fotografico e video do percurso. Quem tem BIM pode ancorar a estacao no modelo e ver o projeto por cima da foto. O cliente ve o passeio no Portal e tambem consegue medir. Nota fiscal: uma nota pode cobrir varios pedidos e um pedido vir em varias notas; material devolvido ao fornecedor volta ligado ao pedido; nota digitada a mao aceita itens; e corrigir o valor de uma nota ja lancada avisa que o Financeiro nao mudou junto. Portal do cliente: a imagem do modelo 3D passa a aparecer, e a medicao em analise aparece separada do que ja foi aprovado.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.54/OrcaPRO-IA-Instalador-v1.2.54.exe"
 }

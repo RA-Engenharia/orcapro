@@ -1,0 +1,597 @@
+/* =====================================================================
+ * tour360.css — a roupa do TOUR VIRTUAL 360.
+ *
+ * O que é: o palco onde a esfera WebGL de js/tour360view.js desenha a foto
+ * da estação, os marcadores que flutuam sobre ela, a barra de ferramentas,
+ * a cortina do comparativo, a etiqueta de medida e as faixas de recado.
+ *
+ * Carregado DEPOIS de css/app.css (index.html), então em empate de
+ * especificidade estas regras vencem — foi de propósito, não por acaso.
+ *
+ * ---------------------------------------------------------------------
+ * TRÊS ARMADILHAS QUE ESTE ARQUIVO EVITA
+ * ---------------------------------------------------------------------
+ *
+ * 1) PALCO SEM ALTURA PRÓPRIA = TELA PRETA, EM SILÊNCIO.
+ *    `redimensionar()` do viewer começa com `if (!w || !alt) return;` e o
+ *    canvas que ele cria é `height:100%`. Se a altura do palco viesse do
+ *    conteúdo, os dois seriam zero: o renderer ficaria no tamanho de
+ *    fábrica, a foto sairia esticada ou preta, e NENHUM erro apareceria.
+ *    Por isso o palco tem `min-height` (o piso que vale em qualquer motor)
+ *    ANTES do `aspect-ratio` (a proporção bonita, que motor antigo ignora).
+ *
+ * 2) O DEDO ARRASTA A FOTO, NÃO A PÁGINA.
+ *    O canvas já nasce com `touch-action:none` inline, mas o marcador NÃO —
+ *    e arrastar a partir de um marcador rolava a página inteira em vez de
+ *    girar a foto. `touch-action:none` no palco resolve para os filhos:
+ *    o navegador intersecta o valor subindo a árvore até o container de
+ *    rolagem. O `overflow` daqui é `hidden` (recorte do canto arredondado)
+ *    e nunca `auto`: caixa que rola come o gesto de girar.
+ *
+ * 3) COR DE ESTADO DO APP NÃO É COR SOBRE FOTOGRAFIA.
+ *    Os marcadores usam as tintas semânticas (--aco/--amarelo/--vermelho/
+ *    --verde) porque o significado tem que ser o mesmo do resto do sistema,
+ *    mas quem garante a leitura sobre a foto são os DOIS ANÉIS — um claro e
+ *    um escuro, cada um cobrindo o tipo de foto onde o outro some. Foto de
+ *    parede rebocada ao meio-dia e foto de laje no fim da tarde aparecem no
+ *    MESMO tour, e os números de contraste de cada caso estão medidos junto
+ *    da regra (captura de tela, não conta de cabeça).
+ *
+ * ---------------------------------------------------------------------
+ * CONTRATO DE MARCAÇÃO (o que os módulos irmãos precisam escrever)
+ * ---------------------------------------------------------------------
+ *   .t360-palco                     host do viewer (Tour360View.montar)
+ *   .t360-marcadores / .t360-mk     criados pelo próprio viewer
+ *   .t360-mk-comentario|-atencao|-pendencia|-aprovado   (Tour360.TIPOS_HOTSPOT)
+ *   .t360-barra                     barra de ferramentas do visualizador
+ *   .t360-cortina                   <input type="range"> do comparativo
+ *   .t360-medida / .t360-medida-aprox   etiqueta do valor medido
+ *   .t360-vazio                     estado sem nenhum tour
+ *   .t360-aviso (+ .t360-aviso-erro)    faixa de recado
+ *   .t360-estacao                   cada estação no relatório fotográfico
+ *                                   (é ela que ganha página nova no papel)
+ * ===================================================================== */
+
+/* ---------------------------------------------------------------------
+ * AS DUAS ÚNICAS TINTAS DESTE ARQUIVO QUE NÃO SEGUEM O TEMA — e o motivo.
+ *
+ * ⚠ Tudo o que fica SOBRE A FOTO não tem tema: a foto não é do app. Se o
+ * anel do marcador clareasse no tema claro e escurecesse no escuro (que é o
+ * que um token de superfície faria), ele sumiria justamente na foto que
+ * tivesse a mesma luz — e o comentário do engenheiro ficaria invisível sem
+ * ninguém perceber que estava lá. O par claro+escuro é fixo de propósito:
+ * um dos dois sempre separa o desenho do fundo, seja qual for a foto.
+ * ------------------------------------------------------------------- */
+:root {
+  --t360-sobre-foto-claro: rgba(255, 255, 255, .94);
+  --t360-sobre-foto-escuro: rgba(0, 0, 0, .62);
+  /* desenho do marcador × alvo do dedo: são medidas DIFERENTES de propósito
+     (ver .t360-mk). 44px é o mínimo de toque já adotado no resto da casa. */
+  --t360-mk-tam: 22px;
+  --t360-mk-alvo: 44px;
+}
+
+/* =====================================================================
+ * PALCO — o host do viewer
+ * ===================================================================== */
+.t360-palco {
+  /* ⚠ é esta linha que ancora a camada de marcadores (`position:absolute;
+     inset:0` posta pelo viewer). Sem ela os marcadores se posicionam contra
+     a página e aparecem no canto da tela, longe da foto. */
+  position: relative;
+  display: block;
+  width: 100%;
+
+  /* ⚠ A ORDEM IMPORTA — ver a armadilha 1 do cabeçalho. O piso vem primeiro
+     porque vale em qualquer navegador; a proporção vem depois e só age onde
+     `aspect-ratio` existe. Invertendo, motor antigo fica sem altura e o
+     viewer desiste em silêncio. */
+  min-height: 320px;
+  aspect-ratio: 16 / 9;
+  /* teto para o palco não empurrar a barra de ferramentas para fora da
+     dobra no monitor largo: quem gira a foto precisa dos botões à vista */
+  max-height: 76vh;
+
+  /* ⚠ --navy é declarado só no :root e NENHUM tema o redefine: é o único
+     token escuro que continua escuro no tema claro. Superfície aqui daria
+     um palco branco, e foto de obra sobre branco cansa a vista em minutos
+     de navegação. */
+  background: var(--navy);
+  border: var(--traco) solid var(--linha);
+  border-radius: var(--raio-lg);
+  box-shadow: var(--sombra);
+  /* recorte do canto arredondado sobre o canvas. `hidden`, nunca `auto` —
+     ver a armadilha 2. */
+  overflow: hidden;
+  /* o arrasto é do viewer, não da página (armadilha 2) */
+  touch-action: none;
+  /* girar arrastando seleciona o texto vizinho no desktop se isto faltar */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Camada dos marcadores. O viewer já escreve `position:absolute;inset:0;
+   pointer-events:none;overflow:hidden` inline — inline vence folha, então
+   repetir aqui seria enfeite. O que falta é a pilha: a camada tem que ficar
+   ACIMA do canvas e ABAIXO da sobreposição do BIM (.t360-sobre), senão o
+   comentário fica atrás da foto e não recebe clique. */
+.t360-marcadores { z-index: 2; }
+.t360-sobre { z-index: 3; }
+
+/* =====================================================================
+ * MARCADOR
+ *
+ * O viewer cria um <button> por hotspot com `position:absolute;
+ * transform:translate(-50%,-50%);pointer-events:auto` INLINE. Inline vence
+ * folha: nada aqui pode depender de mexer em `transform` (seria preciso
+ * !important, e qualquer escala nele desloca o marcador do pixel que ele
+ * aponta). Por isso o realce de hover/foco é SOMBRA, nunca escala.
+ * ===================================================================== */
+.t360-mk {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* com texto (`m.texto`) o círculo vira pílula; sem texto continua redondo.
+     ⚠ O TETO DE LARGURA É DEFESA, NÃO ESTÉTICA: `m.texto` vem do hotspot, e
+     quem monta a lista pode mandar o comentário inteiro para dentro do
+     marcador. Sem teto, um comentário de duas linhas vira uma faixa
+     atravessando a foto e tapando exatamente a parede comentada. Aqui ele
+     corta; o texto por extenso já aparece no `title` e na lista ao lado. */
+  min-width: var(--t360-mk-tam);
+  max-width: 150px;
+  height: var(--t360-mk-tam);
+  padding: 0 5px;
+  white-space: nowrap;
+  /* ⚠ AQUI NÃO PODE SER `overflow: hidden`. Ele cortaria também o
+     pseudo-elemento que estende o alvo de toque para 44px (logo abaixo) — o
+     marcador continuaria bonito e viraria um alvo de 22px, sem nada na tela
+     denunciando. `clip` com margem de folga corta o TEXTO e preserva o alvo.
+     Onde `overflow: clip` não existe, a linha é descartada e o texto longo
+     apenas transborda: feio, mas o alvo continua inteiro. */
+  overflow: clip;
+  overflow-clip-margin: 12px;
+  border: 0;
+  border-radius: 999px;
+  font-family: var(--fonte);
+  font-size: var(--t-micro);
+  font-weight: var(--p-forte);
+  line-height: 1;
+  cursor: pointer;
+
+  /* ⚠ LEGIBILIDADE NÃO VEM DA COR — vem dos DOIS ANÉIS, e cada um trabalha
+     numa foto diferente. Medido em captura (Chrome, escala 1), sobre foto
+     clara #f2efe8 e foto escura #2b2622:
+       · anel CLARO × foto escura ... 13,1:1   (é ele que salva no porão;
+         sobre a foto clara ele cai para 1,05:1, ou seja, some)
+       · anel ESCURO × foto clara ....  6,2:1   (é ele que salva na parede
+         rebocada ao meio-dia; sobre a foto escura cai para 1,3:1)
+     Um anel só resolveria metade dos tours — e a metade que falha é sempre a
+     que ninguém testou. A cor diz QUAL é o estado; os anéis dizem que ali
+     tem alguma coisa. */
+  box-shadow:
+    0 0 0 2px var(--t360-sobre-foto-claro),
+    0 0 0 4px var(--t360-sobre-foto-escuro),
+    0 3px 7px var(--t360-sobre-foto-escuro);
+  /* texto sobre a tinta de estado: as semânticas clareiam no tema escuro
+     (--amarelo vira #dda23f), então texto escuro reprovaria lá e texto claro
+     reprovaria no claro. Claro + halo escuro lê nos dois, pelo mesmo motivo
+     que legenda de foto sempre leva sombra. */
+  color: var(--t360-sobre-foto-claro);
+  text-shadow: 0 1px 2px var(--t360-sobre-foto-escuro);
+  /* ⚠ ESTA CAMADA ESCURA EXISTE POR MEDIÇÃO, NÃO POR GOSTO. O rótulo dentro
+     do marcador é claro, e o âmbar do tema claro (--amarelo #aa6200) devolvia
+     4,38:1 na captura — abaixo do mínimo 4,5. Um número que não se lê dentro
+     de um marcador de "ponto de atenção" é o pior lugar para economizar
+     contraste. Com a camada, o pior dos quatro sobe para 5,33:1 e nenhum
+     perde a identidade da tinta. */
+  background-image: linear-gradient(rgba(0, 0, 0, .12), rgba(0, 0, 0, .12));
+  transition: box-shadow .14s var(--ease);
+}
+
+/* ⚠ ALVO DE 44px COM DESENHO DE 22px. O marcador tem que ser discreto sobre
+   a foto (marcador grande tapa justamente o defeito que ele aponta) e ainda
+   assim acertável com o dedo no canteiro, de luva. O pseudo-elemento estende
+   a área de clique sem mudar uma linha do que se vê.
+   Dois marcadores muito próximos passam a ter alvos sobrepostos: ganha o
+   último do DOM. É o preço, e é melhor que errar o toque nos dois. */
+.t360-mk::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--t360-mk-alvo);
+  height: var(--t360-mk-alvo);
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+}
+
+.t360-mk:hover {
+  box-shadow:
+    0 0 0 3px var(--t360-sobre-foto-claro),
+    0 0 0 5px var(--t360-sobre-foto-escuro),
+    0 4px 12px var(--t360-sobre-foto-escuro);
+}
+/* o anel de foco global (:focus-visible, outline azul) some numa foto de
+   céu ou de tapume azul — aqui o foco usa o mesmo par claro/escuro que já
+   garante o marcador */
+.t360-mk:focus-visible {
+  outline: 2px solid var(--t360-sobre-foto-claro);
+  /* ⚠ 5px porque os dois anéis já ocupam 4px: com o recuo menor o contorno
+     de foco caía DENTRO deles e sumia justamente para quem navega por
+     teclado. E a lista de sombras é repetida inteira aqui de propósito —
+     `box-shadow` substitui, não acumula, e a versão anterior desta regra
+     perdia o anel claro, deixando o marcador focado MENOS visível sobre foto
+     escura do que o não focado. */
+  outline-offset: 5px;
+  box-shadow:
+    0 0 0 2px var(--t360-sobre-foto-claro),
+    0 0 0 4px var(--t360-sobre-foto-escuro),
+    0 3px 10px var(--t360-sobre-foto-escuro);
+}
+
+/* AS QUATRO CORES DE ESTADO (Tour360.TIPOS_HOTSPOT).
+   ⚠ A cor NUNCA é o único portador do estado: o viewer põe o rótulo no
+   `title` e a tela lista os comentários ao lado da foto com o tipo por
+   extenso. Mesma doutrina da paleta de categorias do app.css — quem não
+   distingue as tintas continua sabendo o que cada ponto é. */
+.t360-mk-comentario { background-color: var(--aco); }
+.t360-mk-atencao    { background-color: var(--amarelo); }
+.t360-mk-pendencia  { background-color: var(--vermelho); }
+.t360-mk-aprovado   { background-color: var(--verde); }
+
+/* ⚠ NO TEMA ESCURO A TINTA DE ESTADO CLAREIA — E SOBRE FOTO ISSO É A DIREÇÃO
+   ERRADA. As semânticas do escuro (--amarelo #dda23f, --vermelho #e8767b,
+   --verde #4cae6d, --aco #4e8fbe) foram clareadas para sobreviver a um CARTÃO
+   escuro. O marcador não está num cartão: está numa fotografia, e o rótulo
+   dentro dele é claro. Medido em captura: o rótulo sobre o âmbar do tema
+   escuro dava 2,3:1 — o número dentro da bolinha sumia. Esta camada escura
+   por cima devolve o peso que a foto pede sem inventar cor nenhuma: mesma
+   tinta, mais funda. Depois dela, medido de novo na captura:
+   âmbar 4,55:1 · verde 5,38:1 · vermelho 5,52:1 · aço 6,41:1.
+   ⚠ É `background-image` de propósito: entra por cima da cor de estado e por
+   BAIXO do texto, e não obriga a repetir a lista de sombras do anel. */
+[data-tema="dark"] .t360-mk {
+  background-image: linear-gradient(rgba(0, 0, 0, .35), rgba(0, 0, 0, .35));
+}
+
+/* =====================================================================
+ * BARRA DE FERRAMENTAS (girar · medir · comentar · comparar)
+ * ===================================================================== */
+.t360-barra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* no desktop a barra quebra em linhas quando não cabe — quebrar só
+     acontece quando falta espaço, então em tela larga isto não muda nada */
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: var(--traco) solid var(--linha);
+  border-radius: var(--raio);
+  box-shadow: var(--sombra-sm);
+}
+/* botão de barra não encolhe: rótulo espremido em duas letras não é botão */
+.t360-barra > * { flex: 0 0 auto; }
+/* separador de grupos, quando a tela quiser dividir "ver" de "medir" */
+.t360-barra .t360-barra-sep {
+  width: var(--traco);
+  align-self: stretch;
+  margin: 0 2px;
+  background: var(--linha);
+}
+/* empurra o que vier depois para a direita (fechar, ajuda) */
+.t360-barra .t360-barra-fim { margin-left: auto; }
+
+/* =====================================================================
+ * CORTINA DO COMPARATIVO — <input type="range" class="t360-cortina">
+ *
+ * O viewer desenha as duas fotos na mesma cena e corta por scissor na
+ * fração que `Tour360View.cortina(f)` recebe. Este controle é quem move
+ * essa fração.
+ * ===================================================================== */
+.t360-cortina {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  /* altura do CONTROLE, não do trilho: é ela que dá o alvo de toque */
+  height: 32px;
+  margin: 10px 0 0;
+  padding: 0;
+  background: transparent;
+  cursor: ew-resize;
+  /* ⚠ arrastar o polegar não pode virar rolagem da página. Vale mesmo
+     quando a cortina está fora do palco (que já tem touch-action:none). */
+  touch-action: none;
+}
+/* ⚠ NÃO JUNTE OS PSEUDO-ELEMENTOS DE WEBKIT E DE FIREFOX NUMA LISTA SÓ.
+   Um seletor que o navegador não entende invalida a REGRA INTEIRA — os dois
+   ficariam sem estilo e o controle voltaria ao trilho cinza do sistema no
+   meio de uma tela desenhada. Por isso cada motor tem o seu bloco. */
+.t360-cortina::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--t360-sobre-foto-escuro);
+  box-shadow: inset 0 0 0 1px var(--t360-sobre-foto-claro);
+}
+.t360-cortina::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 26px;
+  height: 26px;
+  margin-top: -10px;   /* centraliza no trilho de 6px */
+  border: 2px solid var(--t360-sobre-foto-claro);
+  border-radius: 999px;
+  background: var(--aco);
+  box-shadow: 0 2px 6px var(--t360-sobre-foto-escuro);
+}
+.t360-cortina::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--t360-sobre-foto-escuro);
+  box-shadow: inset 0 0 0 1px var(--t360-sobre-foto-claro);
+}
+.t360-cortina::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--t360-sobre-foto-claro);
+  border-radius: 999px;
+  background: var(--aco);
+  box-shadow: 0 2px 6px var(--t360-sobre-foto-escuro);
+}
+.t360-cortina:focus-visible { outline: 2px solid var(--aco-claro); outline-offset: 3px; }
+
+/* =====================================================================
+ * ETIQUETA DE MEDIDA
+ *
+ * Pílula ESCURA em qualquer tema, e isso é decisão: a etiqueta nasce sobre
+ * a foto e às vezes é reaproveitada na lista ao lado. Escura com texto claro
+ * lê nas duas situações; uma pílula de superfície sumiria sobre a foto.
+ * ===================================================================== */
+.t360-medida {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 9px;
+  border: var(--traco) solid var(--t360-sobre-foto-claro);
+  border-radius: 999px;
+  background: var(--t360-sobre-foto-escuro);
+  color: var(--t360-sobre-foto-claro);
+  /* número de obra alinha dígito com dígito, como no resto da casa */
+  font-family: var(--fonte-num);
+  font-size: var(--t-peq);
+  font-weight: var(--p-medio);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px var(--t360-sobre-foto-escuro);
+}
+/* rótulo do que foi medido ("vão da janela"), mais discreto que o número */
+.t360-medida .t360-medida-rot {
+  font-family: var(--fonte);
+  font-size: var(--t-micro);
+  font-weight: var(--p-normal);
+  opacity: .82;
+}
+
+/* ⚠ MEDIDA APROXIMADA TEM QUE SER OUTRA COISA AOS OLHOS, NÃO O MESMO
+   DESENHO COM UM TIL NA FRENTE.
+   O motor marca `aproximada` quando o erro estimado passa de
+   Tour360.ERRO_AVISO_PCT (10%) — perto do horizonte, ±2,9 m numa medida de
+   25,86 m. Um número desses copiado para dentro de uma proposta vira preço.
+   Quem bate o olho precisa perceber ANTES de ler: borda tracejada, hachura
+   em âmbar e itálico mudam a silhueta da etiqueta; o til sozinho não muda.
+   A hachura usa color-mix — motor que não conhece descarta só esta linha e
+   sobram o tracejado e o itálico, que já bastam para separar as duas. */
+.t360-medida-aprox {
+  border-style: dashed;
+  border-width: var(--traco-forte);
+  border-color: var(--amarelo);
+  font-style: italic;
+  /* ⚠ A HACHURA FICA NUMA TARJA À ESQUERDA, NÃO ATRÁS DO NÚMERO — e isso saiu
+     de olhar a captura, não do código: com a hachura no fundo inteiro as
+     listras diagonais cruzavam os dígitos e o "25,9" ficava difícil de ler.
+     Etiqueta de medida existe para o número ser lido; o aviso é a moldura.
+     Na tarja ela lê como fita zebrada de canteiro e o miolo fica limpo. */
+  background-repeat: no-repeat;
+  background-size: 16px 100%;
+  background-image: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--amarelo) 62%, transparent) 0 4px,
+    transparent 4px 8px
+  );
+  padding-left: 24px;
+}
+
+/* =====================================================================
+ * ESTADO VAZIO — nenhum tour ainda
+ * ===================================================================== */
+.t360-vazio {
+  text-align: center;
+  padding: 46px 24px;
+  border: var(--traco-forte) dashed var(--linha);
+  border-radius: var(--raio-lg);
+  background: var(--surface-2);
+  color: var(--texto-fraco);
+  font-size: var(--t-base);
+  line-height: 1.6;
+}
+.t360-vazio b, .t360-vazio strong {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--texto);
+  font-size: var(--t-med);
+  font-weight: var(--p-forte);
+}
+.t360-vazio .t360-vazio-ic {
+  display: block;
+  margin-bottom: 10px;
+  font-size: var(--t-hero);
+  line-height: 1;
+  opacity: .55;
+}
+/* a saída fica JUNTO do recado: estado vazio sem botão faz a pessoa procurar
+   o caminho no menu e desistir antes de achar */
+.t360-vazio .t360-vazio-acao { margin-top: 16px; }
+
+/* =====================================================================
+ * FAIXA DE AVISO — foto pendente, estação sem âncora, navegador sem 3D
+ *
+ * Duas linhas de `background` de propósito: a primeira é o piso que
+ * qualquer motor entende, a segunda é a mistura tematizada. Motor antigo
+ * descarta só a que não conhece e a faixa continua legível.
+ * ===================================================================== */
+.t360-aviso {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  padding: 9px 12px;
+  border: var(--traco) solid var(--linha);
+  border-left: 3px solid var(--amarelo);
+  border-radius: var(--raio);
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--amarelo) 10%, var(--surface));
+  color: var(--texto);
+  font-size: var(--t-peq);
+  line-height: 1.5;
+}
+.t360-aviso .t360-aviso-ic { flex: 0 0 auto; color: var(--amarelo); }
+.t360-aviso .t360-aviso-txt { flex: 1 1 240px; }
+/* ⚠ AVISO SEM SAÍDA A PESSOA LÊ COMO FORMALIDADE. A ação mora dentro da
+   própria faixa ("tirar a foto agora", "nortear esta estação"). */
+.t360-aviso .t360-aviso-acao { flex: 0 0 auto; margin-left: auto; }
+
+/* Bloqueio, não aviso: aparelho sem 3D não vai abrir o tour de jeito nenhum.
+   Aceita as duas grafias porque quem escreve a faixa é um módulo irmão e
+   faixa que chega sem estilo é faixa que ninguém lê. */
+.t360-aviso-erro, .t360-aviso.erro {
+  border-left-color: var(--vermelho);
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--vermelho) 10%, var(--surface));
+}
+.t360-aviso-erro .t360-aviso-ic, .t360-aviso.erro .t360-aviso-ic { color: var(--vermelho); }
+
+/* ⚠ NO TEMA ESCURO O TINGIMENTO TRANSLÚCIDO PRECISA DE MAIS TINTA para não
+   sumir contra a superfície escura — a mesma lição da v1.1.192 já registrada
+   no app.css (.faixa-ajustes). */
+[data-tema="dark"] .t360-aviso {
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--amarelo) 18%, var(--surface));
+}
+[data-tema="dark"] .t360-aviso-erro, [data-tema="dark"] .t360-aviso.erro {
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--vermelho) 18%, var(--surface));
+}
+
+/* =====================================================================
+ * CELULAR
+ * ===================================================================== */
+@media screen and (max-width: 820px) {
+  /* ⚠ NO CELULAR A BARRA NÃO QUEBRA: ela ROLA.
+     Com `wrap`, quatro botões viram três ou quatro linhas empilhadas e
+     comem metade da tela — justamente a metade que mostra a foto, que é o
+     assunto. Uma linha só com rolagem lateral mantém a foto grande e
+     nenhum botão fora de alcance. */
+  .t360-barra {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* alvo de dedo na barra, o mesmo piso de 44px que os campos já usam */
+  .t360-barra .btn, .t360-barra button { min-height: 44px; }
+  /* `margin-left:auto` dentro de uma faixa que rola empurraria o botão para
+     fora do alcance; na tela estreita ele volta para o fluxo */
+  .t360-barra .t360-barra-fim { margin-left: 0; }
+  .t360-aviso .t360-aviso-acao { margin-left: 0; }
+}
+
+@media screen and (max-width: 560px) {
+  /* proporção larga em tela estreita devolve uma faixa de 200px de altura,
+     onde não se enxerga obra nenhuma: aqui manda o piso em pixel */
+  .t360-palco {
+    min-height: 340px;
+    max-height: 62vh;
+    border-radius: var(--raio);
+  }
+  .t360-vazio { padding: 32px 16px; }
+}
+
+/* =====================================================================
+ * PAPEL — o relatório fotográfico
+ *
+ * ⚠ Estas regras só alcançam o que estiver dentro de `#proposta-print`: o
+ * @media print do app.css esconde `body > *:not(#proposta-print)`. Não é
+ * regra morta — é o caminho que todo entregável desta casa já usa.
+ * ===================================================================== */
+@media print {
+  /* Ferramenta não vai para o papel: a barra, a cortina e os marcadores são
+     controles: no impresso viram sujeira sobre a foto e o leitor tenta
+     clicar num pedaço de papel. O que o marcador dizia sai por extenso na
+     lista de comentários da estação, que é o que se lê numa reunião. */
+  .t360-barra,
+  .t360-cortina,
+  .t360-marcadores,
+  .t360-mk { display: none !important; }
+
+  /* o palco vira moldura de foto: fundo navy chapado em página inteira come
+     o cartucho e escurece a imagem que é o assunto do relatório */
+  .t360-palco {
+    background: var(--surface);
+    border: var(--traco) solid var(--linha-forte);
+    box-shadow: none;
+    max-height: none;
+    min-height: 0;
+    aspect-ratio: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .t360-palco img { display: block; width: 100%; height: auto; }
+
+  /* ⚠ UMA ESTAÇÃO POR PÁGINA. Estação partida ao meio é o defeito clássico
+     do relatório fotográfico: a foto numa folha e a legenda na seguinte, e
+     quem lê não sabe mais de que ponto da obra é a imagem.
+     `break-*` é a propriedade atual e `page-break-*` é a antiga — as duas
+     ficam porque o navegador do instalador antigo só entende a segunda. */
+  .t360-estacao, .t360-rel-estacao {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    break-before: page;
+    page-break-before: always;
+  }
+  /* ⚠ sem isto o relatório abre com uma folha em branco: a primeira estação
+     também pediria página nova, e a página nova antes da primeira é... uma
+     página vazia. Já aconteceu no impresso de outro módulo. */
+  .t360-estacao:first-child, .t360-rel-estacao:first-child {
+    break-before: auto;
+    page-break-before: auto;
+  }
+
+  /* A etiqueta de medida CONTINUA no papel — é a medida que o cliente
+     confere. No branco ela deixa de ser pílula escura e vira etiqueta de
+     documento (os tokens já voltam aos valores claros no print do app.css).
+     ⚠ E a diferença entre exata e aproximada NÃO pode depender de tinta de
+     fundo: impressora com "imprimir cores de fundo" desligada apagaria a
+     hachura. O tracejado e o itálico sobrevivem sem tinta nenhuma. */
+  .t360-medida {
+    background: var(--surface-2);
+    color: var(--texto);
+    border-color: var(--linha-forte);
+    box-shadow: none;
+    text-shadow: none;
+  }
+  .t360-medida-aprox {
+    border-style: dashed;
+    border-color: var(--amarelo);
+    font-style: italic;
+  }
+
+  .t360-aviso {
+    background: var(--surface-2);
+    box-shadow: none;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .t360-vazio { display: none !important; }
+}

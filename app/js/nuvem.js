@@ -55,6 +55,22 @@
     "composicoes_proprias",
     // níveis do projeto: TÊM obraId, e por isso entram na cascata da obra
     "bim_niveis",
+    /* ⚠ TOUR VIRTUAL 360 — entra porque o fluxo é EXATAMENTE entre aparelhos:
+     * quem tira a foto 360 é quem está na obra, com o celular; quem monta o
+     * comparativo, mede e publica é o escritório. Sem sincronizar, o recurso
+     * não existe na prática.
+     *
+     * A foto NÃO vem junto: o ponto guarda a referência (~120 bytes) e os
+     * bytes vivem no IndexedDB + servidor, pelo trilho do js/fotos.js. Foi
+     * base64 dentro do registro que parou a sincronização de um cliente PARA
+     * SEMPRE, com o app dizendo "Sincronizado".
+     *
+     * Ainda assim esta lista É a que mais pode crescer no uso normal: medido,
+     * um tour de 15 pontos com 6 comentários cada pesa 31 KB, e o aviso do
+     * `salvar` daqui (900 KB) chega por volta do 28º tour — menos de dois anos
+     * de visita quinzenal. Por isso `Tour360.peso()` existe e a tela avisa a
+     * partir de 400 KB, com o nome da visita mais gorda e o que fazer. */
+    "tour360",
     /* ⚠ a federação da obra: de que arquivos ela é feita, com a disciplina, a
      * transparência e a visibilidade que o usuário escolheu para cada um. É
      * trabalho dele, não dado derivado — sem estar aqui não entraria no backup

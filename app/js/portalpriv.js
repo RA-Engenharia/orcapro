@@ -124,6 +124,15 @@
 
     if (o.semNomes) {
       limpar(s.rdos, CAMPOS_NOME, "");
+      /* ⚠ O TOUR 360 CARREGA TEXTO ESCRITO POR PESSOA. Hoje `Tour360.paraPortal`
+         monta os comentários por allowlist e não envia `autor` — mas allowlist
+         é uma linha de distância de deixar de ser, e quem acrescentar um
+         `responsavel` ao comentário amanhã não vai lembrar que existe uma
+         empresa que decidiu, por escrito, que o cliente dela não vê nome de
+         ninguém. O interruptor tem de alcançar o bloco novo pelo mesmo caminho
+         dos diários; `limpar` é recursivo e não faz nada quando o campo não
+         existe, então isto é barato e não muda o retrato de hoje. */
+      limpar(s.tours, CAMPOS_NOME, "");
       s.nomesOcultos = true;
     }
     return s;

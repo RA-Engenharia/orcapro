@@ -56,6 +56,20 @@
     recebido: "Recebido", rejeitado: "Rejeitado", cancelado: "Cancelado"
   };
 
+  /* ⚠ QUANTIDADE, SEM ESCREVER MAIS UM PARSER. Esta base tem 33 módulos que
+     copiaram `Util.parseNum` e dois deles divergiram em sentidos opostos, os
+     dois movendo dinheiro — por isso aqui se DELEGA ao `Util` sempre que ele
+     existir (navegador, e Node quando o teste o carrega). O caminho de baixo
+     só atende o módulo rodando sozinho, e só o que este motor de fato recebe:
+     número, ou string já normalizada por quem gravou. Ele não inventa regra de
+     vírgula: se algum dia chegar "1.234,56" aqui, o certo é carregar o `Util`,
+     não crescer esta função. */
+  function qtd(v) {
+    if (typeof Util !== "undefined" && Util && Util.num) return Util.num(v);
+    if (typeof v === "number") return isFinite(v) ? v : 0;
+    var n = parseFloat(String(v == null ? "" : v));
+    return isFinite(n) ? n : 0;
+  }
   function isoDia(v) {
     var s = String(v == null ? "" : v).slice(0, 10);
     return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
@@ -218,6 +232,35 @@
         var pago = !!(lanc.dataPgto) || String(lanc.status || "") === "pago";
         ev.push({ tipo: "pago", quando: isoDia(lanc.dataPgto) || "", titulo: pago ? "Pago" : "Despesa lançada no Financeiro (pendente)",
                   detalhe: pago ? "" : (lanc.vencimento ? "vence " + br(isoDia(lanc.vencimento)) : ""), feito: pago });
+      } else if (pc.notaId || (pc.notas && pc.notas.length)) {
+        /* ⚠ DEPOIS DE VINCULAR CERTO, O PEDIDO DIZIA QUE TINHA PERDIDO O
+           DINHEIRO. Medido em 07/09/2026: vincular a nota ao pedido APAGA a
+           despesa do pedido de propósito (senão a mesma compra vira duas
+           despesas) e deixa as parcelas da NOTA no lugar. Só que a linha do
+           tempo procura o lançamento pelo carimbo do PEDIDO — não acha nada, e
+           anunciava "não encontrei o lançamento desta compra no Financeiro"
+           justamente para quem tinha feito tudo certo. O recado assustava e
+           mandava procurar um buraco que não existe.
+           Aqui o pedido diz o que de fato aconteceu: o dinheiro dele agora é a
+           nota. `lanc` continua sendo a única fonte quando existe — este ramo
+           só responde quando NÃO há lançamento próprio E há nota vinculada. */
+        /* ⚠ UM PEDIDO PODE VIR EM MAIS DE UMA NOTA (faturamento parcial, o
+           normal em entrega parcelada). Dizer só a primeira faria a linha do
+           tempo esconder metade do faturamento — e o pedido parecer faturado
+           por inteiro quando ainda falta nota. */
+        /* a lista é a verdade; o campo antigo é o vínculo de uma nota só.
+           Lido do próprio registro para esta linha não depender de outro módulo. */
+        var nts = (pc.notas && pc.notas.length) ? pc.notas : [{ id: pc.notaId, numero: pc.notaNumero, valor: pc.valorFaturado }];
+        var somaNt = nts.reduce(function (a, n) { return a + qtd(n && n.valor); }, 0);
+        var faltaNt = qtd(pc.valor) - somaNt;
+        ev.push({ tipo: "pago", quando: isoDia(pc.vinculadoEm),
+          titulo: nts.length > 1 ? "Faturado por " + nts.length + " notas fiscais" : "Faturado pela nota fiscal",
+          detalhe: "o valor virou conta a pagar da NF " + (nts.map(function (n) { return String(n.numero || ""); })
+              .filter(function (s) { return s; }).join(", ") || "vinculada")
+            + " — a despesa do pedido saiu para não contar duas vezes"
+            /* o que falta faturar é o que manda a pessoa cobrar a próxima nota */
+            + (faltaNt >= 0.01 && somaNt > 0 ? " · faltam " + faltaNt.toFixed(2).replace(".", ",") + " a faturar" : ""),
+          feito: true });
       } else if (pc.status === "recebido") {
         ev.push({ tipo: "pago", quando: "", titulo: "Pagamento", detalhe: "não encontrei o lançamento desta compra no Financeiro", feito: false });
       }
@@ -235,6 +278,77 @@
       if (s.atrasado) return "Olá! O pedido " + (pc.numero || "") + " estava previsto para " + br(s.dataVigente) + " e ainda não chegou na obra. Consegue me dizer a nova data?" + quemAssina;
       if (s.status === "enviado") return "Olá! Enviamos o pedido " + (pc.numero || "") + (pc.envio && pc.envio.em ? " em " + br(isoDia(pc.envio.em)) : "") + ". Pode confirmar o recebimento e a data de entrega?" + quemAssina;
       return "Olá! Sobre o pedido " + (pc.numero || "") + (s.dataVigente ? " (entrega prevista " + br(s.dataVigente) + ")" : "") + ": pode me dar uma posição?" + quemAssina;
+    },
+
+    /* =================================================================
+     * ENTREGA PARCIAL — quanto de cada item já chegou
+     *
+     * ⚠ MEDIDO EM 07/09/2026: [Receber] era um clique seco. Chegando 150 dos
+     * 200 sacos, o app dava entrada de 200 no almoxarifado, lançava a despesa
+     * CHEIA e marcava o pedido como recebido. A obra ficava com 50 sacos que
+     * só existem no sistema, o custo médio recalculado sobre quantidade que
+     * não chegou, e o pedido fora de qualquer fila de cobrança — ninguém mais
+     * ia atrás do que faltou. Entrega parcial é o caso NORMAL em obra, e era o
+     * único que a tela não sabia representar.
+     *
+     * A conta mora aqui, pura: `pc.recebimentos` é a lista do que chegou em
+     * cada viagem, e cada linha carrega `itemIdx` — o ÍNDICE do item no
+     * pedido, nunca a descrição (casar material por nome é ligar dinheiro por
+     * semelhança, o que a regra 2 da skill `dinheiro` proíbe, e duas linhas
+     * parecidas no mesmo pedido fariam o saldo do errado andar).
+     *
+     * ⚠ COMPATIBILIDADE: pedido recebido ANTES desta versão não tem
+     * `recebimentos`, só `dataRecebimento` — e para ele "chegou tudo" é a
+     * leitura certa: foi assim que o app o marcou. Ler zero ali faria 38
+     * instalações acordarem com todo pedido antigo "faltando material".
+     * ================================================================= */
+    recebimento: function (pc) {
+      var itens = (pc && Array.isArray(pc.itens)) ? pc.itens : [];
+      var viagens = (pc && Array.isArray(pc.recebimentos)) ? pc.recebimentos : [];
+      /* o pedido antigo (só `dataRecebimento`, sem lista) conta como completo */
+      var legado = !viagens.length && !!(pc && pc.dataRecebimento);
+      var porIdx = {};
+      viagens.forEach(function (v) {
+        ((v && Array.isArray(v.itens)) ? v.itens : []).forEach(function (r) {
+          if (!r || r.itemIdx == null) return;
+          var k = String(r.itemIdx);
+          porIdx[k] = qtd(porIdx[k]) + qtd(r.qtd);
+        });
+      });
+      var linhas = itens.map(function (it, i) {
+        var pedida = qtd(it && it.quantidade);
+        var receb = legado ? pedida : qtd(porIdx[String(i)]);
+        /* ⚠ falta nunca é negativa: receber A MAIS que o pedido acontece (o
+           fornecedor manda a caixa fechada), e transformar isso em "-12 de
+           falta" faria a soma de pendências mentir. O excesso aparece em
+           `aMais`, que é outra pergunta. */
+        return { itemIdx: i, descricao: (it && it.descricao) || "", unidade: (it && it.unidade) || "",
+          pedida: pedida, recebida: receb,
+          falta: Math.max(0, Math.round((pedida - receb) * 1000) / 1000),
+          aMais: Math.max(0, Math.round((receb - pedida) * 1000) / 1000) };
+      });
+      var comFalta = linhas.filter(function (l) { return l.falta > 0; });
+      /* ⚠ pedido SEM itens detalhados (digitado à mão) não tem como ser
+         parcial: não há quantidade para comparar. Dizer "faltou" ali seria
+         inventar pendência — ele é completo assim que houver uma viagem. */
+      var completo = !linhas.length ? (legado || viagens.length > 0) : !comFalta.length;
+      return { linhas: linhas, viagens: viagens.length, legado: legado,
+        completo: completo, comFalta: comFalta,
+        iniciado: legado || viagens.length > 0 };
+    },
+
+    /* ⚠ O TEXTO DE MANDAR O PEDIDO — o passo que não tinha botão nenhum.
+       "Enviar" no OrçaPRO só MARCAVA que o pedido foi mandado; mandar mesmo era
+       trabalho à parte, em outro aplicativo, com o PDF que a pessoa tinha de
+       lembrar de gerar antes. O caminho mais comum do fluxo era o único sem
+       ajuda — e a tela ainda dizia "o app não envia nada sozinho" sem oferecer
+       o que ele PODE fazer: abrir o papel e abrir a conversa.
+       Continua sem enviar nada sozinho; só deixa de esconder as duas metades. */
+    textoEnvio: function (pc, empresa) {
+      var quemAssina = empresa ? " — " + String(empresa) : "";
+      var quando = pc && pc.previsaoEntrega ? " Precisamos para " + br(isoDia(pc.previsaoEntrega)) + "." : "";
+      return "Olá! Segue nosso pedido de compra " + ((pc && pc.numero) || "") + "."
+        + quando + " Pode confirmar o recebimento e a data de entrega?" + quemAssina;
     }
   };
 
