@@ -60,6 +60,29 @@
 
   /* ---------- Constantes de domínio ---------- */
 
+  /* ⚠ ESTE CARIMBO NAO TEM LEITOR, E NAO E ELE QUE PROTEGE A FROTA.
+     MEDIDO em 08/09/2026, grep no repositorio inteiro: `VERSAO_DADOS` aparece
+     QUATRO vezes - a definicao aqui, a escrita em `Tour360.novo` (`versao:`) e
+     as duas copias em loja/tour360.js. NINGUEM pergunta por ele antes de
+     desenhar um numero.
+
+     E subi-lo nao teria impedido o defeito de 08/09/2026 (a area gravada em
+     `p.medidas[]` que o motor da 1.2.56 relia como distancia e devolvia
+     "0,00 m +-0%"): quem precisava recusar era o codigo JA INSTALADO nas 38
+     maquinas, e ele nao le este campo - nem passara a ler.
+
+     E ele nao descreve o FORMATO do conteudo: e escrito uma unica vez, em
+     `Tour360.novo`, no nascimento da visita, e nunca mais atualizado. Uma
+     visita criada na 1.2.55 que ganhe uma area hoje continua carimbada
+     `versao: 1` carregando `p.areas[]`. Usa-lo como porteiro de formato
+     recusaria conteudo que o app entende e aceitaria conteudo que ele nao
+     entende - recado que mente e pior que recado nenhum.
+
+     O que protege de verdade entre versoes esta logo abaixo, em
+     `Tour360.medidasDoPonto`: o que a versao velha nao sabe ler mora onde ela
+     nao olha. Enquanto ninguem escrever o PAR (carimbar em TODA gravacao +
+     um leitor que recuse o desconhecido), este numero fica em 1 de proposito:
+     mante-lo parado e honesto; subi-lo sozinho seria fingir protecao. */
   Tour360.VERSAO_DADOS = 1;
 
   /* Altura do olho de quem segura o celular. 1,60 m é o padrão do corpo
@@ -135,6 +158,19 @@
   function r2(n) { return Math.round(n * 100) / 100; }
   function r3(n) { return Math.round(n * 1000) / 1000; }
   function r1(n) { return Math.round(n * 10) / 10; }
+
+  /* ⚠ NÚMERO QUE VAI PARA GENTE LER SAI EM pt-BR, COM VÍRGULA.
+     `r1`/`r2`/`r3` devolvem NÚMERO, e número concatenado com texto vira string
+     com PONTO: o recado dizia "com a câmera a 1.6 m" enquanto o painel, na
+     mesma tela, escrevia "Altura da câmera 1,60 m". Visto na foto da tela em
+     08/09/2026. Numa tela de medida isso passa por desleixo; num documento que
+     fiscal e perito leem como prova, passa por erro.
+     ⚠ ESTE MOTOR É PURO e roda em Node no gate, sem `Util` — por isso a troca
+     é feita aqui, com uma linha, em vez de chamar o formatador da casa.
+     E só vale para TEXTO: os campos numéricos que a tela e o Portal consomem
+     (`metros`, `erroEstimadoPct`) continuam saindo como NÚMERO, porque quem
+     desenha é quem formata. */
+  function br(n) { return String(n).replace(".", ","); }
 
   /* ⚠ Data LOCAL, nunca toISOString().slice(0,10): das 21h à meia-noite em
      Brasília o ISO já está em amanhã, e a visita de hoje nasceria datada de
@@ -272,7 +308,7 @@
       return {
         ok: false,
         codigo: "perto-horizonte",
-        motivo: "Ponto perto demais da linha do horizonte (" + r1(Math.abs(p)) + "°): a distância fica indefinida. Marque um ponto mais próximo dos seus pés ou meça a partir de uma estação mais perto."
+        motivo: "Ponto perto demais da linha do horizonte (" + br(r1(Math.abs(p))) + "°): a distância fica indefinida. Marque um ponto mais próximo dos seus pés ou meça a partir de uma estação mais perto."
       };
     }
     return { ok: true, metros: h / Math.tan(Math.abs(p) * RAD) };
@@ -316,9 +352,9 @@
 
   function notaErro(pct) {
     if (pct > Tour360.ERRO_AVISO_PCT) {
-      return "Medida aproximada (±" + r1(pct) + "%): os pontos estão perto do horizonte ou a foto pode não estar nivelada. Serve para ordem de grandeza, não para conferir dimensão de projeto.";
+      return "Medida aproximada (±" + br(r1(pct)) + "%): os pontos estão perto do horizonte ou a foto pode não estar nivelada. Serve para ordem de grandeza, não para conferir dimensão de projeto.";
     }
-    return "Estimativa a partir da altura da câmera (±" + r1(pct) + "%). Confira o nivelamento da foto antes de usar em documento.";
+    return "Estimativa a partir da altura da câmera (±" + br(r1(pct)) + "%). Confira o nivelamento da foto antes de usar em documento.";
   }
 
   /* Distância entre dois pontos do CHÃO. Lei dos cossenos entre as duas
@@ -496,8 +532,8 @@
       erroEstimadoPct: pct,
       aproximada: pct > Tour360.ERRO_AVISO_PCT,
       nota: pct > Tour360.ERRO_AVISO_PCT
-        ? "Área aproximada (±" + r1(pct) + "%). Área acumula o erro dos dois eixos, então ela é sempre menos confiável que uma distância — serve para ordem de grandeza e para conferir quantidade, não para fechar contrato."
-        : "Estimativa a partir da altura da câmera (±" + r1(pct) + "%). Área acumula mais erro que distância: confira um lado com trena antes de usar em medição."
+        ? "Área aproximada (±" + br(r1(pct)) + "%). Área acumula o erro dos dois eixos, então ela é sempre menos confiável que uma distância — serve para ordem de grandeza e para conferir quantidade, não para fechar contrato."
+        : "Estimativa a partir da altura da câmera (±" + br(r1(pct)) + "%). Área acumula mais erro que distância: confira um lado com trena antes de usar em medição."
     };
   };
 
@@ -526,7 +562,82 @@
       ok: true,
       alturaCam: r3(h),
       erroEstimadoPct: unit.erroEstimadoPct,
-      nota: "Altura da câmera calculada a partir de " + r2(alvo) + " m conhecidos (±" + r1(unit.erroEstimadoPct) + "%). Vale só para as fotos tiradas nesta mesma altura."
+      nota: "Altura da câmera calculada a partir de " + br(r2(alvo)) + " m conhecidos (±" + br(r1(unit.erroEstimadoPct)) + "%). Vale só para as fotos tiradas nesta mesma altura."
+    };
+  };
+
+  /* =====================================================================
+   * A GUARDA DO CINZA — onde a foto acaba, a medida acaba
+   *
+   * DEPOIS DO ENCAIXE a geometria está certa: `yaw = px/W*360-180` é verdade.
+   * Mas fora da faixa fotografada não existe obra nenhuma, e
+   * `distanciaNoChao` devolve um número perfeitamente calculado sobre NADA.
+   * Sem esta guarda o encaixe trocaria uma mentira (esticar a faixa sobre a
+   * esfera) por outra (medir no vazio) — e a segunda é pior, porque vem com
+   * o ± pequeno e com cara de conferida.
+   *
+   * ⚠ RECEBE O ÂNGULO BRUTO, ANTES DE `Tour360.corrigir`. A faixa é um
+   *   retângulo no espaço da IMAGEM, e `corrigir` já subtraiu `nortear` e
+   *   `horizonte`. Passar o corrigido por engano faz a guarda recusar clique
+   *   válido (e liberar inválido) exatamente nas estações com `nortear ≠ 0`,
+   *   que são as do comparativo entre visitas — o erro mais fácil de cometer
+   *   e o mais difícil de ver. Tem assert próprio, com `nortear: 90`.
+   *
+   * ⚠ AUSÊNCIA SÓ PERMITE. Ponto sem os campos de cobertura é toda a base já
+   *   gravada nas 38 instalações; recusar por ausência trancaria a medição de
+   *   todo mundo numa atualização. Pelo mesmo motivo, foto comum ANTIGA
+   *   continua como está: só recusa a que este código carimbou, porque dessa
+   *   a gente sabe.
+   *
+   * Devolve `null` quando pode medir, ou a recusa com código, motivo e SAÍDA.
+   * ================================================================== */
+  Tour360.podeMedirAqui = function (ang, ponto) {
+    var p = ponto || {};
+    var cH = num(p.panoCobH, 0), cV = num(p.panoCobV, 0);
+    var fonte = txt(p.panoFonte);
+    if (!(cH > 0) && !(cV > 0) && !fonte) return null;      /* não sei: permite */
+
+    var alt = num(p.alturaCam, 0) || Tour360.ALTURA_CAM_PADRAO;
+
+    /* ⚠ ABERTURA INFORMADA NÃO MEDE. Ela empilha três coisas que ninguém
+       consegue conferir depois: um giro que a pessoa chutou, uma projeção
+       que o app supôs cilíndrica e um nivelamento que ele supôs. Girar,
+       navegar e apontar continuam — só o metro sai. */
+    if (fonte === "declarada") {
+      return {
+        ok: false, codigo: "cobertura-declarada",
+        motivo: "Nesta estação a abertura do panorama (" + br(r1(cH)) + "°) foi informada por você, não lida do arquivo — este aparelho não gravou a etiqueta de 360 nesta foto. Por isso ela gira, entra no comparativo e no relatório e aceita apontamento; o que ela não faz é medir, porque o número dependeria de um giro que ninguém consegue conferir depois.",
+        saida: "Refaça a foto em Foto esférica (Photo Sphere / 360) — esse modo grava a geometria dentro do arquivo e libera a medição — ou meça esta parede a partir de uma estação que já tenha foto esférica."
+      };
+    }
+    if (fonte === "plana") {
+      return {
+        ok: false, codigo: "sem-cobertura",
+        motivo: "Esta estação é uma foto comum: ela registra o ponto, mas não tem a informação de quantos graus cobre, então não dá para transformar um clique em metros.",
+        saida: "Para medir, a estação precisa de uma foto em Foto esférica (Photo Sphere / 360), pelo botão Usar foto do celular."
+      };
+    }
+
+    var cp = num(p.panoCentroPitch, 0);
+    var y = Tour360.normalizarYaw(num(ang && ang.yaw, 0));
+    var pi = num(ang && ang.pitch, 0);
+    var foraH = (cH > 0 && cH < 360) && Math.abs(Tour360.difYaw(0, y)) > cH / 2;
+    var foraV = (cV > 0 && cV < 180) && (pi > cp + cV / 2 || pi < cp - cV / 2);
+    if (!foraH && !foraV) return null;
+
+    /* ⚠ O RAIO CEGO SAI DA ALTURA DESTA ESTAÇÃO, nunca de 1,60 fixo: com a
+       câmera a 1,20 m o chão começa a 2,86 m e a 1,75 m começa a 4,17 m. Um
+       número fixo aqui faria o recado mentir para quem usa bastão. */
+    var borda = cp - cV / 2;                       /* pitch da borda de baixo */
+    var raioTxt;
+    if (cV <= 0 || cV >= 180) raioTxt = "";
+    else if (borda >= -0.5) raioTxt = " Nesta estação a foto não alcança o chão em ponto nenhum: a borda de baixo está na linha do horizonte.";
+    else raioTxt = " Nesta estação, com a câmera a " + br(r2(alt)) + " m, o chão só aparece a partir de " + br(r2(alt / Math.tan(Math.abs(borda) * RAD))) + " m dos seus pés.";
+
+    return {
+      ok: false, codigo: "fora-da-foto",
+      motivo: "Este ponto está fora do que a foto mostra. Este panorama cobre " + br(r1(cH)) + "° na horizontal e " + br(r1(cV)) + "° na vertical — o cinza em volta não foi fotografado, e medir ali devolveria um número calculado sobre nada." + raioTxt,
+      saida: "Marque um ponto dentro da parte colorida. Para medir mais perto, refaça a estação em Foto esférica (Photo Sphere / 360), que fecha a esfera inteira e traz o chão até os seus pés."
     };
   };
 
@@ -543,6 +654,36 @@
        já estava gravado — e dois comentários deste arquivo prometiam o
        contrário. `m.alturaCam` fica para a medida órfã, cujo ponto sumiu. */
     var h = num(ponto && ponto.alturaCam, 0) || num(m.alturaCam, 0) || Tour360.ALTURA_CAM_PADRAO;
+    /* ⚠ A ÁREA GUARDA OS CANTOS, e não o m² — mesma regra das outras: o
+       registro guarda os CLIQUES, e o número é recalculado. Corrigir a altura
+       da estação conserta o histórico inteiro em vez de deixar número velho
+       mentindo na tela. Enquanto `recalcular` não conhecia o tipo "area", uma
+       medida de área gravada era relida como distância entre dois pontos que
+       não existiam, e a lista mostrava a recusa no lugar do metro quadrado —
+       por isso a área só podia virar comentário. */
+    /* ⚠ É AQUI QUE A MEDIDA JÁ GRAVADA PARA DE MENTIR. `recalcular` é quem a
+       tela e o `paraPortal` chamam para exibir; sem a guarda neste ponto, uma
+       estação reclassificada continuaria mostrando o número velho ao cliente,
+       calculado com uma geometria que o app já sabe estar errada. Recusando
+       aqui, `paraPortal` publica `metros: null` e o Portal simplesmente não
+       desenha aquele marcador (loja/portal.html: `if(md.metros==null) continue`)
+       — sumir é melhor que um número falso num documento de fiscalização.
+       ⚠ E os cliques vão BRUTOS, antes de `corrigir` — ver o ⚠ de
+       `podeMedirAqui`. */
+    var barra = null, iG, csG;
+    if (typeof Tour360.podeMedirAqui === "function") {
+      csG = (m.tipo === "area") ? (m.cantos || []) : [m.a, m.b];
+      for (iG = 0; iG < csG.length; iG++) {
+        if (!csG[iG]) continue;
+        barra = Tour360.podeMedirAqui(csG[iG], ponto);
+        if (barra) return barra;
+      }
+    }
+    if (m.tipo === "area") {
+      var cantos = [], i, cs = m.cantos || [];
+      for (i = 0; i < cs.length; i++) cantos.push(Tour360.corrigir(cs[i], ponto));
+      return Tour360.medirArea(cantos, h);
+    }
     var a = Tour360.corrigir(m.a, ponto), b = Tour360.corrigir(m.b, ponto);
     if (m.tipo === "altura") return Tour360.medirAltura(a, b, h);
     return Tour360.medirChao(a, b, h);
@@ -580,6 +721,18 @@
     };
   };
 
+  /* ⚠ QUANTOS GRAUS A FOTO DESTA ESTAÇÃO COBRE — e por que o padrão é ZERO.
+     `panoCobH`/`panoCobV` em graus, `panoCentroPitch` a inclinação do centro
+     da faixa, `panoFonte` de onde o número veio ("gpano" = lido do arquivo,
+     "declarada" = informado por quem tirou, "costura" = montado aqui dentro,
+     "nativa"/"plana" = os casos de sempre).
+
+     ZERO SIGNIFICA "NÃO SEI", E NÃO SEI SÓ PERMITE. Toda estação já gravada
+     nas 38 instalações chega aqui sem estes campos; devolver recusa por
+     ausência trancaria a medição de todo mundo de uma vez. O erro simétrico
+     — um `panoCobH || 360` copiado do padrão de `tipo` — seria pior ainda:
+     faria uma faixa sem cobertura lida ser tratada como esfera inteira, que
+     é exatamente o defeito que este trabalho existe para fechar. */
   Tour360.novoPonto = function (nome, opts) {
     var o = opts || {};
     return {
@@ -596,11 +749,18 @@
       vizinhos: [],
       hotspots: [],
       medidas: [],
+      /* ⚠ A AREA MORA NUMA LISTA PROPRIA - ver `Tour360.medidasDoPonto`. */
+      areas: [],
       capturadoEm: txt(o.capturadoEm),
       /* "exif" = data informada pelo aparelho; "anexo" = quando o arquivo
          chegou aqui; vazio = ponto antigo, nao se sabe. A procedencia viaja
          junto com a data porque uma prova sem origem nao e prova. */
-      capturadoFonte: txt(o.capturadoFonte)
+      capturadoFonte: txt(o.capturadoFonte),
+      /* a geometria da foto desta estação — ver o ⚠ acima do `novoPonto` */
+      panoFonte: txt(o.panoFonte),
+      panoCobH: num(o.panoCobH, 0),
+      panoCobV: num(o.panoCobV, 0),
+      panoCentroPitch: num(o.panoCentroPitch, 0)
     };
   };
 
@@ -610,6 +770,100 @@
     return null;
   };
 
+  /* =====================================================================
+   * ⚠ DUAS LISTAS NO REGISTRO, UMA SO NA TELA - E O PORQUE E A FROTA
+   *
+   * O REGISTRO DA VISITA SINCRONIZA PELA NUVEM (js/nuvem.js, entidade
+   * "tour360"), e a nuvem nao pergunta a versao de ninguem: o que a 1.2.57
+   * grava desce, no mesmo dia, no aparelho que ainda roda 1.2.56.
+   *
+   * O ROTEIRO DO DEFEITO (medido em 08/09/2026). A area passou a ser gravada
+   * em `p.medidas[]` como `{tipo:"area", cantos:[...]}` - SEM `a` e SEM `b`.
+   * O `Tour360.recalcular` da 1.2.56, que esta instalado em 38 maquinas, nao
+   * conhece `tipo:"area"`:
+   *
+   *     var a = Tour360.corrigir(m.a, ponto), b = Tour360.corrigir(m.b, ponto);
+   *     if (m.tipo === "altura") return Tour360.medirAltura(a, b, h);
+   *     return Tour360.medirChao(a, b, h);       // <- a area caia aqui
+   *
+   * `corrigir(undefined, ponto)` devolve `{yaw: -nortear, pitch: -horizonte}`
+   * para as DUAS pontas - o mesmo ponto duas vezes. Com a foto inclinada
+   * (`horizonte >= PITCH_MIN_MEDIDA`, que e o caso comum), `medirChao` nao
+   * recusa: ele mede a distancia de um ponto ate ele mesmo e devolve
+   * `{ok:true, metros:0, erroEstimadoPct:0}`. MEDIDO: 21 de 36 combinacoes de
+   * (horizonte, alturaCam) devolvem numero. E "0,00 m +-0%" e um numero com
+   * cara de conferido: o `paraPortal` da 1.2.56 publica esse zero, e ele
+   * aparece na tela do contratante como se fosse medida de verdade.
+   *
+   * NAO HA COMO FAZER O CODIGO JA INSTALADO RECUSAR DE DENTRO DE `medidas`.
+   * MEDIDO tambem: gravar `a`/`b` fora do chao (`pitch: 90`) faz a 1.2.56
+   * recusar em 193 de 201 valores de `horizonte` - mas ela volta a medir a
+   * partir de `horizonte >= 93`, e o campo de horizonte da tela e texto livre,
+   * sem teto. Alem disso a area continuaria aparecendo la como uma LINHA de
+   * medida recusada e continuaria ocupando vaga no teto de MAX_MEDIDAS.
+   *
+   * POR ISSO A AREA MUDOU DE ENDERECO. Ela mora em `p.areas[]`, uma lista que
+   * a 1.2.56 nunca abre: la ela nao vira "0,00 m", nao viaja no retrato que
+   * aquele aparelho publica, e nao conta no teto dele. O cliente que ainda
+   * nao atualizou simplesmente NAO VE a area - que e melhor que ver um numero
+   * que mente. Quem ja esta na 1.2.57 ve tudo, porque tudo passa por aqui.
+   *
+   * ⚠ ESTA FUNCAO E O UNICO LUGAR QUE JUNTA AS DUAS. Todo consumidor (lista da
+   *   tela, contagem da estacao, teto, relatorio, `paraPortal`, `resumo`) le
+   *   daqui - ler `p.medidas` direto e como o defeito volta, so que ao
+   *   contrario: a area sumindo da tela de quem TEM a versao nova.
+   *   A ORDEM importa: medidas primeiro, areas depois. E ela que casa com as
+   *   chaves de recorte do relatorio (`Rel.chaveRecorte(pid, "m", i)`).
+   * ================================================================== */
+  Tour360.medidasDoPonto = function (ponto) {
+    var p = ponto || {};
+    /* ⚠ `Array.isArray`, e nao `|| []`: o codigo que esta funcao substituiu na
+       tela passava por `Util.arr`, que COAGE o que nao e lista. Um registro
+       estragado (medidas virou objeto num merge malfeito) faria `.concat`
+       estourar e derrubar a tela inteira da visita - e a regra desta casa e
+       isolar o corrompido, nunca travar a UI por causa dele. */
+    var ms = Array.isArray(p.medidas) ? p.medidas : [];
+    var as = Array.isArray(p.areas) ? p.areas : [];
+    return ms.concat(as);
+  };
+
+  /* ⚠ A AREA QUE JA FOI GRAVADA NO LUGAR ERRADO - e o formato antigo existiu
+     de verdade: o codigo que gravava area dentro de `p.medidas[]` esteve no
+     master por um dia, e o registro dele pode ter subido para a nuvem.
+     Enquanto ele estiver ali, o aparelho na 1.2.56 mostra "0,00 m".
+
+     Move, nao copia, e e IDEMPOTENTE: rodar duas vezes nao duplica nada.
+     Devolve QUANTAS mudaram de lista, para quem chamar poder registrar.
+
+     ⚠ NAO GRAVA NADA, e isso e doutrina desta casa (js/store.js): migracao
+     converte NA LEITURA, em memoria, e a forma nova so encosta no disco
+     quando algo grava por outro motivo - regravar em massa carimba
+     `atualizadoEm` novo em conteudo velho, a migracao vence o merge da nuvem
+     e passa por cima do que o outro aparelho tinha de mais recente (foi assim
+     que a migracao de fotos apagou diario editado, v1.1.236). Aqui quem grava
+     e o `salvarTour` da tela, no unico funil de gravacao da visita: qualquer
+     edicao cura o registro, e a cura sobe para os outros aparelhos. */
+  Tour360.migrarAreas = function (tour) {
+    var ps = (tour && tour.pontos) || [], mudou = 0, i, k, ms, fica, p;
+    for (i = 0; i < ps.length; i++) {
+      p = ps[i];
+      if (!p) continue;
+      ms = p.medidas || [];
+      fica = [];
+      for (k = 0; k < ms.length; k++) {
+        if (ms[k] && ms[k].tipo === "area") {
+          p.areas = p.areas || [];
+          p.areas.push(ms[k]);
+          mudou++;
+        } else {
+          fica.push(ms[k]);
+        }
+      }
+      if (fica.length !== ms.length) p.medidas = fica;
+    }
+    return mudou;
+  };
+
   Tour360.cabePonto = function (tour) {
     var n = ((tour && tour.pontos) || []).length;
     return { cabe: n < Tour360.MAX_PONTOS, restam: Math.max(0, Tour360.MAX_PONTOS - n) };
@@ -617,6 +871,28 @@
 
   /* Estado do documento. `temPortal` começa FALSO de propósito, como no RDO:
      quem afirma que o cliente está vendo é quem sabe que existe Portal. */
+  /* ⚠ DUAS PERGUNTAS DIFERENTES, E CONFUNDI-LAS JA CUSTOU CARO AQUI.
+
+     `estadoDe` responde "o que ESCREVER NA TELA", e por isso o `temPortal`
+     comeca falso: quem afirma que o cliente esta vendo e quem sabe que existe
+     Portal. Para uma visita publicada numa obra sem Portal ele devolve
+     "pronto" — que e a palavra certa para a pessoa ler.
+
+     `estaPublicado` responde "o gestor MANDOU publicar isto?", que e decisao
+     de maquina e nao tem meio-termo.
+
+     Eu mesmo usei `estadoDe(t) !== "publicado"` como guarda em
+     `Gestao._republicarTourSeNoAr`, e como ela nunca recebia o segundo
+     argumento a resposta era sempre "pronto": a republicacao automatica NUNCA
+     disparava. O efeito era o defeito que eu tinha acabado de consertar na
+     rodada anterior — a foto que termina de subir DEPOIS da publicacao nao
+     alcancava o cliente, calada. Achado por um revisor que espionou a funcao
+     no navegador e viu a lista de chamadas vazia.
+     Regra: rotulo e `estadoDe`; decisao e `estaPublicado`. */
+  Tour360.estaPublicado = function (t) {
+    return txt(t && t.estado) === "publicado";
+  };
+
   Tour360.estadoDe = function (t, temPortal) {
     var e = txt(t && t.estado);
     if (e === "publicado") return temPortal ? "publicado" : "pronto";
@@ -631,7 +907,7 @@
     if (!ps.length) erros.push("Um tour sem ponto nenhum não é um tour.");
     if (ps.length > Tour360.MAX_PONTOS) erros.push("Máximo de " + Tour360.MAX_PONTOS + " pontos por tour.");
 
-    var vistos = {}, semFoto = 0, planas = 0, i, p;
+    var vistos = {}, semFoto = 0, planas = 0, declaradas = 0, i, p;
     for (i = 0; i < ps.length; i++) {
       p = ps[i];
       if (!txt(p.pid)) { erros.push("Ponto sem identificador — o comparativo entre visitas depende dele."); continue; }
@@ -639,12 +915,24 @@
       vistos[p.pid] = true;
       if (!p.foto) semFoto++;
       if (p.tipo !== "equirect") planas++;
+      if (txt(p.panoFonte) === "declarada") declaradas++;
       if (num(p.alturaCam, 0) <= 0) avisos.push("O ponto \"" + txt(p.nome) + "\" está sem altura de câmera — nele não dá para medir.");
       if ((p.hotspots || []).length > Tour360.MAX_HOTSPOTS) erros.push("Ponto \"" + txt(p.nome) + "\" com comentários demais (máximo " + Tour360.MAX_HOTSPOTS + ").");
-      if ((p.medidas || []).length > Tour360.MAX_MEDIDAS) erros.push("Ponto \"" + txt(p.nome) + "\" com medidas demais (máximo " + Tour360.MAX_MEDIDAS + ").");
+      /* ⚠ O TETO E DA ESTACAO, NAO DE UMA DAS DUAS LISTAS. `medidas` e `areas`
+         sao dois arrays por causa da frota (ver `medidasDoPonto`), mas para
+         quem usa - e para a nuvem - sao "as medidas deste ponto": contar so um
+         deles deixaria uma estacao chegar a 80 registros sem ninguem avisar, e
+         este teto existe por causa do documento de 1 MiB do Firestore. */
+      if (Tour360.medidasDoPonto(p).length > Tour360.MAX_MEDIDAS) erros.push("Ponto \"" + txt(p.nome) + "\" com medidas demais (máximo " + Tour360.MAX_MEDIDAS + ").");
     }
     if (semFoto) avisos.push(semFoto + " ponto(s) ainda sem foto.");
     if (planas) avisos.push(planas + " ponto(s) com foto comum (não gira em 360, e não dá para medir por ângulo).");
+    /* ⚠ AVISO, NÃO ERRO. A estação de abertura informada gira, aparece no
+       comparativo e no relatório — ela só não mede. Transformar isso em erro
+       IMPEDIRIA o gestor de republicar um tour que já está no ar, e trava sem
+       porta empurra a pessoa a contornar (marcar a foto como comum só para se
+       livrar do bloqueio). Quem decide o que vai ao cliente é ele. */
+    if (declaradas) avisos.push(declaradas + " estação(ões) com a abertura do panorama informada à mão: elas giram e aparecem no relatório, mas não medem por ângulo.");
 
     return { ok: erros.length === 0, erros: erros, avisos: avisos };
   };
@@ -764,12 +1052,26 @@
         horizonte: num(p.horizonte, 0),
         ancora: p.ancora || null,
         planta: p.planta || null,
+        /* ⚠ A COBERTURA NÃO ATRAVESSA A VISITA, e isso é decisão: ela descreve
+           a FOTO, não a estação. `alturaCam`, `nortear` e `horizonte` são do
+           lugar e por isso são copiados; `panoCobH`/`panoCobV` são do arquivo
+           que foi tirado naquele dia, e a visita nova nasce sem foto. Copiar
+           faria a foto de setembro herdar a abertura da de agosto — e medir
+           com a geometria de outro arquivo, plausível e errado. */
+        panoFonte: "", panoCobH: 0, panoCobV: 0, panoCentroPitch: 0,
         vizinhos: (p.vizinhos || []).slice(),
         hotspots: [],
         medidas: [],
+        areas: [],
         capturadoEm: ""
       });
     }
+    /* ⚠ OS COMENTÁRIOS DO DIA CONTINUAM ZERADOS (acima) — "cobrar o azulejista"
+       é do dia em que foi dito. Mas a PENDÊNCIA atravessa: a fissura de agosto
+       reaparece em setembro, no mesmo ponto da foto, pedindo veredito. Sem
+       isso o módulo é um álbum bonito, e a lista de apontamentos continua no
+       caderno do engenheiro. */
+    Tour360.carregarPendencias(a, t);
     return t;
   };
 
@@ -790,6 +1092,362 @@
       pares: pares, soA: soA, soB: soB,
       comparaveis: pares.length,
       aviso: pares.length ? "" : "Nenhum ponto em comum: estas duas visitas não foram feitas dos mesmos lugares. Para comparar, crie a próxima visita a partir desta (botão \"Repetir visita\")."
+    };
+  };
+
+  /* =====================================================================
+   * 3b. A PENDÊNCIA QUE ATRAVESSA A VISITA
+   *
+   * É o que separa álbum de foto redonda de ferramenta de gestão. A fissura
+   * marcada em agosto tem de REAPARECER em setembro, no mesmo ponto da foto,
+   * pedindo veredito: resolvida, ainda aberta, ou piorou. Sem isso ela vive no
+   * caderno do engenheiro e no grupo do WhatsApp, que é onde ela morre.
+   *
+   * ⚠ COMENTÁRIO E PENDÊNCIA SÃO COISAS DIFERENTES, e essa distinção é o
+   *   coração daqui. "Cobrar o azulejista" é do dia — `basearEm` zera, e está
+   *   certo. "Fissura no pilar P4" é um FATO DA OBRA que não some porque o mês
+   *   virou: essa atravessa, com `origemHid` ligando todas as aparições à
+   *   primeira. Só `atencao` e `pendencia` viram pendência; os outros dois
+   *   tipos continuam sendo recado do dia.
+   *
+   * ⚠ E A LIGAÇÃO É POR CARIMBO, como o `pid` da estação: a cópia da visita
+   *   nova aponta para o `hid` da ORIGINAL. Casar por texto parecido ("fissura
+   *   no pilar" vs "trinca no P4") é o erro que esta casa não comete.
+   * ================================================================== */
+
+  Tour360.STATUS_PENDENCIA = ["aberta", "resolvida", "persiste"];
+  Tour360.TIPOS_PENDENCIA = ["atencao", "pendencia"];
+
+  Tour360.ehPendencia = function (h) {
+    return !!h && Tour360.TIPOS_PENDENCIA.indexOf(txt(h.tipo)) > -1;
+  };
+
+  /* O status de quem nunca foi julgado é "aberta" — e por omissão, não por
+     gravação: registro antigo não tem o campo, e tratá-lo como resolvido
+     apagaria a pendência da lista sem ninguém decidir nada. */
+  Tour360.statusDe = function (h) {
+    var s = txt(h && h.status);
+    return Tour360.STATUS_PENDENCIA.indexOf(s) > -1 ? s : "aberta";
+  };
+
+  Tour360.pendenciaAberta = function (h) {
+    if (!Tour360.ehPendencia(h)) return false;
+    return Tour360.statusDe(h) !== "resolvida";
+  };
+
+  /* Todas as pendências vivas da visita, com a estação de cada uma. */
+  Tour360.pendenciasDe = function (tour, opts) {
+    var o = opts || {};
+    var ps = (tour && tour.pontos) || [], fora = [], i, k;
+    for (i = 0; i < ps.length; i++) {
+      var hs = ps[i].hotspots || [];
+      for (k = 0; k < hs.length; k++) {
+        if (!Tour360.ehPendencia(hs[k])) continue;
+        var st = Tour360.statusDe(hs[k]);
+        if (o.soAbertas && st === "resolvida") continue;
+        fora.push({
+          hid: txt(hs[k].hid),
+          origemHid: txt(hs[k].origemHid) || txt(hs[k].hid),
+          pid: txt(ps[i].pid),
+          estacao: txt(ps[i].nome),
+          nivel: txt(ps[i].nivel),
+          tipo: txt(hs[k].tipo),
+          texto: txt(hs[k].texto),
+          status: st,
+          responsavel: txt(hs[k].responsavel),
+          prazo: txt(hs[k].prazo),
+          yaw: num(hs[k].yaw, 0),
+          pitch: num(hs[k].pitch, 0),
+          desdeData: txt(hs[k].origemData) || txt(tour && tour.data),
+          resolvidoEm: txt(hs[k].resolvidoEm)
+        });
+      }
+    }
+    return fora;
+  };
+
+  /* Traz para a visita nova as pendências que continuam abertas. Cada uma
+     nasce como uma cópia LIGADA à original (`origemHid`) e volta ao estado
+     "aberta": é a pergunta do mês, não a resposta do mês passado.
+     ⚠ Só entra pendência cuja estação existe na visita nova — pendência sem
+     lugar na foto não tem onde ser marcada, e uma lista de itens que ninguém
+     consegue apontar é uma lista que ninguém usa. */
+  /* ⚠ QUAL MARCADOR A CORREÇÃO DE NORTE PODE MOVER — E POR QUÊ.
+     O `yaw`/`pitch` de um marcador é PIXEL DA FOTO em que ele foi apontado: o
+     visualizador desenha o BRUTO (ver o cabeçalho de js/tour360view.js). Daí
+     saem duas regras OPOSTAS, e confundi-las estraga de um jeito que parece
+     conferido — o texto certo, o dedo na parede errada:
+
+     · marcador apontado NESTA foto — mexer no `nortear` é CALIBRAR o norte. A
+       foto não mudou; mover o marcador o tiraria de cima da fissura. NÃO anda.
+     · marcador vindo de OUTRA FOTO (herdado da visita anterior, ou da foto que
+       acabou de ser substituída) — o ângulo dele é pixel da foto ANTIGA. Quando
+       a estação é refotografada, o panorama novo começa de outro lado e o
+       engenheiro corrige o `nortear`: é NESSE instante que o herdado precisa
+       andar, senão a fissura de agosto aponta para outra parede em setembro.
+
+     Por isso quem veio de outra foto carrega `frameNorte`/`frameHor` — o
+     referencial em que o número dele foi escrito. SÓ quem tem esse carimbo
+     anda; depois de andar (e só quando já existe foto para ancorar) o carimbo
+     sai, porque o marcador passou a ser desta foto.
+
+     ⚠ A MEDIDA NÃO ENTRA AQUI, e é de propósito: `recalcular` guarda os
+     cliques BRUTOS e aplica `corrigir` na hora de ler, justamente para que
+     nivelar uma foto torta conserte o histórico inteiro. Mover os cliques
+     desfaria essa correção. */
+  Tour360.marcarFrame = function (ponto) {
+    var hs = (ponto && ponto.hotspots) || [], n = 0, i;
+    for (i = 0; i < hs.length; i++) {
+      if (hs[i].frameNorte !== undefined && hs[i].frameNorte !== null) continue;
+      hs[i].frameNorte = num(ponto.nortear, 0);
+      hs[i].frameHor = num(ponto.horizonte, 0);
+      n++;
+    }
+    return n;
+  };
+
+  Tour360.renortear = function (ponto, nortearNovo, horizonteNovo) {
+    if (!ponto) return { ok: false, motivo: "Estação não encontrada.", movidos: 0 };
+    var nN = num(nortearNovo, 0);
+    var hN = Math.max(-90, Math.min(90, num(horizonteNovo, 0)));
+    var temFoto = !!ponto.foto;
+    var hs = ponto.hotspots || [], movidos = 0, i;
+    for (i = 0; i < hs.length; i++) {
+      var h = hs[i];
+      if (h.frameNorte === undefined || h.frameNorte === null) continue;
+      var fN = num(h.frameNorte, 0), fH = num(h.frameHor, 0);
+      if (fN !== nN || fH !== hN) {
+        /* tira o referencial VELHO e repõe o NOVO: o rumo em relação ao norte
+           é o que se conserva entre duas fotos da mesma estação */
+        h.yaw = Tour360.normalizarYaw(num(h.yaw, 0) - fN + nN);
+        h.pitch = Math.max(-90, Math.min(90, num(h.pitch, 0) - fH + hN));
+        movidos++;
+      }
+      if (temFoto) {
+        /* reconciliado com a foto que está aqui: daqui para frente ele é desta
+           foto, e uma calibração de norte não pode mais arrastá-lo */
+        delete h.frameNorte;
+        delete h.frameHor;
+      } else {
+        /* sem foto ainda: o número continua sendo de outro lugar, e o carimbo
+           tem de sobreviver até a foto nova chegar */
+        h.frameNorte = nN;
+        h.frameHor = hN;
+      }
+    }
+    ponto.nortear = nN;
+    ponto.horizonte = hN;
+    return { ok: true, movidos: movidos, nortear: nN, horizonte: hN, ancorado: temFoto };
+  };
+
+  Tour360.carregarPendencias = function (anterior, novo) {
+    var abertas = Tour360.pendenciasDe(anterior, { soAbertas: true });
+    var n = 0, i;
+    for (i = 0; i < abertas.length; i++) {
+      var p = abertas[i];
+      var alvo = Tour360.pontoDe(novo, p.pid);
+      if (!alvo) continue;
+      /* ⚠ O ÂNGULO ATRAVESSA NO REFERENCIAL COMUM, NUNCA CRU — e o carimbo
+         `frameNorte`/`frameHor` abaixo é a outra metade do mesmo conserto.
+         `yaw`/`pitch` do hotspot são BRUTOS da foto em que ele nasceu. A conta
+         daqui só resolve o caso em que a estação de destino JÁ tem outro
+         `nortear` na hora da cópia — e dentro de `basearEm` ela nunca tem,
+         porque `basearEm` acabou de copiar o `nortear` da origem. Ou seja:
+         sozinha, esta linha é a identidade, e a revisão de 08/09/2026 mostrou
+         isso medindo. O renorteamento de verdade acontece DEPOIS, quando a
+         foto nova chega e o engenheiro corrige o norte dela; quem faz a
+         cópia andar naquele instante é `Tour360.renortear`, e o que diz a ele
+         que este marcador veio de outra foto é o carimbo. */
+      var orig = Tour360.pontoDe(anterior, p.pid) || {};
+      var corr = Tour360.corrigir({ yaw: p.yaw, pitch: p.pitch }, orig);
+      var yawNovo = Tour360.normalizarYaw(corr.yaw + num(alvo.nortear, 0));
+      var pitchNovo = Math.max(-90, Math.min(90, corr.pitch + num(alvo.horizonte, 0)));
+      alvo.hotspots = alvo.hotspots || [];
+      alvo.hotspots.push({
+        hid: uid("h"),
+        origemHid: p.origemHid,          /* ⚠ o carimbo que liga as aparições */
+        origemData: p.desdeData,
+        tipo: p.tipo,
+        texto: p.texto,
+        status: "aberta",
+        responsavel: p.responsavel,
+        prazo: p.prazo,
+        yaw: yawNovo,
+        pitch: pitchNovo,
+        autor: "",
+        em: "",
+        paraCliente: false,              /* quem publica decide de novo */
+        /* o referencial em que o número acima está escrito — ver `renortear` */
+        frameNorte: num(alvo.nortear, 0),
+        frameHor: num(alvo.horizonte, 0)
+      });
+      n++;
+    }
+    return { ok: true, carregadas: n, semEstacao: abertas.length - n };
+  };
+
+  /* Ordena as visitas de uma obra com DESEMPATE DECLARADO.
+     ⚠ DUAS VISITAS NO MESMO DIA É CASO REAL — manhã e tarde, ou uma visita de
+     correção depois de o cliente reclamar (o diário registra o mesmo caso, e é
+     por isso que ele liga por carimbo). Ordenando só por `data`, o empate
+     devolve 0, o `sort` preserva a ordem de ENTRADA, e a ordem de entrada é a
+     que o Store devolveu: qual das duas conta como "a de hoje" passava a
+     depender da ordem de gravação, e o Painel podia cobrar a lista da visita
+     da manhã depois de a da tarde resolver tudo. Agora desempata por
+     `criadoEm` e, faltando ele, por `id` — sempre o mesmo resultado. */
+  function ordenarVisitas(tours, crescente) {
+    var s = crescente ? 1 : -1;
+    return (tours || []).slice().sort(function (a, b) {
+      var d = txt(a && a.data).localeCompare(txt(b && b.data));
+      if (d) return d * s;
+      var c = txt(a && a.criadoEm).localeCompare(txt(b && b.criadoEm));
+      if (c) return c * s;
+      return txt(a && a.id).localeCompare(txt(b && b.id)) * s;
+    });
+  }
+
+  /* Uma passada só por TODAS as visitas, indexando as aparições por `origemHid`.
+     ⚠ ANTES CADA PENDÊNCIA REMONTAVA O HISTÓRICO SOZINHA, e cada remontagem
+     reordenava a lista e revarria todas as visitas: o custo era
+     O(visitas × pendências abertas × estações × comentários) por obra — pago em
+     TODA renderização do Painel, que é a tela onde a pessoa cai a cada volta.
+     Recebe a lista já ordenada do mais VELHO para o mais novo: as aparições
+     saem em ordem cronológica, e é disso que "desde março" depende. */
+  function indexarPendencias(listaCrescente) {
+    var idx = {}, i, k;
+    for (i = 0; i < listaCrescente.length; i++) {
+      var pend = Tour360.pendenciasDe(listaCrescente[i]);
+      for (k = 0; k < pend.length; k++) {
+        var oh = pend[k].origemHid;
+        if (!idx[oh]) idx[oh] = [];
+        idx[oh].push({
+          tourId: txt(listaCrescente[i].id),
+          data: txt(listaCrescente[i].data),
+          estacao: pend[k].estacao,
+          status: pend[k].status,
+          texto: pend[k].texto,
+          hid: pend[k].hid
+        });
+      }
+    }
+    return idx;
+  }
+
+  function montarHistorico(origemHid, linha) {
+    linha = linha || [];
+    /* ⚠ ARRASTAR É ATRAVESSAR O TEMPO, NÃO CONTAR REGISTRO. Duas visitas no
+       MESMO DIA (manhã e tarde, ou uma de correção) davam `visitas: 2` e a
+       pendência nascia pintada de "se arrastando por mais de uma visita" —
+       visto na foto da tela em 08/09/2026, com a fissura marcada de manhã
+       aparecendo de tarde como se viesse do mês passado. Número que mente num
+       painel de cobrança é pior que painel sem número: ele gasta a atenção de
+       quem confia nele. `visitas` continua contando as aparições (é o que a
+       linha do tempo mostra); quem decide a cor é `datas`. */
+    var datas = 0, vista = "", i;
+    for (i = 0; i < linha.length; i++) {
+      if (linha[i].data !== vista) { datas++; vista = linha[i].data; }
+    }
+    return {
+      origemHid: origemHid,
+      aparicoes: linha,
+      visitas: linha.length,
+      datas: datas,
+      desde: linha.length ? linha[0].data : "",
+      situacao: linha.length ? linha[linha.length - 1].status : "",
+      /* ⚠ "há 4 visitas" é o número que faz o gestor agir; "aberta" sozinho
+         não diz se é de ontem ou do começo da obra */
+      arrastando: datas > 1 && linha[linha.length - 1].status !== "resolvida"
+    };
+  }
+
+  /* A vida de uma pendência ao longo das visitas: quando apareceu, o que foi
+     dito em cada uma, quando foi resolvida. É o que sustenta a conversa
+     "isso está assim desde março". */
+  Tour360.historicoPendencia = function (tours, origemHid) {
+    var idx = indexarPendencias(ordenarVisitas(tours, true));
+    return montarHistorico(origemHid, idx[origemHid] || []);
+  };
+
+  /* O histórico de TODAS as pendências da obra de uma vez, indexado por
+     `origemHid`. Existe para a tela que precisa do número de visitas de vários
+     itens: chamar `historicoPendencia` numa por uma refaz a varredura inteira
+     a cada item — e o cartão de pendências faz isso para cada linha, em toda
+     renderização. */
+  Tour360.historicoTodas = function (tours) {
+    var idx = indexarPendencias(ordenarVisitas(tours, true));
+    var fora = {}, oh;
+    for (oh in idx) {
+      if (!Object.prototype.hasOwnProperty.call(idx, oh)) continue;
+      fora[oh] = montarHistorico(oh, idx[oh]);
+    }
+    return fora;
+  };
+
+  /* O apanhado que a tela e o painel de atenção mostram. */
+  Tour360.resumoPendencias = function (tours, hojeISO) {
+    var lista = ordenarVisitas(tours, false);        // a mais nova primeiro
+    if (!lista.length) {
+      return { abertas: 0, vencidas: 0, arrastando: 0, itens: [], deixadas: [], mesmaData: 0 };
+    }
+
+    /* só a visita MAIS RECENTE conta como "hoje": as anteriores são história, e
+       somá-las contaria a mesma fissura cinco vezes */
+    var atual = lista[0];
+    var atualId = txt(atual.id);
+    var idx = indexarPendencias(ordenarVisitas(lista, true));
+    var pend = Tour360.pendenciasDe(atual, { soAbertas: true });
+    var hoje = txt(hojeISO) || hojeLocal();
+    var vencidas = 0, arrastando = 0, i, itens = [];
+    for (i = 0; i < pend.length; i++) {
+      var h = montarHistorico(pend[i].origemHid, idx[pend[i].origemHid]);
+      var venceu = !!pend[i].prazo && pend[i].prazo < hoje;
+      if (venceu) vencidas++;
+      if (h.datas > 1) arrastando++;
+      itens.push({
+        hid: pend[i].hid, origemHid: pend[i].origemHid,
+        estacao: pend[i].estacao, texto: pend[i].texto,
+        status: pend[i].status, responsavel: pend[i].responsavel,
+        prazo: pend[i].prazo, vencida: venceu,
+        visitas: h.visitas, datas: h.datas, desde: h.desde
+      });
+    }
+
+    /* ⚠ A PENDÊNCIA QUE NÃO ENTROU NA VISITA NOVA SUMIA DA COBRANÇA EM SILÊNCIO.
+       Três caminhos normais fazem isso, e nenhum deles é erro de quem usa: criar
+       a visita por "+ Nova visita" em vez de "Repetir visita" (nasce sem as
+       pendências), apagar a estação onde a fissura estava (o carregamento pula
+       quem não tem lugar na foto), e apagar o próprio apontamento herdado. Como
+       o resumo só olhava a visita mais recente, o Painel passava a dizer
+       "nenhuma pendência" — e a fissura continuava na parede. Uma lista que
+       esvazia sozinha é pior que lista nenhuma: ela dá sossego.
+       `deixadas` são as pendências cuja ÚLTIMA aparição está numa visita
+       ANTERIOR e não foi resolvida lá. Elas saem SEPARADAS de `itens` de
+       propósito: "aberta hoje" e "ficou para trás em 12/03" pedem ações
+       diferentes, e misturá-las inflaria a conta de quem está em dia. */
+    var deixadas = [], oh;
+    for (oh in idx) {
+      if (!Object.prototype.hasOwnProperty.call(idx, oh)) continue;
+      var ap = idx[oh], ult = ap[ap.length - 1];
+      if (!ult || ult.status === "resolvida") continue;
+      if (atualId && ult.tourId === atualId) continue;   // está sendo cobrada
+      deixadas.push({
+        origemHid: oh, estacao: ult.estacao, texto: ult.texto,
+        status: ult.status, desde: ap[0].data,
+        ultimaData: ult.data, ultimaTourId: ult.tourId, visitas: ap.length
+      });
+    }
+    deixadas.sort(function (a, b) { return txt(a.ultimaData).localeCompare(txt(b.ultimaData)); });
+
+    /* quantas visitas dividem a data da atual — a tela usa para dizer QUAL
+       delas está na lista em vez de escolher em silêncio */
+    var mesmaData = 0;
+    for (i = 0; i < lista.length; i++) if (txt(lista[i].data) === txt(atual.data)) mesmaData++;
+
+    return {
+      abertas: pend.length, vencidas: vencidas, arrastando: arrastando,
+      itens: itens, deixadas: deixadas,
+      tourId: atualId, data: txt(atual.data),
+      titulo: txt(atual.titulo), mesmaData: mesmaData
     };
   };
 
@@ -954,7 +1612,7 @@
     var p = ponto || {}, o = opts || {};
     var a = p.ancora;
     if (!a || !a.pos || a.pos.length !== 3) {
-      return { ok: false, codigo: "sem-ancora", motivo: "Este ponto ainda não foi ancorado no modelo 3D. Abra o BIM, leve a câmera até onde a foto foi tirada e use \"Ancorar aqui\"." };
+      return { ok: false, codigo: "sem-ancora", motivo: "Este ponto ainda não foi ancorado no modelo 3D. Abra o BIM, leve a câmera até onde a foto foi tirada e use \"Ancorar esta estação onde o BIM está agora\"." };
     }
     /* o yaw da foto e o da cena não têm a mesma origem; `a.yaw` é o
        casamento medido no momento da ancoragem */
@@ -997,7 +1655,7 @@
     return {
       ok: perto,
       difYaw: r1(dy), difPitch: r1(dp), difFov: r1(dfov),
-      motivo: perto ? "" : "O retrato do projeto foi tirado de outro rumo (" + r1(dy) + "° de diferença). Volte à vista do projeto para comparar — sobrepor de outro ângulo mostra divergência que não existe."
+      motivo: perto ? "" : "O retrato do projeto foi tirado de outro rumo (" + br(r1(dy)) + "° de diferença). Volte à vista do projeto para comparar — sobrepor de outro ângulo mostra divergência que não existe."
     };
   };
 
@@ -1051,14 +1709,32 @@
     var nPorPonto = Math.max(2, Math.round(fps * giro));
 
     for (i = 0; i < ps.length; i++) {
+      /* ⚠ VARRER 360° NUMA FAIXA FILMA O CINZA. Uma estação de 200° passava
+         44% do filme mostrando o que ninguém fotografou — com a data e o nome
+         da obra carimbados por cima, num arquivo que parece pronto e que o
+         engenheiro manda ao cliente sem rever quadro a quadro. Varre o que a
+         foto tem: começa numa borda e termina na outra.
+         ⚠ E o pitch entra na faixa: a câmera do filme olha 5° abaixo do
+         horizonte por padrão, e numa cinta de 45° isso ainda cabe — mas numa
+         de 8° não cabe, e o clamp existe para o filme não começar no vazio. */
+      var cH = num(ps[i].panoCobH, 0), cV = num(ps[i].panoCobV, 0);
+      var parcialH = (cH > 0 && cH < 360);
+      var arco = parcialH ? cH : 360 * voltas;
+      var y0 = parcialH ? -cH / 2 : num(o.yawInicial, -180);
+      var pitchQ = pitch;
+      if (cV > 0 && cV < 180) {
+        var cp = num(ps[i].panoCentroPitch, 0);
+        var margem = Math.max(0, cV / 2 - 3);
+        pitchQ = Math.max(cp - margem, Math.min(cp + margem, pitch));
+      }
       for (k = 0; k < nPorPonto; k++) {
         var frac = k / nPorPonto;
         quadros.push(data);
         poses.push({
           pid: ps[i].pid,
           nome: txt(ps[i].nome),
-          yaw: Tour360.normalizarYaw(num(o.yawInicial, -180) + frac * 360 * voltas),
-          pitch: pitch
+          yaw: Tour360.normalizarYaw(y0 + frac * arco),
+          pitch: pitchQ
         });
       }
     }
@@ -1144,9 +1820,23 @@
         comentarios: hs.map(function (h) {
           return { tipo: txt(h.tipo), texto: txt(h.texto), autor: txt(h.autor), em: txt(h.em), yaw: num(h.yaw, 0), pitch: num(h.pitch, 0) };
         }),
-        medidas: (p.medidas || []).map(function (m) {
+        /* ⚠ AS DUAS LISTAS, pelo funil unico (`medidasDoPonto`): a area saiu de
+           `p.medidas[]` por causa da frota, e ler `p.medidas` direto aqui faria
+           o relatorio calar a area de quem ja esta na versao nova. */
+        medidas: Tour360.medidasDoPonto(p).map(function (m) {
           var r = Tour360.recalcular(m, p);
-          return { tipo: txt(m.tipo), metros: r.ok ? r.metros : null, erroEstimadoPct: r.ok ? r.erroEstimadoPct : null, rotulo: txt(m.rotulo), problema: r.ok ? "" : txt(r.motivo) };
+          var d = { tipo: txt(m.tipo), metros: r.ok ? (r.metros === undefined ? null : r.metros) : null, erroEstimadoPct: r.ok ? r.erroEstimadoPct : null, rotulo: txt(m.rotulo), problema: r.ok ? "" : txt(r.motivo) };
+          /* ⚠ A AREA LEVA OS TRES NUMEROS DELA. Este formato nasceu quando toda
+             medida era distancia entre dois pontos, e `metros` sai `undefined`
+             para uma area: sem estes campos o documento afirmava "nao pode ser
+             recalculada" sobre um m2 que o motor calculou certinho (ver
+             `Rel.medidaDaPagina`, que existe por causa desse defeito). */
+          if (txt(m.tipo) === "area") {
+            d.area = r.ok ? (r.area === undefined ? null : r.area) : null;
+            d.perimetro = r.ok ? (r.perimetro === undefined ? null : r.perimetro) : null;
+            d.cantos = r.ok ? num(r.cantos, (m.cantos || []).length) : (m.cantos || []).length;
+          }
+          return d;
         })
       });
     }
@@ -1162,7 +1852,9 @@
       var hs = ps[i].hotspots || [];
       coment += hs.length;
       for (var k = 0; k < hs.length; k++) if (hs[k].tipo === "atencao" || hs[k].tipo === "pendencia") atencao++;
-      medidas += (ps[i].medidas || []).length;
+      /* as DUAS listas: a area conta como medida para quem le o resumo - ela
+         foi tirada com o mesmo trabalho e vale o mesmo no documento */
+      medidas += Tour360.medidasDoPonto(ps[i]).length;
     }
     return {
       pontos: ps.length, comFoto: comFoto, semFoto: ps.length - comFoto,
@@ -1217,16 +1909,44 @@
         planta: p.planta || null,
         capturadoEm: txt(p.capturadoEm),
         capturadoFonte: txt(p.capturadoFonte),
+        /* a geometria da foto: é ela que deixa o Portal dizer o que é cinza e
+           recusar medida fora da faixa, em vez de o cliente medir no vazio */
+        panoFonte: txt(p.panoFonte),
+        panoCobH: num(p.panoCobH, 0),
+        panoCobV: num(p.panoCobV, 0),
+        panoCentroPitch: num(p.panoCentroPitch, 0),
         comentarios: (p.hotspots || []).filter(function (h) { return h && h.paraCliente; }).map(function (h) {
-          return { tipo: txt(h.tipo), texto: txt(h.texto), em: txt(h.em), yaw: num(h.yaw, 0), pitch: num(h.pitch, 0) };
+          /* ⚠ TRES CAMPOS DA PENDENCIA, TRES DECISOES DIFERENTES:
+             · `status` VAI. "Existe" e "ja foi resolvida" sao noticias
+               diferentes para quem paga a obra, e esconder o desfecho faz o
+               cliente cobrar de novo o que ja foi feito.
+             · `prazo` NAO VAI. E compromisso interno; na tela de quem paga ele
+               vira promessa contratual, e uma data que o escritorio nunca
+               assinou passa a ser cobravel — inclusive quando a obra atrasa
+               por causa do proprio cliente.
+             · `responsavel` NAO VAI. E nome de pessoa, e duas empresas ja
+               decidiram por escrito que o cliente delas nao ve nome de
+               ninguem (ver js/portalpriv.js). */
+          return { tipo: txt(h.tipo), texto: txt(h.texto), em: txt(h.em),
+                   status: Tour360.ehPendencia(h) ? Tour360.statusDe(h) : "",
+                   yaw: num(h.yaw, 0), pitch: num(h.pitch, 0) };
         }),
-        medidas: (p.medidas || []).filter(function (m) { return m && m.paraCliente; }).map(function (m) {
+        /* ⚠ O RETRATO NAO MUDOU DE FORMA, e isso e decisao: area e distancia
+           saem na MESMA lista `medidas`, porque o Portal (loja/portal.html) ja
+           desenha as duas por ali e a allowlist `PORTAL_MEDIDA` ja carrega
+           `cantos`, `area` e `perimetro`. A separacao em duas listas e do
+           REGISTRO, para o aparelho na 1.2.56 nao tropecar nela - o retrato e
+           lido por uma pagina so, servida pelo VPS, sempre atual. */
+        medidas: Tour360.medidasDoPonto(p).filter(function (m) { return m && m.paraCliente; }).map(function (m) {
           var r = Tour360.recalcular(m, p);
           return {
             tipo: txt(m.tipo), rotulo: txt(m.rotulo),
             a: { yaw: num(m.a && m.a.yaw, 0), pitch: num(m.a && m.a.pitch, 0) },
             b: { yaw: num(m.b && m.b.yaw, 0), pitch: num(m.b && m.b.pitch, 0) },
-            metros: r.ok ? r.metros : null,
+            cantos: (m.cantos || []).map(function (c) { return { yaw: num(c && c.yaw, 0), pitch: num(c && c.pitch, 0) }; }),
+            metros: r.ok ? (r.metros === undefined ? null : r.metros) : null,
+            area: r.ok ? (r.area === undefined ? null : r.area) : null,
+            perimetro: r.ok ? (r.perimetro === undefined ? null : r.perimetro) : null,
             erroEstimadoPct: r.ok ? r.erroEstimadoPct : null
           };
         })
@@ -1253,14 +1973,25 @@
      não está na lista do que foi DECIDIDO mandar. Campo novo no ponto nasce
      reprovado até alguém escrever aqui que ele pode sair da máquina. */
   Tour360.PORTAL_TOUR = ["id", "titulo", "data", "publicadoEm", "comparaCom", "planta", "pontos"];
-  Tour360.PORTAL_PONTO = ["pid", "nome", "nivel", "foto", "tipo", "alturaCam", "nortear", "horizonte", "vizinhos", "planta", "capturadoEm", "capturadoFonte", "comentarios", "medidas"];
+  /* ⚠ OS QUATRO CAMPOS DE PANORAMA SÃO PARÂMETRO DE CÂMERA, e saem pela mesma
+     régua já escrita para `alturaCam`: quantos graus a foto cobre não é dado de
+     ninguém, é propriedade do arquivo que o cliente está olhando — e sem eles a
+     tela dele não consegue nem escrever "o cinza não foi fotografado" nem
+     recusar uma medida no vazio. São ESCALARES de propósito: `Tour360.auditar`
+     não desce no interior de objeto novo, então um `cobertura: {...}` abriria
+     buraco no cadeado em vez de passar por ele. */
+  Tour360.PORTAL_PONTO = ["pid", "nome", "nivel", "foto", "tipo", "alturaCam", "nortear", "horizonte", "vizinhos", "planta", "capturadoEm", "capturadoFonte", "comentarios", "medidas", "panoFonte", "panoCobH", "panoCobV", "panoCentroPitch"];
   /* ⚠ E AS LISTAS DOS NÍVEIS DE BAIXO. Sem elas o cadeado só olhava `tour.*` e
      `ponto.*`: um campo acrescentado DENTRO de um comentário (o autor, o
      telefone de quem reclamou) ou dentro de uma medida passava limpo, e é
      justamente aí que mora o texto escrito por gente. O ponto mais fundo do
      retrato é o que menos parece perigoso. */
-  Tour360.PORTAL_COMENTARIO = ["tipo", "texto", "em", "yaw", "pitch"];
-  Tour360.PORTAL_MEDIDA = ["tipo", "rotulo", "a", "b", "metros", "erroEstimadoPct"];
+  Tour360.PORTAL_COMENTARIO = ["tipo", "texto", "em", "status", "yaw", "pitch"];
+  /* ⚠ `cantos`, `area` e `perimetro` entram porque a medida de ÁREA precisa
+   chegar inteira ao cliente: sem os cantos ele recebe um número que não
+   consegue conferir na foto, e número que não dá para conferir é pior que
+   número nenhum. `a` e `b` continuam para as medidas de dois pontos. */
+Tour360.PORTAL_MEDIDA = ["tipo", "rotulo", "a", "b", "cantos", "metros", "area", "perimetro", "erroEstimadoPct"];
   Tour360.PORTAL_FOTO = ["i", "t", "leg", "d"];   /* o formato de RDO.fotoDoPortal */
 
   Tour360.auditar = function (bloco) {

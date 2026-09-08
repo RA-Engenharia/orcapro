@@ -243,6 +243,29 @@
       camadaMarc.style.cssText = "position:absolute;inset:0;pointer-events:none;overflow:hidden";
       host.appendChild(camadaMarc);
 
+      /* ⚠ O CINZA PRECISA SE APRESENTAR. Depois do encaixe, a foto que não
+         fecha a esfera é gravada como uma faixa dentro de uma equiretangular
+         2:1, com o não-fotografado em cinza chapado. Girando até lá, a pessoa
+         via um retângulo vazio e nenhuma palavra — e não dá para distinguir
+         "aqui ninguém fotografou" de "a foto não carregou" ou "o aplicativo
+         travou". A recusa de medir só aparecia DEPOIS de tentar medir, ou
+         seja, tarde. Visto na foto da tela em 08/09/2026.
+         É uma etiqueta discreta e sem clique: quem está dentro da parte
+         fotografada nunca a vê. */
+      var camadaVazio = global.document.createElement("div");
+      /* ⚠ NOME PRÓPRIO, E ESTILO PRÓPRIO — os dois por causa do mesmo tropeço.
+         A primeira versão chamou esta camada de `t360-vazio`, e essa classe JÁ
+         EXISTE em css/tour360.css para outra coisa (o estado "nenhum tour",
+         :430). A folha vestiu a camada com fundo CLARO e o texto, que era
+         cinza claro, saiu ilegível. Os asserts continuaram verdes: a mensagem
+         estava no DOM. Quem pegou foi a foto da tela.
+         Então: classe que ninguém mais usa, e o estilo inteiro escrito aqui,
+         sem depender do que a folha do aplicativo fizer. */
+      camadaVazio.className = "t360-forafoto";
+      camadaVazio.style.cssText = "position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);"
+        + "text-align:center;pointer-events:none;display:none;padding:0 18px";
+      host.appendChild(camadaVazio);
+
       var camadaSobre = global.document.createElement("canvas");
       camadaSobre.className = "t360-sobre";
       camadaSobre.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none";
@@ -251,6 +274,7 @@
       S = {
         alive: true, host: host, T: T, scene: scene, camera: camera, renderer: renderer,
         camadaMarc: camadaMarc, camadaSobre: camadaSobre, camadaSetas: camadaSetas,
+        camadaVazio: camadaVazio,
         esferaA: null, esferaB: null, texA: null, texB: null,
         yaw: 0, pitch: 0, fov: FOV_PADRAO, cortina: 1, modo: "simples",
         ponto: null, marcadores: [], elMarc: {},
@@ -958,6 +982,37 @@
     });
   };
 
+  /* A FAIXA FOTOGRAFADA DESTA ESTAÇÃO, em pitch BRUTO (o da imagem), ou
+     `null` quando não dá para saber.
+
+     ⚠ BRUTO, E NÃO CORRIGIDO. `panoCobV`/`panoCentroPitch` descrevem um
+       retângulo no espaço da IMAGEM — é a mesma convenção que faz
+       `Tour360.podeMedirAqui` receber o ângulo ANTES de `corrigir`. Quem
+       comparar com o ângulo corrigido erra a borda pelo tanto que a estação
+       estiver desnivelada (`horizonte`), e erra calado: a seta some para
+       dentro em uma estação e continua no cinza em outra, sem nada na tela
+       dizendo por quê. Por isso o clamp mora DEPOIS de `paraBruto`.
+
+     ⚠ AUSÊNCIA SÓ PERMITE, como no motor. Ponto sem `panoCobV` é toda a base
+       já gravada nas 38 instalações, e esfera fechada (>= 180°) não tem cinza
+       nenhum: nos dois casos a seta segue no −25° de sempre. Um padrão
+       inventado aqui mexeria na altura da seta de quem nunca teve problema. */
+  function faixaDaFoto() {
+    var p = (S && S.ponto) || {};
+    var cV = num(p.panoCobV, 0);
+    if (!(cV > 0) || cV >= 180) return null;
+    /* A MESMA MARGEM DE 3° DE `Tour360.planoVideo`, de propósito: lá ela
+       impede o filme de começar apontado para o cinza, aqui impede a pastilha
+       de nascer nele, e os dois têm de concordar — seta e filme discordando
+       da mesma borda é defeito que ninguém reproduz. A folga existe porque a
+       pastilha é centrada no pixel (`translate(-50%,-50%)`): plantada
+       exatamente na borda, metade dela já está fora da foto. Faixa estreita
+       perde a folga antes de perder o centro (`Math.max(0, ...)`). */
+    var m = Math.max(0, cV / 2 - 3);
+    var cp = num(p.panoCentroPitch, 0);
+    return { min: cp - m, max: cp + m };
+  }
+
   /* Mesma projeção dos marcadores — inclusive o teste de `v.z > 1`, que é o
      que impede a seta das COSTAS de aparecer flutuando na frente (ponto atrás
      da câmera projeta para coordenada normalizada válida; sem o teste, a
@@ -967,12 +1022,32 @@
     var T = S.T;
     var el = S.renderer.domElement;
     var w = el.clientWidth, h = el.clientHeight;
+    var faixa = faixaDaFoto();
     for (var i = 0; i < S.setas.length; i++) {
       var s = S.setas[i];
       var e = S.elSeta[str(s.pid)];
       if (!e) continue;
       var pit = (s.pitch === null || s.pitch === undefined) ? PITCH_SETA : num(s.pitch, PITCH_SETA);
       var b = paraBruto({ yaw: num(s.yaw, 0), pitch: pit });
+      /* ⚠ O PITCH DA SETA ENTRA NA FAIXA; O YAW NÃO.
+         `PITCH_SETA` planta a pastilha 25° abaixo do horizonte porque é onde
+         o chão fica. Depois do encaixe isso deixou de ser sempre verdade: a
+         foto que não fecha a esfera é gravada como uma faixa dentro de uma
+         equiretangular 2:1, com o não-fotografado em cinza, e numa cinta de
+         45° o alcance vertical é de uns ±22° — os 25° caem FORA da parte
+         fotografada. A seta continua clicável (é objeto 3D na frente da
+         textura), então "andar para o próximo ambiente" nunca chegou a
+         quebrar; ela só nasce boiando no cinza, e pastilha no vazio a pessoa
+         lê como app quebrado e não clica. Trazer para a borda de baixo da
+         faixa a devolve para cima do chão que a foto realmente tem.
+
+         ⚠ E SÓ O PITCH — NUNCA O YAW. A seta de volta fica em yaw+180 e, numa
+         faixa parcial, cai mesmo no cinza. Desenhada ali ela ainda APONTA
+         para o lado certo, que é o serviço dela; puxada para dentro da faixa
+         passaria a apontar para uma parede que não é a saída. Feia e certa é
+         melhor que bonita e errada, e este é o tipo de "melhoria" que uma
+         próxima sessão tenta fazer por simetria com a linha de cima. */
+      if (faixa) b.pitch = Math.max(faixa.min, Math.min(faixa.max, b.pitch));
       var d = M().direcao(b.yaw, b.pitch);
       var v = new T.Vector3(d.x, d.y, d.z).multiplyScalar(RAIO * 0.5);
       v.project(S.camera);
@@ -1314,7 +1389,48 @@
     }
     posicionarSetas();
     posicionarMarcadores();
+    avisarVazio();
     for (var i = 0; i < S.ticks.length; i++) { try { S.ticks[i](); } catch (e) {} }
+  }
+
+  /* Mostra o recado quando o CENTRO da vista está fora da parte fotografada.
+     ⚠ O CRITÉRIO É O CENTRO, NÃO A BORDA, e de propósito: exigir o quadro
+     inteiro dentro da faixa faria o recado piscar o tempo todo em quem está
+     olhando a obra de perto da borda — e recado que pisca a pessoa aprende a
+     ignorar. Assim ele só aparece quando ela de fato saiu da foto.
+     ⚠ E o ângulo comparado é o BRUTO (S.yaw/S.pitch), porque `panoCobV` e
+     `panoCentroPitch` descrevem um retângulo no espaço da IMAGEM — a mesma
+     convenção de `Tour360.podeMedirAqui` e do clamp da seta. */
+  function avisarVazio() {
+    var el = S && S.camadaVazio;
+    if (!el) return;
+    var p = (S && S.ponto) || {};
+    var cH = num(p.panoCobH, 0), cV = num(p.panoCobV, 0);
+    if ((!(cH > 0) || cH >= 360) && (!(cV > 0) || cV >= 180)) {
+      if (el.style.display !== "none") { el.style.display = "none"; el.innerHTML = ""; }
+      return;
+    }
+    var cp = num(p.panoCentroPitch, 0);
+    var y = S.yaw, pt = S.pitch;
+    var d = ((y % 360) + 540) % 360 - 180;
+    var foraH = (cH > 0 && cH < 360) && Math.abs(d) > cH / 2;
+    var foraV = (cV > 0 && cV < 180) && (pt > cp + cV / 2 || pt < cp - cV / 2);
+    if (!foraH && !foraV) {
+      if (el.style.display !== "none") { el.style.display = "none"; el.innerHTML = ""; }
+      return;
+    }
+    if (el.style.display === "none") {
+      el.innerHTML = '<span style="display:inline-block;max-width:430px;text-align:left;'
+        + 'background:rgba(9,15,26,.90);border:1px solid rgba(148,163,184,.38);border-radius:12px;'
+        + 'padding:11px 15px;box-shadow:0 6px 22px rgba(0,0,0,.5);'
+        + 'font:500 13px/1.5 system-ui,-apple-system,\'Segoe UI\',Roboto,sans-serif;color:#e2e8f0">'
+        + '<b style="display:block;font-size:14.5px;margin-bottom:3px;color:#fff">Aqui a foto acabou</b>'
+        + "Esta estação foi fotografada em "
+        + (cH > 0 && cH < 360 ? Math.round(cH) + "° de giro" : "toda a volta")
+        + (cV > 0 && cV < 180 ? " por " + Math.round(cV) + "° de altura" : "")
+        + ". Volte para a parte colorida — fora dela não há o que ver nem o que medir.</span>";
+      el.style.display = "block";
+    }
   }
 
   function loop() {

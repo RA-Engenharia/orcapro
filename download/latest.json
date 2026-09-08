@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.56",
+  "versao": "1.2.57",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.56.zip",
-  "notas": "Compras e notas fiscais: quinze consertos de dinheiro. Entrega parcial deixou de virar despesa em dobro (chegando 150 dos 200 sacos, a nota desses 150 acha o pedido). O Comprometido e o Saldo da etapa pararam de contar o mesmo dinheiro duas vezes. Desfazer um item na triagem nao estorna mais o material que o pedido tinha posto no almoxarifado. Reabrir ou rejeitar um pedido antigo nao da mais entrada do material de novo. Nova porta: Desfazer a ultima entrega. Compra que ficou sem despesa porque a nota foi desfeita numa versao antiga aparece no Painel, com o valor e o botao de devolver. Substituir os lancamentos nao apaga mais conta a pagar sem substituto.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.56/OrcaPRO-IA-Instalador-v1.2.56.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.57.zip",
+  "notas": "Tour 360, Painel e o site. A foto panoramica tirada no celular vira estacao de verdade: gira, navega e mede — antes, foto que nao dava a volta completa media o chao com o dobro do giro. O tour parou de medir no vazio: onde a foto nao alcanca, a tela diz que ali a foto acabou e quanto ela cobre, em vez de devolver um numero calculado sobre nada. Medida de area: o m2 marcado nesta versao nao chega mais como \"0,00 m\" no aparelho que ainda esta na versao anterior. Painel: quatro avisos novos do tour — pendencia que atravessa visitas, foto de visita publicada que nunca subiu, visita fotografada e nunca publicada, e os tours chegando perto do limite da nuvem. O caminho de volta: do Painel para a visita exata do aviso, e do diario do cliente para a visita daquele dia. Portal do cliente: o botao \"Ver a visita 360 deste dia\" estava morto, e os pontos de atencao pararam de mostrar um prazo que nunca chegava. Tablet: o campo Descricao nao abre mais o teclado numerico. Site: o botao \"Ver a gestao de obras\" estava branco sobre branco, invisivel.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.57/OrcaPRO-IA-Instalador-v1.2.57.exe"
 }

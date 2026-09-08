@@ -33,6 +33,13 @@
           telefone: "(34) 99876-5432", email: "obras@horizonte.com.br", cidade: "Uberlândia", uf: "MG",
           status: "ativo", origem: "indicacao"
         });
+        /* o segundo contratante: carteira com um cliente só não representa
+           nem a construtora pequena, e a tela de Clientes fica com uma linha. */
+        Store.salvar(EID, "clientes", {
+          id: "dg-cli2", nome: "Prefeitura Municipal Modelo", tipo: "PJ", doc: "00.000.000/0002-00",
+          telefone: "(34) 0000-0000", email: "licitacao@prefeituramodelo.com.br", cidade: "Cidade Modelo", uf: "MG",
+          status: "ativo", origem: "licitacao"
+        });
 
         Store.salvar(EID, "obras", {
           id: "dg-obra1", nome: nomeObra, clienteId: "dg-cli1",
@@ -48,6 +55,34 @@
           id: "dg-obra2", nome: "Reforma Loja Center Sul", clienteId: "dg-cli1",
           tipo: "reforma", fase: "acabamento", status: "andamento",
           local: "Uberlândia / MG", valor: 240000, inicio: "2026-05-11", termino: "2026-08-30"
+        });
+
+        /* ⚠ AS TRÊS ABAIXO EXISTEM PARA A CARTEIRA TER CARA DE CARTEIRA.
+           Com duas obras só, a tela de Obras da vitrine ficava com 60% de área
+           em branco — e é uma das telas que a loja publica em foto. Os status
+           são de propósito: o alerta de prazo do Painel filtra por
+           `status === "andamento"`, então concluída e planejamento entram na
+           lista sem criar alarme falso no Painel. */
+        Store.salvar(EID, "obras", {
+          id: "dg-obra3", nome: "Galpão Logístico BR-050", clienteId: "dg-cli2",
+          tipo: "industrial", fase: "entregue", status: "concluida",
+          local: "Cidade Modelo / MG", endereco: "Rod. BR-000, km 12 — Distrito Industrial",
+          valor: 3200000, inicio: "2025-04-07", termino: "2026-02-27",
+          responsavel: "Eng. João da Silva"
+        });
+        Store.salvar(EID, "obras", {
+          id: "dg-obra4", nome: "Escola Municipal Jardim Europa", clienteId: "dg-cli2",
+          tipo: "institucional", fase: "entregue", status: "concluida",
+          local: "Cidade Modelo / MG", endereco: "Av. das Palmeiras, 1.240",
+          valor: 1420000, inicio: "2025-08-18", termino: "2026-05-29",
+          responsavel: "Eng. Carla Rodrigues"
+        });
+        Store.salvar(EID, "obras", {
+          id: "dg-obra5", nome: "Condomínio Vista Serra — 24 unidades", clienteId: "dg-cli1",
+          tipo: "residencial", fase: "projeto", status: "planejamento",
+          local: "Uberlândia / MG", endereco: "Rua Bernardo Guimarães, 980 — B. Tabajaras",
+          valor: 5600000, inicio: "2026-11-03", termino: "2028-04-14",
+          responsavel: "Eng. João da Silva"
         });
 
         Store.salvar(EID, "contratos", {

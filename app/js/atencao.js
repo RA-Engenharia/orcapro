@@ -1,12 +1,16 @@
 /* =====================================================================
  * atencao.js — O QUE PRECISA DE VOCÊ HOJE
  *
- * Quatro coisas que o sistema JÁ SABE e que não apareciam em lugar nenhum:
+ * O que o sistema JÁ SABE e não aparecia em lugar nenhum:
  *
  *   1) obra que passou do término contratual — e a multa que isso expõe;
  *   2) EPI vencido ou vencendo;
  *   3) estoque abaixo do mínimo que o próprio usuário definiu;
- *   4) diário aprovado que nunca foi publicado para o cliente.
+ *   4) diário aprovado que nunca foi publicado para o cliente;
+ *   5) licença prestes a vencer, que hoje só avisa depois de vencida;
+ *   6) o tour 360 que registra o dia e não cobra o que ficou aberto —
+ *      pendência arrastando de uma visita para a outra, prazo vencido,
+ *      foto que nunca subiu e visita fotografada que ninguém publicou.
  *
  * ⚠ CADA ACHADO CARREGA O MÓDULO QUE ELE EXIGE.
  * Isto não é enfeite: o painel já vazava margem por obra para quem só tinha
@@ -59,9 +63,17 @@
     return Math.round((db - da) / 86400000);
   }
 
-  /* `d`: { obras, contratos, medicoes, estoque, epi, rdo, licenca, hoje }
+  /* `d`: { obras, contratos, medicoes, estoque, epi, rdo, licenca, tours,
+            toursPeso, hoje }
+     `d.tours`: as visitas do Tour Virtual 360, já recortadas pelo escopo de
+        obra de quem está olhando. Só é lido quando o motor `Tour360` existe.
      `opc.diasEpi`: antecedência do aviso de EPI (padrão 60, igual à tela de EPI)
-     `opc.diasLicenca`: antecedência do aviso de licença (padrão 15) */
+     `opc.diasLicenca`: antecedência do aviso de licença (padrão 15)
+     `opc.diasTourRascunho`: dias que uma visita 360 fotografada pode ficar em
+        rascunho antes de virar cobrança (padrão 7)
+     `opc.tour360`: o motor do tour injetado. Existe para o teste medir esta
+        regra sem depender de global; a tela não passa nada e cai no `Tour360`
+        que o navegador já carregou. */
   function achar(d, opc) {
     d = d || {}; var o = opc || {};
     var hoje = texto(d.hoje);
@@ -236,6 +248,256 @@
             : "Renovar antes não custa dias: o período novo soma ao que ainda resta.",
           /* o botão desta linha abre a tela de licença, não um módulo */
           acaoBotao: "licenca"
+        });
+      }
+    }
+
+    /* ---- 6) O TOUR VIRTUAL 360: O QUE ANDA, E O QUE NÃO ANDOU ----
+     *
+     * ⚠ O MÓDULO REGISTRAVA O DIA E NÃO COBRAVA O QUE ANDA. A fissura
+     *   marcada em agosto reaparece em setembro DENTRO do tour — o motor já
+     *   faz isso, por carimbo (`origemHid`) e não por texto parecido. Só que
+     *   em lugar nenhum do app ela chamava alguém: quem não abre a aba não
+     *   descobre que existe pendência arrastando há quatro visitas, nem que a
+     *   foto que o cliente deveria estar vendo nunca saiu do celular. O
+     *   Painel é onde a gestão olha todo dia — é aqui que a cobrança nasce.
+     *
+     * ⚠ NENHUMA CONTA NOVA MORA AQUI. Quem calcula é `js/tour360.js`, o
+     *   MESMO arquivo que roda no Portal do cliente. Reescrever a regra neste
+     *   arquivo seria a réplica que apodrece calada — o defeito do
+     *   `Util.parseNum` copiado em 33 módulos, com dois erros em direções
+     *   opostas, os dois movendo dinheiro. Aqui só se lê o que o motor diz.
+     *
+     * O motor pode não existir: usuário sem o módulo, ou este arquivo rodando
+     * puro em Node no gate. Sem ele nenhum achado de tour nasce, e o painel de
+     * quem não tem o módulo continua exatamente igual ao que era. */
+    var T360 = o.tour360 || (typeof Tour360 !== "undefined" ? Tour360 : null);
+    var tours = d.tours || [];
+    if (T360 && tours.length) {
+      /* ⚠ O RESUMO É POR OBRA, NUNCA DA LISTA INTEIRA.
+         `resumoPendencias` toma a visita MAIS RECENTE da lista que recebe e só
+         ela conta como "hoje" — de propósito, senão a mesma fissura seria
+         contada uma vez em cada visita antiga e o painel viraria eco. Só que,
+         passando os tours de TODAS as obras de uma vez, essa "visita mais
+         recente" é a de UMA obra só: as pendências de todas as outras somem do
+         painel em silêncio — e somem justamente na empresa com várias obras,
+         que é a que mais precisa delas. Por isso agrupo antes de perguntar. */
+      var porObraT = {}, ordemT = [], ti, ki, oidT;
+      for (ti = 0; ti < tours.length; ti++) {
+        oidT = texto(tours[ti] && tours[ti].obraId);
+        if (!porObraT[oidT]) { porObraT[oidT] = []; ordemT.push(oidT); }
+        porObraT[oidT].push(tours[ti]);
+      }
+
+      var arrast = [], vencT = [], deixT = [];
+      for (ti = 0; ti < ordemT.length; ti++) {
+        var resT = null;
+        try { resT = T360.resumoPendencias(porObraT[ordemT[ti]], hoje); } catch (e1T) { resT = null; }
+        var itensT = (resT && resT.itens) || [];
+        for (ki = 0; ki < itensT.length; ki++) {
+          var itT = itensT[ki];
+          var rotT = (nome[ordemT[ti]] ? nome[ordemT[ti]] + " · " : "")
+            + (texto(itT.estacao) || "estação") + " · " + (texto(itT.texto) || "sem descrição");
+          /* ⚠ `datas > 1`, NÃO `visitas > 1`: o motor conta as aparições em
+             `visitas` e os DIAS distintos em `datas`. Duas visitas no mesmo
+             dia — manhã e tarde — são duas aparições e nenhum dia virado, e
+             cobrar isso como "se arrasta" gasta a atenção de quem confia no
+             painel. Atravessar é o mês virar com a fissura ainda lá. */
+          if (num(itT.datas) > 1) {
+            arrast.push({ obraId: ordemT[ti], rot: rotT, visitas: num(itT.visitas),
+              desde: texto(itT.desde), tourId: texto(resT && resT.tourId) });
+          }
+          if (itT.vencida) {
+            vencT.push({ obraId: ordemT[ti], rot: rotT, prazo: texto(itT.prazo),
+              resp: texto(itT.responsavel), tourId: texto(resT && resT.tourId) });
+          }
+        }
+        var dxT = (resT && resT.deixadas) || [];
+        for (ki = 0; ki < dxT.length; ki++) {
+          deixT.push({
+            obraId: ordemT[ti],
+            rot: (nome[ordemT[ti]] ? nome[ordemT[ti]] + " · " : "")
+              + (texto(dxT[ki].estacao) || "estação") + " · " + (texto(dxT[ki].texto) || "sem descrição"),
+            ultimaData: texto(dxT[ki].ultimaData),
+            tourId: texto(dxT[ki].ultimaTourId)
+          });
+        }
+      }
+
+      /* ⚠ A PENDÊNCIA QUE FICOU PARA TRÁS. `resumoPendencias` só cobra a visita
+         MAIS RECENTE — e está certo, senão a mesma fissura seria contada cinco
+         vezes. O buraco era o outro lado: quando a visita nova nasce por
+         "+ Nova visita" (sem herdar), ou a estação é apagada, ou o apontamento
+         herdado é excluído, a pendência desaparece da cobrança SEM NINGUÉM
+         DIZER NADA — e o Painel passa a dizer "nenhuma pendência" com a
+         fissura ainda na parede. Lista que esvazia sozinha dá sossego, que é
+         o pior serviço que este painel pode prestar. */
+      if (deixT.length) {
+        deixT.sort(function (a, b) { return texto(a.ultimaData).localeCompare(texto(b.ultimaData)); });
+        achados.push({
+          tipo: "tour-pendencia-deixada", gravidade: 3, modulo: "tour360",
+          titulo: deixT.length + " pendência(s) do tour 360 ficaram para trás",
+          detalhe: deixT.slice(0, 3).map(function (x) {
+            return x.rot + " (última vez em " + texto(x.ultimaData) + ")";
+          }).join(" · ") + (deixT.length > 3 ? " · +" + (deixT.length - 3) : ""),
+          porque: "Elas continuavam abertas na última visita em que apareceram, e a visita seguinte não as trouxe — ou nasceu do zero, ou a estação foi apagada, ou o apontamento foi excluído. Sem este aviso, sumiriam da cobrança sem ninguém decidir nada.",
+          /* ⚠ O DESTINO É A VISITA ANTIGA, e não a lista do módulo: é nela que
+             a pendência ainda existe e pode ser marcada como resolvida. Sem
+             `acaoGestao` o botão cai no `data-view` e larga a pessoa
+             procurando de novo qual era — exatamente o que o comentário do
+             botão em js/gestao.js manda não fazer. */
+          valor: 0, view: "tour360",
+          acaoGestao: "abrir-tour360", acaoId: (deixT[0] && deixT[0].tourId) || "",
+          acao: "Abra a visita antiga, confira se o problema foi resolvido e marque; se não foi, crie a visita nova pelo botão Repetir visita, para ela vir junto."
+        });
+      }
+
+      if (arrast.length) {
+        arrast.sort(function (a, b) { return b.visitas - a.visitas; });
+        achados.push({
+          tipo: "tour-pendencia-arrastando", gravidade: 3, modulo: "tour360",
+          titulo: arrast.length + " pendência(s) do tour 360 aberta(s) há mais de uma visita",
+          detalhe: arrast.slice(0, 3).map(function (x) {
+            return x.rot + " (" + x.visitas + " visitas" + (x.desde ? ", desde " + x.desde : "") + ")";
+          }).join(" · ") + (arrast.length > 3 ? " · +" + (arrast.length - 3) : ""),
+          porque: "Foi marcada numa visita, reapareceu na seguinte e continua aberta. É defeito que o cliente vai achar na entrega — com a data em que você mesmo viu primeiro.",
+          valor: 0, obraId: arrast[0].obraId, view: "tour360",
+          acaoGestao: "abrir-tour360", acaoId: arrast[0].tourId,
+          acao: "Abra a visita, dê o veredito de cada uma (resolvida ou persiste) e ponha responsável e prazo."
+        });
+      }
+
+      if (vencT.length) {
+        achados.push({
+          tipo: "tour-prazo-vencido", gravidade: 3, modulo: "tour360",
+          titulo: vencT.length + " pendência(s) do tour 360 com prazo vencido",
+          detalhe: vencT.slice(0, 3).map(function (x) {
+            return x.rot + (x.prazo ? " (venceu em " + x.prazo + ")" : "") + (x.resp ? " · " + x.resp : "");
+          }).join(" · ") + (vencT.length > 3 ? " · +" + (vencT.length - 3) : ""),
+          porque: "O prazo foi combinado com alguém e passou. Prazo que vence sem ninguém dizer nada ensina que prazo, aqui, não vale.",
+          valor: 0, obraId: vencT[0].obraId, view: "tour360",
+          acaoGestao: "abrir-tour360", acaoId: vencT[0].tourId,
+          acao: "Cobre quem ficou responsável, ou repactue o prazo dentro da própria pendência."
+        });
+      }
+
+      /* ---- foto de visita PUBLICADA que nunca subiu ----
+         ⚠ SÓ A VISITA PUBLICADA ENTRA. Em rascunho, foto na fila é o estado
+         normal de quem acabou de fotografar; cobrar isso seria alarme que
+         nasce em toda visita e que, de tanto aparecer, ninguém lê. Publicada,
+         a estação simplesmente NÃO EXISTE no Portal (`paraPortal` descarta a
+         foto sem endereço no servidor) e o cliente gira o tour, encontra
+         buraco e conclui que ninguém fotografou aquele canto. */
+      var fotoP = [], fotoN = 0, fotoNoAr = false;
+      for (ti = 0; ti < tours.length; ti++) {
+        var tv = tours[ti];
+        if (texto(tv && tv.estado) !== "publicado") continue;
+        var np = 0;
+        try { np = num(T360.fotosPendentes(tv)); } catch (e2T) { np = 0; }
+        if (np <= 0) continue;
+        fotoN += np;
+        if (comPortal[texto(tv.obraId)]) fotoNoAr = true;
+        fotoP.push({ obraId: texto(tv.obraId), tourId: texto(tv.id), n: np,
+          rot: texto(tv.titulo) || texto(tv.data) || "visita" });
+      }
+      if (fotoP.length) {
+        achados.push({
+          tipo: "tour-foto-nao-subiu", gravidade: fotoNoAr ? 3 : 2, modulo: "tour360",
+          titulo: fotoN + " foto(s) de visita 360 publicada que nunca subiram",
+          detalhe: fotoP.slice(0, 3).map(function (x) {
+            return (nome[x.obraId] ? nome[x.obraId] + " · " : "") + x.rot + " (" + x.n + ")";
+          }).join(" · ") + (fotoP.length > 3 ? " · +" + (fotoP.length - 3) : ""),
+          porque: fotoNoAr
+            ? "A visita está no ar e essas estações não existem para quem abre o Portal: o cliente gira a foto, encontra o buraco e conclui que ninguém fotografou."
+            : "A visita foi dada por publicada e essas fotos só existem no aparelho que as tirou. Nenhum outro computador as vê, e um celular perdido leva o registro junto.",
+          valor: 0, obraId: fotoP[0].obraId, view: "tour360",
+          acaoGestao: "abrir-tour360", acaoId: fotoP[0].tourId,
+          acao: "Abra o app com internet e deixe a fila de fotos terminar — quando a última subir, a visita se republica sozinha."
+        });
+      }
+
+      /* ---- visita fotografada e nunca publicada ----
+         O gêmeo do "diário aprovado e não publicado": alguém foi à obra, subiu
+         no andaime e fotografou. Parado em rascunho, esse trabalho não vira
+         nada — nem para o cliente, nem como comparativo da próxima visita.
+         ⚠ SEM FOTO NÃO ENTRA. Uma visita recém-criada por "Repetir visita",
+         com as estações copiadas e nenhuma foto, é exatamente o passo normal
+         de quem vai fotografar amanhã. */
+      var diasRasc = typeof o.diasTourRascunho === "number" ? o.diasTourRascunho : 7;
+      var parados = [];
+      if (hoje) for (ti = 0; ti < tours.length; ti++) {
+        var tr = tours[ti];
+        if (!tr || texto(tr.estado) === "publicado") continue;
+        var resR = null;
+        try { resR = T360.resumo(tr); } catch (e3T) { resR = null; }
+        if (!resR || !resR.comFoto) continue;
+        var idade = dias(texto(tr.data), hoje);
+        if (idade == null || idade <= diasRasc) continue;
+        parados.push({ obraId: texto(tr.obraId), tourId: texto(tr.id), dias: idade,
+          fotos: resR.comFoto, rot: texto(tr.titulo) || texto(tr.data) || "visita" });
+      }
+      if (parados.length) {
+        parados.sort(function (a, b) { return b.dias - a.dias; });
+        achados.push({
+          tipo: "tour-rascunho-parado", gravidade: 2, modulo: "tour360",
+          titulo: parados.length + " visita(s) 360 fotografada(s) e nunca publicada(s)",
+          detalhe: parados.slice(0, 3).map(function (x) {
+            return (nome[x.obraId] ? nome[x.obraId] + " · " : "") + x.rot
+              + " (" + x.fotos + " foto(s), há " + x.dias + " dias)";
+          }).join(" · ") + (parados.length > 3 ? " · +" + (parados.length - 3) : ""),
+          porque: "Alguém foi à obra e fotografou. Enquanto fica em rascunho, o trabalho não chega ao cliente e não serve de comparativo para a visita seguinte.",
+          valor: 0, obraId: parados[0].obraId, view: "tour360",
+          acaoGestao: "abrir-tour360", acaoId: parados[0].tourId,
+          acao: "Confira as estações e publique — ou registre por que essa visita ficou de fora."
+        });
+      }
+
+    }
+
+    /* ---- O TETO DA NUVEM, FORA DO `if (tours.length)` ----
+       ⚠ ESTE ALARME NÃO PERTENCE À LISTA DA TELA, e ficar dentro daquele `if`
+       era a metade do defeito que faltava fechar: com o Painel filtrado numa
+       obra que ainda não tem visita, `tours` chega vazio, o bloco inteiro não
+       roda, e o alarme sumia — justamente quando o gestor filtra para
+       investigar. O teto de 1 MB é da ENTIDADE da empresa, que vai num único
+       documento do Firestore, e não tem nada a ver com a obra em foco.
+       Achado pelo próprio teste novo (tools/test-atencao-tour.js), não por
+       leitura: o conserto anterior trocou o cano e esqueceu a porta. */
+    if (T360) {
+      /* ---- o teto da nuvem ----
+         ⚠ O TEXTO VEM PRONTO DO MOTOR, e é para vir mesmo: ele nomeia a visita
+         mais gorda, que é o que transforma susto em ação. "Você está perto do
+         limite" não tem saída; "a visita de 12/03 responde por 380 KB" tem. */
+      /* ⚠ O PESO NÃO SAI DE `d.tours`, E ISSO NÃO É DESCUIDO.
+         `d.tours` chega recortado — pelo escopo do sub-usuário e pelo filtro de
+         obra do Painel — e está certo assim para COBRAR pendência. O teto de
+         1 MB é outra pergunta: ele é da entidade inteira da empresa, que vai
+         num único documento. Com a lista recortada, o alarme sumia justamente
+         quando o gestor filtrava por obra para investigar, e o texto seguia
+         dizendo "desta empresa" com um número que não era o dela. Quem monta a
+         tela entrega a lista crua em `d.toursPeso` (js/gestao.js), e diz em
+         `parcial` quando nem ela é a empresa toda. */
+      var fonteP = d.toursPeso;
+      var listaP = (fonteP && fonteP.lista) || (fonteP && fonteP.length ? fonteP : null);
+      var parcialP = !!(fonteP && fonteP.parcial);
+      /* ⚠ SEM `toursPeso`, VOLTA PARA `tours` — MAS DECLARANDO QUE É PARTE.
+         Calar o alarme porque quem chamou esqueceu de um campo trocaria um
+         número impreciso por silêncio, e o silêncio aqui é a sincronização
+         parando sem aviso. Contar como se fosse a empresa toda seria mentir. */
+      if (!listaP) { listaP = tours; parcialP = true; }
+      var pesoT = null;
+      if (listaP && listaP.length) { try { pesoT = T360.peso(listaP); } catch (e4T) { pesoT = null; } }
+      if (pesoT && pesoT.estado !== "ok") {
+        achados.push({
+          tipo: "tour-nuvem-cheia", gravidade: pesoT.estado === "perigo" ? 3 : 2, modulo: "tour360",
+          titulo: pesoT.estado === "perigo"
+            ? "A sincronização dos tours 360 está perto de parar"
+            : "Os tours 360 já ocupam " + num(pesoT.kb) + " KB na nuvem",
+          detalhe: texto(pesoT.aviso)
+            + (parcialP ? " — e esta conta é só das obras que a sua conta enxerga; o limite é da empresa inteira, então o total real é maior." : ""),
+          porque: "A lista inteira vai num único documento de 1 MB. Passado o teto, a sincronização daquela empresa para — em silêncio, com o app continuando a dizer que está sincronizado.",
+          valor: 0, view: "tour360",
+          acao: "Apague as visitas antigas que já viraram relatório fotográfico, ou os comentários que já foram resolvidos."
         });
       }
     }

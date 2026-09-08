@@ -1051,7 +1051,15 @@
           _grp(_bEscopo) + _sep +
           _grp('<button class="btn sm" data-acao="config-orc">' + Icones.get("dados") + 'Dados</button>' +
                '<button class="btn sm" data-acao="parametros-orc" title="Arredondamento, encargos, incidência do BDI, categoria e licitação">' + Icones.get("parametros") + 'Parâmetros</button>') + _sep +
-          _grp('<button class="btn sm" data-acao="exportar-excel">' + Icones.get("excel") + 'Excel (3 abas)</button>' +
+          _grp(/* ⚠ O NÚMERO AQUI É MEDIDO, NÃO ESCRITO DE MEMÓRIA. Dizia "3 abas" desde a
+                  v1.1.x, quando o workbook tinha três planilhas. Em 08/09/2026 instrumentei
+                  ExcelJS.Workbook.prototype.addWorksheet no navegador com o orçamento de
+                  exemplo: saem 13 (Resumo, Sintética, Analítica, Parâmetros, Insumos, Curva
+                  ABC, Cronograma, Gantt, Feriados, Gráficos, Dados IA, Leia-me, _meta). O
+                  botão entra em toda captura de tela que vai para a loja, e a loja vende
+                  "Excel VIVO de 13 abas": o rótulo velho desmentia a venda na mesma tela.
+                  tools/test-loja-home.js amarra os três — rótulo, promessa e exportador. */
+               '<button class="btn sm" data-acao="exportar-excel" title="Workbook vivo com fórmulas: Resumo, Sintética, Analítica, Insumos, Curva ABC, Cronograma, Gantt e mais">' + Icones.get("excel") + 'Excel (13 abas)</button>' +
                '<button class="btn sm" data-acao="reimportar-excel" title="Traz de volta as edições de Qtd/Custo feitas no Excel exportado">' + Icones.get("reimportar") + 'Reimportar</button>') + _sep +
           _grp('<button class="btn sm" data-acao="cenarios">' + Icones.get("cenarios") + 'Comparar cenários</button>' +
                '<button class="btn sm" data-acao="relatorio">' + Icones.get("relatorio") + 'Relatório completo</button>') +

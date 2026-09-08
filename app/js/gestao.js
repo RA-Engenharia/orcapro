@@ -317,17 +317,38 @@
    *   versão foi digitada de memória: 16 ids que não existem e 24 campos reais
    *   de fora. `tools/test-v12-celular.js` cobra a igualdade das duas listas,
    *   então campo numérico novo entra aqui ou o gate fica vermelho.
+   *
+   * ⚠ E A CHAVE AQUI É O `id` DO CAMPO, QUE NÃO É ÚNICO NO ARQUIVO. Os
+   *   formulários são modais, um de cada vez, então vários reaproveitam o
+   *   mesmo id — e reaproveitavam com SENTIDOS OPOSTOS. `g-desc` era o
+   *   "Descontos (R$)" da Folha (lido por `nv()`, logo numérico por
+   *   definição) e AO MESMO TEMPO o campo "Descrição" do Financeiro, das
+   *   Compras e do Patrimônio, que é texto livre. Como a lista foi levantada
+   *   dos `nv()`, o id entrou nela com razão — e o teclado numérico vazou
+   *   para os três campos de texto: no tablet, quem ia escrever "Cimento CP-II
+   *   — NF 4471" recebia o teclado de números e tinha de trocar na mão a cada
+   *   lançamento. No computador não aparece, porque `inputmode` só existe para
+   *   teclado virtual — foi por isso que passou despercebido.
+   *   REGRA: id que entra nesta lista é de UM campo só, e numérico em todos os
+   *   formulários onde aparece. Precisou do mesmo id para um campo de texto?
+   *   Dê um id próprio ao numérico (foi o que `g-descontos` e `g-prazodias`
+   *   fizeram). `tools/test-v12-celular.js` [4] cobra isso.
    * =================================================================== */
   var TECLADO_NUM = {
     "ep-vida": "numeric", "ep-vlr": "decimal", "fr-valor": "decimal", "g-areac": "decimal",
     "g-areat": "decimal", "g-base": "decimal", "g-ckm": "decimal", "g-custo": "decimal",
-    "g-cvalor": "decimal", "g-dep": "decimal", "g-desc": "decimal", "g-dias": "numeric",
+    "g-cvalor": "decimal", "g-dep": "decimal", "g-descontos": "decimal", "g-dias": "numeric",
     "g-efd": "numeric", "g-efi": "numeric", "g-enc": "decimal", "g-faltas": "numeric",
     "g-gserv": "decimal", "g-he": "decimal", "g-km": "decimal", "g-min": "decimal",
     "g-multa": "decimal", "g-orcado": "decimal", "g-pa-dias": "numeric",
     /* termo aditivo: o valor aceita virgula E sinal negativo (supressao e o
-       mesmo instrumento); o prazo e contagem de dias, so digito */
-    "g-prazo": "numeric",
+       mesmo instrumento); o prazo e contagem de dias, so digito.
+       ⚠ `g-prazodias` e nao `g-prazo`: o formulario de Tarefas ja usa
+       `g-prazo` para uma DATA de conclusao. Hoje aquele campo nasce
+       `type="date"`, que o `inp()` isenta do inputmode, entao nao havia
+       defeito visivel — mas era o mesmo id com dois sentidos, esperando que
+       alguem tirasse o `type`. */
+    "g-prazodias": "numeric",
     "g-pct": "decimal", "g-pvalor": "decimal", "g-rem": "decimal", "g-ret": "decimal",
     "g-saldo": "decimal", "g-valor": "decimal", "g-vaq": "decimal", "g-vimp": "decimal",
     "g-vprod": "decimal", "g-vtot": "decimal", "nv-qp": "decimal"
@@ -1444,6 +1465,44 @@
       } catch (e) { return null; }
     },
 
+    /* As visitas 360 que o painel de atenção precisa analisar.
+     * ⚠ SÓ SÃO LIDAS DE QUEM TEM O MÓDULO. `lista("tour360")` desserializa
+     *   todas as visitas da empresa, e o achado seria descartado logo em
+     *   seguida pelo `pode("tour360")` do próprio painel — pagar a leitura
+     *   para jogar fora é o tipo de coisa que deixa o Painel lento sem
+     *   ninguém saber por quê.
+     * ⚠ E o motor precisa estar carregado: sem `Tour360`, o js/atencao.js
+     *   não gera achado nenhum de tour (ele não recalcula nada por conta
+     *   própria — a conta é a mesma que roda no Portal do cliente), então
+     *   passar a lista seria peso à toa. */
+    _dashTours: function (naObra) {
+      if (typeof Tour360 === "undefined" || typeof Tour360.resumoPendencias !== "function") return [];
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("tour360")) return [];
+      try { return lista("tour360").filter(naObra); } catch (e) { return []; }
+    },
+
+    /* ⚠ O PESO DA NUVEM NÃO PODE PASSAR PELO CANO RECORTADO.
+     * `_dashTours` entrega a lista duas vezes filtrada — pelo escopo de obra
+     * do sub-usuário e pelo filtro de obra do próprio Painel. Isso está certo
+     * para COBRAR pendência (a pessoa cuida do que ela vê), e errado para o
+     * teto de 1 MB: o limite é da ENTIDADE INTEIRA da empresa, que vai num
+     * único documento. Com a lista recortada, o alarme sumia justamente
+     * quando o gestor filtrava por obra para investigar — e o texto continuava
+     * dizendo "os tours desta empresa", com um número que não era o da empresa.
+     * `listaTodas` só entra para quem enxerga a empresa toda: para o
+     * sub-usuário restrito, a leitura crua traria o nome da visita mais gorda
+     * de uma obra que ele não pode ver, e o próprio motor põe esse nome no
+     * aviso. Ele recebe a conta da parte dele, com `parcial` para a tela
+     * poder dizer que é parte. */
+    _dashToursPeso: function () {
+      if (typeof Tour360 === "undefined" || typeof Tour360.peso !== "function") return null;
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("tour360")) return null;
+      try {
+        var restrito = (typeof Auth !== "undefined" && Auth.obrasPermitidas && Auth.obrasPermitidas() !== null);
+        return { lista: restrito ? lista("tour360") : listaTodas("tour360"), parcial: !!restrito };
+      } catch (e) { return null; }
+    },
+
     /* Os vínculos de compra que apontam para nota que não responde mais — ver
        o bloco em js/compranota.js. Devolve `null` quando o motor não está ali
        ou quando qualquer coisa estoura: o card inteiro não pode morrer por
@@ -1476,6 +1535,8 @@
         r = Atencao.achar({
           obras: esc.obras, contratos: esc.contratos, estoque: esc.estoque, rdo: esc.rdo,
           epi: lista("epi").filter(naObra),
+          tours: this._dashTours(naObra),
+          toursPeso: this._dashToursPeso(),
           /* ⚠ SÓ PARA QUEM PODE RESOLVER. A licença é da empresa e quem renova
              é o dono; sub-usuário vendo "sua licença vence" é ruído que ele não
              tem como tratar, e é conversa comercial que não é dele. Sem o
@@ -1518,14 +1579,22 @@
           + '<div style="font-size:12px;margin-top:3px">' + Util.esc(i.porque) + '</div>'
           + '<div class="muted" style="font-size:11.5px;margin-top:2px">&rarr; ' + Util.esc(i.acao) + '</div>'
           + '</div>'
-          /* ⚠ TERCEIRA SAÍDA: achado que RESOLVE, e não só navega. `data-view`
-             levaria a pessoa ao Financeiro para procurar uma despesa que não
-             está lá — mandar por uma porta que não existe já aconteceu quatro
-             vezes nesta base. `data-gacao` cai no dispatcher do Gestao
-             (js/app.js já o tem no seletor delegado), que aplica o
-             `_bloqueado()` e o RBAC em função. */
+          /* ⚠ TRÊS SAÍDAS, E A ORDEM É A DA UTILIDADE.
+             · `gacao` RESOLVE ali mesmo, e não só navega: `data-view` levaria
+               a pessoa ao Financeiro para procurar uma despesa que não está
+               lá — mandar por uma porta que não existe já aconteceu quatro
+               vezes nesta base.
+             · `acaoGestao` leva à VISITA exata do achado; caindo no
+               `data-view`, o tour 360 largaria a pessoa na lista do módulo
+               para procurar de novo qual era a pendência.
+             · `acaoBotao` e `view` continuam sendo o caminho de sempre.
+             Os dois primeiros caem no dispatcher do Gestao (js/app.js já o tem
+             no seletor delegado), que aplica o `_bloqueado()` e o RBAC em
+             função — esconder o botão nunca foi guarda. */
           + (i.gacao
             ? '<button class="btn sm primary" data-gacao="' + Util.esc(i.gacao) + '">Resolver</button>'
+            : i.acaoGestao
+            ? '<button class="btn sm" data-gacao="' + Util.esc(i.acaoGestao) + '" data-id="' + Util.esc(i.acaoId || "") + '">Ver</button>'
             : i.acaoBotao
             ? '<button class="btn sm" data-acao="' + Util.esc(i.acaoBotao) + '">Ver</button>'
             : '<button class="btn sm" data-view="' + Util.esc(i.view) + '">Ver</button>')
@@ -4273,7 +4342,7 @@
             '<option value="supressao"' + (Util.num(a.valor) < 0 ? " selected" : "") + ">Supressão (−)</option>")) +
           campo("Valor (R$)", inp("g-valor", Math.abs(Util.num(a.valor)) || "")) + "</div>" +
         '<div class="row">' +
-          campo("Acréscimo de prazo (dias)", inp("g-prazo", a.prazoDias)) + "<div></div></div>" +
+          campo("Acréscimo de prazo (dias)", inp("g-prazodias", a.prazoDias)) + "<div></div></div>" +
         campo("Motivo / justificativa *", '<textarea id="g-motivo" rows="3" placeholder="O que mudou no escopo, e por quê. É este texto que responde à fiscalização.">' + Util.esc(a.motivo || "") + "</textarea>") +
         campo("Fundamento (cláusula, ofício, ART)", inp("g-fund", a.fundamento));
 
@@ -4285,7 +4354,7 @@
            continua sendo um número negativo — supressão e acréscimo são o
            mesmo instrumento, e é assim que `Aditivo.vigente` os soma. */
         obj.valor = Math.abs(nv("g-valor")) * (v("g-adtipo") === "supressao" ? -1 : 1);
-        obj.prazoDias = nv("g-prazo");
+        obj.prazoDias = nv("g-prazodias");
         obj.motivo = v("g-motivo"); obj.fundamento = v("g-fund");
         /* ⚠ MOTIVO É OBRIGATÓRIO, e não é burocracia: o aditivo existe para
            responder "com base em quê". Um termo aditivo sem justificativa é
@@ -17094,6 +17163,16 @@
            reescreve, e sub-usuário não mexe no diário de outra pessoa. */
         if (typeof RDO !== "undefined" && RDO.podeAcao("editar", eu, r, ctxAp))
           acao += '<button class="btn sm" data-gopen="rdo:' + r.id + '" title="Abrir o diário para editar">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + '</button> ';
+        /* ⚠ O DIÁRIO E A VISITA SE ENXERGAM NOS DOIS SENTIDOS. Gravar o
+           carimbo e não oferecer o caminho de volta é ligação que só a base
+           conhece: a pessoa escolhe a visita no formulário e depois não acha
+           por onde abri-la. O botão só existe quando existe carimbo — e o
+           `docTipo` é conferido, para um id de outra porta não abrir uma
+           visita que não é aquela. */
+        if (r.tour360 && r.tour360.docId && r.tour360.docTipo === "tour360"
+            && typeof Tour360 !== "undefined"
+            && !(typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("tour360")))
+          acao += '<button class="btn sm" data-gacao="abrir-tour360" data-id="' + Util.esc(r.tour360.docId) + '" title="Abrir a visita 360 ligada a este diário">Visita 360</button> ';
         acao += '<button class="btn sm" data-gacao="imprimir-rdo" data-id="' + r.id + '" title="Diário impresso profissional (com fotos e assinaturas)">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button>';
         html += '<tr><td style="cursor:pointer" data-gopen="rdo:' + r.id + '" title="Abrir este diário"><b>' + Util.esc(r.numero || "—") + "</b></td><td>" + Util.esc(r.data ? r.data.split("-").reverse().join("/") : "—") + "</td><td>" + Util.esc(ob ? ob.nome : "—") + "</td><td>" + Util.esc(clima) + '</td><td class="num">' + ef + "</td><td>" + Util.esc(resumo || "—") + nf + "</td><td>" + selo + '</td><td class="num">' + acao + "</td></tr>";
       });
@@ -17403,6 +17482,65 @@
         return h;
       }
 
+      /* ⚠ A VISITA 360 LIGADA A ESTE DIÁRIO — pelo CARIMBO, nunca pela data.
+       * Este documento vai para a fiscalização e para o cliente, então daqui
+       * sai o que IDENTIFICA a visita e o que se pode CONTAR: quantas
+       * estações, quantas com foto, quantos pontos de atenção continuam
+       * abertos. O TEXTO dos apontamentos NÃO sai: dentro do tour cada
+       * comentário tem um `paraCliente` que é decidido um a um, e imprimir
+       * tudo aqui furaria essa decisão por uma porta lateral — o recado
+       * interno da equipe chegaria ao contratante sem ninguém escolher.
+       * ⚠ E se a visita não estiver mais na base, o papel DIZ isso. Sumir em
+       * silêncio deixaria quem assina achando que o vínculo nunca existiu. */
+      function blocoTour360() {
+        var lig = r.tour360;
+        if (!lig || !lig.docId || String(lig.docTipo || "") !== "tour360") return "";
+        var tv = null;
+        try { tv = Store.obter(eid(), "tour360", lig.docId); } catch (eTv) { tv = null; }
+        if (!tv) {
+          return bloco("VISITA 360 DESTE DIA",
+            "A visita 360 ligada a este diário não está mais nesta base — pode ter sido excluída, ou ainda não ter chegado por sincronização. O vínculo continua gravado no diário.",
+            "#b45309");
+        }
+        /* ⚠ VISITA DE OUTRA OBRA NÃO É DECLARADA COMO SENDO DESTA.
+           O formulário permite MANTER uma ligação que saiu da lista da obra
+           (a alternativa era o <select> apagar o valor sozinho, sem ninguém
+           decidir), então este caso existe de verdade. Aqui ele viraria
+           mentira: o papel afirmaria à fiscalização que a foto é deste
+           canteiro. Diz o que sabe, e diz o caminho. */
+        if (String(tv.obraId || "") !== String(r.obraId || "")) {
+          return bloco("VISITA 360 DESTE DIA",
+            "A visita 360 ligada a este diário (\"" + (tv.titulo || tv.data || "sem título")
+              + "\") está cadastrada em OUTRA obra, e por isso não é declarada aqui — dizer que ela é desta obra seria afirmar o que o próprio cadastro nega. Abra o diário e escolha uma visita desta obra, ou deixe o campo em branco.",
+            "#b91c1c");
+        }
+        var resT = null, pendT = [], noAr = false;
+        try { resT = Tour360.resumo(tv); } catch (eRt) { resT = null; }
+        try { pendT = Tour360.pendenciasDe(tv, { soAbertas: true }) || []; } catch (ePt) { pendT = []; }
+        /* ⚠ o 2º argumento não é enfeite: "publicado" só é verdade quando a
+           obra TEM Portal. Sem ele o papel afirmaria ao cliente que ele está
+           vendo uma visita que não existe para ele em lugar nenhum. */
+        try { noAr = Tour360.estadoDe(tv, !!ob.portalUser) === "publicado"; } catch (eEt) { noAr = false; }
+        var h = "<b>" + Util.esc(tv.titulo || "Visita 360") + "</b>"
+          + (tv.data ? " — " + Util.esc(String(tv.data).split("-").reverse().join("/")) : "")
+          + (resT ? '<div style="margin-top:4px">' + resT.comFoto + " de " + resT.pontos
+              + " estação(ões) com foto 360"
+              + (resT.medidas ? " · " + resT.medidas + " medida(s) registrada(s)" : "") + "</div>" : "");
+        if (pendT.length) {
+          h += '<div style="margin-top:5px;color:#b45309;font-weight:700">' + pendT.length
+            + " ponto(s) de atenção em aberto nesta visita"
+            + '<div style="font-weight:400;font-size:10px;color:#777">o detalhe de cada um fica no Tour Virtual 360, onde se decide, um a um, o que vai ao cliente</div></div>';
+        }
+        h += '<div style="margin-top:5px;font-size:10px;color:#777">'
+          + (noAr
+            ? "Publicada no Portal do Cliente — lá o cliente gira a foto, compara com a visita anterior e mede dentro dela."
+            : "Registrada no OrçaPRO, em Tour Virtual 360. Ainda não publicada para o cliente.")
+          + "</div>";
+        return '<div style="margin-top:10px;border:1px solid #ddd;border-radius:6px;overflow:hidden">'
+          + '<div style="background:#f1f5f9;padding:5px 10px;font-weight:800;font-size:11px;letter-spacing:.4px">VISITA 360 DESTE DIA</div>'
+          + '<div style="padding:8px 10px;font-size:11.5px">' + h + "</div></div>";
+      }
+
       /* ⚠ O PAPEL PRECISA DIZER EM QUE PÉ ESTÁ. Rascunho recusado saía idêntico
        * a diário aprovado — e é o mesmo PDF que o engenheiro manda ao cliente. */
       var est = (typeof RDO !== "undefined" && RDO.estadoDe) ? RDO.estadoDe(r, !!ob.portalUser) : (r.estado || "rascunho");
@@ -17440,6 +17578,7 @@
         + bloco(itens.length ? "RESUMO DO DIA" : "ATIVIDADES EXECUTADAS", r.atividades)
         + bloco("OCORRÊNCIAS / OBSERVAÇÕES" + (temOcorrencia ? " ⚠" : ""), r.ocorrencias, temOcorrencia ? "#f59e0b" : "#ddd")
         + blocoRegistros()
+        + blocoTour360()
         + (r.equipamentos ? bloco("EQUIPAMENTOS EM USO (texto livre)", r.equipamentos) : "");
 
       /* ⚠ REGISTRO FOTOGRÁFICO. A referência do formato novo (js/fotos.js:89)
@@ -17571,17 +17710,87 @@
     },
 
     /* Gêmeo de `_republicarSeNoAr` para a visita 360: a foto que termina de
-       subir depois da publicação só alcança o cliente se a obra for reenviada.
-       `_republicarPortal` já serializa por obra, então oito panoramas
-       terminando em sequência viram um envio e um reenvio com o estado final. */
+       subir depois da publicação só alcança o cliente se a obra for reenviada. */
     _republicarTourSeNoAr: function (tour) {
       try {
         if (!tour || typeof Tour360 === "undefined") return;
-        if (Tour360.estadoDe(tour) !== "publicado") return;   // não está no ar
+        if (!Tour360.estaPublicado(tour)) return;             // o gestor não mandou publicar
         var ob = Store.obter(eid(), "obras", tour.obraId);
         if (!ob || !ob.portalUser) return;                    // obra sem Portal
-        this._republicarPortal(ob, function () {});
+        /* ⚠ REENVIAR AO PORTAL É PUBLICAR — a mesma régua do gêmeo do diário,
+         * e a mesma que a tela do tour usa em `podeRepublicar()`. Este
+         * caminho é AUTOMÁTICO: dispara sozinho quando uma foto termina de
+         * subir. Sem a guarda, o gestor despublica uma visita errada, o
+         * cliente para de vê-la; no canteiro o celular do encarregado (papel
+         * "usuario", com a fila represada) recupera sinal, a foto sobe e o
+         * app REPUBLICA a obra — devolvendo ao cliente o que o gestor tinha
+         * acabado de tirar do ar. E o próprio app já tinha avisado o
+         * encarregado, na tela, que ele não publica: o aviso virava mentira.
+         * O carimbo remoto da foto já foi gravado antes daqui, então nada se
+         * perde: basta o gestor reenviar por Obras › Portal do cliente. */
+        var _eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+        if (!Tour360.podePublicarPapel(_eu)) return;
+        this._reenviarObraEspacado(ob, "tour");
       } catch (e) {}
+    },
+
+    /* ⚠ UM ESPAÇAMENTO SÓ, COMPARTILHADO PELO DIÁRIO E PELA VISITA 360.
+     * Os dois reenviam A OBRA INTEIRA — o mesmo retrato, para o mesmo lugar no
+     * servidor. Se cada um tivesse o seu timer com a mesma chave (`ob.id`), o
+     * `clearTimeout` de um cancelaria o do outro e a foto do outro nunca
+     * chegaria ao cliente; com chaves separadas, viram dois envios do mesmo
+     * conteúdo. Então é um timer por obra, e o recado diz o que ele levou.
+     *
+     * ⚠ DEBOUNCE NÃO SERVE AQUI, e eu afirmei o contrário no commit 413eaf5
+     * ("16 fotos terminando em sequência viram UM reenvio"). É falso:
+     * `clearTimeout`+`setTimeout` só junta duas fotos que terminam DENTRO da
+     * mesma janela. No 3G do canteiro — que é o cenário do próprio conserto —
+     * a fila sobe uma foto por vez com intervalos bem maiores que 4 s, então
+     * 20 fotos viravam 20 envios do snapshot inteiro: 20× o tráfego e 20
+     * gravações no servidor. O que serve é ESPAÇAMENTO MÍNIMO: no máximo um
+     * reenvio por minuto por obra, e sempre um último depois de a fila
+     * esvaziar. Se veio cedo demais, remarca para quando o minuto fechar em
+     * vez de descartar — descartar perderia a última foto, que é o defeito de
+     * origem. */
+    _reenviarObraEspacado: function (ob, motivo) {
+      var self = this;
+      var ESPACO = 60000;
+      this._reenvioTimer = this._reenvioTimer || {};
+      this._reenvioUltimo = this._reenvioUltimo || {};
+      this._reenvioMotivo = this._reenvioMotivo || {};
+      this._reenvioMotivo[ob.id] = this._reenvioMotivo[ob.id] || {};
+      this._reenvioMotivo[ob.id][motivo || "obra"] = true;
+      var agora = new Date().getTime();
+      var desdeUltimo = agora - (this._reenvioUltimo[ob.id] || 0);
+      var esperar = desdeUltimo >= ESPACO ? 4000 : Math.max(4000, ESPACO - desdeUltimo);
+      clearTimeout(this._reenvioTimer[ob.id]);
+      this._reenvioTimer[ob.id] = setTimeout(function () {
+        self._reenvioUltimo[ob.id] = new Date().getTime();
+        var quais = self._reenvioMotivo[ob.id] || {};
+        self._reenvioMotivo[ob.id] = {};
+        var temT = !!quais.tour, temR = !!quais.rdo;
+        var oQue = (temT && temR) ? "do diário e da visita 360"
+          : (temT ? "da visita 360" : "do diário");
+        /* ⚠ RELÊ A OBRA NA HORA DE ENVIAR. O objeto capturado no closure
+         * envelhece nesses segundos: se o gestor EXCLUIU a obra (ou tirou o
+         * Portal dela) enquanto o timer corria, o reenvio recriava o acesso
+         * do cliente no servidor — ressuscitando o que acabara de ser
+         * apagado. Obra que sumiu do disco não volta pelo Portal. */
+        var atual = null;
+        try { atual = Store.obter(eid(), "obras", ob.id); } catch (eO) {}
+        if (!atual || !atual.portalUser) return;
+        self._republicarPortal(atual, function (res) {
+          if (res && res.ok) { try { UI.toast("Fotos " + oQue + " publicadas para o cliente.", "ok"); } catch (e) {} return; }
+          if (res && res.semPortal) return;
+          /* falhar em silêncio aqui é o defeito original com outra roupa:
+             quem publicou precisa saber que o cliente ainda não vê as fotos */
+          try {
+            UI.toast("As fotos subiram, mas o Portal não foi atualizado"
+              + (res && res.erro ? " (" + res.erro + ")" : "")
+              + " — o cliente ainda não as vê. Abra Obras › Portal do cliente para reenviar.", "erro");
+          } catch (e2) {}
+        });
+      }, esperar);
     },
 
     /* Reenvia a obra ao Portal quando um diário JÁ PUBLICADO muda de conteúdo.
@@ -17604,45 +17813,7 @@
          * acabado de tirar do ar, sem ninguém pedir e sem ninguém saber. */
         var _eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
         if (RDO.podeAcao && !RDO.podeAcao("publicar", _eu, rdo)) return;
-        var self = this;
-        /* ⚠ DEBOUNCE NÃO SERVE AQUI, e eu afirmei o contrário no commit
-         * 413eaf5 ("16 fotos terminando em sequência viram UM reenvio"). É
-         * falso: `clearTimeout`+`setTimeout` só junta duas fotos que terminam
-         * DENTRO da mesma janela. No 3G do canteiro — que é o cenário do
-         * próprio conserto — a fila sobe uma foto por vez com intervalos bem
-         * maiores que 4 s, então 20 fotos viravam 20 envios do snapshot
-         * inteiro. Cada envio carrega a obra toda; 20 deles são 20× o tráfego
-         * e 20 gravações no servidor.
-         * O que serve é ESPAÇAMENTO MÍNIMO: no máximo um reenvio por minuto
-         * por obra, e sempre um último depois da fila esvaziar. Se veio cedo
-         * demais, remarca para quando o minuto fechar em vez de descartar —
-         * descartar perderia a última foto, que é o defeito de origem. */
-        var ESPACO = 60000;
-        this._reenvioTimer = this._reenvioTimer || {};
-        this._reenvioUltimo = this._reenvioUltimo || {};
-        var agora = new Date().getTime();
-        var desdeUltimo = agora - (this._reenvioUltimo[ob.id] || 0);
-        var esperar = desdeUltimo >= ESPACO ? 4000 : Math.max(4000, ESPACO - desdeUltimo);
-        clearTimeout(this._reenvioTimer[ob.id]);
-        this._reenvioTimer[ob.id] = setTimeout(function () {
-          self._reenvioUltimo[ob.id] = new Date().getTime();
-          /* ⚠ RELÊ A OBRA NA HORA DE ENVIAR. O objeto capturado no closure
-           * envelhece nesses segundos: se o gestor EXCLUIU a obra (ou tirou o
-           * Portal dela) enquanto o timer corria, o reenvio recriava o acesso
-           * do cliente no servidor — ressuscitando o que acabara de ser
-           * apagado. Obra que sumiu do disco não volta pelo Portal. */
-          var atual = null;
-          try { atual = Store.obter(eid(), "obras", ob.id); } catch (eO) {}
-          if (!atual || !atual.portalUser) return;
-          ob = atual;
-          self._republicarPortal(ob, function (res) {
-            if (res && res.ok) { try { UI.toast("Fotos do diário publicadas para o cliente.", "ok"); } catch (e) {} return; }
-            if (res && res.semPortal) return;
-            /* falhar em silêncio aqui é o defeito original com outra roupa:
-               o gestor precisa saber que o cliente ainda não vê as fotos */
-            try { UI.toast("As fotos subiram, mas o Portal não foi atualizado" + (res && res.erro ? " (" + res.erro + ")" : "") + " — o cliente ainda não as vê. Abra Obras › Portal do cliente para reenviar.", "erro"); } catch (e2) {}
-          });
-        }, esperar);
+        this._reenviarObraEspacado(ob, "rdo");
       } catch (e) {}
     },
 
@@ -18573,6 +18744,71 @@
           '<textarea id="g-acidente" rows="2" placeholder="Em branco = nenhum acidente hoje">' + Util.esc(r.acidente || "") + "</textarea>");
     },
 
+    /* ==================================================================
+     * A VISITA 360 DO DIA — LIGADA POR ESCOLHA DA PESSOA E POR CARIMBO
+     *
+     * O engenheiro fotografa as estações no MESMO dia em que escreve o
+     * diário, e até aqui os dois registros não se enxergavam: o tour era uma
+     * ilha dentro do app, com o Portal como único ponto de contato.
+     *
+     * ⚠ E A LIGAÇÃO NÃO É POR DATA COINCIDENTE — nunca. Sairia de graça, e é
+     *   exatamente o defeito que esta casa não repete: está escrito no
+     *   cabeçalho de js/tour360.js (o comparativo entre visitas liga por
+     *   `pid`, não por foto parecida) e é a primeira regra do dinheiro
+     *   (documento liga por CARIMBO). Duas visitas no mesmo dia (manhã e
+     *   tarde), uma visita salva com a data digitada errada, ou dois diários
+     *   do mesmo dia em frentes diferentes: em qualquer um desses a máquina
+     *   escolheria sozinha e o diário passaria a apontar para a foto de outro
+     *   lugar da obra — num documento que serve de prova em pleito.
+     *
+     *   Quem liga é a PESSOA, num <select>. O que fica gravado é
+     *   `{docTipo:"tour360", docId}` — o mesmo par que o Financeiro usa para
+     *   carimbar "PC"/"NF" — e ele não muda se a visita for renomeada nem se
+     *   outra nascer no mesmo dia.
+     * ================================================================== */
+    _htmlBlocoTour360: function (r) {
+      if (typeof Tour360 === "undefined") return "";           // motor não carregado
+      if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("tour360")) return "";
+      var lig = (r && r.tour360) || {};
+      return campo('Visita 360 deste dia <span class="muted" style="font-weight:400;font-size:11px">— a visita que foi fotografada neste dia. Escolha você: nada é ligado por data</span>',
+        '<select id="g-tour360">' + this._rdoTourOpcoes(r && r.obraId, lig.docId || "") + "</select>" +
+        '<div class="muted" style="font-size:11px;margin-top:4px">' +
+        "A lista traz as visitas 360 desta obra. Duas visitas no mesmo dia, ou uma data digitada errada, fariam o diário apontar para a foto de outro canto da obra — por isso quem liga é você." +
+        "</div>");
+    },
+
+    /* As opções do seletor de visita 360 do diário.
+     * ⚠ A LIGAÇÃO JÁ GRAVADA APARECE MESMO QUANDO NÃO ESTÁ NA LISTA — visita
+     *   excluída, ainda não sincronizada, ou de outra obra depois de a pessoa
+     *   trocar a obra no formulário. Sem essa opção o <select> não teria como
+     *   representar o valor, o Salvar regravaria o campo a partir dele e a
+     *   ligação sumiria sem ninguém decidir nada. É o mesmo defeito que já
+     *   apagou a lista de peças de um cadastro desta base ao editar o nome:
+     *   select sem opção apaga o valor. Desfazer a ligação continua tendo
+     *   porta — é escolher "— nenhuma —". */
+    _rdoTourOpcoes: function (obraId, sel) {
+      var oid = String(obraId || ""), escolhido = String(sel || ""), ts = [];
+      try {
+        ts = lista("tour360").filter(function (t) { return String(t.obraId || "") === oid; });
+      } catch (e) { ts = []; }
+      ts.sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); });
+      var achou = false;
+      var op = '<option value="">— nenhuma —</option>';
+      ts.forEach(function (t) {
+        if (String(t.id) === escolhido) achou = true;
+        var res = null;
+        try { res = Tour360.resumo(t); } catch (e2) { res = null; }
+        var rot = (Util.fmtDia(t.data) || t.data || "") + " · " + (t.titulo || "Visita")
+          + (res ? " · " + res.comFoto + "/" + res.pontos + " estações com foto" : "");
+        op += '<option value="' + Util.esc(t.id) + '"' + (String(t.id) === escolhido ? " selected" : "")
+          + ">" + Util.esc(rot) + "</option>";
+      });
+      if (escolhido && !achou) {
+        op += '<option value="' + Util.esc(escolhido) + '" selected>Manter a ligação atual (esta visita não está na lista desta obra)</option>';
+      }
+      return op;
+    },
+
     /* --- APROVAÇÃO: o selo no formulário e o histórico --------------- */
     _htmlBlocoAprovacao: function (r) {
       if (typeof RDO === "undefined") return "";
@@ -19230,6 +19466,7 @@
         this._htmlBlocoParalisacao(r) +
         this._htmlBlocoImpedimentos(r) +
         this._htmlBlocoRegistros(r) +
+        this._htmlBlocoTour360(r) +
         campo('Resumo do dia <span class="muted" style="font-weight:400;font-size:11px">— observações que não cabem nos serviços acima</span>',
           '<textarea id="g-ativ" rows="2" placeholder="Observações gerais do dia">' + Util.esc(r.atividades || "") + "</textarea>") +
         (function () { // Last Planner: o diário evidencia a execução → conclui a tarefa da semana
@@ -19308,6 +19545,26 @@
           .filter(function (c) { return c.checked; }).map(function (c) { return c.getAttribute("data-imp"); });
         obj.impedimentosObs = v("g-imp-obs");
         obj.visitas = v("g-visitas"); obj.comunicacoes = v("g-comunic"); obj.acidente = v("g-acidente");
+        /* ⚠ CARIMBO DA VISITA 360: {docTipo, docId} — nunca por data.
+           O `docTipo` viaja junto do id de propósito, na mesma convenção do
+           Financeiro ("PC"/"NF"): sem ele, um id solto seria a próxima pessoa
+           adivinhando de que porta ele veio, e quem lê o diário impresso não
+           teria como recusar um carimbo de outro tipo.
+           ⚠ SELECT AUSENTE NÃO LIMPA A LIGAÇÃO. O bloco não é montado para
+           quem não tem o módulo Tour 360; se aqui houvesse um `else` cego,
+           qualquer salvamento feito por essa pessoa desfaria em silêncio o
+           vínculo que o engenheiro criou. */
+        var _selT360 = document.getElementById("g-tour360");
+        if (_selT360) {
+          if (_selT360.value) {
+            var _euT = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+            obj.tour360 = {
+              docTipo: "tour360", docId: _selT360.value,
+              em: new Date().toISOString(),
+              por: String(_euT.nome || _euT.email || "")
+            };
+          } else obj.tour360 = null;
+        }
         /* os dois campos que RDO.pendenciasDoPleito cobrava e que nao existiam
            em lugar nenhum — sem eles a lista nunca podia ser zerada */
         obj.impactoChuva = v("g-cl-impacto");
@@ -19527,6 +19784,21 @@
               ? (q ? "será o " + (q + 1) + "º diário desta obra" : "primeiro diário desta obra")
               : "";
           }
+        });
+      })();
+      /* ---- a lista de visitas 360 acompanha a OBRA escolhida ----
+       * Sem isto, trocar a obra no seletor deixava na tela as visitas da obra
+       * ANTERIOR — e a pessoa ligaria o diário da obra B a uma visita da obra
+       * A sem nada acusar, que é o casamento errado que este campo existe
+       * para impedir. A ligação já gravada continua representada (o
+       * `_rdoTourOpcoes` acrescenta a opção "Manter a ligação atual"), então
+       * nada some sozinho: sumir passa a ser escolha, não efeito colateral. */
+      (function () {
+        var selObraT = document.getElementById("g-obra");
+        var selTour = document.getElementById("g-tour360");
+        if (!selObraT || !selTour) return;
+        selObraT.addEventListener("change", function () {
+          selTour.innerHTML = self._rdoTourOpcoes(selObraT.value || "", selTour.value || "");
         });
       })();
       try { this._ligarBlocos2Rdo(r, buf); } catch (eB2) { console.warn("[rdo] blocos2:", eB2 && eB2.message); }
@@ -24718,7 +24990,14 @@ renderFolha: function () {
       var corpo =
         '<div class="row">' + campo("Competência *", inp("g-comp", f.competencia || mesAtual, "", "month")) + campo("Colaborador", sel("g-col", optsRec(cols, "nome", f.colaboradorId, "— nenhum —"))) + campo("Obra", sel("g-obra", optsRec(obras, "nome", f.obraId, "— nenhuma —"))) + "</div>" +
         '<div class="row">' + campo("Salário base (R$)", inp("g-base", f.salarioBase)) + campo("Encargos (%)", inp("g-enc", f.encargosPct || 68)) + "</div>" +
-        '<div class="row">' + campo("Horas extras (R$)", inp("g-he", f.horasExtras)) + campo("Descontos (R$)", inp("g-desc", f.descontos)) + campo("Status", sel("g-status", opts(P.folhaStatus, f.status || "aberta"))) + "</div>" +
+        /* ⚠ `g-descontos`, NÃO `g-desc`: este id era compartilhado com o campo
+           "Descrição" do Financeiro, das Compras e do Patrimônio — texto livre.
+           Como aqui ele é lido por `nv()`, entrou na lista de teclado numérico
+           e levou o teclado de números para os três campos de texto no tablet.
+           Ao mexer neste id, mexa NO PAR: o `nv()` lá embaixo lê o mesmo nome,
+           e render sem leitura faz o desconto virar R$ 0,00 sem avisar — o
+           `custoTotal` daqui vira despesa no Financeiro. */
+        '<div class="row">' + campo("Horas extras (R$)", inp("g-he", f.horasExtras)) + campo("Descontos (R$)", inp("g-descontos", f.descontos)) + campo("Status", sel("g-status", opts(P.folhaStatus, f.status || "aberta"))) + "</div>" +
         '<div class="muted" style="margin-top:6px">Custo total atual: <b>' + Util.fmtMoeda(Util.num(f.custoTotal)) + "</b> (recalculado ao salvar).</div>";
       this._modalForm("folha", f, "Folha de pagamento", corpo, function (obj) {
         obj.competencia = v("g-comp"); if (!obj.competencia) { UI.toast("Informe a competência.", "erro"); return false; }
@@ -24727,7 +25006,7 @@ renderFolha: function () {
            colaborador excluído depois não pode deixar o recibo sem nome/CPF */
         var colSnap = lista("colaboradores").filter(function (c) { return c.id === obj.colaboradorId; })[0];
         if (colSnap) { obj.colaboradorNome = colSnap.nome || ""; obj.colaboradorFuncao = colSnap.funcao || ""; obj.colaboradorCpf = colSnap.cpf || ""; }
-        obj.salarioBase = nv("g-base"); obj.encargosPct = nv("g-enc"); obj.horasExtras = nv("g-he"); obj.descontos = nv("g-desc");
+        obj.salarioBase = nv("g-base"); obj.encargosPct = nv("g-enc"); obj.horasExtras = nv("g-he"); obj.descontos = nv("g-descontos");
         obj.status = v("g-status");
         obj.custoTotal = Gestao.calcFolha(obj);
         return true;
@@ -28702,6 +28981,27 @@ renderFolha: function () {
           rd.status = "finalizado"; Store.salvar(eid(), "rdo", rd); App.render(); UI.toast("Diário finalizado.", "ok"); return;
         }
         case "imprimir-rdo": return this.imprimirRdo(id);
+        /* ⚠ ABRIR A VISITA 360 DE FORA DO MÓDULO — do painel de atenção e da
+           linha do diário. NÃO replico aqui o que `t360-abrir` faz: ele zera
+           sete campos de estado do visualizador (medida em curso, comparativo,
+           área em desenho, pino escolhido, estação aberta). Copiar essa lista
+           é a réplica que apodrece calada — no dia em que o módulo ganhar o
+           oitavo campo, o painel abriria a visita com o estado velho da
+           anterior por baixo. Chamo a ação DELE e acrescento só a navegação,
+           que é o que falta a ela (ela termina em `App.render()`, e render sem
+           trocar de view redesenharia o próprio Painel).
+           ⚠ E a guarda de módulo é EXPLÍCITA: o RBAC de graça do dispatcher
+           vale para as ações de `_acoesExtras`, e este `case` está no switch,
+           que passa por fora dele. */
+        case "abrir-tour360":
+          if (typeof Auth !== "undefined" && Auth.podeModulo && !Auth.podeModulo("tour360")) {
+            if (typeof UI !== "undefined") UI.toast("Seu usuário não tem permissão no módulo Tour Virtual 360.", "erro");
+            return;
+          }
+          var _t360Ext = this._acoesExtras && this._acoesExtras["t360-abrir"];
+          if (_t360Ext && id) _t360Ext.fn.call(this, dataset, app);
+          if (typeof App !== "undefined" && App.irPara) App.irPara("tour360");
+          return;
         case "novo-colaborador": return this.novoColaborador();
         case "novo-ponto": return this.novoPonto();
         case "lancar-ponto": {

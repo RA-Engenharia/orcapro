@@ -1,5 +1,5 @@
 /* =====================================================================
- * excel.js — Exportação Excel PROFISSIONAL (workbook vivo, 3 abas)
+ * excel.js — Exportação Excel PROFISSIONAL (workbook vivo, 13 abas)
  * Abas: Resumo · Sintética · Analítica. Tudo com FÓRMULAS (recalcula
  * ao mudar QTD, custo ou BDI) + formatação padrão de planilha
  * orçamentária (navy/aço, moeda R$, zebra, freeze, subtotais).

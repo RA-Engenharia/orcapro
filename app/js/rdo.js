@@ -1156,7 +1156,21 @@
       acidenteHouve: !!String(r.acidente || "").trim(),
       acidente: o.incluirAcidente ? (r.acidente || "") : "",
       publicadoEm: r.publicadoEm || "",
-      aprovadoPor: r.aprovadoPor || ""
+      aprovadoPor: r.aprovadoPor || "",
+      /* ⚠ SÓ O ID DA VISITA 360, e só quando o carimbo diz que é uma.
+       * O diário e a visita se enxergam nos dois sentidos no app; no Portal o
+       * cliente lia sobre a visita e não tinha por onde chegar nela — tinha
+       * de rolar até a outra seção e adivinhar qual das datas era.
+       * O que sai daqui é um id que JÁ está no retrato (`snapshot.tours[].id`);
+       * nada novo atravessa. E o Portal só desenha o link quando encontra esse
+       * id entre as visitas PUBLICADAS: visita que o gestor não publicou não
+       * vira botão morto na tela de quem paga.
+       * ⚠ O NOME É `tour360Id`, e não `tour360`: no registro interno,
+       * `r.tour360` é o CARIMBO ({docTipo, docId}). Repetir o nome com outra
+       * forma no pacote do Portal é a receita de alguém ler `.docId` de uma
+       * string e concluir que o vínculo sumiu. */
+      tour360Id: (r.tour360 && String(r.tour360.docTipo || "") === "tour360")
+        ? String(r.tour360.docId || "") : ""
     };
     return p;
   };

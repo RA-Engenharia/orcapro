@@ -50,6 +50,27 @@
  *   .t360-aviso (+ .t360-aviso-erro)    faixa de recado
  *   .t360-estacao                   cada estação no relatório fotográfico
  *                                   (é ela que ganha página nova no papel)
+ *
+ *   --- veio do `style=` do js nesta rodada (ver o bloco "O QUE ESTAVA SÓ
+ *       NO style=", mais abaixo, para o que pinta já e o que é destino) ---
+ *   #t360-host                      host do visualizador (é o mesmo .t360-palco)
+ *   #t360-sair-tc                   a porta da tela cheia
+ *   #t360-mini                      DOIS elementos com o mesmo id: o cartão do
+ *                                   minimapa e, escondido, o botão "Mapa"
+ *   .t360-mini-topo|-nome|-recado|-quadro|-img   partes do cartão do minimapa
+ *   .t360-mini-pino                 pino clicável no minimapa
+ *   .t360-pino                      pino do cartão da planta (não clicável)
+ *   #t360-planta-quadro / #t360-planta-img       o cartão da planta no editor
+ *   .t360-seta / -i / -nome / -sem-foto          a pastilha de passagem
+ *
+ *   --- acompanhamento de pendências ---
+ *   .t360-chip / .t360-chip-<tipo>  pastilha do tipo do comentário
+ *   .t360-pend + .t360-pend-*       o painel, a lista e cada pendência
+ *   .t360-st-aberta|-resolvida|-persiste         o status (Tour360.statusDe)
+ *   .t360-arrasta                   "arrastando há N visitas"
+ *   .t360-prazo / .t360-prazo-venc  o prazo, e o prazo vencido
+ *   .t360-veredito                  botão de veredito (alvo de 44px)
+ *   .t360-ad / .t360-ad-lado        a página de antes-e-depois
  * ===================================================================== */
 
 /* ---------------------------------------------------------------------
@@ -486,6 +507,689 @@
 }
 
 /* =====================================================================
+ * O QUE ESTAVA SÓ NO `style=` — E A LINHA QUE SEPARA O QUE VEM DO QUE FICA
+ *
+ * A rodada do minimapa, dos pinos, do cartão da planta, do botão de sair da
+ * tela cheia e da pastilha de seta nasceu inteira em `style=` e em
+ * `style.cssText` dentro do js. Não foi desleixo: o autor daquela rodada só
+ * podia tocar num arquivo. Funcionou — e nunca passou por medição de
+ * contraste, porque cor escrita dentro de string de JS ninguém revisa depois.
+ *
+ * ⚠ A RÉGUA:
+ *   · POSIÇÃO CALCULADA fica no js. `left`/`top` em % do pino são FRAÇÃO da
+ *     imagem gravada no dado; `transform: translate(-50%,-50%)` é o que
+ *     centra o desenho no pixel que ele aponta; `position:absolute` e
+ *     `pointer-events` o viewer escreve nos marcadores e nas setas. Nada
+ *     nesta folha pode depender de sobrescrever essas três.
+ *   · APARÊNCIA vem para cá: tamanho, cor, anel, fonte, raio, sombra.
+ *
+ * ⚠ E ISTO MUDA O QUE CADA REGRA FAZ HOJE: estilo inline VENCE folha (só
+ * `!important` passa por cima — e `!important` numa cor de estado apagaria o
+ * verde do "você está aqui"). Então, enquanto o js ainda escrever uma
+ * declaração inline, a gêmea daqui NÃO PINTA NADA: ela é o DESTINO, e passa
+ * a valer no instante em que a linha sair de lá, sem que nada mude na tela.
+ * O que pinta HOJE está marcado com "vale já" no bloco — é sempre coisa que
+ * o inline não escreve: foco, hover, corte de texto longo, papel, celular.
+ *
+ * O caso das SETAS é diferente e melhor: elas não têm aparência inline; o
+ * viewer injeta um <style> no TOPO do <head> (rede para o Portal, a demo e a
+ * e2e, onde esta folha não existe). Como o <link> desta folha vem depois, o
+ * que está aqui VENCE aquele <style> em empate de especificidade — foi assim
+ * que o js foi escrito, e está dito lá. Tudo do bloco das setas vale já.
+ * ===================================================================== */
+
+/* ---------------------------------------------------------------------
+ * HOST DO VISUALIZADOR (#t360-host — o mesmo elemento é `.t360-palco`)
+ * ------------------------------------------------------------------- */
+/* 70vh mantém a foto grande no monitor; o teto em pixel impede que numa tela
+   alta a foto empurre a barra de ferramentas para fora da dobra.
+   ⚠ NÃO É ESTA REGRA QUE MANDA NA TELA CHEIA, e não pode ser: entrando, o
+   viewer escreve `height:100%` INLINE no host (`esticarHost` / `falsaLigar`)
+   e o inline vence — é assim que tem de ser. Saindo, `restaurarHost` devolve
+   o atributo `style` exatamente como estava; quando ele voltar vazio, é esta
+   linha que passa a mandar. */
+#t360-host, .t360-host { height: min(70vh, 620px); }
+
+/* ⚠ O BOTÃO DE SAIR DA TELA CHEIA É A PORTA DA TRAVA — o js explica por quê
+   (na tela cheia falsa do iPhone não há teclado para o Esc). Aqui ficam a
+   posição do canto e, o que importa, o FOCO. */
+#t360-sair-tc, .t360-sair-tc {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  /* 5 contra o 4 do minimapa: em telefone deitado os dois cantos da direita
+     se aproximam, e quem tem de ficar por cima é a saída */
+  z-index: 5;
+}
+/* vale já: o botão nasce SOBRE A FOTO, e o anel de foco azul do app some numa
+   foto de tapume azul ou de céu. Aqui o foco usa o par claro/escuro do
+   arquivo, que é o que sobrevive a qualquer fotografia. */
+#t360-sair-tc:focus-visible, .t360-sair-tc:focus-visible {
+  outline: 2px solid var(--t360-sobre-foto-claro);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px var(--t360-sobre-foto-escuro);
+}
+
+/* ---------------------------------------------------------------------
+ * MINIMAPA
+ *
+ * ⚠ O MESMO id SERVE A DOIS ELEMENTOS DIFERENTES, e isso é de propósito no
+ * js: com o mapa escondido, `#t360-mini` é um BOTÃO "Mapa" de uns 60px; com
+ * o mapa aberto, é o CARTÃO de 260px. O id é um só para que a linha de
+ * limpeza (`removeChild` do velho, no começo de `_montarMinimapa`) alcance os
+ * dois. Consequência para esta folha: regra por id sozinha pintaria o
+ * botãozinho com a caixa do cartão. Por isso o cartão se identifica por
+ * `#t360-mini:not(.btn)` — o botão é o único dos dois que carrega `.btn` — e
+ * a classe `.t360-mini-cartao` fica aceita ao lado, para quando o js passar a
+ * nomear o cartão em vez de só numerá-lo.
+ * ------------------------------------------------------------------- */
+/* ⚠ CARTÃO SEM TEMA, COMO O MARCADOR. Mesma doutrina do topo do arquivo: o
+   minimapa flutua sobre a FOTOGRAFIA, e a fotografia não é do app. Se o
+   cartão clareasse no tema claro, ele sumiria justamente sobre a planta mais
+   comum de todas — a prancha exportada em PNG, que é branca. */
+#t360-mini:not(.btn), .t360-mini-cartao {
+  z-index: 4;
+  width: min(46%, 260px);
+  padding: 6px;
+  border-radius: var(--raio);
+  background: rgba(9, 20, 33, .78);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, .4);
+}
+.t360-mini-topo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+/* o nome da planta encolhe até a reticência antes de empurrar o botão
+   "Esconder" para fora do cartão: sem `min-width:0` num filho de flex o texto
+   longo não encolhe — ele estoura */
+.t360-mini-nome {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t360-sobre-foto-claro);
+  font-size: var(--t-micro);
+}
+/* ⚠ MAPA QUE NÃO ABRE TEM DE DIZER POR QUÊ — o recado ("a imagem ainda não
+   está neste aparelho", "nenhuma estação posicionada") é o que separa
+   "sincronizando" de "recurso quebrado". Ele vive dentro do cartão escuro,
+   então usa a mesma tinta clara do nome, e nunca `--texto-fraco`: token de
+   texto fraco sobre este fundo é o cinza que não se lê. */
+.t360-mini-recado {
+  color: var(--t360-sobre-foto-claro);
+  font-size: var(--t-micro);
+  line-height: 1.35;
+}
+.t360-mini-quadro { position: relative; line-height: 0; }
+.t360-mini-img { display: block; width: 100%; height: auto; border-radius: var(--raio-sm); }
+
+/* PINO — no minimapa e no cartão da planta do editor.
+   ⚠ `left`, `top` e `transform` NÃO ESTÃO AQUI de propósito: são fração da
+   imagem, calculada por pino, e o js é quem sabe. Ver a régua no alto.
+   ⚠ E a COR também fica com o js: ela carrega estado (verde = você está
+   aqui, aço = tem foto, cinza = sem foto). Trazer a cor para cá exigiria
+   `!important` para vencer o inline, e aí o estado sumiria por igual. */
+.t360-mini-pino, .t360-pino {
+  display: inline-block;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  text-align: center;
+  font-family: var(--fonte);
+  font-size: 11px;
+  font-weight: var(--p-forte);
+  line-height: 22px;
+  color: #fff;
+  /* dois anéis, claro e escuro, pela mesma medição do marcador: a planta pode
+     ser prancha branca ou render escuro, e um anel só some em metade dos
+     casos — sempre a metade que ninguém testou */
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(0, 0, 0, .45);
+}
+.t360-mini-pino { cursor: pointer; }
+/* ⚠ O PINO DO CARTÃO DO EDITOR NÃO RECEBE CLIQUE, e isso é regra de uso: com
+   ele clicável, reposicionar uma estação em cima de outra acertava o pino e o
+   clique nunca chegava à planta — a pessoa concluía que "não dá para mover".
+   No minimapa é o contrário: lá o pino É o caminho para a estação. */
+.t360-pino { pointer-events: none; }
+/* vale já: o pino do minimapa é botão e não tinha NENHUM sinal de foco — quem
+   navega por teclado atravessava o mapa às cegas. O anel de foco global é
+   azul e some sobre planta azulada de instalação; aqui vale o par
+   claro/escuro do arquivo. Hover idem: alvo de 22px precisa confirmar que
+   está sob o cursor antes do clique.
+   ⚠ E NÃO HÁ ::after DE 44px AQUI, ao contrário do marcador e da seta: no
+   mapa de 260px os pinos de estações vizinhas ficam a poucos pixels um do
+   outro, e um alvo de 44px engoliria o vizinho — trocar de estação viraria
+   sorteio. Quem precisa do alvo grande tem a lista de estações embaixo da
+   foto, que é o caminho confiável. */
+.t360-mini-pino:focus-visible {
+  outline: 2px solid var(--t360-sobre-foto-claro);
+  outline-offset: 4px;
+}
+.t360-mini-pino:hover { filter: brightness(1.18); }
+
+/* ---------------------------------------------------------------------
+ * CARTÃO DA PLANTA (editor da visita)
+ * ------------------------------------------------------------------- */
+#t360-planta-quadro, .t360-planta-quadro {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  /* zera o vão que a linha de texto deixa embaixo de um <img> inline — sem
+     isto sobra uma tira clara sob a planta e o pino do rodapé cai fora dela */
+  line-height: 0;
+  /* a planta É a área de clique: o cursor precisa dizer isso ANTES do clique */
+  cursor: crosshair;
+}
+#t360-planta-img, .t360-planta-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--raio-sm);
+  border: var(--traco) solid var(--linha);
+}
+
+/* ---------------------------------------------------------------------
+ * PASTILHA DE SETA — a passagem de uma estação para a vizinha
+ *
+ * ⚠ TUDO DESTE BLOCO VALE JÁ: o viewer injeta a aparência padrão num <style>
+ * no topo do <head> justamente para que esta folha, que é um <link> abaixo,
+ * vença em empate. Está escrito lá (`garantirEstiloSeta`). Mexer no visual da
+ * seta é AQUI; mexer lá é mexer na rede do Portal e da demo.
+ * ------------------------------------------------------------------- */
+.t360-seta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  max-width: 190px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  font-family: var(--fonte);
+  font-size: var(--t-micro);
+  font-weight: var(--p-forte);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  /* ⚠ `clip`, NUNCA `hidden`: `hidden` cortaria também o ::after que estende o
+     alvo de toque para 44px, e a seta continuaria bonita valendo 30px de
+     alvo, sem nada na tela denunciando. Mesmo defeito já documentado no
+     marcador, no alto deste arquivo. */
+  overflow: clip;
+  overflow-clip-margin: 12px;
+  color: var(--t360-sobre-foto-claro);
+  background: var(--t360-sobre-foto-escuro);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .85);
+  box-shadow:
+    0 0 0 2px var(--t360-sobre-foto-claro),
+    0 0 0 4px var(--t360-sobre-foto-escuro),
+    0 4px 10px rgba(0, 0, 0, .5);
+  transition: box-shadow .14s var(--ease), background .14s var(--ease);
+}
+.t360-seta::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--t360-mk-alvo);
+  height: var(--t360-mk-alvo);
+  transform: translate(-50%, -50%);
+  border-radius: 999px;
+}
+.t360-seta:hover {
+  background: rgba(0, 0, 0, .82);
+  box-shadow:
+    0 0 0 3px var(--t360-sobre-foto-claro),
+    0 0 0 5px var(--t360-sobre-foto-escuro),
+    0 5px 14px rgba(0, 0, 0, .55);
+}
+.t360-seta:focus-visible {
+  outline: 2px solid var(--t360-sobre-foto-claro);
+  outline-offset: 5px;
+}
+.t360-seta-i { font-size: 13px; line-height: 1; }
+/* ⚠ O NOME DA ESTAÇÃO CORTA COM RETICÊNCIA, NÃO NO MEIO DA LETRA. A pastilha
+   tem teto de largura (nome comprido virando faixa atravessada na foto tapa
+   justamente a parede que ela aponta), e o corte do `overflow:clip` do pai
+   parte o glifo ao meio: "Sala de Reuniã". Com reticência o olho entende que
+   falta texto — e o nome inteiro continua no `title`. Precisa de
+   `min-width:0` porque filho de flex não encolhe abaixo do conteúdo sem isso,
+   e sem encolher não há o que reticenciar. */
+.t360-seta-nome {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ⚠ SETA SEM FOTO: A PASTILHA MUDA DE SILHUETA, NÃO DE OPACIDADE — e isto
+   saiu de MEDIÇÃO, não de gosto.
+   O `opacity:.5` que está na rede do viewer apaga o texto E o fundo ao mesmo
+   tempo, deixando os dois passarem a fotografia por baixo. Medido em captura
+   (Chrome headless, escala 1, pixel lido do PNG) sobre os dois extremos
+   possíveis de foto:
+     · sobre foto CLARA (#f2efe8) ... 2,22:1  — o recado "(sem foto)" SOME
+     · sobre foto ESCURA (#2b2622) ... 5,15:1 — passa
+   Ou seja: o motivo pelo qual a passagem não abre ficava ilegível justamente
+   na foto de parede rebocada ao meio-dia, e ali a pessoa lê a seta apagada
+   como app quebrado. Metade dos tours — a metade que ninguém testou.
+   Aqui a diferença vem do que NÃO depende do fundo: itálico e cursor de
+   recusa mudam a silhueta, o fundo fica mais FUNDO (não mais fraco) e o anel
+   claro afina de 2px para 1px, que é o sinal de "desligado" sem apagar letra.
+   Medido depois, na mesma captura: 16,10:1 nas duas fotos — o fundo passou a
+   ser OPACO, então a fotografia saiu da conta.
+   ⚠ E O `opacity:1` É LOAD-BEARING, não sobra de refatoração: com o fundo
+   opaco novo e o `opacity:.5` de volta, a mesma captura devolve 3,43:1 sobre
+   a foto clara — ainda reprova. Quem apagar esta linha reabre o buraco pela
+   metade, que é a pior versão dele: parece consertado.
+   ⚠ Aceita as duas grafias porque quem escreve a pastilha é o viewer e ele
+   marca por atributo (`disabled`) e por classe; pastilha que chega sem estilo
+   é pastilha que ninguém lê. */
+.t360-seta[disabled], .t360-seta-sem-foto {
+  opacity: 1;
+  cursor: not-allowed;
+  font-style: italic;
+  color: var(--t360-sobre-foto-claro);
+  background: #10161d;
+  box-shadow:
+    0 0 0 1px var(--t360-sobre-foto-claro),
+    0 0 0 3px var(--t360-sobre-foto-escuro),
+    0 3px 8px rgba(0, 0, 0, .5);
+}
+/* sem realce de hover: não há para onde ir, e realce promete clique */
+.t360-seta[disabled]:hover, .t360-seta-sem-foto:hover {
+  background: #10161d;
+  box-shadow:
+    0 0 0 1px var(--t360-sobre-foto-claro),
+    0 0 0 3px var(--t360-sobre-foto-escuro),
+    0 3px 8px rgba(0, 0, 0, .5);
+}
+
+/* =====================================================================
+ * PASTILHA DE TIPO (.t360-chip) — Comentário · Atenção · Pendência · Aprovado
+ *
+ * ⚠ ESTA CLASSE EXISTIA NO JS E NÃO EXISTIA EM CSS NENHUM. `_listaComents`
+ * (js/tour360ui.js) escreve `t360-chip t360-chip-<tipo>` desde a primeira
+ * versão do módulo, e nenhuma folha respondia: os quatro tipos saíam como
+ * texto corrido, no mesmo cinza, um embaixo do outro. Quem lia a tabela não
+ * distinguia um comentário de uma PENDÊNCIA sem ler a palavra inteira — e é a
+ * palavra "Pendência" que decide se aquilo atravessa para a visita seguinte.
+ *
+ * ⚠ E o `.t360-chip` do Portal (loja/portal.html) é OUTRA COISA: lá é o botão
+ * de navegar entre estações, estilizado na folha embutida daquele arquivo.
+ * Não há conflito hoje porque css/tour360.css é carregado só pelo index.html
+ * — mas quem for unificar os dois nomes precisa saber que são dois.
+ * ===================================================================== */
+.t360-chip {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--t-micro);
+  font-weight: var(--p-forte);
+  line-height: 1.5;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  /* o fio interno é o que separa a pastilha da superfície quando o tingimento
+     é discreto — neutro de propósito, para valer nos dois temas */
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .18);
+  /* piso para motor sem color-mix: sem cor, a pastilha ainda é pastilha */
+  background: var(--surface-2);
+  color: var(--texto);
+}
+/* ⚠ A TINTA DO TEXTO E A DO FUNDO SÃO TOKENS DIFERENTES, e não é redundância.
+   `--vermelho` e `--amarelo` são cores de CAIXA (borda, barra, marcador);
+   `--graf-alerta` e `--graf-aviso` existem no app.css justamente para TEXTO
+   pequeno, e têm valor próprio por tema. Trocar um pelo outro é o defeito que
+   o app.css já registrou na `.pill`: a mesma tinta, calibrada contra a
+   superfície, reprovando dentro da pastilha — porque são medições diferentes.
+   Os pares estão medidos no rodapé deste arquivo. */
+.t360-chip-comentario { color: var(--aco);         background: color-mix(in srgb, var(--aco) 6%, var(--surface)); }
+.t360-chip-atencao    { color: var(--graf-aviso);  background: color-mix(in srgb, var(--amarelo) 6%, var(--surface)); }
+.t360-chip-pendencia  { color: var(--graf-alerta); background: color-mix(in srgb, var(--vermelho) 6%, var(--surface)); }
+.t360-chip-aprovado   { color: var(--verde);       background: color-mix(in srgb, var(--verde) 6%, var(--surface)); }
+
+/* =====================================================================
+ * PENDÊNCIAS — o que o módulo passou a ACOMPANHAR, e não só registrar
+ *
+ * O motor (js/tour360.js) responde três coisas e a tela só as veste:
+ *   Tour360.statusDe(h)             -> "aberta" | "resolvida" | "persiste"
+ *   Tour360.historicoPendencia(...) -> {visitas, desde, arrastando}
+ *   Tour360.resumoPendencias(...)   -> {abertas, vencidas, arrastando}
+ *
+ * ⚠ TRÊS DECISÕES QUE NÃO PODEM SER "SIMPLIFICADAS"
+ *
+ * 1) STATUS NUNCA É SÓ COR. Cada pastilha leva a palavra por extenso
+ *    ("Aberta", "Resolvida", "Persiste") e o item leva a barra lateral. Quem
+ *    não distingue as tintas — e num canteiro isso inclui quem está no sol —
+ *    continua sabendo o que cada linha é. Mesma doutrina dos marcadores no
+ *    alto deste arquivo e da paleta de categorias do app.css.
+ *
+ * 2) VENCIDO É O ÚLTIMO A FALAR. Uma pendência pode ser "persiste" E estar
+ *    com o prazo vencido; as duas marcas convivem, mas quem manda na barra
+ *    lateral é a urgência maior. Por isso a regra do vencido vem DEPOIS das
+ *    de status neste arquivo — é a ORDEM DA CASCATA que resolve, não um
+ *    seletor mais específico que ninguém acha depois.
+ *
+ * 3) O VERMELHO DE VENCIDO É `--graf-alerta`, NÃO `--vermelho`. O primeiro é
+ *    o par de tinta que o app.css mantém para ESTOURO/VENCIDO EM TEXTO, com
+ *    valor próprio por tema (#b91c1c no claro, #f87171 no escuro); o segundo
+ *    é cor de caixa. Trocar os dois é exatamente o defeito que o app.css já
+ *    registrou na `.pill` e na `tr-aviso-insumo`: hex de texto copiado de uma
+ *    cor de caixa, que some quando o outro tema chega.
+ *    ⚠ E os "cinco tons de escuro" SAÍRAM na v1.1.188 — `App.aplicarTema`
+ *    hoje remove `data-tom` do <html> e nenhuma regra casa com ele. Os temas
+ *    de COR são dois, claro e escuro, e é contra esses dois que os números do
+ *    rodapé foram medidos. Se um dia voltarem tons, cada um precisa dos seus
+ *    tokens — e nada aqui muda, porque aqui não há hex.
+ *
+ * ⚠⚠ LEIA ISTO ANTES DE MEXER: A TELA DE HOJE NÃO ESCREVE ESTES NOMES.
+ * `_cardPendencias` (js/tour360ui.js) monta o painel como
+ * `div.card.t360-pendencias` + `table.tbl.t360-tab-pendencias`, e escreve o
+ * vermelho de vencido e o âmbar de "há N visitas" como HEX CRAVADO no
+ * `style=` de um <b>. O bloco "PONTE" no fim deste arquivo é o que veste
+ * ESSA marcação — é ele que pinta hoje. O contrato abaixo é o DESTINO: os
+ * nomes para os quais a tela deve convergir, e o dia em que ela convergir a
+ * ponte sai e este bloco assume, sem que nada mude na tela.
+ * Deixar os dois é escolha consciente: apagar o destino jogaria fora a única
+ * descrição escrita de como a lista deveria ser marcada; apagar a ponte
+ * deixaria a tela real sem estilo nenhum. O que NÃO pode acontecer é alguém
+ * ler o contrato abaixo e concluir que ele está no ar.
+ *
+ * CONTRATO DE MARCAÇÃO — DESTINO, não o que a tela escreve hoje:
+ *   .t360-pend                 o cartão/painel
+ *   .t360-pend-cab             cabeçalho (título + contadores)
+ *   .t360-pend-conta           os contadores dentro do cabeçalho
+ *   .t360-pend-filtro          a barra de filtro
+ *   .t360-pend-lista           o <ul>
+ *   .t360-pend-item            o <li>, com data-status="aberta|resolvida|
+ *                              persiste" (a classe de mesmo nome também é
+ *                              aceita) e data-vencida / .vencida
+ *   .t360-pend-topo            a linha das pastilhas
+ *   .t360-pend-txt             o texto da pendência
+ *   .t360-pend-meta            estação · nível · responsável · desde
+ *   .t360-pend-acoes           os botões de veredito
+ *   .t360-veredito             cada botão de veredito (alvo de 44px)
+ *   .t360-st(-aberta|-resolvida|-persiste)   pastilha de status
+ *   .t360-arrasta              selo "arrastando há N visitas"
+ *   .t360-prazo / .t360-prazo-venc           o prazo
+ *   .t360-pend-vazio           nenhuma pendência nesta visita
+ * ===================================================================== */
+.t360-pend { margin-top: 12px; }
+.t360-pend-cab {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.t360-pend-cab b { font-size: var(--t-med); }
+.t360-pend-conta {
+  color: var(--texto-fraco);
+  font-size: var(--t-peq);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A BARRA DE FILTRO (todas · abertas · vencidas · arrastando). */
+.t360-pend-filtro {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+/* botão de filtro não encolhe: rótulo espremido em duas letras não é botão */
+.t360-pend-filtro > * { flex: 0 0 auto; }
+
+.t360-pend-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ⚠ CARTÃO, NÃO LINHA DE TABELA — e isso é decisão de celular, não de gosto.
+   O app.css transforma `table.tbl` em caixa de ROLAGEM LATERAL abaixo de
+   820px (`display:block; overflow-x:auto; white-space:nowrap`). Numa tabela,
+   os botões de veredito ficariam na última coluna — ou seja: fora da tela, do
+   outro lado de um arrasto horizontal que ninguém adivinha. Pendência que só
+   se resolve rolando de lado é pendência que ninguém resolve. */
+.t360-pend-item {
+  padding: 9px 11px;
+  border: var(--traco) solid var(--linha);
+  /* a barra lateral é o portador de estado que sobrevive à impressão sem
+     tinta de fundo e a quem não distingue as cores */
+  border-left: 3px solid var(--linha-forte);
+  border-radius: var(--raio-sm);
+  background: var(--surface);
+  line-height: 1.45;
+}
+.t360-pend-topo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.t360-pend-txt {
+  margin: 0 0 3px;
+  color: var(--texto);
+  font-size: var(--t-base);
+  /* ⚠ o texto vem digitado no canteiro e pode chegar sem espaço nenhum
+     ("fissuranaalvenariadohallterreo"): sem isto ele estoura o cartão para
+     fora da tela do celular e leva a lista inteira junto */
+  overflow-wrap: anywhere;
+}
+.t360-pend-meta {
+  margin: 0;
+  color: var(--texto-fraco);
+  font-size: var(--t-peq);
+  overflow-wrap: anywhere;
+}
+.t360-pend-acoes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* ⚠ ALVO DE 44px NO VEREDITO, EM QUALQUER TELA. O `.btn` da casa dá ~38px de
+   altura, e o `.btn` do celular dá 40px. Estes botões não são navegação: eles
+   GRAVAM um veredito que atravessa para a visita seguinte e sai no Portal do
+   cliente. Errar o dedo aqui é marcar como resolvida a fissura que continua
+   na parede. 44px é o piso de toque já adotado no resto da casa; aqui ele
+   vale também no mouse, e o custo é um botão um pouco mais alto. */
+.t360-veredito {
+  min-height: 44px;
+  /* alvo mínimo também na largura: um "Sim" de três letras é um botão de 30px */
+  min-width: 44px;
+}
+
+/* PASTILHA DE STATUS. Mesma forma da `.t360-chip`; muda só a tinta. */
+.t360-st {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--t-micro);
+  font-weight: var(--p-forte);
+  line-height: 1.5;
+  letter-spacing: .2px;
+  white-space: nowrap;
+  box-shadow: inset 0 0 0 1px rgba(127, 127, 127, .18);
+  background: var(--surface-2);
+  color: var(--texto);
+}
+.t360-st-aberta    { color: var(--graf-aviso);  background: color-mix(in srgb, var(--amarelo) 6%, var(--surface)); }
+.t360-st-resolvida { color: var(--verde);       background: color-mix(in srgb, var(--verde) 6%, var(--surface)); }
+.t360-st-persiste  { color: var(--graf-alerta); background: color-mix(in srgb, var(--vermelho) 6%, var(--surface)); }
+
+/* A BARRA LATERAL DO ITEM, POR STATUS.
+   Aceita `data-status` e a classe de mesmo nome: quem monta a lista é um
+   módulo irmão, e item que chega sem estilo é item que não conta nada.
+   ⚠ `statusDe` devolve EXATAMENTE estas três palavras — copiar outra grafia
+   aqui (plural, acento, maiúscula) cria uma regra que nunca casa, e regra que
+   nunca casa não aparece em lugar nenhum como erro. */
+.t360-pend-item[data-status="aberta"], .t360-pend-item.aberta {
+  border-left-color: var(--amarelo);
+}
+.t360-pend-item[data-status="resolvida"], .t360-pend-item.resolvida {
+  border-left-color: var(--verde);
+  /* resolvida recua: a lista existe para o que FALTA. O recuo é do fundo, não
+     do texto — resolvida continua legível, só para de disputar atenção. */
+  background: var(--surface-2);
+}
+.t360-pend-item[data-status="persiste"], .t360-pend-item.persiste {
+  border-left-color: var(--vermelho);
+}
+
+/* SELO "ARRASTANDO HÁ N VISITAS".
+   ⚠ É ESTE SELO QUE JUSTIFICA A RODADA INTEIRA: uma fissura marcada em agosto
+   que reaparece em setembro e em outubro não é um comentário — é uma obra
+   parada num ponto. O número de visitas vai ESCRITO no selo, nunca só
+   implícito na cor, porque é ele que vira argumento em reunião. */
+.t360-arrasta {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: var(--t-micro);
+  font-weight: var(--p-forte);
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--graf-alerta);
+  /* ⚠ BORDA DE VERDADE, e não o fio de sombra das outras pastilhas: sem ela o
+     selo fica idêntico à pastilha "Persiste" (mesma tinta, mesma forma) e o
+     olho lê duas vezes a mesma coisa. A borda também é o que sobrevive à
+     impressora com "cores de fundo" desligada. Contraste de borda pede 3:1,
+     não 4,5 — `--vermelho` passa nos dois temas (medido no rodapé). */
+  border: var(--traco) solid var(--vermelho);
+  /* duas linhas de propósito: a primeira é o piso que qualquer motor entende,
+     a segunda é a mistura tematizada. Motor antigo descarta só a que não
+     conhece e o selo continua legível. */
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--vermelho) 6%, var(--surface));
+}
+
+/* PRAZO. Sem vencer, é meta e não alarme: fica no tom de apoio. */
+.t360-prazo {
+  color: var(--texto-fraco);
+  font-size: var(--t-peq);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* ⚠ VENCIDO — o único ponto deste arquivo em que a cor precisa GRITAR, e por
+   isso é o mais medido (rodapé). Tinta de TEXTO (`--graf-alerta`), negrito, e
+   a palavra "venceu" escrita junto: cor sozinha não passa por quem imprime em
+   preto-e-branco nem por quem não distingue vermelho de verde. */
+.t360-prazo-venc {
+  color: var(--graf-alerta);
+  font-weight: var(--p-forte);
+}
+/* ⚠ A ORDEM DESTE BLOCO É A REGRA. Ele vem DEPOIS dos três de status para
+   vencer sem precisar de especificidade extra (decisão 2 do cabeçalho deste
+   bloco): pendência vencida que também "persiste" mostra a barra do vencido,
+   que é a urgência maior. Mover este bloco para cima faz a barra do prazo
+   sumir sob a barra do status — sem nenhum erro aparecendo. */
+.t360-pend-item[data-vencida], .t360-pend-item.vencida {
+  border-left-color: var(--graf-alerta);
+  border-left-width: 5px;
+  background: var(--surface);
+  background: color-mix(in srgb, var(--vermelho) 7%, var(--surface));
+}
+
+/* ⚠ NO TEMA ESCURO O TINGIMENTO TRANSLÚCIDO PRECISA DE MAIS TINTA para não
+   sumir contra a superfície escura — mesma lição da v1.1.192 já registrada no
+   app.css (.faixa-ajustes) e repetida na faixa de aviso deste arquivo. */
+/* ⚠ O AÇO É O ÚNICO QUE TROCA DE TOKEN NO ESCURO, e isso é medição: o
+   `--aco` do tema escuro (#4e8fbe) já chega em 4,72:1 contra a superfície
+   LIMPA — não sobra nada para pagar o tingimento da pastilha, e a 14% ele cai
+   para 3,88:1. O par `--aco-claro` existe exatamente para isso e devolve
+   6,11:1 na mesma pastilha. Os outros três têm folga e ficam como estão. */
+[data-tema="dark"] .t360-chip-comentario { color: var(--aco-claro); background: color-mix(in srgb, var(--aco) 14%, var(--surface)); }
+[data-tema="dark"] .t360-chip-atencao    { background: color-mix(in srgb, var(--amarelo) 14%, var(--surface)); }
+[data-tema="dark"] .t360-chip-pendencia  { background: color-mix(in srgb, var(--vermelho) 14%, var(--surface)); }
+[data-tema="dark"] .t360-chip-aprovado   { background: color-mix(in srgb, var(--verde) 14%, var(--surface)); }
+[data-tema="dark"] .t360-st-aberta       { background: color-mix(in srgb, var(--amarelo) 14%, var(--surface)); }
+[data-tema="dark"] .t360-st-resolvida    { background: color-mix(in srgb, var(--verde) 14%, var(--surface)); }
+[data-tema="dark"] .t360-st-persiste     { background: color-mix(in srgb, var(--vermelho) 14%, var(--surface)); }
+[data-tema="dark"] .t360-arrasta         { background: color-mix(in srgb, var(--vermelho) 14%, var(--surface)); }
+[data-tema="dark"] .t360-pend-item[data-vencida],
+[data-tema="dark"] .t360-pend-item.vencida { background: color-mix(in srgb, var(--vermelho) 12%, var(--surface)); }
+
+/* Nenhuma pendência: recado curto, sem moldura de alarme. Zero pendência é boa
+   notícia, e boa notícia dentro de uma caixa vermelha confunde. */
+.t360-pend-vazio {
+  padding: 14px 12px;
+  border: var(--traco) dashed var(--linha);
+  border-radius: var(--raio-sm);
+  background: var(--surface-2);
+  color: var(--texto-fraco);
+  font-size: var(--t-peq);
+  line-height: 1.5;
+}
+
+/* =====================================================================
+ * ANTES E DEPOIS — a mesma estação em duas visitas, lado a lado
+ *
+ * CONTRATO:  .t360-ad > .t360-ad-lado × 2   (cada lado: <figure> + legenda)
+ *            .t360-ad-tit    cabeçalho do par (estação · nível)
+ *            .t360-ad-data   a data de cada lado
+ *
+ * ⚠ A DATA DE CADA LADO É OBRIGATÓRIA, e por isso ela tem estilo próprio
+ * aqui: duas fotos da mesma parede sem data embaixo são duas fotos iguais. É
+ * a data que transforma o par em prova de avanço.
+ * ===================================================================== */
+.t360-ad {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 10px 0;
+}
+/* sem `min-width:0` a coluna do grid não encolhe abaixo da largura natural da
+   imagem, e as duas juntas estouram o cartão */
+.t360-ad-lado { min-width: 0; }
+.t360-ad-lado figure {
+  margin: 0;
+  border: var(--traco) solid var(--linha);
+  border-radius: var(--raio-sm);
+  overflow: hidden;
+  /* ⚠ --navy continua escuro no tema claro (é o único token assim): foto de
+     obra sobre branco cansa a vista, e a moldura escura é a mesma do palco */
+  background: var(--navy);
+}
+.t360-ad-lado img {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* teto para os dois lados caberem na mesma dobra: panorama aberto é muito
+     mais largo que alto, e sem teto o par empurra a legenda para fora */
+  max-height: 300px;
+  object-fit: contain;
+}
+.t360-ad-tit {
+  margin: 0 0 6px;
+  font-weight: var(--p-forte);
+  font-size: var(--t-med);
+}
+.t360-ad-data {
+  display: block;
+  padding: 4px 8px;
+  background: var(--surface-2);
+  color: var(--texto);
+  font-size: var(--t-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+/* =====================================================================
  * CELULAR
  * ===================================================================== */
 @media screen and (max-width: 820px) {
@@ -505,6 +1209,24 @@
      fora do alcance; na tela estreita ele volta para o fluxo */
   .t360-barra .t360-barra-fim { margin-left: 0; }
   .t360-aviso .t360-aviso-acao { margin-left: 0; }
+
+  /* A BARRA DE FILTRO DAS PENDÊNCIAS ROLA, NÃO QUEBRA — pelo mesmo motivo da
+     barra do visualizador logo acima: quatro filtros empilhados empurram a
+     primeira pendência para fora da tela, e a primeira pendência é o assunto. */
+  .t360-pend-filtro {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  /* alvo de dedo também no filtro: errar o filtro esconde a pendência que a
+     pessoa foi buscar, e ela conclui que a pendência sumiu */
+  .t360-pend-filtro .btn, .t360-pend-filtro button { min-height: 44px; }
+
+  /* ⚠ A PASTILHA DE SETA ENCOLHE COM A TELA. 190px numa foto de 360px é
+     metade da largura: duas passagens no mesmo corredor tapam a parede que
+     elas apontam. O nome continua inteiro no `title` e a reticência avisa que
+     foi cortado (ver `.t360-seta-nome`). */
+  .t360-seta { max-width: min(190px, 46vw); }
 }
 
 @media screen and (max-width: 560px) {
@@ -516,6 +1238,166 @@
     border-radius: var(--raio);
   }
   .t360-vazio { padding: 32px 16px; }
+
+  /* ---------------------------------------------------------------
+   * 360px — a largura do telefone mais estreito ainda em uso na obra.
+   * Tudo daqui foi conferido nessa medida, não deduzido.
+   * ------------------------------------------------------------- */
+
+  /* os três botões de veredito dividem a linha em vez de empilhar: em 360px
+     de largura sobram ~338px úteis, e três alvos de 44px cabem lado a lado */
+  .t360-pend-item { padding: 8px 9px; }
+  .t360-pend-acoes { gap: 6px; }
+  .t360-veredito { flex: 1 1 auto; padding-left: 8px; padding-right: 8px; }
+  /* ⚠ `.btn` da casa é `white-space:nowrap`: em 44px de largura o rótulo
+     "Continua igual" sairia por fora do botão, por baixo do vizinho. Aqui ele
+     quebra em duas linhas e o botão cresce — é a mesma saída que o app.css já
+     deu à `.btn.longo`. */
+  .t360-veredito { white-space: normal; line-height: 1.2; text-align: center; }
+
+  /* antes-e-depois EMPILHA no telefone: duas colunas de 165px devolvem duas
+     miniaturas em que não se enxerga fissura nenhuma — e é a fissura o
+     assunto do par. Lado a lado só no papel e no monitor. */
+  .t360-ad { grid-template-columns: 1fr; }
+  .t360-ad-lado img { max-height: 230px; }
+
+  /* ---------------------------------------------------------------
+   * A LISTA DE ESTAÇÕES VIRA CARTÃO — e isto é conserto, não enfeite.
+   *
+   * O app.css transforma toda `table.tbl` abaixo de 820px em caixa de
+   * ROLAGEM LATERAL (`display:block; overflow-x:auto; white-space:nowrap`).
+   * A lista de estações tem sete colunas e cinco botões na última: em 360px
+   * ela abre mostrando a miniatura e o nome, e TODOS os botões ficam do
+   * outro lado de um arrasto horizontal que ninguém adivinha existir. Já é o
+   * caso hoje — "Abrir 360" e "Tirar foto" não aparecem na primeira tela do
+   * telefone, que é justamente o aparelho de quem está na obra.
+   *
+   * ⚠ A ESPECIFICIDADE AQUI É DE PROPÓSITO, e o controle negativo diz
+   * exatamente o que cai sem ela. A regra do app.css é `.main table.tbl`
+   * (0,2,1); `table.t360-pontos` sozinha (0,1,1) PERDE dela. Tirando o
+   * `.main` daqui, as linhas ainda viram cartão — mas a TABELA continua com
+   * `overflow-x:auto` e `white-space:nowrap` do app.css, ou seja: o cartão
+   * nasce dentro de uma caixa que rola de lado e o texto não quebra. Metade
+   * do conserto, e a metade que some é a que ninguém vê na captura, porque a
+   * borda do cartão continua na largura certa — só o CONTEÚDO transborda.
+   * Por isso todo seletor deste bloco começa em `.main table.t360-pontos`.
+   * ------------------------------------------------------------- */
+  .main table.t360-pontos { display: block; overflow-x: visible; white-space: normal; }
+  .main table.t360-pontos thead { display: none; }
+  .main table.t360-pontos tbody { display: block; }
+  .main table.t360-pontos tr {
+    display: block;
+    margin: 0 0 8px;
+    padding: 9px 10px;
+    border: var(--traco) solid var(--linha);
+    border-radius: var(--raio-sm);
+    background: var(--surface);
+  }
+  .main table.t360-pontos td {
+    display: block;
+    width: auto;
+    padding: 2px 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  /* o nome da estação é o título do cartão */
+  .main table.t360-pontos td:nth-child(2) { font-size: var(--t-med); }
+  /* os botões ganham a linha inteira e o alvo de dedo da casa */
+  .main table.t360-pontos td.t360-acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+    white-space: normal;
+  }
+  .main table.t360-pontos td.t360-acoes .btn { min-height: 44px; flex: 1 1 auto; }
+
+  /* ⚠ O RÓTULO DA COLUNA PRECISA VIR JUNTO DO VALOR, senão o cartão vira uma
+     pilha de números sem nome ("1,60 m", "3", "0").
+     O caminho CERTO é o `<td data-rot="Nível">` — ele viaja com a célula e
+     continua verdadeiro se a coluna mudar de lugar. Enquanto `_listaPontos`
+     (js/tour360ui.js) não escrever o atributo, valem os quatro rótulos por
+     POSIÇÃO logo abaixo, copiados do cabeçalho daquela função, nesta ordem:
+        1 miniatura · 2 Estação · 3 Nível · 4 Altura da câmera ·
+        5 Comentários · 6 Medidas · 7 ações
+     ⚠ ESSA CÓPIA É UM ACOPLAMENTO: mexeu na ordem das colunas lá e não mexeu
+     aqui, o cartão passa a chamar altura de nível — e mostrar o rótulo errado
+     é pior que não mostrar nenhum. Por isso a regra do `data-rot` vem antes e
+     desliga a por posição (`:not([data-rot])`): assim que o js escrever o
+     atributo, estas quatro linhas param de valer sozinhas e podem sair. */
+  .main table.t360-pontos td[data-rot]::before {
+    content: attr(data-rot) ": ";
+    color: var(--texto-fraco);
+  }
+  .main table.t360-pontos td:not([data-rot]):nth-child(3)::before { content: "Nível: "; color: var(--texto-fraco); }
+  .main table.t360-pontos td:not([data-rot]):nth-child(4)::before { content: "Altura da câmera: "; color: var(--texto-fraco); }
+  .main table.t360-pontos td:not([data-rot]):nth-child(5)::before { content: "Comentários: "; color: var(--texto-fraco); }
+  .main table.t360-pontos td:not([data-rot]):nth-child(6)::before { content: "Medidas: "; color: var(--texto-fraco); }
+
+  /* ---------------------------------------------------------------
+   * A LISTA DE PENDÊNCIAS TAMBÉM VIRA CARTÃO — mesmo conserto e mesmo
+   * motivo da lista de estações logo acima, e aqui o preço é maior: são
+   * SETE colunas, e os botões de veredito moram na última. Em 360px a
+   * tabela abre mostrando "Estação" e "O que foi apontado", e os três
+   * botões que decidem a pendência ficam do outro lado de um arrasto
+   * horizontal que ninguém adivinha. Pendência que só se resolve rolando
+   * de lado é pendência que ninguém resolve.
+   * ⚠ De novo o `.main` no seletor: sem ele a regra perde para
+   * `.main table.tbl` do app.css e a tabela continua rolando.
+   * ------------------------------------------------------------- */
+  .main table.t360-tab-pendencias { display: block; overflow-x: visible; white-space: normal; }
+  .main table.t360-tab-pendencias thead { display: none; }
+  .main table.t360-tab-pendencias tbody { display: block; }
+  .main table.t360-tab-pendencias tr {
+    display: block;
+    margin: 0 0 8px;
+    padding: 9px 10px;
+    border: var(--traco) solid var(--linha);
+    border-radius: var(--raio-sm);
+  }
+  .main table.t360-tab-pendencias td {
+    display: block;
+    width: auto;
+    padding: 2px 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* a estação é o título do cartão; o apontamento vem logo abaixo, em corpo */
+  .main table.t360-tab-pendencias td:nth-child(1) { font-size: var(--t-med); }
+  /* a última coluna são os botões: linha inteira, alvo de dedo, e o
+     `white-space:nowrap` inline dela precisa ser desfeito para caber */
+  .main table.t360-tab-pendencias td:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+    white-space: normal;
+  }
+  .main table.t360-tab-pendencias td:last-child .btn {
+    flex: 1 1 auto;
+    min-height: 44px;
+    white-space: normal;
+    line-height: 1.2;
+  }
+  /* ⚠ MESMO ACOPLAMENTO DA LISTA DE ESTAÇÕES, e a mesma saída: `data-rot` no
+     <td> é o caminho certo (viaja com a célula), e os rótulos por POSIÇÃO
+     abaixo são a rede enquanto ele não existe. A ordem foi copiada do
+     `<thead>` de `_cardPendencias`:
+       1 Estação · 2 O que foi apontado · 3 Desde · 4 Responsável ·
+       5 Prazo · 6 Situação · 7 botões
+     Mexeu na ordem lá e não mexeu aqui, o cartão passa a chamar prazo de
+     responsável — e rótulo errado é pior que rótulo nenhum. */
+  .main table.t360-tab-pendencias td[data-rot]::before {
+    content: attr(data-rot) ": ";
+    color: var(--texto-fraco);
+  }
+  .main table.t360-tab-pendencias td:not([data-rot]):nth-child(3)::before { content: "Desde: "; color: var(--texto-fraco); }
+  .main table.t360-tab-pendencias td:not([data-rot]):nth-child(4)::before { content: "Responsável: "; color: var(--texto-fraco); }
+  .main table.t360-tab-pendencias td:not([data-rot]):nth-child(5)::before { content: "Prazo: "; color: var(--texto-fraco); }
+  .main table.t360-tab-pendencias td:not([data-rot]):nth-child(6)::before { content: "Situação: "; color: var(--texto-fraco); }
 }
 
 /* =====================================================================
@@ -534,6 +1416,181 @@
   .t360-cortina,
   .t360-marcadores,
   .t360-mk { display: none !important; }
+
+  /* ⚠ AS FERRAMENTAS DA FOTO TAMBÉM SOMEM — e não é a mesma lista de cima.
+     A barra e os marcadores já saíam; a seta, o botão de sair da tela cheia e
+     o minimapa nasceram depois, todos com `position:absolute` e z-index sobre
+     o palco. No papel eles viram sujeira POR CIMA da foto que é o assunto:
+     uma pastilha preta atravessada na parede fotografada, e o leitor tentando
+     clicar num pedaço de papel.
+     ⚠ `#t360-mini` aqui vai SEM o `:not(.btn)` de propósito: o id serve ao
+     cartão e ao botãozinho "Mapa" (ver o bloco do minimapa), e os dois têm de
+     sair. E `!important` é obrigatório porque a posição desses três é escrita
+     INLINE pelo js — sem ele, `display:none` da folha perde para o inline e a
+     pastilha continua na folha. */
+  .t360-setas,
+  .t360-seta,
+  #t360-sair-tc, .t360-sair-tc,
+  #t360-mini, .t360-mini-cartao,
+  .t360-pend-filtro,
+  .t360-pend-acoes,
+  .t360-veredito { display: none !important; }
+
+  /* ---------------------------------------------------------------
+   * PENDÊNCIAS NO PAPEL
+   * ------------------------------------------------------------- */
+  /* ⚠ NENHUMA PENDÊNCIA PARTIDA AO MEIO. Pendência com o texto numa folha e o
+     prazo na seguinte é o defeito clássico do relatório: quem lê não sabe
+     mais de qual item é a data que está no alto da página. As duas grafias
+     ficam (`break-*` é a atual, `page-break-*` é a antiga) porque o WebView
+     do instalador antigo só entende a segunda. */
+  .t360-pend-item {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none;
+  }
+  /* título de painel não fica órfão no rodapé da folha, sem a lista embaixo */
+  .t360-pend-cab, .t360-ad-tit {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+  /* ⚠⚠ AS TINTAS SEMÂNTICAS PRECISAM VOLTAR AOS VALORES CLAROS NO PAPEL — E O
+     app.css NÃO FAZ ISSO. O bloco @media print dele devolve `--surface`,
+     `--texto`, `--linha` e companhia aos valores claros justamente porque o
+     `data-tema="dark"` continua no <html> na hora de imprimir (foi o defeito
+     do "PDF que saía preto"). Mas ele NÃO redeclara `--vermelho`, `--verde`,
+     `--amarelo`, `--aco`, `--graf-alerta` nem `--graf-aviso`: essas continuam
+     com o valor CLAREADO do tema escuro, que existe para sobreviver a um
+     cartão escuro — e cai no branco do papel.
+     MEDIDO em captura (Chrome headless, @media print, partindo do tema
+     escuro), apagando este bloco de propósito — que é o controle negativo
+     dele:
+       chip Atenção 2,08:1 · Pendência 2,77 · Aprovado 2,77 · Comentário
+       3,50 · status Aberta 2,08 · Resolvida 2,77 · Persiste 2,77 · selo
+       arrastando 2,87 — e a BORDA do selo junto, contra 3:1 de mínimo
+     Ou seja: quem trabalha no tema escuro — e o tema é lembrado por aparelho
+     — mandava para o cliente um relatório em que as pastilhas de status
+     simplesmente não se leem. Nenhum assert pegava, porque na TELA está tudo
+     acima de 4,5.
+     A correção repõe as tintas nos elementos do tour, e só neles: mexer no
+     :root daqui mudaria o impresso do app inteiro a partir de uma folha de
+     módulo. Os valores são os do `:root` do css/app.css — ⚠ se aquele bloco
+     mudar, este tem de mudar junto; a saída definitiva é o @media print do
+     app.css passar a redeclarar as semânticas para todo mundo (a `.pill` do
+     app tem exatamente o mesmo buraco). */
+  .t360-chip, .t360-st, .t360-arrasta,
+  .t360-pend, .t360-pend-item, .t360-prazo, .t360-prazo-venc,
+  .t360-pendencias, .t360-tab-pendencias, .t360-tab-pendencias tr,
+  .t360-estacao, .t360-ad {
+    --aco: #0d6ebd;
+    --aco-claro: #3d92cb;
+    --verde: #15803d;
+    --vermelho: #d61f26;
+    --amarelo: #aa6200;
+    --graf-alerta: #b91c1c;
+    --graf-aviso: #b45309;
+  }
+
+  /* ⚠ O STATUS NÃO PODE DEPENDER DE TINTA DE FUNDO — mesma lição já escrita
+     na etiqueta de medida aproximada logo acima: impressora com "imprimir
+     cores de fundo" desligada apaga o tingimento da pastilha e sobra uma
+     pílula branca vazia. A BORDA e a LETRA imprimem sempre. Por isso, no
+     papel, a pastilha perde o fundo tingido, ganha borda de verdade e mantém
+     a tinta no TEXTO — que é o que continua contando o estado quando o fundo
+     não sai. Somando, o estado chega ao leitor por três caminhos
+     independentes: a palavra escrita, a barra lateral do item e a cor da
+     letra. Medido depois da correção: 4,84 · 5,02 · 6,47 · 5,02 (:1).
+     ⚠ Os seletores repetem a forma `[data-tema="dark"] .x` porque é ela que
+     escreve o fundo tingido do escuro (0,2,0): sem o empate de
+     especificidade, a regra do papel perderia e o tingimento continuaria. */
+  .t360-chip, .t360-st, .t360-arrasta,
+  [data-tema="dark"] .t360-chip, [data-tema="dark"] .t360-st, [data-tema="dark"] .t360-arrasta {
+    background: var(--surface);
+    border: var(--traco) solid var(--linha-forte);
+    box-shadow: none;
+  }
+  /* ⚠ e o `--aco-claro` que o escuro usa na pastilha de comentário NÃO lê no
+     branco (3,40:1 medido): no papel volta o `--aco`, que dá 4,84:1. */
+  .t360-chip-comentario, [data-tema="dark"] .t360-chip-comentario { color: var(--aco); }
+  /* ⚠ E AQUI TAMBÉM A FORMA `[data-tema="dark"] .x` TEM DE APARECER. Sem ela
+     a regra neutra logo acima — que precisa ser (0,2,0) para vencer o fundo
+     tingido do escuro — vencia ESTA, e a borda do selo saía no cinza de linha
+     do sistema: medido em 1,94:1, contra os 3:1 mínimos de contorno. O selo
+     "arrastando há N visitas" voltava a ser indistinguível da pastilha
+     "Persiste" no papel, que é justamente onde as duas viram argumento. */
+  .t360-st-persiste, .t360-arrasta, .t360-chip-pendencia,
+  [data-tema="dark"] .t360-st-persiste, [data-tema="dark"] .t360-arrasta, [data-tema="dark"] .t360-chip-pendencia {
+    border-color: var(--vermelho);
+  }
+  .t360-chip-atencao, .t360-st-aberta,
+  [data-tema="dark"] .t360-chip-atencao, [data-tema="dark"] .t360-st-aberta {
+    border-color: var(--amarelo);
+  }
+  .t360-chip-aprovado, .t360-st-resolvida,
+  [data-tema="dark"] .t360-chip-aprovado, [data-tema="dark"] .t360-st-resolvida {
+    border-color: var(--verde);
+  }
+  .t360-st-aberta { border-color: var(--amarelo); }
+  .t360-st-resolvida { border-color: var(--verde); }
+
+  /* ---------------------------------------------------------------
+   * ANTES E DEPOIS NO PAPEL — as duas colunas lado a lado
+   *
+   * ⚠ NO PAPEL É `display:table`, E NÃO O GRID DA TELA. Grid é o layout certo
+   * na tela e o errado na folha: o paginador não sabe quebrar uma faixa de
+   * grid, e no WebView antigo (o do instalador que ainda roda em cliente) as
+   * duas colunas colapsam numa só — o par de fotos sai um embaixo do outro,
+   * que é exatamente o que a página de antes-e-depois existe para não ser.
+   * `display:table` com `table-layout:fixed` é o único arranjo de duas
+   * colunas que todo motor de impressão desenha igual desde sempre.
+   * ------------------------------------------------------------- */
+  .t360-ad {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: separate;
+    border-spacing: 8px 0;
+    margin: 6px 0 10px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .t360-ad-lado {
+    display: table-cell;
+    width: 50%;
+    vertical-align: top;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .t360-ad-lado figure {
+    background: var(--surface);
+    border-color: var(--linha-forte);
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* ⚠ TETO EM MILÍMETRO, NÃO EM PIXEL. A área imprimível do A4 retrato tem
+     ~277mm de altura; com dois cabeçalhos, as duas legendas e o rodapé, 92mm
+     é o que sobra para a imagem sem empurrar a legenda para a folha seguinte
+     — e legenda sem foto é a mesma pendência de sempre: o leitor não sabe de
+     que dia é a imagem. Em px o teto mudaria com o DPI da impressora. */
+  .t360-ad-lado img { max-height: 92mm; }
+  .t360-ad-data {
+    background: var(--surface-2);
+    color: var(--texto);
+  }
+
+  /* ⚠ A COLUNA DOS BOTÕES SAI DA FOLHA — e o <th> dela SAI JUNTO. Escondendo
+     só o <td>, a tabela perde uma célula por linha e todas as colunas andam
+     um lugar para a direita a partir do cabeçalho: o relatório sai com
+     "Responsável" impresso em cima da coluna do prazo. É o tipo de defeito
+     que só aparece no papel, depois de entregue. */
+  .t360-tab-pendencias th:last-child,
+  .t360-tab-pendencias td:last-child { display: none; }
+  /* linha de pendência não parte entre duas folhas, e o cabeçalho se repete
+     em toda folha: sem isso a segunda página é uma tabela sem título de
+     coluna, e ninguém sabe qual data é qual */
+  .t360-tab-pendencias thead { display: table-header-group; }
+  .t360-tab-pendencias tr { break-inside: avoid; page-break-inside: avoid; }
+  .t360-pendencias { break-inside: auto; }
 
   /* o palco vira moldura de foto: fundo navy chapado em página inteira come
      o cartucho e escurece a imagem que é o assunto do relatório */
@@ -595,3 +1652,268 @@
   }
   .t360-vazio { display: none !important; }
 }
+
+
+/* =====================================================================
+ * PONTE — vestindo a marcação que a tela ESCREVE HOJE
+ *
+ * `_cardPendencias` (js/tour360ui.js) monta:
+ *   div.card.mb.t360-pendencias           (+ style="border-left:4px solid #dc2626"
+ *                                          quando há vencida ou arrastando)
+ *     <b>Pendências desta visita</b>
+ *     <p class="muted">  … <b style="color:#b45309">N se arrastando</b>
+ *                        … <b style="color:#dc2626">N com prazo vencido</b>
+ *     table.tbl.t360-tab-pendencias
+ *       colunas: 1 Estação · 2 O que foi apontado · 3 Desde ·
+ *                4 Responsável · 5 Prazo · 6 Situação · 7 (botões)
+ *       <tr style="background:rgba(220,38,38,.10)">  vencida
+ *       <tr style="background:rgba(180,83,9,.10)">   arrastando
+ *       prazo vencido:  <b style="color:#dc2626">vencido em dd/mm/aaaa</b>
+ *       há N visitas:   <b style="color:#b45309">há N visitas</b>
+ *       botões:         button.btn.sm[data-gacao="t360-pend-status"|"t360-pend-ir"]
+ *
+ * ⚠ POR QUE O GANCHO É `data-gacao` E NÃO UMA CLASSE. Os botões de veredito
+ * não têm classe própria — só `.btn sm`, que é de toda a casa. `data-gacao` é
+ * o nome do despachante e é contrato estável deste módulo (é por ele que o
+ * clique chega ao handler); usar atributo de comportamento como gancho de
+ * estilo não é bonito, mas é o único handle que existe, e um alvo de toque
+ * que não existe é pior que um seletor feio. Quando a tela puser
+ * `.t360-veredito`, a regra do bloco de cima assume e esta pode sair.
+ * ===================================================================== */
+.t360-pendencias { margin-top: 12px; }
+
+/* ⚠ ALVO DE 44px NO VEREDITO — a razão inteira está no bloco `.t360-veredito`
+   lá em cima: estes três botões GRAVAM um veredito que atravessa para a
+   próxima visita e sai no Portal do cliente. `.btn` da casa dá ~30px de
+   altura no tamanho `sm`. Errar o dedo aqui é marcar como resolvida a fissura
+   que continua na parede. */
+[data-gacao="t360-pend-status"],
+[data-gacao="t360-pend-ir"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* ⚠⚠ OS DOIS HEX CRAVADOS NO `style=` REPROVAM NO TEMA ESCURO — e são
+   exatamente os dois que o css/app.css já documenta como reprovados:
+   "medido sobre o cartao #142433: #dc2626 dava 3,21:1 e #ea580c dava 4,39:1".
+   Aqui, medido em captura contra a marcação REAL, apagando estas regras de
+   propósito (o controle negativo delas), no tema ESCURO:
+     · "vencido em dd/mm" (#dc2626) sobre a linha destacada .. 3,18:1
+     · "há N visitas"     (#b45309) na mesma linha ........... 3,05:1
+     · o resumo do cartão, sobre o cartão limpo ...... 3,27 e 3,14:1
+   Mínimo 4,5. São as DUAS frases que o cartão existe para dizer, e as duas
+   somem para quem trabalha no tema escuro — que é lembrado por aparelho,
+   então some sempre para a mesma pessoa.
+   ⚠ ISTO É REMENDO, E TEM DATA PARA SAIR. `!important` é o único jeito de uma
+   folha vencer `style=`, e ele só é aceitável aqui porque o alvo é cirúrgico:
+   um <b> cujo próprio atributo `style` contém aquele hex. O conserto de
+   verdade é `_celulaPrazo` e o resumo do cartão pararem de escrever hex e
+   passarem a `var(--graf-alerta)` / `var(--graf-aviso)` — os tokens que o
+   app.css mantém justamente para "estouro/vencido em TEXTO" e "atenção em
+   TEXTO", com valor próprio por tema. No dia em que isso acontecer, estas
+   duas regras deixam de casar sozinhas e podem sair.
+   ⚠ E o seletor é `b[style*=...]`, nunca `[style*=...]` solto: o CARTÃO
+   também carrega `#dc2626` (no `border-left`), e pintar `color` nele
+   avermelharia o texto inteiro do painel. */
+.t360-pendencias b[style*="#dc2626"] { color: var(--graf-alerta) !important; }
+.t360-pendencias b[style*="#b45309"] { color: var(--graf-aviso) !important; }
+
+/* ⚠ E A TINTA DA LINHA DESTACADA TAMBÉM É INLINE — e é ela que derrubava o
+   tema CLARO, que eu tinha dado como salvo. Medido na marcação real:
+     · "vencido em dd/mm" sobre a linha vencida ..... 4,08:1  (mínimo 4,5)
+     · "há N visitas" sobre a mesma linha ........... 4,24:1
+   O texto sozinho passa (4,82 e 5,01 sobre o branco do cartão): quem tira os
+   dois do ar é `rgba(220,38,38,.10)` no `style=` da <tr>. Ou seja, o destaque
+   que existe para a linha SALTAR é o que apaga a frase que ela precisa dizer.
+   Foi a medição contra a marcação de verdade que mostrou; contra a minha, do
+   bloco de cima, o claro estava verde.
+   A tinta aqui vem de `color-mix` sobre `--surface`, na mesma porcentagem
+   calibrada para as pastilhas (6% no claro, 14% no escuro) — os números do
+   rodapé. E o `[style*=...]` casa a fonte do problema: a <tr> que carrega
+   AQUELE rgba. Some sozinho quando o js passar a marcar a linha por classe. */
+.t360-tab-pendencias tr[style*="rgba(220,38,38"] {
+  background: color-mix(in srgb, var(--vermelho) 6%, var(--surface)) !important;
+}
+.t360-tab-pendencias tr[style*="rgba(180,83,9"] {
+  background: color-mix(in srgb, var(--amarelo) 6%, var(--surface)) !important;
+}
+[data-tema="dark"] .t360-tab-pendencias tr[style*="rgba(220,38,38"] {
+  background: color-mix(in srgb, var(--vermelho) 14%, var(--surface)) !important;
+}
+[data-tema="dark"] .t360-tab-pendencias tr[style*="rgba(180,83,9"] {
+  background: color-mix(in srgb, var(--amarelo) 14%, var(--surface)) !important;
+}
+
+
+/* =====================================================================
+ * PAPEL — o segundo bloco, e ele PRECISA vir depois da PONTE
+ *
+ * ⚠ POR QUE UM SEGUNDO @media print, e não uma linha no primeiro: a ponte
+ * pinta a linha destacada com `!important` (é a única forma de vencer o
+ * `style=` do js), e entre duas declarações `!important` de mesma
+ * especificidade ganha a ÚLTIMA do arquivo. O primeiro bloco de papel mora
+ * acima da ponte; qualquer regra escrita lá perderia para ela, em silêncio.
+ *
+ * O QUE ISTO CONSERTA, medido em captura (Chrome, @media print, partindo do
+ * tema escuro, marcação real): a linha vencida saía com a tinta de 14% — a
+ * porcentagem calibrada para a SUPERFÍCIE ESCURA — aplicada sobre o branco do
+ * papel, porque `[data-tema="dark"]` continua no <html> na hora de imprimir e
+ * a regra dele tem especificidade maior. O fundo virava #f9e0e1 em vez de
+ * #fdf2f2, e o "há N visitas" em âmbar caía para 4,01:1 (mínimo 4,5). O
+ * vermelho aguentava (5,17), o âmbar não — e é o âmbar que conta há quantas
+ * visitas a pendência se arrasta, que é a frase que vira cobrança na reunião.
+ * Depois: 4,58:1 no âmbar e 5,90:1 no vermelho, os mesmos números da tela.
+ * ===================================================================== */
+@media print {
+  .t360-tab-pendencias tr[style*="rgba(220,38,38"],
+  [data-tema="dark"] .t360-tab-pendencias tr[style*="rgba(220,38,38"] {
+    background: color-mix(in srgb, var(--vermelho) 6%, var(--surface)) !important;
+  }
+  .t360-tab-pendencias tr[style*="rgba(180,83,9"],
+  [data-tema="dark"] .t360-tab-pendencias tr[style*="rgba(180,83,9"] {
+    background: color-mix(in srgb, var(--amarelo) 6%, var(--surface)) !important;
+  }
+}
+
+/* =====================================================================
+ * OS NÚMEROS — o que foi medido, como, e o que ainda não foi
+ *
+ * ⚠ NADA AQUI FOI ESTIMADO. Cada razão saiu de captura em Chrome headless
+ * (`--headless=new`, escala 1, `Emulation.setDeviceMetricsOverride`), PNG
+ * decodificado e PIXEL LIDO. A cor do texto entra na conta por uma "sonda":
+ * um <i> chapado com a cor RESOLVIDA do elemento (`getComputedStyle`), posto
+ * DENTRO dele — assim `opacity`, `color-mix` e a fotografia por baixo entram
+ * exatamente como entram no glifo, e a franja de subpixel da letra não
+ * contamina a leitura. Régua WCAG 2.1: 4,5:1 para texto, 3:1 para contorno.
+ *
+ * ⚠ E OS "CINCO TONS DE ESCURO" NÃO EXISTEM MAIS. Saíram na v1.1.188:
+ * `App.aplicarTema` remove `data-tom` do <html> e nenhuma regra casa com ele.
+ * Os temas de COR são DOIS. Medi os dois, e mais o papel.
+ *
+ * ---------------------------------------------------------------------
+ * TELA — TEMA CLARO                                         (mínimo 4,5)
+ *   chip Comentário 4,84 · Atenção 4,66 · Pendência 5,90 · Aprovado 4,62
+ *   status Aberta 4,66 · Resolvida 4,62 · Persiste 5,90
+ *   selo "arrastando" 5,90   (a borda dele: 4,69 — mínimo de contorno é 3)
+ *   prazo VENCIDO sobre o item vencido 5,77 · meta no mesmo item 5,53
+ *   prazo no prazo 6,19 · meta no item aberto 6,19 · no resolvido 5,51
+ *
+ * TELA — TEMA ESCURO                                        (mínimo 4,5)
+ *   chip Comentário 6,11 · Atenção 6,26 · Pendência 4,93 · Aprovado 4,78
+ *   status Aberta 6,26 · Resolvida 4,78 · Persiste 4,93
+ *   selo "arrastando" 4,93   (borda 4,75)
+ *   prazo VENCIDO 5,10 · meta no item vencido 6,33
+ *   prazo no prazo 7,42 · meta no item aberto 7,42 · no resolvido 6,67
+ *
+ * PAPEL (@media print, PARTINDO DO TEMA ESCURO — o caso que quebrava)
+ *   chip Comentário 5,27 · Atenção 5,02 · Pendência 6,47 · Aprovado 5,02
+ *   status Aberta 5,02 · Resolvida 5,02 · Persiste 6,47
+ *   selo "arrastando" 6,47   (borda 5,14)
+ *   prazo VENCIDO 5,33 · meta no item vencido 5,10
+ *
+ * SOBRE A FOTOGRAFIA (sem tema — ver o cabeçalho do arquivo)
+ *   seta viva ....... 6,23 (foto clara #f2efe8) · 16,93 (escura #2b2622)
+ *   seta apagada .... 16,10 nas duas   (era 2,22 e 5,15)
+ *   minimapa: nome da planta 9,37 / 15,84 · recado 8,86 / 15,84
+ *
+ * O PIOR DE TODOS é 4,62 (Aprovado/Resolvida no tema claro). Foi ele que
+ * mandou na escolha da porcentagem de tinta das pastilhas: 6% no claro e 14%
+ * no escuro. A varredura de 0% a 26% mostrou que 13% — o valor "bonito" que
+ * eu tinha escrito antes de medir — derrubava TRÊS das quatro pastilhas do
+ * tema claro para a faixa de 4,1 a 4,4.
+ *
+ * ---------------------------------------------------------------------
+ * A PONTE, MEDIDA CONTRA A MARCAÇÃO QUE A TELA ESCREVE HOJE
+ * (`_cardPendencias`, com os `style=` cravados que ela põe)
+ *
+ *                                        antes -> depois
+ *   TEMA CLARO
+ *     "vencido em dd/mm" na linha vencida .... 4,08 -> 5,90
+ *     "há N visitas" na mesma linha .......... 4,24 -> 4,58
+ *     resumo "N com prazo vencido" ........... 4,82 -> 6,46
+ *     resumo "N se arrastando" ............... 5,01 -> 5,01
+ *   TEMA ESCURO
+ *     "vencido em dd/mm" na linha vencida .... 3,18 -> 4,93
+ *     "há N visitas" na mesma linha .......... 3,05 -> 6,57
+ *     resumo "N com prazo vencido" ........... 3,27 -> 5,71
+ *     resumo "N se arrastando" ............... 3,14 -> 7,60
+ *
+ * ⚠ O CLARO TAMBÉM REPROVAVA, e eu não esperava: o texto sozinho passa
+ * (4,82 e 5,01 sobre o branco do cartão) — quem derruba é a tinta da LINHA
+ * destacada, também inline. Contra a minha marcação de laboratório o tema
+ * claro estava verde; só medir contra a marcação de verdade mostrou. Fica
+ * registrado porque é a lição, não o número: medir a própria fixture prova
+ * que a fixture está certa, e mais nada.
+ *
+ *   PAPEL, partindo do tema escuro (marcação real)
+ *     vermelho cravado, no resumo ...................... 6,47
+ *     vermelho cravado, na linha destacada ............. 5,90
+ *     âmbar cravado, no resumo ......................... 5,02
+ *     âmbar cravado, na linha destacada ................ 4,58
+ *   ⚠ este último só chegou aí depois do SEGUNDO bloco de papel (o que fica
+ *   embaixo da ponte): a linha saía com a tinta de 14%, calibrada para a
+ *   superfície escura, aplicada sobre o branco, e o âmbar dava 4,01.
+ *
+ * 360 px na marcação real: a página não rola de lado · a linha virou cartão
+ * (termina em 323) · a coluna dos botões vira faixa · todo botão de decisão
+ * mede 44 de altura e nenhum passa de 312 · a coluna "Prazo" ganhou rótulo.
+ * Papel: a coluna dos botões some, e o <th> dela some junto — 6 th contra
+ * 6 td, sem deslocar as colunas; cabeçalho repetido por folha; linha inteira.
+ *
+ * ---------------------------------------------------------------------
+ * GEOMETRIA (medida no mesmo Chrome, não deduzida do CSS)
+ *   360 px: a página não rola de lado (scrollWidth 360) · o cartão de
+ *           pendência termina em 323 · todo botão de veredito mede 44 de
+ *           altura · a lista de estações vira cartão (tr display:block, sem
+ *           rolagem lateral, linha de 336 px) · antes-e-depois empilha.
+ *   1280 px: antes-e-depois volta a duas colunas · a lista volta a tabela.
+ *   A4 retrato no @media print: antes-e-depois é `table`/`table-cell`, os
+ *           dois lados no mesmo topo, 385 px cada, `break-inside: avoid`;
+ *           filtro e botões de veredito somem da folha.
+ *
+ * ---------------------------------------------------------------------
+ * CONTROLE NEGATIVO — cada guarda foi QUEBRADA de propósito, e a medição
+ * reprovou nas seis. Guarda que passa nos dois mundos é decoração.
+ *   1. tirar o `.main` dos seletores da lista de estações
+ *      -> a tabela volta a `overflow-x: auto`
+ *   2. `min-height` do veredito de 44px para 0
+ *      -> o botão mede 28 px de altura
+ *   3. `display: table` do antes-e-depois no papel de volta para `grid`
+ *      -> o lado deixa de ser `table-cell`
+ *   4. tirar `.t360-pend-acoes` e `.t360-veredito` da lista do papel
+ *      -> os botões de veredito voltam a aparecer na folha
+ *   5. apagar a reposição das tintas semânticas do @media print
+ *      -> chip Atenção 2,08 · Pendência 2,77 · Aprovado 2,77 no papel
+ *   6. devolver `opacity: .5` à seta apagada
+ *      -> 3,43:1 sobre a foto clara
+ *   7. apagar as seis regras de cor da PONTE
+ *      -> 4,08 e 4,24 no claro; 3,18 · 3,05 · 3,27 · 3,14 no escuro
+ *   8. tirar o `.main` dos seletores da lista de pendências
+ *      -> a tabela de sete colunas volta a rolar de lado em 360 px, com os
+ *         botões de veredito do outro lado do arrasto
+ *
+ * ---------------------------------------------------------------------
+ * ⚠ O QUE NÃO FOI MEDIDO, e ninguém deve supor que foi:
+ *   · O WebView antigo do instalador. `display:table` no papel, as duas
+ *     grafias de `break-*`/`page-break-*` e a segunda linha de `background`
+ *     existem POR CAUSA dele — e nada aqui foi rodado lá. É previsão
+ *     defensiva, não medição.
+ *   · Impressora de verdade. O @media print foi lido do Chrome
+ *     (`Emulation.setEmulatedMedia`), não de uma folha saída de bandeja, e
+ *     "imprimir cores de fundo" desligada não foi exercitada — é justamente
+ *     por não ter como medir isso que o estado tem três portadores (palavra,
+ *     barra lateral e cor da letra) em vez de depender do fundo.
+ *   · A tela real do módulo. Tudo aqui foi medido contra marcação de
+ *     laboratório que COPIA a de js/tour360ui.js — para a ponte, copiada
+ *     linha a linha de `_cardPendencias`; para o resto, escrita a partir do
+ *     contrato. Copiar não é rodar: se a tela mudar a marcação, a medição
+ *     continua verde e a tela quebra.
+ *   · O bloco `.t360-pend*` / `.t360-ad*` / `.t360-mini-*` / `.t360-pino`
+ *     NÃO PINTA HOJE: são os nomes do DESTINO, e a tela ainda escreve
+ *     `.t360-pendencias` + `.t360-tab-pendencias`. Está dito no alto daquele
+ *     bloco e repetido aqui de propósito — folha bonita para marcação que
+ *     ninguém escreve é a mesma coisa que recurso inerte.
+ *   · O antes-e-depois (`.t360-ad`) é contrato: nenhum módulo emite essa
+ *     marcação ainda. As regras de papel dele foram exercitadas contra
+ *     fixture, não contra o relatório de verdade.
+ * ===================================================================== */

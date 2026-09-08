@@ -47,10 +47,18 @@
  *    js/tour360cap.js). Enquanto este era o único seletor da tela, a foto
  *    tirada no modo Panorama do celular não tinha por onde entrar — e o
  *    módulo de captura ainda mandava, num toast, "toque em Importar
- *    panorama aqui", apontando para um botão que não existia. Agora são
- *    dois caminhos lado a lado: "Tirar foto" (com `capture`) e "Importar
- *    panorama" (`Tour360Cap.abrirSeletor({captura:false})`). Os dois caem
- *    no mesmo `_receberFoto` — dois seletores, uma régua de compressão só.
+ *    panorama aqui", apontando para um botão que não existia. 
+ *    São dois caminhos lado a lado, e a ORDEM deles é o recurso:
+ *      · "Usar foto do celular" — galeria, SEM `capture`
+ *        (`Tour360Cap.abrirSeletor({captura:false})`). É o PRINCIPAL e o
+ *        `primary`: é por ele que entra o panorama do aplicativo de câmera,
+ *        que é a única foto que gira de verdade.
+ *      · "Tirar foto comum" — câmera, COM `capture`. Registra o ponto, não gira.
+ *    ⚠ E NÃO EXISTE modo panorama para a página pedir: `capture` escolhe
+ *    QUAL câmera, nunca o MODO. Quem ensina o modo é a caixa fixa acima da
+ *    tabela de estações, e ela diz que isso é regra do navegador — em vez de
+ *    deixar a pessoa procurando um ajuste que não existe.
+ *    Os dois caem no mesmo `_receberFoto` — dois seletores, uma régua só.
  *
  * 6) A NAVEGAÇÃO É DO MOTOR; AQUI SÓ HÁ FIAÇÃO. As setas saem de
  *    `Tour360.setasDe`, a ligação de `Tour360.ligarVizinhos`, o rumo pela
@@ -69,6 +77,25 @@
  *    (`setas`, `aoSeta`, `telaCheia`, `girarPara`, `teclado`) é chamada
  *    atrás de `typeof`: um TypeError aqui não derruba só a seta — ele
  *    estoura dentro do wire e o palco inteiro fica preto e mudo.
+ *
+ * ⚠ 9) O MÓDULO REGISTRAVA O DIA E NÃO ACOMPANHAVA O QUE ANDA. A fissura
+ *    marcada em agosto sumia em setembro: `basearEm` copia as estações e
+ *    ZERA os comentários — correto para "cobrar o azulejista", errado para
+ *    "fissura no pilar P4", que é fato da obra e não recado do dia. O motor
+ *    resolveu isso (`ehPendencia`, `statusDe`, `pendenciasDe`,
+ *    `carregarPendencias`, `historicoPendencia`) e ficou SEM FIAÇÃO — o
+ *    defeito que o CLAUDE.md desta casa chama de "motor puro sem fiação":
+ *    verde no gate, inexistente no navegador. O painel de pendências, os
+ *    campos de responsável/prazo e os três botões de veredito são essa
+ *    fiação. Nenhuma conta de status mora aqui: quem decide o que é
+ *    pendência e o que é comentário do dia é `Tour360.ehPendencia`.
+ *
+ * ⚠ 10) "ABERTA" SOZINHO NÃO DIZ SE É DE ONTEM OU DO COMEÇO DA OBRA, e é
+ *    por isso que toda linha do painel traz "desde dd/mm · há N visita(s)".
+ *    O número que faz o gestor agir é o de visitas, não o rótulo do status:
+ *    `Tour360.historicoPendencia` existe para isso e a tela não recalcula
+ *    nada — contar aqui nasceria um segundo número, e o segundo número
+ *    aparece sempre na hora errada.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -120,6 +147,15 @@
      norte — a pessoa perderia o enquadramento a cada comentário. */
   G._t360Carregado = "";
   G._t360Carregando = "";
+  /* pavimento escolhido na lista de estações e no seletor do visualizador.
+     "" = todos; SEM_NIVEL = as estações que ninguém classificou. */
+  G._t360Nivel = "";
+  G._t360PendResolvidas = false;   // mostrar também as pendências já resolvidas
+  /* ⚠ hid da pendência que o painel mandou abrir. Ele é consumido UMA VEZ,
+     dentro de `_aplicarFoco`, depois de a esfera resolver: girar antes disso
+     é escrever num valor que a carga da foto sobrescreve (mesma armadilha do
+     `_t360Rumo`, e o defeito na tela é o mesmo — "às vezes não funciona"). */
+  G._t360FocoHid = "";
 
   /* ---------------------------------------------------------------------
    * LEITURA DOS REGISTROS
@@ -131,6 +167,16 @@
      enxergaria a visita de todas as outras — inclusive as fotos. `podeObra`
      é a mesma régua do funil, então o dia em que a entidade entrar na lista
      este filtro vira redundância inofensiva, nunca contradição. */
+  /* As outras visitas da MESMA obra, da mais nova para a mais velha. E o que
+     deixa o documento e o painel dizerem ha quantas visitas uma pendencia se
+     arrasta — sem isso o modulo so enxerga o dia de hoje. */
+  function visitasDaObra(t) {
+    if (!t) return [];
+    var oid = String(t.obraId || "");
+    return listaTours().filter(function (x) { return String(x.obraId || "") === oid; })
+      .sort(function (a, b) { return String(b.data || "").localeCompare(String(a.data || "")); });
+  }
+
   function listaTours() {
     return Util.arr(K.lista(ENT)).filter(function (t) {
       if (!t) return false;
@@ -160,6 +206,146 @@
   function nomeObra(t) {
     var o = obraDe(t);
     return o ? (o.nome || t.obraId) : (t && t.obraNome) || "—";
+  }
+
+  /* ⚠ AS OUTRAS VISITAS DA MESMA OBRA — é este conjunto, e só ele, que
+     `Tour360.historicoPendencia` varre. Passar a lista inteira da empresa
+     misturaria a fissura do Edifício A com a do Edifício B sempre que dois
+     `origemHid` coincidissem, e passar só a visita aberta devolveria "há 1
+     visita" para tudo: a pendência que se arrasta desde março apareceria com
+     a mesma cara da que nasceu hoje. */
+  function toursDaObra(t) {
+    if (!t) return [];
+    return listaTours().filter(function (x) {
+      return x && String(x.obraId) === String(t.obraId);
+    });
+  }
+
+  function hojeISO() {
+    var M = motor();
+    return (M && M.hojeLocal) ? M.hojeLocal() : "";
+  }
+
+  /* Vencido é prazo ANTES de hoje. Sem prazo não vence — e pendência já
+     resolvida não vence mais, senão a lista continuaria cobrando o que
+     alguém já fechou. */
+  function prazoVencido(prazo, status) {
+    var d = String(prazo || "");
+    if (!d || status === "resolvida") return false;
+    var h = hojeISO();
+    return !!h && d < h;
+  }
+
+  function rotuloStatus(st) {
+    if (st === "resolvida") return "Resolvida";
+    if (st === "persiste") return "Piorou";
+    return "Aberta";
+  }
+
+  /* ⚠ ACHA O COMENTÁRIO PELO `hid`, NUNCA PELO ÍNDICE. O índice muda quando
+     alguém apaga outro comentário da mesma estação — e quem editaria seria o
+     de baixo, calado. É a mesma regra do carimbo que liga documento a
+     documento nesta casa: por identificador, jamais por posição ou semelhança. */
+  function _acharHotspot(tour, pid, hid) {
+    var M = motor();
+    var alvo = (tour && M) ? M.pontoDe(tour, pid) : null;
+    if (!alvo) return null;
+    var hs = Util.arr(alvo.hotspots), i;
+    for (i = 0; i < hs.length; i++) if (hs[i] && hs[i].hid === hid) return hs[i];
+    return null;
+  }
+
+  /* ⚠ VARRE AS DUAS LISTAS. A area mora em `p.areas[]` e nao em `p.medidas[]`
+     (o porque esta em `Tour360.medidasDoPonto`: o motor da 1.2.56, instalado na
+     frota, le uma area de dentro de `medidas` como distancia e devolve
+     "0,00 m +-0%"). Para a TELA as duas sao a mesma coisa: o botao Editar e o
+     Excluir de uma linha de area carregam o mesmo `data-mid`, e procurar so em
+     `medidas` faria os dois dizerem "esta medida nao existe mais". */
+  function _acharMedida(tour, pid, mid) {
+    var M = motor();
+    var alvo = (tour && M) ? M.pontoDe(tour, pid) : null;
+    if (!alvo) return null;
+    var ms = M.medidasDoPonto(alvo), i;
+    for (i = 0; i < ms.length; i++) if (ms[i] && ms[i].mid === mid) return ms[i];
+    return null;
+  }
+
+  /* ---------------------------------------------------------------------
+   * PAVIMENTO — o filtro que separa usar de desistir
+   *
+   * O campo `nivel` já existia no ponto, viajava para o Portal e não filtrava
+   * nada: numa obra de 24 estações, escolher o pavimento antes de procurar é
+   * a diferença entre navegar e rolar a lista até desistir.
+   * ------------------------------------------------------------------- */
+
+  /* ⚠ SENTINELA DO "SEM PAVIMENTO", e ela pode colidir: `nivel` é texto
+     livre, então alguém PODE ter batizado um pavimento de "__sem__". Quando
+     isso acontece a opção não é oferecida (ver `_selNivel`), em vez de a tela
+     mostrar duas coisas diferentes com o mesmo nome. */
+  var SEM_NIVEL = "__sem__";
+
+  function niveisDe(t) {
+    var vistos = {}, out = [];
+    Util.arr(t && t.pontos).forEach(function (p) {
+      var n = (p && p.nivel) ? String(p.nivel) : "";
+      if (!n || vistos[n]) return;
+      vistos[n] = true;
+      out.push(n);
+    });
+    out.sort(function (a, b) { return a.localeCompare(b); });
+    return out;
+  }
+
+  function semNivelQtd(t) {
+    return Util.arr(t && t.pontos).filter(function (p) { return p && !p.nivel; }).length;
+  }
+
+  function casaNivel(p, nivel) {
+    if (!nivel) return true;
+    if (nivel === SEM_NIVEL) return !!p && !p.nivel;
+    return !!p && String(p.nivel) === nivel;
+  }
+
+  /* ⚠ O FILTRO QUE SOBROU DE OUTRA VISITA ESCONDE TUDO E NÃO EXPLICA NADA.
+     `G._t360Nivel` sobrevive ao re-render (é estado de tela) e as visitas não
+     têm os mesmos pavimentos: abrir a visita do térreo com "Cobertura"
+     escolhido deixaria a lista vazia, e a pessoa lê isso como "sumiram as
+     estações". Aqui o filtro que não existe nesta visita simplesmente cai. */
+  function nivelValido(t) {
+    var n = G._t360Nivel;
+    if (!n) return "";
+    if (n === SEM_NIVEL) return semNivelQtd(t) ? n : "";
+    return niveisDe(t).indexOf(n) > -1 ? n : "";
+  }
+
+  function pontosDoFiltro(t) {
+    var n = G._t360Nivel;
+    return Util.arr(t && t.pontos).filter(function (p) { return casaNivel(p, n); });
+  }
+
+  function qtdNoNivel(t, n) {
+    return Util.arr(t && t.pontos).filter(function (p) { return casaNivel(p, n); }).length;
+  }
+
+  /* O seletor de pavimento. Devolve "" quando NENHUMA estação tem nível
+     escrito: um filtro com uma opção só é ruído, e ruído em barra de
+     ferramenta é o que faz a pessoa parar de ler a barra. */
+  function _selNivel(t) {
+    var ns = niveisDe(t);
+    if (!ns.length) return "";
+    var sem = (ns.indexOf(SEM_NIVEL) < 0) ? semNivelQtd(t) : 0;
+    var total = Util.arr(t.pontos).length;
+    var h = '<select id="t360-nivel-sel" data-gacao="t360-nivel">'
+      + '<option value=""' + (G._t360Nivel ? "" : " selected") + ">Todos os pavimentos (" + total + ")</option>"
+      + ns.map(function (n) {
+        return '<option value="' + esc(n) + '"' + (G._t360Nivel === n ? " selected" : "") + ">"
+          + esc(n) + " (" + qtdNoNivel(t, n) + ")</option>";
+      }).join("")
+      + (sem
+        ? '<option value="' + SEM_NIVEL + '"' + (G._t360Nivel === SEM_NIVEL ? " selected" : "") + ">Sem pavimento informado (" + sem + ")</option>"
+        : "")
+      + "</select>";
+    return K.campo("Pavimento", h);
   }
 
   /* ⚠ CARIMBAR O REMOTO ANTES DE GRAVAR. A foto sobe por uma fila; o retorno
@@ -194,6 +380,20 @@
         Fotos.carimbarRemotos(refs);
       }
     } catch (e) {}
+    /* ⚠ A CURA DO REGISTRO ANTIGO, NO UNICO FUNIL DE GRAVACAO DA VISITA.
+       Por um dia o app gravou area dentro de `p.medidas[]`, e esse registro
+       pode ter subido para a nuvem: no aparelho que ainda roda a 1.2.56 ele
+       vira "0,00 m +-0%" (ver `Tour360.medidasDoPonto`). `migrarAreas` MOVE
+       essas areas para `p.areas[]` - onde a 1.2.56 nao olha - e e idempotente.
+       Fica AQUI, e nao em cada handler, pelo mesmo motivo do republicar logo
+       abaixo: este e o unico caminho por onde a visita e gravada, e espalhar a
+       chamada e garantir que o proximo handler novo esqueca.
+       ⚠ E NAO EXISTE VARREDURA EM MASSA de proposito: regravar todas as visitas
+       carimbaria `atualizadoEm` novo em conteudo velho e a migracao venceria o
+       merge da nuvem, passando por cima do que outro aparelho tem de mais
+       recente (v1.1.236, a migracao de fotos que apagou diario editado). A
+       visita se cura na primeira vez que alguem a grava. */
+    try { if (motor() && motor().migrarAreas) motor().migrarAreas(t); } catch (eMig) {}
     var gravado = Store.salvar(eid(), ENT, t);
     /* ⚠ `Store.salvar` DEVOLVE null QUANDO NÃO CONSEGUE GRAVAR (cota do
        localStorage estourada é o caso comum, e uma base de obra chega lá). O
@@ -216,11 +416,54 @@
        handler novo esqueça. `_republicarPortal` serializa por obra, então
        várias exclusões seguidas viram um envio e um reenvio com o estado
        final. Quem publica (o handler `t360-publicar`) passa `true` porque
-       republica com retorno próprio, para poder falar com o usuário. */
-    if (gravado && !semRepublicar && G._republicarTourSeNoAr) {
-      try { G._republicarTourSeNoAr(t); } catch (e2) {}
+       republica com retorno próprio, para poder falar com o usuário.
+
+       ⚠ ESTA CHAMADA ERA `Gestao._republicarTourSeNoAr(t)` E NÃO FAZIA NADA.
+       Medido no navegador em 08/09/2026, com a função espionada:
+       `chamou: []`. A causa estava na primeira linha dela —
+       `if (Tour360.estadoDe(tour) !== "publicado") return;` —, e
+       `Tour360.estadoDe(t)` SEM o segundo argumento devolve "pronto" para a
+       visita publicada (`return temPortal ? "publicado" : "pronto"`). Ou seja:
+       a guarda barrava sempre, e o comentário acima prometia um reenvio que
+       nunca acontecia. Um comentário que mente é pior que comentário nenhum —
+       ele fez a promessa deste arquivo passar por verdadeira por uma versão
+       inteira. Por isso existe `Tour360.estaPublicado`: rótulo de tela e
+       decisão de máquina são perguntas diferentes.
+       O outro chamador daquela função — o retorno de foto do js/gestao.js —
+       foi corrigido na MESMA rodada e também usa `estaPublicado`; lá ele
+       ganhou, junto, a guarda de papel que faltava.
+
+       ⚠ E REENVIAR AO PORTAL É PUBLICAR — a régua do `_republicarSeNoAr` do
+       diário, escrita lá em letra de fôrma. Sem a guarda de papel, o
+       sub-usuário restrito a uma obra empurraria a própria edição para a tela
+       de quem paga sem ninguém do escritório ver. Quem não pode publicar
+       grava normalmente aqui e é avisado na tela do editor (ver `_editor`):
+       calar seria deixar o app e o Portal divergirem em silêncio. */
+    if (gravado && !semRepublicar && String(t.estado) === "publicado" && G._republicarPortal) {
+      var obPub = obraDe(t);
+      if (obPub && obPub.portalUser && podeRepublicar()) {
+        try {
+          G._republicarPortal(obPub, function (res) {
+            /* sucesso é silencioso — a pessoa está editando, não publicando.
+               A FALHA não pode ser: ela deixa o cliente com a versão velha. */
+            if (res && (res.ok || res.semPortal)) return;
+            UI.toast("A alteração foi gravada aqui, mas o Portal do cliente NÃO foi atualizado ("
+              + ((res && res.erro) || "sem detalhe") + ") — ele ainda vê a versão anterior. Republique a visita com internet.", "erro");
+          });
+        } catch (e2) {}
+      }
     }
     return gravado;
+  }
+
+  /* Quem pode empurrar conteúdo para a tela do contratante. É a MESMA régua de
+     publicar (`Tour360.podePublicarPapel`), e não uma segunda: duas réguas para
+     a mesma decisão envelhecem separadas. */
+  function podeRepublicar() {
+    var M = motor();
+    if (!M || typeof M.podePublicarPapel !== "function") return false;
+    var u = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+    try { return !!M.podePublicarPapel(u); } catch (e) { return false; }
   }
 
   function quemSou() {
@@ -245,6 +488,243 @@
   function lista_ul(itens) {
     if (!itens || !itens.length) return "";
     return '<ul style="margin:8px 0 0 18px">' + itens.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+  }
+
+  /* ===================================================================
+   * O PAINEL DE PENDÊNCIAS — o que ANDA entre uma visita e a seguinte
+   *
+   * Quem responde "isso está assim desde quando?" é `historicoPendencia`;
+   * quem diz o que é pendência é `ehPendencia`; quem diz o estado é
+   * `statusDe`. Esta tela lista, ordena e desenha — não julga.
+   * =================================================================== */
+
+  /* Os três botões do veredito. Vão juntos, sempre: oferecer só "Resolvida"
+     transformaria o painel numa lista que só encolhe, e "piorou" é
+     justamente o que o gestor precisa registrar.
+     ⚠ O ESTADO ATUAL NÃO USA `primary`, e a primeira versão usava. Na foto da
+     tela as três linhas apareciam com um "Continua aberta" azul e cheio — que
+     nesta casa é o botão da AÇÃO PRINCIPAL. Quem bate o olho lê "clique aqui",
+     quando o que aquilo diz é "está assim". Marcar com um anel resolve sem
+     mentir sobre a ação; a situação por extenso já está na coluna ao lado. */
+  function _botoesVeredito(pid, hid, st) {
+    var vs = [["resolvida", "Resolvida"], ["aberta", "Continua aberta"], ["persiste", "Piorou"]];
+    return vs.map(function (v) {
+      var atual = (v[0] === st);
+      return '<button class="btn sm" data-gacao="t360-pend-status" '
+        + 'data-pid="' + esc(pid) + '" data-hid="' + esc(hid) + '" data-st="' + v[0] + '"'
+        + (atual
+          ? ' aria-pressed="true" title="É como ela está marcada agora"'
+            + ' style="box-shadow:inset 0 0 0 2px var(--aco,#2e6f9e);font-weight:700"'
+          : "")
+        + ">" + v[1] + "</button>";
+    }).join(" ");
+  }
+
+  /* A pastilha do prazo. ⚠ VENCIDO PRECISA DIZER A DATA: "vencido" sozinho
+     manda a pessoa procurar em que dia era, e prazo sem dia ninguém cobra. */
+  function _celulaPrazo(p) {
+    if (!p.prazo) return '<span class="muted">—</span>';
+    var dia = esc(Util.fmtDia(p.prazo) || p.prazo);
+    if (prazoVencido(p.prazo, p.status)) {
+      return '<b style="color:#dc2626">vencido em ' + dia + "</b>";
+    }
+    return dia;
+  }
+
+  function _cardPendencias(t) {
+    var M = motor();
+    /* ⚠ `typeof` no motor pelo mesmo motivo da armadilha 8: instalação com
+       js/tour360.js antigo no pacote abriria a visita com a tela inteira
+       quebrada por causa de um cartão. Sem o motor novo, o cartão não nasce. */
+    if (!M || typeof M.pendenciasDe !== "function") return "";
+
+    var todas = M.pendenciasDe(t) || [];
+    var tours = toursDaObra(t);
+
+    /* ⚠ UMA VARREDURA SÓ PARA A TABELA INTEIRA. `historicoPendencia` refaz a
+       varredura de TODAS as visitas a cada chamada; chamada uma vez por linha,
+       o cartão custava O(linhas × visitas × estações · comentários) a cada
+       renderização — e esta tela redesenha a cada clique de botão. */
+    var hists = (typeof M.historicoTodas === "function") ? M.historicoTodas(tours) : null;
+    var itens = todas.map(function (x) {
+      var h = hists ? (hists[x.origemHid] || { visitas: 1, desde: x.desdeData })
+        : ((typeof M.historicoPendencia === "function")
+          ? M.historicoPendencia(tours, x.origemHid)
+          : { visitas: 1, desde: x.desdeData });
+      /* ⚠ O "ARRASTANDO" É DESTA LINHA, não o do histórico. `historicoPendencia`
+         devolve `arrastando` olhando a situação da ÚLTIMA aparição em toda a
+         obra — que pode ser a de uma visita mais nova. Numa visita antiga
+         aberta para conferência, isso pintaria como arrastando um item que a
+         pessoa está vendo marcado como resolvido na própria tela. */
+      /* ⚠ `Util.num` desta casa NÃO aceita valor padrão (ela devolve 0 para o
+         que não é número), então o padrão vem depois, no `||`. */
+      var vis = Util.num(h.visitas) || 1;
+      /* ⚠ O QUE PINTA DE VERMELHO É O DIA VIRADO, não a contagem de registros:
+         duas visitas no mesmo dia são duas aparições e nenhuma travessia. */
+      var dts = Util.num(h.datas) || vis;
+      return {
+        p: x,
+        visitas: vis,
+        datas: dts,
+        desde: h.desde || x.desdeData,
+        arrastando: dts > 1 && x.status !== "resolvida",
+        vencida: prazoVencido(x.prazo, x.status)
+      };
+    });
+
+    var abertas = 0, arrastando = 0, vencidas = 0, resolvidas = 0;
+    itens.forEach(function (it) {
+      if (it.p.status === "resolvida") { resolvidas++; return; }
+      abertas++;
+      if (it.arrastando) arrastando++;
+      if (it.vencida) vencidas++;
+    });
+
+    /* ⚠ O QUE FICOU PARA TRÁS E O QUE DIVIDE A DATA — as duas coisas que esta
+       tela decidia em silêncio.
+       · `deixadas`: pendência que continuava aberta numa visita anterior e não
+         veio para a mais nova (visita criada do zero, estação apagada,
+         apontamento excluído). Sem dizer isso, o cartão vazio dá sossego com o
+         problema ainda na parede.
+       · `mesmaData`: duas visitas no mesmo dia é caso real (manhã e tarde, ou
+         uma visita de correção). O resumo escolhe UMA como "a de hoje"; a tela
+         diz qual em vez de deixar a pessoa achar que a lista é do dia. */
+    var resObra = null;
+    if (typeof M.resumoPendencias === "function") {
+      try { resObra = M.resumoPendencias(tours, M.hojeLocal()); } catch (eRO) { resObra = null; }
+    }
+    var ehAtual = !!(resObra && resObra.tourId && String(resObra.tourId) === String(t.id));
+    var deixadas = (ehAtual && resObra.deixadas) || [];
+
+    var html = '<div class="card mb t360-pendencias"'
+      + (arrastando || vencidas || deixadas.length ? ' style="border-left:4px solid #dc2626"' : "")
+      + "><b>Pendências desta visita</b>";
+
+    var avisoDeixadas = "";
+    if (deixadas.length) {
+      avisoDeixadas = '<div class="card t360-pend-deixadas" style="border-left:4px solid #dc2626;margin:8px 0">'
+        + "<b>" + deixadas.length + " pendência(s) ficaram para trás</b>"
+        + '<p class="muted" style="margin:4px 0 0">Elas continuavam abertas numa visita anterior e não vieram para esta — '
+        + "ou esta visita nasceu do zero, ou a estação foi apagada, ou o apontamento foi excluído. "
+        + "Ninguém as marcou como resolvidas: elas só saíram da lista.</p>"
+        + '<ul style="margin:6px 0 0 18px">'
+        + deixadas.slice(0, 5).map(function (d) {
+          return "<li>" + esc(d.estacao || "estação") + " · " + esc(d.texto || "sem descrição")
+            + ' <span class="muted">(última vez em ' + esc(Util.fmtDia(d.ultimaData) || d.ultimaData) + ")</span></li>";
+        }).join("")
+        + (deixadas.length > 5 ? '<li class="muted">+' + (deixadas.length - 5) + " outra(s)</li>" : "")
+        + "</ul></div>";
+    }
+    if (resObra && Util.num(resObra.mesmaData) > 1 && ehAtual) {
+      avisoDeixadas += '<p class="muted" style="margin:6px 0 0">⚠ Esta obra tem '
+        + Util.num(resObra.mesmaData) + " visitas na data " + esc(Util.fmtDia(resObra.data) || resObra.data)
+        + '. A cobrança de pendências considera esta ("' + esc(resObra.titulo || t.titulo || "sem título") + '").</p>';
+    }
+
+    if (!todas.length) {
+      /* ⚠ VAZIO PRECISA ENSINAR O CAMINHO. Sem esta frase o cartão parece
+         quebrado — o engenheiro escreve tudo como "Comentário" e nunca
+         descobre que existe uma lista que atravessa as visitas. */
+      return html + avisoDeixadas + '<p class="muted" style="margin:6px 0 0">Nenhuma. '
+        + "Um comentário só vira pendência quando o tipo dele é <b>Atenção</b> ou <b>Pendência</b> — "
+        + "esses dois atravessam para a próxima visita (por <b>Repetir visita</b>) enquanto não forem marcados como resolvidos. "
+        + "Comentário e Aprovado são recado do dia e ficam nesta visita.</p></div>";
+    }
+
+    html += avisoDeixadas;
+    html += '<p class="muted" style="margin:6px 0 10px">'
+      + "<b>" + abertas + "</b> em aberto"
+      + (arrastando ? " · <b style=\"color:#b45309\">" + arrastando + " se arrastando por mais de uma visita</b>" : "")
+      + (vencidas ? " · <b style=\"color:#dc2626\">" + vencidas + " com prazo vencido</b>" : "")
+      + (resolvidas ? ' · <span class="muted">' + resolvidas + " resolvida(s)</span>" : "")
+      + "</p>";
+
+    /* ⚠ A ORDEM É A DA URGÊNCIA, e ela não é a ordem das estações: quem abre
+       a visita para decidir alguma coisa precisa ver primeiro o que venceu e
+       o que já vem se arrastando. Empate desempata pela mais ANTIGA. */
+    itens.sort(function (a, b) {
+      var pa = (a.p.status === "resolvida" ? 0 : 1) + (a.arrastando ? 2 : 0) + (a.vencida ? 4 : 0);
+      var pb = (b.p.status === "resolvida" ? 0 : 1) + (b.arrastando ? 2 : 0) + (b.vencida ? 4 : 0);
+      if (pa !== pb) return pb - pa;
+      return String(a.desde || "").localeCompare(String(b.desde || ""));
+    });
+
+    html += '<table class="tbl t360-tab-pendencias"><thead><tr>'
+      + "<th>Estação</th><th>O que foi apontado</th><th>Desde</th><th>Responsável</th><th>Prazo</th><th>Situação</th><th></th>"
+      + "</tr></thead><tbody>";
+
+    var mostrou = 0;
+    itens.forEach(function (it) {
+      var p = it.p;
+      if (p.status === "resolvida" && !G._t360PendResolvidas) return;
+      mostrou++;
+      var destaque = it.vencida ? "background:rgba(220,38,38,.10)"
+        : (it.arrastando ? "background:rgba(180,83,9,.10)" : "");
+      html += '<tr' + (destaque ? ' style="' + destaque + '"' : "") + ">"
+        /* o pavimento em linha própria: colado com "·" ele sobra sozinho na
+           quebra e a célula termina num ponto solto */
+        + "<td><b>" + esc(p.estacao || "—") + "</b>"
+        + (p.nivel ? '<br><span class="muted">' + esc(p.nivel) + "</span>" : "")
+        + "</td>"
+        /* ⚠ O TEXTO DO APONTAMENTO É O QUE SE LÊ, e era a coluna mais espremida
+           da tabela: medido na foto da tela, "Fissura no pilar P4, canto da
+           escada" saía em quatro linhas de duas palavras enquanto a coluna dos
+           botões ocupava um terço da largura. Nenhum assert vê isso. */
+        + '<td style="min-width:200px">' + esc(p.texto || "—") + "</td>"
+        /* ⚠ "desde dd/mm · há N visita(s)" é o par que faz o gestor agir.
+           Só o rótulo do status não diz se a fissura é de ontem ou de março. */
+        + "<td>" + esc(Util.fmtDia(it.desde) || "—")
+        /* ⚠ A TINTA DE ALERTA SEGUE OS DIAS VIRADOS, NÃO A CONTAGEM. Duas visitas no
+           MESMO dia são duas aparições e nenhum dia virado: pintar de âmbar
+           faria a manhã e a tarde parecerem um problema de meses. O número
+           continua sendo o de visitas, que é o que a linha do tempo mostra. */
+        + (it.visitas > 1
+          ? '<br>' + (it.datas > 1 ? '<b style="color:#b45309">' : '<span class="muted">')
+            + "há " + it.visitas + " visitas" + (it.datas > 1 ? "</b>" : "</span>")
+          : '<br><span class="muted">1ª visita</span>')
+        + "</td>"
+        + "<td>" + (p.responsavel ? esc(p.responsavel) : '<span class="muted">sem dono</span>') + "</td>"
+        + "<td>" + _celulaPrazo(p) + "</td>"
+        + "<td>" + esc(rotuloStatus(p.status))
+        + (p.status === "resolvida" && p.resolvidoEm ? '<br><span class="muted">em ' + esc(Util.fmtDia(p.resolvidoEm) || p.resolvidoEm) + "</span>" : "")
+        + "</td>"
+        /* ⚠ DUAS LINHAS DE BOTÃO, e não uma fila de cinco: em fila única a
+           coluna passava de 500 px e comia a do texto (ver a nota acima). Cada
+           linha tem `nowrap` própria, então a coluna fica do tamanho da MAIOR
+           das duas — os três vereditos — em vez da soma. */
+        + "<td>"
+        + '<div style="white-space:nowrap;margin-bottom:4px">'
+        + '<button class="btn sm" data-gacao="t360-pend-ir" data-pid="' + esc(p.pid) + '" data-hid="' + esc(p.hid) + '" '
+        + 'title="Abre a estação no 360 e gira até o ponto marcado na foto">Ver na foto</button> '
+        /* ⚠ EDITAR DAQUI TAMBÉM, e não só lá dentro da estação: nomear o
+           responsável e pôr prazo é o que o gestor faz percorrendo a LISTA, de
+           uma vez. Obrigá-lo a abrir cada estação para isso é o mesmo que não
+           ter o campo — ele acaba mandando no grupo do WhatsApp. */
+        + '<button class="btn sm" data-gacao="t360-editar-coment" data-pid="' + esc(p.pid) + '" data-hid="' + esc(p.hid) + '">Editar</button>'
+        + "</div>"
+        + '<div style="white-space:nowrap">' + _botoesVeredito(p.pid, p.hid, p.status) + "</div>"
+        + "</td></tr>";
+    });
+
+    html += "</tbody></table>";
+
+    if (!mostrou) {
+      html += '<p class="muted" style="margin:8px 0 0">Todas as pendências desta visita estão resolvidas.</p>';
+    }
+    if (resolvidas) {
+      html += '<div class="flex mt"><button class="btn sm" data-gacao="t360-pend-resolvidas">'
+        + (G._t360PendResolvidas ? "Esconder as resolvidas" : "Mostrar as " + resolvidas + " resolvida(s)")
+        + "</button></div>";
+    }
+
+    /* ⚠ O QUE ACONTECE NA PRÓXIMA VISITA PRECISA ESTAR ESCRITO. Sem isto, a
+       pessoa marca "resolvida" achando que está só arrumando a tela — e o que
+       ela fez foi decidir que aquele item não atravessa mais. */
+    html += '<p class="muted" style="margin:10px 0 0">Ao criar a próxima visita com <b>Repetir visita</b>, tudo que estiver '
+      + "<b>em aberto</b> ou <b>piorou</b> nasce lá de novo, ligado a esta aparição — o que estiver "
+      + "<b>resolvido</b> fica só no histórico.</p>";
+
+    return html + "</div>";
   }
 
   /* ===================================================================
@@ -330,7 +810,21 @@
            precisa dizer isso; quem não souber vai criar do zero. */
         + '<button class="btn sm" data-gacao="t360-repetir" data-id="' + esc(t.id) + '" '
         + 'title="Cria a próxima visita com os mesmos pontos desta, para comparar mês a mês">Repetir visita</button> '
-        + '<button class="btn sm primary" data-gacao="t360-publicar" data-id="' + esc(t.id) + '">Publicar</button>'
+        /* "Republicar" quando o registro já está marcado como publicado — a
+           régua é `t.estado`, e não `est`: este último vira "pronto" quando a
+           obra não tem Portal, e aí o par de botões diria "Publicar" ao lado
+           de "Despublicar", que é contradição na mesma linha. */
+        + '<button class="btn sm primary" data-gacao="t360-publicar" data-id="' + esc(t.id) + '">'
+        + (String(t.estado) === "publicado" ? "Republicar" : "Publicar") + "</button> "
+        /* ⚠ RECOLHER O QUE JÁ FOI PARA A TELA DE QUEM PAGA. Enquanto este
+           botão não existia, a visita publicada por engano — a foto do
+           canteiro errado, o apontamento que era conversa interna — não tinha
+           volta: o único caminho era excluir a visita inteira, levando junto
+           as fotos, as medidas e o comparativo com o mês anterior. */
+        + (String(t.estado) === "publicado"
+          ? '<button class="btn sm ghost" data-gacao="t360-despublicar" data-id="' + esc(t.id) + '" '
+            + 'title="Tira esta visita do Portal do cliente">Despublicar</button>'
+          : "")
         + "</td></tr>";
     });
 
@@ -345,6 +839,9 @@
     var val = M.validar(t);
     var cabe = M.cabePonto(t);
     var r = M.resumo(t);
+    /* ⚠ o filtro de pavimento que sobrou de OUTRA visita cai aqui, antes de
+       qualquer coisa desenhar — ver `nivelValido`. */
+    G._t360Nivel = nivelValido(t);
 
     /* ⚠ O RELATÓRIO E O VÍDEO PRECISAM DE BOTÃO AQUI. js/tour360rel.js nasceu
        pronto e testado e ficou uma revisão inteira sem nenhuma chamada — quer
@@ -355,9 +852,20 @@
     var extra = '<span class="muted" style="margin-right:12px;align-self:center">'
       + esc(nomeObra(t)) + " · " + esc(Util.fmtDia(t.data) || t.data) + "</span>"
       + (temRel
-          ? '<button class="btn sm" data-gacao="t360-relatorio" data-id="' + esc(t.id) + '">Relatório fotográfico</button> '
+          ? '<button class="btn sm" data-gacao="t360-rel-pendencias" data-id="' + esc(t.id) + '">Pendências</button> '
+            + '<button class="btn sm" data-gacao="t360-antes-depois" data-id="' + esc(t.id) + '">Antes e depois</button> '
+            + '<button class="btn sm" data-gacao="t360-relatorio" data-id="' + esc(t.id) + '">Relatório fotográfico</button> '
             + '<button class="btn sm" data-gacao="t360-video" data-id="' + esc(t.id) + '">Gerar vídeo</button> '
           : "")
+      /* ⚠ TÍTULO, DATA E OBRA ERAM CAMINHO SEM VOLTA. Escolhidos no modal de
+         criação e nunca mais: a visita criada na obra errada, ou com a data
+         de hoje quando a foto é de ontem, só se arrumava excluindo tudo e
+         refotografando — e a data é o que decide quem é "antes" e quem é
+         "depois" no comparativo. */
+      + '<button class="btn sm" data-gacao="t360-editar-tour">Editar visita</button> '
+      + (String(t.estado) === "publicado"
+        ? '<button class="btn sm ghost" data-gacao="t360-despublicar" data-id="' + esc(t.id) + '">Despublicar</button> '
+        : "")
       + '<button class="btn sm" data-gacao="t360-voltar">Voltar à lista</button> ';
 
     var html = G._head(K.svg("galeria") + esc(t.titulo || "Visita"), null, null, extra);
@@ -373,18 +881,78 @@
       + (t.baseadoEm ? '<p class="muted" style="margin:10px 0 0">Esta visita nasceu de outra: as estações têm o mesmo identificador, então o comparativo funciona.</p>' : "")
       + "</div>";
 
+    /* ⚠ QUEM NÃO PODE REPUBLICAR PRECISA SABER QUE O CLIENTE FICOU PARA TRÁS.
+       Editar uma visita no ar grava aqui e reenvia o Portal — mas só para quem
+       pode publicar (ver `salvarTour`). Sem este aviso, o encarregado corrige
+       um apontamento, vê a tela dele certa, e o contratante continua lendo a
+       versão anterior por tempo indeterminado: divergência silenciosa entre o
+       app e a tela de quem paga, que é o defeito mais caro deste módulo. */
+    if (String(t.estado) === "publicado" && !podeRepublicar()) {
+      var obAv = obraDe(t);
+      if (obAv && obAv.portalUser) {
+        html += caixaAviso("Esta visita está no ar, e você não pode reenviá-la",
+          "<p>O que você alterar aqui fica gravado, mas a tela do cliente só muda quando quem publica reenviar a obra. "
+          + "Avise quem responde pela obra para republicar.</p>");
+      }
+    }
+
+    /* ⚠ ANTES DOS ERROS DE PUBLICAÇÃO, DE PROPÓSITO. O que se arrasta e o que
+       venceu é a razão de o gestor abrir esta tela; a validação de publicar só
+       importa no dia em que ele for publicar. */
+    html += _cardPendencias(t);
+
     if (val.erros.length) html += caixaErro("Antes de publicar", lista_ul(val.erros));
     /* ⚠ CAIXA DIFERENTE, DE PROPÓSITO: erro trava, aviso não. Ponto sem foto
        precisa APARECER — sumir calado é pior que travar. */
     if (val.avisos.length) html += caixaAviso("Para você saber", lista_ul(val.avisos));
 
+    /* ⚠ A ÚNICA VEZ EM QUE O APP ENSINA A TIRAR A FOTO CERTA, e por isso ela
+       FICA na tela em vez de ser um toast. Dois toasts somando 619 caracteres
+       (medido) apareciam por 2,6 s num celular, no meio do canteiro: quem
+       perdeu, perdeu. Aqui a instrução fica onde a pessoa volta.
+       ⚠ E ela diz, com essas palavras, que o ORÇAPRO NÃO CONSEGUE abrir a
+       câmera já no modo certo — isso é regra do navegador (`capture` escolhe
+       qual câmera, nunca o modo), não ajuste faltando. Calar sobre isso deixa
+       a pessoa procurando nos ajustes um botão que não existe, e depois
+       concluindo que o recurso não serve. */
+    html += caixaAviso("Como tirar a foto que gira em 360",
+      "<p>A foto se tira no <b>aplicativo de câmera do celular</b> e volta para cá pelo botão "
+      + "<b>Usar foto do celular</b>, na linha da estação. O OrçaPRO <b>não consegue</b> abrir a câmera "
+      + "já no modo certo — isso é regra do navegador, não ajuste faltando.</p>"
+      + "<ol style=\"margin:6px 0 6px 18px\">"
+      + "<li>Abra a câmera e procure <b>Foto esférica</b>, <b>Photo Sphere</b> ou <b>360</b> — o modo que dá a volta inteira, com chão e teto.</li>"
+      + "<li>Fique parado no mesmo lugar e siga os pontos até fechar a volta.</li>"
+      + "<li>Volte aqui e toque em <b>Usar foto do celular</b>.</li>"
+      + "</ol>"
+      + "<p class=\"muted\">O <b>Panorama</b> comum (varrer para o lado) também serve para girar e navegar, "
+      + "mas <b>não mede</b>: ele sai em faixa, e o aplicativo só sabe quanto você girou se você disser.</p>"
+      + "<p class=\"muted\"><b>iPhone, antes de tirar:</b> Ajustes › Câmera › Formatos › <b>Mais compatível</b>. "
+      + "Em Alta eficiência a foto sai em HEIC e o navegador não abre.<br>"
+      + "<b>Foto que veio por WhatsApp:</b> peça para reenviarem <b>como documento</b>. Como “foto”, o aplicativo "
+      + "apaga a etiqueta de 360 e a medição some.</p>");
+
     var ps = Util.arr(t.pontos);
     if (!ps.length) {
       html += K.vazioBox("Esta visita ainda não tem estação nenhuma", "t360-add-ponto", "Adicionar a primeira estação");
     } else {
+      /* ⚠ O FILTRO DE PAVIMENTO E O RECADO DE QUANTO ELE ESCONDE ANDAM
+         JUNTOS. Tabela filtrada sem dizer que está filtrada é o mesmo que
+         estação sumida: a pessoa procura a sala do 3º pavimento numa lista
+         presa ao térreo e conclui que a visita perdeu o ponto. */
+      var vis = pontosDoFiltro(t);
+      var selN = _selNivel(t);
+      if (selN) {
+        html += '<div class="row t360-filtro-nivel">' + selN
+          + K.campo("Mostrando", '<div style="padding-top:9px">'
+            + (G._t360Nivel
+              ? "<b>" + vis.length + "</b> de " + ps.length + " estação(ões) — o filtro está escondendo " + (ps.length - vis.length) + "."
+              : "<b>" + ps.length + "</b> estação(ões) — todos os pavimentos.")
+            + "</div>")
+          + "</div>";
+      }
       html += '<table class="tbl t360-pontos"><thead><tr><th></th><th>Estação</th><th>Nível</th>'
         + '<th class="num">Altura da câmera</th><th class="num">Comentários</th><th class="num">Medidas</th><th></th></tr></thead><tbody>';
-      ps.forEach(function (p) {
+      vis.forEach(function (p) {
         var temFoto = !!p.foto;
         html += '<tr class="t360-ponto">'
           /* a miniatura é preenchida depois do DOM existir: `Fotos.dataURI` é
@@ -398,21 +966,27 @@
           + "<td>" + esc(p.nivel || "—") + "</td>"
           + '<td class="num">' + n2(p.alturaCam) + " m</td>"
           + '<td class="num">' + Util.arr(p.hotspots).length + "</td>"
-          + '<td class="num">' + Util.arr(p.medidas).length + "</td>"
+          + '<td class="num">' + M.medidasDoPonto(p).length + "</td>"
           + '<td class="t360-acoes" style="white-space:nowrap">'
           + (temFoto ? '<button class="btn sm primary" data-gacao="t360-ver" data-pid="' + esc(p.pid) + '">Abrir 360</button> ' : "")
-          /* ⚠ SÃO DOIS BOTÕES DE PROPÓSITO — ver a armadilha 5 do cabeçalho.
-             "Tirar foto" leva `capture` e abre a câmera; "Importar panorama"
-             NÃO leva, e é o único caminho até a galeria em vários Androids —
-             que é justamente onde mora a foto tirada no modo Panorama. */
+          /* ⚠ A ORDEM AQUI É O RECURSO, NÃO ARRUMAÇÃO. A foto que gira é a que
+             foi tirada no aplicativo de câmera do celular — e o único caminho
+             até ela é a GALERIA, num `<input>` SEM `capture`. Com `capture` o
+             navegador abre a câmera direto e, em vários Androids, TIRA A
+             GALERIA DA JOGADA: a pessoa quer buscar o panorama e o aparelho
+             oferece tirar outra foto. Por isso o botão da galeria vem PRIMEIRO
+             e é o `primary`; o da câmera fica ao lado, e o nome dele diz o que
+             ele produz (foto comum, que registra mas não gira).
+             ⚠ E NÃO EXISTE JEITO de a página abrir a câmera já no modo
+             panorama: `capture` só escolhe qual câmera, nunca o modo. Isso é
+             regra do navegador, e a caixa de instrução acima da tabela diz
+             isso com essas palavras em vez de deixar a pessoa procurando um
+             ajuste que não há. */
+          + '<button class="btn sm primary" data-gacao="t360-importar" data-pid="' + esc(p.pid) + '" '
+          + 'title="Abre a galeria do celular: é por aqui que entra a foto tirada em Foto esférica ou Panorama">'
+          + (temFoto ? "Trocar a foto 360" : "Usar foto do celular") + "</button> "
           + '<button class="btn sm" data-gacao="t360-foto" data-pid="' + esc(p.pid) + '" '
-          + 'title="Abre a câmera do aparelho">' + (temFoto ? "Trocar: tirar foto" : "Tirar foto") + "</button> "
-          + '<button class="btn sm" data-gacao="t360-importar" data-pid="' + esc(p.pid) + '" '
-          + 'title="Abre a galeria: é por aqui que entra a foto tirada no modo Panorama do celular">Importar panorama</button> '
-          /* ⚠ o botao de girar no app so nasce quando o aparelho e o endereco
-             permitem: no celular, pela rede da obra (http), getUserMedia nao
-             existe. Botao que aparece e falha depois e pior que botao ausente. */
-          + (podeGirar() ? '<button class="btn sm" data-gacao="t360-capturar-girando" data-pid="' + esc(p.pid) + '">Capturar girando</button> ' : "")
+          + 'title="Abre a câmera: sai uma foto comum, que registra o ponto mas não gira em 360">Tirar foto comum</button> '
           + '<button class="btn sm" data-gacao="t360-editar-ponto" data-pid="' + esc(p.pid) + '">Editar</button> '
           + '<button class="btn sm danger" data-gacao="t360-excluir-ponto" data-pid="' + esc(p.pid) + '">Excluir</button>'
           + "</td></tr>";
@@ -551,6 +1125,8 @@
     var M = motor();
     var p = pontoAberto(t);
     if (!p) { G._t360Pid = ""; return _editor(t); }
+    /* o filtro herdado de outra visita cai aqui — ver nivelValido() */
+    G._t360Nivel = nivelValido(t);
 
     /* ⚠ O VÍDEO SÓ PODE SER PEDIDO DAQUI, e por isso o botão vive aqui.
        A gravação copia quadro a quadro o canvas do visualizador; sem o palco
@@ -575,11 +1151,35 @@
        porque abrir uma esfera vazia é palco preto e mudo */
     var comFoto = Util.arr(t.pontos).filter(function (x) { return !!x.foto; });
     if (comFoto.length > 1) {
+      /* ⚠ A ESTAÇÃO ABERTA ENTRA SEMPRE NA LISTA, mesmo fora do pavimento
+         filtrado — e isso não é gentileza, é o que impede o campo de apagar o
+         próprio valor. Um <select> sem opção que represente o valor atual faz
+         o navegador escolher a primeira, e o `change` seguinte (ou qualquer
+         leitura do valor) trocaria a estação sozinho. É o defeito
+         "select sem opção apaga o valor", que esta casa já pagou uma vez. */
+      var doNivel = comFoto.filter(function (x) { return casaNivel(x, G._t360Nivel) || x.pid === p.pid; });
+      var selN2 = _selNivel(t);
       html += '<div class="row t360-navponto">' + K.campo("Estação",
         '<select id="t360-ponto-sel" data-gacao="t360-ponto-sel">'
-        + comFoto.map(function (x) {
-          return '<option value="' + esc(x.pid) + '"' + (x.pid === p.pid ? " selected" : "") + ">" + esc(x.nome) + "</option>";
-        }).join("") + "</select>") + "</div>";
+        + doNivel.map(function (x) {
+          return '<option value="' + esc(x.pid) + '"' + (x.pid === p.pid ? " selected" : "") + ">"
+            + esc(x.nome) + (x.nivel ? " · " + esc(x.nivel) : "") + "</option>";
+        }).join("") + "</select>")
+        + (selN2 || "")
+        + "</div>";
+      if (G._t360Nivel && doNivel.length < comFoto.length) {
+        /* ⚠ O SELETOR CONTA ESTAÇÕES DA VISITA; ESTA LISTA SÓ MOSTRA AS QUE
+           TÊM FOTO. Escolher "Cobertura (3)" e ver uma opção só não é defeito:
+           é que nenhuma das três foi fotografada ainda. Sem esta frase, a
+           pessoa lê o "(3)" do seletor, conta 1 na lista e conclui que o
+           filtro está quebrado. */
+        var comFotoNoNivel = comFoto.filter(function (x) { return casaNivel(x, G._t360Nivel); }).length;
+        html += '<p class="muted" style="margin:-6px 0 12px">'
+          + (comFotoNoNivel
+            ? "O filtro de pavimento está escondendo " + (comFoto.length - doNivel.length) + " estação(ões) com foto."
+            : "Nenhuma estação deste pavimento tem foto ainda — a lista mostra a estação aberta para você não perder o lugar.")
+          + " As setas dentro da foto continuam levando a todas.</p>";
+      }
     }
 
     /* barra de ferramentas */
@@ -724,36 +1324,92 @@
   }
 
   function _listaComentarios(p) {
+    var M = motor();
     var hs = Util.arr(p.hotspots);
     if (!hs.length) return '<p class="muted">Nenhum comentário nesta estação.</p>';
-    var html = '<table class="tbl t360-coments"><thead><tr><th>#</th><th>Tipo</th><th>Comentário</th><th>Autor</th><th>Portal</th><th></th></tr></thead><tbody>';
+    var html = '<table class="tbl t360-coments"><thead><tr><th>#</th><th>Tipo</th><th>Comentário</th>'
+      + "<th>Autor</th><th>Situação</th><th>Portal</th><th></th></tr></thead><tbody>";
     hs.forEach(function (h, i) {
-      html += '<tr data-t360coment="' + esc(h.hid) + '"><td>' + (i + 1) + "</td>"
+      /* ⚠ QUEM DECIDE O QUE É PENDÊNCIA É O MOTOR, nunca um `if` de tela: a
+         régua ("só atencao e pendencia") mora em `Tour360.ehPendencia`, e uma
+         segunda cópia dela aqui envelheceria em silêncio no dia em que um
+         tipo novo entrasse. `typeof` porque o motor pode ser o antigo. */
+      var ehPend = !!(M && typeof M.ehPendencia === "function" && M.ehPendencia(h));
+      var st = (ehPend && typeof M.statusDe === "function") ? M.statusDe(h) : "";
+      var venceu = ehPend && prazoVencido(h.prazo, st);
+      html += '<tr data-t360coment="' + esc(h.hid) + '"' + (venceu ? ' style="background:rgba(220,38,38,.10)"' : "") + ">"
+        + "<td>" + (i + 1) + "</td>"
         + '<td><span class="t360-chip t360-chip-' + esc(h.tipo || "comentario") + '">' + esc(rotuloTipo(h.tipo)) + "</span></td>"
         + "<td>" + esc(h.texto || "—") + "</td>"
         + "<td>" + esc(h.autor || "—") + "</td>"
+        + "<td>"
+        + (ehPend
+          ? esc(rotuloStatus(st))
+            + (h.responsavel ? '<br><span class="muted">' + esc(h.responsavel) + "</span>" : "")
+            + (h.prazo
+              ? "<br>" + (venceu
+                ? '<b style="color:#dc2626">vencido em ' + esc(Util.fmtDia(h.prazo) || h.prazo) + "</b>"
+                : '<span class="muted">prazo ' + esc(Util.fmtDia(h.prazo) || h.prazo) + "</span>")
+              : "")
+          : '<span class="muted">—</span>')
+        + "</td>"
         + "<td>" + (h.paraCliente ? "sim" : "não") + "</td>"
-        + '<td><button class="btn sm danger" data-gacao="t360-excluir-coment" data-hid="' + esc(h.hid) + '">Excluir</button></td></tr>';
+        + '<td style="white-space:nowrap">'
+        /* ⚠ EDITAR ERA CAMINHO SEM VOLTA: o "mostrar ao cliente" marcado por
+           engano só saía apagando o comentário — e apagar leva junto a posição
+           na foto, o autor, a data e, numa pendência, a ligação com todas as
+           aparições anteriores dela. */
+        + '<button class="btn sm" data-gacao="t360-editar-coment" data-pid="' + esc(p.pid) + '" data-hid="' + esc(h.hid) + '">Editar</button> '
+        + (ehPend ? _botoesVeredito(p.pid, h.hid, st) + " " : "")
+        + '<button class="btn sm danger" data-gacao="t360-excluir-coment" data-pid="' + esc(p.pid) + '" data-hid="' + esc(h.hid) + '">Excluir</button>'
+        + "</td></tr>";
     });
     return html + "</tbody></table>";
   }
 
+  function rotuloMedida(tipo) {
+    if (tipo === "altura") return "Altura";
+    if (tipo === "area") return "Área do piso";
+    return "Distância no chão";
+  }
+
   function _listaMedidas(p) {
     var M = motor();
-    var ms = Util.arr(p.medidas);
+    /* ⚠ AS DUAS LISTAS, pelo funil unico: `medidas` (distancia e altura) e
+       `areas`. Ler `p.medidas` direto aqui faria a area sumir da tela DEPOIS de
+       a pessoa clicar em "Guardar" - o pior desfecho possivel, porque ela mede
+       a mesma sala de novo achando que nao salvou. Ver `Tour360.medidasDoPonto`
+       para o motivo de serem duas listas no registro. */
+    var ms = M.medidasDoPonto(p);
     if (!ms.length) return "";
     var html = '<table class="tbl t360-medidas mt"><thead><tr><th>Tipo</th><th>Rótulo</th><th class="num">Medida</th><th>Confiança</th><th>Portal</th><th></th></tr></thead><tbody>';
     ms.forEach(function (m) {
       /* ⚠ RECALCULA NA LEITURA, sempre. O registro guarda os cliques, não o
          resultado: quem corrigir a altura da câmera depois conserta o
-         histórico inteiro em vez de deixar número velho mentindo na tela. */
+         histórico inteiro em vez de deixar número velho mentindo na tela.
+         Vale para a ÁREA também: `Tour360.recalcular` conhece o tipo "area"
+         desde que ela deixou de ser comentário, e relê pelos cantos. */
       var r = M.recalcular(m, p);
-      html += "<tr><td>" + (m.tipo === "altura" ? "Altura" : "Distância no chão") + "</td>"
+      var ehArea = (m.tipo === "area");
+      html += "<tr><td>" + esc(rotuloMedida(m.tipo)) + "</td>"
         + "<td>" + esc(m.rotulo || "—") + "</td>"
-        + '<td class="num">' + (r.ok ? "<b>" + n2(r.metros) + " m</b>" : '<span class="muted">—</span>') + "</td>"
+        + '<td class="num">'
+        + (r.ok
+          ? (ehArea
+            /* ⚠ O PERÍMETRO SAI JUNTO DO m², e não numa coluna própria: quem
+               orça contrapiso precisa do primeiro e quem orça rodapé do
+               segundo, e os dois saíram do MESMO polígono — separá-los faria
+               parecer que são duas medidas independentes. */
+            ? "<b>" + n2(r.area) + " m²</b><br><span class=\"muted\">perímetro " + n2(r.perimetro) + " m · " + Util.arr(m.cantos).length + " cantos</span>"
+            : "<b>" + n2(r.metros) + " m</b>")
+          : '<span class="muted">—</span>')
+        + "</td>"
         + "<td>" + (r.ok ? (r.aproximada ? "aproximada (±" + n1(r.erroEstimadoPct) + "%)" : "±" + n1(r.erroEstimadoPct) + "%") : esc(r.motivo)) + "</td>"
         + "<td>" + (m.paraCliente ? "sim" : "não") + "</td>"
-        + '<td><button class="btn sm danger" data-gacao="t360-excluir-medida" data-mid="' + esc(m.mid) + '">Excluir</button></td></tr>';
+        + '<td style="white-space:nowrap">'
+        + '<button class="btn sm" data-gacao="t360-editar-medida" data-pid="' + esc(p.pid) + '" data-mid="' + esc(m.mid) + '">Editar</button> '
+        + '<button class="btn sm danger" data-gacao="t360-excluir-medida" data-pid="' + esc(p.pid) + '" data-mid="' + esc(m.mid) + '">Excluir</button>'
+        + "</td></tr>";
     });
     return html + "</tbody></table>";
   }
@@ -823,15 +1479,27 @@
    * linha de orçamento e de boletim. Medindo dois pontos por vez a pessoa soma
    * de cabeça — e é aí que nasce o número errado.
    *
-   * ⚠ A ÁREA NÃO É GRAVADA COMO MEDIDA, e isso é decisão, não esquecimento.
-   *   `Tour360.recalcular` só conhece "chao" e "altura": uma medida gravada
-   *   com tipo "area" seria relida como distância entre dois pontos que não
-   *   existem, e a lista de medidas mostraria a recusa do motor no lugar do
-   *   metro quadrado — número que mente, que é pior que número nenhum. E
-   *   `Tour360.PORTAL_MEDIDA` não tem campo de área, então ela também não
-   *   chegaria ao cliente. A porta é guardar o resultado como COMENTÁRIO
-   *   fixado no primeiro canto: ele atravessa para o Portal se a pessoa
-   *   marcar, e o texto carrega o ± junto do número. */
+   * ⚠ A ÁREA VIRA MEDIDA DE VERDADE — E ANTES NÃO PODIA.
+   *   Enquanto `Tour360.recalcular` só conhecia "chao" e "altura", uma medida
+   *   gravada com tipo "area" era relida como distância entre dois pontos que
+   *   não existiam: a lista mostrava a recusa do motor no lugar do metro
+   *   quadrado, número que mente. E `PORTAL_MEDIDA` não tinha campo de área,
+   *   então ela também não chegava ao cliente. Por isso o caminho antigo era
+   *   guardar o resultado como COMENTÁRIO fixado no primeiro canto.
+   *   Hoje o motor relê a área pelos CANTOS (`recalcular` trata `tipo:"area"`)
+   *   e a allowlist do Portal carrega `cantos`, `area` e `perimetro`. Então
+   *   ela entra na lista de medidas como qualquer outra — e ganha o que só a
+   *   medida tem: recálculo quando alguém corrige a altura da câmera, e o
+   *   cliente conferindo os cantos na própria foto.
+   *   ⚠ MAS ELA NÃO MORA EM `p.medidas[]`, E SIM EM `p.areas[]`. O motor que
+   *   rele a área é o DESTA versão; o que está instalado na frota é o da
+   *   1.2.56, e ele lê uma área de dentro de `medidas` como distância entre
+   *   dois pontos que não existem — "0,00 m ±0%" na tela dele e no Portal do
+   *   contratante. A lista separada é o que o faz simplesmente não ver a
+   *   área. O roteiro inteiro está em `Tour360.medidasDoPonto`.
+   *   ⚠ GRAVAR OS CANTOS BRUTOS, nunca os corrigidos: `recalcular` aplica
+   *   `corrigir()` na leitura, e gravar corrigido faria a correção entrar
+   *   duas vezes — a mesma regra da armadilha 3 do cabeçalho. */
   function _painelArea(t, p) {
     var cl = G._t360AreaCliques;
     var res = G._t360Area;
@@ -868,10 +1536,10 @@
         corpo += '<div class="row">' + K.campo("Rótulo (o que é esta área)", K.inp("t360-area-rotulo", "", "Ex.: contrapiso da sala 2"))
           + K.campo("Mostrar para o cliente", '<label style="display:inline-flex;align-items:center;gap:6px;padding-top:9px"><input type="checkbox" id="t360-area-cli"> no Portal</label>')
           + "</div>"
-          + '<div class="flex"><button class="btn primary" data-gacao="t360-area-comentar">Guardar como comentário nesta estação</button> '
+          + '<div class="flex"><button class="btn primary" data-gacao="t360-area-salvar">Guardar esta área nas medidas</button> '
           + '<button class="btn" data-gacao="t360-area-limpar">Medir outra área</button></div>'
-          + '<p class="muted" style="margin:8px 0 0">A área não entra na lista de medidas: o registro de medida só sabe guardar distância e altura, '
-          + "e um número relido errado ali seria pior que não guardar. Como comentário ele fica fixado no primeiro canto, com o ± junto.</p>";
+          + '<p class="muted" style="margin:8px 0 0">A área entra na <b>lista de medidas</b> desta estação, guardando os cantos que você marcou — '
+          + "não o número. Corrigir depois a altura da câmera refaz o m² sozinho, e o cliente consegue conferir os cantos na própria foto.</p>";
       } else {
         corpo += '<div class="flex"><button class="btn primary" data-gacao="t360-area-fechar">Fechar área</button> '
           + '<button class="btn" data-gacao="t360-area-desfazer">Apagar o último canto</button> '
@@ -887,7 +1555,10 @@
         + '<button class="btn" data-gacao="t360-area-limpar">Recomeçar</button></div>';
     }
 
-    return html + "</div>";
+    /* ⚠ a lista fica AQUI também, e não só no modo "girar": guardar uma área
+       e não vê-la aparecer em lugar nenhum se lê como "não salvou", e a
+       pessoa mede a mesma sala de novo. */
+    return html + _listaMedidas(p) + "</div>";
   }
 
   /* ---------- painel: comentar ---------- */
@@ -1035,12 +1706,29 @@
      já aberta e devolve {ok:false, codigo:"sem-sessao"} quando não há sessão.
      Como o `typeof` dava "function", a tela entrava nesse ramo, o retorno era
      ignorado e o botão de foto não fazia NADA — sem erro, sem console. */
-  /* Uma pergunta so, num lugar so: o modulo existe E o aparelho deixa? */
-  function podeGirar() {
-    var Cap = global.Tour360Cap;
-    if (!Cap || !Cap.podeCapturar) return false;
-    try { return !!Cap.podeCapturar().ok; } catch (e) { return false; }
-  }
+  /* ⚠ `podeGirar()` FOI EMBORA JUNTO COM O BOTÃO, em 08/09/2026. Ficou aqui
+     escrito o porquê, para quem for religar não repetir o caminho:
+
+     1. O dono testou em campo e a foto costurada saiu ruim. O panorama do
+        aplicativo de câmera do celular é melhor e já está pronto.
+     2. O botão nascia EXATAMENTE ONDE NÃO PODE FUNCIONAR. Medido por CDP: na
+        instalação de mesa, em http://localhost, `isSecureContext` é `true`,
+        `DeviceOrientationEvent` existe e `getUserMedia` existe — então
+        `Cap.podeCapturar()` devolvia `{ok:true}` e o botão aparecia no PC,
+        onde não há bússola: acendia a webcam e terminava em "Nenhum quadro foi
+        capturado". No celular, pela rede da obra (http puro), ele
+        corretamente não nascia — ou seja, ele só aparecia onde falha.
+
+     O MÓDULO CONTINUA INTEIRO (js/tour360cap.js, com os 201 asserts de
+     tools/test-tour360cap.js): apagar as seções da costura tiraria ~790 de
+     1485 linhas e 159 asserts, e o gate descobre suíte por `readdirSync` com
+     prefixo `test-` — arquivo apagado SOME DA CONTAGEM SEM ACUSAR. O botão se
+     esconde; o módulo dorme. O handler `t360-capturar-girando` continua
+     válido para quem chamar `G.acao` na mão, e `Cap.podeCapturar()` continua
+     sendo a pergunta certa antes de religar.
+     ⚠ Antes de religar, resolva o item 2: `Cap.podeCapturar` precisa provar
+     que há BÚSSOLA de verdade (um evento de orientação real), não só que a
+     API existe. */
 
   /* ⚠ DOIS CAMINHOS, E A "DUPLICAÇÃO" É O CONSERTO — ver a armadilha 5 do
      cabeçalho e o cabeçalho do js/tour360cap.js. `capture="environment"` abre
@@ -1126,7 +1814,103 @@
     var t = tourAberto();
     var p = t ? motor().pontoDe(t, G._t360FotoPid) : null;
     if (!p) { UI.toast("Escolha antes em qual estação a foto entra.", "erro"); return; }
-    _guardarFoto(t, p, dataURI, leitura);
+
+    /* ⚠ A GEOMETRIA DECIDE ANTES DE GUARDAR, E SÓ AQUI ELA AINDA EXISTE.
+       `Fotos.guardar` chama `Fotos.reduzir`, que redesenha num canvas: nesse
+       re-encode o XMP morre. Depois disso ninguém mais consegue saber quantos
+       graus a foto cobre — e o sintoma seria "meu panorama não mede", sem
+       erro nenhum na tela. */
+    var Cap = global.Tour360Cap;
+    var lane = (leitura && leitura.lane) || "";
+    if (!Cap || !Cap.planoLetterbox || !lane) { _guardarFoto(t, p, dataURI, leitura); return; }
+
+    if (lane === "faixa") {
+      /* faixa sem etiqueta: o app NÃO ADIVINHA quanto a pessoa girou */
+      _perguntarAbertura(leitura, function (covH) {
+        if (covH == null) return;                    /* cancelou: nada muda */
+        _encaixarEGuardar(t, p, dataURI, leitura, { covH: covH });
+      });
+      return;
+    }
+    if (lane === "gpano") { _encaixarEGuardar(t, p, dataURI, leitura, {}); return; }
+    _guardarFoto(t, p, dataURI, leitura);            /* nativa e comum: como sempre */
+  }
+
+  /* Encaixa a faixa numa equiretangular 2:1 de verdade e só então guarda.
+     ⚠ A CONTA NÃO MORA AQUI: quem diz onde a faixa cai é
+     `Cap.planoLetterbox` (puro, testado em Node) e quem pinta é
+     `Cap.letterbox`. Se esta tela calculasse "só para desenhar", nasceria um
+     segundo número — e o segundo número aparece sempre na hora errada. */
+  function _encaixarEGuardar(t, p, dataURI, leitura, extra) {
+    var Cap = global.Tour360Cap;
+    medirImagem(dataURI, function (w, h) {
+      var plano = Cap.planoLetterbox({
+        largura: w, altura: h,
+        gpano: (leitura && leitura.gpano) || null,
+        covH: (extra && extra.covH) || 0
+      });
+      if (!plano.ok) {
+        UI.toast(plano.motivo + (plano.saida ? " " + plano.saida : ""), "erro");
+        return;
+      }
+      var img = new global.Image();
+      img.onload = function () {
+        var enc = Cap.letterbox(img, plano);
+        if (!enc.ok) {
+          UI.toast(enc.motivo + (enc.saida ? " " + enc.saida : ""), "erro");
+          return;
+        }
+        /* a leitura segue junto (a data do EXIF vem dela), acrescida da
+           geometria que o encaixe acabou de fixar */
+        var lt = {};
+        for (var k in (leitura || {})) lt[k] = leitura[k];
+        lt.panoFonte = plano.fonte;
+        lt.panoCobH = plano.covH;
+        lt.panoCobV = plano.covV;
+        lt.panoCentroPitch = plano.centroPitch;
+        lt.encaixada = true;
+        _guardarFoto(t, p, enc.dataURI, lt);
+      };
+      img.onerror = function () {
+        UI.toast("Não consegui abrir a imagem para encaixá-la na esfera.", "erro");
+      };
+      img.src = dataURI;
+    });
+  }
+
+  /* ⚠ UMA PERGUNTA SÓ, E SEM PADRÃO SUGERIDO. Sem a etiqueta, o único que
+     sabe quanto o celular girou é quem girou. Sugerir "360" no campo seria um
+     chute com cara de fato, e ele viraria metro na tela do cliente. */
+  function _perguntarAbertura(leitura, cb) {
+    var prop = (leitura && leitura.proporcao) || 0;
+    UI.modal("Quanto você girou o celular nesta foto?",
+      "<p>Esta foto é uma <b>faixa</b> (proporção " + esc(String(prop)) + ":1) e não traz a etiqueta de 360 do aparelho. "
+      + "Para colocar ela no lugar certo da esfera, preciso saber quantos graus você varreu.</p>"
+      + '<div class="row">'
+      + K.campo("Volta dada (graus) *", '<select id="t360-cov-op">'
+        + '<option value="360">Dei a volta inteira — 360°</option>'
+        + '<option value="180">Meia volta — 180°</option>'
+        + '<option value="90">Um quarto — 90°</option>'
+        + '<option value="">Outro valor…</option></select>')
+      + K.campo("Se “outro”, quantos graus?", K.inp("t360-cov-h", "", "ex.: 200"))
+      + "</div>"
+      + '<p class="muted">Este número <b>não saiu do arquivo — você está informando</b>. Ele serve para a estação girar '
+      + "e para as setas apontarem para o ambiente certo.</p>"
+      + '<p class="muted">⚠ Enquanto for informado por você, <b>esta estação não mede por ângulo</b>: uma medida dependeria '
+      + "de um giro que ninguém consegue conferir depois. Para medir, refaça em <b>Foto esférica</b> (Photo Sphere / 360), "
+      + "que grava a geometria dentro do arquivo.</p>", [
+      { texto: "Cancelar — quero refazer", classe: "ghost", onClick: function () { UI.fecharModal(); cb(null); } },
+      { texto: "Usar assim", classe: "primary", onClick: function () {
+        var op = K.v("t360-cov-op");
+        var v = op ? Util.num(op) : Util.num(K.v("t360-cov-h"));
+        if (!(v > 0) || v > 360) {
+          UI.toast("Informe quantos graus você girou, entre 1 e 360 — sem esse número a foto não tem onde ser colocada na esfera.", "erro");
+          return;
+        }
+        UI.fecharModal();
+        cb(v);
+      } }
+    ]);
   }
 
   /* ⚠ QUEM RECUSA UM ARQUIVO PRECISA DIZER O QUE HOUVE. js/tour360cap.js já
@@ -1207,8 +1991,28 @@
         var alvo = M.pontoDe(atual, p.pid);
         if (!alvo) { UI.toast("Esta estação não existe mais.", "erro"); return; }
         var antiga = alvo.foto;
+        /* ⚠ TROCAR A FOTO DEIXA TODO MARCADOR DAQUI ÓRFÃO DE REFERENCIAL: o
+           ângulo deles é pixel da foto que está SAINDO. O carimbo diz isso ao
+           motor, e é ele que autoriza `renortear` a arrastá-los quando o
+           engenheiro corrigir o norte da foto nova. Sem o carimbo, corrigir o
+           norte não move nada e a pendência aponta para a parede errada. */
+        if (antiga && typeof M.marcarFrame === "function") M.marcarFrame(alvo);
         alvo.foto = ref;
         alvo.tipo = equi ? "equirect" : "plana";
+        /* ⚠ A GEOMETRIA ACOMPANHA A FOTO, e ela e gravada JUNTO com o `tipo`
+           porque as duas descrevem o MESMO arquivo. Gravar em lugares
+           diferentes e como uma estacao acaba com o `tipo` de uma foto e a
+           cobertura de outra — e ai a medida sai plausivel e errada.
+           ⚠ SEM INFORMACAO, VOLTA A ZERO. Trocar a foto de uma estacao que ja
+           tinha panorama nao pode deixar a cobertura ANTIGA no ponto: a foto
+           nova pode ser outra coisa, e medir com a geometria do arquivo velho
+           e exatamente o defeito que este trabalho existe para fechar.
+           Zero quer dizer "nao sei", e "nao sei" so permite. */
+        alvo.panoFonte = (leitura && leitura.panoFonte)
+          || (equi ? "nativa" : "plana");
+        alvo.panoCobH = Util.num((leitura && leitura.panoCobH) || 0);
+        alvo.panoCobV = Util.num((leitura && leitura.panoCobV) || 0);
+        alvo.panoCentroPitch = Util.num((leitura && leitura.panoCentroPitch) || 0);
         /* ⚠ A DATA DA FOTO ERA A DO ANEXO, E ELA VAI PARA UM DOCUMENTO QUE
            FISCAL E PERITO LEEM COMO PROVA. Foto tirada na segunda e anexada na
            quinta saía datada de quinta. Agora vale, nesta ordem: a data do
@@ -1350,10 +2154,21 @@
       return;
     }
 
-    if (G._t360Carregado === chave || G._t360Carregando === chave) {
+    if (G._t360Carregado === chave) {
       /* nada a carregar: a esfera já é esta. O rumo guardado não tem mais
          para onde ir — mantê-lo pendente giraria a próxima estação com o
-         enquadramento de uma troca que já aconteceu. */
+         enquadramento de uma troca que já aconteceu.
+         ⚠ O FOCO, AO CONTRÁRIO, TEM DE SER APLICADO AQUI. Pedir "Ver na foto"
+         de uma pendência da estação que já está aberta não recarrega nada
+         (a chave não muda), e sem esta chamada o botão simplesmente não
+         faria nada — o pior tipo de recurso, o que funciona só às vezes. */
+      G._t360Rumo = null;
+      _aplicarFoco();
+      return;
+    }
+    if (G._t360Carregando === chave) {
+      /* ainda carregando ESTA esfera: girar agora seria sobrescrito pelo
+         `abrir`, então o foco fica pendente para o `pronto(true)` */
       G._t360Rumo = null;
       return;
     }
@@ -1361,7 +2176,7 @@
 
     function pronto(ok) {
       G._t360Carregando = "";
-      if (ok) { G._t360Carregado = chave; _aplicarRumo(); }
+      if (ok) { G._t360Carregado = chave; _aplicarRumo(); _aplicarFoco(); }
     }
 
     if (comparando) {
@@ -1393,7 +2208,7 @@
     }
 
     if (!p.foto) {
-      _mostrarMotivo(document.getElementById("t360-host"), "Esta estação ainda não tem foto. Volte às estações e use \"Tirar/escolher foto\".");
+      _mostrarMotivo(document.getElementById("t360-host"), "Esta estação ainda não tem foto. Volte às estações e use \"Usar foto do celular\".");
       pronto(false); return;
     }
 
@@ -1478,7 +2293,7 @@
     if (!alvo) { UI.toast("Esta estação não existe mais nesta visita.", "erro"); return; }
     if (!alvo.foto) {
       /* recusa com porta: diz o que fazer, e onde */
-      UI.toast("A estação \"" + (alvo.nome || "") + "\" ainda não tem foto — o 360 dela abriria preto. Volte às estações e use \"Tirar foto\" ou \"Importar panorama\".", "erro");
+      UI.toast("A estação \"" + (alvo.nome || "") + "\" ainda não tem foto — o 360 dela abriria preto. Volte às estações e use \"Usar foto do celular\".", "erro");
       return;
     }
 
@@ -1546,6 +2361,39 @@
       var p = (typeof V.pose === "function") ? V.pose() : { pitch: 0, fov: undefined };
       try { V.olharPara(r.yaw, p.pitch, p.fov); } catch (e3) {}
     }
+  }
+
+  /* ---------- levar o olho até a pendência ----------
+   *
+   * O painel promete "clique e veja onde é". Sem isto, o botão trocaria de
+   * estação e largaria a pessoa olhando para o norte da foto, procurando a
+   * fissura numa parede qualquer — porta prometida que o clique seguinte
+   * fecha.
+   *
+   * ⚠ O ÂNGULO DO HOTSPOT É BRUTO (é o que `_cliqueComentar` grava e o que os
+   *   marcadores usam), então o par certo é `girarPara`, NUNCA
+   *   `girarParaCorrigido` — este último espera o espaço corrigido e giraria
+   *   a câmera exatamente o tamanho do `nortear` da estação para o lado
+   *   errado. Ver a decisão 4 do cabeçalho do viewer. */
+  function _aplicarFoco() {
+    var hid = G._t360FocoHid;
+    G._t360FocoHid = "";
+    if (!hid) return;
+    var V = vista();
+    var t = tourAberto(), p = pontoAberto(t);
+    if (!V || !p) return;
+    var hs = Util.arr(p.hotspots), alvo = null, i;
+    for (i = 0; i < hs.length; i++) if (hs[i] && hs[i].hid === hid) { alvo = hs[i]; break; }
+    if (!alvo) return;
+    if (typeof V.girarPara === "function") {
+      try { V.girarPara(Util.num(alvo.yaw), Util.num(alvo.pitch)); } catch (e) {}
+    } else if (typeof V.olharPara === "function") {
+      try { V.olharPara(Util.num(alvo.yaw), Util.num(alvo.pitch)); } catch (e2) {}
+    }
+    /* e destaca a linha do apontamento na lista de baixo — é o mesmo gesto do
+       toque no marcador dentro da foto, e reusar evita inventar um segundo
+       lugar para a mesma informação */
+    try { _abrirMarcador(hid); } catch (e3) {}
   }
 
   /* ⚠ SAIR DA TELA CHEIA PRECISA RE-RENDERIZAR quando a estação mudou lá
@@ -1874,8 +2722,30 @@
        marcar sem o usuário pedir enche a foto de pontas fantasmas */
   }
 
+  /* ⚠ ONDE A FOTO ACABA, A MEDIDA ACABA — e quem decide isso é o motor.
+     Depois do encaixe a geometria está certa, mas fora da faixa fotografada
+     não existe obra nenhuma: `distanciaNoChao` devolveria um número
+     perfeitamente calculado sobre o cinza, com o ± pequeno e cara de
+     conferido. A recusa vem com o motivo E a saída, porque quem precisava do
+     número e leva um "não" seco manda o valor "de olho" no WhatsApp.
+     ⚠ O ÂNGULO VAI BRUTO, nunca o corrigido: a faixa é um retângulo no espaço
+     da IMAGEM e `corrigir` já subtraiu `nortear`/`horizonte` — passar o
+     corrigido faria a guarda recusar clique válido em estação nortada, que
+     são justamente as do comparativo entre visitas. */
+  function _barraMedida(ang) {
+    var M = motor();
+    if (!M || typeof M.podeMedirAqui !== "function") return false;
+    var t = tourAberto(), p = pontoAberto(t);
+    if (!p) return false;
+    var r = M.podeMedirAqui({ yaw: Util.num(ang.yaw), pitch: Util.num(ang.pitch) }, p);
+    if (!r) return false;
+    UI.toast(r.motivo + (r.saida ? " " + r.saida : ""), "erro");
+    return true;
+  }
+
   function _cliqueMedir(ang) {
     if (G._t360Medida && G._t360Medida.ok) return;   // já há resultado na tela
+    if (_barraMedida(ang)) return;
     /* ⚠ GUARDA O BRUTO E O CORRIGIDO. O bruto é o pixel da foto (é ele que
        vai para o registro, porque `Tour360.recalcular` aplica `corrigir()` na
        leitura); o corrigido é o nivelado, que é o que entra na conta AGORA.
@@ -1907,6 +2777,9 @@
     var t = tourAberto(), p = pontoAberto(t);
     if (!p || !M) return;
     if (G._t360AreaFechada) return;      /* já fechou: recomeçar é botão */
+    /* a mesma guarda do `_cliqueMedir`: canto no cinza vira área inventada, e
+       área vai a relatório de fiscalização do mesmo jeito que distância */
+    if (_barraMedida(ang)) return;
     if (G._t360AreaCliques.length >= 24) {
       UI.toast("Vinte e quatro cantos é o limite — meça por partes: fica mais confiável e mais fácil de conferir.", "erro");
       return;
@@ -1952,6 +2825,7 @@
       + "</div>"
       + '<div class="field"><label>O que você viu aqui</label>'
       + '<textarea id="t360-h-texto" rows="4" style="width:100%"></textarea></div>'
+      + _camposPendencia(null)
       /* ⚠ A CAIXA DO PORTAL NASCE DESMARCADA. `Tour360.paraPortal` só leva o
          comentário com `paraCliente`; o padrão inverso mandaria ao cliente a
          anotação interna do engenheiro sem ninguém decidir nada. */
@@ -1968,22 +2842,108 @@
         if (!alvo) { UI.toast("Esta estação não existe mais.", "erro"); UI.fecharModal(); return; }
         var eu = quemSou();
         var cli = document.getElementById("t360-h-cli");
+        var tipo = K.v("t360-h-tipo") || "comentario";
+        var pend = _lerCamposPendencia(tipo);
         alvo.hotspots = Util.arr(alvo.hotspots);
         alvo.hotspots.push({
           hid: "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-          tipo: K.v("t360-h-tipo") || "comentario",
+          tipo: tipo,
           texto: texto,
           autor: eu.autor,
           em: Util.agoraISO(),
           yaw: yaw, pitch: pitch,
+          /* ⚠ `status`, `responsavel` e `prazo` NASCEM SÓ NA PENDÊNCIA.
+             `_lerCamposPendencia` devolve vazio para "comentario" e
+             "aprovado", e é isso que impede um recado do dia de nascer com
+             dono e prazo — e, principalmente, de aparecer no painel de
+             pendências, que é onde a lista precisa ser curta para ser lida. */
+          status: pend.status,
+          responsavel: pend.responsavel,
+          prazo: pend.prazo,
           paraCliente: !!(cli && cli.checked)
         });
         salvarTour(atual);
         UI.fecharModal();
-        UI.toast("Comentário guardado.", "ok");
+        UI.toast(pend.status ? "Pendência registrada — ela atravessa para a próxima visita enquanto não for resolvida." : "Comentário guardado.", "ok");
         App.render();
       } }
     ]);
+    _ligarCamposPendencia();
+  }
+
+  /* ---------- os campos que só a PENDÊNCIA tem ----------
+   *
+   * ⚠ RESPONSÁVEL E PRAZO NÃO APARECEM PARA "COMENTÁRIO" E "APROVADO", e
+   *   isso é decisão: comentário do dia não tem dono nem prazo, e um
+   *   formulário que pede as duas coisas para tudo ensina a pessoa a deixar
+   *   os dois em branco — inclusive onde eles importam.
+   *
+   * ⚠ O RESPONSÁVEL É TEXTO COM SUGESTÃO (<datalist>), NUNCA UM <select>.
+   *   Quem responde pela fissura muitas vezes não está no cadastro de
+   *   colaboradores: é o mestre do subempreiteiro, o projetista, a
+   *   construtora. Num <select> esse nome não teria como ser escrito — e,
+   *   pior, reabrir para editar um registro cujo responsável não está na
+   *   lista faria o campo regravar OUTRO nome (o defeito "select sem opção
+   *   apaga o valor"). Com datalist, o cadastro sugere e o texto manda. */
+  function _camposPendencia(h) {
+    var v = h || {};
+    var cols = [];
+    try {
+      cols = Util.arr(K.lista("colaboradores")).filter(function (c) {
+        return c && c.nome && c.status !== "inativo";
+      });
+    } catch (e) { cols = []; }
+    var opcoes = cols.map(function (c) { return '<option value="' + esc(c.nome) + '"></option>'; }).join("");
+    return '<div id="t360-h-pend" style="display:none">'
+      + '<div class="row">'
+      + K.campo("Responsável", '<input id="t360-h-resp" list="t360-h-resp-lista" value="' + esc(v.responsavel || "") + '" placeholder="Quem resolve isto">'
+        + '<datalist id="t360-h-resp-lista">' + opcoes + "</datalist>")
+      + K.campo("Prazo", K.inp("t360-h-prazo", v.prazo || "", "", "date"))
+      + "</div>"
+      + '<p class="muted" style="margin:-4px 0 10px">Atenção e Pendência <b>atravessam para a próxima visita</b> enquanto não forem '
+      + "marcadas como resolvidas — é o que impede a fissura de agosto de sumir em setembro. "
+      + "O prazo vencido aparece em vermelho no painel da visita.</p>"
+      + "</div>";
+  }
+
+  /* Mostra/esconde o bloco conforme o tipo. Ligado por `onchange` direto no
+     elemento, e NUNCA por `data-gacao`: o dispatcher re-renderizaria a tela e
+     fecharia o modal com o texto digitado dentro. */
+  function _ligarCamposPendencia() {
+    var doc = global.document;
+    if (!doc) return;
+    var sel = doc.getElementById("t360-h-tipo");
+    var bloco = doc.getElementById("t360-h-pend");
+    if (!sel || !bloco) return;
+    function aplicar() {
+      var M = motor();
+      var v = sel.value;
+      var eh = (M && M.TIPOS_PENDENCIA)
+        ? (M.TIPOS_PENDENCIA.indexOf(v) > -1)
+        /* rede para o motor antigo: a régua continua sendo a dele quando ele
+           a publica, e esta cópia só existe para não quebrar a tela */
+        : (v === "atencao" || v === "pendencia");
+      bloco.style.display = eh ? "" : "none";
+    }
+    sel.onchange = aplicar;
+    aplicar();
+  }
+
+  /* Lê os dois campos, mas SÓ quando o tipo é de pendência. Ler sempre
+     gravaria dono e prazo num "Aprovado" — e o painel passaria a cobrar
+     prazo de coisa que já foi aprovada. */
+  function _lerCamposPendencia(tipo) {
+    var M = motor();
+    var eh = (M && M.TIPOS_PENDENCIA)
+      ? (M.TIPOS_PENDENCIA.indexOf(tipo) > -1)
+      : (tipo === "atencao" || tipo === "pendencia");
+    if (!eh) return { status: "", responsavel: "", prazo: "" };
+    var pz = K.v("t360-h-prazo");
+    return {
+      status: "aberta",
+      responsavel: K.v("t360-h-resp"),
+      prazo: /^\d{4}-\d{2}-\d{2}$/.test(pz) ? pz : ""
+    };
   }
 
   /* ===================================================================
@@ -2010,6 +2970,22 @@
           var data = K.v("t360-nv-data");
           if (!obraId) { UI.toast("Escolha a obra: toda visita pertence a uma obra.", "erro"); return; }
           if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Informe a data da visita.", "erro"); return; }
+          /* ⚠ VISITA DO ZERO NÃO HERDA PENDÊNCIA — e essa é a rota mais comum
+             por onde uma fissura em aberto some da cobrança sem ninguém
+             decidir nada: a partir daqui a visita mais recente da obra é esta,
+             e o resumo passa a dizer "nenhuma pendência". A recusa não é o
+             caminho (criar do zero é legítimo: outra torre, outro pavimento);
+             o caminho é dizer o número e oferecer a saída antes. */
+          if (typeof M.resumoPendencias === "function") {
+            var antes = listaTours().filter(function (x) { return String(x.obraId || "") === String(obraId); });
+            var resAntes = null;
+            try { resAntes = M.resumoPendencias(antes, M.hojeLocal()); } catch (eR) { resAntes = null; }
+            var quantasP = (resAntes && resAntes.abertas) || 0;
+            if (quantasP && !window.confirm(quantasP + " pendência(s) estão em aberto na última visita desta obra.\n\n"
+                + "Uma visita criada do zero nasce SEM elas: as estações são novas, e a partir de hoje elas deixam de ser cobradas nesta obra.\n\n"
+                + "Para trazer as pendências junto, cancele e use o botão Repetir visita na visita anterior.\n\n"
+                + "Criar mesmo assim?")) return;
+          }
           var ob = Store.obter(eid(), "obras", obraId);
           var eu = quemSou();
           var t = M.novo(obraId, data, {
@@ -2031,6 +3007,82 @@
       G._t360Cliques = []; G._t360Medida = null; G._t360ParPid = ""; G._t360Comparar = "";
       _zerarArea();
       G._t360PosPid = "";
+      /* visita nova, pavimentos possivelmente outros: o filtro herdado
+         esconderia estações sem explicar por quê (ver `nivelValido`) */
+      G._t360Nivel = "";
+      G._t360PendResolvidas = false;
+      G._t360FocoHid = "";
+      App.render();
+    },
+
+    /* ---------- pendências: o que atravessa a visita ---------- */
+
+    /* Leva à estação e gira até o ponto marcado na foto. ⚠ O foco é aplicado
+       DEPOIS de a esfera resolver (`_aplicarFoco`, chamado no `pronto(true)`
+       do `_sincronizar`): girar antes é escrever num valor que a carga da
+       foto sobrescreve, e o defeito se lê como "às vezes não vai". */
+    "t360-pend-ir": function (ds) {
+      var t = tourAberto();
+      if (!t || !ds || !ds.pid) return;
+      var p = motor().pontoDe(t, ds.pid);
+      if (!p) { UI.toast("Esta estação não existe mais nesta visita.", "erro"); return; }
+      if (!p.foto) {
+        /* recusa com porta: diz o que falta e onde se resolve */
+        UI.toast("A estação \"" + (p.nome || "") + "\" ainda não tem foto — não há onde mostrar o ponto. Use \"Usar foto do celular\" na linha dela.", "erro");
+        return;
+      }
+      G._t360Pid = String(ds.pid);
+      G._t360Modo = "girar";
+      G._t360FocoHid = String(ds.hid || "");
+      G._t360Cliques = []; G._t360Medida = null; G._t360ParPid = "";
+      _zerarArea();
+      App.render();
+    },
+
+    /* O veredito. ⚠ RESOLVIDA GRAVA QUEM E QUANDO; REABRIR APAGA OS DOIS.
+       Sem a limpeza, o registro ficaria dizendo "resolvida em 12/08 por
+       Fulano" com o status "aberta" ao lado — e recado que mente é pior que
+       recado nenhum, ainda mais neste, que é o que o cliente vê no relatório. */
+    "t360-pend-status": function (ds) {
+      var M = motor();
+      var t = tourAberto();
+      if (!t || !ds || !ds.pid || !ds.hid) return;
+      var st = (ds.st === "resolvida" || ds.st === "persiste") ? ds.st : "aberta";
+      var atual = Store.obter(eid(), ENT, t.id);
+      var h = _acharHotspot(atual, ds.pid, ds.hid);
+      if (!h) { UI.toast("Este apontamento não existe mais nesta visita.", "erro"); return; }
+      var antes = (M.statusDe ? M.statusDe(h) : "aberta");
+      /* ⚠ CLICAR NO ESTADO ATUAL NÃO REGRAVA NADA. `salvarTour` republica o
+         Portal da obra quando a visita está no ar: sem esta saída, apertar
+         duas vezes o botão que já estava marcado dispararia um envio inteiro
+         ao servidor sem nada ter mudado. */
+      if (antes === st) { UI.toast("Já está marcada como \"" + rotuloStatus(st) + "\".", "ok"); return; }
+      h.status = st;
+      if (st === "resolvida") {
+        h.resolvidoEm = hojeISO();
+        h.resolvidoPor = quemSou().autor;
+        /* ⚠ SUMIR DEBAIXO DO DEDO É O PIOR DESFECHO DE UM BOTÃO. O painel
+           esconde as resolvidas por padrão (senão a lista só cresce), e sem
+           esta linha a fila inteira saltava para cima no instante do clique:
+           quem errou de linha não vê o que fez, e quem acertou não confere.
+           Medido no navegador: o item marcado desaparecia junto com os três
+           botões de veredito, e o desfazer ficava atrás de outro botão. */
+        G._t360PendResolvidas = true;
+      } else {
+        h.resolvidoEm = "";
+        h.resolvidoPor = "";
+      }
+      if (!salvarTour(atual)) return;
+      UI.toast(st === "resolvida"
+        ? "Marcada como resolvida — ela não vai mais atravessar para a próxima visita."
+        : (st === "persiste"
+          ? "Marcada como PIOROU. Ela continua atravessando para a próxima visita."
+          : "Marcada como em aberto. Ela continua atravessando para a próxima visita."), "ok");
+      App.render();
+    },
+
+    "t360-pend-resolvidas": function () {
+      G._t360PendResolvidas = !G._t360PendResolvidas;
       App.render();
     },
 
@@ -2137,6 +3189,76 @@
       ]);
     },
 
+    /* ⚠ DESPUBLICAR NÃO EXISTIA, e a falta não era pequena: material de obra
+     * ia para a tela de quem paga e não havia como recolher. A foto do
+     * canteiro errado, o apontamento que era conversa interna, a medida
+     * aproximada que o cliente leu como cota de projeto — o único caminho de
+     * volta era EXCLUIR a visita inteira, levando junto as fotos, as medidas e
+     * o comparativo com o mês anterior.
+     *
+     * ⚠ E O CAMINHO NÃO PODE SER SÓ `salvarTour`, por DOIS motivos que
+     * sobrevivem ao conserto do `estaPublicado`:
+     *  1. o reenvio automático só dispara para visita PUBLICADA — e no
+     *     instante em que o estado vira "rascunho" ele desiste, deixando o
+     *     retrato antigo, com a visita dentro, servindo no servidor. O app
+     *     diria "despublicada" e o cliente continuaria vendo tudo, por tempo
+     *     indeterminado. É o mesmo buraco que o "Despublicar" do diário teve.
+     *  2. recolher precisa FALAR com quem mandou recolher. Reenvio automático
+     *     é mudo por natureza; aqui a pessoa está esperando a resposta.
+     * Por isso: grava com `semRepublicar = true` e chama `_republicarPortal`
+     * na mão, com retorno próprio. */
+    "t360-despublicar": function (ds) {
+      var M = motor();
+      var t = Store.obter(eid(), ENT, (ds && ds.id) || G._t360Tour);
+      if (!t) return;
+      if (String(t.estado) !== "publicado") { UI.toast("Esta visita não está publicada.", "erro"); return; }
+      /* mesma régua de publicar: quem tira do ar mexe no que o cliente vê */
+      var eu = (typeof Auth !== "undefined" && Auth.usuario && Auth.usuario()) || {};
+      if (M.podePublicarPapel && !M.podePublicarPapel(eu)) {
+        UI.toast("Recolher a visita do Portal é do gestor, a mesma régua de publicar. Avise quem responde pela obra — nada foi alterado.", "erro");
+        return;
+      }
+      var ob = obraDe(t);
+      var temPortal = !!(ob && ob.portalUser);
+      var corpo = "<p>A visita <b>" + esc(t.titulo || "") + "</b> (" + esc(Util.fmtDia(t.data) || t.data) + ") volta a ser <b>rascunho</b>.</p>"
+        + (temPortal
+          ? "<p>Ela sai da tela do cliente assim que o Portal desta obra for reenviado — o que acontece agora, ao confirmar. "
+            + "Nada é apagado: as fotos, os comentários e as medidas continuam aqui, e publicar de novo é um botão.</p>"
+          : '<p class="muted">Esta obra não tem Portal do Cliente configurado, então não havia nada no ar: a visita só deixa de estar marcada como publicada.</p>');
+      UI.modal("Despublicar a visita", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Despublicar", classe: "danger", onClick: function () {
+          var atual = Store.obter(eid(), ENT, t.id) || t;
+          atual.estado = "rascunho";
+          /* ⚠ `publicadoEm` FICA. Ele é a data em que aquilo esteve no ar —
+             história, e a única resposta possível para "desde quando o cliente
+             viu isto?". Publicar de novo o reescreve. */
+          atual.despublicadoEm = Util.agoraISO();
+          if (!salvarTour(atual, true)) return;   /* republica logo abaixo, com retorno */
+          UI.fecharModal();
+          if (!temPortal) {
+            UI.toast("Visita recolhida. Esta obra não tem Portal do Cliente, então não havia nada no ar.", "ok");
+            App.render();
+            return;
+          }
+          if (!G._republicarPortal) {
+            /* recado honesto: o sistema não consegue verificar, então não
+               afirma que o cliente parou de ver */
+            UI.toast("A visita virou rascunho aqui, mas NÃO consegui atualizar o Portal nesta instalação — o cliente pode continuar vendo. Republique a obra pela tela de Obras.", "erro");
+            App.render();
+            return;
+          }
+          UI.toast("Retirando do Portal do cliente…", "ok");
+          G._republicarPortal(ob, function (res) {
+            if (res && res.ok) UI.toast("Visita recolhida — ela saiu do Portal do cliente.", "ok");
+            else if (res && res.semPortal) UI.toast("Visita recolhida (esta obra não tem Portal).", "ok");
+            else UI.toast("A visita virou rascunho aqui, mas o Portal NÃO foi atualizado (" + ((res && res.erro) || "sem detalhe") + ") — o cliente AINDA VÊ esta visita. Refaça com internet.", "erro");
+            App.render();
+          });
+        } }
+      ]);
+    },
+
     /* ---------- relatório fotográfico e vídeo ----------
      * A conta e a montagem moram em js/tour360rel.js; aqui só entra o clique
      * e sai a mensagem. */
@@ -2150,7 +3272,12 @@
       Rel.abrir(t, {
         obraNome: nomeObra(t),
         local: (ob && ob.local) || "",
-        autor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""
+        autor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : "",
+        /* ⚠ SEM AS OUTRAS VISITAS o documento nao consegue dizer "arrasta-se
+           ha 4 visitas" — e esse e o numero que faz o gestor agir. Ele sai
+           honesto sem elas ("visitas anteriores nao consultadas"), mas mudo. */
+        tours: visitasDaObra(t),
+        hoje: M.hojeLocal()
       }).then(function (res) {
         if (UI.loadingFim) UI.loadingFim();
         if (!res || !res.ok) { UI.toast((res && res.motivo) || "Não consegui montar o relatório.", "erro"); return; }
@@ -2165,6 +3292,116 @@
       });
     },
 
+    /* ⚠ OS TRÊS DOCUMENTOS ABAIXO NASCERAM PRONTOS EM js/tour360rel.js E SEM
+       BOTÃO. "Motor sem fiação" é o defeito que esta feature já pagou três
+       vezes: existe no gate, com asserts, e não existe para quem usa. */
+    "t360-rel-pendencias": function (ds) {
+      var Rel = global.Tour360Rel;
+      if (!Rel || !Rel.abrirPendencias) { UI.toast("O módulo de relatório não carregou.", "erro"); return; }
+      var t = Store.obter(eid(), ENT, ds.id) || tourAberto();
+      if (!t) return;
+      var ob = obraDe(t);
+      if (UI.loading) UI.loading("Montando o relatório de pendências…");
+      Rel.abrirPendencias(t, {
+        tours: visitasDaObra(t),
+        hoje: M.hojeLocal(),
+        obraNome: nomeObra(t),
+        local: (ob && ob.local) || "",
+        autor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""
+      }).then(function (res) {
+        if (UI.loadingFim) UI.loadingFim();
+        if (!res || !res.ok) { UI.toast((res && res.motivo) || "Nada em aberto nesta visita.", "erro"); return; }
+        if (res.faltando) UI.toast(res.faltando + " foto(s) não estão neste aparelho — o documento avisa.", "erro");
+      })["catch"](function (e) {
+        if (UI.loadingFim) UI.loadingFim();
+        UI.toast("Falhou ao montar: " + ((e && e.message) || e), "erro");
+      });
+    },
+
+    "t360-antes-depois": function (ds) {
+      var Rel = global.Tour360Rel;
+      if (!Rel || !Rel.abrirComparativo) { UI.toast("O módulo de relatório não carregou.", "erro"); return; }
+      var t = Store.obter(eid(), ENT, ds.id) || tourAberto();
+      if (!t) return;
+      var outras = visitasDaObra(t).filter(function (x) { return x.id !== t.id; });
+      if (!outras.length) {
+        /* ⚠ a recusa vem com a saída: o comparativo só existe quando a visita
+           nova nasce da anterior, e é assim que se diz isso. */
+        UI.toast("Esta obra só tem esta visita. Use \"Repetir visita\" para criar a próxima com as mesmas estações — é daí que sai o antes e depois.", "erro");
+        return;
+      }
+      var ob = obraDe(t);
+      var opcoes = outras.map(function (x) {
+        return '<option value="' + esc(x.id) + '">' + esc(Util.fmtDia(x.data) || x.data) + (x.titulo ? " — " + esc(x.titulo) : "") + "</option>";
+      }).join("");
+      UI.modal("Antes e depois", "<p>Compare esta visita com outra da mesma obra. O documento sai com as duas fotos de cada estação, no mesmo rumo.</p>"
+        + K.campo("Comparar com", '<select id="t360-ad-sel">' + opcoes + "</select>"), [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Gerar documento", classe: "primary", onClick: function () {
+          var outro = Store.obter(eid(), ENT, K.v("t360-ad-sel"));
+          UI.fecharModal();
+          if (!outro) { UI.toast("Não achei a outra visita.", "erro"); return; }
+          if (UI.loading) UI.loading("Montando o antes e depois…");
+          Rel.abrirComparativo(t, outro, {
+            obraNome: nomeObra(t),
+            local: (ob && ob.local) || "",
+            autor: (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""
+          }).then(function (res) {
+            if (UI.loadingFim) UI.loadingFim();
+            if (!res || !res.ok) { UI.toast((res && res.motivo) || "Não consegui comparar.", "erro"); return; }
+            var fora = Util.num(res.soA) + Util.num(res.soB);
+            if (fora) UI.toast(fora + " estação(ões) só existem em uma das visitas — o documento diz quais.", "erro");
+          })["catch"](function (e) {
+            if (UI.loadingFim) UI.loadingFim();
+            UI.toast("Falhou: " + ((e && e.message) || e), "erro");
+          });
+        } }
+      ]);
+    },
+
+    "t360-video-comparativo": function (ds) {
+      var Rel = global.Tour360Rel;
+      var V = vista();
+      if (!Rel || !Rel.gravarComparativo) { UI.toast("O módulo de vídeo não carregou.", "erro"); return; }
+      /* mesmo motivo do vídeo simples: o quadro sai da esfera que está na tela */
+      if (!V || !V.montado || !V.montado()) {
+        UI.toast("Abra uma estação no visualizador antes de gravar — o vídeo é gravado do que está na tela.", "erro");
+        return;
+      }
+      var t = Store.obter(eid(), ENT, ds.id) || tourAberto();
+      if (!t) return;
+      var outras = visitasDaObra(t).filter(function (x) { return x.id !== t.id; });
+      if (!outras.length) { UI.toast("Só há esta visita nesta obra — não há o que comparar.", "erro"); return; }
+      var opcoes = outras.map(function (x) {
+        return '<option value="' + esc(x.id) + '">' + esc(Util.fmtDia(x.data) || x.data) + "</option>";
+      }).join("");
+      UI.modal("Vídeo de antes e depois", "<p>Cada estação aparece nas duas datas, com a imagem nova entrando por cima da antiga.</p>"
+        + K.campo("Comparar com", '<select id="t360-vc-sel">' + opcoes + "</select>")
+        + '<p id="t360-vc-prog" class="muted"></p>', [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { try { Rel.cancelar(); } catch (e) {} UI.fecharModal(); } },
+        { texto: "Gravar", classe: "primary", onClick: function () {
+          var outro = Store.obter(eid(), ENT, K.v("t360-vc-sel"));
+          if (!outro) { UI.toast("Não achei a outra visita.", "erro"); return; }
+          var pg = Rel.podeGravarComparativo ? Rel.podeGravarComparativo(t, outro, V) : { ok: true };
+          if (!pg.ok) { UI.toast(pg.motivo, "erro"); return; }
+          var prog = document.getElementById("t360-vc-prog");
+          Rel.gravarComparativo(t, outro, null, {
+            aoAndar: function (i, n) { if (prog) prog.textContent = "Quadro " + i + " de " + n + "…"; }
+          }).then(function (res) {
+            UI.fecharModal();
+            var b = Rel.baixar(res);
+            if (!b || !b.ok) { UI.toast((b && b.motivo) || "Gravei, mas não consegui salvar o arquivo.", "erro"); return; }
+            if (res.avisoFormato) UI.toast(res.avisoFormato, "erro");
+            if (res.quadrosPerdidos) UI.toast("Vídeo salvo, mas " + res.quadrosPerdidos + " quadro(s) não entraram.", "erro");
+            else UI.toast("Vídeo de antes e depois salvo: " + res.nome + ".", "ok");
+          })["catch"](function (e) {
+            UI.fecharModal();
+            UI.toast("A gravação falhou: " + ((e && e.message) || e), "erro");
+          });
+        } }
+      ]);
+    },
+
     "t360-video": function (ds) {
       var Rel = global.Tour360Rel;
       if (!Rel) { UI.toast("O módulo de vídeo não carregou (falta js/tour360rel.js).", "erro"); return; }
@@ -2173,7 +3410,7 @@
          montado não há quadro nenhum, e o arquivo sairia preto. A porta é
          dizer o que fazer, não recusar seco. */
       if (!V || !V.montado || !V.montado()) {
-        UI.toast("Abra uma estação no visualizador (botão \"Ver em 360\") antes de gerar o vídeo — ele é gravado do que está na tela.", "erro");
+        UI.toast("Abra uma estação no visualizador (botão \"Abrir 360\") antes de gerar o vídeo — ele é gravado do que está na tela.", "erro");
         return;
       }
       var pg = Rel.podeGravar ? Rel.podeGravar() : { ok: true };
@@ -2191,6 +3428,13 @@
         + (pg.aviso ? '<div class="card" style="border-left:4px solid #b45309;margin:8px 0">' + esc(pg.aviso) + "</div>" : "")
         + '<p id="t360-vprog" class="muted"></p>', [
         { texto: "Cancelar", classe: "ghost", onClick: function () { try { Rel.cancelar(); } catch (e) {} UI.fecharModal(); } },
+        /* ⚠ a porta para o vídeo de ANTES E DEPOIS mora aqui, e não num quinto
+           botão na barra: quem quer vídeo já está nesta caixa, e a barra da
+           visita não cabe mais nada em tela de celular. */
+        { texto: "Antes e depois", classe: "ghost", onClick: function () {
+          UI.fecharModal();
+          G.acao("t360-video-comparativo", { id: t.id });
+        } },
         { texto: "Gravar", classe: "primary", onClick: function () {
           var prog = document.getElementById("t360-vprog");
           Rel.gravar(t, null, {
@@ -2242,11 +3486,24 @@
       if (!t) return;
       var p = motor().pontoDe(t, ds.pid);
       if (!p) return;
-      var quantos = Util.arr(p.hotspots).length + Util.arr(p.medidas).length;
+      /* as areas entram na conta: elas tambem vao junto quando a estacao cai,
+         e numero que esconde metade e o mesmo que aviso generico */
+      var quantos = Util.arr(p.hotspots).length + motor().medidasDoPonto(p).length;
+      /* ⚠ A PENDÊNCIA ABERTA É CONTADA SEPARADO, e não junto com "comentários".
+         Apagar a estação é a porta por onde uma fissura em aberto sai da
+         cobrança: a visita seguinte não tem onde marcá-la, `carregarPendencias`
+         pula quem não tem lugar na foto, e o Painel passa a dizer "nenhuma
+         pendência" com o problema ainda na parede. Quem apaga precisa ver o
+         número antes — número a pessoa confere, aviso genérico ela pula. */
+      var abertasP = 0;
+      Util.arr(p.hotspots).forEach(function (h) {
+        if (motor().pendenciaAberta && motor().pendenciaAberta(h)) abertasP++;
+      });
       /* ⚠ O QUE VAI JUNTO ENTRA NA PERGUNTA. Apagar a estação leva os
          comentários e as medidas dela — e, na visita seguinte que nasceu
          desta, o par deixa de existir: o comparativo daquele ponto some. */
       if (!window.confirm("Excluir a estação \"" + (p.nome || "") + "\"?\n\n"
+        + (abertasP ? abertasP + " pendência(s) EM ABERTO desta estação saem da cobrança e não passam para a próxima visita.\n" : "")
         + (quantos ? quantos + " comentário(s)/medida(s) vão junto.\n" : "")
         + "As visitas futuras que nascerem desta deixam de ter este ponto para comparar.")) return;
       t.pontos = Util.arr(t.pontos).filter(function (x) { return x.pid !== p.pid; });
@@ -2340,11 +3597,30 @@
       });
     },
 
+    /* ⚠ EXCLUIR UMA VISITA QUE ESTÁ NO AR É MEXER NA TELA DO CLIENTE.
+     * O Portal é um RETRATO por obra guardado no servidor: apagar a visita
+     * aqui não tira nada de lá — o retrato antigo continua servindo a visita
+     * excluída, com as fotos que este mesmo handler acabou de apagar do
+     * servidor. Resultado: o cliente abre o tour e encontra as estações com o
+     * quadro vazio, sem nada explicando. É pior que a visita ter sumido: um
+     * tour furado parece defeito do produto dele.
+     * Então, nesta ordem: a mesma régua de papel de publicar, a pergunta
+     * dizendo que está no ar, o reenvio do retrato DEPOIS do `Store.excluir`,
+     * e as fotos apagadas só quando o reenvio voltar `ok` — apagar antes mata
+     * a referência que o retrato ainda em pé está usando. */
     "t360-excluir-tour": function () {
+      var M = motor();
       var t = tourAberto();
       if (!t) return;
-      var r = motor().resumo(t);
+      var r = M.resumo(t);
+      var obEx = obraDe(t);
+      var noAr = !!(M.estaPublicado && M.estaPublicado(t) && obEx && obEx.portalUser);
+      if (noAr && !podeRepublicar()) {
+        UI.toast("Esta visita está no ar para o cliente, e recolher do Portal é do gestor — a mesma régua de publicar. Peça a quem responde pela obra para despublicar antes. Nada foi excluído.", "erro");
+        return;
+      }
       if (!window.confirm("Excluir a visita \"" + (t.titulo || "") + "\"?\n\n"
+        + (noAr ? "ESTA VISITA ESTÁ NO AR PARA O CLIENTE. Ao confirmar, o Portal desta obra é reenviado sem ela.\n\n" : "")
         + r.pontos + " estação(ões) e " + r.comFoto + " foto(s) vão junto. Não pode ser desfeito.")) return;
       var refs = [];
       Util.arr(t.pontos).forEach(function (p) {
@@ -2357,10 +3633,33 @@
          tela consegue achá-la depois para apagar */
       if (t.planta && t.planta.foto) refs.push(t.planta.foto);
       Store.excluir(eid(), ENT, t.id);
-      if (refs.length) { try { if (typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(refs); } catch (e) {} }
       G._t360Tour = ""; G._t360Pid = "";
-      UI.toast("Visita excluída.", "ok");
-      App.render();
+      function apagarFotos() {
+        if (!refs.length) return;
+        try { if (typeof Fotos !== "undefined" && Fotos.apagar) Fotos.apagar(refs); } catch (e) {}
+      }
+      if (!noAr || !G._republicarPortal) {
+        apagarFotos();
+        UI.toast("Visita excluída.", "ok");
+        App.render();
+        return;
+      }
+      UI.toast("Visita excluída aqui. Reenviando o Portal do cliente…", "ok");
+      G._republicarPortal(obEx, function (res) {
+        if (res && (res.ok || res.semPortal)) {
+          apagarFotos();
+          UI.toast("Visita excluída e retirada da tela do cliente.", "ok");
+        } else {
+          /* ⚠ AS FOTOS FICAM. O retrato antigo continua no servidor apontando
+             para elas: apagá-las agora trocaria "visita a mais" por "visita
+             com buracos", que é pior. Elas saem no próximo reenvio bem
+             sucedido — e o recado diz onde é esse botão. */
+          UI.toast("A visita foi excluída aqui, mas o Portal NÃO foi atualizado"
+            + (res && res.erro ? " (" + res.erro + ")" : "")
+            + " — o cliente ainda a vê. Abra Obras › Portal do cliente e reenvie.", "erro");
+        }
+        App.render();
+      });
     },
 
     /* ---------- visualizador ---------- */
@@ -2479,7 +3778,8 @@
       var t = tourAberto(), p = pontoAberto(t);
       var res = G._t360Medida;
       if (!p || !res || !res.ok || G._t360Cliques.length < 2) return;
-      if (Util.arr(p.medidas).length >= M.MAX_MEDIDAS) {
+      /* o teto conta as DUAS listas: e teto da estacao, nao de um dos arrays */
+      if (M.medidasDoPonto(p).length >= M.MAX_MEDIDAS) {
         UI.toast("Esta estação já tem " + M.MAX_MEDIDAS + " medidas — o limite do módulo.", "erro"); return;
       }
       var atual = Store.obter(eid(), ENT, t.id);
@@ -2540,26 +3840,259 @@
       ]);
     },
 
+    /* ⚠ OS DOIS "EXCLUIR" NÃO PERGUNTAVAM NADA, e são botões pequenos ao lado
+       de outros botões pequenos, no celular, com a mão suja de obra. Um toque
+       errado apagava a medida que sustenta uma quantidade de boletim — e, se a
+       visita estivesse publicada, o Portal era reenviado sem ela na mesma
+       hora. Aqui a pergunta diz O QUE vai embora e o que isso significa. */
     "t360-excluir-medida": function (ds) {
-      var t = tourAberto(), p = pontoAberto(t);
-      if (!p) return;
+      var M = motor();
+      var t = tourAberto();
+      if (!t || !ds || !ds.mid) return;
+      var pid = ds.pid || (pontoAberto(t) || {}).pid;
       var atual = Store.obter(eid(), ENT, t.id);
-      var alvo = atual ? motor().pontoDe(atual, p.pid) : null;
+      var alvo = atual ? M.pontoDe(atual, pid) : null;
       if (!alvo) return;
-      alvo.medidas = Util.arr(alvo.medidas).filter(function (m) { return m.mid !== ds.mid; });
+      var m = _acharMedida(atual, pid, ds.mid);
+      if (!m) return;
+      var r = M.recalcular(m, alvo);
+      var quanto = r.ok
+        ? (m.tipo === "area" ? n2(r.area) + " m²" : n2(r.metros) + " m")
+        : "(o motor não consegue reler esta medida)";
+      if (!window.confirm("Excluir esta medida?\n\n"
+        + rotuloMedida(m.tipo) + (m.rotulo ? " — " + m.rotulo : "") + ": " + quanto + "\n\n"
+        + (m.paraCliente ? "Ela está marcada para o Portal: o cliente deixa de vê-la assim que a visita for reenviada.\n" : "")
+        + "Os cliques que a originaram vão junto — não dá para desfazer.")) return;
+      /* ⚠ TIRA DAS DUAS LISTAS. O `mid` e unico no ponto, entao filtrar as duas
+         e seguro e idempotente - e filtrar so `medidas` deixaria o botao
+         Excluir de uma linha de AREA sem efeito nenhum, com o toast dizendo
+         "Medida excluida" e a linha continuando na tela. */
+      alvo.medidas = Util.arr(alvo.medidas).filter(function (x) { return x.mid !== ds.mid; });
+      alvo.areas = Util.arr(alvo.areas).filter(function (x) { return x.mid !== ds.mid; });
       salvarTour(atual);
+      UI.toast("Medida excluída.", "ok");
       App.render();
     },
 
     "t360-excluir-coment": function (ds) {
-      var t = tourAberto(), p = pontoAberto(t);
-      if (!p) return;
+      var M = motor();
+      var t = tourAberto();
+      if (!t || !ds || !ds.hid) return;
+      var pid = ds.pid || (pontoAberto(t) || {}).pid;
       var atual = Store.obter(eid(), ENT, t.id);
-      var alvo = atual ? motor().pontoDe(atual, p.pid) : null;
+      var alvo = atual ? M.pontoDe(atual, pid) : null;
       if (!alvo) return;
-      alvo.hotspots = Util.arr(alvo.hotspots).filter(function (h) { return h.hid !== ds.hid; });
+      var h = _acharHotspot(atual, pid, ds.hid);
+      if (!h) return;
+      var ehPend = !!(M.ehPendencia && M.ehPendencia(h));
+      if (!window.confirm("Excluir este apontamento?\n\n"
+        + rotuloTipo(h.tipo) + ": " + (h.texto || "") + "\n\n"
+        /* ⚠ APAGAR UMA PENDÊNCIA NÃO É RESOLVÊ-LA. A ligação com as aparições
+           anteriores (`origemHid`) morre junto: o "há 4 visitas" vira "1ª
+           visita" na próxima, e a obra perde a prova de que o problema é
+           antigo. Quem quer fechar o assunto marca "Resolvida". */
+        + (ehPend ? "É uma PENDÊNCIA: apagar não é o mesmo que resolver — a ligação com as aparições anteriores dela se perde, e o histórico \"está assim desde…\" recomeça do zero. Para encerrar, use \"Resolvida\".\n\n" : "")
+        + (h.paraCliente ? "Está marcado para o Portal: o cliente deixa de vê-lo assim que a visita for reenviada.\n" : "")
+        + "A posição dele na foto vai junto — não dá para desfazer.")) return;
+      alvo.hotspots = Util.arr(alvo.hotspots).filter(function (x) { return x.hid !== ds.hid; });
       salvarTour(atual);
+      UI.toast("Apontamento excluído.", "ok");
       App.render();
+    },
+
+    /* ---------- editar o que antes só dava para apagar ---------- */
+
+    "t360-editar-coment": function (ds) {
+      var M = motor();
+      var t = tourAberto();
+      if (!t || !ds || !ds.hid) return;
+      var pid = ds.pid || (pontoAberto(t) || {}).pid;
+      var h = _acharHotspot(t, pid, ds.hid);
+      if (!h) { UI.toast("Este apontamento não existe mais nesta visita.", "erro"); return; }
+
+      var tipos = [["comentario", "Comentário"], ["atencao", "Atenção"], ["pendencia", "Pendência"], ["aprovado", "Aprovado"]];
+      var corpo = '<div class="row">'
+        + K.campo("Tipo", '<select id="t360-h-tipo">' + tipos.map(function (x) {
+          return '<option value="' + x[0] + '"' + ((h.tipo || "comentario") === x[0] ? " selected" : "") + ">" + x[1] + "</option>";
+        }).join("") + "</select>")
+        + "</div>"
+        + '<div class="field"><label>O que você viu aqui</label>'
+        + '<textarea id="t360-h-texto" rows="4" style="width:100%">' + esc(h.texto || "") + "</textarea></div>"
+        + _camposPendencia(h)
+        + '<label style="display:inline-flex;align-items:center;gap:6px">'
+        + '<input type="checkbox" id="t360-h-cli"' + (h.paraCliente ? " checked" : "") + "> Mostrar para o cliente no Portal</label>"
+        /* ⚠ O AVISO SÓ APARECE QUANDO A VISITA ESTÁ NO AR, e diz o que
+           realmente acontece: desmarcar aqui só tira do cliente depois do
+           reenvio, que `salvarTour` dispara sozinho. */
+        + (String(t.estado) === "publicado"
+          ? '<p class="muted" style="margin:10px 0 0">Esta visita está publicada: o que você mudar aqui é reenviado ao Portal do cliente ao salvar.</p>'
+          : "")
+        + '<p class="muted" style="margin:6px 0 0">A posição do ponto na foto não muda por aqui — para movê-la, apague e marque de novo no lugar certo.</p>';
+
+      UI.modal("Editar apontamento", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var texto = K.v("t360-h-texto");
+          if (!texto) { UI.toast("O comentário não pode ficar vazio. Para tirá-lo da foto, use Excluir.", "erro"); return; }
+          var atual = Store.obter(eid(), ENT, t.id);
+          var alvo = _acharHotspot(atual, pid, ds.hid);
+          if (!alvo) { UI.toast("Este apontamento não existe mais.", "erro"); UI.fecharModal(); return; }
+          var tipoNovo = K.v("t360-h-tipo") || "comentario";
+          var eraPend = !!(M.ehPendencia && M.ehPendencia(alvo));
+          var ehPend = !!(M.ehPendencia && M.ehPendencia({ tipo: tipoNovo }));
+          var cli = document.getElementById("t360-h-cli");
+          alvo.tipo = tipoNovo;
+          alvo.texto = texto;
+          alvo.paraCliente = !!(cli && cli.checked);
+          if (ehPend) {
+            var pd = _lerCamposPendencia(tipoNovo);
+            alvo.responsavel = pd.responsavel;
+            alvo.prazo = pd.prazo;
+            /* ⚠ O STATUS NÃO É REESCRITO AQUI. `_lerCamposPendencia` devolve
+               sempre "aberta" (é o estado de quem nasce), e usá-lo neste
+               caminho REABRIRIA calado a pendência que alguém marcou como
+               resolvida — bastava corrigir uma vírgula no texto. Quem muda
+               status é o veredito, que é um ato declarado. Só o comentário
+               que ACABOU de virar pendência ganha o "aberta" inicial. */
+            if (!eraPend) alvo.status = "aberta";
+          } else if (eraPend) {
+            /* ⚠ REBAIXAR PENDÊNCIA A COMENTÁRIO LIMPA O QUE ERA DELA. Deixar
+               `status`/`prazo`/`responsavel` para trás faria o registro
+               carregar prazo vencido invisível: `ehPendencia` diria que não é
+               pendência, mas o dado continuaria lá para o dia em que alguém
+               devolvesse o tipo — com a data de meses atrás. */
+            alvo.status = "";
+            alvo.responsavel = "";
+            alvo.prazo = "";
+            alvo.resolvidoEm = "";
+            alvo.resolvidoPor = "";
+          }
+          salvarTour(atual);
+          UI.fecharModal();
+          UI.toast("Apontamento atualizado.", "ok");
+          App.render();
+        } }
+      ]);
+      _ligarCamposPendencia();
+    },
+
+    "t360-editar-medida": function (ds) {
+      var M = motor();
+      var t = tourAberto();
+      if (!t || !ds || !ds.mid) return;
+      var pid = ds.pid || (pontoAberto(t) || {}).pid;
+      var p = M.pontoDe(t, pid);
+      var m = _acharMedida(t, pid, ds.mid);
+      if (!m || !p) { UI.toast("Esta medida não existe mais nesta visita.", "erro"); return; }
+      var r = M.recalcular(m, p);
+      var quanto = r.ok
+        ? (m.tipo === "area"
+          ? n2(r.area) + " m² (±" + n1(r.erroEstimadoPct) + "%) · perímetro " + n2(r.perimetro) + " m"
+          : n2(r.metros) + " m (±" + n1(r.erroEstimadoPct) + "%)")
+        : r.motivo;
+
+      var corpo = "<p><b>" + esc(rotuloMedida(m.tipo)) + ":</b> " + esc(quanto) + "</p>"
+        /* ⚠ SÓ O RÓTULO E O PORTAL SE EDITAM. O número sai dos CLIQUES
+           gravados na foto; deixar alguém digitá-lo aqui criaria uma medida
+           que não corresponde a nada da imagem — e ela viajaria ao cliente
+           com a mesma cara de medida real. Para mudar o número, mede-se de
+           novo. */
+        + '<div class="row">' + K.campo("Rótulo (o que é esta medida)", K.inp("t360-em-rotulo", m.rotulo || "", "Ex.: vão da esquadria")) + "</div>"
+        + '<label style="display:inline-flex;align-items:center;gap:6px">'
+        + '<input type="checkbox" id="t360-em-cli"' + (m.paraCliente ? " checked" : "") + "> Mostrar para o cliente no Portal</label>"
+        + '<p class="muted" style="margin:10px 0 0">O valor não se edita: ele é recalculado a partir dos pontos marcados na foto e da altura da câmera desta estação ('
+        + n2(p.alturaCam) + " m). Para mudar o número, corrija a altura da estação ou meça de novo.</p>";
+
+      UI.modal("Editar medida", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var atual = Store.obter(eid(), ENT, t.id);
+          var alvo = _acharMedida(atual, pid, ds.mid);
+          if (!alvo) { UI.toast("Esta medida não existe mais.", "erro"); UI.fecharModal(); return; }
+          var cli = document.getElementById("t360-em-cli");
+          alvo.rotulo = K.v("t360-em-rotulo");
+          alvo.paraCliente = !!(cli && cli.checked);
+          salvarTour(atual);
+          UI.fecharModal();
+          UI.toast("Medida atualizada.", "ok");
+          App.render();
+        } }
+      ]);
+    },
+
+    /* ⚠ TÍTULO, DATA E OBRA — e a data é a mais perigosa das três: é dela que
+       sai quem é "antes" e quem é "depois" no comparativo (`antesDepois`), e é
+       ela que decide qual visita `Tour360.resumoPendencias` considera a atual.
+       Trocar a data para trás faz a visita de setembro virar história e a de
+       agosto voltar a mandar no painel — por isso o aviso está escrito. */
+    "t360-editar-tour": function () {
+      var M = motor();
+      var t = tourAberto();
+      if (!t) return;
+      var obras = K.lista("obras");
+      var noAr = (String(t.estado) === "publicado");
+      var corpo = '<div class="row">'
+        + K.campo("Obra *", '<select id="t360-ed-obra">' + K.optsRec(obras, "nome", t.obraId, "— escolha a obra —") + "</select>")
+        + K.campo("Data da visita *", K.inp("t360-ed-data", t.data, "", "date"))
+        + "</div>"
+        + '<div class="row">' + K.campo("Título", K.inp("t360-ed-titulo", t.titulo || "")) + "</div>"
+        + '<p class="muted">A <b>data</b> é o que ordena as visitas: ela decide qual foto é o "antes" e qual é o "depois" no comparativo, '
+        + "e qual visita conta como a atual no painel de pendências. Se a foto é de outro dia, é aqui que se acerta.</p>"
+        + (noAr
+          ? caixaAviso("Esta visita está no ar",
+            "<p>Ela já está no Portal do cliente. Ao salvar, o Portal desta obra é reenviado com o que você mudar. "
+            + "<b>Trocar a obra</b> tira a visita do Portal do cliente atual e a leva para o da obra nova — as duas telas mudam.</p>")
+          : "");
+
+      UI.modal("Editar a visita", corpo, [
+        { texto: "Cancelar", classe: "ghost", onClick: function () { UI.fecharModal(); } },
+        { texto: "Salvar", classe: "primary", onClick: function () {
+          var obraId = K.v("t360-ed-obra");
+          var data = K.v("t360-ed-data");
+          if (!obraId) { UI.toast("Escolha a obra: toda visita pertence a uma obra.", "erro"); return; }
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) { UI.toast("Informe a data da visita.", "erro"); return; }
+          var atual = Store.obter(eid(), ENT, t.id) || t;
+          var obraAntes = String(atual.obraId || "");
+          /* ⚠ `atual.estado`, NUNCA `M.estadoDe(atual)`. Sem o segundo
+             argumento, `estadoDe` devolve "pronto" para a visita PUBLICADA
+             (`return temPortal ? "publicado" : "pronto"`) — foi assim que a
+             primeira versão desta linha nasceu sempre falsa, e o Portal da
+             obra anterior nunca era reenviado. Achado pela prova de navegador,
+             não pela leitura: as duas grafias parecem certas. */
+          var estavaNoAr = (String(atual.estado) === "publicado");
+          atual.obraId = obraId;
+          var ob = Store.obter(eid(), "obras", obraId);
+          /* só sobrescreve o nome quando a obra existe: apagar o `obraNome`
+             deixaria a lista sem nome nenhum para a obra que sumiu */
+          if (ob) atual.obraNome = ob.nome || "";
+          atual.data = data;
+          atual.titulo = K.v("t360-ed-titulo") || atual.titulo;
+          /* `salvarTour` já reenvia o Portal da obra NOVA quando a visita
+             está publicada (`_republicarTourSeNoAr` lê `tour.obraId`) */
+          if (!salvarTour(atual)) return;
+          UI.fecharModal();
+
+          /* ⚠ A OBRA ANTIGA TAMBÉM PRECISA SER REENVIADA, e este é o ponto
+             que ninguém lembra: o Portal é um RETRATO por obra. Sem este
+             reenvio, a visita continuaria na tela do cliente ANTERIOR por
+             tempo indeterminado — material de uma obra visível para quem paga
+             outra. `_republicarTourSeNoAr` não alcança este caso porque ele
+             só conhece a obra que está no registro AGORA. */
+          if (estavaNoAr && obraAntes && obraAntes !== String(obraId)) {
+            var obVelha = Store.obter(eid(), "obras", obraAntes);
+            if (obVelha && obVelha.portalUser && G._republicarPortal) {
+              UI.toast("Retirando a visita do Portal da obra anterior…", "ok");
+              G._republicarPortal(obVelha, function (res) {
+                if (res && (res.ok || res.semPortal)) return;
+                UI.toast("A visita mudou de obra aqui, mas o Portal da obra ANTERIOR não foi atualizado ("
+                  + ((res && res.erro) || "falha") + ") — o cliente daquela obra AINDA VÊ esta visita. Republique aquela obra com internet.", "erro");
+              });
+            }
+          }
+          UI.toast("Visita atualizada.", "ok");
+          App.render();
+        } }
+      ]);
     },
 
     /* ---------- medir área ---------- */
@@ -2588,40 +4121,68 @@
       App.render();
     },
 
-    /* ⚠ A ÁREA VIRA COMENTÁRIO, NÃO MEDIDA — o porquê está no cabeçalho do
-       `_painelArea`: o registro de medida só sabe reler distância e altura. */
-    "t360-area-comentar": function () {
+    /* ⚠ A ÁREA É MEDIDA, e o caminho antigo (guardar como comentário) saiu.
+       O porquê está no cabeçalho do `_painelArea`: `Tour360.recalcular` hoje
+       conhece `tipo:"area"` e relê pelos CANTOS, e `PORTAL_MEDIDA` já leva
+       `cantos`, `area` e `perimetro` ao cliente. Como comentário, o número
+       ficava congelado num texto: corrigir a altura da câmera depois não
+       consertava nada, e o cliente recebia um m² que não tinha como conferir
+       na foto. */
+    "t360-area-salvar": function () {
       var M = motor();
       var t = tourAberto(), p = pontoAberto(t);
       var res = G._t360Area;
       if (!p || !res || !res.ok || !G._t360AreaCliques.length) return;
-      if (Util.arr(p.hotspots).length >= M.MAX_HOTSPOTS) {
-        UI.toast("Esta estação já tem " + M.MAX_HOTSPOTS + " comentários — o limite do módulo. Apague um antes.", "erro");
+      /* o teto conta as DUAS listas: e teto da estacao, nao de um dos arrays */
+      if (M.medidasDoPonto(p).length >= M.MAX_MEDIDAS) {
+        UI.toast("Esta estação já tem " + M.MAX_MEDIDAS + " medidas — o limite do módulo. Apague uma antes.", "erro");
         return;
       }
       var atual = Store.obter(eid(), ENT, t.id);
       var alvo = atual ? M.pontoDe(atual, p.pid) : null;
       if (!alvo) { UI.toast("Esta estação não existe mais.", "erro"); return; }
-      var rot = K.v("t360-area-rotulo");
       var cli = document.getElementById("t360-area-cli");
-      var canto = G._t360AreaCliques[0];
-      alvo.hotspots = Util.arr(alvo.hotspots);
-      alvo.hotspots.push({
-        hid: "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-        tipo: "comentario",
-        /* o ± vai DENTRO do texto: o comentário viaja para o Portal e para o
-           relatório sem o painel que explicava a margem */
-        texto: (rot ? rot + ": " : "Área medida na foto: ")
-          + n2(res.area) + " m² (±" + n1(res.erroEstimadoPct) + "%) · perímetro " + n2(res.perimetro) + " m · "
-          + res.cantos + " cantos · altura da câmera " + n2(res.alturaCam) + " m",
+      /* ⚠ OS CANTOS VÃO BRUTOS, nunca os corrigidos — armadilha 3 do
+         cabeçalho. `recalcular` aplica `corrigir()` na leitura; gravar o
+         ângulo já nivelado faria a correção entrar duas vezes, e o dia em que
+         alguém acertasse o horizonte da foto o histórico inteiro passaria a
+         mentir. É a mesma regra de `t360-salvar-medida`. */
+      var cantos = Util.arr(G._t360AreaCliques).map(function (c) {
+        return { yaw: Util.num(c.yaw), pitch: Util.num(c.pitch) };
+      });
+      /* ⚠ A AREA VAI PARA `alvo.areas`, NUNCA PARA `alvo.medidas` - e esta e a
+         linha que separa o conserto do defeito.
+         O ROTEIRO: gravada dentro de `medidas`, ela desce pela nuvem no
+         aparelho que ainda roda a 1.2.56, cujo `recalcular` nao conhece
+         `tipo:"area"`, cai no `medirChao(corrigir(undefined), corrigir(undefined))`
+         e devolve `{ok:true, metros:0, erroEstimadoPct:0}` - "0,00 m +-0%" na
+         lista dele e, se ele republicar a visita, no Portal do contratante.
+         MEDIDO: 21 de 36 combinacoes de (horizonte, alturaCam). O porque
+         completo, e por que nao da para fazer a 1.2.56 recusar de dentro de
+         `medidas`, esta em `Tour360.medidasDoPonto` (js/tour360.js). */
+      alvo.areas = Util.arr(alvo.areas);
+      alvo.areas.push({
+        mid: "m" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        tipo: "area",
+        cantos: cantos,
+        alturaCam: Util.num(alvo.alturaCam),
+        rotulo: K.v("t360-area-rotulo"),
         autor: quemSou().autor,
         em: Util.agoraISO(),
-        yaw: Util.num(canto.yaw), pitch: Util.num(canto.pitch),
         paraCliente: !!(cli && cli.checked)
       });
       salvarTour(atual);
       _zerarArea();
-      UI.toast("Área guardada como comentário no primeiro canto.", "ok");
+      UI.toast("Área guardada nas medidas desta estação: " + n2(res.area) + " m² (±" + n1(res.erroEstimadoPct) + "%).", "ok");
+      App.render();
+    },
+
+    /* ---------- filtro de pavimento ----------
+       ⚠ o clique no <select> chega antes do change, com `value` indefinido —
+       mesma saída do `t360-ponto-sel`. */
+    "t360-nivel": function (ds) {
+      if (!ds || ds.value === undefined) return;
+      G._t360Nivel = ds.value ? String(ds.value) : "";
       App.render();
     },
 
@@ -2940,8 +4501,19 @@
         alvo.nome = nome;
         alvo.nivel = K.v("t360-p-nivel");
         alvo.alturaCam = alt;
-        alvo.nortear = Util.num(K.v("t360-p-norte"));
-        alvo.horizonte = Util.num(K.v("t360-p-hor"));
+        /* ⚠ CORRIGIR O NORTE PODE PRECISAR ARRASTAR MARCADOR — mas só o que
+           veio de OUTRA FOTO. A pendência herdada da visita anterior tem o
+           ângulo escrito no referencial da foto ANTIGA; quando a estação é
+           refotografada, o panorama novo começa de outro lado e é aqui, ao
+           corrigir o norte, que ela precisa andar — senão a fissura de agosto
+           aponta para outra parede em setembro, com o texto certo. O que foi
+           apontado NESTA foto não anda: a foto não mudou, e mover tiraria o
+           marcador de cima da fissura. Quem sabe separar os dois é o motor
+           (`Tour360.renortear`), não esta tela. */
+        var rn = (typeof M.renortear === "function")
+          ? M.renortear(alvo, Util.num(K.v("t360-p-norte")), Util.num(K.v("t360-p-hor")))
+          : null;
+        if (!rn) { alvo.nortear = Util.num(K.v("t360-p-norte")); alvo.horizonte = Util.num(K.v("t360-p-hor")); }
         if (ehNovo) {
           atual.pontos = Util.arr(atual.pontos);
           atual.pontos.push(alvo);
@@ -2950,6 +4522,9 @@
         /* o nivelamento mudou: a esfera precisa reabrir com o novo giro */
         G._t360Carregado = "";
         UI.fecharModal();
+        if (rn && rn.movidos) {
+          UI.toast(rn.movidos + " apontamento(s) herdado(s) de outra foto foram girados junto com o norte — confira se ainda apontam para o lugar certo.", "ok");
+        }
         App.render();
       } }
     ]);

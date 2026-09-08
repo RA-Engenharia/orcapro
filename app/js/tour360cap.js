@@ -171,16 +171,29 @@
      "aqui não há dado", que é a verdade. */
   Cap.COR_VAZIO = "#2b2f33";
 
+  /* ⚠ ESTE TEXTO É A SAÍDA DE TODA RECUSA DESTE MÓDULO, e por isso ele não
+     pode tratar Panorama e Foto esférica como se fossem a mesma coisa — medido,
+     não são. O Panorama de varredura sai em FAIXA (uns 200° por 45°): gira e
+     navega, mas não tem chão, então não mede. A Foto esférica fecha a esfera e
+     grava a geometria dentro do arquivo — é ela que libera a medição.
+     ⚠ E o nome do botão aqui tem de ser o nome que está na tela. Este arquivo
+     já mandou usar "Importar panorama", e outro lugar mandou usar
+     "Tirar/escolher foto" — botão que nunca existiu. */
   Cap.DICA_PANORAMA =
-    "Saída que funciona sempre: abra o aplicativo de câmera do celular, escolha o modo Panorama (ou Photo Sphere), dê a volta completa e depois toque em \"Importar panorama\" aqui.";
+    "Caminho que funciona sempre: abra a câmera do celular e escolha Foto esférica (Photo Sphere / 360) — não o Panorama comum, que sai em faixa e não mede —, dê a volta inteira, e volte aqui em \"Usar foto do celular\".";
 
   /* ⚠ Texto obrigatório na tela da captura assistida. Não é aviso jurídico:
      é o que impede a pessoa de fotografar a obra inteira e só descobrir na
      hora de medir que a foto costurada não tem chão. */
+  /* ⚠ A ÚLTIMA FRASE DESTE TEXTO SE CONTRADIZIA COM `classificar`: ela mandava
+     usar "o modo Panorama" para ter chão, e `classificar` diz, com razão, que
+     panorama de celular não tem chão nem teto. Quem tem chão é a Foto
+     esférica. Dois textos do mesmo arquivo discordando é como a pessoa
+     aprende a não ler nenhum. */
   Cap.AVISO_COSTURA =
     "A costura usa o sensor de direção do celular, não o conteúdo da imagem: as emendas ficam visíveis e linhas retas podem quebrar na junta. " +
     "E a faixa cobre só a altura que a câmera enxergou — a foto costurada NÃO tem chão nem teto, então nela não dá para medir distância no piso. " +
-    "Para uma foto 360 sem emenda e com chão, use o modo Panorama do aplicativo de câmera ou uma câmera 360.";
+    "Para uma foto 360 sem emenda, com chão e que MEDE, use Foto esférica (Photo Sphere / 360) no aplicativo de câmera, ou uma câmera 360.";
 
   /* =====================================================================
    * 2. AMBIENTE: o que ESTE aparelho deixa fazer
@@ -882,6 +895,313 @@
     return r.ok ? r.data : null;
   };
 
+  /* =====================================================================
+   * 5.2 A GEOMETRIA QUE O ARQUIVO DECLARA — leitor de XMP/GPano (puro)
+   *
+   * O DEFEITO QUE ISTO CONSERTA, E ELE JÁ ESTÁ NO AR. A única porta de
+   * entrada de "isto é um panorama" era a PROPORÇÃO 2:1
+   * (`Tour360.ehEquiretangular`). Só que um Photo Sphere PARCIAL de Android
+   * tem a mesma proporção da esfera cheia: recorte 3228x1614 dentro de
+   * 6366x3183 dá exatamente 2,000 nos dois. Ele passa na régua, é carimbado
+   * `equirect` e a estação gira e mede — mas o arquivo cobre 182,5° x 91,3°,
+   * não 360 x 180. Medido contra o motor: um ponto do chão a 4,40 m (câmera a
+   * 1,60 m) sai 1,95 m. Fator 2,26x, sem aviso, no aplicativo E na tela do
+   * cliente. A proporção nunca foi um teste de "isto é a esfera inteira" — é
+   * um teste de proporção, e um recorte proporcional passa.
+   *
+   * A etiqueta GPano (padrão Google Photo Sphere, namespace
+   * http://ns.google.com/photos/1.0/panorama/) responde a pergunta certa:
+   * quantos graus a imagem cobre, e onde a faixa fica dentro da esfera.
+   *
+   * ⚠ METADADO É DECLARAÇÃO DO APARELHO, NÃO FATO — a mesma doutrina que
+   *   `NOTA_DATA_APARELHO` já escreve para a data. Por isso quem usa estes
+   *   números CONFERE se eles descrevem este arquivo (a proporção da parte
+   *   fotografada tem de bater com a proporção dos pixels), e nunca os aceita
+   *   pela metade.
+   *
+   * ⚠ O XML BRUTO NÃO SAI DAQUI. O XMP de celular carrega GPS da obra,
+   *   número de série do aparelho e nome do autor, e o retrato do Portal vai
+   *   para URL pública sem login e para os 38 pacotes de cliente. Saem SETE
+   *   valores nomeados, todos escalares — e escalar é também o que o cadeado
+   *   `Tour360.auditar` consegue enxergar (ele não desce em objeto novo).
+   * ================================================================== */
+
+  Cap.XMP_ASSINATURA = "http://ns.adobe.com/xap/1.0/";   /* 28 chars + NUL */
+
+  function recusaXmp(codigo, motivo) {
+    return { ok: false, codigo: codigo, motivo: motivo };
+  }
+
+  /* Acha o pacote XMP dentro do JPEG e devolve o XML como texto.
+     ⚠ TRÊS DIFERENÇAS PARA `lerExif`, e cada uma é uma armadilha paga:
+     1. NÃO PARA NO PRIMEIRO APP1. `lerExif` dá `return` no "Exif\0\0"; o XMP
+        vem DEPOIS do Exif (a própria especificação da Adobe recomenda essa
+        ordem). Reusar o `return` de lá faz o leitor devolver o Exif e jurar
+        que não havia etiqueta.
+     2. A ASSINATURA CASA OS 29 BYTES, COM O NUL. Casar só
+        "http://ns.adobe.com" pega também o segmento de XMP ESTENDIDO
+        ("http://ns.adobe.com/xmp/extension/") e devolve XML sem raiz.
+     3. NÃO VASCULHA A EXTENSÃO. GPano é minúsculo e cai no primeiro pacote;
+        não achou ali, a resposta é "não achei" — nunca uma varredura
+        especulativa que possa colar pedaço de outro arquivo. */
+  Cap.lerXmp = function (entrada) {
+    var b = paraBytes(entrada);
+    if (!b || b.length < 4) return recusaXmp("vazio", "Arquivo vazio ou pequeno demais para ter etiqueta.");
+    if (u8(b, 0) !== 0xFF || u8(b, 1) !== 0xD8) {
+      return recusaXmp("nao-jpeg", "Este arquivo não é JPEG — só o JPEG carrega a etiqueta de 360 da câmera.");
+    }
+    var assinatura = Cap.XMP_ASSINATURA, tam = assinatura.length;
+    var i = 2, voltas = 0, m, len, k, bate, txtXml;
+    while (i + 1 < b.length && voltas < 512) {
+      voltas++;
+      if (u8(b, i) !== 0xFF) break;
+      m = u8(b, i + 1);
+      while (m === 0xFF) { i++; m = u8(b, i + 1); }
+      if (m < 0) break;
+      if (m === 0xD8 || m === 0x01 || (m >= 0xD0 && m <= 0xD7)) { i += 2; continue; }
+      if (m === 0xDA || m === 0xD9) break;      /* começo do scan / fim: dali é ruído */
+      len = u16(b, i + 2, false);
+      if (len < 2) break;
+      if (m === 0xE1) {
+        bate = true;
+        for (k = 0; k < tam; k++) {
+          if (u8(b, i + 4 + k) !== assinatura.charCodeAt(k)) { bate = false; break; }
+        }
+        /* ⚠ O QUE SUSTENTA É A ASSINATURA INTEIRA, NÃO O NUL — e isto foi
+           MEDIDO com sabotagem, não deduzido. Os dois namespaces divergem
+           cedo ("/xap/1.0/" contra "/xmp/extension/"), então casar os 28
+           caracteres já basta para nunca pegar a extensão: tirar o NUL e
+           rodar a suíte continua VERDE. Quem reprova é encurtar a
+           assinatura para "http://ns.adobe.com".
+           O NUL fica como companhia, e com um motivo: ele é o fim do
+           cabeçalho pela especificação, e é o que impede um namespace futuro
+           que TENHA este como prefixo de entrar por engano. Companhia
+           declarada não é decoração; companhia que se acha sustentação é. */
+        if (bate && u8(b, i + 4 + tam) === 0x00) {
+          txtXml = bytesParaTexto(b, i + 4 + tam + 1, i + 2 + len);
+          if (!txtXml) return recusaXmp("vazio", "A etiqueta desta foto veio vazia.");
+          return { ok: true, xml: txtXml };
+        }
+      }
+      i += 2 + len;
+    }
+    return recusaXmp("sem-xmp", "Esta foto não traz a etiqueta de 360 (XMP). Panorama de varredura costuma não trazer, e aplicativo de mensagem apaga a etiqueta ao reenviar como foto.");
+  };
+
+  /* ⚠ LATIN-1 DE PROPÓSITO. O XMP é UTF-8, mas o que este leitor procura são
+     nomes de propriedade e números — tudo ASCII. Decodificar UTF-8 exigiria
+     `TextDecoder`, que não existe no WebView antigo em que o produto roda; e
+     um acento mal decodificado num campo que nem é lido não muda nada. */
+  function bytesParaTexto(b, de, ate) {
+    var fora = "", i, c, fim = Math.min(ate, b.length);
+    for (i = de; i < fim; i++) {
+      c = u8(b, i);
+      if (c < 0) break;
+      fora += String.fromCharCode(c);
+    }
+    return fora;
+  }
+
+  /* As duas formas do RDF: atributo e elemento. Os dois ramos existem porque
+     não dá para garantir qual o aparelho emite — e um leitor que só entenda
+     uma delas devolve "não achei" para arquivo que tinha a etiqueta. */
+  function campoGPano(xml, nome) {
+    var m = new RegExp("GPano:" + nome + "\\s*=\\s*[\"']([^\"']*)[\"']").exec(xml);
+    if (m) return m[1];
+    m = new RegExp("<GPano:" + nome + "[^>]*>([^<]*)</GPano:" + nome + ">").exec(xml);
+    return m ? m[1] : "";
+  }
+  function inteiroGPano(xml, nome) {
+    var v = campoGPano(xml, nome);
+    if (v === "" || !/^-?\d+$/.test(txt(v))) return null;
+    return parseInt(v, 10);
+  }
+
+  Cap.lerGPano = function (entrada) {
+    var x = Cap.lerXmp(entrada);
+    if (!x.ok) return x;
+    var xml = x.xml;
+
+    var proj = txt(campoGPano(xml, "ProjectionType")).toLowerCase();
+    if (!proj) {
+      return recusaXmp("sem-gpano", "Esta foto traz etiqueta XMP, mas sem a parte de 360 (GPano). Ela entra no tour como foto comum.");
+    }
+    if (proj !== "equirectangular") {
+      return recusaXmp("projecao", "Esta foto declara a projeção “" + proj + "”, e o tour só sabe colocar na esfera a projeção equiretangular. Refaça em Foto esférica (Photo Sphere / 360).");
+    }
+
+    var fw = inteiroGPano(xml, "FullPanoWidthPixels");
+    var fh = inteiroGPano(xml, "FullPanoHeightPixels");
+    var cw = inteiroGPano(xml, "CroppedAreaImageWidthPixels");
+    var ch = inteiroGPano(xml, "CroppedAreaImageHeightPixels");
+    var cl = inteiroGPano(xml, "CroppedAreaLeftPixels");
+    var ct = inteiroGPano(xml, "CroppedAreaTopPixels");
+
+    if (fw === null || fh === null || cw === null || ch === null) {
+      return recusaXmp("incompleto", "A etiqueta de 360 desta foto está incompleta — faltam os tamanhos da esfera ou da parte fotografada. Sem eles não dá para saber quantos graus ela cobre.");
+    }
+    /* ⚠ O ATALHO MAIS TENTADOR DO ARQUIVO INTEIRO, E ELE MENTE.
+       `cl` ausente vale 0 e é NEUTRO: o encaixe recentra na horizontal, e
+       yaw é relativo (quem cuida do rumo é `nortear`). Já `ct` ausente com
+       `ch < fh` É RECUSA: `ct` é onde o HORIZONTE cai, pitch é absoluto
+       (0 = horizonte) e `distanciaNoChao` usa |pitch| direto. Chutar 0 cola
+       a faixa no topo da esfera e desloca toda medida da estação — com o
+       número saindo plausível, que é o pior desfecho. */
+    if (cl === null) cl = 0;
+    if (ct === null) {
+      if (ch < fh) {
+        return recusaXmp("incompleto", "A etiqueta desta foto não diz a que altura da esfera a faixa foi tirada (CroppedAreaTopPixels). Sem isso, toda medida desta estação sairia deslocada. Traga o arquivo original, sem edição.");
+      }
+      ct = 0;
+    }
+
+    if (!(fw > 0) || !(fh > 0) || !(cw > 0) || !(ch > 0) || cl < 0 || ct < 0 ||
+        cl + cw > fw || ct + ch > fh) {
+      return recusaXmp("recorte-impossivel", "A etiqueta de 360 desta foto descreve um recorte impossível (" + cw + "x" + ch + " a partir de " + cl + "," + ct + " dentro de " + fw + "x" + fh + "). O arquivo foi editado depois de tirado.");
+    }
+    /* a "tela cheia" do GPano é equiretangular por definição; se ela não for
+       2:1, o arquivo não é o que a etiqueta diz que é */
+    if (Math.abs(fw / fh - 2) > 0.02) {
+      return recusaXmp("tela-nao-2-1", "A etiqueta desta foto declara uma esfera de " + fw + "x" + fh + ", que não é 2:1 — então ela não descreve uma equiretangular. Não dá para confiar nesses números.");
+    }
+
+    return {
+      ok: true, projecao: proj,
+      fw: fw, fh: fh, cw: cw, ch: ch, cl: cl, ct: ct,
+      completo: (cw === fw && ch === fh)
+    };
+  };
+
+  /* =====================================================================
+   * 5.3 O ENCAIXE — a cobertura entra UMA VEZ, e entra DENTRO DA IMAGEM
+   *
+   * A DECISÃO, E O PORQUÊ DELA. A conta pixel<->ângulo existe em QUATRO
+   * cópias independentes nesta casa: o motor (js/tour360.js), a esfera do
+   * three.js (js/tour360view.js), o recorte do relatório (js/tour360rel.js) e
+   * o canvas do Portal (loja/portal.html). Ensinar as quatro a dividir por
+   * uma cobertura variável é a receita do "conserto que para no segundo
+   * consumidor" — com um agravante estrutural: `loja/portal.html` é arquivo
+   * do VPS e NÃO viaja no pacote de atualização. Aplicativo novo com Portal
+   * velho daria o engenheiro lendo 3,90 m e o cliente lendo 1,06 m na mesma
+   * foto — pior que os dois errarem igual.
+   *
+   * Então a cobertura entra na FRONTEIRA: a faixa é colada dentro de uma
+   * equiretangular 2:1 de verdade, no rumo e na altura certos, e o que
+   * ninguém fotografou fica cinza. A partir daí `yaw = px/W*360 - 180` volta
+   * a ser VERDADE nas quatro cópias, sem tocar em nenhuma — e o Portal que
+   * já está no ar passa a desenhar e medir certo sem receber uma linha.
+   *
+   * ⚠ O CUSTO É REAL E ESTÁ DECLARADO: resolução angular. Uma faixa de 200°
+   *   que hoje chega em 4096 px dá 20,5 px por grau; encaixada, ela ocupa
+   *   2276 dos 4096 e dá 11,4 px por grau. Não dá para fugir: 4096 é o teto de
+   *   textura do celular (acima disso o WebGL recusa e a esfera abre preta).
+   *   É metade do detalhe no zoom em troca de a geometria parar de mentir —
+   *   e foi escolha do dono, em 08/09/2026, não suposição minha.
+   *
+   * ⚠ NÃO EXISTE `centroYaw`, E ISSO É DECISÃO. O encaixe RECENTRA na
+   *   horizontal: `medirChao` só usa `Tour360.difYaw` entre dois cliques, que
+   *   é invariante a um deslocamento constante de yaw, e a convenção da casa
+   *   já é "yaw 0 = centro da foto", com `nortear` cuidando do rumo. Na
+   *   VERTICAL não dá para recentrar: pitch é absoluto (0 = horizonte) e
+   *   `distanciaNoChao` usa |pitch| direto — por isso o `ct` do GPano é
+   *   honrado e `centroPitch` existe.
+   * ================================================================== */
+
+  /* o mesmo teto de textura de js/tour360ui.js (larguraMax 4096) */
+  Cap.LARGURA_EQUI = 4096;
+
+  function recusaEnc(codigo, motivo, saida) {
+    return { ok: false, codigo: codigo, motivo: motivo, saida: saida || "" };
+  }
+
+  /* Onde a faixa cai dentro da equiretangular, em pixels. Puro: roda em Node.
+     opts: { largura, altura, gpano, covH, larguraSaida } */
+  Cap.planoLetterbox = function (opts) {
+    var o = opts || {};
+    var iw = num(o.largura, 0), ih = num(o.altura, 0);
+    if (!(iw > 0) || !(ih > 0)) {
+      return recusaEnc("sem-dimensao", "Não consegui ler o tamanho desta imagem.");
+    }
+    var W = num(o.larguraSaida, 0) || Cap.LARGURA_EQUI;
+    var H = Math.round(W / 2);
+
+    var covH = 0, covV = 0, centroPitch = 0, fonte = "";
+
+    var g = o.gpano;
+    if (g && g.ok) {
+      /* ⚠ A ETIQUETA DESCREVE O ORIGINAL, NÃO NECESSARIAMENTE ESTE ARQUIVO.
+         Cortar ou reduzir depois muda os pixels e não mexe no XMP. Então a
+         conferência é de PROPORÇÃO, não de igualdade — reduzir mantém a
+         razão, recortar não. Sem isto, uma etiqueta herdada de outra foto
+         coloca a obra no lugar errado da esfera com confiança total. */
+      var razaoArq = iw / ih, razaoTag = g.cw / g.ch;
+      if (Math.abs(razaoArq / razaoTag - 1) > 0.02) {
+        return recusaEnc("gpano-nao-bate",
+          "Esta foto traz a etiqueta de 360 do aparelho, mas ela não descreve ESTE arquivo: a etiqueta diz "
+            + g.cw + "x" + g.ch + " e o arquivo tem " + iw + "x" + ih
+            + ". Isso acontece quando a foto é cortada, editada ou reduzida depois de tirada.",
+          "Traga o arquivo original, sem edição — no iPhone, exporte pelo aplicativo Fotos como “original não modificado”; no WhatsApp, peça para reenviarem como DOCUMENTO, não como foto.");
+      }
+      covH = g.cw / g.fw * 360;
+      covV = g.ch / g.fh * 180;
+      centroPitch = 90 - (g.ct + g.ch / 2) / g.fh * 180;
+      fonte = "gpano";
+    } else if (num(o.covH, 0) > 0) {
+      covH = Math.min(360, num(o.covH, 0));
+      /* ⚠ NÃO É REGRA DE TRÊS. Um panorama de varredura é projeção cilíndrica
+         de pixel quadrado: a mesma focal nos dois eixos. Medido em
+         10800x2600 com 200°: a relação cilíndrica dá 45,58°; a regra de três
+         ingenua (covH*ih/iw) daria 48,15° — 5,6% de erro embutido, e ele
+         entraria direto na posição de todo marcador. */
+      var f = iw / (covH * Math.PI / 180);
+      covV = 2 * Math.atan(ih / (2 * f)) * 180 / Math.PI;
+      centroPitch = 0;
+      fonte = "declarada";
+    } else {
+      return recusaEnc("sem-cobertura",
+        "Não dá para saber quantos graus esta foto cobre: ela não traz a etiqueta de 360 e ninguém informou a abertura.",
+        "Refaça em Foto esférica (Photo Sphere / 360), que grava a geometria dentro do arquivo — ou informe quanto você girou o celular.");
+    }
+
+    covV = Math.max(0, Math.min(180, covV));
+    centroPitch = Math.max(-90, Math.min(90, centroPitch));
+    if (!(covH > 0) || !(covV > 0)) {
+      return recusaEnc("cobertura-invalida", "A abertura calculada para esta foto deu zero — os números da etiqueta não fecham.");
+    }
+
+    var dw = Math.round(covH / 360 * W);
+    var dh = Math.round(covV / 180 * H);
+    var dx = Math.round((W - dw) / 2);                                /* recentra */
+    var dy = Math.round((90 - centroPitch - covV / 2) / 180 * H);     /* honra o ct */
+    if (dy < 0) dy = 0;
+    if (dy + dh > H) dy = Math.max(0, H - dh);
+
+    return {
+      ok: true,
+      larguraSaida: W, alturaSaida: H,
+      dx: dx, dy: dy, dw: dw, dh: dh,
+      covH: r3(covH), covV: r3(covV), centroPitch: r3(centroPitch),
+      fonte: fonte,
+      completo: (covH >= 359.5 && covV >= 179.5)
+    };
+  };
+
+  /* ⚠ A ORDEM DESTA DECISÃO É O CONSERTO DO DEFEITO VIVO.
+     Se a PROPORÇÃO decidir primeiro, o Photo Sphere parcial de 3228x1614 —
+     que é exatamente 2:1 — escapa como "esfera inteira" e continua medindo
+     com fator 2x. O GPano vem ANTES, sempre. */
+  Cap.decidirEntrada = function (cls, gpano) {
+    if (!cls || !cls.ok) return { lane: "recusa", cls: cls };
+    var g = gpano && gpano.ok ? gpano : null;
+    if (g) {
+      if (g.cw === g.fw && g.ch === g.fh) return { lane: "nativa", gpano: g };
+      return { lane: "gpano", gpano: g };
+    }
+    if (cls.equirect) return { lane: "nativa", gpano: null };
+    if (cls.codigo === "pano-parcial") return { lane: "faixa", gpano: null };
+    return { lane: "comum", gpano: null };
+  };
+
   /* Grava o resultado da leitura no ponto do tour. `opts.foto` existe para a
      tela poder passar a REFERÊNCIA já guardada (Fotos.guardar) em vez do
      data URI inteiro — o registro do tour não deve carregar megabytes. */
@@ -898,6 +1218,17 @@
        não for "equirect", e um terceiro rótulo inventado aqui viraria aviso
        silencioso lá. */
     ponto.tipo = res.tipo === "equirect" ? "equirect" : "plana";
+    /* ⚠ A GEOMETRIA ACOMPANHA A FOTO, e ela é gravada JUNTO com o `tipo`
+       porque as duas descrevem o mesmo arquivo. Gravar em lugares diferentes
+       é como um ponto acaba com o `tipo` de uma foto e a cobertura de outra —
+       e aí a medida sai plausível e errada, que é o pior desfecho.
+       Sem informação nenhuma os quatro voltam a ZERO em vez de ficarem com o
+       valor da foto ANTERIOR daquela estação: "não sei" só permite; herdar
+       cobertura de outro arquivo mede errado. */
+    ponto.panoFonte = txt(res.panoFonte) || (ponto.tipo === "equirect" ? "nativa" : "plana");
+    ponto.panoCobH = num(res.panoCobH, 0);
+    ponto.panoCobV = num(res.panoCobV, 0);
+    ponto.panoCentroPitch = num(res.panoCentroPitch, 0);
 
     /* ⚠ A DATA DA FOTO É A DO DISPARO, NÃO A DO ANEXO — e o campo ao lado diz
        de onde ela veio. Roteiro do defeito: foto tirada na segunda, anexada na
@@ -1001,7 +1332,7 @@
   /* Lê o arquivo escolhido: data URI + dimensões + classificação + a data
      que o APARELHO gravou na foto (`dataOriginal`, ver a seção 5.1).
 
-     ⚠ A DATA NUNCA DERRUBA O ANEXO. `lerDataOriginal` resolve com `null` em
+     ⚠ A DATA NUNCA DERRUBA O ANEXO. `lerMetadados` resolve com `null` em
        qualquer tropeço — arquivo sem EXIF, navegador sem `readAsArrayBuffer`,
        leitura que falhou. A foto entrar no tour vale mais que a data; o que
        não pode é a data SAIR ERRADA, e por isso `null` é resposta legítima e
@@ -1051,13 +1382,17 @@
 
     return lendo.then(function (r) {
       if (!r || !r.ok) return r;
-      return lerDataOriginal(arq, w).then(function (d) {
+      return lerMetadados(arq, w).then(function (meta) {
+        var d = meta && meta.data;
         /* campos ACRESCENTADOS: quem já lia `dataURI`/`tipo`/`aviso` continua
            lendo a mesma coisa. `dataOriginal` é null quando não deu para saber
            — e null aqui quer dizer "não sei", nunca "hoje". */
         r.dataOriginal = d || null;
         r.dataOriginalNota = d ? Cap.NOTA_DATA_APARELHO : "";
         r.dataOriginalMotivo = d ? "" : Cap.motivoSemData(arq, w);
+        /* a geometria que o arquivo declara, e a lane que ela decide */
+        r.gpano = (meta && meta.gpano) || null;
+        r.lane = Cap.decidirEntrada(r, r.gpano).lane;
         return r;
       });
     });
@@ -1082,22 +1417,29 @@
      ⚠ NUNCA REJEITA. Um `reject` aqui derrubaria o `.then` do anexo inteiro e
        a foto não entraria — trocar a mentira da data pela perda da foto seria
        um defeito pior que o consertado. */
-  function lerDataOriginal(arq, janela) {
+  /* ⚠ UMA LEITURA DE BYTES, DUAS EXTRAÇÕES — e ela tem de acontecer AQUI.
+     `Fotos.guardar` chama `Fotos.reduzir`, que faz `drawImage` + `toDataURL`:
+     nesse re-encode o EXIF E o XMP MORREM. Ler o metadado depois de guardar
+     devolveria "esta foto não tem etiqueta" para toda foto do mundo — e o
+     sintoma seria "meu panorama não mede", sem erro nenhum na tela. */
+  function lerMetadados(arq, janela) {
     var w = janela || global;
     return new Promise(function (res) {
+      var vazio = { data: null, gpano: null };
       try {
-        if (typeof w.FileReader !== "function") { res(null); return; }
+        if (typeof w.FileReader !== "function") { res(vazio); return; }
         var fr = new w.FileReader();
-        if (typeof fr.readAsArrayBuffer !== "function") { res(null); return; }
+        if (typeof fr.readAsArrayBuffer !== "function") { res(vazio); return; }
         var pedaco = (arq && typeof arq.slice === "function") ? arq.slice(0, Cap.EXIF_MAX_BYTES) : arq;
-        fr.onerror = function () { res(null); };
+        fr.onerror = function () { res(vazio); };
         fr.onload = function () {
-          var d = null;
+          var d = null, g = null;
           try { d = Cap.dataExif(fr.result); } catch (e) { d = null; }
-          res(d);
+          try { g = Cap.lerGPano(fr.result); } catch (e2) { g = null; }
+          res({ data: d, gpano: g });
         };
         fr.readAsArrayBuffer(pedaco);
-      } catch (e) { res(null); }
+      } catch (e) { res(vazio); }
     });
   }
 
@@ -1303,7 +1645,7 @@
           passoMin: num(o.passoMin, plano.passoMin),
           usarPitch: !!o.usarPitch,
           automatico: o.automatico !== false,
-          yaws: [], yaw: null, rumo: null, rumoRef: null, pitch: 0,
+          yaws: [], yaw: null, rumo: null, rumoRef: null, pitch: 0, fovV: 0,
           leituras: 0, ultimoMs: 0, ouvinte: null, eventoBussola: ""
         };
 
@@ -1402,10 +1744,50 @@
     });
     if (!r.ok) return r;
 
+    /* ⚠ A ABERTURA VERTICAL SAI DA CAMERA, NAO DE UM CHUTE. `pintarQuadro` ja
+       a calcula da focal do proprio video (`colunasDaProjecao`); guardar aqui e
+       o que permite `finalizar` carimbar quantos graus a cinta cobre — sem
+       isso, a foto costurada voltaria a ser uma esfera inteira de mentira. */
+    if (num(r.fovVertical, 0) > 0) S.fovV = num(r.fovVertical, 0);
+
     S.yaws.push(S.yaw);
     S.ultimoMs = agoraMs;
     avisarProgresso();
     return { ok: true, yaw: S.yaw, quadros: S.yaws.length };
+  };
+
+  /* O ENCAIXE, no canvas. A parte pura (onde a faixa cai) é
+     `Cap.planoLetterbox`; aqui é só pintar.
+     ⚠ UM ÚNICO `drawImage`, e não 24 fatias: a faixa é um retângulo contíguo
+     na origem e um retângulo contíguo no destino — fatiar só acrescentaria
+     emenda visível e tempo. O cinza vem primeiro porque JPEG não tem
+     transparência: sem o `fillRect`, o que ninguém fotografou sairia PRETO, e
+     preto na tela do cliente parece foto queimada, não parece "aqui a foto
+     acabou" (é o mesmo motivo do `destination-over` de `finalizar`). */
+  Cap.letterbox = function (img, plano, opts) {
+    var o = opts || {};
+    if (!img) return { ok: false, codigo: "sem-imagem", motivo: "Imagem não carregada." };
+    if (!plano || !plano.ok) return plano || { ok: false, codigo: "sem-plano", motivo: "Sem plano de encaixe." };
+    var W = plano.larguraSaida, H = plano.alturaSaida;
+    var cv, cx, uri;
+    try {
+      cv = global.document.createElement("canvas");
+      cv.width = W; cv.height = H;
+      cx = cv.getContext("2d");
+      cx.fillStyle = Cap.COR_VAZIO;
+      cx.fillRect(0, 0, W, H);
+      cx.drawImage(img, 0, 0, img.naturalWidth || img.width, img.naturalHeight || img.height,
+                   plano.dx, plano.dy, plano.dw, plano.dh);
+      uri = cv.toDataURL("image/jpeg", num(o.qualidade, Cap.QUALIDADE_JPEG));
+    } catch (e) {
+      return { ok: false, codigo: "sem-canvas",
+        motivo: "Não consegui montar a foto 360 neste aparelho (" + ((e && e.message) || e) + ").",
+        saida: "Tente por outro navegador, ou anexe a foto como registro comum do ponto." };
+    }
+    if (!uri || uri.length < 64) {
+      return { ok: false, codigo: "sem-imagem", motivo: "O aparelho não devolveu a imagem montada." };
+    }
+    return { ok: true, dataURI: uri, largura: W, altura: H };
   };
 
   Cap.finalizar = function (opts) {
@@ -1438,6 +1820,9 @@
     }
 
     var quadros = S.yaws.length;
+    /* ⚠ LER ANTES DE `cancelar`: ele zera a sessão, e o `S` vira null. Este
+       era o defeito que a suíte pegou no primeiro rodar. */
+    var covV = num(S.fovV, 0);
     Cap.cancelar();
 
     var aviso = Cap.AVISO_COSTURA;
@@ -1446,10 +1831,22 @@
         " O que faltou fica cinza na foto. " + aviso;
     }
 
+    /* ⚠ AQUI MORAVA A MESMA MENTIRA DO PHOTO SPHERE PARCIAL, POR OUTRA PORTA.
+       Esta função devolvia `tipo:"equirect", equirect:true` MESMO com
+       `cov.completo === false` — ou seja, uma cinta de uns 35° carimbada como
+       esfera inteira, com a medição liberada. Ela já pinta o vazio de
+       COR_VAZIO, ou seja JÁ PRODUZ um encaixe; só não contava. Carimbando a
+       cobertura, a costura entra no mesmo modelo do panorama do celular e a
+       medição nela passa a ser recusada por `podeMedirAqui` como em qualquer
+       outra faixa. */
     return {
       ok: true, dataURI: uri, largura: W, altura: H,
       tipo: "equirect", equirect: true,
       quadros: quadros, cobertura: cov, completo: cov.completo,
+      panoFonte: "costura",
+      panoCobH: cov.completo ? 360 : num(cov.graus, 0),
+      panoCobV: covV,
+      panoCentroPitch: 0,
       aviso: aviso
     };
   };
