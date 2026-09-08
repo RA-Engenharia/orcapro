@@ -181,7 +181,15 @@
    * elemento carrega hoje. Sem guardar os dois, o modelo restaurado passava a
    * chamar TODAS as paredes de "Parede" e todos os tubos de "Tubo" — a peça
    * continuava certa, e o único jeito de identificá-la sumia. */
+  /* ⚠ `descricao` É O NOME DE MERCADO, e ele TEM de sobreviver ao cache. Ele
+   * só existe enquanto o .ifc está aberto: o cache é justamente o caminho que
+   * dispensa reabrir o arquivo. Sem guardá-lo aqui, a requisição feita logo
+   * depois de importar casaria pelo nome comercial, e a mesma requisição feita
+   * amanhã — com o modelo restaurado — cairia de volta no nome da família e
+   * daria OUTRO resultado, sem nada na tela explicando a diferença. É o mesmo
+   * defeito que o `nomeIfc` acima já custou uma vez. */
   var CAMPOS_ELEMENTO = ["id", "globalId", "tipo", "nome", "nomeIfc", "familia", "sistemaIfc",
+                         "descricao", "descricaoFonte",
                          "etapa", "codOrc", "fase", "tag"];
 
   function elementoLimpo(e) {
@@ -408,7 +416,12 @@
     for (i = 0; i < (reg.instancias || []).length; i++) t += 16 * 8 + 4 * 4 + 24;   /* matriz em double */
     /* o resto (elementos, mapas) estimado por contagem — medir com
        JSON.stringify custaria mais do que a decisão vale */
-    t += (reg.elementos || []).length * 220;
+    /* ⚠ 280, e não 220: o registro do elemento passou a levar `descricao` (o
+       nome de mercado vindo do Revit, dezenas de caracteres) e
+       `descricaoFonte`. Estimativa que não acompanha o registro que ela
+       estima envelhece calada e a política de espaço passa a decidir com um
+       número que já não descreve nada. */
+    t += (reg.elementos || []).length * 280;
     t += Object.keys(reg.qto || {}).length * 120;
     t += Object.keys(reg.carimbos || {}).length * 80;
     t += Object.keys(reg.familias || {}).length * 80;

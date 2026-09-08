@@ -341,6 +341,17 @@
       var fam = String(e.familia || '').trim();
       var temFamilia = !!fam;
       if (!temFamilia) { semFamilia += n; }
+      /* ⚠ A DESCRIÇÃO É O NOME DE MERCADO, e a família é o nome da PASTA.
+         O projetista batiza a família pela convenção do escritório
+         ("AF_Soldavel_Tubo", "ESG_Serie Normal_Luva Simples:Standard") e
+         escreve o nome comercial no campo Descrição do tipo, que é de onde a
+         biblioteca do fabricante já vem preenchida ("Tubo PVC soldável água
+         fria DN 25 mm"). A base de preços fala a segunda língua, não a
+         primeira — então quando a descrição existe ela é a melhor evidência
+         que este arquivo tem, e até a v1.2.x ela era JOGADA FORA na leitura
+         do IFC. Ela ENTRA nos termos; nunca substitui a família, porque a
+         família é o que o engenheiro reconhece ao conferir a linha. */
+      var descr = String(e.descricao || '').trim();
       var disc = disciplinaDe(e);
       if (opc.disciplina && disc.disciplina !== opc.disciplina) return;
       if (opc.subsistema && disc.subsistema !== opc.subsistema) return;
@@ -373,12 +384,25 @@
           dims.vazio = false;
           dims.bitolaMedida = e.bitolaMm;
         }
+        /* ⚠ A MEDIDA DA DESCRIÇÃO SÓ PREENCHE O VAZIO — nunca discute com a
+           geometria nem com a topologia. Este arquivo já registra que bitola
+           INVENTADA é pior que bitola faltando: ela VETA o candidato certo, e
+           o sintoma vira "não achei" num item que estava na base. Texto livre
+           do projetista é a fonte mais fraca das três, então ele só é ouvido
+           onde não há nenhuma outra — e a redução fica de fora de propósito,
+           porque o par dela mora fora de `dims` e uma descrição dizendo
+           "DN 100" numa bucha 100x50 poria a peça errada de volta. */
+        if (dims.vazio && !par && descr) {
+          var dDescr = dimsDe(descr);
+          if (!dDescr.vazio) { dims = dDescr; dims.deDescricao = true; }
+        }
         p = porChave[chave] = {
           chave: chave, familia: fam, temFamilia: temFamilia,
+          descricao: descr, descricaoFonte: descr ? String(e.descricaoFonte || '') : '',
           tipo: String(e.tipo || ''), rotulo: String(e.nome || ''),
           sistemaIfc: String(e.sistemaIfc || ''),
           disciplina: disc.disciplina, subsistema: disc.subsistema, origemDisciplina: disc.origem,
-          termos: termosDe(fam), dims: dims, bitolaMm: e.bitolaMm || 0,
+          termos: termosDe(fam, descr), dims: dims, bitolaMm: e.bitolaMm || 0,
           /* ⚠ o PAR da reducao viaja separado da bitola unica, e nunca entra
              no veto: comparar "reducao 100x50" como se fosse DN 100 poria a
              peca errada de volta pela porta dos fundos. */
@@ -390,6 +414,29 @@
         ordem.push(chave);
       }
       p.n += n;
+      /* ⚠ A DESCRIÇÃO PODE CHEGAR NO SEGUNDO ELEMENTO. A peça nasce do
+         primeiro que aparece, e num modelo real é normal que só parte das
+         instâncias traga o campo preenchido. Se a peça nasceu sem descrição e
+         ela chega depois, os termos e a medida TÊM de ser refeitos — senão o
+         casamento usaria o vocabulário pobre por acidente de ordem de
+         leitura, e a mesma peça daria resultado diferente conforme o IFC
+         fosse exportado em outra ordem. */
+      if (descr) {
+        p.nComDescricao = (p.nComDescricao || 0) + n;
+        if (!p._descrVistas) p._descrVistas = {};
+        p._descrVistas[descr] = 1;
+        if (!p.descricao) {
+          p.descricao = descr;
+          p.descricaoFonte = String(e.descricaoFonte || '');
+          p.termos = termosDe(p.familia, descr);
+          if (p.dims.vazio && !p.bitolaPar) {
+            var dTarde = dimsDe(descr);
+            if (!dTarde.vazio) { dTarde.deDescricao = true; p.dims = dTarde; }
+          }
+        }
+      } else {
+        p.nSemDescricao = (p.nSemDescricao || 0) + n;
+      }
       /* ⚠ SOMA PARCIAL ROTULADA COMO MEDIDA E PIOR QUE SEM MEDIDA.
          Isto acumulava so quem trouxe quantidade e carimbava o total como
          "medido no IFC". Dez tubos de 3 m com sete medidos davam
@@ -411,6 +458,16 @@
 
     var pecas = ordem.map(function (k) {
       var p = porChave[k];
+      /* ⚠ DESCRIÇÕES DIFERENTES DENTRO DA MESMA PEÇA NÃO SE ESCOLHEM SOZINHAS.
+         A chave já junta o que decide a compra (tipo, família, sistema,
+         bitola). Se dentro disso o projetista escreveu nomes comerciais
+         diferentes, é ele que está inconsistente — e a linha vai comprar por
+         UM deles. Isso vai DITO, para a tela poder mostrar; escolher em
+         silêncio é a receita de comprar a peça errada com cara de conferida. */
+      var vistas = p._descrVistas ? Object.keys(p._descrVistas) : [];
+      p.descricaoVariantes = vistas.length;
+      if (vistas.length > 1) p.descricaoOutras = vistas.slice(0, 6);
+      delete p._descrVistas;
       /* sem medida do IFC, a quantidade é a CONTAGEM — e isso vai dito, não
          suposto: peça contada e peça medida não valem o mesmo numa compra */
       if (!(p.quantidade > 0)) { p.quantidade = p.n; p.unidade = p.unidade || 'un'; p.fonteQtd = 'contagem'; }
@@ -430,7 +487,15 @@
       resumo: {
         elementos: total, pecas: pecas.length, semFamilia: semFamilia,
         porContagem: pecas.filter(function (p) { return p.fonteQtd === 'contagem'; }).length,
-        semDisciplina: pecas.filter(function (p) { return !p.disciplina; }).length
+        semDisciplina: pecas.filter(function (p) { return !p.disciplina; }).length,
+        /* ⚠ ESTE NÚMERO É O QUE IMPEDE O RECURSO DE SER INERTE EM SILÊNCIO.
+           Ler a Descrição só ajuda se o modelo a tiver preenchida, e isso
+           varia por escritório e por biblioteca de família. Sem contador, um
+           modelo sem descrição nenhuma se comporta exatamente como antes e
+           ninguém descobre por que o casamento não melhorou. Com ele, a tela
+           diz "0 de 182 peças trouxeram descrição" e a resposta está dada. */
+        comDescricao: pecas.filter(function (p) { return !!p.descricao; }).length,
+        descricaoDivergente: pecas.filter(function (p) { return p.descricaoVariantes > 1; }).length
       }
     };
   }
@@ -550,7 +615,14 @@
     var acima = lista.filter(function (c) { return c.conf >= MIN_CONF; });
     var status = 'pendente', porque = '';
 
-    if (!peca.temFamilia) {
+    /* ⚠ SEM FAMÍLIA MAS COM DESCRIÇÃO NÃO É "SEM NOME". Esta guarda recusava
+       pela AUSÊNCIA de vocabulário: o `rotulo` do app ("Louça/terminal") é
+       igual para dezenas de peças, então casar por ele é casar por nada. A
+       descrição do modelo é vocabulário de verdade — é o nome comercial que a
+       base entende. Manter a recusa aqui apagaria justamente o caso que a
+       leitura da descrição existe para resolver, e o sintoma seria uma peça
+       nomeada na tela saindo "pendente" sem motivo visível. */
+    if (!peca.temFamilia && !peca.descricao) {
       status = 'pendente';
       porque = 'a peça não traz nome de família no modelo — só o rótulo genérico do tipo, que é igual para dezenas de peças diferentes';
     } else if (!acima.length) {
@@ -585,6 +657,13 @@
       } else {
         status = 'ok';
         porque = 'nome e medida conferem (' + resumoDim(peca.dims, peca.bitolaPar) + ')';
+        /* ⚠ QUANDO A DESCRIÇÃO FOI A PROVA, ISSO VAI DITO. Um "ok" decidido
+           por texto livre do projetista não vale o mesmo que um decidido pela
+           geometria, e quem confere a requisição precisa saber de onde veio a
+           evidência para poder discordar. Sem esta linha, os dois casos
+           chegam à tela com a mesma cara. */
+        if (peca.descricao && !peca.temFamilia) porque += ' — nome vindo da Descrição do modelo, que é a única que esta peça traz';
+        else if (peca.dims && peca.dims.deDescricao) porque += ' — a medida veio da Descrição do modelo, não da geometria';
       }
     }
     return { candidatos: lista.slice(0, opc.max || 8), status: status, porque: porque, empate: acima.length ? acima.filter(function (c) { return c.conf === acima[0].conf; }).length : 0 };
@@ -808,7 +887,13 @@
       var it = escolhas[p.chave];
       var temItem = !!(it && it.codigo);
       if (!temItem) pendentes++;
-      var descr = temItem ? it.descricao : (p.familia || p.rotulo || 'peça do modelo');
+      /* ⚠ NA LINHA PENDENTE, QUEM LÊ É O FORNECEDOR — e ele não conhece a
+         convenção de pasta do escritório. "AF_Soldavel_Tubo" não se cota;
+         "Tubo PVC soldável água fria DN 25 mm" se cota. Por isso a descrição
+         do modelo (nome de mercado) vem na frente da família quando existe.
+         A família NÃO se perde: ela viaja em `origemBim.familia`, que é o que
+         o engenheiro usa para achar a peça de volta no Revit. */
+      var descr = temItem ? it.descricao : (p.descricao || p.familia || p.rotulo || 'peça do modelo');
       /* ⚠ O PAR DA REDUCAO TEM DE VIR JUNTO. Esta linha chamava `resumoDim`
          SEM o segundo argumento — e a reducao guarda o par FORA de `dims`, de
          proposito. Resultado: o painel mostrava "reducao 25 x 32 mm" e a linha
@@ -836,7 +921,11 @@
           sistema: p.sistemaIfc || '', subsistema: p.subsistema || '',
           bitolaMm: p.bitolaMm || 0, bitolaPar: p.bitolaPar || null,
           fonteBitola: p.fonteBitola || '', fonteQtd: p.fonteQtd,
-          faltamMedida: p.faltamMedida || 0, pecas: p.n
+          faltamMedida: p.faltamMedida || 0, pecas: p.n,
+          /* a descrição do modelo viaja junto mesmo quando o item casou: é ela
+             que permite conferir DEPOIS se o insumo escolhido é o que o
+             projeto pedia, sem reabrir o IFC */
+          descricao: p.descricao || '', descricaoFonte: p.descricaoFonte || ''
         }
       });
     });
@@ -853,11 +942,14 @@
   function paraInsumoProprio(peca) {
     var medida = resumoDim(peca.dims, peca.bitolaPar);
     return {
-      descricao: seguro(peca.familia + (medida !== 'sem medida' ? ' — ' + medida : '')),
+      /* mesmo motivo da linha de requisição: o insumo próprio nasce com o nome
+         de mercado quando o modelo o traz — é ele que vai ser cotado depois */
+      descricao: seguro((peca.descricao || peca.familia) + (medida !== 'sem medida' ? ' — ' + medida : '')),
       unidade: peca.unidade || 'un',
       categoria: 'MAT',
       preco: 0,
-      origemBim: { chave: peca.chave, familia: peca.familia, tipo: peca.tipo, bitolaMm: peca.bitolaMm || 0 }
+      origemBim: { chave: peca.chave, familia: peca.familia, tipo: peca.tipo, bitolaMm: peca.bitolaMm || 0,
+                   descricao: peca.descricao || '' }
     };
   }
 

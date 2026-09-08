@@ -28,6 +28,7 @@
   var ENT_PARAM = "carp_param";
   var ENT_MADEIRA = "carp_madeiras";
   var ENT_MO = "carp_mo";
+  var ENT_CUSTO = "carp_custos";
   var ENT_PROP = "carp_propostas";
   var ENT_PARCEIRO = "carp_parceiros";
 
@@ -53,7 +54,10 @@
     return l.length ? l[0] : { id: "carp-param" };
   }
   function ctx() {
-    return { madeiras: K.lista(ENT_MADEIRA), servicos: K.lista(ENT_MO), parametros: paramBruto() };
+    return {
+      madeiras: K.lista(ENT_MADEIRA), servicos: K.lista(ENT_MO),
+      custos: K.lista(ENT_CUSTO), parametros: paramBruto()
+    };
   }
 
   /* ===================================================================
@@ -69,14 +73,16 @@
       ["propostas", "Propostas"],
       ["madeiras", "Madeiras"],
       ["mo", "Mão de obra"],
+      ["custos", "Custos"],
       ["parceiros", "Parceiros"],
       ["param", "Parâmetros"]
     ];
     var aba = this._carpAba;
     var novo = aba === "madeiras" ? ["carp-nova-madeira", "Nova madeira"]
       : aba === "mo" ? ["carp-novo-mo", "Novo serviço"]
-        : aba === "parceiros" ? ["carp-novo-parceiro", "Novo parceiro"]
-          : aba === "propostas" ? ["carp-nova-proposta", "Nova proposta"] : null;
+        : aba === "custos" ? ["carp-novo-custo", "Novo custo"]
+          : aba === "parceiros" ? ["carp-novo-parceiro", "Novo parceiro"]
+            : aba === "propostas" ? ["carp-nova-proposta", "Nova proposta"] : null;
 
     var html = this._head(K.svg("carpintaria") + "Carpintaria", novo ? novo[0] : null, novo ? novo[1] : null, _avisoParam());
     html += '<div class="tabs" style="margin-bottom:14px">' + abas.map(function (a) {
@@ -85,6 +91,7 @@
 
     if (aba === "madeiras") return html + _madeiras();
     if (aba === "mo") return html + _mo();
+    if (aba === "custos") return html + _custos();
     if (aba === "parceiros") return html + _parceiros();
     if (aba === "param") return html + _param();
     return html + _propostas();
@@ -197,9 +204,23 @@
   G.carpFormMO = function (s) {
     s = s || {};
     var p = param();
+    /* ⚠ UNIDADE É CAMPO ABERTO, e o pedido foi literal: "eu iria colocar o
+       pedreiro para pagamento por hora trabalhada, porém só tem por m² ou por
+       metro linear — sugiro que eu possa colocar por hora ou eu escrever
+       mesmo". Um `<select>` de duas opções não recusa só a hora: recusa toda
+       forma de cobrar que este módulo não imaginou. */
     var corpo = '<div class="row">' + K.campo("Serviço *", K.inp("cs-nome", s.servico, "Deck, Forro, Ripado, Caibro…"))
-      + K.campo("Unidade", K.sel("cs-un", K.opts([["m2", "m²"], ["m", "metro linear"]], s.unidade || p.unidadeMO)))
-      + K.campo("Valor de tabela (R$ por unidade) *", K.inp("cs-val", s.valor)) + "</div>";
+      + K.campo("Unidade", inpUnidade("cs-un", s.unidade || p.unidadeMO, "m2, m, h, diária…"))
+      + K.campo("Valor de tabela (R$ por unidade) *", K.inp("cs-val", s.valor)) + "</div>"
+      /* ⚠ O AVISO PRECISA ESTAR AQUI, na hora de escolher a unidade. Serviço
+         fora de m² é cobrado normalmente e RECEBE o acréscimo de obra pequena
+         junto (regra 5 do motor: a faixa é da obra, não da linha) — mas não
+         entra na metragem que decide essa faixa. Quem cadastra hora precisa
+         saber disso antes, não descobrir na conta. */
+      + '<p class="muted" style="margin:4px 0 0;font-size:12.5px">Você pode escrever a unidade que usar '
+      + "(<b>h</b> para hora trabalhada, <b>diária</b>, <b>vb</b>…). Só o que estiver em <b>"
+      + esc(p.unidadeMO) + "</b> entra na metragem que decide a faixa de preço — o resto é cobrado "
+      + "normalmente e recebe o acréscimo junto.</p>";
     this._modalForm(ENT_MO, s, "Serviço de mão de obra", corpo, function (obj) {
       obj.servico = K.v("cs-nome");
       if (!obj.servico) { UI.toast("Informe o serviço.", "erro"); return false; }
@@ -207,6 +228,84 @@
       var val = K.v("cs-val");
       /* ⚠ campo vazio fica NULO, não zero — serviço a R$ 0,00 fecha proposta
          cobrando nada por ele e ninguém confere o que parece certo. */
+      obj.valor = val === "" ? null : Util.num(val);
+      obj.comMargem = !!(UI.el("cc-marg") && UI.el("cc-marg").checked);
+      return true;
+    });
+  };
+
+  /* ===================================================================
+   * CUSTOS DE CAMPO — deslocamento, alojamento, insumo
+   *
+   * ⚠ O VALOR AQUI É REFERÊNCIA, NÃO TABELA. Diferente da madeira e do m² da
+   *   mão de obra, o deslocamento muda com a distância e o alojamento com o
+   *   número de diárias. Este cadastro serve para a pessoa não redigitar
+   *   "Deslocamento da equipe" em toda proposta — o valor final é o da linha.
+   * =================================================================== */
+  function _custos() {
+    var cs = K.lista(ENT_CUSTO);
+    var nota = '<div class="card mb" style="padding:12px 15px"><span class="muted">'
+      + "O que a obra custa <b>além de material e mão de obra</b>: deslocamento, mobilização de equipe, "
+      + "hospedagem, alimentação, verniz, lixa. Na proposta cada um vira linha própria e aparece "
+      + "<b>separado para o cliente</b>, em vez de sumir dentro do preço do m².<br>"
+      + "O valor daqui é apenas <b>sugestão</b> — o da proposta é o que vale, porque deslocamento e "
+      + "diária mudam de obra para obra.</span></div>";
+    if (!cs.length) return nota + K.vazioBox("Nenhum custo cadastrado", "carp-novo-custo", "Cadastrar o primeiro");
+    var html = nota + '<table class="tbl"><thead><tr><th>Custo</th><th>Grupo</th><th>Unidade</th>'
+      + '<th class="num">Valor de referência</th><th>Como cobra</th></tr></thead><tbody>';
+    cs.forEach(function (x) {
+      var sem = x.valor == null || String(x.valor) === "";
+      html += '<tr><td style="cursor:pointer" data-gacao="carp-editar-custo" data-id="' + esc(x.id) + '"><b>'
+        + esc(x.nome) + "</b></td><td>" + esc(C.rotuloGrupo(x.grupo)) + "</td><td>" + esc(x.unidade || "—")
+        + '</td><td class="num">' + (sem ? '<span class="muted">a definir na proposta</span>' : moeda(Util.num(x.valor)))
+        + "</td><td>" + (x.comMargem
+          ? '<span title="O valor é o seu custo de compra; o cliente paga custo + a margem da proposta">custo + margem</span>'
+          : '<span class="muted">valor direto</span>') + "</td></tr>";
+    });
+    return html + "</tbody></table>";
+  }
+
+  /* As unidades que o cliente pediu por escrito ("por hora ou eu escrever
+     mesmo"). ⚠ É `datalist`, não `select`: a lista sugere e o campo aceita
+     qualquer texto — nenhuma unidade que ele invente pode ser recusada nem,
+     pior, trocada em silêncio por uma da lista. */
+  var UNIDADES = ["m2", "m", "h", "diária", "un", "vb", "km", "dia", "mês"];
+  function inpUnidade(id, valor, ph) {
+    return '<input id="' + id + '" list="carp-unidades" value="' + esc(valor == null ? "" : valor)
+      + '" placeholder="' + esc(ph || "") + '">' + _datalistUnidades();
+  }
+  function _datalistUnidades() {
+    return '<datalist id="carp-unidades">' + UNIDADES.map(function (u) {
+      return '<option value="' + esc(u) + '">';
+    }).join("") + "</datalist>";
+  }
+
+  G.carpFormCusto = function (x) {
+    x = x || {};
+    var corpo = '<div class="row">' + K.campo("Custo *", K.inp("cc-nome", x.nome, "Deslocamento da equipe, Alojamento, Verniz…"))
+      + K.campo("Grupo", K.sel("cc-grupo", K.opts(C.GRUPOS_EXTRA, x.grupo || "mobilizacao"))) + "</div>"
+      + '<div class="row">' + K.campo("Unidade", inpUnidade("cc-un", x.unidade, "viagem, diária, un, vb…"))
+      + K.campo("Valor de referência (R$)", K.inp("cc-val", x.valor)) + "</div>"
+      /* ⚠ O QUE ESTA CAIXA DECIDE É SE EXISTE CUSTO INTERNO. Marcada, o valor
+         passa a ser o que ELE paga, e o cliente vê custo + margem — o caminho
+         da madeira. Desmarcada, o valor é o que o cliente paga e não há nada a
+         esconder no papel. Nasce DESMARCADA: acrescentar margem sozinho seria
+         cobrar a mais sem ninguém decidir. */
+      + '<label style="display:flex;align-items:flex-start;gap:6px;margin-top:6px">'
+      + '<input type="checkbox" id="cc-marg"' + (x.comMargem ? " checked" : "") + "> "
+      + '<span class="muted">Eu <b>compro e revendo</b> este item — o valor acima é o meu <b>custo</b>, e o cliente '
+      + "paga custo + a margem da proposta (como a madeira). Deixe desmarcado para deslocamento, "
+      + "alojamento e tudo que você repassa pelo valor cheio.</span></label>"
+      + '<p class="muted" style="margin:8px 0 0;font-size:12.5px">O <b>grupo</b> decide sob qual título a linha '
+      + "aparece na proposta do cliente. O <b>valor</b> pode ficar em branco: você informa na proposta.</p>";
+    this._modalForm(ENT_CUSTO, x, "Custo de campo", corpo, function (obj) {
+      obj.nome = K.v("cc-nome");
+      if (!obj.nome) { UI.toast("Informe o nome do custo.", "erro"); return false; }
+      obj.grupo = K.v("cc-grupo") || "mobilizacao";
+      obj.unidade = K.v("cc-un");
+      var val = K.v("cc-val");
+      /* ⚠ vazio fica NULO, não zero — custo a R$ 0,00 entra na proposta
+         cobrando nada e ninguém confere o que parece certo (regra 2). */
       obj.valor = val === "" ? null : Util.num(val);
       return true;
     });
@@ -236,6 +335,12 @@
       + K.campo("O acréscimo de faixa incide sobre", K.sel("cp-inca", K.opts([["mo", C.BASES.mo], ["total", C.BASES.total]], p.incideAcrescimo)))
       + K.campo("O percentual do detalhe incide sobre", K.sel("cp-incd", K.opts([["mo", C.BASES.mo], ["total", C.BASES.total]], p.incideDetalhe)))
       + "</div>"
+      + '<div class="field"><label>Deslocamento, hospedagem e insumos</label>'
+      + K.sel("cp-incx", K.opts([["fora", C.BASES_EXTRA.fora], ["dentro", C.BASES_EXTRA.dentro]], p.incideExtra))
+      + '<span class="muted" style="display:block;margin-top:5px">Eles sempre somam no total da proposta. '
+      + "Esta escolha é se eles também <b>recebem</b> o acréscimo de obra pequena e os percentuais de detalhe. "
+      + "O padrão é <b>não</b>: o acréscimo existe porque obra pequena é mais cara de executar, e o "
+      + "deslocamento já é esse custo, cobrado à parte.</span></div>"
       + '<div class="field"><label>Quando os dois acréscimos caem juntos</label>'
       + K.sel("cp-comp", K.opts([["somado", C.COMPOSICOES.somado], ["composto", C.COMPOSICOES.composto]], p.composicaoAcrescimos))
       + '<span class="muted" style="display:block;margin-top:5px">Numa obra pequena com degrau, a diferença entre os dois modos é real. '
@@ -266,6 +371,7 @@
     b.incideAcrescimo = K.v("cp-inca");
     b.incideDetalhe = K.v("cp-incd");
     b.composicaoAcrescimos = K.v("cp-comp");
+    b.incideExtra = K.v("cp-incx") || "fora";
     b.unidadeMO = b.unidadeMO || "m2";
     var n = parseInt(ds && ds.n, 10) || 4, dets = [], i;
     for (i = 0; i < n; i++) {
@@ -473,6 +579,9 @@
     }
     html += "</div>";
 
+    /* ---- custos de campo: deslocamento, alojamento, insumo ---- */
+    html += _blocoExtras(p, r, fechada);
+
     /* ⚠ o rastro da reabertura aparece na TELA. Gravar quem reabriu e não
        mostrar seria campo morto — e a pergunta que ele responde ("quem mexeu
        na proposta que eu enviei?") só se faz olhando esta tela. */
@@ -518,6 +627,100 @@
     return html;
   };
 
+  /* ===================================================================
+   * O BLOCO DOS CUSTOS DE CAMPO NO EDITOR
+   *
+   * ⚠ ESTE BLOCO É A RESPOSTA AO RELATO. O que ele descreveu foi: "quando eu
+   *   coloco o valor a mais no valor de material ou mão de obra, pro cliente
+   *   aparece só que o meu valor tá caro, mas não consigo mostrar pra ele que
+   *   tenho o custo com deslocamento, mobilização de equipe e alojamento".
+   *   Enquanto não havia onde lançar, o único caminho era inflar o m² — e o
+   *   custo real virava, para quem paga, um preço sem explicação.
+   * =================================================================== */
+  function _blocoExtras(p, r, fechada) {
+    var cs = K.lista(ENT_CUSTO);
+    var linhas = Util.arr(r.linhasExtra);
+    var html = '<div class="card mb"><div class="flex between"><h3 style="margin:0">Mobilização e insumos</h3>'
+      + (fechada ? "" : '<button class="btn sm" data-gacao="carp-add-extra" data-id="' + esc(p.id) + '">+ Custo</button>')
+      + "</div>";
+    if (!linhas.length) {
+      html += '<p class="muted mt">Deslocamento, mobilização de equipe, hospedagem, alimentação, insumos. '
+        + "Lançado aqui, cada um aparece em <b>linha própria</b> na proposta do cliente — em vez de somado por "
+        + "dentro do material ou do m².</p>";
+      return html + "</div>";
+    }
+    html += '<table class="tbl mt"><thead><tr><th>Descrição</th><th>Grupo</th><th class="num">Qtd</th><th>Un.</th>'
+      + '<th class="num">Valor unit.</th><th>Revenda</th><th class="num">Subtotal</th>'
+      + (fechada ? "" : "<th></th>") + "</tr></thead><tbody>";
+    linhas.forEach(function (L, i) {
+      /* a descrição é livre e o catálogo é atalho: o campo aceita texto,
+         e escolher no `datalist` só preenche o nome — nada é obrigatório */
+      var desc = fechada ? esc(L.descricao)
+        /* ⚠ largura cheia: no tamanho padrão o campo cortava "Deslocamento da
+           equipe" em "Deslocamento da equi", e é justamente esse texto que o
+           cliente final vai ler na proposta. */
+        : '<input id="cx-e-desc' + i + '" list="carp-custos-cat" style="width:100%;min-width:220px" value="'
+          + esc(L.descricao) + '" placeholder="Deslocamento, alojamento…">';
+      var grupo = fechada ? esc(C.rotuloGrupo(L.grupo))
+        : '<select id="cx-e-grp' + i + '">' + K.opts(C.GRUPOS_EXTRA, L.grupo || "mobilizacao") + "</select>";
+      html += "<tr><td>" + desc + "</td><td>" + grupo + '</td><td class="num">'
+        + (fechada ? n2(L.qtd) : '<input id="cx-e-qtd' + i + '" value="' + esc(K.numBR(L.qtd)) + '" style="width:80px;text-align:right">')
+        + "</td><td>" + (fechada ? esc(L.unidade) : inpUnidadeCurta("cx-e-un" + i, L.unidade))
+        + '</td><td class="num">'
+        /* ⚠ COM REVENDA, O CAMPO MUDA DE SIGNIFICADO: passa a ser o CUSTO de
+           compra, e quem manda no subtotal é custo + margem. O campo sozinho
+           não diz isso — por isso a linha de baixo mostra, em número, quanto
+           o cliente vai pagar. Sem esse retorno visível a pessoa digita 300 e
+           vê 420 no subtotal sem entender de onde saiu. */
+        + (fechada ? moeda(L.comMargem ? L.custoUnit : L.valorUnit)
+          : '<input id="cx-e-val' + i + '" value="'
+            + esc(_valorCampo(L) == null ? "" : K.numBR(_valorCampo(L)))
+            + '" placeholder="' + esc(_refDe(cs, L) === null ? "informe" : K.numBR(_refDe(cs, L))) + '" style="width:100px;text-align:right">')
+        + (L.comMargem && L.valorUnit != null
+          ? '<div class="muted" style="font-size:11.5px;margin-top:3px">ao cliente ' + moeda(L.valorUnit) + "</div>" : "")
+        + "</td><td>"
+        + (fechada
+          ? (L.comMargem ? '<span class="muted">custo + margem</span>' : "—")
+          : '<label style="display:inline-flex;align-items:center;gap:5px;white-space:nowrap" title="Marcado: o valor ao lado é o seu custo de compra, e o cliente paga custo + a margem desta proposta.">'
+            + '<input type="checkbox" id="cx-e-mrg' + i + '"' + (L.comMargem ? " checked" : "") + "> "
+            + '<span class="muted" style="font-size:11.5px">custo + margem</span></label>')
+        + '</td><td class="num">' + (L.semPreco ? '<span class="muted">sem valor</span>' : moeda(L.subtotal)) + "</td>"
+        + (fechada ? "" : '<td><button class="btn danger sm" data-gacao="carp-rm-extra" data-id="' + esc(p.id) + '" data-i="' + i + '">×</button></td>')
+        + "</tr>";
+    });
+    html += "</tbody></table>";
+    if (!fechada) {
+      html += '<datalist id="carp-custos-cat">' + cs.map(function (x) {
+        return '<option value="' + esc(x.nome) + '">';
+      }).join("") + "</datalist>" + _datalistUnidades();
+    }
+    var par = r.parametros || {};
+    html += '<p class="muted mt" style="font-size:12.5px">Estes valores '
+      + (par.incideExtra === "dentro" ? "<b>recebem</b>" : "<b>não recebem</b>")
+      + " o acréscimo de obra pequena nem os percentuais de detalhe — muda em <b>Parâmetros</b>.</p>";
+    return html + "</div>";
+  }
+
+  /* o que vai DENTRO do campo de valor: com revenda é o custo, senão o preço */
+  function _valorCampo(L) { return L.comMargem ? L.custoUnit : L.valorUnit; }
+
+  /* o valor de referência do catálogo, só para virar placeholder do campo */
+  function _refDe(cs, L) {
+    var achado = null;
+    Util.arr(cs).forEach(function (x) {
+      if (!x) return;
+      var mesmo = (L.custoId && x.id === L.custoId)
+        || (!L.custoId && String(x.nome || "").toLowerCase() === String(L.descricao || "").toLowerCase());
+      if (mesmo && x.valor != null && String(x.valor) !== "") achado = Util.num(x.valor);
+    });
+    return achado;
+  }
+
+  function inpUnidadeCurta(id, valor) {
+    return '<input id="' + id + '" list="carp-unidades" value="' + esc(valor == null ? "" : valor)
+      + '" style="width:80px" placeholder="un">';
+  }
+
   /* A conta, aberta linha a linha. ⚠ Todo número aqui vem de `Carpintaria.calcular` */
   function _resumo(r) {
     function ln(rot, val, forte, obs) {
@@ -540,6 +743,17 @@
         r.acrescimoDetalhe, false, "sobre " + C.BASES[p.incideDetalhe]);
     }
     h += ln("Mão de obra final", r.moTotal, true);
+    if (Util.arr(r.linhasExtra).length) {
+      /* ⚠ o custo do insumo comprado aparece AQUI e só aqui: esta tela é de
+         quem faz o preço. No papel do cliente ele é proibido, e `auditar`
+         recusa gerar o documento se escapar. */
+      if (Util.num(r.custoExtras) > 0) {
+        h += ln("Insumo a preço de compra", r.custoExtras, false, "só os itens que você revende");
+        h += ln("Margem sobre o insumo", r.lucroExtras, false, "");
+      }
+      h += ln("Mobilização e insumos", r.totalExtras, true,
+        p.incideExtra === "dentro" ? "com acréscimo" : "sem acréscimo");
+    }
     h += '<tr><td style="font-size:15px"><b>Total da proposta</b></td><td class="num" style="font-size:17px;font-weight:800">' + moeda(r.total) + "</td></tr>";
     return h + "</tbody></table></div>";
   }
@@ -582,8 +796,83 @@
       var q = UI.el("cx-s-qtd" + i);
       return { servicoId: s, qtd: q ? Util.num(q.value) : L.qtd };
     });
+    var cat = K.lista(ENT_CUSTO);
+    p.itensExtra = Util.arr(r.linhasExtra).map(function (L, i) {
+      var eD = UI.el("cx-e-desc" + i), eQ = UI.el("cx-e-qtd" + i);
+      var eU = UI.el("cx-e-un" + i), eV = UI.el("cx-e-val" + i);
+      var desc = eD ? eD.value.trim() : L.descricao;
+      var valTxt = eV ? eV.value.trim() : null;
+      var marg = UI.el("cx-e-mrg" + i);
+      var comMargem = marg ? !!marg.checked : !!L.comMargem;
+      var digitado = valTxt === null ? _valorCampo(L) : (valTxt === "" ? null : Util.num(valTxt));
+      /* ⚠ LINHA AINDA SEM VALOR SEGUE O CATÁLOGO. Ela clica "+ Custo", escolhe
+         "Verniz Osmocolor" — cadastrado como compro-e-revendo — e não tem por que
+         saber que precisa marcar uma caixa: sem isto, o custo de compra virava
+         preço final e a margem do verniz sumia calada. Depois que há valor na
+         linha, quem manda é a linha. */
+      var cadLinha = _custoPorNome(cat, desc);
+      if (digitado == null && cadLinha && cadLinha.comMargem) comMargem = true;
+      /* ⚠ ESCOLHER DO CATÁLOGO PREENCHE A LINHA — e o GRUPO é o que mais
+         importa, porque é ele que dá o título do bloco no PAPEL DO CLIENTE.
+         Medido no navegador: ela escolhia "Verniz Osmocolor" e a linha ficava
+         no grupo em que nasceu (mobilização), então o verniz saía impresso sob
+         "Mobilização e deslocamento" na proposta. Só herda no instante em que a
+         linha PASSA a apontar para um item do catálogo; depois disso a linha
+         manda, e trocar o grupo à mão continua valendo. */
+      var idNovo = _custoIdPorNome(cat, desc);
+      var acabouDeVincular = !!idNovo && idNovo !== txtOu(L.custoId);
+      var grupoLinha = K.v("cx-e-grp" + i) || L.grupo;
+      var unidLinha = eU ? eU.value.trim() : L.unidade;
+      if (acabouDeVincular && cadLinha) {
+        if (cadLinha.grupo) grupoLinha = cadLinha.grupo;
+        if (cadLinha.unidade) unidLinha = cadLinha.unidade;
+        comMargem = !!cadLinha.comMargem;
+      }
+      return {
+        /* ⚠ o vínculo com o catálogo se refaz pelo NOME EXATO, e só serve para
+           herdar o valor de referência quando o campo fica em branco. Não é
+           casamento por semelhança de dinheiro: nada é lançado a partir disto,
+           o valor continua visível na linha, e nome que não bate simplesmente
+           não herda nada — vira pendência dizendo que falta o valor. */
+        custoId: _custoIdPorNome(cat, desc) || (desc === L.descricao ? L.custoId : ""),
+        descricao: desc,
+        grupo: grupoLinha,
+        unidade: unidLinha,
+        qtd: eQ ? Util.num(eQ.value) : L.qtd,
+        /* campo em branco fica NULO — e nulo herda a referência do catálogo ou
+           vira pendência. Nunca zero (regra 2).
+           ⚠ O MESMO CAMPO ALIMENTA DOIS DESTINOS: com revenda o número é CUSTO
+           (`custoUnit`) e o preço de venda é derivado pelo motor; sem revenda é
+           o preço direto. Gravar nos dois faria a linha carregar um valor de
+           venda velho que o motor ignora e a próxima tela mostra. */
+        comMargem: comMargem,
+        custoUnit: comMargem ? digitado : null,
+        valorUnit: comMargem ? null : digitado
+      };
+    });
     _coletarComercial(p);
     return p;
+  }
+
+  function txtOu(x) { return String(x == null ? "" : x).trim(); }
+
+  function _custoPorNome(cat, nome) {
+    var alvo = String(nome == null ? "" : nome).trim().toLowerCase();
+    if (!alvo) return null;
+    var achado = null;
+    Util.arr(cat).forEach(function (x) {
+      if (x && String(x.nome || "").trim().toLowerCase() === alvo) achado = x;
+    });
+    return achado;
+  }
+  function _custoIdPorNome(cat, nome) {
+    var alvo = String(nome == null ? "" : nome).trim().toLowerCase();
+    if (!alvo) return "";
+    var id = "";
+    Util.arr(cat).forEach(function (x) {
+      if (x && String(x.nome || "").trim().toLowerCase() === alvo) id = x.id;
+    });
+    return id;
   }
 
   function comProposta(ds, fn) {
@@ -601,6 +890,26 @@
   G.carpAddMO = function (ds) { comProposta(ds, function (p) { p.itensMO.push({ servicoId: "", qtd: 0 }); }); };
   G.carpRmMadeira = function (ds) { comProposta(ds, function (p) { p.itensMadeira.splice(parseInt(ds.i, 10), 1); }); };
   G.carpRmMO = function (ds) { comProposta(ds, function (p) { p.itensMO.splice(parseInt(ds.i, 10), 1); }); };
+  /* ⚠ `Util.arr` NAS DUAS, e não é zelo: `coletar` só grava `itensExtra` em
+     proposta ABERTA, então numa fechada o campo pode nem existir. O botão não
+     é desenhado ali — mas o dispatcher é global e o `data-gacao` chega por
+     qualquer caminho (é o que o próprio comentário das ações do parceiro
+     registra). Sem a guarda, o clique vindo por fora estoura no console e o
+     editor fica pela metade. */
+  G.carpAddExtra = function (ds) {
+    comProposta(ds, function (p) {
+      p.itensExtra = Util.arr(p.itensExtra);
+      /* nasce no grupo mais comum e sem valor: sem valor é pendência visível,
+         e pendência é melhor que um zero que ninguém confere */
+      p.itensExtra.push({ custoId: "", descricao: "", grupo: "mobilizacao", unidade: "", qtd: 1, valorUnit: null });
+    });
+  };
+  G.carpRmExtra = function (ds) {
+    comProposta(ds, function (p) {
+      p.itensExtra = Util.arr(p.itensExtra);
+      p.itensExtra.splice(parseInt(ds.i, 10), 1);
+    });
+  };
 
   function _quem() {
     try { return (typeof Auth !== "undefined" && Auth.nome) ? Auth.nome() : ""; } catch (e) { return ""; }
@@ -964,6 +1273,10 @@
         ? '<textarea id="' + id + '" rows="3" placeholder="' + esc(c.dica || "") + '"' + dis + ">" + esc(com[c.id]) + "</textarea>"
         : '<input id="' + id + '" value="' + esc(com[c.id]) + '" placeholder="' + esc(c.dica || "") + '"' + dis + ">");
     }).join("") + "</div>";
+    h += '<label style="display:flex;align-items:flex-start;gap:6px;margin-top:10px">'
+      + '<input type="checkbox" id="cxc-detac"' + (p.detalharAcrescimos ? " checked" : "") + dis + "> "
+      + '<span class="muted">Mostrar no papel a <b>formação do preço</b> — quanto do total é acréscimo de obra '
+      + "pequena e de detalhes. Sem isto, o acréscimo vai embutido no valor de cada linha.</span></label>";
     if (!fechada) {
       h += '<label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px">'
         + '<input type="checkbox" id="cxc-padrao"> <span class="muted">Guardar estes textos como padrão das próximas propostas</span></label>';
@@ -980,6 +1293,14 @@
     /* ⚠ guardar como padrão é escolha EXPLÍCITA. Sem a caixa, digitar uma
        condição diferente numa proposta reescreveria o padrão de todas as
        próximas sem ninguém pedir. */
+    /* ⚠ CAMPO LIDO QUE NINGUÉM GRAVAVA. `carpImprimirProposta` já passava
+       `detalharAcrescimos: !!p.detalharAcrescimos` para o gerador, e o gerador
+       já sabia imprimir a formação do preço — mas nenhuma tela escrevia esse
+       campo. O interruptor que responde "por que ficou mais caro?" existia
+       inteiro e era inalcançável: a única coisa que faltava era esta linha. */
+    var dt = UI.el("cxc-detac");
+    if (dt) p.detalharAcrescimos = !!dt.checked;
+
     var cx = UI.el("cxc-padrao");
     if (cx && cx.checked) {
       var b = paramBruto();
@@ -1226,6 +1547,8 @@
     "carp-editar-madeira": function (ds) { G.carpFormMadeira(Store.obter(eid(), ENT_MADEIRA, ds.id)); },
     "carp-novo-mo": function () { G.carpFormMO(null); },
     "carp-editar-mo": function (ds) { G.carpFormMO(Store.obter(eid(), ENT_MO, ds.id)); },
+    "carp-novo-custo": function () { G.carpFormCusto(null); },
+    "carp-editar-custo": function (ds) { G.carpFormCusto(Store.obter(eid(), ENT_CUSTO, ds.id)); },
     "carp-salvar-param": function (ds) { G.carpSalvarParam(ds); },
     "carp-nova-proposta": function () { G.carpNovaProposta(); },
     "carp-abrir-proposta": function (ds) { G.carpAbrir(ds); },
@@ -1235,6 +1558,8 @@
     "carp-add-mo": function (ds) { G.carpAddMO(ds); },
     "carp-rm-madeira": function (ds) { G.carpRmMadeira(ds); },
     "carp-rm-mo": function (ds) { G.carpRmMO(ds); },
+    "carp-add-extra": function (ds) { G.carpAddExtra(ds); },
+    "carp-rm-extra": function (ds) { G.carpRmExtra(ds); },
     "carp-fechar-proposta": function (ds) { G.carpFechar(ds); },
     "carp-reabrir": function (ds) { G.carpReabrir(ds); },
     "carp-refazer": function (ds) { G.carpRefazer(ds); },
@@ -1273,16 +1598,28 @@
    * =================================================================== */
   G.registrarWire("carpintaria", function () {
     if (!G._carpProp) return;                       // só no editor de proposta
-    var selects = document.querySelectorAll('[id^="cx-m-mad"]');
-    if (!selects.length) return;
-    Array.prototype.forEach.call(selects, function (el) {
-      el.onchange = function () {
-        var p = Store.obter(eid(), ENT_PROP, G._carpProp);
-        if (!p) return;
-        coletar(p, C.calcular(p, ctx()));           // preserva o que está digitado
-        Store.salvar(eid(), ENT_PROP, p);
-        App.render();
-      };
+    function redesenhar() {
+      var p = Store.obter(eid(), ENT_PROP, G._carpProp);
+      if (!p) return;
+      coletar(p, C.calcular(p, ctx()));             // preserva o que está digitado
+      Store.salvar(eid(), ENT_PROP, p);
+      App.render();
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('[id^="cx-m-mad"]'), function (el) {
+      el.onchange = redesenhar;
+    });
+    /* ⚠ A DESCRIÇÃO DO CUSTO TAMBÉM REDESENHA, e não é firula: escolher
+       "Verniz e lixa" no catálogo pode mudar o SIGNIFICADO do campo ao lado
+       (de preço para custo de compra). Sem o redesenho a caixa "custo + margem"
+       só apareceria marcada depois de salvar, e até lá a tela estaria dizendo
+       uma coisa e o motor calculando outra.
+       `change`, nunca `input`: redesenhar a cada tecla tiraria o campo debaixo
+       do dedo de quem está digitando. */
+    Array.prototype.forEach.call(document.querySelectorAll('[id^="cx-e-desc"]'), function (el) {
+      el.onchange = redesenhar;
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[id^="cx-e-mrg"]'), function (el) {
+      el.onchange = redesenhar;
     });
   });
 

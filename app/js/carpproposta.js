@@ -44,6 +44,21 @@
  *   Não é omissão: é uma escolha comercial (a linha convida a negociar o
  *   acréscimo) e existe interruptor para quem quiser mostrar — ver
  *   `opcoes.detalharAcrescimos`.
+ *
+ * ---------------------------------------------------------------------
+ * O TERCEIRO BLOCO: MOBILIZAÇÃO E INSUMOS
+ * ---------------------------------------------------------------------
+ *
+ * O custo de campo (`linhasExtra`) sai em bloco próprio, agrupado por
+ * mobilização / hospedagem / insumo. Ele é o oposto do acréscimo diluído: o
+ * cliente lançava deslocamento e alojamento por dentro do material, o preço
+ * subia e o cliente FINAL só via "está caro".
+ *
+ * ⚠ Deslocamento e alojamento têm UM valor só — o que o cliente paga —, então
+ *   ali não há custo a esconder. O INSUMO COMPRADO (`comMargem`) tem os dois
+ *   números, como a madeira: o cliente digita o custo do verniz e o papel
+ *   mostra custo + margem. Esse custo é tão proibido no papel quanto o da
+ *   tábua, e `auditar` procura os dois desde então.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -67,6 +82,15 @@
     if (global.Util && global.Util.fmtMoeda) return global.Util.fmtMoeda(num(v));
     return "R$ " + num(v).toFixed(2).replace(".", ",");
   }
+  /* ⚠ O RÓTULO DO GRUPO VEM DO MOTOR, e não de uma cópia aqui. Duas tabelas
+     com os mesmos quatro grupos divergem no dia em que alguém acrescenta o
+     quinto — e a que erra é sempre a do documento que já foi enviado. Sem o
+     motor carregado, o próprio valor do grupo é o título: nada é inventado. */
+  function rotuloGrupo(g) {
+    if (global.Carpintaria && global.Carpintaria.rotuloGrupo) return global.Carpintaria.rotuloGrupo(g);
+    return txt(g) || "Outras despesas";
+  }
+
   /* ⚠ "m2" É COMO O PARÂMETRO GUARDA, NÃO COMO O CLIENTE LÊ. A unidade é
      digitada uma vez na tela de parâmetros e ali "m2" é aceitável; num
      documento assinado, "52,00 m2" parece erro de digitação. */
@@ -166,11 +190,19 @@
     var sobreMO = (par.incideAcrescimo === "mo" ? addFaixa : 0)
       + (par.incideDetalhe === "mo" ? addDet : 0);
 
-    var baseRep = venda + moBase;
-    var partesTotal = baseRep > 0 ? ratear(cent(sobreTotal), [venda, moBase]) : [0, 0];
+    /* ⚠ O TERCEIRO BLOCO SÓ ENTRA NO RATEIO SE ENTROU NA BASE. Com o padrão
+       (`incideExtra = "fora"`), o custo de campo não gerou acréscimo nenhum —
+       receber uma fatia dele aqui inflaria o deslocamento no papel e desinflaria
+       a mão de obra, sem mudar o total: o cliente conferiria linha a linha e
+       acharia um número que não é o combinado. */
+    var extras = num(r && r.totalExtras);
+    var pesos = [venda, moBase];
+    if (par.incideExtra === "dentro") pesos.push(extras);
+    var partesTotal = ratear(cent(sobreTotal), pesos);
 
     var blocoMadeiraCent = cent(venda) + partesTotal[0];
     var blocoMOCent = cent(moBase) + cent(sobreMO) + partesTotal[1];
+    var blocoExtraCent = cent(extras) + (partesTotal[2] || 0);
 
     function distribuir(linhas, totalCent) {
       var pesos = linhas.map(function (l) { return num(l.subtotal); });
@@ -181,6 +213,9 @@
         return {
           descricao: l.descricao || l.servico || "",
           unidade: l.unidade || "",
+          /* o grupo viaja para o documento poder separar "Hospedagem" de
+             "Mobilização" — é essa separação que o cliente final precisa ver */
+          grupo: l.grupo || "",
           qtd: q,
           /* o unitário é DERIVADO do total da linha, e não o contrário: é o
              que faz qtd × unitário fechar com o total impresso */
@@ -189,16 +224,37 @@
         };
       });
     }
+    function comPreco(lista) {
+      return arr(lista).filter(function (l) { return !l.semPreco; });
+    }
 
     return {
-      madeira: distribuir(arr(r && r.linhasMadeira).filter(function (l) { return !l.semPreco; }), blocoMadeiraCent),
-      mo: distribuir(arr(r && r.linhasMO).filter(function (l) { return !l.semPreco; }), blocoMOCent),
+      madeira: distribuir(comPreco(r && r.linhasMadeira), blocoMadeiraCent),
+      mo: distribuir(comPreco(r && r.linhasMO), blocoMOCent),
+      extras: distribuir(comPreco(r && r.linhasExtra), blocoExtraCent),
       totalMadeira: reais(blocoMadeiraCent),
       totalMO: reais(blocoMOCent),
-      total: reais(blocoMadeiraCent + blocoMOCent),
+      totalExtras: reais(blocoExtraCent),
+      total: reais(blocoMadeiraCent + blocoMOCent + blocoExtraCent),
       acrescimoFaixa: addFaixa,
       acrescimoDetalhe: addDet
     };
+  };
+
+  /* Junta as linhas de custo pelo grupo, na ordem em que os grupos aparecem —
+     sem inventar grupo nenhum e sem reordenar o que a pessoa lançou. */
+  CarpProposta.porGrupo = function (linhas) {
+    var ordem = [], mapa = {};
+    arr(linhas).forEach(function (l) {
+      var g = txt(l && l.grupo) || "outro";
+      if (!mapa[g]) { mapa[g] = []; ordem.push(g); }
+      mapa[g].push(l);
+    });
+    return ordem.map(function (g) {
+      var soma = 0;
+      mapa[g].forEach(function (l) { soma += num(l.total); });
+      return { grupo: g, linhas: mapa[g], total: Math.round(soma * 100) / 100 };
+    });
   };
 
   /* ===================================================================
@@ -241,6 +297,12 @@
     }
 
     var P = [];
+    /* ⚠ O NÚMERO DA SEÇÃO É CONTADO, não escrito à mão. A seção do
+       incluso/excluso só existe quando há texto — e com os números fixos a
+       proposta sem esses campos saltava de "2." para "4.", o que o cliente
+       final lê como página faltando num documento que vai assinar. */
+    var nSec = 0;
+    function sec(titulo) { nSec += 1; return nSec + ". " + titulo; }
 
     /* ---------- 1) CAPA ---------- */
     function row(k, v) { return '<div class="ci-row"><span>' + esc(k) + "</span><b>" + esc(v) + "</b></div>"; }
@@ -265,7 +327,7 @@
 
     /* ---------- 2) APRESENTAÇÃO E ESCOPO ---------- */
     var servicos = b.mo.map(function (l) { return l.descricao; }).filter(Boolean);
-    P.push(pg("1. Apresentação e escopo",
+    P.push(pg(sec("Apresentação e escopo"),
       "<p>A <b>" + esc(empresa) + "</b> apresenta a proposta para a execução dos serviços descritos abaixo, "
       + "com fornecimento de material e mão de obra.</p>"
       + (servicos.length
@@ -281,6 +343,18 @@
       + '<p class="nota" style="text-align:right">Subtotal de mão de obra: <b>' + moeda(b.totalMO) + "</b></p>";
     if (b.madeira.length) corpoItens += "<h3>Material</h3>" + linhas(b.madeira, "Item")
       + '<p class="nota" style="text-align:right">Subtotal de material: <b>' + moeda(b.totalMadeira) + "</b></p>";
+    /* ⚠ ESTE BLOCO É O PEDIDO INTEIRO. Enquanto deslocamento, alojamento e
+       insumo iam somados por dentro do material ou do m² da mão de obra, o
+       cliente final lia um preço maior e nenhuma razão — e a conversa virava
+       "está caro" em vez de "isto é o que custa levar a equipe até lá".
+       Cada grupo sai com título próprio: é assim que a despesa se defende. */
+    if (b.extras.length) {
+      CarpProposta.porGrupo(b.extras).forEach(function (g) {
+        corpoItens += "<h3>" + esc(rotuloGrupo(g.grupo)) + "</h3>" + linhas(g.linhas, "Descrição");
+      });
+      corpoItens += '<p class="nota" style="text-align:right">Subtotal de mobilização e insumos: <b>'
+        + moeda(b.totalExtras) + "</b></p>";
+    }
     corpoItens += '<table class="prop-tbl"><tfoot><tr><td><b>TOTAL DA PROPOSTA</b></td>'
       + '<td class="r"><b>' + moeda(b.total) + "</b></td></tr></tfoot></table>";
     if (o.detalharAcrescimos && (b.acrescimoFaixa > 0 || b.acrescimoDetalhe > 0)) {
@@ -290,17 +364,17 @@
         + (b.acrescimoDetalhe > 0 ? "detalhes arquitetônicos (" + moeda(b.acrescimoDetalhe) + ")" : "")
         + " já incluídos nos valores acima.</p>";
     }
-    P.push(pg("2. O que será executado", corpoItens));
+    P.push(pg(sec("O que será executado"), corpoItens));
 
     /* ---------- 4) INCLUSO / EXCLUSO ---------- */
     if (com.incluso || com.excluso) {
-      P.push(pg("3. Está incluso / Não está incluso",
+      P.push(pg(sec("Está incluso / Não está incluso"),
         '<div class="cols"><div><h3>Incluso</h3>' + (itens(com.incluso) || '<p class="nota">—</p>') + "</div>"
         + "<div><h3>Não incluso</h3>" + (itens(com.excluso) || '<p class="nota">—</p>') + "</div></div>"));
     }
 
     /* ---------- 5) CONDIÇÕES ---------- */
-    P.push(pg("4. Condições comerciais",
+    P.push(pg(sec("Condições comerciais"),
       '<div class="bloco"><h3>Pagamento</h3><p>' + esc(com.condicoesPagamento) + "</p></div>"
       + '<div class="bloco"><h3>Validade</h3><p>Esta proposta é válida por <b>' + (val.dias || 30)
       + " dias</b> a contar da data de emissão. Vencido o prazo, os valores são refeitos com os preços "
@@ -365,6 +439,19 @@
     if (r && r.custoMadeira != null) suspeitos.push({ v: num(r.custoMadeira), o: "custo total da madeira" });
     if (r && r.lucroMadeira != null && num(r.lucroMadeira) > 0) suspeitos.push({ v: num(r.lucroMadeira), o: "lucro da madeira" });
 
+    /* ⚠ O INSUMO COMPRADO TAMBÉM TEM CUSTO, e ele nasceu depois desta varredura.
+       Enquanto o custo de campo tinha um valor só, não havia o que esconder —
+       por isso a auditoria não olhava aqui. Com `comMargem`, o verniz passou a
+       ter custo de compra E preço de venda, exatamente como a madeira: o
+       primeiro não pode chegar ao papel de quem vai negociar o preço. */
+    arr(r && r.linhasExtra).forEach(function (l) {
+      if (!l || !l.comMargem || l.custoUnit == null) return;
+      suspeitos.push({ v: num(l.custoUnit), o: "custo unitário de " + (l.descricao || "um insumo") });
+      if (num(l.qtd) > 0) suspeitos.push({ v: num(l.custoUnit) * num(l.qtd), o: "custo total de " + (l.descricao || "um insumo") });
+    });
+    if (r && num(r.custoExtras) > 0) suspeitos.push({ v: num(r.custoExtras), o: "custo dos insumos comprados" });
+    if (r && num(r.lucroExtras) > 0) suspeitos.push({ v: num(r.lucroExtras), o: "lucro dos insumos" });
+
     suspeitos.forEach(function (s) {
       if (!(s.v > 0)) return;
       var fmt = moeda(s.v);
@@ -374,11 +461,18 @@
       if (h.indexOf(achatar(fmt)) < 0) return;
       var legitimo = false;
       var b = CarpProposta.blocos(r);
-      [b.total, b.totalMO, b.totalMadeira].concat(
+      [b.total, b.totalMO, b.totalMadeira, b.totalExtras].concat(
         b.madeira.map(function (x) { return x.total; }),
         b.madeira.map(function (x) { return x.unitario; }),
         b.mo.map(function (x) { return x.total; }),
-        b.mo.map(function (x) { return x.unitario; })
+        b.mo.map(function (x) { return x.unitario; }),
+        /* ⚠ o custo de campo também é valor que o documento DEVE mostrar. Sem
+           ele aqui, um deslocamento de R$ 240 numa proposta cujo m² de madeira
+           custou R$ 240 travaria a impressão acusando vazamento de custo — e a
+           pessoa não teria como saber que o "vazamento" era a própria linha
+           que ela acabou de lançar para o cliente ver. */
+        b.extras.map(function (x) { return x.total; }),
+        b.extras.map(function (x) { return x.unitario; })
       ).forEach(function (v) { if (moeda(v) === fmt) legitimo = true; });
       if (!legitimo) achados.push({ tipo: "numero", achado: fmt, motivo: s.o });
     });

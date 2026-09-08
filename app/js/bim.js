@@ -113,9 +113,17 @@ function lerIdentidadeIfc(api, mid, expressID) {
     return {
       globalId: (ln && ln.GlobalId && ln.GlobalId.value) || '',
       nomeIfc: (ln && ln.Name && ln.Name.value) || '',
+      /* ⚠ O `Description` e o NOME DE MERCADO, e ele estava sendo jogado fora.
+         O projetista batiza a familia pela convencao do escritorio
+         ("AF_Soldavel_Tubo") e a biblioteca do fabricante ja vem com o nome
+         comercial no campo Descricao ("Tubo PVC soldavel agua fria DN 25mm").
+         O banco de insumos fala a segunda lingua, nao a primeira — entao para
+         casar peca com preco esta e a melhor evidencia que o arquivo tem.
+         A leitura ja estava paga: e o mesmo GetLine do GlobalId/Name/Tag. */
+      descricao: (ln && ln.Description && ln.Description.value) || '',
       tag: (ln && ln.Tag && ln.Tag.value) || ''
     };
-  } catch (_) { return { globalId: '', nomeIfc: '', tag: '' }; }
+  } catch (_) { return { globalId: '', nomeIfc: '', descricao: '', tag: '' }; }
 }
 /* ⚠ UMA funcao carimba, e os tres caminhos de carga a chamam. Se cada um
    carimbasse do seu jeito, o vinculo do IFC e o do editor divergiriam — e o
@@ -2560,6 +2568,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         }
       } catch (eB) {}
       return { tipo: e.tipo, familia: e.familia, sistemaIfc: e.sistemaIfc, nome: e.nome,
+               /* o nome de mercado que veio do Revit: e ele que casa com a base
+                  de insumos, que fala "TUBO PVC SOLDAVEL DN 25 MM" e nao
+                  "AF_Soldavel_Tubo" */
+               descricao: e.descricao || '', descricaoFonte: e.descricaoFonte || '',
                bitolaMm: bit, quantidade: quant, unidade: un, fonteQtd: fq, uid: e.uid, n: 1 };
     });
 
@@ -2688,7 +2700,19 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }).join('');
       return '<tr>' +
         '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid #24435f">' +
-          '<div><b>' + esc(String(p.familia || p.rotulo || '(sem nome no modelo)').slice(0, 54)) + '</b></div>' +
+          /* ⚠ O NOME DE MERCADO NA FRENTE, A FAMÍLIA LOGO ABAIXO — nunca só um
+             dos dois. É a descrição que casa com a base e que o fornecedor
+             entende; é a família que o engenheiro reconhece para achar a peça
+             de volta no Revit. Trocar uma pela outra deixaria metade das duas
+             pessoas sem a referência que ela usa. */
+          (p.descricao
+            ? '<div><b>' + esc(String(p.descricao).slice(0, 54)) + '</b>' +
+                '<span title="O nome de mercado veio do campo Descrição do modelo — é ele que foi usado para casar com a base" style="margin-left:5px;font-size:9.5px;font-weight:700;color:#7fd1a6;border:1px solid #2f6b4f;border-radius:99px;padding:0 5px">Descrição</span></div>' +
+              '<div style="color:#7f93a8;font-size:10.5px">' + esc(String(p.familia || p.rotulo || '(sem família)').slice(0, 54)) + '</div>' +
+              (p.descricaoVariantes > 1
+                ? '<div style="color:#e0a458;font-size:10.5px">' + p.descricaoVariantes + ' descrições diferentes nestas peças — comprando pela primeira</div>'
+                : '')
+            : '<div><b>' + esc(String(p.familia || p.rotulo || '(sem nome no modelo)').slice(0, 54)) + '</b></div>') +
           '<div style="color:#9fb2c8;font-size:11px">' + p.n + ' pç · ' +
             (p.fonteQtd === 'contagem' ? 'por contagem'
               : p.fonteQtd === 'parcial'
@@ -2716,6 +2740,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       '<div style="color:#9fb2c8">' + pecas.length + ' peças distintas · ' +
         '<span style="color:#6fd08a">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
         '<span style="color:#e0a458">' + cont.sem + ' sem candidato</span></div>' +
+      /* ⚠ ESTA LINHA É O QUE IMPEDE O RECURSO DE FALHAR EM SILÊNCIO. Ler a
+         Descrição do Revit só ajuda se o modelo a tiver preenchida, e isso
+         muda por escritório e por biblioteca de família. Sem o contador, um
+         modelo sem descrição nenhuma se comporta exatamente como antes e a
+         pessoa fica sem saber se o recurso não funciona ou se o modelo não
+         traz o campo. Com ele, a tela responde a pergunta. */
+      (function () {
+        var r = reqEstado.resumo || {};
+        var cd = r.comDescricao || 0, tot = pecas.length;
+        if (cd) {
+          return '<div style="color:#7fd1a6;font-size:11px">' + cd + ' de ' + tot +
+            ' peças trouxeram a <b>Descrição</b> do modelo — é por ela que o casamento com a base foi feito' +
+            (r.descricaoDivergente ? ', e em ' + r.descricaoDivergente + ' há descrições diferentes na mesma peça' : '') + '</div>';
+        }
+        return '<div style="color:#e0a458;font-size:11px">Nenhuma peça trouxe o campo <b>Descrição</b> — o casamento foi feito só pelo nome da família. ' +
+          'Preencher a Descrição do tipo no Revit (o nome comercial) melhora o encontro com a base.</div>';
+      })() +
       '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
         '<button class="btn sm" data-rq-sub=""' + (reqEstado.filtro ? '' : ' style="background:#2e6f9e;color:#fff"') + '>tudo</button>' + chips + '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tbody>' + linhas + '</tbody></table>' +
@@ -2762,7 +2803,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          é a peça errada com cara de conferida. */
       return { idx: i, p: p, v: v, escolhido: (v.status === 'ok' && v.candidatos[0]) ? v.candidatos[0].item : null };
     });
-    reqEstado = { pecas: pecas, filtro: '' };
+    reqEstado = { pecas: pecas, filtro: '', resumo: lev.resumo };
     fecharPaineis(reqPanel);
     reqPanel.style.display = 'flex';
     reqPintar();
@@ -6477,6 +6518,38 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return 0;
   }
 
+  /* Nomes sob os quais o campo "Descrição" do Revit chega num pset. Varia por
+     exportador e pelo idioma da instalação — por isso os três, sem acento e em
+     minúscula. ⚠ Lista FECHADA de propósito: qualquer propriedade cujo nome
+     "pareça" descrição entraria como nome de mercado e iria parar na linha que
+     o fornecedor lê. Só entra o que É o campo Descrição. */
+  var NOME_DESCRICAO = { description: 1, descricao: 1, 'descrição': 1 };
+  function ehNomeDeDescricao(nm) {
+    var s = String(nm == null ? '' : nm).trim().toLowerCase()
+      .replace(/[àáâãä]/g, 'a').replace(/[èéêë]/g, 'e').replace(/[ìíîï]/g, 'i')
+      .replace(/[òóôõö]/g, 'o').replace(/[ùúûü]/g, 'u').replace(/ç/g, 'c');
+    return !!NOME_DESCRICAO[s];
+  }
+
+  /* ⚠ TRÊS FONTES, UMA ORDEM SÓ, E O CARIMBO DE QUAL VENCEU.
+     A mesma "Descrição" do Revit chega ao IFC por caminhos diferentes conforme
+     o exportador: atributo da instância, atributo do tipo, ou propriedade num
+     pset. Ler as três é o que impede o recurso de funcionar no modelo de um
+     cliente e ficar inerte no do outro. Do mais específico para o mais geral —
+     e a fonte viaja junto porque um "ok" decidido por texto livre não vale o
+     mesmo que um decidido pela geometria, e quem confere precisa saber disso.
+     ⚠ O nome NÃO se inventa: sem nenhuma das três, sai vazio e o casador segue
+     com a família, exatamente como antes. */
+  function descricaoDeMercado(idIfc, famEl, carimbo) {
+    var inst = (idIfc && String(idIfc.descricao || '').trim()) || '';
+    if (inst) return { descricao: inst, fonte: 'instancia' };
+    var tipo = (famEl && String(famEl.descricao || '').trim()) || '';
+    if (tipo) return { descricao: tipo, fonte: 'tipo' };
+    var ps = (carimbo && String(carimbo.descricaoPset || '').trim()) || '';
+    if (ps) return { descricao: ps, fonte: 'pset' };
+    return { descricao: '', fonte: '' };
+  }
+
   function lerCarimbosOrcaPro(mid) {
     var mapa = {};
     try {
@@ -6489,7 +6562,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var pset; try { pset = S.api.GetLine(mid, psetID, false); } catch (_) { continue; }
         if (!pset || !pset.HasProperties) continue; // não é IfcPropertySet (ex.: quantities/type)
         var props = Array.isArray(pset.HasProperties) ? pset.HasProperties : [pset.HasProperties];
-        var etapa = null, cod = null, fase = null;
+        var etapa = null, cod = null, fase = null, descrPset = null;
         for (var p = 0; p < props.length; p++) {
           var h = props[p]; if (!h || h.value == null) continue;
           var pv; try { pv = S.api.GetLine(mid, h.value, false); } catch (_) { continue; }
@@ -6498,8 +6571,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (nm === 'OrcaPRO_Etapa' && pv.NominalValue) etapa = pv.NominalValue.value;
           else if (nm === 'OrcaPRO_CodOrc' && pv.NominalValue) cod = pv.NominalValue.value;
           else if (nm === 'OrcaPRO_Fase' && pv.NominalValue) fase = pv.NominalValue.value; // reforma: nova|demolir|existente
+          /* ⚠ TERCEIRA PORTA DA DESCRIÇÃO, e ela sai de graça. Nem todo
+             exportador leva o campo Descrição do Revit para o atributo
+             `Description` do IFC — vários o despejam como propriedade num
+             pset. Esta varredura por TODOS os IfcRelDefinesByProperties já
+             estava acontecendo aqui para achar o carimbo do plugin, então
+             pegar a descrição junto não custa nem uma leitura a mais. Sem
+             isto, um modelo com a descrição preenchida no Revit chegaria ao
+             casador SEM ela, e o sintoma seria "não melhorou nada". */
+          else if (nm && pv.NominalValue && descrPset == null && ehNomeDeDescricao(nm)) {
+            var vD = pv.NominalValue.value;
+            if (vD != null && String(vD).trim()) descrPset = String(vD).trim();
+          }
         }
-        if (etapa == null && cod == null && fase == null) continue;
+        if (etapa == null && cod == null && fase == null && descrPset == null) continue;
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
@@ -6507,6 +6592,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           if (etapa != null) mapa[eid].etapa = etapa;
           if (cod != null) mapa[eid].codOrc = cod;
           if (fase != null) mapa[eid].fase = fase;
+          if (descrPset != null && !mapa[eid].descricaoPset) mapa[eid].descricaoPset = descrPset;
         }
       }
     } catch (e) { /* leitura de propriedades é bônus; nunca impede o modelo de abrir */ }
@@ -6529,10 +6615,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var tipoObj; try { tipoObj = S.api.GetLine(mid, tid, false); } catch (_) { continue; }
         var nomeFam = (tipoObj && tipoObj.Name && tipoObj.Name.value) || null;
         if (!nomeFam) continue;
+        /* ⚠ ESTA É A "Descrição" QUE O ENGENHEIRO VÊ NO REVIT — o campo de
+           Dados de identidade do TIPO, onde a biblioteca do fabricante grava
+           o nome comercial. É por tipo, então vale para todas as instâncias
+           dele de uma vez, e sai do `tipoObj` que já foi lido aqui. */
+        var descrFam = (tipoObj && tipoObj.Description && tipoObj.Description.value) || '';
         var objs = Array.isArray(rel.RelatedObjects) ? rel.RelatedObjects : [rel.RelatedObjects];
         for (var o = 0; o < objs.length; o++) {
           var oh = objs[o]; if (!oh || oh.value == null) continue;
-          mapa[oh.value] = { familia: nomeFam, tipoId: tid };
+          mapa[oh.value] = { familia: nomeFam, tipoId: tid, descricao: descrFam };
         }
       }
     } catch (e) { /* bônus */ }
@@ -6629,6 +6720,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (elK && elK.tipo) pr.push({ n: 'Tipo IFC', v: String(elK.tipo) });
       if (elK && elK.globalId) pr.push({ n: 'GlobalId', v: String(elK.globalId) });
       if (elK && elK.familia) pr.push({ n: 'Família/tipo', v: String(elK.familia) });
+      if (elK && elK.descricao) pr.push({ n: 'Descrição (nome de mercado)', v: String(elK.descricao) });
       if (elK && elK.tag) pr.push({ n: 'Tag', v: String(elK.tag) });
       if (elK && elK.etapa) pr.push({ n: 'Etapa (OrçaPRO)', v: String(elK.etapa) });
       if (elK && elK.codOrc) pr.push({ n: 'Código do orçamento', v: String(elK.codOrc) });
@@ -7392,7 +7484,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
            que o que se GRAVA passa a ser a `chave`. */
         var idIfc = lerIdentidadeIfc(S.api, mid, mesh.expressID);
         var idB = idElemento(modelo.modeloId, { id: mesh.expressID, globalId: idIfc.globalId });
-        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
+        var dM = descricaoDeMercado(idIfc, famEl, cb);
+        modelo.elementos.push({ globalId: idB.globalId, chave: idB.chave, chaveInstavel: idB.instavel, nomeIfc: idIfc.nomeIfc, tag: idIfc.tag, id: mesh.expressID, uid: mid + ':' + mesh.expressID, mid: mid, arquivo: modelo.nome, tipo: tipoNome, nome: rotuloDisciplina(tipoNome), familia: famEl ? famEl.familia : null, descricao: dM.descricao, descricaoFonte: dM.fonte, sistemaIfc: (modelo.sistemas && modelo.sistemas[mesh.expressID]) || '', etapa: cb.etapa || null, codOrc: cb.codOrc || null, fase: cb.fase || null, qto: (qto && qto[mesh.expressID]) || null });
         modelo.nEl++;
       });
       modelo.disciplina = detectarDisciplina(modelo.nome, modelo.tipos);

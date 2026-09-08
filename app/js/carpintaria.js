@@ -26,7 +26,7 @@
  * no documento de decisões daquele cliente, fora do pacote (`clientes/`).
  *
  * ---------------------------------------------------------------------
- * SEIS REGRAS QUE NÃO PODEM SAIR DAQUI PARA A TELA
+ * OITO REGRAS QUE NÃO PODEM SAIR DAQUI PARA A TELA
  * ---------------------------------------------------------------------
  *
  * 1) NENHUM NÚMERO DE NEGÓCIO NASCE NESTE ARQUIVO.
@@ -78,6 +78,36 @@
  *    Como as respostas não fecham a questão sozinhas, ela é PARÂMETRO
  *    (`composicaoAcrescimos`), com o somado por padrão — e está na lista de
  *    perguntas a fazer antes da primeira proposta.
+ *
+ * 7) O CUSTO DE CAMPO SOMA NO TOTAL, MAS NÃO RECEBE ACRÉSCIMO NEM ENTRA NA
+ *    METRAGEM.
+ *    Deslocamento, mobilização, alojamento e insumo (`itensExtra`) existem
+ *    porque o cliente lançava isso por dentro do material ou do m² da mão de
+ *    obra: o preço subia e o cliente FINAL lia só "está caro", sem ver o
+ *    custo que existe de verdade. Agora é bloco próprio, e aparece separado
+ *    no papel.
+ *    ⚠ Eles ficam FORA da base dos dois acréscimos (`incideExtra: "fora"`).
+ *      O +50% de obra pequena existe porque obra pequena é mais cara de
+ *      executar — o deslocamento JÁ É esse custo, agora lançado à parte.
+ *      Somá-lo à base cobraria duas vezes a mesma coisa. É parâmetro para
+ *      quem vender de outro jeito, mas o padrão nunca cobra a mais sozinho.
+ *    ⚠ E não entram na metragem da faixa: metro quadrado de deck é o que
+ *      decide a faixa; diária de alojamento não é obra executada.
+ *
+ * 8) O QUE ELE COMPRA E REVENDE SEGUE O CAMINHO DA MADEIRA.
+ *    Deslocamento e alojamento têm um valor só — o que o cliente paga. Verniz,
+ *    óleo, lixa e tinta, não: ele COMPRA. Com `comMargem`, o valor da linha é
+ *    o custo e o cliente paga `custo × (1 + margem da proposta)`, exatamente
+ *    como a tábua. Sem isso ele teria de fazer a conta da margem de cabeça em
+ *    cada proposta, e a margem que digitou no topo não valeria para o insumo.
+ *    ⚠ E ISSO CRIA CUSTO INTERNO ONDE NÃO HAVIA. Enquanto o custo de campo
+ *      tinha um valor só, não existia nada a esconder do cliente final; agora
+ *      existe, e `CarpProposta.auditar` procura o custo e o lucro destas
+ *      linhas no papel como já procurava os da madeira. Mexer num sem mexer no
+ *      outro reabre o buraco que aquelas três camadas existem para fechar.
+ *    ⚠ Margem vazia NÃO vira 0% aqui — é a regra 3 de novo. E o LUCRO só conta
+ *      o que tem custo: somar o bloco inteiro contaria o repasse do
+ *      deslocamento como margem, e a tela mostraria um ganho que não existe.
  * ===================================================================== */
 (function (global) {
   "use strict";
@@ -128,10 +158,36 @@
     incideDetalhe: "mo",           // "mo" | "total"
     composicaoAcrescimos: "somado",// "somado" | "composto"  — ver regra 6
     validadeDias: 30,              // praxe comercial, não conta de dinheiro
-    unidadeMO: "m2"
+    unidadeMO: "m2",
+    incideExtra: "fora"            // "fora" | "dentro" — ver regra 7
   };
 
   Carpintaria.BASES = { mo: "só a mão de obra", total: "o total da proposta" };
+
+  /* Os grupos existem para o PAPEL: é agrupado por eles que a despesa aparece
+     separada para o cliente final — que é o pedido inteiro. A chave é estável
+     (vai gravada na proposta); o rótulo é texto de tela. */
+  Carpintaria.GRUPOS_EXTRA = [
+    ["mobilizacao", "Mobilização e deslocamento"],
+    ["hospedagem", "Hospedagem e alimentação"],
+    ["insumo", "Insumos e consumíveis"],
+    ["outro", "Outras despesas"]
+  ];
+
+  Carpintaria.rotuloGrupo = function (g) {
+    var achado = "";
+    Carpintaria.GRUPOS_EXTRA.forEach(function (par) { if (par[0] === txt(g)) achado = par[1]; });
+    /* ⚠ grupo desconhecido NÃO vira "Outras despesas". Um grupo gravado por uma
+       versão futura (ou digitado à mão) seria silenciosamente renomeado no
+       papel do cliente, e a linha apareceria embaixo do título errado. Sem
+       rótulo conhecido, o próprio valor é o título. */
+    return achado || txt(g) || "Outras despesas";
+  };
+
+  Carpintaria.BASES_EXTRA = {
+    fora: "não recebem os acréscimos",
+    dentro: "recebem os acréscimos junto com o resto"
+  };
   Carpintaria.COMPOSICOES = {
     somado: "somados sobre a tabela (1 + 50% + 8,3%)",
     composto: "um sobre o outro (1,50 × 1,083)"
@@ -149,6 +205,13 @@
       composicaoAcrescimos: Carpintaria.COMPOSICOES[b.composicaoAcrescimos] ? b.composicaoAcrescimos : "somado",
       validadeDias: b.validadeDias == null || txt(b.validadeDias) === "" ? 30 : num(b.validadeDias),
       unidadeMO: txt(b.unidadeMO) || "m2",
+      /* ⚠ "fora" é o padrão e é decisão de dinheiro, não conveniência: o
+         acréscimo de obra pequena existe porque obra pequena é mais cara de
+         executar — e o deslocamento da equipe JÁ É esse custo, lançado à
+         parte. Cobrá-lo outra vez por dentro do +50% cobra duas vezes a mesma
+         coisa, na proposta que o cliente final lê. Quem quiser o contrário
+         muda nos Parâmetros, vendo o que muda. */
+      incideExtra: Carpintaria.BASES_EXTRA[b.incideExtra] ? b.incideExtra : "fora",
       detalhes: []
     };
     arr(b.detalhes).forEach(function (d) {
@@ -311,9 +374,141 @@
   };
 
   /* ===================================================================
+   * OS CUSTOS DE CAMPO — deslocamento, alojamento, insumo
+   *
+   * ⚠ POR QUE ESTA É UMA TERCEIRA LISTA, e não mais uma linha da mão de obra.
+   *   Foi o pedido do cliente: ele lançava o deslocamento por dentro do valor
+   *   do material ou do m² da mão de obra, e o cliente final lia "está caro"
+   *   sem ver o custo que existe de verdade. Pendurar isso em `itensMO`
+   *   resolveria a soma e estragaria duas contas de uma vez:
+   *     1. a metragem da faixa (regra 5) só soma o que está em m² — o
+   *        deslocamento entraria como "fora da unidade", enchendo de aviso
+   *        uma proposta correta;
+   *     2. e, pior, item fora da unidade RECEBE o acréscimo de faixa junto
+   *        (também regra 5, e de propósito) — o alojamento sairia com +50%
+   *        em obra pequena, cobrando duas vezes o mesmo custo.
+   *
+   * ⚠ O VALOR MORA NA LINHA, não no catálogo. Madeira e mão de obra têm preço
+   *   de tabela porque são os mesmos em toda obra; deslocamento depende da
+   *   distância e alojamento do número de diárias. O catálogo aqui só
+   *   SUGERE um valor de referência — obrigar cadastro por obra faria nascer
+   *   "Deslocamento Curitiba", "Deslocamento Joinville" e um catálogo que
+   *   ninguém mantém.
+   *
+   * ⚠ SEM VALOR NÃO SE INVENTA ZERO — a mesma regra 2 da madeira. A linha
+   *   vira pendência e não entra no total.
+   * =================================================================== */
+  Carpintaria.linhasExtra = function (proposta, ctx, fechada, margemPct) {
+    var pr = proposta || {}, c = ctx || {};
+    var ix = {};
+    arr(c.custos).forEach(function (x) { if (x && txt(x.id)) ix[txt(x.id)] = x; });
+    var linhas = [], total = 0, custoTotal = 0, vendaComCusto = 0, pend = [];
+    var margem = margemPct == null || txt(margemPct) === "" ? null : num(margemPct);
+
+    arr(pr.itensExtra).forEach(function (it, i) {
+      var cad = ix[txt(it && it.custoId)] || null;
+      var desc = txt(it && it.descricao) || (cad && txt(cad.nome)) || ("custo " + (i + 1));
+      var grupo = txt(it && it.grupo) || (cad && txt(cad.grupo)) || "outro";
+      var unid = txt(it && it.unidade) || (cad && txt(cad.unidade)) || "";
+      var qtd = num(it && it.qtd);
+      var unit = null;
+
+      /* ---------------------------------------------------------------
+       * INSUMO COMPRADO: o valor digitado é CUSTO, e o cliente paga custo
+       * + a margem da proposta.
+       *
+       * ⚠ É o caminho da madeira, não um segundo jeito de fazer preço. Ele
+       *   compra verniz, óleo e lixa como compra tábua — e pediu para
+       *   "colocar isso como custo no orçamento". Com um valor só, ele
+       *   precisaria fazer a conta da margem de cabeça em cada proposta, e a
+       *   margem que ele digitou no topo não valeria para o insumo.
+       *
+       * ⚠ E ISTO CRIA CUSTO INTERNO ONDE NÃO HAVIA. Enquanto o custo de campo
+       *   tinha um valor só, não existia nada a esconder do cliente final.
+       *   Agora existe: `auditar` (js/carpproposta.js) passou a procurar o
+       *   custo e o lucro DESTAS linhas no papel, como já fazia com a madeira.
+       *   Mexer aqui sem mexer lá reabre exatamente o buraco que as três
+       *   camadas daquele arquivo existem para fechar.
+       * --------------------------------------------------------------- */
+      var comMargem = !!(it && it.comMargem);
+      var custoUnit = null;
+      if (comMargem) {
+        var bruto = it && it.custoUnit != null && txt(it.custoUnit) !== "" ? it.custoUnit
+          : (!fechada && cad && cad.valor != null && txt(cad.valor) !== "" ? cad.valor : null);
+        if (bruto != null) custoUnit = num(bruto);
+        /* ⚠ FECHADA LÊ O QUE FOI CONGELADO, NÃO RECALCULA — regra 4. Recalcular
+           `custo × (1 + margem)` a cada abertura faria a proposta já enviada
+           mudar de valor se alguém encostasse na margem ou no custo gravado, e
+           é exatamente contra isso que `congelar` existe. */
+        if (fechada && it && it.valorUnit != null && txt(it.valorUnit) !== "") {
+          unit = num(it.valorUnit);
+        } else if (bruto == null) {
+          pend.push('"' + desc + '": falta o custo de compra deste item.');
+        } else if (num(bruto) < 0) {
+          pend.push('"' + desc + '": o custo não pode ser negativo.');
+          custoUnit = null;
+        } else if (margem == null) {
+          /* ⚠ margem vazia NÃO vira 0% aqui, pela mesma regra 3 da madeira:
+             seria vender insumo a preço de custo sem ninguém decidir isso. */
+          pend.push('"' + desc + '": sem a margem da proposta este item sairia a preço de custo.');
+        } else {
+          unit = money(custoUnit * (1 + margem / 100));
+        }
+        if (custoUnit != null) custoTotal += money(qtd * custoUnit);
+        if (qtd <= 0) pend.push('"' + desc + '": quantidade zerada.');
+        var subM = unit == null ? null : money(qtd * unit);
+        if (subM != null) { total += subM; vendaComCusto += subM; }
+        linhas.push({
+          custoId: txt(it && it.custoId), descricao: desc, grupo: grupo,
+          unidade: unid, qtd: qtd, comMargem: true, custoUnit: custoUnit,
+          valorUnit: unit, subtotal: subM, semPreco: unit == null
+        });
+        return;
+      }
+
+      var naLinha = it && it.valorUnit != null && txt(it.valorUnit) !== "";
+      if (naLinha) {
+        unit = num(it.valorUnit);        // congelado (regra 4) ou digitado agora
+      } else if (fechada) {
+        /* ⚠ PROPOSTA FECHADA NÃO VOLTA AO CADASTRO, nem para preencher buraco.
+           `congelar` grava o valor de toda linha, então chegar aqui significa
+           dado adulterado ou vindo de fora — e nesse caso ler o catálogo de
+           HOJE mudaria, calada, o valor de uma proposta já enviada ao cliente.
+           Sem valor gravado, a proposta acusa; ela não adivinha. */
+        pend.push('"' + desc + '": a proposta está fechada e este custo não tem valor congelado.');
+      } else if (cad && cad.valor != null && txt(cad.valor) !== "") {
+        unit = num(cad.valor);                          // valor de referência
+      } else {
+        pend.push('"' + desc + '": falta o valor deste custo.');
+      }
+
+      if (qtd <= 0) pend.push('"' + desc + '": quantidade zerada.');
+      if (unit != null && unit < 0) { pend.push('"' + desc + '": o valor não pode ser negativo.'); unit = null; }
+
+      var sub = unit == null ? null : money(qtd * unit);
+      if (sub != null) total += sub;
+      linhas.push({
+        custoId: txt(it && it.custoId), descricao: desc, grupo: grupo,
+        unidade: unid, qtd: qtd, comMargem: false, custoUnit: null,
+        valorUnit: unit, subtotal: sub, semPreco: unit == null
+      });
+    });
+
+    return {
+      linhas: linhas, total: money(total),
+      /* o que ELE pagou pelos itens comprados — conta interna, nunca papel.
+         ⚠ O lucro é só do que TEM custo: somar o total inteiro contaria
+         deslocamento e alojamento (valor único, custo zero) como lucro puro,
+         e a tela mostraria uma margem que não existe. */
+      custo: money(custoTotal), lucro: money(money(vendaComCusto) - money(custoTotal)),
+      pendencias: pend
+    };
+  };
+
+  /* ===================================================================
    * A CONTA
    *
-   * `ctx` = { madeiras: [], servicos: [], parametros: {} }
+   * `ctx` = { madeiras: [], servicos: [], custos: [], parametros: {} }
    * Proposta FECHADA ignora o ctx e lê o que foi congelado nela — regra 4.
    * =================================================================== */
   Carpintaria.calcular = function (proposta, ctx) {
@@ -398,6 +593,11 @@
       return '"' + n + '" não está em ' + par.unidadeMO + ": ele é cobrado normalmente, mas não entra na metragem que decide a faixa.";
     });
 
+    /* os custos de campo entram DEPOIS da mão de obra e ANTES dos acréscimos,
+       porque é a base dos acréscimos que precisa saber se eles contam */
+    var ext = Carpintaria.linhasExtra(pr, c, fechada, margem);
+    arr(ext.pendencias).forEach(function (x) { pend.push(x); });
+
     var faixa = fechada && pr.faixa ? pr.faixa : Carpintaria.fatorFaixa(med.total, par);
     var det = fechada && pr.detalhe ? pr.detalhe : Carpintaria.fatorDetalhe(pr.detalhes, par);
     if (faixa.indefinido) pend.push("Os parâmetros da faixa de metragem não estão preenchidos.");
@@ -405,8 +605,13 @@
     arr(det.desconhecidos).forEach(function (n) { pend.push('Detalhe "' + n + '" não existe mais nos parâmetros.'); });
 
     /* --- os dois acréscimos, regra 6 --- */
-    var baseFaixa = par.incideAcrescimo === "total" ? money((vendaMadeira || 0) + moBase) : moBase;
-    var baseDet = par.incideDetalhe === "total" ? money((vendaMadeira || 0) + moBase) : moBase;
+    /* ⚠ QUEM ENTRA NA BASE "TOTAL" É DECISÃO DE DINHEIRO, e por isso é
+       parâmetro. Com `incideExtra = "fora"` (o padrão), a base continua sendo
+       exatamente a de antes desta funcionalidade existir — madeira vendida
+       mais mão de obra —, e proposta nenhuma muda de valor por causa dela. */
+    var baseTotal = money((vendaMadeira || 0) + moBase + (par.incideExtra === "dentro" ? ext.total : 0));
+    var baseFaixa = par.incideAcrescimo === "total" ? baseTotal : moBase;
+    var baseDet = par.incideDetalhe === "total" ? baseTotal : moBase;
     var addFaixa, addDet;
     if (par.composicaoAcrescimos === "composto" && par.incideAcrescimo === par.incideDetalhe) {
       /* composto só faz sentido quando os dois batem na mesma base */
@@ -418,11 +623,12 @@
       addDet = money(baseDet * (det.fator - 1));
     }
 
-    var total = vendaMadeira == null ? null : money(vendaMadeira + moBase + addFaixa + addDet);
+    var total = vendaMadeira == null ? null : money(vendaMadeira + moBase + addFaixa + addDet + ext.total);
 
     return {
       fechada: fechada,
-      linhasMadeira: linhasMadeira, linhasMO: linhasMO,
+      linhasMadeira: linhasMadeira, linhasMO: linhasMO, linhasExtra: ext.linhas,
+      totalExtras: ext.total, custoExtras: ext.custo, lucroExtras: ext.lucro,
       custoMadeira: custoMadeira, margemPct: margem, vendaMadeira: vendaMadeira,
       lucroMadeira: vendaMadeira == null ? null : money(vendaMadeira - custoMadeira),
       metragem: med.total, moBase: moBase,
@@ -448,7 +654,8 @@
   Carpintaria.podeFechar = function (proposta, ctx) {
     var r = Carpintaria.calcular(proposta, ctx);
     var f = r.pendencias.slice();
-    if (!arr(proposta && proposta.itensMadeira).length && !arr(proposta && proposta.itensMO).length) {
+    if (!arr(proposta && proposta.itensMadeira).length && !arr(proposta && proposta.itensMO).length
+      && !arr(proposta && proposta.itensExtra).length) {
       f.push("A proposta está vazia.");
     }
     return { ok: f.length === 0, pendencias: f, resultado: r };
@@ -477,13 +684,28 @@
     pr.itensMO = r.linhasMO.map(function (l) {
       return { servicoId: l.servicoId, servico: l.servico, unidade: l.unidade, qtd: l.qtd, valorUnit: l.valorUnit };
     });
+    /* ⚠ o custo de campo congela igual aos outros dois. A descrição e o GRUPO
+       vão junto: é o grupo que dá o título do bloco no papel do cliente, e um
+       catálogo editado depois do envio renomearia o que já foi assinado. */
+    pr.itensExtra = arr(r.linhasExtra).map(function (l) {
+      return {
+        custoId: l.custoId, descricao: l.descricao, grupo: l.grupo,
+        unidade: l.unidade, qtd: l.qtd, valorUnit: l.valorUnit,
+        /* ⚠ o item comprado congela os DOIS números: o de venda porque é o
+           compromisso com o cliente, e o de custo porque é a conta interna que
+           responde "quanto sobrou nesta proposta". Sem o custo congelado, um
+           reajuste de verniz reescreveria o lucro de uma obra já entregue. */
+        comMargem: !!l.comMargem, custoUnit: l.comMargem ? l.custoUnit : null
+      };
+    });
     pr.parametros = r.parametros;   // inclusive a composição dos acréscimos
     pr.faixa = r.faixa;
     pr.detalhe = r.detalhe;
     pr.totais = {
       custoMadeira: r.custoMadeira, vendaMadeira: r.vendaMadeira, moBase: r.moBase,
       acrescimoFaixa: r.acrescimoFaixa, acrescimoDetalhe: r.acrescimoDetalhe,
-      moTotal: r.moTotal, metragem: r.metragem, total: r.total
+      moTotal: r.moTotal, metragem: r.metragem, totalExtras: r.totalExtras,
+      custoExtras: r.custoExtras, lucroExtras: r.lucroExtras, total: r.total
     };
     pr.fechadaEm = txt(hojeISO) || (global.Util && global.Util.agoraISO ? global.Util.agoraISO() : new Date().toISOString());
     if (txt(quem)) pr.fechadaPor = txt(quem);
@@ -506,6 +728,19 @@
     delete pr.totais; delete pr.parametros;
     arr(pr.itensMadeira).forEach(function (i) { delete i.custoUnit; delete i.dataPreco; });
     arr(pr.itensMO).forEach(function (i) { delete i.valorUnit; });
+    /* ⚠ O CUSTO DE CAMPO NÃO É DESCONGELADO — e a diferença não é descuido.
+       O preço da madeira e o m² da mão de obra são CÓPIA do cadastro: apagar
+       a cópia devolve a proposta ao cadastro de hoje, e nada se perde. O valor
+       do deslocamento desta obra foi DIGITADO aqui e não existe em lugar
+       nenhum além desta linha — apagá-lo ao reabrir jogaria fora o que a
+       pessoa escreveu, trocando por um valor de referência que ela já tinha
+       decidido não usar. Reabrir para corrigir uma quantidade não pode
+       reescrever o combinado da obra.
+       ⚠ A EXCEÇÃO É O ITEM COMPRADO (`comMargem`): ali o valor de venda É
+       derivado — custo mais a margem da proposta —, exatamente como o preço
+       da madeira. O custo digitado fica; o preço de venda volta a ser
+       calculado, senão mudar a margem ao reabrir não mexeria no insumo. */
+    arr(pr.itensExtra).forEach(function (i) { if (i && i.comMargem) delete i.valorUnit; });
     return pr;
   };
 
@@ -545,9 +780,24 @@
       }),
       itensMO: arr(velha.itensMO).map(function (i) {
         return { servicoId: i.servicoId, servico: i.servico, unidade: i.unidade, qtd: i.qtd };
+      }),
+      /* o custo de campo vem inteiro, COM o valor — pelo mesmo motivo de
+         `reabrir`: ele foi digitado, não copiado de tabela nenhuma. Refazer é
+         reaproveitar; obrigar a redigitar deslocamento e diárias faria a
+         pessoa preferir editar a proposta vencida. */
+      itensExtra: arr(velha.itensExtra).map(function (i) {
+        return {
+          custoId: i.custoId, descricao: i.descricao, grupo: i.grupo,
+          unidade: i.unidade, qtd: i.qtd,
+          /* item comprado não leva o preço de VENDA velho: ele é derivado do
+             custo mais a margem da proposta nova, e carregar o número antigo
+             deixaria na linha um valor que ninguém usa e todo mundo lê */
+          valorUnit: i.comMargem ? null : i.valorUnit,
+          comMargem: !!i.comMargem, custoUnit: i.comMargem ? i.custoUnit : null
+        };
       })
     };
-    return nova;   // sem custoUnit/valorUnit: os preços vêm do cadastro de hoje
+    return nova;   // sem custoUnit/valorUnit de madeira e MO: esses vêm do cadastro de hoje
   };
 
   global.Carpintaria = Carpintaria;
