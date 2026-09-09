@@ -178,6 +178,71 @@
       totais: pac.avulsos.length ? { L: res.metrosAvulsos } : null
     });
 
+    /* ===================================================================
+     * COMPRA (AGRUPADO) — a folha que vai para a loja, não para o canteiro.
+     *
+     * ⚠ ELA NÃO SUBSTITUI a aba "Tubos por ramal", e a diferença não é de
+     *   gosto: lá cada tubo é uma linha porque o encanador pega a peça já
+     *   numerada e já cortada, com a conexão de cada ponta. Agrupar aquela
+     *   folha destruiria a função dela. Aqui é o contrário — quem compra não
+     *   quer 1.725 linhas, quer quantas barras pedir.
+     *
+     * ⚠ O NÚMERO SAI DO MESMO MOTOR DA TELA (`BimPeca.levantar`), de
+     *   propósito. Reimplementar o agrupamento aqui daria duas contas para a
+     *   mesma pergunta, e a hora de descobrir que divergiram seria com o
+     *   material errado no caminhão.
+     *
+     * ⚠ ABA SEMPRE PRESENTE, mesmo sem dados — mesma razão da "Fora da
+     *   lista": aba que só aparece às vezes treina quem lê a não procurar.
+     * =================================================================== */
+    var compra = (pac.compra || []).map(function (p) {
+      return {
+        descricao: String(p.descricao || p.familia || p.rotulo || '(sem nome no modelo)'),
+        dn: p.bitolaMm > 0 ? p.bitolaMm : (p.bitolaPar ? p.bitolaPar.join(' x ') : ''),
+        pecas: p.n,
+        quantidade: p.quantidade,
+        unidade: p.unidade || '',
+        /* barra só onde o motor autorizou: segmento, medido em metro e com o
+           total fechado. Conexão fica em branco, que é o certo — joelho se
+           compra por unidade. */
+        barras: p.barras || '',
+        procedencia: p.fonteQtd === 'contagem' ? 'contagem (sem medida no IFC)'
+          : p.fonteQtd === 'parcial' ? 'INCOMPLETO — ' + p.faltamMedida + ' peça(s) sem medida'
+          : 'medido no IFC',
+        familias: (p.familiasReunidas > 1 ? p.familiasReunidas + ': ' : '') +
+                  (p.familiasOutras ? p.familiasOutras.join(' · ') : String(p.familia || '')),
+        sistemas: p.sistemasOutros ? p.sistemasOutros.join(' · ') : String(p.sistemaIfc || '')
+      };
+    });
+    var barraM = (pac.compraResumo && pac.compraResumo.barraM) || 6;
+    aba(wb, 'Compra (agrupado)', [
+      { h: 'Descrição (nome de mercado)', k: 'descricao', w: 52 },
+      { h: 'Ø (mm)', k: 'dn', w: 10, centro: true },
+      { h: 'Peças', k: 'pecas', w: 8, centro: true, fmt: INT },
+      { h: 'Quantidade', k: 'quantidade', w: 13, fmt: NUM3 },
+      { h: 'Un', k: 'unidade', w: 6, centro: true },
+      { h: 'Barras de ' + barraM + ' m', k: 'barras', w: 13, centro: true, fmt: INT },
+      { h: 'Procedência do número', k: 'procedencia', w: 30 },
+      { h: 'Famílias do modelo reunidas', k: 'familias', w: 42 },
+      { h: 'Sistemas', k: 'sistemas', w: 28 }
+    ], compra, {
+      titulo: 'Compra — uma linha por descrição e bitola',
+      subtitulo: compra.length
+        ? ('Mesma descrição e mesma bitola somam numa linha só. Tubo vira barra de ' + barraM +
+           ' m, sempre arredondada PARA CIMA (não existe comprar meia barra); conexão fica em unidade. ' +
+           'Linha marcada INCOMPLETO tem peça sem medida no IFC e sai sem barra — confira antes de pedir.')
+        : 'Sem peças agrupadas: carregue o modelo e abra "Requisitar pelo modelo" antes de gerar a planilha.',
+      /* ⚠ O TOTAL SOMA AS LINHAS IMPRESSAS, não um número vindo de outro
+         lugar. Um rodapé que discorda das linhas acima dele é pior que
+         rodapé nenhum: quem confere desiste da folha inteira. Quantidade
+         NÃO entra no total de propósito — metro e unidade na mesma coluna
+         somariam laranja com maçã. */
+      totais: compra.length ? {
+        pecas: compra.reduce(function (s, l) { return s + (Number(l.pecas) || 0); }, 0),
+        barras: compra.reduce(function (s, l) { return s + (Number(l.barras) || 0); }, 0)
+      } : null
+    });
+
     /* conferência: quem lê tem de conseguir fechar a conta sozinho */
     var ws = wb.addWorksheet('Conferência');
     ws.getColumn(1).width = 44; ws.getColumn(2).width = 26;

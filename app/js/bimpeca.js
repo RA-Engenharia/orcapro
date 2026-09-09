@@ -72,6 +72,45 @@
   }
   function norm(s) { return semAcento(s).toLowerCase().replace(/\s+/g, ' ').trim(); }
 
+  /* ===================================================================
+   * TUBO SE COMPRA EM BARRA, NÃO EM METRO.
+   *
+   * O modelo publica comprimento; a loja vende barra inteira. Somar
+   * 47,30 m e mandar isso para a compra faz a pessoa converter de cabeça —
+   * e é aí que entra o erro que ninguém confere. A conta é uma divisão, mas
+   * o ARREDONDAMENTO é a parte que decide dinheiro: 47,30 / 6 = 7,88 barras,
+   * e não existe comprar 0,88 de barra. Sempre PARA CIMA.
+   *
+   * ⚠ O metro exato continua ao lado da barra, de propósito. Quem confere o
+   *   projeto precisa do número do modelo; quem compra precisa da barra. Um
+   *   substituindo o outro deixa metade das duas pessoas sem a referência
+   *   que usa — o mesmo motivo pelo qual a tela mostra descrição E família.
+   *
+   * ⚠ SÓ SEGMENTO, e só medido em metro. Conexão se compra por unidade;
+   *   dividir contagem de joelho por 6 é pedido que ninguém consegue atender.
+   * =================================================================== */
+  var BARRA_M = 6;
+  var SEGMENTO = { IFCFLOWSEGMENT: 1, IFCPIPESEGMENT: 1, IFCDUCTSEGMENT: 1 };
+  function ehSegmento(tipo) { return !!SEGMENTO[String(tipo || '').toUpperCase()]; }
+  /* ⚠ E O ARREDONDAMENTO PARA CIMA TEM DE TOLERAR O RUÍDO DA SOMA, senão ele
+     compra barra a mais. `p.quantidade` não é número digitado: é soma de
+     floats vindos do IFC, e ela passa POR CIMA do múltiplo. Dez trechos de
+     1,80 m somam 18.000000000000004, e o `Math.ceil` cru transforma 18 m em
+     QUATRO barras em vez de três — em toda linha cujo total cai exatamente
+     num múltiplo de 6.
+     Medido, não suposto: uma varredura por somas que ultrapassam o múltiplo
+     achou o caso em segundos, com trechos que qualquer projeto tem
+     (10 × 1,80 m, 14 × 1,2857 m, 11 × 3,8182 m).
+     A folga é de 1e-9 BARRA — seis nanômetros de tubo. Sobra de longe para o
+     ruído do double e não alcança excesso nenhum de verdade: 6,01 m continua
+     pedindo 2 barras, e 18,001 m continua pedindo 4. */
+  var FOLGA_BARRA = 1e-9;
+  function barrasDe(metros) {
+    var m = Number(metros);
+    if (!isFinite(m) || m <= 0) return 0;
+    return Math.ceil(m / BARRA_M - FOLGA_BARRA);
+  }
+
   /* "ESG_Serie Normal_Joelho 45_90:Standard" -> { esquerda, direita, prefixo } */
   function partir(familia) {
     var t = String(familia == null ? '' : familia).trim();
@@ -364,6 +403,16 @@
          (soldavel) e em esgoto (serie normal) tambem. Juntar qualquer um dos
          dois pares daria uma linha de requisicao que ninguem consegue pedir. */
       var par = (e.bitolaPar && e.bitolaPar.length) ? e.bitolaPar.join('x') : '';
+      /* ⚠ A FUSÃO PELA DESCRIÇÃO NÃO ACONTECE AQUI — ela é um SEGUNDO PASSO,
+         depois deste laço (procure `fundirPorDescricao`). Tentei primeiro
+         trocar esta chave pela descrição e o resultado foi o oposto do
+         pedido: num modelo real só PARTE das instâncias traz o campo
+         preenchido (é o que o bloco logo abaixo trata), então a chave por
+         descrição punha as instâncias com o campo numa linha e as sem o campo
+         em outra — dividindo justamente o grupo que era para juntar. Quatro
+         asserts do `test-bimpeca` caíram e foi assim que apareceu.
+         Agrupar por família primeiro deixa a descrição ser RESOLVIDA para o
+         grupo inteiro; só então vale fundir por ela. */
       var chave = String(e.tipo || '?') + '|' + (fam || '(sem familia)') + '|' + (e.sistemaIfc || '') +
                   (e.bitolaMm > 0 ? '|DN' + e.bitolaMm : '') + (par ? '|RED' + par : '');
       var p = porChave[chave];
@@ -414,6 +463,16 @@
         ordem.push(chave);
       }
       p.n += n;
+      /* ⚠ O QUE FOI FUNDIDO TEM DE APARECER. Agrupar pela descrição junta
+         famílias e sistemas diferentes numa linha só — que é o pedido — mas
+         a FAMÍLIA é como o engenheiro acha a peça de volta no Revit. Some-la
+         em silêncio troca um problema (linha repetida) por outro pior (linha
+         que ninguém consegue rastrear). Guardamos os nomes vistos; a tela
+         mostra quantos são e a planilha lista. */
+      if (!p._famVistas) p._famVistas = {};
+      if (fam) p._famVistas[fam] = 1;
+      if (!p._sisVistos) p._sisVistos = {};
+      if (e.sistemaIfc) p._sisVistos[String(e.sistemaIfc)] = 1;
       /* ⚠ A DESCRIÇÃO PODE CHEGAR NO SEGUNDO ELEMENTO. A peça nasce do
          primeiro que aparece, e num modelo real é normal que só parte das
          instâncias traga o campo preenchido. Se a peça nasceu sem descrição e
@@ -456,6 +515,77 @@
       if (e.uid && p.uids.length < 200) p.uids.push(e.uid);
     });
 
+    /* ===================================================================
+     * SEGUNDO PASSO — MESMA DESCRIÇÃO E MESMA BITOLA VIRAM UMA LINHA SÓ.
+     *
+     * O PROBLEMA. O primeiro passo identifica a peça pela FAMÍLIA do Revit.
+     * Quando o projetista modela o mesmo produto com duas famílias, ou
+     * espalha o mesmo tubo por "Água Fria 1" e "Água Fria 3", a compra sai
+     * com "Tubo PVC soldável DN 25mm" repetido em três linhas e quem pede
+     * tem de somar de cabeça. Somar de cabeça é onde nasce o pedido errado.
+     *
+     * ⚠ POR QUE ISSO NÃO DESFAZ A TRAVA DO SISTEMA (a do bloco lá em cima).
+     *   A trava existe porque joelho de água fria é soldável e o de esgoto é
+     *   série normal: mesma palavra, compra diferente. Mas quem separa os
+     *   dois é justamente a DESCRIÇÃO — "Joelho PVC soldável" e "Joelho PVC
+     *   série normal" são textos diferentes e continuam em linhas
+     *   diferentes. Descrição igual em sistemas diferentes é o mesmo produto
+     *   em dois trechos da rede, e aí juntar é o certo. Sem descrição não se
+     *   funde nada, e é por isso que o bloco 5 do teste continua verde.
+     *
+     * ⚠ A BITOLA E O PAR DE REDUÇÃO ENTRAM NA CHAVE DA FUSÃO. Descrição igual
+     *   com DN diferente é compra diferente, e há descrição que não escreve o
+     *   DN ("Tubo PVC soldável", sem mais). Fundir por texto só juntaria 25 e
+     *   50 numa linha — exatamente o erro que este arquivo inteiro existe
+     *   para não cometer.
+     *
+     * ⚠ E A FUSÃO É ANTES DA FINALIZAÇÃO, não depois. Depois, o grupo sem
+     *   medida já virou `quantidade = contagem` com unidade "un": somar isso
+     *   com o irmão medido em "m" daria metro + unidade no mesmo número.
+     *   Fundindo cru, o `nSemMedida` viaja junto e a finalização marca
+     *   `parcial` — que é a verdade: parte medida, parte não.
+     * =================================================================== */
+    function fundirPorDescricao() {
+      var alvo = {}, sobrevivem = [];
+      ordem.forEach(function (k) {
+        var p = porChave[k];
+        if (!p) return;
+        var d = p.descricao ? norm(p.descricao) : '';
+        if (!d) { sobrevivem.push(k); return; }
+        var ck = d + (p.bitolaMm > 0 ? '|DN' + p.bitolaMm : '') +
+                 (p.bitolaPar ? '|RED' + p.bitolaPar.join('x') : '');
+        var dono = alvo[ck];
+        if (!dono) { alvo[ck] = p; sobrevivem.push(k); return; }
+        /* ⚠ UNIDADES DIFERENTES NÃO SE SOMAM, e aqui a saída é NÃO FUNDIR.
+           Metro com metro quadrado no mesmo número é um total que não existe.
+           É raro (mesma descrição e mesmo DN medidos em unidades diferentes),
+           mas o caso raro é exatamente onde um total silenciosamente errado
+           passaria — a linha fica separada e visível. */
+        if (p.unidade && dono.unidade && p.unidade !== dono.unidade) { sobrevivem.push(k); return; }
+        /* funde p DENTRO de dono */
+        var donoTinhaMedida = dono.quantidade > 0;
+        dono.n += p.n;
+        dono.quantidade += p.quantidade;
+        if (!dono.unidade && p.unidade) dono.unidade = p.unidade;
+        /* a procedência acompanha quem trouxe a medida */
+        if (!donoTinhaMedida && p.quantidade > 0) dono.fonteQtd = p.fonteQtd;
+        dono.nMedidos = (dono.nMedidos || 0) + (p.nMedidos || 0);
+        dono.nSemMedida = (dono.nSemMedida || 0) + (p.nSemMedida || 0);
+        dono.nComDescricao = (dono.nComDescricao || 0) + (p.nComDescricao || 0);
+        dono.nSemDescricao = (dono.nSemDescricao || 0) + (p.nSemDescricao || 0);
+        ['_descrVistas', '_famVistas', '_sisVistos'].forEach(function (m) {
+          if (!p[m]) return;
+          if (!dono[m]) dono[m] = {};
+          Object.keys(p[m]).forEach(function (x) { dono[m][x] = 1; });
+        });
+        (p.uids || []).forEach(function (u) { if (dono.uids.length < 200) dono.uids.push(u); });
+        dono.fundidas = (dono.fundidas || 1) + 1;
+        porChave[k] = null;
+      });
+      ordem = sobrevivem;
+    }
+    fundirPorDescricao();
+
     var pecas = ordem.map(function (k) {
       var p = porChave[k];
       /* ⚠ DESCRIÇÕES DIFERENTES DENTRO DA MESMA PEÇA NÃO SE ESCOLHEM SOZINHAS.
@@ -479,6 +609,26 @@
         p.fonteQtd = 'parcial';
         p.faltamMedida = p.nSemMedida;
       }
+      /* o que a chave por descrição reuniu, dito em número e em nome */
+      var fams = p._famVistas ? Object.keys(p._famVistas) : [];
+      var siss = p._sisVistos ? Object.keys(p._sisVistos) : [];
+      p.familiasReunidas = fams.length;
+      if (fams.length > 1) p.familiasOutras = fams.slice(0, 6);
+      p.sistemasReunidos = siss.length;
+      if (siss.length > 1) p.sistemasOutros = siss.slice(0, 6);
+      delete p._famVistas; delete p._sisVistos;
+      /* ⚠ BARRA SÓ DEPOIS DA SOMA FECHADA, e só sobre metro de verdade.
+         Calcular por elemento e somar barras daria 1+1+1 = 3 barras para três
+         tubos de 2 m que cabem em uma — o erro clássico de arredondar antes
+         de somar, e ele infla a compra em até 6 m por linha.
+         ⚠ E não sai barra de total INCOMPLETO (`parcial`): ali o metro já é
+         menor que a obra, e uma barra arredondada para cima em cima de um
+         número curto tem cara de conferido sendo chute. A tela mostra o aviso
+         de incompleto; barra, só quando o total é o total. */
+      if (ehSegmento(p.tipo) && p.unidade === 'm' && p.fonteQtd !== 'parcial' && p.quantidade > 0) {
+        p.barraM = BARRA_M;
+        p.barras = barrasDe(p.quantidade);
+      }
       return p;
     }).sort(function (a, b) { return b.n - a.n || a.familia.localeCompare(b.familia); });
 
@@ -488,6 +638,15 @@
         elementos: total, pecas: pecas.length, semFamilia: semFamilia,
         porContagem: pecas.filter(function (p) { return p.fonteQtd === 'contagem'; }).length,
         semDisciplina: pecas.filter(function (p) { return !p.disciplina; }).length,
+        /* ⚠ CONTADOR DA FUSÃO, pelo mesmo motivo do `comDescricao` logo
+           abaixo: sem ele, um modelo em que nada se funde é indistinguível de
+           um recurso que não está funcionando. Com ele a tela consegue dizer
+           "7 linhas a menos porque a descrição repetia". */
+        linhasFundidas: pecas.filter(function (p) { return p.familiasReunidas > 1 || p.sistemasReunidos > 1; }).length,
+        barraM: BARRA_M,
+        /* metro e barra somados por fora, para o cabeçalho da compra */
+        metrosTubo: pecas.reduce(function (s, p) { return s + (p.barras ? p.quantidade : 0); }, 0),
+        barrasTubo: pecas.reduce(function (s, p) { return s + (p.barras || 0); }, 0),
         /* ⚠ ESTE NÚMERO É O QUE IMPEDE O RECURSO DE SER INERTE EM SILÊNCIO.
            Ler a Descrição só ajuda se o modelo a tiver preenchida, e isso
            varia por escritório e por biblioteca de família. Sem contador, um
@@ -901,11 +1060,22 @@
          pelada. Trinta e tres buchas para pedir sem saber de qual para qual —
          na peca que este arquivo declara ser a mais cara de errar. */
       var medida = resumoDim(p.dims, p.bitolaPar);
+      /* ⚠ A BARRA TEM DE ATRAVESSAR PARA A REQUISIÇÃO — ela parava no painel.
+         O painel do BIM mostrava "26,00 m = 5 barras", e o item gerado saía
+         só com "26 m": quem abre a requisição no ERP, que é onde a compra
+         acontece, voltava a converter de cabeça. É o defeito de sempre nesta
+         base — o conserto que para no segundo consumidor —, e aqui ele
+         apagava justamente o número que o recurso existe para dar.
+         ⚠ E ela entra no TEXTO, não na quantidade: `precoRef` da base é por
+         METRO. Trocar 26 m por 5 barras multiplicaria o valor da linha por
+         um número errado, e requisição dispara aprovação por VALOR. */
+      var barraTxt = (p.barras > 0) ? (' · ' + p.barras + ' barra' + (p.barras > 1 ? 's' : '') +
+                                       ' de ' + (p.barraM || BARRA_M) + ' m') : '';
       itens.push({
         codigo: temItem ? String(it.codigo) : '',
         /* a medida entra na descrição da linha pendente: sem ela, "Luva
            Simples" no papel do comprador não diz qual comprar */
-        descricao: seguro(descr + (!temItem && medida !== 'sem medida' ? ' — ' + medida : '')),
+        descricao: seguro(descr + (!temItem && medida !== 'sem medida' ? ' — ' + medida : '') + barraTxt),
         unidade: (temItem && it.unidade) || p.unidade || 'un',
         quantidade: p.quantidade,
         /* ⚠ SEM PREÇO CHUTADO. A pendente vai com 0 e o consumidor tem de
@@ -922,6 +1092,21 @@
           bitolaMm: p.bitolaMm || 0, bitolaPar: p.bitolaPar || null,
           fonteBitola: p.fonteBitola || '', fonteQtd: p.fonteQtd,
           faltamMedida: p.faltamMedida || 0, pecas: p.n,
+          /* ⚠ O QUE A FUSAO REUNIU VIAJA JUNTO — e `familia` acima passou a
+             ser só a PRIMEIRA delas. Quando a linha reúne duas famílias do
+             Revit para o mesmo produto comercial, quem lê a requisição depois
+             (sem reabrir o IFC) precisa das outras para achar a peça de volta.
+             A gaveta e a planilha já mostram; aqui faltava, e uma linha que
+             ninguém rastreia é o preço alto de resolver a linha repetida.
+             ⚠ CAMPOS NOVOS, nunca no lugar de `familia`/`sistema`: quem já lê
+             os antigos continua lendo. */
+          /* a barra também em campo próprio: o texto serve para quem LÊ, o
+             campo serve para quem for somar barra por obra depois sem ter de
+             despedaçar a descrição com regex */
+          barras: p.barras || 0, barraM: p.barras ? (p.barraM || BARRA_M) : 0,
+          familiasReunidas: p.familiasReunidas || 1,
+          familias: (p.familiasOutras && p.familiasOutras.length) ? p.familiasOutras.slice() : null,
+          sistemas: (p.sistemasOutros && p.sistemasOutros.length) ? p.sistemasOutros.slice() : null,
           /* a descrição do modelo viaja junto mesmo quando o item casou: é ela
              que permite conferir DEPOIS se o insumo escolhido é o que o
              projeto pedia, sem reabrir o IFC */
@@ -986,7 +1171,12 @@
     subsistemaDe: subsistemaDe,
     partir: partir,
     resumoDim: resumoDim,
-    MIN_CONF: MIN_CONF
+    MIN_CONF: MIN_CONF,
+    /* expostos para a fiação (tela e planilha usam o MESMO número) e para o
+       gate poder sondar a conta da barra sem montar um levantamento inteiro */
+    BARRA_M: BARRA_M,
+    barrasDe: barrasDe,
+    ehSegmento: ehSegmento
   };
 
   global.BimPeca = BimPeca;

@@ -1152,6 +1152,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     else if (k === 'cota-planilha') {
       var pacP = (S._numeracao && S._numeracao()) || numerarRede();
       if (pacP) {
+        /* ⚠ A ABA "Compra (agrupado)" SAI DO MESMO MOTOR DA TELA. `reqLevantar`
+           é o que a requisição usa: ele já filtra fase (não se compra material
+           para o que vai ser demolido), já lê a bitola da geometria e já
+           propaga a bitola do tubo para a conexão pela rede. Recalcular aqui
+           daria duas contas para a mesma pergunta, e elas divergiriam sem
+           avisar. Se falhar, a aba sai vazia dizendo o que fazer — a planilha
+           dos tubos não pode deixar de sair por causa dela. */
+        try {
+          var levC = reqLevantar();
+          if (levC) { pacP.compra = levC.pecas; pacP.compraResumo = levC.resumo; }
+        } catch (eC) { pacP.compra = null; }
         if (typeof BimTuboXLS === 'undefined') UI0('Gerador de planilha nao carregado.', 'erro');
         else BimTuboXLS.gerar(pacP, {
           nome: 'Tubos por ramal',
@@ -2719,6 +2730,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                 ? ('<span style="color:#e0a458">' + p.quantidade.toFixed(2) + ' ' + p.unidade + ' — INCOMPLETO, ' + p.faltamMedida + ' peça(s) sem medida no IFC</span>')
                 : (p.quantidade.toFixed(2) + ' ' + p.unidade + ' medidos no IFC')) +
             (medida !== 'sem medida' ? ' · ' + esc(medida) : '') + '</div>' +
+          /* ⚠ A BARRA É O NÚMERO QUE SE PEDE NA LOJA, e ela vem DEPOIS do
+             metro, nunca no lugar dele: quem confere o projeto precisa do
+             metro do modelo, quem compra precisa da barra. Trocar um pelo
+             outro deixaria metade das duas pessoas sem a referência que usa —
+             a mesma razão de a linha mostrar descrição E família. */
+          (p.barras
+            ? '<div style="color:#7fd1a6;font-size:11px;font-weight:700">' + p.barras +
+                ' barra(s) de ' + p.barraM + ' m para comprar</div>'
+            : '') +
+          /* ⚠ O QUE FOI FUNDIDO APARECE. Juntar por descrição some com a
+             família, e é pela família que o engenheiro acha a peça de volta
+             no Revit. Linha que ninguém rastreia é pior que linha repetida. */
+          (p.familiasReunidas > 1
+            ? '<div style="color:#9fb2c8;font-size:10.5px" title="' +
+                esc((p.familiasOutras || []).join(' · ')) + '">' +
+                p.familiasReunidas + ' famílias do modelo reunidas nesta descrição</div>'
+            : '') +
         '</td>' +
         '<td style="padding:5px 4px;vertical-align:top;min-width:260px;border-top:1px solid #24435f">' +
           (opcoes
@@ -2859,6 +2887,27 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   });
 
   S._reqAbrir = reqAbrir;
+  /* ⚠ HOOK DE TESTE — desenha o painel a partir de uma lista de peças já
+     levantada, sem exigir um IFC com tubulação aberto no navegador.
+     POR QUE ELE EXISTE: o agrupamento por descrição e as barras de 6 m são
+     provados em Node contra `BimPeca.levantar`, e a planilha é provada numa
+     bancada com o `construir` real. Faltava o terceiro consumidor — a GAVETA —
+     e nesta base motor verde já conviveu com recurso inerte na tela (52
+     asserts e a função que a tela chamava não existia). Sem este hook, medir
+     o que a gaveta escreve exigiria um IFC hidrossanitário no repositório.
+     Ele NÃO cria caminho novo de produto: monta o mesmo `reqEstado` que
+     `reqAbrir` monta e chama o mesmo `reqPintar`. */
+  S._reqPintarTeste = function (pecas, resumo) {
+    reqEstado = {
+      pecas: (pecas || []).map(function (p, i) {
+        return { idx: i, p: p, v: { candidatos: [], porque: 'bancada de teste' }, escolhido: null };
+      }),
+      filtro: '', resumo: resumo || {}
+    };
+    reqPanel.style.display = 'flex';
+    reqPintar();
+    return reqPanel.innerHTML;
+  };
 
   var sisPanel = document.createElement('div');
   sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.95);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:238px;max-height:72%;overflow:auto';
@@ -8686,6 +8735,7 @@ window.BIM = {
   _frame: function () { if (!S || !S.alive) return false; try { S.orbit.update(); for (var tx = 0; tx < S._tickExtra.length; tx++) { try { S._tickExtra[tx](0.016); } catch (_) {} } S.renderer.render(S.scene, S.camera); for (var tp = 0; tp < (S._tickPos || []).length; tp++) { try { S._tickPos[tp](0.016); } catch (_) {} } return true; } catch (_) { return false; } }, // hook de teste: 1 frame síncrono FIEL ao tick real (inclui _tickExtra E _tickPos — sem _tickPos a lupa nunca desenha fora do navegador, e o teste passaria medindo nada — marcador de snap, rescale de cotas, reunião)
   _foraDoClip: function (p) { return (S && S._foraDoClipRef) ? S._foraDoClipRef({ x: p[0], y: p[1], z: p[2] }) : false; }, // hook de teste
   _ctecModal: function () { return (S && S.ctecModal) ? S.ctecModal : null; }, // hook de teste: elemento do modal do resultado
+  _reqPintarTeste: function (pecas, resumo) { return (S && S._reqPintarTeste) ? S._reqPintarTeste(pecas, resumo) : ''; }, // hook de teste: HTML da gaveta da requisição a partir de peças já levantadas
   get elementos() { return elementosVivos(); },
   // ---- multi-IFC (interoperabilidade entre disciplinas) ----
   get modelos() { return S && S._publicos ? S._publicos() : []; },
