@@ -2801,6 +2801,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return pont.slice(0, 300).map(function (x) { return { item: x.item, fonte: x.item.fonte || '' }; });
   }
 
+  /* ⚠ UM FILTRO SO, DUAS LEITURAS. O que a tela mostra e o que o botao
+     Gerar leva TEM de sair da mesma conta — filtro que filtra so a tela e
+     armadilha, e este painel ja teve esse defeito: a pessoa clicava em
+     "esgoto", via 40 linhas e recebia uma requisicao com 182.
+     A UNICA diferenca e a linha removida — ela continua visivel, riscada,
+     para a pessoa notar o clique errado, e nao entra na requisicao. */
+  function reqFiltrada(paraGerar) {
+    if (!reqEstado) return [];
+    return (reqEstado.pecas || []).filter(function (x) {
+      if (paraGerar && x.removido) return false;
+      if (reqEstado.filtro && (x.p.subsistema || x.p.disciplina || 'sem classificação') !== reqEstado.filtro) return false;
+      if (reqEstado.grupo && (x.p.grupo || 'outros') !== reqEstado.grupo) return false;
+      return true;
+    });
+  }
+
   function reqPintar() {
     if (!reqEstado) return;
     var pecas = reqEstado.pecas;
@@ -2814,9 +2830,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return '<button class="btn sm" data-rq-sub="' + esc(k) + '"' + (on ? ' style="background:#2e6f9e;color:#fff"' : '') + '>' + esc(k) + ' <b>' + subs[k] + '</b></button>';
     }).join(' ');
 
-    var visiveis = pecas.filter(function (x) {
-      return !reqEstado.filtro || (x.p.subsistema || x.p.disciplina || 'sem classificação') === reqEstado.filtro;
-    });
+    /* ⚠ FILTRO DE COMPRA — tubo, conexão, louça, registro. O de cima recorta
+       por SISTEMA (água fria, esgoto); este recorta por BALCÃO, que é como
+       quem compra procura numa lista de 182 linhas. Pedido de 09/09/2026. */
+    var grupos = {};
+    pecas.forEach(function (x) { var g = x.p.grupo || 'outros'; grupos[g] = (grupos[g] || 0) + x.p.n; });
+    var chipsG = Object.keys(grupos).sort(function (a, b) { return grupos[b] - grupos[a]; }).map(function (g) {
+      var on = reqEstado.grupo === g;
+      return '<button class="btn sm" data-rq-grp="' + esc(g) + '"' + (on ? ' style="background:#2e6f9e;color:#fff"' : '') + '>' +
+        esc(BimPeca.rotuloGrupo ? BimPeca.rotuloGrupo(g) : g) + ' <b>' + grupos[g] + '</b></button>';
+    }).join(' ');
+
+    var visiveis = reqFiltrada(false);
 
     var linhas = visiveis.map(function (x) {
       var p = x.p, v = x.v;
@@ -2970,6 +2995,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       })() +
       '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
         '<button class="btn sm" data-rq-sub=""' + (reqEstado.filtro ? '' : ' style="background:#2e6f9e;color:#fff"') + '>tudo</button>' + chips + '</div>' +
+      /* ⚠ DUAS RÉGUAS DIFERENTES, e por isso duas linhas de chips: a de cima
+         recorta por SISTEMA (água fria, esgoto), esta recorta por BALCÃO
+         (tubo, conexão, louça, registro). Misturar as duas numa fila só faria
+         a pessoa achar que "esgoto" e "conexões" são o mesmo tipo de escolha —
+         e elas se COMBINAM: dá para ver só as conexões de esgoto. */
+      '<div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">' +
+        '<span style="color:#6b7a8a;font-size:11px">comprar:</span>' +
+        '<button class="btn sm" data-rq-grp=""' + (reqEstado.grupo ? '' : ' style="background:#2e6f9e;color:#fff"') + '>tudo</button>' + chipsG + '</div>' +
       '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><tbody>' + linhas + '</tbody></table>' +
       /* ATENÇÃO: o aviso do total parcial nasce aqui e segue para a requisição: ela
          dispara aprovação POR VALOR, e item sem preço puxa o total para baixo
@@ -3016,6 +3049,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     });
     reqEstado = { pecas: pecas, filtro: '', resumo: lev.resumo };
     reqBusca = null;   /* levantamento novo, busca antiga nao sobrevive */
+    reqEstado.grupo = '';
     fecharPaineis(reqPanel);
     reqPanel.style.display = 'flex';
     reqPintar();
@@ -3054,6 +3088,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!b || !reqEstado) return;
     var sub = b.getAttribute('data-rq-sub');
     if (sub !== null) { reqEstado.filtro = sub; reqPintar(); return; }
+    var grp = b.getAttribute('data-rq-grp');
+    /* clicar de novo no mesmo chip DESLIGA o filtro: sem isso a pessoa fica
+       presa num recorte e o botão Gerar leva só parte da obra sem ela notar */
+    if (grp !== null) { reqEstado.grupo = (reqEstado.grupo === grp) ? '' : grp; reqPintar(); return; }
     var ver3d = b.getAttribute('data-rq-3d');
     if (ver3d !== null) {
       var x3 = reqEstado.pecas[+ver3d];
@@ -3127,13 +3165,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          via 40 linhas, clicava em Gerar e recebia uma requisicao com as 182 —
          incluindo agua fria e pluvial que ela nao pediu. Filtro que filtra so
          a tela e armadilha, nao filtro. */
-      var visiveis = reqEstado.pecas.filter(function (x) {
-        /* ⚠ LINHA REMOVIDA NÃO ENTRA NA REQUISIÇÃO. Sem este filtro o botão
-           "remover" seria só enfeite: a linha sumiria da tela e o material
-           seria comprado do mesmo jeito — recado que mente, e caro. */
-        if (x.removido) return false;
-        return !reqEstado.filtro || (x.p.subsistema || x.p.disciplina || 'sem classificação') === reqEstado.filtro;
-      });
+      /* ⚠ MESMA CONTA DA TELA (`reqFiltrada`), com `paraGerar` ligado. Duas
+         cópias desta regra é o caminho para elas divergirem na próxima
+         mudança — e a linha removida é a única diferença entre as duas
+         leituras: ela sai da requisição e continua visível, riscada. */
+      var visiveis = reqFiltrada(true);
       if (!visiveis.length) { UI0('Não sobrou nenhuma peça para requisitar — todas foram removidas ou o filtro não deixou nenhuma.', 'info'); return; }
       var escolhas = {};
       visiveis.forEach(function (x) { escolhas[x.p.chave] = x.escolhido; });

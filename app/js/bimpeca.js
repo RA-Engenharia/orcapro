@@ -453,6 +453,53 @@
   function rotuloTipo(t) { return ROTULO_TIPO[t] || ('"' + (t || '?') + '"'); }
 
   /* ---------------------------------------------------------------
+   * 2b-bis. GRUPO DE COMPRA — tubo, conexão, louça, registro.
+   *
+   * ⚠ É O RECORTE DE QUEM COMPRA, não o de quem modela. O `tipoPeca` separa
+   *   tê de junção porque isso decide o ITEM; para achar a linha numa lista de
+   *   182, o que serve é o balcão: tubo se compra por barra, conexão por
+   *   unidade, louça por peça, registro por bitola. Pedido de 09/09/2026:
+   *   "separa os itens por filtros de tubos, conexões etc".
+   *
+   * ⚠ E ELE TEM DUAS FONTES, nesta ordem: o substantivo (que vem da descrição,
+   *   e é o que a pessoa lê) e, sem ele, a CLASSE IFC — que existe mesmo em
+   *   modelo sem descrição nenhuma. Sem a segunda, o filtro nasceria vazio
+   *   justamente nos modelos que mais precisam dele.
+   * ------------------------------------------------------------- */
+  var GRUPO_DO_TIPO = {
+    tubo: 'tubos',
+    te: 'conexoes', juncao: 'conexoes', joelho: 'conexoes', curva: 'conexoes',
+    luva: 'conexoes', cap: 'conexoes', bucha: 'conexoes', reducao: 'conexoes',
+    adaptador: 'conexoes', cruzeta: 'conexoes', nipple: 'conexoes',
+    flange: 'conexoes', uniao: 'conexoes', anel: 'conexoes',
+    registro: 'registros', valvula: 'registros',
+    bacia: 'loucas', lavatorio: 'loucas', pia: 'loucas', tanque: 'loucas',
+    chuveiro: 'loucas', torneira: 'loucas', sifao: 'loucas',
+    ralo: 'caixas', caixa: 'caixas', terminal: 'caixas', calha: 'calhas'
+  };
+  var GRUPO_DA_CLASSE = {
+    IFCFLOWSEGMENT: 'tubos', IFCPIPESEGMENT: 'tubos', IFCDUCTSEGMENT: 'tubos',
+    IFCCABLECARRIERSEGMENT: 'tubos',
+    IFCFLOWFITTING: 'conexoes', IFCPIPEFITTING: 'conexoes', IFCDUCTFITTING: 'conexoes',
+    IFCFLOWCONTROLLER: 'registros', IFCVALVE: 'registros',
+    IFCFLOWTERMINAL: 'loucas', IFCSANITARYTERMINAL: 'loucas',
+    IFCWALL: 'alvenaria', IFCWALLSTANDARDCASE: 'alvenaria', IFCSLAB: 'alvenaria',
+    IFCBEAM: 'estrutura', IFCCOLUMN: 'estrutura', IFCFOOTING: 'estrutura'
+  };
+  var ROTULO_GRUPO = {
+    tubos: 'Tubos', conexoes: 'Conexões', registros: 'Registros e válvulas',
+    loucas: 'Louças e metais', caixas: 'Caixas e ralos', calhas: 'Calhas',
+    alvenaria: 'Alvenaria e lajes', estrutura: 'Estrutura', outros: 'Outros'
+  };
+  function grupoDeCompra(peca) {
+    if (!peca) return 'outros';
+    var g = GRUPO_DO_TIPO[peca.tipoPeca];
+    if (g) return g;
+    return GRUPO_DA_CLASSE[String(peca.tipo || '').toUpperCase()] || 'outros';
+  }
+  function rotuloGrupo(g) { return ROTULO_GRUPO[g] || 'Outros'; }
+
+  /* ---------------------------------------------------------------
    * 3. TERMOS
    * ------------------------------------------------------------- */
   function termosDe(familia, extra) {
@@ -582,7 +629,22 @@
          asserts do `test-bimpeca` caíram e foi assim que apareceu.
          Agrupar por família primeiro deixa a descrição ser RESOLVIDA para o
          grupo inteiro; só então vale fundir por ela. */
-      var chave = String(e.tipo || '?') + '|' + (fam || '(sem familia)') + '|' + (e.sistemaIfc || '') +
+      /* ⚠ O QUE ENTRA NA CHAVE É O SUBSISTEMA, NÃO O NOME DO RAMAL.
+         O sistema entrou aqui por um motivo certo: o mesmo joelho em água fria
+         e em esgoto são compras diferentes (soldável × série normal). Só que o
+         que carrega essa informação é a DISCIPLINA — e o Revit numera os
+         ramais, então o texto do sistema vem "Esgoto - Ramal 1", "Esgoto -
+         Ramal 2", "Esgoto - Ramal 3". Pôr esse texto na chave fragmenta a
+         MESMA peça por ramal.
+         Medido no print de 09/09/2026: três linhas de `Tipos de tubos:ESG_Tubo
+         Série Normal`, DN 40, com 0,05 m + 0,03 m + 0,05 m — e cada uma
+         arredondando para UMA BARRA de 6 m. Treze centímetros de tubo pedindo
+         TRÊS barras, porque o arredondamento acontece por linha. O número do
+         ramal não muda o que se compra; a disciplina muda.
+         ⚠ Sem subsistema classificado cai no texto cru, que é o comportamento
+         de antes: melhor fragmentar do que juntar água fria com esgoto. */
+      var chaveSis = disc.subsistema || String(e.sistemaIfc || '');
+      var chave = String(e.tipo || '?') + '|' + (fam || '(sem familia)') + '|' + chaveSis +
                   (e.bitolaMm > 0 ? '|DN' + e.bitolaMm : '') + (par ? '|RED' + par : '');
       var p = porChave[chave];
       if (!p) {
@@ -815,6 +877,9 @@
          diferentes, é ele que está inconsistente — e a linha vai comprar por
          UM deles. Isso vai DITO, para a tela poder mostrar; escolher em
          silêncio é a receita de comprar a peça errada com cara de conferida. */
+      /* o grupo de compra sai do tipo (que ja pode ter vindo da descricao)
+         e, sem ele, da classe IFC — calculado aqui, com a peca pronta */
+      p.grupo = grupoDeCompra(p);
       var vistas = p._descrVistas ? Object.keys(p._descrVistas) : [];
       p.descricaoVariantes = vistas.length;
       if (vistas.length > 1) p.descricaoOutras = vistas.slice(0, 6);
@@ -1471,6 +1536,8 @@
     barrasDe: barrasDe,
     /* o substantivo da peca, exposto para o gate sondar a leitura sem
        montar levantamento — e para a tela poder dizer o que achou */
+    grupoDeCompra: grupoDeCompra,
+    rotuloGrupo: rotuloGrupo,
     tipoDaDescricao: tipoDaDescricao,
     tipoDaFamilia: tipoDaFamilia,
     rotuloTipo: rotuloTipo,
