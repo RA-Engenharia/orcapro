@@ -102,6 +102,24 @@
   function br(iso) { return iso ? iso.slice(8, 10) + "/" + iso.slice(5, 7) + "/" + iso.slice(0, 4) : ""; }
   function brCurto(iso) { return iso ? iso.slice(8, 10) + "/" + iso.slice(5, 7) : ""; }
   function plural(n, s, p) { return n + " " + (n === 1 ? s : p); }
+  function txt(v) { return v == null ? "" : String(v); }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  /* ⚠ CHAVE DE NOME DE FORNECEDOR — a mesma régua do `chave()` do
+     js/compranota.js, que casa a nota fiscal com o pedido pelo nome. Divergir
+     dela seria o app aceitar "Depósito São José" na nota e recusar o mesmo
+     texto aqui, sem ninguém entender por quê.
+     ⚠ ACENTO SUBSTITUÍDO À MÃO, e não por `normalize("NFD")`: o produto roda
+     em WebView de instalador antigo (ver CLAUDE.md) e este motor também roda
+     no Node do gate. A tabela explícita é feia e funciona nos dois.
+     ⚠ CONSERVADORA DE PROPÓSITO: só caem acento, caixa e pontuação. Letra e
+     dígito nunca saem — "Ferragens 2" e "Ferragens 3" são empresas
+     diferentes, e normalizar demais funde cadastro de gente diferente. */
+  function chaveNome(x) {
+    return txt(x).toLowerCase()
+      .replace(/[àáâãä]/g, "a").replace(/[éêë]/g, "e").replace(/[íï]/g, "i")
+      .replace(/[óôõö]/g, "o").replace(/[úü]/g, "u").replace(/ç/g, "c")
+      .replace(/[^a-z0-9]+/g, " ").trim();
+  }
 
   var ComprasLinha = {
     TERMINAL: TERMINAL,
@@ -306,6 +324,93 @@
       var feitos = ev.filter(function (e) { return e.feito && e.quando; }).sort(function (a, b) { return a.quando < b.quando ? -1 : a.quando > b.quando ? 1 : 0; });
       var resto = ev.filter(function (e) { return !(e.feito && e.quando); });
       return feitos.concat(resto);
+    },
+
+    /* ==================================================================
+     * DE QUEM É ESTE PEDIDO — e por que a pergunta não era trivial
+     *
+     * ⚠ ROTEIRO DO DEFEITO (medido em 09/09/2026 no backup da RA): o
+     *   cadastro tinha o fornecedor COM telefone, a lista de Compras
+     *   desenhava o nome dele na coluna Fornecedor, e o botão "Abrir
+     *   conversa do fornecedor" respondia "não tem WhatsApp nem telefone no
+     *   cadastro". As duas frases falavam de coisas diferentes: a tela
+     *   desenha `fornecedorNome` (texto gravado no pedido) e a busca do
+     *   telefone só sabia procurar por `fornecedorId` — que 4 dos 7 pedidos
+     *   daquela base não tinham. O recado então acusava o CADASTRO por uma
+     *   falta que era do VÍNCULO, e mandava conferir onde não havia nada
+     *   para consertar.
+     *
+     * ⚠ PEDIDO SEM `fornecedorId` NÃO É ANOMALIA — são três caminhos
+     *   legítimos: "Gerar pedido" a partir da requisição (o modal não
+     *   perguntava o fornecedor), fornecedor "— avulso —" no Mapa de Cotação
+     *   (`fornecedorId: null` de propósito) e pedido anterior ao vínculo.
+     *
+     * ⚠ CASAR POR NOME É EXATO E ÚNICO, NUNCA "PARECIDO". Abrir a conversa
+     *   errada manda o pedido de compra — com preço, quantidade e obra —
+     *   para a empresa errada, e isso não tem desfazer. Por isso: nome
+     *   normalizado IDÊNTICO (caem acento, caixa e pontuação; letra e dígito
+     *   nunca) e UM só candidato. Dois cadastros com o mesmo nome devolvem
+     *   `ambiguo` e quem chama manda a pessoa escolher. É a doutrina do
+     *   dinheiro (skill `dinheiro`, §2) aplicada a contato: não se liga por
+     *   semelhança, e o recado diz que NÃO ENCONTREI — nunca que não existe.
+     *
+     * ⚠ `via` IMPORTA PARA QUEM CHAMA: casar por nome é bom o bastante para
+     *   abrir a conversa e NÃO é vínculo. A tela precisa dizer isso, senão
+     *   ninguém nunca conserta o pedido e o palpite vira permanente.
+     *
+     * Devolve { forn, via, motivo, numero, quantos, nome }:
+     *   motivo "ok"          — `numero` pronto para o wa.me (só dígitos, com DDI)
+     *          "sem-fornecedor" — o pedido não nomeia ninguém
+     *          "sem-vinculo"    — tem nome, nenhum cadastro com esse nome
+     *          "ambiguo"        — mais de um cadastro com o mesmo nome
+     *          "id-orfao"       — o vínculo aponta para cadastro que sumiu
+     *          "sem-telefone"   — achou o cadastro, sem telefone nem WhatsApp
+     *          "incompleto"     — telefone com menos de 10 dígitos (não vira wa.me)
+     * ================================================================== */
+    contatoDoPedido: function (pc, fornecedores) {
+      var p = pc || {};
+      var lista = arr(fornecedores);
+      var nome = txt(p.fornecedorNome).trim();
+      var id = txt(p.fornecedorId);
+      var forn = null, via = null;
+
+      /* ⚠ COMPARAÇÃO POR STRING: `id` sai de `select.value` (sempre texto) e
+         o registro pode ter vindo da nuvem, do JSON de backup ou do seed da
+         demo. `===` cru entre 3 e "3" devolveria "fornecedor não encontrado"
+         num vínculo perfeitamente bom. */
+      if (id) {
+        for (var i = 0; i < lista.length; i++) {
+          if (lista[i] && txt(lista[i].id) === id) { forn = lista[i]; via = "id"; break; }
+        }
+        if (!forn) return { forn: null, via: null, motivo: "id-orfao", numero: "", quantos: 0, nome: nome };
+      }
+
+      if (!forn) {
+        if (!nome) return { forn: null, via: null, motivo: "sem-fornecedor", numero: "", quantos: 0, nome: "" };
+        var alvo = chaveNome(nome);
+        var achados = [];
+        for (var j = 0; j < lista.length; j++) {
+          if (lista[j] && alvo && chaveNome(lista[j].nome) === alvo) achados.push(lista[j]);
+        }
+        if (!achados.length) return { forn: null, via: null, motivo: "sem-vinculo", numero: "", quantos: 0, nome: nome };
+        if (achados.length > 1) return { forn: null, via: null, motivo: "ambiguo", numero: "", quantos: achados.length, nome: nome };
+        forn = achados[0]; via = "nome";
+      }
+
+      var tel = txt(forn.whatsapp || forn.telefone).replace(/[^0-9]/g, "");
+      var base = { forn: forn, via: via, quantos: 1, nome: txt(forn.nome) || nome };
+      if (!tel) { base.motivo = "sem-telefone"; base.numero = ""; return base; }
+      /* ⚠ MENOS DE 10 DÍGITOS NÃO VIRA CONVERSA. DDD (2) + assinante (8) é o
+         menor telefone brasileiro discável; "3486" ou "9999" cadastrado por
+         engano virava "553486" e abria o WhatsApp num número que não existe —
+         a pessoa via a tela do WhatsApp reclamando e culpava o aparelho, não
+         o cadastro. Dizer o que falta é a saída; abrir errado não é. */
+      if (tel.length < 10) { base.motivo = "incompleto"; base.numero = ""; base.digitos = tel.length; return base; }
+      /* 10 ou 11 dígitos = número nacional, ganha o DDI. Acima disso já veio
+         com DDI (ou é internacional) e não se mexe. */
+      base.motivo = "ok";
+      base.numero = tel.length <= 11 ? "55" + tel : tel;
+      return base;
     },
 
     /* texto pronto para cobrar o fornecedor pelo WhatsApp — o app NÃO avisa

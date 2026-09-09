@@ -14535,12 +14535,12 @@
         var txtE = (typeof ComprasLinha !== "undefined" && ComprasLinha.textoEnvio)
           ? ComprasLinha.textoEnvio(reg, empresa)
           : ("Olá! Segue nosso pedido de compra " + (reg.numero || "") + ".");
-        var semTelE = self._abrirWhatsFornecedor(reg.fornecedorId, txtE);
-        /* ⚠ sem telefone o recado ENTREGA o texto em vez de só recusar — a
+        var zapE = self._abrirWhatsFornecedor(reg, txtE);
+        /* ⚠ sem conversa o recado ENTREGA o texto em vez de só recusar — a
            pessoa copia e manda por onde tiver. Recusa sem saída é o defeito. */
-        UI.toast(semTelE
-          ? ("Este fornecedor não tem WhatsApp nem telefone no cadastro. Mensagem pronta para copiar: " + semTelE)
-          : "Abri a conversa no WhatsApp — anexe o PDF por lá; o app não manda arquivo sozinho.", "aviso");
+        UI.toast(zapE.aberto
+          ? ("Abri a conversa no WhatsApp — anexe o PDF por lá; o app não manda arquivo sozinho." + zapE.nota)
+          : (zapE.aviso + " Mensagem pronta para copiar: " + txtE), "aviso");
       };
     },
     comprasMarcarConfirmado: function (id) {
@@ -14722,12 +14722,42 @@
        primeira vez que uma das duas mudasse.
        Devolve "" quando abriu, ou a mensagem pronta quando NÃO há telefone —
        assim quem chama copia o texto para a pessoa em vez de só dizer "não dá". */
-    _abrirWhatsFornecedor: function (fornecedorId, texto) {
-      var forn = fornecedorId ? (lista("fornecedores").filter(function (f) { return f.id === fornecedorId; })[0] || {}) : {};
-      var tel = String(forn.whatsapp || forn.telefone || "").replace(/\D/g, "");
-      if (!tel) return texto;
-      try { window.open("https://wa.me/" + (tel.length <= 11 ? "55" + tel : tel) + "?text=" + encodeURIComponent(texto), "_blank"); } catch (e) {}
-      return "";
+    /* ⚠ RECEBE O PEDIDO INTEIRO, NÃO SÓ O ID. Antes recebia `fornecedorId` e,
+       sem ele, respondia "este fornecedor não tem WhatsApp nem telefone no
+       cadastro" — uma frase sobre o CADASTRO para uma falta que era do
+       VÍNCULO. O fornecedor estava lá, com telefone; o pedido é que não
+       apontava para ele (o roteiro completo e os três caminhos que geram
+       pedido sem id estão em `ComprasLinha.contatoDoPedido`).
+       Devolve { aberto, aviso, nota }: `aviso` é o recado pronto de por que
+       NÃO abriu — cada motivo com a sua porta —, e `nota` é o que precisa ser
+       dito quando abriu por casamento de nome em vez de vínculo gravado. */
+    _abrirWhatsFornecedor: function (pedido, texto) {
+      var pc = pedido || {};
+      /* sem o motor a tela não mente: diz que não conseguiu CONFERIR. */
+      if (typeof ComprasLinha === "undefined" || !ComprasLinha.contatoDoPedido) {
+        return { aberto: false, nota: "", aviso: "Não consegui procurar o contato do fornecedor: o motor de compras (compraslinha.js) não carregou — recarregue o app." };
+      }
+      var c = ComprasLinha.contatoDoPedido(pc, lista("fornecedores"));
+      var quem = c.nome ? ("\"" + c.nome + "\"") : "este fornecedor";
+      if (c.motivo !== "ok") {
+        var aviso;
+        /* ⚠ CADA RECUSA APONTA A PORTA. Trava sem saída empurra a pessoa a
+           inventar caminho — e aqui a saída é sempre curta: escolher o
+           fornecedor no pedido, ou completar o cadastro. */
+        if (c.motivo === "sem-fornecedor") aviso = "Este pedido ainda não diz de quem é a compra. Abra o pedido e escolha o Fornecedor — aí o WhatsApp abre sozinho.";
+        else if (c.motivo === "sem-vinculo") aviso = "O pedido está no nome de " + quem + ", mas não há fornecedor com esse nome no cadastro. Cadastre-o em Fornecedores, ou abra o pedido e escolha o fornecedor certo.";
+        else if (c.motivo === "ambiguo") aviso = "Há " + c.quantos + " fornecedores cadastrados como " + quem + " e eu não escolho por você: abra o pedido e selecione qual é no campo Fornecedor.";
+        else if (c.motivo === "id-orfao") aviso = "O fornecedor deste pedido não está mais no cadastro (foi excluído). Abra o pedido e escolha outro fornecedor.";
+        else if (c.motivo === "incompleto") aviso = "O telefone de " + quem + " tem só " + c.digitos + " dígito(s) — falta o DDD, ou o número está incompleto. Corrija em Fornecedores.";
+        else aviso = quem.charAt(0).toUpperCase() + quem.slice(1) + " não tem WhatsApp nem telefone no cadastro — preencha em Fornecedores.";
+        return { aberto: false, aviso: aviso, nota: "" };
+      }
+      try { window.open("https://wa.me/" + c.numero + "?text=" + encodeURIComponent(texto), "_blank"); } catch (e) {}
+      /* ⚠ PALPITE BOM SE ANUNCIA. Casar pelo nome abre a conversa certa na
+         imensa maioria das vezes e NÃO é vínculo: sem dizer isso, o pedido
+         fica solto para sempre e ninguém fica sabendo que há o que consertar. */
+      return { aberto: true, aviso: "",
+        nota: c.via === "nome" ? (" Achei " + quem + " pelo nome — este pedido não está vinculado ao cadastro; abra o pedido e escolha o fornecedor para gravar o vínculo.") : "" };
     },
     /* =================================================================
      * FORNECEDOR RECUSOU — o estado que não existia
@@ -15929,12 +15959,12 @@
       if (typeof ComprasLinha === "undefined") { UI.toast("O motor da linha do tempo (compraslinha.js) não carregou — recarregue o app.", "erro"); return; }
       var empresa = ""; try { empresa = (Auth.usuario() || {}).empresa || ""; } catch (e) {}
       var texto = ComprasLinha.textoCobranca(reg, empresa, this._hojeISO());
-      var semTel = this._abrirWhatsFornecedor(reg.fornecedorId, texto);
-      if (semTel) {
-        UI.toast("Este fornecedor não tem WhatsApp nem telefone no cadastro. Mensagem pronta para copiar: " + semTel, "aviso");
+      var zap = this._abrirWhatsFornecedor(reg, texto);
+      if (!zap.aberto) {
+        UI.toast(zap.aviso + " Mensagem pronta para copiar: " + texto, "aviso");
         return;
       }
-      UI.toast("Abri a mensagem no WhatsApp — o fornecedor NÃO foi avisado automaticamente; envie por lá.", "aviso");
+      UI.toast("Abri a mensagem no WhatsApp — o fornecedor NÃO foi avisado automaticamente; envie por lá." + zap.nota, "aviso");
     },
     comprasTrocaObra: function (d) {
       var v = (d && d.value != null && d.value !== "") ? d.value
@@ -21136,14 +21166,53 @@
       ]);
     },
 
-renderRequisicoes: function () {
+    /* ⚠ SEPARAR POR OBRA — o MESMO motor de Financeiro, Compras, Medições e
+       RDO (js/porobra.js), não uma quinta régua. Suprimentos era o buraco:
+       com três obras rodando, Requisições e Cotações eram uma lista só, e a
+       pergunta "o que esta obra pediu?" não tinha resposta na tela.
+       ⚠ OS CONTADORES SEGUEM O RECORTE (regra 3 do PorObra): "Abertas: 12"
+       ao lado de uma tabela mostrando 3 são dois números sobre coisas
+       diferentes lado a lado — e quem lê acredita no que está escrito. */
+    _reqObra: "todas",
+    reqTrocaObra: function (d) {
+      var v = (d && d.value != null && d.value !== "") ? d.value
+        : (d && d.id != null && d.id !== "") ? d.id : "todas";
+      this._reqObra = v;
+      App.render();
+    },
+    _reqEscopo: function () {
+      var todos = lista("requisicoes"), obras = lista("obras");
+      /* ⚠ SEM O MOTOR, A TELA AINDA ABRE: módulo em branco o cliente lê como
+         "meus dados sumiram". Degrada para a lista completa, sem filtro. */
+      if (typeof PorObra === "undefined") return { semMotor: true, sel: "todas", obras: obras, todos: todos, lista: todos };
+      var sel = this._reqObra || "todas";
+      if (sel !== "todas" && sel !== PorObra.SEM_OBRA && sel !== PorObra.ORFAO &&
+        !obras.some(function (o) { return String(o.id) === String(sel); })) sel = this._reqObra = "todas";
+      return { sel: sel, obras: obras, todos: todos, lista: PorObra.filtrar(todos, sel, obras) };
+    },
+    renderRequisicoes: function () {
       var self = this;
-      var rs = lista("requisicoes"), obras = lista("obras");
+      var e = this._reqEscopo(), obras = e.obras;
+      var rs = e.lista;
       var abertas = rs.filter(function (r) { return r.status === "aberta" || r.status === "cotando"; }).length;
       var urgentes = rs.filter(function (r) { return r.prioridade === "urgente" && r.status !== "comprada" && r.status !== "cancelada"; }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Abertas: <b>' + abertas + "</b> · Urgentes: <b>" + urgentes + "</b></span>";
+      var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+      var selReq = (e.todos.length && !e.semMotor)
+        ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
+          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + 'Obra <select data-gacao="req-obra" title="Separar as requisições por obra" style="max-width:230px">' +
+          ops.map(function (o) {
+            return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
+              Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+          }).join("") + "</select></label>"
+        : "";
+      var extra = selReq + '<span class="muted" style="margin-right:12px;align-self:center">Abertas: <b>' + abertas + "</b> · Urgentes: <b>" + urgentes + "</b></span>";
       var html = this._head(svg("requisicoes") + "Requisições", "nova-requisicoes", "Nova requisição", extra);
-      if (!rs.length) return html + vazioBox("Nenhuma requisição", "nova-requisicoes", "Criar primeira");
+      if (!e.todos.length) return html + vazioBox("Nenhuma requisição", "nova-requisicoes", "Criar primeira");
+      /* ⚠ VAZIO DO RECORTE ≠ VAZIO DO MÓDULO, e precisa de porta: sem o botão,
+         quem filtrou uma obra sem requisição lê "nenhuma requisição" e conclui
+         que perdeu os dados. */
+      if (!rs.length) return html + '<div class="vazio card">Nenhuma requisição em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
+        '</b>. <button class="btn sm" data-gacao="req-obra">Ver todas as obras</button></div>';
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
@@ -21178,12 +21247,40 @@ renderRequisicoes: function () {
     },
     novoRequisicoes: function () { this.formRequisicoes(null); },
     // =================== COTAÇÕES (Mapa de Cotação de Compras) ===================
+    /* mesmo motor e mesmas regras das Requisições, logo acima. */
+    _cotObra: "todas",
+    cotTrocaObra: function (d) {
+      var v = (d && d.value != null && d.value !== "") ? d.value
+        : (d && d.id != null && d.id !== "") ? d.id : "todas";
+      this._cotObra = v;
+      App.render();
+    },
+    _cotEscopo: function () {
+      var todos = lista("cotacoes"), obras = lista("obras");
+      if (typeof PorObra === "undefined") return { semMotor: true, sel: "todas", obras: obras, todos: todos, lista: todos };
+      var sel = this._cotObra || "todas";
+      if (sel !== "todas" && sel !== PorObra.SEM_OBRA && sel !== PorObra.ORFAO &&
+        !obras.some(function (o) { return String(o.id) === String(sel); })) sel = this._cotObra = "todas";
+      return { sel: sel, obras: obras, todos: todos, lista: PorObra.filtrar(todos, sel, obras) };
+    },
     renderCotacoes: function () {
-      var cs = lista("cotacoes"), obras = lista("obras");
+      var e = this._cotEscopo(), obras = e.obras;
+      var cs = e.lista;
       var abertas = cs.filter(function (c) { return c.status !== "concluida"; }).length;
-      var extra = '<span class="muted" style="margin-right:12px;align-self:center">Em cotação: <b>' + abertas + "</b></span>";
+      var ops = e.semMotor ? [] : PorObra.opcoes(e.todos, obras);
+      var selCot = (e.todos.length && !e.semMotor)
+        ? '<label style="display:flex;align-items:center;gap:6px;margin-right:12px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--texto-fraco)">' +
+          (typeof Icones !== "undefined" ? Icones.get("obra", 15) : "") + 'Obra <select data-gacao="cot-obra" title="Separar as cotações por obra" style="max-width:230px">' +
+          ops.map(function (o) {
+            return '<option value="' + Util.esc(o.valor) + '"' + (String(o.valor) === String(e.sel) ? " selected" : "") + ">" +
+              Util.esc(o.rotulo) + " (" + o.n + ")</option>";
+          }).join("") + "</select></label>"
+        : "";
+      var extra = selCot + '<span class="muted" style="margin-right:12px;align-self:center">Em cotação: <b>' + abertas + "</b></span>";
       var html = this._head(svg("cotacoes") + "Cotações", "nova-cotacoes", "Nova cotação", extra);
-      if (!cs.length) return html + vazioBox("Nenhuma cotação ainda. Compare 2-3 fornecedores item a item antes de comprar — a economia aparece sozinha.", "nova-cotacoes", "Criar primeira");
+      if (!e.todos.length) return html + vazioBox("Nenhuma cotação ainda. Compare 2-3 fornecedores item a item antes de comprar — a economia aparece sozinha.", "nova-cotacoes", "Criar primeira");
+      if (!cs.length) return html + '<div class="vazio card">Nenhuma cotação em <b>' + Util.esc(PorObra.rotuloDe(e.sel, obras)) +
+        '</b>. <button class="btn sm" data-gacao="cot-obra">Ver todas as obras</button></div>';
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th class="num">Itens</th><th class="num">Fornecedores</th><th class="num">Melhor total</th><th>Status</th><th></th></tr></thead><tbody>';
       cs.forEach(function (c) {
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
@@ -22761,7 +22858,17 @@ renderRequisicoes: function () {
       var nI = (r.itens && r.itens.length) || 0;
       var corpo =
         '<div class="row">' + campo("Descrição", inp("g-pdesc", r.descricao)) + campo("Valor (R$)", inp("g-pvalor", r.valorEstimado || "", "", "number")) + "</div>" +
-        '<div class="row">' + campo("Obra", sel("g-pobra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
+        /* ⚠ O PEDIDO NASCIA SEM DONO. Este modal perguntava descrição, valor e
+           obra — e o pedido ia para Compras sem fornecedor nenhum. Duas coisas
+           quebravam por causa disso: a coluna Fornecedor da lista ficava "—",
+           e o botão "Abrir conversa do fornecedor" não tinha por onde procurar
+           o telefone (era o defeito relatado em 09/09/2026 — o cadastro tinha o
+           WhatsApp, o pedido é que não apontava para ele).
+           ⚠ CONTINUA OPCIONAL: comprar antes de decidir de quem é o caminho
+           normal de quem vai cotar. "— escolher depois —" é estado legítimo, e
+           o formulário do pedido preenche quando a decisão sair. */
+        '<div class="row">' + campo("Obra", sel("g-pobra", optsRec(obras, "nome", r.obraId, "— nenhuma —")))
+          + campo("Fornecedor", sel("g-pforn", optsRec(lista("fornecedores"), "nome", "", "— escolher depois —"))) + "</div>" +
         (nI ? '<p class="muted">Leva <b>' + nI + "</b> ite" + (nI > 1 ? "ns" : "m") + " para o pedido" + (r.valorEstimado ? " (valor de referência do banco: <b>" + Util.fmtMoeda(r.valorEstimado) + "</b>, ajuste com a cotação real)." : ".") + "</p>" : "") +
         '<p class="muted">Cria um pedido em Compras (status Aguardando aprovação) e marca a requisição como comprada.</p>';
       UI.modal("Gerar pedido — " + Util.esc(r.numero || ""), corpo, [
@@ -22785,7 +22892,13 @@ renderRequisicoes: function () {
              carimba isso para o recebimento poder AVISAR: sem o carimbo, o
              preço do banco entra calado no kardex e vira custo médio do
              almoxarifado como se fosse o preço pago. */
-          Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id, precoOrigem: "banco" }, true));
+          /* ⚠ ID E NOME, OS DOIS. O id é o vínculo (é por ele que o telefone,
+             o papel e a nota fiscal acham o fornecedor); o nome é o que a lista
+             desenha e o que sobra se o cadastro for excluído depois. Gravar só
+             um dos dois é como o pedido fica meio ligado. */
+          var fornPed = lista("fornecedores").filter(function (x) { return String(x.id) === String(v("g-pforn")); })[0];
+          Store.salvar(eid(), "compras", self._aprovCarimbar({ numero: pc, descricao: desc, obraId: v("g-pobra"), valor: nv("g-pvalor"), status: "cotacao", categoria: "material", itens: r.itens || [], requisicaoId: r.id, precoOrigem: "banco",
+            fornecedorId: fornPed ? fornPed.id : "", fornecedorNome: fornPed ? fornPed.nome : "" }, true));
           r.status = "comprada"; Store.salvar(eid(), "requisicoes", r);
           UI.fecharModal(); App.render(); UI.toast("Pedido " + pc + " criado.", "ok");
         } }
@@ -28407,7 +28520,7 @@ renderFolha: function () {
     _ISENTO_BLOQUEIO: {
       "custo-frota": 1, "consultar-chave": 1,
       "pr-troca-obra": 1, "dash-periodo": 1, "dash-obra": 1, "dash-obra-multi": 1, "dash-metas": 1, "tar-filtro": 1, "tar-obra": 1,
-      "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1,
+      "fin-obra": 1, "compras-obra": 1, "med-obra": 1, "rdo-obra": 1, "req-obra": 1, "cot-obra": 1,
       "bim-troca-obra": 1, "lp-obra": 1, "lp-visao": 1, "fs-semana": 1, "fs-obra": 1, "prod-obra": 1,
       "galeria-abrir": 1, "galeria-fechar": 1, "galeria-nav": 1, "galeria-troca-obra": 1,
       "bim-drawer-fechar": 1,
@@ -28484,6 +28597,8 @@ renderFolha: function () {
         case "fin-obra": return this.finTrocaObra(dataset);
         case "fin-estornar": return this.finEstornar(id);
         case "compras-obra": return this.comprasTrocaObra(dataset);
+        case "req-obra": return this.reqTrocaObra(dataset);
+        case "cot-obra": return this.cotTrocaObra(dataset);
         case "compras-filtro": this._comprasFiltro = (dataset && dataset.value) || "todos"; App.render(); return;
         case "enviar-compra": return this.comprasMarcarEnviado(id);
         case "confirmar-compra": return this.comprasMarcarConfirmado(id);

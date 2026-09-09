@@ -2546,6 +2546,40 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   host.appendChild(reqPanel);
   S.reqPanel = reqPanel;
   var reqEstado = null;
+  /* qual linha está com a busca manual aberta, e o que foi digitado. Uma por
+     vez: duas abertas encheriam o painel e nenhuma das duas seria lida. */
+  var reqBusca = null;
+
+  /* ⚠ BUSCA NA BASE INTEIRA, e só INSUMO. Sub-composição vendida como insumo
+     poria "CONCRETO FCK 25MPA, M3, R$ 587" num pedido de compra de material —
+     é a mesma regra que o casador automático já segue.
+     Casa por TODAS as palavras digitadas (e pelo código), porque quem busca à
+     mão está estreitando de propósito: "te sanitario 50" tem de trazer o tê de
+     50, não tudo que tem "50". */
+  function reqBuscaResultados(idx, termo) {
+    var t = String(termo || '').trim().toLowerCase();
+    if (t.length < 2) return '<div style="color:#8aa0b6;font-size:10.5px;padding:3px 0">digite ao menos 2 letras — ou o código do insumo</div>';
+    var todos = [];
+    try { if (typeof Insumos !== 'undefined') todos = Insumos._idx || []; } catch (e) { todos = []; }
+    if (!todos.length) return '<div style="color:#e0a458;font-size:10.5px;padding:3px 0">o banco de insumos não está carregado nesta tela</div>';
+    var palavras = t.split(/\s+/).filter(Boolean);
+    var achados = [];
+    for (var i = 0; i < todos.length && achados.length < 40; i++) {
+      var it = todos[i];
+      if (String(it.tipo || '').toLowerCase() === 'composicao') continue;
+      var alvo = (String(it.codigo || '') + ' ' + String(it.descricao || '')).toLowerCase();
+      var tem = true;
+      for (var w = 0; w < palavras.length; w++) if (alvo.indexOf(palavras[w]) < 0) { tem = false; break; }
+      if (tem) achados.push(it);
+    }
+    if (!achados.length) return '<div style="color:#e0a458;font-size:10.5px;padding:3px 0">nenhum insumo com todas essas palavras</div>';
+    return achados.slice(0, 25).map(function (it) {
+      return '<button class="btn sm" data-rq-pick="' + idx + '" data-rq-cod="' + esc(String(it.codigo)) + '" ' +
+        'style="display:block;width:100%;text-align:left;font-size:10.5px;margin:2px 0;white-space:normal">' +
+        esc(String(it.descricao).slice(0, 90)) + ' · <b>' + esc(String(it.unidade || '')) + '</b> · R$ ' +
+        (Number(it.custoUnitario) || 0).toFixed(2) + '</button>';
+    }).join('') + (achados.length > 25 ? '<div style="color:#8aa0b6;font-size:10px">mostrando 25 — refine a busca</div>' : '');
+  }
 
   function reqLevantar() {
     if (typeof BimPeca === 'undefined') { UI0('Motor de peças não carregado.', 'erro'); return null; }
@@ -2709,7 +2743,28 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           esc(String(c.item.descricao).slice(0, 70)) + '  ·  R$ ' + (Number(c.item.custoUnitario) || 0).toFixed(2) +
           '</option>';
       }).join('');
-      return '<tr>' +
+      /* ⚠ SELECT QUE NÃO SABE REPRESENTAR O VALOR APAGA O VALOR. O item
+         escolhido À MÃO na busca quase nunca está entre os 6 candidatos — é
+         justamente por isso que a pessoa foi buscar. Sem uma opção para ele, o
+         `select` nascia em "— deixar pendente —" e a escolha ficava invisível;
+         pior, o primeiro toque no select gravaria por cima dela. A e2e pegou
+         isto no navegador ("clicar no resultado escolhe o item" reprovou),
+         depois de o motor e os asserts de fonte darem verde — é o mesmo
+         defeito que esta base já registrou em outro formulário. */
+      if (x.escolhido) {
+        var jaTem = false;
+        v.candidatos.slice(0, 6).forEach(function (c) {
+          if (String(c.item.codigo) === String(x.escolhido.codigo)) jaTem = true;
+        });
+        if (!jaTem) {
+          opcoes = '<option value="M" selected>[escolhido por você] ' +
+            esc(String(x.escolhido.descricao).slice(0, 70)) + '  ·  R$ ' +
+            (Number(x.escolhido.custoUnitario) || 0).toFixed(2) + '</option>' + opcoes;
+        }
+      }
+      /* linha removida continua VISIVEL, riscada e apagada: sumir de vez
+         tiraria da pessoa a chance de perceber que removeu a errada */
+      return '<tr' + (x.removido ? ' style="opacity:.45;text-decoration:line-through"' : '') + '>' +
         '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid #24435f">' +
           /* ⚠ O NOME DE MERCADO NA FRENTE, A FAMÍLIA LOGO ABAIXO — nunca só um
              dos dois. É a descrição que casa com a base e que o fornecedor
@@ -2753,11 +2808,37 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
             ? '<select data-rq-sel="' + x.idx + '" style="width:100%;font-size:11px"><option value="">— deixar pendente —</option>' + opcoes + '</select>'
             : '<span style="color:#e0a458">sem candidato na base</span>') +
           '<div style="color:#9fb2c8;font-size:11px;margin-top:3px">' + esc(v.porque) + '</div>' +
+          /* ⚠ A PORTA DE SAÍDA DA LISTA CURTA. Os candidatos são os 6 melhores
+             de um casamento automático, e quando ele erra a pessoa ficava sem
+             caminho: ou aceitava um dos seis, ou criava insumo próprio
+             duplicando um item que JÁ EXISTE na base. Medido no projeto real:
+             para o tê 50×50 os seis eram CAP, LUVA, TERMINAL, TUBO, JOELHO e
+             ANEL, e o `TE SANITARIO DN 50 X 50` estava na base o tempo todo.
+             Quem conhece a obra acha em segundos o que o casador não achou —
+             então a busca na base inteira fica aqui, na mesma linha. */
+          (reqBusca && reqBusca.idx === x.idx
+            ? '<div style="margin-top:5px;border-top:1px dashed #2f5474;padding-top:5px">' +
+                '<input data-rq-busca="' + x.idx + '" value="' + esc(reqBusca.termo || '') + '" ' +
+                  'placeholder="buscar na base: codigo ou palavras da descricao" ' +
+                  'style="width:100%;padding:4px 7px;border-radius:6px;border:1px solid #2f6b8f;background:#0c1f33;color:#dbe8f5;font-size:11px">' +
+                '<div id="rq-res-' + x.idx + '" style="max-height:150px;overflow:auto;margin-top:4px">' +
+                  reqBuscaResultados(x.idx, reqBusca.termo) + '</div></div>'
+            : '') +
         '</td>' +
-        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid #24435f">' +
+        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid #24435f;white-space:nowrap">' +
+          (x.escolhido ? '<div style="color:#6fd08a;margin-bottom:3px">✓</div>' : '') +
+          '<button class="btn sm" data-rq-buscar="' + x.idx + '" title="Procurar o item na base inteira, e nao so entre os candidatos que o casador achou">' +
+            (reqBusca && reqBusca.idx === x.idx ? 'fechar busca' : 'buscar') + '</button>' +
           (x.escolhido
-            ? '<span style="color:#6fd08a">✓</span>'
-            : '<button class="btn sm" data-rq-novo="' + x.idx + '" title="Criar como insumo próprio, com a descrição e a unidade que vieram do modelo">+ insumo</button>') +
+            ? ''
+            : ' <button class="btn sm" data-rq-novo="' + x.idx + '" title="Criar como insumo próprio, com a descrição e a unidade que vieram do modelo">+ insumo</button>') +
+          /* ⚠ REMOVER É REVERSÍVEL DE PROPÓSITO. A linha some da requisição,
+             mas continua na tela riscada, com "voltar" ao lado: apagar sem
+             volta numa lista de 182 peças é a pessoa perder o levantamento
+             inteiro por um clique errado e ter de refazer o levantamento. */
+          ' <button class="btn sm" data-rq-remover="' + x.idx + '" title="' +
+            (x.removido ? 'Trazer esta peça de volta para a requisição' : 'Tirar esta peça da requisição — dá para voltar atrás') + '">' +
+            (x.removido ? 'voltar' : 'remover') + '</button>' +
         '</td></tr>';
     }).join('');
 
@@ -2767,7 +2848,15 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         '<button class="btn sm" data-rq="fechar" title="Fechar">' + ico('fechar') + '</button></div>' +
       '<div style="color:#9fb2c8">' + pecas.length + ' peças distintas · ' +
         '<span style="color:#6fd08a">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
-        '<span style="color:#e0a458">' + cont.sem + ' sem candidato</span></div>' +
+        '<span style="color:#e0a458">' + cont.sem + ' sem candidato</span>' +
+        /* ⚠ O QUE FOI REMOVIDO TEM DE APARECER NO CABEÇALHO. Com 182 linhas a
+           pessoa rola a lista e não vê o que riscou lá em cima; sem este
+           número ela clica em Gerar achando que está pedindo tudo. */
+        (function () {
+          var nR = 0;
+          pecas.forEach(function (y) { if (y.removido) nR++; });
+          return nR ? ' · <span style="color:#f08a8a">' + nR + ' removida(s), fora da requisição</span>' : '';
+        })() + '</div>' +
       /* ⚠ ESTA LINHA É O QUE IMPEDE O RECURSO DE FALHAR EM SILÊNCIO. Ler a
          Descrição do Revit só ajuda se o modelo a tiver preenchida, e isso
          muda por escritório e por biblioteca de família. Sem o contador, um
@@ -2832,10 +2921,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return { idx: i, p: p, v: v, escolhido: (v.status === 'ok' && v.candidatos[0]) ? v.candidatos[0].item : null };
     });
     reqEstado = { pecas: pecas, filtro: '', resumo: lev.resumo };
+    reqBusca = null;   /* levantamento novo, busca antiga nao sobrevive */
     fecharPaineis(reqPanel);
     reqPanel.style.display = 'flex';
     reqPintar();
   }
+
+  /* ⚠ DIGITAR NÃO PODE REPINTAR O PAINEL INTEIRO. Repintar recria o <input> e
+     o cursor sai dele: a pessoa digita a primeira letra e perde o foco, o que
+     na prática torna a busca inusável. Então o `input` atualiza SÓ a caixa de
+     resultados daquela linha. */
+  reqPanel.addEventListener('input', function (ev) {
+    var cx = ev.target && ev.target.getAttribute ? ev.target.getAttribute('data-rq-busca') : null;
+    if (cx === null || !reqBusca) return;
+    reqBusca.termo = ev.target.value || '';
+    var box = document.getElementById('rq-res-' + cx);
+    if (box) box.innerHTML = reqBuscaResultados(+cx, reqBusca.termo);
+  });
 
   reqPanel.addEventListener('change', function (ev) {
     var sel = ev.target && ev.target.closest ? ev.target.closest('[data-rq-sel]') : null;
@@ -2843,7 +2945,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var x = reqEstado.pecas[+sel.getAttribute('data-rq-sel')];
     if (!x) return;
     var j = sel.value;
+    /* ⚠ "M" É A OPÇÃO DO ITEM ESCOLHIDO À MÃO, e ela não indexa `candidatos`.
+       Sem este ramo, `+'M'` vira NaN, `candidatos[NaN]` é undefined e o
+       próprio ato de abrir o select APAGAVA a escolha manual — o valor sumia
+       sem a pessoa ter escolhido nada. */
+    if (j === 'M') { x.escolhaManual = true; return; }
     x.escolhido = (j === '') ? null : ((x.v.candidatos[+j] || {}).item || null);
+    if (x.escolhido) x.escolhaManual = false;
     reqPintar();
   });
 
@@ -2852,6 +2960,39 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!b || !reqEstado) return;
     var sub = b.getAttribute('data-rq-sub');
     if (sub !== null) { reqEstado.filtro = sub; reqPintar(); return; }
+    var abrir = b.getAttribute('data-rq-buscar');
+    if (abrir !== null) {
+      reqBusca = (reqBusca && reqBusca.idx === +abrir) ? null : { idx: +abrir, termo: '' };
+      reqPintar();
+      /* o foco vai para a caixa: quem clicou em "buscar" quer digitar agora */
+      try { var cx = reqPanel.querySelector('[data-rq-busca]'); if (cx) cx.focus(); } catch (eF) {}
+      return;
+    }
+    var pick = b.getAttribute('data-rq-pick');
+    if (pick !== null) {
+      var xp = reqEstado.pecas[+pick];
+      var cod = b.getAttribute('data-rq-cod');
+      if (xp && cod) {
+        var achado = null;
+        try {
+          var lista = (typeof Insumos !== 'undefined' && Insumos._idx) || [];
+          for (var q = 0; q < lista.length; q++) if (String(lista[q].codigo) === cod) { achado = lista[q]; break; }
+        } catch (eP) {}
+        /* ⚠ ESCOLHA À MÃO É ESCOLHA, e ela manda. Não se mistura com o
+           casamento automático nem se "confirma" por cima dele: quem clicou
+           leu a descrição inteira e o preço. Mas ela também não vira veredito
+           do motor — o status continua contando a história do casador, e o
+           carimbo de quem escolheu vai junto. */
+        if (achado) { xp.escolhido = achado; xp.escolhaManual = true; reqBusca = null; reqPintar(); }
+      }
+      return;
+    }
+    var rem = b.getAttribute('data-rq-remover');
+    if (rem !== null) {
+      var xr = reqEstado.pecas[+rem];
+      if (xr) { xr.removido = !xr.removido; reqPintar(); }
+      return;
+    }
     var novo = b.getAttribute('data-rq-novo');
     if (novo !== null) {
       var xn = reqEstado.pecas[+novo];
@@ -2868,7 +3009,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return;
     }
     var k = b.getAttribute('data-rq');
-    if (k === 'fechar') { reqPanel.style.display = 'none'; reqEstado = null; return; }
+    if (k === 'fechar') { reqPanel.style.display = 'none'; reqEstado = null; reqBusca = null; return; }
     if (k === 'gerar') {
       /* ⚠ O BOTAO GERA O QUE ESTA A VISTA. Ele mandava o modelo INTEIRO
          mesmo com um chip de subsistema ligado: a pessoa clicava em "esgoto",
@@ -2876,13 +3017,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          incluindo agua fria e pluvial que ela nao pediu. Filtro que filtra so
          a tela e armadilha, nao filtro. */
       var visiveis = reqEstado.pecas.filter(function (x) {
+        /* ⚠ LINHA REMOVIDA NÃO ENTRA NA REQUISIÇÃO. Sem este filtro o botão
+           "remover" seria só enfeite: a linha sumiria da tela e o material
+           seria comprado do mesmo jeito — recado que mente, e caro. */
+        if (x.removido) return false;
         return !reqEstado.filtro || (x.p.subsistema || x.p.disciplina || 'sem classificação') === reqEstado.filtro;
       });
+      if (!visiveis.length) { UI0('Não sobrou nenhuma peça para requisitar — todas foram removidas ou o filtro não deixou nenhuma.', 'info'); return; }
       var escolhas = {};
       visiveis.forEach(function (x) { escolhas[x.p.chave] = x.escolhido; });
       var pac = BimPeca.paraRequisicao(visiveis.map(function (x) { return x.p; }), escolhas);
       try { window.dispatchEvent(new CustomEvent('orcapro:requisicao-do-bim', { detail: pac })); } catch (e3) {}
-      reqPanel.style.display = 'none'; reqEstado = null;
+      reqPanel.style.display = 'none'; reqEstado = null; reqBusca = null;
     }
   });
 

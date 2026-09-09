@@ -156,14 +156,32 @@
        regra do trio comia os dois números antes de a regra de bitola vê-los,
        o veto não tinha o que comparar e a peça errada subia com cara de
        conferida. Reduções são justamente as peças em que errar custa mais. */
+    /* ⚠ "50 X 50" NÃO É REDUÇÃO — é a MESMA bitola escrita duas vezes, e foi
+       assim que o casador perdeu a peça certa. A SINAPI escreve o tê reto como
+       `TE SANITARIO, PVC, DN 50 X 50 MM, SERIE NORMAL`: dois números porque o
+       tê tem duas saídas, as duas de 50 mm. Marcando isso como redução, a
+       guarda "peça reta não é redução" (compararDims, logo abaixo) reprovava
+       justamente o item CERTO.
+       Medido no projeto hidrossanitário real, no tê 50×50 do print: o
+       `7097 TE SANITARIO, PVC, DN 50 X 50 MM` empatava em pontos com CAP e
+       LUVA (9 de 13,6) e caía de 66% para 6% — sumia da lista. O usuário via
+       seis candidatos e nenhum deles era um tê; o melhor colocado era um CAP.
+       Redução é quando as bitolas DIFEREM. */
+    function marcarReducao(vals) {
+      var vistos = {}, n = 0;
+      for (var i = 0; i < vals.length; i++) { if (!vistos[vals[i]]) { vistos[vals[i]] = 1; n++; } }
+      if (n > 1) d.reducaoTexto = true;
+    }
     comer(/\bdn\s*(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?\s*mm\b/g, function (m, a, b, c) {
-      [a, b, c].filter(Boolean).forEach(function (x) { d.dn.push(parseInt(x, 10)); });
-      d.reducaoTexto = true;
+      var vs = [a, b, c].filter(Boolean).map(function (x) { return parseInt(x, 10); });
+      vs.forEach(function (x) { d.dn.push(x); });
+      marcarReducao(vs);
     });
     /* e "100 X 50 MM" sem o DN na frente é o mesmo caso */
     comer(/(\d+)\s*x\s*(\d+)(?:\s*x\s*(\d+))?\s*mm\b/g, function (m, a, b, c) {
-      [a, b, c].filter(Boolean).forEach(function (x) { d.mm.push(parseInt(x, 10)); });
-      d.reducaoTexto = true;
+      var vs2 = [a, b, c].filter(Boolean).map(function (x) { return parseInt(x, 10); });
+      vs2.forEach(function (x) { d.mm.push(x); });
+      marcarReducao(vs2);
     });
 
     /* trio 150x150x50 / 90x90 / 0.80 x 2.10 — ANTES dos leitores de número
@@ -282,6 +300,113 @@
     if (!a || !b) return 'muda';
     return a === b ? 'confere' : 'diverge';
   }
+
+  /* ---------------------------------------------------------------
+   * 2b. O SUBSTANTIVO DA PEÇA — o que ela É. E ele é VETO.
+   *
+   * ⚠ A LIÇÃO QUE FALTAVA. Este arquivo já dizia que a bitola não é ponto, é
+   *   veto. Faltava dizer o mesmo do NOME DA PEÇA, e o buraco era grande:
+   *   medido no projeto real, um "Tê 50 × 50" de esgoto trazia os termos
+   *   `serie, normal, juncao, esgoto, tigre` — todos genéricos — e os seis
+   *   melhores candidatos eram CAP, LUVA, TERMINAL DE VENTILAÇÃO, TUBO e
+   *   ANEL. Nenhum era um tê. Pior: com a bitola conferindo, uma
+   *   `LUVA SIMPLES DN 100` chegou a ser PRÉ-MARCADA para uma "Junção Simples
+   *   100 × 100", com o veredito "nome e medida conferem".
+   *
+   * ⚠ POR QUE O SCORE SOZINHO NUNCA IA RESOLVER. "tê" tem duas letras e o
+   *   filtro de termos descarta o que tem menos de três — a palavra que
+   *   DECIDE era justamente a que não entrava. E acrescentá-la aos termos
+   *   seria pior: o pré-filtro casa por substring, e "te" está dentro de
+   *   "TErminal" e "TE de inspeção". Por isso o tipo viaja como sinal
+   *   ESTRUTURADO, comparado por palavra inteira, e não como mais um token.
+   *
+   * ⚠ O SUBSTANTIVO É O DA ESQUERDA. A SINAPI começa a descrição pela peça:
+   *   "TE SANITARIO DE REDUCAO" é um TÊ, "JUNCAO SIMPLES DE REDUCAO" é uma
+   *   JUNÇÃO, "BUCHA DE REDUCAO" é uma BUCHA — as três contêm "redução", e
+   *   quem manda é quem aparece primeiro. Por isso vence a POSIÇÃO no texto,
+   *   não a ordem desta lista.
+   *
+   * ⚠ E TÊ NÃO É JUNÇÃO. São peças diferentes (o tê sanitário deriva a 90°, a
+   *   junção simples a 45°), preços diferentes, e a família do Revit costuma
+   *   chamar as duas de `Te_Juncao`. Juntá-las aqui para "facilitar" traria
+   *   de volta exatamente o erro que este bloco existe para impedir.
+   * ------------------------------------------------------------- */
+  var TIPO_PECA = [
+    ['te',        /\bte\b|\btes\b/],
+    ['juncao',    /\bjuncao\b|\bjuncoes\b/],
+    ['joelho',    /\bjoelho\b|\bcotovelo\b/],
+    ['curva',     /\bcurva\b/],
+    ['luva',      /\bluva\b/],
+    ['cap',       /\bcap\b|\btampao\b|\bplugue?\b/],
+    ['bucha',     /\bbucha\b/],
+    ['reducao',   /\breducao\b/],
+    ['adaptador', /\badaptador\b/],
+    ['tubo',      /\btubo\b|\beletroduto\b/],
+    ['terminal',  /\bterminal\b/],
+    ['anel',      /\banel\b/],
+    ['sifao',     /\bsifao\b/],
+    ['ralo',      /\bralo\b/],
+    ['caixa',     /\bcaixa\b/],
+    ['registro',  /\bregistro\b/],
+    ['valvula',   /\bvalvula\b/],
+    ['torneira',  /\btorneira\b/],
+    ['bacia',     /\bbacia\b|\bvaso sanitario\b/],
+    ['lavatorio', /\blavatorio\b/],
+    ['pia',       /\bpia\b/],
+    ['tanque',    /\btanque\b/],
+    ['chuveiro',  /\bchuveiro\b/],
+    ['cruzeta',   /\bcruzeta\b/],
+    ['nipple',    /\bnipple\b|\bniple\b/],
+    ['flange',    /\bflange\b/],
+    ['uniao',     /\buniao\b/],
+    ['calha',     /\bcalha\b/]
+  ];
+  /* devolve o substantivo mais à ESQUERDA, ou '' quando o texto não nomeia
+     nenhuma peça conhecida — e '' NUNCA veta: silêncio não é divergência */
+  function tipoPecaDe(texto) {
+    var t = ' ' + norm(texto).replace(/[_\-.,;:/()\[\]"]/g, ' ') + ' ';
+    var achado = '', pos = Infinity, n = 0, vistos = {};
+    for (var i = 0; i < TIPO_PECA.length; i++) {
+      var m = TIPO_PECA[i][1].exec(t);
+      if (!m) continue;
+      if (!vistos[TIPO_PECA[i][0]]) { vistos[TIPO_PECA[i][0]] = 1; n++; }
+      if (m.index < pos) { pos = m.index; achado = TIPO_PECA[i][0]; }
+    }
+    return { tipo: achado, quantos: n };
+  }
+  /* ⚠ DUAS LEITURAS DO MESMO DICIONÁRIO, e a diferença não é preciosismo.
+     · Na DESCRIÇÃO (nome de mercado, dos dois lados) vence o mais à esquerda:
+       a SINAPI escreve a peça primeiro e o resto é qualificação —
+       "TE SANITARIO DE REDUCAO" é um tê, não uma redução.
+     · Na FAMÍLIA do Revit, não. Ela é ETIQUETA DE PASTA e frequentemente
+       nomeia DUAS peças de uma vez: a família real do projeto se chama
+       `ESG_Serie Normal_Te_Juncao` e cobre tê E junção. Ler a da esquerda ali
+       carimbaria "tê" numa junção e o veto passaria a reprovar o item CERTO —
+       trocando um casamento ruim por um errado, que é pior. Então da família
+       só se aceita o tipo quando ela nomeia UMA peça só. */
+  function tipoDaDescricao(texto) { return tipoPecaDe(texto).tipo; }
+  function tipoDaFamilia(texto) {
+    var r = tipoPecaDe(texto);
+    return r.quantos === 1 ? r.tipo : '';
+  }
+  function compararTipoPeca(a, b) {
+    if (!a || !b) return 'muda';
+    return a === b ? 'confere' : 'diverge';
+  }
+  /* como o tipo aparece no recado ao usuário — o recado tem de dizer QUAL é a
+     peça de cada lado, senão vira "não confere" genérico, que a pessoa lê como
+     formalidade e ignora */
+  var ROTULO_TIPO = {
+    te: 'um tê', juncao: 'uma junção', joelho: 'um joelho', curva: 'uma curva',
+    luva: 'uma luva', cap: 'um cap', bucha: 'uma bucha', reducao: 'uma redução',
+    adaptador: 'um adaptador', tubo: 'um tubo', terminal: 'um terminal',
+    anel: 'um anel', sifao: 'um sifão', ralo: 'um ralo', caixa: 'uma caixa',
+    registro: 'um registro', valvula: 'uma válvula', torneira: 'uma torneira',
+    bacia: 'uma bacia', lavatorio: 'um lavatório', pia: 'uma pia',
+    tanque: 'um tanque', chuveiro: 'um chuveiro', cruzeta: 'uma cruzeta',
+    nipple: 'um nipple', flange: 'um flange', uniao: 'uma união', calha: 'uma calha'
+  };
+  function rotuloTipo(t) { return ROTULO_TIPO[t] || ('"' + (t || '?') + '"'); }
 
   /* ---------------------------------------------------------------
    * 3. TERMOS
@@ -448,6 +573,10 @@
         p = porChave[chave] = {
           chave: chave, familia: fam, temFamilia: temFamilia,
           descricao: descr, descricaoFonte: descr ? String(e.descricaoFonte || '') : '',
+          /* o que a peça É. Da descrição quando há; da família só quando ela
+             nomeia UMA peça só (ver tipoDaFamilia). '' = desconhecido, e
+             desconhecido nunca veta. */
+          tipoPeca: descr ? tipoDaDescricao(descr) : tipoDaFamilia(fam),
           tipo: String(e.tipo || ''), rotulo: String(e.nome || ''),
           sistemaIfc: String(e.sistemaIfc || ''),
           disciplina: disc.disciplina, subsistema: disc.subsistema, origemDisciplina: disc.origem,
@@ -488,6 +617,10 @@
           p.descricao = descr;
           p.descricaoFonte = String(e.descricaoFonte || '');
           p.termos = termosDe(p.familia, descr);
+          /* a descrição manda: quando ela chega, o tipo vem dela e não do
+             palpite da família — senão a ordem de leitura do IFC decidiria
+             qual peça o casador acha que é */
+          p.tipoPeca = tipoDaDescricao(descr);
           if (p.dims.vazio && !p.bitolaPar) {
             var dTarde = dimsDe(descr);
             if (!dTarde.vazio) { dTarde.deDescricao = true; p.dims = dTarde; }
@@ -758,14 +891,26 @@
       var p = pontuar(peca, item, sin, opc.peso || null);
       return {
         item: item, fonte: c.fonte || item.fonte || '',
-        conf: p.conf, dim: p.dim, uni: p.uni, achou: p.achou, de: p.tot, viaSinonimo: p.viaSinonimo
+        conf: p.conf, dim: p.dim, uni: p.uni, achou: p.achou, de: p.tot, viaSinonimo: p.viaSinonimo,
+        tipoPeca: compararTipoPeca(peca.tipoPeca, tipoDaDescricao(item.descricao))
       };
     }).filter(function (c) { return c.conf > 0; })
       .sort(function (a, b) {
+        /* ⚠ O SUBSTANTIVO VEM ANTES DO SCORE, e é a única chave que passa na
+           frente dele. Medido no tê 50×50 do projeto real: uma
+           `JUNCAO SIMPLES, PVC, 45 GRAUS, DN 50 X 50` marcava 88% contra 66%
+           do `TE SANITARIO, PVC, DN 50 X 50` — as duas com a bitola
+           conferindo — porque a família do Revit se chama `Te_Juncao` e a
+           palavra "juncao" entrava nos termos. Deixar o score decidir aí é
+           comprar junção de 45° no lugar de tê de 90°, com cara de conferido.
+           Peça de OUTRO tipo perde para peça do tipo certo, sempre; quando o
+           tipo é desconhecido dos dois lados o valor é 'muda' e a ordem é
+           exatamente a de antes. */
+        var ord = { confere: 0, muda: 1, diverge: 2 };
+        if (ord[a.tipoPeca] !== ord[b.tipoPeca]) return ord[a.tipoPeca] - ord[b.tipoPeca];
         if (b.conf !== a.conf) return b.conf - a.conf;
         /* empate no score: quem CONFERE a dimensão passa na frente de quem
            não declara — e quem diverge fica por último */
-        var ord = { confere: 0, muda: 1, diverge: 2 };
         /* unidade decide antes da medida: e ela que separa o anel [UN] do tubo [M] */
         if (ord[a.uni] !== ord[b.uni]) return ord[a.uni] - ord[b.uni];
         return (ord[a.dim] - ord[b.dim]);
@@ -789,8 +934,26 @@
       porque = 'nenhum insumo da base ficou acima do mínimo de confiança';
     } else {
       var topo = acima[0];
-      var empatados = acima.filter(function (c) { return c.conf === topo.conf; });
-      if (topo.uni === 'diverge') {
+      /* ⚠ EMPATE SÓ CONTA ENTRE PEÇAS DO MESMO TIPO. Sem isto o recado passou
+         a mentir na direção contrária: no tê 50×50, com o tipo já resolvido, a
+         tela dizia "6 insumos empatam em 66%" — mas os outros cinco eram CAP,
+         LUVA, TUBO e TERMINAL, que o tipo já mandou para o fim da lista e que
+         ninguém está considerando. Empate é entre quem disputa. */
+      var empatados = acima.filter(function (c) {
+        return c.conf === topo.conf && c.tipoPeca === topo.tipoPeca;
+      });
+      /* ⚠ TIPO DIFERENTE NUNCA VIRA "ok", e isso vem ANTES da unidade e da
+         medida: se o candidato nem é a mesma peça, o resto não importa.
+         Medido no print do projeto real: uma `LUVA SIMPLES, PVC, SOLDAVEL,
+         DN 100` estava PRÉ-MARCADA para a "Junção Simples 100 × 100mm" com o
+         veredito "nome e medida conferem" — a bitola conferia, a palavra
+         "simples" era comum às duas, e nada dizia que luva não é junção. */
+      if (topo.tipoPeca === 'diverge') {
+        status = 'ambiguo';
+        porque = 'o melhor candidato é ' + rotuloTipo(tipoDaDescricao(topo.item.descricao)) +
+                 ' e o modelo pede ' + rotuloTipo(peca.tipoPeca) +
+                 ' — confira na lista ou busque o item na base';
+      } else if (topo.uni === 'diverge') {
         /* ⚠ UNIDADE INCOMPATÍVEL VEM ANTES DE TUDO. É o caso do anel de
            borracha [UN] no lugar do tubo [M], em que a bitola confere nos dois
            e só a grandeza denuncia — medido no modelo real, cinco das 23
@@ -825,7 +988,7 @@
         else if (peca.dims && peca.dims.deDescricao) porque += ' — a medida veio da Descrição do modelo, não da geometria';
       }
     }
-    return { candidatos: lista.slice(0, opc.max || 8), status: status, porque: porque, empate: acima.length ? acima.filter(function (c) { return c.conf === acima[0].conf; }).length : 0 };
+    return { candidatos: lista.slice(0, opc.max || 8), status: status, porque: porque, empate: acima.length ? acima.filter(function (c) { return c.conf === acima[0].conf && c.tipoPeca === acima[0].tipoPeca; }).length : 0 };
   }
 
   function resumoDim(d, par) {
@@ -1176,6 +1339,11 @@
        gate poder sondar a conta da barra sem montar um levantamento inteiro */
     BARRA_M: BARRA_M,
     barrasDe: barrasDe,
+    /* o substantivo da peca, exposto para o gate sondar a leitura sem
+       montar levantamento — e para a tela poder dizer o que achou */
+    tipoDaDescricao: tipoDaDescricao,
+    tipoDaFamilia: tipoDaFamilia,
+    rotuloTipo: rotuloTipo,
     ehSegmento: ehSegmento
   };
 
