@@ -21216,7 +21216,23 @@
       html += '<table class="tbl"><thead><tr><th>Nº</th><th>Data</th><th>Obra</th><th>Descrição</th><th>Prioridade</th><th>Status</th><th></th></tr></thead><tbody>';
       rs.forEach(function (r) {
         var ob = obras.filter(function (o) { return o.id === r.obraId; })[0];
-        var acoes = '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ';
+        /* ⚠ A EDIÇÃO EXISTIA E NÃO TINHA PORTA. O formulário sempre soube
+           acrescentar item, tirar item e mudar quantidade — mas a única forma
+           de chegar nele era clicar no NÚMERO da requisição, uma célula sem
+           rótulo, sem cursor de link para quem não passa o mouse e sem nada
+           dizendo que ali se clica. Relatado em 09/09/2026 como "não tem como
+           editar depois que gera": para quem usa, recurso sem porta é recurso
+           que não existe.
+           ⚠ E o rótulo conta a verdade do estado: em requisição já comprada o
+           pedido JÁ SAIU, e o que se abre ali é para conferir, não para mudar
+           o que foi comprado — por isso "Ver", e o formulário explica onde se
+           muda de verdade. */
+        var fechadaReq = (r.status === "comprada" || r.status === "cancelada");
+        var acoes = '<button class="btn sm" data-gopen="requisicoes:' + r.id + '" title="' +
+          (fechadaReq ? 'Abrir a requisição para conferir os itens' : 'Abrir para editar: acrescentar item, tirar item, mudar quantidade') +
+          '">' + (typeof Icones !== 'undefined' ? Icones.get(fechadaReq ? 'olho' : 'editar', 15) : '') +
+          (fechadaReq ? ' Ver' : ' Editar') + '</button> ' +
+          '<button class="btn sm" data-gacao="doc-requisicao" data-id="' + r.id + '" title="Gerar Solicitação de Compra">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> ';
         if (r.status !== "aprovada" && r.status !== "comprada" && r.status !== "cancelada" && r.status !== "rejeitada" && r.status !== "cotando") acoes += '<button class="btn sm" data-gacao="aprovar-requisicao" data-id="' + r.id + '">Aprovar</button> <button class="btn sm" data-gacao="rejeitar-requisicao" data-id="' + r.id + '" style="color:#dc2626">Rejeitar</button> ';
         if (r.status === "aprovada") acoes += '<button class="btn sm" data-gacao="cotar-requisicao" data-id="' + r.id + '" title="Comparar fornecedores antes de comprar">🆚 Cotar</button> <button class="btn sm primary" data-gacao="comprar-requisicao" data-id="' + r.id + '">Gerar pedido</button>';
         else if (r.status === "cotando") acoes += '<span class="muted" title="Cotação em andamento — conclua ou exclua a cotação no módulo Cotações">🆚 em cotação</span>';
@@ -21286,7 +21302,19 @@
         var ob = obras.filter(function (o) { return o.id === c.obraId; })[0];
         var d = (typeof Cotacoes !== "undefined") ? Cotacoes.decisao(c) : { totalMisto: null, totalUnico: null };
         var melhor = d.totalMisto != null ? d.totalMisto : d.totalUnico;
-        var acoes = '<button class="btn sm" data-gacao="doc-cotacao" data-id="' + c.id + '" title="Imprimir o Mapa de Cotação">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-cotacao" data-id="' + c.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button>';
+        /* ⚠ MESMA PORTA QUE FALTAVA NA REQUISIÇÃO. O Mapa de Cotação sempre
+           teve "+ item", o × para tirar item e "+ fornecedor" — e a única
+           entrada era clicar no número. Cotação CONCLUÍDA abre em somente
+           leitura de propósito (os pedidos já saíram), e a porta dela é o
+           "Reabrir cotação" que o próprio formulário desenha; por isso aqui o
+           rótulo é "Ver", e não "Editar" que mentiria sobre o que vai
+           acontecer no clique. */
+        var concluidaCot = (c.status === "concluida");
+        var acoes = '<button class="btn sm" data-gopen="cotacoes:' + c.id + '" title="' +
+          (concluidaCot ? 'Abrir o Mapa de Cotação para conferir (concluída: os pedidos já saíram)' : 'Abrir para editar: acrescentar item, tirar item, acrescentar fornecedor') +
+          '">' + (typeof Icones !== 'undefined' ? Icones.get(concluidaCot ? 'olho' : 'editar', 15) : '') +
+          (concluidaCot ? ' Ver' : ' Editar') + '</button> ' +
+          '<button class="btn sm" data-gacao="doc-cotacao" data-id="' + c.id + '" title="Imprimir o Mapa de Cotação">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + '</button> <button class="btn sm" data-gacao="excluir-cotacao" data-id="' + c.id + '" style="color:#dc2626">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button>';
         var st = c.status || "rascunho";
         /* "enviada" = publicação online ATIVA. Vencida sem ninguém encerrar, o
            registro ainda diz "enviada" — na lista isso leria "Aguardando
@@ -22759,7 +22787,32 @@
         this._reqItensSeed = null;
       }
       var nPend = itensBuf.filter(function (i) { return i.pendente; }).length;
-      var corpo =
+      /* ⚠ REQUISIÇÃO COMPRADA CONTINUA EDITÁVEL — E ISSO PRECISA SER DITO.
+         O "Gerar pedido" COPIA os itens para um registro novo em Compras; os
+         dois seguem vidas separadas a partir dali. Então mexer aqui não muda
+         uma vírgula do que foi pedido ao fornecedor, e a pessoa que abre esta
+         tela para "corrigir o pedido" sairia achando que corrigiu.
+         Não travo a edição: quem pediu a porta foi o usuário, e há motivo
+         legítimo para acertar a requisição depois (corrigir uma descrição,
+         completar um preço que faltava). O que não pode é o silêncio — então
+         a tela diz o que este formulário muda e onde se muda o resto. */
+      var pedidoDaReq = null;
+      if (r.id && (r.status === "comprada")) {
+        try {
+          lista("compras").forEach(function (p) {
+            if (!pedidoDaReq && p && String(p.requisicaoId || "") === String(r.id)) pedidoDaReq = p;
+          });
+        } catch (ePed) { pedidoDaReq = null; }
+      }
+      var avisoComprada = (r.status === "comprada")
+        ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 11px;margin-bottom:10px;color:#92400e">' +
+          (typeof Icones !== "undefined" ? Icones.get("alerta", 15) : "") +
+          ' Esta requisição já virou pedido de compra' +
+          (pedidoDaReq ? ' (<b>' + Util.esc(pedidoDaReq.numero || pedidoDaReq.id) + '</b>)' : '') +
+          '. Mudar itens <b>aqui não muda o pedido</b> — o pedido levou uma cópia dos itens quando foi gerado. ' +
+          'Para mudar o que foi comprado, edite o pedido em <b>Compras</b>.</div>'
+        : "";
+      var corpo = avisoComprada +
         '<div class="row">' + campo("Número", inp("g-numero", numero)) + campo("Data", inp("g-data", r.data || hoje, "", "date")) + campo("Obra", sel("g-obra", optsRec(obras, "nome", r.obraId, "— nenhuma —"))) + "</div>" +
         '<div class="row">' + campo("Solicitante", inp("g-solic", r.solicitante)) + campo("Prioridade", sel("g-prioridade", opts(P.reqPrioridade, r.prioridade || "normal"))) + campo("Status", sel("g-status", opts(P.reqStatus, r.status || "aberta"))) + "</div>" +
         campo("Itens da solicitação *",
