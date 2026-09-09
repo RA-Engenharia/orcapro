@@ -43,6 +43,27 @@
     return isFinite(n) ? n : 0;
   }
   function r2(v) { return Math.round(v * 100) / 100; }
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function texto(v) { return v == null ? "" : String(v); }
+  /* ⚠ CHAVE DE MATERIAL — delega ao `Util.itemChave`, que é a régua oficial da
+     casa para dizer se dois textos são o MESMO item de almoxarifado ("Cimento
+     CP-II 50kg" = "CIMENTO CP II 50 KG"). O fallback existe só porque este
+     módulo roda no Node do gate, onde `Util` não é carregado; ele repete a
+     mesma regra — cai acento, caixa e pontuação, LETRA E DÍGITO NUNCA, porque
+     "CP-II" e "CP-IV" são cimentos diferentes e "DN 40" não é "DN 100".
+     ⚠ A UNIDADE ENTRA NA CHAVE: o mesmo tubo cotado em metro e em barra são
+     linhas distintas da cotação, com preços que não se comparam. */
+  function itemChave(it) {
+    if (!it) return "";
+    var d = texto(it.descricao), u = texto(it.unidade), c = texto(it.codigo);
+    var nd = (typeof Util !== "undefined" && Util && Util.itemChave) ? Util.itemChave(d)
+      : d.toLowerCase()
+        .replace(/[àáâãä]/g, "a").replace(/[éêë]/g, "e").replace(/[íï]/g, "i")
+        .replace(/[óôõö]/g, "o").replace(/[úü]/g, "u").replace(/ç/g, "c")
+        .replace(/[^a-z0-9]/g, "");
+    if (!nd) return "";
+    return c.trim().toLowerCase() + "|" + nd + "|" + u.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
 
   var Cotacoes = {
 
@@ -127,13 +148,30 @@
 
     /* pedidos de compra do cenário escolhido ('unico' | 'misto') —
        cada pedido: { fornecedorIdx, itens:[{...item, valorUnit, subtotal}], frete, total } */
+    /* ⚠ O MODO "parcial" EXISTE PORQUE A OBRA NÃO ESPERA. Até 09/09/2026 a
+       cotação só virava pedido quando TODO item tinha ao menos um preço: com
+       40 itens e 3 que ninguém cotou, os 37 ficavam presos junto — e a saída
+       que sobrava era apagar da cotação os itens que ainda interessavam,
+       perdendo o registro de que eles foram pedidos. "Comprar com buraco"
+       continua proibido nos outros dois modos (fornecedor incompleto nunca
+       vence como único, e o misto exige todo item com preço); o parcial é
+       EXPLÍCITO: a tela mostra quantos ficam de fora e oferece nascer uma
+       cotação nova com eles, para o pendente não virar item esquecido.
+       ⚠ ELE NÃO INVENTA PREÇO. Item sem preço nenhum não entra em pedido
+       nenhum — só sai da lista deste pedido e volta em `pendentes`. */
     pedidos: function (cot, modo) {
-      if (modo !== "unico" && modo !== "misto") return []; // modo desconhecido: explícito, nunca silencioso
+      if (modo !== "unico" && modo !== "misto" && modo !== "parcial") return []; // modo desconhecido: explícito, nunca silencioso
       var d = this.decisao(cot), itens = cot.itens || [], self = this, grupos = {};
       if (modo === "unico") {
         if (d.vencedorUnico == null) return [];
         var f0 = d.vencedorUnico;
         grupos[f0] = itens.map(function (it, i) { return { item: it, itemIdx: i, preco: self.preco(cot, i, f0) }; });
+      } else if (modo === "parcial") {
+        itens.forEach(function (it, i) {
+          var m = d.porItem[i];
+          if (!m) return;                 /* ninguém cotou: fica para a próxima rodada */
+          (grupos[m.fornecedorIdx] = grupos[m.fornecedorIdx] || []).push({ item: it, itemIdx: i, preco: m.preco });
+        });
       } else {
         if (!d.mistoCompleto) return [];
         itens.forEach(function (it, i) {
@@ -170,6 +208,114 @@
       });
       if (!cobertos) return null;
       return { itensComparados: cobertos, totalPago: r2(pago), totalReferencia: r2(refe), economia: r2(refe - pago) };
+    },
+
+    /* ==================================================================
+     * TIRAR ITEM DA COTAÇÃO SEM EMBARALHAR PREÇO
+     *
+     * ⚠ O PREÇO MORA NO ÍNDICE, E POR ISSO REMOVER É PERIGOSO. Cada
+     *   fornecedor guarda `precos: { "0": 2.28, "1": 13.90 }`, onde a chave é
+     *   a POSIÇÃO do item na lista. Tirar o item 1 de uma lista de 4 sem
+     *   reindexar faz o preço do item 2 passar a valer para o 3, o do 3 para
+     *   o 4 — calado, sem erro nenhum na tela, e o mapa de cotação passa a
+     *   comparar tubo com joelho. A tela já resolvia isso por um caminho que
+     *   não serve fora dela: o × apaga a descrição e o `_cotDoForm` reconstrói
+     *   tudo do DOM (com `mapaIdx`), o que exige o formulário aberto.
+     *
+     * Devolve uma cotação NOVA (não mexe na recebida) com os itens fora e os
+     * preços realinhados. Índice inexistente é ignorado.
+     * ================================================================== */
+    removerItens: function (cot, indices) {
+      var itens = arr(cot && cot.itens), fora = {};
+      arr(indices).forEach(function (i) { if (itens[i]) fora[i] = 1; });
+      var mapa = {}, novos = [];
+      itens.forEach(function (it, i) {
+        if (fora[i]) return;
+        mapa[i] = novos.length;      /* índice antigo -> novo, a mesma régua do `mapaIdx` da tela */
+        novos.push(it);
+      });
+      var forns = arr(cot && cot.fornecedores).map(function (fr) {
+        var novoPrecos = {}, precos = (fr && fr.precos) || {};
+        Object.keys(precos).forEach(function (k) {
+          var alvo = mapa[+k];
+          if (alvo == null) return;  /* preço do item removido sai junto — é o que a tela promete no confirm */
+          novoPrecos[alvo] = precos[k];
+        });
+        var copia = {};
+        Object.keys(fr || {}).forEach(function (k) { copia[k] = fr[k]; });
+        copia.precos = novoPrecos;
+        return copia;
+      });
+      var saida = {};
+      Object.keys(cot || {}).forEach(function (k) { saida[k] = cot[k]; });
+      saida.itens = novos;
+      saida.fornecedores = forns;
+      return saida;
+    },
+
+    /* ==================================================================
+     * ACHAR NA COTAÇÃO O ITEM QUE SAIU DA REQUISIÇÃO
+     *
+     * ⚠ NÃO HÁ ID COMPARTILHADO, E ISSO É O PROBLEMA. A cotação nasce da
+     *   requisição copiando os itens (`novaCotacaoDaRequisicao`) sem guardar
+     *   de qual item da requisição cada um veio — então excluir na requisição
+     *   não tinha como alcançar a cotação, que foi o relato de 09/09/2026.
+     *   Daqui para a frente o vínculo vai gravado (`reqItemId`); para as
+     *   cotações que já existem, resta casar pelo conteúdo.
+     *
+     * ⚠ EXATO E ÚNICO, como todo casamento sem id nesta base. A chave é
+     *   código + descrição normalizada + unidade; dois itens da cotação com a
+     *   mesma chave devolvem `ambiguos` e NINGUÉM é removido. Tirar o item
+     *   errado de uma cotação leva junto o preço que os fornecedores deram —
+     *   trabalho que não volta, e que ninguém percebe ter perdido.
+     * ================================================================== */
+    casarItens: function (cotItens, alvos) {
+      var lista = arr(cotItens), out = { achados: [], naoAchados: [], ambiguos: [] };
+      arr(alvos).forEach(function (alvo) {
+        if (!alvo) return;
+        /* o vínculo gravado vence o palpite: cotação nova casa por id */
+        var porId = [];
+        if (texto(alvo.id)) {
+          lista.forEach(function (it, i) { if (it && texto(it.reqItemId) && texto(it.reqItemId) === texto(alvo.id)) porId.push(i); });
+        }
+        if (porId.length === 1) { out.achados.push({ idx: porId[0], item: lista[porId[0]], via: "id" }); return; }
+        if (porId.length > 1) { out.ambiguos.push({ alvo: alvo, quantos: porId.length }); return; }
+        var k = itemChave(alvo), achados = [];
+        if (!k) { out.naoAchados.push({ alvo: alvo }); return; }
+        lista.forEach(function (it, i) { if (it && itemChave(it) === k) achados.push(i); });
+        if (!achados.length) { out.naoAchados.push({ alvo: alvo }); return; }
+        if (achados.length > 1) { out.ambiguos.push({ alvo: alvo, quantos: achados.length }); return; }
+        out.achados.push({ idx: achados[0], item: lista[achados[0]], via: "conteudo" });
+      });
+      return out;
+    },
+
+    /* ==================================================================
+     * O QUE FICOU SEM PREÇO — e que não pode virar item esquecido
+     *
+     * Item que NENHUM fornecedor cotou. É o que trava a conclusão nos modos
+     * completos e o que sai de fora no modo parcial; a tela usa esta lista
+     * para dizer o número na cara da pessoa ANTES de ela concluir, e para
+     * montar a cotação seguinte.
+     *
+     * ⚠ "SEM PREÇO" É ZERO FORNECEDORES, não "algum fornecedor não cotou".
+     *   Item que um cotou e outro não está resolvido — tem preço, tem
+     *   vencedor, entra no pedido.
+     * ================================================================== */
+    pendentes: function (cot) {
+      var porItem = this.melhorPorItem(cot), itens = arr(cot && cot.itens);
+      var out = [];
+      itens.forEach(function (it, i) { if (!porItem[i]) out.push({ idx: i, item: it }); });
+      return out;
+    },
+
+    /* quantos fornecedores já deram preço para este item — o que se perde ao
+       tirá-lo. A tela mostra isso ANTES de perguntar: "tirar o item" e "jogar
+       fora o preço de 3 fornecedores" são decisões diferentes. */
+    precosDoItem: function (cot, idx) {
+      var n = 0, self = this;
+      arr(cot && cot.fornecedores).forEach(function (_fr, f) { if (self.preco(cot, idx, f) != null) n++; });
+      return n;
     },
 
     validar: function (cot) {

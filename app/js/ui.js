@@ -64,8 +64,17 @@
       this.fecharModal();
       var bg = document.createElement("div");
       bg.className = "modal-bg"; bg.id = "modal-bg";
+      /* ⚠ QUEM PEDE A LARGURA É O CONTEÚDO, NÃO CADA CHAMADOR. São ~140
+         `UI.modal` no app: marcar um por um garantiria que o próximo modal com
+         grade nasce apertado de novo, e ninguém ia lembrar da regra. Corpo com
+         <table> é grade de itens/comparativo — o caso que os 760 px de antes
+         cortavam (ver o comentário de `.modal.largo` em css/app.css).
+         `data-modal-largo` fica como saída manual para o corpo que precisa de
+         espaço sem ter tabela (ex.: duas colunas lado a lado). */
+      var corpo = String(corpoHTML == null ? "" : corpoHTML);
+      var largo = corpo.indexOf("<table") > -1 || corpo.indexOf("data-modal-largo") > -1;
       bg.innerHTML =
-        '<div class="modal"><header><h2>' + this._rotuloHtml(titulo) + '</h2>' +
+        '<div class="modal' + (largo ? " largo" : "") + '"><header><h2>' + this._rotuloHtml(titulo) + '</h2>' +
         '<span style="flex:1"></span><button class="btn ghost sm" data-fechar>' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></header>' +
         '<div class="body">' + corpoHTML + '</div>' +
         '<footer id="modal-footer"></footer></div>';

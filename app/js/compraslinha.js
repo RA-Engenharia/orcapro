@@ -367,12 +367,19 @@
      *          "sem-telefone"   — achou o cadastro, sem telefone nem WhatsApp
      *          "incompleto"     — telefone com menos de 10 dígitos (não vira wa.me)
      * ================================================================== */
-    contatoDoPedido: function (pc, fornecedores) {
+    /* ⚠ DUAS PERGUNTAS DIFERENTES, E MISTURÁ-LAS CUSTOU CARO: "de quem é este
+       pedido" (vínculo) e "dá para abrir conversa" (telefone). Um fornecedor
+       achado e sem telefone responde SIM à primeira e NÃO à segunda — e a
+       tela de religar vínculo precisa exatamente da primeira, senão deixaria
+       de fora justo os pedidos de quem ainda não tem WhatsApp cadastrado.
+       `acharFornecedor` responde a primeira; `contatoDoPedido` chama esta e
+       acrescenta a segunda. A REGRA DE CASAMENTO MORA NUM LUGAR SÓ: duplicá-la
+       é como as duas telas passariam a discordar sobre de quem é o pedido. */
+    acharFornecedor: function (pc, fornecedores) {
       var p = pc || {};
       var lista = arr(fornecedores);
       var nome = txt(p.fornecedorNome).trim();
       var id = txt(p.fornecedorId);
-      var forn = null, via = null;
 
       /* ⚠ COMPARAÇÃO POR STRING: `id` sai de `select.value` (sempre texto) e
          o registro pode ter vindo da nuvem, do JSON de backup ou do seed da
@@ -380,37 +387,82 @@
          num vínculo perfeitamente bom. */
       if (id) {
         for (var i = 0; i < lista.length; i++) {
-          if (lista[i] && txt(lista[i].id) === id) { forn = lista[i]; via = "id"; break; }
+          if (lista[i] && txt(lista[i].id) === id) return { forn: lista[i], via: "id", motivo: "ok", quantos: 1, nome: txt(lista[i].nome) || nome };
         }
-        if (!forn) return { forn: null, via: null, motivo: "id-orfao", numero: "", quantos: 0, nome: nome };
+        return { forn: null, via: null, motivo: "id-orfao", quantos: 0, nome: nome };
       }
 
-      if (!forn) {
-        if (!nome) return { forn: null, via: null, motivo: "sem-fornecedor", numero: "", quantos: 0, nome: "" };
-        var alvo = chaveNome(nome);
-        var achados = [];
-        for (var j = 0; j < lista.length; j++) {
-          if (lista[j] && alvo && chaveNome(lista[j].nome) === alvo) achados.push(lista[j]);
-        }
-        if (!achados.length) return { forn: null, via: null, motivo: "sem-vinculo", numero: "", quantos: 0, nome: nome };
-        if (achados.length > 1) return { forn: null, via: null, motivo: "ambiguo", numero: "", quantos: achados.length, nome: nome };
-        forn = achados[0]; via = "nome";
+      if (!nome) return { forn: null, via: null, motivo: "sem-fornecedor", quantos: 0, nome: "" };
+      var alvo = chaveNome(nome);
+      var achados = [];
+      for (var j = 0; j < lista.length; j++) {
+        if (lista[j] && alvo && chaveNome(lista[j].nome) === alvo) achados.push(lista[j]);
       }
+      if (!achados.length) return { forn: null, via: null, motivo: "sem-vinculo", quantos: 0, nome: nome };
+      if (achados.length > 1) return { forn: null, via: null, motivo: "ambiguo", quantos: achados.length, nome: nome };
+      return { forn: achados[0], via: "nome", motivo: "ok", quantos: 1, nome: txt(achados[0].nome) || nome };
+    },
 
+    contatoDoPedido: function (pc, fornecedores) {
+      var base = this.acharFornecedor(pc, fornecedores);
+      base.numero = "";
+      if (base.motivo !== "ok") return base;
+      var forn = base.forn;
       var tel = txt(forn.whatsapp || forn.telefone).replace(/[^0-9]/g, "");
-      var base = { forn: forn, via: via, quantos: 1, nome: txt(forn.nome) || nome };
-      if (!tel) { base.motivo = "sem-telefone"; base.numero = ""; return base; }
+      if (!tel) { base.motivo = "sem-telefone"; return base; }
       /* ⚠ MENOS DE 10 DÍGITOS NÃO VIRA CONVERSA. DDD (2) + assinante (8) é o
          menor telefone brasileiro discável; "3486" ou "9999" cadastrado por
          engano virava "553486" e abria o WhatsApp num número que não existe —
          a pessoa via a tela do WhatsApp reclamando e culpava o aparelho, não
          o cadastro. Dizer o que falta é a saída; abrir errado não é. */
-      if (tel.length < 10) { base.motivo = "incompleto"; base.numero = ""; base.digitos = tel.length; return base; }
+      if (tel.length < 10) { base.motivo = "incompleto"; base.digitos = tel.length; return base; }
       /* 10 ou 11 dígitos = número nacional, ganha o DDI. Acima disso já veio
          com DDI (ou é internacional) e não se mexe. */
-      base.motivo = "ok";
       base.numero = tel.length <= 11 ? "55" + tel : tel;
       return base;
+    },
+
+    /* ==================================================================
+     * OS PEDIDOS QUE SÓ TÊM O NOME — o passivo que o conserto deixou
+     *
+     * ⚠ VÍNCULO FALTANDO NÃO QUEBRA SÓ O WHATSAPP. `documentoCompra` monta o
+     *   papel do pedido a partir de `Store.obter("fornecedores", fornecedorId)`:
+     *   sem o vínculo, o PDF que o fornecedor recebe sai sem CNPJ, sem contato,
+     *   sem endereço, sem e-mail e SEM OS DADOS DE PAGAMENTO (PIX, banco,
+     *   agência, conta, titular) — justamente os campos que existem para o
+     *   pedido "se bastar" e ninguém precisar ligar para o escritório.
+     *
+     * ⚠ ISTO NÃO É MIGRAÇÃO AUTOMÁTICA, E A DIFERENÇA IMPORTA. Esta função só
+     *   CLASSIFICA e devolve candidatos; quem grava é a tela, depois de a
+     *   pessoa ver de quem para quem. Religar dinheiro/documento por palpite,
+     *   calado e em lote, é exatamente o que a doutrina da casa proíbe: um
+     *   palpite errado aqui manda o próximo pedido, com preço e quantidade,
+     *   para a empresa errada.
+     *
+     * ⚠ SÓ PEDIDO SEM `fornecedorId`. Vínculo que aponta para cadastro
+     *   excluído (`id-orfao`) fica DE FORA: ali houve uma escolha deliberada e
+     *   o cadastro foi apagado depois; refazê-la por nome seria adivinhar por
+     *   cima de uma decisão de alguém. Esses aparecem na tela como aviso, com
+     *   o caminho de abrir o pedido.
+     *
+     * Devolve { resolviveis, ambiguos, semCadastro, semNome, quebrados, total }
+     * — `resolviveis[i]` = { pc, forn }, o resto só o pedido e o porquê.
+     * ================================================================== */
+    vinculosPendentes: function (compras, fornecedores) {
+      var self = this;
+      var out = { resolviveis: [], ambiguos: [], semCadastro: [], semNome: [], quebrados: [], total: 0 };
+      arr(compras).forEach(function (pc) {
+        if (!pc) return;
+        var r = self.acharFornecedor(pc, fornecedores);
+        if (r.motivo === "id-orfao") { out.quebrados.push({ pc: pc, quantos: 0 }); return; }
+        if (r.via === "id") return;                       /* já vinculado: nada a fazer */
+        if (r.motivo === "ok") { out.resolviveis.push({ pc: pc, forn: r.forn }); return; }
+        if (r.motivo === "ambiguo") { out.ambiguos.push({ pc: pc, quantos: r.quantos }); return; }
+        if (r.motivo === "sem-vinculo") { out.semCadastro.push({ pc: pc, quantos: 0 }); return; }
+        out.semNome.push({ pc: pc, quantos: 0 });
+      });
+      out.total = out.resolviveis.length + out.ambiguos.length + out.semCadastro.length + out.semNome.length + out.quebrados.length;
+      return out;
     },
 
     /* texto pronto para cobrar o fornecedor pelo WhatsApp — o app NÃO avisa

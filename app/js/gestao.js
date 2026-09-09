@@ -15135,7 +15135,7 @@
             + '<td class="num">' + (sub > 0 ? Util.fmtMoeda(sub) : '<span class="muted">—</span>') + "</td></tr>";
         }
         return '<tr data-pci="' + i + '">'
-          + '<td><input data-pcit="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material"></td>'
+          + '<td><input data-pcit="desc" value="' + Util.esc(it.descricao || "") + '" style="width:100%;min-width:200px" placeholder="descrição do material"></td>'
           + '<td><input data-pcit="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:74px;text-align:right" inputmode="decimal"></td>'
           + '<td><input data-pcit="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td>'
           + '<td><input data-pcit="preco" value="' + Util.esc(numBR(pu(it)) || "") + '" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
@@ -15442,7 +15442,7 @@
       var itens = Util.arr(nf.itens);
       var linha = function (it, i) {
         return '<tr data-nfi="' + i + '">'
-          + '<td><input data-nfit="desc" value="' + Util.esc((it && it.descricao) || "") + '" placeholder="descrição do material"></td>'
+          + '<td><input data-nfit="desc" value="' + Util.esc((it && it.descricao) || "") + '" style="width:100%;min-width:200px" placeholder="descrição do material"></td>'
           + '<td><input data-nfit="qtd" value="' + Util.esc(numBR(it && it.quantidade) || "") + '" style="width:74px;text-align:right" inputmode="decimal"></td>'
           + '<td><input data-nfit="un" value="' + Util.esc((it && it.unidade) || "") + '" style="width:52px" placeholder="un"></td>'
           + '<td><input data-nfit="vunit" value="' + Util.esc(numBR(it && (it.valorUnit != null ? it.valorUnit : it.precoUnit)) || "") + '" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
@@ -15507,7 +15507,7 @@
         var tr = document.createElement ? document.createElement("tr") : null;
         if (!tr) return;
         tr.setAttribute("data-nfi", String(1000 + n));
-        tr.innerHTML = '<td><input data-nfit="desc" value="" placeholder="descrição do material"></td>'
+        tr.innerHTML = '<td><input data-nfit="desc" value="" style="width:100%;min-width:200px" placeholder="descrição do material"></td>'
           + '<td><input data-nfit="qtd" value="" style="width:74px;text-align:right" inputmode="decimal"></td>'
           + '<td><input data-nfit="un" value="" style="width:52px" placeholder="un"></td>'
           + '<td><input data-nfit="vunit" value="" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
@@ -15966,6 +15966,111 @@
       }
       UI.toast("Abri a mensagem no WhatsApp — o fornecedor NÃO foi avisado automaticamente; envie por lá." + zap.nota, "aviso");
     },
+    /* ==================================================================
+     * RELIGAR O PEDIDO AO CADASTRO — de quem para quem, à vista
+     *
+     * ⚠ NÃO É MIGRAÇÃO SILENCIOSA, E ESSA É A DECISÃO DE PRODUTO. Dava para
+     *   varrer os pedidos no carregamento e gravar o vínculo sozinho, pelo
+     *   mesmo casamento de nome. Não se faz: um palpite errado aqui é o
+     *   próximo pedido de compra — com preço, quantidade e obra — indo para a
+     *   empresa errada, e uma gravação que ninguém viu acontecer não tem como
+     *   ser conferida depois. A pessoa vê a lista "nome escrito → cadastro",
+     *   desmarca o que não quiser, e só então grava.
+     *
+     * ⚠ O QUE NÃO DÁ PARA RESOLVER APARECE IGUAL, com o motivo e o caminho.
+     *   Tela que mostra só o que ela conserta ensina que o resto não existe.
+     *
+     * ⚠ RELÊ O REGISTRO VIVO NA HORA DE GRAVAR. Entre abrir este modal e
+     *   clicar, outro aparelho pode ter vinculado o mesmo pedido (a nuvem
+     *   funde pelo `atualizadoEm` mais novo). Gravar por cima do objeto do
+     *   closure devolveria o pedido ao estado de quando a tela abriu.
+     * ================================================================== */
+    comprasRevisarVinculos: function () {
+      var self = this;
+      if (!this._comprasGuardaMod()) return;
+      if (typeof ComprasLinha === "undefined" || !ComprasLinha.vinculosPendentes) {
+        UI.toast("O motor de compras (compraslinha.js) não carregou — recarregue o app.", "erro"); return;
+      }
+      var v = ComprasLinha.vinculosPendentes(lista("compras"), lista("fornecedores"));
+      if (!v.total) { UI.toast("Todos os pedidos já estão ligados ao cadastro de fornecedores.", "ok"); return; }
+
+      var linha = function (pc, dir) {
+        return '<div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--linha,#e2e8f0)">'
+          + '<span style="min-width:118px;font-weight:700;font-size:12.5px">' + Util.esc(pc.numero || "sem número") + "</span>"
+          + '<span style="flex:1;font-size:12.5px">' + dir + "</span>"
+          + '<span class="muted" style="font-size:11.5px">' + Util.esc(rot(P.compraStatus, pc.status) || pc.status || "") + "</span></div>";
+      };
+      var corpo = "";
+      if (v.resolviveis.length) {
+        corpo += '<p style="margin:0 0 6px;font-size:13px">Estes pedidos têm o nome de um fornecedor que <b>existe no cadastro</b>, escrito igual. Marque os que devem ficar ligados a ele:</p>';
+        corpo += '<div style="max-height:260px;overflow:auto;margin-bottom:10px">';
+        v.resolviveis.forEach(function (r, i) {
+          corpo += '<label style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--linha,#e2e8f0);cursor:pointer">'
+            + '<input type="checkbox" id="vin-' + i + '" data-vin-pc="' + Util.esc(r.pc.id) + '" data-vin-forn="' + Util.esc(r.forn.id) + '" checked>'
+            + '<span style="min-width:110px;font-weight:700;font-size:12.5px">' + Util.esc(r.pc.numero || "sem número") + "</span>"
+            + '<span style="flex:1;font-size:12.5px">' + Util.esc(r.pc.fornecedorNome || "") + ' <span class="muted">→</span> <b>' + Util.esc(r.forn.nome || "") + "</b>"
+            + (r.forn.doc ? ' <span class="muted" style="font-size:11px">' + Util.esc(r.forn.doc) + "</span>" : "")
+            + (r.forn.whatsapp || r.forn.telefone ? "" : ' <span class="muted" style="font-size:11px">(cadastro sem telefone)</span>')
+            + "</span>"
+            + '<span class="muted" style="font-size:11.5px">' + Util.esc(rot(P.compraStatus, r.pc.status) || r.pc.status || "") + "</span></label>";
+        });
+        corpo += "</div>";
+      }
+      /* ⚠ o que a tela NÃO resolve fica visível, com o caminho de cada um */
+      var bloco = function (titulo, itens, explica, dirFn) {
+        if (!itens.length) return "";
+        var h = '<h4 style="margin:12px 0 4px;font-size:12.5px;border-top:1px solid var(--linha,#e2e8f0);padding-top:8px">' + titulo + " (" + itens.length + ")</h4>"
+          + '<p class="muted" style="margin:0 0 6px;font-size:12px">' + explica + "</p>";
+        itens.slice(0, 12).forEach(function (x) { h += linha(x.pc, dirFn(x)); });
+        if (itens.length > 12) h += '<p class="muted" style="font-size:12px;margin:6px 0 0">… e mais ' + (itens.length - 12) + ".</p>";
+        return h;
+      };
+      corpo += bloco("Mais de um cadastro com esse nome", v.ambiguos,
+        "Eu não escolho por você: abrir a conversa ou o papel do fornecedor errado não tem desfazer. Abra o pedido e selecione qual é no campo Fornecedor.",
+        function (x) { return Util.esc(x.pc.fornecedorNome || "") + ' <span class="muted">→ ' + x.quantos + " cadastros com esse nome</span>"; });
+      corpo += bloco("Nome que não está no cadastro", v.semCadastro,
+        "Cadastre o fornecedor em Fornecedores com esse nome (ou abra o pedido e escolha o certo) e volte aqui.",
+        function (x) { return Util.esc(x.pc.fornecedorNome || "") + ' <span class="muted">→ nenhum cadastro</span>'; });
+      corpo += bloco("Pedido sem fornecedor nenhum", v.semNome,
+        "Estes não dizem de quem é a compra. Abra o pedido e escolha o Fornecedor.",
+        function () { return '<span class="muted">— sem nome escrito —</span>'; });
+      corpo += bloco("Vínculo apontando para cadastro excluído", v.quebrados,
+        "Alguém escolheu o fornecedor e o cadastro foi apagado depois. Não refaço essa escolha por adivinhação: abra o pedido e selecione o fornecedor.",
+        function (x) { return Util.esc(x.pc.fornecedorNome || "(sem nome)") + ' <span class="muted">→ cadastro excluído</span>'; });
+
+      var botoes = [];
+      if (v.resolviveis.length) botoes.push({ texto: "Ligar os marcados ao cadastro", classe: "primary", onClick: function () {
+        if (Gestao._bloqueado()) return;
+        var cxs = document.querySelectorAll("[data-vin-pc]");
+        var ok = 0, pulados = 0, mudou = 0;
+        for (var i = 0; i < cxs.length; i++) {
+          if (!cxs[i].checked) { pulados++; continue; }
+          var pcId = cxs[i].getAttribute("data-vin-pc"), fId = cxs[i].getAttribute("data-vin-forn");
+          var vivo = null; try { vivo = Store.obter(eid(), "compras", pcId); } catch (eV) { vivo = null; }
+          if (!vivo) { mudou++; continue; }
+          /* ⚠ IDEMPOTENTE E CONSERVADOR: se outro aparelho já vinculou (ou a
+             pessoa mexeu no nome depois que esta tela abriu), não escreve por
+             cima — conta como "mudou" e o recado diz. */
+          if (String(vivo.fornecedorId || "")) { mudou++; continue; }
+          var fo = lista("fornecedores").filter(function (x) { return String(x.id) === String(fId); })[0];
+          if (!fo) { mudou++; continue; }
+          vivo.fornecedorId = fo.id;
+          /* a grafia oficial do cadastro passa a valer: a chave normalizada é a
+             MESMA (foi assim que casaram), então isto só acerta acento e caixa
+             — nada que mude o casamento da nota fiscal por nome. */
+          vivo.fornecedorNome = fo.nome;
+          vivo.vinculoFornecedor = { em: self._hojeISO(), por: self._quemAprova(), via: "nome-exato" };
+          if (Store.salvar(eid(), "compras", vivo)) ok++; else mudou++;
+        }
+        UI.fecharModal(); App.render();
+        UI.toast(ok + " pedido(s) ligados ao cadastro — o PDF deles passa a sair com CNPJ, contato, endereço e dados de pagamento."
+          + (pulados ? " " + pulados + " você deixou desmarcado(s)." : "")
+          + (mudou ? " " + mudou + " NÃO foram alterados (já tinham vínculo, mudaram em outro aparelho, ou o cadastro saiu) — abra a lista de novo para ver como estão." : ""),
+          mudou ? "aviso" : "ok");
+      } });
+      botoes.push({ texto: v.resolviveis.length ? "Cancelar" : "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } });
+      UI.modal("Ligar pedidos ao cadastro de fornecedores", corpo, botoes);
+    },
     comprasTrocaObra: function (d) {
       var v = (d && d.value != null && d.value !== "") ? d.value
         : (d && d.id != null && d.id !== "") ? d.id : "todas";
@@ -16053,6 +16158,31 @@
           '<span class="fin-sub">' + t.nDescartado + ' rejeitado(s)/cancelado(s)</span></div>' : "") +
         (e.sel !== "todas" ? '<button class="btn sm ghost" data-gacao="compras-obra" style="align-self:center">Ver todas</button>' : "") +
         "</div>";
+
+      /* ⚠ A PORTA DO PASSIVO. O conserto de 09/09/2026 fez o app ACHAR o
+         fornecedor pelo nome quando o pedido não tem vínculo — mas achar não é
+         vincular: os pedidos que já existem continuam só com o nome, e cada um
+         deles ainda sai no PDF sem CNPJ, sem contato, sem endereço e sem os
+         dados de pagamento (ver `documentoCompra`, que lê o fornecedor por
+         `fornecedorId`). Sem esta faixa, a única saída seria abrir pedido por
+         pedido — e ninguém faz isso por 40 pedidos.
+         ⚠ A FAIXA SÓ APARECE QUANDO HÁ O QUE FAZER, e conta o que ela mesma
+         não resolve: "3 pendentes" com um botão que conserta 1 seria promessa
+         que a tela seguinte desmente. */
+      var vinc = (typeof ComprasLinha !== "undefined" && ComprasLinha.vinculosPendentes)
+        ? ComprasLinha.vinculosPendentes(e.todos, lista("fornecedores")) : null;
+      if (vinc && vinc.total) {
+        var nRes = vinc.resolviveis.length;
+        var restam = vinc.total - nRes;
+        html += '<div class="card" style="margin:0 0 12px;padding:10px 12px;border-left:4px solid var(--amarelo,#d97706)">'
+          + '<b>' + vinc.total + ' pedido(s) não estão ligados ao cadastro de fornecedores.</b> '
+          + '<span class="muted">Eles têm só o nome escrito: o PDF do pedido sai sem CNPJ, contato, endereço e dados de pagamento, e o botão de WhatsApp depende de adivinhar pelo nome.</span> '
+          + (nRes
+            ? '<button class="btn sm primary" data-gacao="compras-vinculos" style="margin-left:6px">Revisar ' + nRes + ' vínculo(s)</button>'
+            : '<button class="btn sm" data-gacao="compras-vinculos" style="margin-left:6px">Ver o que falta</button>')
+          + (restam ? ' <span class="muted" style="font-size:12px">· ' + restam + ' precisa(m) de decisão sua</span>' : "")
+          + "</div>";
+      }
 
       if (!e.semMotor && e.sel === "todas" && obras.length) {
         /* ⚠ CLOSURE, e não `PorObra.totaisCompras` solto: `porObra` chama o
@@ -16340,7 +16470,7 @@
         var tr = document.createElement ? document.createElement("tr") : null;
         if (!tr) return;
         tr.setAttribute("data-pci", String(1000 + n));
-        tr.innerHTML = '<td><input data-pcit="desc" value="" placeholder="descrição do material"></td>'
+        tr.innerHTML = '<td><input data-pcit="desc" value="" style="width:100%;min-width:200px" placeholder="descrição do material"></td>'
           + '<td><input data-pcit="qtd" value="" style="width:74px;text-align:right" inputmode="decimal"></td>'
           + '<td><input data-pcit="un" value="" style="width:52px" placeholder="un"></td>'
           + '<td><input data-pcit="preco" value="" style="width:88px;text-align:right" inputmode="decimal" placeholder="R$/un"></td>'
@@ -21340,7 +21470,18 @@
     },
     novaCotacaoDaRequisicao: function (reqId) {
       var r = Store.obter(eid(), "requisicoes", reqId); if (!r) return;
-      var itens = this._reqItens(r).map(function (it) { return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef) }; });
+      /* ⚠ `reqItemId` É O VÍNCULO QUE NÃO EXISTIA. A cotação copiava os itens
+         da requisição e não guardava de qual item cada linha veio — por isso
+         excluir na requisição não tinha como alcançar a cotação (relato de
+         09/09/2026). Daqui para a frente o casamento é por id; as cotações que
+         já existem continuam casando por conteúdo (`Cotacoes.casarItens`), que
+         é palpite bom mas palpite. */
+      /* ⚠ `reqItemId` SÓ QUANDO É ID DE VERDADE. Carimbar a posição ("rq1:2")
+         seria pior que não carimbar: ela deixa de valer no primeiro item que a
+         requisição perder, e o casamento passaria a apontar para o material
+         errado com a confiança de quem casou "por id". Sem id, o casamento cai
+         para conteúdo, que é palpite — mas palpite que se sabe palpite. */
+      var itens = this._reqItens(r).map(function (it) { return { codigo: it.codigo || "", descricao: it.descricao, unidade: it.unidade, quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef), reqItemId: it.id || "" }; });
       if (!itens.length) { UI.toast("A requisição não tem itens pra cotar.", "erro"); return; }
       this.formCotacao({ numero: this._proxNumeroCot(), data: hojeLocal(), obraId: r.obraId || "", requisicaoId: r.id, descricao: r.descricao || "", status: "rascunho", itens: itens, fornecedores: [] });
     },
@@ -21620,7 +21761,16 @@
         try { lst = Cotacoes.pedidos(cot, modo) || []; } catch (e) { lst = []; }
         return lst.length;
       };
-      if (cot.cenario === "misto" || cot.cenario === "unico") {
+      /* ⚠ "parcial" ENTROU AQUI JUNTO COM O CENÁRIO (achado na revisão de
+         publicação da 1.2.62, com o gate verde). Sem ele, uma cotação concluída
+         no parcial caía no ramo de baixo, que conta `misto` e `unico` — e os
+         dois devolvem 0 numa cotação com item pendente, que é exatamente a
+         condição em que o parcial existe. Resultado: `{n:0}`, e a retentativa
+         de conclusão perdia a conferência de "emissão que parou no meio"
+         justamente no cenário novo. Não acusava errado (o app não afirma nada
+         com n:0), mas deixava de proteger — e guarda que some calada some
+         quando mais importa. */
+      if (cot.cenario === "misto" || cot.cenario === "unico" || cot.cenario === "parcial") {
         var nEsc = conta(cot.cenario);
         return { n: nEsc, certo: nEsc > 0 };
       }
@@ -21932,7 +22082,7 @@
            requisição, e ela fica presa em "Comprada" para sempre
            (ver `_liberaRequisicaoSemPedido`). */
         requisicaoId: cot.requisicaoId || null,
-        obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : "fornecedor único") + ")." }, true));
+        obs: (prazo ? "Prazo de entrega: " + prazo + " dia(s). " : "") + "Gerado pelo Mapa de Cotação " + cot.numero + " (cenário " + (modo === "misto" ? "misto" : modo === "parcial" ? "parcial — só os itens já cotados" : "fornecedor único") + ")." }, true));
       if (rec && obsExtra) { rec.obs = (rec.obs || "") + " " + obsExtra; Store.salvar(eid(), "compras", rec); }
       return rec || null;
     },
@@ -22050,6 +22200,35 @@
       ]);
     },
 
+    /* ⚠ O Δ É POR ITEM, E É ISSO QUE O TOTAL NÃO MOSTRA. Uma cotação pode
+       fechar 5% abaixo da referência e ter, dentro dela, um item 60% acima —
+       que é onde mora o erro de digitação, a unidade trocada (preço do metro
+       lançado como preço da barra) e o item que o fornecedor "chutou" para
+       ganhar o resto. O agregado esconde exatamente o que se procura.
+       ⚠ NADA ESTIMADO: item sem referência, ou que ninguém cotou, mostra "—".
+       Inventar base de comparação aqui produziria uma discrepância falsa, que
+       é pior que nenhuma — manda conferir o que está certo. */
+    _cotPintarDeltas: function (cot, box) {
+      if (!box || typeof Cotacoes === "undefined" || !Cotacoes.melhorPorItem) return;
+      var melhores = Cotacoes.melhorPorItem(cot), itens = cot.itens || [];
+      Array.prototype.forEach.call(box.querySelectorAll("[data-ct-delta]"), function (td) {
+        var i = +td.getAttribute("data-ct-delta");
+        var it = itens[i], m = melhores[i];
+        var ref = it ? Util.num(it.precoRef) : 0;
+        if (!it || !(ref > 0) || !m) {
+          td.innerHTML = '<span class="muted">—</span>';
+          td.title = !it ? "" : (!(ref > 0) ? "Sem preço de referência do banco para este item" : "Nenhum fornecedor cotou este item");
+          return;
+        }
+        var dif = m.preco - ref;
+        var pct = Math.round((dif / ref) * 1000) / 10;
+        var cor = dif > 0 ? "var(--vermelho,#dc2626)" : (dif < 0 ? "var(--verde,#16a34a)" : "var(--texto-fraco,#64748b)");
+        var sinal = dif > 0 ? "+" : "";
+        td.innerHTML = '<b style="color:' + cor + '">' + sinal + String(pct).replace(".", ",") + "%</b>";
+        td.title = "Melhor cotado " + Util.fmtMoeda(m.preco) + " · referência do banco " + Util.fmtMoeda(ref)
+          + " · " + (dif > 0 ? "acima" : dif < 0 ? "abaixo" : "igual") + " em " + Util.fmtMoeda(Math.abs(dif)) + "/un";
+      });
+    },
     _cotPainelDecisao: function (cot) {
       if (typeof Cotacoes === "undefined" || !cot.itens.length || !cot.fornecedores.length) return '<div class="muted" style="font-size:12.5px">Preencha itens, fornecedores e preços — a decisão aparece aqui ao vivo.</div>';
       var d = Cotacoes.decisao(cot);
@@ -22119,18 +22298,45 @@
         }
         /* data-ct-iid: id estável do item (ver _cotDoForm) — nasce aqui e
            sobrevive à re-renderização porque _cotDoForm o lê de volta */
-        linhas += '<tr data-ct-item="' + i + '" data-ct-iid="' + Util.esc(it.id || Util.uid("cti")) + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '"></td>' + precosTd +
+        /* ⚠ A REFERÊNCIA DO BANCO SAIU DO ESCONDERIJO (09/09/2026). Ela já era
+           gravada e já vinha da requisição (`precoRef`), mas a célula era
+           `display:none`: o app sabia por quanto o orçamento previu o item e
+           não contava para quem estava decidindo a compra. A conta agregada
+           ("contra o preço de referência: R$ X abaixo") só aparecia no rodapé,
+           depois da cotação fechar, e só quando TODOS os itens tinham preço —
+           ou seja, no momento em que já não dá para agir. Quem cota precisa ver
+           a discrepância no item, enquanto digita: um tubo 40% acima da
+           referência some dentro de um total que fechou "abaixo".
+           ⚠ Continua sendo um input (e não texto): a referência é editável de
+           propósito — item que nasceu sem preço de banco recebe o que o
+           orçamento previu, à mão, e passa a ter comparação. */
+        linhas += '<tr data-ct-item="' + i + '" data-ct-iid="' + Util.esc(it.id || Util.uid("cti")) + '"><td><input data-cti="cod" value="' + Util.esc(it.codigo || "") + '" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" value="' + Util.esc(it.descricao || "") + '" style="width:100%;min-width:200px" placeholder="descrição do material/serviço"></td><td><input data-cti="un" value="' + Util.esc(it.unidade || "") + '" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" value="' + Util.esc(numBR(it.quantidade) || "") + '" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td><input data-cti="ref" value="' + Util.esc(numBR(it.precoRef) || "") + '" style="width:82px" inputmode="decimal" placeholder="banco" title="Preço de referência do banco/orçamento"></td>' + precosTd +
+          '<td class="num" data-ct-delta="' + i + '" style="font-size:11.5px;white-space:nowrap">—</td>' +
           (ehConcluida || ehTravada ? '' : '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>') + "</tr>";
       });
       var cabPrecos = ""; for (var f3 = 0; f3 < nF; f3++) cabPrecos += "<th>Forn. " + (f3 + 1) + "</th>";
+      /* o Δ vem DEPOIS dos fornecedores: ele compara o melhor preço da linha
+         com a referência, então só faz sentido lido no fim da linha. */
+      cabPrecos += '<th class="num" title="Diferença entre o melhor preço cotado e o preço de referência do banco">Δ vs banco</th>';
       if (!ehConcluida && !ehTravada) cabPrecos += "<th></th>";
-      var faixaTrava = ehTravada ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;margin:6px 0;color:#92400e">' + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + ' Itens travados enquanto a cotação online estiver aberta (válida até ' + Util.fmtData(c.online.expiraEm) + '). Para mudar os itens, encerre e publique de novo.</div>' : "";
+      /* ⚠ A TRAVA MANDAVA ENCERRAR E NÃO DIZIA ONDE. O botão Encerrar existe,
+         mas mora no card "Cotar online", depois da grade inteira e do painel de
+         decisão — numa cotação de 40 itens ele fica a três rolagens daqui. O
+         relato de 09/09/2026 foi exatamente este: "preciso ter a opção de
+         deletar item aqui também" — o × por item já existia, e sumia por causa
+         desta trava, cujo caminho de saída não estava ao alcance da mão.
+         ⚠ CHAMA O MESMO `CotOnlineUI.encerrar` do card, e não uma cópia: ele já
+         confirma com a pessoa, puxa as respostas pendentes antes de fechar e
+         grava o Mapa. Uma segunda implementação aqui seria a que esquece de
+         puxar a resposta que o fornecedor mandou dez minutos atrás. */
+      var faixaTrava = ehTravada ? '<div style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;margin:6px 0;color:#92400e">' + (typeof Icones !== "undefined" ? Icones.get("cadeado", 15) : "") + ' Itens travados enquanto a cotação online estiver aberta (válida até ' + Util.fmtData(c.online.expiraEm) + '): os fornecedores estão respondendo <b>esta</b> lista. Para acrescentar, tirar ou corrigir item, encerre a rodada — as respostas já enviadas são puxadas antes de fechar.'
+        + ' <button type="button" class="btn sm" id="ct-encerrar-trava" style="margin-left:4px">Encerrar a cotação online</button></div>' : "";
       var corpo =
         '<div class="row">' + campo("Nº", inp("ct-num", c.numero)) + campo("Data", inp("ct-data", c.data, "", "date")) + campo("Obra", sel("ct-obra", optsRec(obras, "nome", c.obraId, "— nenhuma —"))) + "</div>" +
         campo("Descrição", inp("ct-desc", c.descricao || "", "ex.: Materiais da alvenaria — Bloco B")) +
         (c.requisicaoId ? '<p class="muted" style="font-size:12px">Vinculada à requisição ' + Util.esc((Store.obter(eid(), "requisicoes", c.requisicaoId) || {}).numero || "") + "</p>" : "") +
         '<div class="row" style="gap:10px;flex-wrap:wrap;margin:6px 0">' + cabF + "</div>" + faixaTrava +
-        '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Cód.</th><th>Item</th><th>Un</th><th>Qtd</th><th style="display:none"></th>' + cabPrecos + "</tr></thead><tbody id=\"ct-linhas\">" + linhas + "</tbody></table></div>" +
+        '<div style="overflow-x:auto"><table class="tbl" style="font-size:12.5px"><thead><tr><th>Cód.</th><th style="width:32%">Item</th><th>Un</th><th>Qtd</th><th title="Preço previsto pelo banco/orçamento">Ref. banco</th>' + cabPrecos + "</tr></thead><tbody id=\"ct-linhas\">" + linhas + "</tbody></table></div>" +
         (ehConcluida ? "" : (ehTravada ? "" : '<button type="button" class="btn sm" id="ct-add-item" style="margin-top:6px">+ item</button>') + (nF < maxF ? ' <button type="button" class="btn sm" id="ct-add-forn" style="margin-top:6px;margin-left:6px">+ fornecedor</button>' : "")) +
         (ehConcluida ? "" : '<div id="ct-online" style="margin-top:10px"></div>') +
         '<div class="card" style="margin-top:12px;padding:12px"><div style="font-weight:800;font-size:13px;margin-bottom:8px">' + (typeof Icones !== 'undefined' ? Icones.get('balanca', 15) : '') + ' Decisão (recalcula enquanto você digita)</div><div id="ct-decisao"></div></div>';
@@ -22210,13 +22416,27 @@
       var wire = function () {
         /* `true` = só a grade: este recalcula a cada tecla e não precisa do
            registro vivo — ver `soGrade` em _cotDoForm (custo por tecla) */
-        var atualiza = function () { var el = document.getElementById("ct-decisao"); if (el) el.innerHTML = self._cotPainelDecisao(ehConcluida ? c : self._cotDoForm(c, true)); };
+        var atualiza = function () {
+          var g = ehConcluida ? c : self._cotDoForm(c, true);
+          var el = document.getElementById("ct-decisao"); if (el) el.innerHTML = self._cotPainelDecisao(g);
+          self._cotPintarDeltas(g, document.getElementById("ct-linhas"));
+        };
         var box = document.getElementById("ct-linhas"); if (!box) return;
         var raiz = box.closest(".modal") || document;
         /* bloco "Cotar online" (#ct-online) — só em cotação aberta */
         if (!ehConcluida && typeof CotOnlineUI !== "undefined" && CotOnlineUI.wireForm) { try { CotOnlineUI.wireForm(c, raiz); } catch (eCo) { console.warn("cotonline", eCo); } }
         if (ehConcluida) { Array.prototype.forEach.call(raiz.querySelectorAll("input,select"), function (el2) { el2.disabled = true; }); atualiza(); return; }
         if (ehTravada) {
+          /* ⚠ FIAÇÃO DA SAÍDA DA TRAVA: botão desenhado e não fiado é botão
+             morto, sem erro nenhum na tela — e aqui seria pior que não ter,
+             porque a faixa passa a prometer uma porta que não abre. */
+          var bTrava = raiz.querySelector("#ct-encerrar-trava");
+          if (bTrava) bTrava.onclick = function () {
+            if (typeof CotOnlineUI === "undefined" || !CotOnlineUI.encerrar) {
+              UI.toast("O módulo da cotação online não carregou — recarregue o app.", "erro"); return;
+            }
+            CotOnlineUI.encerrar(c);
+          };
           /* somente leitura pelo DOM, como a concluída faz: `v()`/`_cotDoForm`
              leem `.value` de input disabled normalmente, então o salvar
              continua enxergando os itens travados */
@@ -22241,7 +22461,10 @@
           for (var f4 = 0; f4 < nF; f4++) tds += '<td><input data-ct-preco="' + f4 + '" data-ct-preco-item="' + i + '" placeholder="R$/un" style="width:86px" inputmode="decimal"></td>';
           var tr = document.createElement("tr"); tr.setAttribute("data-ct-item", i);
           tr.setAttribute("data-ct-iid", Util.uid("cti")); // id estável do item (cotação online — ver _cotDoForm)
-          tr.innerHTML = '<td><input data-cti="cod" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" placeholder="descrição"></td><td><input data-cti="un" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td style="display:none"><input data-cti="ref"></td>' + tds;
+          /* ⚠ MESMAS COLUNAS DA LINHA DE CIMA. Item acrescentado à mão com uma
+             célula a menos desalinha a tabela inteira a partir dele — e o preço
+             digitado passa a cair na coluna do fornecedor errado. */
+          tr.innerHTML = '<td><input data-cti="cod" style="width:76px" placeholder="cód."></td><td><input data-cti="desc" style="width:100%;min-width:200px" placeholder="descrição"></td><td><input data-cti="un" style="width:52px" placeholder="un"></td><td><input data-cti="qtd" style="width:70px" inputmode="decimal" placeholder="qtd"></td><td><input data-cti="ref" style="width:82px" inputmode="decimal" placeholder="banco" title="Preço de referência do banco/orçamento"></td>' + tds + '<td class="num" data-ct-delta="' + i + '" style="font-size:11.5px;white-space:nowrap">—</td>';
           tr.innerHTML += '<td style="width:34px"><button type="button" class="btn sm ghost" data-ct-delitem="' + i + '" title="Tirar este item da cotação" style="padding:0 7px;color:#dc2626">×</button></td>';
           box.appendChild(tr);
         };
@@ -22323,10 +22546,32 @@
          gravada uma linha antes (nada do que foi digitado se perde). */
       if (cot && cot.status === "concluida") { UI.toast(self._cotMsgConcluida(cot && cot.id), "erro"); return; }
       var d = Cotacoes.decisao(cot);
-      if (d.vencedorUnico == null && !d.mistoCompleto) { UI.toast("Nenhum cenário fecha a compra — preencha os preços (todo item precisa de ao menos 1 preço).", "erro"); return; }
+      /* ⚠ A OBRA NÃO ESPERA O ÚLTIMO PREÇO. Esta porta recusava a conclusão
+         enquanto QUALQUER item estivesse sem preço: numa cotação de 40 itens,
+         3 que ninguém cotou prendiam os 37 restantes. A saída que sobrava era
+         apagar da cotação os itens ainda pendentes — perdendo o registro de que
+         eles foram pedidos, que é o começo de comprar duas vezes.
+         ⚠ A RECUSA CONTINUA QUANDO NÃO HÁ NADA: sem nenhum item cotado, não há
+         pedido para emitir, e aí a mensagem é a mesma de antes. */
+      var pends = (Cotacoes.pendentes ? Cotacoes.pendentes(cot) : []);
+      var podeParcial = pends.length > 0 && pends.length < (cot.itens || []).length;
+      if (d.vencedorUnico == null && !d.mistoCompleto && !podeParcial) { UI.toast("Nenhum cenário fecha a compra — preencha os preços (ao menos um item precisa de preço).", "erro"); return; }
       var opcoes = "";
       if (d.mistoCompleto) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="misto" checked style="width:auto"> <span><b>Misto</b> — cada item do mais barato: <b>' + Util.fmtMoeda(d.totalMisto) + "</b>" + (d.economiaMisto > 0 ? ' <span style="color:var(--verde);font-weight:700">(economiza ' + Util.fmtMoeda(d.economiaMisto) + ")</span>" : "") + "</span></label>";
       if (d.vencedorUnico != null) opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:6px 0"><input type="radio" name="ct-modo" value="unico"' + (d.mistoCompleto ? "" : " checked") + ' style="width:auto"> <span><b>Fornecedor único</b> — ' + Util.esc(d.totais[d.vencedorUnico].nome) + " entrega tudo: <b>" + Util.fmtMoeda(d.totalUnico) + "</b> (menos entregas pra receber)</span></label>";
+      /* ⚠ O PARCIAL SÓ APARECE QUANDO HÁ PENDENTE, e diz o preço de escolhê-lo:
+         quantos itens ficam de fora. Opção que esconde o que deixa para trás é
+         como se compra a mesma coisa duas vezes. */
+      if (podeParcial) {
+        var totParcial = 0;
+        Cotacoes.pedidos(cot, "parcial").forEach(function (p) { totParcial += Util.num(p.total); });
+        opcoes += '<label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="radio" name="ct-modo" value="parcial"'
+          + ((d.mistoCompleto || d.vencedorUnico != null) ? "" : " checked") + ' style="width:auto;margin-top:3px"> <span><b>Comprar só o que já foi cotado</b> — '
+          + ((cot.itens || []).length - pends.length) + " de " + (cot.itens || []).length + " itens, do mais barato de cada: <b>" + Util.fmtMoeda(totParcial) + "</b>"
+          + '<br><span class="muted" style="font-size:12px">' + pends.length + " item(ns) sem preço nenhum ficam de fora: "
+          + Util.esc(pends.slice(0, 3).map(function (p) { return (p.item && p.item.descricao) || ""; }).join("; ")) + (pends.length > 3 ? "…" : "") + "</span></span></label>";
+        opcoes += '<label style="display:flex;gap:8px;align-items:center;margin:2px 0 6px 26px;font-size:12.5px"><input type="checkbox" id="ct-nova-pend" checked style="width:auto"> <span>Abrir uma <b>cotação nova</b> com os ' + pends.length + " pendente(s) — para eles não virarem item esquecido</span></label>";
+      }
       /* ⚠ O AVISO PRECISA COBRIR O QUE A AÇÃO FAZ. Quem encerra aqui é
          `CotOnlineUI.encerrarSilencioso`, cuja única condição é "existe
          publicação sem `encerradaEm`" — e ele NÃO puxa antes de encerrar.
@@ -22475,8 +22720,51 @@
             UI.toast(gravados.length + " pedido(s) de compra criado(s) (" + nums + "), mas não consegui gravar a conclusão da cotação: o armazenamento recusou. Ela vai continuar aparecendo como aberta até você concluir de novo — os pedidos não saem em dobro, a guarda lê o número deles em Compras.", "erro");
             return;
           }
-          if (cot.requisicaoId) { var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId); if (rq && (rq.status === "cotando" || rq.status === "aprovada")) { rq.status = "comprada"; Store.salvar(eid(), "requisicoes", rq); } }
-          UI.fecharModal(); App.render(); UI.toast(peds.length + " pedido(s) de compra criado(s) a partir da cotação.", "ok");
+          /* ⚠ A COTAÇÃO DOS PENDENTES NASCE DEPOIS DOS PEDIDOS, e só se eles
+             entraram: criar antes deixaria uma cotação órfã quando a gravação
+             dos pedidos falhasse (o ramo acima devolve tudo ao estado anterior).
+             ⚠ Ela é RASCUNHO e sem preço: os itens vão com a quantidade e a
+             referência do banco, e nenhum preço de fornecedor — quem não cotou
+             não deu preço, e copiar coluna vazia só ensinaria a olhar para uma
+             cotação que parece começada. */
+          var novaPend = null, pendNaConclusao = (Cotacoes.pendentes ? Cotacoes.pendentes(cot) : []);
+          var querNova = modo === "parcial" && pendNaConclusao.length
+            && (function () { var cx = document.getElementById("ct-nova-pend"); return !cx || cx.checked; })();
+          if (querNova) {
+            novaPend = {
+              numero: self._proxNumeroCot(), data: hojeLocal(), obraId: cot.obraId || "",
+              requisicaoId: cot.requisicaoId || null, status: "rascunho",
+              descricao: "Pendentes da cotação " + (cot.numero || ""),
+              origemCotacaoId: cot.id || null,
+              itens: pendNaConclusao.map(function (p) {
+                var it = p.item || {};
+                return { id: Util.uid("cti"), codigo: it.codigo || "", descricao: it.descricao || "", unidade: it.unidade || "",
+                  quantidade: Util.num(it.quantidade), precoRef: Util.num(it.precoRef), reqItemId: it.reqItemId || "" };
+              }),
+              fornecedores: []
+            };
+            novaPend = Store.salvar(eid(), "cotacoes", novaPend);
+          }
+          /* ⚠ REQUISIÇÃO SÓ VIRA "COMPRADA" QUANDO A COMPRA ACABOU. Com itens
+             pendentes e uma cotação nova em pé, ela continua "cotando": marcar
+             comprada esconderia a parte que ainda falta comprar, e o fluxo
+             pararia num estado que diz que terminou. Sem a cotação nova (a
+             pessoa desmarcou), aí sim ela fecha — e o recado avisa o que ficou
+             sem cotação nenhuma. */
+          if (cot.requisicaoId) {
+            var rq = Store.obter(eid(), "requisicoes", cot.requisicaoId);
+            if (rq && (rq.status === "cotando" || rq.status === "aprovada")) {
+              rq.status = novaPend ? "cotando" : "comprada";
+              Store.salvar(eid(), "requisicoes", rq);
+            }
+          }
+          UI.fecharModal(); App.render();
+          UI.toast(peds.length + " pedido(s) de compra criado(s) a partir da cotação."
+            + (modo === "parcial" && pendNaConclusao.length
+              ? (novaPend
+                ? " Os " + pendNaConclusao.length + " item(ns) sem preço foram para a cotação " + (novaPend.numero || "") + " (rascunho) — cote e conclua ela para fechar a requisição."
+                : " ATENÇÃO: " + pendNaConclusao.length + " item(ns) ficaram sem preço e SEM cotação nova — eles não estão comprados nem sendo cotados.")
+              : ""), "ok");
         } }
       ]);
     },
@@ -22760,12 +23048,132 @@
       ]);
     },
     // itens de uma requisição (back-compat com o formato antigo de item único)
+    /* ==================================================================
+     * TIROU DA REQUISIÇÃO — E A COTAÇÃO?
+     *
+     * ⚠ O RELATO (09/09/2026): "excluí em requisições, depois em editar, e não
+     *   excluiu aqui em cotações". Era verdade: a cotação copia os itens ao
+     *   nascer e nunca mais olha para a requisição.
+     *
+     * ⚠ E PROPAGAR CALADO SERIA PIOR QUE NÃO PROPAGAR. O item da cotação
+     *   carrega o preço que os fornecedores deram — trabalho de telefonema e
+     *   espera. Apagá-lo junto, sem avisar, é perder isso sem ninguém ver
+     *   acontecer; e se a cotação está publicada, os fornecedores estão
+     *   respondendo sobre AQUELA lista neste minuto. Então: o app conta o que
+     *   encontrou, diz quantos preços saem junto, e pergunta.
+     *
+     * ⚠ COTAÇÃO CONCLUÍDA NÃO É TOCADA. Ela virou pedido de compra; mexer nos
+     *   itens dela mudaria o documento que já gerou dinheiro.
+     * ================================================================== */
+    _reqEcoNaCotacao: function (req, itensAntes) {
+      var self = this;
+      if (!req || !req.id || typeof Cotacoes === "undefined" || !Cotacoes.casarItens) return;
+      var depois = this._reqItens(req);
+      /* o que saiu: estava antes e não está agora (por id quando há, senão
+         pelo conteúdo — a mesma régua do casamento na cotação) */
+      var vivos = {};
+      depois.forEach(function (it) { if (it.id) vivos[String(it.id)] = 1; });
+      var chave = function (it) { return String(it.codigo || "") + "|" + String(it.descricao || "").toLowerCase().replace(/[^a-z0-9]/g, "") + "|" + String(it.unidade || "").toLowerCase(); };
+      var vivosPorConteudo = {};
+      depois.forEach(function (it) { vivosPorConteudo[chave(it)] = (vivosPorConteudo[chave(it)] || 0) + 1; });
+      var antesPorConteudo = {};
+      Util.arr(itensAntes).forEach(function (it) { antesPorConteudo[chave(it)] = (antesPorConteudo[chave(it)] || 0) + 1; });
+      var sairam = Util.arr(itensAntes).filter(function (it) {
+        /* ⚠ O ID SÓ DECIDE QUANDO EXISTE DOS DOIS LADOS. Item com id que sumiu
+           da lista saiu, ponto. Item SEM id (requisição gravada antes desta
+           versão) só pode ser julgado por conteúdo — e por CONTAGEM, senão
+           tirar 1 de 2 luvas iguais não seria detectado. */
+        if (it.id) return !vivos[String(it.id)];
+        var k = chave(it);
+        return (vivosPorConteudo[k] || 0) < (antesPorConteudo[k] || 0);
+      });
+      if (!sairam.length) return;
+
+      var cots = lista("cotacoes").filter(function (c) {
+        return c && String(c.requisicaoId || "") === String(req.id) && c.status !== "concluida";
+      });
+      if (!cots.length) return;
+
+      /* ⚠ UMA COTAÇÃO POR VEZ: o normal é haver uma. Com mais de uma, a
+         primeira aberta é a que a pergunta trata — encadear modais faria a
+         pessoa responder no escuro sobre a segunda. O recado nomeia o resto. */
+      var cot = cots[0];
+      var travada = !!(Cotacoes.onlineAtiva && Cotacoes.onlineAtiva(cot));
+      var casamento = Cotacoes.casarItens(cot.itens || [], sairam);
+      if (!casamento.achados.length) {
+        /* nada a fazer, e o app DIZ isso: silêncio aqui é o defeito original */
+        if (casamento.ambiguos.length) {
+          UI.toast("Tirei " + sairam.length + " item(ns) da requisição. Na cotação " + (cot.numero || "") + " há mais de uma linha igual a "
+            + (casamento.ambiguos.length === 1 ? "um deles" : "alguns deles") + " — não escolho qual tirar: abra a cotação e use o × na linha certa.", "aviso");
+        }
+        return;
+      }
+      var nPrecos = 0;
+      casamento.achados.forEach(function (a) { nPrecos += (Cotacoes.precosDoItem ? Cotacoes.precosDoItem(cot, a.idx) : 0); });
+      var listaHtml = casamento.achados.slice(0, 10).map(function (a) {
+        var np = Cotacoes.precosDoItem ? Cotacoes.precosDoItem(cot, a.idx) : 0;
+        return "<li>" + Util.esc((a.item && a.item.descricao) || "") + (np ? ' <span class="muted">— ' + np + " preço(s) cotado(s) saem junto</span>" : "") + "</li>";
+      }).join("") + (casamento.achados.length > 10 ? "<li>… e mais " + (casamento.achados.length - 10) + ".</li>" : "");
+
+      if (travada) {
+        /* ⚠ TRAVA COM PORTA: os fornecedores estão respondendo esta lista, e
+           mudar item aqui faria a resposta cair em outro material. A saída é a
+           mesma do Mapa — encerrar a rodada. */
+        UI.modal("A cotação está publicada — não mexi nela",
+          '<p style="margin-top:0;font-size:13px">Você tirou ' + sairam.length + ' item(ns) da requisição <b>' + Util.esc(req.numero || "") + '</b>. A cotação <b>'
+          + Util.esc(cot.numero || "") + '</b> está <b>publicada online</b> e os fornecedores estão respondendo exatamente esta lista — tirar item agora faria a resposta deles cair em outro material.</p>'
+          + '<p style="font-size:13px">Ficaram na cotação:</p><ul style="font-size:12.5px;margin:0 0 8px">' + listaHtml + "</ul>"
+          + '<p class="muted" style="font-size:12.5px">Para tirar: abra a cotação, use <b>Encerrar a cotação online</b> na faixa amarela (as respostas já enviadas são puxadas antes) e depois o × na linha.</p>',
+          [{ texto: "Entendi", classe: "primary", onClick: function () { UI.fecharModal(); } }]);
+        return;
+      }
+
+      UI.modal("Tirar também da cotação?",
+        '<p style="margin-top:0;font-size:13px">Você tirou ' + sairam.length + ' item(ns) da requisição <b>' + Util.esc(req.numero || "") + '</b>. '
+        + 'A cotação <b>' + Util.esc(cot.numero || "") + '</b> ainda tem ' + casamento.achados.length + ' desses itens:</p>'
+        + '<ul style="font-size:12.5px;margin:0 0 8px">' + listaHtml + "</ul>"
+        + (nPrecos
+          ? '<p style="font-size:12.5px;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:7px 10px;color:#92400e"><b>' + nPrecos + ' preço(s) já cotado(s) saem junto</b> e não voltam. Se foi engano, deixe na cotação.</p>'
+          : '<p class="muted" style="font-size:12.5px">Nenhum fornecedor cotou esses itens ainda.</p>')
+        + (casamento.naoAchados.length ? '<p class="muted" style="font-size:12px">' + casamento.naoAchados.length + " item(ns) que você tirou não estão nesta cotação.</p>" : "")
+        + (casamento.ambiguos.length ? '<p class="muted" style="font-size:12px">' + casamento.ambiguos.length + " têm mais de uma linha igual na cotação e não serão tocados — use o × na linha certa.</p>" : ""),
+        [{ texto: "Tirar da cotação", classe: "primary", onClick: function () {
+          if (Gestao._bloqueado()) return;
+          /* ⚠ REGISTRO VIVO NA HORA DE GRAVAR: entre abrir este modal e clicar,
+             outro aparelho pode ter publicado ou concluído a cotação. */
+          var vivo = Store.obter(eid(), "cotacoes", cot.id);
+          if (!vivo) { UI.fecharModal(); UI.toast("A cotação não existe mais.", "erro"); return; }
+          if (vivo.status === "concluida") { UI.fecharModal(); UI.toast("A cotação " + (vivo.numero || "") + " foi concluída em outro aparelho — ela já virou pedido e não pode mudar de itens.", "erro"); return; }
+          if (Cotacoes.onlineAtiva && Cotacoes.onlineAtiva(vivo)) { UI.fecharModal(); UI.toast("A cotação " + (vivo.numero || "") + " foi publicada online em outro aparelho — encerre a rodada antes de mudar os itens.", "erro"); return; }
+          /* recasa contra o registro VIVO: os índices do modal são do que a
+             tela leu, e índice velho remove a linha errada — com o preço dela. */
+          var novo = Cotacoes.casarItens(vivo.itens || [], sairam);
+          if (!novo.achados.length) { UI.fecharModal(); UI.toast("Os itens já não estão mais nesta cotação.", "aviso"); App.render(); return; }
+          var limpo = Cotacoes.removerItens(vivo, novo.achados.map(function (a) { return a.idx; }));
+          if (!Store.salvar(eid(), "cotacoes", limpo)) { UI.toast("Não consegui gravar a cotação: o armazenamento do navegador recusou. Nada mudou nela.", "erro"); return; }
+          UI.fecharModal(); App.render();
+          UI.toast(novo.achados.length + " item(ns) saíram da cotação " + (limpo.numero || "") + "."
+            + (nPrecos ? " Os preços deles saíram junto." : "")
+            + (limpo.itens.length ? "" : " A cotação ficou SEM ITENS — abra e acrescente, ou exclua a cotação."), "ok");
+        } },
+        { texto: "Deixar na cotação", classe: "ghost", onClick: function () {
+          UI.fecharModal();
+          UI.toast("A cotação " + (cot.numero || "") + " ficou como estava — os itens continuam lá para os fornecedores responderem.", "ok");
+        } }]);
+    },
     _reqItens: function (r) {
       /* ⚠ ESTE FUNIL NORMALIZAVA PARA 7 CHAVES E DESCARTAVA O RESTO EM
          SILENCIO. Campo novo que nao estivesse aqui sumia na primeira
          gravacao, sem erro nenhum — e `pendente` decide se o total exibido e
          completo ou parcial, o que muda quem precisa aprovar a requisicao. */
-      if (r.itens && r.itens.length) return r.itens.map(function (i) { return { codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "", pendente: i.pendente === true, origemBim: i.origemBim || null }; });
+      /* ⚠ O `id` ENTROU NO FUNIL (09/09/2026) — e a falta dele era o motivo de
+         excluir item na requisição não alcançar a cotação. Sem identidade, a
+         única forma de dizer "este item saiu" é comparar posição, e posição
+         muda quando qualquer item some: o item 2 vira o 1, e o que saiu passa a
+         parecer vivo. Item antigo (do cliente, gravado antes disto) continua sem
+         id e cai no casamento por conteúdo — de propósito: inventar id aqui,
+         na LEITURA, geraria um id novo a cada render. */
+      if (r.itens && r.itens.length) return r.itens.map(function (i) { return { id: i.id || "", codigo: i.codigo || "", descricao: i.descricao || "", unidade: i.unidade || "un", quantidade: Util.num(i.quantidade) || 1, precoRef: Util.num(i.precoRef) || 0, categoria: i.categoria || "MAT", fonte: i.fonte || "", pendente: i.pendente === true, origemBim: i.origemBim || null }; });
       if (r.descricao) return [{ codigo: "", descricao: r.descricao, unidade: r.unidade || "un", quantidade: Util.num(r.quantidade) || 1, precoRef: 0, categoria: "MAT", fonte: "" }];
       return [];
     },
@@ -22823,6 +23231,17 @@
           '<div id="ri-novo" style="display:none;padding:10px 12px;border-radius:9px;box-shadow:inset 0 0 0 1px var(--linha);margin-bottom:10px"></div>' +
           '<div id="ri-itens"></div>') +
         campo("Observações", '<textarea id="g-obs" rows="2">' + Util.esc(r.observacoes || "") + "</textarea>");
+      /* ⚠ FOTO DOS ITENS AO ABRIR: é contra ela que se sabe o que a pessoa
+         TIROU. Comparar com o registro no disco depois do save não serve — ele
+         já é o novo.
+         ⚠ E SEM INVENTAR ID POR ÍNDICE, que foi por onde isto falhou primeiro:
+         "rq1:1" identifica a POSIÇÃO, não o item. Tirando o item do meio, a
+         posição 1 passa a ser ocupada por outro e o removido aparece como vivo
+         — a detecção dava sempre "ninguém saiu", calada. */
+      var itensAoAbrir = this._reqItens(r).map(function (it) {
+        var c = {}; Object.keys(it).forEach(function (k) { c[k] = it[k]; });
+        return c;
+      });
       this._modalForm("requisicoes", r, "Requisição de compra", corpo, function (obj) {
         // form de item manual aberto e preenchido? o item seria perdido em silêncio
         var boxPend = document.getElementById("ri-novo"), descPend = document.getElementById("rin-desc");
@@ -22839,6 +23258,11 @@
         obj.valorEstimado = self._reqValor(itensBuf);
         obj.quantidade = itensBuf[0].quantidade; obj.unidade = itensBuf[0].unidade; // back-compat
         return true;
+      }, function (obj) {
+        /* ⚠ DEPOIS DO SAVE, NUNCA ANTES: se a gravação da requisição falhar,
+           nada pode ter sido tirado da cotação — sobraria uma cotação furada
+           para uma requisição intacta. */
+        self._reqEcoNaCotacao(obj, itensAoAbrir);
       });
       // wiring (UI.modal já colocou o form no DOM)
       function renderItens() {
@@ -22894,7 +23318,9 @@
             var salvo = App.salvarInsumoProprio(d); // valida + toasta; entra nas próximas buscas
             if (salvo) cod = salvo.codigo;
           }
-          itensBuf.push({ codigo: cod, descricao: d.descricao, unidade: d.unidade, quantidade: 1, precoRef: d.preco || 0, categoria: d.categoria, fonte: cod ? "PRÓPRIO" : "" });
+          /* id próprio: é o que permite dizer depois "este item foi tirado" sem
+             depender da posição na lista (ver `_reqEcoNaCotacao`). */
+          itensBuf.push({ id: Util.uid("rqi"), codigo: cod, descricao: d.descricao, unidade: d.unidade, quantidade: 1, precoRef: d.preco || 0, categoria: d.categoria, fonte: cod ? "PRÓPRIO" : "" });
           boxN.style.display = "none";
           renderItens();
           if (!d.salvar) UI.toast("Item adicionado à requisição.", "ok");
@@ -28650,6 +29076,7 @@ renderFolha: function () {
         case "fin-obra": return this.finTrocaObra(dataset);
         case "fin-estornar": return this.finEstornar(id);
         case "compras-obra": return this.comprasTrocaObra(dataset);
+        case "compras-vinculos": return this.comprasRevisarVinculos();
         case "req-obra": return this.reqTrocaObra(dataset);
         case "cot-obra": return this.cotTrocaObra(dataset);
         case "compras-filtro": this._comprasFiltro = (dataset && dataset.value) || "todos"; App.render(); return;

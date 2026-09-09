@@ -268,7 +268,18 @@ function montar(host, opts) {
   // v1.1.82 — ícones SVG line-art (estilo Revit) no lugar dos emojis: stroke currentColor,
   // 14px, herdam a cor do tema. ico(nome) devolve a tag inline.
   function ico(n) {
+    /* ⚠ NOME QUE NAO EXISTE AQUI DESENHA UM SVG VAZIO, em silêncio: `P[n]`
+       vira '' e sai um botão sem símbolo. Achado OLHANDO a foto do painel em
+       09/09/2026 — o botão de fechar era uma caixa branca vazia, e no fundo
+       navy antigo ninguém notava. Faltavam quatro: `fechar`, `camadas` (o
+       botão Iguais), `relatorios` (o Planilha) e `requisicoes` (o próprio
+       Requisitar). É o mesmo defeito do catálogo `Icones`, que já ganhou
+       assert em tools/test-suprimentos-editar.js. */
     var P = {
+      fechar: '<path d="M4 4l8 8M12 4l-8 8"/>',
+      camadas: '<path d="M8 2l6 3-6 3-6-3z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/>',
+      relatorios: '<path d="M4 2h5l3 3v9H4z"/><path d="M6 7.5h4M6 10h4M6 12.5h2"/>',
+      requisicoes: '<path d="M3 4h10v10H3z"/><path d="M6 2h4v3H6z"/><path d="M5.5 8.5h5M5.5 11h3"/>',
       abrir: '<path d="M2 5h4l2 2h6v6H2z"/><path d="M2 5V3h5"/>',
       lixo: '<path d="M4 5h8M6 5V3h4v2M5 5l1 8h4l1-8"/>',
       ultra: '<path d="M8 2l1.6 4.2L14 8l-4.4 1.8L8 14l-1.6-4.2L2 8l4.4-1.8z"/>',
@@ -711,7 +722,13 @@ function montar(host, opts) {
     bar.style.color = T.texto;
     [S.editPanel, S.snapPanel, S.pavPanel, S.visPanel, S.editDist, S.p3dPanel].forEach(function (pn) {
       if (!pn) return;
-      pn.style.background = T.painel; pn.style.borderColor = T.borda; pn.style.color = T.texto;
+      /* ⚠ AS JANELAS NÃO SEGUEM MAIS O TEMA DA CENA — e é de propósito.
+         O tema pinta o AMBIENTE 3D (fundo, barra, dock); as janelas de
+         trabalho ficam claras sempre, que é o pedido de 09/09/2026: "esse azul
+         deixa só para as outras coisas; sempre que for janela pode ficar com
+         fundo branco". Repintar aqui com `T.painel` devolvia o navy assim que
+         a pessoa trocasse de tema — o branco duraria até o primeiro clique na
+         paleta, e o defeito pareceria intermitente. */
       // re-pinta os toggles ativos DOS PAINÉIS também (chain/orto/ângulo/sub-ferramenta)
       pn.querySelectorAll && pn.querySelectorAll('button').forEach(function (b3) { if (b3.style.background && b3.style.background !== '') b3.style.background = corAtiva(); });
     });
@@ -751,7 +768,7 @@ function montar(host, opts) {
     gas:         { nome: 'Gás',              cor: '#eab308' },
     incendio:    { nome: 'Incêndio (PPCI)',  cor: '#dc2626' },
     ventilacao:  { nome: 'Ventilação',       cor: '#7c3aed' },
-    outros:      { nome: 'Outros / não classificado', cor: '#8aa0b6' }
+    outros:      { nome: 'Outros / não classificado', cor: '#6b7a8a' }
   };
   var sisCores = {}; SIS_ORDEM.forEach(function (k) { sisCores[k] = SIS_PADRAO[k].cor; });
   try { var _sc0 = JSON.parse(localStorage.getItem('orcapro:bim:sistemas') || '{}'); SIS_ORDEM.forEach(function (k) { if (_sc0[k] && /^#[0-9a-f]{6}$/i.test(_sc0[k])) sisCores[k] = _sc0[k]; }); } catch (_) {}
@@ -872,8 +889,8 @@ function montar(host, opts) {
   host.appendChild(over);
 
   var loading = document.createElement('div');
-  loading.style.cssText = 'position:absolute;inset:0;background:rgba(11,26,43,.86);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:5;color:#dbe8f5';
-  loading.innerHTML = '<div style="width:40px;height:40px;border:4px solid #24435f;border-top-color:#16a34a;border-radius:50%;animation:bimsp 1s linear infinite"></div><div data-l="txt">Lendo o IFC…</div>';
+  loading.style.cssText = 'position:absolute;inset:0;background:rgba(11,26,43,.86);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px;z-index:5;color:#1a2b3c';
+  loading.innerHTML = '<div style="width:40px;height:40px;border:4px solid #d3dce6;border-top-color:#16a34a;border-radius:50%;animation:bimsp 1s linear infinite"></div><div data-l="txt">Lendo o IFC…</div>';
   host.appendChild(loading);
   if (!document.getElementById('bim-spin-style')) { var st = document.createElement('style'); st.id = 'bim-spin-style'; st.textContent = '@keyframes bimsp{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
 
@@ -1101,6 +1118,63 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     scene.add(ln); _selLn = ln;
   }
   S._contornoSelecao = contornoSelecao;
+
+  /* =================================================================
+   * VER A PEÇA NO MODELO — a desambiguação que o modelo já tem.
+   *
+   * ⚠ POR QUE ISTO EXISTE (pedido de 09/09/2026): quando o casador fica em
+   *   dúvida entre dois insumos, quem tira a dúvida é a OBRA. "Vincular o
+   *   insumo à volumetria pra identificar na dúvida — aí não tem erro."
+   *   A lista dizia "56 pç · DN 50" e não havia como saber QUAIS 56 peças
+   *   eram; a resposta estava na tela ao lado, no 3D, sem caminho até ela.
+   *
+   * ⚠ O AABB É LOCAL AO `modelRoot`, NÃO DO MUNDO. No modo imersivo o
+   *   `modelRoot` ganha posição e escala (ele reposiciona o modelo na sala),
+   *   então enquadrar a caixa crua levaria a câmera para o lugar errado — e o
+   *   erro só apareceria em imersivo, que é onde ninguém testa. Por isso a
+   *   matriz entra na conta.
+   * ================================================================= */
+  var _lupa3d = null;
+  function limparLupa3d() {
+    if (!_lupa3d) return;
+    scene.remove(_lupa3d);
+    _lupa3d.traverse(function (o) { if (o.geometry && o.geometry.dispose) o.geometry.dispose(); });
+    _lupa3d = null;
+  }
+  S._limparLupa3d = limparLupa3d;
+  function verNo3D(uids) {
+    limparLupa3d();
+    if (!uids || !uids.length) return 0;
+    var porUid = {};
+    (S.elementos || []).forEach(function (e) { porUid[e.uid] = e; });
+    modelRoot.updateMatrixWorld(true);
+    var uniao = new THREE.Box3(), n = 0, grupo = new THREE.Group();
+    for (var i = 0; i < uids.length; i++) {
+      var e2 = porUid[uids[i]];
+      if (!e2 || !e2.aabb) continue;
+      var b = new THREE.Box3(
+        new THREE.Vector3(e2.aabb.min[0], e2.aabb.min[1], e2.aabb.min[2]),
+        new THREE.Vector3(e2.aabb.max[0], e2.aabb.max[1], e2.aabb.max[2]));
+      b.applyMatrix4(modelRoot.matrixWorld);
+      if (b.isEmpty()) continue;
+      uniao.union(b); n++;
+      /* ⚠ TETO DE 80 CONTORNOS. Uma família de tubo tem 400 peças e desenhar
+         todas custa um engasgo visível sem dizer mais nada: a moldura da união
+         já mostra ONDE a peça mora, e o número está escrito na linha. */
+      if (grupo.children.length < 80) {
+        var hl = new THREE.Box3Helper(b, 0x16a34a);
+        if (hl.material) { hl.material.depthTest = false; hl.material.transparent = true; hl.material.opacity = .95; }
+        hl.renderOrder = 1001; hl.raycast = function () {};
+        grupo.add(hl);
+      }
+    }
+    if (!n) return 0;
+    grupo.raycast = function () {};
+    scene.add(grupo); _lupa3d = grupo;
+    if (S._enquadrarObj && !fly.on && !xr.on) S._enquadrarObj(uniao, 2.4);
+    return n;
+  }
+  S._verNo3D = verNo3D;
   // o contorno é um overlay independente na cena (depthTest:false): compõe a visibilidade do elemento
   // selecionado a cada frame (some quando ele fica invisível no 4D, no toggle de modelo, isolar etc.) — regra de ouro
   S._tickExtra.push(function () { if (_selLn) _selLn.visible = !!(S.selected && cadeiaVisivel(S.selected)); });
@@ -2348,10 +2422,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var planta = { on: false, plane: null, y0: 0, y1: 1 };
   S.planta = planta;
   var cortePanel = document.createElement('div');
-  cortePanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:220px';
-  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Altura do corte</b><span data-c="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
+  cortePanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:220px';
+  cortePanel.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Altura do corte</b><span data-c="v" style="color:#15803d;font-weight:700">—</span></div>' +
     '<input type="range" data-c="alt" min="0" max="1000" value="620" style="width:100%;accent-color:#22c55e">' +
-    '<div style="font-size:11px;color:#9fb2c8">Esconde o que está acima do corte — a planta baixa do pavimento. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona aqui (cota horizontal).</div>' +
+    '<div style="font-size:11px;color:#5b6b7c">Esconde o que está acima do corte — a planta baixa do pavimento. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona aqui (cota horizontal).</div>' +
     '<button class="btn sm primary" data-c="planta2d" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica (2D)</button>' +
     '<button class="btn sm" data-c="estilo" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Estilo desenho (branco)</button>' +
     '<button class="btn sm" data-c="cortetec" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico (A–A)</button>';
@@ -2426,18 +2500,18 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var corteL = { on: false, plane: new THREE.Plane(new THREE.Vector3(0, -1, 0), 0), az: 0, inc: 0, inv: false, d0: 0, d1: 1 };
   S.corteL = corteL;
   var corteLPanel = document.createElement('div');
-  corteLPanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:240px';
+  corteLPanel.style.cssText = 'position:absolute;left:10px;bottom:10px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:240px';
   corteLPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Plano de corte</b><span data-k="v" style="color:#7fe0a3;font-weight:700">—</span></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:baseline"><b>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Plano de corte</b><span data-k="v" style="color:#15803d;font-weight:700">—</span></div>' +
     '<div style="display:flex;gap:5px"><button class="btn sm" data-k="ph" style="flex:1">Horizontal</button><button class="btn sm" data-k="pns" style="flex:1">N–S</button><button class="btn sm" data-k="plo" style="flex:1">L–O</button></div>' +
-    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#9fb2c8">Ângulo (azimute) <span data-k="azv">0°</span></label>' +
+    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#5b6b7c">Ângulo (azimute) <span data-k="azv">0°</span></label>' +
     '<input type="range" data-k="az" min="0" max="359" value="0" style="width:100%;accent-color:#22c55e">' +
-    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#9fb2c8">Inclinação (0=vertical, 90=horizontal) <span data-k="incv">0°</span></label>' +
+    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#5b6b7c">Inclinação (0=vertical, 90=horizontal) <span data-k="incv">0°</span></label>' +
     '<input type="range" data-k="inc" min="0" max="90" value="0" style="width:100%;accent-color:#22c55e">' +
-    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#9fb2c8">Posição do corte <span data-k="posv">50%</span></label>' +
+    '<label style="display:flex;justify-content:space-between;font-size:11px;color:#5b6b7c">Posição do corte <span data-k="posv">50%</span></label>' +
     '<input type="range" data-k="pos" min="0" max="1000" value="500" style="width:100%;accent-color:#22c55e">' +
     '<button class="btn sm" data-k="inv" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('ciclo', 15) : '') + ' Inverter lado visível</button>' +
-    '<div style="font-size:11px;color:#9fb2c8">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona na face do corte.</div>';
+    '<div style="font-size:11px;color:#5b6b7c">O modelo some do lado cortado conforme você move. Gire a órbita normalmente. A ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena funciona na face do corte.</div>';
   host.appendChild(corteLPanel);
   S.corteLPanel = corteLPanel;
   function corteNormal() {
@@ -2513,7 +2587,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   function salvarSnap() { try { localStorage.setItem('orcapro:bim:snap', JSON.stringify({ on: snap.on, v: snap.v, m: snap.m, a: snap.a, i: snap.i, c: snap.c })); } catch (_) {} }
   S.snap = snap;
   var snapPanel = document.createElement('div');
-  snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:210px';
+  snapPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:210px';
   snapPanel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('ima', 15) : '') + ' Snap da trena</b><button class="btn sm" data-s="on" style="padding:2px 9px">ON</button></div>' +
     '<div style="display:flex;gap:5px;flex-wrap:wrap">' +
@@ -2522,7 +2596,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-s="a" style="flex:1" title="Agarra no ponto mais próximo da aresta">◆ Aresta</button>' +
     '<button class="btn sm" data-s="i" style="flex:1" title="Agarra no CRUZAMENTO real de duas arestas (canto parede×viga)">✚ Interseção</button>' +
     '<button class="btn sm" data-s="c" style="flex:1" title="Agarra no EIXO de uma boca redonda: ponta de tubo, furo, pilar circular">⊕ Centro</button></div>' +
-    '<div style="font-size:11px;color:#9fb2c8">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
+    '<div style="font-size:11px;color:#5b6b7c">Aproxime o clique de um canto/aresta: a cota agarra no ponto exato (o marcador mostra o tipo). Sem alvo por perto, mede na superfície livre.</div>';
   host.appendChild(snapPanel);
   S.snapPanel = snapPanel;
 
@@ -2542,7 +2616,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
    * mostra o resultado e deixa a PESSOA decidir. Nada é escolhido sozinho.
    * ================================================================= */
   var reqPanel = document.createElement('div');
-  reqPanel.style.cssText = 'position:absolute;left:10px;top:56px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:11px;padding:12px 14px;color:#dbe8f5;font-size:12px;width:min(620px,93vw);max-height:78%;overflow:auto';
+  /* ⚠ 620px NÃO CABIA A LINHA. Com descrição, família, o aviso de fusão, o
+     seletor de candidato e quatro botões, a tabela estourava a largura e o
+     painel ganhava BARRA DE ROLAGEM HORIZONTAL — a coluna dos botões saía
+     cortada no print de 09/09/2026, e "buscar"/"+ insumo"/"remover" ficavam
+     fora da tela. Rolagem horizontal dentro de uma janela é o sintoma de que a
+     janela está pequena, não de que o conteúdo é grande demais: numa tela de
+     trabalho há espaço de sobra ao lado do modelo. */
+  /* ⚠ A LARGURA É DO HOST, NÃO DA JANELA DO NAVEGADOR. `min(1180px,96vw)`
+     parece razoável e está errado aqui: o viewer vive dentro da casca do BIM,
+     com barra lateral e faixa do Revit à volta, então 96vw é MUITO mais largo
+     que o espaço real — e o painel continuava saindo cortado à direita, com o
+     "+ insumo" pela metade. Medido em foto: host ≈ 1050 px numa tela de
+     1600 px. Ancorar `left` e `right` faz a janela caber no que existe,
+     qualquer que seja o tamanho da tela, e o `max-width` só impede que ela
+     fique larga demais para ler numa tela grande. */
+  reqPanel.style.cssText = 'position:absolute;left:10px;right:10px;top:56px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:11px;padding:12px 14px;color:#1a2b3c;font-size:12px;max-width:1180px;max-height:86%;overflow:auto;box-shadow:0 14px 38px rgba(12,31,51,.28)';
   host.appendChild(reqPanel);
   S.reqPanel = reqPanel;
   var reqEstado = null;
@@ -2558,10 +2647,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
      50, não tudo que tem "50". */
   function reqBuscaResultados(idx, termo) {
     var t = String(termo || '').trim().toLowerCase();
-    if (t.length < 2) return '<div style="color:#8aa0b6;font-size:10.5px;padding:3px 0">digite ao menos 2 letras — ou o código do insumo</div>';
+    if (t.length < 2) return '<div style="color:#6b7a8a;font-size:10.5px;padding:3px 0">digite ao menos 2 letras — ou o código do insumo</div>';
     var todos = [];
     try { if (typeof Insumos !== 'undefined') todos = Insumos._idx || []; } catch (e) { todos = []; }
-    if (!todos.length) return '<div style="color:#e0a458;font-size:10.5px;padding:3px 0">o banco de insumos não está carregado nesta tela</div>';
+    if (!todos.length) return '<div style="color:#b45309;font-size:10.5px;padding:3px 0">o banco de insumos não está carregado nesta tela</div>';
     var palavras = t.split(/\s+/).filter(Boolean);
     var achados = [];
     for (var i = 0; i < todos.length && achados.length < 40; i++) {
@@ -2572,13 +2661,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       for (var w = 0; w < palavras.length; w++) if (alvo.indexOf(palavras[w]) < 0) { tem = false; break; }
       if (tem) achados.push(it);
     }
-    if (!achados.length) return '<div style="color:#e0a458;font-size:10.5px;padding:3px 0">nenhum insumo com todas essas palavras</div>';
+    if (!achados.length) return '<div style="color:#b45309;font-size:10.5px;padding:3px 0">nenhum insumo com todas essas palavras</div>';
     return achados.slice(0, 25).map(function (it) {
       return '<button class="btn sm" data-rq-pick="' + idx + '" data-rq-cod="' + esc(String(it.codigo)) + '" ' +
         'style="display:block;width:100%;text-align:left;font-size:10.5px;margin:2px 0;white-space:normal">' +
         esc(String(it.descricao).slice(0, 90)) + ' · <b>' + esc(String(it.unidade || '')) + '</b> · R$ ' +
         (Number(it.custoUnitario) || 0).toFixed(2) + '</button>';
-    }).join('') + (achados.length > 25 ? '<div style="color:#8aa0b6;font-size:10px">mostrando 25 — refine a busca</div>' : '');
+    }).join('') + (achados.length > 25 ? '<div style="color:#6b7a8a;font-size:10px">mostrando 25 — refine a busca</div>' : '');
   }
 
   function reqLevantar() {
@@ -2765,7 +2854,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* linha removida continua VISIVEL, riscada e apagada: sumir de vez
          tiraria da pessoa a chance de perceber que removeu a errada */
       return '<tr' + (x.removido ? ' style="opacity:.45;text-decoration:line-through"' : '') + '>' +
-        '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid #24435f">' +
+        '<td style="padding:5px 4px;vertical-align:top;border-top:1px solid #d3dce6">' +
           /* ⚠ O NOME DE MERCADO NA FRENTE, A FAMÍLIA LOGO ABAIXO — nunca só um
              dos dois. É a descrição que casa com a base e que o fornecedor
              entende; é a família que o engenheiro reconhece para achar a peça
@@ -2773,16 +2862,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              pessoas sem a referência que ela usa. */
           (p.descricao
             ? '<div><b>' + esc(String(p.descricao).slice(0, 54)) + '</b>' +
-                '<span title="O nome de mercado veio do campo Descrição do modelo — é ele que foi usado para casar com a base" style="margin-left:5px;font-size:9.5px;font-weight:700;color:#7fd1a6;border:1px solid #2f6b4f;border-radius:99px;padding:0 5px">Descrição</span></div>' +
-              '<div style="color:#7f93a8;font-size:10.5px">' + esc(String(p.familia || p.rotulo || '(sem família)').slice(0, 54)) + '</div>' +
+                '<span title="O nome de mercado veio do campo Descrição do modelo — é ele que foi usado para casar com a base" style="margin-left:5px;font-size:9.5px;font-weight:700;color:#15803d;border:1px solid #86efac;border-radius:99px;padding:0 5px">Descrição</span></div>' +
+              '<div style="color:#6b7a8a;font-size:10.5px">' + esc(String(p.familia || p.rotulo || '(sem família)').slice(0, 54)) + '</div>' +
               (p.descricaoVariantes > 1
-                ? '<div style="color:#e0a458;font-size:10.5px">' + p.descricaoVariantes + ' descrições diferentes nestas peças — comprando pela primeira</div>'
+                ? '<div style="color:#b45309;font-size:10.5px">' + p.descricaoVariantes + ' descrições diferentes nestas peças — comprando pela primeira</div>'
                 : '')
             : '<div><b>' + esc(String(p.familia || p.rotulo || '(sem nome no modelo)').slice(0, 54)) + '</b></div>') +
-          '<div style="color:#9fb2c8;font-size:11px">' + p.n + ' pç · ' +
+          '<div style="color:#5b6b7c;font-size:11px">' + p.n + ' pç · ' +
             (p.fonteQtd === 'contagem' ? 'por contagem'
               : p.fonteQtd === 'parcial'
-                ? ('<span style="color:#e0a458">' + p.quantidade.toFixed(2) + ' ' + p.unidade + ' — INCOMPLETO, ' + p.faltamMedida + ' peça(s) sem medida no IFC</span>')
+                ? ('<span style="color:#b45309">' + p.quantidade.toFixed(2) + ' ' + p.unidade + ' — INCOMPLETO, ' + p.faltamMedida + ' peça(s) sem medida no IFC</span>')
                 : (p.quantidade.toFixed(2) + ' ' + p.unidade + ' medidos no IFC')) +
             (medida !== 'sem medida' ? ' · ' + esc(medida) : '') + '</div>' +
           /* ⚠ A BARRA É O NÚMERO QUE SE PEDE NA LOJA, e ela vem DEPOIS do
@@ -2791,23 +2880,23 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              outro deixaria metade das duas pessoas sem a referência que usa —
              a mesma razão de a linha mostrar descrição E família. */
           (p.barras
-            ? '<div style="color:#7fd1a6;font-size:11px;font-weight:700">' + p.barras +
+            ? '<div style="color:#15803d;font-size:11px;font-weight:700">' + p.barras +
                 ' barra(s) de ' + p.barraM + ' m para comprar</div>'
             : '') +
           /* ⚠ O QUE FOI FUNDIDO APARECE. Juntar por descrição some com a
              família, e é pela família que o engenheiro acha a peça de volta
              no Revit. Linha que ninguém rastreia é pior que linha repetida. */
           (p.familiasReunidas > 1
-            ? '<div style="color:#9fb2c8;font-size:10.5px" title="' +
+            ? '<div style="color:#5b6b7c;font-size:10.5px" title="' +
                 esc((p.familiasOutras || []).join(' · ')) + '">' +
                 p.familiasReunidas + ' famílias do modelo reunidas nesta descrição</div>'
             : '') +
         '</td>' +
-        '<td style="padding:5px 4px;vertical-align:top;min-width:260px;border-top:1px solid #24435f">' +
+        '<td style="padding:5px 4px;vertical-align:top;min-width:260px;border-top:1px solid #d3dce6">' +
           (opcoes
             ? '<select data-rq-sel="' + x.idx + '" style="width:100%;font-size:11px"><option value="">— deixar pendente —</option>' + opcoes + '</select>'
-            : '<span style="color:#e0a458">sem candidato na base</span>') +
-          '<div style="color:#9fb2c8;font-size:11px;margin-top:3px">' + esc(v.porque) + '</div>' +
+            : '<span style="color:#b45309">sem candidato na base</span>') +
+          '<div style="color:#5b6b7c;font-size:11px;margin-top:3px">' + esc(v.porque) + '</div>' +
           /* ⚠ A PORTA DE SAÍDA DA LISTA CURTA. Os candidatos são os 6 melhores
              de um casamento automático, e quando ele erra a pessoa ficava sem
              caminho: ou aceitava um dos seis, ou criava insumo próprio
@@ -2817,16 +2906,21 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
              Quem conhece a obra acha em segundos o que o casador não achou —
              então a busca na base inteira fica aqui, na mesma linha. */
           (reqBusca && reqBusca.idx === x.idx
-            ? '<div style="margin-top:5px;border-top:1px dashed #2f5474;padding-top:5px">' +
+            ? '<div style="margin-top:5px;border-top:1px dashed #c9d5e1;padding-top:5px">' +
                 '<input data-rq-busca="' + x.idx + '" value="' + esc(reqBusca.termo || '') + '" ' +
                   'placeholder="buscar na base: codigo ou palavras da descricao" ' +
-                  'style="width:100%;padding:4px 7px;border-radius:6px;border:1px solid #2f6b8f;background:#0c1f33;color:#dbe8f5;font-size:11px">' +
+                  'style="width:100%;padding:4px 7px;border-radius:6px;border:1px solid #9db4c8;background:#ffffff;color:#1a2b3c;font-size:11px">' +
                 '<div id="rq-res-' + x.idx + '" style="max-height:150px;overflow:auto;margin-top:4px">' +
                   reqBuscaResultados(x.idx, reqBusca.termo) + '</div></div>'
             : '') +
         '</td>' +
-        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid #24435f;white-space:nowrap">' +
-          (x.escolhido ? '<div style="color:#6fd08a;margin-bottom:3px">✓</div>' : '') +
+        '<td style="padding:5px 4px;vertical-align:top;text-align:right;border-top:1px solid #d3dce6;white-space:nowrap">' +
+          (x.escolhido ? '<div style="color:#15803d;margin-bottom:3px">✓</div>' : '') +
+          /* ⚠ A DÚVIDA SE TIRA NA OBRA. Quando dois insumos parecem iguais no
+             papel, quem sabe qual é a peça é o modelo — e ele está do lado.
+             Este botão leva a câmera até as peças desta linha e as contorna. */
+          '<button class="btn sm" data-rq-3d="' + x.idx + '" title="Levar a câmera até estas ' + p.n + ' peça(s) no modelo e contorná-las">' +
+            (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' 3D</button> ' +
           '<button class="btn sm" data-rq-buscar="' + x.idx + '" title="Procurar o item na base inteira, e nao so entre os candidatos que o casador achou">' +
             (reqBusca && reqBusca.idx === x.idx ? 'fechar busca' : 'buscar') + '</button>' +
           (x.escolhido
@@ -2846,16 +2940,16 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       '<div style="display:flex;align-items:center;gap:8px">' +
         '<b style="flex:1">Requisitar pelo modelo</b>' +
         '<button class="btn sm" data-rq="fechar" title="Fechar">' + ico('fechar') + '</button></div>' +
-      '<div style="color:#9fb2c8">' + pecas.length + ' peças distintas · ' +
-        '<span style="color:#6fd08a">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
-        '<span style="color:#e0a458">' + cont.sem + ' sem candidato</span>' +
+      '<div style="color:#5b6b7c">' + pecas.length + ' peças distintas · ' +
+        '<span style="color:#15803d">' + cont.ok + ' casadas</span> · ' + cont.escolher + ' a escolher · ' +
+        '<span style="color:#b45309">' + cont.sem + ' sem candidato</span>' +
         /* ⚠ O QUE FOI REMOVIDO TEM DE APARECER NO CABEÇALHO. Com 182 linhas a
            pessoa rola a lista e não vê o que riscou lá em cima; sem este
            número ela clica em Gerar achando que está pedindo tudo. */
         (function () {
           var nR = 0;
           pecas.forEach(function (y) { if (y.removido) nR++; });
-          return nR ? ' · <span style="color:#f08a8a">' + nR + ' removida(s), fora da requisição</span>' : '';
+          return nR ? ' · <span style="color:#b91c1c">' + nR + ' removida(s), fora da requisição</span>' : '';
         })() + '</div>' +
       /* ⚠ ESTA LINHA É O QUE IMPEDE O RECURSO DE FALHAR EM SILÊNCIO. Ler a
          Descrição do Revit só ajuda se o modelo a tiver preenchida, e isso
@@ -2867,11 +2961,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         var r = reqEstado.resumo || {};
         var cd = r.comDescricao || 0, tot = pecas.length;
         if (cd) {
-          return '<div style="color:#7fd1a6;font-size:11px">' + cd + ' de ' + tot +
+          return '<div style="color:#15803d;font-size:11px">' + cd + ' de ' + tot +
             ' peças trouxeram a <b>Descrição</b> do modelo — é por ela que o casamento com a base foi feito' +
             (r.descricaoDivergente ? ', e em ' + r.descricaoDivergente + ' há descrições diferentes na mesma peça' : '') + '</div>';
         }
-        return '<div style="color:#e0a458;font-size:11px">Nenhuma peça trouxe o campo <b>Descrição</b> — o casamento foi feito só pelo nome da família. ' +
+        return '<div style="color:#b45309;font-size:11px">Nenhuma peça trouxe o campo <b>Descrição</b> — o casamento foi feito só pelo nome da família. ' +
           'Preencher a Descrição do tipo no Revit (o nome comercial) melhora o encontro com a base.</div>';
       })() +
       '<div style="display:flex;gap:4px;flex-wrap:wrap">' +
@@ -2881,7 +2975,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
          dispara aprovação POR VALOR, e item sem preço puxa o total para baixo
          — o pedido pode passar por baixo do limite de quem precisava aprovar */
       ((cont.sem + cont.escolher)
-        ? '<div style="color:#e0a458">O que ficar sem item entra como <b>linha pendente, sem preço</b> — o total sai parcial e precisa ser completado antes de mandar aprovar.</div>'
+        ? '<div style="color:#b45309">O que ficar sem item entra como <b>linha pendente, sem preço</b> — o total sai parcial e precisa ser completado antes de mandar aprovar.</div>'
         : '') +
       '<div style="display:flex;gap:6px">' +
         '<button class="btn sm primary" data-rq="gerar">Gerar requisição' +
@@ -2960,6 +3054,20 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!b || !reqEstado) return;
     var sub = b.getAttribute('data-rq-sub');
     if (sub !== null) { reqEstado.filtro = sub; reqPintar(); return; }
+    var ver3d = b.getAttribute('data-rq-3d');
+    if (ver3d !== null) {
+      var x3 = reqEstado.pecas[+ver3d];
+      if (x3) {
+        var achou = S._verNo3D ? S._verNo3D(x3.p.uids || []) : 0;
+        /* ⚠ RECADO QUE MENTE É PIOR QUE RECADO NENHUM: o levantamento guarda
+           no máximo 200 uids por peça, e um modelo restaurado do cache pode
+           não trazer a caixa de todas. Quando não dá para mostrar, a tela diz
+           — em vez de a câmera não mexer e a pessoa achar que o botão quebrou. */
+        if (!achou) UI0('Não consegui localizar estas peças no 3D — o modelo restaurado do cache pode não trazer a caixa delas. Abra o .ifc de novo.', 'info');
+        else UI0(achou + ' peça(s) contornadas no modelo' + (achou < x3.p.n ? ' (de ' + x3.p.n + ' — a lista guarda até 200 por linha)' : '') + '.', 'ok');
+      }
+      return;
+    }
     var abrir = b.getAttribute('data-rq-buscar');
     if (abrir !== null) {
       reqBusca = (reqBusca && reqBusca.idx === +abrir) ? null : { idx: +abrir, termo: '' };
@@ -3009,7 +3117,10 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return;
     }
     var k = b.getAttribute('data-rq');
-    if (k === 'fechar') { reqPanel.style.display = 'none'; reqEstado = null; reqBusca = null; return; }
+    if (k === 'fechar') { reqPanel.style.display = 'none'; reqEstado = null; reqBusca = null;
+      /* o contorno do "ver no 3D" e do painel: fechar o painel sem limpar
+         deixaria molduras verdes penduradas na cena sem nada que as explique */
+      if (S._limparLupa3d) S._limparLupa3d(); return; }
     if (k === 'gerar') {
       /* ⚠ O BOTAO GERA O QUE ESTA A VISTA. Ele mandava o modelo INTEIRO
          mesmo com um chip de subsistema ligado: a pessoa clicava em "esgoto",
@@ -3056,7 +3167,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   };
 
   var sisPanel = document.createElement('div');
-  sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.95);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:238px;max-height:72%;overflow:auto';
+  sisPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:238px;max-height:72%;overflow:auto';
   host.appendChild(sisPanel);
   S.sisPanel = sisPanel;
   function pintarSisPanel() {
@@ -3065,14 +3176,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       return '<label style="display:flex;align-items:center;gap:8px;cursor:pointer">' +
         '<input type="color" data-sk="' + k + '" value="' + sisCores[k] + '" style="width:26px;height:22px;border:0;background:none;padding:0;cursor:pointer">' +
         '<span style="flex:1">' + esc(SIS_PADRAO[k].nome) + '</span>' +
-        '<b style="color:#9fb2c8;font-weight:600">' + cnt[k] + '</b></label>';
+        '<b style="color:#5b6b7c;font-weight:600">' + cnt[k] + '</b></label>';
     }).join('');
     sisPanel.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Sistemas hidrossanitários</b>' +
       '<button class="btn sm" data-sx="fechar" style="padding:2px 8px" title="Desligar as cores por sistema">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
-      (linhas || '<div style="color:#9fb2c8;line-height:1.4">Nenhum sistema hidráulico reconhecido pelos nomes dos elementos. As cores aparecem quando o IFC tiver tubulação nomeada (água fria, esgoto, pluvial, gás, incêndio…).</div>') +
+      (linhas || '<div style="color:#5b6b7c;line-height:1.4">Nenhum sistema hidráulico reconhecido pelos nomes dos elementos. As cores aparecem quando o IFC tiver tubulação nomeada (água fria, esgoto, pluvial, gás, incêndio…).</div>') +
       '<div style="display:flex;gap:6px;margin-top:2px"><button class="btn sm" data-sx="padrao" style="flex:1" title="Voltar às cores padrão">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Cores padrão</button></div>' +
-      '<div style="font-size:11px;color:#9fb2c8;line-height:1.4">Estas cores também valem na <b>Planta baixa</b> e no <b>RA/RV</b>. Clique numa cor pra trocar.</div>';
+      '<div style="font-size:11px;color:#5b6b7c;line-height:1.4">Estas cores também valem na <b>Planta baixa</b> e no <b>RA/RV</b>. Clique numa cor pra trocar.</div>';
   }
   // legenda compacta (chips) para o overlay do imersivo — pintada dentro do xrHud
   function montarLegendaChips() {
@@ -3242,7 +3353,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     s += '<rect x="' + X(0).toFixed(1) + '" y="' + Y(H).toFixed(1) + '" width="' + iw.toFixed(1) + '" height="' + ih.toFixed(1) + '" fill="#fbfdff" stroke="#123" stroke-width="1.4"/>';
     (pd.vaos || []).forEach(function (v) {
       s += '<rect x="' + X(v.x).toFixed(1) + '" y="' + Y(v.y + v.h).toFixed(1) + '" width="' + (v.w * sc).toFixed(1) + '" height="' + (v.h * sc).toFixed(1) + '" fill="#e8ecef" stroke="#8a97a3" stroke-dasharray="4 3"/>';
-      if (v.w * sc > 30 && v.h * sc > 18) s += '<text x="' + X(v.x + v.w / 2).toFixed(1) + '" y="' + Y(v.y + v.h / 2).toFixed(1) + '" font-size="10" fill="#5a6a78" text-anchor="middle" dominant-baseline="middle">VÃO</text>';
+      if (v.w * sc > 30 && v.h * sc > 18) s += '<text x="' + X(v.x + v.w / 2).toFixed(1) + '" y="' + Y(v.y + v.h / 2).toFixed(1) + '" font-size="10" fill="#6b7a8a" text-anchor="middle" dominant-baseline="middle">VÃO</text>';
     });
     var fs = Math.max(8, Math.min(15, sc * 0.28));
     pag.placas.forEach(function (p) {
@@ -3338,7 +3449,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     function trInsumo(i) { return '<tr><td>' + esc(i.nome) + '</td><td>' + fmtB(i.total) + '</td><td>' + esc(i.unid) + '</td></tr>'; }
     var trProd = (ins.producao || []).map(trInsumo).join('');
     var juntaNome = ins.juntaTipo === 'argamassa' ? 'argamassa polimérica (junta preenchida)' : (ins.juntaTipo === 'seca' ? 'encaixe seco (sem argamassa)' : 'adesivo/argamassa polimérica (cordão)');
-    var trMont = (ins.montagem || []).length ? (ins.montagem || []).map(trInsumo).join('') : '<tr><td colspan="3" style="text-align:left;color:#5a6a78">Junta seca — sem consumo de argamassa/adesivo.</td></tr>';
+    var trMont = (ins.montagem || []).length ? (ins.montagem || []).map(trInsumo).join('') : '<tr><td colspan="3" style="text-align:left;color:#6b7a8a">Junta seca — sem consumo de argamassa/adesivo.</td></tr>';
     var trCg = cg.linhas.map(function (l, ix) { var pd = d.paredes[ix]; return '<tr><td>' + esc(pd ? pd.id : ('P' + (ix + 1))) + '</td><td>' + fmtB(l.comprimento) + '</td><td>' + l.espessura + '</td><td>' + l.placas + '</td><td>' + fmtB(l.pesoKg) + '</td><td>' + fmtB(l.cargaKgM) + '</td><td>' + fmtB(l.cargaKNm) + '</td></tr>'; }).join('');
     var pranchas = d.paredes.map(function (pd) {
       var pg = pd.pag;
@@ -3349,11 +3460,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + 'header{background:linear-gradient(135deg,#0f2740,#1858a8);color:#fff;padding:20px 26px;display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}'
       + 'header h1{margin:0;font-size:21px}header .sub{opacity:.85;font-size:13px;margin-top:3px}'
       + '.wrap{max-width:1000px;margin:0 auto;padding:18px 22px 20px}.cards{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0}'
-      + '.cd{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:10px 14px;min-width:96px;flex:1}.cd b{display:block;font-size:20px;color:#1858a8}.cd span{font-size:11px;color:#5a6a78;text-transform:uppercase;letter-spacing:.4px}'
+      + '.cd{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:10px 14px;min-width:96px;flex:1}.cd b{display:block;font-size:20px;color:#1858a8}.cd span{font-size:11px;color:#6b7a8a;text-transform:uppercase;letter-spacing:.4px}'
       + 'h2{font-size:15px;border-bottom:2px solid #1858a8;padding-bottom:5px;margin:26px 0 12px}'
       + 'table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff}th,td{border:1px solid #d5dfea;padding:6px 9px;text-align:right}th{background:#eaf1f8}td:first-child,th:first-child{text-align:left}'
-      + '.conf{color:#b26a00;font-style:italic}.leg{display:flex;flex-wrap:wrap;gap:16px;font-size:11.5px;color:#5a6a78;margin:8px 0}.leg span{display:inline-flex;align-items:center;gap:5px}.sw{width:14px;height:14px;border-radius:3px;border:1px solid #2b4a6b;display:inline-block}'
-      + '.pr{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:14px;margin:14px 0;page-break-inside:avoid}.pr h3{margin:0 0 3px;font-size:14px;color:#1858a8}.pr .meta{font-size:12px;color:#5a6a78;margin-bottom:8px}'
+      + '.conf{color:#b26a00;font-style:italic}.leg{display:flex;flex-wrap:wrap;gap:16px;font-size:11.5px;color:#6b7a8a;margin:8px 0}.leg span{display:inline-flex;align-items:center;gap:5px}.sw{width:14px;height:14px;border-radius:3px;border:1px solid #2b4a6b;display:inline-block}'
+      + '.pr{background:#fff;border:1px solid #dbe4ee;border-radius:10px;padding:14px;margin:14px 0;page-break-inside:avoid}.pr h3{margin:0 0 3px;font-size:14px;color:#1858a8}.pr .meta{font-size:12px;color:#6b7a8a;margin-bottom:8px}'
       + 'footer{max-width:1000px;margin:0 auto;padding:8px 22px 40px;font-size:11px;color:#7a8a99;line-height:1.55}'
       + '.pbtn{background:#16a34a;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-size:13px;cursor:pointer}'
       + '@media print{.pbtn,.noprint{display:none}body{background:#fff}}';
@@ -3364,8 +3475,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + '<div class="leg"><span><i class="sw" style="background:#e6f0fb"></i> placa inteira 90×90 cm</span><span><i class="sw" style="background:#fdecc8"></i> recorte (dimensão em cm)</span><span><i class="sw" style="background:#e8ecef;border-style:dashed"></i> vão (porta/janela)</span></div>'
       + (mapa ? '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('planta', 15) : '') + ' Mapa de localização das paredes</h2>' + mapa : '')
       + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('estoque', 15) : '') + ' Material — placas por espessura</h2><table><thead><tr><th>Espessura</th><th>Placas</th><th>Inteiras</th><th>Recortes</th><th>Área (m²)</th><th>Peso (kg)</th></tr></thead><tbody>' + trEsp + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>' + m.totalPlacas + '</td><td>' + m.totalInteiras + '</td><td>' + m.totalRecortes + '</td><td>' + fmtB(m.areaPlacas) + '</td><td>' + fmtB(m.pesoTotalKg) + '</td></tr></tbody></table>'
-      + '<h2>🏭 Insumos de produção das placas <span style="font-size:11px;color:#5a6a78;font-weight:400">(fábrica — por placa cheia produzida: ' + fmtB(ins.areaCheia) + ' m²)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trProd + '</tbody></table>'
-      + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Insumos de montagem/assentamento <span style="font-size:11px;color:#5a6a78;font-weight:400">(obra — junta: ' + esc(juntaNome) + ' · por ' + fmtB(ins.areaInstalada) + ' m² instalados)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trMont + '</tbody></table>'
+      + '<h2>🏭 Insumos de produção das placas <span style="font-size:11px;color:#6b7a8a;font-weight:400">(fábrica — por placa cheia produzida: ' + fmtB(ins.areaCheia) + ' m²)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trProd + '</tbody></table>'
+      + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Insumos de montagem/assentamento <span style="font-size:11px;color:#6b7a8a;font-weight:400">(obra — junta: ' + esc(juntaNome) + ' · por ' + fmtB(ins.areaInstalada) + ' m² instalados)</span></h2><table><thead><tr><th>Insumo</th><th>Quantidade</th><th>Unid.</th></tr></thead><tbody>' + trMont + '</tbody></table>'
       + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Carga própria das paredes na fundação</h2><table><thead><tr><th>Parede</th><th>Comp. (m)</th><th>Esp. (cm)</th><th>Placas</th><th>Peso (kg)</th><th>Carga (kg/m)</th><th>Carga (kN/m)</th></tr></thead><tbody>' + trCg + '<tr style="font-weight:bold;background:#eef4fa"><td>Total</td><td>—</td><td>—</td><td>' + m.totalPlacas + '</td><td>' + fmtB(cg.pesoTotalKg) + '</td><td>—</td><td>—</td></tr></tbody></table>'
       + '<h2>' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Pranchas executivas por parede</h2>' + pranchas
       + '</div>'
@@ -3381,12 +3492,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   // painel flutuante do Blocok (espessura + peso + insumos editáveis + desconto de vãos)
   var blocokPanel = document.createElement('div');
-  blocokPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(15,39,64,.96);border:1px solid #24435f;border-radius:11px;padding:12px 13px;color:#dbe8f5;font-size:12px;width:264px;max-height:80%;overflow:auto';
+  blocokPanel.style.cssText = 'position:absolute;left:10px;bottom:14px;z-index:4;display:none;flex-direction:column;gap:7px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:11px;padding:12px 13px;color:#1a2b3c;font-size:12px;width:264px;max-height:80%;overflow:auto';
   host.appendChild(blocokPanel);
   S.blocokPanel = blocokPanel;
-  var INP = 'width:58px;background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:2px 5px';
+  var INP = 'width:58px;background:#0b1a2b;border:1px solid #d3dce6;color:#1a2b3c;border-radius:5px;padding:2px 5px';
   function linhaNum(rot, attrs, val, unid) {
-    return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="flex:1;color:#9fb2c8;font-size:11px">' + rot + '</span><input type="number" min="0" step="0.1" ' + attrs + ' value="' + val + '" style="' + INP + '"><span style="color:#9fb2c8;font-size:10px;width:40px">' + unid + '</span></label>';
+    return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="flex:1;color:#5b6b7c;font-size:11px">' + rot + '</span><input type="number" min="0" step="0.1" ' + attrs + ' value="' + val + '" style="' + INP + '"><span style="color:#5b6b7c;font-size:10px;width:40px">' + unid + '</span></label>';
   }
   function pintarBlocokPanel() {
     var c = ensureInsCfg();
@@ -3394,7 +3505,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var juntaOpts = [['cola', 'Cola/adesivo polimérico (cordão)'], ['argamassa', 'Argamassa polimérica (junta preenchida)'], ['seca', 'Encaixe seco (sem argamassa)']].map(function (o) { return '<option value="' + o[0] + '"' + (c.junta.tipo === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('');
     var juntaExtra = (c.junta.tipo === 'cola') ? linhaNum('Consumo do adesivo', 'data-bkj="cola"', c.junta.colaKgM2, 'kg/m²')
       : (c.junta.tipo === 'argamassa') ? linhaNum('Espessura da junta', 'data-bkj="gap"', c.junta.gapCm, 'cm') : '';
-    var pesos = [10, 13, 15, 20].map(function (e) { return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="width:36px;color:#9fb2c8">' + e + ' cm</span><input type="number" min="1" step="0.5" data-bkp="peso" data-esp="' + e + '" value="' + blocokCfg.pesoPorEsp[e] + '" style="' + INP + '"><span style="color:#9fb2c8;font-size:11px">kg/placa</span></label>'; }).join('');
+    var pesos = [10, 13, 15, 20].map(function (e) { return '<label style="display:flex;align-items:center;gap:5px;margin-top:3px"><span style="width:36px;color:#5b6b7c">' + e + ' cm</span><input type="number" min="1" step="0.5" data-bkp="peso" data-esp="' + e + '" value="' + blocokCfg.pesoPorEsp[e] + '" style="' + INP + '"><span style="color:#5b6b7c;font-size:11px">kg/placa</span></label>'; }).join('');
     var traco = linhaNum('Cimento CP-V', 'data-bkm="cimento"', c.mix.cimento, 'kg/m³')
       + linhaNum('Areia industrial', 'data-bkm="areia"', c.mix.areia, 'm³/m³')
       + linhaNum('Pedrisco', 'data-bkm="pedrisco"', c.mix.pedrisco, 'm³/m³')
@@ -3410,12 +3521,12 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       + linhaNum('Placas/pallet', 'data-bklg="placasPallet"', lc.placasPallet, 'un');
     blocokPanel.innerHTML =
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Plantas Executivas Blocok</b><button class="btn sm" data-bk="fechar" style="padding:2px 8px">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>'
-      + '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
-      + '<label style="display:flex;flex-direction:column;gap:2px"><span style="color:#9fb2c8">Espessura Blocok</span><select data-bk="esp" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + espOpts + '</select></label>'
-      + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:#9fb2c8">Junta de assentamento</span><select data-bk="junta" style="background:#0b1a2b;border:1px solid #24435f;color:#dbe8f5;border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
-      + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Traço do micro concreto (avançado)</summary>' + traco + '</details>'
-      + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Peso por placa (compra)</summary>' + pesos + '</details>'
-      + '<details style="border-top:1px solid #24435f;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#cfe0f2">Mão de obra & logística (planilha)</summary>' + molog + '</details>'
+      + '<div style="font-size:11px;color:#5b6b7c;line-height:1.35">Lê as paredes do IFC → pranchas 90×90 numeradas + material + <b>insumos calculados</b> + carga na fundação.</div>'
+      + '<label style="display:flex;flex-direction:column;gap:2px"><span style="color:#5b6b7c">Espessura Blocok</span><select data-bk="esp" style="background:#0b1a2b;border:1px solid #d3dce6;color:#1a2b3c;border-radius:5px;padding:3px 5px">' + espOpts + '</select></label>'
+      + '<label style="display:flex;flex-direction:column;gap:2px;margin-top:2px"><span style="color:#5b6b7c">Junta de assentamento</span><select data-bk="junta" style="background:#0b1a2b;border:1px solid #d3dce6;color:#1a2b3c;border-radius:5px;padding:3px 5px">' + juntaOpts + '</select></label>' + juntaExtra
+      + '<details style="border-top:1px solid #d3dce6;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Traço do micro concreto (avançado)</summary>' + traco + '</details>'
+      + '<details style="border-top:1px solid #d3dce6;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Peso por placa (compra)</summary>' + pesos + '</details>'
+      + '<details style="border-top:1px solid #d3dce6;padding-top:5px"><summary style="cursor:pointer;font-size:11px;color:#243b52">Mão de obra & logística (planilha)</summary>' + molog + '</details>'
       + '<label style="display:flex;align-items:center;gap:6px;margin-top:2px"><input type="checkbox" data-bk="vaos"' + (blocokCfg.descontarVaos ? ' checked' : '') + '> descontar vãos (portas/janelas)</label>'
       + '<button class="btn sm primary" data-bk="gerar" style="margin-top:2px">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Gerar plantas executivas</button>'
       + '<button class="btn sm" data-bk="planilha" style="margin-top:2px">' + (typeof Icones !== 'undefined' ? Icones.get('graficos', 15) : '') + ' Gerar planilha (Excel)</button>'
@@ -3458,7 +3569,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       b.style.background = cfg[kk] ? corAtiva() : ''; b.style.color = cfg[kk] ? '#fff' : '';
       if (kk === 'on') b.textContent = cfg.on ? 'ON' : 'OFF';
     });
-    var bs = bar.querySelector('[data-b="snap"]'); if (bs) { bs.style.background = snap.on ? corAtiva() : ''; bs.style.color = snap.on ? '#fff' : ''; bs.style.outline = (snapPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
+    var bs = bar.querySelector('[data-b="snap"]'); if (bs) { bs.style.background = snap.on ? corAtiva() : ''; bs.style.color = snap.on ? '#fff' : ''; bs.style.outline = (snapPanel.style.display === 'flex') ? '2px solid #15803d' : ''; }
   }
   pintarSnapPanel();
   function toggleSnapPanel() { var abrir = (snapPanel.style.display === 'none' || !snapPanel.style.display); fecharPaineis(abrir ? snapPanel : null); snapPanel.style.display = abrir ? 'flex' : 'none'; pintarSnapPanel(); } // repinta -> botão mostra painel aberto
@@ -3471,7 +3582,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // marcador HTML (não entra na cena 3D: não é clipado nem raycastado)
   var snapMarca = document.createElement('div');
   snapMarca.style.cssText = 'position:absolute;z-index:5;display:none;pointer-events:none;transform:translate(-50%,-50%)';
-  snapMarca.innerHTML = '<div data-sm="ico" style="width:12px;height:12px;border:2px solid #22c55e;margin:0 auto"></div><div data-sm="rot" style="font-size:10px;font-weight:700;color:#7fe0a3;text-shadow:0 1px 2px rgba(0,0,0,.8);text-align:center;margin-top:2px"></div>';
+  snapMarca.innerHTML = '<div data-sm="ico" style="width:12px;height:12px;border:2px solid #22c55e;margin:0 auto"></div><div data-sm="rot" style="font-size:10px;font-weight:700;color:#15803d;text-shadow:0 1px 2px rgba(0,0,0,.8);text-align:center;margin-top:2px"></div>';
   host.appendChild(snapMarca);
   S.snapMarca = snapMarca;
   var SNAP_VIS = { vertice: { cor: '#22c55e', borda: '0', rot: 'vértice' }, meio: { cor: '#f59e0b', borda: '50%', rot: 'meio' }, aresta: { cor: '#38bdf8', borda: '0', rot: 'aresta' }, intersecao: { cor: '#e879f9', borda: '0', rot: '✚ interseção' }, centro: { cor: '#facc15', borda: '50%', rot: '⊕ centro' } };
@@ -3669,7 +3780,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var lupaEl = document.createElement('div');
   lupaEl.setAttribute('data-bim', 'lupa');   // âncora do teste e do suporte
   lupaEl.style.cssText = 'position:absolute;z-index:9;display:none;pointer-events:none;width:' + LUPA_D + 'px;height:' + LUPA_D + 'px;' +
-    'border-radius:50%;overflow:hidden;border:3px solid rgba(34,197,94,.95);box-shadow:0 6px 22px rgba(0,0,0,.45);transform:translate(-50%,-50%);background:#0f2740';
+    'border-radius:50%;overflow:hidden;border:3px solid rgba(34,197,94,.95);box-shadow:0 6px 22px rgba(0,0,0,.45);transform:translate(-50%,-50%);background:#ffffff';
   var lupaCv = document.createElement('canvas');
   lupaCv.width = LUPA_D; lupaCv.height = LUPA_D;
   lupaCv.style.cssText = 'width:100%;height:100%;display:block';
@@ -4178,14 +4289,14 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
   // painel de configuração do corte
   var ctecCfg = document.createElement('div');
-  ctecCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:260px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  ctecCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:14px 16px;color:#1a2b3c;font-size:12px;width:260px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
   ctecCfg.innerHTML =
     '<b>' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Gerar corte técnico</b>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Tipo de vista <select data-t="tipo" class="inp" style="width:130px"><option value="corte">Corte (A–A)</option><option value="fachada">Fachada/Elevação</option></select></label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-t="esc" class="inp" style="width:130px"><option value="50">1:50</option><option value="75">1:75</option><option value="100" selected>1:100</option><option value="200">1:200</option></select></label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade de visão <input data-t="prof" class="inp" type="number" min="0.5" step="0.5" value="10" style="width:70px"> m</label>' +
     '<label style="display:flex;gap:6px;align-items:center;font-size:12px"><input data-t="inv" type="checkbox"> Olhar para o outro lado</label>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Auxílio visual de coordenação, não substitui o projeto executivo. Faces cortadas saem <b>hachuradas</b>; superfícies curvas/tubos podem sair sem contorno. Confira sempre pela escala gráfica.</div>' +
+    '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Auxílio visual de coordenação, não substitui o projeto executivo. Faces cortadas saem <b>hachuradas</b>; superfícies curvas/tubos podem sair sem contorno. Confira sempre pela escala gráfica.</div>' +
     '<div style="display:flex;gap:6px"><button class="btn sm primary" data-t="gerar" style="flex:1">Gerar</button><button class="btn sm" data-t="cancelar" style="flex:1">Cancelar</button></div>';
   host.appendChild(ctecCfg);
   S.ctecCfg = ctecCfg;
@@ -4193,8 +4304,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   var ctecModal = document.createElement('div');
   ctecModal.style.cssText = 'position:absolute;inset:0;z-index:7;display:none;align-items:center;justify-content:center;background:rgba(4,12,22,.82)';
   ctecModal.innerHTML =
-    '<div style="display:flex;flex-direction:column;gap:9px;max-width:92%;max-height:92%;background:#0f2740;border:1px solid #24435f;border-radius:12px;padding:13px">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;color:#dbe8f5;font-size:13px"><b data-r="titulo">Corte técnico</b>' +
+    '<div style="display:flex;flex-direction:column;gap:9px;max-width:92%;max-height:92%;background:#ffffff;border:1px solid #d3dce6;border-radius:12px;padding:13px">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;color:#1a2b3c;font-size:13px"><b data-r="titulo">Corte técnico</b>' +
     '<span><button class="btn sm" data-r="ajustar" title="Mudar escala/tipo/profundidade sem redesenhar a linha">🔧 Ajustar</button> <button class="btn sm" data-r="imprimir">' + (typeof Icones !== 'undefined' ? Icones.get('imprimir', 15) : '') + ' Imprimir</button> <button class="btn sm" data-r="baixar">' + (typeof Icones !== 'undefined' ? Icones.get('baixar', 15) : '') + ' PNG</button> <button class="btn sm" data-r="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></span></div>' +
     '<div style="overflow:auto;background:#fff;border-radius:6px;text-align:center"><img data-r="img" style="max-width:100%;display:block;margin:0 auto"></div></div>';
   host.appendChild(ctecModal);
@@ -4455,13 +4566,13 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   S._edgesEstilo = function (mostrar) { if (!estiloD.on) return; todasMalhas(function (m) { if (m.userData._edgeLn) m.userData._edgeLn.visible = !!mostrar; }); };
 
   var plantaCfg = document.createElement('div');
-  plantaCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:270px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  plantaCfg.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:14px 16px;color:#1a2b3c;font-size:12px;width:270px;box-shadow:0 12px 34px rgba(0,0,0,.5)';
   plantaCfg.innerHTML =
     '<b>' + (typeof Icones !== 'undefined' ? Icones.get('nota', 15) : '') + ' Planta baixa técnica</b>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Escala <select data-q="esc" class="inp" style="width:130px"><option value="50" selected>1:50</option><option value="75">1:75</option><option value="100">1:100</option><option value="200">1:200</option></select></label>' +
     '<label style="display:flex;gap:6px;align-items:center"><input data-q="cotas" type="checkbox" checked> Cotas automáticas nas paredes</label>' +
     '<label style="display:flex;justify-content:space-between;align-items:center">Profundidade abaixo do corte <input data-q="prof" class="inp" type="number" min="0.5" step="0.5" value="3" style="width:64px"> m</label>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' As cotas saem dos alinhamentos das faces das paredes retas nos eixos do modelo. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena.</div>' +
+    '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' As cotas saem dos alinhamentos das faces das paredes retas nos eixos do modelo. Parede fora de esquadro fica sem cota automática (declarada no desenho) — use a ' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' trena.</div>' +
     '<div style="display:flex;gap:6px"><button class="btn sm primary" data-q="gerar" style="flex:1">Gerar</button><button class="btn sm" data-q="cancelar" style="flex:1">Cancelar</button></div>';
   host.appendChild(plantaCfg);
   S.plantaCfg = plantaCfg;
@@ -4716,7 +4827,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     return v;
   }
   var pavPanel = document.createElement('div');
-  pavPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:250px;max-height:55%;overflow:auto';
+  pavPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:250px;max-height:55%;overflow:auto';
   host.appendChild(pavPanel);
   S.pavPanel = pavPanel;
   function todasMalhas(fn) { modelRoot.children.forEach(function (g) { (g.children || []).forEach(fn); }); }
@@ -4754,22 +4865,22 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var lst = pavLista();
     var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('niveis', 15) : '') + ' Pavimentos</b><button class="btn sm" data-p="todos" title="Mostrar todos os pavimentos de novo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos</button></div>';
     if (!lst.length) {
-      html += '<div style="font-size:11px;color:#9fb2c8">Este IFC não declara pavimentos (IfcBuildingStorey). Use a ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta com o slider de altura.</div>';
+      html += '<div style="font-size:11px;color:#5b6b7c">Este IFC não declara pavimentos (IfcBuildingStorey). Use a ' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + ' Planta com o slider de altura.</div>';
     } else {
       var base = null;
       lst.forEach(function (pv) { if (pv.y0 != null && (base == null || pv.y0 < base)) base = pv.y0; });
       lst.forEach(function (pv) {
         var atv = pav.isolado === pv.nome;
-        var nivel = (pv.y0 != null && base != null) ? ' <span style="color:#9fb2c8;font-size:11px">nível +' + fmtDist(Math.max(0, pv.y0 - base)) + '</span>' : '';
+        var nivel = (pv.y0 != null && base != null) ? ' <span style="color:#5b6b7c;font-size:11px">nível +' + fmtDist(Math.max(0, pv.y0 - base)) + '</span>' : '';
         html += '<div style="display:flex;align-items:center;gap:5px;border:1px solid ' + (atv ? corAtiva() : 'transparent') + ';border-radius:7px;padding:2px 4px">' +
           '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(pv.nome) + ' · ' + pv.n + ' elementos">' + esc(pv.nome) + nivel + '</span>' +
           '<button class="btn sm" data-p="iso" data-n="' + esc(pv.nome) + '" title="Isolar este pavimento">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + '</button>' +
           '<button class="btn sm" data-p="pl" data-n="' + esc(pv.nome) + '" title="Planta baixa deste pavimento">' + (typeof Icones !== 'undefined' ? Icones.get('regua', 15) : '') + '</button></div>';
       });
-      html += '<div style="font-size:11px;color:#9fb2c8">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos restaura.</div>';
+      html += '<div style="font-size:11px;color:#5b6b7c">Isolar mostra só o que o IFC declara nesse andar — o que não está em pavimento nenhum também some. ' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Todos restaura.</div>';
     }
     pavPanel.innerHTML = html;
-    var bp2 = bar.querySelector('[data-b="pav"]'); if (bp2) { bp2.style.background = pav.isolado ? corAtiva() : ''; bp2.style.color = pav.isolado ? '#fff' : ''; bp2.style.outline = (pavPanel.style.display === 'flex') ? '2px solid #7fe0a3' : ''; }
+    var bp2 = bar.querySelector('[data-b="pav"]'); if (bp2) { bp2.style.background = pav.isolado ? corAtiva() : ''; bp2.style.color = pav.isolado ? '#fff' : ''; bp2.style.outline = (pavPanel.style.display === 'flex') ? '2px solid #15803d' : ''; }
   }
   S._pavRender = pavRender;
   function restaurarVisibilidade() {
@@ -4829,7 +4940,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // todos do mesmo tipo. Só mexe em mesh.visible (materiais intactos).
   // ============================================================
   var visPanel = document.createElement('div');
-  visPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(15,39,64,.94);border:1px solid #24435f;border-radius:11px;padding:11px 13px;color:#dbe8f5;font-size:12px;width:220px';
+  visPanel.style.cssText = 'position:absolute;right:10px;top:52px;z-index:4;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.98);border:1px solid #d3dce6;border-radius:11px;padding:11px 13px;color:#1a2b3c;font-size:12px;width:220px';
   visPanel.innerHTML =
     // ✕ próprio (padrão dos outros painéis): sem ele, o único jeito de fechar era o
     // botão "Ver" lá dentro do leque do dock — e com a barra recolhida o painel ficava
@@ -4842,7 +4953,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-v="rx" title="Raio-X: deixa o resto translúcido (não some) e destaca o elemento. Enxergue o que está atrás/dentro.">' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X da seleção</button>' +
     '<button class="btn sm" data-v="rxt" title="Raio-X por tipo: destaca todos deste tipo (ex.: toda a hidráulica) e translucidez o resto — bom pra ver onde há cano antes de furar.">' + (typeof Icones !== 'undefined' ? Icones.get('camadas', 15) : '') + ' Raio-X deste tipo</button>' +
     '<button class="btn sm" data-v="tudo" title="Volta a mostrar tudo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Restaurar tudo</button>' +
-    '<div style="font-size:11px;color:#9fb2c8">Dê <b>dois cliques</b> num elemento do modelo pra selecionar antes.</div>';
+    '<div style="font-size:11px;color:#5b6b7c">Dê <b>dois cliques</b> num elemento do modelo pra selecionar antes.</div>';
   host.appendChild(visPanel);
   S.visPanel = visPanel;
   function selInfo() { return (S.selected && S.selected.userData && S.selected.userData.expressID != null) ? { mid: S.selected.userData.mid, eid: S.selected.userData.expressID, tipo: S.selected.userData.tipo } : null; }
@@ -4915,7 +5026,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var abrir = (visPanel.style.display === 'none' || !visPanel.style.display);
     fecharPaineis(abrir ? visPanel : null);
     visPanel.style.display = abrir ? 'flex' : 'none';
-    var bv = bar.querySelector('[data-b="vis"]'); if (bv) bv.style.outline = abrir ? '2px solid #7fe0a3' : '';
+    var bv = bar.querySelector('[data-b="vis"]'); if (bv) bv.style.outline = abrir ? '2px solid #15803d' : '';
   }
   // um painel flutuante por vez (snap/pav/vis disputam os cantos da tela)
   function fecharPaineis(exceto) {
@@ -5184,7 +5295,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
         /* o carimbo honesto virou função: o vídeo do 4D usa o MESMO, e duas
            contagens escritas à mão dariam dois números para a mesma cena */
         var rotEl = rotuloElementos();
-        g2.fillStyle = '#7fe0a3'; g2.font = 'bold 16px Segoe UI, Arial';
+        g2.fillStyle = '#15803d'; g2.font = 'bold 16px Segoe UI, Arial';
         g2.fillText((((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') ? ((typeof Empresa!=='undefined'&&Empresa.nomeDoc&&Empresa.nomeDoc())||'') + ' · ' : '') + ((typeof Empresa!=='undefined'&&Empresa.creditoTexto&&Empresa.creditoTexto())?'OrçaPRO BIM · ':'') + new Date().toLocaleString('pt-BR') + ' · ' + rotEl + (pav.isolado ? ' · pavimento: ' + pav.isolado : ''), 12, img.height + 28);
         var a2 = document.createElement('a'); a2.href = cnv.toDataURL('image/png'); a2.download = 'bim-foto.png'; a2.click();
         S._hint('' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Foto salva (bim-foto.png).');
@@ -5214,7 +5325,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   // painel de controle (fica sobre o canvas; entra no re-home)
   var xrPanel = document.createElement('div');
-  xrPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.96);border:1px solid #24435f;border-radius:12px;padding:12px 13px;color:#dbe8f5;font-size:12px;width:250px;max-height:78vh;overflow:auto';
+  xrPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:5;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:12px 13px;color:#1a2b3c;font-size:12px;width:250px;max-height:78vh;overflow:auto';
   host.appendChild(xrPanel);
   S.xrPanel = xrPanel;
   // HUD imersivo (joystick + sair + mira) — some quando não está no modo
@@ -5238,17 +5349,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var vazio = box.isEmpty();
     var discs = disciplinasPresentes();
     var html = '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' Realidade Mista / Virtual</b><button class="btn sm" data-x="fechar" title="Fechar painel">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>';
-    if (vazio) { html += '<div style="font-size:11px;color:#9fb2c8">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
+    if (vazio) { html += '<div style="font-size:11px;color:#5b6b7c">Carregue um modelo primeiro.</div>'; xrPanel.innerHTML = html; return; }
     if (!xr.on) {
-      html += '<div style="font-size:11px;color:#9fb2c8">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
+      html += '<div style="font-size:11px;color:#5b6b7c">Veja o projeto no ambiente ou ande dentro dele. Escolha o modo:</div>' +
         '<button class="btn sm primary" data-x="camera" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto (ver no seu ambiente)</button>' +
         '<button class="btn sm" data-x="caminhar" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhar no projeto (fundo liso)</button>' +
-        '<button class="btn sm" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#9fb2c8">(verificando…)</span></button>' +
-        '<button class="btn sm" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#9fb2c8">(verificando…)</span></button>' +
-        '<div style="font-size:11px;color:#9fb2c8;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão) só no Android/ARCore.</div>';
+        '<button class="btn sm" data-x="ar" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (Android) <span data-x="arst" style="color:#5b6b7c">(verificando…)</span></button>' +
+        '<button class="btn sm" data-x="vr" style="width:100%" disabled>' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo <span data-x="vrst" style="color:#5b6b7c">(verificando…)</span></button>' +
+        '<div style="font-size:11px;color:#5b6b7c;line-height:1.35">📷 <b>funciona no iPhone e Android</b>: liga a câmera e o projeto aparece no ambiente real — mova o celular pra olhar, joystick pra chegar perto (precisa HTTPS: use o link ' + (typeof Icones !== 'undefined' ? Icones.get('nuvem', 15) : '') + ' da nuvem). ' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA com âncora (fixa no chão) só no Android/ARCore.</div>';
     } else {
       var em = xr.mode === 'ar' ? '' + (typeof Icones !== 'undefined' ? Icones.get('celular', 15) : '') + ' RA no ambiente' : xr.mode === 'vr' ? '' + (typeof Icones !== 'undefined' ? Icones.get('vr', 15) : '') + ' VR imersivo' : xr.mode === 'camera' ? '' + (typeof Icones !== 'undefined' ? Icones.get('camera', 15) : '') + ' Câmera + Projeto' : '' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Caminhando';
-      html += '<div style="font-size:11px;color:#7fe0a3"><b>' + em + '</b> ativo</div>';
+      html += '<div style="font-size:11px;color:#15803d"><b>' + em + '</b> ativo</div>';
       // escala — no AR de mesa (hit-test) e agora TAMBÉM no câmera/caminhar (1:1 real OU miniatura na sala)
       if (xr.mode === 'ar') {
         var ESCS = [['1', '1:1 (real)'], ['0.04', '1:25'], ['0.02', '1:50'], ['0.01', '1:100'], ['0.005', '1:200']];
@@ -5265,25 +5376,25 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
           '<div style="display:flex;gap:6px">' +
           '<button class="btn sm" data-x="centralizar" style="flex:1">' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' Centralizar</button>' +
           '<button class="btn sm" data-x="travarcam" style="flex:1">' + (xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Destravar' : '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Travar') + '</button></div>' +
-          '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' recoloca à frente; ' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' fixa no lugar.</div>';
+          '<div style="font-size:11px;color:#5b6b7c;line-height:1.3">1:1 = andar DENTRO em tamanho real. Miniatura = ver o projeto inteiro na sua frente. ' + (typeof Icones !== 'undefined' ? Icones.get('alvo', 15) : '') + ' recoloca à frente; ' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' fixa no lugar.</div>';
       }
       // altura do corte de visão (reflete o valor atual — não reseta no repaint)
       var cf = (xr.cortefrac == null ? 1000 : xr.cortefrac);
-      html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Teto de visão</span><span data-x="cortev" style="color:#7fe0a3">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('corte', 15) : '') + ' Teto de visão</span><span data-x="cortev" style="color:#15803d">' + (cf >= 999 ? 'inteiro' : '') + '</span></div>' +
         '<input type="range" data-x="corte" min="0" max="1000" value="' + cf + '" style="width:100%;accent-color:#22c55e">';
       // passos: sensibilidade (só caminhar/câmera — no AR a locomoção é do WebXR). Tablet precisa de mais
       // sensibilidade (movimento gentil); o usuário ajusta se não anda ou anda demais.
       if (xr.mode !== 'ar' && xr.mode !== 'vr') {
         var ps = Math.round(_passSens() * 100); // valor REAL (localStorage c/ fallback), não o default fixo — bate com o aplicado
-        html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Sensibilidade dos passos</span><span data-x="passv" style="color:#7fe0a3">' + (ps / 100).toFixed(1) + '×</span></div>' +
+        html += '<div style="display:flex;justify-content:space-between;align-items:baseline"><span>' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Sensibilidade dos passos</span><span data-x="passv" style="color:#15803d">' + (ps / 100).toFixed(1) + '×</span></div>' +
           '<input type="range" data-x="passsens" min="40" max="300" value="' + ps + '" style="width:100%;accent-color:#0d9488">' +
-          '<div style="font-size:10.5px;color:#9fb2c8;line-height:1.25;margin-top:-2px">Ande com o aparelho na mão pra andar no projeto. Se o projeto não anda, <b>aumente</b>; se anda sozinho, <b>diminua</b>. (No tablet costuma precisar mais.)</div>';
+          '<div style="font-size:10.5px;color:#5b6b7c;line-height:1.25;margin-top:-2px">Ande com o aparelho na mão pra andar no projeto. Se o projeto não anda, <b>aumente</b>; se anda sozinho, <b>diminua</b>. (No tablet costuma precisar mais.)</div>';
       }
       // medir
       html += '<button class="btn sm" data-x="medir" style="width:100%">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir na escala (toque 2 pontos)</button>';
       // disciplinas
       if (discs.length > 1) {
-        html += '<div style="font-size:11px;color:#9fb2c8;margin-top:2px">Disciplinas (toque pra ligar/desligar):</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
+        html += '<div style="font-size:11px;color:#5b6b7c;margin-top:2px">Disciplinas (toque pra ligar/desligar):</div><div style="display:flex;flex-wrap:wrap;gap:5px">';
         discs.forEach(function (d) {
           var off = !!xr.discOcultas[d.chave];
           html += '<button class="btn sm" data-xd="' + esc(d.chave) + '" style="' + (off ? 'opacity:.45' : 'background:' + corAtiva() + ';color:#fff') + '">' + esc(d.nome) + '</button>';
@@ -5292,7 +5403,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       }
       if (xr.mode === 'ar') {
         html += '<button class="btn sm" data-x="travar" style="width:100%">' + (xr.travado ? '' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Destravar do ponto' : '' + (typeof Icones !== 'undefined' ? Icones.get('cadeado', 15) : '') + ' Travar neste ponto') + '</button>' +
-          '<div style="font-size:11px;color:#9fb2c8;line-height:1.3">Aponte pro chão, toque pra fixar o projeto no lugar real; trave pra ele não sair do lugar.</div>';
+          '<div style="font-size:11px;color:#5b6b7c;line-height:1.3">Aponte pro chão, toque pra fixar o projeto no lugar real; trave pra ele não sair do lugar.</div>';
       }
       html += '<button class="btn sm" data-x="sair" style="width:100%">⏹ Sair do imersivo</button>';
     }
@@ -5424,17 +5535,17 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       // Passos SÓ em Caminhar/Câmera (no AR a locomoção é do WebXR, o botão seria morto). Rótulo reflete
       // o estado REAL (listener ativo) — nunca mostra "on" sem sensor ligado (gate v1.1.93).
       (comReticulo ? '' : '<button data-har="passos" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + ((xr._pass && xr._pass.on) ? '#0d9488' : 'rgba(90,110,130,.7)') + '">' + (typeof Icones !== 'undefined' ? Icones.get('caminhar', 15) : '') + ' Passos: ' + ((xr._pass && xr._pass.on) ? 'on' : 'off') + '</button>') +
-      '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#7fe0a3;font-weight:600">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir</button>' +
+      '<button data-har="medir" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#0b1a2b;background:#15803d;font-weight:600">' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Medir</button>' +
       '<button data-har="sistema" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;font-weight:600;background:' + (sisColor.on ? corAtiva() : '#334a63') + '">' + (typeof Icones !== 'undefined' ? Icones.get('paleta', 15) : '') + ' Sistemas</button>' +
       '<button data-har="ajustes" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#334a63">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Ajustes</button>' +
       '<button data-har="sair" style="pointer-events:auto;border:0;border-radius:14px;padding:7px 12px;font-size:12px;color:#fff;background:#b91c1c">⏹ Sair</button></div>';
     xrHud.innerHTML =
       (comReticulo ? '' : '<div data-h="joy" style="position:absolute;left:16px;bottom:60px;width:108px;height:108px;border-radius:50%;background:rgba(20,40,64,.4);border:2px solid rgba(127,224,163,.5);pointer-events:auto;touch-action:none">' +
       '<div data-h="knob" style="position:absolute;left:31px;top:31px;width:46px;height:46px;border-radius:50%;background:rgba(127,224,163,.85)"></div></div>') +
-      (comReticulo ? '<div style="position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #7fe0a3;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>' : '') +
+      (comReticulo ? '<div style="position:absolute;left:50%;top:50%;width:22px;height:22px;margin:-11px 0 0 -11px;border:2px solid #15803d;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,.4)"></div>' : '') +
       barra +
       (S._montarLegendaChips ? S._montarLegendaChips() : '') + // legenda de cores por sistema (só quando o modo está ligado)
-      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#dbe8f5;font-size:12px;padding:5px 12px;border-radius:20px;max-width:88%;text-align:center"></div></div>';
+      '<div style="position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;pointer-events:none"><div data-h="dica" style="margin-top:8px;background:rgba(11,26,43,.82);color:#1a2b3c;font-size:12px;padding:5px 12px;border-radius:20px;max-width:88%;text-align:center"></div></div>';
     xrHud.style.display = 'block';
     if (!comReticulo) ligarJoystick();
   }
@@ -5447,7 +5558,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (xr._passH) { xr._pass.on = !xr._pass.on; _syncPassosHud(xr._pass.on ? 'Andar com o celular na mão move você no projeto (por passos).' : 'Passos desligados — use o joystick.'); }
       else { ligarPassos(); } // sem listener (permissão negada/pendente) → re-tenta de fato em vez de mentir "on"
     }
-    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#f0b94a' : '#7fe0a3'; xrDica(xr.medir.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
+    else if (k === 'medir') { xr.medir.on = !xr.medir.on; if (!xr.medir.on) limparMedirXR(); b.style.background = xr.medir.on ? '#b45309' : '#15803d'; xrDica(xr.medir.on ? '' + (typeof Icones !== 'undefined' ? Icones.get('medir', 15) : '') + ' Toque em 2 pontos do modelo pra medir na escala.' : ''); } // limpa as medições ao desligar (paridade com o painel)
     else if (k === 'ajustes') { var aberto = xrPanel.style.display === 'flex'; if (aberto) { xrPanel.style.display = 'none'; } else { pintarXRPanel(); xrPanel.style.display = 'flex'; if (S._ajustarTop) S._ajustarTop(); } }
     else if (k === 'sistema') { if (S._setSistema) S._setSistema(!(S._sisColorOn && S._sisColorOn())); } // recolore por sistema; _sisImersivoSync remonta o HUD (botão + legenda)
     else { toggleDisciplinaXR(k); var off = !!xr.discOcultas[k]; b.style.background = off ? 'rgba(90,110,130,.7)' : corAtiva(); }
@@ -5456,7 +5567,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // (update cirúrgico, sem remontar o HUD inteiro — não reseta joystick nem o estado do 📏 Medir)
   S._sisImersivoSync = function () {
     if (!(xr.on && xrHud.style.display !== 'none')) return;
-    var b = xrHud.querySelector('[data-har="sistema"]'); if (b) b.style.background = S._sisColorOn && S._sisColorOn() ? corAtiva() : '#334a63';
+    var b = xrHud.querySelector('[data-har="sistema"]'); if (b) b.style.background = S._sisColorOn && S._sisColorOn() ? corAtiva() : '#c9d5e1';
     var leg = xrHud.querySelector('[data-h="sisleg"]'); if (leg && leg.parentNode) leg.parentNode.removeChild(leg);
     if (S._sisColorOn && S._sisColorOn() && S._montarLegendaChips) { var html = S._montarLegendaChips(); if (html) xrHud.insertAdjacentHTML('beforeend', html); }
   };
@@ -5980,9 +6091,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
                orto: false, angPre: 0, chain: true, pPrev: null, linhaProv: null };
   S.edit = edit;
   var editPanel = document.createElement('div');
-  editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:10px 12px;color:#dbe8f5;font-size:12px;width:280px;max-width:94%';
+  editPanel.style.cssText = 'position:absolute;left:10px;top:52px;z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:10px 12px;color:#1a2b3c;font-size:12px;width:280px;max-width:94%';
   editPanel.innerHTML =
-    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor <span style="color:#9fb2c8;font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
+    '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('editar', 15) : '') + ' Editor <span style="color:#5b6b7c;font-weight:400">(sintético)</span></b><button class="btn sm" data-ed="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
     '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
     '<button class="btn sm" data-ed="parede">' + (typeof Icones !== 'undefined' ? Icones.get('bloco', 15) : '') + ' Parede</button>' +
     '<button class="btn sm" data-ed="laje">' + (typeof Icones !== 'undefined' ? Icones.get('laje', 15) : '') + ' Laje</button>' +
@@ -6001,9 +6112,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<button class="btn sm" data-ed="angpre" title="Ângulos predefinidos: livre → 45° → 15°">∠ Livre</button>' +
     '<button class="btn sm" data-ed="chain" title="A próxima parede continua do fim da anterior (Esc encerra a cadeia)">⛓ Encadear</button>' +
     '</div>' +
-    '<div style="font-size:10.5px;color:#9fb2c8">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter — igual no Revit.</div>' +
-    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button><span data-ed="st" style="color:#9fb2c8;font-size:11.5px"></span></div>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
+    '<div style="font-size:10.5px;color:#5b6b7c">' + (typeof Icones !== 'undefined' ? Icones.get('lampada', 15) : '') + ' Desenhando parede: digite a <b>distância</b> na caixinha junto ao cursor e Enter — igual no Revit.</div>' +
+    '<div style="display:flex;gap:6px;align-items:center"><button class="btn sm" data-ed="undo">' + (typeof Icones !== 'undefined' ? Icones.get('voltar', 15) : '') + ' Desfazer</button><span data-ed="st" style="color:#5b6b7c;font-size:11.5px"></span></div>' +
+    '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria SINTÉTICA de estudo, com QTO exato das peças criadas. Elemento de IFC importado nunca muda — "apagar" só o oculta como removido na edição.</div>';
   host.appendChild(editPanel);
   S.editPanel = editPanel; // re-home re-parenteia via S.* — fora da lista o painel fica órfão
   var editMats = null;
@@ -6064,8 +6175,8 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   // preview vivo (rubber-band) + caixinha de distância junto ao cursor (padrão do snapMarca:
   // DOM fora da cena — nunca é clipado nem raycastado)
   var editDist = document.createElement('div');
-  editDist.style.cssText = 'position:absolute;z-index:6;display:none;background:rgba(15,39,64,.95);border:1px solid #2FBF71;border-radius:8px;padding:3px 6px;color:#dbe8f5;font-size:12px;white-space:nowrap;pointer-events:auto';
-  editDist.innerHTML = '<span data-edd="txt" style="font-weight:700;color:#7fe0a3"></span> <input data-edd="inp" inputmode="decimal" placeholder="m" style="width:52px;background:#0b1a2b;border:1px solid #24435f;border-radius:5px;color:#fff;font-size:12px;padding:1px 4px">';
+  editDist.style.cssText = 'position:absolute;z-index:6;display:none;background:rgba(255,255,255,.98);border:1px solid #2FBF71;border-radius:8px;padding:3px 6px;color:#1a2b3c;font-size:12px;white-space:nowrap;pointer-events:auto';
+  editDist.innerHTML = '<span data-edd="txt" style="font-weight:700;color:#15803d"></span> <input data-edd="inp" inputmode="decimal" placeholder="m" style="width:52px;background:#ffffff;border:1px solid #9db4c8;border-radius:5px;color:#1a2b3c;font-size:12px;padding:1px 4px">';
   host.appendChild(editDist);
   S.editDist = editDist; // re-home
   function editPreviewLimpar() {
@@ -6436,7 +6547,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
 
   var p3d = { parse: null, det: null };
   var p3dPanel = document.createElement('div');
-  p3dPanel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(15,39,64,.97);border:1px solid #24435f;border-radius:12px;padding:14px 16px;color:#dbe8f5;font-size:12px;width:480px;max-width:94%;max-height:92%;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.5)';
+  p3dPanel.style.cssText = 'position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:6;display:none;flex-direction:column;gap:8px;background:rgba(255,255,255,.985);border:1px solid #d3dce6;border-radius:12px;padding:14px 16px;color:#1a2b3c;font-size:12px;width:480px;max-width:94%;max-height:92%;overflow:auto;box-shadow:0 12px 34px rgba(0,0,0,.5)';
   p3dPanel.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center"><b>' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Planta 2D → 3D (DXF)</b><button class="btn sm" data-p3="fechar">' + (typeof Icones !== 'undefined' ? Icones.get('fechar', 15) : '') + '</button></div>' +
     '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
@@ -6444,11 +6555,11 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     '<label style="display:flex;gap:5px;align-items:center">Pé-direito <input data-p3="pd" class="inp" type="number" value="2.80" step="0.1" min="2" max="6" style="width:64px"> m</label>' +
     '<label style="display:flex;gap:5px;align-items:center">Unidade <select data-p3="un" class="inp" style="width:76px"><option value="">auto</option><option value="0.001">mm</option><option value="0.01">cm</option><option value="1">m</option></select></label>' +
     '<input type="file" data-p3="file"' + (ehToque() ? '' : ' accept=".dxf"') + ' style="display:none"></div>' +
-    '<div data-p3="info" style="font-size:11.5px;color:#9fb2c8">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
-    '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid #24435f;border-radius:8px;cursor:pointer;display:none"></canvas>' +
+    '<div data-p3="info" style="font-size:11.5px;color:#5b6b7c">Exporte a planta baixa do seu CAD em <b>DXF</b> (AutoCAD/QCAD/LibreCAD; DWG? salve-como DXF). O sistema propõe as paredes — você confirma.</div>' +
+    '<canvas data-p3="cv" width="448" height="300" style="background:#0b1a2b;border:1px solid #d3dce6;border-radius:8px;cursor:pointer;display:none"></canvas>' +
     '<div data-p3="res" style="font-size:12px"></div>' +
     '<button class="btn sm primary" data-p3="gerar" style="display:none">' + (typeof Icones !== 'undefined' ? Icones.get('obra', 15) : '') + ' Gerar 3D</button>' +
-    '<div style="font-size:11px;color:#f0b94a;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria de ESTUDO (paredes por par de linhas paralelas de 6–40 cm) — clique numa parede verde do preview pra ligar/desligar. Portas, janelas e cobertura não entram nesta fase. Não substitui o projeto.</div>';
+    '<div style="font-size:11px;color:#b45309;line-height:1.35">' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Volumetria de ESTUDO (paredes por par de linhas paralelas de 6–40 cm) — clique numa parede verde do preview pra ligar/desligar. Portas, janelas e cobertura não entram nesta fase. Não substitui o projeto.</div>';
   host.appendChild(p3dPanel);
   S.p3dPanel = p3dPanel;
   function toggleP3dPanel() { var abrir = p3dPanel.style.display === 'none' || !p3dPanel.style.display; fecharPaineis(null); p3dPanel.style.display = abrir ? 'flex' : 'none'; }
@@ -6479,7 +6590,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     if (!p3d.det) { res.innerHTML = ''; bg.style.display = 'none'; return; }
     var ligadas = p3d.det.paredes.filter(function (p) { return p.ligada !== false; });
     var mTot = ligadas.reduce(function (s, p) { return s + p.comprimento; }, 0);
-    res.innerHTML = '<b style="color:#7fe0a3">' + ligadas.length + ' parede(s) ligadas</b> (' + mTot.toFixed(1).replace('.', ',') + ' m lineares) · ' +
+    res.innerHTML = '<b style="color:#15803d">' + ligadas.length + ' parede(s) ligadas</b> (' + mTot.toFixed(1).replace('.', ',') + ' m lineares) · ' +
       /* NÃO AFIRMAR A CAUSA. "portas/mobiliário/cotas" era chute apresentado
          como fato: no DXF com a parede fatiada em LINEs, boa parte dos
          sem-par é FACE DE PAREDE que o pareador não casou — e o texto
@@ -6498,7 +6609,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       if (nTrio) mot.push(nTrio + ' com três linhas paralelas (pode ser cota, não parede)');
       if (nPil) mot.push(nPil + ' com comprimento próximo da espessura (parece pilar, contaria em dobro)');
       if (nOutro > 0) mot.push(nOutro + ' desligados por você');
-      res.innerHTML += '<br><span style="color:#f0b94a">⚠ ' + dubias.length + ' NÃO entram no 3D: ' + mot.join(' · ') + '.</span>';
+      res.innerHTML += '<br><span style="color:#b45309">⚠ ' + dubias.length + ' NÃO entram no 3D: ' + mot.join(' · ') + '.</span>';
     }
     /* botão que gera NADA não fica oferecido: com zero ligadas ele produzia
        um modelo vazio e o painel continuava aberto, sem dizer por quê */
@@ -6507,9 +6618,9 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
       /* dois casos DIFERENTES, e mandar clicar no segundo é mandar clicar
          no vazio: sem parede proposta não há o que ligar no desenho */
       res.innerHTML += p3d.det.paredes.length
-        ? '<br><b style="color:#f0b94a">Nenhuma parede ligada</b> — clique nas do desenho para ligar ' +
+        ? '<br><b style="color:#b45309">Nenhuma parede ligada</b> — clique nas do desenho para ligar ' +
           'o que for parede de verdade. O 3D só nasce com pelo menos uma.'
-        : '<br><b style="color:#f0b94a">Nenhuma parede foi proposta</b> — não há o que clicar. ' +
+        : '<br><b style="color:#b45309">Nenhuma parede foi proposta</b> — não há o que clicar. ' +
           'Confira a UNIDADE no seletor acima (envergadura errada joga toda espessura fora da faixa de ' +
           '6–40 cm) e explode os blocos no CAD antes de exportar.';
       return;
@@ -6534,7 +6645,7 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
     var env = p3d.parse.extents ? ((p3d.parse.extents.x1 - p3d.parse.extents.x0).toFixed(1) + '×' + (p3d.parse.extents.y1 - p3d.parse.extents.y0).toFixed(1) + ' m') : '—';
     var ign = Object.keys(p3d.parse.stats.ignoradas || {}).map(function (k) { return k + '×' + p3d.parse.stats.ignoradas[k]; }).join(', ');
     info.innerHTML = '<b>' + esc(p3d.nome) + '</b> · ' + p3d.parse.segmentos.length + ' segmentos · envergadura ' + env +
-      (p3d.parse.unidade.origem.indexOf('heuristica') === 0 ? ' · <span style="color:#f0b94a">unidade ASSUMIDA (' + p3d.parse.unidade.origem.slice(11) + ') — confira a envergadura e corrija no seletor se preciso</span>' : '');
+      (p3d.parse.unidade.origem.indexOf('heuristica') === 0 ? ' · <span style="color:#b45309">unidade ASSUMIDA (' + p3d.parse.unidade.origem.slice(11) + ') — confira a envergadura e corrija no seletor se preciso</span>' : '');
     if (ign) info.innerHTML += '<br>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Entidades ignoradas: ' + esc(ign) + (/INSERT/.test(ign) ? ' — geometria DENTRO de bloco não entra: exploda os blocos no CAD antes de exportar.' : '.');
     if (!p3d.det.paredes.length) info.innerHTML += '<br>' + (typeof Icones !== 'undefined' ? Icones.get('alerta', 15) : '') + ' Nenhum par de linhas com cara de parede (6–40 cm). Confira a UNIDADE — envergadura errada = espessuras fora da faixa.';
     /* o que saiu e o que entrou DESMARCADO tem de aparecer: sem isso o

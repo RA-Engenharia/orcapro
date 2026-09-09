@@ -982,7 +982,37 @@ tr.tr-aviso-insumo b { cursor: pointer; text-decoration: underline; text-underli
 
 /* ---------- Modal ---------- */
 .modal-bg { position: fixed; inset: 0; background: rgba(8,18,30,.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; z-index: 50; padding: 20px; animation: fadein .15s; }
-.modal { background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-lg); box-shadow: var(--sombra-lg); width: 100%; max-width: 760px; max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; animation: popin .18s cubic-bezier(.16,1,.3,1); }
+/* ⚠ LARGURA POR CONTEÚDO, e não uma medida só para tudo (09/09/2026).
+ * Os 760 px valiam para um formulário de cadastro, e sufocavam as telas que
+ * são o trabalho de verdade: o Mapa de Cotação com 40 itens × N fornecedores
+ * abria com a descrição do material cortada em 20 caracteres ("TUBO PVC SERIE
+ * NORMAL, D…" para quatro bitolas diferentes) e a coluna de preço espremida —
+ * numa janela de 1500 px, com 700 px sobrando de véu escuro dos dois lados.
+ * Quem precisa comparar preço item a item lia quatro linhas idênticas.
+ *
+ * ⚠ NÃO É "TUDO GRANDE": um "tem certeza?" de duas linhas com 1580 px de
+ *   largura é pior que o problema que resolve — a frase atravessa a tela e o
+ *   botão fica longe do texto. Quem decide é o conteúdo, no `UI.modal`: corpo
+ *   com <table> (grade de itens, comparativos, listas longas) ganha `largo`.
+ *
+ * ⚠ SEM `min()`/`clamp()` DE PROPÓSITO: o produto roda em WebView de
+ *   instalador antigo (ver CLAUDE.md) e função de CSS que o motor não conhece
+ *   invalida a declaração inteira — o modal voltaria ao tamanho de fábrica sem
+ *   ninguém entender por quê. O `padding` do `.modal-bg` já garante que o
+ *   modal nunca encoste na borda, então `max-width` sozinho basta. */
+.modal { background: var(--surface); border: 1px solid var(--linha); border-radius: var(--raio-lg); box-shadow: var(--sombra-lg); width: 100%; max-width: 880px; max-height: 92vh; display: flex; flex-direction: column; overflow: hidden; animation: popin .18s cubic-bezier(.16,1,.3,1); }
+.modal.largo { max-width: 1580px; max-height: 94vh; }
+.modal.largo .body { padding: 16px 18px; }
+/* ⚠ ALARGAR O MODAL NÃO ALARGA O QUE ESTÁ DENTRO — medido na foto do headless
+ * em 09/09/2026, com o Mapa já em 1560 px: os cards de fornecedor esticaram
+ * junto (são `flex:1`) e os campos ficaram do tamanho de fábrica dentro deles,
+ * com um vão de 300 px depois de cada um; o "Condição (ex.: 28 dias)" virou uma
+ * caixinha perdida no canto. Quem olha lê isso como tela quebrada, não como
+ * tela grande. O card do fornecedor é um bloco de formulário: os campos dele
+ * ocupam a largura que o card tiver, seja ela qual for. */
+[data-ct-forn] input:not([type="hidden"]), [data-ct-forn] select { width: 100%; }
+[data-ct-forn] .row { display: flex; gap: 6px; }
+[data-ct-forn] .row > input { flex: 1; min-width: 0; }
 .modal header { padding: 18px 24px; border-bottom: 1px solid var(--linha); display: flex; align-items: center; background: linear-gradient(180deg, var(--surface-2), var(--surface)); }
 .modal header h2 { margin: 0; font-size: var(--t-tit); font-weight: var(--p-forte); letter-spacing: -.3px; }
 @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }

@@ -198,7 +198,18 @@
 
     comer(/\bdn\s*(\d+)/g, function (m, nn) { d.dn.push(parseInt(nn, 10)); });
     comer(/(\d+(?:[.,]\d+)?)\s*mm\b/g, function (m, nn) { d.mm.push(Math.round(parseFloat(String(nn).replace(',', '.')))); });
-    comer(/(\d+)\s*(?:graus|grau|°)/g, function (m, nn) { d.graus.push(parseInt(nn, 10)); });
+    /* ⚠ "90º" NÃO É "90°", e a diferença custou o casamento de TODOS os
+       joelhos. O Revit escreve o ângulo com o indicador ordinal masculino
+       (U+00BA, "90º"); esta regra só conhecia o SÍMBOLO DE GRAU (U+00B0,
+       "90°") e a palavra "GRAUS", que é a forma da SINAPI. Os dois desenham
+       igual na tela e são caracteres diferentes.
+       Efeito medido no print de 09/09/2026: a peça "Joelho 90º 100mm" saía
+       com `graus: []`, o candidato "JOELHO ... 90 GRAUS" com `[90]` e o
+       "45 GRAUS" com `[45]` — e `compararDims` PULA a grandeza que só um lado
+       declara. Sem nada para comparar, 45 e 90 empatavam em 59% e a peça ia
+       para "pendente". A família não salva: ela se chama `Joelho 45_90`, que
+       é o nome do grupo, e de propósito não vira medida nenhuma. */
+    comer(/(\d+)\s*(?:graus|grau|[°º])/g, function (m, nn) { d.graus.push(parseInt(nn, 10)); });
     comer(/(\d+(?:[.,]\d+)?)\s*(?:l|litros?)\b/g, function (m, nn) { d.litros.push(Math.round(parseFloat(String(nn).replace(',', '.')))); });
 
     /* DN e mm são a mesma grandeza no vocabulário de tubo: unificar evita que
@@ -393,6 +404,39 @@
     if (!a || !b) return 'muda';
     return a === b ? 'confere' : 'diverge';
   }
+
+  /* ---------------------------------------------------------------
+   * 2c. A SÉRIE — e ela também é VETO.
+   *
+   * ⚠ A PALAVRA "SERIE" ESTAVA FAZENDO O CONTRÁRIO DO QUE DEVIA. A peça diz
+   *   "Esgoto Série Normal"; a base de MG tem só dois joelhos 90° DN 100 de
+   *   esgoto:
+   *       3520  JOELHO PVC, SOLDAVEL, PB, 90 GRAUS, DN 100 MM   R$  9,33
+   *      20157  JOELHO, PVC SERIE R, 90 GRAUS, DN 100 MM        R$ 21,80
+   *   O certo é o primeiro — a série normal, que a SINAPI escreve como
+   *   "SOLDAVEL, PB" e não com a palavra "normal". O casador punha o SÉRIE R
+   *   na frente (59% contra 39%) porque ele compartilha o token "serie" com a
+   *   peça. Ou seja: a palavra que deveria SEPARAR as duas séries era o ponto
+   *   que as APROXIMAVA, e a escolha saía 2,3× mais cara.
+   *
+   * ⚠ SÉRIE R É SÉRIE REFORÇADA — o mesmo produto com dois nomes. Tratá-las
+   *   como séries diferentes deixaria a peça pendente sem motivo.
+   *
+   * ⚠ E QUEM NÃO DECLARA NÃO DIVERGE: "SOLDAVEL, PB" não nomeia série, então
+   *   vale 'muda' e continua na disputa. É o que faz o item certo sobreviver
+   *   justamente no caso que motivou este bloco.
+   * ------------------------------------------------------------- */
+  function serieDe(texto) {
+    var t = ' ' + norm(texto).replace(/[_\-.,;:/()\[\]"]/g, ' ') + ' ';
+    if (/\bserie\s+refor/.test(t) || /\bserie\s+r\b/.test(t)) return 'reforcada';
+    if (/\bserie\s+normal\b/.test(t)) return 'normal';
+    return '';
+  }
+  function compararSerie(a, b) {
+    if (!a || !b) return 'muda';
+    return a === b ? 'confere' : 'diverge';
+  }
+  function rotuloSerie(s) { return s === 'reforcada' ? 'série reforçada (R)' : s === 'normal' ? 'série normal' : '?'; }
   /* como o tipo aparece no recado ao usuário — o recado tem de dizer QUAL é a
      peça de cada lado, senão vira "não confere" genérico, que a pessoa lê como
      formalidade e ignora */
@@ -570,6 +614,32 @@
           var dDescr = dimsDe(descr);
           if (!dDescr.vazio) { dims = dDescr; dims.deDescricao = true; }
         }
+        /* ⚠ E ELA TAMBÉM COMPLETA GRANDEZA A GRANDEZA, não só o vazio total.
+           A peça do print tinha bitola 100 medida na geometria — logo `dims`
+           NÃO estava vazio — e por isso o ângulo que só a descrição traz
+           ("Joelho 90º") era descartado. Resultado: com `graus: []` de um
+           lado, o veto não tinha o que comparar e o joelho de 45 empatava com
+           o de 90, os dois a 59%, tudo pendente.
+           A regra continua sendo a de sempre: a descrição só é ouvida ONDE
+           NÃO HÁ outra fonte. Grandeza que a família ou a geometria já
+           declararam não é tocada — em especial a BITOLA, que a geometria
+           mede e o texto livre não desmente. E a redução segue fora. */
+        if (!par && descr) {
+          var dC = dimsDe(descr);
+          ['graus', 'litros', 'pol', 'trio'].forEach(function (g) {
+            if (!dims[g].length && dC[g].length) {
+              dims[g] = dC[g].slice();
+              dims.vazio = false;
+              (dims.deDescricaoEm = dims.deDescricaoEm || []).push(g);
+            }
+          });
+          /* bitola só quando NEM a geometria NEM o nome da família a trazem */
+          if (!dims.bitola.length && dC.bitola.length) {
+            dims.bitola = dC.bitola.slice();
+            dims.vazio = false;
+            (dims.deDescricaoEm = dims.deDescricaoEm || []).push('bitola');
+          }
+        }
         p = porChave[chave] = {
           chave: chave, familia: fam, temFamilia: temFamilia,
           descricao: descr, descricaoFonte: descr ? String(e.descricaoFonte || '') : '',
@@ -577,6 +647,9 @@
              nomeia UMA peça só (ver tipoDaFamilia). '' = desconhecido, e
              desconhecido nunca veta. */
           tipoPeca: descr ? tipoDaDescricao(descr) : tipoDaFamilia(fam),
+          /* a serie vem da descricao e, sem ela, do nome da familia — que
+             aqui NAO e ambiguo: `ESG_Serie Normal_...` nomeia a serie uma vez so */
+          serie: serieDe(descr || fam),
           tipo: String(e.tipo || ''), rotulo: String(e.nome || ''),
           sistemaIfc: String(e.sistemaIfc || ''),
           disciplina: disc.disciplina, subsistema: disc.subsistema, origemDisciplina: disc.origem,
@@ -621,9 +694,24 @@
              palpite da família — senão a ordem de leitura do IFC decidiria
              qual peça o casador acha que é */
           p.tipoPeca = tipoDaDescricao(descr);
+          p.serie = serieDe(descr) || p.serie;
           if (p.dims.vazio && !p.bitolaPar) {
             var dTarde = dimsDe(descr);
             if (!dTarde.vazio) { dTarde.deDescricao = true; p.dims = dTarde; }
+          }
+          /* ⚠ MESMO COMPLEMENTO DO CAMINHO DE CIMA. Se ficasse só lá, a peça
+             cujo primeiro elemento veio sem descrição perderia o ângulo — e o
+             mesmo IFC daria casamento diferente conforme a ordem de leitura,
+             que é justamente o que este bloco existe para impedir. */
+          if (!p.bitolaPar) {
+            var dT2 = dimsDe(descr);
+            ['graus', 'litros', 'pol', 'trio', 'bitola'].forEach(function (g) {
+              if (!p.dims[g].length && dT2[g].length) {
+                p.dims[g] = dT2[g].slice();
+                p.dims.vazio = false;
+                (p.dims.deDescricaoEm = p.dims.deDescricaoEm || []).push(g);
+              }
+            });
           }
         }
       } else {
@@ -892,7 +980,8 @@
       return {
         item: item, fonte: c.fonte || item.fonte || '',
         conf: p.conf, dim: p.dim, uni: p.uni, achou: p.achou, de: p.tot, viaSinonimo: p.viaSinonimo,
-        tipoPeca: compararTipoPeca(peca.tipoPeca, tipoDaDescricao(item.descricao))
+        tipoPeca: compararTipoPeca(peca.tipoPeca, tipoDaDescricao(item.descricao)),
+        serie: compararSerie(peca.serie, serieDe(item.descricao))
       };
     }).filter(function (c) { return c.conf > 0; })
       .sort(function (a, b) {
@@ -906,14 +995,46 @@
            Peça de OUTRO tipo perde para peça do tipo certo, sempre; quando o
            tipo é desconhecido dos dois lados o valor é 'muda' e a ordem é
            exatamente a de antes. */
+        /* ⚠ QUEM DIVERGE CAI — TODOS OS VETOS NA MESMA BALANÇA, E ANTES DO
+           SCORE. A versão anterior empilhava um `if` por veto, em ordem fixa
+           (tipo, série, score, unidade, medida), e isso põe um veto a mandar
+           no outro: bastou a série entrar acima da medida para um
+           `JOELHO ... 90 GRAUS, DN 100 X 50 MM, SERIE NORMAL` (uma REDUÇÃO,
+           R$ 22,81) subir na frente do `JOELHO ... 90 GRAUS, DN 100 MM`
+           (R$ 9,33) numa busca por joelho reto de 45° — a palavra "SERIE
+           NORMAL" pesando mais que a medida errada. Medido aqui, não suposto.
+           A regra honesta é a que este arquivo já usa para a bitola: divergiu,
+           o candidato cai. Contar as divergências trata os quatro vetos como
+           iguais e não cria hierarquia entre eles; depois o score decide, e só
+           então quantas confirmações cada um traz. */
         var ord = { confere: 0, muda: 1, diverge: 2 };
-        if (ord[a.tipoPeca] !== ord[b.tipoPeca]) return ord[a.tipoPeca] - ord[b.tipoPeca];
+        function vetos(c) {
+          var n = 0;
+          if (c.tipoPeca === 'diverge') n++;
+          if (c.serie === 'diverge') n++;
+          if (c.uni === 'diverge') n++;
+          if (c.dim === 'diverge') n++;
+          return n;
+        }
+        /* ⚠ E O VETO SÓ MANDA ENTRE QUEM ESTÁ ACIMA DO MÍNIMO DE CONFIANÇA.
+           Sem este degrau, "não declarar nada" virava vantagem: no tê 50×50 um
+           ADITIVO IMPERMEABILIZANTE e um ADITIVO SUPERPLASTIFICANTE, ambos a
+           22% e sem tipo nem medida declarados (zero vetos), subiam acima da
+           junção, do cap e da luva de 66% — que ao menos são conexões da mesma
+           bitola e série, e são o que a pessoa quer ver como alternativa.
+           Medido aqui. Abaixo do mínimo, quem decide é o score e mais nada. */
+        var fracoA = a.conf < MIN_CONF ? 1 : 0, fracoB = b.conf < MIN_CONF ? 1 : 0;
+        if (fracoA !== fracoB) return fracoA - fracoB;
+        var va = vetos(a), vb = vetos(b);
+        if (va !== vb) return va - vb;
         if (b.conf !== a.conf) return b.conf - a.conf;
-        /* empate no score: quem CONFERE a dimensão passa na frente de quem
-           não declara — e quem diverge fica por último */
-        /* unidade decide antes da medida: e ela que separa o anel [UN] do tubo [M] */
+        /* empate no score: quem CONFIRMA mais passa na frente de quem não
+           declara. Unidade e medida seguem valendo mais que o resto — é a
+           unidade que separa o anel [UN] do tubo [M]. */
         if (ord[a.uni] !== ord[b.uni]) return ord[a.uni] - ord[b.uni];
-        return (ord[a.dim] - ord[b.dim]);
+        if (ord[a.dim] !== ord[b.dim]) return ord[a.dim] - ord[b.dim];
+        if (ord[a.tipoPeca] !== ord[b.tipoPeca]) return ord[a.tipoPeca] - ord[b.tipoPeca];
+        return (ord[a.serie] - ord[b.serie]);
       });
 
     var acima = lista.filter(function (c) { return c.conf >= MIN_CONF; });
@@ -952,6 +1073,15 @@
         status = 'ambiguo';
         porque = 'o melhor candidato é ' + rotuloTipo(tipoDaDescricao(topo.item.descricao)) +
                  ' e o modelo pede ' + rotuloTipo(peca.tipoPeca) +
+                 ' — confira na lista ou busque o item na base';
+      } else if (topo.serie === 'diverge') {
+        /* ⚠ SÉRIE ERRADA NÃO VIRA "ok". Série normal e série reforçada (R) são
+           o mesmo desenho de peça em espessura e preço diferentes — no joelho
+           90° DN 100 de esgoto, R$ 9,33 contra R$ 21,80. Deixar passar como
+           conferido é a peça certa pelo preço errado, 2,3× para cima. */
+        status = 'ambiguo';
+        porque = 'o melhor candidato é ' + rotuloSerie(serieDe(topo.item.descricao)) +
+                 ' e o modelo pede ' + rotuloSerie(peca.serie) +
                  ' — confira na lista ou busque o item na base';
       } else if (topo.uni === 'diverge') {
         /* ⚠ UNIDADE INCOMPATÍVEL VEM ANTES DE TUDO. É o caso do anel de
