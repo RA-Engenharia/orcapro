@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.63",
+  "versao": "1.2.64",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.63.zip",
-  "notas": "Compra pelo modelo BIM: o mesmo tubo deixa de aparecer repetido, e a lista ganhou filtro por tipo de material. O Revit numera os ramais (\"Esgoto - Ramal 1\", \"Ramal 2\", \"Ramal 3\") e a lista quebrava a MESMA peca por ramal — tres linhas de ESG_Tubo Serie Normal DN 40, com 5 cm, 3 cm e 5 cm, cada uma pedindo UMA BARRA de 6 m. Treze centimetros de tubo pediam tres barras, porque o arredondamento acontece por linha. Agora e uma linha, uma barra, e ela diz quantos sistemas do modelo reuniu. Agua fria e esgoto continuam separados: o que junta e a disciplina, nao o numero do ramal — o mesmo joelho nas duas e compra diferente (soldavel x serie normal). E a lista ganhou uma segunda fila de botoes para filtrar por tipo de material: Tubos, Conexoes, Registros e valvulas, Loucas e metais, Caixas e ralos. Combina com o filtro por sistema (da para ver so as conexoes de esgoto), clicar de novo desliga, e o filtro vale tambem para o botao Gerar requisicao: o que voce ve na tela e exatamente o que vai para a requisicao.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.63/OrcaPRO-IA-Instalador-v1.2.63.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.64.zip",
+  "notas": "Correcao: o arquivo IFC de eletrica nomeado com o prefixo ELE_ entrava no modelo como hidraulica. A compatibilizacao entao mostrava o par de disciplinas errado — dizia \"Estrutura x Hidraulica\" para um choque que e com a eletrica, e era esse rotulo que ia no relatorio e no BCF do projetista. Agora o prefixo da ABNT decide a disciplina do arquivo: ARQ_, EST_, ELE_, HID_, PLU_ e MEC_.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.64/OrcaPRO-IA-Instalador-v1.2.64.exe"
 }

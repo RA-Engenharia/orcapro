@@ -7280,13 +7280,26 @@ if (S._fecharPaineis && !(fly.on || (S.medir && S.medir.on) || (S.area && S.area
   }
 
   // ---------- MULTI-IFC: cada arquivo vira um MODELO independente (disciplina + transparência próprias) ----------
+  /* ⚠ O PREFIXO DA ABNT PRECISA CASAR, E ELE É CURTO.
+     O projetista nomeia o arquivo por disciplina: ARQ_, EST_, ELE_, HID_, PLU_,
+     MEC_. As regras pegavam só a palavra inteira ("eletrica", "hidraulica") — e
+     um `ELE_CRECHE_PONTAL_REV00.ifc` real (Revit, 4.432 elementos, medido em
+     09/09/2026) NÃO casava com /elet|elec|el[ée]tr/.
+     ⚠ E QUANDO O NOME FALHA NÃO SOBRA REDE: a contagem por tipo IFC não
+     distingue MEP nenhum — eletroduto e tubo hidráulico são os DOIS
+     `IfcFlowSegment` (está escrito em js/bimclash.js). A elétrica caía como
+     HIDRÁULICA, e a compatibilização reportava "Estrutura × Hidráulica" para
+     choque que é com a elétrica: número certo, rótulo errado — e é o rótulo
+     que vai no relatório e no BCF que o projetista abre.
+     ⚠ O limite de palavra antes do prefixo não é enfeite: sem ele "tele_" viraria elétrica
+     e "aplu_" viraria pluvial. */
   function detectarDisciplina(nome, tipos) {
     var n = String(nome || '').toLowerCase();
     if (/estrut|struct|\best[_\-.]|founda/.test(n)) return 'estrutural';
     if (/arq|arch/.test(n)) return 'arquitetura';
-    if (/hidr|hydro|sanit|agua|água|esgoto|plumb/.test(n)) return 'hidraulica';
-    if (/elet|elec|el[ée]tr/.test(n)) return 'eletrica';
-    if (/avac|hvac|mec[aâ]|clima/.test(n)) return 'mecanica';
+    if (/hidr|hydro|sanit|agua|água|esgoto|plumb|\bhid[_\-.]|\bplu[_\-.]|\bsan[_\-.]/.test(n)) return 'hidraulica';
+    if (/elet|elec|el[ée]tr|\bele[_\-.]/.test(n)) return 'eletrica';
+    if (/avac|hvac|mec[aâ]|clima|\bmec[_\-.]/.test(n)) return 'mecanica';
     var t = tipos || {};
     var est = (t.IFCBEAM || 0) + (t.IFCCOLUMN || 0) + (t.IFCFOOTING || 0) + (t.IFCPILE || 0) + (t.IFCMEMBER || 0);
     var hid = (t.IFCFLOWSEGMENT || 0) + (t.IFCFLOWFITTING || 0) + (t.IFCFLOWTERMINAL || 0);
