@@ -158,7 +158,7 @@
   --t-base:  15px;   /* corpo, tabela, formulário */
   --t-med:   17px;   /* subtítulo, valor de indicador */
   --t-tit:   20px;   /* título de tela e de modal */
-  --t-hero:  32px;   /* o número grande do painel, e só ele */
+  --t-hero:  32px;   /* o número grande do painel e o nome da obra no palco de Obras — só os dois */
   /* ⚠ REGUA SEPARADA, E POR UM MOTIVO TECNICO. Dentro de um <svg> com
      viewBox, "px" nao e pixel de tela: o desenho e escalado pela largura do
      cartao. O eixo do fluxo de caixa mede 440 unidades e e desenhado em
@@ -1794,6 +1794,111 @@ input.cell.cell-erro { border-color: #dc2626 !important; background: rgba(220,38
 
 /* no papel a capa não entra: o impresso tem cabeçalho próprio */
 @media print { .orc-card .obra-capa, .conta-logo, .conta-foto { display: none !important; } }
+
+/* ---------- Palco da lista de Obras (js/obravitrine.js) ----------
+   O topo da tela de Obras é uma obra em tamanho grande, trocada pelo mouse
+   sobre o card. O palco é ESCURO NOS DOIS TEMAS, de propósito: é foto com
+   texto por cima, e texto só lê sobre foto com um véu escuro — num palco
+   claro o véu teria de ser branco e lavaria a foto inteira.
+   Por isso as tintas daqui são próprias (--ov-*), escolhidas contra o véu
+   navy, e não os tokens do tema: o --verde do tema claro (#15803d) some
+   sobre o navy. */
+.ov-palco {
+  --ov-fundo: #0b1b2c;
+  --ov-texto: #ffffff;
+  --ov-fraco: #b9c9d9;
+  --ov-verde: #6fd08a;
+  --ov-ambar: #e8b04f;
+  --ov-alerta: #f4999d;
+  --ov-aco: #8fc0e3;
+  /* ⚠ o !important VENCE o style="display:none" que o motor escreve no HTML
+     (ver ObraVitrine.palco). Folha velha em cache = palco invisível, e não
+     uma foto de 1600 px cobrindo a lista. */
+  display: grid !important;
+  position: relative; overflow: hidden; isolation: isolate;
+  min-height: 340px; margin: 0 0 22px;
+  border-radius: var(--raio-lg);
+  background: var(--ov-fundo); color: var(--ov-texto);
+  box-shadow: var(--sombra);
+}
+.ov-fundo, .ov-veu { position: absolute; inset: 0; }
+.ov-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: 0; transition: opacity .45s var(--ease); }
+.ov-img.on { opacity: 1; }
+.ov-palco.carregando .ov-img.on { opacity: .3; }
+.ov-veu {
+  background:
+    linear-gradient(90deg, rgba(11,27,44,.97) 0%, rgba(11,27,44,.9) 32%, rgba(11,27,44,.45) 60%, rgba(11,27,44,0) 84%),
+    linear-gradient(0deg, rgba(11,27,44,.85) 0%, rgba(11,27,44,0) 48%);
+}
+/* sem foto: papel milimetrado de prancha. A obra ainda não tem imagem, mas o
+   palco continua sendo de engenharia — e não o cinza de "imagem faltando" */
+.ov-palco.sem-foto .ov-fundo {
+  background-image:
+    linear-gradient(rgba(143,192,227,.13) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(143,192,227,.13) 1px, transparent 1px),
+    linear-gradient(rgba(143,192,227,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(143,192,227,.05) 1px, transparent 1px);
+  background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+  background-position: -1px -1px;
+}
+.ov-texto { position: relative; z-index: 1; align-self: end; max-width: 640px; padding: 32px 34px 28px; }
+.ov-linha1 { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 0 0 8px; font-size: var(--t-peq); color: var(--ov-fraco); }
+.ov-st { display: inline-flex; align-items: center; gap: 7px; color: var(--ov-texto); font-weight: var(--p-medio); }
+.ov-st::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ov-st, var(--ov-aco)); }
+.ov-st[data-st="andamento"] { --ov-st: var(--ov-verde); }
+.ov-st[data-st="pausada"] { --ov-st: var(--ov-ambar); }
+.ov-st[data-st="concluida"] { --ov-st: var(--ov-fraco); }
+/* ⚠ `.ov-palco .ov-nome`, e não `.ov-nome` sozinho: `.main h2` (0,1,1)
+   vencia (0,1,0) e pintava o nome com a cor do TEXTO do tema — escuro sobre
+   o palco escuro, invisível no tema claro — e ainda o encolhia para 20px.
+   Só a foto da tela mostrou; tools/e2e-obras-vitrine.js agora mede cor,
+   tamanho e contraste. */
+.ov-palco .ov-nome { margin: 0; font-size: var(--t-hero); line-height: 1.12; font-weight: var(--p-forte); letter-spacing: -.5px; color: var(--ov-texto); text-wrap: balance; }
+.ov-onde { display: flex; flex-wrap: wrap; gap: 2px 18px; margin: 6px 0 0; font-size: var(--t-base); color: var(--ov-fraco); }
+.ov-numeros { display: flex; flex-wrap: wrap; gap: 12px 40px; margin: 22px 0 14px; }
+.ov-numeros dt { display: flex; align-items: center; gap: 7px; font-size: var(--t-peq); color: var(--ov-fraco); }
+.ov-numeros dd { margin: 2px 0 0; font-size: var(--t-tit); font-weight: var(--p-forte); line-height: 1.25; font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; color: var(--ov-texto); }
+.ov-numeros dd.ov-nota { margin: 1px 0 0; font-size: var(--t-micro); font-weight: var(--p-normal); color: var(--ov-fraco); }
+.ov-numeros dd.ov-alerta { color: var(--ov-alerta); }
+.ov-sw { display: inline-block; flex: none; }
+.ov-sw-med { width: 12px; height: 8px; border-radius: 2px; background: var(--ov-verde); }
+.ov-sw-hoje { width: 2px; height: 13px; background: var(--ov-texto); }
+/* a trena: medido (barra) e calendário (traço) na mesma fita, com as marcas
+   de 10 em 10% de uma trena de obra */
+.ov-trena {
+  position: relative; height: 10px; max-width: 460px; margin: 4px 0 0;
+  border-radius: 2px; background-color: rgba(255,255,255,.10);
+  background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.30) 0, rgba(255,255,255,.30) 1px, transparent 1px, transparent 10%);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,.30);
+}
+.ov-trena-med { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 2px; background: var(--ov-verde); transform-origin: left center; }
+.ov-trena-hoje { position: absolute; top: -5px; bottom: -5px; width: 2px; margin-left: -1px; background: var(--ov-texto); box-shadow: 0 0 0 1px rgba(11,27,44,.6); }
+.ov-diario { margin: 14px 0 0; font-size: var(--t-peq); color: var(--ov-fraco); }
+.ov-acoes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.ov-palco .btn.ov-sec { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.3); color: var(--ov-texto); }
+.ov-palco .btn.ov-sec:hover { background: rgba(255,255,255,.2); }
+.ov-credito { position: absolute; right: 16px; bottom: 12px; z-index: 1; margin: 0; font-size: var(--t-micro); color: rgba(255,255,255,.8); text-shadow: 0 1px 2px rgba(0,0,0,.7); }
+/* a entrada curta quando o palco TROCA de obra — resposta ao gesto; na
+   primeira pintura não roda (a classe só entra em _ovMostrar) */
+.ov-texto.entra > * { animation: ov-entra .3s var(--ease) both; }
+.ov-texto.entra .ov-trena-med { animation: ov-cresce .55s var(--ease) both; }
+@keyframes ov-entra { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
+@keyframes ov-cresce { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+/* o card que está no palco fica marcado: é o elo entre a grade e o topo */
+.ov-grade .orc-card.em-cena { border-color: var(--aco); }
+.ov-grade .orc-card.em-cena::before { opacity: 1; transform: scaleY(1); }
+.ov-grade .orc-card:focus-visible { outline: none; border-color: var(--aco); box-shadow: var(--anel), var(--sombra-hover); }
+@media screen and (max-width: 820px) {
+  .ov-palco { min-height: 300px; }
+  .ov-texto { padding: 22px 20px 20px; }
+  .ov-palco .ov-nome { font-size: calc(var(--t-hero) * .8); }
+  .ov-numeros { gap: 10px 26px; }
+  /* ⚠ no celular o texto cobre a foto de cima a baixo, então o véu é quase
+     uniforme. A 1ª versão clareava para .4 no topo e a linha de status caiu
+     em cima da parte clara da foto (visto na captura a 390 px). */
+  .ov-veu { background: linear-gradient(0deg, rgba(11,27,44,.97) 0%, rgba(11,27,44,.9) 50%, rgba(11,27,44,.8) 100%); }
+}
+@media print { .ov-palco { display: none !important; } }
 
 /* =====================================================================
  * APARÊNCIA — o seletor de dois eixos (v1.1.188)

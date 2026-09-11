@@ -3292,13 +3292,22 @@
       if (obras.some(function (o) { return o.portalUser; })) {
         html += '<div style="margin:-4px 0 12px"><button class="btn sm" data-gacao="avaliacoes-portal" style="font-size:12.5px">' + (typeof Icones !== 'undefined' ? Icones.get('estrela', 15) : '') + ' Avaliações dos clientes</button></div>';
       }
-      html += '<div class="grid-cards">';
+      /* O PALCO (js/obravitrine.js): a obra em destaque no topo, trocada pelo
+         mouse sobre o card. O motor escreve o texto; daqui saem os números da
+         régua ÚNICA do engenheiro (_avancoMedido / _medidoEmValor) e as
+         listas já passadas pelo funil de escopo — `lista()` filtra por obra do
+         usuário, e o palco não pode mostrar diário de obra que ele não vê. */
+      var vit = this._ovPreparar(obras, clientes);
+      html += vit.html;
+      html += '<div class="grid-cards ov-grade">';
       obras.forEach(function (o) {
         var cli = clientes.filter(function (c) { return c.id === o.clienteId; })[0];
         // lixeira visível no card (só admin): antes, excluir exigia abrir o cadastro e
         // rolar até o rodapé do modal — no celular ninguém achava.
         var podeExcluir = !(typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin());
-        html += '<div class="card orc-card' + (o.foto ? " com-foto" : "") + '" data-gopen="obras:' + o.id + '">' +
+        /* tabindex: o card vira parada de teclado — Tab põe a obra no palco e
+           Enter abre (ver _ovLigar). Antes o card só existia para o mouse. */
+        html += '<div class="card orc-card' + (o.foto ? " com-foto" : "") + (o.id === vit.id ? " em-cena" : "") + '" data-gopen="obras:' + o.id + '" data-ov="' + Util.esc(o.id) + '" tabindex="0">' +
           /* a capa entra ANTES do titulo e so existe se a obra tem foto: quem
              nao cadastrou foto continua com o card exatamente como era. O src
              chega depois (a foto mora no IndexedDB, leitura assincrona), por
@@ -3341,7 +3350,141 @@
           });
         }, 0);
       }
+      /* a fiação do palco espera o App pôr o HTML na tela — mesmo motivo do
+         setTimeout das capas logo acima */
+      if (vit.id) {
+        var selfOv = this;
+        setTimeout(function () { selfOv._ovLigar(); selfOv._ovMostrar(vit.id, true); }, 0);
+      }
       return html + "</div>";
+    },
+    /* ---------- Palco da lista de Obras — fiação do js/obravitrine.js ---------- */
+    _ovPreparar: function (obras, clientes) {
+      var gs = this, dados = {};
+      this._ovDados = dados;
+      if (typeof ObraVitrine === "undefined" || !obras.length) return { id: "", html: "" };
+      var meds = lista("medicoes"), idx = ObraVitrine.indiceDiarios(lista("rdo"));
+      var cli = {}, aprov = {};
+      clientes.forEach(function (c) { if (c) cli[c.id] = c; });
+      /* mesmo filtro de status do _avancoMedido: é esta contagem que decide
+         entre "nenhuma medição aprovada" e "0% em 2 medições aprovadas" */
+      meds.forEach(function (m) {
+        if (m && (m.status === "aprovada" || m.status === "paga")) aprov[m.obraId] = (aprov[m.obraId] || 0) + 1;
+      });
+      obras.forEach(function (o) {
+        dados[o.id] = ObraVitrine.montar(o, {
+          clienteNome: cli[o.clienteId] ? cli[o.clienteId].nome : "",
+          statusRot: o.status ? rot(P.obraStatus, o.status) : "",
+          faseRot: o.fase ? rot(P.obraFase, o.fase) : "",
+          tipoRot: o.tipo ? rot(P.obraTipo, o.tipo) : "",
+          avancoPct: gs._avancoMedido(o.id, meds),     /* fonte única — ver _avancoMedido */
+          medidoValor: gs._medidoEmValor(o.id, meds),
+          aprovadas: aprov[o.id] || 0,
+          fim: gs._fimPrevisto(o),
+          diario: idx[o.id] || null
+        });
+      });
+      var id = ObraVitrine.destaque(obras, this._ovLembrado);
+      return { id: id, html: id ? ObraVitrine.palco(dados[id]) : "" };
+    },
+    /* Os ouvintes vão no document UMA vez e só agem dentro de `.ov-grade`:
+       renderObras roda a cada App.render, e ligar a cada vez empilharia um
+       ouvinte por visita à tela — o palco trocaria N vezes por hover. */
+    _ovLigar: function () {
+      if (this._ovLigado) return;
+      this._ovLigado = true;
+      var gs = this, timer = null, sob = null;
+      var SEL = ".ov-grade .orc-card[data-ov]";
+      function cardDe(el) { return (el && el.closest) ? el.closest(SEL) : null; }
+      document.addEventListener("mouseover", function (e) {
+        var c = cardDe(e.target);
+        if (c === sob) return;
+        sob = c; clearTimeout(timer);
+        if (!c) return;
+        timer = setTimeout(function () { if (sob === c) gs._ovMostrar(c.getAttribute("data-ov")); }, ObraVitrine.ESPERA_MS);
+      });
+      /* teclado: Tab no card troca o palco na hora (quem navega por teclado já
+         parou ali); Enter e espaço abrem a obra, que é o que o clique faz */
+      document.addEventListener("focusin", function (e) {
+        var c = cardDe(e.target);
+        if (c) { clearTimeout(timer); gs._ovMostrar(c.getAttribute("data-ov")); }
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        var c = e.target;
+        if (!c || !c.matches || !c.matches(SEL)) return;
+        e.preventDefault(); c.click();
+      });
+    },
+    _ovMostrar: function (id, inicial) {
+      var pal = document.querySelector("[data-ov-palco]");
+      var m = this._ovDados && this._ovDados[id];
+      if (!pal || !m) return;
+      if (!inicial && pal.getAttribute("data-ov-id") === id) return;
+      pal.setAttribute("data-ov-id", id);
+      this._ovLembrado = id;
+      var cards = document.querySelectorAll(".ov-grade .orc-card[data-ov]");
+      for (var i = 0; i < cards.length; i++) cards[i].classList.toggle("em-cena", cards[i].getAttribute("data-ov") === id);
+      if (!inicial) {
+        var tx = pal.querySelector("[data-ov-texto]");
+        if (tx) {
+          tx.innerHTML = ObraVitrine.texto(m);
+          /* a entrada curta do texto é a resposta ao gesto: mostra que o palco
+             trocou de obra. Tirar e repor a classe reinicia a animação. */
+          tx.classList.remove("entra"); void tx.offsetWidth; tx.classList.add("entra");
+        }
+      }
+      this._ovFoto(pal, m);
+    },
+    /* Duas camadas de <img> que se revezam: a nova carrega por baixo e só
+       então aparece por cima da antiga (crossfade), nunca uma troca seca. */
+    _ovFoto: function (pal, m) {
+      var gs = this, tok = this._ovTok = (this._ovTok || 0) + 1;
+      var imgs = pal.querySelectorAll(".ov-img"), cred = pal.querySelector("[data-ov-credito]");
+      if (imgs.length < 2) return;
+      function semFoto() {
+        pal.classList.add("sem-foto"); pal.classList.remove("carregando");
+        imgs[0].classList.remove("on"); imgs[1].classList.remove("on");
+        if (cred) cred.textContent = "";
+      }
+      var k = ObraVitrine.chaveFoto(m.foto);
+      if (!k || typeof Fotos === "undefined" || !Fotos.dataURI) { semFoto(); return; }
+      var atual = pal.querySelector(".ov-img.on");
+      if (atual && atual.getAttribute("data-k") === k) { pal.classList.remove("carregando"); if (cred) cred.textContent = ObraVitrine.credito(m); return; }
+      var prox = atual === imgs[0] ? imgs[1] : imgs[0];
+      function mostrar() {
+        if (tok !== gs._ovTok) return;           /* o mouse já foi para outra obra */
+        pal.classList.remove("sem-foto"); pal.classList.remove("carregando");
+        prox.classList.add("on"); if (atual && atual !== prox) atual.classList.remove("on");
+        if (cred) cred.textContent = ObraVitrine.credito(m);
+      }
+      function aplicar(src) {
+        if (tok !== gs._ovTok) return;
+        if (!src) { semFoto(); return; }
+        /* Voltar para a obra de antes põe na camada o MESMO src que ela já
+           tinha. MEDIDO em 11/09/2026 (tools/e2e-obras-vitrine.js, seção 6,
+           com um atalho para esse caso removido de propósito): o navegador
+           dispara `load` de novo, como manda a especificação — não precisa
+           de atalho aqui, e o que existia foi tirado por não segurar nada. */
+        prox.onload = mostrar;
+        prox.onerror = function () { if (tok === gs._ovTok) semFoto(); };
+        prox.setAttribute("data-k", k);
+        prox.src = src;
+      }
+      var cache = this._ovCache || (this._ovCache = {});
+      if (cache[k]) { aplicar(cache[k]); return; }
+      /* foto que ainda vai chegar (IndexedDB, ou baixada do servidor): a
+         anterior fica esmaecida, e não intacta — senão o palco mostra o texto
+         de uma obra sobre a foto de outra enquanto a rede anda */
+      if (atual) pal.classList.add("carregando");
+      Fotos.dataURI(m.foto.ref).then(function (d) {
+        if (d) {
+          /* teto de 16 fotos em memória: são dataURIs de centenas de KB */
+          if (Object.keys(cache).length >= 16) { gs._ovCache = cache = {}; }
+          cache[k] = d;
+        }
+        aplicar(d || "");
+      }).catch(function () { aplicar(""); });
     },
     novoObra: function () { this.formObra(null); },
     /* ---------- Excluir obra (v1.1.126) ----------

@@ -1,7 +1,7 @@
 {
-  "versao": "1.2.64",
+  "versao": "1.2.65",
   "tipo": "silenciosa",
-  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.64.zip",
-  "notas": "Correcao: o arquivo IFC de eletrica nomeado com o prefixo ELE_ entrava no modelo como hidraulica. A compatibilizacao entao mostrava o par de disciplinas errado — dizia \"Estrutura x Hidraulica\" para um choque que e com a eletrica, e era esse rotulo que ia no relatorio e no BCF do projetista. Agora o prefixo da ABNT decide a disciplina do arquivo: ARQ_, EST_, ELE_, HID_, PLU_ e MEC_.",
-  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.64/OrcaPRO-IA-Instalador-v1.2.64.exe"
+  "zip": "https://raw.githubusercontent.com/RA-Engenharia/orcapro/main/download/OrcaPRO-IA-update-v1.2.65.zip",
+  "notas": "Novidade na tela de Obras: no topo aparece a obra em destaque, com a foto, o valor do contrato, quanto ja foi medido, quanto do prazo ja passou e a data do ultimo diario. Pare o mouse sobre uma obra da lista para ve-la ali.",
+  "instalador": "https://github.com/RA-Engenharia/orcapro/releases/download/v1.2.65/OrcaPRO-IA-Instalador-v1.2.65.exe"
 }
