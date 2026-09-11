@@ -659,8 +659,17 @@
         html += '<div class="card"><b>' + (typeof Icones !== 'undefined' ? Icones.get('destravado', 15) : '') + ' Teste grátis — ' + Util.esc(st.rotulo || "") + ' restantes</b><br>Durante o teste você usa <b>TUDO</b>: monta orçamento, salva e exporta (PDF, Excel, proposta, laudo). Ao final dos 7 dias, ative uma licença para continuar — seus orçamentos ficam preservados.</div>';
       } else if (st.trial) {
         html += '<div class="card"><b>⏰ Teste grátis encerrado</b><br>Seus orçamentos estão preservados. Ative sua licença com a chave da compra para voltar a salvar e exportar.</div>';
+      } else if (st.expirada) {
+        /* a renovação vale NESTA chave: o texto não pode sugerir chave nova */
+        html += '<div class="card"><b style="color:#b91c1c">Licença vencida</b>' + (st.expira ? ' em ' + new Date(st.expira).toLocaleDateString("pt-BR") : '') + '<br>' + Util.esc(st.email || "") + '. Para voltar a salvar e exportar, renove com a RA Engenharia. A renovação vale nesta mesma chave: depois do pagamento, basta abrir o OrçaPRO com internet. Seus dados continuam onde estão.</div>';
+      } else if (st.revalidar) {
+        html += '<div class="card"><b style="color:#b45309">Reconecte à internet</b><br>A licença precisa ser confirmada com o servidor. Abra o OrçaPRO com internet e ela volta sozinha.</div>';
+      } else if (st.outroDispositivo) {
+        html += '<div class="card"><b style="color:#b91c1c">Licença de outro computador</b><br>Esta licença foi ativada em outro aparelho. Fale com a RA Engenharia para liberar este.</div>';
       } else {
         html += '<div class="card"><b style="color:var(--verde,#16a34a)">' + (typeof Icones !== 'undefined' ? Icones.get('check', 15) : '') + ' Licenciado</b><br>' + Util.esc(st.email || "") + (st.expira ? ' · válida até ' + new Date(st.expira).toLocaleDateString("pt-BR") : ' · permanente') + '</div>';
+        if (st.tipoLicenca === "equipe") html += '<div class="card" style="margin-top:8px">Licença <b>independente</b>: uso individual, em até ' + (st.dispositivosMax || 3) + ' aparelhos, sem criar usuários.</div>';
+        else if (st.tipoLicenca === "titular" && st.equipe) html += '<div class="card" style="margin-top:8px">Titular com <b>' + st.equipe.max + '</b> vagas de equipe, entre usuários da empresa e licenças independentes (' + (st.equipe.independentes || 0) + ' independente(s) emitida(s)).</div>';
       }
       html += '<div class="field" style="margin-top:12px"><label>Chave de licença</label><input id="lic-chave" placeholder="cole aqui a chave que você recebeu"></div>';
       return html;

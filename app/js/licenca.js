@@ -99,14 +99,88 @@
       if (ia < 0 && ib < 0) return String(a || b || "");   // tier desconhecido: devolve como veio
       return (ib > ia) ? T[ib] : (ia >= 0 ? T[ia] : T[ib]);
     },
+    /* ==================================================================
+     * TIPO DE LICENÇA (licenças de equipe) — e por que NÃO é mão única.
+     *
+     * A restrição da licença independente vem do servidor e tem de valer; o
+     * upgrade para o pacote completo (MESMA chave, mesmo banco na nuvem) tem
+     * de poder retirá-la. Então:
+     *   - resposta COM equipeV (servidor que conhece o contrato) manda, para
+     *     restringir ou para liberar;
+     *   - resposta SEM equipeV (servidor antigo, cache, recusa temporária)
+     *     não muda nada: nem inventa restrição para o cliente padrão, nem
+     *     libera a licença independente.
+     * Copiar a regra do tier (_maiorTier) aqui travaria o promovido para sempre.
+     * ================================================================== */
+    _aplicarEquipe: function (l, d) {
+      if (!d || Number(d.equipeV) !== 1) return false;
+      var t = d.tipoLicenca == null ? "" : String(d.tipoLicenca);
+      if (t && t !== "equipe" && t !== "titular") return false;          // tipo que este app não conhece: não decide
+      var n = function (x) { x = parseInt(x, 10); return (x >= 0 && x <= 999) ? x : null; };
+      var foto = function () { return JSON.stringify([l.tipoLicenca || "", l.usuariosMax, l.equipe || null, l.dispositivosMax || null, l.upgrade || null]); };
+      var antes = foto();
+      if (t === "equipe") {
+        l.tipoLicenca = "equipe"; l.usuariosMax = 0; delete l.equipe;
+        l.dispositivosMax = n(d.dispositivosMax);
+        var up = (d.upgrade && typeof d.upgrade === "object") ? d.upgrade : null;
+        l.upgrade = up ? { nome: String(up.nome || ""), valor: Number(up.valor) || 0, periodo: String(up.periodo || "") } : null;
+        var zap = String(d.whatsapp || "").replace(/\D/g, "");
+        if (zap) l.whatsappRA = zap;
+      } else if (t === "titular") {
+        var e = d.equipe || {}, mx = n(e.max) || 0, ind = n(e.independentes) || 0;
+        l.tipoLicenca = "titular";
+        l.equipe = { max: mx, independentes: ind, empresa: n(e.empresa), dispositivos: n(e.dispositivos) || 3 };
+        l.usuariosMax = (n(d.usuariosMax) != null) ? n(d.usuariosMax) : Math.max(0, mx - ind);
+        delete l.dispositivosMax; delete l.upgrade;
+      } else {
+        delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade;
+      }
+      l.equipeEm = agora();
+      return antes !== foto();
+    },
+    /* os campos do tipo de licença que o status() expõe — em TODOS os
+       retornos de chave verificada, inclusive carência vencida, para a
+       licença independente nunca cair no fluxo do cliente padrão */
+    _com: function (o, l) {
+      var t = (l && (l.tipoLicenca === "equipe" || l.tipoLicenca === "titular")) ? l.tipoLicenca : "";
+      o.tipoLicenca = t;
+      o.usuariosMax = t === "equipe" ? 0 : ((t === "titular" && typeof l.usuariosMax === "number") ? l.usuariosMax : null);
+      o.equipe = t === "titular" ? (l.equipe || null) : null;
+      o.dispositivosMax = t === "equipe" ? (l.dispositivosMax || null) : null;
+      o.upgrade = t === "equipe" ? (l.upgrade || null) : null;
+      o.whatsappRA = (l && l.whatsappRA) || "";
+      return o;
+    },
+    /* ==================================================================
+     * RENOVAÇÃO NA MESMA CHAVE. A validade gravada DENTRO da chave é a da
+     * compra; o servidor pode estendê-la sem trocar a chave (a conta da nuvem
+     * deriva dela, e chave nova seria banco novo). Resposta com renovV
+     * (servidor que conhece a regra) grava ou limpa a validade estendida;
+     * resposta sem a marca não mexe. O status() usa a maior das duas.
+     * ================================================================== */
+    _aplicarRenovacao: function (l, d) {
+      if (!d || Number(d.renovV) !== 1) return false;
+      var antes = Number(l.renovadaAte) || 0, ren = Number(d.expiraRenovada) || 0;
+      if (ren > 0) l.renovadaAte = ren; else delete l.renovadaAte;
+      return (Number(l.renovadaAte) || 0) !== antes;
+    },
+    _expEfetiva: function (l, info) {
+      var e = (info && info.exp) || 0;
+      return (e > 0 && Number(l.renovadaAte) > e) ? Number(l.renovadaAte) : e;
+    },
     _ativarLocal: function (chave, v, verificado) {
-      var l = this._ler() || {};
-      l.chave = String(chave).trim(); l.email = v.email; l.expira = v.expira;
+      var l = this._ler() || {}, nova = String(chave).trim();
+      /* chave NOVA: o que o servidor disse sobre a anterior (tipo de licença,
+         vagas, aparelhos) não vale para esta. O tierServidor segue a regra dele. */
+      if (l.chave && l.chave !== nova) { delete l.tipoLicenca; delete l.usuariosMax; delete l.equipe; delete l.dispositivosMax; delete l.upgrade; delete l.equipeEm; delete l.usoInformadoEm; delete l.renovadaAte; }
+      l.chave = nova; l.email = v.email; l.expira = v.expira;
       /* o que o SERVIDOR disse — guardado para o status() poder subir o tier
          da chave. Nunca desce: ver _maiorTier. */
       if (v.tier) l.tierServidor = this._maiorTier(l.tierServidor, v.tier);
       l.ativadoEm = agora(); l.deviceId = this.deviceId();
       l.verificado = !!verificado; if (verificado) l.validadoEm = agora();
+      this._aplicarEquipe(l, v);
+      this._aplicarRenovacao(l, v);
       this._gravar(l);
     },
     // Ativação ONLINE obrigatória p/ licenças v2: o servidor assina + trava o dispositivo (sem furo offline).
@@ -118,7 +192,7 @@
       fetch(srv + "/api/ativar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: c, deviceId: this.deviceId() }) })
         .then(function (r) { return r.json(); })
         .then(function (d) {
-          if (d && d.ok) { self._ativarLocal(c, { email: d.email, expira: d.expira, tier: d.tier }, true); cb({ ok: true, email: d.email, expira: d.expira, tier: d.tier || "" }); }
+          if (d && d.ok) { self._ativarLocal(c, d, true); cb({ ok: true, email: d.email, expira: d.expira, tier: d.tier || "", tipoLicenca: d.tipoLicenca || "" }); }
           else cb({ ok: false, erro: (d && d.erro) || "Não foi possível ativar." });
         }, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença. Tente novamente com a internet." }); });
     },
@@ -136,10 +210,28 @@
             // a revalidação é o caminho por onde uma concessão nova CHEGA a
             // quem já estava ativado — sem reativar, sem chave nova
             if (d.tier) l.tierServidor = self._maiorTier(l.tierServidor, d.tier);
-            self._gravar(l); cb({ ok: true, tier: l.tierServidor || "" });
+            // e é também por aqui que a licença independente chega, e que o upgrade a libera
+            var mudou = self._aplicarEquipe(l, d);
+            var mudouRen = self._aplicarRenovacao(l, d);   // a renovação chega por aqui, na mesma chave
+            self._gravar(l); cb({ ok: true, tier: l.tierServidor || "", mudouEquipe: mudou, mudouRenovacao: mudouRen, tipoLicenca: l.tipoLicenca || "" });
           }
           else if (d && d.bloqueado) { try { localStorage.removeItem(KEY); } catch (e) {} cb({ ok: false, bloqueado: true, erro: d.erro }); }
-          else cb({ ok: true }); // recusa temporária: mantém (a carência cobre)
+          else {
+            /* RECUSA (não bloqueio). A renovação vale nos dois sentidos: servidor
+               que conhece a regra (renovV) grava ou limpa; e "vencida" dita pelo
+               servidor para uma chave cuja validade ASSINADA já passou limpa a
+               renovação guardada aqui (renovação desfeita no servidor, ou
+               renovadaAte editado à mão no navegador). O resto fica como sempre:
+               a carência cobre recusa temporária. */
+            var mudouR = false;
+            if (d && Number(d.renovV) === 1) mudouR = self._aplicarRenovacao(l, d);
+            else if (d && /expirad/i.test(String(d.erro || "")) && l.renovadaAte) {
+              var infoR = self._lerExpDe(l.chave);
+              if (infoR && infoR.exp > 0 && infoR.exp < agora()) { delete l.renovadaAte; mudouR = true; }
+            }
+            if (mudouR) self._gravar(l);
+            cb({ ok: true, mudouRenovacao: mudouR });
+          }
         }, function () { cb({ ok: true, offline: true }); });
     },
     // Ping de teste + ancora o início do trial no servidor (por dispositivo)
@@ -157,22 +249,102 @@
       } catch (e) {}
     },
 
+    /* O titular com cota emite, de dentro do app, uma licença independente
+       (server/licencas-filhas.js). A chave INTEIRA volta só nesta resposta: é a
+       credencial da nuvem da pessoa, e não é guardada aqui (nem Store, nem
+       backup, nem log). */
+    emitirIndependente: function (nome, email, usuariosEmpresa, cb) {
+      var self = this, srv = this._servidor(), l = this._ler() || {};
+      if (!srv || !l.chave || typeof fetch === "undefined") { cb({ ok: false, erro: "Emitir licença independente precisa de internet." }); return; }
+      var corpo = { chave: l.chave, nome: nome, email: email };
+      if (typeof usuariosEmpresa === "number" && usuariosEmpresa >= 0) corpo.usuariosEmpresa = usuariosEmpresa;
+      fetch(srv + "/api/licenca/filha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d && d.ok) {
+            var m = self._ler() || {};
+            if (m.tipoLicenca === "titular" && m.equipe) {
+              if (typeof d.emitidas === "number") m.equipe.independentes = d.emitidas;
+              if (typeof d.max === "number") m.equipe.max = d.max;
+              if (typeof d.empresa === "number") m.equipe.empresa = d.empresa;
+              m.usuariosMax = Math.max(0, (m.equipe.max || 0) - (m.equipe.independentes || 0));
+              self._gravar(m);
+            }
+          }
+          cb(d || { ok: false, erro: "Resposta vazia do servidor de licença." });
+        }, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença. Tente de novo com a internet." }); });
+    },
+    /* O titular informa quantos usuários da empresa existem, para o servidor
+       não emitir licença independente além das vagas. Só manda quando o número
+       mudou; sem internet, fica para a próxima vez que a tela abrir. */
+    informarUso: function (usuariosEmpresa) {
+      try {
+        var self = this, l = this._ler() || {}, srv = this._servidor();
+        if (l.tipoLicenca !== "titular" || !l.chave || !srv || typeof fetch === "undefined") return;
+        var n = parseInt(usuariosEmpresa, 10); if (!(n >= 0 && n <= 999)) return;
+        if (l.equipe && l.equipe.empresa === n && l.usoInformadoEm) return;
+        fetch(srv + "/api/licenca/uso", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave, usuariosEmpresa: n }) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || !d.ok || d.ignorado) return;
+            var m = self._ler() || {}; if (m.tipoLicenca !== "titular") return;
+            if (d.equipe) m.equipe = { max: Number(d.equipe.max) || 0, independentes: Number(d.equipe.independentes) || 0, empresa: Number(d.equipe.empresa) || 0, dispositivos: Number(d.equipe.dispositivos) || 3 };
+            if (typeof d.usuariosMax === "number") m.usuariosMax = d.usuariosMax;
+            m.usoInformadoEm = agora(); self._gravar(m);
+          })["catch"](function () {});
+      } catch (e) {}
+    },
+
+    /* Titular: confere a contagem com o servidor NA HORA (sem o atalho do
+       informarUso), antes de abrir o formulário de usuário. Uma licença
+       independente emitida pela página web não chega sozinha ao app.
+       cb(equipe) com a resposta, cb(null) offline ou em erro: aí vale o que
+       está gravado, sem travar quem está sem internet. */
+    atualizarEquipe: function (usuariosEmpresa, cb) {
+      cb = cb || function () {};
+      try {
+        var self = this, l = this._ler() || {}, srv = this._servidor(), n = parseInt(usuariosEmpresa, 10);
+        if (l.tipoLicenca !== "titular" || !l.chave || !srv || typeof fetch === "undefined" || !(n >= 0 && n <= 999)) { cb(null); return; }
+        var feito = false, fim = function (x) { if (!feito) { feito = true; cb(x); } };
+        setTimeout(function () { fim(null); }, 6000);   // rede lenta não prende o botão
+        fetch(srv + "/api/licenca/uso", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave, usuariosEmpresa: n }) })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d || !d.ok || d.ignorado || !d.equipe) { fim(null); return; }
+            var m = self._ler() || {}; if (m.tipoLicenca !== "titular") { fim(null); return; }
+            m.equipe = { max: Number(d.equipe.max) || 0, independentes: Number(d.equipe.independentes) || 0, empresa: Number(d.equipe.empresa) || 0, dispositivos: Number(d.equipe.dispositivos) || 3 };
+            if (typeof d.usuariosMax === "number") m.usuariosMax = d.usuariosMax;
+            m.usoInformadoEm = agora(); self._gravar(m);
+            fim(m.equipe);
+          }, function () { fim(null); });
+      } catch (e) { cb(null); }
+    },
+    /* a lista das licenças independentes do titular, com a chave MASCARADA */
+    listarIndependentes: function (cb) {
+      var srv = this._servidor(), l = this._ler() || {};
+      if (!srv || !l.chave || typeof fetch === "undefined") { cb({ ok: false, erro: "A lista precisa de internet." }); return; }
+      fetch(srv + "/api/licenca/filhas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chave: l.chave }) })
+        .then(function (r) { return r.json(); })
+        .then(function (d) { cb(d || { ok: false, erro: "Resposta vazia do servidor de licença." }); }, function () { cb({ ok: false, erro: "Sem conexão com o servidor de licença." }); });
+    },
+
     status: function () {
       var l = this._ler() || {};
       if (l.chave) {
         var info = this._lerExpDe(l.chave);
-        var expirada = !!(info && info.exp && info.exp < agora());
+        var expEf = this._expEfetiva(l, info);   // a da chave, ou a renovada pelo servidor
+        var expirada = !!(expEf && expEf < agora());
         if (l.verificado) {
           // v2: ativada e verificada pelo servidor; respeita validade + dispositivo + carência offline
-          if (expirada) return { ativo: false, trial: false, expirada: true, email: (l.email || (info && info.email)) };
-          if (l.deviceId && l.deviceId !== this.deviceId()) return { ativo: false, trial: false, outroDispositivo: true };
-          var dias = (info && info.exp) ? Math.ceil((info.exp - agora()) / 86400000) : null;
+          if (expirada) return this._com({ ativo: false, trial: false, expirada: true, expira: expEf, email: (l.email || (info && info.email)) }, l);
+          if (l.deviceId && l.deviceId !== this.deviceId()) return this._com({ ativo: false, trial: false, outroDispositivo: true }, l);
+          var dias = expEf ? Math.ceil((expEf - agora()) / 86400000) : null;
           if (agora() < (l.validadoEm || 0) + GRACE_MS) {
-            return { ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias,
+            return this._com({ ativo: true, trial: false, email: l.email, expira: l.expira, diasRestantes: dias,
               /* o maior entre o que a chave carrega e o que o servidor concedeu */
-              tier: this._maiorTier((info && info.tier) || "", l.tierServidor || "") };
+              tier: this._maiorTier((info && info.tier) || "", l.tierServidor || "") }, l);
           }
-          return { ativo: false, trial: false, revalidar: true, email: l.email, diasRestantes: dias }; // carência vencida: reconectar
+          return this._com({ ativo: false, trial: false, revalidar: true, email: l.email, diasRestantes: dias }, l); // carência vencida: reconectar
         }
         // chave presente mas sem ativação verificada pelo servidor -> não concede (cai p/ trial)
       }
@@ -181,7 +353,7 @@
       if (!ini) { ini = agora(); l.trialInicio = ini; this._gravar(l); }
       var fim = ini + TRIAL_MS;
       var rest = fim - agora();
-      return { ativo: rest > 0, trial: true, expira: fim, expirado: rest <= 0, restanteMs: Math.max(0, rest), rotulo: rotuloTempo(rest) };
+      return this._com({ ativo: rest > 0, trial: true, expira: fim, expirado: rest <= 0, restanteMs: Math.max(0, rest), rotulo: rotuloTempo(rest) }, {});
     }
   };
 

@@ -34,10 +34,33 @@
   // Limite de usuários (RBAC) por licença. Padrão 10; parametrizável por máquina via
   // localStorage 'orcapro:limite-usuarios' (o dono/RA sobe p/ clientes que compram usuários
   // extras — sobrevive a updates, como o desbloqueio do Blocok). Teto de segurança 999.
-  var LIMITE_USUARIOS = (function () {
+  var LIMITE_PADRAO = (function () {
     try { var o = parseInt(localStorage.getItem("orcapro:limite-usuarios"), 10); if (o > 0 && o <= 999) return o; } catch (e) {}
     return 10;
   })();
+  /* ===== VAGAS DE USUÁRIO — lidas NA HORA, nunca no carregamento =====
+     O tipo de licença chega pela revalidação do boot (js/app.js), DEPOIS de
+     este arquivo carregar. Três casos, e o primeiro é a frota inteira:
+     - padrão: exatamente como sempre (LIMITE_PADRAO, com o ajuste por máquina);
+     - titular com cota (licenças de equipe, server/licencas-filhas.js): as
+       vagas são SOMADAS, usuários da empresa + licenças independentes <= cota.
+       O ajuste por máquina não vale aqui: quem manda é a cota do contrato;
+     - licença independente: não cria usuários. O botão continua, e o clique
+       explica o pacote completo (_avisoPlanoSemUsuarios).
+     typeof em tudo: 12 suítes carregam este arquivo sem o licenca.js. */
+  function cotaUsuarios() {
+    var s = null;
+    try { s = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null; } catch (eS) { s = null; }
+    var empresa = 0;
+    try { empresa = (typeof listaTodas === "function" ? listaTodas("equipe") : lista("equipe")).length; } catch (eL) { empresa = 0; }
+    var t = (s && (s.tipoLicenca === "equipe" || s.tipoLicenca === "titular")) ? s.tipoLicenca : "";
+    if (t === "equipe") return { tipo: "equipe", max: 0, empresa: empresa, indep: 0, usadas: empresa, podeCriar: false, dispositivos: Number(s.dispositivosMax) || 3 };
+    if (t === "titular" && s.equipe && Number(s.equipe.max) > 0) {
+      var mx = Number(s.equipe.max) || 0, ind = Number(s.equipe.independentes) || 0;
+      return { tipo: "titular", max: mx, empresa: empresa, indep: ind, usadas: empresa + ind, podeCriar: (empresa + ind) < mx, dispositivos: Number(s.equipe.dispositivos) || 3 };
+    }
+    return { tipo: "padrao", max: LIMITE_PADRAO, empresa: empresa, indep: 0, usadas: empresa, podeCriar: empresa < LIMITE_PADRAO };
+  }
   var DEPTO_MODULOS = {
     /* ⚠ Os presets citam módulos que o perfil da empresa pode esconder — e
        tudo bem: `_modulosAtribuiveis` filtra na hora de desenhar, e id que
@@ -558,7 +581,7 @@
       return (o && o.length) ? o : null;
     } catch (e) { return null; }
   }
-  function vazioBox(txt, gacao, btn) { return '<div class="vazio card"><h3>' + txt + "</h3>" + (gacao ? '<button class="btn primary mt" data-gacao="' + gacao + '">+ ' + btn + "</button>" : "") + "</div>"; }
+  function vazioBox(txt, gacao, btn, semMais) { return '<div class="vazio card"><h3>' + txt + "</h3>" + (gacao ? '<button class="btn primary mt" data-gacao="' + gacao + '">' + (semMais ? "" : "+ ") + btn + "</button>" : "") + "</div>"; }
 
   // Ícones profissionais (monoline SVG, estilo Lucide) — sem emoji.
   var ICON = {
@@ -23714,14 +23737,21 @@
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) return this._semPermissao("usuarios");
       var us = lista("equipe").slice().sort(function (a, b) { return (a.nome || "").localeCompare(b.nome || ""); });
       var ativos = us.filter(function (u) { return u.ativo !== false; }).length;
-      var extra = '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Aprovações</button>'
-        + '<span class="muted" style="margin-right:12px;align-self:center">' + us.length + " de " + LIMITE_USUARIOS + " usuários · " + ativos + " ativos</span>";
-      var podeAdd = us.length < LIMITE_USUARIOS;
+      var cota = cotaUsuarios();
+      var extra = (cota.tipo === "titular" ? '<button class="btn sm" data-gacao="ver-independentes" style="margin-right:10px;align-self:center" title="Abre a lista das licenças independentes que você emitiu">' + (typeof Icones !== 'undefined' ? Icones.get('chave', 15) : '') + ' Licenças independentes</button>' : '')
+        + '<button class="btn sm" data-gacao="config-aprovacao" style="margin-right:10px;align-self:center">' + (typeof Icones !== 'undefined' ? Icones.get('ajustes', 15) : '') + ' Aprovações</button>'
+        + '<span class="muted" style="margin-right:12px;align-self:center">' + this._rotuloCota(cota, us.length, ativos) + "</span>";
+      var podeAdd = cota.tipo === "equipe" ? true : cota.podeCriar;   // licença independente: o botão fica e o clique explica o plano
       var html = this._head(svg("usuarios") + "Usuários &amp; Permissões", podeAdd ? "novo-usuario" : "", podeAdd ? "Novo usuário" : "", extra);
-      html += '<p class="muted" style="margin:-4px 0 14px">Você (dono da conta) é o <b>administrador</b>. Cadastre até <b>' + LIMITE_USUARIOS + '</b> usuários e libere os módulos por <b>departamento</b> — cada um entra com o próprio login e senha e vê só o que foi liberado.</p>';
-      html += this._bannerMultiAparelho();
-      if (!podeAdd) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px">Limite de ' + LIMITE_USUARIOS + ' usuários nesta versão. Desative ou exclua um para criar outro.</div>';
-      if (!us.length) return html + vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário");
+      html += '<p class="muted" style="margin:-4px 0 14px">' + this._textoCota(cota) + '</p>';
+      // o titular conta ao servidor quantos usuários da empresa existem (vagas somadas)
+      try { if (cota.tipo === "titular" && typeof Licenca !== "undefined" && Licenca.informarUso) Licenca.informarUso(cota.empresa); } catch (eIu) {}
+      html += this._bannerMultiAparelho(cota);
+      /* "Desative ou exclua" era falso: inativo também ocupa vaga (a conta inclui inativos) */
+      if (!podeAdd) html += '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px">' + (cota.tipo === "titular"
+        ? 'As ' + cota.max + ' vagas da sua equipe estão em uso: ' + cota.empresa + ' usuário(s) da empresa e ' + cota.indep + ' licença(s) independente(s). Exclua um usuário da empresa para liberar uma vaga.'
+        : 'Limite de ' + cota.max + ' usuários nesta versão. Exclua um usuário para criar outro.') + '</div>';
+      if (!us.length) return html + (cota.tipo === "equipe" ? vazioBox("Sua licença é de uso individual", "novo-usuario", "Ver como cadastrar usuários", true) : vazioBox("Nenhum usuário cadastrado", "novo-usuario", "Cadastrar primeiro usuário"));
       html += '<table class="tbl"><thead><tr><th>Nome</th><th>Login</th><th>Departamento</th><th class="num">Módulos</th><th>Status</th><th></th></tr></thead><tbody>';
       us.forEach(function (u) {
         var nMod = (u.modulos && u.modulos.length) || 0;
@@ -23730,18 +23760,20 @@
       });
       return html + "</tbody></table>";
     },
-    _bannerMultiAparelho: function () {
+    _bannerMultiAparelho: function (cota) {
+      /* licença independente: é a MESMA pessoa em até N aparelhos, não "cada usuário" */
+      var indiv = !!(cota && cota.tipo === "equipe"), nAp = (cota && cota.dispositivos) || 3;
       var lic = (typeof Licenca !== "undefined" && Licenca.status) ? Licenca.status() : null;
       if (!lic || !lic.ativo || lic.trial) return "";                       // só cliente licenciado
       if (typeof Nuvem === "undefined" || !Nuvem.disponivel()) return "";   // nuvem ligada no config
       var conta = (typeof Auth !== "undefined" && Auth.contaMestre) ? Auth.contaMestre() : null;
       if (conta) {
         return '<div class="card" style="background:#eafaf0;border-color:#b9e6c8;color:#0f5132;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-          '<span>📱 <b>Acesso multi-aparelho ATIVO.</b> Admin: <b>' + Util.esc(conta.email) + '</b> — cada usuário entra no próprio celular/tablet com a mesma licença.</span>' +
+          '<span>📱 <b>Acesso multi-aparelho ATIVO.</b> Admin: <b>' + Util.esc(conta.email) + '</b> — ' + (indiv ? 'você entra com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'cada usuário entra no próprio celular/tablet com a mesma licença.') + '</span>' +
           '<button class="btn sm" data-gacao="config-admin">Trocar senha de admin</button></div>';
       }
       return '<div class="card" style="background:#fffbeb;border-color:#fde68a;color:#92400e;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">' +
-        '<span>📱 <b>Ative o acesso multi-aparelho:</b> defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.</span>' +
+        '<span>📱 <b>Ative o acesso multi-aparelho:</b> ' + (indiv ? 'defina sua conta de administrador para entrar com o mesmo login nos seus até ' + nAp + ' aparelhos.' : 'defina sua conta de administrador e cada usuário entra no próprio celular/tablet com a mesma licença.') + '</span>' +
         '<button class="btn sm primary" data-gacao="config-admin">' + (typeof Icones !== 'undefined' ? Icones.get('link', 15) : '') + ' Configurar admin</button></div>';
     },
     configurarAdmin: function () {
@@ -23787,7 +23819,24 @@
         catch (e) { UI.toast("Copie manualmente.", "erro"); }
       };
     },
-    novoUsuario: function () { this.formUsuario(null); },
+    novoUsuario: function () {
+      var c = cotaUsuarios(), self = this;
+      if (c.tipo === "equipe") return this._avisoPlanoSemUsuarios();
+      /* titular: confere a contagem com o servidor ANTES de abrir. Offline,
+         segue com o que está gravado (cb recebe null) */
+      if (c.tipo === "titular" && typeof Licenca !== "undefined" && Licenca.atualizarEquipe) {
+        Licenca.atualizarEquipe(c.empresa, function (eq) {
+          /* a contagem mudou lá fora (independente emitida pela página web):
+             redesenha a tela ANTES de abrir, senão o aviso diz "9 de 9" com a
+             tela ainda mostrando "8 de 9" e o botão Novo */
+          var c2 = cotaUsuarios();
+          if (eq && (c2.usadas !== c.usadas || c2.max !== c.max)) { try { App.render(); } catch (eR) {} }
+          self.formUsuario(null);
+        });
+        return;
+      }
+      this.formUsuario(null);
+    },
     /* Política de aprovação da empresa. A autoaprovação (admin e usuário
        marcado aprovam a própria criação) é o padrão pedido pelo cliente;
        aqui o admin pode voltar aos quatro olhos para todo mundo. */
@@ -23815,6 +23864,20 @@
     formUsuario: function (u) {
       if (typeof Auth !== "undefined" && Auth.ehAdmin && !Auth.ehAdmin()) { UI.toast("Só o administrador gerencia usuários.", "erro"); return; }
       u = u || {}; var self = this, ehNovo = !u.id;
+      /* a guarda mora na FUNÇÃO, não no botão: vale para o despacho, para o
+         "Cadastrar primeiro usuário" e para qualquer chamador futuro */
+      var cota = cotaUsuarios();
+      if (ehNovo && cota.tipo === "equipe") return this._avisoPlanoSemUsuarios();
+      if (ehNovo && cota.tipo !== "padrao" && !cota.podeCriar) { UI.toast(cota.tipo === "titular" ? "Sem vaga na sua equipe: " + cota.usadas + " de " + cota.max + " em uso." : "Limite de " + cota.max + " usuários atingido.", "erro"); return; }
+      /* titular com cota: escolhe o TIPO de cada vaga */
+      var ehTitular = ehNovo && cota.tipo === "titular";
+      var seletorTipo = !ehTitular ? "" :
+        '<div class="field"><label>Tipo de acesso</label>' +
+        '<label class="opt-linha" style="align-items:flex-start;margin-bottom:6px"><input type="radio" name="g-tipo" value="empresa" checked style="margin-top:3px"> <span><b>Usuário da minha empresa</b><br><span class="muted" style="font-size:12px">Entra nos seus dados, com login e senha próprios e só os módulos que você liberar.</span></span></label>' +
+        '<label class="opt-linha" style="align-items:flex-start"><input type="radio" name="g-tipo" value="independente" style="margin-top:3px"> <span><b>Licença independente</b><br><span class="muted" style="font-size:12px">A pessoa recebe uma chave própria e trabalha separada, com a empresa e os dados dela: ela não vê os seus dados e você não vê os dela. Uso individual, em até ' + cota.dispositivos + ' aparelhos, sem cadastrar usuários. A licença dela vence no mesmo dia que a sua e, quando você renova a sua, a dela é renovada junto, na mesma chave. Esta vaga fica com ela e só volta para você se a pessoa contratar o pacote completo.</span></span></label></div>' +
+        '<div id="us-bloco-indep" hidden>' +
+        '<div class="row">' + campo("Nome da pessoa *", inp("g-ind-nome", "", "Ex.: João Lima")) + campo("E-mail da pessoa *", inp("g-ind-email", "", "pessoa@empresa.com")) + '</div>' +
+        '<p class="muted" style="font-size:12px;margin:4px 0 0">A licença e a conta dela na nuvem nascem deste e-mail, que não pode ser trocado depois. Ao emitir, a chave aparece para você copiar e enviar só para a pessoa.</p></div>';
       var atrib = this._modulosAtribuiveis();
       var modsSel = (u.modulos && u.modulos.length) ? u.modulos.slice() : this._modulosDoDepto(u.departamento || "engenharia");
       var checkboxes = '<div id="us-mods" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;max-height:230px;overflow:auto;border:1px solid var(--linha,#e2e8f0);border-radius:10px;padding:10px">' +
@@ -23866,7 +23929,14 @@
              aprovador na PRÓPRIA criação. Só faz efeito junto com "Pode
              aprovar" acima — sem poder de aprovação, não há o que dispensar. */
           + '<label style="display:flex;align-items:flex-start;gap:8px;font-size:13px;cursor:pointer;margin-top:8px"><input type="checkbox" id="g-autoaprovar"' + (u.autoAprovar ? " checked" : "") + ' style="margin-top:3px"> <span>Pode <b>aprovar a própria criação</b> (dispensa o segundo aprovador)<br><span class="muted" style="font-size:12px">O administrador já pode por padrão. A ação fica registrada na trilha como autoaprovação.</span></span></label>');
+      if (ehTitular) corpo = seletorTipo + '<div id="us-bloco-empresa">' + corpo + '</div>';
       this._modalForm("equipe", u, "Usuário", corpo, function (obj) {
+        /* licença independente: NÃO nasce registro em equipe. Devolver false
+           aborta o _modalForm antes do Store.salvar; quem emite é o servidor. */
+        if (ehTitular && ((document.querySelector('input[name="g-tipo"]:checked') || {}).value === "independente")) {
+          self._emitirIndependente(v("g-ind-nome"), v("g-ind-email"));
+          return false;
+        }
         obj.nome = v("g-nome"); if (!obj.nome) { UI.toast("Informe o nome.", "erro"); return false; }
         obj.login = String(v("g-login") || "").trim().toLowerCase(); if (obj.login.length < 3) { UI.toast("Login muito curto (mín. 3).", "erro"); return false; }
         // login único GLOBALMENTE (evita colisão entre empresas no mesmo navegador)
@@ -23874,7 +23944,10 @@
           ? Auth.loginEquipeEmUso(obj.login, eid(), obj.id)
           : !!lista("equipe").filter(function (x) { return x.id !== obj.id && String(x.login || "").toLowerCase() === obj.login; })[0];
         if (emUso) { UI.toast('Já existe um usuário com o login "' + obj.login + '".', "erro"); return false; }
-        if (ehNovo && lista("equipe").length >= LIMITE_USUARIOS) { UI.toast("Limite de " + LIMITE_USUARIOS + " usuários atingido.", "erro"); return false; }
+        if (ehNovo) {
+          var cotaS = cotaUsuarios();
+          if (!cotaS.podeCriar) { UI.toast(cotaS.tipo === "equipe" ? "Sua licença independente não cria usuários." : (cotaS.tipo === "titular" ? "Sem vaga na sua equipe: " + cotaS.usadas + " de " + cotaS.max + " em uso." : "Limite de " + cotaS.max + " usuários atingido."), "erro"); return false; }
+        }
         var senha = v("g-senha");
         if (ehNovo && !senha) { senha = self._gerarSenhaPadrao(); } // senha padrão automática se em branco
         /* ⚠ O `else` daqui era `btoa(...)` — Base64, reversível. Um fallback
@@ -23919,6 +23992,18 @@
         senhaGerada = senha || ""; // captura o plaintext p/ mostrar/enviar (só quando é nova senha)
         return true;
       }, ehNovo ? function (obj) { self._usuarioCriado(obj, senhaGerada); } : null);
+      /* tipo de acesso do titular: alterna os dois blocos pelo atributo hidden */
+      if (ehTitular) {
+        var bEmp = document.getElementById("us-bloco-empresa"), bInd = document.getElementById("us-bloco-indep");
+        Array.prototype.forEach.call(document.querySelectorAll('input[name="g-tipo"]'), function (r) {
+          r.onchange = function () {
+            var ind = r.value === "independente" && r.checked; if (bEmp) bEmp.hidden = ind; if (bInd) bInd.hidden = !ind;
+            /* emitir é irreversível: o botão diz o que vai acontecer */
+            var bt = document.querySelector("#modal-footer .primary");
+            if (bt) { if (bt._htmlOrig == null) bt._htmlOrig = bt.innerHTML; bt.innerHTML = ind ? "Emitir licença" : bt._htmlOrig; }
+          };
+        });
+      }
       /* "Todas as obras" apaga a malha em vez de escondê-la: o admin continua
          vendo quais obras existem, e entende que marcar Todas é uma escolha. */
       var _tds = document.getElementById("us-obras-todas"), _malha = document.getElementById("us-obras");
@@ -23937,6 +24022,101 @@
         });
         UI.toast("Módulos do departamento aplicados.", "ok");
       };
+    },
+    /* ---- vagas de usuário: textos e fluxos por tipo de licença ---- */
+    _cotaUsuarios: function () { return cotaUsuarios(); },
+    /* vagas livres para usuários NOVOS vindos de um backup (js/app.js, importação):
+       null = cliente padrão, sem trava; senão, quantos ainda cabem */
+    _vagasBackup: function () {
+      var c = cotaUsuarios();
+      return c.tipo === "padrao" ? null : Math.max(0, (Number(c.max) || 0) - (Number(c.usadas) || 0));
+    },
+    _rotuloCota: function (c, n, ativos) {
+      if (c.tipo === "titular") return c.usadas + " de " + c.max + " vagas · " + c.empresa + " na empresa · " + c.indep + (c.indep === 1 ? " independente" : " independentes");
+      if (c.tipo === "equipe") return "Licença individual · até " + (c.dispositivos || 3) + " aparelhos";
+      return n + " de " + c.max + " usuários · " + ativos + " ativos";
+    },
+    _textoCota: function (c) {
+      if (c.tipo === "titular") return 'Você (dono da conta) é o <b>administrador</b>. Sua equipe tem <b>' + c.max + '</b> vagas, e cada uma pode ser um <b>usuário da sua empresa</b> (entra nos seus dados, com permissões por departamento) ou uma <b>licença independente</b> (a pessoa trabalha separada, com a própria empresa e os próprios dados). Você escolhe o tipo em <b>Novo usuário</b>.';
+      if (c.tipo === "equipe") return 'Esta é uma <b>licença independente</b>: um acesso individual, com login e senha, em até <b>' + (c.dispositivos || 3) + '</b> aparelhos. Cadastrar usuários para a sua empresa faz parte do <b>pacote completo</b>.';
+      return 'Você (dono da conta) é o <b>administrador</b>. Cadastre até <b>' + c.max + '</b> usuários e libere os módulos por <b>departamento</b> — cada um entra com o próprio login e senha e vê só o que foi liberado.';
+    },
+    /* Licença independente clicou em "Novo usuário". O botão NÃO some: o clique
+       explica o plano, as vantagens e o caminho do pacote completo. As vantagens
+       são só as que o código entrega (conferidas em auth.js, gestao.js,
+       nuvem.js e aprovacao.js); nada de prometer auditoria geral. */
+    _avisoPlanoSemUsuarios: function () {
+      var s = {}; try { s = (typeof Licenca !== "undefined" && Licenca.status) ? (Licenca.status() || {}) : {}; } catch (e) { s = {}; }
+      var up = s.upgrade || null;
+      /* o pacote completo mantém a chave e ESTENDE a validade no servidor
+         (renovação na mesma chave): um período completo a partir da contratação */
+      var validade = s.expira ? new Date(s.expira).toLocaleDateString("pt-BR") : "";
+      var fone = String(s.whatsappRA || "").replace(/\D/g, "") || "553492869383";
+      var valor = (up && up.valor) ? Number(up.valor).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "";
+      var planoTxt = (up && valor) ? (Util.esc(up.nome || "") + ", R$ " + valor + Util.esc(up.periodo || "")) : "";
+      var msg = "Olá, Rogério! Uso o OrçaPRO com uma licença independente (" + (s.email || "") + ") e quero contratar o pacote completo para cadastrar usuários da minha empresa.";
+      var wa = "https://wa.me/" + fone + "?text=" + encodeURIComponent(msg);
+      var corpo =
+        '<p style="margin:0 0 10px">Sua licença é <b>independente</b>: um acesso individual, com login e senha, em até <b>' + (Number(s.dispositivosMax) || 3) + '</b> aparelhos. <b>Este tipo de plano não permite criar usuários para a sua empresa.</b></p>' +
+        '<div class="card" style="background:#f0fdf4;border-color:#b9e6c8;color:#14532d;margin:0 0 12px"><b>Você não perde nada do que já lançou.</b> A contratação muda o seu plano na mesma licença: orçamentos, obras, diários, medições e todos os lançamentos continuam exatamente onde estão. Depois da liberação, basta abrir o OrçaPRO com internet.</div>' +
+        '<p style="margin:0 0 6px"><b>Com o pacote completo você passa a:</b></p>' +
+        '<ul style="margin:0 0 12px 18px;padding:0;font-size:13.5px;line-height:1.55">' +
+          '<li>cadastrar a sua equipe, cada pessoa com <b>login e senha próprios</b>, trocados no primeiro acesso;</li>' +
+          '<li>liberar os módulos <b>por departamento</b>: engenharia, compras, financeiro, RH, administrativo e diretoria;</li>' +
+          '<li>trabalhar todos no <b>mesmo banco da empresa</b>, sincronizado entre os aparelhos de cada um;</li>' +
+          '<li>escolher <b>quais obras</b> cada pessoa vê;</li>' +
+          '<li>definir <b>quem aprova</b> medições, compras, requisições, folha, produção e diário e, se quiser, exigir que quem preencheu não aprove o próprio documento;</li>' +
+          '<li>ver <b>quem aprovou, rejeitou ou reabriu</b> cada documento, e quando;</li>' +
+          '<li>mandar o acesso de cada pessoa <b>por link no WhatsApp ou por QR na tela</b>, e tirar o acesso de alguém desativando o usuário.</li></ul>' +
+        '<p style="margin:0 0 12px">O pacote completo é cobrado pelo <b>valor integral do plano que você usa, pela tabela da loja</b>' + (planoTxt ? ': <b>' + planoTxt + '</b>' : '') + '.' + (validade ? ' Hoje a sua licença vale até <b>' + validade + '</b>.' : '') + ' Com o pacote completo, ela passa a valer por mais um período completo' + (up && /ano/.test(up.periodo || '') ? ' de 12 meses' : (up && /m[eê]s/.test(up.periodo || '') ? ' de 1 mês' : ' do plano')) + ', contado da data da contratação, na mesma chave e com os mesmos dados.' + '</p>' +
+        '<a class="btn primary" style="text-decoration:none" href="' + wa + '" target="_blank" rel="noopener">' + (typeof Icones !== 'undefined' ? Icones.get('mensagem', 15) : '') + ' Falar com o Rogério no WhatsApp</a>';
+      UI.modal("Criar usuários não faz parte do seu plano", corpo, [{ texto: "Agora não", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+    },
+    /* titular emite uma licença independente de dentro do app */
+    _emitirIndependente: function (nome, email) {
+      nome = String(nome || "").trim(); email = String(email || "").trim().toLowerCase();
+      if (!nome) { UI.toast("Informe o nome da pessoa.", "erro"); return; }
+      if (!/^[^@\s|]+@[^@\s|]+\.[^@\s|]+$/.test(email)) { UI.toast("Informe um e-mail válido da pessoa.", "erro"); return; }
+      if (typeof Licenca === "undefined" || !Licenca.emitirIndependente) { UI.toast("Esta instalação não emite licenças independentes. Atualize o OrçaPRO.", "erro"); return; }
+      if (!window.confirm("Emitir licença independente para " + nome + " <" + email + ">?\n\nO e-mail não pode ser trocado depois, e esta vaga fica com a pessoa até ela contratar o pacote completo.")) return;
+      var btn = document.querySelector("#modal-footer .primary"); if (btn) btn.disabled = true;
+      var self = this;
+      Licenca.emitirIndependente(nome, email, cotaUsuarios().empresa, function (d) {
+        if (btn) btn.disabled = false;
+        if (!d || !d.ok) { UI.toast((d && d.erro) || "Não foi possível emitir a licença.", "erro"); return; }
+        self._independenteEmitida(d);
+      });
+    },
+    _independenteEmitida: function (d) {
+      var srv = (typeof Licenca !== "undefined" && Licenca._servidor) ? Licenca._servidor() : "";
+      var link = "https://orcapro.raengenhariaespecial.com.br/baixar";   // o domínio da loja; o licencaServer é o host técnico
+      var corpo = '<p style="margin:0 0 8px"><b>Licença independente emitida para ' + Util.esc(d.nome || "") + '</b> (' + Util.esc(d.email || "") + ').</p>' +
+        (d.repetida ? '<p style="margin:0 0 8px;color:#92400e">Esta licença já tinha sido emitida para este e-mail há poucos minutos: é a mesma chave, e nenhuma vaga nova foi usada.</p>' : '') + '<p class="muted" style="font-size:13px;margin:0 0 8px">Copie a chave e envie <b>só para a pessoa</b>, em conversa particular: ela é o acesso à conta dessa pessoa na nuvem. O OrçaPRO não a envia por e-mail e, depois que você fechar esta tela, ela só aparece mascarada.</p>' +
+        '<div style="border:1.5px dashed var(--linha,#e2e8f0);border-radius:10px;background:#f8fafc;padding:10px 12px;font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all">' + Util.esc(d.licenca || "") + '</div>' +
+        (d.expira ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Esta licença vale até <b>' + new Date(d.expira).toLocaleDateString("pt-BR") + '</b>, o mesmo dia da sua, e é renovada junto quando você renovar a sua.</p>' : '') + (link ? '<p class="muted" style="font-size:12px;margin:8px 0 0">Para instalar, a pessoa baixa o OrçaPRO em <a href="' + Util.esc(link) + '" target="_blank" rel="noopener">' + Util.esc(link) + '</a> e cola a chave na ativação.</p>' : '') +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"><button class="btn primary" id="ind-copiar">' + (typeof Icones !== 'undefined' ? Icones.get('checklist', 15) : '') + ' Copiar chave</button></div>';
+      UI.modal("Licença independente emitida", corpo, [{ texto: "Concluir", classe: "ghost", onClick: function () { UI.fecharModal(); try { App.render(); } catch (e) {} } }]);
+      var cp = document.getElementById("ind-copiar");
+      if (cp) cp.onclick = function () {
+        try { navigator.clipboard.writeText(d.licenca || "").then(function () { UI.toast("Chave copiada.", "ok"); }, function () { UI.toast("Copie manualmente do quadro.", "erro"); }); }
+        catch (e) { UI.toast("Copie manualmente do quadro.", "erro"); }
+      };
+    },
+    /* a lista das licenças independentes, DENTRO do app: a chave do titular
+       não vai para URL nenhuma (histórico, barra de endereço), e a de cada
+       pessoa aparece mascarada */
+    verIndependentes: function () {
+      if (typeof Licenca === "undefined" || !Licenca.listarIndependentes) { UI.toast("Atualize o OrçaPRO para ver a lista.", "erro"); return; }
+      Licenca.listarIndependentes(function (d) {
+        if (!d || !d.ok) { UI.toast((d && d.erro) || "A lista precisa de internet.", "erro"); return; }
+        var linhas = (d.filhas || []).map(function (f) {
+          return '<tr><td>' + Util.esc(f.nome || "") + (f.promovida ? ' <span class="muted" style="font-size:11px">(pacote completo, não ocupa vaga)</span>' : '') + '</td><td>' + Util.esc(f.email || "") + '</td><td>' + (f.emitidaEm ? new Date(f.emitidaEm).toLocaleDateString("pt-BR") : "") + '</td><td style="font-family:ui-monospace,Consolas,monospace;font-size:11px;white-space:nowrap">' + Util.esc(f.licencaMascara || "") + '</td></tr>';
+        }).join("");
+        var corpo = '<p class="muted" style="margin:0 0 10px">Vagas em uso: <b>' + ((Number(d.emitidas) || 0) + (Number(d.empresa) || 0)) + ' de ' + (Number(d.max) || 0) + '</b>, sendo ' + (Number(d.empresa) || 0) + ' usuário(s) da empresa e ' + (Number(d.emitidas) || 0) + ' licença(s) independente(s).</p>' +
+          (linhas ? '<div style="overflow-x:auto"><table class="tbl"><thead><tr><th>Nome</th><th>E-mail</th><th>Emitida em</th><th>Chave</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' : '<p>Nenhuma licença independente emitida ainda.</p>') +
+          '<p class="muted" style="font-size:12px;margin:10px 0 0">A chave aparece mascarada: ela é o acesso à conta de cada pessoa na nuvem. Se alguém perdeu a sua, fale com a RA Engenharia.</p>';
+        UI.modal("Licenças independentes", corpo, [{ texto: "Fechar", classe: "ghost", onClick: function () { UI.fecharModal(); } }]);
+      });
     },
     _gerarSenhaPadrao: function () {
       // senha provisória curta e fácil de digitar (o usuário troca no 1º acesso). Ex.: "ra7391".
@@ -29567,6 +29747,7 @@ renderFolha: function () {
            não pediu para o app abrir assim para sempre. */
         case "ver-tudo": this._verTudo[id] = true; App.render(); return;
         case "novo-usuario": return this.novoUsuario();
+        case "ver-independentes": return this.verIndependentes();
         case "config-aprovacao": return this.configAprovacao();
         case "config-admin": return this.configurarAdmin();
         case "acesso-movel": return this.acessoMovel(id);

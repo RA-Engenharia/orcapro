@@ -221,7 +221,7 @@
       try {
         if (typeof Licenca !== "undefined") {
           if (Licenca.status().trial) Licenca.registrarTeste();
-          else Licenca.revalidar(function (r) { if (r && r.bloqueado) { try { self.render(); UI.toast("Licença: " + (r.erro || "ativada em outra máquina."), "erro"); } catch (e) {} } });
+          else Licenca.revalidar(function (r) { if (r && r.bloqueado) { try { self.render(); UI.toast("Licença: " + (r.erro || "ativada em outra máquina."), "erro"); } catch (e) {} } else if (r && (r.mudouEquipe || r.mudouRenovacao)) { try { self.render(); } catch (e2) {} } });
         }
       } catch (e) {}
       this.checarAtualizacao();
@@ -3454,6 +3454,7 @@
              A SEMÂNTICA NÃO MUDA — é a mesma de sempre, só que a comparação
              usa um índice em memória em vez de reler o disco por registro. */
           var nGest = 0, entsGest = 0;
+          var nPulados = 0;   // usuários do backup que ficaram de fora por falta de vaga
           if (temGestao) {
             Object.keys(dump.gestao).forEach(function (ent) {
               var lista = Util.arr(dump.gestao[ent]);
@@ -3464,6 +3465,7 @@
                 Store.listar(eid, ent).forEach(function (x) {
                   if (x && x.id != null) idx[String(x.id)] = String(x.atualizadoEm || "");
                 });
+                var vagasEquipe = (ent === "equipe" && typeof Gestao !== "undefined" && Gestao._vagasBackup) ? Gestao._vagasBackup() : null, puladosB = Object.create(null);   // null = sem trava; cada id pulado conta uma vez
                 var entram = [];
                 lista.forEach(function (reg) {
                   if (!reg || !reg.id) return;
@@ -3471,6 +3473,12 @@
                   /* o mais novo vence — restaurar backup velho por cima de
                      trabalho recente seria trocar um dado bom por um velho */
                   if (idx[k] != null && idx[k] >= String(reg.atualizadoEm || "")) return;
+                  /* usuário NOVO do backup ocupa vaga (licença independente e titular
+                     com cota); o que já existe e o cliente padrão nunca são barrados */
+                  if (vagasEquipe !== null && idx[k] == null) {
+                    if (vagasEquipe <= 0) { if (!puladosB[k]) { puladosB[k] = 1; nPulados++; } return; }
+                    vagasEquipe--;
+                  }
                   /* o índice é atualizado aqui porque o laço antigo relia o
                      disco: um arquivo com DOIS registros do mesmo id comparava
                      o segundo com o primeiro que acabara de entrar. Sem esta
@@ -3500,12 +3508,13 @@
               } catch (eG) {}
             });
           }
+          if (nPulados) { try { var cotaT = (typeof Gestao !== "undefined" && Gestao._cotaUsuarios) ? Gestao._cotaUsuarios() : {}; UI.toast(nPulados + " usuário(s) do backup ficaram de fora: " + (cotaT.tipo === "equipe" ? "a licença independente não cadastra usuários." : "todas as vagas da sua equipe estão em uso."), "erro"); } catch (eTp) {} }
           if (dump.prefs && typeof dump.prefs === "object") {
             var atual = Store.lerPrefs(eid) || {};
             for (var k in dump.prefs) if (atual[k] == null) atual[k] = dump.prefs[k];
             Store.salvarPrefs(eid, atual);
           }
-          UI.toast(nOrc + " orçamento(s) restaurado(s)"
+          UI.toast(nOrc + " orçamento(s) restaurado(s)" + (nPulados ? " · " + nPulados + " usuário(s) do backup ficaram de fora por falta de vaga" : "")
             + (orcMantidos ? " (" + orcMantidos + " já estava(m) mais novo(s) aqui e foi(ram) mantido(s))" : "")
             + (rProp ? " · composições próprias: " + rProp.novos + " nova(s), " + rProp.atualizados + " atualizada(s), " + rProp.total + " no total" : "")
             + (temGestao ? " · Gestão: " + nGest + " registro(s) em " + entsGest + " módulo(s)" : "") + ".", "ok");
